@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace App\Portfolio\Watch\Presentation\Command;
 
+use App\Portfolio\Shared\Application\OrderScopeLockInterface;
 use App\Portfolio\Watch\Application\WatchedProductAdministratorInterface;
+use App\Portfolio\Watch\Domain\Entity\WatchedProduct;
 use App\Portfolio\Watch\Domain\Repository\WatchedProductRepositoryInterface;
 use App\Portfolio\Watch\Domain\ValueObject\VersionSource;
 use App\Shared\Presentation\Command\GuardsExistingContent;
+use App\Shared\Presentation\Command\SeedOutcome;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -20,7 +23,9 @@ use Symfony\Component\Console\Style\SymfonyStyle;
  * Ne fait rien si un catalogue est déjà en place : il faut `--force` pour le
  * remplacer, et c'est alors une purge suivie d'une recréation, qui écrase les
  * produits ajoutés depuis le backoffice. Voir `GuardsExistingContent` — même
- * comportement pour les cinq commandes de peuplement du projet.
+ * comportement pour les autres commandes app:*:seed du projet. Purge et
+ * recréation dans une seule transaction, sous le verrou d'ordre du catalogue
+ * (issue #567) : interrompue, la commande n'a rien écrit.
  *
  * Les `slug` sont les identifiants du catalogue endoflife.date, et tous ont été
  * vérifiés à l'écriture de cette commande. Un slug fautif ne casserait pas la
@@ -46,9 +51,17 @@ final class SeedWatchedProductsCommand extends Command
 {
     use GuardsExistingContent;
 
+    /**
+     * Le périmètre d'ordre écrit : la classe d'entité, celle que son
+     * `Administrator` verrouille — un autre périmètre ici serait refusé à son
+     * premier `withLock()`.
+     */
+    private const array ORDER_SCOPES = [WatchedProduct::class];
+
     public function __construct(
         private readonly WatchedProductRepositoryInterface $watchedProductRepository,
         private readonly WatchedProductAdministratorInterface $watchedProductAdministrator,
+        private readonly OrderScopeLockInterface $orderScopeLock,
     ) {
         parent::__construct();
     }
@@ -62,14 +75,35 @@ final class SeedWatchedProductsCommand extends Command
     {
         $io = new SymfonyStyle($input, $output);
 
-        $existingProducts = $this->watchedProductRepository->findAllOrdered();
+        // Issue #567 : décompte, purge et recréation dans une seule transaction,
+        // sous le verrou du catalogue ; le compte rendu s'affiche après son COMMIT.
+        // Le catalogue n'est chargé qu'une fois, sous le verrou : il sert au
+        // décompte, puis à la purge.
+        $outcome = $this->orderScopeLock->withLocks(
+            self::ORDER_SCOPES,
+            function () use ($input): SeedOutcome {
+                $existing = $this->watchedProductRepository->findAllOrdered();
 
-        if ($this->refusesToOverwrite($io, $input, \count($existingProducts))) {
-            return Command::SUCCESS;
-        }
+                return $this->seedUnlessPopulated($input, static fn (): int => \count($existing), fn (): array => $this->seed($existing));
+            },
+        );
 
-        foreach ($existingProducts as $existing) {
-            $this->watchedProductRepository->remove($existing);
+        return $outcome->report($io);
+    }
+
+    /**
+     * Purge puis recrée, sous le verrou. La purge est écrite ligne par ligne
+     * avant toute création : dans un même `flush()`, les `INSERT` passeraient
+     * avant les `DELETE`, et l'index unique du `slug` refuserait le catalogue.
+     *
+     * @param list<WatchedProduct> $existing le catalogue en place, à purger
+     *
+     * @return list<string> le compte rendu, une ligne
+     */
+    private function seed(array $existing): array
+    {
+        foreach ($existing as $product) {
+            $this->watchedProductRepository->remove($product);
         }
 
         // Passe par le cas d'usage plutôt que d'écrire en base directement,
@@ -82,9 +116,7 @@ final class SeedWatchedProductsCommand extends Command
             $this->watchedProductAdministrator->create($slug, $label, $versionSource, $version);
         }
 
-        $io->success(\sprintf('%d produits surveillés posés.', \count($this->catalog())));
-
-        return Command::SUCCESS;
+        return [\sprintf('%d produits surveillés posés.', \count($this->catalog()))];
     }
 
     /**

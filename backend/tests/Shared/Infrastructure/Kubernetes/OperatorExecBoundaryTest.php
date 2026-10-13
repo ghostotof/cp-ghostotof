@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Tests\Shared\Infrastructure\Kubernetes;
 
+use App\Tests\Support\KubernetesManifests;
 use PHPUnit\Framework\TestCase;
-use Symfony\Component\Yaml\Yaml;
 
 /**
  * Issue #520 : où passe la frontière du `kubectl exec`.
@@ -44,6 +44,15 @@ final class OperatorExecBoundaryTest extends TestCase
     private const string READ_ONLY_CONSOLE_COMMAND = 'messenger:failed:show';
 
     /**
+     * Le rôle PostgreSQL des `psql` du runbook (issue #575) : `pg_read_all_data`
+     * et rien d'autre, sans mot de passe, joignable par le seul socket local du
+     * pod. La lecture seule devient une frontière, là où
+     * `default_transaction_read_only` sous le superutilisateur n'était qu'un
+     * garde-fou qu'un `SET` levait. Créé par `k8s/base/postgres-roles-job.yaml`.
+     */
+    private const string READER_ROLE = 'cpg_reader';
+
+    /**
      * Toutes les règles qui atteignent le ServiceAccount du déployeur : le Role
      * du namespace et le ClusterRole, chacun par sa liaison. Une liaison qui
      * pointerait ailleurs (un ClusterRole `edit` intégré, par exemple) ferait
@@ -51,8 +60,8 @@ final class OperatorExecBoundaryTest extends TestCase
      */
     public function testTheDeployerOpensNeitherAShellNorATunnel(): void
     {
-        self::assertSame(['kind' => 'Role', 'name' => 'github-actions-deployer'], $this->roleRef('rolebinding.yaml'));
-        self::assertSame(['kind' => 'ClusterRole', 'name' => 'github-actions-deployer'], $this->roleRef('clusterrolebinding.yaml'));
+        self::assertSame(['kind' => 'Role', 'name' => 'github-actions-deployer'], $this->roleRef('rolebinding.yaml', 'RoleBinding'));
+        self::assertSame(['kind' => 'ClusterRole', 'name' => 'github-actions-deployer'], $this->roleRef('clusterrolebinding.yaml', 'ClusterRoleBinding'));
 
         $granted = [];
         foreach (['role.yaml' => 'Role', 'clusterrole.yaml' => 'ClusterRole'] as $manifest => $kind) {
@@ -131,6 +140,35 @@ final class OperatorExecBoundaryTest extends TestCase
         self::assertMatchesRegularExpression('/\|\s*$/', $input, 'La requête est envoyée par un tube.');
         self::assertStringNotContainsString('SELECT', $exec);
         self::assertStringNotContainsString('<userId>', $exec);
+    }
+
+    /**
+     * Chaque `psql` que le runbook lance par `exec` (recherche d'un compte,
+     * keepalives, comptage des hachages par format — issue #590, contrôle des
+     * rôles — issue #575) est une lecture : sous le rôle lecteur, session en
+     * lecture seule et bornée, sans ~/.psqlrc, erreur en code non nul, dans le
+     * namespace que l'opérateur donne, et la requête sur l'entrée standard
+     * (tube ou heredoc), jamais dans l'argv de l'exec.
+     */
+    public function testEveryRunbookPsqlIsAReadOnlySessionInTheNamespaceGivenByTheOperator(): void
+    {
+        $calls = array_values(array_filter(
+            $this->runbookExecLines(),
+            static fn (string $line): bool => 1 === preg_match('/\bpsql\b/', $line),
+        ));
+        self::assertGreaterThanOrEqual(4, \count($calls), 'Le runbook a perdu un de ses psql en lecture : relire ce test.');
+
+        foreach ($calls as $call) {
+            $exec = substr($call, (int) strpos($call, 'kubectl '));
+            self::assertMatchesRegularExpression('/kubectl -n "\$\{NS:\?[^}]+\}" exec -i deploy\/postgres -c postgres --/', $exec, $call);
+            self::assertStringContainsString('PGOPTIONS="-c default_transaction_read_only=on -c lock_timeout=5s" psql ', $exec, $call);
+            self::assertMatchesRegularExpression('/\bpsql -X\b/', $exec, $call);
+            self::assertStringContainsString('-v ON_ERROR_STOP=1', $exec, $call);
+            self::assertStringContainsString('-U '.self::READER_ROLE.' ', $exec, 'Un psql du runbook ne tourne que sous le rôle lecteur : '.$call);
+            self::assertStringNotContainsString('POSTGRES_USER', $exec, 'Jamais le superutilisateur de l\'image : '.$call);
+            self::assertDoesNotMatchRegularExpression('/-n (preprod|prod)\b/', $exec, $call);
+            self::assertDoesNotMatchRegularExpression('/\b(SELECT|SHOW|UPDATE|DELETE|INSERT)\b/', $exec, 'Requête dans l\'argv de l\'exec : '.$call);
+        }
     }
 
     /**
@@ -231,9 +269,12 @@ final class OperatorExecBoundaryTest extends TestCase
         ));
     }
 
+    /**
+     * Le runbook, à côté de la base.
+     */
     private function readme(): string
     {
-        return (string) file_get_contents($this->k8sDir().'/README.md');
+        return (string) file_get_contents(\dirname(KubernetesManifests::base()->directory()).'/README.md');
     }
 
     /**
@@ -241,8 +282,7 @@ final class OperatorExecBoundaryTest extends TestCase
      */
     private function rules(string $manifest, string $kind): array
     {
-        $role = $this->rbac($manifest);
-        self::assertSame($kind, $role['kind'] ?? null);
+        $role = $this->rbac($manifest, $kind);
 
         $rules = $role['rules'] ?? null;
         self::assertIsArray($rules);
@@ -258,9 +298,9 @@ final class OperatorExecBoundaryTest extends TestCase
     /**
      * @return array{kind: mixed, name: mixed}
      */
-    private function roleRef(string $manifest): array
+    private function roleRef(string $manifest, string $kind): array
     {
-        $ref = $this->rbac($manifest)['roleRef'] ?? null;
+        $ref = $this->rbac($manifest, $kind)['roleRef'] ?? null;
         self::assertIsArray($ref);
 
         return ['kind' => $ref['kind'] ?? null, 'name' => $ref['name'] ?? null];
@@ -269,18 +309,8 @@ final class OperatorExecBoundaryTest extends TestCase
     /**
      * @return array<mixed>
      */
-    private function rbac(string $manifest): array
+    private function rbac(string $manifest, string $kind): array
     {
-        $path = $this->k8sDir().'/base/github-actions-rbac/'.$manifest;
-        self::assertFileIsReadable($path);
-        $object = Yaml::parse((string) file_get_contents($path));
-        self::assertIsArray($object);
-
-        return $object;
-    }
-
-    private function k8sDir(): string
-    {
-        return \dirname(__DIR__, 5).'/k8s';
+        return KubernetesManifests::base()->resource('github-actions-rbac/'.$manifest, $kind);
     }
 }

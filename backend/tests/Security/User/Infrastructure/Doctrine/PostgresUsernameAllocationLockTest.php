@@ -10,7 +10,7 @@ use App\Security\User\Infrastructure\Doctrine\PostgresUsernameAllocationLock;
 use App\Security\User\Infrastructure\Doctrine\UsernameAllocationLockInsideTransactionException;
 use App\Security\User\Infrastructure\Doctrine\UsernameAllocationLockTimeoutException;
 use App\Tests\Support\CommitRefusal;
-use App\Tests\Support\OpensProbeConnection;
+use App\Tests\Support\ProbesLocks;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception\DriverException;
 use Doctrine\ORM\EntityManagerInterface;
@@ -26,7 +26,7 @@ use Throwable;
  */
 final class PostgresUsernameAllocationLockTest extends KernelTestCase
 {
-    use OpensProbeConnection;
+    use ProbesLocks;
 
     private EntityManagerInterface $em;
 
@@ -71,9 +71,11 @@ final class PostgresUsernameAllocationLockTest extends KernelTestCase
 
     /**
      * Un refus levé par l'opération remonte tel quel, annule la transaction
-     * et rend le verrou, sans fermer l'EntityManager.
+     * et rend le verrou. Levé après une écriture, il ferme l'EntityManager
+     * (issue #549) : l'UnitOfWork tenait pour inséré le compte que le ROLLBACK
+     * venait d'annuler.
      */
-    public function testARefusalInsideTheOperationRollsBackAndReleasesTheLock(): void
+    public function testARefusalAfterAWriteRollsBackReleasesTheLockAndClosesTheEntityManager(): void
     {
         $probe = self::openProbeBeside($this->em->getConnection());
 
@@ -95,12 +97,32 @@ final class PostgresUsernameAllocationLockTest extends KernelTestCase
             }
 
             self::assertSame(0, $this->em->getConnection()->fetchOne("SELECT COUNT(*) FROM cpg_user WHERE username = 'refused'"), 'L\'écriture de l\'opération refusée a été validée.');
-            self::assertTrue($this->em->isOpen());
+            self::assertFalse($this->em->isOpen(), 'Un refus levé après une écriture a laissé l\'EntityManager ouvert sur le compte que le ROLLBACK a annulé (issue #549).');
             self::assertFalse($this->em->getConnection()->isTransactionActive());
             self::assertTrue($this->probeCanTakeTheLock($probe), 'Le verrou a survécu au refus.');
         } finally {
             $probe->close();
         }
+    }
+
+    /**
+     * Un refus levé avant toute écriture (l'adresse ou l'identifiant déjà
+     * pris) est une issue ordinaire : rien n'est périmé, l'EntityManager
+     * reste ouvert.
+     */
+    public function testARefusalBeforeAnyWriteLeavesTheEntityManagerOpen(): void
+    {
+        $caught = null;
+
+        try {
+            $this->lock()->whileAllocating(static fn (): never => throw new LogicException('refus'));
+        } catch (LogicException $exception) {
+            $caught = $exception;
+        }
+
+        self::assertSame('refus', $caught->getMessage(), 'L\'exception de l\'opération aurait dû remonter telle quelle.');
+        self::assertTrue($this->em->isOpen(), 'Un refus levé avant toute écriture a fermé l\'EntityManager.');
+        self::assertFalse($this->em->getConnection()->isTransactionActive());
     }
 
     /**
@@ -173,12 +195,41 @@ final class PostgresUsernameAllocationLockTest extends KernelTestCase
 
             self::assertInstanceOf(DriverException::class, $caught, \sprintf('Le COMMIT refusé est remonté sous un autre nom : %s.', get_debug_type($caught)));
             self::assertSame(CommitRefusal::SQLSTATE, $caught->getSQLState());
-            self::assertTrue($this->em->isOpen());
+            self::assertFalse($this->em->isOpen(), 'Un COMMIT refusé a laissé l\'EntityManager ouvert (issue #547).');
             self::assertFalse($connection->isTransactionActive());
             self::assertTrue($this->probeCanTakeTheLock($probe), 'Le verrou a survécu au COMMIT refusé.');
         } finally {
             $probe->close();
         }
+    }
+
+    /**
+     * Issue #547 : le compte inséré par l'opération a réussi au point de
+     * sauvegarde, puis la base a refusé le COMMIT. L'UnitOfWork le tenait pour
+     * écrit : le squelette ferme donc l'EntityManager, et une nouvelle lecture
+     * ne trouve pas ce compte, jamais validé.
+     */
+    public function testACommitRefusedByTheDatabaseClosesTheEntityManagerOnItsRefusedWrites(): void
+    {
+        $connection = $this->em->getConnection();
+        $neverCommitted = new CpgUser('refused', '');
+        $caught = null;
+
+        try {
+            $this->lock()->whileAllocating(function () use ($connection, $neverCommitted): null {
+                $this->em->persist($neverCommitted);
+                $this->em->flush();
+                CommitRefusal::scheduleIn($connection);
+
+                return null;
+            });
+        } catch (Throwable $exception) {
+            $caught = $exception;
+        }
+
+        self::assertInstanceOf(DriverException::class, $caught, \sprintf('Le COMMIT refusé est remonté sous un autre nom : %s.', get_debug_type($caught)));
+        self::assertFalse($this->em->isOpen(), 'Un COMMIT refusé a laissé l\'EntityManager ouvert sur une écriture annulée.');
+        self::assertNull($this->em->find(CpgUser::class, $neverCommitted->getId()), 'Une lecture après le refus rend un compte que la base n\'a jamais validé.');
     }
 
     /**
@@ -247,15 +298,10 @@ final class PostgresUsernameAllocationLockTest extends KernelTestCase
     }
 
     /**
-     * Tente le verrou depuis une autre session, et le rend aussitôt s'il l'a
-     * eu : `pg_try_advisory_xact_lock` hors transaction explicite ne le garde
-     * que le temps de l'instruction.
+     * Le verrou d'attribution des identifiants, tenté depuis `$probe`.
      */
     private function probeCanTakeTheLock(Connection $probe): bool
     {
-        return true === $probe->fetchOne(
-            'SELECT pg_try_advisory_xact_lock(?, ?)',
-            [PostgresUsernameAllocationLock::ADVISORY_NAMESPACE, PostgresUsernameAllocationLock::ADVISORY_KEY],
-        );
+        return $this->probeCanTakeTheAdvisoryLock($probe, PostgresUsernameAllocationLock::ADVISORY_NAMESPACE, PostgresUsernameAllocationLock::ADVISORY_KEY);
     }
 }

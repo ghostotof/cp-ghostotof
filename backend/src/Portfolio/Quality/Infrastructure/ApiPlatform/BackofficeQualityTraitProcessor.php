@@ -45,6 +45,7 @@ final readonly class BackofficeQualityTraitProcessor implements ProcessorInterfa
     {
         $trait = $this->qualityTraitAdministrator->update(
             $id,
+            Locale::from((string) $data->locale),
             $data->label,
             $this->translationGroup($data),
         );

@@ -4,11 +4,14 @@ declare(strict_types=1);
 
 namespace App\Tests\Shared\Infrastructure\Lock;
 
+use App\Security\User\Domain\Entity\CpgUser;
 use App\Shared\Infrastructure\Lock\PostgresLockedTransaction;
 use App\Tests\Support\CommitRefusal;
-use App\Tests\Support\OpensProbeConnection;
+use App\Tests\Support\ProbesLocks;
+use Closure;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception\CommitFailedRollbackOnly;
+use Doctrine\DBAL\Exception\ConnectionLost;
 use Doctrine\DBAL\Exception\DriverException;
 use Doctrine\DBAL\Exception\NoActiveTransaction;
 use Doctrine\ORM\EntityManagerInterface;
@@ -21,17 +24,17 @@ use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Throwable;
 
 /**
- * Le squelette commun aux trois verrous PostgreSQL (issue #512), sur la base
+ * Le squelette commun aux verrous PostgreSQL (issue #512), sur la base
  * réelle. Ce que chaque verrou garantit en plus — la sérialisation de deux
  * processus — reste couvert par ses propres tests et par les tests de
- * concurrence (#364, #389, #435, #458).
+ * concurrence (#364, #389, #435, #458 ; #545 par une sonde).
  *
  * Le verrou pris ici est un advisory lock de transaction quelconque : seule
  * compte la forme du squelette autour de lui.
  */
 final class PostgresLockedTransactionTest extends KernelTestCase
 {
-    use OpensProbeConnection;
+    use ProbesLocks;
 
     /** Une clé qu'aucun verrou de l'application n'emploie. */
     private const string LOCK_SQL = 'SELECT pg_advisory_xact_lock(512, 512)';
@@ -49,6 +52,8 @@ final class PostgresLockedTransactionTest extends KernelTestCase
      */
     private const string CAUSE_MESSAGE = 'cause avec une donnée à ne pas journaliser';
 
+    private EntityManagerInterface $entityManager;
+
     private Connection $connection;
 
     private Connection $probe;
@@ -58,7 +63,8 @@ final class PostgresLockedTransactionTest extends KernelTestCase
     protected function setUp(): void
     {
         self::bootKernel();
-        $this->connection = self::getContainer()->get(EntityManagerInterface::class)->getConnection();
+        $this->entityManager = self::getContainer()->get(EntityManagerInterface::class);
+        $this->connection = $this->entityManager->getConnection();
         $this->probe = self::openProbeBeside($this->connection);
         $this->logs = new TestHandler();
     }
@@ -83,6 +89,26 @@ final class PostgresLockedTransactionTest extends KernelTestCase
         self::assertSame([true, false], $result, "L'opération n'a pas tourné en transaction, verrou pris.");
         self::assertFalse($this->connection->isTransactionActive());
         self::assertTrue($this->probeCanTakeTheLock(), 'Le verrou a survécu au COMMIT.');
+    }
+
+    /**
+     * Ce que l'acquisition a pris est remis à l'opération (issue #560) : un
+     * verrou de ligne qui relit l'entité en la verrouillant la passe telle
+     * quelle, sans la relire une seconde fois. Une opération qui n'en a pas
+     * l'usage ne déclare pas de paramètre.
+     */
+    public function testTheOperationReceivesWhatTheAcquisitionReturned(): void
+    {
+        $acquired = new DomainException('ce que l’acquisition a pris');
+
+        $received = $this->transaction()->run(
+            acquire: fn (): DomainException => $acquired,
+            onTimeout: $this->unexpectedTimeout(...),
+            onNested: $this->unexpectedNesting(...),
+            operation: static fn (DomainException $taken): DomainException => $taken,
+        );
+
+        self::assertSame($acquired, $received, "L'opération n'a pas reçu ce que l'acquisition avait rendu.");
     }
 
     /**
@@ -190,6 +216,7 @@ final class PostgresLockedTransactionTest extends KernelTestCase
     public function testARefusalRaisedByTheAcquisitionRollsBack(): void
     {
         $refusal = new LogicException('acquisition refusée');
+        $listeners = $this->listenerCount();
 
         try {
             $this->transaction()->run(
@@ -204,6 +231,7 @@ final class PostgresLockedTransactionTest extends KernelTestCase
         }
 
         self::assertFalse($this->connection->isTransactionActive());
+        self::assertSame($listeners, $this->listenerCount(), "Un écouteur est resté branché après une acquisition refusée (issue #549).");
     }
 
     public function testAFailingOperationRollsBackAndReleasesTheLock(): void
@@ -232,6 +260,7 @@ final class PostgresLockedTransactionTest extends KernelTestCase
             self::assertSame($refusal, $caught, "L'exception de l'opération n'est pas remontée telle quelle.");
             self::assertSame(0, $this->connection->fetchOne('SELECT COUNT(*) FROM locked_write'), "L'écriture de l'opération refusée a été validée.");
             self::assertFalse($this->connection->isTransactionActive());
+            self::assertTrue($this->entityManager->isOpen(), "Un refus levé par l'opération a fermé l'EntityManager.");
             self::assertTrue($this->probeCanTakeTheLock(), "Le verrou a survécu à l'échec de l'opération.");
         } finally {
             $this->connection->executeStatement('DROP TABLE locked_write');
@@ -239,10 +268,129 @@ final class PostgresLockedTransactionTest extends KernelTestCase
     }
 
     /**
+     * Issue #549 : levée après un `flush()` qui a écrit, l'exception de
+     * l'opération ferme l'EntityManager. Le flush avait réussi au point de
+     * sauvegarde, et l'UnitOfWork tenait pour écrit ce que le ROLLBACK venait
+     * d'annuler : `find()` rendait un compte jamais validé.
+     */
+    public function testAnExceptionAfterAWrittenFlushClosesTheEntityManager(): void
+    {
+        $refusal = new DomainException('refus après une écriture');
+        $neverCommitted = new CpgUser('written', '');
+
+        $caught = $this->failureOfARun(function () use ($neverCommitted, $refusal): never {
+            $this->entityManager->persist($neverCommitted);
+            $this->entityManager->flush();
+
+            throw $refusal;
+        });
+
+        self::assertSame($refusal, $caught, "L'exception de l'opération n'est pas remontée telle quelle.");
+        self::assertFalse($this->connection->isTransactionActive());
+        self::assertFalse($this->entityManager->isOpen(), "Une exception levée après une écriture a laissé l'EntityManager ouvert sur ce que le ROLLBACK a annulé.");
+        self::assertNull($this->entityManager->find(CpgUser::class, $neverCommitted->getId()), 'Une lecture après le ROLLBACK rend un compte que la base n\'a jamais validé.');
+    }
+
+    /**
+     * Un `flush()` qui n'avait rien à écrire ne laisse rien de périmé : un
+     * refus levé après lui laisse l'EntityManager ouvert, comme un refus levé
+     * avant toute écriture.
+     */
+    public function testAnExceptionAfterAFlushWithNothingToWriteLeavesTheEntityManagerOpen(): void
+    {
+        $refusal = new DomainException('refus après un flush vide');
+
+        $caught = $this->failureOfARun(function () use ($refusal): never {
+            $this->entityManager->flush();
+
+            throw $refusal;
+        });
+
+        self::assertSame($refusal, $caught);
+        self::assertTrue($this->entityManager->isOpen(), "Un flush sans écriture a suffi à fermer l'EntityManager.");
+    }
+
+    /**
+     * Une session perdue après une écriture (`ConnectionLost`, la branche sans
+     * ROLLBACK) ferme l'EntityManager de même : PostgreSQL a abandonné la
+     * transaction avec la session.
+     */
+    public function testASessionLostAfterAWrittenFlushAlsoClosesTheEntityManager(): void
+    {
+        $listeners = $this->listenerCount();
+        $caught = $this->failureOfARun(function (): void {
+            $this->entityManager->persist(new CpgUser('lostsession', ''));
+            $this->entityManager->flush();
+            $this->terminateTheSession();
+            $this->connection->fetchOne('SELECT 1');
+        });
+
+        self::assertInstanceOf(ConnectionLost::class, $caught, \sprintf('La session coupée est remontée sous un autre nom : %s.', get_debug_type($caught)));
+        self::assertFalse($this->entityManager->isOpen(), "Une session perdue après une écriture a laissé l'EntityManager ouvert.");
+        self::assertSame($listeners, $this->listenerCount(), 'Un écouteur est resté branché après une session perdue.');
+    }
+
+    /**
+     * Un flush qui ne fait que supprimer est une écriture comme une autre : le
+     * ROLLBACK rend la ligne, mais l'UnitOfWork ne la gère plus. L'EntityManager
+     * est fermé, et une lecture la retrouve.
+     */
+    public function testAnExceptionAfterAFlushThatOnlyDeletesClosesTheEntityManager(): void
+    {
+        $stored = new CpgUser('deletedthenrestored', '');
+        $this->entityManager->persist($stored);
+        $this->entityManager->flush();
+
+        try {
+            $caught = $this->failureOfARun(function () use ($stored): never {
+                $this->entityManager->remove($stored);
+                $this->entityManager->flush();
+
+                throw new DomainException('refus après une suppression');
+            });
+
+            self::assertInstanceOf(DomainException::class, $caught);
+            self::assertFalse($this->entityManager->isOpen(), "Une exception levée après une suppression a laissé l'EntityManager ouvert.");
+            self::assertNotNull($this->entityManager->find(CpgUser::class, $stored->getId()), 'Une lecture après le ROLLBACK ne retrouve pas la ligne que la suppression annulée a laissée.');
+        } finally {
+            $this->connection->executeStatement('DELETE FROM cpg_user WHERE id = ?', [$stored->getId()->toRfc4122()]);
+        }
+    }
+
+    /**
+     * L'écriture d'une transaction validée n'est pas reprochée à la suivante :
+     * un refus levé sans écriture dans une nouvelle transaction laisse
+     * l'EntityManager ouvert. Et rien ne reste branché sur l'EntityManager
+     * une fois `run()` rendu, qu'il ait validé ou levé.
+     */
+    public function testTheWatchOnFlushesEndsWithItsRun(): void
+    {
+        $listeners = $this->listenerCount();
+        $user = new CpgUser('committed', '');
+
+        try {
+            self::assertNull($this->failureOfARun(function () use ($user): void {
+                $this->entityManager->persist($user);
+                $this->entityManager->flush();
+            }), 'La transaction qui écrit aurait dû valider.');
+            self::assertSame($listeners, $this->listenerCount(), 'Un écouteur est resté branché après une transaction validée.');
+
+            $caught = $this->failureOfARun(static fn (): never => throw new DomainException('refus sans écriture'));
+
+            self::assertInstanceOf(DomainException::class, $caught);
+            self::assertTrue($this->entityManager->isOpen(), "L'écriture validée d'une transaction précédente a fait fermer l'EntityManager.");
+            self::assertSame($listeners, $this->listenerCount(), 'Un écouteur est resté branché après une transaction annulée.');
+        } finally {
+            $this->connection->executeStatement('DELETE FROM cpg_user WHERE id = ?', [$user->getId()->toRfc4122()]);
+        }
+    }
+
+    /**
      * Un COMMIT refusé remonte sous l'erreur de la base, sans `rollBack()`
      * de repli : PostgreSQL a déjà annulé la transaction, et DBAL l'a déjà
      * close — `Connection::transactional()` levait « There is no active
-     * transaction » par-dessus.
+     * transaction » par-dessus. L'EntityManager reçu est fermé (issue #547)
+     * sans qu'aucun crochet ne le demande : un verrou ne peut pas l'oublier.
      */
     public function testACommitRefusedByTheDatabaseSurfacesUnderItsOwnError(): void
     {
@@ -262,6 +410,7 @@ final class PostgresLockedTransactionTest extends KernelTestCase
         self::assertInstanceOf(DriverException::class, $caught, \sprintf('Le COMMIT refusé est remonté sous un autre nom : %s.', get_debug_type($caught)));
         self::assertSame(CommitRefusal::SQLSTATE, $caught->getSQLState());
         self::assertFalse($this->connection->isTransactionActive());
+        self::assertFalse($this->entityManager->isOpen(), "Un COMMIT refusé a laissé l'EntityManager ouvert.");
         self::assertTrue($this->probeCanTakeTheLock(), 'Le verrou a survécu au COMMIT refusé.');
     }
 
@@ -270,6 +419,9 @@ final class PostgresLockedTransactionTest extends KernelTestCase
      * (`setRollbackOnly()`), laisse sa transaction ouverte : le squelette
      * l'annule, sans quoi la session — un worker qui vit longtemps — garde
      * la transaction et le verrou. `Connection::transactional()` le faisait.
+     * Ce n'est pas une `DriverException` : l'EntityManager reste ouvert, la
+     * portée de #502 gardée par #547 (aucun appelant ne fait de
+     * `setRollbackOnly()`).
      */
     public function testACommitRefusedByDbalBeforeTheDatabaseStillReleasesTheLock(): void
     {
@@ -288,6 +440,7 @@ final class PostgresLockedTransactionTest extends KernelTestCase
 
         self::assertInstanceOf(CommitFailedRollbackOnly::class, $caught, \sprintf('Le refus de DBAL est remonté sous un autre nom : %s.', get_debug_type($caught)));
         self::assertFalse($this->connection->isTransactionActive(), 'La transaction est restée ouverte.');
+        self::assertTrue($this->entityManager->isOpen());
         self::assertTrue($this->probeCanTakeTheLock(), 'Le verrou a survécu au COMMIT refusé par DBAL.');
     }
 
@@ -356,7 +509,7 @@ final class PostgresLockedTransactionTest extends KernelTestCase
 
     /**
      * Issue #532 : le squelette refuse de s'ouvrir dans une transaction déjà
-     * ouverte, pour les trois verrous à la fois. Imbriqué, son COMMIT ne
+     * ouverte, pour tous ses verrous à la fois. Imbriqué, son COMMIT ne
      * serait qu'un `RELEASE SAVEPOINT` : le verrou tiendrait jusqu'au COMMIT
      * de l'appelant, et ce que l'adaptateur fait « après la validation »
      * (publier une invitation, envoyer un lien) partirait avant elle. Le
@@ -458,14 +611,41 @@ final class PostgresLockedTransactionTest extends KernelTestCase
     }
 
     /**
+     * Issue #549 : après une écriture, l'EntityManager est fermé même quand le
+     * ROLLBACK lève l'erreur de programmation ci-dessus. Ce qu'il tient n'est
+     * plus sûr ; le fermer reste la réponse prudente.
+     */
+    public function testAWriteIsForgottenEvenWhenTheRollbackRaisesAProgrammingError(): void
+    {
+        $user = new CpgUser('handcommitted', '');
+
+        try {
+            $caught = $this->failureOfARun(function () use ($user): never {
+                $this->entityManager->persist($user);
+                $this->entityManager->flush();
+                $this->connection->commit();
+
+                throw new DomainException('refus après un COMMIT indu');
+            });
+
+            self::assertInstanceOf(NoActiveTransaction::class, $caught, \sprintf("L'erreur de programmation a été masquée : %s.", get_debug_type($caught)));
+            self::assertFalse($this->entityManager->isOpen(), "L'erreur du ROLLBACK a empêché de fermer l'EntityManager après une écriture.");
+        } finally {
+            $this->connection->executeStatement('DELETE FROM cpg_user WHERE id = ?', [$user->getId()->toRfc4122()]);
+        }
+    }
+
+    /**
      * Un verrou peut nommer un refus du COMMIT qu'il reconnaît (le trigger
      * des groupes de traduction, #390) ; un refus qu'il ne reconnaît pas
-     * remonte tel quel.
+     * remonte tel quel. Le crochet ne fait que nommer : l'EntityManager est
+     * déjà fermé quand il est appelé, et le reste quand il renomme (#547).
      */
     public function testACommitRefusalCanBeRenamedByTheLockThatRecognisesIt(): void
     {
         $recognised = null;
         $unrecognised = null;
+        $openWhenNamed = null;
 
         try {
             $this->transaction()->run(
@@ -473,7 +653,11 @@ final class PostgresLockedTransactionTest extends KernelTestCase
                 onTimeout: $this->unexpectedTimeout(...),
                 onNested: $this->unexpectedNesting(...),
                 operation: fn () => CommitRefusal::scheduleIn($this->connection),
-                onCommitRefused: static fn (DriverException $refusal): ?Throwable => CommitRefusal::SQLSTATE === $refusal->getSQLState() ? new DomainException('invariant', 0, $refusal) : null,
+                onCommitRefused: function (DriverException $refusal) use (&$openWhenNamed): ?Throwable {
+                    $openWhenNamed = $this->entityManager->isOpen();
+
+                    return CommitRefusal::SQLSTATE === $refusal->getSQLState() ? new DomainException('invariant', 0, $refusal) : null;
+                },
             );
         } catch (Throwable $exception) {
             $recognised = $exception;
@@ -493,6 +677,8 @@ final class PostgresLockedTransactionTest extends KernelTestCase
 
         self::assertInstanceOf(DomainException::class, $recognised);
         self::assertInstanceOf(DriverException::class, $recognised->getPrevious());
+        self::assertFalse($openWhenNamed, "L'EntityManager était encore ouvert quand le crochet a été appelé.");
+        self::assertFalse($this->entityManager->isOpen(), "Un refus renommé par le crochet a laissé l'EntityManager ouvert.");
         self::assertInstanceOf(DriverException::class, $unrecognised, 'Un refus non reconnu a été renommé.');
         self::assertFalse($this->connection->isTransactionActive());
     }
@@ -518,9 +704,37 @@ final class PostgresLockedTransactionTest extends KernelTestCase
         self::assertSame(1, $this->connection->fetchOne('SELECT 1'));
     }
 
+    /**
+     * Ce qu'une transaction du squelette, sans verrou à prendre, a levé en
+     * lançant `$operation` ; `null` si elle a validé.
+     *
+     * @param Closure(): mixed $operation
+     */
+    private function failureOfARun(Closure $operation): ?Throwable
+    {
+        try {
+            $this->transaction()->run(
+                acquire: static fn (): null => null,
+                onTimeout: $this->unexpectedTimeout(...),
+                onNested: $this->unexpectedNesting(...),
+                operation: $operation,
+            );
+        } catch (Throwable $exception) {
+            return $exception;
+        }
+
+        return null;
+    }
+
+    /** Tous les écouteurs branchés sur l'EntityManager, tous événements confondus. */
+    private function listenerCount(): int
+    {
+        return array_sum(array_map(\count(...), $this->entityManager->getEventManager()->getAllListeners()));
+    }
+
     private function transaction(string $lockTimeout = PostgresLockedTransaction::FALLBACK_LOCK_TIMEOUT): PostgresLockedTransaction
     {
-        return new PostgresLockedTransaction($this->connection, new Logger('test', [$this->logs]), $lockTimeout);
+        return new PostgresLockedTransaction($this->entityManager, new Logger('test', [$this->logs]), $lockTimeout);
     }
 
     /**
@@ -563,12 +777,10 @@ final class PostgresLockedTransactionTest extends KernelTestCase
     }
 
     /**
-     * Tente le verrou depuis une autre session, et le rend aussitôt s'il l'a
-     * eu : hors transaction explicite, un verrou de transaction ne vit que le
-     * temps de l'instruction.
+     * Le verrou de ces tests (`LOCK_SQL`), tenté depuis la connexion témoin.
      */
     private function probeCanTakeTheLock(): bool
     {
-        return true === $this->probe->fetchOne('SELECT pg_try_advisory_xact_lock(512, 512)');
+        return $this->probeCanTakeTheAdvisoryLock($this->probe, 512, 512);
     }
 }

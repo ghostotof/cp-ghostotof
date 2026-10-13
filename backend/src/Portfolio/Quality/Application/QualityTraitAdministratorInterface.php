@@ -7,6 +7,7 @@ namespace App\Portfolio\Quality\Application;
 use App\Portfolio\Quality\Domain\Entity\QualityTrait as QualityTraitEntity;
 use App\Portfolio\Quality\Domain\Exception\QualityTraitNotFoundException;
 use App\Portfolio\Shared\Domain\Exception\IncompleteOrderException;
+use App\Portfolio\Shared\Domain\Exception\TranslatableContentLocaleIsImmutableException;
 use App\Portfolio\Shared\Domain\Exception\TranslationAlreadyExistsException;
 use App\Portfolio\Shared\Domain\Exception\UnknownOrderEntryException;
 use App\Portfolio\Shared\Domain\Exception\UnknownTranslationGroupException;
@@ -38,11 +39,16 @@ interface QualityTraitAdministratorInterface
      * groupe l'y rattache et lui en fait hériter la position, le sien ne fait
      * rien.
      *
-     * @throws QualityTraitNotFoundException si l'id est inconnu
-     * @throws UnknownTranslationGroupException groupe inconnu du périmètre
-     * @throws TranslationAlreadyExistsException le groupe porte déjà cette langue
+     * `$locale` doit être celle de l'entrée (issue #582) : une entrée ne
+     * change pas de langue, et le `PUT` qui en porte une autre est refusé
+     * avant toute écriture plutôt qu'ignoré sous un 200.
+     *
+     * @throws QualityTraitNotFoundException                 si l'id est inconnu
+     * @throws TranslatableContentLocaleIsImmutableException `$locale` n'est pas celle de l'entrée
+     * @throws UnknownTranslationGroupException              groupe inconnu du périmètre
+     * @throws TranslationAlreadyExistsException             le groupe porte déjà cette langue
      */
-    public function update(Uuid $id, string $label, ?Uuid $translationGroup): QualityTraitEntity;
+    public function update(Uuid $id, Locale $locale, string $label, ?Uuid $translationGroup): QualityTraitEntity;
 
     /**
      * @throws QualityTraitNotFoundException si l'id est inconnu

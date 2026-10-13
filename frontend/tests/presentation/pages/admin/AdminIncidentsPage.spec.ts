@@ -276,9 +276,9 @@ describe('AdminIncidentsPage', () => {
   })
 
   /**
-   * Issue #170 R2 : `locale` est ignorée par le `PUT` (le serveur ne change
-   * jamais la langue d'une entrée) ; la proposer en édition serait un no-op
-   * silencieux. Le champ est désactivé, pas caché : la langue reste lisible.
+   * Issue #170 R2 : une entrée ne change jamais de langue — le serveur
+   * refuse un `PUT` qui en porte une autre (409 `locale-immutable`, #582).
+   * Le champ est désactivé en édition, pas caché : la langue reste lisible.
    */
   it('désactive le sélecteur de langue en édition, et le libère en création', async () => {
     const { wrapper } = await mountPage()

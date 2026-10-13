@@ -6,10 +6,14 @@ namespace App\Portfolio\Quality\Presentation\Command;
 
 use App\Portfolio\Quality\Application\QualityPrincipleAdministratorInterface;
 use App\Portfolio\Quality\Application\QualityTraitAdministratorInterface;
+use App\Portfolio\Quality\Domain\Entity\QualityPrinciple;
+use App\Portfolio\Quality\Domain\Entity\QualityTrait;
 use App\Portfolio\Quality\Domain\Repository\QualityPrincipleRepositoryInterface;
 use App\Portfolio\Quality\Domain\Repository\QualityTraitRepositoryInterface;
+use App\Portfolio\Shared\Application\OrderScopeLockInterface;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Shared\Presentation\Command\GuardsExistingContent;
+use App\Shared\Presentation\Command\SeedOutcome;
 use App\Shared\Presentation\Command\TranslationGroupIndex;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
@@ -20,8 +24,13 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 /**
  * Peuple/réinitialise les principes et traits de qualité affichés sur la
  * landing page (fr/en), servis depuis la base via GET /api/quality/{locale}.
- * Idempotente : chaque exécution purge et recrée l'intégralité du contenu par
- * locale.
+ * Même garde-fou que les autres commandes app:*:seed ({@see GuardsExistingContent}) :
+ * si du contenu est déjà en place, elle décline (code de sortie 0). Avec
+ * --force, elle purge les deux tables, toutes locales confondues, puis recrée
+ * le contenu de référence, ce qui écrase les éditions faites au backoffice.
+ * Le tout dans une seule transaction, sous les verrous d'ordre des deux
+ * tables (issue #567) : une panne entre les deux ne laisse plus la seconde
+ * vide, et un `--force` interrompu garde le contenu d'avant.
  */
 #[AsCommand(
     name: 'app:quality:seed',
@@ -31,11 +40,19 @@ final class SeedQualityContentCommand extends Command
 {
     use GuardsExistingContent;
 
+    /**
+     * Les périmètres d'ordre écrits : la classe d'entité de chaque table,
+     * celle que son `Administrator` verrouille — un autre périmètre ici serait
+     * refusé à leur premier `withLock()`.
+     */
+    private const array ORDER_SCOPES = [QualityPrinciple::class, QualityTrait::class];
+
     public function __construct(
         private readonly QualityPrincipleRepositoryInterface $qualityPrincipleRepository,
         private readonly QualityTraitRepositoryInterface $qualityTraitRepository,
         private readonly QualityPrincipleAdministratorInterface $qualityPrincipleAdministrator,
         private readonly QualityTraitAdministratorInterface $qualityTraitAdministrator,
+        private readonly OrderScopeLockInterface $orderScopeLock,
     ) {
         parent::__construct();
     }
@@ -49,13 +66,29 @@ final class SeedQualityContentCommand extends Command
     {
         $io = new SymfonyStyle($input, $output);
 
-        if ($this->refusesToOverwrite($io, $input, $this->countExisting())) {
-            return Command::SUCCESS;
-        }
+        // Issue #567 : décompte, purge et recréation dans une seule transaction,
+        // sous les verrous des deux périmètres ; le compte rendu s'affiche après
+        // son COMMIT.
+        $outcome = $this->orderScopeLock->withLocks(
+            self::ORDER_SCOPES,
+            fn (): SeedOutcome => $this->seedUnlessPopulated($input, $this->countExisting(...), $this->seed(...)),
+        );
 
+        return $outcome->report($io);
+    }
+
+    /**
+     * Purge puis recrée, sous les verrous : la purge des deux tables est écrite
+     * ligne par ligne avant toute création.
+     *
+     * @return list<string> une ligne de compte rendu par locale
+     */
+    private function seed(): array
+    {
         $translationGroups = new TranslationGroupIndex();
+        $lines = [];
 
-        // Spec 0004 D3 : la purge précède désormais toute création, au lieu
+        // Spec 0004 D3 : la purge précède toute création, au lieu
         // d'être faite langue par langue. Une entrée sans groupe se range en
         // fin de périmètre, toutes langues confondues : les entrées d'une
         // autre langue encore en place pendant la création décaleraient la
@@ -93,15 +126,15 @@ final class SeedQualityContentCommand extends Command
                 $translationGroups->remember('trait', $index, $created->getTranslationGroup());
             }
 
-            $io->success(\sprintf(
+            $lines[] = \sprintf(
                 '[%s] %d principe(s), %d trait(s).',
                 $localeValue,
                 \count($content['principles']),
                 \count($content['traits']),
-            ));
+            );
         }
 
-        return Command::SUCCESS;
+        return $lines;
     }
 
     /**

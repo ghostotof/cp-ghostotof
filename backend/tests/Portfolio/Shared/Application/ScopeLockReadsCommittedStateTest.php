@@ -11,13 +11,16 @@ use App\Portfolio\Shared\Domain\TranslatableContent;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Portfolio\Watch\Application\WatchedProductAdministratorInterface;
 use App\Portfolio\Watch\Domain\Entity\WatchedProduct;
+use App\Portfolio\Watch\Domain\Exception\WatchedProductNotFoundException;
 use App\Portfolio\Watch\Domain\ValueObject\VersionSource;
+use App\Shared\Infrastructure\Doctrine\VanishedEntitySavedAgainException;
 use App\Tests\Support\OpensProbeConnection;
 use Closure;
 use Doctrine\ORM\EntityManagerInterface;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Uid\Uuid;
+use Throwable;
 
 /**
  * Sous le verrou de périmètre, une opération décide sur ce que la base porte,
@@ -128,6 +131,78 @@ final class ScopeLockReadsCommittedStateTest extends KernelTestCase
     }
 
     /**
+     * Le perdant de deux `DELETE` simultanés (#499) : l'entrée, chargée par
+     * son provider, a été supprimée par l'autre `DELETE` avant le verrou. Elle
+     * est introuvable (404), comme pour un `DELETE` qui arrive après. Hors du
+     * verrou, le second `DELETE` ne touchait aucune ligne et répondait 204.
+     *
+     * @param class-string<TranslatableContent> $entityClass
+     * @param Closure(): LocalizedContext       $context
+     */
+    #[DataProvider('provideLocalizedContexts')]
+    public function testDeletingAnEntryDeletedConcurrentlyReportsItAsNotFound(string $entityClass, Closure $context): void
+    {
+        [$operations, $entry] = $this->prepare($entityClass, $context);
+
+        $this->deleteFromAnotherSession($entityClass, $entry);
+
+        $this->expectException($operations['notFound']);
+        $operations['delete']($entry);
+    }
+
+    /**
+     * L'instance que la relecture a détachée — sa ligne supprimée par une
+     * autre session — et qu'un appelant tient encore ne doit pas revenir en
+     * base s'il la sauve (issue #548). Doctrine tient pour **neuve** une
+     * instance qu'il ne gère pas (`persist()` suppose `STATE_NEW`, sans lire
+     * la base) : le `save()` d'un dépôt, `persist()` puis `flush()`,
+     * réinsérait l'entrée supprimée, sans erreur ni trace.
+     *
+     * @param class-string<TranslatableContent> $entityClass
+     * @param Closure(): LocalizedContext       $context
+     */
+    #[DataProvider('provideLocalizedContexts')]
+    public function testSavingAnEntryDetachedByTheRereadIsRefusedInsteadOfReinserted(string $entityClass, Closure $context): void
+    {
+        [$operations, $entry] = $this->prepare($entityClass, $context);
+        $this->deleteFromAnotherSession($entityClass, $entry);
+        try {
+            $operations['update']($entry, $entry->getTranslationGroup());
+            self::fail("L'entrée supprimée a été mise à jour : la relecture ne l'a pas détachée (#402).");
+        } catch (Throwable $notFound) {
+            self::assertInstanceOf($operations['notFound'], $notFound);
+        }
+
+        $refusal = $this->saveAgain($entry);
+
+        self::assertSame(0, $this->storedCount($entityClass, $this->idOf($entityClass, $entry)), "L'entrée supprimée, détachée par la relecture puis re-sauvée, a été réinsérée (#548).");
+        self::assertInstanceOf(VanishedEntitySavedAgainException::class, $refusal, \sprintf('La re-sauvegarde aurait dû être refusée sous son nom : %s.', get_debug_type($refusal)));
+    }
+
+    /**
+     * L'instance qu'un `delete()` de l'`Administrator` vient de supprimer — la
+     * même que celle que l'appelant tient, relue en place sous le verrou — ne
+     * revient pas en base s'il la sauve ensuite (issue #557) : après le
+     * `flush()` du `DELETE`, Doctrine a effacé son état et lui a laissé son
+     * UUID, et `persist()` la tenait pour neuve.
+     *
+     * @param class-string<TranslatableContent> $entityClass
+     * @param Closure(): LocalizedContext       $context
+     */
+    #[DataProvider('provideLocalizedContexts')]
+    public function testSavingAnEntryThisManagerDeletedIsRefusedInsteadOfReinserted(string $entityClass, Closure $context): void
+    {
+        [$operations, $entry] = $this->prepare($entityClass, $context);
+        $id = $this->idOf($entityClass, $entry);
+        $operations['delete']($entry);
+
+        $refusal = $this->saveAgain($entry);
+
+        self::assertSame(0, $this->storedCount($entityClass, $id), "L'entrée supprimée par le delete() de son Administrator, re-sauvée, a été réinsérée (#557).");
+        self::assertInstanceOf(VanishedEntitySavedAgainException::class, $refusal, \sprintf('La re-sauvegarde aurait dû être refusée sous son nom : %s.', get_debug_type($refusal)));
+    }
+
+    /**
      * « Créer la version EN » de G, dont le membre FR — déjà chargé — a été
      * déplacé par un réordonnancement validé entre-temps : la version EN doit
      * hériter de la position que G porte en base, pas de celle qu'il quittait.
@@ -175,6 +250,69 @@ final class ScopeLockReadsCommittedStateTest extends KernelTestCase
         $stored = self::getContainer()->get(EntityManagerInterface::class)->getConnection()
             ->fetchOne(\sprintf('SELECT position FROM %s WHERE id = ?', $this->table), [$created->getId()->toRfc4122()]);
         self::assertSame($movedTo + 1, $stored, "Le produit créé s'est rangé après une position que le catalogue ne porte plus : deux produits sur une position (#402, #389).");
+    }
+
+    /**
+     * Le `PUT` d'un produit de veille passe sous le verrou depuis #499 : un
+     * produit supprimé par une autre session après son chargement est
+     * introuvable, au lieu d'être « mis à jour » en 200.
+     */
+    public function testUpdatingAProductDeletedConcurrentlyReportsItAsNotFound(): void
+    {
+        $product = $this->loadProductThenDeleteItFromAnotherSession();
+
+        $this->expectException(WatchedProductNotFoundException::class);
+        self::getContainer()->get(WatchedProductAdministratorInterface::class)
+            ->update($product->getId(), $product->getSlug(), 'Renommé', VersionSource::MANUAL, '2.0');
+    }
+
+    /**
+     * Le perdant de deux `DELETE` simultanés d'un produit est introuvable
+     * (#499), comme pour les contenus localisés.
+     */
+    public function testDeletingAProductDeletedConcurrentlyReportsItAsNotFound(): void
+    {
+        $product = $this->loadProductThenDeleteItFromAnotherSession();
+
+        $this->expectException(WatchedProductNotFoundException::class);
+        self::getContainer()->get(WatchedProductAdministratorInterface::class)->delete($product->getId());
+    }
+
+    /**
+     * Le produit de veille partage la relecture, donc le refus de #548 : un
+     * produit supprimé, détaché par la relecture puis re-sauvé, ne revient pas.
+     */
+    public function testSavingAProductDetachedByTheRereadIsRefusedInsteadOfReinserted(): void
+    {
+        $product = $this->loadProductThenDeleteItFromAnotherSession();
+        try {
+            self::getContainer()->get(WatchedProductAdministratorInterface::class)->delete($product->getId());
+            self::fail("Le produit supprimé a été supprimé une seconde fois : la relecture ne l'a pas détaché (#499).");
+        } catch (WatchedProductNotFoundException) {
+        }
+
+        $refusal = $this->saveAgain($product);
+
+        self::assertSame(0, $this->storedCount(WatchedProduct::class, $product->getId()->toRfc4122()), 'Le produit supprimé, détaché par la relecture puis re-sauvé, a été réinséré (#548).');
+        self::assertInstanceOf(VanishedEntitySavedAgainException::class, $refusal, \sprintf('La re-sauvegarde aurait dû être refusée sous son nom : %s.', get_debug_type($refusal)));
+    }
+
+    /**
+     * Le produit de veille, supprimé par le `delete()` de son `Administrator`
+     * puis re-sauvé par l'appelant qui le tient, ne revient pas (#557).
+     */
+    public function testSavingAProductThisManagerDeletedIsRefusedInsteadOfReinserted(): void
+    {
+        self::bootKernel();
+        $this->table = self::getContainer()->get(EntityManagerInterface::class)->getClassMetadata(WatchedProduct::class)->getTableName();
+        $administrator = self::getContainer()->get(WatchedProductAdministratorInterface::class);
+        $product = $administrator->create('supprime-ici', 'Produit', VersionSource::MANUAL, '1.0');
+        $administrator->delete($product->getId());
+
+        $refusal = $this->saveAgain($product);
+
+        self::assertSame(0, $this->storedCount(WatchedProduct::class, $product->getId()->toRfc4122()), 'Le produit supprimé par le delete() de son Administrator, re-sauvé, a été réinséré (#557).');
+        self::assertInstanceOf(VanishedEntitySavedAgainException::class, $refusal, \sprintf('La re-sauvegarde aurait dû être refusée sous son nom : %s.', get_debug_type($refusal)));
     }
 
     /**
@@ -241,6 +379,26 @@ final class ScopeLockReadsCommittedStateTest extends KernelTestCase
     }
 
     /**
+     * Un produit chargé dans l'EntityManager — par sa création, comme le
+     * provider dans une requête —, puis supprimé par une autre session.
+     */
+    private function loadProductThenDeleteItFromAnotherSession(): WatchedProduct
+    {
+        self::bootKernel();
+        $metadata = self::getContainer()->get(EntityManagerInterface::class)->getClassMetadata(WatchedProduct::class);
+        $this->table = $metadata->getTableName();
+        $product = self::getContainer()->get(WatchedProductAdministratorInterface::class)
+            ->create('supprime', 'Produit', VersionSource::MANUAL, '1.0');
+
+        $this->writeFromAnotherSession(
+            \sprintf('DELETE FROM %s WHERE %s = ?', $this->table, $metadata->getColumnName('id')),
+            [$product->getId()->toRfc4122()],
+        );
+
+        return $product;
+    }
+
+    /**
      * Ce que valide l'écriture concurrente : l'entrée dans ce groupe, à cette
      * position. Écrit par une seconde connexion, donc hors de la carte
      * d'identité de l'ORM.
@@ -274,6 +432,43 @@ final class ScopeLockReadsCommittedStateTest extends KernelTestCase
             \sprintf('DELETE FROM %s WHERE %s = ?', $metadata->getTableName(), $metadata->getColumnName('id')),
             [$this->idOf($entityClass, $entry)],
         );
+    }
+
+    /**
+     * Re-sauve l'instance comme le `save()` d'un dépôt — `persist()` puis
+     * `flush()` — et rend ce que cela a levé.
+     */
+    private function saveAgain(object $entry): ?Throwable
+    {
+        $entityManager = self::getContainer()->get(EntityManagerInterface::class);
+
+        try {
+            $entityManager->persist($entry);
+            $entityManager->flush();
+        } catch (Throwable $refusal) {
+            return $refusal;
+        }
+
+        return null;
+    }
+
+    /**
+     * Le nombre de lignes de cet identifiant, lu en base.
+     *
+     * @param class-string $entityClass
+     */
+    private function storedCount(string $entityClass, string $id): int
+    {
+        $entityManager = self::getContainer()->get(EntityManagerInterface::class);
+        $metadata = $entityManager->getClassMetadata($entityClass);
+
+        $count = $entityManager->getConnection()->fetchOne(
+            \sprintf('SELECT COUNT(*) FROM %s WHERE %s = ?', $metadata->getTableName(), $metadata->getColumnName('id')),
+            [$id],
+        );
+        self::assertIsInt($count);
+
+        return $count;
     }
 
     /**

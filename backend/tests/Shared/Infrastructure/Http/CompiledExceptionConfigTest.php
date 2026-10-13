@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Shared\Infrastructure\Http;
 
 use App\Security\User\Domain\Exception\CpgUserNotFoundException;
+use App\Tests\Shared\Infrastructure\Http\Fixtures\ConvertedLevel\StatusOnlyFixtureException;
 use App\Tests\Shared\Infrastructure\Http\Fixtures\ExceptionToStatusFixtureResource;
 use App\Tests\Shared\Infrastructure\Http\Fixtures\LogLevelAttributes\AbstractAttributedFixtureException;
 use App\Tests\Shared\Infrastructure\Http\Fixtures\LogLevelAttributes\AttributeLoggedFixtureException;
@@ -13,6 +14,7 @@ use App\Tests\Support\CompiledExceptionConfig;
 use App\Tests\Support\ExtraConfigKernel;
 use DomainException;
 use OverflowException;
+use PHPUnit\Framework\Attributes\DataProvider;
 use RuntimeException;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\HttpKernel\KernelInterface;
@@ -110,15 +112,53 @@ final class CompiledExceptionConfigTest extends KernelTestCase
 
     /**
      * Une entrée `framework.exceptions` qui fixe un `status_code` fait
-     * convertir l'exception par le noyau — rendue avec ce statut —, mais son
-     * niveau reste résolu sur l'exception d'origine : sans `log_level`,
-     * `critical` (issue #357).
+     * convertir l'exception par le noyau, qui la rend avec ce statut
+     * (issue #357).
      */
     public function testAStatusCodeEntryConvertsTheException(): void
     {
         $listener = CompiledExceptionConfig::listenerWith([OverflowException::class => ['status_code' => 404]]);
 
         self::assertSame([OverflowException::class => 404], CompiledExceptionConfig::kernelHttpStatus($listener, [OverflowException::class]));
+    }
+
+    /**
+     * Sans `log_level`, le noyau lit le niveau par défaut sur l'exception
+     * **convertie** depuis Symfony 8.1.8 (`resolveLogLevel($original,
+     * $converted)`) : `error` pour un 4xx, `critical` pour un 5xx. Avant, il le
+     * lisait sur l'exception d'origine, donc `critical` dans les deux cas.
+     * kernelLogLevel() lui passe la même conversion, pour ne pas en diverger
+     * (PR #441).
+     *
+     * @return iterable<string, array{array<class-string, array{log_level?: string, status_code?: int<100, 599>}>, string}>
+     */
+    public static function convertedDefaultLevelCases(): iterable
+    {
+        yield 'entrée status_code 4xx' => [[OverflowException::class => ['status_code' => 404]], 'error'];
+        yield 'entrée status_code 5xx' => [[OverflowException::class => ['status_code' => 503]], 'critical'];
+        yield 'sans conversion' => [[], 'critical'];
+    }
+
+    /**
+     * @param array<class-string, array{log_level?: string, status_code?: int<100, 599>}> $entries
+     */
+    #[DataProvider('convertedDefaultLevelCases')]
+    public function testTheDefaultLevelIsReadOnTheConvertedException(array $entries, string $level): void
+    {
+        $listener = CompiledExceptionConfig::listenerWith($entries);
+
+        self::assertSame($level, CompiledExceptionConfig::kernelLogLevel($listener, OverflowException::class));
+    }
+
+    /**
+     * Un #[WithHttpStatus] convertit aussi : son statut fixe le niveau par
+     * défaut d'une exception sans entrée.
+     */
+    public function testWithHttpStatusConvertsBeforeTheDefaultLevel(): void
+    {
+        $listener = CompiledExceptionConfig::listenerWith([]);
+
+        self::assertSame('error', CompiledExceptionConfig::kernelLogLevel($listener, StatusOnlyFixtureException::class));
     }
 
     /**

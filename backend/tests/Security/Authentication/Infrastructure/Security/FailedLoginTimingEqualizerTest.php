@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Security\Authentication\Infrastructure\Security;
 
 use App\Security\Authentication\Infrastructure\Security\FailedLoginTimingEqualizer;
+use App\Security\Authentication\Infrastructure\Security\SubmittedPasswordTooLongException;
 use App\Security\User\Domain\Entity\CpgUser;
 use DateTimeImmutable;
 use PHPUnit\Framework\MockObject\MockObject;
@@ -131,18 +132,39 @@ final class FailedLoginTimingEqualizerTest extends TestCase
     }
 
     /**
-     * Compte invité non activé : son hachage est vide, donc
+     * Compte invité sans mot de passe : son hachage est vide, donc
      * `NativePasswordHasher::verify()` retombe sur `password_verify($p, '')`,
      * qui échoue sans dériver quoi que ce soit. Sans compensation, une
      * invitation en attente se distingue d'un compte actif au chronomètre.
      */
-    public function testAnAccountPendingActivationIsCompensatedByADummyHash(): void
+    public function testAnInvitedAccountWithoutAPasswordIsCompensatedByADummyHash(): void
     {
         $this->hasher()->expects(self::once())->method('hash');
 
         ($this->equalizer())($this->failure(
             new BadCredentialsException('The presented password is invalid.'),
             $this->passportFor($this->pendingUser()),
+        ));
+    }
+
+    /**
+     * Régression (issue #560) : un compte invité dont un ROLE_SUPER a posé le
+     * mot de passe depuis le backoffice (#238, #460) reste en attente
+     * d'activation, mais son hachage n'est plus vide — `verify()` a fait la
+     * vraie dérivation. Un hachage factice de plus doublait son temps de
+     * réponse, et le désignait au chronomètre comme « invitation dont le mot
+     * de passe a été posé pour la personne ». Ce qui décide est l'absence de
+     * mot de passe, pas l'attente d'activation.
+     */
+    public function testAPendingAccountWhosePasswordWasSetFromTheBackofficeIsNotCompensated(): void
+    {
+        $this->hasher()->expects(self::never())->method('hash');
+        $user = $this->pendingUser();
+        $user->setPassword('a-real-hash-set-from-the-backoffice');
+
+        ($this->equalizer())($this->failure(
+            new BadCredentialsException('The presented password is invalid.'),
+            $this->passportFor($user),
         ));
     }
 
@@ -158,6 +180,28 @@ final class FailedLoginTimingEqualizerTest extends TestCase
         ($this->equalizer())($this->failure(
             new BadCredentialsException('The presented password is invalid.'),
             $this->passportFor(new CpgUser('jane', 'hashed-password')),
+        ));
+    }
+
+    /**
+     * Décision de l'issue #590, pincée ici : un compte dont le hachage est
+     * d'avant la configuration courante (`needsRehash()` vrai) n'est pas
+     * compensé, comme tout compte qui a un mot de passe — l'égaliseur ne lit
+     * pas le format du hachage. Ce test ne prouve pas que `verify()` ne fait
+     * qu'une dérivation (le hasher est simulé) : c'est le rôle de
+     * `CpgUserPasswordHasherTest`, qui rougissait sous `algorithm: auto`. Il
+     * fige le choix de ne pas compenser l'écart qui reste (coût stocké contre
+     * coût configuré, limite acceptée) : payer la différence obligerait à lire
+     * le hachage stocké et ne marcherait que dans un sens. Le hachage n'est
+     * qu'une chaîne au format bcrypt, jamais vérifiée.
+     */
+    public function testAnAccountWhoseHashNeedsRehashIsNotCompensated(): void
+    {
+        $this->hasher()->expects(self::never())->method('hash');
+
+        ($this->equalizer())($this->failure(
+            new BadCredentialsException('The presented password is invalid.'),
+            $this->passportFor(new CpgUser('jane', '$2y$05$'.str_repeat('a', 53))),
         ));
     }
 
@@ -183,6 +227,33 @@ final class FailedLoginTimingEqualizerTest extends TestCase
         ($this->equalizer())($this->failure(new TooManyLoginAttemptsAuthenticationException(), $passport));
 
         self::assertSame(0, $loaded, 'Le throttling a déclenché un chargement d\'utilisateur.');
+    }
+
+    /**
+     * Issue #588 : un mot de passe au-delà de la borne du hasher est refusé
+     * par OverlongPasswordRefusalListener *avant* le chargement du compte,
+     * pour tous les identifiants. Rien n'a été dérivé et rien ne doit l'être :
+     * c'est le même chemin pour tous. Rappeler le chargeur coûterait une
+     * requête SQL et ne compenserait que l'identifiant inconnu — l'écart que
+     * ce refus supprime reviendrait.
+     */
+    public function testAnOverlongPasswordRefusalIsNeverCompensatedNorLoadsTheAccount(): void
+    {
+        $this->hasher()->expects(self::never())->method('hash');
+        $loaded = 0;
+
+        $passport = new Passport(
+            new UserBadge('ghost', static function () use (&$loaded): ?UserInterface {
+                ++$loaded;
+
+                return null;
+            }),
+            new PasswordCredentials('irrelevant'),
+        );
+
+        ($this->equalizer())($this->failure(new SubmittedPasswordTooLongException(), $passport));
+
+        self::assertSame(0, $loaded, 'Le refus d\'un mot de passe trop long a déclenché un chargement de compte.');
     }
 
     /**
@@ -269,7 +340,7 @@ final class FailedLoginTimingEqualizerTest extends TestCase
 
     private function pendingUser(): CpgUser
     {
-        $user = new CpgUser('invited', '');
+        $user = new CpgUser('invited', CpgUser::NO_PASSWORD);
         $user->markInvited(new DateTimeImmutable());
 
         return $user;

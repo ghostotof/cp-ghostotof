@@ -60,7 +60,7 @@ final readonly class PendingInvitationPurger implements PendingInvitationPurgerI
             // Garde anti-lockout (comme CpgUserAdministrator::delete) : un
             // compte ROLE_SUPER en attente d'activation reste une décision
             // humaine, jamais une suppression automatique.
-            if (\in_array(CpgUser::ROLE_SUPER, $user->getRoles(), true)) {
+            if ($user->isSuperAdmin()) {
                 // Par l'UUID, jamais l'identifiant (issue #363) : celui d'un
                 // invité est dérivé de son adresse.
                 $skipped[] = $user->accountId();
@@ -100,7 +100,7 @@ final readonly class PendingInvitationPurger implements PendingInvitationPurgerI
             return $this->accountLock->whileLocked($user, function (CpgUser $locked) use ($threshold): bool {
                 $invitedAt = $locked->getInvitedAt();
                 if (!$locked->isAwaitingPasswordSetup() || null === $invitedAt || $invitedAt >= $threshold
-                    || \in_array(CpgUser::ROLE_SUPER, $locked->getRoles(), true)) {
+                    || $locked->isSuperAdmin()) {
                     return false;
                 }
 

@@ -8,6 +8,7 @@ use App\Portfolio\Quality\Domain\Entity\QualityTrait as QualityTraitEntity;
 use App\Portfolio\Quality\Domain\Exception\QualityTraitNotFoundException;
 use App\Portfolio\Quality\Domain\Repository\QualityTraitRepositoryInterface;
 use App\Portfolio\Shared\Application\OrderScopeLockInterface;
+use App\Portfolio\Shared\Domain\Exception\TranslatableContentLocaleIsImmutableException;
 use App\Portfolio\Shared\Domain\Service\ContentPlacement;
 use App\Portfolio\Shared\Domain\Service\OrderAssigner;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
@@ -16,8 +17,10 @@ use Symfony\Component\Uid\Uuid;
 final readonly class QualityTraitAdministrator implements QualityTraitAdministratorInterface
 {
     /**
-     * Périmètre d'ordre, verrouillé par toute écriture qui place une entrée
-     * (issue #389) : la table entière, toutes langues confondues.
+     * Périmètre d'ordre, verrouillé par toute écriture : celles qui placent
+     * une entrée (issue #389), et delete(), pour qu'une suppression ne valide
+     * pas sous une autre écriture (issue #499). La table entière, toutes
+     * langues confondues.
      */
     private const string ORDER_SCOPE = QualityTraitEntity::class;
 
@@ -43,13 +46,20 @@ final readonly class QualityTraitAdministrator implements QualityTraitAdministra
         });
     }
 
-    public function update(Uuid $id, string $label, ?Uuid $translationGroup): QualityTraitEntity
+    public function update(Uuid $id, Locale $locale, string $label, ?Uuid $translationGroup): QualityTraitEntity
     {
-        return $this->orderScopeLock->withLock(self::ORDER_SCOPE, function () use ($id, $label, $translationGroup): QualityTraitEntity {
+        return $this->orderScopeLock->withLock(self::ORDER_SCOPE, function () use ($id, $locale, $label, $translationGroup): QualityTraitEntity {
             $trait = $this->qualityTraitRepository->findOneById($id);
 
             if (null === $trait) {
                 throw QualityTraitNotFoundException::forId($id);
+            }
+
+            // Issue #582 : une entrée ne change pas de langue. Refusé avant
+            // toute autre lecture et tout changement en mémoire (#549), donc
+            // avant le détachement ou le rattachement que demande le corps.
+            if ($trait->getLocale() !== $locale) {
+                throw TranslatableContentLocaleIsImmutableException::refused();
             }
 
             if (null === $translationGroup) {
@@ -76,13 +86,15 @@ final readonly class QualityTraitAdministrator implements QualityTraitAdministra
 
     public function delete(Uuid $id): void
     {
-        $trait = $this->qualityTraitRepository->findOneById($id);
+        $this->orderScopeLock->withLock(self::ORDER_SCOPE, function () use ($id): void {
+            $trait = $this->qualityTraitRepository->findOneById($id);
 
-        if (null === $trait) {
-            throw QualityTraitNotFoundException::forId($id);
-        }
+            if (null === $trait) {
+                throw QualityTraitNotFoundException::forId($id);
+            }
 
-        $this->qualityTraitRepository->remove($trait);
+            $this->qualityTraitRepository->remove($trait);
+        });
     }
 
     public function reorder(array $keys): void

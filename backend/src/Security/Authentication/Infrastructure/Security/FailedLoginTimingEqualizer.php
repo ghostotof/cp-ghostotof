@@ -7,7 +7,6 @@ namespace App\Security\Authentication\Infrastructure\Security;
 use App\Security\User\Domain\Entity\CpgUser;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 use Symfony\Component\PasswordHasher\Hasher\PasswordHasherFactoryInterface;
-use Symfony\Component\Security\Core\Exception\TooManyLoginAttemptsAuthenticationException;
 use Symfony\Component\Security\Core\Exception\UserNotFoundException;
 use Symfony\Component\Security\Http\Authenticator\Passport\Badge\UserBadge;
 use Symfony\Component\Security\Http\Event\LoginFailureEvent;
@@ -24,38 +23,87 @@ use Throwable;
  *    dizaines de millisecondes, c'est le coût voulu ;
  *  - identifiant **inconnu** : `UserBadge::getUser()` lève avant d'arriver là,
  *    la réponse part sans qu'aucune dérivation n'ait eu lieu ;
- *  - identifiant **connu mais en attente d'activation** : son hachage est la
- *    chaîne vide (le mot de passe est défini plus tard, via le lien
- *    d'invitation), et `NativePasswordHasher::verify()` retombe alors sur
- *    `password_verify($p, '')`, qui rend `false` sans rien dériver.
+ *  - identifiant **connu mais sans mot de passe** (`CpgUser::hasPassword()`
+ *    faux : une invitation dont la personne n'a pas encore défini le sien) :
+ *    son hachage est la chaîne vide, et `NativePasswordHasher::verify()`
+ *    retombe alors sur `password_verify($p, '')`, qui rend `false` sans rien
+ *    dériver. Pas « en attente d'activation » : un ROLE_SUPER peut poser le
+ *    mot de passe d'un compte invité depuis le backoffice (#238, #460), qui
+ *    reste en attente d'activation alors que `verify()` a fait la vraie
+ *    dérivation — le compenser doublait son temps de réponse et le désignait
+ *    au chronomètre (issue #560).
  *
  * L'écart est mesurable et dit deux choses qu'on ne veut pas publier : quels
- * identifiants existent, et lesquels sont des invitations en attente — une
- * invitation en attente étant justement un compte dont le mot de passe n'est
- * pas encore choisi. Ce listener rétablit l'égalité en payant, et seulement
- * dans ces deux cas, un hachage factice avec le hasher réellement configuré
- * pour `CpgUser`.
+ * identifiants existent, et lesquels sont des invitations dont la personne
+ * n'a pas encore choisi son mot de passe. Ce listener rétablit l'égalité en
+ * payant, et seulement dans ces deux cas, un hachage factice avec le hasher
+ * réellement configuré pour `CpgUser`.
  *
- * **Jamais pour un compte actif avec un mauvais mot de passe** : la vraie
- * vérification a déjà eu lieu, un second hachage doublerait le temps et
- * recréerait l'écart dans l'autre sens. **Jamais non plus pour un échec qui
- * n'est pas un échec d'identifiants** : le throttling doit rester bon marché
- * (c'est sa raison d'être), et un corps JSON invalide comme un mot de passe
- * vide échouent avant même que le passeport n'existe — donc avant toute
+ * **Jamais pour un compte qui a un mot de passe** (actif, ou invité dont le
+ * mot de passe a été posé depuis le backoffice) : la vraie vérification a déjà
+ * eu lieu, un second hachage doublerait le temps et recréerait l'écart dans
+ * l'autre sens. Cela suppose que `verify()` dérive vraiment : au-delà de
+ * `CpgUser::MAX_PASSWORD_LENGTH` octets (la borne du hasher), il rend `false`
+ * sans rien dériver, et un compte existant répondait plus vite qu'un
+ * identifiant inconnu (issue #588). Ce cas n'arrive plus jusqu'ici :
+ * {@see OverlongPasswordRefusalListener} le refuse avant tout chargement de
+ * compte, par une {@see SubmittedPasswordTooLongException}. **Jamais non plus
+ * pour un échec qui n'est pas un échec d'identifiants** : le throttling doit
+ * rester bon marché (c'est sa raison d'être), un corps JSON invalide comme un
+ * mot de passe vide échouent avant même que le passeport n'existe, et un mot
+ * de passe trop long avant que le compte ne soit chargé — donc avant toute
  * requête en base, uniformément pour tous les identifiants, sans rien à
- * compenser.
+ * compenser. Le throttling et le mot de passe trop long ont un passeport :
+ * ils doivent être reconnus à leur exception **avant**
+ * `Passport::getUser()`, qui chargerait le compte.
+ *
+ * Cela suppose aussi que `verify()` dérive **une seule fois**, quel que soit
+ * l'âge du hachage stocké (issue #590). Sous `algorithm: auto`, un échec sur un
+ * hachage à rehacher (`needsRehash()` vrai : coût ou algorithme d'avant la
+ * configuration courante) faisait essayer `SodiumPasswordHasher`, qui refait
+ * un bcrypt complet : deux dérivations, quand ce listener en paie une.
+ * `security.yaml` écrit donc `algorithm: bcrypt` et son coût, et les hashers
+ * secondaires qui restent (Pbkdf2, MessageDigest) refusent un hachage à `$`
+ * avant de rien calculer (`CpgUserPasswordHasherTest`). **Limite acceptée** : cette dérivation unique
+ * se fait au coût *stocké*, ce listener paie le coût *configuré*. Après un
+ * changement de coût ou d'algorithme, un compte au hachage ancien répond en
+ * un temps à lui (plus court ou plus long que l'inconnu), jusqu'à sa
+ * prochaine connexion réussie qui le rehache (`StalePasswordHashRehashTest`) ;
+ * un compte dormant le reste. Rehacher d'avance demande le mot de passe en
+ * clair : seuls un hachage encapsulé (bcrypt de l'ancien hachage, qu'aucun
+ * hasher de Symfony ne sait vérifier) ou un mot de passe vidé puis une
+ * nouvelle invitation (le compte devient « sans mot de passe », compensé
+ * ici, au prix d'un nouveau mot de passe à choisir) l'éviteraient — ni l'un
+ * ni l'autre retenu. Payer ici la différence obligerait à lire le hachage
+ * stocké, sans marcher dans les deux sens. La configuration n'a pas changé depuis la création des
+ * comptes (bcrypt coût 13, que produisait déjà `auto`) : aucun hachage ancien
+ * n'est attendu, et le diagnostic SQL de `k8s/README.md`, « Avant de changer
+ * `password_hashers` », le vérifie — avec la procédure à suivre avant tout
+ * changement.
  *
  * `hash()` d'une constante plutôt que `verify()` contre un hachage factice
  * précalculé, pour trois raisons : le hachage précalculé serait figé dans le
- * code alors que `password_hashers` vaut `auto` (un changement d'algorithme ou
+ * code alors que `password_hashers` peut changer (un changement d'algorithme ou
  * de coût rouvrirait l'écart en silence, et en test le coût abaissé ne
- * s'appliquerait pas) ; `MigratingPasswordHasher::verify()` essaie les hashers
- * secondaires quand le format ne correspond pas, donc coûterait *plus* que la
- * vraie vérification ; `hash()` délègue au meilleur hasher, une fois, avec les
+ * s'appliquerait pas) ; un hachage précalculé que la configuration ne
+ * produirait plus serait « à rehacher », et `MigratingPasswordHasher::verify()`
+ * essaie alors les hashers secondaires après l'échec du principal ; `hash()` délègue au meilleur hasher, une fois, avec les
  * mêmes paramètres que `verify()` — même nombre d'itérations, à la génération
  * du sel près. L'objectif est l'équivalence, pas l'égalité à la microseconde.
  * Rien n'est lu du mot de passe soumis : moins de surface, et rien qui puisse
- * se retrouver par accident dans un journal.
+ * se retrouver par accident dans un journal. Écart accepté qui en découle
+ * (audit de #588) : sur un hachage bcrypt, `verify()` pré-hache en sha512
+ * une saisie de plus de 72 octets ou contenant un NUL, pas `hash()` sur la
+ * constante — quelques microsecondes, noyées dans le bcrypt et le réseau,
+ * hors de portée sous `login_throttling`. L'égaliser obligerait à lire la
+ * saisie. Autre écart accepté (issue #590) : un identifiant inconnu mais
+ * conforme à `CpgUser::USERNAME_PATTERN` paie une requête qui ne rend aucune
+ * ligne, un compte existant une ligne et son hydratation Doctrine — de l'ordre
+ * de 100 µs, contre un écart-type d'environ 3 ms sur bcrypt seul (mesuré sur un
+ * poste, plus en pod avec le réseau) : quelques milliers d'essais par
+ * identifiant pour le voir, soit des semaines pour une seule IP sous
+ * `login_throttling` — des heures pour un attaquant réparti sur de
+ * nombreuses adresses, la limite des compteurs par IP acceptée plus bas.
  *
  * DoS : ce hachage rend coûteux un login sur identifiant inconnu, qui l'était
  * déjà sur identifiant connu. Il reste borné par `login_throttling`
@@ -113,20 +161,20 @@ final readonly class FailedLoginTimingEqualizer
      */
     private function realVerificationWasSkipped(LoginFailureEvent $event): bool
     {
-        $exception = $event->getException();
+        $cause = LoginFailureCause::of($event->getException());
 
-        if ($exception instanceof TooManyLoginAttemptsAuthenticationException) {
-            return false;
+        // Identifiant inconnu : on décide *sans* rappeler le chargeur —
+        // UserBadge ne mémorise pas l'échec, un second appel signifierait une
+        // seconde requête SQL par identifiant inconnu.
+        if (LoginFailureCause::UnknownIdentifier === $cause) {
+            return true;
         }
 
-        // Identifiant inconnu. AuthenticatorManager::handleAuthenticationFailure()
-        // masque l'UserNotFoundException derrière une BadCredentialsException
-        // dès que `expose_security_errors` n'est pas `all`, en la conservant en
-        // `previous` : les deux formes sont reconnues. On décide ici *sans*
-        // rappeler le chargeur — UserBadge ne mémorise pas l'échec, un second
-        // appel signifierait une seconde requête SQL par identifiant inconnu.
-        if ($exception instanceof UserNotFoundException || $exception->getPrevious() instanceof UserNotFoundException) {
-            return true;
+        // Throttling, mot de passe trop long : refusés avant le chargement du
+        // compte, identiquement pour tous les identifiants. Rien à compenser,
+        // et surtout rien à charger.
+        if ($cause->leftNoAccountLoaded()) {
+            return false;
         }
 
         $passport = $event->getPassport();
@@ -140,7 +188,7 @@ final readonly class FailedLoginTimingEqualizer
         try {
             // Gratuit dans les cas qui arrivent ici : `CheckCredentialsListener`
             // a déjà chargé le compte, `UserBadge` le mémorise. Le seul cas où
-            // ce n'est pas vrai, le throttling, est écarté plus haut.
+            // ce n'est pas vrai sont écartés plus haut (LoginFailureCause).
             $user = $passport->getUser();
         } catch (UserNotFoundException) {
             return true;
@@ -150,6 +198,10 @@ final readonly class FailedLoginTimingEqualizer
             return false;
         }
 
-        return $user instanceof CpgUser && $user->isPendingActivation();
+        // L'absence de mot de passe, pas l'attente d'activation (issue #560) :
+        // un compte invité dont le mot de passe a été posé depuis le
+        // backoffice reste en attente d'activation, mais `verify()` a déjà
+        // payé la vraie dérivation sur son hachage.
+        return $user instanceof CpgUser && !$user->hasPassword();
     }
 }

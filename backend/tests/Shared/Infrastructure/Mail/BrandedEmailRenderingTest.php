@@ -8,11 +8,12 @@ use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Twig\Environment;
 
 /**
- * Fondation e-mail (cf. tasks/plan.md, tâche 1.2) : tout e-mail sortant hérite
- * d'un layout de base à la charte graphique du site. Ce test vérifie qu'un
- * template enfant qui `extends 'emails/base.html.twig'` (resp. `.txt.twig`) se
- * rend sans erreur, reprend le bandeau de marque, expose un bloc de contenu et
- * échappe correctement les variables.
+ * Fondation e-mail (cf. tâche 1.2 du plan archivé
+ * `.claude/specs/archive/2026-09-03-adr-0001-provisionnement-utilisateurs/plan.md`) :
+ * tout e-mail sortant hérite d'un layout de base à la charte graphique du site.
+ * Ce test vérifie qu'un template enfant qui `extends 'emails/base.html.twig'`
+ * (resp. `.txt.twig`) se rend sans erreur, reprend le bandeau de marque, expose
+ * un bloc de contenu et échappe correctement les variables.
  */
 final class BrandedEmailRenderingTest extends KernelTestCase
 {

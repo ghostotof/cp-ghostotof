@@ -8,6 +8,7 @@ use App\Portfolio\CaseStudy\Domain\Entity\CaseStudy;
 use App\Portfolio\CaseStudy\Domain\Exception\CaseStudyNotFoundException;
 use App\Portfolio\CaseStudy\Domain\Repository\CaseStudyRepositoryInterface;
 use App\Portfolio\Shared\Application\OrderScopeLockInterface;
+use App\Portfolio\Shared\Domain\Exception\TranslatableContentLocaleIsImmutableException;
 use App\Portfolio\Shared\Domain\Service\ContentPlacement;
 use App\Portfolio\Shared\Domain\Service\OrderAssigner;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
@@ -16,8 +17,10 @@ use Symfony\Component\Uid\Uuid;
 final readonly class CaseStudyAdministrator implements CaseStudyAdministratorInterface
 {
     /**
-     * Périmètre d'ordre, verrouillé par toute écriture qui place une entrée
-     * (issue #389) : la table entière, toutes langues confondues.
+     * Périmètre d'ordre, verrouillé par toute écriture : celles qui placent
+     * une entrée (issue #389), et delete(), pour qu'une suppression ne valide
+     * pas sous une autre écriture (issue #499). La table entière, toutes
+     * langues confondues.
      */
     private const string ORDER_SCOPE = CaseStudy::class;
 
@@ -49,6 +52,7 @@ final readonly class CaseStudyAdministrator implements CaseStudyAdministratorInt
 
     public function update(
         Uuid $id,
+        Locale $locale,
         string $title,
         string $problem,
         string $solution,
@@ -56,11 +60,18 @@ final readonly class CaseStudyAdministrator implements CaseStudyAdministratorInt
         string $measuredResult,
         ?Uuid $translationGroup,
     ): CaseStudy {
-        return $this->orderScopeLock->withLock(self::ORDER_SCOPE, function () use ($id, $title, $problem, $solution, $tradeoffs, $measuredResult, $translationGroup): CaseStudy {
+        return $this->orderScopeLock->withLock(self::ORDER_SCOPE, function () use ($id, $locale, $title, $problem, $solution, $tradeoffs, $measuredResult, $translationGroup): CaseStudy {
             $caseStudy = $this->caseStudyRepository->findOneById($id);
 
             if (null === $caseStudy) {
                 throw CaseStudyNotFoundException::forId($id);
+            }
+
+            // Issue #582 : une entrée ne change pas de langue. Refusé avant
+            // toute autre lecture et tout changement en mémoire (#549), donc
+            // avant le détachement ou le rattachement que demande le corps.
+            if ($caseStudy->getLocale() !== $locale) {
+                throw TranslatableContentLocaleIsImmutableException::refused();
             }
 
             if (null === $translationGroup) {
@@ -87,13 +98,15 @@ final readonly class CaseStudyAdministrator implements CaseStudyAdministratorInt
 
     public function delete(Uuid $id): void
     {
-        $caseStudy = $this->caseStudyRepository->findOneById($id);
+        $this->orderScopeLock->withLock(self::ORDER_SCOPE, function () use ($id): void {
+            $caseStudy = $this->caseStudyRepository->findOneById($id);
 
-        if (null === $caseStudy) {
-            throw CaseStudyNotFoundException::forId($id);
-        }
+            if (null === $caseStudy) {
+                throw CaseStudyNotFoundException::forId($id);
+            }
 
-        $this->caseStudyRepository->remove($caseStudy);
+            $this->caseStudyRepository->remove($caseStudy);
+        });
     }
 
     public function reorder(array $keys): void

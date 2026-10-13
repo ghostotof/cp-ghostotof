@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace App\Portfolio\About\Application;
 
 use App\Portfolio\About\Domain\Entity\AboutMeCard;
+use App\Portfolio\About\Domain\Exception\AboutMeCardCategoryIsImmutableException;
 use App\Portfolio\About\Domain\Exception\AboutMeCardNotFoundException;
 use App\Portfolio\About\Domain\ValueObject\AboutMeCardCategory;
 use App\Portfolio\Shared\Domain\Exception\IncompleteOrderException;
+use App\Portfolio\Shared\Domain\Exception\TranslatableContentLocaleIsImmutableException;
 use App\Portfolio\Shared\Domain\Exception\TranslationAlreadyExistsException;
 use App\Portfolio\Shared\Domain\Exception\UnknownOrderEntryException;
 use App\Portfolio\Shared\Domain\Exception\UnknownTranslationGroupException;
@@ -38,15 +40,25 @@ interface AboutMeCardAdministratorInterface
 
     /**
      * `$translationGroup` porte la sémantique du `PUT` (spec 0004 D3) : `null`
-     * détache l'entrée de ses traductions en conservant sa position, un autre
-     * groupe l'y rattache et lui en fait hériter la position, le sien ne fait
-     * rien.
+     * détache l'entrée de ses traductions et l'envoie en fin de sa catégorie
+     * (#169), un autre groupe l'y rattache et lui en fait hériter la position,
+     * le sien ne fait rien.
      *
-     * @throws AboutMeCardNotFoundException si l'id est inconnu
-     * @throws UnknownTranslationGroupException groupe inconnu du périmètre
-     * @throws TranslationAlreadyExistsException le groupe porte déjà cette langue
+     * `$category` doit être celle de la carte (issue #578) : une carte ne
+     * change pas de catégorie, et le `PUT` qui en porte une autre est refusé
+     * avant toute écriture plutôt qu'ignoré sous un 200.
+     *
+     * `$locale` doit être celle de l'entrée (issue #582) : une entrée ne
+     * change pas de langue, et le `PUT` qui en porte une autre est refusé
+     * avant toute écriture plutôt qu'ignoré sous un 200.
+     *
+     * @throws AboutMeCardNotFoundException                  si l'id est inconnu
+     * @throws TranslatableContentLocaleIsImmutableException `$locale` n'est pas celle de la carte
+     * @throws AboutMeCardCategoryIsImmutableException       `$category` n'est pas celle de la carte
+     * @throws UnknownTranslationGroupException              groupe inconnu du périmètre
+     * @throws TranslationAlreadyExistsException             le groupe porte déjà cette langue
      */
-    public function update(Uuid $id, string $title, string $description, ?string $iconKey, ?Uuid $translationGroup): AboutMeCard;
+    public function update(Uuid $id, Locale $locale, AboutMeCardCategory $category, string $title, string $description, ?string $iconKey, ?Uuid $translationGroup): AboutMeCard;
 
     /**
      * @throws AboutMeCardNotFoundException si l'id est inconnu

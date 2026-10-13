@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace App\Tests\Shared\Infrastructure\Lock;
 
 use App\Shared\Infrastructure\Lock\PostgresLockedTransaction;
+use App\Tests\Support\KubernetesManifests;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
-use Symfony\Component\Yaml\Yaml;
 
 /**
  * Aucune commande console des pods n'attend un verrou PostgreSQL indéfiniment
@@ -36,9 +36,11 @@ use Symfony\Component\Yaml\Yaml;
  * migration qui doit attendre plus longtemps l'annonce elle-même par
  * `SET LOCAL lock_timeout`.
  *
- * Le recensement des manifestes est fait ici, par l'image, et non repris de
- * SystemCachePodVolumeTest : un nouveau manifeste qui exécute l'image sans la
- * borne fait rougir ce test de lui-même.
+ * Les manifestes viennent du recensement par l'image de KubernetesManifests,
+ * pas de la liste de
+ * {@see \App\Tests\Shared\Infrastructure\Cache\SystemCachePodVolumeTest} : un
+ * nouveau manifeste qui exécute l'image sans la borne fait rougir ce test de
+ * lui-même.
  */
 final class ConsoleLockWaitBoundTest extends TestCase
 {
@@ -61,7 +63,7 @@ final class ConsoleLockWaitBoundTest extends TestCase
      */
     public static function manifests(): iterable
     {
-        foreach (self::manifestsRunningTheBackendImage() as $manifest) {
+        foreach (KubernetesManifests::base()->manifestsRunningTheBackendImage() as $manifest) {
             yield $manifest => [$manifest];
         }
     }
@@ -72,7 +74,7 @@ final class ConsoleLockWaitBoundTest extends TestCase
      */
     public function testTheCensusFindsTheConsoleManifests(): void
     {
-        $found = self::manifestsRunningTheBackendImage();
+        $found = KubernetesManifests::base()->manifestsRunningTheBackendImage();
 
         foreach (['migrate-job.yaml', 'seed-job.yaml', 'messenger-worker-deployment.yaml', 'watch-refresh-cronjob.yaml'] as $expected) {
             self::assertContains($expected, $found);
@@ -97,11 +99,11 @@ final class ConsoleLockWaitBoundTest extends TestCase
     #[DataProvider('manifests')]
     public function testEveryConsoleContainerBoundsItsLockWaitsLikeFpm(string $manifest): void
     {
-        $containers = $this->backendContainers($manifest, 'containers');
+        $containers = KubernetesManifests::base()->backendContainersIn($manifest);
         self::assertNotSame([], $containers, \sprintf('%s : aucun conteneur de l\'image backend.', $manifest));
 
         foreach ($containers as $container) {
-            $name = $this->text($container['name'] ?? null);
+            $name = KubernetesManifests::text($container['name'] ?? null);
             if (isset(self::EXEMPT[$manifest][$name])) {
                 continue;
             }
@@ -128,11 +130,11 @@ final class ConsoleLockWaitBoundTest extends TestCase
     #[DataProvider('manifests')]
     public function testNoInitContainerOfTheImageRunsTheConsole(string $manifest): void
     {
-        foreach ($this->backendContainers($manifest, 'initContainers') as $container) {
+        foreach (KubernetesManifests::base()->backendContainersIn($manifest, 'initContainers') as $container) {
             self::assertStringNotContainsString(
                 'bin/console',
-                $this->text($container['command'] ?? null).' '.$this->text($container['args'] ?? null),
-                \sprintf('%s, initContainer %s : il lance la console sans être couvert par ce test.', $manifest, $this->text($container['name'] ?? null)),
+                KubernetesManifests::text($container['command'] ?? null).' '.KubernetesManifests::text($container['args'] ?? null),
+                \sprintf('%s, initContainer %s : il lance la console sans être couvert par ce test.', $manifest, KubernetesManifests::text($container['name'] ?? null)),
             );
         }
     }
@@ -146,7 +148,7 @@ final class ConsoleLockWaitBoundTest extends TestCase
         foreach (self::EXEMPT as $manifest => $containers) {
             foreach (array_keys($containers) as $name) {
                 $container = null;
-                foreach ($this->backendContainers($manifest, 'containers') as $candidate) {
+                foreach (KubernetesManifests::base()->backendContainersIn($manifest) as $candidate) {
                     if ($name === ($candidate['name'] ?? null)) {
                         $container = $candidate;
                     }
@@ -178,117 +180,12 @@ final class ConsoleLockWaitBoundTest extends TestCase
      */
     private function pgOptions(array $container): ?string
     {
-        foreach ($this->items($container['env'] ?? null) as $variable) {
-            if ('PGOPTIONS' === ($variable['name'] ?? null)) {
-                $value = $variable['value'] ?? null;
-
-                return \is_string($value) ? $value : '(valeur non littérale)';
-            }
+        $variable = KubernetesManifests::firstWith($container, 'env', 'name', 'PGOPTIONS');
+        if (null === $variable) {
+            return null;
         }
+        $value = $variable['value'] ?? null;
 
-        return null;
-    }
-
-    /**
-     * Les manifestes de k8s/base qui exécutent l'image backend, sous son nom
-     * kustomize (`backend`) ou sous le placeholder des Jobs hors kustomize,
-     * entre guillemets ou non, commentaire de fin de ligne permis.
-     *
-     * @return list<string>
-     */
-    private static function manifestsRunningTheBackendImage(): array
-    {
-        $paths = glob(self::k8sBase().'/*.yaml');
-        self::assertIsArray($paths);
-
-        $found = [];
-        foreach ($paths as $path) {
-            if (1 === preg_match('/^\s+image:\s*(["\']?)(backend|\$\{BACKEND_IMAGE\})\1\s*(#.*)?$/m', (string) file_get_contents($path))) {
-                $found[] = basename($path);
-            }
-        }
-        sort($found);
-
-        return $found;
-    }
-
-    /**
-     * Les conteneurs de l'image backend d'une liste du pod spec
-     * (`containers` ou `initContainers`), tous documents du fichier confondus.
-     *
-     * @return list<array<mixed>>
-     */
-    private function backendContainers(string $manifest, string $list): array
-    {
-        $path = self::k8sBase().'/'.$manifest;
-        self::assertFileIsReadable($path);
-        $documents = preg_split('/^---\s*$/m', (string) file_get_contents($path));
-        self::assertIsArray($documents);
-
-        $containers = [];
-        foreach ($documents as $document) {
-            $resource = Yaml::parse($document);
-            if (!\is_array($resource)) {
-                continue;
-            }
-            $spec = match ($resource['kind'] ?? null) {
-                'Deployment', 'Job' => $this->at($resource, 'spec', 'template', 'spec'),
-                'CronJob' => $this->at($resource, 'spec', 'jobTemplate', 'spec', 'template', 'spec'),
-                default => null,
-            };
-            foreach ($this->items($spec[$list] ?? null) as $container) {
-                if (\in_array($container['image'] ?? null, ['backend', '${BACKEND_IMAGE}'], true)) {
-                    $containers[] = $container;
-                }
-            }
-        }
-
-        return $containers;
-    }
-
-    /**
-     * @param array<mixed> $node
-     *
-     * @return array<mixed>|null
-     */
-    private function at(array $node, string ...$keys): ?array
-    {
-        foreach ($keys as $key) {
-            $child = $node[$key] ?? null;
-            if (!\is_array($child)) {
-                return null;
-            }
-            $node = $child;
-        }
-
-        return $node;
-    }
-
-    /**
-     * Les éléments d'une liste YAML qui sont eux-mêmes des tables.
-     *
-     * @return list<array<mixed>>
-     */
-    private function items(mixed $list): array
-    {
-        return \is_array($list) ? array_values(array_filter($list, \is_array(...))) : [];
-    }
-
-    /**
-     * Une valeur YAML rendue lisible : chaîne telle quelle, liste jointe par
-     * des espaces (une commande `['sh', '-c', '…']`), rien sinon.
-     */
-    private function text(mixed $value): string
-    {
-        if (\is_string($value)) {
-            return $value;
-        }
-
-        return \is_array($value) ? implode(' ', array_filter($value, \is_string(...))) : '';
-    }
-
-    private static function k8sBase(): string
-    {
-        return \dirname(__DIR__, 5).'/k8s/base';
+        return \is_string($value) ? $value : '(valeur non littérale)';
     }
 }

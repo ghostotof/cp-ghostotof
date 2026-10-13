@@ -181,7 +181,7 @@ final readonly class SecurityAuditLogger implements SecurityAuditLoggerInterface
         $this->record(
             'user-created',
             'User created from the command line.',
-            [...$this->account($user), 'superAdmin' => \in_array(CpgUser::ROLE_SUPER, $user->getRoles(), true)],
+            [...$this->account($user), 'superAdmin' => $user->isSuperAdmin()],
             self::CONSOLE,
         );
     }

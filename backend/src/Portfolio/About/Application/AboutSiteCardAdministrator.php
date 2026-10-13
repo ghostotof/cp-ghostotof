@@ -8,6 +8,7 @@ use App\Portfolio\About\Domain\Entity\AboutSiteCard;
 use App\Portfolio\About\Domain\Exception\AboutSiteCardNotFoundException;
 use App\Portfolio\About\Domain\Repository\AboutSiteCardRepositoryInterface;
 use App\Portfolio\Shared\Application\OrderScopeLockInterface;
+use App\Portfolio\Shared\Domain\Exception\TranslatableContentLocaleIsImmutableException;
 use App\Portfolio\Shared\Domain\Service\ContentPlacement;
 use App\Portfolio\Shared\Domain\Service\OrderAssigner;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
@@ -16,8 +17,10 @@ use Symfony\Component\Uid\Uuid;
 final readonly class AboutSiteCardAdministrator implements AboutSiteCardAdministratorInterface
 {
     /**
-     * Périmètre d'ordre, verrouillé par toute écriture qui place une entrée
-     * (issue #389) : la table entière, toutes langues confondues.
+     * Périmètre d'ordre, verrouillé par toute écriture : celles qui placent
+     * une entrée (issue #389), et delete(), pour qu'une suppression ne valide
+     * pas sous une autre écriture (issue #499). La table entière, toutes
+     * langues confondues.
      */
     private const string ORDER_SCOPE = AboutSiteCard::class;
 
@@ -45,13 +48,20 @@ final readonly class AboutSiteCardAdministrator implements AboutSiteCardAdminist
         });
     }
 
-    public function update(Uuid $id, string $title, string $description, ?string $iconKey, ?Uuid $translationGroup): AboutSiteCard
+    public function update(Uuid $id, Locale $locale, string $title, string $description, ?string $iconKey, ?Uuid $translationGroup): AboutSiteCard
     {
-        return $this->orderScopeLock->withLock(self::ORDER_SCOPE, function () use ($id, $title, $description, $iconKey, $translationGroup): AboutSiteCard {
+        return $this->orderScopeLock->withLock(self::ORDER_SCOPE, function () use ($id, $locale, $title, $description, $iconKey, $translationGroup): AboutSiteCard {
             $card = $this->aboutSiteCardRepository->findOneById($id);
 
             if (null === $card) {
                 throw AboutSiteCardNotFoundException::forId($id);
+            }
+
+            // Issue #582 : une entrée ne change pas de langue. Refusé avant
+            // toute autre lecture et tout changement en mémoire (#549), donc
+            // avant le détachement ou le rattachement que demande le corps.
+            if ($card->getLocale() !== $locale) {
+                throw TranslatableContentLocaleIsImmutableException::refused();
             }
 
             if (null === $translationGroup) {
@@ -78,13 +88,15 @@ final readonly class AboutSiteCardAdministrator implements AboutSiteCardAdminist
 
     public function delete(Uuid $id): void
     {
-        $card = $this->aboutSiteCardRepository->findOneById($id);
+        $this->orderScopeLock->withLock(self::ORDER_SCOPE, function () use ($id): void {
+            $card = $this->aboutSiteCardRepository->findOneById($id);
 
-        if (null === $card) {
-            throw AboutSiteCardNotFoundException::forId($id);
-        }
+            if (null === $card) {
+                throw AboutSiteCardNotFoundException::forId($id);
+            }
 
-        $this->aboutSiteCardRepository->remove($card);
+            $this->aboutSiteCardRepository->remove($card);
+        });
     }
 
     public function reorder(array $keys): void

@@ -14,13 +14,13 @@ use Symfony\Component\Uid\Uuid;
 interface ExperienceTechnologyAdministratorInterface
 {
     /**
-     * @throws ExperienceTechnologyNotFoundException si l'id est inconnu
+     * @throws ExperienceTechnologyNotFoundException si l'id est inconnu, ou la technologie supprimée depuis son chargement (#545)
      * @throws ExperienceTechnologyAlreadyExistsException si le nom est déjà utilisé par une autre technologie
      */
     public function update(Uuid $id, TechnologyName $name, ExperienceYears $years, ?string $iconKey, ?string $relatedTechnologyName, bool $secondary = false): ExperienceTechnology;
 
     /**
-     * @throws ExperienceTechnologyNotFoundException si l'id est inconnu
+     * @throws ExperienceTechnologyNotFoundException si l'id est inconnu, ou la technologie supprimée depuis son chargement (#545)
      */
     public function delete(Uuid $id): void;
 }

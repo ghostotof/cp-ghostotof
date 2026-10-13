@@ -8,6 +8,7 @@ use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Exception\AccountNotAwaitingActivationException;
 use App\Security\User\Domain\Exception\CpgUserNotFoundException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
+use App\Shared\Infrastructure\Doctrine\VanishedEntities;
 use DateTimeImmutable;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
@@ -27,8 +28,10 @@ use Symfony\Component\Uid\Uuid;
  */
 class CpgUserRepository extends ServiceEntityRepository implements CpgUserRepositoryInterface, PasswordUpgraderInterface, UserLoaderInterface
 {
-    public function __construct(ManagerRegistry $registry)
-    {
+    public function __construct(
+        ManagerRegistry $registry,
+        private readonly VanishedEntities $vanishedEntities,
+    ) {
         parent::__construct($registry, CpgUser::class);
     }
 
@@ -101,26 +104,38 @@ class CpgUserRepository extends ServiceEntityRepository implements CpgUserReposi
             // (CpgUserAdministrator::changePassword(), qui ne marque jamais
             // activatedAt) — le compte se connecte déjà et ne doit plus
             // ressortir ici, même s'il reste isPendingActivation() vrai.
-            ->andWhere("u.password = ''")
+            ->andWhere('u.password = :noPassword')
             ->setParameter('threshold', $threshold, Types::DATETIMETZ_IMMUTABLE)
+            ->setParameter('noPassword', CpgUser::NO_PASSWORD)
             ->orderBy('u.invitedAt', 'ASC')
             ->getQuery()
             ->getResult();
     }
 
     /**
-     * `roles` est une colonne JSON : plutôt qu'un `WHERE` portable
-     * hasardeux sur du JSON, on filtre en PHP. La table `cpg_user` n'est
-     * alimentée que par la commande CLI (aucune inscription publique), son
-     * volume reste négligeable — le coût du chargement complet est ici sans
-     * enjeu de performance.
+     * En SQL, sur la colonne `roles` (JSON, lue en `jsonb` pour l'opérateur de
+     * contenance `@>`) : jusqu'à #551, un `findAll()` filtré en PHP rendait les
+     * instances de la carte d'identité, donc l'acteur et la cible tels que la
+     * requête les avait chargés — un comptage périmé sous le verrou même. Le
+     * rôle est lié en paramètre JSON, jamais interpolé. Un compte sans mot de
+     * passe ({@see CpgUser::NO_PASSWORD}, `CpgUser::hasPassword()` faux) ne peut
+     * pas se connecter et ne compte pas.
      */
-    public function countByRole(string $role): int
+    public function countOtherSuperAdminsAbleToSignIn(CpgUser $except): int
     {
-        return \count(array_filter(
-            $this->findAll(),
-            static fn (CpgUser $user): bool => \in_array($role, $user->getRoles(), true),
-        ));
+        $count = $this->getEntityManager()->getConnection()->fetchOne(
+            'SELECT COUNT(*) FROM cpg_user'
+            .' WHERE id <> :id AND CAST(roles AS jsonb) @> CAST(:role AS jsonb) AND password <> :noPassword',
+            ['id' => $except->getId(), 'role' => json_encode([CpgUser::ROLE_SUPER], \JSON_THROW_ON_ERROR), 'noPassword' => CpgUser::NO_PASSWORD],
+            ['id' => UuidType::NAME],
+        );
+
+        // Un COUNT(*) est un entier pour pdo_pgsql, une chaîne pour un pilote
+        // qui textualise ; la conversion ne dépend pas du pilote, et
+        // l'assertion ne sert qu'à l'analyse statique.
+        \assert(is_numeric($count));
+
+        return (int) $count;
     }
 
     public function save(CpgUser $user): void
@@ -196,16 +211,25 @@ class CpgUserRepository extends ServiceEntityRepository implements CpgUserReposi
      * malgré l'erreur (accusé du broker perdu, #479) et la personne définir son
      * mot de passe. Un jeton émis entre-temps par le handler part avec le
      * compte (`ON DELETE CASCADE`).
+     *
+     * Le compte dont la ligne a été supprimée ici est détaché et retenu par
+     * {@see VanishedEntities::deleteById()} (issues #569, #560) : resté géré, une
+     * modification puis un `save()` émettaient un `UPDATE` sur 0 ligne, perdu
+     * en silence ; sa re-sauvegarde est désormais refusée. Un compte épargné
+     * (activé entre-temps) reste géré : sa ligne existe. Un jeton qu'un
+     * `ON DELETE CASCADE` emporte n'est pas détaché : aucun n'est chargé ici.
      */
     public function removePendingInvitation(CpgUser $user): void
     {
-        $this->createQueryBuilder('user')
-            ->delete()
-            ->where('user.id = :id')
-            ->andWhere('user.activatedAt IS NULL')
-            ->setParameter('id', $user->getId(), UuidType::NAME)
-            ->getQuery()
-            ->execute();
+        $this->vanishedEntities->deleteById(
+            $this->createQueryBuilder('user')
+                ->delete()
+                ->where('user.id = :id')
+                ->andWhere('user.activatedAt IS NULL')
+                ->setParameter('id', $user->getId(), UuidType::NAME)
+                ->getQuery(),
+            $user,
+        );
     }
 
     /**

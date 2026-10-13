@@ -17,6 +17,31 @@ paths:
 
 > Moved verbatim from `.claude/CLAUDE.md` (#346), section « Architecture › Deployment invariants ». The index of every rule is at the top of `.claude/CLAUDE.md`.
 
+- **A PHPUnit test reads a manifest through `tests/Support/KubernetesManifests`, never by hand**
+  (issue #541). `KubernetesManifests::base()` (`k8s/base`) or `::overlay('prod')` (the overlay's
+  own files, never the `kustomize build` render — an overlay patch on the base stays invisible to
+  every test below). It splits a file into documents (`---` alone or followed by a comment, CRLF
+  included), descends to the pod spec (`Deployment`, `StatefulSet`, `Job`, `CronJob`, a bare
+  `Pod`) and finds a container or initContainer by name; the business assertions stay in each
+  test. It also holds the **one census of the manifests running the backend image** (issue #542,
+  `manifestsRunningTheBackendImage()`, `*.yaml` and `*.yml` of the directory, not its
+  subdirectories), read from the parsed `image` of every container and initContainer — never a
+  regex on the text, two copies of which disagreed on quotes and trailing comments — and
+  `isBackendImage()` / `backendContainers()` / `backendContainersIn($manifest)`: `backend` or the
+  pipeline's `ghcr.io/ghostotof/cp-ghostotof-backend`, with or without a tag or digest (kustomize
+  rewrites it by name), or `${BACKEND_IMAGE}` / `$BACKEND_IMAGE` (envsubst fills both). The census
+  parses every manifest of the directory, so an unrelated one it refuses turns both its consumers
+  red. YAML lists are read through it too (`entries()`, `firstWith($node, $list, $key, $value)`,
+  `text()`), never a private copy. It **refuses** rather than skips: an unparsable document or one
+  that is not a mapping (named by its first line), a resource of another kind carrying a pod
+  template or a `containers` list at any depth (a `DaemonSet`, a `PodTemplate`, a `List` of Pods
+  must be taught to it first), a list that is a mapping, a list entry that is not a mapping, a
+  name found zero or twice. Its own test,
+  `tests/Shared/KubernetesManifestsTest.php`, proves each case on manifests it writes. **Proving
+  a manifest guard still fails** takes a mutation the dev container actually sees: `k8s/` is a
+  bind mount that Docker Desktop loses track of when a file is replaced by a new inode (`sed -i`,
+  `perl -i`, an editor's atomic save) — write in place (`cat new > file`), compare `sha1sum` on
+  the host and in `backend`, and restore the same way; `docker compose restart backend` resyncs.
 - **No application state on the pod's filesystem** (ADR 0005, audit of 2026-09-16, constat A1,
   hotfix v0.14.1). Pods run `readOnlyRootFilesystem: true` with only `var/log` mounted, and
   Symfony's default `cache.app` was a `FilesystemAdapter` under `var/cache/prod/pools`: its
@@ -44,7 +69,7 @@ paths:
   image's pre-warmed cache (the volume would hide it otherwise). That is allowed because the
   cache is derived, disposable and identical in every pod — not application state. A new pod
   spec running the image needs the three parts; `SystemCachePodVolumeTest` turns red otherwise
-  and also checks no other manifest runs the image.
+  and also checks, on `KubernetesManifests`' census, that no other manifest runs the image.
   **Shared storage is not atomicity: every limiter also takes a lock shared across pods**
   (issue #272, ADR 0005 amended 2026-09-30). Without `symfony/lock`, `consume()` was a
   non-atomic read-modify-write — 20 simultaneous calls on one key counted **one** unit.
@@ -69,35 +94,59 @@ paths:
   `env[PGOPTIONS] = "-c lock_timeout=5s"` (the DSN cannot carry it: DBAL doesn't forward `options`
   to pdo_pgsql, so it bounds every PostgreSQL lock wait of an FPM worker, ORM included, never the
   console) and `request_terminate_timeout = 65s` (total wall time — keep it above any legitimate
-  request), pinned by `FpmLockWaitBoundTest`. **The console gets the same bound from its pods**
+  request), pinned by `FpmLockWaitBoundTest`. That bounds the *wait*, not the lock's life: **a
+  session whose client vanished without a FIN** (node lost, network partition) kept the lock until
+  Linux's default keepalive, 2 h, every request on the key failing in 5 s meanwhile. Hence, in
+  `k8s/base/postgres.yaml` (issue #279), `args` `-c tcp_keepalives_idle=60
+  -c tcp_keepalives_interval=10 -c tcp_keepalives_count=3`: such a session dies in 90 s (measured
+  96 s, still held after 202 s without) — **plus `-c tcp_user_timeout=90000`** (ms), because Linux sends no keepalive probe while data waits for its ACK: a client gone while the
+  server was answering it was left to retransmissions, ~15 min (measured: held after 303 s with
+  keepalives alone, released in 106 s with it). `PostgresGhostSessionReleaseTest` caps both at 120 s,
+  values written without units. `args`, never `command` (the image's entrypoint initialises the
+  database). On a Unix socket PostgreSQL ignores them and `SHOW` reads `0`: check them over TCP
+  (`k8s/README.md`, « Sessions fantômes PostgreSQL », which also says why `idle_session_timeout` and
+  `client_connection_check_interval` are not set). A pod deleted, even with `--force`, is no ghost: the
+  kubelet kills the container and the server gets the FIN — nor is anything in dev, hence no `command`
+  in `docker-compose.yml`. **The console gets the same bound from its pods**
   (issue #525): every container of `k8s/base` running the backend image carries
   `PGOPTIONS: '-c lock_timeout=5s'` in its own `env:` — worker, CronJobs, every Job, the migration
   included —, exactly www.prod.conf's value. `env:` per manifest rather than a `backend-config` line
   (written twice, one per overlay) or a DBAL middleware (it would not reach the connection
   `symfony/lock` opens itself through `DriverManager`, and could not tell a migration apart).
-  `ConsoleLockWaitBoundTest` finds the manifests **by the image**, so a new one without the bound
+  `ConsoleLockWaitBoundTest` finds the manifests **by the image** (the same census), so a new one without the bound
   turns it red; its only exemption is `backend-deployment.yaml`'s `php-fpm` (the pool sets it).
-  Without it a console session has `lock_timeout = 0` (measured). An operator's read-only `exec`
+  Without it a console session has `lock_timeout = 0` (measured). The bound is per lock statement: an
+  `app:*:seed` on two tables (About, Quality) takes its two scope locks one statement each under
+  `withLocks()` (issue #567, `.claude/rules/seeding.md`), so the seed Job can wait up to 2 × 5 s behind two
+  busy scopes before failing. An operator's read-only `exec`
   (below) repeats `-c lock_timeout=5s` in its own `PGOPTIONS`, which replaces the variable whole.
   For the worker, a handler waiting past 5 s raises `55P03` and Messenger retries it. **The
   application's own PostgreSQL locks keep a fallback bound, now a safety net** (issue #512, kept on
-  2026-10-12, #525) for sessions with none — the dev container's console, CI: the order-scope lock, the account lock and the username
-  allocation lock share one skeleton, `Shared/Infrastructure/Lock/PostgresLockedTransaction`
-  (an *Execute Around*: hand-made transaction, wait bounded, `55P03` — defined there only, as
-  `LOCK_NOT_AVAILABLE` — renamed per lock, a refused COMMIT never masked, nor the cause by a
+  2026-10-12, #525) for sessions with none — the dev container's console, CI: the order-scope lock, the account lock, the username
+  allocation lock, the technology row lock (#545) and the account administration lock (#551) share one skeleton, `Shared/Infrastructure/Lock/PostgresLockedTransaction`
+  (an *Execute Around*: hand-made transaction, what `acquire` returns handed to the operation — the entity a
+  row lock re-read while locking it, issue #560 —, wait bounded, `55P03` — defined there only, as
+  `LOCK_NOT_AVAILABLE` — renamed per lock, a refused COMMIT closing the EntityManager the skeleton
+  receives, issue #547, and so does an exception the operation throws after a `flush()` that had
+  something to write, issue #549 — `WrittenFlushWatch` on `onFlush`, one per transaction, unhooked
+  whatever happens, closing after the ROLLBACK; a refusal before any write leaves it open, see
+  `.claude/rules/portfolio-contenus.md` —, a refused COMMIT never masked, nor the cause by a
   ROLLBACK the database refuses after it, issue #526: that failure is logged `error` with classes and
   SQLSTATE only, the session is closed — never reused, PostgreSQL rolls it back, DBAL reopens one —, and
   the cause is rethrown as is; a programming error of the ROLLBACK, `NoActiveTransaction`, still
   surfaces; **never inside a transaction already open**, issues #526, #532: `run()` refuses before
   opening anything, under the name each adapter gives its required `onNested` —
   `OrderScopeLockInsideTransactionException`, `AccountLockInsideTransactionException`,
-  `UsernameAllocationLockInsideTransactionException`, `LogicException`s, unmapped `critical` 500s —, since
+  `UsernameAllocationLockInsideTransactionException`, `ExperienceTechnologyLockInsideTransactionException`,
+  `AccountAdministrationLockInsideTransactionException`, `LogicException`s, unmapped `critical` 500s —, since
   nested its COMMIT would only be a `RELEASE SAVEPOINT` and what each lock promises « after the commit »
   would not hold; the check lives in the skeleton, required, so a new lock cannot forget it, and DBAL's
   count is the judge — a raw `executeStatement('BEGIN')` is not seen), which gives the
   transaction `FALLBACK_LOCK_TIMEOUT` (`5s`, the FPM value) through `set_config('lock_timeout', …, true)`
   **only when the session has none** (`0`): a bound already chosen (`PGOPTIONS`, a test) is kept,
-  neither lengthened nor shortened. A new PostgreSQL lock goes through it. `docker/php` is mounted read-only in the dev
+  neither lengthened nor shortened. A new PostgreSQL lock goes through it, and a lock that re-reads what the
+  EntityManager loaded before it goes through `Shared/Infrastructure/Doctrine/RereadUnderLock` too (#560,
+  `.claude/rules/backend-architecture.md`). `docker/php` is mounted read-only in the dev
   container for that test. **Never consume a limiter inside `wrapInTransaction`**: the lock and
   the `cache_items` row live on two connections PostgreSQL does not relate, which both deadlocks
   (until `lock_timeout`) and republishes the window after the lock is released. The Monolog
@@ -107,6 +156,55 @@ paths:
   never above `notice`, so the channel is silent in prod; a lock failure stays visible through
   `RateLimiterLockFailureListener`'s `error` line, which never names the resource. A future lock
   taken outside an `/api` request would fail silently: revisit this before adding one.
+- **The application and the migrations run under two PostgreSQL roles, neither a superuser**
+  (issue #575, decided 2026-10-13). Until then every `DATABASE_URL` reused the image's `POSTGRES_USER`:
+  the **bootstrap superuser**, owner of every table — so an SQL injection could have disabled the
+  deferred trigger of the translation groups (#390, #501, #503), read or rewritten any table, or run
+  `COPY … PROGRAM`. Now `backend-secrets.DATABASE_URL` is **`cpg_app`** (`SELECT, INSERT, UPDATE,
+  DELETE` on every table, `USAGE, SELECT` on every sequence; no `TRUNCATE`, no DDL, no ownership, not
+  `doctrine_migration_versions`) for FPM, the worker, both CronJobs and every applicative Job, and
+  **`migrate-job.yaml` alone** reads **`cpg_migrator`** — owner of the database, of `public` and of
+  every object — from its own `backend-migration-secrets` (an `env` entry, which beats `envFrom`;
+  `MigrationRoleSecretsTest` pins the wiring and that no other backend-image manifest names that
+  Secret). A third role, **`cpg_reader`** (`pg_read_all_data`, no password: reachable from inside
+  the `postgres` pod only — local socket and `127.0.0.1`, `trust` in the image —, from nowhere over
+  the network), runs the runbook's human `psql`s (`OperatorExecBoundaryTest` requires `-U cpg_reader`).
+  The SQL lives in `k8s/base/postgres-roles/{roles,privileges,verify}.sql`, played by
+  `k8s/base/postgres-roles-job.yaml` (image of `postgres.yaml`, never the backend image — it would
+  enter the census above —, one transaction whose `ACCESS EXCLUSIVE` locks are held until its
+  COMMIT, a few seconds, rerunnable, passwords from a temporary Secret created from files, SQL from a
+  temporary ConfigMap; `PostgresRolesJobManifestTest`) through `tools/run-job.sh … 120`, **by hand,
+  preprod then prod, before the release branch that reads the new Secret is pushed** — and prod
+  **just before** the merge: until the release is in `main`, a hotfix cut from `main` still carries
+  the old `migrate-job.yaml`, which would run under `cpg_app` and fail fail-closed on the migrations
+  table (`k8s/README.md`, « Rôles PostgreSQL », which also gives the rollback). **A rerun never
+  rewrites an existing password** (a `rotate` key in the temporary Secret asks for it): rewriting
+  `cpg_app`'s would cut the application until its URL is republished and the pods restarted.
+  **Future tables need no GRANT**: `ALTER DEFAULT PRIVILEGES FOR ROLE cpg_migrator` covers what a
+  migration creates — an object created by hand under the superuser does not inherit them: rerun
+  the Job. **The guard is
+  `ApplicationRolePrivilegesTest`**, which replays `privileges.sql` on the migrated test schema with
+  throwaway roles (`SET ROLE`, one rolled-back transaction, no password): every table and sequence
+  open to the application role, a table the migrator creates later too, the trigger still firing
+  under it, and `DISABLE TRIGGER`, `DROP TRIGGER`/`FUNCTION`, `session_replication_role`, DDL and
+  `TRUNCATE` refused in `42501`. **Dev and CI keep the single superuser role**, on purpose: the
+  tests that lift a constraint, disable the trigger or set `session_replication_role` need it, and
+  the guard above is what proves the privileges. A new statement the application needs (a `LOCK
+  TABLE`, a temp table, a new schema) is added to the guard first, then to `privileges.sql`. Accepted
+  blind spot: CI migrates as the superuser, so a migration that needs more than ownership (`CREATE
+  EXTENSION`, `SECURITY DEFINER`, `session_replication_role`) passes CI and fails first in preprod,
+  fail-closed, under `cpg_migrator` — none does today; write one and preprod says so; and
+  `roles.sql`/`verify.sql` (psql meta-commands) run nowhere before preprod, the Job there is their
+  proof. **Accepted limits** (security review of #575): any role may `ALTER ROLE` itself (password,
+  `SET` defaults) — an injection could cut the application durably; the Job resets the three roles'
+  attributes and `RESET ALL` at every pass, and `verify.sql` refuses a stray attribute; the new
+  passwords cross the cluster network in clear once, inside `ALTER ROLE … PASSWORD`, between the
+  Job's pod and `database` (computing SCRAM verifiers client-side was weighed and left for later);
+  `cpg_reader` is a second net against an operator's mistake, not a boundary against whoever holds
+  `exec` or `port-forward` (`trust` inside the pod gives the superuser too). `verify.sql` **fails
+  the Job** on any expectation betrayed, so a false state never commits. Kept, as
+  #593: the bootstrap superuser stays reachable over TCP with `postgres-credentials` (entrypoint,
+  probes, Adminer, this Job).
 - **Doctrine migrations run as a Job, not `kubectl exec`** (audit C8). `k8s/base/migrate-job.yaml` is
   deliberately **outside** `kustomization.yaml`'s `resources:` — so kustomize's image transformer never sees
   it, hence the `${BACKEND_IMAGE}` placeholder that `envsubst` fills at apply time (`image: backend` would
@@ -143,8 +241,8 @@ paths:
     the line (issue #386, `app:user:create`, see `.claude/rules/security-user.md`);
   - **a human holding an admin kubeconfig may `exec` for read-only diagnosis whose output stays on their
     terminal**, from a separate terminal, never behind a `!` in an assistant session: `nginx -T` on the
-    sidecar (below), the Xdebug checks and `kubectl cp` of the profiles, and naming an account from its
-    `userId` (`k8s/README.md`, « Journal de sécurité »). That last one is an exec *on purpose*: a Job
+    sidecar (below), the Xdebug checks and `kubectl cp` of the profiles, the `SHOW` of the PostgreSQL
+    keepalives over TCP (`k8s/README.md`, « Sessions fantômes PostgreSQL », issue #279), the count of password hashes per format before a change of `password_hashers` (`k8s/README.md`, « Avant de changer `password_hashers` », issue #590 — a format header and a count, never a salt, a hash or an identifier), and naming an account from its `userId` (`k8s/README.md`, « Journal de sécurité »). That last one is an exec *on purpose*: a Job
     would write the name and address into its pod's logs, readable until the pod is deleted, by the CI
     token too (`pods/log`) — the very thing issue #363 removed from the logs. The query goes on stdin
     (nothing in the exec's argv, so nothing in the API server's request URL — the UUID does stay in the
@@ -152,7 +250,8 @@ paths:
     `uuid` (no injection from a pasted log value), inside a `default_transaction_read_only` session — a
     guard rather than a boundary, a `SET` lifts it — and `NS` has no default.
   Two guards, two scopes: `OperatorExecBoundaryTest` reads the repo (the deployer's Role, ClusterRole and
-  both bindings, wildcards such as `*/exec` included, plus the shape of the account lookup);
+  both bindings, wildcards such as `*/exec` included, plus the shape of the account lookup and of every
+  runbook `psql`: read-only `PGOPTIONS`, `-X`, `ON_ERROR_STOP`, `${NS:?…}`, query on stdin — issue #590);
   `tools/rotate-deployer-token.sh` checks the token actually issued against the cluster
   (`auth can-i create pods/exec` → `no`) — the only one that sees a binding added by hand. Keep both. A
   new manual `exec` in the runbook must fit the third case; if its output carries a secret or personal
@@ -213,7 +312,8 @@ paths:
   gone, 240 + 30 s of grace, a narrow margin under 300. Today: waited 300 s, deadline 360 —
   `migrate-job.yaml`, `messenger-probe-job.yaml`, `messenger-stop-workers-job.yaml`,
   `messenger-failed-{retry,remove}-job.yaml`, `create-user-job.yaml`; `seed-job.yaml` waited 180,
-  deadline 240. Counted from the Job's creation, `Always` pulls and retry included; `sh`/`php` as
+  deadline 240; `postgres-roles-job.yaml` (#575) waited 120, deadline 240. Counted from the Job's
+  creation, `Always` pulls and retry included; `sh`/`php` as
   PID 1 ignore SIGTERM, so the pod dies 30 s after the deadline (grace period). **An `::error::`
   means « stopped »** (decided 2026-10-12, #535): with the deadline above the wait, a Job whose wait
   expired — or that `wait-rollout.sh` failed early, a pod that never started — is still active and
@@ -241,6 +341,13 @@ paths:
   reading it**, only in the next one; a Messenger message in flight at deploy time must stay readable
   by both versions (v0.11.0's `SendAccountInvitationMessage.userId` note). Only migrations the old code
   cannot survive fall outside this order — see the maintenance window below.
+  **A migration that writes into one of the eight ordered content tables, then alters or indexes that
+  table, can pass the CI and fail only on a populated database — preprod, or a dev database with
+  content** (issue #505): their deferred trigger `trg_translation_group_single_position` leaves pending
+  events that make PostgreSQL refuse the DDL (`55006`), and a write touching no row on the CI's empty
+  database queues none. Which writes count, the fix (`SET CONSTRAINTS … IMMEDIATE` after the writes,
+  never at the top), the test on rows it requires and the drop-and-recreate trap are in
+  `.claude/rules/portfolio-contenus.md`, « Trap for future migrations ».
 - **Every ExternalSecret of the release is synced before anything is migrated or rolled out**
   (issue #325). Right after `backend-config`, the `Deploy` step applies the ESO objects alone
   (`external-secrets.io_*.yaml` from the `kustomize build -o` output) and runs
@@ -455,8 +562,8 @@ paths:
   trigger travels in a **cookie** — Xdebug 3.5 does not read HTTP headers, and nginx logs the query string.
   Production receives none of this. Procedure in `k8s/README.md`.
 - **No pod mounts a ServiceAccount token, and both namespaces carry Pod Security Admission labels**
-  (audit A17). `automountServiceAccountToken: false` on all fifteen pod specs, the seven Jobs outside kustomize
-  included — none of them talks to the Kubernetes API (RabbitMQ does no peer discovery here, ESO runs in
+  (audit A17). `automountServiceAccountToken: false` on all sixteen pod specs, the eight Jobs outside kustomize
+  included (`postgres-roles-job.yaml` since #575) — none of them talks to the Kubernetes API (RabbitMQ does no peer discovery here, ESO runs in
   its own namespace), so the default `default`-SA token was pure standing credential. The `preprod` and
   `prod` `Namespace` objects set `enforce: baseline` with `audit`/`warn: restricted`: RabbitMQ declares no
   container `securityContext` (constat A18, accepted — v0.5.0 already put it in `CrashLoopBackOff` by

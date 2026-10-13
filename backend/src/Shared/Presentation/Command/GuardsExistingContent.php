@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Shared\Presentation\Command;
 
+use Closure;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
-use Symfony\Component\Console\Style\SymfonyStyle;
 
 /**
  * Empêche une commande de peuplement d'effacer du contenu déjà en place.
@@ -31,6 +31,23 @@ use Symfony\Component\Console\Style\SymfonyStyle;
  * déploiement — à chaque passage après le premier. « Il y a déjà du contenu »
  * n'est pas une erreur, c'est la réponse attendue dans la quasi-totalité des
  * exécutions.
+ *
+ * **Un peuplement est atomique, par commande** (issue #567). Le décompte, la
+ * purge et les recréations tournent dans **une** transaction, sous le verrou
+ * d'ordre de chaque périmètre écrit
+ * ({@see \App\Portfolio\Shared\Application\OrderScopeLockInterface::withLocks()}),
+ * d'où {@see self::seedUnlessPopulated()}, le corps que la commande confie au
+ * verrou. Avant, la purge validait ligne par ligne hors verrou et chaque
+ * `Administrator::create()` dans sa propre transaction : une panne à
+ * mi-parcours laissait une base partielle — avec `--force`, le contenu
+ * d'avant détruit et quelques entrées neuves ; sur une base vide, quelques
+ * lignes que le garde-fou tenait ensuite pour « du contenu en place », de
+ * sorte que le Job de préprod relancé déclinait en code 0 sur une page à
+ * moitié vide, et pour À propos et Qualité, qui écrivent deux tables, la
+ * seconde restait vide pour de bon. Désormais un échec n'écrit rien, et la
+ * relance repeuple. Le décompte se relit **sous le verrou** : lu avant, deux
+ * seeds simultanés d'une base vide la peuplaient tous les deux. Le compte
+ * rendu ({@see SeedOutcome}) s'affiche après le retour de la transaction.
  */
 trait GuardsExistingContent
 {
@@ -48,21 +65,35 @@ trait GuardsExistingContent
     }
 
     /**
-     * @param int $existing nombre d'entrées déjà présentes, toutes locales confondues
+     * Le corps d'un peuplement, à exécuter sous le verrou de ses périmètres :
+     * relit le décompte, garde le contenu en place sans `--force`, sinon
+     * purge puis recrée. La purge doit être écrite (`flush()`) avant toute
+     * création : dans un même `flush()`, l'UnitOfWork exécute les `INSERT`
+     * avant les `DELETE`, et un index unique (le `slug` des produits
+     * surveillés) refuserait la recréation.
      *
-     * @return bool vrai si la commande doit s'arrêter sans rien écrire
+     * @param Closure(): int          $countExisting nombre d'entrées déjà présentes, toutes locales confondues
+     * @param Closure(): list<string> $seed          purge puis recrée ; rend les lignes du compte rendu
      */
-    private function refusesToOverwrite(SymfonyStyle $io, InputInterface $input, int $existing): bool
+    private function seedUnlessPopulated(InputInterface $input, Closure $countExisting, Closure $seed): SeedOutcome
     {
-        if (0 === $existing || true === $input->getOption('force')) {
-            return false;
+        $existing = $countExisting();
+
+        if ($existing > 0 && !$this->forcesOverwrite($input)) {
+            return SeedOutcome::kept($existing);
         }
 
-        $io->success(\sprintf(
-            '%d entrée(s) déjà en place : rien à faire. Relancer avec --force pour les remplacer par le contenu de référence (destructif).',
-            $existing,
-        ));
+        return SeedOutcome::seeded($seed());
+    }
 
-        return true;
+    /**
+     * Vrai si l'opérateur a demandé le remplacement (`--force`). Seule lecture
+     * de l'option : une commande qui doit aussi épargner une donnée exclue du
+     * décompte — donc écrite même quand le garde-fou laisse passer sans
+     * `--force` — la consulte ici plutôt que de relire `force` elle-même.
+     */
+    private function forcesOverwrite(InputInterface $input): bool
+    {
+        return true === $input->getOption('force');
     }
 }

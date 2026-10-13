@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Tests\Shared\Infrastructure\Messenger;
 
+use App\Tests\Support\KubernetesManifests;
 use PHPUnit\Framework\TestCase;
-use Symfony\Component\Yaml\Yaml;
 
 /**
  * Le worker attend RabbitMQ avant de démarrer (issue #298).
@@ -61,24 +61,7 @@ final class WorkerWaitsForRabbitMqTest extends TestCase
      */
     private function initContainer(): array
     {
-        $path = \dirname(__DIR__, 5).'/k8s/base/messenger-worker-deployment.yaml';
-        self::assertFileIsReadable($path);
-        $resource = Yaml::parse((string) file_get_contents($path));
-        self::assertIsArray($resource);
-
-        $spec = $resource['spec'] ?? null;
-        $template = \is_array($spec) ? ($spec['template'] ?? null) : null;
-        $podSpec = \is_array($template) ? ($template['spec'] ?? null) : null;
-        $initContainers = \is_array($podSpec) ? ($podSpec['initContainers'] ?? []) : [];
-        self::assertIsArray($initContainers);
-
-        foreach ($initContainers as $container) {
-            if (\is_array($container) && self::INIT_CONTAINER === ($container['name'] ?? null)) {
-                return $container;
-            }
-        }
-
-        self::fail(\sprintf('initContainer « %s » absent du worker.', self::INIT_CONTAINER));
+        return KubernetesManifests::base()->initContainer('messenger-worker-deployment.yaml', 'Deployment', self::INIT_CONTAINER);
     }
 
     /**
@@ -89,6 +72,6 @@ final class WorkerWaitsForRabbitMqTest extends TestCase
         $command = $container['command'] ?? null;
         self::assertIsArray($command);
 
-        return implode(' ', array_filter($command, \is_string(...)));
+        return KubernetesManifests::text($command);
     }
 }

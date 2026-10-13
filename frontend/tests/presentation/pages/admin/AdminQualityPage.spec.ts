@@ -711,6 +711,18 @@ describe('AdminQualityPage', () => {
       expect(router.currentRoute.value.path).toBe('/admin/ailleurs')
     })
 
+    // Issue #582 : chaque sélecteur de langue est relié à son texte d'aide,
+    // rendu en permanence — une référence statique, jamais pendante.
+    it('relie chaque sélecteur de langue à son aide par aria-describedby', async () => {
+      const { wrapper } = await mountPage()
+
+      for (const selectId of ['admin-quality-principle-locale', 'admin-quality-trait-locale']) {
+        const helpId = wrapper.get(`#${selectId}`).attributes('aria-describedby')
+        expect(helpId, selectId).toBe(`${selectId}-help`)
+        expect(wrapper.get(`#${helpId}`).text()).toContain('Langue de cette entrée')
+      }
+    })
+
     it("ne présente aucune violation d'accessibilité, les deux tableaux groupés rendus", async () => {
       const { wrapper } = await mountPage()
 

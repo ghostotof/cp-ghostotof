@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace App\Tests\Shared\Infrastructure\Messenger;
 
 use App\Shared\Infrastructure\Messenger\AuthenticatedEnvelopeSerializer;
+use App\Tests\Support\KubernetesManifests;
 use PHPUnit\Framework\TestCase;
-use Symfony\Component\Yaml\Yaml;
 
 /**
  * Le broker refuse à la source un message démesuré (issue #477).
@@ -35,12 +35,9 @@ final class RabbitMqMessageSizeCapTest extends TestCase
 
     public function testTheBrokerCapsTheMessageSizeAtFourTimesTheSerializerBound(): void
     {
-        $path = $this->k8sBase().'/rabbitmq.conf';
-        self::assertFileIsReadable($path);
-
         // Une seule ligne : RabbitMQ retiendrait la dernière, un test qui lirait
         // la première pourrait passer à côté.
-        self::assertSame(1, preg_match_all('/^\s*max_message_size\s*=\s*(\d+)\s*$/m', (string) file_get_contents($path), $matches));
+        self::assertSame(1, preg_match_all('/^\s*max_message_size\s*=\s*(\d+)\s*$/m', KubernetesManifests::base()->source('rabbitmq.conf'), $matches));
 
         self::assertSame(4 * AuthenticatedEnvelopeSerializer::MAX_ENVELOPE_BYTES, (int) $matches[1][0]);
     }
@@ -52,12 +49,11 @@ final class RabbitMqMessageSizeCapTest extends TestCase
      */
     public function testTheConfigurationIsGeneratedWithAContentHash(): void
     {
-        $kustomization = Yaml::parseFile($this->k8sBase().'/kustomization.yaml');
-        self::assertIsArray($kustomization);
-        $generators = $kustomization['configMapGenerator'] ?? null;
-        self::assertIsArray($generators);
-
-        $found = array_filter($generators, static fn (mixed $generator): bool => \is_array($generator) && self::CONFIG_MAP === ($generator['name'] ?? null));
+        $kustomization = KubernetesManifests::base()->resource('kustomization.yaml', 'Kustomization');
+        $found = array_filter(
+            KubernetesManifests::entries($kustomization, 'configMapGenerator'),
+            static fn (array $generator): bool => self::CONFIG_MAP === ($generator['name'] ?? null),
+        );
         self::assertCount(1, $found, 'configMapGenerator '.self::CONFIG_MAP.' absent.');
         $generator = array_first($found);
 
@@ -66,28 +62,29 @@ final class RabbitMqMessageSizeCapTest extends TestCase
 
         // Un `generatorOptions` global, dans la base ou un overlay, couperait
         // aussi le hachage (incident de backend-nginx-conf, #18).
-        foreach (['', '/../overlays/preprod', '/../overlays/prod'] as $directory) {
-            $file = Yaml::parseFile($this->k8sBase().$directory.'/kustomization.yaml');
-            self::assertIsArray($file);
+        $directories = [
+            'k8s/base' => KubernetesManifests::base(),
+            'k8s/overlays/preprod' => KubernetesManifests::overlay('preprod'),
+            'k8s/overlays/prod' => KubernetesManifests::overlay('prod'),
+        ];
+        foreach ($directories as $directory => $manifests) {
+            $file = $manifests->resource('kustomization.yaml', 'Kustomization');
             $options = $file['generatorOptions'] ?? [];
             self::assertIsArray($options);
-            self::assertNotTrue($options['disableNameSuffixHash'] ?? false, 'generatorOptions.disableNameSuffixHash dans k8s/base'.$directory);
+            self::assertNotTrue($options['disableNameSuffixHash'] ?? false, 'generatorOptions.disableNameSuffixHash dans '.$directory.'/kustomization.yaml');
         }
     }
 
     public function testTheBrokerMountsTheConfigurationBesideTheImageDefaults(): void
     {
-        $podSpec = $this->rabbitMqPodSpec();
-        $containers = $podSpec['containers'] ?? null;
-        self::assertIsArray($containers);
-        $container = array_first(array_filter($containers, static fn (mixed $c): bool => \is_array($c) && 'rabbitmq' === ($c['name'] ?? null)));
-        self::assertIsArray($container);
+        $podSpec = KubernetesManifests::base()->podSpec('rabbitmq.yaml', 'Deployment');
+        $container = KubernetesManifests::base()->container('rabbitmq.yaml', 'Deployment', 'rabbitmq');
 
         // Un fichier dans conf.d, par subPath : le dossier garde le
         // 10-defaults.conf de l'image.
         $mounts = array_filter(
-            \is_array($container['volumeMounts'] ?? null) ? $container['volumeMounts'] : [],
-            static fn (mixed $m): bool => \is_array($m) && self::MOUNT_PATH === ($m['mountPath'] ?? null),
+            KubernetesManifests::entries($container, 'volumeMounts'),
+            static fn (array $m): bool => self::MOUNT_PATH === ($m['mountPath'] ?? null),
         );
         self::assertCount(1, $mounts, self::MOUNT_PATH.' non monté.');
         $mount = array_first($mounts);
@@ -95,40 +92,11 @@ final class RabbitMqMessageSizeCapTest extends TestCase
         self::assertTrue($mount['readOnly'] ?? false);
 
         $volumes = array_filter(
-            \is_array($podSpec['volumes'] ?? null) ? $podSpec['volumes'] : [],
-            static fn (mixed $v): bool => \is_array($v) && ($v['name'] ?? null) === $mount['name'],
+            KubernetesManifests::entries($podSpec, 'volumes'),
+            static fn (array $v): bool => ($v['name'] ?? null) === $mount['name'],
         );
         $volume = array_first($volumes);
         self::assertIsArray($volume);
         self::assertSame(['name' => self::CONFIG_MAP], $volume['configMap'] ?? null);
-    }
-
-    /**
-     * @return array<mixed>
-     */
-    private function rabbitMqPodSpec(): array
-    {
-        $documents = preg_split('/^---\s*$/m', (string) file_get_contents($this->k8sBase().'/rabbitmq.yaml'));
-        self::assertIsArray($documents);
-
-        foreach ($documents as $document) {
-            $resource = Yaml::parse($document);
-            if (!\is_array($resource) || 'Deployment' !== ($resource['kind'] ?? null)) {
-                continue;
-            }
-            $spec = $resource['spec'] ?? null;
-            $template = \is_array($spec) ? ($spec['template'] ?? null) : null;
-            $podSpec = \is_array($template) ? ($template['spec'] ?? null) : null;
-            self::assertIsArray($podSpec);
-
-            return $podSpec;
-        }
-
-        self::fail('Deployment rabbitmq introuvable dans k8s/base/rabbitmq.yaml.');
-    }
-
-    private function k8sBase(): string
-    {
-        return \dirname(__DIR__, 5).'/k8s/base';
     }
 }

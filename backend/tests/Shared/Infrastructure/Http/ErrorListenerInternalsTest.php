@@ -47,13 +47,17 @@ final class ErrorListenerInternalsTest extends TestCase
         self::assertSame('?object', (string) $method->getReturnType());
     }
 
-    public function testTheLogLevelResolverTakesAThrowableAndReturnsALevel(): void
+    /**
+     * Le second paramètre, l'exception convertie par le noyau, est apparu avec
+     * Symfony 8.1.8 : CompiledExceptionConfig::kernelLogLevelOf() le fournit.
+     */
+    public function testTheLogLevelResolverTakesAThrowableAndItsConversionAndReturnsALevel(): void
     {
         $method = new ReflectionMethod(ErrorListener::class, 'resolveLogLevel');
 
         self::assertFalse($method->isStatic());
         self::assertSame(
-            ['throwable' => 'Throwable'],
+            ['throwable' => 'Throwable', 'convertedThrowable' => '?Throwable'],
             array_combine(
                 array_map(static fn (ReflectionParameter $parameter): string => $parameter->getName(), $method->getParameters()),
                 array_map(static fn (ReflectionParameter $parameter): string => (string) $parameter->getType(), $method->getParameters()),

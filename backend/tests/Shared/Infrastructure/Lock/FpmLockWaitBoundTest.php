@@ -15,8 +15,9 @@ use PHPUnit\Framework\TestCase;
  * `pg_advisory_lock()` attend sans fin, le TTL du composant Lock ne s'applique
  * pas à ce store, et `max_execution_time` ne compte pas l'attente réseau. Si
  * le détenteur disparaît sans fermer son socket (nœud perdu), PostgreSQL garde
- * le verrou jusqu'au keepalive TCP — de l'ordre de deux heures — et chaque
- * requête sur la même clé immobilise un worker ; huit suffisent à figer un pod.
+ * le verrou jusqu'à déclarer la session morte — deux heures avant l'issue #279,
+ * 90 s depuis (PostgresGhostSessionReleaseTest) — et chaque requête sur la
+ * même clé immobilise un worker ; huit suffisent à figer un pod.
  *
  * Le DSN ne permet pas de poser `lock_timeout` sur la seule connexion du verrou
  * (DBAL ne transmet pas `options` à pdo_pgsql, vérifié) : `PGOPTIONS`, lu par

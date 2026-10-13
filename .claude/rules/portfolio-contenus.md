@@ -55,65 +55,356 @@ paths:
     SQLSTATE **`23T90`** (class 23, integrity; a subclass PostgreSQL does not define, so it is recognised
     without reading the message) naming the table and the group, whatever the path (application,
     migration, SQL). **Deferred, never immediate**: `OrderAssigner` and Doctrine write a group's members one
-    `UPDATE` at a time, and the gap between two statements is legitimate. Since no group can stay
-    divergent, a reorder no longer meets one to repair silently. `inGroup()`'s check stays the **first**
+    `UPDATE` at a time, and the gap between two statements is legitimate. A few writes still escape it
+    and can leave a group divergent; the next `reorder()` refuses such a group instead of repairing it
+    silently (issue #503, see « What the trigger does not see » below). `inGroup()`'s check stays the **first**
     net — it answers before any write, under a domain name —; the trigger only catches at COMMIT what
     bypasses it. **On the application path the refusal comes out as `TranslationGroupHasSeveralPositionsException`**
     (`refusedAtCommit()`, the database's message in its own, previous = the `DriverException`), a
     `critical` 500: `PostgresAdvisoryOrderScopeLock` opens and closes its transaction by hand — through
-    the skeleton it shares with the two account locks since #512, `Shared/Infrastructure/Lock/PostgresLockedTransaction`,
+    the skeleton it shares with the three account locks since #512 (the administration one since #551) and the technology row lock since #545, `Shared/Infrastructure/Lock/PostgresLockedTransaction`,
     which also bounds the wait of a session without `lock_timeout` (the console, `app:*:seed`, waited
-    forever before) — and translates `23T90` at `commit()` (its `onCommitRefused`).
+    forever before) — and names the trigger's refusals at `commit()` (its `onCommitRefused`, see below).
+    **Who names the refusal, and who knows the codes** (issue #506): the lock **triggers** the translation
+    because it owns the COMMIT where a deferred refusal falls — nothing else on the application path sees it.
+    The **knowledge** of the SQLSTATEs (`23T90`, `23T91`) and of the exception each one names lives apart, in
+    `Portfolio/Shared/Infrastructure/Doctrine/TranslationGroupRefusal` (`nameOf(DriverException)`, `null` for
+    any other SQLSTATE), passed as the hook itself: a new invariant of the trigger adds a constant and an arm
+    there, never touches the lock. Tests that need a code read it there (`TranslationGroupRefusalTest` pins
+    the mapping, `previous` and message kept). Every application write able to wake the trigger is a write
+    that places, hence under `withLock()` (#389, `OrderScopeLockCoverageTest`). A write that bypasses the lock
+    gets the **raw** refusal, which still names the table and the group despite the driver-error redaction —
+    accepted limit: in SQL, a migration, or a `flush()` inside a transaction the caller opened
+    (`wrapInTransaction()`, which also closes the manager), a `DriverException` `23T90`/`23T91` at that
+    COMMIT; through an ORM `flush()` outside any transaction, Doctrine wraps it in `OptimisticLockException`
+    « Commit failed » (its `previous`, `UnitOfWork::commit()`, measured) and closes the manager (unmapped, a
+    `critical` 500;
+    `PostgresAdvisoryOrderScopeLockTest::testAWriteOutsideTheLockSurfacesAsDoctrinesCommitFailureWrappingTheRawRefusal`
+    pins it). Rejected: a DBAL middleware naming the refusal everywhere — `ExceptionConverter::convert()` must
+    return a `DriverException`, which the invariant's name is not, so it would either break that contract or
+    give one refusal two names, and it would make the COMMIT hook useless.
     **It refuses to run inside a transaction already open** (issue #526), another `withLock()` included: there
     its `commit()` would only be a `RELEASE SAVEPOINT`, and the trigger would refuse at the caller's COMMIT as
     a bare `23T90`. The refusal, `OrderScopeLockInsideTransactionException` (a `LogicException`, unmapped, a
-    `critical` 500), comes before any write; no caller nests today (the `Administrator`s, the seeds, the
+    `critical` 500), comes before any write; no caller nests today (the `Administrator`s, the
     migrations, which write in SQL, the whole suite), so the rule holds by construction instead of relying on
     the next caller's memory. Since #532 the check lives in the shared skeleton (`run()`'s required
-    `onNested`), common to the two account locks, each naming its own refusal. A future operation spanning
-    two scopes takes one lock, or an adapter that owns the outer COMMIT — never a nested `withLock()`. DBAL's count is the judge: a transaction opened in raw
+    `onNested`), common to every lock of the skeleton, each naming its own refusal. **One exception, bounded,
+    outside the skeleton** (issue #567, reversing #532's "no adapter has a use for it"): the order scope lock
+    gains `withLocks(scopes, operation)` — one transaction through the unchanged skeleton, the advisory locks
+    of every scope taken **sorted** (no deadlock between two callers asking for the same ones), one statement
+    each (a `SELECT` list has no guaranteed evaluation order), so `lock_timeout` bounds each wait and not their
+    sum — N scopes, up to N × 5 s —, each scope re-read (#402), the held scopes kept in a small registry
+    emptied in a `finally` whatever the outcome —, and under that transaction a `withLock()` of the **same
+    adapter** on a scope **that transaction holds** runs its operation directly: no `BEGIN`, no new lock, no
+    re-read (nothing can have been committed into a scope it holds). A plain `withLock()` fills no registry:
+    under it a `withLock()` of the same scope stays refused like any other — the re-entrance exists only for
+    the operation that asked for it by taking `withLocks()`, never on the backoffice path. That
+    is what lets an `app:*:seed` chain the `Administrator`s, which each take `withLock()`, under one
+    transaction (see `.claude/rules/seeding.md`). It does not contradict #526's reason: the COMMIT stays the
+    outer lock's, so `onCommitRefused` still names a deferred refusal, and the closing of the EntityManager
+    (#547, #549) covers the whole transaction. Every other nested case still goes through the skeleton and
+    is refused: a scope not held (a seed locking X while its `Administrator` writes Y — a scope mistake that
+    must show, as a `critical` 500 at the first write), a `withLocks()` under a lock, a transaction opened
+    by other code, an empty scope list (`OrderScopeLockWithoutScopeException`). The registry is the
+    container instance's — one adapter serves the `Administrator`s and the commands; a hand-built one holds
+    nothing for them. `PostgresAdvisoryOrderScopeLockTest` pins it (both scopes held and released,
+    re-entrance at nesting level 1 with no second transaction, scope not held refused, the same scope under
+    a plain `withLock()` refused, a timeout on the second scope named after that scope, `withLocks()` never
+    re-entrant, refusal named at the outer COMMIT with the manager closed, registry emptied after a success,
+    an exception and a refused COMMIT, both scopes re-read). A future operation spanning
+    two scopes takes `withLocks()` — never a nested `withLock()` on a scope it does not hold. DBAL's count is the judge: a transaction opened in raw
     SQL (`executeStatement('BEGIN')`) is not seen, and none may be opened that way around an `Administrator`. **Never go back to `Connection::transactional()`** there: when
     `commit()` fails, DBAL has already brought its nesting level to 0, and `transactional()`'s fallback
     `rollBack()` throws "There is no active transaction" over the real error, for any SQLSTATE outside
     its short list (unique, foreign key, deadlock…) — measured, `PostgresAdvisoryOrderScopeLockTest`
     pins it. No `rollBack()` after a failed `commit()`: PostgreSQL already rolled the transaction back,
     and the lock with it. The check runs before the COMMIT, hence still under the scope lock for the
-    application's writes. **Accepted limits**: two concurrent SQL transactions that skip that lock can
-    each re-read the group without the other's uncommitted write and both commit; after a refused
-    COMMIT, the EntityManager stays open and its managed entities keep the refused positions and
-    groups (the request ends in a 500; a command chaining operations stops on it); the check costs one
+    application's writes. **A COMMIT the database refuses closes the EntityManager** (issue #502): any
+    `DriverException` the COMMIT raises, whatever its SQLSTATE (a `CommitFailedRollbackOnly`, which nothing
+    here can cause, leaves it open). Since #547 the **skeleton** closes it, for every lock built on it
+    (it receives the EntityManager, not the bare connection), **before** calling `onCommitRefused`, which only
+    names the refusal it recognises (`TranslationGroupRefusal::nameOf()`, the `23T90` and `23T91`, #506) —
+    the closing stays in the skeleton, and a new lock cannot forget it. The operation's
+    `flush()`es had succeeded at the savepoint, so the UnitOfWork held as written what the refusal had just
+    rolled back — a read on the same EntityManager returned the refused position, `find()` an entry never
+    committed, and a write outside the lock started from there (a following locked operation of the same
+    scope was already repaired by the #402 re-read below, measured). It is closed, as Doctrine's own failed
+    COMMIT closes it (`UnitOfWork::commit()`): identity map emptied, a **new** read re-reads the database, an
+    ORM write fails with `EntityManagerClosed` — the refusal is terminal for the unit of work that got it.
+    What the caller already holds keeps the refused values (detached), and a raw DBAL statement or a DQL
+    `UPDATE`/`DELETE` still goes through the closed manager (no repository of `Portfolio` writes that way).
+    A session lost at the COMMIT (`ConnectionLost`, a `DriverException` too) leaves its outcome unknown:
+    closing is the safe answer there as well. **An exception the operation throws after a write closes it
+    too** (issue #549, in the skeleton, for every lock): a `flush()` that had something to write succeeded
+    at the savepoint, the operation then threw — a business refusal placed after a `save()`, a database
+    error on a later statement, a lost session — and the ROLLBACK undid what the UnitOfWork held as
+    written, the same stale state by the other path. `Shared/Infrastructure/Lock/WrittenFlushWatch`,
+    hooked on `onFlush` for that transaction only and unhooked whatever happens, notes a flush with
+    scheduled changes; the skeleton closes the manager **after** the ROLLBACK (in the `ConnectionLost`
+    branch too) and rethrows the exception unchanged. A business refusal (409, 404) thrown **before** any
+    write — every `Administrator` throws it there, keep it so: no wasted write, and the manager stays open
+    for a caller that carries on — leaves it open; so do a flush with nothing to write and a DQL or raw
+    DBAL write, which bypass the UnitOfWork (accepted limit, no caller under a lock of the skeleton: what
+    the code itself carries into memory after such a write — an entity loaded or refreshed afterwards, or
+    original data synced by hand as `CpgUserRepository::advanceInvitationGeneration()` does, outside any
+    lock today — keeps the rolled-back value; such a pattern placed under a lock goes through `flush()` or
+    closes the manager itself). Only a `flush()` counts: an entity changed in memory then a refusal before
+    the `flush()` leaves those pending changes in the open manager, as anywhere with Doctrine — so a
+    refusal also comes before any change (`ContentPlacement`, `OrderAssigner` do). Before #549 « throw before
+    writing » was only written down. Rejected: doing nothing (the rule alone does not stop the next refusal
+    placed after a `save()`); closing on any exception (`wrapInTransaction()`'s default, which breaks callers
+    that set a refusal aside and continue — the invitation handler, the purge); a test guard checking that
+    each expected refusal precedes the write (it sees only the scenarios written, neither database errors
+    nor the account locks); `postFlush`, emitted by an empty flush too. `PostgresLockedTransactionTest`
+    pins it (a written flush then an exception, a deletion alone, an empty flush, a lost session, no
+    listener left behind — commit, refusal, failed acquisition, lost session —, no write held against the
+    next transaction), with `PostgresAdvisoryOrderScopeLockTest` (a read after
+    the refusal sees the database, the next write fails with `EntityManagerClosed`) and
+    `PostgresUsernameAllocationLockTest`. A Messenger worker gets a fresh one at the next message (DoctrineBundle's `Registry::reset()`
+    resets a closed manager); a command stops on the exception. Rejected: re-reading the scope on the
+    refusal (one more query on the failure path, to guard so it never masks the refusal, the scope's class
+    only, and writes that carry on after a broken invariant); `clear()` alone (it leaves the manager writing
+    — `close()` empties the identity map just as wide, every class included, then refuses ORM writes). `PostgresAdvisoryOrderScopeLockTest` pins a read, a
+    following write and a refusal under another SQLSTATE (a deferred unique constraint on a temporary
+    table). **Accepted limits**: two concurrent SQL transactions that skip that lock can
+    each re-read the group without the other's uncommitted write and both commit; the check costs one
     indexed query per row written at COMMIT, 2N for a reorder of N FR/EN pairs, under the lock.
-    **Trap for future migrations**: a deferred trigger leaves pending events until the COMMIT, and
-    PostgreSQL refuses an `ALTER TABLE` on a table that has some (55006, "pending trigger events") — a
-    migration that writes into one of the eight tables and then alters it starts with `SET CONSTRAINTS
-    trg_translation_group_single_position IMMEDIATE`. That migration reported every divergent group as
+    **Trap for future migrations** (issue #505, measured on PostgreSQL 18, pinned by
+    `tests/Migrations/DeferredTriggerPendingEventsTest`). A deferred trigger leaves a pending event per
+    row a watched write touches, until the COMMIT, and PostgreSQL then refuses some DDL on that table in
+    SQLSTATE `55006` ("cannot ALTER TABLE …" / "cannot CREATE INDEX … because it has pending trigger
+    events"). The refusal depends on the subcommand, not on the statement: **measured refused**, the
+    `ALTER TABLE` subcommands `ADD`/`DROP COLUMN`, `ALTER COLUMN … TYPE`, `SET NOT NULL`, `SET DEFAULT`,
+    `ADD CONSTRAINT`, `DISABLE TRIGGER`, **and `CREATE INDEX`**; **measured accepted**, `ALTER TABLE …
+    RENAME COLUMN` (an `ALTER TABLE` too), a `COMMENT`, a `DROP INDEX`, a DDL on another table. **Any other
+    DDL on the table: measure it before relying on it passing** — a case in the test's providers —, and
+    until then wrap it in the fix below, `IMMEDIATE` right before it **and `DEFERRED` right after it**:
+    that changes nothing when nothing is pending, while `IMMEDIATE` left in force would refuse a group
+    rewritten row by row later in the migration (`23T90`, pinned). Each
+    migration runs in its own transaction (`doctrine_migrations.yaml`, no `all_or_nothing`), so the
+    trap is a write then a DDL on the same table **within one migration**. **Watched writes**: an
+    `INSERT` that inserts rows, and an `UPDATE` touching rows and naming a column of the trigger's
+    `UPDATE OF` clause — `position`, `translation_group`, plus `category` on `about_me_card` since
+    #501; an `UPDATE` of any other column (`SET title = …`), a `DELETE`, a statement touching no row
+    leave nothing pending. **The fix**: `SET CONSTRAINTS trg_translation_group_single_position
+    IMMEDIATE` **after** the writes, right before the DDL — it runs the pending checks there (a
+    divergent group is refused at that line, `23T90`, or `23T91` for a me-card group across
+    categories) and empties the queue —, then `SET CONSTRAINTS … DEFERRED` if more writes follow the
+    DDL (immediate mode stays in force for the rest of the transaction); or the DDL first, the writes
+    after. **Never at the top** of a migration that rewrites a group in several statements: in
+    immediate mode each statement is checked at its end, and the legitimate gap between two members'
+    `UPDATE`s is refused (`23T90`) — the old advice here said exactly that, and was wrong. **Where it
+    shows**: a statement only queues events for the rows it touches, and the CI migrates an empty
+    database (no seeds). A plain `INSERT … VALUES` always inserts, so the CI catches it followed by a
+    DDL; an `UPDATE`, or an `INSERT … SELECT` from a table that is empty there, touches no row, so the
+    CI is green and the refusal appears only on a populated database — a `make db-migrate` on a dev
+    database with content, or the preprod deploy (fail-closed there: the migration Job fails before
+    `apply -k`, see `.claude/rules/deploiement.md`); agents' worktrees, on empty test databases, miss it
+    too. Hence the model of `.claude/rules/seeding.md` (a data migration tested by `tests/Migrations/`
+    against rows), required here: **a migration that writes into one of the eight tables has a
+    `tests/Migrations/` test that first puts rows in the tables it writes and alters** (rows its
+    statements actually touch), replaying it inside a rolled-back transaction (`ReplaysMigration`);
+    such a test clears its own `INSERT`s' events before replaying (`SET CONSTRAINTS … IMMEDIATE` then
+    `DEFERRED`), or it gets a false `55006`. **And a migration that drops and recreates the trigger
+    writes no data**: dropping it while writes of the same transaction await their deferred check
+    cancels those checks silently — a later `IMMEDIATE` checks nothing (pinned), nor does the COMMIT
+    (measured for #505). **No automatic guard, by decision** (#505): replaying every migration on a
+    populated database in CI was weighed and rejected — the hole is narrow (a watched write touching
+    no row in CI, then a refused DDL on the same table, in one migration), a plain `INSERT` is already
+    caught by the CI, the preprod refusal fails closed with the previous release still serving, and
+    the test on rows above catches it before the release branch. The test pins the facts, not
+    migrations: a PostgreSQL upgrade or a trigger change that contradicts them turns it red, and this
+    paragraph with it. Migrations are frozen: `Version20261012120000`'s docblock still gives the old
+    « `IMMEDIATE` at the top » advice — never copy it, this paragraph is the reference. Migration `Version20261012120000` reported every divergent group as
     a `warning` with its original positions per locale in the migration Job's output, then **renumbered
     its perimeter** `0…n-1` by lowest position, the group breaking ties — aligning on the lowest
     position alone left two groups tied, which the repositories break by each row's own id, so FR and
     EN in two orders; a table with no divergent group was left untouched. Me-cards are renumbered per
     category; a group spread across two categories (which the application forbids) is left out of the
     renumbering — each category would give it its own rank, creating the divergence being repaired — and
-    reported: reordering either category is refused until it is corrected in the backoffice. Rejected: an `EXCLUDE USING gist
+    reported (for its fate since #501, see the next paragraph). Rejected: an `EXCLUDE USING gist
     (translation_group WITH =, position WITH <>)` (`btree_gist`), safe under concurrency, but DBAL
     introspects its index, which no mapping declares, so every `doctrine:migrations:diff` would propose
     a `DROP INDEX` — DBAL reads neither triggers nor functions; a `CHECK`, which cannot read other rows;
-    logging in `OrderAssigner` alone (late, a logger in a pure Domain service, SQL writes still unseen);
+    logging in `OrderAssigner` alone as the main guard (late, a logger in a pure Domain service, SQL writes
+    still unseen — its refusal as a net behind the trigger is #503's, below);
     a periodic check (`watch-refresh`, a preprod smoke test), as late. A new localized context adds its
     table to a **new** migration creating the same trigger: `TranslationGroupSinglePositionTest` fails on
     any `TranslatableContent` entity whose table lacks it, and probes each context of
     `ProvidesLocalizedAdministrators` (`UPDATE` of a position or a group, `INSERT`, a transient gap, a real
     `reorder()`); `tests/Migrations/Version20261012120000Test` pins the alignment and its warnings. A test
     that must write a divergent group does it in a transaction it rolls back: a deferred trigger never
-    fires there.
-    **Every write that computes a position runs under its scope's lock** (issue #389): `create()`, `update()`
-    and `reorder()` of the eight localized `Administrator`s, `create()` and `reorder()` of
-    `WatchedProductAdministrator` (its `update()` never touches the position), wrap their **whole body** in
+    fires there — or, to run a real `reorder()` on it (the `Administrator` refuses an open transaction,
+    #526), commits it from a probe session under `SET session_replication_role = replica` (#503).
+    **What the trigger does not see, and the net behind it** (issue #503). These writes can still leave a
+    group divergent: two concurrent SQL transactions that skip the scope lock (the accepted limit above);
+    a write with triggers disabled — `SET session_replication_role = replica` (superuser only),
+    `pg_restore --disable-triggers`, `ALTER TABLE … DISABLE TRIGGER`; a migration that drops and recreates
+    the trigger while writes of its own transaction await their check (#505, above). (The category hole is
+    closed by #501 and #561, below.) Before #503 the next `reorder()` of the scope met such a group and
+    **repaired it silently**: `OrderAssigner` groups the scope by key and writes one position on every
+    member without reading theirs, so the evidence of the upstream defect vanished — exactly what #390 set
+    out to prevent. Since #503 `Orderable` exposes `getPosition()` (lifted from `TranslatableContent`;
+    `WatchedProduct`, keyed by its own id, has one entity per key and can never diverge) and
+    `OrderAssigner::assign()` refuses a scope in which one key's entities disagree, with
+    `TranslationGroupHasSeveralPositionsException::forOrderingKey()` — the group, the positions found and
+    the fix in the message, a `critical` 500, nothing written, the manager left open —, **before** the
+    exact-set 422s: a pipeline defect before a client error, as in #384 (a 422 first, an `info` stale list,
+    would hide it until the next save after the reload). It reads the scope the caller
+    already loaded under the lock: in memory, O(n), no query, no extra wait under the lock. It refuses
+    **any** reorder of that scope, whatever the order asked, like #561's spread groups: the group is repaired
+    first. It is a **net, not a detector**: nothing reports the group until someone reorders its scope (the
+    public pages rank FR and EN differently meanwhile). **Repair**: in the backoffice, detach the entry whose
+    position is wrong (« Version de » set to « — aucune — »: a new group, the end of its scope, #169), then
+    attach it back to its group through « Version de » (`reattach()` inherits the group's position, the
+    remaining member's — which entry is detached decides which position the group keeps); or in SQL, the
+    members aligned in one transaction. Then reorder. The message names the content type (hence the
+    table), the group and the positions found; the backoffice user only sees a generic 500, the fix is in
+    the `critical` log. Rejected: a periodic check, in a CronJob (no alert reads the CronJobs'
+    logs: a `warning` there reaches nobody); a query in the preprod smoke test (preprod is only written by
+    the `Administrator`s, which the trigger already guards, and it would be a new Job); a warning in the
+    migration Job (the deployment path, for a content defect, and it sees only the state at deploy time).
+    #390's rejection of « logging in `OrderAssigner` » (above) aimed at a **main** guard, late and logged; a
+    refusal serving as a net behind the trigger is not that — it logs nothing (a pure Domain service), it
+    throws. `OrderAssignerTest` pins the refusal, nothing moved, and its precedence over the three 422
+    cases (unknown, duplicated, missing key); `TranslationGroupSinglePositionTest` the eight contexts of
+    `ProvidesLocalizedAdministrators` (the probe commits the divergent group triggers disabled — the test
+    role is a superuser in dev and CI —, the real `reorder()` is refused under the name, no `previous`, the
+    rows unchanged, the manager open; red before: the reorder repaired the group). **The production
+    application role cannot disable the triggers itself** (issue #575, decided 2026-10-13): it was the
+    image's bootstrap superuser, owner of the tables; since #575 the application runs under `cpg_app`
+    (DML only, no ownership, no superuser) and the migrations under `cpg_migrator` (the owner), so
+    `ALTER TABLE … DISABLE TRIGGER`, `DROP TRIGGER` and `SET session_replication_role` are refused to it
+    (`42501`) — `ApplicationRolePrivilegesTest` proves it on the real schema, and that the trigger still
+    fires under that role (`SECURITY INVOKER`). The test role of dev and CI stays the superuser, on purpose
+    (this probe needs `session_replication_role`). See `.claude/rules/deploiement.md`, « The application
+    and the migrations run under two PostgreSQL roles ».
+    **Nor a me-card group across two categories** (issue #501). Me-cards are ordered per category, and the
+    members of a group share theirs: the application guarantees it (no category setter on `AboutMeCard`,
+    `AboutMeCardAdministrator::membersInCategory()` reads a group within the category, the seed groups per
+    category), the database did not — the #390 trigger compared positions across categories and did not
+    listen to `category`, so an EN version inserted in SQL into another category at the same position, or
+    an `UPDATE` of `category` alone, went through. Such a group got two ranks, one per category (FR and EN
+    ranked differently on the public page); « Détacher » saw only the entry and did nothing (`detach()` is
+    a no-op on an entry alone in its category); and a `reorder()` of either category was refused only
+    when it moved the stray member, under the misleading name of the positions. Migration
+    `Version20261012160000` keeps **one function and one trigger name**: the function reads its table's
+    scope column from `TG_ARGV[0]` (none for the seven single-scope tables, untouched), one query returns
+    `MIN`/`MAX` of the positions and the number of distinct scopes (the list of scopes, for the message, is
+    read only on a refusal), and the scope check runs **before**
+    the position check — a group both spread and on two positions is refused for the cause, not its
+    consequence — raising SQLSTATE **`23T91`**, which `TranslationGroupRefusal` names
+    `TranslationGroupAcrossSeveralScopesException` when the scope lock's COMMIT gets it (`Domain/Exception`, a
+    `LogicException`, `refusedAtCommit()`, unmapped: a `critical` 500, a pipeline defect, like the
+    positions' one; both SQLSTATEs map in one `match` of `TranslationGroupRefusal::nameOf()`, the lock's
+    `onCommitRefused` since #506). No common parent to the two exceptions (#506): nothing catches them
+    together, the positions' one also comes from `ContentPlacement::inGroup()` before any write, and the
+    shared one-line factory is not worth a type. On `about_me_card` the trigger is recreated `AFTER INSERT OR UPDATE OF
+    position, translation_group, category … EXECUTE FUNCTION portfolio_translation_group_single_position('category')`.
+    Moving a whole group to another category in one transaction stays accepted (deferred). Same accepted
+    limit as the positions: two concurrent SQL transactions that skip the scope lock can each add a member
+    in another category without seeing the other's, and both commit. Rejected: a
+    second function or trigger (two reads of the group per row at COMMIT, two names for `SET CONSTRAINTS`);
+    a check in `reorder()` alone (sees only what goes through it, late, SQL writes still unseen); doing
+    nothing (the misleading 500 and the two ranks stayed). **Groups already spread are not corrected** (no
+    category is surely the right one): the migration reports each again as a `warning` with its categories,
+    and any write that touches one (insertion, a member's position, group or category) is now refused —
+    a `DELETE` does not wake the trigger. The fix is in the backoffice: **delete the stray entry, then
+    recreate its version in the right category**, or **« Détacher » it** (issue #561, below).
+    **The application refuses such a group by name, before any write** (issue #561). The backoffice
+    still offered to write into it: « Créer la version EN » in the category where EN was missing, and the
+    « Version de » selector (which lists the form's category only) on a `PUT`, both saw the group filtered by
+    category, let `inGroup()` accept a locale the group already carried elsewhere, and ended on the unique
+    `(translation_group, locale)` index — a raw 500 that closed the EntityManager; a `reorder()` wrote, then
+    was refused at the COMMIT (`23T91`), and only when it moved the stray member. Now
+    `AboutMeCardAdministrator` throws `TranslationGroupAcrossSeveralScopesException::forGroup()` (same
+    `critical` 500, the group, its categories and the fix in the message, nothing written, the manager left
+    open): on a creation or an attachment, `membersInCategory()` reads the group across categories (the
+    same query as before, no extra cost) and refuses a group with members both in the category and outside
+    it — a group wholly in another category stays the 422 `unknown-translation-group`; on a `reorder()`,
+    `refuseGroupsSpreadOutsideOf()` refuses **any** reorder of a category holding such a group, whatever the
+    order asked (it depends on the state only), through `findInOtherCategoriesSharingAGroupWith()` — one
+    query under the lock, empty on a sound database — so a reorder that would have left the stray member in
+    place, accepted before, is refused too: the group must be repaired first. Two writes are **not**
+    refused, on purpose: a `PUT` sending the card's **own** group (what the frontend sends on a text edit of
+    a member, `hasSibling()` looking across categories) is a no-op the administrator tests before reading
+    anything, so the cards to be corrected stay editable; and « Détacher » (`translationGroup: null`) reads
+    the card's group across categories, so on a spread member it **really detaches** (a new group, the end of
+    its category, #169) — the trigger checks only the new group, alone, and the old one keeps its other
+    member: a second fix, where it used to be a silent no-op. Either fix repairs the **group**, not the
+    other category's numbering: the member left there keeps the position it was given in the first one,
+    which may already be another key's (it was before the fix too); a reorder of that category, accepted
+    again once no spread group remains, renumbers it. **Order of the guards** on an ordered write,
+    each before any write: a group across categories (`AboutMeCardAdministrator`, me-cards only, the only
+    per-scope table — kept out of the Shared services, which only see their scope), then a group on
+    several positions (`ContentPlacement::inGroup()` on a placement; `OrderAssigner::assign()` on a
+    `reorder()`, since #503), then the client's errors (the 409 `translation-already-exists`,
+    `OrderAssigner`'s 422s of the exact-set rule), then the trigger at COMMIT for what bypasses the application — the cause before its
+    consequence, as in the trigger, and a pipeline defect before a client error, as in #384.
+    **Two client errors come first, on purpose, both read from the body alone: a `PUT` carrying another
+    locale (issue #582, end of this paragraph), then one carrying another category** (issue #578). A card
+    never changes category (no setter, see #501 above); the `PUT` validated `category`, ignored it and
+    answered 200 — and the form of the time, whose category change emptied « Version de », sent
+    `translationGroup: null` with it, so the card was silently detached and sent to the end of its
+    category. `AboutMeCardAdministrator::update()` now receives the category and throws
+    `AboutMeCardCategoryIsImmutableException` (`About/Domain/Exception`, 409, `type`
+    `me-card-category-immutable`, `log_level: info`, modelled on the watch slug's
+    `WatchedProductSlugIsImmutableException`) right after re-reading the card under the lock, before any
+    other read and any change in memory (#549), hence before `detach()`/`reattach()` and before the
+    spread-group refusal. That does not contradict #384: #384 forbids a client error that **results from**
+    the corrupt state from hiding it, while this one depends on the request body alone; a spread group is
+    still refused under its name by the next valid request. The frontend disables the field in edit
+    (`.claude/rules/frontend-backoffice.md`). **The locale, on the eight contexts** (issue #582): an entry
+    never changes language — it is its group's version in that language, unique there —, and the `PUT`
+    validated `locale`, ignored it and answered 200 since #170 R2 (which had only disabled the field in the
+    form). Every `<X>Administrator::update()` now receives the locale and throws
+    `TranslatableContentLocaleIsImmutableException` (`Portfolio/Shared/Domain/Exception`, **one** exception
+    for the eight, like `TranslationAlreadyExistsException`: one rule, one `type` a client keys on —
+    `locale-immutable`, 409, `log_level: info`, a literal message) right after re-reading the entry under the
+    lock, in the same place and for the same reasons as the category; on a me-card **before** the category
+    (the rule shared by the eight first, the card's own second — both depend on the body alone,
+    `testTheLocaleRefusalComesFirstAndBeforeAnyChange`). The admin frontend does not map it (the field is
+    disabled in edit, nothing in the UI can send it; a 409 of that `type` would read as
+    `translation-already-exists`, accepted). Rejected: a check in the processors through `previous_data`
+    (a business rule in Infrastructure, read before the lock), an edit DTO without `locale` (a 400 on every
+    body carrying it, the same locale included: a contract break for every client). Pinned by
+    `tests/Portfolio/Shared/Application/LocaleIsImmutableOnUpdateTest` over `ProvidesLocalizedAdministrators`
+    (whose `update` takes an optional locale, the entry's by default — a new context is covered there once:
+    refused under the name, the row unchanged, the manager open, and before the 409
+    `translation-already-exists`) and by each `Backoffice<X>ResourceTest` (the typed 409, red before with a 200).
+    `AboutMeCardAdministratorTest` pins each path with mocks (no `save()`, nothing changed in memory before
+    the refusal, the text edit that reads nothing, the real detachment, the reorder refused before an
+    unknown key's 422, the category refusal before any read and before the spread-group one, #578);
+    `BackofficeAboutMeCardResourceTest` the 409 on a card with a translation (the old form's body: red
+    before with a 200 and the card detached), on a lone card, and with a group of the requested category (the
+    guard order at the HTTP layer: a 422 `unknown-translation-group` before); `AboutMeCardGroupSpreadOverTwoCategoriesTest` on the real database (creation,
+    attachment and a reorder moving the stray member refused under the name with no `previous` and the
+    manager open — red before with the unique violation and the COMMIT refusal —, a reorder leaving it in
+    place refused too — accepted before —, detachment accepted at the COMMIT) and `AboutMeCardRepositoryTest` the
+    strays query. Both commit the spread group through `tests/Portfolio/About/Support/CommitsSpreadMeCardGroup`:
+    the administrator refuses an open transaction (#526), so a rolled-back one is not an option; it disables
+    the trigger, inserts and re-enables it **in one committed transaction** (PostgreSQL's DDL is
+    transactional, no other session sees the table without its trigger, and the inserts leave no pending
+    event, hence no 55006), and the test's `tearDown` deletes the rows. `TranslationGroupSinglePositionTest`
+    pins the insertion and the move of one member (refused in `23T91`), a group spread and on two
+    positions (`23T91`, not `23T90`), the whole group moved (accepted), and, for every table, the scope
+    argument and the watched columns (`SCOPE_COLUMNS`: a new per-scope table goes there and in its
+    migration); `PostgresAdvisoryOrderScopeLockTest` the name on the application path;
+    `tests/Migrations/Version20261012160000Test` the warning, the untouched group and `down()`.
+    **Every write of an ordered content's `Administrator` runs under its scope's lock** (issues #389, #499):
+    `create()`, `update()`, `delete()` and `reorder()` of the eight localized `Administrator`s and of
+    `WatchedProductAdministrator` wrap their **whole body** in
     `Shared/Application/OrderScopeLockInterface::withLock(ORDER_SCOPE, …)`, `ORDER_SCOPE` being the entity
     class (`<Entity>::class`, never a table name, which the Application layer has no business knowing; the
     whole table for `AboutMeCard` too, wider than its per-category ordering scope, on purpose). Without it a "Create
     the XX version" landing between a `reorder()`'s read and its save kept the old position (a group on two
     positions, invisible to the exact-set rule), and two simultaneous creations without a group got the same
-    `atEndOf()`. The adapter, `Shared/Infrastructure/Doctrine/PostgresAdvisoryOrderScopeLock`, runs the body
+    `atEndOf()`. `delete()` and the watch catalogue's `update()` place nothing, and are locked since #499 for
+    another reason: outside the lock, a deletion committed between an operation's re-read (below) and its
+    `flush()` left a `PUT`'s `UPDATE` touching no row, answered with a 200 on a vanished entry — and the
+    watch `update()`, with neither lock nor re-read, "updated" a product deleted since its loading.
+    The adapter, `Shared/Infrastructure/Doctrine/PostgresAdvisoryOrderScopeLock`, runs the body
     in a transaction it opens and closes by hand (not `Connection::transactional()`, since issue #390, see
     above) whose first statement is `pg_advisory_xact_lock(ORDR, hashtext(scope))`,
     released by the COMMIT/ROLLBACK itself. Three choices not to undo: a **scope** lock, never `SELECT … FOR
@@ -126,6 +417,65 @@ paths:
     EntityManager loaded before the lock — the `PUT` entry, loaded by the provider; the whole scope, in a command
     chaining operations such as a seed — is refreshed in place (same object, which a caller may keep and save),
     and an instance the query no longer returns (deleted meanwhile) is detached, so `find()` reports it not found.
+    **That detached instance is never saved again** (issue #548): `UnitOfWork::doPersist()` takes an instance it
+    does not manage for **new** — it assumes `STATE_NEW` and reads nothing — so a caller still holding it and
+    calling `<Repository>::save()` re-inserted the deleted entry, no error, no trace (measured before the fix on
+    the eight localized contexts, the watch catalogue and the technologies). The adapter re-reads and detaches
+    through `Shared/Infrastructure/Doctrine/RereadUnderLock::everyManagedInstanceOf()` (issue #560, the one
+    re-read under a lock shared by every lock that re-reads, see `.claude/rules/backend-architecture.md`), which
+    calls `VanishedEntities::detachVanished()`; that one remembers the instance in a
+    `WeakMap` (nothing kept in memory); its `prePersist` listener — emitted only for an instance Doctrine takes
+    for new, exactly the re-insertion path — refuses it with `VanishedEntitySavedAgainException` (a
+    `LogicException`, unmapped, a `critical` 500: a caller's defect), before anything is scheduled. No false
+    positive: the map holds objects, not ids nor classes, and only an object passed to `detachVanished()` is in
+    it. No caller did it (the `Administrator`s re-find their entry under the lock and only receive ids, processors
+    call no repository, seeds re-save nothing): the guard makes the rule hold by construction, as #526 did,
+    instead of relying on the next caller. Every lock that detaches a vanished row goes through
+    `RereadUnderLock`, the only caller of `detachVanished()`, never `detach()` — the technology row lock too (#545,
+    below), the account administration lock (#551) and the account row lock (#560, `.claude/rules/security-user.md`);
+    only the container's
+    instance listens (a hand-built one refuses nothing, so tests take it from the container). Rejected: a check in
+    each repository's `save()` (the UnitOfWork cannot tell a detached entity from a new one with a natural id and
+    no row; it would need the same registry in every repository); removing instead of detaching (a phantom
+    `DELETE` at the flush, then the instance is new again); `markReadOnly` (`find()` would still return it,
+    reopening #402). **Not covered, accepted**: an instance detached otherwise — `close()` (#502, #547, #549) or
+    `clear()` — is not remembered; on the same closed manager its `persist()` already fails with
+    `EntityManagerClosed`, only a reset manager would take it, and no worker writes an entity a lock detaches.
+    **An instance this same manager removed and flushed is covered since #557**: `UnitOfWork::executeDeletions()`
+    wipes its state after the `DELETE` but leaves the UUID the constructor assigned, so Doctrine took it for new too
+    and a re-save re-inserted the row at the same id (measured before the fix on the eight localized contexts, the
+    watch catalogue and the technologies, through each `Administrator::delete()`). A second listener on
+    `postRemove` — emitted at the end of the flush's deletions, before the COMMIT — remembers the instance in the
+    same `WeakMap`, which keeps the **cause** (`VanishedEntityCause`: vanished under a lock / removed by this
+    manager) so the refusal names it (`VanishedEntitySavedAgainException::vanishedUnderLock()` /
+    `removedByThisManager()`); every class, like `prePersist`. `remove()` then `persist()` **before** the flush is
+    untouched: the removal is cancelled (`STATE_REMOVED` becomes managed again, no `prePersist`, no `postRemove`).
+    Rejected: an `onFlush` check (it would need the same registry, and refuses only once the `INSERT` is
+    scheduled), a guard in each repository's `save()`, a list of classes, documenting only. **Accepted limits**:
+    restoring an entity by re-persisting the removed instance is refused with no escape hatch — a restoration
+    creates a new entity; a ROLLBACK after the deleting flush leaves the instance remembered while the row is
+    back — the lock skeleton closes the manager when it sees that ROLLBACK (the operation threw after writing, or
+    the database refused the COMMIT, #547/#549), but not on a COMMIT DBAL itself refuses (`CommitFailedRollbackOnly`)
+    nor in a transaction opened and rolled back by hand: there, without the guard, the `INSERT` would hit the
+    primary key at the flush; the guard refuses it first, under a message that still thinks the row deleted; an entity with a **generated** id would
+    be refused wrongly (`executeDeletions()` nulls its id, its re-persist is a new `INSERT`) — none has one, revisit
+    the day one does. **A DQL deletion by id is covered since #569**: it emits no `postRemove` and left the
+    instance **managed**, so a change then a `save()` sent an `UPDATE` touching no row, lost in silence (Doctrine
+    counts affected rows only for a versioned entity). The two such deletions,
+    `PasswordSetupTokenRepository::remove()` and `CpgUserRepository::removePendingInvitation()`
+    (`.claude/rules/security-user.md`), run it through `VanishedEntities::deleteById(Query, entity)` (#560: the
+    rule written once, the manager read from the query) — the instance detached, and remembered under the
+    « removed by this manager » cause — **only when the `DELETE` touched the row**: a row their condition spared (a
+    consumed token, an account activated meanwhile) still exists and its instance stays managed. A new DQL deletion
+    by id goes through it. Still not covered, accepted: a **bulk** DQL deletion
+    (`deleteForUser()`, `deleteUnusedForUser()`), an SQL one and an `ON DELETE CASCADE` detach nothing (none of
+    those paths has an instance loaded); a deletion by id that touched no row because the row was already gone
+    detaches nothing either (nothing tells it apart from a spared one); and `deleteById()` inside a
+    transaction later rolled back remembers an instance whose row is back, with the manager left open, since the
+    skeleton's `WrittenFlushWatch` does not see a DQL write — both callers delete outside any transaction; a
+    still-managed entity **referencing** a detached account (a loaded token) makes the next `flush()` fail with
+    Doctrine's « A new entity was found through the relationship… » — loud, not lost, and no path loads a token
+    before `removePendingInvitation()`.
     Before, `find()` handed back the identity-map instance and a query did not rehydrate a managed one: a
     concurrent write committed in between was silently undone (`reattach()` saw a no-op, `detach()` looked in the
     group the entry had left, a version created in a group took the position the group was leaving, a deleted
@@ -134,25 +484,48 @@ paths:
     held from before and saved afterwards collides with the one the operation reloaded
     (`EntityIdentityCollisionException`, measured on four resource tests). Consequence for a caller: an unwritten
     change to such an instance is overwritten. An instance scheduled for insertion or removal is neither re-read
-    nor detached (detaching it silently cancelled the pending `INSERT`). Not covered: a deletion committed
-    *during* the operation — `delete()` takes no lock, so if it commits between the re-read and a `PUT`'s
-    flush, the `UPDATE` touches no row and the `PUT` still answers 200; only a deletion committed before the
-    lock is reported not found. A command chaining N operations on one EntityManager re-reads O(N²) rows,
-    negligible for ten-entry seeds. It relies on READ COMMITTED (PostgreSQL's default, set nowhere):
+    nor detached (detaching it silently cancelled the pending `INSERT`). Since `delete()` takes the lock
+    (#499), an application deletion runs wholly before an operation of its scope — which then reports the
+    entry not found — or wholly after it, never in between: the loser of two simultaneous `DELETE`s of one
+    entry answers **404** (it answered 204, its `DELETE` touching no row), like a `DELETE` arriving later.
+    **Not covered, accepted**: a deletion in SQL, which skips the `Administrator`s, can still commit during an
+    operation, whose `PUT` then answers 200 on a row gone. (The `--force` purge of the `app:*:seed` commands
+    was that case too, `<Repository>::remove()` without a lock; since #567 it runs under the scope locks of
+    the command's `withLocks()`, so a backoffice write of the scope waits for the whole seed — a few hundred
+    milliseconds at most — instead of landing in the middle of it.) A command chaining N operations on one
+    EntityManager used to re-read O(N²) rows; under `withLocks()` the scopes are re-read once, at entry,
+    and the re-entrant `withLock()`s re-read nothing. It relies on READ COMMITTED (PostgreSQL's default, set nowhere):
     under REPEATABLE READ the snapshot would be taken by the lock's own `SELECT`, before the wait. Last writer
     wins, like every other field; no `#[ORM\Version]`. `ScopeLockReadsCommittedStateTest` pins both (the four
     stale-state cases over the same `ProvidesLocalizedAdministrators` list as `OrderScopeLockCoverageTest`, so a
-    new localized context goes there once, the watch catalogue's end, the pending insert, and the isolation level).
+    new localized context goes there once, the second `DELETE` of an entry deleted meanwhile, the watch
+    catalogue's end, its `PUT` and `DELETE` of a product deleted meanwhile, the pending insert, the re-save of an
+    entry or a product detached by the re-read, refused instead of re-inserted (#548), and the isolation level);
+    `VanishedEntitiesTest` pins the listener's wiring, its refusal before scheduling, no false positive and the
+    `WeakMap` (red with an `SplObjectStorage`, measured); since #557 also the refusal of an instance this manager
+    removed, under its own message, the removal cancelled before the flush, and no memory kept on the
+    `postRemove` path. The re-save after each `Administrator::delete()` is pinned by
+    `ScopeLockReadsCommittedStateTest` (localized contexts, watch catalogue) and
+    `PostgresExperienceTechnologyRowLockTest`.
     In an FPM worker the wait is bounded by `PGOPTIONS` `lock_timeout=5s`; past it the adapter throws
     `OrderScopeLockTimeoutException` (named, unmapped: a `critical` 500 — 5 s for a millisecond write is an
     anomaly, not a conflict to retry), and only for its own lock statement: a timeout inside the operation
-    stays the DBAL exception. **The console waits without a bound**: the `app:*:seed` commands go through the
-    `Administrator`s, so the deploy's seed Job takes the same lock, which `www.prod.conf` does not reach —
-    harmless while every holder keeps it for milliseconds, revisit before holding it any longer. Guards:
-    `OrderScopeLockCoverageTest` (a probe session holds each scope, every placing operation of every
+    stays the DBAL exception. Since #499 that covers a backoffice `DELETE` and a watch `PUT` too, which never
+    waited before: each now costs the lock, a transaction and the re-read of its entry, and comes out as that
+    500 behind a writer holding the scope past 5 s. **The console is bounded too** (#512, #525): the
+    `app:*:seed` commands take the same lock — since #567 once per command, through `withLocks()` on every
+    scope the command writes, held for the whole purge and recreation —, which
+    `www.prod.conf` does not reach — its pod's own `PGOPTIONS` gives it `lock_timeout=5s`, and a session with
+    none (dev, CI) gets `PostgresLockedTransaction::FALLBACK_LOCK_TIMEOUT`. Every backoffice holder keeps
+    the lock for milliseconds; a seed holds its scopes for the whole command, measured for #567 on the
+    largest (`app:about:seed --force`, 30 cards and the settings, one `flush()` each): about 100 ms in the
+    test environment, the command taking 0.5 s with the kernel boot — two orders of magnitude under the 5 s
+    bound; revisit before holding it any longer. Guards:
+    `OrderScopeLockCoverageTest` (a probe session holds each scope, every write of every
     `Administrator` must wait — a new one written without `withLock()` turns it red) and
-    `ContributionOrderConcurrencyTest` (two real processes, interleaved at the `preFlush`, both races).
-    `delete()` takes no lock: it leaves a gap, never a collision. The **only client-driven
+    `ContributionOrderConcurrencyTest` (two real processes, interleaved at the `preFlush`: both races of #389,
+    and a `DELETE` during a `PUT`, #499 — the child reports the title it deleted, the one the `PUT` wrote
+    once it waits). A deletion leaves a gap, never a collision. The **only client-driven
     writer of `position` is `PUT /api/backoffice/<x>/order`** (`ContentPlacement` derives it server-side,
     no request body ever chooses it) (`Backoffice<X>OrderResource`, `read: false`,
     `output: false`, 204, one per context, `{groups: [uuid…]}` — `{ids: […]}` for Watch, plus
@@ -174,7 +547,40 @@ paths:
   read-only API Platform resource (`GetCollection('/experience/technologies')`, or an aggregating `Provider` for
   `/quality/{locale}` and `/about/{locale}` that returns `{principles, traits}` / `{settings, siteCards, meCards}`
   in one call), and a backoffice CRUD resource (see `.claude/rules/backoffice-api.md`). Seeded via idempotent `app:{about,quality,contributions,incidents}:seed`
-  console commands (purge-by-locale then recreate — safe to rerun).
+  console commands (content already there: they decline, unless `--force`, which purges the whole table — every
+  locale, spec 0004 D3 — then recreates; **`AboutSettings` is created when missing, rewritten with `--force`
+  only, never purged**, see below).
+
+  **`AboutSettings` has no lock, by decision** (issue #553). It is the singleton per locale of the About page's
+  section texts, and **nothing in the application deletes it**: `AboutSettingsRepositoryInterface` has no
+  `remove()`, the backoffice resource only `Get`/`Put`, and `app:about:seed` never purges it (`ensureSettings()`:
+  a direct `save()` when the locale has no row; `update()` through the `Administrator` with `--force` only;
+  otherwise the row is kept as edited). Its `countExisting()` leaves it out, so with no card left the
+  command runs without `--force` — it then recreates the cards and creates missing settings, but **never
+  rewrites existing ones** (issue #568: before, that run reset the five section texts edited in the
+  backoffice, the one rewrite of an existing row by a guarded seed, contrary to `.claude/rules/seeding.md`).
+  `SeedAboutContentCommandTest` pins kept, created and `--force`-reset settings. The defect of #499/#545 — a
+  `PUT` answering 200 on a row deleted since the provider loaded it — does not arise, because `AboutSettingsAdministrator::update()` re-reads the database:
+  `findByLocale()` is a `findOneBy()`, a search by criteria whose `SELECT` Doctrine **always** runs, so a row
+  gone is `null` (**404**, `AboutSettingsNotFoundException`) and a row recreated under another id is the one
+  written — unlike `find($id)`, which hands back the identity-map instance without a query (#545). Its fields
+  are not refreshed, but `AboutSettings::update()` overwrites all five editable ones, and `id`/`locale` never
+  change. **Keep that search by criteria**: a `find($id)`, a second-level or result cache, or a memoizing decorator
+  without a lock reopens the 200 on a vanished row. **Accepted**: a deletion in SQL — or a deletion and re-creation under
+  another id — committed between that `SELECT` and the `flush()`'s `UPDATE` still answers 200, the `UPDATE` on the
+  old id touching no row (the write is lost; milliseconds, SQL only, very low severity); two simultaneous `PUT`s of one locale, last
+  writer wins, like every field (no `#[ORM\Version]`); two concurrent creations in SQL meet the unique index
+  `uniq_about_settings_locale` (two seeds no longer can: since #567 `app:about:seed` writes the settings inside
+  its one transaction, under the locks of the two card scopes, so the second seed waits, re-reads the count
+  and declines — the settings have no lock of their own, still on purpose: no position, no group).
+  **Trigger**: an application deletion of the settings (a seed purge, a `DELETE`) first requires the
+  row lock of #545 (`ExperienceTechnologyLockInterface`'s pattern on `PostgresLockedTransaction`).
+  `AboutSettingsUpdateReadsCommittedRowTest` pins it: settings loaded as the provider does, deleted in SQL → not
+  found; deleted then re-inserted under a new id → the new row is written (both red with a read from the identity
+  map, measured); and the trigger itself — the repository interface exposes exactly `findByLocale()`/`save()`, the
+  backoffice resource exactly `Get`/`Put` (red with a `remove()` or a `Delete` added, measured). Turning it red
+  means adding the lock first, then updating the test. That guard is partial: an `EntityManager::remove()`, a DQL
+  or DBAL `DELETE` written elsewhere (a command, another processor) does not trip it — review is the net there.
 
   **`ExperienceTechnology.years` is a finite number in `[0, 100]`, checked at three layers** (issue #372).
   A single non-encodable row (`Infinity`, `NaN`) is enough to put the public `GET /api/experience/technologies`
@@ -210,6 +616,53 @@ paths:
   `Length`, which is how the NUL and the non-breaking space got through; `InvalidTechnologyNameException` is
   unmapped on purpose, like `InvalidExperienceYearsException`. No `CHECK` in the database, unlike `years`: an untrimmed name is a
   duplicate on the public page, not a 500, and no write path reaches SQL without the Value Object. `relatedTechnologyName` is a free label, not trimmed.
+
+  **A technology's `PUT` and `DELETE` run under its row lock** (issue #545). The defect was the one #402 and
+  #499 fixed for ordered content: the provider loads the technology before the processor, `find()` hands back
+  that identity-map instance, and a deletion committed in between left the `UPDATE` or `DELETE` touching no
+  row — Doctrine counts affected rows only for a versioned entity —, so the `PUT` answered **200** on a
+  vanished technology and the loser of two simultaneous `DELETE`s **204**. `ExperienceTechnologyAdministrator`'s
+  `update()` and `delete()` now wrap their **whole body** in `Application/ExperienceTechnologyLockInterface::whileLocked($id, …)`;
+  the adapter, `Infrastructure/Doctrine/PostgresExperienceTechnologyRowLock`, runs it on the shared skeleton
+  (`Shared/Infrastructure/Lock/PostgresLockedTransaction`, like the order scope lock and the two account
+  locks): **one** DQL `SELECT … FOR UPDATE` (`LockMode::PESSIMISTIC_WRITE`) with `Query::HINT_REFRESH` locks the
+  row, says whether it still exists (`null`) and refreshes the managed instance in place, handed to the
+  operation as the acquisition returned it (the skeleton passes it on since #560). Row gone: the stale instance is
+  detached — unless it is scheduled for insertion or removal, whose pending write detaching would cancel, the
+  #402 filter — so a caller still holding it cannot save it again (issue #548, see the ordering section); query,
+  detachment and filter are `Shared/Infrastructure/Doctrine/RereadUnderLock::row()`'s (#560), and the
+  technology is not found (**404**, mapping
+  unchanged; the admin frontend already reads it as `not-found`). So a deletion runs wholly before the write or
+  wholly after it. Not `find($id, LockMode::PESSIMISTIC_WRITE)`: on an instance already managed it is a
+  `refresh()` with `FOR UPDATE`, which hydrates nothing when the row has gone and returns the stale instance —
+  existence must be read explicitly. A **row** lock, not the order scope lock: nothing is placed (no position,
+  no translation group), only the written row is held — two technologies never wait for each other — and,
+  unlike an advisory lock, PostgreSQL enforces it on every `UPDATE`/`DELETE` of the row, so a deletion in SQL
+  waits too. `create()` (`ExperienceTechnologyRegistrar`) stays outside: nothing can vanish under it, and its
+  race is the unique index on `name`. The name check of `update()` runs under the lock but only holds that row:
+  the unique index stays the last net, its violation still converted to 409 (the failed `flush()` closes the
+  EntityManager, as before). Its wait is bounded like the other locks of the skeleton (`lock_timeout=5s` under
+  FPM, the skeleton's fallback elsewhere); past it, `ExperienceTechnologyLockTimeoutException` (unmapped, a
+  `critical` 500); inside a transaction already open, `ExperienceTechnologyLockInsideTransactionException`
+  before anything is locked. **A refused COMMIT**: no `onCommitRefused` is passed, there is nothing to name —
+  the table has no deferred constraint (the unique name and the `years` `CHECK` are immediate and refuse at
+  the `flush()`), so only a session lost at that moment can refuse it; the `DriverException` surfaces as is
+  and the skeleton **closes the EntityManager** (issue #547, as for every lock of the skeleton, see the
+  ordering section above): its UnitOfWork held as written what the refusal had just rolled back; an exception
+  the operation throws after a write closes it too (issue #549, same section); the 409 of a name already
+  taken leaves it open when it comes from the check before the `save()`, while the unique index's 409 (two
+  racing `PUT`s) comes after a failed `flush()`, which has already closed it. Cost per
+  `PUT`/`DELETE`, all under the lock: `BEGIN`, the lock-bound `set_config`, the locked read, the `flush()`'s
+  `SAVEPOINT`, write and `RELEASE SAVEPOINT`, `COMMIT` — sub-millisecond round trips each. Guards: `ExperienceTechnologyWritesUnderRowLockTest` (a technology loaded as the
+  provider does, then deleted in SQL: `update()` and `delete()` say not found; a probe session holds the row,
+  and each write must fail on the lock's named timeout — without the lock, the `flush()` waited on the row too
+  but failed as a bare `DriverException`, having decided on the provider's instance) and
+  `PostgresExperienceTechnologyRowLockTest` (re-read, not found and detached, its re-save refused rather than
+  re-inserted (#548), a pending insert not found but
+  kept, a `flush()` refused inside the operation rolled back and surfacing as is — the path of the 409 —, wait
+  bound, named timeout, nesting refused, a COMMIT refused after a successful `flush()` closing the EntityManager
+  and a new read seeing the database, #547). No two-process test (decided for #545): the probe already proves the write waits for the
+  row before reading it.
 
   `Contribution` is the odd one out and deliberately so: it carries a long `body` (the argument, not
   just a link to it) alongside `title`/`project`/`reference`/`url`/`summary`. That text is **plain

@@ -8,12 +8,14 @@ use App\Security\User\Application\AccountLockInterface;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Exception\CpgUserNotFoundException;
 use App\Security\User\Infrastructure\Doctrine\AccountLockInsideTransactionException;
+use App\Security\User\Infrastructure\Doctrine\AccountLockOnUnmanagedAccountException;
 use App\Security\User\Infrastructure\Doctrine\AccountLockTimeoutException;
 use App\Security\User\Infrastructure\Doctrine\PostgresAccountRowLock;
+use App\Shared\Infrastructure\Doctrine\RereadUnderLock;
+use App\Shared\Infrastructure\Doctrine\VanishedEntitySavedAgainException;
 use App\Tests\Support\CommitRefusal;
-use App\Tests\Support\OpensProbeConnection;
+use App\Tests\Support\ProbesLocks;
 use DateTimeImmutable;
-use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception\DriverException;
 use Doctrine\ORM\EntityManagerInterface;
 use LogicException;
@@ -28,7 +30,7 @@ use Throwable;
  */
 final class PostgresAccountRowLockTest extends KernelTestCase
 {
-    use OpensProbeConnection;
+    use ProbesLocks;
 
     private EntityManagerInterface $em;
 
@@ -57,6 +59,50 @@ final class PostgresAccountRowLockTest extends KernelTestCase
         self::assertFalse($pending, 'L\'opération a lu l\'entité d\'avant le verrou.');
     }
 
+    /**
+     * L'opération reçoit **l'instance de l'appelant**, relue sur place : deux
+     * appelants la relisent après le verrou (le handler d'invitation pour
+     * l'e-mail, l'activation pour le journal).
+     */
+    public function testTheOperationReceivesTheCallersInstanceRereadInPlace(): void
+    {
+        $user = $this->pendingUser();
+
+        $locked = $this->lock()->whileLocked($user, static fn (CpgUser $locked): CpgUser => $locked);
+
+        self::assertSame($user, $locked, "L'opération n'a pas reçu l'instance de l'appelant.");
+    }
+
+    /**
+     * Un compte que l'EntityManager ne gère pas est refusé avant de rien
+     * verrouiller (issue #560) : la relecture rendrait une autre instance,
+     * gérée, que l'opération modifierait pendant que l'appelant garde la
+     * sienne, périmée — en silence. Avant #560, `refresh()` levait déjà ;
+     * l'interface pose cette précondition.
+     */
+    public function testAnUnmanagedAccountIsRefusedBeforeAnythingIsLocked(): void
+    {
+        $user = $this->pendingUser();
+        $this->em->detach($user);
+        $ran = false;
+        $caught = null;
+
+        try {
+            $this->lock()->whileLocked($user, static function (CpgUser $locked) use (&$ran): null {
+                $ran = true;
+
+                return null;
+            });
+        } catch (Throwable $exception) {
+            $caught = $exception;
+        }
+
+        self::assertInstanceOf(AccountLockOnUnmanagedAccountException::class, $caught, \sprintf("Un compte non géré n'a pas été refusé sous son nom : %s.", get_debug_type($caught)));
+        self::assertStringContainsString($user->getId()->toRfc4122(), $caught->getMessage());
+        self::assertFalse($ran, "L'opération a tourné sur une autre instance que celle de l'appelant.");
+        self::assertFalse($this->em->getConnection()->isTransactionActive());
+    }
+
     public function testAnAccountDeletedMeanwhileIsANotFound(): void
     {
         $user = $this->pendingUser();
@@ -65,6 +111,36 @@ final class PostgresAccountRowLockTest extends KernelTestCase
         $this->expectException(CpgUserNotFoundException::class);
 
         $this->lock()->whileLocked($user, static fn (CpgUser $locked): null => null);
+    }
+
+    /**
+     * Le compte disparu n'est pas seulement introuvable : l'instance que
+     * l'appelant tient encore est détachée et retenue (issue #560, la règle
+     * de #548 pour tous les verrous qui relisent). Restée gérée, une
+     * modification puis un `save()` auraient émis un `UPDATE` sur 0 ligne,
+     * perdu en silence ; sa re-sauvegarde est désormais refusée.
+     */
+    public function testAnAccountDeletedMeanwhileIsDetachedAndCannotBeSavedAgain(): void
+    {
+        $user = $this->pendingUser();
+        $id = $user->getId()->toRfc4122();
+        $this->em->getConnection()->executeStatement('DELETE FROM cpg_user WHERE id = :id', ['id' => $id]);
+
+        try {
+            $this->lock()->whileLocked($user, static fn (CpgUser $locked): null => null);
+            self::fail("Le compte supprimé entre-temps n'a pas été dit introuvable.");
+        } catch (CpgUserNotFoundException) {
+        }
+
+        self::assertFalse($this->em->contains($user), "L'instance du compte disparu est restée gérée.");
+        $refusal = null;
+        try {
+            $this->em->persist($user);
+        } catch (VanishedEntitySavedAgainException $exception) {
+            $refusal = $exception;
+        }
+        self::assertNotNull($refusal, "La re-sauvegarde du compte disparu n'a pas été refusée.");
+        self::assertSame(VanishedEntitySavedAgainException::vanishedUnderLock(CpgUser::class, $id)->getMessage(), $refusal->getMessage());
     }
 
     /**
@@ -132,7 +208,7 @@ final class PostgresAccountRowLockTest extends KernelTestCase
 
         try {
             $this->expectException(AccountLockTimeoutException::class);
-            (new PostgresAccountRowLock($this->em, new NullLogger(), '50ms'))->whileLocked($user, static fn (CpgUser $locked): null => null);
+            (new PostgresAccountRowLock($this->em, new NullLogger(), self::getContainer()->get(RereadUnderLock::class), '50ms'))->whileLocked($user, static fn (CpgUser $locked): null => null);
         } finally {
             $holder->rollBack();
             $holder->close();
@@ -167,8 +243,68 @@ final class PostgresAccountRowLockTest extends KernelTestCase
 
         self::assertInstanceOf(DriverException::class, $caught, \sprintf('Le COMMIT refusé est remonté sous un autre nom : %s.', get_debug_type($caught)));
         self::assertSame(CommitRefusal::SQLSTATE, $caught->getSQLState());
-        self::assertTrue($this->em->isOpen());
+        self::assertFalse($this->em->isOpen(), 'Un COMMIT refusé a laissé l\'EntityManager ouvert (issue #547).');
         self::assertFalse($connection->isTransactionActive());
+    }
+
+    /**
+     * Issue #547 : le `flush()` de l'opération a réussi au point de
+     * sauvegarde, puis la base a refusé le COMMIT. L'UnitOfWork tenait pour
+     * écrit ce que le refus venait d'annuler : le squelette ferme donc
+     * l'EntityManager, comme le verrou d'ordre depuis #502, et une nouvelle
+     * lecture relit la base.
+     */
+    public function testACommitRefusedByTheDatabaseClosesTheEntityManagerOnItsRefusedWrites(): void
+    {
+        $user = $this->pendingUser();
+        $connection = $this->em->getConnection();
+        $caught = null;
+
+        try {
+            $this->lock()->whileLocked($user, function (CpgUser $locked) use ($connection): null {
+                $locked->setEmail('refused@example.com');
+                $this->em->flush();
+                CommitRefusal::scheduleIn($connection);
+
+                return null;
+            });
+        } catch (Throwable $exception) {
+            $caught = $exception;
+        }
+
+        self::assertInstanceOf(DriverException::class, $caught, \sprintf('Le COMMIT refusé est remonté sous un autre nom : %s.', get_debug_type($caught)));
+        self::assertFalse($this->em->isOpen(), 'Un COMMIT refusé a laissé l\'EntityManager ouvert sur une écriture annulée.');
+        self::assertSame('newcomer@example.com', $this->em->find(CpgUser::class, $user->getId())?->getEmail(), 'Une lecture après le refus rend l\'adresse que la base a refusée.');
+    }
+
+    /**
+     * Issue #549 : le chemin de l'activation et de `changePassword()` — des
+     * `save()` puis une instruction suivante que la base refuse (ici une
+     * division par zéro, à la place du `DELETE` DQL des jetons). Le ROLLBACK
+     * annule l'écriture flushée : l'EntityManager est fermé, et une lecture
+     * relit l'adresse que la base porte.
+     */
+    public function testADatabaseErrorAfterAWriteClosesTheEntityManager(): void
+    {
+        $user = $this->pendingUser();
+        $connection = $this->em->getConnection();
+        $caught = null;
+
+        try {
+            $this->lock()->whileLocked($user, function (CpgUser $locked) use ($connection): null {
+                $locked->setEmail('rolledback@example.com');
+                $this->em->flush();
+                $connection->executeStatement('SELECT 1 / 0');
+
+                return null;
+            });
+        } catch (Throwable $exception) {
+            $caught = $exception;
+        }
+
+        self::assertInstanceOf(DriverException::class, $caught, \sprintf("L'erreur de la base est remontée sous un autre nom : %s.", get_debug_type($caught)));
+        self::assertFalse($this->em->isOpen(), "Une erreur de la base après une écriture a laissé l'EntityManager ouvert sur l'adresse annulée.");
+        self::assertSame('newcomer@example.com', $this->em->find(CpgUser::class, $user->getId())?->getEmail(), 'Une lecture après le ROLLBACK rend l\'adresse que la base a annulée.');
     }
 
     /**
@@ -203,7 +339,7 @@ final class PostgresAccountRowLockTest extends KernelTestCase
             self::assertStringNotContainsString($user->getUserIdentifier(), $caught->getMessage(), "Le message cite l'identifiant du compte.");
             self::assertFalse($ran, "L'opération a tourné dans la transaction de l'appelant.");
             self::assertSame(1, $connection->getTransactionNestingLevel(), "La transaction de l'appelant a été touchée.");
-            self::assertTrue($this->probeCanLockTheRow($probe, $user), 'La ligne du compte a été verrouillée malgré le refus.');
+            self::assertTrue($this->probeCanLockTheRow($probe, 'cpg_user', $user->getId()), 'La ligne du compte a été verrouillée malgré le refus.');
         } finally {
             $connection->rollBack();
             $probe->close();
@@ -229,7 +365,7 @@ final class PostgresAccountRowLockTest extends KernelTestCase
 
             self::assertInstanceOf(AccountLockInsideTransactionException::class, $caught, \sprintf("L'imbrication n'a pas été refusée sous son nom : %s.", get_debug_type($caught)));
             self::assertFalse($this->em->getConnection()->isTransactionActive());
-            self::assertTrue($this->probeCanLockTheRow($probe, $user), 'La ligne du compte est restée verrouillée après le refus.');
+            self::assertTrue($this->probeCanLockTheRow($probe, 'cpg_user', $user->getId()), 'La ligne du compte est restée verrouillée après le refus.');
         } finally {
             $probe->close();
         }
@@ -251,16 +387,4 @@ final class PostgresAccountRowLockTest extends KernelTestCase
         return $user;
     }
 
-    /**
-     * Tente la ligne depuis une autre session sans jamais l'attendre
-     * (`SKIP LOCKED` : une ligne tenue n'est pas rendue), et la rend aussitôt
-     * — hors transaction explicite, l'instruction seule la tient.
-     */
-    private function probeCanLockTheRow(Connection $probe, CpgUser $user): bool
-    {
-        return 1 === $probe->fetchOne(
-            'SELECT 1 FROM cpg_user WHERE id = :id FOR UPDATE SKIP LOCKED',
-            ['id' => $user->getId()->toRfc4122()],
-        );
-    }
 }

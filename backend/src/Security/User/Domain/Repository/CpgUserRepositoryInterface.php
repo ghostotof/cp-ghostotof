@@ -51,11 +51,17 @@ interface CpgUserRepositoryInterface
     public function findAwaitingPasswordSetupInvitedBefore(DateTimeImmutable $threshold): array;
 
     /**
-     * Nombre d'utilisateurs possédant le rôle donné (rôles implicites inclus,
-     * cf. CpgUser::getRoles()). Utilisé par la garde anti-lockout du dernier
-     * ROLE_SUPER (cf. CpgUserAdministrator::delete).
+     * Nombre de comptes ROLE_SUPER **capables de se connecter** (mot de passe
+     * défini), `$except` exclu : la garde anti-lockout du dernier ROLE_SUPER
+     * (CpgUserAdministrator::delete(), CpgUserRoleAdministrator::setSuperAdmin()),
+     * appelée sous le verrou d'administration (issue #551). Compté **en
+     * base**, jamais sur un `findAll()` filtré en PHP : la carte d'identité
+     * tient l'acteur et la cible tels que la requête les a chargés, avant
+     * l'écriture concurrente que le verrou vient d'attendre. Un ROLE_SUPER
+     * encore en attente d'activation (mot de passe vide) ne compte pas : il ne
+     * peut pas se connecter, il ne garde pas le backoffice ouvert.
      */
-    public function countByRole(string $role): int;
+    public function countOtherSuperAdminsAbleToSignIn(CpgUser $except): int;
 
     public function save(CpgUser $user): void;
 
@@ -89,6 +95,11 @@ interface CpgUserRepositoryInterface
      * le compte par son identifiant, jamais s'il a été activé entre-temps.
      * Chemin d'échec : ne dépend ni de l'unité de travail ni d'un `flush()`
      * global. Un compte déjà supprimé n'est pas une erreur.
+     *
+     * Le compte dont la ligne a été supprimée n'est plus géré, et le sauver
+     * de nouveau est refusé (issue #569) ; un compte épargné reste géré, de
+     * même qu'un compte déjà supprimé : la suppression n'a touché aucune ligne,
+     * et rien ne le distingue d'un compte épargné.
      */
     public function removePendingInvitation(CpgUser $user): void;
 }

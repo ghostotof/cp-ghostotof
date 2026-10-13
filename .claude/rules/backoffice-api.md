@@ -87,7 +87,8 @@ paths:
   `exceptionToStatus` carried by an `#[ApiResource]` or one of its operations (merged by the vendor at
   render time, `ErrorListener::getOperationExceptionToStatus`), every exception the kernel converts
   itself — a `framework.exceptions` entry with a `status_code`, which wins, else a `#[WithHttpStatus]`
-  of `src/`; either way the level is resolved on the original exception — and every concrete
+  of `src/`; either way the entries and `#[WithLogLevel]` are matched on the original exception, the
+  default level (`critical`, or `error` for a 4xx) on the conversion since Symfony 8.1.8 — and every concrete
   `ProblemExceptionInterface` of `src/` (found by token parsing
   through `tests/Support/DeclaredClasses`, shared with `ProblemDetailStaysStaticTest`, never inferred from
   file paths); a level that matches **every** status the exception can be rendered with (4xx:
@@ -121,7 +122,9 @@ paths:
   everywhere but resolves per environment, and the same test refuses it. The level checked is the one
   the kernel resolves, read from `ErrorListener::resolveLogLevel` itself: the first matching entry by
   `instanceof`, else an inherited `#[WithLogLevel]` — honoured, though the project keeps levels in
-  `framework.exceptions` so the domain does not depend on HttpKernel. Three vendor internals are read by
+  `framework.exceptions` so the domain does not depend on HttpKernel, else the default, read on the
+  `HttpException` the kernel substituted (`CompiledExceptionConfig::kernelConversion()` hands it the same
+  one — Symfony 8.1.8 added that second parameter, PR #441). Three vendor internals are read by
   reflection rather than reimplemented (the compiled mapping, `getInheritedAttribute`,
   `resolveLogLevel`); `ErrorListenerInternalsTest` pins their signature, so a Symfony upgrade that
   changes them fails there first. GraphQL operations are not covered:
@@ -161,9 +164,13 @@ paths:
   Platform's defaults instead of extending them, so two of the three it ships with sit explicitly at the
   **end** of the list (`Serializer\ExceptionInterface: 500`, `ApiPlatform\Metadata\Exception\InvalidArgumentException: 500`),
   both **deliberately not** at API Platform's 400; the third, `Doctrine\ORM\OptimisticLockException: 409`,
-  was **removed** by issue #373 (no entity is versioned, and its only possible throw today, `notVersioned()`,
-  is a programming error — a `critical` 500, what no entry gives; map the conflict back to a 409 with a
-  `log_level` the day an `#[ORM\Version]` appears). The API Platform `InvalidArgumentException` (subclass
+  was **removed** by issue #373 (no entity is versioned, and its possible throws today are server defects —
+  `notVersioned()`, a programming error, and « Commit failed », Doctrine's wrapping of any COMMIT the database
+  refuses on a `flush()` outside a transaction, the translation-group trigger's included, #506 — a `critical`
+  500, what no entry gives; the day an `#[ORM\Version]` appears, the version conflict is a client 409, but
+  Doctrine throws it in the same class (`lockFailedVersionMismatch()`): catch it where it arises and rethrow
+  a project exception mapped to 409 with a `log_level` — never map the whole class, or a refused COMMIT
+  becomes a client 409). The API Platform `InvalidArgumentException` (subclass
   `ItemNotFoundException`; `OperationNotFoundException` is **not** one, it extends PHP's) was reachable by a
   client: an `id` in the body of any PUT — a "standard" PUT populates no object in API Platform 4, so the key
   went to IRI resolution and came out 400 + `critical`. `defaults.denormalization_context.api_allow_update:

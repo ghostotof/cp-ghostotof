@@ -25,9 +25,9 @@ use Symfony\Component\Uid\Uuid;
 final readonly class WatchedProductAdministrator implements WatchedProductAdministratorInterface
 {
     /**
-     * Périmètre d'ordre, verrouillé par toute écriture qui place un produit
-     * (issue #389) : le catalogue entier. update() n'en fait pas partie, il ne
-     * touche pas à la position.
+     * Périmètre d'ordre, verrouillé par toute écriture du catalogue : celles
+     * qui placent un produit (issue #389), et update() comme delete(), qui ne
+     * placent rien mais ne doivent pas valider l'une sous l'autre (issue #499).
      */
     private const string ORDER_SCOPE = WatchedProduct::class;
 
@@ -64,31 +64,38 @@ final readonly class WatchedProductAdministrator implements WatchedProductAdmini
         VersionSource $versionSource,
         ?string $version,
     ): WatchedProduct {
-        $product = $this->watchedProductRepository->findOneById($id);
+        // Sous le verrou bien qu'il ne place rien (#499) : la relecture (#402)
+        // dit introuvable un produit supprimé depuis son chargement, et une
+        // suppression ne valide pas entre cette relecture et l'écriture.
+        return $this->orderScopeLock->withLock(self::ORDER_SCOPE, function () use ($id, $slug, $label, $versionSource, $version): WatchedProduct {
+            $product = $this->watchedProductRepository->findOneById($id);
 
-        if (null === $product) {
-            throw WatchedProductNotFoundException::forId($id);
-        }
+            if (null === $product) {
+                throw WatchedProductNotFoundException::forId($id);
+            }
 
-        if ($product->getSlug() !== $slug) {
-            throw WatchedProductSlugIsImmutableException::forSlugs($product->getSlug(), $slug);
-        }
+            if ($product->getSlug() !== $slug) {
+                throw WatchedProductSlugIsImmutableException::forSlugs($product->getSlug(), $slug);
+            }
 
-        $product->update($label, $versionSource, $version);
-        $this->watchedProductRepository->save($product);
+            $product->update($label, $versionSource, $version);
+            $this->watchedProductRepository->save($product);
 
-        return $product;
+            return $product;
+        });
     }
 
     public function delete(Uuid $id): void
     {
-        $product = $this->watchedProductRepository->findOneById($id);
+        $this->orderScopeLock->withLock(self::ORDER_SCOPE, function () use ($id): void {
+            $product = $this->watchedProductRepository->findOneById($id);
 
-        if (null === $product) {
-            throw WatchedProductNotFoundException::forId($id);
-        }
+            if (null === $product) {
+                throw WatchedProductNotFoundException::forId($id);
+            }
 
-        $this->watchedProductRepository->remove($product);
+            $this->watchedProductRepository->remove($product);
+        });
     }
 
     public function reorder(array $keys): void

@@ -5,9 +5,12 @@ declare(strict_types=1);
 namespace App\Portfolio\CaseStudy\Presentation\Command;
 
 use App\Portfolio\CaseStudy\Application\CaseStudyAdministratorInterface;
+use App\Portfolio\CaseStudy\Domain\Entity\CaseStudy;
 use App\Portfolio\CaseStudy\Domain\Repository\CaseStudyRepositoryInterface;
+use App\Portfolio\Shared\Application\OrderScopeLockInterface;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Shared\Presentation\Command\GuardsExistingContent;
+use App\Shared\Presentation\Command\SeedOutcome;
 use App\Shared\Presentation\Command\TranslationGroupIndex;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
@@ -18,17 +21,19 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 /**
  * Peuple/réinitialise les études de cas techniques du palier de base (ADR
  * 0003 D5), servies depuis la base via GET /api/case-studies/{locale}
- * (ROLE_USER). Idempotente, même garde-fou que les cinq autres commandes
- * app:*:seed (GuardsExistingContent) : une base déjà peuplée est laissée
- * intacte sans --force.
+ * (ROLE_USER). Même garde-fou que les autres commandes app:*:seed
+ * ({@see GuardsExistingContent}) : une base déjà peuplée est laissée intacte sans
+ * --force ; avec --force, toute la table est purgée, toutes locales
+ * confondues, puis recréée.
  *
  * **Le contenu ci-dessous est un placeholder explicite** (titre préfixé
  * « [Exemple] »), pas du contenu de référence réel : le texte des études de
  * cas est la matière éditoriale de Christophe (études de cas techniques
  * réelles, jamais de nom de client), à saisir depuis le backoffice — même
- * caveat que la rubrique Contributions (cf. tasks/plan.md). Ce préfixe
- * empêche toute confusion si cette commande était un jour lancée en
- * production sans que le vrai contenu n'ait encore été fourni.
+ * caveat que la rubrique Contributions (cf. le plan archivé,
+ * `.claude/specs/archive/2026-09-13-adr-0003-paliers-d-acces/plan.md`).
+ * Ce préfixe empêche toute confusion si cette commande était un jour lancée
+ * en production sans que le vrai contenu n'ait encore été fourni.
  */
 #[AsCommand(
     name: 'app:case-studies:seed',
@@ -38,9 +43,17 @@ final class SeedCaseStudyContentCommand extends Command
 {
     use GuardsExistingContent;
 
+    /**
+     * Le périmètre d'ordre écrit : la classe d'entité, celle que son
+     * `Administrator` verrouille — un autre périmètre ici serait refusé à son
+     * premier `withLock()`.
+     */
+    private const array ORDER_SCOPES = [CaseStudy::class];
+
     public function __construct(
         private readonly CaseStudyRepositoryInterface $caseStudyRepository,
         private readonly CaseStudyAdministratorInterface $caseStudyAdministrator,
+        private readonly OrderScopeLockInterface $orderScopeLock,
     ) {
         parent::__construct();
     }
@@ -54,13 +67,28 @@ final class SeedCaseStudyContentCommand extends Command
     {
         $io = new SymfonyStyle($input, $output);
 
-        if ($this->refusesToOverwrite($io, $input, $this->countExisting())) {
-            return Command::SUCCESS;
-        }
+        // Issue #567 : décompte, purge et recréation dans une seule transaction,
+        // sous le verrou du périmètre ; le compte rendu s'affiche après son COMMIT.
+        $outcome = $this->orderScopeLock->withLocks(
+            self::ORDER_SCOPES,
+            fn (): SeedOutcome => $this->seedUnlessPopulated($input, $this->countExisting(...), $this->seed(...)),
+        );
 
+        return $outcome->report($io);
+    }
+
+    /**
+     * Purge puis recrée, sous le verrou : la purge est écrite ligne par ligne
+     * avant toute création.
+     *
+     * @return list<string> une ligne de compte rendu par locale
+     */
+    private function seed(): array
+    {
         $translationGroups = new TranslationGroupIndex();
+        $lines = [];
 
-        // Spec 0004 D3 : la purge précède désormais toute création, au lieu
+        // Spec 0004 D3 : la purge précède toute création, au lieu
         // d'être faite langue par langue. Une entrée sans groupe se range en
         // fin de périmètre, toutes langues confondues : les entrées d'une
         // autre langue encore en place pendant la création décaleraient la
@@ -86,10 +114,10 @@ final class SeedCaseStudyContentCommand extends Command
                 $translationGroups->remember('case-study', $index, $created->getTranslationGroup());
             }
 
-            $io->success(\sprintf('[%s] %d étude(s) de cas.', $localeValue, \count($caseStudies)));
+            $lines[] = \sprintf('[%s] %d étude(s) de cas.', $localeValue, \count($caseStudies));
         }
 
-        return Command::SUCCESS;
+        return $lines;
     }
 
     /**

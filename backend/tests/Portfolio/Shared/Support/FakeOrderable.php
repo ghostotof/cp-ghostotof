@@ -11,15 +11,16 @@ use App\Portfolio\Shared\Domain\Orderable;
  * doit dépendre d'aucun des neuf contextes qui l'utilisent — en prendre un au
  * hasard ferait de son test l'otage de ce contexte-là. Garde trace des appels
  * à `moveToPosition()` pour pouvoir affirmer qu'une entité hors périmètre n'a
- * jamais été touchée.
+ * jamais été touchée. La position de départ se choisit, pour composer un
+ * groupe dont les membres divergent (issue #503) ; par défaut -1, une valeur
+ * qu'`OrderAssigner` n'écrit jamais, pour qu'une assertion sur la position 0
+ * prouve une écriture et non l'état de départ.
  */
 final class FakeOrderable implements Orderable
 {
-    private ?int $position = null;
-
     private int $moveCount = 0;
 
-    public function __construct(private readonly string $key)
+    public function __construct(private readonly string $key, private int $position = -1)
     {
     }
 
@@ -34,7 +35,7 @@ final class FakeOrderable implements Orderable
         ++$this->moveCount;
     }
 
-    public function getPosition(): ?int
+    public function getPosition(): int
     {
         return $this->position;
     }

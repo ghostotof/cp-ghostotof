@@ -28,10 +28,11 @@ use Psr\Log\LoggerInterface;
  * - Le squelette — transaction à la main, attente bornée si la session ne
  *   la borne pas (un filet depuis #525 : la console de dev ou de CI),
  *   `55P03` renommé, COMMIT refusé remonté sous
- *   l'erreur de la base — est celui des trois verrous PostgreSQL,
+ *   l'erreur de la base — est celui des verrous PostgreSQL,
  *   {@see PostgresLockedTransaction} (issue #512). Un refus levé par
  *   l'opération ne ferme pas, à lui seul, l'EntityManager ; celui que lève
- *   un `flush()` le ferme, comme avant ce verrou.
+ *   un `flush()` le ferme, comme avant ce verrou, et un COMMIT refusé par la
+ *   base aussi (issue #547).
  * - **Jamais dans une transaction déjà ouverte** (issue #532) : le squelette
  *   le refuse, ici sous {@see UsernameAllocationLockInsideTransactionException}.
  *   Imbriqué, son COMMIT ne serait qu'un point de sauvegarde, et
@@ -60,11 +61,15 @@ final readonly class PostgresUsernameAllocationLock implements UsernameAllocatio
     {
         $connection = $this->entityManager->getConnection();
 
-        return new PostgresLockedTransaction($connection, $this->logger, $this->fallbackLockTimeout)->run(
-            acquire: static fn (): mixed => $connection->executeQuery(
-                'SELECT pg_advisory_xact_lock(?, ?)',
-                [self::ADVISORY_NAMESPACE, self::ADVISORY_KEY],
-            ),
+        return new PostgresLockedTransaction($this->entityManager, $this->logger, $this->fallbackLockTimeout)->run(
+            // Ne rend rien : le squelette remettrait à l'opération ce que rend
+            // l'acquisition (#560), et un advisory lock n'a rien à lui donner.
+            acquire: static function () use ($connection): void {
+                $connection->executeQuery(
+                    'SELECT pg_advisory_xact_lock(?, ?)',
+                    [self::ADVISORY_NAMESPACE, self::ADVISORY_KEY],
+                );
+            },
             onTimeout: UsernameAllocationLockTimeoutException::afterWaiting(...),
             onNested: UsernameAllocationLockInsideTransactionException::create(...),
             operation: $operation,

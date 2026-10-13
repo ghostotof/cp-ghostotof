@@ -22,7 +22,8 @@ use Doctrine\Migrations\AbstractMigration;
  * plpgsql. Au COMMIT, pour chaque ligne insérée, ou dont la position ou le
  * groupe a changé, elle relit **l'état courant** du groupe (min et max des
  * positions) et lève le SQLSTATE `23T90` (classe 23, violation d'intégrité ;
- * propre au projet, pour que `PostgresAdvisoryOrderScopeLock` le reconnaisse
+ * propre au projet, pour que l'application le reconnaisse — depuis #506,
+ * `TranslationGroupRefusal` —
  * sans lire le message) en nommant la table et le groupe s'il porte plus
  * d'une position. Lire l'état courant plutôt que
  * `NEW.position` évite un faux refus quand la même ligne est réécrite deux

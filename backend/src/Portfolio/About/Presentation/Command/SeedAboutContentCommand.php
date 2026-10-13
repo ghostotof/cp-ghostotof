@@ -7,13 +7,17 @@ namespace App\Portfolio\About\Presentation\Command;
 use App\Portfolio\About\Application\AboutMeCardAdministratorInterface;
 use App\Portfolio\About\Application\AboutSettingsAdministratorInterface;
 use App\Portfolio\About\Application\AboutSiteCardAdministratorInterface;
+use App\Portfolio\About\Domain\Entity\AboutMeCard;
 use App\Portfolio\About\Domain\Entity\AboutSettings;
+use App\Portfolio\About\Domain\Entity\AboutSiteCard;
 use App\Portfolio\About\Domain\Repository\AboutMeCardRepositoryInterface;
 use App\Portfolio\About\Domain\Repository\AboutSettingsRepositoryInterface;
 use App\Portfolio\About\Domain\Repository\AboutSiteCardRepositoryInterface;
 use App\Portfolio\About\Domain\ValueObject\AboutMeCardCategory;
+use App\Portfolio\Shared\Application\OrderScopeLockInterface;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Shared\Presentation\Command\GuardsExistingContent;
+use App\Shared\Presentation\Command\SeedOutcome;
 use App\Shared\Presentation\Command\TranslationGroupIndex;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
@@ -25,9 +29,21 @@ use Symfony\Component\Console\Style\SymfonyStyle;
  * Peuple/réinitialise le contenu de la page À propos (fr/en) avec son contenu
  * de référence (repris de l'ancien contenu statique frontend
  * infrastructure/portfolio/content/{fr,en}.ts, aujourd'hui servi depuis la
- * base via GET /api/about/{locale}). Idempotente : chaque exécution purge et
- * recrée les cartes, et upsert les réglages (AboutSettings est un singleton
- * par locale, jamais supprimé).
+ * base via GET /api/about/{locale}). Même garde-fou que les autres commandes
+ * app:*:seed ({@see GuardsExistingContent}) : si des cartes sont déjà en
+ * place, elle décline (code de sortie 0). Avec --force, elle purge toutes les
+ * cartes, toutes locales confondues, puis les recrée, ce qui écrase les
+ * éditions faites au backoffice. Les réglages ({@see AboutSettings}, un
+ * singleton par locale) sont créés s'ils manquent, à chaque peuplement
+ * effectif ; s'ils existent, seul --force les remet au contenu de référence
+ * (issue #568), sinon ils sont conservés tels qu'édités. Jamais purgés, ils
+ * n'entrent pas dans le décompte.
+ *
+ * Le tout — décompte, purge, cartes et réglages — dans une seule transaction,
+ * sous les verrous d'ordre des deux tables de cartes (issue #567) : une panne
+ * entre les deux ne laisse plus la seconde vide, et un `--force` interrompu
+ * garde le contenu d'avant. Les réglages, sans verrou (#553), y sont écrits
+ * aussi : ils valident ou s'annulent avec les cartes.
  */
 #[AsCommand(
     name: 'app:about:seed',
@@ -37,6 +53,13 @@ final class SeedAboutContentCommand extends Command
 {
     use GuardsExistingContent;
 
+    /**
+     * Les périmètres d'ordre écrits : la classe d'entité de chaque table de
+     * cartes, celle que leur `Administrator` verrouille — un autre périmètre
+     * ici serait refusé à leur premier `withLock()`.
+     */
+    private const array ORDER_SCOPES = [AboutSiteCard::class, AboutMeCard::class];
+
     public function __construct(
         private readonly AboutSettingsRepositoryInterface $aboutSettingsRepository,
         private readonly AboutSiteCardRepositoryInterface $aboutSiteCardRepository,
@@ -44,6 +67,7 @@ final class SeedAboutContentCommand extends Command
         private readonly AboutSettingsAdministratorInterface $aboutSettingsAdministrator,
         private readonly AboutSiteCardAdministratorInterface $aboutSiteCardAdministrator,
         private readonly AboutMeCardAdministratorInterface $aboutMeCardAdministrator,
+        private readonly OrderScopeLockInterface $orderScopeLock,
     ) {
         parent::__construct();
     }
@@ -57,18 +81,40 @@ final class SeedAboutContentCommand extends Command
     {
         $io = new SymfonyStyle($input, $output);
 
-        if ($this->refusesToOverwrite($io, $input, $this->countExisting())) {
-            return Command::SUCCESS;
-        }
+        // Les réglages, un singleton par langue, ne sont jamais purgés : ils ne
+        // sont réécrits qu'avec --force (#568), voir ensureSettings().
+        $overwriteSettings = $this->forcesOverwrite($input);
 
+        $outcome = $this->orderScopeLock->withLocks(
+            self::ORDER_SCOPES,
+            fn (): SeedOutcome => $this->seedUnlessPopulated(
+                $input,
+                $this->countExisting(...),
+                fn (): array => $this->seed($overwriteSettings),
+            ),
+        );
+
+        return $outcome->report($io);
+    }
+
+    /**
+     * Purge puis recrée, sous les verrous : la purge est écrite ligne par
+     * ligne avant toute création.
+     *
+     * @param bool $overwriteSettings vrai avec --force, voir ensureSettings()
+     *
+     * @return list<string> une ligne de compte rendu par locale
+     */
+    private function seed(bool $overwriteSettings): array
+    {
         $translationGroups = new TranslationGroupIndex();
+        $lines = [];
 
-        // Spec 0004 D3 : la purge précède désormais toute création, au lieu
+        // Spec 0004 D3 : la purge précède toute création, au lieu
         // d'être faite langue par langue. Une carte sans groupe se range en fin
         // de périmètre, toutes langues confondues : les cartes d'une autre
         // langue encore en place pendant la création décaleraient la
-        // numérotation d'autant, à chaque `--force`. Les réglages, eux, sont un
-        // singleton par langue : ils sont mis à jour, jamais purgés.
+        // numérotation d'autant, à chaque `--force`.
         foreach ($this->aboutSiteCardRepository->findAll() as $existing) {
             $this->aboutSiteCardRepository->remove($existing);
         }
@@ -80,23 +126,24 @@ final class SeedAboutContentCommand extends Command
         foreach ($this->content() as $localeValue => $content) {
             $locale = Locale::from($localeValue);
 
-            $this->upsertSettings($locale, $content);
+            $settingsOutcome = $this->ensureSettings($locale, $content, $overwriteSettings);
             $this->createSiteCards($locale, $content['site']['cards'], $translationGroups);
             $this->createMeCards($locale, AboutMeCardCategory::TECHNICAL, $content['me']['technicalCards'], $translationGroups);
             $this->createMeCards($locale, AboutMeCardCategory::PERSONAL, $content['me']['personalCards'], $translationGroups);
             $this->createMeCards($locale, AboutMeCardCategory::HOBBY, $content['me']['hobbiesCards'], $translationGroups);
 
-            $io->success(\sprintf(
-                '[%s] Réglages à jour, %d carte(s) site, %d carte(s) technique(s), %d carte(s) personnelle(s), %d carte(s) loisir(s).',
+            $lines[] = \sprintf(
+                '[%s] Réglages %s, %d carte(s) site, %d carte(s) technique(s), %d carte(s) personnelle(s), %d carte(s) loisir(s).',
                 $localeValue,
+                $settingsOutcome,
                 \count($content['site']['cards']),
                 \count($content['me']['technicalCards']),
                 \count($content['me']['personalCards']),
                 \count($content['me']['hobbiesCards']),
-            ));
+            );
         }
 
-        return Command::SUCCESS;
+        return $lines;
     }
 
     /**
@@ -112,32 +159,51 @@ final class SeedAboutContentCommand extends Command
      *         hobbiesCards: list<array{title: string, description: string, iconKey: ?string}>,
      *     },
      * } $content
+     * @param bool $overwrite vrai avec --force : des réglages existants sont
+     *                        remis au contenu de référence ; faux, ils sont
+     *                        conservés tels qu'édités au backoffice (#568)
+     *
+     * @return string le sort des réglages, pour le message de la commande
      */
-    private function upsertSettings(Locale $locale, array $content): void
+    private function ensureSettings(Locale $locale, array $content, bool $overwrite): string
     {
-        $existing = $this->aboutSettingsRepository->findByLocale($locale);
-
-        if (null !== $existing) {
-            $this->aboutSettingsAdministrator->update(
-                $locale,
-                $content['site']['eyebrow'],
-                $content['me']['eyebrow'],
-                $content['me']['technicalSubtitle'],
-                $content['me']['personalSubtitle'],
-                $content['me']['hobbiesSubtitle'],
-            );
-
-            return;
-        }
-
-        $this->aboutSettingsRepository->save(new AboutSettings(
-            $locale,
+        // Les cinq textes de section, dans l'ordre commun au constructeur
+        // d'AboutSettings et à update() : écrits une fois pour les deux.
+        $texts = [
             $content['site']['eyebrow'],
             $content['me']['eyebrow'],
             $content['me']['technicalSubtitle'],
             $content['me']['personalSubtitle'],
             $content['me']['hobbiesSubtitle'],
-        ));
+        ];
+
+        $existing = $this->aboutSettingsRepository->findByLocale($locale);
+
+        if (null === $existing) {
+            $this->aboutSettingsRepository->save(new AboutSettings($locale, ...$texts));
+
+            return 'créés';
+        }
+
+        // Sans --force, une ligne existante n'est jamais réécrite (#568) :
+        // c'est la promesse de GuardsExistingContent, que le décompte seul ne
+        // tient pas pour les réglages, puisqu'ils en sont exclus. Le message
+        // rappelle la voie de remise à zéro : un texte de référence changé
+        // dans le code n'atteint pas des réglages déjà en place.
+        if (!$overwrite) {
+            return 'conservés (--force pour les remettre au contenu de référence)';
+        }
+
+        // Double lecture voulue (#562) : update() relit lui-même la ligne par
+        // findByLocale() et ne reçoit jamais d'entité. C'est ce contrat qui
+        // fait tenir l'absence de verrou d'AboutSettings (#553) : une
+        // signature prenant l'entité laisserait le processeur du backoffice
+        // lui passer l'instance chargée par le provider. Ne pas « optimiser »
+        // en lui passant $existing : un SELECT indexé de plus par locale, avec
+        // --force seulement.
+        $this->aboutSettingsAdministrator->update($locale, ...$texts);
+
+        return 'remis au contenu de référence';
     }
 
     /**
@@ -275,10 +341,12 @@ final class SeedAboutContentCommand extends Command
 
     /**
      * Cartes site et cartes « moi », toutes locales confondues. Les réglages
-     * (`AboutSettings`) sont volontairement exclus du décompte : leur mise à
-     * jour est un upsert, pas une purge — ils ne risquent donc rien, et les
-     * compter ferait considérer comme « peuplée » une base qui n'a pourtant
-     * aucune carte.
+     * (`AboutSettings`) sont volontairement exclus du décompte : ils ne sont
+     * jamais purgés, et les compter ferait considérer comme « peuplée » une
+     * base qui n'a pourtant aucune carte. Quand aucune carte ne reste, la
+     * commande s'exécute donc sans --force ; elle crée alors les réglages
+     * manquants mais conserve ceux qui existent ({@see self::ensureSettings()},
+     * issue #568).
      */
     private function countExisting(): int
     {

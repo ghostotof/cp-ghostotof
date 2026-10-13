@@ -82,6 +82,36 @@ final class SecurityAuditLogTest extends WebTestCase
     }
 
     /**
+     * Issue #588 : un mot de passe au-delà de la borne du hasher est refusé
+     * avant le chargement du compte. La ligne reste un `login-failed` avec
+     * l'empreinte de l'identifiant tenté, mais **sans** `userId`, même pour un
+     * compte existant : le désigner obligerait à le charger, pour un
+     * identifiant existant seulement, et le temps redirait qui existe.
+     */
+    public function testAnOverlongPasswordIsRecordedWithoutDesignatingTheAccount(): void
+    {
+        $client = self::createClient();
+        // Le compteur (IP, identifiant) survit dans `cache.rate_limiter` :
+        // sans purge, les échecs sur `jane` des exécutions précédentes
+        // finiraient en 429.
+        self::getContainer()->get('cache.rate_limiter')->clear();
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::PLAIN_USERNAME, TestCredentials::plainPassword());
+
+        $this->attemptLogin($client, self::PLAIN_USERNAME, TestCredentials::overlong());
+
+        self::assertResponseStatusCodeSame(401);
+        $event = self::singleSecurityAuditEvent('login-failed');
+        self::assertIsString($event['userFingerprint']);
+        self::assertSame([
+            'event' => 'login-failed',
+            'userFingerprint' => $event['userFingerprint'],
+            'actor' => 'anonymous',
+            'ip' => '127.0.0.1',
+            'path' => '/api/login_check',
+        ], $event);
+    }
+
+    /**
      * Le compteur de login_throttling est indexé par (IP, identifiant) et
      * survit dans var/cache : identifiant unique par exécution, comme
      * LoginThrottlingTest.

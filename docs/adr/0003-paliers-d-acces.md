@@ -290,6 +290,6 @@ chiffres que seul l'auteur peut fournir — puis la suppression de l'entrée `[E
 laisse. Aucun compte n'a `ROLE_TRUSTED` hors `ROLE_SUPER` : c'est l'état attendu tant que personne
 n'a été invité nominativement.
 
-Le suivi par `tasks/plan.md` est terminé — le fichier porte désormais le plan des specs 0003 et
-0004 ; l'historique de cette ADR reste lisible dans celui du fichier et dans les issues fermées du
-label `adr-0003`.
+Le suivi par `tasks/plan.md` est terminé — ce plan est archivé, dans son état de clôture, sous
+`.claude/specs/archive/2026-09-13-adr-0003-paliers-d-acces/plan.md` ; l'historique de cette ADR
+reste lisible dans celui du fichier et dans les issues fermées du label `adr-0003`.

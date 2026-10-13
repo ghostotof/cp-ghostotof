@@ -8,28 +8,33 @@ use Closure;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception\ConnectionLost;
 use Doctrine\DBAL\Exception\DriverException;
+use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\ORM\Events;
 use Psr\Log\LoggerInterface;
 use Throwable;
 
 /**
  * Le squelette commun des verrous PostgreSQL de l'application (issue #512) :
  * une transaction ouverte et close à la main, l'attente du verrou bornée, son
- * `55P03` renommé, puis l'opération. Trois adaptateurs le partagent — le
- * périmètre d'ordre (#389), la ligne du compte (#435, #458) et l'attribution
- * des identifiants (#364) — qui en avaient chacun leur copie, déjà divergente.
+ * `55P03` renommé, puis l'opération. Trois adaptateurs le partageaient à sa
+ * création — le périmètre d'ordre (#389), la ligne du compte (#435, #458) et
+ * l'attribution des identifiants (#364) — qui en avaient chacun leur copie,
+ * déjà divergente ; la ligne d'une technologie (#545) et l'administration des
+ * comptes (#551) s'y sont ajoutées.
  *
  * Patron **Execute Around** (la méthode qui encadre une opération reçue) : le
  * squelette est écrit une fois, et chaque adaptateur lui passe ce qui varie
  * réellement entre eux — l'instruction qui prend le verrou, l'exception qui
  * nomme son attente dépassée, celle qui nomme son imbrication refusée, et,
- * pour le seul verrou d'ordre, le refus du COMMIT qu'il sait nommer.
+ * pour le seul verrou d'ordre, le refus du COMMIT qu'il sait nommer (son
+ * `$onCommitRefused`, qui ne fait que nommer depuis #547).
  * Rejetés : une classe abstraite (Template Method), qui lierait par héritage
  * deux contextes (Portfolio, Security) et forcerait à faire transiter par des
  * crochets ce que chaque appel reçoit (le périmètre, le compte) ; un service
  * injecté, sans implémentation alternative à offrir, qui aurait changé le
  * câblage et les constructeurs pour rien. C'est un objet immuable, pas un
- * service : chaque adaptateur le construit sur la connexion de son
- * EntityManager, avec son délai.
+ * service : chaque adaptateur le construit sur son EntityManager, dont il
+ * prend la connexion, avec son délai.
  *
  * Une transaction à la main, ni `EntityManager::wrapInTransaction()` ni
  * `Connection::transactional()`. Le premier **ferme l'EntityManager** sur
@@ -45,6 +50,73 @@ use Throwable;
  * transaction (point de sauvegarde) ; un `flush()` qui échoue ferme
  * l'EntityManager de lui-même, comme hors de tout verrou.
  *
+ * **Un COMMIT refusé par la base ferme l'EntityManager** (issues #502, #547) :
+ * toute `DriverException` levée par le COMMIT, quel que soit son SQLSTATE. Les
+ * `flush()` de l'opération ont réussi au point de sauvegarde ; le refus annule
+ * ce qu'ils ont écrit, mais l'UnitOfWork le tient pour écrit — une lecture
+ * rendait la valeur refusée, `find()` une ligne jamais validée, et une écriture
+ * suivante repartait de là. Il est fermé comme l'échec du COMMIT de Doctrine
+ * lui-même le ferme ({@see \Doctrine\ORM\UnitOfWork::commit()}) : carte
+ * d'identité vidée, une **nouvelle** lecture relit la base, une écriture par
+ * l'ORM échoue en {@see \Doctrine\ORM\Exception\EntityManagerClosed}. Ce que
+ * l'appelant tient déjà garde les valeurs refusées (détaché), et une
+ * instruction DBAL brute ou un `UPDATE`/`DELETE` DQL passe encore. Une session
+ * perdue au COMMIT (`ConnectionLost`, une `DriverException` aussi, le seul
+ * refus que les verrous sans contrainte différée puissent recevoir) laisse son
+ * issue inconnue : fermer reste la réponse sûre. Un worker Messenger le
+ * retrouve neuf au message suivant
+ * ({@see \Doctrine\Bundle\DoctrineBundle\Registry::reset()} réinitialise un
+ * EntityManager fermé) ; une commande s'arrête sur l'exception.
+ * Écrit ici, et non par adaptateur (#547, après #502 qui l'avait mis dans le
+ * seul verrou d'ordre) : le squelette reçoit l'EntityManager, un nouveau verrou
+ * ne peut donc pas l'oublier, comme `$onNested`. La fermeture précède
+ * `$onCommitRefused`, qui ne fait plus que nommer le refus qu'il reconnaît.
+ * Un COMMIT que DBAL refuse lui-même avant d'écrire (`CommitFailedRollbackOnly`,
+ * après un `setRollbackOnly()` qu'aucun appelant ne fait) n'est pas une
+ * `DriverException` et le laisse ouvert (portée de #502 gardée).
+ * Rejetés : un crochet `$onCommitRefused` obligatoire, que chaque adaptateur
+ * aurait rempli de son propre `close()` — un verrou aurait pu passer un
+ * crochet vide ; une fermeture par adaptateur, oubliable comme le délai et le
+ * COMMIT refusé avant #512 ; un rappel « oublier les écritures » injecté à la
+ * place de l'EntityManager, qui aurait gardé le squelette sur DBAL seul pour
+ * un verrou sans ORM qui n'existe pas. Le prix assumé : ce squelette de
+ * `Shared` dépend de l'ORM. `close()` n'est pas protégé : il vide la carte
+ * d'identité et ne lève que si un écouteur `onClear` lève, et l'application
+ * n'en a aucun (Doctrine ne le protège pas non plus dans son propre
+ * `UnitOfWork::commit()`).
+ *
+ * **Une exception de l'opération levée après une écriture ferme aussi
+ * l'EntityManager** (issue #549) : le même état périmé, par l'autre chemin. Un
+ * `flush()` de l'opération a réussi au point de sauvegarde, puis l'opération
+ * lève — un refus métier qui viendrait après le `save()`, une erreur de la base
+ * sur une instruction suivante (le `DELETE` DQL qui suit les `save()` de
+ * l'activation d'un compte), une session perdue — et le ROLLBACK annule ce que
+ * l'UnitOfWork tient pour écrit. Une {@see WrittenFlushWatch}, branchée sur
+ * `onFlush` le temps de la seule transaction et débranchée quoi qu'il arrive,
+ * note qu'un flush avait quelque chose à écrire ; l'EntityManager est alors
+ * fermé **après** le ROLLBACK (dans la branche `ConnectionLost` aussi, où
+ * PostgreSQL a abandonné la transaction). L'exception remonte telle quelle.
+ * Un refus levé **avant** toute écriture — l'usage de chaque `Administrator`
+ * et de chaque cas d'usage des comptes — le laisse ouvert : rien n'est périmé,
+ * et un appelant qui l'écarte (le handler d'invitation, la purge) continue sur
+ * le même EntityManager. Un flush qui n'avait rien à écrire ne compte pas, ni
+ * une écriture DQL ou DBAL brute, qui ne passe pas par l'UnitOfWork (limite
+ * dans {@see WrittenFlushWatch}). Fermé aussi quand le ROLLBACK lève une erreur
+ * de programmation que `rollBackAfter()` laisse remonter (l'opération a validé
+ * elle-même la transaction) : l'écriture est alors validée, mais l'état n'est
+ * plus sûr, et fermer reste prudent. Seul un `flush()` compte : une entité
+ * modifiée en mémoire puis un refus levé avant le `flush()` laisse ces
+ * modifications en attente dans l'EntityManager resté ouvert, comme partout
+ * avec Doctrine — un refus se lève donc avant toute modification aussi, ce que
+ * font `ContentPlacement` et `OrderAssigner`. Avant #549, la règle
+ * « lever avant d'écrire » n'était qu'écrite, et rien ne la faisait respecter.
+ * Rejetés : ne rien faire (la règle, seule, ne protège pas du prochain refus
+ * placé après un `save()`) ; fermer sur toute exception (le défaut de
+ * `wrapInTransaction()`, qui casserait les appelants qui écartent un refus pour
+ * continuer) ; une garde de test qui vérifie que chaque refus attendu précède
+ * l'écriture (elle ne voit que les scénarios écrits, et ni les erreurs de la
+ * base ni les verrous de compte) ; `postFlush`, émis même par un flush vide.
+ *
  * **L'attente est bornée quand rien ne la borne — un filet** : si la session
  * n'a aucun `lock_timeout` (`0`), la transaction reçoit celui de l'adaptateur,
  * par `set_config(…, true)`, l'équivalent de `SET LOCAL` : il s'éteint avec
@@ -55,7 +127,7 @@ use Throwable;
  * une commande lancée par `kubectl exec` (l'environnement du conteneur
  * `php-fpm` n'a pas PGOPTIONS, seul son pool l'a), un futur pod qui
  * l'oublierait. Gardé (décision du 2026-10-12) : il coûte une
- * requête par transaction verrouillée, et ces trois verrous sont ceux dont
+ * requête par transaction verrouillée, et ces verrous sont ceux dont
  * l'attente compte le plus. Un délai que la session a déjà choisi (`PGOPTIONS`,
  * un test) est gardé tel quel, ni rallongé ni raccourci. Il
  * vaut pour toute la transaction, donc aussi pour les attentes de l'opération
@@ -66,24 +138,29 @@ use Throwable;
  * #532), celle d'un autre verrou ou la sienne comprise, avant de rien prendre
  * ni lancer : `run()` lève l'exception que l'adaptateur donne à `$onNested`,
  * et la transaction de l'appelant reste intacte. Imbriqué, son COMMIT ne
- * serait qu'un `RELEASE SAVEPOINT`, et ce que chacun des trois verrous promet
+ * serait qu'un `RELEASE SAVEPOINT`, et ce que chacun des verrous promet
  * « après la validation » ne tiendrait plus : le verrou tiendrait jusqu'au
  * COMMIT de l'appelant, un refus différé (le trigger des groupes de
  * traduction, #390) tomberait à ce COMMIT-là hors de portée de
  * `$onCommitRefused`, une invitation serait publiée — et un lien envoyé —
  * avant que le compte ou le jeton soient visibles du worker ou du lecteur.
- * Aucun appelant n'imbrique (cas d'usage, handlers, commandes, seeds, la
- * suite entière) : le refus rend la règle vraie par construction, au lieu de
- * la confier à la mémoire du prochain appelant.
+ * Aucun appelant n'imbrique (cas d'usage, handlers, commandes, la suite
+ * entière ; les seeds enchaînent les `Administrator`s sous `withLocks()` du
+ * verrou d'ordre, dont la réentrance n'atteint pas `run()`) : le refus rend
+ * la règle vraie par construction, au lieu de la confier à la mémoire du
+ * prochain appelant.
  *
  * Écrit ici une fois plutôt que dans chaque adaptateur, dès qu'il y en a eu
  * trois à le vouloir (#532 ; #526 l'avait laissé dans le seul verrou d'ordre) :
- * `$onNested` est **obligatoire**, un quatrième verrou ne peut donc pas
+ * `$onNested` est **obligatoire**, un nouveau verrou ne peut donc pas
  * l'oublier, alors qu'une copie par adaptateur se serait oubliée comme le
  * délai et le COMMIT refusé avant #512. Chacun garde le nom de son refus, qui
  * dit à l'exploitant quel verrou a été mal pris. Rejetée : une option qui
- * laisse un adaptateur tolérer l'imbrication — aucun n'en a l'usage, et elle
- * aurait gardé vivant un chemin que personne n'emprunte.
+ * laisse un adaptateur tolérer l'imbrication — elle aurait gardé vivant un
+ * chemin que personne n'emprunte. La réentrance bornée du verrou d'ordre
+ * (#567, `withLocks()`) ne passe pas par ici : un `withLock()` sur un
+ * périmètre que sa transaction tient déjà n'atteint pas `run()`, qui refuse
+ * toujours tout ce qui l'atteint dans une transaction ouverte.
  *
  * Le juge est DBAL (`isTransactionActive()`), seul à savoir ce que `commit()`
  * émettra : une transaction ouverte en SQL brut (`executeStatement('BEGIN')`)
@@ -129,32 +206,46 @@ final readonly class PostgresLockedTransaction
      */
     public const string FALLBACK_LOCK_TIMEOUT = '5s';
 
+    /** Celle de l'EntityManager : la transaction, ses verrous et ses `flush()`. */
+    private Connection $connection;
+
     /**
-     * @param LoggerInterface $logger reçoit le seul échec d'un ROLLBACK, que
-     *                                rien d'autre ne verrait : la cause est
-     *                                relancée à sa place
-     * @param string $fallbackLockTimeout une durée PostgreSQL (`5s`, `100ms`),
-     *                                    donnée à la seule session qui n'a
-     *                                    aucun `lock_timeout` — sous FPM, elle
-     *                                    ne sert donc jamais ; une valeur
-     *                                    invalide est refusée par la base à la
-     *                                    première transaction qui la pose
+     * @param EntityManagerInterface $entityManager       celui dont l'opération écrit : le
+     *                                                    squelette prend sa connexion, et le
+     *                                                    ferme sur un COMMIT refusé ou sur
+     *                                                    une exception levée après une écriture
+     * @param LoggerInterface        $logger              reçoit le seul échec d'un ROLLBACK, que
+     *                                                    rien d'autre ne verrait : la cause est
+     *                                                    relancée à sa place
+     * @param string                 $fallbackLockTimeout une durée PostgreSQL (`5s`, `100ms`),
+     *                                                    donnée à la seule session qui n'a
+     *                                                    aucun `lock_timeout` — sous FPM, elle
+     *                                                    ne sert donc jamais ; une valeur
+     *                                                    invalide est refusée par la base à la
+     *                                                    première transaction qui la pose
      */
     public function __construct(
-        private Connection $connection,
+        private EntityManagerInterface $entityManager,
         private LoggerInterface $logger,
         private string $fallbackLockTimeout = self::FALLBACK_LOCK_TIMEOUT,
     ) {
+        $this->connection = $entityManager->getConnection();
     }
 
     /**
+     * @template A
      * @template T
      *
-     * @param Closure(): mixed                          $acquire         prend le verrou ; peut refuser (la ligne a disparu)
+     * @param Closure(): A                              $acquire         prend le verrou ; peut refuser (la ligne a disparu) ; ce qu'il rend
+     *                                                                   — l'entité relue en la verrouillant — est remis à `$operation`
      * @param Closure(DriverException): Throwable       $onTimeout       nomme l'attente dépassée de `$acquire`
      * @param Closure(): Throwable                      $onNested        nomme le refus de s'ouvrir dans une transaction déjà ouverte
-     * @param Closure(): T                              $operation       tourne sous le verrou, dans la transaction
-     * @param (Closure(DriverException): ?Throwable)|null $onCommitRefused nomme un refus du COMMIT reconnu ; `null` le laisse tel quel
+     * @param Closure(A): T                             $operation       tourne sous le verrou, dans la transaction, avec ce qu'a rendu
+     *                                                                   `$acquire` (issue #560 ; une opération qui n'en a pas l'usage ne
+     *                                                                   déclare pas de paramètre)
+     * @param (Closure(DriverException): ?Throwable)|null $onCommitRefused appelé pour **toute** `DriverException` du COMMIT, transaction déjà
+     *                                                                   annulée et EntityManager déjà fermé (#547) : nomme le refus qu'il
+     *                                                                   reconnaît ; `null` le laisse remonter tel quel
      *
      * @return T
      */
@@ -167,20 +258,38 @@ final readonly class PostgresLockedTransaction
             throw $onNested();
         }
 
+        // Issue #549 : une écriture de l'opération, que l'exception suivante
+        // annule, ferme l'EntityManager. Une montre par transaction, débranchée
+        // quoi qu'il arrive. Prise avant d'ouvrir : rien ne doit pouvoir lever
+        // entre l'ouverture et le `try` qui annule.
+        $writes = new WrittenFlushWatch();
+        $eventManager = $this->entityManager->getEventManager();
+
         $this->connection->beginTransaction();
 
         try {
+            $eventManager->addEventListener(Events::onFlush, $writes);
             $this->boundTheWait();
-            $this->acquire($acquire, $onTimeout);
-            $result = $operation();
-        } catch (ConnectionLost $exception) {
-            // Plus de session à annuler : PostgreSQL a déjà abandonné la
-            // transaction (même choix que Connection::transactional()).
-            throw $exception;
+            $acquired = $this->acquire($acquire, $onTimeout);
+            $result = $operation($acquired);
         } catch (Throwable $exception) {
-            $this->rollBackAfter($exception);
+            try {
+                // Une session perdue n'a plus rien à annuler : PostgreSQL a
+                // déjà abandonné la transaction (même choix que
+                // Connection::transactional()).
+                if (!$exception instanceof ConnectionLost) {
+                    $this->rollBackAfter($exception);
+                }
+            } finally {
+                // Un seul point de fermeture, atteint même si le ROLLBACK lève
+                // une erreur de programmation que rollBackAfter() laisse
+                // remonter : l'état de l'EntityManager n'est alors plus sûr.
+                $this->closeIfItWrote($writes);
+            }
 
             throw $exception;
+        } finally {
+            $eventManager->removeEventListener(Events::onFlush, $writes);
         }
 
         try {
@@ -188,7 +297,16 @@ final readonly class PostgresLockedTransaction
         } catch (Throwable $refusal) {
             $this->rollBackIfStillOpen($refusal);
 
-            if ($refusal instanceof DriverException && null !== $onCommitRefused) {
+            if (!$refusal instanceof DriverException) {
+                throw $refusal;
+            }
+
+            // Issues #502, #547 : l'UnitOfWork tient pour écrit ce que le
+            // refus vient d'annuler. Fermé avant le crochet, qui ne peut donc
+            // pas l'empêcher.
+            $this->entityManager->close();
+
+            if (null !== $onCommitRefused) {
                 throw $onCommitRefused($refusal) ?? $refusal;
             }
 
@@ -196,6 +314,20 @@ final readonly class PostgresLockedTransaction
         }
 
         return $result;
+    }
+
+    /**
+     * Ferme l'EntityManager si un `flush()` de l'opération a écrit avant
+     * l'exception (issue #549) : le ROLLBACK, ou la session perdue, a annulé ce
+     * que l'UnitOfWork tient pour écrit. Appelé **après** le ROLLBACK, pour que
+     * rien ne puisse l'empêcher. Un refus levé avant toute écriture le laisse
+     * ouvert : rien n'est périmé.
+     */
+    private function closeIfItWrote(WrittenFlushWatch $writes): void
+    {
+        if ($writes->sawAWrite()) {
+            $this->entityManager->close();
+        }
     }
 
     /**
@@ -283,13 +415,17 @@ final readonly class PostgresLockedTransaction
     }
 
     /**
-     * @param Closure(): mixed                    $acquire
+     * @template A
+     *
+     * @param Closure(): A                        $acquire
      * @param Closure(DriverException): Throwable $onTimeout
+     *
+     * @return A
      */
-    private function acquire(Closure $acquire, Closure $onTimeout): void
+    private function acquire(Closure $acquire, Closure $onTimeout): mixed
     {
         try {
-            $acquire();
+            return $acquire();
         } catch (DriverException $exception) {
             if (self::LOCK_NOT_AVAILABLE === $exception->getSQLState()) {
                 throw $onTimeout($exception);

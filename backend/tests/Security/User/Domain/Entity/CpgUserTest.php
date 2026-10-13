@@ -94,6 +94,26 @@ final class CpgUserTest extends TestCase
         self::assertSame(['ROLE_USER', 'ROLE_ADMIN'], $user->getRoles());
     }
 
+    /**
+     * Le rôle d'administration se lit sur les rôles **stockés** (issue #560) :
+     * ROLE_TRUSTED, que ROLE_SUPER hérite par la role_hierarchy, ne le donne
+     * pas en retour.
+     */
+    public function testOnlyAnAccountHoldingRoleSuperIsASuperAdmin(): void
+    {
+        $user = new CpgUser('jane', 'hashed-password');
+        self::assertFalse($user->isSuperAdmin(), 'Un compte sans rôle est dit super-administrateur.');
+
+        $user->setRoles([CpgUser::ROLE_TRUSTED]);
+        self::assertFalse($user->isSuperAdmin(), 'ROLE_TRUSTED a été pris pour ROLE_SUPER.');
+
+        $user->setRoles([CpgUser::ROLE_SUPER]);
+        self::assertTrue($user->isSuperAdmin());
+
+        $user->setRoles([CpgUser::ROLE_TRUSTED]);
+        self::assertFalse($user->isSuperAdmin(), 'Une rétrogradation est restée super-administratrice.');
+    }
+
     public function testPasswordCanBeUpgraded(): void
     {
         $user = new CpgUser('jane', 'old-hash');
@@ -215,6 +235,20 @@ final class CpgUserTest extends TestCase
 
         self::assertTrue($user->isPendingActivation());
         self::assertFalse($user->isAwaitingPasswordSetup());
+    }
+
+    /**
+     * « Mot de passe défini » a un seul sens (issue #560) : un hachage autre
+     * que NO_PASSWORD. Un compte invité naît sans mot de passe, en reçoit un
+     * par le lien ou par le backoffice ; un compte CLI en reçoit un aussitôt.
+     */
+    public function testAnAccountHasAPasswordOnceItsHashIsNoLongerNoPassword(): void
+    {
+        $user = new CpgUser('jane', CpgUser::NO_PASSWORD);
+        self::assertFalse($user->hasPassword(), 'Un compte sans mot de passe est dit en avoir un.');
+
+        $user->setPassword('a-real-hash-set-from-the-backoffice');
+        self::assertTrue($user->hasPassword());
     }
 
     /**

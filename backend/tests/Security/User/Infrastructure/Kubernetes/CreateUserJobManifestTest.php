@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Tests\Security\User\Infrastructure\Kubernetes;
 
+use App\Tests\Support\KubernetesManifests;
 use PHPUnit\Framework\TestCase;
-use Symfony\Component\Yaml\Yaml;
 
 /**
  * Revue de #386 : l'événement `user-created` part sur le stderr du processus
@@ -45,13 +45,13 @@ final class CreateUserJobManifestTest extends TestCase
     public function testTheSecretIsMountedReadOnlyAndReadableByTheGroupOnly(): void
     {
         $spec = $this->podSpec();
-        $volume = $this->firstWith($spec['volumes'] ?? null, 'name', 'create-user-password');
+        $volume = KubernetesManifests::firstWith($spec, 'volumes', 'name', 'create-user-password');
         self::assertNotNull($volume);
         self::assertSame(self::SECRET_NAME, $volume['secret']['secretName'] ?? null);
         // 0440 : le groupe du fsGroup lit, personne n'écrit.
         self::assertSame(0o440, $volume['secret']['defaultMode'] ?? null);
 
-        $mount = $this->firstWith($this->container()['volumeMounts'] ?? null, 'name', 'create-user-password');
+        $mount = KubernetesManifests::firstWith($this->container(), 'volumeMounts', 'name', 'create-user-password');
         self::assertNotNull($mount);
         self::assertSame(self::SECRET_MOUNT, $mount['mountPath'] ?? null);
         self::assertTrue($mount['readOnly'] ?? false);
@@ -120,7 +120,7 @@ final class CreateUserJobManifestTest extends TestCase
         self::assertStringContainsString('--username="$NEW_ACCOUNT_USERNAME"', $command);
         self::assertStringNotContainsString('CPG_USERNAME', $command);
 
-        $variable = $this->firstWith($this->container()['env'] ?? null, 'name', 'NEW_ACCOUNT_USERNAME');
+        $variable = KubernetesManifests::firstWith($this->container(), 'env', 'name', 'NEW_ACCOUNT_USERNAME');
         self::assertNotNull($variable);
         self::assertSame('${CPG_USERNAME}', $variable['value'] ?? null);
     }
@@ -128,7 +128,7 @@ final class CreateUserJobManifestTest extends TestCase
     /** Hors de `kustomization.yaml` : un `apply -k` ne doit jamais créer de compte. */
     public function testTheJobIsNotPartOfTheKustomization(): void
     {
-        self::assertStringNotContainsString(self::MANIFEST, (string) file_get_contents($this->k8sBase().'/kustomization.yaml'));
+        self::assertStringNotContainsString(self::MANIFEST, KubernetesManifests::base()->source('kustomization.yaml'));
     }
 
     private function commandLine(): string
@@ -136,7 +136,7 @@ final class CreateUserJobManifestTest extends TestCase
         $command = $this->container()['command'] ?? null;
         self::assertIsArray($command);
 
-        return implode(' ', array_map(static fn (mixed $part): string => \is_string($part) ? $part : '', $command));
+        return KubernetesManifests::text($command);
     }
 
     /**
@@ -144,10 +144,7 @@ final class CreateUserJobManifestTest extends TestCase
      */
     private function container(): array
     {
-        $container = $this->firstWith($this->podSpec()['containers'] ?? null, 'name', 'create-user');
-        self::assertNotNull($container, 'Conteneur « create-user » absent.');
-
-        return $container;
+        return KubernetesManifests::base()->container(self::MANIFEST, 'Job', 'create-user');
     }
 
     /**
@@ -155,10 +152,7 @@ final class CreateUserJobManifestTest extends TestCase
      */
     private function podSpec(): array
     {
-        $spec = $this->job()['spec']['template']['spec'] ?? null;
-        self::assertIsArray($spec);
-
-        return $spec;
+        return KubernetesManifests::base()->podSpec(self::MANIFEST, 'Job');
     }
 
     /**
@@ -166,37 +160,11 @@ final class CreateUserJobManifestTest extends TestCase
      */
     private function job(): array
     {
-        $job = Yaml::parse($this->source());
-        self::assertIsArray($job);
-        self::assertSame('Job', $job['kind'] ?? null);
-
-        return $job;
+        return KubernetesManifests::base()->resource(self::MANIFEST, 'Job');
     }
 
     private function source(): string
     {
-        $path = $this->k8sBase().'/'.self::MANIFEST;
-        self::assertFileIsReadable($path);
-
-        return (string) file_get_contents($path);
-    }
-
-    /**
-     * @return array<mixed>|null
-     */
-    private function firstWith(mixed $list, string $key, string $value): ?array
-    {
-        foreach (\is_array($list) ? $list : [] as $item) {
-            if (\is_array($item) && $value === ($item[$key] ?? null)) {
-                return $item;
-            }
-        }
-
-        return null;
-    }
-
-    private function k8sBase(): string
-    {
-        return \dirname(__DIR__, 6).'/k8s/base';
+        return KubernetesManifests::base()->source(self::MANIFEST);
     }
 }

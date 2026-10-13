@@ -22,8 +22,6 @@ interface TranslatableContent extends Orderable
 
     public function getTranslationGroup(): Uuid;
 
-    public function getPosition(): int;
-
     /**
      * Rattache l'entrée au groupe d'un contenu existant : elle en devient la
      * version dans sa propre langue.

@@ -122,15 +122,13 @@ final readonly class ExtractedTextNormalizer
      */
     private function withoutPageNumbers(array $pages): array
     {
-        foreach ($pages as $index => $lines) {
-            foreach ($this->edgeIndexes($lines) as $position) {
-                if (1 === preg_match(self::PAGE_NUMBER, $lines[$position])) {
-                    $pages[$index][$position] = '';
-                }
-            }
-        }
-
-        return $pages;
+        return array_map(
+            fn (array $lines): array => $this->blanked($lines, array_filter(
+                $this->edgeIndexes($lines),
+                static fn (int $position): bool => 1 === preg_match(self::PAGE_NUMBER, $lines[$position]),
+            )),
+            $pages,
+        );
     }
 
     /**
@@ -146,20 +144,44 @@ final readonly class ExtractedTextNormalizer
 
         $repeated = array_intersect(...array_map($this->edgeLines(...), $pages));
         $seen = [];
-        foreach ($pages as $index => $lines) {
+        $result = [];
+        foreach ($pages as $lines) {
+            $duplicates = [];
             foreach ($this->edgeIndexes($lines) as $position) {
                 $line = $lines[$position];
                 if (!\in_array($line, $repeated, true)) {
                     continue;
                 }
                 if (isset($seen[$line])) {
-                    $pages[$index][$position] = '';
+                    $duplicates[] = $position;
                 }
                 $seen[$line] = true;
             }
+            $result[] = $this->blanked($lines, $duplicates);
         }
 
-        return $pages;
+        return $result;
+    }
+
+    /**
+     * Vide les lignes aux positions données, en reconstruisant la page plutôt
+     * qu'en écrivant `$lines[$position]` : PHPStan (≥ 2.3) ne peut prouver
+     * qu'une écriture à un indice entier quelconque garde une `list`, et le
+     * contrat de `paragraphs()` en dépend.
+     *
+     * @param list<string>    $lines
+     * @param array<int, int> $positions
+     *
+     * @return list<string>
+     */
+    private function blanked(array $lines, array $positions): array
+    {
+        $blanked = [];
+        foreach ($lines as $position => $line) {
+            $blanked[] = \in_array($position, $positions, true) ? '' : $line;
+        }
+
+        return $blanked;
     }
 
     /**

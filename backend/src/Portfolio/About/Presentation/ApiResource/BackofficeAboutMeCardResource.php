@@ -64,11 +64,12 @@ final class BackofficeAboutMeCardResource
     public function __construct(
         public ?string $id = null,
         /**
-         * Lue à la création seulement. Le `PUT` l'ignore (#170, R2) : une
-         * entrée ne change jamais de langue — elle appartient à un groupe de
-         * traduction où sa langue est unique —, et le formulaire d'édition
-         * désactive le champ. Toujours validée, pour qu'un corps incohérent
-         * soit un 422 et non un silence.
+         * Fixée à la création. Une entrée ne change jamais de langue — elle
+         * appartient à un groupe de traduction où sa langue est unique — : le
+         * `PUT` qui en porte une autre est refusé en 409 typé
+         * `locale-immutable` (issue #582 ; il l'ignorait sous un 200 depuis
+         * #170 R2), et le formulaire d'édition désactive le champ. Toujours
+         * validée : une valeur hors des langues est un 422.
          */
         #[Assert\NotBlank]
         #[Assert\Choice(callback: [Locale::class, 'values'])]
@@ -87,6 +88,12 @@ final class BackofficeAboutMeCardResource
          * Bornée par l'enum, pas par une liste recopiée (spec 0004, D2 — même
          * règle que `Locale::values()` sur `locale`) : une catégorie ajoutée
          * dans `AboutMeCardCategory` est acceptée ici sans second geste.
+         *
+         * Sur un `PUT`, elle doit être celle de la carte (issue #578) : une
+         * carte ne change pas de catégorie, et une autre valeur est refusée en
+         * 409 (`me-card-category-immutable`) plutôt qu'ignorée — comme
+         * `locale` depuis #582, refusée avant elle. Le formulaire d'édition
+         * désactive le champ.
          */
         #[Assert\NotBlank]
         #[Assert\Choice(callback: [AboutMeCardCategory::class, 'values'])]

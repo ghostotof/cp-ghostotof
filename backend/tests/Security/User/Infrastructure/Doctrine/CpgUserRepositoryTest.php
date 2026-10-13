@@ -7,6 +7,7 @@ namespace App\Tests\Security\User\Infrastructure\Doctrine;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use App\Security\User\Infrastructure\Doctrine\CpgUserRepository;
+use App\Shared\Infrastructure\Doctrine\VanishedEntitySavedAgainException;
 use App\Tests\Support\ReadsAllChannelsLog;
 use App\Tests\Support\TestCredentials;
 use DateTimeImmutable;
@@ -246,6 +247,60 @@ final class CpgUserRepositoryTest extends KernelTestCase
         self::assertSame(1, $this->em->getConnection()->fetchOne('SELECT COUNT(*) FROM cpg_user'));
     }
 
+    /**
+     * Issue #569 : la suppression DQL laissait l'instance **gérée** alors que
+     * sa ligne n'existait plus. Une modification puis un `save()` émettaient
+     * un `UPDATE` sur 0 ligne — Doctrine ne lit pas ce compte pour une entité
+     * non versionnée —, l'écriture perdue en silence. L'instance est
+     * désormais détachée et retenue par VanishedEntities : sa re-sauvegarde
+     * est refusée sous la cause « supprimée par cet EntityManager ».
+     */
+    public function testRemovePendingInvitationForgetsTheDeletedAccountAndRefusesItsResave(): void
+    {
+        $user = new CpgUser('undispatched', '');
+        $user->setEmail('undispatched@example.com');
+        $user->markInvited(new DateTimeImmutable('2026-10-11T18:00:00+02:00'));
+        $this->repository->save($user);
+        $id = $user->getId()->toRfc4122();
+
+        $this->repository->removePendingInvitation($user);
+        $stillManaged = $this->em->contains($user);
+        $user->markInvited(new DateTimeImmutable('2026-10-11T18:05:00+02:00'));
+        $refusal = null;
+        try {
+            $this->repository->save($user);
+        } catch (VanishedEntitySavedAgainException $exception) {
+            $refusal = $exception;
+        }
+
+        self::assertSame(0, $this->em->getConnection()->fetchOne('SELECT COUNT(*) FROM cpg_user'), 'Le compte supprimé, re-sauvé, a été réinséré.');
+        self::assertFalse($stillManaged, "Le compte supprimé en DQL est resté géré par l'EntityManager (#569).");
+        self::assertNotNull($refusal, 'La re-sauvegarde du compte supprimé en DQL est passée en silence, UPDATE sur 0 ligne (#569).');
+        self::assertSame(VanishedEntitySavedAgainException::removedByThisManager(CpgUser::class, $id)->getMessage(), $refusal->getMessage());
+    }
+
+    /**
+     * Le compte activé entre-temps n'est pas supprimé (0 ligne touchée) : il
+     * reste géré, et l'écrire reste possible. Seul un DELETE qui a touché sa
+     * ligne détache l'instance.
+     */
+    public function testRemovePendingInvitationLeavesASparedAccountManaged(): void
+    {
+        $user = new CpgUser('activated-meanwhile', 'hashed-password');
+        $user->setEmail('activated@example.com');
+        $user->markInvited(new DateTimeImmutable('2026-10-11T18:00:00+02:00'));
+        $user->markActivated(new DateTimeImmutable('2026-10-11T18:01:00+02:00'));
+        $this->repository->save($user);
+
+        $this->repository->removePendingInvitation($user);
+        $stillManaged = $this->em->contains($user);
+        $user->setEmail('activated.renamed@example.com');
+        $this->repository->save($user);
+
+        self::assertTrue($stillManaged, 'Le compte épargné par la suppression a été détaché.');
+        self::assertSame('activated.renamed@example.com', $this->em->getConnection()->fetchOne('SELECT email FROM cpg_user'));
+    }
+
     public function testLoadUserByIdentifierReturnsTheAccount(): void
     {
         $this->em->persist(new CpgUser('jane', 'hashed-password'));
@@ -314,6 +369,54 @@ final class CpgUserRepositoryTest extends KernelTestCase
             self::allChannelsLogRecords(),
             static fn (LogRecord $record): bool => 'doctrine' === $record->channel && str_contains($record->message, 'FROM cpg_user'),
         ));
+    }
+
+    /**
+     * Issue #551 : la garde du dernier ROLE_SUPER compte les **autres**
+     * comptes ROLE_SUPER capables de se connecter — la cible exclue, un compte
+     * invité jamais activé (mot de passe vide) exclu, un compte sans le rôle
+     * exclu.
+     */
+    public function testCountOtherSuperAdminsAbleToSignInExcludesTheTargetThePendingOnesAndThePlainOnes(): void
+    {
+        $target = $this->storedSuperAdmin('target', 'hashed-password');
+        $this->storedSuperAdmin('able', 'hashed-password');
+        $this->storedSuperAdmin('pending', '');
+        $this->storedUser('plain', 'hashed-password', []);
+
+        self::assertSame(1, $this->repository->countOtherSuperAdminsAbleToSignIn($target));
+    }
+
+    /**
+     * Compté en base, jamais sur la carte d'identité : le seul autre ROLE_SUPER
+     * est encore ROLE_SUPER en mémoire, plus en base.
+     */
+    public function testCountOtherSuperAdminsAbleToSignInReadsTheDatabaseNotTheIdentityMap(): void
+    {
+        $target = $this->storedSuperAdmin('target', 'hashed-password');
+        $demotedMeanwhile = $this->storedSuperAdmin('demoted', 'hashed-password');
+        $this->em->getConnection()->executeStatement("UPDATE cpg_user SET roles = '[]' WHERE id = :id", ['id' => $demotedMeanwhile->getId()->toRfc4122()]);
+
+        self::assertContains(CpgUser::ROLE_SUPER, $demotedMeanwhile->getRoles(), 'La carte d\'identité doit encore tenir le rôle, c\'est elle que le test accuse.');
+        self::assertSame(0, $this->repository->countOtherSuperAdminsAbleToSignIn($target));
+    }
+
+    private function storedSuperAdmin(string $username, string $hashedPassword): CpgUser
+    {
+        return $this->storedUser($username, $hashedPassword, [CpgUser::ROLE_SUPER]);
+    }
+
+    /**
+     * @param list<string> $roles
+     */
+    private function storedUser(string $username, string $hashedPassword, array $roles): CpgUser
+    {
+        $user = new CpgUser($username, $hashedPassword);
+        $user->setRoles($roles);
+        $this->em->persist($user);
+        $this->em->flush();
+
+        return $user;
     }
 
     /** @return iterable<string, array{string}> */

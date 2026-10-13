@@ -112,6 +112,10 @@ api_platform:
         # n'a donc pas à lire le `detail` localisé.
         App\Portfolio\Shared\Domain\Exception\TranslationAlreadyExistsException: 409
         App\Portfolio\Shared\Domain\Exception\UnknownTranslationGroupException: 422
+        # Issue #582 : une entrée ne change pas de langue — refus explicite (409
+        # typé `locale-immutable`) sur les huit contextes localisés, comme la
+        # catégorie d'une carte « moi » (#578). Le `PUT` l'ignorait (#170 R2).
+        App\Portfolio\Shared\Domain\Exception\TranslatableContentLocaleIsImmutableException: 409
         # Spec 0004 D4 : PUT …/order exige l'ensemble exact des clés du
         # périmètre. Une clé inconnue (ou dupliquée) et une clé manquante sont
         # toutes deux une saisie invalide (422), pas une 404 ni un 409 : la
@@ -125,11 +129,18 @@ api_platform:
         App\Portfolio\About\Domain\Exception\AboutSettingsNotFoundException: 404
         App\Portfolio\About\Domain\Exception\AboutSiteCardNotFoundException: 404
         App\Portfolio\About\Domain\Exception\AboutMeCardNotFoundException: 404
+        # Issue #578 : une carte ne change pas de catégorie — refus explicite (409
+        # typé `me-card-category-immutable`), comme le slug d'un produit surveillé.
+        App\Portfolio\About\Domain\Exception\AboutMeCardCategoryIsImmutableException: 409
         App\Security\User\Domain\Exception\CpgUserNotFoundException: 404
         App\Security\User\Domain\Exception\CannotDeleteOwnAccountException: 409
         App\Security\User\Domain\Exception\CannotDeleteLastSuperAdminException: 409
         App\Security\User\Domain\Exception\CannotModifyOwnRolesException: 409
         App\Security\User\Domain\Exception\CannotDemoteLastSuperAdminException: 409
+        # L'acteur relu sous le verrou d'administration n'est plus ROLE_SUPER,
+        # ou n'existe plus (issue #551) : l'autorisation n'existe plus, comme
+        # le pare-feu le dira à sa requête suivante — un 403, pas un 409.
+        App\Security\User\Domain\Exception\ActingAccountNoLongerSuperAdminException: 403
         App\Security\User\Domain\Exception\EmailAlreadyUsedException: 409
         App\Security\User\Domain\Exception\AccountNotAwaitingActivationException: 409
         # Levée par SendAccountInvitationHandler (worker Messenger async) ;
@@ -199,11 +210,18 @@ api_platform:
         ApiPlatform\Metadata\Exception\InvalidArgumentException: 500
         # Troisième défaut d'API Platform, `Doctrine\ORM\OptimisticLockException: 409`,
         # **retiré** (issue #373) : aucune entité n'est versionnée (pas de
-        # #[ORM\Version] dans src/), et la seule levée possible aujourd'hui,
-        # OptimisticLockException::notVersioned(), est une erreur de
-        # programmation — un 500 `critical`, ce que donne l'absence d'entrée.
-        # Le jour où une entité sera versionnée, le conflit concurrent est un
-        # 409 du client : lui donner alors une entrée et un `log_level`.
+        # #[ORM\Version] dans src/), et ses levées possibles aujourd'hui sont
+        # des défauts du serveur — OptimisticLockException::notVersioned(),
+        # une erreur de programmation, et « Commit failed », l'enveloppe que
+        # Doctrine met sur tout COMMIT refusé par la base lors d'un flush()
+        # hors transaction, refus du trigger des groupes de traduction compris
+        # (#506) : un 500 `critical`, ce que donne l'absence d'entrée. Le jour
+        # où une entité sera versionnée, le conflit concurrent est un 409 du
+        # client, mais Doctrine le lève dans la même classe
+        # (lockFailedVersionMismatch()) : l'attraper là où il naît et le
+        # relancer sous une exception du projet, mappée en 409 avec un
+        # `log_level`, jamais mapper la classe entière, qui rendrait un COMMIT
+        # refusé en 409.
     defaults:
         stateless: true
         cache_headers:

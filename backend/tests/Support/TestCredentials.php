@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Tests\Support;
 
+use App\Security\User\Domain\Entity\CpgUser;
+
 /**
  * Mots de passe des comptes jetables créés par les tests fonctionnels.
  *
@@ -48,6 +50,20 @@ final class TestCredentials
     public static function plainPassword(): string
     {
         return self::variant('plain');
+    }
+
+    /**
+     * Une saisie d'un octet au-delà de {@see CpgUser::MAX_PASSWORD_LENGTH},
+     * la borne du hasher : aucun compte ne peut avoir ce mot de passe, et
+     * `verify()` la refuserait sans rien dériver (issue #588). Construite en
+     * répétant une valeur tirée au hasard, pour la même raison que le reste de
+     * cette classe : aucune chaîne du dépôt ne ressemble à un mot de passe.
+     */
+    public static function overlong(): string
+    {
+        $unit = self::variant('overlong');
+
+        return substr(str_repeat($unit, intdiv(CpgUser::MAX_PASSWORD_LENGTH, \strlen($unit)) + 1), 0, CpgUser::MAX_PASSWORD_LENGTH + 1);
     }
 
     /**

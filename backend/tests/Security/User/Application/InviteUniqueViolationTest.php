@@ -119,9 +119,9 @@ final class InviteUniqueViolationTest extends KernelTestCase
                 return $this->real->findAwaitingPasswordSetupInvitedBefore($threshold);
             }
 
-            public function countByRole(string $role): int
+            public function countOtherSuperAdminsAbleToSignIn(CpgUser $except): int
             {
-                return $this->real->countByRole($role);
+                return $this->real->countOtherSuperAdminsAbleToSignIn($except);
             }
 
             public function save(CpgUser $user): void

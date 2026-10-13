@@ -102,6 +102,20 @@ spec:
             # vaille : elle pose `SET lock_timeout = '…'` sur la session.
             - name: PGOPTIONS
               value: '-c lock_timeout=5s'
+            # Issue #575 : les migrations tournent sous le rôle PROPRIÉTAIRE du
+            # schéma (cpg_migrator), le seul qui puisse faire du DDL ; l'application
+            # tourne sous cpg_app, qui n'a que le DML (DATABASE_URL de
+            # backend-secrets). Un `env` prime sur `envFrom` : backend-secrets
+            # reste monté pour APP_SECRET et le reste du noyau, seule l'URL
+            # change. Ce Secret n'est monté nulle part ailleurs
+            # (MigrationRoleSecretsTest) : l'URL du propriétaire n'atteint
+            # jamais un pod qui sert des requêtes. Rôles et procédure :
+            # postgres-roles-job.yaml, k8s/README.md « Rôles PostgreSQL ».
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: backend-migration-secrets
+                  key: DATABASE_URL
           envFrom:
             - configMapRef:
                 name: backend-config

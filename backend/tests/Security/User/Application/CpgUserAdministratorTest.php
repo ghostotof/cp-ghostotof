@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace App\Tests\Security\User\Application;
 
 use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
+use App\Security\User\Application\AccountAdministrationLockInterface;
 use App\Security\User\Application\AccountLockInterface;
 use App\Security\User\Application\CpgUserAdministrator;
 use App\Security\User\Domain\Entity\CpgUser;
+use App\Security\User\Domain\Exception\ActingAccountNoLongerSuperAdminException;
 use App\Security\User\Domain\Exception\CannotDeleteLastSuperAdminException;
 use App\Security\User\Domain\Exception\CannotDeleteOwnAccountException;
 use App\Security\User\Domain\Exception\CpgUserNotFoundException;
@@ -33,7 +35,7 @@ final class CpgUserAdministratorTest extends TestCase
         $repository->expects(self::once())->method('findOneById')->with($targetUser->getId())->willReturn($targetUser);
         // Cible sans ROLE_SUPER : la garde anti-lockout ne doit même pas
         // interroger le dépôt sur le décompte.
-        $repository->expects(self::never())->method('countByRole');
+        $repository->expects(self::never())->method('countOtherSuperAdminsAbleToSignIn');
         $repository->expects(self::once())->method('remove')->with($targetUser);
 
         $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
@@ -44,14 +46,19 @@ final class CpgUserAdministratorTest extends TestCase
         $administrator->delete($targetUser->getId(), $actingUser);
     }
 
-    public function testDeleteThrowsWhenTargetIsTheLastSuperAdmin(): void
+    /**
+     * Issue #551 : la garde compte les **autres** ROLE_SUPER capables de se
+     * connecter, la cible exclue — ici aucun, un seul autre en attente
+     * d'activation par exemple.
+     */
+    public function testDeleteThrowsWhenNoOtherSuperAdminAbleToSignInRemains(): void
     {
         $actingUser = $this->user('super');
         $targetUser = $this->superUser('other-super');
 
         $repository = $this->createMock(CpgUserRepositoryInterface::class);
         $repository->expects(self::once())->method('findOneById')->with($targetUser->getId())->willReturn($targetUser);
-        $repository->expects(self::once())->method('countByRole')->with(CpgUser::ROLE_SUPER)->willReturn(1);
+        $repository->expects(self::once())->method('countOtherSuperAdminsAbleToSignIn')->with($targetUser)->willReturn(0);
         $repository->expects(self::never())->method('remove');
 
         $administrator = $this->administrator($repository, self::createStub(UserPasswordHasherInterface::class), $this->auditLoggerExpectingNothing());
@@ -68,7 +75,7 @@ final class CpgUserAdministratorTest extends TestCase
 
         $repository = $this->createMock(CpgUserRepositoryInterface::class);
         $repository->expects(self::once())->method('findOneById')->with($targetUser->getId())->willReturn($targetUser);
-        $repository->expects(self::once())->method('countByRole')->with(CpgUser::ROLE_SUPER)->willReturn(2);
+        $repository->expects(self::once())->method('countOtherSuperAdminsAbleToSignIn')->with($targetUser)->willReturn(1);
         $repository->expects(self::once())->method('remove')->with($targetUser);
 
         $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
@@ -77,6 +84,78 @@ final class CpgUserAdministratorTest extends TestCase
         $administrator = $this->administrator($repository, self::createStub(UserPasswordHasherInterface::class), $auditLogger);
 
         $administrator->delete($targetUser->getId(), $actingUser);
+    }
+
+    /**
+     * Issues #551, #552 : la suppression, et la garde, se font sous le verrou
+     * d'administration, sur le compte qu'il a relu ; le journal s'écrit après
+     * son retour, donc après le COMMIT — une action journalisée est une action
+     * validée.
+     */
+    public function testDeleteRunsUnderTheAdministrationLockAndLogsAfterItReturned(): void
+    {
+        $actingUser = $this->user('super');
+        $targetUser = $this->superUser('other-super');
+        $reread = $this->superUser('other-super');
+        $lockReturned = false;
+
+        $repository = $this->createMock(CpgUserRepositoryInterface::class);
+        $repository->method('findOneById')->willReturn($targetUser);
+        $repository->expects(self::once())->method('countOtherSuperAdminsAbleToSignIn')->with($reread)->willReturn(1);
+        $repository->expects(self::once())->method('remove')->with($reread);
+
+        $lock = $this->createMock(AccountAdministrationLockInterface::class);
+        $lock->expects(self::once())->method('whileAdministering')->with($targetUser, $actingUser)->willReturnCallback(
+            static function (CpgUser $target, CpgUser $actor, Closure $operation) use ($reread, &$lockReturned): mixed {
+                $result = $operation($reread);
+                $lockReturned = true;
+
+                return $result;
+            },
+        );
+
+        $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
+        $auditLogger->expects(self::once())->method('userDeleted')->willReturnCallback(static function () use (&$lockReturned): void {
+            self::assertTrue($lockReturned, 'Le journal a été écrit avant le retour du verrou, donc avant le COMMIT.');
+        });
+
+        $administrator = $this->administrator($repository, self::createStub(UserPasswordHasherInterface::class), $auditLogger, administrationLock: $lock);
+
+        $administrator->delete($targetUser->getId(), $actingUser);
+    }
+
+    /**
+     * @return iterable<string, array{Closure(): never}>
+     */
+    public static function lockRefusals(): iterable
+    {
+        yield 'compte administré disparu (#552)' => [static fn (): never => throw CpgUserNotFoundException::forId(Uuid::v7())];
+        yield 'acteur rétrogradé entre-temps (#551)' => [static fn (): never => throw ActingAccountNoLongerSuperAdminException::demotedMeanwhile()];
+    }
+
+    /**
+     * @param Closure(): never $refusal
+     */
+    #[DataProvider('lockRefusals')]
+    public function testARefusalOfTheLockRemovesNothingAndLogsNothing(Closure $refusal): void
+    {
+        $actingUser = $this->user('super');
+        $targetUser = $this->user('jane');
+
+        $repository = $this->createMock(CpgUserRepositoryInterface::class);
+        $repository->method('findOneById')->willReturn($targetUser);
+        $repository->expects(self::never())->method('remove');
+
+        $lock = self::createStub(AccountAdministrationLockInterface::class);
+        $lock->method('whileAdministering')->willReturnCallback($refusal);
+
+        $administrator = $this->administrator($repository, self::createStub(UserPasswordHasherInterface::class), $this->auditLoggerExpectingNothing(), administrationLock: $lock);
+
+        try {
+            $administrator->delete($targetUser->getId(), $actingUser);
+            self::fail('Le refus du verrou aurait dû remonter.');
+        } catch (CpgUserNotFoundException|ActingAccountNoLongerSuperAdminException) {
+        }
     }
 
     /**
@@ -211,21 +290,29 @@ final class CpgUserAdministratorTest extends TestCase
     }
 
     /**
-     * Le verrou du compte exécute l'opération telle quelle ; le verrou réel
-     * est couvert par PostgresAccountRowLockTest et les tests de concurrence.
+     * Les deux verrous exécutent l'opération telle quelle, sur le compte
+     * reçu ; les verrous réels sont couverts par PostgresAccountRowLockTest,
+     * PostgresAccountAdministrationLockTest et les tests de concurrence.
      */
     private function administrator(
         CpgUserRepositoryInterface $repository,
         UserPasswordHasherInterface $hasher,
         SecurityAuditLoggerInterface $auditLogger,
         ?PasswordSetupTokenRepositoryInterface $tokenRepository = null,
+        ?AccountAdministrationLockInterface $administrationLock = null,
     ): CpgUserAdministrator {
         $accountLock = self::createStub(AccountLockInterface::class);
         $accountLock->method('whileLocked')->willReturnCallback(
             static fn (CpgUser $user, Closure $operation): mixed => $operation($user),
         );
+        if (null === $administrationLock) {
+            $administrationLock = self::createStub(AccountAdministrationLockInterface::class);
+            $administrationLock->method('whileAdministering')->willReturnCallback(
+                static fn (CpgUser $target, CpgUser $actingUser, Closure $operation): mixed => $operation($target),
+            );
+        }
 
-        return new CpgUserAdministrator($repository, $hasher, $auditLogger, $tokenRepository ?? self::createStub(PasswordSetupTokenRepositoryInterface::class), $accountLock);
+        return new CpgUserAdministrator($repository, $hasher, $auditLogger, $tokenRepository ?? self::createStub(PasswordSetupTokenRepositoryInterface::class), $accountLock, $administrationLock);
     }
 
     /**

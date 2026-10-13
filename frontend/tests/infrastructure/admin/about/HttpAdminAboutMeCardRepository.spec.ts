@@ -201,6 +201,23 @@ describe('HttpAdminAboutMeCardRepository', () => {
     expect((error as AdminAboutError).reason).toBe('translation-already-exists')
   })
 
+  it('distingue par son type le 409 d’une catégorie changée en « category-immutable » (#578)', async () => {
+    // Le formulaire désactive la catégorie en édition : seul un SPA resté en
+    // cache d'avant #578 envoie encore ce corps. Sans le type, il lirait
+    // « Ce contenu a déjà une version dans cette langue ».
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse(409, { type: '/errors/me-card-category-immutable', detail: 'Catégorie immuable.' })),
+    )
+
+    const error = await new HttpAdminAboutMeCardRepository(API_BASE_URL)
+      .update(UPDATED_CARD_ID, { ...INPUT, category: 'hobby' })
+      .catch((caught: unknown) => caught)
+
+    expect(error).toBeInstanceOf(AdminAboutError)
+    expect((error as AdminAboutError).reason).toBe('category-immutable')
+  })
+
   it("traduit en « unknown-translation-group » le 422 d'un rattachement hors catégorie", async () => {
     // Côté serveur, un groupe d'une autre catégorie est simplement inconnu du
     // périmètre : c'est le même 422 que pour un groupe disparu.
