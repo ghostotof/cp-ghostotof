@@ -1852,9 +1852,9 @@ ServiceAccount `default` que ce dépôt ne gère pas. Les quinze objets concern�
 CronJob `watch-refresh` et `contact-failed-messages-purge`, **et les sept Jobs
 hors kustomize** `migrate-job.yaml`, `seed-job.yaml`, `create-user-job.yaml`
 (issue #386), `messenger-probe-job.yaml` (issue #470) et les trois Jobs de
-`failed` (issue #521) — `postgres-roles-job.yaml` (issue #575) a été retiré par
-l'issue #593 — ces derniers
-ne passent par aucun transformateur, ils portent donc le champ directement.
+`failed` (issue #521). Ces Jobs ne passent par aucun transformateur, ils
+portent donc le champ directement. (`postgres-roles-job.yaml`, issue #575,
+était le huitième : l'issue #593 l'a retiré.)
 
 ### Labels Pod Security Admission sur les deux namespaces
 

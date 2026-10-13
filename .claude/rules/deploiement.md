@@ -177,14 +177,24 @@ paths:
   files of the checkout and the passwords on **stdin** (`\set app_pw` / `migrator_pw` / `rotate` read
   from private files by `cat`, never an argument; `roles.sql` refuses a missing or short password and a
   `rotate` other than 0 or 1 before any write). One transaction whose `ACCESS EXCLUSIVE` locks are held
-  until its COMMIT, a few seconds, rerunnable. **`BEGIN;` and `COMMIT;` are lines of the stream, never
-  `--single-transaction`**: with that option psql sends COMMIT at the end of its input when nothing
-  failed, so a stream cut midway (network, closed terminal) committed what had arrived — measured on
-  the pinned image: the three roles created, no ownership transfer, no `verify.sql`, psql exit 0; with
-  the COMMIT as the last line, a truncated stream loses it and the closed session rolls back. The SQL
-  files hold no transaction control. `PostgresRolesProcedureTest` pins the command, the stream and the
-  files (no echo, no shell backtick run in the pod, the rotation gate). That `exec` is the **one written
-  exception** to #520 (below). It replaced the Job of #575 (`postgres-roles-job.yaml`, removed): a Job
+  until its COMMIT, a few seconds, rerunnable. **The stream opens with `BEGIN;` and ends with
+  `commit.sql`, which commits only if `verify.sql` ran to its end** — its last statement sets
+  `verify_passed`, which `roles.sql` unsets first; otherwise `commit.sql` raises (exit 3). Never
+  `--single-transaction`, nor an unconditional final `COMMIT;`: the first commits at the end of input
+  whatever arrived (measured on the pinned image: the three roles created, no ownership transfer, no
+  `verify.sql`, psql exit 0), the second commits even when a `cat` failed (run outside the checkout's
+  root, a file renamed) — both found by the reviews of #593. A stream cut before `commit.sql` writes
+  nothing; **an interrupted command is an unknown state** all the same (the ~20 KB stream is usually
+  in the pod already, psql may reach the COMMIT unseen): rerun step 2 alone with the **same** `$TMP`
+  files and `ROTATE`, never step 1. `roles.sql` silences the server's statement logs **before** its
+  first statement carrying a password (the length guard), sets `idle_in_transaction_session_timeout`
+  to 30 s (a stalled stream would hold the ownership transfers' locks in front of the API), and prints
+  whether it wrote each password (`t`/`f`, never the value) — **never publish an URL whose password was
+  not written**, the restart after would cut the application. The SQL files hold no transaction control
+  and no reconnection. `PostgresRolesProcedureTest` fixes the exec line word for word and pins the
+  stream, `commit.sql` and its mark, and the files (no echo of a variable, a password cited only in its
+  three places, no shell, `\copy`, `\w`, `\setenv` nor `PROGRAM`, the rotation gate). That `exec` is
+  the **one written exception** to #520 (below). It replaced the Job of #575 (`postgres-roles-job.yaml`, removed): a Job
   connected over TCP, which the `pg_hba.conf` now refuses. **A rerun never rewrites an existing
   password** (`ROTATE=1` asks for it): rewriting `cpg_app`'s would cut the application until its URL is
   republished and the pods restarted.
@@ -205,7 +215,7 @@ paths:
   `roles.sql`/`verify.sql` (psql meta-commands) run in no CI job: they were played against the
   pinned image by hand for #593 (first pass, rerun, rotation, refusals, truncated stream), and preprod
   is their proof at each change. **Accepted limits** (security review of #575): any role may `ALTER ROLE` itself (password,
-  `SET` defaults) — an injection could cut the application durably; the Job resets the three roles'
+  `SET` defaults) — an injection could cut the application durably; the procedure resets the three roles'
   attributes and `RESET ALL` at every pass, and `verify.sql` refuses a stray attribute;
   `cpg_reader` is a second net against an operator's mistake, not a boundary against whoever holds
   `exec` or `port-forward` (`trust` inside the pod gives the superuser too). `verify.sql` **fails
@@ -221,9 +231,13 @@ paths:
   short outage, in the release notes, validated in preprod like any change of that workload) at
   `/etc/postgresql/pg_hba.conf`, read through `-c hba_file=…` in `postgres.yaml`'s `args` — outside
   PGDATA, so valid on an initialised PVC, and the entrypoint passes the same args to its init server
-  (socket only). Rules: `local all all trust` and loopback `trust` (as in the image: probes,
-  entrypoint, the roles procedure, the `SHOW` of the keepalives over `127.0.0.1`), then
-  `host all cpg_app,cpg_migrator all scram-sha-256`, then `host all all all reject`. **Named roles,
+  (socket only). Rules: `local all all trust` (as in the image: probes, entrypoint, the roles
+  procedure), loopback `trust` **for `cpg_reader` only** (the `SHOW` of the keepalives over
+  `127.0.0.1`) — the image's `host all all 127.0.0.1/32 trust` gave the superuser without a password
+  to a `kubectl port-forward` or an ephemeral container (`kubectl debug`), which reach the pod's
+  loopback (measured, review of #593) —, then `host all cpg_app,cpg_migrator all scram-sha-256`,
+  `host replication all all reject` (`all` does not cover replication: refused by its own rule, not
+  for lack of one), and `host all all all reject`. **Named roles,
   never an exclusion**: the bootstrap's name lives in a Secret, not in the repo — a new role reaching
   the network is added to that line on purpose. `pg_hba` cannot tell one pod from another, so
   **no TCP rule can admit the superuser "for one Job only"**: that is why the roles procedure is an
@@ -231,15 +245,23 @@ paths:
   undone first. `NOLOGIN` on the bootstrap was ruled out (the probes and the entrypoint use it).
   Adminer is a pod like any other: `cpg_app` or `cpg_migrator` only. Two guards:
   `PostgresHbaTest` (last rule `host all all all reject`, local `trust`, every accepting TCP rule
-  either loopback `trust` or SCRAM for the two named roles — never `all`, a `+group`, an `@file`, a
-  `/regex` —, no `include`, no replication, the generator hashed, the arg and the mount);
-  `tools/check-postgres-hba.sh` (`make postgres-hba`, CI job `postgres-hba`, needed by
-  `release-version`) boots the pinned image under uid 70 with the file and **measures** it from
-  another container: superuser and `cpg_reader` refused with `pg_hba.conf rejects connection`,
-  `cpg_app`/`cpg_migrator` admitted, refused with a wrong password; `pg_isready`, the superuser on the
-  socket, `cpg_reader` on `127.0.0.1` — an invalid file stops the server at init, and
-  `rollback-preprod` does not undo `postgres`. Neither proves a boot on an initialised PVC: preprod
-  does. **Dev and CI keep the image's file** (single superuser role, on purpose, see above).
+  either loopback `trust` for `cpg_reader` alone or SCRAM for the two named roles — never `all`, a
+  `+group`, an `@file`, a `/regex` —, no `include`, replication named only by its reject rule, the
+  generator hashed, the arg and the mount); `tools/check-postgres-hba.sh` (`make postgres-hba`, CI job
+  `postgres-hba`, needed by `release-version`) boots the pinned image under the manifest's
+  `runAsUser` with the file and **measures** it: from another container, superuser and `cpg_reader`
+  refused with `pg_hba.conf rejects connection`, a physical replication connection refused by its
+  rule, `cpg_app`/`cpg_migrator` admitted and refused with a wrong password; on the loopback
+  (`127.0.0.1`, `::1`) the superuser refused, `cpg_reader` admitted; the superuser on the socket —
+  `pg_isready` is replayed but authenticates nobody, so it says the server answers, nothing about
+  the file. An invalid file stops the server at init, and `rollback-preprod` does not undo
+  `postgres`. Neither proves a boot on an initialised PVC: preprod does — and **in the cluster,
+  `verify.sql` checks the file the server actually reads** at every pass of the roles procedure
+  (`hba_file` equal to `postgres.yaml`'s path, no rule in error, no `trust` off the socket but for the
+  reader, last rule `reject`): an args patch or an old manifest would bring back PGDATA's file in
+  silence. A smoke test that tries the superuser over TCP from preprod is issue #596; narrowing the
+  network rule to the application's database and the pod range, issue #597.
+  **Dev and CI keep the image's file** (single superuser role, on purpose, see above).
 - **Doctrine migrations run as a Job, not `kubectl exec`** (audit C8). `k8s/base/migrate-job.yaml` is
   deliberately **outside** `kustomization.yaml`'s `resources:` — so kustomize's image transformer never sees
   it, hence the `${BACKEND_IMAGE}` placeholder that `envsubst` fills at apply time (`image: backend` would
@@ -276,9 +298,11 @@ paths:
     the line (issue #386, `app:user:create`, see `.claude/rules/security-user.md`). **One written
     exception**, issue #593: the PostgreSQL roles procedure (the #575 bullet above), an `exec` on the
     `postgres` pod's local socket because no Job can reach the bootstrap superuser any more. It writes no
-    audit line, its output is `verify.sql`'s counters; `OperatorExecBoundaryTest` exempts exactly one exec
-    line, in its runbook section, and refuses a second one there — a new writing `exec` needs the same
-    reasoning written down, never a widened exemption;
+    audit line, its output is `verify.sql`'s counters; `OperatorExecBoundaryTest` exempts the `bash`
+    block of its runbook section **by its place** (the phrase opening it is unique), refuses a second
+    exec there, judges a copy of the line anywhere else like any other `psql`, and refuses any
+    `kubectl debug`, `attach` or `port-forward` to `postgres` in the runbook — a new writing `exec`
+    needs the same reasoning written down, never a widened exemption;
   - **a human holding an admin kubeconfig may `exec` for read-only diagnosis whose output stays on their
     terminal**, from a separate terminal, never behind a `!` in an assistant session: `nginx -T` on the
     sidecar (below), the Xdebug checks and `kubectl cp` of the profiles, the `SHOW` of the PostgreSQL
