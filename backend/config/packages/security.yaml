@@ -1,7 +1,24 @@
 security:
     # https://symfony.com/doc/current/security.html#registering-the-user-hashing-passwords
     password_hashers:
-        App\Security\User\Domain\Entity\CpgUser: auto
+        # bcrypt et son coût écrits en clair, pas `auto` (issue #590, constat
+        # A10). Sous `auto`, Symfony essaie SodiumPasswordHasher après un échec
+        # sur un hachage à rehacher, qui refait un bcrypt complet : un compte
+        # au hachage ancien coûtait deux dérivations, l'égaliseur des échecs de
+        # login n'en paie qu'une. Avec `bcrypt`, les hashers secondaires
+        # (Pbkdf2, MessageDigest) refusent sur-le-champ tout hachage à `$`.
+        # Un hachage argon se vérifie toujours, et une connexion réussie
+        # rehache encore. Le coût est écrit pour qu'aucun nouveau défaut de
+        # Symfony ne le change en silence.
+        #
+        # **Avant de changer l'algorithme ou le coût**, lire « Avant de changer
+        # password_hashers » dans k8s/README.md : la vérification se fait au
+        # coût *stocké*, donc chaque compte au hachage ancien répond en un
+        # temps à lui jusqu'à sa prochaine connexion réussie.
+        # CpgUserPasswordHasherTest fige ces valeurs dans chaque environnement.
+        App\Security\User\Domain\Entity\CpgUser:
+            algorithm: bcrypt
+            cost: 13
 
     # https://symfony.com/doc/current/security.html#loading-the-user-the-user-provider
     providers:
@@ -135,8 +152,7 @@ when@test:
         password_hashers:
             # Password hashers are resource-intensive by design to ensure security.
             # In tests, it's safe to reduce their cost to improve performance.
+            # Même algorithme qu'ailleurs (issue #590), seul le coût change.
             App\Security\User\Domain\Entity\CpgUser:
-                algorithm: auto
+                algorithm: bcrypt
                 cost: 4 # Lowest possible value for bcrypt
-                time_cost: 3 # Lowest possible value for argon
-                memory_cost: 10 # Lowest possible value for argon
