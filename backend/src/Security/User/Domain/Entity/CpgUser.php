@@ -57,6 +57,18 @@ class CpgUser implements UserInterface, PasswordAuthenticatedUserInterface, Acco
      */
     public const string ROLE_TRUSTED = 'ROLE_TRUSTED';
 
+    /**
+     * Le hachage d'un compte qui n'a **pas de mot de passe** : un compte invité,
+     * jusqu'à ce que la personne définisse le sien par le lien ou qu'un
+     * ROLE_SUPER le pose depuis le backoffice. Il ne peut pas se connecter :
+     * `password_verify()` ne vérifie rien contre une chaîne vide. La seule
+     * écriture de la convention (issue #560) : {@see self::hasPassword()} la
+     * lit en PHP, et les requêtes de `CpgUserRepository` la lient en paramètre
+     * (`findAwaitingPasswordSetupInvitedBefore()`,
+     * `countOtherSuperAdminsAbleToSignIn()`), le SQL ne pouvant appeler le PHP.
+     */
+    public const string NO_PASSWORD = '';
+
     /** En caractères : la règle que lit la personne qui choisit son mot de passe. */
     public const int MIN_PASSWORD_LENGTH = 8;
 
@@ -254,7 +266,19 @@ class CpgUser implements UserInterface, PasswordAuthenticatedUserInterface, Acco
      */
     public function isAwaitingPasswordSetup(): bool
     {
-        return $this->isPendingActivation() && '' === $this->password;
+        return $this->isPendingActivation() && !$this->hasPassword();
+    }
+
+    /**
+     * Un mot de passe a-t-il été défini, par la personne (lien d'invitation,
+     * création en CLI) ou pour elle (backoffice) ? Faux pour le seul hachage
+     * {@see self::NO_PASSWORD}. Indépendant de l'activation : un compte invité
+     * dont le mot de passe a été posé depuis le backoffice en a un, et reste
+     * pourtant en attente d'activation.
+     */
+    public function hasPassword(): bool
+    {
+        return self::NO_PASSWORD !== $this->password;
     }
 
     public function getUserIdentifier(): string

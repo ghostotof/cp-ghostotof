@@ -238,6 +238,21 @@ final class CpgUserTest extends TestCase
     }
 
     /**
+     * « Mot de passe défini » a un seul sens (issue #560) : un hachage autre
+     * que NO_PASSWORD. Un compte invité naît sans mot de passe, en reçoit un
+     * par le lien ou par le backoffice ; un compte CLI en reçoit un aussitôt.
+     */
+    public function testAnAccountHasAPasswordOnceItsHashIsNoLongerNoPassword(): void
+    {
+        $user = new CpgUser('jane', CpgUser::NO_PASSWORD);
+        self::assertFalse($user->hasPassword(), 'Un compte sans mot de passe est dit en avoir un.');
+
+        $user->setPassword('a-real-hash-set-from-the-backoffice');
+        self::assertTrue($user->hasPassword());
+        self::assertSame('', CpgUser::NO_PASSWORD, 'Le hachage vide est la convention que lisent les requêtes de CpgUserRepository.');
+    }
+
+    /**
      * Un compte CLI n'a jamais été invité : ni en attente d'activation, ni en
      * attente de mot de passe.
      */

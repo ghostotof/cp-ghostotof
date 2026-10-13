@@ -104,8 +104,9 @@ class CpgUserRepository extends ServiceEntityRepository implements CpgUserReposi
             // (CpgUserAdministrator::changePassword(), qui ne marque jamais
             // activatedAt) — le compte se connecte déjà et ne doit plus
             // ressortir ici, même s'il reste isPendingActivation() vrai.
-            ->andWhere("u.password = ''")
+            ->andWhere('u.password = :noPassword')
             ->setParameter('threshold', $threshold, Types::DATETIMETZ_IMMUTABLE)
+            ->setParameter('noPassword', CpgUser::NO_PASSWORD)
             ->orderBy('u.invitedAt', 'ASC')
             ->getQuery()
             ->getResult();
@@ -116,15 +117,16 @@ class CpgUserRepository extends ServiceEntityRepository implements CpgUserReposi
      * contenance `@>`) : jusqu'à #551, un `findAll()` filtré en PHP rendait les
      * instances de la carte d'identité, donc l'acteur et la cible tels que la
      * requête les avait chargés — un comptage périmé sous le verrou même. Le
-     * rôle est lié en paramètre JSON, jamais interpolé. Un mot de passe vide
-     * est celui d'un compte invité jamais activé (CpgUser::isAwaitingPasswordSetup()).
+     * rôle est lié en paramètre JSON, jamais interpolé. Un compte sans mot de
+     * passe ({@see CpgUser::NO_PASSWORD}, `CpgUser::hasPassword()` faux) ne peut
+     * pas se connecter et ne compte pas.
      */
     public function countOtherSuperAdminsAbleToSignIn(CpgUser $except): int
     {
         $count = $this->getEntityManager()->getConnection()->fetchOne(
             'SELECT COUNT(*) FROM cpg_user'
-            ." WHERE id <> :id AND CAST(roles AS jsonb) @> CAST(:role AS jsonb) AND password <> ''",
-            ['id' => $except->getId(), 'role' => json_encode([CpgUser::ROLE_SUPER], \JSON_THROW_ON_ERROR)],
+            .' WHERE id <> :id AND CAST(roles AS jsonb) @> CAST(:role AS jsonb) AND password <> :noPassword',
+            ['id' => $except->getId(), 'role' => json_encode([CpgUser::ROLE_SUPER], \JSON_THROW_ON_ERROR), 'noPassword' => CpgUser::NO_PASSWORD],
             ['id' => UuidType::NAME],
         );
 

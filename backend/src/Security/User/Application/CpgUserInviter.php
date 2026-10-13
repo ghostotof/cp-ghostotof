@@ -106,7 +106,7 @@ final readonly class CpgUserInviter implements CpgUserInviterInterface
 
         // Mot de passe vide : le compte n'est utilisable qu'une fois le mot de
         // passe défini via le lien d'invitation (cf. PasswordSetupService).
-        $user = new CpgUser($this->usernameGenerator->generateFromEmail($email), '');
+        $user = new CpgUser($this->usernameGenerator->generateFromEmail($email), CpgUser::NO_PASSWORD);
         $user->setEmail($email);
         // ADR 0003 D1 : inviter depuis le backoffice *est* l'octroi nominatif
         // de ROLE_TRUSTED par un ROLE_SUPER — ce n'est jamais un compte au
