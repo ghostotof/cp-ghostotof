@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Security\Authentication\Infrastructure\Log;
 
 use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
+use App\Security\Authentication\Infrastructure\Security\SubmittedPasswordTooLongException;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Shared\Infrastructure\Http\CanonicalPath;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
@@ -107,6 +108,9 @@ final readonly class SecurityEventsSubscriber implements EventSubscriberInterfac
      * {@see \Symfony\Component\Security\Core\Exception\BadCredentialsException}
      * qui la garde en `previous` —
      * UserBadge ne mémorise pas l'échec, le rappeler relancerait la requête.
+     * Un mot de passe trop long ({@see SubmittedPasswordTooLongException},
+     * issue #588) est refusé avant tout chargement : le charger ici le
+     * chargerait pour un identifiant existant seulement.
      * Dans les autres cas qui arrivent ici,
      * {@see \Symfony\Component\Security\Http\EventListener\CheckCredentialsListener}
      * a déjà chargé le compte et UserBadge le mémorise. Une panne de la base
@@ -120,6 +124,14 @@ final readonly class SecurityEventsSubscriber implements EventSubscriberInterfac
         $exception = $event->getException();
 
         if ($exception instanceof UserNotFoundException || $exception->getPrevious() instanceof UserNotFoundException) {
+            return null;
+        }
+
+        // Refusé avant tout chargement de compte, identiquement pour tous les
+        // identifiants (issue #588) : le charger ici coûterait une requête
+        // pour un identifiant existant seulement, et le temps redirait qui
+        // existe. L'empreinte de l'identifiant suffit à la ligne.
+        if ($exception instanceof SubmittedPasswordTooLongException) {
             return null;
         }
 

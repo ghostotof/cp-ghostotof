@@ -43,16 +43,19 @@ use Throwable;
  * **Jamais pour un compte qui a un mot de passe** (actif, ou invité dont le
  * mot de passe a été posé depuis le backoffice) : la vraie vérification a déjà
  * eu lieu, un second hachage doublerait le temps et recréerait l'écart dans
- * l'autre sens. Limite connue, antérieure à #560 : un mot de passe soumis de
- * plus de 4096 octets (`PasswordHasherInterface::MAX_PASSWORD_LENGTH`) fait
- * rendre `false` à `verify()` sans rien dériver, et rien ne le borne au login
- * — un compte existant répond alors plus vite qu'un identifiant inconnu
- * (issue #588). **Jamais non plus pour un échec qui
- * n'est pas un échec d'identifiants** : le throttling doit rester bon marché
- * (c'est sa raison d'être), et un corps JSON invalide comme un mot de passe
- * vide échouent avant même que le passeport n'existe — donc avant toute
+ * l'autre sens. Cela suppose que `verify()` dérive vraiment : au-delà de
+ * `CpgUser::MAX_PASSWORD_LENGTH` octets (la borne du hasher), il rend `false`
+ * sans rien dériver, et un compte existant répondait plus vite qu'un
+ * identifiant inconnu (issue #588). Ce cas n'arrive plus jusqu'ici :
+ * {@see OverlongPasswordRefusalListener} le refuse avant tout chargement de
+ * compte, par une {@see SubmittedPasswordTooLongException}. **Jamais non plus
+ * pour un échec qui n'est pas un échec d'identifiants** : le throttling doit
+ * rester bon marché (c'est sa raison d'être), un corps JSON invalide comme un
+ * mot de passe vide échouent avant même que le passeport n'existe, et un mot
+ * de passe trop long avant que le compte ne soit chargé — donc avant toute
  * requête en base, uniformément pour tous les identifiants, sans rien à
- * compenser.
+ * compenser. Ces deux refus-là doivent être reconnus **avant**
+ * `Passport::getUser()`, qui chargerait le compte.
  *
  * `hash()` d'une constante plutôt que `verify()` contre un hachage factice
  * précalculé, pour trois raisons : le hachage précalculé serait figé dans le
@@ -124,7 +127,9 @@ final readonly class FailedLoginTimingEqualizer
     {
         $exception = $event->getException();
 
-        if ($exception instanceof TooManyLoginAttemptsAuthenticationException) {
+        // Refusés avant le chargement du compte, identiquement pour tous les
+        // identifiants : rien à compenser, et surtout rien à charger.
+        if ($exception instanceof TooManyLoginAttemptsAuthenticationException || $exception instanceof SubmittedPasswordTooLongException) {
             return false;
         }
 
