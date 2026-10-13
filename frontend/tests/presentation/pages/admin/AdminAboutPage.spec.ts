@@ -718,7 +718,11 @@ describe('AdminAboutPage', () => {
       const { wrapper } = await mountPage(createSettingsRepository(), createSiteCardRepository(), meCardRepository)
       const edited = ME_FIXTURES.technical.cards[0]
 
-      // Le geste qui détachait la carte : il ne passe plus.
+      // Le geste qui détachait la carte : il ne passe plus. Sur un champ
+      // désactivé, Vue Test Utils n'émet pas le `change`, comme un navigateur
+      // qui n'en laisse pas l'occasion à l'utilisateur ; ce qui compte est le
+      // corps envoyé (le DOM, lui, garde la valeur écrite de force). Le
+      // `disabled` est vérifié plus bas.
       await buttonLabelled(actionsForLine(wrapper, ME_TABLE.technical, edited.title), 'Modifier').trigger('click')
       await wrapper.get('#admin-about-me-card-category').setValue('hobby')
       await formOf(wrapper, ME_FORM).trigger('submit.prevent')

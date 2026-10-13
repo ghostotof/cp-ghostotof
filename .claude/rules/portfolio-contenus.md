@@ -325,7 +325,8 @@ paths:
     the refusal, the text edit that reads nothing, the real detachment, the reorder refused before an
     unknown key's 422, the category refusal before any read and before the spread-group one, #578);
     `BackofficeAboutMeCardResourceTest` the 409 on a card with a translation (the old form's body: red
-    before with a 200 and the card detached) and on a lone card; `AboutMeCardGroupSpreadOverTwoCategoriesTest` on the real database (creation,
+    before with a 200 and the card detached), on a lone card, and with a group of the requested category (the
+    guard order at the HTTP layer: a 422 `unknown-translation-group` before); `AboutMeCardGroupSpreadOverTwoCategoriesTest` on the real database (creation,
     attachment and a reorder moving the stray member refused under the name with no `previous` and the
     manager open — red before with the unique violation and the COMMIT refusal —, a reorder leaving it in
     place refused too — accepted before —, detachment accepted at the COMMIT) and `AboutMeCardRepositoryTest` the

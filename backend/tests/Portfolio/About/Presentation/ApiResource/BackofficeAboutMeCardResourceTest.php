@@ -467,6 +467,31 @@ final class BackofficeAboutMeCardResourceTest extends WebTestCase
     }
 
     /**
+     * Ordre des gardes (#578), au niveau HTTP : une autre catégorie et un
+     * groupe de cette catégorie-là répondaient 422 `unknown-translation-group`
+     * (le groupe, filtré par la catégorie de la carte, était inconnu). Le refus
+     * de catégorie passe désormais en premier : il ne dépend que du corps.
+     */
+    public function testPutChangingTheCategoryTowardsAGroupOfThatCategoryIsTheCategoryRefusal(): void
+    {
+        [$client, $csrfToken] = $this->superClient();
+
+        $administrator = $this->administrator($client);
+        $hobby = $administrator->create(Locale::FR, AboutMeCardCategory::HOBBY, 'Musique', 'Description.', 'guitar');
+        $technical = $administrator->create(Locale::EN, AboutMeCardCategory::TECHNICAL, 'Developer', 'Description.', 'code');
+
+        $body = $this->put($client, $csrfToken, $technical->getId()->toRfc4122(), [
+            'locale' => 'en',
+            'category' => 'hobby',
+            'title' => 'Music',
+            'translationGroup' => $hobby->getTranslationGroup()->toRfc4122(),
+        ]);
+
+        self::assertResponseStatusCodeSame(409);
+        self::assertSame('/errors/me-card-category-immutable', $body['type'] ?? null);
+    }
+
+    /**
      * Le périmètre d'ordre d'une carte « moi » est sa catégorie : un groupe
      * d'une autre catégorie lui est inconnu. L'accepter ferait valoir une même
      * position dans deux tableaux distincts, et déplacer l'un déplacerait

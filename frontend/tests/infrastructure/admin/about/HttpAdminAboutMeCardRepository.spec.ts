@@ -211,7 +211,7 @@ describe('HttpAdminAboutMeCardRepository', () => {
     )
 
     const error = await new HttpAdminAboutMeCardRepository(API_BASE_URL)
-      .update(MISSING_CARD_ID, { ...INPUT, category: 'hobby' })
+      .update(UPDATED_CARD_ID, { ...INPUT, category: 'hobby' })
       .catch((caught: unknown) => caught)
 
     expect(error).toBeInstanceOf(AdminAboutError)

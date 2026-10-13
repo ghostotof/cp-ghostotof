@@ -205,16 +205,24 @@ const translationOptions = computed(() => [
   ),
 ])
 
-// En création seulement : en édition, le sélecteur de catégorie est désactivé
-// (#578), et seul `startEdit` change la catégorie, avant de réécrire le groupe.
+// Remise à zéro de « Version de » quand la catégorie change, **hors édition**.
+// En édition, une carte ne change pas de catégorie (#578) : le sélecteur est
+// désactivé, et seul `startEdit` y écrit — celle de la carte, juste avant son
+// groupe. La garde `isEditing` le dit dans le code au lieu de dépendre de
+// l'ordre des affectations de `startEdit` : `editingId` y est posé en premier,
+// et un groupe effacé là partirait en `translationGroup: null`, c'est-à-dire
+// en détachement, que le serveur accepte (la catégorie étant la bonne).
 // `flush: 'sync'` : le rattachement est remis à zéro **au moment même** où la
-// catégorie change, donc avant que `startEdit`/`startCreateVersion`/l'assistant
-// n'écrivent le groupe juste après — un watcher différé l'aurait effacé au tick
-// suivant. Sans cette remise à zéro, le sélecteur afficherait une valeur absente
-// de ses options et l'enregistrement partirait vers un 422.
+// catégorie change, donc avant que `startCreateVersion`/`resetForm` n'écrivent
+// le groupe juste après — un watcher différé l'aurait effacé au tick suivant.
+// Sans cette remise à zéro, le sélecteur afficherait une valeur absente de ses
+// options et l'enregistrement partirait vers un 422.
 watch(
   () => form.category,
   () => {
+    if (isEditing.value) {
+      return
+    }
     form.translationGroup = ''
   },
   { flush: 'sync' },

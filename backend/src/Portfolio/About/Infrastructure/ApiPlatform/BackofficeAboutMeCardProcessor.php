@@ -32,7 +32,7 @@ final readonly class BackofficeAboutMeCardProcessor implements ProcessorInterfac
     {
         $card = $this->aboutMeCardAdministrator->create(
             Locale::from((string) $data->locale),
-            AboutMeCardCategory::from((string) $data->category),
+            $this->category($data),
             $data->title,
             $data->description,
             $data->iconKey,
@@ -47,12 +47,11 @@ final readonly class BackofficeAboutMeCardProcessor implements ProcessorInterfac
      */
     private function update(Uuid $id, mixed $data): BackofficeAboutMeCardResource
     {
-        // AboutMeCardCategory::from : valeur déjà bornée par #[Assert\Choice].
-        // Transmise pour que l'administrateur refuse une autre catégorie que
-        // celle de la carte (issue #578), au lieu de l'ignorer.
+        // La catégorie est transmise pour que l'administrateur refuse une autre
+        // catégorie que celle de la carte (issue #578), au lieu de l'ignorer.
         $card = $this->aboutMeCardAdministrator->update(
             $id,
-            AboutMeCardCategory::from((string) $data->category),
+            $this->category($data),
             $data->title,
             $data->description,
             $data->iconKey,
@@ -65,6 +64,15 @@ final readonly class BackofficeAboutMeCardProcessor implements ProcessorInterfac
     private function delete(Uuid $id): void
     {
         $this->aboutMeCardAdministrator->delete($id);
+    }
+
+    /**
+     * `AboutMeCardCategory::from` : valeur déjà bornée par `#[Assert\Choice]`
+     * en amont. Un `ValueError` ici serait un vrai défaut et doit remonter en 500.
+     */
+    private function category(BackofficeAboutMeCardResource $data): AboutMeCardCategory
+    {
+        return AboutMeCardCategory::from((string) $data->category);
     }
 
     /**

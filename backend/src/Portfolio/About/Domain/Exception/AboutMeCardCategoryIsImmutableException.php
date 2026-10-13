@@ -39,7 +39,7 @@ final class AboutMeCardCategoryIsImmutableException extends DomainException impl
      */
     public static function refused(): self
     {
-        return new self('La catégorie d\'une carte ne peut pas changer : créez la carte dans la bonne catégorie, puis supprimez celle-ci.');
+        return new self('La catégorie d\'une carte ne peut pas changer : créez la carte dans la bonne catégorie, ses versions dans les autres langues aussi, puis supprimez les anciennes.');
     }
 
     protected function problemType(): string
