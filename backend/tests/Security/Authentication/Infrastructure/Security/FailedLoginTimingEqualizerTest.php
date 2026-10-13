@@ -184,23 +184,24 @@ final class FailedLoginTimingEqualizerTest extends TestCase
     }
 
     /**
-     * Un hachage d'avant la configuration courante (`needsRehash()` vrai, ici
-     * un bcrypt au coût 5, au-dessus des 4 de test) : `verify()` a fait **une** dérivation, au coût
-     * stocké — `algorithm: bcrypt` ne laisse aucun hasher secondaire en refaire
-     * une (issue #590, CpgUserPasswordHasherTest). Rien à compenser : un
-     * hachage factice doublerait le temps. L'écart qui reste (coût stocké
-     * contre coût configuré) est une limite acceptée, que seule la connexion
-     * réussie suivante résorbe ; payer la différence obligerait à lire le
-     * hachage stocké et ne marcherait que dans un sens.
+     * Décision de l'issue #590, pincée ici : un compte dont le hachage est
+     * d'avant la configuration courante (`needsRehash()` vrai) n'est pas
+     * compensé, comme tout compte qui a un mot de passe — l'égaliseur ne lit
+     * pas le format du hachage. Ce test ne prouve pas que `verify()` ne fait
+     * qu'une dérivation (le hasher est simulé) : c'est le rôle de
+     * `CpgUserPasswordHasherTest`, qui rougissait sous `algorithm: auto`. Il
+     * fige le choix de ne pas compenser l'écart qui reste (coût stocké contre
+     * coût configuré, limite acceptée) : payer la différence obligerait à lire
+     * le hachage stocké et ne marcherait que dans un sens. Le hachage n'est
+     * qu'une chaîne au format bcrypt, jamais vérifiée.
      */
     public function testAnAccountWhoseHashNeedsRehashIsNotCompensated(): void
     {
         $this->hasher()->expects(self::never())->method('hash');
-        $staleHash = password_hash(bin2hex(random_bytes(8)), \PASSWORD_BCRYPT, ['cost' => 5]);
 
         ($this->equalizer())($this->failure(
             new BadCredentialsException('The presented password is invalid.'),
-            $this->passportFor(new CpgUser('jane', $staleHash)),
+            $this->passportFor(new CpgUser('jane', '$2y$05$'.str_repeat('a', 53))),
         ));
     }
 

@@ -1509,8 +1509,12 @@ le changement, chaque compte au hachage ancien répond donc à un mauvais mot de
 à lui, plus court ou plus long qu'un identifiant inconnu. Mesuré sur un poste : 34 ms au coût 10,
 135 ms au coût 12 et 539 ms au coût 14, contre 270 ms au coût 13. Le chronomètre dit alors que
 ce compte existe. L'écart dure jusqu'à la prochaine connexion réussie du compte, qui rehache son
-mot de passe (`PasswordMigratingListener`, `CpgUserRepository::upgradePassword()`). Un compte
-dormant le garde. Rehacher d'avance est impossible : il faudrait le mot de passe en clair.
+mot de passe (`PasswordMigratingListener`, `CpgUserRepository::upgradePassword()`, pincé par
+`StalePasswordHashRehashTest`). Un compte dormant le garde. Rehacher d'avance demande le mot de
+passe en clair. Il existe deux contournements, non retenus : un hachage encapsulé (bcrypt de
+l'ancien hachage), qu'aucun hasher de Symfony ne vérifie ; ou vider le mot de passe puis réinviter.
+Le compte devient alors « sans mot de passe », un cas que l'égaliseur compense, mais la personne doit
+en choisir un nouveau. Ne jamais le faire sur le dernier `ROLE_SUPER` qui a un mot de passe.
 Décision du 2026-10-13 : on accepte cet écart et on le documente.
 
 Avant de modifier la configuration, puis après le déploiement, compter les hachages par format,
@@ -1525,18 +1529,20 @@ kubectl -n "${NS:?preprod ou prod}" exec -i deploy/postgres -c postgres -- \
   sh -c 'PGOPTIONS="-c default_transaction_read_only=on -c lock_timeout=5s" psql -X -A -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
 SELECT CASE
          WHEN password = '' THEN '(sans mot de passe)'
-         WHEN password LIKE '$argon2%' THEN substring(password FROM '^(\$argon2[a-z]*\$v=[0-9]+\$[^$]*\$)')
+         WHEN password LIKE '$argon2%' THEN coalesce(substring(password FROM '^(\$argon2[a-z]*\$v=[0-9]+\$[^$]*\$)'), '(argon, format inconnu)')
          ELSE coalesce(substring(password FROM '^(\$2[abxy]\$[0-9]{2}\$)'), '(format inconnu)')
        END AS entete,
        count(*) AS comptes
 FROM cpg_user GROUP BY 1 ORDER BY 1;
 SQL
-# attendu, avec la configuration actuelle : seulement « (sans mot de passe)|n » et « $2y$13$|m ».
+# attendu, avec la configuration actuelle : l'en-tête entete|comptes, les lignes
+# « (sans mot de passe)|n » et « $2y$13$|m » (l'une ou l'autre peut manquer), puis « (k rows) ».
 # Toute autre ligne désigne des hachages anciens, ou posés à la main en SQL.
 ```
 
-Le nombre de lignes d'un format autre que celui de la configuration est le nombre de comptes
-désignables au chronomètre. On le lit avant de décider. `CpgUserPasswordHasherTest` se met à jour dans le même
+Le nombre de comptes désignables au chronomètre est la somme de la colonne `comptes` sur toutes les
+lignes, sauf celle du format configuré et « (sans mot de passe) », que l'égaliseur compense déjà. On le
+lit avant de décider. `CpgUserPasswordHasherTest` se met à jour dans le même
 changement que `security.yaml`.
 
 ## Durcissement des pods (jeton de ServiceAccount et Pod Security Admission)

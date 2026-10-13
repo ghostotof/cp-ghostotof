@@ -193,7 +193,7 @@ paths:
   - **a human holding an admin kubeconfig may `exec` for read-only diagnosis whose output stays on their
     terminal**, from a separate terminal, never behind a `!` in an assistant session: `nginx -T` on the
     sidecar (below), the Xdebug checks and `kubectl cp` of the profiles, the `SHOW` of the PostgreSQL
-    keepalives over TCP (`k8s/README.md`, « Sessions fantômes PostgreSQL », issue #279), and naming an account from its `userId` (`k8s/README.md`, « Journal de sécurité »). That last one is an exec *on purpose*: a Job
+    keepalives over TCP (`k8s/README.md`, « Sessions fantômes PostgreSQL », issue #279), the count of password hashes per format before a change of `password_hashers` (`k8s/README.md`, « Avant de changer `password_hashers` », issue #590 — a format header and a count, never a salt, a hash or an identifier), and naming an account from its `userId` (`k8s/README.md`, « Journal de sécurité »). That last one is an exec *on purpose*: a Job
     would write the name and address into its pod's logs, readable until the pod is deleted, by the CI
     token too (`pods/log`) — the very thing issue #363 removed from the logs. The query goes on stdin
     (nothing in the exec's argv, so nothing in the API server's request URL — the UUID does stay in the
@@ -201,7 +201,8 @@ paths:
     `uuid` (no injection from a pasted log value), inside a `default_transaction_read_only` session — a
     guard rather than a boundary, a `SET` lifts it — and `NS` has no default.
   Two guards, two scopes: `OperatorExecBoundaryTest` reads the repo (the deployer's Role, ClusterRole and
-  both bindings, wildcards such as `*/exec` included, plus the shape of the account lookup);
+  both bindings, wildcards such as `*/exec` included, plus the shape of the account lookup and of every
+  runbook `psql`: read-only `PGOPTIONS`, `-X`, `ON_ERROR_STOP`, `${NS:?…}`, query on stdin — issue #590);
   `tools/rotate-deployer-token.sh` checks the token actually issued against the cluster
   (`auth can-i create pods/exec` → `no`) — the only one that sees a binding added by hand. Keep both. A
   new manual `exec` in the runbook must fit the third case; if its output carries a secret or personal

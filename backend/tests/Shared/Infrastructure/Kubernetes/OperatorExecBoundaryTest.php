@@ -134,6 +134,32 @@ final class OperatorExecBoundaryTest extends TestCase
     }
 
     /**
+     * Chaque `psql` que le runbook lance par `exec` (recherche d'un compte,
+     * keepalives, comptage des hachages par format — issue #590) est une
+     * lecture : session en lecture seule et bornée, sans ~/.psqlrc, erreur en
+     * code non nul, dans le namespace que l'opérateur donne, et la requête
+     * sur l'entrée standard (tube ou heredoc), jamais dans l'argv de l'exec.
+     */
+    public function testEveryRunbookPsqlIsAReadOnlySessionInTheNamespaceGivenByTheOperator(): void
+    {
+        $calls = array_values(array_filter(
+            $this->runbookExecLines(),
+            static fn (string $line): bool => 1 === preg_match('/\bpsql\b/', $line),
+        ));
+        self::assertGreaterThanOrEqual(3, \count($calls), 'Le runbook a perdu un de ses psql en lecture : relire ce test.');
+
+        foreach ($calls as $call) {
+            $exec = substr($call, (int) strpos($call, 'kubectl '));
+            self::assertMatchesRegularExpression('/kubectl -n "\$\{NS:\?[^}]+\}" exec -i deploy\/postgres -c postgres --/', $exec, $call);
+            self::assertStringContainsString('PGOPTIONS="-c default_transaction_read_only=on -c lock_timeout=5s" psql ', $exec, $call);
+            self::assertMatchesRegularExpression('/\bpsql -X\b/', $exec, $call);
+            self::assertStringContainsString('-v ON_ERROR_STOP=1', $exec, $call);
+            self::assertDoesNotMatchRegularExpression('/-n (preprod|prod)\b/', $exec, $call);
+            self::assertDoesNotMatchRegularExpression('/\b(SELECT|SHOW|UPDATE|DELETE|INSERT)\b/', $exec, 'Requête dans l\'argv de l\'exec : '.$call);
+        }
+    }
+
+    /**
      * Issue #521 : rejouer, supprimer un message de `failed` ou relancer le
      * signal d'arrêt des workers a un effet de bord, donc passe par un Job
      * (`k8s/base/messenger-*-job.yaml`). Un `kubectl exec` du runbook qui lance

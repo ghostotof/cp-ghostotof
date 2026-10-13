@@ -129,21 +129,28 @@ paths:
     `algorithm: bcrypt` and `cost: 13` (`4` under `when@test`), **never `auto`**. Under `auto`,
     `MigratingPasswordHasher` tried `SodiumPasswordHasher` after a failure on a hash that `needsRehash()`,
     which falls back on `password_verify` — two bcrypt, the equalizer pays one. With `bcrypt` the
-    secondaries left (Pbkdf2, MessageDigest) refuse any hash holding a `$` at once; an argon hash still
-    verifies and a successful login still rehashes; the `$2y$13$` hashes `auto` produced are not stale. The
-    cost is written so that no new Symfony default changes it silently. `CpgUserPasswordHasherTest` proves
-    no secondary verifies a stale bcrypt or argon hash (behaviour, with the right password) and pins
-    algorithm and cost per environment (`EnvironmentConfigKernel`). **Accepted limit** (decided on
+    secondaries left (Pbkdf2, MessageDigest) refuse any hash holding a `$` before computing anything; an
+    argon hash still verifies and a successful login still rehashes (`StalePasswordHashRehashTest`); the
+    `$2y$13$` hashes `auto` produced are not stale. The cost is written so that no new Symfony default
+    changes it silently. `CpgUserPasswordHasherTest` proves no secondary verifies a stale bcrypt or argon
+    hash (behaviour, with the right password), pins the exact list of secondary classes (a new one must be
+    shown to refuse before deriving), and pins per environment (`EnvironmentConfigKernel`) the **whole**
+    `CpgUser` entry (an `id` would replace everything), `CpgUser` as the only key of `password_hashers`, and
+    no `PasswordHasherAwareInterface` on `CpgUser`. **Accepted limit** (decided on
     2026-10-13): that one derivation runs at the **stored** cost, the equalizer pays the configured one —
     after a change of cost or algorithm, each account with an older hash answers in a time of its own
     (34 ms at cost 10, 539 ms at 14, against 270 ms at 13, workstation) until its next successful login
-    rehashes it; a dormant account keeps it. Rehashing ahead is impossible without the plaintext, paying
-    the difference here would mean reading the stored hash and works one way only. **Before changing
+    rehashes it; a dormant account keeps it. Rehashing ahead needs the plaintext; the two workarounds were
+    not retained — an onion hash (bcrypt of the old hash, which no Symfony hasher verifies) or emptying the
+    password and reinviting (the account becomes « without a password », compensated, but the person must
+    choose a new one; never on the last `ROLE_SUPER` with a password). Paying the difference here would
+    mean reading the stored hash and works one way only. **Before changing
     `password_hashers`**, read `k8s/README.md` « Avant de changer `password_hashers` » (read-only SQL count
     of hashes per format, a human's `exec`) and update the test in the same change. Also accepted: an
     unknown identifier matching `USERNAME_PATTERN` pays a query returning no row, an account one row and
     its hydration — about 100 µs against bcrypt's ~3 ms standard deviation, thousands of tries per
-    identifier, weeks per IP under `login_throttling`.
+    identifier, weeks for a single IP under `login_throttling`, hours for an attacker spread over many
+    addresses (the per-IP counters' limit, already accepted).
     `FailedLoginTimingEqualizerTest` + `tests/Security/Authentication/LoginFailureTimingTest.php` pin it.
     Related fact worth knowing: `login_throttling` answers a **429** `/errors/rate-limited` with
     `Retry-After` since issue #399, the only failure that leaves Lexik's 401 — it says nothing about the

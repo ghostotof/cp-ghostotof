@@ -63,15 +63,19 @@ use Throwable;
  * configuration courante) faisait essayer `SodiumPasswordHasher`, qui refait
  * un bcrypt complet : deux dérivations, quand ce listener en paie une.
  * `security.yaml` écrit donc `algorithm: bcrypt` et son coût, et les hashers
- * secondaires qui restent refusent sur-le-champ tout hachage à `$`
- * (`CpgUserPasswordHasherTest`). **Limite acceptée** : cette dérivation unique
+ * secondaires qui restent (Pbkdf2, MessageDigest) refusent un hachage à `$`
+ * avant de rien calculer (`CpgUserPasswordHasherTest`). **Limite acceptée** : cette dérivation unique
  * se fait au coût *stocké*, ce listener paie le coût *configuré*. Après un
  * changement de coût ou d'algorithme, un compte au hachage ancien répond en
  * un temps à lui (plus court ou plus long que l'inconnu), jusqu'à sa
- * prochaine connexion réussie qui le rehache ; un compte dormant le reste.
- * Rehacher d'avance est impossible sans le mot de passe en clair, et payer
- * ici la différence obligerait à lire le hachage stocké, sans marcher dans
- * les deux sens. La configuration n'a pas changé depuis la création des
+ * prochaine connexion réussie qui le rehache (`StalePasswordHashRehashTest`) ;
+ * un compte dormant le reste. Rehacher d'avance demande le mot de passe en
+ * clair : seuls un hachage encapsulé (bcrypt de l'ancien hachage, qu'aucun
+ * hasher de Symfony ne sait vérifier) ou un mot de passe vidé puis une
+ * nouvelle invitation (le compte devient « sans mot de passe », compensé
+ * ici, au prix d'un nouveau mot de passe à choisir) l'éviteraient — ni l'un
+ * ni l'autre retenu. Payer ici la différence obligerait à lire le hachage
+ * stocké, sans marcher dans les deux sens. La configuration n'a pas changé depuis la création des
  * comptes (bcrypt coût 13, que produisait déjà `auto`) : aucun hachage ancien
  * n'est attendu, et le diagnostic SQL de `k8s/README.md`, « Avant de changer
  * `password_hashers` », le vérifie — avec la procédure à suivre avant tout
@@ -81,9 +85,9 @@ use Throwable;
  * précalculé, pour trois raisons : le hachage précalculé serait figé dans le
  * code alors que `password_hashers` peut changer (un changement d'algorithme ou
  * de coût rouvrirait l'écart en silence, et en test le coût abaissé ne
- * s'appliquerait pas) ; `MigratingPasswordHasher::verify()` essaie les hashers
- * secondaires quand le format ne correspond pas, donc coûterait *plus* que la
- * vraie vérification ; `hash()` délègue au meilleur hasher, une fois, avec les
+ * s'appliquerait pas) ; un hachage précalculé que la configuration ne
+ * produirait plus serait « à rehacher », et `MigratingPasswordHasher::verify()`
+ * essaie alors les hashers secondaires après l'échec du principal ; `hash()` délègue au meilleur hasher, une fois, avec les
  * mêmes paramètres que `verify()` — même nombre d'itérations, à la génération
  * du sel près. L'objectif est l'équivalence, pas l'égalité à la microseconde.
  * Rien n'est lu du mot de passe soumis : moins de surface, et rien qui puisse
@@ -97,7 +101,9 @@ use Throwable;
  * ligne, un compte existant une ligne et son hydratation Doctrine — de l'ordre
  * de 100 µs, contre un écart-type d'environ 3 ms sur bcrypt seul (mesuré sur un
  * poste, plus en pod avec le réseau) : quelques milliers d'essais par
- * identifiant pour le voir, soit des semaines par IP sous `login_throttling`.
+ * identifiant pour le voir, soit des semaines pour une seule IP sous
+ * `login_throttling` — des heures pour un attaquant réparti sur de
+ * nombreuses adresses, la limite des compteurs par IP acceptée plus bas.
  *
  * DoS : ce hachage rend coûteux un login sur identifiant inconnu, qui l'était
  * déjà sur identifiant connu. Il reste borné par `login_throttling`
