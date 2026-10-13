@@ -57,9 +57,29 @@ use Throwable;
  * ils doivent être reconnus à leur exception **avant**
  * `Passport::getUser()`, qui chargerait le compte.
  *
+ * Cela suppose aussi que `verify()` dérive **une seule fois**, quel que soit
+ * l'âge du hachage stocké (issue #590). Sous `algorithm: auto`, un échec sur un
+ * hachage à rehacher (`needsRehash()` vrai : coût ou algorithme d'avant la
+ * configuration courante) faisait essayer `SodiumPasswordHasher`, qui refait
+ * un bcrypt complet : deux dérivations, quand ce listener en paie une.
+ * `security.yaml` écrit donc `algorithm: bcrypt` et son coût, et les hashers
+ * secondaires qui restent refusent sur-le-champ tout hachage à `$`
+ * (`CpgUserPasswordHasherTest`). **Limite acceptée** : cette dérivation unique
+ * se fait au coût *stocké*, ce listener paie le coût *configuré*. Après un
+ * changement de coût ou d'algorithme, un compte au hachage ancien répond en
+ * un temps à lui (plus court ou plus long que l'inconnu), jusqu'à sa
+ * prochaine connexion réussie qui le rehache ; un compte dormant le reste.
+ * Rehacher d'avance est impossible sans le mot de passe en clair, et payer
+ * ici la différence obligerait à lire le hachage stocké, sans marcher dans
+ * les deux sens. La configuration n'a pas changé depuis la création des
+ * comptes (bcrypt coût 13, que produisait déjà `auto`) : aucun hachage ancien
+ * n'est attendu, et le diagnostic SQL de `k8s/README.md`, « Avant de changer
+ * `password_hashers` », le vérifie — avec la procédure à suivre avant tout
+ * changement.
+ *
  * `hash()` d'une constante plutôt que `verify()` contre un hachage factice
  * précalculé, pour trois raisons : le hachage précalculé serait figé dans le
- * code alors que `password_hashers` vaut `auto` (un changement d'algorithme ou
+ * code alors que `password_hashers` peut changer (un changement d'algorithme ou
  * de coût rouvrirait l'écart en silence, et en test le coût abaissé ne
  * s'appliquerait pas) ; `MigratingPasswordHasher::verify()` essaie les hashers
  * secondaires quand le format ne correspond pas, donc coûterait *plus* que la
@@ -72,7 +92,12 @@ use Throwable;
  * une saisie de plus de 72 octets ou contenant un NUL, pas `hash()` sur la
  * constante — quelques microsecondes, noyées dans le bcrypt et le réseau,
  * hors de portée sous `login_throttling`. L'égaliser obligerait à lire la
- * saisie.
+ * saisie. Autre écart accepté (issue #590) : un identifiant inconnu mais
+ * conforme à `CpgUser::USERNAME_PATTERN` paie une requête qui ne rend aucune
+ * ligne, un compte existant une ligne et son hydratation Doctrine — de l'ordre
+ * de 100 µs, contre un écart-type d'environ 3 ms sur bcrypt seul (mesuré sur un
+ * poste, plus en pod avec le réseau) : quelques milliers d'essais par
+ * identifiant pour le voir, soit des semaines par IP sous `login_throttling`.
  *
  * DoS : ce hachage rend coûteux un login sur identifiant inconnu, qui l'était
  * déjà sur identifiant connu. Il reste borné par `login_throttling`

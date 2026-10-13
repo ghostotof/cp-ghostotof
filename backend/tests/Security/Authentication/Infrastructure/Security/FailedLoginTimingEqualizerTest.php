@@ -184,6 +184,27 @@ final class FailedLoginTimingEqualizerTest extends TestCase
     }
 
     /**
+     * Un hachage d'avant la configuration courante (`needsRehash()` vrai, ici
+     * un bcrypt au coût 5, au-dessus des 4 de test) : `verify()` a fait **une** dérivation, au coût
+     * stocké — `algorithm: bcrypt` ne laisse aucun hasher secondaire en refaire
+     * une (issue #590, CpgUserPasswordHasherTest). Rien à compenser : un
+     * hachage factice doublerait le temps. L'écart qui reste (coût stocké
+     * contre coût configuré) est une limite acceptée, que seule la connexion
+     * réussie suivante résorbe ; payer la différence obligerait à lire le
+     * hachage stocké et ne marcherait que dans un sens.
+     */
+    public function testAnAccountWhoseHashNeedsRehashIsNotCompensated(): void
+    {
+        $this->hasher()->expects(self::never())->method('hash');
+        $staleHash = password_hash(bin2hex(random_bytes(8)), \PASSWORD_BCRYPT, ['cost' => 5]);
+
+        ($this->equalizer())($this->failure(
+            new BadCredentialsException('The presented password is invalid.'),
+            $this->passportFor(new CpgUser('jane', $staleHash)),
+        ));
+    }
+
+    /**
      * Le throttling rejette avant toute vérification (CheckPassportEvent,
      * priorité 2080) : sa réponse doit rester bon marché, c'est son rôle.
      * Le chargeur d'utilisateur ne doit pas non plus être déclenché.
