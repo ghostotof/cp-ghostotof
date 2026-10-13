@@ -20,4 +20,9 @@ final readonly class ImmediateOrderScopeLock implements OrderScopeLockInterface
     {
         return $operation();
     }
+
+    public function withLocks(array $scopes, Closure $operation): mixed
+    {
+        return $operation();
+    }
 }

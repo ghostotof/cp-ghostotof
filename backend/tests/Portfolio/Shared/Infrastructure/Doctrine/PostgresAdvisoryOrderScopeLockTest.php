@@ -16,8 +16,12 @@ use App\Portfolio\Shared\Domain\Exception\TranslationGroupHasSeveralPositionsExc
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Portfolio\Shared\Infrastructure\Doctrine\OrderScopeLockInsideTransactionException;
 use App\Portfolio\Shared\Infrastructure\Doctrine\OrderScopeLockTimeoutException;
+use App\Portfolio\Shared\Infrastructure\Doctrine\OrderScopeLockWithoutScopeException;
 use App\Portfolio\Shared\Infrastructure\Doctrine\PostgresAdvisoryOrderScopeLock;
 use App\Portfolio\Shared\Infrastructure\Doctrine\TranslationGroupRefusal;
+use App\Portfolio\Watch\Application\WatchedProductAdministratorInterface;
+use App\Portfolio\Watch\Domain\Entity\WatchedProduct;
+use App\Portfolio\Watch\Domain\ValueObject\VersionSource;
 use App\Shared\Infrastructure\Doctrine\VanishedEntities;
 use App\Tests\Portfolio\Shared\Support\FakeOrderable;
 use App\Tests\Portfolio\Shared\Support\FakeTranslatableContent;
@@ -497,6 +501,203 @@ final class PostgresAdvisoryOrderScopeLockTest extends KernelTestCase
         self::assertInstanceOf(OrderScopeLockInsideTransactionException::class, $caught, \sprintf("L'imbrication n'a pas été refusée sous son nom : %s.", get_debug_type($caught)));
         self::assertFalse($this->entityManager()->getConnection()->isTransactionActive());
         self::assertTrue($this->probeCanLock(self::SCOPE), 'Le verrou du premier périmètre a survécu au refus.');
+    }
+
+    /**
+     * Issue #567 : `withLocks()` tient **chaque** périmètre demandé pour toute
+     * l'opération, dans une seule transaction, et les relâche tous après elle.
+     * Les périmètres sont pris triés, quel que soit l'ordre de la liste, pour
+     * que deux appelants qui en demandent les mêmes ne s'interbloquent pas.
+     */
+    public function testWithLocksHoldsEveryScopeForTheWholeOperationAndReleasesThemAfterIt(): void
+    {
+        $connection = $this->entityManager()->getConnection();
+
+        $observed = $this->lock()->withLocks([self::OTHER_SCOPE, self::SCOPE], fn (): array => [
+            'scope locked' => !$this->probeCanLock(self::SCOPE),
+            'other scope locked' => !$this->probeCanLock(self::OTHER_SCOPE),
+            'in a transaction' => $connection->isTransactionActive(),
+        ]);
+
+        self::assertSame(['scope locked' => true, 'other scope locked' => true, 'in a transaction' => true], $observed);
+        self::assertTrue($this->probeCanLock(self::SCOPE), 'Le premier verrou survit à l\'opération.');
+        self::assertTrue($this->probeCanLock(self::OTHER_SCOPE), 'Le second verrou survit à l\'opération.');
+        self::assertFalse($connection->isTransactionActive());
+    }
+
+    /**
+     * Issue #567, la réentrance bornée : sous `withLocks()`, un `withLock()`
+     * d'un périmètre **déjà tenu** par ce même adaptateur — celui de chaque
+     * `Administrator` qu'un seed enchaîne — exécute l'opération dans la
+     * transaction ouverte, sans en ouvrir une autre ni reprendre le verrou :
+     * le COMMIT reste celui de `withLocks()`, seul à nommer un refus différé.
+     */
+    public function testANestedWithLockOnAHeldScopeRunsInTheTransactionAlreadyOpen(): void
+    {
+        $connection = $this->entityManager()->getConnection();
+        $lock = $this->lock();
+
+        $observed = $lock->withLocks([self::SCOPE, self::OTHER_SCOPE], fn (): array => $lock->withLock(self::OTHER_SCOPE, fn (): array => [
+            'nesting level' => $connection->getTransactionNestingLevel(),
+            'scope still locked' => !$this->probeCanLock(self::OTHER_SCOPE),
+        ]));
+
+        self::assertSame(['nesting level' => 1, 'scope still locked' => true], $observed, 'Le withLock() imbriqué n\'a pas tourné dans la transaction de withLocks().');
+        self::assertFalse($connection->isTransactionActive());
+        self::assertTrue($this->probeCanLock(self::OTHER_SCOPE));
+    }
+
+    /**
+     * La réentrance ne vaut que pour un périmètre tenu : un seed qui prend X
+     * pendant que son `Administrator` écrit Y est une erreur de périmètre,
+     * refusée bruyamment, comme toute imbrication (#526), avant toute écriture.
+     */
+    public function testANestedWithLockOnAScopeNotHeldIsRefused(): void
+    {
+        $lock = $this->lock();
+        $ran = false;
+        $caught = null;
+
+        try {
+            $lock->withLocks([self::SCOPE], static function () use ($lock, &$ran): void {
+                $lock->withLock(self::OTHER_SCOPE, static function () use (&$ran): void {
+                    $ran = true;
+                });
+            });
+        } catch (Throwable $exception) {
+            $caught = $exception;
+        }
+
+        self::assertInstanceOf(OrderScopeLockInsideTransactionException::class, $caught, \sprintf("L'imbrication sur un périmètre non tenu n'a pas été refusée sous son nom : %s.", get_debug_type($caught)));
+        self::assertStringContainsString(self::OTHER_SCOPE, $caught->getMessage());
+        self::assertFalse($ran, "L'opération a tourné sans le verrou de son périmètre.");
+        self::assertFalse($this->entityManager()->getConnection()->isTransactionActive());
+        self::assertTrue($this->probeCanLock(self::SCOPE), 'Le verrou extérieur a survécu au refus.');
+        self::assertTrue($this->probeCanLock(self::OTHER_SCOPE), 'Le périmètre refusé a été verrouillé.');
+    }
+
+    /**
+     * `withLocks()` n'est jamais réentrant, même sur des périmètres tous tenus,
+     * ni dans une transaction déjà ouverte : seul `withLock()` sur un périmètre
+     * tenu l'est. Le squelette garde la règle de #526 pour tout le reste.
+     */
+    public function testWithLocksRefusesToNestInsideItselfOrInsideATransactionAlreadyOpen(): void
+    {
+        $lock = $this->lock();
+        $connection = $this->entityManager()->getConnection();
+
+        $nested = $this->failureOf(static fn (): mixed => $lock->withLocks([self::SCOPE], static fn (): mixed => $lock->withLocks([self::SCOPE], static fn (): null => null)));
+
+        self::assertInstanceOf(OrderScopeLockInsideTransactionException::class, $nested, \sprintf("withLocks() imbriqué n'a pas été refusé : %s.", get_debug_type($nested)));
+        self::assertFalse($connection->isTransactionActive());
+
+        $connection->beginTransaction();
+
+        try {
+            $inOpenTransaction = $this->failureOf(static fn (): mixed => $lock->withLocks([self::SCOPE], static fn (): null => null));
+
+            self::assertInstanceOf(OrderScopeLockInsideTransactionException::class, $inOpenTransaction, \sprintf("withLocks() dans une transaction ouverte n'a pas été refusé : %s.", get_debug_type($inOpenTransaction)));
+            self::assertSame(1, $connection->getTransactionNestingLevel(), "La transaction de l'appelant a été touchée.");
+        } finally {
+            $connection->rollBack();
+        }
+    }
+
+    /**
+     * Sans périmètre, `withLocks()` n'aurait qu'une transaction à offrir, sans
+     * rien sérialiser : une erreur de programmation, refusée avant d'ouvrir.
+     */
+    public function testWithLocksWithoutAnyScopeIsRefused(): void
+    {
+        // @phpstan-ignore argument.type (une liste vide viole le contrat de l'interface : c'est ce que le test éprouve)
+        $caught = $this->failureOf(fn (): mixed => $this->lock()->withLocks([], static fn (): null => null));
+
+        self::assertInstanceOf(OrderScopeLockWithoutScopeException::class, $caught, \sprintf("Une liste de périmètres vide n'a pas été refusée : %s.", get_debug_type($caught)));
+        self::assertFalse($this->entityManager()->getConnection()->isTransactionActive());
+    }
+
+    /**
+     * Les périmètres tenus sont oubliés quelle que soit l'issue — succès,
+     * exception de l'opération — : un `withLock()` suivant ouvre bien sa
+     * propre transaction, au lieu de tourner « réentrant » hors de toute
+     * transaction sur un registre périmé.
+     */
+    public function testTheScopesHeldAreForgottenAfterASuccessAndAfterAFailure(): void
+    {
+        $lock = $this->lock();
+        $connection = $this->entityManager()->getConnection();
+
+        $lock->withLocks([self::SCOPE], static fn (): null => null);
+
+        self::assertTrue($lock->withLock(self::SCOPE, $connection->isTransactionActive(...)), 'Après un succès, le périmètre est encore tenu pour verrouillé.');
+
+        $this->failureOf(static fn (): mixed => $lock->withLocks([self::SCOPE], static fn (): never => throw new DomainException('refus simulé')));
+
+        self::assertTrue($lock->withLock(self::SCOPE, $connection->isTransactionActive(...)), 'Après une exception, le périmètre est encore tenu pour verrouillé.');
+    }
+
+    /**
+     * Le COMMIT de `withLocks()` est celui que le trigger différé refuse : le
+     * refus sort sous le nom de l'invariant, même pour l'écriture faite par un
+     * `withLock()` réentrant (#390, #506), l'EntityManager est fermé (#547), et
+     * les périmètres tenus sont oubliés après ce refus aussi.
+     */
+    public function testACommitRefusedUnderWithLocksFailsUnderTheInvariantsNameAndForgetsTheScopes(): void
+    {
+        $lock = $this->lock();
+        $entityManager = $this->entityManager();
+        $connection = $entityManager->getConnection();
+
+        try {
+            [$french, $english] = $this->contributionPair();
+            $caught = $this->failureOf(static function () use ($lock, $entityManager, $english): void {
+                $lock->withLocks([Contribution::class, self::OTHER_SCOPE], static function () use ($lock, $entityManager, $english): void {
+                    $lock->withLock(Contribution::class, static function () use ($entityManager, $english): void {
+                        $english->moveToPosition($english->getPosition() + self::OUT_OF_ITS_GROUP);
+                        $entityManager->flush();
+                    });
+                });
+            });
+        } finally {
+            $connection->executeStatement('DELETE FROM contribution');
+        }
+
+        self::assertInstanceOf(TranslationGroupHasSeveralPositionsException::class, $caught, \sprintf('Le refus du trigger est remonté sous un autre nom : %s.', get_debug_type($caught)));
+        self::assertStringContainsString($french->getTranslationGroup()->toRfc4122(), $caught->getMessage(), 'Le message ne nomme pas le groupe.');
+        self::assertFalse($entityManager->isOpen(), 'Un COMMIT refusé a laissé l\'EntityManager ouvert sur des écritures annulées.');
+        self::assertFalse($connection->isTransactionActive());
+        self::assertTrue($this->probeCanLock(Contribution::class), 'Le verrou survit au COMMIT refusé.');
+        self::assertTrue($lock->withLock(Contribution::class, $connection->isTransactionActive(...)), 'Après un COMMIT refusé, le périmètre est encore tenu pour verrouillé.');
+    }
+
+    /**
+     * Issue #402 sous `withLocks()` : les entrées de **chaque** périmètre que
+     * l'EntityManager gérait avant le verrou sont relues une fois les verrous
+     * pris — une ligne supprimée entre-temps est introuvable, dans l'un comme
+     * dans l'autre. Le `withLock()` réentrant, lui, ne relit rien : rien n'a
+     * pu être validé dans un périmètre tenu.
+     */
+    public function testWithLocksRereadsTheEntriesOfEveryScopeLoadedBeforeTheLocks(): void
+    {
+        $entityManager = $this->entityManager();
+        $connection = $entityManager->getConnection();
+
+        try {
+            [$french] = $this->contributionPair();
+            $product = self::getContainer()->get(WatchedProductAdministratorInterface::class)->create('php', 'PHP', VersionSource::MANUAL, '8.5');
+            $this->probe->executeStatement('DELETE FROM contribution WHERE id = ?', [$french->getId()->toRfc4122()]);
+            $this->probe->executeStatement('DELETE FROM watched_product WHERE id = ?', [$product->getId()->toRfc4122()]);
+
+            $found = $this->lock()->withLocks([Contribution::class, WatchedProduct::class], static fn (): array => [
+                'contribution' => $entityManager->find(Contribution::class, $french->getId()),
+                'product' => $entityManager->find(WatchedProduct::class, $product->getId()),
+            ]);
+        } finally {
+            $connection->executeStatement('DELETE FROM contribution');
+            $connection->executeStatement('DELETE FROM watched_product');
+        }
+
+        self::assertSame(['contribution' => null, 'product' => null], $found, 'Une entrée supprimée avant les verrous a été rendue depuis la carte d\'identité.');
     }
 
     /**

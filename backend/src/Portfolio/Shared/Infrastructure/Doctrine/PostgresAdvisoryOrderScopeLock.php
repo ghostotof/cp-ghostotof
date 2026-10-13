@@ -58,10 +58,32 @@ use Psr\Log\LoggerInterface;
  * imbriqué, son COMMIT ne serait qu'un `RELEASE SAVEPOINT`, le trigger
  * refuserait au COMMIT de l'appelant en `23T90` ou `23T91` brut, et le verrou ne serait
  * relâché qu'alors. Refuser plutôt que documenter la limite : aucun appelant
- * n'imbrique (ni les `Administrator`s, ni les seeds, ni les migrations, qui
+ * n'imbrique (ni les `Administrator`s, ni les migrations, qui
  * écrivent en SQL), et la règle « sur le chemin applicatif, le refus sort
  * sous le nom de l'invariant » tient ainsi par construction, au lieu de
  * reposer sur la mémoire du prochain appelant.
+ *
+ * **Une réentrance, bornée** (issue #567) : `withLocks()` ouvre **une**
+ * transaction par le squelette, y prend les verrous de plusieurs périmètres —
+ * triés, pour que deux appels qui demandent les mêmes ne s'interbloquent
+ * pas —, relit chacun (#402) et retient les périmètres tenus dans un registre
+ * vidé quoi qu'il arrive. Sous cette transaction, un `withLock()` de **ce
+ * même adaptateur** sur un périmètre **tenu** exécute son opération
+ * directement : ni `BEGIN`, ni nouveau verrou, ni relecture — rien n'a pu
+ * être validé dans un périmètre que cette transaction tient. C'est ce qui
+ * permet à un `app:*:seed` d'enchaîner les `Administrator`s, qui prennent
+ * chacun `withLock()`, sous une seule transaction : sa purge et ses
+ * recréations valident ou s'annulent ensemble, ce que le refus de #526
+ * interdisait (#532 avait écarté la réentrance faute d'appelant). Elle ne
+ * contredit pas la raison de #526 : le COMMIT reste celui du verrou
+ * extérieur, donc `onCommitRefused` nomme toujours un refus différé, et la
+ * fermeture de l'EntityManager (#547, #549) couvre toute la transaction.
+ * Tout autre cas imbriqué reste refusé par le squelette, que la réentrance
+ * ne traverse pas : un périmètre non tenu — un seed qui verrouille X pendant
+ * que son `Administrator` écrit Y, une erreur de périmètre qui doit se voir
+ * —, un `withLocks()` sous un verrou, une transaction ouverte par un autre
+ * code. Le registre est celui de l'instance : une seule, celle du conteneur,
+ * sert les `Administrator`s et les commandes.
  *
  * **Un COMMIT refusé par la base ferme l'EntityManager** (issue #502) : toute
  * `DriverException` levée par le COMMIT, quel que soit son SQLSTATE. C'est le
@@ -128,13 +150,13 @@ use Psr\Log\LoggerInterface;
  * entrée disparue. C'est pourquoi `delete()` prend aussi le verrou (#499) : une
  * suppression passe entièrement avant l'opération, qui la dit introuvable, ou
  * entièrement après, et le perdant de deux `DELETE` simultanés est en 404.
- * Restent hors de cette garantie les suppressions qui contournent les
- * `Administrator`s : la purge `--force` des `app:*:seed`, et le SQL.
+ * La purge `--force` des `app:*:seed` est sous ce verrou aussi depuis #567 ;
+ * reste hors de cette garantie la suppression en SQL.
  *
  * Coût : dans une commande qui enchaîne N opérations sur un même
- * EntityManager, chacune relit ce que les précédentes ont chargé — O(N²)
- * lignes, négligeable pour des seeds d'une dizaine d'entrées (même ordre que
- * `ContentPlacement::atEndOf()`).
+ * EntityManager, chacune relisait ce que les précédentes avaient chargé —
+ * O(N²) lignes. Sous `withLocks()`, la relecture n'a lieu qu'une fois, à
+ * l'entrée (même ordre que `ContentPlacement::atEndOf()`).
  *
  * Cela suppose READ COMMITTED, le niveau par défaut de PostgreSQL, que rien ne
  * change ici : chaque instruction y voit ce qui a été validé avant elle, donc
@@ -143,7 +165,7 @@ use Psr\Log\LoggerInterface;
  * lui-même, avant l'attente. `ScopeLockReadsCommittedStateTest` épingle les
  * deux.
  */
-final readonly class PostgresAdvisoryOrderScopeLock implements OrderScopeLockInterface
+final class PostgresAdvisoryOrderScopeLock implements OrderScopeLockInterface
 {
     /**
      * Première clé du verrou, commune à tous les périmètres d'ordre : « ORDR »
@@ -152,32 +174,84 @@ final readonly class PostgresAdvisoryOrderScopeLock implements OrderScopeLockInt
      */
     public const int ADVISORY_NAMESPACE = 0x4F524452;
 
+    /**
+     * Les périmètres que la transaction ouverte par `withLocks()` tient, le
+     * temps de son opération (issue #567) : vide hors d'elle. Le seul état
+     * mutable de l'adaptateur, d'où la classe non `readonly`.
+     *
+     * @var list<class-string>
+     */
+    private array $heldScopes = [];
+
     public function __construct(
-        private EntityManagerInterface $entityManager,
-        private LoggerInterface $logger,
-        private VanishedEntities $vanishedEntities,
-        private string $fallbackLockTimeout = PostgresLockedTransaction::FALLBACK_LOCK_TIMEOUT,
+        private readonly EntityManagerInterface $entityManager,
+        private readonly LoggerInterface $logger,
+        private readonly VanishedEntities $vanishedEntities,
+        private readonly string $fallbackLockTimeout = PostgresLockedTransaction::FALLBACK_LOCK_TIMEOUT,
     ) {
     }
 
     public function withLock(string $scope, Closure $operation): mixed
     {
+        // Issue #567 : sous withLocks() de cet adaptateur, un périmètre déjà
+        // tenu participe à la transaction ouverte, sans rien reprendre ni
+        // relire. Un périmètre non tenu passe par le squelette, qui refuse.
+        if (\in_array($scope, $this->heldScopes, true)) {
+            return $operation();
+        }
+
+        return $this->withLocks([$scope], $operation);
+    }
+
+    /**
+     * @param list<class-string> $scopes plus large que le `non-empty-list` de l'interface,
+     *                                   pour que le refus d'une liste vide construite à
+     *                                   l'exécution soit un vrai contrôle
+     */
+    public function withLocks(array $scopes, Closure $operation): mixed
+    {
+        // Triés et dédoublonnés : deux appels qui demandent les mêmes
+        // périmètres les prennent dans le même ordre, donc sans interblocage.
+        $scopes = array_values(array_unique($scopes));
+        sort($scopes, \SORT_STRING);
+
+        if ([] === $scopes) {
+            throw OrderScopeLockWithoutScopeException::create();
+        }
+
         $connection = $this->entityManager->getConnection();
+        $waitingFor = $scopes[0];
 
         return new PostgresLockedTransaction($this->entityManager, $this->logger, $this->fallbackLockTimeout)->run(
-            // Bloquant : attend la fin de la transaction qui tient ce périmètre.
-            acquire: static fn (): mixed => $connection->executeQuery(
-                'SELECT pg_advisory_xact_lock(?, hashtext(?))',
-                [self::ADVISORY_NAMESPACE, $scope],
-            ),
-            onTimeout: static fn (DriverException $timeout): OrderScopeLockTimeoutException => OrderScopeLockTimeoutException::forScope($scope, $timeout),
+            // Bloquant, périmètre par périmètre : attend la fin de la
+            // transaction qui tient chacun.
+            acquire: static function () use ($connection, $scopes, &$waitingFor): void {
+                foreach ($scopes as $scope) {
+                    $waitingFor = $scope;
+                    $connection->executeQuery(
+                        'SELECT pg_advisory_xact_lock(?, hashtext(?))',
+                        [self::ADVISORY_NAMESPACE, $scope],
+                    );
+                }
+            },
+            onTimeout: static fn (DriverException $timeout): OrderScopeLockTimeoutException => OrderScopeLockTimeoutException::forScope($waitingFor, $timeout),
             // Issue #526 : imbriqué, le refus du trigger des groupes tomberait
             // au COMMIT de l'appelant, sans `onCommitRefused` pour le nommer.
-            onNested: static fn (): OrderScopeLockInsideTransactionException => OrderScopeLockInsideTransactionException::forScope($scope),
-            operation: function () use ($scope, $operation): mixed {
-                $this->rereadEntriesLoadedBefore($scope);
+            onNested: static fn (): OrderScopeLockInsideTransactionException => OrderScopeLockInsideTransactionException::forScopes($scopes),
+            operation: function () use ($scopes, $operation): mixed {
+                foreach ($scopes as $scope) {
+                    $this->rereadEntriesLoadedBefore($scope);
+                }
 
-                return $operation();
+                $this->heldScopes = $scopes;
+
+                try {
+                    return $operation();
+                } finally {
+                    // Vidé quelle que soit l'issue : un registre périmé ferait
+                    // tourner le prochain withLock() hors de toute transaction.
+                    $this->heldScopes = [];
+                }
             },
             // Le nom des refus du trigger des groupes (#506, voir plus haut).
             onCommitRefused: TranslationGroupRefusal::nameOf(...),
