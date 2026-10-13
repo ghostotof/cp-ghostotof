@@ -73,7 +73,7 @@ final class PostgresRolesProcedureTest extends TestCase
      */
     public function testOneExecRunsTheSqlOverTheLocalSocket(): void
     {
-        self::assertSame(self::normalized(self::EXEC), self::normalized($this->exec()));
+        self::assertSame($this->normalized(self::EXEC), $this->normalized($this->exec()));
     }
 
     /**
@@ -105,7 +105,9 @@ final class PostgresRolesProcedureTest extends TestCase
         // La marque n'est posée qu'une fois, par la dernière instruction de
         // verify.sql, et effacée en tête de roles.sql.
         $verify = array_values(array_filter(explode("\n", $this->statements('verify.sql')), static fn (string $line): bool => '' !== trim($line)));
-        self::assertSame('\\set verify_passed 1', trim(array_last($verify)));
+        $last = array_last($verify);
+        self::assertIsString($last, 'verify.sql est vide.');
+        self::assertSame('\\set verify_passed 1', trim($last));
         self::assertStringContainsString('\\unset verify_passed', $this->statements('roles.sql'));
         foreach (self::SQL_FILES as $file) {
             self::assertLessThanOrEqual('verify.sql' === $file ? 1 : 0, preg_match_all('/\\\\set\s+verify_passed\b/', $this->statements($file)), $file);
@@ -265,7 +267,7 @@ final class PostgresRolesProcedureTest extends TestCase
         self::assertStringContainsString("(SELECT auth_method FROM pg_hba_file_rules ORDER BY rule_number DESC LIMIT 1) <> 'reject' THEN RAISE", $verify);
     }
 
-    private static function normalized(string $text): string
+    private function normalized(string $text): string
     {
         return trim((string) preg_replace('/\s+/', ' ', $text));
     }
