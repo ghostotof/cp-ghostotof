@@ -447,6 +447,38 @@ final class BackofficeIncidentResourceTest extends WebTestCase
     }
 
     /**
+     * Issue #582 : une entrée ne change jamais de langue — elle est la version
+     * d'un groupe de traduction dans sa langue. Le `PUT` qui en porte une autre
+     * était validé, ignoré, et répondait 200 (#170 R2) ; il est refusé sous un
+     * nom, avant toute écriture, l'entrée et sa traduction inchangées.
+     */
+    public function testPutChangingTheLocaleIsRefusedAndLeavesTheEntryUntouched(): void
+    {
+        $client = self::createClient();
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
+        $csrfToken = $this->loginAs($client, self::SUPER_USERNAME, TestCredentials::superPassword());
+
+        $administrator = $client->getContainer()->get(IncidentAdministratorInterface::class);
+        $french = $administrator->create(Locale::FR, 'Second', 'v0.2.0', new DateTimeImmutable('2026-01-02'), 'i', 'c', 'r', 'inv');
+        $administrator->create(Locale::EN, 'Second, in English', 'v0.2.0', new DateTimeImmutable('2026-01-02'), 'i', 'c', 'r', 'inv', $french->getTranslationGroup());
+
+        $body = $this->put($client, $csrfToken, $french->getId()->toRfc4122(), [
+            'locale' => 'en',
+            'title' => 'Second, renamed',
+            'translationGroup' => $french->getTranslationGroup()->toRfc4122(),
+        ]);
+
+        self::assertResponseStatusCodeSame(409);
+        self::assertSame('/errors/locale-immutable', $body['type'] ?? null);
+
+        $reloaded = self::getContainer()->get(IncidentRepositoryInterface::class)->findOneById($french->getId());
+        self::assertNotNull($reloaded);
+        self::assertSame(Locale::FR, $reloaded->getLocale());
+        self::assertSame('Second', $reloaded->getTitle());
+        self::assertTrue($reloaded->getTranslationGroup()->equals($french->getTranslationGroup()));
+    }
+
+    /**
      * Le corps décodé est du `mixed` : ce sont les assertions PHPUnit qui
      * valident la forme de la réponse, pas l'analyse statique (cf. les
      * `ignoreErrors` de `phpstan.dist.neon`, portée `tests/` seulement).

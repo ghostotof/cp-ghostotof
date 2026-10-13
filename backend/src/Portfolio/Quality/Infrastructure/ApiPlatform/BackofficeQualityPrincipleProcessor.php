@@ -47,6 +47,7 @@ final readonly class BackofficeQualityPrincipleProcessor implements ProcessorInt
     {
         $principle = $this->qualityPrincipleAdministrator->update(
             $id,
+            Locale::from((string) $data->locale),
             $data->title,
             $data->description,
             $data->iconKey,

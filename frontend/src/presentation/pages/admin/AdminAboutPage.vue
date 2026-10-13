@@ -71,10 +71,14 @@ useUnsavedOrderGuard(isAnyOrderDirty)
       <BaseSelect
         id="admin-about-locale"
         v-model="selectedLocale"
+        aria-describedby="admin-about-locale-help"
         :label="t('admin.about.settings.localeLabel')"
         :options="localeOptions"
       />
-      <p class="form-text mb-0">
+      <p
+        id="admin-about-locale-help"
+        class="form-text mb-0"
+      >
         {{ t('admin.about.settings.localeHelp') }}
       </p>
     </div>

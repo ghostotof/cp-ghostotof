@@ -39,7 +39,7 @@ final class QualityTraitAdministratorTest extends TestCase
 
         $administrator = new QualityTraitAdministrator($repository, new ContentPlacement(), new OrderAssigner(), new ImmediateOrderScopeLock());
 
-        $updated = $administrator->update($trait->getId(), 'Maintenabilité', null);
+        $updated = $administrator->update($trait->getId(), $trait->getLocale(), 'Maintenabilité', null);
 
         self::assertSame('Maintenabilité', $updated->getLabel());
         // Spec 0004 D3 : `update` ne touche plus à la position — elle ne se
@@ -57,7 +57,7 @@ final class QualityTraitAdministratorTest extends TestCase
 
         $this->expectException(QualityTraitNotFoundException::class);
 
-        $administrator->update(Uuid::v7(), 'Label', null);
+        $administrator->update(Uuid::v7(), Locale::FR, 'Label', null);
     }
 
     public function testDeleteRemovesTrait(): void

@@ -505,10 +505,14 @@ useUnsavedOrderGuard(isAnyOrderDirty)
           id="admin-quality-principle-locale"
           v-model="principleForm.locale"
           :disabled="isEditingPrinciple"
+          aria-describedby="admin-quality-principle-locale-help"
           :label="t('admin.localeLabel')"
           :options="localeOptions"
         />
-        <p class="form-text mb-3">
+        <p
+          id="admin-quality-principle-locale-help"
+          class="form-text mb-3"
+        >
           {{ t('admin.quality.localeHelp') }}
         </p>
         <BaseSelect
@@ -763,10 +767,14 @@ useUnsavedOrderGuard(isAnyOrderDirty)
           id="admin-quality-trait-locale"
           v-model="traitForm.locale"
           :disabled="isEditingTrait"
+          aria-describedby="admin-quality-trait-locale-help"
           :label="t('admin.localeLabel')"
           :options="localeOptions"
         />
-        <p class="form-text mb-3">
+        <p
+          id="admin-quality-trait-locale-help"
+          class="form-text mb-3"
+        >
           {{ t('admin.quality.localeHelp') }}
         </p>
         <BaseSelect

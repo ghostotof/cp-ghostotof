@@ -53,6 +53,7 @@ final readonly class BackofficeCaseStudyProcessor implements ProcessorInterface
     {
         $caseStudy = $this->caseStudyAdministrator->update(
             $id,
+            Locale::from((string) $data->locale),
             $data->title,
             $data->problem,
             $data->solution,

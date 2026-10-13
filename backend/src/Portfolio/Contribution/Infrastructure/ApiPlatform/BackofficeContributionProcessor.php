@@ -54,6 +54,7 @@ final readonly class BackofficeContributionProcessor implements ProcessorInterfa
     {
         $contribution = $this->contributionAdministrator->update(
             $id,
+            Locale::from((string) $data->locale),
             $data->title,
             $data->project,
             $data->reference,

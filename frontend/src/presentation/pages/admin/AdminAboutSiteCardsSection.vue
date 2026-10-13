@@ -279,10 +279,14 @@ async function handleDelete(card: AdminAboutSiteCard): Promise<void> {
         id="admin-about-site-card-locale"
         v-model="form.locale"
         :disabled="isEditing"
+        aria-describedby="admin-about-site-card-locale-help"
         :label="t('admin.localeLabel')"
         :options="localeOptions"
       />
-      <p class="form-text mb-3">
+      <p
+        id="admin-about-site-card-locale-help"
+        class="form-text mb-3"
+      >
         {{ t('admin.about.localeHelp') }}
       </p>
       <BaseSelect
