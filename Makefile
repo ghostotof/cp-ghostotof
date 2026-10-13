@@ -9,8 +9,11 @@ NGINX_SIDECAR_TAG := $(shell sed -n 's/.*image: nginx:\([^[:space:]]*\).*/\1/p' 
 # Tag du broker que déploient les manifestes, pour rabbitmq-conf (#477). Vide si
 # le manifeste change de forme : tools/check-rabbitmq-conf.sh refuse alors `rabbitmq:`.
 RABBITMQ_MANIFEST_TAG := $(shell sed -n 's/.*image: rabbitmq:\([^[:space:]]*\).*/\1/p' k8s/base/rabbitmq.yaml | head -1)
+# Tag du serveur que déploient les manifestes, pour postgres-hba (#593). Vide si
+# le manifeste change de forme : tools/check-postgres-hba.sh refuse alors `postgres:`.
+POSTGRES_MANIFEST_TAG := $(shell sed -n 's/.*image: postgres:\([^[:space:]]*\).*/\1/p' k8s/base/postgres.yaml | head -1)
 
-.PHONY: help build up down restart logs sh sh-front init db-migrate consume audit build-prod build-preprod front-init front-test front-lint front-build back-test back-quality back-lsp back-style-fix build-front-prod build-front-preprod front-image-headers back-nginx-rate-limits rabbitmq-conf dev-secrets get-secret
+.PHONY: help build up down restart logs sh sh-front init db-migrate consume audit build-prod build-preprod front-init front-test front-lint front-build back-test back-quality back-lsp back-style-fix build-front-prod build-front-preprod front-image-headers back-nginx-rate-limits rabbitmq-conf postgres-hba dev-secrets get-secret
 
 help: ## Affiche cette aide
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -194,6 +197,9 @@ back-nginx-rate-limits: ## Vérifie que chaque zone nginx du backend refuse en 4
 
 rabbitmq-conf: ## Démarre le RabbitMQ des manifestes avec k8s/base/rabbitmq.conf et vérifie son plafond (#477)
 	tools/check-rabbitmq-conf.sh rabbitmq:$(RABBITMQ_MANIFEST_TAG)
+
+postgres-hba: ## Démarre le PostgreSQL des manifestes avec k8s/base/postgres-pg_hba.conf et mesure qui il admet par TCP (#593)
+	tools/check-postgres-hba.sh postgres:$(POSTGRES_MANIFEST_TAG)
 
 # --- Secrets Kubernetes (préprod/prod) ---------------------------------------
 # Lit les Secrets déjà présents dans le cluster (remplis par External Secrets
