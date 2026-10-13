@@ -207,10 +207,11 @@ rabbitmq-conf: ## Démarre le RabbitMQ des manifestes avec k8s/base/rabbitmq.con
 # vérité.
 ENV ?= preprod
 SECRET ?=
-# Uniquement les 4 secrets applicatifs gérés par ESO (cf. k8s/overlays/*/external-secrets.yaml) :
+# Uniquement les 5 secrets applicatifs gérés par ESO (cf. k8s/overlays/*/external-secrets.yaml) :
 # cv-pdf est exclu (binaire, illisible en terminal) ainsi que les secrets
 # bootstrap scaleway-eso-auth/gitlab-registry (pas des credentials applicatifs).
-ESO_SECRETS := backend-secrets postgres-credentials rabbitmq-credentials jwt-keys
+# backend-migration-secrets (#575) : l'URL du rôle PostgreSQL propriétaire, lue par le seul Job de migration.
+ESO_SECRETS := backend-secrets backend-migration-secrets postgres-credentials rabbitmq-credentials jwt-keys
 
 get-secret: ## Affiche les secrets applicatifs en clair (ENV=preprod|prod, défaut preprod ; SECRET=nom pour n'en cibler qu'un)
 	@if [ "$(ENV)" != "preprod" ] && [ "$(ENV)" != "prod" ]; then \

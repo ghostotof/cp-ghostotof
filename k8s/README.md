@@ -212,10 +212,10 @@ détail des jobs.
 ## Secrets — Scaleway Secret Manager, jamais dans git
 
 `k8s/base/secretstore.yaml` (un `SecretStore` ESO, partagé par les deux
-namespaces) et `k8s/overlays/{preprod,prod}/external-secrets.yaml` (5
-`ExternalSecret` chacun) sont **déjà commités** : ils déclarent *comment*
-chaque Secret Kubernetes (`backend-secrets`, `postgres-credentials`,
-`rabbitmq-credentials`, `jwt-keys`, `cv-pdf`) doit être rempli depuis Scaleway
+namespaces) et `k8s/overlays/{preprod,prod}/external-secrets.yaml` (un
+`ExternalSecret` par Secret) sont **déjà commités** : ils déclarent *comment*
+chaque Secret Kubernetes (`backend-secrets`, `backend-migration-secrets`,
+`postgres-credentials`, `rabbitmq-credentials`, `jwt-keys`, `cv-pdf`) doit être rempli depuis Scaleway
 Secret Manager, mais pas les valeurs elles-mêmes. `kubectl apply -k` suffit
 donc désormais à redéployer un environnement complet — reste seulement à
 alimenter Scaleway Secret Manager, une fois, à la main.
@@ -354,7 +354,11 @@ scw secret secret create name=preprod-postgres-db path=/ region=fr-par
 scw secret version create secret-id=<id> data="cp_ghostotof" region=fr-par
 # ... idem pour : preprod-postgres-user, preprod-postgres-password,
 # preprod-rabbitmq-user, preprod-rabbitmq-password, preprod-backend-app-secret,
-# preprod-backend-database-url (postgresql://app:<PASSWORD>@database:5432/cp_ghostotof?serverVersion=18&charset=utf8),
+# preprod-backend-database-url (postgresql://cpg_app:<PASSWORD>@database:5432/cp_ghostotof?serverVersion=18&charset=utf8,
+#   le rôle APPLICATIF, DML seulement — jamais le POSTGRES_USER de l'image, issue #575),
+# preprod-backend-migration-database-url (postgresql://cpg_migrator:<PASSWORD>@…, le rôle
+#   PROPRIÉTAIRE du schéma, lu par le seul Job de migration — les deux rôles et leurs
+#   mots de passe sont créés par le Job postgres-roles, § « Rôles PostgreSQL »),
 # preprod-backend-messenger-dsn (amqp://app:<PASSWORD>@rabbitmq:5672/%2f/messages),
 # preprod-backend-jwt-passphrase, preprod-backend-mailer-dsn,
 # preprod-backend-contact-email, preprod-backend-anthropic-api-key
@@ -967,6 +971,192 @@ main :
 - `rollout undo` ne rejoue jamais le `down()` d'une migration : le schéma reste celui de la release
   défaite (`.claude/rules/deploiement.md`, migration avant le rollout).
 
+## Rôles PostgreSQL (issue #575)
+
+Le rôle que l'image crée (`POSTGRES_USER`, Secret `postgres-credentials`) est
+le **superutilisateur bootstrap** de l'instance, propriétaire des tables.
+Jusqu'à #575, `DATABASE_URL` le réutilisait : l'application, le worker, les
+CronJobs et le Job de migration tournaient tous sous lui, et les gardes de la
+base — le trigger différé des groupes de traduction (#390, #501, #503), la
+contrainte `CHECK` des durées (#372) — ne tenaient que tant que personne ne
+les désactivait depuis l'application (`ALTER TABLE … DISABLE TRIGGER`, `SET
+session_replication_role`, `COPY … PROGRAM`…). Trois rôles sans aucun de ces
+pouvoirs les remplacent :
+
+| Rôle | Pouvoirs | Qui l'utilise | Où est son URL |
+|---|---|---|---|
+| `cpg_app` | `SELECT, INSERT, UPDATE, DELETE` sur chaque table, `USAGE` sur chaque séquence ; ni `TRUNCATE`, ni DDL, ni propriété ; pas la table des migrations | FPM, worker, CronJobs, Jobs applicatifs (seed, création de compte, témoin, `failed`, arrêt des workers) | `backend-secrets.DATABASE_URL` ← `<env>-backend-database-url` |
+| `cpg_migrator` | propriétaire de la base, du schéma `public` et de chaque objet ; les privilèges par défaut de ce qu'il crée vont à `cpg_app` | le seul Job de migration (`migrate-job.yaml`, `env` `DATABASE_URL`) | `backend-migration-secrets.DATABASE_URL` ← `<env>-backend-migration-database-url` |
+| `cpg_reader` | `pg_read_all_data`, aucun mot de passe : joignable depuis l'intérieur du pod seulement (socket local et `127.0.0.1`, en `trust` dans l'image), de nulle part par le réseau | les `psql` humains de ce runbook | — |
+
+Le SQL est versionné, `k8s/base/postgres-roles/{roles,privileges,verify}.sql`,
+et joué par le Job `k8s/base/postgres-roles-job.yaml` (image de `postgres.yaml`,
+une seule transaction, rejouable) ; `privileges.sql` est aussi rejoué par
+`ApplicationRolePrivilegesTest` sur le schéma migré de la base de test, à
+chaque run de la suite : un `GRANT` qu'une table nouvelle attendrait, ou un
+pouvoir rendu au rôle applicatif, rougit la CI avant la release. Le rôle
+bootstrap reste pour l'image (entrypoint, sondes `pg_isready`), Adminer et ce
+Job — voir « Limites connues » (#593).
+
+**Quand.** Hors déploiement, à la main, **préprod puis prod**, et **avant de
+pousser la branche de release qui embarque #575** : son Job de migration lit
+déjà `backend-migration-secrets`, et sans le secret Scaleway la garde #325
+arrête le déploiement en le nommant ; sans le transfert de propriété, une
+migration échoue sur un DDL (fail-closed, release précédente en service). La
+bascule de `DATABASE_URL` applicatif, elle, ne dépend d'aucun code : le code
+en service tourne tel quel sous `cpg_app`, et un pod de CronJob parti entre la
+publication et le redémarrage aussi.
+
+**Terminal séparé, jamais derrière un `!` dans une session d'agent**, mêmes
+règles qu'au §2bis : les mots de passe naissent dans des fichiers d'un
+répertoire privé et n'en sortent que par un Secret créé depuis ces fichiers et
+par `data=@fichier` ; rien dans un argument, rien à l'écran. Depuis la racine
+d'un checkout qui porte le Job (`develop` après la fusion de #575, ou la
+branche de release). `NS` sans valeur par défaut, comme partout ici.
+
+```bash
+NS=        # preprod, puis prod : vide, rien ne part
+: "${NS:?preprod ou prod}"
+umask 077
+TMP=$(mktemp -d)
+trap 'rm -rf "$TMP"' EXIT
+# 1. Mots de passe (hexadécimal : aucun caractère à encoder dans une URL) et URL, par fichier.
+openssl rand -hex 24 | tr -d '\n' > "$TMP/app-password"
+openssl rand -hex 24 | tr -d '\n' > "$TMP/migrator-password"
+DB="$(kubectl -n "$NS" get secret postgres-credentials -o jsonpath='{.data.POSTGRES_DB}' | base64 -d)"
+{ printf 'postgresql://cpg_app:'; cat "$TMP/app-password"; printf '@database:5432/%s?serverVersion=18&charset=utf8' "$DB"; } > "$TMP/app-url"
+{ printf 'postgresql://cpg_migrator:'; cat "$TMP/migrator-password"; printf '@database:5432/%s?serverVersion=18&charset=utf8' "$DB"; } > "$TMP/migrator-url"
+# 2. Les deux objets temporaires que le Job monte : le SQL du dépôt (celui de HEAD, relu :
+#    `git diff --quiet HEAD -- k8s/base/postgres-roles` doit être muet), les mots de passe.
+#    Supprimés d'abord : un essai interrompu les aurait laissés (AlreadyExists).
+kubectl -n "$NS" delete configmap postgres-roles-sql --ignore-not-found
+kubectl -n "$NS" delete secret postgres-roles-passwords --ignore-not-found
+kubectl -n "$NS" create configmap postgres-roles-sql --from-file=k8s/base/postgres-roles/
+kubectl -n "$NS" create secret generic postgres-roles-passwords \
+  --from-file=app-password="$TMP/app-password" --from-file=migrator-password="$TMP/migrator-password"
+#    Rotation seulement : la clé `rotate` en plus (vide, sa présence suffit) —
+#    `--from-file=rotate=/dev/null` ajouté à la commande ci-dessus.
+# 3. Le Job (issue #488 : suppression du précédent, apply, attente, journaux). L'image est celle
+#    du manifeste, tenue avec postgres.yaml par un test : l'argument image, requis par run-job.sh,
+#    est sans effet ici.
+tools/run-job.sh "$NS" k8s/base/postgres-roles-job.yaml unused 120
+# 4. Dans tous les cas, succès ou échec :
+kubectl -n "$NS" delete secret postgres-roles-passwords
+kubectl -n "$NS" delete configmap postgres-roles-sql
+```
+
+Chaque `ALTER … OWNER TO` prend un verrou `ACCESS EXCLUSIVE` tenu jusqu'au
+COMMIT de la transaction unique (quelques secondes, `verify.sql` compris) :
+les requêtes de l'API sur ces tables attendent ce temps-là, et un
+interblocage avec le trafic (`40P01`) annule l'une des deux transactions —
+le Job, à relancer, ou une écriture du backoffice, un 500 pour son auteur.
+Une heure calme, donc. Lire la sortie de `verify.sql` dans les journaux du
+Job : trois rôles, `rolsuper` `f` partout, le lecteur sans mot de passe, le
+rôle de migration propriétaire de la base et du schéma, `0` objet de
+`public` hors de lui, `0` table sans DML pour `cpg_app`, `f | f | f`, `2`
+privilèges par défaut, `t | f` pour le lecteur, puis `conforme`. **Un écart
+fait échouer le Job** : `verify.sql` se termine par un bloc qui lève une
+erreur sur chaque attente trahie, psql sort en 3 et `--single-transaction`
+annule tout — rien n'est à défaire, lire la cause, corriger, relancer depuis
+l'étape 2 (`run-job.sh` supprime le Job précédent). Un `55P03` dans ses
+journaux est un `ALTER … OWNER TO` bloqué par une transaction longue (une
+migration, un seed) : relancer hors déploiement. Des mots de passe absents ou
+trop courts (fichier mal nommé) sont refusés avant toute écriture.
+
+**Environnement neuf** (nouveau namespace, PVC perdu) : ce Job passe **avant
+la première migration**, sur la base encore vide que l'image a créée —
+`privileges.sql` et `verify.sql` ne supposent aucune table —, puis la
+`DATABASE_URL` de migration est publiée, et le déploiement migre sous
+`cpg_migrator`. Rejouer ensuite le Job (mode `refresh` du wizard) pour
+retirer à `cpg_app` la table des migrations, que les privilèges par défaut
+lui avaient ouverte.
+
+Le même contrôle, plus tard, sans le Job, sous le lecteur (lecture seule,
+sortie sur le terminal, requête sur l'entrée standard) :
+
+```bash
+NS=        # preprod ou prod, à renseigner : vide, la commande s'arrête avant d'appeler le cluster
+kubectl -n "${NS:?preprod ou prod}" exec -i deploy/postgres -c postgres -- \
+  sh -c 'PGOPTIONS="-c default_transaction_read_only=on -c lock_timeout=5s" psql -X -A -v ON_ERROR_STOP=1 -U cpg_reader -d "$POSTGRES_DB"' <<'SQL'
+SELECT rolname, rolsuper, rolcanlogin FROM pg_roles WHERE rolname IN ('cpg_app', 'cpg_migrator', 'cpg_reader') ORDER BY 1;
+SELECT count(*) AS objets_hors_migration FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p', 'v', 'm', 'S', 'i') AND pg_get_userbyid(c.relowner) <> 'cpg_migrator';
+SELECT count(*) AS tables_sans_dml FROM information_schema.tables t
+WHERE t.table_schema = 'public' AND t.table_type = 'BASE TABLE' AND t.table_name <> 'doctrine_migration_versions'
+  AND NOT has_table_privilege('cpg_app', format('%I.%I', t.table_schema, t.table_name), 'SELECT,INSERT,UPDATE,DELETE');
+SQL
+# attendu : trois lignes avec rolsuper f, puis 0, puis 0.
+```
+
+**Publier les URL, puis basculer** (même recette que les secrets de
+l'assistant, §2 : `publish` crée le secret ou y ajoute une version,
+`data=@fichier`) :
+
+```bash
+publish() {
+  local id
+  id=$(scw secret secret list name="$1" region=fr-par -o json | jq -r '.[0].id // empty')
+  [ -n "$id" ] || id=$(scw secret secret create name="$1" path=/ region=fr-par -o json | jq -r .id)
+  scw secret version create "$id" data=@"$2" region=fr-par > /dev/null && echo "publié : $1"
+}
+publish "${NS}-backend-database-url"           "$TMP/app-url"        # nouvelle version : cpg_app
+publish "${NS}-backend-migration-database-url" "$TMP/migrator-url"   # nouveau secret : cpg_migrator
+# Les pods relisent backend-secrets au redémarrage seulement ; backend et worker ensemble (§ Retour
+# arrière applicatif). backend-migration-secrets n'a pas de pod : le Job de migration le lira.
+kubectl -n "$NS" annotate externalsecret backend-secrets force-sync="$(date +%s)" --overwrite
+kubectl -n "$NS" get externalsecret backend-secrets -o jsonpath='{.status.conditions[?(@.type=="Ready")].status} {.status.refreshTime}{"\n"}'
+kubectl -n "$NS" rollout restart deployment/backend deployment/worker
+kubectl -n "$NS" rollout status deployment/backend --timeout=180s
+kubectl -n "$NS" rollout status deployment/worker --timeout=180s
+# Un privilège manquant se lit en SQLSTATE 42501 dans les journaux : 0 attendu.
+kubectl -n "$NS" logs deploy/backend -c php-fpm --since=5m | grep -c '42501' || true
+kubectl -n "$NS" logs deploy/worker --since=5m | grep -c '42501' || true
+```
+
+Puis, à la main, ce que les journaux ne prouvent pas : une page publique
+(`/api/watch`), un login raté (le compteur de `cache_items` s'écrit sous
+`cpg_app`), une écriture du backoffice qui réordonne (le trigger se déclenche
+sous `cpg_app`), et, pour la préprod, le prochain push de la branche de
+release — son Job de migration tourne alors sous `cpg_migrator`, ses smoke
+tests sous `cpg_app`. Aucun signal d'arrêt des workers à relancer : le
+worker est redémarré, et le cache signé est intact (même `APP_SECRET`).
+
+**Retour arrière** (à tout moment, le rôle bootstrap existe toujours) :
+republier l'URL du superutilisateur comme **nouvelle** version de
+`<env>-backend-database-url` — c'est la **dernière version d'avant #575**,
+pas forcément la précédente (après une rotation, la précédente porte un mot
+de passe de `cpg_app` devenu faux) ; la relire dans Secret Manager vers un
+fichier, jamais à l'écran : `scw secret version access <secret-id>
+revision=<n> region=fr-par > "$TMP/previous-url"` (vérifier la forme de
+sortie avec `--help`, elle évolue : brute, ou `-o json` à décoder par `jq -r
+.data | base64 -d`), puis `scw secret version create <secret-id>
+data=@"$TMP/previous-url" region=fr-par` —, `force-sync`, `rollout restart`
+des deux. Les rôles et la propriété transférée ne gênent en rien le
+superutilisateur ; les laisser. Une fois la bascule validée en prod, désactiver
+les versions qui portent l'URL du superutilisateur **sauf la plus récente**,
+gardée pour ce retour arrière (`scw secret version disable`, §2bis étape 5).
+
+**Le Job ne réécrit jamais un mot de passe existant par défaut** : rejoué
+tel quel, il laisse l'application connectée. **Un objet créé à la main** sous
+le superutilisateur (une table, une séquence) n'hérite pas des privilèges par
+défaut, attachés au rôle qui crée : rejouer les étapes 1 à 4 — les mots de
+passe générés sont ignorés, les `GRANT … ON ALL` rattrapent l'objet — ou,
+mieux, ne créer d'objet que par une migration. **Rotation des mots de passe** :
+les mêmes étapes 1 à 4 avec une clé `rotate` de plus dans le Secret temporaire
+(`--from-file=rotate=/dev/null` suffit : c'est sa présence qui compte, lue par
+`roles.sql`), puis republier les deux URL, `force-sync`, `rollout restart`.
+Entre le COMMIT du Job et le redémarrage, toute nouvelle connexion de
+l'application échoue : enchaîner sans attendre, à une heure calme.
+
+**Fenêtre à connaître, entre la bascule et la release qui l'embarque.** Le
+`migrate-job.yaml` d'avant #575 lit `backend-secrets`, donc `cpg_app` une fois
+la bascule faite, et `cpg_app` n'a pas la table des migrations : un
+déploiement depuis `main` d'avant #575 (un hotfix) échouerait alors à son Job
+de migration, fail-closed, même sans migration en attente. D'où l'ordre :
+basculer la prod juste avant le merge de la release, pas des jours avant ; et
+si un hotfix doit partir entre-temps, le retour arrière ci-dessous le temps du
+hotfix, puis rebasculer.
+
 ## Administration de la base (Adminer)
 
 `k8s/base/adminer.yaml` déploie Adminer (interface web PostgreSQL) **sans
@@ -1018,7 +1208,12 @@ toujours honorée par l'image 5.x), identifiants à saisir à la main
 <preprod|prod> -o jsonpath='{.data.POSTGRES_USER}' | base64 -d`, idem pour
 `POSTGRES_PASSWORD`). L'accès est donc conditionné à la possession d'un
 kubeconfig valide sur le cluster (même niveau de confiance qu'un `kubectl
-exec`), pas d'un simple mot de passe web.
+exec`), pas d'un simple mot de passe web. Ce sont les identifiants du
+**superutilisateur** de l'image, que l'application n'utilise plus depuis
+l'issue #575 (§ « Rôles PostgreSQL ») : tout ce qu'Adminer fait sous eux
+contourne les gardes de la base — un `DISABLE TRIGGER` y passe. Pour une
+simple lecture, préférer le `psql` sous `cpg_reader` du § « Journal de
+sécurité ».
 
 ### Version de l'image et `readOnlyRootFilesystem`
 
@@ -1128,13 +1323,14 @@ kubeconfig d'administrateur (lecture seule, la sortie reste sur le terminal) :
 NS=        # preprod ou prod, à renseigner : vide, la commande s'arrête avant d'appeler le cluster
 printf '%s\n' 'SHOW tcp_keepalives_idle;' 'SHOW tcp_keepalives_interval;' 'SHOW tcp_keepalives_count;' 'SHOW tcp_user_timeout;' \
   | kubectl -n "${NS:?preprod ou prod}" exec -i deploy/postgres -c postgres -- \
-    sh -c 'PGOPTIONS="-c default_transaction_read_only=on -c lock_timeout=5s" psql -X -A -t -v ON_ERROR_STOP=1 -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+    sh -c 'PGOPTIONS="-c default_transaction_read_only=on -c lock_timeout=5s" psql -X -A -t -v ON_ERROR_STOP=1 -h 127.0.0.1 -U cpg_reader -d "$POSTGRES_DB"'
 # attendu : 60, 10, 3 et 90000 sur quatre lignes ; 0 : connexion par socket
 # (-h manquant) ou serveur démarré sans les args.
 ```
 
 Comme pour la recherche d'un compte (§ « Journal de sécurité »), la requête arrive
-par l'entrée standard, rien dans l'argv de l'`exec`. Aucun mot de passe : le
+par l'entrée standard, rien dans l'argv de l'`exec`, sous le rôle lecteur
+`cpg_reader` (§ « Rôles PostgreSQL », issue #575). Aucun mot de passe : le
 `pg_hba.conf` de l'image fait confiance (`trust`) aux connexions TCP de
 127.0.0.1, c'est-à-dire de l'intérieur du pod.
 
@@ -1374,7 +1570,7 @@ session d'assistant —, avec un **kubeconfig d'administrateur humain**. Le jeto
 NS=        # preprod ou prod, à renseigner : vide, la commande s'arrête avant d'appeler le cluster
 printf '%s\n' '\set id <userId>' "SELECT username, email FROM cpg_user WHERE id = :'id'::uuid;" \
   | kubectl -n "${NS:?preprod ou prod}" exec -i deploy/postgres -c postgres -- \
-    sh -c 'PGOPTIONS="-c default_transaction_read_only=on -c lock_timeout=5s" psql -X -A -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+    sh -c 'PGOPTIONS="-c default_transaction_read_only=on -c lock_timeout=5s" psql -X -A -v ON_ERROR_STOP=1 -U cpg_reader -d "$POSTGRES_DB"'
 # attendu : l'en-tête username|email, une ligne nom|adresse et « (1 row) » ;
 # « (0 rows) » : aucun compte de cet UUID dans CE namespace — relire $NS avant de conclure.
 ```
@@ -1391,10 +1587,14 @@ morceau, essayé sur l'image `postgres:18.6-alpine` en local (pas encore sur le 
 - **Pas d'injection.** L'UUID passe par une variable psql (`\set`), citée par `:'id'` et convertie
   en `uuid` : une valeur collée depuis un journal qui contiendrait une apostrophe ou du SQL ne
   devient qu'une erreur « invalid input syntax for type uuid ».
-- **Lecture seule.** `default_transaction_read_only` fait refuser une écriture par erreur
-  (« cannot execute UPDATE in a read-only transaction ») ; c'est un garde-fou, pas une frontière :
-  un `SET default_transaction_read_only = off` dans la session le lève, et la même identité peut
-  de toute façon tout faire. `lock_timeout=5s` borne ses attentes de verrou comme celles de FPM et
+- **Lecture seule, deux fois.** `default_transaction_read_only` fait refuser une écriture par
+  erreur (« cannot execute UPDATE in a read-only transaction ») ; un `SET` dans la session le lève,
+  c'est un garde-fou. Le rôle, depuis l'issue #575, en est un second : `cpg_reader` n'a que
+  `pg_read_all_data` (§ « Rôles PostgreSQL »), jamais le superutilisateur de l'image — une
+  erreur d'opérateur n'écrit rien. Pas une frontière contre qui détient l'`exec` : dans le pod,
+  `trust` donne aussi `-U "$POSTGRES_USER"`, et `pg_read_all_data` lit `pg_authid` (jamais de
+  `SELECT *` dessus dans un terminal). Tant que le Job des rôles n'a pas été joué dans ce
+  namespace, le rôle n'existe pas et la commande échoue en le disant. `lock_timeout=5s` borne ses attentes de verrou comme celles de FPM et
   des Jobs (#525) : `PGOPTIONS` remplace la variable entière, la borne doit donc y être répétée.
 - **Un résultat lisible.** `-X` ignore un `~/.psqlrc` ; `-A` rend `nom|adresse` sans alignement mais
   garde l'en-tête et le compte de lignes, pour qu'un namespace erroné (« (0 rows) ») ne se confonde
@@ -1404,7 +1604,9 @@ morceau, essayé sur l'image `postgres:18.6-alpine` en local (pas encore sur le 
 - **Aucun secret ne sort du pod.** La connexion passe par le socket local du conteneur, sans mot de
   passe : l'image officielle y pose la méthode `trust` à l'initialisation (`local all all trust`),
   et `postgres.yaml` ne fixe ni `POSTGRES_HOST_AUTH_METHOD` ni `POSTGRES_INITDB_ARGS` — à confirmer
-  sur le volume réel à la première exécution en préprod (#520).
+  sur le volume réel à la première exécution en préprod (#520). `cpg_reader` n'a d'ailleurs aucun
+  mot de passe : depuis un autre pod (`scram-sha-256`), il n'est joignable de nulle part ; seuls le
+  socket local et `127.0.0.1` du pod, en `trust`, le prennent.
 
 Pincé par `OperatorExecBoundaryTest`.
 
@@ -1526,7 +1728,7 @@ et coût, ou paramètres argon) et un nombre de comptes, jamais un sel, un hacha
 ```bash
 NS=        # preprod ou prod, à renseigner : vide, la commande s'arrête avant d'appeler le cluster
 kubectl -n "${NS:?preprod ou prod}" exec -i deploy/postgres -c postgres -- \
-  sh -c 'PGOPTIONS="-c default_transaction_read_only=on -c lock_timeout=5s" psql -X -A -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
+  sh -c 'PGOPTIONS="-c default_transaction_read_only=on -c lock_timeout=5s" psql -X -A -v ON_ERROR_STOP=1 -U cpg_reader -d "$POSTGRES_DB"' <<'SQL'
 SELECT CASE
          WHEN password = '' THEN '(sans mot de passe)'
          WHEN password LIKE '$argon2%' THEN coalesce(substring(password FROM '^(\$argon2[a-z]*\$v=[0-9]+\$[^$]*\$)'), '(argon, format inconnu)')
@@ -1580,13 +1782,13 @@ Aucun pod de ce dépôt n'en a l'usage — vérifié plutôt que supposé :
 
 Le champ est posé au niveau du **pod spec** (`spec.template.spec`, et
 `spec.jobTemplate.spec.template.spec` pour les CronJob), pas sur le
-ServiceAccount `default` que ce dépôt ne gère pas. Les quinze objets concernés :
+ServiceAccount `default` que ce dépôt ne gère pas. Les seize objets concernés :
 `backend`, `worker`, `frontend`, `postgres`, `rabbitmq`, `adminer`, les
-CronJob `watch-refresh` et `contact-failed-messages-purge`, **et les sept Jobs
+CronJob `watch-refresh` et `contact-failed-messages-purge`, **et les huit Jobs
 hors kustomize** `migrate-job.yaml`, `seed-job.yaml`, `create-user-job.yaml`
-(issue #386), `messenger-probe-job.yaml` (issue #470) et les trois Jobs de
-`failed` (issue #521) — ces derniers ne passent par aucun transformateur, ils
-portent donc le champ directement.
+(issue #386), `messenger-probe-job.yaml` (issue #470), les trois Jobs de
+`failed` (issue #521) et `postgres-roles-job.yaml` (issue #575) — ces derniers
+ne passent par aucun transformateur, ils portent donc le champ directement.
 
 ### Labels Pod Security Admission sur les deux namespaces
 
@@ -1655,14 +1857,14 @@ coupées : quelques requêtes peuvent répondre 500 pendant la reprise.
 Dans l'ordre, avec un kubeconfig **d'administrateur**, sur la préprod, **avant**
 de fusionner la release :
 
-1. **Hors ligne.** Le rendu doit passer et les quinze pod specs porter le champ :
+1. **Hors ligne.** Le rendu doit passer et les seize pod specs porter le champ :
    ```bash
    kubectl kustomize k8s/overlays/preprod >/dev/null && echo rendu-ok
    kubectl kustomize k8s/overlays/preprod | grep -c 'automountServiceAccountToken: false'   # 8 attendu
    grep -c 'automountServiceAccountToken: false' k8s/base/migrate-job.yaml k8s/base/seed-job.yaml \
      k8s/base/create-user-job.yaml k8s/base/messenger-probe-job.yaml \
      k8s/base/messenger-stop-workers-job.yaml k8s/base/messenger-failed-retry-job.yaml \
-     k8s/base/messenger-failed-remove-job.yaml
+     k8s/base/messenger-failed-remove-job.yaml k8s/base/postgres-roles-job.yaml
    ```
 2. **Lire les avertissements sans rien bloquer.** Poser d'abord `audit` et
    `warn` seuls. Au moment où un label PSA est posé ou modifié, l'API évalue
@@ -1754,6 +1956,11 @@ de fusionner la release :
 
 - Postgres et RabbitMQ tournent en pod (1 réplique, PVC) plutôt que sur des
   services managés Scaleway : pas de sauvegarde automatique.
+- Le superutilisateur PostgreSQL de l'image reste joignable par TCP depuis
+  tout pod du namespace, avec le mot de passe de `postgres-credentials`
+  (issue #593) : l'application ne l'utilise plus (#575, § « Rôles
+  PostgreSQL »), mais une fuite de ce mot de passe rendrait ce que #575
+  retire. Le restreindre au socket local demande un `pg_hba.conf` propre.
 - Pod Security Admission est posé (cf. « Durcissement des pods » ci-dessus)
   mais `enforce` est à `baseline`, pas à `restricted` : **RabbitMQ** est le
   seul workload qui reste en deçà (aucun `securityContext` de conteneur —

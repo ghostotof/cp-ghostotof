@@ -1,0 +1,137 @@
+# Issue #575 — rôles PostgreSQL de l'application, des migrations et du runbook.
+#
+# Le rôle que l'image crée (POSTGRES_USER, Secret postgres-credentials) est le
+# superutilisateur bootstrap de l'instance, propriétaire des tables : jusqu'à
+# #575 l'application, le worker, les CronJobs et le Job de migration tournaient
+# tous sous lui. Une injection SQL aurait pu désactiver le trigger différé des
+# groupes de traduction (#390, #501, #503), lire ou réécrire toute table, ou
+# exécuter des commandes côté serveur. Ce Job crée trois rôles sans aucun de
+# ces pouvoirs et transfère la propriété du schéma :
+#   - cpg_app       : l'application (FPM, worker, CronJobs, Jobs applicatifs),
+#                     DML seulement — DATABASE_URL de backend-secrets ;
+#   - cpg_migrator  : propriétaire de la base et de chaque objet, les seules
+#                     migrations — DATABASE_URL du Secret de migration, lu par
+#                     le seul migrate-job.yaml (MigrationRoleSecretsTest) ;
+#   - cpg_reader    : lecture seule, sans mot de passe, pour les psql humains
+#                     du runbook par le socket local du pod postgres.
+# Le SQL est celui du dépôt, k8s/base/postgres-roles/{roles,privileges,verify}.sql,
+# rejouable ; privileges.sql est aussi rejoué par ApplicationRolePrivilegesTest
+# sur le schéma de la base de test, à chaque run de la suite.
+#
+# Un Job, pas un `kubectl exec` (#520) : un effet de bord passe par un Job, et
+# chaque psql du runbook reste une lecture (OperatorExecBoundaryTest). L'image
+# est celle de postgres.yaml — JAMAIS l'image backend, qui ferait entrer ce Job
+# dans les recensements des Jobs applicatifs (cache système, PGOPTIONS) ; le
+# test PostgresRolesJobManifestTest tient les deux tags ensemble. D'où aussi
+# l'absence du placeholder d'image des autres Jobs (envsubst n'a rien à
+# remplacer) : l'argument image de tools/run-job.sh est requis mais sans
+# effet ici.
+#
+# Les mots de passe entrent par un Secret temporaire créé DEPUIS DES FICHIERS
+# (invariant « a secret is never passed as a process argument »), monté en
+# lecture seule et lu par psql (`\set … \`cat …\`` dans roles.sql) ; le SQL par
+# une ConfigMap temporaire créée depuis k8s/base/postgres-roles/. Procédure,
+# suppression des deux objets comprise : k8s/README.md, « Rôles PostgreSQL ».
+#
+# DÉLIBÉRÉMENT ABSENT de kustomization.yaml `resources:`, comme migrate-job.yaml :
+# un `apply -k` ne touche jamais aux rôles.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: postgres-roles
+  labels:
+    app.kubernetes.io/name: postgres-roles
+spec:
+  # Aucune reprise : --single-transaction a tout annulé, et un refus se lit
+  # dans les journaux avant de relancer.
+  backoffLimit: 0
+  # Attendu 120 s par le runbook (tools/run-job.sh … 120) : au-dessus, pour
+  # que les journaux d'un pod bloqué soient lus avant sa suppression, convention
+  # de tous les Jobs (#525, #535), vérifiée par tools/tests/run-job.test.sh.
+  activeDeadlineSeconds: 240
+  # Une heure pour relire verify.sql dans `kubectl logs job/postgres-roles` ;
+  # le Secret et la ConfigMap, eux, sont supprimés dès la fin du Job.
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: postgres-roles
+    spec:
+      automountServiceAccountToken: false
+      restartPolicy: Never
+      securityContext:
+        # Le groupe `postgres` de l'image (gid 70, cf. postgres.yaml) : il lit
+        # le Secret monté en 0440.
+        fsGroup: 70
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: psql
+          image: postgres:18.6-alpine # garder synchronisé avec postgres.yaml (PostgresRolesJobManifestTest)
+          # psql -X : aucun ~/.psqlrc ; ON_ERROR_STOP : une erreur sort en 3 ;
+          # --single-transaction : les trois fichiers en une transaction, un
+          # refus annule tout (ALTER DATABASE … OWNER y est permis). Les noms
+          # de rôle sont ceux du dépôt, pas des secrets. Ni -a ni -e : psql
+          # n'écho rien, un ALTER ROLE porte un mot de passe.
+          command:
+            - sh
+            - -c
+            - exec psql -X -v ON_ERROR_STOP=1 --single-transaction -h database -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v app_role=cpg_app -v migrator_role=cpg_migrator -v reader_role=cpg_reader -f /sql/roles.sql -f /sql/privileges.sql -f /sql/verify.sql
+          env:
+            # Issue #525 : chaque ALTER … OWNER TO prend un verrou ACCESS
+            # EXCLUSIVE bref ; derrière une transaction longue (une migration,
+            # un seed), il échoue au bout de 5 s au lieu de mettre l'API en
+            # file derrière lui. Relancer hors déploiement.
+            - name: PGOPTIONS
+              value: '-c lock_timeout=5s'
+            # Les trois valeurs de postgres-credentials, chacune par référence :
+            # pas d'envFrom, qui recopierait POSTGRES_PASSWORD en plus de
+            # PGPASSWORD. psql lit le mot de passe dans PGPASSWORD, jamais dans
+            # l'argv.
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_PASSWORD
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_USER
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_DB
+          volumeMounts:
+            - name: postgres-roles-sql
+              mountPath: /sql
+              readOnly: true
+            - name: postgres-roles-passwords
+              mountPath: /run/secrets/postgres-roles
+              readOnly: true
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              cpu: 500m
+              memory: 128Mi
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 70
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ['ALL']
+      volumes:
+        # Créés à la main juste avant l'apply, supprimés juste après (runbook).
+        - name: postgres-roles-sql
+          configMap:
+            name: postgres-roles-sql
+        # 288 est 0440 en décimal : le groupe du fsGroup lit, personne n'écrit
+        # (cf. create-user-job.yaml pour la notation).
+        - name: postgres-roles-passwords
+          secret:
+            secretName: postgres-roles-passwords
+            defaultMode: 288

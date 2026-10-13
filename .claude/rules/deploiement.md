@@ -156,6 +156,55 @@ paths:
   never above `notice`, so the channel is silent in prod; a lock failure stays visible through
   `RateLimiterLockFailureListener`'s `error` line, which never names the resource. A future lock
   taken outside an `/api` request would fail silently: revisit this before adding one.
+- **The application and the migrations run under two PostgreSQL roles, neither a superuser**
+  (issue #575, decided 2026-10-13). Until then every `DATABASE_URL` reused the image's `POSTGRES_USER`:
+  the **bootstrap superuser**, owner of every table — so an SQL injection could have disabled the
+  deferred trigger of the translation groups (#390, #501, #503), read or rewritten any table, or run
+  `COPY … PROGRAM`. Now `backend-secrets.DATABASE_URL` is **`cpg_app`** (`SELECT, INSERT, UPDATE,
+  DELETE` on every table, `USAGE, SELECT` on every sequence; no `TRUNCATE`, no DDL, no ownership, not
+  `doctrine_migration_versions`) for FPM, the worker, both CronJobs and every applicative Job, and
+  **`migrate-job.yaml` alone** reads **`cpg_migrator`** — owner of the database, of `public` and of
+  every object — from its own `backend-migration-secrets` (an `env` entry, which beats `envFrom`;
+  `MigrationRoleSecretsTest` pins the wiring and that no other backend-image manifest names that
+  Secret). A third role, **`cpg_reader`** (`pg_read_all_data`, no password: reachable from inside
+  the `postgres` pod only — local socket and `127.0.0.1`, `trust` in the image —, from nowhere over
+  the network), runs the runbook's human `psql`s (`OperatorExecBoundaryTest` requires `-U cpg_reader`).
+  The SQL lives in `k8s/base/postgres-roles/{roles,privileges,verify}.sql`, played by
+  `k8s/base/postgres-roles-job.yaml` (image of `postgres.yaml`, never the backend image — it would
+  enter the census above —, one transaction whose `ACCESS EXCLUSIVE` locks are held until its
+  COMMIT, a few seconds, rerunnable, passwords from a temporary Secret created from files, SQL from a
+  temporary ConfigMap; `PostgresRolesJobManifestTest`) through `tools/run-job.sh … 120`, **by hand,
+  preprod then prod, before the release branch that reads the new Secret is pushed** — and prod
+  **just before** the merge: until the release is in `main`, a hotfix cut from `main` still carries
+  the old `migrate-job.yaml`, which would run under `cpg_app` and fail fail-closed on the migrations
+  table (`k8s/README.md`, « Rôles PostgreSQL », which also gives the rollback). **A rerun never
+  rewrites an existing password** (a `rotate` key in the temporary Secret asks for it): rewriting
+  `cpg_app`'s would cut the application until its URL is republished and the pods restarted.
+  **Future tables need no GRANT**: `ALTER DEFAULT PRIVILEGES FOR ROLE cpg_migrator` covers what a
+  migration creates — an object created by hand under the superuser does not inherit them: rerun
+  the Job. **The guard is
+  `ApplicationRolePrivilegesTest`**, which replays `privileges.sql` on the migrated test schema with
+  throwaway roles (`SET ROLE`, one rolled-back transaction, no password): every table and sequence
+  open to the application role, a table the migrator creates later too, the trigger still firing
+  under it, and `DISABLE TRIGGER`, `DROP TRIGGER`/`FUNCTION`, `session_replication_role`, DDL and
+  `TRUNCATE` refused in `42501`. **Dev and CI keep the single superuser role**, on purpose: the
+  tests that lift a constraint, disable the trigger or set `session_replication_role` need it, and
+  the guard above is what proves the privileges. A new statement the application needs (a `LOCK
+  TABLE`, a temp table, a new schema) is added to the guard first, then to `privileges.sql`. Accepted
+  blind spot: CI migrates as the superuser, so a migration that needs more than ownership (`CREATE
+  EXTENSION`, `SECURITY DEFINER`, `session_replication_role`) passes CI and fails first in preprod,
+  fail-closed, under `cpg_migrator` — none does today; write one and preprod says so; and
+  `roles.sql`/`verify.sql` (psql meta-commands) run nowhere before preprod, the Job there is their
+  proof. **Accepted limits** (security review of #575): any role may `ALTER ROLE` itself (password,
+  `SET` defaults) — an injection could cut the application durably; the Job resets the three roles'
+  attributes and `RESET ALL` at every pass, and `verify.sql` refuses a stray attribute; the new
+  passwords cross the cluster network in clear once, inside `ALTER ROLE … PASSWORD`, between the
+  Job's pod and `database` (computing SCRAM verifiers client-side was weighed and left for later);
+  `cpg_reader` is a second net against an operator's mistake, not a boundary against whoever holds
+  `exec` or `port-forward` (`trust` inside the pod gives the superuser too). `verify.sql` **fails
+  the Job** on any expectation betrayed, so a false state never commits. Kept, as
+  #593: the bootstrap superuser stays reachable over TCP with `postgres-credentials` (entrypoint,
+  probes, Adminer, this Job).
 - **Doctrine migrations run as a Job, not `kubectl exec`** (audit C8). `k8s/base/migrate-job.yaml` is
   deliberately **outside** `kustomization.yaml`'s `resources:` — so kustomize's image transformer never sees
   it, hence the `${BACKEND_IMAGE}` placeholder that `envsubst` fills at apply time (`image: backend` would
@@ -263,7 +312,8 @@ paths:
   gone, 240 + 30 s of grace, a narrow margin under 300. Today: waited 300 s, deadline 360 —
   `migrate-job.yaml`, `messenger-probe-job.yaml`, `messenger-stop-workers-job.yaml`,
   `messenger-failed-{retry,remove}-job.yaml`, `create-user-job.yaml`; `seed-job.yaml` waited 180,
-  deadline 240. Counted from the Job's creation, `Always` pulls and retry included; `sh`/`php` as
+  deadline 240; `postgres-roles-job.yaml` (#575) waited 120, deadline 240. Counted from the Job's
+  creation, `Always` pulls and retry included; `sh`/`php` as
   PID 1 ignore SIGTERM, so the pod dies 30 s after the deadline (grace period). **An `::error::`
   means « stopped »** (decided 2026-10-12, #535): with the deadline above the wait, a Job whose wait
   expired — or that `wait-rollout.sh` failed early, a pod that never started — is still active and
@@ -512,8 +562,8 @@ paths:
   trigger travels in a **cookie** — Xdebug 3.5 does not read HTTP headers, and nginx logs the query string.
   Production receives none of this. Procedure in `k8s/README.md`.
 - **No pod mounts a ServiceAccount token, and both namespaces carry Pod Security Admission labels**
-  (audit A17). `automountServiceAccountToken: false` on all fifteen pod specs, the seven Jobs outside kustomize
-  included — none of them talks to the Kubernetes API (RabbitMQ does no peer discovery here, ESO runs in
+  (audit A17). `automountServiceAccountToken: false` on all sixteen pod specs, the eight Jobs outside kustomize
+  included (`postgres-roles-job.yaml` since #575) — none of them talks to the Kubernetes API (RabbitMQ does no peer discovery here, ESO runs in
   its own namespace), so the default `default`-SA token was pure standing credential. The `preprod` and
   `prod` `Namespace` objects set `enforce: baseline` with `audit`/`warn: restricted`: RabbitMQ declares no
   container `securityContext` (constat A18, accepted — v0.5.0 already put it in `CrashLoopBackOff` by

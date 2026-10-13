@@ -271,8 +271,15 @@ paths:
     cases (unknown, duplicated, missing key); `TranslationGroupSinglePositionTest` the eight contexts of
     `ProvidesLocalizedAdministrators` (the probe commits the divergent group triggers disabled — the test
     role is a superuser in dev and CI —, the real `reorder()` is refused under the name, no `previous`, the
-    rows unchanged, the manager open; red before: the reorder repaired the group). Whether the production
-    application role could itself disable the triggers: #575.
+    rows unchanged, the manager open; red before: the reorder repaired the group). **The production
+    application role cannot disable the triggers itself** (issue #575, decided 2026-10-13): it was the
+    image's bootstrap superuser, owner of the tables; since #575 the application runs under `cpg_app`
+    (DML only, no ownership, no superuser) and the migrations under `cpg_migrator` (the owner), so
+    `ALTER TABLE … DISABLE TRIGGER`, `DROP TRIGGER` and `SET session_replication_role` are refused to it
+    (`42501`) — `ApplicationRolePrivilegesTest` proves it on the real schema, and that the trigger still
+    fires under that role (`SECURITY INVOKER`). The test role of dev and CI stays the superuser, on purpose
+    (this probe needs `session_replication_role`). See `.claude/rules/deploiement.md`, « The application
+    and the migrations run under two PostgreSQL roles ».
     **Nor a me-card group across two categories** (issue #501). Me-cards are ordered per category, and the
     members of a group share theirs: the application guarantees it (no category setter on `AboutMeCard`,
     `AboutMeCardAdministrator::membersInCategory()` reads a group within the category, the seed groups per
