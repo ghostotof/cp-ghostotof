@@ -705,24 +705,31 @@ describe('AdminAboutPage', () => {
       expect(valueOf(wrapper, '#admin-about-me-card-translation-group')).toBe('')
     })
 
-    it("groupe réparti sur deux catégories (limite acceptée, #573) : le sélecteur paraît vide, « aucune » détache", async () => {
-      // Un groupe antérieur à la garde de #501 : « Musique » (FR) reste dans
-      // « En dehors du travail », sa version EN « Music » a été rangée dans
-      // « Techniquement ». L'application ne peut pas en produire, seule une
-      // écriture SQL d'avant #501 le pourrait — d'où une limite acceptée plutôt
-      // qu'un guidage dans l'interface (décision #573, `frontend-backoffice.md`).
+    // Un groupe antérieur à la garde de #501 : « Musique » (FR) reste dans
+    // « En dehors du travail », sa version EN « Music » a été rangée dans
+    // « Techniquement ». L'application ne peut pas en produire, seule une
+    // écriture SQL d'avant #501 le pourrait — d'où une limite acceptée plutôt
+    // qu'un guidage dans l'interface (décision #573, `frontend-backoffice.md`).
+    // Les deux membres sont couverts : aucune catégorie n'est sûrement la bonne,
+    // la carte égarée peut être l'une ou l'autre.
+    it.each([
+      { member: 'FR « Musique », restée dans « En dehors du travail »', index: 0, category: 'hobby' as const },
+      { member: 'EN « Music », rangée dans « Techniquement »', index: 1, category: 'technical' as const },
+    ])("groupe réparti sur deux catégories (limite acceptée, #573), $member : le sélecteur paraît vide, « aucune » détache", async ({ index, category }) => {
       const spreadGroup = ME_FIXTURES.hobby.groups[0]
-      const [musiqueFr, musicEn] = ME_FIXTURES.hobby.cards
+      const musicEn = ME_FIXTURES.hobby.cards[1]
       const spreadCards = ALL_ME_CARDS.map((card) => (card.id === musicEn.id ? { ...card, category: 'technical' as const } : card))
+      const edited = spreadCards.find((card) => card.id === ME_FIXTURES.hobby.cards[index].id)
+      if (!edited) throw new Error('Carte du groupe réparti introuvable.')
       const meCardRepository = createMeCardRepository({ list: vi.fn(async () => spreadCards) })
       const { wrapper } = await mountPage(createSettingsRepository(), createSiteCardRepository(), meCardRepository)
 
-      await buttonLabelled(actionsForLine(wrapper, ME_TABLE.hobby, musiqueFr.title), 'Modifier').trigger('click')
+      await buttonLabelled(actionsForLine(wrapper, ME_TABLE[category], edited.title), 'Modifier').trigger('click')
 
       // `startEdit` garde le groupe (`hasSibling` cherche dans toutes les
       // catégories), mais « Version de » ne liste que la catégorie du
-      // formulaire, où la sœur EN n'est pas : la valeur est hors des options,
-      // et le navigateur affiche un sélecteur vide.
+      // formulaire, où la sœur n'est pas : la valeur est hors des options, et
+      // le navigateur affiche un sélecteur vide.
       const select = wrapper.get('#admin-about-me-card-translation-group').element as HTMLSelectElement
       const optionValues = Array.from(select.options).map((option) => option.value)
       expect(optionValues).not.toContain(spreadGroup)
@@ -734,19 +741,19 @@ describe('AdminAboutPage', () => {
       await flushPromises()
 
       expect(meCardRepository.update).toHaveBeenLastCalledWith(
-        musiqueFr.id,
+        edited.id,
         expect.objectContaining({ translationGroup: spreadGroup }),
       )
 
       // Le chemin de correction : « — aucune — » envoie `null`, que le serveur
       // lit toutes catégories confondues et traite en vrai détachement (#561).
-      await buttonLabelled(actionsForLine(wrapper, ME_TABLE.hobby, musiqueFr.title), 'Modifier').trigger('click')
+      await buttonLabelled(actionsForLine(wrapper, ME_TABLE[category], edited.title), 'Modifier').trigger('click')
       await wrapper.get('#admin-about-me-card-translation-group').setValue('')
       await formOf(wrapper, ME_FORM).trigger('submit.prevent')
       await flushPromises()
 
       expect(meCardRepository.update).toHaveBeenLastCalledWith(
-        musiqueFr.id,
+        edited.id,
         expect.objectContaining({ translationGroup: null }),
       )
     })

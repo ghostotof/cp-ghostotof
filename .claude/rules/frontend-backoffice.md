@@ -90,35 +90,41 @@ status announcement) that a fork would silently lose:
   `beforeunload` — both in `application/admin/shared/useUnsavedOrderGuard(isDirty)` (#170 F5), tested once
   in its own spec with `enableAutoUnmount` (a page left mounted keeps its listener); a page calls it,
   never re-implements it. `startEdit` sends back the group it read whenever the entry has a
-  sibling, otherwise `''` → `null`, which `ContentPlacement::reattach` treats as a no-op on a lone
+  sibling, otherwise `''` → `null`, which `ContentPlacement::detach` treats as a no-op on a lone
   entry. The `Position` number field is gone from every form; `BaseNumberInput` survives only for
   genuinely numeric content (years of experience).
 - **A me-card group spread across two categories is not signalled by the backoffice, by decision**
   (issue #573). Such a group (FR in one category, EN in another) predates #501's guard; the backend
-  refuses, before any write, every write that would touch it (#561, `.claude/rules/portfolio-contenus.md`).
+  refuses, before any write, every write that would add a member to it or reorder one of its categories
+  (#561, `.claude/rules/portfolio-contenus.md`) — a text edit and the detachment stay accepted.
   What the admin sees if one ever exists: editing one of its members, « Version de » **looks empty** —
   `startEdit` keeps the card's own group (`hasSibling` looks across categories) while the options only
   list the form's category (`translationGroupOptions` keeps a retained group only when an entry of
-  another locale in `entries` carries it); « Créer la version XX » on its row, « Version de » towards it from the other
-  category and **any** reorder of either category end on a 500 the page reads as the generic
-  `unknown` (« Une erreur est survenue. Réessayez plus tard. », retrying never helps). The fix: **edit
-  the stray card, choose « — aucune — », save** (a `PUT` with `translationGroup: null`, which the server
-  reads across categories and turns into a real detachment, #561), or delete it and recreate its version
-  in the right category; saving a member without touching the selector sends its own group, a no-op, so
-  the cards stay editable. Why no detection, badge or disabled actions: the application cannot produce
-  such a group (no category setter; « Créer la version » copies the category; « Version de » is
-  filtered; the server answers 422), production had none (`Version20261012120000`, v0.24.0, ran without
-  warning), and once `Version20261012160000` (#501) is deployed the database refuses any write creating
-  one, so only a group older than it can remain — and that migration lists each in a `warning`; the
-  backend's `critical` log names the group, its categories and the fix. Rejected: an alert listing the
-  spread groups with a guided option in the selector (code and i18n for a state that cannot arise), plus
-  disabling the refused actions (the order bricks shared by every page, and the backend rule copied into
-  the frontend), a typed 409 from the backend (reverses #561's named 500, loses the `critical` alert, and
-  a static `detail` could not name the group). **Reopen it** if the migration of #501 reports « groupe
-  de traduction … rangé dans plusieurs category » in preprod or prod (fix it as above first), or if the
-  trigger is ever disabled. `AdminAboutPage.spec.ts` (« groupe réparti… ») pins the empty-looking
-  selector, the own group sent back and the detachment through « aucune »; it turns red if `startEdit`
-  looks for a sibling in the form's category only, which would make a text edit detach the card.
+  another locale in `entries` carries it); « Créer la version XX » on its row and « Version de »
+  towards it from the other category end on a 500 read as the generic `unknown` (« Une erreur est
+  survenue. Réessayez plus tard. »), and **any** reorder of either category on « L'enregistrement de
+  l'ordre a échoué. Réessayez plus tard. » — retrying never helps. The fix: **edit the stray card,
+  choose « — aucune — », save** (a `PUT` with `translationGroup: null`, which the server reads across
+  categories and turns into a real detachment, #561), or delete it and recreate its version in the
+  right category; saving a member without touching the selector sends its own group, a no-op, so the
+  cards stay editable. Why no detection, badge or disabled actions: the application cannot produce such
+  a group (no category setter; « Créer la version » copies the category; « Version de » is filtered;
+  the server answers 422); `Version20261012120000` (#390), which reports every spread group, gave no
+  warning at the v0.24.0 production deploy (an operational record, not provable from the repository);
+  once `Version20261012160000` (#501) is deployed, the database refuses at COMMIT any write creating
+  one — bar the accepted limit of two concurrent SQL transactions that skip the scope lock —, so only a
+  group older than it can remain, and that migration lists each in a `warning`; the backend's
+  `critical` log names the group, its categories and the fix. Rejected: an alert listing the spread
+  groups with a guided option in the selector (code and i18n for a state that cannot arise), plus
+  disabling the refused actions (the order bricks shared by every page, and the backend rule copied
+  into the frontend), a typed 409 from the backend (reverses #561's named 500, loses the `critical`
+  alert, and a static `detail` could not name the group). **Reopen it** if the migration of #501
+  reports « groupe de traduction … réparti sur plusieurs valeurs de category » in preprod or prod (fix
+  it as above first: that frozen warning only names delete-and-recreate, detaching through « aucune »
+  works as well since #561), or if the trigger is ever disabled. `AdminAboutPage.spec.ts` (« groupe
+  réparti… ») pins, for both members, the empty-looking selector, the own group sent back and the detachment
+  through « aucune »; it turns red if `startEdit` looks for a sibling in the form's category only, which would
+  make a text edit detach the card.
 
 **Translation assistant** (ADR 0004 phase 1, spec 0002): one more admin slice, `domain/admin/translation`
 (`TranslationDraft`, `AdminTranslationError` with reasons `validation|rate-limited|unavailable|unknown`)

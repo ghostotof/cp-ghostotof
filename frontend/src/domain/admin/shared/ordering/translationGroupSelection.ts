@@ -28,12 +28,11 @@ export interface TranslationGroupOption {
  *
  * Le groupe déjà retenu (`formTranslationGroup`) est conservé **dès qu'une
  * entrée d'une autre locale de `entries` le porte**, même s'il a déjà
- * `formLocale` : le sélecteur
- * ne doit pas afficher une valeur absente de ses options — un rattachement
- * devenu impossible se solde par un 409 explicite, pas par un champ vide. Une
- * seule exception connue, acceptée (#573) : les cartes « moi » passent les
- * entrées de la seule catégorie du formulaire, si bien qu'un groupe réparti sur
- * deux catégories, antérieur à #501, n'y figure pas et le sélecteur paraît vide.
+ * `formLocale` : le sélecteur ne doit pas afficher une valeur absente de ses
+ * options — un rattachement devenu impossible se solde par un 409 explicite,
+ * pas par un champ vide. Un appelant qui ne passe qu'une partie des entrées
+ * peut donc retenir un groupe qu'aucune entrée d'une autre locale de `entries`
+ * ne porte : le sélecteur paraît alors vide (limite acceptée, #573).
  *
  * Ne porte pas l'option « aucune » : c'est à la page de la préfixer, son
  * libellé étant un texte traduit (i18n), donc hors de ce module
