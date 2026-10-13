@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Shared\Infrastructure\Kubernetes;
 
 use App\Tests\Support\KubernetesManifests;
+use App\Tests\Support\Runbook;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -59,9 +60,6 @@ final class OperatorExecBoundaryTest extends TestCase
      * garde-fou qu'un `SET` levait. Créé par la procédure des rôles du runbook.
      */
     private const string READER_ROLE = 'cpg_reader';
-
-    /** La section de l'unique `psql` qui écrit (issue #593). */
-    private const string ROLES_SECTION = 'Pour créer ou rejouer les rôles';
 
     /**
      * Toutes les règles qui atteignent le ServiceAccount du déployeur : le Role
@@ -164,7 +162,7 @@ final class OperatorExecBoundaryTest extends TestCase
     public function testEveryRunbookPsqlIsAReadOnlySessionInTheNamespaceGivenByTheOperator(): void
     {
         $calls = array_values(array_filter(
-            $this->execLines($this->readmeWithoutTheRolesBlock()),
+            Runbook::execLines(Runbook::repository()->withoutBashBlockAfter(Runbook::ROLES_PROCEDURE)->text()),
             static fn (string $line): bool => 1 === preg_match('/\bpsql\b/', $line),
         ));
         self::assertGreaterThanOrEqual(4, \count($calls), 'Le runbook a perdu un de ses psql en lecture : relire ce test.');
@@ -189,7 +187,7 @@ final class OperatorExecBoundaryTest extends TestCase
      */
     public function testTheRolesProcedureIsTheOnlyExemptedExec(): void
     {
-        $roles = $this->execLines($this->bashBlockAfter(self::ROLES_SECTION));
+        $roles = Runbook::execLines(Runbook::repository()->bashBlockAfter(Runbook::ROLES_PROCEDURE));
 
         self::assertCount(1, $roles, 'La section des rôles ne porte qu\'un exec.');
         self::assertMatchesRegularExpression('/\bpsql\b/', $roles[0]);
@@ -203,7 +201,7 @@ final class OperatorExecBoundaryTest extends TestCase
      */
     public function testNoRunbookCommandDebugsAttachesOrForwardsToPostgres(): void
     {
-        $joined = (string) preg_replace('/\\\\\n\s*/', ' ', $this->readme());
+        $joined = Runbook::joined(Runbook::repository()->text());
 
         self::assertDoesNotMatchRegularExpression('/\bkubectl\b[^\n]*\b(debug|attach|port-forward)\b[^\n]*\b(postgres|database)\b/', $joined);
     }
@@ -219,7 +217,7 @@ final class OperatorExecBoundaryTest extends TestCase
     public function testNoRunbookExecRunsAConsoleCommandOtherThanTheFailedRead(): void
     {
         $offending = [];
-        foreach ($this->runbookExecLines() as $line) {
+        foreach (Runbook::execLines(Runbook::repository()->text()) as $line) {
             preg_match_all('#bin/console\s+(\S+)#', $line, $commands);
             foreach ($commands[1] as $command) {
                 if (self::READ_ONLY_CONSOLE_COMMAND !== $command) {
@@ -244,11 +242,11 @@ final class OperatorExecBoundaryTest extends TestCase
      */
     public function testTheFailedTransportIsReadOnlyThroughAReadOnlySession(): void
     {
-        $block = $this->bashBlockAfter(self::FAILED_READ_SECTION);
+        $block = Runbook::repository()->bashBlockAfter(self::FAILED_READ_SECTION);
         self::assertMatchesRegularExpression('/^NS= /m', $block);
 
         $calls = array_values(array_filter(
-            $this->execLines($block),
+            Runbook::execLines($block),
             static fn (string $line): bool => str_contains($line, 'bin/console'),
         ));
         self::assertNotEmpty($calls, 'La section « lire failed » n\'a plus de commande.');
@@ -265,69 +263,7 @@ final class OperatorExecBoundaryTest extends TestCase
      */
     private function lookupCommand(): string
     {
-        return $this->bashBlockAfter(self::LOOKUP_SECTION);
-    }
-
-    private function bashBlockAfter(string $section): string
-    {
-        $readme = $this->readme();
-        $start = strpos($readme, $section);
-        self::assertIsInt($start, \sprintf('La section « %s » a disparu du runbook.', $section));
-
-        self::assertSame(1, preg_match('/```bash\n(.*?)```/s', substr($readme, $start), $block));
-
-        return $block[1];
-    }
-
-    /**
-     * Le runbook moins le bloc `bash` de la procédure des rôles — l'unique
-     * exemption, par sa place et non par le texte de sa ligne. La phrase qui
-     * l'ouvre est unique dans le runbook.
-     */
-    private function readmeWithoutTheRolesBlock(): string
-    {
-        $readme = $this->readme();
-        self::assertSame(1, substr_count($readme, self::ROLES_SECTION), 'La phrase qui ouvre la procédure des rôles est unique.');
-        $start = (int) strpos($readme, self::ROLES_SECTION);
-        self::assertSame(1, preg_match('/```bash\n.*?```/s', $readme, $block, PREG_OFFSET_CAPTURE, $start));
-        [$text, $at] = $block[0];
-
-        return substr($readme, 0, $at).substr($readme, $at + \strlen($text));
-    }
-
-    /**
-     * Les commandes `kubectl … exec` de tout le runbook.
-     *
-     * @return list<string>
-     */
-    private function runbookExecLines(): array
-    {
-        return $this->execLines($this->readme());
-    }
-
-    /**
-     * Les lignes d'un texte qui ouvrent un `kubectl exec`, continuations
-     * (`\` en fin de ligne) rejointes.
-     *
-     * @return list<string>
-     */
-    private function execLines(string $text): array
-    {
-        $joined = preg_replace('/\\\\\n\s*/', ' ', $text);
-        self::assertIsString($joined);
-
-        return array_values(array_filter(
-            explode("\n", $joined),
-            static fn (string $line): bool => 1 === preg_match('/\bkubectl\b.*\bexec\b/', $line),
-        ));
-    }
-
-    /**
-     * Le runbook, à côté de la base.
-     */
-    private function readme(): string
-    {
-        return (string) file_get_contents(\dirname(KubernetesManifests::base()->directory()).'/README.md');
+        return Runbook::repository()->bashBlockAfter(self::LOOKUP_SECTION);
     }
 
     /**

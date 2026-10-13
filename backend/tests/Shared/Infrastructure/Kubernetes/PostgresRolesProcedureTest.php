@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Shared\Infrastructure\Kubernetes;
 
 use App\Tests\Support\KubernetesManifests;
+use App\Tests\Support\Runbook;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -29,8 +30,6 @@ use PHPUnit\Framework\TestCase;
  */
 final class PostgresRolesProcedureTest extends TestCase
 {
-    private const string SECTION = 'Pour créer ou rejouer les rôles';
-
     private const string SQL_DIRECTORY = 'postgres-roles';
 
     /** Les fichiers qui écrivent ou contrôlent, sans contrôle de transaction à eux. */
@@ -61,8 +60,9 @@ final class PostgresRolesProcedureTest extends TestCase
         self::assertMatchesRegularExpression('/^umask 077$/m', $block);
         self::assertStringContainsString('TMP=$(mktemp -d)', $block);
         self::assertDoesNotMatchRegularExpression('/-n (preprod|prod)\b/', $block);
-        // Toute commande kubectl du bloc vise le namespace donné, garde comprise.
-        self::assertSame(0, preg_match_all('/kubectl -n "\$NS"/', $block), 'Chaque kubectl du bloc écrit "${NS:?…}".');
+        // Aucune commande kubectl du bloc ne lit NS sans sa garde : vide, elle
+        // viserait le namespace du contexte courant.
+        self::assertSame(0, preg_match_all('/kubectl -n "\$NS"/', $block), 'Un kubectl du bloc lit "$NS" sans "${NS:?…}".');
     }
 
     /**
@@ -292,10 +292,7 @@ final class PostgresRolesProcedureTest extends TestCase
      */
     private function exec(): string
     {
-        $execs = array_values(array_filter(
-            explode("\n", $this->block()),
-            static fn (string $line): bool => 1 === preg_match('/\bkubectl\b.*\bexec\b/', $line),
-        ));
+        $execs = Runbook::execLines($this->block());
         self::assertCount(1, $execs, 'La procédure des rôles tient en un seul exec.');
 
         // L'argv de l'exec seul, sans le groupe de commandes qui l'alimente par un tube.
@@ -303,19 +300,10 @@ final class PostgresRolesProcedureTest extends TestCase
     }
 
     /**
-     * Le bloc `bash` qui suit la phrase d'introduction, continuations (`\` en
-     * fin de ligne) rejointes.
+     * Le bloc `bash` de la procédure, continuations rejointes.
      */
     private function block(): string
     {
-        $readme = (string) file_get_contents(\dirname(KubernetesManifests::base()->directory()).'/README.md');
-        self::assertSame(1, substr_count($readme, self::SECTION), \sprintf('La phrase « %s » ouvre la section, une seule fois.', self::SECTION));
-        $start = (int) strpos($readme, self::SECTION);
-        self::assertSame(1, preg_match('/```bash\n(.*?)```/s', substr($readme, $start), $block));
-
-        $joined = preg_replace('/\\\\\n\s*/', ' ', $block[1]);
-        self::assertIsString($joined);
-
-        return $joined;
+        return Runbook::joined(Runbook::repository()->bashBlockAfter(Runbook::ROLES_PROCEDURE));
     }
 }
