@@ -218,7 +218,9 @@ paths:
   `SET` defaults) — an injection could cut the application durably; the procedure resets the three roles'
   attributes and `RESET ALL` at every pass, and `verify.sql` refuses a stray attribute;
   `cpg_reader` is a second net against an operator's mistake, not a boundary against whoever holds
-  `exec` or `port-forward` (`trust` inside the pod gives the superuser too). `verify.sql` **fails
+  `exec` (`trust` on the local socket gives the superuser too) — a `port-forward` or an ephemeral
+  container reaches the loopback, where only `cpg_reader` is trusted since the review of #593, so it
+  reads every table without a password but no longer gets the superuser. `verify.sql` **fails
   the procedure** on any expectation betrayed (psql exits 3 before the COMMIT), so a false state never
   commits. The passwords no longer cross the cluster network (#593): the exec stream, then the local
   socket.

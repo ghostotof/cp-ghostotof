@@ -1123,6 +1123,29 @@ SQL
 # attendu : trois lignes avec rolsuper f, puis 0, puis 0.
 ```
 
+**Le `pg_hba.conf` vu du réseau** (issue #593), à la release qui l'embarque,
+préprod puis prod, après le rollout de `postgres` : `cpg_reader`, admis sans
+mot de passe sur le loopback seulement, tente `database` — le Service — depuis
+le pod `postgres` lui-même. La connexion sort par le réseau du cluster et
+revient avec l'adresse du pod pour source : elle doit tomber sur la règle
+`reject`, comme le superutilisateur depuis n'importe quel pod. Un `SELECT`
+réussi voudrait dire que le serveur lit encore le fichier de l'image, ou que
+le CNI présente la connexion comme venant de `127.0.0.1` : arrêter la release.
+Lecture seule, aucun mot de passe en jeu (`-w` : psql n'en demande pas) :
+
+```bash
+NS=        # preprod ou prod, à renseigner : vide, la commande s'arrête avant d'appeler le cluster
+echo 'SELECT 1;' | kubectl -n "${NS:?preprod ou prod}" exec -i deploy/postgres -c postgres -- \
+  sh -c 'PGOPTIONS="-c default_transaction_read_only=on -c lock_timeout=5s" psql -X -w -v ON_ERROR_STOP=1 -h database -U cpg_reader -d "$POSTGRES_DB"'
+# attendu : FATAL:  pg_hba.conf rejects connection for host "<adresse du pod>", user "cpg_reader", …
+```
+
+Le même refus, mesuré sur l'image épinglée pour chaque rôle et chaque voie
+(réplication, loopback compris), est le job CI `postgres-hba`
+(`tools/check-postgres-hba.sh`) ; dans le cluster, `verify.sql` relit aussi le
+fichier actif à chaque passage de la procédure des rôles. Suivi #596 : en
+faire un smoke de préprod automatique.
+
 **Publier les URL, puis basculer** — seulement celles dont le mot de passe a
 été écrit (`t` ci-dessus) ; même recette que les secrets de l'assistant, §2 :
 `publish` crée le secret ou y ajoute une version, `data=@fichier` :
@@ -1396,8 +1419,9 @@ Comme pour la recherche d'un compte (§ « Journal de sécurité »), la requêt
 par l'entrée standard, rien dans l'argv de l'`exec`, sous le rôle lecteur
 `cpg_reader` (§ « Rôles PostgreSQL », issue #575). Aucun mot de passe : le
 `pg_hba.conf` du dépôt (`k8s/base/postgres-pg_hba.conf`, issue #593) fait
-confiance (`trust`) aux connexions TCP de 127.0.0.1, c'est-à-dire de
-l'intérieur du pod, comme celui de l'image.
+confiance (`trust`) aux connexions TCP de 127.0.0.1 pour `cpg_reader` **seul**
+— de l'intérieur du pod, ou d'un `port-forward` — ; le superutilisateur y est
+refusé, contrairement au fichier de l'image.
 
 Ce qui n'est pas posé, volontairement :
 

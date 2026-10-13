@@ -64,7 +64,7 @@ SELECT EXISTS (SELECT FROM pg_roles WHERE rolname = :'app_role') AS app_existed,
 -- faute de frappe, refusée de même.
 \if :passwords_ok
 \else
-DO $$ BEGIN RAISE EXCEPTION '#575 : mots de passe absents ou trop courts sur l''entrée standard (48 caractères attendus) : rien n''est écrit'; END $$;
+DO $$ BEGIN RAISE EXCEPTION '#575 : mots de passe absents ou trop courts sur l''entrée standard (32 caractères au moins, 48 générés par la procédure) : rien n''est écrit'; END $$;
 \endif
 \if :rotate_ok
 \else
