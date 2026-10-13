@@ -360,10 +360,14 @@ function categoryLabel(category: AdminAboutMeCardCategory): string {
         id="admin-about-me-card-locale"
         v-model="form.locale"
         :disabled="isEditing"
+        aria-describedby="admin-about-me-card-locale-help"
         :label="t('admin.localeLabel')"
         :options="localeOptions"
       />
-      <p class="form-text mb-3">
+      <p
+        id="admin-about-me-card-locale-help"
+        class="form-text mb-3"
+      >
         {{ t('admin.about.localeHelp') }}
       </p>
       <!--
