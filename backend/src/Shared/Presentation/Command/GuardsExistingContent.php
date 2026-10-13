@@ -54,7 +54,7 @@ trait GuardsExistingContent
      */
     private function refusesToOverwrite(SymfonyStyle $io, InputInterface $input, int $existing): bool
     {
-        if (0 === $existing || true === $input->getOption('force')) {
+        if (0 === $existing || $this->forcesOverwrite($input)) {
             return false;
         }
 
@@ -64,5 +64,16 @@ trait GuardsExistingContent
         ));
 
         return true;
+    }
+
+    /**
+     * Vrai si l'opérateur a demandé le remplacement (`--force`). Seule lecture
+     * de l'option : une commande qui doit aussi épargner une donnée exclue du
+     * décompte — donc écrite même quand le garde-fou laisse passer sans
+     * `--force` — la consulte ici plutôt que de relire `force` elle-même.
+     */
+    private function forcesOverwrite(InputInterface $input): bool
+    {
+        return true === $input->getOption('force');
     }
 }

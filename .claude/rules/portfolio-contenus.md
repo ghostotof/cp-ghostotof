@@ -420,14 +420,19 @@ paths:
   `/quality/{locale}` and `/about/{locale}` that returns `{principles, traits}` / `{settings, siteCards, meCards}`
   in one call), and a backoffice CRUD resource (see `.claude/rules/backoffice-api.md`). Seeded via idempotent `app:{about,quality,contributions,incidents}:seed`
   console commands (content already there: they decline, unless `--force`, which purges the whole table — every
-  locale, spec 0004 D3 — then recreates; **`AboutSettings` is upserted, never purged**, see below).
+  locale, spec 0004 D3 — then recreates; **`AboutSettings` is created when missing, rewritten with `--force`
+  only, never purged**, see below).
 
   **`AboutSettings` has no lock, by decision** (issue #553). It is the singleton per locale of the About page's
   section texts, and **nothing in the application deletes it**: `AboutSettingsRepositoryInterface` has no
-  `remove()`, the backoffice resource only `Get`/`Put`, and `app:about:seed` upserts it (`upsertSettings()`:
-  `update()` through the `Administrator` when the locale has its row, a direct `save()` otherwise; its
-  `countExisting()` leaves it out). The defect of #499/#545 — a `PUT` answering 200 on a row deleted since the
-  provider loaded it — does not arise, because `AboutSettingsAdministrator::update()` re-reads the database:
+  `remove()`, the backoffice resource only `Get`/`Put`, and `app:about:seed` never purges it (`ensureSettings()`:
+  a direct `save()` when the locale has no row; `update()` through the `Administrator` with `--force` only;
+  otherwise the row is kept as edited). Its `countExisting()` leaves it out, so with no card left the
+  command runs without `--force` — it then recreates the cards and creates missing settings, but **never
+  rewrites existing ones** (issue #568: before, that run reset the five section texts edited in the
+  backoffice, the one rewrite of an existing row by a guarded seed, contrary to `.claude/rules/seeding.md`).
+  `SeedAboutContentCommandTest` pins kept, created and `--force`-reset settings. The defect of #499/#545 — a
+  `PUT` answering 200 on a row deleted since the provider loaded it — does not arise, because `AboutSettingsAdministrator::update()` re-reads the database:
   `findByLocale()` is a `findOneBy()`, a search by criteria whose `SELECT` Doctrine **always** runs, so a row
   gone is `null` (**404**, `AboutSettingsNotFoundException`) and a row recreated under another id is the one
   written — unlike `find($id)`, which hands back the identity-map instance without a query (#545). Its fields
