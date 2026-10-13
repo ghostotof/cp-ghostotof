@@ -67,14 +67,15 @@ final readonly class ContentPlacement
             throw UnknownTranslationGroupException::forGroup($translationGroup);
         }
 
-        // Toutes les entrées d'un groupe partagent sa position (invariant tenu
-        // par ce service et par OrderAssigner, et refusé en base au COMMIT
-        // depuis l'issue #390) : la première vaut pour toutes. Un groupe qui
-        // ne le respecte pas est un défaut du pipeline, pas une saisie — il
-        // surface (500) plutôt que d'être arbitré en silence. Ce contrôle est
-        // le premier filet : il répond avant toute écriture, sous un nom
-        // métier ; le trigger ne rattrape au COMMIT que ce qui le contourne
-        // (migration, SQL). Ne pas le retirer en comptant sur la base.
+        // Toutes les entrées d'un groupe partagent sa position (invariant
+        // établi par ce service et par OrderAssigner, qui le contrôle aussi
+        // avant un réordonnancement depuis l'issue #503, et refusé en base au
+        // COMMIT depuis l'issue #390) : la première vaut pour toutes. Un
+        // groupe qui ne le respecte pas est un défaut du pipeline, pas une
+        // saisie — il surface (500) plutôt que d'être arbitré en silence. Ce
+        // contrôle est le premier filet : il répond avant toute écriture, sous
+        // un nom métier ; le trigger ne rattrape au COMMIT que ce qui le
+        // contourne (migration, SQL). Ne pas le retirer en comptant sur la base.
         //
         // Ce contrôle passe AVANT celui de la langue (issue #384) : avec deux
         // langues et l'index unique (translation_group, locale), le seul groupe

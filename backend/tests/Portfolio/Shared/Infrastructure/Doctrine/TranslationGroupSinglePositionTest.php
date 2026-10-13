@@ -7,6 +7,7 @@ namespace App\Tests\Portfolio\Shared\Infrastructure\Doctrine;
 use App\Portfolio\About\Application\AboutMeCardAdministratorInterface;
 use App\Portfolio\About\Domain\Entity\AboutMeCard;
 use App\Portfolio\About\Domain\ValueObject\AboutMeCardCategory;
+use App\Portfolio\Shared\Domain\Exception\TranslationGroupHasSeveralPositionsException;
 use App\Portfolio\Shared\Domain\TranslatableContent;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Portfolio\Shared\Infrastructure\Doctrine\TranslationGroupRefusal;
@@ -196,6 +197,52 @@ final class TranslationGroupSinglePositionTest extends KernelTestCase
 
         self::assertSame([0, 0], $this->positionsOf($second->getTranslationGroup()));
         self::assertSame([1, 1], $this->positionsOf($first->getTranslationGroup()));
+    }
+
+    /**
+     * Issue #503 : un groupe resté sur deux positions malgré le trigger — une
+     * écriture triggers désactivés (`session_replication_role = replica`, un
+     * `pg_restore --disable-triggers`), deux transactions SQL concurrentes hors
+     * du verrou de périmètre, un DROP puis CREATE du trigger avec des écritures
+     * en attente. `OrderAssigner` écrivait alors la même position sur tous ses
+     * membres sans comparer celles d'avant : le réordonnancement réparait le
+     * groupe en silence et effaçait la preuve du défaut amont.
+     *
+     * Il refuse désormais, sous le nom du défaut, avant toute écriture : les
+     * positions en base restent celles que le défaut a laissées, et
+     * l'EntityManager reste ouvert (#549 : rien d'écrit). Le groupe divergent
+     * est **validé** par la sonde, triggers désactivés pour sa session seule :
+     * l'administrateur refuse une transaction déjà ouverte (#526), une
+     * transaction annulée ne permettrait donc pas de jouer le vrai `reorder()`.
+     * Le `tearDown` supprime les lignes (un `DELETE` ne réveille pas le trigger).
+     *
+     * @param class-string<TranslatableContent> $entityClass
+     * @param Closure(): LocalizedContext       $context
+     */
+    #[DataProvider('provideLocalizedContexts')]
+    public function testReorderingAScopeHoldingAGroupLeftOnSeveralPositionsIsRefusedAndKeepsTheEvidence(string $entityClass, Closure $context): void
+    {
+        [$operations, $french, $english] = $this->pair($entityClass, $context);
+        $group = $french->getTranslationGroup();
+        $other = $operations['create'](Locale::FR, null);
+        $this->commitWithTriggersDisabled(
+            \sprintf('UPDATE %s SET position = position + 7 WHERE id = ?', $this->table),
+            [$this->idOf($entityClass, $english)],
+        );
+        $before = [$this->rowsOf($group), $this->rowsOf($other->getTranslationGroup())];
+        self::assertCount(2, array_unique($this->positionsOf($group)), 'Prémisse : la sonde a validé un groupe sur deux positions.');
+
+        try {
+            $operations['reorder']([$other->getTranslationGroup()->toRfc4122(), $group->toRfc4122()]);
+            self::fail('Le réordonnancement a réparé en silence un groupe sur deux positions (#503).');
+        } catch (TranslationGroupHasSeveralPositionsException $refusal) {
+            self::assertStringContainsString($group->toRfc4122(), $refusal->getMessage(), 'Le refus ne nomme pas le groupe fautif.');
+            self::assertStringContainsString($entityClass, $refusal->getMessage(), 'Le refus ne nomme pas le type de contenu, donc la table.');
+            self::assertNull($refusal->getPrevious(), 'Le refus doit venir de l\'application, avant toute écriture, pas du COMMIT.');
+        }
+
+        self::assertSame($before, [$this->rowsOf($group), $this->rowsOf($other->getTranslationGroup())], 'Le refus a laissé une écriture : la preuve du défaut est effacée.');
+        self::assertTrue(self::getContainer()->get(EntityManagerInterface::class)->isOpen(), 'Un refus avant toute écriture doit laisser l\'EntityManager ouvert (#549).');
     }
 
     /**
@@ -396,6 +443,31 @@ final class TranslationGroupSinglePositionTest extends KernelTestCase
         }
 
         self::assertSame($before, $this->rowsOf($group), 'La transaction refusée a laissé une trace en base.');
+    }
+
+    /**
+     * Valide l'écriture sur la sonde, triggers désactivés pour cette session
+     * seule (`session_replication_role = replica` : un trigger de contrainte
+     * ne se déclenche pas, `ORIGIN` étant son mode par défaut) — ce que fait un
+     * `pg_restore --disable-triggers` ou une réplication logique. Le paramètre
+     * exige un superutilisateur, ce qu'est le rôle de la base de test en dev
+     * et en CI (`POSTGRES_USER` de l'image) : la prémisse est vérifiée et
+     * nommée plutôt que de laisser un « permission denied ». Le paramètre
+     * meurt avec la session, fermée aussitôt.
+     *
+     * @param list<int|string> $parameters
+     */
+    private function commitWithTriggersDisabled(string $sql, array $parameters): void
+    {
+        $probe = $this->probe();
+
+        try {
+            self::assertSame('on', $probe->fetchOne("SELECT current_setting('is_superuser')"), 'Prémisse : le rôle de test doit être superutilisateur pour désactiver les triggers (session_replication_role).');
+            $probe->executeStatement('SET session_replication_role = replica');
+            $probe->executeStatement($sql, $parameters);
+        } finally {
+            $probe->close();
+        }
     }
 
     private function probe(): Connection

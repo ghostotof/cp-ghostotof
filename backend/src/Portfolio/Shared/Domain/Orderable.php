@@ -6,7 +6,8 @@ namespace App\Portfolio\Shared\Domain;
 
 /**
  * Spec 0004 D5 — ce qu'un contenu doit savoir faire pour être ordonné par
- * `OrderAssigner` : dire sous quelle clé il se range, et accepter une position.
+ * `OrderAssigner` : dire sous quelle clé il se range, dire sa position
+ * actuelle, et accepter une position.
  *
  * Toute la subtilité tient dans `orderingKey()`. Pour un contenu localisé,
  * c'est le **groupe de traduction**, pas l'id : les lignes FR et EN d'un même
@@ -25,6 +26,13 @@ interface Orderable
      * répondent la même clé sont le même contenu et se déplacent ensemble.
      */
     public function orderingKey(): string;
+
+    /**
+     * Position actuelle. `OrderAssigner` la lit avant d'écrire, pour refuser
+     * une clé dont les entités divergent déjà (issue #503) plutôt que de les
+     * réaligner en silence.
+     */
+    public function getPosition(): int;
 
     public function moveToPosition(int $position): void;
 }

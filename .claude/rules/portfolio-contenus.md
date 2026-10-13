@@ -55,8 +55,9 @@ paths:
     SQLSTATE **`23T90`** (class 23, integrity; a subclass PostgreSQL does not define, so it is recognised
     without reading the message) naming the table and the group, whatever the path (application,
     migration, SQL). **Deferred, never immediate**: `OrderAssigner` and Doctrine write a group's members one
-    `UPDATE` at a time, and the gap between two statements is legitimate. Since no group can stay
-    divergent, a reorder no longer meets one to repair silently. `inGroup()`'s check stays the **first**
+    `UPDATE` at a time, and the gap between two statements is legitimate. A few writes still escape it
+    and can leave a group divergent; the next `reorder()` refuses such a group instead of repairing it
+    silently (issue #503, see « What the trigger does not see » below). `inGroup()`'s check stays the **first**
     net — it answers before any write, under a domain name —; the trigger only catches at COMMIT what
     bypasses it. **On the application path the refusal comes out as `TranslationGroupHasSeveralPositionsException`**
     (`refusedAtCommit()`, the database's message in its own, previous = the `DriverException`), a
@@ -163,14 +164,52 @@ paths:
     (translation_group WITH =, position WITH <>)` (`btree_gist`), safe under concurrency, but DBAL
     introspects its index, which no mapping declares, so every `doctrine:migrations:diff` would propose
     a `DROP INDEX` — DBAL reads neither triggers nor functions; a `CHECK`, which cannot read other rows;
-    logging in `OrderAssigner` alone (late, a logger in a pure Domain service, SQL writes still unseen);
+    logging in `OrderAssigner` alone as the main guard (late, a logger in a pure Domain service, SQL writes
+    still unseen — its refusal as a net behind the trigger is #503's, below);
     a periodic check (`watch-refresh`, a preprod smoke test), as late. A new localized context adds its
     table to a **new** migration creating the same trigger: `TranslationGroupSinglePositionTest` fails on
     any `TranslatableContent` entity whose table lacks it, and probes each context of
     `ProvidesLocalizedAdministrators` (`UPDATE` of a position or a group, `INSERT`, a transient gap, a real
     `reorder()`); `tests/Migrations/Version20261012120000Test` pins the alignment and its warnings. A test
     that must write a divergent group does it in a transaction it rolls back: a deferred trigger never
-    fires there.
+    fires there — or, to run a real `reorder()` on it (the `Administrator` refuses an open transaction,
+    #526), commits it from a probe session under `SET session_replication_role = replica` (#503).
+    **What the trigger does not see, and the net behind it** (issue #503). These writes can still leave a
+    group divergent: two concurrent SQL transactions that skip the scope lock (the accepted limit above);
+    a write with triggers disabled — `SET session_replication_role = replica` (superuser only),
+    `pg_restore --disable-triggers`, `ALTER TABLE … DISABLE TRIGGER`; a migration that drops and recreates
+    the trigger while writes of its own transaction await their check (#505, above). (The category hole is
+    closed by #501 and #561, below.) Before #503 the next `reorder()` of the scope met such a group and
+    **repaired it silently**: `OrderAssigner` groups the scope by key and writes one position on every
+    member without reading theirs, so the evidence of the upstream defect vanished — exactly what #390 set
+    out to prevent. Since #503 `Orderable` exposes `getPosition()` (lifted from `TranslatableContent`;
+    `WatchedProduct`, keyed by its own id, has one entity per key and can never diverge) and
+    `OrderAssigner::assign()` refuses a scope in which one key's entities disagree, with
+    `TranslationGroupHasSeveralPositionsException::forOrderingKey()` — the group, the positions found and
+    the fix in the message, a `critical` 500, nothing written, the manager left open —, **before** the
+    exact-set 422s: a pipeline defect before a client error, as in #384 (a 422 first, an `info` stale list,
+    would hide it until the next save after the reload). It reads the scope the caller
+    already loaded under the lock: in memory, O(n), no query, no extra wait under the lock. It refuses
+    **any** reorder of that scope, whatever the order asked, like #561's spread groups: the group is repaired
+    first. It is a **net, not a detector**: nothing reports the group until someone reorders its scope (the
+    public pages rank FR and EN differently meanwhile). **Repair**: in the backoffice, detach the entry whose
+    position is wrong (« Version de » set to « — aucune — »: a new group, the end of its scope, #169), then
+    attach it back to its group through « Version de » (`reattach()` inherits the group's position, the
+    remaining member's — which entry is detached decides which position the group keeps); or in SQL, the
+    members aligned in one transaction. Then reorder. The message names the content type (hence the
+    table), the group and the positions found; the backoffice user only sees a generic 500, the fix is in
+    the `critical` log. Rejected: a periodic check, in a CronJob (no alert reads the CronJobs'
+    logs: a `warning` there reaches nobody); a query in the preprod smoke test (preprod is only written by
+    the `Administrator`s, which the trigger already guards, and it would be a new Job); a warning in the
+    migration Job (the deployment path, for a content defect, and it sees only the state at deploy time).
+    #390's rejection of « logging in `OrderAssigner` » (above) aimed at a **main** guard, late and logged; a
+    refusal serving as a net behind the trigger is not that — it logs nothing (a pure Domain service), it
+    throws. `OrderAssignerTest` pins the refusal, nothing moved, and its precedence over the three 422
+    cases (unknown, duplicated, missing key); `TranslationGroupSinglePositionTest` the eight contexts of
+    `ProvidesLocalizedAdministrators` (the probe commits the divergent group triggers disabled — the test
+    role is a superuser in dev and CI —, the real `reorder()` is refused under the name, no `previous`, the
+    rows unchanged, the manager open; red before: the reorder repaired the group). Whether the production
+    application role could itself disable the triggers: #575.
     **Nor a me-card group across two categories** (issue #501). Me-cards are ordered per category, and the
     members of a group share theirs: the application guarantees it (no category setter on `AboutMeCard`,
     `AboutMeCardAdministrator::membersInCategory()` reads a group within the category, the seed groups per
@@ -229,9 +268,9 @@ paths:
     again once no spread group remains, renumbers it. **Order of the guards** on an ordered write,
     each before any write: a group across categories (`AboutMeCardAdministrator`, me-cards only, the only
     per-scope table — kept out of the Shared services, which only see their scope), then a group on
-    several positions (`ContentPlacement::inGroup()` on a placement; on a `reorder()`, only the trigger
-    so far — #503), then the client's errors (the 409 `translation-already-exists`, `OrderAssigner`'s 422s of
-    the exact-set rule), then the trigger at COMMIT for what bypasses the application — the cause before its
+    several positions (`ContentPlacement::inGroup()` on a placement; `OrderAssigner::assign()` on a
+    `reorder()`, since #503), then the client's errors (the 409 `translation-already-exists`,
+    `OrderAssigner`'s 422s of the exact-set rule), then the trigger at COMMIT for what bypasses the application — the cause before its
     consequence, as in the trigger, and a pipeline defect before a client error, as in #384.
     `AboutMeCardAdministratorTest` pins each path with mocks (no `save()`, nothing changed in memory before
     the refusal, the text edit that reads nothing, the real detachment, the reorder refused before an
