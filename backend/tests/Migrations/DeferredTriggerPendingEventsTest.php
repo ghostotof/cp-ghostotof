@@ -55,7 +55,22 @@ final class DeferredTriggerPendingEventsTest extends KernelTestCase
 
     private const string DEFERRED = 'SET CONSTRAINTS '.self::TRIGGER.' DEFERRED';
 
-    private const string INSERT_CONTRIBUTION = "INSERT INTO contribution (id, translation_group, locale, position, title, project, reference, url, summary, body)
+    /**
+     * Les `INSERT` bruts (ici et dans le cas `about_me_card`) recopient les
+     * colonnes NOT NULL de la table, par décision (issue #585). Mesuré : une
+     * colonne NOT NULL ajoutée **avec** un DEFAULT — l'une des deux voies de
+     * la règle des migrations, `.claude/rules/deploiement.md` — ne change
+     * rien ; sans DEFAULT (l'autre voie : la migration remplit la colonne),
+     * les 24 cas échouent dès le `setUp`, en `23502` nommant la
+     * colonne et la table : un échec bruyant, impossible à confondre avec
+     * l'invariant (`55006`, `23T90`), réparé d'une ligne. Écartés : un
+     * constructeur de ligne minimale lisant le schéma (de la magie qui cache
+     * les colonnes écrites), les `Administrator`s ou l'ORM (le test écrit en
+     * SQL dans sa propre transaction, que les `Administrator`s refusent, #526),
+     * un helper propre à ce test (`Version20261012120000Test` et
+     * `Version20261012160000Test` recopient les mêmes listes).
+     */
+    private const string INSERT_CONTRIBUTION ="INSERT INTO contribution (id, translation_group, locale, position, title, project, reference, url, summary, body)
         VALUES (?, ?, ?, ?, 'T', 'P', 'R', 'https://example.org', 'S', 'B')";
 
     private Connection $connection;
