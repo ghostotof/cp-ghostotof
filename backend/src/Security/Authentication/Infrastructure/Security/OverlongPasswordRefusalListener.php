@@ -51,10 +51,15 @@ use Symfony\Component\Security\Http\Event\CheckPassportEvent;
  * Seule la **longueur** de la saisie est lue, jamais sa valeur. Ce n'est pas
  * une validation de mot de passe posé (`PlainPasswordLength`, dont le minimum
  * pourrait refuser un compte ancien) : seulement la borne au-delà de laquelle
- * aucun compte ne peut répondre oui. Le firewall `api` n'est pas concerné :
- * son passeport JWT ne porte pas de PasswordCredentials.
+ * aucun compte ne peut répondre oui.
+ *
+ * Inscrit sur le seul dispatcher du firewall `login` (`dispatcher:`), le seul
+ * qui reçoit un mot de passe : inscrit globalement, il serait recopié sur le
+ * firewall `api` et tournerait à chaque requête authentifiée, pour rien (un
+ * passeport JWT ne porte pas de PasswordCredentials, que l'écouteur exige de
+ * toute façon).
  */
-#[AsEventListener(event: CheckPassportEvent::class, priority: 1500)]
+#[AsEventListener(event: CheckPassportEvent::class, priority: 1500, dispatcher: 'security.event_dispatcher.login')]
 final readonly class OverlongPasswordRefusalListener
 {
     public function __invoke(CheckPassportEvent $event): void

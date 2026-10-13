@@ -7,6 +7,7 @@ namespace App\Tests\Security\Authentication;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Security\Authentication\Infrastructure\Security\FailedLoginTimingEqualizer;
 use App\Security\Authentication\Infrastructure\Security\SubmittedPasswordTooLongException;
+use App\Security\User\Application\CpgUserAdministratorInterface;
 use App\Security\User\Application\CpgUserInviterInterface;
 use App\Security\User\Application\CpgUserRegistrarInterface;
 use App\Tests\Support\HttpJson;
@@ -126,9 +127,10 @@ final class LoginFailureTimingTest extends WebTestCase
     /**
      * Le refus a lieu après le `checkPassport` de `login_throttling`, qui pose
      * l'identifiant tenté sur la requête : il compte donc pour le couple (IP,
-     * identifiant), comme tout échec. Placé plus haut, il serait compté sous un
-     * identifiant vide, et cinq essais trop longs ne brideraient pas
-     * l'identifiant visé.
+     * identifiant), comme tout échec, et une paire bridée reçoit le 429 même
+     * avec une saisie trop longue. Placé plus haut, il serait compté sous un
+     * identifiant vide, cinq essais trop longs ne brideraient pas
+     * l'identifiant visé, et le sixième répondrait encore 401.
      */
     public function testAnOverlongPasswordCountsTowardsTheTriedIdentifiersThrottling(): void
     {
@@ -139,6 +141,7 @@ final class LoginFailureTimingTest extends WebTestCase
             self::assertSame(401, $this->attemptLogin($client, $username, TestCredentials::overlong())->getStatusCode());
         }
 
+        self::assertSame(429, $this->attemptLogin($client, $username, TestCredentials::overlong())->getStatusCode(), 'Une paire bridée échappe au 429 avec une saisie trop longue.');
         self::assertSame(429, $this->attemptLogin($client, $username, 'wrong-password')->getStatusCode(), 'Les refus pour mot de passe trop long ne comptent pas pour l\'identifiant tenté.');
     }
 
@@ -279,6 +282,11 @@ final class LoginFailureTimingTest extends WebTestCase
         $pending = self::getContainer()->get(CpgUserInviterInterface::class)
             ->invite('pending.'.$suffix.'@example.test', Locale::FR)
             ->getUsername();
+        // Invité dont le mot de passe a été posé depuis le backoffice (#238,
+        // #460) : en attente d'activation, mais `verify()` dérive vraiment.
+        $invitedWithPassword = self::getContainer()->get(CpgUserInviterInterface::class)
+            ->invite('set.'.$suffix.'@example.test', Locale::FR);
+        self::getContainer()->get(CpgUserAdministratorInterface::class)->changePassword($invitedWithPassword->getId(), TestCredentials::plainPassword());
         self::getContainer()->get(EntityManagerInterface::class)->clear();
 
         /** @var list<LoginFailureEvent> $failures */
@@ -287,7 +295,14 @@ final class LoginFailureTimingTest extends WebTestCase
             $failures[] = $event;
         }, -200);
 
-        $cases = ['inconnu' => 'ghost-'.$suffix, 'en attente' => $pending, 'actif' => $active];
+        $cases = [
+            'inconnu' => 'ghost-'.$suffix,
+            // Hors CpgUser::USERNAME_PATTERN : le chargeur le refuse sans requête.
+            'hors motif' => 'ghost '.$suffix,
+            'en attente' => $pending,
+            'invité au mot de passe posé' => $invitedWithPassword->getUsername(),
+            'actif' => $active,
+        ];
         foreach ($cases as $username) {
             $this->attemptLogin($client, $username, TestCredentials::overlong());
         }

@@ -91,6 +91,10 @@ final class SecurityAuditLogTest extends WebTestCase
     public function testAnOverlongPasswordIsRecordedWithoutDesignatingTheAccount(): void
     {
         $client = self::createClient();
+        // Le compteur (IP, identifiant) survit dans `cache.rate_limiter` :
+        // sans purge, les échecs sur `jane` des exécutions précédentes
+        // finiraient en 429.
+        self::getContainer()->get('cache.rate_limiter')->clear();
         $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::PLAIN_USERNAME, TestCredentials::plainPassword());
 
         $this->attemptLogin($client, self::PLAIN_USERNAME, TestCredentials::overlong());

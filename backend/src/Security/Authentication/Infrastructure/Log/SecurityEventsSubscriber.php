@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Security\Authentication\Infrastructure\Log;
 
 use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
-use App\Security\Authentication\Infrastructure\Security\SubmittedPasswordTooLongException;
+use App\Security\Authentication\Infrastructure\Security\LoginFailureCause;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Shared\Infrastructure\Http\CanonicalPath;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
@@ -13,8 +13,6 @@ use Symfony\Component\HttpKernel\Event\ExceptionEvent;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Symfony\Component\HttpKernel\KernelEvents;
 use Symfony\Component\Security\Core\Exception\AccessDeniedException;
-use Symfony\Component\Security\Core\Exception\TooManyLoginAttemptsAuthenticationException;
-use Symfony\Component\Security\Core\Exception\UserNotFoundException;
 use Symfony\Component\Security\Http\Authenticator\Passport\Badge\UserBadge;
 use Symfony\Component\Security\Http\Event\LoginFailureEvent;
 use Symfony\Component\Security\Http\Event\LoginSuccessEvent;
@@ -85,8 +83,9 @@ final readonly class SecurityEventsSubscriber implements EventSubscriberInterfac
         }
 
         $triedIdentifier = $event->getPassport()?->getBadge(UserBadge::class)?->getUserIdentifier();
+        $cause = LoginFailureCause::of($event->getException());
 
-        if ($event->getException() instanceof TooManyLoginAttemptsAuthenticationException) {
+        if (LoginFailureCause::Throttled === $cause) {
             // Refusé avant le chargement du compte : le charger ici coûterait
             // une requête SQL sur le chemin même que l'attaquant martèle.
             $this->auditLogger->loginThrottled($triedIdentifier);
@@ -94,23 +93,18 @@ final readonly class SecurityEventsSubscriber implements EventSubscriberInterfac
             return;
         }
 
-        $this->auditLogger->loginFailed($triedIdentifier, $this->loadedAccount($event));
+        $this->auditLogger->loginFailed($triedIdentifier, $this->loadedAccount($event, $cause));
     }
 
     /**
      * Le compte que l'identifiant tenté désigne, s'il a déjà été chargé par
      * l'authentification — jamais au prix d'une requête de plus (issue #418).
-     * Même raisonnement que
-     * {@see \App\Security\Authentication\Infrastructure\Security\FailedLoginTimingEqualizer} :
-     * un identifiant inconnu se reconnaît à l'exception, nue ou masquée par
-     * {@see \Symfony\Component\Security\Http\Authentication\AuthenticatorManager}
-     * derrière une
-     * {@see \Symfony\Component\Security\Core\Exception\BadCredentialsException}
-     * qui la garde en `previous` —
-     * UserBadge ne mémorise pas l'échec, le rappeler relancerait la requête.
-     * Un mot de passe trop long ({@see SubmittedPasswordTooLongException},
-     * issue #588) est refusé avant tout chargement : le charger ici le
-     * chargerait pour un identifiant existant seulement.
+     * {@see LoginFailureCause} dit, pour ce subscriber comme pour
+     * {@see \App\Security\Authentication\Infrastructure\Security\FailedLoginTimingEqualizer},
+     * quand aucun compte n'est chargé : un identifiant inconnu (UserBadge ne
+     * mémorise pas l'échec, le rappeler relancerait la requête) ou un mot de
+     * passe trop long, refusé avant tout chargement (issue #588 : le charger
+     * ici le chargerait pour un identifiant existant seulement).
      * Dans les autres cas qui arrivent ici,
      * {@see \Symfony\Component\Security\Http\EventListener\CheckCredentialsListener}
      * a déjà chargé le compte et UserBadge le mémorise. Une panne de la base
@@ -119,19 +113,14 @@ final readonly class SecurityEventsSubscriber implements EventSubscriberInterfac
      * le gestionnaire d'authentification ne la rattrape pas et la requête
      * finit en 500, sans LoginFailureEvent.
      */
-    private function loadedAccount(LoginFailureEvent $event): ?CpgUser
+    private function loadedAccount(LoginFailureEvent $event, LoginFailureCause $cause): ?CpgUser
     {
-        $exception = $event->getException();
-
-        if ($exception instanceof UserNotFoundException || $exception->getPrevious() instanceof UserNotFoundException) {
-            return null;
-        }
-
-        // Refusé avant tout chargement de compte, identiquement pour tous les
-        // identifiants (issue #588) : le charger ici coûterait une requête
-        // pour un identifiant existant seulement, et le temps redirait qui
-        // existe. L'empreinte de l'identifiant suffit à la ligne.
-        if ($exception instanceof SubmittedPasswordTooLongException) {
+        // Identifiant inconnu, ou mot de passe trop long refusé avant tout
+        // chargement, identiquement pour tous les identifiants (issue #588) :
+        // le lire ici lancerait une requête, pour un identifiant existant
+        // seulement dans le second cas, et le temps redirait qui existe.
+        // L'empreinte de l'identifiant suffit à la ligne.
+        if ($cause->leftNoAccountLoaded()) {
             return null;
         }
 

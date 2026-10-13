@@ -25,6 +25,10 @@ use Symfony\Component\Security\Core\Exception\BadCredentialsException;
  *
  * Le message est constant et ne cite rien : la ligne `Authenticator failed.`
  * du canal `security` journalise l'exception.
+ *
+ * Dans `Infrastructure/`, pas dans `Domain/Exception` comme
+ * `LoginRateLimitExceededException` : elle étend une exception du composant
+ * Security, dont le domaine ne dépend pas.
  */
 final class SubmittedPasswordTooLongException extends BadCredentialsException
 {

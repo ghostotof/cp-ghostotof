@@ -7,7 +7,6 @@ namespace App\Security\Authentication\Infrastructure\Security;
 use App\Security\User\Domain\Entity\CpgUser;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 use Symfony\Component\PasswordHasher\Hasher\PasswordHasherFactoryInterface;
-use Symfony\Component\Security\Core\Exception\TooManyLoginAttemptsAuthenticationException;
 use Symfony\Component\Security\Core\Exception\UserNotFoundException;
 use Symfony\Component\Security\Http\Authenticator\Passport\Badge\UserBadge;
 use Symfony\Component\Security\Http\Event\LoginFailureEvent;
@@ -54,7 +53,8 @@ use Throwable;
  * mot de passe vide échouent avant même que le passeport n'existe, et un mot
  * de passe trop long avant que le compte ne soit chargé — donc avant toute
  * requête en base, uniformément pour tous les identifiants, sans rien à
- * compenser. Ces deux refus-là doivent être reconnus **avant**
+ * compenser. Le throttling et le mot de passe trop long ont un passeport :
+ * ils doivent être reconnus à leur exception **avant**
  * `Passport::getUser()`, qui chargerait le compte.
  *
  * `hash()` d'une constante plutôt que `verify()` contre un hachage factice
@@ -67,7 +67,12 @@ use Throwable;
  * mêmes paramètres que `verify()` — même nombre d'itérations, à la génération
  * du sel près. L'objectif est l'équivalence, pas l'égalité à la microseconde.
  * Rien n'est lu du mot de passe soumis : moins de surface, et rien qui puisse
- * se retrouver par accident dans un journal.
+ * se retrouver par accident dans un journal. Écart accepté qui en découle
+ * (audit de #588) : sur un hachage bcrypt, `verify()` pré-hache en sha512
+ * une saisie de plus de 72 octets ou contenant un NUL, pas `hash()` sur la
+ * constante — quelques microsecondes, noyées dans le bcrypt et le réseau,
+ * hors de portée sous `login_throttling`. L'égaliser obligerait à lire la
+ * saisie.
  *
  * DoS : ce hachage rend coûteux un login sur identifiant inconnu, qui l'était
  * déjà sur identifiant connu. Il reste borné par `login_throttling`
@@ -125,22 +130,20 @@ final readonly class FailedLoginTimingEqualizer
      */
     private function realVerificationWasSkipped(LoginFailureEvent $event): bool
     {
-        $exception = $event->getException();
+        $cause = LoginFailureCause::of($event->getException());
 
-        // Refusés avant le chargement du compte, identiquement pour tous les
-        // identifiants : rien à compenser, et surtout rien à charger.
-        if ($exception instanceof TooManyLoginAttemptsAuthenticationException || $exception instanceof SubmittedPasswordTooLongException) {
-            return false;
+        // Identifiant inconnu : on décide *sans* rappeler le chargeur —
+        // UserBadge ne mémorise pas l'échec, un second appel signifierait une
+        // seconde requête SQL par identifiant inconnu.
+        if (LoginFailureCause::UnknownIdentifier === $cause) {
+            return true;
         }
 
-        // Identifiant inconnu. AuthenticatorManager::handleAuthenticationFailure()
-        // masque l'UserNotFoundException derrière une BadCredentialsException
-        // dès que `expose_security_errors` n'est pas `all`, en la conservant en
-        // `previous` : les deux formes sont reconnues. On décide ici *sans*
-        // rappeler le chargeur — UserBadge ne mémorise pas l'échec, un second
-        // appel signifierait une seconde requête SQL par identifiant inconnu.
-        if ($exception instanceof UserNotFoundException || $exception->getPrevious() instanceof UserNotFoundException) {
-            return true;
+        // Throttling, mot de passe trop long : refusés avant le chargement du
+        // compte, identiquement pour tous les identifiants. Rien à compenser,
+        // et surtout rien à charger.
+        if ($cause->leftNoAccountLoaded()) {
+            return false;
         }
 
         $passport = $event->getPassport();
@@ -154,7 +157,7 @@ final readonly class FailedLoginTimingEqualizer
         try {
             // Gratuit dans les cas qui arrivent ici : `CheckCredentialsListener`
             // a déjà chargé le compte, `UserBadge` le mémorise. Le seul cas où
-            // ce n'est pas vrai, le throttling, est écarté plus haut.
+            // ce n'est pas vrai sont écartés plus haut (LoginFailureCause).
             $user = $passport->getUser();
         } catch (UserNotFoundException) {
             return true;
