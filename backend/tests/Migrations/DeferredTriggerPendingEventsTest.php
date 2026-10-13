@@ -72,9 +72,17 @@ final class DeferredTriggerPendingEventsTest extends KernelTestCase
         $this->flushPendingEvents();
     }
 
+    /**
+     * `isset()` d'abord (issue #585) : si `setUp()` échoue avant d'affecter
+     * la connexion (démarrage du noyau, conteneur), lire la propriété lèverait
+     * une `Error` d'initialisation. PHPUnit 13 garderait bien l'exception de
+     * `setUp()` et avalerait celle-ci sans trace (mesuré), mais
+     * `parent::tearDown()` serait sauté : le noyau démarré resterait en place
+     * jusqu'au prochain `bootKernel()`.
+     */
     protected function tearDown(): void
     {
-        if ($this->connection->isTransactionActive()) {
+        if (isset($this->connection) && $this->connection->isTransactionActive()) {
             $this->connection->rollBack();
         }
         parent::tearDown();
