@@ -10,7 +10,7 @@ use App\Security\User\Infrastructure\Doctrine\PostgresUsernameAllocationLock;
 use App\Security\User\Infrastructure\Doctrine\UsernameAllocationLockInsideTransactionException;
 use App\Security\User\Infrastructure\Doctrine\UsernameAllocationLockTimeoutException;
 use App\Tests\Support\CommitRefusal;
-use App\Tests\Support\OpensProbeConnection;
+use App\Tests\Support\ProbesLocks;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception\DriverException;
 use Doctrine\ORM\EntityManagerInterface;
@@ -26,7 +26,7 @@ use Throwable;
  */
 final class PostgresUsernameAllocationLockTest extends KernelTestCase
 {
-    use OpensProbeConnection;
+    use ProbesLocks;
 
     private EntityManagerInterface $em;
 
@@ -298,15 +298,10 @@ final class PostgresUsernameAllocationLockTest extends KernelTestCase
     }
 
     /**
-     * Tente le verrou depuis une autre session, et le rend aussitôt s'il l'a
-     * eu : `pg_try_advisory_xact_lock` hors transaction explicite ne le garde
-     * que le temps de l'instruction.
+     * Le verrou d'attribution des identifiants, tenté depuis `$probe`.
      */
     private function probeCanTakeTheLock(Connection $probe): bool
     {
-        return true === $probe->fetchOne(
-            'SELECT pg_try_advisory_xact_lock(?, ?)',
-            [PostgresUsernameAllocationLock::ADVISORY_NAMESPACE, PostgresUsernameAllocationLock::ADVISORY_KEY],
-        );
+        return $this->probeCanTakeTheAdvisoryLock($probe, PostgresUsernameAllocationLock::ADVISORY_NAMESPACE, PostgresUsernameAllocationLock::ADVISORY_KEY);
     }
 }

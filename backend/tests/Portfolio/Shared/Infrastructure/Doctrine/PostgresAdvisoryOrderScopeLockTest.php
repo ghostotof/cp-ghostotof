@@ -25,7 +25,7 @@ use App\Portfolio\Watch\Domain\ValueObject\VersionSource;
 use App\Shared\Infrastructure\Doctrine\RereadUnderLock;
 use App\Tests\Portfolio\Shared\Support\FakeOrderable;
 use App\Tests\Portfolio\Shared\Support\FakeTranslatableContent;
-use App\Tests\Support\OpensProbeConnection;
+use App\Tests\Support\ProbesLocks;
 use Closure;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception\DriverException;
@@ -46,7 +46,7 @@ use Throwable;
  */
 final class PostgresAdvisoryOrderScopeLockTest extends KernelTestCase
 {
-    use OpensProbeConnection;
+    use ProbesLocks;
 
     /** Deux périmètres quelconques : un périmètre est une classe d'entité, n'importe laquelle fait l'affaire ici. */
     private const string SCOPE = FakeTranslatableContent::class;
@@ -769,25 +769,13 @@ final class PostgresAdvisoryOrderScopeLockTest extends KernelTestCase
     }
 
     /**
-     * Tente de prendre le verrou depuis la connexion témoin, et le relâche
-     * aussitôt s'il l'a obtenu.
+     * Le verrou du périmètre, tenté depuis la connexion témoin.
      *
      * @param class-string $scope
      */
     private function probeCanLock(string $scope): bool
     {
-        $acquired = (bool) $this->probe->fetchOne(
-            'SELECT pg_try_advisory_lock(?, hashtext(?))',
-            [PostgresAdvisoryOrderScopeLock::ADVISORY_NAMESPACE, $scope],
-        );
-        if ($acquired) {
-            $this->probe->fetchOne(
-                'SELECT pg_advisory_unlock(?, hashtext(?))',
-                [PostgresAdvisoryOrderScopeLock::ADVISORY_NAMESPACE, $scope],
-            );
-        }
-
-        return $acquired;
+        return $this->probeCanTakeTheNamedAdvisoryLock($this->probe, PostgresAdvisoryOrderScopeLock::ADVISORY_NAMESPACE, $scope);
     }
 
     /**

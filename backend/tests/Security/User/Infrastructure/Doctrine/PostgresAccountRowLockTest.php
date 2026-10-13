@@ -13,7 +13,7 @@ use App\Security\User\Infrastructure\Doctrine\PostgresAccountRowLock;
 use App\Shared\Infrastructure\Doctrine\RereadUnderLock;
 use App\Shared\Infrastructure\Doctrine\VanishedEntitySavedAgainException;
 use App\Tests\Support\CommitRefusal;
-use App\Tests\Support\OpensProbeConnection;
+use App\Tests\Support\ProbesLocks;
 use DateTimeImmutable;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception\DriverException;
@@ -30,7 +30,7 @@ use Throwable;
  */
 final class PostgresAccountRowLockTest extends KernelTestCase
 {
-    use OpensProbeConnection;
+    use ProbesLocks;
 
     private EntityManagerInterface $em;
 
@@ -295,7 +295,7 @@ final class PostgresAccountRowLockTest extends KernelTestCase
             self::assertStringNotContainsString($user->getUserIdentifier(), $caught->getMessage(), "Le message cite l'identifiant du compte.");
             self::assertFalse($ran, "L'opération a tourné dans la transaction de l'appelant.");
             self::assertSame(1, $connection->getTransactionNestingLevel(), "La transaction de l'appelant a été touchée.");
-            self::assertTrue($this->probeCanLockTheRow($probe, $user), 'La ligne du compte a été verrouillée malgré le refus.');
+            self::assertTrue($this->probeCanLockTheRow($probe, 'cpg_user', $user->getId()), 'La ligne du compte a été verrouillée malgré le refus.');
         } finally {
             $connection->rollBack();
             $probe->close();
@@ -321,7 +321,7 @@ final class PostgresAccountRowLockTest extends KernelTestCase
 
             self::assertInstanceOf(AccountLockInsideTransactionException::class, $caught, \sprintf("L'imbrication n'a pas été refusée sous son nom : %s.", get_debug_type($caught)));
             self::assertFalse($this->em->getConnection()->isTransactionActive());
-            self::assertTrue($this->probeCanLockTheRow($probe, $user), 'La ligne du compte est restée verrouillée après le refus.');
+            self::assertTrue($this->probeCanLockTheRow($probe, 'cpg_user', $user->getId()), 'La ligne du compte est restée verrouillée après le refus.');
         } finally {
             $probe->close();
         }
@@ -343,16 +343,4 @@ final class PostgresAccountRowLockTest extends KernelTestCase
         return $user;
     }
 
-    /**
-     * Tente la ligne depuis une autre session sans jamais l'attendre
-     * (`SKIP LOCKED` : une ligne tenue n'est pas rendue), et la rend aussitôt
-     * — hors transaction explicite, l'instruction seule la tient.
-     */
-    private function probeCanLockTheRow(Connection $probe, CpgUser $user): bool
-    {
-        return 1 === $probe->fetchOne(
-            'SELECT 1 FROM cpg_user WHERE id = :id FOR UPDATE SKIP LOCKED',
-            ['id' => $user->getId()->toRfc4122()],
-        );
-    }
 }

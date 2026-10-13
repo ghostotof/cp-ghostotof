@@ -7,7 +7,7 @@ namespace App\Tests\Shared\Infrastructure\Lock;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Shared\Infrastructure\Lock\PostgresLockedTransaction;
 use App\Tests\Support\CommitRefusal;
-use App\Tests\Support\OpensProbeConnection;
+use App\Tests\Support\ProbesLocks;
 use Closure;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception\CommitFailedRollbackOnly;
@@ -34,7 +34,7 @@ use Throwable;
  */
 final class PostgresLockedTransactionTest extends KernelTestCase
 {
-    use OpensProbeConnection;
+    use ProbesLocks;
 
     /** Une clé qu'aucun verrou de l'application n'emploie. */
     private const string LOCK_SQL = 'SELECT pg_advisory_xact_lock(512, 512)';
@@ -777,12 +777,10 @@ final class PostgresLockedTransactionTest extends KernelTestCase
     }
 
     /**
-     * Tente le verrou depuis une autre session, et le rend aussitôt s'il l'a
-     * eu : hors transaction explicite, un verrou de transaction ne vit que le
-     * temps de l'instruction.
+     * Le verrou de ces tests (`LOCK_SQL`), tenté depuis la connexion témoin.
      */
     private function probeCanTakeTheLock(): bool
     {
-        return true === $this->probe->fetchOne('SELECT pg_try_advisory_xact_lock(512, 512)');
+        return $this->probeCanTakeTheAdvisoryLock($this->probe, 512, 512);
     }
 }

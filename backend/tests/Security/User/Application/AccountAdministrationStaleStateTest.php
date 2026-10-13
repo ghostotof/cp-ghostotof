@@ -12,6 +12,7 @@ use App\Security\User\Domain\Exception\CannotDeleteLastSuperAdminException;
 use App\Security\User\Domain\Exception\CannotDemoteLastSuperAdminException;
 use App\Security\User\Domain\Exception\CpgUserNotFoundException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
+use App\Tests\Security\User\Support\ReadsStoredSuperAdmins;
 use App\Tests\Support\ReadsSecurityAuditLog;
 use DateTimeImmutable;
 use Doctrine\ORM\EntityManagerInterface;
@@ -42,6 +43,7 @@ use Throwable;
 final class AccountAdministrationStaleStateTest extends KernelTestCase
 {
     use ReadsSecurityAuditLog;
+    use ReadsStoredSuperAdmins;
 
     private EntityManagerInterface $em;
 
@@ -222,25 +224,6 @@ final class AccountAdministrationStaleStateTest extends KernelTestCase
         }
 
         return null;
-    }
-
-    /**
-     * @return list<string>
-     */
-    private function storedSuperAdminUsernames(): array
-    {
-        $rows = $this->em->getConnection()->fetchFirstColumn(
-            'SELECT username FROM cpg_user WHERE CAST(roles AS jsonb) @> CAST(:role AS jsonb) ORDER BY username',
-            ['role' => json_encode([CpgUser::ROLE_SUPER], \JSON_THROW_ON_ERROR)],
-        );
-
-        $usernames = [];
-        foreach ($rows as $username) {
-            self::assertIsString($username);
-            $usernames[] = $username;
-        }
-
-        return $usernames;
     }
 
     private function purge(): void

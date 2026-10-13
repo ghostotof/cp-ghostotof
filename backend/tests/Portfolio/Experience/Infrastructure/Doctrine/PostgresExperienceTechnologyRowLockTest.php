@@ -16,7 +16,7 @@ use App\Portfolio\Experience\Infrastructure\Doctrine\PostgresExperienceTechnolog
 use App\Shared\Infrastructure\Doctrine\RereadUnderLock;
 use App\Shared\Infrastructure\Doctrine\VanishedEntitySavedAgainException;
 use App\Tests\Support\CommitRefusal;
-use App\Tests\Support\OpensProbeConnection;
+use App\Tests\Support\ProbesLocks;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception\DriverException;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
@@ -34,7 +34,7 @@ use Throwable;
  */
 final class PostgresExperienceTechnologyRowLockTest extends KernelTestCase
 {
-    use OpensProbeConnection;
+    use ProbesLocks;
 
     private EntityManagerInterface $em;
 
@@ -314,7 +314,7 @@ final class PostgresExperienceTechnologyRowLockTest extends KernelTestCase
             self::assertStringContainsString($technology->getId()->toRfc4122(), $caught->getMessage());
             self::assertFalse($ran, "L'opération a tourné dans la transaction de l'appelant.");
             self::assertSame(1, $connection->getTransactionNestingLevel(), "La transaction de l'appelant a été touchée.");
-            self::assertTrue($this->probeCanLockTheRow($probe, $technology), 'La ligne a été verrouillée malgré le refus.');
+            self::assertTrue($this->probeCanLockTheRow($probe, 'experience_technology', $technology->getId()), 'La ligne a été verrouillée malgré le refus.');
         } finally {
             $connection->rollBack();
             $probe->close();
@@ -359,15 +359,4 @@ final class PostgresExperienceTechnologyRowLockTest extends KernelTestCase
         return $technology;
     }
 
-    /**
-     * Tente la ligne depuis une autre session sans jamais l'attendre
-     * (`SKIP LOCKED` : une ligne tenue n'est pas rendue).
-     */
-    private function probeCanLockTheRow(Connection $probe, ExperienceTechnology $technology): bool
-    {
-        return 1 === $probe->fetchOne(
-            'SELECT 1 FROM experience_technology WHERE id = :id FOR UPDATE SKIP LOCKED',
-            ['id' => $technology->getId()->toRfc4122()],
-        );
-    }
 }
