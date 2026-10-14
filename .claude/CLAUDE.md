@@ -23,7 +23,10 @@ This file only carries what applies everywhere, plus what runs from the shell (g
 | `backend-architecture.md` | backend DDD layout, UUID v7 keys | adding an entity, a bounded context, a migration |
 | `security-user.md` | `Security/User` | touching accounts, invitations, password setup |
 | `security-authentication.md` | `Security/Authentication` | touching login, JWT, cookies, CSRF, a `kernel.request` guard, the audit log |
-| `portfolio-contenus.md` | `Portfolio/*` content, ordering, translation groups | touching a content context, `position`, `translation_group` |
+| `portfolio-contenus.md` | `Portfolio/*` content contexts — and the index of the three below | touching a content context |
+| `portfolio-ordre.md` | ordering and translation groups: model, trigger, scope lock | touching `position`, `translation_group`, the order scope lock |
+| `portfolio-ordre-migrations.md` | migrations on the eight ordered tables, the trigger's blind spots | writing a migration that touches an ordered table |
+| `portfolio-ordre-ecritures.md` | application refusals, writes under the scope lock, detached instances | touching an ordered content's `Administrator` or a write path |
 | `portfolio-watch.md` | `Portfolio/Watch` | touching the tech watch, `/stack`, an outbound call |
 | `ai.md` | `Ai/` (translation, career assistant) | touching anything that calls a language model |
 | `backoffice-api.md` | backoffice API, API Platform pattern, API errors | adding an endpoint, an API Platform resource, an exception mapping |
