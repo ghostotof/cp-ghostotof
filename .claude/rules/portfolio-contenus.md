@@ -3,7 +3,10 @@ paths:
   - "backend/src/Portfolio/**"
   - "backend/tests/Portfolio/**"
   - "frontend/src/presentation/pages/**"
-  - "frontend/src/presentation/ui/**"
+  - "frontend/src/presentation/ui/RichText.vue"
+  - "frontend/tests/presentation/pages/ContributionsPage.spec.ts"
+  - "backend/tests/Support/LiftsExperienceYearsConstraint.php"
+  - "backend/migrations/Version20261006120000.php"
 ---
 
 # Backend — `Portfolio` content contexts

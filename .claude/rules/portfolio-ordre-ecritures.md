@@ -2,8 +2,15 @@
 paths:
   - "backend/src/Portfolio/**"
   - "backend/tests/Portfolio/**"
-  - "frontend/src/presentation/pages/**"
-  - "frontend/src/presentation/ui/**"
+  - "frontend/src/presentation/ui/admin/Order*"
+  - "backend/migrations/Version20260914170000.php"
+  - "backend/migrations/Version20261012160000.php"
+  - "backend/src/Shared/Infrastructure/Doctrine/RereadUnderLock.php"
+  - "backend/src/Shared/Infrastructure/Doctrine/VanishedEntit*"
+  - "backend/tests/Shared/Infrastructure/Doctrine/RereadUnderLockTest.php"
+  - "backend/tests/Shared/Infrastructure/Doctrine/VanishedEntit*"
+  - "backend/src/Security/User/Infrastructure/Doctrine/CpgUserRepository.php"
+  - "backend/src/Security/User/Infrastructure/Doctrine/PasswordSetupTokenRepository.php"
 ---
 
 # Backend — `Portfolio` ordering: application refusals and writes under the scope lock
