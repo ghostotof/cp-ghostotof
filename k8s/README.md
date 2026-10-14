@@ -1064,8 +1064,13 @@ terminal : trois rôles, `rolsuper` `f` partout, le lecteur sans mot de passe,
 le rôle de migration propriétaire de la base et du schéma, `0` objet de
 `public` hors de lui, `0` table sans DML pour `cpg_app`, `f | f | f`, `2`
 privilèges par défaut, `t | f` pour le lecteur, le `pg_hba.conf` actif
-(`/etc/postgresql/pg_hba.conf`, `0`, `0`, `reject` — #593), puis `conforme`
-et `COMMIT`. **Un écart fait échouer la commande** : `verify.sql` se termine
+(`/etc/postgresql/pg_hba.conf`, `0`, `0`, `reject` — #593), les bases de
+l'image fermées (`t | f | 0 | 0` — #597 : refus avant toute règle qui
+accepte, base de l'application au nom non réservé, aucune base de plus,
+plus de `CONNECT`/`TEMPORARY` à `PUBLIC` sur `postgres` et `template1`),
+puis `conforme` et `COMMIT`. Une base créée à la main (une restauration)
+fait donc échouer la procédure tant qu'elle existe : la supprimer, ou
+décider de l'admettre, avant de relancer. **Un écart fait échouer la commande** : `verify.sql` se termine
 par un bloc qui lève une erreur sur chaque attente trahie, psql sort en 3
 avant `commit.sql` et la session close annule tout — rien n'est à défaire,
 lire la cause, corriger, relancer l'étape 2. **Sans `conforme` ni `COMMIT`,
@@ -1318,7 +1323,9 @@ sélection après le premier collage.
 Le champ **"Base de données" se remplit aussi** : vide, Adminer se connecte à
 `postgres`, que le `pg_hba.conf` refuse aux deux rôles comme `template0` et
 `template1` (issue #597) — « pg_hba.conf rejects connection … database
-"postgres" ». Le nom est celui de l'URL, après `database:5432/`.
+"postgres" ». Le nom est celui de l'URL, après `database:5432/`. Une page
+d'Adminer qui se reconnecterait à `postgres` (liste des bases, niveau
+serveur) tombe sur le même refus : rester dans la base de l'application.
 
 L'accès reste conditionné à la possession d'un kubeconfig valide sur le
 cluster (même niveau de confiance qu'un `kubectl exec`), pas d'un simple mot

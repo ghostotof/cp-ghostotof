@@ -213,7 +213,8 @@ paths:
   EXTENSION`, `SECURITY DEFINER`, `session_replication_role`) passes CI and fails first in preprod,
   fail-closed, under `cpg_migrator` — none does today; write one and preprod says so; and
   `roles.sql`/`verify.sql` (psql meta-commands) run in no CI job: they were played against the
-  pinned image by hand for #593 (first pass, rerun, rotation, refusals, truncated stream), and preprod
+  pinned image by hand for #593 (first pass, rerun, rotation, refusals, truncated stream) and for #597
+  (two passes, then each of `verify.sql`'s four #597 refusals), and preprod
   is their proof at each change. **Accepted limits** (security review of #575): any role may `ALTER ROLE` itself (password,
   `SET` defaults) — an injection could cut the application durably; the procedure resets the three roles'
   attributes and `RESET ALL` at every pass, and `verify.sql` refuses a stray attribute;
@@ -234,17 +235,29 @@ paths:
   `/etc/postgresql/pg_hba.conf`, read through `-c hba_file=…` in `postgres.yaml`'s `args` — outside
   PGDATA, so valid on an initialised PVC, and the entrypoint passes the same args to its init server
   (socket only). Rules: `local all all trust` (as in the image: probes, entrypoint, the roles
-  procedure), loopback `trust` **for `cpg_reader` only** (the `SHOW` of the keepalives over
-  `127.0.0.1`) — the image's `host all all 127.0.0.1/32 trust` gave the superuser without a password
-  to a `kubectl port-forward` or an ephemeral container (`kubectl debug`), which reach the pod's
-  loopback (measured, review of #593) —, then `host postgres,template0,template1 all all reject`
-  (issue #597: `PUBLIC` keeps `CONNECT` and `TEMP` on the image's databases, so the next line let both
-  roles into `postgres` and `template1` — measured; the application's database is named in a Secret,
-  so the image's are refused by name, **before** the line that admits the roles, and no other database
-  can appear: the three roles are `NOCREATEDB`, checked by `verify.sql`; Adminer needs the database
-  name typed in, an empty field means `postgres`), then `host all cpg_app,cpg_migrator all scram-sha-256`,
-  `host replication all all reject` (`all` does not cover replication: refused by its own rule, not
-  for lack of one), and `host all all all reject`. **Named roles,
+  procedure), then `host postgres,template0,template1 all all reject` (issue #597: `PUBLIC` keeps
+  `CONNECT` and `TEMP` on the image's databases, so the role line let both roles into `postgres` and
+  `template1`, and the reader's loopback `trust` let it in too — measured; the application's database is
+  named in a Secret, so the image's are refused by name, for every role and address, **before** every
+  accepting rule, loopback included. That is an exclusion: a database the superuser creates later — a
+  restoration — would escape it, hence `verify.sql`'s checks (below) and `privileges.sql`'s `REVOKE
+  CONNECT, TEMPORARY ON DATABASE postgres, template1 FROM PUBLIC`, the second barrier; Adminer needs the
+  database name typed in, an empty field means `postgres`), then loopback `trust` **for `cpg_reader`
+  only** (the `SHOW` of the keepalives over `127.0.0.1`) — the image's `host all all 127.0.0.1/32 trust`
+  gave the superuser without a password to a `kubectl port-forward` or an ephemeral container (`kubectl
+  debug`), which reach the pod's loopback (measured, review of #593) —, then `host all
+  cpg_app,cpg_migrator all scram-sha-256`, `host replication all all reject` (`all` does not cover
+  replication: refused by its own rule, not for lack of one), and `host all all all reject`. **The
+  role line's address stays `all`, measured**
+  (issue #597, preprod, 2026-10-14): a pod arrives with its own pod address (no NAT), but the node
+  hosting `postgres` arrives with its `cilium_host` address, **inside the pod range** too —
+  indistinguishable from a pod, drawn anew when Kapsule replaces the node, and the path of any
+  `hostNetwork` pod of that node, whatever its namespace, since Cilium applies it no NetworkPolicy —,
+  while a pod of another namespace or another node never reaches the server (`default-deny-ingress` +
+  `allow-datastores-from-app`, timeout measured). A pod range in `pg_hba` would refuse nothing that can
+  connect today (only a future NodePort or hostPort exposure, SNATed to the node's address, which no
+  manifest makes); don't add one without measuring again (the measure: a fictitious role from `kubectl
+  debug node/…`, refused by the last `reject`, which quotes the address it saw). **Named roles,
   never an exclusion**: the bootstrap's name lives in a Secret, not in the repo — a new role reaching
   the network is added to that line on purpose. `pg_hba` cannot tell one pod from another, so
   **no TCP rule can admit the superuser "for one Job only"**: that is why the roles procedure is an
@@ -254,27 +267,40 @@ paths:
   `PostgresHbaTest` (last rule `host all all all reject`, local `trust`, every accepting TCP rule
   either loopback `trust` for `cpg_reader` alone or SCRAM for the two named roles — never `all`, a
   `+group`, an `@file`, a `/regex` —, the image's databases rejected by a `host` rule placed before
-  every accepting network rule, no `include`, replication named only by its reject rule, the
+  every accepting TCP rule, loopback included, a list written with blanks around a comma refused
+  (PostgreSQL reads it, the test's split would shift the fields), no `include`, replication named
+  only by its reject rule, the
   generator hashed, the arg and the mount); `tools/check-postgres-hba.sh` (`make postgres-hba`, CI job
   `postgres-hba`, needed by `release-version`) boots the pinned image under the manifest's
   `runAsUser` with the file and **measures** it: from another container, superuser and `cpg_reader`
   refused with `pg_hba.conf rejects connection`, a physical replication connection refused by its
-  rule, `cpg_app`/`cpg_migrator` admitted and refused with a wrong password, and refused with the
-  right one on `postgres`, `template0` and `template1` by `pg_hba.conf` (#597); on the loopback
-  (`127.0.0.1`, `::1`) the superuser refused, `cpg_reader` admitted; the superuser on the socket —
+  rule, `cpg_app`/`cpg_migrator` admitted and refused with a wrong password, and, on the image's
+  databases — read from `pg_database`, which must hold exactly `postgres`, `template0` and
+  `template1` beside the application's —, refused by `pg_hba.conf` before any authentication, a
+  logical replication on `postgres` too (#597); on the loopback (`127.0.0.1`, `::1`) the superuser
+  refused, `cpg_reader` admitted on the application's database and, like `cpg_app`, refused on the
+  image's; the superuser on the socket —
   `pg_isready` is replayed but authenticates nobody, so it says the server answers, nothing about
   the file. An invalid file stops the server at init, and `rollback-preprod` does not undo
   `postgres`. Neither proves a boot on an initialised PVC: preprod does — and **in the cluster,
   `verify.sql` checks the file the server actually reads** at every pass of the roles procedure
   (`hba_file` equal to `postgres.yaml`'s path, no rule in error, no `trust` off the socket but for the
-  reader, last rule `reject`): an args patch or an old manifest would bring back PGDATA's file in
-  silence. **The preprod pipeline measures it at every deploy** (issue #596), in its own job
+  reader, last rule `reject`; since #597, the image databases' `reject` before every accepting rule,
+  no database besides the application's and the image's three, an application database not named
+  like one of them, no `CONNECT`/`TEMPORARY` left to `PUBLIC` on `postgres` and `template1` — each
+  case played on the pinned image, refused in exit 3): an args patch or an old manifest would bring
+  back PGDATA's file, or a ConfigMap from before #597, in silence. **The preprod pipeline measures it
+  at every deploy** (issue #596), in its own job
   `postgres-hba-preprod` (issue #600): `tools/run-job.sh`
   launches `k8s/base/postgres-hba-probe-job.yaml` (outside kustomize, the server's image written in it —
   run-job.sh's image argument is `sans-objet` —, waited 120 s, deadline 180), which tries `database`
   over TCP as the bootstrap superuser **without a password**, on the application's database **and on
-  `postgres`** (a rule reopening the superuser on another database would pass otherwise), and exits 0
-  only when both answer `pg_hba.conf rejects connection` (last line `#596 : OK`): `reject` refuses
+  `postgres`** (a rule reopening the superuser on another database would pass otherwise), then as
+  **`cpg_app` on `postgres`**, without a password either (issue #597: the superuser is refused
+  everywhere by both the #593 and the #597 files, so only the application role tells a ConfigMap
+  without the image databases' `reject` — a password prompt; an application database named
+  `postgres` prompts too), and exits 0 only when all three answer `pg_hba.conf rejects connection`
+  (last line `#596 : OK`): `reject` refuses
   before any authentication, so the pod gets the superuser's *name* and the database's from
   `postgres-credentials` key by key (`secretKeyRef`, never `envFrom`, which would bring
   `POSTGRES_PASSWORD`), `PGPASSWORD` refused, `PGPASSFILE` pointed at a path that cannot exist. A
@@ -325,12 +351,14 @@ paths:
   `--read-only`, `PGCONNECT_TIMEOUT`) **both ways, in CI**: success against the repo's file, with
   trap names too (`conn`, `conn_rejects`); failure naming the password prompt against a server
   started without `-c hba_file`; failure against a third whose file reopens the `postgres` database
-  (copied in by `docker cp`); retries then failure on a closed port — and checks no output names the
+  (copied in by `docker cp`, the reopening rule first in the file, where #597's `reject` cannot hide
+  it); failure naming `cpg_app` against a fourth, the repo's file without #597's `reject`; retries
+  then failure on a closed port — and checks no output names the
   role or the database; it refuses a missing probe file and wants the `#596 : OK` marker (Docker
   mounts a missing source as an empty directory, where `sh` exits 0 — measured). **In preprod only
   the passing direction is measured**, at every deploy (decided 2026-10-14: reopening the superuser
   there to see the probe fail was not worth it). Preprod only, like every smoke: in prod the
-  runbook's command stays the release's check. **The network rule's address stays `all`, measured** (issue #597, preprod, 2026-10-14): a pod arrives with its own pod address (no NAT), but the node hosting `postgres` arrives with its `cilium_host` address, **inside the pod range** too — indistinguishable from a pod, and drawn anew when Kapsule replaces the node —, while another node or namespace never reaches the server (`allow-datastores` NetworkPolicy, timeout measured). A pod range in `pg_hba` would refuse nothing that can connect; don't add one without measuring again (the measure: a fictitious role from `kubectl debug node/…`, refused by the last `reject`, which quotes the address it saw).
+  runbook's command stays the release's check.
   **Dev and CI keep the image's file** (single superuser role, on purpose, see above).
 - **Doctrine migrations run as a Job, not `kubectl exec`** (audit C8). `k8s/base/migrate-job.yaml` is
   deliberately **outside** `kustomization.yaml`'s `resources:` — so kustomize's image transformer never sees
