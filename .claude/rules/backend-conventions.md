@@ -62,15 +62,15 @@ what every publishing context shares — status 503 and `type` `/errors/message-
 constructor takes the cause and passes its own **literal** sentence (`ContactMessageQueueUnavailableException`,
 `InvitationQueueUnavailableException`). Literal, not composed by a shared factory: the message is the client's
 `detail`, and `ProblemDetailStaysStaticTest` refuses any composed one — a factory building it from a
-`subject()` hook was written first and dropped for that reason, rather than allow-listed. A context's `Domain`
+`subject()` hook was written, then dropped for that reason, rather than allow-listed. A context's `Domain`
 depends on `Shared/Domain` only, and `Shared` never lists the contexts (the rejected alternative, a single
 class with an enum of contexts, would change `Shared` for every new producer). **The conversion is written
-once, in the bus** (issue #491, replacing #485's `try`/`catch` copied at each dispatch site, which nothing
-forced a new producer to write): every message routed to a publishing transport implements
+once, in the bus** (issue #491, not #485's `try`/`catch` copied at each dispatch site, which nothing forces a new
+producer to write): every message routed to a publishing transport implements
 `Shared/Application/Message/QueuedMessageInterface`, whose `queueUnavailableException(Throwable $cause)` returns
 `new <Context>QueueUnavailableException($cause)` — a **Factory Method**: the middleware, written once in
 `Shared`, cannot know which exception to build, each message builds its own. An interface rather than an
-attribute, settled in #491: typed end to end, where an attribute would need `new $class($failure)`, which PHPStan checks against
+attribute (#491): typed end to end, where an attribute would need `new $class($failure)`, which PHPStan checks against
 `RuntimeException`'s constructor and refuses. `Shared/Infrastructure/Messenger/QueueUnavailableMiddleware`,
 declared on `messenger.bus.default` (Symfony places it before `send_message`, which it wraps), catches
 Messenger's `TransportException` — which does **not** implement `TransportExceptionInterface`, verified —
@@ -122,10 +122,10 @@ does not (`$secretToBeHashed` is clear — name a digest `…Hash`), issue #428.
 `basicAuth` and a service URL that carries its credentials (`databaseUrl`, `amqpUrl`, `redisUrl`…). A
 parent's **private** method is no prototype (it is not inherited); a parent's constructor still is, on
 purpose: a child receiving the secret under another name for `parent::__construct()` would otherwise be
-missed, and a false negative is invisible while a false positive gets renamed (review of #428).
+missed, and a false negative is invisible while a false positive gets renamed (#428).
 `DeclaredClasses::classLikes()` is read once per directory and process (≈ 60 ms per walk of `src/`). Scope: methods of the classes, interfaces, traits and enums of `src/`
 (`DeclaredClasses::classLikes()`, issue #421: an enum, an interface nothing implements or a trait nothing
-uses was reached by no class) and of the classes' `App\…` interfaces and parents; a used trait is read
+uses would be reached by no class) and of the classes' `App\…` interfaces and parents; a used trait is read
 in each class using it, where its prototype lives, and reported under that class, never a second time
 under its own name (`DeclaredClasses::withoutUsedTraits()`, the one place that rule is written — go
 through it in any new guard on `classLikes()`). **`DeclaredClasses` has
@@ -136,8 +136,8 @@ interface extending the type), `classLikes()` for one that reads signatures, att
 into its implementations). Never widen `classes()` silently. **Closures and arrow functions stay out,
 an accepted limit** (#421, reasons in `SecretParametersTest`'s docblock): reflection cannot reach them
 without running the code, and a token census by name would miss the very case that would justify it — a
-callback gets its value under its contract's generic name (the `$value` that `app:user:create`'s password
-validator and normalizer used to receive). **A callback that receives a secret is therefore a method,
+callback gets its value under its contract's generic name (as the `$value` of the closures that once validated and
+normalized `app:user:create`'s password, which the guard missed). **A callback that receives a secret is therefore a method,
 never a closure** (issue #433): `CreateCpgUserCommand::validatePassword()` and `withoutLineEnding()`,
 passed as `$this->validatePassword(...)`, name their parameter `$password`, so the password guard
 requires their `#[SensitiveParameter]` like any other; `CreateCpgUserCommandTest` also reads the attribute
@@ -157,9 +157,9 @@ another name or in an `array` is hidden by hand and pinned in `HIDDEN_BY_HAND` (
 `PasswordOptionRedactor::redact($text)`); an entry the census already sees is refused there.
 `KeyedMac::sign($data)` and both parameters of `verifies($mac, $data)` are hidden and pinned there (issue
 #487): the tried login identifier, the CSRF token's two halves — together a valid token — and the Messenger
-envelope body go through them under generic names, and `hash_equals()`, which received them before, hides its
-own. No exclusion list until a first false positive needs one. Why it matters although
-production and, since #420, PHPUnit strip arguments (`zend.exception_ignore_args`, see
+envelope body go through them under generic names — `hash_equals()`, which received them directly,
+hides its own, so routing them through `KeyedMac` must keep them hidden. No exclusion list until a first false positive needs one. Why it matters although
+production and PHPUnit (#420) strip arguments (`zend.exception_ignore_args`, see
 `.claude/rules/backend-outillage.md`): dev does not (the debug JSON error body, Messenger's
 `ErrorDetailsStamp`, output pasted in a ticket or an assistant session), and `debug_backtrace()` never
 does. The attribute only hides that frame's arguments: not a message, a local variable, nor a vendor call that
@@ -167,8 +167,8 @@ receives the value next (`Cookie::create()`, Lexik). The walk and the hash exclu
 password guard (`tests/Support/SensitiveParameters`), so a change there moves both.
 
 **A regex of `src/` ends on `\z`, never on `$`** (issues #386, #409). In PCRE `$` also matches before a
-final `\n`, so `/^[a-z]+$/` accepts `"abc\n"`: a username, a watched-product slug and a translation field
-name all went through that way. `\z` rather than the `D` modifier: the anchor reads where it acts, and
+final `\n`, so `/^[a-z]+$/` accepts `"abc\n"` — a username, a watched-product slug and a translation field
+name of `src/` were accepted that way. `\z` rather than the `D` modifier: the anchor reads where it acts, and
 survives a copy of the pattern's body without its modifiers. `tests/Shared/RegexEndAnchorTest.php`
 (`tests/Support/DollarAnchoredPatterns`) fails on any string literal of `src/` shaped like a regex that
 holds an anchoring `$` (escaped, in a character class or a `Q…E` quote it is literal) without `D` or
@@ -185,14 +185,14 @@ fail-closed side.
 ones included** (issue #391). `use LogicException;` then `new LogicException(…)`, `use Throwable;` then
 `catch (Throwable $e)`, `use DateTimeImmutable;` then `DateTimeImmutable $at`, likewise `Stringable`,
 `JsonSerializable`, `Closure`, `Generator`, `ReflectionClass`…: never `\LogicException`, never
-`\App\…\Foo` inline, in code, attributes and phpdoc types alike (settled on 2026-10-10) — a `{@see}`
+`\App\…\Foo` inline, in code, attributes and phpdoc types alike — a `{@see}`
 in a comment is not a type, see below.
-**A comment never adds a `use`** (settled on 2026-10-10, review of #391). A class the file imports for
+**A comment never adds a `use`** (#391). A class the file imports for
 its code is cited by its short name — `{@see Foo}` in a docblock, `Foo` in a `//` comment. Any other class
 is cited by **`{@see}` with its full name, without `use`**: `{@see \ValueError}`,
 `{@see \App\Shared\Infrastructure\Http\RetryAfterListener}`, `{@see \DateInterval::createFromDateString()}`
 — the leading `\` makes it unambiguous for the IDE, which keeps it clickable and renames it. Rector leaves
-such a `{@see}` alone (verified on 2026-10-10). In a `//` comment, where `{@see}` means nothing, the full
+such a `{@see}` alone (verified). In a `//` comment, where `{@see}` means nothing, the full
 name stands alone (`Monolog\Logger` in `ReadsSecurityAuditLog`). Two reasons. An import only a docblock needs
 is checked by nothing — PHP does not resolve an unused `use`, PHPStan does not read `{@see}`, Rector keeps
 it — so a deleted or renamed class leaves it dangling with a green CI; and it would make an inner layer
@@ -204,7 +204,7 @@ name in a comment of `src/` or `tests/` that is neither a class, interface, enum
 autoloader knows. Not checked, and allowed: a name relative to its context, as the repository interfaces
 write it (`Infrastructure\Doctrine\CpgUserRepository`), and the `Assert\…` shorthand. A comment that names
 a class which does not exist (a removed vendor class, a hypothetical homonym) says so in words rather than
-by a full name. Background, verified on 2026-10-10: Rector's `removeUnusedImports` keeps an import
+by a full name. Background, verified: Rector's `removeUnusedImports` keeps an import
 referenced by `{@see}` in a `/** … */` docblock, but deletes one cited in plain prose or in a `//` /
 `/* … */` comment, even through `{@see}`. Code quoted in a comment
 (`` `new DateTimeImmutable('-'.$x)` ``, `` `#[SensitiveParameter]` ``) takes the short name without `{@see}`:
@@ -234,22 +234,20 @@ script run by hand. The version is in the phar's name so that a version bump who
 fixer's parallel runner looks for in `argv[0]` to find itself (`Cannot determine Fixer executable`
 otherwise). One target applies both rules in one pass per directory, `src/` then `tests/` (php-cs-fixer
 takes several paths only with a config file). No check-only mode: the two PHPUnit guards are that, and
-stricter (they refuse `use function`). That phar is how #391 sorted the existing code. Verified on
-2026-10-12 under PHP 8.5.11: a misordered `use`, a qualified `\array_map(` and an unqualified `count(`
-in `src/` and `tests/` → the script → empty `git diff`. Out of scope, **by decision** (2026-10-10): native **functions and constants** are
+stricter (they refuse `use function`). Verified under PHP 8.5.11: a misordered `use`, a qualified `\array_map(` and an unqualified `count(`
+in `src/` and `tests/` → the script → empty `git diff`. Out of scope, **by decision** (#391): native **functions and constants** are
 never imported — no `use function` / `use const`, `importShortClasses` does not touch them; namespaces
 cited in prose (`App\Shared`). **A native function is qualified exactly when the compiler optimizes it**
-(settled on 2026-10-10, review of #391): a function of php-cs-fixer's `@compiler_optimized` set (`\count`,
+(#391): a function of php-cs-fixer's `@compiler_optimized` set (`\count`,
 `\in_array`, `\is_string`, `\strlen`, `\sprintf`, `\dirname`…) is written with its leading backslash, every
 other one without (`array_map`, `trim`, `json_decode`: no dedicated opcode, nothing to gain). Measured for
 `sprintf`: `\sprintf('x %s', $a)` compiles to a bare `FAST_CONCAT`, the unqualified call to a runtime
 lookup and a function call. A first-class callable (`is_string(...)`) is not a call and stays as written.
-#391 applied the split once (73 `sprintf` in `src/`, 147 in `tests/`, a dozen others) with the same phar,
-rule `native_function_invocation` (`include: ['@compiler_optimized']`, `strict: false`).
 `tests/Shared/NativeCallsQualificationTest.php` (`tests/Support/MisqualifiedNativeCalls`, issue #394)
 keeps it: an unqualified call to a function of the set fails, and so does a qualified call to any other
 single-segment global function, with the file, the line and the expected form. Its message names the same
-`make back-style-fix`, which applies the rule with `strict: true`, also removing a superfluous `\`. Methods, declarations, `new`,
+`make back-style-fix`, which applies php-cs-fixer's rule `native_function_invocation`
+(`include: ['@compiler_optimized']`) with `strict: true`, also removing a superfluous `\`. Methods, declarations, `new`,
 attribute classes and first-class callables are not calls, and, as in php-cs-fixer, an unqualified call
 is left alone when the file declares a function of that name outside any class (a namespaced double of
 the native, which `\count()` would bypass). The set is **copied** into
@@ -259,8 +257,8 @@ test requires each name to be an internal function of the running PHP unless it 
 starts compiling, as `sprintf` with PHP 8.4 —: on a php-cs-fixer bump (a new `PHP_CS_FIXER_VERSION` and
 `PHP_CS_FIXER_SHA256` in `.env` and `versions.lock`),
 copy the new list over and re-read both guards against the fixers they mirror.
-Constants were not migrated: a leading backslash already there stays.
-**The line is performance, and it was measured** (2026-10-10, PHP 8.5, OPcache dump after the optimizer): the
+Constants are left as written: a leading backslash already there stays.
+**The line is performance, and it was measured** (PHP 8.5, OPcache dump after the optimizer): the
 rule only covers natives whose import costs nothing. `\DateTimeImmutable` and an imported `DateTimeImmutable`
 compile to **identical opcodes** — `use` is resolved at compile time — whereas an unqualified `count($a)`
 loses the dedicated `COUNT` opcode for `INIT_NS_FCALL_BY_NAME` + `DO_FCALL_BY_NAME`, a runtime lookup that
@@ -271,7 +269,7 @@ costly to import would keep its qualified name, with the measurement as its just
 `use …\Constraints as Assert;` alias the code itself writes. The guard is Rector's
 `withImportNames(importShortClasses: true, removeUnusedImports: true)` in `backend/rector.php`, checked by
 the blocking `rector-backend` job: it rejects a qualified class, native or namespaced, in code and phpdoc
-types (issue #391, ≈ 200 files migrated). It does **not** see a `@template T of \Foo` bound, reviewed by
+types (issue #391). It does **not** see a `@template T of \Foo` bound, reviewed by
 hand, nor any prose, where `CommentedClassNamesExistTest` checks the full names (see above), nor import
 order or function qualification, which the two #394 guards above check.
 
