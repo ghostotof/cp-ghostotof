@@ -1068,7 +1068,13 @@ privilèges par défaut, `t | f` pour le lecteur, le `pg_hba.conf` actif
 l'image fermées (`t | f | 0 | 0` — #597 : refus avant toute règle qui
 accepte, base de l'application au nom non réservé, aucune base de plus,
 plus de `CONNECT`/`TEMPORARY` à `PUBLIC` sur `postgres` et `template1`),
-puis `conforme` et `COMMIT`. Une base créée à la main (une restauration)
+la base de l'application (`{TimeZone=Europe/Paris} | 0 | -1 | f | 3` — #608 :
+le fuseau de `Version20261011120000` seul réglage de base, vide avant la
+première migration, aucun réglage `ALTER ROLE … IN DATABASE`, pas de limite
+de connexions, pas un modèle, `CONNECT` pour les trois rôles),
+puis `conforme` et `COMMIT`. Un refus `#608` ne se répare pas par la
+procédure, qui échoue tant que l'écart existe : aucun chemin écrit à ce jour
+(issue #610). Une base créée à la main (une restauration)
 fait donc échouer la procédure tant qu'elle existe : la supprimer, ou
 décider de l'admettre, avant de relancer. **Un écart fait échouer la commande** : `verify.sql` se termine
 par un bloc qui lève une erreur sur chaque attente trahie, psql sort en 3

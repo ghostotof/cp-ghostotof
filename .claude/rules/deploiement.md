@@ -214,10 +214,25 @@ paths:
   fail-closed, under `cpg_migrator` — none does today; write one and preprod says so; and
   `roles.sql`/`verify.sql` (psql meta-commands) run in no CI job: they were played against the
   pinned image by hand for #593 (first pass, rerun, rotation, refusals, truncated stream) and for #597
-  (two passes, then each of `verify.sql`'s four #597 refusals), and preprod
+  (two passes, then each of `verify.sql`'s four #597 refusals) and for #608 (a fresh database, then a
+  migrated one twice, then each `ALTER` below), and preprod
   is their proof at each change. **Accepted limits** (security review of #575): any role may `ALTER ROLE` itself (password,
   `SET` defaults) — an injection could cut the application durably; the procedure resets the three roles'
-  attributes and `RESET ALL` at every pass, and `verify.sql` refuses a stray attribute;
+  attributes and `RESET ALL` at every pass, and `verify.sql` refuses a stray attribute — `RESET ALL`
+  misses a setting scoped to the database (`ALTER ROLE … IN DATABASE … SET`, which `cpg_app` may set on
+  itself, measured), so `verify.sql` refuses any such setting, whatever its role (#608).
+  **The migrator owns the database, and an owner may cut it** (issue #608, measured on the pinned
+  image): a database-level setting applied to every new session (`search_path`, `idle_session_timeout`,
+  `default_transaction_read_only`, `statement_timeout`…), `CONNECTION LIMIT`, `IS_TEMPLATE`, `REVOKE
+  CONNECT … FROM PUBLIC` — `superuser` parameters, `RENAME` (no `CREATEDB`) and `ALLOW_CONNECTIONS false`
+  on the current database are refused to it. `verify.sql` admits **one** database setting, the time zone
+  `Version20261011120000` writes, at the exact value of `php.prod.ini`'s `date.timezone`
+  (`PostgresRolesProcedureTest` pins the two together) and only once `doctrine_migration_versions` exists
+  (the procedure precedes the first migration on a fresh database); it refuses a connection limit, a
+  template flag and a missing `CONNECT` for any of the three roles. `REVOKE TEMPORARY` is let through: the
+  application uses no temporary table. A read-only or `statement_timeout` database setting fails the
+  procedure earlier, in `roles.sql` (exit 3 too). **Nothing repairs these states**: the procedure fails
+  as long as one holds, and a writing `exec` is #520's exception alone — issue #610;
   `cpg_reader` is a second net against an operator's mistake, not a boundary against whoever holds
   `exec` (`trust` on the local socket gives the superuser too) — a `port-forward` or an ephemeral
   container reaches the loopback, where only `cpg_reader` is trusted since the review of #593, so it

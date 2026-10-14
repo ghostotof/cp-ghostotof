@@ -75,7 +75,9 @@ DO $$ BEGIN RAISE EXCEPTION '#593 : rotate vaut 0 ou 1 : rien n''est écrit'; EN
 --    chaque passage : un rôle qui existait déjà (ou qu'une injection aurait
 --    altéré — ALTER ROLE sur soi-même est permis à tout rôle) perd tout
 --    attribut de trop et tout réglage de session (`RESET ALL`). Aucun n'est
---    superutilisateur ni ne peut créer une base ou un rôle.
+--    superutilisateur ni ne peut créer une base ou un rôle. `RESET ALL` ne
+--    touche pas un réglage propre à la base (`ALTER ROLE … IN DATABASE …
+--    SET`) : verify.sql le refuse (#608), rien ici ne le répare (#610).
 SELECT format('CREATE ROLE %I', r)
 FROM (VALUES (:'app_role'), (:'migrator_role'), (:'reader_role')) AS v(r)
 WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = r) \gexec
