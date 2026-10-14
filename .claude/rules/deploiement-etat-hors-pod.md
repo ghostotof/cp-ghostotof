@@ -1,5 +1,9 @@
 ---
 paths:
+  - ".github/workflows/pipeline.yml"
+  - "tools/tests/smoke-login-throttling.test.sh"
+  - "backend/config/packages/framework.yaml"
+  - "backend/config/packages/doctrine.yaml"
   - "k8s/**"
   - "docker/php/Dockerfile"
   - "docker/php/www.prod.conf"

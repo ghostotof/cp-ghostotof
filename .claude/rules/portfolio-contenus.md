@@ -1,5 +1,6 @@
 ---
 paths:
+  - "frontend/src/presentation/sections/**"
   - "backend/src/Portfolio/**"
   - "backend/tests/Portfolio/**"
   - "frontend/src/presentation/pages/**"

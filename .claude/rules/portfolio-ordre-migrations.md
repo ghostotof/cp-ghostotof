@@ -1,10 +1,9 @@
 ---
 paths:
-  - "backend/src/Portfolio/Shared/**"
-  - "backend/tests/Portfolio/Shared/**"
+  - "backend/src/Portfolio/**"
+  - "backend/tests/Portfolio/**"
   - "backend/migrations/**"
   - "backend/tests/Migrations/**"
-  - "backend/src/Portfolio/*/Domain/Entity/**"
   - "backend/config/packages/doctrine_migrations.yaml"
 ---
 

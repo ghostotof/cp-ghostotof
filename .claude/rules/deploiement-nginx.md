@@ -1,5 +1,8 @@
 ---
 paths:
+  - "k8s/overlays/*/kustomization.yaml"
+  - "docker/php/www.prod.conf"
+  - "backend/config/packages/framework.yaml"
   - "docker/nginx/**"
   - "docker/node/**"
   - "k8s/base/backend-nginx.conf"

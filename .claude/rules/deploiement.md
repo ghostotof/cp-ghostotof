@@ -1,5 +1,6 @@
 ---
 paths:
+  - "backend/src/Contact/Infrastructure/ApiPlatform/ContactMessageProcessor.php"
   - "k8s/**"
   - "docker/php/Dockerfile"
   - "docker/php/xdebug.preprod.ini"

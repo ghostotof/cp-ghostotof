@@ -1,5 +1,10 @@
 ---
 paths:
+  - "k8s/base/backend-deployment.yaml"
+  - "k8s/base/messenger-worker-deployment.yaml"
+  - "k8s/base/frontend-deployment.yaml"
+  - "tools/check-release-gates.sh"
+  - "tools/tests/check-release-gates.test.sh"
   - "k8s/base/*-job.yaml"
   - "k8s/base/*-cronjob.yaml"
   - "k8s/base/kustomization.yaml"

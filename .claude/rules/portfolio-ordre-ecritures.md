@@ -1,8 +1,8 @@
 ---
 paths:
+  - "backend/src/**/Infrastructure/Doctrine/Postgres*Lock.php"
   - "backend/src/Portfolio/**"
   - "backend/tests/Portfolio/**"
-  - "frontend/src/presentation/ui/admin/Order*"
   - "backend/migrations/Version20260914170000.php"
   - "backend/migrations/Version20261012160000.php"
   - "backend/src/Shared/Infrastructure/Doctrine/RereadUnderLock.php"

@@ -1,5 +1,12 @@
 ---
 paths:
+  - "backend/migrations/**"
+  - "k8s/base/*-job.yaml"
+  - "k8s/base/*-cronjob.yaml"
+  - "k8s/base/backend-deployment.yaml"
+  - "k8s/base/messenger-worker-deployment.yaml"
+  - "k8s/overlays/*/kustomization.yaml"
+  - "k8s/overlays/preprod/backend-xdebug.yaml"
   - "k8s/base/postgres*"
   - "k8s/base/postgres-roles/**"
   - "k8s/base/migrate-job.yaml"
@@ -17,7 +24,6 @@ paths:
   - "tools/tests/check-release-gates.test.sh"
   - "tools/tests/postgres-image-pins.test.sh"
   - "docker/php/php.prod.ini"
-  - "backend/migrations/Version20261011120000.php"
   - "backend/tests/Shared/Infrastructure/Postgres/**"
   - "backend/tests/Shared/Infrastructure/Kubernetes/Postgres*"
   - "backend/tests/Shared/Infrastructure/Kubernetes/MigrationRoleSecretsTest.php"

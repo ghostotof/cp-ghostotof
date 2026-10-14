@@ -1,5 +1,6 @@
 ---
 paths:
+  - "backend/src/Shared/Infrastructure/Lock/WrittenFlushWatch.php"
   - "backend/src/Portfolio/**"
   - "backend/tests/Portfolio/**"
   - "backend/migrations/Version20261012120000.php"
