@@ -656,7 +656,7 @@
   },
   "anonymousCv": {
     "eyebrow": "CV sans identité",
-    "intro": "Compétences, ancienneté et réalisations par domaine — sans nom, employeur, client ni coordonnées. De quoi décider si vous voulez demander le vrai.",
+    "intro": "Compétences, ancienneté et réalisations par domaine — sans nom, employeur, client ni coordonnées. De quoi décider si vous voulez demander le CV nominatif.",
     "loading": "Chargement du CV sans identité…",
     "error": "Le CV sans identité n'a pas pu être chargé. Réessayez plus tard.",
     "empty": "Aucune section publiée pour le moment.",

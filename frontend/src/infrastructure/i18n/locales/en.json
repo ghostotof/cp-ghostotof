@@ -656,7 +656,7 @@
   },
   "anonymousCv": {
     "eyebrow": "CV without identity",
-    "intro": "Skills, seniority and achievements by domain — no name, employer, client or contact details. Enough to decide whether you want to ask for the real one.",
+    "intro": "Skills, seniority and achievements by domain — no name, employer, client or contact details. Enough to decide whether you want to ask for the CV that bears my name.",
     "loading": "Loading the CV without identity…",
     "error": "The CV without identity could not be loaded. Please try again later.",
     "empty": "No section published yet.",

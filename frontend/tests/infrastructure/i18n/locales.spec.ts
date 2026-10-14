@@ -77,19 +77,23 @@ describe('fichiers de traduction', () => {
   })
 
   /**
-   * Les termes que le glossaire du domaine (CONTEXT.md, #602) range sous
-   * « À éviter » ne doivent pas reparaître dans l'interface : c'est là que le
-   * vocabulaire dérive le plus vite, une clé à la fois.
+   * Quelques termes que le glossaire du domaine (CONTEXT.md, #602) range sous
+   * « À éviter », ceux que l'interface n'a aucune raison d'employer. Ce n'est
+   * pas tout le glossaire : un libellé de navigation (« Parcours »,
+   * « Assistant ») n'en est pas un terme, et « version de » y est le bon mot.
    */
   it('n’emploient aucun terme écarté par le glossaire du domaine', () => {
     const avoided: RegExp[] = [
       // « CV sans identité » : publiable, mais pas anonyme.
       /\banonymous CV\b/i,
       /\bCV anonym/i,
-      // Ce que produit l'assistant de traduction est une proposition : il
-      // n'existe aucun état « brouillon » d'un contenu.
-      /\bbrouillon/i,
-      /\bdraft\b/i,
+      // Le CV nominatif, jamais « le vrai » : l'autre n'est pas un faux.
+      /\ble vrai\b/i,
+      /\bthe real one\b/i,
+      // Ce que produit l'assistant de traduction est une proposition. Le seul
+      // brouillon du domaine est le brouillon d'ordre, qui garde son nom.
+      /\bbrouillon (généré|traduit)/i,
+      /\b(AI-generated|translated) draft\b/i,
     ]
 
     const offending = [...values(fr as Messages), ...values(en as Messages)]
