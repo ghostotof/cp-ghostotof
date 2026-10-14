@@ -20,7 +20,9 @@ This file only carries what applies everywhere, plus what runs from the shell (g
 | Rule (`.claude/rules/`) | Area | Read it before… |
 |---|---|---|
 | `backend-outillage.md` | backend quality tooling, Monolog | touching PHPStan/Rector/Psalm/`lsp:check`, a CI quality job, logging |
-| `backend-architecture.md` | backend DDD layout, UUID v7 keys | adding an entity, a bounded context, a migration |
+| `backend-architecture.md` | backend DDD layout, UUID v7 keys, timestamps — and the index of the two below | adding an entity, a bounded context, a migration |
+| `backend-integrite.md` | authenticated envelopes and cache values, derived keys, `KeyedMac` | touching Messenger serialization, a cache pool, an HMAC, `APP_SECRET` |
+| `backend-conventions.md` | exceptions, `#[SensitiveParameter]`, regexes, imports, `sprintf` | writing any backend class |
 | `security-user.md` | `Security/User` | touching accounts, invitations, password setup |
 | `security-authentication.md` | `Security/Authentication` | touching login, JWT, cookies, CSRF, a `kernel.request` guard, the audit log |
 | `portfolio-contenus.md` | `Portfolio/*` content contexts — and the index of the three below | touching a content context |
