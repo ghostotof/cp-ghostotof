@@ -63,6 +63,8 @@ final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
 
     private string $migrator;
 
+    private string $reader;
+
     private string $suffix;
 
     protected function setUp(): void
@@ -74,16 +76,16 @@ final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
         $this->suffix = bin2hex(random_bytes(4));
         $this->app = 'cpg_app_probe_'.$this->suffix;
         $this->migrator = 'cpg_migrator_probe_'.$this->suffix;
-        $reader = 'cpg_reader_probe_'.$this->suffix;
+        $this->reader = 'cpg_reader_probe_'.$this->suffix;
 
         $this->probe->beginTransaction();
-        foreach ([$this->app, $this->migrator, $reader] as $role) {
+        foreach ([$this->app, $this->migrator, $this->reader] as $role) {
             $this->probe->executeStatement(\sprintf('CREATE ROLE %s NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE', $this->probe->quoteSingleIdentifier($role)));
         }
         // Ce que verify.sql reçoit de psql, par set_config, avant ses blocs.
         $this->probe->executeQuery(
             "SELECT set_config('cpg.app_role', ?, true), set_config('cpg.migrator_role', ?, true), set_config('cpg.reader_role', ?, true)",
-            [$this->app, $this->migrator, $reader],
+            [$this->app, $this->migrator, $this->reader],
         );
         // Le rôle de migration lit la table des migrations, comme son
         // propriétaire le fait dans le cluster (roles.sql, étape 3).
@@ -145,11 +147,13 @@ final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
     /**
      * Issue #610 : chaque écart que le bloc `#608` refuse, roles.sql le
      * répare — la procédure, qui échouait tant qu'il existait, repasse.
+     *
+     * @param list<string> $alterations
      */
     #[DataProvider('repairableAlterations')]
-    public function testRolesSqlRepairsEveryAlterationTheVerificationRefuses(string $alteration): void
+    public function testRolesSqlRepairsEveryAlterationTheVerificationRefuses(array $alterations): void
     {
-        $this->arm(explode('; ', $alteration));
+        $this->arm($alterations);
         // Témoin : l'écart est refusé. Le refus interrompt la transaction ;
         // le savepoint la rend à la réparation, l'écart toujours en place.
         $this->probe->createSavepoint('refus');
@@ -163,29 +167,35 @@ final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
     }
 
     /**
-     * Les gestes du bloc `#608`, plus ceux qu'il refuse sans les nommer un à
-     * un ; plusieurs instructions sont séparées par `; `.
+     * Les gestes du bloc `#608`, plus ceux qu'il refuse sans les nommer un à un.
      *
-     * @return iterable<string, array{string}>
+     * @return iterable<string, array{list<string>}>
      */
     public static function repairableAlterations(): iterable
     {
         foreach (self::ownerAlterations() as $case => [$alteration]) {
-            yield $case => [$alteration];
+            yield $case => [[$alteration]];
         }
-        yield 'réglage de base et fuseau changé ensemble' => ["ALTER DATABASE {db} SET search_path = nowhere; ALTER DATABASE {db} SET timezone TO 'UTC'"];
-        yield 'réglage d\'extension' => ["ALTER DATABASE {db} SET cpg.probe = 'x'"];
-        yield 'réglage de rôle dans la base, rôle de migration' => ['ALTER ROLE {migrator} IN DATABASE {db} SET statement_timeout = 1'];
-        yield 'réglage de rôle dans la base, superutilisateur' => ["ALTER ROLE CURRENT_USER IN DATABASE {db} SET work_mem = '64kB'"];
-        yield 'CONNECT retiré, propriétaire compris' => ['REVOKE CONNECT ON DATABASE {db} FROM PUBLIC; REVOKE CONNECT ON DATABASE {db} FROM CURRENT_USER'];
+        yield 'réglage de base et fuseau changé ensemble' => [['ALTER DATABASE {db} SET search_path = nowhere', "ALTER DATABASE {db} SET timezone TO 'UTC'"]];
+        yield 'réglage d\'extension' => [["ALTER DATABASE {db} SET cpg.probe = 'x'"]];
+        yield 'réglage de rôle dans la base, rôle de migration' => [['ALTER ROLE {migrator} IN DATABASE {db} SET statement_timeout = 1']];
+        yield 'réglage de rôle dans la base, superutilisateur' => [["ALTER ROLE CURRENT_USER IN DATABASE {db} SET work_mem = '64kB'"]];
+        yield 'CONNECT retiré, propriétaire compris' => [['REVOKE CONNECT ON DATABASE {db} FROM PUBLIC', 'REVOKE CONNECT ON DATABASE {db} FROM CURRENT_USER']];
     }
 
     /**
-     * Une base saine n'est pas réécrite : ni ses réglages, ni ses privilèges
-     * (un GRANT inconditionnel rendrait explicite une ACL par défaut).
+     * Une base que le bloc `#608` admet n'est pas réécrite : ni ses réglages,
+     * ni ses privilèges (un GRANT inconditionnel rendrait explicite une ACL par
+     * défaut, et rouvrirait à PUBLIC une base qui donne CONNECT aux trois rôles
+     * seulement).
+     *
+     * @param list<string> $setUp
      */
-    public function testRolesSqlLeavesAHealthyDatabaseUntouched(): void
+    #[DataProvider('healthyDatabases')]
+    public function testRolesSqlLeavesAHealthyDatabaseUntouched(array $setUp): void
     {
+        $this->arm($setUp);
+        $this->play(RolesVerification::blockOf('#608'));
         $before = $this->databaseState();
 
         $this->play(RolesVerification::repairBlock());
@@ -194,17 +204,29 @@ final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
     }
 
     /**
+     * @return iterable<string, array{list<string>}>
+     */
+    public static function healthyDatabases(): iterable
+    {
+        yield 'ACL par défaut' => [[]];
+        yield 'CONNECT aux trois rôles seulement' => [[
+            'REVOKE CONNECT ON DATABASE {db} FROM PUBLIC',
+            'GRANT CONNECT ON DATABASE {db} TO {app}, {migrator}, {reader}',
+        ]];
+    }
+
+    /**
      * Avant `Version20261011120000` (environnement neuf, base restaurée d'avant
      * elle), le fuseau n'appartient qu'à la migration : roles.sql ne le pose
-     * pas, et retire celui qu'il trouverait — le bloc `#608` le refuse.
+     * pas, et retire celui qu'il trouverait — le bloc `#608` le refuse. Table
+     * des migrations absente (base neuve) comprise.
+     *
+     * @param list<string> $setUp
      */
     #[DataProvider('timeZonesBeforeTheMigration')]
-    public function testRolesSqlPosesNoTimeZoneBeforeItsMigration(string $timeZone): void
+    public function testRolesSqlSetsNoTimeZoneBeforeItsMigration(array $setUp): void
     {
-        $this->arm([
-            "DELETE FROM public.doctrine_migration_versions WHERE version = 'DoctrineMigrations\\Version20261011120000'",
-            $timeZone,
-        ]);
+        $this->arm($setUp);
 
         $this->play(RolesVerification::repairBlock());
 
@@ -213,12 +235,14 @@ final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
     }
 
     /**
-     * @return iterable<string, array{string}>
+     * @return iterable<string, array{list<string>}>
      */
     public static function timeZonesBeforeTheMigration(): iterable
     {
-        yield 'sans fuseau' => ['ALTER DATABASE {db} RESET timezone'];
-        yield 'avec le fuseau' => ["ALTER DATABASE {db} SET timezone TO 'Europe/Paris'"];
+        $unmigrated = "DELETE FROM public.doctrine_migration_versions WHERE version = 'DoctrineMigrations\\Version20261011120000'";
+        yield 'sans fuseau' => [[$unmigrated, 'ALTER DATABASE {db} RESET timezone']];
+        yield 'avec le fuseau' => [[$unmigrated, "ALTER DATABASE {db} SET timezone TO 'Europe/Paris'"]];
+        yield 'table des migrations absente' => [['ALTER TABLE public.doctrine_migration_versions RENAME TO {t1}', "ALTER DATABASE {db} SET timezone TO 'Europe/Paris'"]];
     }
 
     /**
@@ -617,7 +641,7 @@ final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
         }
     }
 
-    /** Les noms jetables de ce test, quotés : `{t1}`, `{f}`, `{r}`, `{app}`, `{migrator}`, et la base `{db}`. */
+    /** Les noms jetables de ce test, quotés : `{t1}`, `{f}`, `{r}`, `{app}`, `{migrator}`, `{reader}`, et la base `{db}`. */
     private function expand(string $statement): string
     {
         return strtr($statement, [
@@ -626,6 +650,7 @@ final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
             '{r}' => $this->probe->quoteSingleIdentifier('cpg_probe_r_'.$this->suffix),
             '{app}' => $this->probe->quoteSingleIdentifier($this->app),
             '{migrator}' => $this->probe->quoteSingleIdentifier($this->migrator),
+            '{reader}' => $this->probe->quoteSingleIdentifier($this->reader),
             '{db}' => $this->probe->quoteSingleIdentifier($this->database()),
         ]);
     }

@@ -376,15 +376,14 @@ final class PostgresRolesProcedureTest extends TestCase
      */
     public function testTheVerificationRefusesWhatTheDatabaseOwnerCanAlter(): void
     {
-        $migration = (string) file_get_contents(\dirname(__DIR__, 4).'/migrations/'.self::TIMEZONE_MIGRATION.'.php');
-        self::assertSame(1, preg_match("/SET timezone TO %L', current_database\\(\\), '([^']+)'/", $migration, $written), self::TIMEZONE_MIGRATION.' : le fuseau écrit par la migration.');
-        self::assertSame($written[1], PhpImageBuild::productionIniDirective('date.timezone'), 'Le fuseau de la base est celui des images.');
+        $timeZone = $this->migrationTimeZone();
+        self::assertSame($timeZone, PhpImageBuild::productionIniDirective('date.timezone'), 'Le fuseau de la base est celui des images.');
 
         $block = $this->normalized(RolesVerification::blockOf('#608'));
 
         self::assertStringContainsString("migree boolean := current_setting('cpg.fuseau_migre')::boolean;", $block, 'La migration du fuseau est passée : lu par roles.sql sous le rôle de migration ({@see self::testTheMigrationTableIsReadUnderTheMigratorOnly()}).');
         self::assertStringContainsString("CASE WHEN migree THEN ARRAY['TimeZone'] END", $block, 'Le seul réglage de base admis, une fois migrée.');
-        self::assertStringContainsString(\sprintf("IF migree AND reglages IS DISTINCT FROM ARRAY['TimeZone=%s'] THEN RAISE", $written[1]), $block);
+        self::assertStringContainsString(\sprintf("IF migree AND reglages IS DISTINCT FROM ARRAY['TimeZone=%s'] THEN RAISE", $timeZone), $block);
         self::assertStringContainsString('setdatabase = base AND setrole <> 0', $block, 'Aucun réglage de rôle propre à la base (ALTER ROLE … IN DATABASE).');
         self::assertStringContainsString('datconnlimit <> -1', $block);
         self::assertStringContainsString('datistemplate', $block);
@@ -402,16 +401,17 @@ final class PostgresRolesProcedureTest extends TestCase
      * celui du superutilisateur étant dans un Secret. Le comportement est
      * rejoué par {@see \App\Tests\Shared\Infrastructure\Postgres\DatabaseOwnerSettingsVerificationTest}.
      */
-    public function testTheRepairPosesTheMigrationsTimeZoneAndPrintsNoValue(): void
+    public function testTheRepairSetsTheMigrationsTimeZoneAndPrintsNoValue(): void
     {
-        $migration = (string) file_get_contents(\dirname(__DIR__, 4).'/migrations/'.self::TIMEZONE_MIGRATION.'.php');
-        self::assertSame(1, preg_match("/SET timezone TO %L', current_database\\(\\), '([^']+)'/", $migration, $written), self::TIMEZONE_MIGRATION.' : le fuseau écrit par la migration.');
+        $timeZone = $this->migrationTimeZone();
 
         $repair = $this->normalized(RolesVerification::repairBlock());
 
         self::assertStringContainsString("migree boolean := current_setting('cpg.fuseau_migre')::boolean;", $repair, 'La migration du fuseau est passée : lu à l\'étape 4, comme verify.sql.');
-        self::assertStringContainsString(\sprintf("CASE WHEN migree THEN ARRAY['TimeZone=%s'] END", $written[1]), $repair);
-        self::assertStringContainsString(\sprintf("IF migree THEN EXECUTE format('ALTER DATABASE %%I SET timezone TO %%L', current_database(), '%s');", $written[1]), $repair);
+        self::assertStringContainsString(\sprintf("fuseau text := '%s';", $timeZone), $repair);
+        self::assertStringContainsString("CASE WHEN migree THEN ARRAY['TimeZone=' || fuseau] END", $repair);
+        self::assertStringContainsString("IF migree THEN EXECUTE format('ALTER DATABASE %I SET timezone TO %L', current_database(), fuseau);", $repair);
+        self::assertStringContainsString("BEGIN PERFORM set_config('search_path', 'pg_catalog, pg_temp', true);", $repair, 'Le search_path fixé par le bloc lui-même, pas par PGOPTIONS seul.');
 
         preg_match_all("/RAISE NOTICE '#610 :(?:[^']|'')*'(.*?);/", $repair, $notices);
         self::assertNotEmpty($notices[1], 'roles.sql : les avis #610.');
@@ -443,7 +443,7 @@ final class PostgresRolesProcedureTest extends TestCase
         // Nulle part ailleurs une lecture de la table : ni la réparation, ni verify.sql.
         $reads = 0;
         foreach (['roles.sql', 'verify.sql'] as $file) {
-            $reads += preg_match_all('/\bFROM\s+public\.doctrine_migration_versions\b/', $this->statements($file));
+            $reads += (int) preg_match_all('/\bFROM\s+public\.doctrine_migration_versions\b/', $this->statements($file));
         }
         self::assertSame(1, $reads, 'Une seule lecture de la table des migrations, dans la fonction du rôle de migration.');
         self::assertMatchesRegularExpression('/\bFROM\s+public\.doctrine_migration_versions\b/', $reading);
@@ -484,6 +484,15 @@ final class PostgresRolesProcedureTest extends TestCase
         $runbook = Runbook::repository()->bashBlockAfter(self::SCHEMA_LINES_RUNBOOK);
         self::assertSame(1, preg_match("/<<'SQL'\nSET search_path = pg_catalog, pg_temp;\n(.*?);\nSQL$/ms", $runbook, $copy), 'k8s/README.md : la requête des lignes du schéma, sous le même search_path.');
         self::assertSame($this->normalized(RolesVerification::schemaLinesQuery()), $this->normalized($copy[1]), 'Le runbook lit les mêmes lignes que verify.sql.');
+    }
+
+    /** Le fuseau que `Version20261011120000`, figée, écrit sur la base. */
+    private function migrationTimeZone(): string
+    {
+        $migration = (string) file_get_contents(\dirname(__DIR__, 4).'/migrations/'.self::TIMEZONE_MIGRATION.'.php');
+        self::assertSame(1, preg_match("/SET timezone TO %L', current_database\\(\\), '([^']+)'/", $migration, $written), self::TIMEZONE_MIGRATION.' : le fuseau écrit par la migration.');
+
+        return $written[1];
     }
 
     private function normalized(string $text): string

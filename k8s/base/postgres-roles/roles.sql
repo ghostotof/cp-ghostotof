@@ -1,4 +1,6 @@
--- Issue #575 — création des rôles et transfert de la propriété.
+-- Issue #575 — création des rôles et transfert de la propriété ; depuis #610,
+-- lecture des migrations sous le rôle de migration et remise en état de la
+-- base de l'application (étapes 4 et 5).
 --
 -- Joué par la procédure « Rôles PostgreSQL » de k8s/README.md : un
 -- `kubectl exec` dans le pod postgres, psql sur le socket local, en tant que
@@ -157,7 +159,9 @@ ORDER BY t.typname \gexec
 --    verify.sql relisent, sans jamais lire la table eux-mêmes (ils refusent
 --    sans ces réglages). Une table absente (base neuve) donne `cpg.migrations`
 --    vide. Du SQL pur : rejoué par DatabaseOwnerSettingsVerificationTest.
-SELECT set_config('cpg.migrator_role', :'migrator_role', true);
+SELECT set_config('cpg.app_role', :'app_role', true),
+       set_config('cpg.migrator_role', :'migrator_role', true),
+       set_config('cpg.reader_role', :'reader_role', true);
 DO $$
 DECLARE
     lues record;
@@ -203,8 +207,9 @@ $$;
 --    - Les réglages de rôle propres à la base, de tout rôle : verify.sql les
 --      refuse tous.
 --    - CONNECT rendu à PUBLIC, l'état que l'image crée (privileges.sql ne le
---      retire que sur postgres et template1) ; le pg_hba.conf du dépôt filtre
---      les rôles admis par le réseau.
+--      retire que sur postgres et template1), quand l'un des trois rôles ne
+--      l'a plus — le critère même de verify.sql ; le pg_hba.conf du dépôt
+--      filtre les rôles admis par le réseau.
 --    - Ni limite de connexions, ni marque de modèle.
 --    Laissés tels quels, comme verify.sql les laisse : TEMPORARY et
 --    ALLOW_CONNECTIONS. Du SQL pur, sans variable psql : rejoué sur la base de
@@ -215,16 +220,18 @@ DECLARE
     base oid := (SELECT oid FROM pg_database WHERE datname = current_database());
     reglages text[] := (SELECT setconfig FROM pg_db_role_setting WHERE setdatabase = base AND setrole = 0);
     migree boolean := current_setting('cpg.fuseau_migre')::boolean;
+    fuseau text := 'Europe/Paris';
     attendus text[];
     roles_regles oid[];
     r oid;
 BEGIN
-    attendus := CASE WHEN migree THEN ARRAY['TimeZone=Europe/Paris'] END;
+    PERFORM set_config('search_path', 'pg_catalog, pg_temp', true);
+    attendus := CASE WHEN migree THEN ARRAY['TimeZone=' || fuseau] END;
     IF reglages IS DISTINCT FROM attendus THEN
         RAISE NOTICE '#610 : réglages de base remis en état (trouvés : %)', (SELECT array_agg(split_part(c, '=', 1) ORDER BY c COLLATE "C") FROM unnest(reglages) AS c);
         EXECUTE format('ALTER DATABASE %I RESET ALL', current_database());
         IF migree THEN
-            EXECUTE format('ALTER DATABASE %I SET timezone TO %L', current_database(), 'Europe/Paris');
+            EXECUTE format('ALTER DATABASE %I SET timezone TO %L', current_database(), fuseau);
             RAISE NOTICE '#610 : fuseau de la base remis à celui de Version20261011120000';
         END IF;
     END IF;
@@ -235,7 +242,8 @@ BEGIN
     IF cardinality(roles_regles) > 0 THEN
         RAISE NOTICE '#610 : réglages de rôle propres à la base retirés pour % rôle(s)', cardinality(roles_regles);
     END IF;
-    IF NOT has_database_privilege('public', current_database(), 'CONNECT') THEN
+    IF EXISTS (SELECT FROM unnest(ARRAY[current_setting('cpg.app_role'), current_setting('cpg.migrator_role'), current_setting('cpg.reader_role')]) AS c(nom)
+               WHERE NOT has_database_privilege(c.nom, current_database(), 'CONNECT')) THEN
         EXECUTE format('GRANT CONNECT ON DATABASE %I TO PUBLIC', current_database());
         RAISE NOTICE '#610 : CONNECT rendu à PUBLIC sur la base';
     END IF;
