@@ -23,6 +23,13 @@
 -- qu'un schéma plus ancien ne laisse pas l'application créer une table.
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 
+-- Issue #597 : les bases que l'image crée à côté de celle de l'application.
+-- PUBLIC y garde CONNECT et TEMPORARY ; le pg_hba.conf du dépôt les refuse
+-- déjà par leur nom, ce retrait est la seconde barrière, celle qui tient si
+-- une règle réseau les rouvre. Le superutilisateur (sondes, entrypoint) n'en
+-- dépend pas ; template0 refuse déjà les connexions (datallowconn).
+REVOKE CONNECT, TEMPORARY ON DATABASE postgres, template1 FROM PUBLIC;
+
 -- Le rôle applicatif : le DML sur tout le schéma, rien d'autre. Ni TRUNCATE,
 -- ni TRIGGER, ni REFERENCES ; aucune propriété (ALTER TABLE … DISABLE TRIGGER
 -- et DROP TRIGGER sont réservés au propriétaire), pas superutilisateur

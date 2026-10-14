@@ -270,6 +270,30 @@ final class PostgresRolesProcedureTest extends TestCase
         self::assertStringContainsString("(SELECT auth_method FROM pg_hba_file_rules ORDER BY rule_number DESC LIMIT 1) <> 'reject' THEN RAISE", $verify);
     }
 
+    /**
+     * Issue #597, dans le cluster : un `rollout undo` de `postgres` ramènerait
+     * une ConfigMap de l'époque #593, sans le refus des bases de l'image, et
+     * un superutilisateur peut créer une base que ce refus, qui les nomme,
+     * ne couvrirait pas. verify.sql échoue donc sur le refus absent ou placé
+     * après une règle TCP qui accepte, sur une base hors de la base de
+     * l'application et des trois de l'image, sur une base de l'application
+     * qui porterait le nom de l'une d'elles (le refus la couperait), et sur un
+     * CONNECT ou TEMPORARY resté à PUBLIC sur `postgres` ou `template1`.
+     * Ce test lit la forme ; la procédure jouée sur l'image épinglée, puis en
+     * préprod, en est la mesure (.claude/rules/deploiement.md).
+     */
+    public function testTheVerificationChecksTheImageDatabasesStayClosed(): void
+    {
+        $verify = $this->normalized($this->statements('verify.sql'));
+
+        self::assertStringContainsString("database @> ARRAY['postgres', 'template0', 'template1'] AND user_name = ARRAY['all'] AND address = 'all' AND auth_method = 'reject'", $verify);
+        self::assertStringContainsString("type <> 'local' AND auth_method <> 'reject'", $verify, 'Le refus se compare à la première règle TCP qui accepte, loopback compris.');
+        self::assertStringContainsString("current_database() IN ('postgres', 'template0', 'template1')", $verify);
+        self::assertStringContainsString("datname NOT IN (current_database(), 'postgres', 'template0', 'template1')", $verify);
+        self::assertStringContainsString("has_database_privilege('public', d, 'CONNECT') OR has_database_privilege('public', d, 'TEMPORARY')", $verify);
+        self::assertSame(4, preg_match_all("/RAISE EXCEPTION '#597 :/", $verify), 'Quatre refus #597 dans le bloc de vérification.');
+    }
+
     private function normalized(string $text): string
     {
         return trim((string) preg_replace('/\s+/', ' ', $text));

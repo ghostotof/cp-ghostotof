@@ -65,6 +65,16 @@ SELECT current_setting('hba_file') AS fichier_hba,
        (SELECT count(*) FROM pg_hba_file_rules WHERE auth_method = 'trust' AND type <> 'local' AND NOT (user_name = ARRAY[:'reader_role'] AND address IN ('127.0.0.1', '::1'))) AS confiance_hors_socket_et_lecteur,
        (SELECT auth_method FROM pg_hba_file_rules ORDER BY rule_number DESC LIMIT 1) AS derniere_regle;
 
+\echo '--- #597 : bases de l''image fermées (attendu : t, f, 0, 0)'
+SELECT EXISTS (
+         SELECT FROM pg_hba_file_rules
+         WHERE type = 'host' AND database @> ARRAY['postgres', 'template0', 'template1'] AND user_name = ARRAY['all'] AND address = 'all' AND auth_method = 'reject'
+           AND rule_number < (SELECT min(rule_number) FROM pg_hba_file_rules WHERE type <> 'local' AND auth_method <> 'reject')
+       ) AS refus_avant_toute_acceptation,
+       current_database() IN ('postgres', 'template0', 'template1') AS base_au_nom_reserve,
+       (SELECT count(*) FROM pg_database WHERE datname NOT IN (current_database(), 'postgres', 'template0', 'template1')) AS bases_en_trop,
+       (SELECT count(*) FROM unnest(ARRAY['postgres', 'template1']) AS d WHERE has_database_privilege('public', d, 'CONNECT') OR has_database_privilege('public', d, 'TEMPORARY')) AS bases_ouvertes_a_public;
+
 \echo '--- #575 : vérification (une erreur ici annule toute la procédure)'
 DO $$
 DECLARE
@@ -114,6 +124,22 @@ BEGIN
     SELECT count(*) INTO n FROM pg_hba_file_rules WHERE auth_method = 'trust' AND type <> 'local' AND NOT (user_name = ARRAY[reader] AND address IN ('127.0.0.1', '::1'));
     IF n <> 0 THEN RAISE EXCEPTION '#593 : % règle(s) TCP en trust hors de % sur le loopback', n, reader; END IF;
     IF (SELECT auth_method FROM pg_hba_file_rules ORDER BY rule_number DESC LIMIT 1) <> 'reject' THEN RAISE EXCEPTION '#593 : la dernière règle du pg_hba.conf ne refuse pas'; END IF;
+    -- #597 : les bases que l'image crée restent fermées. Le refus de pg_hba,
+    -- qui les nomme, précède toute règle TCP qui accepte (un rollout undo de
+    -- postgres ramènerait une ConfigMap sans lui) ; aucune autre base n'existe,
+    -- qu'il ne couvrirait pas (une restauration sous le superutilisateur) ; la
+    -- base de l'application ne porte pas un de leurs noms (le refus la
+    -- couperait) ; PUBLIC n'y a plus CONNECT ni TEMPORARY (privileges.sql).
+    IF NOT EXISTS (
+        SELECT FROM pg_hba_file_rules
+        WHERE type = 'host' AND database @> ARRAY['postgres', 'template0', 'template1'] AND user_name = ARRAY['all'] AND address = 'all' AND auth_method = 'reject'
+          AND rule_number < (SELECT min(rule_number) FROM pg_hba_file_rules WHERE type <> 'local' AND auth_method <> 'reject')
+    ) THEN RAISE EXCEPTION '#597 : le pg_hba.conf ne refuse pas les bases de l''image avant toute règle TCP qui accepte'; END IF;
+    IF current_database() IN ('postgres', 'template0', 'template1') THEN RAISE EXCEPTION '#597 : la base de l''application porte le nom d''une base de l''image (%)', current_database(); END IF;
+    SELECT count(*) INTO n FROM pg_database WHERE datname NOT IN (current_database(), 'postgres', 'template0', 'template1');
+    IF n <> 0 THEN RAISE EXCEPTION '#597 : % base(s) hors de celle de l''application et de celles de l''image', n; END IF;
+    SELECT count(*) INTO n FROM unnest(ARRAY['postgres', 'template1']) AS d WHERE has_database_privilege('public', d, 'CONNECT') OR has_database_privilege('public', d, 'TEMPORARY');
+    IF n <> 0 THEN RAISE EXCEPTION '#597 : PUBLIC a encore CONNECT ou TEMPORARY sur % base(s) de l''image', n; END IF;
 END
 $$;
 \echo '--- #575 : conforme'
