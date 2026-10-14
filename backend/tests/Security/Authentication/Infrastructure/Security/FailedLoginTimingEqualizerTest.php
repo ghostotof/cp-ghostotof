@@ -322,7 +322,7 @@ final class FailedLoginTimingEqualizerTest extends TestCase
     }
 
     /**
-     * Le palier de base (GuestUser) n'a pas de mot de passe et ne passe jamais
+     * Le palier de base (BaseAccessUser) n'a pas de mot de passe et ne passe jamais
      * par ce firewall : un utilisateur qui n'est pas un CpgUser ne déclenche
      * rien.
      */

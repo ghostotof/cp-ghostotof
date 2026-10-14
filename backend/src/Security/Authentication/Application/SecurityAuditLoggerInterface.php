@@ -84,7 +84,7 @@ interface SecurityAuditLoggerInterface
     public function loggedOut(?UserInterface $user): void;
 
     /** ADR 0003 D6 : jeton ROLE_USER émis sans compte, identifié par son marqueur `guest-…`. */
-    public function baseAccessIssued(string $guestIdentifier): void;
+    public function baseAccessIssued(string $baseAccessMarker): void;
 
     /** Rejet par l'un des deux gardes CSRF ; le chemin dit lequel. */
     public function csrfRejected(): void;

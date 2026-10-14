@@ -7,7 +7,7 @@ namespace App\Tests\Security\Authentication\Infrastructure\Log;
 use App\Security\Authentication\Infrastructure\Log\LoginIdentifierFingerprint;
 use App\Security\Authentication\Infrastructure\Log\SecurityAuditLogger;
 use App\Security\User\Domain\Entity\CpgUser;
-use App\Security\User\Domain\ValueObject\GuestUser;
+use App\Security\User\Domain\ValueObject\BaseAccessUser;
 use App\Tests\Support\TestCredentials;
 use Closure;
 use Monolog\Handler\TestHandler;
@@ -171,10 +171,10 @@ final class SecurityAuditLoggerTest extends TestCase
     public function testLoggedOutNamesADepartingBaseTierGuestByItsMarker(): void
     {
         $this->pushRequest('/api/logout', 'POST');
-        $guest = new GuestUser('guest-0123');
-        $this->authenticate($guest);
+        $baseAccessUser = new BaseAccessUser('guest-0123');
+        $this->authenticate($baseAccessUser);
 
-        $this->auditLogger->loggedOut($guest);
+        $this->auditLogger->loggedOut($baseAccessUser);
 
         self::assertSame([
             'event' => 'logged-out',
@@ -253,7 +253,7 @@ final class SecurityAuditLoggerTest extends TestCase
     public function testBackofficeAccessDeniedNamesTheBaseTierGuestAsActor(): void
     {
         $this->pushRequest('/api/backoffice/users', 'GET');
-        $this->authenticate(new GuestUser('guest-0123'));
+        $this->authenticate(new BaseAccessUser('guest-0123'));
 
         $this->auditLogger->backofficeAccessDenied();
 

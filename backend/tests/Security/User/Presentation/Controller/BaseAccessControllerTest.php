@@ -16,7 +16,7 @@ use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 
 /**
  * ADR 0003 D6 : POST /api/account/base-access émet un jeton ROLE_USER sans
- * jamais créer de compte — voir GuestUserProvider (chaîné avant cpg_users
+ * jamais créer de compte — voir BaseAccessUserProvider (chaîné avant cpg_users
  * dans security.yaml, ne répond que si le payload JWT porte le marqueur
  * "guest": true) pour la mécanique de ré-authentification sur les requêtes
  * suivantes.
@@ -73,7 +73,7 @@ final class BaseAccessControllerTest extends WebTestCase
         self::assertSame($expiresAt->getTimestamp(), (int) $bearerCookie->getExpiresTime(), 'Le corps et le cookie doivent annoncer la même échéance.');
 
         // Le cookie authentifie bien la requête suivante (403, pas 401) : la
-        // mécanique de ré-authentification via GuestUserProvider fonctionne.
+        // mécanique de ré-authentification via BaseAccessUserProvider fonctionne.
         // /api/me exige ROLE_TRUSTED (ADR 0003 D4) : un jeton ROLE_USER seul
         // doit être reconnu comme authentifié mais insuffisant.
         $client->request('GET', '/api/me');

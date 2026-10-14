@@ -229,7 +229,7 @@ final class ApiRouteExposureTest extends WebTestCase
     /**
      * Invariant n°5 — ADR 0003 D6. Même garde que l'invariant n°4, mais côté
      * jeton du palier de base émis par POST /api/account/base-access (aucun
-     * compte, cf. GuestUser/GuestUserProvider) plutôt qu'un compte enregistré :
+     * compte, cf. BaseAccessUser/BaseAccessUserProvider) plutôt qu'un compte enregistré :
      * les deux chemins vers ROLE_USER doivent être également insuffisants pour
      * le CV/api-me.
      */

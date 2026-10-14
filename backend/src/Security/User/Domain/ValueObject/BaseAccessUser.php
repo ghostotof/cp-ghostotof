@@ -9,12 +9,17 @@ use Symfony\Component\Security\Core\User\UserInterface;
 /**
  * Sujet d'authentification du palier de base (ADR 0003 D6) : jamais persisté,
  * reconstruit à chaque requête depuis le seul contenu signé du JWT (cf.
- * {@see \App\Security\User\Infrastructure\Security\GuestUserProvider}). Le rôle est
+ * {@see \App\Security\User\Infrastructure\Security\BaseAccessUserProvider}). Le rôle est
  * volontairement figé ici plutôt que lu depuis le jeton : même si un jeton
  * "guest" portait un jour des claims supplémentaires par erreur, cette classe
  * ne peut matériellement pas accorder plus que ROLE_USER.
+ *
+ * Nommée d'après l'accès de base du glossaire (CONTEXT.md, #602). Le claim
+ * `guest` du jeton et le marqueur `guest-…` du journal gardent leur nom
+ * d'avant : identifiants d'exploitation, sur lesquels filtrent le runbook et
+ * l'historique des logs.
  */
-final readonly class GuestUser implements UserInterface
+final readonly class BaseAccessUser implements UserInterface
 {
     public function __construct(private string $identifier)
     {

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Security\User\Infrastructure\Security;
 
-use App\Security\User\Domain\ValueObject\GuestUser;
+use App\Security\User\Domain\ValueObject\BaseAccessUser;
 use Lexik\Bundle\JWTAuthenticationBundle\Security\User\PayloadAwareUserProviderInterface;
 use Symfony\Component\Security\Core\Exception\UnsupportedUserException;
 use Symfony\Component\Security\Core\Exception\UserNotFoundException;
@@ -23,7 +23,7 @@ use Symfony\Component\Security\Core\User\UserInterface;
  * et la chaîne retombe sur `cpg_users` (Doctrine) sans aucun changement de
  * comportement.
  */
-final class GuestUserProvider implements PayloadAwareUserProviderInterface
+final class BaseAccessUserProvider implements PayloadAwareUserProviderInterface
 {
     private const string GUEST_CLAIM = 'guest';
 
@@ -36,7 +36,7 @@ final class GuestUserProvider implements PayloadAwareUserProviderInterface
             throw new UserNotFoundException(\sprintf('"%s" n\'est pas un jeton du palier de base.', $identifier));
         }
 
-        return new GuestUser($identifier);
+        return new BaseAccessUser($identifier);
     }
 
     /**
@@ -53,7 +53,7 @@ final class GuestUserProvider implements PayloadAwareUserProviderInterface
 
     public function refreshUser(UserInterface $user): UserInterface
     {
-        if (!$user instanceof GuestUser) {
+        if (!$user instanceof BaseAccessUser) {
             throw new UnsupportedUserException(\sprintf('Instances de "%s" non supportées.', get_debug_type($user)));
         }
 
@@ -63,6 +63,6 @@ final class GuestUserProvider implements PayloadAwareUserProviderInterface
 
     public function supportsClass(string $class): bool
     {
-        return GuestUser::class === $class;
+        return BaseAccessUser::class === $class;
     }
 }

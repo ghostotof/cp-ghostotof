@@ -18,7 +18,7 @@ namespace App\Shared\Domain\Security;
  * clé ses quotas sur le compte, ne dépend d'aucun autre contexte (comme
  * `Contact`, cf. ThrottledRequestAuditListener), et c'est le seul fait du
  * compte dont il a besoin. Le sujet du palier de base
- * ({@see \App\Security\User\Domain\ValueObject\GuestUser}) ne l'implémente
+ * ({@see \App\Security\User\Domain\ValueObject\BaseAccessUser}) ne l'implémente
  * pas : il n'est pas un compte, et son marqueur `guest-…`, aléatoire, ne
  * désigne personne.
  */

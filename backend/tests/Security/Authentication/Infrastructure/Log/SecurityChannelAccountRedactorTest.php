@@ -6,7 +6,7 @@ namespace App\Tests\Security\Authentication\Infrastructure\Log;
 
 use App\Security\Authentication\Infrastructure\Log\SecurityChannelAccountRedactor;
 use App\Security\User\Domain\Entity\CpgUser;
-use App\Security\User\Domain\ValueObject\GuestUser;
+use App\Security\User\Domain\ValueObject\BaseAccessUser;
 use DateTimeImmutable;
 use LogicException;
 use Monolog\Formatter\JsonFormatter;
@@ -44,9 +44,9 @@ final class SecurityChannelAccountRedactorTest extends TestCase
 
     public function testAGuestTokenKeepsItsRandomMarker(): void
     {
-        $guest = new GuestUser('guest-0123abcd');
+        $baseAccessUser = new BaseAccessUser('guest-0123abcd');
 
-        $line = $this->formatted(['token' => new UsernamePasswordToken($guest, 'api', $guest->getRoles())]);
+        $line = $this->formatted(['token' => new UsernamePasswordToken($baseAccessUser, 'api', $baseAccessUser->getRoles())]);
 
         self::assertStringContainsString('UsernamePasswordToken(user=\"guest-0123abcd\", roles=\"ROLE_USER\")', $line);
     }
