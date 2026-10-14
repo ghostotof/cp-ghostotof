@@ -51,7 +51,7 @@ final class PostgresRolesProcedureTest extends TestCase
      * comparé en entier, une commande glissée dans le `sh -c` le fait rougir.
      */
     private const string EXEC = <<<'SH'
-        kubectl -n "${NS:?preprod ou prod}" exec -i deploy/postgres -c postgres -- sh -c 'PGOPTIONS="-c lock_timeout=5s -c idle_in_transaction_session_timeout=30s -c statement_timeout=0 -c transaction_timeout=0 -c idle_session_timeout=0 -c default_transaction_read_only=off -c role=none -c search_path=pg_catalog,pg_temp -c password_encryption=scram-sha-256" psql -X -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v app_role=cpg_app -v migrator_role=cpg_migrator -v reader_role=cpg_reader -f -'
+        kubectl -n "${NS:?preprod ou prod}" exec -i deploy/postgres -c postgres -- sh -c 'PGOPTIONS="-c lock_timeout=5s -c idle_in_transaction_session_timeout=30s -c statement_timeout=0 -c transaction_timeout=0 -c idle_session_timeout=0 -c default_transaction_read_only=off -c role=none -c search_path=pg_catalog,pg_temp -c password_encryption=scram-sha-256 -c client_min_messages=notice -c standard_conforming_strings=on" psql -X -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v app_role=cpg_app -v migrator_role=cpg_migrator -v reader_role=cpg_reader -f -'
         SH;
 
     /**
@@ -78,6 +78,13 @@ final class PostgresRolesProcedureTest extends TestCase
         // Un mot de passe réécrit (rotation) l'est en SCRAM, la seule méthode
         // que le pg_hba.conf du dépôt accepte.
         'password_encryption' => 'scram-sha-256',
+        // Relecture de #610, mesuré sur l'image épinglée : à `error`, posé sur
+        // la base, il taisait les avis `#610` — l'incident réparé sans trace.
+        'client_min_messages' => 'notice',
+        // Relecture de #610, mesuré : à `off`, posé sur la base, l'antislash de
+        // `DoctrineMigrations\Version…` disparaissait des littéraux, la
+        // procédure échouait à chaque passage sur un faux « checkout en retard ».
+        'standard_conforming_strings' => 'on',
     ];
 
     /**
@@ -369,20 +376,77 @@ final class PostgresRolesProcedureTest extends TestCase
      */
     public function testTheVerificationRefusesWhatTheDatabaseOwnerCanAlter(): void
     {
-        $migration = (string) file_get_contents(\dirname(__DIR__, 4).'/migrations/'.self::TIMEZONE_MIGRATION.'.php');
-        self::assertSame(1, preg_match("/SET timezone TO %L', current_database\\(\\), '([^']+)'/", $migration, $written), self::TIMEZONE_MIGRATION.' : le fuseau écrit par la migration.');
-        self::assertSame($written[1], PhpImageBuild::productionIniDirective('date.timezone'), 'Le fuseau de la base est celui des images.');
+        $timeZone = $this->migrationTimeZone();
+        self::assertSame($timeZone, PhpImageBuild::productionIniDirective('date.timezone'), 'Le fuseau de la base est celui des images.');
 
         $block = $this->normalized(RolesVerification::blockOf('#608'));
 
-        self::assertStringContainsString(\sprintf("WHERE version = $1)' INTO migree USING 'DoctrineMigrations\\%s'", self::TIMEZONE_MIGRATION), $block, 'La migration du fuseau est passée : sa ligne, pas la seule existence de la table.');
+        self::assertStringContainsString("migree boolean := current_setting('cpg.fuseau_migre')::boolean;", $block, 'La migration du fuseau est passée : lu par roles.sql sous le rôle de migration ({@see self::testTheMigrationTableIsReadUnderTheMigratorOnly()}).');
         self::assertStringContainsString("CASE WHEN migree THEN ARRAY['TimeZone'] END", $block, 'Le seul réglage de base admis, une fois migrée.');
-        self::assertStringContainsString(\sprintf("IF migree AND reglages IS DISTINCT FROM ARRAY['TimeZone=%s'] THEN RAISE", $written[1]), $block);
+        self::assertStringContainsString(\sprintf("IF migree AND reglages IS DISTINCT FROM ARRAY['TimeZone=%s'] THEN RAISE", $timeZone), $block);
         self::assertStringContainsString('setdatabase = base AND setrole <> 0', $block, 'Aucun réglage de rôle propre à la base (ALTER ROLE … IN DATABASE).');
         self::assertStringContainsString('datconnlimit <> -1', $block);
         self::assertStringContainsString('datistemplate', $block);
         self::assertStringContainsString("NOT has_database_privilege(r, current_database(), 'CONNECT')", $block);
         self::assertSame(6, preg_match_all("/RAISE EXCEPTION '#608 :/", $block), 'Six refus #608 dans leur bloc.');
+    }
+
+    /**
+     * Issue #610 : roles.sql répare ce que le bloc `#608` refuse, fuseau
+     * compris — la migration figée ne se rejoue pas (elle convertit aussi les
+     * horodatages). Il le pose aux mêmes conditions que verify.sql l'admet :
+     * la ligne de `Version20261011120000`, et la valeur que la migration écrit.
+     * Ses avis n'impriment que des noms de réglage et des nombres : ni une
+     * valeur, choisie par qui tient le rôle de migration, ni un nom de rôle,
+     * celui du superutilisateur étant dans un Secret. Le comportement est
+     * rejoué par {@see \App\Tests\Shared\Infrastructure\Postgres\DatabaseOwnerSettingsVerificationTest}.
+     */
+    public function testTheRepairSetsTheMigrationsTimeZoneAndPrintsNoValue(): void
+    {
+        $timeZone = $this->migrationTimeZone();
+
+        $repair = $this->normalized(RolesVerification::repairBlock());
+
+        self::assertStringContainsString("migree boolean := current_setting('cpg.fuseau_migre')::boolean;", $repair, 'La migration du fuseau est passée : lu à l\'étape 4, comme verify.sql.');
+        self::assertStringContainsString(\sprintf("fuseau text := '%s';", $timeZone), $repair);
+        self::assertStringContainsString("CASE WHEN migree THEN ARRAY['TimeZone=' || fuseau] END", $repair);
+        self::assertStringContainsString("IF migree THEN EXECUTE format('ALTER DATABASE %I SET timezone TO %L', current_database(), fuseau);", $repair);
+        self::assertStringContainsString("BEGIN PERFORM set_config('search_path', 'pg_catalog, pg_temp', true);", $repair, 'Le search_path fixé par le bloc lui-même, pas par PGOPTIONS seul.');
+
+        preg_match_all("/RAISE NOTICE '#610 :(?:[^']|'')*'(.*?);/", $repair, $notices);
+        self::assertNotEmpty($notices[1], 'roles.sql : les avis #610.');
+        foreach ($notices[1] as $arguments) {
+            self::assertContains(trim($arguments), ['', ", (SELECT array_agg(split_part(c, '=', 1) ORDER BY c COLLATE \"C\") FROM unnest(reglages) AS c)", ', cardinality(roles_regles)'], 'Un avis #610 ne cite qu\'un nom de réglage ou un nombre.');
+        }
+    }
+
+    /**
+     * Revue de #610, mesuré sur l'image épinglée : la table des migrations
+     * appartient au rôle de migration, et la lire sous le superutilisateur
+     * exécutait le code qu'il y pose (une vue et sa fonction). Une seule
+     * lecture, dans une fonction `SECURITY DEFINER` dont il est propriétaire,
+     * appelée une fois puis supprimée ; les blocs relisent ses réglages. Le
+     * fuseau est reconnu à la ligne de `Version20261011120000`, pas à la seule
+     * existence de la table, qu'une base restaurée d'avant elle porte sans le
+     * fuseau. Le comportement est rejoué par
+     * {@see \App\Tests\Shared\Infrastructure\Postgres\DatabaseOwnerSettingsVerificationTest}.
+     */
+    public function testTheMigrationTableIsReadUnderTheMigratorOnly(): void
+    {
+        $reading = $this->normalized(RolesVerification::migrationsReading());
+
+        self::assertStringContainsString('LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS', $reading);
+        self::assertStringContainsString("EXECUTE format('ALTER FUNCTION pg_temp.cpg_migrations() OWNER TO %I', current_setting('cpg.migrator_role'));", $reading);
+        self::assertStringContainsString("SELECT * INTO STRICT lues FROM pg_temp.cpg_migrations(); DROP FUNCTION pg_temp.cpg_migrations();", $reading, 'Appelée une fois, supprimée aussitôt.');
+        self::assertStringContainsString(\sprintf("bool_or(version = 'DoctrineMigrations\\%s')", self::TIMEZONE_MIGRATION), $reading);
+
+        // Nulle part ailleurs une lecture de la table : ni la réparation, ni verify.sql.
+        $reads = 0;
+        foreach (['roles.sql', 'verify.sql'] as $file) {
+            $reads += (int) preg_match_all('/\bFROM\s+public\.doctrine_migration_versions\b/', $this->statements($file));
+        }
+        self::assertSame(1, $reads, 'Une seule lecture de la table des migrations, dans la fonction du rôle de migration.');
+        self::assertMatchesRegularExpression('/\bFROM\s+public\.doctrine_migration_versions\b/', $reading);
     }
 
     /**
@@ -420,6 +484,15 @@ final class PostgresRolesProcedureTest extends TestCase
         $runbook = Runbook::repository()->bashBlockAfter(self::SCHEMA_LINES_RUNBOOK);
         self::assertSame(1, preg_match("/<<'SQL'\nSET search_path = pg_catalog, pg_temp;\n(.*?);\nSQL$/ms", $runbook, $copy), 'k8s/README.md : la requête des lignes du schéma, sous le même search_path.');
         self::assertSame($this->normalized(RolesVerification::schemaLinesQuery()), $this->normalized($copy[1]), 'Le runbook lit les mêmes lignes que verify.sql.');
+    }
+
+    /** Le fuseau que `Version20261011120000`, figée, écrit sur la base. */
+    private function migrationTimeZone(): string
+    {
+        $migration = (string) file_get_contents(\dirname(__DIR__, 4).'/migrations/'.self::TIMEZONE_MIGRATION.'.php');
+        self::assertSame(1, preg_match("/SET timezone TO %L', current_database\\(\\), '([^']+)'/", $migration, $written), self::TIMEZONE_MIGRATION.' : le fuseau écrit par la migration.');
+
+        return $written[1];
     }
 
     private function normalized(string $text): string
