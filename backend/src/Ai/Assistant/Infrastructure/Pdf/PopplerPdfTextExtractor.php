@@ -16,7 +16,7 @@ use Symfony\Component\Process\Process;
 /**
  * Extrait le CV nominatif avec pdftotext (poppler-utils, installé dans l'étape
  * `base` de l'image), repli prévu par la spec 0005 sur smalot/pdfparser : sur
- * le vrai CV, ce dernier ne rendait aucune ligne vide entre paragraphes, des
+ * le CV nominatif, ce dernier ne rendait aucune ligne vide entre paragraphes, des
  * centaines d'artefacts `<>` et des puces détachées (journal de la spec).
  *
  * Rien n'est gardé entre deux appels (D7) : ni cache, ni propriété mutable.
@@ -31,7 +31,7 @@ use Symfony\Component\Process\Process;
  * recopie les deux dans son message, elle n'est donc ni journalisée ni
  * relancée.
  *
- * Le processus est borné par un délai (la mesure sur le vrai CV donne une
+ * Le processus est borné par un délai (la mesure sur le CV nominatif donne une
  * douzaine de millisecondes) et lancé **sans l'environnement du worker** :
  * Symfony Process lui transmettrait sinon DATABASE_URL, APP_SECRET et les clés
  * d'API, à portée d'une faille du parseur.
@@ -42,7 +42,7 @@ final readonly class PopplerPdfTextExtractor implements PdfTextExtractorInterfac
 
     /**
      * Le texte entre en entier dans chaque appel facturé : borné, le coût
-     * l'est par construction (ADR 0004). Le vrai CV en compte ~6 400.
+     * l'est par construction (ADR 0004). Le CV nominatif en compte ~6 400.
      */
     public const int MAX_CHARACTERS = 30_000;
 

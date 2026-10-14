@@ -86,7 +86,7 @@ useUnsavedOrderGuard(isAnyOrderDirty)
     <!--
       Les réglages sont un singleton par locale : l'assistant de traduction y
       demande la bascule de la langue de page, dont les réglages se rechargent
-      (le brouillon est appliqué après, cf. AdminAboutSettingsForm).
+      (la proposition est appliquée après, cf. AdminAboutSettingsForm).
     -->
     <AdminAboutSettingsForm
       :locale="selectedLocale"

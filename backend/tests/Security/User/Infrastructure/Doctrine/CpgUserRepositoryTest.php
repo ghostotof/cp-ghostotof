@@ -23,7 +23,7 @@ use Symfony\Component\Security\Core\Exception\UserNotFoundException;
  * PendingInvitationPurger (issue #238) pour retrouver les comptes en attente
  * de définition de mot de passe invités depuis trop longtemps. Round de
  * correction (I2) : renommée depuis `findPendingActivationInvitedBefore()` et
- * son prédicat SQL complété d'un mot de passe vide — un compte invité dont le
+ * son prédicat SQL complété d'un mot de passe vide — un compte sur invitation dont le
  * mot de passe a été posé depuis le backoffice
  * (CpgUserAdministrator::changePassword(), sans jamais markActivated()) reste
  * `isPendingActivation()` vrai mais ne doit plus être purgeable.
@@ -85,7 +85,7 @@ final class CpgUserRepositoryTest extends KernelTestCase
      * Le seuil de la purge est comparé en instant, quel que soit le fuseau
      * de l'objet qui le porte — ici UTC, celui d'une valeur relue. Écrit en
      * heure murale sans décalage, 07:30 UTC serait lu 07:30 dans le fuseau de
-     * la session (Paris), soit 05:30 UTC, et le compte invité à 07:00 UTC ne
+     * la session (Paris), soit 05:30 UTC, et le compte sur invitation à 07:00 UTC ne
      * passerait plus pour plus ancien que le seuil.
      */
     public function testThePurgeThresholdIsComparedAsAnInstant(): void
@@ -147,7 +147,7 @@ final class CpgUserRepositoryTest extends KernelTestCase
     }
 
     /**
-     * I2 : un compte invité peut se voir poser un mot de passe depuis le
+     * I2 : un compte sur invitation peut se voir poser un mot de passe depuis le
      * backoffice (CpgUserAdministrator::changePassword()) sans jamais être
      * marqué activé — il se connecte déjà et ne doit plus jamais être purgé,
      * même très ancien.

@@ -410,7 +410,7 @@ describe('AdminQualityPage', () => {
         buttonLabelled(tableOf(wrapper, PRINCIPLES), 'Créer la version EN').attributes('disabled'),
       ).toBeDefined()
       expect(buttonLabelled(formOf(wrapper, PRINCIPLES), 'Enregistrer').attributes('disabled')).toBeDefined()
-      // Un appel au modèle produirait un brouillon que le formulaire verrouillé ne
+      // Un appel au modèle produirait une proposition que le formulaire verrouillé ne
       // pourrait pas enregistrer : du quota dépensé pour rien (ADR 0004).
       expect(translateButton(wrapper, PRINCIPLES).attributes('disabled')).toBeDefined()
 
@@ -619,11 +619,11 @@ describe('AdminQualityPage', () => {
       expect(principleRepository.update).not.toHaveBeenCalled()
 
       const banner = formOf(wrapper, PRINCIPLES).get('[role="status"]')
-      expect(banner.text()).toContain('Brouillon généré par IA')
+      expect(banner.text()).toContain('Proposition générée par IA')
       expect(banner.text()).toContain('FR')
     })
 
-    it('principe : enregistrer le brouillon crée une entrée EN rattachée au même groupe', async () => {
+    it('principe : enregistrer la proposition crée une entrée EN rattachée au même groupe', async () => {
       const principleRepository = createPrincipleRepository()
       const { wrapper } = await mountPage(principleRepository)
 

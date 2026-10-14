@@ -7,7 +7,7 @@ namespace App\Ai\Assistant\Application;
 use LogicException;
 
 /**
- * Le préambule de l'assistant de parcours (`config/ai/prompts/career_assistant.txt`)
+ * Le préambule de l'assistant de carrière (`config/ai/prompts/career_assistant.txt`)
  * est absent ou blanc (issue #323). Sans lui, le message système se réduirait
  * au corpus, sans aucune consigne : mieux vaut refuser l'appel que l'envoyer.
  *

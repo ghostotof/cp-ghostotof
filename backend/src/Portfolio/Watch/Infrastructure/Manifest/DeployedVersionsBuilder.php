@@ -32,7 +32,7 @@ final readonly class DeployedVersionsBuilder
     use WritesManifestFile;
 
     /**
-     * Où lire chaque version, par slug de produit suivi.
+     * Où lire chaque version, par slug de produit surveillé.
      *
      * @var array<string, array{file: string, pattern: string}>
      */

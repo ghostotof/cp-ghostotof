@@ -11,7 +11,7 @@ use DateTimeImmutable;
 use DomainException;
 
 /**
- * Un même compte a dépassé le quota horaire de l'assistant de parcours
+ * Un même compte a dépassé le quota horaire de l'assistant de carrière
  * (spec 0005 D6). 429 avec le `type` stable de tout refus de débit
  * (`/errors/rate-limited`, {@see IsRateLimitedProblem}, le même que celui que
  * rend la zone nginx `assistant`) : le frontend n'a qu'une raison à

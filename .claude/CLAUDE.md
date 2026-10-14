@@ -33,6 +33,7 @@ This file only carries what applies everywhere, plus what runs from the shell (g
 | `frontend-a11y.md` | accessibility | adding or changing UI |
 | `images-docker.md` | Dockerfiles, frontend image, share cards | touching `docker/`, the image build, `.dockerignore` |
 | `deploiement.md` | Kubernetes, nginx, pipeline deploy jobs, state off the pod | touching `k8s/`, `docker/`, a workflow, `cache`/`lock`/rate limiters |
+| `release.md` | release flow, pipeline internals | touching `pipeline.yml`, a release script, `RELEASE_NOTES.md` |
 
 ## Goals
 
@@ -50,46 +51,30 @@ This file only carries what applies everywhere, plus what runs from the shell (g
    - The frontend is fully linted with ESLint.
    - The backend is fully linted with PHPStan.
 8. The security must be a top priority.
-9. In its final state, the website implements the three-tier access model of ADR 0003 (anonymous, a
-   discretion-only base tier, and a nominative trusted tier) rather than a shared generic guest account.
-   Without `ROLE_TRUSTED`, the site must not expose any personal information that could identify me. This
-   information becomes available once `ROLE_TRUSTED` is granted.
-   - **Scope, as settled on 2026-09-04** (audit C3), **role updated 2026-09-12** (ADR 0003 D2/D4): this
-     covers the **CV** (`GET /api/cv`, `ROLE_TRUSTED`) —
-     real name, employers, career history — and `GET /api/me`. It does **not** cover the About page: its
-     content is deliberately public in full, including the "hobbies" panel, because that content is authored
-     through the backoffice and what gets published is decided at authoring time. Don't reintroduce a
-     conditional filter there (see `AboutContentResource`'s docblock).
-   - "Expose", not "display": hiding a field client-side is presentation, never protection. The enforcement
-     rule and its automated guard live under "Backoffice" below.
-   - **There is a base tier below the trusted one** (`ROLE_USER`, ADR 0003 D1/D2): granted to anyone
-     authenticated, publishable and non-identifying by construction — it must never gate CV-level data.
-     Only `ROLE_TRUSTED` does, and it is granted **nominatively** by a `ROLE_SUPER` account through the
-     backoffice invitation flow (`CpgUserInviter::invite`), never via a shared or published credential.
-     `ROLE_SUPER` inherits `ROLE_TRUSTED` via the `role_hierarchy` in `security.yaml`. See `docs/adr/0003`
-     for the full model, `docs/adr/0001` (amended) for the invitation mechanics.
-   - **The credential-free way to reach the base tier is built** (ADR 0003 D6): `POST /api/account/base-access`
-     (`BaseAccessController`, per-IP rate-limited, double-submit-CSRF-excluded like `/api/contact` but
-     guarded by `LoginCsrfRequestListener`, see `.claude/rules/security-authentication.md`) issues a 15-minute
-     JWT carrying exactly `ROLE_USER`, with **no account materialised in the DB**. The frontend's
-     "Accès instantané" CTA calls it; "Terminer cet accès" (issue #65) ends it early through the
-     unchanged `POST /api/logout`, which expires the cookie whoever holds it. The tier is read from the
-     HTTP status of `GET /api/me` (401 anonymous / 403 base / 200 trusted) — no dedicated endpoint.
-     The response body carries `expiresAt`, the only way the frontend can know when the httpOnly cookie
-     dies: `useAuth` arms a timer on it (remembered in `localStorage` to survive a reload, a past value
-     is ignored — the server is the truth) and any 401 on base-tier content calls
-     `markBaseAccessExpired()`, so the header never shows "Accès de base" above a page asking for it.
-   - **Content that tier carries** (ADR 0003 D5): two contexts, both built — `Portfolio/CaseStudy`
-     (`GET /api/case-studies/{locale}`) and `Portfolio/AnonymousCv` (`GET /api/anonymous-cv/{locale}`,
-     skills, seniority and **achievements** per domain, no name/employer/client; the path deliberately
-     avoids the `^/api/cv` prefix, which is `ROLE_TRUSTED`). The third content the ADR listed, an
-     anonymised career path, was **dropped on 2026-09-13** (D5 amended): the time sequence is the most
-     re-identifying element, and the chronology is precisely what the nominative tier adds — don't
-     reintroduce it as "just durations and sectors". A real account never granted `ROLE_TRUSTED` still
-     lands on that same base tier. **Never name a real account in this repo** (issue #78, pt 5): a valid
-     username in a public repository is half a credential, `login_throttling` or not — the former
-     shared demo account was removed from production for that reason, and its name scrubbed from here
-     and from the migration docblock that mentioned it.
+9. The website implements the three access tiers of ADR 0003 — anonymous, base, trusted; the vocabulary
+   (palier anonyme / de base / de confiance, accès de base, nominatif) is in `CONTEXT.md`. Invariants, each
+   enforced **server-side**:
+   - **No nominative data without `ROLE_TRUSTED`**: nothing that could identify me — the nominative CV
+     (`GET /api/cv`: real name, employers, career history) and `GET /api/me` — reaches a caller without it.
+     "Expose", not "display": hiding a field client-side is presentation, never protection; the guard is
+     `ApiRouteExposureTest` (see "Backoffice" below).
+   - **The base tier (`ROLE_USER`) is discretion, not protection**: anyone gets it in one click, with no
+     account (`POST /api/account/base-access`: a 15-minute JWT carrying **exactly** `ROLE_USER`), and every
+     account has it (`CpgUser::getRoles()`). It never gates nominative data: its contents
+     (`Portfolio/CaseStudy`, `Portfolio/AnonymousCv`) are publishable by construction — no name, employer
+     nor client —, never served under the `^/api/cv` prefix (`ROLE_TRUSTED`), and never carry the
+     professional chronology — it re-identifies even without names, even reduced to durations and sectors
+     (ADR 0003 D5 amended, 2026-09-13).
+   - **`ROLE_TRUSTED` is granted nominatively** by a `ROLE_SUPER` account via the invitation flow, never
+     through a shared or published credential; `ROLE_SUPER` inherits it through `role_hierarchy` (the CLI,
+     `app:user:create`, never grants `ROLE_TRUSTED` alone: `--role ROLE_SUPER` for the bootstrap, or a
+     base-tier account).
+   - **Never name a real account in this repo** (issue #78, pt 5): a valid username in a public repository is
+     half a credential, `login_throttling` or not.
+   - The About page is **public in full, on purpose** (audit C3): what it publishes is decided at authoring
+     time. Don't reintroduce a conditional filter there (see `AboutContentResource`'s docblock).
+   Mechanics: `docs/adr/0003`, `docs/adr/0001` (amended, invitations), `.claude/rules/security-authentication.md`
+   (base access), `.claude/rules/frontend.md` (its expiry on the frontend).
 10. The modifications must follow the project's git flow (spec 0006, archived under
     `.claude/specs/archive/2026-09-16-spec-0006-flux-de-release/`): `main` is exactly what runs in
     production and only advances by the merge of a `release/<X.Y.Z>` branch; `develop` is the
@@ -164,70 +149,22 @@ Content management for all of the bounded contexts (see `.claude/rules/`), plus 
   reading stdin, `scw secret … data=@file`, `gh secret set` from stdin — never `htpasswd -b`,
   `data="$(cat …)"` or `gh secret set --body`. Run them in a **separate terminal**, never behind a `!`
   prefix in a Claude Code session.
-- **A release is a branch, the merge is the stop, the tag is a consequence** (spec 0006,
-  2026-09-16, replacing the "tag = trigger" flow that cost v0.7.0 a stale image, v0.7.1 its
-  Markdown headings and v0.11.0–v0.13.1 a literal `#` in their titles). The pipeline has three
-  phases gated by the branch: quality on every push of `main`, `develop`, `feature/**`, `fix/**`,
-  `hotfix/**`, `release/**`, `dependabot/**` (no `pull_request` event: the push's checks show on
-  the PR, listening to both doubled every run); on `release/**` only, `release-version` →
-  `build-images` → `deploy-preprod` → smoke tests + audit (→ `rollback-preprod`), and **the run
-  stops there**; on `main` only, `deploy-prod` → `finalize-release` + `audit-prod`. Rules that
-  hold, each with its guard:
-  - **The version is computed, never chosen** — `tools/next-version.sh` (Conventional Commits
-    since the last `v*` tag reachable from `origin/main`: `!`/`BREAKING CHANGE` → major, demoted
-    to minor while in `0.x`; `feat` → minor; else patch; nothing conventional → "rien à livrer").
-    The branch is named `release/<that version>`, `RELEASE_NOTES.md` at the repo root starts with
-    `# v<that version> — <title>` (em dash, strict), and `release-version` fails naming the three
-    values if they disagree: rename the branch, don't touch the CI. `git fetch --tags` first, or
-    the script may answer a version already shipped.
-  - **Images are `<version>-<7-char sha>` and `-preprod`, immutable.** `build-images` inspects the
-    four manifests first: all present → green no-op (re-run), none → build + push, some → fail.
-    That is what makes the old "reused tag serves a stale image" incident impossible;
-    `k8s/base/migrate-job.yaml` keeps `imagePullPolicy: Always` anyway. `preprod` is still built
-    `FROM production`.
-  - **Every push on `release/*` redeploys preprod** (migration before rollout, seed, smoke tests,
-    audit, rollback on failure, unchanged) and produces no pending approval. The preprod is
-    unique, so one release at a time; a second `release/*` branch is warned about, not blocked.
-  - **`main` only moves by the merge-commit of the release PR** (rulesets: PR required, merge
-    method `merge` only — squash/rebase are disabled repo-wide because `deploy-prod` finds the
-    release as `HEAD^2` —, `smoke-test-preprod` + `audit-preprod` + `postgres-hba-preprod` required
-    on the head SHA, kept in step with `pipeline.yml` by `tools/check-release-gates.sh`, issue #600 —
-    no deletion, no force-push). `deploy-prod` never builds: three guards **before** the kubeconfig
-    is even written — HEAD is a merge and `HEAD^2`'s `RELEASE_NOTES.md` gives the version
-    (`tools/verify-release-merge.sh`), the four images exist on GHCR, a `success` run of the
-    workflow exists for `release/<version>` at that exact commit (`gh run list --commit` wants
-    the **full** SHA; the run survives the branch's deletion). The `production` environment keeps
-    its secrets but no longer requires a reviewer: the merge is the stop.
-  - **`finalize-release` runs after a green prod**, six idempotent steps in
-    `tools/finalize-release.sh` (a re-run changes nothing): annotated tag `vX.Y.Z` on `HEAD^2`
-    with `RELEASE_NOTES.md` read *at that commit* as the annotation (`--cleanup=verbatim`, so the
-    Markdown headings survive; the first line minus its `#` becomes the release title, the rest
-    its body); push of the tag; GitHub Release; copy of the notes to `docs/releases/vX.Y.Z.md`
-    committed on `main` with `[skip ci]`, the root file staying in place for the next release;
-    deletion of `release/X.Y.Z`; `git push main:develop`, whose non-fast-forward refusal is the
-    intended clean stop (green, the summary prints the commands to report `main` through a
-    `fix/sync-main-vX.Y.Z` branch cut from `develop`, issue #293 — **never a `main` → `develop`
-    PR**: its head is the `[skip ci]` copy commit, no required check ever runs on that SHA and the
-    PR stays `BLOCKED` forever; the branch must keep a prefix the pipeline listens to; once that
-    PR is merged, a re-run says "déjà reporté" instead of printing the commands again). Its pushes
-    use the **`release-bot` deploy key** (secret `RELEASE_DEPLOY_KEY`, host key pinned from `gh api
-    meta`, checkout with `persist-credentials: false`), the only bypass actor of the three
-    rulesets (`main`, `develop`, tags `v*` — a personal repo refuses the `github-actions` app as
-    a bypass actor). Deploy-key pushes **do** trigger workflows, unlike `GITHUB_TOKEN`'s, hence
-    the `[skip ci]` on the copy commit. Rotation and the whole D9 setup: `tools/github-settings.sh`
-    (idempotent) and its README.
-  - **Never write `[skip ci]`, `[ci skip]`, `[no ci]`, `[skip actions]` or `[actions skip]` in a
-    commit or merge message** — GitHub silently skips the push's run (it happened to the very
-    commit that introduced `finalize-release`). Only the copy commit above carries it.
-  - **Pipeline `run:` steps are `bash -e` without `pipefail`**: never `cmd | tee >> $GITHUB_OUTPUT`,
-    a failing `cmd` goes unnoticed (write to a file, then append). The runner has no git
-    identity: scripts that tag or commit pass `-c user.name`/`user.email`. Both learned in T5/T8.
-  - **Every job declares `timeout-minutes`, and so does every step calling `apt-get`** (issue
-    #285): GitHub's default is 360 minutes, and a frozen apt mirror held v0.18.3's `build-images`
-    for over 30 minutes without failing. Size a job at 3–10× its usual duration, a deploy job
-    above the sum of its internal `kubectl` waits — a timeout that cuts `deploy-prod` mid-apply
-    is worse than a slow run. `tools/check-workflow-timeouts.sh` (run by `tools-tests`) turns
-    red on a job or apt step added without one.
+- **A release is a branch, the merge is the stop, the tag is a consequence** (spec 0006). The pipeline's
+  internals — its three phases, immutable images, `deploy-prod`'s guards, `finalize-release`'s six steps,
+  the `release-bot` deploy key, the rules for editing a workflow — live in `.claude/rules/release.md`. What
+  holds from the shell:
+  - **The version is computed, never chosen** — `tools/next-version.sh`. The branch is named
+    `release/<that version>`, `RELEASE_NOTES.md` at the repo root starts with `# v<that version> — <title>`
+    (em dash, strict), and `release-version` fails naming the three values if they disagree: rename the
+    branch, don't touch the CI. `git fetch --tags` first, or the script may answer a version already shipped.
+  - **`main` only moves by the merge-commit of the release PR** (squash and rebase are disabled repo-wide),
+    once `smoke-test-preprod`, `audit-preprod` and `postgres-hba-preprod` are green on its head. Every push
+    on `release/*` redeploys the single preprod: one release at a time.
+  - **Never write `[skip ci]`, `[ci skip]`, `[no ci]`, `[skip actions]` or `[actions skip]` in a commit or
+    merge message** — GitHub silently skips the push's run (it happened to the very commit that introduced
+    `finalize-release`). Only `finalize-release`'s copy commit carries it.
+  - **Never a `main` → `develop` PR** (issue #293): when `finalize-release`'s summary asks for a sync, run its
+    `fix/sync-main-vX.Y.Z` commands as given.
   - **What to do by hand, in order**: `git switch develop && git pull && git fetch --tags`;
     `git switch -c release/$(tools/next-version.sh)`; write `RELEASE_NOTES.md`; open the PR to
     `main` as a draft; iterate until the run is green (a `fix/*` PR targets the release branch);
@@ -242,26 +179,8 @@ All image/tool versions are pinned in `../.env` and mirrored in `versions.lock`.
 Composer, pinned to major branch `2` only (see comments in `../.env`) so 2.x patches land on every `make build`
 without ever silently jumping to Composer 3.
 
-`jsdom` used to be held back at `^26.x` because `jsdom@30` requires Node `>=22.22` and fails on anything
-older — including a workstation below the project's `NODE_TAG`. **That pin is gone** (issue #26): the fix was
-to stop letting the host matter, via the `make front-*` targets above, not to constrain a dependency to suit
-one machine. A host-only constraint has no business in `package.json`.
-
-Node 26's own native (experimental) `localStorage`/`sessionStorage` globals conflict with jsdom's: any test
-touching the bare `localStorage` global (not `window.localStorage`) before jsdom's environment fully
-initializes used to fail with `Cannot read properties of undefined (reading 'clear')`. The workaround was
-`NODE_OPTIONS=--no-experimental-webstorage` on `frontend/package.json`'s `test`/`test:watch` scripts, kept
-through the jsdom 30 move (issue #26), which did not make it obsolete.
-
-**Vitest 5 does** (vitest-dev/vitest#10293, "don't emit localStorage warnings on Node 26"), so the flag is
-gone. Verified both ways rather than assumed, since the failure is environment-dependent and a green suite
-alone proves nothing: on Vitest 4 without the flag, 11 tests fail on `setItem`/`clear`; on Vitest 5 without
-it, all 490 pass. If those failures ever come back, the flag is the fix — but check first whether Vitest or
-Node changed, because reinstating it would hide a real regression just as well as it hides this one.
-
-`vue-i18n`/`@intlify/*` (and transitively a few ESLint tooling packages) declare `engines.node >= 22`. The
-container satisfies it, so this is only ever an `EBADENGINE` warning if someone installs outside it — one
-more reason the `make front-*` targets exist.
+The frontend toolchain's history (the `jsdom` pin, Node 26's `localStorage`, the Vitest 5 fix, `EBADENGINE`
+warnings) lives in `.claude/rules/frontend.md`, « Toolchain history ».
 
 ## Commands
 
@@ -440,32 +359,19 @@ a spec is never what tells open from closed; its location is.
 ### Domain docs
 
 Single-context layout — root `CONTEXT.md` + `docs/adr/`. See `docs/agents/domain.md`.
-ADRs:
-- `docs/adr/0001-admin-user-provisioning.md` (invitation-by-email flow, `email` now stored, Twig for emails)
-- `docs/adr/0002-veille-technique.md` (`Portfolio/Watch`: outbound calls out of the render path, snapshot in
-  DB, public aggregate vs `ROLE_SUPER` detail, manifest built at `docker build`)
-- `docs/adr/0003-paliers-d-acces.md` — **statut `accepté`, implémenté et clos** (D1/D2/D4/D6/D7, D5 réduit à deux
-  contenus par amendement du 2026-09-13; closed 2026-09-15, see its « Clôture » section — what is left is
-  editorial content entry, not engineering). Makes `ROLE_USER` the bottom tier (one click, no credentials,
-  discretion rather than secrecy) and puts the CV behind `ROLE_TRUSTED`. Read it before touching
-  `access_control`, `CpgUser::getRoles()` or `BaseAccessController`: it turns on the fact that `getRoles()`
-  grants `ROLE_USER` unconditionally, which is why a tier was added *above* rather than below.
-  **Amended 2026-09-21** (3rd audit, A9), end of « Conséquences »: the accepted risk that **`POST /api/logout`
-  does not revoke the JWT** — it only expires the cookies, the firewalls are stateless and the payload has no
-  `jti`, so a token copied beforehand stays valid until it expires (1 h for a login token, 15 min for the base
-  tier). Read it before adding a revocation list, lengthening `token_ttl`, or gating anything more sensitive
-  than the CV; it also names the two remedies and what each one costs.
-- `docs/adr/0004-assistance-ia.md` — **statut `accepté` (2026-09-14), phases 1 et 2 livrées** (phase 1: spec 0002, issues
-  `spec-0002` closed, v0.10.0/v0.10.1 in production the same day; phase 2: spec 0005, v0.19.0 in production on
-  2026-10-04; the case-studies admin page, #104, joined
-  on 2026-09-14, so every admin form now has the button). Rules for anything that calls a language model: one importing class behind an interface,
-  bundle pinned exact, no call from a public render path, only publishable backoffice content leaves, human in
-  the loop, bounded cost, offline tests. **Amended 2026-09-15**: D7 is now the `ROLE_TRUSTED` career
-  assistant on Scaleway (not an MCP server), D3 lets the nominative CV reach a model operated by the site's
-  host or self-hosted only, D2 admits calls on behalf of `ROLE_TRUSTED` (never the base tier), D5 adds a
-  bounded input. Read it before adding any `Symfony\AI` usage or a new `ai.agent`.
-- `docs/adr/0005-etat-hors-du-pod.md` — **statut `accepté` (2026-09-16), livré par le hotfix v0.14.1**.
-  No application state on the pod's filesystem: `cache.app` on Doctrine DBAL, why an `emptyDir`
-  or a PHPUnit test would not have done, and the two backstops (nginx `login` zone, preprod
-  smoke test that exercises the throttling). Read it before touching `cache.yaml`, adding a
-  rate limiter, or mounting anything under `var/`.
+ADRs (status, dates and amendments live in each ADR):
+- `docs/adr/0001-admin-user-provisioning.md` — invitation-by-email flow, `email` stored, Twig for e-mails.
+- `docs/adr/0002-veille-technique.md` — `Portfolio/Watch`: outbound calls out of the render path, relevé in
+  DB, public aggregate vs `ROLE_SUPER` detail, manifest built at `docker build`.
+- `docs/adr/0003-paliers-d-acces.md` — the three access tiers. Read it before touching `access_control`,
+  `CpgUser::getRoles()` (it grants `ROLE_USER` unconditionally, which is why a tier was added *above*) or
+  `BaseAccessController`; and before adding a revocation list, lengthening `token_ttl` or gating anything
+  more sensitive than the CV: **`POST /api/logout` does not revoke the JWT** (accepted risk, amended
+  2026-09-21).
+- `docs/adr/0004-assistance-ia.md` — anything that calls a language model: one importing class behind an
+  interface, bundle pinned exact, no call from a public render path, only publishable backoffice content
+  leaves (the nominative CV only to the site's host or self-hosted), never a call on behalf of the base
+  tier, human in the loop, bounded cost, offline tests. Read it before adding any `Symfony\AI` usage or a
+  new `ai.agent`.
+- `docs/adr/0005-etat-hors-du-pod.md` — no application state on the pod's filesystem. Read it before
+  touching `cache.yaml`, adding a rate limiter, or mounting anything under `var/`.

@@ -13,9 +13,9 @@ namespace App\Portfolio\Watch\Presentation\ApiResource;
  * identifiants, paquets touchés, versions correctives — existe bien dans le
  * snapshot, mais n'est servi qu'à ROLE_SUPER.
  *
- * Le compte invité `ROLE_USER` ne suffirait pas : il est partagé et ses
- * identifiants circulent, ce qui en fait l'équivalent du public dès qu'il
- * s'agit d'une surface d'attaque. La nuance est autre pour le CV, qui est une
+ * Le palier de base (`ROLE_USER`) ne suffirait pas : il s'obtient en un clic,
+ * sans identifiant, ce qui en fait l'équivalent du public dès qu'il s'agit
+ * d'une surface d'attaque. La nuance est autre pour le CV, qui est une
  * donnée personnelle et non une faiblesse exploitable.
  *
  * `packagesScanned` vaut null quand aucune analyse n'a été tentée. C'est la

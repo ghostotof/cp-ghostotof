@@ -1,6 +1,6 @@
 # Symfony AI — socle de l'ADR 0004 (assistance IA). Deux agents, jamais sur un
 # chemin de rendu public (règle héritée de l'ADR 0002) : le traducteur du
-# backoffice (ROLE_SUPER, Anthropic) et l'assistant de parcours (ROLE_TRUSTED,
+# backoffice (ROLE_SUPER, Anthropic) et l'assistant de carrière (ROLE_TRUSTED,
 # Scaleway, ADR 0004 D7 amendée). Seule la plateforme Anthropic est déclarée
 # ici : celle de Scaleway l'est dans services.yaml (spec 0005 D2).
 #
@@ -38,7 +38,7 @@ ai:
             # détourner par injection de prompt.
             tools: false
 
-        # Assistant « interrogez mon parcours » (contexte Ai/Assistant, spec 0005).
+        # Assistant de carrière (contexte Ai/Assistant, spec 0005).
         # Le CV nominatif n'est envoyé qu'à ce modèle, opéré par l'hébergeur du
         # site (Scaleway, fr-par — ADR 0004 D3 amendée).
         career_assistant:

@@ -13,7 +13,7 @@ paths:
 
 > Moved verbatim from `.claude/CLAUDE.md` (#346), section « Architecture › Backend architecture › `Portfolio/Watch/` ». The index of every rule is at the top of `.claude/CLAUDE.md`.
 
-- **`Portfolio/Watch/`** — the tech-watch radar behind the public `/{locale}/stack` page: version
+- **`Portfolio/Watch/`** — the tech watch (« veille technique », see `CONTEXT.md`) behind the public `/{locale}/stack` page: version
   lifecycles from **endoflife.date** and known vulnerabilities of the deployed packages from **OSV.dev**.
   It is the only context whose domain depends on third parties, and the rules below are what keep that
   dependency from becoming a liability. Full rationale in `docs/adr/0002-veille-technique.md`.

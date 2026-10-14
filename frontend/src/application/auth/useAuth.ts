@@ -150,7 +150,7 @@ export function markBaseAccessExpired(): void {
 }
 
 /**
- * Un appel du palier nominatif (l'assistant, ROLE_TRUSTED) a reçu 401 ou 403 :
+ * Un appel du palier de confiance (l'assistant, ROLE_TRUSTED) a reçu 401 ou 403 :
  * le jeton ne vaut plus ce palier (expiré, révoqué, ou compte rétrogradé).
  * Contrairement à markBaseAccessExpired, repasse à anonyme sans condition : la
  * page qui l'appelle ne sert que ce palier, et garder un en-tête « connecté »

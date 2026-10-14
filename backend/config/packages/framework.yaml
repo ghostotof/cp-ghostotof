@@ -105,7 +105,7 @@ framework:
         # Le quota est la borne de dépense, même sur un compte ROLE_SUPER
         # compromis (rate_limiter.yaml). Son refus est tracé sur `ai_usage` avec
         # le compte et l'échéance (SymfonyTranslationRateLimiter, issue #356),
-        # comme celui de l'assistant de parcours : `info` ici, comme lui.
+        # comme celui de l'assistant de carrière : `info` ici, comme lui.
         App\Ai\Translation\Domain\Exception\TranslationRateLimitExceededException:
             log_level: info
         # Contenus du portfolio : introuvable, conflit, saisie invalide.
@@ -249,7 +249,7 @@ framework:
                 base_uri: 'https://api.anthropic.com'
                 timeout: 40
                 max_redirects: 0
-            # Même bornes pour l'assistant de parcours (spec 0005, ADR 0004 D5) :
+            # Même bornes pour l'assistant de carrière (spec 0005, ADR 0004 D5) :
             # consommé par la plateforme Scaleway déclarée dans services.yaml, le
             # bundle ne sachant pas le lui transmettre (spec 0005 D2).
             ai.scaleway.http_client:

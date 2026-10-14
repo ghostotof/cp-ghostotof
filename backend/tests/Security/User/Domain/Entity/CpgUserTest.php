@@ -221,7 +221,7 @@ final class CpgUserTest extends TestCase
 
     /**
      * I2 : CpgUserAdministrator::changePassword() peut poser un mot de passe
-     * sur un compte invité sans jamais appeler markActivated() — un tel compte
+     * sur un compte sur invitation sans jamais appeler markActivated() — un tel compte
      * reste isPendingActivation() bien qu'il se connecte déjà. Il ne doit
      * jamais être purgeable : isAwaitingPasswordSetup() doit dire faux, alors
      * même qu'isPendingActivation() dit encore vrai.
@@ -239,7 +239,7 @@ final class CpgUserTest extends TestCase
 
     /**
      * « Mot de passe défini » a un seul sens (issue #560) : un hachage autre
-     * que NO_PASSWORD. Un compte invité naît sans mot de passe, en reçoit un
+     * que NO_PASSWORD. Un compte sur invitation naît sans mot de passe, en reçoit un
      * par le lien ou par le backoffice ; un compte CLI en reçoit un aussitôt.
      */
     public function testAnAccountHasAPasswordOnceItsHashIsNoLongerNoPassword(): void

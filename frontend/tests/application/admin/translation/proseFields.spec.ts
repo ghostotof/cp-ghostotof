@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { reactive } from 'vue'
-import { applyTranslationDraft, collectProseFields } from '../../../../src/application/admin/translation/proseFields'
+import { applyTranslationProposal, collectProseFields } from '../../../../src/application/admin/translation/proseFields'
 
 const PROSE = ['title', 'body'] as const
 
@@ -18,19 +18,19 @@ describe('collectProseFields', () => {
   })
 })
 
-describe('applyTranslationDraft', () => {
-  it('remplace les champs de prose présents dans le brouillon et laisse les autres intacts', () => {
+describe('applyTranslationProposal', () => {
+  it('remplace les champs de prose présents dans la proposition et laisse les autres intacts', () => {
     const form = reactive({ locale: 'fr', title: 'Panne', body: 'Corps.', url: 'https://x', position: 2 })
 
-    applyTranslationDraft(form, PROSE, { sourceLocale: 'fr', targetLocale: 'en', fields: { title: 'Outage', body: 'Body.' } })
+    applyTranslationProposal(form, PROSE, { sourceLocale: 'fr', targetLocale: 'en', fields: { title: 'Outage', body: 'Body.' } })
 
     expect(form).toMatchObject({ title: 'Outage', body: 'Body.', url: 'https://x', position: 2 })
   })
 
-  it('ne touche pas à un champ de prose absent du brouillon', () => {
+  it('ne touche pas à un champ de prose absent de la proposition', () => {
     const form = reactive({ title: 'Panne', body: '' })
 
-    applyTranslationDraft(form, PROSE, { sourceLocale: 'fr', targetLocale: 'en', fields: { title: 'Outage' } })
+    applyTranslationProposal(form, PROSE, { sourceLocale: 'fr', targetLocale: 'en', fields: { title: 'Outage' } })
 
     expect(form.body).toBe('')
   })

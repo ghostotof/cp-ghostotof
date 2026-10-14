@@ -50,7 +50,7 @@ final class CpgUserRoleAdministratorTest extends TestCase
         $this->administrator($repository, $this->auditLoggerExpectingRoleChange($target, false))->setSuperAdmin($target->getId(), false, $actingUser);
 
         self::assertNotContains(CpgUser::ROLE_SUPER, $target->getRoles());
-        // ADR 0003 D1 : un compte invité a été accordé nominativement (son
+        // ADR 0003 D1 : un compte sur invitation a été accordé nominativement (son
         // e-mail dit à qui le CV est ouvert) — la rétrogradation le ramène à
         // son palier réel, ROLE_TRUSTED, jamais au palier de base.
         self::assertContains(CpgUser::ROLE_TRUSTED, $target->getRoles());

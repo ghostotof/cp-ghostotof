@@ -48,7 +48,7 @@ final class SendAccountInvitationMessageTest extends TestCase
         yield 'génération en chaîne' => [3, $userId.$locale.'s:20:"invitationGeneration";s:1:"1";'];
         yield 'génération flottante' => [3, $userId.$locale.'s:20:"invitationGeneration";d:1;'];
         yield 'génération booléenne' => [3, $userId.$locale.'s:20:"invitationGeneration";b:1;'];
-        // Un compte invité a une génération d'au moins 1 (markInvited() part
+        // Un compte sur invitation a une génération d'au moins 1 (markInvited() part
         // de 0) : 0 ou moins ne vient pas de CpgUserInviter.
         yield 'génération à zéro' => [3, $userId.$locale.'s:20:"invitationGeneration";i:0;'];
         yield 'génération négative' => [3, $userId.$locale.'s:20:"invitationGeneration";i:-1;'];

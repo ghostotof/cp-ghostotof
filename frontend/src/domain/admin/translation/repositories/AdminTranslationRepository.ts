@@ -1,5 +1,5 @@
 import type { Locale } from '../../../portfolio/entities/Locale'
-import type { TranslationDraft, TranslationFields } from '../entities/TranslationDraft'
+import type { TranslationProposal, TranslationFields } from '../entities/TranslationProposal'
 
 /**
  * Abstraction (DIP) de l'assistant de traduction du backoffice (spec 0002).
@@ -7,5 +7,5 @@ import type { TranslationDraft, TranslationFields } from '../entities/Translatio
  * recopie le reste.
  */
 export interface AdminTranslationRepository {
-  translate(sourceLocale: Locale, targetLocale: Locale, fields: TranslationFields): Promise<TranslationDraft>
+  translate(sourceLocale: Locale, targetLocale: Locale, fields: TranslationFields): Promise<TranslationProposal>
 }

@@ -54,7 +54,7 @@ No token at all ⇒ `incomplete` with **no network call**. `SetPasswordPage.spec
 `router/adminGuard.spec.ts` (the 404 on an old segment link) pin all of it.
 
 **Ordering and translation groups** (spec 0004, `v0.12.0`): every ordered admin page (Incidents,
-Contributions, Anonymous CV, Quality ×2, About site cards + one table per me-card category, Watch) is
+Contributions, CV sans identité, Quality ×2, About site cards + one table per me-card category, Watch) is
 wired on the same shared bricks, and a new page must reuse them rather than grow its own copy —
 they carry the security-neutral but a11y-critical behaviour (keyboard alternative, focus return,
 status announcement) that a fork would silently lose:
@@ -148,27 +148,27 @@ status announcement) that a fork would silently lose:
   make a text edit detach the card.
 
 **Translation assistant** (ADR 0004 phase 1, spec 0002): one more admin slice, `domain/admin/translation`
-(`TranslationDraft`, `AdminTranslationError` with reasons `validation|rate-limited|unavailable|unknown`)
+(`TranslationProposal`, `AdminTranslationError` with reasons `validation|rate-limited|unavailable|unknown`)
 → `infrastructure/admin/translation/HttpAdminTranslationRepository.ts` (`POST /api/backoffice/translations`)
-→ `application/admin/translation/useAdminTranslation.ts` (`translate()` returns the draft or `null` and
+→ `application/admin/translation/useAdminTranslation.ts` (`translate()` returns the proposal or `null` and
 exposes `errorReason`; **it never touches a form nor persists anything**, ADR 0004 D4) + the two helpers in
 `proseFields.ts` (`collectProseFields` drops blank fields, the API refuses them with a 422;
-`applyTranslationDraft` leaves a field absent from the draft untouched) → `presentation/ui/admin/
+`applyTranslationProposal` leaves a field absent from the proposal untouched) → `presentation/ui/admin/
 TranslateEntryButton.vue` (label follows the form's locale, `aria-busy` while calling, emits `translate`).
 **Each page alone decides which of its fields are prose** (spec D2 — the backend is content-agnostic) and
-what to do with the draft. Since spec 0004 every per-entry form (Incidents, Contributions, Anonymous CV,
+what to do with the proposal. Since spec 0004 every per-entry form (Incidents, Contributions, CV sans identité,
 Quality principles/traits, About site/me cards) behaves the same way: the form switches to *creation* in
 the target locale, the non-prose fields (`version`, `occurredAt`, `iconKey`…) are kept, **the source
 entry's `translationGroup` is kept too** (spec 0004 D9, `sourceGroup` — distinct from the selector's
-value, so a lone source still attaches its draft) so saving the proposed version links it with no
-extra gesture, and a `role="status"` banner names the draft's source locale. The old "page-locale"
+value, so a lone source still attaches its proposal) so saving the proposed version links it with no
+extra gesture, and a `role="status"` banner names the proposal's source locale. The old "page-locale"
 semantics is gone with the page-level selector (one locale per form, see above). About *settings* is
-the one singleton per locale, so its draft is **deferred**: parked in `pendingDraft`, applied on the
+the one singleton per locale, so its proposal is **deferred**: parked in `pendingProposal`, applied on the
 return of `load()` for the target locale (hence the `flush: 'sync'` watcher, or the copy from the server
-would overwrite it). The button is disabled while an order draft is dirty (a draft the locked form could
+would overwrite it). The button is disabled while an order draft is dirty (a proposal the locked form could
 not save would burn quota for nothing). Never use `v-html` on text coming back from the model: it goes
 through the form fields, then `RichText.vue`. The case-studies admin page (`/admin/case-studies`, issue #104,
-closed 2026-09-14) is wired exactly like the anonymous-CV one — every field is prose, so "Create the XX
+closed 2026-09-14) is wired exactly like the CV sans identité one — every field is prose, so "Create the XX
 version" copies nothing and the assistant sends all five fields.
 
 - `presentation/ui/{BaseTextInput,BaseTextarea,BaseNumberInput,BaseSelect}.vue` — the project's first reusable

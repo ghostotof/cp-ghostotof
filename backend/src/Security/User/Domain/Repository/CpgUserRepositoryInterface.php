@@ -42,7 +42,7 @@ interface CpgUserRepositoryInterface
      * "en attente depuis trop longtemps" se détermine en base, jamais par un
      * findAll() filtré en PHP. Round de correction (I2) : renommée depuis
      * findPendingActivationInvitedBefore() — le prédicat exige en plus un mot
-     * de passe vide, pour exclure un compte invité dont le mot de passe a été
+     * de passe vide, pour exclure un compte sur invitation dont le mot de passe a été
      * posé depuis le backoffice (CpgUserAdministrator::changePassword(), sans
      * jamais markActivated()) et qui se connecte donc déjà.
      *

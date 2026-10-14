@@ -3,11 +3,11 @@ import { computed, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAdminAboutSettings } from '../../../application/admin/about/useAdminAboutSettings'
 import { useAdminTranslation } from '../../../application/admin/translation/useAdminTranslation'
-import { applyTranslationDraft, collectProseFields } from '../../../application/admin/translation/proseFields'
+import { applyTranslationProposal, collectProseFields } from '../../../application/admin/translation/proseFields'
 import BaseTextInput from '../../ui/BaseTextInput.vue'
 import TranslateEntryButton from '../../ui/admin/TranslateEntryButton.vue'
 import type { Locale } from '../../../domain/portfolio/entities/Locale'
-import type { TranslationDraft } from '../../../domain/admin/translation/entities/TranslationDraft'
+import type { TranslationProposal } from '../../../domain/admin/translation/entities/TranslationProposal'
 
 /**
  * Les réglages sont le **seul** formulaire de la page à garder la langue de
@@ -35,15 +35,15 @@ const errorText = computed(() => (errorMessage.value ? t(`admin.about.errors.${e
 /**
  * Assistant de traduction (spec 0002). Les réglages sont un singleton par
  * locale : « proposer la version EN » signifie basculer la page en EN, dont
- * les réglages existants se rechargent et remplissent le formulaire — le
- * brouillon serait écrasé s'il était appliqué avant. Il est donc mis en
- * attente et posé sur le formulaire une fois la locale cible chargée ;
+ * les réglages existants se rechargent et remplissent le formulaire — la
+ * proposition serait écrasée si elle était appliquée avant. Elle est donc mise en
+ * attente et posée sur le formulaire une fois la locale cible chargée ;
  * Enregistrer met alors à jour les réglages de cette locale.
  */
 const { isTranslating, errorReason: translationErrorReason, translate } = useAdminTranslation()
 const PROSE_FIELDS = ['siteEyebrow', 'meEyebrow', 'technicalSubtitle', 'personalSubtitle', 'hobbiesSubtitle'] as const
-const pendingDraft = ref<TranslationDraft | null>(null)
-const draftSourceLocale = ref<Locale | null>(null)
+const pendingProposal = ref<TranslationProposal | null>(null)
+const proposalSourceLocale = ref<Locale | null>(null)
 const hasProseToTranslate = computed(() => PROSE_FIELDS.some((field) => '' !== form[field].trim()))
 const translationErrorText = computed(() =>
   translationErrorReason.value ? t(`admin.translation.errors.${translationErrorReason.value}`) : null,
@@ -51,7 +51,7 @@ const translationErrorText = computed(() =>
 
 // `flush: 'sync'` : le formulaire est rempli au moment même où les réglages
 // arrivent, et non au prochain tick — ainsi, au retour de load(), la copie a
-// déjà eu lieu et le brouillon en attente peut se poser par-dessus sans être
+// déjà eu lieu et la proposition en attente peut se poser par-dessus sans être
 // écrasé ensuite.
 watch(
   settings,
@@ -71,35 +71,35 @@ watch(
   () => props.locale,
   async (locale) => {
     await load(locale)
-    applyPendingDraft(locale)
+    applyPendingProposal(locale)
   },
   { immediate: true },
 )
 
-/** Pose le brouillon en attente si la locale qui vient d'être chargée est sa cible. */
-function applyPendingDraft(loadedLocale: Locale): void {
-  if (!pendingDraft.value || loadedLocale !== pendingDraft.value.targetLocale) {
+/** Pose la proposition en attente si la locale qui vient d'être chargée est sa cible. */
+function applyPendingProposal(loadedLocale: Locale): void {
+  if (!pendingProposal.value || loadedLocale !== pendingProposal.value.targetLocale) {
     return
   }
 
-  applyTranslationDraft(form, PROSE_FIELDS, pendingDraft.value)
-  draftSourceLocale.value = pendingDraft.value.sourceLocale
-  pendingDraft.value = null
+  applyTranslationProposal(form, PROSE_FIELDS, pendingProposal.value)
+  proposalSourceLocale.value = pendingProposal.value.sourceLocale
+  pendingProposal.value = null
 }
 
 async function handleTranslate(targetLocale: Locale): Promise<void> {
-  const draft = await translate(props.locale, targetLocale, collectProseFields(form, PROSE_FIELDS))
-  if (!draft) {
+  const proposal = await translate(props.locale, targetLocale, collectProseFields(form, PROSE_FIELDS))
+  if (!proposal) {
     return
   }
 
-  pendingDraft.value = draft
+  pendingProposal.value = proposal
   emit('switchLocale', targetLocale)
 }
 
 async function handleSubmit(): Promise<void> {
   isSubmitting.value = true
-  draftSourceLocale.value = null
+  proposalSourceLocale.value = null
   await save(props.locale, { ...form })
   isSubmitting.value = false
 }
@@ -171,11 +171,11 @@ async function handleSubmit(): Promise<void> {
       </div>
 
       <p
-        v-if="draftSourceLocale"
+        v-if="proposalSourceLocale"
         class="alert alert-info small"
         role="status"
       >
-        {{ t('admin.translation.draftNotice', { locale: draftSourceLocale.toUpperCase() }) }}
+        {{ t('admin.translation.proposalNotice', { locale: proposalSourceLocale.toUpperCase() }) }}
       </p>
 
       <p

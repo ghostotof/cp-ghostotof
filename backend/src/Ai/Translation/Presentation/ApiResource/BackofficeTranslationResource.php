@@ -17,7 +17,7 @@ use Symfony\Component\Validator\Context\ExecutionContextInterface;
  * ROLE_SUPER par la règle `^/api/backoffice(/|$)` de security.yaml — aucune
  * entrée d'allow-list dans ApiRouteExposureTest, et il ne doit jamais y en
  * avoir. Une seule opération, `status: 200` : rien n'est créé ni persisté, la
- * réponse est le même dictionnaire, traduit. Le brouillon obtenu n'entre en
+ * réponse est le même dictionnaire, traduit. La proposition obtenue n'entre en
  * base que si l'humain l'enregistre ensuite par le formulaire habituel (D4).
  *
  * Agnostique du contenu (D2) : le frontend choisit les champs de prose de

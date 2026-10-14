@@ -380,7 +380,7 @@ final class WatchRefresherTest extends TestCase
             static fn (): never => throw new LogicException('La base ne doit pas être interrogée sans périmètre.'),
         );
 
-        // Rien à écrire d'aucun côté : ni cycles de vie (aucun produit suivi),
+        // Rien à écrire d'aucun côté : ni cycles de vie (aucun produit surveillé),
         // ni vulnérabilités (aucun périmètre).
         $this->snapshotRepository->expects(self::never())->method('save');
 

@@ -51,7 +51,7 @@ export class StaticPortfolioContentRepository implements PortfolioContentReposit
       // groupe, le contenu du palier de base (ADR 0003 D5) vient en tête :
       // visible de tous dans le menu — le palier est une discrétion, pas un
       // secret (D1) — la page elle-même propose l'action qui débloque
-      // l'accès. Le CV complet (palier de confiance) reste un bouton d'action
+      // l'accès. Le CV nominatif (palier de confiance) reste un bouton d'action
       // de l'en-tête, pas un lien de « Parcours ».
       {
         label: nav.career,

@@ -72,7 +72,7 @@ final readonly class CpgUserRoleAdministrator implements CpgUserRoleAdministrato
      * ADR 0003 D1 (issue #78, pt 3). ROLE_SUPER englobe ROLE_TRUSTED via la
      * role_hierarchy, mais ROLE_TRUSTED ne s'accorde que nominativement : par
      * l'invitation, qui lie l'octroi à une adresse e-mail, donc à une personne.
-     * Un compte invité retrouve donc son palier réel à la rétrogradation — il
+     * Un compte sur invitation retrouve donc son palier réel à la rétrogradation — il
      * n'y a pas de perte de confiance implicite dans un acte administratif.
      * Un compte CLI, lui, n'a pas d'e-mail : personne ne l'a jamais accordé, et
      * la CLI refuse justement `--role ROLE_TRUSTED` (Task 12). Le promouvoir

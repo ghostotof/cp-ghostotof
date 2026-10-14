@@ -36,7 +36,7 @@ use Symfony\Contracts\HttpClient\Exception\ExceptionInterface as HttpClientExcep
  * (issue #269) : ProviderFailure, partagée avec l'assistant (issue #308).
  *
  * Journal sur le canal `ai_usage` (monolog.yaml), à niveau fixe en
- * production, comme l'assistant de parcours (issue #356) : en `info` sur le
+ * production, comme l'assistant de carrière (issue #356) : en `info` sur le
  * canal applicatif, l'usage ne sortait jamais d'un pod (LOG_LEVEL=warning).
  * Chaque ligne porte un `outcome` (`done`, `error`), le refus de quota
  * (`rate-limited`) étant écrit par SymfonyTranslationRateLimiter.

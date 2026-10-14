@@ -9,7 +9,7 @@ const route = useRoute()
 const { t } = useI18n()
 
 /**
- * Le CV complet se télécharge d'ici pour ROLE_SUPER, et non depuis l'en-tête
+ * Le CV nominatif se télécharge d'ici pour ROLE_SUPER, et non depuis l'en-tête
  * (AppHeader, qui garde le bouton pour les autres comptes de confiance) : la
  * barre de droite du super-admin était la seule à déborder entre 1200 et
  * 1399 px (mesure de l'issue #88), et le propriétaire du site n'a pas besoin
