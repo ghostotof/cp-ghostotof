@@ -123,6 +123,18 @@ expect "racine à 50 000 octets : succès" 0 "conformes" "$repo"
 printf 'b' >>"$repo/.claude/CLAUDE.md"
 expect "racine à 50 001 octets : échec" 1 "50001 octets, au-delà du plafond" "$repo"
 
+# --- Plafond d'une règle (#605) ---------------------------------------------------
+# Une règle trop longue est lue tronquée par l'outil Read : un invariant situé
+# après la coupure est ignoré sans que rien ne le signale.
+repo="$(new_repo plafond-regle)"
+rule="$repo/.claude/rules/longue.md"
+printf -- '---\npaths:\n  - "k8s/**"\n---\n' >"$rule"
+head -c "$((50000 - $(wc -c <"$rule")))" /dev/zero | tr '\0' 'a' >>"$rule"
+track "$repo"
+expect "règle à 50 000 octets : succès" 0 "conformes" "$repo"
+printf 'b' >>"$rule"
+expect "règle à 50 001 octets : échec" 1 ".claude/rules/longue.md : 50001 octets, au-delà du plafond" "$repo"
+
 # --- Erreur d'usage --------------------------------------------------------------
 mkdir -p "$TMP/pas-un-depot"
 expect "répertoire hors git : erreur d'usage" 2 "Pas un dépôt git" "$TMP/pas-un-depot"

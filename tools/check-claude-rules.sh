@@ -13,7 +13,9 @@
 #     ne charge plus jamais sa règle : l'invariant cesse de s'appliquer.
 #
 # S'y ajoute un plafond sur .claude/CLAUDE.md : sans lui, la racine
-# regrossit section après section, ce qui a mené à #346.
+# regrossit section après section, ce qui a mené à #346. Et un plafond sur
+# chaque règle (#605) : au-delà, l'outil Read la lit tronquée, et un
+# invariant situé après la coupure est ignoré sans que rien ne le signale.
 #
 # Les globs sont évalués par git lui-même (pathspec `:(glob)`, où `*` ne
 # traverse pas `/` et `**` traverse les répertoires), contre les fichiers
@@ -31,6 +33,12 @@ set -euo pipefail
 # Plafond de .claude/CLAUDE.md, en octets (#346 : 50 000, la racine en
 # faisait 35 193 après le découpage).
 readonly MAX_ROOT_BYTES=50000
+
+# Plafond d'une règle, en octets (#605). Read s'arrête à 25 000 jetons :
+# deploiement.md (88 141 octets) y était tronqué, backend-architecture.md
+# (55 109 octets) passait encore. 50 000 laisse une marge sous ce seuil, et
+# reprend la borne de la racine.
+readonly MAX_RULE_BYTES=50000
 
 root="${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 if ! git -C "$root" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
@@ -52,6 +60,12 @@ fi
 shopt -s nullglob
 for rule in "$root"/.claude/rules/*.md; do
   name=".claude/rules/$(basename "$rule")"
+
+  size="$(wc -c <"$rule")"
+  size="${size// /}"
+  if [ "$size" -gt "$MAX_RULE_BYTES" ]; then
+    problems+=("$name : $size octets, au-delà du plafond de $MAX_RULE_BYTES — la découper par sous-domaine, chaque morceau avec ses \`paths:\`")
+  fi
 
   # Les globs de `paths:`, un par ligne « - glob », guillemets retirés, lus
   # seulement dans un frontmatter qui ouvre le fichier et se referme.

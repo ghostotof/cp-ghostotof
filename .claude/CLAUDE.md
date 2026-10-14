@@ -15,7 +15,9 @@ This file only carries what applies everywhere, plus what runs from the shell (g
 - **Where a new invariant goes.** In the rule of its area, or in a new rule with its own `paths:`. This
   file only receives what is cross-cutting or shell-driven. `tools/check-claude-rules.sh` (run by
   `tools-tests`) fails on a rule without `paths:`, on a glob that matches no tracked file, and on this
-  file growing past 50 000 bytes.
+  file or a rule growing past 50 000 bytes (#605: past `Read`'s ceiling a rule is read truncated). A
+  rule that outgrows it is split by sub-domain, the original file keeping an index of where each part
+  went.
 
 | Rule (`.claude/rules/`) | Area | Read it before… |
 |---|---|---|
