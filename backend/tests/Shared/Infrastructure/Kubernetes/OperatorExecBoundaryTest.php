@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Shared\Infrastructure\Kubernetes;
 
 use App\Tests\Support\KubernetesManifests;
+use App\Tests\Support\Runbook;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -23,6 +24,14 @@ use PHPUnit\Framework\TestCase;
  * tunnel, et la commande du runbook reste une lecture, sur l'entrée standard.
  * Le jeton réellement émis est contrôlé à part, contre le cluster, par
  * tools/rotate-deployer-token.sh (`auth can-i create pods/exec` → no).
+ *
+ * Une seule exception écrite, issue #593 : la procédure des rôles PostgreSQL,
+ * qui écrit, passe par un `exec` sur le socket local du pod `postgres`, seul
+ * chemin du superutilisateur depuis que le `pg_hba.conf` du dépôt lui ferme le
+ * réseau. Elle tient en une ligne du bloc de sa section : ce test exempte ce
+ * bloc-là, et lui seul (une copie de la ligne ailleurs dans le runbook est
+ * jugée comme toute autre), et {@see PostgresRolesProcedureTest} en fige la
+ * ligne mot pour mot.
  */
 final class OperatorExecBoundaryTest extends TestCase
 {
@@ -48,7 +57,7 @@ final class OperatorExecBoundaryTest extends TestCase
      * et rien d'autre, sans mot de passe, joignable par le seul socket local du
      * pod. La lecture seule devient une frontière, là où
      * `default_transaction_read_only` sous le superutilisateur n'était qu'un
-     * garde-fou qu'un `SET` levait. Créé par `k8s/base/postgres-roles-job.yaml`.
+     * garde-fou qu'un `SET` levait. Créé par la procédure des rôles du runbook.
      */
     private const string READER_ROLE = 'cpg_reader';
 
@@ -153,7 +162,7 @@ final class OperatorExecBoundaryTest extends TestCase
     public function testEveryRunbookPsqlIsAReadOnlySessionInTheNamespaceGivenByTheOperator(): void
     {
         $calls = array_values(array_filter(
-            $this->runbookExecLines(),
+            Runbook::execLines(Runbook::repository()->withoutBashBlockAfter(Runbook::ROLES_PROCEDURE)->text()),
             static fn (string $line): bool => 1 === preg_match('/\bpsql\b/', $line),
         ));
         self::assertGreaterThanOrEqual(4, \count($calls), 'Le runbook a perdu un de ses psql en lecture : relire ce test.');
@@ -172,6 +181,32 @@ final class OperatorExecBoundaryTest extends TestCase
     }
 
     /**
+     * L'exception de #593 ne s'étend pas : sa section ne porte qu'un `exec`, et
+     * c'est un `psql`. Une deuxième commande écrite là échapperait au contrôle
+     * des lectures ci-dessus.
+     */
+    public function testTheRolesProcedureIsTheOnlyExemptedExec(): void
+    {
+        $roles = Runbook::execLines(Runbook::repository()->bashBlockAfter(Runbook::ROLES_PROCEDURE));
+
+        self::assertCount(1, $roles, 'La section des rôles ne porte qu\'un exec.');
+        self::assertMatchesRegularExpression('/\bpsql\b/', $roles[0]);
+    }
+
+    /**
+     * Les autres façons d'entrer dans le pod `postgres` atteignent le socket
+     * ou le loopback, où le pg_hba.conf fait confiance (relecture de #593) :
+     * aucun `kubectl debug`, `attach` ni `port-forward` vers lui dans le
+     * runbook. Un `exec` y reste jugé par les tests ci-dessus.
+     */
+    public function testNoRunbookCommandDebugsAttachesOrForwardsToPostgres(): void
+    {
+        $joined = Runbook::joined(Runbook::repository()->text());
+
+        self::assertDoesNotMatchRegularExpression('/\bkubectl\b[^\n]*\b(debug|attach|port-forward)\b[^\n]*\b(postgres|database)\b/', $joined);
+    }
+
+    /**
      * Issue #521 : rejouer, supprimer un message de `failed` ou relancer le
      * signal d'arrêt des workers a un effet de bord, donc passe par un Job
      * (`k8s/base/messenger-*-job.yaml`). Un `kubectl exec` du runbook qui lance
@@ -182,7 +217,7 @@ final class OperatorExecBoundaryTest extends TestCase
     public function testNoRunbookExecRunsAConsoleCommandOtherThanTheFailedRead(): void
     {
         $offending = [];
-        foreach ($this->runbookExecLines() as $line) {
+        foreach (Runbook::execLines(Runbook::repository()->text()) as $line) {
             preg_match_all('#bin/console\s+(\S+)#', $line, $commands);
             foreach ($commands[1] as $command) {
                 if (self::READ_ONLY_CONSOLE_COMMAND !== $command) {
@@ -207,11 +242,11 @@ final class OperatorExecBoundaryTest extends TestCase
      */
     public function testTheFailedTransportIsReadOnlyThroughAReadOnlySession(): void
     {
-        $block = $this->bashBlockAfter(self::FAILED_READ_SECTION);
+        $block = Runbook::repository()->bashBlockAfter(self::FAILED_READ_SECTION);
         self::assertMatchesRegularExpression('/^NS= /m', $block);
 
         $calls = array_values(array_filter(
-            $this->execLines($block),
+            Runbook::execLines($block),
             static fn (string $line): bool => str_contains($line, 'bin/console'),
         ));
         self::assertNotEmpty($calls, 'La section « lire failed » n\'a plus de commande.');
@@ -228,53 +263,7 @@ final class OperatorExecBoundaryTest extends TestCase
      */
     private function lookupCommand(): string
     {
-        return $this->bashBlockAfter(self::LOOKUP_SECTION);
-    }
-
-    private function bashBlockAfter(string $section): string
-    {
-        $readme = $this->readme();
-        $start = strpos($readme, $section);
-        self::assertIsInt($start, \sprintf('La section « %s » a disparu du runbook.', $section));
-
-        self::assertSame(1, preg_match('/```bash\n(.*?)```/s', substr($readme, $start), $block));
-
-        return $block[1];
-    }
-
-    /**
-     * Les commandes `kubectl … exec` de tout le runbook.
-     *
-     * @return list<string>
-     */
-    private function runbookExecLines(): array
-    {
-        return $this->execLines($this->readme());
-    }
-
-    /**
-     * Les lignes d'un texte qui ouvrent un `kubectl exec`, continuations
-     * (`\` en fin de ligne) rejointes.
-     *
-     * @return list<string>
-     */
-    private function execLines(string $text): array
-    {
-        $joined = preg_replace('/\\\\\n\s*/', ' ', $text);
-        self::assertIsString($joined);
-
-        return array_values(array_filter(
-            explode("\n", $joined),
-            static fn (string $line): bool => 1 === preg_match('/\bkubectl\b.*\bexec\b/', $line),
-        ));
-    }
-
-    /**
-     * Le runbook, à côté de la base.
-     */
-    private function readme(): string
-    {
-        return (string) file_get_contents(\dirname(KubernetesManifests::base()->directory()).'/README.md');
+        return Runbook::repository()->bashBlockAfter(self::LOOKUP_SECTION);
     }
 
     /**

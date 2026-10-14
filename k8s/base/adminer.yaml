@@ -41,8 +41,9 @@ spec:
           env:
             # Pré-remplit le champ "Serveur" du formulaire de connexion ;
             # les identifiants restent saisis à la main à chaque session,
-            # jamais injectés dans le pod (cf. secret postgres-credentials,
-            # à consulter via `kubectl get secret postgres-credentials -o yaml`).
+            # jamais injectés dans le pod. Seuls cpg_app et cpg_migrator
+            # passent : le pg_hba.conf du dépôt refuse au superutilisateur
+            # tout accès réseau, Adminer compris (issue #593, k8s/README.md).
             - name: ADMINER_DEFAULT_SERVER
               value: database
           volumeMounts:

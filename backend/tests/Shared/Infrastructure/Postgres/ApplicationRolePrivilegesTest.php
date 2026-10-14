@@ -20,8 +20,8 @@ use Symfony\Component\Uid\Uuid;
  * (`cpg_app`, DML seulement), les migrations sous le propriétaire
  * (`cpg_migrator`), et les `psql` humains du runbook sous un lecteur
  * (`cpg_reader`). Les privilèges sont écrits une fois, dans
- * `k8s/base/postgres-roles/privileges.sql`, joué par le Job
- * `postgres-roles-job.yaml` ; ce test rejoue **ce même fichier** sur le schéma
+ * `k8s/base/postgres-roles/privileges.sql`, joué par la procédure « Rôles
+ * PostgreSQL » de `k8s/README.md` ; ce test rejoue **ce même fichier** sur le schéma
  * réel de la base de test, avec des rôles jetables, pour que le CI attrape
  * avant la release ce qui ne se verrait sinon qu'en 500 sur un pod :
  *

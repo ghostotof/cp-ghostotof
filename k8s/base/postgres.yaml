@@ -65,6 +65,14 @@ spec:
             - tcp_keepalives_count=3
             - -c
             - tcp_user_timeout=90000
+            # Issue #593 : le pg_hba.conf du dépôt (postgres-pg_hba.conf), pas
+            # celui que l'image écrit dans PGDATA — le superutilisateur
+            # bootstrap n'est plus joignable par le réseau. Hors de PGDATA,
+            # donc valable sur un PVC déjà initialisé ; l'entrypoint passe
+            # aussi ces args au serveur temporaire de l'initialisation, qui
+            # n'écoute que le socket local (`trust`). PostgresHbaTest.
+            - -c
+            - hba_file=/etc/postgresql/pg_hba.conf
           ports:
             - containerPort: 5432
           envFrom:
@@ -83,6 +91,12 @@ spec:
             # volume pointe directement sur .../data.
             - name: data
               mountPath: /var/lib/postgresql
+            # Un fichier, par subPath : /etc/postgresql garde le reste de
+            # l'image. Lisible par l'uid 70 (ConfigMap en 0644 par défaut).
+            - name: hba
+              mountPath: /etc/postgresql/pg_hba.conf
+              subPath: pg_hba.conf
+              readOnly: true
           resources:
             requests:
               cpu: 100m
@@ -104,6 +118,10 @@ spec:
         - name: data
           persistentVolumeClaim:
             claimName: postgres-data
+        # Nom réécrit par kustomize avec le hachage du contenu (configMapGenerator).
+        - name: hba
+          configMap:
+            name: postgres-hba
 ---
 apiVersion: v1
 kind: Service
