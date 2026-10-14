@@ -330,7 +330,7 @@ paths:
   mounts a missing source as an empty directory, where `sh` exits 0 — measured). **In preprod only
   the passing direction is measured**, at every deploy (decided 2026-10-14: reopening the superuser
   there to see the probe fail was not worth it). Preprod only, like every smoke: in prod the
-  runbook's command stays the release's check. Narrowing the network rule to the application's database and the pod range is issue #597.
+  runbook's command stays the release's check. **The network rule's address stays `all`, measured** (issue #597, preprod, 2026-10-14): a pod arrives with its own pod address (no NAT), but the node hosting `postgres` arrives with its `cilium_host` address, **inside the pod range** too — indistinguishable from a pod, and drawn anew when Kapsule replaces the node —, while another node or namespace never reaches the server (`allow-datastores` NetworkPolicy, timeout measured). A pod range in `pg_hba` would refuse nothing that can connect; don't add one without measuring again (the measure: a fictitious role from `kubectl debug node/…`, refused by the last `reject`, which quotes the address it saw).
   **Dev and CI keep the image's file** (single superuser role, on purpose, see above).
 - **Doctrine migrations run as a Job, not `kubectl exec`** (audit C8). `k8s/base/migrate-job.yaml` is
   deliberately **outside** `kustomization.yaml`'s `resources:` — so kustomize's image transformer never sees
