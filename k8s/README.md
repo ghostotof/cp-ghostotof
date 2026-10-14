@@ -1079,8 +1079,9 @@ valeurs), puis `#611 : vérification` sans rien de plus — le schéma de la
 base est exactement celui que ses migrations laissent (son empreinte, admise
 pour la dernière migration passée et leur nombre) —, puis `conforme` et `COMMIT`.
 Un refus `#611` ne se répare pas par la procédure, qui échoue tant que l'écart
-existe : la requête qui suit nomme les objets en cause. Un écart `#608`, si
-(issue #610 ; ci-dessous). Un `#611 : aucune empreinte de schéma
+existe : la requête qui suit nomme les objets en cause. Un écart `#608`, lui,
+n'arrive plus jusqu'au refus : `roles.sql` le répare avant `verify.sql`
+(issue #610, « Un avis `NOTICE: #610` » ci-dessous). Un `#611 : aucune empreinte de schéma
 connue pour ces migrations` n'est pas une altération : le checkout est en
 retard sur l'environnement (`verify.sql` garde les empreintes de toutes les
 migrations), le mettre à jour et relancer — ou la base est antérieure aux
@@ -1106,18 +1107,23 @@ de l'application altérée et l'a remise en l'état que le bloc `#608` de
 `verify.sql` attend, dans la même transaction — réglages de base (le fuseau
 seul, à la valeur de `Version20261011120000`, et seulement une fois elle
 passée), réglages `ALTER ROLE … IN DATABASE … SET` de tout rôle, `CONNECT`
-rendu à `PUBLIC`, limite de connexions et marque de modèle retirées. Il nomme
+rendu à `PUBLIC` si l'un des trois rôles ne l'a plus, limite de connexions et
+marque de modèle retirées. Il nomme
 les réglages trouvés et compte les rôles, jamais une valeur ni un nom de rôle.
 Sur une base saine, aucun avis. La réparation n'est validée qu'avec le reste,
 après `conforme` : un refus plus loin l'annule elle aussi. Un avis n'est
 **jamais anodin** : personne n'altère la base par le chemin normal. Seuls
 peuvent avoir fait le geste le propriétaire (`cpg_migrator`, c'est-à-dire le
-Job de migration ou qui détient son URL), un rôle sur lui-même (une injection
-SQL sous `cpg_app`) ou le superutilisateur. Donc, après le `COMMIT` :
+Job de migration ou qui détient son URL), un rôle sur lui-même — une
+injection SQL sous `cpg_app`, ou `cpg_reader`, joignable sans mot de passe
+depuis l'intérieur du pod `postgres` (un `exec`, un `port-forward`, un
+`kubectl debug`) — ou le superutilisateur. Donc, après le `COMMIT` :
 
-1. noter l'heure et les avis, puis traiter l'événement comme un incident de
-   sécurité : relire les journaux de `backend`, du `worker` et du dernier Job
-   de migration autour du moment probable, et le journal de sécurité ;
+1. noter l'heure, les avis et la lecture ci-dessous si elle a été faite,
+   puis traiter l'événement comme un incident de sécurité : relire les
+   journaux de `backend`, du `worker` et du dernier Job de migration autour
+   du moment probable, le journal de sécurité, et l'audit de l'API server
+   (`exec`, `port-forward`, `debug` sur le pod `postgres`) ;
 2. si le geste peut venir d'une URL de base de données divulguée, rejouer la
    procédure avec `ROTATE=1` et republier les deux URL (§ ci-dessus) ;
 3. les sessions déjà ouvertes gardent les réglages lus à leur connexion. FPM
@@ -1128,6 +1134,42 @@ SQL sous `cpg_app`) ou le superutilisateur. Donc, après le `COMMIT` :
 Un refus `#608` **après** des avis `#610`, ou sans eux, est un défaut de la
 réparation, pas un état à corriger à la main (un `exec` qui écrit hors de la
 procédure est interdit, #520) : ouvrir une issue avec le message du refus.
+
+**La réparation efface ce qu'elle répare** : les avis ne citent ni les
+valeurs ni les rôles, choisis par qui a fait le geste. Pour garder la preuve,
+lancer **avant l'étape 2** cette lecture, sans rien écrire, sous le lecteur ;
+sa sortie reste sur le terminal, jamais dans une session d'agent (des
+valeurs choisies par un tiers). Sur une base saine, une ligne `(base)` qui ne
+porte que le fuseau (aucune avant `Version20261011120000`), puis `-1 | f`.
+Toute autre ligne est l'écart que l'étape 2 effacera. Un réglage de base
+`role`, une limite de connexions ou un `CONNECT` retiré peut refuser la
+connexion du lecteur (le superutilisateur de la procédure n'y est pas
+soumis) : le message d'erreur est alors la preuve (mesuré : `too many
+connections for database` sous `CONNECTION LIMIT 0`).
+
+```bash
+NS=        # preprod ou prod, à renseigner : vide, la commande s'arrête avant d'appeler le cluster
+kubectl -n "${NS:?preprod ou prod}" exec -i deploy/postgres -c postgres -- \
+  sh -c 'PGOPTIONS="-c default_transaction_read_only=on -c lock_timeout=5s" psql -X -A -v ON_ERROR_STOP=1 -U cpg_reader -d "$POSTGRES_DB"' <<'SQL'
+SET statement_timeout = 0;
+SET search_path = pg_catalog, pg_temp;
+SELECT coalesce(nullif(s.setrole, 0)::regrole::text, '(base)') AS role, s.setconfig AS reglages
+FROM pg_db_role_setting s JOIN pg_database d ON d.oid = s.setdatabase
+WHERE d.datname = current_database() ORDER BY 1;
+SELECT datconnlimit AS limite_de_connexions, datistemplate AS modele, datacl AS privileges
+FROM pg_database WHERE datname = current_database();
+SQL
+```
+
+**Une erreur levée dans `pg_temp.cpg_migrations()`** (le contexte de
+l'erreur la nomme ; revue de #610) : `roles.sql` lit la table des
+migrations dans cette fonction, sous `cpg_migrator`, propriétaire de la
+table — jamais sous le superutilisateur, puisque lire la table exécute ce
+que son propriétaire y a posé. Une erreur là, un `cannot set parameter
+"role" within security-definer function` par exemple, veut dire que la table
+n'est plus celle des migrations (une vue, un type à sa place) : c'est un
+incident, conduit comme un avis `#610` ; la requête du refus `#611`
+ci-dessous nomme l'objet.
 
 **Lire la ligne `mot_de_passe_cpg_app_ecrit | mot_de_passe_cpg_migrator_ecrit`**
 avant de publier quoi que ce soit : `t` pour un rôle créé ou une rotation,
