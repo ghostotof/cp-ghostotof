@@ -13,13 +13,13 @@ paths:
 **Nor a me-card group across two categories** (issue #501). Me-cards are ordered per category, and the
 members of a group share theirs: the application guarantees it (no category setter on `AboutMeCard`,
 `AboutMeCardAdministrator::membersInCategory()` reads a group within the category, the seed groups per
-category), the database did not — the #390 trigger compared positions across categories and did not
-listen to `category`, so an EN version inserted in SQL into another category at the same position, or
-an `UPDATE` of `category` alone, went through. Such a group got two ranks, one per category (FR and EN
-ranked differently on the public page); « Détacher » saw only the entry and did nothing (`detach()` is
-a no-op on an entry alone in its category); and a `reorder()` of either category was refused only
-when it moved the stray member, under the misleading name of the positions. Migration
-`Version20261012160000` keeps **one function and one trigger name**: the function reads its table's
+category); the database must too. The #390 trigger alone compares positions across categories and does
+not listen to `category`, so an EN version inserted in SQL into another category at the same position, or
+an `UPDATE` of `category` alone, goes through it. Such a group gets two ranks, one per category (FR and EN
+ranked differently on the public page); « Détacher » limited to the category sees only the entry and does
+nothing (`detach()` is a no-op on an entry alone in its category); and a `reorder()` of either category is
+refused only when it moves the stray member, under the misleading name of the positions. Migration
+`Version20261012160000` keeps that trigger's **one function and one trigger name**: the function reads its table's
 scope column from `TG_ARGV[0]` (none for the seven single-scope tables, untouched), one query returns
 `MIN`/`MAX` of the positions and the number of distinct scopes (the list of scopes, for the message, is
 read only on a refusal), and the scope check runs **before**
@@ -28,7 +28,7 @@ consequence — raising SQLSTATE **`23T91`**, which `TranslationGroupRefusal` na
 `TranslationGroupAcrossSeveralScopesException` when the scope lock's COMMIT gets it (`Domain/Exception`, a
 `LogicException`, `refusedAtCommit()`, unmapped: a `critical` 500, a pipeline defect, like the
 positions' one; both SQLSTATEs map in one `match` of `TranslationGroupRefusal::nameOf()`, the lock's
-`onCommitRefused` since #506). No common parent to the two exceptions (#506): nothing catches them
+`onCommitRefused`, #506). No common parent to the two exceptions (#506): nothing catches them
 together, the positions' one also comes from `ContentPlacement::inGroup()` before any write, and the
 shared one-line factory is not worth a type. On `about_me_card` the trigger is recreated `AFTER INSERT OR UPDATE OF
 position, translation_group, category … EXECUTE FUNCTION portfolio_translation_group_single_position('category')`.
@@ -37,47 +37,48 @@ limit as the positions: two concurrent SQL transactions that skip the scope lock
 in another category without seeing the other's, and both commit. Rejected: a
 second function or trigger (two reads of the group per row at COMMIT, two names for `SET CONSTRAINTS`);
 a check in `reorder()` alone (sees only what goes through it, late, SQL writes still unseen); doing
-nothing (the misleading 500 and the two ranks stayed). **Groups already spread are not corrected** (no
+nothing (the misleading 500 and the two ranks would stay). **Groups already spread are not corrected** (no
 category is surely the right one): the migration reports each again as a `warning` with its categories,
-and any write that touches one (insertion, a member's position, group or category) is now refused —
+and any write that touches one (insertion, a member's position, group or category) is refused —
 a `DELETE` does not wake the trigger. The fix is in the backoffice: **delete the stray entry, then
 recreate its version in the right category**, or **« Détacher » it** (issue #561, below).
-**The application refuses such a group by name, before any write** (issue #561). The backoffice
-still offered to write into it: « Créer la version EN » in the category where EN was missing, and the
-« Version de » selector (which lists the form's category only) on a `PUT`, both saw the group filtered by
-category, let `inGroup()` accept a locale the group already carried elsewhere, and ended on the unique
-`(translation_group, locale)` index — a raw 500 that closed the EntityManager; a `reorder()` wrote, then
-was refused at the COMMIT (`23T91`), and only when it moved the stray member. Now
-`AboutMeCardAdministrator` throws `TranslationGroupAcrossSeveralScopesException::forGroup()` (same
+**The application refuses such a group by name, before any write** (issue #561). Otherwise « Créer la
+version EN » in the category where EN is missing, and the « Version de » selector (which lists the
+form's category only) on a `PUT`, would see the group filtered by category, let `inGroup()` accept a
+locale the group already carries elsewhere, and end on the unique `(translation_group, locale)` index —
+a raw 500 that closes the EntityManager; a `reorder()` would write, then be refused at the COMMIT
+(`23T91`) — and only when it moves the stray member, the database letting through one that leaves it in
+place. `AboutMeCardAdministrator` throws `TranslationGroupAcrossSeveralScopesException::forGroup()` (same
 `critical` 500, the group, its categories and the fix in the message, nothing written, the manager left
 open): on a creation or an attachment, `membersInCategory()` reads the group across categories (the
-same query as before, no extra cost) and refuses a group with members both in the category and outside
+same query, widened: no extra cost) and refuses a group with members both in the category and outside
 it — a group wholly in another category stays the 422 `unknown-translation-group`; on a `reorder()`,
 `refuseGroupsSpreadOutsideOf()` refuses **any** reorder of a category holding such a group, whatever the
 order asked (it depends on the state only), through `findInOtherCategoriesSharingAGroupWith()` — one
-query under the lock, empty on a sound database — so a reorder that would have left the stray member in
-place, accepted before, is refused too: the group must be repaired first. Two writes are **not**
+query under the lock, empty on a sound database — so a reorder that would leave the stray member in
+place is refused too: the group must be repaired first. Two writes are **not**
 refused, on purpose: a `PUT` sending the card's **own** group (what the frontend sends on a text edit of
 a member, `hasSibling()` looking across categories) is a no-op the administrator tests before reading
 anything, so the cards to be corrected stay editable; and « Détacher » (`translationGroup: null`) reads
 the card's group across categories, so on a spread member it **really detaches** (a new group, the end of
 its category, #169) — the trigger checks only the new group, alone, and the old one keeps its other
-member: a second fix, where it used to be a silent no-op. Either fix repairs the **group**, not the
+member: a second fix. Either fix repairs the **group**, not the
 other category's numbering: the member left there keeps the position it was given in the first one,
-which may already be another key's (it was before the fix too); a reorder of that category, accepted
+which may already be another key's (a collision the fix does not introduce: leave `detach()` alone); a
+reorder of that category, accepted
 again once no spread group remains, renumbers it. **Order of the guards** on an ordered write,
 each before any write: a group across categories (`AboutMeCardAdministrator`, me-cards only, the only
 per-scope table — kept out of the Shared services, which only see their scope), then a group on
 several positions (`ContentPlacement::inGroup()` on a placement; `OrderAssigner::assign()` on a
-`reorder()`, since #503), then the client's errors (the 409 `translation-already-exists`,
+`reorder()`, #503), then the client's errors (the 409 `translation-already-exists`,
 `OrderAssigner`'s 422s of the exact-set rule), then the trigger at COMMIT for what bypasses the application — the cause before its
 consequence, as in the trigger, and a pipeline defect before a client error, as in #384.
 **Two client errors come first, on purpose, both read from the body alone: a `PUT` carrying another
 locale (issue #582, end of this paragraph), then one carrying another category** (issue #578). A card
-never changes category (no setter, see #501 above); the `PUT` validated `category`, ignored it and
-answered 200 — and the form of the time, whose category change emptied « Version de », sent
-`translationGroup: null` with it, so the card was silently detached and sent to the end of its
-category. `AboutMeCardAdministrator::update()` now receives the category and throws
+never changes category (no setter, see #501 above); a `PUT` that validated `category` and ignored it
+would answer 200 — and a form whose category change empties « Version de » would send
+`translationGroup: null` with it, so the card would be silently detached and sent to the end of its
+category. `AboutMeCardAdministrator::update()` receives the category and throws
 `AboutMeCardCategoryIsImmutableException` (`About/Domain/Exception`, 409, `type`
 `me-card-category-immutable`, `log_level: info`, modelled on the watch slug's
 `WatchedProductSlugIsImmutableException`) right after re-reading the card under the lock, before any
@@ -86,9 +87,9 @@ spread-group refusal. That does not contradict #384: #384 forbids a client error
 the corrupt state from hiding it, while this one depends on the request body alone; a spread group is
 still refused under its name by the next valid request. The frontend disables the field in edit
 (`.claude/rules/frontend-backoffice.md`). **The locale, on the eight contexts** (issue #582): an entry
-never changes language — it is its group's version in that language, unique there —, and the `PUT`
-validated `locale`, ignored it and answered 200 since #170 R2 (which had only disabled the field in the
-form). Every `<X>Administrator::update()` now receives the locale and throws
+never changes language — it is its group's version in that language, unique there —, and disabling
+the field in the form (#170 R2) does not stop a `PUT` from sending another one. Every
+`<X>Administrator::update()` receives the locale and throws
 `TranslatableContentLocaleIsImmutableException` (`Portfolio/Shared/Domain/Exception`, **one** exception
 for the eight, like `TranslationAlreadyExistsException`: one rule, one `type` a client keys on —
 `locale-immutable`, 409, `log_level: info`, a literal message) right after re-reading the entry under the
@@ -102,16 +103,15 @@ body carrying it, the same locale included: a contract break for every client). 
 `tests/Portfolio/Shared/Application/LocaleIsImmutableOnUpdateTest` over `ProvidesLocalizedAdministrators`
 (whose `update` takes an optional locale, the entry's by default — a new context is covered there once:
 refused under the name, the row unchanged, the manager open, and before the 409
-`translation-already-exists`) and by each `Backoffice<X>ResourceTest` (the typed 409, red before with a 200).
+`translation-already-exists`) and by each `Backoffice<X>ResourceTest` (the typed 409).
 `AboutMeCardAdministratorTest` pins each path with mocks (no `save()`, nothing changed in memory before
 the refusal, the text edit that reads nothing, the real detachment, the reorder refused before an
 unknown key's 422, the category refusal before any read and before the spread-group one, #578);
-`BackofficeAboutMeCardResourceTest` the 409 on a card with a translation (the old form's body: red
-before with a 200 and the card detached), on a lone card, and with a group of the requested category (the
+`BackofficeAboutMeCardResourceTest` the 409 on a card with a translation (the body of a form changing
+the category), on a lone card, and with a group of the requested category (the
 guard order at the HTTP layer: a 422 `unknown-translation-group` before); `AboutMeCardGroupSpreadOverTwoCategoriesTest` on the real database (creation,
 attachment and a reorder moving the stray member refused under the name with no `previous` and the
-manager open — red before with the unique violation and the COMMIT refusal —, a reorder leaving it in
-place refused too — accepted before —, detachment accepted at the COMMIT) and `AboutMeCardRepositoryTest` the
+manager open, a reorder leaving it in place refused too, detachment accepted at the COMMIT) and `AboutMeCardRepositoryTest` the
 strays query. Both commit the spread group through `tests/Portfolio/About/Support/CommitsSpreadMeCardGroup`:
 the administrator refuses an open transaction (#526), so a rolled-back one is not an option; it disables
 the trigger, inserts and re-enables it **in one committed transaction** (PostgreSQL's DDL is
@@ -128,14 +128,15 @@ migration); `PostgresAdvisoryOrderScopeLockTest` the name on the application pat
 `Shared/Application/OrderScopeLockInterface::withLock(ORDER_SCOPE, …)`, `ORDER_SCOPE` being the entity
 class (`<Entity>::class`, never a table name, which the Application layer has no business knowing; the
 whole table for `AboutMeCard` too, wider than its per-category ordering scope, on purpose). Without it a "Create
-the XX version" landing between a `reorder()`'s read and its save kept the old position (a group on two
-positions, invisible to the exact-set rule), and two simultaneous creations without a group got the same
-`atEndOf()`. `delete()` and the watch catalogue's `update()` place nothing, and are locked since #499 for
-another reason: outside the lock, a deletion committed between an operation's re-read (below) and its
-`flush()` left a `PUT`'s `UPDATE` touching no row, answered with a 200 on a vanished entry — and the
-watch `update()`, with neither lock nor re-read, "updated" a product deleted since its loading.
+the XX version" landing between a `reorder()`'s read and its save would keep the old position (a group on
+two positions, invisible to the exact-set rule), and two simultaneous creations without a group would get
+the same `atEndOf()`. `delete()` and the watch catalogue's `update()` place nothing, and are locked for
+another reason (#499): outside the lock, a deletion committed between an operation's re-read (below) and
+its `flush()` would leave a `PUT`'s `UPDATE` touching no row, answered with a 200 on a vanished entry —
+and the watch `update()`, with neither lock nor re-read, would "update" a product deleted since its
+loading.
 The adapter, `Shared/Infrastructure/Doctrine/PostgresAdvisoryOrderScopeLock`, runs the body
-in a transaction it opens and closes by hand (not `Connection::transactional()`, since issue #390, see
+in a transaction it opens and closes by hand (not `Connection::transactional()`, issue #390, see
 `.claude/rules/portfolio-ordre.md`) whose first statement is `pg_advisory_xact_lock(ORDR, hashtext(scope))`,
 released by the COMMIT/ROLLBACK itself. Three choices not to undo: a **scope** lock, never `SELECT … FOR
 UPDATE` (a blocked one does not see rows the other transaction inserted, and locks nothing on an empty
@@ -149,8 +150,8 @@ chaining operations such as a seed — is refreshed in place (same object, which
 and an instance the query no longer returns (deleted meanwhile) is detached, so `find()` reports it not found.
 **That detached instance is never saved again** (issue #548): `UnitOfWork::doPersist()` takes an instance it
 does not manage for **new** — it assumes `STATE_NEW` and reads nothing — so a caller still holding it and
-calling `<Repository>::save()` re-inserted the deleted entry, no error, no trace (measured before the fix on
-the eight localized contexts, the watch catalogue and the technologies). The adapter re-reads and detaches
+calling `<Repository>::save()` re-inserts the deleted entry without the guard, no error, no trace (measured
+on the eight localized contexts, the watch catalogue and the technologies). The adapter re-reads and detaches
 through `Shared/Infrastructure/Doctrine/RereadUnderLock::everyManagedInstanceOf()` (issue #560, the one
 re-read under a lock shared by every lock that re-reads, see `.claude/rules/backend-architecture.md`), which
 calls `VanishedEntities::detachVanished()`; that one remembers the instance in a
@@ -158,8 +159,8 @@ calls `VanishedEntities::detachVanished()`; that one remembers the instance in a
 for new, exactly the re-insertion path — refuses it with `VanishedEntitySavedAgainException` (a
 `LogicException`, unmapped, a `critical` 500: a caller's defect), before anything is scheduled. No false
 positive: the map holds objects, not ids nor classes, and only an object passed to `detachVanished()` is in
-it. No caller did it (the `Administrator`s re-find their entry under the lock and only receive ids, processors
-call no repository, seeds re-save nothing): the guard makes the rule hold by construction, as #526 did,
+it. No caller does it today (the `Administrator`s re-find their entry under the lock and only receive ids, processors
+call no repository, seeds re-save nothing): the guard makes the rule hold by construction, like #526's,
 instead of relying on the next caller. Every lock that detaches a vanished row goes through
 `RereadUnderLock`, the only caller of `detachVanished()`, never `detach()` — the technology row lock too (#545,
 `.claude/rules/portfolio-contenus.md`), the account administration lock (#551) and the account row lock (#560, `.claude/rules/security-user.md`);
@@ -171,10 +172,10 @@ no row; it would need the same registry in every repository); removing instead o
 reopening #402). **Not covered, accepted**: an instance detached otherwise — `close()` (#502, #547, #549) or
 `clear()` — is not remembered; on the same closed manager its `persist()` already fails with
 `EntityManagerClosed`, only a reset manager would take it, and no worker writes an entity a lock detaches.
-**An instance this same manager removed and flushed is covered since #557**: `UnitOfWork::executeDeletions()`
-wipes its state after the `DELETE` but leaves the UUID the constructor assigned, so Doctrine took it for new too
-and a re-save re-inserted the row at the same id (measured before the fix on the eight localized contexts, the
-watch catalogue and the technologies, through each `Administrator::delete()`). A second listener on
+**An instance this same manager removed and flushed is covered too** (#557): `UnitOfWork::executeDeletions()`
+wipes its state after the `DELETE` but leaves the UUID the constructor assigned, so Doctrine takes it for new too
+and a re-save re-inserts the row at the same id without the guard (measured on the eight localized contexts,
+the watch catalogue and the technologies, through each `Administrator::delete()`). A second listener on
 `postRemove` — emitted at the end of the flush's deletions, before the COMMIT — remembers the instance in the
 same `WeakMap`, which keeps the **cause** (`VanishedEntityCause`: vanished under a lock / removed by this
 manager) so the refusal names it (`VanishedEntitySavedAgainException::vanishedUnderLock()` /
@@ -189,8 +190,8 @@ the database refused the COMMIT, #547/#549), but not on a COMMIT DBAL itself ref
 nor in a transaction opened and rolled back by hand: there, without the guard, the `INSERT` would hit the
 primary key at the flush; the guard refuses it first, under a message that still thinks the row deleted; an entity with a **generated** id would
 be refused wrongly (`executeDeletions()` nulls its id, its re-persist is a new `INSERT`) — none has one, revisit
-the day one does. **A DQL deletion by id is covered since #569**: it emits no `postRemove` and left the
-instance **managed**, so a change then a `save()` sent an `UPDATE` touching no row, lost in silence (Doctrine
+the day one does. **A DQL deletion by id is covered too** (#569): it emits no `postRemove` and leaves the
+instance **managed**, so a change then a `save()` would send an `UPDATE` touching no row, lost in silence (Doctrine
 counts affected rows only for a versioned entity). The two such deletions,
 `PasswordSetupTokenRepository::remove()` and `CpgUserRepository::removePendingInvitation()`
 (`.claude/rules/security-user.md`), run it through `VanishedEntities::deleteById(Query, entity)` (#560: the
@@ -206,25 +207,24 @@ skeleton's `WrittenFlushWatch` does not see a DQL write — both callers delete 
 still-managed entity **referencing** a detached account (a loaded token) makes the next `flush()` fail with
 Doctrine's « A new entity was found through the relationship… » — loud, not lost, and no path loads a token
 before `removePendingInvitation()`.
-Before, `find()` handed back the identity-map instance and a query did not rehydrate a managed one: a
-concurrent write committed in between was silently undone (`reattach()` saw a no-op, `detach()` looked in the
-group the entry had left, a version created in a group took the position the group was leaving, a deleted
-entry was "updated" with a 200). Not `refresh()` entry by entry: it does not see a deleted row (it hydrates
+Without the re-read, `find()` hands back the identity-map instance and a query does not rehydrate a managed
+one: a concurrent write committed in between would be silently undone (`reattach()` sees a no-op, `detach()`
+looks in the group the entry has left, a version created in a group takes the position the group is leaving,
+a deleted entry is "updated" with a 200). Not `refresh()` entry by entry: it does not see a deleted row (it hydrates
 nothing and keeps the instance) and costs a query each. Not detaching the whole scope either: an instance
 held from before and saved afterwards collides with the one the operation reloaded
 (`EntityIdentityCollisionException`, measured on four resource tests). Consequence for a caller: an unwritten
 change to such an instance is overwritten. An instance scheduled for insertion or removal is neither re-read
-nor detached (detaching it silently cancelled the pending `INSERT`). Since `delete()` takes the lock
+nor detached (detaching it would silently cancel the pending `INSERT`). As `delete()` takes the lock
 (#499), an application deletion runs wholly before an operation of its scope — which then reports the
 entry not found — or wholly after it, never in between: the loser of two simultaneous `DELETE`s of one
-entry answers **404** (it answered 204, its `DELETE` touching no row), like a `DELETE` arriving later.
+entry answers **404**, like a `DELETE` arriving later.
 **Not covered, accepted**: a deletion in SQL, which skips the `Administrator`s, can still commit during an
-operation, whose `PUT` then answers 200 on a row gone. (The `--force` purge of the `app:*:seed` commands
-was that case too, `<Repository>::remove()` without a lock; since #567 it runs under the scope locks of
-the command's `withLocks()`, so a backoffice write of the scope waits for the whole seed — a few hundred
-milliseconds at most — instead of landing in the middle of it.) A command chaining N operations on one
-EntityManager used to re-read O(N²) rows; under `withLocks()` the scopes are re-read once, at entry,
-and the re-entrant `withLock()`s re-read nothing. It relies on READ COMMITTED (PostgreSQL's default, set nowhere):
+operation, whose `PUT` then answers 200 on a row gone. (Covered, by contrast: the `--force` purge of the
+`app:*:seed` commands runs under the scope locks of the command's `withLocks()` (#567), so a backoffice write of the scope waits
+for the whole seed — a few hundred milliseconds at most — instead of landing in the middle of it.) Under
+`withLocks()` the scopes are re-read once, at entry, and the re-entrant `withLock()`s re-read nothing (a
+re-read per operation would cost O(N²) rows to a command chaining N operations on one EntityManager). It relies on READ COMMITTED (PostgreSQL's default, set nowhere):
 under REPEATABLE READ the snapshot would be taken by the lock's own `SELECT`, before the wait. Last writer
 wins, like every other field; no `#[ORM\Version]`. `ScopeLockReadsCommittedStateTest` pins both (the four
 stale-state cases over the same `ProvidesLocalizedAdministrators` list as `OrderScopeLockCoverageTest`, so a
@@ -232,7 +232,7 @@ new localized context goes there once, the second `DELETE` of an entry deleted m
 catalogue's end, its `PUT` and `DELETE` of a product deleted meanwhile, the pending insert, the re-save of an
 entry or a product detached by the re-read, refused instead of re-inserted (#548), and the isolation level);
 `VanishedEntitiesTest` pins the listener's wiring, its refusal before scheduling, no false positive and the
-`WeakMap` (red with an `SplObjectStorage`, measured); since #557 also the refusal of an instance this manager
+`WeakMap` (red with an `SplObjectStorage`, measured); also (#557) the refusal of an instance this manager
 removed, under its own message, the removal cancelled before the flush, and no memory kept on the
 `postRemove` path. The re-save after each `Administrator::delete()` is pinned by
 `ScopeLockReadsCommittedStateTest` (localized contexts, watch catalogue) and
@@ -240,14 +240,14 @@ removed, under its own message, the removal cancelled before the flush, and no m
 In an FPM worker the wait is bounded by `PGOPTIONS` `lock_timeout=5s`; past it the adapter throws
 `OrderScopeLockTimeoutException` (named, unmapped: a `critical` 500 — 5 s for a millisecond write is an
 anomaly, not a conflict to retry), and only for its own lock statement: a timeout inside the operation
-stays the DBAL exception. Since #499 that covers a backoffice `DELETE` and a watch `PUT` too, which never
-waited before: each now costs the lock, a transaction and the re-read of its entry, and comes out as that
+stays the DBAL exception. That covers a backoffice `DELETE` and a watch `PUT` too (#499): each costs the
+lock, a transaction and the re-read of its entry, and comes out as that
 500 behind a writer holding the scope past 5 s. **The console is bounded too** (#512, #525): the
-`app:*:seed` commands take the same lock — since #567 once per command, through `withLocks()` on every
+`app:*:seed` commands take the same lock — once per command (#567), through `withLocks()` on every
 scope the command writes, held for the whole purge and recreation —, which
 `www.prod.conf` does not reach — its pod's own `PGOPTIONS` gives it `lock_timeout=5s`, and a session with
 none (dev, CI) gets `PostgresLockedTransaction::FALLBACK_LOCK_TIMEOUT`. Every backoffice holder keeps
-the lock for milliseconds; a seed holds its scopes for the whole command, measured for #567 on the
+the lock for milliseconds; a seed holds its scopes for the whole command, measured on the
 largest (`app:about:seed --force`, 30 cards and the settings, one `flush()` each): about 100 ms in the
 test environment, the command taking 0.5 s with the kernel boot — two orders of magnitude under the 5 s
 bound; revisit before holding it any longer. Guards:
@@ -267,5 +267,5 @@ a row created or deleted between the page load and the save changes the set, the
 the frontend reloads and says so. Never relax it to "ignore unknown keys". The
 `Version20260914170000` migration paired the existing FR/EN rows by `position` (and `category`)
 **only when the pair was unique on both sides**, giving every other row its own group — a wrong
-link would survive every proofreading, an isolated row is one "Version of" click away — and it is
-the first migration of the UUID era that is **reversible**.
+link would survive every proofreading, an isolated row is one "Version of" click away — and, unlike
+the UUID migrations, whose `down()` throws, it is **reversible**.
