@@ -36,9 +36,19 @@ readonly MAX_ROOT_BYTES=50000
 
 # Plafond d'une règle, en octets (#605). Read s'arrête à 25 000 jetons :
 # deploiement.md (88 141 octets) y était tronqué, backend-architecture.md
-# (55 109 octets) passait encore. 50 000 laisse une marge sous ce seuil, et
-# reprend la borne de la racine.
+# (55 109 octets) passait encore. Le plafond est en octets parce qu'un
+# script ne compte pas de jetons : mesuré le 2026-10-14, les 50 000 premiers
+# octets de l'ancien deploiement.md, le texte le plus dense en code des
+# règles, se lisent en entier en un seul Read. Même borne que la racine.
 readonly MAX_RULE_BYTES=50000
+
+# byte_size <fichier> : sa taille en octets, sans les blancs que `wc -c`
+# ajoute devant le nombre sur certains systèmes.
+byte_size() {
+  local size
+  size="$(wc -c <"$1")"
+  printf '%s' "${size// /}"
+}
 
 root="${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 if ! git -C "$root" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
@@ -50,8 +60,7 @@ problems=()
 
 claude_md="$root/.claude/CLAUDE.md"
 if [ -f "$claude_md" ]; then
-  size="$(wc -c <"$claude_md")"
-  size="${size// /}"
+  size="$(byte_size "$claude_md")"
   if [ "$size" -gt "$MAX_ROOT_BYTES" ]; then
     problems+=(".claude/CLAUDE.md : $size octets, au-delà du plafond de $MAX_ROOT_BYTES — déplacer l'ajout dans la règle de sa zone")
   fi
@@ -61,8 +70,7 @@ shopt -s nullglob
 for rule in "$root"/.claude/rules/*.md; do
   name=".claude/rules/$(basename "$rule")"
 
-  size="$(wc -c <"$rule")"
-  size="${size// /}"
+  size="$(byte_size "$rule")"
   if [ "$size" -gt "$MAX_RULE_BYTES" ]; then
     problems+=("$name : $size octets, au-delà du plafond de $MAX_RULE_BYTES — la découper par sous-domaine, chaque morceau avec ses \`paths:\`")
   fi
