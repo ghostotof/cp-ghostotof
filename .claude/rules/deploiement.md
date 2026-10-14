@@ -230,8 +230,11 @@ paths:
   (`PostgresRolesProcedureTest` pins the two together) and only once `doctrine_migration_versions` exists
   (the procedure precedes the first migration on a fresh database); it refuses a connection limit, a
   template flag and a missing `CONNECT` for any of the three roles. `REVOKE TEMPORARY` is let through: the
-  application uses no temporary table. A read-only or `statement_timeout` database setting fails the
-  procedure earlier, in `roles.sql` (exit 3 too). **Nothing repairs these states**: the procedure fails
+  application uses no temporary table. A database setting applies to the procedure's own session too:
+  read-only or under a short `statement_timeout`, `roles.sql` used to fail before `verify.sql` could name
+  it (measured), so `roles.sql` first sets its session before any query — `statement_timeout = 0`,
+  `transaction_timeout = 0`, `SET TRANSACTION READ WRITE` (admitted only before the transaction's first
+  query), its own `search_path` —, pinned by `PostgresRolesProcedureTest`. **Nothing repairs these states**: the procedure fails
   as long as one holds, and a writing `exec` is #520's exception alone — issue #610;
   `cpg_reader` is a second net against an operator's mistake, not a boundary against whoever holds
   `exec` (`trust` on the local socket gives the superuser too) — a `port-forward` or an ephemeral

@@ -33,6 +33,18 @@
 \set rotate ''
 \endif
 
+-- Issue #608 : un réglage de la base (ALTER DATABASE … SET, permis à son
+-- propriétaire, le rôle de migration) s'applique aussi à cette session. Lue
+-- seule ou sous un statement_timeout court, la procédure échouait ici, avant
+-- que verify.sql ne nomme l'écart. Sa session fixe donc ce dont elle dépend,
+-- avant toute requête (SET TRANSACTION n'est admis qu'avant la première de la
+-- transaction ouverte par le flux), sans hériter ni du chemin de recherche ni
+-- des délais de la base ; verify.sql refuse ensuite le réglage lui-même.
+SET statement_timeout = 0;
+SET transaction_timeout = 0;
+SET TRANSACTION READ WRITE;
+SET search_path = pg_catalog, pg_temp;
+
 -- Un ALTER ROLE … PASSWORD qui échouerait serait journalisé avec son texte
 -- par le serveur (log_min_error_statement = error par défaut) : relevé au
 -- niveau que rien n'atteint, pour la seule durée de cette session, et le

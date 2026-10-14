@@ -162,9 +162,9 @@ BEGIN
     -- fois les migrations passées — la procédure précède la première sur une
     -- base neuve. ALLOW_CONNECTIONS false n'est pas contrôlé : refusé sur la
     -- base courante, il exigerait une connexion à une autre base, que #597
-    -- ferme, et rendrait de toute façon ce contrôle injoignable. Un réglage
-    -- default_transaction_read_only ou statement_timeout fait échouer la
-    -- procédure plus tôt, dans roles.sql (sortie 3 aussi).
+    -- ferme, et rendrait de toute façon ce contrôle injoignable. roles.sql
+    -- fixe sa propre session en tête (lecture-écriture, sans délai, chemin de
+    -- recherche à lui) : un réglage de base qui l'aurait arrêté arrive ici.
     SELECT (SELECT setconfig FROM pg_db_role_setting WHERE setdatabase = d.oid AND setrole = 0),
            CASE WHEN to_regclass('public.doctrine_migration_versions') IS NULL THEN NULL ELSE ARRAY['TimeZone=Europe/Paris'] END
       INTO reglages, attendu

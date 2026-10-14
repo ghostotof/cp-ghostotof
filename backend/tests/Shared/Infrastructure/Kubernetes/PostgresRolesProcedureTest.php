@@ -222,6 +222,26 @@ final class PostgresRolesProcedureTest extends TestCase
     }
 
     /**
+     * Issue #608 : un réglage de la base s'applique à chaque nouvelle session,
+     * celle de la procédure comprise. En lecture seule ou sous un
+     * `statement_timeout` court, roles.sql échouait avant que verify.sql ne
+     * nomme l'écart (mesuré sur l'image épinglée). roles.sql fixe donc sa
+     * propre session avant toute requête : `SET TRANSACTION` n'est admis
+     * qu'avant la première de la transaction ouverte par le flux.
+     */
+    public function testRolesSetsItsOwnSessionBeforeAnyQuery(): void
+    {
+        $roles = $this->statements('roles.sql');
+        $firstQuery = strpos($roles, 'SELECT ');
+        self::assertIsInt($firstQuery);
+        foreach (['SET statement_timeout = 0;', 'SET transaction_timeout = 0;', 'SET TRANSACTION READ WRITE;', 'SET search_path = pg_catalog, pg_temp;'] as $setting) {
+            $at = strpos($roles, $setting);
+            self::assertIsInt($at, $setting);
+            self::assertLessThan($firstQuery, $at, $setting.' : avant la première requête.');
+        }
+    }
+
+    /**
      * Relecture de #593 : rejouée sans rotation, la procédure ignore les mots
      * de passe générés — les publier couperait l'application au redémarrage
      * suivant. roles.sql dit, pour chacun, s'il l'a écrit, jamais sa valeur.
