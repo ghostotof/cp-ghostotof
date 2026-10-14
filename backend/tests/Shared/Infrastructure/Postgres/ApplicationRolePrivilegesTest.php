@@ -104,6 +104,29 @@ final class ApplicationRolePrivilegesTest extends KernelTestCase
     }
 
     /**
+     * Issue #597 : `PUBLIC` garde `CONNECT` et `TEMPORARY` sur les bases que
+     * l'image crée. Le pg_hba.conf du dépôt les refuse déjà par leur nom ; le
+     * privilège retiré est la seconde barrière, celle qui tient si une règle
+     * réseau les rouvre. `template0` refuse déjà les connexions
+     * (`datallowconn`).
+     */
+    public function testNoRoleOfTheProcedureConnectsToTheImageDatabases(): void
+    {
+        foreach ([$this->app, $this->migrator, $this->reader] as $role) {
+            foreach (['postgres', 'template1'] as $database) {
+                self::assertFalse(
+                    $this->probe->fetchOne('SELECT has_database_privilege(?, ?, ?)', [$role, $database, 'CONNECT']),
+                    \sprintf('%s peut se connecter à %s : PUBLIC y a encore CONNECT.', $role, $database),
+                );
+                self::assertFalse(
+                    $this->probe->fetchOne('SELECT has_database_privilege(?, ?, ?)', [$role, $database, 'TEMPORARY']),
+                    \sprintf('%s peut créer des tables temporaires dans %s : PUBLIC y a encore TEMPORARY.', $role, $database),
+                );
+            }
+        }
+    }
+
+    /**
      * Le GRANT oublié : chaque table du schéma — celles de demain comprises,
      * puisque le test lit le schéma migré — est lisible et modifiable, jamais
      * vidable ; la table des migrations est hors de portée.

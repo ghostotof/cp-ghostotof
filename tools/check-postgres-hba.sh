@@ -17,10 +17,13 @@
 #   - depuis un autre conteneur, par TCP : le superutilisateur et cpg_reader
 #     refusés par une règle `reject`, une connexion de réplication aussi,
 #     cpg_app et cpg_migrator admis avec leur mot de passe, refusés avec un
-#     mauvais ;
+#     mauvais ; sur les bases que crée l'image (`postgres`, `template0`,
+#     `template1`, lues dans pg_database, issue #597), refusés par pg_hba.conf
+#     avant toute authentification, réplication logique comprise ;
 #   - sur le loopback du conteneur, chemin d'un `kubectl port-forward` ou d'un
 #     conteneur éphémère : le superutilisateur refusé, cpg_reader admis sans
-#     mot de passe (le SHOW des keepalives du runbook) ;
+#     mot de passe (le SHOW des keepalives du runbook) sur la base de
+#     l'application seule, aucune base de l'image (#597) ;
 #   - sur le socket local : le superutilisateur admis (entrypoint, procédure
 #     des rôles). La sonde `pg_isready` du manifeste est rejouée pour dire que
 #     le serveur répond ; elle n'authentifie personne, elle ne mesure donc
@@ -33,7 +36,9 @@
 #     second serveur, démarré sans `-c hba_file`, qui lit le pg_hba.conf de
 #     l'image dans PGDATA (ce que ramènerait un `rollout undo` de `postgres` ou
 #     un overlay qui perd l'argument) ; elle échoue contre un troisième, dont
-#     le fichier n'admet le superutilisateur que sur la base `postgres` ; elle
+#     le fichier n'admet le superutilisateur que sur la base `postgres`, et
+#     contre un quatrième, le fichier du dépôt sans le refus des bases de
+#     l'image (#597), où seul cpg_app, sans mot de passe, la trahit ; elle
 #     réessaie puis échoue sur un port fermé. Sa sortie, qui part dans les
 #     journaux du pipeline, ne nomme jamais le superutilisateur ni la base.
 #
@@ -85,11 +90,14 @@ server="check-postgres-hba-$$"
 # PGDATA), puis un fichier qui n'admet le superutilisateur que sur `postgres`.
 pgdata_server="check-postgres-hba-pgdata-$$"
 postgres_db_server="check-postgres-hba-postgresdb-$$"
+# Sonde #597 : le fichier du dépôt sans le refus des bases de l'image (une
+# ConfigMap de l'époque #593, que ramènerait un `rollout undo` de `postgres`).
+no_597_server="check-postgres-hba-no597-$$"
 network="check-postgres-hba-$$"
 umask 077
 scratch="$(mktemp -d)"
 cleanup() {
-  docker rm -f "$server" "$pgdata_server" "$postgres_db_server" >/dev/null 2>&1 || true
+  docker rm -f "$server" "$pgdata_server" "$postgres_db_server" "$no_597_server" >/dev/null 2>&1 || true
   docker network rm "$network" >/dev/null 2>&1 || true
   rm -rf "$scratch"
 }
@@ -111,20 +119,27 @@ docker run -d --name "$server" --network "$network" --user "$RUN_AS:$RUN_AS" \
 docker run -d --name "$pgdata_server" --network "$network" --user "$RUN_AS:$RUN_AS" \
   --env-file "$scratch/server.env" \
   "$IMAGE" postgres >/dev/null
-# Le fichier du dépôt, plus une règle qui rouvre le superutilisateur sur la
-# base `postgres` seulement, juste avant le `reject` final. Copié dans le
-# conteneur (docker cp passe par l'API, sans partage de fichiers), lisible par
-# l'uid du serveur.
-sed '$!b; /^host[[:space:]]\{1,\}all[[:space:]]\{1,\}all[[:space:]]\{1,\}all[[:space:]]\{1,\}reject/i host postgres all all scram-sha-256' \
-  "$HBA" > "$scratch/postgres-db.conf"
-grep -q '^host postgres all all scram-sha-256$' "$scratch/postgres-db.conf" \
-  || { echo "La règle de test n'a pas été insérée (dernière ligne de $HBA changée ?)." >&2; exit 2; }
+# Le fichier du dépôt, précédé d'une règle qui rouvre le superutilisateur sur
+# la base `postgres` seulement. En tête, la seule place où elle n'est pas
+# masquée : le refus des bases de l'image (#597) la précéderait sinon. Copié
+# dans le conteneur (docker cp passe par l'API, sans partage de fichiers),
+# lisible par l'uid du serveur.
+{ echo 'host postgres all all scram-sha-256'; cat "$HBA"; } > "$scratch/postgres-db.conf"
 chmod 644 "$scratch/postgres-db.conf"
 docker create --name "$postgres_db_server" --network "$network" --user "$RUN_AS:$RUN_AS" \
   --env-file "$scratch/server.env" \
   "$IMAGE" postgres -c hba_file=/tmp/pg_hba.conf >/dev/null
 docker cp "$scratch/postgres-db.conf" "$postgres_db_server:/tmp/pg_hba.conf" >/dev/null
 docker start "$postgres_db_server" >/dev/null
+grep -v '^host[[:space:]]\{1,\}postgres,template0,template1[[:space:]]' "$HBA" > "$scratch/no-597.conf"
+cmp -s "$HBA" "$scratch/no-597.conf" \
+  && { echo "Le refus des bases de l'image (#597) est introuvable dans $HBA." >&2; exit 2; }
+chmod 644 "$scratch/no-597.conf"
+docker create --name "$no_597_server" --network "$network" --user "$RUN_AS:$RUN_AS" \
+  --env-file "$scratch/server.env" \
+  "$IMAGE" postgres -c hba_file=/tmp/pg_hba.conf >/dev/null
+docker cp "$scratch/no-597.conf" "$no_597_server:/tmp/pg_hba.conf" >/dev/null
+docker start "$no_597_server" >/dev/null
 rm -f "$scratch/server.env"
 
 # Prêt quand le serveur définitif écoute en TCP : le serveur temporaire de
@@ -149,6 +164,7 @@ wait_listening() {
 wait_listening "$server" "$HBA"
 wait_listening "$pgdata_server" "le pg_hba.conf de l'image"
 wait_listening "$postgres_db_server" "un pg_hba.conf ouvert sur la base postgres"
+wait_listening "$no_597_server" "le pg_hba.conf du dépôt sans le refus #597"
 
 failures=0
 fail() {
@@ -171,18 +187,22 @@ served="$(docker exec "$server" psql -X -A -t -U "$BOOTSTRAP" -d "$DB" -c 'SHOW 
 # namespace vers le Service `database`. Le mot de passe passe par un fichier
 # d'environnement ; rien n'est affiché qu'un code et le message du serveur.
 # $1 rôle, $2 fichier du mot de passe (vide : aucun), $3 base (défaut : $DB ;
-# `replication` demande une connexion de réplication physique).
+# `replication` demande une connexion de réplication physique, `logical:<base>`
+# une réplication logique sur <base>).
 remote() {
   local env="$scratch/client.env" target="dbname=${3:-$DB}"
   : > "$env"
   if [ -n "$2" ]; then
     { printf 'PGPASSWORD='; cat "$2"; } > "$env"
   fi
-  if [ "${3:-}" = replication ]; then
-    # Réplication physique : c'est elle que le mot-clé `replication` désigne
-    # (une réplication logique, `replication=database`, suit le nom de la base).
-    target="dbname=$DB replication=true"
-  fi
+  case "${3:-}" in
+    replication)
+      # Réplication physique : c'est elle que le mot-clé `replication` désigne.
+      target="dbname=$DB replication=true" ;;
+    logical:*)
+      # Réplication logique : elle suit le nom de la base qu'elle nomme.
+      target="dbname=${3#logical:} replication=database" ;;
+  esac
   docker run --rm --network "$network" --env-file "$env" --entrypoint psql "$IMAGE" \
     -X -A -t -w -c 'SELECT 1' "host=$server user=$1 $target" 2>&1
 }
@@ -213,11 +233,32 @@ expect_admitted cpg_migrator "$scratch/migrator"
 expect_refused cpg_app "$scratch/wrong" 'password authentication failed'
 expect_refused cpg_migrator "$scratch/wrong" 'password authentication failed'
 expect_refused "$BOOTSTRAP" "$scratch/bootstrap" 'pg_hba.conf rejects replication connection' replication
+# Issue #597 : cpg_app et cpg_migrator n'atteignent que la base de
+# l'application, jamais celles que l'image crée (PUBLIC y garde CONNECT et
+# TEMP). Le refus de pg_hba.conf précède l'authentification : le mot de passe
+# fourni ne joue pas — sans la règle, SCRAM l'accepterait et le contrôle
+# rougirait. Les bases sont lues dans le catalogue du serveur, et la liste doit
+# être exactement celle-ci : une base de plus dans une image future échapperait
+# à la règle, qui les nomme.
+image_databases="$(docker exec "$server" psql -X -A -t -U "$BOOTSTRAP" -d "$DB" \
+  -c "SELECT string_agg(datname, ' ' ORDER BY datname) FROM pg_database WHERE datname <> '$DB'" 2>&1)"
+[ "$image_databases" = 'postgres template0 template1' ] \
+  || fail "bases créées par l'image : « postgres template0 template1 » attendu, « $image_databases » lu."
+for database in $image_databases; do
+  # Les fichiers de mot de passe portent le nom du rôle sans `cpg_` (app, migrator).
+  for role in cpg_app cpg_migrator; do
+    expect_refused "$role" "$scratch/${role#cpg_}" 'pg_hba.conf rejects connection' "$database"
+  done
+done
+# Une réplication LOGIQUE suit le nom de la base (`replication=database`) :
+# refusée sur `postgres` par la même règle, sous le message d'une connexion
+# ordinaire (seule la réplication physique a le sien).
+expect_refused cpg_app "$scratch/app" 'pg_hba.conf rejects connection for .*database "postgres"' logical:postgres
 
 # Le loopback : ce qu'un port-forward ou un conteneur éphémère atteint.
 # $1 adresse ; refus du superutilisateur, même sans mot de passe à fournir.
 loopback() {
-  docker exec "$server" psql -X -A -t -w -h "$1" -U "$2" -d "$DB" -c 'SELECT 1' 2>&1
+  docker exec "$server" psql -X -A -t -w -h "$1" -U "$2" -d "${3:-$DB}" -c 'SELECT 1' 2>&1
 }
 for address in 127.0.0.1 ::1; do
   out="$(loopback "$address" "$BOOTSTRAP" || true)"
@@ -225,6 +266,15 @@ for address in 127.0.0.1 ::1; do
     || fail "superutilisateur sur $address (port-forward) : refus attendu, obtenu « $out »."
   [ "$(loopback "$address" cpg_reader)" = 1 ] \
     || fail "cpg_reader ne passe plus par $address sans mot de passe."
+  # #597 : sur le loopback non plus, aucune base de l'image — ni pour le
+  # lecteur, admis en `trust` sur la seule base de l'application.
+  for database in $image_databases; do
+    for role in cpg_reader cpg_app; do
+      out="$(loopback "$address" "$role" "$database" || true)"
+      grep -q 'pg_hba.conf rejects connection' <<<"$out" \
+        || fail "$role sur $address, base $database : refus attendu, obtenu « $out »."
+    done
+  done
 done
 
 # La sonde du smoke préprod (#596), lancée comme le Job : uid du manifeste,
@@ -281,6 +331,10 @@ expect_probe_fails "pg_hba.conf de l'image, superutilisateur admis en SCRAM" \
   'demande un mot de passe' "$pgdata_server"
 expect_probe_fails "superutilisateur admis sur la base postgres seulement" \
   'base postgres.*demande un mot de passe' "$postgres_db_server"
+# #597 : le superutilisateur y reste refusé partout ; seul cpg_app, tenté sans
+# mot de passe sur `postgres`, révèle le refus manquant.
+expect_probe_fails "pg_hba.conf sans le refus des bases de l'image" \
+  'cpg_app, base postgres.*demande un mot de passe' "$no_597_server"
 # Un port fermé : la sonde réessaie (un serveur qui vient de redémarrer
 # n'écoute pas encore), puis échoue en le nommant.
 expect_probe_fails "port fermé" 'injoignable' "$server" 5433
@@ -299,4 +353,4 @@ if [ "$failures" -ne 0 ]; then
   exit 1
 fi
 
-echo "PostgreSQL ($IMAGE) démarre avec $HBA : superutilisateur, cpg_reader et réplication refusés par TCP, cpg_app et cpg_migrator admis par SCRAM, loopback à cpg_reader seul, socket local inchangé ; la sonde du smoke préprod (#596) passe ici (noms piégés compris) et échoue sur le fichier de l'image, sur la base postgres rouverte et sur un port fermé."
+echo "PostgreSQL ($IMAGE) démarre avec $HBA : superutilisateur, cpg_reader et réplication refusés par TCP, cpg_app et cpg_migrator admis par SCRAM, refusés sur les bases de l'image (#597), loopback à cpg_reader seul et hors des bases de l'image, socket local inchangé ; la sonde du smoke préprod (#596) passe ici (noms piégés compris) et échoue sur le fichier de l'image, sur la base postgres rouverte, sur un fichier sans le refus des bases de l'image (#597) et sur un port fermé."

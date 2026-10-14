@@ -19,7 +19,9 @@ use PHPUnit\Framework\TestCase;
  * de son mot de passe rendait ce que #575 retire. Le dépôt monte le sien,
  * `k8s/base/postgres-pg_hba.conf`, qui admet par le réseau les deux rôles
  * applicatifs **nommés** et refuse tout le reste — jamais par exclusion du
- * rôle bootstrap, dont le nom est dans un Secret, pas dans le dépôt.
+ * rôle bootstrap, dont le nom est dans un Secret, pas dans le dépôt. Ces deux
+ * rôles n'atteignent que la base de l'application : celles que l'image crée
+ * leur sont refusées par une règle placée avant (issue #597).
  *
  * Le socket local garde la confiance de l'image (sondes `pg_isready`,
  * entrypoint, procédure des rôles du runbook). Le loopback, lui, ne fait
@@ -51,6 +53,14 @@ final class PostgresHbaTest extends TestCase
 
     /** Les types d'enregistrement qui portent une connexion TCP. */
     private const array TCP_TYPES = ['host', 'hostssl', 'hostnossl', 'hostgssenc', 'hostnogssenc'];
+
+    /**
+     * Les bases que l'image crée à côté de celle de l'application, triées
+     * (issue #597). `PUBLIC` y garde `CONNECT` et `TEMP` ; `template0` refuse
+     * déjà les connexions (`datallowconn`), nommée pour ne rien laisser au
+     * catalogue.
+     */
+    private const array IMAGE_DATABASES = ['postgres', 'template0', 'template1'];
 
     public function testTheLastRuleRejectsEveryOtherTcpConnection(): void
     {
@@ -106,6 +116,41 @@ final class PostgresHbaTest extends TestCase
 
         sort($admitted);
         self::assertSame(self::NETWORK_ROLES, $admitted);
+    }
+
+    /**
+     * Les rôles admis par TCP n'atteignent que la base de l'application
+     * (issue #597). Son nom est dans un Secret, pas dans le dépôt : le fichier
+     * refuse donc par leur nom les bases que l'image crée, AVANT toute règle
+     * TCP qui accepte — PostgreSQL applique la première règle qui correspond.
+     * Loopback compris : `cpg_reader` n'a rien à faire sur `postgres` ni
+     * `template1`, où `PUBLIC` garde `TEMP`. C'est une exclusion de bases, pas
+     * de rôles : une base créée plus tard par le superutilisateur lui
+     * échapperait, d'où le contrôle de `pg_database` par verify.sql et le
+     * `REVOKE CONNECT, TEMPORARY` de privileges.sql.
+     *
+     * Une règle `host` pour tous les rôles et toutes les adresses : `hostssl`
+     * ou `hostnossl` laisseraient passer l'autre mode de chiffrement.
+     */
+    public function testTheImageDatabasesAreRejectedBeforeAnyTcpRuleAccepts(): void
+    {
+        $rules = $this->rules();
+        $expected = self::IMAGE_DATABASES;
+        sort($expected);
+        $rejectPosition = array_find_key($rules, static function (array $rule) use ($expected): bool {
+            $databases = explode(',', $rule[1] ?? '');
+            sort($databases);
+
+            return ['host', 'all', 'all', 'reject'] === [$rule[0], $rule[2] ?? null, $rule[3] ?? null, $rule[4] ?? null]
+                && $expected === $databases;
+        });
+        self::assertIsInt($rejectPosition, \sprintf('Une règle « host %s all all reject » doit fermer au réseau les bases de l\'image.', implode(',', self::IMAGE_DATABASES)));
+
+        foreach ($rules as $position => $rule) {
+            if (self::acceptsOverTcp($rule)) {
+                self::assertGreaterThan($rejectPosition, $position, \sprintf('« %s » : placée avant le refus des bases de l\'image, elle les ouvrirait.', implode(' ', $rule)));
+            }
+        }
     }
 
     /**
@@ -185,10 +230,21 @@ final class PostgresHbaTest extends TestCase
     public static function acceptingTcpRules(): iterable
     {
         foreach (self::parse() as $rule) {
-            if (\in_array($rule[0], self::TCP_TYPES, true) && 'reject' !== ($rule[4] ?? null)) {
+            if (self::acceptsOverTcp($rule)) {
                 yield implode(' ', $rule) => [$rule];
             }
         }
+    }
+
+    /**
+     * Une règle TCP qui accepte : la seule définition, partagée par le
+     * fournisseur de données et le contrôle d'ordre de #597.
+     *
+     * @param list<string> $rule
+     */
+    private static function acceptsOverTcp(array $rule): bool
+    {
+        return \in_array($rule[0], self::TCP_TYPES, true) && 'reject' !== ($rule[4] ?? null);
     }
 
     /**
@@ -221,6 +277,10 @@ final class PostgresHbaTest extends TestCase
 
             self::assertStringNotContainsString('"', $line, 'Un champ entre guillemets n\'est pas lu par ce test.');
             self::assertStringEndsNotWith('\\', $line, 'Une ligne continuée n\'est pas lue par ce test.');
+            // PostgreSQL lit `a, b` comme la liste `a,b` (une virgule en fin de
+            // jeton appelle le suivant) ; découpés aux blancs ici, ses champs
+            // seraient décalés. Refusée plutôt que lue de travers.
+            self::assertDoesNotMatchRegularExpression('/,\s|\s,/', $line, 'Une liste écrite avec des blancs autour d\'une virgule n\'est pas lue par ce test.');
             $fields = preg_split('/\s+/', $line);
             self::assertIsArray($fields);
             $rules[] = $fields;
