@@ -196,7 +196,10 @@ paths:
   in front of the API), `statement_timeout=0`, `transaction_timeout=0`, `idle_session_timeout=0`,
   `default_transaction_read_only=off`, `role=none` (a database-level `role` made the superuser session
   run as the migrator — measured; `RESET ROLE` falls back to that same value), `search_path=pg_catalog,pg_temp`,
-  `password_encryption=scram-sha-256` (the only method the repository's `pg_hba.conf` accepts);
+  `password_encryption=scram-sha-256` (the only method the repository's `pg_hba.conf` accepts),
+  `client_min_messages=notice` (at `error`, set on the database, it silenced #610's notices — measured, review
+  of #610) and `standard_conforming_strings=on` (at `off`, the backslash of `DoctrineMigrations\Version…`
+  vanished from the literals and the procedure failed on every pass as a false « checkout behind » — measured);
   `PostgresRolesProcedureTest` lists them with their reasons, no more, no less. The SQL files hold no
   transaction control and no reconnection. `PostgresRolesProcedureTest` fixes the exec line word for word and pins the
   stream, `commit.sql` and its mark, and the files (no echo of a variable, a password cited only in its

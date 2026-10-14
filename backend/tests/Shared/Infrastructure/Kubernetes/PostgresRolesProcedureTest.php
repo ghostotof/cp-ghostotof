@@ -51,7 +51,7 @@ final class PostgresRolesProcedureTest extends TestCase
      * comparé en entier, une commande glissée dans le `sh -c` le fait rougir.
      */
     private const string EXEC = <<<'SH'
-        kubectl -n "${NS:?preprod ou prod}" exec -i deploy/postgres -c postgres -- sh -c 'PGOPTIONS="-c lock_timeout=5s -c idle_in_transaction_session_timeout=30s -c statement_timeout=0 -c transaction_timeout=0 -c idle_session_timeout=0 -c default_transaction_read_only=off -c role=none -c search_path=pg_catalog,pg_temp -c password_encryption=scram-sha-256" psql -X -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v app_role=cpg_app -v migrator_role=cpg_migrator -v reader_role=cpg_reader -f -'
+        kubectl -n "${NS:?preprod ou prod}" exec -i deploy/postgres -c postgres -- sh -c 'PGOPTIONS="-c lock_timeout=5s -c idle_in_transaction_session_timeout=30s -c statement_timeout=0 -c transaction_timeout=0 -c idle_session_timeout=0 -c default_transaction_read_only=off -c role=none -c search_path=pg_catalog,pg_temp -c password_encryption=scram-sha-256 -c client_min_messages=notice -c standard_conforming_strings=on" psql -X -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v app_role=cpg_app -v migrator_role=cpg_migrator -v reader_role=cpg_reader -f -'
         SH;
 
     /**
@@ -78,6 +78,13 @@ final class PostgresRolesProcedureTest extends TestCase
         // Un mot de passe réécrit (rotation) l'est en SCRAM, la seule méthode
         // que le pg_hba.conf du dépôt accepte.
         'password_encryption' => 'scram-sha-256',
+        // Relecture de #610, mesuré sur l'image épinglée : à `error`, posé sur
+        // la base, il taisait les avis `#610` — l'incident réparé sans trace.
+        'client_min_messages' => 'notice',
+        // Relecture de #610, mesuré : à `off`, posé sur la base, l'antislash de
+        // `DoctrineMigrations\Version…` disparaissait des littéraux, la
+        // procédure échouait à chaque passage sur un faux « checkout en retard ».
+        'standard_conforming_strings' => 'on',
     ];
 
     /**
