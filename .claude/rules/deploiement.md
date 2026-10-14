@@ -261,7 +261,8 @@ paths:
   `verify.sql` checks the file the server actually reads** at every pass of the roles procedure
   (`hba_file` equal to `postgres.yaml`'s path, no rule in error, no `trust` off the socket but for the
   reader, last rule `reject`): an args patch or an old manifest would bring back PGDATA's file in
-  silence. **`smoke-test-preprod` measures it at every preprod deploy** (issue #596): `tools/run-job.sh`
+  silence. **The preprod pipeline measures it at every deploy** (issue #596), in its own job
+  `postgres-hba-preprod` (issue #600): `tools/run-job.sh`
   launches `k8s/base/postgres-hba-probe-job.yaml` (outside kustomize, the server's image written in it —
   run-job.sh's image argument is `sans-objet` —, waited 120 s, deadline 180), which tries `database`
   over TCP as the bootstrap superuser **without a password**, on the application's database **and on
@@ -273,8 +274,27 @@ paths:
   password prompt (PGDATA's file admits the superuser by SCRAM), a connection or a server still
   unreachable after 4 tries (`Connection refused` / `timeout expired` only — a fresh PVC's init server
   listens on the socket alone; ~55 s at worst, the second database skipped then) fail it, named on a
-  `#596 : ÉCHEC (…)` line the pipeline's `::error::` points to — then `rollback-preprod`, which does
-  not undo `postgres`: fix the release (whether it should trigger that rollback at all: issue #600).
+  `#596 : ÉCHEC (…)` line the pipeline's `::error::` points to. **That failure never triggers
+  `rollback-preprod`** (issue #600, decided 2026-10-14): the rollback undoes `backend`, `worker` and
+  `frontend`, which the probe does not accuse, and never `postgres`, which it does — inside
+  `smoke-test-preprod` it took the release's application away from preprod, left the superuser open,
+  skipped the #470 message probe placed after it and made the diagnosis run the previous release
+  against the faulty `postgres`. So the job runs beside `smoke-test-preprod` and `audit-preprod`,
+  `needs: [deploy-preprod]` only (whose `Deploy` step already waits for `postgres`' rollout), and is
+  **not an ancestor of `rollback-preprod`** (`failure()` there is
+  true as soon as any ancestor fails, directly or not); the release stays in place against the
+  `postgres` to fix — fix it by a new commit on the `release/*` branch. It is the **third required check
+  of `main`**'s ruleset (`MAIN_REQUIRED_CHECKS` in `tools/github-settings.sh`, a manual run of the script
+  after changing it): a red job outside the required checks would let the release PR merge, and
+  `deploy-prod`'s guard 3 (a `success` run required) would refuse only **after** `main` moved.
+  `rollout undo` of `postgres` was ruled out (a `Recreate` outage on a workload carrying state, back to
+  a revision that may itself predate #593 and read PGDATA's file). `tools/check-release-gates.sh` (its
+  test, `tools/tests/check-release-gates.test.sh`, runs in `tools-tests`) keeps the three facts
+  together: the probe's manifest launched by some job and that job no ancestor of `rollback-preprod`;
+  every required check of both rulesets a job of `pipeline.yml`; every job that `needs`
+  `deploy-preprod`, the rollback aside, a required check of `main`. A new probe accusing a workload the
+  rollback does not bring back joins its `NO_ROLLBACK_PROBES` list. The same question for the datastores'
+  `rollout status` checks of `smoke-test-preprod` is issue #603.
   The probe is **`k8s/base/postgres-hba-probe.sh`**, copied byte for byte (bar the final newline,
   which Symfony's YAML parser drops) into the Job's `command` — under `k8s/`, because the dev
   container mounts it and not `tools/` —, written without any `${…}` (run-job.sh refuses one left
@@ -423,7 +443,7 @@ paths:
   A refused stop is a second `::error::`, still exit 1: only then does the runbook's « wait for
   `Complete`/`Failed` before relaunching » apply. `delete jobs` is already in the deployer Role.
   The waits are unchanged (#285); the failure path gains up to 90 s, counted in the
-  `timeout-minutes` of `deploy-preprod`, `smoke-test-preprod` and `deploy-prod`. The guard is `tools/tests/run-job.test.sh`, the only one of that
+  `timeout-minutes` of `deploy-preprod`, `smoke-test-preprod`, `postgres-hba-preprod` and `deploy-prod`. The guard is `tools/tests/run-job.test.sh`, the only one of that
   relation (the PHPUnit manifest tests pin values, not the relation): it reads every `run-job.sh`
   call of `pipeline.yml`, `tools/smoke-messenger-probe.sh` and `k8s/README.md` (continuation lines
   joined, a minimum count per file so a reworded call cannot empty the check), fails on a deadline
@@ -470,7 +490,9 @@ paths:
   each attempted even when another fails (`|| status=1`, the job stays red — under `bash -e` the first
   failure skipped the rest): the worker reads what the API queues under the same envelope MAC key, so
   undoing one without the other sends every message to `failed` (issue #450). A manual rollback in
-  prod follows the same rule, see `k8s/README.md`, « Retour arrière applicatif ».
+  prod follows the same rule, see `k8s/README.md`, « Retour arrière applicatif ». It is triggered only
+  by the jobs it `needs`, and a check accusing a workload it does not undo is never one of them: the
+  pg_hba probe (`postgres-hba-preprod`, issue #600, see the #593 bullet above).
 - **`smoke-test-preprod` proves a message travels from the API to the worker** (issue #470), not only that
   the worker is `Ready`: a MAC key mismatch between `backend` and `worker` (a `KEY_CONTEXT` badly deployed,
   a worker left on the previous release) used to leave preprod green with every message in `failed`.

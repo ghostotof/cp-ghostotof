@@ -16,12 +16,12 @@
 # recopier dans l'autre.
 #
 # DÉLIBÉRÉMENT ABSENT de kustomization.yaml `resources:`, comme
-# messenger-probe-job.yaml : lancé par tools/run-job.sh dans
-# `smoke-test-preprod`, qui supprime d'abord le Job précédent (la spec d'un Job
-# est immuable). Aucune variable entre accolades, commentaires et sonde
-# compris : run-job.sh refuse celles qui restent après envsubst. L'image est
-# celle du serveur (`psql`), écrite ici : l'argument image de run-job.sh est
-# sans effet.
+# messenger-probe-job.yaml : lancé par tools/run-job.sh dans le job
+# `postgres-hba-preprod` (#600 ; dans `smoke-test-preprod` avant), qui supprime
+# d'abord le Job précédent (la spec d'un Job est immuable). Aucune variable
+# entre accolades, commentaires et sonde compris : run-job.sh refuse celles qui
+# restent après envsubst. L'image est celle du serveur (`psql`), écrite ici :
+# l'argument image de run-job.sh est sans effet.
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -80,7 +80,7 @@ spec:
               # ---------------------------------------------------------------------------
               # Issue #596 — le pg_hba.conf vu du réseau, depuis un pod du namespace. Joué
               # par le Job k8s/base/postgres-hba-probe-job.yaml (copie à l'identique dans
-              # son `command`, PostgresHbaProbeJobManifestTest) dans `smoke-test-preprod`,
+              # son `command`, PostgresHbaProbeJobManifestTest) dans `postgres-hba-preprod`,
               # et dans les deux sens contre l'image épinglée par tools/check-postgres-hba.sh.
               #
               # Tente une connexion TCP sous le superutilisateur bootstrap, sans mot de

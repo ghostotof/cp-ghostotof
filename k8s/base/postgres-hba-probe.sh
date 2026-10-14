@@ -4,7 +4,7 @@
 # ---------------------------------------------------------------------------
 # Issue #596 — le pg_hba.conf vu du réseau, depuis un pod du namespace. Joué
 # par le Job k8s/base/postgres-hba-probe-job.yaml (copie à l'identique dans
-# son `command`, PostgresHbaProbeJobManifestTest) dans `smoke-test-preprod`,
+# son `command`, PostgresHbaProbeJobManifestTest) dans `postgres-hba-preprod`,
 # et dans les deux sens contre l'image épinglée par tools/check-postgres-hba.sh.
 #
 # Tente une connexion TCP sous le superutilisateur bootstrap, sans mot de

@@ -9,7 +9,8 @@ use PHPUnit\Framework\TestCase;
 
 /**
  * Le Job du smoke préprod qui mesure le pg_hba.conf vu du réseau (issue #596),
- * lancé par tools/run-job.sh dans `smoke-test-preprod`.
+ * lancé par tools/run-job.sh dans le job `postgres-hba-preprod` (issue #600 :
+ * hors des `needs` de `rollback-preprod`, qui ne ramène pas `postgres`).
  *
  * Il tente, depuis un pod du namespace, une connexion TCP sous le
  * superutilisateur bootstrap, sans mot de passe, et n'aboutit que sur le refus

@@ -1143,15 +1143,19 @@ echo 'SELECT 1;' | kubectl -n "${NS:?preprod ou prod}" exec -i deploy/postgres -
 Le même refus, mesuré sur l'image épinglée pour chaque rôle et chaque voie
 (réplication, loopback compris), est le job CI `postgres-hba`
 (`tools/check-postgres-hba.sh`) ; dans le cluster, `verify.sql` relit aussi le
-fichier actif à chaque passage de la procédure des rôles. **En préprod, le
-smoke le refait à chaque déploiement** (issue #596) : `smoke-test-preprod`
-lance par `tools/run-job.sh` le Job `postgres-hba-probe` (image du serveur,
-sans mot de passe, seulement le nom du superutilisateur lu dans
-`postgres-credentials`), qui tente `database` sous le superutilisateur, sur la
-base de l'application puis sur `postgres`, et n'aboutit que sur deux
-`pg_hba.conf rejects connection` (dernière ligne `#596 : OK`) — sinon le smoke
-échoue, sa ligne `#596 : ÉCHEC (…)` dit pourquoi, et `rollback-preprod` suit
-(sans toucher `postgres` : c'est la release à corriger). Un serveur qui refuse
+fichier actif à chaque passage de la procédure des rôles. **En préprod, la
+pipeline le refait à chaque déploiement** (issue #596) : le job
+`postgres-hba-preprod` lance par `tools/run-job.sh` le Job `postgres-hba-probe`
+(image du serveur, sans mot de passe, seulement le nom du superutilisateur lu
+dans `postgres-credentials`), qui tente `database` sous le superutilisateur, sur
+la base de l'application puis sur `postgres`, et n'aboutit que sur deux
+`pg_hba.conf rejects connection` (dernière ligne `#596 : OK`) — sinon le job
+échoue et sa ligne `#596 : ÉCHEC (…)` dit pourquoi. **Cet échec ne déclenche
+pas `rollback-preprod`** (issue #600) : le retour arrière ramènerait
+l'application, qui n'est pas en cause, et jamais `postgres`, qui l'est. La
+release reste donc en place contre le `postgres` à corriger, et la PR vers
+`main` reste rouge (`postgres-hba-preprod` est un check requis du ruleset) :
+corriger la release par un nouveau commit sur sa branche. Un serveur qui refuse
 ou laisse expirer la connexion est réessayé quatre fois. Sa sonde,
 `k8s/base/postgres-hba-probe.sh`, est recopiée à l'identique dans le `command`
 du Job (`PostgresHbaProbeJobManifestTest`) ; elle masque le nom du

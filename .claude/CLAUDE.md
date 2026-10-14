@@ -190,8 +190,9 @@ Content management for all of the bounded contexts (see `.claude/rules/`), plus 
     unique, so one release at a time; a second `release/*` branch is warned about, not blocked.
   - **`main` only moves by the merge-commit of the release PR** (rulesets: PR required, merge
     method `merge` only — squash/rebase are disabled repo-wide because `deploy-prod` finds the
-    release as `HEAD^2` —, `smoke-test-preprod` + `audit-preprod` required on the head SHA, no
-    deletion, no force-push). `deploy-prod` never builds: three guards **before** the kubeconfig
+    release as `HEAD^2` —, `smoke-test-preprod` + `audit-preprod` + `postgres-hba-preprod` required
+    on the head SHA, kept in step with `pipeline.yml` by `tools/check-release-gates.sh`, issue #600 —
+    no deletion, no force-push). `deploy-prod` never builds: three guards **before** the kubeconfig
     is even written — HEAD is a merge and `HEAD^2`'s `RELEASE_NOTES.md` gives the version
     (`tools/verify-release-merge.sh`), the four images exist on GHCR, a `success` run of the
     workflow exists for `release/<version>` at that exact commit (`gh run list --commit` wants
