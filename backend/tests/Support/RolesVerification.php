@@ -7,7 +7,8 @@ namespace App\Tests\Support;
 use PHPUnit\Framework\Assert;
 
 /**
- * Le SQL de `k8s/base/postgres-roles/verify.sql`, lu par les tests de forme
+ * Le SQL de `k8s/base/postgres-roles/verify.sql` — et le bloc de réparation de
+ * `roles.sql` (issue #610) —, lu par les tests de forme
  * ({@see \App\Tests\Shared\Infrastructure\Kubernetes\PostgresRolesProcedureTest})
  * et rejoué sur la base de test
  * ({@see \App\Tests\Shared\Infrastructure\Postgres\DatabaseOwnerSettingsVerificationTest}).
@@ -16,6 +17,8 @@ final class RolesVerification
 {
     private const string VERIFY_SQL = 'postgres-roles/verify.sql';
 
+    private const string ROLES_SQL = 'postgres-roles/roles.sql';
+
     /**
      * Le bloc `DO $$ … $$;` qui porte les refus d'une issue (`#608`), seul :
      * une assertion sur le fichier entier serait satisfaite par la requête
@@ -23,10 +26,26 @@ final class RolesVerification
      */
     public static function blockOf(string $issue): string
     {
-        $statements = (string) preg_replace('/^\s*--.*$/m', '', KubernetesManifests::base()->source(self::VERIFY_SQL));
+        return self::blockCarrying(self::VERIFY_SQL, "RAISE EXCEPTION '".$issue.' :', 'les refus '.$issue);
+    }
+
+    /**
+     * Le bloc `DO $$ … $$;` de roles.sql qui remet la base de l'application en
+     * l'état que le bloc `#608` de verify.sql attend (issue #610), reconnu à
+     * ses avis `#610`.
+     */
+    public static function repairBlock(): string
+    {
+        return self::blockCarrying(self::ROLES_SQL, "RAISE NOTICE '#610 :", 'la réparation #610');
+    }
+
+    /** Le seul bloc `DO $$ … $$;` multiligne du fichier qui contient `$mark`, sans les commentaires de ligne entière. */
+    private static function blockCarrying(string $file, string $mark, string $what): string
+    {
+        $statements = (string) preg_replace('/^\s*--.*$/m', '', KubernetesManifests::base()->source($file));
         preg_match_all('/^DO \$\$$.*?^\$\$;$/ms', $statements, $blocks);
-        $mine = array_values(array_filter($blocks[0], static fn (string $block): bool => str_contains($block, "RAISE EXCEPTION '".$issue.' :')));
-        Assert::assertCount(1, $mine, \sprintf('verify.sql : un et un seul bloc DO porte les refus %s.', $issue));
+        $mine = array_values(array_filter($blocks[0], static fn (string $block): bool => str_contains($block, $mark)));
+        Assert::assertCount(1, $mine, \sprintf('%s : un et un seul bloc DO porte %s.', basename($file), $what));
 
         return $mine[0];
     }

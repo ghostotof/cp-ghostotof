@@ -31,6 +31,10 @@ use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
  * la base de test migrée a la sienne dans verify.sql, puis que chaque geste la
  * change.
  *
+ * Issue #610 : ce que le bloc `#608` refuse, roles.sql le répare — son bloc
+ * de réparation, du SQL pur lui aussi, est rejoué après chacun de ces gestes,
+ * puis le bloc `#608` doit passer.
+ *
  * Tout tient dans une transaction annulée au `tearDown` : les rôles jetables
  * (`NOLOGIN`, aucun mot de passe), les `ALTER DATABASE`, les `REVOKE` et le DDL
  * sont transactionnels et ne se voient que d'elle. Le reste de verify.sql n'est
@@ -133,6 +137,85 @@ final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
         yield 'modèle' => ['ALTER DATABASE {db} WITH IS_TEMPLATE true', '#608 : la base est marquée modèle'];
         yield 'CONNECT retiré' => ['REVOKE CONNECT ON DATABASE {db} FROM PUBLIC', '#608 : 3 rôle(s) sur 3 sans CONNECT'];
         yield 'réglage de rôle dans la base' => ['ALTER ROLE {app} IN DATABASE {db} SET default_transaction_read_only = on', '#608 : 1 réglage(s) de rôle propre(s) à la base'];
+    }
+
+    /**
+     * Issue #610 : chaque écart que le bloc `#608` refuse, roles.sql le
+     * répare — la procédure, qui échouait tant qu'il existait, repasse.
+     */
+    #[DataProvider('repairableAlterations')]
+    public function testRolesSqlRepairsEveryAlterationTheVerificationRefuses(string $alteration): void
+    {
+        $this->arm(explode('; ', $alteration));
+        // Témoin : l'écart est refusé. Le refus interrompt la transaction ;
+        // le savepoint la rend à la réparation, l'écart toujours en place.
+        $this->probe->createSavepoint('refus');
+        $this->assertBlockRefuses('#608', '#608 :');
+        $this->probe->rollbackSavepoint('refus');
+
+        $this->probe->executeStatement(RolesVerification::repairBlock());
+
+        $this->probe->executeStatement(RolesVerification::blockOf('#608'));
+        self::assertSame('{TimeZone=Europe/Paris}', $this->databaseSettings(), 'Le fuseau de la migration, seul.');
+    }
+
+    /**
+     * Les gestes du bloc `#608`, plus ceux qu'il refuse sans les nommer un à
+     * un ; plusieurs instructions sont séparées par `; `.
+     *
+     * @return iterable<string, array{string}>
+     */
+    public static function repairableAlterations(): iterable
+    {
+        foreach (self::ownerAlterations() as $case => [$alteration]) {
+            yield $case => [$alteration];
+        }
+        yield 'réglage de base et fuseau changé ensemble' => ["ALTER DATABASE {db} SET search_path = nowhere; ALTER DATABASE {db} SET timezone TO 'UTC'"];
+        yield 'réglage d\'extension' => ["ALTER DATABASE {db} SET cpg.probe = 'x'"];
+        yield 'réglage de rôle dans la base, rôle de migration' => ['ALTER ROLE {migrator} IN DATABASE {db} SET statement_timeout = 1'];
+        yield 'réglage de rôle dans la base, superutilisateur' => ["ALTER ROLE CURRENT_USER IN DATABASE {db} SET work_mem = '64kB'"];
+        yield 'CONNECT retiré, propriétaire compris' => ['REVOKE CONNECT ON DATABASE {db} FROM PUBLIC; REVOKE CONNECT ON DATABASE {db} FROM CURRENT_USER'];
+    }
+
+    /**
+     * Une base saine n'est pas réécrite : ni ses réglages, ni ses privilèges
+     * (un GRANT inconditionnel rendrait explicite une ACL par défaut).
+     */
+    public function testRolesSqlLeavesAHealthyDatabaseUntouched(): void
+    {
+        $before = $this->databaseState();
+
+        $this->probe->executeStatement(RolesVerification::repairBlock());
+
+        self::assertSame($before, $this->databaseState());
+    }
+
+    /**
+     * Avant `Version20261011120000` (environnement neuf, base restaurée d'avant
+     * elle), le fuseau n'appartient qu'à la migration : roles.sql ne le pose
+     * pas, et retire celui qu'il trouverait — le bloc `#608` le refuse.
+     */
+    #[DataProvider('timeZonesBeforeTheMigration')]
+    public function testRolesSqlPosesNoTimeZoneBeforeItsMigration(string $timeZone): void
+    {
+        $this->arm([
+            "DELETE FROM public.doctrine_migration_versions WHERE version = 'DoctrineMigrations\\Version20261011120000'",
+            $timeZone,
+        ]);
+
+        $this->probe->executeStatement(RolesVerification::repairBlock());
+
+        $this->probe->executeStatement(RolesVerification::blockOf('#608'));
+        self::assertNull($this->databaseSettings());
+    }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function timeZonesBeforeTheMigration(): iterable
+    {
+        yield 'sans fuseau' => ['ALTER DATABASE {db} RESET timezone'];
+        yield 'avec le fuseau' => ["ALTER DATABASE {db} SET timezone TO 'Europe/Paris'"];
     }
 
     /**
@@ -472,6 +555,33 @@ final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
         $this->probe->executeStatement('RESET ROLE');
 
         return $result;
+    }
+
+    /** Les réglages propres à la base (`setrole = 0`), tels que le catalogue les garde ; `null` sans aucun. */
+    private function databaseSettings(): ?string
+    {
+        $settings = $this->probe->fetchOne('SELECT setconfig::text FROM pg_db_role_setting WHERE setdatabase = (SELECT oid FROM pg_database WHERE datname = current_database()) AND setrole = 0');
+        self::assertTrue(false === $settings || \is_string($settings));
+
+        return false === $settings ? null : $settings;
+    }
+
+    /**
+     * Ce que la réparation peut écrire : les réglages de la base et de ses
+     * rôles, son ACL, sa limite de connexions et sa marque de modèle.
+     *
+     * @return array<string, mixed>
+     */
+    private function databaseState(): array
+    {
+        $state = $this->probe->fetchAssociative(
+            "SELECT d.datacl::text AS acl, d.datconnlimit AS limite, d.datistemplate AS modele,
+                    (SELECT string_agg(s.setrole::text || ':' || s.setconfig::text, ';' ORDER BY s.setrole) FROM pg_db_role_setting s WHERE s.setdatabase = d.oid) AS reglages
+             FROM pg_database d WHERE d.datname = current_database()",
+        );
+        self::assertIsArray($state);
+
+        return $state;
     }
 
     private function database(): string

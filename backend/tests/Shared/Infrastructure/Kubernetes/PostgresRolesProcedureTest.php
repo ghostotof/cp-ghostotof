@@ -386,6 +386,34 @@ final class PostgresRolesProcedureTest extends TestCase
     }
 
     /**
+     * Issue #610 : roles.sql répare ce que le bloc `#608` refuse, fuseau
+     * compris — la migration figée ne se rejoue pas (elle convertit aussi les
+     * horodatages). Il le pose aux mêmes conditions que verify.sql l'admet :
+     * la ligne de `Version20261011120000`, et la valeur que la migration écrit.
+     * Ses avis n'impriment que des noms de réglage et des nombres : ni une
+     * valeur, choisie par qui tient le rôle de migration, ni un nom de rôle,
+     * celui du superutilisateur étant dans un Secret. Le comportement est
+     * rejoué par {@see \App\Tests\Shared\Infrastructure\Postgres\DatabaseOwnerSettingsVerificationTest}.
+     */
+    public function testTheRepairPosesTheMigrationsTimeZoneAndPrintsNoValue(): void
+    {
+        $migration = (string) file_get_contents(\dirname(__DIR__, 4).'/migrations/'.self::TIMEZONE_MIGRATION.'.php');
+        self::assertSame(1, preg_match("/SET timezone TO %L', current_database\\(\\), '([^']+)'/", $migration, $written), self::TIMEZONE_MIGRATION.' : le fuseau écrit par la migration.');
+
+        $repair = $this->normalized(RolesVerification::repairBlock());
+
+        self::assertStringContainsString(\sprintf("WHERE version = $1)' INTO migree USING 'DoctrineMigrations\\%s'", self::TIMEZONE_MIGRATION), $repair, 'La migration du fuseau est passée : sa ligne, comme verify.sql.');
+        self::assertStringContainsString(\sprintf("CASE WHEN migree THEN ARRAY['TimeZone=%s'] END", $written[1]), $repair);
+        self::assertStringContainsString(\sprintf("IF migree THEN EXECUTE format('ALTER DATABASE %%I SET timezone TO %%L', current_database(), '%s');", $written[1]), $repair);
+
+        preg_match_all("/RAISE NOTICE '#610 :(?:[^']|'')*'(.*?);/", $repair, $notices);
+        self::assertNotEmpty($notices[1], 'roles.sql : les avis #610.');
+        foreach ($notices[1] as $arguments) {
+            self::assertContains(trim($arguments), ['', ", (SELECT array_agg(split_part(c, '=', 1) ORDER BY c COLLATE \"C\") FROM unnest(reglages) AS c)", ', cardinality(roles_regles)'], 'Un avis #610 ne cite qu\'un nom de réglage ou un nombre.');
+        }
+    }
+
+    /**
      * Les valeurs des réglages de la base sont choisies par qui tient le rôle de
      * migration : verify.sql n'en imprime que les noms (des identifiants que le
      * serveur valide), jamais les valeurs, ni à l'affichage ni dans un refus.

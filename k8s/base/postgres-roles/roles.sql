@@ -77,7 +77,7 @@ DO $$ BEGIN RAISE EXCEPTION '#593 : rotate vaut 0 ou 1 : rien n''est écrit'; EN
 --    attribut de trop et tout réglage de session (`RESET ALL`). Aucun n'est
 --    superutilisateur ni ne peut créer une base ou un rôle. `RESET ALL` ne
 --    touche pas un réglage propre à la base (`ALTER ROLE … IN DATABASE …
---    SET`) : verify.sql le refuse (#608), rien ici ne le répare (#610).
+--    SET`) : l'étape 4 le retire (#610).
 SELECT format('CREATE ROLE %I', r)
 FROM (VALUES (:'app_role'), (:'migrator_role'), (:'reader_role')) AS v(r)
 WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = r) \gexec
@@ -142,3 +142,72 @@ FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace
 WHERE n.nspname = 'public' AND t.typtype IN ('e', 'd', 'c', 'r') AND pg_get_userbyid(t.typowner) <> :'migrator_role'
   AND NOT EXISTS (SELECT FROM pg_class c WHERE c.reltype = t.oid)
 ORDER BY t.typname \gexec
+
+-- 4. La base de l'application remise en l'état que le bloc `#608` de
+--    verify.sql attend (issue #610) : son propriétaire, le rôle de migration,
+--    peut la couper sans être superutilisateur, et tout rôle pose sur lui-même
+--    un réglage propre à la base — une injection SQL sous cpg_app comprise.
+--    Sans cette étape, aucun chemin écrit ne réparait ces états : la
+--    procédure échouait tant qu'ils existaient, et un `exec` qui écrit hors
+--    d'elle est interdit (#520). Chaque réparation n'écrit que sur un écart
+--    (une base saine n'est pas réécrite) et l'annonce par un avis `#610` sur
+--    le terminal de l'opérateur : des noms de réglage et des nombres, jamais
+--    une valeur (choisie par qui tient le rôle de migration), jamais un nom
+--    de rôle (celui du superutilisateur est dans un Secret).
+--    - Les réglages de base : le fuseau seul, une fois Version20261011120000
+--      passée (sa ligne, comme verify.sql), à la valeur que la migration figée
+--      écrit — elle ne se rejoue pas, elle convertit aussi les horodatages ;
+--      aucun avant elle. PostgresRolesProcedureTest lie la valeur à la
+--      migration.
+--    - Les réglages de rôle propres à la base, de tout rôle : verify.sql les
+--      refuse tous.
+--    - CONNECT rendu à PUBLIC, l'état que l'image crée (privileges.sql ne le
+--      retire que sur postgres et template1) ; le pg_hba.conf du dépôt filtre
+--      les rôles admis par le réseau.
+--    - Ni limite de connexions, ni marque de modèle.
+--    Laissés tels quels, comme verify.sql les laisse : TEMPORARY et
+--    ALLOW_CONNECTIONS. Du SQL pur, sans variable psql : rejoué sur la base de
+--    test par DatabaseOwnerSettingsVerificationTest, après chaque geste que le
+--    bloc `#608` refuse.
+DO $$
+DECLARE
+    base oid := (SELECT oid FROM pg_database WHERE datname = current_database());
+    reglages text[] := (SELECT setconfig FROM pg_db_role_setting WHERE setdatabase = base AND setrole = 0);
+    migree boolean := false;
+    attendus text[];
+    roles_regles oid[];
+    r oid;
+BEGIN
+    IF to_regclass('public.doctrine_migration_versions') IS NOT NULL THEN
+        EXECUTE 'SELECT EXISTS (SELECT FROM public.doctrine_migration_versions WHERE version = $1)' INTO migree USING 'DoctrineMigrations\Version20261011120000';
+    END IF;
+    attendus := CASE WHEN migree THEN ARRAY['TimeZone=Europe/Paris'] END;
+    IF reglages IS DISTINCT FROM attendus THEN
+        RAISE NOTICE '#610 : réglages de base remis en état (trouvés : %)', (SELECT array_agg(split_part(c, '=', 1) ORDER BY c COLLATE "C") FROM unnest(reglages) AS c);
+        EXECUTE format('ALTER DATABASE %I RESET ALL', current_database());
+        IF migree THEN
+            EXECUTE format('ALTER DATABASE %I SET timezone TO %L', current_database(), 'Europe/Paris');
+            RAISE NOTICE '#610 : fuseau de la base remis à celui de Version20261011120000';
+        END IF;
+    END IF;
+    roles_regles := ARRAY(SELECT setrole FROM pg_db_role_setting WHERE setdatabase = base AND setrole <> 0);
+    FOREACH r IN ARRAY roles_regles LOOP
+        EXECUTE format('ALTER ROLE %I IN DATABASE %I RESET ALL', pg_get_userbyid(r), current_database());
+    END LOOP;
+    IF cardinality(roles_regles) > 0 THEN
+        RAISE NOTICE '#610 : réglages de rôle propres à la base retirés pour % rôle(s)', cardinality(roles_regles);
+    END IF;
+    IF NOT has_database_privilege('public', current_database(), 'CONNECT') THEN
+        EXECUTE format('GRANT CONNECT ON DATABASE %I TO PUBLIC', current_database());
+        RAISE NOTICE '#610 : CONNECT rendu à PUBLIC sur la base';
+    END IF;
+    IF (SELECT datconnlimit <> -1 FROM pg_database WHERE oid = base) THEN
+        EXECUTE format('ALTER DATABASE %I CONNECTION LIMIT -1', current_database());
+        RAISE NOTICE '#610 : limite de connexions de la base retirée';
+    END IF;
+    IF (SELECT datistemplate FROM pg_database WHERE oid = base) THEN
+        EXECUTE format('ALTER DATABASE %I IS_TEMPLATE false', current_database());
+        RAISE NOTICE '#610 : marque de modèle de la base retirée';
+    END IF;
+END
+$$;
