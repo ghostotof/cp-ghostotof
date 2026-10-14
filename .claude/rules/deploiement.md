@@ -261,8 +261,27 @@ paths:
   `verify.sql` checks the file the server actually reads** at every pass of the roles procedure
   (`hba_file` equal to `postgres.yaml`'s path, no rule in error, no `trust` off the socket but for the
   reader, last rule `reject`): an args patch or an old manifest would bring back PGDATA's file in
-  silence. A smoke test that tries the superuser over TCP from preprod is issue #596; narrowing the
-  network rule to the application's database and the pod range, issue #597.
+  silence. **`smoke-test-preprod` measures it at every preprod deploy** (issue #596): `tools/run-job.sh`
+  launches `k8s/base/postgres-hba-probe-job.yaml` (outside kustomize, the server's image written in it —
+  run-job.sh's image argument is `sans-objet` —, waited 120 s, deadline 180), which tries `database`
+  over TCP as the bootstrap superuser **without a password** and exits 0 only on `pg_hba.conf rejects
+  connection`: `reject` refuses before any authentication, so the pod gets the superuser's *name* and
+  the database's from `postgres-credentials` key by key (`secretKeyRef`, never `envFrom`, which would
+  bring `POSTGRES_PASSWORD`), `PGPASSWORD` refused, `PGPASSFILE` pointed at a path that cannot exist.
+  A password prompt (PGDATA's file admits the superuser by SCRAM), a connection or an unreachable
+  server fail it, named — then `rollback-preprod`, which does not undo `postgres`: fix the release.
+  The probe is **`k8s/base/postgres-hba-probe.sh`**, copied byte for byte (bar the final newline,
+  which Symfony's YAML parser drops) into the Job's `command` — under `k8s/`, because the dev
+  container mounts it and not `tools/` —, written without any `${…}` (run-job.sh refuses one left
+  after envsubst, comments included), and it **masks the superuser's and the database's names** in
+  what it prints: the Job's logs reach the pipeline's. `PostgresHbaProbeJobManifestTest` pins the
+  copy, the image and uid of `postgres.yaml`, the env (`PGHOST` = the Service's name), no password,
+  the hardening; `tools/check-postgres-hba.sh` runs the probe file under the manifest's uid **both
+  ways** — success against the repo's file, failure against a second server started without
+  `-c hba_file` — and checks its output names neither; it refuses a missing probe file and wants the
+  success marker (Docker mounts a missing source as an empty directory, where `sh` exits 0 —
+  measured). Preprod only, like every smoke: in prod the runbook's command stays the release's
+  check. Narrowing the network rule to the application's database and the pod range is issue #597.
   **Dev and CI keep the image's file** (single superuser role, on purpose, see above).
 - **Doctrine migrations run as a Job, not `kubectl exec`** (audit C8). `k8s/base/migrate-job.yaml` is
   deliberately **outside** `kustomization.yaml`'s `resources:` — so kustomize's image transformer never sees
@@ -378,7 +397,7 @@ paths:
   gone, 240 + 30 s of grace, a narrow margin under 300. Today: waited 300 s, deadline 360 —
   `migrate-job.yaml`, `messenger-probe-job.yaml`, `messenger-stop-workers-job.yaml`,
   `messenger-failed-{retry,remove}-job.yaml`, `create-user-job.yaml`; `seed-job.yaml` waited 180,
-  deadline 240. Counted from the Job's
+  deadline 240; `postgres-hba-probe-job.yaml` (#596) waited 120, deadline 180. Counted from the Job's
   creation, `Always` pulls and retry included; `sh`/`php` as
   PID 1 ignore SIGTERM, so the pod dies 30 s after the deadline (grace period). **An `::error::`
   means « stopped »** (decided 2026-10-12, #535): with the deadline above the wait, a Job whose wait
@@ -628,8 +647,8 @@ paths:
   trigger travels in a **cookie** — Xdebug 3.5 does not read HTTP headers, and nginx logs the query string.
   Production receives none of this. Procedure in `k8s/README.md`.
 - **No pod mounts a ServiceAccount token, and both namespaces carry Pod Security Admission labels**
-  (audit A17). `automountServiceAccountToken: false` on all fifteen pod specs, the seven Jobs outside kustomize
-  included (`postgres-roles-job.yaml`, #575, was the eighth until #593 removed it) — none of them talks to the Kubernetes API (RabbitMQ does no peer discovery here, ESO runs in
+  (audit A17). `automountServiceAccountToken: false` on all sixteen pod specs, the eight Jobs outside kustomize
+  included (`postgres-hba-probe-job.yaml`, #596, is the eighth; `postgres-roles-job.yaml`, #575, held that place until #593 removed it) — none of them talks to the Kubernetes API (RabbitMQ does no peer discovery here, ESO runs in
   its own namespace), so the default `default`-SA token was pure standing credential. The `preprod` and
   `prod` `Namespace` objects set `enforce: baseline` with `audit`/`warn: restricted`: RabbitMQ declares no
   container `securityContext` (constat A18, accepted — v0.5.0 already put it in `CrashLoopBackOff` by

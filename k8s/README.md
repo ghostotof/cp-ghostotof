@@ -1143,8 +1143,19 @@ echo 'SELECT 1;' | kubectl -n "${NS:?preprod ou prod}" exec -i deploy/postgres -
 Le même refus, mesuré sur l'image épinglée pour chaque rôle et chaque voie
 (réplication, loopback compris), est le job CI `postgres-hba`
 (`tools/check-postgres-hba.sh`) ; dans le cluster, `verify.sql` relit aussi le
-fichier actif à chaque passage de la procédure des rôles. Suivi #596 : en
-faire un smoke de préprod automatique.
+fichier actif à chaque passage de la procédure des rôles. **En préprod, le
+smoke le refait à chaque déploiement** (issue #596) : `smoke-test-preprod`
+lance par `tools/run-job.sh` le Job `postgres-hba-probe` (image du serveur,
+sans mot de passe, seulement le nom du superutilisateur lu dans
+`postgres-credentials`), qui tente `database` sous le superutilisateur et
+n'aboutit que sur `pg_hba.conf rejects connection` — sinon le smoke échoue, et
+`rollback-preprod` suit (sans toucher `postgres` : c'est la release à
+corriger). Sa sonde, `k8s/base/postgres-hba-probe.sh`, est recopiée à
+l'identique dans le `command` du Job (`PostgresHbaProbeJobManifestTest`) et
+mesurée dans les deux sens par `tools/check-postgres-hba.sh` ; elle masque le
+nom du superutilisateur et de la base dans ses journaux. En prod, il n'y a pas
+de smoke : la commande ci-dessus reste celle de la release qui touche
+`postgres.yaml` ou le `pg_hba.conf`.
 
 **Publier les URL, puis basculer** — seulement celles dont le mot de passe a
 été écrit (`t` ci-dessus) ; même recette que les secrets de l'assistant, §2 :
