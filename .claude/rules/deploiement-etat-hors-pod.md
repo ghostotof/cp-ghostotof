@@ -1,16 +1,28 @@
 ---
 paths:
   - "k8s/**"
-  - "docker/**"
-  - ".github/workflows/**"
-  - "tools/**"
-  - "backend/migrations/**"
+  - "docker/php/Dockerfile"
+  - "docker/php/www.prod.conf"
+  - "docker-compose.yml"
+  - "tools/smoke-login-throttling.sh"
+  - "backend/.env"
+  - "backend/phpunit.dist.xml"
   - "backend/config/packages/cache.yaml"
   - "backend/config/packages/lock.yaml"
   - "backend/config/packages/rate_limiter.yaml"
   - "backend/config/packages/monolog.yaml"
+  - "backend/config/packages/security.yaml"
+  - "backend/migrations/Version20260916180000.php"
   - "backend/src/Shared/Infrastructure/Lock/**"
-  - "frontend/public/.well-known/**"
+  - "backend/src/**/Infrastructure/Doctrine/Postgres*Lock.php"
+  - "backend/src/**/*LockInsideTransactionException.php"
+  - "backend/src/**/Infrastructure/RateLimiter/**"
+  - "backend/src/Security/Authentication/Infrastructure/Http/RateLimiterLockFailureListener.php"
+  - "backend/tests/Shared/Infrastructure/Lock/**"
+  - "backend/tests/Shared/Infrastructure/Cache/**"
+  - "backend/tests/Security/RateLimiter*"
+  - "backend/tests/Security/Authentication/LoginThrottlingTest.php"
+  - "backend/tests/Support/KubernetesManifests.php"
 ---
 
 # Deployment invariants — no application state on the pod (ADR 0005)
