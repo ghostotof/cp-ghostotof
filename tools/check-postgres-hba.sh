@@ -24,7 +24,18 @@
 #   - sur le socket local : le superutilisateur admis (entrypoint, procédure
 #     des rôles). La sonde `pg_isready` du manifeste est rejouée pour dire que
 #     le serveur répond ; elle n'authentifie personne, elle ne mesure donc
-#     rien du fichier.
+#     rien du fichier ;
+#   - la sonde du smoke préprod (k8s/base/postgres-hba-probe.sh, issue #596),
+#     jouée comme le Job (uid du manifeste, système de fichiers en lecture
+#     seule, PGCONNECT_TIMEOUT), dans les deux sens : elle réussit contre ce
+#     serveur, y compris sous des noms qui recoupent les messages qu'elle
+#     reconnaît ; elle échoue en nommant la demande de mot de passe contre un
+#     second serveur, démarré sans `-c hba_file`, qui lit le pg_hba.conf de
+#     l'image dans PGDATA (ce que ramènerait un `rollout undo` de `postgres` ou
+#     un overlay qui perd l'argument) ; elle échoue contre un troisième, dont
+#     le fichier n'admet le superutilisateur que sur la base `postgres` ; elle
+#     réessaie puis échoue sur un port fermé. Sa sortie, qui part dans les
+#     journaux du pipeline, ne nomme jamais le superutilisateur ni la base.
 #
 # Les mots de passe sont générés à chaque run et n'entrent dans aucun argument
 # de processus : fichiers d'environnement privés et entrée standard de psql.
@@ -46,6 +57,14 @@ esac
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 HBA="$ROOT/k8s/base/postgres-pg_hba.conf"
+# La sonde du smoke préprod (#596). Vérifiée avant tout montage : un chemin
+# source absent, Docker le crée en répertoire vide, et `sh` sur un répertoire
+# sort en 0 — la sonde passerait sans avoir rien mesuré (constaté).
+PROBE="$ROOT/k8s/base/postgres-hba-probe.sh"
+if [ ! -f "$PROBE" ]; then
+  echo "$PROBE introuvable : la sonde du smoke préprod (#596) n'aurait rien à jouer." >&2
+  exit 2
+fi
 # Le chemin que lit le serveur, pris dans le manifeste : une seule source.
 MOUNT="$(sed -n 's/^[[:space:]]*- hba_file=\([^[:space:]]*\)[[:space:]]*$/\1/p' "$ROOT/k8s/base/postgres.yaml")"
 if [ -z "$MOUNT" ] || [ "$(printf '%s\n' "$MOUNT" | wc -l)" -ne 1 ]; then
@@ -62,11 +81,15 @@ fi
 BOOTSTRAP=hba_bootstrap
 DB=hba_check
 server="check-postgres-hba-$$"
+# Sonde #596 : le même serveur sans `-c hba_file` (le fichier de l'image dans
+# PGDATA), puis un fichier qui n'admet le superutilisateur que sur `postgres`.
+pgdata_server="check-postgres-hba-pgdata-$$"
+postgres_db_server="check-postgres-hba-postgresdb-$$"
 network="check-postgres-hba-$$"
 umask 077
 scratch="$(mktemp -d)"
 cleanup() {
-  docker rm -f "$server" >/dev/null 2>&1 || true
+  docker rm -f "$server" "$pgdata_server" "$postgres_db_server" >/dev/null 2>&1 || true
   docker network rm "$network" >/dev/null 2>&1 || true
   rm -rf "$scratch"
 }
@@ -84,28 +107,48 @@ docker run -d --name "$server" --network "$network" --user "$RUN_AS:$RUN_AS" \
   --env-file "$scratch/server.env" \
   -v "$HBA:$MOUNT:ro" \
   "$IMAGE" postgres -c "hba_file=$MOUNT" >/dev/null
+# Démarrés en même temps, pour ne pas attendre les initialisations l'une après l'autre.
+docker run -d --name "$pgdata_server" --network "$network" --user "$RUN_AS:$RUN_AS" \
+  --env-file "$scratch/server.env" \
+  "$IMAGE" postgres >/dev/null
+# Le fichier du dépôt, plus une règle qui rouvre le superutilisateur sur la
+# base `postgres` seulement, juste avant le `reject` final. Copié dans le
+# conteneur (docker cp passe par l'API, sans partage de fichiers), lisible par
+# l'uid du serveur.
+sed '$!b; /^host[[:space:]]\{1,\}all[[:space:]]\{1,\}all[[:space:]]\{1,\}all[[:space:]]\{1,\}reject/i host postgres all all scram-sha-256' \
+  "$HBA" > "$scratch/postgres-db.conf"
+grep -q '^host postgres all all scram-sha-256$' "$scratch/postgres-db.conf" \
+  || { echo "La règle de test n'a pas été insérée (dernière ligne de $HBA changée ?)." >&2; exit 2; }
+chmod 644 "$scratch/postgres-db.conf"
+docker create --name "$postgres_db_server" --network "$network" --user "$RUN_AS:$RUN_AS" \
+  --env-file "$scratch/server.env" \
+  "$IMAGE" postgres -c hba_file=/tmp/pg_hba.conf >/dev/null
+docker cp "$scratch/postgres-db.conf" "$postgres_db_server:/tmp/pg_hba.conf" >/dev/null
+docker start "$postgres_db_server" >/dev/null
 rm -f "$scratch/server.env"
 
 # Prêt quand le serveur définitif écoute en TCP : le serveur temporaire de
 # l'initialisation n'écoute que le socket local. Jusqu'à 2 min.
-ready=
-for _ in $(seq 1 60); do
-  if [ "$(docker inspect -f '{{.State.Running}}' "$server")" != "true" ]; then
-    echo "PostgreSQL s'est arrêté au démarrage avec $HBA (fichier refusé ?) :" >&2
-    docker logs --tail 40 "$server" >&2 || true
-    exit 1
-  fi
-  if docker exec "$server" pg_isready -q -h 127.0.0.1 -U "$BOOTSTRAP" -d "$DB" >/dev/null 2>&1; then
-    ready=1
-    break
-  fi
-  sleep 2
-done
-if [ -z "$ready" ]; then
-  echo "PostgreSQL n'écoute pas en TCP au bout de 2 min :" >&2
-  docker logs --tail 40 "$server" >&2 || true
+# $1 conteneur, $2 ce qu'il lit (pour le message).
+wait_listening() {
+  for _ in $(seq 1 60); do
+    if [ "$(docker inspect -f '{{.State.Running}}' "$1")" != "true" ]; then
+      echo "PostgreSQL s'est arrêté au démarrage avec $2 (fichier refusé ?) :" >&2
+      docker logs --tail 40 "$1" >&2 || true
+      exit 1
+    fi
+    if docker exec "$1" pg_isready -q -h 127.0.0.1 -U "$BOOTSTRAP" -d "$DB" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 2
+  done
+  echo "PostgreSQL ($2) n'écoute pas en TCP au bout de 2 min :" >&2
+  docker logs --tail 40 "$1" >&2 || true
   exit 1
-fi
+}
+wait_listening "$server" "$HBA"
+wait_listening "$pgdata_server" "le pg_hba.conf de l'image"
+wait_listening "$postgres_db_server" "un pg_hba.conf ouvert sur la base postgres"
 
 failures=0
 fail() {
@@ -184,6 +227,66 @@ for address in 127.0.0.1 ::1; do
     || fail "cpg_reader ne passe plus par $address sans mot de passe."
 done
 
+# La sonde du smoke préprod (#596), lancée comme le Job : uid du manifeste,
+# système de fichiers en lecture seule, PGCONNECT_TIMEOUT du manifeste,
+# variables libpq seulement, aucun mot de passe.
+# $1 serveur, $2 rôle, $3 base, $4 port (défaut 5432).
+probe() {
+  docker run --rm --network "$network" --user "$RUN_AS:$RUN_AS" --read-only \
+    -e PGHOST="$1" -e PGUSER="$2" -e PGDATABASE="$3" -e PGPORT="${4:-5432}" -e PGCONNECT_TIMEOUT=10 \
+    -v "$PROBE:/postgres-hba-probe.sh:ro" \
+    --entrypoint sh "$IMAGE" /postgres-hba-probe.sh 2>&1
+}
+# $1 libellé, $2 sortie de la sonde, $3… noms qui ne doivent pas y figurer.
+probe_output_is_redacted() {
+  local label="$1" output="$2" name
+  shift 2
+  for name in "$@"; do
+    if grep -qF -e "$name" <<<"$output"; then
+      fail "sonde #596 ($label) : sa sortie laisse voir « $name » : « $output »."
+    fi
+  done
+}
+# $1 libellé, $2 serveur, $3 rôle, $4 base — succès attendu, avec la marque
+# que la sonde n'imprime qu'après les deux refus : un code 0 seul ne prouve
+# pas qu'elle a tourné.
+expect_probe_passes() {
+  local out
+  if ! out="$(probe "$2" "$3" "$4")" || ! grep -q '^#596 : OK' <<<"$out"; then
+    fail "sonde #596 ($1) : succès attendu, obtenu « $out »."
+  fi
+  probe_output_is_redacted "$1" "$out" "$3" "$4"
+  PROBE_OUTPUT="$out"
+}
+# $1 libellé, $2 marque attendue dans l'échec, $3 serveur, $4 port (défaut 5432).
+expect_probe_fails() {
+  local out
+  if out="$(probe "$3" "$BOOTSTRAP" "$DB" "${4:-}")"; then
+    fail "sonde #596 ($1) : échec attendu, succès obtenu « $out »."
+  elif ! grep -q -- "$2" <<<"$out"; then
+    fail "sonde #596 ($1) : échec « $2 » attendu, obtenu « $out »."
+  fi
+  probe_output_is_redacted "$1" "$out" "$BOOTSTRAP" "$DB"
+  PROBE_OUTPUT="$out"
+}
+
+expect_probe_passes "pg_hba.conf du dépôt" "$server" "$BOOTSTRAP" "$DB"
+# Des noms qui recoupent les messages que la sonde reconnaît (« connection »,
+# « rejects »), l'un préfixe de l'autre : le refus reste reconnu, et ni l'un
+# ni la partie propre de l'autre n'apparaissent. Le `reject` final refuse un
+# rôle inexistant avant de le chercher.
+expect_probe_passes "noms qui recoupent les motifs" "$server" conn conn_rejects
+probe_output_is_redacted "noms qui recoupent les motifs" "$PROBE_OUTPUT" _rejects
+expect_probe_fails "pg_hba.conf de l'image, superutilisateur admis en SCRAM" \
+  'demande un mot de passe' "$pgdata_server"
+expect_probe_fails "superutilisateur admis sur la base postgres seulement" \
+  'base postgres.*demande un mot de passe' "$postgres_db_server"
+# Un port fermé : la sonde réessaie (un serveur qui vient de redémarrer
+# n'écoute pas encore), puis échoue en le nommant.
+expect_probe_fails "port fermé" 'injoignable' "$server" 5433
+retries="$(grep -c 'nouvel essai' <<<"$PROBE_OUTPUT" || true)"
+[ "$retries" -ge 1 ] || fail "sonde #596 (port fermé) : au moins un nouvel essai attendu, $retries lu."
+
 # Le socket local, et la sonde du manifeste (le serveur répond ; elle
 # n'authentifie pas : seul le SELECT mesure la règle `local`).
 docker exec "$server" sh -c 'pg_isready -q -U "$POSTGRES_USER" -d "$POSTGRES_DB"' \
@@ -196,4 +299,4 @@ if [ "$failures" -ne 0 ]; then
   exit 1
 fi
 
-echo "PostgreSQL ($IMAGE) démarre avec $HBA : superutilisateur, cpg_reader et réplication refusés par TCP, cpg_app et cpg_migrator admis par SCRAM, loopback à cpg_reader seul, socket local inchangé."
+echo "PostgreSQL ($IMAGE) démarre avec $HBA : superutilisateur, cpg_reader et réplication refusés par TCP, cpg_app et cpg_migrator admis par SCRAM, loopback à cpg_reader seul, socket local inchangé ; la sonde du smoke préprod (#596) passe ici (noms piégés compris) et échoue sur le fichier de l'image, sur la base postgres rouverte et sur un port fermé."

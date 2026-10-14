@@ -481,9 +481,9 @@ done
 CALL_PATTERN='run-job\.sh"?[[:space:]]+[^[:space:]]+[[:space:]]+"?[^[:space:]"]*k8s/base/[a-z-]+\.yaml"?[[:space:]]+[^[:space:]]+[[:space:]]+[0-9]+'
 # <fichier>:<nombre minimal d'appels> — en deçà, l'expression ne lit plus le
 # fichier et la vérification serait vide. Pipeline : migration (préprod,
-# prod) et seed ; le témoin ; runbook : rejeu, suppression, arrêt des
-# workers, création de compte.
-SOURCES=".github/workflows/pipeline.yml:3 tools/smoke-messenger-probe.sh:1 k8s/README.md:4"
+# prod), seed et sonde du pg_hba.conf (#596) ; le témoin ; runbook : rejeu,
+# suppression, arrêt des workers, création de compte.
+SOURCES=".github/workflows/pipeline.yml:4 tools/smoke-messenger-probe.sh:1 k8s/README.md:4"
 REPO="$TOOLS/.."
 all_calls=""
 for source in $SOURCES; do

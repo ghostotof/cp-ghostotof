@@ -3,7 +3,8 @@
 # run-job.sh
 # ---------------------------------------------------------------------------
 # Lance un Job Kubernetes tenu hors de kustomize (issue #488) — la migration,
-# le seed, le message témoin, la création de compte — et attend sa fin. Une
+# le seed, le message témoin, la sonde du pg_hba.conf (#596), la création de
+# compte, la file d'échec Messenger — et attend sa fin. Une
 # seule implémentation de la séquence, que le pipeline écrivait en ligne à
 # chaque Job :
 #
