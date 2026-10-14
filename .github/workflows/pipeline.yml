@@ -813,6 +813,28 @@ jobs:
       url: https://preprod.cp-ghostotof.com
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Configure kubectl
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBE_CONFIG_PREPROD }}" > ~/.kube/config
+      # En tête du job (issue #603), pour que le premier rouge nomme le
+      # workload. Un datastore qui ne démarre pas — RabbitMQ en
+      # CrashLoopBackOff à l'incident v0.5.0, invisible de /healthz et de
+      # /api/me — fait déjà échouer deploy-preprod, qui attend ces trois
+      # workloads (wait-rollout.sh), et rollback-preprod ne tourne pas. Reste
+      # ici celui qui était Ready à la fin du déploiement et qui est tombé
+      # depuis : les étapes suivantes l'accuseraient sous un autre nom (le
+      # throttling du login lit PostgreSQL — comptes, `cache.app` en
+      # doctrine_dbal —, le message témoin passe par RabbitMQ). Son échec
+      # déclenche rollback-preprod, qui ne ramène ni postgres ni rabbitmq :
+      # inefficace sur la cause, sans danger, et sortir ce contrôle du job,
+      # comme la sonde pg_hba (#600), n'y changerait rien — ces deux étapes le
+      # déclencheraient quand même. Instantané quand tout est Ready.
+      - name: Vérifie les datastores et le worker
+        run: |
+          kubectl -n preprod rollout status deployment/postgres --timeout=60s
+          kubectl -n preprod rollout status deployment/rabbitmq --timeout=60s
+          kubectl -n preprod rollout status deployment/worker --timeout=60s
       - name: Smoke tests
         run: |
           curl -fsS https://preprod.cp-ghostotof.com/healthz
@@ -830,26 +852,6 @@ jobs:
         env:
           AUDIT_BASIC_AUTH: ${{ secrets.PREPROD_BASIC_AUTH }}
         run: tools/smoke-login-throttling.sh https://preprod.cp-ghostotof.com
-      - name: Configure kubectl
-        run: |
-          mkdir -p ~/.kube
-          echo "${{ secrets.KUBE_CONFIG_PREPROD }}" > ~/.kube/config
-      # Incident v0.5.0 : RabbitMQ en CrashLoopBackOff (donc le worker aussi,
-      # par dépendance) n'était détecté ni par /healthz ni par /api/me — les
-      # deux endpoints HTTP démarrent très bien même sans broker AMQP
-      # fonctionnel, seule la publication d'un message (POST /api/contact)
-      # échouait réellement. `rollout status` échoue/timeout si le déploiement
-      # n'atteint jamais l'état Ready, ce qui aurait fait échouer ce job et
-      # déclenché rollback-preprod — et laissé la PR vers `main` rouge.
-      # Postgres ajouté par cohérence : /api/me ne le sollicite pas non plus
-      # (rejet 401 avant toute requête DB pour une requête non authentifiée),
-      # donc une régression équivalente sur postgres.yaml passerait tout aussi
-      # inaperçue sans cette vérification dédiée.
-      - name: Vérifie les datastores et le worker
-        run: |
-          kubectl -n preprod rollout status deployment/postgres --timeout=60s
-          kubectl -n preprod rollout status deployment/rabbitmq --timeout=60s
-          kubectl -n preprod rollout status deployment/worker --timeout=60s
       # Issue #470 : un worker `Ready` ne prouve pas qu'il décode ce que l'API
       # signe. Un écart de clé de MAC (KEY_CONTEXT mal déployé, worker resté sur
       # l'ancienne release) laissait la préprod verte, chaque message dans
