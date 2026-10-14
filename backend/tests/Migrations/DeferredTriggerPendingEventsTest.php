@@ -59,8 +59,9 @@ final class DeferredTriggerPendingEventsTest extends KernelTestCase
      * Les `INSERT` bruts (ici et dans le cas `about_me_card`) recopient les
      * colonnes NOT NULL de la table, par décision (issue #585). Mesuré : une
      * colonne NOT NULL ajoutée **avec** un DEFAULT — l'une des deux voies de
-     * la règle des migrations, `.claude/rules/deploiement.md` — ne change
-     * rien ; sans DEFAULT (l'autre voie : la migration remplit la colonne),
+     * la règle des migrations, `.claude/rules/deploiement-pipeline.md`
+     * (« The standard deploy runs the migration *before* the rollout ») — ne
+     * change rien ; sans DEFAULT (l'autre voie : la migration remplit la colonne),
      * sur `contribution` tous les cas échouent dès le `setUp`, sur
      * `about_me_card` le seul cas qui y écrit, en `23502` nommant la colonne
      * et la table : un échec bruyant, impossible à confondre avec l'invariant

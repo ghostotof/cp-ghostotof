@@ -535,7 +535,7 @@ au §4.
 Conséquence de cet ordre : les `ExternalSecret` d'une release sont appliqués
 **même si sa migration échoue ensuite**, et les pods de la release précédente,
 toujours en service, redémarrent sur ses Secrets. D'où la même discipline que
-pour les colonnes (expand/contract, `.claude/rules/deploiement.md`) : **ne
+pour les colonnes (expand/contract, `.claude/rules/deploiement-pipeline.md`) : **ne
 jamais retirer ni renommer une clé de Secret dans la release qui cesse de la
 lire**, seulement dans la suivante. Ajouter une clé est toujours sûr.
 `rollback-preprod` ne joue `rollout undo` que si `deploy-preprod` a réussi : un
@@ -851,7 +851,7 @@ conséquence. Avant le merge de la release :
 1. Vider `async` et lire `failed`, rejouer ou purger ce qui doit l'être (étape 1 ci-dessus) : une
    ligne laissée là devient illisible.
 2. Déployer avec la **fenêtre de maintenance** (`DEPLOY_MAINTENANCE_WINDOW=true`, cf.
-   `.claude/rules/deploiement.md`) : `backend` et `worker` passent à 0 avant la migration et
+   `.claude/rules/deploiement-pipeline.md`) : `backend` et `worker` passent à 0 avant la migration et
    repartent ensemble sous la nouvelle clé. Sans elle, le backend en `RollingUpdate` garde un ancien
    pod qui signe sous l'ancienne clé pendant que le worker, en `Recreate`, exige déjà la nouvelle :
    un message de contact envoyé à ce moment est perdu (il n'existe que dans la file). Prix de la
@@ -863,7 +863,7 @@ conséquence. Avant le merge de la release :
 Un message dont les réessais sont épuisés, ou qui ne se décode pas (MAC refusé, invitation sans
 génération), reste dans la table `messenger_messages` (`queue_name = failed`) jusqu'à son rejeu,
 sa suppression ou la purge des 30 jours (messages de contact, `messenger-purge-cronjob.yaml`).
-Quatre opérations, deux voies (issue #521, règle de #520 dans `.claude/rules/deploiement.md`) :
+Quatre opérations, deux voies (issue #521, règle de #520 dans `.claude/rules/deploiement-pipeline.md`) :
 
 | Opération | Effet de bord | Ligne d'audit | Ce que la sortie expose | Voie |
 |---|---|---|---|---|
@@ -969,7 +969,7 @@ main :
   d'objet par la file tant qu'elles tournent. Au redéploiement suivant, ce qu'elles ont mis en file
   sans MAC est refusé.
 - `rollout undo` ne rejoue jamais le `down()` d'une migration : le schéma reste celui de la release
-  défaite (`.claude/rules/deploiement.md`, migration avant le rollout).
+  défaite (`.claude/rules/deploiement-pipeline.md`, migration avant le rollout).
 
 ## Rôles PostgreSQL (issue #575)
 
@@ -1876,7 +1876,7 @@ printf '%s\n' '\set id <userId>' "SELECT username, email FROM cpg_user WHERE id 
 ```
 
 C'est l'**exception assumée** à « jamais `kubectl exec` » (issue #520, règle dans
-`.claude/rules/deploiement.md`) : une lecture humaine dont la sortie reste sur le terminal. Un Job
+`.claude/rules/deploiement-pipeline.md`) : une lecture humaine dont la sortie reste sur le terminal. Un Job
 aurait écrit le nom et l'adresse dans les journaux de son pod, lisibles jusqu'à sa suppression,
 y compris par le jeton CI (`pods/log`), ce que #363 cherche justement à éviter. Ce que fait chaque
 morceau, essayé sur l'image `postgres:18.6-alpine` en local (pas encore sur le cluster) :

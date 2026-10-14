@@ -16,8 +16,8 @@
 # n'existe que dans les images qui contiennent #528 : ce manifeste se lance
 # depuis un checkout de la release qui tourne (k8s/README.md).
 #
-# Règle de #520 (`.claude/rules/deploiement.md`, « What never kubectl exec
-# covers ») : une commande à effet de bord passe par un Job, jamais par
+# Règle de #520 (`.claude/rules/deploiement-pipeline.md`, « What never kubectl
+# exec covers ») : une commande à effet de bord passe par un Job, jamais par
 # `kubectl exec`. La lecture de `failed` (`messenger:failed:show`), elle, reste
 # un exec humain en lecture seule : en `-vv`, elle affiche le message lui-même
 # (nom, adresse et texte d'un visiteur), qu'un Job écrirait dans ses journaux.
@@ -41,8 +41,8 @@ spec:
   # (initContainer et conteneur), puis la commande, attendus 300 s par la
   # procédure (tools/run-job.sh … 300).
   # Délai : convention de tous les Jobs, attente + 35 s < délai ≤ attente + 120 s
-  # (issues #525, #535 ; .claude/rules/deploiement.md, « One rule for every Job's
-  # deadline » ; vérifiée par tools/tests/run-job.test.sh).
+  # (issues #525, #535 ; .claude/rules/deploiement-pipeline.md, « One rule for
+  # every Job's deadline » ; vérifiée par tools/tests/run-job.test.sh).
   activeDeadlineSeconds: 360
   # Une heure pour relire `kubectl logs job/backend-messenger-stop-workers`.
   ttlSecondsAfterFinished: 3600
@@ -81,7 +81,8 @@ spec:
           command: ['php', 'bin/console', 'app:messenger:stop-workers', '--no-interaction']
           env:
             # Issue #525 : attentes de verrou PostgreSQL bornées comme sous FPM (valeur
-            # de www.prod.conf ; ConsoleLockWaitBoundTest, .claude/rules/deploiement.md).
+            # de www.prod.conf ; ConsoleLockWaitBoundTest,
+            # .claude/rules/deploiement-etat-hors-pod.md).
             - name: PGOPTIONS
               value: '-c lock_timeout=5s'
             # Revue de #521, comme les Jobs de `failed` : Symfony Console lit

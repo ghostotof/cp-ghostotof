@@ -32,7 +32,8 @@ spec:
   # Une sonde qui échoue fait échouer le smoke, elle ne réessaie pas.
   backoffLimit: 0
   # Délai : convention de tous les Jobs, attente + 35 s < délai ≤ attente + 120 s
-  # (issues #525, #535 ; .claude/rules/deploiement.md ; vérifiée par
+  # (issues #525, #535 ; .claude/rules/deploiement-pipeline.md, « One rule for
+  # every Job's deadline » ; vérifiée par
   # tools/tests/run-job.test.sh). Attente du pipeline : 120 s, pull de l'image
   # compris ; la sonde elle-même dure moins de PGCONNECT_TIMEOUT.
   activeDeadlineSeconds: 180
