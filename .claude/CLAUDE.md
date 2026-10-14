@@ -32,7 +32,11 @@ This file only carries what applies everywhere, plus what runs from the shell (g
 | `frontend-backoffice.md` | `/admin`, set-password, route guard | touching an admin page or the router |
 | `frontend-a11y.md` | accessibility | adding or changing UI |
 | `images-docker.md` | Dockerfiles, frontend image, share cards | touching `docker/`, the image build, `.dockerignore` |
-| `deploiement.md` | Kubernetes, nginx, pipeline deploy jobs, state off the pod | touching `k8s/`, `docker/`, a workflow, `cache`/`lock`/rate limiters |
+| `deploiement.md` | Kubernetes manifests, ConfigMaps, pod security, stateful PVCs — and the index of the four below | touching `k8s/`, `docker/`, a workflow |
+| `deploiement-pipeline.md` | deploy Jobs, `kubectl exec` boundary, migration before rollout, deploy waits | touching a Job, `pipeline.yml`'s deploy jobs, `run-job.sh`, `wait-rollout.sh`, a migration |
+| `deploiement-postgres.md` | PostgreSQL roles, bootstrap superuser, `pg_hba.conf` | touching `postgres*`, `postgres-roles/`, the migrator, a migration |
+| `deploiement-etat-hors-pod.md` | no state on the pod (ADR 0005) | touching `cache`/`lock`/rate limiters, a volume, `lock_timeout` |
+| `deploiement-nginx.md` | nginx rate limits, headers, `security.txt` | touching an nginx conf, a rate-limit zone, a response header |
 | `release.md` | release flow, pipeline internals | touching `pipeline.yml`, a release script, `RELEASE_NOTES.md` |
 
 ## Goals
