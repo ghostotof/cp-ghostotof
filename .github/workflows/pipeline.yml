@@ -894,7 +894,8 @@ jobs:
   # `postgres` ou un vieux manifeste relirait en silence celui de PGDATA, qui
   # l'admet. Un Job (image du serveur, aucun mot de passe, seulement le nom du
   # rôle) tente la connexion TCP depuis un pod du namespace et n'aboutit que sur
-  # le refus `reject`. L'argument image de run-job.sh est sans objet : le
+  # le refus `reject` — puis cpg_app sur `postgres` (issue #597 : le refus des
+  # bases de l'image, qu'un `rollout undo` retirerait aussi). L'argument image de run-job.sh est sans objet : le
   # manifeste porte celle du serveur.
   # Un job à part, hors des `needs` de rollback-preprod (issue #600) : dans
   # smoke-test-preprod, son échec ramenait backend, worker et frontend — qui ne
@@ -923,7 +924,7 @@ jobs:
         run: |
           mkdir -p ~/.kube
           echo "${{ secrets.KUBE_CONFIG_PREPROD }}" > ~/.kube/config
-      - name: Le superutilisateur PostgreSQL est refusé par TCP
+      - name: Le superutilisateur et les bases de l'image sont refusés par TCP
         run: |
           status=0
           tools/run-job.sh preprod k8s/base/postgres-hba-probe-job.yaml sans-objet 120 || status=$?
@@ -932,7 +933,7 @@ jobs:
           # renvoie à la ligne « #596 : … » de la sonde, qui nomme la cause. Un
           # refus avant le cluster (2) ou du cluster (3) est déjà nommé.
           if [ "$status" -eq 1 ]; then
-            echo "::error::La sonde du pg_hba.conf a échoué (issue #596). Sa ligne « #596 : ÉCHEC … » ci-dessus dit pourquoi : superutilisateur admis ou mot de passe demandé (le serveur ne lit pas le pg_hba.conf du dépôt : args de postgres.yaml, rollout de postgres), ou serveur injoignable. Sans cette ligne, le pod n'a pas démarré (image, Secret postgres-credentials) : voir l'événement nommé ci-dessus." >&2
+            echo "::error::La sonde du pg_hba.conf a échoué (issue #596). Sa ligne « #596 : ÉCHEC … » ci-dessus dit pourquoi : superutilisateur admis ou mot de passe demandé (le serveur ne lit pas le pg_hba.conf du dépôt : args de postgres.yaml, rollout de postgres), mot de passe demandé à cpg_app sur postgres (refus des bases de l'image absent, issue #597 : ConfigMap d'avant, ou base de l'application nommée postgres), ou serveur injoignable. Sans cette ligne, le pod n'a pas démarré (image, Secret postgres-credentials) : voir l'événement nommé ci-dessus." >&2
           fi
           exit "$status"
 

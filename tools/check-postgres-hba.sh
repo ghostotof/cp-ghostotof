@@ -36,7 +36,9 @@
 #     second serveur, démarré sans `-c hba_file`, qui lit le pg_hba.conf de
 #     l'image dans PGDATA (ce que ramènerait un `rollout undo` de `postgres` ou
 #     un overlay qui perd l'argument) ; elle échoue contre un troisième, dont
-#     le fichier n'admet le superutilisateur que sur la base `postgres` ; elle
+#     le fichier n'admet le superutilisateur que sur la base `postgres`, et
+#     contre un quatrième, le fichier du dépôt sans le refus des bases de
+#     l'image (#597), où seul cpg_app, sans mot de passe, la trahit ; elle
 #     réessaie puis échoue sur un port fermé. Sa sortie, qui part dans les
 #     journaux du pipeline, ne nomme jamais le superutilisateur ni la base.
 #
@@ -88,11 +90,14 @@ server="check-postgres-hba-$$"
 # PGDATA), puis un fichier qui n'admet le superutilisateur que sur `postgres`.
 pgdata_server="check-postgres-hba-pgdata-$$"
 postgres_db_server="check-postgres-hba-postgresdb-$$"
+# Sonde #597 : le fichier du dépôt sans le refus des bases de l'image (une
+# ConfigMap de l'époque #593, que ramènerait un `rollout undo` de `postgres`).
+no_597_server="check-postgres-hba-no597-$$"
 network="check-postgres-hba-$$"
 umask 077
 scratch="$(mktemp -d)"
 cleanup() {
-  docker rm -f "$server" "$pgdata_server" "$postgres_db_server" >/dev/null 2>&1 || true
+  docker rm -f "$server" "$pgdata_server" "$postgres_db_server" "$no_597_server" >/dev/null 2>&1 || true
   docker network rm "$network" >/dev/null 2>&1 || true
   rm -rf "$scratch"
 }
@@ -126,6 +131,15 @@ docker create --name "$postgres_db_server" --network "$network" --user "$RUN_AS:
   "$IMAGE" postgres -c hba_file=/tmp/pg_hba.conf >/dev/null
 docker cp "$scratch/postgres-db.conf" "$postgres_db_server:/tmp/pg_hba.conf" >/dev/null
 docker start "$postgres_db_server" >/dev/null
+grep -v '^host[[:space:]]\{1,\}postgres,template0,template1[[:space:]]' "$HBA" > "$scratch/no-597.conf"
+cmp -s "$HBA" "$scratch/no-597.conf" \
+  && { echo "Le refus des bases de l'image (#597) est introuvable dans $HBA." >&2; exit 2; }
+chmod 644 "$scratch/no-597.conf"
+docker create --name "$no_597_server" --network "$network" --user "$RUN_AS:$RUN_AS" \
+  --env-file "$scratch/server.env" \
+  "$IMAGE" postgres -c hba_file=/tmp/pg_hba.conf >/dev/null
+docker cp "$scratch/no-597.conf" "$no_597_server:/tmp/pg_hba.conf" >/dev/null
+docker start "$no_597_server" >/dev/null
 rm -f "$scratch/server.env"
 
 # Prêt quand le serveur définitif écoute en TCP : le serveur temporaire de
@@ -150,6 +164,7 @@ wait_listening() {
 wait_listening "$server" "$HBA"
 wait_listening "$pgdata_server" "le pg_hba.conf de l'image"
 wait_listening "$postgres_db_server" "un pg_hba.conf ouvert sur la base postgres"
+wait_listening "$no_597_server" "le pg_hba.conf du dépôt sans le refus #597"
 
 failures=0
 fail() {
@@ -316,6 +331,10 @@ expect_probe_fails "pg_hba.conf de l'image, superutilisateur admis en SCRAM" \
   'demande un mot de passe' "$pgdata_server"
 expect_probe_fails "superutilisateur admis sur la base postgres seulement" \
   'base postgres.*demande un mot de passe' "$postgres_db_server"
+# #597 : le superutilisateur y reste refusé partout ; seul cpg_app, tenté sans
+# mot de passe sur `postgres`, révèle le refus manquant.
+expect_probe_fails "pg_hba.conf sans le refus des bases de l'image" \
+  'cpg_app, base postgres.*demande un mot de passe' "$no_597_server"
 # Un port fermé : la sonde réessaie (un serveur qui vient de redémarrer
 # n'écoute pas encore), puis échoue en le nommant.
 expect_probe_fails "port fermé" 'injoignable' "$server" 5433
@@ -334,4 +353,4 @@ if [ "$failures" -ne 0 ]; then
   exit 1
 fi
 
-echo "PostgreSQL ($IMAGE) démarre avec $HBA : superutilisateur, cpg_reader et réplication refusés par TCP, cpg_app et cpg_migrator admis par SCRAM, refusés sur les bases de l'image (#597), loopback à cpg_reader seul et hors des bases de l'image, socket local inchangé ; la sonde du smoke préprod (#596) passe ici (noms piégés compris) et échoue sur le fichier de l'image, sur la base postgres rouverte et sur un port fermé."
+echo "PostgreSQL ($IMAGE) démarre avec $HBA : superutilisateur, cpg_reader et réplication refusés par TCP, cpg_app et cpg_migrator admis par SCRAM, refusés sur les bases de l'image (#597), loopback à cpg_reader seul et hors des bases de l'image, socket local inchangé ; la sonde du smoke préprod (#596) passe ici (noms piégés compris) et échoue sur le fichier de l'image, sur la base postgres rouverte, sur un fichier sans le refus des bases de l'image (#597) et sur un port fermé."
