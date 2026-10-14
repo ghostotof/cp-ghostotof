@@ -1075,9 +1075,11 @@ la base de l'application (`{TimeZone} | 0 | -1 | f | 3` — #608 : le fuseau
 seul réglage de base, vide tant que `Version20261011120000` n'est pas passée,
 aucun réglage `ALTER ROLE … IN DATABASE`, pas de limite de connexions, pas un
 modèle, `CONNECT` pour les trois rôles ; les noms des réglages, jamais leurs
-valeurs), puis `conforme` et `COMMIT`. Un refus `#608` ne se répare pas par la
-procédure, qui échoue tant que l'écart existe : aucun chemin écrit à ce jour
-(issue #610). **Un écart fait échouer la commande** : `verify.sql` se termine
+valeurs), `0` table de `public` en sécurité au niveau des lignes (#611 :
+activée sans politique par le propriétaire, elle ne montrerait plus aucune
+ligne à `cpg_app` ; le compte, jamais les noms), puis `conforme` et `COMMIT`.
+Un refus `#608` ou `#611` ne se répare pas par la procédure, qui échoue tant
+que l'écart existe : aucun chemin écrit à ce jour (issue #610). **Un écart fait échouer la commande** : `verify.sql` se termine
 par un bloc qui lève une erreur sur chaque attente trahie, psql sort en 3
 avant `commit.sql` et la session close annule tout — rien n'est à défaire,
 lire la cause, corriger, relancer l'étape 2. **Sans `conforme` ni `COMMIT`,

@@ -222,7 +222,8 @@ paths:
   `roles.sql`/`verify.sql` (psql meta-commands) run in no CI job: they were played against the
   pinned image by hand for #593 (first pass, rerun, rotation, refusals, truncated stream) and for #597
   (two passes, then each of `verify.sql`'s four #597 refusals) and for #608 (a fresh database, a
-  migrated one twice, a rotation, then each `ALTER` below), and preprod
+  migrated one twice, a rotation, then each `ALTER` below) and for #611 (a fresh database, a
+  migrator's table under `ENABLE ROW LEVEL SECURITY` refused in exit 3, then passing once disabled), and preprod
   is their proof at each change. **Accepted limits** (security review of #575): any role may `ALTER ROLE` itself (password,
   `SET` defaults) — an injection could cut the application durably; the procedure resets the three roles'
   attributes and `RESET ALL` at every pass, and `verify.sql` refuses a stray attribute — `RESET ALL`
@@ -243,7 +244,14 @@ paths:
   replayed on the migrated test database by `DatabaseOwnerSettingsVerificationTest` (throwaway roles, one
   rolled-back transaction): it passes as is, and refuses each alteration above with its cause. The
   procedure's own session ignores these settings (`PGOPTIONS`, above), so the one that would have stopped
-  it reaches `verify.sql`. **Nothing repairs these states**: the procedure fails as long as one holds,
+  it reaches `verify.sql`. **Owner of every table of `public`, the migrator may also enable row-level
+  security on one** (issue #611, measured on the pinned image): without a policy, `cpg_app` (no
+  `BYPASSRLS`) reads no row of it, its `INSERT` is refused and its `UPDATE`/`DELETE` touch nothing,
+  silently; `FORCE` alone is inert but arms the next `ENABLE`. The project uses no row-level security,
+  so `verify.sql`'s `#611` block refuses any table of `public` whose `relrowsecurity` or
+  `relforcerowsecurity` is set, printing the count, never the names — the day a table needs a policy,
+  that block is where it is admitted. Replayed by `DatabaseOwnerSettingsVerificationTest` (ENABLE,
+  FORCE alone, a partitioned table). **Nothing repairs these states**: the procedure fails as long as one holds,
   and a writing `exec` is #520's exception alone — issue #610;
   `cpg_reader` is a second net against an operator's mistake, not a boundary against whoever holds
   `exec` (`trust` on the local socket gives the superuser too) — a `port-forward` or an ephemeral

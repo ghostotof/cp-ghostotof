@@ -21,6 +21,10 @@ use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
  * passe —, puis après chacun des gestes mesurés sur l'image épinglée — il
  * refuse, en nommant l'écart.
  *
+ * Issue #611 : propriétaire de chaque table de `public`, il peut aussi y
+ * activer la sécurité au niveau des lignes sans politique — l'application,
+ * sans `BYPASSRLS`, n'y voit plus rien. Le bloc `#611` est rejoué de même.
+ *
  * Tout tient dans une transaction annulée au `tearDown` : les rôles jetables
  * (`NOLOGIN`, aucun mot de passe), les `ALTER DATABASE` et les `REVOKE` sont
  * transactionnels et ne se voient que d'elle. Le reste de verify.sql n'est pas
@@ -118,6 +122,68 @@ final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
         yield 'modèle' => ['ALTER DATABASE {db} WITH IS_TEMPLATE true', '#608 : la base est marquée modèle'];
         yield 'CONNECT retiré' => ['REVOKE CONNECT ON DATABASE {db} FROM PUBLIC', '#608 : 3 rôle(s) sur 3 sans CONNECT'];
         yield 'réglage de rôle dans la base' => ['ALTER ROLE {app} IN DATABASE {db} SET default_transaction_read_only = on', '#608 : 1 réglage(s) de rôle propre(s) à la base'];
+    }
+
+    /** La base de test, migrée, n'a aucune table en sécurité au niveau des lignes : le bloc passe. */
+    public function testAMigratedDatabaseWithoutRowSecurityPasses(): void
+    {
+        $this->probe->executeStatement(RolesVerification::blockOf('#611'));
+
+        self::assertSame(0, $this->probe->fetchOne("SELECT count(*) FROM pg_class WHERE relnamespace = 'public'::regnamespace AND (relrowsecurity OR relforcerowsecurity)"), 'Prémisse : le projet n\'utilise pas la sécurité au niveau des lignes.');
+    }
+
+    /**
+     * Prémisse du bloc `#611`, mesurée sur l'image épinglée : sans politique,
+     * une table en sécurité au niveau des lignes ne montre plus aucune ligne au
+     * rôle applicatif, qui a pourtant son `SELECT`.
+     */
+    public function testRowSecurityWithoutPolicyHidesEveryRowFromTheApplication(): void
+    {
+        $table = $this->throwawayTable('(id integer)');
+        $this->probe->executeStatement(\sprintf('INSERT INTO %s VALUES (1)', $table));
+        $this->probe->executeStatement(\sprintf('GRANT SELECT ON %s TO %s', $table, $this->probe->quoteSingleIdentifier($this->app)));
+        $this->probe->executeStatement(\sprintf('ALTER TABLE %s ENABLE ROW LEVEL SECURITY', $table));
+
+        $this->probe->executeStatement(\sprintf('SET LOCAL ROLE %s', $this->probe->quoteSingleIdentifier($this->app)));
+        self::assertSame(0, $this->probe->fetchOne(\sprintf('SELECT count(*) FROM %s', $table)));
+    }
+
+    /**
+     * Chaque drapeau de sécurité au niveau des lignes posé sur une table de
+     * `public` est refusé : `ENABLE` coupe l'application, `FORCE` seul est
+     * inerte mais arme le prochain `ENABLE`, et une table partitionnée filtre
+     * ce qu'on lit par elle.
+     */
+    #[DataProvider('rowSecurityAlterations')]
+    public function testEveryRowSecurityFlagIsRefused(string $definition, string $alteration): void
+    {
+        $this->probe->executeStatement(\sprintf('ALTER TABLE %s %s', $this->throwawayTable($definition), $alteration));
+
+        try {
+            $this->probe->executeStatement(RolesVerification::blockOf('#611'));
+            self::fail('Le bloc #611 a accepté : '.$alteration);
+        } catch (DriverException $exception) {
+            self::assertStringContainsString('#611 : 1 table(s) de public en sécurité au niveau des lignes', $exception->getMessage());
+        }
+    }
+
+    /**
+     * @return iterable<string, array{string, string}>
+     */
+    public static function rowSecurityAlterations(): iterable
+    {
+        yield 'activée' => ['(id integer)', 'ENABLE ROW LEVEL SECURITY'];
+        yield 'forcée seule' => ['(id integer)', 'FORCE ROW LEVEL SECURITY'];
+        yield 'activée sur une table partitionnée' => ['(id integer) PARTITION BY RANGE (id)', 'ENABLE ROW LEVEL SECURITY'];
+    }
+
+    /** Une table de `public`, créée dans la transaction annulée au `tearDown`. */
+    private function throwawayTable(string $definition): string
+    {
+        $table = $this->probe->quoteSingleIdentifier('cpg_rls_probe_'.bin2hex(random_bytes(4)));
+        $this->probe->executeStatement(\sprintf('CREATE TABLE public.%s %s', $table, $definition));
+
+        return 'public.'.$table;
     }
 
     private function database(): string

@@ -196,5 +196,29 @@ BEGIN
     IF n <> 0 THEN RAISE EXCEPTION '#608 : % rôle(s) sur 3 sans CONNECT sur la base', n; END IF;
 END
 $$;
+
+-- #611 : propriétaire de chaque table de public, le rôle de migration peut y
+-- activer la sécurité au niveau des lignes sans politique. Mesuré sur l'image
+-- épinglée : le rôle applicatif, sans BYPASSRLS, n'y lit plus aucune ligne,
+-- son INSERT est refusé, ses UPDATE et DELETE ne touchent rien sans erreur ;
+-- sur une table partitionnée, ce qu'on lit par le parent. FORCE seul est
+-- inerte mais arme le prochain ENABLE, et ôte au propriétaire son
+-- contournement. Le projet n'en utilise pas : tout drapeau est refusé, quelle
+-- que soit la politique — une politique sans le drapeau reste sans effet. Le
+-- compte seul, pas les noms, choisis par qui tient le rôle de migration.
+-- Rejoué sur la base de test par DatabaseOwnerSettingsVerificationTest.
+\echo '--- #611 : tables de public en sécurité au niveau des lignes (attendu : 0)'
+SELECT count(*) AS tables_en_securite_de_ligne
+FROM pg_class WHERE relnamespace = 'public'::regnamespace AND (relrowsecurity OR relforcerowsecurity);
+
+\echo '--- #611 : vérification'
+DO $$
+DECLARE
+    n integer;
+BEGIN
+    SELECT count(*) INTO n FROM pg_class WHERE relnamespace = 'public'::regnamespace AND (relrowsecurity OR relforcerowsecurity);
+    IF n <> 0 THEN RAISE EXCEPTION '#611 : % table(s) de public en sécurité au niveau des lignes (ENABLE ou FORCE ROW LEVEL SECURITY), aucune attendue', n; END IF;
+END
+$$;
 \echo '--- #575 : conforme'
 \set verify_passed 1
