@@ -34,7 +34,7 @@ paths:
     inline. `__Host-` prefixing is a separate, preprod-tested step (it renames what Lexik and the frontend
     read by name).
   - **Tokens, JWTs and CSRF values are hidden from stack traces** (`#[SensitiveParameter]`, issue #414): the
-    guard covers all of `src/`, so its rule lives in `.claude/rules/backend-architecture.md`.
+    guard covers all of `src/`, so its rule lives in `.claude/rules/backend-conventions.md`.
   - `Infrastructure/Http/CsrfCookieRequestSubscriber.php` — double-submit-cookie CSRF check, a `kernel.request`
     listener at priority 20 (must run *above* the Security firewall's priority 8 — see the class docblock).
   - `Infrastructure/Http/LoginCsrfRequestListener.php` — **login-CSRF guard** (issue #76) on the two anonymous
@@ -190,13 +190,13 @@ paths:
     which is the point (minimisation, RGPD register §6; not Goal #9, which is about what the API exposes).
     It runs through a human's read-only `kubectl exec` on the `postgres` pod (`k8s/README.md`, « Journal de
     sécurité »), **never a Job**: a Job would print the name and address into its pod's logs, readable by
-    the CI token's `pods/log` — the exception and its bounds are in `.claude/rules/deploiement.md` (issue #520).
+    the CI token's `pods/log` — the exception and its bounds are in `.claude/rules/deploiement-pipeline.md` (issue #520).
     **Never a password, a token (JWT, XSRF, invitation), an e-mail, a login identifier, a request body or a
     serialized exception** in any context.
     **The identifier tried at login is never written as typed** (issue #418): a password typed in the
     username field would otherwise reach the production log. `login-failed` and `login-throttled` carry
     `userFingerprint` instead — `Infrastructure/Log/LoginIdentifierFingerprint`, an HMAC-SHA256 keyed by a
-    key derived from `kernel.secret` for this use alone (issue #455, see `.claude/rules/backend-architecture.md`), case-folded like `login_throttling`'s counter (`mb_strtolower`), **6 hex chars
+    key derived from `kernel.secret` for this use alone (issue #455, see `.claude/rules/backend-integrite.md`), case-folded like `login_throttling`'s counter (`mb_strtolower`), **6 hex chars
     (24 bits) on purpose**, an empty key refused (with the key, a longer fingerprint would confirm
     offline, at SHA-256 speed, a password typed as identifier; the class docblock has the numbers) — and
     designate the account (`userId`, from the loaded `CpgUser`, never from the input) **only when the
