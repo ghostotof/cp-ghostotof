@@ -1147,13 +1147,18 @@ fichier actif à chaque passage de la procédure des rôles. **En préprod, le
 smoke le refait à chaque déploiement** (issue #596) : `smoke-test-preprod`
 lance par `tools/run-job.sh` le Job `postgres-hba-probe` (image du serveur,
 sans mot de passe, seulement le nom du superutilisateur lu dans
-`postgres-credentials`), qui tente `database` sous le superutilisateur et
-n'aboutit que sur `pg_hba.conf rejects connection` — sinon le smoke échoue, et
-`rollback-preprod` suit (sans toucher `postgres` : c'est la release à
-corriger). Sa sonde, `k8s/base/postgres-hba-probe.sh`, est recopiée à
-l'identique dans le `command` du Job (`PostgresHbaProbeJobManifestTest`) et
-mesurée dans les deux sens par `tools/check-postgres-hba.sh` ; elle masque le
-nom du superutilisateur et de la base dans ses journaux. En prod, il n'y a pas
+`postgres-credentials`), qui tente `database` sous le superutilisateur, sur la
+base de l'application puis sur `postgres`, et n'aboutit que sur deux
+`pg_hba.conf rejects connection` (dernière ligne `#596 : OK`) — sinon le smoke
+échoue, sa ligne `#596 : ÉCHEC (…)` dit pourquoi, et `rollback-preprod` suit
+(sans toucher `postgres` : c'est la release à corriger). Un serveur qui refuse
+ou laisse expirer la connexion est réessayé quatre fois. Sa sonde,
+`k8s/base/postgres-hba-probe.sh`, est recopiée à l'identique dans le `command`
+du Job (`PostgresHbaProbeJobManifestTest`) ; elle masque le nom du
+superutilisateur et de la base dans ses journaux. **En préprod, seul le sens
+« refusé » se mesure** ; le sens « échec » (fichier de l'image, base `postgres`
+rouverte, port fermé) est mesuré en CI contre l'image épinglée par
+`tools/check-postgres-hba.sh`. En prod, il n'y a pas
 de smoke : la commande ci-dessus reste celle de la release qui touche
 `postgres.yaml` ou le `pg_hba.conf`.
 

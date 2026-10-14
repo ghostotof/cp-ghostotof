@@ -264,31 +264,44 @@ paths:
   silence. **`smoke-test-preprod` measures it at every preprod deploy** (issue #596): `tools/run-job.sh`
   launches `k8s/base/postgres-hba-probe-job.yaml` (outside kustomize, the server's image written in it —
   run-job.sh's image argument is `sans-objet` —, waited 120 s, deadline 180), which tries `database`
-  over TCP as the bootstrap superuser **without a password** and exits 0 only on `pg_hba.conf rejects
-  connection`: `reject` refuses before any authentication, so the pod gets the superuser's *name* and
-  the database's from `postgres-credentials` key by key (`secretKeyRef`, never `envFrom`, which would
-  bring `POSTGRES_PASSWORD`), `PGPASSWORD` refused, `PGPASSFILE` pointed at a path that cannot exist.
-  A password prompt (PGDATA's file admits the superuser by SCRAM), a connection or an unreachable
-  server fail it, named — then `rollback-preprod`, which does not undo `postgres`: fix the release.
+  over TCP as the bootstrap superuser **without a password**, on the application's database **and on
+  `postgres`** (a rule reopening the superuser on another database would pass otherwise), and exits 0
+  only when both answer `pg_hba.conf rejects connection` (last line `#596 : OK`): `reject` refuses
+  before any authentication, so the pod gets the superuser's *name* and the database's from
+  `postgres-credentials` key by key (`secretKeyRef`, never `envFrom`, which would bring
+  `POSTGRES_PASSWORD`), `PGPASSWORD` refused, `PGPASSFILE` pointed at a path that cannot exist. A
+  password prompt (PGDATA's file admits the superuser by SCRAM), a connection or a server still
+  unreachable after 4 tries (`Connection refused` / `timeout expired` only — a fresh PVC's init server
+  listens on the socket alone; ~55 s at worst, the second database skipped then) fail it, named on a
+  `#596 : ÉCHEC (…)` line the pipeline's `::error::` points to — then `rollback-preprod`, which does
+  not undo `postgres`: fix the release (whether it should trigger that rollback at all: issue #600).
   The probe is **`k8s/base/postgres-hba-probe.sh`**, copied byte for byte (bar the final newline,
   which Symfony's YAML parser drops) into the Job's `command` — under `k8s/`, because the dev
   container mounts it and not `tools/` —, written without any `${…}` (run-job.sh refuses one left
   after envsubst, comments included), and it **masks the superuser's and the database's names** in
-  what it prints: the Job's logs reach the pipeline's. `PostgresHbaProbeJobManifestTest` pins the
+  what it prints — the Job's logs reach the pipeline's —, **for display only**: the patterns are
+  matched on psql's raw output (masked first, a secret name overlapping « connection » broke the
+  match — review of #596), in one pass, longest name first, also truncated to 63 bytes, under a
+  single `<masqué>` marker (no `<superutilisateur>_prod` leftover, no visible equality of the two). `PostgresHbaProbeJobManifestTest` pins the
   copy, the image and uid of `postgres.yaml`, the env (`PGHOST` = the Service's name), no password,
-  the hardening; `tools/check-postgres-hba.sh` runs the probe file under the manifest's uid **both
-  ways** — success against the repo's file, failure against a second server started without
-  `-c hba_file` — and checks its output names neither; it refuses a missing probe file and wants the
-  success marker (Docker mounts a missing source as an empty directory, where `sh` exits 0 —
-  measured). Preprod only, like every smoke: in prod the runbook's command stays the release's
-  check. Narrowing the network rule to the application's database and the pod range is issue #597.
+  the hardening; `tools/check-postgres-hba.sh` runs the probe file as the Job runs (manifest's uid,
+  `--read-only`, `PGCONNECT_TIMEOUT`) **both ways, in CI**: success against the repo's file, with
+  trap names too (`conn`, `conn_rejects`); failure naming the password prompt against a server
+  started without `-c hba_file`; failure against a third whose file reopens the `postgres` database
+  (copied in by `docker cp`); retries then failure on a closed port — and checks no output names the
+  role or the database; it refuses a missing probe file and wants the `#596 : OK` marker (Docker
+  mounts a missing source as an empty directory, where `sh` exits 0 — measured). **In preprod only
+  the passing direction is measured**, at every deploy (decided 2026-10-14: reopening the superuser
+  there to see the probe fail was not worth it). Preprod only, like every smoke: in prod the
+  runbook's command stays the release's check. Narrowing the network rule to the application's database and the pod range is issue #597.
   **Dev and CI keep the image's file** (single superuser role, on purpose, see above).
 - **Doctrine migrations run as a Job, not `kubectl exec`** (audit C8). `k8s/base/migrate-job.yaml` is
   deliberately **outside** `kustomization.yaml`'s `resources:` — so kustomize's image transformer never sees
   it, hence the `${BACKEND_IMAGE}` placeholder that `envsubst` fills at apply time (`image: backend` would
   resolve to `docker.io/library/backend`). **Every Job outside kustomize runs through
   `tools/run-job.sh <ns> <manifest> <image> <timeout> [NAME=value…]`** (issue #488) — migration and seed
-  in `pipeline.yml`, the messenger probe, the manual `create-user` procedure, the three `failed`
+  in `pipeline.yml`, the messenger probe, the pg_hba probe (issue #596, its image written in the
+  manifest, the image argument `sans-objet`), the manual `create-user` procedure, the three `failed`
   maintenance Jobs (issue #521). **Before the cluster is
   touched** (exit 2): bash ≥ 4, jq and envsubst present (otherwise `wait-rollout.sh` failed *after* the
   apply, on a Job still running); one object, `kind: Job`, its `metadata.name` (end-of-line comment
