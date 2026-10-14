@@ -39,7 +39,7 @@ use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
  * (`NOLOGIN`, aucun mot de passe), les `ALTER DATABASE`, les `REVOKE` et le DDL
  * sont transactionnels et ne se voient que d'elle. Le reste de verify.sql n'est
  * pas rejoué ici (il lit le pg_hba.conf de l'image de préprod) ; la procédure
- * entière a été jouée sur l'image épinglée (.claude/rules/deploiement.md).
+ * entière a été jouée sur l'image épinglée (.claude/rules/deploiement-postgres.md).
  */
 final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
 {

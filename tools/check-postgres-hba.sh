@@ -47,7 +47,7 @@
 #
 # Ce que ce script ne couvre PAS : un serveur qui démarre sur un PVC déjà
 # initialisé — seul un vrai rollout en préprod le prouve
-# (.claude/rules/deploiement.md).
+# (.claude/rules/deploiement-postgres.md).
 #
 # Usage :  tools/check-postgres-hba.sh postgres:<tag>
 #          (make postgres-hba, qui lit le tag dans k8s/base/postgres.yaml)

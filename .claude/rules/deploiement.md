@@ -86,7 +86,7 @@ paths:
   Production receives none of this. Procedure in `k8s/README.md`.
 - **No pod mounts a ServiceAccount token, and both namespaces carry Pod Security Admission labels**
   (audit A17). `automountServiceAccountToken: false` on all sixteen pod specs, the eight Jobs outside kustomize
-  included (`postgres-hba-probe-job.yaml`, #596, is the eighth; `postgres-roles-job.yaml`, #575, held that place until #593 removed it) — none of them talks to the Kubernetes API (RabbitMQ does no peer discovery here, ESO runs in
+  included (`postgres-hba-probe-job.yaml`, #596, among them) — none of them talks to the Kubernetes API (RabbitMQ does no peer discovery here, ESO runs in
   its own namespace), so the default `default`-SA token was pure standing credential. The `preprod` and
   `prod` `Namespace` objects set `enforce: baseline` with `audit`/`warn: restricted`: RabbitMQ declares no
   container `securityContext` (constat A18, accepted — v0.5.0 already put it in `CrashLoopBackOff` by

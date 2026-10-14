@@ -343,7 +343,7 @@ final class PostgresRolesProcedureTest extends TestCase
      * qui porterait le nom de l'une d'elles (le refus la couperait), et sur un
      * CONNECT ou TEMPORARY resté à PUBLIC sur `postgres` ou `template1`.
      * Ce test lit la forme ; la procédure jouée sur l'image épinglée, puis en
-     * préprod, en est la mesure (.claude/rules/deploiement.md).
+     * préprod, en est la mesure (.claude/rules/deploiement-postgres.md).
      */
     public function testTheVerificationChecksTheImageDatabasesStayClosed(): void
     {
