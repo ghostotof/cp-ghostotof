@@ -7,9 +7,10 @@ namespace App\Tests\Support;
 use PHPUnit\Framework\Assert;
 
 /**
- * Ce que lit `docker build` pour l'image PHP : `docker/php/Dockerfile`, tous
- * stages confondus, et le `.dockerignore` du contexte de build, la racine du
- * dépôt (issues #474, #489).
+ * Ce que lit `docker build` pour l'image PHP, depuis la racine du dépôt (le
+ * contexte de build) : `docker/php/Dockerfile`, tous stages confondus, le
+ * `.dockerignore` (issues #474, #489), et le `php.prod.ini` que le Dockerfile
+ * copie dans l'image (issue #612).
  *
  * Le Dockerfile est lu instruction par instruction comme Docker le passe au
  * shell : lignes de commentaire retirées, lignes de continuation jointes. Un
@@ -64,6 +65,34 @@ final class PhpImageBuild
             array_map(trim(...), self::withoutComments(self::read('.dockerignore'))),
             static fn (string $line): bool => '' !== $line,
         ));
+    }
+
+    /**
+     * La valeur d'une directive de `php.prod.ini`, lue par {@see self::iniDirective()}.
+     */
+    public static function productionIniDirective(string $name): string
+    {
+        return self::iniDirective(self::read('docker/php/php.prod.ini'), $name, 'php.prod.ini');
+    }
+
+    /**
+     * La valeur brute d'une directive dans le texte d'un fichier ini, `$file`
+     * le nommant dans les messages. Comme PHP : commentaires ignorés,
+     * guillemets retirés, la dernière occurrence l'emportant. Brute, à la
+     * différence du démarrage de PHP (scanner normal) : `On` reste `On` (pas
+     * `1`), `1` ou `yes` ne deviennent pas `On`, un `${VAR}` n'est pas
+     * développé, et une section `[PATH=…]` ou `[HOST=…]` est aplatie — le
+     * fichier de l'image n'en a aucune. Une directive absente, ou écrite
+     * `nom[] = …`, fait échouer le test.
+     */
+    public static function iniDirective(string $ini, string $name, string $file): string
+    {
+        $directives = parse_ini_string($ini, false, \INI_SCANNER_RAW);
+        Assert::assertIsArray($directives, \sprintf('%s illisible.', $file));
+        Assert::assertArrayHasKey($name, $directives, \sprintf('%s : aucune directive « %s ».', $file, $name));
+        Assert::assertIsString($directives[$name], \sprintf('%s : « %s » n\'est pas une valeur simple.', $file, $name));
+
+        return $directives[$name];
     }
 
     /**
