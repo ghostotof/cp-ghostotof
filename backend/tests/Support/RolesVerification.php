@@ -30,4 +30,31 @@ final class RolesVerification
 
         return $mine[0];
     }
+
+    /**
+     * La requête des lignes du schéma du bloc `#611` (issue #611), une ligne
+     * canonique par objet : prise entre ses deux marqueurs, dans le fichier
+     * brut, pour être rejouée et comparée à sa copie du runbook.
+     */
+    public static function schemaLinesQuery(): string
+    {
+        $source = KubernetesManifests::base()->source(self::VERIFY_SQL);
+        Assert::assertSame(1, preg_match('/^\s*-- #611 : lignes du schéma, début\n(.*?)^\s*-- #611 : lignes du schéma, fin$/ms', $source, $query), 'verify.sql : la requête des lignes du schéma, entre ses marqueurs.');
+
+        return trim($query[1]);
+    }
+
+    /**
+     * Les empreintes que le bloc `#611` admet, par dernière migration passée
+     * (`''` : base neuve, avant toute migration).
+     *
+     * @return array<string, string>
+     */
+    public static function schemaFingerprints(): array
+    {
+        preg_match_all("/\\('((?:DoctrineMigrations\\\\Version\\d{14})?)', '([0-9a-f]{32})'\\)/", self::blockOf('#611'), $rows, \PREG_SET_ORDER);
+        Assert::assertNotEmpty($rows, 'verify.sql : le bloc #611 porte ses empreintes.');
+
+        return array_column($rows, 2, 1);
+    }
 }

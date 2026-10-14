@@ -1075,21 +1075,21 @@ la base de l'application (`{TimeZone} | 0 | -1 | f | 3` — #608 : le fuseau
 seul réglage de base, vide tant que `Version20261011120000` n'est pas passée,
 aucun réglage `ALTER ROLE … IN DATABASE`, pas de limite de connexions, pas un
 modèle, `CONNECT` pour les trois rôles ; les noms des réglages, jamais leurs
-valeurs), les gestes du propriétaire qui videraient le DML de l'application
-sans erreur (`0 | 0 | 0 | 0 | t`, la dernière valeur vide avant la première
-migration — #611 : aucune table en sécurité au niveau des lignes, aucun
-schéma hors de `public`, aucune règle hors des vues, aucun trigger hors du
-garde des groupes de traduction activé, sa fonction celle des migrations ;
-des comptes, jamais les noms), puis `conforme` et `COMMIT`. Un refus `#608`
-ou `#611` ne se répare pas par la procédure, qui échoue tant que l'écart
+valeurs), puis `#611 : vérification` sans rien de plus — le schéma de la
+base est exactement celui que ses migrations laissent (son empreinte, celle
+de la dernière migration passée) —, puis `conforme` et `COMMIT`. Un refus
+`#608` ou `#611` ne se répare pas par la procédure, qui échoue tant que l'écart
 existe : aucun chemin écrit à ce jour (issue #610) ; pour `#611`, la requête
-qui suit nomme l'objet. **Un écart fait échouer la commande** : `verify.sql`
-se termine par un bloc de refus par issue (`#575`, `#608`, `#611`), chacun
-levant une erreur sur la première attente trahie, psql sort en 3 avant
-`commit.sql` et la session close annule tout — rien n'est à défaire, lire la
-cause, corriger, relancer l'étape 2. psql s'arrête au **premier** refus : un
-écart corrigé peut en laisser voir un suivant au passage d'après. **Sans `conforme` ni `COMMIT`,
-rien n'est validé** : `commit.sql` ne valide que si `verify.sql` est allé au
+qui suit nomme les objets en cause. Un `#611 : aucune empreinte de schéma
+connue pour la dernière migration` n'est pas une altération : le checkout est
+en retard sur l'environnement (`verify.sql` garde les empreintes de toutes les
+migrations), le mettre à jour et relancer. **Un écart fait échouer la
+commande** : `verify.sql` se termine par un bloc de refus par issue (`#575`,
+`#608`, `#611`), chacun levant une erreur sur la première attente trahie,
+psql sort en 3 avant `commit.sql` et la session close annule tout — rien
+n'est à défaire, lire la cause, corriger, relancer l'étape 2. psql s'arrête
+au **premier** refus : un écart corrigé peut en laisser voir un suivant au
+passage d'après. **Sans `conforme` ni `COMMIT`, rien n'est validé** : `commit.sql` ne valide que si `verify.sql` est allé au
 bout — `verify.sql` absent du flux, erreur nommée, sortie 3 ; lancé hors de
 la racine du checkout, `cat: …: No such file`, aucun fichier ni `COMMIT`, la
 session close annule (sortie 0 possible : lire le `COMMIT`, pas le code ;
@@ -1145,29 +1145,83 @@ SQL
 ```
 
 **Un refus `#611`**, nommé (issue #611) : `verify.sql` n'imprime que des
-comptes, la requête ci-dessous liste les objets, sous le lecteur, sans rien
-écrire. Leurs noms sont choisis par qui tient le rôle de migration : les lire
-sur le terminal, ne pas les recopier dans une session d'agent. Sur une table
-en sécurité au niveau des lignes, `cpg_reader` lit **0 ligne** lui aussi (pas
-de `BYPASSRLS`, et `pg_read_all_data` ne la contourne pas) : c'est le
-symptôme, pas une table vide.
+empreintes ; la requête ci-dessous lit, sous le lecteur et sans rien écrire,
+les mêmes lignes que lui — une par objet hors du système, propriétaires et
+privilèges exclus. La comparer, triée, à la même requête jouée sur une base de
+dev migrée jusqu'à la même dernière migration (`make db-migrate`, puis `psql`
+dans le conteneur `database`, la requête sur l'entrée standard) : les lignes
+qui diffèrent sont l'écart. Les noms qu'elles portent sont choisis par qui
+tient le rôle de migration : les lire sur le terminal, ne pas les recopier
+dans une session d'agent. Sur une table en sécurité au niveau des lignes,
+`cpg_reader` lit **0 ligne** lui aussi (pas de `BYPASSRLS`, et
+`pg_read_all_data` ne la contourne pas) : c'est le symptôme, pas une table
+vide.
 
 ```bash
 NS=        # preprod ou prod, à renseigner : vide, la commande s'arrête avant d'appeler le cluster
 kubectl -n "${NS:?preprod ou prod}" exec -i deploy/postgres -c postgres -- \
-  sh -c 'PGOPTIONS="-c default_transaction_read_only=on -c lock_timeout=5s" psql -X -A -v ON_ERROR_STOP=1 -U cpg_reader -d "$POSTGRES_DB"' <<'SQL'
-SELECT 'securite de ligne' AS geste, c.oid::regclass::text AS objet FROM pg_class c
-WHERE c.relnamespace = 'public'::regnamespace AND (c.relrowsecurity OR c.relforcerowsecurity)
-UNION ALL SELECT 'schema', quote_ident(nspname) FROM pg_namespace WHERE nspname NOT IN ('public', 'information_schema') AND nspname !~ '^pg_'
-UNION ALL SELECT 'regle', quote_ident(r.rulename) || ' sur ' || c.oid::regclass::text FROM pg_rewrite r JOIN pg_class c ON c.oid = r.ev_class
-WHERE c.relnamespace = 'public'::regnamespace AND NOT (r.ev_type = '1' AND c.relkind IN ('v', 'm'))
-UNION ALL SELECT 'trigger', quote_ident(t.tgname) || ' sur ' || c.oid::regclass::text || ', ' || t.tgfoid::regprocedure::text || ', ' || t.tgenabled::text FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
-WHERE c.relnamespace = 'public'::regnamespace AND NOT t.tgisinternal
-ORDER BY 1, 2;
+  sh -c 'PGOPTIONS="-c default_transaction_read_only=on -c lock_timeout=5s" psql -X -A -t -v ON_ERROR_STOP=1 -U cpg_reader -d "$POSTGRES_DB"' <<'SQL'
+SET search_path = pg_catalog, pg_temp;
+SELECT 'schema ' || quote_ident(n.nspname) FROM pg_namespace n WHERE n.nspname <> 'information_schema' AND n.nspname !~ '^pg_'
+UNION ALL
+SELECT concat_ws(' ', 'relation', quote_ident(c.relname), c.relkind, c.relpersistence, c.relrowsecurity, c.relforcerowsecurity, c.relispartition, pg_get_expr(c.relpartbound, c.oid), c.reloptions::text, am.amname, ts.spcname)
+FROM pg_class c LEFT JOIN pg_am am ON am.oid = c.relam LEFT JOIN pg_tablespace ts ON ts.oid = c.reltablespace
+WHERE c.relnamespace = 'public'::regnamespace
+UNION ALL
+SELECT concat_ws(' ', 'colonne', quote_ident(c.relname), quote_ident(a.attname), format_type(a.atttypid, a.atttypmod), a.attnotnull, a.attidentity, a.attgenerated, pg_get_expr(d.adbin, d.adrelid), co.collname)
+FROM pg_attribute a JOIN pg_class c ON c.oid = a.attrelid JOIN pg_type ty ON ty.oid = a.atttypid
+LEFT JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
+LEFT JOIN pg_collation co ON co.oid = a.attcollation AND a.attcollation <> ty.typcollation
+WHERE c.relnamespace = 'public'::regnamespace AND c.relkind IN ('r', 'p', 'v', 'm', 'c', 'f') AND a.attnum > 0 AND NOT a.attisdropped
+UNION ALL
+SELECT 'index ' || pg_get_indexdef(i.indexrelid) FROM pg_index i JOIN pg_class c ON c.oid = i.indrelid WHERE c.relnamespace = 'public'::regnamespace
+UNION ALL
+SELECT concat_ws(' ', 'contrainte', quote_ident(coalesce(c.relname, t.typname)), quote_ident(k.conname), pg_get_constraintdef(k.oid))
+FROM pg_constraint k LEFT JOIN pg_class c ON c.oid = k.conrelid LEFT JOIN pg_type t ON t.oid = k.contypid
+WHERE k.connamespace = 'public'::regnamespace AND k.contype <> 'n'
+UNION ALL
+SELECT concat_ws(' ', 'trigger', pg_get_triggerdef(t.oid), t.tgenabled::text) FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid WHERE c.relnamespace = 'public'::regnamespace AND NOT t.tgisinternal
+UNION ALL
+SELECT 'regle ' || pg_get_ruledef(r.oid) FROM pg_rewrite r JOIN pg_class c ON c.oid = r.ev_class WHERE c.relnamespace = 'public'::regnamespace
+UNION ALL
+SELECT concat_ws(' ', 'politique', quote_ident(c.relname), quote_ident(p.polname), p.polcmd::text, p.polpermissive, pg_get_expr(p.polqual, p.polrelid), pg_get_expr(p.polwithcheck, p.polrelid))
+FROM pg_policy p JOIN pg_class c ON c.oid = p.polrelid WHERE c.relnamespace = 'public'::regnamespace
+UNION ALL
+SELECT concat_ws(' ', 'heritage', quote_ident(c.relname), h.inhparent::regclass::text) FROM pg_inherits h JOIN pg_class c ON c.oid = h.inhrelid WHERE c.relnamespace = 'public'::regnamespace
+UNION ALL
+SELECT concat_ws(' ', 'sequence', quote_ident(c.relname), format_type(s.seqtypid, NULL), s.seqstart, s.seqincrement, s.seqmin, s.seqmax, s.seqcache, s.seqcycle)
+FROM pg_sequence s JOIN pg_class c ON c.oid = s.seqrelid WHERE c.relnamespace = 'public'::regnamespace
+UNION ALL
+SELECT CASE WHEN p.prokind = 'a' THEN 'agregat ' || p.oid::regprocedure::text ELSE 'fonction ' || pg_get_functiondef(p.oid) END FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace
+UNION ALL
+SELECT concat_ws(' ', 'operateur', o.oid::regoperator::text, o.oprcode::regprocedure::text) FROM pg_operator o WHERE o.oprnamespace = 'public'::regnamespace
+UNION ALL
+SELECT concat_ws(' ', 'type', quote_ident(t.typname), t.typtype, format_type(t.typbasetype, t.typtypmod), t.typnotnull, t.typdefault,
+       (SELECT string_agg(quote_literal(e.enumlabel), ',' ORDER BY e.enumsortorder) FROM pg_enum e WHERE e.enumtypid = t.oid))
+FROM pg_type t WHERE t.typnamespace = 'public'::regnamespace AND t.typrelid = 0 AND NOT (t.typcategory = 'A' AND t.typelem <> 0)
+UNION ALL
+SELECT 'classe ' || quote_ident(opcname) FROM pg_opclass WHERE opcnamespace = 'public'::regnamespace
+UNION ALL
+SELECT 'famille ' || quote_ident(opfname) FROM pg_opfamily WHERE opfnamespace = 'public'::regnamespace
+UNION ALL
+SELECT 'collation ' || quote_ident(collname) FROM pg_collation WHERE collnamespace = 'public'::regnamespace
+UNION ALL
+SELECT 'conversion ' || quote_ident(conname) FROM pg_conversion WHERE connamespace = 'public'::regnamespace
+UNION ALL
+SELECT 'recherche ' || quote_ident(cfgname) FROM pg_ts_config WHERE cfgnamespace = 'public'::regnamespace
+UNION ALL
+SELECT 'dictionnaire ' || quote_ident(dictname) FROM pg_ts_dict WHERE dictnamespace = 'public'::regnamespace
+UNION ALL
+SELECT 'analyseur ' || quote_ident(prsname) FROM pg_ts_parser WHERE prsnamespace = 'public'::regnamespace
+UNION ALL
+SELECT 'modele ' || quote_ident(tmplname) FROM pg_ts_template WHERE tmplnamespace = 'public'::regnamespace
+UNION ALL
+SELECT 'statistique ' || quote_ident(stxname) FROM pg_statistic_ext WHERE stxnamespace = 'public'::regnamespace
+UNION ALL
+SELECT 'extension ' || quote_ident(extname) FROM pg_extension WHERE extnamespace = 'public'::regnamespace;
 SQL
-# attendu : les huit gardes, trg_translation_group_single_position sur chacune des tables
-# ordonnées, portfolio_translation_group_single_position(), O ; rien d'autre. Une fonction
-# réécrite ne se voit pas ici : son refus suffit à la désigner.
+# attendu : les lignes de la base de dev à la même migration, ni plus ni moins ;
+# une fonction s'étend sur plusieurs lignes (sa définition entière).
 ```
 
 **Le `pg_hba.conf` vu du réseau** (issue #593), à la release qui l'embarque,

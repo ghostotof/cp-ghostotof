@@ -21,28 +21,37 @@ use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
  * passe —, puis après chacun des gestes mesurés sur l'image épinglée — il
  * refuse, en nommant l'écart.
  *
- * Issue #611 : propriétaire de la base et de chaque table de `public`, il peut
+ * Issue #611 : propriétaire de la base et de chaque objet de `public`, il peut
  * aussi vider le DML de l'application **sans erreur** — sécurité au niveau des
- * lignes sans politique, schéma au nom du rôle applicatif devant `public` dans
- * le `search_path`, règle `DO INSTEAD NOTHING`, trigger qui annule ou efface la
- * ligne. Les prémisses ci-dessous rejouent ce qui a été mesuré sur l'image
- * épinglée ; le bloc `#611` est rejoué comme le bloc `#608`.
+ * lignes sans politique, schéma au nom du rôle applicatif devant `public`,
+ * règle `DO INSTEAD NOTHING`, trigger qui annule ou efface la ligne, opérateur
+ * plus exact que celui du catalogue. Les prémisses ci-dessous rejouent ces
+ * mesures. Le bloc `#611` n'énumère pas les gestes : il compare l'empreinte du
+ * schéma à celle que les migrations laissent, et ce test vérifie d'abord que
+ * la base de test migrée a la sienne dans verify.sql, puis que chaque geste la
+ * change.
  *
  * Tout tient dans une transaction annulée au `tearDown` : les rôles jetables
- * (`NOLOGIN`, aucun mot de passe), les `ALTER DATABASE` et les `REVOKE` sont
- * transactionnels et ne se voient que d'elle. Le reste de verify.sql n'est pas
- * rejoué ici (il lit le pg_hba.conf de l'image de préprod) ; la procédure
+ * (`NOLOGIN`, aucun mot de passe), les `ALTER DATABASE`, les `REVOKE` et le DDL
+ * sont transactionnels et ne se voient que d'elle. Le reste de verify.sql n'est
+ * pas rejoué ici (il lit le pg_hba.conf de l'image de préprod) ; la procédure
  * entière a été jouée sur l'image épinglée (.claude/rules/deploiement.md).
  */
 final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
 {
     use OpensProbeConnection;
 
+    /** La fonction du garde des groupes de traduction, seule fonction de `public`. */
+    private const string GUARD_FUNCTION = 'public.portfolio_translation_group_single_position()';
+
     /** Une fonction de trigger qui annule la ligne (`BEFORE`) ou l'ignore (`AFTER`). */
     private const string NOTHING_FUNCTION = "CREATE FUNCTION public.{f}() RETURNS trigger LANGUAGE plpgsql AS 'BEGIN RETURN NULL; END'";
 
     /** Une fonction de trigger qui efface la ligne qu'on vient d'écrire. */
     private const string ERASING_FUNCTION = "CREATE FUNCTION public.{f}() RETURNS trigger LANGUAGE plpgsql AS 'BEGIN DELETE FROM public.{t1} WHERE id = NEW.id; RETURN NULL; END'";
+
+    /** Le refus du bloc `#611` quand le schéma n'a pas l'empreinte attendue. */
+    private const string SCHEMA_REFUSAL = "#611 : le schéma de la base n'est pas celui des migrations";
 
     private Connection $probe;
 
@@ -104,18 +113,9 @@ final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
     #[DataProvider('ownerAlterations')]
     public function testEveryAlterationTheOwnerCanMakeIsRefused(string $alteration, string $refusal): void
     {
-        $this->probe->executeStatement(strtr($alteration, [
-            '{db}' => $this->probe->quoteSingleIdentifier($this->database()),
-            '{app}' => $this->probe->quoteSingleIdentifier($this->app),
-            '{migrator}' => $this->probe->quoteSingleIdentifier($this->migrator),
-        ]));
+        $this->arm([$alteration]);
 
-        try {
-            $this->probe->executeStatement(RolesVerification::blockOf('#608'));
-            self::fail('Le bloc #608 a accepté : '.$alteration);
-        } catch (DriverException $exception) {
-            self::assertStringContainsString($refusal, $exception->getMessage());
-        }
+        $this->assertBlockRefuses('#608', $refusal);
     }
 
     /**
@@ -136,27 +136,42 @@ final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
     }
 
     /**
-     * La base de test, migrée, porte le seul trigger admis — le garde des
-     * groupes de traduction, sur ses huit tables — et sa fonction : le bloc
-     * passe, et la comparaison de la fonction n'est pas vide. Une migration qui
-     * change cette fonction ou ajoute un trigger, une règle, un schéma rougit
-     * ce test tant que le bloc ne l'admet pas.
+     * L'empreinte du schéma de la base de test, migrée jusqu'à la dernière
+     * migration du dépôt, figure dans verify.sql pour cette migration. Une
+     * migration nouvelle rougit ce test : son message donne la ligne à ajouter.
      */
-    public function testAMigratedDatabaseWithOnlyTheTranslationGroupGuardPasses(): void
+    public function testTheMigratedSchemaHasItsFingerprintInVerifySql(): void
     {
-        self::assertSame(8, $this->probe->fetchOne("SELECT count(*) FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid WHERE c.relnamespace = 'public'::regnamespace AND NOT t.tgisinternal AND t.tgname = 'trg_translation_group_single_position'"), 'Prémisse : le garde sur ses huit tables.');
-        self::assertSame(1, $this->probe->fetchOne("SELECT count(*) FROM pg_proc WHERE pronamespace = 'public'::regnamespace AND proname = 'portfolio_translation_group_single_position'"), 'Prémisse : sa fonction existe, la comparaison porte.');
+        $latest = $this->probe->fetchOne('SELECT max(version) FROM public.doctrine_migration_versions');
+        self::assertIsString($latest);
+        $this->probe->executeStatement("SET LOCAL search_path = pg_catalog, pg_temp");
+        $fingerprint = $this->probe->fetchOne(\sprintf("SELECT md5(string_agg(l, E'\\n' ORDER BY l COLLATE \"C\")) FROM (%s) AS lignes(l)", RolesVerification::schemaLinesQuery()));
 
-        $this->probe->executeStatement(RolesVerification::blockOf('#611'));
+        self::assertSame(
+            $fingerprint,
+            RolesVerification::schemaFingerprints()[$latest] ?? null,
+            \sprintf("verify.sql, bloc #611 : ajouter ('%s', '%s') à ses empreintes, sans retirer les précédentes.", $latest, \is_string($fingerprint) ? $fingerprint : ''),
+        );
     }
 
-    /** Une vue porte une règle `_RETURN` : elle n'est pas un geste du propriétaire, le bloc l'admet. */
-    public function testAViewIsAdmitted(): void
+    /** La base de test, migrée, a l'empreinte de sa dernière migration : le bloc passe. */
+    public function testAMigratedDatabasePassesTheSchemaFingerprint(): void
     {
-        $this->arm(['CREATE VIEW public.{t1} AS SELECT 1 AS id']);
-
         $this->probe->executeStatement(RolesVerification::blockOf('#611'));
-        self::assertSame(1, $this->probe->fetchOne("SELECT count(*) FROM pg_rewrite r JOIN pg_class c ON c.oid = r.ev_class WHERE c.relnamespace = 'public'::regnamespace AND r.rulename = '_RETURN'"), 'Prémisse : la vue porte sa règle.');
+
+        self::assertSame(8, $this->probe->fetchOne("SELECT count(*) FROM pg_trigger WHERE tgname = 'trg_translation_group_single_position'"), 'Prémisse : le garde sur ses huit tables, dans l\'empreinte.');
+    }
+
+    /**
+     * Une dernière migration que verify.sql ne connaît pas — un checkout en
+     * retard sur l'environnement — est refusée comme telle, pas comme un
+     * schéma altéré.
+     */
+    public function testAnUnknownLatestMigrationIsRefused(): void
+    {
+        $this->arm(["INSERT INTO public.doctrine_migration_versions (version, executed_at, execution_time) VALUES ('DoctrineMigrations\\Version29991231000000', now(), 0)"]);
+
+        $this->assertBlockRefuses('#611', '#611 : aucune empreinte de schéma connue pour la dernière migration de la base');
     }
 
     /**
@@ -208,15 +223,39 @@ final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
     public function testASchemaNamedAfterTheApplicationRoleShadowsPublic(): void
     {
         self::assertSame('"$user", public', $this->probe->fetchOne('SHOW search_path'), 'Prémisse : le search_path par défaut.');
-        $table = $this->ownedTable();
+        $this->ownedTable();
         $this->arm([
             'CREATE SCHEMA {app}',
-            'CREATE TABLE {app}.'.substr($table, \strlen('public.')).' (id integer)',
+            'CREATE TABLE {app}.{t1} (id integer)',
             'GRANT USAGE ON SCHEMA {app} TO {app}',
-            'GRANT SELECT ON {app}.'.substr($table, \strlen('public.')).' TO {app}',
+            'GRANT SELECT ON {app}.{t1} TO {app}',
         ]);
 
-        self::assertSame(0, $this->asRole($this->app, fn (): mixed => $this->probe->fetchOne('SELECT count(*) FROM '.substr($table, \strlen('public.')))));
+        self::assertSame(0, $this->asRole($this->app, fn (): mixed => $this->probe->fetchOne($this->expand('SELECT count(*) FROM {t1}'))));
+    }
+
+    /**
+     * Prémisse mesurée (le schéma de la CVE-2018-1058) : un opérateur de
+     * `public` plus exact que celui du catalogue est choisi pour une
+     * comparaison à un littéral ou à un paramètre de type inconnu — la ligne
+     * n'est plus trouvée, sans erreur.
+     */
+    public function testAnOperatorInPublicShadowsTheCatalogsOne(): void
+    {
+        $this->arm([
+            'CREATE TABLE public.{t1} (username varchar(180))',
+            "INSERT INTO public.{t1} VALUES ('alice')",
+            'GRANT SELECT ON public.{t1} TO {app}',
+        ]);
+        $find = fn (): mixed => $this->probe->fetchOne($this->expand("SELECT count(*) FROM public.{t1} WHERE username = 'alice'"));
+        self::assertSame(1, $this->asRole($this->app, $find), 'Témoin : l\'opérateur du catalogue trouve la ligne.');
+
+        $this->arm([
+            "CREATE FUNCTION public.{f}(varchar, varchar) RETURNS boolean LANGUAGE sql IMMUTABLE AS 'SELECT false'",
+            'CREATE OPERATOR public.= (LEFTARG = varchar, RIGHTARG = varchar, FUNCTION = public.{f})',
+        ]);
+
+        self::assertSame(0, $this->asRole($this->app, $find));
     }
 
     /**
@@ -245,43 +284,70 @@ final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
     }
 
     /**
-     * Chaque geste du propriétaire qui viderait le DML de l'application est
-     * refusé, avec sa cause ; le compte seul, jamais un nom.
-     *
-     * @param list<string> $gesture
+     * Chaque geste du propriétaire sur le schéma change son empreinte : il est
+     * refusé. Chaque cas ne touche qu'une famille de lignes (un objet existant,
+     * ou un seul objet ajouté), ce qui prouve que l'empreinte la couvre.
      */
-    #[DataProvider('ownerGesturesOnTables')]
-    public function testEveryGestureEmptyingTheApplicationsDmlIsRefused(array $gesture, string $refusal): void
+    #[DataProvider('schemaGestures')]
+    public function testEveryGestureOnTheSchemaIsRefused(string $gesture): void
     {
-        $this->arm($gesture);
+        $this->arm([$gesture]);
 
-        try {
-            $this->probe->executeStatement(RolesVerification::blockOf('#611'));
-            self::fail('Le bloc #611 a accepté : '.implode(' ; ', $gesture));
-        } catch (DriverException $exception) {
-            self::assertStringContainsString($refusal, $exception->getMessage());
-        }
+        $this->assertBlockRefuses('#611', self::SCHEMA_REFUSAL);
     }
 
     /**
-     * @return iterable<string, array{list<string>, string}>
+     * @return iterable<string, array{string}>
      */
-    public static function ownerGesturesOnTables(): iterable
+    public static function schemaGestures(): iterable
     {
-        $rowSecurity = '#611 : %d table(s) de public en sécurité au niveau des lignes';
-        yield 'sécurité de ligne activée' => [['CREATE TABLE public.{t1} (id integer)', 'ALTER TABLE public.{t1} ENABLE ROW LEVEL SECURITY'], \sprintf($rowSecurity, 1)];
-        yield 'sécurité de ligne forcée seule' => [['CREATE TABLE public.{t1} (id integer)', 'ALTER TABLE public.{t1} FORCE ROW LEVEL SECURITY'], \sprintf($rowSecurity, 1)];
-        yield 'sécurité de ligne avec une politique' => [['CREATE TABLE public.{t1} (id integer)', 'CREATE POLICY {r} ON public.{t1} USING (true)', 'ALTER TABLE public.{t1} ENABLE ROW LEVEL SECURITY'], \sprintf($rowSecurity, 1)];
-        yield 'sécurité de ligne sur une table partitionnée' => [['CREATE TABLE public.{t1} (id integer) PARTITION BY RANGE (id)', 'ALTER TABLE public.{t1} ENABLE ROW LEVEL SECURITY'], \sprintf($rowSecurity, 1)];
-        yield 'sécurité de ligne sur une partition' => [['CREATE TABLE public.{t1} (id integer) PARTITION BY RANGE (id)', 'CREATE TABLE public.{t2} PARTITION OF public.{t1} FOR VALUES FROM (0) TO (10)', 'ALTER TABLE public.{t2} ENABLE ROW LEVEL SECURITY'], \sprintf($rowSecurity, 1)];
-        yield 'sécurité de ligne sur deux tables' => [['CREATE TABLE public.{t1} (id integer)', 'CREATE TABLE public.{t2} (id integer)', 'ALTER TABLE public.{t1} ENABLE ROW LEVEL SECURITY', 'ALTER TABLE public.{t2} ENABLE ROW LEVEL SECURITY'], \sprintf($rowSecurity, 2)];
-        yield 'schéma au nom du rôle applicatif' => [['CREATE SCHEMA {app}'], '#611 : 1 schéma(s) hors de public et des schémas système'];
-        yield 'règle DO INSTEAD NOTHING' => [['CREATE TABLE public.{t1} (id integer)', 'CREATE RULE {r} AS ON INSERT TO public.{t1} DO INSTEAD NOTHING'], '#611 : 1 règle(s) sur public hors des vues'];
-        yield 'trigger BEFORE qui renvoie NULL' => [['CREATE TABLE public.{t1} (id integer)', self::NOTHING_FUNCTION, 'CREATE TRIGGER {r} BEFORE INSERT ON public.{t1} FOR EACH ROW EXECUTE FUNCTION public.{f}()'], '#611 : 1 trigger(s) de public hors du garde des groupes de traduction'];
-        yield 'trigger AFTER qui efface la ligne' => [['CREATE TABLE public.{t1} (id integer)', self::ERASING_FUNCTION, 'CREATE TRIGGER {r} AFTER INSERT ON public.{t1} FOR EACH ROW EXECUTE FUNCTION public.{f}()'], '#611 : 1 trigger(s) de public hors du garde des groupes de traduction'];
-        yield 'trigger au nom du garde sur une autre fonction' => [['CREATE TABLE public.{t1} (id integer)', self::NOTHING_FUNCTION, 'CREATE CONSTRAINT TRIGGER trg_translation_group_single_position AFTER INSERT ON public.{t1} DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.{f}()'], '#611 : 1 trigger(s) de public hors du garde des groupes de traduction'];
-        yield 'garde désactivé' => [['ALTER TABLE public.contribution DISABLE TRIGGER trg_translation_group_single_position'], '#611 : 1 trigger(s) de public hors du garde des groupes de traduction'];
-        yield 'fonction du garde remplacée' => [["CREATE OR REPLACE FUNCTION public.portfolio_translation_group_single_position() RETURNS trigger LANGUAGE plpgsql AS 'BEGIN RETURN NULL; END'"], "#611 : la fonction du garde des groupes de traduction n'est pas celle des migrations"];
+        yield 'sécurité de ligne activée' => ['ALTER TABLE public.contribution ENABLE ROW LEVEL SECURITY'];
+        yield 'sécurité de ligne forcée seule' => ['ALTER TABLE public.contribution FORCE ROW LEVEL SECURITY'];
+        yield 'politique' => ['CREATE POLICY {r} ON public.contribution USING (true)'];
+        yield 'schéma au nom du rôle applicatif' => ['CREATE SCHEMA {app}'];
+        yield 'règle DO INSTEAD NOTHING' => ['CREATE RULE {r} AS ON INSERT TO public.contribution DO INSTEAD NOTHING'];
+        yield 'vue' => ['CREATE VIEW public.{t1} AS SELECT 1 AS id'];
+        yield 'table' => ['CREATE TABLE public.{t1} (id integer)'];
+        yield 'trigger BEFORE sur la fonction du garde' => ['CREATE TRIGGER {r} BEFORE INSERT ON public.contribution FOR EACH ROW EXECUTE FUNCTION '.self::GUARD_FUNCTION];
+        yield 'garde désactivé' => ['ALTER TABLE public.contribution DISABLE TRIGGER trg_translation_group_single_position'];
+        yield 'garde retiré d\'une table' => ['DROP TRIGGER trg_translation_group_single_position ON public.contribution'];
+        yield 'fonction du garde réécrite' => ['CREATE OR REPLACE FUNCTION '.self::GUARD_FUNCTION." RETURNS trigger LANGUAGE plpgsql AS 'BEGIN RETURN NULL; END'"];
+        yield 'fonction du garde renommée' => ['ALTER FUNCTION '.self::GUARD_FUNCTION.' RENAME TO {f}'];
+        yield 'fonction ajoutée' => ["CREATE FUNCTION public.{f}() RETURNS integer LANGUAGE sql AS 'SELECT 1'"];
+        yield 'opérateur' => ['CREATE OPERATOR public.=== (LEFTARG = text, RIGHTARG = text, FUNCTION = pg_catalog.texteq)'];
+        yield 'type' => ["CREATE TYPE public.{t1} AS ENUM ('a')"];
+        yield 'index' => ['CREATE INDEX {r} ON public.contribution (position)'];
+        yield 'contrainte' => ['ALTER TABLE public.contribution ADD CONSTRAINT {r} CHECK (true)'];
+        yield 'défaut de colonne' => ['ALTER TABLE public.contribution ALTER COLUMN position SET DEFAULT 12345'];
+    }
+
+    /**
+     * Le garde recréé à l'identique, sauf une condition `WHEN (false)` qui
+     * l'empêche de jamais s'exécuter : refusé — sa définition est dans
+     * l'empreinte, pas seulement son nom et sa fonction.
+     */
+    public function testTheGuardRecreatedUnderAFalseConditionIsRefused(): void
+    {
+        $definition = $this->probe->fetchOne("SELECT pg_get_triggerdef(oid) FROM pg_trigger WHERE tgname = 'trg_translation_group_single_position' AND tgrelid = 'public.contribution'::regclass");
+        self::assertIsString($definition);
+        self::assertStringContainsString('FOR EACH ROW EXECUTE', $definition, 'Prémisse : la définition, sans condition.');
+
+        $this->arm([
+            'DROP TRIGGER trg_translation_group_single_position ON public.contribution',
+            str_replace('FOR EACH ROW EXECUTE', 'FOR EACH ROW WHEN (false) EXECUTE', $definition),
+        ]);
+
+        $this->assertBlockRefuses('#611', self::SCHEMA_REFUSAL);
+    }
+
+    private function assertBlockRefuses(string $issue, string $refusal): void
+    {
+        try {
+            $this->probe->executeStatement(RolesVerification::blockOf($issue));
+            self::fail(\sprintf('Le bloc %s a accepté.', $issue));
+        } catch (DriverException $exception) {
+            self::assertStringContainsString($refusal, $exception->getMessage());
+        }
     }
 
     /**
@@ -308,22 +374,24 @@ final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
         }
     }
 
-    /** Les noms jetables de ce test, quotés : `{t1}`, `{t2}`, `{f}`, `{r}`, `{app}`, `{migrator}`. */
+    /** Les noms jetables de ce test, quotés : `{t1}`, `{f}`, `{r}`, `{app}`, `{migrator}`, et la base `{db}`. */
     private function expand(string $statement): string
     {
         return strtr($statement, [
             '{t1}' => $this->probe->quoteSingleIdentifier('cpg_probe_t1_'.$this->suffix),
-            '{t2}' => $this->probe->quoteSingleIdentifier('cpg_probe_t2_'.$this->suffix),
             '{f}' => $this->probe->quoteSingleIdentifier('cpg_probe_f_'.$this->suffix),
             '{r}' => $this->probe->quoteSingleIdentifier('cpg_probe_r_'.$this->suffix),
             '{app}' => $this->probe->quoteSingleIdentifier($this->app),
             '{migrator}' => $this->probe->quoteSingleIdentifier($this->migrator),
+            '{db}' => $this->probe->quoteSingleIdentifier($this->database()),
         ]);
     }
 
     /**
      * Joue `$operation` sous `$role` (`SET LOCAL ROLE`), rend la main au
-     * superutilisateur, et renvoie ce qu'elle a renvoyé.
+     * superutilisateur, et renvoie ce qu'elle a renvoyé. Si elle échoue, la
+     * transaction est peut-être interrompue : son erreur remonte telle quelle,
+     * sans `RESET ROLE` qui la masquerait — le `tearDown` annule tout.
      *
      * @template T
      *
@@ -334,11 +402,10 @@ final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
     private function asRole(string $role, callable $operation): mixed
     {
         $this->probe->executeStatement('SET LOCAL ROLE '.$this->probe->quoteSingleIdentifier($role));
-        try {
-            return $operation();
-        } finally {
-            $this->probe->executeStatement('RESET ROLE');
-        }
+        $result = $operation();
+        $this->probe->executeStatement('RESET ROLE');
+
+        return $result;
     }
 
     private function database(): string

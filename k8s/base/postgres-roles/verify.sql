@@ -83,18 +83,6 @@ SELECT (SELECT array_agg(split_part(c, '=', 1) ORDER BY c COLLATE "C") FROM pg_d
        (SELECT count(*) FROM unnest(ARRAY[:'app_role', :'migrator_role', :'reader_role']) AS r WHERE has_database_privilege(r, current_database(), 'CONNECT')) AS roles_avec_connect
 FROM pg_database d WHERE d.datname = current_database();
 
-\echo '--- #611 : gestes du propriétaire qui videraient le DML de l''application (attendu : 0, 0, 0, 0, t ; NULL avant la première migration)'
-SELECT (SELECT count(*) FROM pg_class WHERE relnamespace = 'public'::regnamespace AND (relrowsecurity OR relforcerowsecurity)) AS tables_en_securite_de_ligne,
-       (SELECT count(*) FROM pg_namespace WHERE nspname NOT IN ('public', 'information_schema') AND nspname !~ '^pg_') AS schemas_hors_public,
-       (SELECT count(*) FROM pg_rewrite r JOIN pg_class c ON c.oid = r.ev_class WHERE c.relnamespace = 'public'::regnamespace AND NOT (r.ev_type = '1' AND c.relkind IN ('v', 'm'))) AS regles_hors_vues,
-       (SELECT count(*) FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
-        WHERE c.relnamespace = 'public'::regnamespace AND NOT t.tgisinternal
-          AND NOT (t.tgname = 'trg_translation_group_single_position' AND t.tgtype = 21 AND t.tgconstraint <> 0 AND t.tgdeferrable AND t.tginitdeferred AND t.tgenabled = 'O'
-                   AND t.tgfoid = (SELECT p.oid FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.proname = 'portfolio_translation_group_single_position' AND p.pronargs = 0))) AS triggers_hors_garde,
-       (SELECT bool_and(md5(p.prosrc) = '0cdf79877b4d3577aa72788ccf3a1d42' AND NOT p.prosecdef AND p.proconfig IS NULL AND l.lanname = 'plpgsql')
-        FROM pg_proc p JOIN pg_language l ON l.oid = p.prolang
-        WHERE p.pronamespace = 'public'::regnamespace AND p.proname = 'portfolio_translation_group_single_position' AND p.pronargs = 0) AS fonction_du_garde_conforme;
-
 \echo '--- #575 : vérification (une erreur ici annule toute la procédure)'
 DO $$
 DECLARE
@@ -209,52 +197,116 @@ BEGIN
 END
 $$;
 
--- #611 : propriétaire de la base et de chaque table de public, le rôle de
--- migration peut vider le DML de l'application SANS ERREUR — mesuré sur
--- l'image épinglée, sous des rôles de la forme de privileges.sql :
--- - la sécurité au niveau des lignes sans politique : le rôle applicatif, sans
---   BYPASSRLS, n'y lit plus rien, son INSERT est refusé, ses UPDATE et DELETE
---   ne touchent rien ; FORCE seul est inerte mais arme le prochain ENABLE, et
---   ôte au propriétaire son contournement. Le projet n'en utilise pas : tout
---   drapeau est refusé, politique ou non ;
--- - un schéma au nom du rôle applicatif, ouvert à lui : le search_path par
---   défaut ("$user", public) le place devant public, les requêtes non
---   qualifiées lisent sa copie. Le projet n'utilise que public : tout autre
---   schéma est refusé (le préfixe pg_ est réservé au système) ;
--- - une règle (DO INSTEAD NOTHING) ou un trigger qui annule (BEFORE, RETURN
---   NULL) ou efface (AFTER, DELETE) la ligne écrite. Seule règle admise : la
---   règle SELECT d'une vue. Seul trigger admis : le garde des groupes de
---   traduction (Version20261012120000, Version20261012160000), à sa forme
---   exacte — tgtype 21 = ROW + INSERT + UPDATE, AFTER ; contrainte différée ;
---   activé, un DISABLE TRIGGER ôterait le garde — et sur sa fonction, dont le
---   corps est épinglé par son empreinte : CREATE OR REPLACE le réécrirait.
--- Une migration qui change cette fonction ou ajoute un trigger, une règle, un
--- schéma met ce bloc à jour dans le même changement :
--- DatabaseOwnerSettingsVerificationTest le rejoue sur la base de test migrée
--- et rougit sinon. Des comptes seulement, jamais les noms, choisis par qui
--- tient le rôle de migration. Pas une frontière contre lui (il peut aussi
--- effacer des lignes) : un filet contre un geste persistant qui couperait
--- l'application en silence.
+-- #611 : propriétaire de la base et de chaque objet de public, le rôle de
+-- migration peut vider le DML de l'application SANS ERREUR. Mesuré sur l'image
+-- épinglée, sous des rôles de la forme de privileges.sql : la sécurité au
+-- niveau des lignes sans politique (le rôle applicatif, sans BYPASSRLS, ne lit
+-- plus rien, ses UPDATE et DELETE ne touchent rien) ; un schéma au nom du rôle
+-- applicatif, que le search_path par défaut ("$user", public) place devant
+-- public ; une règle DO INSTEAD NOTHING ; un trigger qui annule (BEFORE) ou
+-- efface (AFTER) la ligne ; un opérateur de public plus exact que celui du
+-- catalogue (le schéma de la CVE-2018-1058 : `username = 'x'` ne trouve plus
+-- rien). Une liste de gestes ne se ferme pas ; une liste d'admission, si : le
+-- schéma doit être exactement celui que les migrations laissent.
+-- Ce bloc lit une ligne canonique par objet hors du système — schémas, puis
+-- dans public relations, colonnes, index, contraintes, triggers et leur
+-- activation, règles, politiques, héritage, séquences, fonctions, opérateurs,
+-- types et le reste du catalogue —, sans propriétaire ni privilège (#575 les
+-- contrôle) ni nom de colonne supprimée, et compare leur md5 à l'empreinte
+-- de la dernière migration passée. Mesuré : une base de dev migrée pas à pas
+-- depuis le début du projet et une base neuve migrée sous un rôle non
+-- superutilisateur jusqu'à la même version ont les mêmes lignes. Le
+-- search_path est fixé avant la lecture : pg_get_*def qualifient un nom selon
+-- lui. Une empreinte par migration, gardées toutes : la procédure, jouée
+-- depuis un checkout en avance sur l'environnement, reconnaît encore sa
+-- version ; une migration inconnue (checkout en retard) est refusée comme
+-- telle. DatabaseOwnerSettingsVerificationTest calcule l'empreinte de la base
+-- de test migrée : une migration nouvelle le rougit, et son message donne la
+-- ligne à ajouter. La requête entre les marqueurs est recopiée à l'identique
+-- dans k8s/README.md, pour nommer les lignes qui diffèrent ; ce bloc n'imprime
+-- que des empreintes, jamais un nom. Pas une frontière contre qui tient le
+-- rôle de migration (il peut aussi effacer des lignes) : un filet contre un
+-- geste persistant qui couperait l'application en silence.
 \echo '--- #611 : vérification'
 DO $$
 DECLARE
-    garde oid := (SELECT oid FROM pg_proc WHERE pronamespace = 'public'::regnamespace AND proname = 'portfolio_translation_group_single_position' AND pronargs = 0);
-    n integer;
+    derniere text := '';
+    attendue text;
+    empreinte text;
 BEGIN
-    SELECT count(*) INTO n FROM pg_class WHERE relnamespace = 'public'::regnamespace AND (relrowsecurity OR relforcerowsecurity);
-    IF n <> 0 THEN RAISE EXCEPTION '#611 : % table(s) de public en sécurité au niveau des lignes (ENABLE ou FORCE ROW LEVEL SECURITY), aucune attendue', n; END IF;
-    SELECT count(*) INTO n FROM pg_namespace WHERE nspname NOT IN ('public', 'information_schema') AND nspname !~ '^pg_';
-    IF n <> 0 THEN RAISE EXCEPTION '#611 : % schéma(s) hors de public et des schémas système (CREATE SCHEMA), aucun attendu', n; END IF;
-    SELECT count(*) INTO n FROM pg_rewrite r JOIN pg_class c ON c.oid = r.ev_class WHERE c.relnamespace = 'public'::regnamespace AND NOT (r.ev_type = '1' AND c.relkind IN ('v', 'm'));
-    IF n <> 0 THEN RAISE EXCEPTION '#611 : % règle(s) sur public hors des vues (CREATE RULE), aucune attendue', n; END IF;
-    SELECT count(*) INTO n FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
-    WHERE c.relnamespace = 'public'::regnamespace AND NOT t.tgisinternal
-      AND NOT (t.tgname = 'trg_translation_group_single_position' AND t.tgtype = 21 AND t.tgconstraint <> 0 AND t.tgdeferrable AND t.tginitdeferred AND t.tgenabled = 'O' AND t.tgfoid = garde);
-    IF n <> 0 THEN RAISE EXCEPTION '#611 : % trigger(s) de public hors du garde des groupes de traduction (CREATE TRIGGER, DISABLE TRIGGER), aucun attendu', n; END IF;
-    IF garde IS NOT NULL AND NOT EXISTS (
-        SELECT FROM pg_proc p JOIN pg_language l ON l.oid = p.prolang
-        WHERE p.oid = garde AND md5(p.prosrc) = '0cdf79877b4d3577aa72788ccf3a1d42' AND NOT p.prosecdef AND p.proconfig IS NULL AND l.lanname = 'plpgsql'
-    ) THEN RAISE EXCEPTION '#611 : la fonction du garde des groupes de traduction n''est pas celle des migrations (CREATE OR REPLACE FUNCTION)'; END IF;
+    PERFORM set_config('search_path', 'pg_catalog, pg_temp', true);
+    IF to_regclass('public.doctrine_migration_versions') IS NOT NULL THEN
+        EXECUTE 'SELECT coalesce(max(version), '''') FROM public.doctrine_migration_versions' INTO derniere;
+    END IF;
+    -- Dernière migration passée, empreinte du schéma qu'elle laisse ('' : base neuve).
+    attendue := (SELECT e FROM (VALUES
+        ('', 'a93ae92c0e0fe1c236d7055de6898229'),
+        ('DoctrineMigrations\Version20261012120000', '5b6707941be0ae1c6286af934bfc563d'),
+        ('DoctrineMigrations\Version20261012160000', '5cf897d0be8abd298e188f26fc20bb02')
+    ) AS empreintes(v, e) WHERE v = derniere);
+    SELECT md5(string_agg(l, E'\n' ORDER BY l COLLATE "C")) INTO empreinte FROM (
+        -- #611 : lignes du schéma, début
+        SELECT 'schema ' || quote_ident(n.nspname) FROM pg_namespace n WHERE n.nspname <> 'information_schema' AND n.nspname !~ '^pg_'
+        UNION ALL
+        SELECT concat_ws(' ', 'relation', quote_ident(c.relname), c.relkind, c.relpersistence, c.relrowsecurity, c.relforcerowsecurity, c.relispartition, pg_get_expr(c.relpartbound, c.oid), c.reloptions::text, am.amname, ts.spcname)
+        FROM pg_class c LEFT JOIN pg_am am ON am.oid = c.relam LEFT JOIN pg_tablespace ts ON ts.oid = c.reltablespace
+        WHERE c.relnamespace = 'public'::regnamespace
+        UNION ALL
+        SELECT concat_ws(' ', 'colonne', quote_ident(c.relname), quote_ident(a.attname), format_type(a.atttypid, a.atttypmod), a.attnotnull, a.attidentity, a.attgenerated, pg_get_expr(d.adbin, d.adrelid), co.collname)
+        FROM pg_attribute a JOIN pg_class c ON c.oid = a.attrelid JOIN pg_type ty ON ty.oid = a.atttypid
+        LEFT JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
+        LEFT JOIN pg_collation co ON co.oid = a.attcollation AND a.attcollation <> ty.typcollation
+        WHERE c.relnamespace = 'public'::regnamespace AND c.relkind IN ('r', 'p', 'v', 'm', 'c', 'f') AND a.attnum > 0 AND NOT a.attisdropped
+        UNION ALL
+        SELECT 'index ' || pg_get_indexdef(i.indexrelid) FROM pg_index i JOIN pg_class c ON c.oid = i.indrelid WHERE c.relnamespace = 'public'::regnamespace
+        UNION ALL
+        SELECT concat_ws(' ', 'contrainte', quote_ident(coalesce(c.relname, t.typname)), quote_ident(k.conname), pg_get_constraintdef(k.oid))
+        FROM pg_constraint k LEFT JOIN pg_class c ON c.oid = k.conrelid LEFT JOIN pg_type t ON t.oid = k.contypid
+        WHERE k.connamespace = 'public'::regnamespace AND k.contype <> 'n'
+        UNION ALL
+        SELECT concat_ws(' ', 'trigger', pg_get_triggerdef(t.oid), t.tgenabled::text) FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid WHERE c.relnamespace = 'public'::regnamespace AND NOT t.tgisinternal
+        UNION ALL
+        SELECT 'regle ' || pg_get_ruledef(r.oid) FROM pg_rewrite r JOIN pg_class c ON c.oid = r.ev_class WHERE c.relnamespace = 'public'::regnamespace
+        UNION ALL
+        SELECT concat_ws(' ', 'politique', quote_ident(c.relname), quote_ident(p.polname), p.polcmd::text, p.polpermissive, pg_get_expr(p.polqual, p.polrelid), pg_get_expr(p.polwithcheck, p.polrelid))
+        FROM pg_policy p JOIN pg_class c ON c.oid = p.polrelid WHERE c.relnamespace = 'public'::regnamespace
+        UNION ALL
+        SELECT concat_ws(' ', 'heritage', quote_ident(c.relname), h.inhparent::regclass::text) FROM pg_inherits h JOIN pg_class c ON c.oid = h.inhrelid WHERE c.relnamespace = 'public'::regnamespace
+        UNION ALL
+        SELECT concat_ws(' ', 'sequence', quote_ident(c.relname), format_type(s.seqtypid, NULL), s.seqstart, s.seqincrement, s.seqmin, s.seqmax, s.seqcache, s.seqcycle)
+        FROM pg_sequence s JOIN pg_class c ON c.oid = s.seqrelid WHERE c.relnamespace = 'public'::regnamespace
+        UNION ALL
+        SELECT CASE WHEN p.prokind = 'a' THEN 'agregat ' || p.oid::regprocedure::text ELSE 'fonction ' || pg_get_functiondef(p.oid) END FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace
+        UNION ALL
+        SELECT concat_ws(' ', 'operateur', o.oid::regoperator::text, o.oprcode::regprocedure::text) FROM pg_operator o WHERE o.oprnamespace = 'public'::regnamespace
+        UNION ALL
+        SELECT concat_ws(' ', 'type', quote_ident(t.typname), t.typtype, format_type(t.typbasetype, t.typtypmod), t.typnotnull, t.typdefault,
+               (SELECT string_agg(quote_literal(e.enumlabel), ',' ORDER BY e.enumsortorder) FROM pg_enum e WHERE e.enumtypid = t.oid))
+        FROM pg_type t WHERE t.typnamespace = 'public'::regnamespace AND t.typrelid = 0 AND NOT (t.typcategory = 'A' AND t.typelem <> 0)
+        UNION ALL
+        SELECT 'classe ' || quote_ident(opcname) FROM pg_opclass WHERE opcnamespace = 'public'::regnamespace
+        UNION ALL
+        SELECT 'famille ' || quote_ident(opfname) FROM pg_opfamily WHERE opfnamespace = 'public'::regnamespace
+        UNION ALL
+        SELECT 'collation ' || quote_ident(collname) FROM pg_collation WHERE collnamespace = 'public'::regnamespace
+        UNION ALL
+        SELECT 'conversion ' || quote_ident(conname) FROM pg_conversion WHERE connamespace = 'public'::regnamespace
+        UNION ALL
+        SELECT 'recherche ' || quote_ident(cfgname) FROM pg_ts_config WHERE cfgnamespace = 'public'::regnamespace
+        UNION ALL
+        SELECT 'dictionnaire ' || quote_ident(dictname) FROM pg_ts_dict WHERE dictnamespace = 'public'::regnamespace
+        UNION ALL
+        SELECT 'analyseur ' || quote_ident(prsname) FROM pg_ts_parser WHERE prsnamespace = 'public'::regnamespace
+        UNION ALL
+        SELECT 'modele ' || quote_ident(tmplname) FROM pg_ts_template WHERE tmplnamespace = 'public'::regnamespace
+        UNION ALL
+        SELECT 'statistique ' || quote_ident(stxname) FROM pg_statistic_ext WHERE stxnamespace = 'public'::regnamespace
+        UNION ALL
+        SELECT 'extension ' || quote_ident(extname) FROM pg_extension WHERE extnamespace = 'public'::regnamespace
+        -- #611 : lignes du schéma, fin
+    ) AS lignes(l);
+    IF attendue IS NULL THEN RAISE EXCEPTION '#611 : aucune empreinte de schéma connue pour la dernière migration de la base (empreinte %) : checkout en retard sur l''environnement, le mettre à jour', empreinte; END IF;
+    IF empreinte IS DISTINCT FROM attendue THEN RAISE EXCEPTION '#611 : le schéma de la base n''est pas celui des migrations (empreinte %, % attendue)', empreinte, attendue; END IF;
 END
 $$;
 

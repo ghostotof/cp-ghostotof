@@ -244,24 +244,31 @@ paths:
   replayed on the migrated test database by `DatabaseOwnerSettingsVerificationTest` (throwaway roles, one
   rolled-back transaction): it passes as is, and refuses each alteration above with its cause. The
   procedure's own session ignores these settings (`PGOPTIONS`, above), so the one that would have stopped
-  it reaches `verify.sql`. **Owner of the database and of every table of `public`, the migrator may also
+  it reaches `verify.sql`. **Owner of the database and of every object of `public`, the migrator may also
   empty the application's DML without any error** (issue #611, each gesture measured on the pinned
-  image): row-level security without a policy (`cpg_app`, no `BYPASSRLS`, reads no row, its `INSERT`
-  is refused, its `UPDATE`/`DELETE` touch nothing; `FORCE` alone is inert but arms the next `ENABLE`);
-  a schema named after `cpg_app` and open to it, which the default `search_path` (`"$user", public`)
-  puts before `public`; a rule (`DO INSTEAD NOTHING`); a trigger that cancels (`BEFORE`, `RETURN
-  NULL`) **or erases** (`AFTER`, `DELETE`) the row — so a trigger's type proves nothing, only an
-  allow-list does. `verify.sql`'s `#611` block refuses any row-level security flag, any schema but
-  `public` and the system's (`pg_` is reserved), any rule but a view's `SELECT` rule, any
-  non-internal trigger of `public` but the translation-group guard at its exact shape (name,
-  `tgtype` 21, deferred constraint trigger, enabled — a `DISABLE TRIGGER` removed the guard —, on
-  its function), and that function unless its body's `md5` is the one the migrations write. Counts
-  only, never the names (`PostgresRolesProcedureTest` pins it); the runbook's read-only query names
-  them. **A migration that changes that function or adds a trigger, a rule or a schema updates the
-  block in the same change**: `DatabaseOwnerSettingsVerificationTest` replays it on the migrated
-  test database (measured premises, then each gesture refused) and turns red otherwise. Not a
-  boundary against whoever holds the migrator — they can delete rows outright —, a net against a
-  persistent gesture that would cut the application silently. **Nothing repairs these states**: the procedure fails as long as one holds,
+  image): row-level security without a policy (`cpg_app`, no `BYPASSRLS`, reads no row, its
+  `UPDATE`/`DELETE` touch nothing); a schema named after `cpg_app` and open to it, which the default
+  `search_path` (`"$user", public`) puts before `public`; a rule (`DO INSTEAD NOTHING`); a trigger that
+  cancels (`BEFORE`) **or erases** (`AFTER`) the row; an operator of `public` more exact than the
+  catalog's (the CVE-2018-1058 pattern: `username = 'x'` finds nothing). A list of gestures never closes
+  (a first version did, and its review found the holes), so `verify.sql`'s `#611` block is an
+  **allow-list of the whole schema**: one canonical line per object outside the system — schemas, then
+  in `public` relations, columns, indexes, constraints, triggers and their enabled state, rules,
+  policies, inheritance, sequences, functions, operators, types and the rest of the catalog —, without
+  owners or privileges (#575 checks those) nor dropped columns, read under a fixed `search_path`
+  (`pg_get_*def` qualify a name by it), and their `md5` compared with the fingerprint of the **latest
+  migration applied** (`''`: a fresh database). Measured: a dev database migrated step by step since
+  the project's start, a fresh one migrated under a non-superuser owner to the same version, and a
+  `pg_dump` restoration all give the same lines. Hashes only in a refusal, never a name; the runbook
+  holds a byte-identical copy of the query (`PostgresRolesProcedureTest` pins both) to name the lines
+  that differ. Every fingerprint is kept: a procedure played from a checkout ahead of the environment
+  still knows its version, and one behind it is refused as such, not as an alteration.
+  **Every migration adds its fingerprint to that block in the same change**: `DatabaseOwnerSettingsVerificationTest`
+  computes the migrated test database's and turns red, its message giving the line to add; it also
+  replays the block — measured premises, then each gesture refused, one family of lines at a time. A
+  PostgreSQL bump that changes how a definition is printed turns it red the same way. Not a boundary
+  against whoever holds the migrator — they can delete rows outright —, a net against a persistent
+  gesture that would cut the application silently. **Nothing repairs these states**: the procedure fails as long as one holds,
   and a writing `exec` is #520's exception alone — issue #610;
   `cpg_reader` is a second net against an operator's mistake, not a boundary against whoever holds
   `exec` (`trust` on the local socket gives the superuser too) — a `port-forward` or an ephemeral
@@ -547,7 +554,9 @@ paths:
   a column added `NOT NULL` has a default or is filled by the migration itself
   (`Version20260914170000` is the model); **never drop or rename a column in the release that stops
   reading it**, only in the next one; a Messenger message in flight at deploy time must stay readable
-  by both versions (v0.11.0's `SendAccountInvitationMessage.userId` note). Only migrations the old code
+  by both versions (v0.11.0's `SendAccountInvitationMessage.userId` note); and the migration adds the
+  fingerprint of the schema it leaves to `verify.sql`'s `#611` block (issue #611, see the roles bullet
+  above — the test says which line). Only migrations the old code
   cannot survive fall outside this order — see the maintenance window below.
   **A migration that writes into one of the eight ordered content tables, then alters or indexes that
   table, can pass the CI and fail only on a populated database — preprod, or a dev database with

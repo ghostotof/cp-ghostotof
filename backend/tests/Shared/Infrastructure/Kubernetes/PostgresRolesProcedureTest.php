@@ -40,6 +40,9 @@ final class PostgresRolesProcedureTest extends TestCase
     /** Le dernier fichier du flux : la validation, conditionnée à verify.sql. */
     private const string COMMIT_FILE = 'commit.sql';
 
+    /** La phrase du runbook qui ouvre la requête des lignes du schéma (#611). */
+    private const string SCHEMA_LINES_RUNBOOK = '**Un refus `#611`**';
+
     /** La migration qui pose le fuseau de la base (#434), seul réglage de base admis (#608). */
     private const string TIMEZONE_MIGRATION = 'Version20261011120000';
 
@@ -397,26 +400,25 @@ final class PostgresRolesProcedureTest extends TestCase
     }
 
     /**
-     * Issue #611 : les objets que verify.sql refuse ici — tables, schémas,
-     * règles, triggers — portent des noms choisis par qui tient le rôle de
-     * migration. Le bloc n'en imprime que des comptes, ni dans un refus (le seul
-     * argument d'un `RAISE` est le compte `n`), ni à l'affichage (des comptes et
-     * un booléen, aucun agrégat de noms). Les refus sont rejoués par
+     * Issue #611 : le bloc compare l'empreinte du schéma à celle des
+     * migrations. Il fixe le `search_path` avant de lire (les `pg_get_*def`
+     * qualifient un nom selon lui), n'imprime que des empreintes — jamais un
+     * nom, choisi par qui tient le rôle de migration —, et le runbook recopie
+     * à l'identique la requête de ses lignes, pour nommer celles qui
+     * diffèrent. Le bloc est rejoué par
      * {@see \App\Tests\Shared\Infrastructure\Postgres\DatabaseOwnerSettingsVerificationTest}.
      */
-    public function testTheVerificationOfOwnerGesturesOnTablesPrintsCountsOnly(): void
+    public function testTheSchemaFingerprintPrintsHashesOnlyAndTheRunbookReadsTheSameLines(): void
     {
         $block = $this->normalized(RolesVerification::blockOf('#611'));
 
-        self::assertSame(5, preg_match_all("/RAISE EXCEPTION '#611 :[^;]*;/", $block, $raises), 'Cinq refus #611 dans leur bloc.');
-        foreach ($raises[0] as $raise) {
-            self::assertMatchesRegularExpression("/\\ARAISE EXCEPTION '(?:[^']|'')*'(?:, n)?;\\z/", $raise, 'Un refus #611 ne cite que le compte.');
-        }
+        self::assertStringContainsString("BEGIN PERFORM set_config('search_path', 'pg_catalog, pg_temp', true);", $block, 'Le search_path est fixé avant toute lecture.');
+        self::assertSame(2, preg_match_all("/RAISE EXCEPTION '#611 :(?:[^']|'')*'(, [a-z_, ]+);/", $block, $raises), 'Deux refus #611.');
+        self::assertSame([', empreinte', ', empreinte, attendue'], $raises[1], 'Un refus #611 ne cite que des empreintes.');
 
-        self::assertSame(1, preg_match("/\\\\echo '--- #611 :[^\\n]*\\n(SELECT .*?);/s", $this->statements('verify.sql'), $display), 'verify.sql : l\'affichage #611.');
-        self::assertDoesNotMatchRegularExpression('/_agg\s*\(|regclass|::text|\bformat\s*\(/i', $display[1], 'L\'affichage #611 n\'imprime pas de nom.');
-        preg_match_all('/\) AS (\w+)/', $display[1], $columns);
-        self::assertSame(['tables_en_securite_de_ligne', 'schemas_hors_public', 'regles_hors_vues', 'triggers_hors_garde', 'fonction_du_garde_conforme'], $columns[1], 'Des comptes, et le seul booléen de la fonction.');
+        $runbook = Runbook::repository()->bashBlockAfter(self::SCHEMA_LINES_RUNBOOK);
+        self::assertSame(1, preg_match("/<<'SQL'\nSET search_path = pg_catalog, pg_temp;\n(.*?);\nSQL$/ms", $runbook, $copy), 'k8s/README.md : la requête des lignes du schéma, sous le même search_path.');
+        self::assertSame($this->normalized(RolesVerification::schemaLinesQuery()), $this->normalized($copy[1]), 'Le runbook lit les mêmes lignes que verify.sql.');
     }
 
     private function normalized(string $text): string
