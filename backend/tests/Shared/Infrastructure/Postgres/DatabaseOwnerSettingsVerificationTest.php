@@ -21,9 +21,12 @@ use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
  * passe —, puis après chacun des gestes mesurés sur l'image épinglée — il
  * refuse, en nommant l'écart.
  *
- * Issue #611 : propriétaire de chaque table de `public`, il peut aussi y
- * activer la sécurité au niveau des lignes sans politique — l'application,
- * sans `BYPASSRLS`, n'y voit plus rien. Le bloc `#611` est rejoué de même.
+ * Issue #611 : propriétaire de la base et de chaque table de `public`, il peut
+ * aussi vider le DML de l'application **sans erreur** — sécurité au niveau des
+ * lignes sans politique, schéma au nom du rôle applicatif devant `public` dans
+ * le `search_path`, règle `DO INSTEAD NOTHING`, trigger qui annule ou efface la
+ * ligne. Les prémisses ci-dessous rejouent ce qui a été mesuré sur l'image
+ * épinglée ; le bloc `#611` est rejoué comme le bloc `#608`.
  *
  * Tout tient dans une transaction annulée au `tearDown` : les rôles jetables
  * (`NOLOGIN`, aucun mot de passe), les `ALTER DATABASE` et les `REVOKE` sont
@@ -35,11 +38,19 @@ final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
 {
     use OpensProbeConnection;
 
+    /** Une fonction de trigger qui annule la ligne (`BEFORE`) ou l'ignore (`AFTER`). */
+    private const string NOTHING_FUNCTION = "CREATE FUNCTION public.{f}() RETURNS trigger LANGUAGE plpgsql AS 'BEGIN RETURN NULL; END'";
+
+    /** Une fonction de trigger qui efface la ligne qu'on vient d'écrire. */
+    private const string ERASING_FUNCTION = "CREATE FUNCTION public.{f}() RETURNS trigger LANGUAGE plpgsql AS 'BEGIN DELETE FROM public.{t1} WHERE id = NEW.id; RETURN NULL; END'";
+
     private Connection $probe;
 
     private string $app;
 
     private string $migrator;
+
+    private string $suffix;
 
     protected function setUp(): void
     {
@@ -47,10 +58,10 @@ final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
         $this->probe = self::openProbeBeside(self::getContainer()->get(EntityManagerInterface::class)->getConnection());
         self::assertSame('on', $this->probe->fetchOne("SELECT current_setting('is_superuser')"), 'Prémisse : le rôle de test est le superutilisateur de l\'image, qui crée les rôles jetables.');
 
-        $suffix = bin2hex(random_bytes(4));
-        $this->app = 'cpg_app_probe_'.$suffix;
-        $this->migrator = 'cpg_migrator_probe_'.$suffix;
-        $reader = 'cpg_reader_probe_'.$suffix;
+        $this->suffix = bin2hex(random_bytes(4));
+        $this->app = 'cpg_app_probe_'.$this->suffix;
+        $this->migrator = 'cpg_migrator_probe_'.$this->suffix;
+        $reader = 'cpg_reader_probe_'.$this->suffix;
 
         $this->probe->beginTransaction();
         foreach ([$this->app, $this->migrator, $reader] as $role) {
@@ -124,66 +135,210 @@ final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
         yield 'réglage de rôle dans la base' => ['ALTER ROLE {app} IN DATABASE {db} SET default_transaction_read_only = on', '#608 : 1 réglage(s) de rôle propre(s) à la base'];
     }
 
-    /** La base de test, migrée, n'a aucune table en sécurité au niveau des lignes : le bloc passe. */
-    public function testAMigratedDatabaseWithoutRowSecurityPasses(): void
+    /**
+     * La base de test, migrée, porte le seul trigger admis — le garde des
+     * groupes de traduction, sur ses huit tables — et sa fonction : le bloc
+     * passe, et la comparaison de la fonction n'est pas vide. Une migration qui
+     * change cette fonction ou ajoute un trigger, une règle, un schéma rougit
+     * ce test tant que le bloc ne l'admet pas.
+     */
+    public function testAMigratedDatabaseWithOnlyTheTranslationGroupGuardPasses(): void
     {
-        $this->probe->executeStatement(RolesVerification::blockOf('#611'));
+        self::assertSame(8, $this->probe->fetchOne("SELECT count(*) FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid WHERE c.relnamespace = 'public'::regnamespace AND NOT t.tgisinternal AND t.tgname = 'trg_translation_group_single_position'"), 'Prémisse : le garde sur ses huit tables.');
+        self::assertSame(1, $this->probe->fetchOne("SELECT count(*) FROM pg_proc WHERE pronamespace = 'public'::regnamespace AND proname = 'portfolio_translation_group_single_position'"), 'Prémisse : sa fonction existe, la comparaison porte.');
 
-        self::assertSame(0, $this->probe->fetchOne("SELECT count(*) FROM pg_class WHERE relnamespace = 'public'::regnamespace AND (relrowsecurity OR relforcerowsecurity)"), 'Prémisse : le projet n\'utilise pas la sécurité au niveau des lignes.');
+        $this->probe->executeStatement(RolesVerification::blockOf('#611'));
+    }
+
+    /** Une vue porte une règle `_RETURN` : elle n'est pas un geste du propriétaire, le bloc l'admet. */
+    public function testAViewIsAdmitted(): void
+    {
+        $this->arm(['CREATE VIEW public.{t1} AS SELECT 1 AS id']);
+
+        $this->probe->executeStatement(RolesVerification::blockOf('#611'));
+        self::assertSame(1, $this->probe->fetchOne("SELECT count(*) FROM pg_rewrite r JOIN pg_class c ON c.oid = r.ev_class WHERE c.relnamespace = 'public'::regnamespace AND r.rulename = '_RETURN'"), 'Prémisse : la vue porte sa règle.');
     }
 
     /**
-     * Prémisse du bloc `#611`, mesurée sur l'image épinglée : sans politique,
-     * une table en sécurité au niveau des lignes ne montre plus aucune ligne au
-     * rôle applicatif, qui a pourtant son `SELECT`.
+     * Prémisse mesurée sur l'image épinglée : sans politique, une table en
+     * sécurité au niveau des lignes ne montre plus rien au rôle applicatif, qui
+     * la lisait ; son `INSERT` est refusé, ses `UPDATE` et `DELETE` ne touchent
+     * rien, sans erreur.
      */
-    public function testRowSecurityWithoutPolicyHidesEveryRowFromTheApplication(): void
+    public function testRowSecurityWithoutPolicyEmptiesTheApplicationsDml(): void
     {
-        $table = $this->throwawayTable('(id integer)');
-        $this->probe->executeStatement(\sprintf('INSERT INTO %s VALUES (1)', $table));
-        $this->probe->executeStatement(\sprintf('GRANT SELECT ON %s TO %s', $table, $this->probe->quoteSingleIdentifier($this->app)));
+        $table = $this->ownedTable();
+        self::assertSame(1, $this->asRole($this->app, fn (): mixed => $this->probe->fetchOne('SELECT count(*) FROM '.$table)), 'Témoin : le rôle applicatif lit la ligne.');
+
         $this->probe->executeStatement(\sprintf('ALTER TABLE %s ENABLE ROW LEVEL SECURITY', $table));
 
-        $this->probe->executeStatement(\sprintf('SET LOCAL ROLE %s', $this->probe->quoteSingleIdentifier($this->app)));
-        self::assertSame(0, $this->probe->fetchOne(\sprintf('SELECT count(*) FROM %s', $table)));
+        $this->asRole($this->app, function () use ($table): void {
+            self::assertSame(0, $this->probe->fetchOne('SELECT count(*) FROM '.$table));
+            self::assertSame(0, $this->probe->executeStatement('UPDATE '.$table.' SET id = 2'));
+            self::assertSame(0, $this->probe->executeStatement('DELETE FROM '.$table));
+            $this->probe->createSavepoint('insertion');
+            try {
+                $this->probe->executeStatement('INSERT INTO '.$table.' VALUES (3)');
+                self::fail('L\'INSERT a été admis.');
+            } catch (DriverException $exception) {
+                self::assertStringContainsString('violates row-level security policy', $exception->getMessage());
+            }
+            $this->probe->rollbackSavepoint('insertion');
+        });
+    }
+
+    /** Prémisse mesurée : `FORCE` retire au propriétaire son contournement ; seul, sans `ENABLE`, il est inerte. */
+    public function testForcedRowSecurityHidesTheRowsFromTheOwnerToo(): void
+    {
+        $table = $this->ownedTable();
+        $count = fn (): mixed => $this->probe->fetchOne('SELECT count(*) FROM '.$table);
+
+        $this->probe->executeStatement(\sprintf('ALTER TABLE %s FORCE ROW LEVEL SECURITY', $table));
+        self::assertSame(1, $this->asRole($this->app, $count), 'FORCE seul est inerte.');
+
+        $this->probe->executeStatement(\sprintf('ALTER TABLE %s ENABLE ROW LEVEL SECURITY', $table));
+        self::assertSame(0, $this->asRole($this->migrator, $count), 'FORCE + ENABLE : le propriétaire non plus.');
     }
 
     /**
-     * Chaque drapeau de sécurité au niveau des lignes posé sur une table de
-     * `public` est refusé : `ENABLE` coupe l'application, `FORCE` seul est
-     * inerte mais arme le prochain `ENABLE`, et une table partitionnée filtre
-     * ce qu'on lit par elle.
+     * Prémisse mesurée : un schéma au nom du rôle applicatif, ouvert à lui,
+     * passe devant `public` dans le `search_path` par défaut — ses requêtes non
+     * qualifiées lisent la copie.
      */
-    #[DataProvider('rowSecurityAlterations')]
-    public function testEveryRowSecurityFlagIsRefused(string $definition, string $alteration): void
+    public function testASchemaNamedAfterTheApplicationRoleShadowsPublic(): void
     {
-        $this->probe->executeStatement(\sprintf('ALTER TABLE %s %s', $this->throwawayTable($definition), $alteration));
+        self::assertSame('"$user", public', $this->probe->fetchOne('SHOW search_path'), 'Prémisse : le search_path par défaut.');
+        $table = $this->ownedTable();
+        $this->arm([
+            'CREATE SCHEMA {app}',
+            'CREATE TABLE {app}.'.substr($table, \strlen('public.')).' (id integer)',
+            'GRANT USAGE ON SCHEMA {app} TO {app}',
+            'GRANT SELECT ON {app}.'.substr($table, \strlen('public.')).' TO {app}',
+        ]);
+
+        self::assertSame(0, $this->asRole($this->app, fn (): mixed => $this->probe->fetchOne('SELECT count(*) FROM '.substr($table, \strlen('public.')))));
+    }
+
+    /**
+     * Prémisse mesurée : une règle ou un trigger posé par le propriétaire fait
+     * disparaître l'`INSERT` de l'application, sans erreur.
+     *
+     * @param list<string> $gesture
+     */
+    #[DataProvider('silentInsertDrops')]
+    public function testEachGestureSilentlyDropsTheApplicationsInsert(array $gesture): void
+    {
+        $this->arm(['CREATE TABLE public.{t1} (id integer)', 'GRANT SELECT, INSERT, UPDATE, DELETE ON public.{t1} TO {app}', ...$gesture]);
+
+        $this->asRole($this->app, fn (): int|string => $this->probe->executeStatement($this->expand('INSERT INTO public.{t1} VALUES (1)')));
+        self::assertSame(0, $this->probe->fetchOne($this->expand('SELECT count(*) FROM public.{t1}')));
+    }
+
+    /**
+     * @return iterable<string, array{list<string>}>
+     */
+    public static function silentInsertDrops(): iterable
+    {
+        yield 'règle DO INSTEAD NOTHING' => [['CREATE RULE {r} AS ON INSERT TO public.{t1} DO INSTEAD NOTHING']];
+        yield 'trigger BEFORE qui renvoie NULL' => [[self::NOTHING_FUNCTION, 'CREATE TRIGGER {r} BEFORE INSERT ON public.{t1} FOR EACH ROW EXECUTE FUNCTION public.{f}()']];
+        yield 'trigger AFTER qui efface la ligne' => [[self::ERASING_FUNCTION, 'CREATE TRIGGER {r} AFTER INSERT ON public.{t1} FOR EACH ROW EXECUTE FUNCTION public.{f}()']];
+    }
+
+    /**
+     * Chaque geste du propriétaire qui viderait le DML de l'application est
+     * refusé, avec sa cause ; le compte seul, jamais un nom.
+     *
+     * @param list<string> $gesture
+     */
+    #[DataProvider('ownerGesturesOnTables')]
+    public function testEveryGestureEmptyingTheApplicationsDmlIsRefused(array $gesture, string $refusal): void
+    {
+        $this->arm($gesture);
 
         try {
             $this->probe->executeStatement(RolesVerification::blockOf('#611'));
-            self::fail('Le bloc #611 a accepté : '.$alteration);
+            self::fail('Le bloc #611 a accepté : '.implode(' ; ', $gesture));
         } catch (DriverException $exception) {
-            self::assertStringContainsString('#611 : 1 table(s) de public en sécurité au niveau des lignes', $exception->getMessage());
+            self::assertStringContainsString($refusal, $exception->getMessage());
         }
     }
 
     /**
-     * @return iterable<string, array{string, string}>
+     * @return iterable<string, array{list<string>, string}>
      */
-    public static function rowSecurityAlterations(): iterable
+    public static function ownerGesturesOnTables(): iterable
     {
-        yield 'activée' => ['(id integer)', 'ENABLE ROW LEVEL SECURITY'];
-        yield 'forcée seule' => ['(id integer)', 'FORCE ROW LEVEL SECURITY'];
-        yield 'activée sur une table partitionnée' => ['(id integer) PARTITION BY RANGE (id)', 'ENABLE ROW LEVEL SECURITY'];
+        $rowSecurity = '#611 : %d table(s) de public en sécurité au niveau des lignes';
+        yield 'sécurité de ligne activée' => [['CREATE TABLE public.{t1} (id integer)', 'ALTER TABLE public.{t1} ENABLE ROW LEVEL SECURITY'], \sprintf($rowSecurity, 1)];
+        yield 'sécurité de ligne forcée seule' => [['CREATE TABLE public.{t1} (id integer)', 'ALTER TABLE public.{t1} FORCE ROW LEVEL SECURITY'], \sprintf($rowSecurity, 1)];
+        yield 'sécurité de ligne avec une politique' => [['CREATE TABLE public.{t1} (id integer)', 'CREATE POLICY {r} ON public.{t1} USING (true)', 'ALTER TABLE public.{t1} ENABLE ROW LEVEL SECURITY'], \sprintf($rowSecurity, 1)];
+        yield 'sécurité de ligne sur une table partitionnée' => [['CREATE TABLE public.{t1} (id integer) PARTITION BY RANGE (id)', 'ALTER TABLE public.{t1} ENABLE ROW LEVEL SECURITY'], \sprintf($rowSecurity, 1)];
+        yield 'sécurité de ligne sur une partition' => [['CREATE TABLE public.{t1} (id integer) PARTITION BY RANGE (id)', 'CREATE TABLE public.{t2} PARTITION OF public.{t1} FOR VALUES FROM (0) TO (10)', 'ALTER TABLE public.{t2} ENABLE ROW LEVEL SECURITY'], \sprintf($rowSecurity, 1)];
+        yield 'sécurité de ligne sur deux tables' => [['CREATE TABLE public.{t1} (id integer)', 'CREATE TABLE public.{t2} (id integer)', 'ALTER TABLE public.{t1} ENABLE ROW LEVEL SECURITY', 'ALTER TABLE public.{t2} ENABLE ROW LEVEL SECURITY'], \sprintf($rowSecurity, 2)];
+        yield 'schéma au nom du rôle applicatif' => [['CREATE SCHEMA {app}'], '#611 : 1 schéma(s) hors de public et des schémas système'];
+        yield 'règle DO INSTEAD NOTHING' => [['CREATE TABLE public.{t1} (id integer)', 'CREATE RULE {r} AS ON INSERT TO public.{t1} DO INSTEAD NOTHING'], '#611 : 1 règle(s) sur public hors des vues'];
+        yield 'trigger BEFORE qui renvoie NULL' => [['CREATE TABLE public.{t1} (id integer)', self::NOTHING_FUNCTION, 'CREATE TRIGGER {r} BEFORE INSERT ON public.{t1} FOR EACH ROW EXECUTE FUNCTION public.{f}()'], '#611 : 1 trigger(s) de public hors du garde des groupes de traduction'];
+        yield 'trigger AFTER qui efface la ligne' => [['CREATE TABLE public.{t1} (id integer)', self::ERASING_FUNCTION, 'CREATE TRIGGER {r} AFTER INSERT ON public.{t1} FOR EACH ROW EXECUTE FUNCTION public.{f}()'], '#611 : 1 trigger(s) de public hors du garde des groupes de traduction'];
+        yield 'trigger au nom du garde sur une autre fonction' => [['CREATE TABLE public.{t1} (id integer)', self::NOTHING_FUNCTION, 'CREATE CONSTRAINT TRIGGER trg_translation_group_single_position AFTER INSERT ON public.{t1} DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.{f}()'], '#611 : 1 trigger(s) de public hors du garde des groupes de traduction'];
+        yield 'garde désactivé' => [['ALTER TABLE public.contribution DISABLE TRIGGER trg_translation_group_single_position'], '#611 : 1 trigger(s) de public hors du garde des groupes de traduction'];
+        yield 'fonction du garde remplacée' => [["CREATE OR REPLACE FUNCTION public.portfolio_translation_group_single_position() RETURNS trigger LANGUAGE plpgsql AS 'BEGIN RETURN NULL; END'"], "#611 : la fonction du garde des groupes de traduction n'est pas celle des migrations"];
     }
 
-    /** Une table de `public`, créée dans la transaction annulée au `tearDown`. */
-    private function throwawayTable(string $definition): string
+    /**
+     * Une table de `public` au rôle de migration jetable, une ligne, le DML
+     * ouvert au rôle applicatif jetable — la forme que privileges.sql donne.
+     */
+    private function ownedTable(): string
     {
-        $table = $this->probe->quoteSingleIdentifier('cpg_rls_probe_'.bin2hex(random_bytes(4)));
-        $this->probe->executeStatement(\sprintf('CREATE TABLE public.%s %s', $table, $definition));
+        $this->arm([
+            'CREATE TABLE public.{t1} (id integer)',
+            'INSERT INTO public.{t1} VALUES (1)',
+            'GRANT SELECT, INSERT, UPDATE, DELETE ON public.{t1} TO {app}',
+            'ALTER TABLE public.{t1} OWNER TO {migrator}',
+        ]);
 
-        return 'public.'.$table;
+        return $this->expand('public.{t1}');
+    }
+
+    /** @param list<string> $statements joués sous le superutilisateur, dans la transaction annulée au `tearDown` */
+    private function arm(array $statements): void
+    {
+        foreach ($statements as $statement) {
+            $this->probe->executeStatement($this->expand($statement));
+        }
+    }
+
+    /** Les noms jetables de ce test, quotés : `{t1}`, `{t2}`, `{f}`, `{r}`, `{app}`, `{migrator}`. */
+    private function expand(string $statement): string
+    {
+        return strtr($statement, [
+            '{t1}' => $this->probe->quoteSingleIdentifier('cpg_probe_t1_'.$this->suffix),
+            '{t2}' => $this->probe->quoteSingleIdentifier('cpg_probe_t2_'.$this->suffix),
+            '{f}' => $this->probe->quoteSingleIdentifier('cpg_probe_f_'.$this->suffix),
+            '{r}' => $this->probe->quoteSingleIdentifier('cpg_probe_r_'.$this->suffix),
+            '{app}' => $this->probe->quoteSingleIdentifier($this->app),
+            '{migrator}' => $this->probe->quoteSingleIdentifier($this->migrator),
+        ]);
+    }
+
+    /**
+     * Joue `$operation` sous `$role` (`SET LOCAL ROLE`), rend la main au
+     * superutilisateur, et renvoie ce qu'elle a renvoyé.
+     *
+     * @template T
+     *
+     * @param callable(): T $operation
+     *
+     * @return T
+     */
+    private function asRole(string $role, callable $operation): mixed
+    {
+        $this->probe->executeStatement('SET LOCAL ROLE '.$this->probe->quoteSingleIdentifier($role));
+        try {
+            return $operation();
+        } finally {
+            $this->probe->executeStatement('RESET ROLE');
+        }
     }
 
     private function database(): string

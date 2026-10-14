@@ -83,6 +83,18 @@ SELECT (SELECT array_agg(split_part(c, '=', 1) ORDER BY c COLLATE "C") FROM pg_d
        (SELECT count(*) FROM unnest(ARRAY[:'app_role', :'migrator_role', :'reader_role']) AS r WHERE has_database_privilege(r, current_database(), 'CONNECT')) AS roles_avec_connect
 FROM pg_database d WHERE d.datname = current_database();
 
+\echo '--- #611 : gestes du propriétaire qui videraient le DML de l''application (attendu : 0, 0, 0, 0, t ; NULL avant la première migration)'
+SELECT (SELECT count(*) FROM pg_class WHERE relnamespace = 'public'::regnamespace AND (relrowsecurity OR relforcerowsecurity)) AS tables_en_securite_de_ligne,
+       (SELECT count(*) FROM pg_namespace WHERE nspname NOT IN ('public', 'information_schema') AND nspname !~ '^pg_') AS schemas_hors_public,
+       (SELECT count(*) FROM pg_rewrite r JOIN pg_class c ON c.oid = r.ev_class WHERE c.relnamespace = 'public'::regnamespace AND NOT (r.ev_type = '1' AND c.relkind IN ('v', 'm'))) AS regles_hors_vues,
+       (SELECT count(*) FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
+        WHERE c.relnamespace = 'public'::regnamespace AND NOT t.tgisinternal
+          AND NOT (t.tgname = 'trg_translation_group_single_position' AND t.tgtype = 21 AND t.tgconstraint <> 0 AND t.tgdeferrable AND t.tginitdeferred AND t.tgenabled = 'O'
+                   AND t.tgfoid = (SELECT p.oid FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.proname = 'portfolio_translation_group_single_position' AND p.pronargs = 0))) AS triggers_hors_garde,
+       (SELECT bool_and(md5(p.prosrc) = '0cdf79877b4d3577aa72788ccf3a1d42' AND NOT p.prosecdef AND p.proconfig IS NULL AND l.lanname = 'plpgsql')
+        FROM pg_proc p JOIN pg_language l ON l.oid = p.prolang
+        WHERE p.pronamespace = 'public'::regnamespace AND p.proname = 'portfolio_translation_group_single_position' AND p.pronargs = 0) AS fonction_du_garde_conforme;
+
 \echo '--- #575 : vérification (une erreur ici annule toute la procédure)'
 DO $$
 DECLARE
@@ -197,28 +209,54 @@ BEGIN
 END
 $$;
 
--- #611 : propriétaire de chaque table de public, le rôle de migration peut y
--- activer la sécurité au niveau des lignes sans politique. Mesuré sur l'image
--- épinglée : le rôle applicatif, sans BYPASSRLS, n'y lit plus aucune ligne,
--- son INSERT est refusé, ses UPDATE et DELETE ne touchent rien sans erreur ;
--- sur une table partitionnée, ce qu'on lit par le parent. FORCE seul est
--- inerte mais arme le prochain ENABLE, et ôte au propriétaire son
--- contournement. Le projet n'en utilise pas : tout drapeau est refusé, quelle
--- que soit la politique — une politique sans le drapeau reste sans effet. Le
--- compte seul, pas les noms, choisis par qui tient le rôle de migration.
--- Rejoué sur la base de test par DatabaseOwnerSettingsVerificationTest.
-\echo '--- #611 : tables de public en sécurité au niveau des lignes (attendu : 0)'
-SELECT count(*) AS tables_en_securite_de_ligne
-FROM pg_class WHERE relnamespace = 'public'::regnamespace AND (relrowsecurity OR relforcerowsecurity);
-
+-- #611 : propriétaire de la base et de chaque table de public, le rôle de
+-- migration peut vider le DML de l'application SANS ERREUR — mesuré sur
+-- l'image épinglée, sous des rôles de la forme de privileges.sql :
+-- - la sécurité au niveau des lignes sans politique : le rôle applicatif, sans
+--   BYPASSRLS, n'y lit plus rien, son INSERT est refusé, ses UPDATE et DELETE
+--   ne touchent rien ; FORCE seul est inerte mais arme le prochain ENABLE, et
+--   ôte au propriétaire son contournement. Le projet n'en utilise pas : tout
+--   drapeau est refusé, politique ou non ;
+-- - un schéma au nom du rôle applicatif, ouvert à lui : le search_path par
+--   défaut ("$user", public) le place devant public, les requêtes non
+--   qualifiées lisent sa copie. Le projet n'utilise que public : tout autre
+--   schéma est refusé (le préfixe pg_ est réservé au système) ;
+-- - une règle (DO INSTEAD NOTHING) ou un trigger qui annule (BEFORE, RETURN
+--   NULL) ou efface (AFTER, DELETE) la ligne écrite. Seule règle admise : la
+--   règle SELECT d'une vue. Seul trigger admis : le garde des groupes de
+--   traduction (Version20261012120000, Version20261012160000), à sa forme
+--   exacte — tgtype 21 = ROW + INSERT + UPDATE, AFTER ; contrainte différée ;
+--   activé, un DISABLE TRIGGER ôterait le garde — et sur sa fonction, dont le
+--   corps est épinglé par son empreinte : CREATE OR REPLACE le réécrirait.
+-- Une migration qui change cette fonction ou ajoute un trigger, une règle, un
+-- schéma met ce bloc à jour dans le même changement :
+-- DatabaseOwnerSettingsVerificationTest le rejoue sur la base de test migrée
+-- et rougit sinon. Des comptes seulement, jamais les noms, choisis par qui
+-- tient le rôle de migration. Pas une frontière contre lui (il peut aussi
+-- effacer des lignes) : un filet contre un geste persistant qui couperait
+-- l'application en silence.
 \echo '--- #611 : vérification'
 DO $$
 DECLARE
+    garde oid := (SELECT oid FROM pg_proc WHERE pronamespace = 'public'::regnamespace AND proname = 'portfolio_translation_group_single_position' AND pronargs = 0);
     n integer;
 BEGIN
     SELECT count(*) INTO n FROM pg_class WHERE relnamespace = 'public'::regnamespace AND (relrowsecurity OR relforcerowsecurity);
     IF n <> 0 THEN RAISE EXCEPTION '#611 : % table(s) de public en sécurité au niveau des lignes (ENABLE ou FORCE ROW LEVEL SECURITY), aucune attendue', n; END IF;
+    SELECT count(*) INTO n FROM pg_namespace WHERE nspname NOT IN ('public', 'information_schema') AND nspname !~ '^pg_';
+    IF n <> 0 THEN RAISE EXCEPTION '#611 : % schéma(s) hors de public et des schémas système (CREATE SCHEMA), aucun attendu', n; END IF;
+    SELECT count(*) INTO n FROM pg_rewrite r JOIN pg_class c ON c.oid = r.ev_class WHERE c.relnamespace = 'public'::regnamespace AND NOT (r.ev_type = '1' AND c.relkind IN ('v', 'm'));
+    IF n <> 0 THEN RAISE EXCEPTION '#611 : % règle(s) sur public hors des vues (CREATE RULE), aucune attendue', n; END IF;
+    SELECT count(*) INTO n FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
+    WHERE c.relnamespace = 'public'::regnamespace AND NOT t.tgisinternal
+      AND NOT (t.tgname = 'trg_translation_group_single_position' AND t.tgtype = 21 AND t.tgconstraint <> 0 AND t.tgdeferrable AND t.tginitdeferred AND t.tgenabled = 'O' AND t.tgfoid = garde);
+    IF n <> 0 THEN RAISE EXCEPTION '#611 : % trigger(s) de public hors du garde des groupes de traduction (CREATE TRIGGER, DISABLE TRIGGER), aucun attendu', n; END IF;
+    IF garde IS NOT NULL AND NOT EXISTS (
+        SELECT FROM pg_proc p JOIN pg_language l ON l.oid = p.prolang
+        WHERE p.oid = garde AND md5(p.prosrc) = '0cdf79877b4d3577aa72788ccf3a1d42' AND NOT p.prosecdef AND p.proconfig IS NULL AND l.lanname = 'plpgsql'
+    ) THEN RAISE EXCEPTION '#611 : la fonction du garde des groupes de traduction n''est pas celle des migrations (CREATE OR REPLACE FUNCTION)'; END IF;
 END
 $$;
+
 \echo '--- #575 : conforme'
 \set verify_passed 1

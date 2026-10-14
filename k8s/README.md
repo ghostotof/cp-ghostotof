@@ -1075,14 +1075,20 @@ la base de l'application (`{TimeZone} | 0 | -1 | f | 3` — #608 : le fuseau
 seul réglage de base, vide tant que `Version20261011120000` n'est pas passée,
 aucun réglage `ALTER ROLE … IN DATABASE`, pas de limite de connexions, pas un
 modèle, `CONNECT` pour les trois rôles ; les noms des réglages, jamais leurs
-valeurs), `0` table de `public` en sécurité au niveau des lignes (#611 :
-activée sans politique par le propriétaire, elle ne montrerait plus aucune
-ligne à `cpg_app` ; le compte, jamais les noms), puis `conforme` et `COMMIT`.
-Un refus `#608` ou `#611` ne se répare pas par la procédure, qui échoue tant
-que l'écart existe : aucun chemin écrit à ce jour (issue #610). **Un écart fait échouer la commande** : `verify.sql` se termine
-par un bloc qui lève une erreur sur chaque attente trahie, psql sort en 3
-avant `commit.sql` et la session close annule tout — rien n'est à défaire,
-lire la cause, corriger, relancer l'étape 2. **Sans `conforme` ni `COMMIT`,
+valeurs), les gestes du propriétaire qui videraient le DML de l'application
+sans erreur (`0 | 0 | 0 | 0 | t`, la dernière valeur vide avant la première
+migration — #611 : aucune table en sécurité au niveau des lignes, aucun
+schéma hors de `public`, aucune règle hors des vues, aucun trigger hors du
+garde des groupes de traduction activé, sa fonction celle des migrations ;
+des comptes, jamais les noms), puis `conforme` et `COMMIT`. Un refus `#608`
+ou `#611` ne se répare pas par la procédure, qui échoue tant que l'écart
+existe : aucun chemin écrit à ce jour (issue #610) ; pour `#611`, la requête
+qui suit nomme l'objet. **Un écart fait échouer la commande** : `verify.sql`
+se termine par un bloc de refus par issue (`#575`, `#608`, `#611`), chacun
+levant une erreur sur la première attente trahie, psql sort en 3 avant
+`commit.sql` et la session close annule tout — rien n'est à défaire, lire la
+cause, corriger, relancer l'étape 2. psql s'arrête au **premier** refus : un
+écart corrigé peut en laisser voir un suivant au passage d'après. **Sans `conforme` ni `COMMIT`,
 rien n'est validé** : `commit.sql` ne valide que si `verify.sql` est allé au
 bout — `verify.sql` absent du flux, erreur nommée, sortie 3 ; lancé hors de
 la racine du checkout, `cat: …: No such file`, aucun fichier ni `COMMIT`, la
@@ -1136,6 +1142,32 @@ WHERE t.table_schema = 'public' AND t.table_type = 'BASE TABLE' AND t.table_name
   AND NOT has_table_privilege('cpg_app', format('%I.%I', t.table_schema, t.table_name), 'SELECT,INSERT,UPDATE,DELETE');
 SQL
 # attendu : trois lignes avec rolsuper f, puis 0, puis 0.
+```
+
+**Un refus `#611`**, nommé (issue #611) : `verify.sql` n'imprime que des
+comptes, la requête ci-dessous liste les objets, sous le lecteur, sans rien
+écrire. Leurs noms sont choisis par qui tient le rôle de migration : les lire
+sur le terminal, ne pas les recopier dans une session d'agent. Sur une table
+en sécurité au niveau des lignes, `cpg_reader` lit **0 ligne** lui aussi (pas
+de `BYPASSRLS`, et `pg_read_all_data` ne la contourne pas) : c'est le
+symptôme, pas une table vide.
+
+```bash
+NS=        # preprod ou prod, à renseigner : vide, la commande s'arrête avant d'appeler le cluster
+kubectl -n "${NS:?preprod ou prod}" exec -i deploy/postgres -c postgres -- \
+  sh -c 'PGOPTIONS="-c default_transaction_read_only=on -c lock_timeout=5s" psql -X -A -v ON_ERROR_STOP=1 -U cpg_reader -d "$POSTGRES_DB"' <<'SQL'
+SELECT 'securite de ligne' AS geste, c.oid::regclass::text AS objet FROM pg_class c
+WHERE c.relnamespace = 'public'::regnamespace AND (c.relrowsecurity OR c.relforcerowsecurity)
+UNION ALL SELECT 'schema', quote_ident(nspname) FROM pg_namespace WHERE nspname NOT IN ('public', 'information_schema') AND nspname !~ '^pg_'
+UNION ALL SELECT 'regle', quote_ident(r.rulename) || ' sur ' || c.oid::regclass::text FROM pg_rewrite r JOIN pg_class c ON c.oid = r.ev_class
+WHERE c.relnamespace = 'public'::regnamespace AND NOT (r.ev_type = '1' AND c.relkind IN ('v', 'm'))
+UNION ALL SELECT 'trigger', quote_ident(t.tgname) || ' sur ' || c.oid::regclass::text || ', ' || t.tgfoid::regprocedure::text || ', ' || t.tgenabled::text FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
+WHERE c.relnamespace = 'public'::regnamespace AND NOT t.tgisinternal
+ORDER BY 1, 2;
+SQL
+# attendu : les huit gardes, trg_translation_group_single_position sur chacune des tables
+# ordonnées, portfolio_translation_group_single_position(), O ; rien d'autre. Une fonction
+# réécrite ne se voit pas ici : son refus suffit à la désigner.
 ```
 
 **Le `pg_hba.conf` vu du réseau** (issue #593), à la release qui l'embarque,

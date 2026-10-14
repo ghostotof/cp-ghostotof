@@ -396,6 +396,29 @@ final class PostgresRolesProcedureTest extends TestCase
         self::assertDoesNotMatchRegularExpression("/RAISE EXCEPTION '[^']*'[^;]*\\breglages\\b/", RolesVerification::blockOf('#608'), 'Un refus ne cite pas la valeur des réglages.');
     }
 
+    /**
+     * Issue #611 : les objets que verify.sql refuse ici — tables, schémas,
+     * règles, triggers — portent des noms choisis par qui tient le rôle de
+     * migration. Le bloc n'en imprime que des comptes, ni dans un refus (le seul
+     * argument d'un `RAISE` est le compte `n`), ni à l'affichage (des comptes et
+     * un booléen, aucun agrégat de noms). Les refus sont rejoués par
+     * {@see \App\Tests\Shared\Infrastructure\Postgres\DatabaseOwnerSettingsVerificationTest}.
+     */
+    public function testTheVerificationOfOwnerGesturesOnTablesPrintsCountsOnly(): void
+    {
+        $block = $this->normalized(RolesVerification::blockOf('#611'));
+
+        self::assertSame(5, preg_match_all("/RAISE EXCEPTION '#611 :[^;]*;/", $block, $raises), 'Cinq refus #611 dans leur bloc.');
+        foreach ($raises[0] as $raise) {
+            self::assertMatchesRegularExpression("/\\ARAISE EXCEPTION '(?:[^']|'')*'(?:, n)?;\\z/", $raise, 'Un refus #611 ne cite que le compte.');
+        }
+
+        self::assertSame(1, preg_match("/\\\\echo '--- #611 :[^\\n]*\\n(SELECT .*?);/s", $this->statements('verify.sql'), $display), 'verify.sql : l\'affichage #611.');
+        self::assertDoesNotMatchRegularExpression('/_agg\s*\(|regclass|::text|\bformat\s*\(/i', $display[1], 'L\'affichage #611 n\'imprime pas de nom.');
+        preg_match_all('/\) AS (\w+)/', $display[1], $columns);
+        self::assertSame(['tables_en_securite_de_ligne', 'schemas_hors_public', 'regles_hors_vues', 'triggers_hors_garde', 'fonction_du_garde_conforme'], $columns[1], 'Des comptes, et le seul booléen de la fonction.');
+    }
+
     private function normalized(string $text): string
     {
         return trim((string) preg_replace('/\s+/', ' ', $text));
