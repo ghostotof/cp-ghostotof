@@ -19,7 +19,9 @@ use PHPUnit\Framework\TestCase;
  * de son mot de passe rendait ce que #575 retire. Le dépôt monte le sien,
  * `k8s/base/postgres-pg_hba.conf`, qui admet par le réseau les deux rôles
  * applicatifs **nommés** et refuse tout le reste — jamais par exclusion du
- * rôle bootstrap, dont le nom est dans un Secret, pas dans le dépôt.
+ * rôle bootstrap, dont le nom est dans un Secret, pas dans le dépôt. Ces deux
+ * rôles n'atteignent que la base de l'application : celles que l'image crée
+ * leur sont refusées par une règle placée avant (issue #597).
  *
  * Le socket local garde la confiance de l'image (sondes `pg_isready`,
  * entrypoint, procédure des rôles du runbook). Le loopback, lui, ne fait
@@ -51,6 +53,14 @@ final class PostgresHbaTest extends TestCase
 
     /** Les types d'enregistrement qui portent une connexion TCP. */
     private const array TCP_TYPES = ['host', 'hostssl', 'hostnossl', 'hostgssenc', 'hostnogssenc'];
+
+    /**
+     * Les bases que l'image crée à côté de celle de l'application, triées
+     * (issue #597). `PUBLIC` y garde `CONNECT` et `TEMP` ; `template0` refuse
+     * déjà les connexions (`datallowconn`), nommée pour ne rien laisser au
+     * catalogue.
+     */
+    private const array IMAGE_DATABASES = ['postgres', 'template0', 'template1'];
 
     public function testTheLastRuleRejectsEveryOtherTcpConnection(): void
     {
@@ -106,6 +116,40 @@ final class PostgresHbaTest extends TestCase
 
         sort($admitted);
         self::assertSame(self::NETWORK_ROLES, $admitted);
+    }
+
+    /**
+     * Les deux rôles applicatifs n'atteignent que la base de l'application
+     * (issue #597). Son nom est dans un Secret, pas dans le dépôt : le fichier
+     * refuse donc par leur nom les bases que l'image crée, AVANT la règle qui
+     * admet les deux rôles — PostgreSQL applique la première règle qui
+     * correspond. Une exclusion suffit ici : les trois rôles sont `NOCREATEDB`
+     * (vérifié par verify.sql), aucune autre base ne naît sans le
+     * superutilisateur.
+     *
+     * Une règle `host` pour tous les rôles et toutes les adresses : `hostssl`
+     * ou `hostnossl` laisseraient passer l'autre mode de chiffrement.
+     */
+    public function testTheImageDatabasesAreRejectedBeforeAnyNetworkRoleIsAdmitted(): void
+    {
+        $rules = $this->rules();
+        $reject = array_find_key($rules, static function (array $rule): bool {
+            $databases = explode(',', $rule[1] ?? '');
+            sort($databases);
+
+            return ['host', 'all', 'all', 'reject'] === [$rule[0], $rule[2] ?? null, $rule[3] ?? null, $rule[4] ?? null]
+                && self::IMAGE_DATABASES === $databases;
+        });
+        self::assertIsInt($reject, \sprintf('Une règle « host %s all all reject » doit fermer au réseau les bases de l\'image.', implode(',', self::IMAGE_DATABASES)));
+
+        foreach ($rules as $position => $rule) {
+            $acceptsOverTheNetwork = \in_array($rule[0], self::TCP_TYPES, true)
+                && 'reject' !== ($rule[4] ?? null)
+                && !\in_array($rule[3] ?? null, self::LOOPBACK, true);
+            if ($acceptsOverTheNetwork) {
+                self::assertGreaterThan($reject, $position, \sprintf('« %s » : placée avant le refus des bases de l\'image, elle leur ouvrirait le réseau.', implode(' ', $rule)));
+            }
+        }
     }
 
     /**

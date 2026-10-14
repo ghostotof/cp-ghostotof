@@ -17,7 +17,8 @@
 #   - depuis un autre conteneur, par TCP : le superutilisateur et cpg_reader
 #     refusés par une règle `reject`, une connexion de réplication aussi,
 #     cpg_app et cpg_migrator admis avec leur mot de passe, refusés avec un
-#     mauvais ;
+#     mauvais, et refusés même avec le bon sur les bases que crée l'image
+#     (`postgres`, `template0`, `template1`, issue #597) ;
 #   - sur le loopback du conteneur, chemin d'un `kubectl port-forward` ou d'un
 #     conteneur éphémère : le superutilisateur refusé, cpg_reader admis sans
 #     mot de passe (le SHOW des keepalives du runbook) ;
@@ -111,14 +112,12 @@ docker run -d --name "$server" --network "$network" --user "$RUN_AS:$RUN_AS" \
 docker run -d --name "$pgdata_server" --network "$network" --user "$RUN_AS:$RUN_AS" \
   --env-file "$scratch/server.env" \
   "$IMAGE" postgres >/dev/null
-# Le fichier du dépôt, plus une règle qui rouvre le superutilisateur sur la
-# base `postgres` seulement, juste avant le `reject` final. Copié dans le
-# conteneur (docker cp passe par l'API, sans partage de fichiers), lisible par
-# l'uid du serveur.
-sed '$!b; /^host[[:space:]]\{1,\}all[[:space:]]\{1,\}all[[:space:]]\{1,\}all[[:space:]]\{1,\}reject/i host postgres all all scram-sha-256' \
-  "$HBA" > "$scratch/postgres-db.conf"
-grep -q '^host postgres all all scram-sha-256$' "$scratch/postgres-db.conf" \
-  || { echo "La règle de test n'a pas été insérée (dernière ligne de $HBA changée ?)." >&2; exit 2; }
+# Le fichier du dépôt, précédé d'une règle qui rouvre le superutilisateur sur
+# la base `postgres` seulement. En tête, la seule place où elle n'est pas
+# masquée : le refus des bases de l'image (#597) la précéderait sinon. Copié
+# dans le conteneur (docker cp passe par l'API, sans partage de fichiers),
+# lisible par l'uid du serveur.
+{ echo 'host postgres all all scram-sha-256'; cat "$HBA"; } > "$scratch/postgres-db.conf"
 chmod 644 "$scratch/postgres-db.conf"
 docker create --name "$postgres_db_server" --network "$network" --user "$RUN_AS:$RUN_AS" \
   --env-file "$scratch/server.env" \
@@ -213,6 +212,15 @@ expect_admitted cpg_migrator "$scratch/migrator"
 expect_refused cpg_app "$scratch/wrong" 'password authentication failed'
 expect_refused cpg_migrator "$scratch/wrong" 'password authentication failed'
 expect_refused "$BOOTSTRAP" "$scratch/bootstrap" 'pg_hba.conf rejects replication connection' replication
+# Issue #597 : avec leur BON mot de passe, cpg_app et cpg_migrator n'atteignent
+# que la base de l'application, jamais celles que l'image crée (PUBLIC y garde
+# CONNECT et TEMP). Refusés par pg_hba.conf, avant toute authentification —
+# template0 compris, que `datallowconn` refuserait sinon plus tard.
+for role in cpg_app cpg_migrator; do
+  for database in postgres template0 template1; do
+    expect_refused "$role" "$scratch/${role#cpg_}" 'pg_hba.conf rejects connection' "$database"
+  done
+done
 
 # Le loopback : ce qu'un port-forward ou un conteneur éphémère atteint.
 # $1 adresse ; refus du superutilisateur, même sans mot de passe à fournir.
@@ -299,4 +307,4 @@ if [ "$failures" -ne 0 ]; then
   exit 1
 fi
 
-echo "PostgreSQL ($IMAGE) démarre avec $HBA : superutilisateur, cpg_reader et réplication refusés par TCP, cpg_app et cpg_migrator admis par SCRAM, loopback à cpg_reader seul, socket local inchangé ; la sonde du smoke préprod (#596) passe ici (noms piégés compris) et échoue sur le fichier de l'image, sur la base postgres rouverte et sur un port fermé."
+echo "PostgreSQL ($IMAGE) démarre avec $HBA : superutilisateur, cpg_reader et réplication refusés par TCP, cpg_app et cpg_migrator admis par SCRAM sur la base de l'application seule, loopback à cpg_reader seul, socket local inchangé ; la sonde du smoke préprod (#596) passe ici (noms piégés compris) et échoue sur le fichier de l'image, sur la base postgres rouverte et sur un port fermé."

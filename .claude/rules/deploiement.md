@@ -237,7 +237,12 @@ paths:
   procedure), loopback `trust` **for `cpg_reader` only** (the `SHOW` of the keepalives over
   `127.0.0.1`) — the image's `host all all 127.0.0.1/32 trust` gave the superuser without a password
   to a `kubectl port-forward` or an ephemeral container (`kubectl debug`), which reach the pod's
-  loopback (measured, review of #593) —, then `host all cpg_app,cpg_migrator all scram-sha-256`,
+  loopback (measured, review of #593) —, then `host postgres,template0,template1 all all reject`
+  (issue #597: `PUBLIC` keeps `CONNECT` and `TEMP` on the image's databases, so the next line let both
+  roles into `postgres` and `template1` — measured; the application's database is named in a Secret,
+  so the image's are refused by name, **before** the line that admits the roles, and no other database
+  can appear: the three roles are `NOCREATEDB`, checked by `verify.sql`; Adminer needs the database
+  name typed in, an empty field means `postgres`), then `host all cpg_app,cpg_migrator all scram-sha-256`,
   `host replication all all reject` (`all` does not cover replication: refused by its own rule, not
   for lack of one), and `host all all all reject`. **Named roles,
   never an exclusion**: the bootstrap's name lives in a Secret, not in the repo — a new role reaching
@@ -248,12 +253,14 @@ paths:
   Adminer is a pod like any other: `cpg_app` or `cpg_migrator` only. Two guards:
   `PostgresHbaTest` (last rule `host all all all reject`, local `trust`, every accepting TCP rule
   either loopback `trust` for `cpg_reader` alone or SCRAM for the two named roles — never `all`, a
-  `+group`, an `@file`, a `/regex` —, no `include`, replication named only by its reject rule, the
+  `+group`, an `@file`, a `/regex` —, the image's databases rejected by a `host` rule placed before
+  every accepting network rule, no `include`, replication named only by its reject rule, the
   generator hashed, the arg and the mount); `tools/check-postgres-hba.sh` (`make postgres-hba`, CI job
   `postgres-hba`, needed by `release-version`) boots the pinned image under the manifest's
   `runAsUser` with the file and **measures** it: from another container, superuser and `cpg_reader`
   refused with `pg_hba.conf rejects connection`, a physical replication connection refused by its
-  rule, `cpg_app`/`cpg_migrator` admitted and refused with a wrong password; on the loopback
+  rule, `cpg_app`/`cpg_migrator` admitted and refused with a wrong password, and refused with the
+  right one on `postgres`, `template0` and `template1` by `pg_hba.conf` (#597); on the loopback
   (`127.0.0.1`, `::1`) the superuser refused, `cpg_reader` admitted; the superuser on the socket —
   `pg_isready` is replayed but authenticates nobody, so it says the server answers, nothing about
   the file. An invalid file stops the server at init, and `rollback-preprod` does not undo

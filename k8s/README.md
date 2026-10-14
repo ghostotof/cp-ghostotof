@@ -1315,6 +1315,11 @@ SECRET=backend-secrets
 `SECRET=backend-migration-secrets` pour `cpg_migrator`. `-loops 1` vide la
 sélection après le premier collage.
 
+Le champ **"Base de données" se remplit aussi** : vide, Adminer se connecte à
+`postgres`, que le `pg_hba.conf` refuse aux deux rôles comme `template0` et
+`template1` (issue #597) — « pg_hba.conf rejects connection … database
+"postgres" ». Le nom est celui de l'URL, après `database:5432/`.
+
 L'accès reste conditionné à la possession d'un kubeconfig valide sur le
 cluster (même niveau de confiance qu'un `kubectl exec`), pas d'un simple mot
 de passe web. Sous `cpg_migrator`, tout ce qu'Adminer fait touche le schéma
