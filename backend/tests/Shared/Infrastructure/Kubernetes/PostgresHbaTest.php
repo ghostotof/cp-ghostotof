@@ -119,35 +119,36 @@ final class PostgresHbaTest extends TestCase
     }
 
     /**
-     * Les deux rôles applicatifs n'atteignent que la base de l'application
+     * Les rôles admis par TCP n'atteignent que la base de l'application
      * (issue #597). Son nom est dans un Secret, pas dans le dépôt : le fichier
-     * refuse donc par leur nom les bases que l'image crée, AVANT la règle qui
-     * admet les deux rôles — PostgreSQL applique la première règle qui
-     * correspond. Une exclusion suffit ici : les trois rôles sont `NOCREATEDB`
-     * (vérifié par verify.sql), aucune autre base ne naît sans le
-     * superutilisateur.
+     * refuse donc par leur nom les bases que l'image crée, AVANT toute règle
+     * TCP qui accepte — PostgreSQL applique la première règle qui correspond.
+     * Loopback compris : `cpg_reader` n'a rien à faire sur `postgres` ni
+     * `template1`, où `PUBLIC` garde `TEMP`. C'est une exclusion de bases, pas
+     * de rôles : une base créée plus tard par le superutilisateur lui
+     * échapperait, d'où le contrôle de `pg_database` par verify.sql et le
+     * `REVOKE CONNECT, TEMPORARY` de privileges.sql.
      *
      * Une règle `host` pour tous les rôles et toutes les adresses : `hostssl`
      * ou `hostnossl` laisseraient passer l'autre mode de chiffrement.
      */
-    public function testTheImageDatabasesAreRejectedBeforeAnyNetworkRoleIsAdmitted(): void
+    public function testTheImageDatabasesAreRejectedBeforeAnyTcpRuleAccepts(): void
     {
         $rules = $this->rules();
-        $reject = array_find_key($rules, static function (array $rule): bool {
+        $expected = self::IMAGE_DATABASES;
+        sort($expected);
+        $rejectPosition = array_find_key($rules, static function (array $rule) use ($expected): bool {
             $databases = explode(',', $rule[1] ?? '');
             sort($databases);
 
             return ['host', 'all', 'all', 'reject'] === [$rule[0], $rule[2] ?? null, $rule[3] ?? null, $rule[4] ?? null]
-                && self::IMAGE_DATABASES === $databases;
+                && $expected === $databases;
         });
-        self::assertIsInt($reject, \sprintf('Une règle « host %s all all reject » doit fermer au réseau les bases de l\'image.', implode(',', self::IMAGE_DATABASES)));
+        self::assertIsInt($rejectPosition, \sprintf('Une règle « host %s all all reject » doit fermer au réseau les bases de l\'image.', implode(',', self::IMAGE_DATABASES)));
 
         foreach ($rules as $position => $rule) {
-            $acceptsOverTheNetwork = \in_array($rule[0], self::TCP_TYPES, true)
-                && 'reject' !== ($rule[4] ?? null)
-                && !\in_array($rule[3] ?? null, self::LOOPBACK, true);
-            if ($acceptsOverTheNetwork) {
-                self::assertGreaterThan($reject, $position, \sprintf('« %s » : placée avant le refus des bases de l\'image, elle leur ouvrirait le réseau.', implode(' ', $rule)));
+            if (self::acceptsOverTcp($rule)) {
+                self::assertGreaterThan($rejectPosition, $position, \sprintf('« %s » : placée avant le refus des bases de l\'image, elle les ouvrirait.', implode(' ', $rule)));
             }
         }
     }
@@ -229,10 +230,21 @@ final class PostgresHbaTest extends TestCase
     public static function acceptingTcpRules(): iterable
     {
         foreach (self::parse() as $rule) {
-            if (\in_array($rule[0], self::TCP_TYPES, true) && 'reject' !== ($rule[4] ?? null)) {
+            if (self::acceptsOverTcp($rule)) {
                 yield implode(' ', $rule) => [$rule];
             }
         }
+    }
+
+    /**
+     * Une règle TCP qui accepte : la seule définition, partagée par le
+     * fournisseur de données et le contrôle d'ordre de #597.
+     *
+     * @param list<string> $rule
+     */
+    private static function acceptsOverTcp(array $rule): bool
+    {
+        return \in_array($rule[0], self::TCP_TYPES, true) && 'reject' !== ($rule[4] ?? null);
     }
 
     /**
@@ -265,6 +277,10 @@ final class PostgresHbaTest extends TestCase
 
             self::assertStringNotContainsString('"', $line, 'Un champ entre guillemets n\'est pas lu par ce test.');
             self::assertStringEndsNotWith('\\', $line, 'Une ligne continuée n\'est pas lue par ce test.');
+            // PostgreSQL lit `a, b` comme la liste `a,b` (une virgule en fin de
+            // jeton appelle le suivant) ; découpés aux blancs ici, ses champs
+            // seraient décalés. Refusée plutôt que lue de travers.
+            self::assertDoesNotMatchRegularExpression('/,\s|\s,/', $line, 'Une liste écrite avec des blancs autour d\'une virgule n\'est pas lue par ce test.');
             $fields = preg_split('/\s+/', $line);
             self::assertIsArray($fields);
             $rules[] = $fields;
