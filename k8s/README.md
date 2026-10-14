@@ -1076,14 +1076,17 @@ seul réglage de base, vide tant que `Version20261011120000` n'est pas passée,
 aucun réglage `ALTER ROLE … IN DATABASE`, pas de limite de connexions, pas un
 modèle, `CONNECT` pour les trois rôles ; les noms des réglages, jamais leurs
 valeurs), puis `#611 : vérification` sans rien de plus — le schéma de la
-base est exactement celui que ses migrations laissent (son empreinte, celle
-de la dernière migration passée) —, puis `conforme` et `COMMIT`. Un refus
+base est exactement celui que ses migrations laissent (son empreinte, admise
+pour la dernière migration passée et leur nombre) —, puis `conforme` et `COMMIT`. Un refus
 `#608` ou `#611` ne se répare pas par la procédure, qui échoue tant que l'écart
 existe : aucun chemin écrit à ce jour (issue #610) ; pour `#611`, la requête
 qui suit nomme les objets en cause. Un `#611 : aucune empreinte de schéma
-connue pour la dernière migration` n'est pas une altération : le checkout est
-en retard sur l'environnement (`verify.sql` garde les empreintes de toutes les
-migrations), le mettre à jour et relancer. **Un écart fait échouer la
+connue pour ces migrations` n'est pas une altération : le checkout est en
+retard sur l'environnement (`verify.sql` garde les empreintes de toutes les
+migrations), le mettre à jour et relancer — ou la base est antérieure aux
+empreintes (une restauration ancienne), la migrer d'abord. Un `#611 : la
+table des migrations est vide` est un premier `migrate` interrompu : relancer
+la migration, puis la procédure. **Un écart fait échouer la
 commande** : `verify.sql` se termine par un bloc de refus par issue (`#575`,
 `#608`, `#611`), chacun levant une erreur sur la première attente trahie,
 psql sort en 3 avant `commit.sql` et la session close annule tout — rien
@@ -1164,7 +1167,7 @@ kubectl -n "${NS:?preprod ou prod}" exec -i deploy/postgres -c postgres -- \
 SET search_path = pg_catalog, pg_temp;
 SELECT 'schema ' || quote_ident(n.nspname) FROM pg_namespace n WHERE n.nspname <> 'information_schema' AND n.nspname !~ '^pg_'
 UNION ALL
-SELECT concat_ws(' ', 'relation', quote_ident(c.relname), c.relkind, c.relpersistence, c.relrowsecurity, c.relforcerowsecurity, c.relispartition, pg_get_expr(c.relpartbound, c.oid), c.reloptions::text, am.amname, ts.spcname)
+SELECT concat_ws(' ', 'relation', quote_ident(c.relname), c.relkind, c.relpersistence, c.relrowsecurity, c.relforcerowsecurity, c.relispartition, c.relreplident, pg_get_expr(c.relpartbound, c.oid), c.reloptions::text, am.amname, ts.spcname)
 FROM pg_class c LEFT JOIN pg_am am ON am.oid = c.relam LEFT JOIN pg_tablespace ts ON ts.oid = c.reltablespace
 WHERE c.relnamespace = 'public'::regnamespace
 UNION ALL
@@ -1182,15 +1185,25 @@ WHERE k.connamespace = 'public'::regnamespace AND k.contype <> 'n'
 UNION ALL
 SELECT concat_ws(' ', 'trigger', pg_get_triggerdef(t.oid), t.tgenabled::text) FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid WHERE c.relnamespace = 'public'::regnamespace AND NOT t.tgisinternal
 UNION ALL
-SELECT 'regle ' || pg_get_ruledef(r.oid) FROM pg_rewrite r JOIN pg_class c ON c.oid = r.ev_class WHERE c.relnamespace = 'public'::regnamespace
+SELECT concat_ws(' ', 'regle', pg_get_ruledef(r.oid), r.ev_enabled::text) FROM pg_rewrite r JOIN pg_class c ON c.oid = r.ev_class WHERE c.relnamespace = 'public'::regnamespace
 UNION ALL
-SELECT concat_ws(' ', 'politique', quote_ident(c.relname), quote_ident(p.polname), p.polcmd::text, p.polpermissive, pg_get_expr(p.polqual, p.polrelid), pg_get_expr(p.polwithcheck, p.polrelid))
+SELECT concat_ws(' ', 'politique', quote_ident(c.relname), quote_ident(p.polname), p.polcmd::text, p.polpermissive, pg_get_expr(p.polqual, p.polrelid), pg_get_expr(p.polwithcheck, p.polrelid),
+       (SELECT string_agg(r.nom, ',' ORDER BY r.nom) FROM (SELECT CASE WHEN x = 0 THEN 'public' ELSE quote_ident(pg_get_userbyid(x)) END AS nom FROM unnest(p.polroles) AS x) AS r))
 FROM pg_policy p JOIN pg_class c ON c.oid = p.polrelid WHERE c.relnamespace = 'public'::regnamespace
 UNION ALL
 SELECT concat_ws(' ', 'heritage', quote_ident(c.relname), h.inhparent::regclass::text) FROM pg_inherits h JOIN pg_class c ON c.oid = h.inhrelid WHERE c.relnamespace = 'public'::regnamespace
 UNION ALL
 SELECT concat_ws(' ', 'sequence', quote_ident(c.relname), format_type(s.seqtypid, NULL), s.seqstart, s.seqincrement, s.seqmin, s.seqmax, s.seqcache, s.seqcycle)
 FROM pg_sequence s JOIN pg_class c ON c.oid = s.seqrelid WHERE c.relnamespace = 'public'::regnamespace
+UNION ALL
+SELECT concat_ws(' ', 'publication', quote_ident(pb.pubname), quote_ident(c.relname), pg_get_expr(pr.prqual, pr.prrelid))
+FROM pg_publication_rel pr JOIN pg_publication pb ON pb.oid = pr.prpubid JOIN pg_class c ON c.oid = pr.prrelid WHERE c.relnamespace = 'public'::regnamespace
+UNION ALL
+SELECT 'publication du schema ' || quote_ident(pb.pubname) FROM pg_publication_namespace pn JOIN pg_publication pb ON pb.oid = pn.pnpubid WHERE pn.pnnspid = 'public'::regnamespace
+UNION ALL
+SELECT concat_ws(' ', 'transtypage', format_type(k.castsource, NULL), format_type(k.casttarget, NULL), k.castfunc::regprocedure::text, k.castcontext::text, k.castmethod::text)
+FROM pg_cast k JOIN pg_type ts ON ts.oid = k.castsource JOIN pg_type tt ON tt.oid = k.casttarget
+WHERE ts.typnamespace = 'public'::regnamespace OR tt.typnamespace = 'public'::regnamespace
 UNION ALL
 SELECT CASE WHEN p.prokind = 'a' THEN 'agregat ' || p.oid::regprocedure::text ELSE 'fonction ' || pg_get_functiondef(p.oid) END FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace
 UNION ALL

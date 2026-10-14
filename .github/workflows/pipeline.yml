@@ -64,7 +64,7 @@ jobs:
     timeout-minutes: 15 # habituel ~2 min, démarrage de RabbitMQ compris (#479)
     services:
       database:
-        image: postgres:18.4-alpine
+        image: postgres:18.6-alpine # celle de la prod : verify.sql compare le texte des définitions (#611), tools/tests/postgres-image-pins.test.sh
         env:
           POSTGRES_DB: cp_ghostotof
           POSTGRES_USER: app
@@ -408,6 +408,7 @@ jobs:
           tools/tests/summary-language-tools.test.sh
           tools/tests/check-claude-rules.test.sh
           tools/tests/check-release-gates.test.sh
+          tools/tests/postgres-image-pins.test.sh
       # Seuils : erreurs et avertissements bloquent, `info`/`style` non —
       # audit-prod.sh, antérieur à ce job, porte trois remarques de style que
       # ce job n'a pas vocation à réécrire.

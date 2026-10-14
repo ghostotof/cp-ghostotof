@@ -253,20 +253,30 @@ paths:
   catalog's (the CVE-2018-1058 pattern: `username = 'x'` finds nothing). A list of gestures never closes
   (a first version did, and its review found the holes), so `verify.sql`'s `#611` block is an
   **allow-list of the whole schema**: one canonical line per object outside the system — schemas, then
-  in `public` relations, columns, indexes, constraints, triggers and their enabled state, rules,
-  policies, inheritance, sequences, functions, operators, types and the rest of the catalog —, without
-  owners or privileges (#575 checks those) nor dropped columns, read under a fixed `search_path`
-  (`pg_get_*def` qualify a name by it), and their `md5` compared with the fingerprint of the **latest
-  migration applied** (`''`: a fresh database). Measured: a dev database migrated step by step since
+  in `public` relations (replica identity included), columns, indexes, constraints, triggers and rules
+  with their enabled state, policies and their roles, inheritance, sequences, publications, functions,
+  operators, types, casts and the rest of the catalog —, without owners or privileges (#575 checks
+  those) nor dropped columns, read under a fixed `search_path` (`pg_get_*def` qualify a name by it),
+  each line hashed (a line holding a newline cannot pass for two), and the `md5` of the whole compared
+  with the fingerprints admitted for the **migrations applied: the latest and their count** (`''`, 0: a
+  fresh database; the count tells apart a migration merged after a more recent one, which keeps the
+  latest unchanged). An empty migrations table (a first `migrate` interrupted) has its own refusal. Measured: a dev database migrated step by step since
   the project's start, a fresh one migrated under a non-superuser owner to the same version, and a
   `pg_dump` restoration all give the same lines. Hashes only in a refusal, never a name; the runbook
   holds a byte-identical copy of the query (`PostgresRolesProcedureTest` pins both) to name the lines
   that differ. Every fingerprint is kept: a procedure played from a checkout ahead of the environment
-  still knows its version, and one behind it is refused as such, not as an alteration.
+  still knows its migrations, and one behind it (or a database older than the fingerprints) is refused
+  as such, not as an alteration. Several fingerprints may be admitted for the same migrations — a
+  PostgreSQL bump that changes how a definition is printed needs two until every environment has it;
+  the image is pinned identically in `.env`, `versions.lock`, `postgres.yaml` and CI's `test-backend`
+  service (`tools/tests/postgres-image-pins.test.sh`), CI having stayed on 18.4 unnoticed until #611.
   **Every migration adds its fingerprint to that block in the same change**: `DatabaseOwnerSettingsVerificationTest`
-  computes the migrated test database's and turns red, its message giving the line to add; it also
-  replays the block — measured premises, then each gesture refused, one family of lines at a time. A
-  PostgreSQL bump that changes how a definition is printed turns it red the same way. Not a boundary
+  computes the migrated test database's with the block's own query (between its « empreinte » markers)
+  and turns red, its message giving the line to add; it also replays the block — measured premises,
+  then each gesture refused, one family of lines at a time, and for a gesture on an object a migration
+  would create (a rule disabled, a policy given to another role), the fingerprint before and after.
+  Proving such a test still bites takes a mutation that keeps the reference database's fingerprint
+  (replace a column by the value it has everywhere there), or every case fails for the wrong reason. Not a boundary
   against whoever holds the migrator — they can delete rows outright —, a net against a persistent
   gesture that would cut the application silently. **Nothing repairs these states**: the procedure fails as long as one holds,
   and a writing `exec` is #520's exception alone — issue #610;

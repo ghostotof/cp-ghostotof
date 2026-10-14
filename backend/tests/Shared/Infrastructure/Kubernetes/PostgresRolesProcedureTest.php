@@ -413,8 +413,9 @@ final class PostgresRolesProcedureTest extends TestCase
         $block = $this->normalized(RolesVerification::blockOf('#611'));
 
         self::assertStringContainsString("BEGIN PERFORM set_config('search_path', 'pg_catalog, pg_temp', true);", $block, 'Le search_path est fixé avant toute lecture.');
-        self::assertSame(2, preg_match_all("/RAISE EXCEPTION '#611 :(?:[^']|'')*'(, [a-z_, ]+);/", $block, $raises), 'Deux refus #611.');
-        self::assertSame([', empreinte', ', empreinte, attendue'], $raises[1], 'Un refus #611 ne cite que des empreintes.');
+        self::assertSame(3, preg_match_all("/RAISE EXCEPTION '#611 :(?:[^']|'')*'((?:, [a-z_]+)*);/", $block, $raises), 'Trois refus #611.');
+        self::assertSame(['', ', nombre, empreinte', ', empreinte'], $raises[1], 'Un refus #611 ne cite qu\'un nombre et des empreintes.');
+        self::assertStringContainsString("SELECT md5(string_agg(md5(l), '' ORDER BY l COLLATE \"C\"))", $block, 'Chaque ligne hachée avant l\'agrégat : une ligne qui contient un saut de ligne ne peut en imiter deux.');
 
         $runbook = Runbook::repository()->bashBlockAfter(self::SCHEMA_LINES_RUNBOOK);
         self::assertSame(1, preg_match("/<<'SQL'\nSET search_path = pg_catalog, pg_temp;\n(.*?);\nSQL$/ms", $runbook, $copy), 'k8s/README.md : la requête des lignes du schéma, sous le même search_path.');

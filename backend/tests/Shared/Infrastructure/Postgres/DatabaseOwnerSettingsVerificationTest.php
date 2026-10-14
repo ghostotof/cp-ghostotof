@@ -137,24 +137,26 @@ final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
 
     /**
      * L'empreinte du schéma de la base de test, migrée jusqu'à la dernière
-     * migration du dépôt, figure dans verify.sql pour cette migration. Une
-     * migration nouvelle rougit ce test : son message donne la ligne à ajouter.
+     * migration du dépôt, figure dans verify.sql pour ces migrations (la
+     * dernière et leur nombre). Une migration nouvelle rougit ce test : son
+     * message donne la ligne à ajouter.
      */
     public function testTheMigratedSchemaHasItsFingerprintInVerifySql(): void
     {
         $latest = $this->probe->fetchOne('SELECT max(version) FROM public.doctrine_migration_versions');
+        $applied = $this->probe->fetchOne('SELECT count(*) FROM public.doctrine_migration_versions');
         self::assertIsString($latest);
-        $this->probe->executeStatement("SET LOCAL search_path = pg_catalog, pg_temp");
-        $fingerprint = $this->probe->fetchOne(\sprintf("SELECT md5(string_agg(l, E'\\n' ORDER BY l COLLATE \"C\")) FROM (%s) AS lignes(l)", RolesVerification::schemaLinesQuery()));
+        self::assertIsInt($applied);
+        $fingerprint = $this->fingerprint();
 
-        self::assertSame(
+        self::assertContains(
             $fingerprint,
-            RolesVerification::schemaFingerprints()[$latest] ?? null,
-            \sprintf("verify.sql, bloc #611 : ajouter ('%s', '%s') à ses empreintes, sans retirer les précédentes.", $latest, \is_string($fingerprint) ? $fingerprint : ''),
+            RolesVerification::schemaFingerprints()[$latest.'|'.$applied] ?? [],
+            \sprintf("verify.sql, bloc #611 : ajouter ('%s', %d, '%s') à ses empreintes, sans retirer les précédentes.", $latest, $applied, $fingerprint),
         );
     }
 
-    /** La base de test, migrée, a l'empreinte de sa dernière migration : le bloc passe. */
+    /** La base de test, migrée, a l'empreinte de ses migrations : le bloc passe. */
     public function testAMigratedDatabasePassesTheSchemaFingerprint(): void
     {
         $this->probe->executeStatement(RolesVerification::blockOf('#611'));
@@ -163,15 +165,37 @@ final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
     }
 
     /**
-     * Une dernière migration que verify.sql ne connaît pas — un checkout en
-     * retard sur l'environnement — est refusée comme telle, pas comme un
-     * schéma altéré.
+     * Deux empreintes admises pour les mêmes migrations — la transition d'une
+     * montée de PostgreSQL qui change l'impression d'une définition — : le
+     * bloc compare à chacune, sans lever sur la seconde.
      */
-    public function testAnUnknownLatestMigrationIsRefused(): void
+    public function testASecondFingerprintForTheSameMigrationsIsAdmittedToo(): void
+    {
+        $block = RolesVerification::blockOf('#611');
+        self::assertSame(1, preg_match("/\\('(DoctrineMigrations\\\\Version\\d{14})', (\\d+), '[0-9a-f]{32}'\\)\\n\\s*\\) AS empreintes/", $block, $last), 'Prémisse : la dernière ligne de la table des empreintes.');
+
+        $this->probe->executeStatement(str_replace($last[0], \sprintf("('%s', %s, '%s'),\n%s", $last[1], $last[2], md5('autre impression'), $last[0]), $block));
+        $this->addToAssertionCount(1);
+    }
+
+    /**
+     * Des migrations que verify.sql ne connaît pas — un checkout en retard sur
+     * l'environnement, une base antérieure aux empreintes — sont refusées
+     * comme telles, pas comme un schéma altéré.
+     */
+    public function testUnknownMigrationsAreRefusedAsSuch(): void
     {
         $this->arm(["INSERT INTO public.doctrine_migration_versions (version, executed_at, execution_time) VALUES ('DoctrineMigrations\\Version29991231000000', now(), 0)"]);
 
-        $this->assertBlockRefuses('#611', '#611 : aucune empreinte de schéma connue pour la dernière migration de la base');
+        $this->assertBlockRefuses('#611', '#611 : aucune empreinte de schéma connue pour ces migrations');
+    }
+
+    /** Une table des migrations vide — un premier `migrate` interrompu — est refusée comme telle. */
+    public function testAnEmptyMigrationTableIsRefusedAsSuch(): void
+    {
+        $this->arm(['DELETE FROM public.doctrine_migration_versions']);
+
+        $this->assertBlockRefuses('#611', '#611 : la table des migrations est vide');
     }
 
     /**
@@ -319,6 +343,37 @@ final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
         yield 'index' => ['CREATE INDEX {r} ON public.contribution (position)'];
         yield 'contrainte' => ['ALTER TABLE public.contribution ADD CONSTRAINT {r} CHECK (true)'];
         yield 'défaut de colonne' => ['ALTER TABLE public.contribution ALTER COLUMN position SET DEFAULT 12345'];
+        yield 'identité de réplication' => ['ALTER TABLE public.contribution REPLICA IDENTITY NOTHING'];
+        yield 'publication' => ['CREATE PUBLICATION {r} FOR TABLE public.contribution'];
+        yield 'transtypage' => ['CREATE CAST (text AS public.contribution) WITH INOUT'];
+    }
+
+    /**
+     * Un geste sur un objet qu'une migration poserait — une règle désactivée,
+     * une politique rendue à un autre rôle — change ses lignes. Le bloc ne
+     * peut le montrer seul (poser l'objet change déjà l'empreinte) : on
+     * compare l'empreinte avant et après le seul geste.
+     *
+     * @param list<string> $setUp
+     */
+    #[DataProvider('gesturesOnMigratedObjects')]
+    public function testAGestureOnAnObjectAMigrationWouldCreateChangesTheFingerprint(array $setUp, string $gesture): void
+    {
+        $this->arm($setUp);
+        $before = $this->fingerprint();
+
+        $this->arm([$gesture]);
+
+        self::assertNotSame($before, $this->fingerprint());
+    }
+
+    /**
+     * @return iterable<string, array{list<string>, string}>
+     */
+    public static function gesturesOnMigratedObjects(): iterable
+    {
+        yield 'règle désactivée' => [['CREATE RULE {r} AS ON INSERT TO public.contribution DO ALSO NOTHING'], 'ALTER TABLE public.contribution DISABLE RULE {r}'];
+        yield 'politique rendue à un autre rôle' => [['CREATE POLICY {r} ON public.contribution USING (true)'], 'ALTER POLICY {r} ON public.contribution TO {app}'];
     }
 
     /**
@@ -338,6 +393,17 @@ final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
         ]);
 
         $this->assertBlockRefuses('#611', self::SCHEMA_REFUSAL);
+    }
+
+    /** L'empreinte du schéma, calculée par la requête même du bloc `#611`, sous son search_path. */
+    private function fingerprint(): string
+    {
+        $this->probe->executeStatement('SET LOCAL search_path = pg_catalog, pg_temp');
+        $fingerprint = $this->probe->fetchOne(RolesVerification::schemaFingerprintQuery());
+        $this->probe->executeStatement('RESET search_path');
+        self::assertIsString($fingerprint);
+
+        return $fingerprint;
     }
 
     private function assertBlockRefuses(string $issue, string $refusal): void
