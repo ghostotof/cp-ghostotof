@@ -293,8 +293,18 @@ paths:
   together: the probe's manifest launched by some job and that job no ancestor of `rollback-preprod`;
   every required check of both rulesets a job of `pipeline.yml`; every job that `needs`
   `deploy-preprod`, the rollback aside, a required check of `main`. A new probe accusing a workload the
-  rollback does not bring back joins its `NO_ROLLBACK_PROBES` list. The same question for the datastores'
-  `rollout status` checks of `smoke-test-preprod` is issue #603.
+  rollback does not bring back joins its `NO_ROLLBACK_PROBES` list. **The datastores' `rollout status`
+  checks stay in `smoke-test-preprod`** (issue #603, decided 2026-10-14), the one case where a check
+  accusing `postgres` or `rabbitmq` may trigger the rollback. A datastore that does not come up with
+  the release — new manifest, node, PVC, pull, or already down — fails `deploy-preprod`, whose `Deploy`
+  step waits for all three (`wait-rollout.sh`, 300 s), so there is no rollback at all. What the smoke
+  still sees is a datastore `Ready` at the end of the deploy and down a minute or two later; moving the
+  check out, as for the probe, would not spare the rollback, since the login-throttling step (accounts
+  and `cache.app` in PostgreSQL) and the #470 message probe (RabbitMQ) would trigger it anyway — and
+  those test the application, they must. The rollback is then useless on the cause, never harmful (it
+  is the smoke's ordinary rollback). So the check comes **first in the job**, right after
+  `Configure kubectl`, so that the first red names the workload instead of a « broken » throttling;
+  no offline guard holds that order, it only serves the diagnosis.
   The probe is **`k8s/base/postgres-hba-probe.sh`**, copied byte for byte (bar the final newline,
   which Symfony's YAML parser drops) into the Job's `command` — under `k8s/`, because the dev
   container mounts it and not `tools/` —, written without any `${…}` (run-job.sh refuses one left
@@ -549,7 +559,8 @@ paths:
   Each wait may overrun its timeout by ~35 s, counted in `timeout-minutes`. Fail-closed is
   unchanged: a failure before `apply -k` leaves the previous release serving; after it, no automatic
   rollback in prod, and `rollback-preprod` still runs only on a successful deploy. The 60 s
-  `rollout status` checks of `smoke-test-preprod` are not deploy waits and stay. Offline test:
+  `rollout status` checks of `smoke-test-preprod` are not deploy waits and stay: they catch a
+  datastore that went down after the deploy, first in the job (issue #603, see the #593 bullet). Offline test:
   `tools/tests/wait-rollout.test.sh`.
 - **`DEPLOY_MAINTENANCE_WINDOW` (repository variable) opts a deploy into a maintenance window** — added
   for v0.11.0's irreversible integer→UUID primary-key migrations, where the new code cannot read the old
