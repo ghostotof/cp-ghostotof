@@ -25,14 +25,12 @@ use Symfony\Component\Security\Core\User\UserInterface;
  */
 final class BaseAccessUserProvider implements PayloadAwareUserProviderInterface
 {
-    private const string GUEST_CLAIM = 'guest';
-
     /**
      * @param array<array-key, mixed> $payload
      */
     public function loadUserByIdentifierAndPayload(string $identifier, array $payload): UserInterface
     {
-        if (true !== ($payload[self::GUEST_CLAIM] ?? null)) {
+        if (true !== ($payload[BaseAccessUser::TOKEN_CLAIM] ?? null)) {
             throw new UserNotFoundException(\sprintf('"%s" n\'est pas un jeton du palier de base.', $identifier));
         }
 

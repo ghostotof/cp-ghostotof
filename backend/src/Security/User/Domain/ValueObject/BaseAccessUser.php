@@ -21,6 +21,13 @@ use Symfony\Component\Security\Core\User\UserInterface;
  */
 final readonly class BaseAccessUser implements UserInterface
 {
+    /**
+     * Claim booléen qui distingue un jeton du palier de base d'un jeton de
+     * compte. Écrit par le contrôleur qui l'émet, lu par le provider qui le
+     * reconnaît : un seul nom pour les deux.
+     */
+    public const string TOKEN_CLAIM = 'guest';
+
     public function __construct(private string $identifier)
     {
     }

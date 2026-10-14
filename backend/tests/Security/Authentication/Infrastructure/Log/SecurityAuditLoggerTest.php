@@ -220,7 +220,7 @@ final class SecurityAuditLoggerTest extends TestCase
         ], $this->singleRecord()->context);
     }
 
-    public function testBaseAccessIssuedNamesTheGuestIdentifier(): void
+    public function testBaseAccessIssuedNamesItsMarker(): void
     {
         $this->pushRequest('/api/account/base-access', 'POST');
 

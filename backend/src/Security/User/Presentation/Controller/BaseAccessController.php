@@ -49,7 +49,7 @@ final readonly class BaseAccessController
         $baseAccessUser = new BaseAccessUser('guest-'.bin2hex(random_bytes(16)));
 
         $jwt = $this->jwtTokenManager->createFromPayload($baseAccessUser, [
-            'guest' => true,
+            BaseAccessUser::TOKEN_CLAIM => true,
             'exp' => $expiresAt,
         ]);
 

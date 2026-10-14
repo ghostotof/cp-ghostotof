@@ -9,6 +9,7 @@ use App\Tests\Support\ReadsAllChannelsLog;
 use DateTimeImmutable;
 use Doctrine\DBAL\Connection;
 use Doctrine\ORM\EntityManagerInterface;
+use Lexik\Bundle\JWTAuthenticationBundle\Encoder\JWTEncoderInterface;
 use Monolog\Level;
 use Monolog\LogRecord;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
@@ -78,6 +79,30 @@ final class BaseAccessControllerTest extends WebTestCase
         // doit être reconnu comme authentifié mais insuffisant.
         $client->request('GET', '/api/me');
         self::assertResponseStatusCodeSame(403);
+    }
+
+    /**
+     * Le jeton émis porte le claim que BaseAccessUserProvider lit, sous son nom
+     * d'exploitation : `guest`, comme le préfixe `guest-` du marqueur. L'accès de
+     * base a changé de nom dans le code (#602), pas ces deux identifiants —
+     * renommer le claim invaliderait les jetons en circulation au déploiement,
+     * et le marqueur est ce que filtrent le runbook et l'historique des logs.
+     */
+    public function testTheIssuedTokenKeepsItsOperationalClaimAndMarker(): void
+    {
+        $client = $this->createClientWithFreshRateLimiter();
+
+        $client->request('POST', '/api/account/base-access', server: ['HTTP_X_REQUESTED_WITH' => 'fetch']);
+
+        self::assertResponseIsSuccessful();
+        $bearerCookie = $client->getCookieJar()->get('BEARER');
+        self::assertNotNull($bearerCookie);
+
+        $claims = self::getContainer()->get(JWTEncoderInterface::class)->decode($bearerCookie->getValue());
+
+        self::assertTrue($claims['guest'] ?? null);
+        self::assertIsString($claims['username'] ?? null);
+        self::assertStringStartsWith('guest-', $claims['username']);
     }
 
     private function countCpgUsers(Connection $connection): int

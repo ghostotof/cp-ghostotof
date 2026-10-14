@@ -42,7 +42,7 @@ final class SecurityChannelAccountRedactorTest extends TestCase
         self::assertStringContainsString('"authenticator":"X"', $line, 'Les autres clés du contexte restent.');
     }
 
-    public function testAGuestTokenKeepsItsRandomMarker(): void
+    public function testABaseAccessTokenKeepsItsRandomMarker(): void
     {
         $baseAccessUser = new BaseAccessUser('guest-0123abcd');
 
