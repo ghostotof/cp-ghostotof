@@ -75,8 +75,8 @@ SELECT EXISTS (
        (SELECT count(*) FROM pg_database WHERE datname NOT IN (current_database(), 'postgres', 'template0', 'template1')) AS bases_en_trop,
        (SELECT count(*) FROM unnest(ARRAY['postgres', 'template1']) AS d WHERE has_database_privilege('public', d, 'CONNECT') OR has_database_privilege('public', d, 'TEMPORARY')) AS bases_ouvertes_a_public;
 
-\echo '--- #608 : base de l''application (attendu : {TimeZone=Europe/Paris}, NULL avant la première migration ; 0, -1, f, 3)'
-SELECT (SELECT setconfig FROM pg_db_role_setting WHERE setdatabase = d.oid AND setrole = 0) AS reglages_de_la_base,
+\echo '--- #608 : base de l''application (attendu : {TimeZone}, vide avant la migration du fuseau ; 0, -1, f, 3)'
+SELECT (SELECT array_agg(split_part(c, '=', 1) ORDER BY c COLLATE "C") FROM pg_db_role_setting, unnest(setconfig) AS c WHERE setdatabase = d.oid AND setrole = 0) AS reglages_de_la_base,
        (SELECT count(*) FROM pg_db_role_setting WHERE setdatabase = d.oid AND setrole <> 0) AS reglages_de_role_dans_la_base,
        d.datconnlimit AS limite_de_connexions,
        d.datistemplate AS modele,
@@ -90,8 +90,6 @@ DECLARE
     migrator text := current_setting('cpg.migrator_role');
     reader text := current_setting('cpg.reader_role');
     n integer;
-    reglages text[];
-    attendu text[];
 BEGIN
     SELECT count(*) INTO n FROM pg_roles
     WHERE rolname IN (app, migrator, reader) AND NOT rolsuper AND rolcanlogin AND NOT rolcreaterole AND NOT rolcreatedb
@@ -150,30 +148,50 @@ BEGIN
     IF n <> 0 THEN RAISE EXCEPTION '#597 : % base(s) hors de celle de l''application et de celles de l''image', n; END IF;
     SELECT count(*) INTO n FROM unnest(ARRAY['postgres', 'template1']) AS d WHERE has_database_privilege('public', d, 'CONNECT') OR has_database_privilege('public', d, 'TEMPORARY');
     IF n <> 0 THEN RAISE EXCEPTION '#597 : PUBLIC a encore CONNECT ou TEMPORARY sur % base(s) de l''image', n; END IF;
-    -- #608 : propriétaire de la base, le rôle de migration peut la rendre
-    -- inutilisable pour l'application sans être superutilisateur (mesuré sur
-    -- l'image épinglée) : un réglage de base, appliqué à chaque nouvelle
-    -- session (search_path, idle_session_timeout, default_transaction_read_only,
-    -- statement_timeout…), CONNECTION LIMIT, IS_TEMPLATE, REVOKE CONNECT. Et
-    -- tout rôle pose sur lui-même un réglage propre à la base (ALTER ROLE …
-    -- IN DATABASE … SET), que le RESET ALL de roles.sql et rolconfig ne voient
-    -- pas. Seul réglage de base admis : le fuseau de Version20261011120000, à
-    -- la valeur de date.timezone des images (PostgresRolesProcedureTest), une
-    -- fois les migrations passées — la procédure précède la première sur une
-    -- base neuve. ALLOW_CONNECTIONS false n'est pas contrôlé : refusé sur la
-    -- base courante, il exigerait une connexion à une autre base, que #597
-    -- ferme, et rendrait de toute façon ce contrôle injoignable. roles.sql
-    -- fixe sa propre session en tête (lecture-écriture, sans délai, chemin de
-    -- recherche à lui) : un réglage de base qui l'aurait arrêté arrive ici.
-    SELECT (SELECT setconfig FROM pg_db_role_setting WHERE setdatabase = d.oid AND setrole = 0),
-           CASE WHEN to_regclass('public.doctrine_migration_versions') IS NULL THEN NULL ELSE ARRAY['TimeZone=Europe/Paris'] END
-      INTO reglages, attendu
-      FROM pg_database d WHERE d.datname = current_database();
-    IF reglages IS DISTINCT FROM attendu THEN RAISE EXCEPTION '#608 : la base porte les réglages %, % attendu (ALTER DATABASE … SET)', reglages, attendu; END IF;
-    SELECT count(*) INTO n FROM pg_database d, pg_db_role_setting WHERE d.datname = current_database() AND setdatabase = d.oid AND setrole <> 0;
+END
+$$;
+
+-- #608 : propriétaire de la base, le rôle de migration peut la rendre
+-- inutilisable pour l'application sans être superutilisateur (mesuré sur
+-- l'image épinglée) : un réglage de base, appliqué à chaque nouvelle session
+-- (search_path, role, idle_session_timeout, default_transaction_read_only,
+-- statement_timeout…), CONNECTION LIMIT, IS_TEMPLATE, REVOKE CONNECT. Et tout
+-- rôle pose sur lui-même un réglage propre à la base (ALTER ROLE … IN
+-- DATABASE … SET), que le RESET ALL de roles.sql et rolconfig ne voient pas.
+-- Seul réglage de base admis : le fuseau, une fois Version20261011120000
+-- passée — sa ligne, pas l'existence de la table, qu'une base restaurée
+-- d'avant elle porte sans le fuseau —, à la valeur que la migration écrit et
+-- que date.timezone des images porte (PostgresRolesProcedureTest lie les
+-- trois). Les valeurs, choisies par qui tient le rôle de migration, ne sont
+-- jamais imprimées : les noms seulement. Laissés passer : REVOKE TEMPORARY
+-- (l'application n'a pas de table temporaire) et ALLOW_CONNECTIONS false,
+-- refusé sur la base courante et qui rendrait ce contrôle injoignable. Les
+-- options de connexion de la procédure (PGOPTIONS) écartent ces réglages de
+-- sa propre session : celui qui l'aurait arrêtée arrive ici. Du SQL pur,
+-- rejoué sur la base de test par DatabaseOwnerSettingsVerificationTest.
+\echo '--- #608 : vérification'
+DO $$
+DECLARE
+    app text := current_setting('cpg.app_role');
+    migrator text := current_setting('cpg.migrator_role');
+    reader text := current_setting('cpg.reader_role');
+    base oid := (SELECT oid FROM pg_database WHERE datname = current_database());
+    reglages text[] := (SELECT setconfig FROM pg_db_role_setting WHERE setdatabase = base AND setrole = 0);
+    noms text[] := (SELECT array_agg(split_part(c, '=', 1) ORDER BY c COLLATE "C") FROM unnest(reglages) AS c);
+    migree boolean := false;
+    attendus text[];
+    n integer;
+BEGIN
+    IF to_regclass('public.doctrine_migration_versions') IS NOT NULL THEN
+        EXECUTE 'SELECT EXISTS (SELECT FROM public.doctrine_migration_versions WHERE version = $1)' INTO migree USING 'DoctrineMigrations\Version20261011120000';
+    END IF;
+    attendus := CASE WHEN migree THEN ARRAY['TimeZone'] END;
+    IF noms IS DISTINCT FROM attendus THEN RAISE EXCEPTION '#608 : la base porte les réglages %, % attendu (ALTER DATABASE … SET)', noms, attendus; END IF;
+    IF migree AND reglages IS DISTINCT FROM ARRAY['TimeZone=Europe/Paris'] THEN RAISE EXCEPTION '#608 : le fuseau de la base n''est pas Europe/Paris (ALTER DATABASE … SET timezone)'; END IF;
+    SELECT count(*) INTO n FROM pg_db_role_setting WHERE setdatabase = base AND setrole <> 0;
     IF n <> 0 THEN RAISE EXCEPTION '#608 : % réglage(s) de rôle propre(s) à la base (ALTER ROLE … IN DATABASE … SET)', n; END IF;
-    IF (SELECT d.datconnlimit <> -1 FROM pg_database d WHERE d.datname = current_database()) THEN RAISE EXCEPTION '#608 : la base limite ses connexions (CONNECTION LIMIT)'; END IF;
-    IF (SELECT d.datistemplate FROM pg_database d WHERE d.datname = current_database()) THEN RAISE EXCEPTION '#608 : la base est marquée modèle (IS_TEMPLATE)'; END IF;
+    IF (SELECT datconnlimit <> -1 FROM pg_database WHERE oid = base) THEN RAISE EXCEPTION '#608 : la base limite ses connexions (CONNECTION LIMIT)'; END IF;
+    IF (SELECT datistemplate FROM pg_database WHERE oid = base) THEN RAISE EXCEPTION '#608 : la base est marquée modèle (IS_TEMPLATE)'; END IF;
     SELECT count(*) INTO n FROM unnest(ARRAY[app, migrator, reader]) AS r WHERE NOT has_database_privilege(r, current_database(), 'CONNECT');
     IF n <> 0 THEN RAISE EXCEPTION '#608 : % rôle(s) sur 3 sans CONNECT sur la base', n; END IF;
 END

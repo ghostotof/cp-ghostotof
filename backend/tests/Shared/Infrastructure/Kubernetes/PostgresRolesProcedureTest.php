@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Shared\Infrastructure\Kubernetes;
 
 use App\Tests\Support\KubernetesManifests;
+use App\Tests\Support\RolesVerification;
 use App\Tests\Support\Runbook;
 use PHPUnit\Framework\TestCase;
 
@@ -38,13 +39,42 @@ final class PostgresRolesProcedureTest extends TestCase
     /** Le dernier fichier du flux : la validation, conditionnée à verify.sql. */
     private const string COMMIT_FILE = 'commit.sql';
 
+    /** La migration qui pose le fuseau de la base (#434), seul réglage de base admis (#608). */
+    private const string TIMEZONE_MIGRATION = 'Version20261011120000';
+
     /**
      * L'unique `exec` qui écrit du runbook, mot pour mot (blancs normalisés) :
      * comparé en entier, une commande glissée dans le `sh -c` le fait rougir.
      */
     private const string EXEC = <<<'SH'
-        kubectl -n "${NS:?preprod ou prod}" exec -i deploy/postgres -c postgres -- sh -c 'PGOPTIONS="-c lock_timeout=5s" psql -X -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v app_role=cpg_app -v migrator_role=cpg_migrator -v reader_role=cpg_reader -f -'
+        kubectl -n "${NS:?preprod ou prod}" exec -i deploy/postgres -c postgres -- sh -c 'PGOPTIONS="-c lock_timeout=5s -c idle_in_transaction_session_timeout=30s -c statement_timeout=0 -c transaction_timeout=0 -c idle_session_timeout=0 -c default_transaction_read_only=off -c role=none -c search_path=pg_catalog,pg_temp -c password_encryption=scram-sha-256" psql -X -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v app_role=cpg_app -v migrator_role=cpg_migrator -v reader_role=cpg_reader -f -'
         SH;
+
+    /**
+     * Les options de connexion de la procédure, chacune avec sa raison. Une
+     * option de connexion l'emporte sur un réglage de la base ou d'un rôle dans
+     * la base, dès l'ouverture de la session, `BEGIN` compris (issue #608).
+     */
+    private const array SESSION_OPTIONS = [
+        // L'attente de verrou bornée comme partout (#525).
+        'lock_timeout' => '5s',
+        // Un flux bloqué en route ne garde pas les verrous des transferts de
+        // propriété devant l'API : la session est fermée, tout est annulé.
+        'idle_in_transaction_session_timeout' => '30s',
+        // #608 : propriétaire de la base, le rôle de migration peut poser
+        // chacun des réglages suivants sur elle (mesuré sur l'image épinglée).
+        // Sans ces options, la procédure échouait avant que verify.sql ne
+        // nomme l'écart — ou, pour `role`, tournait sous le rôle de migration.
+        'statement_timeout' => '0',
+        'transaction_timeout' => '0',
+        'idle_session_timeout' => '0',
+        'default_transaction_read_only' => 'off',
+        'role' => 'none',
+        'search_path' => 'pg_catalog,pg_temp',
+        // Un mot de passe réécrit (rotation) l'est en SCRAM, la seule méthode
+        // que le pg_hba.conf du dépôt accepte.
+        'password_encryption' => 'scram-sha-256',
+    ];
 
     /**
      * Le namespace est obligatoire, jamais une valeur par défaut, et les
@@ -68,12 +98,35 @@ final class PostgresRolesProcedureTest extends TestCase
     /**
      * Une seule commande, sur le socket local du pod (pas de `-h` : le
      * `trust` de `local all all`), le SQL lu sur l'entrée standard, avec les
-     * noms de rôle du dépôt et l'attente de verrou bornée comme partout ; ni
-     * `--single-transaction` ni écho.
+     * noms de rôle du dépôt et les options de session de
+     * {@see self::SESSION_OPTIONS} ; ni `--single-transaction` ni écho.
      */
     public function testOneExecRunsTheSqlOverTheLocalSocket(): void
     {
         self::assertSame($this->normalized(self::EXEC), $this->normalized($this->exec()));
+    }
+
+    /**
+     * Issue #608 : un réglage de la base s'applique à chaque nouvelle session,
+     * celle de la procédure comprise. En lecture seule, sous un délai court ou
+     * sous `role`, la procédure échouait dans roles.sql avant que verify.sql ne
+     * nomme l'écart (mesuré sur l'image épinglée). Les `SET` d'un fichier
+     * arriveraient après la connexion et après `BEGIN` : les options de
+     * connexion, elles, s'appliquent dès l'ouverture. Ni plus ni moins que
+     * {@see self::SESSION_OPTIONS}, chacune une fois.
+     */
+    public function testTheSessionOptionsOverrideTheDatabaseSettings(): void
+    {
+        self::assertSame(1, preg_match('/PGOPTIONS="([^"]*)" psql /', $this->exec(), $match), 'PGOPTIONS entre guillemets doubles, juste avant psql.');
+        self::assertSame(1, preg_match('/\A(?:-c [a-z_]+=\S+ ?)+\z/', $match[1]), 'PGOPTIONS : des « -c nom=valeur » seulement, sans blanc dans une valeur.');
+        preg_match_all('/-c ([a-z_]+)=(\S+)/', $match[1], $pairs, \PREG_SET_ORDER);
+
+        $options = [];
+        foreach ($pairs as [, $name, $value]) {
+            self::assertArrayNotHasKey($name, $options, $name.' : une seule fois.');
+            $options[$name] = $value;
+        }
+        self::assertSame(self::SESSION_OPTIONS, $options);
     }
 
     /**
@@ -199,8 +252,7 @@ final class PostgresRolesProcedureTest extends TestCase
     /**
      * roles.sql efface la marque de verify.sql, coupe la journalisation d'une
      * instruction refusée **avant** la première qui porte un mot de passe (la
-     * garde de longueur), borne une transaction laissée en attente, refuse
-     * avant toute écriture un mot de passe absent ou court et une rotation qui
+     * garde de longueur), refuse avant toute écriture un mot de passe absent ou court et une rotation qui
      * ne vaut ni 0 ni 1, et ne réécrit un mot de passe qu'à la création ou sur
      * rotation (relecture de #575).
      */
@@ -209,7 +261,7 @@ final class PostgresRolesProcedureTest extends TestCase
         $roles = $this->statements('roles.sql');
         $firstPassword = strpos($roles, "length(:'app_pw')");
         self::assertIsInt($firstPassword);
-        foreach (['SET log_min_error_statement = panic;', 'SET log_statement = none;', 'SET log_min_duration_statement = -1;', "SET idle_in_transaction_session_timeout = '30s';"] as $setting) {
+        foreach (['SET log_min_error_statement = panic;', 'SET log_statement = none;', 'SET log_min_duration_statement = -1;'] as $setting) {
             $at = strpos($roles, $setting);
             self::assertIsInt($at, $setting);
             self::assertLessThan($firstPassword, $at, $setting.' : avant la première requête qui porte un mot de passe.');
@@ -219,26 +271,6 @@ final class PostgresRolesProcedureTest extends TestCase
         self::assertMatchesRegularExpression("/:'rotate' IN \\('0', '1'\\)/", $roles);
         self::assertMatchesRegularExpression("/ALTER ROLE %I PASSWORD %L[^\\n]*WHERE :'rotate' = '1' OR NOT :'app_existed'::boolean/", $roles);
         self::assertMatchesRegularExpression("/ALTER ROLE %I PASSWORD %L[^\\n]*WHERE :'rotate' = '1' OR NOT :'migrator_existed'::boolean/", $roles);
-    }
-
-    /**
-     * Issue #608 : un réglage de la base s'applique à chaque nouvelle session,
-     * celle de la procédure comprise. En lecture seule ou sous un
-     * `statement_timeout` court, roles.sql échouait avant que verify.sql ne
-     * nomme l'écart (mesuré sur l'image épinglée). roles.sql fixe donc sa
-     * propre session avant toute requête : `SET TRANSACTION` n'est admis
-     * qu'avant la première de la transaction ouverte par le flux.
-     */
-    public function testRolesSetsItsOwnSessionBeforeAnyQuery(): void
-    {
-        $roles = $this->statements('roles.sql');
-        $firstQuery = strpos($roles, 'SELECT ');
-        self::assertIsInt($firstQuery);
-        foreach (['SET statement_timeout = 0;', 'SET transaction_timeout = 0;', 'SET TRANSACTION READ WRITE;', 'SET search_path = pg_catalog, pg_temp;'] as $setting) {
-            $at = strpos($roles, $setting);
-            self::assertIsInt($at, $setting);
-            self::assertLessThan($firstQuery, $at, $setting.' : avant la première requête.');
-        }
     }
 
     /**
@@ -322,26 +354,47 @@ final class PostgresRolesProcedureTest extends TestCase
      * LIMIT 0`, `IS_TEMPLATE`, `REVOKE CONNECT … FROM PUBLIC` ; et tout rôle
      * pose sur lui-même un réglage propre à la base (`ALTER ROLE … IN DATABASE
      * … SET`), que ni le `RESET ALL` de roles.sql ni `rolconfig` ne voient.
-     * verify.sql n'admet donc qu'un réglage de base, le fuseau de
-     * `Version20261011120000`, à la valeur exacte de `date.timezone` des
-     * images, et seulement une fois les migrations passées (la procédure
-     * précède la première sur une base neuve). Ce test lit la forme ; chaque
-     * refus a été joué sur l'image épinglée (.claude/rules/deploiement.md).
+     * verify.sql n'admet donc qu'un réglage de base, le fuseau, et seulement
+     * une fois `Version20261011120000` passée — la ligne de la table des
+     * migrations, pas son existence : une base restaurée d'avant elle, ou un
+     * premier `migrate` interrompu, porte la table sans le fuseau. La valeur
+     * admise est celle que la migration, figée, écrit, et celle de
+     * `date.timezone` des images : le test lie les trois. Les refus sont lus
+     * dans leur bloc seul ({@see RolesVerification::blockOf()}), et rejoués sur
+     * la base de test par {@see \App\Tests\Shared\Infrastructure\Postgres\DatabaseOwnerSettingsVerificationTest}.
      */
     public function testTheVerificationRefusesWhatTheDatabaseOwnerCanAlter(): void
     {
+        $migration = (string) file_get_contents(\dirname(__DIR__, 4).'/migrations/'.self::TIMEZONE_MIGRATION.'.php');
+        self::assertSame(1, preg_match("/SET timezone TO %L', current_database\\(\\), '([^']+)'/", $migration, $written), self::TIMEZONE_MIGRATION.' : le fuseau écrit par la migration.');
         $ini = (string) file_get_contents(\dirname(__DIR__, 5).'/docker/php/php.prod.ini');
         self::assertSame(1, preg_match('/^date\.timezone = (\S+)$/m', $ini, $timezone), 'php.prod.ini : une ligne « date.timezone = <fuseau> ».');
+        self::assertSame($written[1], $timezone[1], 'Le fuseau de la base est celui des images.');
 
+        $block = $this->normalized(RolesVerification::blockOf('#608'));
+
+        self::assertStringContainsString(\sprintf("WHERE version = $1)' INTO migree USING 'DoctrineMigrations\\%s'", self::TIMEZONE_MIGRATION), $block, 'La migration du fuseau est passée : sa ligne, pas la seule existence de la table.');
+        self::assertStringContainsString("CASE WHEN migree THEN ARRAY['TimeZone'] END", $block, 'Le seul réglage de base admis, une fois migrée.');
+        self::assertStringContainsString(\sprintf("IF migree AND reglages IS DISTINCT FROM ARRAY['TimeZone=%s'] THEN RAISE", $written[1]), $block);
+        self::assertStringContainsString('setdatabase = base AND setrole <> 0', $block, 'Aucun réglage de rôle propre à la base (ALTER ROLE … IN DATABASE).');
+        self::assertStringContainsString('datconnlimit <> -1', $block);
+        self::assertStringContainsString('datistemplate', $block);
+        self::assertStringContainsString("NOT has_database_privilege(r, current_database(), 'CONNECT')", $block);
+        self::assertSame(6, preg_match_all("/RAISE EXCEPTION '#608 :/", $block), 'Six refus #608 dans leur bloc.');
+    }
+
+    /**
+     * Les valeurs des réglages de la base sont choisies par qui tient le rôle de
+     * migration : verify.sql n'en imprime que les noms (des identifiants que le
+     * serveur valide), jamais les valeurs, ni à l'affichage ni dans un refus.
+     */
+    public function testTheVerificationPrintsTheSettingNamesOnly(): void
+    {
         $verify = $this->normalized($this->statements('verify.sql'));
 
-        self::assertStringContainsString(\sprintf("CASE WHEN to_regclass('public.doctrine_migration_versions') IS NULL THEN NULL ELSE ARRAY['TimeZone=%s'] END", $timezone[1]), $verify, 'Le seul réglage de base admis : le fuseau des images, une fois migrée.');
-        self::assertStringContainsString('setdatabase = d.oid AND setrole = 0', $verify);
-        self::assertStringContainsString('setdatabase = d.oid AND setrole <> 0', $verify, 'Aucun réglage de rôle propre à la base (ALTER ROLE … IN DATABASE).');
-        self::assertStringContainsString('d.datconnlimit <> -1', $verify);
-        self::assertStringContainsString('d.datistemplate', $verify);
-        self::assertStringContainsString("NOT has_database_privilege(r, current_database(), 'CONNECT')", $verify);
-        self::assertSame(5, preg_match_all("/RAISE EXCEPTION '#608 :/", $verify), 'Cinq refus #608 dans le bloc de vérification.');
+        self::assertStringContainsString("array_agg(split_part(c, '=', 1) ORDER BY c COLLATE \"C\") FROM pg_db_role_setting, unnest(setconfig) AS c", $verify);
+        self::assertStringNotContainsString('setconfig AS', $verify);
+        self::assertDoesNotMatchRegularExpression("/RAISE EXCEPTION '[^']*'[^;]*\\breglages\\b/", RolesVerification::blockOf('#608'), 'Un refus ne cite pas la valeur des réglages.');
     }
 
     private function normalized(string $text): string

@@ -33,18 +33,6 @@
 \set rotate ''
 \endif
 
--- Issue #608 : un réglage de la base (ALTER DATABASE … SET, permis à son
--- propriétaire, le rôle de migration) s'applique aussi à cette session. Lue
--- seule ou sous un statement_timeout court, la procédure échouait ici, avant
--- que verify.sql ne nomme l'écart. Sa session fixe donc ce dont elle dépend,
--- avant toute requête (SET TRANSACTION n'est admis qu'avant la première de la
--- transaction ouverte par le flux), sans hériter ni du chemin de recherche ni
--- des délais de la base ; verify.sql refuse ensuite le réglage lui-même.
-SET statement_timeout = 0;
-SET transaction_timeout = 0;
-SET TRANSACTION READ WRITE;
-SET search_path = pg_catalog, pg_temp;
-
 -- Un ALTER ROLE … PASSWORD qui échouerait serait journalisé avec son texte
 -- par le serveur (log_min_error_statement = error par défaut) : relevé au
 -- niveau que rien n'atteint, pour la seule durée de cette session, et le
@@ -57,13 +45,13 @@ SET search_path = pg_catalog, pg_temp;
 -- l'exec (chiffré entre le poste et l'API server, puis jusqu'au kubelet) et
 -- atteint le serveur par le socket local.
 --
--- Une transaction laissée en attente (flux bloqué en route) garderait les
--- verrous ACCESS EXCLUSIVE des transferts de propriété devant l'API : la
--- session est fermée au bout de 30 s d'inactivité, et tout est annulé.
+-- Une transaction laissée en attente (flux bloqué en route), le délai des
+-- instructions, le rôle et le chemin de recherche de la session sont fixés
+-- par les options de connexion de la procédure (PGOPTIONS, k8s/README.md) :
+-- elles l'emportent dès la connexion sur un réglage de la base (#608).
 SET log_min_error_statement = panic;
 SET log_statement = none;
 SET log_min_duration_statement = -1;
-SET idle_in_transaction_session_timeout = '30s';
 SELECT EXISTS (SELECT FROM pg_roles WHERE rolname = :'app_role') AS app_existed,
        EXISTS (SELECT FROM pg_roles WHERE rolname = :'migrator_role') AS migrator_existed,
        length(:'app_pw') >= 32 AND length(:'migrator_pw') >= 32 AS passwords_ok,
