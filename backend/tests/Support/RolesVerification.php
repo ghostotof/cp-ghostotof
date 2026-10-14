@@ -30,4 +30,51 @@ final class RolesVerification
 
         return $mine[0];
     }
+
+    /**
+     * La requête des lignes du schéma du bloc `#611` (issue #611), une ligne
+     * canonique par objet : prise entre ses deux marqueurs, dans le fichier
+     * brut, pour être rejouée et comparée à sa copie du runbook.
+     */
+    public static function schemaLinesQuery(): string
+    {
+        $source = KubernetesManifests::base()->source(self::VERIFY_SQL);
+        Assert::assertSame(1, preg_match('/^\s*-- #611 : lignes du schéma, début\n(.*?)^\s*-- #611 : lignes du schéma, fin$/ms', $source, $query), 'verify.sql : la requête des lignes du schéma, entre ses marqueurs.');
+
+        return trim($query[1]);
+    }
+
+    /**
+     * La requête d'empreinte du bloc `#611` entière — l'agrégat et ses
+     * lignes —, prise entre ses marqueurs : le test la rejoue telle que le
+     * bloc la calcule, sans recopier son enveloppe.
+     */
+    public static function schemaFingerprintQuery(): string
+    {
+        $source = KubernetesManifests::base()->source(self::VERIFY_SQL);
+        Assert::assertSame(1, preg_match('/^\s*-- #611 : empreinte, début\n(.*?)^\s*-- #611 : empreinte, fin$/ms', $source, $query), 'verify.sql : la requête d\'empreinte, entre ses marqueurs.');
+
+        return trim($query[1]);
+    }
+
+    /**
+     * Les empreintes que le bloc `#611` admet, par migrations passées — la
+     * dernière (`''` : aucune) et leur nombre, `dernière|nombre` — : une ou
+     * plusieurs chacune (une montée de PostgreSQL qui change l'impression
+     * d'une définition en admet deux le temps de la transition).
+     *
+     * @return array<string, list<string>>
+     */
+    public static function schemaFingerprints(): array
+    {
+        preg_match_all("/\\('((?:DoctrineMigrations\\\\Version\\d{14})?)', (\\d+), '([0-9a-f]{32})'\\)/", self::blockOf('#611'), $rows, \PREG_SET_ORDER);
+        Assert::assertNotEmpty($rows, 'verify.sql : le bloc #611 porte ses empreintes.');
+
+        $fingerprints = [];
+        foreach ($rows as [, $latest, $count, $fingerprint]) {
+            $fingerprints[$latest.'|'.$count][] = $fingerprint;
+        }
+
+        return $fingerprints;
+    }
 }

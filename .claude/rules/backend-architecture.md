@@ -17,6 +17,12 @@ DDD structure: each bounded context is a top-level folder under `src/`, itself s
 ceremonial folders. `config/packages/doctrine.yaml`'s mapping scans all of `src/` (not a single `Entity/`
 folder), so entities live inside their bounded context instead of a shared top-level directory.
 
+**Every migration adds the fingerprint of the schema it leaves to `k8s/base/postgres-roles/verify.sql`**
+(issue #611): its `#611` block admits, per migrations applied (the latest and their count), the
+schema's fingerprints, and the roles procedure fails on any other. `DatabaseOwnerSettingsVerificationTest`
+turns red on a migration without its line and prints it — add it, never remove an older one. Why, and what the fingerprint covers:
+`.claude/rules/deploiement.md`, the PostgreSQL roles bullet.
+
 **Every entity has a UUID v7 primary key, assigned in its constructor** (spec 0003, `v0.11.0`):
 `#[ORM\Id] #[ORM\Column(type: UuidType::NAME)] private Uuid $id;` with no `GeneratedValue`,
 `$this->id = Uuid::v7();` as the first assignment, right after the constructor's guards (three entities

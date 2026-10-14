@@ -196,5 +196,145 @@ BEGIN
     IF n <> 0 THEN RAISE EXCEPTION '#608 : % rôle(s) sur 3 sans CONNECT sur la base', n; END IF;
 END
 $$;
+
+-- #611 : propriétaire de la base et de chaque objet de public, le rôle de
+-- migration peut vider le DML de l'application SANS ERREUR. Mesuré sur l'image
+-- épinglée, sous des rôles de la forme de privileges.sql : la sécurité au
+-- niveau des lignes sans politique (le rôle applicatif, sans BYPASSRLS, ne lit
+-- plus rien, ses UPDATE et DELETE ne touchent rien) ; un schéma au nom du rôle
+-- applicatif, que le search_path par défaut ("$user", public) place devant
+-- public ; une règle DO INSTEAD NOTHING ; un trigger qui annule (BEFORE) ou
+-- efface (AFTER) la ligne ; un opérateur de public plus exact que celui du
+-- catalogue (le schéma de la CVE-2018-1058 : `username = 'x'` ne trouve plus
+-- rien). Une liste de gestes ne se ferme pas ; une liste d'admission, si : le
+-- schéma doit être exactement celui que les migrations laissent.
+-- Ce bloc lit une ligne canonique par objet hors du système — schémas ; dans
+-- public, relations, colonnes, index, contraintes, triggers et règles avec
+-- leur activation, politiques et leurs rôles, héritage, séquences,
+-- publications, fonctions, opérateurs, types, transtypages et le reste du
+-- catalogue —, sans propriétaire ni privilège (#575 les contrôle) ni colonne
+-- supprimée, sous un search_path fixé (pg_get_*def qualifient un nom selon
+-- lui), hache chacune (une ligne qui contient un saut de ligne ne peut en
+-- imiter deux) et compare le md5 de l'ensemble aux empreintes admises pour
+-- les migrations passées : la dernière et leur nombre (une migration plus
+-- ancienne fusionnée après une plus récente change le nombre, pas la
+-- dernière). Mesuré : une base de dev migrée pas à pas depuis le début du
+-- projet, une base neuve migrée sous un rôle non superutilisateur jusqu'à la
+-- même version et une restauration pg_dump ont les mêmes lignes.
+-- Toutes les empreintes sont gardées : un checkout en avance sur
+-- l'environnement reconnaît encore ses migrations ; des migrations inconnues
+-- (checkout en retard, base antérieure aux empreintes) sont refusées comme
+-- telles. Plusieurs empreintes par migrations sont admises : une montée de
+-- PostgreSQL qui change l'impression d'une définition en demande deux, le
+-- temps que tous les environnements la passent. DatabaseOwnerSettingsVerificationTest
+-- calcule, par la requête entre les marqueurs « empreinte », celle de la base
+-- de test migrée : une migration nouvelle le rougit, et son message donne la
+-- ligne à ajouter. La requête entre les marqueurs « lignes du schéma » est
+-- recopiée à l'identique dans k8s/README.md, pour nommer les lignes qui
+-- diffèrent ; ce bloc n'imprime que des empreintes, jamais un nom. Pas une
+-- frontière contre qui tient le rôle de migration (il peut aussi effacer des
+-- lignes) : un filet contre un geste persistant qui couperait l'application
+-- en silence.
+\echo '--- #611 : vérification'
+DO $$
+DECLARE
+    derniere text := '';
+    nombre bigint := 0;
+    empreinte text;
+    connues boolean;
+    admise boolean;
+BEGIN
+    PERFORM set_config('search_path', 'pg_catalog, pg_temp', true);
+    IF to_regclass('public.doctrine_migration_versions') IS NOT NULL THEN
+        EXECUTE 'SELECT coalesce(max(version), ''''), count(*) FROM public.doctrine_migration_versions' INTO derniere, nombre;
+        IF nombre = 0 THEN RAISE EXCEPTION '#611 : la table des migrations est vide (un premier migrate interrompu ?) : relancer la migration, puis la procédure'; END IF;
+    END IF;
+    empreinte := (
+        -- #611 : empreinte, début
+        SELECT md5(string_agg(md5(l), '' ORDER BY l COLLATE "C")) FROM (
+            -- #611 : lignes du schéma, début
+            SELECT 'schema ' || quote_ident(n.nspname) FROM pg_namespace n WHERE n.nspname <> 'information_schema' AND n.nspname !~ '^pg_'
+            UNION ALL
+            SELECT concat_ws(' ', 'relation', quote_ident(c.relname), c.relkind, c.relpersistence, c.relrowsecurity, c.relforcerowsecurity, c.relispartition, c.relreplident, pg_get_expr(c.relpartbound, c.oid), c.reloptions::text, am.amname, ts.spcname)
+            FROM pg_class c LEFT JOIN pg_am am ON am.oid = c.relam LEFT JOIN pg_tablespace ts ON ts.oid = c.reltablespace
+            WHERE c.relnamespace = 'public'::regnamespace
+            UNION ALL
+            SELECT concat_ws(' ', 'colonne', quote_ident(c.relname), quote_ident(a.attname), format_type(a.atttypid, a.atttypmod), a.attnotnull, a.attidentity, a.attgenerated, pg_get_expr(d.adbin, d.adrelid), co.collname)
+            FROM pg_attribute a JOIN pg_class c ON c.oid = a.attrelid JOIN pg_type ty ON ty.oid = a.atttypid
+            LEFT JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
+            LEFT JOIN pg_collation co ON co.oid = a.attcollation AND a.attcollation <> ty.typcollation
+            WHERE c.relnamespace = 'public'::regnamespace AND c.relkind IN ('r', 'p', 'v', 'm', 'c', 'f') AND a.attnum > 0 AND NOT a.attisdropped
+            UNION ALL
+            SELECT 'index ' || pg_get_indexdef(i.indexrelid) FROM pg_index i JOIN pg_class c ON c.oid = i.indrelid WHERE c.relnamespace = 'public'::regnamespace
+            UNION ALL
+            SELECT concat_ws(' ', 'contrainte', quote_ident(coalesce(c.relname, t.typname)), quote_ident(k.conname), pg_get_constraintdef(k.oid))
+            FROM pg_constraint k LEFT JOIN pg_class c ON c.oid = k.conrelid LEFT JOIN pg_type t ON t.oid = k.contypid
+            WHERE k.connamespace = 'public'::regnamespace AND k.contype <> 'n'
+            UNION ALL
+            SELECT concat_ws(' ', 'trigger', pg_get_triggerdef(t.oid), t.tgenabled::text) FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid WHERE c.relnamespace = 'public'::regnamespace AND NOT t.tgisinternal
+            UNION ALL
+            SELECT concat_ws(' ', 'regle', pg_get_ruledef(r.oid), r.ev_enabled::text) FROM pg_rewrite r JOIN pg_class c ON c.oid = r.ev_class WHERE c.relnamespace = 'public'::regnamespace
+            UNION ALL
+            SELECT concat_ws(' ', 'politique', quote_ident(c.relname), quote_ident(p.polname), p.polcmd::text, p.polpermissive, pg_get_expr(p.polqual, p.polrelid), pg_get_expr(p.polwithcheck, p.polrelid),
+                   (SELECT string_agg(r.nom, ',' ORDER BY r.nom) FROM (SELECT CASE WHEN x = 0 THEN 'public' ELSE quote_ident(pg_get_userbyid(x)) END AS nom FROM unnest(p.polroles) AS x) AS r))
+            FROM pg_policy p JOIN pg_class c ON c.oid = p.polrelid WHERE c.relnamespace = 'public'::regnamespace
+            UNION ALL
+            SELECT concat_ws(' ', 'heritage', quote_ident(c.relname), h.inhparent::regclass::text) FROM pg_inherits h JOIN pg_class c ON c.oid = h.inhrelid WHERE c.relnamespace = 'public'::regnamespace
+            UNION ALL
+            SELECT concat_ws(' ', 'sequence', quote_ident(c.relname), format_type(s.seqtypid, NULL), s.seqstart, s.seqincrement, s.seqmin, s.seqmax, s.seqcache, s.seqcycle)
+            FROM pg_sequence s JOIN pg_class c ON c.oid = s.seqrelid WHERE c.relnamespace = 'public'::regnamespace
+            UNION ALL
+            SELECT concat_ws(' ', 'publication', quote_ident(pb.pubname), quote_ident(c.relname), pg_get_expr(pr.prqual, pr.prrelid))
+            FROM pg_publication_rel pr JOIN pg_publication pb ON pb.oid = pr.prpubid JOIN pg_class c ON c.oid = pr.prrelid WHERE c.relnamespace = 'public'::regnamespace
+            UNION ALL
+            SELECT 'publication du schema ' || quote_ident(pb.pubname) FROM pg_publication_namespace pn JOIN pg_publication pb ON pb.oid = pn.pnpubid WHERE pn.pnnspid = 'public'::regnamespace
+            UNION ALL
+            SELECT concat_ws(' ', 'transtypage', format_type(k.castsource, NULL), format_type(k.casttarget, NULL), k.castfunc::regprocedure::text, k.castcontext::text, k.castmethod::text)
+            FROM pg_cast k JOIN pg_type ts ON ts.oid = k.castsource JOIN pg_type tt ON tt.oid = k.casttarget
+            WHERE ts.typnamespace = 'public'::regnamespace OR tt.typnamespace = 'public'::regnamespace
+            UNION ALL
+            SELECT CASE WHEN p.prokind = 'a' THEN 'agregat ' || p.oid::regprocedure::text ELSE 'fonction ' || pg_get_functiondef(p.oid) END FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace
+            UNION ALL
+            SELECT concat_ws(' ', 'operateur', o.oid::regoperator::text, o.oprcode::regprocedure::text) FROM pg_operator o WHERE o.oprnamespace = 'public'::regnamespace
+            UNION ALL
+            SELECT concat_ws(' ', 'type', quote_ident(t.typname), t.typtype, format_type(t.typbasetype, t.typtypmod), t.typnotnull, t.typdefault,
+                   (SELECT string_agg(quote_literal(e.enumlabel), ',' ORDER BY e.enumsortorder) FROM pg_enum e WHERE e.enumtypid = t.oid))
+            FROM pg_type t WHERE t.typnamespace = 'public'::regnamespace AND t.typrelid = 0 AND NOT (t.typcategory = 'A' AND t.typelem <> 0)
+            UNION ALL
+            SELECT 'classe ' || quote_ident(opcname) FROM pg_opclass WHERE opcnamespace = 'public'::regnamespace
+            UNION ALL
+            SELECT 'famille ' || quote_ident(opfname) FROM pg_opfamily WHERE opfnamespace = 'public'::regnamespace
+            UNION ALL
+            SELECT 'collation ' || quote_ident(collname) FROM pg_collation WHERE collnamespace = 'public'::regnamespace
+            UNION ALL
+            SELECT 'conversion ' || quote_ident(conname) FROM pg_conversion WHERE connamespace = 'public'::regnamespace
+            UNION ALL
+            SELECT 'recherche ' || quote_ident(cfgname) FROM pg_ts_config WHERE cfgnamespace = 'public'::regnamespace
+            UNION ALL
+            SELECT 'dictionnaire ' || quote_ident(dictname) FROM pg_ts_dict WHERE dictnamespace = 'public'::regnamespace
+            UNION ALL
+            SELECT 'analyseur ' || quote_ident(prsname) FROM pg_ts_parser WHERE prsnamespace = 'public'::regnamespace
+            UNION ALL
+            SELECT 'modele ' || quote_ident(tmplname) FROM pg_ts_template WHERE tmplnamespace = 'public'::regnamespace
+            UNION ALL
+            SELECT 'statistique ' || quote_ident(stxname) FROM pg_statistic_ext WHERE stxnamespace = 'public'::regnamespace
+            UNION ALL
+            SELECT 'extension ' || quote_ident(extname) FROM pg_extension WHERE extnamespace = 'public'::regnamespace
+            -- #611 : lignes du schéma, fin
+        ) AS lignes(l)
+        -- #611 : empreinte, fin
+    );
+    -- Dernière migration passée ('' : aucune), nombre de migrations passées,
+    -- empreinte du schéma qu'elles laissent. Ajouter, ne jamais retirer.
+    SELECT bool_or(true), bool_or(e = empreinte) INTO connues, admise FROM (VALUES
+        ('', 0, '00c92ee65ecb7af3a7453bb7404b4e67'),
+        ('DoctrineMigrations\Version20261012120000', 31, 'c221d88f9f1fb58395de06ebd3c560f2'),
+        ('DoctrineMigrations\Version20261012160000', 32, 'cf3fa860c81a7d142a545f81179dd130')
+    ) AS empreintes(v, n, e) WHERE v = derniere AND n = nombre;
+    IF connues IS NULL THEN RAISE EXCEPTION '#611 : aucune empreinte de schéma connue pour ces migrations (% passées, empreinte %) : checkout en retard sur l''environnement, ou base antérieure aux empreintes', nombre, empreinte; END IF;
+    IF NOT admise THEN RAISE EXCEPTION '#611 : le schéma de la base n''est pas celui des migrations (empreinte %)', empreinte; END IF;
+END
+$$;
+
 \echo '--- #575 : conforme'
 \set verify_passed 1

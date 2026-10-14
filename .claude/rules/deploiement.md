@@ -222,7 +222,8 @@ paths:
   `roles.sql`/`verify.sql` (psql meta-commands) run in no CI job: they were played against the
   pinned image by hand for #593 (first pass, rerun, rotation, refusals, truncated stream) and for #597
   (two passes, then each of `verify.sql`'s four #597 refusals) and for #608 (a fresh database, a
-  migrated one twice, a rotation, then each `ALTER` below), and preprod
+  migrated one twice, a rotation, then each `ALTER` below) and for #611 (a fresh database, then
+  a migrated one twice, then each gesture above refused in exit 3, then passing once undone), and preprod
   is their proof at each change. **Accepted limits** (security review of #575): any role may `ALTER ROLE` itself (password,
   `SET` defaults) — an injection could cut the application durably; the procedure resets the three roles'
   attributes and `RESET ALL` at every pass, and `verify.sql` refuses a stray attribute — `RESET ALL`
@@ -243,7 +244,41 @@ paths:
   replayed on the migrated test database by `DatabaseOwnerSettingsVerificationTest` (throwaway roles, one
   rolled-back transaction): it passes as is, and refuses each alteration above with its cause. The
   procedure's own session ignores these settings (`PGOPTIONS`, above), so the one that would have stopped
-  it reaches `verify.sql`. **Nothing repairs these states**: the procedure fails as long as one holds,
+  it reaches `verify.sql`. **Owner of the database and of every object of `public`, the migrator may also
+  empty the application's DML without any error** (issue #611, each gesture measured on the pinned
+  image): row-level security without a policy (`cpg_app`, no `BYPASSRLS`, reads no row, its
+  `UPDATE`/`DELETE` touch nothing); a schema named after `cpg_app` and open to it, which the default
+  `search_path` (`"$user", public`) puts before `public`; a rule (`DO INSTEAD NOTHING`); a trigger that
+  cancels (`BEFORE`) **or erases** (`AFTER`) the row; an operator of `public` more exact than the
+  catalog's (the CVE-2018-1058 pattern: `username = 'x'` finds nothing). A list of gestures never closes
+  (a first version did, and its review found the holes), so `verify.sql`'s `#611` block is an
+  **allow-list of the whole schema**: one canonical line per object outside the system — schemas, then
+  in `public` relations (replica identity included), columns, indexes, constraints, triggers and rules
+  with their enabled state, policies and their roles, inheritance, sequences, publications, functions,
+  operators, types, casts and the rest of the catalog —, without owners or privileges (#575 checks
+  those) nor dropped columns, read under a fixed `search_path` (`pg_get_*def` qualify a name by it),
+  each line hashed (a line holding a newline cannot pass for two), and the `md5` of the whole compared
+  with the fingerprints admitted for the **migrations applied: the latest and their count** (`''`, 0: a
+  fresh database; the count tells apart a migration merged after a more recent one, which keeps the
+  latest unchanged). An empty migrations table (a first `migrate` interrupted) has its own refusal. Measured: a dev database migrated step by step since
+  the project's start, a fresh one migrated under a non-superuser owner to the same version, and a
+  `pg_dump` restoration all give the same lines. Hashes only in a refusal, never a name; the runbook
+  holds a byte-identical copy of the query (`PostgresRolesProcedureTest` pins both) to name the lines
+  that differ. Every fingerprint is kept: a procedure played from a checkout ahead of the environment
+  still knows its migrations, and one behind it (or a database older than the fingerprints) is refused
+  as such, not as an alteration. Several fingerprints may be admitted for the same migrations — a
+  PostgreSQL bump that changes how a definition is printed needs two until every environment has it;
+  the image is pinned identically in `.env`, `versions.lock`, `postgres.yaml` and CI's `test-backend`
+  service (`tools/tests/postgres-image-pins.test.sh`), CI having stayed on 18.4 unnoticed until #611.
+  **Every migration adds its fingerprint to that block in the same change**: `DatabaseOwnerSettingsVerificationTest`
+  computes the migrated test database's with the block's own query (between its « empreinte » markers)
+  and turns red, its message giving the line to add; it also replays the block — measured premises,
+  then each gesture refused, one family of lines at a time, and for a gesture on an object a migration
+  would create (a rule disabled, a policy given to another role), the fingerprint before and after.
+  Proving such a test still bites takes a mutation that keeps the reference database's fingerprint
+  (replace a column by the value it has everywhere there), or every case fails for the wrong reason. Not a boundary
+  against whoever holds the migrator — they can delete rows outright —, a net against a persistent
+  gesture that would cut the application silently. **Nothing repairs these states**: the procedure fails as long as one holds,
   and a writing `exec` is #520's exception alone — issue #610;
   `cpg_reader` is a second net against an operator's mistake, not a boundary against whoever holds
   `exec` (`trust` on the local socket gives the superuser too) — a `port-forward` or an ephemeral
@@ -529,7 +564,9 @@ paths:
   a column added `NOT NULL` has a default or is filled by the migration itself
   (`Version20260914170000` is the model); **never drop or rename a column in the release that stops
   reading it**, only in the next one; a Messenger message in flight at deploy time must stay readable
-  by both versions (v0.11.0's `SendAccountInvitationMessage.userId` note). Only migrations the old code
+  by both versions (v0.11.0's `SendAccountInvitationMessage.userId` note); and the migration adds the
+  fingerprint of the schema it leaves to `verify.sql`'s `#611` block (issue #611, see the roles bullet
+  above — the test says which line). Only migrations the old code
   cannot survive fall outside this order — see the maintenance window below.
   **A migration that writes into one of the eight ordered content tables, then alters or indexes that
   table, can pass the CI and fail only on a populated database — preprod, or a dev database with
