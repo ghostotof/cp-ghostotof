@@ -294,6 +294,36 @@ final class PostgresRolesProcedureTest extends TestCase
         self::assertSame(4, preg_match_all("/RAISE EXCEPTION '#597 :/", $verify), 'Quatre refus #597 dans le bloc de vérification.');
     }
 
+    /**
+     * Issue #608 : propriétaire de la base (#575), le rôle de migration peut,
+     * sans être superutilisateur, la rendre inutilisable pour l'application.
+     * Mesuré sur l'image épinglée : un réglage de base (`search_path`,
+     * `idle_session_timeout`, `default_transaction_read_only`…), `CONNECTION
+     * LIMIT 0`, `IS_TEMPLATE`, `REVOKE CONNECT … FROM PUBLIC` ; et tout rôle
+     * pose sur lui-même un réglage propre à la base (`ALTER ROLE … IN DATABASE
+     * … SET`), que ni le `RESET ALL` de roles.sql ni `rolconfig` ne voient.
+     * verify.sql n'admet donc qu'un réglage de base, le fuseau de
+     * `Version20261011120000`, à la valeur exacte de `date.timezone` des
+     * images, et seulement une fois les migrations passées (la procédure
+     * précède la première sur une base neuve). Ce test lit la forme ; chaque
+     * refus a été joué sur l'image épinglée (.claude/rules/deploiement.md).
+     */
+    public function testTheVerificationRefusesWhatTheDatabaseOwnerCanAlter(): void
+    {
+        $ini = (string) file_get_contents(\dirname(__DIR__, 5).'/docker/php/php.prod.ini');
+        self::assertSame(1, preg_match('/^date\.timezone = (\S+)$/m', $ini, $timezone), 'php.prod.ini : une ligne « date.timezone = <fuseau> ».');
+
+        $verify = $this->normalized($this->statements('verify.sql'));
+
+        self::assertStringContainsString(\sprintf("CASE WHEN to_regclass('public.doctrine_migration_versions') IS NULL THEN NULL ELSE ARRAY['TimeZone=%s'] END", $timezone[1]), $verify, 'Le seul réglage de base admis : le fuseau des images, une fois migrée.');
+        self::assertStringContainsString('setdatabase = d.oid AND setrole = 0', $verify);
+        self::assertStringContainsString('setdatabase = d.oid AND setrole <> 0', $verify, 'Aucun réglage de rôle propre à la base (ALTER ROLE … IN DATABASE).');
+        self::assertStringContainsString('d.datconnlimit <> -1', $verify);
+        self::assertStringContainsString('d.datistemplate', $verify);
+        self::assertStringContainsString("NOT has_database_privilege(r, current_database(), 'CONNECT')", $verify);
+        self::assertSame(5, preg_match_all("/RAISE EXCEPTION '#608 :/", $verify), 'Cinq refus #608 dans le bloc de vérification.');
+    }
+
     private function normalized(string $text): string
     {
         return trim((string) preg_replace('/\s+/', ' ', $text));
