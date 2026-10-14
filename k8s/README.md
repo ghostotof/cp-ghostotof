@@ -1077,10 +1077,10 @@ aucun réglage `ALTER ROLE … IN DATABASE`, pas de limite de connexions, pas un
 modèle, `CONNECT` pour les trois rôles ; les noms des réglages, jamais leurs
 valeurs), puis `#611 : vérification` sans rien de plus — le schéma de la
 base est exactement celui que ses migrations laissent (son empreinte, admise
-pour la dernière migration passée et leur nombre) —, puis `conforme` et `COMMIT`. Un refus
-`#608` ou `#611` ne se répare pas par la procédure, qui échoue tant que l'écart
-existe : aucun chemin écrit à ce jour (issue #610) ; pour `#611`, la requête
-qui suit nomme les objets en cause. Un `#611 : aucune empreinte de schéma
+pour la dernière migration passée et leur nombre) —, puis `conforme` et `COMMIT`.
+Un refus `#611` ne se répare pas par la procédure, qui échoue tant que l'écart
+existe : la requête qui suit nomme les objets en cause. Un écart `#608`, si
+(issue #610 ; ci-dessous). Un `#611 : aucune empreinte de schéma
 connue pour ces migrations` n'est pas une altération : le checkout est en
 retard sur l'environnement (`verify.sql` garde les empreintes de toutes les
 migrations), le mettre à jour et relancer — ou la base est antérieure aux
@@ -1100,6 +1100,34 @@ mesuré, #593). Un `55P03` est un `ALTER … OWNER TO` bloqué par une
 transaction longue (une migration, un seed) : relancer hors déploiement. Des
 mots de passe absents ou trop courts, ou un `ROTATE` qui ne vaut ni 0 ni 1,
 sont refusés avant toute écriture.
+
+**Un avis `NOTICE: #610 : …`** (issue #610) : `roles.sql` a trouvé la base
+de l'application altérée et l'a remise en l'état que le bloc `#608` de
+`verify.sql` attend, dans la même transaction — réglages de base (le fuseau
+seul, à la valeur de `Version20261011120000`, et seulement une fois elle
+passée), réglages `ALTER ROLE … IN DATABASE … SET` de tout rôle, `CONNECT`
+rendu à `PUBLIC`, limite de connexions et marque de modèle retirées. Il nomme
+les réglages trouvés et compte les rôles, jamais une valeur ni un nom de rôle.
+Sur une base saine, aucun avis. La réparation n'est validée qu'avec le reste,
+après `conforme` : un refus plus loin l'annule elle aussi. Un avis n'est
+**jamais anodin** : personne n'altère la base par le chemin normal. Seuls
+peuvent avoir fait le geste le propriétaire (`cpg_migrator`, c'est-à-dire le
+Job de migration ou qui détient son URL), un rôle sur lui-même (une injection
+SQL sous `cpg_app`) ou le superutilisateur. Donc, après le `COMMIT` :
+
+1. noter l'heure et les avis, puis traiter l'événement comme un incident de
+   sécurité : relire les journaux de `backend`, du `worker` et du dernier Job
+   de migration autour du moment probable, et le journal de sécurité ;
+2. si le geste peut venir d'une URL de base de données divulguée, rejouer la
+   procédure avec `ROTATE=1` et republier les deux URL (§ ci-dessus) ;
+3. les sessions déjà ouvertes gardent les réglages lus à leur connexion. FPM
+   en ouvre une par requête, mais le `worker` garde la sienne jusqu'à une
+   heure (`--time-limit=3600`) : `kubectl -n "${NS:?preprod ou prod}" rollout
+   restart deployment/worker` pour ne pas attendre.
+
+Un refus `#608` **après** des avis `#610`, ou sans eux, est un défaut de la
+réparation, pas un état à corriger à la main (un `exec` qui écrit hors de la
+procédure est interdit, #520) : ouvrir une issue avec le message du refus.
 
 **Lire la ligne `mot_de_passe_cpg_app_ecrit | mot_de_passe_cpg_migrator_ecrit`**
 avant de publier quoi que ce soit : `t` pour un rôle créé ou une rotation,

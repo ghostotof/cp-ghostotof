@@ -223,12 +223,15 @@ paths:
   pinned image by hand for #593 (first pass, rerun, rotation, refusals, truncated stream) and for #597
   (two passes, then each of `verify.sql`'s four #597 refusals) and for #608 (a fresh database, a
   migrated one twice, a rotation, then each `ALTER` below) and for #611 (a fresh database, then
-  a migrated one twice, then each gesture above refused in exit 3, then passing once undone), and preprod
-  is their proof at each change. **Accepted limits** (security review of #575): any role may `ALTER ROLE` itself (password,
+  a migrated one twice, then each gesture above refused in exit 3, then passing once undone) and for #610
+  (a database restored by `pg_dump` from the migrated test database, every `#608` gesture made by
+  `cpg_migrator` and `cpg_app` themselves, repaired with its notices and committed, a silent rerun, a
+  rotation), and preprod is their proof at each change. **Accepted limits** (security review of #575): any role may `ALTER ROLE` itself (password,
   `SET` defaults) — an injection could cut the application durably; the procedure resets the three roles'
   attributes and `RESET ALL` at every pass, and `verify.sql` refuses a stray attribute — `RESET ALL`
   misses a setting scoped to the database (`ALTER ROLE … IN DATABASE … SET`, which `cpg_app` may set on
-  itself, measured), so `verify.sql` refuses any such setting, whatever its role (#608).
+  itself, measured), so `verify.sql` refuses any such setting, whatever its role (#608), and
+  `roles.sql` removes it (#610, below).
   **The migrator owns the database, and an owner may cut it** (issue #608, measured on the pinned
   image): a database-level setting applied to every new session (`search_path`, `role`,
   `idle_session_timeout`, `default_transaction_read_only`, `statement_timeout`, `password_encryption`…),
@@ -244,7 +247,23 @@ paths:
   replayed on the migrated test database by `DatabaseOwnerSettingsVerificationTest` (throwaway roles, one
   rolled-back transaction): it passes as is, and refuses each alteration above with its cause. The
   procedure's own session ignores these settings (`PGOPTIONS`, above), so the one that would have stopped
-  it reaches `verify.sql`. **Owner of the database and of every object of `public`, the migrator may also
+  it reaches `verify.sql`. **And `roles.sql` repairs every one of them** (issue #610, decided 2026-10-14):
+  until then nothing written did — the procedure failed as long as one held, and a writing `exec` outside
+  it is forbidden (#520). Its step 4, a pure-SQL `DO` block (no psql variable), puts the database back in
+  the state the `#608` block expects, writing only on a gap (a healthy database is not rewritten, its
+  default ACL stays implicit): the database settings reset, then the time zone set again **only once
+  `Version20261011120000` ran** (its row, as `verify.sql` reads it) at the value that frozen migration
+  writes — the migration cannot be replayed, it also converts the timestamps; `PostgresRolesProcedureTest`
+  ties the value to it —; every `ALTER ROLE … IN DATABASE` setting, **whatever the role** (`verify.sql`
+  refuses them all, a superuser-set one included); `CONNECT` granted back **to `PUBLIC`**, the image's
+  default (`privileges.sql` revokes it on `postgres` and `template1` only; `pg_hba.conf` filters the roles);
+  no connection limit, no template flag. `TEMPORARY` and `ALLOW_CONNECTIONS` are left as `verify.sql` leaves
+  them. Each repair prints a `NOTICE: #610 : …` — setting names and counts, never a value nor a role name
+  (the superuser's is in a Secret) —, committed with the rest after `conforme`; the runbook says what such
+  a notice means (an incident: someone holding the migrator or `cpg_app` altered the database) and that a
+  `#608` refusal left after it is a defect of the repair, never a hand fix. `DatabaseOwnerSettingsVerificationTest`
+  replays the block after every gesture the `#608` block refuses (refused first, then repaired, then the
+  block passes), on a healthy database (state unchanged) and before the time-zone migration (none set). **Owner of the database and of every object of `public`, the migrator may also
   empty the application's DML without any error** (issue #611, each gesture measured on the pinned
   image): row-level security without a policy (`cpg_app`, no `BYPASSRLS`, reads no row, its
   `UPDATE`/`DELETE` touch nothing); a schema named after `cpg_app` and open to it, which the default
@@ -278,8 +297,8 @@ paths:
   Proving such a test still bites takes a mutation that keeps the reference database's fingerprint
   (replace a column by the value it has everywhere there), or every case fails for the wrong reason. Not a boundary
   against whoever holds the migrator — they can delete rows outright —, a net against a persistent
-  gesture that would cut the application silently. **Nothing repairs these states**: the procedure fails as long as one holds,
-  and a writing `exec` is #520's exception alone — issue #610;
+  gesture that would cut the application silently. **Nothing repairs these states** (unlike `#608`'s, which
+  `roles.sql` repairs, #610): the procedure fails as long as one holds, and a writing `exec` is #520's exception alone;
   `cpg_reader` is a second net against an operator's mistake, not a boundary against whoever holds
   `exec` (`trust` on the local socket gives the superuser too) — a `port-forward` or an ephemeral
   container reaches the loopback, where only `cpg_reader` is trusted since the review of #593, so it

@@ -167,8 +167,10 @@ $$;
 -- (l'application n'a pas de table temporaire) et ALLOW_CONNECTIONS false,
 -- refusé sur la base courante et qui rendrait ce contrôle injoignable. Les
 -- options de connexion de la procédure (PGOPTIONS) écartent ces réglages de
--- sa propre session : celui qui l'aurait arrêtée arrive ici. Du SQL pur,
--- rejoué sur la base de test par DatabaseOwnerSettingsVerificationTest.
+-- sa propre session : celui qui l'aurait arrêtée arrive ici. L'étape 4 de
+-- roles.sql répare chacun de ces écarts plus tôt dans la transaction (#610) :
+-- ce bloc reste le contrôle, et un refus ici est un défaut de la réparation.
+-- Du SQL pur, rejoué sur la base de test par DatabaseOwnerSettingsVerificationTest.
 \echo '--- #608 : vérification'
 DO $$
 DECLARE
