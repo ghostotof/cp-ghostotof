@@ -803,7 +803,7 @@ jobs:
     needs: [release-version, deploy-preprod]
     if: startsWith(github.ref, 'refs/heads/release/')
     runs-on: ubuntu-latest
-    timeout-minutes: 20 # habituel ~1 min 30 ; rollouts bornés à 60 s, curl à 15 s, sonde pg_hba attendue 120 s et Job témoin 300 s (chacun + ~35 s de wait-rollout.sh, + 90 s au plus pour l'arrêter s'il tourne encore à l'échec, #535, #596)
+    timeout-minutes: 20 # habituel ~1 min 30, mais au-delà des 3–10× de #285 à dessein : la somme des attentes du pire cas, ~16 min, l'emporte — rollouts bornés à 60 s, curl à 15 s, sonde pg_hba attendue 120 s et Job témoin 300 s (chacun + ~35 s de wait-rollout.sh, + 90 s au plus pour l'arrêter s'il tourne encore à l'échec, #535, #596)
     # Les secrets d'environnement ne sont servis qu'aux jobs qui déclarent
     # l'environnement, et sa politique de branche borne d'où ils sont lisibles
     # (audit 2026-09-16, A4).
@@ -861,10 +861,12 @@ jobs:
         run: |
           status=0
           tools/run-job.sh preprod k8s/base/postgres-hba-probe-job.yaml sans-objet 120 || status=$?
-          # Seul le code 1 dit que la sonde a tourné sans obtenir le refus ; un
+          # Le code 1 couvre la sonde qui n'a pas obtenu le refus, mais aussi un
+          # pod qui n'a pas démarré (pull, clé de Secret absente) : le message
+          # renvoie à la ligne « #596 : … » de la sonde, qui nomme la cause. Un
           # refus avant le cluster (2) ou du cluster (3) est déjà nommé.
           if [ "$status" -eq 1 ]; then
-            echo "::error::Le superutilisateur PostgreSQL n'est pas refusé par TCP en préprod (issue #596) : le serveur ne lit pas le pg_hba.conf du dépôt (args de postgres.yaml, rollout de postgres). Les journaux de la sonde sont ci-dessus." >&2
+            echo "::error::La sonde du pg_hba.conf a échoué (issue #596). Sa ligne « #596 : ÉCHEC … » ci-dessus dit pourquoi : superutilisateur admis ou mot de passe demandé (le serveur ne lit pas le pg_hba.conf du dépôt : args de postgres.yaml, rollout de postgres), ou serveur injoignable. Sans cette ligne, le pod n'a pas démarré (image, Secret postgres-credentials) : voir l'événement nommé ci-dessus." >&2
           fi
           exit "$status"
       # Issue #470 : un worker `Ready` ne prouve pas qu'il décode ce que l'API
