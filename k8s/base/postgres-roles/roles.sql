@@ -45,13 +45,13 @@
 -- l'exec (chiffré entre le poste et l'API server, puis jusqu'au kubelet) et
 -- atteint le serveur par le socket local.
 --
--- Une transaction laissée en attente (flux bloqué en route) garderait les
--- verrous ACCESS EXCLUSIVE des transferts de propriété devant l'API : la
--- session est fermée au bout de 30 s d'inactivité, et tout est annulé.
+-- Une transaction laissée en attente (flux bloqué en route), le délai des
+-- instructions, le rôle et le chemin de recherche de la session sont fixés
+-- par les options de connexion de la procédure (PGOPTIONS, k8s/README.md) :
+-- elles l'emportent dès la connexion sur un réglage de la base (#608).
 SET log_min_error_statement = panic;
 SET log_statement = none;
 SET log_min_duration_statement = -1;
-SET idle_in_transaction_session_timeout = '30s';
 SELECT EXISTS (SELECT FROM pg_roles WHERE rolname = :'app_role') AS app_existed,
        EXISTS (SELECT FROM pg_roles WHERE rolname = :'migrator_role') AS migrator_existed,
        length(:'app_pw') >= 32 AND length(:'migrator_pw') >= 32 AS passwords_ok,
@@ -75,7 +75,9 @@ DO $$ BEGIN RAISE EXCEPTION '#593 : rotate vaut 0 ou 1 : rien n''est écrit'; EN
 --    chaque passage : un rôle qui existait déjà (ou qu'une injection aurait
 --    altéré — ALTER ROLE sur soi-même est permis à tout rôle) perd tout
 --    attribut de trop et tout réglage de session (`RESET ALL`). Aucun n'est
---    superutilisateur ni ne peut créer une base ou un rôle.
+--    superutilisateur ni ne peut créer une base ou un rôle. `RESET ALL` ne
+--    touche pas un réglage propre à la base (`ALTER ROLE … IN DATABASE …
+--    SET`) : verify.sql le refuse (#608), rien ici ne le répare (#610).
 SELECT format('CREATE ROLE %I', r)
 FROM (VALUES (:'app_role'), (:'migrator_role'), (:'reader_role')) AS v(r)
 WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = r) \gexec

@@ -1044,6 +1044,7 @@ DB="$(kubectl -n "${NS:?preprod ou prod}" get secret postgres-credentials -o jso
 #    Mots de passe et rotation en tête de l'entrée standard : jamais dans l'argv de l'exec.
 #    BEGIN en tête du flux, commit.sql en dernier : il ne valide que si verify.sql est allé
 #    au bout (pas --single-transaction, qui validait un flux coupé ou incomplet).
+#    PGOPTIONS fixe la session dès la connexion, devant tout réglage de la base (#608).
 {
   printf 'BEGIN;\n'
   printf '\\set app_pw '; cat "$TMP/app-password"; printf '\n'
@@ -1051,7 +1052,7 @@ DB="$(kubectl -n "${NS:?preprod ou prod}" get secret postgres-credentials -o jso
   printf '\\set rotate %s\n' "$ROTATE"
   cat k8s/base/postgres-roles/roles.sql k8s/base/postgres-roles/privileges.sql k8s/base/postgres-roles/verify.sql k8s/base/postgres-roles/commit.sql
 } | kubectl -n "${NS:?preprod ou prod}" exec -i deploy/postgres -c postgres -- \
-  sh -c 'PGOPTIONS="-c lock_timeout=5s" psql -X -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v app_role=cpg_app -v migrator_role=cpg_migrator -v reader_role=cpg_reader -f -'
+  sh -c 'PGOPTIONS="-c lock_timeout=5s -c idle_in_transaction_session_timeout=30s -c statement_timeout=0 -c transaction_timeout=0 -c idle_session_timeout=0 -c default_transaction_read_only=off -c role=none -c search_path=pg_catalog,pg_temp -c password_encryption=scram-sha-256" psql -X -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v app_role=cpg_app -v migrator_role=cpg_migrator -v reader_role=cpg_reader -f -'
 ```
 
 Chaque `ALTER … OWNER TO` prend un verrou `ACCESS EXCLUSIVE` tenu jusqu'au
@@ -1067,10 +1068,16 @@ privilèges par défaut, `t | f` pour le lecteur, le `pg_hba.conf` actif
 (`/etc/postgresql/pg_hba.conf`, `0`, `0`, `reject` — #593), les bases de
 l'image fermées (`t | f | 0 | 0` — #597 : refus avant toute règle qui
 accepte, base de l'application au nom non réservé, aucune base de plus,
-plus de `CONNECT`/`TEMPORARY` à `PUBLIC` sur `postgres` et `template1`),
-puis `conforme` et `COMMIT`. Une base créée à la main (une restauration)
-fait donc échouer la procédure tant qu'elle existe : la supprimer, ou
-décider de l'admettre, avant de relancer. **Un écart fait échouer la commande** : `verify.sql` se termine
+plus de `CONNECT`/`TEMPORARY` à `PUBLIC` sur `postgres` et `template1` ; une
+base créée à la main, une restauration, fait donc échouer la procédure tant
+qu'elle existe : la supprimer, ou décider de l'admettre, avant de relancer),
+la base de l'application (`{TimeZone} | 0 | -1 | f | 3` — #608 : le fuseau
+seul réglage de base, vide tant que `Version20261011120000` n'est pas passée,
+aucun réglage `ALTER ROLE … IN DATABASE`, pas de limite de connexions, pas un
+modèle, `CONNECT` pour les trois rôles ; les noms des réglages, jamais leurs
+valeurs), puis `conforme` et `COMMIT`. Un refus `#608` ne se répare pas par la
+procédure, qui échoue tant que l'écart existe : aucun chemin écrit à ce jour
+(issue #610). **Un écart fait échouer la commande** : `verify.sql` se termine
 par un bloc qui lève une erreur sur chaque attente trahie, psql sort en 3
 avant `commit.sql` et la session close annule tout — rien n'est à défaire,
 lire la cause, corriger, relancer l'étape 2. **Sans `conforme` ni `COMMIT`,
@@ -1093,7 +1100,8 @@ l'application serait coupée à son redémarrage suivant.
 inconnu** : le flux, une vingtaine de Ko, est souvent déjà livré dans le pod,
 et psql peut aller jusqu'au `COMMIT` sans que la sortie revienne. Un flux
 coupé avant `commit.sql` n'écrit rien (mesuré, #593), et une transaction
-laissée en attente est fermée au bout de 30 s (`idle_in_transaction_session_timeout`).
+laissée en attente est fermée au bout de 30 s (`idle_in_transaction_session_timeout`,
+dans `PGOPTIONS`).
 Relancer **la seule commande de l'étape 2, dans le même terminal** (mêmes
 fichiers de `$TMP`, même `ROTATE`) — elle est rejouable, et ses mots de
 passe sont ceux que la base a peut-être déjà — **jamais l'étape 1**, qui en

@@ -187,11 +187,18 @@ paths:
   nothing; **an interrupted command is an unknown state** all the same (the ~20 KB stream is usually
   in the pod already, psql may reach the COMMIT unseen): rerun step 2 alone with the **same** `$TMP`
   files and `ROTATE`, never step 1. `roles.sql` silences the server's statement logs **before** its
-  first statement carrying a password (the length guard), sets `idle_in_transaction_session_timeout`
-  to 30 s (a stalled stream would hold the ownership transfers' locks in front of the API), and prints
+  first statement carrying a password (the length guard), and prints
   whether it wrote each password (`t`/`f`, never the value) — **never publish an URL whose password was
-  not written**, the restart after would cut the application. The SQL files hold no transaction control
-  and no reconnection. `PostgresRolesProcedureTest` fixes the exec line word for word and pins the
+  not written**, the restart after would cut the application. **The session is set by the exec's
+  `PGOPTIONS`**, never by a `SET` in a file (issue #608): a connection option beats a setting of the
+  database or of a role in it from the connection on, `BEGIN` included — `lock_timeout=5s`,
+  `idle_in_transaction_session_timeout=30s` (a stalled stream would hold the ownership transfers' locks
+  in front of the API), `statement_timeout=0`, `transaction_timeout=0`, `idle_session_timeout=0`,
+  `default_transaction_read_only=off`, `role=none` (a database-level `role` made the superuser session
+  run as the migrator — measured; `RESET ROLE` falls back to that same value), `search_path=pg_catalog,pg_temp`,
+  `password_encryption=scram-sha-256` (the only method the repository's `pg_hba.conf` accepts);
+  `PostgresRolesProcedureTest` lists them with their reasons, no more, no less. The SQL files hold no
+  transaction control and no reconnection. `PostgresRolesProcedureTest` fixes the exec line word for word and pins the
   stream, `commit.sql` and its mark, and the files (no echo of a variable, a password cited only in its
   three places, no shell, `\copy`, `\w`, `\setenv` nor `PROGRAM`, the rotation gate). That `exec` is
   the **one written exception** to #520 (below). It replaced the Job of #575 (`postgres-roles-job.yaml`, removed): a Job
@@ -214,10 +221,30 @@ paths:
   fail-closed, under `cpg_migrator` — none does today; write one and preprod says so; and
   `roles.sql`/`verify.sql` (psql meta-commands) run in no CI job: they were played against the
   pinned image by hand for #593 (first pass, rerun, rotation, refusals, truncated stream) and for #597
-  (two passes, then each of `verify.sql`'s four #597 refusals), and preprod
+  (two passes, then each of `verify.sql`'s four #597 refusals) and for #608 (a fresh database, a
+  migrated one twice, a rotation, then each `ALTER` below), and preprod
   is their proof at each change. **Accepted limits** (security review of #575): any role may `ALTER ROLE` itself (password,
   `SET` defaults) — an injection could cut the application durably; the procedure resets the three roles'
-  attributes and `RESET ALL` at every pass, and `verify.sql` refuses a stray attribute;
+  attributes and `RESET ALL` at every pass, and `verify.sql` refuses a stray attribute — `RESET ALL`
+  misses a setting scoped to the database (`ALTER ROLE … IN DATABASE … SET`, which `cpg_app` may set on
+  itself, measured), so `verify.sql` refuses any such setting, whatever its role (#608).
+  **The migrator owns the database, and an owner may cut it** (issue #608, measured on the pinned
+  image): a database-level setting applied to every new session (`search_path`, `role`,
+  `idle_session_timeout`, `default_transaction_read_only`, `statement_timeout`, `password_encryption`…),
+  `CONNECTION LIMIT`, `IS_TEMPLATE`, `REVOKE CONNECT … FROM PUBLIC` — `superuser` parameters, `RENAME`
+  (no `CREATEDB`) and `ALLOW_CONNECTIONS false` on the current database are refused to it. `verify.sql`'s
+  own `#608` block admits **one** database setting, the time zone, and only once `Version20261011120000`
+  ran — its row in `doctrine_migration_versions`, not the table's existence: a restored database or an
+  interrupted first `migrate` carries the table without the time zone —, at the exact value that frozen
+  migration writes, equal to `php.prod.ini`'s `date.timezone` (`PostgresRolesProcedureTest` ties the
+  three); it refuses a connection limit, a template flag and a missing `CONNECT` for any of the three
+  roles, and prints the settings' **names**, never their values (chosen by whoever holds the migrator).
+  `REVOKE TEMPORARY` is let through: the application uses no temporary table. That block is pure SQL,
+  replayed on the migrated test database by `DatabaseOwnerSettingsVerificationTest` (throwaway roles, one
+  rolled-back transaction): it passes as is, and refuses each alteration above with its cause. The
+  procedure's own session ignores these settings (`PGOPTIONS`, above), so the one that would have stopped
+  it reaches `verify.sql`. **Nothing repairs these states**: the procedure fails as long as one holds,
+  and a writing `exec` is #520's exception alone — issue #610;
   `cpg_reader` is a second net against an operator's mistake, not a boundary against whoever holds
   `exec` (`trust` on the local socket gives the superuser too) — a `port-forward` or an ephemeral
   container reaches the loopback, where only `cpg_reader` is trusted since the review of #593, so it
