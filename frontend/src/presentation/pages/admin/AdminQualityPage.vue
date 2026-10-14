@@ -5,7 +5,7 @@ import { useUnsavedOrderGuard } from '../../../application/admin/shared/useUnsav
 import { useAdminQualityPrinciples } from '../../../application/admin/quality/useAdminQualityPrinciples'
 import { useAdminQualityTraits } from '../../../application/admin/quality/useAdminQualityTraits'
 import { useAdminTranslation } from '../../../application/admin/translation/useAdminTranslation'
-import { applyTranslationDraft, collectProseFields } from '../../../application/admin/translation/proseFields'
+import { applyTranslationProposal, collectProseFields } from '../../../application/admin/translation/proseFields'
 import { useOrderDraft } from '../../../application/admin/shared/useOrderDraft'
 import { useOrderHandleFocus } from '../../../application/admin/shared/useOrderHandleFocus'
 import { useRowDragAndDrop } from '../../../application/admin/shared/useRowDragAndDrop'
@@ -52,9 +52,9 @@ import type { AdminQualityTrait } from '../../../domain/admin/quality/entities/A
  * depuis D8, changer de langue ne recharge plus aucune liste.
  *
  * **Conséquence sur l'assistant** : chacun bascule **son** formulaire vers la
- * locale cible (D9) et y rattache le brouillon au groupe de l'entrée source,
+ * locale cible (D9) et y rattache la proposition au groupe de l'entrée source,
  * si bien que l'enregistrer lie la traduction sans geste supplémentaire. Rien
- * n'est rechargé derrière, donc rien ne vient écraser le brouillon.
+ * n'est rechargé derrière, donc rien ne vient écraser la proposition.
  *
  * **« Modifier » sur une entrée d'une autre langue** aligne la langue du
  * formulaire sur celle de l'entrée : sans cela, l'enregistrement réécrirait
@@ -158,16 +158,16 @@ const isSubmittingTrait = ref(false)
  * Groupe de l'entrée dont le formulaire est issu (édition, ou « Créer la
  * version XX »), `null` sur une page blanche. Distinct de
  * `form.translationGroup`, qui est la valeur *choisie* dans le sélecteur :
- * l'assistant bascule le formulaire vers l'autre locale et doit y rattacher le
- * brouillon au groupe de la **source** (D9), y compris quand ce groupe n'avait
+ * l'assistant bascule le formulaire vers l'autre locale et doit y rattacher la
+ * proposition au groupe de la **source** (D9), y compris quand ce groupe n'avait
  * aucune traduction et que le sélecteur affichait donc « aucune ».
  */
 const principleSourceGroup = ref<string | null>(null)
 const traitSourceGroup = ref<string | null>(null)
 
-/** Locale de l'entrée dont le formulaire est un brouillon traduit, `null` sinon. */
-const principleDraftSourceLocale = ref<Locale | null>(null)
-const traitDraftSourceLocale = ref<Locale | null>(null)
+/** Locale de l'entrée dont le formulaire est une proposition traduite, `null` sinon. */
+const principleProposalSourceLocale = ref<Locale | null>(null)
+const traitProposalSourceLocale = ref<Locale | null>(null)
 
 const isEditingPrinciple = computed(() => null !== editingPrincipleId.value)
 const isEditingTrait = computed(() => null !== editingTraitId.value)
@@ -295,7 +295,7 @@ const traitTranslationOptions = computed(() => [
 
 function resetPrincipleForm(): void {
   editingPrincipleId.value = null
-  principleDraftSourceLocale.value = null
+  principleProposalSourceLocale.value = null
   principleSourceGroup.value = null
   principleForm.locale = SUPPORTED_LOCALES[0]
   principleForm.translationGroup = ''
@@ -306,7 +306,7 @@ function resetPrincipleForm(): void {
 
 function resetTraitForm(): void {
   editingTraitId.value = null
-  traitDraftSourceLocale.value = null
+  traitProposalSourceLocale.value = null
   traitSourceGroup.value = null
   traitForm.locale = SUPPORTED_LOCALES[0]
   traitForm.translationGroup = ''
@@ -320,7 +320,7 @@ function resetTraitForm(): void {
 // est conservé. Le sélecteur affiche donc « aucune » sans conséquence.
 function startEditPrinciple(principle: AdminQualityPrinciple): void {
   editingPrincipleId.value = principle.id
-  principleDraftSourceLocale.value = null
+  principleProposalSourceLocale.value = null
   principleSourceGroup.value = principle.translationGroup
   principleForm.locale = principle.locale
   principleForm.translationGroup = hasSibling(principles.value, principle) ? principle.translationGroup : ''
@@ -331,7 +331,7 @@ function startEditPrinciple(principle: AdminQualityPrinciple): void {
 
 function startEditTrait(trait: AdminQualityTrait): void {
   editingTraitId.value = trait.id
-  traitDraftSourceLocale.value = null
+  traitProposalSourceLocale.value = null
   traitSourceGroup.value = trait.translationGroup
   traitForm.locale = trait.locale
   traitForm.translationGroup = hasSibling(traits.value, trait) ? trait.translationGroup : ''
@@ -349,7 +349,7 @@ function startCreatePrincipleVersion(row: TranslationGroupRow<AdminQualityPrinci
   const existing = firstEntry(row, SUPPORTED_LOCALES)
 
   editingPrincipleId.value = null
-  principleDraftSourceLocale.value = null
+  principleProposalSourceLocale.value = null
   principleSourceGroup.value = row.key
   principleForm.locale = locale
   principleForm.translationGroup = row.key
@@ -361,7 +361,7 @@ function startCreatePrincipleVersion(row: TranslationGroupRow<AdminQualityPrinci
 /** Même geste pour un trait, qui n'a aucun champ non-prose à recopier. */
 function startCreateTraitVersion(row: TranslationGroupRow<AdminQualityTrait>, locale: Locale): void {
   editingTraitId.value = null
-  traitDraftSourceLocale.value = null
+  traitProposalSourceLocale.value = null
   traitSourceGroup.value = row.key
   traitForm.locale = locale
   traitForm.translationGroup = row.key
@@ -417,8 +417,8 @@ async function handleSubmitTrait(): Promise<void> {
 }
 
 /**
- * Demande un brouillon dans l'autre locale, puis bascule le formulaire en
- * **création** avec ce brouillon : la prose est remplacée, le reste conservé —
+ * Demande une proposition dans l'autre locale, puis bascule le formulaire en
+ * **création** avec cette proposition : la prose est remplacée, le reste conservé —
  * y compris le groupe de l'entrée source, pour que l'enregistrement rattache
  * la version proposée sans geste supplémentaire (spec 0004, D9). Rien n'est
  * enregistré ici — seul le bouton Enregistrer habituel persiste (ADR 0004,
@@ -427,35 +427,35 @@ async function handleSubmitTrait(): Promise<void> {
 async function handleTranslatePrinciple(targetLocale: Locale): Promise<void> {
   const sourceLocale = principleForm.locale
 
-  const draft = await translatePrinciple(
+  const proposal = await translatePrinciple(
     sourceLocale,
     targetLocale,
     collectProseFields(principleForm, PRINCIPLE_PROSE_FIELDS),
   )
-  if (!draft) {
+  if (!proposal) {
     return
   }
 
   editingPrincipleId.value = null
   principleForm.locale = targetLocale
   principleForm.translationGroup = principleSourceGroup.value ?? ''
-  applyTranslationDraft(principleForm, PRINCIPLE_PROSE_FIELDS, draft)
-  principleDraftSourceLocale.value = sourceLocale
+  applyTranslationProposal(principleForm, PRINCIPLE_PROSE_FIELDS, proposal)
+  principleProposalSourceLocale.value = sourceLocale
 }
 
 async function handleTranslateTrait(targetLocale: Locale): Promise<void> {
   const sourceLocale = traitForm.locale
 
-  const draft = await translateTrait(sourceLocale, targetLocale, collectProseFields(traitForm, TRAIT_PROSE_FIELDS))
-  if (!draft) {
+  const proposal = await translateTrait(sourceLocale, targetLocale, collectProseFields(traitForm, TRAIT_PROSE_FIELDS))
+  if (!proposal) {
     return
   }
 
   editingTraitId.value = null
   traitForm.locale = targetLocale
   traitForm.translationGroup = traitSourceGroup.value ?? ''
-  applyTranslationDraft(traitForm, TRAIT_PROSE_FIELDS, draft)
-  traitDraftSourceLocale.value = sourceLocale
+  applyTranslationProposal(traitForm, TRAIT_PROSE_FIELDS, proposal)
+  traitProposalSourceLocale.value = sourceLocale
 }
 
 async function handleDeletePrinciple(principle: AdminQualityPrinciple): Promise<void> {
@@ -542,7 +542,7 @@ useUnsavedOrderGuard(isAnyOrderDirty)
 
         <!--
           Verrouillé lui aussi tant qu'un ordre est modifié : l'appel au modèle
-          produirait un brouillon que le formulaire, verrouillé, ne pourrait pas
+          produirait une proposition que le formulaire, verrouillé, ne pourrait pas
           enregistrer — du quota dépensé pour rien (ADR 0004, coût borné).
         -->
         <div class="mb-3">
@@ -556,11 +556,11 @@ useUnsavedOrderGuard(isAnyOrderDirty)
         </div>
 
         <p
-          v-if="principleDraftSourceLocale"
+          v-if="principleProposalSourceLocale"
           class="alert alert-info small"
           role="status"
         >
-          {{ t('admin.translation.draftNotice', { locale: principleDraftSourceLocale.toUpperCase() }) }}
+          {{ t('admin.translation.proposalNotice', { locale: principleProposalSourceLocale.toUpperCase() }) }}
         </p>
 
         <p
@@ -801,11 +801,11 @@ useUnsavedOrderGuard(isAnyOrderDirty)
         </div>
 
         <p
-          v-if="traitDraftSourceLocale"
+          v-if="traitProposalSourceLocale"
           class="alert alert-info small"
           role="status"
         >
-          {{ t('admin.translation.draftNotice', { locale: traitDraftSourceLocale.toUpperCase() }) }}
+          {{ t('admin.translation.proposalNotice', { locale: traitProposalSourceLocale.toUpperCase() }) }}
         </p>
 
         <p

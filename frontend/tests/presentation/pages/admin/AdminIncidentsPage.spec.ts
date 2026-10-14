@@ -239,7 +239,7 @@ describe('AdminIncidentsPage', () => {
     expect(buttonLabelled(actionsForLine(wrapper, 'Panne du broker RabbitMQ'), 'Supprimer').attributes('disabled')).toBeDefined()
     expect(buttonLabelled(wrapper, 'Créer la version EN').attributes('disabled')).toBeDefined()
     expect(buttonLabelled(wrapper, 'Enregistrer').attributes('disabled')).toBeDefined()
-    // Un appel au modèle produirait un brouillon que le formulaire verrouillé ne
+    // Un appel au modèle produirait une proposition que le formulaire verrouillé ne
     // pourrait pas enregistrer : du quota dépensé pour rien (ADR 0004).
     expect(translateButton(wrapper).attributes('disabled')).toBeDefined()
 
@@ -392,11 +392,11 @@ describe('AdminIncidentsPage', () => {
     expect(incidents.update).not.toHaveBeenCalled()
 
     const banner = wrapper.get('form [role="status"]')
-    expect(banner.text()).toContain('Brouillon généré par IA')
+    expect(banner.text()).toContain('Proposition générée par IA')
     expect(banner.text()).toContain('FR')
   })
 
-  it('enregistre le brouillon comme une nouvelle entrée EN rattachée au même groupe', async () => {
+  it('enregistre la proposition comme une nouvelle entrée EN rattachée au même groupe', async () => {
     const incidents = createIncidentRepository()
     const { wrapper } = await mountPage(incidents)
 

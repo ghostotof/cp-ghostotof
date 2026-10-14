@@ -86,6 +86,10 @@ describe('fichiers de traduction', () => {
       // « CV sans identité » : publiable, mais pas anonyme.
       /\banonymous CV\b/i,
       /\bCV anonym/i,
+      // Ce que produit l'assistant de traduction est une proposition : il
+      // n'existe aucun état « brouillon » d'un contenu.
+      /\bbrouillon/i,
+      /\bdraft\b/i,
     ]
 
     const offending = [...values(fr as Messages), ...values(en as Messages)]

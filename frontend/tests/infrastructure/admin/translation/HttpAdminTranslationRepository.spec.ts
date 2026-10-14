@@ -27,11 +27,11 @@ describe('HttpAdminTranslationRepository', () => {
     vi.unstubAllGlobals()
   })
 
-  it('translate() envoie POST avec le dictionnaire, les cookies et le header CSRF, et rend le brouillon', async () => {
+  it('translate() envoie POST avec le dictionnaire, les cookies et le header CSRF, et rend la proposition', async () => {
     const fetchMock = vi.fn(async () => jsonResponse(200, { sourceLocale: 'fr', targetLocale: 'en', fields: TRANSLATED }))
     vi.stubGlobal('fetch', fetchMock)
 
-    const draft = await new HttpAdminTranslationRepository(API_BASE_URL).translate('fr', 'en', FIELDS)
+    const proposal = await new HttpAdminTranslationRepository(API_BASE_URL).translate('fr', 'en', FIELDS)
 
     expect(fetchMock).toHaveBeenCalledWith(
       PATH,
@@ -42,7 +42,7 @@ describe('HttpAdminTranslationRepository', () => {
         body: JSON.stringify({ sourceLocale: 'fr', targetLocale: 'en', fields: FIELDS }),
       }),
     )
-    expect(draft).toEqual({ sourceLocale: 'fr', targetLocale: 'en', fields: TRANSLATED })
+    expect(proposal).toEqual({ sourceLocale: 'fr', targetLocale: 'en', fields: TRANSLATED })
   })
 
   it('traduit un 422 en « validation », avec les violations dans le message', async () => {

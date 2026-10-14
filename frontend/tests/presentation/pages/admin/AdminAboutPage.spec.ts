@@ -562,7 +562,7 @@ describe('AdminAboutPage', () => {
         // une liste et perdrait le brouillon.
         for (const form of [SETTINGS_FORM, SITE_FORM, ME_FORM]) {
           expect(buttonLabelled(formOf(wrapper, form), 'Enregistrer').attributes('disabled')).toBeDefined()
-          // Un appel au modèle produirait un brouillon que le formulaire
+          // Un appel au modèle produirait une proposition que le formulaire
           // verrouillé ne pourrait pas enregistrer : du quota dépensé pour rien
           // (ADR 0004).
           expect(translateButton(wrapper, form).attributes('disabled')).toBeDefined()
@@ -926,7 +926,7 @@ describe('AdminAboutPage', () => {
       expect(siteCardRepository.update).not.toHaveBeenCalled()
 
       const banner = formOf(wrapper, SITE_FORM).get('[role="status"]')
-      expect(banner.text()).toContain('Brouillon généré par IA')
+      expect(banner.text()).toContain('Proposition générée par IA')
       expect(banner.text()).toContain('FR')
 
       await formOf(wrapper, SITE_FORM).trigger('submit.prevent')
@@ -1056,7 +1056,7 @@ describe('AdminAboutPage', () => {
       })
     })
 
-    it('assistant : bascule la page en EN et applique le brouillon APRÈS le rechargement des réglages', async () => {
+    it('assistant : bascule la page en EN et applique la proposition APRÈS le rechargement des réglages', async () => {
       const settingsRepository = createSettingsRepository()
       const translation = createTranslationRepository(TRANSLATED_SETTINGS)
       const { wrapper } = await mountPage(settingsRepository, undefined, undefined, translation)
@@ -1075,10 +1075,10 @@ describe('AdminAboutPage', () => {
       expect(valueOf(wrapper, '#admin-about-locale')).toBe('en')
       expect(settingsRepository.get).toHaveBeenCalledWith('en')
       // Le rechargement des réglages EN (le stub rend les valeurs FR) ne doit
-      // pas écraser le brouillon : celui-ci est appliqué une fois la locale chargée.
+      // pas écraser la proposition : celle-ci est appliquée une fois la locale chargée.
       expect(valueOf(wrapper, '#admin-about-site-eyebrow')).toBe('About this site')
       expect(valueOf(wrapper, '#admin-about-hobbies-subtitle')).toBe('Outside work')
-      expect(panelOf(wrapper, SETTINGS_PANEL).get('[role="status"]').text()).toContain('Brouillon généré par IA')
+      expect(panelOf(wrapper, SETTINGS_PANEL).get('[role="status"]').text()).toContain('Proposition générée par IA')
       expect(settingsRepository.update).not.toHaveBeenCalled()
 
       await formOf(wrapper, SETTINGS_FORM).trigger('submit.prevent')

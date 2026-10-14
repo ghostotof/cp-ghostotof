@@ -1,6 +1,6 @@
 import { inject, ref, type InjectionKey, type Ref } from 'vue'
 import type { Locale } from '../../../domain/portfolio/entities/Locale'
-import type { TranslationDraft, TranslationFields } from '../../../domain/admin/translation/entities/TranslationDraft'
+import type { TranslationProposal, TranslationFields } from '../../../domain/admin/translation/entities/TranslationProposal'
 import type { AdminTranslationRepository } from '../../../domain/admin/translation/repositories/AdminTranslationRepository'
 import {
   AdminTranslationError,
@@ -12,12 +12,12 @@ export const ADMIN_TRANSLATION_REPOSITORY: InjectionKey<AdminTranslationReposito
 export interface UseAdminTranslationResult {
   isTranslating: Ref<boolean>
   errorReason: Ref<AdminTranslationErrorReason | null>
-  translate: (sourceLocale: Locale, targetLocale: Locale, fields: TranslationFields) => Promise<TranslationDraft | null>
+  translate: (sourceLocale: Locale, targetLocale: Locale, fields: TranslationFields) => Promise<TranslationProposal | null>
 }
 
 /**
- * Partagé par toutes les pages admin qui proposent un brouillon traduit : la
- * page fournit les champs de prose, reçoit le brouillon (ou `null` en cas
+ * Partagé par toutes les pages admin qui offrent la traduction assistée : la
+ * page fournit les champs de prose, reçoit la proposition (ou `null` en cas
  * d'échec, la raison étant exposée) et décide seule quoi en faire — ce
  * composable ne touche jamais au formulaire ni à la persistance (ADR 0004, D4).
  * Pas de dépendance à useI18n() : la page traduit `errorReason`.
@@ -39,7 +39,7 @@ export function useAdminTranslation(): UseAdminTranslationResult {
     sourceLocale: Locale,
     targetLocale: Locale,
     fields: TranslationFields,
-  ): Promise<TranslationDraft | null> => {
+  ): Promise<TranslationProposal | null> => {
     isTranslating.value = true
     errorReason.value = null
 

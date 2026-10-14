@@ -6,11 +6,11 @@ import {
   useAdminTranslation,
 } from '../../../../src/application/admin/translation/useAdminTranslation'
 import type { AdminTranslationRepository } from '../../../../src/domain/admin/translation/repositories/AdminTranslationRepository'
-import type { TranslationDraft } from '../../../../src/domain/admin/translation/entities/TranslationDraft'
+import type { TranslationProposal } from '../../../../src/domain/admin/translation/entities/TranslationProposal'
 import { AdminTranslationError } from '../../../../src/domain/admin/translation/errors/AdminTranslationError'
 
 const FIELDS = { title: 'Panne', impact: 'Formulaire en 500.' }
-const DRAFT: TranslationDraft = { sourceLocale: 'fr', targetLocale: 'en', fields: { title: 'Outage', impact: 'Form down.' } }
+const PROPOSAL: TranslationProposal = { sourceLocale: 'fr', targetLocale: 'en', fields: { title: 'Outage', impact: 'Form down.' } }
 
 function mountWithComposable(repository: AdminTranslationRepository) {
   let captured: ReturnType<typeof useAdminTranslation> | undefined
@@ -26,20 +26,20 @@ function mountWithComposable(repository: AdminTranslationRepository) {
 }
 
 describe('useAdminTranslation', () => {
-  it('rend le brouillon et passe par isTranslating pendant l\'appel', async () => {
-    let resolve!: (draft: TranslationDraft) => void
+  it('rend la proposition et passe par isTranslating pendant l\'appel', async () => {
+    let resolve!: (proposal: TranslationProposal) => void
     const repository: AdminTranslationRepository = {
-      translate: vi.fn(() => new Promise<TranslationDraft>((r) => { resolve = r })),
+      translate: vi.fn(() => new Promise<TranslationProposal>((r) => { resolve = r })),
     }
     const composable = mountWithComposable(repository)
 
     const pending = composable.translate('fr', 'en', FIELDS)
     expect(composable.isTranslating.value).toBe(true)
 
-    resolve(DRAFT)
-    const draft = await pending
+    resolve(PROPOSAL)
+    const proposal = await pending
 
-    expect(draft).toEqual(DRAFT)
+    expect(proposal).toEqual(PROPOSAL)
     expect(repository.translate).toHaveBeenCalledWith('fr', 'en', FIELDS)
     expect(composable.isTranslating.value).toBe(false)
     expect(composable.errorReason.value).toBeNull()
@@ -51,9 +51,9 @@ describe('useAdminTranslation', () => {
     }
     const composable = mountWithComposable(repository)
 
-    const draft = await composable.translate('fr', 'en', FIELDS)
+    const proposal = await composable.translate('fr', 'en', FIELDS)
 
-    expect(draft).toBeNull()
+    expect(proposal).toBeNull()
     expect(composable.errorReason.value).toBe('rate-limited')
     expect(composable.isTranslating.value).toBe(false)
   })
@@ -72,7 +72,7 @@ describe('useAdminTranslation', () => {
   it('efface la raison de l\'erreur précédente au début de l\'appel suivant', async () => {
     const translate = vi.fn<AdminTranslationRepository['translate']>()
       .mockRejectedValueOnce(new AdminTranslationError('unavailable', 'Indisponible.'))
-      .mockResolvedValueOnce(DRAFT)
+      .mockResolvedValueOnce(PROPOSAL)
     const composable = mountWithComposable({ translate })
 
     await composable.translate('fr', 'en', FIELDS)
