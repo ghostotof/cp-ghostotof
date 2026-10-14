@@ -45,7 +45,7 @@ paths:
     (`pass(word|wd|phrase)`, `pwd`, `mot_de_passe`, any case, `hash` excluded) and may hold a string unless
     it carries that sequence **alone**; on any such parameter without `#[SensitiveParameter]` (interfaces
     included, and an implementation through its prototype's name since #414 — see
-    `.claude/rules/backend-architecture.md`); on any class of `src/` whose file, or the file of a trait it uses
+    `.claude/rules/backend-conventions.md`); on any class of `src/` whose file, or the file of a trait it uses
     (#421 — a trait is attributed to the class using it, the only one that can implement the interface or be a
     processor), names a `Symfony\Component\PasswordHasher\`
     type that is not declared in its `HASHERS` with the interface method the password reaches it by; and on any caller of those methods
@@ -77,7 +77,7 @@ paths:
     (issue #364), `Application/UsernameAllocationLockInterface` — adapter
     `Infrastructure/Doctrine/PostgresUsernameAllocationLock`, one transaction-scoped advisory lock for all, its
     wait bounded by the shared skeleton (`Shared/Infrastructure/Lock/PostgresLockedTransaction`, issue #512,
-    see `.claude/rules/deploiement.md`) → `UsernameAllocationLockTimeoutException` (500 `critical`):
+    see `.claude/rules/deploiement-etat-hors-pod.md`) → `UsernameAllocationLockTimeoutException` (500 `critical`):
     `invite()` checks the address, derives the username and saves under it, and dispatches only after its
     commit; `register()` refuses a taken username fast, hashes **outside** (slow), then re-checks and saves under
     it. Two simultaneous invitations of the same local part get `jean` and `jean2` — the second used to fail on
@@ -237,7 +237,7 @@ paths:
     the id is no secret and lets an operator revoke that token alone — and the token then lives until the
     next successful send purges it, or until it expires. A removal that took the row detaches the token
     through `VanishedEntities::deleteById()` (#569, #560): left managed, a later change and `save()` would have
-    sent an `UPDATE` touching no row; its re-save is now refused (see `.claude/rules/portfolio-contenus.md`).
+    sent an `UPDATE` touching no row; its re-save is now refused (see `.claude/rules/portfolio-ordre-ecritures.md`).
     Accepted limits, settled in the review of #425:
     a transport exception does not prove the e-mail stayed home (lost response after acceptance, SMTP
     reconnection failing after the `250`), so a received link can be dead — the retry sends another; a
@@ -381,7 +381,7 @@ paths:
     in preprod/prod it runs **only** through `k8s/base/create-user-job.yaml`, never `kubectl exec`, whose
     stderr is the operator's terminal and loses the `user-created` audit line — procedure in `k8s/README.md`,
     « Créer un compte super-administrateur »; the scope of « never `kubectl exec` », and its one read-only
-    exception for a human, is in `.claude/rules/deploiement.md`, issue #520) and
+    exception for a human, is in `.claude/rules/deploiement-pipeline.md`, issue #520) and
     `Presentation/Controller/CurrentUserController.php` (`GET /api/me`). Everything else is API Platform
     resources — see `.claude/rules/backoffice-api.md` for the `ROLE_SUPER` ones, plus the two **public** (no auth, no CSRF,
     IP rate-limited) ones of the set-password flow.

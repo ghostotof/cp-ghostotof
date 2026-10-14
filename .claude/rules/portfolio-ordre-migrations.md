@@ -42,7 +42,7 @@ database (no seeds). A plain `INSERT … VALUES` always inserts, so the CI catch
 DDL; an `UPDATE`, or an `INSERT … SELECT` from a table that is empty there, touches no row, so the
 CI is green and the refusal appears only on a populated database — a `make db-migrate` on a dev
 database with content, or the preprod deploy (fail-closed there: the migration Job fails before
-`apply -k`, see `.claude/rules/deploiement.md`); agents' worktrees, on empty test databases, miss it
+`apply -k`, see `.claude/rules/deploiement-pipeline.md`); agents' worktrees, on empty test databases, miss it
 too. Hence the model of `.claude/rules/seeding.md` (a data migration tested by `tests/Migrations/`
 against rows), required here: **a migration that writes into one of the eight tables has a
 `tests/Migrations/` test that first puts rows in the tables it writes and alters** (rows its
@@ -120,5 +120,5 @@ image's bootstrap superuser, owner of the tables; since #575 the application run
 `ALTER TABLE … DISABLE TRIGGER`, `DROP TRIGGER` and `SET session_replication_role` are refused to it
 (`42501`) — `ApplicationRolePrivilegesTest` proves it on the real schema, and that the trigger still
 fires under that role (`SECURITY INVOKER`). The test role of dev and CI stays the superuser, on purpose
-(this probe needs `session_replication_role`). See `.claude/rules/deploiement.md`, « The application
+(this probe needs `session_replication_role`). See `.claude/rules/deploiement-postgres.md`, « The application
 and the migrations run under two PostgreSQL roles ».

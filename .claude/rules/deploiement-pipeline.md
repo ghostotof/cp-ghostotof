@@ -162,7 +162,7 @@ paths:
   events that make PostgreSQL refuse the DDL (`55006`), and a write touching no row on the CI's empty
   database queues none. Which writes count, the fix (`SET CONSTRAINTS … IMMEDIATE` after the writes,
   never at the top), the test on rows it requires and the drop-and-recreate trap are in
-  `.claude/rules/portfolio-contenus.md`, « Trap for future migrations ».
+  `.claude/rules/portfolio-ordre-migrations.md`, « Trap for future migrations ».
 - **Every ExternalSecret of the release is synced before anything is migrated or rolled out**
   (issue #325). Right after `backend-config`, the `Deploy` step applies the ESO objects alone
   (`external-secrets.io_*.yaml` from the `kustomize build -o` output) and runs

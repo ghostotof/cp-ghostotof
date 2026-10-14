@@ -138,7 +138,7 @@ paths:
   republish it (a duplicate contact e-mail, or an invitation token regenerated once more); after a confirm
   timeout the long-lived worker channel may take a late ack for the next publish; while RabbitMQ restarts
   (`Recreate`, a release) publications fail loudly instead of vanishing — and since #485 that failure is a
-  named **503** (`MessageQueueUnavailableException`, see `.claude/rules/backend-architecture.md`) logged
+  named **503** (`MessageQueueUnavailableException`, see `.claude/rules/backend-conventions.md`) logged
   `warning`, never a `critical` 500, and a first invitation that could not be queued removes the account
   it had just created. The contact quota stays consumed **before** the send, on purpose (decided
   2026-10-11, review of #485): consuming it after the send let a concurrent burst through (×6 to ×12),

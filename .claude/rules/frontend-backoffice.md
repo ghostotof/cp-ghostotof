@@ -104,7 +104,7 @@ status announcement) that a fork would silently lose:
   (`admin.about.meCard.categoryLockedHelp`: create the card in the right category, then delete this one)
   referenced by `aria-describedby` **only while editing** — the hint is not rendered otherwise, and an
   IDREF to a missing element is an a11y fault. The server refuses another category with a 409 of type
-  `me-card-category-immutable` (`.claude/rules/portfolio-contenus.md`), which
+  `me-card-category-immutable` (`.claude/rules/portfolio-ordre-ecritures.md`), which
   `HttpAdminAboutMeCardRepository` reads as the reason `category-immutable` — keyed on the `type`, the
   other 409 of the cards staying `translation-already-exists`; only a SPA cached from before #578 can
   still send that body. `AdminAboutPage.spec.ts` pins the gesture (red before: `category: 'hobby'`,
@@ -117,7 +117,7 @@ status announcement) that a fork would silently lose:
 - **A me-card group spread across two categories is not signalled by the backoffice, by decision**
   (issue #573). Such a group (FR in one category, EN in another) predates #501's guard; the backend
   refuses, before any write, every write that would add a member to it or reorder one of its categories
-  (#561, `.claude/rules/portfolio-contenus.md`) — a text edit and the detachment stay accepted.
+  (#561, `.claude/rules/portfolio-ordre-ecritures.md`) — a text edit and the detachment stay accepted.
   What the admin sees if one ever exists: editing one of its members, « Version de » **looks empty** —
   `startEdit` keeps the card's own group (`hasSibling` looks across categories) while the options only
   list the form's category (`translationGroupOptions` keeps a retained group only when an entry of

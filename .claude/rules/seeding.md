@@ -32,7 +32,7 @@ answer in nearly every execution, not an error. `SeedWatchedProductsCommandTest`
 **A seed is atomic, per command** (issue #567). The count, the purge and the recreations of one command
 run in **one** transaction, under the order scope lock of every entity class the command writes
 (`OrderScopeLockInterface::withLocks()`, the `Administrator`s' own `withLock()` re-entering it — see
-`.claude/rules/portfolio-contenus.md`): a command that fails writes nothing, and the next run — the next
+`.claude/rules/portfolio-ordre.md`): a command that fails writes nothing, and the next run — the next
 deploy's Job (`backoffLimit: 0`, no retry inside a Job), or the operator's relaunch — repopulates.
 Before, the purge committed row by row outside any lock and each `Administrator::create()` in its own
 transaction, so a failure in the middle left a partial base — with `--force`, the previous content gone and

@@ -47,7 +47,7 @@ of the context, **every** envelope signed under the old key becomes unreadable �
 queues and `failed` alike. Before merging such a release: drain `async`, **read `failed` and replay or
 purge it** (`messenger:failed:show` by a human `kubectl exec`, replay and removal by Job, issue #521,
 `k8s/README.md` « File d'échec Messenger »), and deploy with `DEPLOY_MAINTENANCE_WINDOW=true`
-(`.claude/rules/deploiement.md`): otherwise an old API pod (`RollingUpdate`) still signs under the old key
+(`.claude/rules/deploiement-pipeline.md`): otherwise an old API pod (`RollingUpdate`) still signs under the old key
 while the worker (`Recreate`) already demands the new one, and a contact message sent then is lost — it
 exists only in the queue. Say so in the release notes. A rollback past #444 followed by a redeploy
 recreates unsigned messages, refused as such. `rollback-preprod` undoes `worker` together with `backend`

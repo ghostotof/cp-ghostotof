@@ -30,7 +30,7 @@ folder), so entities live inside their bounded context instead of a shared top-l
 (issue #611): its `#611` block admits, per migrations applied (the latest and their count), the
 schema's fingerprints, and the roles procedure fails on any other. `DatabaseOwnerSettingsVerificationTest`
 turns red on a migration without its line and prints it — add it, never remove an older one. Why, and what the fingerprint covers:
-`.claude/rules/deploiement.md`, the PostgreSQL roles bullet.
+`.claude/rules/deploiement-postgres.md`, the PostgreSQL roles bullet.
 
 **Every entity has a UUID v7 primary key, assigned in its constructor** (spec 0003, `v0.11.0`):
 `#[ORM\Id] #[ORM\Column(type: UuidType::NAME)] private Uuid $id;` with no `GeneratedValue`,
@@ -81,7 +81,7 @@ touched the row, and only then** — left managed, a later `save()` sent an `UPD
 silence; a row the condition spared, or already gone, still leaves the instance managed. A new DQL deletion by
 id goes through it. The registry is not per EntityManager: `detachVanished()` takes the manager only for the
 `detach()` (a Doctrine listener cannot receive it by injection), `deleteById()` reads it from the query. The details, the
-rejected options and the accepted limits live in `.claude/rules/portfolio-contenus.md` (ordering section).
+rejected options and the accepted limits live in `.claude/rules/portfolio-ordre-ecritures.md`.
 
 **Every entity timestamp is stored with its offset** (issue #434): `#[ORM\Column(type:
 Types::DATETIMETZ_IMMUTABLE)]` (`datetimetz` for a mutable object), PostgreSQL `TIMESTAMP(0) WITH TIME
