@@ -55,6 +55,12 @@ configMapGenerator:
   - name: rabbitmq-conf
     files:
       - rabbitmq.conf
+  # Issue #593 : même raison, le pg_hba.conf est monté par subPath et
+  # PostgreSQL ne le relit qu'au démarrage (ou sur SIGHUP) ; le hachage du nom
+  # le redémarre quand le fichier change.
+  - name: postgres-hba
+    files:
+      - pg_hba.conf=postgres-pg_hba.conf
 
 # Placeholders remplacés par chaque overlay via `kustomize edit set image`
 # (fait par le job de déploiement CI, jamais commité en dur : le registre et

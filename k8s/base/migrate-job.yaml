@@ -110,7 +110,7 @@ spec:
             # change. Ce Secret n'est monté nulle part ailleurs
             # (MigrationRoleSecretsTest) : l'URL du propriétaire n'atteint
             # jamais un pod qui sert des requêtes. Rôles et procédure :
-            # postgres-roles-job.yaml, k8s/README.md « Rôles PostgreSQL ».
+            # k8s/base/postgres-roles/, k8s/README.md « Rôles PostgreSQL ».
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
