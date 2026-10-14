@@ -24,7 +24,14 @@
 #   - sur le socket local : le superutilisateur admis (entrypoint, procédure
 #     des rôles). La sonde `pg_isready` du manifeste est rejouée pour dire que
 #     le serveur répond ; elle n'authentifie personne, elle ne mesure donc
-#     rien du fichier.
+#     rien du fichier ;
+#   - la sonde du smoke préprod (k8s/base/postgres-hba-probe.sh, issue #596),
+#     dans les deux sens : elle réussit contre ce serveur, et échoue contre un
+#     second, démarré sans `-c hba_file`, qui lit le pg_hba.conf de l'image
+#     dans PGDATA (le superutilisateur admis en SCRAM) — ce que ramènerait un
+#     `rollout undo` de `postgres` ou un overlay qui perd l'argument. Sa
+#     sortie, qui part dans les journaux du pipeline, ne nomme jamais le
+#     superutilisateur ni la base.
 #
 # Les mots de passe sont générés à chaque run et n'entrent dans aucun argument
 # de processus : fichiers d'environnement privés et entrée standard de psql.
@@ -46,6 +53,14 @@ esac
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 HBA="$ROOT/k8s/base/postgres-pg_hba.conf"
+# La sonde du smoke préprod (#596). Vérifiée avant tout montage : un chemin
+# source absent, Docker le crée en répertoire vide, et `sh` sur un répertoire
+# sort en 0 — la sonde passerait sans avoir rien mesuré (constaté).
+PROBE="$ROOT/k8s/base/postgres-hba-probe.sh"
+if [ ! -f "$PROBE" ]; then
+  echo "$PROBE introuvable : la sonde du smoke préprod (#596) n'aurait rien à jouer." >&2
+  exit 2
+fi
 # Le chemin que lit le serveur, pris dans le manifeste : une seule source.
 MOUNT="$(sed -n 's/^[[:space:]]*- hba_file=\([^[:space:]]*\)[[:space:]]*$/\1/p' "$ROOT/k8s/base/postgres.yaml")"
 if [ -z "$MOUNT" ] || [ "$(printf '%s\n' "$MOUNT" | wc -l)" -ne 1 ]; then
@@ -62,11 +77,13 @@ fi
 BOOTSTRAP=hba_bootstrap
 DB=hba_check
 server="check-postgres-hba-$$"
+# Le même serveur sans `-c hba_file` : le fichier de l'image (sonde #596).
+legacy="check-postgres-hba-pgdata-$$"
 network="check-postgres-hba-$$"
 umask 077
 scratch="$(mktemp -d)"
 cleanup() {
-  docker rm -f "$server" >/dev/null 2>&1 || true
+  docker rm -f "$server" "$legacy" >/dev/null 2>&1 || true
   docker network rm "$network" >/dev/null 2>&1 || true
   rm -rf "$scratch"
 }
@@ -84,28 +101,33 @@ docker run -d --name "$server" --network "$network" --user "$RUN_AS:$RUN_AS" \
   --env-file "$scratch/server.env" \
   -v "$HBA:$MOUNT:ro" \
   "$IMAGE" postgres -c "hba_file=$MOUNT" >/dev/null
+# Démarré en même temps, pour ne pas attendre deux initialisations l'une après l'autre.
+docker run -d --name "$legacy" --network "$network" --user "$RUN_AS:$RUN_AS" \
+  --env-file "$scratch/server.env" \
+  "$IMAGE" postgres >/dev/null
 rm -f "$scratch/server.env"
 
 # Prêt quand le serveur définitif écoute en TCP : le serveur temporaire de
 # l'initialisation n'écoute que le socket local. Jusqu'à 2 min.
-ready=
-for _ in $(seq 1 60); do
-  if [ "$(docker inspect -f '{{.State.Running}}' "$server")" != "true" ]; then
-    echo "PostgreSQL s'est arrêté au démarrage avec $HBA (fichier refusé ?) :" >&2
-    docker logs --tail 40 "$server" >&2 || true
-    exit 1
-  fi
-  if docker exec "$server" pg_isready -q -h 127.0.0.1 -U "$BOOTSTRAP" -d "$DB" >/dev/null 2>&1; then
-    ready=1
-    break
-  fi
-  sleep 2
-done
-if [ -z "$ready" ]; then
-  echo "PostgreSQL n'écoute pas en TCP au bout de 2 min :" >&2
-  docker logs --tail 40 "$server" >&2 || true
+# $1 conteneur, $2 ce qu'il lit (pour le message).
+wait_listening() {
+  for _ in $(seq 1 60); do
+    if [ "$(docker inspect -f '{{.State.Running}}' "$1")" != "true" ]; then
+      echo "PostgreSQL s'est arrêté au démarrage avec $2 (fichier refusé ?) :" >&2
+      docker logs --tail 40 "$1" >&2 || true
+      exit 1
+    fi
+    if docker exec "$1" pg_isready -q -h 127.0.0.1 -U "$BOOTSTRAP" -d "$DB" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 2
+  done
+  echo "PostgreSQL ($2) n'écoute pas en TCP au bout de 2 min :" >&2
+  docker logs --tail 40 "$1" >&2 || true
   exit 1
-fi
+}
+wait_listening "$server" "$HBA"
+wait_listening "$legacy" "le pg_hba.conf de l'image"
 
 failures=0
 fail() {
@@ -184,6 +206,31 @@ for address in 127.0.0.1 ::1; do
     || fail "cpg_reader ne passe plus par $address sans mot de passe."
 done
 
+# La sonde du smoke préprod (#596), lancée comme le Job : uid du manifeste,
+# variables libpq seulement, aucun mot de passe. $1 serveur visé.
+probe() {
+  docker run --rm --network "$network" --user "$RUN_AS:$RUN_AS" \
+    -e PGHOST="$1" -e PGUSER="$BOOTSTRAP" -e PGDATABASE="$DB" \
+    -v "$PROBE:/postgres-hba-probe.sh:ro" \
+    --entrypoint sh "$IMAGE" /postgres-hba-probe.sh 2>&1
+}
+# $1 libellé, $2 sortie de la sonde : ni le superutilisateur ni la base n'y figurent.
+probe_output_is_redacted() {
+  if grep -qF -e "$BOOTSTRAP" -e "$DB" <<<"$2"; then
+    fail "sonde #596 ($1) : sa sortie nomme le superutilisateur ou la base : « $2 »."
+  fi
+}
+# Un succès porte la marque que la sonde n'imprime que sur le refus attendu :
+# un code 0 seul ne prouve pas qu'elle a tourné.
+if ! out="$(probe "$server")" || ! grep -q '^#596 : refusé par pg_hba.conf' <<<"$out"; then
+  fail "sonde #596 contre $HBA : succès attendu, obtenu « $out »."
+fi
+probe_output_is_redacted "pg_hba.conf du dépôt" "$out"
+if out="$(probe "$legacy")"; then
+  fail "sonde #596 contre le pg_hba.conf de l'image (superutilisateur admis) : échec attendu, succès obtenu « $out »."
+fi
+probe_output_is_redacted "pg_hba.conf de l'image" "$out"
+
 # Le socket local, et la sonde du manifeste (le serveur répond ; elle
 # n'authentifie pas : seul le SELECT mesure la règle `local`).
 docker exec "$server" sh -c 'pg_isready -q -U "$POSTGRES_USER" -d "$POSTGRES_DB"' \
@@ -196,4 +243,4 @@ if [ "$failures" -ne 0 ]; then
   exit 1
 fi
 
-echo "PostgreSQL ($IMAGE) démarre avec $HBA : superutilisateur, cpg_reader et réplication refusés par TCP, cpg_app et cpg_migrator admis par SCRAM, loopback à cpg_reader seul, socket local inchangé."
+echo "PostgreSQL ($IMAGE) démarre avec $HBA : superutilisateur, cpg_reader et réplication refusés par TCP, cpg_app et cpg_migrator admis par SCRAM, loopback à cpg_reader seul, socket local inchangé ; la sonde du smoke préprod (#596) passe ici et échoue sur le fichier de l'image."
