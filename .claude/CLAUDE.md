@@ -59,12 +59,15 @@ This file only carries what applies everywhere, plus what runs from the shell (g
      "Expose", not "display": hiding a field client-side is presentation, never protection; the guard is
      `ApiRouteExposureTest` (see "Backoffice" below).
    - **The base tier (`ROLE_USER`) is discretion, not protection**: anyone gets it in one click, with no
-     account (`POST /api/account/base-access`), and every account has it (`CpgUser::getRoles()`). It never
-     gates nominative data: its contents (`Portfolio/CaseStudy`, `Portfolio/AnonymousCv`) are publishable by
-     construction, never served under the `^/api/cv` prefix (`ROLE_TRUSTED`), and never carry the
+     account (`POST /api/account/base-access`: a 15-minute JWT carrying **exactly** `ROLE_USER`), and every
+     account has it (`CpgUser::getRoles()`). It never gates nominative data: its contents
+     (`Portfolio/CaseStudy`, `Portfolio/AnonymousCv`) are publishable by construction — no name, employer
+     nor client —, never served under the `^/api/cv` prefix (`ROLE_TRUSTED`), and never carry the
      professional chronology — it re-identifies even without names (ADR 0003 D5 amended, 2026-09-13).
-   - **`ROLE_TRUSTED` is granted nominatively** by a `ROLE_SUPER` account (which inherits it through
-     `role_hierarchy`) via the invitation flow, never through a shared or published credential.
+   - **`ROLE_TRUSTED` is granted nominatively** by a `ROLE_SUPER` account via the invitation flow, never
+     through a shared or published credential; `ROLE_SUPER` inherits it through `role_hierarchy` (the CLI,
+     `app:user:create`, never grants `ROLE_TRUSTED` alone: `--role ROLE_SUPER` for the bootstrap, or a
+     base-tier account).
    - **Never name a real account in this repo** (issue #78, pt 5): a valid username in a public repository is
      half a credential, `login_throttling` or not.
    - The About page is **public in full, on purpose** (audit C3): what it publishes is decided at authoring
@@ -365,7 +368,7 @@ ADRs (status, dates and amendments live in each ADR):
   more sensitive than the CV: **`POST /api/logout` does not revoke the JWT** (accepted risk, amended
   2026-09-21).
 - `docs/adr/0004-assistance-ia.md` — anything that calls a language model: one importing class behind an
-  interface, bundle pinned exact, no call from a public render path, only publishable content leaves (the
+  interface, bundle pinned exact, no call from a public render path, only publishable backoffice content leaves (the
   nominative CV only to the site's host or self-hosted), never a call on behalf of the base tier, human in the loop, bounded cost, offline tests. Read
   it before adding any `Symfony\AI` usage or a new `ai.agent`.
 - `docs/adr/0005-etat-hors-du-pod.md` — no application state on the pod's filesystem. Read it before

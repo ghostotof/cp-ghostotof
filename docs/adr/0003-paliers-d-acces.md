@@ -4,8 +4,10 @@
 > glossaire, en emploie d'autres. Le titre « anonyme, invité, approuvé » désigne le **palier anonyme**,
 > le **palier de base** et le **palier de confiance**. « Palier intermédiaire » est le **palier de base** ;
 > « palier nominatif » et « palier supérieur » sont le **palier de confiance** — « nominatif » ne qualifie
-> plus qu'une donnée ou un compte. Le « compte invité » est partout l'ancien compte générique partagé,
-> retiré. Le « parcours anonymisé » abandonné en D5 portait sur la **chronologie professionnelle**,
+> plus qu'une donnée ou un compte. « Invité » y a trois sens : le « compte invité (générique) » est
+> l'ancien compte partagé, retiré ; le « jeton invité », comme le « compte invité réel » écarté en D6,
+> est l'**accès de base** ; « invité → `ROLE_TRUSTED` gardé » (D1) parle d'un **compte** créé par
+> **invitation**. Le « parcours anonymisé » abandonné en D5 portait sur la **chronologie professionnelle**,
 > nominative par nature.
 
 - Statut : **accepté, mis en œuvre** (2026-09-12, clos le 2026-09-15) — socle D1/D2/D4/D7 mergé

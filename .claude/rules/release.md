@@ -1,6 +1,6 @@
 ---
 paths:
-  - ".github/workflows/pipeline.yml"
+  - ".github/workflows/**"
   - "RELEASE_NOTES.md"
   - "tools/next-version.sh"
   - "tools/verify-release-merge.sh"
