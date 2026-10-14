@@ -1,0 +1,168 @@
+# Issue #596 — smoke préprod du pg_hba.conf vu du réseau : depuis un pod du
+# namespace, le superutilisateur bootstrap doit être refusé par TCP.
+#
+# Le pg_hba.conf du dépôt (#593) ferme ce rôle au réseau ; dans le cluster,
+# seule la procédure des rôles le vérifiait, à la main et rarement. Un patch
+# d'`args` d'un overlay, un `rollout undo` de `postgres` ou un `apply -k` d'un
+# vieux checkout relirait en silence le fichier de PGDATA, ouvert au
+# superutilisateur, et `rollback-preprod` ne touche pas `postgres`. Ce Job tente
+# la connexion sans mot de passe et ne réussit que sur le refus `reject` : il
+# n'a besoin que du NOM du superutilisateur (`postgres-credentials`, clé par
+# clé, jamais `envFrom`), et la sonde masque ce nom dans ses journaux.
+#
+# Son `command` est k8s/base/postgres-hba-probe.sh à l'octet près
+# (PostgresHbaProbeJobManifestTest), sonde mesurée dans les deux sens contre
+# l'image épinglée par tools/check-postgres-hba.sh. Modifier l'une, c'est
+# recopier dans l'autre.
+#
+# DÉLIBÉRÉMENT ABSENT de kustomization.yaml `resources:`, comme
+# messenger-probe-job.yaml : lancé par tools/run-job.sh dans
+# `smoke-test-preprod`, qui supprime d'abord le Job précédent (la spec d'un Job
+# est immuable). Aucune variable entre accolades, commentaires et sonde
+# compris : run-job.sh refuse celles qui restent après envsubst. L'image est
+# celle du serveur (`psql`), écrite ici : l'argument image de run-job.sh est
+# sans effet.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: postgres-hba-probe
+  labels:
+    app.kubernetes.io/name: postgres-hba-probe
+spec:
+  # Une sonde qui échoue fait échouer le smoke, elle ne réessaie pas.
+  backoffLimit: 0
+  # Délai : convention de tous les Jobs, attente + 35 s < délai ≤ attente + 120 s
+  # (issues #525, #535 ; .claude/rules/deploiement.md ; vérifiée par
+  # tools/tests/run-job.test.sh). Attente du pipeline : 120 s, pull de l'image
+  # compris ; la sonde elle-même dure moins de PGCONNECT_TIMEOUT.
+  activeDeadlineSeconds: 180
+  # Une heure pour relire `kubectl logs job/postgres-hba-probe`.
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: postgres-hba-probe
+    spec:
+      automountServiceAccountToken: false
+      restartPolicy: Never
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: postgres-hba-probe
+          # La même que postgres.yaml (PostgresHbaProbeJobManifestTest).
+          image: postgres:18.6-alpine
+          env:
+            # Le Service, comme l'application : la connexion passe par le réseau
+            # du cluster et tombe sur les règles `host` du pg_hba.conf.
+            - name: PGHOST
+              value: database
+            - name: PGUSER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_USER
+            - name: PGDATABASE
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_DB
+            # Un serveur injoignable échoue vite, et nommé.
+            - name: PGCONNECT_TIMEOUT
+              value: '10'
+          command:
+            - sh
+            - -c
+            - |
+              #!/bin/sh
+              #
+              # postgres-hba-probe.sh
+              # ---------------------------------------------------------------------------
+              # Issue #596 — le pg_hba.conf vu du réseau, depuis un pod du namespace. Joué
+              # par le Job k8s/base/postgres-hba-probe-job.yaml (copie à l'identique dans
+              # son `command`, PostgresHbaProbeJobManifestTest) dans `smoke-test-preprod`,
+              # et dans les deux sens contre l'image épinglée par tools/check-postgres-hba.sh.
+              #
+              # Tente une connexion TCP sous le superutilisateur bootstrap, sans mot de
+              # passe. Le pg_hba.conf du dépôt la refuse par sa règle `reject`, AVANT toute
+              # authentification (#593) : seul ce refus-là fait sortir en 0. Tout le reste
+              # sort en 1 en le nommant — une connexion obtenue, une demande de mot de passe
+              # (le pg_hba.conf de l'image dans PGDATA, qui admet le superutilisateur en
+              # SCRAM : ce que ramènerait un `rollout undo` de `postgres` ou un overlay qui
+              # perd `-c hba_file`), un serveur injoignable.
+              #
+              # Aucun mot de passe en jeu : `-w` (psql n'en demande jamais), PGPASSFILE
+              # vers un chemin qui ne peut pas exister (libpq ignore alors le fichier sans
+              # rien dire ; `/dev/null` lui fait écrire un avertissement), et un PGPASSWORD
+              # posé est refusé. Ce que la sonde imprime part dans les journaux du
+              # pipeline : le nom du superutilisateur et celui de la base, tenus dans un
+              # Secret, y sont masqués.
+              #
+              # POSIX sh : tourne dans l'image postgres (alpine, BusyBox). Aucune variable
+              # entre accolades, commentaires compris : tools/run-job.sh passe le manifeste
+              # du Job dans envsubst et refuse celles qui restent (on écrit `$VAR`).
+              # Env :  PGHOST, PGUSER (le superutilisateur), PGDATABASE ; PGCONNECT_TIMEOUT
+              #        (10 s par défaut)
+              # ---------------------------------------------------------------------------
+              if [ -z "$PGHOST" ] || [ -z "$PGUSER" ] || [ -z "$PGDATABASE" ]; then
+                echo "#596 : PGHOST, PGUSER et PGDATABASE sont requis." >&2
+                exit 1
+              fi
+              if [ -n "$PGPASSWORD" ]; then
+                echo "#596 : PGPASSWORD est posé ; la sonde ne lit aucun mot de passe." >&2
+                exit 1
+              fi
+              PGPASSFILE=/dev/null/aucun-pgpass
+              [ -n "$PGCONNECT_TIMEOUT" ] || PGCONNECT_TIMEOUT=10
+              export PGPASSFILE PGCONNECT_TIMEOUT
+
+              # Remplace chaque occurrence littérale des deux noms (lus dans ENVIRON : ni
+              # expression régulière, ni séquence d'échappement interprétée).
+              redact() {
+                awk '
+                  function hide(s, name, mark,    out, i) {
+                    out = ""
+                    while ((i = index(s, name)) > 0) {
+                      out = out substr(s, 1, i - 1) mark
+                      s = substr(s, i + length(name))
+                    }
+                    return out s
+                  }
+                  { print hide(hide($0, ENVIRON["PGUSER"], "<superutilisateur>"), ENVIRON["PGDATABASE"], "<base>") }
+                '
+              }
+
+              if out="$(psql -X -A -t -w -c 'SELECT 1' 2>&1)"; then
+                echo "#596 : ÉCHEC, le superutilisateur est ADMIS par TCP sur $PGHOST : le serveur ne lit pas le pg_hba.conf du dépôt." >&2
+                exit 1
+              fi
+              out="$(printf '%s\n' "$out" | redact)"
+              case "$out" in
+                *'pg_hba.conf rejects connection'*)
+                  echo "#596 : refusé par pg_hba.conf, comme attendu — $out"
+                  exit 0
+                  ;;
+                *'no password supplied'*)
+                  echo "#596 : ÉCHEC, $PGHOST demande un mot de passe au superutilisateur au lieu de le refuser : il lit le pg_hba.conf de PGDATA, pas celui du dépôt — $out" >&2
+                  ;;
+                *)
+                  echo "#596 : ÉCHEC, refus « pg_hba.conf rejects connection » attendu de $PGHOST, obtenu — $out" >&2
+                  ;;
+              esac
+              exit 1
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          # Le conteneur du serveur (uid de postgres.yaml), plus un système de
+          # fichiers en lecture seule : psql n'écrit rien.
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 70
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ['ALL']
