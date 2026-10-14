@@ -10,16 +10,17 @@ paths:
 
 > Split out of `.claude/rules/portfolio-contenus.md` (#605), whose index lists every `Portfolio` content rule. These rules live in `Portfolio/Shared/` and apply to the eight localized entities with a position. The first paragraph (« Nor a me-card group… ») continues « What the trigger does not see » of `.claude/rules/portfolio-ordre-migrations.md`. The index of every rule is at the top of `.claude/CLAUDE.md`.
 
-**Nor a me-card group across two categories** (issue #501). Me-cards are ordered per category, and the
+**Nor a me-card group across two categories** (#501). Me-cards are ordered per category, and the
 members of a group share theirs: the application guarantees it (no category setter on `AboutMeCard`,
 `AboutMeCardAdministrator::membersInCategory()` reads a group within the category, the seed groups per
-category); the database must too. The #390 trigger alone compares positions across categories and does
-not listen to `category`, so an EN version inserted in SQL into another category at the same position, or
-an `UPDATE` of `category` alone, goes through it. Such a group gets two ranks, one per category (FR and EN
-ranked differently on the public page); « Détacher » limited to the category sees only the entry and does
-nothing (`detach()` is a no-op on an entry alone in its category); and a `reorder()` of either category is
-refused only when it moves the stray member, under the misleading name of the positions. Migration
-`Version20261012160000` keeps that trigger's **one function and one trigger name**: the function reads its table's
+category); the database must too. The #390 trigger alone — positions only, deaf to `category` — would
+let through an EN version inserted in SQL into another category at the same position, or an `UPDATE` of
+`category` alone. Such a group would get two ranks, one per category (FR and EN ranked differently on the
+public page); « Détacher » limited to the category would see only the entry and do nothing (`detach()` is
+a no-op on an entry alone in its category); and a `reorder()` of either category would be refused only
+when it moves the stray member, under the misleading name of the positions. Migration
+`Version20261012160000` adds the scope check to that trigger and keeps its **one function and one
+trigger name**: the function reads its table's
 scope column from `TG_ARGV[0]` (none for the seven single-scope tables, untouched), one query returns
 `MIN`/`MAX` of the positions and the number of distinct scopes (the list of scopes, for the message, is
 read only on a refusal), and the scope check runs **before**
@@ -41,17 +42,16 @@ nothing (the misleading 500 and the two ranks would stay). **Groups already spre
 category is surely the right one): the migration reports each again as a `warning` with its categories,
 and any write that touches one (insertion, a member's position, group or category) is refused —
 a `DELETE` does not wake the trigger. The fix is in the backoffice: **delete the stray entry, then
-recreate its version in the right category**, or **« Détacher » it** (issue #561, below).
-**The application refuses such a group by name, before any write** (issue #561). Otherwise « Créer la
+recreate its version in the right category**, or **« Détacher » it** (#561, below).
+**The application refuses such a group by name, before any write** (#561). Otherwise « Créer la
 version EN » in the category where EN is missing, and the « Version de » selector (which lists the
 form's category only) on a `PUT`, would see the group filtered by category, let `inGroup()` accept a
 locale the group already carries elsewhere, and end on the unique `(translation_group, locale)` index —
 a raw 500 that closes the EntityManager; a `reorder()` would write, then be refused at the COMMIT
-(`23T91`) — and only when it moves the stray member, the database letting through one that leaves it in
-place. `AboutMeCardAdministrator` throws `TranslationGroupAcrossSeveralScopesException::forGroup()` (same
+(`23T91`) — and only when it moves the stray member. `AboutMeCardAdministrator` throws `TranslationGroupAcrossSeveralScopesException::forGroup()` (same
 `critical` 500, the group, its categories and the fix in the message, nothing written, the manager left
-open): on a creation or an attachment, `membersInCategory()` reads the group across categories (the
-same query, widened: no extra cost) and refuses a group with members both in the category and outside
+open): on a creation or an attachment, `membersInCategory()` reads the group across categories (one
+query, no extra cost) and refuses a group with members both in the category and outside
 it — a group wholly in another category stays the 422 `unknown-translation-group`; on a `reorder()`,
 `refuseGroupsSpreadOutsideOf()` refuses **any** reorder of a category holding such a group, whatever the
 order asked (it depends on the state only), through `findInOtherCategoriesSharingAGroupWith()` — one
@@ -64,9 +64,8 @@ the card's group across categories, so on a spread member it **really detaches**
 its category, #169) — the trigger checks only the new group, alone, and the old one keeps its other
 member: a second fix. Either fix repairs the **group**, not the
 other category's numbering: the member left there keeps the position it was given in the first one,
-which may already be another key's (a collision the fix does not introduce: leave `detach()` alone); a
-reorder of that category, accepted
-again once no spread group remains, renumbers it. **Order of the guards** on an ordered write,
+which may already be another key's (a collision that predates the fix); a reorder of that category,
+accepted once no spread group remains, renumbers it. **Order of the guards** on an ordered write,
 each before any write: a group across categories (`AboutMeCardAdministrator`, me-cards only, the only
 per-scope table — kept out of the Shared services, which only see their scope), then a group on
 several positions (`ContentPlacement::inGroup()` on a placement; `OrderAssigner::assign()` on a
@@ -74,7 +73,7 @@ several positions (`ContentPlacement::inGroup()` on a placement; `OrderAssigner:
 `OrderAssigner`'s 422s of the exact-set rule), then the trigger at COMMIT for what bypasses the application — the cause before its
 consequence, as in the trigger, and a pipeline defect before a client error, as in #384.
 **Two client errors come first, on purpose, both read from the body alone: a `PUT` carrying another
-locale (issue #582, end of this paragraph), then one carrying another category** (issue #578). A card
+locale (#582, end of this paragraph), then one carrying another category** (#578). A card
 never changes category (no setter, see #501 above); a `PUT` that validated `category` and ignored it
 would answer 200 — and a form whose category change empties « Version de » would send
 `translationGroup: null` with it, so the card would be silently detached and sent to the end of its
@@ -86,7 +85,7 @@ other read and any change in memory (#549), hence before `detach()`/`reattach()`
 spread-group refusal. That does not contradict #384: #384 forbids a client error that **results from**
 the corrupt state from hiding it, while this one depends on the request body alone; a spread group is
 still refused under its name by the next valid request. The frontend disables the field in edit
-(`.claude/rules/frontend-backoffice.md`). **The locale, on the eight contexts** (issue #582): an entry
+(`.claude/rules/frontend-backoffice.md`). **The locale, on the eight contexts** (#582): an entry
 never changes language — it is its group's version in that language, unique there —, and disabling
 the field in the form (#170 R2) does not stop a `PUT` from sending another one. Every
 `<X>Administrator::update()` receives the locale and throws
@@ -122,7 +121,7 @@ positions (`23T91`, not `23T90`), the whole group moved (accepted), and, for eve
 argument and the watched columns (`SCOPE_COLUMNS`: a new per-scope table goes there and in its
 migration); `PostgresAdvisoryOrderScopeLockTest` the name on the application path;
 `tests/Migrations/Version20261012160000Test` the warning, the untouched group and `down()`.
-**Every write of an ordered content's `Administrator` runs under its scope's lock** (issues #389, #499):
+**Every write of an ordered content's `Administrator` runs under its scope's lock** (#389, #499):
 `create()`, `update()`, `delete()` and `reorder()` of the eight localized `Administrator`s and of
 `WatchedProductAdministrator` wrap their **whole body** in
 `Shared/Application/OrderScopeLockInterface::withLock(ORDER_SCOPE, …)`, `ORDER_SCOPE` being the entity
@@ -136,7 +135,7 @@ its `flush()` would leave a `PUT`'s `UPDATE` touching no row, answered with a 20
 and the watch `update()`, with neither lock nor re-read, would "update" a product deleted since its
 loading.
 The adapter, `Shared/Infrastructure/Doctrine/PostgresAdvisoryOrderScopeLock`, runs the body
-in a transaction it opens and closes by hand (not `Connection::transactional()`, issue #390, see
+in a transaction it opens and closes by hand (not `Connection::transactional()`, #390, see
 `.claude/rules/portfolio-ordre.md`) whose first statement is `pg_advisory_xact_lock(ORDR, hashtext(scope))`,
 released by the COMMIT/ROLLBACK itself. Three choices not to undo: a **scope** lock, never `SELECT … FOR
 UPDATE` (a blocked one does not see rows the other transaction inserted, and locks nothing on an empty
@@ -144,22 +143,22 @@ table, so the creation race survives it); **not** `lock.factory` (a session lock
 which would have to be released after the ORM's COMMIT); **not** `wrapInTransaction()`, which closes the
 EntityManager on any exception, while a 409 inside the lock is an ordinary outcome. A read made *before*
 `withLock()` escapes it, hence the whole body. **Once the lock is taken, the adapter re-reads every
-managed instance of the scope's class** (issue #402), in one `HINT_REFRESH` query on their ids: what the
+managed instance of the scope's class** (#402), in one `HINT_REFRESH` query on their ids: what the
 EntityManager loaded before the lock — the `PUT` entry, loaded by the provider; the whole scope, in a command
 chaining operations such as a seed — is refreshed in place (same object, which a caller may keep and save),
 and an instance the query no longer returns (deleted meanwhile) is detached, so `find()` reports it not found.
-**That detached instance is never saved again** (issue #548): `UnitOfWork::doPersist()` takes an instance it
+**That detached instance is never saved again** (#548): `UnitOfWork::doPersist()` takes an instance it
 does not manage for **new** — it assumes `STATE_NEW` and reads nothing — so a caller still holding it and
 calling `<Repository>::save()` re-inserts the deleted entry without the guard, no error, no trace (measured
 on the eight localized contexts, the watch catalogue and the technologies). The adapter re-reads and detaches
-through `Shared/Infrastructure/Doctrine/RereadUnderLock::everyManagedInstanceOf()` (issue #560, the one
+through `Shared/Infrastructure/Doctrine/RereadUnderLock::everyManagedInstanceOf()` (#560, the one
 re-read under a lock shared by every lock that re-reads, see `.claude/rules/backend-architecture.md`), which
 calls `VanishedEntities::detachVanished()`; that one remembers the instance in a
 `WeakMap` (nothing kept in memory); its `prePersist` listener — emitted only for an instance Doctrine takes
 for new, exactly the re-insertion path — refuses it with `VanishedEntitySavedAgainException` (a
 `LogicException`, unmapped, a `critical` 500: a caller's defect), before anything is scheduled. No false
 positive: the map holds objects, not ids nor classes, and only an object passed to `detachVanished()` is in
-it. No caller does it today (the `Administrator`s re-find their entry under the lock and only receive ids, processors
+it. No caller does it (the `Administrator`s re-find their entry under the lock and only receive ids, processors
 call no repository, seeds re-save nothing): the guard makes the rule hold by construction, like #526's,
 instead of relying on the next caller. Every lock that detaches a vanished row goes through
 `RereadUnderLock`, the only caller of `detachVanished()`, never `detach()` — the technology row lock too (#545,

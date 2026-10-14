@@ -21,10 +21,10 @@ paths:
   deliberately **outside** `kustomization.yaml`'s `resources:` — so kustomize's image transformer never sees
   it, hence the `${BACKEND_IMAGE}` placeholder that `envsubst` fills at apply time (`image: backend` would
   resolve to `docker.io/library/backend`). **Every Job outside kustomize runs through
-  `tools/run-job.sh <ns> <manifest> <image> <timeout> [NAME=value…]`** (issue #488) — migration and seed
-  in `pipeline.yml`, the messenger probe, the pg_hba probe (issue #596, its image written in the
+  `tools/run-job.sh <ns> <manifest> <image> <timeout> [NAME=value…]`** (#488) — migration and seed
+  in `pipeline.yml`, the messenger probe, the pg_hba probe (#596, its image written in the
   manifest, the image argument `sans-objet`), the manual `create-user` procedure, the three `failed`
-  maintenance Jobs (issue #521). **Before the cluster is
+  maintenance Jobs (#521). **Before the cluster is
   touched** (exit 2): bash ≥ 4, jq and envsubst present (otherwise `wait-rollout.sh` would fail *after* the
   apply, on a Job still running); one object, `kind: Job`, its `metadata.name` (end-of-line comment
   stripped) a DNS-1123 name — never an option, `delete job/NAME`; each `NAME=value` a `${NAME}` of the
@@ -34,7 +34,7 @@ paths:
   (refused by the cluster: exit 3), `tools/wait-rollout.sh` (Job failed: exit 1), and every container's
   last 200 log lines (`--all-containers --prefix`, init containers included) — on stdout after a success,
   on stderr after an `::error::` otherwise; on that failure path, a Job neither `Complete` nor `Failed`
-  is then **stopped** (`delete --cascade=foreground --wait=true --timeout=90s`, issue #535, see the
+  is then **stopped** (`delete --cascade=foreground --wait=true --timeout=90s`, #535, see the
   deadline bullet below). The probe blames the worker on exit 1 only. Never re-inline
   that sequence — `run-job.test.sh` greps `pipeline.yml` for it: a fix made in one copy is a fix missing
   in the others. Offline test: `tools/tests/run-job.test.sh`. The deployer `Role` has no `pods/exec: create`, so the
@@ -46,12 +46,12 @@ paths:
   environment secret, rotated quarterly — never a durable `kubernetes.io/service-account-token` Secret. If a console command must run at deploy time, declare another Job — never bring `pods/exec`
   back. The RBAC is a **manual bootstrap the pipeline never replays**: after changing it, re-run the loop in
   `k8s/README.md` §4 *before* the next deploy, or the job fails on `cannot create resource "jobs"`.
-- **What « never `kubectl exec` » covers, exactly** (issue #520). Three cases, three answers:
+- **What « never `kubectl exec` » covers, exactly** (#520). Three cases, three answers:
   - **the CI identity never gets `pods/exec`** (nor `pods/attach`, `pods/portforward`) — audit C8 above;
   - **a command with a side effect, or one that writes an audit line, runs as a Job** (`tools/run-job.sh`),
     never through `exec`: its stderr would be the operator's terminal and `kubectl logs` would never see
-    the line (issue #386, `app:user:create`, see `.claude/rules/security-user.md`). **One written
-    exception**, issue #593: the PostgreSQL roles procedure (the #575 bullet of `.claude/rules/deploiement-postgres.md`), an `exec` on the
+    the line (#386, `app:user:create`, see `.claude/rules/security-user.md`). **One written
+    exception**, #593: the PostgreSQL roles procedure (the #575 bullet of `.claude/rules/deploiement-postgres.md`), an `exec` on the
     `postgres` pod's local socket because no Job can reach the bootstrap superuser. It writes no
     audit line, its output is `verify.sql`'s counters; `OperatorExecBoundaryTest` exempts the `bash`
     block of its runbook section **by its place** (the phrase opening it is unique), refuses a second
@@ -61,7 +61,7 @@ paths:
   - **a human holding an admin kubeconfig may `exec` for read-only diagnosis whose output stays on their
     terminal**, from a separate terminal, never behind a `!` in an assistant session: `nginx -T` on the
     sidecar (`.claude/rules/deploiement.md`, the two ConfigMaps), the Xdebug checks and `kubectl cp` of the profiles, the `SHOW` of the PostgreSQL
-    keepalives over TCP (`k8s/README.md`, « Sessions fantômes PostgreSQL », issue #279), the count of password hashes per format before a change of `password_hashers` (`k8s/README.md`, « Avant de changer `password_hashers` », issue #590 — a format header and a count, never a salt, a hash or an identifier), and naming an account from its `userId` (`k8s/README.md`, « Journal de sécurité »). That last one is an exec *on purpose*: a Job
+    keepalives over TCP (`k8s/README.md`, « Sessions fantômes PostgreSQL », #279), the count of password hashes per format before a change of `password_hashers` (`k8s/README.md`, « Avant de changer `password_hashers` », #590 — a format header and a count, never a salt, a hash or an identifier), and naming an account from its `userId` (`k8s/README.md`, « Journal de sécurité »). That last one is an exec *on purpose*: a Job
     would write the name and address into its pod's logs, readable until the pod is deleted, by the CI
     token too (`pods/log`) — what #363 keeps out of the logs. The query goes on stdin
     (nothing in the exec's argv, so nothing in the API server's request URL — the UUID does stay in the
@@ -70,12 +70,12 @@ paths:
     guard rather than a boundary, a `SET` lifts it — and `NS` has no default.
   Two guards, two scopes: `OperatorExecBoundaryTest` reads the repo (the deployer's Role, ClusterRole and
   both bindings, wildcards such as `*/exec` included, plus the shape of the account lookup and of every
-  runbook `psql`: read-only `PGOPTIONS`, `-X`, `ON_ERROR_STOP`, `${NS:?…}`, query on stdin — issue #590);
+  runbook `psql`: read-only `PGOPTIONS`, `-X`, `ON_ERROR_STOP`, `${NS:?…}`, query on stdin — #590);
   `tools/rotate-deployer-token.sh` checks the token actually issued against the cluster
   (`auth can-i create pods/exec` → `no`) — the only one that sees a binding added by hand. Keep both. A
   new manual `exec` in the runbook must fit the third case; if its output carries a secret or personal
   data, it stays on the terminal, and if it writes anything, it is a Job. **Messenger's `failed`
-  transport follows that split** (issue #521, `k8s/README.md` « File d'échec Messenger »):
+  transport follows that split** (#521, `k8s/README.md` « File d'échec Messenger »):
   `messenger:failed:show` is the third case — read-only, and at `-vv` it dumps the message itself (a
   visitor's name, address and text, an invitation's `userId`, the raw body of an undecodable
   envelope; measured: none of it without `-vv`) — so an `exec` on `deploy/backend -c php-fpm` under
@@ -83,7 +83,7 @@ paths:
   read-only: a `failed:remove` there fails with SQLSTATE 25006, measured); `failed:retry <id>`,
   `failed:remove <id>` and `stop-workers` have side effects, so `messenger-failed-{retry,remove}-job.yaml`
   and `messenger-stop-workers-job.yaml` (running `app:messenger:stop-workers`, which reads the signal back,
-  issue #528 — never Symfony's, which is green on a refused write), never with `-v` (and `SHELL_VERBOSITY=0` in their `env`, which
+  #528 — never Symfony's, which is green on a refused write), never with `-v` (and `SHELL_VERBOSITY=0` in their `env`, which
   beats a `backend-config` value), one at a time (`run-job.sh` deletes a running namesake), the id through `FAILED_MESSAGE_ID` and refused
   in 64 unless all digits (`run-job.sh` admits `-`, and `--all` read as an option empties the table).
   `MessengerMaintenanceJobsManifestTest` pins the Jobs, `OperatorExecBoundaryTest` the read block and
@@ -115,8 +115,8 @@ paths:
   only — each runs in its own transaction), then fails, `apply -k` never runs and the previous
   release keeps serving. A transient blocker therefore means **re-running the deploy job** — say
   so in the release notes. A migration that must wait longer says so itself, `SET LOCAL
-  lock_timeout = '…'` at the top of its `up()` (`Version20261011120000` sets `5s` that way, now
-  redundant and left as is: migrations are frozen); a non-transactional one
+  lock_timeout = '…'` at the top of its `up()` (`Version20261011120000` sets `5s` that way, redundant
+  with the bound and left as is: migrations are frozen); a non-transactional one
   (`isTransactional(): false`, `CREATE INDEX CONCURRENTLY`) has no transaction for `SET LOCAL` to
   apply to — a no-op with a warning — and sets `SET lock_timeout = '…'` on the session instead.
   **One rule for every Job's deadline: `wait + 35 < activeDeadlineSeconds ≤ wait + 120`**
@@ -128,8 +128,9 @@ paths:
   while past the wait (plus `wait-rollout.sh`'s ~35 s overrun) the pod still runs and `run-job.sh`
   prints its logs — the diagnosis of exactly the hang the deadline is for. A deadline under the
   wait gives an `::error::` with no logs, only `DeadlineExceeded` — and on Kubernetes ≥ 1.31
-  `Failed` is set only once the pods are gone, 30 s of grace after the deadline (240 + 30 s under a
-  300 s wait: a narrow margin before a bare timeout). Current values:
+  `Failed` is set only once the pods are gone, 30 s of grace after the deadline (the probe and the four manual
+  Jobs had 240 under 300 before #535: 240 + 30 s under a 300 s wait, a narrow margin before a bare
+  timeout). Current values:
   waited 300 s, deadline 360 —
   `migrate-job.yaml`, `messenger-probe-job.yaml`, `messenger-stop-workers-job.yaml`,
   `messenger-failed-{retry,remove}-job.yaml`, `create-user-job.yaml`; `seed-job.yaml` waited 180,
@@ -145,7 +146,7 @@ paths:
   the 30 s grace period); a `Failed` Job is kept, its logs readable until `ttlSecondsAfterFinished`.
   A refused stop is a second `::error::`, still exit 1: only then does the runbook's « wait for
   `Complete`/`Failed` before relaunching » apply. `delete jobs` is already in the deployer Role.
-  The waits are unchanged (#285); that stop adds up to 90 s to the failure path, counted in the
+  That stop does not lengthen the waits (#285); it adds up to 90 s to the failure path, counted in the
   `timeout-minutes` of `deploy-preprod`, `smoke-test-preprod`, `postgres-hba-preprod` and `deploy-prod`. The guard is `tools/tests/run-job.test.sh`, the only one of that
   relation (the PHPUnit manifest tests pin values, not the relation): it reads every `run-job.sh`
   call of `pipeline.yml`, `tools/smoke-messenger-probe.sh` and `k8s/README.md` (continuation lines
@@ -161,18 +162,18 @@ paths:
   (`Version20260914170000` is the model); **never drop or rename a column in the release that stops
   reading it**, only in the next one; a Messenger message in flight at deploy time must stay readable
   by both versions (v0.11.0's `SendAccountInvitationMessage.userId` note); and the migration adds the
-  fingerprint of the schema it leaves to `verify.sql`'s `#611` block (issue #611, see the roles bullet
+  fingerprint of the schema it leaves to `verify.sql`'s `#611` block (#611, see the roles bullet
   of `.claude/rules/deploiement-postgres.md` — the test says which line). Only migrations the old code
   cannot survive fall outside this order — see the maintenance window below.
   **A migration that writes into one of the eight ordered content tables, then alters or indexes that
   table, can pass the CI and fail only on a populated database — preprod, or a dev database with
-  content** (issue #505): their deferred trigger `trg_translation_group_single_position` leaves pending
+  content** (#505): their deferred trigger `trg_translation_group_single_position` leaves pending
   events that make PostgreSQL refuse the DDL (`55006`), and a write touching no row on the CI's empty
   database queues none. Which writes count, the fix (`SET CONSTRAINTS … IMMEDIATE` after the writes,
   never at the top), the test on rows it requires and the drop-and-recreate trap are in
   `.claude/rules/portfolio-ordre-migrations.md`, « Trap for future migrations ».
 - **Every ExternalSecret of the release is synced before anything is migrated or rolled out**
-  (issue #325). Right after `backend-config`, the `Deploy` step applies the ESO objects alone
+  (#325). Right after `backend-config`, the `Deploy` step applies the ESO objects alone
   (`external-secrets.io_*.yaml` from the `kustomize build -o` output) and runs
   `tools/wait-external-secrets.sh <ns> <names…> --timeout 120`, before the maintenance window.
   Otherwise a key missing from Secret Manager would surface only as `CreateContainerConfigError` after
@@ -193,11 +194,11 @@ paths:
   anyway and roll the still-serving release back to the one before it. It undoes **`backend`, `worker` and `frontend`**,
   each attempted even when another fails (`|| status=1`, the job stays red — under `bash -e` the first
   failure would skip the rest): the worker reads what the API queues under the same envelope MAC key, so
-  undoing one without the other sends every message to `failed` (issue #450). A manual rollback in
+  undoing one without the other sends every message to `failed` (#450). A manual rollback in
   prod follows the same rule, see `k8s/README.md`, « Retour arrière applicatif ». It is triggered only
   by the jobs it `needs`, and a check accusing a workload it does not undo is never one of them: the
-  pg_hba probe (`postgres-hba-preprod`, issue #600, see the #593 bullet of `.claude/rules/deploiement-postgres.md`).
-- **`smoke-test-preprod` proves a message travels from the API to the worker** (issue #470), not only that
+  pg_hba probe (`postgres-hba-preprod`, #600, see the #593 bullet of `.claude/rules/deploiement-postgres.md`).
+- **`smoke-test-preprod` proves a message travels from the API to the worker** (#470), not only that
   the worker is `Ready`: a MAC key mismatch between `backend` and `worker` (a `KEY_CONTEXT` badly deployed,
   a worker left on the previous release) would otherwise leave preprod green with every message in `failed`.
   `tools/smoke-messenger-probe.sh preprod <image>` applies `k8s/base/messenger-probe-job.yaml` (outside
@@ -218,7 +219,7 @@ paths:
   is handled later, harmlessly — except by a worker rolled back past #470, which does not know the class
   (one more `failed` row). Offline test: `tools/tests/smoke-messenger-probe.test.sh`. Preprod only — prod has
   no rollback to trigger.
-- **Every deploy wait fails early on a container that will not start** (issue #353). The `Deploy`
+- **Every deploy wait fails early on a container that will not start** (#353). The `Deploy`
   steps never call `kubectl rollout status` or `kubectl wait --for=condition=complete` directly:
   `tools/wait-rollout.sh <ns> deployment/NAME|job/NAME --timeout N` cuts kubectl's own wait into
   5 s slices — so "done" keeps kubectl's meaning — and between slices reads the pods of the
@@ -250,17 +251,17 @@ paths:
   changing the Role**); refused, the script warns once and waits on — a forgotten bootstrap must
   never break every deploy. The reasons live in one table, `REASON_CLASS`, with their delays in
   `GRACE`. It never reads a Secret.
-  Each wait may overrun its timeout by ~35 s, counted in `timeout-minutes`. Fail-closed is
-  unchanged: a failure before `apply -k` leaves the previous release serving; after it, no automatic
+  Each wait may overrun its timeout by ~35 s, counted in `timeout-minutes`. Fail-closed
+  holds: a failure before `apply -k` leaves the previous release serving; after it, no automatic
   rollback in prod, and `rollback-preprod` still runs only on a successful deploy. The 60 s
   `rollout status` checks of `smoke-test-preprod` are not deploy waits and stay: they catch a
-  datastore that went down after the deploy, first in the job (issue #603, see the #593 bullet of `.claude/rules/deploiement-postgres.md`). Offline test:
+  datastore that went down after the deploy, first in the job (#603, see the #593 bullet of `.claude/rules/deploiement-postgres.md`). Offline test:
   `tools/tests/wait-rollout.test.sh`.
 - **`DEPLOY_MAINTENANCE_WINDOW` (repository variable) opts a deploy into a maintenance window** — for an
   irreversible migration where the new code cannot read the old schema **and vice versa** (v0.11.0's
   integer→UUID primary keys), so no pod may serve a request while the migration runs. It is needed in
   two cases only (#175): such a migration, and a change of the Messenger envelope `KEY_CONTEXT`
-  (issue #450, `AuthenticatedEnvelopeSerializer`), where an old API pod still signing under the old key
+  (#450, `AuthenticatedEnvelopeSerializer`), where an old API pod still signing under the old key
   meets a worker already demanding the new one — a refused MAC is final, the message is lost. An
   additive migration doesn't. When it equals `true`,
   `deploy-preprod`/`deploy-prod` in `pipeline.yml` patch `backend` and `worker` to `replicas: 0` (a
