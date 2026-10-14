@@ -27,7 +27,7 @@ use Symfony\Component\HttpKernel\Event\ExceptionEvent;
  * Priorité 0, comme le 403 backoffice de SecurityEventsSubscriber : au-dessus
  * de ces deux rendus, qui arrêtent la propagation. Seule la requête
  * principale compte. Les quotas par compte, du traducteur (ROLE_SUPER) et de
- * l'assistant de parcours (ROLE_TRUSTED), ne sont pas triés ici : ils se
+ * l'assistant de carrière (ROLE_TRUSTED), ne sont pas triés ici : ils se
  * tracent sur `ai_usage` avec le compte.
  *
  * Le tri est une liste fermée, quand RetryAfterListener lit RetryAfterAware

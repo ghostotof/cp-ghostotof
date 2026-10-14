@@ -384,7 +384,7 @@ for ENV in preprod prod; do
 done
 ```
 
-**Assistant de parcours** (`<env>-backend-scaleway-ai-api-key` et
+**Assistant de carrière** (`<env>-backend-scaleway-ai-api-key` et
 `<env>-backend-scaleway-ai-project-id`, spec 0005) — **à publier avant de
 pousser la branche `release/*` qui livre l'assistant**. Un `ExternalSecret` qui
 référence une clé absente laisse `backend-secrets` incomplet, et le Deployment
@@ -490,7 +490,7 @@ RECETTE
 ```
 
 La vérification en préprod pendant la release est décrite plus bas, dans
-« Assistant de parcours : vérification pendant la release ».
+« Assistant de carrière : vérification pendant la release ».
 
 **Clés JWT** — générées en LOCAL (jamais sur le cluster ni en clair ailleurs
 qu'ici), une paire par environnement (préprod et prod ne doivent PAS partager
@@ -739,13 +739,13 @@ elle évolue.
    garantie réelle reste que la valeur n'a jamais quitté ce répertoire, et
    qu'elle est révoquée dès l'étape 5.
 
-## Assistant de parcours : vérification pendant la release
+## Assistant de carrière : vérification pendant la release
 
 La préprod n'est déployée que depuis une branche `release/*` : l'assistant
 (spec 0005, `POST /api/assistant/answers`) n'est donc vérifié en conditions
 réelles qu'à la release qui le livre, **avant** le merge dans `main`. Les
 secrets Scaleway doivent avoir été publiés avant le push de la branche (§2,
-« Assistant de parcours »). Après le déploiement préprod de la branche :
+« Assistant de carrière »). Après le déploiement préprod de la branche :
 
 1. **Les deux clés sont arrivées dans le Secret.** La commande lit les noms des
    clés, pas leurs valeurs :
@@ -768,7 +768,7 @@ secrets Scaleway doivent avoir été publiés avant le push de la branche (§2,
    ```
 
 3. **Une question réelle, en flux**, depuis un compte de test `ROLE_TRUSTED`
-   de la préprod (un compte invité, jamais un compte de production), sur la
+   de la préprod (un compte sur invitation, jamais un compte de production), sur la
    page Assistant. Dans l'onglet Réseau des DevTools, la réponse doit être en
    `text/event-stream` et le texte doit s'afficher **au fil de l'eau**, pas
    d'un bloc à la fin. Un affichage d'un bloc signale un tampon resté actif

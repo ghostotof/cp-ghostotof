@@ -1,5 +1,10 @@
 # ADR 0001 — Provisionnement d'utilisateurs par le super-admin
 
+> **Vocabulaire (2026-10-14, #602).** Les termes canoniques du domaine sont dans [`CONTEXT.md`](../../CONTEXT.md) ; ce document, antérieur au
+> glossaire, ne les emploie pas tous. Le « compte invité générique » dont il parle est l'ancien compte
+> partagé, retiré par l'ADR 0003 ; un compte créé par **invitation** est un **compte** tout court,
+> toujours nominatif.
+
 - Statut : accepté
 - Date : 2026-09-03
 - Portée : `src/Security/User`, `src/Security/Authentication`, `templates/emails`, frontend `admin/users` + page publique `set-password`, k8s `backend-config`

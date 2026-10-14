@@ -117,7 +117,7 @@ export const router = createRouter({
           path: 'assistant',
           name: 'assistant',
           component: AssistantPage,
-          // Palier nominatif (ADR 0003 D1/D4, spec 0005). `roles` : un seul doit
+          // Palier de confiance (ADR 0003 D1/D4, spec 0005). `roles` : un seul doit
           // correspondre, et un ROLE_SUPER ne porte pas forcément ROLE_TRUSTED en
           // clair. Anonyme ou palier de base sans compte : redirigé vers login.
           meta: {

@@ -54,7 +54,7 @@ No token at all ⇒ `incomplete` with **no network call**. `SetPasswordPage.spec
 `router/adminGuard.spec.ts` (the 404 on an old segment link) pin all of it.
 
 **Ordering and translation groups** (spec 0004, `v0.12.0`): every ordered admin page (Incidents,
-Contributions, Anonymous CV, Quality ×2, About site cards + one table per me-card category, Watch) is
+Contributions, CV sans identité, Quality ×2, About site cards + one table per me-card category, Watch) is
 wired on the same shared bricks, and a new page must reuse them rather than grow its own copy —
 they carry the security-neutral but a11y-critical behaviour (keyboard alternative, focus return,
 status announcement) that a fork would silently lose:
@@ -156,7 +156,7 @@ exposes `errorReason`; **it never touches a form nor persists anything**, ADR 00
 `applyTranslationDraft` leaves a field absent from the draft untouched) → `presentation/ui/admin/
 TranslateEntryButton.vue` (label follows the form's locale, `aria-busy` while calling, emits `translate`).
 **Each page alone decides which of its fields are prose** (spec D2 — the backend is content-agnostic) and
-what to do with the draft. Since spec 0004 every per-entry form (Incidents, Contributions, Anonymous CV,
+what to do with the draft. Since spec 0004 every per-entry form (Incidents, Contributions, CV sans identité,
 Quality principles/traits, About site/me cards) behaves the same way: the form switches to *creation* in
 the target locale, the non-prose fields (`version`, `occurredAt`, `iconKey`…) are kept, **the source
 entry's `translationGroup` is kept too** (spec 0004 D9, `sourceGroup` — distinct from the selector's

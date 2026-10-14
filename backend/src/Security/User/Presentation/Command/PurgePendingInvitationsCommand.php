@@ -17,10 +17,10 @@ use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
 /**
- * Purge les comptes invités depuis le backoffice jamais activés au-delà d'une
+ * Purge les comptes sur invitation depuis le backoffice jamais activés au-delà d'une
  * durée de rétention (issue #238).
  *
- * Contexte RGPD (registre §3.2, minimisation art. 5-1-c) : un compte invité
+ * Contexte RGPD (registre §3.2, minimisation art. 5-1-c) : un compte sur invitation
  * ({@see \App\Security\User\Application\CpgUserInviter}) porte un e-mail — une donnée
  * personnelle — tant qu'il n'a pas défini son mot de passe. Une invitation
  * jamais suivie d'effet n'a plus de raison de conserver cette adresse
@@ -39,7 +39,7 @@ use Symfony\Component\Console\Style\SymfonyStyle;
  */
 #[AsCommand(
     name: 'app:user:purge-pending-invitations',
-    description: 'Supprime les comptes invités jamais activés au-delà d\'une durée depuis leur dernière invitation (RGPD, minimisation).',
+    description: 'Supprime les comptes sur invitation jamais activés au-delà d\'une durée depuis leur dernière invitation (RGPD, minimisation).',
 )]
 final class PurgePendingInvitationsCommand extends Command
 {

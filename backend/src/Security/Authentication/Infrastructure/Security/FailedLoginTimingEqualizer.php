@@ -28,7 +28,7 @@ use Throwable;
  *    son hachage est la chaîne vide, et `NativePasswordHasher::verify()`
  *    retombe alors sur `password_verify($p, '')`, qui rend `false` sans rien
  *    dériver. Pas « en attente d'activation » : un ROLE_SUPER peut poser le
- *    mot de passe d'un compte invité depuis le backoffice (#238, #460), qui
+ *    mot de passe d'un compte sur invitation depuis le backoffice (#238, #460), qui
  *    reste en attente d'activation alors que `verify()` a fait la vraie
  *    dérivation — le compenser doublait son temps de réponse et le désignait
  *    au chronomètre (issue #560).
@@ -199,7 +199,7 @@ final readonly class FailedLoginTimingEqualizer
         }
 
         // L'absence de mot de passe, pas l'attente d'activation (issue #560) :
-        // un compte invité dont le mot de passe a été posé depuis le
+        // un compte sur invitation dont le mot de passe a été posé depuis le
         // backoffice reste en attente d'activation, mais `verify()` a déjà
         // payé la vraie dérivation sur son hachage.
         return $user instanceof CpgUser && !$user->hasPassword();

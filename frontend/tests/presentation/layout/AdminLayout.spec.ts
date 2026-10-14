@@ -158,7 +158,7 @@ describe('AdminLayout', () => {
   })
 
   /**
-   * Le téléchargement du CV complet est ici pour ROLE_SUPER, et non dans
+   * Le téléchargement du CV nominatif est ici pour ROLE_SUPER, et non dans
    * l'en-tête (AppHeader) : c'est le seul palier dont la barre de droite
    * débordait entre 1200 et 1399 px (mesure de l'issue #88). Les autres
    * comptes de confiance gardent le bouton dans l'en-tête — ils n'ont pas

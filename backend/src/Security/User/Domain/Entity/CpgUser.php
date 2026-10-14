@@ -58,7 +58,7 @@ class CpgUser implements UserInterface, PasswordAuthenticatedUserInterface, Acco
     public const string ROLE_TRUSTED = 'ROLE_TRUSTED';
 
     /**
-     * Le hachage d'un compte qui n'a **pas de mot de passe** : un compte invité,
+     * Le hachage d'un compte qui n'a **pas de mot de passe** : un compte sur invitation,
      * jusqu'à ce que la personne définisse le sien par le lien ou qu'un
      * ROLE_SUPER le pose depuis le backoffice. Il ne peut pas se connecter :
      * `password_verify()` ne vérifie rien contre une chaîne vide. La seule
@@ -147,7 +147,7 @@ class CpgUser implements UserInterface, PasswordAuthenticatedUserInterface, Acco
 
     /**
      * Date à laquelle la personne invitée a défini son mot de passe via le lien
-     * reçu. Un compte "en attente d'activation" est un compte invité mais pas
+     * reçu. Un compte "en attente d'activation" est un compte sur invitation mais pas
      * encore activé (cf. isPendingActivation()) ; un compte CLI, lui, n'a ni
      * invitation ni activation et reste utilisable d'emblée.
      */
@@ -245,9 +245,9 @@ class CpgUser implements UserInterface, PasswordAuthenticatedUserInterface, Acco
     }
 
     /**
-     * Compte invité depuis le backoffice mais dont le mot de passe n'a pas
+     * Compte sur invitation depuis le backoffice mais dont le mot de passe n'a pas
      * encore été défini via le lien reçu. Toujours faux pour un compte CLI
-     * (aucune invitation) comme pour un compte invité déjà activé.
+     * (aucune invitation) comme pour un compte sur invitation déjà activé.
      */
     public function isPendingActivation(): bool
     {
@@ -255,12 +255,12 @@ class CpgUser implements UserInterface, PasswordAuthenticatedUserInterface, Acco
     }
 
     /**
-     * Round de correction (I2, issue #238) : un compte invité dont le mot de
+     * Round de correction (I2, issue #238) : un compte sur invitation dont le mot de
      * passe n'a *jamais* été défini — la définition littérale d'« invitation
      * jamais activée » que retient la purge automatique
      * (PendingInvitationPurger). Se distingue délibérément de
      * isPendingActivation() : CpgUserAdministrator::changePassword() peut
-     * poser un mot de passe sur un compte invité sans jamais appeler
+     * poser un mot de passe sur un compte sur invitation sans jamais appeler
      * markActivated() (ce n'est pas la personne qui a défini le sien via le
      * lien reçu) — un tel compte reste isPendingActivation() vrai mais se
      * connecte déjà, et ne doit jamais être purgé.
@@ -273,7 +273,7 @@ class CpgUser implements UserInterface, PasswordAuthenticatedUserInterface, Acco
     /**
      * Un mot de passe a-t-il été défini, par la personne (lien d'invitation,
      * création en CLI) ou pour elle (backoffice) ? Faux pour le seul hachage
-     * {@see self::NO_PASSWORD}. Indépendant de l'activation : un compte invité
+     * {@see self::NO_PASSWORD}. Indépendant de l'activation : un compte sur invitation
      * dont le mot de passe a été posé depuis le backoffice en a un, et reste
      * pourtant en attente d'activation.
      */

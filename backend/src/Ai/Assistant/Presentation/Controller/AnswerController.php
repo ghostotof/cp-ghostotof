@@ -16,7 +16,7 @@ use Symfony\Component\HttpKernel\Attribute\MapRequestPayload;
 use Symfony\Component\Routing\Attribute\Route;
 
 /**
- * Assistant de parcours (spec 0005 D4, D9), réservé à ROLE_TRUSTED par
+ * Assistant de carrière (spec 0005 D4, D9), réservé à ROLE_TRUSTED par
  * l'access_control `^/api/assistant(/|$)`, double-submit CSRF exigé comme sur
  * toute mutation /api. Un contrôleur plutôt qu'une ressource API Platform : la
  * réponse est un flux d'événements, qu'un processeur ne produit pas.

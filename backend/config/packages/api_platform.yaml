@@ -85,7 +85,7 @@ api_platform:
         App\Portfolio\Incident\Domain\Exception\IncidentNotFoundException: 404
         App\Portfolio\Watch\Domain\Exception\WatchedProductNotFoundException: 404
         App\Portfolio\Watch\Domain\Exception\WatchedProductSlugAlreadyUsedException: 409
-        # Changer le slug d'un produit suivi revient à en suivre un autre :
+        # Changer le slug d'un produit surveillé revient à en surveiller un autre :
         # l'entité ne l'expose pas en écriture, et le refus est explicite plutôt
         # que silencieux (409 comme la collision de slug, c'est bien un conflit
         # avec l'état existant).

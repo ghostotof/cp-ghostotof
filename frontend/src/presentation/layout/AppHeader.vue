@@ -375,7 +375,7 @@ function navLinkClass(link: NavigationLink) {
             </RouterLink>
           </template>
           <template v-else>
-            <!-- Assistant (#265) : proposé à tout le palier nominatif, donc
+            <!-- Assistant (#265) : proposé à tout le palier de confiance, donc
                  aussi à ROLE_SUPER, contrairement au CV. -->
             <RouterLink
               :to="`${homeLink}/assistant`"

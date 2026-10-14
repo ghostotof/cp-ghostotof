@@ -55,8 +55,8 @@ final class BackofficeWatchedProductResourceTest extends WebTestCase
     }
 
     /**
-     * Authentifié n'est pas autorisé : le compte invité partagé ne doit pas
-     * pouvoir toucher au catalogue.
+     * Authentifié n'est pas autorisé : le palier de base ne doit pas pouvoir
+     * toucher au catalogue.
      */
     public function testRequestWithoutRoleSuperIsForbidden(): void
     {

@@ -135,7 +135,7 @@ interface SecurityAuditLoggerInterface
      * Quotas par IP des routes anonymes atteints (429, issue #356), un
      * événement par route. Sans sujet : la clé du limiteur est l'IP, déjà
      * portée par la ligne. Les quotas par compte, ceux du traducteur et de
-     * l'assistant de parcours, sont sur `ai_usage` avec le compte (ADR 0004).
+     * l'assistant de carrière, sont sur `ai_usage` avec le compte (ADR 0004).
      */
     public function passwordSetupThrottled(): void;
 

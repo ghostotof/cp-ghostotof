@@ -167,7 +167,7 @@ _En code_ : `PackageManifest`
 **Assistant de carrière** :
 Assistant conversationnel qui répond aux questions sur la carrière de l'auteur, à partir du CV nominatif,
 du CV sans identité et des études de cas ; réservé au palier de confiance.
-_À éviter_ : assistant seul, « interrogez mon parcours », assistant-parcours
+_À éviter_ : assistant seul, assistant de parcours, « interrogez mon parcours », assistant-parcours
 _En code_ : `Ai/Assistant`, `career_assistant`
 
 **Assistant de traduction** :

@@ -8,7 +8,7 @@ namespace App\Shared\Domain\Security;
  * Ce par quoi un compte se désigne hors de `Security/User` : son UUID, jamais
  * son identifiant de connexion (issue #363).
  *
- * Pour un compte invité, l'identifiant de connexion est dérivé de la partie
+ * Pour un compte sur invitation, l'identifiant de connexion est dérivé de la partie
  * locale de l'adresse (ADR 0001 D2) — souvent un prénom et un nom. Les
  * journaux (`security_audit`, `security`, `ai_usage`) et les clés des quotas
  * par compte écrivent donc l'UUID, que seule la base relie à une personne, et
