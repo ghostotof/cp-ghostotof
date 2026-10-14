@@ -1,9 +1,11 @@
 ---
 paths:
+  - "backend/src/Shared/Infrastructure/Lock/WrittenFlushWatch.php"
   - "backend/src/Portfolio/**"
   - "backend/tests/Portfolio/**"
-  - "frontend/src/presentation/pages/**"
-  - "frontend/src/presentation/ui/**"
+  - "backend/migrations/Version20261012120000.php"
+  - "backend/src/Shared/Infrastructure/Lock/PostgresLockedTransaction.php"
+  - "backend/tests/Shared/Infrastructure/Lock/PostgresLockedTransactionTest.php"
 ---
 
 # Backend — `Portfolio` ordering and translation groups: the model, the trigger, the scope lock

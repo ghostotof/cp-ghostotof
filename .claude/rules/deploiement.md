@@ -1,16 +1,22 @@
 ---
 paths:
+  - "backend/src/Contact/Infrastructure/ApiPlatform/ContactMessageProcessor.php"
   - "k8s/**"
-  - "docker/**"
-  - ".github/workflows/**"
-  - "tools/**"
-  - "backend/migrations/**"
-  - "backend/config/packages/cache.yaml"
-  - "backend/config/packages/lock.yaml"
-  - "backend/config/packages/rate_limiter.yaml"
-  - "backend/config/packages/monolog.yaml"
-  - "backend/src/Shared/Infrastructure/Lock/**"
-  - "frontend/public/.well-known/**"
+  - "docker/php/Dockerfile"
+  - "docker/php/xdebug.preprod.ini"
+  - "docker-compose.yml"
+  - "docker-compose.override.yml"
+  - ".github/workflows/pipeline.yml"
+  - "tools/check-rabbitmq-conf.sh"
+  - "tools/wait-rollout.sh"
+  - "backend/config/packages/messenger.yaml"
+  - "backend/tests/Support/KubernetesManifests.php"
+  - "backend/tests/Shared/KubernetesManifestsTest.php"
+  - "backend/tests/Shared/Infrastructure/Kubernetes/**"
+  - "backend/tests/Shared/Infrastructure/Messenger/Amqp*"
+  - "backend/tests/Shared/Infrastructure/Messenger/RabbitMq*"
+  - "backend/tests/Shared/Infrastructure/Messenger/WorkerWaitsForRabbitMqTest.php"
+  - "backend/tests/Shared/Infrastructure/Messenger/Fixtures/**"
 ---
 
 # Deployment invariants

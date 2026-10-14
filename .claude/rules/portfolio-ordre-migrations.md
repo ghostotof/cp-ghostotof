@@ -4,8 +4,7 @@ paths:
   - "backend/tests/Portfolio/**"
   - "backend/migrations/**"
   - "backend/tests/Migrations/**"
-  - "frontend/src/presentation/pages/**"
-  - "frontend/src/presentation/ui/**"
+  - "backend/config/packages/doctrine_migrations.yaml"
 ---
 
 # Backend — `Portfolio` ordering: migrations and what the trigger does not see
