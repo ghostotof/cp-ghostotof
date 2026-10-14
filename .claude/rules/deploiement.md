@@ -15,7 +15,7 @@ paths:
 
 # Deployment invariants
 
-> Moved verbatim from `.claude/CLAUDE.md` (#346), section « Architecture › Deployment invariants ». The index of every rule is at the top of `.claude/CLAUDE.md`.
+> Moved verbatim from `.claude/CLAUDE.md` (#346), section « Architecture › Deployment invariants »; since #605 this file keeps only part of it, see the index below. The index of every rule is at the top of `.claude/CLAUDE.md`.
 
 **Where the rest lives** (split by #605, so that each file reads in one `Read`). A reference elsewhere to
 `.claude/rules/deploiement.md`, « <bullet> » points at one of these:
@@ -54,7 +54,7 @@ paths:
   `perl -i`, an editor's atomic save) — write in place (`cat new > file`), compare `sha1sum` on
   the host and in `backend`, and restore the same way; `docker compose restart backend` resyncs.
 - **`watch-refresh-cronjob.yaml` *is* in `kustomization.yaml`'s `resources:`** — the opposite of
-  `migrate-job.yaml` (`deploiement-pipeline.md`), and deliberately: it wants kustomize's image transformer, since it must run the
+  `migrate-job.yaml` (`.claude/rules/deploiement-pipeline.md`), and deliberately: it wants kustomize's image transformer, since it must run the
   same image as the Deployment. It used to be **the only object in the cluster that makes outbound calls
   to third parties**; since ADR 0004 the `backend` Deployment does too (`api.anthropic.com`, from the
   backoffice only). The namespace's NetworkPolicies restrict ingress only, so nothing extra is needed today —

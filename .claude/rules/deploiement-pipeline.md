@@ -1,9 +1,16 @@
 ---
 paths:
   - "k8s/**"
+  - "docker/**"
   - ".github/workflows/**"
   - "tools/**"
   - "backend/migrations/**"
+  - "backend/config/packages/cache.yaml"
+  - "backend/config/packages/lock.yaml"
+  - "backend/config/packages/rate_limiter.yaml"
+  - "backend/config/packages/monolog.yaml"
+  - "backend/src/Shared/Infrastructure/Lock/**"
+  - "frontend/public/.well-known/**"
 ---
 
 # Deployment invariants — Jobs and the deploy pipeline
@@ -45,7 +52,7 @@ paths:
   - **a command with a side effect, or one that writes an audit line, runs as a Job** (`tools/run-job.sh`),
     never through `exec`: its stderr would be the operator's terminal and `kubectl logs` would never see
     the line (issue #386, `app:user:create`, see `.claude/rules/security-user.md`). **One written
-    exception**, issue #593: the PostgreSQL roles procedure (the #575 bullet of `deploiement-postgres.md`), an `exec` on the
+    exception**, issue #593: the PostgreSQL roles procedure (the #575 bullet of `.claude/rules/deploiement-postgres.md`), an `exec` on the
     `postgres` pod's local socket because no Job can reach the bootstrap superuser any more. It writes no
     audit line, its output is `verify.sql`'s counters; `OperatorExecBoundaryTest` exempts the `bash`
     block of its runbook section **by its place** (the phrase opening it is unique), refuses a second
@@ -54,7 +61,7 @@ paths:
     needs the same reasoning written down, never a widened exemption;
   - **a human holding an admin kubeconfig may `exec` for read-only diagnosis whose output stays on their
     terminal**, from a separate terminal, never behind a `!` in an assistant session: `nginx -T` on the
-    sidecar (`deploiement.md`, the two ConfigMaps), the Xdebug checks and `kubectl cp` of the profiles, the `SHOW` of the PostgreSQL
+    sidecar (`.claude/rules/deploiement.md`, the two ConfigMaps), the Xdebug checks and `kubectl cp` of the profiles, the `SHOW` of the PostgreSQL
     keepalives over TCP (`k8s/README.md`, « Sessions fantômes PostgreSQL », issue #279), the count of password hashes per format before a change of `password_hashers` (`k8s/README.md`, « Avant de changer `password_hashers` », issue #590 — a format header and a count, never a salt, a hash or an identifier), and naming an account from its `userId` (`k8s/README.md`, « Journal de sécurité »). That last one is an exec *on purpose*: a Job
     would write the name and address into its pod's logs, readable until the pod is deleted, by the CI
     token too (`pods/log`) — the very thing issue #363 removed from the logs. The query goes on stdin
@@ -154,7 +161,7 @@ paths:
   reading it**, only in the next one; a Messenger message in flight at deploy time must stay readable
   by both versions (v0.11.0's `SendAccountInvitationMessage.userId` note); and the migration adds the
   fingerprint of the schema it leaves to `verify.sql`'s `#611` block (issue #611, see the roles bullet
-  above — the test says which line). Only migrations the old code
+  of `.claude/rules/deploiement-postgres.md` — the test says which line). Only migrations the old code
   cannot survive fall outside this order — see the maintenance window below.
   **A migration that writes into one of the eight ordered content tables, then alters or indexes that
   table, can pass the CI and fail only on a populated database — preprod, or a dev database with
@@ -189,7 +196,7 @@ paths:
   undoing one without the other sends every message to `failed` (issue #450). A manual rollback in
   prod follows the same rule, see `k8s/README.md`, « Retour arrière applicatif ». It is triggered only
   by the jobs it `needs`, and a check accusing a workload it does not undo is never one of them: the
-  pg_hba probe (`postgres-hba-preprod`, issue #600, see the #593 bullet of `deploiement-postgres.md`).
+  pg_hba probe (`postgres-hba-preprod`, issue #600, see the #593 bullet of `.claude/rules/deploiement-postgres.md`).
 - **`smoke-test-preprod` proves a message travels from the API to the worker** (issue #470), not only that
   the worker is `Ready`: a MAC key mismatch between `backend` and `worker` (a `KEY_CONTEXT` badly deployed,
   a worker left on the previous release) used to leave preprod green with every message in `failed`.
@@ -247,7 +254,7 @@ paths:
   unchanged: a failure before `apply -k` leaves the previous release serving; after it, no automatic
   rollback in prod, and `rollback-preprod` still runs only on a successful deploy. The 60 s
   `rollout status` checks of `smoke-test-preprod` are not deploy waits and stay: they catch a
-  datastore that went down after the deploy, first in the job (issue #603, see the #593 bullet). Offline test:
+  datastore that went down after the deploy, first in the job (issue #603, see the #593 bullet of `.claude/rules/deploiement-postgres.md`). Offline test:
   `tools/tests/wait-rollout.test.sh`.
 - **`DEPLOY_MAINTENANCE_WINDOW` (repository variable) opts a deploy into a maintenance window** — added
   for v0.11.0's irreversible integer→UUID primary-key migrations, where the new code cannot read the old

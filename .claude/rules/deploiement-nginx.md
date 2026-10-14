@@ -1,15 +1,16 @@
 ---
 paths:
-  - "docker/nginx/**"
-  - "docker/node/**"
-  - "k8s/base/backend-nginx.conf"
-  - "k8s/ingress-nginx-values.yaml"
-  - "frontend/public/.well-known/**"
+  - "k8s/**"
+  - "docker/**"
+  - ".github/workflows/**"
+  - "tools/**"
+  - "backend/migrations/**"
+  - "backend/config/packages/cache.yaml"
+  - "backend/config/packages/lock.yaml"
   - "backend/config/packages/rate_limiter.yaml"
-  - "tools/check-backend-nginx-rate-limits.sh"
-  - "tools/check-frontend-image-headers.sh"
-  - "tools/smoke-login-throttling.sh"
-  - "tools/audit-prod.sh"
+  - "backend/config/packages/monolog.yaml"
+  - "backend/src/Shared/Infrastructure/Lock/**"
+  - "frontend/public/.well-known/**"
 ---
 
 # Deployment invariants — nginx (rate limits, headers, security.txt)

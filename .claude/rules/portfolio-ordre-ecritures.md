@@ -8,7 +8,7 @@ paths:
 
 # Backend — `Portfolio` ordering: application refusals and writes under the scope lock
 
-> Split out of `.claude/rules/portfolio-contenus.md` (#605), whose index lists every `Portfolio` content rule. These rules live in `Portfolio/Shared/` and apply to the eight localized entities with a position. The index of every rule is at the top of `.claude/CLAUDE.md`.
+> Split out of `.claude/rules/portfolio-contenus.md` (#605), whose index lists every `Portfolio` content rule. These rules live in `Portfolio/Shared/` and apply to the eight localized entities with a position. The first paragraph (« Nor a me-card group… ») continues « What the trigger does not see » of `.claude/rules/portfolio-ordre-migrations.md`. The index of every rule is at the top of `.claude/CLAUDE.md`.
 
 **Nor a me-card group across two categories** (issue #501). Me-cards are ordered per category, and the
 members of a group share theirs: the application guarantees it (no category setter on `AboutMeCard`,
@@ -136,7 +136,7 @@ another reason: outside the lock, a deletion committed between an operation's re
 watch `update()`, with neither lock nor re-read, "updated" a product deleted since its loading.
 The adapter, `Shared/Infrastructure/Doctrine/PostgresAdvisoryOrderScopeLock`, runs the body
 in a transaction it opens and closes by hand (not `Connection::transactional()`, since issue #390, see
-`portfolio-ordre.md`) whose first statement is `pg_advisory_xact_lock(ORDR, hashtext(scope))`,
+`.claude/rules/portfolio-ordre.md`) whose first statement is `pg_advisory_xact_lock(ORDR, hashtext(scope))`,
 released by the COMMIT/ROLLBACK itself. Three choices not to undo: a **scope** lock, never `SELECT … FOR
 UPDATE` (a blocked one does not see rows the other transaction inserted, and locks nothing on an empty
 table, so the creation race survives it); **not** `lock.factory` (a session lock on a second connection,
@@ -162,7 +162,7 @@ it. No caller did it (the `Administrator`s re-find their entry under the lock an
 call no repository, seeds re-save nothing): the guard makes the rule hold by construction, as #526 did,
 instead of relying on the next caller. Every lock that detaches a vanished row goes through
 `RereadUnderLock`, the only caller of `detachVanished()`, never `detach()` — the technology row lock too (#545,
-`portfolio-contenus.md`), the account administration lock (#551) and the account row lock (#560, `.claude/rules/security-user.md`);
+`.claude/rules/portfolio-contenus.md`), the account administration lock (#551) and the account row lock (#560, `.claude/rules/security-user.md`);
 only the container's
 instance listens (a hand-built one refuses nothing, so tests take it from the container). Rejected: a check in
 each repository's `save()` (the UnitOfWork cannot tell a detached entity from a new one with a natural id and

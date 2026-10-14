@@ -80,11 +80,11 @@ that must write a divergent group does it in a transaction it rolls back: a defe
 fires there — or, to run a real `reorder()` on it (the `Administrator` refuses an open transaction,
 #526), commits it from a probe session under `SET session_replication_role = replica` (#503).
 **What the trigger does not see, and the net behind it** (issue #503). These writes can still leave a
-group divergent: two concurrent SQL transactions that skip the scope lock (the accepted limit of `portfolio-ordre.md`);
+group divergent: two concurrent SQL transactions that skip the scope lock (the accepted limit of `.claude/rules/portfolio-ordre.md`);
 a write with triggers disabled — `SET session_replication_role = replica` (superuser only),
 `pg_restore --disable-triggers`, `ALTER TABLE … DISABLE TRIGGER`; a migration that drops and recreates
 the trigger while writes of its own transaction await their check (#505, above). (The category hole is
-closed by #501 and #561, in `portfolio-ordre-ecritures.md`.) Before #503 the next `reorder()` of the scope met such a group and
+closed by #501 and #561, in `.claude/rules/portfolio-ordre-ecritures.md`.) Before #503 the next `reorder()` of the scope met such a group and
 **repaired it silently**: `OrderAssigner` groups the scope by key and writes one position on every
 member without reading theirs, so the evidence of the upstream defect vanished — exactly what #390 set
 out to prevent. Since #503 `Orderable` exposes `getPosition()` (lifted from `TranslatableContent`;

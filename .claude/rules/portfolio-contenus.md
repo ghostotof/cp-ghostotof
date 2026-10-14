@@ -8,7 +8,7 @@ paths:
 
 # Backend — `Portfolio` content contexts
 
-> Moved verbatim from `.claude/CLAUDE.md` (#346), section « Architecture › Backend architecture › `Portfolio/Shared/` to `Portfolio/Incident/` ». The index of every rule is at the top of `.claude/CLAUDE.md`.
+> Moved verbatim from `.claude/CLAUDE.md` (#346), section « Architecture › Backend architecture › `Portfolio/Shared/` to `Portfolio/Incident/` »; since #605 this file keeps only part of it, see the index below. The index of every rule is at the top of `.claude/CLAUDE.md`.
 
 **Where the rest lives** (split by #605, so that each file reads in one `Read`). A reference elsewhere to
 `.claude/rules/portfolio-contenus.md`, « <paragraph> » or « the ordering section » points at one of these:
@@ -122,7 +122,7 @@ paths:
   row, says whether it still exists (`null`) and refreshes the managed instance in place, handed to the
   operation as the acquisition returned it (the skeleton passes it on since #560). Row gone: the stale instance is
   detached — unless it is scheduled for insertion or removal, whose pending write detaching would cancel, the
-  #402 filter — so a caller still holding it cannot save it again (issue #548, see `portfolio-ordre-ecritures.md`); query,
+  #402 filter — so a caller still holding it cannot save it again (issue #548, see `.claude/rules/portfolio-ordre-ecritures.md`); query,
   detachment and filter are `Shared/Infrastructure/Doctrine/RereadUnderLock::row()`'s (#560), and the
   technology is not found (**404**, mapping
   unchanged; the admin frontend already reads it as `not-found`). So a deletion runs wholly before the write or
@@ -141,7 +141,7 @@ paths:
   the table has no deferred constraint (the unique name and the `years` `CHECK` are immediate and refuse at
   the `flush()`), so only a session lost at that moment can refuse it; the `DriverException` surfaces as is
   and the skeleton **closes the EntityManager** (issue #547, as for every lock of the skeleton, see
-  `portfolio-ordre.md`): its UnitOfWork held as written what the refusal had just rolled back; an exception
+  `.claude/rules/portfolio-ordre.md`): its UnitOfWork held as written what the refusal had just rolled back; an exception
   the operation throws after a write closes it too (issue #549, same section); the 409 of a name already
   taken leaves it open when it comes from the check before the `save()`, while the unique index's 409 (two
   racing `PUT`s) comes after a failed `flush()`, which has already closed it. Cost per

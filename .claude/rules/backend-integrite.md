@@ -167,7 +167,7 @@ derivation as `hash_hkdf('sha256', …, 32, …)`, never a call to `SecretKeyDer
 and its `hash_hmac()` — and checks both directions (a MAC signed before is accepted, the class signs what it would have
 signed); a changed `KEY_CONTEXT` turns it red, which is intended — a rotation is decided and announced in the
 release notes, never slipped in by a refactoring. `sign()`'s `$data` and both of `verifies()`'s parameters carry
-`#[SensitiveParameter]`, pinned in `HIDDEN_BY_HAND` (see the parameters rule of `backend-conventions.md`).
+`#[SensitiveParameter]`, pinned in `HIDDEN_BY_HAND` (see the parameters rule of `.claude/rules/backend-conventions.md`).
 **The derived key never shows in a dump**: it is held in a `SensitiveParameterValue`, which `var_dump()`,
 `print_r()`, `var_export()`, an array cast, `json_encode()` and Symfony's VarDumper (`dump()`, the profiler) all
 show empty, and which PHP refuses to serialize. Not a `__debugInfo()`: VarDumper reads the private properties

@@ -50,7 +50,7 @@ classes its `Administrator`s lock (`ORDER_SCOPES`); a mismatch is refused at the
 (no lock of their own, #553) are written in that same transaction. Cost: the scopes are held for the whole
 command — measured on `app:about:seed --force`, the largest: about 100 ms, under the 5 s `lock_timeout` by
 two orders of magnitude; a backoffice write of the same scope waits that long instead of landing in the
-middle of a purge (the former "accepted limit" of `portfolio-contenus.md`, gone). The locks are taken one
+middle of a purge (the former "accepted limit" of `.claude/rules/portfolio-contenus.md`, gone). The locks are taken one
 statement each, so `lock_timeout` bounds each wait, not their sum: a two-table seed (About, Quality) behind
 two busy scopes can wait up to 2 × 5 s before failing. After a failure past the
 first write, the EntityManager is closed (#549): the command stops on the exception, as before.

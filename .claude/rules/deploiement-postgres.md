@@ -1,15 +1,16 @@
 ---
 paths:
-  - "k8s/base/postgres*"
-  - "k8s/base/postgres-roles/**"
-  - "k8s/base/migrate-job.yaml"
-  - "k8s/README.md"
-  - "backend/migrations/**"
+  - "k8s/**"
+  - "docker/**"
   - ".github/workflows/**"
-  - "tools/check-postgres-hba.sh"
-  - "tools/check-release-gates.sh"
-  - "tools/tests/postgres-image-pins.test.sh"
-  - "tools/tests/check-release-gates.test.sh"
+  - "tools/**"
+  - "backend/migrations/**"
+  - "backend/config/packages/cache.yaml"
+  - "backend/config/packages/lock.yaml"
+  - "backend/config/packages/rate_limiter.yaml"
+  - "backend/config/packages/monolog.yaml"
+  - "backend/src/Shared/Infrastructure/Lock/**"
+  - "frontend/public/.well-known/**"
 ---
 
 # Deployment invariants — PostgreSQL roles and the bootstrap superuser
@@ -64,7 +65,7 @@ paths:
   transaction control and no reconnection. `PostgresRolesProcedureTest` fixes the exec line word for word and pins the
   stream, `commit.sql` and its mark, and the files (no echo of a variable, a password cited only in its
   three places, no shell, `\copy`, `\w`, `\setenv` nor `PROGRAM`, the rotation gate). That `exec` is
-  the **one written exception** to #520 (`deploiement-pipeline.md`). It replaced the Job of #575 (`postgres-roles-job.yaml`, removed): a Job
+  the **one written exception** to #520 (`.claude/rules/deploiement-pipeline.md`). It replaced the Job of #575 (`postgres-roles-job.yaml`, removed): a Job
   connected over TCP, which the `pg_hba.conf` now refuses. **A rerun never rewrites an existing
   password** (`ROTATE=1` asks for it): rewriting `cpg_app`'s would cut the application until its URL is
   republished and the pods restarted.

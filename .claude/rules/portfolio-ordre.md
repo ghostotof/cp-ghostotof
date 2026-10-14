@@ -45,7 +45,7 @@ paths:
   migration, SQL). **Deferred, never immediate**: `OrderAssigner` and Doctrine write a group's members one
   `UPDATE` at a time, and the gap between two statements is legitimate. A few writes still escape it
   and can leave a group divergent; the next `reorder()` refuses such a group instead of repairing it
-  silently (issue #503, see « What the trigger does not see » in `portfolio-ordre-migrations.md`). `inGroup()`'s check stays the **first**
+  silently (issue #503, see « What the trigger does not see » in `.claude/rules/portfolio-ordre-migrations.md`). `inGroup()`'s check stays the **first**
   net — it answers before any write, under a domain name —; the trigger only catches at COMMIT what
   bypasses it. **On the application path the refusal comes out as `TranslationGroupHasSeveralPositionsException`**
   (`refusedAtCommit()`, the database's message in its own, previous = the `DriverException`), a
@@ -117,7 +117,7 @@ paths:
   `flush()`es had succeeded at the savepoint, so the UnitOfWork held as written what the refusal had just
   rolled back — a read on the same EntityManager returned the refused position, `find()` an entry never
   committed, and a write outside the lock started from there (a following locked operation of the same
-  scope was already repaired by the #402 re-read of `portfolio-ordre-ecritures.md`, measured). It is closed, as Doctrine's own failed
+  scope was already repaired by the #402 re-read of `.claude/rules/portfolio-ordre-ecritures.md`, measured). It is closed, as Doctrine's own failed
   COMMIT closes it (`UnitOfWork::commit()`): identity map emptied, a **new** read re-reads the database, an
   ORM write fails with `EntityManagerClosed` — the refusal is terminal for the unit of work that got it.
   What the caller already holds keeps the refused values (detached), and a raw DBAL statement or a DQL

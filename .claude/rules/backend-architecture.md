@@ -8,7 +8,7 @@ paths:
 
 # Backend — architecture and UUID v7 keys
 
-> Moved verbatim from `.claude/CLAUDE.md` (#346), section « Architecture › Backend architecture (introduction) ». The index of every rule is at the top of `.claude/CLAUDE.md`.
+> Moved verbatim from `.claude/CLAUDE.md` (#346), section « Architecture › Backend architecture (introduction) »; since #605 this file keeps only part of it, see the index below. The index of every rule is at the top of `.claude/CLAUDE.md`.
 
 **Where the rest lives** (split by #605, so that each file reads in one `Read`). A reference elsewhere to
 `.claude/rules/backend-architecture.md`, « <paragraph> » points at one of these:

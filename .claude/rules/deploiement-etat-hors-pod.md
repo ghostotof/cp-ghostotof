@@ -2,11 +2,15 @@
 paths:
   - "k8s/**"
   - "docker/**"
+  - ".github/workflows/**"
+  - "tools/**"
+  - "backend/migrations/**"
   - "backend/config/packages/cache.yaml"
   - "backend/config/packages/lock.yaml"
   - "backend/config/packages/rate_limiter.yaml"
   - "backend/config/packages/monolog.yaml"
   - "backend/src/Shared/Infrastructure/Lock/**"
+  - "frontend/public/.well-known/**"
 ---
 
 # Deployment invariants — no application state on the pod (ADR 0005)
@@ -90,7 +94,7 @@ paths:
   `app:*:seed` on two tables (About, Quality) takes its two scope locks one statement each under
   `withLocks()` (issue #567, `.claude/rules/seeding.md`), so the seed Job can wait up to 2 × 5 s behind two
   busy scopes before failing. An operator's read-only `exec`
-  (`deploiement-pipeline.md`, « What « never `kubectl exec` » covers ») repeats `-c lock_timeout=5s` in its own `PGOPTIONS`, which replaces the variable whole.
+  (`.claude/rules/deploiement-pipeline.md`, « What « never `kubectl exec` » covers ») repeats `-c lock_timeout=5s` in its own `PGOPTIONS`, which replaces the variable whole.
   For the worker, a handler waiting past 5 s raises `55P03` and Messenger retries it. **The
   application's own PostgreSQL locks keep a fallback bound, now a safety net** (issue #512, kept on
   2026-10-12, #525) for sessions with none — the dev container's console, CI: the order-scope lock, the account lock, the username
