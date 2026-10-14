@@ -84,19 +84,16 @@ spec:
               # et dans les deux sens contre l'image épinglée par tools/check-postgres-hba.sh.
               #
               # Tente une connexion TCP sous le superutilisateur bootstrap, sans mot de
-              # passe. Le pg_hba.conf du dépôt la refuse par sa règle `reject`, AVANT toute
-              # authentification (#593) : seul ce refus-là fait sortir en 0. Tout le reste
-              # sort en 1 en le nommant — une connexion obtenue, une demande de mot de passe
-              # (le pg_hba.conf de l'image dans PGDATA, qui admet le superutilisateur en
-              # SCRAM : ce que ramènerait un `rollout undo` de `postgres` ou un overlay qui
-              # perd `-c hba_file`), un serveur injoignable.
+              # passe, sur la base de l'application puis sur `postgres`. Le pg_hba.conf du
+              # dépôt la refuse par sa règle `reject`, AVANT toute authentification (#593) :
+              # seul ce refus, sur les deux bases, fait sortir en 0 (dernière ligne
+              # « #596 : OK »). Une connexion obtenue, une demande de mot de passe (le
+              # fichier de l'image dans PGDATA, que ramènerait un `rollout undo` de
+              # `postgres`) ou un serveur resté injoignable sortent en 1, nommés.
               #
-              # Aucun mot de passe en jeu : `-w` (psql n'en demande jamais), PGPASSFILE
-              # vers un chemin qui ne peut pas exister (libpq ignore alors le fichier sans
-              # rien dire ; `/dev/null` lui fait écrire un avertissement), et un PGPASSWORD
-              # posé est refusé. Ce que la sonde imprime part dans les journaux du
-              # pipeline : le nom du superutilisateur et celui de la base, tenus dans un
-              # Secret, y sont masqués.
+              # Aucun mot de passe en jeu (`-w`, PGPASSFILE sur un chemin impossible,
+              # PGPASSWORD refusé). La sortie part dans les journaux du pipeline : les noms
+              # du superutilisateur et de la base, tenus dans un Secret, y sont masqués.
               #
               # POSIX sh : tourne dans l'image postgres (alpine, BusyBox). Aucune variable
               # entre accolades, commentaires compris : tools/run-job.sh passe le manifeste
@@ -116,40 +113,116 @@ spec:
               [ -n "$PGCONNECT_TIMEOUT" ] || PGCONNECT_TIMEOUT=10
               export PGPASSFILE PGCONNECT_TIMEOUT
 
-              # Remplace chaque occurrence littérale des deux noms (lus dans ENVIRON : ni
-              # expression régulière, ni séquence d'échappement interprétée).
+              # Le superutilisateur doit être refusé sur la base de l'application ET sur
+              # `postgres`, que l'image crée toujours : une règle qui le rouvrirait sur une
+              # autre base que celle de l'application passerait sinon.
+              SECOND_DATABASE=postgres
+              # Un serveur qui vient de redémarrer (Recreate, PVC neuf : le serveur
+              # d'initialisation n'écoute que le socket local) refuse ou laisse expirer la
+              # connexion un moment : quelques essais, rien d'autre n'est réessayé. Au pire
+              # 4 × PGCONNECT_TIMEOUT (10 s) + 3 × 5 s ≈ 55 s, sur une seule base (la seconde
+              # n'est pas tentée après un serveur resté injoignable) : sous l'attente de 120 s
+              # du pipeline, pull de l'image compris.
+              ATTEMPTS=4
+              PAUSE=5
+
+              # Masque, pour l'affichage seulement, chaque occurrence littérale des noms du
+              # superutilisateur et de la base (lus dans ENVIRON : ni expression régulière,
+              # ni séquence d'échappement), tronqués aussi à 63 octets comme le serveur les
+              # cite. Un seul passage, le nom le plus long d'abord, un seul marqueur : ni la
+              # partie propre d'un nom qui en contient un autre, ni l'égalité des deux ne
+              # transparaissent.
               redact() {
                 awk '
-                  function hide(s, name, mark,    out, i) {
-                    out = ""
-                    while ((i = index(s, name)) > 0) {
-                      out = out substr(s, 1, i - 1) mark
-                      s = substr(s, i + length(name))
+                  BEGIN {
+                    n = 0
+                    add(ENVIRON["PGUSER"]); add(ENVIRON["PGDATABASE"])
+                    add(substr(ENVIRON["PGUSER"], 1, 63)); add(substr(ENVIRON["PGDATABASE"], 1, 63))
+                    # Tri par longueur décroissante (quelques éléments : tri par insertion).
+                    for (i = 2; i <= n; i++) {
+                      v = names[i]
+                      for (j = i - 1; j >= 1 && length(names[j]) < length(v); j--) names[j + 1] = names[j]
+                      names[j + 1] = v
                     }
-                    return out s
                   }
-                  { print hide(hide($0, ENVIRON["PGUSER"], "<superutilisateur>"), ENVIRON["PGDATABASE"], "<base>") }
+                  function add(name) { if (name != "") names[++n] = name }
+                  {
+                    line = $0; out = ""
+                    while (line != "") {
+                      hit = 0
+                      for (k = 1; k <= n; k++) {
+                        if (substr(line, 1, length(names[k])) == names[k]) { hit = k; break }
+                      }
+                      if (hit) { out = out "<masqué>"; line = substr(line, length(names[hit]) + 1) }
+                      else { out = out substr(line, 1, 1); line = substr(line, 2) }
+                    }
+                    print out
+                  }
                 '
               }
 
-              if out="$(psql -X -A -t -w -c 'SELECT 1' 2>&1)"; then
-                echo "#596 : ÉCHEC, le superutilisateur est ADMIS par TCP sur $PGHOST : le serveur ne lit pas le pg_hba.conf du dépôt." >&2
-                exit 1
+              # attempt BASE — une connexion TCP sous le superutilisateur, sans mot de passe.
+              # Pose RAW (sortie brute de psql) et VERDICT : admitted, rejected, password,
+              # unreachable ou other. Les motifs sont cherchés dans la sortie BRUTE : le
+              # masquage, qui peut toucher un nom recoupant « connection », ne vient
+              # qu'après, à l'affichage.
+              attempt() {
+                if RAW="$(psql -X -A -t -w -d "$1" -c 'SELECT 1' 2>&1)"; then
+                  VERDICT=admitted
+                  return
+                fi
+                case "$RAW" in
+                  *'pg_hba.conf rejects connection'*) VERDICT=rejected ;;
+                  *'no password supplied'*) VERDICT=password ;;
+                  *'Connection refused'*|*'timeout expired'*) VERDICT=unreachable ;;
+                  *) VERDICT=other ;;
+                esac
+              }
+
+              # probe BASE LIBELLÉ — 0 seulement si le superutilisateur y est refusé par
+              # pg_hba.conf ; sinon 1, en le nommant.
+              probe() {
+                try=1
+                attempt "$1"
+                while [ "$VERDICT" = unreachable ] && [ "$try" -lt "$ATTEMPTS" ]; do
+                  echo "#596 : $PGHOST injoignable ($2), nouvel essai dans $PAUSE s ($try/$ATTEMPTS)."
+                  sleep "$PAUSE"
+                  try=$((try + 1))
+                  attempt "$1"
+                done
+                shown="$(printf '%s\n' "$RAW" | redact)"
+                case "$VERDICT" in
+                  rejected)
+                    echo "#596 : refusé par pg_hba.conf ($2) — $shown"
+                    return 0
+                    ;;
+                  admitted)
+                    echo "#596 : ÉCHEC ($2), le superutilisateur est ADMIS par TCP sur $PGHOST : le serveur ne lit pas le pg_hba.conf du dépôt." >&2
+                    ;;
+                  password)
+                    echo "#596 : ÉCHEC ($2), $PGHOST demande un mot de passe au superutilisateur au lieu de le refuser : il ne lit pas le pg_hba.conf du dépôt (celui de PGDATA ?) — $shown" >&2
+                    ;;
+                  unreachable)
+                    echo "#596 : ÉCHEC ($2), $PGHOST injoignable après $ATTEMPTS essais — $shown" >&2
+                    ;;
+                  *)
+                    echo "#596 : ÉCHEC ($2), refus « pg_hba.conf rejects connection » attendu de $PGHOST, obtenu — $shown" >&2
+                    ;;
+                esac
+                return 1
+              }
+
+              status=0
+              probe "$PGDATABASE" "base de l'application" || status=1
+              if [ "$VERDICT" = unreachable ]; then
+                echo "#596 : base $SECOND_DATABASE non tentée, le serveur est resté injoignable." >&2
+              elif [ "$PGDATABASE" != "$SECOND_DATABASE" ]; then
+                probe "$SECOND_DATABASE" "base $SECOND_DATABASE" || status=1
               fi
-              out="$(printf '%s\n' "$out" | redact)"
-              case "$out" in
-                *'pg_hba.conf rejects connection'*)
-                  echo "#596 : refusé par pg_hba.conf, comme attendu — $out"
-                  exit 0
-                  ;;
-                *'no password supplied'*)
-                  echo "#596 : ÉCHEC, $PGHOST demande un mot de passe au superutilisateur au lieu de le refuser : il lit le pg_hba.conf de PGDATA, pas celui du dépôt — $out" >&2
-                  ;;
-                *)
-                  echo "#596 : ÉCHEC, refus « pg_hba.conf rejects connection » attendu de $PGHOST, obtenu — $out" >&2
-                  ;;
-              esac
-              exit 1
+              if [ "$status" -eq 0 ]; then
+                echo "#596 : OK, superutilisateur refusé par TCP sur les deux bases."
+              fi
+              exit "$status"
           resources:
             requests:
               cpu: 10m

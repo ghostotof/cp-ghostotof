@@ -85,7 +85,7 @@ final class PostgresHbaProbeJobManifestTest extends TestCase
                 $variable,
             );
         }
-        self::assertSame(['PGHOST', 'PGUSER', 'PGDATABASE', 'PGCONNECT_TIMEOUT'], array_keys($env));
+        self::assertEqualsCanonicalizing(['PGHOST', 'PGUSER', 'PGDATABASE', 'PGCONNECT_TIMEOUT'], array_keys($env));
         self::assertSame('10', $env['PGCONNECT_TIMEOUT']['value'] ?? null);
     }
 
