@@ -77,7 +77,7 @@ DO $$ BEGIN RAISE EXCEPTION '#593 : rotate vaut 0 ou 1 : rien n''est écrit'; EN
 --    attribut de trop et tout réglage de session (`RESET ALL`). Aucun n'est
 --    superutilisateur ni ne peut créer une base ou un rôle. `RESET ALL` ne
 --    touche pas un réglage propre à la base (`ALTER ROLE … IN DATABASE …
---    SET`) : l'étape 4 le retire (#610).
+--    SET`) : l'étape 5 le retire (#610).
 SELECT format('CREATE ROLE %I', r)
 FROM (VALUES (:'app_role'), (:'migrator_role'), (:'reader_role')) AS v(r)
 WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = r) \gexec
@@ -143,7 +143,48 @@ WHERE n.nspname = 'public' AND t.typtype IN ('e', 'd', 'c', 'r') AND pg_get_user
   AND NOT EXISTS (SELECT FROM pg_class c WHERE c.reltype = t.oid)
 ORDER BY t.typname \gexec
 
--- 4. La base de l'application remise en l'état que le bloc `#608` de
+-- 4. La table des migrations, lue SOUS LE RÔLE DE MIGRATION (revue de #610,
+--    mesuré sur l'image épinglée). Elle lui appartient : il peut la
+--    remplacer par une vue, ou donner à sa colonne un type de public et son
+--    transtypage, dont la fonction s'exécutait sous le superutilisateur de
+--    cette session à la moindre lecture — `SET LOCAL ROLE` n'y suffit pas, le
+--    code lu fait `RESET ROLE`. D'où une fonction `SECURITY DEFINER` dont il
+--    est le propriétaire : ce qu'il a posé tourne sous lui, avec ses seuls
+--    droits, et le serveur y refuse tout changement de rôle ou de session.
+--    Elle est appelée une fois puis supprimée — le code posé, sous son
+--    propriétaire, pourrait la redéfinir pour un appel suivant —, et ce
+--    qu'elle rend est rangé dans des réglages de transaction que l'étape 5 et
+--    verify.sql relisent, sans jamais lire la table eux-mêmes (ils refusent
+--    sans ces réglages). Une table absente (base neuve) donne `cpg.migrations`
+--    vide. Du SQL pur : rejoué par DatabaseOwnerSettingsVerificationTest.
+SELECT set_config('cpg.migrator_role', :'migrator_role', true);
+DO $$
+DECLARE
+    lues record;
+BEGIN
+    EXECUTE $f$
+        CREATE FUNCTION pg_temp.cpg_migrations(OUT presente boolean, OUT nombre bigint, OUT derniere text, OUT fuseau boolean)
+        LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $corps$
+        BEGIN
+            presente := to_regclass('public.doctrine_migration_versions') IS NOT NULL;
+            IF presente THEN
+                SELECT count(*), coalesce(max(version), ''), coalesce(bool_or(version = 'DoctrineMigrations\Version20261011120000'), false)
+                INTO nombre, derniere, fuseau
+                FROM public.doctrine_migration_versions;
+            END IF;
+        END
+        $corps$
+    $f$;
+    EXECUTE format('ALTER FUNCTION pg_temp.cpg_migrations() OWNER TO %I', current_setting('cpg.migrator_role'));
+    SELECT * INTO STRICT lues FROM pg_temp.cpg_migrations();
+    DROP FUNCTION pg_temp.cpg_migrations();
+    PERFORM set_config('cpg.migrations', CASE WHEN lues.presente THEN lues.nombre::text ELSE '' END, true),
+            set_config('cpg.derniere_migration', coalesce(lues.derniere, ''), true),
+            set_config('cpg.fuseau_migre', coalesce(lues.fuseau, false)::text, true);
+END
+$$;
+
+-- 5. La base de l'application remise en l'état que le bloc `#608` de
 --    verify.sql attend (issue #610) : son propriétaire, le rôle de migration,
 --    peut la couper sans être superutilisateur, et tout rôle pose sur lui-même
 --    un réglage propre à la base — une injection SQL sous cpg_app comprise.
@@ -155,7 +196,7 @@ ORDER BY t.typname \gexec
 --    une valeur (choisie par qui tient le rôle de migration), jamais un nom
 --    de rôle (celui du superutilisateur est dans un Secret).
 --    - Les réglages de base : le fuseau seul, une fois Version20261011120000
---      passée (sa ligne, comme verify.sql), à la valeur que la migration figée
+--      passée (sa ligne, lue à l'étape 4), à la valeur que la migration figée
 --      écrit — elle ne se rejoue pas, elle convertit aussi les horodatages ;
 --      aucun avant elle. PostgresRolesProcedureTest lie la valeur à la
 --      migration.
@@ -173,14 +214,11 @@ DO $$
 DECLARE
     base oid := (SELECT oid FROM pg_database WHERE datname = current_database());
     reglages text[] := (SELECT setconfig FROM pg_db_role_setting WHERE setdatabase = base AND setrole = 0);
-    migree boolean := false;
+    migree boolean := current_setting('cpg.fuseau_migre')::boolean;
     attendus text[];
     roles_regles oid[];
     r oid;
 BEGIN
-    IF to_regclass('public.doctrine_migration_versions') IS NOT NULL THEN
-        EXECUTE 'SELECT EXISTS (SELECT FROM public.doctrine_migration_versions WHERE version = $1)' INTO migree USING 'DoctrineMigrations\Version20261011120000';
-    END IF;
     attendus := CASE WHEN migree THEN ARRAY['TimeZone=Europe/Paris'] END;
     IF reglages IS DISTINCT FROM attendus THEN
         RAISE NOTICE '#610 : réglages de base remis en état (trouvés : %)', (SELECT array_agg(split_part(c, '=', 1) ORDER BY c COLLATE "C") FROM unnest(reglages) AS c);

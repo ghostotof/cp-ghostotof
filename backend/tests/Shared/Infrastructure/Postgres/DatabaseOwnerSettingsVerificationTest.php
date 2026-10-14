@@ -85,6 +85,9 @@ final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
             "SELECT set_config('cpg.app_role', ?, true), set_config('cpg.migrator_role', ?, true), set_config('cpg.reader_role', ?, true)",
             [$this->app, $this->migrator, $reader],
         );
+        // Le rôle de migration lit la table des migrations, comme son
+        // propriétaire le fait dans le cluster (roles.sql, étape 3).
+        $this->probe->executeStatement('GRANT SELECT ON public.doctrine_migration_versions TO '.$this->probe->quoteSingleIdentifier($this->migrator));
     }
 
     protected function tearDown(): void
@@ -101,7 +104,7 @@ final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
     /** L'état de la base de test, migrée : le bloc passe. */
     public function testAMigratedDatabaseWithItsTimeZoneOnlyPasses(): void
     {
-        $this->probe->executeStatement(RolesVerification::blockOf('#608'));
+        $this->play(RolesVerification::blockOf('#608'));
 
         self::assertSame(
             'TimeZone',
@@ -153,9 +156,9 @@ final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
         $this->assertBlockRefuses('#608', '#608 :');
         $this->probe->rollbackSavepoint('refus');
 
-        $this->probe->executeStatement(RolesVerification::repairBlock());
+        $this->play(RolesVerification::repairBlock());
 
-        $this->probe->executeStatement(RolesVerification::blockOf('#608'));
+        $this->play(RolesVerification::blockOf('#608'));
         self::assertSame('{TimeZone=Europe/Paris}', $this->databaseSettings(), 'Le fuseau de la migration, seul.');
     }
 
@@ -185,7 +188,7 @@ final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
     {
         $before = $this->databaseState();
 
-        $this->probe->executeStatement(RolesVerification::repairBlock());
+        $this->play(RolesVerification::repairBlock());
 
         self::assertSame($before, $this->databaseState());
     }
@@ -203,9 +206,9 @@ final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
             $timeZone,
         ]);
 
-        $this->probe->executeStatement(RolesVerification::repairBlock());
+        $this->play(RolesVerification::repairBlock());
 
-        $this->probe->executeStatement(RolesVerification::blockOf('#608'));
+        $this->play(RolesVerification::blockOf('#608'));
         self::assertNull($this->databaseSettings());
     }
 
@@ -216,6 +219,81 @@ final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
     {
         yield 'sans fuseau' => ['ALTER DATABASE {db} RESET timezone'];
         yield 'avec le fuseau' => ["ALTER DATABASE {db} SET timezone TO 'Europe/Paris'"];
+    }
+
+    /**
+     * Revue de #610, mesuré sur l'image épinglée : la table des migrations
+     * appartient au rôle de migration, qui peut la remplacer par une vue dont
+     * une fonction s'exécutait sous le superutilisateur de la procédure, et
+     * `SET LOCAL ROLE` ne l'en empêchait pas (le code lu fait `RESET ROLE`).
+     * roles.sql la lit donc dans une fonction `SECURITY DEFINER` du rôle de
+     * migration : le code posé tourne sous lui, et ne peut ni changer de rôle
+     * ni de session.
+     */
+    #[DataProvider('plantedStatements')]
+    public function testAFunctionPlantedInTheMigrationTableRunsUnderTheMigratorWithoutEscape(string $statement, string $refusal): void
+    {
+        $this->arm([
+            'DROP TABLE public.doctrine_migration_versions',
+            "CREATE FUNCTION public.{f}() RETURNS boolean LANGUAGE plpgsql AS 'BEGIN ".$statement." RETURN true; END'",
+            "CREATE VIEW public.doctrine_migration_versions AS SELECT v AS version FROM (VALUES ('DoctrineMigrations\\Version20261011120000'::varchar)) AS t(v) WHERE public.{f}()",
+            'ALTER VIEW public.doctrine_migration_versions OWNER TO {migrator}',
+        ]);
+
+        // Le nom tel que current_user l'imprime, sans guillemets.
+        $expected = str_replace('{migrator}', $this->migrator, $refusal);
+
+        try {
+            $this->probe->executeStatement(RolesVerification::migrationsReading());
+            self::fail('La lecture des migrations a accepté la vue.');
+        } catch (DriverException $exception) {
+            self::assertStringContainsString($expected, $exception->getMessage());
+        }
+    }
+
+    /**
+     * @return iterable<string, array{string, string}>
+     */
+    public static function plantedStatements(): iterable
+    {
+        yield 'sous quel rôle' => ["RAISE EXCEPTION ''sous %'', current_user;", 'sous {migrator}'];
+        yield 'RESET ROLE' => ['RESET ROLE;', 'cannot set parameter "role" within security-definer function'];
+        yield 'SET ROLE vers le superutilisateur' => ["EXECUTE format(''SET ROLE %I'', session_user);", 'cannot set parameter "role" within security-definer function'];
+        yield 'SET SESSION AUTHORIZATION' => ['SET SESSION AUTHORIZATION DEFAULT;', 'cannot set parameter "session_authorization" within security-definer function'];
+    }
+
+    /**
+     * La fonction de lecture est appelée une fois puis supprimée : le code
+     * posé, qui tourne sous son propriétaire, ne peut la redéfinir pour qu'un
+     * appel suivant du superutilisateur l'exécute. Les blocs relisent ce qu'elle
+     * a rendu dans des réglages de transaction.
+     */
+    public function testTheMigrationsAreReadOnceAndTheReadingFunctionIsDropped(): void
+    {
+        $this->probe->executeStatement(RolesVerification::migrationsReading());
+
+        self::assertNull($this->probe->fetchOne("SELECT to_regprocedure('pg_temp.cpg_migrations()')"));
+        self::assertSame(
+            $this->probe->fetchNumeric('SELECT count(*)::text, max(version), \'true\' FROM public.doctrine_migration_versions'),
+            $this->probe->fetchNumeric("SELECT current_setting('cpg.migrations'), current_setting('cpg.derniere_migration'), current_setting('cpg.fuseau_migre')"),
+            'Ce que la table porte, lu par le superutilisateur hors de toute vue piégée.',
+        );
+    }
+
+    /** Sans la lecture de roles.sql, les blocs de verify.sql refusent : rien n'est lu en superutilisateur. */
+    #[DataProvider('blocksReadingTheMigrations')]
+    public function testABlockRefusesWithoutTheMigratorsReading(string $issue): void
+    {
+        $this->assertStatementRefuses(RolesVerification::blockOf($issue), 'unrecognized configuration parameter "cpg.');
+    }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function blocksReadingTheMigrations(): iterable
+    {
+        yield '#608' => ['#608'];
+        yield '#611' => ['#611'];
     }
 
     /**
@@ -242,7 +320,7 @@ final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
     /** La base de test, migrée, a l'empreinte de ses migrations : le bloc passe. */
     public function testAMigratedDatabasePassesTheSchemaFingerprint(): void
     {
-        $this->probe->executeStatement(RolesVerification::blockOf('#611'));
+        $this->play(RolesVerification::blockOf('#611'));
 
         self::assertSame(8, $this->probe->fetchOne("SELECT count(*) FROM pg_trigger WHERE tgname = 'trg_translation_group_single_position'"), 'Prémisse : le garde sur ses huit tables, dans l\'empreinte.');
     }
@@ -257,7 +335,7 @@ final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
         $block = RolesVerification::blockOf('#611');
         self::assertSame(1, preg_match("/\\('(DoctrineMigrations\\\\Version\\d{14})', (\\d+), '[0-9a-f]{32}'\\)\\n\\s*\\) AS empreintes/", $block, $last), 'Prémisse : la dernière ligne de la table des empreintes.');
 
-        $this->probe->executeStatement(str_replace($last[0], \sprintf("('%s', %s, '%s'),\n%s", $last[1], $last[2], md5('autre impression'), $last[0]), $block));
+        $this->play(str_replace($last[0], \sprintf("('%s', %s, '%s'),\n%s", $last[1], $last[2], md5('autre impression'), $last[0]), $block));
         $this->addToAssertionCount(1);
     }
 
@@ -491,12 +569,28 @@ final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
 
     private function assertBlockRefuses(string $issue, string $refusal): void
     {
+        $this->probe->executeStatement(RolesVerification::migrationsReading());
+        $this->assertStatementRefuses(RolesVerification::blockOf($issue), $refusal);
+    }
+
+    private function assertStatementRefuses(string $statement, string $refusal): void
+    {
         try {
-            $this->probe->executeStatement(RolesVerification::blockOf($issue));
-            self::fail(\sprintf('Le bloc %s a accepté.', $issue));
+            $this->probe->executeStatement($statement);
+            self::fail('Le bloc a accepté.');
         } catch (DriverException $exception) {
             self::assertStringContainsString($refusal, $exception->getMessage());
         }
+    }
+
+    /**
+     * Joue un bloc comme le flux de la procédure : la lecture des migrations
+     * de roles.sql d'abord, sur l'état présent de la base, puis le bloc.
+     */
+    private function play(string $block): void
+    {
+        $this->probe->executeStatement(RolesVerification::migrationsReading());
+        $this->probe->executeStatement($block);
     }
 
     /**

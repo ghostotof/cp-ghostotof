@@ -160,7 +160,9 @@ $$;
 -- DATABASE … SET), que le RESET ALL de roles.sql et rolconfig ne voient pas.
 -- Seul réglage de base admis : le fuseau, une fois Version20261011120000
 -- passée — sa ligne, pas l'existence de la table, qu'une base restaurée
--- d'avant elle porte sans le fuseau —, à la valeur que la migration écrit et
+-- d'avant elle porte sans le fuseau ; lue par roles.sql (étape 4) sous le rôle
+-- de migration, jamais ici sous le superutilisateur : la table est à lui, et
+-- la lire exécuterait ce qu'il y pose (revue de #610) —, à la valeur que la migration écrit et
 -- que date.timezone des images porte (PostgresRolesProcedureTest lie les
 -- trois). Les valeurs, choisies par qui tient le rôle de migration, ne sont
 -- jamais imprimées : les noms seulement. Laissés passer : REVOKE TEMPORARY
@@ -180,13 +182,10 @@ DECLARE
     base oid := (SELECT oid FROM pg_database WHERE datname = current_database());
     reglages text[] := (SELECT setconfig FROM pg_db_role_setting WHERE setdatabase = base AND setrole = 0);
     noms text[] := (SELECT array_agg(split_part(c, '=', 1) ORDER BY c COLLATE "C") FROM unnest(reglages) AS c);
-    migree boolean := false;
+    migree boolean := current_setting('cpg.fuseau_migre')::boolean;
     attendus text[];
     n integer;
 BEGIN
-    IF to_regclass('public.doctrine_migration_versions') IS NOT NULL THEN
-        EXECUTE 'SELECT EXISTS (SELECT FROM public.doctrine_migration_versions WHERE version = $1)' INTO migree USING 'DoctrineMigrations\Version20261011120000';
-    END IF;
     attendus := CASE WHEN migree THEN ARRAY['TimeZone'] END;
     IF noms IS DISTINCT FROM attendus THEN RAISE EXCEPTION '#608 : la base porte les réglages %, % attendu (ALTER DATABASE … SET)', noms, attendus; END IF;
     IF migree AND reglages IS DISTINCT FROM ARRAY['TimeZone=Europe/Paris'] THEN RAISE EXCEPTION '#608 : le fuseau de la base n''est pas Europe/Paris (ALTER DATABASE … SET timezone)'; END IF;
@@ -218,7 +217,8 @@ $$;
 -- supprimée, sous un search_path fixé (pg_get_*def qualifient un nom selon
 -- lui), hache chacune (une ligne qui contient un saut de ligne ne peut en
 -- imiter deux) et compare le md5 de l'ensemble aux empreintes admises pour
--- les migrations passées : la dernière et leur nombre (une migration plus
+-- les migrations passées, lues par roles.sql (étape 4) sous le rôle de
+-- migration : la dernière et leur nombre (une migration plus
 -- ancienne fusionnée après une plus récente change le nombre, pas la
 -- dernière). Mesuré : une base de dev migrée pas à pas depuis le début du
 -- projet, une base neuve migrée sous un rôle non superutilisateur jusqu'à la
@@ -247,8 +247,9 @@ DECLARE
     admise boolean;
 BEGIN
     PERFORM set_config('search_path', 'pg_catalog, pg_temp', true);
-    IF to_regclass('public.doctrine_migration_versions') IS NOT NULL THEN
-        EXECUTE 'SELECT coalesce(max(version), ''''), count(*) FROM public.doctrine_migration_versions' INTO derniere, nombre;
+    IF current_setting('cpg.migrations') <> '' THEN
+        derniere := current_setting('cpg.derniere_migration');
+        nombre := current_setting('cpg.migrations')::bigint;
         IF nombre = 0 THEN RAISE EXCEPTION '#611 : la table des migrations est vide (un premier migrate interrompu ?) : relancer la migration, puis la procédure'; END IF;
     END IF;
     empreinte := (

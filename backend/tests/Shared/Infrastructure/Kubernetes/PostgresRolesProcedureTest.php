@@ -375,7 +375,7 @@ final class PostgresRolesProcedureTest extends TestCase
 
         $block = $this->normalized(RolesVerification::blockOf('#608'));
 
-        self::assertStringContainsString(\sprintf("WHERE version = $1)' INTO migree USING 'DoctrineMigrations\\%s'", self::TIMEZONE_MIGRATION), $block, 'La migration du fuseau est passée : sa ligne, pas la seule existence de la table.');
+        self::assertStringContainsString("migree boolean := current_setting('cpg.fuseau_migre')::boolean;", $block, 'La migration du fuseau est passée : lu par roles.sql sous le rôle de migration ({@see self::testTheMigrationTableIsReadUnderTheMigratorOnly()}).');
         self::assertStringContainsString("CASE WHEN migree THEN ARRAY['TimeZone'] END", $block, 'Le seul réglage de base admis, une fois migrée.');
         self::assertStringContainsString(\sprintf("IF migree AND reglages IS DISTINCT FROM ARRAY['TimeZone=%s'] THEN RAISE", $written[1]), $block);
         self::assertStringContainsString('setdatabase = base AND setrole <> 0', $block, 'Aucun réglage de rôle propre à la base (ALTER ROLE … IN DATABASE).');
@@ -402,7 +402,7 @@ final class PostgresRolesProcedureTest extends TestCase
 
         $repair = $this->normalized(RolesVerification::repairBlock());
 
-        self::assertStringContainsString(\sprintf("WHERE version = $1)' INTO migree USING 'DoctrineMigrations\\%s'", self::TIMEZONE_MIGRATION), $repair, 'La migration du fuseau est passée : sa ligne, comme verify.sql.');
+        self::assertStringContainsString("migree boolean := current_setting('cpg.fuseau_migre')::boolean;", $repair, 'La migration du fuseau est passée : lu à l\'étape 4, comme verify.sql.');
         self::assertStringContainsString(\sprintf("CASE WHEN migree THEN ARRAY['TimeZone=%s'] END", $written[1]), $repair);
         self::assertStringContainsString(\sprintf("IF migree THEN EXECUTE format('ALTER DATABASE %%I SET timezone TO %%L', current_database(), '%s');", $written[1]), $repair);
 
@@ -411,6 +411,35 @@ final class PostgresRolesProcedureTest extends TestCase
         foreach ($notices[1] as $arguments) {
             self::assertContains(trim($arguments), ['', ", (SELECT array_agg(split_part(c, '=', 1) ORDER BY c COLLATE \"C\") FROM unnest(reglages) AS c)", ', cardinality(roles_regles)'], 'Un avis #610 ne cite qu\'un nom de réglage ou un nombre.');
         }
+    }
+
+    /**
+     * Revue de #610, mesuré sur l'image épinglée : la table des migrations
+     * appartient au rôle de migration, et la lire sous le superutilisateur
+     * exécutait le code qu'il y pose (une vue et sa fonction). Une seule
+     * lecture, dans une fonction `SECURITY DEFINER` dont il est propriétaire,
+     * appelée une fois puis supprimée ; les blocs relisent ses réglages. Le
+     * fuseau est reconnu à la ligne de `Version20261011120000`, pas à la seule
+     * existence de la table, qu'une base restaurée d'avant elle porte sans le
+     * fuseau. Le comportement est rejoué par
+     * {@see \App\Tests\Shared\Infrastructure\Postgres\DatabaseOwnerSettingsVerificationTest}.
+     */
+    public function testTheMigrationTableIsReadUnderTheMigratorOnly(): void
+    {
+        $reading = $this->normalized(RolesVerification::migrationsReading());
+
+        self::assertStringContainsString('LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS', $reading);
+        self::assertStringContainsString("EXECUTE format('ALTER FUNCTION pg_temp.cpg_migrations() OWNER TO %I', current_setting('cpg.migrator_role'));", $reading);
+        self::assertStringContainsString("SELECT * INTO STRICT lues FROM pg_temp.cpg_migrations(); DROP FUNCTION pg_temp.cpg_migrations();", $reading, 'Appelée une fois, supprimée aussitôt.');
+        self::assertStringContainsString(\sprintf("bool_or(version = 'DoctrineMigrations\\%s')", self::TIMEZONE_MIGRATION), $reading);
+
+        // Nulle part ailleurs une lecture de la table : ni la réparation, ni verify.sql.
+        $reads = 0;
+        foreach (['roles.sql', 'verify.sql'] as $file) {
+            $reads += preg_match_all('/\bFROM\s+public\.doctrine_migration_versions\b/', $this->statements($file));
+        }
+        self::assertSame(1, $reads, 'Une seule lecture de la table des migrations, dans la fonction du rôle de migration.');
+        self::assertMatchesRegularExpression('/\bFROM\s+public\.doctrine_migration_versions\b/', $reading);
     }
 
     /**

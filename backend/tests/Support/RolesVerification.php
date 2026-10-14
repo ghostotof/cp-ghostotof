@@ -39,6 +39,16 @@ final class RolesVerification
         return self::blockCarrying(self::ROLES_SQL, "RAISE NOTICE '#610 :", 'la réparation #610');
     }
 
+    /**
+     * Le bloc de roles.sql qui lit la table des migrations sous le rôle de
+     * migration (revue de #610) et range ce qu'il lit dans des réglages de
+     * transaction, reconnu à la fonction de lecture qu'il crée.
+     */
+    public static function migrationsReading(): string
+    {
+        return self::blockCarrying(self::ROLES_SQL, 'CREATE FUNCTION pg_temp.cpg_migrations(', 'la lecture des migrations');
+    }
+
     /** Le seul bloc `DO $$ … $$;` multiligne du fichier qui contient `$mark`, sans les commentaires de ligne entière. */
     private static function blockCarrying(string $file, string $mark, string $what): string
     {
