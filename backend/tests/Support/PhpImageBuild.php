@@ -8,8 +8,9 @@ use PHPUnit\Framework\Assert;
 
 /**
  * Ce que lit `docker build` pour l'image PHP : `docker/php/Dockerfile`, tous
- * stages confondus, et le `.dockerignore` du contexte de build, la racine du
- * dépôt (issues #474, #489).
+ * stages confondus, le `.dockerignore` du contexte de build, la racine du
+ * dépôt (issues #474, #489), et le `php.prod.ini` que le Dockerfile copie dans
+ * l'image (issue #612).
  *
  * Le Dockerfile est lu instruction par instruction comme Docker le passe au
  * shell : lignes de commentaire retirées, lignes de continuation jointes. Un
@@ -64,6 +65,23 @@ final class PhpImageBuild
             array_map(trim(...), self::withoutComments(self::read('.dockerignore'))),
             static fn (string $line): bool => '' !== $line,
         ));
+    }
+
+    /**
+     * La valeur d'une directive de `php.prod.ini`, telle que PHP lit le
+     * fichier — commentaires ignorés, guillemets retirés, la dernière
+     * occurrence l'emportant — mais brute : `On` reste `On`, là où le
+     * scanner normal rendrait `1`. Une directive absente fait échouer le test.
+     */
+    public static function productionIniDirective(string $name): string
+    {
+        $directives = parse_ini_string(self::read('docker/php/php.prod.ini'), false, \INI_SCANNER_RAW);
+        Assert::assertIsArray($directives, 'php.prod.ini illisible.');
+        Assert::assertArrayHasKey($name, $directives, \sprintf('php.prod.ini : aucune directive « %s ».', $name));
+        // Une directive écrite `nom[] = …` serait lue comme une liste.
+        Assert::assertIsString($directives[$name], \sprintf('php.prod.ini : « %s » n\'est pas une valeur simple.', $name));
+
+        return $directives[$name];
     }
 
     /**

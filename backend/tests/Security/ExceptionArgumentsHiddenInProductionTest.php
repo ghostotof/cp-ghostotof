@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Security;
 
+use App\Tests\Support\PhpImageBuild;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -21,20 +22,14 @@ use PHPUnit\Framework\TestCase;
  * étant construite `FROM production`) : en dev, les arguments restent visibles,
  * c'est précisément ce qu'on veut en déboguant.
  *
- * Le test lit le fichier, comme `FpmLockWaitBoundTest` : la configuration de
- * l'image n'est pas celle du conteneur de dev qui exécute la suite.
- * `docker/php` y est monté en lecture seule pour cela.
+ * Le test lit le fichier ({@see PhpImageBuild::productionIniDirective()}) : la
+ * configuration de l'image n'est pas celle du conteneur de dev qui exécute la
+ * suite. `docker/php` y est monté en lecture seule pour cela.
  */
 final class ExceptionArgumentsHiddenInProductionTest extends TestCase
 {
     public function testDeployedImagesDropCallArgumentsFromExceptionTraces(): void
     {
-        $path = \dirname(__DIR__, 3).'/docker/php/php.prod.ini';
-        self::assertFileIsReadable($path);
-
-        self::assertMatchesRegularExpression(
-            '/^zend\.exception_ignore_args = On$/m',
-            (string) file_get_contents($path),
-        );
+        self::assertSame('On', PhpImageBuild::productionIniDirective('zend.exception_ignore_args'));
     }
 }

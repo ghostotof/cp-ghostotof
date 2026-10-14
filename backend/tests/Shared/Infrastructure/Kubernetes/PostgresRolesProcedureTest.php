@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Shared\Infrastructure\Kubernetes;
 
 use App\Tests\Support\KubernetesManifests;
+use App\Tests\Support\PhpImageBuild;
 use App\Tests\Support\RolesVerification;
 use App\Tests\Support\Runbook;
 use PHPUnit\Framework\TestCase;
@@ -367,9 +368,7 @@ final class PostgresRolesProcedureTest extends TestCase
     {
         $migration = (string) file_get_contents(\dirname(__DIR__, 4).'/migrations/'.self::TIMEZONE_MIGRATION.'.php');
         self::assertSame(1, preg_match("/SET timezone TO %L', current_database\\(\\), '([^']+)'/", $migration, $written), self::TIMEZONE_MIGRATION.' : le fuseau écrit par la migration.');
-        $ini = (string) file_get_contents(\dirname(__DIR__, 5).'/docker/php/php.prod.ini');
-        self::assertSame(1, preg_match('/^date\.timezone = (\S+)$/m', $ini, $timezone), 'php.prod.ini : une ligne « date.timezone = <fuseau> ».');
-        self::assertSame($written[1], $timezone[1], 'Le fuseau de la base est celui des images.');
+        self::assertSame($written[1], PhpImageBuild::productionIniDirective('date.timezone'), 'Le fuseau de la base est celui des images.');
 
         $block = $this->normalized(RolesVerification::blockOf('#608'));
 
