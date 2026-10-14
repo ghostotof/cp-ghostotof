@@ -3,6 +3,10 @@
 Portfolio d'un développeur dont le contenu se dévoile par paliers : ce qui identifie l'auteur n'est servi
 qu'aux personnes à qui il l'a accordé nommément.
 
+Les termes valent en français, langue des issues et des specs ; l'interface anglaise emploie leurs
+traductions, le code les noms donnés en _En code_. Un libellé de navigation (« Parcours », « Assistant »,
+« CV ») n'est pas un terme du glossaire.
+
 ## Paliers d'accès
 
 **Palier d'accès** :
@@ -25,7 +29,7 @@ _En code_ : `ROLE_USER`, `base`
 Autorisation temporaire, sans compte, qui place la personne au palier de base. Elle s'obtient en un clic,
 sans identifiant.
 _À éviter_ : accès instantané (libellé du bouton), jeton sans compte, compte invité
-_En code_ : `BaseAccessUser` ; le marqueur de journal `guest-…` est conservé tel quel
+_En code_ : `BaseAccessUser`
 
 **Palier de confiance** :
 Palier qui reçoit les données nominatives. Il n'est accordé qu'à une personne nommée, par un administrateur.
@@ -55,19 +59,22 @@ _En code_ : `CpgUser`
 
 **Invitation** :
 Acte par lequel un administrateur crée le compte d'une personne nommée et lui envoie par e-mail de quoi
-l'activer. Le compte reste en attente jusqu'à son activation.
+l'activer. Le compte reste en attente jusqu'à son activation ; on dit « compte sur invitation » quand il
+faut le distinguer d'un compte créé en ligne de commande.
 _À éviter_ : invité, pour désigner un palier ou un compte
 
 ## Contenus
 
 **Publiable** :
 Critère éditorial — « accepterais-je de publier ceci ? » — qui décide si un contenu peut aller au palier
-de base ou partir vers un fournisseur d'IA. Ce n'est pas un état : il n'existe ni brouillon ni
+de base ou partir vers un fournisseur d'IA tiers (seul l'hébergeur du site peut recevoir davantage). Ce
+n'est pas un état : il n'existe ni brouillon ni
 publication, tout contenu enregistré est servi.
 _À éviter_ : publié, brouillon, comme états d'un contenu
 
 **CV nominatif** :
-CV complet de l'auteur, sous forme de document, réservé au palier de confiance.
+CV de l'auteur avec son identité — nom, employeurs, chronologie professionnelle —, sous forme de document,
+réservé au palier de confiance.
 _À éviter_ : CV seul, vrai CV, CV complet
 _En code_ : `Portfolio/Cv`
 
@@ -75,7 +82,7 @@ _En code_ : `Portfolio/Cv`
 CV publiable organisé par domaines de compétence, sans nom, employeur, client ni chronologie ; contenu du
 palier de base.
 _À éviter_ : CV anonymisé, CV anonyme, CV seul
-_En code_ : `AnonymousCv`, nom historique : il désigne l'absence d'identité, pas l'anonymat
+_En code_ : `AnonymousCv`
 
 **Domaine de compétence** :
 Rubrique du CV sans identité qui regroupe des compétences, une ancienneté et des réalisations.
@@ -98,12 +105,12 @@ _À éviter_ : étude technique, case study
 _En code_ : `CaseStudy`
 
 **Chronologie professionnelle** :
-Succession datée des postes et des employeurs. Nominative par nature, même privée des noms : elle se
-ré-identifie par recoupement.
+Succession datée des postes et des employeurs. Nominative par nature, même privée des noms ou réduite à
+des durées et des secteurs : elle se ré-identifie par recoupement.
 _À éviter_ : parcours seul, parcours anonymisé
 
 **Parcours technique** :
-Technologies pratiquées par l'auteur et leurs années de pratique, sans chronologie ; contenu public.
+Technologies pratiquées par l'auteur et leurs années de pratique, sans chronologie ; ouvert au palier anonyme.
 _À éviter_ : parcours seul, expériences
 _En code_ : `Portfolio/Experience`
 
@@ -119,14 +126,20 @@ Un contenu dans une langue donnée.
 _À éviter_ : version seul, traduction (l'original n'en est pas une)
 
 **Groupe de traduction** :
-Ensemble des versions linguistiques d'un même contenu, au plus une par langue.
-_À éviter_ : « version de », « translation of »
+Ensemble des versions linguistiques d'un même contenu, au plus une par langue ; chacune est « version de »
+chacune des autres.
+_À éviter_ : « translation of »
 _En code_ : `translation_group`
 
 **Ordre d'affichage** :
 Ordre choisi par l'administrateur pour une liste de contenus.
 _À éviter_ : position, placement, classement (réservé à un ordre calculé)
 _En code_ : `position`, `Orderable`
+
+**Brouillon d'ordre** :
+Ordre d'affichage modifié dans le backoffice et pas encore enregistré ; tant qu'il existe, les autres
+modifications de la page sont bloquées.
+_En code_ : `useOrderDraft`
 
 ## Veille technique
 
@@ -178,5 +191,5 @@ _En code_ : `Ai/Translation`
 **Proposition** :
 Texte produit par l'assistant de traduction, soumis à l'administrateur et jamais enregistré tant qu'il ne
 l'a pas validé.
-_À éviter_ : brouillon
+_À éviter_ : brouillon (réservé au brouillon d'ordre)
 _En code_ : `TranslationProposal`

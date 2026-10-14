@@ -183,7 +183,7 @@ paths:
     address (`UsernameGenerator`, ADR 0001 D2), usually a first and last name. `actor` is the UUID of the
     authenticated account, the base tier's random `guest-…` marker, `anonymous`, `system`, `console`, or
     `unidentified` for any other `UserInterface` (none exists). `user` now only ever carries that
-    `guest-…` marker (`base-access-issued`, a guest's `logged-out`). Both go through
+    `guest-…` marker (`base-access-issued`, a base access's `logged-out`). Both go through
     `App\Shared\Domain\Security\AccountReference` (`CpgUser::accountId()`), the interface `Ai` reads too,
     so no context depends on `Security`. To name an account during an incident:
     `SELECT username, email FROM cpg_user WHERE id = '<userId>'` — once deleted, its lines designate no one,

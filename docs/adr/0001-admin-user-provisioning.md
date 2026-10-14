@@ -2,8 +2,8 @@
 
 > **Vocabulaire (2026-10-14, #602).** Les termes canoniques du domaine sont dans [`CONTEXT.md`](../../CONTEXT.md) ; ce document, antérieur au
 > glossaire, ne les emploie pas tous. Le « compte invité générique » dont il parle est l'ancien compte
-> partagé, retiré par l'ADR 0003 ; un compte créé par **invitation** est un **compte** tout court,
-> toujours nominatif.
+> partagé, retiré par l'ADR 0003 ; un compte créé par **invitation** est un **compte** (« compte sur
+> invitation » quand il faut le distinguer), toujours nominatif.
 
 - Statut : accepté
 - Date : 2026-09-03

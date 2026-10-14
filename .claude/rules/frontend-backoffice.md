@@ -168,7 +168,7 @@ return of `load()` for the target locale (hence the `flush: 'sync'` watcher, or 
 would overwrite it). The button is disabled while an order draft is dirty (a proposal the locked form could
 not save would burn quota for nothing). Never use `v-html` on text coming back from the model: it goes
 through the form fields, then `RichText.vue`. The case-studies admin page (`/admin/case-studies`, issue #104,
-closed 2026-09-14) is wired exactly like the anonymous-CV one — every field is prose, so "Create the XX
+closed 2026-09-14) is wired exactly like the CV sans identité one — every field is prose, so "Create the XX
 version" copies nothing and the assistant sends all five fields.
 
 - `presentation/ui/{BaseTextInput,BaseTextarea,BaseNumberInput,BaseSelect}.vue` — the project's first reusable
