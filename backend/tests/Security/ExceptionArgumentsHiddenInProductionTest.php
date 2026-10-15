@@ -49,6 +49,17 @@ final class ExceptionArgumentsHiddenInProductionTest extends TestCase
      */
     private const string DIRECTIVE_NAME = '/exception_ignore_args/i';
 
+    /**
+     * La directive, ou une variable qui détourne PHP de ses fichiers ini.
+     */
+    private const string INI_LOOKUP_OVERRIDE = '/exception_ignore_args|\bPHP_INI_SCAN_DIR\b|\bPHPRC\b/i';
+
+    /**
+     * Une option de `php` ou de `php-fpm` qui écarte ou remplace leurs
+     * fichiers de configuration, isolée ou en tête d'élément JSON.
+     */
+    private const string CONFIGURATION_OPTION = '/(?:\A|[\s"\[,])(?:-[ncdy](?![A-Za-z-])|--(?:no-php-ini|php-ini|define|fpm-config)\b)/';
+
     public function testDeployedImagesDropCallArgumentsFromExceptionTraces(): void
     {
         self::assertSame('On', PhpImageBuild::productionIniDirective('zend.exception_ignore_args'));
@@ -80,5 +91,45 @@ final class ExceptionArgumentsHiddenInProductionTest extends TestCase
         }
 
         self::assertSame([], $offenders, 'Seul php.prod.ini règle zend.exception_ignore_args dans les images déployées (issue #616).');
+    }
+
+    /**
+     * Aucune instruction des stages déployés ne nomme la directive (un `ENV`,
+     * un `-d` de la commande) ni ne détourne PHP de ses fichiers :
+     * `PHP_INI_SCAN_DIR` remplace `conf.d/` en entier, `zz-app.ini` compris,
+     * `PHPRC` déplace `php.ini`. Une écriture dans `/usr/local/etc/` par un
+     * `RUN` est déjà refusée par {@see PhpImageBuild::configurationCopiesOf()}.
+     */
+    public function testNoInstructionOfTheDeployedStagesBypassesTheConfigurationFiles(): void
+    {
+        self::assertSame(
+            [],
+            array_values(array_filter(
+                PhpImageBuild::deployedInstructions(),
+                static fn (string $instruction): bool => 1 === preg_match(self::INI_LOOKUP_OVERRIDE, $instruction),
+            )),
+            'Une instruction des stages déployés règle zend.exception_ignore_args ou détourne PHP de php.prod.ini (issue #616).',
+        );
+    }
+
+    /**
+     * La commande des images ne passe à PHP ni à FPM aucune option qui écarte
+     * ou remplace leurs fichiers de configuration : `-n` (aucun ini), `-c`
+     * (un autre `php.ini`), `-d` (une directive), `-y` (une autre
+     * configuration de FPM), ni leurs formes longues. Un `sh -c …` y serait
+     * refusé aussi, et c'est voulu : la commande passerait par un shell que le
+     * garde ne lit pas.
+     */
+    public function testTheImageCommandKeepsTheConfigurationFiles(): void
+    {
+        self::assertSame(
+            [],
+            array_values(array_filter(
+                PhpImageBuild::deployedInstructions(),
+                static fn (string $instruction): bool => 1 === preg_match('/\A\s*(?:CMD|ENTRYPOINT)\b/i', $instruction)
+                    && 1 === preg_match(self::CONFIGURATION_OPTION, $instruction),
+            )),
+            'La commande des images déployées écarte leurs fichiers de configuration (issue #616).',
+        );
     }
 }
