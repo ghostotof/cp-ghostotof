@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Support;
 
+use Doctrine\DBAL\Connection;
 use PHPUnit\Framework\Assert;
 
 /**
@@ -129,6 +130,46 @@ final class RolesVerification
         Assert::assertSame(1, preg_match('/^\s*-- #611 : empreinte, début\n(.*?)^\s*-- #611 : empreinte, fin$/ms', $source, $query), 'verify.sql : la requête d\'empreinte, entre ses marqueurs.');
 
         return trim($query[1]);
+    }
+
+    /**
+     * Les réglages qui changent l'impression d'une définition, que le bloc
+     * `#611` fixe lui-même avant de calculer l'empreinte (issue #634) — nom =>
+     * valeur —, pris entre leurs marqueurs, dans le fichier brut.
+     *
+     * @return array<string, string>
+     */
+    public static function schemaPrintSettings(): array
+    {
+        $source = KubernetesManifests::base()->source(self::VERIFY_SQL);
+        Assert::assertSame(1, preg_match('/^\s*-- #611 : réglages d\'impression, début\n(.*?)^\s*-- #611 : réglages d\'impression, fin$/ms', $source, $region), 'verify.sql : les réglages d\'impression, entre leurs marqueurs.');
+        preg_match_all("/set_config\\('([A-Za-z_]+)', '([^']*)', true\\)/", $region[1], $settings, \PREG_SET_ORDER);
+        Assert::assertNotEmpty($settings, 'verify.sql : le bloc #611 fixe ses réglages d\'impression.');
+
+        return array_column($settings, 2, 1);
+    }
+
+    /**
+     * L'empreinte du schéma que le bloc `#611` calcule : sa requête, sous ses
+     * réglages d'impression ({@see self::schemaPrintSettings()}), posés dans
+     * un point de sauvegarde annulé ensuite — la session appelante, qui doit
+     * avoir une transaction ouverte, n'en garde rien.
+     */
+    public static function schemaFingerprint(Connection $connection): string
+    {
+        $connection->executeStatement('SAVEPOINT cpg_empreinte_634');
+        try {
+            foreach (self::schemaPrintSettings() as $name => $value) {
+                $connection->executeQuery('SELECT pg_catalog.set_config(?, ?, true)', [$name, $value]);
+            }
+            $fingerprint = $connection->fetchOne(self::schemaFingerprintQuery());
+        } finally {
+            $connection->executeStatement('ROLLBACK TO SAVEPOINT cpg_empreinte_634');
+            $connection->executeStatement('RELEASE SAVEPOINT cpg_empreinte_634');
+        }
+        Assert::assertIsString($fingerprint);
+
+        return $fingerprint;
     }
 
     /**

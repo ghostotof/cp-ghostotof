@@ -67,6 +67,9 @@ final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
 
     private string $suffix;
 
+    /** Le message du dernier refus attendu, pour qui doit y lire plus que sa cause. */
+    private string $lastRefusal = '';
+
     protected function setUp(): void
     {
         self::bootKernel();
@@ -744,15 +747,57 @@ final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
         $this->assertBlockRefuses('#611', self::SCHEMA_REFUSAL);
     }
 
-    /** L'empreinte du schéma, calculée par la requête même du bloc `#611`, sous son search_path. */
+    /**
+     * Issue #634 : `pg_get_expr` imprime une constante selon les réglages de
+     * la session — un horodatage selon `TimeZone` et `DateStyle`, un
+     * intervalle selon `IntervalStyle`, un flottant selon
+     * `extra_float_digits`. La session de la procédure tourne en `GMT` depuis
+     * la remise de #618, celle qui calcule les empreintes admises en
+     * `Europe/Paris` : une migration qui poserait une telle constante dans un
+     * `DEFAULT`, un `CHECK` ou un prédicat d'index ferait refuser son
+     * empreinte à chaque passage. Le bloc fixe donc ces réglages lui-même :
+     * joué sous deux sessions qui les ont tous différents, il calcule la même
+     * empreinte (lue dans son refus, la table plantée n'étant d'aucune
+     * migration).
+     */
+    public function testTheFingerprintDoesNotDependOnTheSessionPrintSettings(): void
+    {
+        $this->arm(["CREATE TABLE public.{t1} (instant timestamptz DEFAULT '2026-03-29 01:30:00+00', jour date DEFAULT '2026-10-25', duree interval DEFAULT '1 day 02:00:00', mesure double precision DEFAULT 0.30000000000000004)"]);
+
+        $paris = $this->refusedFingerprintUnder(['TimeZone' => 'Europe/Paris', 'DateStyle' => 'ISO, MDY', 'IntervalStyle' => 'postgres', 'extra_float_digits' => '1']);
+        $elsewhere = $this->refusedFingerprintUnder(['TimeZone' => 'Asia/Tokyo', 'DateStyle' => 'SQL, DMY', 'IntervalStyle' => 'sql_standard', 'extra_float_digits' => '0']);
+
+        self::assertSame($paris, $elsewhere);
+        self::assertSame($paris, $this->fingerprint(), 'Le test calcule l\'empreinte sous les réglages du bloc, pas sous ceux de sa session : la ligne qu\'il propose pour une migration nouvelle est celle que le bloc admettra.');
+    }
+
+    /**
+     * L'empreinte que le bloc `#611` cite dans son refus, joué sous les
+     * réglages de session `$settings`, posés et retirés dans un point de
+     * sauvegarde.
+     *
+     * @param array<string, string> $settings
+     */
+    private function refusedFingerprintUnder(array $settings): string
+    {
+        $this->probe->beginTransaction();
+        try {
+            foreach ($settings as $name => $value) {
+                $this->probe->executeQuery('SELECT set_config(?, ?, true)', [$name, $value]);
+            }
+            $this->assertBlockRefuses('#611', self::SCHEMA_REFUSAL);
+            self::assertSame(1, preg_match('/empreinte ([0-9a-f]{32})/', $this->lastRefusal, $fingerprint));
+
+            return $fingerprint[1];
+        } finally {
+            $this->probe->rollBack();
+        }
+    }
+
+    /** L'empreinte du schéma, calculée comme le bloc `#611` la calcule. */
     private function fingerprint(): string
     {
-        $this->probe->executeStatement('SET LOCAL search_path = pg_catalog, pg_temp');
-        $fingerprint = $this->probe->fetchOne(RolesVerification::schemaFingerprintQuery());
-        $this->probe->executeStatement('RESET search_path');
-        self::assertIsString($fingerprint);
-
-        return $fingerprint;
+        return RolesVerification::schemaFingerprint($this->probe);
     }
 
     private function assertBlockRefuses(string $issue, string $refusal): void
@@ -768,6 +813,7 @@ final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
             self::fail('Le bloc a accepté.');
         } catch (DriverException $exception) {
             self::assertStringContainsString($refusal, $exception->getMessage());
+            $this->lastRefusal = $exception->getMessage();
         }
     }
 

@@ -560,24 +560,30 @@ final class PostgresRolesProcedureTest extends TestCase
     /**
      * Issue #611 : le bloc compare l'empreinte du schéma à celle des
      * migrations. Il fixe le `search_path` avant de lire (les `pg_get_*def`
-     * qualifient un nom selon lui), n'imprime que des empreintes — jamais un
-     * nom, choisi par qui tient le rôle de migration —, et le runbook recopie
-     * à l'identique la requête de ses lignes, pour nommer celles qui
-     * diffèrent. Le bloc est rejoué par
+     * qualifient un nom selon lui) — et, depuis #634, les réglages qui
+     * changent l'impression d'une constante —, n'imprime que des empreintes —
+     * jamais un nom, choisi par qui tient le rôle de migration —, et le
+     * runbook recopie à l'identique la requête de ses lignes, sous les mêmes
+     * réglages, pour nommer celles qui diffèrent. Le bloc est rejoué par
      * {@see \App\Tests\Shared\Infrastructure\Postgres\DatabaseOwnerSettingsVerificationTest}.
      */
     public function testTheSchemaFingerprintPrintsHashesOnlyAndTheRunbookReadsTheSameLines(): void
     {
         $block = $this->normalized(RolesVerification::blockOf('#611'));
 
-        self::assertStringContainsString("BEGIN PERFORM set_config('search_path', 'pg_catalog, pg_temp', true);", $block, 'Le search_path est fixé avant toute lecture.');
+        $settings = RolesVerification::schemaPrintSettings();
+        self::assertSame(['search_path', 'TimeZone', 'DateStyle', 'IntervalStyle', 'extra_float_digits'], array_keys($settings), 'Le chemin et ce qui imprime une constante : horodatage, date, intervalle, flottant.');
+        self::assertSame('pg_catalog, pg_temp', $settings['search_path']);
+        self::assertStringContainsString(" BEGIN PERFORM set_config('search_path', 'pg_catalog, pg_temp', true), ", $block, 'Les réglages sont la première instruction du bloc, avant toute lecture.');
         self::assertSame(3, preg_match_all("/RAISE EXCEPTION '#611 :(?:[^']|'')*'((?:, [a-z_]+)*);/", $block, $raises), 'Trois refus #611.');
         self::assertSame(['', ', nombre, empreinte', ', empreinte'], $raises[1], 'Un refus #611 ne cite qu\'un nombre et des empreintes.');
         self::assertStringContainsString("SELECT md5(string_agg(md5(l), '' ORDER BY l COLLATE \"C\"))", $block, 'Chaque ligne hachée avant l\'agrégat : une ligne qui contient un saut de ligne ne peut en imiter deux.');
 
         $runbook = Runbook::repository()->bashBlockAfter(self::SCHEMA_LINES_RUNBOOK);
-        self::assertSame(1, preg_match("/<<'SQL'\nSET search_path = pg_catalog, pg_temp;\n(.*?);\nSQL$/ms", $runbook, $copy), 'k8s/README.md : la requête des lignes du schéma, sous le même search_path.');
-        self::assertSame($this->normalized(RolesVerification::schemaLinesQuery()), $this->normalized($copy[1]), 'Le runbook lit les mêmes lignes que verify.sql.');
+        self::assertSame(1, preg_match("/<<'SQL'\n((?:SET [^\n]+;\n)+)(.*?);\nSQL$/ms", $runbook, $copy), 'k8s/README.md : la requête des lignes du schéma, après ses SET.');
+        preg_match_all("/^SET (\\w+) = '?([^'\n]*)'?;$/m", $copy[1], $sets, \PREG_SET_ORDER);
+        self::assertSame($settings, array_column($sets, 2, 1), 'Le runbook pose les réglages du bloc, dans le même ordre.');
+        self::assertSame($this->normalized(RolesVerification::schemaLinesQuery()), $this->normalized($copy[2]), 'Le runbook lit les mêmes lignes que verify.sql.');
     }
 
     /** Le fuseau que `Version20261011120000`, figée, écrit sur la base. */

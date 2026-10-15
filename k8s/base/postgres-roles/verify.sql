@@ -256,7 +256,22 @@ DECLARE
     connues boolean;
     admise boolean;
 BEGIN
-    PERFORM set_config('search_path', 'pg_catalog, pg_temp', true);
+    -- Ce qui change l'impression d'une définition, fixé ici plutôt que reçu de
+    -- la session (issue #634) : le chemin qualifie les noms, le fuseau et le
+    -- style de date un horodatage constant, le style d'intervalle un
+    -- intervalle, extra_float_digits un flottant. La session de la procédure
+    -- tourne en GMT (remise de #618), celle des tests en Europe/Paris : sans
+    -- eux, une migration posant une telle constante dans un DEFAULT, un CHECK
+    -- ou un prédicat d'index serait refusée à chaque passage. Les tests
+    -- calculent les empreintes sous ces réglages, lus entre les marqueurs, et
+    -- le runbook les pose avant sa copie de la requête des lignes.
+    -- #611 : réglages d'impression, début
+    PERFORM set_config('search_path', 'pg_catalog, pg_temp', true),
+            set_config('TimeZone', 'UTC', true),
+            set_config('DateStyle', 'ISO, YMD', true),
+            set_config('IntervalStyle', 'postgres', true),
+            set_config('extra_float_digits', '1', true);
+    -- #611 : réglages d'impression, fin
     IF current_setting('cpg.migrations') <> '' THEN
         derniere := current_setting('cpg.derniere_migration');
         nombre := current_setting('cpg.migrations')::bigint;

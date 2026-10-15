@@ -102,7 +102,7 @@ final class InheritedSessionSettingsTest extends KernelTestCase
      */
     public function testTheProcedureSessionKeepsNothingTheDatabaseSets(): void
     {
-        $clean = $this->fingerprint($this->probe);
+        $clean = $this->cleanFingerprint();
         $this->plant();
         self::assertSame([], $this->sharedDatabaseSettings(), 'Ce que le test plante ne touche jamais la base de test partagée.');
 
@@ -112,7 +112,7 @@ final class InheritedSessionSettingsTest extends KernelTestCase
             foreach ([...array_keys(self::DATABASE_SETTINGS), ...array_keys(self::ROLE_IN_DATABASE_SETTINGS)] as $name) {
                 self::assertContains($name, $inherited, 'Prémisse : la nouvelle session hérite de '.$name.'.');
             }
-            self::assertNotSame($clean, $this->fingerprint($session), 'Prémisse : hérité, quote_all_identifiers change l\'empreinte #611.');
+            self::assertNotSame($clean, RolesVerification::schemaFingerprint($session), 'Prémisse : hérité, quote_all_identifiers change l\'empreinte #611.');
         });
 
         $this->inProcedureSession(RolesVerification::sessionOptions(), function (Connection $session) use ($clean): void {
@@ -126,7 +126,7 @@ final class InheritedSessionSettingsTest extends KernelTestCase
                     $name.' : rendu à sa valeur de démarrage.',
                 );
             }
-            self::assertSame($clean, $this->fingerprint($session));
+            self::assertSame($clean, RolesVerification::schemaFingerprint($session));
         });
     }
 
@@ -290,14 +290,18 @@ final class InheritedSessionSettingsTest extends KernelTestCase
         $this->shared->executeStatement(\sprintf('DROP DATABASE IF EXISTS %s WITH (FORCE)', $this->shared->quoteSingleIdentifier($this->throwawayDatabase())));
     }
 
-    /** L'empreinte du schéma, calculée par la requête même du bloc `#611`, sous son search_path. */
-    private function fingerprint(Connection $connection): string
+    /**
+     * L'empreinte du schéma de la base jetable, calculée comme le bloc `#611`
+     * la calcule, dans une transaction annulée : avant tout réglage planté.
+     */
+    private function cleanFingerprint(): string
     {
-        $connection->executeStatement('SET search_path = pg_catalog, pg_temp');
-        $fingerprint = $connection->fetchOne(RolesVerification::schemaFingerprintQuery());
-        self::assertIsString($fingerprint);
-
-        return $fingerprint;
+        $this->probe->beginTransaction();
+        try {
+            return RolesVerification::schemaFingerprint($this->probe);
+        } finally {
+            $this->probe->rollBack();
+        }
     }
 
     /**

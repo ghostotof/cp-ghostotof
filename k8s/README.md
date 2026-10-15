@@ -1287,13 +1287,20 @@ tient le rôle de migration : les lire sur le terminal, ne pas les recopier
 dans une session d'agent. Sur une table en sécurité au niveau des lignes,
 `cpg_reader` lit **0 ligne** lui aussi (pas de `BYPASSRLS`, et
 `pg_read_all_data` ne la contourne pas) : c'est le symptôme, pas une table
-vide.
+vide. Les `SET` en tête sont ceux que le bloc `#611` pose avant de lire
+(issue #634) : une constante horodatée, un intervalle ou un flottant s'y
+imprime comme `verify.sql` l'a imprimé, quels que soient les réglages de la
+session.
 
 ```bash
 NS=        # preprod ou prod, à renseigner : vide, la commande s'arrête avant d'appeler le cluster
 kubectl -n "${NS:?preprod ou prod}" exec -i deploy/postgres -c postgres -- \
   sh -c 'PGOPTIONS="-c default_transaction_read_only=on -c lock_timeout=5s" psql -X -A -t -v ON_ERROR_STOP=1 -U cpg_reader -d "$POSTGRES_DB"' <<'SQL'
 SET search_path = pg_catalog, pg_temp;
+SET TimeZone = 'UTC';
+SET DateStyle = 'ISO, YMD';
+SET IntervalStyle = 'postgres';
+SET extra_float_digits = 1;
 SELECT 'schema ' || quote_ident(n.nspname) FROM pg_namespace n WHERE n.nspname <> 'information_schema' AND n.nspname !~ '^pg_'
 UNION ALL
 SELECT concat_ws(' ', 'relation', quote_ident(c.relname), c.relkind, c.relpersistence, c.relrowsecurity, c.relforcerowsecurity, c.relispartition, c.relreplident, pg_get_expr(c.relpartbound, c.oid), c.reloptions::text, am.amname, ts.spcname)

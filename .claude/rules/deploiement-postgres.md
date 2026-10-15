@@ -99,8 +99,9 @@ paths:
   (`#618 : réglages hérités non rendus`) if one is left, i.e. one with no boot value. Measured: the
   152 owner-settable `user` settings planted at once (custom placeholders such as `cpg.*` are refused
   to the owner), the real stream passes, none left. The session's zone becomes `GMT` (the database's
-  `TimeZone` is inherited too): the #611 fingerprint does not depend on `TimeZone`, `DateStyle` or
-  `extra_float_digits` (measured). `InheritedSessionSettingsTest` commits real `ALTER DATABASE` and
+  `TimeZone` is inherited too), the tests' stays `Europe/Paris`: so the #611 block fixes what prints a
+  constant itself (#634, below), else a migration putting a timestamp in a `DEFAULT` would be refused
+  at every pass. `InheritedSessionSettingsTest` commits real `ALTER DATABASE` and
   `ALTER ROLE … IN DATABASE … SET` on a **throwaway database** of its own (#634: on the shared test
   database, an interrupted run left them to every other test) and opens a **new** connection with the
   runbook's `PGOPTIONS` (libpq reads the environment: `putenv`), as `psql` in the pod does — the
@@ -255,7 +256,11 @@ paths:
   rules with their enabled state, policies and their roles, inheritance, sequences, publications,
   functions, operators, types, casts and the rest of the catalog —, without owners or privileges
   (#575 checks those) nor dropped columns, read under a fixed `search_path` (`pg_get_*def` qualify a
-  name by it), each line hashed (a line holding a newline cannot pass for two), and the `md5` of the
+  name by it) and, since #634, fixed `TimeZone`, `DateStyle`, `IntervalStyle` and `extra_float_digits`
+  (`pg_get_expr` prints a constant by them — measured: a timestamp, an interval and a float in a
+  `DEFAULT` gave two fingerprints under two sessions) — all set by one `PERFORM` between its « réglages
+  d'impression » markers, which the tests read (`RolesVerification::schemaFingerprint()`, under them, in
+  a savepoint rolled back) and the runbook repeats as `SET`s before its copy —, each line hashed (a line holding a newline cannot pass for two), and the `md5` of the
   whole compared with the fingerprints admitted for the **migrations applied: the latest and their
   count** (`''`, 0: a fresh database; the count tells apart a migration merged after a more recent
   one, which keeps the latest unchanged). An empty migrations table (a first `migrate` interrupted)
