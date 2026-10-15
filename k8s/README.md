@@ -1206,7 +1206,20 @@ que son propriétaire y a posé. Une erreur là, un `cannot set parameter
 "role" within security-definer function` par exemple, veut dire que la table
 n'est plus celle des migrations (une vue, un type à sa place) : c'est un
 incident, conduit comme un avis `#610` ; la requête du refus `#611`
-ci-dessous nomme l'objet.
+ci-dessous nomme l'objet. Ce que ce code règle ou crée dans la session est
+annulé avec la lecture (issue #633) : il ne peut rien laisser au
+superutilisateur, ni réglage, ni objet temporaire.
+
+**Un refus `#633 : la lecture des migrations n'a pas abouti`** : le code de
+la table a levé la sentinelle par laquelle la lecture s'annule elle-même — le
+même incident. **Un refus `#633 : le chemin de recherche de la session n'est
+plus celui de la procédure`** (après la lecture, ou en tête de `verify.sql`) :
+un autre schéma que `pg_catalog` et le schéma temporaire de la session est
+entré dans le chemin de recherche, où une fonction de ce schéma aurait pu
+prendre la place de celle du catalogue sous le superutilisateur. La lecture
+l'empêche : c'est un défaut de la procédure, ou une ligne `PGOPTIONS` qui
+n'est pas celle ci-dessus — jamais une correction à la main ; signaler, ne
+pas relancer avant d'avoir compris.
 
 **Lire la ligne `mot_de_passe_cpg_app_ecrit | mot_de_passe_cpg_migrator_ecrit`**
 avant de publier quoi que ce soit : `t` pour un rôle créé ou une rotation,

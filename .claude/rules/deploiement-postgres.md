@@ -138,7 +138,10 @@ paths:
   `client_min_messages` and `standard_conforming_strings` included —, the evidence query before,
   repaired with its notices and committed, a silent rerun, a rotation, then the trapped view refused
   in exit 3) and for #618 (`roles.sql` and `privileges.sql` under every owner-settable setting planted,
-  with and without the reset, and a setting on the superuser role itself), and preprod is their proof at each change. **Accepted limits** (#575): any role may
+  with and without the reset, and a setting on the superuser role itself) and for #633 (a `pg_dump`
+restoration, two healthy passes, then the trapped view of `cpg_migrator` with a `COPY … TO PROGRAM`
+behind a shadowing `current_setting`: run as the superuser before the fix, never after, the
+sentinel removed refused by the guard), and preprod is their proof at each change. **Accepted limits** (#575): any role may
   `ALTER ROLE` itself (password, `SET` defaults) — an injection could cut the application durably; the
   procedure resets the three roles' attributes and `RESET ALL` at every pass, and `verify.sql` refuses
   a stray attribute — `RESET ALL` misses a setting scoped to the database
@@ -185,15 +188,39 @@ paths:
   would run **as the procedure's superuser** on the first read; `SET LOCAL ROLE` does not hold, the
   code read does `RESET ROLE`. So `roles.sql`'s step 4 reads it **once**, inside a `SECURITY DEFINER`
   function of `pg_temp` **owned by `cpg_migrator`** (its code runs under him, and the server refuses
-  any role or session change inside a security-definer function), **dropped right after the call**
-  (the planted code, under the owner, could redefine it for a later call), and hands what it read to
+  any role or session change inside a security-definer function), and hands what it read to
   the repair and to `verify.sql` through transaction settings (`cpg.migrations`,
   `cpg.derniere_migration`, `cpg.fuseau_migre`) — without them `verify.sql` refuses.
-  `PostgresRolesProcedureTest` allows a single read of the table in all the files, in that function;
+  **A security-definer function does not confine its code's settings** (#633, measured on the pinned
+  image, reproduced end to end): an ordinary `SET` overrides the function's own `SET` clause and
+  outlives it (CREATE FUNCTION's documentation). The planted code put `public` before the catalog
+  for the rest of the superuser's session, and a function of `public` named like a catalog one
+  (`current_setting(text)`) ran **as the superuser** from step 5's variable initialisations on — a
+  `COPY … TO PROGRAM` that survived the procedure's own rollback; `client_min_messages = error`
+  silenced the repair's notices. So the read runs **inside a sub-transaction the block rolls back
+  itself** (`<<lecture>>`, a sentinel `RAISE … ERRCODE = 'CP633'` caught by name, the values kept in
+  PL/pgSQL variables, which no rollback touches): every setting, object and write of the planted code
+  disappears with it, the function included (never a `DROP` after it); planted code raising the
+  sentinel itself leaves the read unfinished, refused (`#633 : la lecture des migrations n'a pas
+  abouti`). Left: effects outside transactions (session advisory locks, sequence values) — at worst a
+  stuck procedure, never code under the superuser. The `set_config` calls after it are qualified.
+  **Then a guard checks the session's `search_path`**, the same `DO` block right after the read and
+  at the head of `verify.sql`, before its first query: `pg_catalog.current_schemas(true)` must be the
+  catalog alone, optionally followed by the session's temp schema (`pg_*` names are reserved) — read
+  from the schemas, not the string (`PGOPTIONS` writes it without a space, a `SET` with one) —,
+  every name in it qualified, its operator included (`OPERATOR(pg_catalog.!~)`): it guards against
+  exactly an altered path. Each layer holds alone (measured: the sentinel removed, the guard refuses
+  in exit 3). Full qualification of `verify.sql` was ruled out: operators cannot be qualified in
+  practice, and the fingerprint query is copied byte for byte in the runbook.
+  `PostgresRolesProcedureTest` allows a single read of the table in all the files, in that function,
+  pins the sub-transaction and the guard's two places and qualification;
   `DatabaseOwnerSettingsVerificationTest` plants the trapped view (`current_user`, `RESET ROLE`,
-  `SET ROLE`, `SET SESSION AUTHORIZATION`). The other superuser statements of
-  the procedure (`ALTER … OWNER`, `GRANT`, `has_*_privilege`, `pg_get_*def`) touch the catalog without
-  running user code. **Owner of the database and of every object of `public`, the migrator may also
+  `SET ROLE`, `SET SESSION AUTHORIZATION`; since #633 `search_path`, `client_min_messages`,
+  `standard_conforming_strings`, `quote_all_identifiers` — the session's settings identical after the
+  read —, the sentinel, and a `public.current_setting(text)` that must never run in the repair or a
+  `verify.sql` block), and replays the guard on foreign paths and on the procedure's. The other
+  superuser statements of the procedure (`ALTER … OWNER`, `GRANT`, `has_*_privilege`, `pg_get_*def`)
+  touch the catalog without running user code. **Owner of the database and of every object of `public`, the migrator may also
   empty the application's DML without any error** (#611, each gesture measured on the pinned image): row-level security
   without a policy (`cpg_app`, no `BYPASSRLS`, reads no row, its `UPDATE`/`DELETE` touch nothing); a
   schema named after `cpg_app` and open to it, which the default `search_path` (`"$user", public`)
