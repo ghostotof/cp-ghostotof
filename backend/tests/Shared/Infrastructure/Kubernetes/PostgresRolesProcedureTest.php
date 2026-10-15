@@ -398,8 +398,9 @@ final class PostgresRolesProcedureTest extends TestCase
      * `idle_session_timeout`, `default_transaction_read_only`…), `CONNECTION
      * LIMIT 0`, `IS_TEMPLATE`, `REVOKE CONNECT … FROM PUBLIC` ; et tout rôle
      * pose sur lui-même un réglage propre à la base (`ALTER ROLE … IN DATABASE
-     * … SET`), que ni le `RESET ALL` de roles.sql ni `rolconfig` ne voient.
-     * verify.sql n'admet donc qu'un réglage de base, le fuseau, et seulement
+     * … SET`), que ni le `RESET ALL` de roles.sql ni `rolconfig` ne voient ;
+     * hors de la base enfin (#634), un réglage d'un rôle pour toutes les
+     * bases, de tous les rôles ou d'une base de l'image. verify.sql n'admet donc qu'un réglage de base, le fuseau, et seulement
      * une fois `Version20261011120000` passée — la ligne de la table des
      * migrations, pas son existence : une base restaurée d'avant elle, ou un
      * premier `migrate` interrompu, porte la table sans le fuseau. La valeur
@@ -422,7 +423,8 @@ final class PostgresRolesProcedureTest extends TestCase
         self::assertStringContainsString('datconnlimit <> -1', $block);
         self::assertStringContainsString('datistemplate', $block);
         self::assertStringContainsString("NOT has_database_privilege(r, current_database(), 'CONNECT')", $block);
-        self::assertSame(6, preg_match_all("/RAISE EXCEPTION '#608 :/", $block), 'Six refus #608 dans leur bloc.');
+        self::assertStringContainsString("WHERE setdatabase = 0 OR setdatabase IN (SELECT oid FROM pg_database WHERE datname IN ('postgres', 'template0', 'template1'))", $block, '#634 : aucun réglage hors de la base — un rôle pour toutes les bases, tous les rôles, une base de l\'image.');
+        self::assertSame(7, preg_match_all("/RAISE EXCEPTION '#608 :/", $block), 'Sept refus #608 dans leur bloc.');
     }
 
     /**
@@ -450,7 +452,7 @@ final class PostgresRolesProcedureTest extends TestCase
         preg_match_all("/RAISE NOTICE '#610 :(?:[^']|'')*'(.*?);/", $repair, $notices);
         self::assertNotEmpty($notices[1], 'roles.sql : les avis #610.');
         foreach ($notices[1] as $arguments) {
-            self::assertContains(trim($arguments), ['', ", (SELECT array_agg(split_part(c, '=', 1) ORDER BY c COLLATE \"C\") FROM unnest(reglages) AS c)", ', cardinality(roles_regles)'], 'Un avis #610 ne cite qu\'un nom de réglage ou un nombre.');
+            self::assertContains(trim($arguments), ['', ", (SELECT array_agg(split_part(c, '=', 1) ORDER BY c COLLATE \"C\") FROM unnest(reglages) AS c)", ', cardinality(roles_regles)', ', retires_hors'], 'Un avis #610 ne cite qu\'un nom de réglage ou un nombre.');
         }
     }
 

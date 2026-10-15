@@ -85,9 +85,10 @@ SELECT EXISTS (
        (SELECT count(*) FROM pg_database WHERE datname NOT IN (current_database(), 'postgres', 'template0', 'template1')) AS bases_en_trop,
        (SELECT count(*) FROM unnest(ARRAY['postgres', 'template1']) AS d WHERE has_database_privilege('public', d, 'CONNECT') OR has_database_privilege('public', d, 'TEMPORARY')) AS bases_ouvertes_a_public;
 
-\echo '--- #608 : base de l''application (attendu : {TimeZone}, vide avant la migration du fuseau ; 0, -1, f, 3)'
+\echo '--- #608 : base de l''application (attendu : {TimeZone}, vide avant la migration du fuseau ; 0, 0, -1, f, 3)'
 SELECT (SELECT array_agg(split_part(c, '=', 1) ORDER BY c COLLATE "C") FROM pg_db_role_setting, unnest(setconfig) AS c WHERE setdatabase = d.oid AND setrole = 0) AS reglages_de_la_base,
        (SELECT count(*) FROM pg_db_role_setting WHERE setdatabase = d.oid AND setrole <> 0) AS reglages_de_role_dans_la_base,
+       (SELECT count(*) FROM pg_db_role_setting WHERE setdatabase = 0 OR setdatabase IN (SELECT oid FROM pg_database WHERE datname IN ('postgres', 'template0', 'template1'))) AS reglages_hors_de_la_base,
        d.datconnlimit AS limite_de_connexions,
        d.datistemplate AS modele,
        (SELECT count(*) FROM unnest(ARRAY[:'app_role', :'migrator_role', :'reader_role']) AS r WHERE has_database_privilege(r, current_database(), 'CONNECT')) AS roles_avec_connect
@@ -168,6 +169,12 @@ $$;
 -- statement_timeout…), CONNECTION LIMIT, IS_TEMPLATE, REVOKE CONNECT. Et tout
 -- rôle pose sur lui-même un réglage propre à la base (ALTER ROLE … IN
 -- DATABASE … SET), que le RESET ALL de roles.sql et rolconfig ne voient pas.
+-- Hors de la base enfin (issue #634) : un réglage d'un rôle pour toutes les
+-- bases (permis à tout rôle sur lui-même, superutilisateur compris), de tous
+-- les rôles (ALTER ROLE ALL SET) ou d'une base de l'image — les autres bases
+-- sont refusées plus haut (#597) ; la base de dev des tests, elle, porte son
+-- propre fuseau. La remise de #618 les écarte de la session de la procédure,
+-- pas de celles de l'application ni du lecteur : seul doit rester le fuseau.
 -- Seul réglage de base admis : le fuseau, une fois Version20261011120000
 -- passée — sa ligne, pas l'existence de la table, qu'une base restaurée
 -- d'avant elle porte sans le fuseau ; lue par roles.sql (étape 4) sous le rôle
@@ -201,6 +208,9 @@ BEGIN
     IF migree AND reglages IS DISTINCT FROM ARRAY['TimeZone=Europe/Paris'] THEN RAISE EXCEPTION '#608 : le fuseau de la base n''est pas Europe/Paris (ALTER DATABASE … SET timezone)'; END IF;
     SELECT count(*) INTO n FROM pg_db_role_setting WHERE setdatabase = base AND setrole <> 0;
     IF n <> 0 THEN RAISE EXCEPTION '#608 : % réglage(s) de rôle propre(s) à la base (ALTER ROLE … IN DATABASE … SET)', n; END IF;
+    SELECT count(*) INTO n FROM pg_db_role_setting
+    WHERE setdatabase = 0 OR setdatabase IN (SELECT oid FROM pg_database WHERE datname IN ('postgres', 'template0', 'template1'));
+    IF n <> 0 THEN RAISE EXCEPTION '#608 : % réglage(s) posé(s) hors de la base (ALTER ROLE … SET, ALTER ROLE ALL SET, base de l''image ; #634)', n; END IF;
     IF (SELECT datconnlimit <> -1 FROM pg_database WHERE oid = base) THEN RAISE EXCEPTION '#608 : la base limite ses connexions (CONNECTION LIMIT)'; END IF;
     IF (SELECT datistemplate FROM pg_database WHERE oid = base) THEN RAISE EXCEPTION '#608 : la base est marquée modèle (IS_TEMPLATE)'; END IF;
     SELECT count(*) INTO n FROM unnest(ARRAY[app, migrator, reader]) AS r WHERE NOT has_database_privilege(r, current_database(), 'CONNECT');

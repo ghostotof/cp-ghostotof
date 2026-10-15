@@ -55,6 +55,9 @@ final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
     /** Une fonction de trigger qui efface la ligne qu'on vient d'écrire. */
     private const string ERASING_FUNCTION = "CREATE FUNCTION public.{f}() RETURNS trigger LANGUAGE plpgsql AS 'BEGIN DELETE FROM public.{t1} WHERE id = NEW.id; RETURN NULL; END'";
 
+    /** Le refus du bloc `#608` quand un réglage est posé hors de la base (issue #634). */
+    private const string OUTSIDE_REFUSAL = '#608 : 1 réglage(s) posé(s) hors de la base';
+
     /** Le refus du bloc `#611` quand le schéma n'a pas l'empreinte attendue. */
     private const string SCHEMA_REFUSAL = "#611 : le schéma de la base n'est pas celui des migrations";
 
@@ -146,6 +149,15 @@ final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
         yield 'modèle' => ['ALTER DATABASE {db} WITH IS_TEMPLATE true', '#608 : la base est marquée modèle'];
         yield 'CONNECT retiré' => ['REVOKE CONNECT ON DATABASE {db} FROM PUBLIC', '#608 : 3 rôle(s) sur 3 sans CONNECT'];
         yield 'réglage de rôle dans la base' => ['ALTER ROLE {app} IN DATABASE {db} SET default_transaction_read_only = on', '#608 : 1 réglage(s) de rôle propre(s) à la base'];
+        // #634 : hors de la base, ce qu'un rôle pose sur lui-même pour toutes
+        // les bases, ce que le superutilisateur pose sur lui, sur tous les
+        // rôles ou sur une base de l'image — que la remise de #618 écarte de
+        // la session de la procédure sans le retirer.
+        yield 'réglage d\'un rôle pour toutes les bases' => ['ALTER ROLE {app} SET default_transaction_read_only = on', self::OUTSIDE_REFUSAL];
+        yield 'réglage du superutilisateur pour toutes les bases' => ["ALTER ROLE CURRENT_USER SET work_mem = '64kB'", self::OUTSIDE_REFUSAL];
+        yield 'réglage de tous les rôles' => ["ALTER ROLE ALL SET work_mem = '64kB'", self::OUTSIDE_REFUSAL];
+        yield 'réglage d\'une base de l\'image' => ["ALTER DATABASE template1 SET work_mem = '64kB'", self::OUTSIDE_REFUSAL];
+        yield 'réglage de rôle dans une base de l\'image' => ["ALTER ROLE {app} IN DATABASE postgres SET work_mem = '64kB'", self::OUTSIDE_REFUSAL];
     }
 
     /**
@@ -753,8 +765,8 @@ final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
      * que la réparation efface. Elle ne lisait que les réglages propres à la
      * base, pas ceux d'un rôle pour toutes les bases (`ALTER ROLE … SET`,
      * permis à tout rôle sur lui-même) ni ceux de tous les rôles (`ALTER ROLE
-     * ALL SET`, superutilisateur) : la remise de #618 les neutralise pour la
-     * session de la procédure, mais la preuve ne les gardait pas. Rejouée ici
+     * ALL SET`, superutilisateur), ni ceux d'une base de l'image — que
+     * l'étape 2 efface désormais (#634) : la preuve ne les gardait pas. Rejouée ici
      * telle que le runbook l'écrit, dans la transaction annulée du test.
      */
     public function testTheEvidenceReadingShowsTheRoleSettingsOutsideTheDatabaseToo(): void
@@ -763,6 +775,7 @@ final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
             "ALTER ROLE {app} SET work_mem = '1MB'",
             "ALTER ROLE {migrator} IN DATABASE {db} SET work_mem = '2MB'",
             "ALTER ROLE ALL SET work_mem = '3MB'",
+            "ALTER DATABASE template1 SET work_mem = '4MB'",
         ]);
 
         $rows = $this->evidenceSettings();
@@ -770,6 +783,7 @@ final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
         self::assertContains($this->app.'|(toutes les bases)|{work_mem=1MB}', $rows);
         self::assertContains($this->migrator.'|(cette base)|{work_mem=2MB}', $rows);
         self::assertContains('(tous les rôles)|(toutes les bases)|{work_mem=3MB}', $rows);
+        self::assertContains('(base)|template1|{work_mem=4MB}', $rows, 'Une base de l\'image : l\'étape 2 l\'efface aussi (#634).');
         self::assertContains('(base)|(cette base)|{TimeZone=Europe/Paris}', $rows, 'Prémisse : le fuseau de la migration, sur la base.');
     }
 

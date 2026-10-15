@@ -1116,11 +1116,11 @@ nomme la liste (des noms, jamais une valeur). Sur une base saine : `{TimeZone}`,
 le fuseau que `Version20261011120000` pose sur la base (la session de la
 procédure tourne alors en `GMT`, ce qui ne change rien à ce qu'elle lit :
 mesuré, l'empreinte `#611` est la même), ou une ligne vide avant elle. Un
-autre nom réglé sur la base, ou sur un rôle dans la base, est un écart que
-l'avis `#610` ci-dessous signale aussi et que l'étape 2 efface : la même
-conduite. Un nom qui ne vient ni de l'un ni de l'autre est un réglage posé sur
-le superutilisateur lui-même (`ALTER ROLE … SET`, que seul un
-superutilisateur peut faire) : un incident, et la procédure ne l'efface pas.
+autre nom est un écart que l'avis `#610` ci-dessous signale aussi et que
+l'étape 2 efface : réglé sur la base ou sur un rôle en elle, sur le
+superutilisateur lui-même pour toutes les bases (`ALTER ROLE … SET`, que seul
+un superutilisateur peut faire) ou sur tous les rôles (`ALTER ROLE ALL SET`,
+issue #634) — la même conduite.
 
 **Un refus `#618 : réglages hérités non rendus : {…}`** : un réglage hérité
 n'a pas de valeur de démarrage, et la procédure ne tourne pas sous lui. Deux
@@ -1145,8 +1145,10 @@ de l'application altérée et l'a remise en l'état que le bloc `#608` de
 seul, à la valeur de `Version20261011120000`, et seulement une fois elle
 passée), réglages `ALTER ROLE … IN DATABASE … SET` de tout rôle, `CONNECT`
 rendu à `PUBLIC` si l'un des trois rôles ne l'a plus, limite de connexions et
-marque de modèle retirées. Il nomme
-les réglages trouvés et compte les rôles, jamais une valeur ni un nom de rôle.
+marque de modèle retirées — et, hors de la base (issue #634), les réglages
+d'un rôle pour toutes les bases, de tous les rôles et des bases de l'image,
+dont l'application et le lecteur héritaient. Il nomme les réglages trouvés et
+compte les rôles ou les lignes, jamais une valeur ni un nom de rôle.
 Sur une base saine, aucun avis. La réparation n'est validée qu'avec le reste,
 après `conforme` : un refus plus loin l'annule elle aussi. Un avis n'est
 **jamais anodin** : personne n'altère la base par le chemin normal. Seuls
@@ -1176,16 +1178,15 @@ procédure est interdit, #520) : ouvrir une issue avec le message du refus.
 valeurs ni les rôles, choisis par qui a fait le geste. Pour garder la preuve,
 lancer **avant l'étape 2** cette lecture, sans rien écrire, sous le lecteur ;
 sa sortie reste sur le terminal, jamais dans une session d'agent (des
-valeurs choisies par un tiers). Sur une base saine, une ligne
-`(base)|(cette base)` qui ne porte que le fuseau (aucune avant
-`Version20261011120000`), puis `-1 | f`. Toute autre ligne de `(cette base)`
-est l'écart que l'étape 2 effacera. Une ligne de `(toutes les bases)` est un
-réglage posé sur un rôle hors de la base (`ALTER ROLE … SET`, permis à tout
-rôle sur lui-même) ou sur tous les rôles (`(tous les rôles)`, `ALTER ROLE ALL
-SET`, superutilisateur seul) : la procédure l'écarte de sa propre session
-(issue #618, et #634 pour tous les rôles) sans le retirer — l'étape 1 retire ceux des trois rôles
-(`RESET ALL`), pas ceux du superutilisateur ni de tous les rôles —, le même
-incident (issue #634). Un réglage de base
+valeurs choisies par un tiers). Sur une base saine, une seule ligne,
+`(base)|(cette base)`, qui ne porte que le fuseau (aucune avant
+`Version20261011120000`), puis `-1 | f`. Toute autre ligne est l'écart que
+l'étape 2 effacera, le même incident : sur `(cette base)`, un réglage de la
+base ou d'un rôle en elle ; sur `(toutes les bases)`, un réglage posé sur un
+rôle pour toutes les bases (`ALTER ROLE … SET`, permis à tout rôle sur
+lui-même, superutilisateur compris) ou sur tous les rôles (`(tous les rôles)`,
+`ALTER ROLE ALL SET`, superutilisateur seul) ; sur `postgres`, `template0` ou
+`template1`, un réglage d'une base de l'image (issue #634). Un réglage de base
 `role`, une limite de connexions ou un `CONNECT` retiré peut refuser la
 connexion du lecteur (le superutilisateur de la procédure n'y est pas
 soumis) : le message d'erreur est alors la preuve (mesuré : `too many
@@ -1198,10 +1199,10 @@ kubectl -n "${NS:?preprod ou prod}" exec -i deploy/postgres -c postgres -- \
 SET statement_timeout = 0;
 SET search_path = pg_catalog, pg_temp;
 SELECT CASE WHEN s.setrole <> 0 THEN s.setrole::regrole::text WHEN s.setdatabase = 0 THEN '(tous les rôles)' ELSE '(base)' END AS role,
-       CASE WHEN s.setdatabase = 0 THEN '(toutes les bases)' ELSE '(cette base)' END AS portee,
+       CASE WHEN s.setdatabase = 0 THEN '(toutes les bases)' WHEN d.datname = current_database() THEN '(cette base)' ELSE d.datname END AS portee,
        s.setconfig AS reglages
-FROM pg_db_role_setting s
-WHERE s.setdatabase IN (0, (SELECT oid FROM pg_database WHERE datname = current_database())) ORDER BY 2, 1;
+FROM pg_db_role_setting s LEFT JOIN pg_database d ON d.oid = s.setdatabase
+WHERE s.setdatabase = 0 OR d.datname IN (current_database(), 'postgres', 'template0', 'template1') ORDER BY 2, 1;
 SELECT datconnlimit AS limite_de_connexions, datistemplate AS modele, datacl AS privileges
 FROM pg_database WHERE datname = current_database();
 SQL

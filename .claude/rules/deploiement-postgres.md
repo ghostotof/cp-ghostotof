@@ -174,12 +174,19 @@ paths:
   in `doctrine_migration_versions`, not the table's existence: a restored database or an interrupted
   first `migrate` carries the table without the time zone —, at the exact value that frozen migration
   writes, equal to `php.prod.ini`'s `date.timezone` (`PostgresRolesProcedureTest` ties the three); it
-  refuses a connection limit, a template flag and a missing `CONNECT` for any of the three roles, and
-  prints the settings' **names**, never their values (chosen by whoever holds the migrator).
+  refuses a connection limit, a template flag and a missing `CONNECT` for any of the three roles, any
+  setting **outside the database** (#634: a role's for every database — any role may set it on itself,
+  the superuser on itself too —, every role's, `ALTER ROLE ALL SET`, or one on an image database or a
+  role in it; #618's reset kept them out of the procedure's session only, the application and the
+  reader inherited them; other databases are refused by #597, and the tests' dev database carries its
+  own time zone — so `pg_db_role_setting` holds exactly the time zone row; **accepted, not a follow-up**:
+  `ALTER SYSTEM` and `postgresql.conf` (source `configuration file`), the server's own configuration,
+  which only the superuser — the trust root, who reads everything anyway — can change), and prints the settings' **names**, never their values (chosen by whoever holds the migrator).
   `REVOKE TEMPORARY` is let through: the application uses no temporary table. That block is pure SQL,
   so `DatabaseOwnerSettingsVerificationTest` replays it on the migrated test database (throwaway
   roles, one rolled-back transaction): it passes as
-  is, and refuses each alteration above with its cause. The procedure's own session ignores these settings (`PGOPTIONS` and #618's reset, above), so the one that
+  is, and refuses each alteration above with its cause. The procedure's own session ignores these
+  settings (`PGOPTIONS` and #618's reset, above), so the one that
   would have stopped it reaches `verify.sql`. **And `roles.sql` repairs every one of them** (#610):
   otherwise the procedure would fail as long as one held, and a writing `exec` outside it is
   forbidden (#520). Its step 4, a pure-SQL `DO` block (no psql variable), puts the database back in
@@ -188,7 +195,9 @@ paths:
   `Version20261011120000` ran** (its row, as `verify.sql` reads it) at the value that frozen migration
   writes — the migration cannot be replayed, it also converts the timestamps; `PostgresRolesProcedureTest`
   ties the value to it —; every `ALTER ROLE … IN DATABASE` setting, **whatever the role** (`verify.sql`
-  refuses them all, a superuser-set one included); `CONNECT` granted back **to `PUBLIC`**, the image's
+  refuses them all, a superuser-set one included); since #634 every setting outside the database (a
+  role's for every database, every role's, an image database's or a role's in it, one `RESET ALL` per
+  row, counted in its own notice); `CONNECT` granted back **to `PUBLIC`**, the image's
   default (`privileges.sql` revokes it on `postgres` and `template1` only; `pg_hba.conf` filters the roles);
   no connection limit, no template flag. `TEMPORARY` and `ALLOW_CONNECTIONS` are left as `verify.sql` leaves
   them; `CONNECT` is granted only when one of the three roles lacks it — `verify.sql`'s own criterion, so a
@@ -197,9 +206,8 @@ paths:
   role name (the superuser's is in a Secret) —, committed with the rest after `conforme`; the runbook says
   what such a notice means (an incident: someone holding the migrator, `cpg_app` or `cpg_reader` altered the
   database), gives a read-only `cpg_reader` query to run **before** the procedure to keep the values the
-  repair erases — since #634 also the settings of a role for every database and of every role
-  (`setdatabase = 0`, which #618's reset only neutralises for the procedure's session;
-  `DatabaseOwnerSettingsVerificationTest` replays it as written) —, and says that a `#608` refusal left
+  repair erases — since #634 also the settings outside the database it now erases too, each line
+  naming its scope (`DatabaseOwnerSettingsVerificationTest` replays it as written) —, and says that a `#608` refusal left
   after it is a defect of the repair, never a hand fix.
   `DatabaseOwnerSettingsVerificationTest` replays the repair after every gesture the `#608` block
   refuses (refused first, then repaired, then the block passes), on healthy databases (state
