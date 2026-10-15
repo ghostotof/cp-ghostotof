@@ -1206,7 +1206,29 @@ que son propriétaire y a posé. Une erreur là, un `cannot set parameter
 "role" within security-definer function` par exemple, veut dire que la table
 n'est plus celle des migrations (une vue, un type à sa place) : c'est un
 incident, conduit comme un avis `#610` ; la requête du refus `#611`
-ci-dessous nomme l'objet.
+ci-dessous nomme l'objet. Ce que ce code règle ou crée dans la session est
+annulé avec la lecture (issue #633) : il ne peut rien laisser au
+superutilisateur, ni réglage, ni objet temporaire. Il peut seulement écrire
+sur le terminal : **tout avis imprimé entre `--- #633 : lecture des
+migrations, début` et `--- #633 : lecture des migrations, fin` vient de la
+table**, même s'il ressemble à un avis `#610` ou à `conforme` — le même
+incident. La lecture est bornée à 30 secondes : un `canceling statement due
+to statement timeout` juste après le marqueur de début, c'est la table qui
+fait attendre la procédure (le même incident encore), pas une heure chargée.
+Une procédure qui reste muette après ce marqueur au-delà des 30 secondes,
+c'est encore la table (son code peut attraper l'annulation) : l'interrompre,
+et traiter le même incident.
+
+**Un refus `#633 : la lecture des migrations n'a pas abouti`** : le code de
+la table a levé la sentinelle par laquelle la lecture s'annule elle-même — le
+même incident. **Un refus `#633 : le chemin de recherche de la session n'est
+plus celui de la procédure`** (après la lecture, ou en tête de `verify.sql`) :
+un autre schéma que `pg_catalog` et le schéma temporaire de la session est
+entré dans le chemin de recherche, où une fonction de ce schéma aurait pu
+prendre la place de celle du catalogue sous le superutilisateur. La lecture
+l'empêche : c'est un défaut de la procédure, ou une ligne `PGOPTIONS` qui
+n'est pas celle ci-dessus — jamais une correction à la main ; signaler, ne
+pas relancer avant d'avoir compris.
 
 **Lire la ligne `mot_de_passe_cpg_app_ecrit | mot_de_passe_cpg_migrator_ecrit`**
 avant de publier quoi que ce soit : `t` pour un rôle créé ou une rotation,

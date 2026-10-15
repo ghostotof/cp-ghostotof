@@ -9,6 +9,16 @@
 -- chaque requête. Les tables sont désignées par
 -- to_regclass : absentes (base neuve, avant la première migration), la
 -- colonne est NULL et le contrôle ne porte pas dessus.
+--
+-- Issue #633 : le garde du chemin de recherche de roles.sql, à l'identique,
+-- avant la première requête — chacune ci-dessous résout ses noms par lui.
+DO $$
+BEGIN
+    IF pg_catalog.replace(pg_catalog.current_setting('search_path'), ' ', '') OPERATOR(pg_catalog.<>) 'pg_catalog,pg_temp' THEN
+        RAISE EXCEPTION '#633 : le chemin de recherche de la session n''est plus celui de la procédure (pg_catalog, pg_temp)';
+    END IF;
+END
+$$;
 SELECT set_config('cpg.app_role', :'app_role', true),
        set_config('cpg.migrator_role', :'migrator_role', true),
        set_config('cpg.reader_role', :'reader_role', true);
