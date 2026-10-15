@@ -62,7 +62,8 @@ final class OperatorExecBoundaryTest extends TestCase
     private const string READER_ROLE = 'cpg_reader';
 
     /**
-     * La session de chaque `psql` du lecteur : lecture seule et attente de
+     * Le début de chaque `psql` du lecteur, ses `PGOPTIONS` puis `psql ` : sa
+     * session en lecture seule et attente de
      * verrou bornée, puis deux options qui l'emportent sur un réglage que le
      * propriétaire de la base, ou un rôle sur lui-même, peut poser (issue
      * #634, mesuré) — `client_encoding` (hérité, `GBK` relisait le flux
@@ -76,7 +77,7 @@ final class OperatorExecBoundaryTest extends TestCase
      * refuser la connexion du lecteur (`permission denied to set parameter`),
      * et ni le propriétaire ni un rôle sur lui-même ne peuvent la poser.
      */
-    private const string READER_OPTIONS = 'PGOPTIONS="-c default_transaction_read_only=on -c lock_timeout=5s -c client_encoding=UTF8 -c local_preload_libraries= -c search_path=pg_catalog,pg_temp" psql ';
+    private const string READER_PSQL = 'PGOPTIONS="-c default_transaction_read_only=on -c lock_timeout=5s -c client_encoding=UTF8 -c local_preload_libraries= -c search_path=pg_catalog,pg_temp" psql ';
 
     /**
      * Toutes les règles qui atteignent le ServiceAccount du déployeur : le Role
@@ -120,7 +121,7 @@ final class OperatorExecBoundaryTest extends TestCase
     {
         $command = $this->lookupCommand();
 
-        self::assertStringContainsString(self::READER_OPTIONS, $command);
+        self::assertStringContainsString(self::READER_PSQL, $command);
         // -X : aucun ~/.psqlrc du conteneur ; ON_ERROR_STOP : une erreur sort en code non nul.
         self::assertMatchesRegularExpression('/\bpsql -X\b/', $command);
         self::assertStringContainsString('-v ON_ERROR_STOP=1', $command);
@@ -189,7 +190,7 @@ final class OperatorExecBoundaryTest extends TestCase
         foreach ($calls as $call) {
             $exec = substr($call, (int) strpos($call, 'kubectl '));
             self::assertMatchesRegularExpression('/kubectl -n "\$\{NS:\?[^}]+\}" exec -i deploy\/postgres -c postgres --/', $exec, $call);
-            self::assertStringContainsString(self::READER_OPTIONS, $exec, $call);
+            self::assertStringContainsString(self::READER_PSQL, $exec, $call);
             self::assertStringNotContainsString('session_preload_libraries', $exec, 'Refusée au lecteur, cette option couperait sa connexion : '.$call);
             self::assertMatchesRegularExpression('/\bpsql -X\b/', $exec, $call);
             self::assertStringContainsString('-v ON_ERROR_STOP=1', $exec, $call);

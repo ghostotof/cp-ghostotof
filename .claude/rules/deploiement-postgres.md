@@ -115,13 +115,16 @@ paths:
   `client_min_messages=log` option, the server log being out of reach — and the SCRAM verifier has one
   iteration, with it neither (proved by removing `database`, then `database user`, from the reset's
   sources); a setting for every role (`ALTER ROLE ALL SET work_mem`, server-wide, so harmless and
-  removed in `setUp` and `tearDown`) given back too; the refusal without `timezone_abbreviations`' option; and every `user` setting
+  removed in `setUp` and `tearDown`) given back too; the refusal without `timezone_abbreviations`'
+  option; and every `user` setting
   with a NULL boot value being an option, so a PostgreSQL bump adding one turns it red. That database,
   `<test database>_heritage`, is created empty from `template0` in `setUp` (given the shared database's
-  migration time zone, so the procedure's session inherits it too and the reset gives `GMT` back) and dropped `WITH (FORCE)`
+  migration time zone, so the procedure's session inherits it too and the reset gives `GMT` back) and
+  dropped `WITH (FORCE)`
   in `tearDown` and before each creation, so a run interrupted leaves nothing the next one does not
   remove, and the shared database never carries a planted setting (asserted; `setUp` also removes, name by
-  name, what a run interrupted before #634 left there). The SQL files hold no transaction control and no reconnection.
+  name, what a run interrupted before #634 left there). The SQL files hold no transaction control and no
+  reconnection.
   `PostgresRolesProcedureTest` pins the exec line word for word, the stream, `commit.sql` and its
   mark, and the files (no echo of a variable, a password cited only in its three places, no shell,
   `\copy`, `\w`, `\setenv` nor `PROGRAM`, the rotation gate). That `exec` is the **one written exception** to #520
@@ -196,7 +199,8 @@ paths:
   database), gives a read-only `cpg_reader` query to run **before** the procedure to keep the values the
   repair erases — since #634 also the settings of a role for every database and of every role
   (`setdatabase = 0`, which #618's reset only neutralises for the procedure's session;
-  `DatabaseOwnerSettingsVerificationTest` replays it as written) —, and says that a `#608` refusal left after it is a defect of the repair, never a hand fix.
+  `DatabaseOwnerSettingsVerificationTest` replays it as written) —, and says that a `#608` refusal left
+  after it is a defect of the repair, never a hand fix.
   `DatabaseOwnerSettingsVerificationTest` replays the repair after every gesture the `#608` block
   refuses (refused first, then repaired, then the block passes), on healthy databases (state
   unchanged), and before the time-zone migration or without its table (none set).
@@ -269,9 +273,11 @@ paths:
   constant or a name by them — measured: a timestamp, an interval, a float, bytes and a backslash in a
   `DEFAULT` gave two fingerprints under two sessions; under an inherited `standard_conforming_strings
   = off`, the block's own `DoctrineMigrations\Version…` literals lost their backslash, « no known
-  fingerprint », until fixed at its head — PL/pgSQL prepares each query at its first run) — all set by one `PERFORM` between its « réglages
+  fingerprint », until fixed at its head — PL/pgSQL prepares each query at its first run) — all set by
+  one `PERFORM` between its « réglages
   d'impression » markers, which the tests read (`RolesVerification::schemaFingerprint()`, under them, in
-  a savepoint rolled back) and the runbook repeats as `SET`s before its copy —, each line hashed (a line holding a newline cannot pass for two), and the `md5` of the
+  a savepoint rolled back) and the runbook repeats as `SET`s before its copy —, each line hashed (a line
+  holding a newline cannot pass for two), and the `md5` of the
   whole compared with the fingerprints admitted for the **migrations applied: the latest and their
   count** (`''`, 0: a fresh database; the count tells apart a migration merged after a more recent
   one, which keeps the latest unchanged). An empty migrations table (a first `migrate` interrupted)

@@ -210,14 +210,14 @@ final class InheritedSessionSettingsTest extends KernelTestCase
         $options = RolesVerification::sessionOptions().' -c client_min_messages=log';
 
         $this->inProcedureSession($options, function (Connection $session): void {
-            [$messages, $iterations] = $this->writeAPassword($session);
+            ['messages' => $messages, 'iterations' => $iterations] = $this->writeAPasswordAndObserve($session);
             self::assertNotSame([], $messages, 'Prémisse : hérité, debug_print_parse écrit le mot de passe.');
             self::assertSame(1, $iterations, 'Prémisse : hérité, scram_iterations affaiblit le vérificateur.');
         });
 
         $this->inProcedureSession($options, function (Connection $session): void {
             $session->executeStatement(RolesVerification::inheritedSettingsReset());
-            [$messages, $iterations] = $this->writeAPassword($session);
+            ['messages' => $messages, 'iterations' => $iterations] = $this->writeAPasswordAndObserve($session);
 
             self::assertSame([], $messages, 'Aucun message ne porte le mot de passe.');
             self::assertSame((string) $iterations, $session->fetchOne("SELECT boot_val FROM pg_catalog.pg_settings WHERE name = 'scram_iterations'"), 'Le vérificateur a les itérations de démarrage.');
@@ -229,9 +229,9 @@ final class InheritedSessionSettingsTest extends KernelTestCase
      * renvoie les messages du serveur qui portent ce mot de passe, et les
      * itérations du vérificateur SCRAM écrit (`SCRAM-SHA-256$<itérations>:…`).
      *
-     * @return array{list<string>, int}
+     * @return array{messages: list<string>, iterations: int}
      */
-    private function writeAPassword(Connection $session): array
+    private function writeAPasswordAndObserve(Connection $session): array
     {
         $password = TestCredentials::variant('roles-procedure');
         $role = $session->quoteSingleIdentifier('cpg_probe_pw_'.bin2hex(random_bytes(4)));
@@ -250,7 +250,7 @@ final class InheritedSessionSettingsTest extends KernelTestCase
         self::assertIsString($verifier);
         self::assertSame(1, preg_match('/\ASCRAM-SHA-256\$(\d+):/', $verifier, $iterations), 'Un vérificateur SCRAM (password_encryption de la procédure).');
 
-        return [$messages, (int) $iterations[1]];
+        return ['messages' => $messages, 'iterations' => (int) $iterations[1]];
     }
 
     /**
@@ -392,8 +392,8 @@ final class InheritedSessionSettingsTest extends KernelTestCase
     private function sharedDatabaseSettings(): array
     {
         $shared = $this->shared->fetchFirstColumn(
-            "SELECT split_part(c, '=', 1) FROM pg_db_role_setting s, unnest(s.setconfig) AS c
-             WHERE s.setdatabase = (SELECT oid FROM pg_database WHERE datname = current_database()) ORDER BY 1",
+            "SELECT pg_catalog.split_part(c, '=', 1) FROM pg_catalog.pg_db_role_setting AS s CROSS JOIN LATERAL pg_catalog.unnest(s.setconfig) AS c
+             WHERE s.setdatabase = (SELECT oid FROM pg_catalog.pg_database WHERE datname = pg_catalog.current_database()) ORDER BY 1",
         );
         $planted = [...array_keys(self::DATABASE_SETTINGS), ...array_keys(self::ROLE_IN_DATABASE_SETTINGS), self::WITHOUT_BOOT_VALUE];
 

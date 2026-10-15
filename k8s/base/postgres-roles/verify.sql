@@ -267,7 +267,9 @@ BEGIN
     -- eux, une migration posant une telle constante dans un DEFAULT, un CHECK
     -- ou un prédicat d'index serait refusée à chaque passage. Les tests
     -- calculent les empreintes sous ces réglages, lus entre les marqueurs, et
-    -- le runbook les pose avant sa copie de la requête des lignes.
+    -- le runbook les pose avant sa copie de la requête des lignes. Posés pour
+    -- la transaction, pas pour ce seul bloc : il est le dernier du fichier,
+    -- et commit.sql ne lit rien qu'ils changent.
     -- #611 : réglages d'impression, début
     PERFORM set_config('search_path', 'pg_catalog, pg_temp', true),
             set_config('TimeZone', 'UTC', true),

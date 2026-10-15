@@ -8,17 +8,27 @@ use Doctrine\DBAL\Connection;
 use PHPUnit\Framework\Assert;
 
 /**
- * Le SQL de `k8s/base/postgres-roles/verify.sql` — et le bloc de réparation de
- * `roles.sql` (issue #610), sa lecture des migrations, son garde du chemin de
- * recherche et sa remise des réglages hérités (#618) —, plus les options de
- * connexion de la procédure, lues dans le runbook (`k8s/README.md`, l'unique
- * `exec` de sa section), lu par les tests de forme
- * ({@see \App\Tests\Shared\Infrastructure\Kubernetes\PostgresRolesProcedureTest})
- * et rejoué sur la base de test
+ * La procédure des rôles PostgreSQL vue par les tests. Elle lit trois sources :
+ *
+ *  - `k8s/base/postgres-roles/verify.sql` : ses blocs de refus, la requête et
+ *    les réglages d'impression de l'empreinte `#611` ;
+ *  - `roles.sql` : sa réparation (#610), sa lecture des migrations, son garde
+ *    du chemin de recherche (#633) et sa remise des réglages hérités (#618) ;
+ *  - le runbook (`k8s/README.md`) : les options de connexion de l'unique
+ *    `exec` de la procédure.
+ *
+ * Les tests de forme les lisent
+ * ({@see \App\Tests\Shared\Infrastructure\Kubernetes\PostgresRolesProcedureTest}),
+ * d'autres les rejouent sur la base de test
  * ({@see \App\Tests\Shared\Infrastructure\Postgres\DatabaseOwnerSettingsVerificationTest}).
+ * Une seule méthode exécute du SQL, {@see self::schemaFingerprint()} : elle
+ * calcule l'empreinte exactement comme le bloc `#611`, pour tous ces tests.
  */
 final class RolesVerification
 {
+    /** @var array<string, string>|null les réglages d'impression, lus une fois par processus */
+    private static ?array $schemaPrintSettings = null;
+
     private const string VERIFY_SQL = 'postgres-roles/verify.sql';
 
     private const string ROLES_SQL = 'postgres-roles/roles.sql';
@@ -144,6 +154,12 @@ final class RolesVerification
      */
     public static function schemaPrintSettings(): array
     {
+        return self::$schemaPrintSettings ??= self::readSchemaPrintSettings();
+    }
+
+    /** @return array<string, string> */
+    private static function readSchemaPrintSettings(): array
+    {
         $source = KubernetesManifests::base()->source(self::VERIFY_SQL);
         Assert::assertSame(1, preg_match('/^\s*-- #611 : réglages d\'impression, début\n(.*?)^\s*-- #611 : réglages d\'impression, fin$/ms', $source, $region), 'verify.sql : les réglages d\'impression, entre leurs marqueurs.');
         preg_match_all("/set_config\\('([A-Za-z_]+)', '([^']*)', true\\)/", $region[1], $settings, \PREG_SET_ORDER);
@@ -162,9 +178,7 @@ final class RolesVerification
     {
         $connection->executeStatement('SAVEPOINT cpg_empreinte_634');
         try {
-            foreach (self::schemaPrintSettings() as $name => $value) {
-                $connection->executeQuery('SELECT pg_catalog.set_config(?, ?, true)', [$name, $value]);
-            }
+            self::setForTheTransaction($connection, self::schemaPrintSettings());
             $fingerprint = $connection->fetchOne(self::schemaFingerprintQuery());
         } finally {
             $connection->executeStatement('ROLLBACK TO SAVEPOINT cpg_empreinte_634');
@@ -173,6 +187,23 @@ final class RolesVerification
         Assert::assertIsString($fingerprint);
 
         return $fingerprint;
+    }
+
+    /**
+     * Pose `$settings` (nom => valeur) pour la transaction en cours, en une
+     * seule requête, comme le `PERFORM` du bloc `#611`.
+     *
+     * @param array<string, string> $settings
+     */
+    public static function setForTheTransaction(Connection $connection, array $settings): void
+    {
+        $calls = implode(', ', array_fill(0, \count($settings), 'pg_catalog.set_config(?, ?, true)'));
+        $parameters = [];
+        foreach ($settings as $name => $value) {
+            $parameters[] = $name;
+            $parameters[] = $value;
+        }
+        $connection->executeQuery('SELECT '.$calls, $parameters);
     }
 
     /**

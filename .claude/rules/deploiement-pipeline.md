@@ -96,7 +96,8 @@ paths:
   since #634, `-c client_encoding=UTF8 -c local_preload_libraries= -c search_path=pg_catalog,pg_temp` in that
   `PGOPTIONS`, which beat what the database's owner or a role on itself may set — an inherited `public`
   before `pg_catalog` made the reader read the owner's forged `public.pg_roles` view, measured, so an
-  application table is written qualified, `public.cpg_user` —, never `session_preload_libraries=`: a `superuser`
+  application table is written qualified, `public.cpg_user` —, never `session_preload_libraries=`: a
+  `superuser`
   setting, the option refuses the reader's connection — measured);
   `tools/rotate-deployer-token.sh` checks the token actually issued against the cluster
   (`auth can-i create pods/exec` → `no`) — the only one that sees a binding added by hand. Keep both. A

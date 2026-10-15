@@ -71,9 +71,6 @@ final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
 
     private string $suffix;
 
-    /** Le message du dernier refus attendu, pour qui doit y lire plus que sa cause. */
-    private string $lastRefusal = '';
-
     protected function setUp(): void
     {
         self::bootKernel();
@@ -503,7 +500,7 @@ final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
         $applied = $this->probe->fetchOne('SELECT count(*) FROM public.doctrine_migration_versions');
         self::assertIsString($latest);
         self::assertIsInt($applied);
-        $fingerprint = $this->fingerprint();
+        $fingerprint = RolesVerification::schemaFingerprint($this->probe);
 
         self::assertContains(
             $fingerprint,
@@ -716,11 +713,11 @@ final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
     public function testAGestureOnAnObjectAMigrationWouldCreateChangesTheFingerprint(array $setUp, string $gesture): void
     {
         $this->arm($setUp);
-        $before = $this->fingerprint();
+        $before = RolesVerification::schemaFingerprint($this->probe);
 
         $this->arm([$gesture]);
 
-        self::assertNotSame($before, $this->fingerprint());
+        self::assertNotSame($before, RolesVerification::schemaFingerprint($this->probe));
     }
 
     /**
@@ -784,8 +781,8 @@ final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
      */
     private function evidenceSettings(): array
     {
-        self::assertSame(1, preg_match("/<<'SQL'\n(.*?)\nSQL$/ms", Runbook::repository()->bashBlockAfter(self::EVIDENCE_RUNBOOK), $sql), 'k8s/README.md : la lecture de preuve, sur l\'entrée standard.');
-        $statements = array_map(trim(...), explode(";\n", rtrim($sql[1], ";\n")));
+        $sql = Runbook::sqlHeredoc(Runbook::repository()->bashBlockAfter(self::EVIDENCE_RUNBOOK));
+        $statements = array_map(trim(...), explode(";\n", rtrim($sql, ";\n")));
         foreach ($statements as $statement) {
             if (str_starts_with($statement, 'SET ')) {
                 $this->probe->executeStatement($statement);
@@ -793,9 +790,9 @@ final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
             }
             self::assertStringContainsString('pg_db_role_setting', $statement, 'La première requête lit les réglages.');
 
-            // Les colonnes sont du texte ou NULL (aucune ici) : implode les joint telles quelles.
+            // Une colonne NULL s'écrit NULL : elle ne disparaît pas en décalant les autres.
             return array_map(
-                static fn (array $row): string => implode('|', array_filter($row, \is_string(...))),
+                static fn (array $row): string => implode('|', array_map(static fn (mixed $column): string => \is_scalar($column) ? (string) $column : 'NULL', $row)),
                 $this->probe->fetchAllNumeric($statement),
             );
         }
@@ -809,9 +806,9 @@ final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
      * `extra_float_digits`, des octets selon `bytea_output`, un antislash
      * selon `standard_conforming_strings`, tout identifiant selon
      * `quote_all_identifiers` (relecture de #634 : la copie du runbook, lue
-     * par le lecteur sans la remise de #618, en héritait). La session de la procédure tourne en `GMT` depuis
-     * la remise de #618, celle qui calcule les empreintes admises en
-     * `Europe/Paris` : une migration qui poserait une telle constante dans un
+     * par le lecteur sans la remise de #618, en héritait). La session de la
+     * procédure tourne en `GMT` depuis la remise de #618, celle qui calcule
+     * les empreintes admises en `Europe/Paris` : une migration qui poserait une telle constante dans un
      * `DEFAULT`, un `CHECK` ou un prédicat d'index ferait refuser son
      * empreinte à chaque passage. Le bloc fixe donc ces réglages lui-même :
      * joué sous deux sessions qui les ont tous différents, il calcule la même
@@ -826,7 +823,7 @@ final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
         $elsewhere = $this->refusedFingerprintUnder(['TimeZone' => 'Asia/Tokyo', 'DateStyle' => 'SQL, DMY', 'IntervalStyle' => 'sql_standard', 'extra_float_digits' => '0', 'bytea_output' => 'escape', 'standard_conforming_strings' => 'off', 'quote_all_identifiers' => 'on']);
 
         self::assertSame($paris, $elsewhere);
-        self::assertSame($paris, $this->fingerprint(), 'Le test calcule l\'empreinte sous les réglages du bloc, pas sous ceux de sa session : la ligne qu\'il propose pour une migration nouvelle est celle que le bloc admettra.');
+        self::assertSame($paris, RolesVerification::schemaFingerprint($this->probe), 'Le test calcule l\'empreinte sous les réglages du bloc, pas sous ceux de sa session : la ligne qu\'il propose pour une migration nouvelle est celle que le bloc admettra.');
     }
 
     /**
@@ -840,11 +837,8 @@ final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
     {
         $this->probe->beginTransaction();
         try {
-            foreach ($settings as $name => $value) {
-                $this->probe->executeQuery('SELECT set_config(?, ?, true)', [$name, $value]);
-            }
-            $this->assertBlockRefuses('#611', self::SCHEMA_REFUSAL);
-            self::assertSame(1, preg_match('/empreinte ([0-9a-f]{32})/', $this->lastRefusal, $fingerprint));
+            RolesVerification::setForTheTransaction($this->probe, $settings);
+            self::assertSame(1, preg_match('/empreinte ([0-9a-f]{32})/', $this->assertBlockRefuses('#611', self::SCHEMA_REFUSAL), $fingerprint));
 
             return $fingerprint[1];
         } finally {
@@ -852,27 +846,25 @@ final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
         }
     }
 
-    /** L'empreinte du schéma, calculée comme le bloc `#611` la calcule. */
-    private function fingerprint(): string
-    {
-        return RolesVerification::schemaFingerprint($this->probe);
-    }
-
-    private function assertBlockRefuses(string $issue, string $refusal): void
+    /** Joue le bloc de l'issue après la lecture des migrations ; renvoie son refus, qui doit contenir `$refusal`. */
+    private function assertBlockRefuses(string $issue, string $refusal): string
     {
         $this->probe->executeStatement(RolesVerification::migrationsReading());
-        $this->assertStatementRefuses(RolesVerification::blockOf($issue), $refusal);
+
+        return $this->assertStatementRefuses(RolesVerification::blockOf($issue), $refusal);
     }
 
-    private function assertStatementRefuses(string $statement, string $refusal): void
+    /** Joue l'instruction ; renvoie son refus, qui doit contenir `$refusal`. */
+    private function assertStatementRefuses(string $statement, string $refusal): string
     {
         try {
             $this->probe->executeStatement($statement);
-            self::fail('Le bloc a accepté.');
         } catch (DriverException $exception) {
             self::assertStringContainsString($refusal, $exception->getMessage());
-            $this->lastRefusal = $exception->getMessage();
+
+            return $exception->getMessage();
         }
+        self::fail('Le bloc a accepté.');
     }
 
     /**

@@ -580,7 +580,7 @@ final class PostgresRolesProcedureTest extends TestCase
         self::assertStringContainsString("SELECT md5(string_agg(md5(l), '' ORDER BY l COLLATE \"C\"))", $block, 'Chaque ligne hachée avant l\'agrégat : une ligne qui contient un saut de ligne ne peut en imiter deux.');
 
         $runbook = Runbook::repository()->bashBlockAfter(self::SCHEMA_LINES_RUNBOOK);
-        self::assertSame(1, preg_match("/<<'SQL'\n((?:SET [^\n]+;\n)+)(.*?);\nSQL$/ms", $runbook, $copy), 'k8s/README.md : la requête des lignes du schéma, après ses SET.');
+        self::assertSame(1, preg_match("/\\A((?:SET [^\n]+;\n)+)(.*);\\z/s", Runbook::sqlHeredoc($runbook), $copy), 'k8s/README.md : la requête des lignes du schéma, après ses SET.');
         preg_match_all("/^SET (\\w+) = '?([^'\n]*)'?;$/m", $copy[1], $sets, \PREG_SET_ORDER);
         self::assertSame($settings, array_column($sets, 2, 1), 'Le runbook pose les réglages du bloc, dans le même ordre.');
         self::assertSame($this->normalized(RolesVerification::schemaLinesQuery()), $this->normalized($copy[2]), 'Le runbook lit les mêmes lignes que verify.sql.');
