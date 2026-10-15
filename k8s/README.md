@@ -1183,7 +1183,7 @@ est l'écart que l'étape 2 effacera. Une ligne de `(toutes les bases)` est un
 réglage posé sur un rôle hors de la base (`ALTER ROLE … SET`, permis à tout
 rôle sur lui-même) ou sur tous les rôles (`(tous les rôles)`, `ALTER ROLE ALL
 SET`, superutilisateur seul) : la procédure l'écarte de sa propre session
-(issue #618) sans le retirer — l'étape 1 retire ceux des trois rôles
+(issue #618, et #634 pour tous les rôles) sans le retirer — l'étape 1 retire ceux des trois rôles
 (`RESET ALL`), pas ceux du superutilisateur ni de tous les rôles —, le même
 incident (issue #634). Un réglage de base
 `role`, une limite de connexions ou un `CONNECT` retiré peut refuser la

@@ -94,7 +94,9 @@ paths:
   `LOAD 'plpgsql'` (its settings show only once loaded — and the owner may set them once loaded in
   its own session, measured), then plain SQL (no PL/pgSQL, no array literal, no `= NULL`, no
   backslash: it runs under the settings it removes), `set_config(name, boot_val, false)` on every
-  `pg_settings` row of source `database`, `user` or `database user` — never `client`, the options —,
+  `pg_settings` row of source `global` (`ALTER ROLE ALL SET`, superuser only — missed until #634,
+  measured: such a `debug_print_parse` or `scram_iterations` deceived the procedure), `database`, `user`
+  or `database user` — never `client`, the options —,
   a `CASE` fixing the evaluation order, the names printed (never a value); then a `DO` that refuses
   (`#618 : réglages hérités non rendus`) if one is left, i.e. one with no boot value. Measured: the
   152 owner-settable `user` settings planted at once (custom placeholders such as `cpg.*` are refused
@@ -111,7 +113,8 @@ paths:
   `debug_print_parse` — read through pdo_pgsql's notice callback under an added
   `client_min_messages=log` option, the server log being out of reach — and the SCRAM verifier has one
   iteration, with it neither (proved by removing `database`, then `database user`, from the reset's
-  sources); the refusal without `timezone_abbreviations`' option; and every `user` setting
+  sources); a setting for every role (`ALTER ROLE ALL SET work_mem`, server-wide, so harmless and
+  removed in `setUp` and `tearDown`) given back too; the refusal without `timezone_abbreviations`' option; and every `user` setting
   with a NULL boot value being an option, so a PostgreSQL bump adding one turns it red. That database,
   `<test database>_heritage`, is created empty from `template0` in `setUp` and dropped `WITH (FORCE)`
   in `tearDown` and before each creation, so a run interrupted leaves nothing the next one does not

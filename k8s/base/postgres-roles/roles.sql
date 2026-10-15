@@ -46,9 +46,10 @@
 -- requête, mot de passe compris, dans le journal du serveur ; scram_iterations
 -- affaiblit les vérificateurs écrits). La liste ne se ferme pas : tout réglage
 -- hérité est rendu à sa valeur de démarrage, AVANT la première instruction qui
--- porte un mot de passe. Ceux des options (source `client`) ne sont pas
--- touchés. plpgsql chargé d'abord, pour que ses réglages soient visibles. Du
--- SQL simple, sans PL/pgSQL, sous les réglages encore hérités : ni littéral de
+-- porte un mot de passe — posé pour tous les rôles (`ALTER ROLE ALL SET`,
+-- source `global`, issue #634), sur la base, sur un rôle ou sur un rôle dans
+-- la base. Ceux des options (source `client`) ne sont pas touchés. plpgsql
+-- chargé d'abord, pour que ses réglages soient visibles. Du SQL simple, sans PL/pgSQL, sous les réglages encore hérités : ni littéral de
 -- tableau, ni `= NULL`, ni antislash. Le CASE fixe l'ordre d'évaluation : seul
 -- un réglage hérité est réécrit. Puis un refus s'il en reste un — un réglage
 -- sans valeur de démarrage, que seule une option de connexion rend
@@ -60,10 +61,10 @@
 LOAD 'plpgsql';
 SELECT pg_catalog.array_agg(s.name ORDER BY s.name) AS "#618 : réglages hérités rendus à leur valeur de démarrage"
 FROM pg_catalog.pg_settings AS s
-WHERE CASE WHEN s.source IN ('database', 'user', 'database user') THEN (pg_catalog.set_config(s.name, s.boot_val, false) IS NULL) IS NOT NULL ELSE false END;
+WHERE CASE WHEN s.source IN ('global', 'database', 'user', 'database user') THEN (pg_catalog.set_config(s.name, s.boot_val, false) IS NULL) IS NOT NULL ELSE false END;
 DO $$
 DECLARE
-    restants text[] := (SELECT pg_catalog.array_agg(name ORDER BY name) FROM pg_catalog.pg_settings WHERE source IN ('database', 'user', 'database user'));
+    restants text[] := (SELECT pg_catalog.array_agg(name ORDER BY name) FROM pg_catalog.pg_settings WHERE source IN ('global', 'database', 'user', 'database user'));
 BEGIN
     IF restants IS NOT NULL THEN
         RAISE EXCEPTION '#618 : réglages hérités non rendus : %', restants;

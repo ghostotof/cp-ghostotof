@@ -39,12 +39,12 @@ final class InheritedSessionSettingsTest extends KernelTestCase
     use OpensProbeConnection;
 
     /**
-     * Les sources d'un réglage hérité : la base, le rôle, le rôle dans la base.
-     * Écrites ici sans être lues dans roles.sql, qui les écrit deux fois : le
-     * test observe la session de son côté, et une source retirée de la remise
-     * le fait rougir.
+     * Les sources d'un réglage hérité : tous les rôles (`global`, #634), la
+     * base, le rôle, le rôle dans la base. Écrites ici sans être lues dans
+     * roles.sql, qui les écrit deux fois : le test observe la session de son
+     * côté, et une source retirée de la remise le fait rougir.
      */
-    private const string INHERITED = "('database', 'user', 'database user')";
+    private const string INHERITED = "('global', 'database', 'user', 'database user')";
 
     /**
      * Ce qu'un propriétaire de la base peut poser sur elle (mesuré sur l'image
@@ -64,6 +64,14 @@ final class InheritedSessionSettingsTest extends KernelTestCase
     /** Posé sur le rôle de la session dans la base : un vérificateur SCRAM d'une seule itération. */
     private const array ROLE_IN_DATABASE_SETTINGS = ['scram_iterations' => '1'];
 
+    /**
+     * Posé pour tous les rôles dans toutes les bases (`ALTER ROLE ALL SET`,
+     * superutilisateur seul) : la source `global` (issue #634). La commande
+     * vaut pour tout le serveur, pas pour la base jetable : un réglage sans
+     * conséquence, retiré au `setUp` comme au `tearDown`.
+     */
+    private const array EVERY_ROLE_SETTINGS = ['work_mem' => '5MB'];
+
     /** Le seul réglage `user` sans valeur de démarrage : la remise ne peut que le laisser. */
     private const string WITHOUT_BOOT_VALUE = 'timezone_abbreviations';
 
@@ -82,6 +90,7 @@ final class InheritedSessionSettingsTest extends KernelTestCase
         $this->shared = self::openProbeBeside(self::getContainer()->get(EntityManagerInterface::class)->getConnection());
         self::assertSame('on', $this->shared->fetchOne("SELECT current_setting('is_superuser')"), 'Prémisse : le rôle de test est le superutilisateur de l\'image, comme celui de la procédure.');
 
+        $this->removeEveryRoleSettings();
         $this->dropThrowawayDatabase();
         $this->shared->executeStatement(\sprintf('CREATE DATABASE %s TEMPLATE template0', $this->shared->quoteSingleIdentifier($this->throwawayDatabase())));
         $this->probe = self::openProbeOn($this->shared, $this->throwawayDatabase());
@@ -93,6 +102,7 @@ final class InheritedSessionSettingsTest extends KernelTestCase
             $this->probe->close();
         }
         if (isset($this->shared)) {
+            $this->removeEveryRoleSettings();
             $this->dropThrowawayDatabase();
             $this->shared->close();
         }
@@ -132,6 +142,33 @@ final class InheritedSessionSettingsTest extends KernelTestCase
                 );
             }
             self::assertSame($clean, RolesVerification::schemaFingerprint($session));
+        });
+    }
+
+    /**
+     * Issue #634 : un réglage posé pour tous les rôles (`ALTER ROLE ALL SET`)
+     * arrive dans la session de la procédure sous la source `global`, que la
+     * remise ne visait pas : `debug_print_parse` ou `scram_iterations` posés
+     * ainsi par un superutilisateur trompaient la procédure sans la faire
+     * échouer. Il est rendu à sa valeur de démarrage comme les autres.
+     */
+    public function testASettingForEveryRoleIsGivenBackToo(): void
+    {
+        foreach (self::EVERY_ROLE_SETTINGS as $name => $value) {
+            $this->shared->executeStatement(\sprintf('ALTER ROLE ALL SET %s = %s', $name, $this->shared->quote($value)));
+        }
+
+        $this->inProcedureSession(RolesVerification::sessionOptions(), function (Connection $session): void {
+            foreach (array_keys(self::EVERY_ROLE_SETTINGS) as $name) {
+                self::assertSame('global', $session->fetchOne('SELECT source FROM pg_catalog.pg_settings WHERE name = ?', [$name]), 'Prémisse : '.$name.' hérité de tous les rôles.');
+            }
+
+            $session->executeStatement(RolesVerification::inheritedSettingsReset());
+
+            foreach (array_keys(self::EVERY_ROLE_SETTINGS) as $name) {
+                // `setting`, pas current_setting() : boot_val est sans unité (4096, pas 4MB).
+                self::assertTrue($session->fetchOne('SELECT setting = boot_val FROM pg_catalog.pg_settings WHERE name = ?', [$name]), $name.' : rendu à sa valeur de démarrage.');
+            }
         });
     }
 
@@ -277,6 +314,14 @@ final class InheritedSessionSettingsTest extends KernelTestCase
         }
         foreach (self::ROLE_IN_DATABASE_SETTINGS as $name => $value) {
             $this->probe->executeStatement(\sprintf('ALTER ROLE CURRENT_USER IN DATABASE %s SET %s = %s', $this->database(), $name, $this->probe->quote($value)));
+        }
+    }
+
+    /** Retire ce que le test pose pour tous les rôles, réglage par réglage. */
+    private function removeEveryRoleSettings(): void
+    {
+        foreach (array_keys(self::EVERY_ROLE_SETTINGS) as $name) {
+            $this->shared->executeStatement('ALTER ROLE ALL RESET '.$name);
         }
     }
 
