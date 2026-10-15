@@ -1044,7 +1044,8 @@ DB="$(kubectl -n "${NS:?preprod ou prod}" get secret postgres-credentials -o jso
 #    Mots de passe et rotation en tête de l'entrée standard : jamais dans l'argv de l'exec.
 #    BEGIN en tête du flux, commit.sql en dernier : il ne valide que si verify.sql est allé
 #    au bout (pas --single-transaction, qui validait un flux coupé ou incomplet).
-#    PGOPTIONS fixe la session dès la connexion, devant tout réglage de la base (#608).
+#    PGOPTIONS fixe la session dès la connexion, devant tout réglage de la base (#608) ;
+#    roles.sql rend en tête tout autre réglage hérité, et BEGIN écrit son isolation (#618).
 {
   printf 'BEGIN ISOLATION LEVEL READ COMMITTED;\n'
   printf '\\set app_pw '; cat "$TMP/app-password"; printf '\n'
@@ -1101,6 +1102,32 @@ mesuré, #593). Un `55P03` est un `ALTER … OWNER TO` bloqué par une
 transaction longue (une migration, un seed) : relancer hors déploiement. Des
 mots de passe absents ou trop courts, ou un `ROTATE` qui ne vaut ni 0 ni 1,
 sont refusés avant toute écriture.
+
+**La colonne `#618 : réglages hérités rendus à leur valeur de démarrage`**,
+en tête de sortie (issue #618) : un réglage posé sur la base ou sur un rôle
+s'applique à toute nouvelle session, celle-ci comprise, et peut changer le
+sens de la procédure sans la faire échouer — mesuré sur l'image épinglée :
+`debug_print_parse` écrivait le mot de passe dans le journal du serveur,
+`scram_iterations` affaiblissait les vérificateurs écrits,
+`quote_all_identifiers` faisait refuser l'empreinte `#611` à chaque passage.
+`roles.sql` rend donc à sa session, avant tout mot de passe, la valeur de
+démarrage de tout réglage hérité qu'aucune option de connexion ne fixe, et en
+nomme la liste (des noms, jamais une valeur). Sur une base saine : `{TimeZone}`,
+le fuseau que `Version20261011120000` pose sur la base (la session de la
+procédure tourne alors en `GMT`, ce qui ne change rien à ce qu'elle lit :
+mesuré, l'empreinte `#611` est la même), ou une ligne vide avant elle. Un
+autre nom réglé sur la base, ou sur un rôle dans la base, est un écart que
+l'avis `#610` ci-dessous signale aussi et que l'étape 2 efface : la même
+conduite. Un nom qui ne vient ni de l'un ni de l'autre est un réglage posé sur
+le superutilisateur lui-même (`ALTER ROLE … SET`, que seul un
+superutilisateur peut faire) : un incident, et la procédure ne l'efface pas.
+
+**Un refus `#618 : réglages hérités non rendus : {…}`** : un réglage hérité
+n'a pas de valeur de démarrage (`timezone_abbreviations`, le seul sur l'image
+épinglée, est fixé par `PGOPTIONS`) : la procédure ne tourne pas sous lui.
+Une montée de PostgreSQL qui en ajouterait un est arrêtée avant, par
+`InheritedSessionSettingsTest` ; ce refus en préprod est donc un défaut du
+dépôt : ouvrir une issue avec le message, ne rien corriger à la main (#520).
 
 **Un avis `NOTICE: #610 : …`** (issue #610) : `roles.sql` a trouvé la base
 de l'application altérée et l'a remise en l'état que le bloc `#608` de

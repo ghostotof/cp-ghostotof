@@ -54,7 +54,8 @@ paths:
   the checkout and the passwords on **stdin** (`\set app_pw` / `migrator_pw` / `rotate` read from
   private files by `cat`, never an argument; `roles.sql` refuses a missing or short password and a
   `rotate` other than 0 or 1 before any write). One transaction whose `ACCESS EXCLUSIVE` locks are held
-  until its COMMIT, a few seconds, rerunnable. **The stream opens with `BEGIN;` and ends with
+  until its COMMIT, a few seconds, rerunnable. **The stream opens with `BEGIN ISOLATION LEVEL READ COMMITTED;` (#618: a database-level
+  `default_transaction_isolation` acts at `BEGIN`, measured) and ends with
   `commit.sql`, which commits only if `verify.sql` ran to its end** — its last statement sets
   `verify_passed`, which `roles.sql` unsets first; otherwise `commit.sql` raises (exit 3). Never
   `--single-transaction`, nor an unconditional final `COMMIT;`: the first commits at the end of input
@@ -76,8 +77,34 @@ paths:
   repository's `pg_hba.conf` accepts), `client_min_messages=notice` (at `error`, set on the database,
   it silenced the repair's notices — measured) and `standard_conforming_strings=on` (at `off`, the
   backslash of `DoctrineMigrations\Version…` vanished from the literals and the procedure failed on
-  every pass as a false « checkout behind » — measured); `PostgresRolesProcedureTest` lists them with
-  their reasons, no more, no less. The SQL files hold no transaction control and no reconnection.
+  every pass as a false « checkout behind » — measured), and, since #618, three that act before any
+  statement: `client_encoding=UTF8` (inherited `GBK` re-read the UTF-8 stream, psql exit 3),
+  `local_preload_libraries=` (empty: a missing library set on the database refused the connection
+  itself) and `timezone_abbreviations=Default` (the one `user` setting with no boot value, which the
+  reset below cannot give back); `PostgresRolesProcedureTest` lists them with their reasons, no more,
+  no less. **Every other inherited setting is given back its boot value by `roles.sql`** (#618): a
+  list of options never closes, and some settings change the procedure's meaning without failing it
+  (measured on the pinned image, psql exit 0 both times: `debug_print_parse` wrote the password into
+  the server log four times, `scram_iterations=1` wrote one-iteration SCRAM verifiers) or fail it on
+  every pass (`quote_all_identifiers` changes `pg_get_*def`, hence the #611 fingerprint). Its head,
+  between the `-- #618 : réglages hérités` markers, before the first statement carrying a password:
+  `LOAD 'plpgsql'` (its settings show only once loaded — and the owner may set them once loaded in
+  its own session, measured), then plain SQL (no PL/pgSQL, no array literal, no `= NULL`, no
+  backslash: it runs under the settings it removes), `set_config(name, boot_val, false)` on every
+  `pg_settings` row of source `database`, `user` or `database user` — never `client`, the options —,
+  a `CASE` fixing the evaluation order, the names printed (never a value); then a `DO` that refuses
+  (`#618 : réglages hérités non rendus`) if one is left, i.e. one with no boot value. Measured: the
+  152 owner-settable `user` settings planted at once (custom placeholders such as `cpg.*` are refused
+  to the owner), the real stream passes, none left. The session's zone becomes `GMT` (the database's
+  `TimeZone` is inherited too): the #611 fingerprint does not depend on `TimeZone`, `DateStyle` or
+  `extra_float_digits` (measured). `InheritedSessionSettingsTest` commits real `ALTER DATABASE` and
+  `ALTER ROLE … IN DATABASE … SET` on the test database and opens a **new** connection with the
+  runbook's `PGOPTIONS` (libpq reads the environment: `putenv`), as `psql` in the pod does — the
+  premises (inherited, fingerprint changed), then none left after the reset, each at its boot value,
+  the fingerprint back; the refusal without `timezone_abbreviations`' option; and every `user` setting
+  with a NULL boot value being an option, so a PostgreSQL bump adding one turns it red. It removes
+  what it plants setting by setting (never `RESET ALL`, which would take the migration's time zone),
+  in `tearDown` and in `setUp`. The SQL files hold no transaction control and no reconnection.
   `PostgresRolesProcedureTest` pins the exec line word for word, the stream, `commit.sql` and its
   mark, and the files (no echo of a variable, a password cited only in its three places, no shell,
   `\copy`, `\w`, `\setenv` nor `PROGRAM`, the rotation gate). That `exec` is the **one written exception** to #520
@@ -107,7 +134,8 @@ paths:
   test database, every `#608` gesture made by `cpg_migrator`, `cpg_app` and `cpg_reader` themselves —
   `client_min_messages` and `standard_conforming_strings` included —, the evidence query before,
   repaired with its notices and committed, a silent rerun, a rotation, then the trapped view refused
-  in exit 3), and preprod is their proof at each change. **Accepted limits** (#575): any role may
+  in exit 3) and for #618 (`roles.sql` and `privileges.sql` under every owner-settable setting planted,
+  with and without the reset, and a setting on the superuser role itself), and preprod is their proof at each change. **Accepted limits** (#575): any role may
   `ALTER ROLE` itself (password, `SET` defaults) — an injection could cut the application durably; the
   procedure resets the three roles' attributes and `RESET ALL` at every pass, and `verify.sql` refuses
   a stray attribute — `RESET ALL` misses a setting scoped to the database
@@ -127,7 +155,7 @@ paths:
   `REVOKE TEMPORARY` is let through: the application uses no temporary table. That block is pure SQL,
   so `DatabaseOwnerSettingsVerificationTest` replays it on the migrated test database (throwaway
   roles, one rolled-back transaction): it passes as
-  is, and refuses each alteration above with its cause. The procedure's own session ignores these settings (`PGOPTIONS`, above), so the one that
+  is, and refuses each alteration above with its cause. The procedure's own session ignores these settings (`PGOPTIONS` and #618's reset, above), so the one that
   would have stopped it reaches `verify.sql`. **And `roles.sql` repairs every one of them** (#610):
   otherwise the procedure would fail as long as one held, and a writing `exec` outside it is
   forbidden (#520). Its step 4, a pure-SQL `DO` block (no psql variable), puts the database back in
