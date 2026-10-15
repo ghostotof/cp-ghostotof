@@ -117,9 +117,11 @@ paths:
   sources); a setting for every role (`ALTER ROLE ALL SET work_mem`, server-wide, so harmless and
   removed in `setUp` and `tearDown`) given back too; the refusal without `timezone_abbreviations`' option; and every `user` setting
   with a NULL boot value being an option, so a PostgreSQL bump adding one turns it red. That database,
-  `<test database>_heritage`, is created empty from `template0` in `setUp` and dropped `WITH (FORCE)`
+  `<test database>_heritage`, is created empty from `template0` in `setUp` (given the shared database's
+  migration time zone, so the procedure's session inherits it too and the reset gives `GMT` back) and dropped `WITH (FORCE)`
   in `tearDown` and before each creation, so a run interrupted leaves nothing the next one does not
-  remove, and the shared database never carries a planted setting (asserted). The SQL files hold no transaction control and no reconnection.
+  remove, and the shared database never carries a planted setting (asserted; `setUp` also removes, name by
+  name, what a run interrupted before #634 left there). The SQL files hold no transaction control and no reconnection.
   `PostgresRolesProcedureTest` pins the exec line word for word, the stream, `commit.sql` and its
   mark, and the files (no echo of a variable, a password cited only in its three places, no shell,
   `\copy`, `\w`, `\setenv` nor `PROGRAM`, the rotation gate). That `exec` is the **one written exception** to #520

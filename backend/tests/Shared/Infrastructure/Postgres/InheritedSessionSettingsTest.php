@@ -82,7 +82,10 @@ final class InheritedSessionSettingsTest extends KernelTestCase
     /** La base de test partagée : elle crée et supprime la base jetable, rien d'autre. */
     private Connection $shared;
 
-    /** La base jetable, vide, où le test plante ses réglages. */
+    /** Le nom de la base de test partagée, lu une fois. */
+    private string $sharedDatabase;
+
+    /** La base jetable, vide mais au fuseau de la migration, où le test plante ses réglages. */
     private Connection $probe;
 
     protected function setUp(): void
@@ -90,10 +93,19 @@ final class InheritedSessionSettingsTest extends KernelTestCase
         self::bootKernel();
         $this->shared = self::openProbeBeside(self::getContainer()->get(EntityManagerInterface::class)->getConnection());
         self::assertSame('on', $this->shared->fetchOne("SELECT current_setting('is_superuser')"), 'Prémisse : le rôle de test est le superutilisateur de l\'image, comme celui de la procédure.');
+        $sharedDatabase = $this->shared->fetchOne('SELECT current_database()');
+        self::assertIsString($sharedDatabase);
+        $this->sharedDatabase = $sharedDatabase;
 
         $this->removeEveryRoleSettings();
+        $this->removeWhatEarlierVersionsLeftOnTheSharedDatabase();
         $this->dropThrowawayDatabase();
         $this->shared->executeStatement(\sprintf('CREATE DATABASE %s TEMPLATE template0', $this->shared->quoteSingleIdentifier($this->throwawayDatabase())));
+        // Le fuseau que Version20261011120000 pose sur la base partagée, posé de
+        // même sur la jetable : la session de la procédure en hérite aussi.
+        $timeZone = $this->shared->fetchOne('SHOW timezone');
+        self::assertIsString($timeZone);
+        $this->shared->executeStatement(\sprintf('ALTER DATABASE %s SET timezone TO %s', $this->shared->quoteSingleIdentifier($this->throwawayDatabase()), $this->shared->quote($timeZone)));
         $this->probe = self::openProbeOn($this->shared, $this->throwawayDatabase());
     }
 
@@ -125,7 +137,7 @@ final class InheritedSessionSettingsTest extends KernelTestCase
         $this->inProcedureSession(RolesVerification::sessionOptions(), function (Connection $session) use ($clean): void {
             $session->executeStatement("LOAD 'plpgsql'");
             $inherited = $session->fetchFirstColumn('SELECT name FROM pg_catalog.pg_settings WHERE source IN '.self::INHERITED.' ORDER BY name');
-            foreach ([...array_keys(self::DATABASE_SETTINGS), ...array_keys(self::ROLE_IN_DATABASE_SETTINGS)] as $name) {
+            foreach ([...array_keys(self::DATABASE_SETTINGS), ...array_keys(self::ROLE_IN_DATABASE_SETTINGS), 'TimeZone'] as $name) {
                 self::assertContains($name, $inherited, 'Prémisse : la nouvelle session hérite de '.$name.'.');
             }
             self::assertSame('"public"', $session->fetchOne("SELECT pg_catalog.quote_ident('public')"), 'Prémisse : hérité, quote_all_identifiers change l\'impression des noms.');
@@ -136,7 +148,7 @@ final class InheritedSessionSettingsTest extends KernelTestCase
             $session->executeStatement(RolesVerification::inheritedSettingsReset());
 
             self::assertSame([], $session->fetchFirstColumn('SELECT name FROM pg_catalog.pg_settings WHERE source IN '.self::INHERITED));
-            foreach ([...array_keys(self::DATABASE_SETTINGS), ...array_keys(self::ROLE_IN_DATABASE_SETTINGS)] as $name) {
+            foreach ([...array_keys(self::DATABASE_SETTINGS), ...array_keys(self::ROLE_IN_DATABASE_SETTINGS), 'TimeZone'] as $name) {
                 self::assertSame(
                     $session->fetchOne('SELECT boot_val FROM pg_catalog.pg_settings WHERE name = ?', [$name]),
                     $session->fetchOne('SELECT pg_catalog.current_setting(?)', [$name]),
@@ -327,13 +339,27 @@ final class InheritedSessionSettingsTest extends KernelTestCase
         }
     }
 
+    /**
+     * Avant #634, ce test plantait ses réglages sur la base de test partagée :
+     * un passage interrompu de cette version-là les y a peut-être laissés, et
+     * plus rien d'autre ne les retirerait. Retirés nom par nom, jamais par
+     * `RESET ALL`, qui emporterait le fuseau de la migration.
+     */
+    private function removeWhatEarlierVersionsLeftOnTheSharedDatabase(): void
+    {
+        $shared = $this->shared->quoteSingleIdentifier($this->sharedDatabase);
+        foreach ([...array_keys(self::DATABASE_SETTINGS), self::WITHOUT_BOOT_VALUE] as $name) {
+            $this->shared->executeStatement(\sprintf('ALTER DATABASE %s RESET %s', $shared, $name));
+        }
+        foreach (array_keys(self::ROLE_IN_DATABASE_SETTINGS) as $name) {
+            $this->shared->executeStatement(\sprintf('ALTER ROLE CURRENT_USER IN DATABASE %s RESET %s', $shared, $name));
+        }
+    }
+
     /** Le nom de la base jetable : fixe, pour qu'un passage interrompu la retrouve. */
     private function throwawayDatabase(): string
     {
-        $shared = $this->shared->fetchOne('SELECT current_database()');
-        self::assertIsString($shared);
-
-        return $shared.self::THROWAWAY_SUFFIX;
+        return $this->sharedDatabase.self::THROWAWAY_SUFFIX;
     }
 
     /** Supprime la base jetable, sessions ouvertes comprises, si elle existe. */
