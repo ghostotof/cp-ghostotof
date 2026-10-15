@@ -10,6 +10,7 @@ use App\Tests\Support\OpensProbeConnection;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception\DriverException;
 use Doctrine\ORM\EntityManagerInterface;
+use Pdo\Pgsql;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Uid\Uuid;
@@ -276,6 +277,30 @@ final class ApplicationRolePrivilegesTest extends KernelTestCase
     }
 
     /**
+     * Rejouée, la procédure n'imprime aucun avis de privileges.sql. Un `GRANT`
+     * d'appartenance déjà accordée répondait `NOTICE: role … has already been
+     * granted membership in role "pg_read_all_data" by role …`, qui nomme le
+     * superutilisateur de l'image — dont le nom ne vit que dans un Secret —
+     * sur le terminal de l'opérateur, à chaque passage (constaté en préprod et
+     * en prod à la release 0.27.0). Le setUp a déjà joué le fichier une fois.
+     */
+    public function testARerunPrintsNoNotice(): void
+    {
+        $native = $this->probe->getNativeConnection();
+        self::assertInstanceOf(Pgsql::class, $native);
+        $notices = [];
+        $native->setNoticeCallback(static function (string $notice) use (&$notices): void {
+            $notices[] = $notice;
+        });
+
+        foreach ($this->privilegeStatements() as $statement) {
+            $this->probe->executeStatement($statement);
+        }
+
+        self::assertSame([], $notices);
+    }
+
+    /**
      * Les instructions du fichier, les variables psql remplacées par les rôles
      * jetables : du SQL pur, que psql et ce test lisent de la même façon — une
      * instruction par `;`, un bloc `DO $$ … $$` (dont les `;` sont internes)
@@ -295,10 +320,11 @@ final class ApplicationRolePrivilegesTest extends KernelTestCase
             ":'app_role'" => $this->probe->quote($this->app),
             ':"migrator_role"' => $this->identifier($this->migrator),
             ':"reader_role"' => $this->identifier($this->reader),
+            ":'reader_role'" => $this->probe->quote($this->reader),
         ]);
         $sql = preg_replace('/^\s*--.*$/m', '', $sql);
         self::assertIsString($sql);
-        self::assertDoesNotMatchRegularExpression('/:["\']/', $sql, 'privileges.sql n\'utilise que :"app_role", :\'app_role\', :"migrator_role" et :"reader_role".');
+        self::assertDoesNotMatchRegularExpression('/:["\']/', $sql, 'privileges.sql n\'utilise que :"app_role", :\'app_role\', :"migrator_role", :"reader_role" et :\'reader_role\'.');
 
         $pieces = preg_split('/(\$\$|;)/', $sql, -1, \PREG_SPLIT_DELIM_CAPTURE);
         self::assertIsArray($pieces);

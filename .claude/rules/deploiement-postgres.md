@@ -43,7 +43,10 @@ paths:
   applicative Job, and **`migrate-job.yaml` alone** reads **`cpg_migrator`** — owner of the database,
   of `public` and of every object — from its own `backend-migration-secrets` (an `env` entry, which
   beats `envFrom`; `MigrationRoleSecretsTest` pins the wiring and that no other backend-image
-  manifest names that Secret). A third role, **`cpg_reader`** (`pg_read_all_data`, no password: reachable from inside the
+  manifest names that Secret). A third role, **`cpg_reader`** (`pg_read_all_data` — granted by `privileges.sql` only when it lacks its
+  use: a rerun's `GRANT` printed a notice naming the image superuser, whose name lives in a Secret only,
+  measured at the 0.27.0 release; `ApplicationRolePrivilegesTest` replays the file twice and wants no
+  notice —, no password: reachable from inside the
   `postgres` pod only — local socket and `127.0.0.1`, `trust` —, refused over the network by the
   repository's `pg_hba.conf`, #593), runs the runbook's human `psql`s (`OperatorExecBoundaryTest`
   requires `-U cpg_reader`).
