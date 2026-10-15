@@ -116,6 +116,25 @@ final class ExceptionArgumentsHiddenInProductionTest extends TestCase
     }
 
     /**
+     * Aucun fichier de configuration des images n'en inclut un autre : un
+     * `include =` de FPM charge un fichier, livré par exemple avec le code de
+     * l'application, que le garde ne lirait jamais.
+     */
+    public function testNoConfigurationFileOfTheImagesIncludesAnother(): void
+    {
+        $offenders = [];
+        foreach (PhpImageBuild::deployedConfigurationCopies() as $copy) {
+            foreach (PhpImageBuild::iniKeys(PhpImageBuild::contextFile($copy->source), $copy->source) as $key) {
+                if (0 === strcasecmp('include', $key)) {
+                    $offenders[] = \sprintf('%s (%s, %s)', $copy->source, $copy->stage, $copy->destination);
+                }
+            }
+        }
+
+        self::assertSame([], $offenders, 'Un fichier de configuration des images en inclut un autre, que le garde ne lit pas (issue #616).');
+    }
+
+    /**
      * Aucune instruction des stages déployés ne nomme la directive (un `ENV`,
      * un `-d` de la commande) ni ne détourne PHP de ses fichiers :
      * `PHP_INI_SCAN_DIR` remplace `conf.d/` en entier, `zz-app.ini` compris,
