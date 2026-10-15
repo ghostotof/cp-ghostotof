@@ -50,6 +50,17 @@ final class RolesVerification
     }
 
     /**
+     * Le garde du chemin de recherche (issue #633) : un bloc identique dans
+     * roles.sql, juste après la lecture des migrations, et en tête de
+     * verify.sql. Il refuse une session où un schéma autre que le catalogue et
+     * le schéma temporaire de la session précède ou suit le catalogue.
+     */
+    public static function searchPathGuard(string $file): string
+    {
+        return self::blockCarrying('postgres-roles/'.$file, "RAISE EXCEPTION '#633 : le chemin de recherche", 'le garde du chemin de recherche');
+    }
+
+    /**
      * Ce que roles.sql joue en tête pour rendre à la session de la procédure
      * les valeurs de démarrage des réglages qu'elle hérite de la base ou d'un
      * rôle (issue #618), pris entre ses marqueurs, dans le fichier brut.

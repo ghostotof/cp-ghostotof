@@ -453,7 +453,10 @@ final class PostgresRolesProcedureTest extends TestCase
      * appartient au rôle de migration, et la lire sous le superutilisateur
      * exécutait le code qu'il y pose (une vue et sa fonction). Une seule
      * lecture, dans une fonction `SECURITY DEFINER` dont il est propriétaire,
-     * appelée une fois puis supprimée ; les blocs relisent ses réglages. Le
+     * appelée une fois, au sein d'une sous-transaction que la lecture annule
+     * elle-même par une erreur sentinelle (issue #633) : la fonction, et tout
+     * ce que le code posé a réglé ou créé, disparaissent avec elle ; les blocs
+     * relisent les réglages rangés après l'annulation. Le
      * fuseau est reconnu à la ligne de `Version20261011120000`, pas à la seule
      * existence de la table, qu'une base restaurée d'avant elle porte sans le
      * fuseau. Le comportement est rejoué par
@@ -465,7 +468,14 @@ final class PostgresRolesProcedureTest extends TestCase
 
         self::assertStringContainsString('LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS', $reading);
         self::assertStringContainsString("EXECUTE format('ALTER FUNCTION pg_temp.cpg_migrations() OWNER TO %I', current_setting('cpg.migrator_role'));", $reading);
-        self::assertStringContainsString("SELECT * INTO STRICT lues FROM pg_temp.cpg_migrations(); DROP FUNCTION pg_temp.cpg_migrations();", $reading, 'Appelée une fois, supprimée aussitôt.');
+        self::assertStringContainsString('BEGIN <<lecture>> BEGIN EXECUTE $f$ CREATE FUNCTION pg_temp.cpg_migrations(', $reading, 'La fonction créée dans la sous-transaction.');
+        self::assertStringContainsString("SELECT * INTO STRICT lues FROM pg_temp.cpg_migrations(); lue := true; RAISE EXCEPTION USING ERRCODE = 'CP633'; EXCEPTION WHEN SQLSTATE 'CP633' THEN NULL; END lecture; IF NOT lue THEN RAISE EXCEPTION '#633 : la lecture des migrations n''a pas abouti", $reading, 'Appelée une fois, la sous-transaction annulée par la seule sentinelle, une lecture inachevée refusée.');
+        self::assertSame(2, substr_count($reading, 'CP633'), 'La sentinelle levée une fois, attrapée une fois.');
+        self::assertStringNotContainsString('DROP FUNCTION', $reading, 'L\'annulation supprime la fonction ; un DROP la suivrait dans la session.');
+        // Ce qui range les valeurs lues, après l'annulation, ne résout aucun nom par le chemin de recherche.
+        $afterTheReading = substr($reading, (int) strpos($reading, 'IF NOT lue'));
+        self::assertSame(3, substr_count($afterTheReading, 'pg_catalog.set_config('));
+        self::assertDoesNotMatchRegularExpression('/(?<!pg_catalog\.)\b(set_config|current_setting)\(|::(?!pg_catalog\.)/', $afterTheReading);
         self::assertStringContainsString(\sprintf("bool_or(version = 'DoctrineMigrations\\%s')", self::TIMEZONE_MIGRATION), $reading);
 
         // Nulle part ailleurs une lecture de la table : ni la réparation, ni verify.sql.
@@ -475,6 +485,37 @@ final class PostgresRolesProcedureTest extends TestCase
         }
         self::assertSame(1, $reads, 'Une seule lecture de la table des migrations, dans la fonction du rôle de migration.');
         self::assertMatchesRegularExpression('/\bFROM\s+public\.doctrine_migration_versions\b/', $reading);
+    }
+
+    /**
+     * Issue #633 : le chemin de recherche de la session est contrôlé juste
+     * après la lecture des migrations, avant la réparation, et en tête de
+     * verify.sql, avant sa première requête — par le même bloc, dont aucun nom
+     * ne passe par le chemin de recherche (fonctions et opérateur qualifiés :
+     * il garde précisément contre un chemin altéré). Son comportement est
+     * rejoué par {@see \App\Tests\Shared\Infrastructure\Postgres\DatabaseOwnerSettingsVerificationTest}.
+     */
+    public function testTheSearchPathIsCheckedAfterTheReadingAndBeforeTheVerification(): void
+    {
+        $guard = RolesVerification::searchPathGuard('roles.sql');
+        self::assertSame($guard, RolesVerification::searchPathGuard('verify.sql'), 'Le même garde dans les deux fichiers.');
+
+        $roles = $this->statements('roles.sql');
+        $reading = (int) strpos($roles, RolesVerification::migrationsReading());
+        $guardInRoles = (int) strpos($roles, $guard);
+        self::assertGreaterThan($reading, $guardInRoles, 'roles.sql : le garde après la lecture des migrations.');
+        self::assertSame('', trim(substr($roles, $reading + \strlen(RolesVerification::migrationsReading()), $guardInRoles - $reading - \strlen(RolesVerification::migrationsReading()))), 'roles.sql : rien entre la lecture et le garde.');
+        self::assertLessThan((int) strpos($roles, RolesVerification::repairBlock()), $guardInRoles, 'roles.sql : le garde avant la réparation.');
+
+        $verify = $this->statements('verify.sql');
+        self::assertSame(0, strpos(ltrim($verify), $guard), 'verify.sql : le garde en tête, avant toute requête.');
+
+        $code = (string) preg_replace("/'(?:[^']|'')*'/", "''", $guard);
+        self::assertSame(1, substr_count($code, 'OPERATOR(pg_catalog.!~)'), 'Le garde : un opérateur du catalogue, qualifié.');
+        $code = str_replace('OPERATOR(pg_catalog.!~)', '', $code);
+        preg_match_all('/([\w.]+)\s*\(/', $code, $calls);
+        self::assertSame(['pg_catalog.array_to_string', 'pg_catalog.current_schemas'], $calls[1], 'Le garde : des fonctions du catalogue, qualifiées.');
+        self::assertDoesNotMatchRegularExpression('/::|\bDECLARE\b|[=<>~!|@#%^&*+\/-]/', $code, 'Le garde : ni transtypage, ni variable, ni autre opérateur, résolus par le chemin de recherche.');
     }
 
     /**

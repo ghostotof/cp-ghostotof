@@ -186,11 +186,22 @@ ORDER BY t.typname \gexec
 --    code lu fait `RESET ROLE`. D'où une fonction `SECURITY DEFINER` dont il
 --    est le propriétaire : ce qu'il a posé tourne sous lui, avec ses seuls
 --    droits, et le serveur y refuse tout changement de rôle ou de session.
---    Elle est appelée une fois puis supprimée — le code posé, sous son
---    propriétaire, pourrait la redéfinir pour un appel suivant —, et ce
---    qu'elle rend est rangé dans des réglages de transaction que l'étape 5 et
---    verify.sql relisent, sans jamais lire la table eux-mêmes (ils refusent
---    sans ces réglages). Une table absente (base neuve) donne `cpg.migrations`
+--    Mais pas de réglage (issue #633, mesuré sur l'image épinglée) : un `SET`
+--    ordinaire l'emporte sur la clause `SET` de la fonction et survit à sa
+--    sortie — `public` placé devant le catalogue faisait exécuter une
+--    fonction de `public`, homonyme d'une fonction du catalogue, sous le
+--    superutilisateur dès l'étape 5 ; `client_min_messages` masquait ses avis.
+--    D'où une sous-transaction, que la lecture annule elle-même par une
+--    erreur sentinelle une fois les valeurs dans ses variables (PL/pgSQL ne
+--    les annule pas) : tout réglage, tout objet que le code posé a créé ou
+--    écrit, la fonction elle-même, disparaissent avec elle. Restent les
+--    effets hors transaction (verrous consultatifs de session, valeurs de
+--    séquence) : au pire une procédure bloquée, jamais du code sous le
+--    superutilisateur. Le code posé qui lève la sentinelle ne fait pas
+--    passer une lecture inachevée pour faite. Ce qu'elle rend est rangé dans
+--    des réglages de transaction que l'étape 5 et verify.sql relisent, sans
+--    jamais lire la table eux-mêmes (ils refusent sans ces réglages), par des
+--    noms qualifiés. Une table absente (base neuve) donne `cpg.migrations`
 --    vide. Du SQL pur : rejoué par DatabaseOwnerSettingsVerificationTest.
 SELECT set_config('cpg.app_role', :'app_role', true),
        set_config('cpg.migrator_role', :'migrator_role', true),
@@ -198,26 +209,51 @@ SELECT set_config('cpg.app_role', :'app_role', true),
 DO $$
 DECLARE
     lues record;
+    lue boolean := false;
 BEGIN
-    EXECUTE $f$
-        CREATE FUNCTION pg_temp.cpg_migrations(OUT presente boolean, OUT nombre bigint, OUT derniere text, OUT fuseau boolean)
-        LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $corps$
-        BEGIN
-            presente := to_regclass('public.doctrine_migration_versions') IS NOT NULL;
-            IF presente THEN
-                SELECT count(*), coalesce(max(version), ''), coalesce(bool_or(version = 'DoctrineMigrations\Version20261011120000'), false)
-                INTO nombre, derniere, fuseau
-                FROM public.doctrine_migration_versions;
-            END IF;
-        END
-        $corps$
-    $f$;
-    EXECUTE format('ALTER FUNCTION pg_temp.cpg_migrations() OWNER TO %I', current_setting('cpg.migrator_role'));
-    SELECT * INTO STRICT lues FROM pg_temp.cpg_migrations();
-    DROP FUNCTION pg_temp.cpg_migrations();
-    PERFORM set_config('cpg.migrations', CASE WHEN lues.presente THEN lues.nombre::text ELSE '' END, true),
-            set_config('cpg.derniere_migration', coalesce(lues.derniere, ''), true),
-            set_config('cpg.fuseau_migre', coalesce(lues.fuseau, false)::text, true);
+    <<lecture>>
+    BEGIN
+        EXECUTE $f$
+            CREATE FUNCTION pg_temp.cpg_migrations(OUT presente boolean, OUT nombre bigint, OUT derniere text, OUT fuseau boolean)
+            LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $corps$
+            BEGIN
+                presente := to_regclass('public.doctrine_migration_versions') IS NOT NULL;
+                IF presente THEN
+                    SELECT count(*), coalesce(max(version), ''), coalesce(bool_or(version = 'DoctrineMigrations\Version20261011120000'), false)
+                    INTO nombre, derniere, fuseau
+                    FROM public.doctrine_migration_versions;
+                END IF;
+            END
+            $corps$
+        $f$;
+        EXECUTE format('ALTER FUNCTION pg_temp.cpg_migrations() OWNER TO %I', current_setting('cpg.migrator_role'));
+        SELECT * INTO STRICT lues FROM pg_temp.cpg_migrations();
+        lue := true;
+        RAISE EXCEPTION USING ERRCODE = 'CP633';
+    EXCEPTION WHEN SQLSTATE 'CP633' THEN
+        NULL;
+    END lecture;
+    IF NOT lue THEN
+        RAISE EXCEPTION '#633 : la lecture des migrations n''a pas abouti (sentinelle levée par le code de la table)';
+    END IF;
+    PERFORM pg_catalog.set_config('cpg.migrations', CASE WHEN lues.presente THEN lues.nombre::pg_catalog.text ELSE '' END, true),
+            pg_catalog.set_config('cpg.derniere_migration', coalesce(lues.derniere, ''), true),
+            pg_catalog.set_config('cpg.fuseau_migre', coalesce(lues.fuseau, false)::pg_catalog.text, true);
+END
+$$;
+-- Issue #633 : le chemin de recherche de la session, contrôlé avant que la
+-- suite résolve un seul nom par lui — une fonction, un opérateur, une relation
+-- ou un type d'un autre schéma pourrait y prendre la place de ceux du
+-- catalogue. Admis : le catalogue en tête, suivi au plus du schéma temporaire
+-- de la session (les noms `pg_*` sont réservés au système). Lu par
+-- current_schemas, pas par la chaîne : PGOPTIONS l'écrit sans espace, un SET
+-- avec. Le même bloc ouvre verify.sql ; aucun de ses noms ne passe par le
+-- chemin qu'il contrôle (PostgresRolesProcedureTest).
+DO $$
+BEGIN
+    IF pg_catalog.array_to_string(pg_catalog.current_schemas(true), ',') OPERATOR(pg_catalog.!~) '^pg_catalog(,pg_temp_[0-9]+)?$' THEN
+        RAISE EXCEPTION '#633 : le chemin de recherche de la session n''est plus celui de la procédure (pg_catalog, pg_temp)';
+    END IF;
 END
 $$;
 

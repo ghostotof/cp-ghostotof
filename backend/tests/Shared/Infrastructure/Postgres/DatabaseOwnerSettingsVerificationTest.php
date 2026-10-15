@@ -257,12 +257,7 @@ final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
     #[DataProvider('plantedStatements')]
     public function testAFunctionPlantedInTheMigrationTableRunsUnderTheMigratorWithoutEscape(string $statement, string $refusal): void
     {
-        $this->arm([
-            'DROP TABLE public.doctrine_migration_versions',
-            "CREATE FUNCTION public.{f}() RETURNS boolean LANGUAGE plpgsql AS 'BEGIN ".$statement." RETURN true; END'",
-            "CREATE VIEW public.doctrine_migration_versions AS SELECT v AS version FROM (VALUES ('DoctrineMigrations\\Version20261011120000'::varchar)) AS t(v) WHERE public.{f}()",
-            'ALTER VIEW public.doctrine_migration_versions OWNER TO {migrator}',
-        ]);
+        $this->plantInTheMigrationTable($statement);
 
         // Le nom tel que current_user l'imprime, sans guillemets.
         $expected = str_replace('{migrator}', $this->migrator, $refusal);
@@ -284,6 +279,149 @@ final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
         yield 'RESET ROLE' => ['RESET ROLE;', 'cannot set parameter "role" within security-definer function'];
         yield 'SET ROLE vers le superutilisateur' => ["EXECUTE format(''SET ROLE %I'', session_user);", 'cannot set parameter "role" within security-definer function'];
         yield 'SET SESSION AUTHORIZATION' => ['SET SESSION AUTHORIZATION DEFAULT;', 'cannot set parameter "session_authorization" within security-definer function'];
+    }
+
+    /**
+     * Issue #633, mesuré sur l'image épinglée : un `SET` ordinaire, dans une
+     * fonction qui porte une clause `SET`, l'emporte sur elle et survit à sa
+     * sortie (documentation de CREATE FUNCTION). Le code posé par le rôle de
+     * migration plaçait ainsi `public` devant le catalogue pour la suite de la
+     * session du superutilisateur : une fonction de `public` homonyme d'une
+     * fonction du catalogue s'exécutait sous lui dès l'étape 5. Rien de ce
+     * que ce code règle ne doit survivre à la lecture.
+     */
+    #[DataProvider('plantedSessionSettings')]
+    public function testThePlantedCodeLeavesNoSettingToTheSuperusersSession(string $statement): void
+    {
+        $this->asTheProcedureSession();
+        $this->plantInTheMigrationTable($statement);
+        $before = $this->sessionSettings();
+
+        $this->probe->executeStatement(RolesVerification::migrationsReading());
+
+        self::assertSame($before, $this->sessionSettings());
+    }
+
+    /**
+     * Des réglages qu'un rôle sans privilège pose, et qui changent le sens de
+     * ce qui suit : la résolution des noms, les avis `#610` de la réparation,
+     * la lecture des littéraux, l'empreinte `#611`.
+     *
+     * @return iterable<string, array{string}>
+     */
+    public static function plantedSessionSettings(): iterable
+    {
+        yield 'SET search_path' => ['SET search_path = public, pg_catalog;'];
+        yield 'set_config de session' => ["PERFORM set_config(''search_path'', ''public, pg_catalog'', false);"];
+        yield 'avis masqués' => ['SET client_min_messages = error;'];
+        yield 'littéraux' => ['SET standard_conforming_strings = off;'];
+        yield 'empreinte' => ['SET quote_all_identifiers = on;'];
+    }
+
+    /**
+     * Le geste complet de #633 : `public` placé devant le catalogue par le code
+     * posé, puis une fonction homonyme d'une fonction du catalogue, que la
+     * réparation et chaque bloc de verify.sql appellent. Elle ne doit jamais
+     * s'exécuter : chaque bloc passe, ou refuse pour sa propre cause.
+     */
+    public function testNoFunctionOfPublicRunsUnderTheSuperuserAfterTheReading(): void
+    {
+        $this->asTheProcedureSession();
+        $this->plantInTheMigrationTable('SET search_path = public, pg_catalog;');
+        $this->arm(["CREATE FUNCTION public.current_setting(text) RETURNS text LANGUAGE plpgsql AS 'BEGIN RAISE EXCEPTION ''#633 : sous %'', current_user; END'"]);
+
+        $this->probe->executeStatement(RolesVerification::migrationsReading());
+
+        foreach (['réparation #610' => RolesVerification::repairBlock(), '#575' => RolesVerification::blockOf('#575'), '#608' => RolesVerification::blockOf('#608'), '#611' => RolesVerification::blockOf('#611')] as $block => $sql) {
+            $this->probe->createSavepoint('bloc');
+            try {
+                $this->probe->executeStatement($sql);
+            } catch (DriverException $exception) {
+                self::assertStringNotContainsString('#633 : sous', $exception->getMessage(), $block.' : une fonction de public a tourné dans la session du superutilisateur.');
+            }
+            $this->probe->rollbackSavepoint('bloc');
+        }
+    }
+
+    /**
+     * La lecture se fait dans une sous-transaction qu'elle annule elle-même,
+     * par une erreur sentinelle, une fois les valeurs lues. Le code posé qui
+     * lève cette sentinelle avant la fin ne fait pas passer une lecture
+     * inachevée pour une lecture faite.
+     */
+    public function testThePlantedCodeCannotFakeTheEndOfTheReading(): void
+    {
+        $this->plantInTheMigrationTable("RAISE EXCEPTION USING ERRCODE = ''CP633'';");
+
+        $this->assertStatementRefuses(RolesVerification::migrationsReading(), "#633 : la lecture des migrations n'a pas abouti");
+    }
+
+    /**
+     * Le garde du chemin de recherche refuse une session où un autre schéma
+     * que le catalogue et le schéma temporaire se trouve dans le chemin : une
+     * fonction, un opérateur ou une relation de ce schéma pourrait y prendre
+     * la place de ceux du catalogue (le schéma de la CVE-2018-1058).
+     *
+     * @param list<string> $setUp
+     */
+    #[DataProvider('foreignSearchPaths')]
+    public function testTheSearchPathGuardRefusesAPathOtherThanTheProcedures(array $setUp): void
+    {
+        $this->arm($setUp);
+
+        $this->assertStatementRefuses(RolesVerification::searchPathGuard('verify.sql'), "#633 : le chemin de recherche de la session n'est plus celui de la procédure");
+    }
+
+    /**
+     * @return iterable<string, array{list<string>}>
+     */
+    public static function foreignSearchPaths(): iterable
+    {
+        yield 'public devant le catalogue' => [['SET LOCAL search_path = public, pg_catalog']];
+        yield 'public après le catalogue' => [['SET LOCAL search_path = pg_catalog, public']];
+        yield 'chemin par défaut' => [['SET LOCAL search_path = "$user", public']];
+        yield 'schéma temporaire devant le catalogue' => [['CREATE TEMP TABLE {t1} ()', 'SET LOCAL search_path = pg_temp, pg_catalog']];
+    }
+
+    /**
+     * Le chemin de la procédure passe : tel que PGOPTIONS l'écrit (sans
+     * espace), tel qu'un `SET` le réécrit, avant ou après la création du
+     * schéma temporaire de la session (l'étape 4 y crée sa fonction).
+     *
+     * @param list<string> $setUp
+     */
+    #[DataProvider('proceduresSearchPaths')]
+    public function testTheSearchPathGuardAdmitsTheProceduresPath(array $setUp): void
+    {
+        $this->arm($setUp);
+
+        $this->probe->executeStatement(RolesVerification::searchPathGuard('verify.sql'));
+        $this->addToAssertionCount(1);
+    }
+
+    /**
+     * @return iterable<string, array{list<string>}>
+     */
+    public static function proceduresSearchPaths(): iterable
+    {
+        yield 'options de la procédure' => [["SELECT set_config('search_path', 'pg_catalog,pg_temp', true)"]];
+        yield 'SET' => [['SET LOCAL search_path = pg_catalog, pg_temp']];
+        yield 'schéma temporaire créé' => [['CREATE TEMP TABLE {t1} ()', "SELECT set_config('search_path', 'pg_catalog,pg_temp', true)"]];
+    }
+
+    /**
+     * Témoin de #633 : sans le `SET` posé, la même fonction de `public` ne
+     * s'exécute pas — le search_path de la procédure ne nomme pas `public`.
+     */
+    public function testAFunctionOfPublicAloneDoesNotRunUnderTheProceduresSearchPath(): void
+    {
+        $this->asTheProcedureSession();
+        $this->plantInTheMigrationTable('');
+        $this->arm(["CREATE FUNCTION public.current_setting(text) RETURNS text LANGUAGE plpgsql AS 'BEGIN RAISE EXCEPTION ''#633 : sous %'', current_user; END'"]);
+
+        $this->play(RolesVerification::repairBlock());
+
+        $this->play(RolesVerification::blockOf('#608'));
     }
 
     /**
@@ -631,6 +769,45 @@ final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
         ]);
 
         return $this->expand('public.{t1}');
+    }
+
+    /**
+     * Remplace la table des migrations par une vue du rôle de migration, dont
+     * la lecture exécute `$statement` (PL/pgSQL, apostrophes doublées) — ce que
+     * son propriétaire peut poser dans le cluster (revue de #610).
+     */
+    private function plantInTheMigrationTable(string $statement): void
+    {
+        $this->arm([
+            'DROP TABLE public.doctrine_migration_versions',
+            "CREATE FUNCTION public.{f}() RETURNS boolean LANGUAGE plpgsql AS 'BEGIN ".$statement." RETURN true; END'",
+            "CREATE VIEW public.doctrine_migration_versions AS SELECT v AS version FROM (VALUES ('DoctrineMigrations\\Version20261011120000'::varchar)) AS t(v) WHERE public.{f}()",
+            'ALTER VIEW public.doctrine_migration_versions OWNER TO {migrator}',
+        ]);
+    }
+
+    /**
+     * Le search_path que les options de connexion de la procédure donnent à sa
+     * session (PGOPTIONS, issue #608), pour la durée de la transaction du test.
+     */
+    private function asTheProcedureSession(): void
+    {
+        self::assertStringContainsString('-c search_path=pg_catalog,pg_temp ', RolesVerification::sessionOptions().' ', 'Prémisse : le search_path des options de la procédure.');
+        $this->probe->executeStatement('SET LOCAL search_path = pg_catalog, pg_temp');
+        // Comme roles.sql en tête (#618) : les réglages de plpgsql visibles
+        // avant la lecture, pas révélés par elle.
+        $this->probe->executeStatement("LOAD 'plpgsql'");
+    }
+
+    /**
+     * Les réglages de la session, hors ceux que la lecture des migrations range
+     * elle-même (`cpg.*`).
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function sessionSettings(): array
+    {
+        return $this->probe->fetchAllAssociative("SELECT name, setting FROM pg_catalog.pg_settings WHERE name NOT LIKE 'cpg.%' ORDER BY name");
     }
 
     /** @param list<string> $statements joués sous le superutilisateur, dans la transaction annulée au `tearDown` */
