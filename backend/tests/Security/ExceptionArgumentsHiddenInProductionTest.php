@@ -39,16 +39,18 @@ use PHPUnit\Framework\TestCase;
  * instructions et la commande des stages déployés, le sidecar nginx et les
  * pods (un test chacun, ses limites dans son docblock).
  *
- * Non couvert, et accepté : les fichiers que l'image officielle range
- * elle-même dans la configuration (`docker-php-ext-*.ini`,
- * `php-fpm.d/docker.conf`, `www.conf`), absents du dépôt — seule une image
- * construite les montrerait, au prix d'un `docker build` dans la suite.
+ * Non couvert, et accepté : les fichiers que l'image officielle range dans
+ * la configuration (`php-fpm.d/docker.conf`, `www.conf`), et les
+ * `conf.d/docker-php-ext-*.ini` qu'écrivent les `RUN docker-php-ext-enable`
+ * de ce Dockerfile (une ligne `extension=` chacun), absents du dépôt — seule
+ * une image construite les montrerait, au prix d'un `docker build` dans la
+ * suite.
  */
 final class ExceptionArgumentsHiddenInProductionTest extends TestCase
 {
     /**
-     * Le motif du nom de la directive, sans son préfixe et sans casse : un garde qui
-     * refuse doit refuser large.
+     * Le motif du nom de la directive, sans son préfixe et sans casse : un
+     * garde qui refuse doit refuser large.
      */
     private const string DIRECTIVE_PATTERN = '/exception_ignore_args/i';
 

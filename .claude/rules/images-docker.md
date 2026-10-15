@@ -61,18 +61,24 @@ prod run the identical PHP engine:
   pod's — needs `composer` on the `PATH`, as in the dev container and CI.
 - **`preprod`** — built **`FROM production`** (not a parallel build) so its application layers are byte-identical
   to prod; only adds Xdebug (**inert in the image**, see `.claude/rules/deploiement.md`) and verbose logs.
-- **`php.prod.ini` is the only source of `zend.exception_ignore_args = On`** (issues #278, #616): the
-  deployed traces carry no call arguments. `ExceptionArgumentsHiddenInProductionTest` pins the value and
-  refuses every other way the runtime could contradict it: any file the deployed stages (`production`,
-  `preprod` and their ancestors, read from the Dockerfile by `tests/Support/PhpImageBuild`) copy under
-  `/usr/local/etc/` naming the directive — `xdebug.preprod.ini` loads *after* `zz-app.ini`, a pool's
-  `php_admin_flag` beats any ini —; any write there that is not the `COPY` of one context file (`--from`,
-  several sources, JSON form, a `RUN`); `PHP_INI_SCAN_DIR` or `PHPRC` in those stages or in `k8s/`; an
-  option `-n`/`-c`/`-d`/`-y` in the image's `CMD`/`ENTRYPOINT` (a `sh -c` included, unread); a
-  `PHP_VALUE`/`PHP_ADMIN_VALUE` FastCGI param anywhere in `k8s/`. A new config file needs no change to
-  the test, it is found through its `COPY`. Not seen: the official image's own files
-  (`docker-php-ext-*.ini`, `php-fpm.d/docker.conf`), a `php -n`/`-c` in a pod's command.
   Pipeline order is dev → preprod → prod regardless of declaration order in the Dockerfile.
+- **`php.prod.ini` is the only source of `zend.exception_ignore_args = On`** (issues #278, #616): the
+  deployed traces carry no call arguments. `ExceptionArgumentsHiddenInProductionTest` pins the value,
+  requires the file to be a loaded ini (directly under `conf.d/`) copied by `production` or one of its
+  ancestors, and refuses every other way the runtime could contradict it. `tests/Support/PhpImageBuild`
+  reads the deployed stages (`production`, `preprod`, their ancestors) and keeps **one copy per stage**
+  (`ConfigurationCopy`): no other file they copy under `/usr/local/etc/` may name the directive —
+  `xdebug.preprod.ini` loads *after* `zz-app.ini`, a pool's `php_admin_flag` beats any ini — nor
+  `include` another; any other write there, by path or by `$PHP_INI_DIR` (`--from`, several sources,
+  JSON form, a `RUN`, a `WORKDIR`), fails, as do a stage named by a variable, a stage name declared
+  twice and a heredoc. Those stages never name `PHP_INI_SCAN_DIR` nor `PHPRC`; their `CMD`/`ENTRYPOINT`
+  is JSON and **exactly `php-fpm` with `-F`**, an allow-list (a deny-list missed `-nF`, `-cx.ini`, `-p`,
+  the shell form). In `k8s/`, every file but `*.md` (`KubernetesManifests::tree()->linesMatching()`,
+  comments included) names neither the directive, `PHP_INI_SCAN_DIR`, `PHPRC`, nor a
+  `PHP_VALUE`/`PHP_ADMIN_VALUE` FastCGI param. A new config file needs no change to the test: it is
+  found through its `COPY`. Not seen: the official image's own files (`php-fpm.d/docker.conf`,
+  `www.conf`) and the `docker-php-ext-*.ini` that `docker-php-ext-enable` writes (one `extension=`
+  line each), a `-n`/`-c`/`-y`/`-p` in a pod's command, keys an ExternalSecret would import by `dataFrom`.
 
 The build context is the **repo root**, so `.dockerignore` is what keeps things out of it, and two entries
 are there for secrecy rather than size (audit A13/A22): `backend/config/jwt/` — a workstation that has
