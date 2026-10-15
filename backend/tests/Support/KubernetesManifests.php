@@ -4,7 +4,11 @@ declare(strict_types=1);
 
 namespace App\Tests\Support;
 
+use FilesystemIterator;
 use PHPUnit\Framework\Assert;
+use RecursiveDirectoryIterator;
+use RecursiveIteratorIterator;
+use SplFileInfo;
 use Symfony\Component\Yaml\Exception\ParseException;
 use Symfony\Component\Yaml\Yaml;
 
@@ -63,6 +67,17 @@ final readonly class KubernetesManifests
     }
 
     /**
+     * Tout `k8s/` : la base, les overlays et les fichiers posés à sa racine.
+     * Pour {@see self::linesMatching()}, qui descend dans les
+     * sous-répertoires ; les lectures par manifeste restent à `base()` et
+     * `overlay()`.
+     */
+    public static function tree(): self
+    {
+        return new self(\dirname(self::base()->directory()));
+    }
+
+    /**
      * Les manifestes d'un autre répertoire : ceux qu'un test écrit pour
      * éprouver la lecture elle-même.
      */
@@ -85,6 +100,39 @@ final readonly class KubernetesManifests
         Assert::assertFileIsReadable($path);
 
         return (string) file_get_contents($path);
+    }
+
+    /**
+     * Les lignes qui répondent à `$pattern`, dans chaque fichier du
+     * répertoire et de ses sous-répertoires, documentation (`*.md`)
+     * exceptée, chacune préfixée de son chemin relatif et de son numéro,
+     * triées (issue #616). Une lecture du texte, pour un garde qui refuse un
+     * mot où qu'il soit écrit : quelle que soit l'extension — un `.env` de
+     * `configMapGenerator` nourrit l'environnement d'un pod —, commentaires
+     * compris, puisqu'un `#` dans un scalaire de bloc YAML n'en ouvre pas
+     * forcément un. Ce qui se lit par ressource passe par {@see self::documents()}.
+     *
+     * @return list<string>
+     */
+    public function linesMatching(string $pattern): array
+    {
+        $files = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($this->directory, FilesystemIterator::SKIP_DOTS));
+        $matches = [];
+        foreach ($files as $file) {
+            if (!$file instanceof SplFileInfo || !$file->isFile() || 'md' === $file->getExtension()) {
+                continue;
+            }
+            $lines = file($file->getPathname(), \FILE_IGNORE_NEW_LINES);
+            Assert::assertIsArray($lines, \sprintf('%s illisible.', $file->getPathname()));
+            foreach ($lines as $index => $line) {
+                if (1 === preg_match($pattern, $line)) {
+                    $matches[] = \sprintf('%s:%d: %s', substr($file->getPathname(), \strlen($this->directory) + 1), $index + 1, trim($line));
+                }
+            }
+        }
+        sort($matches);
+
+        return $matches;
     }
 
     /**

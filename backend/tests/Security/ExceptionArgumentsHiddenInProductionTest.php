@@ -7,11 +7,7 @@ namespace App\Tests\Security;
 use App\Tests\Support\ConfigurationCopy;
 use App\Tests\Support\KubernetesManifests;
 use App\Tests\Support\PhpImageBuild;
-use FilesystemIterator;
 use PHPUnit\Framework\TestCase;
-use RecursiveDirectoryIterator;
-use RecursiveIteratorIterator;
-use SplFileInfo;
 
 /**
  * Les traces d'exception des environnements déployés ne portent pas les
@@ -179,15 +175,17 @@ final class ExceptionArgumentsHiddenInProductionTest extends TestCase
      * FPM applique ces deux paramètres FastCGI à la requête, par-dessus tout
      * fichier ini. Refusés en entier, et pas seulement quand ils nomment la
      * directive : leur valeur peut se composer de variables nginx qu'aucune
-     * lecture du texte ne verrait, et aucun usage n'en a besoin. Lu dans tout
-     * `k8s/`, une conf portée par un manifeste comprise ; `fastcgi_params`,
-     * le fichier de l'image nginx, n'est pas dans le dépôt.
+     * lecture du texte ne verrait, et aucun usage n'en a besoin. Lu dans
+     * chaque fichier de `k8s/` hors `*.md`
+     * ({@see KubernetesManifests::linesMatching()}), une conf portée par un
+     * manifeste comprise ; `fastcgi_params`, le fichier de l'image nginx,
+     * n'est pas dans le dépôt.
      */
     public function testTheSidecarPassesNoIniValueToFpm(): void
     {
         self::assertSame(
             [],
-            $this->deploymentLinesMatching('/\bPHP_(?:ADMIN_)?VALUE\b/i'),
+            KubernetesManifests::tree()->linesMatching('/\bPHP_(?:ADMIN_)?VALUE\b/i'),
             'Un PHP_VALUE ou PHP_ADMIN_VALUE passé à FPM l\'emporte sur php.prod.ini (issue #616).',
         );
     }
@@ -196,48 +194,21 @@ final class ExceptionArgumentsHiddenInProductionTest extends TestCase
      * Aucun pod ne nomme la directive ni ne détourne PHP de ses fichiers
      * (`PHP_INI_SCAN_DIR`, `PHPRC`) : ni l'`env:` d'un conteneur, ni un
      * littéral de ConfigMap (`envFrom`), ni la clé d'un ExternalSecret, ni un
-     * `-d` de commande. Le texte de tout `k8s/` est lu, overlays compris :
+     * `-d` de commande, ni un `.env` de `configMapGenerator`. Chaque fichier
+     * de `k8s/` hors `*.md` est lu, overlays et commentaires compris :
      * chacune de ces formes y écrit le nom en clair.
      *
-     * Non vu : un `php -n` ou `php -c` dans la commande d'un pod (souvent un
-     * script `sh -c` sur plusieurs lignes), et les clés qu'un ExternalSecret
-     * importerait par `dataFrom` sans les nommer (aucun n'en a).
+     * Non vu : une option `-n`, `-c`, `-y` ou `-p` de `php` ou `php-fpm` dans
+     * la commande d'un pod (souvent un script `sh -c` sur plusieurs lignes),
+     * et les clés qu'un ExternalSecret importerait par `dataFrom` sans les
+     * nommer (aucun n'en a).
      */
     public function testNoPodBypassesTheConfigurationFiles(): void
     {
         self::assertSame(
             [],
-            $this->deploymentLinesMatching(self::DIRECTIVE_OR_INI_REDIRECTION),
+            KubernetesManifests::tree()->linesMatching(self::DIRECTIVE_OR_INI_REDIRECTION),
             'Un manifeste règle zend.exception_ignore_args ou détourne PHP de php.prod.ini (issue #616).',
         );
-    }
-
-    /**
-     * Les lignes hors commentaire des manifestes et des confs de `k8s/` qui
-     * répondent à `$pattern`, chacune préfixée de son fichier et de son
-     * numéro.
-     *
-     * @return list<string>
-     */
-    private function deploymentLinesMatching(string $pattern): array
-    {
-        $root = \dirname(KubernetesManifests::base()->directory());
-        $files = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($root, FilesystemIterator::SKIP_DOTS));
-        $matches = [];
-        foreach ($files as $file) {
-            if (!$file instanceof SplFileInfo || !\in_array($file->getExtension(), ['yaml', 'yml', 'conf'], true)) {
-                continue;
-            }
-            $lines = file($file->getPathname(), \FILE_IGNORE_NEW_LINES);
-            self::assertIsArray($lines, \sprintf('%s illisible.', $file->getPathname()));
-            foreach ($lines as $index => $line) {
-                if (!str_starts_with(ltrim($line), '#') && 1 === preg_match($pattern, $line)) {
-                    $matches[] = \sprintf('%s:%d: %s', substr($file->getPathname(), \strlen($root) + 1), $index + 1, trim($line));
-                }
-            }
-        }
-        sort($matches);
-
-        return $matches;
     }
 }
