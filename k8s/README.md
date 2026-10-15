@@ -1176,9 +1176,16 @@ procédure est interdit, #520) : ouvrir une issue avec le message du refus.
 valeurs ni les rôles, choisis par qui a fait le geste. Pour garder la preuve,
 lancer **avant l'étape 2** cette lecture, sans rien écrire, sous le lecteur ;
 sa sortie reste sur le terminal, jamais dans une session d'agent (des
-valeurs choisies par un tiers). Sur une base saine, une ligne `(base)` qui ne
-porte que le fuseau (aucune avant `Version20261011120000`), puis `-1 | f`.
-Toute autre ligne est l'écart que l'étape 2 effacera. Un réglage de base
+valeurs choisies par un tiers). Sur une base saine, une ligne
+`(base)|(cette base)` qui ne porte que le fuseau (aucune avant
+`Version20261011120000`), puis `-1 | f`. Toute autre ligne de `(cette base)`
+est l'écart que l'étape 2 effacera. Une ligne de `(toutes les bases)` est un
+réglage posé sur un rôle hors de la base (`ALTER ROLE … SET`, permis à tout
+rôle sur lui-même) ou sur tous les rôles (`(tous les rôles)`, `ALTER ROLE ALL
+SET`, superutilisateur seul) : la procédure l'écarte de sa propre session
+(issue #618) sans le retirer — l'étape 1 retire ceux des trois rôles
+(`RESET ALL`), pas ceux du superutilisateur ni de tous les rôles —, le même
+incident (issue #634). Un réglage de base
 `role`, une limite de connexions ou un `CONNECT` retiré peut refuser la
 connexion du lecteur (le superutilisateur de la procédure n'y est pas
 soumis) : le message d'erreur est alors la preuve (mesuré : `too many
@@ -1190,9 +1197,11 @@ kubectl -n "${NS:?preprod ou prod}" exec -i deploy/postgres -c postgres -- \
   sh -c 'PGOPTIONS="-c default_transaction_read_only=on -c lock_timeout=5s -c client_encoding=UTF8 -c local_preload_libraries=" psql -X -A -v ON_ERROR_STOP=1 -U cpg_reader -d "$POSTGRES_DB"' <<'SQL'
 SET statement_timeout = 0;
 SET search_path = pg_catalog, pg_temp;
-SELECT coalesce(nullif(s.setrole, 0)::regrole::text, '(base)') AS role, s.setconfig AS reglages
-FROM pg_db_role_setting s JOIN pg_database d ON d.oid = s.setdatabase
-WHERE d.datname = current_database() ORDER BY 1;
+SELECT CASE WHEN s.setrole <> 0 THEN s.setrole::regrole::text WHEN s.setdatabase = 0 THEN '(tous les rôles)' ELSE '(base)' END AS role,
+       CASE WHEN s.setdatabase = 0 THEN '(toutes les bases)' ELSE '(cette base)' END AS portee,
+       s.setconfig AS reglages
+FROM pg_db_role_setting s
+WHERE s.setdatabase IN (0, (SELECT oid FROM pg_database WHERE datname = current_database())) ORDER BY 2, 1;
 SELECT datconnlimit AS limite_de_connexions, datistemplate AS modele, datacl AS privileges
 FROM pg_database WHERE datname = current_database();
 SQL

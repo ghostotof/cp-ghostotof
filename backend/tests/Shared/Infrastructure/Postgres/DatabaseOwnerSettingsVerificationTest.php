@@ -6,6 +6,7 @@ namespace App\Tests\Shared\Infrastructure\Postgres;
 
 use App\Tests\Support\OpensProbeConnection;
 use App\Tests\Support\RolesVerification;
+use App\Tests\Support\Runbook;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception\DriverException;
 use Doctrine\ORM\EntityManagerInterface;
@@ -56,6 +57,9 @@ final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
 
     /** Le refus du bloc `#611` quand le schéma n'a pas l'empreinte attendue. */
     private const string SCHEMA_REFUSAL = "#611 : le schéma de la base n'est pas celui des migrations";
+
+    /** La phrase qui ouvre la lecture de preuve du runbook, avant la réparation (#610). */
+    private const string EVIDENCE_RUNBOOK = "La réparation efface ce qu'elle répare";
 
     private Connection $probe;
 
@@ -745,6 +749,57 @@ final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
         ]);
 
         $this->assertBlockRefuses('#611', self::SCHEMA_REFUSAL);
+    }
+
+    /**
+     * Issue #634 : la lecture de preuve du runbook garde, avant l'étape 2, ce
+     * que la réparation efface. Elle ne lisait que les réglages propres à la
+     * base, pas ceux d'un rôle pour toutes les bases (`ALTER ROLE … SET`,
+     * permis à tout rôle sur lui-même) ni ceux de tous les rôles (`ALTER ROLE
+     * ALL SET`, superutilisateur) : la remise de #618 les neutralise pour la
+     * session de la procédure, mais la preuve ne les gardait pas. Rejouée ici
+     * telle que le runbook l'écrit, dans la transaction annulée du test.
+     */
+    public function testTheEvidenceReadingShowsTheRoleSettingsOutsideTheDatabaseToo(): void
+    {
+        $this->arm([
+            "ALTER ROLE {app} SET work_mem = '1MB'",
+            "ALTER ROLE {migrator} IN DATABASE {db} SET work_mem = '2MB'",
+            "ALTER ROLE ALL SET work_mem = '3MB'",
+        ]);
+
+        $rows = $this->evidenceSettings();
+
+        self::assertContains($this->app.'|(toutes les bases)|{work_mem=1MB}', $rows);
+        self::assertContains($this->migrator.'|(cette base)|{work_mem=2MB}', $rows);
+        self::assertContains('(tous les rôles)|(toutes les bases)|{work_mem=3MB}', $rows);
+        self::assertContains('(base)|(cette base)|{TimeZone=Europe/Paris}', $rows, 'Prémisse : le fuseau de la migration, sur la base.');
+    }
+
+    /**
+     * Les lignes de la première requête de la lecture de preuve du runbook,
+     * jouée après ses `SET`, colonnes jointes par `|`.
+     *
+     * @return list<string>
+     */
+    private function evidenceSettings(): array
+    {
+        self::assertSame(1, preg_match("/<<'SQL'\n(.*?)\nSQL$/ms", Runbook::repository()->bashBlockAfter(self::EVIDENCE_RUNBOOK), $sql), 'k8s/README.md : la lecture de preuve, sur l\'entrée standard.');
+        $statements = array_map(trim(...), explode(";\n", rtrim($sql[1], ";\n")));
+        foreach ($statements as $statement) {
+            if (str_starts_with($statement, 'SET ')) {
+                $this->probe->executeStatement($statement);
+                continue;
+            }
+            self::assertStringContainsString('pg_db_role_setting', $statement, 'La première requête lit les réglages.');
+
+            // Les colonnes sont du texte ou NULL (aucune ici) : implode les joint telles quelles.
+            return array_map(
+                static fn (array $row): string => implode('|', array_filter($row, \is_string(...))),
+                $this->probe->fetchAllNumeric($statement),
+            );
+        }
+        self::fail('La lecture de preuve ne lit rien.');
     }
 
     /**

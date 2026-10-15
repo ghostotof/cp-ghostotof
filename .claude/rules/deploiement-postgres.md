@@ -188,7 +188,9 @@ paths:
   role name (the superuser's is in a Secret) —, committed with the rest after `conforme`; the runbook says
   what such a notice means (an incident: someone holding the migrator, `cpg_app` or `cpg_reader` altered the
   database), gives a read-only `cpg_reader` query to run **before** the procedure to keep the values the
-  repair erases, and says that a `#608` refusal left after it is a defect of the repair, never a hand fix.
+  repair erases — since #634 also the settings of a role for every database and of every role
+  (`setdatabase = 0`, which #618's reset only neutralises for the procedure's session;
+  `DatabaseOwnerSettingsVerificationTest` replays it as written) —, and says that a `#608` refusal left after it is a defect of the repair, never a hand fix.
   `DatabaseOwnerSettingsVerificationTest` replays the repair after every gesture the `#608` block
   refuses (refused first, then repaired, then the block passes), on healthy databases (state
   unchanged), and before the time-zone migration or without its table (none set).
