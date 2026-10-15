@@ -572,7 +572,7 @@ final class PostgresRolesProcedureTest extends TestCase
         $block = $this->normalized(RolesVerification::blockOf('#611'));
 
         $settings = RolesVerification::schemaPrintSettings();
-        self::assertSame(['search_path', 'TimeZone', 'DateStyle', 'IntervalStyle', 'extra_float_digits'], array_keys($settings), 'Le chemin et ce qui imprime une constante : horodatage, date, intervalle, flottant.');
+        self::assertSame(['search_path', 'TimeZone', 'DateStyle', 'IntervalStyle', 'extra_float_digits', 'bytea_output', 'standard_conforming_strings', 'quote_all_identifiers'], array_keys($settings), 'Le chemin et ce qui imprime une constante ou un nom : horodatage, date, intervalle, flottant, octets, antislash, identifiant.');
         self::assertSame('pg_catalog, pg_temp', $settings['search_path']);
         self::assertStringContainsString(" BEGIN PERFORM set_config('search_path', 'pg_catalog, pg_temp', true), ", $block, 'Les réglages sont la première instruction du bloc, avant toute lecture.');
         self::assertSame(3, preg_match_all("/RAISE EXCEPTION '#611 :(?:[^']|'')*'((?:, [a-z_]+)*);/", $block, $raises), 'Trois refus #611.');

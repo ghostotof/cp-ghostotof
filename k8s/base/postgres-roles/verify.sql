@@ -259,7 +259,10 @@ BEGIN
     -- Ce qui change l'impression d'une définition, fixé ici plutôt que reçu de
     -- la session (issue #634) : le chemin qualifie les noms, le fuseau et le
     -- style de date un horodatage constant, le style d'intervalle un
-    -- intervalle, extra_float_digits un flottant. La session de la procédure
+    -- intervalle, extra_float_digits un flottant, bytea_output des octets,
+    -- standard_conforming_strings un antislash (celui des empreintes
+    -- ci-dessous compris : PL/pgSQL prépare chaque requête à sa première
+    -- exécution, après ces réglages), quote_all_identifiers tout nom. La session de la procédure
     -- tourne en GMT (remise de #618), celle des tests en Europe/Paris : sans
     -- eux, une migration posant une telle constante dans un DEFAULT, un CHECK
     -- ou un prédicat d'index serait refusée à chaque passage. Les tests
@@ -270,7 +273,10 @@ BEGIN
             set_config('TimeZone', 'UTC', true),
             set_config('DateStyle', 'ISO, YMD', true),
             set_config('IntervalStyle', 'postgres', true),
-            set_config('extra_float_digits', '1', true);
+            set_config('extra_float_digits', '1', true),
+            set_config('bytea_output', 'hex', true),
+            set_config('standard_conforming_strings', 'on', true),
+            set_config('quote_all_identifiers', 'off', true);
     -- #611 : réglages d'impression, fin
     IF current_setting('cpg.migrations') <> '' THEN
         derniere := current_setting('cpg.derniere_migration');

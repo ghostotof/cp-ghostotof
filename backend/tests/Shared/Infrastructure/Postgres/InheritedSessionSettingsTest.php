@@ -48,8 +48,9 @@ final class InheritedSessionSettingsTest extends KernelTestCase
 
     /**
      * Ce qu'un propriétaire de la base peut poser sur elle (mesuré sur l'image
-     * épinglée), réglage => valeur : l'impression des identifiants change
-     * l'empreinte `#611` (la procédure échouait à chaque passage), les trois
+     * épinglée), réglage => valeur : l'impression des identifiants changeait
+     * l'empreinte `#611` (la procédure échouait à chaque passage, jusqu'à ce
+     * que le bloc le fixe lui-même, #634), les trois
      * suivants changent le sens du SQL ou de PL/pgSQL, le dernier écrit l'arbre
      * de chaque requête — un mot de passe compris — dans le journal du serveur.
      */
@@ -111,8 +112,8 @@ final class InheritedSessionSettingsTest extends KernelTestCase
 
     /**
      * Prémisse : sans la remise, la session de la procédure hérite de chaque
-     * réglage posé — et l'empreinte du schéma n'est plus celle des migrations.
-     * Avec elle, plus aucun réglage hérité, chacun à sa valeur de démarrage,
+     * réglage posé — les noms s'impriment autrement, mais l'empreinte du
+     * schéma n'en dépend plus (#634). Avec elle, plus aucun réglage hérité, chacun à sa valeur de démarrage,
      * et l'empreinte est celle d'une session saine.
      */
     public function testTheProcedureSessionKeepsNothingTheDatabaseSets(): void
@@ -127,7 +128,8 @@ final class InheritedSessionSettingsTest extends KernelTestCase
             foreach ([...array_keys(self::DATABASE_SETTINGS), ...array_keys(self::ROLE_IN_DATABASE_SETTINGS)] as $name) {
                 self::assertContains($name, $inherited, 'Prémisse : la nouvelle session hérite de '.$name.'.');
             }
-            self::assertNotSame($clean, RolesVerification::schemaFingerprint($session), 'Prémisse : hérité, quote_all_identifiers change l\'empreinte #611.');
+            self::assertSame('"public"', $session->fetchOne("SELECT pg_catalog.quote_ident('public')"), 'Prémisse : hérité, quote_all_identifiers change l\'impression des noms.');
+            self::assertSame($clean, RolesVerification::schemaFingerprint($session), 'Le bloc #611 fixe quote_all_identifiers lui-même (#634) : l\'empreinte n\'en dépend plus.');
         });
 
         $this->inProcedureSession(RolesVerification::sessionOptions(), function (Connection $session) use ($clean): void {

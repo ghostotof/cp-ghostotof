@@ -806,7 +806,10 @@ final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
      * Issue #634 : `pg_get_expr` imprime une constante selon les réglages de
      * la session — un horodatage selon `TimeZone` et `DateStyle`, un
      * intervalle selon `IntervalStyle`, un flottant selon
-     * `extra_float_digits`. La session de la procédure tourne en `GMT` depuis
+     * `extra_float_digits`, des octets selon `bytea_output`, un antislash
+     * selon `standard_conforming_strings`, tout identifiant selon
+     * `quote_all_identifiers` (relecture de #634 : la copie du runbook, lue
+     * par le lecteur sans la remise de #618, en héritait). La session de la procédure tourne en `GMT` depuis
      * la remise de #618, celle qui calcule les empreintes admises en
      * `Europe/Paris` : une migration qui poserait une telle constante dans un
      * `DEFAULT`, un `CHECK` ou un prédicat d'index ferait refuser son
@@ -817,10 +820,10 @@ final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
      */
     public function testTheFingerprintDoesNotDependOnTheSessionPrintSettings(): void
     {
-        $this->arm(["CREATE TABLE public.{t1} (instant timestamptz DEFAULT '2026-03-29 01:30:00+00', jour date DEFAULT '2026-10-25', duree interval DEFAULT '1 day 02:00:00', mesure double precision DEFAULT 0.30000000000000004)"]);
+        $this->arm(["CREATE TABLE public.{t1} (instant timestamptz DEFAULT '2026-03-29 01:30:00+00', jour date DEFAULT '2026-10-25', duree interval DEFAULT '1 day 02:00:00', mesure double precision DEFAULT 0.30000000000000004, octets bytea DEFAULT '\\x0102', texte text DEFAULT 'a\\b')"]);
 
-        $paris = $this->refusedFingerprintUnder(['TimeZone' => 'Europe/Paris', 'DateStyle' => 'ISO, MDY', 'IntervalStyle' => 'postgres', 'extra_float_digits' => '1']);
-        $elsewhere = $this->refusedFingerprintUnder(['TimeZone' => 'Asia/Tokyo', 'DateStyle' => 'SQL, DMY', 'IntervalStyle' => 'sql_standard', 'extra_float_digits' => '0']);
+        $paris = $this->refusedFingerprintUnder(['TimeZone' => 'Europe/Paris', 'DateStyle' => 'ISO, MDY', 'IntervalStyle' => 'postgres', 'extra_float_digits' => '1', 'bytea_output' => 'hex', 'standard_conforming_strings' => 'on', 'quote_all_identifiers' => 'off']);
+        $elsewhere = $this->refusedFingerprintUnder(['TimeZone' => 'Asia/Tokyo', 'DateStyle' => 'SQL, DMY', 'IntervalStyle' => 'sql_standard', 'extra_float_digits' => '0', 'bytea_output' => 'escape', 'standard_conforming_strings' => 'off', 'quote_all_identifiers' => 'on']);
 
         self::assertSame($paris, $elsewhere);
         self::assertSame($paris, $this->fingerprint(), 'Le test calcule l\'empreinte sous les réglages du bloc, pas sous ceux de sa session : la ligne qu\'il propose pour une migration nouvelle est celle que le bloc admettra.');

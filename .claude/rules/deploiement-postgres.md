@@ -89,7 +89,8 @@ paths:
   list of options never closes, and some settings change the procedure's meaning without failing it
   (measured on the pinned image, psql exit 0 both times: `debug_print_parse` wrote the password into
   the server log four times, `scram_iterations=1` wrote one-iteration SCRAM verifiers) or fail it on
-  every pass (`quote_all_identifiers` changes `pg_get_*def`, hence the #611 fingerprint). Its head,
+  every pass (`quote_all_identifiers` changes `pg_get_*def`, hence the #611 fingerprint — until #634,
+  where the block fixes it itself). Its head,
   between the `-- #618 : réglages hérités` markers, before the first statement carrying a password:
   `LOAD 'plpgsql'` (its settings show only once loaded — and the owner may set them once loaded in
   its own session, measured), then plain SQL (no PL/pgSQL, no array literal, no `= NULL`, no
@@ -261,9 +262,12 @@ paths:
   rules with their enabled state, policies and their roles, inheritance, sequences, publications,
   functions, operators, types, casts and the rest of the catalog —, without owners or privileges
   (#575 checks those) nor dropped columns, read under a fixed `search_path` (`pg_get_*def` qualify a
-  name by it) and, since #634, fixed `TimeZone`, `DateStyle`, `IntervalStyle` and `extra_float_digits`
-  (`pg_get_expr` prints a constant by them — measured: a timestamp, an interval and a float in a
-  `DEFAULT` gave two fingerprints under two sessions) — all set by one `PERFORM` between its « réglages
+  name by it) and, since #634, fixed `TimeZone`, `DateStyle`, `IntervalStyle`, `extra_float_digits`,
+  `bytea_output`, `standard_conforming_strings` and `quote_all_identifiers` (`pg_get_expr` prints a
+  constant or a name by them — measured: a timestamp, an interval, a float, bytes and a backslash in a
+  `DEFAULT` gave two fingerprints under two sessions; under an inherited `standard_conforming_strings
+  = off`, the block's own `DoctrineMigrations\Version…` literals lost their backslash, « no known
+  fingerprint », until fixed at its head — PL/pgSQL prepares each query at its first run) — all set by one `PERFORM` between its « réglages
   d'impression » markers, which the tests read (`RolesVerification::schemaFingerprint()`, under them, in
   a savepoint rolled back) and the runbook repeats as `SET`s before its copy —, each line hashed (a line holding a newline cannot pass for two), and the `md5` of the
   whole compared with the fingerprints admitted for the **migrations applied: the latest and their
