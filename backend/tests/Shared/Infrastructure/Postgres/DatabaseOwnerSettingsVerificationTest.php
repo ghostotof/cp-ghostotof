@@ -331,6 +331,8 @@ final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
         $this->arm(["CREATE FUNCTION public.current_setting(text) RETURNS text LANGUAGE plpgsql AS 'BEGIN RAISE EXCEPTION ''#633 : sous %'', current_user; END'"]);
 
         $this->probe->executeStatement(RolesVerification::migrationsReading());
+        // Sans quoi un bloc qui échouerait plus tôt, pour une autre cause, laisserait passer le test.
+        self::assertSame('pg_catalog, pg_temp', $this->probe->fetchOne("SELECT pg_catalog.current_setting('search_path')"), 'Le chemin de la procédure, rendu après la lecture.');
 
         foreach (['réparation #610' => RolesVerification::repairBlock(), '#575' => RolesVerification::blockOf('#575'), '#608' => RolesVerification::blockOf('#608'), '#611' => RolesVerification::blockOf('#611')] as $block => $sql) {
             $this->probe->createSavepoint('bloc');
@@ -381,6 +383,11 @@ final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
         yield 'public après le catalogue' => [['SET LOCAL search_path = pg_catalog, public']];
         yield 'chemin par défaut' => [['SET LOCAL search_path = "$user", public']];
         yield 'schéma temporaire devant le catalogue' => [['CREATE TEMP TABLE {t1} ()', 'SET LOCAL search_path = pg_temp, pg_catalog']];
+        // Relecture de #633 : le schéma temporaire d'une autre session, nommé, se parcourt comme un autre.
+        yield 'schéma temporaire nommé' => [['SET LOCAL search_path = pg_catalog, pg_temp_7']];
+        // Un schéma absent ne figure pas dans current_schemas, mais il entre
+        // dans le chemin dès qu'un rôle qui peut le créer le crée.
+        yield 'schéma encore absent' => [['SET LOCAL search_path = pg_catalog, pg_temp, "$user"']];
     }
 
     /**
@@ -425,12 +432,13 @@ final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
     }
 
     /**
-     * La fonction de lecture est appelée une fois puis supprimée : le code
-     * posé, qui tourne sous son propriétaire, ne peut la redéfinir pour qu'un
-     * appel suivant du superutilisateur l'exécute. Les blocs relisent ce qu'elle
-     * a rendu dans des réglages de transaction.
+     * La fonction de lecture est appelée une fois et disparaît avec la
+     * sous-transaction qui l'a créée (#633), sans `DROP` : le code posé, qui
+     * tourne sous son propriétaire, ne peut la redéfinir pour qu'un appel
+     * suivant du superutilisateur l'exécute. Les blocs relisent ce qu'elle a
+     * rendu dans des réglages de transaction.
      */
-    public function testTheMigrationsAreReadOnceAndTheReadingFunctionIsDropped(): void
+    public function testTheMigrationsAreReadOnceAndTheReadingFunctionDisappearsWithItsSubTransaction(): void
     {
         $this->probe->executeStatement(RolesVerification::migrationsReading());
 

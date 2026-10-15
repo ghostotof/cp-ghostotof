@@ -47,6 +47,12 @@ final class PostgresRolesProcedureTest extends TestCase
     /** La migration qui pose le fuseau de la base (#434), seul réglage de base admis (#608). */
     private const string TIMEZONE_MIGRATION = 'Version20261011120000';
 
+    /** Ce qui ouvre la lecture des migrations de roles.sql (relecture de #633), espaces normalisés. */
+    private const string READING_OPEN = "\\echo '--- #633 : lecture des migrations, début (tout avis jusqu''à sa fin vient du code de la table, pas de la procédure)' SET LOCAL statement_timeout = '30s';";
+
+    /** Ce qui la ferme, juste avant le garde du chemin de recherche. */
+    private const string READING_CLOSE = "SET LOCAL statement_timeout = 0; \\echo '--- #633 : lecture des migrations, fin'";
+
     /**
      * L'unique `exec` qui écrit du runbook, mot pour mot (blancs normalisés) :
      * comparé en entier, une commande glissée dans le `sh -c` le fait rougir.
@@ -478,6 +484,13 @@ final class PostgresRolesProcedureTest extends TestCase
         self::assertDoesNotMatchRegularExpression('/(?<!pg_catalog\.)\b(set_config|current_setting)\(|::(?!pg_catalog\.)/', $afterTheReading);
         self::assertStringContainsString(\sprintf("bool_or(version = 'DoctrineMigrations\\%s')", self::TIMEZONE_MIGRATION), $reading);
 
+        // Relecture de #633 : encadrée de marqueurs (un avis du code posé, qui
+        // survit à l'annulation, se lit entre eux, jamais comme un de la
+        // procédure) et bornée dans le temps (PGOPTIONS fixe statement_timeout
+        // à 0 ; la lecture ne tiendrait plus indéfiniment les verrous de l'étape 3).
+        $roles = $this->normalized($this->statements('roles.sql'));
+        self::assertStringContainsString(self::READING_OPEN.' '.$reading.' '.self::READING_CLOSE, $roles, 'roles.sql : la lecture entre ses marqueurs, sous sa borne.');
+
         // Nulle part ailleurs une lecture de la table : ni la réparation, ni verify.sql.
         $reads = 0;
         foreach (['roles.sql', 'verify.sql'] as $file) {
@@ -504,17 +517,20 @@ final class PostgresRolesProcedureTest extends TestCase
         $reading = (int) strpos($roles, RolesVerification::migrationsReading());
         $guardInRoles = (int) strpos($roles, $guard);
         self::assertGreaterThan($reading, $guardInRoles, 'roles.sql : le garde après la lecture des migrations.');
-        self::assertSame('', trim(substr($roles, $reading + \strlen(RolesVerification::migrationsReading()), $guardInRoles - $reading - \strlen(RolesVerification::migrationsReading()))), 'roles.sql : rien entre la lecture et le garde.');
+        self::assertSame(self::READING_CLOSE, $this->normalized(substr($roles, $reading + \strlen(RolesVerification::migrationsReading()), $guardInRoles - $reading - \strlen(RolesVerification::migrationsReading()))), 'roles.sql : entre la lecture et le garde, sa fermeture seule.');
         self::assertLessThan((int) strpos($roles, RolesVerification::repairBlock()), $guardInRoles, 'roles.sql : le garde avant la réparation.');
 
         $verify = $this->statements('verify.sql');
         self::assertSame(0, strpos(ltrim($verify), $guard), 'verify.sql : le garde en tête, avant toute requête.');
 
+        // La chaîne, pas current_schemas (relecture de #633) : il omet un schéma
+        // encore absent et ne distingue pas le schéma temporaire d'une autre session.
+        self::assertStringContainsString("IF pg_catalog.replace(pg_catalog.current_setting('search_path'), ' ', '') OPERATOR(pg_catalog.<>) 'pg_catalog,pg_temp' THEN", $this->normalized($guard), 'Le garde : le chemin exactement celui des options de la procédure, aux espaces près.');
         $code = (string) preg_replace("/'(?:[^']|'')*'/", "''", $guard);
-        self::assertSame(1, substr_count($code, 'OPERATOR(pg_catalog.!~)'), 'Le garde : un opérateur du catalogue, qualifié.');
-        $code = str_replace('OPERATOR(pg_catalog.!~)', '', $code);
+        self::assertSame(1, substr_count($code, 'OPERATOR(pg_catalog.<>)'), 'Le garde : un opérateur du catalogue, qualifié.');
+        $code = str_replace('OPERATOR(pg_catalog.<>)', '', $code);
         preg_match_all('/([\w.]+)\s*\(/', $code, $calls);
-        self::assertSame(['pg_catalog.array_to_string', 'pg_catalog.current_schemas'], $calls[1], 'Le garde : des fonctions du catalogue, qualifiées.');
+        self::assertSame(['pg_catalog.replace', 'pg_catalog.current_setting'], $calls[1], 'Le garde : des fonctions du catalogue, qualifiées.');
         self::assertDoesNotMatchRegularExpression('/::|\bDECLARE\b|[=<>~!|@#%^&*+\/-]/', $code, 'Le garde : ni transtypage, ni variable, ni autre opérateur, résolus par le chemin de recherche.');
     }
 

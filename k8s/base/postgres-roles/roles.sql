@@ -196,8 +196,12 @@ ORDER BY t.typname \gexec
 --    les annule pas) : tout réglage, tout objet que le code posé a créé ou
 --    écrit, la fonction elle-même, disparaissent avec elle. Restent les
 --    effets hors transaction (verrous consultatifs de session, valeurs de
---    séquence) : au pire une procédure bloquée, jamais du code sous le
---    superutilisateur. Le code posé qui lève la sentinelle ne fait pas
+--    séquence) et les avis qu'il envoie au terminal, jamais du code sous le
+--    superutilisateur : la lecture est encadrée de deux marqueurs, tout avis
+--    imprimé entre eux vient de la table, et bornée à 30 secondes
+--    (PGOPTIONS laisse statement_timeout à 0 ; sinon un `pg_sleep` posé
+--    tiendrait indéfiniment les verrous de l'étape 3 devant l'API), la borne
+--    retirée aussitôt après. Le code posé qui lève la sentinelle ne fait pas
 --    passer une lecture inachevée pour faite. Ce qu'elle rend est rangé dans
 --    des réglages de transaction que l'étape 5 et verify.sql relisent, sans
 --    jamais lire la table eux-mêmes (ils refusent sans ces réglages), par des
@@ -206,6 +210,8 @@ ORDER BY t.typname \gexec
 SELECT set_config('cpg.app_role', :'app_role', true),
        set_config('cpg.migrator_role', :'migrator_role', true),
        set_config('cpg.reader_role', :'reader_role', true);
+\echo '--- #633 : lecture des migrations, début (tout avis jusqu''à sa fin vient du code de la table, pas de la procédure)'
+SET LOCAL statement_timeout = '30s';
 DO $$
 DECLARE
     lues record;
@@ -241,17 +247,22 @@ BEGIN
             pg_catalog.set_config('cpg.fuseau_migre', coalesce(lues.fuseau, false)::pg_catalog.text, true);
 END
 $$;
+SET LOCAL statement_timeout = 0;
+\echo '--- #633 : lecture des migrations, fin'
 -- Issue #633 : le chemin de recherche de la session, contrôlé avant que la
 -- suite résolve un seul nom par lui — une fonction, un opérateur, une relation
 -- ou un type d'un autre schéma pourrait y prendre la place de ceux du
--- catalogue. Admis : le catalogue en tête, suivi au plus du schéma temporaire
--- de la session (les noms `pg_*` sont réservés au système). Lu par
--- current_schemas, pas par la chaîne : PGOPTIONS l'écrit sans espace, un SET
--- avec. Le même bloc ouvre verify.sql ; aucun de ses noms ne passe par le
--- chemin qu'il contrôle (PostgresRolesProcedureTest).
+-- catalogue. Admis : exactement celui des options de la procédure, aux
+-- espaces près (PGOPTIONS l'écrit sans espace, un SET avec) ; `pg_temp` y
+-- désigne toujours le schéma temporaire de la session. Pas current_schemas
+-- (relecture de #633) : il admettrait le schéma temporaire d'une autre
+-- session nommé `pg_temp_N`, parcouru comme un schéma ordinaire, et
+-- omettrait un schéma encore absent, que son créateur ferait entrer en cours
+-- de transaction. Le même bloc ouvre verify.sql ; aucun de ses noms ne passe
+-- par le chemin qu'il contrôle (PostgresRolesProcedureTest).
 DO $$
 BEGIN
-    IF pg_catalog.array_to_string(pg_catalog.current_schemas(true), ',') OPERATOR(pg_catalog.!~) '^pg_catalog(,pg_temp_[0-9]+)?$' THEN
+    IF pg_catalog.replace(pg_catalog.current_setting('search_path'), ' ', '') OPERATOR(pg_catalog.<>) 'pg_catalog,pg_temp' THEN
         RAISE EXCEPTION '#633 : le chemin de recherche de la session n''est plus celui de la procédure (pg_catalog, pg_temp)';
     END IF;
 END

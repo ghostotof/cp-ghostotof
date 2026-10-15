@@ -1208,7 +1208,13 @@ n'est plus celle des migrations (une vue, un type à sa place) : c'est un
 incident, conduit comme un avis `#610` ; la requête du refus `#611`
 ci-dessous nomme l'objet. Ce que ce code règle ou crée dans la session est
 annulé avec la lecture (issue #633) : il ne peut rien laisser au
-superutilisateur, ni réglage, ni objet temporaire.
+superutilisateur, ni réglage, ni objet temporaire. Il peut seulement écrire
+sur le terminal : **tout avis imprimé entre `--- #633 : lecture des
+migrations, début` et `--- #633 : lecture des migrations, fin` vient de la
+table**, même s'il ressemble à un avis `#610` ou à `conforme` — le même
+incident. La lecture est bornée à 30 secondes : un `canceling statement due
+to statement timeout` juste après le marqueur de début, c'est la table qui
+fait attendre la procédure (le même incident encore), pas une heure chargée.
 
 **Un refus `#633 : la lecture des migrations n'a pas abouti`** : le code de
 la table a levé la sentinelle par laquelle la lecture s'annule elle-même — le

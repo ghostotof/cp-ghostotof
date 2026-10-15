@@ -14,7 +14,7 @@
 -- avant la première requête — chacune ci-dessous résout ses noms par lui.
 DO $$
 BEGIN
-    IF pg_catalog.array_to_string(pg_catalog.current_schemas(true), ',') OPERATOR(pg_catalog.!~) '^pg_catalog(,pg_temp_[0-9]+)?$' THEN
+    IF pg_catalog.replace(pg_catalog.current_setting('search_path'), ' ', '') OPERATOR(pg_catalog.<>) 'pg_catalog,pg_temp' THEN
         RAISE EXCEPTION '#633 : le chemin de recherche de la session n''est plus celui de la procédure (pg_catalog, pg_temp)';
     END IF;
 END

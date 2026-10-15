@@ -141,7 +141,8 @@ paths:
   with and without the reset, and a setting on the superuser role itself) and for #633 (a `pg_dump`
 restoration, two healthy passes, then the trapped view of `cpg_migrator` with a `COPY … TO PROGRAM`
 behind a shadowing `current_setting`: run as the superuser before the fix, never after, the
-sentinel removed refused by the guard), and preprod is their proof at each change. **Accepted limits** (#575): any role may
+sentinel removed refused by the guard; a planted `pg_sleep` with a forged `#610` notice cut at
+30 s, the notice between the markers), and preprod is their proof at each change. **Accepted limits** (#575): any role may
   `ALTER ROLE` itself (password, `SET` defaults) — an injection could cut the application durably; the
   procedure resets the three roles' attributes and `RESET ALL` at every pass, and `verify.sql` refuses
   a stray attribute — `RESET ALL` misses a setting scoped to the database
@@ -202,14 +203,20 @@ sentinel removed refused by the guard), and preprod is their proof at each chang
   PL/pgSQL variables, which no rollback touches): every setting, object and write of the planted code
   disappears with it, the function included (never a `DROP` after it); planted code raising the
   sentinel itself leaves the read unfinished, refused (`#633 : la lecture des migrations n'a pas
-  abouti`). Left: effects outside transactions (session advisory locks, sequence values) — at worst a
-  stuck procedure, never code under the superuser. The `set_config` calls after it are qualified.
+  abouti`). Left: effects outside transactions (session advisory locks, sequence values) and the
+  messages it sends to the terminal, never code under the superuser — so the read sits between two
+  `\echo` markers (`--- #633 : lecture des migrations, début …` / `fin`: a notice printed between
+  them comes from the table's code, possibly a forged `#610`), under `SET LOCAL statement_timeout =
+  '30s'`, set back to `0` right after (`PGOPTIONS` leaves it at 0, and a planted `pg_sleep` would
+  otherwise hold step 3's locks in front of the API; measured: cut at 30 s, exit 3). The `set_config`
+  calls after it are qualified.
   **Then a guard checks the session's `search_path`**, the same `DO` block right after the read and
-  at the head of `verify.sql`, before its first query: `pg_catalog.current_schemas(true)` must be the
-  catalog alone, optionally followed by the session's temp schema (`pg_*` names are reserved) — read
-  from the schemas, not the string (`PGOPTIONS` writes it without a space, a `SET` with one) —,
-  every name in it qualified, its operator included (`OPERATOR(pg_catalog.!~)`): it guards against
-  exactly an altered path. Each layer holds alone (measured: the sentinel removed, the guard refuses
+  at the head of `verify.sql`, before its first query: the string, blanks removed, must be exactly
+  `pg_catalog,pg_temp` (`PGOPTIONS` writes it without a space, a `SET` with one), where `pg_temp` is
+  always the session's own temp schema — never `current_schemas()` (review of #633): it admits
+  another session's temp schema named `pg_temp_N`, searched like any schema, and omits a schema not
+  created yet, which its creator could bring in mid-transaction. Every name in it is qualified, its
+  operator included (`OPERATOR(pg_catalog.<>)`): it guards against exactly an altered path. Each layer holds alone (measured: the sentinel removed, the guard refuses
   in exit 3). Full qualification of `verify.sql` was ruled out: operators cannot be qualified in
   practice, and the fingerprint query is copied byte for byte in the runbook.
   `PostgresRolesProcedureTest` allows a single read of the table in all the files, in that function,
@@ -218,7 +225,10 @@ sentinel removed refused by the guard), and preprod is their proof at each chang
   `SET ROLE`, `SET SESSION AUTHORIZATION`; since #633 `search_path`, `client_min_messages`,
   `standard_conforming_strings`, `quote_all_identifiers` — the session's settings identical after the
   read —, the sentinel, and a `public.current_setting(text)` that must never run in the repair or a
-  `verify.sql` block), and replays the guard on foreign paths and on the procedure's. The other
+  `verify.sql` block), and replays the guard on foreign paths (`public` on either side, the default
+  path, `pg_temp` first, a named `pg_temp_N`, a missing `"$user"`) and on the procedure's.
+  `privileges.sql` has no guard of its own: it runs after the step-4 guard, behind which no user code
+  runs, and before `verify.sql`'s (review of #633, accepted). The other
   superuser statements of the procedure (`ALTER … OWNER`, `GRANT`, `has_*_privilege`, `pg_get_*def`)
   touch the catalog without running user code. **Owner of the database and of every object of `public`, the migrator may also
   empty the application's DML without any error** (#611, each gesture measured on the pinned image): row-level security
