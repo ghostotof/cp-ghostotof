@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Shared;
 
+use App\Tests\Support\ConfigurationCopy;
 use App\Tests\Support\PhpImageBuild;
 use PHPUnit\Framework\AssertionFailedError;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -95,11 +96,55 @@ final class PhpImageBuildTest extends TestCase
      */
     public function testTheDeployedConfigurationCopiesAreReadFromTheDockerfile(): void
     {
-        self::assertSame([
-            '/usr/local/etc/php/conf.d/zz-app.ini' => 'docker/php/php.prod.ini',
-            '/usr/local/etc/php-fpm.d/zz-www.conf' => 'docker/php/www.prod.conf',
-            '/usr/local/etc/php/conf.d/zz-xdebug.ini' => 'docker/php/xdebug.preprod.ini',
+        self::assertEquals([
+            new ConfigurationCopy('production', 'docker/php/php.prod.ini', '/usr/local/etc/php/conf.d/zz-app.ini'),
+            new ConfigurationCopy('production', 'docker/php/www.prod.conf', '/usr/local/etc/php-fpm.d/zz-www.conf'),
+            new ConfigurationCopy('preprod', 'docker/php/xdebug.preprod.ini', '/usr/local/etc/php/conf.d/zz-xdebug.ini'),
         ], PhpImageBuild::deployedConfigurationCopies());
+    }
+
+    /**
+     * Deux stages qui copient vers la même destination gardent chacun leur
+     * copie : rangée par destination, celle de `preprod` effaçait celle de
+     * `production`, dont le fichier n'était alors jamais lu (relecture de
+     * #616).
+     */
+    public function testEachStageKeepsItsCopyToTheSameDestination(): void
+    {
+        self::assertEquals(
+            [
+                new ConfigurationCopy('production', 'docker/php/other.ini', '/usr/local/etc/php/conf.d/zz-app.ini'),
+                new ConfigurationCopy('preprod', 'docker/php/php.prod.ini', '/usr/local/etc/php/conf.d/zz-app.ini'),
+            ],
+            PhpImageBuild::configurationCopiesOf(<<<'DOCKERFILE'
+                FROM php:8 AS production
+                COPY docker/php/other.ini /usr/local/etc/php/conf.d/zz-app.ini
+                FROM production AS preprod
+                COPY docker/php/php.prod.ini /usr/local/etc/php/conf.d/zz-app.ini
+                DOCKERFILE),
+        );
+    }
+
+    /**
+     * Le stage `production` du vrai Dockerfile et ceux dont il descend : ce
+     * que l'image de production reçoit, sans ce que `preprod` ajoute.
+     */
+    public function testTheProductionImageIsBuiltFromItsAncestors(): void
+    {
+        self::assertSame(['production', 'base'], PhpImageBuild::stageAndAncestors('production'));
+    }
+
+    /**
+     * PHP ne charge un ini que sous `conf.d/` et suffixé `.ini` (au-delà de
+     * `php.ini`, que l'image ne fournit pas) ; un pool FPM n'en est pas un.
+     */
+    public function testOnlyAnIniUnderConfDIsLoadedByPhp(): void
+    {
+        self::assertTrue(new ConfigurationCopy('production', 'a.ini', '/usr/local/etc/php/conf.d/zz-app.ini')->isLoadedPhpIni());
+        self::assertFalse(new ConfigurationCopy('production', 'a.ini', '/usr/local/etc/php/zz-app.ini')->isLoadedPhpIni());
+        self::assertFalse(new ConfigurationCopy('production', 'a.ini', '/usr/local/etc/php/conf.d/sub/zz-app.ini')->isLoadedPhpIni());
+        self::assertFalse(new ConfigurationCopy('production', 'a.ini', '/usr/local/etc/php/conf.d/zz-app.ini.bak')->isLoadedPhpIni());
+        self::assertFalse(new ConfigurationCopy('production', 'a.conf', '/usr/local/etc/php-fpm.d/zz-www.conf')->isLoadedPhpIni());
     }
 
     /**
@@ -152,10 +197,10 @@ final class PhpImageBuildTest extends TestCase
      */
     public function testACopyIntoTheConfigurationNamesItsDestinationFile(): void
     {
-        self::assertSame(
+        self::assertEquals(
             [
-                '/usr/local/etc/php/conf.d/extra.ini' => 'docker/php/extra.ini',
-                '/usr/local/etc/php-fpm.d/zz-www.conf' => 'docker/php/www.prod.conf',
+                new ConfigurationCopy('production', 'docker/php/extra.ini', '/usr/local/etc/php/conf.d/extra.ini'),
+                new ConfigurationCopy('production', 'docker/php/www.prod.conf', '/usr/local/etc/php-fpm.d/zz-www.conf'),
             ],
             PhpImageBuild::configurationCopiesOf(<<<'DOCKERFILE'
                 FROM php:8 AS production

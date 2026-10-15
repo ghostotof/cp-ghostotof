@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Security;
 
+use App\Tests\Support\ConfigurationCopy;
 use App\Tests\Support\KubernetesManifests;
 use App\Tests\Support\PhpImageBuild;
 use FilesystemIterator;
@@ -69,10 +70,25 @@ final class ExceptionArgumentsHiddenInProductionTest extends TestCase
     public function testDeployedImagesDropCallArgumentsFromExceptionTraces(): void
     {
         self::assertSame('On', PhpImageBuild::productionIniDirective('zend.exception_ignore_args'));
-        self::assertContains(
-            PhpImageBuild::PRODUCTION_INI,
-            PhpImageBuild::deployedConfigurationCopies(),
-            'php.prod.ini n\'est plus copié dans la configuration des images déployées : la directive qu\'il pose ne s\'y applique pas.',
+    }
+
+    /**
+     * `php.prod.ini` est un ini que PHP charge (sous `conf.d/`), copié par le
+     * stage `production` ou un de ses ancêtres : copié par `preprod` seul, ou
+     * hors de `conf.d/`, la directive ne s'appliquerait pas en production.
+     */
+    public function testTheProductionImageLoadsTheProductionIni(): void
+    {
+        $productionStages = PhpImageBuild::stageAndAncestors('production');
+        self::assertNotSame(
+            [],
+            array_filter(
+                PhpImageBuild::deployedConfigurationCopies(),
+                static fn (ConfigurationCopy $copy): bool => PhpImageBuild::PRODUCTION_INI === $copy->source
+                    && $copy->isLoadedPhpIni()
+                    && \in_array($copy->stage, $productionStages, true),
+            ),
+            'php.prod.ini n\'est plus chargé par l\'image de production : la directive qu\'il pose ne s\'y applique pas.',
         );
     }
 
@@ -85,13 +101,13 @@ final class ExceptionArgumentsHiddenInProductionTest extends TestCase
     public function testNoOtherConfigurationFileOfTheImagesNamesTheDirective(): void
     {
         $offenders = [];
-        foreach (PhpImageBuild::deployedConfigurationCopies() as $destination => $source) {
-            if (PhpImageBuild::PRODUCTION_INI === $source) {
+        foreach (PhpImageBuild::deployedConfigurationCopies() as $copy) {
+            if (PhpImageBuild::PRODUCTION_INI === $copy->source) {
                 continue;
             }
-            foreach (PhpImageBuild::iniKeys(PhpImageBuild::contextFile($source), $source) as $key) {
+            foreach (PhpImageBuild::iniKeys(PhpImageBuild::contextFile($copy->source), $copy->source) as $key) {
                 if (1 === preg_match(self::DIRECTIVE_PATTERN, $key)) {
-                    $offenders[] = \sprintf('%s (%s) : %s', $source, $destination, $key);
+                    $offenders[] = \sprintf('%s (%s, %s) : %s', $copy->source, $copy->stage, $copy->destination, $key);
                 }
             }
         }

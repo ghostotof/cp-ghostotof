@@ -84,31 +84,30 @@ final class PhpImageBuild
      */
     public static function deployedInstructionsOf(string $dockerfile): array
     {
-        $stages = self::stagesOf($dockerfile);
-        $deployed = [];
-        foreach (self::DEPLOYED_STAGES as $stage) {
-            Assert::assertArrayHasKey($stage, $stages, \sprintf('Dockerfile : aucun stage « %s ».', $stage));
-            for ($name = $stage; null !== $name; $name = $stages[$name]['parent']) {
-                $deployed[$name] = true;
-            }
-        }
-
         $instructions = [];
-        foreach ($stages as $name => $stage) {
-            if (isset($deployed[$name])) {
-                array_push($instructions, ...$stage['instructions']);
-            }
+        foreach (self::deployedStagesOf($dockerfile) as $stageInstructions) {
+            array_push($instructions, ...$stageInstructions);
         }
 
         return $instructions;
     }
 
     /**
-     * Les fichiers que les images déployées reçoivent dans la configuration
-     * de PHP ou de FPM, destination => source (issue #616), lus par
-     * {@see self::configurationCopiesOf()}.
+     * Le stage `$stage` du Dockerfile et ceux dont il descend, du plus proche
+     * au plus lointain : ce que son image reçoit.
      *
-     * @return array<string, string>
+     * @return list<string>
+     */
+    public static function stageAndAncestors(string $stage): array
+    {
+        return self::ancestryOf(self::stagesOf(self::dockerfile()), $stage);
+    }
+
+    /**
+     * Les fichiers que les images déployées reçoivent dans la configuration
+     * de PHP ou de FPM (issue #616), lus par {@see self::configurationCopiesOf()}.
+     *
+     * @return list<ConfigurationCopy>
      */
     public static function deployedConfigurationCopies(): array
     {
@@ -116,29 +115,32 @@ final class PhpImageBuild
     }
 
     /**
-     * Les `COPY` et `ADD` des stages déployés vers `/usr/local/etc/`,
-     * destination => source ; une destination en répertoire reçoit le nom du
-     * fichier source, comme Docker la complète. Toute autre instruction de ces
-     * stages qui nomme ce répertoire — une copie depuis un stage (`--from`),
-     * plusieurs sources, la forme JSON, un `RUN` qui y écrit — fait échouer le
-     * test : ce que le garde ne sait pas lire, il le refuse.
+     * Les `COPY` et `ADD` des stages déployés vers `/usr/local/etc/`, une
+     * copie par stage et par instruction — deux stages qui écrivent la même
+     * destination en gardent deux. Une destination en répertoire reçoit le nom
+     * du fichier source, comme Docker la complète. Toute autre instruction de
+     * ces stages qui nomme ce répertoire — une copie depuis un stage
+     * (`--from`), plusieurs sources, la forme JSON, un `RUN` qui y écrit —
+     * fait échouer le test : ce que le garde ne sait pas lire, il le refuse.
      *
-     * @return array<string, string>
+     * @return list<ConfigurationCopy>
      */
     public static function configurationCopiesOf(string $dockerfile): array
     {
         $copies = [];
-        foreach (self::deployedInstructionsOf($dockerfile) as $instruction) {
-            if (!str_contains($instruction, self::CONFIGURATION_ROOT)) {
-                continue;
+        foreach (self::deployedStagesOf($dockerfile) as $stage => $instructions) {
+            foreach ($instructions as $instruction) {
+                if (!str_contains($instruction, self::CONFIGURATION_ROOT)) {
+                    continue;
+                }
+                Assert::assertSame(
+                    1,
+                    preg_match(self::SINGLE_FILE_COPY, trim($instruction), $copy),
+                    \sprintf('« %s » écrit dans la configuration de PHP ou de FPM sans être la copie d\'un seul fichier du contexte de build : le garde ne saurait pas lire ce que l\'image y reçoit.', $instruction),
+                );
+                $destination = str_ends_with($copy[2], '/') ? $copy[2].basename($copy[1]) : $copy[2];
+                $copies[] = new ConfigurationCopy($stage, $copy[1], $destination);
             }
-            Assert::assertSame(
-                1,
-                preg_match(self::SINGLE_FILE_COPY, trim($instruction), $copy),
-                \sprintf('« %s » écrit dans la configuration de PHP ou de FPM sans être la copie d\'un seul fichier du contexte de build : le garde ne saurait pas lire ce que l\'image y reçoit.', $instruction),
-            );
-            $destination = str_ends_with($copy[2], '/') ? $copy[2].basename($copy[1]) : $copy[2];
-            $copies[$destination] = $copy[1];
         }
 
         return $copies;
@@ -290,6 +292,49 @@ final class PhpImageBuild
         }
 
         return $stages;
+    }
+
+    /**
+     * Les instructions des {@see self::DEPLOYED_STAGES} et des stages dont ils
+     * descendent, par stage, dans l'ordre du texte. Un stage déployé absent
+     * fait échouer le test.
+     *
+     * @return array<string, list<string>>
+     */
+    private static function deployedStagesOf(string $dockerfile): array
+    {
+        $stages = self::stagesOf($dockerfile);
+        $deployed = [];
+        foreach (self::DEPLOYED_STAGES as $stage) {
+            array_push($deployed, ...self::ancestryOf($stages, $stage));
+        }
+
+        $selected = [];
+        foreach ($stages as $name => $stage) {
+            if (\in_array($name, $deployed, true)) {
+                $selected[$name] = $stage['instructions'];
+            }
+        }
+
+        return $selected;
+    }
+
+    /**
+     * `$stage` et les stages dont il descend, du plus proche au plus lointain.
+     *
+     * @param array<string, array{parent: ?string, instructions: list<string>}> $stages
+     *
+     * @return list<string>
+     */
+    private static function ancestryOf(array $stages, string $stage): array
+    {
+        Assert::assertArrayHasKey($stage, $stages, \sprintf('Dockerfile : aucun stage « %s ».', $stage));
+        $ancestry = [];
+        for ($name = $stage; null !== $name; $name = $stages[$name]['parent']) {
+            $ancestry[] = $name;
+        }
+
+        return $ancestry;
     }
 
     /**
