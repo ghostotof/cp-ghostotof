@@ -35,6 +35,39 @@
 \set rotate ''
 \endif
 
+-- Issue #618 : un réglage posé sur la base (ALTER DATABASE … SET, permis à
+-- son propriétaire, le rôle de migration) ou sur un rôle dans la base
+-- s'applique à cette session aussi. Les options de connexion (PGOPTIONS,
+-- k8s/README.md) n'en écartent qu'une liste, celle des réglages qui agissent
+-- avant toute instruction ; d'autres, mesurés sur l'image épinglée, changent
+-- le sens de ce qui suit (quote_all_identifiers change l'empreinte `#611` :
+-- la procédure échouait à chaque passage, sa réparation annulée avec elle),
+-- ou trompent sans échouer (debug_print_parse écrit l'arbre de chaque
+-- requête, mot de passe compris, dans le journal du serveur ; scram_iterations
+-- affaiblit les vérificateurs écrits). La liste ne se ferme pas : tout réglage
+-- hérité est rendu à sa valeur de démarrage, AVANT la première instruction qui
+-- porte un mot de passe. Ceux des options (source `client`) ne sont pas
+-- touchés. plpgsql chargé d'abord, pour que ses réglages soient visibles. Du
+-- SQL simple, sans PL/pgSQL, sous les réglages encore hérités : ni littéral de
+-- tableau, ni `= NULL`, ni antislash. Le CASE fixe l'ordre d'évaluation : seul
+-- un réglage hérité est réécrit. Puis un refus s'il en reste un — un réglage
+-- sans valeur de démarrage, que seule une option de connexion rend
+-- (InheritedSessionSettingsTest les liste) : la procédure ne tourne pas sous
+-- lui. Des noms, jamais une valeur.
+-- #618 : réglages hérités, début
+LOAD 'plpgsql';
+SELECT pg_catalog.array_agg(s.name ORDER BY s.name) AS "#618 : réglages hérités rendus à leur valeur de démarrage"
+FROM pg_catalog.pg_settings AS s
+WHERE CASE WHEN s.source IN ('database', 'user', 'database user') THEN (pg_catalog.set_config(s.name, s.boot_val, false) IS NULL) IS NOT NULL ELSE false END;
+DO $$
+BEGIN
+    IF EXISTS (SELECT FROM pg_catalog.pg_settings WHERE source IN ('database', 'user', 'database user')) THEN
+        RAISE EXCEPTION '#618 : réglages hérités non rendus : %', (SELECT pg_catalog.array_agg(name ORDER BY name) FROM pg_catalog.pg_settings WHERE source IN ('database', 'user', 'database user'));
+    END IF;
+END
+$$;
+-- #618 : réglages hérités, fin
+
 -- Un ALTER ROLE … PASSWORD qui échouerait serait journalisé avec son texte
 -- par le serveur (log_min_error_statement = error par défaut) : relevé au
 -- niveau que rien n'atteint, pour la seule durée de cette session, et le

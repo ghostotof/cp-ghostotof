@@ -1052,7 +1052,7 @@ DB="$(kubectl -n "${NS:?preprod ou prod}" get secret postgres-credentials -o jso
   printf '\\set rotate %s\n' "$ROTATE"
   cat k8s/base/postgres-roles/roles.sql k8s/base/postgres-roles/privileges.sql k8s/base/postgres-roles/verify.sql k8s/base/postgres-roles/commit.sql
 } | kubectl -n "${NS:?preprod ou prod}" exec -i deploy/postgres -c postgres -- \
-  sh -c 'PGOPTIONS="-c lock_timeout=5s -c idle_in_transaction_session_timeout=30s -c statement_timeout=0 -c transaction_timeout=0 -c idle_session_timeout=0 -c default_transaction_read_only=off -c role=none -c search_path=pg_catalog,pg_temp -c password_encryption=scram-sha-256 -c client_min_messages=notice -c standard_conforming_strings=on -c client_encoding=UTF8 -c local_preload_libraries=" psql -X -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v app_role=cpg_app -v migrator_role=cpg_migrator -v reader_role=cpg_reader -f -'
+  sh -c 'PGOPTIONS="-c lock_timeout=5s -c idle_in_transaction_session_timeout=30s -c statement_timeout=0 -c transaction_timeout=0 -c idle_session_timeout=0 -c default_transaction_read_only=off -c role=none -c search_path=pg_catalog,pg_temp -c password_encryption=scram-sha-256 -c client_min_messages=notice -c standard_conforming_strings=on -c client_encoding=UTF8 -c local_preload_libraries= -c timezone_abbreviations=Default" psql -X -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v app_role=cpg_app -v migrator_role=cpg_migrator -v reader_role=cpg_reader -f -'
 ```
 
 Chaque `ALTER … OWNER TO` prend un verrou `ACCESS EXCLUSIVE` tenu jusqu'au

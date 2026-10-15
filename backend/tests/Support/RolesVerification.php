@@ -49,6 +49,32 @@ final class RolesVerification
         return self::blockCarrying(self::ROLES_SQL, 'CREATE FUNCTION pg_temp.cpg_migrations(', 'la lecture des migrations');
     }
 
+    /**
+     * Ce que roles.sql joue en tête pour rendre à la session de la procédure
+     * les valeurs de démarrage des réglages qu'elle hérite de la base ou d'un
+     * rôle (issue #618), pris entre ses marqueurs, dans le fichier brut.
+     */
+    public static function inheritedSettingsReset(): string
+    {
+        $source = KubernetesManifests::base()->source(self::ROLES_SQL);
+        Assert::assertSame(1, preg_match('/^-- #618 : réglages hérités, début\n(.*?)^-- #618 : réglages hérités, fin$/ms', $source, $reset), 'roles.sql : la remise des réglages hérités, entre ses marqueurs.');
+
+        return trim($reset[1]);
+    }
+
+    /**
+     * Les options de connexion de la procédure (`PGOPTIONS` de son unique
+     * `exec`, issue #608), telles que le runbook les donne.
+     */
+    public static function sessionOptions(): string
+    {
+        $execs = Runbook::execLines(Runbook::repository()->bashBlockAfter(Runbook::ROLES_PROCEDURE));
+        Assert::assertCount(1, $execs, 'La procédure des rôles tient en un seul exec.');
+        Assert::assertSame(1, preg_match('/PGOPTIONS="([^"]*)" psql /', $execs[0], $options), 'PGOPTIONS entre guillemets doubles, juste avant psql.');
+
+        return $options[1];
+    }
+
     /** Le seul bloc `DO $$ … $$;` multiligne du fichier qui contient `$mark`, sans les commentaires de ligne entière. */
     private static function blockCarrying(string $file, string $mark, string $what): string
     {
