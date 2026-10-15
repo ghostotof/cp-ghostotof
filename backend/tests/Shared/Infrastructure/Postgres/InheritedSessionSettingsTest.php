@@ -6,9 +6,11 @@ namespace App\Tests\Shared\Infrastructure\Postgres;
 
 use App\Tests\Support\OpensProbeConnection;
 use App\Tests\Support\RolesVerification;
+use App\Tests\Support\TestCredentials;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception\DriverException;
 use Doctrine\ORM\EntityManagerInterface;
+use Pdo\Pgsql;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 
 /**
@@ -21,22 +23,34 @@ use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
  *
  * {@see DatabaseOwnerSettingsVerificationTest} rejoue ses blocs dans une
  * session déjà ouverte, qui n'hérite pas de ce qu'il pose : ce test-ci valide
- * ses réglages sur la base de test, puis ouvre une **nouvelle** connexion avec
- * les options du runbook, comme `psql` dans le pod. Les réglages posés sont
- * retirés un par un au `tearDown` (et au `setUp`, si un passage interrompu en
- * a laissé) : le fuseau que la migration pose sur la base reste intact.
+ * ses réglages, puis ouvre une **nouvelle** connexion avec les options du
+ * runbook, comme `psql` dans le pod.
+ *
+ * Issue #634 : ces réglages validés survivaient à un passage interrompu
+ * (fatale, délai, Ctrl-C), et tous les autres tests en héritaient jusqu'au
+ * passage suivant de celui-ci. Ils sont donc posés sur une **base jetable**,
+ * créée vide au `setUp` et supprimée au `tearDown` — et au `setUp` suivant,
+ * si un passage interrompu l'a laissée : la base de test partagée n'en porte
+ * jamais aucun. `DROP DATABASE` emporte aussi les réglages de rôle propres à
+ * la base. Coût mesuré : une base créée depuis `template0` par test.
  */
 final class InheritedSessionSettingsTest extends KernelTestCase
 {
     use OpensProbeConnection;
 
-    /** Les sources d'un réglage hérité : la base, le rôle, le rôle dans la base. */
-    private const string INHERITED = "('database', 'user', 'database user')";
+    /**
+     * Les sources d'un réglage hérité : tous les rôles (`global`, #634), la
+     * base, le rôle, le rôle dans la base. Écrites ici sans être lues dans
+     * roles.sql, qui les écrit deux fois : le test observe la session de son
+     * côté, et une source retirée de la remise le fait rougir.
+     */
+    private const string INHERITED = "('global', 'database', 'user', 'database user')";
 
     /**
      * Ce qu'un propriétaire de la base peut poser sur elle (mesuré sur l'image
-     * épinglée), réglage => valeur : l'impression des identifiants change
-     * l'empreinte `#611` (la procédure échouait à chaque passage), les trois
+     * épinglée), réglage => valeur : l'impression des identifiants changeait
+     * l'empreinte `#611` (la procédure échouait à chaque passage, jusqu'à ce
+     * que le bloc le fixe lui-même, #634), les trois
      * suivants changent le sens du SQL ou de PL/pgSQL, le dernier écrit l'arbre
      * de chaque requête — un mot de passe compris — dans le journal du serveur.
      */
@@ -51,61 +65,192 @@ final class InheritedSessionSettingsTest extends KernelTestCase
     /** Posé sur le rôle de la session dans la base : un vérificateur SCRAM d'une seule itération. */
     private const array ROLE_IN_DATABASE_SETTINGS = ['scram_iterations' => '1'];
 
+    /**
+     * Posé pour tous les rôles dans toutes les bases (`ALTER ROLE ALL SET`,
+     * superutilisateur seul) : la source `global` (issue #634). La commande
+     * vaut pour tout le serveur, pas pour la base jetable : un réglage sans
+     * conséquence, retiré au `setUp` comme au `tearDown`.
+     */
+    private const array EVERY_ROLE_SETTINGS = ['work_mem' => '5MB'];
+
     /** Le seul réglage `user` sans valeur de démarrage : la remise ne peut que le laisser. */
     private const string WITHOUT_BOOT_VALUE = 'timezone_abbreviations';
 
+    /** Le suffixe de la base jetable, ajouté au nom de la base de test partagée. */
+    private const string THROWAWAY_SUFFIX = '_heritage';
+
+    /** La base de test partagée : elle crée et supprime la base jetable, rien d'autre. */
+    private Connection $shared;
+
+    /** Le nom de la base de test partagée, lu une fois. */
+    private string $sharedDatabase;
+
+    /** La base jetable, vide mais au fuseau de la migration, où le test plante ses réglages. */
     private Connection $probe;
 
     protected function setUp(): void
     {
         self::bootKernel();
-        $this->probe = self::openProbeBeside(self::getContainer()->get(EntityManagerInterface::class)->getConnection());
-        self::assertSame('on', $this->probe->fetchOne("SELECT current_setting('is_superuser')"), 'Prémisse : le rôle de test est le superutilisateur de l\'image, comme celui de la procédure.');
-        $this->removePlantedSettings();
+        $this->shared = self::openProbeBeside(self::getContainer()->get(EntityManagerInterface::class)->getConnection());
+        self::assertSame('on', $this->shared->fetchOne("SELECT current_setting('is_superuser')"), 'Prémisse : le rôle de test est le superutilisateur de l\'image, comme celui de la procédure.');
+        $sharedDatabase = $this->shared->fetchOne('SELECT current_database()');
+        self::assertIsString($sharedDatabase);
+        $this->sharedDatabase = $sharedDatabase;
+
+        $this->removeEveryRoleSettings();
+        $this->removeWhatEarlierVersionsLeftOnTheSharedDatabase();
+        $this->dropThrowawayDatabase();
+        $this->shared->executeStatement(\sprintf('CREATE DATABASE %s TEMPLATE template0', $this->shared->quoteSingleIdentifier($this->throwawayDatabase())));
+        // Le fuseau que Version20261011120000 pose sur la base partagée, posé de
+        // même sur la jetable : la session de la procédure en hérite aussi.
+        $timeZone = $this->shared->fetchOne('SHOW timezone');
+        self::assertIsString($timeZone);
+        $this->shared->executeStatement(\sprintf('ALTER DATABASE %s SET timezone TO %s', $this->shared->quoteSingleIdentifier($this->throwawayDatabase()), $this->shared->quote($timeZone)));
+        $this->probe = self::openProbeOn($this->shared, $this->throwawayDatabase());
     }
 
     protected function tearDown(): void
     {
         if (isset($this->probe)) {
-            $this->removePlantedSettings();
             $this->probe->close();
+        }
+        if (isset($this->shared)) {
+            $this->removeEveryRoleSettings();
+            $this->dropThrowawayDatabase();
+            $this->shared->close();
         }
         parent::tearDown();
     }
 
     /**
      * Prémisse : sans la remise, la session de la procédure hérite de chaque
-     * réglage posé — et l'empreinte du schéma n'est plus celle des migrations.
-     * Avec elle, plus aucun réglage hérité, chacun à sa valeur de démarrage,
+     * réglage posé — les noms s'impriment autrement, mais l'empreinte du
+     * schéma n'en dépend plus (#634). Avec elle, plus aucun réglage hérité, chacun à sa valeur de démarrage,
      * et l'empreinte est celle d'une session saine.
      */
     public function testTheProcedureSessionKeepsNothingTheDatabaseSets(): void
     {
-        $clean = $this->fingerprint($this->probe);
+        $clean = $this->cleanFingerprint();
         $this->plant();
+        self::assertSame([], $this->sharedDatabaseSettings(), 'Ce que le test plante ne touche jamais la base de test partagée.');
 
         $this->inProcedureSession(RolesVerification::sessionOptions(), function (Connection $session) use ($clean): void {
             $session->executeStatement("LOAD 'plpgsql'");
             $inherited = $session->fetchFirstColumn('SELECT name FROM pg_catalog.pg_settings WHERE source IN '.self::INHERITED.' ORDER BY name');
-            foreach ([...array_keys(self::DATABASE_SETTINGS), ...array_keys(self::ROLE_IN_DATABASE_SETTINGS)] as $name) {
+            foreach ([...array_keys(self::DATABASE_SETTINGS), ...array_keys(self::ROLE_IN_DATABASE_SETTINGS), 'TimeZone'] as $name) {
                 self::assertContains($name, $inherited, 'Prémisse : la nouvelle session hérite de '.$name.'.');
             }
-            self::assertNotSame($clean, $this->fingerprint($session), 'Prémisse : hérité, quote_all_identifiers change l\'empreinte #611.');
+            self::assertSame('"public"', $session->fetchOne("SELECT pg_catalog.quote_ident('public')"), 'Prémisse : hérité, quote_all_identifiers change l\'impression des noms.');
+            self::assertSame($clean, RolesVerification::schemaFingerprint($session), 'Le bloc #611 fixe quote_all_identifiers lui-même (#634) : l\'empreinte n\'en dépend plus.');
         });
 
         $this->inProcedureSession(RolesVerification::sessionOptions(), function (Connection $session) use ($clean): void {
             $session->executeStatement(RolesVerification::inheritedSettingsReset());
 
             self::assertSame([], $session->fetchFirstColumn('SELECT name FROM pg_catalog.pg_settings WHERE source IN '.self::INHERITED));
-            foreach ([...array_keys(self::DATABASE_SETTINGS), ...array_keys(self::ROLE_IN_DATABASE_SETTINGS)] as $name) {
+            foreach ([...array_keys(self::DATABASE_SETTINGS), ...array_keys(self::ROLE_IN_DATABASE_SETTINGS), 'TimeZone'] as $name) {
                 self::assertSame(
                     $session->fetchOne('SELECT boot_val FROM pg_catalog.pg_settings WHERE name = ?', [$name]),
                     $session->fetchOne('SELECT pg_catalog.current_setting(?)', [$name]),
                     $name.' : rendu à sa valeur de démarrage.',
                 );
             }
-            self::assertSame($clean, $this->fingerprint($session));
+            self::assertSame($clean, RolesVerification::schemaFingerprint($session));
         });
+    }
+
+    /**
+     * Issue #634 : un réglage posé pour tous les rôles (`ALTER ROLE ALL SET`)
+     * arrive dans la session de la procédure sous la source `global`, que la
+     * remise ne visait pas : `debug_print_parse` ou `scram_iterations` posés
+     * ainsi par un superutilisateur trompaient la procédure sans la faire
+     * échouer. Il est rendu à sa valeur de démarrage comme les autres.
+     */
+    public function testASettingForEveryRoleIsGivenBackToo(): void
+    {
+        foreach (self::EVERY_ROLE_SETTINGS as $name => $value) {
+            $this->shared->executeStatement(\sprintf('ALTER ROLE ALL SET %s = %s', $name, $this->shared->quote($value)));
+        }
+
+        $this->inProcedureSession(RolesVerification::sessionOptions(), function (Connection $session): void {
+            foreach (array_keys(self::EVERY_ROLE_SETTINGS) as $name) {
+                self::assertSame('global', $session->fetchOne('SELECT source FROM pg_catalog.pg_settings WHERE name = ?', [$name]), 'Prémisse : '.$name.' hérité de tous les rôles.');
+            }
+
+            $session->executeStatement(RolesVerification::inheritedSettingsReset());
+
+            foreach (array_keys(self::EVERY_ROLE_SETTINGS) as $name) {
+                // `setting`, pas current_setting() : boot_val est sans unité (4096, pas 4MB).
+                self::assertTrue($session->fetchOne('SELECT setting = boot_val FROM pg_catalog.pg_settings WHERE name = ?', [$name]), $name.' : rendu à sa valeur de démarrage.');
+            }
+        });
+    }
+
+    /**
+     * Issue #634 : les deux tromperies mesurées à la main pour #618, qui
+     * laissent la procédure réussir (psql sort en 0), rejouées sur l'écriture
+     * d'un mot de passe telle que roles.sql la fait (`ALTER ROLE … PASSWORD`,
+     * étape 2) dans une nouvelle session :
+     *
+     *  - `debug_print_parse` écrit l'arbre de chaque requête, au niveau `LOG`,
+     *    dans le journal du serveur (`log_min_messages` le laisse passer). Le
+     *    test ne lit pas ce journal : il abaisse `client_min_messages` à `log`
+     *    par une option de connexion, que la remise ne touche pas, et reçoit
+     *    les mêmes messages par le rappel d'avis de pdo_pgsql ;
+     *  - `scram_iterations`, posé sur le rôle de la session dans la base,
+     *    donne un vérificateur d'une seule itération, lu dans `pg_authid`.
+     *
+     * Sans la remise, le mot de passe est dans les messages et le vérificateur
+     * faible ; avec elle, aucun message ne le porte et le vérificateur a les
+     * itérations de démarrage. Le rôle jetable meurt avec la transaction.
+     */
+    public function testAPasswordWrittenAfterTheResetLeavesNoTraceAndKeepsItsIterations(): void
+    {
+        $this->plant();
+        $options = RolesVerification::sessionOptions().' -c client_min_messages=log';
+
+        $this->inProcedureSession($options, function (Connection $session): void {
+            ['messages' => $messages, 'iterations' => $iterations] = $this->writeAPasswordAndObserve($session);
+            self::assertNotSame([], $messages, 'Prémisse : hérité, debug_print_parse écrit le mot de passe.');
+            self::assertSame(1, $iterations, 'Prémisse : hérité, scram_iterations affaiblit le vérificateur.');
+        });
+
+        $this->inProcedureSession($options, function (Connection $session): void {
+            $session->executeStatement(RolesVerification::inheritedSettingsReset());
+            ['messages' => $messages, 'iterations' => $iterations] = $this->writeAPasswordAndObserve($session);
+
+            self::assertSame([], $messages, 'Aucun message ne porte le mot de passe.');
+            self::assertSame((string) $iterations, $session->fetchOne("SELECT boot_val FROM pg_catalog.pg_settings WHERE name = 'scram_iterations'"), 'Le vérificateur a les itérations de démarrage.');
+        });
+    }
+
+    /**
+     * Un rôle jetable reçoit un mot de passe, comme à l'étape 2 de roles.sql :
+     * renvoie les messages du serveur qui portent ce mot de passe, et les
+     * itérations du vérificateur SCRAM écrit (`SCRAM-SHA-256$<itérations>:…`).
+     *
+     * @return array{messages: list<string>, iterations: int}
+     */
+    private function writeAPasswordAndObserve(Connection $session): array
+    {
+        $password = TestCredentials::variant('roles-procedure');
+        $role = $session->quoteSingleIdentifier('cpg_probe_pw_'.bin2hex(random_bytes(4)));
+        $native = $session->getNativeConnection();
+        self::assertInstanceOf(Pgsql::class, $native);
+
+        $messages = [];
+        $native->setNoticeCallback(static function (string $message) use (&$messages, $password): void {
+            if (str_contains($message, $password)) {
+                $messages[] = $message;
+            }
+        });
+        $session->executeStatement('CREATE ROLE '.$role);
+        $session->executeStatement(\sprintf('ALTER ROLE %s PASSWORD %s', $role, $session->quote($password)));
+        $verifier = $session->fetchOne('SELECT rolpassword FROM pg_catalog.pg_authid WHERE oid = ?::regrole', [$role]);
+        self::assertIsString($verifier);
+        self::assertSame(1, preg_match('/\ASCRAM-SHA-256\$(\d+):/', $verifier, $iterations), 'Un vérificateur SCRAM (password_encryption de la procédure).');
+
+        return ['messages' => $messages, 'iterations' => (int) $iterations[1]];
     }
 
     /**
@@ -116,7 +261,7 @@ final class InheritedSessionSettingsTest extends KernelTestCase
     public function testAnInheritedSettingLeftInPlaceStopsTheProcedure(): void
     {
         $this->probe->executeStatement(\sprintf("ALTER DATABASE %s SET %s = 'Australia'", $this->database(), self::WITHOUT_BOOT_VALUE));
-        $withoutItsOption = trim((string) preg_replace('/-c '.self::WITHOUT_BOOT_VALUE.'=\S*/', '', RolesVerification::sessionOptions()));
+        $withoutItsOption = trim((string) preg_replace('/-c '.preg_quote(self::WITHOUT_BOOT_VALUE, '/').'=\S*/', '', RolesVerification::sessionOptions()));
 
         $this->inProcedureSession($withoutItsOption, function (Connection $session): void {
             try {
@@ -186,25 +331,73 @@ final class InheritedSessionSettingsTest extends KernelTestCase
         }
     }
 
-    /** Retire ce que ce test pose, réglage par réglage : jamais `RESET ALL`, qui emporterait le fuseau de la migration. */
-    private function removePlantedSettings(): void
+    /** Retire ce que le test pose pour tous les rôles, réglage par réglage. */
+    private function removeEveryRoleSettings(): void
     {
-        foreach ([...array_keys(self::DATABASE_SETTINGS), self::WITHOUT_BOOT_VALUE] as $name) {
-            $this->probe->executeStatement(\sprintf('ALTER DATABASE %s RESET %s', $this->database(), $name));
-        }
-        foreach (array_keys(self::ROLE_IN_DATABASE_SETTINGS) as $name) {
-            $this->probe->executeStatement(\sprintf('ALTER ROLE CURRENT_USER IN DATABASE %s RESET %s', $this->database(), $name));
+        foreach (array_keys(self::EVERY_ROLE_SETTINGS) as $name) {
+            $this->shared->executeStatement('ALTER ROLE ALL RESET '.$name);
         }
     }
 
-    /** L'empreinte du schéma, calculée par la requête même du bloc `#611`, sous son search_path. */
-    private function fingerprint(Connection $connection): string
+    /**
+     * Avant #634, ce test plantait ses réglages sur la base de test partagée :
+     * un passage interrompu de cette version-là les y a peut-être laissés, et
+     * plus rien d'autre ne les retirerait. Retirés nom par nom, jamais par
+     * `RESET ALL`, qui emporterait le fuseau de la migration.
+     */
+    private function removeWhatEarlierVersionsLeftOnTheSharedDatabase(): void
     {
-        $connection->executeStatement('SET search_path = pg_catalog, pg_temp');
-        $fingerprint = $connection->fetchOne(RolesVerification::schemaFingerprintQuery());
-        self::assertIsString($fingerprint);
+        $shared = $this->shared->quoteSingleIdentifier($this->sharedDatabase);
+        foreach ([...array_keys(self::DATABASE_SETTINGS), self::WITHOUT_BOOT_VALUE] as $name) {
+            $this->shared->executeStatement(\sprintf('ALTER DATABASE %s RESET %s', $shared, $name));
+        }
+        foreach (array_keys(self::ROLE_IN_DATABASE_SETTINGS) as $name) {
+            $this->shared->executeStatement(\sprintf('ALTER ROLE CURRENT_USER IN DATABASE %s RESET %s', $shared, $name));
+        }
+    }
 
-        return $fingerprint;
+    /** Le nom de la base jetable : fixe, pour qu'un passage interrompu la retrouve. */
+    private function throwawayDatabase(): string
+    {
+        return $this->sharedDatabase.self::THROWAWAY_SUFFIX;
+    }
+
+    /** Supprime la base jetable, sessions ouvertes comprises, si elle existe. */
+    private function dropThrowawayDatabase(): void
+    {
+        $this->shared->executeStatement(\sprintf('DROP DATABASE IF EXISTS %s WITH (FORCE)', $this->shared->quoteSingleIdentifier($this->throwawayDatabase())));
+    }
+
+    /**
+     * L'empreinte du schéma de la base jetable, calculée comme le bloc `#611`
+     * la calcule, dans une transaction annulée : avant tout réglage planté.
+     */
+    private function cleanFingerprint(): string
+    {
+        $this->probe->beginTransaction();
+        try {
+            return RolesVerification::schemaFingerprint($this->probe);
+        } finally {
+            $this->probe->rollBack();
+        }
+    }
+
+    /**
+     * Les réglages plantés par ce test que porte la base de test partagée,
+     * sur elle ou sur un rôle en elle : ceux qu'hériteraient tous les autres
+     * tests si un passage était interrompu.
+     *
+     * @return list<string>
+     */
+    private function sharedDatabaseSettings(): array
+    {
+        $shared = $this->shared->fetchFirstColumn(
+            "SELECT pg_catalog.split_part(c, '=', 1) FROM pg_catalog.pg_db_role_setting AS s CROSS JOIN LATERAL pg_catalog.unnest(s.setconfig) AS c
+             WHERE s.setdatabase = (SELECT oid FROM pg_catalog.pg_database WHERE datname = pg_catalog.current_database()) ORDER BY 1",
+        );
+        $planted = [...array_keys(self::DATABASE_SETTINGS), ...array_keys(self::ROLE_IN_DATABASE_SETTINGS), self::WITHOUT_BOOT_VALUE];
+
+        return array_values(array_filter($planted, static fn (string $name): bool => \in_array($name, $shared, true)));
     }
 
     private function database(): string

@@ -6,6 +6,7 @@ namespace App\Tests\Shared\Infrastructure\Postgres;
 
 use App\Tests\Support\OpensProbeConnection;
 use App\Tests\Support\RolesVerification;
+use App\Tests\Support\Runbook;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception\DriverException;
 use Doctrine\ORM\EntityManagerInterface;
@@ -54,8 +55,14 @@ final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
     /** Une fonction de trigger qui efface la ligne qu'on vient d'écrire. */
     private const string ERASING_FUNCTION = "CREATE FUNCTION public.{f}() RETURNS trigger LANGUAGE plpgsql AS 'BEGIN DELETE FROM public.{t1} WHERE id = NEW.id; RETURN NULL; END'";
 
+    /** Le refus du bloc `#608` quand un réglage est posé hors de la base (issue #634). */
+    private const string OUTSIDE_REFUSAL = '#608 : 1 réglage(s) posé(s) hors de la base';
+
     /** Le refus du bloc `#611` quand le schéma n'a pas l'empreinte attendue. */
     private const string SCHEMA_REFUSAL = "#611 : le schéma de la base n'est pas celui des migrations";
+
+    /** La phrase qui ouvre la lecture de preuve du runbook, avant la réparation (#610). */
+    private const string EVIDENCE_RUNBOOK = "La réparation efface ce qu'elle répare";
 
     private Connection $probe;
 
@@ -142,6 +149,15 @@ final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
         yield 'modèle' => ['ALTER DATABASE {db} WITH IS_TEMPLATE true', '#608 : la base est marquée modèle'];
         yield 'CONNECT retiré' => ['REVOKE CONNECT ON DATABASE {db} FROM PUBLIC', '#608 : 3 rôle(s) sur 3 sans CONNECT'];
         yield 'réglage de rôle dans la base' => ['ALTER ROLE {app} IN DATABASE {db} SET default_transaction_read_only = on', '#608 : 1 réglage(s) de rôle propre(s) à la base'];
+        // #634 : hors de la base, ce qu'un rôle pose sur lui-même pour toutes
+        // les bases, ce que le superutilisateur pose sur lui, sur tous les
+        // rôles ou sur une base de l'image — que la remise de #618 écarte de
+        // la session de la procédure sans le retirer.
+        yield 'réglage d\'un rôle pour toutes les bases' => ['ALTER ROLE {app} SET default_transaction_read_only = on', self::OUTSIDE_REFUSAL];
+        yield 'réglage du superutilisateur pour toutes les bases' => ["ALTER ROLE CURRENT_USER SET work_mem = '64kB'", self::OUTSIDE_REFUSAL];
+        yield 'réglage de tous les rôles' => ["ALTER ROLE ALL SET work_mem = '64kB'", self::OUTSIDE_REFUSAL];
+        yield 'réglage d\'une base de l\'image' => ["ALTER DATABASE template1 SET work_mem = '64kB'", self::OUTSIDE_REFUSAL];
+        yield 'réglage de rôle dans une base de l\'image' => ["ALTER ROLE {app} IN DATABASE postgres SET work_mem = '64kB'", self::OUTSIDE_REFUSAL];
     }
 
     /**
@@ -496,7 +512,7 @@ final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
         $applied = $this->probe->fetchOne('SELECT count(*) FROM public.doctrine_migration_versions');
         self::assertIsString($latest);
         self::assertIsInt($applied);
-        $fingerprint = $this->fingerprint();
+        $fingerprint = RolesVerification::schemaFingerprint($this->probe);
 
         self::assertContains(
             $fingerprint,
@@ -709,11 +725,11 @@ final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
     public function testAGestureOnAnObjectAMigrationWouldCreateChangesTheFingerprint(array $setUp, string $gesture): void
     {
         $this->arm($setUp);
-        $before = $this->fingerprint();
+        $before = RolesVerification::schemaFingerprint($this->probe);
 
         $this->arm([$gesture]);
 
-        self::assertNotSame($before, $this->fingerprint());
+        self::assertNotSame($before, RolesVerification::schemaFingerprint($this->probe));
     }
 
     /**
@@ -744,31 +760,125 @@ final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
         $this->assertBlockRefuses('#611', self::SCHEMA_REFUSAL);
     }
 
-    /** L'empreinte du schéma, calculée par la requête même du bloc `#611`, sous son search_path. */
-    private function fingerprint(): string
+    /**
+     * Issue #634 : la lecture de preuve du runbook garde, avant l'étape 2, ce
+     * que la réparation efface. Elle ne lisait que les réglages propres à la
+     * base, pas ceux d'un rôle pour toutes les bases (`ALTER ROLE … SET`,
+     * permis à tout rôle sur lui-même) ni ceux de tous les rôles (`ALTER ROLE
+     * ALL SET`, superutilisateur), ni ceux d'une base de l'image — que
+     * l'étape 2 efface désormais (#634) : la preuve ne les gardait pas. Rejouée ici
+     * telle que le runbook l'écrit, dans la transaction annulée du test.
+     */
+    public function testTheEvidenceReadingShowsTheRoleSettingsOutsideTheDatabaseToo(): void
     {
-        $this->probe->executeStatement('SET LOCAL search_path = pg_catalog, pg_temp');
-        $fingerprint = $this->probe->fetchOne(RolesVerification::schemaFingerprintQuery());
-        $this->probe->executeStatement('RESET search_path');
-        self::assertIsString($fingerprint);
+        $this->arm([
+            "ALTER ROLE {app} SET work_mem = '1MB'",
+            "ALTER ROLE {migrator} IN DATABASE {db} SET work_mem = '2MB'",
+            "ALTER ROLE ALL SET work_mem = '3MB'",
+            "ALTER DATABASE template1 SET work_mem = '4MB'",
+        ]);
 
-        return $fingerprint;
+        $rows = $this->evidenceSettings();
+
+        self::assertContains($this->app.'|(toutes les bases)|{work_mem=1MB}', $rows);
+        self::assertContains($this->migrator.'|(cette base)|{work_mem=2MB}', $rows);
+        self::assertContains('(tous les rôles)|(toutes les bases)|{work_mem=3MB}', $rows);
+        self::assertContains('(base)|template1|{work_mem=4MB}', $rows, 'Une base de l\'image : l\'étape 2 l\'efface aussi (#634).');
+        self::assertContains('(base)|(cette base)|{TimeZone=Europe/Paris}', $rows, 'Prémisse : le fuseau de la migration, sur la base.');
     }
 
-    private function assertBlockRefuses(string $issue, string $refusal): void
+    /**
+     * Les lignes de la première requête de la lecture de preuve du runbook,
+     * jouée après ses `SET`, colonnes jointes par `|`.
+     *
+     * @return list<string>
+     */
+    private function evidenceSettings(): array
+    {
+        $sql = Runbook::sqlHeredoc(Runbook::repository()->bashBlockAfter(self::EVIDENCE_RUNBOOK));
+        $statements = array_map(trim(...), explode(";\n", rtrim($sql, ";\n")));
+        foreach ($statements as $statement) {
+            if (str_starts_with($statement, 'SET ')) {
+                $this->probe->executeStatement($statement);
+                continue;
+            }
+            self::assertStringContainsString('pg_db_role_setting', $statement, 'La première requête lit les réglages.');
+
+            // Une colonne NULL s'écrit NULL : elle ne disparaît pas en décalant les autres.
+            return array_map(
+                static fn (array $row): string => implode('|', array_map(static fn (mixed $column): string => \is_scalar($column) ? (string) $column : 'NULL', $row)),
+                $this->probe->fetchAllNumeric($statement),
+            );
+        }
+        self::fail('La lecture de preuve ne lit rien.');
+    }
+
+    /**
+     * Issue #634 : `pg_get_expr` imprime une constante selon les réglages de
+     * la session — un horodatage selon `TimeZone` et `DateStyle`, un
+     * intervalle selon `IntervalStyle`, un flottant selon
+     * `extra_float_digits`, des octets selon `bytea_output`, un antislash
+     * selon `standard_conforming_strings`, tout identifiant selon
+     * `quote_all_identifiers` (relecture de #634 : la copie du runbook, lue
+     * par le lecteur sans la remise de #618, en héritait). La session de la
+     * procédure tourne en `GMT` depuis la remise de #618, celle qui calcule
+     * les empreintes admises en `Europe/Paris` : une migration qui poserait une telle constante dans un
+     * `DEFAULT`, un `CHECK` ou un prédicat d'index ferait refuser son
+     * empreinte à chaque passage. Le bloc fixe donc ces réglages lui-même :
+     * joué sous deux sessions qui les ont tous différents, il calcule la même
+     * empreinte (lue dans son refus, la table plantée n'étant d'aucune
+     * migration).
+     */
+    public function testTheFingerprintDoesNotDependOnTheSessionPrintSettings(): void
+    {
+        $this->arm(["CREATE TABLE public.{t1} (instant timestamptz DEFAULT '2026-03-29 01:30:00+00', jour date DEFAULT '2026-10-25', duree interval DEFAULT '1 day 02:00:00', mesure double precision DEFAULT 0.30000000000000004, octets bytea DEFAULT '\\x0102', texte text DEFAULT 'a\\b')"]);
+
+        $paris = $this->refusedFingerprintUnder(['TimeZone' => 'Europe/Paris', 'DateStyle' => 'ISO, MDY', 'IntervalStyle' => 'postgres', 'extra_float_digits' => '1', 'bytea_output' => 'hex', 'standard_conforming_strings' => 'on', 'quote_all_identifiers' => 'off']);
+        $elsewhere = $this->refusedFingerprintUnder(['TimeZone' => 'Asia/Tokyo', 'DateStyle' => 'SQL, DMY', 'IntervalStyle' => 'sql_standard', 'extra_float_digits' => '0', 'bytea_output' => 'escape', 'standard_conforming_strings' => 'off', 'quote_all_identifiers' => 'on']);
+
+        self::assertSame($paris, $elsewhere);
+        self::assertSame($paris, RolesVerification::schemaFingerprint($this->probe), 'Le test calcule l\'empreinte sous les réglages du bloc, pas sous ceux de sa session : la ligne qu\'il propose pour une migration nouvelle est celle que le bloc admettra.');
+    }
+
+    /**
+     * L'empreinte que le bloc `#611` cite dans son refus, joué sous les
+     * réglages de session `$settings`, posés et retirés dans un point de
+     * sauvegarde.
+     *
+     * @param array<string, string> $settings
+     */
+    private function refusedFingerprintUnder(array $settings): string
+    {
+        $this->probe->beginTransaction();
+        try {
+            RolesVerification::setForTheTransaction($this->probe, $settings);
+            self::assertSame(1, preg_match('/empreinte ([0-9a-f]{32})/', $this->assertBlockRefuses('#611', self::SCHEMA_REFUSAL), $fingerprint));
+
+            return $fingerprint[1];
+        } finally {
+            $this->probe->rollBack();
+        }
+    }
+
+    /** Joue le bloc de l'issue après la lecture des migrations ; renvoie son refus, qui doit contenir `$refusal`. */
+    private function assertBlockRefuses(string $issue, string $refusal): string
     {
         $this->probe->executeStatement(RolesVerification::migrationsReading());
-        $this->assertStatementRefuses(RolesVerification::blockOf($issue), $refusal);
+
+        return $this->assertStatementRefuses(RolesVerification::blockOf($issue), $refusal);
     }
 
-    private function assertStatementRefuses(string $statement, string $refusal): void
+    /** Joue l'instruction ; renvoie son refus, qui doit contenir `$refusal`. */
+    private function assertStatementRefuses(string $statement, string $refusal): string
     {
         try {
             $this->probe->executeStatement($statement);
-            self::fail('Le bloc a accepté.');
         } catch (DriverException $exception) {
             self::assertStringContainsString($refusal, $exception->getMessage());
+
+            return $exception->getMessage();
         }
+        self::fail('Le bloc a accepté.');
     }
 
     /**

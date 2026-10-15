@@ -46,23 +46,28 @@
 -- requête, mot de passe compris, dans le journal du serveur ; scram_iterations
 -- affaiblit les vérificateurs écrits). La liste ne se ferme pas : tout réglage
 -- hérité est rendu à sa valeur de démarrage, AVANT la première instruction qui
--- porte un mot de passe. Ceux des options (source `client`) ne sont pas
--- touchés. plpgsql chargé d'abord, pour que ses réglages soient visibles. Du
--- SQL simple, sans PL/pgSQL, sous les réglages encore hérités : ni littéral de
+-- porte un mot de passe — posé pour tous les rôles (`ALTER ROLE ALL SET`,
+-- source `global`, issue #634), sur la base, sur un rôle ou sur un rôle dans
+-- la base. Ceux des options (source `client`) ne sont pas touchés. plpgsql
+-- chargé d'abord, pour que ses réglages soient visibles. Du SQL simple, sans PL/pgSQL, sous les réglages encore hérités : ni littéral de
 -- tableau, ni `= NULL`, ni antislash. Le CASE fixe l'ordre d'évaluation : seul
 -- un réglage hérité est réécrit. Puis un refus s'il en reste un — un réglage
 -- sans valeur de démarrage, que seule une option de connexion rend
 -- (InheritedSessionSettingsTest les liste) : la procédure ne tourne pas sous
--- lui. Des noms, jamais une valeur.
+-- lui. Des noms, jamais une valeur. `(set_config(…) IS NULL) IS NOT NULL`
+-- vaut toujours vrai (issue #634) : il appelle set_config pour son effet et
+-- garde la ligne, dont le nom s'imprime ; aucune comparaison n'y est faite.
 -- #618 : réglages hérités, début
 LOAD 'plpgsql';
 SELECT pg_catalog.array_agg(s.name ORDER BY s.name) AS "#618 : réglages hérités rendus à leur valeur de démarrage"
 FROM pg_catalog.pg_settings AS s
-WHERE CASE WHEN s.source IN ('database', 'user', 'database user') THEN (pg_catalog.set_config(s.name, s.boot_val, false) IS NULL) IS NOT NULL ELSE false END;
+WHERE CASE WHEN s.source IN ('global', 'database', 'user', 'database user') THEN (pg_catalog.set_config(s.name, s.boot_val, false) IS NULL) IS NOT NULL ELSE false END;
 DO $$
+DECLARE
+    restants text[] := (SELECT pg_catalog.array_agg(name ORDER BY name) FROM pg_catalog.pg_settings WHERE source IN ('global', 'database', 'user', 'database user'));
 BEGIN
-    IF EXISTS (SELECT FROM pg_catalog.pg_settings WHERE source IN ('database', 'user', 'database user')) THEN
-        RAISE EXCEPTION '#618 : réglages hérités non rendus : %', (SELECT pg_catalog.array_agg(name ORDER BY name) FROM pg_catalog.pg_settings WHERE source IN ('database', 'user', 'database user'));
+    IF restants IS NOT NULL THEN
+        RAISE EXCEPTION '#618 : réglages hérités non rendus : %', restants;
     END IF;
 END
 $$;
@@ -290,6 +295,12 @@ $$;
 --      migration.
 --    - Les réglages de rôle propres à la base, de tout rôle : verify.sql les
 --      refuse tous.
+--    - Hors de la base (issue #634) : les réglages d'un rôle pour toutes les
+--      bases (superutilisateur compris ; ceux des trois rôles sont déjà partis
+--      à l'étape 1), de tous les rôles (ALTER ROLE ALL SET) et des bases de
+--      l'image, sur elles ou sur un rôle en elles. La remise de #618 les
+--      écarte de cette session seulement ; l'application et le lecteur en
+--      héritaient.
 --    - CONNECT rendu à PUBLIC, l'état que l'image crée (privileges.sql ne le
 --      retire que sur postgres et template1), quand l'un des trois rôles ne
 --      l'a plus — le critère même de verify.sql ; le pg_hba.conf du dépôt
@@ -308,6 +319,8 @@ DECLARE
     attendus text[];
     roles_regles oid[];
     r oid;
+    hors record;
+    retires_hors integer := 0;
 BEGIN
     PERFORM set_config('search_path', 'pg_catalog, pg_temp', true);
     attendus := CASE WHEN migree THEN ARRAY['TimeZone=' || fuseau] END;
@@ -325,6 +338,22 @@ BEGIN
     END LOOP;
     IF cardinality(roles_regles) > 0 THEN
         RAISE NOTICE '#610 : réglages de rôle propres à la base retirés pour % rôle(s)', cardinality(roles_regles);
+    END IF;
+    FOR hors IN SELECT s.setdatabase, s.setrole, d.datname FROM pg_db_role_setting s LEFT JOIN pg_database d ON d.oid = s.setdatabase
+                WHERE s.setdatabase = 0 OR d.datname IN ('postgres', 'template0', 'template1') LOOP
+        IF hors.setdatabase = 0 AND hors.setrole = 0 THEN
+            EXECUTE 'ALTER ROLE ALL RESET ALL';
+        ELSIF hors.setdatabase = 0 THEN
+            EXECUTE format('ALTER ROLE %I RESET ALL', pg_get_userbyid(hors.setrole));
+        ELSIF hors.setrole = 0 THEN
+            EXECUTE format('ALTER DATABASE %I RESET ALL', hors.datname);
+        ELSE
+            EXECUTE format('ALTER ROLE %I IN DATABASE %I RESET ALL', pg_get_userbyid(hors.setrole), hors.datname);
+        END IF;
+        retires_hors := retires_hors + 1;
+    END LOOP;
+    IF retires_hors > 0 THEN
+        RAISE NOTICE '#610 : réglages posés hors de la base retirés (% ligne(s) : un rôle pour toutes les bases, tous les rôles ou une base de l''image ; #634)', retires_hors;
     END IF;
     IF EXISTS (SELECT FROM unnest(ARRAY[current_setting('cpg.app_role'), current_setting('cpg.migrator_role'), current_setting('cpg.reader_role')]) AS c(nom)
                WHERE NOT has_database_privilege(c.nom, current_database(), 'CONNECT')) THEN

@@ -89,25 +89,42 @@ paths:
   list of options never closes, and some settings change the procedure's meaning without failing it
   (measured on the pinned image, psql exit 0 both times: `debug_print_parse` wrote the password into
   the server log four times, `scram_iterations=1` wrote one-iteration SCRAM verifiers) or fail it on
-  every pass (`quote_all_identifiers` changes `pg_get_*def`, hence the #611 fingerprint). Its head,
+  every pass (`quote_all_identifiers` changes `pg_get_*def`, hence the #611 fingerprint — until #634,
+  where the block fixes it itself). Its head,
   between the `-- #618 : réglages hérités` markers, before the first statement carrying a password:
   `LOAD 'plpgsql'` (its settings show only once loaded — and the owner may set them once loaded in
   its own session, measured), then plain SQL (no PL/pgSQL, no array literal, no `= NULL`, no
   backslash: it runs under the settings it removes), `set_config(name, boot_val, false)` on every
-  `pg_settings` row of source `database`, `user` or `database user` — never `client`, the options —,
+  `pg_settings` row of source `global` (`ALTER ROLE ALL SET`, superuser only — missed until #634,
+  measured: such a `debug_print_parse` or `scram_iterations` deceived the procedure), `database`, `user`
+  or `database user` — never `client`, the options —,
   a `CASE` fixing the evaluation order, the names printed (never a value); then a `DO` that refuses
   (`#618 : réglages hérités non rendus`) if one is left, i.e. one with no boot value. Measured: the
   152 owner-settable `user` settings planted at once (custom placeholders such as `cpg.*` are refused
   to the owner), the real stream passes, none left. The session's zone becomes `GMT` (the database's
-  `TimeZone` is inherited too): the #611 fingerprint does not depend on `TimeZone`, `DateStyle` or
-  `extra_float_digits` (measured). `InheritedSessionSettingsTest` commits real `ALTER DATABASE` and
-  `ALTER ROLE … IN DATABASE … SET` on the test database and opens a **new** connection with the
+  `TimeZone` is inherited too), the tests' stays `Europe/Paris`: so the #611 block fixes what prints a
+  constant itself (#634, below), else a migration putting a timestamp in a `DEFAULT` would be refused
+  at every pass. `InheritedSessionSettingsTest` commits real `ALTER DATABASE` and
+  `ALTER ROLE … IN DATABASE … SET` on a **throwaway database** of its own (#634: on the shared test
+  database, an interrupted run left them to every other test) and opens a **new** connection with the
   runbook's `PGOPTIONS` (libpq reads the environment: `putenv`), as `psql` in the pod does — the
   premises (inherited, fingerprint changed), then none left after the reset, each at its boot value,
-  the fingerprint back; the refusal without `timezone_abbreviations`' option; and every `user` setting
-  with a NULL boot value being an option, so a PostgreSQL bump adding one turns it red. It removes
-  what it plants setting by setting (never `RESET ALL`, which would take the migration's time zone),
-  in `tearDown` and in `setUp`. The SQL files hold no transaction control and no reconnection.
+  the fingerprint back; since #634, the two deceptions on a password written as step 2 writes it (a
+  throwaway role, `ALTER ROLE … PASSWORD`): without the reset the password is in the `LOG` messages of
+  `debug_print_parse` — read through pdo_pgsql's notice callback under an added
+  `client_min_messages=log` option, the server log being out of reach — and the SCRAM verifier has one
+  iteration, with it neither (proved by removing `database`, then `database user`, from the reset's
+  sources); a setting for every role (`ALTER ROLE ALL SET work_mem`, server-wide, so harmless and
+  removed in `setUp` and `tearDown`) given back too; the refusal without `timezone_abbreviations`'
+  option; and every `user` setting
+  with a NULL boot value being an option, so a PostgreSQL bump adding one turns it red. That database,
+  `<test database>_heritage`, is created empty from `template0` in `setUp` (given the shared database's
+  migration time zone, so the procedure's session inherits it too and the reset gives `GMT` back) and
+  dropped `WITH (FORCE)`
+  in `tearDown` and before each creation, so a run interrupted leaves nothing the next one does not
+  remove, and the shared database never carries a planted setting (asserted; `setUp` also removes, name by
+  name, what a run interrupted before #634 left there). The SQL files hold no transaction control and no
+  reconnection.
   `PostgresRolesProcedureTest` pins the exec line word for word, the stream, `commit.sql` and its
   mark, and the files (no echo of a variable, a password cited only in its three places, no shell,
   `\copy`, `\w`, `\setenv` nor `PROGRAM`, the rotation gate). That `exec` is the **one written exception** to #520
@@ -157,12 +174,19 @@ paths:
   in `doctrine_migration_versions`, not the table's existence: a restored database or an interrupted
   first `migrate` carries the table without the time zone —, at the exact value that frozen migration
   writes, equal to `php.prod.ini`'s `date.timezone` (`PostgresRolesProcedureTest` ties the three); it
-  refuses a connection limit, a template flag and a missing `CONNECT` for any of the three roles, and
-  prints the settings' **names**, never their values (chosen by whoever holds the migrator).
+  refuses a connection limit, a template flag and a missing `CONNECT` for any of the three roles, any
+  setting **outside the database** (#634: a role's for every database — any role may set it on itself,
+  the superuser on itself too —, every role's, `ALTER ROLE ALL SET`, or one on an image database or a
+  role in it; #618's reset kept them out of the procedure's session only, the application and the
+  reader inherited them; other databases are refused by #597, and the tests' dev database carries its
+  own time zone — so `pg_db_role_setting` holds exactly the time zone row; **accepted, not a follow-up**:
+  `ALTER SYSTEM` and `postgresql.conf` (source `configuration file`), the server's own configuration,
+  which only the superuser — the trust root, who reads everything anyway — can change), and prints the settings' **names**, never their values (chosen by whoever holds the migrator).
   `REVOKE TEMPORARY` is let through: the application uses no temporary table. That block is pure SQL,
   so `DatabaseOwnerSettingsVerificationTest` replays it on the migrated test database (throwaway
   roles, one rolled-back transaction): it passes as
-  is, and refuses each alteration above with its cause. The procedure's own session ignores these settings (`PGOPTIONS` and #618's reset, above), so the one that
+  is, and refuses each alteration above with its cause. The procedure's own session ignores these
+  settings (`PGOPTIONS` and #618's reset, above), so the one that
   would have stopped it reaches `verify.sql`. **And `roles.sql` repairs every one of them** (#610):
   otherwise the procedure would fail as long as one held, and a writing `exec` outside it is
   forbidden (#520). Its step 4, a pure-SQL `DO` block (no psql variable), puts the database back in
@@ -171,7 +195,9 @@ paths:
   `Version20261011120000` ran** (its row, as `verify.sql` reads it) at the value that frozen migration
   writes — the migration cannot be replayed, it also converts the timestamps; `PostgresRolesProcedureTest`
   ties the value to it —; every `ALTER ROLE … IN DATABASE` setting, **whatever the role** (`verify.sql`
-  refuses them all, a superuser-set one included); `CONNECT` granted back **to `PUBLIC`**, the image's
+  refuses them all, a superuser-set one included); since #634 every setting outside the database (a
+  role's for every database, every role's, an image database's or a role's in it, one `RESET ALL` per
+  row, counted in its own notice); `CONNECT` granted back **to `PUBLIC`**, the image's
   default (`privileges.sql` revokes it on `postgres` and `template1` only; `pg_hba.conf` filters the roles);
   no connection limit, no template flag. `TEMPORARY` and `ALLOW_CONNECTIONS` are left as `verify.sql` leaves
   them; `CONNECT` is granted only when one of the three roles lacks it — `verify.sql`'s own criterion, so a
@@ -180,7 +206,9 @@ paths:
   role name (the superuser's is in a Secret) —, committed with the rest after `conforme`; the runbook says
   what such a notice means (an incident: someone holding the migrator, `cpg_app` or `cpg_reader` altered the
   database), gives a read-only `cpg_reader` query to run **before** the procedure to keep the values the
-  repair erases, and says that a `#608` refusal left after it is a defect of the repair, never a hand fix.
+  repair erases — since #634 also the settings outside the database it now erases too, each line
+  naming its scope (`DatabaseOwnerSettingsVerificationTest` replays it as written) —, and says that a `#608` refusal left
+  after it is a defect of the repair, never a hand fix.
   `DatabaseOwnerSettingsVerificationTest` replays the repair after every gesture the `#608` block
   refuses (refused first, then repaired, then the block passes), on healthy databases (state
   unchanged), and before the time-zone migration or without its table (none set).
@@ -248,7 +276,16 @@ paths:
   rules with their enabled state, policies and their roles, inheritance, sequences, publications,
   functions, operators, types, casts and the rest of the catalog —, without owners or privileges
   (#575 checks those) nor dropped columns, read under a fixed `search_path` (`pg_get_*def` qualify a
-  name by it), each line hashed (a line holding a newline cannot pass for two), and the `md5` of the
+  name by it) and, since #634, fixed `TimeZone`, `DateStyle`, `IntervalStyle`, `extra_float_digits`,
+  `bytea_output`, `standard_conforming_strings` and `quote_all_identifiers` (`pg_get_expr` prints a
+  constant or a name by them — measured: a timestamp, an interval, a float, bytes and a backslash in a
+  `DEFAULT` gave two fingerprints under two sessions; under an inherited `standard_conforming_strings
+  = off`, the block's own `DoctrineMigrations\Version…` literals lost their backslash, « no known
+  fingerprint », until fixed at its head — PL/pgSQL prepares each query at its first run) — all set by
+  one `PERFORM` between its « réglages
+  d'impression » markers, which the tests read (`RolesVerification::schemaFingerprint()`, under them, in
+  a savepoint rolled back) and the runbook repeats as `SET`s before its copy —, each line hashed (a line
+  holding a newline cannot pass for two), and the `md5` of the
   whole compared with the fingerprints admitted for the **migrations applied: the latest and their
   count** (`''`, 0: a fresh database; the count tells apart a migration merged after a more recent
   one, which keeps the latest unchanged). An empty migrations table (a first `migrate` interrupted)

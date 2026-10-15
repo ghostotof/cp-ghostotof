@@ -1116,11 +1116,11 @@ nomme la liste (des noms, jamais une valeur). Sur une base saine : `{TimeZone}`,
 le fuseau que `Version20261011120000` pose sur la base (la session de la
 procédure tourne alors en `GMT`, ce qui ne change rien à ce qu'elle lit :
 mesuré, l'empreinte `#611` est la même), ou une ligne vide avant elle. Un
-autre nom réglé sur la base, ou sur un rôle dans la base, est un écart que
-l'avis `#610` ci-dessous signale aussi et que l'étape 2 efface : la même
-conduite. Un nom qui ne vient ni de l'un ni de l'autre est un réglage posé sur
-le superutilisateur lui-même (`ALTER ROLE … SET`, que seul un
-superutilisateur peut faire) : un incident, et la procédure ne l'efface pas.
+autre nom est un écart que l'avis `#610` ci-dessous signale aussi et que
+l'étape 2 efface : réglé sur la base ou sur un rôle en elle, sur le
+superutilisateur lui-même pour toutes les bases (`ALTER ROLE … SET`, que seul
+un superutilisateur peut faire) ou sur tous les rôles (`ALTER ROLE ALL SET`,
+issue #634) — la même conduite.
 
 **Un refus `#618 : réglages hérités non rendus : {…}`** : un réglage hérité
 n'a pas de valeur de démarrage, et la procédure ne tourne pas sous lui. Deux
@@ -1145,8 +1145,10 @@ de l'application altérée et l'a remise en l'état que le bloc `#608` de
 seul, à la valeur de `Version20261011120000`, et seulement une fois elle
 passée), réglages `ALTER ROLE … IN DATABASE … SET` de tout rôle, `CONNECT`
 rendu à `PUBLIC` si l'un des trois rôles ne l'a plus, limite de connexions et
-marque de modèle retirées. Il nomme
-les réglages trouvés et compte les rôles, jamais une valeur ni un nom de rôle.
+marque de modèle retirées — et, hors de la base (issue #634), les réglages
+d'un rôle pour toutes les bases, de tous les rôles et des bases de l'image,
+dont l'application et le lecteur héritaient. Il nomme les réglages trouvés et
+compte les rôles ou les lignes, jamais une valeur ni un nom de rôle.
 Sur une base saine, aucun avis. La réparation n'est validée qu'avec le reste,
 après `conforme` : un refus plus loin l'annule elle aussi. Un avis n'est
 **jamais anodin** : personne n'altère la base par le chemin normal. Seuls
@@ -1176,9 +1178,15 @@ procédure est interdit, #520) : ouvrir une issue avec le message du refus.
 valeurs ni les rôles, choisis par qui a fait le geste. Pour garder la preuve,
 lancer **avant l'étape 2** cette lecture, sans rien écrire, sous le lecteur ;
 sa sortie reste sur le terminal, jamais dans une session d'agent (des
-valeurs choisies par un tiers). Sur une base saine, une ligne `(base)` qui ne
-porte que le fuseau (aucune avant `Version20261011120000`), puis `-1 | f`.
-Toute autre ligne est l'écart que l'étape 2 effacera. Un réglage de base
+valeurs choisies par un tiers). Sur une base saine, une seule ligne,
+`(base)|(cette base)`, qui ne porte que le fuseau (aucune avant
+`Version20261011120000`), puis `-1 | f`. Toute autre ligne est l'écart que
+l'étape 2 effacera, le même incident : sur `(cette base)`, un réglage de la
+base ou d'un rôle en elle ; sur `(toutes les bases)`, un réglage posé sur un
+rôle pour toutes les bases (`ALTER ROLE … SET`, permis à tout rôle sur
+lui-même, superutilisateur compris) ou sur tous les rôles (`(tous les rôles)`,
+`ALTER ROLE ALL SET`, superutilisateur seul) ; sur `postgres`, `template0` ou
+`template1`, un réglage d'une base de l'image (issue #634). Un réglage de base
 `role`, une limite de connexions ou un `CONNECT` retiré peut refuser la
 connexion du lecteur (le superutilisateur de la procédure n'y est pas
 soumis) : le message d'erreur est alors la preuve (mesuré : `too many
@@ -1187,12 +1195,14 @@ connections for database` sous `CONNECTION LIMIT 0`).
 ```bash
 NS=        # preprod ou prod, à renseigner : vide, la commande s'arrête avant d'appeler le cluster
 kubectl -n "${NS:?preprod ou prod}" exec -i deploy/postgres -c postgres -- \
-  sh -c 'PGOPTIONS="-c default_transaction_read_only=on -c lock_timeout=5s" psql -X -A -v ON_ERROR_STOP=1 -U cpg_reader -d "$POSTGRES_DB"' <<'SQL'
+  sh -c 'PGOPTIONS="-c default_transaction_read_only=on -c lock_timeout=5s -c client_encoding=UTF8 -c local_preload_libraries= -c search_path=pg_catalog,pg_temp" psql -X -A -v ON_ERROR_STOP=1 -U cpg_reader -d "$POSTGRES_DB"' <<'SQL'
 SET statement_timeout = 0;
 SET search_path = pg_catalog, pg_temp;
-SELECT coalesce(nullif(s.setrole, 0)::regrole::text, '(base)') AS role, s.setconfig AS reglages
-FROM pg_db_role_setting s JOIN pg_database d ON d.oid = s.setdatabase
-WHERE d.datname = current_database() ORDER BY 1;
+SELECT CASE WHEN s.setrole <> 0 THEN s.setrole::regrole::text WHEN s.setdatabase = 0 THEN '(tous les rôles)' ELSE '(base)' END AS role,
+       CASE WHEN s.setdatabase = 0 THEN '(toutes les bases)' WHEN d.datname = current_database() THEN '(cette base)' ELSE d.datname END AS portee,
+       s.setconfig AS reglages
+FROM pg_db_role_setting s LEFT JOIN pg_database d ON d.oid = s.setdatabase
+WHERE s.setdatabase = 0 OR d.datname IN (current_database(), 'postgres', 'template0', 'template1') ORDER BY 2, 1;
 SELECT datconnlimit AS limite_de_connexions, datistemplate AS modele, datacl AS privileges
 FROM pg_database WHERE datname = current_database();
 SQL
@@ -1265,7 +1275,7 @@ sortie sur le terminal, requête sur l'entrée standard) :
 ```bash
 NS=        # preprod ou prod, à renseigner : vide, la commande s'arrête avant d'appeler le cluster
 kubectl -n "${NS:?preprod ou prod}" exec -i deploy/postgres -c postgres -- \
-  sh -c 'PGOPTIONS="-c default_transaction_read_only=on -c lock_timeout=5s" psql -X -A -v ON_ERROR_STOP=1 -U cpg_reader -d "$POSTGRES_DB"' <<'SQL'
+  sh -c 'PGOPTIONS="-c default_transaction_read_only=on -c lock_timeout=5s -c client_encoding=UTF8 -c local_preload_libraries= -c search_path=pg_catalog,pg_temp" psql -X -A -v ON_ERROR_STOP=1 -U cpg_reader -d "$POSTGRES_DB"' <<'SQL'
 SELECT rolname, rolsuper, rolcanlogin FROM pg_roles WHERE rolname IN ('cpg_app', 'cpg_migrator', 'cpg_reader') ORDER BY 1;
 SELECT count(*) AS objets_hors_migration FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
 WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p', 'v', 'm', 'S', 'i') AND pg_get_userbyid(c.relowner) <> 'cpg_migrator';
@@ -1287,13 +1297,23 @@ tient le rôle de migration : les lire sur le terminal, ne pas les recopier
 dans une session d'agent. Sur une table en sécurité au niveau des lignes,
 `cpg_reader` lit **0 ligne** lui aussi (pas de `BYPASSRLS`, et
 `pg_read_all_data` ne la contourne pas) : c'est le symptôme, pas une table
-vide.
+vide. Les `SET` en tête sont ceux que le bloc `#611` pose avant de lire
+(issue #634) : une constante horodatée, un intervalle, un flottant, des
+octets, un antislash ou un nom s'y imprime comme `verify.sql` l'a imprimé,
+quels que soient les réglages que la session hérite de la base.
 
 ```bash
 NS=        # preprod ou prod, à renseigner : vide, la commande s'arrête avant d'appeler le cluster
 kubectl -n "${NS:?preprod ou prod}" exec -i deploy/postgres -c postgres -- \
-  sh -c 'PGOPTIONS="-c default_transaction_read_only=on -c lock_timeout=5s" psql -X -A -t -v ON_ERROR_STOP=1 -U cpg_reader -d "$POSTGRES_DB"' <<'SQL'
+  sh -c 'PGOPTIONS="-c default_transaction_read_only=on -c lock_timeout=5s -c client_encoding=UTF8 -c local_preload_libraries= -c search_path=pg_catalog,pg_temp" psql -X -A -t -v ON_ERROR_STOP=1 -U cpg_reader -d "$POSTGRES_DB"' <<'SQL'
 SET search_path = pg_catalog, pg_temp;
+SET TimeZone = 'UTC';
+SET DateStyle = 'ISO, YMD';
+SET IntervalStyle = 'postgres';
+SET extra_float_digits = 1;
+SET bytea_output = 'hex';
+SET standard_conforming_strings = on;
+SET quote_all_identifiers = off;
 SELECT 'schema ' || quote_ident(n.nspname) FROM pg_namespace n WHERE n.nspname <> 'information_schema' AND n.nspname !~ '^pg_'
 UNION ALL
 SELECT concat_ws(' ', 'relation', quote_ident(c.relname), c.relkind, c.relpersistence, c.relrowsecurity, c.relforcerowsecurity, c.relispartition, c.relreplident, pg_get_expr(c.relpartbound, c.oid), c.reloptions::text, am.amname, ts.spcname)
@@ -1379,7 +1399,7 @@ Lecture seule, aucun mot de passe en jeu (`-w` : psql n'en demande pas) :
 ```bash
 NS=        # preprod ou prod, à renseigner : vide, la commande s'arrête avant d'appeler le cluster
 echo 'SELECT 1;' | kubectl -n "${NS:?preprod ou prod}" exec -i deploy/postgres -c postgres -- \
-  sh -c 'PGOPTIONS="-c default_transaction_read_only=on -c lock_timeout=5s" psql -X -w -v ON_ERROR_STOP=1 -h database -U cpg_reader -d "$POSTGRES_DB"'
+  sh -c 'PGOPTIONS="-c default_transaction_read_only=on -c lock_timeout=5s -c client_encoding=UTF8 -c local_preload_libraries= -c search_path=pg_catalog,pg_temp" psql -X -w -v ON_ERROR_STOP=1 -h database -U cpg_reader -d "$POSTGRES_DB"'
 # attendu : FATAL:  pg_hba.conf rejects connection for host "<adresse du pod>", user "cpg_reader", …
 ```
 
@@ -1680,7 +1700,7 @@ kubeconfig d'administrateur (lecture seule, la sortie reste sur le terminal) :
 NS=        # preprod ou prod, à renseigner : vide, la commande s'arrête avant d'appeler le cluster
 printf '%s\n' 'SHOW tcp_keepalives_idle;' 'SHOW tcp_keepalives_interval;' 'SHOW tcp_keepalives_count;' 'SHOW tcp_user_timeout;' \
   | kubectl -n "${NS:?preprod ou prod}" exec -i deploy/postgres -c postgres -- \
-    sh -c 'PGOPTIONS="-c default_transaction_read_only=on -c lock_timeout=5s" psql -X -A -t -v ON_ERROR_STOP=1 -h 127.0.0.1 -U cpg_reader -d "$POSTGRES_DB"'
+    sh -c 'PGOPTIONS="-c default_transaction_read_only=on -c lock_timeout=5s -c client_encoding=UTF8 -c local_preload_libraries= -c search_path=pg_catalog,pg_temp" psql -X -A -t -v ON_ERROR_STOP=1 -h 127.0.0.1 -U cpg_reader -d "$POSTGRES_DB"'
 # attendu : 60, 10, 3 et 90000 sur quatre lignes ; 0 : connexion par socket
 # (-h manquant) ou serveur démarré sans les args.
 ```
@@ -1927,9 +1947,9 @@ session d'assistant —, avec un **kubeconfig d'administrateur humain**. Le jeto
 
 ```bash
 NS=        # preprod ou prod, à renseigner : vide, la commande s'arrête avant d'appeler le cluster
-printf '%s\n' '\set id <userId>' "SELECT username, email FROM cpg_user WHERE id = :'id'::uuid;" \
+printf '%s\n' '\set id <userId>' "SELECT username, email FROM public.cpg_user WHERE id = :'id'::uuid;" \
   | kubectl -n "${NS:?preprod ou prod}" exec -i deploy/postgres -c postgres -- \
-    sh -c 'PGOPTIONS="-c default_transaction_read_only=on -c lock_timeout=5s" psql -X -A -v ON_ERROR_STOP=1 -U cpg_reader -d "$POSTGRES_DB"'
+    sh -c 'PGOPTIONS="-c default_transaction_read_only=on -c lock_timeout=5s -c client_encoding=UTF8 -c local_preload_libraries= -c search_path=pg_catalog,pg_temp" psql -X -A -v ON_ERROR_STOP=1 -U cpg_reader -d "$POSTGRES_DB"'
 # attendu : l'en-tête username|email, une ligne nom|adresse et « (1 row) » ;
 # « (0 rows) » : aucun compte de cet UUID dans CE namespace — relire $NS avant de conclure.
 ```
@@ -1955,6 +1975,15 @@ morceau, essayé sur l'image `postgres:18.6-alpine` en local (pas encore sur le 
   `SELECT *` dessus dans un terminal). Tant que la procédure des rôles n'a pas été jouée dans ce
   namespace, le rôle n'existe pas et la commande échoue en le disant. `lock_timeout=5s` borne ses attentes de verrou comme celles de FPM et
   des Jobs (#525) : `PGOPTIONS` remplace la variable entière, la borne doit donc y être répétée.
+  `client_encoding=UTF8` et `local_preload_libraries=` (vide) l'emportent sur ce que le propriétaire
+  de la base, ou un rôle sur lui-même, peut poser (issue #634, mesuré) : un encodage hérité brouille
+  la sortie, une bibliothèque absente refuse la connexion elle-même — la lecture de preuve « avant
+  l'étape 2 » comprise. `search_path=pg_catalog,pg_temp` de même (relecture de #634, mesuré) : hérité
+  de la base, `public` placé devant `pg_catalog` faisait lire au lecteur une vue `public.pg_roles`
+  forgée par le propriétaire au lieu du catalogue — une table de l'application s'écrit donc
+  qualifiée (`public.cpg_user`). Jamais `session_preload_libraries=` : le lecteur n'étant pas
+  superutilisateur, l'option refuserait sa connexion, et ni le propriétaire ni un rôle sur lui-même
+  ne peuvent poser ce réglage.
 - **Un résultat lisible.** `-X` ignore un `~/.psqlrc` ; `-A` rend `nom|adresse` sans alignement mais
   garde l'en-tête et le compte de lignes, pour qu'un namespace erroné (« (0 rows) ») ne se confonde
   pas avec une sortie vide ; `ON_ERROR_STOP=1` fait sortir en code 3 sur une erreur au lieu de 0.
@@ -2087,14 +2116,14 @@ et coût, ou paramètres argon) et un nombre de comptes, jamais un sel, un hacha
 ```bash
 NS=        # preprod ou prod, à renseigner : vide, la commande s'arrête avant d'appeler le cluster
 kubectl -n "${NS:?preprod ou prod}" exec -i deploy/postgres -c postgres -- \
-  sh -c 'PGOPTIONS="-c default_transaction_read_only=on -c lock_timeout=5s" psql -X -A -v ON_ERROR_STOP=1 -U cpg_reader -d "$POSTGRES_DB"' <<'SQL'
+  sh -c 'PGOPTIONS="-c default_transaction_read_only=on -c lock_timeout=5s -c client_encoding=UTF8 -c local_preload_libraries= -c search_path=pg_catalog,pg_temp" psql -X -A -v ON_ERROR_STOP=1 -U cpg_reader -d "$POSTGRES_DB"' <<'SQL'
 SELECT CASE
          WHEN password = '' THEN '(sans mot de passe)'
          WHEN password LIKE '$argon2%' THEN coalesce(substring(password FROM '^(\$argon2[a-z]*\$v=[0-9]+\$[^$]*\$)'), '(argon, format inconnu)')
          ELSE coalesce(substring(password FROM '^(\$2[abxy]\$[0-9]{2}\$)'), '(format inconnu)')
        END AS entete,
        count(*) AS comptes
-FROM cpg_user GROUP BY 1 ORDER BY 1;
+FROM public.cpg_user GROUP BY 1 ORDER BY 1;
 SQL
 # attendu, avec la configuration actuelle : l'en-tête entete|comptes, les lignes
 # « (sans mot de passe)|n » et « $2y$13$|m » (l'une ou l'autre peut manquer), puis « (k rows) ».

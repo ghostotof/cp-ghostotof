@@ -92,7 +92,13 @@ paths:
     guard rather than a boundary, a `SET` lifts it — and `NS` has no default.
   Two guards, two scopes: `OperatorExecBoundaryTest` reads the repo (the deployer's Role, ClusterRole and
   both bindings, wildcards such as `*/exec` included, plus the shape of the account lookup and of every
-  runbook `psql`: read-only `PGOPTIONS`, `-X`, `ON_ERROR_STOP`, `${NS:?…}`, query on stdin — #590);
+  runbook `psql`: read-only `PGOPTIONS`, `-X`, `ON_ERROR_STOP`, `${NS:?…}`, query on stdin — #590 —, and,
+  since #634, `-c client_encoding=UTF8 -c local_preload_libraries= -c search_path=pg_catalog,pg_temp` in that
+  `PGOPTIONS`, which beat what the database's owner or a role on itself may set — an inherited `public`
+  before `pg_catalog` made the reader read the owner's forged `public.pg_roles` view, measured, so an
+  application table is written qualified, `public.cpg_user` —, never `session_preload_libraries=`: a
+  `superuser`
+  setting, the option refuses the reader's connection — measured);
   `tools/rotate-deployer-token.sh` checks the token actually issued against the cluster
   (`auth can-i create pods/exec` → `no`) — the only one that sees a binding added by hand. Keep both. A
   new manual `exec` in the runbook must fit the third case; if its output carries a secret or personal
