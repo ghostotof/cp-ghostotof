@@ -38,7 +38,12 @@ final class InheritedSessionSettingsTest extends KernelTestCase
 {
     use OpensProbeConnection;
 
-    /** Les sources d'un réglage hérité : la base, le rôle, le rôle dans la base. */
+    /**
+     * Les sources d'un réglage hérité : la base, le rôle, le rôle dans la base.
+     * Écrites ici sans être lues dans roles.sql, qui les écrit deux fois : le
+     * test observe la session de son côté, et une source retirée de la remise
+     * le fait rougir.
+     */
     private const string INHERITED = "('database', 'user', 'database user')";
 
     /**
@@ -205,7 +210,7 @@ final class InheritedSessionSettingsTest extends KernelTestCase
     public function testAnInheritedSettingLeftInPlaceStopsTheProcedure(): void
     {
         $this->probe->executeStatement(\sprintf("ALTER DATABASE %s SET %s = 'Australia'", $this->database(), self::WITHOUT_BOOT_VALUE));
-        $withoutItsOption = trim((string) preg_replace('/-c '.self::WITHOUT_BOOT_VALUE.'=\S*/', '', RolesVerification::sessionOptions()));
+        $withoutItsOption = trim((string) preg_replace('/-c '.preg_quote(self::WITHOUT_BOOT_VALUE, '/').'=\S*/', '', RolesVerification::sessionOptions()));
 
         $this->inProcedureSession($withoutItsOption, function (Connection $session): void {
             try {

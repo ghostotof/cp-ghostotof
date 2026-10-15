@@ -9,7 +9,10 @@ use PHPUnit\Framework\Assert;
 
 /**
  * Le SQL de `k8s/base/postgres-roles/verify.sql` — et le bloc de réparation de
- * `roles.sql` (issue #610) —, lu par les tests de forme
+ * `roles.sql` (issue #610), sa lecture des migrations, son garde du chemin de
+ * recherche et sa remise des réglages hérités (#618) —, plus les options de
+ * connexion de la procédure, lues dans le runbook (`k8s/README.md`, l'unique
+ * `exec` de sa section), lu par les tests de forme
  * ({@see \App\Tests\Shared\Infrastructure\Kubernetes\PostgresRolesProcedureTest})
  * et rejoué sur la base de test
  * ({@see \App\Tests\Shared\Infrastructure\Postgres\DatabaseOwnerSettingsVerificationTest}).
