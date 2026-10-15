@@ -13,7 +13,7 @@ use Symfony\Component\Process\Process;
 /**
  * Issue #521 : les commandes Messenger à effet de bord passent par un Job
  * déclaré, lancé par tools/run-job.sh (règle de #520,
- * `.claude/rules/deploiement.md`) :
+ * `.claude/rules/deploiement-pipeline.md`, « What never kubectl exec covers ») :
  *
  *  - `app:messenger:stop-workers` réécrit le signal de redémarrage en cache,
  *    sous la clé du secret courant (étape 4 de la rotation d'`APP_SECRET`), et

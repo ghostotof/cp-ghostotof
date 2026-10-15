@@ -1,6 +1,13 @@
 # ADR 0002 — Veille technique en données vivantes (`Portfolio/Watch`)
 
-- Statut : accepté
+> **Vocabulaire et amendement (2026-10-14, #602).** Les termes canoniques du domaine sont dans [`CONTEXT.md`](../../CONTEXT.md) ; le « tech radar »
+> s'y dit **veille technique**, et un snapshot un **relevé**. Le motif de D4, repris dans les
+> alternatives écartées, décrit `ROLE_USER` comme « un compte invité partagé dont les identifiants
+> circulent » : c'est **périmé** depuis l'ADR 0003, qui a retiré ce compte. Le **palier de base**
+> (`ROLE_USER`) s'obtient désormais en un clic, sans identifiant ni compte : il reste l'équivalent du
+> public pour une surface d'attaque, et D4 tient inchangée.
+
+- Statut : accepté ; **amendé le 2026-10-14** (#602 : motif de D4 mis à jour, voir l'encadré ci-dessus)
 - Date : 2026-09-08
 - Portée : `src/Portfolio/Watch`, `backend/bin/build-package-manifest.php`, `docker/php/Dockerfile`
   (stage `production`), `k8s/base/watch-refresh-cronjob.yaml`, frontend `watch` + `admin/watch` +
@@ -49,7 +56,7 @@ Les dix décisions structurantes, dans l'ordre où elles se rencontrent en lisan
 4. **Détail des vulnérabilités réservé à `ROLE_SUPER`** (D4). Le public voit un agrégat —
    `{packagesScanned, affectedCount, checkedAt}` — et rien d'autre : ni identifiant de CVE, ni nom de
    paquet affecté, ni version vulnérable. Motif : le compte invité `ROLE_USER` est partagé et ses
-   identifiants circulent (cf. ADR 0001) ; `ROLE_USER` ≈ public **dès qu'il s'agit d'une surface
+   identifiants circulent (cf. ADR 0001 — *motif périmé, voir l'amendement du 2026-10-14 en tête*) ; `ROLE_USER` ≈ public **dès qu'il s'agit d'une surface
    d'attaque**, ce qui n'est pas le cas d'un CV. Le cloisonnement se joue **à la lecture** (dans le
    provider), jamais à l'écriture : le snapshot conserve le détail, sans quoi l'administrateur serait
    privé de ce qu'il est précisément le seul à avoir le droit de voir.
@@ -265,7 +272,7 @@ qui est en retard. Divulgation assumée, désormais écrite plutôt que sous-ent
   dépendances Composer de rien.
 - **Tout saisir au backoffice** : fragile là où c'est le plus visible (PHP, Symfony).
 - **Publier le détail des CVE**, ou le réserver à `ROLE_USER` : la carte des vulnérabilités connues
-  d'un site est une aide à l'attaque, et `ROLE_USER` est un compte partagé.
+  d'un site est une aide à l'attaque, et `ROLE_USER` est un compte partagé (*périmé, voir l'amendement du 2026-10-14 en tête*).
 - **CI interrogeant OSV puis poussant le résultat en production** (formulation initiale de D3) : aurait
   exigé un credential machine et un endpoint d'écriture supplémentaires, et figé l'analyse au build —
   alors qu'une CVE publiée trois semaines après le déploiement doit apparaître.

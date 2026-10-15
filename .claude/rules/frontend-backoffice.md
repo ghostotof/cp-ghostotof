@@ -54,7 +54,7 @@ No token at all ⇒ `incomplete` with **no network call**. `SetPasswordPage.spec
 `router/adminGuard.spec.ts` (the 404 on an old segment link) pin all of it.
 
 **Ordering and translation groups** (spec 0004, `v0.12.0`): every ordered admin page (Incidents,
-Contributions, Anonymous CV, Quality ×2, About site cards + one table per me-card category, Watch) is
+Contributions, CV sans identité, Quality ×2, About site cards + one table per me-card category, Watch) is
 wired on the same shared bricks, and a new page must reuse them rather than grow its own copy —
 they carry the security-neutral but a11y-critical behaviour (keyboard alternative, focus return,
 status announcement) that a fork would silently lose:
@@ -62,6 +62,14 @@ status announcement) that a fork would silently lose:
   per group with `byLocale`/`missing`), `orderRowsByDraft`, `moveKey`, `translationGroupSelection`
   (`translationGroupOptions`/`firstEntry`/`hasSibling`/`rowLines`, the "Version of" rule: entries of
   **any other locale** whose group lacks the form's locale — nothing names FR or EN), all framework-free.
+- `infrastructure/admin/shared/orderProblems.ts` — **the two 422 slugs of the exact-set rule** (D4,
+  `.claude/rules/portfolio-ordre-ecritures.md`): `unknown-order-entry` (a key the server no longer
+  knows, an entry deleted since the load) and `incomplete-order` (a key missing, an entry created
+  since), listed once in `STALE_ORDER_PROBLEM_TYPES` and matched on the problem+json `type` by
+  `hasProblemType`, never on the localized `detail`. Every ordered repository reads a 422 carrying
+  either as `AdminOrderError('stale-order')`, anything else as `unknown`. A slug renamed on the backend
+  is renamed here in the same change: otherwise a concurrent edit reads as a failed save that the
+  admin retries in vain instead of a reload.
 - `application/admin/shared/` — `useOrderDraft` (the draft follows the server keys until the first
   `move`, then detaches until `reset`/`save`; on a 422 `stale-order` it reloads and re-syncs, on any
   other error it keeps the draft so the admin can retry), `useRowDragAndDrop` (native HTML5, the
@@ -104,7 +112,7 @@ status announcement) that a fork would silently lose:
   (`admin.about.meCard.categoryLockedHelp`: create the card in the right category, then delete this one)
   referenced by `aria-describedby` **only while editing** — the hint is not rendered otherwise, and an
   IDREF to a missing element is an a11y fault. The server refuses another category with a 409 of type
-  `me-card-category-immutable` (`.claude/rules/portfolio-contenus.md`), which
+  `me-card-category-immutable` (`.claude/rules/portfolio-ordre-ecritures.md`), which
   `HttpAdminAboutMeCardRepository` reads as the reason `category-immutable` — keyed on the `type`, the
   other 409 of the cards staying `translation-already-exists`; only a SPA cached from before #578 can
   still send that body. `AdminAboutPage.spec.ts` pins the gesture (red before: `category: 'hobby'`,
@@ -117,7 +125,7 @@ status announcement) that a fork would silently lose:
 - **A me-card group spread across two categories is not signalled by the backoffice, by decision**
   (issue #573). Such a group (FR in one category, EN in another) predates #501's guard; the backend
   refuses, before any write, every write that would add a member to it or reorder one of its categories
-  (#561, `.claude/rules/portfolio-contenus.md`) — a text edit and the detachment stay accepted.
+  (#561, `.claude/rules/portfolio-ordre-ecritures.md`) — a text edit and the detachment stay accepted.
   What the admin sees if one ever exists: editing one of its members, « Version de » **looks empty** —
   `startEdit` keeps the card's own group (`hasSibling` looks across categories) while the options only
   list the form's category (`translationGroupOptions` keeps a retained group only when an entry of
@@ -148,27 +156,27 @@ status announcement) that a fork would silently lose:
   make a text edit detach the card.
 
 **Translation assistant** (ADR 0004 phase 1, spec 0002): one more admin slice, `domain/admin/translation`
-(`TranslationDraft`, `AdminTranslationError` with reasons `validation|rate-limited|unavailable|unknown`)
+(`TranslationProposal`, `AdminTranslationError` with reasons `validation|rate-limited|unavailable|unknown`)
 → `infrastructure/admin/translation/HttpAdminTranslationRepository.ts` (`POST /api/backoffice/translations`)
-→ `application/admin/translation/useAdminTranslation.ts` (`translate()` returns the draft or `null` and
+→ `application/admin/translation/useAdminTranslation.ts` (`translate()` returns the proposal or `null` and
 exposes `errorReason`; **it never touches a form nor persists anything**, ADR 0004 D4) + the two helpers in
 `proseFields.ts` (`collectProseFields` drops blank fields, the API refuses them with a 422;
-`applyTranslationDraft` leaves a field absent from the draft untouched) → `presentation/ui/admin/
+`applyTranslationProposal` leaves a field absent from the proposal untouched) → `presentation/ui/admin/
 TranslateEntryButton.vue` (label follows the form's locale, `aria-busy` while calling, emits `translate`).
 **Each page alone decides which of its fields are prose** (spec D2 — the backend is content-agnostic) and
-what to do with the draft. Since spec 0004 every per-entry form (Incidents, Contributions, Anonymous CV,
+what to do with the proposal. Since spec 0004 every per-entry form (Incidents, Contributions, CV sans identité,
 Quality principles/traits, About site/me cards) behaves the same way: the form switches to *creation* in
 the target locale, the non-prose fields (`version`, `occurredAt`, `iconKey`…) are kept, **the source
 entry's `translationGroup` is kept too** (spec 0004 D9, `sourceGroup` — distinct from the selector's
-value, so a lone source still attaches its draft) so saving the proposed version links it with no
-extra gesture, and a `role="status"` banner names the draft's source locale. The old "page-locale"
+value, so a lone source still attaches its proposal) so saving the proposed version links it with no
+extra gesture, and a `role="status"` banner names the proposal's source locale. The old "page-locale"
 semantics is gone with the page-level selector (one locale per form, see above). About *settings* is
-the one singleton per locale, so its draft is **deferred**: parked in `pendingDraft`, applied on the
+the one singleton per locale, so its proposal is **deferred**: parked in `pendingProposal`, applied on the
 return of `load()` for the target locale (hence the `flush: 'sync'` watcher, or the copy from the server
-would overwrite it). The button is disabled while an order draft is dirty (a draft the locked form could
+would overwrite it). The button is disabled while an order draft is dirty (a proposal the locked form could
 not save would burn quota for nothing). Never use `v-html` on text coming back from the model: it goes
 through the form fields, then `RichText.vue`. The case-studies admin page (`/admin/case-studies`, issue #104,
-closed 2026-09-14) is wired exactly like the anonymous-CV one — every field is prose, so "Create the XX
+closed 2026-09-14) is wired exactly like the CV sans identité one — every field is prose, so "Create the XX
 version" copies nothing and the assistant sends all five fields.
 
 - `presentation/ui/{BaseTextInput,BaseTextarea,BaseNumberInput,BaseSelect}.vue` — the project's first reusable

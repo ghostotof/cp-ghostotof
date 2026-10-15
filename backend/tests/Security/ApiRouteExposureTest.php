@@ -93,7 +93,7 @@ final class ApiRouteExposureTest extends WebTestCase
      */
     private const array BASE_TIER_PATHS = [
         '/api/case-studies/{locale}' => 'ADR 0003 D5 : études de cas techniques — ni nom, ni employeur, ni client.',
-        '/api/anonymous-cv/{locale}' => 'ADR 0003 D5 : CV sans identité — compétences, séniorité et réalisations par domaine, sans nom, employeur, client ni chronologie (D5 amendée le 2026-09-13).',
+        '/api/anonymous-cv/{locale}' => 'ADR 0003 D5 : CV sans identité — compétences, ancienneté et réalisations par domaine, sans nom, employeur, client ni chronologie (D5 amendée le 2026-09-13).',
         '/api/logout' => '« Terminer cet accès » (issue #65) : expire les cookies, quel que soit le porteur. Ne sert aucune donnée.',
     ];
 
@@ -229,7 +229,7 @@ final class ApiRouteExposureTest extends WebTestCase
     /**
      * Invariant n°5 — ADR 0003 D6. Même garde que l'invariant n°4, mais côté
      * jeton du palier de base émis par POST /api/account/base-access (aucun
-     * compte, cf. GuestUser/GuestUserProvider) plutôt qu'un compte enregistré :
+     * compte, cf. BaseAccessUser/BaseAccessUserProvider) plutôt qu'un compte enregistré :
      * les deux chemins vers ROLE_USER doivent être également insuffisants pour
      * le CV/api-me.
      */

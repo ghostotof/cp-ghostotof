@@ -64,7 +64,7 @@ jobs:
     timeout-minutes: 15 # habituel ~2 min, démarrage de RabbitMQ compris (#479)
     services:
       database:
-        image: postgres:18.4-alpine
+        image: postgres:18.6-alpine # celle de la prod : verify.sql compare le texte des définitions (#611), tools/tests/postgres-image-pins.test.sh
         env:
           POSTGRES_DB: cp_ghostotof
           POSTGRES_USER: app
@@ -79,7 +79,7 @@ jobs:
       COMPOSER_ALLOW_SUPERUSER: '1'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2.37.2
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2.40.0
         with:
           php-version: '8.5'
           extensions: intl, pdo_pgsql, zip, sockets, amqp-2.2.0
@@ -158,7 +158,7 @@ jobs:
     timeout-minutes: 15 # habituel ~110 s
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '26.7.0'
       - working-directory: frontend
@@ -205,7 +205,7 @@ jobs:
       COMPOSER_ALLOW_SUPERUSER: '1'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2.37.2
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2.40.0
         with:
           php-version: '8.5'
           extensions: intl, pdo_pgsql
@@ -238,7 +238,7 @@ jobs:
       COMPOSER_ALLOW_SUPERUSER: '1'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2.37.2
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2.40.0
         with:
           php-version: '8.5'
           extensions: intl, pdo_pgsql
@@ -272,7 +272,7 @@ jobs:
       COMPOSER_ALLOW_SUPERUSER: '1'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2.37.2
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2.40.0
         with:
           php-version: '8.5'
           extensions: intl, pdo_pgsql
@@ -320,7 +320,7 @@ jobs:
       COMPOSER_ALLOW_SUPERUSER: '1'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2.37.2
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2.40.0
         with:
           php-version: '8.5'
           extensions: intl, pdo_pgsql
@@ -407,11 +407,13 @@ jobs:
           tools/tests/dev-env-secrets.test.sh
           tools/tests/summary-language-tools.test.sh
           tools/tests/check-claude-rules.test.sh
+          tools/tests/check-release-gates.test.sh
+          tools/tests/postgres-image-pins.test.sh
       # Seuils : erreurs et avertissements bloquent, `info`/`style` non —
       # audit-prod.sh, antérieur à ce job, porte trois remarques de style que
       # ce job n'a pas vocation à réécrire.
       - name: shellcheck (préinstallé sur le runner)
-        run: shellcheck -x --severity=warning tools/*.sh tools/lib/*.sh tools/tests/*.sh tools/tests/lib/*.sh docker/php/install-symfony-language-tools.sh docker/php/dev-env-secrets.sh docker/php/php-cs-fixer.sh .github/scripts/summary-language-tools.sh
+        run: shellcheck -x --severity=warning tools/*.sh tools/lib/*.sh tools/tests/*.sh tools/tests/lib/*.sh k8s/base/*.sh docker/php/install-symfony-language-tools.sh docker/php/dev-env-secrets.sh docker/php/php-cs-fixer.sh .github/scripts/summary-language-tools.sh
       # Image officielle, figée sur le digest de son index multi-arch (v1.7.12).
       # Elle embarque shellcheck et pyflakes, donc les `run:` de ce fichier sont
       # analysés aussi.
@@ -604,7 +606,7 @@ jobs:
       # d'API pour ce réglage. Régénérée ici pour rester alignée sur le gabarit.
       - name: Artefact — prévisualisation sociale du dépôt
         if: steps.existing.outputs.state == 'absent'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: social-preview
           path: .github/social-preview.png
@@ -673,7 +675,8 @@ jobs:
           # migration additive est inoffensive pour l'ancien code encore en
           # service — il ignore les colonnes qu'il ne mappe pas — et le nouveau
           # code arrive sur un schéma déjà prêt. Discipline d'écriture des
-          # migrations qui rend cet ordre sûr : .claude/rules/deploiement.md.
+          # migrations qui rend cet ordre sûr : .claude/rules/deploiement-pipeline.md,
+          # « The standard deploy runs the migration *before* the rollout ».
           #
           # 1. La configuration de la release avant son Job. migrate-job.yaml lit
           #    `backend-config` par son nom littéral (hors kustomize) ; joué
@@ -803,7 +806,7 @@ jobs:
     needs: [release-version, deploy-preprod]
     if: startsWith(github.ref, 'refs/heads/release/')
     runs-on: ubuntu-latest
-    timeout-minutes: 15 # habituel ~1 min 30 ; rollouts bornés à 60 s, curl à 15 s, Job témoin attendu 300 s (+ ~35 s de wait-rollout.sh, + 90 s au plus pour l'arrêter s'il tourne encore à l'échec, #535)
+    timeout-minutes: 16 # habituel ~1 min 30, mais au-delà des 3–10× de #285 à dessein : la somme des attentes du pire cas, ~12 min, l'emporte — rollouts bornés à 60 s, curl à 15 s, Job témoin attendu 300 s (+ ~35 s de wait-rollout.sh, + 90 s au plus pour l'arrêter s'il tourne encore à l'échec, #535) ; la sonde pg_hba a son propre job depuis #600
     # Les secrets d'environnement ne sont servis qu'aux jobs qui déclarent
     # l'environnement, et sa politique de branche borne d'où ils sont lisibles
     # (audit 2026-09-16, A4).
@@ -812,6 +815,28 @@ jobs:
       url: https://preprod.cp-ghostotof.com
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Configure kubectl
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBE_CONFIG_PREPROD }}" > ~/.kube/config
+      # En tête du job (issue #603), pour que le premier rouge nomme le
+      # workload. Un datastore qui ne démarre pas — RabbitMQ en
+      # CrashLoopBackOff à l'incident v0.5.0, invisible de /healthz et de
+      # /api/me — fait déjà échouer deploy-preprod, qui attend ces trois
+      # workloads (wait-rollout.sh), et rollback-preprod ne tourne pas. Reste
+      # ici celui qui était Ready à la fin du déploiement et qui est tombé
+      # depuis : les étapes suivantes l'accuseraient sous un autre nom (le
+      # throttling du login lit PostgreSQL — comptes, `cache.app` en
+      # doctrine_dbal —, le message témoin passe par RabbitMQ). Son échec
+      # déclenche rollback-preprod, qui ne ramène ni postgres ni rabbitmq :
+      # inefficace sur la cause, sans danger, et sortir ce contrôle du job,
+      # comme la sonde pg_hba (#600), n'y changerait rien — ces deux étapes le
+      # déclencheraient quand même. Instantané quand tout est Ready.
+      - name: Vérifie les datastores et le worker
+        run: |
+          kubectl -n preprod rollout status deployment/postgres --timeout=60s
+          kubectl -n preprod rollout status deployment/rabbitmq --timeout=60s
+          kubectl -n preprod rollout status deployment/worker --timeout=60s
       - name: Smoke tests
         run: |
           curl -fsS https://preprod.cp-ghostotof.com/healthz
@@ -829,26 +854,6 @@ jobs:
         env:
           AUDIT_BASIC_AUTH: ${{ secrets.PREPROD_BASIC_AUTH }}
         run: tools/smoke-login-throttling.sh https://preprod.cp-ghostotof.com
-      - name: Configure kubectl
-        run: |
-          mkdir -p ~/.kube
-          echo "${{ secrets.KUBE_CONFIG_PREPROD }}" > ~/.kube/config
-      # Incident v0.5.0 : RabbitMQ en CrashLoopBackOff (donc le worker aussi,
-      # par dépendance) n'était détecté ni par /healthz ni par /api/me — les
-      # deux endpoints HTTP démarrent très bien même sans broker AMQP
-      # fonctionnel, seule la publication d'un message (POST /api/contact)
-      # échouait réellement. `rollout status` échoue/timeout si le déploiement
-      # n'atteint jamais l'état Ready, ce qui aurait fait échouer ce job et
-      # déclenché rollback-preprod — et laissé la PR vers `main` rouge.
-      # Postgres ajouté par cohérence : /api/me ne le sollicite pas non plus
-      # (rejet 401 avant toute requête DB pour une requête non authentifiée),
-      # donc une régression équivalente sur postgres.yaml passerait tout aussi
-      # inaperçue sans cette vérification dédiée.
-      - name: Vérifie les datastores et le worker
-        run: |
-          kubectl -n preprod rollout status deployment/postgres --timeout=60s
-          kubectl -n preprod rollout status deployment/rabbitmq --timeout=60s
-          kubectl -n preprod rollout status deployment/worker --timeout=60s
       # Issue #470 : un worker `Ready` ne prouve pas qu'il décode ce que l'API
       # signe. Un écart de clé de MAC (KEY_CONTEXT mal déployé, worker resté sur
       # l'ancienne release) laissait la préprod verte, chaque message dans
@@ -886,6 +891,54 @@ jobs:
           AUDIT_BASIC_AUTH: ${{ secrets.PREPROD_BASIC_AUTH }}
         run: ./tools/audit-prod.sh preprod.cp-ghostotof.com
 
+  # Issue #596 : le pg_hba.conf du dépôt (#593) ferme le superutilisateur
+  # PostgreSQL au réseau, mais un patch d'`args`, un `rollout undo` de
+  # `postgres` ou un vieux manifeste relirait en silence celui de PGDATA, qui
+  # l'admet. Un Job (image du serveur, aucun mot de passe, seulement le nom du
+  # rôle) tente la connexion TCP depuis un pod du namespace et n'aboutit que sur
+  # le refus `reject` — puis cpg_app sur `postgres` (issue #597 : le refus des
+  # bases de l'image, qu'un `rollout undo` retirerait aussi). L'argument image de run-job.sh est sans objet : le
+  # manifeste porte celle du serveur.
+  # Un job à part, hors des `needs` de rollback-preprod (issue #600) : dans
+  # smoke-test-preprod, son échec ramenait backend, worker et frontend — qui ne
+  # sont pas en cause — et laissait `postgres`, qui l'est, dans l'état fautif ;
+  # le message témoin, placé après, était sauté. Ici la release reste en place
+  # contre le `postgres` à corriger (diagnostic sur la bonne version), et la PR
+  # vers `main` reste rouge : ce job est un check requis du ruleset
+  # (tools/github-settings.sh). tools/check-release-gates.sh tient les deux.
+  # Partir en parallèle du smoke ne lui retire rien : deploy-preprod a déjà
+  # attendu le rollout de `postgres` (wait-rollout.sh, 300 s), que la sonde
+  # suivait jusque-là derrière le `rollout status` du smoke.
+  postgres-hba-preprod:
+    needs: [deploy-preprod]
+    if: startsWith(github.ref, 'refs/heads/release/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 8 # habituel ~1 min (pas encore mesuré en préprod) ; pire cas ~4 min 30 : sonde attendue 120 s + ~35 s de wait-rollout.sh + 90 s au plus pour l'arrêter (#535), checkout et kubeconfig compris
+    # Les secrets d'environnement ne sont servis qu'aux jobs qui déclarent
+    # l'environnement, et sa politique de branche borne d'où ils sont lisibles
+    # (audit 2026-09-16, A4).
+    environment:
+      name: preprod
+      url: https://preprod.cp-ghostotof.com
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Configure kubectl
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBE_CONFIG_PREPROD }}" > ~/.kube/config
+      - name: Le superutilisateur et les bases de l'image sont refusés par TCP
+        run: |
+          status=0
+          tools/run-job.sh preprod k8s/base/postgres-hba-probe-job.yaml sans-objet 120 || status=$?
+          # Le code 1 couvre la sonde qui n'a pas obtenu le refus, mais aussi un
+          # pod qui n'a pas démarré (pull, clé de Secret absente) : le message
+          # renvoie à la ligne « #596 : … » de la sonde, qui nomme la cause. Un
+          # refus avant le cluster (2) ou du cluster (3) est déjà nommé.
+          if [ "$status" -eq 1 ]; then
+            echo "::error::La sonde du pg_hba.conf a échoué (issue #596). Sa ligne « #596 : ÉCHEC … » ci-dessus dit pourquoi : superutilisateur admis ou mot de passe demandé (le serveur ne lit pas le pg_hba.conf du dépôt : args de postgres.yaml, rollout de postgres), mot de passe demandé à cpg_app sur postgres (refus des bases de l'image absent, issue #597 : ConfigMap d'avant, ou base de l'application nommée postgres), ou serveur injoignable. Sans cette ligne, le pod n'a pas démarré (image, Secret postgres-credentials) : voir l'événement nommé ci-dessus." >&2
+          fi
+          exit "$status"
+
   # ---------------------------------------------------------------------------
   # cleanup-preprod — seulement si smoke-test-preprod/audit-preprod échoue
   # ---------------------------------------------------------------------------
@@ -895,6 +948,9 @@ jobs:
   # refusée — n'a fait aucun rollout : `rollout undo` ramènerait alors la
   # release encore en service à la précédente, sur un schéma déjà migré, au
   # lieu de la laisser servir (le fail-closed promis par l'étape Deploy).
+  # Jamais sur postgres-hba-preprod (issue #600) : ce rollback ne ramène pas
+  # `postgres`, que cette sonde accuse — tools/check-release-gates.sh refuse
+  # qu'elle devienne un ancêtre de ce job, même indirect.
   rollback-preprod:
     needs: [deploy-preprod, smoke-test-preprod, audit-preprod]
     if: failure() && startsWith(github.ref, 'refs/heads/release/') && needs.deploy-preprod.result == 'success'
@@ -1032,7 +1088,8 @@ jobs:
           # migration additive est inoffensive pour l'ancien code encore en
           # service — il ignore les colonnes qu'il ne mappe pas — et le nouveau
           # code arrive sur un schéma déjà prêt. Discipline d'écriture des
-          # migrations qui rend cet ordre sûr : .claude/rules/deploiement.md.
+          # migrations qui rend cet ordre sûr : .claude/rules/deploiement-pipeline.md,
+          # « The standard deploy runs the migration *before* the rollout ».
           #
           # 1. La configuration de la release avant son Job. migrate-job.yaml lit
           #    `backend-config` par son nom littéral (hors kustomize) ; joué

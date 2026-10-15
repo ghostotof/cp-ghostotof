@@ -384,7 +384,7 @@ for ENV in preprod prod; do
 done
 ```
 
-**Assistant de parcours** (`<env>-backend-scaleway-ai-api-key` et
+**Assistant de carrière** (`<env>-backend-scaleway-ai-api-key` et
 `<env>-backend-scaleway-ai-project-id`, spec 0005) — **à publier avant de
 pousser la branche `release/*` qui livre l'assistant**. Un `ExternalSecret` qui
 référence une clé absente laisse `backend-secrets` incomplet, et le Deployment
@@ -490,7 +490,7 @@ RECETTE
 ```
 
 La vérification en préprod pendant la release est décrite plus bas, dans
-« Assistant de parcours : vérification pendant la release ».
+« Assistant de carrière : vérification pendant la release ».
 
 **Clés JWT** — générées en LOCAL (jamais sur le cluster ni en clair ailleurs
 qu'ici), une paire par environnement (préprod et prod ne doivent PAS partager
@@ -535,7 +535,7 @@ au §4.
 Conséquence de cet ordre : les `ExternalSecret` d'une release sont appliqués
 **même si sa migration échoue ensuite**, et les pods de la release précédente,
 toujours en service, redémarrent sur ses Secrets. D'où la même discipline que
-pour les colonnes (expand/contract, `.claude/rules/deploiement.md`) : **ne
+pour les colonnes (expand/contract, `.claude/rules/deploiement-pipeline.md`) : **ne
 jamais retirer ni renommer une clé de Secret dans la release qui cesse de la
 lire**, seulement dans la suivante. Ajouter une clé est toujours sûr.
 `rollback-preprod` ne joue `rollout undo` que si `deploy-preprod` a réussi : un
@@ -739,13 +739,13 @@ elle évolue.
    garantie réelle reste que la valeur n'a jamais quitté ce répertoire, et
    qu'elle est révoquée dès l'étape 5.
 
-## Assistant de parcours : vérification pendant la release
+## Assistant de carrière : vérification pendant la release
 
 La préprod n'est déployée que depuis une branche `release/*` : l'assistant
 (spec 0005, `POST /api/assistant/answers`) n'est donc vérifié en conditions
 réelles qu'à la release qui le livre, **avant** le merge dans `main`. Les
 secrets Scaleway doivent avoir été publiés avant le push de la branche (§2,
-« Assistant de parcours »). Après le déploiement préprod de la branche :
+« Assistant de carrière »). Après le déploiement préprod de la branche :
 
 1. **Les deux clés sont arrivées dans le Secret.** La commande lit les noms des
    clés, pas leurs valeurs :
@@ -768,7 +768,7 @@ secrets Scaleway doivent avoir été publiés avant le push de la branche (§2,
    ```
 
 3. **Une question réelle, en flux**, depuis un compte de test `ROLE_TRUSTED`
-   de la préprod (un compte invité, jamais un compte de production), sur la
+   de la préprod (un compte sur invitation, jamais un compte de production), sur la
    page Assistant. Dans l'onglet Réseau des DevTools, la réponse doit être en
    `text/event-stream` et le texte doit s'afficher **au fil de l'eau**, pas
    d'un bloc à la fin. Un affichage d'un bloc signale un tampon resté actif
@@ -851,7 +851,7 @@ conséquence. Avant le merge de la release :
 1. Vider `async` et lire `failed`, rejouer ou purger ce qui doit l'être (étape 1 ci-dessus) : une
    ligne laissée là devient illisible.
 2. Déployer avec la **fenêtre de maintenance** (`DEPLOY_MAINTENANCE_WINDOW=true`, cf.
-   `.claude/rules/deploiement.md`) : `backend` et `worker` passent à 0 avant la migration et
+   `.claude/rules/deploiement-pipeline.md`) : `backend` et `worker` passent à 0 avant la migration et
    repartent ensemble sous la nouvelle clé. Sans elle, le backend en `RollingUpdate` garde un ancien
    pod qui signe sous l'ancienne clé pendant que le worker, en `Recreate`, exige déjà la nouvelle :
    un message de contact envoyé à ce moment est perdu (il n'existe que dans la file). Prix de la
@@ -863,7 +863,7 @@ conséquence. Avant le merge de la release :
 Un message dont les réessais sont épuisés, ou qui ne se décode pas (MAC refusé, invitation sans
 génération), reste dans la table `messenger_messages` (`queue_name = failed`) jusqu'à son rejeu,
 sa suppression ou la purge des 30 jours (messages de contact, `messenger-purge-cronjob.yaml`).
-Quatre opérations, deux voies (issue #521, règle de #520 dans `.claude/rules/deploiement.md`) :
+Quatre opérations, deux voies (issue #521, règle de #520 dans `.claude/rules/deploiement-pipeline.md`) :
 
 | Opération | Effet de bord | Ligne d'audit | Ce que la sortie expose | Voie |
 |---|---|---|---|---|
@@ -969,7 +969,7 @@ main :
   d'objet par la file tant qu'elles tournent. Au redéploiement suivant, ce qu'elles ont mis en file
   sans MAC est refusé.
 - `rollout undo` ne rejoue jamais le `down()` d'une migration : le schéma reste celui de la release
-  défaite (`.claude/rules/deploiement.md`, migration avant le rollout).
+  défaite (`.claude/rules/deploiement-pipeline.md`, migration avant le rollout).
 
 ## Rôles PostgreSQL (issue #575)
 
@@ -1044,14 +1044,16 @@ DB="$(kubectl -n "${NS:?preprod ou prod}" get secret postgres-credentials -o jso
 #    Mots de passe et rotation en tête de l'entrée standard : jamais dans l'argv de l'exec.
 #    BEGIN en tête du flux, commit.sql en dernier : il ne valide que si verify.sql est allé
 #    au bout (pas --single-transaction, qui validait un flux coupé ou incomplet).
+#    PGOPTIONS fixe la session dès la connexion, devant tout réglage de la base (#608) ;
+#    roles.sql rend en tête tout autre réglage hérité, et BEGIN écrit son isolation (#618).
 {
-  printf 'BEGIN;\n'
+  printf 'BEGIN ISOLATION LEVEL READ COMMITTED;\n'
   printf '\\set app_pw '; cat "$TMP/app-password"; printf '\n'
   printf '\\set migrator_pw '; cat "$TMP/migrator-password"; printf '\n'
   printf '\\set rotate %s\n' "$ROTATE"
   cat k8s/base/postgres-roles/roles.sql k8s/base/postgres-roles/privileges.sql k8s/base/postgres-roles/verify.sql k8s/base/postgres-roles/commit.sql
 } | kubectl -n "${NS:?preprod ou prod}" exec -i deploy/postgres -c postgres -- \
-  sh -c 'PGOPTIONS="-c lock_timeout=5s" psql -X -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v app_role=cpg_app -v migrator_role=cpg_migrator -v reader_role=cpg_reader -f -'
+  sh -c 'PGOPTIONS="-c lock_timeout=5s -c idle_in_transaction_session_timeout=30s -c statement_timeout=0 -c transaction_timeout=0 -c idle_session_timeout=0 -c default_transaction_read_only=off -c role=none -c search_path=pg_catalog,pg_temp -c password_encryption=scram-sha-256 -c client_min_messages=notice -c standard_conforming_strings=on -c client_encoding=UTF8 -c local_preload_libraries= -c session_preload_libraries= -c timezone_abbreviations=Default" psql -X -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v app_role=cpg_app -v migrator_role=cpg_migrator -v reader_role=cpg_reader -f -'
 ```
 
 Chaque `ALTER … OWNER TO` prend un verrou `ACCESS EXCLUSIVE` tenu jusqu'au
@@ -1064,12 +1066,35 @@ terminal : trois rôles, `rolsuper` `f` partout, le lecteur sans mot de passe,
 le rôle de migration propriétaire de la base et du schéma, `0` objet de
 `public` hors de lui, `0` table sans DML pour `cpg_app`, `f | f | f`, `2`
 privilèges par défaut, `t | f` pour le lecteur, le `pg_hba.conf` actif
-(`/etc/postgresql/pg_hba.conf`, `0`, `0`, `reject` — #593), puis `conforme`
-et `COMMIT`. **Un écart fait échouer la commande** : `verify.sql` se termine
-par un bloc qui lève une erreur sur chaque attente trahie, psql sort en 3
-avant `commit.sql` et la session close annule tout — rien n'est à défaire,
-lire la cause, corriger, relancer l'étape 2. **Sans `conforme` ni `COMMIT`,
-rien n'est validé** : `commit.sql` ne valide que si `verify.sql` est allé au
+(`/etc/postgresql/pg_hba.conf`, `0`, `0`, `reject` — #593), les bases de
+l'image fermées (`t | f | 0 | 0` — #597 : refus avant toute règle qui
+accepte, base de l'application au nom non réservé, aucune base de plus,
+plus de `CONNECT`/`TEMPORARY` à `PUBLIC` sur `postgres` et `template1` ; une
+base créée à la main, une restauration, fait donc échouer la procédure tant
+qu'elle existe : la supprimer, ou décider de l'admettre, avant de relancer),
+la base de l'application (`{TimeZone} | 0 | -1 | f | 3` — #608 : le fuseau
+seul réglage de base, vide tant que `Version20261011120000` n'est pas passée,
+aucun réglage `ALTER ROLE … IN DATABASE`, pas de limite de connexions, pas un
+modèle, `CONNECT` pour les trois rôles ; les noms des réglages, jamais leurs
+valeurs), puis `#611 : vérification` sans rien de plus — le schéma de la
+base est exactement celui que ses migrations laissent (son empreinte, admise
+pour la dernière migration passée et leur nombre) —, puis `conforme` et `COMMIT`.
+Un refus `#611` ne se répare pas par la procédure, qui échoue tant que l'écart
+existe : la requête qui suit nomme les objets en cause. Un écart `#608`, lui,
+n'arrive plus jusqu'au refus : `roles.sql` le répare avant `verify.sql`
+(issue #610, « Un avis `NOTICE: #610` » ci-dessous). Un `#611 : aucune empreinte de schéma
+connue pour ces migrations` n'est pas une altération : le checkout est en
+retard sur l'environnement (`verify.sql` garde les empreintes de toutes les
+migrations), le mettre à jour et relancer — ou la base est antérieure aux
+empreintes (une restauration ancienne), la migrer d'abord. Un `#611 : la
+table des migrations est vide` est un premier `migrate` interrompu : relancer
+la migration, puis la procédure. **Un écart fait échouer la
+commande** : `verify.sql` se termine par un bloc de refus par issue (`#575`,
+`#608`, `#611`), chacun levant une erreur sur la première attente trahie,
+psql sort en 3 avant `commit.sql` et la session close annule tout — rien
+n'est à défaire, lire la cause, corriger, relancer l'étape 2. psql s'arrête
+au **premier** refus : un écart corrigé peut en laisser voir un suivant au
+passage d'après. **Sans `conforme` ni `COMMIT`, rien n'est validé** : `commit.sql` ne valide que si `verify.sql` est allé au
 bout — `verify.sql` absent du flux, erreur nommée, sortie 3 ; lancé hors de
 la racine du checkout, `cat: …: No such file`, aucun fichier ni `COMMIT`, la
 session close annule (sortie 0 possible : lire le `COMMIT`, pas le code ;
@@ -1077,6 +1102,143 @@ mesuré, #593). Un `55P03` est un `ALTER … OWNER TO` bloqué par une
 transaction longue (une migration, un seed) : relancer hors déploiement. Des
 mots de passe absents ou trop courts, ou un `ROTATE` qui ne vaut ni 0 ni 1,
 sont refusés avant toute écriture.
+
+**La colonne `#618 : réglages hérités rendus à leur valeur de démarrage`**,
+en tête de sortie (issue #618) : un réglage posé sur la base ou sur un rôle
+s'applique à toute nouvelle session, celle-ci comprise, et peut changer le
+sens de la procédure sans la faire échouer — mesuré sur l'image épinglée :
+`debug_print_parse` écrivait le mot de passe dans le journal du serveur,
+`scram_iterations` affaiblissait les vérificateurs écrits,
+`quote_all_identifiers` faisait refuser l'empreinte `#611` à chaque passage.
+`roles.sql` rend donc à sa session, avant tout mot de passe, la valeur de
+démarrage de tout réglage hérité qu'aucune option de connexion ne fixe, et en
+nomme la liste (des noms, jamais une valeur). Sur une base saine : `{TimeZone}`,
+le fuseau que `Version20261011120000` pose sur la base (la session de la
+procédure tourne alors en `GMT`, ce qui ne change rien à ce qu'elle lit :
+mesuré, l'empreinte `#611` est la même), ou une ligne vide avant elle. Un
+autre nom est un écart que l'avis `#610` ci-dessous signale aussi et que
+l'étape 2 efface : réglé sur la base ou sur un rôle en elle, sur le
+superutilisateur lui-même pour toutes les bases (`ALTER ROLE … SET`, que seul
+un superutilisateur peut faire) ou sur tous les rôles (`ALTER ROLE ALL SET`,
+issue #634) — la même conduite.
+
+**Un refus `#618 : réglages hérités non rendus : {…}`** : un réglage hérité
+n'a pas de valeur de démarrage, et la procédure ne tourne pas sous lui. Deux
+causes, que départage le contexte du réglage nommé (`SELECT context FROM
+pg_settings WHERE name = '…'` sous le lecteur ; absent de `pg_settings`, c'est
+le paramètre réservé d'une extension) :
+
+- un réglage de contexte `user` : `timezone_abbreviations`, le seul sur
+  l'image épinglée, est fixé par `PGOPTIONS`, et `InheritedSessionSettingsTest`
+  arrête avant une montée de PostgreSQL qui en ajouterait un. C'est un défaut
+  du dépôt : ouvrir une issue avec le message ;
+- un réglage que seul un superutilisateur peut poser — sur la base, sur le
+  superutilisateur lui-même (`ALTER ROLE … SET`), ou le paramètre réservé
+  d'une extension —, que le test ne voit pas : un incident, conduit comme un
+  avis `#610`.
+
+Dans les deux cas, rien ne se corrige à la main (#520).
+
+**Un avis `NOTICE: #610 : …`** (issue #610) : `roles.sql` a trouvé la base
+de l'application altérée et l'a remise en l'état que le bloc `#608` de
+`verify.sql` attend, dans la même transaction — réglages de base (le fuseau
+seul, à la valeur de `Version20261011120000`, et seulement une fois elle
+passée), réglages `ALTER ROLE … IN DATABASE … SET` de tout rôle, `CONNECT`
+rendu à `PUBLIC` si l'un des trois rôles ne l'a plus, limite de connexions et
+marque de modèle retirées — et, hors de la base (issue #634), les réglages
+d'un rôle pour toutes les bases, de tous les rôles et des bases de l'image,
+dont l'application et le lecteur héritaient. Il nomme les réglages trouvés et
+compte les rôles ou les lignes, jamais une valeur ni un nom de rôle.
+Sur une base saine, aucun avis. La réparation n'est validée qu'avec le reste,
+après `conforme` : un refus plus loin l'annule elle aussi. Un avis n'est
+**jamais anodin** : personne n'altère la base par le chemin normal. Seuls
+peuvent avoir fait le geste le propriétaire (`cpg_migrator`, c'est-à-dire le
+Job de migration ou qui détient son URL), un rôle sur lui-même — une
+injection SQL sous `cpg_app`, ou `cpg_reader`, joignable sans mot de passe
+depuis l'intérieur du pod `postgres` (un `exec`, un `port-forward`, un
+`kubectl debug`) — ou le superutilisateur. Donc, après le `COMMIT` :
+
+1. noter l'heure, les avis et la lecture ci-dessous si elle a été faite,
+   puis traiter l'événement comme un incident de sécurité : relire les
+   journaux de `backend`, du `worker` et du dernier Job de migration autour
+   du moment probable, le journal de sécurité, et l'audit de l'API server
+   (`exec`, `port-forward`, `debug` sur le pod `postgres`) ;
+2. si le geste peut venir d'une URL de base de données divulguée, rejouer la
+   procédure avec `ROTATE=1` et republier les deux URL (§ ci-dessus) ;
+3. les sessions déjà ouvertes gardent les réglages lus à leur connexion. FPM
+   en ouvre une par requête, mais le `worker` garde la sienne jusqu'à une
+   heure (`--time-limit=3600`) : `kubectl -n "${NS:?preprod ou prod}" rollout
+   restart deployment/worker` pour ne pas attendre.
+
+Un refus `#608` **après** des avis `#610`, ou sans eux, est un défaut de la
+réparation, pas un état à corriger à la main (un `exec` qui écrit hors de la
+procédure est interdit, #520) : ouvrir une issue avec le message du refus.
+
+**La réparation efface ce qu'elle répare** : les avis ne citent ni les
+valeurs ni les rôles, choisis par qui a fait le geste. Pour garder la preuve,
+lancer **avant l'étape 2** cette lecture, sans rien écrire, sous le lecteur ;
+sa sortie reste sur le terminal, jamais dans une session d'agent (des
+valeurs choisies par un tiers). Sur une base saine, une seule ligne,
+`(base)|(cette base)`, qui ne porte que le fuseau (aucune avant
+`Version20261011120000`), puis `-1 | f`. Toute autre ligne est l'écart que
+l'étape 2 effacera, le même incident : sur `(cette base)`, un réglage de la
+base ou d'un rôle en elle ; sur `(toutes les bases)`, un réglage posé sur un
+rôle pour toutes les bases (`ALTER ROLE … SET`, permis à tout rôle sur
+lui-même, superutilisateur compris) ou sur tous les rôles (`(tous les rôles)`,
+`ALTER ROLE ALL SET`, superutilisateur seul) ; sur `postgres`, `template0` ou
+`template1`, un réglage d'une base de l'image (issue #634). Un réglage de base
+`role`, une limite de connexions ou un `CONNECT` retiré peut refuser la
+connexion du lecteur (le superutilisateur de la procédure n'y est pas
+soumis) : le message d'erreur est alors la preuve (mesuré : `too many
+connections for database` sous `CONNECTION LIMIT 0`).
+
+```bash
+NS=        # preprod ou prod, à renseigner : vide, la commande s'arrête avant d'appeler le cluster
+kubectl -n "${NS:?preprod ou prod}" exec -i deploy/postgres -c postgres -- \
+  sh -c 'PGOPTIONS="-c default_transaction_read_only=on -c lock_timeout=5s -c client_encoding=UTF8 -c local_preload_libraries= -c search_path=pg_catalog,pg_temp" psql -X -A -v ON_ERROR_STOP=1 -U cpg_reader -d "$POSTGRES_DB"' <<'SQL'
+SET statement_timeout = 0;
+SET search_path = pg_catalog, pg_temp;
+SELECT CASE WHEN s.setrole <> 0 THEN s.setrole::regrole::text WHEN s.setdatabase = 0 THEN '(tous les rôles)' ELSE '(base)' END AS role,
+       CASE WHEN s.setdatabase = 0 THEN '(toutes les bases)' WHEN d.datname = current_database() THEN '(cette base)' ELSE d.datname END AS portee,
+       s.setconfig AS reglages
+FROM pg_db_role_setting s LEFT JOIN pg_database d ON d.oid = s.setdatabase
+WHERE s.setdatabase = 0 OR d.datname IN (current_database(), 'postgres', 'template0', 'template1') ORDER BY 2, 1;
+SELECT datconnlimit AS limite_de_connexions, datistemplate AS modele, datacl AS privileges
+FROM pg_database WHERE datname = current_database();
+SQL
+```
+
+**Une erreur levée dans `pg_temp.cpg_migrations()`** (le contexte de
+l'erreur la nomme ; revue de #610) : `roles.sql` lit la table des
+migrations dans cette fonction, sous `cpg_migrator`, propriétaire de la
+table — jamais sous le superutilisateur, puisque lire la table exécute ce
+que son propriétaire y a posé. Une erreur là, un `cannot set parameter
+"role" within security-definer function` par exemple, veut dire que la table
+n'est plus celle des migrations (une vue, un type à sa place) : c'est un
+incident, conduit comme un avis `#610` ; la requête du refus `#611`
+ci-dessous nomme l'objet. Ce que ce code règle ou crée dans la session est
+annulé avec la lecture (issue #633) : il ne peut rien laisser au
+superutilisateur, ni réglage, ni objet temporaire. Il peut seulement écrire
+sur le terminal : **tout avis imprimé entre `--- #633 : lecture des
+migrations, début` et `--- #633 : lecture des migrations, fin` vient de la
+table**, même s'il ressemble à un avis `#610` ou à `conforme` — le même
+incident. La lecture est bornée à 30 secondes : un `canceling statement due
+to statement timeout` juste après le marqueur de début, c'est la table qui
+fait attendre la procédure (le même incident encore), pas une heure chargée.
+Une procédure qui reste muette après ce marqueur au-delà des 30 secondes,
+c'est encore la table (son code peut attraper l'annulation) : l'interrompre,
+et traiter le même incident.
+
+**Un refus `#633 : la lecture des migrations n'a pas abouti`** : le code de
+la table a levé la sentinelle par laquelle la lecture s'annule elle-même — le
+même incident. **Un refus `#633 : le chemin de recherche de la session n'est
+plus celui de la procédure`** (après la lecture, ou en tête de `verify.sql`) :
+un autre schéma que `pg_catalog` et le schéma temporaire de la session est
+entré dans le chemin de recherche, où une fonction de ce schéma aurait pu
+prendre la place de celle du catalogue sous le superutilisateur. La lecture
+l'empêche : c'est un défaut de la procédure, ou une ligne `PGOPTIONS` qui
+n'est pas celle ci-dessus — jamais une correction à la main ; signaler, ne
+pas relancer avant d'avoir compris.
 
 **Lire la ligne `mot_de_passe_cpg_app_ecrit | mot_de_passe_cpg_migrator_ecrit`**
 avant de publier quoi que ce soit : `t` pour un rôle créé ou une rotation,
@@ -1088,7 +1250,8 @@ l'application serait coupée à son redémarrage suivant.
 inconnu** : le flux, une vingtaine de Ko, est souvent déjà livré dans le pod,
 et psql peut aller jusqu'au `COMMIT` sans que la sortie revienne. Un flux
 coupé avant `commit.sql` n'écrit rien (mesuré, #593), et une transaction
-laissée en attente est fermée au bout de 30 s (`idle_in_transaction_session_timeout`).
+laissée en attente est fermée au bout de 30 s (`idle_in_transaction_session_timeout`,
+dans `PGOPTIONS`).
 Relancer **la seule commande de l'étape 2, dans le même terminal** (mêmes
 fichiers de `$TMP`, même `ROTATE`) — elle est rejouable, et ses mots de
 passe sont ceux que la base a peut-être déjà — **jamais l'étape 1**, qui en
@@ -1112,7 +1275,7 @@ sortie sur le terminal, requête sur l'entrée standard) :
 ```bash
 NS=        # preprod ou prod, à renseigner : vide, la commande s'arrête avant d'appeler le cluster
 kubectl -n "${NS:?preprod ou prod}" exec -i deploy/postgres -c postgres -- \
-  sh -c 'PGOPTIONS="-c default_transaction_read_only=on -c lock_timeout=5s" psql -X -A -v ON_ERROR_STOP=1 -U cpg_reader -d "$POSTGRES_DB"' <<'SQL'
+  sh -c 'PGOPTIONS="-c default_transaction_read_only=on -c lock_timeout=5s -c client_encoding=UTF8 -c local_preload_libraries= -c search_path=pg_catalog,pg_temp" psql -X -A -v ON_ERROR_STOP=1 -U cpg_reader -d "$POSTGRES_DB"' <<'SQL'
 SELECT rolname, rolsuper, rolcanlogin FROM pg_roles WHERE rolname IN ('cpg_app', 'cpg_migrator', 'cpg_reader') ORDER BY 1;
 SELECT count(*) AS objets_hors_migration FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
 WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p', 'v', 'm', 'S', 'i') AND pg_get_userbyid(c.relowner) <> 'cpg_migrator';
@@ -1121,6 +1284,106 @@ WHERE t.table_schema = 'public' AND t.table_type = 'BASE TABLE' AND t.table_name
   AND NOT has_table_privilege('cpg_app', format('%I.%I', t.table_schema, t.table_name), 'SELECT,INSERT,UPDATE,DELETE');
 SQL
 # attendu : trois lignes avec rolsuper f, puis 0, puis 0.
+```
+
+**Un refus `#611`**, nommé (issue #611) : `verify.sql` n'imprime que des
+empreintes ; la requête ci-dessous lit, sous le lecteur et sans rien écrire,
+les mêmes lignes que lui — une par objet hors du système, propriétaires et
+privilèges exclus. La comparer, triée, à la même requête jouée sur une base de
+dev migrée jusqu'à la même dernière migration (`make db-migrate`, puis `psql`
+dans le conteneur `database`, la requête sur l'entrée standard) : les lignes
+qui diffèrent sont l'écart. Les noms qu'elles portent sont choisis par qui
+tient le rôle de migration : les lire sur le terminal, ne pas les recopier
+dans une session d'agent. Sur une table en sécurité au niveau des lignes,
+`cpg_reader` lit **0 ligne** lui aussi (pas de `BYPASSRLS`, et
+`pg_read_all_data` ne la contourne pas) : c'est le symptôme, pas une table
+vide. Les `SET` en tête sont ceux que le bloc `#611` pose avant de lire
+(issue #634) : une constante horodatée, un intervalle, un flottant, des
+octets, un antislash ou un nom s'y imprime comme `verify.sql` l'a imprimé,
+quels que soient les réglages que la session hérite de la base.
+
+```bash
+NS=        # preprod ou prod, à renseigner : vide, la commande s'arrête avant d'appeler le cluster
+kubectl -n "${NS:?preprod ou prod}" exec -i deploy/postgres -c postgres -- \
+  sh -c 'PGOPTIONS="-c default_transaction_read_only=on -c lock_timeout=5s -c client_encoding=UTF8 -c local_preload_libraries= -c search_path=pg_catalog,pg_temp" psql -X -A -t -v ON_ERROR_STOP=1 -U cpg_reader -d "$POSTGRES_DB"' <<'SQL'
+SET search_path = pg_catalog, pg_temp;
+SET TimeZone = 'UTC';
+SET DateStyle = 'ISO, YMD';
+SET IntervalStyle = 'postgres';
+SET extra_float_digits = 1;
+SET bytea_output = 'hex';
+SET standard_conforming_strings = on;
+SET quote_all_identifiers = off;
+SELECT 'schema ' || quote_ident(n.nspname) FROM pg_namespace n WHERE n.nspname <> 'information_schema' AND n.nspname !~ '^pg_'
+UNION ALL
+SELECT concat_ws(' ', 'relation', quote_ident(c.relname), c.relkind, c.relpersistence, c.relrowsecurity, c.relforcerowsecurity, c.relispartition, c.relreplident, pg_get_expr(c.relpartbound, c.oid), c.reloptions::text, am.amname, ts.spcname)
+FROM pg_class c LEFT JOIN pg_am am ON am.oid = c.relam LEFT JOIN pg_tablespace ts ON ts.oid = c.reltablespace
+WHERE c.relnamespace = 'public'::regnamespace
+UNION ALL
+SELECT concat_ws(' ', 'colonne', quote_ident(c.relname), quote_ident(a.attname), format_type(a.atttypid, a.atttypmod), a.attnotnull, a.attidentity, a.attgenerated, pg_get_expr(d.adbin, d.adrelid), co.collname)
+FROM pg_attribute a JOIN pg_class c ON c.oid = a.attrelid JOIN pg_type ty ON ty.oid = a.atttypid
+LEFT JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
+LEFT JOIN pg_collation co ON co.oid = a.attcollation AND a.attcollation <> ty.typcollation
+WHERE c.relnamespace = 'public'::regnamespace AND c.relkind IN ('r', 'p', 'v', 'm', 'c', 'f') AND a.attnum > 0 AND NOT a.attisdropped
+UNION ALL
+SELECT 'index ' || pg_get_indexdef(i.indexrelid) FROM pg_index i JOIN pg_class c ON c.oid = i.indrelid WHERE c.relnamespace = 'public'::regnamespace
+UNION ALL
+SELECT concat_ws(' ', 'contrainte', quote_ident(coalesce(c.relname, t.typname)), quote_ident(k.conname), pg_get_constraintdef(k.oid))
+FROM pg_constraint k LEFT JOIN pg_class c ON c.oid = k.conrelid LEFT JOIN pg_type t ON t.oid = k.contypid
+WHERE k.connamespace = 'public'::regnamespace AND k.contype <> 'n'
+UNION ALL
+SELECT concat_ws(' ', 'trigger', pg_get_triggerdef(t.oid), t.tgenabled::text) FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid WHERE c.relnamespace = 'public'::regnamespace AND NOT t.tgisinternal
+UNION ALL
+SELECT concat_ws(' ', 'regle', pg_get_ruledef(r.oid), r.ev_enabled::text) FROM pg_rewrite r JOIN pg_class c ON c.oid = r.ev_class WHERE c.relnamespace = 'public'::regnamespace
+UNION ALL
+SELECT concat_ws(' ', 'politique', quote_ident(c.relname), quote_ident(p.polname), p.polcmd::text, p.polpermissive, pg_get_expr(p.polqual, p.polrelid), pg_get_expr(p.polwithcheck, p.polrelid),
+       (SELECT string_agg(r.nom, ',' ORDER BY r.nom) FROM (SELECT CASE WHEN x = 0 THEN 'public' ELSE quote_ident(pg_get_userbyid(x)) END AS nom FROM unnest(p.polroles) AS x) AS r))
+FROM pg_policy p JOIN pg_class c ON c.oid = p.polrelid WHERE c.relnamespace = 'public'::regnamespace
+UNION ALL
+SELECT concat_ws(' ', 'heritage', quote_ident(c.relname), h.inhparent::regclass::text) FROM pg_inherits h JOIN pg_class c ON c.oid = h.inhrelid WHERE c.relnamespace = 'public'::regnamespace
+UNION ALL
+SELECT concat_ws(' ', 'sequence', quote_ident(c.relname), format_type(s.seqtypid, NULL), s.seqstart, s.seqincrement, s.seqmin, s.seqmax, s.seqcache, s.seqcycle)
+FROM pg_sequence s JOIN pg_class c ON c.oid = s.seqrelid WHERE c.relnamespace = 'public'::regnamespace
+UNION ALL
+SELECT concat_ws(' ', 'publication', quote_ident(pb.pubname), quote_ident(c.relname), pg_get_expr(pr.prqual, pr.prrelid))
+FROM pg_publication_rel pr JOIN pg_publication pb ON pb.oid = pr.prpubid JOIN pg_class c ON c.oid = pr.prrelid WHERE c.relnamespace = 'public'::regnamespace
+UNION ALL
+SELECT 'publication du schema ' || quote_ident(pb.pubname) FROM pg_publication_namespace pn JOIN pg_publication pb ON pb.oid = pn.pnpubid WHERE pn.pnnspid = 'public'::regnamespace
+UNION ALL
+SELECT concat_ws(' ', 'transtypage', format_type(k.castsource, NULL), format_type(k.casttarget, NULL), k.castfunc::regprocedure::text, k.castcontext::text, k.castmethod::text)
+FROM pg_cast k JOIN pg_type ts ON ts.oid = k.castsource JOIN pg_type tt ON tt.oid = k.casttarget
+WHERE ts.typnamespace = 'public'::regnamespace OR tt.typnamespace = 'public'::regnamespace
+UNION ALL
+SELECT CASE WHEN p.prokind = 'a' THEN 'agregat ' || p.oid::regprocedure::text ELSE 'fonction ' || pg_get_functiondef(p.oid) END FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace
+UNION ALL
+SELECT concat_ws(' ', 'operateur', o.oid::regoperator::text, o.oprcode::regprocedure::text) FROM pg_operator o WHERE o.oprnamespace = 'public'::regnamespace
+UNION ALL
+SELECT concat_ws(' ', 'type', quote_ident(t.typname), t.typtype, format_type(t.typbasetype, t.typtypmod), t.typnotnull, t.typdefault,
+       (SELECT string_agg(quote_literal(e.enumlabel), ',' ORDER BY e.enumsortorder) FROM pg_enum e WHERE e.enumtypid = t.oid))
+FROM pg_type t WHERE t.typnamespace = 'public'::regnamespace AND t.typrelid = 0 AND NOT (t.typcategory = 'A' AND t.typelem <> 0)
+UNION ALL
+SELECT 'classe ' || quote_ident(opcname) FROM pg_opclass WHERE opcnamespace = 'public'::regnamespace
+UNION ALL
+SELECT 'famille ' || quote_ident(opfname) FROM pg_opfamily WHERE opfnamespace = 'public'::regnamespace
+UNION ALL
+SELECT 'collation ' || quote_ident(collname) FROM pg_collation WHERE collnamespace = 'public'::regnamespace
+UNION ALL
+SELECT 'conversion ' || quote_ident(conname) FROM pg_conversion WHERE connamespace = 'public'::regnamespace
+UNION ALL
+SELECT 'recherche ' || quote_ident(cfgname) FROM pg_ts_config WHERE cfgnamespace = 'public'::regnamespace
+UNION ALL
+SELECT 'dictionnaire ' || quote_ident(dictname) FROM pg_ts_dict WHERE dictnamespace = 'public'::regnamespace
+UNION ALL
+SELECT 'analyseur ' || quote_ident(prsname) FROM pg_ts_parser WHERE prsnamespace = 'public'::regnamespace
+UNION ALL
+SELECT 'modele ' || quote_ident(tmplname) FROM pg_ts_template WHERE tmplnamespace = 'public'::regnamespace
+UNION ALL
+SELECT 'statistique ' || quote_ident(stxname) FROM pg_statistic_ext WHERE stxnamespace = 'public'::regnamespace
+UNION ALL
+SELECT 'extension ' || quote_ident(extname) FROM pg_extension WHERE extnamespace = 'public'::regnamespace;
+SQL
+# attendu : les lignes de la base de dev à la même migration, ni plus ni moins ;
+# une fonction s'étend sur plusieurs lignes (sa définition entière).
 ```
 
 **Le `pg_hba.conf` vu du réseau** (issue #593), à la release qui l'embarque,
@@ -1136,15 +1399,35 @@ Lecture seule, aucun mot de passe en jeu (`-w` : psql n'en demande pas) :
 ```bash
 NS=        # preprod ou prod, à renseigner : vide, la commande s'arrête avant d'appeler le cluster
 echo 'SELECT 1;' | kubectl -n "${NS:?preprod ou prod}" exec -i deploy/postgres -c postgres -- \
-  sh -c 'PGOPTIONS="-c default_transaction_read_only=on -c lock_timeout=5s" psql -X -w -v ON_ERROR_STOP=1 -h database -U cpg_reader -d "$POSTGRES_DB"'
+  sh -c 'PGOPTIONS="-c default_transaction_read_only=on -c lock_timeout=5s -c client_encoding=UTF8 -c local_preload_libraries= -c search_path=pg_catalog,pg_temp" psql -X -w -v ON_ERROR_STOP=1 -h database -U cpg_reader -d "$POSTGRES_DB"'
 # attendu : FATAL:  pg_hba.conf rejects connection for host "<adresse du pod>", user "cpg_reader", …
 ```
 
 Le même refus, mesuré sur l'image épinglée pour chaque rôle et chaque voie
 (réplication, loopback compris), est le job CI `postgres-hba`
 (`tools/check-postgres-hba.sh`) ; dans le cluster, `verify.sql` relit aussi le
-fichier actif à chaque passage de la procédure des rôles. Suivi #596 : en
-faire un smoke de préprod automatique.
+fichier actif à chaque passage de la procédure des rôles. **En préprod, la
+pipeline le refait à chaque déploiement** (issue #596) : le job
+`postgres-hba-preprod` lance par `tools/run-job.sh` le Job `postgres-hba-probe`
+(image du serveur, sans mot de passe, seulement le nom du superutilisateur lu
+dans `postgres-credentials`), qui tente `database` sous le superutilisateur, sur
+la base de l'application puis sur `postgres`, et n'aboutit que sur deux
+`pg_hba.conf rejects connection` (dernière ligne `#596 : OK`) — sinon le job
+échoue et sa ligne `#596 : ÉCHEC (…)` dit pourquoi. **Cet échec ne déclenche
+pas `rollback-preprod`** (issue #600) : le retour arrière ramènerait
+l'application, qui n'est pas en cause, et jamais `postgres`, qui l'est. La
+release reste donc en place contre le `postgres` à corriger, et la PR vers
+`main` reste rouge (`postgres-hba-preprod` est un check requis du ruleset) :
+corriger la release par un nouveau commit sur sa branche. Un serveur qui refuse
+ou laisse expirer la connexion est réessayé quatre fois. Sa sonde,
+`k8s/base/postgres-hba-probe.sh`, est recopiée à l'identique dans le `command`
+du Job (`PostgresHbaProbeJobManifestTest`) ; elle masque le nom du
+superutilisateur et de la base dans ses journaux. **En préprod, seul le sens
+« refusé » se mesure** ; le sens « échec » (fichier de l'image, base `postgres`
+rouverte, port fermé) est mesuré en CI contre l'image épinglée par
+`tools/check-postgres-hba.sh`. En prod, il n'y a pas
+de smoke : la commande ci-dessus reste celle de la release qui touche
+`postgres.yaml` ou le `pg_hba.conf`.
 
 **Publier les URL, puis basculer** — seulement celles dont le mot de passe a
 été écrit (`t` ci-dessus) ; même recette que les secrets de l'assistant, §2 :
@@ -1295,6 +1578,13 @@ SECRET=backend-secrets
 `SECRET=backend-migration-secrets` pour `cpg_migrator`. `-loops 1` vide la
 sélection après le premier collage.
 
+Le champ **"Base de données" se remplit aussi** : vide, Adminer se connecte à
+`postgres`, que le `pg_hba.conf` refuse aux deux rôles comme `template0` et
+`template1` (issue #597) — « pg_hba.conf rejects connection … database
+"postgres" ». Le nom est celui de l'URL, après `database:5432/`. Une page
+d'Adminer qui se reconnecterait à `postgres` (liste des bases, niveau
+serveur) tombe sur le même refus : rester dans la base de l'application.
+
 L'accès reste conditionné à la possession d'un kubeconfig valide sur le
 cluster (même niveau de confiance qu'un `kubectl exec`), pas d'un simple mot
 de passe web. Sous `cpg_migrator`, tout ce qu'Adminer fait touche le schéma
@@ -1410,7 +1700,7 @@ kubeconfig d'administrateur (lecture seule, la sortie reste sur le terminal) :
 NS=        # preprod ou prod, à renseigner : vide, la commande s'arrête avant d'appeler le cluster
 printf '%s\n' 'SHOW tcp_keepalives_idle;' 'SHOW tcp_keepalives_interval;' 'SHOW tcp_keepalives_count;' 'SHOW tcp_user_timeout;' \
   | kubectl -n "${NS:?preprod ou prod}" exec -i deploy/postgres -c postgres -- \
-    sh -c 'PGOPTIONS="-c default_transaction_read_only=on -c lock_timeout=5s" psql -X -A -t -v ON_ERROR_STOP=1 -h 127.0.0.1 -U cpg_reader -d "$POSTGRES_DB"'
+    sh -c 'PGOPTIONS="-c default_transaction_read_only=on -c lock_timeout=5s -c client_encoding=UTF8 -c local_preload_libraries= -c search_path=pg_catalog,pg_temp" psql -X -A -t -v ON_ERROR_STOP=1 -h 127.0.0.1 -U cpg_reader -d "$POSTGRES_DB"'
 # attendu : 60, 10, 3 et 90000 sur quatre lignes ; 0 : connexion par socket
 # (-h manquant) ou serveur démarré sans les args.
 ```
@@ -1657,15 +1947,15 @@ session d'assistant —, avec un **kubeconfig d'administrateur humain**. Le jeto
 
 ```bash
 NS=        # preprod ou prod, à renseigner : vide, la commande s'arrête avant d'appeler le cluster
-printf '%s\n' '\set id <userId>' "SELECT username, email FROM cpg_user WHERE id = :'id'::uuid;" \
+printf '%s\n' '\set id <userId>' "SELECT username, email FROM public.cpg_user WHERE id = :'id'::uuid;" \
   | kubectl -n "${NS:?preprod ou prod}" exec -i deploy/postgres -c postgres -- \
-    sh -c 'PGOPTIONS="-c default_transaction_read_only=on -c lock_timeout=5s" psql -X -A -v ON_ERROR_STOP=1 -U cpg_reader -d "$POSTGRES_DB"'
+    sh -c 'PGOPTIONS="-c default_transaction_read_only=on -c lock_timeout=5s -c client_encoding=UTF8 -c local_preload_libraries= -c search_path=pg_catalog,pg_temp" psql -X -A -v ON_ERROR_STOP=1 -U cpg_reader -d "$POSTGRES_DB"'
 # attendu : l'en-tête username|email, une ligne nom|adresse et « (1 row) » ;
 # « (0 rows) » : aucun compte de cet UUID dans CE namespace — relire $NS avant de conclure.
 ```
 
 C'est l'**exception assumée** à « jamais `kubectl exec` » (issue #520, règle dans
-`.claude/rules/deploiement.md`) : une lecture humaine dont la sortie reste sur le terminal. Un Job
+`.claude/rules/deploiement-pipeline.md`) : une lecture humaine dont la sortie reste sur le terminal. Un Job
 aurait écrit le nom et l'adresse dans les journaux de son pod, lisibles jusqu'à sa suppression,
 y compris par le jeton CI (`pods/log`), ce que #363 cherche justement à éviter. Ce que fait chaque
 morceau, essayé sur l'image `postgres:18.6-alpine` en local (pas encore sur le cluster) :
@@ -1685,6 +1975,15 @@ morceau, essayé sur l'image `postgres:18.6-alpine` en local (pas encore sur le 
   `SELECT *` dessus dans un terminal). Tant que la procédure des rôles n'a pas été jouée dans ce
   namespace, le rôle n'existe pas et la commande échoue en le disant. `lock_timeout=5s` borne ses attentes de verrou comme celles de FPM et
   des Jobs (#525) : `PGOPTIONS` remplace la variable entière, la borne doit donc y être répétée.
+  `client_encoding=UTF8` et `local_preload_libraries=` (vide) l'emportent sur ce que le propriétaire
+  de la base, ou un rôle sur lui-même, peut poser (issue #634, mesuré) : un encodage hérité brouille
+  la sortie, une bibliothèque absente refuse la connexion elle-même — la lecture de preuve « avant
+  l'étape 2 » comprise. `search_path=pg_catalog,pg_temp` de même (relecture de #634, mesuré) : hérité
+  de la base, `public` placé devant `pg_catalog` faisait lire au lecteur une vue `public.pg_roles`
+  forgée par le propriétaire au lieu du catalogue — une table de l'application s'écrit donc
+  qualifiée (`public.cpg_user`). Jamais `session_preload_libraries=` : le lecteur n'étant pas
+  superutilisateur, l'option refuserait sa connexion, et ni le propriétaire ni un rôle sur lui-même
+  ne peuvent poser ce réglage.
 - **Un résultat lisible.** `-X` ignore un `~/.psqlrc` ; `-A` rend `nom|adresse` sans alignement mais
   garde l'en-tête et le compte de lignes, pour qu'un namespace erroné (« (0 rows) ») ne se confonde
   pas avec une sortie vide ; `ON_ERROR_STOP=1` fait sortir en code 3 sur une erreur au lieu de 0.
@@ -1817,14 +2116,14 @@ et coût, ou paramètres argon) et un nombre de comptes, jamais un sel, un hacha
 ```bash
 NS=        # preprod ou prod, à renseigner : vide, la commande s'arrête avant d'appeler le cluster
 kubectl -n "${NS:?preprod ou prod}" exec -i deploy/postgres -c postgres -- \
-  sh -c 'PGOPTIONS="-c default_transaction_read_only=on -c lock_timeout=5s" psql -X -A -v ON_ERROR_STOP=1 -U cpg_reader -d "$POSTGRES_DB"' <<'SQL'
+  sh -c 'PGOPTIONS="-c default_transaction_read_only=on -c lock_timeout=5s -c client_encoding=UTF8 -c local_preload_libraries= -c search_path=pg_catalog,pg_temp" psql -X -A -v ON_ERROR_STOP=1 -U cpg_reader -d "$POSTGRES_DB"' <<'SQL'
 SELECT CASE
          WHEN password = '' THEN '(sans mot de passe)'
          WHEN password LIKE '$argon2%' THEN coalesce(substring(password FROM '^(\$argon2[a-z]*\$v=[0-9]+\$[^$]*\$)'), '(argon, format inconnu)')
          ELSE coalesce(substring(password FROM '^(\$2[abxy]\$[0-9]{2}\$)'), '(format inconnu)')
        END AS entete,
        count(*) AS comptes
-FROM cpg_user GROUP BY 1 ORDER BY 1;
+FROM public.cpg_user GROUP BY 1 ORDER BY 1;
 SQL
 # attendu, avec la configuration actuelle : l'en-tête entete|comptes, les lignes
 # « (sans mot de passe)|n » et « $2y$13$|m » (l'une ou l'autre peut manquer), puis « (k rows) ».

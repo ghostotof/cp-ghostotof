@@ -611,7 +611,7 @@ describe('AppHeader', () => {
       expect(wrapper.find(TARGET).exists()).toBe(false)
     })
 
-    it('palier nominatif : un lien texte masqué sous 768 px, et une entrée du menu du compte', async () => {
+    it('palier de confiance : un lien texte masqué sous 768 px, et une entrée du menu du compte', async () => {
       await primeAuthState({ username: 'jane', roles: ['ROLE_TRUSTED', 'ROLE_USER'] })
       const { wrapper } = await mountHeader()
 
@@ -674,7 +674,7 @@ describe('AppHeader', () => {
       expect(wrapper.find('#account-menu').exists()).toBe(false)
     })
 
-    it('palier nominatif : Assistant, CV et Déconnexion ; les boutons texte sont masqués sous 768 px', async () => {
+    it('palier de confiance : Assistant, CV et Déconnexion ; les boutons texte sont masqués sous 768 px', async () => {
       await primeAuthState({ username: 'jane', roles: ['ROLE_TRUSTED', 'ROLE_USER'] })
       const { wrapper } = await mountHeader()
 

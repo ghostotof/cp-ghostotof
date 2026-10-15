@@ -16,7 +16,7 @@ exists — the `Security` bounded context (`User` + `Authentication`), six `Port
 (`Experience`, `Quality`, `About`, `Contribution`, `Incident`, `Watch`, see `.claude/rules/backend-architecture.md` and the context rules) and an
 `Ai` context whose two sub-contexts are delivered — `Translation` (spec 0002, ADR 0004, v0.10.0/v0.10.1) and `Assistant` (spec 0005, v0.19.0), see `.claude/rules/ai.md`; every entity has a UUID v7 key (spec 0003, v0.11.0) and every ordered content is
 reordered by drag-and-drop with an explicit FR/EN link in the database (spec 0004, v0.12.0, see
-`.claude/rules/portfolio-contenus.md`) — and follows a DDD structure under
+`.claude/rules/portfolio-ordre.md`) — and follows a DDD structure under
 `src/<BoundedContext>/` — the generic `ApiResource/`, `Controller/`, `Entity/`, `Repository/` directories left
 over from the skeleton have been deleted (they were empty placeholders, no code ever lived there); don't
 recreate them, new code always goes under its bounded context. PHPUnit is configured (`phpunit.dist.xml`,
@@ -117,7 +117,7 @@ until both move in the same change.
 
 `phpunit.dist.xml` sets `<ini name="zend.exception_ignore_args" value="1"/>`, as `php.prod.ini` does in
 the deployed images: a trace carries no call arguments. `#[SensitiveParameter]` (#411, #414, see
-`.claude/rules/backend-architecture.md`) only covers `src/`; the vendor keeps its arguments
+`.claude/rules/backend-conventions.md`) only covers `src/`; the vendor keeps its arguments
 (`Cookie::create($value)`, `JWTManager::parse($token)`, `LcobucciJWTEncoder::decode($token)`…), and the
 risk is a test trace pasted in a ticket or an assistant session. Facts measured before deciding
 (2026-10-10): **CI already ran with it On** — `setup-php` loads `php.ini-production` by default

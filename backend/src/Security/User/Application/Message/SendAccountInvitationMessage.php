@@ -68,7 +68,7 @@ final readonly class SendAccountInvitationMessage implements QueuedMessageInterf
      * format d'avant l'issue #434, toléré jusqu'à la v0.23.0 — est refusé de
      * même depuis l'issue #448 : le handler ne saurait pas s'il sert une
      * invitation dépassée. Une génération inférieure à 1 ne vient pas de
-     * CpgUserInviter (un compte invité a au moins la première).
+     * CpgUserInviter (un compte sur invitation a au moins la première).
      *
      * @param array<string, mixed> $data
      */

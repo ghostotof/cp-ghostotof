@@ -403,7 +403,7 @@ final class PasswordSetupServiceTest extends TestCase
 
     private function usableToken(MockClock $clock): PasswordSetupToken
     {
-        // Un jeton n'existe que pour un compte invité, encore en attente.
+        // Un jeton n'existe que pour un compte sur invitation, encore en attente.
         $user = new CpgUser('jane', '');
         $user->markInvited(new DateTimeImmutable('2026-09-08 08:00:00'));
 

@@ -73,6 +73,17 @@ final readonly class Runbook
     }
 
     /**
+     * Le SQL qu'un bloc envoie à psql par un heredoc `<<'SQL'` … `SQL`, tel
+     * qu'écrit, sans ses deux lignes de clôture.
+     */
+    public static function sqlHeredoc(string $block): string
+    {
+        Assert::assertSame(1, preg_match("/<<'SQL'\n(.*?)\nSQL$/ms", $block, $sql), 'Le bloc envoie un heredoc SQL à psql.');
+
+        return $sql[1];
+    }
+
+    /**
      * Les lignes continuées d'un texte rejointes en une, par une seule espace
      * (les blancs autour de la coupure, indentation comprise, en font une).
      */

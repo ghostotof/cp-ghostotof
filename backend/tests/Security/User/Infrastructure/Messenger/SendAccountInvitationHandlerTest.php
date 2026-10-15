@@ -400,7 +400,7 @@ final class SendAccountInvitationHandlerTest extends TestCase
 
     /**
      * Le jeton est déjà valide quand l'e-mail se construit : une adresse que
-     * Mime refuse (un compte invité avant `email_validation_mode: strict`) ne
+     * Mime refuse (un compte sur invitation avant `email_validation_mode: strict`) ne
      * doit pas faire remonter son RfcComplianceException, qui la cite
      * (issue #356), dans le stamp ni dans les logs du worker.
      */

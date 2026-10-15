@@ -85,9 +85,9 @@ final readonly class SecurityAuditLogger implements SecurityAuditLoggerInterface
         $this->record('logged-out', 'Logged out.', $this->principal($user));
     }
 
-    public function baseAccessIssued(string $guestIdentifier): void
+    public function baseAccessIssued(string $baseAccessMarker): void
     {
-        $this->record('base-access-issued', 'Base-tier token issued.', ['user' => $guestIdentifier]);
+        $this->record('base-access-issued', 'Base-tier token issued.', ['user' => $baseAccessMarker]);
     }
 
     public function csrfRejected(): void

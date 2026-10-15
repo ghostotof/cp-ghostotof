@@ -4,7 +4,7 @@
 #    en échec (point d'audit B6, 30 jours par défaut) — voir
 #    src/Contact/Presentation/Command/PurgeFailedContactMessagesCommand.php.
 # 2. `app:user:purge-pending-invitations` — RGPD (issue #238) : supprime les
-#    comptes invités jamais activés au-delà de 30 jours depuis leur dernière
+#    comptes sur invitation jamais activés au-delà de 30 jours depuis leur dernière
 #    invitation — voir
 #    src/Security/User/Presentation/Command/PurgePendingInvitationsCommand.php.
 # 3. `cache:pool:prune` — purge des entrées expirées de `cache_items`, la table
@@ -77,7 +77,8 @@ spec:
                   php bin/console cache:pool:prune --no-interaction
               env:
                 # Issue #525 : attentes de verrou PostgreSQL bornées comme sous FPM (valeur
-                # de www.prod.conf ; ConsoleLockWaitBoundTest, .claude/rules/deploiement.md).
+                # de www.prod.conf ; ConsoleLockWaitBoundTest,
+                # .claude/rules/deploiement-etat-hors-pod.md).
                 - name: PGOPTIONS
                   value: '-c lock_timeout=5s'
               envFrom:

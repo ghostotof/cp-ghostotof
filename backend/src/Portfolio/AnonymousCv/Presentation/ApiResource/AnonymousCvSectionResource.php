@@ -16,7 +16,7 @@ use App\Portfolio\AnonymousCv\Infrastructure\ApiPlatform\AnonymousCvProvider;
  * du palier de base (POST /api/account/base-access, ADR 0003 D6).
  *
  * Le chemin est délibérément `/anonymous-cv` et non `/cv-anonymous` ou
- * `/cv/anonymous` : `^/api/cv` est réservé ROLE_TRUSTED (le vrai CV, D4) et
+ * `/cv/anonymous` : `^/api/cv` est réservé ROLE_TRUSTED (le CV nominatif, D4) et
  * Symfony n'applique que la première règle d'access_control qui matche.
  */
 #[ApiResource(

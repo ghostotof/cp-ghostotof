@@ -1,9 +1,9 @@
-import type { TranslationDraft, TranslationFields } from '../../../domain/admin/translation/entities/TranslationDraft'
+import type { TranslationProposal, TranslationFields } from '../../../domain/admin/translation/entities/TranslationProposal'
 
 /**
  * Les deux gestes que toute page admin répète autour de l'assistant de
  * traduction : extraire de son formulaire les champs de prose à envoyer, puis
- * y reporter le brouillon reçu. Partagés plutôt que recopiés page par page —
+ * y reporter la proposition reçue. Partagés plutôt que recopiés page par page —
  * une correction (un champ blanc envoyé, un champ écrasé par erreur)
  * s'applique alors partout d'un coup.
  *
@@ -23,10 +23,10 @@ export function collectProseFields<K extends string>(form: Record<K, string>, ke
   return fields
 }
 
-/** Remplace la prose par le brouillon ; un champ absent du brouillon est laissé tel quel. */
-export function applyTranslationDraft<K extends string>(form: Record<K, string>, keys: readonly K[], draft: TranslationDraft): void {
+/** Remplace la prose par la proposition ; un champ absent de la proposition est laissé tel quel. */
+export function applyTranslationProposal<K extends string>(form: Record<K, string>, keys: readonly K[], proposal: TranslationProposal): void {
   for (const key of keys) {
-    const translated = draft.fields[key]
+    const translated = proposal.fields[key]
     if (undefined !== translated) {
       form[key] = translated
     }

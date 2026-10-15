@@ -7,7 +7,7 @@ namespace App\Security\User\Presentation\Controller;
 use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use App\Security\Authentication\Infrastructure\Http\AuthCookieFactory;
 use App\Security\Authentication\Infrastructure\Http\CsrfCookieTokenSigner;
-use App\Security\User\Domain\ValueObject\GuestUser;
+use App\Security\User\Domain\ValueObject\BaseAccessUser;
 use DateTimeImmutable;
 use DateTimeInterface;
 use Lexik\Bundle\JWTAuthenticationBundle\Services\JWTTokenManagerInterface;
@@ -16,7 +16,7 @@ use Symfony\Component\Routing\Attribute\Route;
 
 /**
  * ADR 0003 D6 : émet un jeton portant exactement ROLE_USER, sans jamais créer
- * de compte (cf. GuestUser, GuestUserProvider). Rate-limité par
+ * de compte (cf. BaseAccessUser, BaseAccessUserProvider). Rate-limité par
  * BaseAccessRateLimitRequestListener (avant ce contrôleur). Route publique —
  * voir ApiRouteExposureTest::PUBLIC_PATHS pour la justification, et
  * CsrfCookieRequestSubscriber::EXCLUDED_PATHS (appelant anonyme, aucun cookie
@@ -46,10 +46,10 @@ final readonly class BaseAccessController
     public function __invoke(): JsonResponse
     {
         $expiresAt = time() + self::TOKEN_TTL_SECONDS;
-        $guest = new GuestUser('guest-'.bin2hex(random_bytes(16)));
+        $baseAccessUser = new BaseAccessUser('guest-'.bin2hex(random_bytes(16)));
 
-        $jwt = $this->jwtTokenManager->createFromPayload($guest, [
-            'guest' => true,
+        $jwt = $this->jwtTokenManager->createFromPayload($baseAccessUser, [
+            BaseAccessUser::TOKEN_CLAIM => true,
             'exp' => $expiresAt,
         ]);
 
@@ -58,7 +58,7 @@ final readonly class BaseAccessController
         // cette information, l'en-tête afficherait « Accès de base » jusqu'au
         // prochain rechargement, bien après que le jeton ait expiré.
         $response = new JsonResponse([
-            'roles' => $guest->getRoles(),
+            'roles' => $baseAccessUser->getRoles(),
             'expiresAt' => (new DateTimeImmutable('@'.$expiresAt))->format(DateTimeInterface::ATOM),
         ]);
 
@@ -71,7 +71,7 @@ final readonly class BaseAccessController
         // Journal de sécurité (D5) : l'identifiant `guest-…` du jeton, jamais
         // le jeton lui-même — c'est lui qu'on retrouvera comme auteur d'un
         // éventuel 403 backoffice pendant ses 15 minutes.
-        $this->auditLogger->baseAccessIssued($guest->getUserIdentifier());
+        $this->auditLogger->baseAccessIssued($baseAccessUser->getUserIdentifier());
 
         return $response;
     }

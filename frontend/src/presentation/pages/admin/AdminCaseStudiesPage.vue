@@ -4,7 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { useUnsavedOrderGuard } from '../../../application/admin/shared/useUnsavedOrderGuard'
 import { useAdminCaseStudies } from '../../../application/admin/caseStudies/useAdminCaseStudies'
 import { useAdminTranslation } from '../../../application/admin/translation/useAdminTranslation'
-import { applyTranslationDraft, collectProseFields } from '../../../application/admin/translation/proseFields'
+import { applyTranslationProposal, collectProseFields } from '../../../application/admin/translation/proseFields'
 import { useOrderDraft } from '../../../application/admin/shared/useOrderDraft'
 import { useOrderHandleFocus } from '../../../application/admin/shared/useOrderHandleFocus'
 import { useRowDragAndDrop } from '../../../application/admin/shared/useRowDragAndDrop'
@@ -69,18 +69,18 @@ const isSubmitting = ref(false)
  * version XX »), `null` sur une page blanche. Distinct de
  * `form.translationGroup`, qui est la valeur *choisie* dans le sélecteur :
  * l'assistant de traduction bascule le formulaire vers l'autre locale et doit
- * y rattacher le brouillon au groupe de la **source** (D9), y compris quand
+ * y rattacher la proposition au groupe de la **source** (D9), y compris quand
  * ce groupe n'avait aucune traduction et que le sélecteur affichait donc
  * « aucune ».
  */
 const sourceGroup = ref<string | null>(null)
 
 /**
- * Locale de l'entrée dont le formulaire courant est un brouillon traduit,
- * `null` sinon : porte la bannière « brouillon généré par IA ». Effacée dès que
+ * Locale de l'entrée dont le formulaire courant est une proposition traduite,
+ * `null` sinon : porte la bannière « proposition générée par IA ». Effacée dès que
  * le formulaire repart d'une entrée réelle ou d'une page blanche.
  */
-const draftSourceLocale = ref<Locale | null>(null)
+const proposalSourceLocale = ref<Locale | null>(null)
 
 /**
  * Les champs que l'assistant traduit — ici, tout : une étude de cas n'a aucun
@@ -88,7 +88,7 @@ const draftSourceLocale = ref<Locale | null>(null)
  * l'entrée existante (spec 0002, D2 ; spec 0004 §7).
  *
  * Contenu du palier de base (ADR 0003 D5) : la règle éditoriale — jamais de
- * nom de client — vaut pour le brouillon autant que pour l'original, et c'est
+ * nom de client — vaut pour la proposition autant que pour l'original, et c'est
  * la relecture humaine qui la garantit.
  */
 const PROSE_FIELDS = ['title', 'problem', 'solution', 'tradeoffs', 'measuredResult'] as const
@@ -161,7 +161,7 @@ const translationOptions = computed(() => [
 
 function resetForm(): void {
   editingId.value = null
-  draftSourceLocale.value = null
+  proposalSourceLocale.value = null
   sourceGroup.value = null
   form.locale = SUPPORTED_LOCALES[0]
   form.translationGroup = ''
@@ -174,7 +174,7 @@ function resetForm(): void {
 
 function startEdit(caseStudy: AdminCaseStudy): void {
   editingId.value = caseStudy.id
-  draftSourceLocale.value = null
+  proposalSourceLocale.value = null
   sourceGroup.value = caseStudy.translationGroup
   form.locale = caseStudy.locale as Locale
   // Le groupe lu est repris tel quel dès qu'il porte une traduction : le
@@ -197,7 +197,7 @@ function startEdit(caseStudy: AdminCaseStudy): void {
  */
 function startCreateVersion(row: TranslationGroupRow<AdminCaseStudy>, locale: Locale): void {
   editingId.value = null
-  draftSourceLocale.value = null
+  proposalSourceLocale.value = null
   sourceGroup.value = row.key
   form.locale = locale
   form.translationGroup = row.key
@@ -237,8 +237,8 @@ async function handleSubmit(): Promise<void> {
 }
 
 /**
- * Demande un brouillon dans l'autre locale, puis bascule le formulaire en
- * **création** avec ce brouillon : la prose est remplacée, le reste conservé —
+ * Demande une proposition dans l'autre locale, puis bascule le formulaire en
+ * **création** avec cette proposition : la prose est remplacée, le reste conservé —
  * y compris le groupe de l'entrée source, pour que l'enregistrement rattache
  * la version proposée sans geste supplémentaire (spec 0004, D9). Rien n'est
  * enregistré ici — seul le bouton Enregistrer habituel persiste (ADR 0004,
@@ -247,16 +247,16 @@ async function handleSubmit(): Promise<void> {
 async function handleTranslate(targetLocale: Locale): Promise<void> {
   const sourceLocale = form.locale
 
-  const draft = await translate(sourceLocale, targetLocale, collectProseFields(form, PROSE_FIELDS))
-  if (!draft) {
+  const proposal = await translate(sourceLocale, targetLocale, collectProseFields(form, PROSE_FIELDS))
+  if (!proposal) {
     return
   }
 
   editingId.value = null
   form.locale = targetLocale
   form.translationGroup = sourceGroup.value ?? ''
-  applyTranslationDraft(form, PROSE_FIELDS, draft)
-  draftSourceLocale.value = sourceLocale
+  applyTranslationProposal(form, PROSE_FIELDS, proposal)
+  proposalSourceLocale.value = sourceLocale
 }
 
 async function handleDelete(caseStudy: AdminCaseStudy): Promise<void> {
@@ -344,7 +344,7 @@ useUnsavedOrderGuard(isOrderDirty)
 
         <!--
           Verrouillé lui aussi tant que l'ordre est modifié : l'appel au modèle
-          produirait un brouillon que le formulaire, verrouillé, ne pourrait pas
+          produirait une proposition que le formulaire, verrouillé, ne pourrait pas
           enregistrer — du quota dépensé pour rien (ADR 0004, coût borné).
         -->
         <div class="mb-3">
@@ -358,11 +358,11 @@ useUnsavedOrderGuard(isOrderDirty)
         </div>
 
         <p
-          v-if="draftSourceLocale"
+          v-if="proposalSourceLocale"
           class="alert alert-info small"
           role="status"
         >
-          {{ t('admin.translation.draftNotice', { locale: draftSourceLocale.toUpperCase() }) }}
+          {{ t('admin.translation.proposalNotice', { locale: proposalSourceLocale.toUpperCase() }) }}
         </p>
 
         <p

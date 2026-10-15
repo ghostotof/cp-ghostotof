@@ -45,7 +45,7 @@ paths:
   `/errors/rate-limited` + `Retry-After`, the refusal logged on `ai_usage` with the account's `userId`. **`#[WithMonologChannel]`
   is lost on an `#[AsDecorator]` service** (decoration rewrites its tags, the record silently went to the app
   channel): inject `monolog.logger.<channel>` by id there. The quota takes the shared PostgreSQL advisory lock like
-  every limiter (#272, v0.18.2, ADR 0005 D8–D10 — see the ADR 0005 invariant in `.claude/rules/deploiement.md`), so a burst of synchronised
+  every limiter (#272, v0.18.2, ADR 0005 D8–D10 — see the ADR 0005 invariant in `.claude/rules/deploiement-etat-hors-pod.md`), so a burst of synchronised
   calls counts one unit each; never consume it inside a Doctrine transaction; body over 128 KiB (the longest valid conversation, 16 000 characters in all, is ~64 kB in 4-byte
   characters; 64 KiB, the spec's first figure, predates that total and refused the 104 kB the per-message
   bounds alone then allowed. 128 KiB also lets through a conversation whose every message respects its own

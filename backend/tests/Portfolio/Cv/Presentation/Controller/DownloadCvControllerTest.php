@@ -19,7 +19,7 @@ use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
  * AuthenticationFlowTest) et le cas limite "fichier absent" (déploiement où
  * CV_FILE_PATH ne pointe vers rien, cf. backend/resources/README.md). La
  * fixture (tests/Portfolio/Cv/Fixtures/dummy.pdf) est utilisée à la place du
- * vrai CV : voir CV_FILE_PATH dans .env.test.
+ * CV nominatif : voir CV_FILE_PATH dans .env.test.
  */
 final class DownloadCvControllerTest extends WebTestCase
 {

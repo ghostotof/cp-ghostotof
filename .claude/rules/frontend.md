@@ -126,3 +126,39 @@ blocking advisory in *dev tooling* has no fix, first look for a way to take the 
 the tree; if there is none, wait for the fix. Never `--omit=dev` (it would hide the next advisory in the
 build chain, which can be a supply-chain hole) and never a silent audit exception.
 
+### Base access (ADR 0003 D6)
+
+> Moved from `.claude/CLAUDE.md`'s Goal #9 (#602). The backend side is in `.claude/rules/security-authentication.md`.
+
+The header's « Accès instantané » calls `POST /api/account/base-access`; « Terminer cet accès » (issue #65)
+calls `POST /api/logout`. The tier comes from the status of `GET /api/me` (401 / 403 / 200). The httpOnly
+cookie cannot be read, so the response's `expiresAt` is the only way to know when it dies: `useAuth` arms a
+timer on it, remembered in `localStorage` to survive a reload — a past value is ignored, the server is the
+truth —, and any 401 on base-tier content calls `markBaseAccessExpired()`, so the header never shows
+« Accès de base » above a page asking for it.
+
+### Toolchain history (Node, jsdom, Vitest)
+
+> Moved verbatim from `.claude/CLAUDE.md` (#602), section « Versions ». « The `make front-*` targets above »
+> are those of `.claude/CLAUDE.md`, « Frontend day-to-day ».
+
+`jsdom` used to be held back at `^26.x` because `jsdom@30` requires Node `>=22.22` and fails on anything
+older — including a workstation below the project's `NODE_TAG`. **That pin is gone** (issue #26): the fix was
+to stop letting the host matter, via the `make front-*` targets above, not to constrain a dependency to suit
+one machine. A host-only constraint has no business in `package.json`.
+
+Node 26's own native (experimental) `localStorage`/`sessionStorage` globals conflict with jsdom's: any test
+touching the bare `localStorage` global (not `window.localStorage`) before jsdom's environment fully
+initializes used to fail with `Cannot read properties of undefined (reading 'clear')`. The workaround was
+`NODE_OPTIONS=--no-experimental-webstorage` on `frontend/package.json`'s `test`/`test:watch` scripts, kept
+through the jsdom 30 move (issue #26), which did not make it obsolete.
+
+**Vitest 5 does** (vitest-dev/vitest#10293, "don't emit localStorage warnings on Node 26"), so the flag is
+gone. Verified both ways rather than assumed, since the failure is environment-dependent and a green suite
+alone proves nothing: on Vitest 4 without the flag, 11 tests fail on `setItem`/`clear`; on Vitest 5 without
+it, all 490 pass. If those failures ever come back, the flag is the fix — but check first whether Vitest or
+Node changed, because reinstating it would hide a real regression just as well as it hides this one.
+
+`vue-i18n`/`@intlify/*` (and transitively a few ESLint tooling packages) declare `engines.node >= 22`. The
+container satisfies it, so this is only ever an `EBADENGINE` warning if someone installs outside it — one
+more reason the `make front-*` targets exist.

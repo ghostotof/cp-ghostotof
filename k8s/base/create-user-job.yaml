@@ -37,8 +37,8 @@ spec:
   # compte resterait dans la spec. Deux tirages `Always` compris, attendu 300 s
   # par la procédure (k8s/README.md).
   # Délai : convention de tous les Jobs, attente + 35 s < délai ≤ attente + 120 s
-  # (issues #525, #535 ; .claude/rules/deploiement.md, « One rule for every Job's
-  # deadline » ; vérifiée par tools/tests/run-job.test.sh).
+  # (issues #525, #535 ; .claude/rules/deploiement-pipeline.md, « One rule for
+  # every Job's deadline » ; vérifiée par tools/tests/run-job.test.sh).
   activeDeadlineSeconds: 360
   # Une journée pour relire `kubectl logs job/backend-create-user` ; le Secret,
   # lui, est supprimé dès la fin du Job (cf. la procédure).
@@ -87,7 +87,8 @@ spec:
             - exec php bin/console app:user:create --no-interaction --username="$NEW_ACCOUNT_USERNAME" --role=ROLE_SUPER --password-stdin < /run/secrets/create-user/password
           env:
             # Issue #525 : attentes de verrou PostgreSQL bornées comme sous FPM (valeur
-            # de www.prod.conf ; ConsoleLockWaitBoundTest, .claude/rules/deploiement.md).
+            # de www.prod.conf ; ConsoleLockWaitBoundTest,
+            # .claude/rules/deploiement-etat-hors-pod.md).
             - name: PGOPTIONS
               value: '-c lock_timeout=5s'
             - name: NEW_ACCOUNT_USERNAME

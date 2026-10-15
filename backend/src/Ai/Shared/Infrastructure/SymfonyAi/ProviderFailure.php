@@ -18,7 +18,7 @@ use Throwable;
 
 /**
  * Description journalisable d'un échec du fournisseur de modèle, partagée par
- * le traducteur et l'assistant de parcours (issue #308).
+ * le traducteur et l'assistant de carrière (issue #308).
  *
  * Le bridge recopie le corps de la réponse du fournisseur dans le message de
  * ses exceptions, et ce corps peut citer l'entrée : le message n'est donc

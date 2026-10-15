@@ -28,7 +28,7 @@ use Symfony\Component\Validator\Constraints as Assert;
  * `Incident::$invariant`. Une section que l'on ne peut pas enregistrer sans
  * dire ce qu'on a fait de la compétence ne peut pas dériver en catalogue.
  *
- * Le vrai CV (nom, employeurs, parcours) reste derrière `ROLE_TRUSTED`
+ * Le CV nominatif (nom, employeurs, chronologie) reste derrière `ROLE_TRUSTED`
  * (`GET /api/cv`, D4) — la route de ce contenu, `/api/anonymous-cv`, est
  * choisie pour ne jamais matcher le préfixe `^/api/cv` de l'access_control.
  */

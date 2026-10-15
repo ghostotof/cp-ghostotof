@@ -10,7 +10,7 @@ import { AnonymousCvUnavailableError } from '../../domain/anonymousCv/errors/Ano
  * GET n'étant pas une méthode "unsafe" pour CsrfCookieRequestSubscriber
  * (backend), aucun header X-XSRF-TOKEN n'est requis.
  *
- * Le chemin est `/api/anonymous-cv`, distinct de `/api/cv` (le vrai CV, PDF,
+ * Le chemin est `/api/anonymous-cv`, distinct de `/api/cv` (le CV nominatif, PDF,
  * ROLE_TRUSTED) : côté backend, `^/api/cv` est capturé par une règle
  * ROLE_TRUSTED, d'où un préfixe qui ne la matche pas.
  */

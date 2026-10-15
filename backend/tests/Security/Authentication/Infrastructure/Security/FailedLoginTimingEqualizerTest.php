@@ -132,7 +132,7 @@ final class FailedLoginTimingEqualizerTest extends TestCase
     }
 
     /**
-     * Compte invité sans mot de passe : son hachage est vide, donc
+     * Compte sur invitation sans mot de passe : son hachage est vide, donc
      * `NativePasswordHasher::verify()` retombe sur `password_verify($p, '')`,
      * qui échoue sans dériver quoi que ce soit. Sans compensation, une
      * invitation en attente se distingue d'un compte actif au chronomètre.
@@ -148,7 +148,7 @@ final class FailedLoginTimingEqualizerTest extends TestCase
     }
 
     /**
-     * Régression (issue #560) : un compte invité dont un ROLE_SUPER a posé le
+     * Régression (issue #560) : un compte sur invitation dont un ROLE_SUPER a posé le
      * mot de passe depuis le backoffice (#238, #460) reste en attente
      * d'activation, mais son hachage n'est plus vide — `verify()` a fait la
      * vraie dérivation. Un hachage factice de plus doublait son temps de
@@ -322,7 +322,7 @@ final class FailedLoginTimingEqualizerTest extends TestCase
     }
 
     /**
-     * Le palier de base (GuestUser) n'a pas de mot de passe et ne passe jamais
+     * Le palier de base (BaseAccessUser) n'a pas de mot de passe et ne passe jamais
      * par ce firewall : un utilisateur qui n'est pas un CpgUser ne déclenche
      * rien.
      */

@@ -199,8 +199,8 @@ final class WatchResourceTest extends WebTestCase
      * anonyme, elle, n'en expose qu'un décompte.
      *
      * Publier ce détail reviendrait à tendre au premier scanner venu la carte
-     * des faiblesses de ce site en production. Le compte invité ROLE_USER ne
-     * suffirait pas davantage : il est partagé et ses identifiants circulent,
+     * des faiblesses de ce site en production. Le palier de base (ROLE_USER)
+     * ne suffirait pas davantage : il s'obtient en un clic, sans identifiant,
      * ce qui en fait l'équivalent du public dès qu'il s'agit d'une surface
      * d'attaque.
      *

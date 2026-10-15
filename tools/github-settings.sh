@@ -11,9 +11,9 @@
 #      pas autrement) ; delete_branch_on_merge reste à false (c'est
 #      finalize-release qui supprime la branche, après la prod) ;
 #   b. ruleset `main` : PR obligatoire en commit de merge, checks requis
-#      `smoke-test-preprod` + `audit-preprod` (sur le SHA de tête de la PR,
-#      c'est-à-dire le run de la branche release/*), pas de suppression, pas
-#      de force-push ;
+#      `smoke-test-preprod` + `audit-preprod` + `postgres-hba-preprod` (sur le
+#      SHA de tête de la PR, c'est-à-dire le run de la branche release/* ; le
+#      troisième depuis l'issue #600), pas de suppression, pas de force-push ;
 #   c. ruleset `develop` : PR obligatoire, checks requis = la phase 1 ;
 #   d. environnements `production` (branche `main`) et `preprod` (branches
 #      `release/*`) : aucun reviewer requis (le merge est le stop humain), et
@@ -30,7 +30,7 @@
 #      désactivées, donc les quatre écosystèmes suivis par `dependabot.yml` ne
 #      remontaient rien, constat A2) et correctifs de sécurité automatiques
 #      **désactivés** : leurs PR visent la branche par défaut `main`, qui
-#      n'accepte qu'une PR validée par `smoke-test-preprod`/`audit-preprod`,
+#      n'accepte qu'une PR validée par les checks de la préprod (étape b),
 #      donc elles ne seraient jamais mergeables (voir l'étape h) ;
 #   i. Private Vulnerability Reporting : le canal de signalement privé annoncé
 #      par SECURITY.md, qui n'expose rien avant qu'un correctif existe ;
@@ -92,6 +92,14 @@ upsert_ruleset() {
 
 bypass='[{"actor_type":"DeployKey","bypass_mode":"always"}]'
 pr_rule='{"type":"pull_request","parameters":{"required_approving_review_count":0,"dismiss_stale_reviews_on_push":false,"require_code_owner_review":false,"require_last_push_approval":false,"required_review_thread_resolution":false,"allowed_merge_methods":["merge"]}}'
+# Checks requis des deux rulesets, une ligne chacun : tools/check-release-gates.sh
+# les relit (issue #600) et échoue si un nom n'est plus un job de pipeline.yml,
+# ou si un job qui suit `deploy-preprod` (hors `rollback-preprod`) manque à
+# MAIN_REQUIRED_CHECKS — rouge mais non requis, il laisserait fusionner la PR
+# de release, et `deploy-prod` refuserait après l'avancée de `main`.
+MAIN_REQUIRED_CHECKS=(smoke-test-preprod audit-preprod postgres-hba-preprod)
+DEVELOP_REQUIRED_CHECKS=(test-backend test-frontend sast-backend phpstan-backend rector-backend lsp-check-backend tools-tests)
+
 # checks_rule <contexte>…  — les checks GitHub Actions portent l'id de l'app 15368.
 checks_rule() {
   local ctx="" c
@@ -104,7 +112,7 @@ upsert_ruleset "main — release par PR" "$(cat <<JSON
 {"name":"main — release par PR","target":"branch","enforcement":"active",
  "bypass_actors":$bypass,
  "conditions":{"ref_name":{"include":["refs/heads/main"],"exclude":[]}},
- "rules":[$pr_rule,$(checks_rule smoke-test-preprod audit-preprod),{"type":"deletion"},{"type":"non_fast_forward"}]}
+ "rules":[$pr_rule,$(checks_rule "${MAIN_REQUIRED_CHECKS[@]}"),{"type":"deletion"},{"type":"non_fast_forward"}]}
 JSON
 )"
 
@@ -113,7 +121,7 @@ upsert_ruleset "develop — PR et phase 1" "$(cat <<JSON
 {"name":"develop — PR et phase 1","target":"branch","enforcement":"active",
  "bypass_actors":$bypass,
  "conditions":{"ref_name":{"include":["refs/heads/develop"],"exclude":[]}},
- "rules":[$pr_rule,$(checks_rule test-backend test-frontend sast-backend phpstan-backend rector-backend lsp-check-backend tools-tests),{"type":"deletion"},{"type":"non_fast_forward"}]}
+ "rules":[$pr_rule,$(checks_rule "${DEVELOP_REQUIRED_CHECKS[@]}"),{"type":"deletion"},{"type":"non_fast_forward"}]}
 JSON
 )"
 
@@ -186,8 +194,8 @@ else
 fi
 # Les correctifs de sécurité automatiques, eux, sont DÉSACTIVÉS (option 1
 # retenue le 2026-09-16) : leurs PR sont ouvertes sur la branche par défaut,
-# `main`, qui n'accepte qu'une PR validée par `smoke-test-preprod` et
-# `audit-preprod` — des checks qu'une branche `dependabot/**` ne produit pas.
+# `main`, qui n'accepte qu'une PR validée par les checks de la préprod
+# (MAIN_REQUIRED_CHECKS) — qu'une branche `dependabot/**` ne produit pas.
 # Elles seraient donc ingérables à vie, et hors du flux de release (spec 0006).
 # Ce qui reste : les alertes ci-dessus préviennent, les mises à jour groupées
 # hebdomadaires de `dependabot.yml` visent `develop` (`target-branch`), et

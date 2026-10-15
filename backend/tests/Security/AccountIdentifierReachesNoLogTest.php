@@ -27,7 +27,7 @@ use Symfony\Component\RateLimiter\RateLimiterFactoryInterface;
 
 /**
  * Aucun journal ne nomme un compte par son identifiant de connexion (issue
- * #363). Pour un compte invité, cet identifiant est dérivé de la partie
+ * #363). Pour un compte sur invitation, cet identifiant est dérivé de la partie
  * locale de l'adresse (`prenom.sentinelle@…` → `prenom.sentinelle`,
  * UsernameGenerator, ADR 0001 D2) : c'est le plus souvent un prénom et un nom.
  * Un compte se désigne dans les journaux par son `userId` (UUID), que seule la
@@ -162,7 +162,7 @@ final class AccountIdentifierReachesNoLogTest extends WebTestCase
     }
 
     /**
-     * Le compte invité : un login raté, un login, ses requêtes authentifiées
+     * Le compte sur invitation : un login raté, un login, ses requêtes authentifiées
      * (une permise, une refusée par le backoffice), le quota de l'assistant de
      * parcours, la déconnexion. Renvoie son JWT, rejoué après la suppression.
      */

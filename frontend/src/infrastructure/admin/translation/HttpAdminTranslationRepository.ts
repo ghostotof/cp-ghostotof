@@ -1,5 +1,5 @@
 import type { Locale } from '../../../domain/portfolio/entities/Locale'
-import type { TranslationDraft, TranslationFields } from '../../../domain/admin/translation/entities/TranslationDraft'
+import type { TranslationProposal, TranslationFields } from '../../../domain/admin/translation/entities/TranslationProposal'
 import type { AdminTranslationRepository } from '../../../domain/admin/translation/repositories/AdminTranslationRepository'
 import {
   AdminTranslationError,
@@ -29,7 +29,7 @@ export class HttpAdminTranslationRepository implements AdminTranslationRepositor
     this.client = new BackofficeHttpClient(apiBaseUrl)
   }
 
-  async translate(sourceLocale: Locale, targetLocale: Locale, fields: TranslationFields): Promise<TranslationDraft> {
+  async translate(sourceLocale: Locale, targetLocale: Locale, fields: TranslationFields): Promise<TranslationProposal> {
     const response = await this.client.mutate('POST', PATH, { sourceLocale, targetLocale, fields })
 
     if (!response.ok) {

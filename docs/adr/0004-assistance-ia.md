@@ -1,5 +1,9 @@
 # ADR 0004 — Assistance IA : un fournisseur de modèles sans en devenir l'otage (`Ai/`)
 
+> **Vocabulaire (2026-10-14, #602).** Les termes canoniques du domaine sont dans [`CONTEXT.md`](../../CONTEXT.md) ; l'assistant « interrogez mon
+> parcours » de D7 (spec `assistant-parcours`) y est l'**assistant de carrière**, et « palier nominatif »
+> ou « palier supérieur » le **palier de confiance**.
+
 - Statut : **accepté** (2026-09-14) — **phase 1 livrée** le même jour (spec
   `.claude/specs/archive/2026-09-14-spec-0002-assistant-traduction/0002-ai-translation-assistant.md`, issues `spec-0002` fermées, releases v0.10.0 puis
   v0.10.1 en production) ; **amendée le 2026-09-15** : la phase 2 n'est plus un serveur MCP mais un

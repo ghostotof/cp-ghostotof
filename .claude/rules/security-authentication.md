@@ -34,7 +34,7 @@ paths:
     inline. `__Host-` prefixing is a separate, preprod-tested step (it renames what Lexik and the frontend
     read by name).
   - **Tokens, JWTs and CSRF values are hidden from stack traces** (`#[SensitiveParameter]`, issue #414): the
-    guard covers all of `src/`, so its rule lives in `.claude/rules/backend-architecture.md`.
+    guard covers all of `src/`, so its rule lives in `.claude/rules/backend-conventions.md`.
   - `Infrastructure/Http/CsrfCookieRequestSubscriber.php` — double-submit-cookie CSRF check, a `kernel.request`
     listener at priority 20 (must run *above* the Security firewall's priority 8 — see the class docblock).
   - `Infrastructure/Http/LoginCsrfRequestListener.php` — **login-CSRF guard** (issue #76) on the two anonymous
@@ -42,13 +42,23 @@ paths:
     rightly outside the double-submit (an anonymous caller has no `XSRF-TOKEN` to echo), but a cross-site
     HTML form could submit them top-level: the victim's cookie isn't sent (`SameSite=Lax`), yet the
     response's `Set-Cookie` *is* accepted and **replaces** the trusted `BEARER` with the attacker's (or a
-    15-minute guest one). The guard requires the `X-Requested-With` header, which a form cannot set and
+    15-minute base-access one). The guard requires the `X-Requested-With` header, which a form cannot set and
     which makes a cross-site `fetch()` fail its CORS preflight. **Presence is the protection, not the
     value.** Same priority 20 as the CSRF subscriber: above the firewall (or `json_login` sets the cookie
     first) and above the rate limiters (15), so a forged submission never burns the victim's IP quota.
     `nelmio_cors.yaml` lists the header in `allow_headers`; the frontend sends it via
     `infrastructure/http/loginCsrfHeader.ts` on both calls. Functional tests therefore pass
     `'HTTP_X_REQUESTED_WITH' => 'fetch'` in `server:` on every login/base-access request.
+  - **Base access (ADR 0003 D6; moved from `.claude/CLAUDE.md`'s Goal #9, #602).** `POST /api/account/base-access`
+    (`Security/User/Presentation/Controller/BaseAccessController`, per-IP rate-limited, excluded from the
+    double-submit CSRF like `/api/contact` but guarded by `LoginCsrfRequestListener` above) issues a 15-minute
+    JWT carrying exactly `ROLE_USER` and the `guest` claim, for a `BaseAccessUser` that is **never
+    materialised in the database** (`BaseAccessUserProvider` rebuilds it from the signed payload alone, first
+    in the `app_users` chain). « Terminer cet accès » (issue #65) ends it through the unchanged
+    `POST /api/logout`, which expires the cookie whoever holds it. The tier is read from the HTTP status of
+    `GET /api/me` — 401 anonymous, 403 base, 200 trusted —, no dedicated endpoint. The response body carries
+    `expiresAt`, the only way the frontend can know when the httpOnly cookie dies (see
+    `.claude/rules/frontend.md`, « Base access »).
   - **Any listener that decides on the request path must use `App\Shared\Infrastructure\Http\CanonicalPath::of()`,
     never `getPathInfo()` directly** (issue #77). `getPathInfo()` is *not* decoded, while the router, the
     firewalls and `access_control` all decide on `rawurldecode()`: `POST /%61pi/logout` reached the
@@ -173,20 +183,20 @@ paths:
     address (`UsernameGenerator`, ADR 0001 D2), usually a first and last name. `actor` is the UUID of the
     authenticated account, the base tier's random `guest-…` marker, `anonymous`, `system`, `console`, or
     `unidentified` for any other `UserInterface` (none exists). `user` now only ever carries that
-    `guest-…` marker (`base-access-issued`, a guest's `logged-out`). Both go through
+    `guest-…` marker (`base-access-issued`, a base access's `logged-out`). Both go through
     `App\Shared\Domain\Security\AccountReference` (`CpgUser::accountId()`), the interface `Ai` reads too,
     so no context depends on `Security`. To name an account during an incident:
     `SELECT username, email FROM cpg_user WHERE id = '<userId>'` — once deleted, its lines designate no one,
     which is the point (minimisation, RGPD register §6; not Goal #9, which is about what the API exposes).
     It runs through a human's read-only `kubectl exec` on the `postgres` pod (`k8s/README.md`, « Journal de
     sécurité »), **never a Job**: a Job would print the name and address into its pod's logs, readable by
-    the CI token's `pods/log` — the exception and its bounds are in `.claude/rules/deploiement.md` (issue #520).
+    the CI token's `pods/log` — the exception and its bounds are in `.claude/rules/deploiement-pipeline.md` (issue #520).
     **Never a password, a token (JWT, XSRF, invitation), an e-mail, a login identifier, a request body or a
     serialized exception** in any context.
     **The identifier tried at login is never written as typed** (issue #418): a password typed in the
     username field would otherwise reach the production log. `login-failed` and `login-throttled` carry
     `userFingerprint` instead — `Infrastructure/Log/LoginIdentifierFingerprint`, an HMAC-SHA256 keyed by a
-    key derived from `kernel.secret` for this use alone (issue #455, see `.claude/rules/backend-architecture.md`), case-folded like `login_throttling`'s counter (`mb_strtolower`), **6 hex chars
+    key derived from `kernel.secret` for this use alone (issue #455, see `.claude/rules/backend-integrite.md`), case-folded like `login_throttling`'s counter (`mb_strtolower`), **6 hex chars
     (24 bits) on purpose**, an empty key refused (with the key, a longer fingerprint would confirm
     offline, at SHA-256 speed, a password typed as identifier; the class docblock has the numbers) — and
     designate the account (`userId`, from the loaded `CpgUser`, never from the input) **only when the

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Security\Authentication\Infrastructure\Log;
 
-use App\Security\User\Domain\ValueObject\GuestUser;
+use App\Security\User\Domain\ValueObject\BaseAccessUser;
 use App\Shared\Domain\Security\AccountReference;
 use Symfony\Component\Security\Core\User\UserInterface;
 
@@ -16,7 +16,7 @@ use Symfony\Component\Security\Core\User\UserInterface;
  *  - un compte ({@see AccountReference}) par son UUID, sous `userId` —
  *    jamais par son identifiant de connexion, dérivé de l'adresse pour un
  *    invité (ADR 0001 D2) ;
- *  - le sujet du palier de base ({@see GuestUser}) par son marqueur `guest-…`,
+ *  - le sujet du palier de base ({@see BaseAccessUser}) par son marqueur `guest-…`,
  *    aléatoire, sous `user` ;
  *  - tout autre utilisateur, par rien : aucun fournisseur n'en produit, et
  *    on ne sait pas ce que son identifiant contient.
@@ -34,7 +34,7 @@ final readonly class PrincipalDesignation
     {
         return match (true) {
             $user instanceof AccountReference => new self('userId', $user->accountId()),
-            $user instanceof GuestUser => new self('user', $user->getUserIdentifier()),
+            $user instanceof BaseAccessUser => new self('user', $user->getUserIdentifier()),
             default => null,
         };
     }

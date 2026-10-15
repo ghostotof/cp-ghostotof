@@ -24,4 +24,18 @@ trait OpensProbeConnection
 
         return DriverManager::getConnection($params);
     }
+
+    /**
+     * La même connexion, sur une autre base du même serveur (issue #634 : la
+     * base jetable d'un test qui valide des `ALTER DATABASE`). Le suffixe
+     * `_test` de la configuration est déjà dans `dbname` : rien ne le rajoute.
+     */
+    private static function openProbeOn(Connection $connection, string $database): Connection
+    {
+        /** @var Params $params mêmes paramètres, donc même forme, que ceux qu'a reçus DriverManager */
+        $params = $connection->getParams();
+        $params['dbname'] = $database;
+
+        return DriverManager::getConnection($params);
+    }
 }
