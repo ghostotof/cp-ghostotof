@@ -28,6 +28,16 @@ final class PhpImageBuildTest extends TestCase
     }
 
     /**
+     * Le pool FPM des images (issue #615), lu comme `php.prod.ini` : le vrai
+     * fichier, quel que soit l'emplacement du test qui le demande. La ligne
+     * attendue est celle que pincent les deux tests de borne du verrou.
+     */
+    public function testTheProductionPoolIsReadFromTheBuildContext(): void
+    {
+        self::assertMatchesRegularExpression('/^env\[PGOPTIONS\] = "-c lock_timeout=5s"$/m', PhpImageBuild::productionPool());
+    }
+
+    /**
      * Une directive absente fait échouer le test qui la demande, en la
      * nommant, au lieu de rendre une chaîne vide qu'une assertion pourrait
      * accepter.

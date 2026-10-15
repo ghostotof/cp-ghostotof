@@ -6,6 +6,7 @@ namespace App\Tests\Shared\Infrastructure\Lock;
 
 use App\Shared\Infrastructure\Lock\PostgresLockedTransaction;
 use App\Tests\Support\KubernetesManifests;
+use App\Tests\Support\PhpImageBuild;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
@@ -165,9 +166,7 @@ final class ConsoleLockWaitBoundTest extends TestCase
      */
     private function fpmPgOptions(): string
     {
-        $path = \dirname(__DIR__, 5).'/docker/php/www.prod.conf';
-        self::assertFileIsReadable($path);
-        self::assertSame(1, preg_match('/^env\[PGOPTIONS\] = "([^"]*)"$/m', (string) file_get_contents($path), $matches), 'www.prod.conf : env[PGOPTIONS] introuvable.');
+        self::assertSame(1, preg_match('/^env\[PGOPTIONS\] = "([^"]*)"$/m', PhpImageBuild::productionPool(), $matches), 'www.prod.conf : env[PGOPTIONS] introuvable.');
 
         return $matches[1];
     }

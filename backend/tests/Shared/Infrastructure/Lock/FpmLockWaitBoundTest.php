@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Shared\Infrastructure\Lock;
 
 use App\Security\Authentication\Infrastructure\Http\RateLimiterLockFailureListener;
+use App\Tests\Support\PhpImageBuild;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -33,7 +34,7 @@ final class FpmLockWaitBoundTest extends TestCase
     {
         self::assertStringContainsString(
             'env[PGOPTIONS] = "-c lock_timeout=5s"',
-            $this->productionPool(),
+            PhpImageBuild::productionPool(),
         );
     }
 
@@ -42,7 +43,7 @@ final class FpmLockWaitBoundTest extends TestCase
         // Juste au-dessus du fastcgi_read_timeout de 60 s (nginx, ingress) :
         // nginx a déjà répondu 504, le worker n'a plus personne à servir. Au-dessus
         // aussi des 50 s de max_duration de l'assistant en flux.
-        self::assertMatchesRegularExpression('/^request_terminate_timeout = 65s$/m', $this->productionPool());
+        self::assertMatchesRegularExpression('/^request_terminate_timeout = 65s$/m', PhpImageBuild::productionPool());
     }
 
     /**
@@ -53,16 +54,8 @@ final class FpmLockWaitBoundTest extends TestCase
      */
     public function testTheRetryAfterOfALockFailureOutlastsTheLockTimeout(): void
     {
-        self::assertSame(1, preg_match('/lock_timeout=(\d+)s/', $this->productionPool(), $matches));
+        self::assertSame(1, preg_match('/lock_timeout=(\d+)s/', PhpImageBuild::productionPool(), $matches));
 
         self::assertGreaterThan((int) $matches[1], RateLimiterLockFailureListener::RETRY_AFTER_SECONDS);
-    }
-
-    private function productionPool(): string
-    {
-        $path = \dirname(__DIR__, 5).'/docker/php/www.prod.conf';
-        self::assertFileIsReadable($path);
-
-        return (string) file_get_contents($path);
     }
 }

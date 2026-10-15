@@ -9,8 +9,8 @@ use PHPUnit\Framework\Assert;
 /**
  * Ce que lit `docker build` pour l'image PHP, depuis la racine du dépôt (le
  * contexte de build) : `docker/php/Dockerfile`, tous stages confondus, le
- * `.dockerignore` (issues #474, #489), et le `php.prod.ini` que le Dockerfile
- * copie dans l'image (issue #612).
+ * `.dockerignore` (issues #474, #489), et le `php.prod.ini` (issue #612) et le
+ * `www.prod.conf` (issue #615) que le Dockerfile copie dans l'image.
  *
  * Le Dockerfile est lu instruction par instruction comme Docker le passe au
  * shell : lignes de commentaire retirées, lignes de continuation jointes. Un
@@ -73,6 +73,15 @@ final class PhpImageBuild
     public static function productionIniDirective(string $name): string
     {
         return self::iniDirective(self::read('docker/php/php.prod.ini'), $name, 'php.prod.ini');
+    }
+
+    /**
+     * Le texte de `www.prod.conf`, le pool FPM que le Dockerfile copie juste
+     * après `php.prod.ini` (issue #615).
+     */
+    public static function productionPool(): string
+    {
+        return self::read('docker/php/www.prod.conf');
     }
 
     /**
