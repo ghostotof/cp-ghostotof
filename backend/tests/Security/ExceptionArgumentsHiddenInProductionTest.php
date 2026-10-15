@@ -157,6 +157,26 @@ final class ExceptionArgumentsHiddenInProductionTest extends TestCase
     }
 
     /**
+     * Aucun pod ne nomme la directive ni ne détourne PHP de ses fichiers
+     * (`PHP_INI_SCAN_DIR`, `PHPRC`) : ni l'`env:` d'un conteneur, ni un
+     * littéral de ConfigMap (`envFrom`), ni la clé d'un ExternalSecret, ni un
+     * `-d` de commande. Le texte de tout `k8s/` est lu, overlays compris :
+     * chacune de ces formes y écrit le nom en clair.
+     *
+     * Non vu : un `php -n` ou `php -c` dans la commande d'un pod (souvent un
+     * script `sh -c` sur plusieurs lignes), et les clés qu'un ExternalSecret
+     * importerait par `dataFrom` sans les nommer (aucun n'en a).
+     */
+    public function testNoPodBypassesTheConfigurationFiles(): void
+    {
+        self::assertSame(
+            [],
+            $this->deploymentLinesMatching(self::INI_LOOKUP_OVERRIDE),
+            'Un manifeste règle zend.exception_ignore_args ou détourne PHP de php.prod.ini (issue #616).',
+        );
+    }
+
+    /**
      * Les lignes hors commentaire des manifestes et des confs de `k8s/` qui
      * répondent à `$pattern`, chacune préfixée de son fichier et de son
      * numéro.
