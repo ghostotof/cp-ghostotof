@@ -319,12 +319,19 @@ final class PhpImageBuild
         $parent = null;
         $instructions = [];
         foreach (self::instructionsOf($dockerfile) as $instruction) {
+            Assert::assertDoesNotMatchRegularExpression(
+                '/<<-?\s*["\']?[A-Za-z_]/',
+                $instruction,
+                \sprintf('« %s » ouvre un heredoc : son corps, lu ligne à ligne, échapperait au garde.', $instruction),
+            );
             if (1 === preg_match('/\AFROM\s+(?:--\S+\s+)*(\S+)(?:\s+AS\s+(\S+))?\s*\z/i', trim($instruction), $from)) {
                 if (null !== $name) {
                     $stages[$name] = ['parent' => $parent, 'instructions' => $instructions];
                 }
                 $base = strtolower($from[1]);
+                Assert::assertStringStartsNotWith('$', $base, \sprintf('« %s » : un stage désigné par une variable échapperait au garde.', $instruction));
                 $name = strtolower($from[2] ?? (string) \count($stages));
+                Assert::assertArrayNotHasKey($name, $stages, \sprintf('Dockerfile : stage « %s » déclaré deux fois.', $name));
                 $parent = \array_key_exists($base, $stages) ? $base : null;
                 $instructions = [];
             }

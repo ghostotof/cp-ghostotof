@@ -183,6 +183,44 @@ final class PhpImageBuildTest extends TestCase
         );
     }
 
+    /**
+     * Ce que le lecteur de stages ne sait pas résoudre, il le refuse : un
+     * `FROM` dont l'image est une variable (elle peut désigner un stage, dont
+     * les instructions échapperaient au garde), un nom de stage repris (sa
+     * parenté bouclerait), un heredoc (son corps, lu ligne à ligne, ouvrirait
+     * de faux stages et cacherait ses commandes).
+     *
+     * @return iterable<string, array{string, string}>
+     */
+    public static function unresolvableDockerfiles(): iterable
+    {
+        yield 'stage par variable' => ["ARG BASE=base\nFROM php:8 AS base\nFROM \${BASE} AS production\nFROM production AS preprod\n", 'désigné par une variable'];
+        yield 'stage par variable nue' => ["FROM php:8 AS base\nFROM \$BASE AS production\nFROM production AS preprod\n", 'désigné par une variable'];
+        yield 'nom repris' => ["FROM php:8 AS production\nFROM production AS production\nFROM production AS preprod\n", 'stage « production » déclaré deux fois'];
+        yield 'heredoc' => ["FROM php:8 AS production\nRUN <<EOF\nsed -i d /x.ini\nEOF\nFROM production AS preprod\n", 'heredoc'];
+    }
+
+    #[DataProvider('unresolvableDockerfiles')]
+    public function testAnUnresolvableDockerfileIsRefused(string $dockerfile, string $message): void
+    {
+        $this->expectException(AssertionFailedError::class);
+        $this->expectExceptionMessage($message);
+
+        PhpImageBuild::deployedInstructionsOf($dockerfile);
+    }
+
+    /**
+     * Une image extérieure dont seul le tag est une variable reste lisible :
+     * c'est la forme de tout `FROM` du vrai Dockerfile.
+     */
+    public function testAVariableTagOfAnExternalImageIsRead(): void
+    {
+        self::assertSame(
+            ['FROM php:${PHP_TAG} AS production', 'FROM production AS preprod'],
+            PhpImageBuild::deployedInstructionsOf("FROM php:\${PHP_TAG} AS production\nFROM production AS preprod\n"),
+        );
+    }
+
     public function testAMissingDeployedStageFailsTheTest(): void
     {
         $this->expectException(AssertionFailedError::class);
