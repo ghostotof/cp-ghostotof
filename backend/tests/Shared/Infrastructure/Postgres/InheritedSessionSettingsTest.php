@@ -6,9 +6,11 @@ namespace App\Tests\Shared\Infrastructure\Postgres;
 
 use App\Tests\Support\OpensProbeConnection;
 use App\Tests\Support\RolesVerification;
+use App\Tests\Support\TestCredentials;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception\DriverException;
 use Doctrine\ORM\EntityManagerInterface;
+use Pdo\Pgsql;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 
 /**
@@ -126,6 +128,73 @@ final class InheritedSessionSettingsTest extends KernelTestCase
             }
             self::assertSame($clean, $this->fingerprint($session));
         });
+    }
+
+    /**
+     * Issue #634 : les deux tromperies mesurées à la main pour #618, qui
+     * laissent la procédure réussir (psql sort en 0), rejouées sur l'écriture
+     * d'un mot de passe telle que roles.sql la fait (`ALTER ROLE … PASSWORD`,
+     * étape 2) dans une nouvelle session :
+     *
+     *  - `debug_print_parse` écrit l'arbre de chaque requête, au niveau `LOG`,
+     *    dans le journal du serveur (`log_min_messages` le laisse passer). Le
+     *    test ne lit pas ce journal : il abaisse `client_min_messages` à `log`
+     *    par une option de connexion, que la remise ne touche pas, et reçoit
+     *    les mêmes messages par le rappel d'avis de pdo_pgsql ;
+     *  - `scram_iterations`, posé sur le rôle de la session dans la base,
+     *    donne un vérificateur d'une seule itération, lu dans `pg_authid`.
+     *
+     * Sans la remise, le mot de passe est dans les messages et le vérificateur
+     * faible ; avec elle, aucun message ne le porte et le vérificateur a les
+     * itérations de démarrage. Le rôle jetable meurt avec la transaction.
+     */
+    public function testAPasswordWrittenAfterTheResetLeavesNoTraceAndKeepsItsIterations(): void
+    {
+        $this->plant();
+        $options = RolesVerification::sessionOptions().' -c client_min_messages=log';
+
+        $this->inProcedureSession($options, function (Connection $session): void {
+            [$messages, $iterations] = $this->writeAPassword($session);
+            self::assertNotSame([], $messages, 'Prémisse : hérité, debug_print_parse écrit le mot de passe.');
+            self::assertSame(1, $iterations, 'Prémisse : hérité, scram_iterations affaiblit le vérificateur.');
+        });
+
+        $this->inProcedureSession($options, function (Connection $session): void {
+            $session->executeStatement(RolesVerification::inheritedSettingsReset());
+            [$messages, $iterations] = $this->writeAPassword($session);
+
+            self::assertSame([], $messages, 'Aucun message ne porte le mot de passe.');
+            self::assertSame((string) $iterations, $session->fetchOne("SELECT boot_val FROM pg_catalog.pg_settings WHERE name = 'scram_iterations'"), 'Le vérificateur a les itérations de démarrage.');
+        });
+    }
+
+    /**
+     * Un rôle jetable reçoit un mot de passe, comme à l'étape 2 de roles.sql :
+     * renvoie les messages du serveur qui portent ce mot de passe, et les
+     * itérations du vérificateur SCRAM écrit (`SCRAM-SHA-256$<itérations>:…`).
+     *
+     * @return array{list<string>, int}
+     */
+    private function writeAPassword(Connection $session): array
+    {
+        $password = TestCredentials::variant('roles-procedure');
+        $role = $session->quoteSingleIdentifier('cpg_probe_pw_'.bin2hex(random_bytes(4)));
+        $native = $session->getNativeConnection();
+        self::assertInstanceOf(Pgsql::class, $native);
+
+        $messages = [];
+        $native->setNoticeCallback(static function (string $message) use (&$messages, $password): void {
+            if (str_contains($message, $password)) {
+                $messages[] = $message;
+            }
+        });
+        $session->executeStatement('CREATE ROLE '.$role);
+        $session->executeStatement(\sprintf('ALTER ROLE %s PASSWORD %s', $role, $session->quote($password)));
+        $verifier = $session->fetchOne('SELECT rolpassword FROM pg_catalog.pg_authid WHERE oid = ?::regrole', [$role]);
+        self::assertIsString($verifier);
+        self::assertSame(1, preg_match('/\ASCRAM-SHA-256\$(\d+):/', $verifier, $iterations), 'Un vérificateur SCRAM (password_encryption de la procédure).');
+
+        return [$messages, (int) $iterations[1]];
     }
 
     /**

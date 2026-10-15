@@ -105,7 +105,12 @@ paths:
   database, an interrupted run left them to every other test) and opens a **new** connection with the
   runbook's `PGOPTIONS` (libpq reads the environment: `putenv`), as `psql` in the pod does — the
   premises (inherited, fingerprint changed), then none left after the reset, each at its boot value,
-  the fingerprint back; the refusal without `timezone_abbreviations`' option; and every `user` setting
+  the fingerprint back; since #634, the two deceptions on a password written as step 2 writes it (a
+  throwaway role, `ALTER ROLE … PASSWORD`): without the reset the password is in the `LOG` messages of
+  `debug_print_parse` — read through pdo_pgsql's notice callback under an added
+  `client_min_messages=log` option, the server log being out of reach — and the SCRAM verifier has one
+  iteration, with it neither (proved by removing `database`, then `database user`, from the reset's
+  sources); the refusal without `timezone_abbreviations`' option; and every `user` setting
   with a NULL boot value being an option, so a PostgreSQL bump adding one turns it red. That database,
   `<test database>_heritage`, is created empty from `template0` in `setUp` and dropped `WITH (FORCE)`
   in `tearDown` and before each creation, so a run interrupted leaves nothing the next one does not
