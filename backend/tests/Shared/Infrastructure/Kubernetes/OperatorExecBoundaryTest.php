@@ -62,6 +62,19 @@ final class OperatorExecBoundaryTest extends TestCase
     private const string READER_ROLE = 'cpg_reader';
 
     /**
+     * La session de chaque `psql` du lecteur : lecture seule et attente de
+     * verrou bornée, puis deux options qui l'emportent sur un réglage que le
+     * propriétaire de la base, ou un rôle sur lui-même, peut poser (issue
+     * #634, mesuré) — `client_encoding` (hérité, `GBK` relisait le flux
+     * UTF-8) et `local_preload_libraries` (une bibliothèque absente refusait
+     * la connexion elle-même, preuve « avant l'étape 2 » comprise). Jamais
+     * `session_preload_libraries=` : de contexte `superuser`, l'option fait
+     * refuser la connexion du lecteur (`permission denied to set parameter`),
+     * et ni le propriétaire ni un rôle sur lui-même ne peuvent la poser.
+     */
+    private const string READER_OPTIONS = 'PGOPTIONS="-c default_transaction_read_only=on -c lock_timeout=5s -c client_encoding=UTF8 -c local_preload_libraries=" psql ';
+
+    /**
      * Toutes les règles qui atteignent le ServiceAccount du déployeur : le Role
      * du namespace et le ClusterRole, chacun par sa liaison. Une liaison qui
      * pointerait ailleurs (un ClusterRole `edit` intégré, par exemple) ferait
@@ -103,7 +116,7 @@ final class OperatorExecBoundaryTest extends TestCase
     {
         $command = $this->lookupCommand();
 
-        self::assertStringContainsString('PGOPTIONS="-c default_transaction_read_only=on -c lock_timeout=5s" psql ', $command);
+        self::assertStringContainsString(self::READER_OPTIONS, $command);
         // -X : aucun ~/.psqlrc du conteneur ; ON_ERROR_STOP : une erreur sort en code non nul.
         self::assertMatchesRegularExpression('/\bpsql -X\b/', $command);
         self::assertStringContainsString('-v ON_ERROR_STOP=1', $command);
@@ -155,8 +168,10 @@ final class OperatorExecBoundaryTest extends TestCase
      * Chaque `psql` que le runbook lance par `exec` (recherche d'un compte,
      * keepalives, comptage des hachages par format — issue #590, contrôle des
      * rôles — issue #575) est une lecture : sous le rôle lecteur, session en
-     * lecture seule et bornée, sans ~/.psqlrc, erreur en code non nul, dans le
-     * namespace que l'opérateur donne, et la requête sur l'entrée standard
+     * lecture seule et bornée, à l'abri des réglages hérités qui la
+     * couperaient ou brouilleraient sa sortie (#634), sans ~/.psqlrc, erreur
+     * en code non nul, dans le namespace que l'opérateur donne, et la requête
+     * sur l'entrée standard
      * (tube ou heredoc), jamais dans l'argv de l'exec.
      */
     public function testEveryRunbookPsqlIsAReadOnlySessionInTheNamespaceGivenByTheOperator(): void
@@ -170,7 +185,8 @@ final class OperatorExecBoundaryTest extends TestCase
         foreach ($calls as $call) {
             $exec = substr($call, (int) strpos($call, 'kubectl '));
             self::assertMatchesRegularExpression('/kubectl -n "\$\{NS:\?[^}]+\}" exec -i deploy\/postgres -c postgres --/', $exec, $call);
-            self::assertStringContainsString('PGOPTIONS="-c default_transaction_read_only=on -c lock_timeout=5s" psql ', $exec, $call);
+            self::assertStringContainsString(self::READER_OPTIONS, $exec, $call);
+            self::assertStringNotContainsString('session_preload_libraries', $exec, 'Refusée au lecteur, cette option couperait sa connexion : '.$call);
             self::assertMatchesRegularExpression('/\bpsql -X\b/', $exec, $call);
             self::assertStringContainsString('-v ON_ERROR_STOP=1', $exec, $call);
             self::assertStringContainsString('-U '.self::READER_ROLE.' ', $exec, 'Un psql du runbook ne tourne que sous le rôle lecteur : '.$call);
