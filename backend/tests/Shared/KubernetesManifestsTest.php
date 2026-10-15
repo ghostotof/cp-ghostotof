@@ -57,6 +57,36 @@ final class KubernetesManifestsTest extends TestCase
     }
 
     /**
+     * Tout `k8s/` : la base, les overlays et ce qui est posé à sa racine
+     * (`ingress-nginx-values.yaml`).
+     */
+    public function testTheTreeIsTheWholeKubernetesDirectory(): void
+    {
+        self::assertSame(\dirname(KubernetesManifests::base()->directory()), KubernetesManifests::tree()->directory());
+    }
+
+    /**
+     * Une ligne est cherchée dans chaque fichier, sous-répertoires compris,
+     * quelle que soit son extension — un `.env` de `configMapGenerator`
+     * nourrit l'environnement d'un pod comme un manifeste —, documentation
+     * (`*.md`) exceptée. Les commentaires comptent : dans un scalaire de bloc
+     * YAML, un `#` n'en ouvre pas forcément un (issue #616).
+     */
+    public function testLinesAreSoughtInEveryFileButTheDocumentation(): void
+    {
+        $filesystem = new Filesystem();
+        $filesystem->dumpFile($this->directory.'/base/app.yaml', "kind: ConfigMap\n# FOO commenté\n");
+        $filesystem->dumpFile($this->directory.'/overlays/prod/app.env', "BAR=1\nFOO=2\n");
+        $filesystem->dumpFile($this->directory.'/nginx.conf', "set \$x FOO;\n");
+        $filesystem->dumpFile($this->directory.'/README.md', "FOO\n");
+
+        self::assertSame(
+            ['base/app.yaml:2: # FOO commenté', 'nginx.conf:1: set $x FOO;', 'overlays/prod/app.env:2: FOO=2'],
+            KubernetesManifests::in($this->directory)->linesMatching('/FOO/'),
+        );
+    }
+
+    /**
      * Un séparateur en tête de fichier ou en fin de fichier laisse un document
      * vide, qui n'en est pas un.
      */

@@ -49,7 +49,9 @@ paths:
   rewrites it by name), or `${BACKEND_IMAGE}` / `$BACKEND_IMAGE` (envsubst fills both). The census
   parses every manifest of the directory, so an unrelated one it refuses turns both its consumers
   red. YAML lists are read through it too (`entries()`, `firstWith($node, $list, $key, $value)`,
-  `text()`), never a private copy. It **refuses** rather than skips: an unparsable document or one
+  `text()`), never a private copy. A guard refusing a word wherever it is written reads the text of
+  the whole tree through it too (`KubernetesManifests::tree()->linesMatching($pattern)`, issue #616:
+  every file but `*.md`, comments included). It **refuses** rather than skips: an unparsable document or one
   that is not a mapping (named by its first line), a resource of another kind carrying a pod
   template or a `containers` list at any depth (a `DaemonSet`, a `PodTemplate`, a `List` of Pods
   must be taught to it first), a list that is a mapping, a list entry that is not a mapping, a
