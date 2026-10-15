@@ -1053,7 +1053,7 @@ DB="$(kubectl -n "${NS:?preprod ou prod}" get secret postgres-credentials -o jso
   printf '\\set rotate %s\n' "$ROTATE"
   cat k8s/base/postgres-roles/roles.sql k8s/base/postgres-roles/privileges.sql k8s/base/postgres-roles/verify.sql k8s/base/postgres-roles/commit.sql
 } | kubectl -n "${NS:?preprod ou prod}" exec -i deploy/postgres -c postgres -- \
-  sh -c 'PGOPTIONS="-c lock_timeout=5s -c idle_in_transaction_session_timeout=30s -c statement_timeout=0 -c transaction_timeout=0 -c idle_session_timeout=0 -c default_transaction_read_only=off -c role=none -c search_path=pg_catalog,pg_temp -c password_encryption=scram-sha-256 -c client_min_messages=notice -c standard_conforming_strings=on -c client_encoding=UTF8 -c local_preload_libraries= -c timezone_abbreviations=Default" psql -X -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v app_role=cpg_app -v migrator_role=cpg_migrator -v reader_role=cpg_reader -f -'
+  sh -c 'PGOPTIONS="-c lock_timeout=5s -c idle_in_transaction_session_timeout=30s -c statement_timeout=0 -c transaction_timeout=0 -c idle_session_timeout=0 -c default_transaction_read_only=off -c role=none -c search_path=pg_catalog,pg_temp -c password_encryption=scram-sha-256 -c client_min_messages=notice -c standard_conforming_strings=on -c client_encoding=UTF8 -c local_preload_libraries= -c session_preload_libraries= -c timezone_abbreviations=Default" psql -X -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v app_role=cpg_app -v migrator_role=cpg_migrator -v reader_role=cpg_reader -f -'
 ```
 
 Chaque `ALTER … OWNER TO` prend un verrou `ACCESS EXCLUSIVE` tenu jusqu'au
@@ -1123,11 +1123,21 @@ le superutilisateur lui-même (`ALTER ROLE … SET`, que seul un
 superutilisateur peut faire) : un incident, et la procédure ne l'efface pas.
 
 **Un refus `#618 : réglages hérités non rendus : {…}`** : un réglage hérité
-n'a pas de valeur de démarrage (`timezone_abbreviations`, le seul sur l'image
-épinglée, est fixé par `PGOPTIONS`) : la procédure ne tourne pas sous lui.
-Une montée de PostgreSQL qui en ajouterait un est arrêtée avant, par
-`InheritedSessionSettingsTest` ; ce refus en préprod est donc un défaut du
-dépôt : ouvrir une issue avec le message, ne rien corriger à la main (#520).
+n'a pas de valeur de démarrage, et la procédure ne tourne pas sous lui. Deux
+causes, que départage le contexte du réglage nommé (`SELECT context FROM
+pg_settings WHERE name = '…'` sous le lecteur ; absent de `pg_settings`, c'est
+le paramètre réservé d'une extension) :
+
+- un réglage de contexte `user` : `timezone_abbreviations`, le seul sur
+  l'image épinglée, est fixé par `PGOPTIONS`, et `InheritedSessionSettingsTest`
+  arrête avant une montée de PostgreSQL qui en ajouterait un. C'est un défaut
+  du dépôt : ouvrir une issue avec le message ;
+- un réglage que seul un superutilisateur peut poser — sur la base, sur le
+  superutilisateur lui-même (`ALTER ROLE … SET`), ou le paramètre réservé
+  d'une extension —, que le test ne voit pas : un incident, conduit comme un
+  avis `#610`.
+
+Dans les deux cas, rien ne se corrige à la main (#520).
 
 **Un avis `NOTICE: #610 : …`** (issue #610) : `roles.sql` a trouvé la base
 de l'application altérée et l'a remise en l'état que le bloc `#608` de

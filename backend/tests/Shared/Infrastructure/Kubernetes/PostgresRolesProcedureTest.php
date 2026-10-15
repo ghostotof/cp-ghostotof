@@ -52,7 +52,7 @@ final class PostgresRolesProcedureTest extends TestCase
      * comparé en entier, une commande glissée dans le `sh -c` le fait rougir.
      */
     private const string EXEC = <<<'SH'
-        kubectl -n "${NS:?preprod ou prod}" exec -i deploy/postgres -c postgres -- sh -c 'PGOPTIONS="-c lock_timeout=5s -c idle_in_transaction_session_timeout=30s -c statement_timeout=0 -c transaction_timeout=0 -c idle_session_timeout=0 -c default_transaction_read_only=off -c role=none -c search_path=pg_catalog,pg_temp -c password_encryption=scram-sha-256 -c client_min_messages=notice -c standard_conforming_strings=on -c client_encoding=UTF8 -c local_preload_libraries= -c timezone_abbreviations=Default" psql -X -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v app_role=cpg_app -v migrator_role=cpg_migrator -v reader_role=cpg_reader -f -'
+        kubectl -n "${NS:?preprod ou prod}" exec -i deploy/postgres -c postgres -- sh -c 'PGOPTIONS="-c lock_timeout=5s -c idle_in_transaction_session_timeout=30s -c statement_timeout=0 -c transaction_timeout=0 -c idle_session_timeout=0 -c default_transaction_read_only=off -c role=none -c search_path=pg_catalog,pg_temp -c password_encryption=scram-sha-256 -c client_min_messages=notice -c standard_conforming_strings=on -c client_encoding=UTF8 -c local_preload_libraries= -c session_preload_libraries= -c timezone_abbreviations=Default" psql -X -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v app_role=cpg_app -v migrator_role=cpg_migrator -v reader_role=cpg_reader -f -'
         SH;
 
     /**
@@ -95,9 +95,14 @@ final class PostgresRolesProcedureTest extends TestCase
         // la connexion elle-même (« could not access file ») : la procédure,
         // qui la répare, ne démarrait plus. Vide : aucune n'est chargée.
         'local_preload_libraries' => '',
-        // #618 : le seul réglage `user` sans valeur de démarrage — la remise
-        // en tête de roles.sql ne peut que le laisser, et refuse alors
-        // (InheritedSessionSettingsTest).
+        // Relecture de #618, mesuré : son pendant de contexte `superuser`,
+        // que le propriétaire ne pose qu'avec un `GRANT SET ON PARAMETER`
+        // (ou le superutilisateur), refusait la connexion de même.
+        'session_preload_libraries' => '',
+        // #618 : il n'agit pas avant toute instruction, mais c'est le seul
+        // réglage `user` sans valeur de démarrage — la remise en tête de
+        // roles.sql ne peut que le laisser, et refuse alors
+        // (\App\Tests\Shared\Infrastructure\Postgres\InheritedSessionSettingsTest).
         'timezone_abbreviations' => 'Default',
     ];
 
@@ -142,9 +147,9 @@ final class PostgresRolesProcedureTest extends TestCase
      */
     public function testTheSessionOptionsOverrideTheDatabaseSettings(): void
     {
-        self::assertSame(1, preg_match('/PGOPTIONS="([^"]*)" psql /', $this->exec(), $match), 'PGOPTIONS entre guillemets doubles, juste avant psql.');
-        self::assertSame(1, preg_match('/\A(?:-c [a-z_]+=\S* ?)+\z/', $match[1]), 'PGOPTIONS : des « -c nom=valeur » seulement, sans blanc dans une valeur (vide permis).');
-        preg_match_all('/-c ([a-z_]+)=(\S*)/', $match[1], $pairs, \PREG_SET_ORDER);
+        $sessionOptions = RolesVerification::sessionOptions();
+        self::assertSame(1, preg_match('/\A(?:-c [a-z_]+=\S* ?)+\z/', $sessionOptions), 'PGOPTIONS : des « -c nom=valeur » seulement, sans blanc dans une valeur (vide permis).');
+        preg_match_all('/-c ([a-z_]+)=(\S*)/', $sessionOptions, $pairs, \PREG_SET_ORDER);
 
         $options = [];
         foreach ($pairs as [, $name, $value]) {

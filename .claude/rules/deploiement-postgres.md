@@ -78,10 +78,13 @@ paths:
   it silenced the repair's notices — measured) and `standard_conforming_strings=on` (at `off`, the
   backslash of `DoctrineMigrations\Version…` vanished from the literals and the procedure failed on
   every pass as a false « checkout behind » — measured), and, since #618, three that act before any
-  statement: `client_encoding=UTF8` (inherited `GBK` re-read the UTF-8 stream, psql exit 3),
+  statement — `client_encoding=UTF8` (inherited `GBK` re-read the UTF-8 stream, psql exit 3),
   `local_preload_libraries=` (empty: a missing library set on the database refused the connection
-  itself) and `timezone_abbreviations=Default` (the one `user` setting with no boot value, which the
-  reset below cannot give back); `PostgresRolesProcedureTest` lists them with their reasons, no more,
+  itself) and its `superuser`-context twin `session_preload_libraries=` (same refusal, measured; the
+  owner sets it only with a `GRANT SET ON PARAMETER`) — plus `timezone_abbreviations=Default`, which
+  acts no earlier than any other but is the one `user` setting with no boot value, the one the reset
+  below cannot give back (the criterion for an option is « acts before the first statement » **or**
+  « has no boot value »); `PostgresRolesProcedureTest` lists them with their reasons, no more,
   no less. **Every other inherited setting is given back its boot value by `roles.sql`** (#618): a
   list of options never closes, and some settings change the procedure's meaning without failing it
   (measured on the pinned image, psql exit 0 both times: `debug_print_parse` wrote the password into
