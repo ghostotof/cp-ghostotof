@@ -13,8 +13,8 @@
 --     différé ni altérer le schéma.
 -- D'où la forme : du SQL pur, une instruction par `;` (un bloc `DO $$ … $$`
 -- compte pour une), aucune méta-commande psql, et seulement les variables
--- :"app_role" (identifiant), :'app_role' (littéral), :"migrator_role" et
--- :"reader_role". Rejouable : chaque GRANT/REVOKE est idempotent. Jouable sur
+-- :"app_role" (identifiant), :'app_role' et :'reader_role' (littéraux),
+-- :"migrator_role" et :"reader_role". Rejouable : chaque GRANT/REVOKE est idempotent. Jouable sur
 -- une base encore vide (environnement neuf : la procédure passe AVANT la première
 -- migration, qui tourne sous le rôle de migration) : rien ici ne suppose une
 -- table.
@@ -63,5 +63,16 @@ ALTER DEFAULT PRIVILEGES FOR ROLE :"migrator_role" IN SCHEMA public GRANT USAGE,
 
 -- Le lecteur des psql humains du runbook (k8s/README.md) : tout lire, dont
 -- cpg_user pour nommer un compte, rien écrire — une frontière, là où
--- default_transaction_read_only n'était qu'un garde-fou.
-GRANT pg_read_all_data TO :"reader_role";
+-- default_transaction_read_only n'était qu'un garde-fou. Accordé seulement
+-- s'il manque : rejoué sur une appartenance existante, le GRANT imprimait un
+-- avis qui nomme le rôle qui l'avait accordée, le superutilisateur de l'image,
+-- dont le nom ne vit que dans un Secret (constaté à la release 0.27.0).
+-- USAGE et non MEMBER : une appartenance sans héritage ne donne pas les droits.
+SELECT set_config('cpg.reader_role', :'reader_role', true);
+DO $$
+BEGIN
+    IF NOT pg_has_role(current_setting('cpg.reader_role'), 'pg_read_all_data', 'USAGE') THEN
+        EXECUTE format('GRANT pg_read_all_data TO %I', current_setting('cpg.reader_role'));
+    END IF;
+END
+$$;
