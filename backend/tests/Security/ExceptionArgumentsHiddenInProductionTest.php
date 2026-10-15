@@ -38,6 +38,9 @@ use SplFileInfo;
  * un fichier ajouté demain est vu sans toucher au test. `xdebug.preprod.ini`,
  * chargé après `zz-app.ini` dans l'image `preprod`, l'emporterait sur lui ;
  * un `php_admin_flag[…]` du pool FPM l'emporterait sur tout fichier ini.
+ * Au-delà des fichiers, le garde lit ce qui pourrait les écarter : les
+ * instructions et la commande des stages déployés, le sidecar nginx et les
+ * pods (un test chacun, ses limites dans son docblock).
  *
  * Non couvert, et accepté : les fichiers que l'image officielle range
  * elle-même dans la configuration (`docker-php-ext-*.ini`,
