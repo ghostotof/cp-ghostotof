@@ -52,7 +52,7 @@ final class PostgresRolesProcedureTest extends TestCase
      * comparé en entier, une commande glissée dans le `sh -c` le fait rougir.
      */
     private const string EXEC = <<<'SH'
-        kubectl -n "${NS:?preprod ou prod}" exec -i deploy/postgres -c postgres -- sh -c 'PGOPTIONS="-c lock_timeout=5s -c idle_in_transaction_session_timeout=30s -c statement_timeout=0 -c transaction_timeout=0 -c idle_session_timeout=0 -c default_transaction_read_only=off -c role=none -c search_path=pg_catalog,pg_temp -c password_encryption=scram-sha-256 -c client_min_messages=notice -c standard_conforming_strings=on" psql -X -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v app_role=cpg_app -v migrator_role=cpg_migrator -v reader_role=cpg_reader -f -'
+        kubectl -n "${NS:?preprod ou prod}" exec -i deploy/postgres -c postgres -- sh -c 'PGOPTIONS="-c lock_timeout=5s -c idle_in_transaction_session_timeout=30s -c statement_timeout=0 -c transaction_timeout=0 -c idle_session_timeout=0 -c default_transaction_read_only=off -c role=none -c search_path=pg_catalog,pg_temp -c password_encryption=scram-sha-256 -c client_min_messages=notice -c standard_conforming_strings=on -c client_encoding=UTF8 -c local_preload_libraries= -c session_preload_libraries= -c timezone_abbreviations=Default" psql -X -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v app_role=cpg_app -v migrator_role=cpg_migrator -v reader_role=cpg_reader -f -'
         SH;
 
     /**
@@ -86,6 +86,24 @@ final class PostgresRolesProcedureTest extends TestCase
         // `DoctrineMigrations\Version…` disparaissait des littéraux, la
         // procédure échouait à chaque passage sur un faux « checkout en retard ».
         'standard_conforming_strings' => 'on',
+        // #618, mesuré : ces deux-là agissent avant toute instruction, aucune
+        // remise à zéro écrite dans un fichier ne les rattrape. Hérité de la
+        // base (`GBK`), l'encodage du client relisait le flux UTF-8 : un avis
+        // accentué faisait sortir psql en 3, à chaque passage.
+        'client_encoding' => 'UTF8',
+        // Une bibliothèque absente posée sur la base (`nexiste_pas`) refusait
+        // la connexion elle-même (« could not access file ») : la procédure,
+        // qui la répare, ne démarrait plus. Vide : aucune n'est chargée.
+        'local_preload_libraries' => '',
+        // Relecture de #618, mesuré : son pendant de contexte `superuser`,
+        // que le propriétaire ne pose qu'avec un `GRANT SET ON PARAMETER`
+        // (ou le superutilisateur), refusait la connexion de même.
+        'session_preload_libraries' => '',
+        // #618 : il n'agit pas avant toute instruction, mais c'est le seul
+        // réglage `user` sans valeur de démarrage — la remise en tête de
+        // roles.sql ne peut que le laisser, et refuse alors
+        // (\App\Tests\Shared\Infrastructure\Postgres\InheritedSessionSettingsTest).
+        'timezone_abbreviations' => 'Default',
     ];
 
     /**
@@ -129,9 +147,9 @@ final class PostgresRolesProcedureTest extends TestCase
      */
     public function testTheSessionOptionsOverrideTheDatabaseSettings(): void
     {
-        self::assertSame(1, preg_match('/PGOPTIONS="([^"]*)" psql /', $this->exec(), $match), 'PGOPTIONS entre guillemets doubles, juste avant psql.');
-        self::assertSame(1, preg_match('/\A(?:-c [a-z_]+=\S+ ?)+\z/', $match[1]), 'PGOPTIONS : des « -c nom=valeur » seulement, sans blanc dans une valeur.');
-        preg_match_all('/-c ([a-z_]+)=(\S+)/', $match[1], $pairs, \PREG_SET_ORDER);
+        $sessionOptions = RolesVerification::sessionOptions();
+        self::assertSame(1, preg_match('/\A(?:-c [a-z_]+=\S* ?)+\z/', $sessionOptions), 'PGOPTIONS : des « -c nom=valeur » seulement, sans blanc dans une valeur (vide permis).');
+        preg_match_all('/-c ([a-z_]+)=(\S*)/', $sessionOptions, $pairs, \PREG_SET_ORDER);
 
         $options = [];
         foreach ($pairs as [, $name, $value]) {
@@ -146,7 +164,7 @@ final class PostgresRolesProcedureTest extends TestCase
      * `--single-transaction`, qui envoie COMMIT à la fin de l'entrée si rien
      * n'a échoué : un flux coupé en route validait ce qui était arrivé
      * (mesuré : trois rôles, ni transfert de propriété ni verify.sql, sortie
-     * 0). Le flux ouvre par `BEGIN;` et finit par commit.sql, qui ne valide
+     * 0). Le flux ouvre par `BEGIN ISOLATION LEVEL READ COMMITTED;` et finit par commit.sql, qui ne valide
      * que si verify.sql est allé jusqu'au bout : un fichier manquant (un `cat`
      * lancé hors de la racine du checkout, un fichier renommé) ou un flux
      * tronqué n'écrivent rien.
@@ -155,7 +173,10 @@ final class PostgresRolesProcedureTest extends TestCase
     {
         self::assertSame(1, preg_match('/^\{\n(.*?)\n\}\s*\|/ms', $this->block(), $group), 'Le flux est un groupe de commandes `{ … } |`.');
         $lines = array_map(trim(...), explode("\n", $group[1]));
-        self::assertSame("printf 'BEGIN;\\n'", $lines[0], 'Première ligne du flux : BEGIN.');
+        // #618 : l'isolation est celle du BEGIN, pas celle qu'un
+        // `default_transaction_isolation` posé sur la base donnerait (mesuré :
+        // `serializable` hérité, rattrapé par la clause).
+        self::assertSame("printf 'BEGIN ISOLATION LEVEL READ COMMITTED;\\n'", $lines[0], 'Première ligne du flux : BEGIN, son isolation écrite.');
 
         $paths = array_map(
             static fn (string $file): string => 'k8s/base/'.self::SQL_DIRECTORY.'/'.$file,
@@ -263,7 +284,8 @@ final class PostgresRolesProcedureTest extends TestCase
 
     /**
      * roles.sql efface la marque de verify.sql, coupe la journalisation d'une
-     * instruction refusée **avant** la première qui porte un mot de passe (la
+     * instruction refusée et rend à la session les réglages qu'elle hérite de
+     * la base (#618) **avant** la première qui porte un mot de passe (la
      * garde de longueur), refuse avant toute écriture un mot de passe absent ou court et une rotation qui
      * ne vaut ni 0 ni 1, et ne réécrit un mot de passe qu'à la création ou sur
      * rotation (relecture de #575).
@@ -278,6 +300,11 @@ final class PostgresRolesProcedureTest extends TestCase
             self::assertIsInt($at, $setting);
             self::assertLessThan($firstPassword, $at, $setting.' : avant la première requête qui porte un mot de passe.');
         }
+        // #618 : les réglages hérités de la base rendus avant elle aussi (un
+        // debug_print_parse hérité écrivait le mot de passe dans le journal).
+        $reset = strpos($roles, RolesVerification::inheritedSettingsReset());
+        self::assertIsInt($reset, 'roles.sql : la remise des réglages hérités, telle qu\'entre ses marqueurs.');
+        self::assertLessThan($firstPassword, $reset, 'La remise des réglages hérités : avant la première requête qui porte un mot de passe.');
 
         self::assertStringContainsString(':{?rotate}', $roles);
         self::assertMatchesRegularExpression("/:'rotate' IN \\('0', '1'\\)/", $roles);
