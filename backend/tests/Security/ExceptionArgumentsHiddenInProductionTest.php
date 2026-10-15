@@ -49,18 +49,16 @@ use SplFileInfo;
  */
 final class ExceptionArgumentsHiddenInProductionTest extends TestCase
 {
-    private const string PRODUCTION_INI = 'docker/php/php.prod.ini';
-
     /**
-     * Le nom de la directive, sans son préfixe et sans casse : un garde qui
+     * Le motif du nom de la directive, sans son préfixe et sans casse : un garde qui
      * refuse doit refuser large.
      */
-    private const string DIRECTIVE_NAME = '/exception_ignore_args/i';
+    private const string DIRECTIVE_PATTERN = '/exception_ignore_args/i';
 
     /**
      * La directive, ou une variable qui détourne PHP de ses fichiers ini.
      */
-    private const string INI_LOOKUP_OVERRIDE = '/exception_ignore_args|\bPHP_INI_SCAN_DIR\b|\bPHPRC\b/i';
+    private const string DIRECTIVE_OR_INI_REDIRECTION = '/exception_ignore_args|\bPHP_INI_SCAN_DIR\b|\bPHPRC\b/i';
 
     /**
      * Une option de `php` ou de `php-fpm` qui écarte ou remplace leurs
@@ -72,7 +70,7 @@ final class ExceptionArgumentsHiddenInProductionTest extends TestCase
     {
         self::assertSame('On', PhpImageBuild::productionIniDirective('zend.exception_ignore_args'));
         self::assertContains(
-            self::PRODUCTION_INI,
+            PhpImageBuild::PRODUCTION_INI,
             PhpImageBuild::deployedConfigurationCopies(),
             'php.prod.ini n\'est plus copié dans la configuration des images déployées : la directive qu\'il pose ne s\'y applique pas.',
         );
@@ -88,11 +86,11 @@ final class ExceptionArgumentsHiddenInProductionTest extends TestCase
     {
         $offenders = [];
         foreach (PhpImageBuild::deployedConfigurationCopies() as $destination => $source) {
-            if (self::PRODUCTION_INI === $source) {
+            if (PhpImageBuild::PRODUCTION_INI === $source) {
                 continue;
             }
             foreach (PhpImageBuild::iniKeys(PhpImageBuild::contextFile($source), $source) as $key) {
-                if (1 === preg_match(self::DIRECTIVE_NAME, $key)) {
+                if (1 === preg_match(self::DIRECTIVE_PATTERN, $key)) {
                     $offenders[] = \sprintf('%s (%s) : %s', $source, $destination, $key);
                 }
             }
@@ -114,7 +112,7 @@ final class ExceptionArgumentsHiddenInProductionTest extends TestCase
             [],
             array_values(array_filter(
                 PhpImageBuild::deployedInstructions(),
-                static fn (string $instruction): bool => 1 === preg_match(self::INI_LOOKUP_OVERRIDE, $instruction),
+                static fn (string $instruction): bool => 1 === preg_match(self::DIRECTIVE_OR_INI_REDIRECTION, $instruction),
             )),
             'Une instruction des stages déployés règle zend.exception_ignore_args ou détourne PHP de php.prod.ini (issue #616).',
         );
@@ -174,7 +172,7 @@ final class ExceptionArgumentsHiddenInProductionTest extends TestCase
     {
         self::assertSame(
             [],
-            $this->deploymentLinesMatching(self::INI_LOOKUP_OVERRIDE),
+            $this->deploymentLinesMatching(self::DIRECTIVE_OR_INI_REDIRECTION),
             'Un manifeste règle zend.exception_ignore_args ou détourne PHP de php.prod.ini (issue #616).',
         );
     }

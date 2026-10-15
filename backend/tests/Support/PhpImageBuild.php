@@ -24,10 +24,16 @@ final class PhpImageBuild
     public const string WORKDIR = '/var/www/backend';
 
     /**
+     * Le fichier ini des images déployées, seul à poser les directives que
+     * les tests y pincent (`zend.exception_ignore_args`, `date.timezone`).
+     */
+    public const string PRODUCTION_INI = 'docker/php/php.prod.ini';
+
+    /**
      * Les stages que le Makefile et la pipeline construisent et déploient
      * (`--target production`, `--target preprod`).
      */
-    public const array DEPLOYED_STAGES = ['production', 'preprod'];
+    private const array DEPLOYED_STAGES = ['production', 'preprod'];
 
     /**
      * Où l'image officielle range la configuration de PHP (`php.ini`,
@@ -57,16 +63,6 @@ final class PhpImageBuild
     }
 
     /**
-     * Les instructions d'un texte de Dockerfile, chacune sur une ligne.
-     *
-     * @return list<string>
-     */
-    public static function instructionsOf(string $dockerfile): array
-    {
-        return explode("\n", (string) preg_replace('/\\\\\n\s*/', ' ', implode("\n", self::withoutComments($dockerfile))));
-    }
-
-    /**
      * Les instructions des stages déployés et de leurs ancêtres, dans l'ordre
      * du Dockerfile (issue #616).
      *
@@ -88,37 +84,19 @@ final class PhpImageBuild
      */
     public static function deployedInstructionsOf(string $dockerfile): array
     {
-        // Stage => stage dont il descend (null pour une image extérieure),
-        // et stage => ses instructions.
-        /** @var array<string, ?string> $parents */
-        $parents = [];
-        /** @var array<string, list<string>> $instructionsByStage */
-        $instructionsByStage = [];
-        $current = null;
-        foreach (self::instructionsOf($dockerfile) as $instruction) {
-            if (1 === preg_match('/\AFROM\s+(?:--\S+\s+)*(\S+)(?:\s+AS\s+(\S+))?\s*\z/i', trim($instruction), $from)) {
-                $base = strtolower($from[1]);
-                $current = strtolower($from[2] ?? (string) \count($parents));
-                $parents[$current] = \array_key_exists($base, $parents) ? $base : null;
-                $instructionsByStage[$current] = [];
-            }
-            if (null !== $current && '' !== trim($instruction)) {
-                $instructionsByStage[$current][] = $instruction;
-            }
-        }
-
+        $stages = self::stagesOf($dockerfile);
         $deployed = [];
         foreach (self::DEPLOYED_STAGES as $stage) {
-            Assert::assertArrayHasKey($stage, $parents, \sprintf('Dockerfile : aucun stage « %s ».', $stage));
-            for ($name = $stage; null !== $name; $name = $parents[$name]) {
+            Assert::assertArrayHasKey($stage, $stages, \sprintf('Dockerfile : aucun stage « %s ».', $stage));
+            for ($name = $stage; null !== $name; $name = $stages[$name]['parent']) {
                 $deployed[$name] = true;
             }
         }
 
         $instructions = [];
-        foreach ($instructionsByStage as $name => $stageInstructions) {
+        foreach ($stages as $name => $stage) {
             if (isset($deployed[$name])) {
-                array_push($instructions, ...$stageInstructions);
+                array_push($instructions, ...$stage['instructions']);
             }
         }
 
@@ -210,7 +188,7 @@ final class PhpImageBuild
      */
     public static function productionIniDirective(string $name): string
     {
-        return self::iniDirective(self::read('docker/php/php.prod.ini'), $name, 'php.prod.ini');
+        return self::iniDirective(self::read(self::PRODUCTION_INI), $name, basename(self::PRODUCTION_INI));
     }
 
     /**
@@ -234,8 +212,7 @@ final class PhpImageBuild
      */
     public static function iniDirective(string $ini, string $name, string $file): string
     {
-        $directives = parse_ini_string($ini, false, \INI_SCANNER_RAW);
-        Assert::assertIsArray($directives, \sprintf('%s illisible.', $file));
+        $directives = self::parseIni($ini, $file, false);
         Assert::assertArrayHasKey($name, $directives, \sprintf('%s : aucune directive « %s ».', $file, $name));
         Assert::assertIsString($directives[$name], \sprintf('%s : « %s » n\'est pas une valeur simple.', $file, $name));
 
@@ -252,10 +229,67 @@ final class PhpImageBuild
      */
     public static function iniKeys(string $ini, string $file): array
     {
-        $parsed = parse_ini_string($ini, true, \INI_SCANNER_RAW);
+        return self::keysOf(self::parseIni($ini, $file, true));
+    }
+
+    /**
+     * Un texte ini lu brut, comme le lisent {@see self::iniDirective()} et
+     * {@see self::iniKeys()} ; illisible, il fait échouer le test.
+     *
+     * @return array<mixed>
+     */
+    private static function parseIni(string $ini, string $file, bool $sections): array
+    {
+        $parsed = parse_ini_string($ini, $sections, \INI_SCANNER_RAW);
         Assert::assertIsArray($parsed, \sprintf('%s illisible.', $file));
 
-        return self::keysOf($parsed);
+        return $parsed;
+    }
+
+    /**
+     * Les instructions d'un texte de Dockerfile, chacune sur une ligne.
+     *
+     * @return list<string>
+     */
+    private static function instructionsOf(string $dockerfile): array
+    {
+        return explode("\n", (string) preg_replace('/\\\\\n\s*/', ' ', implode("\n", self::withoutComments($dockerfile))));
+    }
+
+    /**
+     * Les stages d'un texte de Dockerfile, dans l'ordre, par nom en
+     * minuscules (Docker les lit sans casse) : le stage dont chacun descend
+     * par `FROM <stage>` (null pour une image extérieure) et ses instructions,
+     * `FROM` compris. Un stage sans nom reçoit son rang ; les `ARG` globaux
+     * d'avant le premier `FROM` n'appartiennent à aucun.
+     *
+     * @return array<string, array{parent: ?string, instructions: list<string>}>
+     */
+    private static function stagesOf(string $dockerfile): array
+    {
+        $stages = [];
+        $name = null;
+        $parent = null;
+        $instructions = [];
+        foreach (self::instructionsOf($dockerfile) as $instruction) {
+            if (1 === preg_match('/\AFROM\s+(?:--\S+\s+)*(\S+)(?:\s+AS\s+(\S+))?\s*\z/i', trim($instruction), $from)) {
+                if (null !== $name) {
+                    $stages[$name] = ['parent' => $parent, 'instructions' => $instructions];
+                }
+                $base = strtolower($from[1]);
+                $name = strtolower($from[2] ?? (string) \count($stages));
+                $parent = \array_key_exists($base, $stages) ? $base : null;
+                $instructions = [];
+            }
+            if (null !== $name && '' !== trim($instruction)) {
+                $instructions[] = $instruction;
+            }
+        }
+        if (null !== $name) {
+            $stages[$name] = ['parent' => $parent, 'instructions' => $instructions];
+        }
+
+        return $stages;
     }
 
     /**
