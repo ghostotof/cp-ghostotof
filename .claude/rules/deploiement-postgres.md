@@ -101,13 +101,15 @@ paths:
   to the owner), the real stream passes, none left. The session's zone becomes `GMT` (the database's
   `TimeZone` is inherited too): the #611 fingerprint does not depend on `TimeZone`, `DateStyle` or
   `extra_float_digits` (measured). `InheritedSessionSettingsTest` commits real `ALTER DATABASE` and
-  `ALTER ROLE … IN DATABASE … SET` on the test database and opens a **new** connection with the
+  `ALTER ROLE … IN DATABASE … SET` on a **throwaway database** of its own (#634: on the shared test
+  database, an interrupted run left them to every other test) and opens a **new** connection with the
   runbook's `PGOPTIONS` (libpq reads the environment: `putenv`), as `psql` in the pod does — the
   premises (inherited, fingerprint changed), then none left after the reset, each at its boot value,
   the fingerprint back; the refusal without `timezone_abbreviations`' option; and every `user` setting
-  with a NULL boot value being an option, so a PostgreSQL bump adding one turns it red. It removes
-  what it plants setting by setting (never `RESET ALL`, which would take the migration's time zone),
-  in `tearDown` and in `setUp`. The SQL files hold no transaction control and no reconnection.
+  with a NULL boot value being an option, so a PostgreSQL bump adding one turns it red. That database,
+  `<test database>_heritage`, is created empty from `template0` in `setUp` and dropped `WITH (FORCE)`
+  in `tearDown` and before each creation, so a run interrupted leaves nothing the next one does not
+  remove, and the shared database never carries a planted setting (asserted). The SQL files hold no transaction control and no reconnection.
   `PostgresRolesProcedureTest` pins the exec line word for word, the stream, `commit.sql` and its
   mark, and the files (no echo of a variable, a password cited only in its three places, no shell,
   `\copy`, `\w`, `\setenv` nor `PROGRAM`, the rotation gate). That `exec` is the **one written exception** to #520

@@ -21,10 +21,16 @@ use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
  *
  * {@see DatabaseOwnerSettingsVerificationTest} rejoue ses blocs dans une
  * session déjà ouverte, qui n'hérite pas de ce qu'il pose : ce test-ci valide
- * ses réglages sur la base de test, puis ouvre une **nouvelle** connexion avec
- * les options du runbook, comme `psql` dans le pod. Les réglages posés sont
- * retirés un par un au `tearDown` (et au `setUp`, si un passage interrompu en
- * a laissé) : le fuseau que la migration pose sur la base reste intact.
+ * ses réglages, puis ouvre une **nouvelle** connexion avec les options du
+ * runbook, comme `psql` dans le pod.
+ *
+ * Issue #634 : ces réglages validés survivaient à un passage interrompu
+ * (fatale, délai, Ctrl-C), et tous les autres tests en héritaient jusqu'au
+ * passage suivant de celui-ci. Ils sont donc posés sur une **base jetable**,
+ * créée vide au `setUp` et supprimée au `tearDown` — et au `setUp` suivant,
+ * si un passage interrompu l'a laissée : la base de test partagée n'en porte
+ * jamais aucun. `DROP DATABASE` emporte aussi les réglages de rôle propres à
+ * la base. Coût mesuré : une base créée depuis `template0` par test.
  */
 final class InheritedSessionSettingsTest extends KernelTestCase
 {
@@ -54,21 +60,34 @@ final class InheritedSessionSettingsTest extends KernelTestCase
     /** Le seul réglage `user` sans valeur de démarrage : la remise ne peut que le laisser. */
     private const string WITHOUT_BOOT_VALUE = 'timezone_abbreviations';
 
+    /** Le suffixe de la base jetable, ajouté au nom de la base de test partagée. */
+    private const string THROWAWAY_SUFFIX = '_heritage';
+
+    /** La base de test partagée : elle crée et supprime la base jetable, rien d'autre. */
+    private Connection $shared;
+
+    /** La base jetable, vide, où le test plante ses réglages. */
     private Connection $probe;
 
     protected function setUp(): void
     {
         self::bootKernel();
-        $this->probe = self::openProbeBeside(self::getContainer()->get(EntityManagerInterface::class)->getConnection());
-        self::assertSame('on', $this->probe->fetchOne("SELECT current_setting('is_superuser')"), 'Prémisse : le rôle de test est le superutilisateur de l\'image, comme celui de la procédure.');
-        $this->removePlantedSettings();
+        $this->shared = self::openProbeBeside(self::getContainer()->get(EntityManagerInterface::class)->getConnection());
+        self::assertSame('on', $this->shared->fetchOne("SELECT current_setting('is_superuser')"), 'Prémisse : le rôle de test est le superutilisateur de l\'image, comme celui de la procédure.');
+
+        $this->dropThrowawayDatabase();
+        $this->shared->executeStatement(\sprintf('CREATE DATABASE %s TEMPLATE template0', $this->shared->quoteSingleIdentifier($this->throwawayDatabase())));
+        $this->probe = self::openProbeOn($this->shared, $this->throwawayDatabase());
     }
 
     protected function tearDown(): void
     {
         if (isset($this->probe)) {
-            $this->removePlantedSettings();
             $this->probe->close();
+        }
+        if (isset($this->shared)) {
+            $this->dropThrowawayDatabase();
+            $this->shared->close();
         }
         parent::tearDown();
     }
@@ -83,6 +102,7 @@ final class InheritedSessionSettingsTest extends KernelTestCase
     {
         $clean = $this->fingerprint($this->probe);
         $this->plant();
+        self::assertSame([], $this->sharedDatabaseSettings(), 'Ce que le test plante ne touche jamais la base de test partagée.');
 
         $this->inProcedureSession(RolesVerification::sessionOptions(), function (Connection $session) use ($clean): void {
             $session->executeStatement("LOAD 'plpgsql'");
@@ -186,15 +206,19 @@ final class InheritedSessionSettingsTest extends KernelTestCase
         }
     }
 
-    /** Retire ce que ce test pose, réglage par réglage : jamais `RESET ALL`, qui emporterait le fuseau de la migration. */
-    private function removePlantedSettings(): void
+    /** Le nom de la base jetable : fixe, pour qu'un passage interrompu la retrouve. */
+    private function throwawayDatabase(): string
     {
-        foreach ([...array_keys(self::DATABASE_SETTINGS), self::WITHOUT_BOOT_VALUE] as $name) {
-            $this->probe->executeStatement(\sprintf('ALTER DATABASE %s RESET %s', $this->database(), $name));
-        }
-        foreach (array_keys(self::ROLE_IN_DATABASE_SETTINGS) as $name) {
-            $this->probe->executeStatement(\sprintf('ALTER ROLE CURRENT_USER IN DATABASE %s RESET %s', $this->database(), $name));
-        }
+        $shared = $this->shared->fetchOne('SELECT current_database()');
+        self::assertIsString($shared);
+
+        return $shared.self::THROWAWAY_SUFFIX;
+    }
+
+    /** Supprime la base jetable, sessions ouvertes comprises, si elle existe. */
+    private function dropThrowawayDatabase(): void
+    {
+        $this->shared->executeStatement(\sprintf('DROP DATABASE IF EXISTS %s WITH (FORCE)', $this->shared->quoteSingleIdentifier($this->throwawayDatabase())));
     }
 
     /** L'empreinte du schéma, calculée par la requête même du bloc `#611`, sous son search_path. */
@@ -205,6 +229,24 @@ final class InheritedSessionSettingsTest extends KernelTestCase
         self::assertIsString($fingerprint);
 
         return $fingerprint;
+    }
+
+    /**
+     * Les réglages plantés par ce test que porte la base de test partagée,
+     * sur elle ou sur un rôle en elle : ceux qu'hériteraient tous les autres
+     * tests si un passage était interrompu.
+     *
+     * @return list<string>
+     */
+    private function sharedDatabaseSettings(): array
+    {
+        $shared = $this->shared->fetchFirstColumn(
+            "SELECT split_part(c, '=', 1) FROM pg_db_role_setting s, unnest(s.setconfig) AS c
+             WHERE s.setdatabase = (SELECT oid FROM pg_database WHERE datname = current_database()) ORDER BY 1",
+        );
+        $planted = [...array_keys(self::DATABASE_SETTINGS), ...array_keys(self::ROLE_IN_DATABASE_SETTINGS), self::WITHOUT_BOOT_VALUE];
+
+        return array_values(array_filter($planted, static fn (string $name): bool => \in_array($name, $shared, true)));
     }
 
     private function database(): string
