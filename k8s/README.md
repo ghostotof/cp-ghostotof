@@ -1194,7 +1194,7 @@ connections for database` sous `CONNECTION LIMIT 0`).
 ```bash
 NS=        # preprod ou prod, à renseigner : vide, la commande s'arrête avant d'appeler le cluster
 kubectl -n "${NS:?preprod ou prod}" exec -i deploy/postgres -c postgres -- \
-  sh -c 'PGOPTIONS="-c default_transaction_read_only=on -c lock_timeout=5s -c client_encoding=UTF8 -c local_preload_libraries=" psql -X -A -v ON_ERROR_STOP=1 -U cpg_reader -d "$POSTGRES_DB"' <<'SQL'
+  sh -c 'PGOPTIONS="-c default_transaction_read_only=on -c lock_timeout=5s -c client_encoding=UTF8 -c local_preload_libraries= -c search_path=pg_catalog,pg_temp" psql -X -A -v ON_ERROR_STOP=1 -U cpg_reader -d "$POSTGRES_DB"' <<'SQL'
 SET statement_timeout = 0;
 SET search_path = pg_catalog, pg_temp;
 SELECT CASE WHEN s.setrole <> 0 THEN s.setrole::regrole::text WHEN s.setdatabase = 0 THEN '(tous les rôles)' ELSE '(base)' END AS role,
@@ -1274,7 +1274,7 @@ sortie sur le terminal, requête sur l'entrée standard) :
 ```bash
 NS=        # preprod ou prod, à renseigner : vide, la commande s'arrête avant d'appeler le cluster
 kubectl -n "${NS:?preprod ou prod}" exec -i deploy/postgres -c postgres -- \
-  sh -c 'PGOPTIONS="-c default_transaction_read_only=on -c lock_timeout=5s -c client_encoding=UTF8 -c local_preload_libraries=" psql -X -A -v ON_ERROR_STOP=1 -U cpg_reader -d "$POSTGRES_DB"' <<'SQL'
+  sh -c 'PGOPTIONS="-c default_transaction_read_only=on -c lock_timeout=5s -c client_encoding=UTF8 -c local_preload_libraries= -c search_path=pg_catalog,pg_temp" psql -X -A -v ON_ERROR_STOP=1 -U cpg_reader -d "$POSTGRES_DB"' <<'SQL'
 SELECT rolname, rolsuper, rolcanlogin FROM pg_roles WHERE rolname IN ('cpg_app', 'cpg_migrator', 'cpg_reader') ORDER BY 1;
 SELECT count(*) AS objets_hors_migration FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
 WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p', 'v', 'm', 'S', 'i') AND pg_get_userbyid(c.relowner) <> 'cpg_migrator';
@@ -1304,7 +1304,7 @@ session.
 ```bash
 NS=        # preprod ou prod, à renseigner : vide, la commande s'arrête avant d'appeler le cluster
 kubectl -n "${NS:?preprod ou prod}" exec -i deploy/postgres -c postgres -- \
-  sh -c 'PGOPTIONS="-c default_transaction_read_only=on -c lock_timeout=5s -c client_encoding=UTF8 -c local_preload_libraries=" psql -X -A -t -v ON_ERROR_STOP=1 -U cpg_reader -d "$POSTGRES_DB"' <<'SQL'
+  sh -c 'PGOPTIONS="-c default_transaction_read_only=on -c lock_timeout=5s -c client_encoding=UTF8 -c local_preload_libraries= -c search_path=pg_catalog,pg_temp" psql -X -A -t -v ON_ERROR_STOP=1 -U cpg_reader -d "$POSTGRES_DB"' <<'SQL'
 SET search_path = pg_catalog, pg_temp;
 SET TimeZone = 'UTC';
 SET DateStyle = 'ISO, YMD';
@@ -1395,7 +1395,7 @@ Lecture seule, aucun mot de passe en jeu (`-w` : psql n'en demande pas) :
 ```bash
 NS=        # preprod ou prod, à renseigner : vide, la commande s'arrête avant d'appeler le cluster
 echo 'SELECT 1;' | kubectl -n "${NS:?preprod ou prod}" exec -i deploy/postgres -c postgres -- \
-  sh -c 'PGOPTIONS="-c default_transaction_read_only=on -c lock_timeout=5s -c client_encoding=UTF8 -c local_preload_libraries=" psql -X -w -v ON_ERROR_STOP=1 -h database -U cpg_reader -d "$POSTGRES_DB"'
+  sh -c 'PGOPTIONS="-c default_transaction_read_only=on -c lock_timeout=5s -c client_encoding=UTF8 -c local_preload_libraries= -c search_path=pg_catalog,pg_temp" psql -X -w -v ON_ERROR_STOP=1 -h database -U cpg_reader -d "$POSTGRES_DB"'
 # attendu : FATAL:  pg_hba.conf rejects connection for host "<adresse du pod>", user "cpg_reader", …
 ```
 
@@ -1696,7 +1696,7 @@ kubeconfig d'administrateur (lecture seule, la sortie reste sur le terminal) :
 NS=        # preprod ou prod, à renseigner : vide, la commande s'arrête avant d'appeler le cluster
 printf '%s\n' 'SHOW tcp_keepalives_idle;' 'SHOW tcp_keepalives_interval;' 'SHOW tcp_keepalives_count;' 'SHOW tcp_user_timeout;' \
   | kubectl -n "${NS:?preprod ou prod}" exec -i deploy/postgres -c postgres -- \
-    sh -c 'PGOPTIONS="-c default_transaction_read_only=on -c lock_timeout=5s -c client_encoding=UTF8 -c local_preload_libraries=" psql -X -A -t -v ON_ERROR_STOP=1 -h 127.0.0.1 -U cpg_reader -d "$POSTGRES_DB"'
+    sh -c 'PGOPTIONS="-c default_transaction_read_only=on -c lock_timeout=5s -c client_encoding=UTF8 -c local_preload_libraries= -c search_path=pg_catalog,pg_temp" psql -X -A -t -v ON_ERROR_STOP=1 -h 127.0.0.1 -U cpg_reader -d "$POSTGRES_DB"'
 # attendu : 60, 10, 3 et 90000 sur quatre lignes ; 0 : connexion par socket
 # (-h manquant) ou serveur démarré sans les args.
 ```
@@ -1943,9 +1943,9 @@ session d'assistant —, avec un **kubeconfig d'administrateur humain**. Le jeto
 
 ```bash
 NS=        # preprod ou prod, à renseigner : vide, la commande s'arrête avant d'appeler le cluster
-printf '%s\n' '\set id <userId>' "SELECT username, email FROM cpg_user WHERE id = :'id'::uuid;" \
+printf '%s\n' '\set id <userId>' "SELECT username, email FROM public.cpg_user WHERE id = :'id'::uuid;" \
   | kubectl -n "${NS:?preprod ou prod}" exec -i deploy/postgres -c postgres -- \
-    sh -c 'PGOPTIONS="-c default_transaction_read_only=on -c lock_timeout=5s -c client_encoding=UTF8 -c local_preload_libraries=" psql -X -A -v ON_ERROR_STOP=1 -U cpg_reader -d "$POSTGRES_DB"'
+    sh -c 'PGOPTIONS="-c default_transaction_read_only=on -c lock_timeout=5s -c client_encoding=UTF8 -c local_preload_libraries= -c search_path=pg_catalog,pg_temp" psql -X -A -v ON_ERROR_STOP=1 -U cpg_reader -d "$POSTGRES_DB"'
 # attendu : l'en-tête username|email, une ligne nom|adresse et « (1 row) » ;
 # « (0 rows) » : aucun compte de cet UUID dans CE namespace — relire $NS avant de conclure.
 ```
@@ -1974,7 +1974,10 @@ morceau, essayé sur l'image `postgres:18.6-alpine` en local (pas encore sur le 
   `client_encoding=UTF8` et `local_preload_libraries=` (vide) l'emportent sur ce que le propriétaire
   de la base, ou un rôle sur lui-même, peut poser (issue #634, mesuré) : un encodage hérité brouille
   la sortie, une bibliothèque absente refuse la connexion elle-même — la lecture de preuve « avant
-  l'étape 2 » comprise. Jamais `session_preload_libraries=` : le lecteur n'étant pas
+  l'étape 2 » comprise. `search_path=pg_catalog,pg_temp` de même (relecture de #634, mesuré) : hérité
+  de la base, `public` placé devant `pg_catalog` faisait lire au lecteur une vue `public.pg_roles`
+  forgée par le propriétaire au lieu du catalogue — une table de l'application s'écrit donc
+  qualifiée (`public.cpg_user`). Jamais `session_preload_libraries=` : le lecteur n'étant pas
   superutilisateur, l'option refuserait sa connexion, et ni le propriétaire ni un rôle sur lui-même
   ne peuvent poser ce réglage.
 - **Un résultat lisible.** `-X` ignore un `~/.psqlrc` ; `-A` rend `nom|adresse` sans alignement mais
@@ -2109,14 +2112,14 @@ et coût, ou paramètres argon) et un nombre de comptes, jamais un sel, un hacha
 ```bash
 NS=        # preprod ou prod, à renseigner : vide, la commande s'arrête avant d'appeler le cluster
 kubectl -n "${NS:?preprod ou prod}" exec -i deploy/postgres -c postgres -- \
-  sh -c 'PGOPTIONS="-c default_transaction_read_only=on -c lock_timeout=5s -c client_encoding=UTF8 -c local_preload_libraries=" psql -X -A -v ON_ERROR_STOP=1 -U cpg_reader -d "$POSTGRES_DB"' <<'SQL'
+  sh -c 'PGOPTIONS="-c default_transaction_read_only=on -c lock_timeout=5s -c client_encoding=UTF8 -c local_preload_libraries= -c search_path=pg_catalog,pg_temp" psql -X -A -v ON_ERROR_STOP=1 -U cpg_reader -d "$POSTGRES_DB"' <<'SQL'
 SELECT CASE
          WHEN password = '' THEN '(sans mot de passe)'
          WHEN password LIKE '$argon2%' THEN coalesce(substring(password FROM '^(\$argon2[a-z]*\$v=[0-9]+\$[^$]*\$)'), '(argon, format inconnu)')
          ELSE coalesce(substring(password FROM '^(\$2[abxy]\$[0-9]{2}\$)'), '(format inconnu)')
        END AS entete,
        count(*) AS comptes
-FROM cpg_user GROUP BY 1 ORDER BY 1;
+FROM public.cpg_user GROUP BY 1 ORDER BY 1;
 SQL
 # attendu, avec la configuration actuelle : l'en-tête entete|comptes, les lignes
 # « (sans mot de passe)|n » et « $2y$13$|m » (l'une ou l'autre peut manquer), puis « (k rows) ».

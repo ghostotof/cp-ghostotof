@@ -67,12 +67,16 @@ final class OperatorExecBoundaryTest extends TestCase
      * propriétaire de la base, ou un rôle sur lui-même, peut poser (issue
      * #634, mesuré) — `client_encoding` (hérité, `GBK` relisait le flux
      * UTF-8) et `local_preload_libraries` (une bibliothèque absente refusait
-     * la connexion elle-même, preuve « avant l'étape 2 » comprise). Jamais
+     * la connexion elle-même, preuve « avant l'étape 2 » comprise) ; et,
+     * relecture de #634, `search_path` : hérité de la base, `public` devant
+     * `pg_catalog` faisait lire au lecteur une vue `public.pg_roles` forgée
+     * par le propriétaire (mesuré) — une table de `public` s'écrit donc
+     * qualifiée dans ses requêtes. Jamais
      * `session_preload_libraries=` : de contexte `superuser`, l'option fait
      * refuser la connexion du lecteur (`permission denied to set parameter`),
      * et ni le propriétaire ni un rôle sur lui-même ne peuvent la poser.
      */
-    private const string READER_OPTIONS = 'PGOPTIONS="-c default_transaction_read_only=on -c lock_timeout=5s -c client_encoding=UTF8 -c local_preload_libraries=" psql ';
+    private const string READER_OPTIONS = 'PGOPTIONS="-c default_transaction_read_only=on -c lock_timeout=5s -c client_encoding=UTF8 -c local_preload_libraries= -c search_path=pg_catalog,pg_temp" psql ';
 
     /**
      * Toutes les règles qui atteignent le ServiceAccount du déployeur : le Role
@@ -158,7 +162,7 @@ final class OperatorExecBoundaryTest extends TestCase
 
         [$input, $exec] = [substr($command, 0, $kubectl), substr($command, $kubectl)];
         self::assertStringContainsString("\\set id <userId>", $input);
-        self::assertStringContainsString("WHERE id = :'id'::uuid;", $input);
+        self::assertStringContainsString("FROM public.cpg_user WHERE id = :'id'::uuid;", $input, 'La table qualifiée : le chemin de recherche du lecteur ne porte que pg_catalog.');
         self::assertMatchesRegularExpression('/\|\s*$/', $input, 'La requête est envoyée par un tube.');
         self::assertStringNotContainsString('SELECT', $exec);
         self::assertStringNotContainsString('<userId>', $exec);
