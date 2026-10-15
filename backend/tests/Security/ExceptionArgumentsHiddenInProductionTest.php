@@ -4,8 +4,13 @@ declare(strict_types=1);
 
 namespace App\Tests\Security;
 
+use App\Tests\Support\KubernetesManifests;
 use App\Tests\Support\PhpImageBuild;
+use FilesystemIterator;
 use PHPUnit\Framework\TestCase;
+use RecursiveDirectoryIterator;
+use RecursiveIteratorIterator;
+use SplFileInfo;
 
 /**
  * Les traces d'exception des environnements déployés ne portent pas les
@@ -131,5 +136,52 @@ final class ExceptionArgumentsHiddenInProductionTest extends TestCase
             )),
             'La commande des images déployées écarte leurs fichiers de configuration (issue #616).',
         );
+    }
+
+    /**
+     * Le sidecar nginx ne passe à FPM aucun `PHP_VALUE` ni `PHP_ADMIN_VALUE` :
+     * FPM applique ces deux paramètres FastCGI à la requête, par-dessus tout
+     * fichier ini. Refusés en entier, et pas seulement quand ils nomment la
+     * directive : leur valeur peut se composer de variables nginx qu'aucune
+     * lecture du texte ne verrait, et aucun usage n'en a besoin. Lu dans tout
+     * `k8s/`, une conf portée par un manifeste comprise ; `fastcgi_params`,
+     * le fichier de l'image nginx, n'est pas dans le dépôt.
+     */
+    public function testTheSidecarPassesNoIniValueToFpm(): void
+    {
+        self::assertSame(
+            [],
+            $this->deploymentLinesMatching('/\bPHP_(?:ADMIN_)?VALUE\b/i'),
+            'Un PHP_VALUE ou PHP_ADMIN_VALUE passé à FPM l\'emporte sur php.prod.ini (issue #616).',
+        );
+    }
+
+    /**
+     * Les lignes hors commentaire des manifestes et des confs de `k8s/` qui
+     * répondent à `$pattern`, chacune préfixée de son fichier et de son
+     * numéro.
+     *
+     * @return list<string>
+     */
+    private function deploymentLinesMatching(string $pattern): array
+    {
+        $root = \dirname(KubernetesManifests::base()->directory());
+        $files = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($root, FilesystemIterator::SKIP_DOTS));
+        $matches = [];
+        foreach ($files as $file) {
+            if (!$file instanceof SplFileInfo || !\in_array($file->getExtension(), ['yaml', 'yml', 'conf'], true)) {
+                continue;
+            }
+            $lines = file($file->getPathname(), \FILE_IGNORE_NEW_LINES);
+            self::assertIsArray($lines, \sprintf('%s illisible.', $file->getPathname()));
+            foreach ($lines as $index => $line) {
+                if (!str_starts_with(ltrim($line), '#') && 1 === preg_match($pattern, $line)) {
+                    $matches[] = \sprintf('%s:%d: %s', substr($file->getPathname(), \strlen($root) + 1), $index + 1, trim($line));
+                }
+            }
+        }
+        sort($matches);
+
+        return $matches;
     }
 }
