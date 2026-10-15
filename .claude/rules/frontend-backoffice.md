@@ -62,6 +62,14 @@ status announcement) that a fork would silently lose:
   per group with `byLocale`/`missing`), `orderRowsByDraft`, `moveKey`, `translationGroupSelection`
   (`translationGroupOptions`/`firstEntry`/`hasSibling`/`rowLines`, the "Version of" rule: entries of
   **any other locale** whose group lacks the form's locale — nothing names FR or EN), all framework-free.
+- `infrastructure/admin/shared/orderProblems.ts` — **the two 422 slugs of the exact-set rule** (D4,
+  `.claude/rules/portfolio-ordre-ecritures.md`): `unknown-order-entry` (a key the server no longer
+  knows, an entry deleted since the load) and `incomplete-order` (a key missing, an entry created
+  since), listed once in `STALE_ORDER_PROBLEM_TYPES` and matched on the problem+json `type` by
+  `hasProblemType`, never on the localized `detail`. Every ordered repository reads a 422 carrying
+  either as `AdminOrderError('stale-order')`, anything else as `unknown`. A slug renamed on the backend
+  is renamed here in the same change: otherwise a concurrent edit reads as a failed save that the
+  admin retries in vain instead of a reload.
 - `application/admin/shared/` — `useOrderDraft` (the draft follows the server keys until the first
   `move`, then detaches until `reset`/`save`; on a 422 `stale-order` it reloads and re-syncs, on any
   other error it keeps the draft so the admin can retry), `useRowDragAndDrop` (native HTML5, the

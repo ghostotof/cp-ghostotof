@@ -77,7 +77,8 @@ spec:
                   php bin/console cache:pool:prune --no-interaction
               env:
                 # Issue #525 : attentes de verrou PostgreSQL bornées comme sous FPM (valeur
-                # de www.prod.conf ; ConsoleLockWaitBoundTest, .claude/rules/deploiement.md).
+                # de www.prod.conf ; ConsoleLockWaitBoundTest,
+                # .claude/rules/deploiement-etat-hors-pod.md).
                 - name: PGOPTIONS
                   value: '-c lock_timeout=5s'
               envFrom:

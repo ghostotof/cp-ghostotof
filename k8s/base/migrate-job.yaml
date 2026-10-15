@@ -85,7 +85,8 @@ spec:
           command: ['php', 'bin/console', 'doctrine:migrations:migrate', '--no-interaction']
           env:
             # Issue #525 : attentes de verrou PostgreSQL bornées comme sous FPM (valeur
-            # de www.prod.conf ; ConsoleLockWaitBoundTest, .claude/rules/deploiement.md).
+            # de www.prod.conf ; ConsoleLockWaitBoundTest,
+            # .claude/rules/deploiement-etat-hors-pod.md).
             # Ici, la borne a un sens propre : elle ARRÊTE LE DÉPLOIEMENT, elle
             # ne refuse pas une requête. Un DDL qui attend un verrou exclusif
             # met en file derrière lui chaque requête de l'API sur sa table

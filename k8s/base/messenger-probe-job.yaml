@@ -29,8 +29,8 @@ spec:
   # annulée sur un GHCR lent (relecture de #470). Le budget de la sonde est
   # l'attente de tools/smoke-messenger-probe.sh (300 s, ~210 s aux pulls).
   # Délai : convention de tous les Jobs, attente + 35 s < délai ≤ attente + 120 s
-  # (issues #525, #535 ; .claude/rules/deploiement.md, « One rule for every Job's
-  # deadline » ; vérifiée par tools/tests/run-job.test.sh).
+  # (issues #525, #535 ; .claude/rules/deploiement-pipeline.md, « One rule for
+  # every Job's deadline » ; vérifiée par tools/tests/run-job.test.sh).
   activeDeadlineSeconds: 360
   # Une heure pour relire `kubectl logs job/backend-messenger-probe`.
   ttlSecondsAfterFinished: 3600
@@ -69,7 +69,8 @@ spec:
           command: ['php', 'bin/console', 'app:messenger:probe', '--no-interaction', '--timeout=90']
           env:
             # Issue #525 : attentes de verrou PostgreSQL bornées comme sous FPM (valeur
-            # de www.prod.conf ; ConsoleLockWaitBoundTest, .claude/rules/deploiement.md).
+            # de www.prod.conf ; ConsoleLockWaitBoundTest,
+            # .claude/rules/deploiement-etat-hors-pod.md).
             - name: PGOPTIONS
               value: '-c lock_timeout=5s'
           envFrom:
