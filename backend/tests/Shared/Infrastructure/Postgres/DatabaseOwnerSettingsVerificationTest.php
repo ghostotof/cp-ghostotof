@@ -322,27 +322,42 @@ final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
      * Le geste complet de #633 : `public` placé devant le catalogue par le code
      * posé, puis une fonction homonyme d'une fonction du catalogue, que la
      * réparation et chaque bloc de verify.sql appellent. Elle ne doit jamais
-     * s'exécuter : chaque bloc passe, ou refuse pour sa propre cause.
+     * s'exécuter : chaque bloc passe, ou refuse pour sa propre cause — la vue
+     * piégée ne rend qu'une migration (`#611`), les rôles jetables n'ont ni
+     * LOGIN ni mot de passe (`#575`).
      */
-    public function testNoFunctionOfPublicRunsUnderTheSuperuserAfterTheReading(): void
+    #[DataProvider('blocksAfterTheReading')]
+    public function testNoFunctionOfPublicRunsUnderTheSuperuserAfterTheReading(string $block, ?string $ownRefusal): void
     {
         $this->asTheProcedureSession();
         $this->plantInTheMigrationTable('SET search_path = public, pg_catalog;');
-        $this->arm(["CREATE FUNCTION public.current_setting(text) RETURNS text LANGUAGE plpgsql AS 'BEGIN RAISE EXCEPTION ''#633 : sous %'', current_user; END'"]);
+        $this->plantACatalogHomonymInPublic();
 
         $this->probe->executeStatement(RolesVerification::migrationsReading());
-        // Sans quoi un bloc qui échouerait plus tôt, pour une autre cause, laisserait passer le test.
         self::assertSame('pg_catalog, pg_temp', $this->probe->fetchOne("SELECT pg_catalog.current_setting('search_path')"), 'Le chemin de la procédure, rendu après la lecture.');
 
-        foreach (['réparation #610' => RolesVerification::repairBlock(), '#575' => RolesVerification::blockOf('#575'), '#608' => RolesVerification::blockOf('#608'), '#611' => RolesVerification::blockOf('#611')] as $block => $sql) {
-            $this->probe->createSavepoint('bloc');
-            try {
-                $this->probe->executeStatement($sql);
-            } catch (DriverException $exception) {
-                self::assertStringNotContainsString('#633 : sous', $exception->getMessage(), $block.' : une fonction de public a tourné dans la session du superutilisateur.');
-            }
-            $this->probe->rollbackSavepoint('bloc');
+        $sql = '#610' === $block ? RolesVerification::repairBlock() : RolesVerification::blockOf($block);
+        if (null === $ownRefusal) {
+            $this->probe->executeStatement($sql);
+            $this->addToAssertionCount(1);
+
+            return;
         }
+        $this->assertStatementRefuses($sql, $ownRefusal);
+    }
+
+    /**
+     * La réparation, puis les blocs de verify.sql, et le refus propre attendu
+     * de chacun sur cette base piégée (`null` : il passe).
+     *
+     * @return iterable<string, array{string, ?string}>
+     */
+    public static function blocksAfterTheReading(): iterable
+    {
+        yield 'réparation #610' => ['#610', null];
+        yield '#575' => ['#575', '#575 : '];
+        yield '#608' => ['#608', null];
+        yield '#611' => ['#611', '#611 : '];
     }
 
     /**
@@ -371,7 +386,7 @@ final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
     {
         $this->arm($setUp);
 
-        $this->assertStatementRefuses(RolesVerification::searchPathGuard('verify.sql'), "#633 : le chemin de recherche de la session n'est plus celui de la procédure");
+        $this->assertStatementRefuses(RolesVerification::searchPathGuardOfVerify(), "#633 : le chemin de recherche de la session n'est plus celui de la procédure");
     }
 
     /**
@@ -402,7 +417,7 @@ final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
     {
         $this->arm($setUp);
 
-        $this->probe->executeStatement(RolesVerification::searchPathGuard('verify.sql'));
+        $this->probe->executeStatement(RolesVerification::searchPathGuardOfVerify());
         $this->addToAssertionCount(1);
     }
 
@@ -417,18 +432,21 @@ final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
     }
 
     /**
-     * Témoin de #633 : sans le `SET` posé, la même fonction de `public` ne
-     * s'exécute pas — le search_path de la procédure ne nomme pas `public`.
+     * Témoin de #633 : la même vue, la même fonction de `public`, sans le `SET`
+     * posé — elle ne s'exécute pas, le search_path de la procédure ne nomme
+     * pas `public`. La vue reste : le témoin ne diffère du geste complet que
+     * par ce `SET`.
      */
     public function testAFunctionOfPublicAloneDoesNotRunUnderTheProceduresSearchPath(): void
     {
         $this->asTheProcedureSession();
         $this->plantInTheMigrationTable('');
-        $this->arm(["CREATE FUNCTION public.current_setting(text) RETURNS text LANGUAGE plpgsql AS 'BEGIN RAISE EXCEPTION ''#633 : sous %'', current_user; END'"]);
+        $this->plantACatalogHomonymInPublic();
 
         $this->play(RolesVerification::repairBlock());
 
         $this->play(RolesVerification::blockOf('#608'));
+        $this->addToAssertionCount(1);
     }
 
     /**
@@ -792,6 +810,16 @@ final class DatabaseOwnerSettingsVerificationTest extends KernelTestCase
             "CREATE VIEW public.doctrine_migration_versions AS SELECT v AS version FROM (VALUES ('DoctrineMigrations\\Version20261011120000'::varchar)) AS t(v) WHERE public.{f}()",
             'ALTER VIEW public.doctrine_migration_versions OWNER TO {migrator}',
         ]);
+    }
+
+    /**
+     * Une fonction de `public` homonyme exacte de `pg_catalog.current_setting(text)`,
+     * que la réparation et verify.sql appellent sans la qualifier : exécutée,
+     * elle lève une erreur qui nomme le rôle sous lequel elle a tourné.
+     */
+    private function plantACatalogHomonymInPublic(): void
+    {
+        $this->arm(["CREATE FUNCTION public.current_setting(text) RETURNS text LANGUAGE plpgsql AS 'BEGIN RAISE EXCEPTION ''#633 : sous %'', current_user; END'"]);
     }
 
     /**

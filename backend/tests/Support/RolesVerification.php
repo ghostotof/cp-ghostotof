@@ -19,6 +19,9 @@ final class RolesVerification
 
     private const string ROLES_SQL = 'postgres-roles/roles.sql';
 
+    /** Le refus qui reconnaît le garde du chemin de recherche (issue #633). */
+    private const string SEARCH_PATH_GUARD_MARK = "RAISE EXCEPTION '#633 : le chemin de recherche";
+
     /**
      * Le bloc `DO $$ … $$;` qui porte les refus d'une issue (`#608`), seul :
      * une assertion sur le fichier entier serait satisfaite par la requête
@@ -50,14 +53,19 @@ final class RolesVerification
     }
 
     /**
-     * Le garde du chemin de recherche (issue #633) : un bloc identique dans
-     * roles.sql, juste après la lecture des migrations, et en tête de
-     * verify.sql. Il refuse une session où un schéma autre que le catalogue et
-     * le schéma temporaire de la session précède ou suit le catalogue.
+     * Le garde du chemin de recherche (issue #633) de roles.sql, juste après
+     * la lecture des migrations : il refuse une session dont le chemin n'est
+     * pas exactement celui des options de la procédure.
      */
-    public static function searchPathGuard(string $file): string
+    public static function searchPathGuardOfRoles(): string
     {
-        return self::blockCarrying('postgres-roles/'.$file, "RAISE EXCEPTION '#633 : le chemin de recherche", 'le garde du chemin de recherche');
+        return self::blockCarrying(self::ROLES_SQL, self::SEARCH_PATH_GUARD_MARK, 'le garde du chemin de recherche');
+    }
+
+    /** Le même garde, en tête de verify.sql. */
+    public static function searchPathGuardOfVerify(): string
+    {
+        return self::blockCarrying(self::VERIFY_SQL, self::SEARCH_PATH_GUARD_MARK, 'le garde du chemin de recherche');
     }
 
     /**

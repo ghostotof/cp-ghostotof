@@ -1215,6 +1215,9 @@ table**, même s'il ressemble à un avis `#610` ou à `conforme` — le même
 incident. La lecture est bornée à 30 secondes : un `canceling statement due
 to statement timeout` juste après le marqueur de début, c'est la table qui
 fait attendre la procédure (le même incident encore), pas une heure chargée.
+Une procédure qui reste muette après ce marqueur au-delà des 30 secondes,
+c'est encore la table (son code peut attraper l'annulation) : l'interrompre,
+et traiter le même incident.
 
 **Un refus `#633 : la lecture des migrations n'a pas abouti`** : le code de
 la table a levé la sentinelle par laquelle la lecture s'annule elle-même — le

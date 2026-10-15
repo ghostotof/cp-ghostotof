@@ -139,10 +139,10 @@ paths:
   repaired with its notices and committed, a silent rerun, a rotation, then the trapped view refused
   in exit 3) and for #618 (`roles.sql` and `privileges.sql` under every owner-settable setting planted,
   with and without the reset, and a setting on the superuser role itself) and for #633 (a `pg_dump`
-restoration, two healthy passes, then the trapped view of `cpg_migrator` with a `COPY … TO PROGRAM`
-behind a shadowing `current_setting`: run as the superuser before the fix, never after, the
-sentinel removed refused by the guard; a planted `pg_sleep` with a forged `#610` notice cut at
-30 s, the notice between the markers), and preprod is their proof at each change. **Accepted limits** (#575): any role may
+  restoration, two healthy passes, then the trapped view of `cpg_migrator` with a `COPY … TO PROGRAM`
+  behind a shadowing `current_setting`: run as the superuser before the fix, never after, the
+  sentinel removed refused by the guard; a planted `pg_sleep` with a forged `#610` notice cut at
+  30 s, the notice between the markers), and preprod is their proof at each change. **Accepted limits** (#575): any role may
   `ALTER ROLE` itself (password, `SET` defaults) — an injection could cut the application durably; the
   procedure resets the three roles' attributes and `RESET ALL` at every pass, and `verify.sql` refuses
   a stray attribute — `RESET ALL` misses a setting scoped to the database
@@ -204,12 +204,18 @@ sentinel removed refused by the guard; a planted `pg_sleep` with a forged `#610`
   disappears with it, the function included (never a `DROP` after it); planted code raising the
   sentinel itself leaves the read unfinished, refused (`#633 : la lecture des migrations n'a pas
   abouti`). Left: effects outside transactions (session advisory locks, sequence values) and the
-  messages it sends to the terminal, never code under the superuser — so the read sits between two
-  `\echo` markers (`--- #633 : lecture des migrations, début …` / `fin`: a notice printed between
-  them comes from the table's code, possibly a forged `#610`), under `SET LOCAL statement_timeout =
-  '30s'`, set back to `0` right after (`PGOPTIONS` leaves it at 0, and a planted `pg_sleep` would
-  otherwise hold step 3's locks in front of the API; measured: cut at 30 s, exit 3). The `set_config`
-  calls after it are qualified.
+  messages it sends to the terminal, never code under the superuser (a `PREPARE` survives too, but
+  the procedure executes none; a `LOAD` is limited to `$libdir/plugins`, absent from the pinned image,
+  measured) — so the read sits between two markers written with `\warn` (`--- #633 : lecture des
+  migrations, début …` / `fin`), on stderr like the notices — never `\echo`, on stdout: `kubectl
+  exec` does not order two streams —, and a notice printed between them comes from the table's code,
+  possibly a forged `#610`; and under `SET LOCAL statement_timeout = '30s'`, set back to `0` right
+  after (`PGOPTIONS` leaves it at 0; measured: a planted `pg_sleep` cut at 30 s, exit 3). **That bound
+  is no boundary**: code catching `query_canceled` sleeps again (measured), and
+  `transaction_timeout` or `client_connection_check_interval` are user settings it could disarm too.
+  Accepted (review of #633): whoever holds the migrator can block the API without the procedure
+  (`LOCK`, `DROP` on its own tables), and the read holds an `ACCESS EXCLUSIVE` lock only when step 3
+  transferred an object. The `set_config` calls after it are qualified.
   **Then a guard checks the session's `search_path`**, the same `DO` block right after the read and
   at the head of `verify.sql`, before its first query: the string, blanks removed, must be exactly
   `pg_catalog,pg_temp` (`PGOPTIONS` writes it without a space, a `SET` with one), where `pg_temp` is

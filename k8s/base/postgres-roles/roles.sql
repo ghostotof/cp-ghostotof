@@ -197,11 +197,15 @@ ORDER BY t.typname \gexec
 --    écrit, la fonction elle-même, disparaissent avec elle. Restent les
 --    effets hors transaction (verrous consultatifs de session, valeurs de
 --    séquence) et les avis qu'il envoie au terminal, jamais du code sous le
---    superutilisateur : la lecture est encadrée de deux marqueurs, tout avis
---    imprimé entre eux vient de la table, et bornée à 30 secondes
---    (PGOPTIONS laisse statement_timeout à 0 ; sinon un `pg_sleep` posé
---    tiendrait indéfiniment les verrous de l'étape 3 devant l'API), la borne
---    retirée aussitôt après. Le code posé qui lève la sentinelle ne fait pas
+--    superutilisateur : la lecture est encadrée de deux marqueurs, écrits
+--    sur la sortie d'erreur comme les avis (`\warn`, pas `\echo` : kubectl
+--    n'ordonne pas deux flux entre eux), tout avis imprimé entre eux vient de
+--    la table ; et bornée à 30 secondes (PGOPTIONS laisse statement_timeout
+--    à 0), la borne retirée aussitôt après. La borne arrête une attente
+--    naïve, pas le code qui attrape `query_canceled` et se rendort (mesuré) :
+--    qui tient le rôle de migration peut bloquer l'API sans la procédure
+--    (LOCK, DROP sur ses tables) ; la lecture ne tient de verrou ACCESS
+--    EXCLUSIVE que si l'étape 3 a transféré un objet. Le code posé qui lève la sentinelle ne fait pas
 --    passer une lecture inachevée pour faite. Ce qu'elle rend est rangé dans
 --    des réglages de transaction que l'étape 5 et verify.sql relisent, sans
 --    jamais lire la table eux-mêmes (ils refusent sans ces réglages), par des
@@ -210,12 +214,12 @@ ORDER BY t.typname \gexec
 SELECT set_config('cpg.app_role', :'app_role', true),
        set_config('cpg.migrator_role', :'migrator_role', true),
        set_config('cpg.reader_role', :'reader_role', true);
-\echo '--- #633 : lecture des migrations, début (tout avis jusqu''à sa fin vient du code de la table, pas de la procédure)'
+\warn '--- #633 : lecture des migrations, début (tout avis jusqu''à sa fin vient du code de la table, pas de la procédure)'
 SET LOCAL statement_timeout = '30s';
 DO $$
 DECLARE
     lues record;
-    lue boolean := false;
+    lecture_faite boolean := false;
 BEGIN
     <<lecture>>
     BEGIN
@@ -234,12 +238,12 @@ BEGIN
         $f$;
         EXECUTE format('ALTER FUNCTION pg_temp.cpg_migrations() OWNER TO %I', current_setting('cpg.migrator_role'));
         SELECT * INTO STRICT lues FROM pg_temp.cpg_migrations();
-        lue := true;
+        lecture_faite := true;
         RAISE EXCEPTION USING ERRCODE = 'CP633';
     EXCEPTION WHEN SQLSTATE 'CP633' THEN
         NULL;
     END lecture;
-    IF NOT lue THEN
+    IF NOT lecture_faite THEN
         RAISE EXCEPTION '#633 : la lecture des migrations n''a pas abouti (sentinelle levée par le code de la table)';
     END IF;
     PERFORM pg_catalog.set_config('cpg.migrations', CASE WHEN lues.presente THEN lues.nombre::pg_catalog.text ELSE '' END, true),
@@ -248,7 +252,7 @@ BEGIN
 END
 $$;
 SET LOCAL statement_timeout = 0;
-\echo '--- #633 : lecture des migrations, fin'
+\warn '--- #633 : lecture des migrations, fin'
 -- Issue #633 : le chemin de recherche de la session, contrôlé avant que la
 -- suite résolve un seul nom par lui — une fonction, un opérateur, une relation
 -- ou un type d'un autre schéma pourrait y prendre la place de ceux du
