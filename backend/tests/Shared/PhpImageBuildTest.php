@@ -244,6 +244,45 @@ final class PhpImageBuildTest extends TestCase
     }
 
     /**
+     * Les commandes des images déployées, lues dans le vrai Dockerfile : le
+     * `CMD` de chaque stage déployé ou ancêtre, en forme JSON.
+     */
+    public function testTheDeployedCommandsAreReadFromTheDockerfile(): void
+    {
+        self::assertSame([['php-fpm', '-F'], ['php-fpm', '-F']], PhpImageBuild::deployedCommands());
+    }
+
+    /**
+     * `CMD` et `ENTRYPOINT` sont lus élément par élément ; le `CMD` d'un
+     * `HEALTHCHECK` n'est pas la commande de l'image.
+     */
+    public function testACommandIsReadFromItsJsonForm(): void
+    {
+        self::assertSame(
+            [['docker-entrypoint', '--x'], ['php-fpm', '-F']],
+            PhpImageBuild::deployedCommandsOf(<<<'DOCKERFILE'
+                FROM php:8 AS production
+                ENTRYPOINT ["docker-entrypoint", "--x"]
+                HEALTHCHECK --interval=15s CMD ["/usr/local/bin/healthcheck"]
+                FROM production AS preprod
+                CMD ["php-fpm", "-F"]
+                DOCKERFILE),
+        );
+    }
+
+    /**
+     * La forme shell passe par un `sh -c` implicite, qui développe des
+     * variables que le garde ne lit pas : elle est refusée.
+     */
+    public function testAShellFormCommandIsRefused(): void
+    {
+        $this->expectException(AssertionFailedError::class);
+        $this->expectExceptionMessage('n\'est pas en forme JSON');
+
+        PhpImageBuild::deployedCommandsOf("FROM php:8 AS production\nCMD php-fpm -F \$FLAGS\nFROM production AS preprod\n");
+    }
+
+    /**
      * Un `COPY docker/php/ …` copierait tout un répertoire : le garde, qui lit
      * chaque fichier reçu, refuse une source qui n'est pas un fichier.
      */

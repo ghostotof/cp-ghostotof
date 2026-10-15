@@ -152,6 +152,46 @@ final class PhpImageBuild
     }
 
     /**
+     * Les commandes des images déployées, lues par {@see self::deployedCommandsOf()}.
+     *
+     * @return list<list<string>>
+     */
+    public static function deployedCommands(): array
+    {
+        return self::deployedCommandsOf(self::dockerfile());
+    }
+
+    /**
+     * Chaque `CMD` et `ENTRYPOINT` des stages déployés et de leurs ancêtres,
+     * élément par élément, dans l'ordre du texte ; le `CMD` d'un
+     * `HEALTHCHECK` n'en est pas un. Une commande en forme shell fait échouer
+     * le test : Docker la passe à `sh -c`, qui développe des variables et
+     * découpe des mots que le garde ne lit pas.
+     *
+     * @return list<list<string>>
+     */
+    public static function deployedCommandsOf(string $dockerfile): array
+    {
+        $commands = [];
+        foreach (self::deployedInstructionsOf($dockerfile) as $instruction) {
+            if (1 !== preg_match('/\A\s*(?:CMD|ENTRYPOINT)\s+(.*)\z/is', $instruction, $command)) {
+                continue;
+            }
+            $message = \sprintf('« %s » n\'est pas en forme JSON : la commande passerait par un shell que le garde ne lit pas.', $instruction);
+            $elements = json_decode(trim($command[1]), true);
+            Assert::assertIsList($elements, $message);
+            $arguments = [];
+            foreach ($elements as $element) {
+                Assert::assertIsString($element, $message);
+                $arguments[] = $element;
+            }
+            $commands[] = $arguments;
+        }
+
+        return $commands;
+    }
+
+    /**
      * Un fichier du contexte de build, à partir de sa racine.
      */
     public static function contextFile(string $path): string

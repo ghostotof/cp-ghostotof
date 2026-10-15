@@ -62,10 +62,10 @@ final class ExceptionArgumentsHiddenInProductionTest extends TestCase
     private const string DIRECTIVE_OR_INI_REDIRECTION = '/exception_ignore_args|\bPHP_INI_SCAN_DIR\b|\bPHPRC\b/i';
 
     /**
-     * Une option de `php` ou de `php-fpm` qui écarte ou remplace leurs
-     * fichiers de configuration, isolée ou en tête d'élément JSON.
+     * Les options que la commande des images peut passer à `php-fpm` :
+     * `-F`, rester au premier plan (le conteneur en dépend).
      */
-    private const string CONFIGURATION_OPTION = '/(?:\A|[\s"\[,])(?:-[ncdy](?![A-Za-z-])|--(?:no-php-ini|php-ini|define|fpm-config)\b)/';
+    private const array ALLOWED_COMMAND_OPTIONS = ['-F'];
 
     public function testDeployedImagesDropCallArgumentsFromExceptionTraces(): void
     {
@@ -135,24 +135,24 @@ final class ExceptionArgumentsHiddenInProductionTest extends TestCase
     }
 
     /**
-     * La commande des images ne passe à PHP ni à FPM aucune option qui écarte
-     * ou remplace leurs fichiers de configuration : `-n` (aucun ini), `-c`
-     * (un autre `php.ini`), `-d` (une directive), `-y` (une autre
-     * configuration de FPM), ni leurs formes longues. Un `sh -c …` y serait
-     * refusé aussi, et c'est voulu : la commande passerait par un shell que le
-     * garde ne lit pas.
+     * La commande des images est `php-fpm` avec les seules options de
+     * {@see self::ALLOWED_COMMAND_OPTIONS} : une liste de refus (`-n`, `-c`,
+     * `-d`, `-y`, `-p`…) ratait toujours une variante — options groupées
+     * (`-nF`), argument collé (`-cx.ini`), forme longue —, une liste autorisée
+     * fait relire chaque ajout. La forme shell, qui passerait par un `sh -c`,
+     * est refusée par {@see PhpImageBuild::deployedCommandsOf()}.
      */
     public function testTheImageCommandKeepsTheConfigurationFiles(): void
     {
-        self::assertSame(
-            [],
-            array_values(array_filter(
-                PhpImageBuild::deployedInstructions(),
-                static fn (string $instruction): bool => 1 === preg_match('/\A\s*(?:CMD|ENTRYPOINT)\b/i', $instruction)
-                    && 1 === preg_match(self::CONFIGURATION_OPTION, $instruction),
-            )),
-            'La commande des images déployées écarte leurs fichiers de configuration (issue #616).',
-        );
+        $offenders = [];
+        foreach (PhpImageBuild::deployedCommands() as $command) {
+            $options = \array_slice($command, 1);
+            if ('php-fpm' !== ($command[0] ?? null) || [] !== array_diff($options, self::ALLOWED_COMMAND_OPTIONS)) {
+                $offenders[] = json_encode($command, \JSON_UNESCAPED_SLASHES);
+            }
+        }
+
+        self::assertSame([], $offenders, 'La commande des images déployées sort de php-fpm -F : relire ce qu\'elle fait de php.prod.ini avant de l\'autoriser (issue #616).');
     }
 
     /**
