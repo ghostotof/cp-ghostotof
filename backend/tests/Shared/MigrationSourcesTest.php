@@ -34,7 +34,7 @@ final class MigrationSourcesTest extends TestCase
     public function testAMissingMigrationFailsTheTestNamingTheFile(): void
     {
         $this->expectException(AssertionFailedError::class);
-        $this->expectExceptionMessageMatches('#/migrations/Version19700101000000\.php" exists#');
+        $this->expectExceptionMessageMatches('#/migrations/Version19700101000000\.php : migration absente ou illisible\.#');
 
         MigrationSources::of('Version19700101000000');
     }

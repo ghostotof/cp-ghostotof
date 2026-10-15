@@ -18,14 +18,18 @@ use PHPUnit\Framework\Assert;
 final class MigrationSources
 {
     /**
-     * Le texte de `migrations/<version>.php`. Un fichier absent fait échouer
-     * le test en le nommant.
+     * Le texte de `migrations/<version>.php`. Un fichier absent, illisible
+     * ou qui n'est pas un fichier ordinaire (un répertoire passe
+     * `assertFileIsReadable`) fait échouer le test en le nommant, et une
+     * lecture ratée n'est jamais rendue comme un texte vide.
      */
     public static function of(string $version): string
     {
         $path = \dirname(__DIR__, 2).'/migrations/'.$version.'.php';
-        Assert::assertFileIsReadable($path);
+        Assert::assertTrue(is_file($path) && is_readable($path), \sprintf('%s : migration absente ou illisible.', $path));
+        $source = file_get_contents($path);
+        Assert::assertIsString($source, \sprintf('%s : lecture impossible.', $path));
 
-        return (string) file_get_contents($path);
+        return $source;
     }
 }
