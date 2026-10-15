@@ -9,10 +9,11 @@ use PHPUnit\Framework\AssertionFailedError;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Ce que {@see PhpImageBuild} lit de `php.prod.ini` (issue #612) : les deux
- * tests qui pincent une directive des images déployées passent par lui, et le
- * chemin du fichier ne dépend plus de leur emplacement. La lecture elle-même
- * est éprouvée sur des textes écrits pour l'occasion.
+ * Ce que {@see PhpImageBuild} lit de `php.prod.ini` (issue #612) et de
+ * `www.prod.conf` (issue #615) : les tests qui pincent une directive des
+ * images déployées passent par lui, et le chemin du fichier ne dépend plus de
+ * leur emplacement. La lecture des directives est éprouvée sur des textes
+ * écrits pour l'occasion.
  */
 final class PhpImageBuildTest extends TestCase
 {
@@ -25,6 +26,16 @@ final class PhpImageBuildTest extends TestCase
     {
         self::assertSame('On', PhpImageBuild::productionIniDirective('zend.exception_ignore_args'));
         self::assertSame('Europe/Paris', PhpImageBuild::productionIniDirective('date.timezone'));
+    }
+
+    /**
+     * Le pool FPM des images (issue #615), lu comme `php.prod.ini` : le vrai
+     * fichier, quel que soit l'emplacement du test qui le demande. Sa valeur
+     * reste aux deux tests de borne du verrou, qui la pincent.
+     */
+    public function testTheProductionPoolIsReadFromTheBuildContext(): void
+    {
+        self::assertMatchesRegularExpression('/^env\[PGOPTIONS\] = "[^"]+"$/m', PhpImageBuild::productionPool());
     }
 
     /**

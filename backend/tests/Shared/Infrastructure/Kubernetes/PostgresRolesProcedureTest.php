@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Shared\Infrastructure\Kubernetes;
 
 use App\Tests\Support\KubernetesManifests;
+use App\Tests\Support\MigrationSources;
 use App\Tests\Support\PhpImageBuild;
 use App\Tests\Support\RolesVerification;
 use App\Tests\Support\Runbook;
@@ -489,8 +490,7 @@ final class PostgresRolesProcedureTest extends TestCase
     /** Le fuseau que `Version20261011120000`, figée, écrit sur la base. */
     private function migrationTimeZone(): string
     {
-        $migration = (string) file_get_contents(\dirname(__DIR__, 4).'/migrations/'.self::TIMEZONE_MIGRATION.'.php');
-        self::assertSame(1, preg_match("/SET timezone TO %L', current_database\\(\\), '([^']+)'/", $migration, $written), self::TIMEZONE_MIGRATION.' : le fuseau écrit par la migration.');
+        self::assertSame(1, preg_match("/SET timezone TO %L', current_database\\(\\), '([^']+)'/", MigrationSources::of(self::TIMEZONE_MIGRATION), $written), self::TIMEZONE_MIGRATION.' : le fuseau écrit par la migration.');
 
         return $written[1];
     }
