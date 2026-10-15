@@ -225,6 +225,13 @@ final class PhpImageBuildTest extends TestCase
         yield 'plusieurs sources' => ['COPY a.ini b.ini /usr/local/etc/php/conf.d/'];
         yield 'forme JSON' => ['COPY ["a.ini", "/usr/local/etc/php/conf.d/a.ini"]'];
         yield 'RUN' => ['RUN echo "zend.exception_ignore_args = Off" > /usr/local/etc/php/conf.d/x.ini'];
+        // L'image officielle exporte `PHP_INI_DIR=/usr/local/etc/php`, que
+        // Docker développe aussi dans la destination d'un `COPY`.
+        yield 'destination par la variable' => ['COPY docker/php/extra.ini $PHP_INI_DIR/conf.d/'];
+        yield 'RUN par la variable' => ['RUN rm "$PHP_INI_DIR/conf.d/zz-app.ini"'];
+        yield 'variable redéfinie' => ['ENV PHP_INI_DIR=/tmp'];
+        yield 'répertoire sans barre finale' => ['COPY docker/etc /usr/local/etc'];
+        yield 'WORKDIR' => ['WORKDIR /usr/local/etc/php/conf.d'];
     }
 
     #[DataProvider('unreadableConfigurationWrites')]

@@ -36,16 +36,21 @@ final class PhpImageBuild
     private const array DEPLOYED_STAGES = ['production', 'preprod'];
 
     /**
-     * Où l'image officielle range la configuration de PHP (`php.ini`,
-     * `conf.d/`) et de FPM (`php-fpm.conf`, `php-fpm.d/`).
+     * Une instruction qui touche `/usr/local/etc`, où l'image officielle
+     * range la configuration de PHP (`php.ini`, `conf.d/`) et de FPM
+     * (`php-fpm.conf`, `php-fpm.d/`) : par son chemin, barre finale ou non,
+     * ou par `PHP_INI_DIR`, que l'image officielle exporte
+     * (`/usr/local/etc/php`) et que Docker développe jusque dans la
+     * destination d'un `COPY`.
      */
-    private const string CONFIGURATION_ROOT = '/usr/local/etc/';
+    private const string CONFIGURATION_MENTION = '#/usr/local/etc(?=[/\s"\'\],]|\z)|PHP_INI_DIR#';
 
     /**
-     * Un `COPY` (ou `ADD`) d'un seul fichier du contexte de build : options
-     * de propriété et de mode seulement, source puis destination.
+     * Un `COPY` (ou `ADD`) d'un seul fichier du contexte de build vers un
+     * chemin écrit en clair sous `/usr/local/etc/` : options de propriété et
+     * de mode seulement, source puis destination.
      */
-    private const string SINGLE_FILE_COPY = '/\A(?:COPY|ADD)\s+(?:--(?:chown|chmod)=\S+\s+)*([^\s\[\]"]+)\s+(\S+)\z/i';
+    private const string SINGLE_FILE_COPY = '#\A(?:COPY|ADD)\s+(?:--(?:chown|chmod)=\S+\s+)*([^\s\[\]"$]+)\s+(/usr/local/etc/[^\s$]*)\z#i';
 
     public static function dockerfile(): string
     {
@@ -130,7 +135,7 @@ final class PhpImageBuild
         $copies = [];
         foreach (self::deployedStagesOf($dockerfile) as $stage => $instructions) {
             foreach ($instructions as $instruction) {
-                if (!str_contains($instruction, self::CONFIGURATION_ROOT)) {
+                if (1 !== preg_match(self::CONFIGURATION_MENTION, $instruction)) {
                     continue;
                 }
                 Assert::assertSame(
