@@ -100,8 +100,8 @@ final class McpEndpointTest extends WebTestCase
     }
 
     /**
-     * Le GET répond sans passer par le SDK : il applique lui-même la
-     * protection d'hôte, comme le POST.
+     * Le GET répond sans le transport du SDK, mais traverse ses middlewares :
+     * la même protection d'hôte que le POST (McpEndpointGetTest pour la liste).
      */
     public function testGetFromAForeignHostIsRefused(): void
     {

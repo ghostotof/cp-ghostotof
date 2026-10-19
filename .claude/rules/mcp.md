@@ -121,10 +121,16 @@ paths:
   `#[AsDecorator]` of `mcp.server.portfolio.controller`): `retry: 300000`, then closed. The SDK 0.8.1 answers
   405 (spec-compliant), which PhpStorm's AI Assistant takes for a failure. A finished `Response`, **never a
   `StreamedResponse` held open**: under PHP-FPM a held stream keeps one worker per connected client, and the
-  server sends no notification anyway. POST, DELETE and OPTIONS go to the bundle. The GET bypasses the SDK's
-  middlewares, so it applies the host check itself, with the SDK's rules (raw `Origin` if any, else the raw
-  `Host`, port ignored) — `McpEndpointTest::testGetFromAForeignHostIsRefused`. Accepted, like the SDK: the
-  `Origin` check ignores scheme and port (`http://<site>:8443` passes), a page served on the site's own name.
+  server sends no notification anyway. POST, DELETE and OPTIONS go to the bundle; `HEAD`, which the router
+  matches to the GET route, gets the GET's answer without a body (it reached the SDK's 405 before #641).
+  **The GET goes through the very middlewares of the POST** (#641): `mcp.server.portfolio.middleware_factory`
+  (the SDK's DNS-rebinding protection and CORS, built by the bundle from `allowed_hosts`) run by the SDK's
+  `MiddlewareRequestHandler` — never a copy of their rules: T1's copy kept one host where `allowed_hosts` is a
+  list, and split `[::1]:8080` into `[`. Then it answers as the transport does for a session: 400 for a
+  malformed or repeated `Mcp-Session-Id`, 404 for an unknown or expired one (the client re-initialises; a GET
+  without the header is still served), 406 without `Accept: text/event-stream`. `McpEndpointGetTest` pins each
+  case, the host rules on a several-host list included. Accepted, like the SDK: the `Origin` check ignores
+  scheme and port (`http://<site>:8443` passes), a page served on the site's own name.
 - **Tests** speak MCP through `tests/Mcp/Support/SpeaksMcp` (`initializeMcpSession()`, `mcpCall()`, JSON or
   SSE answers alike, the last answering event of a stream; `callMcpTool()`, `listedMcpTool()`, `routeBody()`).
   A test that opens sessions calls `forgetMcpSessions()` in its `tearDown`: the `mcp-portfolio-` rows of
