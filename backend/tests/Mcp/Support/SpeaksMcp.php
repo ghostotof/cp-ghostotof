@@ -35,6 +35,20 @@ trait SpeaksMcp
      */
     private function initializeMcpSession(KernelBrowser $client, array $server = []): string
     {
+        return $this->openMcpSession($client, $server)[0];
+    }
+
+    /**
+     * Ouvre une session MCP et rend son identifiant avec le `result` de la
+     * réponse à `initialize` — `serverInfo`, `instructions`, capacités : ce
+     * que le serveur dit de lui-même.
+     *
+     * @param array<string, string> $server en-têtes supplémentaires (format `$_SERVER`)
+     *
+     * @return array{0: string, 1: array<string, mixed>}
+     */
+    private function openMcpSession(KernelBrowser $client, array $server = []): array
+    {
         $this->postMcp($client, null, [
             'jsonrpc' => '2.0',
             'id' => 1,
@@ -49,10 +63,13 @@ trait SpeaksMcp
 
         $sessionId = $client->getResponse()->headers->get(self::MCP_SESSION_HEADER);
         self::assertIsString($sessionId, 'initialize doit rendre un identifiant de session.');
+        $result = $this->decodeMcpResponse($client)['result'] ?? null;
+        self::assertIsArray($result, 'initialize a répondu une erreur.');
 
         $this->postMcp($client, $sessionId, ['jsonrpc' => '2.0', 'method' => 'notifications/initialized'], $server);
 
-        return $sessionId;
+        /** @var array<string, mixed> $result */
+        return [$sessionId, $result];
     }
 
     /**

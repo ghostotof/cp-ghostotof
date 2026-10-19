@@ -81,8 +81,8 @@ paths:
   depends on a repository or a backoffice class (constructor types, declared resource). A new content
   route therefore turns the suite red until it is exposed or excluded.
 - **Tools** are services `#[McpTool]` on `__invoke()`, under `Presentation/Tool/` — the `registry` of
-  `mcp.yaml` lists that namespace only, and **the bundle refuses a pattern that matches no service** (the
-  server does not boot): a `prompts` pattern enters with the first prompt. `readOnlyHint: true`. A language
+  `mcp.yaml` lists that namespace (and `Presentation/Prompt/` for prompts) only, and **the bundle refuses a
+  pattern that matches no service** (the server does not boot). `readOnlyHint: true`. A language
   parameter is a **string**, never an enum (decided 2026-10-19): `#[Schema(description: ToolLocale::DESCRIPTION)]
   string $locale = ToolLocale::DEFAULT`, parsed by `ToolLocale::parse()`, which turns an unknown value into a
   tool error the model can correct (MCP 2025-11-25) — with a PHP enum type the SDK derived an `enum` and
@@ -92,7 +92,42 @@ paths:
   titles, schemas, `instructions` and `serverInfo` are read by any client, i.e. at the anonymous tier: **they
   never name the author** (ADR 0006 D8), they say « the site's author ». The only exceptions are listed under
   D8 in the ADR, each decided by the author (today: the server name `cp-ghostotof`, for this server only);
-  a new one goes into that list first.
+  a new one goes into that list first, then into `AuthorNeverNamedTest::ADMITTED`.
+- **The prompt** (#642): `Presentation/Prompt/PresentForRolePrompt`, `present_for_role(role, locale = 'fr')`,
+  one user message in French or English that sends the model to the tools (rely on them only, cite the tool
+  behind each statement, say what they do not tell) and carries nothing of the site. **Its `@param` texts
+  are published**: the SDK makes them the arguments' descriptions in `prompts/list` (it reads no
+  `#[Schema]` on a prompt), so they are English and under D8 like a tool description. `role` goes through
+  `PromptRole`: refused beyond `MAX_CHARACTERS` (500, counted in characters on the trimmed input, never
+  truncated), refused when empty before or after cleaning, then its chevrons and control characters
+  (`\n` and `\t` kept) removed and put last, between `<role>` and `</role>` — no tag it carries can close
+  the block. A refusal (and an unknown language) is a `PromptGetException`, the only error the SDK 0.8.1
+  renders with its message — `-32603`, where the protocol wants `-32602`; a missing `role` is the SDK's own
+  generic `-32603`. Its message never quotes the text received: the SDK logs it with the error. The raw
+  `prompts/get` arguments, `role` included, are still in the SDK's `debug` log of the request — task 4 (#643).
+- **The D8 guard** (#642, ADR 0006 D8): `tests/Mcp/AuthorNeverNamedTest` reads, **over HTTP on the real
+  server**, what it says of itself — `initialize` (`serverInfo`, `instructions`), `tools/list`,
+  `prompts/list`, every prompt's `prompts/get` in both languages, `resources/list` and
+  `resources/templates/list` (a `nextCursor` fails it: a next page would escape) — and refuses, through
+  `tests/Mcp/Support/AuthorMentions`, the author's full name, each word of it of three letters or more, and
+  any run of six consecutive words of the nominative CV, every string read keys included, case, accents
+  and punctuation ignored, on word boundaries. Tool outputs are not read: they are the routes' content (D1).
+  The CV is the file `GET /api/cv` serves (`app.cv_file_path`, through the corpus's
+  `PdfTextExtractorInterface`): textless in CI (`dummy.pdf`), the real one on a workstation that has it.
+  **The name never enters the repo**: `MCP_D8_AUTHOR_NAME` is a fictive name in `phpunit.dist.xml`, as an
+  `<env>` **without `force`** (PHPUnit then keeps a value the process environment already carries —
+  `<server>` always overwrites), replaced in `test-backend` by the **repository secret**
+  `MCP_D8_AUTHOR_NAME`. A Dependabot push cannot read it: on `dependabot/*` only, the empty variable is
+  unset and the fictive name applies; anywhere else an empty name fails the guard, saying so. A violation
+  names the place and the term's number, **never the term nor the text carrying it** — a failure message
+  ends up in a CI log or an assistant session, and GitHub masks the secret's whole value, not one of its
+  words. Set or rotate the secret **in a separate terminal**, from a prompt or a file, never `--body`:
+  `gh secret set MCP_D8_AUTHOR_NAME --repo ghostotof/cp-ghostotof` (it asks for the value without echoing
+  it). To check the real name locally: `docker compose exec -e MCP_D8_AUTHOR_NAME … backend php bin/phpunit
+  tests/Mcp/AuthorNeverNamedTest.php`, from that terminal too. The guard's in-memory mutations prove it
+  bites (the test name in a tool description, a last name alone in capitals, a name at the admitted path,
+  a fragment of the fictive CV in a prompt message); measured on the code too (#642: the name in a tool
+  description and a last name in a prompt `@param`, both red).
 - **The `mcp` firewall never reads a cookie** (ADR 0006 D4). Declared before `api`, `^/api/mcp$`, stateless,
   no authenticator (phase 2 will add the MCP-connection Bearer one, and only it). That is what makes
   `/api/mcp`'s entry in `CsrfCookieRequestSubscriber::EXCLUDED_PATHS` safe: a cross-site request carrying a
