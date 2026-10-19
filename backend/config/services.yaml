@@ -102,6 +102,12 @@ services:
         arguments:
             $versionsPath: '%app.watch_deployed_versions_path%'
 
+    # Sessions du serveur MCP (mcp.yaml) : le store `cache` du SDK attend un
+    # cache PSR-16, posé ici sur le pool DBAL `cache.mcp_sessions` (cache.yaml).
+    app.mcp.session_cache:
+        class: Symfony\Component\Cache\Psr16Cache
+        arguments: ['@cache.mcp_sessions']
+
 when@test:
     services:
         _defaults:

@@ -1,0 +1,44 @@
+# Serveur MCP du portfolio (ADR 0006, spec 0007) : le canal par lequel
+# l'assistant IA d'une personne interroge le site. Lecture seule, aucun appel
+# de modèle ; chaque outil rend exactement ce que sert la route du même palier
+# (ADR 0006 D1). Le bundle et le SDK sont pinnés en version exacte dans
+# composer.json (D7).
+mcp:
+    servers:
+        portfolio:
+            name: cp-ghostotof
+            version: 0.1.0
+            # Lu par n'importe quel client, donc au palier anonyme : rien ici ne
+            # nomme l'auteur (ADR 0006 D8).
+            description: 'Read-only access to the portfolio of the site''s author.'
+            instructions: >-
+                This server gives read-only access to the portfolio of the site's author:
+                technical background, quality principles, contributions, production incidents,
+                tech watch and more. Each tool returns exactly what the matching page of the
+                site serves, in French or English. Call the tools rather than guess, and say
+                when a question is not covered by what they return.
+            transports:
+                http: true
+                stdio: false
+            http:
+                # Sous /api : l'Ingress n'envoie au backend que ce préfixe
+                # (ADR 0006, alternatives écartées).
+                path: /api/mcp
+                # Protection contre le rebond DNS : seul l'hôte du site est servi
+                # (en-têtes Host et Origin). Dérivé de l'URL publique déjà posée
+                # par overlay, pour n'avoir qu'une source ; `localhost` en dev et
+                # en test.
+                allowed_hosts: ['%env(key:host:url:APP_FRONTEND_BASE_URL)%']
+            # ADR 0005 : deux réplicas, un disque en lecture seule. Le store
+            # par défaut (un fichier sous var/cache) n'y fonctionne pas ; les
+            # sessions vivent dans un pool DBAL (cache.yaml), dont chaque valeur
+            # est authentifiée par AuthenticatedCacheMarshaller (issue #468).
+            session:
+                store: cache
+                cache_pool: app.mcp.session_cache
+                ttl: 3600
+            # Ce que le serveur expose : les outils du contexte Mcp, rien
+            # d'autre (le bundle refuse un motif qui ne désigne aucun service ;
+            # les prompts entreront avec le premier, tâche 3 de la spec).
+            registry:
+                tools: ['App\Mcp\Presentation\Tool\']

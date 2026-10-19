@@ -35,6 +35,12 @@ framework:
         app: cache.adapter.doctrine_dbal
         default_doctrine_dbal_provider: database_connection
 
-        # Namespaced pools use the above "app" backend by default
-        #pools:
-            #my.dedicated.cache: null
+        pools:
+            # Sessions du serveur MCP (ADR 0006 D6) : une entrée par
+            # `initialize`, une heure de vie. Même table `cache_items`, même
+            # purge (`cache:pool:prune`), même MAC (AuthenticatedCacheMarshaller)
+            # que `cache.app` ; un pool à part pour que ses clés ne côtoient pas
+            # celles des limiteurs.
+            cache.mcp_sessions:
+                adapter: cache.adapter.doctrine_dbal
+                default_lifetime: 3600
