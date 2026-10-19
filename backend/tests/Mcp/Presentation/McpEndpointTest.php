@@ -151,6 +151,30 @@ final class McpEndpointTest extends WebTestCase
     }
 
     /**
+     * Une session **existante** qui dépasse la borne en cours de route (le
+     * client y fait recopier une « réponse » volumineuse) est détruite, et le
+     * reste : le SDK réécrivait aussitôt sous le même identifiant une session
+     * vide en vidant sa file sortante, si bien que la requête suivante
+     * tournait sur une session vidée au lieu du 404 qui fait se réinitialiser
+     * le client (relecture de la tâche 2).
+     */
+    public function testASessionThatOutgrowsTheBoundIsGoneForTheNextRequest(): void
+    {
+        $client = self::createClient();
+        $sessionId = $this->initializeMcpSession($client);
+
+        $this->postMcp($client, $sessionId, [
+            'jsonrpc' => '2.0',
+            'id' => 99,
+            'result' => ['padding' => str_repeat('x', 600 * 1024)],
+        ]);
+
+        $this->postMcp($client, $sessionId, ['jsonrpc' => '2.0', 'id' => 3, 'method' => 'tools/list']);
+        self::assertResponseStatusCodeSame(404);
+        self::assertLessThan(BoundedSessionStore::MAX_BYTES, $this->largestStoredMcpSession());
+    }
+
+    /**
      * Protection contre le rebond DNS : seul l'hôte du site (dérivé
      * d'APP_FRONTEND_BASE_URL, `localhost` en test) est servi.
      */

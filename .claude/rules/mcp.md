@@ -103,9 +103,13 @@ paths:
   (`clientInfo`, `capabilities` and their free `experimental` fields, « responses » under ids of the client's
   choosing) and rewrites the whole row on every request — unbounded, an anonymous client filled `cache_items`,
   hence PostgreSQL's disk (security review of #640, rated high). Over the bound the session is destroyed and the
-  write refused (`warning`, size only, never the id); the SDK then answers the request without a session id and
-  writes back a small empty session while draining its outgoing queue — an orphan row, whose **count** is the
-  nginx `mcp` zone's business (task 5, #644), not the bound's. **The bound must fit the largest legitimate
+  write refused (`warning`, size only, never the id), and **the id stays gone for the rest of the request**
+  (#641): draining its outgoing queue, the SDK re-reads the session and writes it back, empty, under the same
+  id — which stayed valid, so the next request ran on an emptied session (no `clientInfo`, no negotiated
+  version) instead of the 404 that makes a client re-initialise. The decorator remembers the destroyed id
+  (`ResetInterface`) and refuses it on `exists`/`read`/`write`; the answer queued for that request is lost
+  (it could not fit), the client sees no JSON-RPC answer, then a 404. The **number** of sessions per IP is
+  the nginx `mcp` zone's business (task 5, #644), not the bound's. **The bound must fit the largest legitimate
   answer**: the SDK queues a tool's response in the session before sending it, so every answer goes through
   `cache_items` — phase 2's nominative corpus included (measure it there). Each MCP request costs three
   round trips on the session row (`has`, `get`, `set`) and two writes per `tools/call` (save, then the queue
