@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Mcp\Presentation\Tool;
 
+use App\Mcp\Presentation\Tool\GetContactInfoTool;
 use App\Tests\Mcp\Support\SpeaksMcp;
 use Doctrine\ORM\EntityManagerInterface;
 use Mcp\Capability\Discovery\SchemaValidator;
@@ -44,6 +45,18 @@ final class GetContactInfoToolTest extends WebTestCase
         self::assertFalse($result['isError'] ?? false);
         self::assertSame(['contactPageUrl' => 'http://localhost:5173/en/contact'], $result['structuredContent']);
         self::assertSame($result['structuredContent'], json_decode($result['content'][0]['text'], true, flags: \JSON_THROW_ON_ERROR));
+    }
+
+    /**
+     * Une URL publique écrite avec un `/` final ne double pas la barre : la
+     * valeur vient d'une variable posée par overlay, sa forme n'est pas
+     * garantie.
+     */
+    public function testATrailingSlashOfTheSiteUrlIsNotDoubled(): void
+    {
+        $result = new GetContactInfoTool('https://site.example/')('en');
+
+        self::assertSame(['contactPageUrl' => 'https://site.example/en/contact'], $result->structuredContent);
     }
 
     public function testWithoutLocaleTheFrenchPageIsReturned(): void

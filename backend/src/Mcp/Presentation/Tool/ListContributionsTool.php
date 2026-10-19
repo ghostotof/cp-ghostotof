@@ -25,8 +25,8 @@ final readonly class ListContributionsTool
     /** La ressource de la route servie, déclarée et lue par la même constante. */
     private const string RESOURCE = ContributionResource::class;
 
-    // Schéma fermé, comme celui de get_about : un champ ajouté à la route sans
-    // être déclaré ici fait échouer la validation du test.
+    // Schéma fermé : un champ ajouté à la route sans être déclaré ici fait
+    // échouer la validation du test.
     private const array OUTPUT_SCHEMA = [
         'type' => 'object',
         'properties' => [

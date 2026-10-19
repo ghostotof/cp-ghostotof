@@ -47,8 +47,8 @@ paths:
   write otherwise. The text block, which `JsonToolResult` encodes itself, takes the flag and stays
   byte-identical; `RouteBackedToolsTest` compares `structuredContent` as a JSON value (`asJsonValue()`).
 - **The catalogue** (#641, spec 0007 « Catalogue des outils »): eight route-backed tools — `get_about`,
-  `get_quality`, `get_technical_background` and `get_tech_watch` (no `locale`: their routes take none),
-  `list_contributions`, `list_incidents`, and at the base tier, served without a token (ADR 0006 D2),
+  `get_quality`, `list_contributions`, `list_incidents`, `get_technical_background` and `get_tech_watch`
+  (the last two without `locale`: their routes take none), and at the base tier, served without a token (ADR 0006 D2),
   `get_anonymous_cv` and `list_case_studies` — plus two **without a route**, in a closed list:
   `get_contact_info` (`{"contactPageUrl": "<APP_FRONTEND_BASE_URL>/<locale>/contact"}`, nothing else, no
   e-mail; `app.frontend_base_url`, the variable `allowed_hosts` reads) and `get_nominative_corpus`,

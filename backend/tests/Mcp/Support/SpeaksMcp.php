@@ -107,6 +107,8 @@ trait SpeaksMcp
     private function listedMcpTool(KernelBrowser $client, string $sessionId, string $name): array
     {
         $response = $this->mcpCall($client, $sessionId, 'tools/list');
+        self::assertIsArray($response['result'] ?? null, 'tools/list a répondu une erreur de protocole.');
+        self::assertIsArray($response['result']['tools'] ?? null);
 
         foreach ($response['result']['tools'] as $tool) {
             if ($name === $tool['name']) {
