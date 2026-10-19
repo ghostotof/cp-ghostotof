@@ -51,7 +51,7 @@ final class DollarAnchoredPatterns
     {
         $found = [];
         foreach (PhpSources::files($directory) as $path) {
-            foreach (self::inCode((string) file_get_contents($path)) as [$line, $pattern]) {
+            foreach (self::inCode(RepositoryFiles::read($path)) as [$line, $pattern]) {
                 $found[] = $path.':'.$line.' '.$pattern;
             }
         }

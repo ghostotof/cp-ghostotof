@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Shared;
 
 use App\Tests\Support\CommentedClassNames;
+use App\Tests\Support\RepositoryFiles;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
@@ -24,7 +25,7 @@ final class CommentedClassNamesExistTest extends TestCase
 {
     public function testEveryClassNamedInFullInACommentExists(): void
     {
-        $root = \dirname(__DIR__, 2);
+        $root = RepositoryFiles::backend();
 
         self::assertSame([], CommentedClassNames::in($root.'/src', $root.'/tests'));
     }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Shared\Infrastructure\Lock;
 
+use App\Tests\Support\RepositoryFiles;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Yaml\Yaml;
 
@@ -87,7 +88,7 @@ final class LockLogChannelTest extends TestCase
      */
     private function productionHandlers(): array
     {
-        $config = Yaml::parseFile(\dirname(__DIR__, 4).'/config/packages/monolog.yaml');
+        $config = Yaml::parseFile(RepositoryFiles::backend('config/packages/monolog.yaml'));
         self::assertIsArray($config);
         $handlers = $config['when@prod']['monolog']['handlers'] ?? null;
         self::assertIsArray($handlers);

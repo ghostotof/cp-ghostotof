@@ -273,7 +273,7 @@ final class PlainPasswordInputs
         $sources = [];
         foreach ([$class, ...DeclaredClasses::traitsUsedBy([$class])] as $declaration) {
             $file = (new ReflectionClass($declaration))->getFileName();
-            $sources[] = false === $file ? '' : (string) file_get_contents($file);
+            $sources[] = false === $file ? '' : RepositoryFiles::read($file);
         }
 
         return $sources;

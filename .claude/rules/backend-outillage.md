@@ -202,3 +202,29 @@ red: the leftover link is refused anyway by the « account already active » gua
 `testEveryUnusableLinkGetsTheSameResponse` red on its « révoqué par le backoffice » link (204 instead of
 the common 404 — the account is still pending, nothing else refuses the link), measured in #519. No
 concurrency harness for either: the purge is no race.
+
+## Reading a repository file from a test (issue #629)
+
+A test reads a file of `src/`, `config/`, the backend or the repository through
+**`tests/Support/RepositoryFiles`**: `backend('src')` and `repository('k8s/README.md')` are written in that
+class only, from its own location, and `read($absolutePath)` fails the test naming the path and the cause
+— missing, not a regular file (a directory passes `assertFileIsReadable`), unreadable —, never returning
+`''` the way `(string) file_get_contents()` did, the symptom of #615. Every reader of a repository file goes
+through it: `KubernetesManifests`, `PhpImageBuild`, `MigrationSources`, `Runbook`, `EnvironmentConfigKernel`,
+the token censuses of `tests/Support` (`DeclaredClasses`, `MisqualifiedNativeCalls`…) and the tests that walk
+`src/`. A file a test wrote itself (a sandbox, a temporary directory) is not a repository file. Never write
+`\dirname(__DIR__, n)` or `__DIR__.'/../..'` to reach out of `tests/`: such a path depends on the test's depth
+and silently reads elsewhere when the test moves. `tests/Shared/DirPathsStayInTestsTest.php`
+(`tests/Support/PathsLeavingTests`, by tokens) resolves every path built from `__DIR__` lexically from the
+file's directory — `dirname(<__DIR__ and its concatenation>[, n])`, qualified or not, `n` in any base,
+positional or named, trailing comma allowed, or a bare `__DIR__`, each followed by its concatenated pieces
+(literals, `DIRECTORY_SEPARATOR`, the start of an interpolated string) — and fails on one that leaves `tests/`
+or that it cannot resolve. **It judges where a path leads, not how it gets there**: a sibling fixture, and the
+child scripts' `require \dirname(__DIR__, n).'/bootstrap.php'` (which load the autoloader, so cannot use
+`RepositoryFiles`), stay in `tests/` and pass without an exemption — the issue meant to exempt them; a moved
+one fails loudly on its `require`. A path that climbs out and comes back into `tests/` passing is the same
+accepted limit. Its `EXEMPT` list holds pairs (file, resolved path) for the files that run before the
+autoloader (`tests/bootstrap.php`, `tests/object-manager.php`, the child script `await-barrier.php`) and
+`RepositoryFiles` itself, each pair still required to be written; a new path in an exempt file is refused.
+Not seen: a nested call on the result (`\dirname(\dirname(__DIR__))`, `realpath()`), a path carried by a
+variable, one composed by `sprintf()` or `implode()`, a constant other than `DIRECTORY_SEPARATOR`, `__FILE__`.

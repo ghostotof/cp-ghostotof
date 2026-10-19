@@ -9,6 +9,7 @@ use App\Shared\Application\Message\QueuedMessageInterface;
 use App\Tests\Support\DeclaredClasses;
 use App\Tests\Support\EnvironmentConfigKernel;
 use App\Tests\Support\PhpSources;
+use App\Tests\Support\RepositoryFiles;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use ReflectionAttribute;
@@ -51,7 +52,6 @@ use Symfony\Component\Messenger\Attribute\AsMessage;
  */
 final class QueuedMessagesNameTheirQueueFailureTest extends TestCase
 {
-    private const string SOURCES = __DIR__.'/../../../../src';
     private const string FIXTURE_PROJECT = __DIR__.'/Fixtures/AsyncRoutingProject';
     private const string FIXTURE_CLASSES = __DIR__.'/Fixtures';
 
@@ -64,7 +64,7 @@ final class QueuedMessagesNameTheirQueueFailureTest extends TestCase
 
     public function testEveryPublishedMessageOfTheApplicationNamesItsQueueFailure(): void
     {
-        self::assertSame([], $this->unconvertedRoutings(null, self::SOURCES), 'Un message routé vers une file doit implémenter QueuedMessageInterface (issue #491), sinon une panne du broker redevient un 500 critical.');
+        self::assertSame([], $this->unconvertedRoutings(null, RepositoryFiles::backend('src')), 'Un message routé vers une file doit implémenter QueuedMessageInterface (issue #491), sinon une panne du broker redevient un 500 critical.');
     }
 
     /**
@@ -93,7 +93,7 @@ final class QueuedMessagesNameTheirQueueFailureTest extends TestCase
     {
         $published = [];
         foreach (EnvironmentConfigKernel::allowedEnvironments() as $environment) {
-            foreach ($this->publishingRoutes($environment, null, self::SOURCES) as [$message]) {
+            foreach ($this->publishingRoutes($environment, null, RepositoryFiles::backend('src')) as [$message]) {
                 $published[] = $message;
             }
         }
@@ -109,8 +109,8 @@ final class QueuedMessagesNameTheirQueueFailureTest extends TestCase
     public function testNoSourceChoosesItsTransportAtDispatch(): void
     {
         $sources = [];
-        foreach (PhpSources::files(self::SOURCES) as $path) {
-            $sources[$path] = (string) file_get_contents($path);
+        foreach (PhpSources::files(RepositoryFiles::backend('src')) as $path) {
+            $sources[$path] = RepositoryFiles::read($path);
         }
 
         self::assertSame([], $this->transportNamesStamps($sources), 'Un TransportNamesStamp route le message hors de la garde (issue #491) : router par framework.messenger.routing ou par #[AsMessage].');

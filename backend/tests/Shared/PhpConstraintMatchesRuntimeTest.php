@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Shared;
 
+use App\Tests\Support\RepositoryFiles;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -21,8 +22,6 @@ use PHPUnit\Framework\TestCase;
  */
 final class PhpConstraintMatchesRuntimeTest extends TestCase
 {
-    private const string COMPOSER_JSON = __DIR__.'/../../composer.json';
-
     public function testTheConstraintIsTheRuntimeVersion(): void
     {
         self::assertSame(\sprintf('>=%d.%d', \PHP_MAJOR_VERSION, \PHP_MINOR_VERSION), $this->composer()['require']['php'] ?? null);
@@ -44,8 +43,7 @@ final class PhpConstraintMatchesRuntimeTest extends TestCase
      */
     private function composer(): array
     {
-        $contents = file_get_contents(self::COMPOSER_JSON);
-        self::assertIsString($contents);
+        $contents = RepositoryFiles::read(RepositoryFiles::backend('composer.json'));
 
         /** @var array{require?: array<string, string>, replace?: array<string, string>} */
         return json_decode($contents, true, 512, \JSON_THROW_ON_ERROR);
