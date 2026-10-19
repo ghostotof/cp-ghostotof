@@ -202,3 +202,21 @@ red: the leftover link is refused anyway by the « account already active » gua
 `testEveryUnusableLinkGetsTheSameResponse` red on its « révoqué par le backoffice » link (204 instead of
 the common 404 — the account is still pending, nothing else refuses the link), measured in #519. No
 concurrency harness for either: the purge is no race.
+
+## Reading a repository file from a test (issue #629)
+
+A test reads a file of `src/`, `config/`, the backend or the repository through
+**`tests/Support/RepositoryFiles`**: `backend()` and `repository()` are computed once, from that class's
+location, and `read($absolutePath)` fails the test naming the path when the file is missing, unreadable or
+not a regular file (a directory passes `assertFileIsReadable`), never returning `''` the way
+`(string) file_get_contents()` did — the symptom of #615. `KubernetesManifests`, `PhpImageBuild`,
+`MigrationSources`, `Runbook` and `EnvironmentConfigKernel` go through it. Never write `\dirname(__DIR__, n)`
+or `__DIR__.'/../..'` to reach out of `tests/`: such a path depends on the test's depth and silently reads
+elsewhere when the test moves. `tests/Shared/DirPathsStayInTestsTest.php` (`tests/Support/PathsLeavingTests`,
+by tokens) resolves every path built from `__DIR__` — `dirname(__DIR__[, n])`, qualified or not, or a bare
+`__DIR__`, followed by an optional concatenated literal — lexically from the file's directory, and fails on
+one that leaves `tests/` (a sibling fixture, `tests/bootstrap.php` stay allowed). Its `EXEMPT` list holds the
+files that run before the autoloader (`tests/bootstrap.php`, `tests/object-manager.php`, the child script
+`await-barrier.php`) and `RepositoryFiles` itself, each still required to need it. Not seen: a nested call
+on the result (`\dirname(\dirname(__DIR__))`, `realpath()`), a path carried by a variable, a second
+concatenated literal, `__FILE__`.
