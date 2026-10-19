@@ -76,7 +76,7 @@ final readonly class GetQualityTool
     ): CallToolResult {
         $language = ToolLocale::parse($locale);
 
-        return RouteBackedToolResult::forObject(
+        return JsonToolResult::forObject(
             $this->routePayloadReader->read(self::RESOURCE, ['locale' => $language->value]),
         );
     }

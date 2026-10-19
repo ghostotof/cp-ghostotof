@@ -98,7 +98,7 @@ final readonly class GetTechWatchTool
     )]
     public function __invoke(): CallToolResult
     {
-        return RouteBackedToolResult::forObject(
+        return JsonToolResult::forObject(
             $this->routePayloadReader->read(self::RESOURCE),
         );
     }

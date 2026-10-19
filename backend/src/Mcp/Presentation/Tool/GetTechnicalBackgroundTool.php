@@ -72,7 +72,7 @@ final readonly class GetTechnicalBackgroundTool
     )]
     public function __invoke(): CallToolResult
     {
-        return RouteBackedToolResult::forCollection(
+        return JsonToolResult::forCollection(
             $this->routePayloadReader->read(self::RESOURCE),
         );
     }

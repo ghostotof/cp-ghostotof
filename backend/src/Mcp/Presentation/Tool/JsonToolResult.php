@@ -8,16 +8,17 @@ use Mcp\Schema\Content\TextContent;
 use Mcp\Schema\Result\CallToolResult;
 
 /**
- * Le résultat d'un outil adossé à une route (ADR 0006 D1) : le payload de la
- * route en `structuredContent`, et ce même JSON dans le bloc texte — beaucoup
- * de clients ne passent que ce bloc au modèle, qui doit y voir les mêmes
- * données.
+ * Le résultat JSON d'un outil : l'objet en `structuredContent`, et ce même
+ * JSON dans le bloc texte — beaucoup de clients ne passent que ce bloc au
+ * modèle, qui doit y voir les mêmes données. Pour un outil adossé à une route
+ * (ADR 0006 D1), l'objet est le payload de la route ; `get_contact_info`, sans
+ * route, rend le sien sous la même forme.
  *
  * Construit ici plutôt que laissé au formateur du SDK, pour que les deux
  * formes viennent d'un seul payload, quelle que soit la révision du
  * protocole négociée.
  */
-final class RouteBackedToolResult
+final class JsonToolResult
 {
     // JSON_PRESERVE_ZERO_FRACTION, comme l'encodeur JSON du Serializer qui
     // écrit la route : un flottant entier (des années `1.0`) s'y écrit `1.0`.

@@ -35,7 +35,7 @@ paths:
   variables are not checked against the route's `requirements` — no item tool exists; the first one handles
   both (a typed parameter, `null` → `ToolCallException`). Wiring defects (`RouteOperationNotFoundException`,
   `RouteAboveMcpTiersException`, `UnexpectedRoutePayloadException`) never reach the HTTP kernel: the SDK catches
-  them, logs them `error` on the `mcp` channel and answers `-32603` — no `framework.exceptions` entry applies. `Presentation/Tool/RouteBackedToolResult` builds the result: the
+  them, logs them `error` on the `mcp` channel and answers `-32603` — no `framework.exceptions` entry applies. `Presentation/Tool/JsonToolResult` builds the result (every tool's, `get_contact_info`'s included): the
   payload as `structuredContent` and the same JSON as the one text block (many clients pass only that block to
   the model). A route rendering an object → that object; a collection → `{"items": [...]}` (ADR 0006 D1, the
   MCP spec wants an object before the 2026-07-28 revision). Each tool's functional test compares its output
@@ -44,7 +44,7 @@ paths:
   nuance, accepted** (#641): the route's Serializer writes an integral float as `1.0`
   (`JSON_PRESERVE_ZERO_FRACTION`, the technologies' `years`), the SDK encodes the whole JSON-RPC answer
   with a bare `json_encode`, so `structuredContent` carries `1` — the same JSON number, which a tool cannot
-  write otherwise. The text block, which `RouteBackedToolResult` encodes itself, takes the flag and stays
+  write otherwise. The text block, which `JsonToolResult` encodes itself, takes the flag and stays
   byte-identical; `RouteBackedToolsTest` compares `structuredContent` as a JSON value (`asJsonValue()`).
 - **The catalogue** (#641, spec 0007 « Catalogue des outils »): eight route-backed tools — `get_about`,
   `get_quality`, `get_technical_background` and `get_tech_watch` (no `locale`: their routes take none),

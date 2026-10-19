@@ -70,7 +70,7 @@ final readonly class ListIncidentsTool
     ): CallToolResult {
         $language = ToolLocale::parse($locale);
 
-        return RouteBackedToolResult::forCollection(
+        return JsonToolResult::forCollection(
             $this->routePayloadReader->read(self::RESOURCE, ['locale' => $language->value]),
         );
     }

@@ -51,9 +51,7 @@ final readonly class GetContactInfoTool
     ): CallToolResult {
         $language = ToolLocale::parse($locale);
 
-        // Même forme qu'un outil adossé : l'objet en structuredContent, le
-        // même JSON dans le bloc texte.
-        return RouteBackedToolResult::forObject([
+        return JsonToolResult::forObject([
             'contactPageUrl' => \sprintf('%s/%s/contact', rtrim($this->frontendBaseUrl, '/'), $language->value),
         ]);
     }

@@ -102,6 +102,6 @@ final readonly class GetAboutTool
             throw new ToolCallException('No About content exists in this language.');
         }
 
-        return RouteBackedToolResult::forObject($payload);
+        return JsonToolResult::forObject($payload);
     }
 }
