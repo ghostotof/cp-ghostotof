@@ -84,6 +84,25 @@ final class McpEndpointTest extends WebTestCase
     }
 
     /**
+     * Le SDK répond 405 au GET (il n'ouvre pas de flux), ce que l'AI
+     * Assistant de PhpStorm prend pour une panne (ADR 0006, conséquences).
+     * Le GET ouvre donc un flux SSE vide, qui demande au client d'attendre
+     * cinq minutes avant de le rouvrir, et se ferme aussitôt : aucun worker
+     * FPM n'est retenu.
+     */
+    public function testGetOpensAnEmptyEventStreamInsteadOf405(): void
+    {
+        $client = self::createClient();
+
+        $client->request('GET', self::MCP_ENDPOINT, server: ['HTTP_ACCEPT' => 'text/event-stream']);
+
+        self::assertResponseIsSuccessful();
+        self::assertStringStartsWith('text/event-stream', (string) $client->getResponse()->headers->get('Content-Type'));
+        self::assertSame("retry: 300000\n\n", $client->getResponse()->getContent());
+        self::assertTrue($client->getResponse()->headers->hasCacheControlDirective('no-store'));
+    }
+
+    /**
      * Protection contre le rebond DNS : seul l'hôte du site (dérivé
      * d'APP_FRONTEND_BASE_URL, `localhost` en test) est servi.
      */
