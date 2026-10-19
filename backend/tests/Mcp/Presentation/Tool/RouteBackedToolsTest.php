@@ -30,8 +30,12 @@ final class RouteBackedToolsTest extends WebTestCase
     /** Contenu à poser avant de lire la route : la commande de seed du contexte. */
     private const string CONTRIBUTIONS = 'app:contributions:seed';
 
+    private const string INCIDENTS = 'app:incidents:seed';
+
+    private const string QUALITY = 'app:quality:seed';
+
     /** Tables que les seeds de ce test remplissent. */
-    private const array SEEDED_TABLES = ['contribution'];
+    private const array SEEDED_TABLES = ['contribution', 'incident', 'quality_principle', 'quality_trait'];
 
     protected function setUp(): void
     {
@@ -58,6 +62,8 @@ final class RouteBackedToolsTest extends WebTestCase
     {
         foreach (['fr', 'en'] as $locale) {
             yield 'list_contributions '.$locale => ['list_contributions', ['locale' => $locale], '/api/contributions/'.$locale, self::CONTRIBUTIONS, true];
+            yield 'list_incidents '.$locale => ['list_incidents', ['locale' => $locale], '/api/incidents/'.$locale, self::INCIDENTS, true];
+            yield 'get_quality '.$locale => ['get_quality', ['locale' => $locale], '/api/quality/'.$locale, self::QUALITY, false];
         }
     }
 
@@ -105,6 +111,7 @@ final class RouteBackedToolsTest extends WebTestCase
     public static function collectionTools(): iterable
     {
         yield 'list_contributions' => ['list_contributions', '/api/contributions/fr'];
+        yield 'list_incidents' => ['list_incidents', '/api/incidents/fr'];
     }
 
     /**
@@ -130,6 +137,8 @@ final class RouteBackedToolsTest extends WebTestCase
     public static function localizedTools(): iterable
     {
         yield 'list_contributions' => ['list_contributions'];
+        yield 'list_incidents' => ['list_incidents'];
+        yield 'get_quality' => ['get_quality'];
     }
 
     #[DataProvider('localizedTools')]
