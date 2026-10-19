@@ -25,7 +25,7 @@ final class NoBareGenericExceptionTest extends TestCase
 {
     public function testNoSourceFileInstantiatesABareGenericException(): void
     {
-        self::assertSame([], BareExceptionInstantiations::in(RepositoryFiles::backend().'/src'));
+        self::assertSame([], BareExceptionInstantiations::in(RepositoryFiles::backend('src')));
     }
 
     /**

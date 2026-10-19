@@ -428,7 +428,7 @@ final class PlainPasswordInputsTest extends TestCase
      */
     private function srcClasses(): array
     {
-        return $this->classesIn(RepositoryFiles::backend().'/src');
+        return $this->classesIn(RepositoryFiles::backend('src'));
     }
 
     /**

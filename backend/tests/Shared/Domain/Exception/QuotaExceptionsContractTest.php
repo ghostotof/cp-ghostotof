@@ -91,7 +91,7 @@ final class QuotaExceptionsContractTest extends TestCase
      */
     public static function quotaExceptions(): iterable
     {
-        foreach (DeclaredClasses::implementing(RepositoryFiles::backend().'/src', RetryAfterAware::class) as $class) {
+        foreach (DeclaredClasses::implementing(RepositoryFiles::backend('src'), RetryAfterAware::class) as $class) {
             if (!(new ReflectionClass($class))->isAbstract()) {
                 yield $class => [$class];
             }

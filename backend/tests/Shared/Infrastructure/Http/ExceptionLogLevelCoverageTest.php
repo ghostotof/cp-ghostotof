@@ -532,10 +532,10 @@ final class ExceptionLogLevelCoverageTest extends KernelTestCase
             $global,
         );
         $problems = array_values(array_filter(
-            DeclaredClasses::implementing(RepositoryFiles::backend().'/src', ProblemExceptionInterface::class),
+            DeclaredClasses::implementing(RepositoryFiles::backend('src'), ProblemExceptionInterface::class),
             static fn (string $class): bool => !(new ReflectionClass($class))->isAbstract(),
         ));
-        $converted = CompiledExceptionConfig::kernelHttpStatus($listener, [...DeclaredClasses::classes(RepositoryFiles::backend().'/src'), ...$this->statusCodeKeys()]);
+        $converted = CompiledExceptionConfig::kernelHttpStatus($listener, [...DeclaredClasses::classes(RepositoryFiles::backend('src')), ...$this->statusCodeKeys()]);
 
         $classes = array_unique([...array_merge(...array_map(array_keys(...), $mappings)), ...$problems, ...array_keys($converted)]);
         $statuses = [];

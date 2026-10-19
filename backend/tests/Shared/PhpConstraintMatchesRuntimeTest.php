@@ -43,7 +43,7 @@ final class PhpConstraintMatchesRuntimeTest extends TestCase
      */
     private function composer(): array
     {
-        $contents = RepositoryFiles::read(RepositoryFiles::backend().'/composer.json');
+        $contents = RepositoryFiles::read(RepositoryFiles::backend('composer.json'));
 
         /** @var array{require?: array<string, string>, replace?: array<string, string>} */
         return json_decode($contents, true, 512, \JSON_THROW_ON_ERROR);

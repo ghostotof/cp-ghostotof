@@ -48,7 +48,7 @@ final class ProblemStatusMatchesExceptionToStatusTest extends KernelTestCase
         );
 
         $problems = array_filter(
-            DeclaredClasses::implementing(RepositoryFiles::backend().'/src', ProblemExceptionInterface::class),
+            DeclaredClasses::implementing(RepositoryFiles::backend('src'), ProblemExceptionInterface::class),
             static fn (string $class): bool => !(new ReflectionClass($class))->isAbstract(),
         );
         self::assertNotEmpty($problems, 'Aucune ProblemExceptionInterface recensée : le garde-fou ne garderait rien.');

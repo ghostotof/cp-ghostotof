@@ -36,7 +36,7 @@ final class NoAnonymousClassNorFreeFunctionTest extends TestCase
     {
         self::assertSame(
             [],
-            AnonymousClassesAndFreeFunctions::in(RepositoryFiles::backend().'/src'),
+            AnonymousClassesAndFreeFunctions::in(RepositoryFiles::backend('src')),
             'Nommez la classe ou faites de la fonction une méthode : les gardes de signatures ne voient que les'
             .' déclarations nommées (issue #432, .claude/rules/backend-architecture.md).',
         );

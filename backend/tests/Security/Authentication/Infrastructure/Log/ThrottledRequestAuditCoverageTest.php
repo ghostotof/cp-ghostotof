@@ -85,7 +85,7 @@ final class ThrottledRequestAuditCoverageTest extends TestCase
 
     public function testEveryQuotaExceptionIsAuditedByItsOwnEventOrJustified(): void
     {
-        $quotas = $this->quotaExceptions(RepositoryFiles::backend().'/src');
+        $quotas = $this->quotaExceptions(RepositoryFiles::backend('src'));
         self::assertNotEmpty($quotas, 'Aucune exception de quota recensée : le garde-fou ne garderait rien.');
 
         $audited = [];
@@ -108,7 +108,7 @@ final class ThrottledRequestAuditCoverageTest extends TestCase
      */
     public function testEveryJustifiedQuotaExistsAndIsLeftAloneByTheListener(): void
     {
-        $quotas = $this->quotaExceptions(RepositoryFiles::backend().'/src');
+        $quotas = $this->quotaExceptions(RepositoryFiles::backend('src'));
         $justified = [
             ...array_map(static fn (): string => 'quota par compte', self::PER_ACCOUNT),
             ...array_map(static fn (): string => 'tracé en amont', self::TRACED_UPSTREAM),

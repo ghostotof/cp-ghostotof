@@ -55,7 +55,7 @@ final readonly class KubernetesManifests
      */
     public static function base(): self
     {
-        return new self(RepositoryFiles::repository().'/k8s/base');
+        return new self(RepositoryFiles::repository('k8s/base'));
     }
 
     /**
@@ -63,7 +63,7 @@ final readonly class KubernetesManifests
      */
     public static function overlay(string $name): self
     {
-        return new self(\dirname(self::base()->directory()).'/overlays/'.$name);
+        return new self(RepositoryFiles::repository('k8s/overlays/'.$name));
     }
 
     /**
@@ -74,7 +74,7 @@ final readonly class KubernetesManifests
      */
     public static function tree(): self
     {
-        return new self(\dirname(self::base()->directory()));
+        return new self(RepositoryFiles::repository('k8s'));
     }
 
     /**
@@ -96,10 +96,7 @@ final readonly class KubernetesManifests
      */
     public function source(string $file): string
     {
-        $path = $this->directory.'/'.$file;
-        Assert::assertFileIsReadable($path);
-
-        return (string) file_get_contents($path);
+        return RepositoryFiles::read($this->directory.'/'.$file);
     }
 
     /**

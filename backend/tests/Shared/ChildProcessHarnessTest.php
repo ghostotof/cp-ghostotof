@@ -8,6 +8,7 @@ use App\Tests\Support\ChildPhpProcess;
 use App\Tests\Support\FlushInterleaving;
 use App\Tests\Support\PhpSources;
 use App\Tests\Support\ProcessBarrier;
+use App\Tests\Support\RepositoryFiles;
 use PhpToken;
 use PHPUnit\Framework\AssertionFailedError;
 use PHPUnit\Framework\TestCase;
@@ -290,13 +291,13 @@ final class ChildProcessHarnessTest extends TestCase
             // FlushInterleavingTest vérifie que l'écouteur se retire.
             self::FLUSH_EVENT => [$interleaving, __DIR__.'/FlushInterleavingTest.php'],
         ];
-        $tests = \dirname(__DIR__);
+        $tests = RepositoryFiles::backend('tests');
         $offenders = [];
         $exemptionsUsed = [];
 
         foreach (PhpSources::files($tests) as $path) {
             $relative = substr($path, \strlen($tests) + 1);
-            $tokens = PhpSources::significantTokens((string) file_get_contents($path));
+            $tokens = PhpSources::significantTokens(RepositoryFiles::read($path));
             foreach (array_keys($tokens) as $index) {
                 $construct = $this->constructAt($tokens, $index);
                 if (null === $construct || \in_array($path, $owners[$construct], true)) {

@@ -402,7 +402,7 @@ final class SymfonyAiCareerAssistantTest extends TestCase
     {
         return new SymfonyAiCareerAssistant(
             $agent,
-            new CareerAssistantSystemPrompt(new StubCorpusRenderer(self::CORPUS), RepositoryFiles::backend().'/config/ai/prompts/career_assistant.txt'),
+            new CareerAssistantSystemPrompt(new StubCorpusRenderer(self::CORPUS), RepositoryFiles::backend('config/ai/prompts/career_assistant.txt')),
             $this->logger,
         );
     }

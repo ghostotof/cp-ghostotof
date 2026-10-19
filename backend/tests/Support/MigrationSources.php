@@ -21,6 +21,6 @@ final class MigrationSources
      */
     public static function of(string $version): string
     {
-        return RepositoryFiles::read(RepositoryFiles::backend().'/migrations/'.$version.'.php');
+        return RepositoryFiles::read(RepositoryFiles::backend('migrations/'.$version.'.php'));
     }
 }

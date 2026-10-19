@@ -40,7 +40,7 @@ final class BareExceptionInstantiations
     {
         $found = [];
         foreach (PhpSources::files($directory) as $path) {
-            foreach (self::inCode((string) file_get_contents($path)) as $line) {
+            foreach (self::inCode(RepositoryFiles::read($path)) as $line) {
                 $found[] = $path.':'.$line;
             }
         }

@@ -439,6 +439,6 @@ final class PhpImageBuild
      */
     private static function read(string $path): string
     {
-        return RepositoryFiles::read(RepositoryFiles::repository().'/'.$path);
+        return RepositoryFiles::read(RepositoryFiles::repository($path));
     }
 }

@@ -126,7 +126,7 @@ final class ProductionImageCompilesDotenvTest extends TestCase
     private function dotenvReferences(): array
     {
         $references = [];
-        foreach (explode("\n", RepositoryFiles::read(RepositoryFiles::backend().'/.env')) as $line) {
+        foreach (explode("\n", RepositoryFiles::read(RepositoryFiles::backend('.env'))) as $line) {
             if (1 !== preg_match('/^\s*(?:export\s+)?[A-Za-z_][A-Za-z0-9_]*=(.*)\z/', $line, $assignment) || str_starts_with($assignment[1], "'")) {
                 continue;
             }

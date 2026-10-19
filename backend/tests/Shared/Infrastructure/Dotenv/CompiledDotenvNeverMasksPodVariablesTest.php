@@ -92,7 +92,7 @@ final class CompiledDotenvNeverMasksPodVariablesTest extends TestCase
 
         $values = include self::$project.'/.env.local.php';
         self::assertIsArray($values);
-        $dotenv = (new Dotenv())->parse(RepositoryFiles::read(RepositoryFiles::backend().'/.env'));
+        $dotenv = (new Dotenv())->parse(RepositoryFiles::read(RepositoryFiles::backend('.env')));
         self::assertSame(array_keys($dotenv), array_keys($values), 'Les clés compilées sont celles de .env, dans le même ordre.');
 
         foreach ($dotenv as $name => $value) {

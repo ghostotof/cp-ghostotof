@@ -60,6 +60,6 @@ final class CareerAssistantSystemPromptTest extends TestCase
      */
     private function preambleFile(): string
     {
-        return RepositoryFiles::backend().'/config/ai/prompts/career_assistant.txt';
+        return RepositoryFiles::backend('config/ai/prompts/career_assistant.txt');
     }
 }

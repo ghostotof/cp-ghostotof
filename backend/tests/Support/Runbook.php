@@ -36,7 +36,7 @@ final readonly class Runbook
      */
     public static function repository(): self
     {
-        return new self(RepositoryFiles::read(\dirname(KubernetesManifests::base()->directory()).'/README.md'));
+        return new self(RepositoryFiles::read(RepositoryFiles::repository('k8s/README.md')));
     }
 
     /**

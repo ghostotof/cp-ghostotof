@@ -294,7 +294,7 @@ final class SecretParametersTest extends TestCase
      */
     private function srcParameters(): array
     {
-        return $this->parametersIn(RepositoryFiles::backend().'/src');
+        return $this->parametersIn(RepositoryFiles::backend('src'));
     }
 
     /**

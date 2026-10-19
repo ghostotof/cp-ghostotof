@@ -38,7 +38,7 @@ final class RegexEndAnchorTest extends TestCase
     {
         self::assertSame(
             [],
-            DollarAnchoredPatterns::in(RepositoryFiles::backend().'/src'),
+            DollarAnchoredPatterns::in(RepositoryFiles::backend('src')),
             'Ancrez la fin par \z : `$` accepte un "\n" final (issue #409).',
         );
     }
@@ -105,7 +105,7 @@ final class RegexEndAnchorTest extends TestCase
      */
     public function testEveryRegexConstraintPublishesAPatternThatEcmaScriptReads(): void
     {
-        self::assertSame([], $this->htmlPatternsEcmaScriptMisreadsIn(RepositoryFiles::backend().'/src'), 'Déclarez un htmlPattern sans \A, \z ni \Z (ECMAScript ne les connaît pas).');
+        self::assertSame([], $this->htmlPatternsEcmaScriptMisreadsIn(RepositoryFiles::backend('src')), 'Déclarez un htmlPattern sans \A, \z ni \Z (ECMAScript ne les connaît pas).');
     }
 
     /**

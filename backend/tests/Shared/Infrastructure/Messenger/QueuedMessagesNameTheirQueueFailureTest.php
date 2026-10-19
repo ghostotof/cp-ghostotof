@@ -64,7 +64,7 @@ final class QueuedMessagesNameTheirQueueFailureTest extends TestCase
 
     public function testEveryPublishedMessageOfTheApplicationNamesItsQueueFailure(): void
     {
-        self::assertSame([], $this->unconvertedRoutings(null, RepositoryFiles::backend().'/src'), 'Un message routé vers une file doit implémenter QueuedMessageInterface (issue #491), sinon une panne du broker redevient un 500 critical.');
+        self::assertSame([], $this->unconvertedRoutings(null, RepositoryFiles::backend('src')), 'Un message routé vers une file doit implémenter QueuedMessageInterface (issue #491), sinon une panne du broker redevient un 500 critical.');
     }
 
     /**
@@ -93,7 +93,7 @@ final class QueuedMessagesNameTheirQueueFailureTest extends TestCase
     {
         $published = [];
         foreach (EnvironmentConfigKernel::allowedEnvironments() as $environment) {
-            foreach ($this->publishingRoutes($environment, null, RepositoryFiles::backend().'/src') as [$message]) {
+            foreach ($this->publishingRoutes($environment, null, RepositoryFiles::backend('src')) as [$message]) {
                 $published[] = $message;
             }
         }
@@ -109,8 +109,8 @@ final class QueuedMessagesNameTheirQueueFailureTest extends TestCase
     public function testNoSourceChoosesItsTransportAtDispatch(): void
     {
         $sources = [];
-        foreach (PhpSources::files(RepositoryFiles::backend().'/src') as $path) {
-            $sources[$path] = (string) file_get_contents($path);
+        foreach (PhpSources::files(RepositoryFiles::backend('src')) as $path) {
+            $sources[$path] = RepositoryFiles::read($path);
         }
 
         self::assertSame([], $this->transportNamesStamps($sources), 'Un TransportNamesStamp route le message hors de la garde (issue #491) : router par framework.messenger.routing ou par #[AsMessage].');

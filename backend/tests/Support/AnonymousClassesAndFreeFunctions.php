@@ -35,7 +35,7 @@ final class AnonymousClassesAndFreeFunctions
     {
         $found = [];
         foreach (PhpSources::files($directory) as $path) {
-            foreach (self::inCode((string) file_get_contents($path)) as $entry) {
+            foreach (self::inCode(RepositoryFiles::read($path)) as $entry) {
                 $found[] = $path.':'.$entry;
             }
         }

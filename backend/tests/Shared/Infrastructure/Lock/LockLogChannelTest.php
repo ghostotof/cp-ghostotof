@@ -88,7 +88,7 @@ final class LockLogChannelTest extends TestCase
      */
     private function productionHandlers(): array
     {
-        $config = Yaml::parseFile(RepositoryFiles::backend().'/config/packages/monolog.yaml');
+        $config = Yaml::parseFile(RepositoryFiles::backend('config/packages/monolog.yaml'));
         self::assertIsArray($config);
         $handlers = $config['when@prod']['monolog']['handlers'] ?? null;
         self::assertIsArray($handlers);

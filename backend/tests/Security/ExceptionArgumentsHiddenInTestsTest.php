@@ -32,7 +32,7 @@ final class ExceptionArgumentsHiddenInTestsTest extends TestCase
 
     public function testPhpUnitConfigurationDropsCallArgumentsFromExceptionTraces(): void
     {
-        $path = $this->backendDirectory().'/phpunit.dist.xml';
+        $path = RepositoryFiles::backend('phpunit.dist.xml');
         self::assertFileIsReadable($path);
 
         self::assertSame(['1'], $this->declaredValues($path), 'phpunit.dist.xml pose zend.exception_ignore_args à 1 (issue #420).');
@@ -99,13 +99,13 @@ final class ExceptionArgumentsHiddenInTestsTest extends TestCase
     {
         $helper = (new ReflectionClass(ChildPhpProcess::class))->getFileName();
         $offenders = [];
-        foreach (PhpSources::files($this->backendDirectory().'/tests') as $path) {
+        foreach (PhpSources::files(RepositoryFiles::backend('tests')) as $path) {
             if ($path === $helper) {
                 continue;
             }
-            foreach (PhpSources::significantTokens((string) file_get_contents($path)) as $token) {
+            foreach (PhpSources::significantTokens(RepositoryFiles::read($path)) as $token) {
                 if ('PHP_BINARY' === ltrim($token->text, '\\')) {
-                    $offenders[] = \sprintf('%s:%d', substr($path, \strlen($this->backendDirectory()) + 1), $token->line);
+                    $offenders[] = \sprintf('%s:%d', substr($path, \strlen(RepositoryFiles::backend()) + 1), $token->line);
                 }
             }
         }
@@ -123,7 +123,7 @@ final class ExceptionArgumentsHiddenInTestsTest extends TestCase
      */
     private function requireTheSettingUnlessDisabledLocally(): void
     {
-        $local = $this->backendDirectory().'/phpunit.xml';
+        $local = RepositoryFiles::backend('phpunit.xml');
         $declaredOff = is_file($local) && array_any($this->declaredValues($local), static fn (string $value): bool => !self::isOn($value));
         if ($declaredOff && !self::isOn((string) \ini_get(ChildPhpProcess::DIRECTIVE))) {
             self::markTestSkipped('zend.exception_ignore_args désactivé par un phpunit.xml local : les traces portent les arguments des appels.');
@@ -143,14 +143,9 @@ final class ExceptionArgumentsHiddenInTestsTest extends TestCase
      */
     private function declaredValues(string $path): array
     {
-        $settings = new SimpleXMLElement((string) file_get_contents($path))->xpath('/phpunit/php/ini[@name="'.ChildPhpProcess::DIRECTIVE.'"]/@value');
+        $settings = new SimpleXMLElement(RepositoryFiles::read($path))->xpath('/phpunit/php/ini[@name="'.ChildPhpProcess::DIRECTIVE.'"]/@value');
 
         return array_values(array_map(strval(...), \is_array($settings) ? $settings : []));
-    }
-
-    private function backendDirectory(): string
-    {
-        return RepositoryFiles::backend();
     }
 
     private function thrownBy(string $argument): DomainException

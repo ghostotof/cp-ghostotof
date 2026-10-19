@@ -43,9 +43,8 @@ final class SignaturesAreNeverComparedByHandTest extends TestCase
     public function testNoSignatureOfSrcIsComparedByHand(): void
     {
         $offenders = [];
-        foreach (PhpSources::files(RepositoryFiles::backend().'/src') as $file) {
-            $code = file_get_contents($file);
-            self::assertIsString($code);
+        foreach (PhpSources::files(RepositoryFiles::backend('src')) as $file) {
+            $code = RepositoryFiles::read($file);
             if ($this->comparesASignature($code)) {
                 $offenders[] = $file;
             }

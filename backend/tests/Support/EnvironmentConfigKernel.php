@@ -59,7 +59,7 @@ final class EnvironmentConfigKernel extends Kernel
      */
     public function getCacheDir(): string
     {
-        return RepositoryFiles::backend().'/var/cache/environment_config/'.$this->environment.'-'.hash('xxh3', $this->getProjectDir());
+        return RepositoryFiles::backend('var/cache/environment_config/'.$this->environment.'-'.hash('xxh3', $this->getProjectDir()));
     }
 
     /**

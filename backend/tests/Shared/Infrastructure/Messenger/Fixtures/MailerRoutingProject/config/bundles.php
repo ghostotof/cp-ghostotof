@@ -8,4 +8,4 @@ use App\Tests\Support\RepositoryFiles;
 // de l'application, pour que chaque extension soit là pour charger sa
 // configuration.
 
-return require RepositoryFiles::backend().'/config/bundles.php';
+return require RepositoryFiles::backend('config/bundles.php');

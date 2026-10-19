@@ -44,7 +44,7 @@ final class AiUsageLogChannelTest extends TestCase
     private function productionHandlers(): array
     {
         /** @var array{'when@prod': array{monolog: array{handlers: array<string, array{channels?: list<string>, level?: string}>}}} $config */
-        $config = Yaml::parseFile(RepositoryFiles::backend().'/config/packages/monolog.yaml');
+        $config = Yaml::parseFile(RepositoryFiles::backend('config/packages/monolog.yaml'));
 
         return $config['when@prod']['monolog']['handlers'];
     }

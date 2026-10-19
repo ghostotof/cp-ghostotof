@@ -30,9 +30,8 @@ final class ElapsedDurationsTest extends TestCase
     public function testNoStringLiteralAddsOrSubtractsHours(): void
     {
         $offenders = [];
-        foreach (PhpSources::files(RepositoryFiles::backend().'/src') as $file) {
-            $code = file_get_contents($file);
-            self::assertIsString($code);
+        foreach (PhpSources::files(RepositoryFiles::backend('src')) as $file) {
+            $code = RepositoryFiles::read($file);
             $offenders = [...$offenders, ...$this->relativeHourLiterals($code, $file)];
         }
 
