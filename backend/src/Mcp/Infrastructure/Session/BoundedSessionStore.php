@@ -62,7 +62,20 @@ final class BoundedSessionStore implements SessionStoreInterface, ResetInterface
 
     public function read(Uuid $id): string|false
     {
-        return $this->wasDestroyedOverTheBound($id) ? false : $this->inner->read($id);
+        if ($this->wasDestroyedOverTheBound($id)) {
+            return false;
+        }
+
+        $data = $this->inner->read($id);
+        if (false === $data && $this->inner->exists($id)) {
+            // Présente mais illisible : Psr16SessionStore a avalé l'échec (le
+            // MAC du cache refusé après une rotation d'APP_SECRET, par
+            // exemple) et le SDK repart d'une session vide. Une requête de
+            // plus, sur le seul chemin d'échec.
+            $this->logger->warning('MCP session unreadable: present in the store but not read back.');
+        }
+
+        return $data;
     }
 
     public function write(Uuid $id, string $data): bool
