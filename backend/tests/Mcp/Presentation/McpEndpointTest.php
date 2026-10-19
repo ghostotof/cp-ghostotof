@@ -39,9 +39,7 @@ final class McpEndpointTest extends WebTestCase
     {
         $connection = self::getContainer()->get(EntityManagerInterface::class)->getConnection();
         $connection->executeStatement('DELETE FROM cpg_user');
-        // Les sessions vivent une heure : sans ce ménage, un passage en
-        // laisserait au suivant.
-        $connection->executeStatement("DELETE FROM cache_items WHERE item_id LIKE '%mcp-portfolio-%'");
+        self::forgetMcpSessions($connection);
         parent::tearDown();
     }
 

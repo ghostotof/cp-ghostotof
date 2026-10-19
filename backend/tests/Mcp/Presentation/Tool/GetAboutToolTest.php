@@ -14,7 +14,6 @@ use App\Tests\Mcp\Support\SpeaksMcp;
 use Doctrine\ORM\EntityManagerInterface;
 use Mcp\Capability\Discovery\SchemaValidator;
 use PHPUnit\Framework\Attributes\DataProvider;
-use stdClass;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 
@@ -38,6 +37,7 @@ final class GetAboutToolTest extends WebTestCase
         $connection->executeStatement('DELETE FROM about_site_card');
         $connection->executeStatement('DELETE FROM about_me_card');
         $connection->executeStatement('DELETE FROM about_settings');
+        self::forgetMcpSessions($connection);
         parent::tearDown();
     }
 
@@ -52,7 +52,7 @@ final class GetAboutToolTest extends WebTestCase
         $client = self::createClient();
         $sessionId = $this->initializeMcpSession($client);
 
-        $tool = $this->listedTool($client, $sessionId, 'get_about');
+        $tool = $this->listedMcpTool($client, $sessionId, 'get_about');
 
         $locale = $tool['inputSchema']['properties']['locale'];
         self::assertSame('string', $locale['type']);
@@ -78,9 +78,9 @@ final class GetAboutToolTest extends WebTestCase
         $client = self::createClient();
         $this->seedAbout($client, $locale);
 
-        $routeBody = $this->routeBody($client, $locale);
+        $routeBody = $this->routeBody($client, '/api/about/'.$locale->value);
         $sessionId = $this->initializeMcpSession($client);
-        $result = $this->callGetAbout($client, $sessionId, ['locale' => $locale->value]);
+        $result = $this->callMcpTool($client, $sessionId, 'get_about', ['locale' => $locale->value]);
 
         self::assertFalse($result['isError'] ?? false);
         self::assertSame($routeBody, $result['structuredContent']);
@@ -96,8 +96,8 @@ final class GetAboutToolTest extends WebTestCase
         $this->seedAbout($client, Locale::FR);
         $sessionId = $this->initializeMcpSession($client);
 
-        $outputSchema = $this->listedTool($client, $sessionId, 'get_about')['outputSchema'];
-        $result = $this->callGetAbout($client, $sessionId, ['locale' => 'fr']);
+        $outputSchema = $this->listedMcpTool($client, $sessionId, 'get_about')['outputSchema'];
+        $result = $this->callMcpTool($client, $sessionId, 'get_about', ['locale' => 'fr']);
 
         self::assertSame([], new SchemaValidator()->validateAgainstJsonSchema($result['structuredContent'], $outputSchema));
     }
@@ -107,9 +107,9 @@ final class GetAboutToolTest extends WebTestCase
         $client = self::createClient();
         $this->seedAbout($client, Locale::FR);
 
-        $routeBody = $this->routeBody($client, Locale::FR);
+        $routeBody = $this->routeBody($client, '/api/about/fr');
         $sessionId = $this->initializeMcpSession($client);
-        $result = $this->callGetAbout($client, $sessionId, []);
+        $result = $this->callMcpTool($client, $sessionId, 'get_about', []);
 
         self::assertSame($routeBody, $result['structuredContent']);
     }
@@ -163,57 +163,5 @@ final class GetAboutToolTest extends WebTestCase
         $meCards->create($locale, AboutMeCardCategory::TECHNICAL, 'Développeur', 'PHP.', 'code');
         $meCards->create($locale, AboutMeCardCategory::PERSONAL, 'Curieux', 'Toujours.', 'lightbulb');
         $meCards->create($locale, AboutMeCardCategory::HOBBY, 'Musique', 'Guitare.', 'guitar');
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function routeBody(KernelBrowser $client, Locale $locale): array
-    {
-        $client->request('GET', '/api/about/'.$locale->value);
-        self::assertResponseIsSuccessful();
-
-        $body = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
-        self::assertIsArray($body);
-
-        /** @var array<string, mixed> $body */
-        return $body;
-    }
-
-    /**
-     * @param array<string, string> $arguments
-     *
-     * @return array<string, mixed>
-     */
-    private function callGetAbout(KernelBrowser $client, string $sessionId, array $arguments): array
-    {
-        $response = $this->mcpCall($client, $sessionId, 'tools/call', [
-            'name' => 'get_about',
-            'arguments' => [] === $arguments ? new stdClass() : $arguments,
-        ]);
-        self::assertArrayHasKey('result', $response);
-        self::assertIsArray($response['result']);
-
-        /** @var array<string, mixed> $result */
-        $result = $response['result'];
-
-        return $result;
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function listedTool(KernelBrowser $client, string $sessionId, string $name): array
-    {
-        $response = $this->mcpCall($client, $sessionId, 'tools/list');
-
-        foreach ($response['result']['tools'] as $tool) {
-            if ($name === $tool['name']) {
-                /** @var array<string, mixed> $tool */
-                return $tool;
-            }
-        }
-
-        self::fail(\sprintf('tools/list n\'annonce pas « %s ».', $name));
     }
 }

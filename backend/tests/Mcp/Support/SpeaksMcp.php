@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Mcp\Support;
 
 use App\Tests\Support\HttpJson;
+use Doctrine\DBAL\Connection;
 use stdClass;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 
@@ -72,6 +73,75 @@ trait SpeaksMcp
         ], $server);
 
         return $this->decodeMcpResponse($client);
+    }
+
+    /**
+     * Appelle un outil et rend le `result` de la réponse — une erreur d'outil
+     * (`isError: true`) en est un ; une erreur de protocole fait échouer le test.
+     *
+     * @param array<string, string> $arguments
+     *
+     * @return array<string, mixed>
+     */
+    private function callMcpTool(KernelBrowser $client, string $sessionId, string $name, array $arguments = []): array
+    {
+        $response = $this->mcpCall($client, $sessionId, 'tools/call', [
+            'name' => $name,
+            'arguments' => [] === $arguments ? new stdClass() : $arguments,
+        ]);
+        self::assertArrayHasKey('result', $response, \sprintf('tools/call « %s » a répondu une erreur de protocole.', $name));
+        self::assertIsArray($response['result']);
+
+        /** @var array<string, mixed> $result */
+        $result = $response['result'];
+
+        return $result;
+    }
+
+    /**
+     * L'entrée de `tools/list` qui porte ce nom ; le test échoue si elle n'y
+     * est pas.
+     *
+     * @return array<string, mixed>
+     */
+    private function listedMcpTool(KernelBrowser $client, string $sessionId, string $name): array
+    {
+        $response = $this->mcpCall($client, $sessionId, 'tools/list');
+
+        foreach ($response['result']['tools'] as $tool) {
+            if ($name === $tool['name']) {
+                /** @var array<string, mixed> $tool */
+                return $tool;
+            }
+        }
+
+        self::fail(\sprintf('tools/list n\'annonce pas « %s ».', $name));
+    }
+
+    /**
+     * Le corps JSON décodé que sert une route GET — l'étalon auquel un outil
+     * adossé se compare (ADR 0006 D1).
+     *
+     * @return array<mixed>
+     */
+    private function routeBody(KernelBrowser $client, string $path): array
+    {
+        $client->request('GET', $path);
+        self::assertResponseIsSuccessful();
+
+        $body = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
+        self::assertIsArray($body);
+
+        return $body;
+    }
+
+    /**
+     * Supprime les sessions MCP ouvertes par le test : elles vivent une heure
+     * dans la table du cache, un passage en laisserait au suivant.
+     */
+    private static function forgetMcpSessions(Connection $connection): void
+    {
+        $connection->executeStatement("DELETE FROM cache_items WHERE item_id LIKE '%mcp-portfolio-%'");
     }
 
     /**
