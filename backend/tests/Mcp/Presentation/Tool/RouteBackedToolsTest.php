@@ -55,6 +55,11 @@ final class RouteBackedToolsTest extends WebTestCase
 
     private const string WATCH_RELEASE_CYCLES = 'watch-release-cycles';
 
+    private const string WATCH_WITH_VULNERABILITIES = 'watch-with-vulnerabilities';
+
+    /** Identifiant d'une vulnérabilité du relevé : réservé à ROLE_SUPER, jamais servi par l'outil. */
+    private const string VULNERABILITY_ID = 'GHSA-h7vf-5wrv-9fhv';
+
     /** Tables que les seeds de ce test remplissent. */
     private const array SEEDED_TABLES = ['contribution', 'incident', 'quality_principle', 'quality_trait', 'experience_technology', 'watch_snapshot', 'anonymous_cv_section', 'case_study'];
 
@@ -93,7 +98,7 @@ final class RouteBackedToolsTest extends WebTestCase
 
         // Routes sans langue : l'outil ne déclare pas de paramètre.
         yield 'get_technical_background' => ['get_technical_background', [], '/api/experience/technologies', self::TECHNOLOGIES, true, false];
-        yield 'get_tech_watch' => ['get_tech_watch', [], '/api/watch', self::WATCH_RELEASE_CYCLES, false, false];
+        yield 'get_tech_watch' => ['get_tech_watch', [], '/api/watch', self::WATCH_WITH_VULNERABILITIES, false, false];
     }
 
     /**
@@ -279,6 +284,7 @@ final class RouteBackedToolsTest extends WebTestCase
         match ($content) {
             self::TECHNOLOGIES => $this->registerTechnologies(),
             self::WATCH_RELEASE_CYCLES => $this->saveReleaseCyclesSnapshot(),
+            self::WATCH_WITH_VULNERABILITIES => $this->saveReleaseCyclesAndVulnerabilitiesSnapshots(),
             default => $this->runSeedCommand($content),
         };
     }
@@ -293,6 +299,25 @@ final class RouteBackedToolsTest extends WebTestCase
     }
 
     /**
+     * Le relevé de vulnérabilités garde en base tout son détail (identifiants,
+     * paquets, versions), que seul ROLE_SUPER lit : l'outil comme la route
+     * n'en servent que l'agrégat. Posé ici pour que l'égalité et le schéma
+     * fermé le prouvent sur des données (relecture de la tâche 2, audit B8).
+     */
+    public function testTheTechWatchServesTheVulnerabilityAggregateNeverItsDetail(): void
+    {
+        $client = self::createClient();
+        $this->seed(self::WATCH_WITH_VULNERABILITIES);
+        $sessionId = $this->initializeMcpSession($client);
+
+        $result = $this->callMcpTool($client, $sessionId, 'get_tech_watch');
+
+        self::assertSame(1, $result['structuredContent']['vulnerabilities']['affectedCount']);
+        self::assertStringNotContainsString(self::VULNERABILITY_ID, $result['content'][0]['text']);
+        self::assertStringNotContainsString('symfony/http-kernel', $result['content'][0]['text']);
+    }
+
+    /**
      * Une technologie complète, une secondaire sans icône ni technologie
      * liée : la route omet ces champs nuls, l'outil doit les omettre aussi.
      */
@@ -301,6 +326,27 @@ final class RouteBackedToolsTest extends WebTestCase
         $registrar = self::getContainer()->get(ExperienceTechnologyRegistrarInterface::class);
         $registrar->register(TechnologyName::fromString('Symfony'), ExperienceYears::fromFloat(8.5), 'symfony', 'PHP');
         $registrar->register(TechnologyName::fromString('Rancher'), ExperienceYears::fromFloat(1.0), null, null, true);
+    }
+
+    private function saveReleaseCyclesAndVulnerabilitiesSnapshots(): void
+    {
+        $this->saveReleaseCyclesSnapshot();
+        self::getContainer()->get(WatchSnapshotRepositoryInterface::class)->save(new WatchSnapshot(
+            WatchSnapshotType::VULNERABILITIES,
+            [
+                'packagesScanned' => 84,
+                'vulnerabilities' => [[
+                    'id' => self::VULNERABILITY_ID,
+                    'aliases' => ['CVE-2026-0001'],
+                    'summary' => 'Une faille sérieuse',
+                    'severity' => 'MODERATE',
+                    'package' => ['ecosystem' => 'Packagist', 'name' => 'symfony/http-kernel', 'version' => '4.0.0'],
+                    'fixedIn' => '4.4.50',
+                ]],
+            ],
+            new DateTimeImmutable('2026-09-07 04:41:00', new DateTimeZone('UTC')),
+            SnapshotSourceStatus::OK,
+        ));
     }
 
     /**
