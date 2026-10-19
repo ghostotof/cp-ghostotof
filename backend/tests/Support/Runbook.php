@@ -36,7 +36,7 @@ final readonly class Runbook
      */
     public static function repository(): self
     {
-        return new self(self::read(\dirname(KubernetesManifests::base()->directory()).'/README.md'));
+        return new self(RepositoryFiles::read(\dirname(KubernetesManifests::base()->directory()).'/README.md'));
     }
 
     /**
@@ -117,12 +117,5 @@ final readonly class Runbook
         Assert::assertSame(1, preg_match('/```bash\n(.*?)```/s', $this->text, $match, PREG_OFFSET_CAPTURE, $start), \sprintf('Aucun bloc bash après « %s ».', $opening));
 
         return [$match[1][0], $match[0][0], $match[0][1]];
-    }
-
-    private static function read(string $path): string
-    {
-        Assert::assertFileIsReadable($path);
-
-        return (string) file_get_contents($path);
     }
 }

@@ -55,7 +55,7 @@ final readonly class KubernetesManifests
      */
     public static function base(): self
     {
-        return new self(\dirname(__DIR__, 3).'/k8s/base');
+        return new self(RepositoryFiles::repository().'/k8s/base');
     }
 
     /**
