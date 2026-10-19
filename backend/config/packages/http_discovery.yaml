@@ -1,3 +1,9 @@
+# Recette Flex de php-http/discovery : publie les interfaces PSR-17 sous la
+# fabrique de découverte, qui trouve nyholm/psr7 (dépendance directe). Le
+# serveur MCP (mcp.yaml) en a besoin pour traduire les requêtes Symfony en
+# PSR-7. Le plugin Composer du paquet est désactivé (`allow-plugins`) : il
+# n'installe rien de lui-même, la découverte ne voit que ce que composer.json
+# requiert.
 services:
     Psr\Http\Message\RequestFactoryInterface: '@http_discovery.psr17_factory'
     Psr\Http\Message\ResponseFactoryInterface: '@http_discovery.psr17_factory'

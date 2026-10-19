@@ -101,13 +101,7 @@ trait SpeaksMcp
         $body = (string) $response->getContent();
 
         if (str_starts_with((string) $response->headers->get('Content-Type'), 'text/event-stream')) {
-            $data = [];
-            foreach (explode("\n", $body) as $line) {
-                if (str_starts_with($line, 'data:')) {
-                    $data[] = ltrim(substr($line, 5));
-                }
-            }
-            $body = implode("\n", $data);
+            $body = self::lastJsonRpcAnswerOf($body);
         }
 
         $decoded = json_decode($body, true, flags: \JSON_THROW_ON_ERROR);
@@ -115,5 +109,30 @@ trait SpeaksMcp
 
         /** @var array<string, mixed> $decoded */
         return $decoded;
+    }
+
+    /**
+     * Un flux SSE peut porter des notifications avant la réponse : on garde le
+     * dernier événement qui répond à une requête (`result` ou `error`), chaque
+     * événement étant lu à part (ses lignes `data:` jointes).
+     */
+    private static function lastJsonRpcAnswerOf(string $stream): string
+    {
+        $answer = '';
+        foreach (explode("\n\n", str_replace("\r\n", "\n", $stream)) as $event) {
+            $data = [];
+            foreach (explode("\n", $event) as $line) {
+                if (str_starts_with($line, 'data:')) {
+                    $data[] = ltrim(substr($line, 5));
+                }
+            }
+
+            $candidate = implode("\n", $data);
+            if (str_contains($candidate, '"result"') || str_contains($candidate, '"error"')) {
+                $answer = $candidate;
+            }
+        }
+
+        return $answer;
     }
 }

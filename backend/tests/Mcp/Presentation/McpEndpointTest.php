@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Mcp\Presentation;
 
+use App\Mcp\Infrastructure\Session\BoundedSessionStore;
 use App\Security\User\Application\CpgUserRegistrarInterface;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Tests\Mcp\Support\SpeaksMcp;
@@ -11,6 +12,8 @@ use App\Tests\Support\RepositoryFiles;
 use App\Tests\Support\TestCredentials;
 use Doctrine\ORM\EntityManagerInterface;
 use Mcp\Server\Session\Psr16SessionStore;
+use Monolog\Logger;
+use ReflectionProperty;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\Cache\Adapter\DoctrineDbalAdapter;
@@ -36,6 +39,9 @@ final class McpEndpointTest extends WebTestCase
     {
         $connection = self::getContainer()->get(EntityManagerInterface::class)->getConnection();
         $connection->executeStatement('DELETE FROM cpg_user');
+        // Les sessions vivent une heure : sans ce ménage, un passage en
+        // laisserait au suivant.
+        $connection->executeStatement("DELETE FROM cache_items WHERE item_id LIKE '%mcp-portfolio-%'");
         parent::tearDown();
     }
 
@@ -96,6 +102,57 @@ final class McpEndpointTest extends WebTestCase
     }
 
     /**
+     * Le GET répond sans passer par le SDK : il applique lui-même la
+     * protection d'hôte, comme le POST.
+     */
+    public function testGetFromAForeignHostIsRefused(): void
+    {
+        $client = self::createClient();
+
+        $client->request('GET', self::MCP_ENDPOINT, server: ['HTTP_HOST' => 'evil.example']);
+        self::assertResponseStatusCodeSame(403);
+
+        $client->request('GET', self::MCP_ENDPOINT, server: ['HTTP_ORIGIN' => 'https://evil.example']);
+        self::assertResponseStatusCodeSame(403);
+    }
+
+    /**
+     * Le SDK recopie en session ce que le client déclare (`capabilities`,
+     * `clientInfo`, ses « réponses ») : sans borne, un anonyme remplirait la
+     * table `cache_items`, donc le disque de PostgreSQL. Une session qui
+     * dépasse la borne n'est pas enregistrée, et son identifiant ne sert à
+     * rien.
+     */
+    public function testAnOversizedSessionIsNeitherKeptNorReusable(): void
+    {
+        $client = self::createClient();
+
+        // Le motif de comptage voit bien une session ordinaire : sans cela,
+        // l'égalité finale serait vraie par construction.
+        $before = $this->storedMcpSessions();
+        $this->initializeMcpSession($client);
+        self::assertSame($before + 1, $this->storedMcpSessions());
+
+        $this->postMcp($client, null, [
+            'jsonrpc' => '2.0',
+            'id' => 1,
+            'method' => 'initialize',
+            'params' => [
+                'protocolVersion' => self::MCP_PROTOCOL_VERSION,
+                'capabilities' => ['experimental' => ['padding' => ['value' => str_repeat('x', 600 * 1024)]]],
+                'clientInfo' => ['name' => 'phpunit', 'version' => '1.0.0'],
+            ],
+        ]);
+
+        // Aucun identifiant rendu, et la session volumineuse n'atteint pas la
+        // base. Le SDK y réécrit une session vide en vidant sa file sortante :
+        // une petite ligne orpheline, dont le nombre relève du débit (zone
+        // nginx `mcp`), pas de la borne.
+        self::assertNull($client->getResponse()->headers->get(self::MCP_SESSION_HEADER));
+        self::assertLessThan(BoundedSessionStore::MAX_BYTES, $this->largestStoredMcpSession());
+    }
+
+    /**
      * Protection contre le rebond DNS : seul l'hôte du site (dérivé
      * d'APP_FRONTEND_BASE_URL, `localhost` en test) est servi.
      */
@@ -148,7 +205,15 @@ final class McpEndpointTest extends WebTestCase
         // Le conteneur de test sert le pool tel que compilé (sans traçage) :
         // sa classe est celle que la prod instancie.
         self::assertSame(DoctrineDbalAdapter::class, $container->get('cache.mcp_sessions')::class);
-        self::assertSame(Psr16SessionStore::class, $container->get('mcp.server.portfolio.session.store')::class);
+        // Le store du bundle, borné par BoundedSessionStore, écrit dans ce pool.
+        // (la lecture échoue si le store n'est pas BoundedSessionStore).
+        $store = $container->get('mcp.server.portfolio.session.store');
+        self::assertSame(Psr16SessionStore::class, get_debug_type(new ReflectionProperty(BoundedSessionStore::class, 'inner')->getValue($store)));
+        // Un `#[AsDecorator]` perd ses tags de canal : le refus d'une session
+        // trop grosse doit bien partir sur le canal `mcp`.
+        $logger = new ReflectionProperty(BoundedSessionStore::class, 'logger')->getValue($store);
+        self::assertInstanceOf(Logger::class, $logger);
+        self::assertSame('mcp', $logger->getName());
     }
 
     /**
@@ -174,15 +239,33 @@ final class McpEndpointTest extends WebTestCase
         self::assertArrayHasKey('mcp/sdk', $composer['require']);
     }
 
+    private function largestStoredMcpSession(): int
+    {
+        $connection = self::getContainer()->get(EntityManagerInterface::class)->getConnection();
+
+        return $this->integer($connection->fetchOne("SELECT COALESCE(MAX(octet_length(item_data)), 0) FROM cache_items WHERE item_id LIKE '%mcp-portfolio-%'"));
+    }
+
+    private function storedMcpSessions(): int
+    {
+        $connection = self::getContainer()->get(EntityManagerInterface::class)->getConnection();
+
+        return $this->integer($connection->fetchOne("SELECT COUNT(*) FROM cache_items WHERE item_id LIKE '%mcp-portfolio-%'"));
+    }
+
+    private function integer(mixed $value): int
+    {
+        self::assertTrue(\is_int($value) || (\is_string($value) && ctype_digit($value)));
+
+        return (int) $value;
+    }
+
     /**
      * @param array<string, string> $server
      */
     private function postInitialize(KernelBrowser $client, array $server = []): void
     {
-        $client->request('POST', self::MCP_ENDPOINT, server: $server + [
-            'CONTENT_TYPE' => 'application/json',
-            'HTTP_ACCEPT' => 'application/json, text/event-stream',
-        ], content: self::jsonBody([
+        $this->postMcp($client, null, [
             'jsonrpc' => '2.0',
             'id' => 1,
             'method' => 'initialize',
@@ -191,7 +274,7 @@ final class McpEndpointTest extends WebTestCase
                 'capabilities' => ['roots' => ['listChanged' => false]],
                 'clientInfo' => ['name' => 'phpunit', 'version' => '1.0.0'],
             ],
-        ]));
+        ], $server);
     }
 
     private function loginAs(KernelBrowser $client): void

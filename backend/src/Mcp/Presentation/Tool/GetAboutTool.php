@@ -22,6 +22,9 @@ use Mcp\Schema\ToolAnnotations;
  */
 final readonly class GetAboutTool
 {
+    // Schéma fermé (`additionalProperties: false`) : un champ ajouté à la
+    // route sans être déclaré ici fait échouer la validation du test, au
+    // lieu d'échapper au schéma que lisent les clients.
     private const array CARD_SCHEMA = [
         'type' => 'object',
         'properties' => [
@@ -31,6 +34,7 @@ final readonly class GetAboutTool
             'iconKey' => ['type' => 'string'],
         ],
         'required' => ['title', 'description'],
+        'additionalProperties' => false,
     ];
 
     private const array CARDS_SCHEMA = ['type' => 'array', 'items' => self::CARD_SCHEMA];
@@ -46,6 +50,7 @@ final readonly class GetAboutTool
                     'cards' => self::CARDS_SCHEMA,
                 ],
                 'required' => ['eyebrow', 'cards'],
+                'additionalProperties' => false,
             ],
             'me' => [
                 'type' => 'object',
@@ -60,9 +65,11 @@ final readonly class GetAboutTool
                     'hobbiesCards' => self::CARDS_SCHEMA,
                 ],
                 'required' => ['eyebrow', 'technicalSubtitle', 'technicalCards', 'personalSubtitle', 'personalCards', 'hobbiesSubtitle', 'hobbiesCards'],
+                'additionalProperties' => false,
             ],
         ],
         'required' => ['site', 'me'],
+        'additionalProperties' => false,
     ];
 
     public function __construct(

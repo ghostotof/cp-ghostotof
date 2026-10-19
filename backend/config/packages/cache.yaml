@@ -37,10 +37,10 @@ framework:
 
         pools:
             # Sessions du serveur MCP (ADR 0006 D6) : une entrée par
-            # `initialize`, une heure de vie. Même table `cache_items`, même
-            # purge (`cache:pool:prune`), même MAC (AuthenticatedCacheMarshaller)
-            # que `cache.app` ; un pool à part pour que ses clés ne côtoient pas
-            # celles des limiteurs.
+            # `initialize`. Même table `cache_items`, même purge
+            # (`cache:pool:prune`), même MAC (AuthenticatedCacheMarshaller) que
+            # `cache.app` ; un pool à part pour que ses clés ne côtoient pas
+            # celles des limiteurs. Leur durée de vie n'est écrite qu'une fois,
+            # `session.ttl` dans mcp.yaml : le store la passe à chaque écriture.
             cache.mcp_sessions:
                 adapter: cache.adapter.doctrine_dbal
-                default_lifetime: 3600

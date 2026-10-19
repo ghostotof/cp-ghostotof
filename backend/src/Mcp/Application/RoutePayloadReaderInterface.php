@@ -15,8 +15,13 @@ namespace App\Mcp\Application;
 interface RoutePayloadReaderInterface
 {
     /**
-     * Rend le corps JSON décodé de l'unique opération GET publique de la
-     * ressource, tel que la route le servirait.
+     * Rend le corps JSON décodé de l'unique opération GET de la ressource que
+     * le serveur peut servir sans connexion MCP (paliers anonyme et de base),
+     * tel que la route le servirait.
+     *
+     * Les exceptions de domaine du provider (une langue sans contenu, que la
+     * route rend en 404) le traversent telles quelles : l'outil les convertit
+     * en erreur d'outil lisible par le modèle.
      *
      * @param class-string          $resourceClass ressource API Platform de la route
      * @param array<string, string> $uriVariables  variables de son gabarit d'URI (`locale`…)
