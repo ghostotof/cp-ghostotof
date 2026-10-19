@@ -59,7 +59,7 @@ final class DirPathsStayInTestsTest extends TestCase
     public function testNoPathBuiltFromDirLeavesTests(): void
     {
         $found = array_values(array_filter(
-            self::census(),
+            $this->census(),
             static fn (string $problem): bool => !self::isExempt($problem),
         ));
 
@@ -69,7 +69,7 @@ final class DirPathsStayInTestsTest extends TestCase
     public function testEveryExemptionIsStillNeeded(): void
     {
         $written = [];
-        foreach (self::census() as $problem) {
+        foreach ($this->census() as $problem) {
             if (1 === preg_match(self::OUTSIDE, $problem, $match)) {
                 $written[$match['file']][] = $match['path'];
             }
@@ -130,7 +130,7 @@ final class DirPathsStayInTestsTest extends TestCase
     /**
      * @return list<string>
      */
-    private static function census(): array
+    private function census(): array
     {
         return self::$census ??= PathsLeavingTests::in(RepositoryFiles::backend('tests'));
     }

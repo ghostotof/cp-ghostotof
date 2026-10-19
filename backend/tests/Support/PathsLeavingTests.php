@@ -63,7 +63,8 @@ final class PathsLeavingTests
     {
         $tokens = PhpSources::significantTokens($code);
         $problems = [];
-        for ($index = 0; $index < \count($tokens); ++$index) {
+        $counter = \count($tokens);
+        for ($index = 0; $index < $counter; ++$index) {
             $path = self::pathAt($tokens, $index, $directory);
             if (null === $path) {
                 continue;
