@@ -33,14 +33,53 @@ paths:
   is refused that way, not by its path; `ApiPlatformRoutePayloadReaderTest` pins it. Not done, accepted: a
   provider returning `null` (an item route's 404) would surface as `UnexpectedRoutePayloadException`, and URI
   variables are not checked against the route's `requirements` — no item tool exists; the first one handles
-  both (a typed parameter, `null` → `ToolCallException`). Wiring defects (`RouteOperationNotFoundException`,
+  both (a typed parameter, `null` → `ToolCallException`). Since #641 the path read in the `AccessMap` is **the router's**,
+  generated under the operation's name (its route name at API Platform), base URL stripped — never `/api` +
+  the template, which ignored a `routePrefix` and failed open; an operation with no route is refused
+  (`UnroutedOperationException`). The read runs on a synthetic request (`127.0.0.1`, `localhost`, GET), so
+  `AccessMapStaysPathOnlyTest` refuses any `access_control` rule conditioned on anything but its path (`ips`,
+  `host`, `port`, `methods`, `allow_if`). The provider is called with no request nor token:
+  `McpExposureSymmetryTest` refuses a served provider depending on `RequestStack`, `Security`, the token
+  storage or the authorization checker. Not covered, accepted: a property guarded by
+  `#[ApiProperty(security: …)]` would be omitted (no token), an inequality with the route, never a leak — none
+  exists today. Wiring defects (`RouteOperationNotFoundException`,
   `RouteAboveMcpTiersException`, `UnexpectedRoutePayloadException`) never reach the HTTP kernel: the SDK catches
-  them, logs them `error` on the `mcp` channel and answers `-32603` — no `framework.exceptions` entry applies. `Presentation/Tool/RouteBackedToolResult` builds the result: the
+  them, logs them `error` on the `mcp` channel and answers `-32603` — no `framework.exceptions` entry applies. `Presentation/Tool/JsonToolResult` builds the result (every tool's, `get_contact_info`'s included): the
   payload as `structuredContent` and the same JSON as the one text block (many clients pass only that block to
   the model). A route rendering an object → that object; a collection → `{"items": [...]}` (ADR 0006 D1, the
   MCP spec wants an object before the 2026-07-28 revision). Each tool's functional test compares its output
   with the route's body **in the same test**, in every language the route takes, and checks the
-  `structuredContent` against the declared `outputSchema` with the SDK's `SchemaValidator`.
+  `structuredContent` against the declared `outputSchema` with the SDK's `SchemaValidator`. **One JSON
+  nuance, accepted** (#641): the route's Serializer writes an integral float as `1.0`
+  (`JSON_PRESERVE_ZERO_FRACTION`, the technologies' `years`), the SDK encodes the whole JSON-RPC answer
+  with a bare `json_encode`, so `structuredContent` carries `1` — the same JSON number, which a tool cannot
+  write otherwise. The text block, which `JsonToolResult` encodes itself, takes the flag and stays
+  byte-identical; `RouteBackedToolsTest` compares `structuredContent` as a JSON value (`asJsonValue()`).
+- **The catalogue** (#641, spec 0007 « Catalogue des outils »): eight route-backed tools — `get_about`,
+  `get_quality`, `list_contributions`, `list_incidents`, `get_technical_background` and `get_tech_watch`
+  (the last two without `locale`: their routes take none), and at the base tier, served without a token (ADR 0006 D2),
+  `get_anonymous_cv` and `list_case_studies` — plus two **without a route**, in a closed list:
+  `get_contact_info` (`{"contactPageUrl": "<APP_FRONTEND_BASE_URL>/<locale>/contact"}`, nothing else, no
+  e-mail; `app.frontend_base_url`, the variable `allowed_hosts` reads) and `get_nominative_corpus`,
+  **always listed**, its description saying it requires an MCP connection (ADR 0006 D3, what phase 2's
+  deferred authentication relies on); in phase 1 its call is a literal tool error, and it has no
+  dependency, so nothing of the corpus can leak. `get_tech_watch` relays third-party strings
+  (endoflife.date cycles, versions, links) to the person's model — indirect prompt injection (LLM01): its
+  description says to treat them as data; the output stays equal to the route (D1).
+- **Every route-backed tool declares its route**: `#[BackedByRoute(self::RESOURCE, AccessTier::…)]` on the
+  class, `self::RESOURCE` (the API Platform resource) being the constant it also passes to the reader, so
+  the route declared is the route read. `AccessTier` is the ADR 0003 tier the route's `access_control`
+  rule fixes (none → `ANONYMOUS`, `ROLE_USER` → `BASE`, `ROLE_TRUSTED` → `TRUSTED`).
+  **`tests/Mcp/McpExposureSymmetryTest`** (ADR 0006 D1) reads the real router, `security.access_map` and
+  the `portfolio` registry (after `mcp.server.portfolio.builder`'s `build()`, which fills it): every route
+  of the anonymous and base tiers — **any method**, so a route serving content other than by `GET` cannot
+  slip by — has a tool (matched on `_api_resource_class`) or an entry in `EXCLUDED_ROUTES` with its reason
+  (writes and flows, `/api/mcp`, API Platform infrastructure); every tool declares a `GET` route of its
+  resource whose tier is **exactly** the declared one, or is in the closed `TOOLS_WITHOUT_ROUTE` (amend
+  the ADR before adding one). Fictive cases prove each side fails (a route with neither tool nor
+  exclusion, a tool with no route or no declaration, a base-tier tool declared anonymous), and no tool
+  depends on a repository or a backoffice class (constructor types, declared resource). A new content
+  route therefore turns the suite red until it is exposed or excluded.
 - **Tools** are services `#[McpTool]` on `__invoke()`, under `Presentation/Tool/` — the `registry` of
   `mcp.yaml` lists that namespace only, and **the bundle refuses a pattern that matches no service** (the
   server does not boot): a `prompts` pattern enters with the first prompt. `readOnlyHint: true`. A language
@@ -73,25 +112,41 @@ paths:
   (`clientInfo`, `capabilities` and their free `experimental` fields, « responses » under ids of the client's
   choosing) and rewrites the whole row on every request — unbounded, an anonymous client filled `cache_items`,
   hence PostgreSQL's disk (security review of #640, rated high). Over the bound the session is destroyed and the
-  write refused (`warning`, size only, never the id); the SDK then answers the request without a session id and
-  writes back a small empty session while draining its outgoing queue — an orphan row, whose **count** is the
-  nginx `mcp` zone's business (task 5, #644), not the bound's. **The bound must fit the largest legitimate
+  write refused (`warning`, size only, never the id), and **the id stays gone for the rest of the request**
+  (#641): draining its outgoing queue, the SDK re-reads the session and writes it back, empty, under the same
+  id — which stayed valid, so the next request ran on an emptied session (no `clientInfo`, no negotiated
+  version) instead of the 404 that makes a client re-initialise. The decorator remembers the destroyed id
+  (`ResetInterface`) and refuses it on `exists`/`read`/`write`; the answer queued for that request is lost
+  (it could not fit), the client sees no JSON-RPC answer, then a 404. The **number** of sessions per IP is
+  the nginx `mcp` zone's business (task 5, #644), not the bound's. **The bound must fit the largest legitimate
   answer**: the SDK queues a tool's response in the session before sending it, so every answer goes through
   `cache_items` — phase 2's nominative corpus included (measure it there). Each MCP request costs three
   round trips on the session row (`has`, `get`, `set`) and two writes per `tools/call` (save, then the queue
   drained): ADR 0006 D6's « no write per call » holds for the authentication, not for the session.
-  `Psr16SessionStore` swallows every exception and returns `false`; the decorator logs that `warning` too.
+  `Psr16SessionStore` swallows every exception and returns `false`; the decorator logs that `warning` too, on a
+  refused write and on a session **present but unreadable** (`read()` false while `exists()` is true — the cache
+  MAC refused after an `APP_SECRET` rotation, #641): the SDK then starts from an empty session.
 - **`GET /api/mcp` answers an empty SSE stream, not 405** (`Presentation/Controller/McpEndpointController`, an
   `#[AsDecorator]` of `mcp.server.portfolio.controller`): `retry: 300000`, then closed. The SDK 0.8.1 answers
   405 (spec-compliant), which PhpStorm's AI Assistant takes for a failure. A finished `Response`, **never a
   `StreamedResponse` held open**: under PHP-FPM a held stream keeps one worker per connected client, and the
-  server sends no notification anyway. POST, DELETE and OPTIONS go to the bundle. The GET bypasses the SDK's
-  middlewares, so it applies the host check itself, with the SDK's rules (raw `Origin` if any, else the raw
-  `Host`, port ignored) — `McpEndpointTest::testGetFromAForeignHostIsRefused`. Accepted, like the SDK: the
-  `Origin` check ignores scheme and port (`http://<site>:8443` passes), a page served on the site's own name.
+  server sends no notification anyway. POST, DELETE and OPTIONS go to the bundle; `HEAD`, which the router
+  matches to the GET route, gets the GET's answer without a body (it reached the SDK's 405 before #641).
+  **The GET goes through the very middlewares of the POST** (#641): `mcp.server.portfolio.middleware_factory`
+  (the SDK's DNS-rebinding protection and CORS, built by the bundle from `allowed_hosts`) run by the SDK's
+  `MiddlewareRequestHandler` — never a copy of their rules: T1's copy kept one host where `allowed_hosts` is a
+  list, and split `[::1]:8080` into `[`. Then it answers as the transport does for a session: 400 for a
+  malformed or repeated `Mcp-Session-Id`, 404 for an unknown or expired one (the client re-initialises; a GET
+  without the header is still served), 406 without `Accept: text/event-stream`. `McpEndpointGetTest` pins each
+  case, the host rules on a several-host list included. Accepted, like the SDK: the `Origin` check ignores
+  scheme and port (`http://<site>:8443` passes), a page served on the site's own name.
 - **Tests** speak MCP through `tests/Mcp/Support/SpeaksMcp` (`initializeMcpSession()`, `mcpCall()`, JSON or
-  SSE answers alike, the last answering event of a stream). A test that opens sessions deletes the
-  `mcp-portfolio-` rows of `cache_items` in its `tearDown`: they live an hour in the test database. Only the
+  SSE answers alike, the last answering event of a stream; `callMcpTool()`, `listedMcpTool()`, `routeBody()`).
+  A test that opens sessions calls `forgetMcpSessions()` in its `tearDown`: the `mcp-portfolio-` rows of
+  `cache_items` live an hour in the test database. A new route-backed tool adds its rows to
+  `RouteBackedToolsTest`'s providers (equality per language, closed schema, empty `{"items": []}`, unknown
+  language), where a base-tier route is read with a base-access token, the cookies then dropped so that
+  the tool is called without one. Only the
   handshake-era revision (`2025-06-18`) is exercised; the SDK also serves the sessionless 2026-07-28 revision on
   the same endpoint, untested so far (phase 2's deferred 401 must recognise the protected tool in both forms).
 - **Open, owned elsewhere** (security review of #640): the SDK logs raw JSON-RPC messages, arguments and

@@ -39,9 +39,7 @@ final class McpEndpointTest extends WebTestCase
     {
         $connection = self::getContainer()->get(EntityManagerInterface::class)->getConnection();
         $connection->executeStatement('DELETE FROM cpg_user');
-        // Les sessions vivent une heure : sans ce ménage, un passage en
-        // laisserait au suivant.
-        $connection->executeStatement("DELETE FROM cache_items WHERE item_id LIKE '%mcp-portfolio-%'");
+        self::forgetMcpSessions($connection);
         parent::tearDown();
     }
 
@@ -102,8 +100,8 @@ final class McpEndpointTest extends WebTestCase
     }
 
     /**
-     * Le GET répond sans passer par le SDK : il applique lui-même la
-     * protection d'hôte, comme le POST.
+     * Le GET répond sans le transport du SDK, mais traverse ses middlewares :
+     * la même protection d'hôte que le POST (McpEndpointGetTest pour la liste).
      */
     public function testGetFromAForeignHostIsRefused(): void
     {
@@ -149,6 +147,30 @@ final class McpEndpointTest extends WebTestCase
         // une petite ligne orpheline, dont le nombre relève du débit (zone
         // nginx `mcp`), pas de la borne.
         self::assertNull($client->getResponse()->headers->get(self::MCP_SESSION_HEADER));
+        self::assertLessThan(BoundedSessionStore::MAX_BYTES, $this->largestStoredMcpSession());
+    }
+
+    /**
+     * Une session **existante** qui dépasse la borne en cours de route (le
+     * client y fait recopier une « réponse » volumineuse) est détruite, et le
+     * reste : le SDK réécrivait aussitôt sous le même identifiant une session
+     * vide en vidant sa file sortante, si bien que la requête suivante
+     * tournait sur une session vidée au lieu du 404 qui fait se réinitialiser
+     * le client (relecture de la tâche 2).
+     */
+    public function testASessionThatOutgrowsTheBoundIsGoneForTheNextRequest(): void
+    {
+        $client = self::createClient();
+        $sessionId = $this->initializeMcpSession($client);
+
+        $this->postMcp($client, $sessionId, [
+            'jsonrpc' => '2.0',
+            'id' => 99,
+            'result' => ['padding' => str_repeat('x', 600 * 1024)],
+        ]);
+
+        $this->postMcp($client, $sessionId, ['jsonrpc' => '2.0', 'id' => 3, 'method' => 'tools/list']);
+        self::assertResponseStatusCodeSame(404);
         self::assertLessThan(BoundedSessionStore::MAX_BYTES, $this->largestStoredMcpSession());
     }
 

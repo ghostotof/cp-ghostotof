@@ -12,6 +12,8 @@ use ApiPlatform\State\ProviderInterface;
 use App\Mcp\Application\RoutePayloadReaderInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\Routing\Exception\RouteNotFoundException;
+use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 use Symfony\Component\Security\Http\AccessMapInterface;
 use Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
@@ -34,13 +36,16 @@ use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
  * MCP anonyme. Le lecteur interroge donc la même `AccessMap` que le firewall
  * pour le chemin de la route, et refuse toute opération qui exige plus que
  * `ROLE_USER` ou qui porte un attribut `security`.
+ *
+ * **Ce chemin est celui du routeur**, généré sous le nom de l'opération (le
+ * nom de sa route chez API Platform), jamais reconstruit : un `routePrefix`
+ * ou un préfixe de montage changé faisait interroger un autre chemin que la
+ * route servie, auquel aucune règle ne s'appliquait — le contrôle échouait
+ * ouvert (relecture de la tâche 2). Une opération sans route est refusée.
  */
 final readonly class ApiPlatformRoutePayloadReader implements RoutePayloadReaderInterface
 {
     private const string FORMAT = 'json';
-
-    /** Préfixe sous lequel `config/routes/api_platform.yaml` monte les ressources. */
-    private const string ROUTE_PREFIX = '/api';
 
     /** Rôles qu'une route peut exiger et rester servie sans connexion MCP. */
     private const array ROLES_SERVED_WITHOUT_CONNECTION = ['PUBLIC_ACCESS', 'ROLE_USER'];
@@ -58,6 +63,7 @@ final readonly class ApiPlatformRoutePayloadReader implements RoutePayloadReader
         private NormalizerInterface $normalizer,
         #[Autowire(service: 'security.access_map')]
         private AccessMapInterface $accessMap,
+        private UrlGeneratorInterface $urlGenerator,
     ) {
     }
 
@@ -98,7 +104,7 @@ final readonly class ApiPlatformRoutePayloadReader implements RoutePayloadReader
                     continue;
                 }
 
-                if ($this->isServedWithoutConnection($operation, $uriVariables)) {
+                if ($this->isServedWithoutConnection($resourceClass, $operation, $uriVariables)) {
                     $served[] = $operation;
                 } else {
                     ++$reservedAbove;
@@ -118,15 +124,16 @@ final readonly class ApiPlatformRoutePayloadReader implements RoutePayloadReader
     }
 
     /**
+     * @param class-string          $resourceClass
      * @param array<string, string> $uriVariables
      */
-    private function isServedWithoutConnection(HttpOperation $operation, array $uriVariables): bool
+    private function isServedWithoutConnection(string $resourceClass, HttpOperation $operation, array $uriVariables): bool
     {
         if (null !== $operation->getSecurity()) {
             return false;
         }
 
-        [$roles] = $this->accessMap->getPatterns(Request::create($this->routePath($operation, $uriVariables)));
+        [$roles] = $this->accessMap->getPatterns(Request::create($this->routePath($resourceClass, $operation, $uriVariables)));
 
         foreach ($roles ?? [] as $role) {
             if (!\in_array($role, self::ROLES_SERVED_WITHOUT_CONNECTION, true)) {
@@ -139,19 +146,27 @@ final readonly class ApiPlatformRoutePayloadReader implements RoutePayloadReader
 
     /**
      * Le chemin que la route sert pour ces variables, tel qu'`access_control`
-     * le voit (préfixe compris) ; une variable absente garde son nom, ce qui
-     * suffit à situer la route.
+     * le voit, généré par le routeur : préfixes compris, et les `requirements`
+     * de la route appliqués aux variables.
      *
+     * @param class-string          $resourceClass
      * @param array<string, string> $uriVariables
      */
-    private function routePath(HttpOperation $operation, array $uriVariables): string
+    private function routePath(string $resourceClass, HttpOperation $operation, array $uriVariables): string
     {
-        $replacements = [];
-        foreach ($uriVariables as $name => $value) {
-            $replacements['{'.$name.'}'] = rawurlencode($value);
+        $name = (string) $operation->getName();
+
+        try {
+            $path = $this->urlGenerator->generate($name, $uriVariables, UrlGeneratorInterface::ABSOLUTE_PATH);
+        } catch (RouteNotFoundException $routeNotFound) {
+            throw UnroutedOperationException::forOperation($resourceClass, $name, $routeNotFound);
         }
 
-        return self::ROUTE_PREFIX.strtr((string) $operation->getUriTemplate(), $replacements);
+        // Le générateur préfixe l'URL de base de la requête (`/index.php`, un
+        // sous-répertoire) ; `access_control` compare le chemin sans elle.
+        $baseUrl = $this->urlGenerator->getContext()->getBaseUrl();
+
+        return '' !== $baseUrl && str_starts_with($path, $baseUrl) ? substr($path, \strlen($baseUrl)) : $path;
     }
 
     /**

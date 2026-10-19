@@ -20,8 +20,12 @@ use Mcp\Schema\ToolAnnotations;
  * La description et le schéma sont lus par n'importe quel client : ils ne
  * nomment pas l'auteur (D8).
  */
+#[BackedByRoute(self::RESOURCE, AccessTier::ANONYMOUS)]
 final readonly class GetAboutTool
 {
+    /** La ressource de la route servie, déclarée et lue par la même constante. */
+    private const string RESOURCE = AboutContentResource::class;
+
     // Schéma fermé (`additionalProperties: false`) : un champ ajouté à la
     // route sans être déclaré ici fait échouer la validation du test, au
     // lieu d'échapper au schéma que lisent les clients.
@@ -91,13 +95,13 @@ final readonly class GetAboutTool
         $language = ToolLocale::parse($locale);
 
         try {
-            $payload = $this->routePayloadReader->read(AboutContentResource::class, ['locale' => $language->value]);
+            $payload = $this->routePayloadReader->read(self::RESOURCE, ['locale' => $language->value]);
         } catch (AboutSettingsNotFoundException) {
             // La route répond 404 ; le modèle doit lire pourquoi, pas une
             // erreur interne.
             throw new ToolCallException('No About content exists in this language.');
         }
 
-        return RouteBackedToolResult::forObject($payload);
+        return JsonToolResult::forObject($payload);
     }
 }
