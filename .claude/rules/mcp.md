@@ -33,7 +33,16 @@ paths:
   is refused that way, not by its path; `ApiPlatformRoutePayloadReaderTest` pins it. Not done, accepted: a
   provider returning `null` (an item route's 404) would surface as `UnexpectedRoutePayloadException`, and URI
   variables are not checked against the route's `requirements` — no item tool exists; the first one handles
-  both (a typed parameter, `null` → `ToolCallException`). Wiring defects (`RouteOperationNotFoundException`,
+  both (a typed parameter, `null` → `ToolCallException`). Since #641 the path read in the `AccessMap` is **the router's**,
+  generated under the operation's name (its route name at API Platform), base URL stripped — never `/api` +
+  the template, which ignored a `routePrefix` and failed open; an operation with no route is refused
+  (`UnroutedOperationException`). The read runs on a synthetic request (`127.0.0.1`, `localhost`, GET), so
+  `AccessMapStaysPathOnlyTest` refuses any `access_control` rule conditioned on anything but its path (`ips`,
+  `host`, `port`, `methods`, `allow_if`). The provider is called with no request nor token:
+  `McpExposureSymmetryTest` refuses a served provider depending on `RequestStack`, `Security`, the token
+  storage or the authorization checker. Not covered, accepted: a property guarded by
+  `#[ApiProperty(security: …)]` would be omitted (no token), an inequality with the route, never a leak — none
+  exists today. Wiring defects (`RouteOperationNotFoundException`,
   `RouteAboveMcpTiersException`, `UnexpectedRoutePayloadException`) never reach the HTTP kernel: the SDK catches
   them, logs them `error` on the `mcp` channel and answers `-32603` — no `framework.exceptions` entry applies. `Presentation/Tool/JsonToolResult` builds the result (every tool's, `get_contact_info`'s included): the
   payload as `structuredContent` and the same JSON as the one text block (many clients pass only that block to

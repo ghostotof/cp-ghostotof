@@ -69,6 +69,19 @@ final class McpEndpointGetTest extends WebTestCase
         self::assertSame($expectedStatus, $response->getStatusCode());
     }
 
+    /**
+     * Une page servie sous le nom du site (son `Origin`) est admise, port
+     * ignoré, comme au POST.
+     */
+    public function testAGetFromThePageOfTheSiteIsServed(): void
+    {
+        $client = self::createClient();
+
+        $client->request('GET', self::MCP_ENDPOINT, server: ['HTTP_ORIGIN' => 'http://localhost:5173'] + self::EVENT_STREAM);
+
+        self::assertResponseIsSuccessful();
+    }
+
     public function testAGetWithAnUnknownSessionIs404(): void
     {
         $client = self::createClient();

@@ -12,6 +12,7 @@ use App\Mcp\Presentation\Tool\AccessTier;
 use App\Mcp\Presentation\Tool\BackedByRoute;
 use App\Portfolio\Contribution\Presentation\ApiResource\ContributionResource;
 use App\Portfolio\Quality\Presentation\ApiResource\QualityContentResource;
+use App\Tests\Mcp\Fixtures\CallerReadingProvider;
 use App\Tests\Mcp\Infrastructure\ApiPlatform\Fixtures\PrefixedResource;
 use App\Tests\Mcp\Presentation\Tool\GetAboutToolTest;
 use App\Tests\Mcp\Presentation\Tool\RouteBackedToolsTest;
@@ -19,9 +20,13 @@ use App\Tests\Mcp\Support\UnreadableAccessRuleException;
 use ReflectionClass;
 use ReflectionNamedType;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
+use Symfony\Bundle\SecurityBundle\Security;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\Routing\Route;
 use Symfony\Component\Routing\RouteCollection;
+use Symfony\Component\Security\Core\Authentication\Token\Storage\TokenStorageInterface;
+use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
 
 /**
  * Test d'exposition symétrique (ADR 0006 D1, spec 0007 tâche 2) : **le serveur
@@ -115,6 +120,14 @@ final class McpExposureSymmetryTest extends KernelTestCase
 
     /** Paliers servis sans connexion MCP (ADR 0006 D2). */
     private const array TIERS_WITHOUT_CONNECTION = [AccessTier::ANONYMOUS, AccessTier::BASE];
+
+    /** Ce qui donne à un provider la requête ou l'appelant, que le lecteur ne lui fournit pas. */
+    private const array CALLER_DEPENDENCIES = [
+        RequestStack::class,
+        Security::class,
+        TokenStorageInterface::class,
+        AuthorizationCheckerInterface::class,
+    ];
 
     /** Contrôleur des opérations qu'API Platform synthétise pour ses IRI : pas des routes de contenu. */
     private const string NOT_EXPOSED_CONTROLLER = 'api_platform.action.not_exposed';
@@ -303,6 +316,37 @@ final class McpExposureSymmetryTest extends KernelTestCase
     }
 
     /**
+     * Le lecteur appelle le provider de la route sans requête HTTP ni jeton :
+     * un provider qui lirait la requête ou l'appelant servirait par MCP autre
+     * chose que sa route (relecture de la tâche 2). Aucun provider d'une route
+     * servie n'en dépend.
+     */
+    public function testNoServedProviderDependsOnTheRequestOrTheCaller(): void
+    {
+        $factory = self::getContainer()->get(ResourceMetadataCollectionFactoryInterface::class);
+        $checked = 0;
+
+        foreach (array_filter($this->tools()) as $name => $declared) {
+            foreach ($factory->create($declared->resourceClass) as $resource) {
+                foreach ($resource->getOperations() ?? [] as $operation) {
+                    $provider = $operation->getProvider();
+                    if (\is_string($provider) && class_exists($provider)) {
+                        self::assertSame([], $this->callerDependenciesOf($provider), \sprintf('Le provider de « %s » dépend de la requête ou de l\'appelant.', $name));
+                        ++$checked;
+                    }
+                }
+            }
+        }
+
+        self::assertGreaterThanOrEqual(\count(array_filter($this->tools())), $checked, 'Des providers n\'ont pas été résolus en classe : le test ne les vérifie pas.');
+    }
+
+    public function testAProviderReadingTheRequestOrTheCallerIsCaught(): void
+    {
+        self::assertSame([RequestStack::class, Security::class], $this->callerDependenciesOf(CallerReadingProvider::class));
+    }
+
+    /**
      * L'égalité outil/route (D1) n'est prouvée que pour les outils que les
      * tests d'égalité appellent : un outil adossé ajouté sans ses lignes
      * dans `RouteBackedToolsTest` échapperait à la preuve.
@@ -476,6 +520,19 @@ final class McpExposureSymmetryTest extends KernelTestCase
             '_api_operation_name' => 'fictive',
             '_controller' => 'api_platform.symfony.main_controller',
         ], methods: $methods);
+    }
+
+    /**
+     * @param class-string $class
+     *
+     * @return list<string> dépendances du constructeur qui lisent la requête ou l'appelant
+     */
+    private function callerDependenciesOf(string $class): array
+    {
+        return array_values(array_filter(
+            $this->constructorTypesOf($class),
+            static fn (string $type): bool => \in_array($type, self::CALLER_DEPENDENCIES, true),
+        ));
     }
 
     /**
