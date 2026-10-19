@@ -4,20 +4,24 @@ declare(strict_types=1);
 
 namespace App\Tests\Mcp;
 
+use ApiPlatform\Metadata\Exception\OperationNotFoundException;
+use ApiPlatform\Metadata\HttpOperation;
+use ApiPlatform\Metadata\Resource\Factory\ResourceMetadataCollectionFactoryInterface;
+use App\Mcp\Application\RoutePayloadReaderInterface;
 use App\Mcp\Presentation\Tool\AccessTier;
 use App\Mcp\Presentation\Tool\BackedByRoute;
 use App\Portfolio\Contribution\Presentation\ApiResource\ContributionResource;
 use App\Portfolio\Quality\Presentation\ApiResource\QualityContentResource;
-use Mcp\Capability\Registry;
-use Mcp\Server\Builder;
+use App\Tests\Mcp\Infrastructure\ApiPlatform\Fixtures\PrefixedResource;
+use App\Tests\Mcp\Presentation\Tool\GetAboutToolTest;
+use App\Tests\Mcp\Presentation\Tool\RouteBackedToolsTest;
+use App\Tests\Mcp\Support\UnreadableAccessRuleException;
 use ReflectionClass;
 use ReflectionNamedType;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\Routing\Route;
 use Symfony\Component\Routing\RouteCollection;
-use Symfony\Component\Routing\RouterInterface;
-use Symfony\Component\Security\Http\AccessMapInterface;
 
 /**
  * Test d'exposition symétrique (ADR 0006 D1, spec 0007 tâche 2) : **le serveur
@@ -25,76 +29,107 @@ use Symfony\Component\Security\Http\AccessMapInterface;
  * que ces routes servent ne lui échappe sans qu'on l'ait décidé.
  *
  * Construit comme `ApiRouteExposureTest` et `CorpusSourcesTest` : il lit le
- * routeur, l'`AccessMap` et le registre d'outils **réels** du conteneur, pas
- * une déclaration. Deux sens :
+ * routeur, l'`AccessMap`, les métadonnées API Platform et le registre d'outils
+ * **réels** du conteneur, pas une déclaration. Deux sens :
  *
  *  1. chaque route des paliers servis sans connexion MCP (anonyme et de base,
- *     ADR 0006 D2 — le palier fixé par `access_control`, comme le fait le
- *     lecteur de payload) a un outil, ou figure dans {@see self::EXCLUDED_ROUTES}
- *     avec sa raison. Toutes les méthodes, pas seulement GET : une écriture
- *     ou un parcours s'y justifie aussi, pour qu'une route qui servirait du
- *     contenu autrement qu'en GET ne passe pas inaperçue ;
- *  2. chaque outil déclare sa route ({@see BackedByRoute}), qui existe avec ce
- *     palier exactement, ou figure dans la liste fermée
+ *     ADR 0006 D2) est couverte : sa route GET de contenu par l'outil qui la
+ *     lit, toute autre route — une autre méthode sur la même ressource
+ *     comprise — par une entrée de {@see self::EXCLUDED_ROUTES}, à ses
+ *     méthodes exactes, avec sa raison ;
+ *  2. chaque outil déclare sa route ({@see BackedByRoute}) : une route GET de
+ *     contenu de sa ressource, de ce palier exactement, et ce palier est servi
+ *     sans connexion — ou il figure dans la liste fermée
  *     {@see self::TOOLS_WITHOUT_ROUTE}.
  *
- * Ajouter un contexte de contenu fait donc échouer la suite tant qu'on n'a pas
- * choisi de l'exposer ou de l'exclure ; retirer une route fait échouer l'outil
- * orphelin. Les deux tests « fictifs » prouvent que l'oubli échoue bien.
+ * Le palier d'une route est celui que fixe `access_control` (première règle
+ * qui correspond, comme le firewall), relevé au-delà du palier de confiance
+ * quand l'opération porte un attribut `security` — le lecteur de payload la
+ * refuse alors. Une règle à plusieurs rôles ou à un rôle inconnu fait échouer
+ * le test plutôt que de sortir la route du sens 1.
+ *
+ * S'y ajoutent ce qui rend l'attribut digne de confiance : chaque outil adossé
+ * n'injecte que le lecteur de payload (il ne peut lire que par lui), et son
+ * égalité avec la route est prouvée par `RouteBackedToolsTest` ou par son
+ * propre test. Les cas « fictifs » prouvent que chaque oubli échoue.
  */
 final class McpExposureSymmetryTest extends KernelTestCase
 {
     /**
-     * Routes des paliers anonyme et de base qui n'ont pas d'outil, chacune
-     * justifiée : ni contenu, ni lecture.
+     * Routes des paliers anonyme et de base sans outil, chacune justifiée : ni
+     * contenu, ni lecture. La clé porte les méthodes exactes de la route : une
+     * méthode ajoutée change la clé, et demande sa propre justification.
      *
-     * @var array<string, string> chemin de route (tel que déclaré au routeur) => raison
+     * @var array<string, string> « MÉTHODES chemin » => raison
      */
     private const array EXCLUDED_ROUTES = [
         // --- Écritures et parcours : aucun contenu servi.
-        '/api/contact' => 'Écriture (POST) : le formulaire de contact. get_contact_info donne l\'adresse de sa page publique, l\'outil n\'écrit rien (lecture seule, D1).',
-        '/api/account/password-setup' => 'Parcours d\'activation d\'un compte (POST, jeton reçu par e-mail) : aucun contenu.',
-        '/api/account/password-setup/validate' => 'Parcours d\'activation (POST) : ne répond que par un statut.',
-        '/api/account/base-access' => 'Parcours : émet le jeton du palier de base. Le serveur MCP sert ce palier sans jeton (D2).',
-        '/api/login_check' => 'Parcours d\'authentification (POST) : aucun contenu.',
-        '/api/logout' => 'Parcours : expire les cookies (POST), aucun contenu.',
-        '/api/mcp' => 'Le serveur MCP lui-même.',
+        'POST /api/contact' => 'Écriture : le formulaire de contact. get_contact_info donne l\'adresse de sa page publique ; le serveur n\'écrit rien (lecture seule, D1).',
+        'POST /api/account/password-setup' => 'Parcours d\'activation d\'un compte (jeton reçu par e-mail) : aucun contenu.',
+        'POST /api/account/password-setup/validate' => 'Parcours d\'activation : ne répond que par un statut.',
+        'POST /api/account/base-access' => 'Parcours : émet le jeton du palier de base. Le serveur MCP sert ce palier sans jeton (D2).',
+        'POST /api/login_check' => 'Parcours d\'authentification : aucun contenu.',
+        'POST /api/logout' => 'Parcours : expire les cookies, aucun contenu.',
+        'GET|POST|DELETE|OPTIONS /api/mcp' => 'Le serveur MCP lui-même.',
 
         // --- Infrastructure API Platform : aucune donnée métier.
-        '/api/docs.{_format}' => 'Schéma OpenAPI, désactivé en préprod et en prod (when@prod).',
-        '/api/errors/{status}.{_format}' => 'Ressource d\'erreur interne d\'API Platform.',
-        '/api/validation_errors/{id}' => 'Ressource d\'erreur de validation interne d\'API Platform.',
-        '/api/.well-known/genid/{id}' => 'Identifiants anonymes générés par API Platform.',
-        '/api/.well-known/genid/{id}.{_format}' => 'Idem, variante formatée.',
+        'GET|HEAD /api/docs.{_format}' => 'Schéma OpenAPI, désactivé en préprod et en prod (when@prod).',
+        'GET /api/errors/{status}.{_format}' => 'Ressource d\'erreur interne d\'API Platform.',
+        'GET /api/validation_errors/{id}' => 'Ressource d\'erreur de validation interne d\'API Platform (une route par format).',
+        'GET|HEAD /api/validation_errors/{id}' => 'Idem, la route générique.',
+        'GET|HEAD /api/.well-known/genid/{id}' => 'Identifiants anonymes générés par API Platform.',
+        'GET /api/.well-known/genid/{id}.{_format}' => 'Idem, variante formatée (opération not_exposed).',
     ];
 
     /**
      * Outils sans route adossée : la liste est **fermée** (ADR 0006 D1). Y
-     * ajouter un outil demande d'amender l'ADR d'abord.
+     * ajouter un outil demande d'amender l'ADR d'abord. Chacun avec les seuls
+     * types que son constructeur peut recevoir.
      *
-     * @var array<string, string> nom de l'outil => raison
+     * @var array<string, array{string, list<string>}> nom => [raison, types du constructeur]
      */
     private const array TOOLS_WITHOUT_ROUTE = [
-        'get_contact_info' => 'Adresse de la page publique du formulaire de contact (palier anonyme) : la route /api/contact est une écriture.',
-        'get_nominative_corpus' => 'Corpus nominatif (palier de confiance, connexion MCP) : ses sources sont celles que CorpusSourcesTest fixe.',
+        'get_contact_info' => ['Adresse de la page publique du formulaire de contact (palier anonyme) : la route /api/contact est une écriture.', ['string']],
+        'get_nominative_corpus' => ['Corpus nominatif (palier de confiance, connexion MCP) : ses sources sont celles que CorpusSourcesTest fixe. Aucune dépendance en phase 1 : rien du corpus ne peut passer.', []],
     ];
 
-    /** Rôle exigé par `access_control` → palier ; aucun rôle : anonyme. */
+    /**
+     * Outils adossés dont l'égalité avec la route est prouvée par leur propre
+     * test plutôt que par `RouteBackedToolsTest`.
+     *
+     * @var array<string, class-string> nom => test
+     */
+    private const array EQUALITY_TESTED_APART = [
+        'get_about' => GetAboutToolTest::class,
+    ];
+
+    /** Rôle exigé par `access_control` → palier ; aucune règle : anonyme. */
     private const array TIER_OF_ROLE = [
         'PUBLIC_ACCESS' => AccessTier::ANONYMOUS,
         'ROLE_USER' => AccessTier::BASE,
         'ROLE_TRUSTED' => AccessTier::TRUSTED,
     ];
 
+    /** Rôles au-delà de tout palier : le backoffice. */
+    private const array ROLES_ABOVE_TIERS = ['ROLE_SUPER'];
+
     /** Paliers servis sans connexion MCP (ADR 0006 D2). */
     private const array TIERS_WITHOUT_CONNECTION = [AccessTier::ANONYMOUS, AccessTier::BASE];
 
-    public function testEveryRouteOfTheTiersServedWithoutConnectionHasAToolOrAJustifiedExclusion(): void
+    /** Contrôleur des opérations qu'API Platform synthétise pour ses IRI : pas des routes de contenu. */
+    private const string NOT_EXPOSED_CONTROLLER = 'api_platform.action.not_exposed';
+
+    protected function setUp(): void
+    {
+        self::bootKernel();
+    }
+
+    public function testEveryRouteOfTheTiersServedWithoutConnectionIsCoveredByAToolOrAJustifiedExclusion(): void
     {
         self::assertSame([], $this->uncoveredRoutes($this->routes(), $this->tools()));
     }
 
-    public function testEveryToolDeclaresAnExistingRouteOfItsOwnTierOrIsAListedException(): void
+    public function testEveryToolDeclaresAContentRouteOfItsOwnTierServedWithoutConnectionOrIsAListedException(): void
     {
         self::assertSame([], $this->toolsWithoutAMatchingRoute($this->routes(), $this->tools()));
     }
@@ -106,9 +141,53 @@ final class McpExposureSymmetryTest extends KernelTestCase
     public function testAFictiveContentRouteWithoutToolNorExclusionIsCaught(): void
     {
         $routes = $this->routes();
-        $routes->add('_api_/fictive/{locale}_get_collection', new Route('/api/fictive/{locale}', ['_api_resource_class' => 'App\Fictive\FictiveResource'], methods: ['GET']));
+        $routes->add('_api_/fictive/{locale}_get_collection', $this->contentRoute('/api/fictive/{locale}', 'App\Fictive\FictiveResource', ['GET']));
 
         self::assertSame(['GET /api/fictive/{locale}'], $this->uncoveredRoutes($routes, $this->tools()));
+    }
+
+    /**
+     * Une autre méthode sur une ressource exposée n'est pas couverte par
+     * l'outil, qui ne lit que le GET : elle demande sa propre exclusion.
+     */
+    public function testAnotherMethodOnAnExposedResourceIsNotCoveredByItsTool(): void
+    {
+        $routes = $this->routes();
+        $routes->add('_api_/contributions/{locale}_post', $this->contentRoute('/api/contributions/{locale}', ContributionResource::class, ['POST']));
+
+        self::assertSame(['POST /api/contributions/{locale}'], $this->uncoveredRoutes($routes, $this->tools()));
+    }
+
+    /**
+     * Une exclusion vaut pour les méthodes exactes de sa clé : un GET ajouté
+     * sur un chemin exclu pour son POST n'est pas couvert.
+     */
+    public function testAnExclusionCoversItsExactMethodsOnly(): void
+    {
+        $routes = $this->routes();
+        $routes->add('fictive_contact_get', new Route('/api/contact', methods: ['GET']));
+
+        self::assertSame(['GET /api/contact'], $this->uncoveredRoutes($routes, $this->tools()));
+    }
+
+    /**
+     * Une règle `access_control` à plusieurs rôles ne sort pas la route du
+     * sens 1 en silence : le test échoue, faute de savoir lire son palier.
+     */
+    public function testARuleWithSeveralRolesFailsTheTestInsteadOfHidingTheRoute(): void
+    {
+        $this->expectException(UnreadableAccessRuleException::class);
+        $this->expectExceptionMessageMatches('/plusieurs rôles/');
+
+        $this->tierOfRoles(['ROLE_USER', 'ROLE_TRUSTED'], '/api/fictive');
+    }
+
+    public function testAnUnknownRoleFailsTheTestInsteadOfHidingTheRoute(): void
+    {
+        $this->expectException(UnreadableAccessRuleException::class);
+        $this->expectExceptionMessageMatches('/rôle inconnu/');
+
+        $this->tierOfRoles(['ROLE_FICTIVE'], '/api/fictive');
     }
 
     /**
@@ -118,15 +197,15 @@ final class McpExposureSymmetryTest extends KernelTestCase
     public function testAFictiveToolWithoutRouteIsCaught(): void
     {
         $tools = $this->tools();
-        $tools['list_fictive'] = new BackedByRoute('App\Fictive\FictiveResource', AccessTier::ANONYMOUS);
+        $tools['list_fictive'] = new BackedByRoute(PrefixedResource::class, AccessTier::ANONYMOUS);
         $tools['get_undeclared'] = null;
 
         self::assertSame(['get_undeclared', 'list_fictive'], $this->toolsWithoutAMatchingRoute($this->routes(), $tools));
     }
 
     /**
-     * Le palier d'un outil est celui de sa route, tel qu'`access_control` le
-     * fixe : une route anonyme déclarée de base ou de confiance échoue.
+     * Le palier d'un outil est celui de sa route : une route anonyme déclarée
+     * de base, ou de confiance, échoue.
      */
     public function testAToolCannotDeclareAnotherTierThanItsRoutes(): void
     {
@@ -154,12 +233,47 @@ final class McpExposureSymmetryTest extends KernelTestCase
         self::assertSame([$baseTierTool], $this->toolsWithoutAMatchingRoute($this->routes(), $tools));
     }
 
+    /**
+     * En phase 1, aucun outil adossé n'est du palier de confiance : rien ne
+     * vérifie encore la connexion MCP. Une route de ce palier déclarée comme
+     * telle échoue quand même.
+     */
+    public function testAToolOfTheTrustedTierIsRefusedInPhaseOne(): void
+    {
+        $routes = $this->routes();
+        $routes->add('_api_/fictive-cv_get', $this->contentRoute('/api/cv/fictive', PrefixedResource::class, ['GET']));
+        $tools = $this->tools();
+        $tools['get_fictive_cv'] = new BackedByRoute(PrefixedResource::class, AccessTier::TRUSTED);
+
+        self::assertSame(['get_fictive_cv'], $this->toolsWithoutAMatchingRoute($routes, $tools));
+    }
+
+    /**
+     * Les routes qu'API Platform synthétise pour ses IRI (`not_exposed`) ne
+     * sont pas du contenu : elles ne satisfont pas une déclaration. Le
+     * routeur réel en porte une, anonyme, au nom d'une ressource du
+     * backoffice.
+     */
+    public function testANotExposedRouteDoesNotSatisfyADeclaration(): void
+    {
+        $notExposed = array_find($this->routes()->all(), static fn (Route $route): bool => self::NOT_EXPOSED_CONTROLLER === $route->getDefault('_controller') && null !== $route->getDefault('_api_resource_class'));
+        self::assertInstanceOf(Route::class, $notExposed, 'Plus de route not_exposed au routeur : le cas n\'est plus vérifié.');
+        $resource = $notExposed->getDefault('_api_resource_class');
+        self::assertIsString($resource);
+        self::assertTrue(class_exists($resource));
+
+        $tools = $this->tools();
+        $tools['get_ghost'] = new BackedByRoute($resource, AccessTier::ANONYMOUS);
+
+        self::assertSame(['get_ghost'], $this->toolsWithoutAMatchingRoute($this->routes(), $tools));
+    }
+
     public function testTheExclusionListHasNoStaleEntry(): void
     {
-        $paths = array_map(static fn (Route $route): string => $route->getPath(), $this->routes()->all());
+        $signatures = array_map($this->signatureOf(...), array_values($this->routes()->all()));
 
-        foreach (array_keys(self::EXCLUDED_ROUTES) as $path) {
-            self::assertContains($path, $paths, \sprintf('EXCLUDED_ROUTES déclare « %s », qui n\'existe plus au routeur.', $path));
+        foreach (array_keys(self::EXCLUDED_ROUTES) as $signature) {
+            self::assertContains($signature, $signatures, \sprintf('EXCLUDED_ROUTES déclare « %s », que le routeur ne porte plus.', $signature));
         }
     }
 
@@ -174,50 +288,61 @@ final class McpExposureSymmetryTest extends KernelTestCase
     }
 
     /**
-     * Un outil lit par le lecteur de payload, jamais par un repository ni une
-     * classe de backoffice (spec 0007) : ni ses dépendances, ni la ressource
-     * qu'il déclare.
+     * Un outil adossé ne reçoit que le lecteur de payload : il ne peut lire
+     * que par lui, donc que la route du palier que le lecteur vérifie — ni
+     * repository, ni classe de backoffice, ni provider, ni le rendu du corpus.
+     * Un outil sans route ne reçoit que ce que sa liste lui accorde.
      */
-    public function testNoToolDependsOnARepositoryOrABackofficeClass(): void
+    public function testEveryToolReceivesOnlyWhatItsKindAllows(): void
     {
         foreach ($this->toolClasses() as $name => $class) {
-            foreach (new ReflectionClass($class)->getConstructor()?->getParameters() ?? [] as $parameter) {
-                $type = $parameter->getType();
-                $dependency = $type instanceof ReflectionNamedType ? $type->getName() : (string) $type;
-                self::assertStringNotContainsString('Repository', $dependency, $name);
-                self::assertStringNotContainsString('Backoffice', $dependency, $name);
-            }
-        }
+            $expected = \array_key_exists($name, self::TOOLS_WITHOUT_ROUTE) ? self::TOOLS_WITHOUT_ROUTE[$name][1] : [RoutePayloadReaderInterface::class];
 
-        foreach ($this->tools() as $name => $route) {
-            self::assertStringNotContainsString('Backoffice', $route?->resourceClass ?? '', $name);
+            self::assertSame($expected, $this->constructorTypesOf($class), \sprintf('« %s » reçoit d\'autres dépendances que celles de son espèce.', $name));
         }
     }
 
     /**
-     * Sens 1. Les routes des paliers servis sans connexion qui n'ont ni outil
-     * (par la ressource API Platform qu'elles servent) ni exclusion.
+     * L'égalité outil/route (D1) n'est prouvée que pour les outils que les
+     * tests d'égalité appellent : un outil adossé ajouté sans ses lignes
+     * dans `RouteBackedToolsTest` échapperait à la preuve.
+     */
+    public function testEveryRouteBackedToolHasItsRouteEqualityTest(): void
+    {
+        $tested = array_unique(array_map(static fn (array $case): string => $case[0], iterator_to_array(RouteBackedToolsTest::toolsAndTheirRoutes())));
+        $tested = [...$tested, ...array_keys(self::EQUALITY_TESTED_APART)];
+        $routeBacked = array_keys(array_filter($this->tools()));
+        sort($routeBacked);
+        sort($tested);
+
+        self::assertSame($routeBacked, $tested);
+    }
+
+    /**
+     * Sens 1. Les routes des paliers servis sans connexion que ni un outil (sa
+     * route GET de contenu) ni une exclusion (à ses méthodes exactes) ne
+     * couvrent.
      *
      * @param array<string, ?BackedByRoute> $tools
      *
-     * @return list<string> « MÉTHODES chemin » de chaque route non couverte
+     * @return list<string> signature « MÉTHODES chemin » de chaque route non couverte
      */
     private function uncoveredRoutes(RouteCollection $routes, array $tools): array
     {
-        $exposedResources = array_map(static fn (BackedByRoute $route): string => $route->resourceClass, array_filter($tools));
+        $exposedResources = array_values(array_map(static fn (BackedByRoute $route): string => $route->resourceClass, array_filter($tools)));
 
         $uncovered = [];
         foreach ($routes as $route) {
-            $path = $route->getPath();
-            if (!str_starts_with($path, '/api/') || !\in_array($this->tierOf($path), self::TIERS_WITHOUT_CONNECTION, true)) {
+            if (!str_starts_with($route->getPath(), '/api/') || !\in_array($this->tierOf($route), self::TIERS_WITHOUT_CONNECTION, true)) {
                 continue;
             }
 
-            if (\array_key_exists($path, self::EXCLUDED_ROUTES) || \in_array($route->getDefault('_api_resource_class'), $exposedResources, true)) {
+            $readByATool = $this->isContentGetRoute($route) && \in_array($route->getDefault('_api_resource_class'), $exposedResources, true);
+            if ($readByATool || \array_key_exists($this->signatureOf($route), self::EXCLUDED_ROUTES)) {
                 continue;
             }
 
-            $uncovered[] = \sprintf('%s %s', implode('|', $route->getMethods()) ?: 'ANY', $path);
+            $uncovered[] = $this->signatureOf($route);
         }
         sort($uncovered);
 
@@ -225,9 +350,9 @@ final class McpExposureSymmetryTest extends KernelTestCase
     }
 
     /**
-     * Sens 2. Les outils qui ne sont ni dans la liste fermée, ni adossés à
-     * une route GET existante de leur ressource dont le palier est exactement
-     * celui qu'ils déclarent.
+     * Sens 2. Les outils qui ne sont ni dans la liste fermée, ni adossés à une
+     * route GET de contenu de leur ressource dont le palier est exactement
+     * celui qu'ils déclarent — et un palier servi sans connexion.
      *
      * @param array<string, ?BackedByRoute> $tools
      *
@@ -237,15 +362,11 @@ final class McpExposureSymmetryTest extends KernelTestCase
     {
         $faulty = [];
         foreach ($tools as $name => $declared) {
-            if (null === $declared) {
-                if (!\array_key_exists($name, self::TOOLS_WITHOUT_ROUTE)) {
-                    $faulty[] = $name;
-                }
+            $matches = null === $declared
+                ? \array_key_exists($name, self::TOOLS_WITHOUT_ROUTE)
+                : \in_array($declared->tier, self::TIERS_WITHOUT_CONNECTION, true) && $this->hasContentGetRouteOfTier($routes, $declared);
 
-                continue;
-            }
-
-            if (!$this->hasGetRouteOfTier($routes, $declared)) {
+            if (!$matches) {
                 $faulty[] = $name;
             }
         }
@@ -254,12 +375,12 @@ final class McpExposureSymmetryTest extends KernelTestCase
         return $faulty;
     }
 
-    private function hasGetRouteOfTier(RouteCollection $routes, BackedByRoute $declared): bool
+    private function hasContentGetRouteOfTier(RouteCollection $routes, BackedByRoute $declared): bool
     {
         foreach ($routes as $route) {
-            if ($declared->resourceClass === $route->getDefault('_api_resource_class')
-                && \in_array(Request::METHOD_GET, $route->getMethods(), true)
-                && $declared->tier === $this->tierOf($route->getPath())) {
+            if ($this->isContentGetRoute($route)
+                && $declared->resourceClass === $route->getDefault('_api_resource_class')
+                && $declared->tier === $this->tierOf($route)) {
                 return true;
             }
         }
@@ -268,32 +389,115 @@ final class McpExposureSymmetryTest extends KernelTestCase
     }
 
     /**
-     * Le palier d'un chemin, tel que l'`AccessMap` du firewall le fixe — la
-     * même lecture que le lecteur de payload. `null` : au-delà du palier de
-     * confiance (le backoffice).
+     * Une route GET d'une opération API Platform réelle, pas une de celles
+     * qu'API Platform synthétise pour construire ses IRI.
      */
-    private function tierOf(string $path): ?AccessTier
+    private function isContentGetRoute(Route $route): bool
+    {
+        return \in_array(Request::METHOD_GET, $route->getMethods(), true)
+            && null !== $route->getDefault('_api_operation_name')
+            && self::NOT_EXPOSED_CONTROLLER !== $route->getDefault('_controller');
+    }
+
+    /**
+     * Le palier d'une route : celui de la première règle `access_control` de
+     * son chemin, relevé au-delà de tout palier (`null`) quand son opération
+     * API Platform porte un attribut `security`, que le lecteur refuse.
+     */
+    private function tierOf(Route $route): ?AccessTier
     {
         $accessMap = self::getContainer()->get('security.access_map');
-        self::assertInstanceOf(AccessMapInterface::class, $accessMap);
+        [$roles] = $accessMap->getPatterns(Request::create($route->getPath()));
 
-        [$roles] = $accessMap->getPatterns(Request::create($path));
-        $roles ??= [];
+        $tier = $this->tierOfRoles($roles ?? [], $route->getPath());
 
+        return null !== $tier && $this->operationCarriesSecurity($route) ? null : $tier;
+    }
+
+    /**
+     * @param array<mixed> $roles
+     */
+    private function tierOfRoles(array $roles, string $path): ?AccessTier
+    {
         if ([] === $roles) {
             return AccessTier::ANONYMOUS;
         }
 
-        return 1 === \count($roles) ? (self::TIER_OF_ROLE[$roles[0]] ?? null) : null;
+        if (1 !== \count($roles)) {
+            throw UnreadableAccessRuleException::forPath($path, 'exige plusieurs rôles');
+        }
+
+        $role = array_first($roles);
+        if (!\is_string($role)) {
+            throw UnreadableAccessRuleException::forPath($path, 'n\'exige pas un rôle');
+        }
+
+        if (\in_array($role, self::ROLES_ABOVE_TIERS, true)) {
+            return null;
+        }
+
+        return self::TIER_OF_ROLE[$role] ?? throw UnreadableAccessRuleException::forPath($path, 'exige un rôle inconnu ('.$role.')');
+    }
+
+    private function operationCarriesSecurity(Route $route): bool
+    {
+        $resourceClass = $route->getDefault('_api_resource_class');
+        $operationName = $route->getDefault('_api_operation_name');
+        if (!\is_string($resourceClass) || !\is_string($operationName) || !class_exists($resourceClass)) {
+            return false;
+        }
+
+        try {
+            $operation = self::getContainer()->get(ResourceMetadataCollectionFactoryInterface::class)->create($resourceClass)->getOperation($operationName);
+        } catch (OperationNotFoundException) {
+            // Une route fictive des cas de ce test : pas d'opération réelle.
+            return false;
+        }
+
+        return $operation instanceof HttpOperation && null !== $operation->getSecurity();
+    }
+
+    private function signatureOf(Route $route): string
+    {
+        $methods = $route->getMethods();
+
+        return \sprintf('%s %s', [] === $methods ? 'ANY' : implode('|', $methods), $route->getPath());
+    }
+
+    /**
+     * Une route d'opération API Platform, telle que son chargeur la déclare.
+     *
+     * @param list<string> $methods
+     */
+    private function contentRoute(string $path, string $resourceClass, array $methods): Route
+    {
+        return new Route($path, [
+            '_api_resource_class' => $resourceClass,
+            '_api_operation_name' => 'fictive',
+            '_controller' => 'api_platform.symfony.main_controller',
+        ], methods: $methods);
+    }
+
+    /**
+     * @param class-string $class
+     *
+     * @return list<string> types des paramètres du constructeur, dans l'ordre
+     */
+    private function constructorTypesOf(string $class): array
+    {
+        $types = [];
+        foreach (new ReflectionClass($class)->getConstructor()?->getParameters() ?? [] as $parameter) {
+            $type = $parameter->getType();
+            $types[] = $type instanceof ReflectionNamedType ? $type->getName() : (string) $type;
+        }
+
+        return $types;
     }
 
     private function routes(): RouteCollection
     {
-        $router = self::getContainer()->get('router');
-        self::assertInstanceOf(RouterInterface::class, $router);
-
-        // Une copie : les tests « fictifs » y ajoutent une route.
-        return clone $router->getRouteCollection();
+        // Une copie : les cas « fictifs » y ajoutent une route.
+        return clone self::getContainer()->get('router')->getRouteCollection();
     }
 
     /**
@@ -321,21 +525,19 @@ final class McpExposureSymmetryTest extends KernelTestCase
      */
     private function toolClasses(): array
     {
-        self::bootKernel();
         $container = self::getContainer();
-        $builder = $container->get('mcp.server.portfolio.builder');
-        self::assertInstanceOf(Builder::class, $builder);
-        $builder->build();
+        $container->get('mcp.server.portfolio.builder')->build();
         $registry = $container->get('mcp.server.portfolio.registry');
-        self::assertInstanceOf(Registry::class, $registry);
 
         $classes = [];
-        foreach (array_keys(iterator_to_array($registry->getTools())) as $name) {
+        foreach ($registry->getTools() as $name => $tool) {
+            self::assertIsString($name);
             $handler = $registry->getTool($name)->handler;
             self::assertIsArray($handler, \sprintf('L\'outil « %s » n\'est pas une méthode de classe.', $name));
-            self::assertIsString($handler[0]);
-            self::assertTrue(class_exists($handler[0]));
-            $classes[$name] = $handler[0];
+            $class = $handler[0];
+            self::assertIsString($class);
+            self::assertTrue(class_exists($class));
+            $classes[$name] = $class;
         }
         self::assertNotEmpty($classes, 'Aucun outil au registre : le test ne vérifie plus rien.');
 
