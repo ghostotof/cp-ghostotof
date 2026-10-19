@@ -26,6 +26,7 @@ use App\Tests\Security\User\Fixtures\Traits\UsesThePasswordFieldTraitFixture;
 use App\Tests\Support\DeclaredClasses;
 use App\Tests\Support\PhpSources;
 use App\Tests\Support\PlainPasswordInputs;
+use App\Tests\Support\RepositoryFiles;
 use App\Tests\Support\SensitiveParameters;
 use PhpToken;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -427,7 +428,7 @@ final class PlainPasswordInputsTest extends TestCase
      */
     private function srcClasses(): array
     {
-        return $this->classesIn(\dirname(__DIR__, 3).'/src');
+        return $this->classesIn(RepositoryFiles::backend().'/src');
     }
 
     /**

@@ -12,6 +12,7 @@ use App\Security\User\Domain\Exception\BaseAccessRateLimitExceededException;
 use App\Security\User\Domain\Exception\PasswordSetupRateLimitExceededException;
 use App\Shared\Domain\Exception\RetryAfterAware;
 use App\Tests\Support\DeclaredClasses;
+use App\Tests\Support\RepositoryFiles;
 use DateTimeImmutable;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -33,8 +34,6 @@ use ReflectionClass;
  */
 final class QuotaExceptionsContractTest extends TestCase
 {
-    private const string SOURCES = __DIR__.'/../../../../src';
-
     /**
      * L'exception est construite avec l'échéance pour seul argument, la
      * signature de tous les quotas : un quota qui en aurait une autre adapte
@@ -92,7 +91,7 @@ final class QuotaExceptionsContractTest extends TestCase
      */
     public static function quotaExceptions(): iterable
     {
-        foreach (DeclaredClasses::implementing(self::SOURCES, RetryAfterAware::class) as $class) {
+        foreach (DeclaredClasses::implementing(RepositoryFiles::backend().'/src', RetryAfterAware::class) as $class) {
             if (!(new ReflectionClass($class))->isAbstract()) {
                 yield $class => [$class];
             }

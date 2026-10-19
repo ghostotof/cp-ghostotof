@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Ai\Assistant\Infrastructure;
 
+use App\Tests\Support\RepositoryFiles;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Yaml\Yaml;
 
@@ -19,8 +20,6 @@ use Symfony\Component\Yaml\Yaml;
  */
 final class AiUsageLogChannelTest extends TestCase
 {
-    private const string MONOLOG_CONFIG = __DIR__.'/../../../../config/packages/monolog.yaml';
-
     public function testTheChannelHasItsOwnInfoLevelHandlerInProduction(): void
     {
         $handlers = $this->productionHandlers();
@@ -45,7 +44,7 @@ final class AiUsageLogChannelTest extends TestCase
     private function productionHandlers(): array
     {
         /** @var array{'when@prod': array{monolog: array{handlers: array<string, array{channels?: list<string>, level?: string}>}}} $config */
-        $config = Yaml::parseFile(self::MONOLOG_CONFIG);
+        $config = Yaml::parseFile(RepositoryFiles::backend().'/config/packages/monolog.yaml');
 
         return $config['when@prod']['monolog']['handlers'];
     }

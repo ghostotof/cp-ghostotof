@@ -8,6 +8,7 @@ use App\Tests\Shared\Fixtures\RegexEndAnchor\RegexOnInterfaceFixture;
 use App\Tests\Shared\Fixtures\RegexEndAnchor\UsesTheRegexTraitFixture;
 use App\Tests\Support\DeclaredClasses;
 use App\Tests\Support\DollarAnchoredPatterns;
+use App\Tests\Support\RepositoryFiles;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use ReflectionAttribute;
@@ -33,13 +34,11 @@ use Symfony\Component\Validator\Constraints\Regex;
  */
 final class RegexEndAnchorTest extends TestCase
 {
-    private const string SOURCES = __DIR__.'/../../src';
-
     public function testNoSourcePatternIsAnchoredByADollar(): void
     {
         self::assertSame(
             [],
-            DollarAnchoredPatterns::in(self::SOURCES),
+            DollarAnchoredPatterns::in(RepositoryFiles::backend().'/src'),
             'Ancrez la fin par \z : `$` accepte un "\n" final (issue #409).',
         );
     }
@@ -106,7 +105,7 @@ final class RegexEndAnchorTest extends TestCase
      */
     public function testEveryRegexConstraintPublishesAPatternThatEcmaScriptReads(): void
     {
-        self::assertSame([], $this->htmlPatternsEcmaScriptMisreadsIn(self::SOURCES), 'Déclarez un htmlPattern sans \A, \z ni \Z (ECMAScript ne les connaît pas).');
+        self::assertSame([], $this->htmlPatternsEcmaScriptMisreadsIn(RepositoryFiles::backend().'/src'), 'Déclarez un htmlPattern sans \A, \z ni \Z (ECMAScript ne les connaît pas).');
     }
 
     /**

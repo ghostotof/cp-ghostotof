@@ -19,6 +19,7 @@ use App\Tests\Shared\Infrastructure\Http\Fixtures\LogLevelSources\LoggedFixtureP
 use App\Tests\Shared\Infrastructure\Http\Fixtures\LogLevelSources\UnloggedFixtureProblemException;
 use App\Tests\Support\CompiledExceptionConfig;
 use App\Tests\Support\DeclaredClasses;
+use App\Tests\Support\RepositoryFiles;
 use DomainException;
 use OverflowException;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -63,7 +64,6 @@ use UnderflowException;
  */
 final class ExceptionLogLevelCoverageTest extends KernelTestCase
 {
-    private const string SOURCES = __DIR__.'/../../../../src';
     private const string FIXTURE_SOURCES = __DIR__.'/Fixtures/LogLevelSources';
     private const string FIXTURE_ATTRIBUTES = __DIR__.'/Fixtures/LogLevelAttributes';
 
@@ -532,10 +532,10 @@ final class ExceptionLogLevelCoverageTest extends KernelTestCase
             $global,
         );
         $problems = array_values(array_filter(
-            DeclaredClasses::implementing(self::SOURCES, ProblemExceptionInterface::class),
+            DeclaredClasses::implementing(RepositoryFiles::backend().'/src', ProblemExceptionInterface::class),
             static fn (string $class): bool => !(new ReflectionClass($class))->isAbstract(),
         ));
-        $converted = CompiledExceptionConfig::kernelHttpStatus($listener, [...DeclaredClasses::classes(self::SOURCES), ...$this->statusCodeKeys()]);
+        $converted = CompiledExceptionConfig::kernelHttpStatus($listener, [...DeclaredClasses::classes(RepositoryFiles::backend().'/src'), ...$this->statusCodeKeys()]);
 
         $classes = array_unique([...array_merge(...array_map(array_keys(...), $mappings)), ...$problems, ...array_keys($converted)]);
         $statuses = [];

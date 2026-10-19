@@ -14,6 +14,7 @@ use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Tests\Ai\Assistant\Support\StubCorpusRenderer;
 use App\Tests\Ai\Support\FakeStreamingAgent;
 use App\Tests\Ai\Translation\Support\InMemoryLogger;
+use App\Tests\Support\RepositoryFiles;
 use Generator;
 use JsonException;
 use LogicException;
@@ -34,7 +35,6 @@ use ValueError;
  */
 final class SymfonyAiCareerAssistantTest extends TestCase
 {
-    private const string PREAMBLE_FILE = __DIR__.'/../../../../../config/ai/prompts/career_assistant.txt';
     private const string QUESTION = 'Question sentinelle sur le parcours ?';
     private const string PREVIOUS_ANSWER = 'Réponse sentinelle précédente.';
     private const string CORPUS = "<documents>\n\nCORPUS-SENTINELLE\n\n</documents>\n";
@@ -402,7 +402,7 @@ final class SymfonyAiCareerAssistantTest extends TestCase
     {
         return new SymfonyAiCareerAssistant(
             $agent,
-            new CareerAssistantSystemPrompt(new StubCorpusRenderer(self::CORPUS), self::PREAMBLE_FILE),
+            new CareerAssistantSystemPrompt(new StubCorpusRenderer(self::CORPUS), RepositoryFiles::backend().'/config/ai/prompts/career_assistant.txt'),
             $this->logger,
         );
     }

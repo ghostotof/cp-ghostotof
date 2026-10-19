@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Shared;
 
 use App\Tests\Support\MisqualifiedNativeCalls;
+use App\Tests\Support\RepositoryFiles;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use ReflectionFunction;
@@ -25,7 +26,7 @@ final class NativeCallsQualificationTest extends TestCase
 {
     public function testEveryNativeCallIsQualifiedExactlyWhenTheCompilerOptimizesIt(): void
     {
-        $root = \dirname(__DIR__, 2);
+        $root = RepositoryFiles::backend();
 
         self::assertSame([], MisqualifiedNativeCalls::in($root.'/src', $root.'/tests'), MisqualifiedNativeCalls::fix());
     }

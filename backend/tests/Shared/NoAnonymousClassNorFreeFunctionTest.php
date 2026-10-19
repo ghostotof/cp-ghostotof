@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Shared;
 
 use App\Tests\Support\AnonymousClassesAndFreeFunctions;
+use App\Tests\Support\RepositoryFiles;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
@@ -35,7 +36,7 @@ final class NoAnonymousClassNorFreeFunctionTest extends TestCase
     {
         self::assertSame(
             [],
-            AnonymousClassesAndFreeFunctions::in(\dirname(__DIR__, 2).'/src'),
+            AnonymousClassesAndFreeFunctions::in(RepositoryFiles::backend().'/src'),
             'Nommez la classe ou faites de la fonction une méthode : les gardes de signatures ne voient que les'
             .' déclarations nommées (issue #432, .claude/rules/backend-architecture.md).',
         );

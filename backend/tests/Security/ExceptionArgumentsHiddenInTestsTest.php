@@ -6,6 +6,7 @@ namespace App\Tests\Security;
 
 use App\Tests\Support\ChildPhpProcess;
 use App\Tests\Support\PhpSources;
+use App\Tests\Support\RepositoryFiles;
 use DomainException;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
@@ -149,7 +150,7 @@ final class ExceptionArgumentsHiddenInTestsTest extends TestCase
 
     private function backendDirectory(): string
     {
-        return \dirname(__DIR__, 2);
+        return RepositoryFiles::backend();
     }
 
     private function thrownBy(string $argument): DomainException

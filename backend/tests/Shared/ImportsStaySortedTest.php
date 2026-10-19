@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Shared;
 
+use App\Tests\Support\RepositoryFiles;
 use App\Tests\Support\UnsortedImports;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -23,7 +24,7 @@ final class ImportsStaySortedTest extends TestCase
 {
     public function testEveryImportBlockIsSorted(): void
     {
-        $root = \dirname(__DIR__, 2);
+        $root = RepositoryFiles::backend();
 
         self::assertSame([], UnsortedImports::in($root.'/src', $root.'/tests'), UnsortedImports::fix());
     }

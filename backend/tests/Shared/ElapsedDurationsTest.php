@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Shared;
 
 use App\Tests\Support\PhpSources;
+use App\Tests\Support\RepositoryFiles;
 use PhpToken;
 use PHPUnit\Framework\TestCase;
 
@@ -29,7 +30,7 @@ final class ElapsedDurationsTest extends TestCase
     public function testNoStringLiteralAddsOrSubtractsHours(): void
     {
         $offenders = [];
-        foreach (PhpSources::files(\dirname(__DIR__, 2).'/src') as $file) {
+        foreach (PhpSources::files(RepositoryFiles::backend().'/src') as $file) {
             $code = file_get_contents($file);
             self::assertIsString($code);
             $offenders = [...$offenders, ...$this->relativeHourLiterals($code, $file)];

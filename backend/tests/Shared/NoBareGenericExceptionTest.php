@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Shared;
 
 use App\Tests\Support\BareExceptionInstantiations;
+use App\Tests\Support\RepositoryFiles;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
@@ -24,7 +25,7 @@ final class NoBareGenericExceptionTest extends TestCase
 {
     public function testNoSourceFileInstantiatesABareGenericException(): void
     {
-        self::assertSame([], BareExceptionInstantiations::in(\dirname(__DIR__, 2).'/src'));
+        self::assertSame([], BareExceptionInstantiations::in(RepositoryFiles::backend().'/src'));
     }
 
     /**

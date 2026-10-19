@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Shared\Infrastructure\Dotenv;
 
 use App\Tests\Support\PhpImageBuild;
+use App\Tests\Support\RepositoryFiles;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
@@ -124,11 +125,8 @@ final class ProductionImageCompilesDotenvTest extends TestCase
      */
     private function dotenvReferences(): array
     {
-        $path = \dirname(__DIR__, 4).'/.env';
-        self::assertFileIsReadable($path);
-
         $references = [];
-        foreach (explode("\n", (string) file_get_contents($path)) as $line) {
+        foreach (explode("\n", RepositoryFiles::read(RepositoryFiles::backend().'/.env')) as $line) {
             if (1 !== preg_match('/^\s*(?:export\s+)?[A-Za-z_][A-Za-z0-9_]*=(.*)\z/', $line, $assignment) || str_starts_with($assignment[1], "'")) {
                 continue;
             }

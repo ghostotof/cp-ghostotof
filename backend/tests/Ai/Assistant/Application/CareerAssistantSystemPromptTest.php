@@ -8,6 +8,7 @@ use App\Ai\Assistant\Application\AssistantPreambleMissingException;
 use App\Ai\Assistant\Application\CareerAssistantSystemPrompt;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Tests\Ai\Assistant\Support\StubCorpusRenderer;
+use App\Tests\Support\RepositoryFiles;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -16,15 +17,13 @@ use PHPUnit\Framework\TestCase;
  */
 final class CareerAssistantSystemPromptTest extends TestCase
 {
-    private const string PREAMBLE_FILE = __DIR__.'/../../../../config/ai/prompts/career_assistant.txt';
-
     public function testThePreambleComesFirstThenTheCorpusOfTheRequestedLocale(): void
     {
         $renderer = new StubCorpusRenderer();
 
-        $prompt = (new CareerAssistantSystemPrompt($renderer, self::PREAMBLE_FILE))->compose(Locale::EN);
+        $prompt = (new CareerAssistantSystemPrompt($renderer, $this->preambleFile()))->compose(Locale::EN);
 
-        $preamble = rtrim((string) file_get_contents(self::PREAMBLE_FILE));
+        $preamble = rtrim(RepositoryFiles::read($this->preambleFile()));
         self::assertStringStartsWith('You are the career assistant', $preamble);
         self::assertSame($preamble."\n\n<documents>\n\nCORPUS\n\n</documents>\n", $prompt);
         self::assertSame(Locale::EN, $renderer->lastLocale);
@@ -54,5 +53,13 @@ final class CareerAssistantSystemPromptTest extends TestCase
         } finally {
             unlink($blankFile);
         }
+    }
+
+    /**
+     * Le vrai fichier de prompt, celui qui part en production.
+     */
+    private function preambleFile(): string
+    {
+        return RepositoryFiles::backend().'/config/ai/prompts/career_assistant.txt';
     }
 }
