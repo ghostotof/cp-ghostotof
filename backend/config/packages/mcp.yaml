@@ -37,8 +37,9 @@ mcp:
                 store: cache
                 cache_pool: app.mcp.session_cache
                 ttl: 3600
-            # Ce que le serveur expose : les outils du contexte Mcp, rien
-            # d'autre (le bundle refuse un motif qui ne désigne aucun service ;
-            # les prompts entreront avec le premier, tâche 3 de la spec).
+            # Ce que le serveur expose : les outils et les prompts du contexte
+            # Mcp, rien d'autre (le bundle refuse un motif qui ne désigne aucun
+            # service).
             registry:
                 tools: ['App\Mcp\Presentation\Tool\']
+                prompts: ['App\Mcp\Presentation\Prompt\']

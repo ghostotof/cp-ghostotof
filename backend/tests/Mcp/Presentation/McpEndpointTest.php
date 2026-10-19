@@ -68,15 +68,16 @@ final class McpEndpointTest extends WebTestCase
 
     /**
      * Un client ne demande `prompts/list` ou `resources/list` que si le
-     * serveur annonce la capacité ; le serveur répond quand même, par une
-     * liste vide tant qu'il n'expose ni prompt ni ressource.
+     * serveur annonce la capacité ; le serveur répond aux deux, par son seul
+     * prompt (tâche 3, détaillé dans `PresentForRolePromptTest`) et par une
+     * liste vide de ressources, qu'il n'expose pas en phase 1.
      */
     public function testPromptsAndResourcesListsAnswer(): void
     {
         $client = self::createClient();
         $sessionId = $this->initializeMcpSession($client);
 
-        self::assertSame([], $this->mcpCall($client, $sessionId, 'prompts/list')['result']['prompts']);
+        self::assertSame(['present_for_role'], array_column($this->mcpCall($client, $sessionId, 'prompts/list')['result']['prompts'], 'name'));
         self::assertSame([], $this->mcpCall($client, $sessionId, 'resources/list')['result']['resources']);
     }
 
