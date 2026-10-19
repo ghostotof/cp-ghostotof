@@ -64,23 +64,16 @@ final class McpEndpointTest extends WebTestCase
 
     /**
      * Un client ne demande `prompts/list` ou `resources/list` que si le
-     * serveur annonce la capacité ; le serveur doit répondre quand même, par
-     * un résultat ou par une erreur JSON-RPC, jamais par une erreur HTTP.
+     * serveur annonce la capacité ; le serveur répond quand même, par une
+     * liste vide tant qu'il n'expose ni prompt ni ressource.
      */
     public function testPromptsAndResourcesListsAnswer(): void
     {
         $client = self::createClient();
         $sessionId = $this->initializeMcpSession($client);
 
-        foreach (['prompts/list', 'resources/list'] as $method) {
-            $response = $this->mcpCall($client, $sessionId, $method);
-
-            self::assertResponseIsSuccessful(\sprintf('%s ne doit pas répondre une erreur HTTP.', $method));
-            self::assertTrue(
-                \array_key_exists('result', $response) || \array_key_exists('error', $response),
-                \sprintf('%s doit rendre une réponse JSON-RPC.', $method),
-            );
-        }
+        self::assertSame([], $this->mcpCall($client, $sessionId, 'prompts/list')['result']['prompts']);
+        self::assertSame([], $this->mcpCall($client, $sessionId, 'resources/list')['result']['resources']);
     }
 
     /**
