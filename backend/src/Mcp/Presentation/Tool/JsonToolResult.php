@@ -28,12 +28,19 @@ final class JsonToolResult
 
     /**
      * Une route qui rend un objet : `structuredContent` est cet objet, à
-     * l'identique.
+     * l'identique. Une liste, vide comprise, s'encoderait en tableau JSON :
+     * refusée.
      *
      * @param array<mixed> $payload
+     *
+     * @throws ToolPayloadShapeException le payload est une liste
      */
     public static function forObject(array $payload): CallToolResult
     {
+        if (array_is_list($payload)) {
+            throw ToolPayloadShapeException::listGivenAsObject();
+        }
+
         return new CallToolResult(
             [new TextContent(json_encode($payload, self::JSON_FLAGS))],
             structuredContent: $payload,
@@ -47,9 +54,15 @@ final class JsonToolResult
      * collection vide donne `{"items": []}`, comme la route rend `[]`.
      *
      * @param array<mixed> $items le tableau rendu par la route, tel quel
+     *
+     * @throws ToolPayloadShapeException le payload n'est pas une liste
      */
     public static function forCollection(array $items): CallToolResult
     {
+        if (!array_is_list($items)) {
+            throw ToolPayloadShapeException::objectGivenAsCollection();
+        }
+
         return self::forObject(['items' => $items]);
     }
 }
