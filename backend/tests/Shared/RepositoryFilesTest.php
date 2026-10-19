@@ -21,8 +21,9 @@ final class RepositoryFilesTest extends TestCase
     protected function tearDown(): void
     {
         if (null !== $this->scratch) {
-            new Filesystem()->chmod($this->scratch, 0o700, 0o000, true);
-            new Filesystem()->remove($this->scratch);
+            $filesystem = new Filesystem();
+            $filesystem->chmod($this->scratch, 0o700, 0o000, true);
+            $filesystem->remove($this->scratch);
         }
     }
 
@@ -37,6 +38,16 @@ final class RepositoryFilesTest extends TestCase
         self::assertFileExists(RepositoryFiles::repository().'/docker/php/Dockerfile');
         self::assertFileExists(RepositoryFiles::backend().'/bin/console');
         self::assertSame(RepositoryFiles::repository().'/backend', RepositoryFiles::backend());
+    }
+
+    /**
+     * Un chemin relatif se pose sous la racine, sans `/` à écrire en tête.
+     */
+    public function testAPathIsResolvedUnderItsRoot(): void
+    {
+        self::assertSame(RepositoryFiles::backend().'/config/packages', RepositoryFiles::backend('config/packages'));
+        self::assertSame(RepositoryFiles::repository().'/k8s/README.md', RepositoryFiles::repository('k8s/README.md'));
+        self::assertFileExists(RepositoryFiles::repository('k8s/README.md'));
     }
 
     public function testAFileIsReadWhole(): void
@@ -57,10 +68,10 @@ final class RepositoryFilesTest extends TestCase
 
     public function testAMissingFileFailsTheTestNamingIt(): void
     {
-        $path = RepositoryFiles::backend().'/absent-'.bin2hex(random_bytes(4)).'.txt';
+        $path = RepositoryFiles::backend('absent-'.bin2hex(random_bytes(4)).'.txt');
 
         $this->expectException(AssertionFailedError::class);
-        $this->expectExceptionMessage($path.' : fichier absent, illisible ou qui n\'est pas un fichier ordinaire.');
+        $this->expectExceptionMessage($path.' : fichier absent.');
 
         RepositoryFiles::read($path);
     }
@@ -72,9 +83,9 @@ final class RepositoryFilesTest extends TestCase
     public function testADirectoryFailsTheTestNamingIt(): void
     {
         $this->expectException(AssertionFailedError::class);
-        $this->expectExceptionMessage(RepositoryFiles::backend().'/config : fichier absent, illisible ou qui n\'est pas un fichier ordinaire.');
+        $this->expectExceptionMessage(RepositoryFiles::backend('config').' : pas un fichier ordinaire.');
 
-        RepositoryFiles::read(RepositoryFiles::backend().'/config');
+        RepositoryFiles::read(RepositoryFiles::backend('config'));
     }
 
     public function testAnUnreadableFileFailsTheTestNamingIt(): void
@@ -86,7 +97,7 @@ final class RepositoryFilesTest extends TestCase
         chmod($path, 0o000);
 
         $this->expectException(AssertionFailedError::class);
-        $this->expectExceptionMessage($path.' : fichier absent, illisible ou qui n\'est pas un fichier ordinaire.');
+        $this->expectExceptionMessage($path.' : fichier illisible.');
 
         RepositoryFiles::read($path);
     }

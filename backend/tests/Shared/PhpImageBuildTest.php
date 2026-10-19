@@ -327,7 +327,7 @@ final class PhpImageBuildTest extends TestCase
     public function testAContextDirectoryIsNotReadAsAFile(): void
     {
         $this->expectException(AssertionFailedError::class);
-        $this->expectExceptionMessage('/docker/php : fichier absent, illisible ou qui n\'est pas un fichier ordinaire.');
+        $this->expectExceptionMessage('/docker/php : pas un fichier ordinaire.');
 
         PhpImageBuild::contextFile('docker/php');
     }
