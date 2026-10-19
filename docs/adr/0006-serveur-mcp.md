@@ -3,8 +3,9 @@
 > **Vocabulaire.** Les termes sont ceux de [`CONTEXT.md`](../../CONTEXT.md), section « Accès MCP » :
 > **serveur MCP**, **client MCP**, **connexion MCP**, **corpus nominatif**.
 
-- Statut : **accepté** (2026-10-19), à mettre en œuvre — cadrage de l'issue #379, spec à venir, en
-  deux phases (paliers anonyme et de base, puis connexion MCP)
+- Statut : **accepté** (2026-10-19), à mettre en œuvre — cadrage de l'issue #379, mise en œuvre par
+  la spec 0007 (`.claude/specs/0007-mcp-server.md`), en deux phases (paliers anonyme et de base, puis
+  connexion MCP)
 - Date : 2026-10-19
 - Portée : `config/packages/mcp.yaml` (nouveau), `config/packages/security.yaml` (firewall dédié),
   `CsrfCookieRequestSubscriber` (une exclusion), `tests/Security/ApiRouteExposureTest.php`
@@ -60,6 +61,15 @@ construit comme `ApiRouteExposureTest`, l'impose dans les deux sens : chaque rou
 correspond à une route existante du même palier. Ajouter un contexte de contenu fait échouer la
 suite tant qu'on n'a pas choisi de l'exposer ou de l'exclure ; retirer une route fait échouer l'outil
 orphelin. La revue des payloads demandée par l'issue se réduit ainsi à une règle vérifiée.
+
+Deux précisions, apportées par la spec 0007 le 2026-10-19 :
+
+- **« Exactement sa sortie », pour une collection.** La spécification MCP veut un objet pour
+  `structuredContent` ; une route qui rend un tableau voit donc ce tableau enveloppé dans
+  `{"items": …}`. C'est la seule transformation admise.
+- **Deux outils sans route adossée**, dans une liste fermée et justifiée du test symétrique : l'adresse
+  de la page publique du formulaire de contact (la route `/api/contact` est une écriture), et le
+  corpus nominatif, dont `CorpusSourcesTest` fixe déjà les sources.
 
 Le catalogue, ses noms et son prompt sont du ressort de la spec. Deux outils de l'issue d'origine
 n'existeront pas : `get_experience`, qui est de la chronologie professionnelle, et
