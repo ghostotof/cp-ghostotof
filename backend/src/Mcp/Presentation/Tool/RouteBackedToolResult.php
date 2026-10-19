@@ -19,7 +19,11 @@ use Mcp\Schema\Result\CallToolResult;
  */
 final class RouteBackedToolResult
 {
-    private const int JSON_FLAGS = \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE | \JSON_THROW_ON_ERROR;
+    // JSON_PRESERVE_ZERO_FRACTION, comme l'encodeur JSON du Serializer qui
+    // écrit la route : un flottant entier (des années `1.0`) s'y écrit `1.0`.
+    // `structuredContent`, encodé par le SDK sans ce drapeau, porte `1` : le
+    // même nombre JSON, que l'outil ne peut pas écrire autrement.
+    private const int JSON_FLAGS = \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE | \JSON_PRESERVE_ZERO_FRACTION | \JSON_THROW_ON_ERROR;
 
     /**
      * Une route qui rend un objet : `structuredContent` est cet objet, à
