@@ -47,12 +47,16 @@ final class RouteBackedToolsTest extends WebTestCase
 
     private const string QUALITY = 'app:quality:seed';
 
+    private const string ANONYMOUS_CV = 'app:anonymous-cv:seed';
+
+    private const string CASE_STUDIES = 'app:case-studies:seed';
+
     private const string TECHNOLOGIES = 'technologies';
 
     private const string WATCH_RELEASE_CYCLES = 'watch-release-cycles';
 
     /** Tables que les seeds de ce test remplissent. */
-    private const array SEEDED_TABLES = ['contribution', 'incident', 'quality_principle', 'quality_trait', 'experience_technology', 'watch_snapshot'];
+    private const array SEEDED_TABLES = ['contribution', 'incident', 'quality_principle', 'quality_trait', 'experience_technology', 'watch_snapshot', 'anonymous_cv_section', 'case_study'];
 
     protected function setUp(): void
     {
@@ -70,34 +74,38 @@ final class RouteBackedToolsTest extends WebTestCase
     }
 
     /**
-     * Outil, arguments, route adossée, contenu à poser, et si la route rend
-     * une collection (alors enveloppée dans `items`).
+     * Outil, arguments, route adossée, contenu à poser, si la route rend une
+     * collection (alors enveloppée dans `items`), et si elle est du palier de
+     * base (lue alors avec un jeton d'accès de base ; l'outil, lui, sans
+     * jeton — ADR 0006 D2).
      *
-     * @return iterable<string, array{string, array<string, string>, string, string, bool}>
+     * @return iterable<string, array{string, array<string, string>, string, string, bool, bool}>
      */
     public static function toolsAndTheirRoutes(): iterable
     {
         foreach (['fr', 'en'] as $locale) {
-            yield 'list_contributions '.$locale => ['list_contributions', ['locale' => $locale], '/api/contributions/'.$locale, self::CONTRIBUTIONS, true];
-            yield 'list_incidents '.$locale => ['list_incidents', ['locale' => $locale], '/api/incidents/'.$locale, self::INCIDENTS, true];
-            yield 'get_quality '.$locale => ['get_quality', ['locale' => $locale], '/api/quality/'.$locale, self::QUALITY, false];
+            yield 'list_contributions '.$locale => ['list_contributions', ['locale' => $locale], '/api/contributions/'.$locale, self::CONTRIBUTIONS, true, false];
+            yield 'list_incidents '.$locale => ['list_incidents', ['locale' => $locale], '/api/incidents/'.$locale, self::INCIDENTS, true, false];
+            yield 'get_quality '.$locale => ['get_quality', ['locale' => $locale], '/api/quality/'.$locale, self::QUALITY, false, false];
+            yield 'get_anonymous_cv '.$locale => ['get_anonymous_cv', ['locale' => $locale], '/api/anonymous-cv/'.$locale, self::ANONYMOUS_CV, true, true];
+            yield 'list_case_studies '.$locale => ['list_case_studies', ['locale' => $locale], '/api/case-studies/'.$locale, self::CASE_STUDIES, true, true];
         }
 
         // Routes sans langue : l'outil ne déclare pas de paramètre.
-        yield 'get_technical_background' => ['get_technical_background', [], '/api/experience/technologies', self::TECHNOLOGIES, true];
-        yield 'get_tech_watch' => ['get_tech_watch', [], '/api/watch', self::WATCH_RELEASE_CYCLES, false];
+        yield 'get_technical_background' => ['get_technical_background', [], '/api/experience/technologies', self::TECHNOLOGIES, true, false];
+        yield 'get_tech_watch' => ['get_tech_watch', [], '/api/watch', self::WATCH_RELEASE_CYCLES, false, false];
     }
 
     /**
      * @param array<string, string> $arguments
      */
     #[DataProvider('toolsAndTheirRoutes')]
-    public function testTheToolReturnsExactlyWhatItsRouteServes(string $tool, array $arguments, string $routePath, string $content, bool $collection): void
+    public function testTheToolReturnsExactlyWhatItsRouteServes(string $tool, array $arguments, string $routePath, string $content, bool $collection, bool $baseTier): void
     {
         $client = self::createClient();
         $this->seed($content);
 
-        $routeBody = $this->routeBody($client, $routePath);
+        $routeBody = $this->routeBodyAtItsTier($client, $routePath, $baseTier);
         self::assertNotSame([], $routeBody, 'Le seed doit donner du contenu, sinon l\'égalité ne prouve rien.');
 
         $sessionId = $this->initializeMcpSession($client);
@@ -118,7 +126,7 @@ final class RouteBackedToolsTest extends WebTestCase
      * @param array<string, string> $arguments
      */
     #[DataProvider('toolsAndTheirRoutes')]
-    public function testTheToolIsReadOnlyAndItsOutputConformsToItsClosedSchema(string $tool, array $arguments, string $routePath, string $content, bool $collection): void
+    public function testTheToolIsReadOnlyAndItsOutputConformsToItsClosedSchema(string $tool, array $arguments, string $routePath, string $content, bool $collection, bool $baseTier): void
     {
         $client = self::createClient();
         $this->seed($content);
@@ -132,13 +140,15 @@ final class RouteBackedToolsTest extends WebTestCase
     }
 
     /**
-     * @return iterable<string, array{string, string}>
+     * @return iterable<string, array{string, string, bool}>
      */
     public static function collectionTools(): iterable
     {
-        yield 'list_contributions' => ['list_contributions', '/api/contributions/fr'];
-        yield 'list_incidents' => ['list_incidents', '/api/incidents/fr'];
-        yield 'get_technical_background' => ['get_technical_background', '/api/experience/technologies'];
+        yield 'list_contributions' => ['list_contributions', '/api/contributions/fr', false];
+        yield 'list_incidents' => ['list_incidents', '/api/incidents/fr', false];
+        yield 'get_technical_background' => ['get_technical_background', '/api/experience/technologies', false];
+        yield 'get_anonymous_cv' => ['get_anonymous_cv', '/api/anonymous-cv/fr', true];
+        yield 'list_case_studies' => ['list_case_studies', '/api/case-studies/fr', true];
     }
 
     /**
@@ -146,10 +156,10 @@ final class RouteBackedToolsTest extends WebTestCase
      * liste vide, pas une erreur.
      */
     #[DataProvider('collectionTools')]
-    public function testEmptyContentIsAnEmptyItemsList(string $tool, string $routePath): void
+    public function testEmptyContentIsAnEmptyItemsList(string $tool, string $routePath, bool $baseTier): void
     {
         $client = self::createClient();
-        self::assertSame([], $this->routeBody($client, $routePath));
+        self::assertSame([], $this->routeBodyAtItsTier($client, $routePath, $baseTier));
 
         $sessionId = $this->initializeMcpSession($client);
         $result = $this->callMcpTool($client, $sessionId, $tool, $this->toolTakesALocale($client, $sessionId, $tool) ? ['locale' => 'fr'] : []);
@@ -207,6 +217,8 @@ final class RouteBackedToolsTest extends WebTestCase
         yield 'list_contributions' => ['list_contributions'];
         yield 'list_incidents' => ['list_incidents'];
         yield 'get_quality' => ['get_quality'];
+        yield 'get_anonymous_cv' => ['get_anonymous_cv'];
+        yield 'list_case_studies' => ['list_case_studies'];
     }
 
     #[DataProvider('localizedTools')]
@@ -230,6 +242,29 @@ final class RouteBackedToolsTest extends WebTestCase
     private function asJsonValue(array $value): mixed
     {
         return json_decode(json_encode($value, \JSON_THROW_ON_ERROR), true, flags: \JSON_THROW_ON_ERROR);
+    }
+
+    /**
+     * Le corps de la route, lu au palier qu'elle exige : avec un jeton
+     * d'accès de base pour une route du palier de base. Les cookies sont
+     * ensuite oubliés, pour que l'appel MCP qui suit parte sans jeton.
+     *
+     * @return array<mixed>
+     */
+    private function routeBodyAtItsTier(KernelBrowser $client, string $path, bool $baseTier): array
+    {
+        if ($baseTier) {
+            // Le quota de l'accès de base est par IP : les cas précédents
+            // l'ont entamé.
+            self::getContainer()->get('cache.rate_limiter')->clear();
+            $client->request('POST', '/api/account/base-access', server: ['HTTP_X_REQUESTED_WITH' => 'fetch']);
+            self::assertResponseIsSuccessful();
+        }
+
+        $body = $this->routeBody($client, $path);
+        $client->getCookieJar()->clear();
+
+        return $body;
     }
 
     private function toolTakesALocale(KernelBrowser $client, string $sessionId, string $tool): bool
