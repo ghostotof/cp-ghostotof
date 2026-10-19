@@ -44,12 +44,16 @@ paths:
 - **Tools** are services `#[McpTool]` on `__invoke()`, under `Presentation/Tool/` — the `registry` of
   `mcp.yaml` lists that namespace only, and **the bundle refuses a pattern that matches no service** (the
   server does not boot): a `prompts` pattern enters with the first prompt. `readOnlyHint: true`. A language
-  parameter is typed `Locale $locale = Locale::FR` (the SDK derives the `enum` of the input schema), so an
-  unknown language is refused by the SDK **before** the tool, as a JSON-RPC `-32602`. A domain « not found »
+  parameter is a **string**, never an enum (decided 2026-10-19): `#[Schema(description: ToolLocale::DESCRIPTION)]
+  string $locale = ToolLocale::DEFAULT`, parsed by `ToolLocale::parse()`, which turns an unknown value into a
+  tool error the model can correct (MCP 2025-11-25) — with a PHP enum type the SDK derived an `enum` and
+  refused the value before the tool, as a JSON-RPC `-32602`. A domain « not found »
   the route answers with a 404 becomes a `Mcp\Exception\ToolCallException` with a literal English message
   (`isError: true`), never an unhandled exception (`-32603`, which tells the model nothing). Descriptions,
-  titles, schemas and `instructions` are read by any client, i.e. at the anonymous tier: **they never name
-  the author** (ADR 0006 D8), they say « the site's author ».
+  titles, schemas, `instructions` and `serverInfo` are read by any client, i.e. at the anonymous tier: **they
+  never name the author** (ADR 0006 D8), they say « the site's author ». The only exceptions are listed under
+  D8 in the ADR, each decided by the author (today: the server name `cp-ghostotof`, for this server only);
+  a new one goes into that list first.
 - **The `mcp` firewall never reads a cookie** (ADR 0006 D4). Declared before `api`, `^/api/mcp$`, stateless,
   no authenticator (phase 2 will add the MCP-connection Bearer one, and only it). That is what makes
   `/api/mcp`'s entry in `CsrfCookieRequestSubscriber::EXCLUDED_PATHS` safe: a cross-site request carrying a

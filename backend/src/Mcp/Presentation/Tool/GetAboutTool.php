@@ -7,8 +7,8 @@ namespace App\Mcp\Presentation\Tool;
 use App\Mcp\Application\RoutePayloadReaderInterface;
 use App\Portfolio\About\Domain\Exception\AboutSettingsNotFoundException;
 use App\Portfolio\About\Presentation\ApiResource\AboutContentResource;
-use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use Mcp\Capability\Attribute\McpTool;
+use Mcp\Capability\Attribute\Schema;
 use Mcp\Exception\ToolCallException;
 use Mcp\Schema\Result\CallToolResult;
 use Mcp\Schema\ToolAnnotations;
@@ -77,9 +77,6 @@ final readonly class GetAboutTool
     ) {
     }
 
-    /**
-     * @param Locale $locale language of the content: "fr" (default) or "en"
-     */
     #[McpTool(
         name: 'get_about',
         title: 'About',
@@ -87,10 +84,14 @@ final readonly class GetAboutTool
         annotations: new ToolAnnotations(readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false),
         outputSchema: self::OUTPUT_SCHEMA,
     )]
-    public function __invoke(Locale $locale = Locale::FR): CallToolResult
-    {
+    public function __invoke(
+        #[Schema(description: ToolLocale::DESCRIPTION)]
+        string $locale = ToolLocale::DEFAULT,
+    ): CallToolResult {
+        $language = ToolLocale::parse($locale);
+
         try {
-            $payload = $this->routePayloadReader->read(AboutContentResource::class, ['locale' => $locale->value]);
+            $payload = $this->routePayloadReader->read(AboutContentResource::class, ['locale' => $language->value]);
         } catch (AboutSettingsNotFoundException) {
             // La route répond 404 ; le modèle doit lire pourquoi, pas une
             // erreur interne.

@@ -41,14 +41,24 @@ final class GetAboutToolTest extends WebTestCase
         parent::tearDown();
     }
 
-    public function testToolsListAnnouncesGetAboutAsReadOnlyWithALocaleEnumAndAnOutputSchema(): void
+    /**
+     * La langue est une chaîne dont la description cite les deux valeurs,
+     * pas une énumération : une valeur inconnue doit atteindre l'outil, qui
+     * répond par une erreur d'outil que le modèle peut corriger (révision MCP
+     * 2025-11-25), au lieu d'un `-32602` du SDK. Décision du 2026-10-19.
+     */
+    public function testToolsListAnnouncesGetAboutAsReadOnlyWithAStringLocaleAndAnOutputSchema(): void
     {
         $client = self::createClient();
         $sessionId = $this->initializeMcpSession($client);
 
         $tool = $this->listedTool($client, $sessionId, 'get_about');
 
-        self::assertSame(['fr', 'en'], $tool['inputSchema']['properties']['locale']['enum']);
+        $locale = $tool['inputSchema']['properties']['locale'];
+        self::assertSame('string', $locale['type']);
+        self::assertArrayNotHasKey('enum', $locale);
+        self::assertStringContainsString('"fr"', $locale['description']);
+        self::assertStringContainsString('"en"', $locale['description']);
         self::assertTrue($tool['annotations']['readOnlyHint']);
         self::assertSame('object', $tool['outputSchema']['type']);
     }
@@ -104,18 +114,16 @@ final class GetAboutToolTest extends WebTestCase
         self::assertSame($routeBody, $result['structuredContent']);
     }
 
-    /**
-     * Le schéma d'entrée énumère les langues : le SDK refuse une autre valeur
-     * avant d'appeler l'outil, par une erreur de paramètres JSON-RPC.
-     */
-    public function testAnUnknownLocaleIsRefusedByTheInputSchema(): void
+    public function testAnUnknownLocaleIsAToolErrorTheModelCanCorrect(): void
     {
         $client = self::createClient();
         $sessionId = $this->initializeMcpSession($client);
 
         $response = $this->mcpCall($client, $sessionId, 'tools/call', ['name' => 'get_about', 'arguments' => ['locale' => 'de']]);
 
-        self::assertSame(-32602, $response['error']['code']);
+        self::assertArrayNotHasKey('error', $response);
+        self::assertTrue($response['result']['isError']);
+        self::assertSame('Unknown language: use "fr" or "en".', $response['result']['content'][0]['text']);
     }
 
     /**
