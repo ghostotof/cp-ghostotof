@@ -19,8 +19,12 @@ use Mcp\Schema\ToolAnnotations;
  * et un nombre d'années ne se traduisent pas). La description et le schéma
  * sont lus par n'importe quel client : ils ne nomment pas l'auteur (D8).
  */
+#[BackedByRoute(self::RESOURCE, AccessTier::ANONYMOUS)]
 final readonly class GetTechnicalBackgroundTool
 {
+    /** La ressource de la route servie, déclarée et lue par la même constante. */
+    private const string RESOURCE = ExperienceTechnologyResource::class;
+
     // Schéma fermé : un champ ajouté à la route sans être déclaré ici fait
     // échouer la validation du test.
     private const array OUTPUT_SCHEMA = [
@@ -69,7 +73,7 @@ final readonly class GetTechnicalBackgroundTool
     public function __invoke(): CallToolResult
     {
         return RouteBackedToolResult::forCollection(
-            $this->routePayloadReader->read(ExperienceTechnologyResource::class),
+            $this->routePayloadReader->read(self::RESOURCE),
         );
     }
 }

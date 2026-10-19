@@ -25,8 +25,12 @@ use Mcp\Schema\ToolAnnotations;
  * dit, et la sortie reste égale à la route (D1) plutôt que d'en retirer ces
  * champs.
  */
+#[BackedByRoute(self::RESOURCE, AccessTier::ANONYMOUS)]
 final readonly class GetTechWatchTool
 {
+    /** La ressource de la route servie, déclarée et lue par la même constante. */
+    private const string RESOURCE = WatchResource::class;
+
     // Schéma fermé : un champ ajouté à la route sans être déclaré ici fait
     // échouer la validation du test. La route garde ses champs nuls
     // (skip_null_values à false sur la ressource) : ils sont typés nullables
@@ -95,7 +99,7 @@ final readonly class GetTechWatchTool
     public function __invoke(): CallToolResult
     {
         return RouteBackedToolResult::forObject(
-            $this->routePayloadReader->read(WatchResource::class),
+            $this->routePayloadReader->read(self::RESOURCE),
         );
     }
 }

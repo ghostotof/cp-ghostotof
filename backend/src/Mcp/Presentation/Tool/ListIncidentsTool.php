@@ -19,8 +19,12 @@ use Mcp\Schema\ToolAnnotations;
  * La description et le schéma sont lus par n'importe quel client : ils ne
  * nomment pas l'auteur (D8).
  */
+#[BackedByRoute(self::RESOURCE, AccessTier::ANONYMOUS)]
 final readonly class ListIncidentsTool
 {
+    /** La ressource de la route servie, déclarée et lue par la même constante. */
+    private const string RESOURCE = IncidentResource::class;
+
     // Schéma fermé : un champ ajouté à la route sans être déclaré ici fait
     // échouer la validation du test.
     private const array OUTPUT_SCHEMA = [
@@ -67,7 +71,7 @@ final readonly class ListIncidentsTool
         $language = ToolLocale::parse($locale);
 
         return RouteBackedToolResult::forCollection(
-            $this->routePayloadReader->read(IncidentResource::class, ['locale' => $language->value]),
+            $this->routePayloadReader->read(self::RESOURCE, ['locale' => $language->value]),
         );
     }
 }

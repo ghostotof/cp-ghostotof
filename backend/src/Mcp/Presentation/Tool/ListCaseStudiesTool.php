@@ -20,8 +20,12 @@ use Mcp\Schema\ToolAnnotations;
  * est publiable par construction — ni nom, ni employeur, ni client (ADR 0003
  * D5). La description et le schéma ne nomment pas l'auteur (D8).
  */
+#[BackedByRoute(self::RESOURCE, AccessTier::BASE)]
 final readonly class ListCaseStudiesTool
 {
+    /** La ressource de la route servie, déclarée et lue par la même constante. */
+    private const string RESOURCE = CaseStudyResource::class;
+
     // Schéma fermé : un champ ajouté à la route sans être déclaré ici fait
     // échouer la validation du test.
     private const array OUTPUT_SCHEMA = [
@@ -66,7 +70,7 @@ final readonly class ListCaseStudiesTool
         $language = ToolLocale::parse($locale);
 
         return RouteBackedToolResult::forCollection(
-            $this->routePayloadReader->read(CaseStudyResource::class, ['locale' => $language->value]),
+            $this->routePayloadReader->read(self::RESOURCE, ['locale' => $language->value]),
         );
     }
 }
