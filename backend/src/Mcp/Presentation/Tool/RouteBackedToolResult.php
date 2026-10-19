@@ -34,4 +34,17 @@ final class RouteBackedToolResult
             structuredContent: $payload,
         );
     }
+
+    /**
+     * Une route qui rend une collection : la spécification MCP veut un objet
+     * pour `structuredContent`, le tableau de la route y est donc enveloppé
+     * dans `{"items": …}` — seule transformation admise (ADR 0006 D1). Une
+     * collection vide donne `{"items": []}`, comme la route rend `[]`.
+     *
+     * @param array<mixed> $items le tableau rendu par la route, tel quel
+     */
+    public static function forCollection(array $items): CallToolResult
+    {
+        return self::forObject(['items' => $items]);
+    }
 }
