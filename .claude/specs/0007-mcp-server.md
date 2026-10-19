@@ -459,6 +459,23 @@ Ceux dont la route prend une langue acceptent un paramètre `locale` facultatif,
   `get_nominative_corpus` (corpus nominatif), dans une liste fermée et justifiée du test symétrique.
   Choix validé le 2026-10-19.
 
+### Découpage en tâches (issues, 2026-10-19)
+
+Quatorze tâches, sous-issues de #379, label `spec-0007`, blocages en liens natifs ; suivi cochable
+dans `tasks/todo.md`.
+
+| Phase | Tâches | Issues |
+|---|---|---|
+| 1 | socle et `get_about` ; catalogue et test symétrique ; prompt et garde D8 ; journal `mcp` et RGPD ; zone nginx ; page « Brancher votre assistant » | #640 → #645 |
+| 2 | recherche (questions ouvertes) ; émission d'une connexion MCP ; corpus nominatif ; durée de vie des jetons ; « Mes connexions MCP » ; CIMD ; backoffice ; livraison | #646 → #653 |
+| suivis | ressources MCP ; PhpStorm (tickets JetBrains) | #654, #655 |
+
+**`develop` reçoit la feature deux fois**, par exception à la règle « une fois » de `CLAUDE.md`
+(décision du 2026-10-19) : après la tâche 6, pour que la phase 1 parte en release seule, puis au merge
+de clôture, qui archive la spec et `tasks/`. La vérification des vrais clients suit l'ADR : Claude Code
+en préprod (en-tête Basic) dès la phase 1, claude.ai et ChatGPT en prod ; la préprod ne lève Basic Auth
+sur les chemins MCP et OAuth qu'à la tâche 14.
+
 ### Divers
 
 - La numérotation : cette spec prend 0007 ; l'ADR de l'accès VPN (#339) prendra 0007 dans
