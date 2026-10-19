@@ -9,22 +9,27 @@ use PhpToken;
 /**
  * Recense les chemins que `tests/` bâtit depuis `__DIR__` et qui en sortent
  * (issue #629). Deux formes, lues par jetons :
- * - `\dirname(__DIR__, n)`, qualifié ou non, `n` absent ou entier littéral ;
+ * - `\dirname(<chemin>[, n])`, qualifié ou non, où `<chemin>` est `__DIR__`
+ *   suivi ou non de morceaux concaténés, et `n` un entier littéral en toute
+ *   base, positionnel ou nommé (`levels:`), virgule finale admise ;
  * - `__DIR__` seul.
- * Chacune suivie ou non de `.` et d'un littéral (`'/../../src'`, entre
- * apostrophes ou guillemets). Le chemin est résolu lexicalement depuis le
- * répertoire du fichier, relatif au backend : `tests/Shared` et
+ * Chacune suivie ou non de morceaux concaténés : des littéraux entre
+ * apostrophes ou guillemets, `DIRECTORY_SEPARATOR`, et le début d'une chaîne
+ * interpolée, où la lecture s'arrête. Le chemin est résolu lexicalement
+ * depuis le répertoire du fichier, relatif au backend : `tests/Shared` et
  * `\dirname(__DIR__, 2).'/src'` donnent `src`, hors de `tests/` ;
  * `\dirname(__DIR__, 4).'/tests/bootstrap.php'` y redescend, et passe.
  *
- * Un niveau qui n'est pas un entier littéral est signalé : le chemin ne se
- * résout pas. Une méthode homonyme (`->dirname(`, `::dirname(`) n'est pas la
- * native, son `__DIR__` est lu seul.
+ * Un argument de `dirname` qui ne se résout pas (un niveau variable, un
+ * chemin qui continue par une variable) est signalé : on ne sait pas où il
+ * mène. Une méthode homonyme (`->dirname(`, `::dirname(`) n'est pas la
+ * native, son `__DIR__` est lu seul. Après le premier morceau qui n'est pas
+ * un littéral (une variable), le chemin est jugé sur ce qui précède.
  *
  * Non vus : un appel imbriqué sur le résultat (`\dirname(\dirname(__DIR__))`,
  * `realpath()`), un chemin repris d'une variable (`$root = __DIR__;` puis
- * `$root.'/../..'`), un second littéral concaténé après le premier,
- * `__FILE__`. Aucun n'est écrit dans `tests/` aujourd'hui.
+ * `$root.'/../..'`), un chemin composé par `sprintf()` ou `implode()`, une
+ * constante autre que `DIRECTORY_SEPARATOR`, et `__FILE__`.
  */
 final class PathsLeavingTests
 {
@@ -52,40 +57,60 @@ final class PathsLeavingTests
     /**
      * @param string $directory le répertoire du fichier, relatif au backend (`tests/Shared`)
      *
-     * @return list<string> `ligne problème` pour chaque chemin qui sort de `tests/`, dans l'ordre du code
+     * @return list<string> `ligne problème` pour chaque chemin qui sort de `tests/` ou ne se résout pas, dans l'ordre du code
      */
     public static function inCode(string $code, string $directory): array
     {
         $tokens = PhpSources::significantTokens($code);
         $problems = [];
-        $index = 0;
-        while ($index < \count($tokens)) {
-            $token = $tokens[$index];
-            if (self::isDirnameOfDir($tokens, $index)) {
-                $levels = self::levels($tokens, $index + 3);
-                if (null === $levels) {
-                    $problems[] = $token->line.' \\dirname(__DIR__, …) : niveau non littéral';
-                    $index += 3;
-
-                    continue;
-                }
-                [$count, $next] = $levels;
-            } elseif ($token->is(\T_DIR)) {
-                [$count, $next] = [0, $index + 1];
-            } else {
-                ++$index;
-
+        for ($index = 0; $index < \count($tokens); ++$index) {
+            $path = self::pathAt($tokens, $index, $directory);
+            if (null === $path) {
                 continue;
             }
 
-            $resolved = self::resolve($directory, $count, self::appendedLiteral($tokens, $next));
-            if (!self::staysInTests($resolved)) {
-                $problems[] = $token->line.' '.('' === $resolved ? '.' : $resolved).' : hors de '.self::CONFINEMENT.'/';
+            [$resolved, $next] = $path;
+            $line = $tokens[$index]->line;
+            if (null === $resolved) {
+                $problems[] = $line.' \\dirname(__DIR__…) : non résolu';
+            } elseif (!self::staysInTests($resolved)) {
+                $problems[] = $line.' '.('' === $resolved ? '.' : $resolved).' : hors de '.self::CONFINEMENT.'/';
             }
-            $index = $next;
+            $index = $next - 1;
         }
 
         return $problems;
+    }
+
+    /**
+     * Le chemin qui commence à cet index, résolu (`null` s'il ne se résout
+     * pas), et l'index qui le suit ; `null` si aucun chemin n'y commence.
+     *
+     * @param list<PhpToken> $tokens
+     *
+     * @return array{?string, int}|null
+     */
+    private static function pathAt(array $tokens, int $index, string $directory): ?array
+    {
+        if (self::isDirnameOfDir($tokens, $index)) {
+            [$argument, $afterArgument, $complete] = self::concatenation($tokens, $index + 3, $directory);
+            $levels = self::levels($tokens, $afterArgument);
+            if (!$complete || null === $levels) {
+                return [null, $index + 3];
+            }
+            [$count, $afterCall] = $levels;
+            [$path, $next] = self::concatenation($tokens, $afterCall, self::normalized($argument.str_repeat('/..', $count)));
+
+            return [self::normalized($path), $next];
+        }
+
+        if ($tokens[$index]->is(\T_DIR)) {
+            [$path, $next] = self::concatenation($tokens, $index + 1, $directory);
+
+            return [self::normalized($path), $next];
+        }
+
+        return null;
     }
 
     /**
@@ -97,22 +122,51 @@ final class PathsLeavingTests
     private static function isDirnameOfDir(array $tokens, int $index): bool
     {
         $token = $tokens[$index];
-        $name = $token->is(\T_NAME_FULLY_QUALIFIED) ? substr($token->text, 1) : ($token->is(\T_STRING) ? $token->text : null);
-        if (null === $name || 'dirname' !== strtolower($name)) {
-            return false;
-        }
-
         $previous = $tokens[$index - 1] ?? null;
 
-        return '(' === ($tokens[$index + 1] ?? null)?->text
+        return self::isGlobalName($token, 'dirname')
+            && '(' === ($tokens[$index + 1] ?? null)?->text
             && true === ($tokens[$index + 2] ?? null)?->is(\T_DIR)
             && (null === $previous || !$previous->is([\T_OBJECT_OPERATOR, \T_NULLSAFE_OBJECT_OPERATOR, \T_DOUBLE_COLON, \T_FUNCTION]));
     }
 
     /**
-     * Le nombre de niveaux de `dirname(__DIR__` suivi de `)` ou de `, n)`, et
-     * l'index qui suit la parenthèse fermante ; `null` si `n` n'est pas un
-     * entier littéral.
+     * Les morceaux concaténés à partir de cet index (chacun précédé de `.`),
+     * ajoutés au chemin de base : le chemin, l'index qui suit le dernier
+     * morceau lu, et si la lecture s'est arrêtée sur autre chose qu'un `.`
+     * (vrai : la concaténation est finie ; faux : un morceau inconnu suit).
+     *
+     * @param list<PhpToken> $tokens
+     *
+     * @return array{string, int, bool}
+     */
+    private static function concatenation(array $tokens, int $index, string $path): array
+    {
+        while ('.' === ($tokens[$index] ?? null)?->text) {
+            $piece = $tokens[$index + 1] ?? null;
+            if (true === $piece?->is(\T_CONSTANT_ENCAPSED_STRING)) {
+                $path .= substr($piece->text, 1, -1);
+            } elseif (null !== $piece && self::isGlobalName($piece, 'DIRECTORY_SEPARATOR')) {
+                $path .= '/';
+            } else {
+                // Une chaîne interpolée compte jusqu'à sa première variable.
+                $start = $tokens[$index + 2] ?? null;
+                if ('"' === $piece?->text && true === $start?->is(\T_ENCAPSED_AND_WHITESPACE)) {
+                    $path .= $start->text;
+                }
+
+                return [$path, $index, false];
+            }
+            $index += 2;
+        }
+
+        return [$path, $index, true];
+    }
+
+    /**
+     * Le niveau de `dirname(…` à partir de la parenthèse ou de la virgule
+     * qui suit le chemin, et l'index qui suit la parenthèse fermante ;
+     * `null` si le niveau n'est pas un entier littéral.
      *
      * @param list<PhpToken> $tokens
      *
@@ -120,39 +174,71 @@ final class PathsLeavingTests
      */
     private static function levels(array $tokens, int $index): ?array
     {
-        if (')' === ($tokens[$index] ?? null)?->text) {
+        $at = static fn (int $offset): ?PhpToken => $tokens[$index + $offset] ?? null;
+        if (')' === $at(0)?->text) {
             return [1, $index + 1];
         }
-        if (',' === ($tokens[$index] ?? null)?->text
-            && true === ($tokens[$index + 1] ?? null)?->is(\T_LNUMBER)
-            && ')' === ($tokens[$index + 2] ?? null)?->text) {
-            return [(int) $tokens[$index + 1]->text, $index + 3];
+        if (',' !== $at(0)?->text) {
+            return null;
         }
 
-        return null;
+        $offset = 1;
+        if (')' === $at(1)?->text) {
+            return [1, $index + 2];
+        }
+        if (true === $at(1)?->is(\T_STRING) && 'levels' === $at(1)->text && ':' === $at(2)?->text) {
+            $offset = 3;
+        }
+        $number = $at($offset);
+        if (true !== $number?->is(\T_LNUMBER)) {
+            return null;
+        }
+        if (',' === $at($offset + 1)?->text) {
+            ++$offset;
+        }
+
+        return ')' === $at($offset + 1)?->text ? [self::integer($number->text), $index + $offset + 2] : null;
     }
 
     /**
-     * Le littéral concaténé juste après, sans ses délimiteurs, ou `''`.
-     *
-     * @param list<PhpToken> $tokens
+     * La valeur d'un entier littéral de PHP, en toute base, séparateurs `_`
+     * compris : `(int) '0x3'` vaudrait 0.
      */
-    private static function appendedLiteral(array $tokens, int $index): string
+    private static function integer(string $literal): int
     {
-        if ('.' !== ($tokens[$index] ?? null)?->text || true !== ($tokens[$index + 1] ?? null)?->is(\T_CONSTANT_ENCAPSED_STRING)) {
-            return '';
-        }
+        $digits = strtolower(str_replace('_', '', $literal));
 
-        return substr($tokens[$index + 1]->text, 1, -1);
+        return (int) match (true) {
+            str_starts_with($digits, '0x') => hexdec(substr($digits, 2)),
+            str_starts_with($digits, '0b') => bindec(substr($digits, 2)),
+            str_starts_with($digits, '0o') => octdec(substr($digits, 2)),
+            1 < \strlen($digits) && str_starts_with($digits, '0') => octdec(substr($digits, 1)),
+            default => $digits,
+        };
+    }
+
+    /**
+     * Un nom global d'un seul segment, qualifié ou non, sans tenir compte de
+     * la casse.
+     */
+    private static function isGlobalName(PhpToken $token, string $name): bool
+    {
+        $text = match (true) {
+            $token->is(\T_NAME_FULLY_QUALIFIED) => substr($token->text, 1),
+            $token->is(\T_STRING) => $token->text,
+            default => null,
+        };
+
+        return null !== $text && 0 === strcasecmp($text, $name);
     }
 
     /**
      * Le chemin relatif au backend, `..` gardés en tête quand il en sort.
      */
-    private static function resolve(string $directory, int $levels, string $literal): string
+    private static function normalized(string $path): string
     {
         $segments = [];
-        foreach (explode('/', $directory.str_repeat('/..', $levels).$literal) as $segment) {
+        foreach (explode('/', $path) as $segment) {
             if ('' === $segment || '.' === $segment) {
                 continue;
             }
