@@ -386,3 +386,7 @@ ADRs (status, dates and amendments live in each ADR):
   new `ai.agent`.
 - `docs/adr/0005-etat-hors-du-pod.md` — no application state on the pod's filesystem. Read it before
   touching `cache.yaml`, adding a rate limiter, or mounting anything under `var/`.
+- `docs/adr/0006-serveur-mcp.md` — the MCP server (issue #379): read-only, no model call, serves
+  nothing a route of the same tier doesn't; anonymous + base tier without a token (amends 0003 D1);
+  the trusted tier through an OAuth 2.1 MCP connection only, checked in DB on every request, never a
+  cookie on `/api/mcp`. Read it before touching `/api/mcp`, `mcp.yaml` or anything OAuth.
