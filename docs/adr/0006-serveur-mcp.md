@@ -181,6 +181,13 @@ Aucune description d'outil, aucun prompt, ni le champ `instructions` du serveur 
 ils parlent de « l'auteur du site ». Ce que le serveur dit de lui-même est lu par n'importe quel
 client, donc au palier anonyme ; seul le corpus nominatif, au palier de confiance, porte une identité.
 
+**Exceptions acceptées** (liste fermée, chacune décidée par l'auteur ; la garde D8 de la spec 0007
+les admet nommément, et refuse tout le reste) :
+
+| Ce qui est publié | Valeur | Décision |
+|---|---|---|
+| Nom du serveur (`serverInfo.name`) | `cp-ghostotof` | 2026-10-19, relecture de la tâche 1 (#640) : le nom reprend celui du domaine, déjà public ; l'audit relevait que « cp » peut se lire comme des initiales. Acceptée **pour ce serveur uniquement** : un autre serveur MCP ne s'en prévaut pas. |
+
 ### Ce qui n'est jamais négociable
 
 - Un outil qui sert un contenu qu'aucune route du même palier ne sert, ou un champ que cette route
@@ -190,7 +197,7 @@ client, donc au palier anonyme ; seul le corpus nominatif, au palier de confianc
 - Un second chemin d'authentification vers le corpus nominatif à côté d'OAuth.
 - Une connexion MCP qui survit à sa révocation ou à la perte du palier de confiance.
 - Une lecture nominative absente du journal d'audit.
-- Le nom de l'auteur dans ce que le serveur publie de lui-même.
+- Le nom de l'auteur dans ce que le serveur publie de lui-même, hors des exceptions listées sous D8.
 - Un `^` sur `symfony/mcp-*` ou `mcp/*` tant qu'ils sont en 0.x.
 
 ## Conséquences

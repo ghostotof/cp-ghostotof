@@ -13,7 +13,10 @@
         "doctrine/doctrine-migrations-bundle": "^4.0",
         "doctrine/orm": "^3.6",
         "lexik/jwt-authentication-bundle": "^3.2",
+        "mcp/sdk": "0.8.1",
         "nelmio/cors-bundle": "^2.6",
+        "nyholm/psr7": "^1.8",
+        "psr/simple-cache": "^3.0",
         "spatie/pdf-to-text": "^1.55",
         "symfony/ai-agent": "0.13.0",
         "symfony/ai-anthropic-platform": "0.13.0",
@@ -29,6 +32,7 @@
         "symfony/http-client": "8.1.*",
         "symfony/lock": "8.1.*",
         "symfony/mailer": "8.1.*",
+        "symfony/mcp-bundle": "0.14.1",
         "symfony/messenger": "8.1.*",
         "symfony/monolog-bundle": "^4.1",
         "symfony/process": "8.1.*",
@@ -41,7 +45,7 @@
     },
     "config": {
         "allow-plugins": {
-            "php-http/discovery": true,
+            "php-http/discovery": false,
             "symfony/flex": true,
             "symfony/runtime": true,
             "phpstan/extension-installer": true

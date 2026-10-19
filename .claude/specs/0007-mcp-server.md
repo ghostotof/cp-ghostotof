@@ -174,7 +174,7 @@ peut alors interroger le portfolio avec les jetons de la personne, et le site n'
 55. En tant qu'exploitant, je veux qu'un appel authentifié ne coûte qu'une requête SQL
     d'authentification, afin que le serveur tienne la charge sans cache d'identité.
 56. En tant qu'exploitant, je veux que le serveur MCP n'accepte que l'hôte du site (`allowed_hosts`
-    réglé par variable d'environnement), afin de fermer le rebond DNS.
+    dérivé de l'URL publique déjà réglée par environnement), afin de fermer le rebond DNS.
 57. En tant qu'exploitant de la préprod, je veux que Basic Auth soit levée sur les seuls chemins MCP et
     OAuth en phase 2, afin qu'un client MCP puisse s'y authentifier par Bearer.
 
@@ -191,16 +191,20 @@ peut alors interroger le portfolio avec les jetons de la personne, et le site n'
   Les connexions MCP et le serveur d'autorisation (phase 2) vivent dans `Security`, à côté des comptes
   et du journal d'audit, parce qu'ils décident d'une autorisation, pas d'un contenu.
 - **Endpoint.** `/api/mcp`, transport Streamable HTTP, POST et GET. Il reste sous `/api` (ADR 0006,
-  alternatives écartées) : l'Ingress n'envoie au backend que `/api`.
-- **Firewall dédié** `mcp`, motif `^/api/mcp`, déclaré **avant** le firewall `api`, sans état, **sans
+  alternatives écartées) : l'Ingress n'envoie au backend que `/api`. Le SDK répond 405 au GET (il
+  n'ouvre pas de flux, ce que la spécification MCP admet) ; une enveloppe du contrôleur du bundle y
+  répond par un flux SSE vide (`retry: 300000`) aussitôt fermé — jamais un flux tenu ouvert, qui
+  retiendrait un worker FPM par client (précision de la tâche 1, 2026-10-19).
+- **Firewall dédié** `mcp`, motif `^/api/mcp$`, déclaré **avant** le firewall `api`, sans état, **sans
   aucun authentificateur à cookie** — en phase 1 sans authentificateur du tout, en phase 2 avec le
   seul authentificateur Bearer de la connexion MCP. `CsrfCookieRequestSubscriber` reçoit une exclusion
   pour ce seul préfixe, sûre précisément parce que le firewall n'accepte jamais de cookie (ADR 0006
   D4).
 - **Exposition.** `/api/mcp` entre dans `PUBLIC_PATHS` avec sa justification écrite (canal de lecture,
   ne sert rien qu'une route du même palier ne sert, cf. ADR 0006 D1–D2).
-- **Hôte.** `allowed_hosts` du serveur = l'hôte du site, lu dans une variable d'environnement, vide
-  refusé au démarrage ; en test, l'hôte du client de test.
+- **Hôte.** `allowed_hosts` du serveur = l'hôte du site, dérivé d'`APP_FRONTEND_BASE_URL`
+  (`%env(key:host:url:…)%`), déjà posée par overlay : même hôte que l'API derrière l'Ingress, aucune
+  variable ni ConfigMap nouvelle ; `localhost` en dev et en test (précision de la tâche 1).
 - **Sessions MCP.** Store `cache` du bundle sur un **pool dédié** adossé à l'adaptateur DBAL existant
   (table `cache_items`), durée de vie d'une heure. La purge des entrées expirées est déjà assurée par
   `cache:pool:prune` dans le CronJob de purge existant : aucune tâche nouvelle.
@@ -211,8 +215,9 @@ peut alors interroger le portfolio avec les jetons de la personne, et le site n'
 ### Catalogue des outils (phase 1)
 
 Chaque outil est un service `#[McpTool]`, en lecture seule, annoté comme tel (`readOnlyHint`).
-Ceux dont la route prend une langue acceptent un paramètre `locale` facultatif, énuméré `fr` | `en`,
-`fr` par défaut ; les autres n'en déclarent pas.
+Ceux dont la route prend une langue acceptent un paramètre `locale` facultatif, de type chaîne, dont
+la description cite `fr` et `en`, `fr` par défaut ; les autres n'en déclarent pas (pas d'énumération :
+décision du 2026-10-19, voir « Langue invalide »).
 
 | Outil | Route adossée | Palier | Langue |
 |---|---|---|---|
@@ -237,13 +242,18 @@ Ceux dont la route prend une langue acceptent un paramètre `locale` facultatif,
   - route qui rend une collection → `structuredContent` = `{"items": <le tableau rendu par la route>}`.
   Le bloc texte porte ce même objet sérialisé. L'`outputSchema` décrit cet objet. C'est la seule
   transformation admise, et elle est précisée dans l'ADR 0006 (D1).
-- **Langue invalide** (hors énumération) : erreur d'outil (`isError: true`) au message explicite, pas
-  une erreur de protocole ; la langue n'existe pas, comme la route le dit par un 404.
+- **Langue invalide** : erreur d'outil (`isError: true`) au message explicite (« Unknown language: use
+  "fr" or "en". »), que le modèle peut corriger — ce que la révision MCP 2025-11-25 recommande pour une
+  entrée invalide. Le paramètre est donc une chaîne dont la description cite les deux langues, pas une
+  énumération : avec une énumération, le SDK refuserait la valeur avant l'outil par un `-32602`
+  (décision de l'auteur, 2026-10-19, relecture de la tâche 1).
+- **Contenu absent dans la langue** (la route répond 404, ex. aucun réglage « À propos ») : erreur
+  d'outil (`isError: true`) au message littéral, jamais une erreur interne `-32603`.
 - **Contenu vide** : liste vide, comme la route.
 - **Veille sans manifeste** : la sortie de la route telle quelle (volet vulnérabilités « non
   analysé ») ; ce n'est pas une erreur.
 - **`get_contact_info`** rend `{"contactPageUrl": "https://<site>/<locale>/contact"}` construit depuis
-  la même variable d'hôte que `allowed_hosts` ; il ne rend ni adresse e-mail ni rien d'autre.
+  `APP_FRONTEND_BASE_URL`, comme `allowed_hosts` ; il ne rend ni adresse e-mail ni rien d'autre.
 - **`get_nominative_corpus`** est **toujours listé**, sa description dit qu'il exige une connexion MCP
   (ADR 0006 D3). En phase 1, son appel répond l'erreur d'outil « connexion MCP requise » ; en phase 2,
   le mécanisme décrit plus bas.
@@ -382,13 +392,16 @@ Ceux dont la route prend une langue acceptent un paramètre `locale` facultatif,
     de la route (avec un jeton d'accès de base pour les routes du palier de base) ; `structuredContent`
     (ou son `items`) est égal au corps de la route, et le bloc texte le décode à l'identique ; dans
     les deux langues quand la route en prend une ;
-  - langue invalide → erreur d'outil ; contenu vide → liste vide ;
+  - langue invalide → erreur d'outil explicite ; contenu absent dans la langue → erreur d'outil ;
+    contenu vide → liste vide ;
   - aucun cookie n'est lu : une requête portant un cookie `BEARER` valide de `ROLE_TRUSTED` et sans
     en-tête XSRF n'ouvre pas l'outil nominatif et n'est pas refusée par la garde CSRF ;
   - `get_nominative_corpus` est listé, et son appel anonyme ne rend rien du corpus ;
-  - **D8** : aucune description d'outil, aucun argument, aucun texte de prompt, ni `instructions` ne
-    contient le nom de l'auteur ni un fragment du CV nominatif (le nom est lu depuis la configuration de
-    test, jamais écrit dans le test, comme les secrets de test) ;
+  - **D8** : aucune description d'outil, aucun argument, aucun texte de prompt, ni `instructions`, ni
+    `serverInfo` (`name`, `description`) ne contient le nom de l'auteur ni un fragment du CV nominatif (le
+    nom est lu depuis la configuration de test, jamais écrit dans le test, comme les secrets de test),
+    hors des exceptions que liste l'ADR 0006 sous D8 (le nom de serveur `cp-ghostotof`), admises
+    nommément ;
   - `allowed_hosts` : un `Host` étranger est refusé ;
   - le journal `mcp` porte une IP tronquée en IPv4 et en IPv6, et jamais l'argument `role` ;
   - la route `/api/mcp` est dans `PUBLIC_PATHS` et `ApiRouteExposureTest` reste vert.
@@ -498,3 +511,12 @@ sur les chemins MCP et OAuth qu'à la tâche 14.
   la préprod lève Basic Auth sur les chemins MCP et OAuth en phase 2 (déjà dans l'ADR), les
   durées des jetons (déjà dans l'ADR). Rien de nouveau par rapport à l'ADR publiée sur la même
   branche.
+- **2026-10-19 — tâche 1 (#640)** : trois précisions, nées de l'implémentation et reportées plus haut —
+  la langue invalide est un `-32602` du SDK (le schéma d'entrée énumère les langues) ; `allowed_hosts`
+  dérive d'`APP_FRONTEND_BASE_URL` au lieu d'une variable dédiée ; le GET répond par un flux SSE vide
+  au lieu du 405 du SDK. Règle d'implémentation : `.claude/rules/mcp.md`.
+- **2026-10-19 — relecture de la tâche 1, décisions de l'auteur** : la langue redevient une erreur d'outil
+  (paramètre chaîne, description citant `fr` et `en`), ce qui annule la première des trois précisions
+  ci-dessus — la relecture « Spec » avait relevé que l'écart figurait déjà au plan, avant le code ; le
+  nom de serveur `cp-ghostotof` est une exception acceptée à D8, pour ce serveur uniquement, inscrite
+  dans la liste fermée de l'ADR 0006.

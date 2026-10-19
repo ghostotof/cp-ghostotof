@@ -91,6 +91,19 @@ security:
                 success_handler: lexik_jwt_authentication.handler.authentication_success
                 failure_handler: lexik_jwt_authentication.handler.authentication_failure
 
+        # Serveur MCP (ADR 0006 D4) : un client MCP n'est pas un navigateur et ne
+        # s'authentifie jamais par cookie. Ce firewall, déclaré avant `api`, ne
+        # lit donc pas le cookie BEARER : c'est ce qui rend sûre l'exclusion de
+        # /api/mcp de la garde CSRF (CsrfCookieRequestSubscriber) — une page
+        # tierce qui ferait poster le navigateur d'une personne de confiance n'y
+        # emprunterait aucune identité. Aucun authentificateur en phase 1 ; la
+        # phase 2 n'y ajoutera que celui de la connexion MCP (Bearer en en-tête).
+        # Borné par `$` : la route n'a pas de sous-chemin, un voisin
+        # (`/api/mcpx`) retombe dans `api` (AccessControlAnchoringTest).
+        mcp:
+            pattern: ^/api/mcp$
+            stateless: true
+
         # Toutes les autres routes /api : authentification par JWT extrait du cookie
         # "BEARER" (voir config/packages/lexik_jwt_authentication.yaml). "logout.path"
         # est intercepté par le composant Security avant tout contrôleur : c'est

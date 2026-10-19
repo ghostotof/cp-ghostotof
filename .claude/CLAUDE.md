@@ -33,6 +33,7 @@ This file only carries what applies everywhere, plus what runs from the shell (g
 | `portfolio-ordre-ecritures.md` | application refusals, writes under the scope lock, detached instances | touching an ordered content's `Administrator` or a write path |
 | `portfolio-watch.md` | `Portfolio/Watch` | touching the tech watch, `/stack`, an outbound call |
 | `ai.md` | `Ai/` (translation, career assistant) | touching anything that calls a language model |
+| `mcp.md` | `Mcp/`, the MCP server on `/api/mcp` | touching a tool, `mcp.yaml`, the `mcp` firewall |
 | `backoffice-api.md` | backoffice API, API Platform pattern, API errors | adding an endpoint, an API Platform resource, an exception mapping |
 | `seeding.md` | `app:*:seed`, reference-data migrations | touching a seed command or the meaning of seeded data |
 | `frontend.md` | frontend layers, API-backed content, i18n, SEO, lint | any frontend change |
