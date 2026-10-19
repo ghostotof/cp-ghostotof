@@ -10,8 +10,8 @@ phase 1 parte en release seule ; puis au merge de clôture, qui archive la spec 
 
 ## Phase 1 — sans authentification (paliers anonyme et de base)
 
-- [ ] Tâche 1 — Socle, `/api/mcp` répond et `get_about` rend sa route (#640) — bloquée par : aucune
-- [ ] Tâche 2 — Catalogue complet et test d'exposition symétrique (#641) — bloquée par : #640
+- [x] Tâche 1 — Socle, `/api/mcp` répond et `get_about` rend sa route (#640) — bloquée par : aucune
+- [x] Tâche 2 — Catalogue complet et test d'exposition symétrique (#641) — bloquée par : #640
 - [ ] Tâche 3 — Prompt `present_for_role` et garde D8 (#642) — bloquée par : #641
 - [ ] Tâche 4 — Journal `mcp` (IP tronquée) et registre RGPD (#643) — bloquée par : #640
 - [ ] Tâche 5 — Zone nginx `mcp` et smoke 429 (#644) — bloquée par : #640

@@ -40,7 +40,37 @@ paths:
   the model). A route rendering an object → that object; a collection → `{"items": [...]}` (ADR 0006 D1, the
   MCP spec wants an object before the 2026-07-28 revision). Each tool's functional test compares its output
   with the route's body **in the same test**, in every language the route takes, and checks the
-  `structuredContent` against the declared `outputSchema` with the SDK's `SchemaValidator`.
+  `structuredContent` against the declared `outputSchema` with the SDK's `SchemaValidator`. **One JSON
+  nuance, accepted** (#641): the route's Serializer writes an integral float as `1.0`
+  (`JSON_PRESERVE_ZERO_FRACTION`, the technologies' `years`), the SDK encodes the whole JSON-RPC answer
+  with a bare `json_encode`, so `structuredContent` carries `1` — the same JSON number, which a tool cannot
+  write otherwise. The text block, which `RouteBackedToolResult` encodes itself, takes the flag and stays
+  byte-identical; `RouteBackedToolsTest` compares `structuredContent` as a JSON value (`asJsonValue()`).
+- **The catalogue** (#641, spec 0007 « Catalogue des outils »): eight route-backed tools — `get_about`,
+  `get_quality`, `get_technical_background` and `get_tech_watch` (no `locale`: their routes take none),
+  `list_contributions`, `list_incidents`, and at the base tier, served without a token (ADR 0006 D2),
+  `get_anonymous_cv` and `list_case_studies` — plus two **without a route**, in a closed list:
+  `get_contact_info` (`{"contactPageUrl": "<APP_FRONTEND_BASE_URL>/<locale>/contact"}`, nothing else, no
+  e-mail; `app.frontend_base_url`, the variable `allowed_hosts` reads) and `get_nominative_corpus`,
+  **always listed**, its description saying it requires an MCP connection (ADR 0006 D3, what phase 2's
+  deferred authentication relies on); in phase 1 its call is a literal tool error, and it has no
+  dependency, so nothing of the corpus can leak. `get_tech_watch` relays third-party strings
+  (endoflife.date cycles, versions, links) to the person's model — indirect prompt injection (LLM01): its
+  description says to treat them as data; the output stays equal to the route (D1).
+- **Every route-backed tool declares its route**: `#[BackedByRoute(self::RESOURCE, AccessTier::…)]` on the
+  class, `self::RESOURCE` (the API Platform resource) being the constant it also passes to the reader, so
+  the route declared is the route read. `AccessTier` is the ADR 0003 tier the route's `access_control`
+  rule fixes (none → `ANONYMOUS`, `ROLE_USER` → `BASE`, `ROLE_TRUSTED` → `TRUSTED`).
+  **`tests/Mcp/McpExposureSymmetryTest`** (ADR 0006 D1) reads the real router, `security.access_map` and
+  the `portfolio` registry (after `mcp.server.portfolio.builder`'s `build()`, which fills it): every route
+  of the anonymous and base tiers — **any method**, so a route serving content other than by `GET` cannot
+  slip by — has a tool (matched on `_api_resource_class`) or an entry in `EXCLUDED_ROUTES` with its reason
+  (writes and flows, `/api/mcp`, API Platform infrastructure); every tool declares a `GET` route of its
+  resource whose tier is **exactly** the declared one, or is in the closed `TOOLS_WITHOUT_ROUTE` (amend
+  the ADR before adding one). Fictive cases prove each side fails (a route with neither tool nor
+  exclusion, a tool with no route or no declaration, a base-tier tool declared anonymous), and no tool
+  depends on a repository or a backoffice class (constructor types, declared resource). A new content
+  route therefore turns the suite red until it is exposed or excluded.
 - **Tools** are services `#[McpTool]` on `__invoke()`, under `Presentation/Tool/` — the `registry` of
   `mcp.yaml` lists that namespace only, and **the bundle refuses a pattern that matches no service** (the
   server does not boot): a `prompts` pattern enters with the first prompt. `readOnlyHint: true`. A language
@@ -90,8 +120,12 @@ paths:
   `Host`, port ignored) — `McpEndpointTest::testGetFromAForeignHostIsRefused`. Accepted, like the SDK: the
   `Origin` check ignores scheme and port (`http://<site>:8443` passes), a page served on the site's own name.
 - **Tests** speak MCP through `tests/Mcp/Support/SpeaksMcp` (`initializeMcpSession()`, `mcpCall()`, JSON or
-  SSE answers alike, the last answering event of a stream). A test that opens sessions deletes the
-  `mcp-portfolio-` rows of `cache_items` in its `tearDown`: they live an hour in the test database. Only the
+  SSE answers alike, the last answering event of a stream; `callMcpTool()`, `listedMcpTool()`, `routeBody()`).
+  A test that opens sessions calls `forgetMcpSessions()` in its `tearDown`: the `mcp-portfolio-` rows of
+  `cache_items` live an hour in the test database. A new route-backed tool adds its rows to
+  `RouteBackedToolsTest`'s providers (equality per language, closed schema, empty `{"items": []}`, unknown
+  language), where a base-tier route is read with a base-access token, the cookies then dropped so that
+  the tool is called without one. Only the
   handshake-era revision (`2025-06-18`) is exercised; the SDK also serves the sessionless 2026-07-28 revision on
   the same endpoint, untested so far (phase 2's deferred 401 must recognise the protected tool in both forms).
 - **Open, owned elsewhere** (security review of #640): the SDK logs raw JSON-RPC messages, arguments and
