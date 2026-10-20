@@ -75,6 +75,8 @@ session_id='0199c7a2-5f3e-7b1a-9c4d-2e8f6a1b3c5d'
 # L'`initialize` tel que le transport le rend (en SSE ici : le script lit les deux formes).
 init="200|content-type: text/event-stream;mcp-session-id: $session_id|event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"protocolVersion\":\"2025-06-18\",\"serverInfo\":{\"name\":\"cp-ghostotof\",\"version\":\"0.1.0\"}}}"
 deleted='204||'
+# Le 413 de nginx sur un corps au-delà de 16 Kio : sa page HTML.
+too_large='413|content-type: text/html|<html>413 Request Entity Too Large</html>'
 stream='200|content-type: text/event-stream|retry: 300000'
 # Le 429 de la zone nginx : problem+json `/errors/rate-limited`, sans Retry-After.
 zone429='429|content-type: application/problem+json|{"type":"/errors/rate-limited","title":"rate-limited","status":429,"detail":"Trop de requêtes. Réessayez dans un instant."}'
@@ -83,16 +85,17 @@ mapfile -t twenty_streams < <(repeat 20 "$stream")
 mapfile -t all_streams < <(repeat 120 "$stream")
 
 # --- Cas nominal : initialize, fin de session, 20 GET admis puis le 429.
-run nominal "$init" "$deleted" "${twenty_streams[@]}" "$zone429"
-if [ "$rc" -eq 0 ] && grep -q 'session ouverte' "$TMP/out" && grep -q '429 de la zone mcp à la requête 21' "$TMP/out"; then
-  pass "initialize, DELETE, 20 × 200 puis 429 → succès"
+run nominal "$init" "$deleted" "$too_large" "$too_large" "${twenty_streams[@]}" "$zone429"
+if [ "$rc" -eq 0 ] && grep -q 'session ouverte' "$TMP/out" && grep -q 'corps de 16385 octets refusé (content-length)' "$TMP/out" \
+   && grep -q 'corps de 16385 octets refusé (chunked)' "$TMP/out" && grep -q '429 de la zone mcp à la requête 21' "$TMP/out"; then
+  pass "initialize, DELETE, deux 413, 20 × 200 puis 429 → succès"
 else
   fail "cas nominal" "rc=$rc ; out : $(cat "$TMP/out") ; err : $(cat "$TMP/err")"
 fi
-if [ "$(wc -l < "$TMP/nominal.calls")" -eq 23 ]; then pass "s'arrête au premier 429 (23 appels)"; else fail "nombre d'appels" "$(wc -l < "$TMP/nominal.calls")"; fi
+if [ "$(wc -l < "$TMP/nominal.calls")" -eq 25 ]; then pass "s'arrête au premier 429 (25 appels)"; else fail "nombre d'appels" "$(wc -l < "$TMP/nominal.calls")"; fi
 
 # --- L'initialize en JSON plutôt qu'en SSE : même verdict.
-run json "200|content-type: application/json;Mcp-Session-Id: $session_id|{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"serverInfo\":{\"name\":\"cp-ghostotof\"}}}" "$deleted" "$zone429"
+run json "200|content-type: application/json;Mcp-Session-Id: $session_id|{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"serverInfo\":{\"name\":\"cp-ghostotof\"}}}" "$deleted" "$too_large" "$too_large" "$zone429"
 if [ "$rc" -eq 0 ]; then pass "initialize en JSON, en-tête en casse mixte → succès"; else fail "initialize JSON" "rc=$rc ; err : $(cat "$TMP/err")"; fi
 
 # --- Hôte refusé par le SDK : allowed_hosts ne porte pas l'hôte du déploiement.
@@ -112,27 +115,65 @@ run other "200|content-type: application/json;mcp-session-id: $session_id|{\"jso
 if [ "$rc" -eq 1 ] && grep -q 'serverInfo' "$TMP/err"; then pass "initialize d'un autre serveur → échec"; else fail "autre serveur" "rc=$rc ; err : $(cat "$TMP/err")"; fi
 
 # --- Jamais de 429 : la zone mcp manque (publicapi en voudrait plus de 200).
-run never "$init" "$deleted" "${all_streams[@]}"
-if [ "$rc" -eq 1 ] && grep -q 'aucun 429' "$TMP/err" && [ "$(wc -l < "$TMP/never.calls")" -eq 122 ]; then
+run never "$init" "$deleted" "$too_large" "$too_large" "${all_streams[@]}"
+if [ "$rc" -eq 1 ] && grep -q 'aucun 429' "$TMP/err" && [ "$(wc -l < "$TMP/never.calls")" -eq 124 ]; then
   pass "120 GET sans 429 → échec (zone mcp absente)"
 else
   fail "jamais freiné" "rc=$rc ; appels=$(wc -l < "$TMP/never.calls") ; err : $(cat "$TMP/err")"
 fi
 
 # --- Un 429 en HTML : l'`error_page` de la zone n'est pas en place.
-run html "$init" "$deleted" '429|content-type: text/html|<html>429 Too Many Requests</html>'
+run html "$init" "$deleted" "$too_large" "$too_large" '429|content-type: text/html|<html>429 Too Many Requests</html>'
 if [ "$rc" -eq 1 ] && grep -q 'problem+json' "$TMP/err"; then pass "429 HTML → échec"; else fail "429 HTML" "rc=$rc ; err : $(cat "$TMP/err")"; fi
 
 # --- Un 429 problem+json d'un autre type → échec.
-run untyped "$init" "$deleted" '429|content-type: application/problem+json|{"type":"/errors/429","status":429}'
+run untyped "$init" "$deleted" "$too_large" "$too_large" '429|content-type: application/problem+json|{"type":"/errors/429","status":429}'
 if [ "$rc" -eq 1 ] && grep -q '/errors/rate-limited' "$TMP/err"; then pass "429 sans type rate-limited → échec"; else fail "429 non typé" "rc=$rc ; err : $(cat "$TMP/err")"; fi
 
 # --- Un statut inattendu pendant la saturation → échec immédiat.
-run status "$init" "$deleted" "$stream" '502|content-type: text/html|<html>502</html>'
-if [ "$rc" -eq 1 ] && grep -q '502 reçu' "$TMP/err" && [ "$(wc -l < "$TMP/status.calls")" -eq 4 ]; then
+run status "$init" "$deleted" "$too_large" "$too_large" "$stream" '502|content-type: text/html|<html>502</html>'
+if [ "$rc" -eq 1 ] && grep -q '502 reçu' "$TMP/err" && [ "$(wc -l < "$TMP/status.calls")" -eq 6 ]; then
   pass "502 pendant la saturation → échec immédiat"
 else
   fail "statut inattendu" "rc=$rc ; err : $(cat "$TMP/err")"
+fi
+
+# --- La fin de session échoue : la session resterait une heure en base → échec.
+run undeleted "$init" '404|content-type: application/json|{"jsonrpc":"2.0","error":{"code":-32001,"message":"Session not found"}}'
+if [ "$rc" -eq 1 ] && grep -q 'fin de session : 404' "$TMP/err" && [ "$(wc -l < "$TMP/undeleted.calls")" -eq 2 ]; then
+  pass "DELETE en 404 → échec immédiat"
+else
+  fail "fin de session" "rc=$rc ; err : $(cat "$TMP/err")"
+fi
+
+# --- Un corps au-delà de 16 Kio servi : la borne de la location manque au pod.
+run body "$init" "$deleted" "$stream"
+if [ "$rc" -eq 1 ] && grep -q 'client_max_body_size' "$TMP/err" && grep -q 'content-length' "$TMP/err"; then
+  pass "corps de 16 385 octets admis → échec nommant la borne"
+else
+  fail "borne de corps" "rc=$rc ; err : $(cat "$TMP/err")"
+fi
+run chunked "$init" "$deleted" "$too_large" "$stream"
+if [ "$rc" -eq 1 ] && grep -q 'chunked' "$TMP/err" && grep -q 'fastcgi_pass' "$TMP/err"; then
+  pass "corps chunked de 16 385 octets admis → échec nommant fastcgi_pass"
+else
+  fail "borne de corps chunked" "rc=$rc ; err : $(cat "$TMP/err")"
+fi
+
+# --- Un curl qui échoue (délai, connexion coupée) : l'étape est nommée.
+cat > "$TMP/failing-curl" <<'EOF2'
+#!/usr/bin/env bash
+echo 'curl: (28) Operation timed out' >&2
+exit 28
+EOF2
+chmod +x "$TMP/failing-curl"
+set +e
+SMOKE_CURL="$TMP/failing-curl" "$SCRIPT" https://example.invalid >"$TMP/out" 2>"$TMP/err"; rc=$?
+set -e
+if [ "$rc" -eq 1 ] && grep -q 'initialize' "$TMP/err" && grep -q 'curl a échoué (code 28)' "$TMP/err"; then
+  pass "curl en échec → étape nommée, code 1"
+else
+  fail "curl en échec" "rc=$rc ; err : $(cat "$TMP/err")"
 fi
 
 # --- Le corps affiché dans le journal de la CI est débarrassé des caractères
@@ -144,10 +185,12 @@ else
   fail "caractères de contrôle" "rc=$rc ; err : $(cat -A "$TMP/err")"
 fi
 
-# --- Les requêtes : initialize en POST JSON, DELETE de la session, GET en SSE.
+# --- Les requêtes : initialize en POST JSON, DELETE de la session, deux corps trop gros, GET en SSE.
 first="$(sed -n 1p "$TMP/nominal.args")"
 second="$(sed -n 2p "$TMP/nominal.args")"
-third="$(sed -n 3p "$TMP/nominal.args")"
+third="$(sed -n 5p "$TMP/nominal.args")"
+large="$(sed -n 3p "$TMP/nominal.args")"
+large_chunked="$(sed -n 4p "$TMP/nominal.args")"
 if [[ "$first" == *"-X POST"* && "$first" == *"Content-Type: application/json"* && "$first" == *"Accept: application/json, text/event-stream"* \
    && "$first" == *'"method":"initialize"'* && "$first" == *'"protocolVersion":"2025-06-18"'* && "$first" == *"https://example.invalid/api/mcp"* ]]; then
   pass "initialize : POST JSON, Accept des deux formes, révision 2025-06-18"
@@ -155,6 +198,12 @@ else
   fail "requête initialize" "$first"
 fi
 if [[ "$second" == *"-X DELETE"* && "$second" == *"Mcp-Session-Id: $session_id"* ]]; then pass "fin de session : DELETE avec son identifiant"; else fail "requête DELETE" "$second"; fi
+if [[ "$large" == *"-X POST"* && "$large" == *"--data-binary @"* && "$large" != *"chunked"* && "$large" == *"Mcp-Session-Id: 00000000-0000-0000-0000-000000000000"* \
+   && "$large_chunked" == *"Transfer-Encoding: chunked"* ]]; then
+  pass "corps trop gros : POST d'un fichier, puis le même en chunked, sous un identifiant factice"
+else
+  fail "requêtes de corps" "$large | $large_chunked"
+fi
 if [[ "$third" == *"-X GET"* && "$third" == *"Accept: text/event-stream"* && "$third" != *"Mcp-Session-Id"* ]]; then
   pass "saturation : GET en SSE, sans session (rien n'est écrit en base)"
 else
@@ -162,7 +211,7 @@ else
 fi
 
 # --- Basic Auth : via un fichier -K, jamais -u ; absente sinon.
-AUDIT_BASIC_AUTH='smoke:p"a\ss' run auth "$init" "$deleted" "$zone429"
+AUDIT_BASIC_AUTH='smoke:p"a\ss' run auth "$init" "$deleted" "$too_large" "$too_large" "$zone429"
 if grep -q -- ' -K ' "$TMP/auth.args" && ! grep -q -- ' -u ' "$TMP/auth.args"; then
   pass "AUDIT_BASIC_AUTH → -K <fichier>, jamais -u"
 else

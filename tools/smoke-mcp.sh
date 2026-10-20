@@ -4,19 +4,26 @@
 # ---------------------------------------------------------------------------
 # Exerce le serveur MCP contre un déploiement RÉEL (spec 0007, #644).
 #
-# Deux preuves que la CI ne peut pas apporter :
+# Trois preuves que la CI ne peut pas apporter, sur le sidecar déployé :
 #
 # 1. Un `initialize` sur l'hôte public aboutit. Le SDK refuse en 403 un hôte
 #    absent d'`allowed_hosts`, dérivé d'`APP_FRONTEND_BASE_URL` (mcp.yaml) :
 #    une URL mal posée dans un overlay couperait tout client MCP, et rien
-#    d'autre ne le verrait. La session ouverte est aussitôt fermée (DELETE).
-# 2. Au-delà du seuil, la zone nginx `mcp` répond 429 (problem+json
+#    d'autre ne le verrait. La session ouverte est aussitôt fermée (DELETE),
+#    et ce DELETE doit aboutir : sinon la ligne reste une heure en base.
+# 2. Un corps de 16 Kio + 1 octet est refusé en 413, annoncé par
+#    Content-Length puis envoyé en chunked : la borne de la location et son
+#    `fastcgi_pass` propre, sans lequel un corps chunked passait (relectures
+#    de #644). Sous un identifiant de session factice, pour n'entamer ni la
+#    zone des créations de session, ni rien en base : le 413 précède PHP.
+# 3. Au-delà du seuil, la zone nginx `mcp` répond 429 (problem+json
 #    `/errors/rate-limited`). Les requêtes de saturation sont des GET en SSE
 #    sans session : ils démarrent Symfony mais n'écrivent rien en base. La
 #    zone admet 60 r/min avec une rafale de 20, par pod : la préprod (un pod)
-#    refuse vers la 21e requête, et `publicapi` (rafale de 200) n'en refuserait
-#    aucune avant MAX_REQUESTS. Un 429 dans la borne vient donc de la zone
-#    `mcp`, pas du filet général.
+#    refuse vers la 19e ou 20e requête (les requêtes précédentes ont pris
+#    leurs jetons), et `publicapi` (rafale de 200) n'en refuserait aucune
+#    avant MAX_REQUESTS. Un 429 dans la borne vient donc de la zone `mcp`,
+#    pas du filet général.
 #
 # Appelé par le job `smoke-test-preprod` : son échec bloque la PR vers `main`.
 #
@@ -45,10 +52,15 @@ MAX_REQUESTS=120
 # Le nom que le serveur déclare (mcp.yaml) : un 200 d'un autre service
 # derrière l'Ingress ne prouverait rien.
 server_name='"name":"cp-ghostotof"'
+# La borne de corps de la location `= /api/mcp` (backend-nginx.conf).
+BODY_LIMIT=16384
+# Un identifiant bien formé que le serveur ne connaît pas.
+FAKE_SESSION='00000000-0000-0000-0000-000000000000'
 
 headers_file="$(mktemp)"
+body_file="$(mktemp)"
 auth_config=""
-trap 'rm -f "$headers_file" ${auth_config:+"$auth_config"}' EXIT
+trap 'rm -f "$headers_file" "$body_file" ${auth_config:+"$auth_config"}' EXIT
 
 curl_opts=(-sS --connect-timeout 5 --max-time 15 -D "$headers_file")
 if [ -n "${AUDIT_BASIC_AUTH:-}" ]; then
@@ -65,12 +77,19 @@ header() {
     END { print value }'
 }
 
-# request <méthode> <en-têtes curl…> : remplit `status` et `body`. Dernière
-# ligne de la sortie = code HTTP, le reste = corps.
+# request <étape> <méthode> <en-têtes curl…> : remplit `status` et `body`.
+# Dernière ligne de la sortie = code HTTP, le reste = corps. Un curl en échec
+# (délai, connexion coupée) arrête le smoke en nommant l'étape.
 request() {
-  local method="$1" response
-  shift
-  response="$("$curl_bin" "${curl_opts[@]}" -X "$method" "$@" -w '\n%{http_code}' "$endpoint")"
+  local step="$1" method="$2" response code
+  shift 2
+  if response="$("$curl_bin" "${curl_opts[@]}" -X "$method" "$@" -w '\n%{http_code}' "$endpoint")"; then
+    :
+  else
+    code=$?
+    echo "$step : curl a échoué (code $code) sur $method $endpoint" >&2
+    exit 1
+  fi
   status="${response##*$'\n'}"
   body="${response%$'\n'*}"
   # Le corps part dans le journal de la CI : tout caractère de contrôle devient
@@ -79,7 +98,7 @@ request() {
 }
 
 # --- 1. initialize sur l'hôte réel.
-request POST \
+request initialize POST \
   -H 'Content-Type: application/json' \
   -H 'Accept: application/json, text/event-stream' \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"smoke-mcp","version":"1.0.0"}}}'
@@ -104,12 +123,32 @@ fi
 echo "initialize : session ouverte sur l'hôte réel (allowed_hosts accepte $base)"
 
 # Fermer la session : sa ligne de `cache_items` disparaît sans attendre la purge.
-request DELETE -H "Mcp-Session-Id: $session_id"
+request "fin de session" DELETE -H "Mcp-Session-Id: $session_id"
+if [ "$status" != "200" ] && [ "$status" != "204" ]; then
+  echo "fin de session : $status, 200 ou 204 attendu — la session reste une heure en base (corps : $excerpt)" >&2
+  exit 1
+fi
 echo "fin de session : $status"
 
-# --- 2. Saturation de la zone mcp.
+# --- 2. Borne de corps de la location.
+head -c "$((BODY_LIMIT + 1))" /dev/zero | tr '\0' 'a' > "$body_file"
+for framing in content-length chunked; do
+  framing_opts=()
+  [ "$framing" = chunked ] && framing_opts=(-H 'Transfer-Encoding: chunked')
+  request "borne de corps ($framing)" POST -H 'Content-Type: application/json' -H "Mcp-Session-Id: $FAKE_SESSION" \
+    "${framing_opts[@]}" --data-binary "@$body_file"
+  if [ "$status" != "413" ]; then
+    hint="client_max_body_size 16k de la location = /api/mcp"
+    [ "$framing" = chunked ] && hint="fastcgi_pass propre à la location = /api/mcp (sans lui, un corps chunked est lu sous le 1 Mo du bloc server)"
+    echo "corps de $((BODY_LIMIT + 1)) octets ($framing) : $status, 413 attendu — $hint (corps : $excerpt)" >&2
+    exit 1
+  fi
+  echo "corps de $((BODY_LIMIT + 1)) octets refusé ($framing) : 413"
+done
+
+# --- 3. Saturation de la zone mcp.
 for attempt in $(seq 1 "$MAX_REQUESTS"); do
-  request GET -H 'Accept: text/event-stream'
+  request "saturation, requête $attempt" GET -H 'Accept: text/event-stream'
 
   if [ "$status" = "429" ]; then
     content_type="$(header Content-Type)"

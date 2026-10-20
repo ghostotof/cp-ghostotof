@@ -65,8 +65,10 @@ paths:
   connectors call from their providers' egress addresses, which their users share — fine at this site's
   audience, revisit if phase 2's real clients get throttled. `tools/smoke-mcp.sh`, run by `smoke-test-preprod`
   (its own `timeout-minutes: 3`), proves it on the real pod: an `initialize` on the public host (a 403 there
-  means `allowed_hosts`, derived from `APP_FRONTEND_BASE_URL`, misses it), the session closed by `DELETE`, then
-  `GET`s without a session (they write nothing) until the 429 — within 120 requests, so it can only be the `mcp`
+  means `allowed_hosts`, derived from `APP_FRONTEND_BASE_URL`, misses it), the session closed by `DELETE` (its
+  status checked: a session left open stays an hour), a 16 KiB + 1 body refused in 413 with `Content-Length` then in
+  `chunked` (under a fake session id: no zone of session creations, no PHP), then `GET`s without a session (they
+  write nothing) until the 429 — within 120 requests, so it can only be the `mcp`
   zone (`publicapi`'s burst is 200). Measured in dev on 2026-10-20: the 429 at the 20th `GET` (the `initialize`
   and the `DELETE` took two tokens), and the seventh `initialize` in a row refused by `mcpsession`.
   `publicapi` (600 r/m, burst 200, on
