@@ -101,20 +101,31 @@ paths:
   `prompts/list` (it reads no `#[Schema]` on a prompt), so they are English and under D8 like a tool
   description; `locale`'s is `ToolLocale::DESCRIPTION` word for word, its default `ToolLocale::DEFAULT`, its
   refusal `ToolLocale::UNKNOWN_LANGUAGE` (pinned by the test). `role` goes through the value object
-  `PromptRole`: refused beyond `MAX_CHARACTERS` (500, counted in characters **on the input as typed**, before
-  any cleaning, never truncated); then NFKC (folds the full-width `＜／ｒｏｌｅ＞`), one line ending
-  (`\r\n`, `\r`, NEL, U+2028/2029 → `\n`), invisible characters removed (`\p{Cc}` but `\n` and `\t`,
-  `\p{Cf}` — zero-width, bidi, Unicode TAG —, `\p{Co}`, `\p{Cn}`, variation selectors); then, as
-  `CorpusRenderer` does for `documents`, **only the chevrons introducing the word `role`** are removed
-  (ASCII and the look-alikes NFKC leaves, `‹ 〈 ⟨ ˂ ᐸ ❮`…, across blanks and slashes) — « équipe <10
-  personnes, PHP >= 8.4 » keeps its meaning —; trimmed of Unicode blanks; refused without a letter or digit.
+  `PromptRole`: refused beyond `MAX_CHARACTERS` (500 characters, never truncated), counted **twice**: on the
+  input as typed, before any cleaning (removing characters must not let a long text through), and on the
+  cleaned text, which NFKC can lengthen (U+FDFA gives 18 characters: ~9 000 injected before #662) — the same
+  message both times, the one bound the argument's description publishes. Cleaning: NFKC (folds the
+  full-width `＜／ｒｏｌｅ＞`), one line ending (`\r\n`, `\r`, NEL, U+2028/2029 → `\n`), invisible characters
+  removed (`\p{Cc}` but `\n` and `\t`, `\p{Cf}` — zero-width, bidi, Unicode TAG —, `\p{Co}`, `\p{Cn}`, and
+  **`\p{Default_Ignorable_Code_Point}`**, #662: variation selectors, and the ignorables `\p{Cf}` misses, `Mn`
+  U+034F, U+180B–180F, U+17B4–17B5 and `Lo` Hangul fillers U+115F, U+1160, U+3164, U+FFA0 — `<\u{034F}/role>`
+  displayed as `</role>`; PCRE 10.44 knows the property, an unknown one would fail closed as
+  `RoleNeutralisationFailedException`); then, as `CorpusRenderer` does for `documents`, **only the opening
+  signs introducing the word `role`** are removed, across blanks, slashes and combining marks (`\p{M}`, which
+  cling to the sign without separating it): `<`, `˂`, `ᐸ`, and **by class** every `\p{Ps}` and `\p{Pi}` (#662,
+  decided 2026-10-20 over a longer list of look-alikes, which stopped at the last glyph thought of — `《 ❰ «`
+  passed): `‹ 〈 ⟨ ❮`, but also `[` and `{`, which open a tag elsewhere (BBCode, templates) — « équipe <10
+  personnes, PHP >= 8.4 » keeps its meaning, and `(role-based…)` loses its parenthesis, accepted —; trimmed of
+  Unicode blanks; refused without a letter or digit.
   `delimited()` writes the block. A refusal (and an unknown language) is a `PromptGetException`, the only
   error the SDK 0.8.1 renders with its message — `-32603`, where the protocol wants `-32602`; a missing
   `role` is the SDK's own generic `-32603` « Error while handling prompt ». Its message never quotes the
   text received: the SDK logs it with the error, at `error`, which `SdkChannelRedactor` downgrades to `notice` (#643). A
   PCRE or NFKC failure is `RoleNeutralisationFailedException`, a server fault (generic `-32603`), never a
   « role is empty ». Not exhaustive, accepted (like the corpus): letters of other alphabets mimicking
-  `role`, HTML entities. The raw `prompts/get` arguments, `role` included, are withheld from the SDK's log
+  `role` (`</r\u{043E}le>`, a Cyrillic `о` NFKC does not fold; a combining mark inside the word, `ró`), HTML
+  entities, closing quotes used as openers (`»/role«`, `\p{Pf}`), and shapes that are symbols, not
+  punctuation (`≺`, `◁`, `\p{Sm}`/`\p{So}`). The raw `prompts/get` arguments, `role` included, are withheld from the SDK's log
   (#643, below).
 - **The D8 guard** (#642, ADR 0006 D8): `tests/Mcp/AuthorNeverNamedTest` (group `d8`) reads, **over HTTP on
   the real server**, once per class, what it says or writes of itself: `initialize` (`serverInfo`,

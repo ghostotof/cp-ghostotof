@@ -16,21 +16,27 @@ use Normalizer;
  * devenir un relais d'injection :
  *
  *  - **une borne**, {@see self::MAX_CHARACTERS} caractères (pas octets),
- *    comptée sur la saisie avant tout nettoyage, au-delà de laquelle le texte
- *    est refusé — jamais tronqué : couper une phrase en change le sens, et la
- *    personne ne le verrait pas ;
+ *    comptée deux fois : sur la saisie avant tout nettoyage (retirer des
+ *    caractères ne fait pas passer un texte trop long), puis sur le texte
+ *    nettoyé (NFKC peut l'allonger : U+FDFA y devient 18 caractères, #662).
+ *    Au-delà, le texte est refusé — jamais tronqué : couper une phrase en
+ *    change le sens, et la personne ne le verrait pas ;
  *  - **rien d'invisible** : caractères de contrôle (hors saut de ligne et
  *    tabulation), de format (largeur nulle, bidirectionnel, balises Unicode
- *    TAG), d'usage privé, non assignés et sélecteurs de variante sont
- *    retirés. Une annonce piégée collée dans `role` y porterait des consignes
- *    que la personne ne peut pas relire ;
+ *    TAG), d'usage privé, non assignés, et tout ignorable par défaut —
+ *    sélecteurs de variante, signes combinants et lettres de remplissage
+ *    invisibles (U+034F, U+180B, U+3164…, #662) — sont retirés. Une annonce
+ *    piégée collée dans `role` y porterait des consignes que la personne ne
+ *    peut pas relire ;
  *  - **un bloc qu'il ne peut pas refermer** : {@see self::delimited()}
- *    l'encadre entre `<role>` et `</role>`, et les chevrons qui introduisent le
- *    mot `role` sont retirés — la forme NFKC replie d'abord la pleine chasse
- *    (`＜／ｒｏｌｅ＞`), {@see self::CHEVRONS} couvre les sosies qu'elle laisse
- *    (`‹`, `〈`, `⟨`…). Comme le corpus de l'assistant de parcours (son
- *    `CorpusRenderer`), on ne retire **que ceux-là** : « équipe <10 personnes,
- *    PHP >= 8.4 » garde son sens.
+ *    l'encadre entre `<role>` et `</role>`, et les signes ouvrants qui
+ *    introduisent le mot `role` sont retirés — la forme NFKC replie d'abord la
+ *    pleine chasse (`＜／ｒｏｌｅ＞`), {@see self::OPENINGS} couvre ce qu'elle
+ *    laisse : `<`, deux sosies hors ponctuation (`˂`, `ᐸ`), et par classe tout
+ *    signe ouvrant et tout guillemet initial (`‹`, `〈`, `《`, `❰`, `«`, mais
+ *    aussi `[` et `{`, qui ouvrent une balise ailleurs, #662). Comme le corpus
+ *    de l'assistant de parcours (son `CorpusRenderer`), on ne retire **que
+ *    ceux-là** : « équipe <10 personnes, PHP >= 8.4 » garde son sens.
  *
  * Une valeur refusée est une `PromptGetException`, la seule erreur que le SDK
  * 0.8.1 rend avec son message (`-32603`, quand le protocole attendrait
@@ -45,16 +51,29 @@ final readonly class PromptRole
     private const string TAG = 'role';
 
     /**
-     * Les chevrons ouvrants et leurs sosies que NFKC ne replie pas sur `<`
-     * (la pleine chasse `＜` et le petit `﹤`, eux, le sont).
+     * Ce qui peut ouvrir une balise : `<` et ses sosies que NFKC ne replie pas
+     * (la pleine chasse `＜` et le petit `﹤`, eux, le sont) — tout signe
+     * ouvrant (`\p{Ps}`), tout guillemet initial (`\p{Pi}`), et les deux qui
+     * ne sont pas de la ponctuation, `˂` (modificateur) et `ᐸ` (syllabique).
+     * Une classe plutôt qu'une liste de sosies : la liste s'arrêtait au
+     * dernier glyphe qu'on avait pensé à y mettre (`《`, `❰`, `«` passaient).
      */
-    private const array CHEVRONS = ['<', '‹', '〈', '⟨', '⟪', '˂', 'ᐸ', '❮', '❬', '⦑', '⧼'];
+    private const string OPENINGS = '<˂ᐸ\p{Ps}\p{Pi}';
 
-    /** Ce qui peut séparer un chevron du mot dans une balise : blancs, barres et leurs sosies, chevrons. */
-    private const string TAG_RUN = '/[\s\p{Z}\/⁄∕⧸<‹〈⟨⟪˂ᐸ❮❬⦑⧼]*\z/u';
+    /**
+     * Ce qui peut séparer un signe ouvrant du mot dans une balise : blancs,
+     * barres et leurs sosies, signes combinants (qui s'accrochent au signe
+     * sans le séparer à l'œil), signes ouvrants.
+     */
+    private const string TAG_RUN = '/[\s\p{Z}\p{M}\/⁄∕⧸'.self::OPENINGS.']*\z/u';
 
-    /** Contrôles (hors \n et \t), format, usage privé, non assignés, sélecteurs de variante. */
-    private const string INVISIBLE = '/[^\P{Cc}\n\t]|[\p{Cf}\p{Co}\p{Cn}]|[\x{FE00}-\x{FE0F}\x{E0100}-\x{E01EF}]/u';
+    /**
+     * Contrôles (hors \n et \t), format, usage privé, non assignés, et les
+     * ignorables par défaut, que `\p{Cf}` ne couvre pas tous : sélecteurs de
+     * variante, U+034F, U+180B–180F, U+17B4–17B5 (`Mn`), lettres de
+     * remplissage hangûl U+115F, U+1160, U+3164, U+FFA0 (`Lo`).
+     */
+    private const string INVISIBLE = '/[^\P{Cc}\n\t]|[\p{Cf}\p{Co}\p{Cn}\p{Default_Ignorable_Code_Point}]/u';
 
     private function __construct(
         public string $text,
@@ -70,12 +89,13 @@ final readonly class PromptRole
         // La borne se compte sur ce que la personne a saisi, avant tout
         // nettoyage : retirer des caractères ne doit pas faire passer un texte
         // trop long.
-        if (mb_strlen($input) > self::MAX_CHARACTERS) {
-            throw new PromptGetException(\sprintf('The role is too long: describe it in %d characters at most.', self::MAX_CHARACTERS));
-        }
+        self::assertWithinBound($input);
 
         $text = self::withoutInvisibles(self::normalised($input));
-        $text = self::trimmed(self::withoutTagChevrons($text));
+        $text = self::trimmed(self::withoutTagOpenings($text));
+
+        // Et sur ce qui entre dans le message : NFKC peut allonger le texte.
+        self::assertWithinBound($text);
 
         // Une entrée en UTF-8 invalide n'arrive pas jusqu'ici, le décodage
         // JSON de la requête l'a déjà refusée ; un rôle sans lettre ni chiffre
@@ -91,6 +111,19 @@ final readonly class PromptRole
     public function delimited(): string
     {
         return '<'.self::TAG.">\n".$this->text."\n</".self::TAG.'>';
+    }
+
+    /**
+     * Le même refus avant et après nettoyage : la personne n'a qu'une borne à
+     * respecter, celle que publie la description de l'argument.
+     *
+     * @throws PromptGetException au-delà de {@see self::MAX_CHARACTERS} caractères
+     */
+    private static function assertWithinBound(string $text): void
+    {
+        if (mb_strlen($text) > self::MAX_CHARACTERS) {
+            throw new PromptGetException(\sprintf('The role is too long: describe it in %d characters at most.', self::MAX_CHARACTERS));
+        }
     }
 
     /** NFKC, puis une seule fin de ligne (`\r\n`, `\r`, NEL, U+2028 et U+2029 deviennent `\n`). */
@@ -110,12 +143,12 @@ final readonly class PromptRole
     }
 
     /**
-     * Découpé sur le mot, chaque morceau qui le précède perd les chevrons de la
-     * séquence de caractères de balise qui le termine. Linéaire en pratique sur
-     * un texte de {@see self::MAX_CHARACTERS} caractères au plus (le corpus de
-     * l'assistant, sans borne, a dû l'être par construction).
+     * Découpé sur le mot, chaque morceau qui le précède perd les signes
+     * ouvrants de la séquence de caractères de balise qui le termine. Linéaire
+     * en pratique sur un texte de {@see self::MAX_CHARACTERS} caractères au plus
+     * (le corpus de l'assistant, sans borne, a dû l'être par construction).
      */
-    private static function withoutTagChevrons(string $text): string
+    private static function withoutTagOpenings(string $text): string
     {
         $parts = preg_split('/('.self::TAG.')/iu', $text, -1, \PREG_SPLIT_DELIM_CAPTURE);
         if (false === $parts) {
@@ -128,7 +161,7 @@ final readonly class PromptRole
             }
 
             $start = $run[0][1];
-            $parts[$index] = substr($parts[$index], 0, $start).str_replace(self::CHEVRONS, '', substr($parts[$index], $start));
+            $parts[$index] = substr($parts[$index], 0, $start).self::replaced('/['.self::OPENINGS.']/u', '', substr($parts[$index], $start));
         }
 
         return implode('', $parts);
