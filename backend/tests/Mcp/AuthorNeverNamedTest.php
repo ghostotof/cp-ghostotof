@@ -117,8 +117,13 @@ final class AuthorNeverNamedTest extends WebTestCase
         self::assertArrayHasKey('tools/call get_about langue inconnue', $published);
         self::assertArrayHasKey('tools/call get_contact_info fr', $published);
         self::assertArrayHasKey('tools/call get_nominative_corpus en', $published);
-        foreach (['lot refusé', 'réponse du client refusée', 'initialize refusé'] as $refusal) {
-            self::assertArrayHasKey('error', $published[$refusal], $refusal);
+        // Chaque refus écrit avant le SDK est lu, tel que le serveur le rend : un
+        // cas ajouté à l'enum sans requête qui le provoque ici rougit.
+        foreach (InboundMessageRefusal::cases() as $refusal) {
+            $key = 'refus '.$refusal->name;
+            self::assertArrayHasKey($key, $published);
+            self::assertIsArray($published[$key]);
+            self::assertSame($refusal->message(), $published[$key]['error']['message'] ?? null, $key);
         }
     }
 
@@ -317,18 +322,25 @@ final class AuthorNeverNamedTest extends WebTestCase
             $published += $this->toolAnswers($client, $session->id, $tool);
         }
 
-        // Les refus écrits par le serveur avant le SDK (#644,
-        // InboundMessageRefusalListener) : un lot, une réponse du client, un
-        // `initialize` qui déclare trop.
+        // Les refus écrits par le serveur avant le SDK (#644, #664, #675,
+        // InboundMessageRefusalListener), un par cas de l'enum : un lot, une
+        // réponse du client, un `initialize` qui déclare trop, un `_meta`
+        // scalaire, un `clientInfo` illisible, un `listen`.
+        $this->postMcp($client, $session->id, ['jsonrpc' => '2.0', 'method' => 'notifications/initialized', 'params' => ['_meta' => 1]]);
+        $published['refus MalformedMeta'] = $this->decodeMcpResponse($client);
+        $this->postModernMcp($client, 'tools/list', clientInfo: ['name' => 1, 'version' => '1']);
+        $published['refus MalformedClientInfo'] = $this->decodeMcpResponse($client);
+        $this->postModernMcp($client, 'subscriptions/listen');
+        $published['refus SubscriptionListen'] = $this->decodeMcpResponse($client);
         $this->postMcp($client, $session->id, [
             ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'ping'],
             ['jsonrpc' => '2.0', 'id' => 2, 'method' => 'ping'],
         ]);
-        $published['lot refusé'] = $this->decodeMcpResponse($client);
+        $published['refus SeveralMessages'] = $this->decodeMcpResponse($client);
         $this->postMcp($client, $session->id, ['jsonrpc' => '2.0', 'id' => 9, 'result' => new stdClass()]);
-        $published['réponse du client refusée'] = $this->decodeMcpResponse($client);
+        $published['refus ClientResponse'] = $this->decodeMcpResponse($client);
         $this->postMcpInitialize($client, ['name' => str_repeat('n', InboundMessageRefusal::MAX_DECLARATION_BYTES), 'version' => '1']);
-        $published['initialize refusé'] = $this->decodeMcpResponse($client);
+        $published['refus OversizedDeclaration'] = $this->decodeMcpResponse($client);
 
         return $published;
     }
