@@ -89,11 +89,13 @@ final class McpExposureSymmetryTest extends KernelTestCase
     /**
      * Outils sans route adossée : la liste est **fermée** (ADR 0006 D1). Y
      * ajouter un outil demande d'amender l'ADR d'abord. Chacun avec les seuls
-     * types que son constructeur peut recevoir.
+     * types que son constructeur peut recevoir. Publique : la garde D8
+     * (`AuthorNeverNamedTest`) lit la sortie de ces outils-là, que le serveur
+     * écrit lui-même au lieu de la tenir d'une route.
      *
      * @var array<string, array{string, list<string>}> nom => [raison, types du constructeur]
      */
-    private const array TOOLS_WITHOUT_ROUTE = [
+    public const array TOOLS_WITHOUT_ROUTE = [
         'get_contact_info' => ['Adresse de la page publique du formulaire de contact (palier anonyme) : la route /api/contact est une écriture.', ['string']],
         'get_nominative_corpus' => ['Corpus nominatif (palier de confiance, connexion MCP) : ses sources sont celles que CorpusSourcesTest fixe. Aucune dépendance en phase 1 : rien du corpus ne peut passer.', []],
     ];

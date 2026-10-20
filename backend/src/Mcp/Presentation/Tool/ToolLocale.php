@@ -26,10 +26,16 @@ final class ToolLocale
     public const string DEFAULT = 'fr';
 
     /**
+     * Le refus d'une langue inconnue, le même pour les outils et pour le
+     * prompt `present_for_role` (qui le lève en `PromptGetException`).
+     */
+    public const string UNKNOWN_LANGUAGE = 'Unknown language: use "fr" or "en".';
+
+    /**
      * @throws ToolCallException langue inconnue, renvoyée au modèle comme erreur d'outil
      */
     public static function parse(string $value): Locale
     {
-        return Locale::tryFrom($value) ?? throw new ToolCallException('Unknown language: use "fr" or "en".');
+        return Locale::tryFrom($value) ?? throw new ToolCallException(self::UNKNOWN_LANGUAGE);
     }
 }
