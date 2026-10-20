@@ -127,7 +127,7 @@ final readonly class InboundMessageRefusalListener
             }
             $refusal = $this->refusalOfMessage($message);
             if (null !== $refusal) {
-                return $refusal->error(self::requestIdOf($message));
+                return $refusal->error($this->requestIdOf($message));
             }
         }
 
@@ -167,7 +167,7 @@ final readonly class InboundMessageRefusalListener
      *
      * @param array<mixed> $message
      */
-    private static function requestIdOf(array $message): string|int|null
+    private function requestIdOf(array $message): string|int|null
     {
         $id = $message['id'] ?? null;
 
