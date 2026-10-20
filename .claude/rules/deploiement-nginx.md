@@ -38,8 +38,12 @@ paths:
   these ceilings with N backend pods) protect a *side effect* — sending mail, guessing a token,
   minting a token, guessing a password, spending money.
   `mcp` (60 r/m, burst 20, #644, ADR 0006 D6) sits on the **exact** `location = /api/mcp`, every method
-  (the `GET` boots Symfony too), with its own `client_max_body_size 64k` (a JSON-RPC message weighs a few
-  KiB, and the SDK copies what `initialize` declares into the session row): it protects the resource like
+  (the `GET` boots Symfony too), with its own `client_max_body_size 16k` (a JSON-RPC message weighs a few
+  KiB; the SDK copies what the client sends — `initialize`'s declarations, the « responses » it posts — into the
+  session row, re-encoded: an `é` becomes `\u00e9`, so a row weighs up to three times the body — measured on
+  2026-10-20, 196 KB for 64 KiB of accented text, 48.8 KB at 16 KiB; at the zone's limit, ~2.9 MB per minute,
+  per IP and per pod, ~350 MB over the two hours a row can live with the hourly purge; the body bound caps
+  every vector at once, which a bound on `initialize` alone would not): it protects the resource like
   `publicapi`, but at a tenth of its rate, since each request reads and rewrites a session row in
   `cache_items` — it also bounds the sessions created per IP and the `mcp_usage` lines. Its 413 is nginx's
   HTML page, like the server's 1 MB one. Accepted: claude.ai and ChatGPT connectors call from their

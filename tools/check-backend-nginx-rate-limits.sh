@@ -90,7 +90,7 @@ ZONES=(
 # pile à la borne, non. Le 413 naît à la recherche de location (find-config),
 # avant la phase preaccess : ces requêtes ne consomment aucune zone.
 BODY_LIMITS=(
-  "/api/mcp 65536"
+  "/api/mcp 16384"
 )
 # Locations dont le bloc doit être identique, directive par directive, dans
 # les deux confs (commentaires et blancs ignorés) : le miroir n'est garanti

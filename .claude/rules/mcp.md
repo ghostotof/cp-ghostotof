@@ -313,5 +313,5 @@ paths:
   the `Host` check (a foreign host gets this 400, not the SDK's 403: nothing is served either way); `McpCallLog` writes
   its fallback line (`POST`, 400, `protocol-error`). Its message is read by `AuthorNeverNamedTest` (`lot refusé`).
   `JsonRpcBatchRefusalTest` pins it; `McpCallLogTest`'s batch cases are one-message batches since.
-- **Rate, body and sessions per IP** (#644): the nginx `mcp` zone and the location's 64 KiB body bound
+- **Rate, body and sessions per IP** (#644): the nginx `mcp` zone and the location's 16 KiB body bound
   (`.claude/rules/deploiement-nginx.md`).

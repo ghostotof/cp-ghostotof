@@ -29,7 +29,7 @@ use Symfony\Component\HttpKernel\Event\RequestEvent;
  * JSON-RPC `-32600` sans identifiant (ADR 0006 ; la révision 2025-06-18 veut
  * un statut HTTP d'erreur pour une entrée que le serveur n'accepte pas).
  *
- * Le corps n'est décodé que s'il commence par un crochet : borné à 64 Kio par
+ * Le corps n'est décodé que s'il commence par un crochet : borné à 16 Kio par
  * nginx, il l'est déjà quand il arrive ici.
  */
 #[AsEventListener(event: RequestEvent::class, priority: 15)]
