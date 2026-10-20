@@ -15,7 +15,13 @@ phase 1 parte en release seule ; puis au merge de clôture, qui archive la spec 
 - [x] Tâche 3 — Prompt `present_for_role` et garde D8 (#642) — bloquée par : #641
 - [x] Tâche 4 — Journal `mcp` (IP tronquée) et registre RGPD (#643) — bloquée par : #640
 - [x] Tâche 5 — Zone nginx `mcp` et smoke 429 (#644) — bloquée par : #640
-- [ ] Tâche 6 — Page « Brancher votre assistant » (#645) — bloquée par : #641
+- [x] Tâche 6 — Page « Brancher votre assistant » (#645) — bloquée par : #641
+- [x] Suivi des relectures de #643 sur les tâches 1 à 3 (#663)
+- [ ] Suivi : réponses non sollicitées classées autrement que par le SDK (#671) — **avant la sortie
+      de la phase 1**
+- [ ] Suivi : zone `mcpsession` et borne des paramètres (#672) — à trier avant la sortie de la
+      phase 1 ; point 2 après la décision de #664
+- [ ] Suivi : reports de faible sévérité des relectures de #663 et #645 (#673)
 
 ### Livraison de la phase 1
 

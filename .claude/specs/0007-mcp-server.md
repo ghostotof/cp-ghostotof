@@ -309,9 +309,12 @@ décision du 2026-10-19, voir « Langue invalide »).
 
 ### Frontend (phase 1)
 
-- Page publique bilingue **« Brancher votre assistant »**, sous `/{locale}/…` (le segment est fixé au
-  ticket, avec ses traductions), liée depuis le pied de page. Elle affiche l'URL du serveur
-  (`https://<site>/api/mcp`, construite depuis l'origine courante), ce que le serveur sert par palier
+- Page publique bilingue **« Brancher votre assistant »**, sous `/{locale}/connect-your-assistant`,
+  liée depuis le pied de page. Le segment est **le même dans les deux langues** (décision du
+  2026-10-20, #645) : comme toutes les routes du site, la langue n'est portée que par le préfixe, que
+  le sélecteur de langue et les `hreflang` sont seuls à remplacer. Elle affiche l'URL du serveur
+  (`https://<site>/api/mcp`, construite depuis l'origine courante — décision du 2026-10-20 : c'est
+  l'hôte qu'`allowed_hosts` accepte ; elle est fausse sous Vite en dev, accepté), ce que le serveur sert par palier
   et ce qu'il ne sert jamais, et la configuration pour Claude Code, Claude Desktop et claude.ai,
   ChatGPT, Cursor et PhpStorm. Les blocs de configuration ont un bouton de copie accessible.
 - SEO : titre et description par langue, indexable (la page est publique et décrit un service).
