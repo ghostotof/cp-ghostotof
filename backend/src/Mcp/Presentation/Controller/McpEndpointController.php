@@ -4,14 +4,15 @@ declare(strict_types=1);
 
 namespace App\Mcp\Presentation\Controller;
 
-use Http\Discovery\Psr17Factory;
 use InvalidArgumentException;
 use Mcp\Schema\JsonRpc\Error;
 use Mcp\Server\Session\SessionStoreInterface;
 use Mcp\Server\Transport\Http\MiddlewareRequestHandler;
 use Mcp\Server\Transport\StreamableHttpTransport;
+use Psr\Http\Message\ResponseFactoryInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
+use Psr\Http\Message\StreamFactoryInterface;
 use Symfony\AI\McpBundle\Controller\McpController;
 use Symfony\AI\McpBundle\Http\MiddlewareFactory;
 use Symfony\Bridge\PsrHttpMessage\HttpFoundationFactoryInterface;
@@ -46,7 +47,8 @@ use Symfony\Component\Uid\Uuid;
  * lisait mal un hôte IPv6 (relecture de la tâche 2). Puis il répond comme le
  * transport pour une session : 400 si son identifiant n'est pas un UUID, 404
  * si elle n'existe pas ou plus (le client se réinitialise), 406 sans
- * `Accept: text/event-stream`.
+ * `Accept: text/event-stream` ; un identifiant vide vaut absent, comme au
+ * transport.
  */
 #[AsDecorator('mcp.server.portfolio.controller')]
 final readonly class McpEndpointController
@@ -55,6 +57,9 @@ final readonly class McpEndpointController
     private const int RECONNECT_DELAY_MS = 300_000;
 
     private const string EVENT_STREAM = 'text/event-stream';
+
+    /** Les valeurs de `Mcp-Session-Id` que le transport lit fausses, donc absentes. */
+    private const array SESSION_IDS_READ_AS_ABSENT = ['', '0'];
 
     public function __construct(
         #[AutowireDecorated]
@@ -65,8 +70,11 @@ final readonly class McpEndpointController
         private HttpMessageFactoryInterface $psrHttpFactory,
         #[Autowire(service: 'mcp.http_foundation_factory')]
         private HttpFoundationFactoryInterface $httpFoundationFactory,
+        // Le Http\Discovery\Psr17Factory du bundle, par ses interfaces PSR-17 :
+        // sa classe vient de php-http/discovery, que le `require` ne porte pas
+        // (#663).
         #[Autowire(service: 'mcp.psr17_factory')]
-        private Psr17Factory $psr17Factory,
+        private ResponseFactoryInterface&StreamFactoryInterface $psr17Factory,
         #[Autowire(service: 'mcp.server.portfolio.session.store')]
         private SessionStoreInterface $sessionStore,
     ) {
@@ -101,7 +109,10 @@ final readonly class McpEndpointController
             return $this->jsonRpcError(Response::HTTP_BAD_REQUEST, StreamableHttpTransport::SESSION_HEADER.' header must not be repeated.');
         }
 
-        if ([] !== $sessionIds) {
+        // Vide ou « 0 », l'en-tête vaut absent, comme au transport du SDK
+        // (`$sessionIdString ? Uuid::fromString(…) : null`) : servi comme un
+        // GET sans session, pas refusé comme un UUID invalide (#663).
+        if ([] !== $sessionIds && !\in_array($sessionIds[0], self::SESSION_IDS_READ_AS_ABSENT, true)) {
             try {
                 $sessionId = Uuid::fromString($sessionIds[0]);
             } catch (InvalidArgumentException) {

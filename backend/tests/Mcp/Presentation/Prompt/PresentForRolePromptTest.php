@@ -7,7 +7,11 @@ namespace App\Tests\Mcp\Presentation\Prompt;
 use App\Mcp\Presentation\Prompt\PromptRole;
 use App\Mcp\Presentation\Tool\ToolLocale;
 use App\Tests\Mcp\Support\SpeaksMcp;
+use App\Tests\Support\ReadsAllChannelsLog;
 use Doctrine\ORM\EntityManagerInterface;
+use Monolog\Level;
+use Monolog\LogRecord;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 
@@ -24,6 +28,7 @@ use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
  */
 final class PresentForRolePromptTest extends WebTestCase
 {
+    use ReadsAllChannelsLog;
     use SpeaksMcp;
 
     private const string PROMPT = 'present_for_role';
@@ -170,15 +175,67 @@ final class PresentForRolePromptTest extends WebTestCase
     }
 
     /**
-     * `role` est requis : sans lui, le SDK refuse avant le prompt, par son
-     * erreur générique (le protocole attendrait `-32602`).
+     * `role` est requis (`prompts/list` le dit) : sans lui, le prompt refuse
+     * par son propre message. Le paramètre n'étant pas typé (#663), le SDK lui
+     * passe `null` au lieu de refuser avant lui par son erreur générique.
      */
     public function testAMissingRoleIsRefused(): void
     {
         $error = $this->promptError(['locale' => 'en']);
 
         self::assertSame(self::PROMPT_ERROR, $error['code']);
-        self::assertSame('Error while handling prompt', $error['message']);
+        self::assertSame(PromptRole::NOT_A_TEXT, $error['message']);
+    }
+
+    /**
+     * Un argument de prompt est une chaîne (MCP, `GetPromptRequest`). D'un
+     * autre type, le SDK 0.8.1 le convertissait vers le type du paramètre :
+     * un tableau devenait « Array », avec un avertissement PHP sur le canal
+     * `php` — une ligne `warning` qu'un anonyme provoquait à volonté en
+     * production (#663, point 7). Refusé avant toute conversion, sans aucune
+     * ligne au-dessus de `notice`, sur aucun canal.
+     *
+     * @param array<string, mixed> $arguments
+     */
+    #[DataProvider('argumentsOfAnotherTypeThanText')]
+    public function testAnArgumentOfAnotherTypeThanTextIsRefusedWithoutAWarning(array $arguments, string $expectedMessage): void
+    {
+        // L'avertissement de la conversion ne passe pas par Monolog sous
+        // PHPUnit (son gestionnaire d'erreurs prend la main, et tait ce qui
+        // vient de vendor/) : il est relevé ici, pendant la seule requête.
+        $warnings = [];
+        set_error_handler(static function (int $level, string $message) use (&$warnings): bool {
+            $warnings[] = $message;
+
+            return true;
+        });
+        try {
+            $error = $this->promptError($arguments);
+        } finally {
+            restore_error_handler();
+        }
+
+        self::assertSame(self::PROMPT_ERROR, $error['code']);
+        self::assertSame($expectedMessage, $error['message']);
+        self::assertSame([], $warnings);
+        $loud = array_filter(self::allChannelsLogRecords(), static fn (LogRecord $record): bool => $record->level->isHigherThan(Level::Notice));
+        self::assertSame([], array_map(static fn (LogRecord $record): string => $record->channel.' '.$record->level->getName().' '.mb_substr($record->message, 0, 120), array_values($loud)));
+    }
+
+    /**
+     * @return iterable<string, array{array<string, mixed>, string}>
+     */
+    public static function argumentsOfAnotherTypeThanText(): iterable
+    {
+        yield 'rôle en liste' => [['role' => [self::ROLE]], PromptRole::NOT_A_TEXT];
+        yield 'rôle en objet' => [['role' => ['title' => self::ROLE]], PromptRole::NOT_A_TEXT];
+        yield 'rôle en nombre' => [['role' => 42], PromptRole::NOT_A_TEXT];
+        yield 'rôle booléen' => [['role' => true], PromptRole::NOT_A_TEXT];
+        yield 'rôle nul' => [['role' => null], PromptRole::NOT_A_TEXT];
+        yield 'langue en liste' => [['role' => self::ROLE, 'locale' => ['en']], ToolLocale::UNKNOWN_LANGUAGE];
+        yield 'langue en objet' => [['role' => self::ROLE, 'locale' => ['code' => 'en']], ToolLocale::UNKNOWN_LANGUAGE];
+        // `null` n'est pas dans la liste : le SDK le lit comme absent (`isset`)
+        // et passe la langue par défaut, avant le prompt.
     }
 
     public function testAnUnknownLanguageIsRefused(): void
@@ -221,7 +278,7 @@ final class PresentForRolePromptTest extends WebTestCase
     }
 
     /**
-     * @param array<string, string> $arguments
+     * @param array<string, mixed> $arguments
      *
      * @return array<string, mixed>
      */
@@ -238,7 +295,7 @@ final class PresentForRolePromptTest extends WebTestCase
     }
 
     /**
-     * @param array<string, string> $arguments
+     * @param array<string, mixed> $arguments
      *
      * @return array<string, mixed>
      */

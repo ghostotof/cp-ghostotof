@@ -16,7 +16,9 @@ paths:
   `mcp/sdk` are pinned **exact** (`0.14.1`, `0.8.1`; the bundle requires `mcp/sdk ^0.8.1`, so 0.9 is out until
   a bundle release moves) — `McpEndpointTest::testTheMcpPackagesArePinnedExactly` refuses any operator.
   `nyholm/psr7` is the PSR-17 implementation the bundle's `Http\Discovery\Psr17Factory` looks for;
-  `php-http/discovery` is `false` in `allow-plugins`, so nothing gets installed behind our back.
+  `php-http/discovery` is `false` in `allow-plugins`, so nothing gets installed behind our back. That package is
+  the bundle's, never in our `require`: `src/` takes the service `mcp.psr17_factory` by its PSR-17 interfaces
+  (one parameter typed `ResponseFactoryInterface&StreamFactoryInterface`), never by its class (#663, `McpEndpointTest`).
 - **A tool serves exactly what its route serves** (ADR 0006 D1). Every route-backed tool goes through
   `Application/RoutePayloadReaderInterface` (`Infrastructure/ApiPlatform/ApiPlatformRoutePayloadReader`): the
   resource's **single** `GET` operation the server may serve without an MCP connection (else
@@ -135,8 +137,15 @@ paths:
   instruction sixty lines down, or mimicked on its own line an end of block and a fake reminder) — a pasted
   list becomes one line, accepted —, then trimmed; refused without a letter or digit. `delimited($tag)`
   writes the block. A refusal (and an unknown language) is a `PromptGetException`, the only
-  error the SDK 0.8.1 renders with its message — `-32603`, where the protocol wants `-32602`; a missing
-  `role` is the SDK's own generic `-32603` « Error while handling prompt ». Its message never quotes the
+  error the SDK 0.8.1 renders with its message — `-32603`, where the protocol wants `-32602`. **Both parameters
+  are untyped (`mixed`)** (#663): typed `string`, the SDK cast an argument of another type itself — an array became
+  `"Array"` with a PHP `warning` on the `php` channel (fixed text, no value), a line an anonymous caller produced at
+  will in production. `PromptRole::fromInput()` refuses anything but a string with `NOT_A_TEXT` — a missing `role`
+  too, which the SDK now passes as `null` instead of its generic « Error while handling prompt » —, and a `locale`
+  of another type is an unknown language (`null` stays the default: the SDK reads it as absent).
+  `PresentForRolePromptTest` catches the PHP warning with its own error handler (PHPUnit's keeps vendor warnings
+  away from Monolog) and reads every channel above `notice`. A tool needs none of this: the SDK validates its
+  arguments against the `inputSchema` first. Its message never quotes the
   text received: the SDK logs it with the error, at `error`, which `SdkChannelRedactor` downgrades to `notice` (#643). A
   PCRE or NFKC failure is `RoleNeutralisationFailedException`, a server fault (generic `-32603`), never a
   « role is empty »; a Unicode property the PCRE did not know would fail closed too, but as the compile
@@ -176,12 +185,21 @@ paths:
   `phpunit.dist.xml`, as an `<env>` **without `force`** (PHPUnit then keeps a value the process environment
   already carries — `<server>` always overwrites). In `test-backend` the suite runs `--exclude-group d8`, and
   a step of its own, run whenever the suite ran, runs `--group d8` with the **repository secret**
-  `MCP_D8_AUTHOR_NAME`: the rest of the suite and its `vendor/` code never hold it. A Dependabot push cannot
-  read it: for the actor `dependabot[bot]` only, the empty variable is unset and the fictive name applies;
-  anywhere else an empty name fails the guard, saying so. **Under `GITHUB_ACTIONS` a failure gives the number
+  `MCP_D8_AUTHOR_NAME`: the rest of the suite and its `vendor/` code never hold it. **No actor falls back on the
+  fictive name** (#663): a Dependabot push reads only the **Dependabot secrets**, so the same secret is set
+  there too — before #663 the empty variable was unset for `dependabot[bot]`, and a bump of `mcp/sdk` or
+  `symfony/mcp-bundle`, which write what the server publishes, was never checked against the real name in its
+  own run (only after its merge, on `develop`'s). Without the Dependabot copy, a Dependabot run fails the guard,
+  saying so, like an empty name anywhere else. Accepted: the name then reaches the dependency code of a
+  Dependabot branch not reviewed yet — the code it would reach on `develop` once merged; the alternative (an
+  `ignore` of the two packages in `dependabot.yml`, bumped by hand) gave up their update PRs.
+  `tools/tests/d8-guard-step.test.sh` (`tools-tests`) pins that step: the secret in its `env`, no fallback in its
+  script, no other line of `pipeline.yml` naming the variable (`.github/` is not mounted in the dev container,
+  hence a shell test rather than PHPUnit); `tools/github-settings.sh` (step `l`) checks both copies exist. **Under `GITHUB_ACTIONS` a failure gives the number
   of mentions only** — a public log naming the path and the term's number would tell which published word is
   the name; locally it lists them. Set or rotate the secret from a prompt or a file, never `--body`:
-  `gh secret set MCP_D8_AUTHOR_NAME --repo ghostotof/cp-ghostotof` (the author decided on 2026-10-20 that his
+  `gh secret set MCP_D8_AUTHOR_NAME --repo ghostotof/cp-ghostotof`, then the same with `--app dependabot` (the
+  two stores are distinct; the author decided on 2026-10-20 that his
   name alone is no secret in an assistant session, so it may be run there too; it stays out of the repo). To
   check the real name locally: `read -r MCP_D8_AUTHOR_NAME && export MCP_D8_AUTHOR_NAME`, then `docker compose
   exec -e MCP_D8_AUTHOR_NAME -T -u dev backend php bin/phpunit --group d8` (`-e` without a value: nothing in
@@ -233,7 +251,11 @@ paths:
   drained): ADR 0006 D6's « no write per call » holds for the authentication, not for the session.
   `Psr16SessionStore` swallows every exception and returns `false`; the decorator logs that `warning` too, on a
   refused write and on a session **present but unreadable** (`read()` false while `exists()` is true — the cache
-  MAC refused after an `APP_SECRET` rotation, #641): the SDK then starts from an empty session.
+  MAC refused after an `APP_SECRET` rotation, #641): the SDK then starts from an empty session. That second
+  `exists()` is run **only for an id received** — one the SDK's own `exists()` found earlier in the request
+  (`Protocol` checks a received id before reading it) —, and is still re-run then (expired in between: absent,
+  not unreadable): a new session reads `false` in `save()` on every `initialize`, and the check cost it one query
+  for nothing (#663). The memory of received ids is cleared by `reset()`, like the destroyed ones.
 - **`GET /api/mcp` answers an empty SSE stream, not 405** (`Presentation/Controller/McpEndpointController`, an
   `#[AsDecorator]` of `mcp.server.portfolio.controller`): `retry: 300000`, then closed. The SDK 0.8.1 answers
   405 (spec-compliant), which PhpStorm's AI Assistant takes for a failure. A finished `Response`, **never a
@@ -245,7 +267,8 @@ paths:
   `MiddlewareRequestHandler` — never a copy of their rules: T1's copy kept one host where `allowed_hosts` is a
   list, and split `[::1]:8080` into `[`. Then it answers as the transport does for a session: 400 for a
   malformed or repeated `Mcp-Session-Id`, 404 for an unknown or expired one (the client re-initialises; a GET
-  without the header is still served), 406 without `Accept: text/event-stream`. `McpEndpointGetTest` pins each
+  without the header is still served, and so is one whose header is empty or `0`, which the transport reads
+  as absent — #663), 406 without `Accept: text/event-stream`. `McpEndpointGetTest` pins each
   case, the host rules on a several-host list included. Accepted, like the SDK: the `Origin` check ignores
   scheme and port (`http://<site>:8443` passes), a page served on the site's own name.
 - **Tests** speak MCP through `tests/Mcp/Support/SpeaksMcp` (`initializeMcpSession()`, `mcpCall()`, JSON or
@@ -273,9 +296,8 @@ paths:
   `-32602` or for a missing or unconvertible argument (message prefix). **Never `Mcp\Exception\InvalidArgumentException`**:
   the SDK also throws it for wiring defects (« Invalid handler type »), which would vanish under the cap. A server
   fault (`JsonException` while encoding, a wiring `LogicException`, `RoleNeutralisationFailedException`) keeps its
-  level (`SdkChannelRedactorTest`). Not on this channel: an argument of another type than the prompt's `string`
-  (an array for `role`) is cast to `"Array"` by the SDK, with a PHP `warning` on the `php` channel (fixed text, no
-  value) — the follow-up issue of the review of #643. `SdkChannelRecordsTest` provokes each client fault on the real server, with
+  level (`SdkChannelRedactorTest`). An argument of another type than a string (an array for `role`) is refused by
+  the prompt before any cast since #663 (« The prompt », above). `SdkChannelRecordsTest` provokes each client fault on the real server, with
   100 KB names, and reads the `all_channels_test` probe at `debug`: nothing at `warning` or above, no client
   string whole, no `role` sentinel, no session id — an SDK upgrade that renames a message or a class turns it red.
   Accepted: the dev log loses the raw messages too (the processor is not per environment).

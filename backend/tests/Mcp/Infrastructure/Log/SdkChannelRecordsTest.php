@@ -160,8 +160,8 @@ final class SdkChannelRecordsTest extends WebTestCase
         yield 'rôle refusé pour sa longueur' => ['prompts/get', ['name' => 'present_for_role', 'arguments' => ['role' => $tooLong]]];
         yield 'langue inconnue du prompt' => ['prompts/get', ['name' => 'present_for_role', 'arguments' => ['role' => 'PHP developer', 'locale' => 'Sentinelle-643']]];
         yield 'langue inconnue d\'un outil' => ['tools/call', ['name' => 'get_about', 'arguments' => ['locale' => 'Sentinelle-643']]];
-        // Le SDK 0.8.1 le convertit en « Array » (avertissement PHP sur le canal
-        // `php`, hors de ce canal) : le prompt répond, rien de la valeur ne sort.
+        // Refusé par PromptRole avant que le SDK ne le convertisse (#663 : il en
+        // faisait « Array », avec un avertissement PHP) ; rien de la valeur ne sort.
         yield 'rôle d\'un autre type' => ['prompts/get', ['name' => 'present_for_role', 'arguments' => ['role' => ['Sentinelle-643']]]];
     }
 

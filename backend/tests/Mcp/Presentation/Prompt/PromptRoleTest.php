@@ -198,6 +198,31 @@ final class PromptRoleTest extends TestCase
         self::assertSame($role, PromptRole::fromInput($role)->text);
     }
 
+    /**
+     * Ce que le SDK passe d'un argument JSON d'un autre type, ou d'un `role`
+     * absent (`null`) : refusé avant toute conversion (#663).
+     *
+     * @return iterable<string, array{mixed}>
+     */
+    public static function inputsOfAnotherTypeThanText(): iterable
+    {
+        yield 'liste' => [['Senior PHP developer']];
+        yield 'objet' => [['title' => 'Senior PHP developer']];
+        yield 'entier' => [42];
+        yield 'flottant' => [4.2];
+        yield 'booléen' => [true];
+        yield 'absent' => [null];
+    }
+
+    #[DataProvider('inputsOfAnotherTypeThanText')]
+    public function testAnInputOfAnotherTypeThanTextIsRefused(mixed $input): void
+    {
+        $this->expectException(PromptGetException::class);
+        $this->expectExceptionMessage(PromptRole::NOT_A_TEXT);
+
+        PromptRole::fromInput($input);
+    }
+
     public function testARoleBeyondTheBoundIsRefused(): void
     {
         $this->expectException(PromptGetException::class);

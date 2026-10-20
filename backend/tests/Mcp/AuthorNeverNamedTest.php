@@ -259,7 +259,7 @@ final class AuthorNeverNamedTest extends WebTestCase
     {
         $name = $_ENV['MCP_D8_AUTHOR_NAME'] ?? null;
         self::assertIsString($name, 'MCP_D8_AUTHOR_NAME manque (phpunit.dist.xml, ou le secret en CI).');
-        self::assertNotSame('', trim($name), 'MCP_D8_AUTHOR_NAME est vide : le secret de CI est-il posé ?');
+        self::assertNotSame('', trim($name), 'MCP_D8_AUTHOR_NAME est vide : le secret de CI est-il posé (secrets Actions, et secrets Dependabot pour un push de Dependabot) ?');
 
         return $name;
     }

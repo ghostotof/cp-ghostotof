@@ -56,6 +56,12 @@ final readonly class PromptRole
     /** Un intitulé de poste et quelques exigences ; une fiche de poste entière est refusée (décision du 2026-10-19). */
     public const int MAX_CHARACTERS = 500;
 
+    /**
+     * Le refus d'un `role` absent ou d'un autre type qu'une chaîne (#663) : un
+     * argument de prompt est une chaîne (MCP, `GetPromptRequest`).
+     */
+    public const string NOT_A_TEXT = 'The role must be a text: describe the role to present the author for.';
+
     /** Le plafond du texte nettoyé : le double de la borne publiée (décision du 2026-10-20, #662). */
     public const int MAX_CLEANED_CHARACTERS = 2 * self::MAX_CHARACTERS;
 
@@ -109,11 +115,22 @@ final readonly class PromptRole
     }
 
     /**
-     * @throws PromptGetException                texte sans lettre ni chiffre après nettoyage, au-delà de la borne ou du plafond
+     * L'argument tel que le SDK le reçoit, **non typé** (#663) : un paramètre
+     * `string` laissait le SDK 0.8.1 convertir lui-même un autre type — un
+     * tableau en « Array », avec un avertissement PHP sur le canal `php`,
+     * qu'un anonyme provoquait à volonté en production. Le type est refusé
+     * ici, avant toute conversion ; un `role` absent arrive `null` et l'est
+     * de même.
+     *
+     * @throws PromptGetException                autre chose qu'une chaîne, texte sans lettre ni chiffre après nettoyage, au-delà de la borne ou du plafond
      * @throws RoleNeutralisationFailedException échec de PCRE ou de la normalisation : un défaut du serveur, jamais un « rôle vide »
      */
-    public static function fromInput(string $input): self
+    public static function fromInput(mixed $input): self
     {
+        if (!\is_string($input)) {
+            throw new PromptGetException(self::NOT_A_TEXT);
+        }
+
         // La borne se compte sur ce que la personne a saisi, avant tout
         // nettoyage : retirer des caractères ne doit pas faire passer un texte
         // trop long.

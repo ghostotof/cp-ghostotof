@@ -12,8 +12,8 @@ phase 1 parte en release seule ; puis au merge de clôture, qui archive la spec 
 
 - [x] Tâche 1 — Socle, `/api/mcp` répond et `get_about` rend sa route (#640) — bloquée par : aucune
 - [x] Tâche 2 — Catalogue complet et test d'exposition symétrique (#641) — bloquée par : #640
-- [ ] Tâche 3 — Prompt `present_for_role` et garde D8 (#642) — bloquée par : #641
-- [ ] Tâche 4 — Journal `mcp` (IP tronquée) et registre RGPD (#643) — bloquée par : #640
+- [x] Tâche 3 — Prompt `present_for_role` et garde D8 (#642) — bloquée par : #641
+- [x] Tâche 4 — Journal `mcp` (IP tronquée) et registre RGPD (#643) — bloquée par : #640
 - [x] Tâche 5 — Zone nginx `mcp` et smoke 429 (#644) — bloquée par : #640
 - [ ] Tâche 6 — Page « Brancher votre assistant » (#645) — bloquée par : #641
 
@@ -22,10 +22,14 @@ phase 1 parte en release seule ; puis au merge de clôture, qui archive la spec 
 - [ ] Premier passage vers `develop` : `tasks/` n'y entre jamais. PR d'une branche
       `feature/379-mcp-phase-1` tirée de la mère, où `tasks/` est retiré par un seul commit
       (`git rm -r tasks`) ; la mère le garde. La spec, encore ouverte, entre dans `develop` sous
-      `.claude/specs/`. Pas d'archivage : la feature reste ouverte
-- [ ] Release : variable d'hôte `allowed_hosts` posée en préprod et en prod ; smoke 429 lu ;
-      Claude Code branché en préprod (en-tête Basic) ; claude.ai, ChatGPT, Cursor, PhpStorm vérifiés
-      en prod
+      `.claude/specs/`. Pas d'archivage : la feature reste ouverte. **Avant** : le secret
+      `MCP_D8_AUTHOR_NAME` posé aussi dans les secrets Dependabot (`gh secret set MCP_D8_AUTHOR_NAME
+      --app dependabot`, #663) — sinon, une fois `pipeline.yml` dans `develop`, chaque push de Dependabot échoue la garde D8 ;
+      `tools/github-settings.sh`, étape `l`, le vérifie
+- [ ] Release : aucune variable d'hôte à poser — `allowed_hosts` dérive d'`APP_FRONTEND_BASE_URL`
+      (`mcp.yaml`), déjà posée par overlay ; l'`initialize` du smoke MCP sur l'hôte public le prouve
+      (un 403 dirait qu'il manque) ; smoke 429 lu ; Claude Code branché en préprod (en-tête Basic) ;
+      claude.ai, ChatGPT, Cursor, PhpStorm vérifiés en prod
 
 ## Phase 2 — connexion MCP (palier de confiance)
 

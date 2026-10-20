@@ -8,6 +8,7 @@ use App\Mcp\Infrastructure\Session\BoundedSessionStore;
 use App\Security\User\Application\CpgUserRegistrarInterface;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Tests\Mcp\Support\SpeaksMcp;
+use App\Tests\Support\PhpSources;
 use App\Tests\Support\RepositoryFiles;
 use App\Tests\Support\TestCredentials;
 use Doctrine\ORM\EntityManagerInterface;
@@ -266,6 +267,33 @@ final class McpEndpointTest extends WebTestCase
 
         self::assertArrayHasKey('symfony/mcp-bundle', $composer['require']);
         self::assertArrayHasKey('mcp/sdk', $composer['require']);
+    }
+
+    /**
+     * `php-http/discovery` n'arrive que par le bundle (son `Psr17Factory`,
+     * service `mcp.psr17_factory`) : `src/` dépend des interfaces PSR-17, qui
+     * sont à `psr/http-factory` (contrat stable, arrivé par `nyholm/psr7`,
+     * que le `require` porte), jamais de cette classe concrète d'un paquet
+     * absent du `require` — une montée du bundle qui la retirerait casserait
+     * le contrôleur sans qu'aucune contrainte ne le dise (#663, point 3).
+     */
+    public function testSrcNamesNoClassOfTheDiscoveryPackageItDoesNotRequire(): void
+    {
+        $composer = json_decode(RepositoryFiles::read(RepositoryFiles::backend('composer.json')), true, flags: \JSON_THROW_ON_ERROR);
+        self::assertIsArray($composer);
+        self::assertIsArray($composer['require']);
+        self::assertArrayNotHasKey('php-http/discovery', $composer['require'], 'Requis désormais : ce test n\'a plus de raison d\'être.');
+
+        $offenders = [];
+        foreach (PhpSources::files(RepositoryFiles::backend('src')) as $path) {
+            foreach (PhpSources::significantTokens(RepositoryFiles::read($path)) as $token) {
+                if ($token->is([\T_NAME_QUALIFIED, \T_NAME_FULLY_QUALIFIED]) && str_starts_with(ltrim($token->text, '\\'), 'Http\\Discovery\\')) {
+                    $offenders[] = \sprintf('%s:%d %s', substr($path, \strlen(RepositoryFiles::backend())), $token->line, $token->text);
+                }
+            }
+        }
+
+        self::assertSame([], $offenders);
     }
 
     private function largestStoredMcpSession(): int
