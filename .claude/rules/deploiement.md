@@ -93,7 +93,7 @@ paths:
   trigger travels in a **cookie** — Xdebug 3.5 does not read HTTP headers, and nginx logs the query string.
   Production receives none of this. Procedure in `k8s/README.md`.
 - **No pod mounts a ServiceAccount token, and both namespaces carry Pod Security Admission labels**
-  (audit A17). `automountServiceAccountToken: false` on all sixteen pod specs, the eight Jobs outside kustomize
+  (audit A17). `automountServiceAccountToken: false` on all seventeen pod specs (the hourly `cache-prune-cronjob.yaml`, #644, among them), the eight Jobs outside kustomize
   included (`postgres-hba-probe-job.yaml`, #596, among them) — none of them talks to the Kubernetes API (RabbitMQ does no peer discovery here, ESO runs in
   its own namespace), so the default `default`-SA token was pure standing credential. The `preprod` and
   `prod` `Namespace` objects set `enforce: baseline` with `audit`/`warn: restricted`: RabbitMQ declares no

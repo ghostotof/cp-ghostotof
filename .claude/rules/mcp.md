@@ -207,7 +207,8 @@ paths:
   once, `session.ttl` in `mcp.yaml`, 1 h), through the PSR-16 service `app.mcp.session_cache` (`psr/simple-cache`
   is a direct dependency for it): never the bundle's default `file` store under `var/cache` (read-only pod, two
   replicas, ADR 0005). The values carry the cache MAC like every DBAL pool (#468), and `cache:pool:prune` purges
-  them. **A session is bounded** (`Infrastructure/Session/BoundedSessionStore`, an `#[AsDecorator]` of
+  them, **every hour** since #644 (`k8s/base/cache-prune-cronjob.yaml`, `McpSessionsPrunedHourlyTest`): an expired
+  session lived up to 25 h with the daily purge only, now 2 h at most. **A session is bounded** (`Infrastructure/Session/BoundedSessionStore`, an `#[AsDecorator]` of
   `mcp.server.portfolio.session.store`, `MAX_BYTES` 512 KiB): the SDK copies into it what the client declares
   (`clientInfo`, `capabilities` and their free `experimental` fields, « responses » under ids of the client's
   choosing) and rewrites the whole row on every request — unbounded, an anonymous client filled `cache_items`,

@@ -42,7 +42,8 @@ paths:
   (CI's disk is writable). `cache.app` is now `cache.adapter.doctrine_dbal` in **every** env
   (`cache.yaml`), table `cache_items` created by migration `Version20260916180000`, pruned
   daily by `cache:pool:prune` in the housekeeping CronJob (`messenger-purge-cronjob.yaml`, name
-  kept: `apply -k` never deletes a renamed object). `tests/Security/RateLimiterStorageTest`
+  kept: `apply -k` never deletes a renamed object) and **hourly** by `cache-prune-cronjob.yaml` (#644: an MCP
+  session lives an hour, and every anonymous `initialize` writes one; `McpSessionsPrunedHourlyTest`). `tests/Security/RateLimiterStorageTest`
   pins it (every limiter + `cache.app` DBAL-backed, never Filesystem — add a new limiter to its
   list); `tools/smoke-login-throttling.sh`, run by `smoke-test-preprod`, is the only check that
   exercises a real pod (6 wrong logins, the 6th must be a 429 `/errors/rate-limited` **with** a
