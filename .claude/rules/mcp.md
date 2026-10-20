@@ -137,8 +137,15 @@ paths:
   instruction sixty lines down, or mimicked on its own line an end of block and a fake reminder) — a pasted
   list becomes one line, accepted —, then trimmed; refused without a letter or digit. `delimited($tag)`
   writes the block. A refusal (and an unknown language) is a `PromptGetException`, the only
-  error the SDK 0.8.1 renders with its message — `-32603`, where the protocol wants `-32602`; a missing
-  `role` is the SDK's own generic `-32603` « Error while handling prompt ». Its message never quotes the
+  error the SDK 0.8.1 renders with its message — `-32603`, where the protocol wants `-32602`. **Both parameters
+  are untyped (`mixed`)** (#663): typed `string`, the SDK cast an argument of another type itself — an array became
+  `"Array"` with a PHP `warning` on the `php` channel (fixed text, no value), a line an anonymous caller produced at
+  will in production. `PromptRole::fromInput()` refuses anything but a string with `NOT_A_TEXT` — a missing `role`
+  too, which the SDK now passes as `null` instead of its generic « Error while handling prompt » —, and a `locale`
+  of another type is an unknown language (`null` stays the default: the SDK reads it as absent).
+  `PresentForRolePromptTest` catches the PHP warning with its own error handler (PHPUnit's keeps vendor warnings
+  away from Monolog) and reads every channel above `notice`. A tool needs none of this: the SDK validates its
+  arguments against the `inputSchema` first. Its message never quotes the
   text received: the SDK logs it with the error, at `error`, which `SdkChannelRedactor` downgrades to `notice` (#643). A
   PCRE or NFKC failure is `RoleNeutralisationFailedException`, a server fault (generic `-32603`), never a
   « role is empty »; a Unicode property the PCRE did not know would fail closed too, but as the compile
@@ -280,9 +287,8 @@ paths:
   `-32602` or for a missing or unconvertible argument (message prefix). **Never `Mcp\Exception\InvalidArgumentException`**:
   the SDK also throws it for wiring defects (« Invalid handler type »), which would vanish under the cap. A server
   fault (`JsonException` while encoding, a wiring `LogicException`, `RoleNeutralisationFailedException`) keeps its
-  level (`SdkChannelRedactorTest`). Not on this channel: an argument of another type than the prompt's `string`
-  (an array for `role`) is cast to `"Array"` by the SDK, with a PHP `warning` on the `php` channel (fixed text, no
-  value) — the follow-up issue of the review of #643. `SdkChannelRecordsTest` provokes each client fault on the real server, with
+  level (`SdkChannelRedactorTest`). An argument of another type than a string (an array for `role`) is refused by
+  the prompt before any cast since #663 (« The prompt », above). `SdkChannelRecordsTest` provokes each client fault on the real server, with
   100 KB names, and reads the `all_channels_test` probe at `debug`: nothing at `warning` or above, no client
   string whole, no `role` sentinel, no session id — an SDK upgrade that renames a message or a class turns it red.
   Accepted: the dev log loses the raw messages too (the processor is not per environment).
