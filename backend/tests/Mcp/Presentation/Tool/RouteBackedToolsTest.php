@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Mcp\Presentation\Tool;
 
+use App\Mcp\Infrastructure\Session\BoundedSessionStore;
 use App\Portfolio\Experience\Application\ExperienceTechnologyRegistrarInterface;
 use App\Portfolio\Experience\Domain\ValueObject\ExperienceYears;
 use App\Portfolio\Experience\Domain\ValueObject\TechnologyName;
@@ -59,6 +60,15 @@ final class RouteBackedToolsTest extends WebTestCase
 
     /** Identifiant d'une vulnérabilité du relevé : réservé à ROLE_SUPER, jamais servi par l'outil. */
     private const string VULNERABILITY_ID = 'GHSA-h7vf-5wrv-9fhv';
+
+    /** Part de la borne de session qu'une réponse d'outil peut occuper en file (#644) : un huitième. */
+    private const int ANSWER_SHARE_OF_THE_SESSION_BOUND = BoundedSessionStore::MAX_BYTES / 8;
+
+    /** Octets en file par octet du corps de la route : 2,1 à 2,8 mesurés sur la prod (#644). */
+    private const int QUEUED_PER_ROUTE_BYTE = 3;
+
+    /** L'enveloppe JSON-RPC et le bloc `content`, qui pèsent plus que le payload d'une petite route. */
+    private const int ENVELOPE_BYTES = 1024;
 
     /** Tables que les seeds de ce test remplissent. */
     private const array SEEDED_TABLES = ['contribution', 'incident', 'quality_principle', 'quality_trait', 'experience_technology', 'watch_snapshot', 'anonymous_cv_section', 'case_study'];
@@ -142,6 +152,39 @@ final class RouteBackedToolsTest extends WebTestCase
 
         self::assertTrue($listed['annotations']['readOnlyHint']);
         self::assertSame([], new SchemaValidator()->validateAgainstJsonSchema($result['structuredContent'], $listed['outputSchema']));
+    }
+
+    /**
+     * La réponse d'un outil passe par la session avant de partir (#644) : le
+     * SDK l'encode en JSON, la met en file dans la session, que
+     * `Session::save()` réencode — la chaîne JSON dans du JSON, chaque `"`,
+     * `\` et `/` doublé. Au-delà de {@see BoundedSessionStore::MAX_BYTES}, la
+     * session est détruite et la réponse perdue.
+     *
+     * Deux bornes. Une part de la borne de session, sur le contenu des seeds
+     * (un ordre de grandeur, pas la prod). Et un rapport au corps de la route,
+     * qui ne dépend pas du contenu : un SDK qui ajouterait une troisième copie
+     * du payload, ou cesserait d'échapper l'unicode une fois sur deux,
+     * changerait ce rapport. Mesuré sur la production le 2026-10-20 avec le
+     * même calcul : 2,1 à 2,8 fois le corps, 21,6 Ko au plus
+     * (`get_anonymous_cv` fr, corps de 10,2 Ko) — 4 % de la borne.
+     *
+     * @param array<string, string> $arguments
+     */
+    #[DataProvider('toolsAndTheirRoutes')]
+    public function testTheAnswerQueuedInTheSessionStaysFarBelowTheSessionBound(string $tool, array $arguments, string $routePath, string $content, bool $collection, bool $baseTier): void
+    {
+        $client = self::createClient();
+        $this->seed($content);
+        $this->routeBodyAtItsTier($client, $routePath, $baseTier);
+        $routeBytes = \strlen((string) $client->getResponse()->getContent());
+
+        $sessionId = $this->initializeMcpSession($client);
+        $this->callMcpTool($client, $sessionId, $tool, $arguments);
+        $queuedBytes = \strlen(json_encode($this->rawJsonRpcAnswer($client), \JSON_THROW_ON_ERROR));
+
+        self::assertLessThanOrEqual(self::ANSWER_SHARE_OF_THE_SESSION_BOUND, $queuedBytes, \sprintf('%s : %d octets en file, borne de session %d.', $tool, $queuedBytes, BoundedSessionStore::MAX_BYTES));
+        self::assertLessThanOrEqual(self::QUEUED_PER_ROUTE_BYTE * $routeBytes + self::ENVELOPE_BYTES, $queuedBytes, \sprintf('%s : %d octets en file pour un corps de route de %d.', $tool, $queuedBytes, $routeBytes));
     }
 
     /**
@@ -270,6 +313,19 @@ final class RouteBackedToolsTest extends WebTestCase
         $client->getCookieJar()->clear();
 
         return $body;
+    }
+
+    /**
+     * La réponse JSON-RPC telle que le SDK l'a encodée — la chaîne même qu'il
+     * met en file dans la session —, que le transport l'ait rendue en JSON ou
+     * dans un flux SSE.
+     */
+    private function rawJsonRpcAnswer(KernelBrowser $client): string
+    {
+        $response = $client->getResponse();
+        $body = (string) $response->getContent();
+
+        return str_starts_with((string) $response->headers->get('Content-Type'), 'text/event-stream') ? self::lastJsonRpcAnswerOf($body) : $body;
     }
 
     private function toolTakesALocale(KernelBrowser $client, string $sessionId, string $tool): bool

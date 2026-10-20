@@ -220,7 +220,12 @@ paths:
   (it could not fit), the client sees no JSON-RPC answer, then a 404. The **number** of sessions per IP is
   the nginx `mcp` zone's business (#644), not the bound's. **The bound must fit the largest legitimate
   answer**: the SDK queues a tool's response in the session before sending it, so every answer goes through
-  `cache_items` — phase 2's nominative corpus included (measure it there). Each MCP request costs three
+  `cache_items` — phase 2's nominative corpus included (measure it there). **Guarded since #644**:
+  `RouteBackedToolsTest::testTheAnswerQueuedInTheSessionStaysFarBelowTheSessionBound` measures, per route-backed tool on
+  the seeds, what is queued — the SDK's JSON answer, JSON-encoded again by `Session::save()` — and keeps it under an eighth
+  of `MAX_BYTES` and under 3 × the route body + 1 KiB (a ratio independent of the content: an SDK change of encoding
+  moves it). Measured on production on 2026-10-20 with the same computation: 2.1 to 2.8 × the route body, 21.6 KB at most
+  (`get_anonymous_cv` fr, 10.2 KB body), 4 % of the bound; the seeds give the same order (12 KB for `list_incidents`). Each MCP request costs three
   round trips on the session row (`has`, `get`, `set`) and two writes per `tools/call` (save, then the queue
   drained): ADR 0006 D6's « no write per call » holds for the authentication, not for the session.
   `Psr16SessionStore` swallows every exception and returns `false`; the decorator logs that `warning` too, on a
