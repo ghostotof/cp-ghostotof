@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Mcp\Infrastructure\Log;
 
 use App\Mcp\Infrastructure\Log\McpCallLog;
+use LogicException;
 use Mcp\Capability\Registry;
 use Mcp\Event\RequestEvent as McpRequestEvent;
 use Mcp\Schema\Request\CallToolRequest;
@@ -13,6 +14,8 @@ use Mcp\Server\Session\Session;
 use Monolog\Handler\TestHandler;
 use Monolog\Logger;
 use PHPUnit\Framework\TestCase;
+use Symfony\Bridge\PsrHttpMessage\Factory\PsrHttpFactory;
+use Symfony\Bridge\PsrHttpMessage\HttpMessageFactoryInterface;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Event\RequestEvent;
@@ -33,7 +36,7 @@ final class McpCallLogTerminateTest extends TestCase
     public function testAnUnansweredRequestIsWrittenAtTerminateWithTheCallerNetwork(): void
     {
         $handler = new TestHandler();
-        $log = new McpCallLog(new Logger('mcp_usage', [$handler]), new Registry());
+        $log = new McpCallLog(new Logger('mcp_usage', [$handler]), new Registry(), new PsrHttpFactory());
         $kernel = self::createStub(HttpKernelInterface::class);
 
         $http = Request::create('/api/mcp', 'POST', server: ['REMOTE_ADDR' => '203.0.113.42']);
@@ -51,5 +54,28 @@ final class McpCallLogTerminateTest extends TestCase
         self::assertSame('protocol-error', $records[0]->context['outcome']);
         self::assertIsFloat($records[0]->context['durationMs']);
         self::assertSame('203.0.113.0', $records[0]->context['ip']);
+    }
+
+    /**
+     * La lecture de l'ère moderne relit l'échange avec les classes du SDK et du
+     * pont PSR-7 : si l'une lève, la requête garde sa ligne de repli, et la
+     * suivante ne voit rien de celle-ci (#664).
+     */
+    public function testAModernReadingThatFailsLeavesTheFallbackLine(): void
+    {
+        $handler = new TestHandler();
+        $failingBridge = self::createStub(HttpMessageFactoryInterface::class);
+        $failingBridge->method('createRequest')->willThrowException(new LogicException('pont en panne'));
+        $log = new McpCallLog(new Logger('mcp_usage', [$handler]), new Registry(), $failingBridge);
+        $kernel = self::createStub(HttpKernelInterface::class);
+
+        $http = Request::create('/api/mcp', 'POST', server: ['REMOTE_ADDR' => '203.0.113.42'], content: '{}');
+        $log->onKernelRequest(new RequestEvent($kernel, $http, HttpKernelInterface::MAIN_REQUEST));
+        $log->onTerminate(new TerminateEvent($kernel, $http, new Response('{}', 400, ['Content-Type' => 'application/json'])));
+
+        $records = $handler->getRecords();
+        self::assertCount(1, $records);
+        self::assertSame(McpCallLog::REQUEST_WITHOUT_CALL, $records[0]->message);
+        self::assertSame('protocol-error', $records[0]->context['outcome']);
     }
 }

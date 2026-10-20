@@ -11,8 +11,10 @@ use Mcp\Schema\JsonRpc\Request;
 use Mcp\Server\Stateless\RequestMeta;
 use Mcp\Server\Stateless\StatelessProtocol;
 use Mcp\Server\Wire\InboundClassifier;
+use Symfony\Bridge\PsrHttpMessage\HttpMessageFactoryInterface;
 use Symfony\Component\HttpFoundation\Request as HttpRequest;
 use Symfony\Component\HttpFoundation\Response;
+use Throwable;
 
 /**
  * Un échange de la révision sans session (2026-07-28, SEP-2575), lu de la
@@ -21,17 +23,30 @@ use Symfony\Component\HttpFoundation\Response;
  * qui n'émet aucun des événements que {@see McpCallLog} écoute pour l'autre ère.
  *
  * **L'ère est celle que le SDK décide** : son propre `InboundClassifier`, sur le
- * corps et les en-têtes, pas l'en-tête `MCP-Protocol-Version` seul (une révision
- * inconnue annoncée dans `_meta` est servie par l'ère moderne, qui la refuse ; un
+ * corps et sur les en-têtes **tels qu'il les reçoit**, convertis par le pont
+ * PSR-7 du bundle (qui rogne les blancs et écarte un en-tête à caractère de
+ * contrôle) — pas l'en-tête `MCP-Protocol-Version` seul (une révision inconnue
+ * annoncée dans `_meta` est servie par l'ère moderne, qui la refuse ; un
  * en-tête moderne sans enveloppe est refusé avant toute ère). Un message que le
  * classifieur refuse n'est d'aucune ère : il reste à la ligne de repli.
+ *
+ * **Seule une réponse du protocole compte** : du JSON, un flux SSE ou un
+ * acquittement sans corps. Le SDK refuse à son bord, avant de classer le
+ * message, un `Origin` ou un `Host` étranger (un 403 en texte brut) : aucun
+ * outil n'a été appelé, la ligne de repli le dit, comme dans l'autre ère.
+ * Limite acceptée : son refus d'un corps de plus de 4 Mio est du JSON, lu
+ * comme une erreur de protocole de la méthode envoyée — nginx borne le corps à
+ * 16 Kio bien avant.
  *
  * **La méthode est celle que le SDK reconnaît** : son `MessageFactory` en fait
  * une requête ou une notification typée, dont la classe donne le nom ; les deux
  * méthodes que le protocole sans état sert avant elle (`server/discover`,
  * `subscriptions/listen`) sont nommées par ses constantes. Toute autre, choisie
  * par l'appelant, sans borne, n'est pas recopiée — comme une méthode connue dont
- * le message est mal formé, ce que fait aussi l'autre ère.
+ * le message est mal formé, ce que fait aussi l'autre ère. La fabrique est
+ * construite sans les messages d'extension que `Builder::build()` lui ajoute :
+ * le bundle 0.14.1 n'active aucune extension (`McpCallLogTest` le fige sur
+ * `server/discover`).
  *
  * **L'issue est lue dans la réponse JSON** : un `error` (son `code`), un
  * `result.isError` à `true` (une erreur d'outil), sinon un succès. Une réponse
@@ -52,22 +67,29 @@ final readonly class ModernExchange
     ) {
     }
 
-    /** L'échange, ou `null` quand le SDK n'a pas servi la requête par l'ère moderne. */
-    public static function tryRead(HttpRequest $httpRequest, Response $response): ?self
+    /**
+     * L'échange, ou `null` quand le SDK n'a pas servi la requête par l'ère moderne.
+     *
+     * @param HttpMessageFactoryInterface $psrHttpFactory le pont du contrôleur du bundle
+     */
+    public static function tryRead(HttpRequest $httpRequest, Response $response, HttpMessageFactoryInterface $psrHttpFactory): ?self
     {
-        if (HttpRequest::METHOD_POST !== $httpRequest->getMethod()) {
+        if (HttpRequest::METHOD_POST !== $httpRequest->getMethod() || !self::isAProtocolAnswer($response)) {
             return null;
         }
 
         $body = $httpRequest->getContent();
-        $headers = array_map(static fn (array $values): string => implode(', ', $values), $httpRequest->headers->all());
+        $headers = [];
+        foreach ($psrHttpFactory->createRequest($httpRequest)->getHeaders() as $name => $values) {
+            $headers[(string) $name] = implode(', ', $values);
+        }
         if (!(new InboundClassifier())->classify(HttpRequest::METHOD_POST, $body, $headers)->modern) {
             return null;
         }
 
         // Le classifieur n'a rangé dans l'ère moderne qu'un objet JSON lisible.
         $decoded = self::decodedObject($body) ?? [];
-        $message = MessageFactory::make()->create($body)[0] ?? null;
+        $message = self::typedMessage($body);
         [$outcome, $errorCode] = self::outcomeOf($response);
 
         return new self(
@@ -77,6 +99,36 @@ final readonly class ModernExchange
             $errorCode,
             self::declaredClientInfoOf($decoded),
         );
+    }
+
+    /**
+     * Ce que rend le transport du SDK une fois le message classé : du JSON, un
+     * flux SSE (`getContent()` rend `false`), ou un acquittement sans corps,
+     * que Symfony type alors `text/html`.
+     */
+    private static function isAProtocolAnswer(Response $response): bool
+    {
+        $content = $response->getContent();
+
+        return false === $content
+            || '' === $content
+            || str_starts_with(strtolower((string) $response->headers->get('Content-Type')), 'application/json');
+    }
+
+    /**
+     * La requête ou la notification typée, comme la fabrique du SDK la construit.
+     * Le SDK acquitte une notification sans jamais la construire : un `_meta`
+     * scalaire, qu'elle range dans une propriété typée tableau, lui fait lever une
+     * `TypeError` qu'elle ne rattrape pas — le SDK entoure ses propres appels d'un
+     * `catch (\Throwable)` (audit de #664).
+     */
+    private static function typedMessage(string $body): mixed
+    {
+        try {
+            return MessageFactory::make()->create($body)[0] ?? null;
+        } catch (Throwable) {
+            return null;
+        }
     }
 
     private static function methodOf(mixed $message, mixed $sentMethod): ?string

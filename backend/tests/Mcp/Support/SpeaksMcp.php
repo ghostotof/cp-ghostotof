@@ -182,9 +182,9 @@ trait SpeaksMcp
      * méthode et, pour un outil ou un prompt, son nom. Sans `id`, c'est une
      * notification.
      *
-     * @param array<string, mixed>       $params     sans `_meta`, ajouté ici
-     * @param array<string, string>|null $clientInfo ce que le client déclare, `null` pour ne rien déclarer
-     * @param array<string, string>      $server     en-têtes supplémentaires, qui priment
+     * @param array<string, mixed>      $params     sans `_meta`, ajouté ici
+     * @param array<string, mixed>|null $clientInfo ce que le client déclare, `null` pour ne rien déclarer
+     * @param array<string, string>     $server     en-têtes supplémentaires, qui priment
      */
     private function postModernMcp(
         KernelBrowser $client,

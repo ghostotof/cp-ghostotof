@@ -312,6 +312,82 @@ final class InboundMessageRefusalTest extends WebTestCase
         self::assertResponseStatusCodeSame(202);
     }
 
+    /**
+     * Un `_meta` qui n'est pas un objet : la fabrique du SDK le range dans une
+     * propriété typée tableau d'une notification, et lève une `TypeError`
+     * (audit de #664) — une ligne `error` à volonté sur le canal `mcp`.
+     */
+    #[DataProvider('scalarMetas')]
+    public function testAScalarMetaIsRefused(int|string|bool $meta): void
+    {
+        $client = self::createClient();
+        $sessionId = $this->initializeMcpSession($client);
+
+        $this->postMcp($client, $sessionId, ['jsonrpc' => '2.0', 'method' => 'notifications/initialized', 'params' => ['_meta' => $meta]]);
+
+        $this->assertRefused($client, InboundMessageRefusal::MalformedMeta);
+    }
+
+    /**
+     * @return iterable<string, array{int|string|bool}>
+     */
+    public static function scalarMetas(): iterable
+    {
+        yield 'un entier' => [1];
+        yield 'du texte' => ['x'];
+        yield 'un booléen' => [true];
+    }
+
+    public function testAScalarMetaIsRefusedInTheSessionlessRevisionToo(): void
+    {
+        $client = self::createClient();
+
+        $this->postMcp($client, null, ['jsonrpc' => '2.0', 'method' => 'notifications/tools/list_changed', 'params' => ['_meta' => 1]], [
+            'HTTP_MCP_PROTOCOL_VERSION' => self::MCP_MODERN_REVISION,
+            'HTTP_MCP_METHOD' => 'notifications/tools/list_changed',
+        ]);
+
+        $this->assertRefused($client, InboundMessageRefusal::MalformedMeta);
+    }
+
+    /**
+     * Un `clientInfo` de la révision sans session que le SDK ne sait pas lire :
+     * il le construit hors de tout `try` et répondait 500, une ligne `critical`
+     * à volonté (audit de #664).
+     *
+     * @param array<string, mixed> $clientInfo
+     */
+    #[DataProvider('malformedClientInfos')]
+    public function testAMalformedSessionlessClientInfoIsRefused(array $clientInfo): void
+    {
+        $client = self::createClient();
+
+        $this->postModernMcp($client, 'tools/list', clientInfo: $clientInfo);
+
+        $this->assertRefused($client, InboundMessageRefusal::MalformedClientInfo);
+    }
+
+    /**
+     * @return iterable<string, array{array<string, mixed>}>
+     */
+    public static function malformedClientInfos(): iterable
+    {
+        yield 'un nom qui n\'est pas du texte' => [['name' => 1, 'version' => '1.0.0']];
+        yield 'sans version' => [['name' => 'phpunit']];
+        yield 'un nom vide' => [['name' => '', 'version' => '1.0.0']];
+        yield 'une icône qui n\'est pas un objet' => [['name' => 'phpunit', 'version' => '1.0.0', 'icons' => ['x']]];
+    }
+
+    public function testAWellFormedSessionlessClientInfoIsServed(): void
+    {
+        $client = self::createClient();
+
+        $this->postModernMcp($client, 'tools/list', clientInfo: self::CLIENT_INFO);
+
+        self::assertResponseStatusCodeSame(200);
+        $this->assertNotRefused($client);
+    }
+
     /** La forme des refus du transport du SDK : un identifiant illisible est omis, jamais `null`. */
     private function assertRefused(KernelBrowser $client, InboundMessageRefusal $refusal): void
     {

@@ -387,6 +387,23 @@ final class McpCallLogTest extends WebTestCase
         self::assertSame('success', $line->context['outcome']);
     }
 
+    /**
+     * {@see \App\Mcp\Infrastructure\Log\ModernExchange} construit la fabrique du
+     * SDK sans les messages d'extension que `Builder::build()` lui ajoute : une
+     * extension activée verrait ses méthodes journalisées sans nom. Le jour où
+     * ce test rougit, la lecture doit recevoir la fabrique du serveur.
+     */
+    public function testTheServerEnablesNoExtension(): void
+    {
+        $client = self::createClient();
+
+        $this->postModernMcp($client, 'server/discover');
+
+        $capabilities = $this->decodeMcpResponse($client)['result']['capabilities'] ?? null;
+        self::assertIsArray($capabilities);
+        self::assertArrayNotHasKey('extensions', $capabilities);
+    }
+
     /** Une notification : 202 sans corps, une ligne quand même. */
     public function testAModernNotificationHasItsLine(): void
     {
@@ -482,6 +499,109 @@ final class McpCallLogTest extends WebTestCase
         self::assertResponseStatusCodeSame(400);
 
         $this->assertFallbackLine('POST', 400, 'protocol-error', self::MCP_MODERN_REVISION);
+    }
+
+    public function testAModernPromptIsNamedButItsArgumentsNever(): void
+    {
+        $client = self::createClient();
+
+        $this->postModernMcp($client, 'prompts/get', [
+            'name' => 'present_for_role',
+            'arguments' => ['role' => 'Recrutement chez Sentinelle-664 SARL', 'locale' => 'fr'],
+        ]);
+        self::assertResponseStatusCodeSame(200);
+
+        $line = $this->onlyCallLine();
+        self::assertSame('prompts/get', $line->context['method']);
+        self::assertSame('present_for_role', $line->context['name']);
+        self::assertSame('success', $line->context['outcome']);
+        self::assertStringNotContainsStringIgnoringCase('sentinelle', (new JsonFormatter())->format($line));
+    }
+
+    /**
+     * Un lot sous l'enveloppe moderne : refusé avant le SDK (#644), et que le
+     * classifieur du SDK refuse aussi avant toute ère. La ligne de repli.
+     */
+    public function testAModernBatchLeavesTheFallbackLine(): void
+    {
+        $client = self::createClient();
+        $meta = ['io.modelcontextprotocol/protocolVersion' => self::MCP_MODERN_REVISION, 'io.modelcontextprotocol/clientCapabilities' => new stdClass()];
+
+        $this->postMcp($client, null, [
+            ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'tools/list', 'params' => ['_meta' => $meta]],
+            ['jsonrpc' => '2.0', 'id' => 2, 'method' => 'prompts/list', 'params' => ['_meta' => $meta]],
+        ], ['HTTP_MCP_PROTOCOL_VERSION' => self::MCP_MODERN_REVISION, 'HTTP_MCP_METHOD' => 'tools/list']);
+        self::assertResponseStatusCodeSame(400);
+
+        $this->assertFallbackLine('POST', 400, 'protocol-error', self::MCP_MODERN_REVISION);
+    }
+
+    /**
+     * Un `Origin` étranger : le SDK le refuse à son bord, avant de classer le
+     * message. Aucun outil n'a été appelé, la ligne de repli le dit — comme
+     * dans l'autre ère.
+     */
+    public function testAModernRefusalAtTheEdgeLeavesTheFallbackLine(): void
+    {
+        $client = self::createClient();
+
+        $this->postModernMcp($client, 'tools/call', ['name' => 'get_about', 'arguments' => new stdClass()], server: ['HTTP_ORIGIN' => 'https://evil.example']);
+        self::assertResponseStatusCodeSame(403);
+
+        $this->assertFallbackLine('POST', 403, 'protocol-error', self::MCP_MODERN_REVISION);
+    }
+
+    /**
+     * Une notification au `_meta` scalaire, refusée avant le SDK : la fabrique
+     * du SDK ne sait pas la construire (une `TypeError`). Elle a quand même sa
+     * ligne, sans méthode (audit de #664).
+     */
+    public function testAModernNotificationWithAScalarMetaHasItsLine(): void
+    {
+        $client = self::createClient();
+
+        $this->postMcp($client, null, ['jsonrpc' => '2.0', 'method' => 'notifications/tools/list_changed', 'params' => ['_meta' => 1]], [
+            'HTTP_MCP_PROTOCOL_VERSION' => self::MCP_MODERN_REVISION,
+            'HTTP_MCP_METHOD' => 'notifications/tools/list_changed',
+        ]);
+        self::assertResponseStatusCodeSame(400);
+
+        $line = $this->onlyCallLine();
+        self::assertNull($line->context['method']);
+        self::assertSame('protocol-error', $line->context['outcome']);
+        self::assertSame(-32600, $line->context['errorCode']);
+    }
+
+    /**
+     * Un `clientInfo` que le SDK ne sait pas lire (un nom qui n'est pas du
+     * texte) : refusé avant le SDK, qui répondait 500. La ligne d'appel a la
+     * méthode que la fabrique reconnaît, et le code du refus.
+     */
+    public function testAModernMalformedClientInfoIsAProtocolError(): void
+    {
+        $client = self::createClient();
+
+        $this->postModernMcp($client, 'tools/list', clientInfo: ['name' => 1, 'version' => '1.0.0']);
+        self::assertResponseStatusCodeSame(400);
+
+        $line = $this->onlyCallLine();
+        self::assertSame('tools/list', $line->context['method']);
+        self::assertSame('protocol-error', $line->context['outcome']);
+        self::assertSame(-32600, $line->context['errorCode']);
+    }
+
+    /**
+     * Un caractère de contrôle ou de mise en forme (U+202E inverse l'affichage
+     * de la suite) rendrait la ligne trompeuse à l'œil : il est retiré.
+     */
+    public function testADeclaredClientLosesItsControlAndFormatCharacters(): void
+    {
+        $client = self::createClient();
+
+        $this->postModernMcp($client, 'tools/list', clientInfo: ['name' => "a\u{202E}b\u{200B}c", 'version' => "1\u{0007}.0"]);
+        self::assertResponseStatusCodeSame(200);
+
+        self::assertSame(['name' => 'abc', 'version' => '1.0'], $this->onlyCallLine()->context['declaredClient']);
     }
 
     /** Une révision que le serveur ne connaît pas n'est pas recopiée. */

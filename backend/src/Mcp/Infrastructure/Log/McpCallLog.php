@@ -20,6 +20,7 @@ use Mcp\Server\Session\SessionInterface;
 use Monolog\Attribute\AsMonologProcessor;
 use Monolog\LogRecord;
 use Psr\Log\LoggerInterface;
+use Symfony\Bridge\PsrHttpMessage\HttpMessageFactoryInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\HttpFoundation\Request as HttpRequest;
@@ -28,6 +29,7 @@ use Symfony\Component\HttpKernel\Event\RequestEvent;
 use Symfony\Component\HttpKernel\Event\TerminateEvent;
 use Symfony\Component\HttpKernel\KernelEvents;
 use Symfony\Contracts\Service\ResetInterface;
+use Throwable;
 
 /**
  * Le journal d'appels du serveur MCP, canal `mcp_usage` (spec 0007, « Journal
@@ -41,7 +43,8 @@ use Symfony\Contracts\Service\ResetInterface;
  * d'erreur JSON-RPC, durée, IP tronquée ({@see TruncatedIp}), et le
  * `clientInfo` que le client a **déclaré** à l'`initialize` — d'où le nom de la
  * clé : rien ne le vérifie, chaque champ est borné à
- * {@see self::MAX_DECLARED_CHARACTERS} caractères. Un message invalide (une
+ * {@see self::MAX_DECLARED_CHARACTERS} caractères, sans caractère de contrôle ni
+ * de mise en forme. Un message invalide (une
  * méthode inconnue dans un lot) n'émet aucun événement : la classe l'observe sur
  * le canal `mcp` du SDK ({@see self::observeSdkRecord()}) et lui écrit sa ligne,
  * sans méthode.
@@ -49,14 +52,22 @@ use Symfony\Contracts\Service\ResetInterface;
  * **La révision sans session `2026-07-28`** (#664) a la même ligne, avec les
  * mêmes champs : le SDK la sert par un autre chemin, sans aucun événement, et
  * {@see ModernExchange} la lit de la requête et de la réponse HTTP, à
- * `kernel.terminate`. Sa durée est celle de la requête HTTP, et son
- * `declaredClient` celui que la requête déclare dans son `_meta` (aucune
- * session ne le garde), borné de même.
+ * `kernel.terminate`. Son `declaredClient` est celui que la requête déclare dans
+ * son `_meta` (aucune session ne le garde), borné de même. **Sa durée n'est pas
+ * la même grandeur** : celle de la requête HTTP entière (pare-feu, écouteurs,
+ * envoi de la réponse, les 30 s d'un `subscriptions/listen`), là où l'autre ère
+ * mesure le traitement du message — une statistique de durée sépare les deux
+ * ères. Elle lit ce que dit le classifieur du SDK, pas qui a répondu : un
+ * message refusé avant le SDK sous l'enveloppe moderne a donc sa ligne d'appel,
+ * avec la méthode que la fabrique du SDK reconnaît (aucune pour une réponse du
+ * client).
  *
  * **Une ligne de repli** ({@see self::REQUEST_WITHOUT_CALL}) pour une requête
  * HTTP sur `/api/mcp` qui n'a traité aucun message : JSON illisible, session
- * absente ou expirée, `GET`, `DELETE`, un message refusé avant le SDK, ou avant
- * toute ère par son classifieur (un en-tête de révision moderne sans enveloppe).
+ * absente ou expirée, `GET`, `DELETE`, un message de l'ère à session refusé
+ * avant le SDK, un `Origin` ou un `Host` que le SDK refuse à son bord, ou un
+ * message refusé avant toute ère par son classifieur (un en-tête de révision
+ * moderne sans enveloppe).
  * La ligne porte la méthode, le statut HTTP et la révision annoncée (une valeur
  * que le SDK connaît, sinon `null`) ; {@see self::fallbackOutcome()} en déduit
  * l'issue.
@@ -88,6 +99,9 @@ final class McpCallLog implements EventSubscriberInterface, ResetInterface
 
     private const string ENDPOINT = '/api/mcp';
 
+    /** Les caractères de contrôle (Cc) et de mise en forme (Cf). */
+    private const string INVISIBLE_CHARACTERS = '/[\p{Cc}\p{Cf}]/u';
+
     /** Ce que le SDK 0.8.1 écrit pour chaque message qu'il n'a pas su lire. */
     private const string SDK_INVALID_MESSAGE = 'Failed to create message.';
 
@@ -116,6 +130,10 @@ final class McpCallLog implements EventSubscriberInterface, ResetInterface
         private readonly LoggerInterface $logger,
         #[Autowire(service: 'mcp.server.portfolio.registry')]
         private readonly RegistryInterface $registry,
+        // Le pont du contrôleur du bundle : l'ère moderne se lit sur les
+        // en-têtes tels que le SDK les reçoit.
+        #[Autowire(service: 'mcp.psr_http_factory')]
+        private readonly HttpMessageFactoryInterface $psrHttpFactory,
     ) {
     }
 
@@ -192,34 +210,24 @@ final class McpCallLog implements EventSubscriberInterface, ResetInterface
             return;
         }
 
-        // Une requête sans réponse : une exception que le SDK a rattrapée hors
-        // de ses événements, ou un échange suspendu.
-        foreach ($this->pending as ['method' => $method, 'name' => $name, 'startedAt' => $startedAt]) {
-            $this->writeLine($method, $name, McpCallOutcome::ProtocolError, null, $this->millisecondsSince($startedAt), null);
+        try {
+            // Une requête sans réponse : une exception que le SDK a rattrapée hors
+            // de ses événements, ou un échange suspendu.
+            foreach ($this->pending as ['method' => $method, 'name' => $name, 'startedAt' => $startedAt]) {
+                $this->writeLine($method, $name, McpCallOutcome::ProtocolError, null, $this->millisecondsSince($startedAt), null);
+            }
+
+            // La révision sans session : servie sans événement, lue de l'échange HTTP.
+            if (!$this->wroteALine) {
+                $this->writeModernCall($event, $httpStartedAt);
+            }
+
+            if (!$this->wroteALine) {
+                $this->writeFallbackLine($event, $httpStartedAt);
+            }
+        } finally {
+            $this->reset();
         }
-
-        // La révision sans session : servie sans événement, lue de l'échange HTTP.
-        $modern = $this->wroteALine ? null : ModernExchange::tryRead($event->getRequest(), $event->getResponse());
-        if (null !== $modern) {
-            $this->writeModernCall($modern, $httpStartedAt);
-        }
-
-        if (!$this->wroteALine) {
-            $request = $event->getRequest();
-            $status = $event->getResponse()->getStatusCode();
-            $version = ProtocolVersion::tryFrom((string) $request->headers->get('MCP-Protocol-Version'));
-
-            $this->logger->info(self::REQUEST_WITHOUT_CALL, [
-                'httpMethod' => $request->getMethod(),
-                'httpStatus' => $status,
-                'protocolVersion' => $version?->value,
-                'outcome' => $this->fallbackOutcome($request->getMethod(), $status)->value,
-                'durationMs' => $this->millisecondsSince($httpStartedAt),
-                'ip' => $this->callerNetwork,
-            ]);
-        }
-
-        $this->reset();
     }
 
     public function reset(): void
@@ -229,6 +237,22 @@ final class McpCallLog implements EventSubscriberInterface, ResetInterface
         $this->callerNetwork = null;
         $this->declaredClient = null;
         $this->wroteALine = false;
+    }
+
+    private function writeFallbackLine(TerminateEvent $event, int $httpStartedAt): void
+    {
+        $request = $event->getRequest();
+        $status = $event->getResponse()->getStatusCode();
+        $version = ProtocolVersion::tryFrom((string) $request->headers->get('MCP-Protocol-Version'));
+
+        $this->logger->info(self::REQUEST_WITHOUT_CALL, [
+            'httpMethod' => $request->getMethod(),
+            'httpStatus' => $status,
+            'protocolVersion' => $version?->value,
+            'outcome' => $this->fallbackOutcome($request->getMethod(), $status)->value,
+            'durationMs' => $this->millisecondsSince($httpStartedAt),
+            'ip' => $this->callerNetwork,
+        ]);
     }
 
     /**
@@ -268,9 +292,24 @@ final class McpCallLog implements EventSubscriberInterface, ResetInterface
      * Une requête de l'ère moderne n'a pas de session : le client déclare son
      * `clientInfo` dans le `_meta` de chaque requête, et sa durée est celle de la
      * requête HTTP qui la porte seule.
+     *
+     * La lecture relit l'échange avec les classes du SDK et du pont PSR-7 : ce
+     * qu'elles lèvent — une requête que le pont ne sait pas convertir, que le
+     * contrôleur du bundle a donc refusée avant le SDK — laisse la requête à la
+     * ligne de repli plutôt que sans ligne.
      */
-    private function writeModernCall(ModernExchange $exchange, int $httpStartedAt): void
+    private function writeModernCall(TerminateEvent $event, int $httpStartedAt): void
     {
+        try {
+            $exchange = ModernExchange::tryRead($event->getRequest(), $event->getResponse(), $this->psrHttpFactory);
+        } catch (Throwable) {
+            return;
+        }
+
+        if (null === $exchange) {
+            return;
+        }
+
         $this->writeLine(
             $exchange->method,
             null === $exchange->request ? null : $this->knownName($exchange->request),
@@ -345,9 +384,21 @@ final class McpCallLog implements EventSubscriberInterface, ResetInterface
         ];
     }
 
+    /**
+     * Un champ déclaré, tel qu'il peut s'afficher : sans octet UTF-8 invalide, sans
+     * caractère de contrôle ni de mise en forme — U+202E inverse l'affichage de
+     * la suite, une ligne trompeuse à l'œil dans `kubectl logs` (audit de #664) —,
+     * puis tronqué.
+     */
     private function boundedDeclaration(mixed $value): ?string
     {
-        return \is_string($value) ? mb_substr(mb_scrub($value, 'UTF-8'), 0, self::MAX_DECLARED_CHARACTERS, 'UTF-8') : null;
+        if (!\is_string($value)) {
+            return null;
+        }
+
+        $visible = (string) preg_replace(self::INVISIBLE_CHARACTERS, '', mb_scrub($value, 'UTF-8'));
+
+        return mb_substr($visible, 0, self::MAX_DECLARED_CHARACTERS, 'UTF-8');
     }
 
     private function millisecondsSince(int $startedAt): float
