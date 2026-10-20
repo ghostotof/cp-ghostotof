@@ -67,15 +67,19 @@ paths:
   instead of being silently counted. It holds whatever #664 decides (refusing the modern era makes those
   requests cheap 400s). A handshake revision in the header (`2025-06-18`), or `2026-07-28` with a tab, stays
   counted. **`mcpconn`** (#672, `limit_conn mcpconn 2`, same location) bounds simultaneous connections per IP
-  and per pod: the modern revision's `subscriptions/listen` holds its php-fpm worker 30 s (the SDK's lifetime,
-  not configurable through the bundle without a subscription bus), and fourteen of them from one IP took a
-  whole pod's pool (measured in dev, an unrelated route served 29.8 s later); `mcp` bounds the rate, not the
-  duration. The location also sets `fastcgi_ignore_client_abort on`, like `/api/assistant/`: a request writing
-  nothing before its end keeps its worker after a client abort, and its `mcpconn` slot with it. A `listen` writes
-  every 250 ms, so aborted mid-stream nginx fails to write, closes upstream and the SDK returns the worker
-  (measured: eight `listen`s aborted at 1.2 s, a pool of five, an unrelated route served at once). Measured too:
-  the third simultaneous `listen` gets the 429. The cause is #675 (after #664's decision). Accepted: hosted
-  connectors sharing an egress IP may meet the bound when calls overlap — they last milliseconds. The location has its own
+  and per pod. It was set against the modern revision's `subscriptions/listen`, which held its php-fpm worker
+  30 s: fourteen of them from one IP took a whole pod's pool (measured in dev, an unrelated route served 29.8 s
+  later); `mcp` bounds the rate, not the duration. **Since #675 `listen` is refused before the SDK** and the
+  server announces no notification (`.claude/rules/mcp.md`), so no legitimate request holds a worker beyond
+  milliseconds; the zone is **kept at 2 by decision** (2026-10-21), as defence in depth: one IP never holds more
+  than two of a pod's eight workers, whatever a request becomes (a slow tool, a future stream). The location also
+  sets `fastcgi_ignore_client_abort on`, like `/api/assistant/`: a request writing nothing before its end keeps
+  its worker after a client abort, and its `mcpconn` slot with it. A stream that writes — `listen` before #675,
+  every 250 ms — aborted mid-stream makes nginx fail to write, close upstream and the SDK return the worker
+  (measured: eight `listen`s aborted at 1.2 s, a pool of five, an unrelated route served at once). Measured too,
+  before #675: the third simultaneous `listen` got the 429. Accepted: hosted connectors sharing an egress IP may
+  meet the bound when calls overlap — they last milliseconds, and the `mcp` zone binds first; both bounds are to
+  be measured again against the real clients in phase 2. The location has its own
   `client_max_body_size 16k` **and its own `fastcgi_pass`** (like `/api/assistant/`): through `try_files …
   /index.php`, a `Transfer-Encoding: chunked` body was read after the internal redirect, under `~ ^/index\.php`,
   which only has the server's 1 MB — the bound held for a `Content-Length` body only (a 480 KB session measured).
