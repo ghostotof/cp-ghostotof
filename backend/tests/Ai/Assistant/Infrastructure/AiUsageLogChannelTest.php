@@ -4,9 +4,8 @@ declare(strict_types=1);
 
 namespace App\Tests\Ai\Assistant\Infrastructure;
 
-use App\Tests\Support\RepositoryFiles;
+use App\Tests\Support\ProductionMonologHandlers;
 use PHPUnit\Framework\TestCase;
-use Symfony\Component\Yaml\Yaml;
 
 /**
  * Le coût de l'assistant (jetons, durée, ADR 0004 D5) doit se relire en
@@ -22,11 +21,11 @@ final class AiUsageLogChannelTest extends TestCase
 {
     public function testTheChannelHasItsOwnInfoLevelHandlerInProduction(): void
     {
-        $handlers = $this->productionHandlers();
+        $handlers = ProductionMonologHandlers::all();
 
         $dedicated = array_filter(
             $handlers,
-            static fn (array $handler): bool => \in_array('ai_usage', $handler['channels'] ?? [], true),
+            static fn (array $handler): bool => \in_array('ai_usage', (array) ($handler['channels'] ?? []), true),
         );
 
         self::assertCount(1, $dedicated, 'Un et un seul handler doit porter le canal ai_usage en production.');
@@ -35,17 +34,6 @@ final class AiUsageLogChannelTest extends TestCase
 
     public function testTheMainHandlerExcludesIt(): void
     {
-        self::assertContains('!ai_usage', $this->productionHandlers()['main']['channels'] ?? []);
-    }
-
-    /**
-     * @return array<string, array{channels?: list<string>, level?: string}>
-     */
-    private function productionHandlers(): array
-    {
-        /** @var array{'when@prod': array{monolog: array{handlers: array<string, array{channels?: list<string>, level?: string}>}}} $config */
-        $config = Yaml::parseFile(RepositoryFiles::backend('config/packages/monolog.yaml'));
-
-        return $config['when@prod']['monolog']['handlers'];
+        self::assertContains('!ai_usage', ProductionMonologHandlers::all()['main']['channels'] ?? []);
     }
 }

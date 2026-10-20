@@ -11,7 +11,6 @@ use Monolog\Formatter\JsonFormatter;
 use Monolog\Level;
 use Monolog\LogRecord;
 use stdClass;
-use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\BrowserKit\Cookie;
 
@@ -79,7 +78,8 @@ final class McpCallLogTest extends WebTestCase
     public function testTheInitializeItselfCarriesTheClientItDeclares(): void
     {
         $client = self::createClient();
-        $this->postInitialize($client, ['name' => 'phpunit', 'version' => '1.0.0']);
+        $this->postMcpInitialize($client, self::DECLARED_CLIENT);
+        self::assertResponseIsSuccessful();
 
         $line = $this->onlyCallLine();
         self::assertSame('initialize', $line->context['method']);
@@ -92,7 +92,8 @@ final class McpCallLogTest extends WebTestCase
     public function testADeclaredClientIsBounded(): void
     {
         $client = self::createClient();
-        $this->postInitialize($client, ['name' => str_repeat('n', 10_000), 'version' => str_repeat('v', 10_000)]);
+        $this->postMcpInitialize($client, ['name' => str_repeat('n', 10_000), 'version' => str_repeat('v', 10_000)]);
+        self::assertResponseIsSuccessful();
 
         $declared = $this->onlyCallLine()->context['declaredClient'];
         self::assertIsArray($declared);
@@ -170,10 +171,10 @@ final class McpCallLogTest extends WebTestCase
         $client = self::createClient();
         $sessionId = $this->initializeMcpSession($client);
 
-        $client->request('POST', '/api/mcp', server: $this->mcpHeaders($sessionId), content: self::jsonBody([
+        $this->postMcp($client, $sessionId, [
             ['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/list'],
             ['jsonrpc' => '2.0', 'id' => 3, 'method' => 'prompts/list'],
-        ]));
+        ]);
 
         self::assertSame(['tools/list', 'prompts/list'], array_map(static fn (LogRecord $line): mixed => $line->context['method'], $this->callLines()));
     }
@@ -188,11 +189,11 @@ final class McpCallLogTest extends WebTestCase
         $client = self::createClient();
         $sessionId = $this->initializeMcpSession($client);
 
-        $client->request('POST', '/api/mcp', server: $this->mcpHeaders($sessionId), content: self::jsonBody([
+        $this->postMcp($client, $sessionId, [
             ['jsonrpc' => '2.0', 'id' => 2, 'method' => 'ping'],
             ['jsonrpc' => '2.0', 'id' => 3, 'method' => 'no/such-sentinelle'],
             ['jsonrpc' => '2.0', 'id' => 4, 'method' => 'no/such-sentinelle'],
-        ]));
+        ]);
 
         $lines = $this->callLines();
         self::assertSame(['ping', null, null], array_map(static fn (LogRecord $line): mixed => $line->context['method'], $lines));
@@ -210,10 +211,10 @@ final class McpCallLogTest extends WebTestCase
         $client = self::createClient();
         $sessionId = $this->initializeMcpSession($client);
 
-        $client->request('POST', '/api/mcp', server: $this->mcpHeaders($sessionId), content: self::jsonBody([
+        $this->postMcp($client, $sessionId, [
             ['jsonrpc' => '2.0', 'id' => 5, 'method' => 'tools/list'],
             ['jsonrpc' => '2.0', 'id' => 5, 'method' => 'prompts/list'],
-        ]));
+        ]);
 
         $lines = $this->callLines();
         self::assertCount(2, $lines);
@@ -231,7 +232,7 @@ final class McpCallLogTest extends WebTestCase
         $this->postMcp($client, $sessionId, ['jsonrpc' => '2.0', 'id' => 99, 'result' => new stdClass()]);
         self::assertResponseStatusCodeSame(202);
 
-        $this->assertFallbackLine('POST', 202, 'success', '2025-06-18');
+        $this->assertFallbackLine('POST', 202, 'success', self::MCP_PROTOCOL_VERSION);
     }
 
     public function testANotificationHasItsLine(): void
@@ -251,11 +252,11 @@ final class McpCallLogTest extends WebTestCase
         $client = self::createClient();
         $sessionId = $this->initializeMcpSession($client);
 
-        $client->request('POST', '/api/mcp', server: $this->mcpHeaders($sessionId), content: '{"jsonrpc":');
+        $this->postRawMcp($client, $sessionId, '{"jsonrpc":');
 
         // Le SDK répond l'erreur -32700 en 200 : le statut seul n'y suffit pas.
         self::assertResponseStatusCodeSame(200);
-        $this->assertFallbackLine('POST', 200, 'protocol-error', '2025-06-18');
+        $this->assertFallbackLine('POST', 200, 'protocol-error', self::MCP_PROTOCOL_VERSION);
     }
 
     public function testAnUnknownSessionLeavesTheFallbackLine(): void
@@ -265,7 +266,7 @@ final class McpCallLogTest extends WebTestCase
         $this->postMcp($client, '0199f1e2-0000-7000-8000-000000000000', ['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/list']);
         self::assertResponseStatusCodeSame(404);
 
-        $this->assertFallbackLine('POST', 404, 'protocol-error', '2025-06-18');
+        $this->assertFallbackLine('POST', 404, 'protocol-error', self::MCP_PROTOCOL_VERSION);
     }
 
     public function testADeleteLeavesTheFallbackLine(): void
@@ -273,10 +274,10 @@ final class McpCallLogTest extends WebTestCase
         $client = self::createClient();
         $sessionId = $this->initializeMcpSession($client);
 
-        $client->request('DELETE', '/api/mcp', server: ['HTTP_MCP_SESSION_ID' => $sessionId, 'HTTP_MCP_PROTOCOL_VERSION' => '2025-06-18']);
+        $client->request('DELETE', '/api/mcp', server: ['HTTP_MCP_SESSION_ID' => $sessionId, 'HTTP_MCP_PROTOCOL_VERSION' => self::MCP_PROTOCOL_VERSION]);
         self::assertResponseIsSuccessful();
 
-        $this->assertFallbackLine('DELETE', 200, 'success', '2025-06-18');
+        $this->assertFallbackLine('DELETE', 200, 'success', self::MCP_PROTOCOL_VERSION);
     }
 
     /**
@@ -327,7 +328,7 @@ final class McpCallLogTest extends WebTestCase
         $this->postMcp($client, null, ['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/list']);
         self::assertResponseStatusCodeSame(400);
 
-        $this->assertFallbackLine('POST', 400, 'protocol-error', '2025-06-18');
+        $this->assertFallbackLine('POST', 400, 'protocol-error', self::MCP_PROTOCOL_VERSION);
     }
 
     public function testAGetLeavesTheFallbackLine(): void
@@ -386,33 +387,6 @@ final class McpCallLogTest extends WebTestCase
         self::assertSame(self::LOOPBACK_NETWORK, $line->context['ip']);
     }
 
-    /**
-     * @param array<string, string> $clientInfo
-     */
-    private function postInitialize(KernelBrowser $client, array $clientInfo): void
-    {
-        $this->postMcp($client, null, [
-            'jsonrpc' => '2.0',
-            'id' => 1,
-            'method' => 'initialize',
-            'params' => ['protocolVersion' => '2025-06-18', 'capabilities' => new stdClass(), 'clientInfo' => $clientInfo],
-        ]);
-        self::assertResponseIsSuccessful();
-    }
-
-    /**
-     * @return array<string, string>
-     */
-    private function mcpHeaders(string $sessionId): array
-    {
-        return [
-            'CONTENT_TYPE' => 'application/json',
-            'HTTP_ACCEPT' => 'application/json, text/event-stream',
-            'HTTP_MCP_PROTOCOL_VERSION' => '2025-06-18',
-            'HTTP_MCP_SESSION_ID' => $sessionId,
-        ];
-    }
-
     private function onlyCallLine(): LogRecord
     {
         $lines = $this->callLines();
@@ -442,6 +416,6 @@ final class McpCallLogTest extends WebTestCase
      */
     private function usageRecords(): array
     {
-        return array_values(array_filter(self::allChannelsLogRecords(), static fn (LogRecord $record): bool => 'mcp_usage' === $record->channel));
+        return self::allChannelsLogRecordsOf('mcp_usage');
     }
 }

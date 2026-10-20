@@ -43,6 +43,16 @@ trait ReadsAllChannelsLog
     }
 
     /**
+     * Les enregistrements d'un seul canal.
+     *
+     * @return list<LogRecord>
+     */
+    private static function allChannelsLogRecordsOf(string $channel): array
+    {
+        return array_values(array_filter(self::allChannelsLogRecords(), static fn (LogRecord $record): bool => $channel === $record->channel));
+    }
+
+    /**
      * Les lignes que le noyau écrit pour une exception non rattrapée
      * (ErrorListener::logKernelException, canal `request`) : celles dont le
      * niveau dit si l'exception est traitée en erreur du client ou en panne.

@@ -45,16 +45,7 @@ trait SpeaksMcp
      */
     private function openMcpSession(KernelBrowser $client, array $server = []): OpenedMcpSession
     {
-        $this->postMcp($client, null, [
-            'jsonrpc' => '2.0',
-            'id' => 1,
-            'method' => 'initialize',
-            'params' => [
-                'protocolVersion' => self::MCP_PROTOCOL_VERSION,
-                'capabilities' => new stdClass(),
-                'clientInfo' => ['name' => 'phpunit', 'version' => '1.0.0'],
-            ],
-        ], $server);
+        $this->postMcpInitialize($client, ['name' => 'phpunit', 'version' => '1.0.0'], $server);
         self::assertResponseIsSuccessful();
 
         $sessionId = $client->getResponse()->headers->get(self::MCP_SESSION_HEADER);
@@ -160,10 +151,43 @@ trait SpeaksMcp
     }
 
     /**
-     * @param array<string, mixed>  $message
+     * Envoie l'`initialize` seul, sans la notification qui le suit : la réponse
+     * reste celle du client, et la dernière requête est celle qui crée la session.
+     *
+     * @param array<string, string> $clientInfo ce que le client déclare
+     * @param array<string, string> $server
+     */
+    private function postMcpInitialize(KernelBrowser $client, array $clientInfo, array $server = []): void
+    {
+        $this->postMcp($client, null, [
+            'jsonrpc' => '2.0',
+            'id' => 1,
+            'method' => 'initialize',
+            'params' => [
+                'protocolVersion' => self::MCP_PROTOCOL_VERSION,
+                'capabilities' => new stdClass(),
+                'clientInfo' => $clientInfo,
+            ],
+        ], $server);
+    }
+
+    /**
+     * Un message JSON-RPC, ou un lot (une liste de messages).
+     *
+     * @param array<mixed>          $message
      * @param array<string, string> $server
      */
     private function postMcp(KernelBrowser $client, ?string $sessionId, array $message, array $server = []): void
+    {
+        $this->postRawMcp($client, $sessionId, self::jsonBody($message), $server);
+    }
+
+    /**
+     * Un corps tel quel, JSON illisible compris.
+     *
+     * @param array<string, string> $server
+     */
+    private function postRawMcp(KernelBrowser $client, ?string $sessionId, string $body, array $server = []): void
     {
         $headers = [
             'CONTENT_TYPE' => 'application/json',
@@ -174,7 +198,7 @@ trait SpeaksMcp
             $headers['HTTP_MCP_SESSION_ID'] = $sessionId;
         }
 
-        $client->request('POST', self::MCP_ENDPOINT, server: $server + $headers, content: self::jsonBody($message));
+        $client->request('POST', self::MCP_ENDPOINT, server: $server + $headers, content: $body);
     }
 
     /**

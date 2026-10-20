@@ -92,6 +92,25 @@ final class SdkChannelRedactorTest extends TestCase
         self::assertSame(JsonException::class, $normalized['previous']['class']);
     }
 
+    /** Une chaîne d'exceptions ne fait pas grossir la ligne sans fin : trois `previous`, pas plus. */
+    public function testThePreviousChainIsCutAfterThreeLinks(): void
+    {
+        $chain = new LogicException('0');
+        foreach (['1', '2', '3', '4', '5'] as $message) {
+            $chain = new LogicException($message, 0, $chain);
+        }
+
+        $record = (new SdkChannelRedactor())($this->record(Level::Error, 'x', ['exception' => $chain]));
+
+        $messages = [];
+        $link = $record->context['exception'];
+        while (\is_array($link)) {
+            $messages[] = $link['message'];
+            $link = $link['previous'] ?? null;
+        }
+        self::assertSame(['5', '4', '3', '2'], $messages);
+    }
+
     public function testEachContextValueIsBoundedOrWithheld(): void
     {
         $record = (new SdkChannelRedactor())($this->record(Level::Debug, str_repeat('m', 257), [

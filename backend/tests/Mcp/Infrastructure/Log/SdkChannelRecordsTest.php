@@ -79,18 +79,9 @@ final class SdkChannelRecordsTest extends WebTestCase
     {
         $client = self::createClient();
 
-        // `initialize` à la main : la sonde ne garde que la dernière requête,
-        // et c'est celle-ci qui crée la session (« Created new session »).
-        $this->postMcp($client, null, [
-            'jsonrpc' => '2.0',
-            'id' => 1,
-            'method' => 'initialize',
-            'params' => [
-                'protocolVersion' => '2025-06-18',
-                'capabilities' => new stdClass(),
-                'clientInfo' => ['name' => 'phpunit', 'version' => '1.0.0'],
-            ],
-        ]);
+        // `initialize` seul : la sonde ne garde que la dernière requête, et
+        // c'est celle-ci qui crée la session (« Created new session »).
+        $this->postMcpInitialize($client, ['name' => 'phpunit', 'version' => '1.0.0']);
         $sessionId = $client->getResponse()->headers->get('Mcp-Session-Id');
         self::assertIsString($sessionId);
         self::assertNotSame([], $this->sdkRecords());
@@ -180,12 +171,7 @@ final class SdkChannelRecordsTest extends WebTestCase
         $client = self::createClient();
         $sessionId = $this->initializeMcpSession($client);
 
-        $client->request('POST', '/api/mcp', server: [
-            'CONTENT_TYPE' => 'application/json',
-            'HTTP_ACCEPT' => 'application/json, text/event-stream',
-            'HTTP_MCP_PROTOCOL_VERSION' => '2025-06-18',
-            'HTTP_MCP_SESSION_ID' => $sessionId,
-        ], content: '{"jsonrpc": "2.0", '.str_repeat('z', self::HUGE));
+        $this->postRawMcp($client, $sessionId, '{"jsonrpc": "2.0", '.str_repeat('z', self::HUGE));
 
         $this->assertNoSdkRecordAtOrAboveWarning();
         foreach ($this->formattedSdkRecords() as $line) {
@@ -223,7 +209,7 @@ final class SdkChannelRecordsTest extends WebTestCase
      */
     private function sdkRecords(): array
     {
-        return array_values(array_filter(self::allChannelsLogRecords(), static fn (LogRecord $record): bool => 'mcp' === $record->channel));
+        return self::allChannelsLogRecordsOf('mcp');
     }
 
     /**
