@@ -28,13 +28,21 @@ paths:
 
 > Split out of `.claude/rules/deploiement.md` (#605), whose index lists every deployment rule. The index of every rule is at the top of `.claude/CLAUDE.md`.
 
-- **Six nginx rate-limit zones, two different jobs.** `contact` (10 r/m), `pwsetup` (20 r/m),
+- **Seven nginx rate-limit zones, two different jobs.** `contact` (10 r/m), `pwsetup` (20 r/m),
   `baseaccess` (20 r/m, issue #77 — each call signs an RS256 JWT), `login` (10 r/m, burst 10,
   ADR 0005 — the backstop under Symfony's `login_throttling`, which is the real ceiling) and
   `assistant` (10 r/m, burst 5, plus `limit_conn assistantconn 1` — each call is billed and each
   stream holds one of a pod's 8 php-fpm workers; the zones live in each sidecar, so an IP gets N times
   these ceilings with N backend pods) protect a *side effect* — sending mail, guessing a token,
   minting a token, guessing a password, spending money.
+  `mcp` (60 r/m, burst 20, #644, ADR 0006 D6) sits on the **exact** `location = /api/mcp`, every method
+  (the `GET` boots Symfony too), with its own `client_max_body_size 64k` (a JSON-RPC message weighs a few
+  KiB, and the SDK copies what `initialize` declares into the session row): it protects the resource like
+  `publicapi`, but at a tenth of its rate, since each request reads and rewrites a session row in
+  `cache_items` — it also bounds the sessions created per IP and the `mcp_usage` lines. Its 413 is nginx's
+  HTML page, like the server's 1 MB one. Accepted: claude.ai and ChatGPT connectors call from their
+  providers' egress addresses, which their users share — fine at this site's audience, revisit if
+  phase 2's real clients get throttled.
   `publicapi` (600 r/m, burst 200, on
   `location /`) protects the *resource*: without it every public read reaches PHP and Postgres as
   often as asked. Its ceiling is deliberately far above real use — behind a mobile carrier's CGNAT
@@ -68,7 +76,10 @@ paths:
   `tools/check-backend-nginx-rate-limits.sh` (`make back-nginx-rate-limits`, CI job
   `backend-nginx-rate-limits`) runs the pinned sidecar image on each conf, saturates every
   `limit_req` zone and checks the body, the type and the headers; it fails naming any `limit_req`
-  zone of the confs missing from its `ZONES` list. **`limit_conn` is not exercised** (it would need
+  zone of the confs missing from its `ZONES` list. Since #644 it also checks the two confs are mirrors where
+  it matters — identical zone declarations, and identical directives in each `MIRRORED_LOCATIONS` block
+  (`= /api/mcp`), comments ignored — and each `BODY_LIMITS` bound (413 one byte over, none at the bound).
+  **`limit_conn` is not exercised** (it would need
   an upstream that holds the connection, and there is no php-fpm in the job).
 - **nginx rate limits need `real_ip`** (audit C7). `limit_req_zone` keys on `$binary_remote_addr`, and behind
   the ingress the sidecar's TCP peer is the ingress-nginx pod — without the `set_real_ip_from` block, the whole
