@@ -97,7 +97,7 @@ final readonly class PromptRole
     private static function normalised(string $input): string
     {
         $folded = Normalizer::normalize($input, Normalizer::FORM_KC);
-        if (false === $folded) {
+        if (!\is_string($folded)) {
             throw RoleNeutralisationFailedException::fromNormalizer();
         }
 

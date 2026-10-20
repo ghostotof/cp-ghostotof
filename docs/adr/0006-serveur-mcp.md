@@ -187,6 +187,12 @@ les admet nommément, et refuse tout le reste) :
 | Ce qui est publié | Valeur | Décision |
 |---|---|---|
 | Nom du serveur (`serverInfo.name`) | `cp-ghostotof` | 2026-10-19, relecture de la tâche 1 (#640) : le nom reprend celui du domaine, déjà public ; l'audit relevait que « cp » peut se lire comme des initiales. Acceptée **pour ce serveur uniquement** : un autre serveur MCP ne s'en prévaut pas. |
+| Sortie de `get_contact_info` (`contactPageUrl`, et le bloc texte qui la répète) | `<APP_FRONTEND_BASE_URL>/<langue>/contact` | 2026-10-20, relecture de la tâche 3 (#642) : l'adresse est sur le domaine du site, déjà public, pour la même raison que le nom du serveur. La garde lit la sortie des outils sans route, que le serveur écrit lui-même : celle des outils adossés reste le contenu de leur route (D1). |
+
+Ce que le serveur dit de lui-même couvre aussi ce qu'il écrit hors des listes : ses messages d'erreur
+(outils, prompts) et la sortie des outils sans route. La garde cherche le nom, ses mots, ses formes
+accolées et les initiales (en capitales, ou en tête d'un identifiant comme `cp-…`), ce qui donne son
+effet à l'exception du nom du serveur.
 
 ### Ce qui n'est jamais négociable
 

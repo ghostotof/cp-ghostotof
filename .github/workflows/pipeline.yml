@@ -139,33 +139,50 @@ jobs:
         timeout-minutes: 5
         run: RABBITMQ_CONF_KEEP=1 make rabbitmq-conf
       - name: PHPUnit
+        id: phpunit
         working-directory: backend
         env:
           # `guest` est admis hors loopback par le 10-defaults.conf de l'image.
           RABBITMQ_INTEGRATION_DSN: 'amqp://guest:guest@localhost:5672/%2f'
+        # Toute la suite, sauf la garde D8 : elle seule reçoit le vrai nom de
+        # l'auteur, à l'étape suivante. Ici le processus ne l'a jamais en
+        # mémoire, ni le code de vendor/ que la suite charge.
+        run: php bin/phpunit --exclude-group d8 --log-junit "$RUNNER_TEMP/junit.xml"
+      # Après la suite, quel que soit son résultat, mais seulement si elle a
+      # tourné : derrière une base de test qui n'a pas pu être préparée, elle
+      # échouerait pour rien.
+      - name: PHPUnit — garde D8 (nom réel de l'auteur)
+        if: ${{ !cancelled() && steps.phpunit.outcome != 'skipped' }}
+        working-directory: backend
+        env:
           # Garde D8 du serveur MCP (ADR 0006, AuthorNeverNamedTest) : le vrai
           # nom de l'auteur, que le dépôt ne porte jamais. Il remplace le nom
-          # fictif de phpunit.dist.xml (`env` sans `force`). Secret de dépôt,
-          # posé par stdin dans un terminal séparé (.claude/rules/mcp.md) ;
-          # GitHub masque sa valeur, et le test ne cite jamais ce qu'il trouve.
+          # fictif de phpunit.dist.xml (`env` sans `force`). Secret de dépôt
+          # (.claude/rules/mcp.md) ; GitHub masque sa valeur, et sous
+          # GITHUB_ACTIONS la garde ne donne que le nombre de mentions.
           MCP_D8_AUTHOR_NAME: ${{ secrets.MCP_D8_AUTHOR_NAME }}
         # Un push de Dependabot ne lit pas les secrets du dépôt : la variable
-        # arrive vide, et la garde refuserait un nom vide. Sur ces branches
-        # seulement, elle retombe sur le nom fictif ; ailleurs, un secret
-        # absent fait échouer la garde, qui le dit.
+        # arrive vide, et la garde refuserait un nom vide. Pour lui seul (son
+        # acteur, pas le nom de la branche), elle retombe sur le nom fictif ;
+        # ailleurs, un secret absent fait échouer la garde, qui le dit.
         run: |
-          if [ -z "$MCP_D8_AUTHOR_NAME" ] && [[ "$GITHUB_REF_NAME" == dependabot/* ]]; then
+          if [ -z "$MCP_D8_AUTHOR_NAME" ] && [ "$GITHUB_ACTOR" = 'dependabot[bot]' ]; then
             unset MCP_D8_AUTHOR_NAME
           fi
-          php bin/phpunit --log-junit "$RUNNER_TEMP/junit.xml"
+          php bin/phpunit --group d8 --log-junit "$RUNNER_TEMP/junit-d8.xml"
       # Carte de synthèse sur la page du run, dans l'esprit de celle que Vitest
       # écrit lui-même (reporter github-actions intégré) : PHPUnit n'en produit
       # pas, le script la construit depuis le rapport JUnit. `if: always()` :
       # c'est précisément quand ça échoue qu'elle sert. Le statut du job reste
-      # celui de l'étape PHPUnit.
+      # celui des deux étapes PHPUnit. Une carte par rapport, la seconde écrite
+      # même si la première échoue.
       - name: Résumé PHPUnit
         if: always()
-        run: php .github/scripts/summary-phpunit.php "$RUNNER_TEMP/junit.xml" >> "$GITHUB_STEP_SUMMARY"
+        run: |
+          status=0
+          php .github/scripts/summary-phpunit.php "$RUNNER_TEMP/junit.xml" >> "$GITHUB_STEP_SUMMARY" || status=1
+          php .github/scripts/summary-phpunit.php "$RUNNER_TEMP/junit-d8.xml" >> "$GITHUB_STEP_SUMMARY" || status=1
+          exit "$status"
 
   test-frontend:
     runs-on: ubuntu-latest
