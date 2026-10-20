@@ -17,8 +17,9 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
  * Ce que `McpCallLogTest` ne peut pas exercer sur le vrai serveur (#664) : un
- * flux SSE de l'ère moderne — `subscriptions/listen` tient le sien 30 s —, et
- * les requêtes que l'ère moderne ne sert pas.
+ * flux SSE de l'ère moderne — celui de `subscriptions/listen`, que le serveur
+ * refuse avant le SDK depuis #675 : la lecture reste juste si le refus tombe —,
+ * et les requêtes que l'ère moderne ne sert pas.
  */
 final class ModernExchangeTest extends TestCase
 {

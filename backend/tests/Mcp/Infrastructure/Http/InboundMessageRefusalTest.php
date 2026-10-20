@@ -28,7 +28,9 @@ use Symfony\Component\Uid\Uuid;
  * - un `initialize` dont les déclarations (`clientInfo`, `capabilities`)
  *   dépassent la borne : le SDK les recopie telles quelles en session ;
  * - une réponse du client : le SDK la range en session sous un identifiant
- *   que le client choisit, et ce serveur n'envoie aucune requête au client.
+ *   que le client choisit, et ce serveur n'envoie aucune requête au client ;
+ * - `subscriptions/listen` (#675) : le SDK tient le flux 30 s, un worker
+ *   php-fpm pris, pour un serveur qui n'émet aucune notification.
  */
 final class InboundMessageRefusalTest extends WebTestCase
 {
@@ -386,6 +388,45 @@ final class InboundMessageRefusalTest extends WebTestCase
 
         self::assertResponseStatusCodeSame(200);
         $this->assertNotRefused($client);
+    }
+
+    /**
+     * `subscriptions/listen` (#675) : le SDK tient le flux 30 s, un worker
+     * php-fpm pris pour toute la durée, alors que ce serveur n'émet aucune
+     * notification. Refusé avant le SDK, sans flux ouvert.
+     */
+    public function testASessionlessListenIsRefused(): void
+    {
+        $client = self::createClient();
+
+        $this->postModernMcp($client, 'subscriptions/listen', ['notifications' => ['toolsListChanged' => true]]);
+
+        $this->assertRefused($client, InboundMessageRefusal::SubscriptionListen);
+    }
+
+    /**
+     * Le classifieur du SDK choisit l'ère d'après le corps : un `listen` de la
+     * révision sans session passe aussi sous un en-tête de session quelconque.
+     * Le refus lit la méthode, pas l'en-tête.
+     */
+    public function testASessionlessListenUnderASessionHeaderIsRefusedToo(): void
+    {
+        $client = self::createClient();
+
+        $this->postModernMcp($client, 'subscriptions/listen', server: ['HTTP_MCP_SESSION_ID' => Uuid::v4()->toRfc4122()]);
+
+        $this->assertRefused($client, InboundMessageRefusal::SubscriptionListen);
+    }
+
+    /** Dans une session aussi : une seule règle, quelle que soit l'ère. */
+    public function testAListenInASessionIsRefused(): void
+    {
+        $client = self::createClient();
+        $sessionId = $this->initializeMcpSession($client);
+
+        $this->postMcp($client, $sessionId, ['jsonrpc' => '2.0', 'id' => 2, 'method' => 'subscriptions/listen']);
+
+        $this->assertRefused($client, InboundMessageRefusal::SubscriptionListen);
     }
 
     /** La forme des refus du transport du SDK : un identifiant illisible est omis, jamais `null`. */

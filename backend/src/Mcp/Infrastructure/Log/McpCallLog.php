@@ -55,7 +55,8 @@ use Throwable;
  * `kernel.terminate`. Son `declaredClient` est celui que la requête déclare dans
  * son `_meta` (aucune session ne le garde), borné de même. **Sa durée n'est pas
  * la même grandeur** : celle de la requête HTTP entière (pare-feu, écouteurs,
- * envoi de la réponse, les 30 s d'un `subscriptions/listen`), là où l'autre ère
+ * envoi de la réponse ; les 30 s d'un `subscriptions/listen` avant qu'il soit
+ * refusé, #675), là où l'autre ère
  * mesure le traitement du message — une statistique de durée sépare les deux
  * ères. Elle lit ce que dit le classifieur du SDK, pas qui a répondu : un
  * message refusé avant le SDK sous l'enveloppe moderne a donc sa ligne d'appel,

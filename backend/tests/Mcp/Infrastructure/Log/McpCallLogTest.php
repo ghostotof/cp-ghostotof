@@ -472,6 +472,24 @@ final class McpCallLogTest extends WebTestCase
         self::assertSame(-32600, $line->context['errorCode']);
     }
 
+    /**
+     * `subscriptions/listen`, refusé avant le SDK (#675) : la méthode est nommée
+     * (le protocole sans état la sert par sa constante, hors de la fabrique),
+     * avec le code du refus — plus un flux de 30 s compté comme un succès.
+     */
+    public function testAModernListenRefusedBeforeTheSdkIsNamed(): void
+    {
+        $client = self::createClient();
+
+        $this->postModernMcp($client, 'subscriptions/listen');
+        self::assertResponseStatusCodeSame(400);
+
+        $line = $this->onlyCallLine();
+        self::assertSame('subscriptions/listen', $line->context['method']);
+        self::assertSame('protocol-error', $line->context['outcome']);
+        self::assertSame(-32600, $line->context['errorCode']);
+    }
+
     /** Le client choisit ce qu'il déclare à chaque requête : chaque champ est borné. */
     public function testAModernDeclaredClientIsBounded(): void
     {

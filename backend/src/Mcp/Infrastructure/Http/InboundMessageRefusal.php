@@ -26,6 +26,9 @@ enum InboundMessageRefusal
     /** `clientInfo` de la révision sans session que le SDK ne sait pas lire (#664). */
     case MalformedClientInfo;
 
+    /** `subscriptions/listen` : ce serveur n'émet aucune notification (#675). */
+    case SubscriptionListen;
+
     /**
      * Octets que les déclarations d'un `initialize` peuvent occuper en
      * session. Un vrai client en déclare moins d'un Kio (nom, version,
@@ -42,6 +45,7 @@ enum InboundMessageRefusal
             self::ClientResponse => 'This server sends no requests to the client: responses are not accepted.',
             self::MalformedMeta => 'The "_meta" member of "params" must be an object.',
             self::MalformedClientInfo => 'The declared client information must name the client and its version as non-empty strings.',
+            self::SubscriptionListen => 'This server sends no notifications: "subscriptions/listen" is not served.',
         };
     }
 

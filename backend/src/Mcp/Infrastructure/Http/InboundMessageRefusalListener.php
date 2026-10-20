@@ -9,6 +9,7 @@ use JsonException;
 use Mcp\Exception\MissingRequestMetaException;
 use Mcp\Schema\JsonRpc\Error;
 use Mcp\Server\Stateless\RequestMeta;
+use Mcp\Server\Stateless\StatelessProtocol;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -48,7 +49,13 @@ use Throwable;
  *   d'une notification dans une propriété typée tableau : un scalaire lui fait
  *   lever une `TypeError`, une ligne `error` du canal `mcp` à volonté ;
  * - **un `clientInfo` de la révision sans session que le SDK ne sait pas
- *   lire** (#664) — il le construit hors de tout `try` et répondait 500.
+ *   lire** (#664) — il le construit hors de tout `try` et répondait 500 ;
+ * - **`subscriptions/listen`** (#675). Le SDK tient le flux 30 s (durée que
+ *   le bundle ne laisse régler qu'avec un bus de notifications), un worker
+ *   php-fpm pris pour toute la durée : quatorze `listen` d'une IP saturaient
+ *   un pod. Ce serveur n'émet aucune notification et n'en annonce aucune
+ *   ({@see \App\Mcp\Infrastructure\DependencyInjection\TruthfulCapabilitiesPass}) :
+ *   un client conforme n'a rien à écouter.
  *
  * Un corps illisible est laissé au SDK, qui le refuse lui-même (erreur
  * d'analyse). Le refus a la forme de ceux du transport du SDK : un 400
@@ -118,6 +125,11 @@ final readonly class InboundMessageRefusalListener
             }
             if ($this->isResponse($message)) {
                 return InboundMessageRefusal::ClientResponse;
+            }
+            // Sur la méthode seule, quelle que soit l'ère : le classifieur du
+            // SDK la choisit d'après le corps, en-tête de session ou non.
+            if (StatelessProtocol::LISTEN_METHOD === ($message['method'] ?? null)) {
+                return InboundMessageRefusal::SubscriptionListen;
             }
             $meta = \is_array($message['params'] ?? null) ? ($message['params']['_meta'] ?? null) : null;
             if (null !== $meta && !\is_array($meta)) {
