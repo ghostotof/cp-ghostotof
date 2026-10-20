@@ -295,7 +295,8 @@ décision du 2026-10-19, voir « Langue invalide »).
   pour une requête qui n'en traite aucun) :
   horodatage, méthode JSON-RPC, outil ou prompt, issue (succès, erreur d'outil, erreur de protocole),
   durée, IP tronquée (IPv4 en /24, IPv6 en /48), et le `clientInfo` déclaré au `initialize`, noté comme
-  déclaré. Jamais les arguments en clair (le `role` du prompt est du texte libre), jamais un jeton.
+  déclaré. La révision sans session `2026-07-28`, que le SDK sert sans événement, a la même ligne (#664,
+  lue de la requête et de la réponse HTTP ; son `clientInfo` est celui du `_meta` de chaque requête). Jamais les arguments en clair (le `role` du prompt est du texte libre), jamais un jeton.
 - Le registre RGPD (`docs/rgpd/registre-traitements.md`) reçoit ce traitement, et la politique de
   confidentialité du site est relue en conséquence.
 

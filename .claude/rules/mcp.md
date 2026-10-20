@@ -277,10 +277,11 @@ paths:
   `cache_items` live an hour in the test database. A new route-backed tool adds its rows to
   `RouteBackedToolsTest`'s providers (equality per language, closed schema, empty `{"items": []}`, unknown
   language), where a base-tier route is read with a base-access token, the cookies then dropped so that
-  the tool is called without one. Only the
-  handshake-era revision (`2025-06-18`) is exercised; the SDK also serves the sessionless 2026-07-28 revision on
-  the same endpoint, exercised only by #672's tests (no session written, `initialize` refused) and the preprod
-  smoke (phase 2's deferred 401 must recognise the protected tool in both forms).
+  the tool is called without one. The tools are exercised in the
+  handshake-era revision (`2025-06-18`); the SDK also serves the sessionless 2026-07-28 revision on
+  the same endpoint, exercised by #672's tests (no session written, `initialize` refused), by #664's call-log
+  tests (`postModernMcp()`, `MCP_MODERN_REVISION`) and the preprod smoke (phase 2's deferred 401 must recognise
+  the protected tool in both forms).
 - **The SDK's `mcp` channel is capped and bounded** (#643, security reviews of #640 and #642). McpBundle tags
   every SDK service on `mcp`, hard-coded: at `info`/`debug` it wrote the raw JSON-RPC message (« Received message
   to process. », arguments included — `role` is free text), the decoded request and the session ids, and
@@ -314,13 +315,30 @@ paths:
   address `2002::/16` keeping only the first three bytes of its IPv4 — a /48 kept it whole; read **once, at
   `kernel.request`**: the `RequestStack` is empty at terminate and during an SSE answer) and
   `declaredClient` (`clientInfo` from the session, name and version bounded to 64 characters: declared, never
-  checked). **An HTTP request on `/api/mcp` that handled no message** — unreadable JSON, missing or expired
-  session, `GET`, `DELETE`, a request refused before the SDK (#644: 400, `protocol-error`), and the whole sessionless `2026-07-28` revision, which the SDK
-  serves through `StatelessProtocol` with **no event** (follow-up issue) — leaves one `MCP request without call`
+  checked). **The sessionless `2026-07-28` revision has the same `MCP call` line** (#664, the author's decision of
+  2026-10-20: serve it and log it, rather than refuse it through `protocol_versions`, which would pin the handshake
+  to one revision). The SDK serves it through `StatelessProtocol`, **`final`, built inside `Builder::build()`,
+  with no event**: nothing to listen to nor decorate, so `Infrastructure/Log/ModernExchange` reads it at
+  `kernel.terminate` from the HTTP request and response. The era is **the SDK's decision**, its own
+  `InboundClassifier` on the body and headers — never the header alone (an unknown revision in `_meta` is
+  served, and refused, by the modern leg; a modern header without the envelope is refused before any era and
+  keeps the fallback line). The method is the one **the SDK's `MessageFactory` recognises** (the class of the
+  typed request or notification), plus the two the stateless protocol serves before it, by its constants
+  (`server/discover`, `subscriptions/listen`); any other is the caller's, unbounded, and written `null` — so is a
+  known method whose message is malformed, as in the other era. The outcome is read in the JSON answer (`error`
+  and its `code`, `result.isError`), else from the status: a 202/400 without body (a notification), an SSE stream
+  (`listen`; a tool that notifies — none does) whose `getContent()` is `false`. `durationMs` is the HTTP
+  request's, `declaredClient` the `clientInfo` of the request's own `_meta`, bounded the same way.
+  `McpCallLogTest` drives the real server in that revision (success, tool error, unknown tool and method,
+  removed method, `server/discover`, notification, unsupported revision, bounded client) through
+  `SpeaksMcp::postModernMcp()`; `ModernExchangeTest` covers what it cannot (the 30-second `listen` stream).
+  **An HTTP request on `/api/mcp` that handled no message** — unreadable JSON, missing or expired
+  session, `GET`, `DELETE`, a request refused before the SDK (#644: 400, `protocol-error`; under the modern
+  envelope it has a call line instead, method `null` and the refusal's `-32600`, `ModernExchange` reading what the
+  classifier says, not who answered) or by the SDK's classifier — leaves one `MCP request without call`
   line (`httpMethod`, `httpStatus`, `protocolVersion` — `ProtocolVersion::tryFrom()` of the header, `null` otherwise
   —, `outcome`, `durationMs`, `ip`) at `kernel.terminate`. A `POST` there is a `protocol-error` (the SDK answers a
-  parse error in 200), except a 202 (a notification) and a modern revision, whose outcome follows the
-  status only. Pending requests are keyed by object (a JSON-RPC id is the client's; a batch could repeat it before
+  parse error in 200), except a 202. Pending requests are keyed by object (a JSON-RPC id is the client's; a batch could repeat it before
   #644, kept: the keying costs nothing and a future SDK may queue several) and keep
   their method, known name and start only. A request left without an answer (an exception the SDK caught outside
   its events) is written at terminate as `protocol-error`; accepted: a suspended exchange (sampling, elicitation —
@@ -369,4 +387,5 @@ paths:
   reads as « no session ») and exempts the sessionless 2026-07-28 revision, served on an in-memory session —
   `McpEndpointTest` pins that an `initialize` under that header opens no session, that the revision writes none,
   and that the conf exempts exactly `ProtocolVersion::modernVersions()`. The `mcpconn` zone bounds simultaneous
-  connections (2 per IP and per pod): `subscriptions/listen` holds a worker 30 s (#675, after #664).
+  connections (2 per IP and per pod): `subscriptions/listen` holds a worker 30 s (#675; #664 decided to keep
+  serving the modern revision, so `listen` is to be bounded in the application).
