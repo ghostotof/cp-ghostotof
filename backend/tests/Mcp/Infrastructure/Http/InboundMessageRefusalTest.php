@@ -11,6 +11,7 @@ use Doctrine\ORM\EntityManagerInterface;
 use stdClass;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * Ce que le serveur MCP refuse avant le SDK (#644), parce que le SDK le
@@ -249,6 +250,35 @@ final class InboundMessageRefusalTest extends WebTestCase
         $this->assertRefused($client, InboundMessageRefusal::ClientResponse);
     }
 
+    /**
+     * Le SDK lit `error`, puis `result`, avant `method` (`MessageFactory`) :
+     * une requête qui porte un résultat est pour lui une réponse, rangée en
+     * session sous l'identifiant choisi (#671). Elle passait le refus, qui
+     * exigeait l'absence de `method`, et la session grossissait à chaque envoi.
+     */
+    public function testARequestCarryingAResultIsRefusedAndStoresNoResponse(): void
+    {
+        $client = self::createClient();
+        $sessionId = $this->initializeMcpSession($client);
+
+        $this->postRawMcp($client, $sessionId, '{"jsonrpc":"2.0","id":"a1","method":"ping","result":{}}');
+
+        $this->assertRefused($client, InboundMessageRefusal::ClientResponse);
+        self::assertSame([], $this->storedClientResponses($sessionId));
+    }
+
+    /** De même pour une requête qui porte une erreur. */
+    public function testARequestCarryingAnErrorIsRefusedAndStoresNoResponse(): void
+    {
+        $client = self::createClient();
+        $sessionId = $this->initializeMcpSession($client);
+
+        $this->postRawMcp($client, $sessionId, '{"jsonrpc":"2.0","id":"a1","method":"ping","error":{"code":-32000,"message":"no"}}');
+
+        $this->assertRefused($client, InboundMessageRefusal::ClientResponse);
+        self::assertSame([], $this->storedClientResponses($sessionId));
+    }
+
     /** Une notification n'est pas une réponse : elle passe. */
     public function testANotificationIsServed(): void
     {
@@ -312,6 +342,27 @@ final class InboundMessageRefusalTest extends WebTestCase
         self::assertSame($bytes, InboundMessageRefusal::declarationBytes(self::CLIENT_INFO, $capabilities));
 
         return $capabilities;
+    }
+
+    /**
+     * Les réponses du client que la session a enregistrées, lues dans le store
+     * comme le SDK les écrit (`Protocol::handleResponse()`, clé
+     * `_mcp.responses.<id>`, rangée en tableaux imbriqués par `Session::set()`).
+     *
+     * @return array<mixed>
+     */
+    private function storedClientResponses(string $sessionId): array
+    {
+        $raw = self::getContainer()->get('mcp.server.portfolio.session.store')->read(Uuid::fromString($sessionId));
+        self::assertIsString($raw, 'La session doit exister encore.');
+        $data = json_decode($raw, true, flags: \JSON_THROW_ON_ERROR);
+        self::assertIsArray($data);
+        $internal = $data['_mcp'] ?? [];
+        self::assertIsArray($internal);
+        $responses = $internal['responses'] ?? [];
+        self::assertIsArray($responses);
+
+        return $responses;
     }
 
     private function sessionRows(): int

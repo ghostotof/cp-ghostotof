@@ -32,7 +32,9 @@ use Symfony\Component\HttpKernel\Event\RequestEvent;
  *   `capabilities` tels quels en session (`InitializeHandler`), réécrite en
  *   entier à chaque requête : un client anonyme y faisait tenir 16 Kio de
  *   corps, trois fois plus une fois encodés ;
- * - **une réponse du client.** Le SDK range chaque réponse en session sous
+ * - **une réponse du client**, au sens du SDK — `error` ou `result`, lus
+ *   avant `method` : une requête qui en porte un en est une (#671). Le SDK
+ *   range chaque réponse en session sous
  *   l'identifiant que le client choisit (`Protocol::handleResponse()`), et
  *   elles s'accumulent jusqu'à la borne de session : la ligne réécrite à
  *   chaque requête grossissait de ~30 Ko par réponse postée (audit de #644,
@@ -119,15 +121,18 @@ final readonly class InboundMessageRefusalListener
     }
 
     /**
-     * Le critère du SDK (`MessageFactory`) : sans `method`, avec `result` ou
-     * `error`, un message est une réponse.
+     * Le critère du SDK 0.8.1, dans son ordre (`MessageFactory::createMessage()`) :
+     * `error`, puis `result`, lus par `isset` **avant** `method`. Une requête
+     * portant un résultat est donc une réponse pour lui, rangée en session —
+     * exiger l'absence de `method` la laissait passer (#671). Une valeur `null`
+     * ne compte pas : le SDK sert alors la requête.
+     * `InboundMessageClassificationTest` lie ce critère à la `MessageFactory`.
      *
      * @param array<mixed> $message
      */
     private function isResponse(array $message): bool
     {
-        return !\array_key_exists('method', $message)
-            && (\array_key_exists('result', $message) || \array_key_exists('error', $message));
+        return isset($message['error']) || isset($message['result']);
     }
 
     /**

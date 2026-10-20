@@ -338,8 +338,12 @@ paths:
   left the protocol at revision 2025-06-18, the only handshake revision served; (2) **an `initialize` whose
   `clientInfo` + `capabilities`** weigh more than `MAX_DECLARATION_BYTES` (4 096) **as the session stores them**
   (`declarationBytes()`: `json_encode` without flags, six bytes per accented character) — real clients declare under
-  1 KiB; accepted: a client sending a large icon as a data URI is refused; (3) **a client response** (`result` or
-  `error`, no `method`, the SDK's criterion), which the SDK stored under ids of the client's choosing, accumulating
+  1 KiB; accepted: a client sending a large icon as a data URI is refused; (3) **a client response** — the SDK's
+  criterion in its order (`MessageFactory::createMessage()`): `error`, then `result`, by `isset`, **before** `method`, so a
+  request carrying a result is a response too (#671: requiring no `method` let `{"method":"ping","id":"a1","result":{}}`
+  through, stored under `responses.a1`); a `null` value does not count, the SDK then serves the request.
+  `InboundMessageClassificationTest` runs the SDK's real `MessageFactory` on a hand-written table and fails when its
+  classification moves — realign the listener then, not the table. Such a response the SDK stored under ids of the client's choosing, accumulating
   ~30 KB per post up to the session bound (audit of #644, measured) — this server sends the client no request (no
   sampling, elicitation nor roots); the day a tool asks one, this refusal must learn to recognise the expected answer.
   A one-message batch is served, its message judged like a single one; unreadable JSON is left to the SDK (`-32700`).
