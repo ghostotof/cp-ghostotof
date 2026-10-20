@@ -14,6 +14,15 @@ framework:
     trusted_proxies: private_ranges
     trusted_headers: ['x-forwarded-for', 'x-forwarded-host', 'x-forwarded-proto', 'x-forwarded-port', 'x-forwarded-prefix']
 
+    # Aucune méthode HTTP réécrite par `X-HTTP-Method-Override` (audit de #675) :
+    # Symfony l'honore sur tout POST par défaut, si bien que nginx comptait un
+    # POST dans ses zones quand Symfony voyait un DELETE ou un OPTIONS — que les
+    # refus du serveur MCP, sur POST, ne jugeaient plus —, et qu'une valeur
+    # invalide levait une SuspiciousOperationException (une ligne `request.ERROR`
+    # à volonté). Aucun client du site n'envoie cet en-tête
+    # (tests/Shared/Infrastructure/Http/HttpMethodOverrideTest.php).
+    allowed_http_method_override: []
+
     # Niveau de journalisation de l'ErrorListener du noyau, qui met sinon en
     # `critical` toute exception hors HttpExceptionInterface et en `error` tout
     # 4xx HTTP (tests/Shared/Infrastructure/Http/ApiExceptionLogLevelTest.php ;

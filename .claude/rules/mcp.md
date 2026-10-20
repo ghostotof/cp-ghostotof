@@ -376,7 +376,9 @@ paths:
   `console` (`McpLogChannelsTest`); `McpCallLogTest` reads it through the `all_channels_test` probe (sentinels
   in `role`, `Authorization` and `BEARER`, one-message batch, notification, fallbacks, IPv4/IPv6 callers).
 - **Six inbound messages are refused before the SDK** (#644, #664, #675): `Infrastructure/Http/InboundMessageRefusalListener`
-  (`kernel.request`, priority 15, `POST` on the canonical path `/api/mcp`, so `/api/%6Dcp` too) decodes once a body
+  (`kernel.request`, priority 15, `POST` on the canonical path `/api/mcp`, so `/api/%6Dcp` too — and a POST stays
+  one: `framework.allowed_http_method_override: []` since the audit of #675, where Symfony turned a POST carrying
+  `X-HTTP-Method-Override: DELETE` into a DELETE these refusals did not judge, `HttpMethodOverrideTest`) decodes once a body
   starting, after JSON blanks, with `[` or `{`, and answers **400** `application/json`, a JSON-RPC `-32600` without
   `id` — the form of the SDK transport's own refusals; `listen` excepted, (6) below —, the reason and its message in the enum
   `InboundMessageRefusal`: (1) **a batch of several messages**, with the SDK's own predicate (`json_decode` assoc,
