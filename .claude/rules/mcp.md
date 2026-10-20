@@ -279,7 +279,8 @@ paths:
   language), where a base-tier route is read with a base-access token, the cookies then dropped so that
   the tool is called without one. Only the
   handshake-era revision (`2025-06-18`) is exercised; the SDK also serves the sessionless 2026-07-28 revision on
-  the same endpoint, untested so far (phase 2's deferred 401 must recognise the protected tool in both forms).
+  the same endpoint, exercised only by #672's tests (no session written, `initialize` refused) and the preprod
+  smoke (phase 2's deferred 401 must recognise the protected tool in both forms).
 - **The SDK's `mcp` channel is capped and bounded** (#643, security reviews of #640 and #642). McpBundle tags
   every SDK service on `mcp`, hard-coded: at `info`/`debug` it wrote the raw JSON-RPC message (« Received message
   to process. », arguments included — `role` is free text), the decoded request and the session ids, and
@@ -344,8 +345,8 @@ paths:
   and nginx's 16 KiB body bounds it — a tighter bound of its own would leave the session-bound tests below
   without an HTTP path. `McpEndpointTest::testEachRequestMetaReplacesThePreviousOneInTheSession` pins the
   replacement (three 10 KiB `_meta`s, the row must not grow by half of one; an SDK mutated to accumulate them
-  turns it red, measured): if an SDK bump makes it accumulate, the decision is to be taken again; (3) **a client response**, by the SDK's
-  criterion in its order (`MessageFactory::createMessage()`): `error`, then `result`, by `isset`, **before** `method` —
+  turns it red, measured): if an SDK bump makes it accumulate, the decision is to be taken again;
+  (3) **a client response**, by the SDK's criterion in its order (`MessageFactory::createMessage()`): `error`, then `result`, by `isset`, **before** `method` —
   a request carrying either is a response too (#671: requiring no `method` let
   `{"method":"ping","id":"a1","result":{}}` through, stored under `responses.a1`). A `null` value does not count (the SDK
   serves the request); a falsy non-null one (`false`, `0`, `""`) does (the SDK then refuses it as invalid, with its id;
@@ -362,6 +363,10 @@ paths:
   the SDK on purpose, and the bound is nginx's (`.claude/rules/deploiement-nginx.md`, chunked included).
   `InboundMessageRefusalTest` pins every case; `McpEndpointTest`'s session-bound cases go through `_meta` since.
 - **Rate, body and sessions per IP** (#644): the nginx `mcp` zone and the location's 16 KiB body bound
-  (`.claude/rules/deploiement-nginx.md`). The `mcpsession` zone counts a `POST` without a session **as the SDK
-  reads it** — `Mcp-Session-Id` absent, empty or `0` (`StreamableHttpTransport` tests its truthiness) — and
-  exempts the sessionless 2026-07-28 revision, served on an in-memory session (#672, same rule).
+  (`.claude/rules/deploiement-nginx.md`). The `mcpsession` zone counts every `POST` whose `Mcp-Session-Id` is not
+  a well-formed UUID (#672, an allow-list: PHP's PSR-7 bridge trims tabs and drops a header with a control
+  character before `StreamableHttpTransport` tests the value's truthiness, so nginx cannot list the forms PHP
+  reads as « no session ») and exempts the sessionless 2026-07-28 revision, served on an in-memory session —
+  `McpEndpointTest` pins that an `initialize` under that header opens no session, that the revision writes none,
+  and that the conf exempts exactly `ProtocolVersion::modernVersions()`. The `mcpconn` zone bounds simultaneous
+  connections (2 per IP and per pod): `subscriptions/listen` holds a worker 30 s (#675, after #664).
