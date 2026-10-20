@@ -43,6 +43,9 @@
 #      déplacer — il signale ce qui manque dans l'environnement et ce qui
 #      traîne encore au niveau dépôt ; les commandes sont dans le README en
 #      bas de ce fichier.
+#   l. secret MCP_D8_AUTHOR_NAME (garde D8 du serveur MCP, #663) : présence
+#      seulement, dans les secrets Actions **et** dans les secrets Dependabot,
+#      que lit seul un push de Dependabot.
 #
 # Le seul acteur de bypass des trois rulesets est le type « Deploy keys »
 # (actor_type DeployKey) : un dépôt personnel refuse l'application
@@ -56,7 +59,7 @@ repo=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --repo) repo="${2:?}"; shift ;;
-    -h|--help) sed -n '2,51p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,54p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "github-settings.sh : option inconnue « $1 »" >&2; exit 2 ;;
   esac
   shift
@@ -252,6 +255,19 @@ env_secret preprod KUBE_CONFIG_PREPROD
 env_secret preprod PREPROD_BASIC_AUTH
 env_secret production KUBE_CONFIG_PROD
 env_secret production RELEASE_DEPLOY_KEY
+
+# ---- l. secret de la garde D8, Actions et Dependabot (vérification seulement) -
+# Le vrai nom de l'auteur, que le dépôt ne porte jamais (.claude/rules/mcp.md,
+# garde D8). Un push de Dependabot ne lit que les secrets Dependabot : sans le
+# même nom de ce côté, sa garde D8 échoue (#663, aucun repli sur le nom fictif).
+step "l. Secret MCP_D8_AUTHOR_NAME — Actions et Dependabot, présence seulement"
+for app in actions dependabot; do
+  if gh secret list --repo "$repo" --app "$app" | awk '{print $1}' | grep -qxF MCP_D8_AUTHOR_NAME; then
+    ok "MCP_D8_AUTHOR_NAME : présent dans les secrets $app"
+  else
+    warn "MCP_D8_AUTHOR_NAME : absent des secrets $app — « gh secret set MCP_D8_AUTHOR_NAME --app $app --repo $repo » (valeur à l'invite)"
+  fi
+done
 
 printf '\nTerminé.\n'
 

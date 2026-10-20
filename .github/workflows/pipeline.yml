@@ -161,15 +161,12 @@ jobs:
           # (.claude/rules/mcp.md) ; GitHub masque sa valeur, et sous
           # GITHUB_ACTIONS la garde ne donne que le nombre de mentions.
           MCP_D8_AUTHOR_NAME: ${{ secrets.MCP_D8_AUTHOR_NAME }}
-        # Un push de Dependabot ne lit pas les secrets du dépôt : la variable
-        # arrive vide, et la garde refuserait un nom vide. Pour lui seul (son
-        # acteur, pas le nom de la branche), elle retombe sur le nom fictif ;
-        # ailleurs, un secret absent fait échouer la garde, qui le dit.
-        run: |
-          if [ -z "$MCP_D8_AUTHOR_NAME" ] && [ "$GITHUB_ACTOR" = 'dependabot[bot]' ]; then
-            unset MCP_D8_AUTHOR_NAME
-          fi
-          php bin/phpunit --group d8 --log-junit "$RUNNER_TEMP/junit-d8.xml"
+        # Un push de Dependabot ne lit que les secrets Dependabot : le même nom
+        # y est posé (#663), si bien qu'une montée de mcp/sdk ou du bundle est
+        # contrôlée contre le vrai nom dans son propre run. Aucun repli sur le
+        # nom fictif, pour aucun acteur : un secret absent fait échouer la
+        # garde, qui le dit (tools/tests/d8-guard-step.test.sh).
+        run: php bin/phpunit --group d8 --log-junit "$RUNNER_TEMP/junit-d8.xml"
       # Carte de synthèse sur la page du run, dans l'esprit de celle que Vitest
       # écrit lui-même (reporter github-actions intégré) : PHPUnit n'en produit
       # pas, le script la construit depuis le rapport JUnit. `if: always()` :
@@ -441,6 +438,7 @@ jobs:
           tools/tests/check-claude-rules.test.sh
           tools/tests/check-release-gates.test.sh
           tools/tests/postgres-image-pins.test.sh
+          tools/tests/d8-guard-step.test.sh
       # Seuils : erreurs et avertissements bloquent, `info`/`style` non —
       # audit-prod.sh, antérieur à ce job, porte trois remarques de style que
       # ce job n'a pas vocation à réécrire.

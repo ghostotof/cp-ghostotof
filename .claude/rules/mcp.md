@@ -185,12 +185,21 @@ paths:
   `phpunit.dist.xml`, as an `<env>` **without `force`** (PHPUnit then keeps a value the process environment
   already carries — `<server>` always overwrites). In `test-backend` the suite runs `--exclude-group d8`, and
   a step of its own, run whenever the suite ran, runs `--group d8` with the **repository secret**
-  `MCP_D8_AUTHOR_NAME`: the rest of the suite and its `vendor/` code never hold it. A Dependabot push cannot
-  read it: for the actor `dependabot[bot]` only, the empty variable is unset and the fictive name applies;
-  anywhere else an empty name fails the guard, saying so. **Under `GITHUB_ACTIONS` a failure gives the number
+  `MCP_D8_AUTHOR_NAME`: the rest of the suite and its `vendor/` code never hold it. **No actor falls back on the
+  fictive name** (#663): a Dependabot push reads only the **Dependabot secrets**, so the same secret is set
+  there too — before #663 the empty variable was unset for `dependabot[bot]`, and a bump of `mcp/sdk` or
+  `symfony/mcp-bundle`, which write what the server publishes, was never checked against the real name in its
+  own run (only after its merge, on `develop`'s). Without the Dependabot copy, a Dependabot run fails the guard,
+  saying so, like an empty name anywhere else. Accepted: the name then reaches the dependency code of a
+  Dependabot branch not reviewed yet — the code it would reach on `develop` once merged; the alternative (an
+  `ignore` of the two packages in `dependabot.yml`, bumped by hand) gave up their update PRs.
+  `tools/tests/d8-guard-step.test.sh` (`tools-tests`) pins that step: the secret in its `env`, no fallback in its
+  script, no other line of `pipeline.yml` naming the variable (`.github/` is not mounted in the dev container,
+  hence a shell test rather than PHPUnit); `tools/github-settings.sh` (step `l`) checks both copies exist. **Under `GITHUB_ACTIONS` a failure gives the number
   of mentions only** — a public log naming the path and the term's number would tell which published word is
   the name; locally it lists them. Set or rotate the secret from a prompt or a file, never `--body`:
-  `gh secret set MCP_D8_AUTHOR_NAME --repo ghostotof/cp-ghostotof` (the author decided on 2026-10-20 that his
+  `gh secret set MCP_D8_AUTHOR_NAME --repo ghostotof/cp-ghostotof`, then the same with `--app dependabot` (the
+  two stores are distinct; the author decided on 2026-10-20 that his
   name alone is no secret in an assistant session, so it may be run there too; it stays out of the repo). To
   check the real name locally: `read -r MCP_D8_AUTHOR_NAME && export MCP_D8_AUTHOR_NAME`, then `docker compose
   exec -e MCP_D8_AUTHOR_NAME -T -u dev backend php bin/phpunit --group d8` (`-e` without a value: nothing in
