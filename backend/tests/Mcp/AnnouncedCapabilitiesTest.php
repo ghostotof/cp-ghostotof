@@ -23,10 +23,11 @@ final class AnnouncedCapabilitiesTest extends WebTestCase
 
     /**
      * Ce qu'un client lit, décodé en tableaux : chaque objet vide (`{}`) y
-     * devient `[]`. Écrit à la main, jamais recalculé par le code testé.
+     * devient `[]`. Écrit à la main, jamais recalculé par le code testé. Pas de
+     * `logging` : le serveur n'envoie aucun `notifications/message` (relecture
+     * de #675).
      */
     private const array ANNOUNCED = [
-        'logging' => [],
         'completions' => [],
         'prompts' => [],
         'tools' => [],

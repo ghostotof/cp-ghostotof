@@ -27,7 +27,11 @@ use Symfony\Component\DependencyInjection\Definition;
  * capacités dans sa configuration, et seule une passe peut ajouter un appel à
  * la définition d'un service qu'il enregistre. `setCapabilities()` remplace
  * toute la détection : les autres capacités recopient ce qu'elle donnait
- * (journalisation, complétion, outils, prompts ; aucune ressource). Le registre
+ * (complétion, outils, prompts ; aucune ressource), sauf la journalisation :
+ * aucun code n'envoie de `notifications/message` au client, et
+ * `logging/setLevel`, déprécié depuis la révision 2026-07-28, reste servi —
+ * le SDK ne consulte pas l'annonce (relecture de #675). Les extensions
+ * activées s'y ajoutent dans `Builder::build()` (`withExtensions()`). Le registre
  * ne se remplit qu'à la construction du serveur, après cet appel : on ne peut
  * pas l'y lire. {@see \App\Tests\Mcp\AnnouncedCapabilitiesTest} confronte
  * l'annonce au registre réel, et rougit le jour où une ressource apparaît
@@ -51,7 +55,7 @@ final readonly class TruthfulCapabilitiesPass implements CompilerPassInterface
                 '$resourcesListChanged' => false,
                 '$prompts' => true,
                 '$promptsListChanged' => false,
-                '$logging' => true,
+                '$logging' => false,
                 '$completions' => true,
             ]),
         ]);

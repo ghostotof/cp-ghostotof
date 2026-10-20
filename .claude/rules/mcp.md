@@ -219,7 +219,9 @@ paths:
   `PUBLIC_PATHS`; `AccessControlAnchoringTest` pins the firewall's bounds.
 - **The capabilities are written, never detected** (#675): `Infrastructure/DependencyInjection/TruthfulCapabilitiesPass`
   (registered in `Kernel::build()`) adds `setCapabilities()` to `mcp.server.portfolio.builder` — tools, prompts,
-  logging, completions, **no `listChanged`**, no resources — for both eras (`initialize` and `server/discover`).
+  completions, **no `listChanged`**, no resources, **no `logging`** (nothing sends the client a `notifications/message`;
+  `logging/setLevel`, deprecated since 2026-07-28, is still answered: the SDK's handlers never read the announce) —
+  for both eras (`initialize` and `server/discover`); the enabled extensions are folded in by `Builder::build()`.
   Detected, the SDK 0.8.1 announced `listChanged` for tools, prompts and resources that do not exist as soon as an
   event dispatcher is set — the bundle always sets Symfony's, which the call log listens to (#643) —, with no bus
   (`subscriptions.bus: none`) to carry a single notification: a compliant client opened a `subscriptions/listen`
