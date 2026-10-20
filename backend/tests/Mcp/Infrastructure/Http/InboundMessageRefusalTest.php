@@ -5,12 +5,18 @@ declare(strict_types=1);
 namespace App\Tests\Mcp\Infrastructure\Http;
 
 use App\Mcp\Infrastructure\Http\InboundMessageRefusal;
+use App\Mcp\Infrastructure\Session\BoundedSessionStore;
 use App\Tests\Mcp\Support\SpeaksMcp;
 use Doctrine\DBAL\Connection;
 use Doctrine\ORM\EntityManagerInterface;
+use Mcp\Server\Protocol;
+use Mcp\Server\Session\Session;
+use PHPUnit\Framework\Attributes\DataProvider;
+use ReflectionClassConstant;
 use stdClass;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * Ce que le serveur MCP refuse avant le SDK (#644), parce que le SDK le
@@ -249,6 +255,52 @@ final class InboundMessageRefusalTest extends WebTestCase
         $this->assertRefused($client, InboundMessageRefusal::ClientResponse);
     }
 
+    /**
+     * Le SDK lit `error`, puis `result`, avant `method`
+     * ({@see \Mcp\JsonRpc\MessageFactory}) : une requête qui porte un résultat
+     * ou une erreur est pour lui une réponse, rangée en session sous
+     * l'identifiant choisi (#671). Elle passait le refus, qui exigeait
+     * l'absence de `method`, et la session grossissait à chaque envoi.
+     */
+    #[DataProvider('requestsCarryingAResponse')]
+    public function testARequestCarryingAResponseIsRefusedAndStoresNoResponse(string $message): void
+    {
+        $client = self::createClient();
+        $sessionId = $this->initializeMcpSession($client);
+
+        $this->postRawMcp($client, $sessionId, $message);
+
+        $this->assertRefused($client, InboundMessageRefusal::ClientResponse);
+        self::assertSame([], $this->storedClientResponses($sessionId));
+    }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function requestsCarryingAResponse(): iterable
+    {
+        yield 'résultat' => ['{"jsonrpc":"2.0","id":"a1","method":"ping","result":{}}'];
+        yield 'erreur' => ['{"jsonrpc":"2.0","id":"a1","method":"ping","error":{"code":-32000,"message":"no"}}'];
+    }
+
+    /**
+     * Témoin de la lecture ci-dessus : une réponse rangée comme
+     * {@see Protocol::handleResponse()} la range — sous sa clé, par la
+     * {@see Session} du SDK — est bien relue. Sans lui, une clé renommée par le
+     * SDK laisserait le test précédent vert sans rien prouver.
+     */
+    public function testTheSessionReadingSeesAResponseStoredAsTheSdkStoresIt(): void
+    {
+        $client = self::createClient();
+        $sessionId = $this->initializeMcpSession($client);
+
+        $session = new Session($this->sessionStore(), Uuid::fromString($sessionId));
+        $session->set($this->sdkResponsesKey().'.a1', ['jsonrpc' => '2.0', 'id' => 'a1', 'result' => []]);
+        self::assertTrue($session->save());
+
+        self::assertSame(['a1' => ['jsonrpc' => '2.0', 'id' => 'a1', 'result' => []]], $this->storedClientResponses($sessionId));
+    }
+
     /** Une notification n'est pas une réponse : elle passe. */
     public function testANotificationIsServed(): void
     {
@@ -312,6 +364,40 @@ final class InboundMessageRefusalTest extends WebTestCase
         self::assertSame($bytes, InboundMessageRefusal::declarationBytes(self::CLIENT_INFO, $capabilities));
 
         return $capabilities;
+    }
+
+    /**
+     * Les réponses du client que la session a enregistrées, lues comme le SDK
+     * les lit : par sa {@see Session}, sous la clé de {@see Protocol}.
+     *
+     * @return array<mixed>
+     */
+    private function storedClientResponses(string $sessionId): array
+    {
+        $id = Uuid::fromString($sessionId);
+        self::assertTrue($this->sessionStore()->exists($id), 'La session doit exister encore.');
+        $responses = new Session($this->sessionStore(), $id)->get($this->sdkResponsesKey(), []);
+        self::assertIsArray($responses);
+
+        return $responses;
+    }
+
+    /**
+     * La clé sous laquelle {@see Protocol::handleResponse()} range les réponses
+     * (`_mcp.responses` en 0.8.1), lue dans le SDK : renommée, elle fait
+     * échouer la lecture au lieu de la laisser vide.
+     */
+    private function sdkResponsesKey(): string
+    {
+        $key = new ReflectionClassConstant(Protocol::class, 'SESSION_RESPONSES')->getValue();
+        self::assertIsString($key);
+
+        return $key;
+    }
+
+    private function sessionStore(): BoundedSessionStore
+    {
+        return self::getContainer()->get('mcp.server.portfolio.session.store');
     }
 
     private function sessionRows(): int
