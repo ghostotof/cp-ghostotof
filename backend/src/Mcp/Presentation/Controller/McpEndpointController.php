@@ -4,14 +4,15 @@ declare(strict_types=1);
 
 namespace App\Mcp\Presentation\Controller;
 
-use Http\Discovery\Psr17Factory;
 use InvalidArgumentException;
 use Mcp\Schema\JsonRpc\Error;
 use Mcp\Server\Session\SessionStoreInterface;
 use Mcp\Server\Transport\Http\MiddlewareRequestHandler;
 use Mcp\Server\Transport\StreamableHttpTransport;
+use Psr\Http\Message\ResponseFactoryInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
+use Psr\Http\Message\StreamFactoryInterface;
 use Symfony\AI\McpBundle\Controller\McpController;
 use Symfony\AI\McpBundle\Http\MiddlewareFactory;
 use Symfony\Bridge\PsrHttpMessage\HttpFoundationFactoryInterface;
@@ -69,8 +70,12 @@ final readonly class McpEndpointController
         private HttpMessageFactoryInterface $psrHttpFactory,
         #[Autowire(service: 'mcp.http_foundation_factory')]
         private HttpFoundationFactoryInterface $httpFoundationFactory,
+        // Le `Psr17Factory` du bundle, par ses interfaces PSR-17 : sa classe
+        // vient de php-http/discovery, que le `require` ne porte pas (#663).
         #[Autowire(service: 'mcp.psr17_factory')]
-        private Psr17Factory $psr17Factory,
+        private ResponseFactoryInterface $responseFactory,
+        #[Autowire(service: 'mcp.psr17_factory')]
+        private StreamFactoryInterface $streamFactory,
         #[Autowire(service: 'mcp.server.portfolio.session.store')]
         private SessionStoreInterface $sessionStore,
     ) {
@@ -120,10 +125,10 @@ final readonly class McpEndpointController
             }
         }
 
-        return $this->psr17Factory->createResponse(Response::HTTP_OK)
+        return $this->responseFactory->createResponse(Response::HTTP_OK)
             ->withHeader('Content-Type', self::EVENT_STREAM)
             ->withHeader('Cache-Control', 'no-store')
-            ->withBody($this->psr17Factory->createStream(\sprintf("retry: %d\n\n", self::RECONNECT_DELAY_MS)));
+            ->withBody($this->streamFactory->createStream(\sprintf("retry: %d\n\n", self::RECONNECT_DELAY_MS)));
     }
 
     /**
@@ -131,15 +136,15 @@ final readonly class McpEndpointController
      */
     private function jsonRpcError(int $status, string $message): ResponseInterface
     {
-        return $this->psr17Factory->createResponse($status)
+        return $this->responseFactory->createResponse($status)
             ->withHeader('Content-Type', 'application/json')
-            ->withBody($this->psr17Factory->createStream(json_encode(Error::forInvalidRequest($message), \JSON_THROW_ON_ERROR)));
+            ->withBody($this->streamFactory->createStream(json_encode(Error::forInvalidRequest($message), \JSON_THROW_ON_ERROR)));
     }
 
     private function plain(int $status, string $message): ResponseInterface
     {
-        return $this->psr17Factory->createResponse($status)
+        return $this->responseFactory->createResponse($status)
             ->withHeader('Content-Type', 'text/plain')
-            ->withBody($this->psr17Factory->createStream($message));
+            ->withBody($this->streamFactory->createStream($message));
     }
 }

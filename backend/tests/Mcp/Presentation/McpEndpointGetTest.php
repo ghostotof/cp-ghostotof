@@ -175,6 +175,7 @@ final class McpEndpointGetTest extends WebTestCase
             $container->get('mcp.psr_http_factory'),
             $container->get('mcp.http_foundation_factory'),
             $container->get('mcp.psr17_factory'),
+            $container->get('mcp.psr17_factory'),
             $container->get('mcp.server.portfolio.session.store'),
         );
     }
