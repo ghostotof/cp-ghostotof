@@ -225,28 +225,39 @@ paths:
   exception into its normalised form without a trace (three `previous` at most), and **downgrades the client's
   faults to `notice`** — under the cap; the call log keeps their outcome. Which faults: a closed list written
   against SDK 0.8.1 — by SDK exception class when one only designates the client (`ToolNotFoundException`,
-  `PromptNotFoundException`, `ResourceNotFoundException`, `PromptGetException`, `InvalidInputMessageException`,
-  `Mcp\Exception\InvalidArgumentException`), by exact message otherwise (unreadable JSON, an id-less error
-  response), and `RegistryException` only for a missing required argument. A server fault (`JsonException` while
-  encoding, a wiring `LogicException`, `RoleNeutralisationFailedException`) keeps its level
-  (`SdkChannelRedactorTest`). `SdkChannelRecordsTest` provokes each client fault on the real server, with
+  `PromptNotFoundException`, `ResourceNotFoundException`, `PromptGetException`, `InvalidInputMessageException`),
+  by exact message otherwise (unreadable JSON, an id-less error response), and `RegistryException` only by code
+  `-32602` or for a missing or unconvertible argument (message prefix). **Never `Mcp\Exception\InvalidArgumentException`**:
+  the SDK also throws it for wiring defects (« Invalid handler type »), which would vanish under the cap. A server
+  fault (`JsonException` while encoding, a wiring `LogicException`, `RoleNeutralisationFailedException`) keeps its
+  level (`SdkChannelRedactorTest`). Not on this channel: an argument of another type than the prompt's `string`
+  (an array for `role`) is cast to `"Array"` by the SDK, with a PHP `warning` on the `php` channel (fixed text, no
+  value) — the follow-up issue of the review of #643. `SdkChannelRecordsTest` provokes each client fault on the real server, with
   100 KB names, and reads the `all_channels_test` probe at `debug`: nothing at `warning` or above, no client
   string whole, no `role` sentinel, no session id — an SDK upgrade that renames a message or a class turns it red.
   Accepted: the dev log loses the raw messages too (the processor is not per environment).
 - **The call log is `mcp_usage`** (#643, spec 0007 « Journal des appels », not `mcp`: the SDK's channel).
   `Infrastructure/Log/McpCallLog` listens to the SDK's own events, dispatched through Symfony's
   `event_dispatcher` (`Mcp\Event\RequestEvent`, `ResponseEvent`, `ErrorEvent`, `NotificationEvent`), and writes
-  **one `info` line per JSON-RPC message handled**, `MCP call`: `method`, `name` (the tool or prompt, **only
+  **one `info` line per JSON-RPC message handled**, `MCP call` — an invalid message of a batch (an unknown method)
+  has no event: the class is also a Monolog processor of the `mcp` channel and writes its line, method `null`,
+  `-32600`, when the SDK logs « Failed to create message. »: `method`, `name` (the tool or prompt, **only
   when the registry knows it** — the caller's name has no bound), `outcome` (`McpCallOutcome`: `success`,
   `tool-error` for `isError: true`, `protocol-error`), `errorCode` (JSON-RPC), `durationMs`, `ip`
-  (`TruncatedIp`: IPv4 /24, IPv6 /48, an IPv4-mapped address as IPv4, through `IpUtils::anonymize()`) and
+  (`TruncatedIp`, on the bytes: IPv4 /24, IPv6 /48, an IPv4-mapped address written as the IPv4 it carries, a 6to4
+  address `2002::/16` keeping only the first three bytes of its IPv4 — a /48 kept it whole; read **once, at
+  `kernel.request`**: the `RequestStack` is empty at terminate and during an SSE answer) and
   `declaredClient` (`clientInfo` from the session, name and version bounded to 64 characters: declared, never
   checked). **An HTTP request on `/api/mcp` that handled no message** — unreadable JSON, missing or expired
-  session, `GET`, `DELETE` — leaves one `MCP request without call` line (`httpMethod`, `httpStatus`, `outcome`,
-  `durationMs`, `ip`) at `kernel.terminate`, where the `RequestStack` is already empty (the IP is read from the
-  terminated request); a `POST` there is a `protocol-error` whatever its status (the SDK answers a parse error
-  in 200). A request left without an answer (a fiber suspended, an exception the SDK caught outside its events)
-  is written at terminate as `protocol-error`. **Never an argument, a header, a cookie nor the session id**: the
+  session, `GET`, `DELETE`, client responses only, and the whole sessionless `2026-07-28` revision, which the SDK
+  serves through `StatelessProtocol` with **no event** (follow-up issue) — leaves one `MCP request without call`
+  line (`httpMethod`, `httpStatus`, `protocolVersion` — `ProtocolVersion::tryFrom()` of the header, `null` otherwise
+  —, `outcome`, `durationMs`, `ip`) at `kernel.terminate`. A `POST` there is a `protocol-error` (the SDK answers a
+  parse error in 200), except a 202 (client responses, accepted) and a modern revision, whose outcome follows the
+  status only. Pending requests are keyed by object (a JSON-RPC id is the client's, a batch may repeat it) and keep
+  their method, known name and start only. A request left without an answer (an exception the SDK caught outside
+  its events) is written at terminate as `protocol-error`; accepted: a suspended exchange (sampling, elicitation —
+  no tool does it) is written so too, and its resumption leaves only a fallback line. **Never an argument, a header, a cookie nor the session id**: the
   line is built field by field. Its own `info` handler in `when@prod`, like `ai_usage`, excluded from `main` and
   `console` (`McpLogChannelsTest`); `McpCallLogTest` reads it through the `all_channels_test` probe (sentinels
   in `role`, `Authorization` and `BEARER`, batch, notification, fallbacks, IPv4/IPv6 callers).
