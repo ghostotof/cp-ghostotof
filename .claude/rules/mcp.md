@@ -338,7 +338,13 @@ paths:
   left the protocol at revision 2025-06-18, the only handshake revision served; (2) **an `initialize` whose
   `clientInfo` + `capabilities`** weigh more than `MAX_DECLARATION_BYTES` (4 096) **as the session stores them**
   (`declarationBytes()`: `json_encode` without flags, six bytes per accented character) — real clients declare under
-  1 KiB; accepted: a client sending a large icon as a data URI is refused; (3) **a client response**, by the SDK's
+  1 KiB; accepted: a client sending a large icon as a data URI is refused; **`params._meta` is not counted, accepted**
+  (#672, the author's decision of 2026-10-20 recalled): the SDK keeps only the **last** request's `_meta` in the
+  session (`Protocol::SESSION_ACTIVE_REQUEST_META`, `set` on every request), so it is replaced, never accumulated,
+  and nginx's 16 KiB body bounds it — a tighter bound of its own would leave the session-bound tests below
+  without an HTTP path. `McpEndpointTest::testEachRequestMetaReplacesThePreviousOneInTheSession` pins the
+  replacement (three 10 KiB `_meta`s, the row must not grow by half of one; an SDK mutated to accumulate them
+  turns it red, measured): if an SDK bump makes it accumulate, the decision is to be taken again; (3) **a client response**, by the SDK's
   criterion in its order (`MessageFactory::createMessage()`): `error`, then `result`, by `isset`, **before** `method` —
   a request carrying either is a response too (#671: requiring no `method` let
   `{"method":"ping","id":"a1","result":{}}` through, stored under `responses.a1`). A `null` value does not count (the SDK
@@ -356,4 +362,6 @@ paths:
   the SDK on purpose, and the bound is nginx's (`.claude/rules/deploiement-nginx.md`, chunked included).
   `InboundMessageRefusalTest` pins every case; `McpEndpointTest`'s session-bound cases go through `_meta` since.
 - **Rate, body and sessions per IP** (#644): the nginx `mcp` zone and the location's 16 KiB body bound
-  (`.claude/rules/deploiement-nginx.md`).
+  (`.claude/rules/deploiement-nginx.md`). The `mcpsession` zone counts a `POST` without a session **as the SDK
+  reads it** — `Mcp-Session-Id` absent, empty or `0` (`StreamableHttpTransport` tests its truthiness) — and
+  exempts the sessionless 2026-07-28 revision, served on an in-memory session (#672, same rule).

@@ -32,6 +32,9 @@ final class McpEndpointTest extends WebTestCase
 
     private const string TRUSTED_USERNAME = 'mcp.trusted';
 
+    /** Un `_meta` sous les 16 Kio du corps que nginx admet. */
+    private const int META_PADDING_BYTES = 10 * 1024;
+
     protected function setUp(): void
     {
         self::ensureKernelShutdown();
@@ -180,6 +183,33 @@ final class McpEndpointTest extends WebTestCase
         $this->postMcp($client, $sessionId, ['jsonrpc' => '2.0', 'id' => 3, 'method' => 'tools/list']);
         self::assertResponseStatusCodeSame(404);
         self::assertLessThan(BoundedSessionStore::MAX_BYTES, $this->largestStoredMcpSession());
+    }
+
+    /**
+     * `params._meta` échappe à la borne de 4 096 octets des déclarations de
+     * l'`initialize` (InboundMessageRefusalListener) : accepté, décision de
+     * l'auteur du 2026-10-20, rappelée par #672, parce que le SDK ne garde que
+     * celui de la **dernière** requête (`SESSION_ACTIVE_REQUEST_META`, réécrit
+     * à chaque requête), borné en production par le corps de 16 Kio de nginx.
+     * Ce test fige ce remplacement : une montée du SDK qui accumulerait les
+     * `_meta` en session rouvrirait le remplissage de `cache_items` que #644 a
+     * fermé, et la décision serait à reprendre.
+     */
+    public function testEachRequestMetaReplacesThePreviousOneInTheSession(): void
+    {
+        $client = self::createClient();
+        $sessionId = $this->initializeMcpSession($client);
+
+        $sizes = [];
+        foreach (['a', 'b', 'c'] as $round => $filler) {
+            $this->mcpCall($client, $sessionId, 'tools/list', ['_meta' => ['padding' => str_repeat($filler, self::META_PADDING_BYTES)]]);
+            $sizes[$round] = $this->largestStoredMcpSession();
+        }
+
+        // Le `_meta` est bien en session : sans lui, la mesure ne prouverait rien.
+        self::assertGreaterThan(self::META_PADDING_BYTES, $sizes[0]);
+        // Accumulés, deux `_meta` de plus ajouteraient deux fois le remplissage.
+        self::assertLessThan($sizes[0] + intdiv(self::META_PADDING_BYTES, 2), $sizes[2], 'Le SDK accumule les _meta en session.');
     }
 
     /**
