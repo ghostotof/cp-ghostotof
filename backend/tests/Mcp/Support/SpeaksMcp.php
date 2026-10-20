@@ -6,6 +6,7 @@ namespace App\Tests\Mcp\Support;
 
 use App\Tests\Support\HttpJson;
 use Doctrine\DBAL\Connection;
+use Mcp\Server\Stateless\RequestMeta;
 use stdClass;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 
@@ -25,6 +26,9 @@ trait SpeaksMcp
     private const string MCP_ENDPOINT = '/api/mcp';
 
     private const string MCP_PROTOCOL_VERSION = '2025-06-18';
+
+    /** La révision sans session, servie par un autre chemin du SDK ({@see self::postModernMcp()}). */
+    private const string MCP_MODERN_REVISION = '2026-07-28';
 
     private const string MCP_SESSION_HEADER = 'Mcp-Session-Id';
 
@@ -169,6 +173,46 @@ trait SpeaksMcp
                 'clientInfo' => $clientInfo,
             ],
         ], $server);
+    }
+
+    /**
+     * Une requête de la révision sans session (2026-07-28, SEP-2575) : pas de
+     * session, l'enveloppe `_meta` porte la révision, les capacités et le
+     * `clientInfo` à chaque requête, et les en-têtes SEP-2243 répètent la
+     * méthode et, pour un outil ou un prompt, son nom. Sans `id`, c'est une
+     * notification.
+     *
+     * @param array<string, mixed>       $params     sans `_meta`, ajouté ici
+     * @param array<string, string>|null $clientInfo ce que le client déclare, `null` pour ne rien déclarer
+     * @param array<string, string>      $server     en-têtes supplémentaires, qui priment
+     */
+    private function postModernMcp(
+        KernelBrowser $client,
+        string $method,
+        array $params = [],
+        ?array $clientInfo = null,
+        array $server = [],
+        int|string|null $id = 1,
+    ): void {
+        $meta = [
+            RequestMeta::PROTOCOL_VERSION => self::MCP_MODERN_REVISION,
+            RequestMeta::CLIENT_CAPABILITIES => new stdClass(),
+        ];
+        if (null !== $clientInfo) {
+            $meta[RequestMeta::CLIENT_INFO] = $clientInfo;
+        }
+
+        $message = ['jsonrpc' => '2.0', 'method' => $method, 'params' => ['_meta' => $meta] + $params];
+        if (null !== $id) {
+            $message['id'] = $id;
+        }
+
+        $headers = ['HTTP_MCP_PROTOCOL_VERSION' => self::MCP_MODERN_REVISION, 'HTTP_MCP_METHOD' => $method];
+        if (\is_string($params['name'] ?? null)) {
+            $headers['HTTP_MCP_NAME'] = $params['name'];
+        }
+
+        $this->postMcp($client, null, $message, $server + $headers);
     }
 
     /**

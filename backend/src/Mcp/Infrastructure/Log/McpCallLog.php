@@ -46,13 +46,20 @@ use Symfony\Contracts\Service\ResetInterface;
  * le canal `mcp` du SDK ({@see self::observeSdkRecord()}) et lui écrit sa ligne,
  * sans méthode.
  *
+ * **La révision sans session `2026-07-28`** (#664) a la même ligne, avec les
+ * mêmes champs : le SDK la sert par un autre chemin, sans aucun événement, et
+ * {@see ModernExchange} la lit de la requête et de la réponse HTTP, à
+ * `kernel.terminate`. Sa durée est celle de la requête HTTP, et son
+ * `declaredClient` celui que la requête déclare dans son `_meta` (aucune
+ * session ne le garde), borné de même.
+ *
  * **Une ligne de repli** ({@see self::REQUEST_WITHOUT_CALL}) pour une requête
  * HTTP sur `/api/mcp` qui n'a traité aucun message : JSON illisible, session
- * absente ou expirée, `GET`, `DELETE`, réponses du client seules, et toute la
- * révision sans session `2026-07-28`, que le SDK sert par un autre chemin, sans
- * événement (suivi ouvert). La ligne porte la méthode, le statut HTTP et la
- * révision annoncée (une valeur que le SDK connaît, sinon `null`) ;
- * {@see self::fallbackOutcome()} en déduit l'issue.
+ * absente ou expirée, `GET`, `DELETE`, un message refusé avant le SDK, ou avant
+ * toute ère par son classifieur (un en-tête de révision moderne sans enveloppe).
+ * La ligne porte la méthode, le statut HTTP et la révision annoncée (une valeur
+ * que le SDK connaît, sinon `null`) ; {@see self::fallbackOutcome()} en déduit
+ * l'issue.
  *
  * **Jamais** un argument (le `role` du prompt est du texte libre), un en-tête
  * (`Authorization`, cookie) ni l'identifiant de session, qui vaut accès à la
@@ -161,7 +168,7 @@ final class McpCallLog implements EventSubscriberInterface, ResetInterface
 
     public function onNotification(NotificationEvent $event): void
     {
-        $this->writeLine($event->getMethod(), null, McpCallOutcome::Success, null, null, $event->getSession());
+        $this->writeLine($event->getMethod(), null, McpCallOutcome::Success, null, null, $this->declaredClient($event->getSession()));
     }
 
     /**
@@ -191,6 +198,12 @@ final class McpCallLog implements EventSubscriberInterface, ResetInterface
             $this->writeLine($method, $name, McpCallOutcome::ProtocolError, null, $this->millisecondsSince($startedAt), null);
         }
 
+        // La révision sans session : servie sans événement, lue de l'échange HTTP.
+        $modern = $this->wroteALine ? null : ModernExchange::tryRead($event->getRequest(), $event->getResponse());
+        if (null !== $modern) {
+            $this->writeModernCall($modern, $httpStartedAt);
+        }
+
         if (!$this->wroteALine) {
             $request = $event->getRequest();
             $status = $event->getResponse()->getStatusCode();
@@ -200,7 +213,7 @@ final class McpCallLog implements EventSubscriberInterface, ResetInterface
                 'httpMethod' => $request->getMethod(),
                 'httpStatus' => $status,
                 'protocolVersion' => $version?->value,
-                'outcome' => $this->fallbackOutcome($request->getMethod(), $status, $version)->value,
+                'outcome' => $this->fallbackOutcome($request->getMethod(), $status)->value,
                 'durationMs' => $this->millisecondsSince($httpStartedAt),
                 'ip' => $this->callerNetwork,
             ]);
@@ -222,16 +235,15 @@ final class McpCallLog implements EventSubscriberInterface, ResetInterface
      * L'issue d'une requête HTTP qui n'a traité aucun message. Un `POST` n'existe
      * que pour porter des messages : sans aucun, c'est une erreur de protocole —
      * le SDK répond un JSON illisible en 200 —, sauf un 202 (des réponses du
-     * client, acceptées) et la révision sans session, que le SDK sert sans
-     * événement et dont seul le statut renseigne.
+     * client, acceptées). La révision sans session n'arrive plus ici : elle a sa
+     * ligne d'appel ({@see ModernExchange}).
      */
-    private function fallbackOutcome(string $httpMethod, int $status, ?ProtocolVersion $version): McpCallOutcome
+    private function fallbackOutcome(string $httpMethod, int $status): McpCallOutcome
     {
         return match (true) {
             $status >= 400 => McpCallOutcome::ProtocolError,
             HttpRequest::METHOD_POST !== $httpMethod,
-            Response::HTTP_ACCEPTED === $status,
-            true === $version?->isModern() => McpCallOutcome::Success,
+            Response::HTTP_ACCEPTED === $status => McpCallOutcome::Success,
             default => McpCallOutcome::ProtocolError,
         };
     }
@@ -248,11 +260,31 @@ final class McpCallLog implements EventSubscriberInterface, ResetInterface
             $outcome,
             $errorCode,
             null === $pending ? null : $this->millisecondsSince($pending['startedAt']),
-            $session,
+            $this->declaredClient($session),
         );
     }
 
-    private function writeLine(?string $method, ?string $name, McpCallOutcome $outcome, ?int $errorCode, ?float $durationMs, ?SessionInterface $session): void
+    /**
+     * Une requête de l'ère moderne n'a pas de session : le client déclare son
+     * `clientInfo` dans le `_meta` de chaque requête, et sa durée est celle de la
+     * requête HTTP qui la porte seule.
+     */
+    private function writeModernCall(ModernExchange $exchange, int $httpStartedAt): void
+    {
+        $this->writeLine(
+            $exchange->method,
+            null === $exchange->request ? null : $this->knownName($exchange->request),
+            $exchange->outcome,
+            $exchange->errorCode,
+            $this->millisecondsSince($httpStartedAt),
+            $this->boundedClient($exchange->declaredClientInfo),
+        );
+    }
+
+    /**
+     * @param array{name: ?string, version: ?string}|null $declaredClient
+     */
+    private function writeLine(?string $method, ?string $name, McpCallOutcome $outcome, ?int $errorCode, ?float $durationMs, ?array $declaredClient): void
     {
         $this->wroteALine = true;
 
@@ -263,7 +295,7 @@ final class McpCallLog implements EventSubscriberInterface, ResetInterface
             'errorCode' => $errorCode,
             'durationMs' => $durationMs,
             'ip' => $this->callerNetwork,
-            'declaredClient' => null === $session ? null : $this->declaredClient($session),
+            'declaredClient' => $declaredClient,
         ]);
     }
 
@@ -290,11 +322,24 @@ final class McpCallLog implements EventSubscriberInterface, ResetInterface
         }
 
         $declared = $session->get(self::SDK_CLIENT_INFO);
-        if (!\is_array($declared)) {
+
+        return $this->declaredClient = $this->boundedClient(\is_array($declared) ? $declared : null);
+    }
+
+    /**
+     * Le `clientInfo` déclaré, borné champ par champ : rien ne le vérifie.
+     *
+     * @param array<mixed>|null $declared
+     *
+     * @return array{name: ?string, version: ?string}|null
+     */
+    private function boundedClient(?array $declared): ?array
+    {
+        if (null === $declared) {
             return null;
         }
 
-        return $this->declaredClient = [
+        return [
             'name' => $this->boundedDeclaration($declared['name'] ?? null),
             'version' => $this->boundedDeclaration($declared['version'] ?? null),
         ];
