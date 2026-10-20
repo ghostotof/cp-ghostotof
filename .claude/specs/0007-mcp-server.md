@@ -267,6 +267,10 @@ décision du 2026-10-19, voir « Langue invalide »).
   contenu du site : il oriente vers les outils.
 - Le texte de `role` est inséré comme donnée délimitée, pas comme instruction ; sa longueur est bornée
   (refus au-delà), parce qu'un prompt construit côté serveur ne doit pas devenir un relais d'injection.
+- *Amendé le 2026-10-20 (#662).* Le bloc porte une balise tirée à chaque prompt (`<role-<nonce>>`), que
+  la consigne et le rappel nomment : l'auteur d'une annonce piégée ne la connaît pas, il ne peut donc
+  pas refermer le bloc, quels que soient les sosies qu'il emploie. Le texte y entre sur une seule ligne ;
+  le texte nettoyé a un plafond (le double de la borne publiée), car la normalisation peut l'allonger.
 
 ### Test d'exposition symétrique (phase 1)
 
