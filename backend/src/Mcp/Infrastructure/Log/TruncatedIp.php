@@ -4,24 +4,36 @@ declare(strict_types=1);
 
 namespace App\Mcp\Infrastructure\Log;
 
-use Symfony\Component\HttpFoundation\IpUtils;
-
 /**
  * L'adresse d'un appelant réduite à son réseau, pour le journal d'appels MCP
  * (spec 0007, « Journal des appels ») : IPv4 en /24, IPv6 en /48. Assez pour
- * repérer un abus venant d'un réseau, plus assez pour désigner un poste — le
- * journal ne garde pas de donnée personnelle complète (registre RGPD).
+ * repérer un abus venant d'un réseau, plus assez pour désigner un poste. Un /48
+ * reste souvent le réseau d'un abonné (un foyer, une entreprise) : c'est une
+ * donnée personnelle réduite, pas une donnée anonyme (registre RGPD, §6 bis).
  *
- * Une adresse IPv4 écrite en IPv6 (`::ffff:203.0.113.42`) est tronquée comme
- * l'IPv4 qu'elle porte : `IpUtils::anonymize()` la reconnaît, une troncature
- * IPv6 en /48 l'aurait gardée entière.
+ * Deux formes d'IPv6 portent une IPv4, qu'un /48 garderait :
+ *
+ *  - **l'IPv4 écrite en IPv6** (`::ffff:203.0.113.42`, une socket double pile) :
+ *    elle est rendue en IPv4 (`203.0.113.0`), pour qu'un même /24 n'apparaisse
+ *    pas sous deux valeurs ;
+ *  - **6to4** (`2002::/16`, RFC 3056) : les octets 2 à 5 sont l'IPv4 du client,
+ *    entière dans un /48 ; seuls les trois premiers sont gardés, comme un /24.
+ *
+ * Le calcul se fait sur les octets (`inet_pton`), une famille après l'autre.
  */
 final readonly class TruncatedIp
 {
-    /** Octets mis à zéro : le dernier d'une IPv4 (/24), les dix derniers d'une IPv6 (/48). */
-    private const int IPV4_BYTES = 1;
+    /** Octets gardés : trois d'une IPv4 (/24), six d'une IPv6 (/48). */
+    private const int IPV4_KEPT_BYTES = 3;
 
-    private const int IPV6_BYTES = 10;
+    private const int IPV6_KEPT_BYTES = 6;
+
+    /** `2002:` puis les trois premiers octets de l'IPv4 portée. */
+    private const int SIX_TO_FOUR_KEPT_BYTES = 5;
+
+    private const string IPV4_MAPPED_PREFIX = "\0\0\0\0\0\0\0\0\0\0\xFF\xFF";
+
+    private const string SIX_TO_FOUR_PREFIX = "\x20\x02";
 
     private function __construct(
         public string $value,
@@ -39,6 +51,18 @@ final readonly class TruncatedIp
             return null;
         }
 
-        return new self(IpUtils::anonymize($address, self::IPV4_BYTES, self::IPV6_BYTES));
+        $bytes = (string) inet_pton($address);
+
+        if (str_starts_with($bytes, self::IPV4_MAPPED_PREFIX)) {
+            $bytes = substr($bytes, \strlen(self::IPV4_MAPPED_PREFIX));
+        }
+
+        $kept = match (true) {
+            4 === \strlen($bytes) => self::IPV4_KEPT_BYTES,
+            str_starts_with($bytes, self::SIX_TO_FOUR_PREFIX) => self::SIX_TO_FOUR_KEPT_BYTES,
+            default => self::IPV6_KEPT_BYTES,
+        };
+
+        return new self((string) inet_ntop(str_pad(substr($bytes, 0, $kept), \strlen($bytes), "\0")));
     }
 }

@@ -25,7 +25,12 @@ final class TruncatedIpTest extends TestCase
         yield 'IPv6 : 48 bits gardés' => ['2001:db8:85a3:8d3:1319:8a2e:370:7348', '2001:db8:85a3::'];
         yield 'IPv6 compressée' => ['2001:db8::1', '2001:db8::'];
         yield 'IPv6 boucle locale' => ['::1', '::'];
-        yield 'IPv4 dans IPv6 : traitée en IPv4' => ['::ffff:203.0.113.42', '::ffff:203.0.113.0'];
+        // Le même /24 sous une seule valeur, quelle que soit la famille de la socket.
+        yield 'IPv4 dans IPv6 : écrite en IPv4' => ['::ffff:203.0.113.42', '203.0.113.0'];
+        yield 'IPv4 dans IPv6, en hexadécimal' => ['::ffff:cb00:712a', '203.0.113.0'];
+        // 6to4 (RFC 3056) : les octets 2 à 5 sont l'IPv4 du client ; un /48 la
+        // garderait entière. Elle est tronquée en /24 comme toute IPv4.
+        yield '6to4 : l\'IPv4 portée tombe en /24' => ['2002:cb00:712a:1::5', '2002:cb00:7100::'];
     }
 
     #[DataProvider('addresses')]
