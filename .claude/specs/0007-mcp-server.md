@@ -284,7 +284,10 @@ décision du 2026-10-19, voir « Langue invalide »).
 
 ### Journal des appels (phase 1)
 
-- Canal Monolog `mcp`, distinct de `security_audit` et d'`ai_usage`. Une ligne par requête :
+- Canal Monolog `mcp_usage` (amendé à la tâche 4, #643 : `mcp` est le canal du SDK, que le bundle
+  étiquette en dur ; il est plafonné à `warning` et borné), distinct de `security_audit` et
+  d'`ai_usage`. Une ligne par message JSON-RPC traité (et une ligne de repli, méthode et statut HTTP,
+  pour une requête qui n'en traite aucun) :
   horodatage, méthode JSON-RPC, outil ou prompt, issue (succès, erreur d'outil, erreur de protocole),
   durée, IP tronquée (IPv4 en /24, IPv6 en /48), et le `clientInfo` déclaré au `initialize`, noté comme
   déclaré. Jamais les arguments en clair (le `role` du prompt est du texte libre), jamais un jeton.
@@ -403,7 +406,7 @@ décision du 2026-10-19, voir « Langue invalide »).
     hors des exceptions que liste l'ADR 0006 sous D8 (le nom de serveur `cp-ghostotof`), admises
     nommément ;
   - `allowed_hosts` : un `Host` étranger est refusé ;
-  - le journal `mcp` porte une IP tronquée en IPv4 et en IPv6, et jamais l'argument `role` ;
+  - le journal `mcp_usage` porte une IP tronquée en IPv4 et en IPv6, et jamais l'argument `role` ;
   - la route `/api/mcp` est dans `PUBLIC_PATHS` et `ApiRouteExposureTest` reste vert.
 - **Phase 1, exposition symétrique** : les deux sens, plus un test qui ajoute en mémoire une route
   fictive pour vérifier que l'oubli fait bien échouer (comme les autres tests d'allow-list).
@@ -479,7 +482,7 @@ dans `tasks/todo.md`.
 
 | Phase | Tâches | Issues |
 |---|---|---|
-| 1 | socle et `get_about` ; catalogue et test symétrique ; prompt et garde D8 ; journal `mcp` et RGPD ; zone nginx ; page « Brancher votre assistant » | #640 → #645 |
+| 1 | socle et `get_about` ; catalogue et test symétrique ; prompt et garde D8 ; journal `mcp_usage` et RGPD ; zone nginx ; page « Brancher votre assistant » | #640 → #645 |
 | 2 | recherche (questions ouvertes) ; émission d'une connexion MCP ; corpus nominatif ; durée de vie des jetons ; « Mes connexions MCP » ; CIMD ; backoffice ; livraison | #646 → #653 |
 | suivis | ressources MCP ; PhpStorm (tickets JetBrains) | #654, #655 |
 

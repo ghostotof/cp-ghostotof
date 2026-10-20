@@ -1,0 +1,318 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Mcp\Infrastructure\Log;
+
+use App\Shared\Infrastructure\Http\CanonicalPath;
+use Mcp\Capability\RegistryInterface;
+use Mcp\Event\ErrorEvent;
+use Mcp\Event\NotificationEvent;
+use Mcp\Event\RequestEvent as McpRequestEvent;
+use Mcp\Event\ResponseEvent as McpResponseEvent;
+use Mcp\Schema\Enum\ProtocolVersion;
+use Mcp\Schema\JsonRpc\Error;
+use Mcp\Schema\JsonRpc\Request;
+use Mcp\Schema\Request\CallToolRequest;
+use Mcp\Schema\Request\GetPromptRequest;
+use Mcp\Schema\Result\CallToolResult;
+use Mcp\Server\Session\SessionInterface;
+use Monolog\Attribute\AsMonologProcessor;
+use Monolog\LogRecord;
+use Psr\Log\LoggerInterface;
+use Symfony\Component\DependencyInjection\Attribute\Autowire;
+use Symfony\Component\EventDispatcher\EventSubscriberInterface;
+use Symfony\Component\HttpFoundation\Request as HttpRequest;
+use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpKernel\Event\RequestEvent;
+use Symfony\Component\HttpKernel\Event\TerminateEvent;
+use Symfony\Component\HttpKernel\KernelEvents;
+use Symfony\Contracts\Service\ResetInterface;
+
+/**
+ * Le journal d'appels du serveur MCP, canal `mcp_usage` (spec 0007, « Journal
+ * des appels », tâche 4, #643) : l'auteur mesure l'usage et repère un abus sans
+ * conserver de donnée personnelle complète.
+ *
+ * **Une ligne `info` par message JSON-RPC traité** ({@see self::CALL}), écrite
+ * sur les événements que le SDK émet par le répartiteur de Symfony : méthode,
+ * outil ou prompt (seulement un nom que le serveur connaît : celui que
+ * l'appelant envoie n'a pas de borne), issue ({@see McpCallOutcome}), code
+ * d'erreur JSON-RPC, durée, IP tronquée ({@see TruncatedIp}), et le
+ * `clientInfo` que le client a **déclaré** à l'`initialize` — d'où le nom de la
+ * clé : rien ne le vérifie, chaque champ est borné à
+ * {@see self::MAX_DECLARED_CHARACTERS} caractères. Un message invalide (une
+ * méthode inconnue dans un lot) n'émet aucun événement : la classe l'observe sur
+ * le canal `mcp` du SDK ({@see self::observeSdkRecord()}) et lui écrit sa ligne,
+ * sans méthode.
+ *
+ * **Une ligne de repli** ({@see self::REQUEST_WITHOUT_CALL}) pour une requête
+ * HTTP sur `/api/mcp` qui n'a traité aucun message : JSON illisible, session
+ * absente ou expirée, `GET`, `DELETE`, réponses du client seules, et toute la
+ * révision sans session `2026-07-28`, que le SDK sert par un autre chemin, sans
+ * événement (suivi ouvert). La ligne porte la méthode, le statut HTTP et la
+ * révision annoncée (une valeur que le SDK connaît, sinon `null`) ;
+ * {@see self::fallbackOutcome()} en déduit l'issue.
+ *
+ * **Jamais** un argument (le `role` du prompt est du texte libre), un en-tête
+ * (`Authorization`, cookie) ni l'identifiant de session, qui vaut accès à la
+ * session : la ligne est construite champ par champ, rien n'y est recopié en
+ * bloc, et une requête en attente ne garde que sa méthode, son nom connu et son
+ * heure de début. L'IP est lue une fois, au début de la requête HTTP : à
+ * `kernel.terminate`, et pendant une réponse SSE, la pile des requêtes est déjà
+ * vidée.
+ *
+ * Un canal à part de `mcp`, celui du SDK, plafonné à `warning` (monolog.yaml) :
+ * comme `ai_usage`, la trace doit exister en production, où LOG_LEVEL écarte un
+ * `info`.
+ *
+ * Limite acceptée : une requête dont l'échange est suspendu (sampling,
+ * elicitation — aucun outil n'en fait) est écrite `protocol-error` à la fin de
+ * sa requête HTTP, et sa reprise ne laisse qu'une ligne de repli.
+ */
+#[AsMonologProcessor(channel: 'mcp', method: 'observeSdkRecord')]
+final class McpCallLog implements EventSubscriberInterface, ResetInterface
+{
+    public const string CALL = 'MCP call';
+
+    public const string REQUEST_WITHOUT_CALL = 'MCP request without call';
+
+    public const int MAX_DECLARED_CHARACTERS = 64;
+
+    private const string ENDPOINT = '/api/mcp';
+
+    /** Ce que le SDK 0.8.1 écrit pour chaque message qu'il n'a pas su lire. */
+    private const string SDK_INVALID_MESSAGE = 'Failed to create message.';
+
+    /** La clé de session où le SDK copie le `clientInfo` de l'`initialize`. */
+    private const string SDK_CLIENT_INFO = 'client_info';
+
+    /**
+     * Les requêtes JSON-RPC en cours, par objet : l'identifiant JSON-RPC est
+     * choisi par le client, deux requêtes d'un lot peuvent le partager.
+     *
+     * @var array<int, array{method: string, name: ?string, startedAt: int}>
+     */
+    private array $pending = [];
+
+    private ?int $httpStartedAt = null;
+
+    private ?string $callerNetwork = null;
+
+    /** @var array{name: ?string, version: ?string}|null */
+    private ?array $declaredClient = null;
+
+    private bool $wroteALine = false;
+
+    public function __construct(
+        #[Autowire(service: 'monolog.logger.mcp_usage')]
+        private readonly LoggerInterface $logger,
+        #[Autowire(service: 'mcp.server.portfolio.registry')]
+        private readonly RegistryInterface $registry,
+    ) {
+    }
+
+    public static function getSubscribedEvents(): array
+    {
+        return [
+            // Avant tout le reste : la durée de repli couvre la requête entière.
+            KernelEvents::REQUEST => ['onKernelRequest', 4096],
+            // Après les autres écouteurs, qui peuvent remplacer la requête ou la
+            // réponse : la clé d'attente est l'objet que la réponse portera.
+            McpRequestEvent::class => ['onRequest', -1024],
+            McpResponseEvent::class => ['onResponse', -1024],
+            ErrorEvent::class => ['onError', -1024],
+            NotificationEvent::class => ['onNotification', -1024],
+            KernelEvents::TERMINATE => ['onTerminate', -1024],
+        ];
+    }
+
+    public function onKernelRequest(RequestEvent $event): void
+    {
+        if ($event->isMainRequest() && self::ENDPOINT === CanonicalPath::of($event->getRequest())) {
+            $this->reset();
+            $this->httpStartedAt = $this->now();
+            $this->callerNetwork = TruncatedIp::tryFrom($event->getRequest()->getClientIp())?->value;
+        }
+    }
+
+    public function onRequest(McpRequestEvent $event): void
+    {
+        $request = $event->getRequest();
+        $this->pending[spl_object_id($request)] = [
+            'method' => $request::getMethod(),
+            'name' => $this->knownName($request),
+            'startedAt' => $this->now(),
+        ];
+    }
+
+    public function onResponse(McpResponseEvent $event): void
+    {
+        $result = $event->getResponse()->result;
+        $outcome = $result instanceof CallToolResult && $result->isError ? McpCallOutcome::ToolError : McpCallOutcome::Success;
+
+        $this->writeCall($event->getRequest(), $event->getSession(), $outcome, null);
+    }
+
+    public function onError(ErrorEvent $event): void
+    {
+        $this->writeCall($event->getRequest(), $event->getSession(), McpCallOutcome::ProtocolError, $event->getError()->code);
+    }
+
+    public function onNotification(NotificationEvent $event): void
+    {
+        $this->writeLine($event->getMethod(), null, McpCallOutcome::Success, null, null, $event->getSession());
+    }
+
+    /**
+     * Processeur du canal `mcp` : le SDK n'émet aucun événement pour un message
+     * qu'il n'a pas su lire, mais il l'écrit là, un enregistrement par message.
+     * Rien n'est lu de l'enregistrement que son message.
+     */
+    public function observeSdkRecord(LogRecord $record): LogRecord
+    {
+        if (null !== $this->httpStartedAt && self::SDK_INVALID_MESSAGE === $record->message) {
+            $this->writeLine(null, null, McpCallOutcome::ProtocolError, Error::INVALID_REQUEST, null, null);
+        }
+
+        return $record;
+    }
+
+    public function onTerminate(TerminateEvent $event): void
+    {
+        $httpStartedAt = $this->httpStartedAt;
+        if (null === $httpStartedAt || self::ENDPOINT !== CanonicalPath::of($event->getRequest())) {
+            return;
+        }
+
+        // Une requête sans réponse : une exception que le SDK a rattrapée hors
+        // de ses événements, ou un échange suspendu.
+        foreach ($this->pending as ['method' => $method, 'name' => $name, 'startedAt' => $startedAt]) {
+            $this->writeLine($method, $name, McpCallOutcome::ProtocolError, null, $this->millisecondsSince($startedAt), null);
+        }
+
+        if (!$this->wroteALine) {
+            $request = $event->getRequest();
+            $status = $event->getResponse()->getStatusCode();
+            $version = ProtocolVersion::tryFrom((string) $request->headers->get('MCP-Protocol-Version'));
+
+            $this->logger->info(self::REQUEST_WITHOUT_CALL, [
+                'httpMethod' => $request->getMethod(),
+                'httpStatus' => $status,
+                'protocolVersion' => $version?->value,
+                'outcome' => $this->fallbackOutcome($request->getMethod(), $status, $version)->value,
+                'durationMs' => $this->millisecondsSince($httpStartedAt),
+                'ip' => $this->callerNetwork,
+            ]);
+        }
+
+        $this->reset();
+    }
+
+    public function reset(): void
+    {
+        $this->pending = [];
+        $this->httpStartedAt = null;
+        $this->callerNetwork = null;
+        $this->declaredClient = null;
+        $this->wroteALine = false;
+    }
+
+    /**
+     * L'issue d'une requête HTTP qui n'a traité aucun message. Un `POST` n'existe
+     * que pour porter des messages : sans aucun, c'est une erreur de protocole —
+     * le SDK répond un JSON illisible en 200 —, sauf un 202 (des réponses du
+     * client, acceptées) et la révision sans session, que le SDK sert sans
+     * événement et dont seul le statut renseigne.
+     */
+    private function fallbackOutcome(string $httpMethod, int $status, ?ProtocolVersion $version): McpCallOutcome
+    {
+        return match (true) {
+            $status >= 400 => McpCallOutcome::ProtocolError,
+            HttpRequest::METHOD_POST !== $httpMethod,
+            Response::HTTP_ACCEPTED === $status,
+            true === $version?->isModern() => McpCallOutcome::Success,
+            default => McpCallOutcome::ProtocolError,
+        };
+    }
+
+    private function writeCall(Request $request, SessionInterface $session, McpCallOutcome $outcome, ?int $errorCode): void
+    {
+        $key = spl_object_id($request);
+        $pending = $this->pending[$key] ?? null;
+        unset($this->pending[$key]);
+
+        $this->writeLine(
+            $request::getMethod(),
+            $pending['name'] ?? $this->knownName($request),
+            $outcome,
+            $errorCode,
+            null === $pending ? null : $this->millisecondsSince($pending['startedAt']),
+            $session,
+        );
+    }
+
+    private function writeLine(?string $method, ?string $name, McpCallOutcome $outcome, ?int $errorCode, ?float $durationMs, ?SessionInterface $session): void
+    {
+        $this->wroteALine = true;
+
+        $this->logger->info(self::CALL, [
+            'method' => $method,
+            'name' => $name,
+            'outcome' => $outcome->value,
+            'errorCode' => $errorCode,
+            'durationMs' => $durationMs,
+            'ip' => $this->callerNetwork,
+            'declaredClient' => null === $session ? null : $this->declaredClient($session),
+        ]);
+    }
+
+    /** Le nom de l'outil ou du prompt appelé, s'il est l'un de ceux du serveur. */
+    private function knownName(Request $request): ?string
+    {
+        return match (true) {
+            $request instanceof CallToolRequest && $this->registry->hasTool($request->name) => $request->name,
+            $request instanceof GetPromptRequest && $this->registry->hasPrompt($request->name) => $request->name,
+            default => null,
+        };
+    }
+
+    /**
+     * Le `clientInfo` que le SDK a copié dans la session à l'`initialize`, borné
+     * champ par champ, lu une fois par requête HTTP (une session par requête).
+     *
+     * @return array{name: ?string, version: ?string}|null
+     */
+    private function declaredClient(SessionInterface $session): ?array
+    {
+        if (null !== $this->declaredClient) {
+            return $this->declaredClient;
+        }
+
+        $declared = $session->get(self::SDK_CLIENT_INFO);
+        if (!\is_array($declared)) {
+            return null;
+        }
+
+        return $this->declaredClient = [
+            'name' => $this->boundedDeclaration($declared['name'] ?? null),
+            'version' => $this->boundedDeclaration($declared['version'] ?? null),
+        ];
+    }
+
+    private function boundedDeclaration(mixed $value): ?string
+    {
+        return \is_string($value) ? mb_substr(mb_scrub($value, 'UTF-8'), 0, self::MAX_DECLARED_CHARACTERS, 'UTF-8') : null;
+    }
+
+    private function millisecondsSince(int $startedAt): float
+    {
+        return round(($this->now() - $startedAt) / 1_000_000, 3);
+    }
+
+    /** Horloge monotone, en nanosecondes (`hrtime()` n'est un flottant que sur 32 bits). */
+    private function now(): int
+    {
+        return (int) hrtime(true);
+    }
+}

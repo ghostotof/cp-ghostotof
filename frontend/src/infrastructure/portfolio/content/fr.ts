@@ -97,7 +97,7 @@ const fr: PortfolioLocaleContent = {
   privacyPolicy: {
     eyebrow: 'Vie privée',
     title: 'Politique de confidentialité',
-    lastUpdated: 'Dernière mise à jour : 21 septembre 2026',
+    lastUpdated: 'Dernière mise à jour : 20 octobre 2026',
     sections: [
       {
         heading: 'Responsable du traitement',
@@ -113,6 +113,7 @@ const fr: PortfolioLocaleContent = {
           "Compte sur invitation : si l'éditeur vous accorde un accès nominatif, votre adresse email (à laquelle l'invitation est envoyée), un nom d'utilisateur dérivé de cette adresse et le mot de passe que vous choisissez, conservé sous forme hachée. Aucune inscription publique n'est proposée, aucun compte partagé.",
           "Accès instantané : aucun compte n'est créé et aucune donnée vous concernant n'est enregistrée ; l'accès repose sur un jeton anonyme valable 15 minutes.",
           "Adresse IP : utilisée pour limiter les abus (formulaire de contact, connexion, accès instantané, définition du mot de passe) et consignée dans les journaux techniques et de sécurité du serveur.",
+          "Serveur MCP (l'accès du site pour un assistant IA) : pour chaque appel, le journal technique garde la méthode, l'outil ou le prompt appelé, l'issue et son code d'erreur, la durée, le nom et la version que votre logiciel déclare, et votre adresse IP tronquée : le dernier nombre d'une adresse IPv4 et tout ce qui suit les trois premiers groupes d'une adresse IPv6 sont effacés. Elle désigne alors un réseau — souvent celui d'un abonné, un foyer ou une entreprise — et non plus un appareil. Le texte que votre assistant transmet au serveur — la description d'un poste, par exemple — n'est jamais enregistré.",
           "Stockage local du navigateur (localStorage) : votre préférence de langue et, le cas échéant, l'heure d'expiration de votre accès instantané. Ces valeurs ne sont jamais transmises au serveur.",
         ],
       },
@@ -130,6 +131,7 @@ const fr: PortfolioLocaleContent = {
         list: [
           'Répondre à vos demandes de contact — mesures précontractuelles ou intérêt légitime.',
           'Sécuriser le site et prévenir les abus (limitation de débit, journaux techniques) — intérêt légitime.',
+          "Mesurer l'usage du serveur MCP et repérer un usage abusif — intérêt légitime.",
           "Vous inviter à disposer d'un accès nominatif — intérêt légitime de l'éditeur à accorder un accès individuel plutôt qu'un identifiant partagé.",
           "Vous permettre de vous authentifier ou d'utiliser l'accès instantané — exécution du service demandé.",
         ],

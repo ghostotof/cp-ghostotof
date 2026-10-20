@@ -4,9 +4,8 @@ declare(strict_types=1);
 
 namespace App\Tests\Shared\Infrastructure\Lock;
 
-use App\Tests\Support\RepositoryFiles;
+use App\Tests\Support\ProductionMonologHandlers;
 use PHPUnit\Framework\TestCase;
-use Symfony\Component\Yaml\Yaml;
 
 /**
  * Le canal `lock` est muet en production (issue #272, audit du correctif,
@@ -32,7 +31,7 @@ final class LockLogChannelTest extends TestCase
 {
     public function testTheMainProductionHandlerLeavesTheLockChannelOut(): void
     {
-        self::assertContains('!lock', $this->productionHandler('main')['channels'] ?? []);
+        self::assertContains('!lock', ProductionMonologHandlers::named('main')['channels'] ?? []);
     }
 
     /**
@@ -42,7 +41,7 @@ final class LockLogChannelTest extends TestCase
      */
     public function testTheLockChannelHasItsOwnHandlerAboveEverythingTheComponentEmits(): void
     {
-        $handler = $this->productionHandler('lock');
+        $handler = ProductionMonologHandlers::named('lock');
 
         self::assertSame(['lock'], $handler['channels'] ?? null);
         self::assertSame('warning', $handler['level'] ?? null);
@@ -56,44 +55,10 @@ final class LockLogChannelTest extends TestCase
      */
     public function testNoOtherProductionHandlerReceivesTheLockChannel(): void
     {
-        foreach ($this->productionHandlers() as $name => $handler) {
-            if ('lock' === $name) {
-                continue;
+        foreach (ProductionMonologHandlers::all() as $name => $handler) {
+            if ('lock' !== $name) {
+                self::assertFalse(ProductionMonologHandlers::receives($handler, 'lock'), \sprintf('Le handler de production "%s" reçoit le canal lock.', $name));
             }
-
-            $channels = $handler['channels'] ?? [];
-            self::assertIsArray($channels);
-            $inclusive = array_filter($channels, static fn (mixed $channel): bool => \is_string($channel) && !str_starts_with($channel, '!'));
-
-            self::assertTrue(
-                [] !== $inclusive ? !\in_array('lock', $inclusive, true) : \in_array('!lock', $channels, true),
-                \sprintf('Le handler de production "%s" reçoit le canal lock.', $name),
-            );
         }
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function productionHandler(string $name): array
-    {
-        $handler = $this->productionHandlers()[$name] ?? null;
-        self::assertIsArray($handler, \sprintf('Handler "%s" absent de when@prod.', $name));
-
-        return $handler;
-    }
-
-    /**
-     * @return array<string, array<string, mixed>>
-     */
-    private function productionHandlers(): array
-    {
-        $config = Yaml::parseFile(RepositoryFiles::backend('config/packages/monolog.yaml'));
-        self::assertIsArray($config);
-        $handlers = $config['when@prod']['monolog']['handlers'] ?? null;
-        self::assertIsArray($handlers);
-
-        /** @var array<string, array<string, mixed>> $handlers */
-        return $handlers;
     }
 }
