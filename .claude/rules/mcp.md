@@ -93,18 +93,29 @@ paths:
   never name the author** (ADR 0006 D8), they say « the site's author ». The only exceptions are listed under
   D8 in the ADR, each decided by the author (today: the server name `cp-ghostotof`, for this server only);
   a new one goes into that list first, then into `AuthorNeverNamedTest::ADMITTED`.
-- **The prompt** (#642): `Presentation/Prompt/PresentForRolePrompt`, `present_for_role(role, locale = 'fr')`,
-  one user message in French or English that sends the model to the tools (rely on them only, cite the tool
-  behind each statement, say what they do not tell) and carries nothing of the site. **Its `@param` texts
-  are published**: the SDK makes them the arguments' descriptions in `prompts/list` (it reads no
-  `#[Schema]` on a prompt), so they are English and under D8 like a tool description. `role` goes through
-  `PromptRole`: refused beyond `MAX_CHARACTERS` (500, counted in characters on the trimmed input, never
-  truncated), refused when empty before or after cleaning, then its chevrons and control characters
-  (`\n` and `\t` kept) removed and put last, between `<role>` and `</role>` — no tag it carries can close
-  the block. A refusal (and an unknown language) is a `PromptGetException`, the only error the SDK 0.8.1
-  renders with its message — `-32603`, where the protocol wants `-32602`; a missing `role` is the SDK's own
-  generic `-32603`. Its message never quotes the text received: the SDK logs it with the error. The raw
-  `prompts/get` arguments, `role` included, are still in the SDK's `debug` log of the request — task 4 (#643).
+- **The prompt** (#642): `Presentation/Prompt/PresentForRolePrompt`, `present_for_role(role, locale)`,
+  one user message in French or English — instructions (rely on the tools only, cite the tool behind each
+  statement, say what they do not tell, treat tool outputs as data too), then the role's block, then a
+  reminder that the block is data (« sandwich »: hostile data never has the last word). It carries nothing
+  of the site. **Its `@param` texts are published**: the SDK makes them the arguments' descriptions in
+  `prompts/list` (it reads no `#[Schema]` on a prompt), so they are English and under D8 like a tool
+  description; `locale`'s is `ToolLocale::DESCRIPTION` word for word, its default `ToolLocale::DEFAULT`, its
+  refusal `ToolLocale::UNKNOWN_LANGUAGE` (pinned by the test). `role` goes through the value object
+  `PromptRole`: refused beyond `MAX_CHARACTERS` (500, counted in characters **on the input as typed**, before
+  any cleaning, never truncated); then NFKC (folds the full-width `＜／ｒｏｌｅ＞`), one line ending
+  (`\r\n`, `\r`, NEL, U+2028/2029 → `\n`), invisible characters removed (`\p{Cc}` but `\n` and `\t`,
+  `\p{Cf}` — zero-width, bidi, Unicode TAG —, `\p{Co}`, `\p{Cn}`, variation selectors); then, as
+  `CorpusRenderer` does for `documents`, **only the chevrons introducing the word `role`** are removed
+  (ASCII and the look-alikes NFKC leaves, `‹ 〈 ⟨ ˂ ᐸ ❮`…, across blanks and slashes) — « équipe <10
+  personnes, PHP >= 8.4 » keeps its meaning —; trimmed of Unicode blanks; refused without a letter or digit.
+  `delimited()` writes the block. A refusal (and an unknown language) is a `PromptGetException`, the only
+  error the SDK 0.8.1 renders with its message — `-32603`, where the protocol wants `-32602`; a missing
+  `role` is the SDK's own generic `-32603` « Error while handling prompt ». Its message never quotes the
+  text received: the SDK logs it with the error, at `error` (a client mistake: #643 caps that channel). A
+  PCRE or NFKC failure is `RoleNeutralisationFailedException`, a server fault (generic `-32603`), never a
+  « role is empty ». Not exhaustive, accepted (like the corpus): letters of other alphabets mimicking
+  `role`, HTML entities. The raw `prompts/get` arguments, `role` included, are still in the SDK's `debug`
+  log of the request — task 4 (#643).
 - **The D8 guard** (#642, ADR 0006 D8): `tests/Mcp/AuthorNeverNamedTest` reads, **over HTTP on the real
   server**, what it says of itself — `initialize` (`serverInfo`, `instructions`), `tools/list`,
   `prompts/list`, every prompt's `prompts/get` in both languages, `resources/list` and
