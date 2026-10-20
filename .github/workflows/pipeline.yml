@@ -171,15 +171,15 @@ jobs:
       # écrit lui-même (reporter github-actions intégré) : PHPUnit n'en produit
       # pas, le script la construit depuis le rapport JUnit. `if: always()` :
       # c'est précisément quand ça échoue qu'elle sert. Le statut du job reste
-      # celui des deux étapes PHPUnit. Une carte par rapport, la seconde écrite
-      # même si la première échoue.
+      # celui des deux étapes PHPUnit. Une carte par rapport ; le script sort
+      # toujours en 0, rapport absent ou rouge compris
+      # (tools/tests/summary-phpunit.test.sh), donc la seconde carte est écrite
+      # quoi que dise la première (#663).
       - name: Résumé PHPUnit
         if: always()
         run: |
-          status=0
-          php .github/scripts/summary-phpunit.php "$RUNNER_TEMP/junit.xml" >> "$GITHUB_STEP_SUMMARY" || status=1
-          php .github/scripts/summary-phpunit.php "$RUNNER_TEMP/junit-d8.xml" >> "$GITHUB_STEP_SUMMARY" || status=1
-          exit "$status"
+          php .github/scripts/summary-phpunit.php "$RUNNER_TEMP/junit.xml" >> "$GITHUB_STEP_SUMMARY"
+          php .github/scripts/summary-phpunit.php "$RUNNER_TEMP/junit-d8.xml" >> "$GITHUB_STEP_SUMMARY"
 
   test-frontend:
     runs-on: ubuntu-latest
@@ -439,6 +439,7 @@ jobs:
           tools/tests/check-release-gates.test.sh
           tools/tests/postgres-image-pins.test.sh
           tools/tests/d8-guard-step.test.sh
+          tools/tests/summary-phpunit.test.sh
       # Seuils : erreurs et avertissements bloquent, `info`/`style` non —
       # audit-prod.sh, antérieur à ce job, porte trois remarques de style que
       # ce job n'a pas vocation à réécrire.
