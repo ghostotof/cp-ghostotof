@@ -20,6 +20,12 @@ monolog:
         # `security_audit` : la trace doit exister en production, où LOG_LEVEL
         # écarterait un `info` du canal applicatif.
         - ai_usage
+        # Journal d'appels du serveur MCP (spec 0007, issue #643) : une ligne
+        # par message JSON-RPC, IP tronquée, jamais d'argument
+        # (`App\Mcp\Infrastructure\Log\McpCallLog`). Distinct de `mcp`, le
+        # canal du SDK, plafonné à `warning` ; à part pour la même raison
+        # qu'`ai_usage` : la trace doit exister en production.
+        - mcp_usage
         - deprecation # Deprecations are logged in the dedicated "deprecation" channel when it exists
 
 when@dev:
@@ -113,7 +119,7 @@ when@prod:
                 # les exclure ici est ce qui évite qu'un même événement sorte deux
                 # fois (et, à LOG_LEVEL=debug, avec deux niveaux d'effet différents).
                 # `lock` aussi, pour une autre raison : voir son handler.
-                channels: ["!security", "!security_audit", "!ai_usage", "!deprecation", "!lock", "!mcp"]
+                channels: ["!security", "!security_audit", "!ai_usage", "!deprecation", "!lock", "!mcp", "!mcp_usage"]
             # Verrou des limiteurs de débit (issue #272). Le composant Lock trace
             # chaque pose et chaque levée en `debug`, avec la ressource —
             # `contact_form-<ip>`, `translation_assistant-<uuid du compte>`. Sous
@@ -177,6 +183,15 @@ when@prod:
                 level: info
                 formatter: monolog.formatter.json
                 channels: ["ai_usage"]
+            # Journal d'appels du serveur MCP, au même niveau fixe et pour la même
+            # raison qu'`ai_usage`. Une ligne par message JSON-RPC : le volume est
+            # borné par la zone nginx `mcp` (spec 0007, tâche 5).
+            mcp_usage:
+                type: stream
+                path: php://stderr
+                level: info
+                formatter: monolog.formatter.json
+                channels: ["mcp_usage"]
             console:
                 type: console
                 process_psr_3_messages: false
@@ -185,8 +200,8 @@ when@prod:
                 # reste la seule trace de l'événement, pas une seconde copie
                 # formatée pour un humain.
                 # `lock` aussi, pour la même raison que sous `main` (issue #315),
-                # et `mcp` (issue #643).
-                channels: ["!event", "!doctrine", "!security", "!security_audit", "!ai_usage", "!lock", "!mcp"]
+                # et les deux canaux MCP (issue #643).
+                channels: ["!event", "!doctrine", "!security", "!security_audit", "!ai_usage", "!lock", "!mcp", "!mcp_usage"]
             deprecation:
                 type: stream
                 channels: [deprecation]

@@ -233,5 +233,22 @@ paths:
   100 KB names, and reads the `all_channels_test` probe at `debug`: nothing at `warning` or above, no client
   string whole, no `role` sentinel, no session id — an SDK upgrade that renames a message or a class turns it red.
   Accepted: the dev log loses the raw messages too (the processor is not per environment).
+- **The call log is `mcp_usage`** (#643, spec 0007 « Journal des appels », not `mcp`: the SDK's channel).
+  `Infrastructure/Log/McpCallLog` listens to the SDK's own events, dispatched through Symfony's
+  `event_dispatcher` (`Mcp\Event\RequestEvent`, `ResponseEvent`, `ErrorEvent`, `NotificationEvent`), and writes
+  **one `info` line per JSON-RPC message handled**, `MCP call`: `method`, `name` (the tool or prompt, **only
+  when the registry knows it** — the caller's name has no bound), `outcome` (`McpCallOutcome`: `success`,
+  `tool-error` for `isError: true`, `protocol-error`), `errorCode` (JSON-RPC), `durationMs`, `ip`
+  (`TruncatedIp`: IPv4 /24, IPv6 /48, an IPv4-mapped address as IPv4, through `IpUtils::anonymize()`) and
+  `declaredClient` (`clientInfo` from the session, name and version bounded to 64 characters: declared, never
+  checked). **An HTTP request on `/api/mcp` that handled no message** — unreadable JSON, missing or expired
+  session, `GET`, `DELETE` — leaves one `MCP request without call` line (`httpMethod`, `httpStatus`, `outcome`,
+  `durationMs`, `ip`) at `kernel.terminate`, where the `RequestStack` is already empty (the IP is read from the
+  terminated request); a `POST` there is a `protocol-error` whatever its status (the SDK answers a parse error
+  in 200). A request left without an answer (a fiber suspended, an exception the SDK caught outside its events)
+  is written at terminate as `protocol-error`. **Never an argument, a header, a cookie nor the session id**: the
+  line is built field by field. Its own `info` handler in `when@prod`, like `ai_usage`, excluded from `main` and
+  `console` (`McpLogChannelsTest`); `McpCallLogTest` reads it through the `all_channels_test` probe (sentinels
+  in `role`, `Authorization` and `BEARER`, batch, notification, fallbacks, IPv4/IPv6 callers).
 - **Open, owned elsewhere**: batches of up to 100 calls per HTTP request, the request body size and the number of
   sessions per IP — task 5 (#644).

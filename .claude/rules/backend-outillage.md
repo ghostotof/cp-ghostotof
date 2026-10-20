@@ -86,7 +86,9 @@ channel names an account by its login identifier (issue #363): the `security` ch
 third channel follows the same rule, `ai_usage` (spec 0005): the career assistant's and, since issue
 #356, the translator's token usage, duration and quota refusals, never any content, on its own `info`
 handler — as an `info` of the default channel it never
-left a production pod (`AiUsageLogChannelTest` pins the prod config). The
+left a production pod (`AiUsageLogChannelTest` pins the prod config). Since #643 two more, both kept out of
+`main` and `console` (`McpLogChannelsTest`): `mcp`, the MCP SDK's own channel, capped at `warning` and bounded
+by `SdkChannelRedactor`, and `mcp_usage`, the MCP call log, on an `info` handler (see `.claude/rules/mcp.md`). The
 `default:` processor takes a *parameter name*, hence `app.log_level` in `services.yaml` — `default:warning:`
 would look for a parameter called `warning` and fail at compile time. No duplication with
 `error_log = /proc/self/fd/2` (`php.prod.ini`) either: Monolog writes to fd 2 itself, `error_log` only

@@ -284,7 +284,9 @@ décision du 2026-10-19, voir « Langue invalide »).
 
 ### Journal des appels (phase 1)
 
-- Canal Monolog `mcp`, distinct de `security_audit` et d'`ai_usage`. Une ligne par requête :
+- Canal Monolog `mcp_usage` (amendé à la tâche 4, #643 : `mcp` est le canal du SDK, que le bundle
+  étiquette en dur ; il est plafonné à `warning` et borné), distinct de `security_audit` et
+  d'`ai_usage`. Une ligne par requête :
   horodatage, méthode JSON-RPC, outil ou prompt, issue (succès, erreur d'outil, erreur de protocole),
   durée, IP tronquée (IPv4 en /24, IPv6 en /48), et le `clientInfo` déclaré au `initialize`, noté comme
   déclaré. Jamais les arguments en clair (le `role` du prompt est du texte libre), jamais un jeton.

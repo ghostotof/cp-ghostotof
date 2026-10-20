@@ -36,6 +36,16 @@ final class McpLogChannelsTest extends TestCase
         self::assertSame('monolog.formatter.json', $handler['formatter'] ?? null);
     }
 
+    public function testTheCallLogHasItsOwnInfoLevelHandler(): void
+    {
+        $handler = $this->productionHandler('mcp_usage');
+
+        self::assertSame(['mcp_usage'], $handler['channels'] ?? null);
+        self::assertSame('info', $handler['level'] ?? null);
+        self::assertSame('php://stderr', $handler['path'] ?? null);
+        self::assertSame('monolog.formatter.json', $handler['formatter'] ?? null);
+    }
+
     /**
      * Ni `main` (qui suit LOG_LEVEL, `debug` en préprod), ni `console`, ni un
      * handler ajouté plus tard sans liste de canaux ne reçoit l'un des deux :
@@ -43,7 +53,7 @@ final class McpLogChannelsTest extends TestCase
      */
     public function testNoOtherProductionHandlerReceivesEitherChannel(): void
     {
-        foreach (['mcp'] as $channel) {
+        foreach (['mcp', 'mcp_usage'] as $channel) {
             foreach ($this->productionHandlers() as $name => $handler) {
                 if ($channel === $name) {
                     continue;
