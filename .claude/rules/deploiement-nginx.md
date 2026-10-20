@@ -20,6 +20,8 @@ paths:
   - "tools/smoke-login-throttling.sh"
   - "tools/tests/security-headers.test.sh"
   - "tools/tests/smoke-login-throttling.test.sh"
+  - "tools/smoke-mcp.sh"
+  - "tools/tests/smoke-mcp.test.sh"
   - "backend/config/packages/nelmio_cors.yaml"
   - "SECURITY.md"
 ---
@@ -42,7 +44,11 @@ paths:
   `cache_items` — it also bounds the sessions created per IP and the `mcp_usage` lines. Its 413 is nginx's
   HTML page, like the server's 1 MB one. Accepted: claude.ai and ChatGPT connectors call from their
   providers' egress addresses, which their users share — fine at this site's audience, revisit if
-  phase 2's real clients get throttled.
+  phase 2's real clients get throttled. `tools/smoke-mcp.sh`, run by `smoke-test-preprod` (its own
+  `timeout-minutes: 3`), proves it on the real pod: an `initialize` on the public host (a 403 there means
+  `allowed_hosts`, derived from `APP_FRONTEND_BASE_URL`, misses it), the session closed by `DELETE`, then
+  `GET`s without a session (they write nothing) until the 429 — within 120 requests, so it can only be the `mcp`
+  zone (`publicapi`'s burst is 200). Measured in dev on 2026-10-20: the 429 at the 21st `GET`.
   `publicapi` (600 r/m, burst 200, on
   `location /`) protects the *resource*: without it every public read reaches PHP and Postgres as
   often as asked. Its ceiling is deliberately far above real use — behind a mobile carrier's CGNAT
