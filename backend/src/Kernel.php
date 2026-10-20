@@ -2,7 +2,9 @@
 
 namespace App;
 
+use App\Mcp\Infrastructure\DependencyInjection\TruthfulCapabilitiesPass;
 use Symfony\Bundle\FrameworkBundle\Kernel\MicroKernelTrait;
+use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\HttpKernel\Kernel as BaseKernel;
 
 class Kernel extends BaseKernel
@@ -15,5 +17,11 @@ class Kernel extends BaseKernel
     private function getAllowedEnvs(): array
     {
         return ['prod', 'dev', 'test'];
+    }
+
+    protected function build(ContainerBuilder $container): void
+    {
+        // Capacités vraies du serveur MCP (#675) : voir la passe.
+        $container->addCompilerPass(new TruthfulCapabilitiesPass());
     }
 }
