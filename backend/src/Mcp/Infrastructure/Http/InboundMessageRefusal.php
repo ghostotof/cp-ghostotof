@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Mcp\Infrastructure\Http;
 
+use Mcp\Schema\JsonRpc\Error;
+
 /**
  * Ce que le serveur MCP refuse avant le SDK (#644), et le message rendu au
  * client — lu sans jeton, donc au palier anonyme (ADR 0006 D8) :
@@ -46,6 +48,21 @@ enum InboundMessageRefusal
             self::MalformedMeta => 'The "_meta" member of "params" must be an object.',
             self::MalformedClientInfo => 'The declared client information must name the client and its version as non-empty strings.',
             self::SubscriptionListen => 'This server sends no notifications: "subscriptions/listen" is not served.',
+        };
+    }
+
+    /**
+     * L'erreur JSON-RPC rendue au client. Un message mal formé ou démesuré l'est
+     * comme le transport du SDK refuse les siens : `-32600` sans identifiant.
+     * Un `listen` est une requête bien formée dont la méthode n'est pas servie :
+     * `-32601` avec son identifiant, comme le SDK pour une méthode qu'il ne sert
+     * pas — pour lui, le client doit cesser de demander (#675).
+     */
+    public function error(string|int|null $requestId): Error
+    {
+        return match ($this) {
+            self::SubscriptionListen => Error::forMethodNotFound($this->message(), $requestId),
+            default => Error::forInvalidRequest($this->message()),
         };
     }
 

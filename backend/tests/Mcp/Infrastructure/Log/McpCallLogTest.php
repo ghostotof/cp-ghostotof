@@ -475,7 +475,8 @@ final class McpCallLogTest extends WebTestCase
     /**
      * `subscriptions/listen`, refusé avant le SDK (#675) : la méthode est nommée
      * (le protocole sans état la sert par sa constante, hors de la fabrique),
-     * avec le code du refus — plus un flux de 30 s compté comme un succès.
+     * avec le code du refus (`-32601`) — plus un flux de 30 s compté comme un
+     * succès.
      */
     public function testAModernListenRefusedBeforeTheSdkIsNamed(): void
     {
@@ -487,7 +488,24 @@ final class McpCallLogTest extends WebTestCase
         $line = $this->onlyCallLine();
         self::assertSame('subscriptions/listen', $line->context['method']);
         self::assertSame('protocol-error', $line->context['outcome']);
-        self::assertSame(-32600, $line->context['errorCode']);
+        self::assertSame(-32601, $line->context['errorCode']);
+    }
+
+    /**
+     * Dans une session, le corps ne porte pas l'enveloppe moderne : refusé avant
+     * le SDK, le `listen` ne laisse que la ligne de repli, comme les autres refus
+     * de cette ère (#675 ; le SDK, qui le refusait lui-même, en écrivait une
+     * ligne d'appel sans méthode).
+     */
+    public function testAListenRefusedInASessionLeavesTheFallbackLine(): void
+    {
+        $client = self::createClient();
+        $sessionId = $this->initializeMcpSession($client);
+
+        $this->postMcp($client, $sessionId, ['jsonrpc' => '2.0', 'id' => 2, 'method' => 'subscriptions/listen']);
+        self::assertResponseStatusCodeSame(400);
+
+        $this->assertFallbackLine('POST', 400, 'protocol-error', self::MCP_PROTOCOL_VERSION);
     }
 
     /** Le client choisit ce qu'il déclare à chaque requête : chaque champ est borné. */

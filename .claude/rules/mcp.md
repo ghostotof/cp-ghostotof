@@ -376,7 +376,7 @@ paths:
 - **Six inbound messages are refused before the SDK** (#644, #664, #675): `Infrastructure/Http/InboundMessageRefusalListener`
   (`kernel.request`, priority 15, `POST` on the canonical path `/api/mcp`, so `/api/%6Dcp` too) decodes once a body
   starting, after JSON blanks, with `[` or `{`, and answers **400** `application/json`, a JSON-RPC `-32600` without
-  `id` — the form of the SDK transport's own refusals —, the reason and its message in the enum
+  `id` — the form of the SDK transport's own refusals; `listen` excepted, (6) below —, the reason and its message in the enum
   `InboundMessageRefusal`: (1) **a batch of several messages**, with the SDK's own predicate (`json_decode` assoc,
   then any PHP list is a batch — **an object keyed `"0"`, `"1"`… too**, which passed while only the bracket was read,
   100 `tools/call` served, measured in the reviews of #644): the SDK 0.8.1 accepts up to 100 per request, hard-coded
@@ -414,9 +414,14 @@ paths:
   The server sends and announces no notification (above), so a compliant client has nothing to listen to.
   Rejected: a short lifetime (a compliant client re-subscribing after each graceful close would spend the `mcp`
   zone's 60 requests a minute and meet 429s on its real calls), and the refusal alone with `listChanged` still
-  announced (a feature announced, then refused). In a session the SDK already answered `-32600` « Unknown method »
-  at once (200): the refusal only gives it the common form there. Its call line names `subscriptions/listen` with
-  `-32600`, where the stream was a `success` of 30 s.
+  announced (a feature announced, then refused). **Its form is not the others'** (`InboundMessageRefusal::error()`):
+  a well-formed request whose method is not served, so `-32601` « Method not found » **with its id** (none for a
+  notification), as the SDK answers a method it does not serve — to it, the client should stop asking; a client
+  reading `-32600` without id took it for a malformed message it could retry, into the `mcp` zone's 429s (audit
+  of #675). A 400, never the sessionless SDK's 404: in a session a 404 tells the client its session expired. In a
+  session the SDK already answered `-32600` « Unknown method » at once (200). Under the modern envelope its call
+  line names `subscriptions/listen` with `-32601`, where the stream was a `success` of 30 s; in a session it leaves
+  the fallback line (`McpCallLogTest`).
   A one-message batch is served, its message judged like a single one; unreadable JSON is left to the SDK (`-32700`).
   The refusal precedes the session and the `Host` check (a foreign host gets this 400, not the SDK's 403: nothing is
   served either way); `McpCallLog` writes its fallback line (`POST`, 400, `protocol-error`; a call line under the

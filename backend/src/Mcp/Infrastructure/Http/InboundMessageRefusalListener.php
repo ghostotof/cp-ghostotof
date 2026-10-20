@@ -59,7 +59,9 @@ use Throwable;
  *
  * Un corps illisible est laissé au SDK, qui le refuse lui-même (erreur
  * d'analyse). Le refus a la forme de ceux du transport du SDK : un 400
- * `application/json` portant une erreur JSON-RPC `-32600` sans identifiant. Il
+ * `application/json` portant une erreur JSON-RPC `-32600` sans identifiant —
+ * sauf `listen`, requête bien formée : `-32601` avec son identifiant
+ * ({@see InboundMessageRefusal::error()}). Il
  * précède le contrôle d'hôte du SDK : un hôte étranger reçoit ce 400 au lieu
  * du 403, sans rien de servi dans un cas comme dans l'autre.
  *
@@ -85,18 +87,18 @@ final readonly class InboundMessageRefusalListener
             return;
         }
 
-        $refusal = $this->refusalOf($request->getContent());
-        if (null === $refusal) {
+        $error = $this->refusalOf($request->getContent());
+        if (null === $error) {
             return;
         }
 
         $event->setResponse(JsonResponse::fromJsonString(
-            json_encode(Error::forInvalidRequest($refusal->message()), \JSON_THROW_ON_ERROR),
+            json_encode($error, \JSON_THROW_ON_ERROR),
             Response::HTTP_BAD_REQUEST,
         ));
     }
 
-    private function refusalOf(string $body): ?InboundMessageRefusal
+    private function refusalOf(string $body): ?Error
     {
         // Les blancs JSON seulement (RFC 8259) : ceux que `json_decode` admet.
         $head = ltrim($body, " \t\n\r");
@@ -116,34 +118,60 @@ final readonly class InboundMessageRefusalListener
 
         $messages = array_is_list($decoded) ? $decoded : [$decoded];
         if (\count($messages) > 1) {
-            return InboundMessageRefusal::SeveralMessages;
+            return InboundMessageRefusal::SeveralMessages->error(null);
         }
 
         foreach ($messages as $message) {
             if (!\is_array($message)) {
                 continue;
             }
-            if ($this->isResponse($message)) {
-                return InboundMessageRefusal::ClientResponse;
-            }
-            // Sur la méthode seule, quelle que soit l'ère : le classifieur du
-            // SDK la choisit d'après le corps, en-tête de session ou non.
-            if (StatelessProtocol::LISTEN_METHOD === ($message['method'] ?? null)) {
-                return InboundMessageRefusal::SubscriptionListen;
-            }
-            $meta = \is_array($message['params'] ?? null) ? ($message['params']['_meta'] ?? null) : null;
-            if (null !== $meta && !\is_array($meta)) {
-                return InboundMessageRefusal::MalformedMeta;
-            }
-            if (\is_array($meta) && $this->declaresAnUnreadableClient($meta)) {
-                return InboundMessageRefusal::MalformedClientInfo;
-            }
-            if ($this->declaresTooMuch($message)) {
-                return InboundMessageRefusal::OversizedDeclaration;
+            $refusal = $this->refusalOfMessage($message);
+            if (null !== $refusal) {
+                return $refusal->error(self::requestIdOf($message));
             }
         }
 
         return null;
+    }
+
+    /**
+     * @param array<mixed> $message
+     */
+    private function refusalOfMessage(array $message): ?InboundMessageRefusal
+    {
+        if ($this->isResponse($message)) {
+            return InboundMessageRefusal::ClientResponse;
+        }
+        // Sur la méthode seule, quelle que soit l'ère : le classifieur du
+        // SDK la choisit d'après le corps, en-tête de session ou non.
+        if (StatelessProtocol::LISTEN_METHOD === ($message['method'] ?? null)) {
+            return InboundMessageRefusal::SubscriptionListen;
+        }
+        $meta = \is_array($message['params'] ?? null) ? ($message['params']['_meta'] ?? null) : null;
+        if (null !== $meta && !\is_array($meta)) {
+            return InboundMessageRefusal::MalformedMeta;
+        }
+        if (\is_array($meta) && $this->declaresAnUnreadableClient($meta)) {
+            return InboundMessageRefusal::MalformedClientInfo;
+        }
+        if ($this->declaresTooMuch($message)) {
+            return InboundMessageRefusal::OversizedDeclaration;
+        }
+
+        return null;
+    }
+
+    /**
+     * L'identifiant tel que le SDK le lit (`StatelessProtocol::handle()`) : une
+     * chaîne ou un entier, sinon aucun — jamais un identifiant fabriqué.
+     *
+     * @param array<mixed> $message
+     */
+    private static function requestIdOf(array $message): string|int|null
+    {
+        $id = $message['id'] ?? null;
+
+        return \is_string($id) || \is_int($id) ? $id : null;
     }
 
     /**
