@@ -92,7 +92,8 @@ final class McpCallLogTest extends WebTestCase
     public function testADeclaredClientIsBounded(): void
     {
         $client = self::createClient();
-        $this->postMcpInitialize($client, ['name' => str_repeat('n', 10_000), 'version' => str_repeat('v', 10_000)]);
+        // Sous la borne des déclarations (#644, 4 096 octets encodés), bien au-delà des 64 caractères du journal.
+        $this->postMcpInitialize($client, ['name' => str_repeat('n', 1_500), 'version' => str_repeat('v', 1_500)]);
         self::assertResponseIsSuccessful();
 
         $declared = $this->onlyCallLine()->context['declaredClient'];
@@ -168,7 +169,7 @@ final class McpCallLogTest extends WebTestCase
 
     /**
      * Depuis #644, un lot de plusieurs messages est refusé avant le SDK
-     * (`JsonRpcBatchRefusalListener`) : seul un lot d'un message atteint le
+     * (`InboundMessageRefusalListener`) : seul un lot d'un message atteint le
      * journal, et il y a sa ligne comme un message seul.
      */
     public function testABatchOfOneMessageHasItsLine(): void
@@ -220,16 +221,19 @@ final class McpCallLogTest extends WebTestCase
         $this->assertFallbackLine('POST', 400, 'protocol-error', self::MCP_PROTOCOL_VERSION);
     }
 
-    /** Les réponses du client à une requête du serveur : acceptées (202), aucune erreur. */
-    public function testAPostOfClientResponsesOnlyIsASuccess(): void
+    /**
+     * Une réponse du client : refusée avant le SDK depuis #644 (ce serveur
+     * n'envoie aucune requête au client). La ligne de repli la dit.
+     */
+    public function testAPostOfAClientResponseIsARefusal(): void
     {
         $client = self::createClient();
         $sessionId = $this->initializeMcpSession($client);
 
         $this->postMcp($client, $sessionId, ['jsonrpc' => '2.0', 'id' => 99, 'result' => new stdClass()]);
-        self::assertResponseStatusCodeSame(202);
+        self::assertResponseStatusCodeSame(400);
 
-        $this->assertFallbackLine('POST', 202, 'success', self::MCP_PROTOCOL_VERSION);
+        $this->assertFallbackLine('POST', 400, 'protocol-error', self::MCP_PROTOCOL_VERSION);
     }
 
     public function testANotificationHasItsLine(): void

@@ -179,7 +179,11 @@ final class SdkChannelRecordsTest extends WebTestCase
         }
     }
 
-    /** Une réponse du client qui ne se rattache à rien, sans identifiant. */
+    /**
+     * Une réponse du client qui ne se rattache à rien, sans identifiant. Depuis
+     * #644 elle est refusée avant le SDK (InboundMessageRefusalListener) : le
+     * SDK ne l'écrit donc plus du tout, ce que le test garde.
+     */
     public function testAnIdLessErrorFromTheClientStaysBelowWarning(): void
     {
         $client = self::createClient();
@@ -190,6 +194,7 @@ final class SdkChannelRecordsTest extends WebTestCase
             'id' => null,
             'error' => ['code' => -32000, 'message' => str_repeat('z', self::HUGE)],
         ]);
+        self::assertResponseStatusCodeSame(400);
 
         $this->assertNoSdkRecordAtOrAboveWarning();
         foreach ($this->formattedSdkRecords() as $line) {
