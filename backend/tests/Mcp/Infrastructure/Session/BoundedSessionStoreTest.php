@@ -34,9 +34,67 @@ final class BoundedSessionStoreTest extends TestCase
     public function testASessionPresentButUnreadableIsLogged(): void
     {
         $store = $this->storeOver(exists: true, read: false);
+        $id = Uuid::v4();
+
+        // L'identifiant reçu du client : le SDK en vérifie l'existence avant
+        // de lire la session (Protocol::resolveSession()).
+        self::assertTrue($store->exists($id));
+        self::assertFalse($store->read($id));
+        self::assertTrue($this->mcpLog->hasRecordThatContains('MCP session unreadable', Level::Warning));
+    }
+
+    /**
+     * Une session neuve (`initialize`) : le SDK la lit dans `save()` sans
+     * jamais en avoir vérifié l'existence, et la lecture rend `false` à chaque
+     * fois. Pas de contrôle d'existence pour elle — une requête SQL de plus
+     * par `initialize` (#663, point 2) —, ni de trace : elle n'a jamais existé.
+     */
+    public function testANewSessionReadsWithoutAnExistenceCheck(): void
+    {
+        $inner = $this->createMock(SessionStoreInterface::class);
+        $inner->expects(self::never())->method('exists');
+        $inner->method('read')->willReturn(false);
+        $store = new BoundedSessionStore($inner, new Logger('mcp', [$this->mcpLog]));
 
         self::assertFalse($store->read(Uuid::v4()));
-        self::assertTrue($this->mcpLog->hasRecordThatContains('MCP session unreadable', Level::Warning));
+        self::assertFalse($this->mcpLog->hasWarningRecords());
+    }
+
+    /**
+     * Un identifiant reçu, présent au contrôle puis disparu à la lecture
+     * (expiré entre les deux) : le second contrôle le dit absent, rien à
+     * journaliser.
+     */
+    public function testAReceivedSessionGoneBeforeTheReadIsNotLogged(): void
+    {
+        $inner = self::createStub(SessionStoreInterface::class);
+        $inner->method('exists')->willReturn(true, false);
+        $inner->method('read')->willReturn(false);
+        $store = new BoundedSessionStore($inner, new Logger('mcp', [$this->mcpLog]));
+        $id = Uuid::v4();
+
+        self::assertTrue($store->exists($id));
+        self::assertFalse($store->read($id));
+        self::assertFalse($this->mcpLog->hasWarningRecords());
+    }
+
+    /**
+     * Un runtime persistant : ce qu'une requête a reçu ne vaut pas pour la
+     * suivante. Après `reset()`, la lecture ne refait pas le contrôle.
+     */
+    public function testResetForgetsTheSessionsReceivedByTheRequest(): void
+    {
+        $inner = $this->createMock(SessionStoreInterface::class);
+        $inner->expects(self::once())->method('exists')->willReturn(true);
+        $inner->method('read')->willReturn(false);
+        $store = new BoundedSessionStore($inner, new Logger('mcp', [$this->mcpLog]));
+        $id = Uuid::v4();
+
+        $store->exists($id);
+        $store->reset();
+
+        self::assertFalse($store->read($id));
+        self::assertFalse($this->mcpLog->hasWarningRecords());
     }
 
     /**
@@ -45,8 +103,10 @@ final class BoundedSessionStoreTest extends TestCase
     public function testAnAbsentSessionIsNotLogged(): void
     {
         $store = $this->storeOver(exists: false, read: false);
+        $id = Uuid::v4();
 
-        self::assertFalse($store->read(Uuid::v4()));
+        self::assertFalse($store->exists($id));
+        self::assertFalse($store->read($id));
         self::assertFalse($this->mcpLog->hasWarningRecords());
     }
 

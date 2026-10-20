@@ -233,7 +233,11 @@ paths:
   drained): ADR 0006 D6's « no write per call » holds for the authentication, not for the session.
   `Psr16SessionStore` swallows every exception and returns `false`; the decorator logs that `warning` too, on a
   refused write and on a session **present but unreadable** (`read()` false while `exists()` is true — the cache
-  MAC refused after an `APP_SECRET` rotation, #641): the SDK then starts from an empty session.
+  MAC refused after an `APP_SECRET` rotation, #641): the SDK then starts from an empty session. That second
+  `exists()` is run **only for an id received** — one the SDK's own `exists()` found earlier in the request
+  (`Protocol` checks a received id before reading it) —, and is still re-run then (expired in between: absent,
+  not unreadable): a new session reads `false` in `save()` on every `initialize`, and the check cost it one query
+  for nothing (#663). The memory of received ids is cleared by `reset()`, like the destroyed ones.
 - **`GET /api/mcp` answers an empty SSE stream, not 405** (`Presentation/Controller/McpEndpointController`, an
   `#[AsDecorator]` of `mcp.server.portfolio.controller`): `retry: 300000`, then closed. The SDK 0.8.1 answers
   405 (spec-compliant), which PhpStorm's AI Assistant takes for a failure. A finished `Response`, **never a
