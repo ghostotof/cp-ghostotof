@@ -6,12 +6,15 @@ namespace App\Mcp\Infrastructure\Http;
 
 use App\Shared\Infrastructure\Http\CanonicalPath;
 use JsonException;
+use Mcp\Exception\MissingRequestMetaException;
 use Mcp\Schema\JsonRpc\Error;
+use Mcp\Server\Stateless\RequestMeta;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Event\RequestEvent;
+use Throwable;
 
 /**
  * Refuse en 400 sur `/api/mcp`, avant le SDK, ce que le SDK servirait ou
@@ -40,7 +43,12 @@ use Symfony\Component\HttpKernel\Event\RequestEvent;
  *   réponse postée (audit de #644, mesuré). Ce serveur n'envoie aucune requête au client (ni sampling, ni
  *   elicitation, ni roots) : aucune réponse n'est attendue. Le jour où un
  *   outil en sollicite une, ce refus doit apprendre à reconnaître la réponse
- *   attendue.
+ *   attendue ;
+ * - **un `_meta` qui n'est pas un objet** (#664). La fabrique du SDK range celui
+ *   d'une notification dans une propriété typée tableau : un scalaire lui fait
+ *   lever une `TypeError`, une ligne `error` du canal `mcp` à volonté ;
+ * - **un `clientInfo` de la révision sans session que le SDK ne sait pas
+ *   lire** (#664) — il le construit hors de tout `try` et répondait 500.
  *
  * Un corps illisible est laissé au SDK, qui le refuse lui-même (erreur
  * d'analyse). Le refus a la forme de ceux du transport du SDK : un 400
@@ -111,6 +119,13 @@ final readonly class InboundMessageRefusalListener
             if ($this->isResponse($message)) {
                 return InboundMessageRefusal::ClientResponse;
             }
+            $meta = \is_array($message['params'] ?? null) ? ($message['params']['_meta'] ?? null) : null;
+            if (null !== $meta && !\is_array($meta)) {
+                return InboundMessageRefusal::MalformedMeta;
+            }
+            if (\is_array($meta) && $this->declaresAnUnreadableClient($meta)) {
+                return InboundMessageRefusal::MalformedClientInfo;
+            }
             if ($this->declaresTooMuch($message)) {
                 return InboundMessageRefusal::OversizedDeclaration;
             }
@@ -136,6 +151,30 @@ final readonly class InboundMessageRefusalListener
     private function isResponse(array $message): bool
     {
         return isset($message['error']) || isset($message['result']);
+    }
+
+    /**
+     * L'enveloppe `_meta` de la révision sans session, lue par la méthode même du
+     * SDK : `StatelessProtocol::handle()` ne rattrape que son refus d'une
+     * enveloppe incomplète (un 400 qu'il rend lui-même), et le `clientInfo`
+     * qu'il y construit lève autre chose sur un nom qui n'est pas du texte — il
+     * répondait 500, une ligne `critical` à volonté (audit de #664).
+     *
+     * @param array<mixed> $meta
+     */
+    private function declaresAnUnreadableClient(array $meta): bool
+    {
+        try {
+            RequestMeta::fromParams(['_meta' => $meta]);
+        } catch (MissingRequestMetaException) {
+            return false;
+        } catch (Throwable) {
+            // Ce que le SDK ne rattrape pas (une `Mcp\Exception\InvalidArgumentException`
+            // aujourd'hui, que la méthode ne déclare pas).
+            return true;
+        }
+
+        return false;
     }
 
     /**

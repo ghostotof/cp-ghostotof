@@ -5,7 +5,7 @@
 
 - Statut : **accepté** (2026-10-19), à mettre en œuvre — cadrage de l'issue #379, mise en œuvre par
   la spec 0007 (`.claude/specs/0007-mcp-server.md`), en deux phases (paliers anonyme et de base, puis
-  connexion MCP)
+  connexion MCP) ; amendé le 2026-10-20 (D7 : la révision sans session est servie, #664)
 - Date : 2026-10-19
 - Portée : `config/packages/mcp.yaml` (nouveau), `config/packages/security.yaml` (firewall dédié),
   `CsrfCookieRequestSubscriber` (une exclusion), `tests/Security/ApiRouteExposureTest.php`
@@ -174,6 +174,14 @@ qui défait D1 —, il installe `symfony/object-mapper` sur toutes les opératio
 en 0.x. La règle de l'ADR 0004 (D1), écrite pour `symfony/ai-*`, s'étend à `symfony/mcp-*` et à
 `mcp/*` : même monorepo, même namespace `Symfony\AI\`, même absence de promesse de compatibilité —
 `mcp/sdk` 0.9.0 est sortie avec une série de ruptures la veille de cette décision.
+
+*Amendé le 2026-10-20 (#664).* Le SDK 0.8.1 sert, sur le même point d'accès, la révision du protocole
+sans session (`2026-07-28`) à côté de celles qui s'ouvrent par un `initialize`. Elle est **servie et
+journalisée**, pas refusée : le bundle ne sait la refuser qu'en épinglant le `initialize` sur une seule
+révision (`protocol_versions`), ce qui fermerait le serveur aux clients d'une autre. Ce qui en découle :
+le journal d'appels la lit de l'échange HTTP, faute d'événement du SDK ; le 401 différé de la phase 2
+reconnaît l'outil nominatif sous ses deux formes ; `subscriptions/listen`, qui tient un worker 30 s,
+est à borner dans l'application (#675).
 
 ### D8 — Rien ne nomme l'auteur hors du corpus nominatif
 

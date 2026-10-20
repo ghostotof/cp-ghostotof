@@ -38,9 +38,6 @@ final class McpEndpointTest extends WebTestCase
     /** Un `_meta` sous les 16 Kio du corps que nginx admet. */
     private const int META_PADDING_BYTES = 10 * 1024;
 
-    /** La révision sans session que la zone nginx `mcpsession` exempte (#672). */
-    private const string MODERN_REVISION = '2026-07-28';
-
     protected function setUp(): void
     {
         self::ensureKernelShutdown();
@@ -257,7 +254,7 @@ final class McpEndpointTest extends WebTestCase
         $before = $this->storedMcpSessions();
 
         $this->postMcp($client, null, ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'initialize', 'params' => $params], $server + [
-            'HTTP_MCP_PROTOCOL_VERSION' => self::MODERN_REVISION,
+            'HTTP_MCP_PROTOCOL_VERSION' => self::MCP_MODERN_REVISION,
         ]);
 
         self::assertGreaterThanOrEqual(400, $client->getResponse()->getStatusCode());
@@ -277,7 +274,7 @@ final class McpEndpointTest extends WebTestCase
         $before = $this->storedMcpSessions();
 
         $this->postMcp($client, null, ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'tools/list', 'params' => ['_meta' => self::modernMeta()]], [
-            'HTTP_MCP_PROTOCOL_VERSION' => self::MODERN_REVISION,
+            'HTTP_MCP_PROTOCOL_VERSION' => self::MCP_MODERN_REVISION,
             'HTTP_MCP_METHOD' => 'tools/list',
         ]);
 
@@ -428,7 +425,7 @@ final class McpEndpointTest extends WebTestCase
     private static function modernMeta(): array
     {
         return [
-            RequestMeta::PROTOCOL_VERSION => self::MODERN_REVISION,
+            RequestMeta::PROTOCOL_VERSION => self::MCP_MODERN_REVISION,
             RequestMeta::CLIENT_CAPABILITIES => new stdClass(),
         ];
     }

@@ -20,6 +20,12 @@ enum InboundMessageRefusal
     /** Réponse (ou erreur) du client : ce serveur ne lui envoie aucune requête. */
     case ClientResponse;
 
+    /** `params._meta` présent mais pas un objet (#664). */
+    case MalformedMeta;
+
+    /** `clientInfo` de la révision sans session que le SDK ne sait pas lire (#664). */
+    case MalformedClientInfo;
+
     /**
      * Octets que les déclarations d'un `initialize` peuvent occuper en
      * session. Un vrai client en déclare moins d'un Kio (nom, version,
@@ -34,6 +40,8 @@ enum InboundMessageRefusal
             self::SeveralMessages => 'JSON-RPC batches are not supported: send one message per request.',
             self::OversizedDeclaration => \sprintf('The initialize request declares more than %d bytes of client information and capabilities.', self::MAX_DECLARATION_BYTES),
             self::ClientResponse => 'This server sends no requests to the client: responses are not accepted.',
+            self::MalformedMeta => 'The "_meta" member of "params" must be an object.',
+            self::MalformedClientInfo => 'The declared client information must name the client and its version as non-empty strings.',
         };
     }
 
