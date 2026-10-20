@@ -19,9 +19,11 @@ phase 1 parte en release seule ; puis au merge de clôture, qui archive la spec 
 - [x] Suivi des relectures de #643 sur les tâches 1 à 3 (#663)
 - [ ] Suivi : réponses non sollicitées classées autrement que par le SDK (#671) — **avant la sortie
       de la phase 1**
-- [ ] Suivi : zone `mcpsession` et borne des paramètres (#672) — à trier avant la sortie de la
-      phase 1 ; point 2 après la décision de #664
+- [x] Suivi : zone `mcpsession` et borne des paramètres (#672) — `0` et l'en-tête vide comptés, la
+      révision 2026-07-28 exemptée quelle que soit la décision de #664, `_meta` accepté hors borne
 - [ ] Suivi : reports de faible sévérité des relectures de #663 et #645 (#673)
+- [ ] Suivi : `subscriptions/listen` tient un worker php-fpm 30 s, borné par `mcpconn` depuis #672
+      (#675) — après la décision de #664, avant la sortie de la phase 1
 
 ### Livraison de la phase 1
 

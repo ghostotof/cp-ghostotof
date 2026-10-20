@@ -4,7 +4,7 @@
 # ---------------------------------------------------------------------------
 # Exerce le serveur MCP contre un déploiement RÉEL (spec 0007, #644).
 #
-# Trois preuves que la CI ne peut pas apporter, sur le sidecar déployé :
+# Quatre preuves que la CI ne peut pas apporter, sur le sidecar déployé :
 #
 # 1. Un `initialize` sur l'hôte public aboutit. Le SDK refuse en 403 un hôte
 #    absent d'`allowed_hosts`, dérivé d'`APP_FRONTEND_BASE_URL` (mcp.yaml) :
@@ -16,12 +16,26 @@
 #    `fastcgi_pass` propre, sans lequel un corps chunked passait (relectures
 #    de #644). Sous un identifiant de session factice, pour n'entamer ni la
 #    zone des créations de session, ni rien en base : le 413 précède PHP.
-# 3. Au-delà du seuil, la zone nginx `mcp` répond 429 (problem+json
+# 3. La clé de la zone `mcpsession` (#672) : des `ping` sous
+#    `Mcp-Session-Id: 0`, que le SDK lit comme une absence de session et
+#    refuse en 400 sans rien écrire, sont comptés comme des créations — 429
+#    dans SESSION_MAX_REQUESTS, quand la zone `mcp` (rafale 20) en admettrait
+#    davantage. La zone vidée, un `tools/list` sans session de la révision
+#    2026-07-28 n'est pas refusé en 429 : il est exempté, le SDK le sert sans
+#    session. Un jeton rechargé entre-temps (10 r/min) laisserait passer ce
+#    dernier même compté : le garde des confs (check-backend-nginx-rate-limits.sh)
+#    en est la preuve exacte, celle-ci dit que le pod porte la bonne conf. Un
+#    5xx y est refusé : non comptée, la requête doit encore être traitée
+#    (servie, ou refusée en 4xx si #664 ferme l'ère moderne). La borne suppose
+#    un seul pod, comme la préprod : à deux pods derrière le Service, chaque
+#    zone compte à part et SESSION_MAX_REQUESTS serait à doubler.
+# 4. Au-delà du seuil, la zone nginx `mcp` répond 429 (problem+json
 #    `/errors/rate-limited`). Les requêtes de saturation sont des GET en SSE
 #    sans session : ils démarrent Symfony mais n'écrivent rien en base. La
 #    zone admet 60 r/min avec une rafale de 20, par pod : la préprod (un pod)
-#    refuse vers la 19e ou 20e requête (les requêtes précédentes ont pris
-#    leurs jetons), et `publicapi` (rafale de 200) n'en refuserait aucune
+#    refuse vers la 14e requête (les étapes précédentes ont pris leurs
+#    jetons — mesuré en dev le 2026-10-20 ; vers la 20e avant l'étape 3), et
+#    `publicapi` (rafale de 200) n'en refuserait aucune
 #    avant MAX_REQUESTS. Un 429 dans la borne vient donc de la zone `mcp`,
 #    pas du filet général.
 #
@@ -56,6 +70,11 @@ server_name='"name":"cp-ghostotof"'
 BODY_LIMIT=16384
 # Un identifiant bien formé que le serveur ne connaît pas.
 FAKE_SESSION='00000000-0000-0000-0000-000000000000'
+# Étape 3 : la zone `mcpsession` admet 1 + sa rafale (5) par pod, moins le
+# jeton de l'initialize ; la borne laisse une marge de rechargement et reste
+# en deçà de ce que la zone `mcp` admet encore à ce stade.
+SESSION_MAX_REQUESTS=12
+MODERN_VERSION='2026-07-28'
 
 headers_file="$(mktemp)"
 body_file="$(mktemp)"
@@ -146,7 +165,48 @@ for framing in content-length chunked; do
   echo "corps de $((BODY_LIMIT + 1)) octets refusé ($framing) : 413"
 done
 
-# --- 3. Saturation de la zone mcp.
+# --- 3. Clé de la zone des créations de session.
+session_counted=""
+for attempt in $(seq 1 "$SESSION_MAX_REQUESTS"); do
+  request "sessions, requête $attempt" POST -H 'Content-Type: application/json' \
+    -H 'Accept: application/json, text/event-stream' -H 'Mcp-Session-Id: 0' \
+    -d '{"jsonrpc":"2.0","id":1,"method":"ping"}'
+  if [ "$status" = "429" ]; then
+    session_counted=$((attempt - 1))
+    break
+  fi
+  if [ "$status" != "400" ]; then
+    echo "ping sous « Mcp-Session-Id: 0 », requête $attempt : $status, 400 (session requise) ou 429 attendu (corps : $excerpt)" >&2
+    exit 1
+  fi
+done
+if [ -n "$session_counted" ]; then
+  content_type="$(header Content-Type)"
+  if [[ "$content_type" != application/problem+json* || "$body" != *'"type":"/errors/rate-limited"'* ]]; then
+    echo "ping sous « Mcp-Session-Id: 0 », requête $((session_counted + 1)) : 429 en « $content_type », application/problem+json /errors/rate-limited attendu — pas le refus d'une zone nginx (corps : $excerpt)" >&2
+    exit 1
+  fi
+fi
+if [ -z "$session_counted" ]; then
+  echo "ÉCHEC : aucun 429 après $SESSION_MAX_REQUESTS POST « Mcp-Session-Id: 0 » — la zone mcpsession ne compte pas « 0 » comme une absence de session (map \$mcp_without_session, #672)." >&2
+  exit 1
+fi
+echo "« Mcp-Session-Id: 0 » compté par la zone mcpsession : 429 après $session_counted POST"
+
+request "révision $MODERN_VERSION" POST -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' -H "MCP-Protocol-Version: $MODERN_VERSION" -H 'Mcp-Method: tools/list' \
+  -d "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\",\"params\":{\"_meta\":{\"io.modelcontextprotocol/protocolVersion\":\"$MODERN_VERSION\",\"io.modelcontextprotocol/clientCapabilities\":{}}}}"
+if [ "${status:0:1}" = "5" ]; then
+  echo "révision $MODERN_VERSION sans session : $status — le serveur casse sur la révision sans session (corps : $excerpt)" >&2
+  exit 1
+fi
+if [ "$status" = "429" ]; then
+  echo "révision $MODERN_VERSION sans session : 429 — la zone mcpsession la compte comme une création (map \$mcp_new_session, #672) (corps : $excerpt)" >&2
+  exit 1
+fi
+echo "révision $MODERN_VERSION sans session non comptée : $status"
+
+# --- 4. Saturation de la zone mcp.
 for attempt in $(seq 1 "$MAX_REQUESTS"); do
   request "saturation, requête $attempt" GET -H 'Accept: text/event-stream'
 

@@ -12,8 +12,11 @@ use App\Tests\Support\PhpSources;
 use App\Tests\Support\RepositoryFiles;
 use App\Tests\Support\TestCredentials;
 use Doctrine\ORM\EntityManagerInterface;
+use Mcp\Schema\Enum\ProtocolVersion;
 use Mcp\Server\Session\Psr16SessionStore;
+use Mcp\Server\Stateless\RequestMeta;
 use Monolog\Logger;
+use PHPUnit\Framework\Attributes\DataProvider;
 use ReflectionProperty;
 use stdClass;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
@@ -31,6 +34,12 @@ final class McpEndpointTest extends WebTestCase
     use SpeaksMcp;
 
     private const string TRUSTED_USERNAME = 'mcp.trusted';
+
+    /** Un `_meta` sous les 16 Kio du corps que nginx admet. */
+    private const int META_PADDING_BYTES = 10 * 1024;
+
+    /** La révision sans session que la zone nginx `mcpsession` exempte (#672). */
+    private const string MODERN_REVISION = '2026-07-28';
 
     protected function setUp(): void
     {
@@ -183,6 +192,121 @@ final class McpEndpointTest extends WebTestCase
     }
 
     /**
+     * `params._meta` échappe à la borne de 4 096 octets des déclarations de
+     * l'`initialize`
+     * ({@see \App\Mcp\Infrastructure\Http\InboundMessageRefusalListener}) :
+     * accepté, décision de
+     * l'auteur du 2026-10-20, rappelée par #672, parce que le SDK ne garde que
+     * celui de la **dernière** requête (`SESSION_ACTIVE_REQUEST_META`, réécrit
+     * à chaque requête), borné en production par le corps de 16 Kio de nginx.
+     * Ce test fige ce remplacement : une montée du SDK qui accumulerait les
+     * `_meta` en session rouvrirait le remplissage de `cache_items` que #644 a
+     * fermé, et la décision serait à reprendre. Une clé différente à chaque
+     * tour : une fusion clé par clé (`array_merge`) accumulerait aussi.
+     */
+    public function testEachRequestMetaReplacesThePreviousOneInTheSession(): void
+    {
+        $client = self::createClient();
+        $sessionId = $this->initializeMcpSession($client);
+
+        $sizes = [];
+        foreach (['a', 'b', 'c'] as $round => $filler) {
+            $this->mcpCall($client, $sessionId, 'tools/list', ['_meta' => ['padding_'.$filler => str_repeat($filler, self::META_PADDING_BYTES)]]);
+            $sizes[$round] = $this->largestStoredMcpSession();
+        }
+
+        // Le `_meta` est bien en session : sans lui, la mesure ne prouverait rien.
+        self::assertGreaterThan(self::META_PADDING_BYTES, $sizes[0]);
+        // Accumulés, deux `_meta` de plus ajouteraient deux fois le remplissage.
+        self::assertLessThan($sizes[0] + intdiv(self::META_PADDING_BYTES, 2), $sizes[2], 'Le SDK accumule les _meta en session.');
+    }
+
+    /**
+     * La zone nginx `mcpsession` exempte les POST portant
+     * `MCP-Protocol-Version: 2026-07-28` (#672). Ce n'est sûr que tant qu'un
+     * `initialize` sous cet en-tête n'ouvre aucune session — sans la révision
+     * dans `params._meta`, le classifieur du SDK le refuse ; avec, la méthode
+     * n'existe pas dans cette révision. Une montée du SDK qui l'accepterait
+     * rouvrirait des créations de session hors zone : ce test rougit alors.
+     *
+     * @return iterable<string, array{array<string, mixed>, array<string, string>}>
+     */
+    public static function initializeUnderTheModernRevisionProvider(): iterable
+    {
+        $initialize = [
+            'protocolVersion' => self::MCP_PROTOCOL_VERSION,
+            'capabilities' => new stdClass(),
+            'clientInfo' => ['name' => 'phpunit', 'version' => '1.0.0'],
+        ];
+
+        yield 'sans la révision dans _meta' => [$initialize, []];
+        yield 'avec la révision dans _meta' => [
+            $initialize + ['_meta' => self::modernMeta()],
+            ['HTTP_MCP_METHOD' => 'initialize'],
+        ];
+    }
+
+    /**
+     * @param array<string, mixed>  $params
+     * @param array<string, string> $server
+     */
+    #[DataProvider('initializeUnderTheModernRevisionProvider')]
+    public function testAnInitializeUnderTheModernRevisionOpensNoSession(array $params, array $server): void
+    {
+        $client = self::createClient();
+        $before = $this->storedMcpSessions();
+
+        $this->postMcp($client, null, ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'initialize', 'params' => $params], $server + [
+            'HTTP_MCP_PROTOCOL_VERSION' => self::MODERN_REVISION,
+        ]);
+
+        self::assertGreaterThanOrEqual(400, $client->getResponse()->getStatusCode());
+        self::assertNull($client->getResponse()->headers->get(self::MCP_SESSION_HEADER));
+        self::assertSame($before, $this->storedMcpSessions());
+    }
+
+    /**
+     * L'autre moitié de l'exemption : la révision 2026-07-28 est servie sans
+     * session, rien n'est écrit en base. Si le SDK se mettait à en écrire une
+     * par requête, l'exemption laisserait remplir `cache_items` au rythme de
+     * la zone `mcp`.
+     */
+    public function testAModernRequestIsServedWithoutWritingASession(): void
+    {
+        $client = self::createClient();
+        $before = $this->storedMcpSessions();
+
+        $this->postMcp($client, null, ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'tools/list', 'params' => ['_meta' => self::modernMeta()]], [
+            'HTTP_MCP_PROTOCOL_VERSION' => self::MODERN_REVISION,
+            'HTTP_MCP_METHOD' => 'tools/list',
+        ]);
+
+        self::assertResponseIsSuccessful();
+        $result = $this->decodeMcpResponse($client)['result'] ?? null;
+        self::assertIsArray($result);
+        self::assertNotEmpty($result['tools'] ?? null);
+        self::assertSame($before, $this->storedMcpSessions());
+    }
+
+    /**
+     * L'exemption est écrite en dur dans nginx (`"POST:0:<révision>" ""`) :
+     * elle doit nommer exactement les révisions sans session du SDK. Une
+     * révision moderne ajoutée par une montée du SDK serait sinon comptée
+     * comme une création de session, ses clients bridés à 10 appels par
+     * minute (relectures de #672). Le garde nginx vérifie que les deux confs
+     * ont le même niveau `http` : la conf du sidecar suffit ici.
+     */
+    public function testTheSessionZoneExemptsExactlyTheSdkModernRevisions(): void
+    {
+        preg_match_all('/^\s*"POST:0:([^"]+)"\s+"";/m', RepositoryFiles::read(RepositoryFiles::repository('k8s/base/backend-nginx.conf')), $matches);
+
+        $sdkModernRevisions = array_map(static fn (ProtocolVersion $version): string => $version->value, ProtocolVersion::modernVersions());
+
+        self::assertNotSame([], $matches[1], 'Aucune exemption trouvée dans la zone mcpsession.');
+        self::assertEqualsCanonicalizing($sdkModernRevisions, $matches[1]);
+    }
+
+    /**
      * Protection contre le rebond DNS : seul l'hôte du site (dérivé
      * d'APP_FRONTEND_BASE_URL, `localhost` en test) est servi.
      */
@@ -294,6 +418,19 @@ final class McpEndpointTest extends WebTestCase
         }
 
         self::assertSame([], $offenders);
+    }
+
+    /**
+     * L'enveloppe minimale d'une requête de la révision sans session.
+     *
+     * @return array<string, mixed>
+     */
+    private static function modernMeta(): array
+    {
+        return [
+            RequestMeta::PROTOCOL_VERSION => self::MODERN_REVISION,
+            RequestMeta::CLIENT_CAPABILITIES => new stdClass(),
+        ];
     }
 
     private function largestStoredMcpSession(): int

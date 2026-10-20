@@ -41,9 +41,41 @@ paths:
   `location = /api/mcp`, every method (the `GET` boots Symfony too; a CORS preflight costs a token as well).
   `mcp` protects the resource like `publicapi`, at a tenth of its rate, since each request reads and rewrites a
   session row in `cache_items` — it also bounds the `mcp_usage` lines. `mcpsession` counts **session creations
-  only**: its key, from a `map` on `"$request_method:$http_mcp_session_id"`, is the address for a `POST` without
-  `Mcp-Session-Id` and empty otherwise (an empty key is not counted); an `initialize` carrying an invented id to
-  escape it is refused by the SDK, nothing written (measured by the audit of #644). The location has its own
+  only**: its key is the address for a `POST` **without a session as the SDK reads it** and empty otherwise (an
+  empty key is not counted); an `initialize` carrying an invented id to escape it is refused by the SDK, nothing
+  written (measured by the audit of #644). **« Without a session » is an allow-list** (#672): `$mcp_with_session`
+  is `1` only for a well-formed RFC 4122 UUID (any case), anything else counts. nginx and the SDK do not read
+  the header alike: nginx keeps tabs around the value and admits control characters, PHP's PSR-7 bridge trims
+  spaces and tabs and **drops** a header carrying a control character, then `StreamableHttpTransport` tests the
+  value's PHP truthiness (`""` and `0` read as no session). A deny-list of the empty forms (`""`, `0`, the first
+  fix) let `<TAB>0`, `x<0x01>y` or a lone tab create sessions uncounted (reviews of #672, measured: twelve
+  `initialize`s, twelve rows, no 429); `0` itself escaped the zone before #672. A client sends back the id the
+  server gave it (`toRfc4122()`); an invented UUID is refused by the SDK without a write, any other value with a
+  400. Accepted: a session id in a form `Uuid::fromString()` also takes (base 58, base 32) is counted, a token
+  lost by a client nobody writes. Then `$mcp_new_session` keys
+  `"$request_method:$mcp_with_session:$http_mcp_protocol_version"` (two maps so that the session header cannot
+  fake the separator) and **exempts `MCP-Protocol-Version: 2026-07-28`** exactly: every POST of that sessionless
+  revision carries no session, and the SDK serves it on an in-memory session, nothing written — counted, a
+  legitimate modern client was capped at 10 calls a minute; `mcp` still counts it. The SDK files a request
+  under that revision **by its body** (`params._meta`), the header being a cross-check it requires; a modern
+  request without the header is refused (400) and stays counted, the cautious side. The exemption opens no path
+  to a session: an `initialize` carrying that header gets a 400 (no claim in `params._meta`) or a 404 (claimed:
+  no `initialize` in that revision), no row written — measured in dev behind nginx, and pinned by
+  `McpEndpointTest` (`testAnInitializeUnderTheModernRevisionOpensNoSession`, `testAModernRequestIsServedWithoutWritingASession`,
+  both red under a mutated SDK) with `testTheSessionZoneExemptsExactlyTheSdkModernRevisions`, which matches the
+  conf's exemptions against `ProtocolVersion::modernVersions()`: a modern revision a SDK bump adds turns it red
+  instead of being silently counted. It holds whatever #664 decides (refusing the modern era makes those
+  requests cheap 400s). A handshake revision in the header (`2025-06-18`), or `2026-07-28` with a tab, stays
+  counted. **`mcpconn`** (#672, `limit_conn mcpconn 2`, same location) bounds simultaneous connections per IP
+  and per pod: the modern revision's `subscriptions/listen` holds its php-fpm worker 30 s (the SDK's lifetime,
+  not configurable through the bundle without a subscription bus), and fourteen of them from one IP took a
+  whole pod's pool (measured in dev, an unrelated route served 29.8 s later); `mcp` bounds the rate, not the
+  duration. The location also sets `fastcgi_ignore_client_abort on`, like `/api/assistant/`: a request writing
+  nothing before its end keeps its worker after a client abort, and its `mcpconn` slot with it. A `listen` writes
+  every 250 ms, so aborted mid-stream nginx fails to write, closes upstream and the SDK returns the worker
+  (measured: eight `listen`s aborted at 1.2 s, a pool of five, an unrelated route served at once). Measured too:
+  the third simultaneous `listen` gets the 429. The cause is #675 (after #664's decision). Accepted: hosted
+  connectors sharing an egress IP may meet the bound when calls overlap — they last milliseconds. The location has its own
   `client_max_body_size 16k` **and its own `fastcgi_pass`** (like `/api/assistant/`): through `try_files …
   /index.php`, a `Transfer-Encoding: chunked` body was read after the internal redirect, under `~ ^/index\.php`,
   which only has the server's 1 MB — the bound held for a `Content-Length` body only (a 480 KB session measured).
@@ -56,7 +88,9 @@ paths:
   times less than before the audit fixes of #644 (the worst-case volume is deliberately not written in this
   public repository). Accepted: the zones are per IP and per pod, no global ceiling (a global one would
   let an attacker block every new session); `_meta` keeps the body bound, decided by the author on 2026-10-20 (a
-  tighter bound would leave the session-bound tests without an HTTP path to it). **The site is IPv4 only** (no
+  tighter bound would leave the session-bound tests without an HTTP path to it), confirmed by #672 and resting on
+  the SDK replacing it on each request (`McpEndpointTest::testEachRequestMetaReplacesThePreviousOneInTheSession`,
+  red when the SDK accumulates it — measured by mutation). **The site is IPv4 only** (no
   `AAAA` for the production or preprod host, checked on 2026-10-20): `$binary_remote_addr` is a whole address;
   the day an `AAAA` is published, an IPv6 /64 gives 2^64 keys — key the MCP zones by /64 first. A 413
   (`Content-Length` over the bound) is rendered at find-config, before any zone: an unlimited flow of them
@@ -68,8 +102,20 @@ paths:
   status checked: a session left open stays an hour), a 16 KiB + 1 body refused in 413 with `Content-Length` then in
   `chunked` (under a fake session id: no zone of session creations, no PHP), then `GET`s without a session (they
   write nothing) until the 429 — within 120 requests, so it can only be the `mcp`
-  zone (`publicapi`'s burst is 200). Measured in dev on 2026-10-20: the 429 at the 20th `GET` (the `initialize`
-  and the `DELETE` took two tokens), and the seventh `initialize` in a row refused by `mcpsession`.
+  zone (`publicapi`'s burst is 200). Between the body bound and the `GET`s (#672), `ping`s under
+  `Mcp-Session-Id: 0` (a 400 from the SDK, nothing written) until `mcpsession`'s 429, within 12 — `mcp` would
+  admit more —, then a sessionless `tools/list` of revision 2026-07-28, which must not get a 429 (a token
+  refilled meanwhile would let a counted one through: `check-backend-nginx-rate-limits.sh` is the exact proof,
+  the smoke says the pod carries the conf). Measured in dev on 2026-10-20: the 429 at the 20th `GET` before
+  #672 (the `initialize` and the `DELETE` took two tokens), at the 14th since; the seventh `initialize` in a
+  row refused by `mcpsession`, and the sixth `0` POST after the `initialize`. The smoke's 429 there must be
+  problem+json `/errors/rate-limited`, and the modern request must not be a 5xx; its bound assumes one pod, as in
+  preprod (two pods behind the Service count apart). `check-backend-nginx-rate-limits.sh` probes the key on fresh
+  counters, before any other probe (`check_session_key`): `0` counted (at least the burst admitted, read from
+  `ZONES`, then a 429 within `MCPSESSION_MAX_ADMITTED`), then on the emptied zone each `SESSION_KEY_CASES` entry —
+  an empty header, `<TAB>0`, `x<0x01>y` and a UUID followed by a tab counted; a well-formed UUID and a 2026-07-28
+  POST not counted (the witnesses that the zone does not count everything); a 2025-06-18 one counted. The guard
+  sees nginx only, never what PHP reads: the reading chain above is why the key is an allow-list.
   `publicapi` (600 r/m, burst 200, on
   `location /`) protects the *resource*: without it every public read reaches PHP and Postgres as
   often as asked. Its ceiling is deliberately far above real use — behind a mobile carrier's CGNAT
@@ -108,8 +154,10 @@ paths:
   directives in each `MIRRORED_LOCATIONS` block (`= /api/mcp`, `fastcgi_pass`'s upstream masked), comments
   ignored — and each `BODY_LIMITS` bound (413 one byte over, none at the bound, with `Content-Length` and in
   `chunked`).
-  **`limit_conn` is not exercised** (it would need
-  an upstream that holds the connection, and there is no php-fpm in the job).
+  **Every `limit_conn` zone is exercised since #672** (`CONN_LIMITS`, `check_conn_limit`; a zone of the confs
+  missing from the list fails it): with no php-fpm, a connection is held by leaving its body unfinished — nginx
+  counts it once its headers are read and reads the body before reaching upstream —, the next request must get
+  the problem+json 429 and pass again once they are closed. `assistantconn` was never exercised before.
 - **nginx rate limits need `real_ip`** (audit C7). `limit_req_zone` keys on `$binary_remote_addr`, and behind
   the ingress the sidecar's TCP peer is the ingress-nginx pod — without the `set_real_ip_from` block, the whole
   internet shares one counter, which is a self-inflicted DoS. The trusted ranges mirror Symfony's
