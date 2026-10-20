@@ -218,7 +218,7 @@ paths:
   version) instead of the 404 that makes a client re-initialise. The decorator remembers the destroyed id
   (`ResetInterface`) and refuses it on `exists`/`read`/`write`; the answer queued for that request is lost
   (it could not fit), the client sees no JSON-RPC answer, then a 404. The **number** of sessions per IP is
-  the nginx `mcp` zone's business (task 5, #644), not the bound's. **The bound must fit the largest legitimate
+  the nginx `mcp` zone's business (#644), not the bound's. **The bound must fit the largest legitimate
   answer**: the SDK queues a tool's response in the session before sending it, so every answer goes through
   `cache_items` — phase 2's nominative corpus included (measure it there). Each MCP request costs three
   round trips on the session row (`has`, `get`, `set`) and two writes per `tools/call` (save, then the queue
@@ -296,5 +296,16 @@ paths:
   line is built field by field. Its own `info` handler in `when@prod`, like `ai_usage`, excluded from `main` and
   `console` (`McpLogChannelsTest`); `McpCallLogTest` reads it through the `all_channels_test` probe (sentinels
   in `role`, `Authorization` and `BEARER`, batch, notification, fallbacks, IPv4/IPv6 callers).
-- **Open, owned elsewhere**: batches of up to 100 calls per HTTP request, the request body size and the number of
-  sessions per IP — task 5 (#644).
+- **A JSON-RPC batch of several messages is refused before the SDK** (#644):
+  `Infrastructure/Http/JsonRpcBatchRefusalListener` (`kernel.request`, priority 15, `POST` on the canonical path
+  `/api/mcp`, so `/api/%6Dcp` too) answers **400** `application/json`, a JSON-RPC `-32600` without `id` — the form of
+  the SDK transport's own refusals — when the body, after JSON blanks, starts with `[` and decodes to a list of more
+  than one element. The SDK 0.8.1 accepts up to 100 per request, hard-coded (`MessageFactory::DEFAULT_MAX_BATCH_SIZE`,
+  built by the `Builder`, not configurable through the bundle): 100 `tools/call` for one request counted by the nginx
+  `mcp` zone. Batches left the protocol at revision 2025-06-18, the only handshake revision served. A one-message batch
+  costs one message and is served; unreadable JSON is left to the SDK (`-32700`). The refusal precedes the session and
+  the `Host` check (a foreign host gets this 400, not the SDK's 403: nothing is served either way); `McpCallLog` writes
+  its fallback line (`POST`, 400, `protocol-error`). Its message is read by `AuthorNeverNamedTest` (`lot refusé`).
+  `JsonRpcBatchRefusalTest` pins it; `McpCallLogTest`'s batch cases are one-message batches since.
+- **Rate, body and sessions per IP** (#644): the nginx `mcp` zone and the location's 64 KiB body bound
+  (`.claude/rules/deploiement-nginx.md`).

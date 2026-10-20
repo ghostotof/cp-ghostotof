@@ -116,6 +116,7 @@ final class AuthorNeverNamedTest extends WebTestCase
         self::assertArrayHasKey('tools/call get_about langue inconnue', $published);
         self::assertArrayHasKey('tools/call get_contact_info fr', $published);
         self::assertArrayHasKey('tools/call get_nominative_corpus en', $published);
+        self::assertArrayHasKey('error', $published['lot refusé']);
     }
 
     /**
@@ -312,6 +313,13 @@ final class AuthorNeverNamedTest extends WebTestCase
             self::assertIsArray($tool);
             $published += $this->toolAnswers($client, $session->id, $tool);
         }
+
+        // Le refus d'un lot (#644), écrit par le serveur avant le SDK.
+        $this->postMcp($client, $session->id, [
+            ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'ping'],
+            ['jsonrpc' => '2.0', 'id' => 2, 'method' => 'ping'],
+        ]);
+        $published['lot refusé'] = $this->decodeMcpResponse($client);
 
         return $published;
     }
