@@ -24,13 +24,18 @@
 #    2026-07-28 n'est pas refusé en 429 : il est exempté, le SDK le sert sans
 #    session. Un jeton rechargé entre-temps (10 r/min) laisserait passer ce
 #    dernier même compté : le garde des confs (check-backend-nginx-rate-limits.sh)
-#    en est la preuve exacte, celle-ci dit que le pod porte la bonne conf.
+#    en est la preuve exacte, celle-ci dit que le pod porte la bonne conf. Un
+#    5xx y est refusé : non comptée, la requête doit encore être traitée
+#    (servie, ou refusée en 4xx si #664 ferme l'ère moderne). La borne suppose
+#    un seul pod, comme la préprod : à deux pods derrière le Service, chaque
+#    zone compte à part et SESSION_MAX_REQUESTS serait à doubler.
 # 4. Au-delà du seuil, la zone nginx `mcp` répond 429 (problem+json
 #    `/errors/rate-limited`). Les requêtes de saturation sont des GET en SSE
 #    sans session : ils démarrent Symfony mais n'écrivent rien en base. La
 #    zone admet 60 r/min avec une rafale de 20, par pod : la préprod (un pod)
-#    refuse vers la 14e requête (les étapes précédentes ont pris leurs jetons
-#    — mesuré en dev le 2026-10-20 ; vers la 20e avant l'étape 3), et `publicapi` (rafale de 200) n'en refuserait aucune
+#    refuse vers la 14e requête (les étapes précédentes ont pris leurs
+#    jetons — mesuré en dev le 2026-10-20 ; vers la 20e avant l'étape 3), et
+#    `publicapi` (rafale de 200) n'en refuserait aucune
 #    avant MAX_REQUESTS. Un 429 dans la borne vient donc de la zone `mcp`,
 #    pas du filet général.
 #
@@ -175,6 +180,13 @@ for attempt in $(seq 1 "$SESSION_MAX_REQUESTS"); do
     exit 1
   fi
 done
+if [ -n "$session_counted" ]; then
+  content_type="$(header Content-Type)"
+  if [[ "$content_type" != application/problem+json* || "$body" != *'"type":"/errors/rate-limited"'* ]]; then
+    echo "ping sous « Mcp-Session-Id: 0 », requête $((session_counted + 1)) : 429 en « $content_type », application/problem+json /errors/rate-limited attendu — pas le refus d'une zone nginx (corps : $excerpt)" >&2
+    exit 1
+  fi
+fi
 if [ -z "$session_counted" ]; then
   echo "ÉCHEC : aucun 429 après $SESSION_MAX_REQUESTS POST « Mcp-Session-Id: 0 » — la zone mcpsession ne compte pas « 0 » comme une absence de session (map \$mcp_without_session, #672)." >&2
   exit 1
@@ -184,6 +196,10 @@ echo "« Mcp-Session-Id: 0 » compté par la zone mcpsession : 429 après $sessi
 request "révision $MODERN_VERSION" POST -H 'Content-Type: application/json' \
   -H 'Accept: application/json, text/event-stream' -H "MCP-Protocol-Version: $MODERN_VERSION" -H 'Mcp-Method: tools/list' \
   -d "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\",\"params\":{\"_meta\":{\"io.modelcontextprotocol/protocolVersion\":\"$MODERN_VERSION\",\"io.modelcontextprotocol/clientCapabilities\":{}}}}"
+if [ "${status:0:1}" = "5" ]; then
+  echo "révision $MODERN_VERSION sans session : $status — le serveur casse sur la révision sans session (corps : $excerpt)" >&2
+  exit 1
+fi
 if [ "$status" = "429" ]; then
   echo "révision $MODERN_VERSION sans session : 429 — la zone mcpsession la compte comme une création (map \$mcp_new_session, #672) (corps : $excerpt)" >&2
   exit 1

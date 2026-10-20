@@ -191,6 +191,23 @@ else
   fail "révision moderne comptée" "rc=$rc ; err : $(cat "$TMP/err")"
 fi
 
+# --- Le 429 de l'étape des sessions en HTML : l'`error_page` ne s'applique pas,
+# ou un autre étage a répondu.
+run sessionhtml "$init" "$deleted" "$too_large" "$too_large" "${five_no_session[@]}" '429|content-type: text/html|<html>429</html>'
+if [ "$rc" -eq 1 ] && grep -q 'problem+json' "$TMP/err" && grep -q 'Mcp-Session-Id: 0' "$TMP/err"; then
+  pass "429 HTML à l'étape des sessions → échec"
+else
+  fail "429 HTML des sessions" "rc=$rc ; err : $(cat "$TMP/err")"
+fi
+
+# --- La révision 2026-07-28 en 5xx : non comptée, mais le serveur casse.
+run modern500 "$init" "$deleted" "$too_large" "$too_large" "${five_no_session[@]}" "$zone429" '500|content-type: application/json|{"jsonrpc":"2.0","error":{"code":-32603}}'
+if [ "$rc" -eq 1 ] && grep -q '2026-07-28' "$TMP/err" && grep -q '500' "$TMP/err"; then
+  pass "POST 2026-07-28 en 500 → échec"
+else
+  fail "révision moderne en 5xx" "rc=$rc ; err : $(cat "$TMP/err")"
+fi
+
 # --- Un statut autre que 400 sur un `ping` sans session : le SDK n'a pas
 # refusé, l'étape ne prouve plus rien (et une session a pu s'ouvrir).
 run zerostatus "$init" "$deleted" "$too_large" "$too_large" "$modern"
