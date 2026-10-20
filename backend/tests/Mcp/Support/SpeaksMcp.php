@@ -202,18 +202,24 @@ trait SpeaksMcp
     }
 
     /**
-     * @return array<string, mixed>
+     * La réponse JSON-RPC telle que le SDK l'a encodée — la chaîne même qu'il
+     * met en file dans la session —, que le transport l'ait rendue en JSON ou
+     * dans un flux SSE.
      */
-    private function decodeMcpResponse(KernelBrowser $client): array
+    private function rawMcpAnswer(KernelBrowser $client): string
     {
         $response = $client->getResponse();
         $body = (string) $response->getContent();
 
-        if (str_starts_with((string) $response->headers->get('Content-Type'), 'text/event-stream')) {
-            $body = self::lastJsonRpcAnswerOf($body);
-        }
+        return str_starts_with((string) $response->headers->get('Content-Type'), 'text/event-stream') ? self::lastJsonRpcAnswerOf($body) : $body;
+    }
 
-        $decoded = json_decode($body, true, flags: \JSON_THROW_ON_ERROR);
+    /**
+     * @return array<string, mixed>
+     */
+    private function decodeMcpResponse(KernelBrowser $client): array
+    {
+        $decoded = json_decode($this->rawMcpAnswer($client), true, flags: \JSON_THROW_ON_ERROR);
         self::assertIsArray($decoded);
 
         /** @var array<string, mixed> $decoded */
