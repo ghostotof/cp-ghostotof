@@ -97,7 +97,7 @@ const en: PortfolioLocaleContent = {
   privacyPolicy: {
     eyebrow: 'Privacy',
     title: 'Privacy policy',
-    lastUpdated: 'Last updated: September 21, 2026',
+    lastUpdated: 'Last updated: October 20, 2026',
     sections: [
       {
         heading: 'Data controller',
@@ -113,6 +113,7 @@ const en: PortfolioLocaleContent = {
           'Invited account: if the publisher grants you named access, your email address (to which the invitation is sent), a username derived from that address, and the password you choose, stored as a hash. No public sign-up is offered, no shared account.',
           'Instant access: no account is created and no data about you is recorded; access relies on an anonymous token valid for 15 minutes.',
           "IP address: used to rate-limit abuse (contact form, login, instant access, password setup) and recorded in the server's technical and security logs.",
+          "MCP server (the site's access for an AI assistant): for each call, the technical log keeps the method and tool called, the outcome, the duration, the name and version your software declares, and your IP address truncated to its network (the last number of an IPv4 address, everything after the first three groups of an IPv6 address), which no longer designates a device. The text your assistant sends to the server — a job description, for instance — is never recorded.",
           'Browser local storage (localStorage): your language preference and, where applicable, the expiry time of your instant access. These values are never sent to the server.',
         ],
       },
@@ -130,6 +131,7 @@ const en: PortfolioLocaleContent = {
         list: [
           'Responding to your contact requests — pre-contractual measures or legitimate interest.',
           'Securing the site and preventing abuse (rate limiting, technical logs) — legitimate interest.',
+          'Measuring use of the MCP server and spotting abusive use — legitimate interest.',
           "Inviting you to hold named access — the publisher's legitimate interest in granting individual access rather than a shared credential.",
           'Letting you authenticate or use instant access — performance of the requested service.',
         ],
