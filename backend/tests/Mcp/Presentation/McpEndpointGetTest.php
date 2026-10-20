@@ -100,6 +100,31 @@ final class McpEndpointGetTest extends WebTestCase
         self::assertResponseStatusCodeSame(400);
     }
 
+    /**
+     * Un `Mcp-Session-Id` vide — ou « 0 », que PHP lit faux comme lui — vaut
+     * absent pour le transport du SDK (`$sessionIdString ? … : null`) : le GET
+     * le sert comme un GET sans en-tête, au lieu du 400 d'un UUID invalide
+     * (#663, point 1).
+     *
+     * @return iterable<string, array{string}>
+     */
+    public static function sessionIdsTheTransportReadsAsAbsent(): iterable
+    {
+        yield 'vide' => [''];
+        yield 'zéro' => ['0'];
+    }
+
+    #[DataProvider('sessionIdsTheTransportReadsAsAbsent')]
+    public function testAGetWithASessionIdTheTransportReadsAsAbsentIsServed(string $sessionId): void
+    {
+        $client = self::createClient();
+
+        $client->request('GET', self::MCP_ENDPOINT, server: ['HTTP_MCP_SESSION_ID' => $sessionId] + self::EVENT_STREAM);
+
+        self::assertResponseIsSuccessful();
+        self::assertSame("retry: 300000\n\n", $client->getResponse()->getContent());
+    }
+
     public function testAGetWithALiveSessionOpensTheStream(): void
     {
         $client = self::createClient();

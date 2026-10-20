@@ -245,7 +245,8 @@ paths:
   `MiddlewareRequestHandler` — never a copy of their rules: T1's copy kept one host where `allowed_hosts` is a
   list, and split `[::1]:8080` into `[`. Then it answers as the transport does for a session: 400 for a
   malformed or repeated `Mcp-Session-Id`, 404 for an unknown or expired one (the client re-initialises; a GET
-  without the header is still served), 406 without `Accept: text/event-stream`. `McpEndpointGetTest` pins each
+  without the header is still served, and so is one whose header is empty or `0`, which the transport reads
+  as absent — #663), 406 without `Accept: text/event-stream`. `McpEndpointGetTest` pins each
   case, the host rules on a several-host list included. Accepted, like the SDK: the `Origin` check ignores
   scheme and port (`http://<site>:8443` passes), a page served on the site's own name.
 - **Tests** speak MCP through `tests/Mcp/Support/SpeaksMcp` (`initializeMcpSession()`, `mcpCall()`, JSON or
