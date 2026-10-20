@@ -190,7 +190,7 @@ const en: PortfolioLocaleContent = {
     served: {
       heading: 'What the server serves',
       description:
-        'Exactly what the site’s public pages already serve, read-only. Tools that take a language accept `locale`: `fr` (the default) or `en`.',
+        'Exactly what the site already serves without an account, read-only. Tools that take a language accept `locale`: `fr` (the default) or `en`.',
       tiers: [
         {
           id: 'anonymous',
@@ -226,6 +226,9 @@ const en: PortfolioLocaleContent = {
           'Arguments: `role`, the role’s description (free text, 500 characters at most), and `locale`, `fr` (the default) or `en`.',
       },
     },
+    // « Pas encore ouverte » : vrai en phase 1 seulement. La phase 2 de la spec
+    // 0007 (« Page « Brancher votre assistant » complétée ») réécrit cet élément
+    // en ouvrant la connexion MCP.
     neverServed: {
       heading: 'What the server never serves',
       items: [

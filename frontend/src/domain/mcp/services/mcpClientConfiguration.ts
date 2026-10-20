@@ -6,6 +6,7 @@
  * paramètre (la page la lit dans `window.location`), ce qui les rend testables
  * sans jsdom et garde le domaine indépendant de la présentation.
  */
+import type { McpClientConfigurationKind } from '../entities/McpClientConfigurationKind'
 
 /**
  * Chemin du serveur MCP (`/api/mcp`, ADR 0006) : sous `/api`, parce que
@@ -47,13 +48,6 @@ export function claudeCodeCommand(serverUrl: string): string {
 export function mcpServersJson(serverUrl: string): string {
   return JSON.stringify({ mcpServers: { [MCP_SERVER_LOCAL_NAME]: { url: serverUrl } } }, null, 2)
 }
-
-/**
- * Ce qu'un client attend : la commande Claude Code, le fragment JSON
- * `mcpServers` (Cursor, PhpStorm), ou l'URL seule (les clients qui la font
- * saisir dans un formulaire : claude.ai, Claude Desktop, ChatGPT).
- */
-export type McpClientConfigurationKind = 'claude-code-command' | 'mcp-servers-json' | 'server-url'
 
 /**
  * Une entrée par type : un type ajouté sans entrée ici est une erreur de

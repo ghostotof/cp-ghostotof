@@ -23,9 +23,12 @@ const currentLocale = computed(() => locale.value as Locale)
  * image sert la préprod et la prod, aucune URL n'est donc écrite au build. Lue
  * une fois : l'origine ne change pas sans rechargement.
  *
- * Juste en préprod et en prod, où l'Ingress sert `/api` sur l'hôte de la page ;
- * fausse sous le serveur de dev Vite (`localhost:5173`, qui ne relaie pas
- * `/api`), accepté : la page s'adresse aux visiteurs du site déployé.
+ * Juste en prod, où l'Ingress sert `/api` sur l'hôte de la page. En préprod,
+ * l'URL est juste mais derrière Basic Auth, que claude.ai, ChatGPT et Cursor
+ * n'envoient pas (seul Claude Code, par un en-tête, s'y branche ; levée sur les
+ * chemins MCP à la tâche 14 de la spec 0007). Fausse sous le serveur de dev Vite
+ * (`localhost:5173`, qui ne relaie pas `/api`). Accepté : la page s'adresse aux
+ * visiteurs du site déployé, et la spec fixe l'origine comme source.
  */
 const serverUrl = mcpServerUrl(window.location.origin)
 </script>

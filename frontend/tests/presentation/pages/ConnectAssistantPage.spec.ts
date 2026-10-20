@@ -5,14 +5,17 @@
  * doit en venir. Avec l'origine par défaut de jsdom (`http://localhost:3000`),
  * une URL écrite en dur sur `localhost` passerait le test.
  */
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { nextTick } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
-import { createMemoryHistory, createRouter } from 'vue-router'
+import { createMemoryHistory, createRouter, type RouteLocationNormalized } from 'vue-router'
 import ConnectAssistantPage from '../../../src/presentation/pages/ConnectAssistantPage.vue'
 import { PORTFOLIO_CONTENT_REPOSITORY } from '../../../src/application/portfolio/usePortfolioContent'
 import { StaticPortfolioContentRepository } from '../../../src/infrastructure/portfolio/StaticPortfolioContentRepository'
-import { createAppI18n } from '../../../src/presentation/i18n'
+import { createAppI18n, i18n as appI18n } from '../../../src/presentation/i18n'
 import { router as appRouter } from '../../../src/presentation/router'
+import { applySeoMeta } from '../../../src/presentation/router/seo'
+import { ANNOUNCEMENT_DELAY_MS } from '../../../src/presentation/ui/CopyableCode.vue'
 import { SUPPORTED_LOCALES, type Locale } from '../../../src/domain/portfolio/entities/Locale'
 import { expectNoAccessibilityViolation } from '../../support/axe'
 import { removeClipboard, stubClipboard, type WriteText } from '../../support/clipboard'
@@ -179,8 +182,15 @@ describe('ConnectAssistantPage', () => {
     const wrapper = await mountPage()
     const block = wrapper.find('[data-testid="mcp-client-claude-code"]')
 
-    await block.find('button').trigger('click')
-    await flushPromises()
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      await block.find('button').trigger('click')
+      await flushPromises()
+      vi.advanceTimersByTime(ANNOUNCEMENT_DELAY_MS)
+      await nextTick()
+    } finally {
+      vi.useRealTimers()
+    }
 
     expect(writeText).toHaveBeenCalledWith(`claude mcp add --transport http cp-ghostotof ${SERVER_URL}`)
     expect(block.find('[role="status"]').text()).toBe('Copié dans le presse-papiers.')
@@ -201,35 +211,52 @@ describe('ConnectAssistantPage', () => {
 })
 
 /**
- * Le routeur de l'application lui-même (comme adminGuard.spec.ts) : le titre, la
- * description et l'indexation sont posés par son `afterEach`, à partir des
- * `meta` de la route — c'est cette chaîne-là qu'il faut éprouver.
+ * Les `meta` de la vraie route, lus par `resolve()` (aucune navigation, aucun
+ * garde, l'historique du routeur intact), passés à la vraie `applySeoMeta`, que
+ * le routeur appelle dans son `afterEach`. Deux singletons restent, par
+ * construction : la route n'existe que dans le routeur de l'application, et
+ * `applySeoMeta` traduit avec l'i18n de l'application — dont la langue est
+ * posée ici comme le ferait le `beforeEach`, puis remise à sa valeur.
  */
 describe('ConnectAssistantPage — SEO', () => {
   const description = () => document.querySelector('meta[name="description"]')?.getAttribute('content')
   const robots = () => document.querySelector('meta[name="robots"]')?.getAttribute('content')
 
-  it('pose un titre et une description en français, page indexable', async () => {
-    await appRouter.push('/fr/connect-your-assistant')
+  function applySeoFor(path: string): void {
+    const route = appRouter.resolve(path)
+    appI18n.global.locale.value = route.params.locale as Locale
+    // `resolve()` type `name` comme pouvant être null (route inconnue) ; celle-ci
+    // est nommée, ce que la première assertion vérifie.
+    applySeoMeta(route as RouteLocationNormalized)
+  }
 
-    expect(appRouter.currentRoute.value.name).toBe('connect-assistant')
+  afterEach(() => {
+    appI18n.global.locale.value = 'fr'
+    document.head.querySelectorAll('meta, link').forEach((node) => node.remove())
+    document.title = ''
+  })
+
+  it('pose un titre et une description en français, page indexable', () => {
+    applySeoFor('/fr/connect-your-assistant')
+
+    expect(appRouter.resolve('/fr/connect-your-assistant').name).toBe('connect-assistant')
     expect(document.title).toBe('CP-Ghostotof — Brancher votre assistant')
     expect(description()).toContain('MCP')
     expect(robots()).toBe('index, follow')
   })
 
-  it('pose un titre et une description en anglais, page indexable', async () => {
-    await appRouter.push('/en/connect-your-assistant')
+  it('pose un titre et une description en anglais, page indexable', () => {
+    applySeoFor('/en/connect-your-assistant')
 
     expect(document.title).toBe('CP-Ghostotof — Connect your assistant')
     expect(description()).toContain('MCP')
     expect(robots()).toBe('index, follow')
   })
 
-  it('décrit la page autrement dans chaque langue', async () => {
-    await appRouter.push('/fr/connect-your-assistant')
+  it('décrit la page autrement dans chaque langue', () => {
+    applySeoFor('/fr/connect-your-assistant')
     const french = description()
-    await appRouter.push('/en/connect-your-assistant')
+    applySeoFor('/en/connect-your-assistant')
 
     expect(description()).not.toBe(french)
   })

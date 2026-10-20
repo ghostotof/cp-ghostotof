@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
-import CopyableCode from '../../../src/presentation/ui/CopyableCode.vue'
+import CopyableCode, { ANNOUNCEMENT_DELAY_MS, ANNOUNCEMENT_LIFETIME_MS } from '../../../src/presentation/ui/CopyableCode.vue'
 import { createAppI18n } from '../../../src/presentation/i18n'
 import { expectNoAccessibilityViolation } from '../../support/axe'
 import { removeClipboard, stubClipboard, type WriteText } from '../../support/clipboard'
@@ -22,12 +22,23 @@ describe('CopyableCode', () => {
   let writeText: WriteText
 
   beforeEach(() => {
+    // setTimeout seul : flushPromises (setImmediate) doit rester réel.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     writeText = stubClipboard()
   })
 
   afterEach(() => {
     removeClipboard()
+    vi.useRealTimers()
   })
+
+  /** Clic, écriture résolue, puis le délai d'annonce écoulé. */
+  async function copyAndAnnounce(wrapper: ReturnType<typeof mountBlock>): Promise<void> {
+    await wrapper.find('button').trigger('click')
+    await flushPromises()
+    vi.advanceTimersByTime(ANNOUNCEMENT_DELAY_MS)
+    await nextTick()
+  }
 
   it('affiche le code à copier tel quel', () => {
     expect(mountBlock().find('pre code').text()).toBe(CODE)
@@ -79,8 +90,7 @@ describe('CopyableCode', () => {
   it('annonce la copie réussie aux lecteurs d’écran', async () => {
     const wrapper = mountBlock()
 
-    await wrapper.find('button').trigger('click')
-    await flushPromises()
+    await copyAndAnnounce(wrapper)
 
     expect(wrapper.find('[role="status"]').text()).toBe('Copié dans le presse-papiers.')
   })
@@ -88,8 +98,7 @@ describe('CopyableCode', () => {
   it('annonce la copie en anglais sur la version anglaise', async () => {
     const wrapper = mountBlock('en', 'the Claude Code command')
 
-    await wrapper.find('button').trigger('click')
-    await flushPromises()
+    await copyAndAnnounce(wrapper)
 
     expect(wrapper.find('button').text()).toBe('Copy the Claude Code command')
     expect(wrapper.find('[role="status"]').text()).toBe('Copied to the clipboard.')
@@ -97,18 +106,56 @@ describe('CopyableCode', () => {
 
   /**
    * Un texte identique n'est pas réannoncé : la région est vidée avant chaque
-   * copie, pour qu'une deuxième copie soit confirmée comme la première.
+   * copie, et le message n'y revient qu'après un délai — vidée et remplie dans
+   * la même image, la région ne changerait pas aux yeux des technologies
+   * d'assistance, qui regroupent les mutations.
    */
-  it('vide la région avant une nouvelle copie, pour la réannoncer', async () => {
+  it('vide la région avant une nouvelle copie, et ne la remplit qu’après un délai', async () => {
     const wrapper = mountBlock()
+    await copyAndAnnounce(wrapper)
+
     await wrapper.find('button').trigger('click')
     await flushPromises()
-
-    void wrapper.find('button').trigger('click')
-    await nextTick()
     expect(wrapper.find('[role="status"]').text()).toBe('')
 
+    vi.advanceTimersByTime(ANNOUNCEMENT_DELAY_MS)
+    await nextTick()
+    expect(wrapper.find('[role="status"]').text()).toBe('Copié dans le presse-papiers.')
+  })
+
+  /**
+   * Un « Copié » resté affiché sur un bloc dirait vrai d'un texte que le
+   * presse-papiers ne contient plus, une fois un autre bloc copié.
+   */
+  it('retire le message après un temps', async () => {
+    const wrapper = mountBlock()
+    await copyAndAnnounce(wrapper)
+
+    vi.advanceTimersByTime(ANNOUNCEMENT_LIFETIME_MS)
+    await nextTick()
+
+    expect(wrapper.find('[role="status"]').text()).toBe('')
+  })
+
+  /** Deux clics rapprochés : seul le résultat du dernier compte. */
+  it('n’affiche jamais le résultat tardif d’une copie déjà remplacée', async () => {
+    let rejectFirst: (reason: unknown) => void = () => undefined
+    const writes = [
+      new Promise<void>((_resolve, reject) => {
+        rejectFirst = reject
+      }),
+      Promise.resolve(),
+    ]
+    stubClipboard(vi.fn(async () => writes.shift()))
+    const wrapper = mountBlock()
+
+    await wrapper.find('button').trigger('click')
+    await copyAndAnnounce(wrapper)
+    rejectFirst(new DOMException('refusé', 'NotAllowedError'))
     await flushPromises()
+    vi.advanceTimersByTime(ANNOUNCEMENT_DELAY_MS)
+    await nextTick()
+
     expect(wrapper.find('[role="status"]').text()).toBe('Copié dans le presse-papiers.')
   })
 
@@ -116,8 +163,7 @@ describe('CopyableCode', () => {
     stubClipboard(vi.fn(async () => Promise.reject(new DOMException('refusé', 'NotAllowedError'))))
     const wrapper = mountBlock()
 
-    await wrapper.find('button').trigger('click')
-    await flushPromises()
+    await copyAndAnnounce(wrapper)
 
     expect(wrapper.find('[role="status"]').text()).toBe(
       'La copie a échoué : sélectionnez le texte pour le copier à la main.',
@@ -132,8 +178,7 @@ describe('CopyableCode', () => {
     removeClipboard()
     const wrapper = mountBlock()
 
-    await wrapper.find('button').trigger('click')
-    await flushPromises()
+    await copyAndAnnounce(wrapper)
 
     expect(wrapper.find('[role="status"]').text()).toBe(
       'La copie a échoué : sélectionnez le texte pour le copier à la main.',
@@ -141,6 +186,8 @@ describe('CopyableCode', () => {
   })
 
   it('ne présente aucune violation d’accessibilité détectable', async () => {
+    // axe planifie son analyse par setTimeout : sous horloge simulée, il ne finirait jamais.
+    vi.useRealTimers()
     await expectNoAccessibilityViolation(mountBlock())
   })
 })

@@ -190,7 +190,7 @@ const fr: PortfolioLocaleContent = {
     served: {
       heading: 'Ce que le serveur sert',
       description:
-        "Exactement ce que les pages publiques du site servent déjà, en lecture seule. Les outils qui prennent une langue acceptent `locale` : `fr` (par défaut) ou `en`.",
+        "Exactement ce que le site sert déjà sans compte, en lecture seule. Les outils qui prennent une langue acceptent `locale` : `fr` (par défaut) ou `en`.",
       tiers: [
         {
           id: 'anonymous',
@@ -226,6 +226,9 @@ const fr: PortfolioLocaleContent = {
           'Arguments : `role`, la description du poste (texte libre, 500 caractères au plus), et `locale`, `fr` (par défaut) ou `en`.',
       },
     },
+    // « Pas encore ouverte » : vrai en phase 1 seulement. La phase 2 de la spec
+    // 0007 (« Page « Brancher votre assistant » complétée ») réécrit cet élément
+    // en ouvrant la connexion MCP.
     neverServed: {
       heading: 'Ce que le serveur ne sert jamais',
       items: [

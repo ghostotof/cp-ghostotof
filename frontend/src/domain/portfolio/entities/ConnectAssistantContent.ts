@@ -9,7 +9,7 @@
  * quelle configuration montrer (`McpClientConfigurationKind`), le domaine `mcp`
  * la construit (`clientConfiguration`).
  */
-import type { McpClientConfigurationKind } from '../../mcp/services/mcpClientConfiguration'
+import type { McpClientConfigurationKind } from '../../mcp/entities/McpClientConfigurationKind'
 
 export interface McpClientConfiguration {
   readonly kind: McpClientConfigurationKind

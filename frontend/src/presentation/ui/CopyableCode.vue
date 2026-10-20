@@ -1,5 +1,21 @@
+<script lang="ts">
+/**
+ * Délai entre la région vidée et le message posé. Vidée puis remplie dans la
+ * même image, la région ne change pas aux yeux des technologies d'assistance,
+ * qui regroupent les mutations : la deuxième copie d'un même bloc passerait
+ * sous silence.
+ */
+export const ANNOUNCEMENT_DELAY_MS = 100
+
+/**
+ * Durée d'affichage du message : un « Copié » resté sur un bloc dirait vrai
+ * d'un texte que le presse-papiers ne contient plus, un autre bloc copié.
+ */
+export const ANNOUNCEMENT_LIFETIME_MS = 5000
+</script>
+
 <script setup lang="ts">
-import { ref } from 'vue'
+import { onBeforeUnmount, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import IconCopy from '~icons/lucide/copy'
 
@@ -23,18 +39,45 @@ const { t } = useI18n()
 const announcement = ref('')
 
 /**
+ * Numéro de la dernière copie demandée : le résultat d'une copie déjà remplacée
+ * par un nouveau clic (une écriture lente, refusée tard) n'est jamais affiché.
+ */
+let latestCopy = 0
+let pendingTimer: ReturnType<typeof setTimeout> | undefined
+
+function schedule(callback: () => void, delay: number): void {
+  clearTimeout(pendingTimer)
+  pendingTimer = setTimeout(callback, delay)
+}
+
+onBeforeUnmount(() => clearTimeout(pendingTimer))
+
+/**
  * Copie par l'API Clipboard, qui n'existe qu'en contexte sécurisé (HTTPS,
  * localhost) et peut être refusée par le navigateur. Dans les deux cas, l'échec
  * est annoncé, et le texte reste sélectionnable dans le bloc pour une copie à la
  * main — pas de repli sur `document.execCommand('copy')`, déprécié.
  *
- * La région est vidée avant chaque tentative : un texte identique à celui déjà
- * présent ne serait pas réannoncé, et la deuxième copie passerait sous silence.
+ * La région est vidée avant chaque tentative, et le message n'y revient
+ * qu'après `ANNOUNCEMENT_DELAY_MS` : un texte identique à celui déjà présent ne
+ * serait pas réannoncé. Il en repart après `ANNOUNCEMENT_LIFETIME_MS`.
  */
 async function copy(): Promise<void> {
+  const thisCopy = ++latestCopy
+  clearTimeout(pendingTimer)
   announcement.value = ''
 
-  announcement.value = (await writeToClipboard(props.code)) ? t('common.copied') : t('common.copyFailed')
+  const copied = await writeToClipboard(props.code)
+  if (thisCopy !== latestCopy) {
+    return
+  }
+
+  schedule(() => {
+    announcement.value = copied ? t('common.copied') : t('common.copyFailed')
+    schedule(() => {
+      announcement.value = ''
+    }, ANNOUNCEMENT_LIFETIME_MS)
+  }, ANNOUNCEMENT_DELAY_MS)
 }
 
 /** Vrai si le texte est dans le presse-papiers ; faux si l'API manque ou refuse. */
