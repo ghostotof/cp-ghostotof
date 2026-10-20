@@ -178,6 +178,62 @@ final class McpCallLogTest extends WebTestCase
         self::assertSame(['tools/list', 'prompts/list'], array_map(static fn (LogRecord $line): mixed => $line->context['method'], $this->callLines()));
     }
 
+    /**
+     * Un message invalide d'un lot (une méthode inconnue) n'émet aucun
+     * événement du SDK : il a quand même sa ligne, sans méthode ni nom — ce
+     * qu'il a envoyé n'est pas recopié.
+     */
+    public function testAnInvalidMessageOfABatchHasItsLine(): void
+    {
+        $client = self::createClient();
+        $sessionId = $this->initializeMcpSession($client);
+
+        $client->request('POST', '/api/mcp', server: $this->mcpHeaders($sessionId), content: self::jsonBody([
+            ['jsonrpc' => '2.0', 'id' => 2, 'method' => 'ping'],
+            ['jsonrpc' => '2.0', 'id' => 3, 'method' => 'no/such-sentinelle'],
+            ['jsonrpc' => '2.0', 'id' => 4, 'method' => 'no/such-sentinelle'],
+        ]));
+
+        $lines = $this->callLines();
+        self::assertSame(['ping', null, null], array_map(static fn (LogRecord $line): mixed => $line->context['method'], $lines));
+        self::assertSame(['success', 'protocol-error', 'protocol-error'], array_map(static fn (LogRecord $line): mixed => $line->context['outcome'], $lines));
+        self::assertSame([null, -32600, -32600], array_map(static fn (LogRecord $line): mixed => $line->context['errorCode'], $lines));
+        self::assertSame(self::LOOPBACK_NETWORK, $lines[1]->context['ip']);
+        foreach ($lines as $line) {
+            self::assertStringNotContainsString('sentinelle', (new JsonFormatter())->format($line));
+        }
+    }
+
+    /** L'identifiant JSON-RPC est choisi par le client : deux requêtes du même lot peuvent le partager. */
+    public function testTwoRequestsSharingAnIdKeepTheirOwnDuration(): void
+    {
+        $client = self::createClient();
+        $sessionId = $this->initializeMcpSession($client);
+
+        $client->request('POST', '/api/mcp', server: $this->mcpHeaders($sessionId), content: self::jsonBody([
+            ['jsonrpc' => '2.0', 'id' => 5, 'method' => 'tools/list'],
+            ['jsonrpc' => '2.0', 'id' => 5, 'method' => 'prompts/list'],
+        ]));
+
+        $lines = $this->callLines();
+        self::assertCount(2, $lines);
+        foreach ($lines as $line) {
+            self::assertIsFloat($line->context['durationMs']);
+        }
+    }
+
+    /** Les réponses du client à une requête du serveur : acceptées (202), aucune erreur. */
+    public function testAPostOfClientResponsesOnlyIsASuccess(): void
+    {
+        $client = self::createClient();
+        $sessionId = $this->initializeMcpSession($client);
+
+        $this->postMcp($client, $sessionId, ['jsonrpc' => '2.0', 'id' => 99, 'result' => new stdClass()]);
+        self::assertResponseStatusCodeSame(202);
+
+        $this->assertFallbackLine('POST', 202, 'success', '2025-06-18');
+    }
+
     public function testANotificationHasItsLine(): void
     {
         $client = self::createClient();
@@ -197,7 +253,71 @@ final class McpCallLogTest extends WebTestCase
 
         $client->request('POST', '/api/mcp', server: $this->mcpHeaders($sessionId), content: '{"jsonrpc":');
 
-        $this->assertFallbackLine('POST', $client->getResponse()->getStatusCode(), 'protocol-error');
+        // Le SDK répond l'erreur -32700 en 200 : le statut seul n'y suffit pas.
+        self::assertResponseStatusCodeSame(200);
+        $this->assertFallbackLine('POST', 200, 'protocol-error', '2025-06-18');
+    }
+
+    public function testAnUnknownSessionLeavesTheFallbackLine(): void
+    {
+        $client = self::createClient();
+
+        $this->postMcp($client, '0199f1e2-0000-7000-8000-000000000000', ['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/list']);
+        self::assertResponseStatusCodeSame(404);
+
+        $this->assertFallbackLine('POST', 404, 'protocol-error', '2025-06-18');
+    }
+
+    public function testADeleteLeavesTheFallbackLine(): void
+    {
+        $client = self::createClient();
+        $sessionId = $this->initializeMcpSession($client);
+
+        $client->request('DELETE', '/api/mcp', server: ['HTTP_MCP_SESSION_ID' => $sessionId, 'HTTP_MCP_PROTOCOL_VERSION' => '2025-06-18']);
+        self::assertResponseIsSuccessful();
+
+        $this->assertFallbackLine('DELETE', 200, 'success', '2025-06-18');
+    }
+
+    /**
+     * La révision sans session (2026-07-28) passe par un autre chemin du SDK,
+     * qui n'émet aucun événement : la ligne de repli dit la révision, et son
+     * issue suit le statut HTTP (suivi : journaliser cette ère en entier).
+     */
+    public function testTheSessionlessRevisionLeavesAFallbackLineNamingIt(): void
+    {
+        $client = self::createClient();
+
+        $client->request('POST', '/api/mcp', server: [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_ACCEPT' => 'application/json, text/event-stream',
+            'HTTP_MCP_PROTOCOL_VERSION' => '2026-07-28',
+            // SEP-2243 : la méthode est répétée dans un en-tête.
+            'HTTP_MCP_METHOD' => 'tools/list',
+        ], content: self::jsonBody([
+            'jsonrpc' => '2.0',
+            'id' => 7,
+            'method' => 'tools/list',
+            'params' => ['_meta' => [
+                'io.modelcontextprotocol/protocolVersion' => '2026-07-28',
+                'io.modelcontextprotocol/clientCapabilities' => new stdClass(),
+            ]],
+        ]));
+        self::assertResponseStatusCodeSame(200);
+
+        $this->assertFallbackLine('POST', 200, 'success', '2026-07-28');
+    }
+
+    /** Une révision que le serveur ne connaît pas n'est pas recopiée. */
+    public function testAnUnknownRevisionIsNotCopied(): void
+    {
+        $client = self::createClient();
+
+        $this->postMcp($client, null, ['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/list'], ['HTTP_MCP_PROTOCOL_VERSION' => 'sentinelle-643']);
+
+        $context = $this->usageRecords()[0]->context;
+        self::assertArrayHasKey('protocolVersion', $context);
+        self::assertNull($context['protocolVersion']);
     }
 
     public function testARequestWithoutSessionLeavesTheFallbackLine(): void
@@ -207,7 +327,7 @@ final class McpCallLogTest extends WebTestCase
         $this->postMcp($client, null, ['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/list']);
         self::assertResponseStatusCodeSame(400);
 
-        $this->assertFallbackLine('POST', 400, 'protocol-error');
+        $this->assertFallbackLine('POST', 400, 'protocol-error', '2025-06-18');
     }
 
     public function testAGetLeavesTheFallbackLine(): void
@@ -217,7 +337,7 @@ final class McpCallLogTest extends WebTestCase
         $client->request('GET', '/api/mcp', server: ['HTTP_ACCEPT' => 'text/event-stream']);
         self::assertResponseIsSuccessful();
 
-        $this->assertFallbackLine('GET', 200, 'success');
+        $this->assertFallbackLine('GET', 200, 'success', null);
     }
 
     public function testAnIpv6CallerIsTruncatedToItsSlash48(): void
@@ -250,16 +370,17 @@ final class McpCallLogTest extends WebTestCase
         self::assertSame([], $this->usageRecords());
     }
 
-    private function assertFallbackLine(string $httpMethod, int $httpStatus, string $outcome): void
+    private function assertFallbackLine(string $httpMethod, int $httpStatus, string $outcome, ?string $protocolVersion): void
     {
         $lines = $this->usageRecords();
         self::assertCount(1, $lines);
         $line = $lines[0];
         self::assertSame(Level::Info, $line->level);
         self::assertSame(self::REQUEST_WITHOUT_CALL, $line->message);
-        self::assertSame(['httpMethod', 'httpStatus', 'outcome', 'durationMs', 'ip'], array_keys($line->context));
+        self::assertSame(['httpMethod', 'httpStatus', 'protocolVersion', 'outcome', 'durationMs', 'ip'], array_keys($line->context));
         self::assertSame($httpMethod, $line->context['httpMethod']);
         self::assertSame($httpStatus, $line->context['httpStatus']);
+        self::assertSame($protocolVersion, $line->context['protocolVersion']);
         self::assertSame($outcome, $line->context['outcome']);
         self::assertIsFloat($line->context['durationMs']);
         self::assertSame(self::LOOPBACK_NETWORK, $line->context['ip']);
