@@ -14,6 +14,7 @@ use Doctrine\ORM\EntityManagerInterface;
 use Mcp\Server\Session\Psr16SessionStore;
 use Monolog\Logger;
 use ReflectionProperty;
+use stdClass;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\Cache\Adapter\DoctrineDbalAdapter;
@@ -116,11 +117,14 @@ final class McpEndpointTest extends WebTestCase
     }
 
     /**
-     * Le SDK recopie en session ce que le client déclare (`capabilities`,
-     * `clientInfo`, ses « réponses ») : sans borne, un anonyme remplirait la
-     * table `cache_items`, donc le disque de PostgreSQL. Une session qui
-     * dépasse la borne n'est pas enregistrée, et son identifiant ne sert à
-     * rien.
+     * Le SDK recopie en session ce que le client envoie : sans borne, un
+     * anonyme remplirait la table `cache_items`, donc le disque de PostgreSQL.
+     * Une session qui dépasse la borne n'est pas enregistrée, et son
+     * identifiant ne sert à rien. Depuis #644, les déclarations de
+     * l'`initialize` et les « réponses » du client sont refusées avant le SDK
+     * (InboundMessageRefusalListener) ; reste le `_meta` d'une requête, que le
+     * SDK range en session (`SESSION_ACTIVE_REQUEST_META`), borné en
+     * production par le corps de 16 Kio de nginx — absent en test.
      */
     public function testAnOversizedSessionIsNeitherKeptNorReusable(): void
     {
@@ -138,8 +142,9 @@ final class McpEndpointTest extends WebTestCase
             'method' => 'initialize',
             'params' => [
                 'protocolVersion' => self::MCP_PROTOCOL_VERSION,
-                'capabilities' => ['experimental' => ['padding' => ['value' => str_repeat('x', 600 * 1024)]]],
+                'capabilities' => new stdClass(),
                 'clientInfo' => ['name' => 'phpunit', 'version' => '1.0.0'],
+                '_meta' => ['padding' => str_repeat('x', 600 * 1024)],
             ],
         ]);
 
@@ -153,7 +158,7 @@ final class McpEndpointTest extends WebTestCase
 
     /**
      * Une session **existante** qui dépasse la borne en cours de route (le
-     * client y fait recopier une « réponse » volumineuse) est détruite, et le
+     * client y fait recopier un `_meta` volumineux) est détruite, et le
      * reste : le SDK réécrivait aussitôt sous le même identifiant une session
      * vide en vidant sa file sortante, si bien que la requête suivante
      * tournait sur une session vidée au lieu du 404 qui fait se réinitialiser
@@ -166,8 +171,9 @@ final class McpEndpointTest extends WebTestCase
 
         $this->postMcp($client, $sessionId, [
             'jsonrpc' => '2.0',
-            'id' => 99,
-            'result' => ['padding' => str_repeat('x', 600 * 1024)],
+            'id' => 2,
+            'method' => 'tools/list',
+            'params' => ['_meta' => ['padding' => str_repeat('x', 600 * 1024)]],
         ]);
 
         $this->postMcp($client, $sessionId, ['jsonrpc' => '2.0', 'id' => 3, 'method' => 'tools/list']);

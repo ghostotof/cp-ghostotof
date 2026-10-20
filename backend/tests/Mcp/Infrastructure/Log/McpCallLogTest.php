@@ -92,7 +92,8 @@ final class McpCallLogTest extends WebTestCase
     public function testADeclaredClientIsBounded(): void
     {
         $client = self::createClient();
-        $this->postMcpInitialize($client, ['name' => str_repeat('n', 10_000), 'version' => str_repeat('v', 10_000)]);
+        // Sous la borne des déclarations (#644, 4 096 octets encodés), bien au-delà des 64 caractères du journal.
+        $this->postMcpInitialize($client, ['name' => str_repeat('n', 1_500), 'version' => str_repeat('v', 1_500)]);
         self::assertResponseIsSuccessful();
 
         $declared = $this->onlyCallLine()->context['declaredClient'];
@@ -166,17 +167,19 @@ final class McpCallLogTest extends WebTestCase
         self::assertStringNotContainsString($sessionId, $formatted);
     }
 
-    public function testEachMessageOfABatchHasItsLine(): void
+    /**
+     * Depuis #644, un lot de plusieurs messages est refusé avant le SDK
+     * (`InboundMessageRefusalListener`) : seul un lot d'un message atteint le
+     * journal, et il y a sa ligne comme un message seul.
+     */
+    public function testABatchOfOneMessageHasItsLine(): void
     {
         $client = self::createClient();
         $sessionId = $this->initializeMcpSession($client);
 
-        $this->postMcp($client, $sessionId, [
-            ['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/list'],
-            ['jsonrpc' => '2.0', 'id' => 3, 'method' => 'prompts/list'],
-        ]);
+        $this->postMcp($client, $sessionId, [['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/list']]);
 
-        self::assertSame(['tools/list', 'prompts/list'], array_map(static fn (LogRecord $line): mixed => $line->context['method'], $this->callLines()));
+        self::assertSame('tools/list', $this->onlyCallLine()->context['method']);
     }
 
     /**
@@ -189,24 +192,22 @@ final class McpCallLogTest extends WebTestCase
         $client = self::createClient();
         $sessionId = $this->initializeMcpSession($client);
 
-        $this->postMcp($client, $sessionId, [
-            ['jsonrpc' => '2.0', 'id' => 2, 'method' => 'ping'],
-            ['jsonrpc' => '2.0', 'id' => 3, 'method' => 'no/such-sentinelle'],
-            ['jsonrpc' => '2.0', 'id' => 4, 'method' => 'no/such-sentinelle'],
-        ]);
+        $this->postMcp($client, $sessionId, [['jsonrpc' => '2.0', 'id' => 3, 'method' => 'no/such-sentinelle']]);
 
-        $lines = $this->callLines();
-        self::assertSame(['ping', null, null], array_map(static fn (LogRecord $line): mixed => $line->context['method'], $lines));
-        self::assertSame(['success', 'protocol-error', 'protocol-error'], array_map(static fn (LogRecord $line): mixed => $line->context['outcome'], $lines));
-        self::assertSame([null, -32600, -32600], array_map(static fn (LogRecord $line): mixed => $line->context['errorCode'], $lines));
-        self::assertSame(self::LOOPBACK_NETWORK, $lines[1]->context['ip']);
-        foreach ($lines as $line) {
-            self::assertStringNotContainsString('sentinelle', (new JsonFormatter())->format($line));
-        }
+        $line = $this->onlyCallLine();
+        self::assertNull($line->context['method']);
+        self::assertSame('protocol-error', $line->context['outcome']);
+        self::assertSame(-32600, $line->context['errorCode']);
+        self::assertSame(self::LOOPBACK_NETWORK, $line->context['ip']);
+        self::assertStringNotContainsString('sentinelle', (new JsonFormatter())->format($line));
     }
 
-    /** L'identifiant JSON-RPC est choisi par le client : deux requêtes du même lot peuvent le partager. */
-    public function testTwoRequestsSharingAnIdKeepTheirOwnDuration(): void
+    /**
+     * Un lot refusé (#644) — ici deux requêtes partageant un identifiant, que
+     * le client choisit — n'atteint pas le SDK : aucune ligne d'appel, la
+     * seule ligne de repli de la requête HTTP.
+     */
+    public function testARefusedBatchLeavesOnlyTheFallbackLine(): void
     {
         $client = self::createClient();
         $sessionId = $this->initializeMcpSession($client);
@@ -216,23 +217,23 @@ final class McpCallLogTest extends WebTestCase
             ['jsonrpc' => '2.0', 'id' => 5, 'method' => 'prompts/list'],
         ]);
 
-        $lines = $this->callLines();
-        self::assertCount(2, $lines);
-        foreach ($lines as $line) {
-            self::assertIsFloat($line->context['durationMs']);
-        }
+        self::assertResponseStatusCodeSame(400);
+        $this->assertFallbackLine('POST', 400, 'protocol-error', self::MCP_PROTOCOL_VERSION);
     }
 
-    /** Les réponses du client à une requête du serveur : acceptées (202), aucune erreur. */
-    public function testAPostOfClientResponsesOnlyIsASuccess(): void
+    /**
+     * Une réponse du client : refusée avant le SDK depuis #644 (ce serveur
+     * n'envoie aucune requête au client). La ligne de repli la dit.
+     */
+    public function testAPostOfAClientResponseIsARefusal(): void
     {
         $client = self::createClient();
         $sessionId = $this->initializeMcpSession($client);
 
         $this->postMcp($client, $sessionId, ['jsonrpc' => '2.0', 'id' => 99, 'result' => new stdClass()]);
-        self::assertResponseStatusCodeSame(202);
+        self::assertResponseStatusCodeSame(400);
 
-        $this->assertFallbackLine('POST', 202, 'success', self::MCP_PROTOCOL_VERSION);
+        $this->assertFallbackLine('POST', 400, 'protocol-error', self::MCP_PROTOCOL_VERSION);
     }
 
     public function testANotificationHasItsLine(): void

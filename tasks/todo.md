@@ -14,7 +14,7 @@ phase 1 parte en release seule ; puis au merge de clôture, qui archive la spec 
 - [x] Tâche 2 — Catalogue complet et test d'exposition symétrique (#641) — bloquée par : #640
 - [ ] Tâche 3 — Prompt `present_for_role` et garde D8 (#642) — bloquée par : #641
 - [ ] Tâche 4 — Journal `mcp` (IP tronquée) et registre RGPD (#643) — bloquée par : #640
-- [ ] Tâche 5 — Zone nginx `mcp` et smoke 429 (#644) — bloquée par : #640
+- [x] Tâche 5 — Zone nginx `mcp` et smoke 429 (#644) — bloquée par : #640
 - [ ] Tâche 6 — Page « Brancher votre assistant » (#645) — bloquée par : #641
 
 ### Livraison de la phase 1

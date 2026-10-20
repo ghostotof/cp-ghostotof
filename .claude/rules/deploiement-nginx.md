@@ -20,6 +20,8 @@ paths:
   - "tools/smoke-login-throttling.sh"
   - "tools/tests/security-headers.test.sh"
   - "tools/tests/smoke-login-throttling.test.sh"
+  - "tools/smoke-mcp.sh"
+  - "tools/tests/smoke-mcp.test.sh"
   - "backend/config/packages/nelmio_cors.yaml"
   - "SECURITY.md"
 ---
@@ -28,13 +30,46 @@ paths:
 
 > Split out of `.claude/rules/deploiement.md` (#605), whose index lists every deployment rule. The index of every rule is at the top of `.claude/CLAUDE.md`.
 
-- **Six nginx rate-limit zones, two different jobs.** `contact` (10 r/m), `pwsetup` (20 r/m),
+- **Eight nginx rate-limit zones, two different jobs.** `contact` (10 r/m), `pwsetup` (20 r/m),
   `baseaccess` (20 r/m, issue #77 — each call signs an RS256 JWT), `login` (10 r/m, burst 10,
   ADR 0005 — the backstop under Symfony's `login_throttling`, which is the real ceiling) and
   `assistant` (10 r/m, burst 5, plus `limit_conn assistantconn 1` — each call is billed and each
   stream holds one of a pod's 8 php-fpm workers; the zones live in each sidecar, so an IP gets N times
   these ceilings with N backend pods) protect a *side effect* — sending mail, guessing a token,
   minting a token, guessing a password, spending money.
+  `mcp` (60 r/m, burst 20, #644, ADR 0006 D6) and `mcpsession` (10 r/m, burst 5) sit on the **exact**
+  `location = /api/mcp`, every method (the `GET` boots Symfony too; a CORS preflight costs a token as well).
+  `mcp` protects the resource like `publicapi`, at a tenth of its rate, since each request reads and rewrites a
+  session row in `cache_items` — it also bounds the `mcp_usage` lines. `mcpsession` counts **session creations
+  only**: its key, from a `map` on `"$request_method:$http_mcp_session_id"`, is the address for a `POST` without
+  `Mcp-Session-Id` and empty otherwise (an empty key is not counted); an `initialize` carrying an invented id to
+  escape it is refused by the SDK, nothing written (measured by the audit of #644). The location has its own
+  `client_max_body_size 16k` **and its own `fastcgi_pass`** (like `/api/assistant/`): through `try_files …
+  /index.php`, a `Transfer-Encoding: chunked` body was read after the internal redirect, under `~ ^/index\.php`,
+  which only has the server's 1 MB — the bound held for a `Content-Length` body only (a 480 KB session measured).
+  `tools/check-backend-nginx-rate-limits.sh` probes both framings. **What the client can still make the database
+  keep** (measured on 2026-10-20, dev): `InboundMessageRefusalListener` refuses batches, client responses and an
+  `initialize` declaring more than 4 KiB (`.claude/rules/mcp.md`), so a fresh session row is a few KB; what is
+  left is the last request's `_meta`, which the SDK keeps in the session, replaced by each request, up to the
+  16 KiB body — re-encoded (an `é` becomes `\u00e9`). What one IP can make the database keep is therefore bounded by
+  `mcpsession`'s rate, the two hours a row can live (one-hour TTL, hourly purge) and that body bound, several
+  times less than before the audit fixes of #644 (the worst-case volume is deliberately not written in this
+  public repository). Accepted: the zones are per IP and per pod, no global ceiling (a global one would
+  let an attacker block every new session); `_meta` keeps the body bound, decided by the author on 2026-10-20 (a
+  tighter bound would leave the session-bound tests without an HTTP path to it). **The site is IPv4 only** (no
+  `AAAA` for the production or preprod host, checked on 2026-10-20): `$binary_remote_addr` is a whole address;
+  the day an `AAAA` is published, an IPv6 /64 gives 2^64 keys — key the MCP zones by /64 first. A 413
+  (`Content-Length` over the bound) is rendered at find-config, before any zone: an unlimited flow of them
+  costs nginx only. Its 413 is nginx's HTML page, like the server's 1 MB one. Accepted: claude.ai and ChatGPT
+  connectors call from their providers' egress addresses, which their users share — fine at this site's
+  audience, revisit if phase 2's real clients get throttled. `tools/smoke-mcp.sh`, run by `smoke-test-preprod`
+  (its own `timeout-minutes: 3`), proves it on the real pod: an `initialize` on the public host (a 403 there
+  means `allowed_hosts`, derived from `APP_FRONTEND_BASE_URL`, misses it), the session closed by `DELETE` (its
+  status checked: a session left open stays an hour), a 16 KiB + 1 body refused in 413 with `Content-Length` then in
+  `chunked` (under a fake session id: no zone of session creations, no PHP), then `GET`s without a session (they
+  write nothing) until the 429 — within 120 requests, so it can only be the `mcp`
+  zone (`publicapi`'s burst is 200). Measured in dev on 2026-10-20: the 429 at the 20th `GET` (the `initialize`
+  and the `DELETE` took two tokens), and the seventh `initialize` in a row refused by `mcpsession`.
   `publicapi` (600 r/m, burst 200, on
   `location /`) protects the *resource*: without it every public read reaches PHP and Postgres as
   often as asked. Its ceiling is deliberately far above real use — behind a mobile carrier's CGNAT
@@ -68,7 +103,12 @@ paths:
   `tools/check-backend-nginx-rate-limits.sh` (`make back-nginx-rate-limits`, CI job
   `backend-nginx-rate-limits`) runs the pinned sidecar image on each conf, saturates every
   `limit_req` zone and checks the body, the type and the headers; it fails naming any `limit_req`
-  zone of the confs missing from its `ZONES` list. **`limit_conn` is not exercised** (it would need
+  zone of the confs missing from its `ZONES` list. Since #644 it also checks the two confs are mirrors where
+  it matters — the whole `http` level identical (`real_ip`, `map`, zone declarations), and identical
+  directives in each `MIRRORED_LOCATIONS` block (`= /api/mcp`, `fastcgi_pass`'s upstream masked), comments
+  ignored — and each `BODY_LIMITS` bound (413 one byte over, none at the bound, with `Content-Length` and in
+  `chunked`).
+  **`limit_conn` is not exercised** (it would need
   an upstream that holds the connection, and there is no php-fpm in the job).
 - **nginx rate limits need `real_ip`** (audit C7). `limit_req_zone` keys on `$binary_remote_addr`, and behind
   the ingress the sidecar's TCP peer is the ingress-nginx pod — without the `set_real_ip_from` block, the whole

@@ -7,6 +7,7 @@ namespace App\Tests\Mcp;
 use App\Ai\Assistant\Application\Corpus\PdfTextExtractorInterface;
 use App\Ai\Assistant\Infrastructure\Pdf\ExtractedTextNormalizer;
 use App\Ai\Assistant\Infrastructure\Pdf\PopplerPdfTextExtractor;
+use App\Mcp\Infrastructure\Http\InboundMessageRefusal;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Tests\Mcp\Support\AuthorMention;
 use App\Tests\Mcp\Support\AuthorMentions;
@@ -116,6 +117,9 @@ final class AuthorNeverNamedTest extends WebTestCase
         self::assertArrayHasKey('tools/call get_about langue inconnue', $published);
         self::assertArrayHasKey('tools/call get_contact_info fr', $published);
         self::assertArrayHasKey('tools/call get_nominative_corpus en', $published);
+        foreach (['lot refusé', 'réponse du client refusée', 'initialize refusé'] as $refusal) {
+            self::assertArrayHasKey('error', $published[$refusal], $refusal);
+        }
     }
 
     /**
@@ -312,6 +316,19 @@ final class AuthorNeverNamedTest extends WebTestCase
             self::assertIsArray($tool);
             $published += $this->toolAnswers($client, $session->id, $tool);
         }
+
+        // Les refus écrits par le serveur avant le SDK (#644,
+        // InboundMessageRefusalListener) : un lot, une réponse du client, un
+        // `initialize` qui déclare trop.
+        $this->postMcp($client, $session->id, [
+            ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'ping'],
+            ['jsonrpc' => '2.0', 'id' => 2, 'method' => 'ping'],
+        ]);
+        $published['lot refusé'] = $this->decodeMcpResponse($client);
+        $this->postMcp($client, $session->id, ['jsonrpc' => '2.0', 'id' => 9, 'result' => new stdClass()]);
+        $published['réponse du client refusée'] = $this->decodeMcpResponse($client);
+        $this->postMcpInitialize($client, ['name' => str_repeat('n', InboundMessageRefusal::MAX_DECLARATION_BYTES), 'version' => '1']);
+        $published['initialize refusé'] = $this->decodeMcpResponse($client);
 
         return $published;
     }

@@ -32,7 +32,7 @@ paths:
 | `deploiement-pipeline.md` | migrations as a Job, what « never `kubectl exec` » covers (#520), the migration before the rollout, one rule for every Job's deadline, ExternalSecrets synced first, `smoke-test-preprod`'s message probe, deploy waits failing early, `DEPLOY_MAINTENANCE_WINDOW` |
 | `deploiement-postgres.md` | the two PostgreSQL roles (#575), the bootstrap superuser reachable from the pod only (#593) |
 | `deploiement-etat-hors-pod.md` | no application state on the pod's filesystem (ADR 0005): cache pools, locks, rate limiters, `lock_timeout` and `ConsoleLockWaitBoundTest` |
-| `deploiement-nginx.md` | the six rate-limit zones, `/api/assistant/`'s `fastcgi_pass`, nginx 429s as problem+json, `real_ip`, `add_header` inheritance, `security.txt` |
+| `deploiement-nginx.md` | the eight rate-limit zones (`mcp`, `mcpsession` and the MCP body bound included), `/api/assistant/`'s `fastcgi_pass`, nginx 429s as problem+json, `real_ip`, `add_header` inheritance, `security.txt` |
 
 - **A PHPUnit test reads a manifest through `tests/Support/KubernetesManifests`, never by hand**
   (issue #541). `KubernetesManifests::base()` (`k8s/base`) or `::overlay('prod')` (the overlay's
@@ -93,7 +93,7 @@ paths:
   trigger travels in a **cookie** — Xdebug 3.5 does not read HTTP headers, and nginx logs the query string.
   Production receives none of this. Procedure in `k8s/README.md`.
 - **No pod mounts a ServiceAccount token, and both namespaces carry Pod Security Admission labels**
-  (audit A17). `automountServiceAccountToken: false` on all sixteen pod specs, the eight Jobs outside kustomize
+  (audit A17). `automountServiceAccountToken: false` on all seventeen pod specs (the hourly `cache-prune-cronjob.yaml`, #644, among them), the eight Jobs outside kustomize
   included (`postgres-hba-probe-job.yaml`, #596, among them) — none of them talks to the Kubernetes API (RabbitMQ does no peer discovery here, ESO runs in
   its own namespace), so the default `default`-SA token was pure standing credential. The `preprod` and
   `prod` `Namespace` objects set `enforce: baseline` with `audit`/`warn: restricted`: RabbitMQ declares no

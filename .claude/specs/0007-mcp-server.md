@@ -206,8 +206,9 @@ peut alors interroger le portfolio avec les jetons de la personne, et le site n'
   (`%env(key:host:url:…)%`), déjà posée par overlay : même hôte que l'API derrière l'Ingress, aucune
   variable ni ConfigMap nouvelle ; `localhost` en dev et en test (précision de la tâche 1).
 - **Sessions MCP.** Store `cache` du bundle sur un **pool dédié** adossé à l'adaptateur DBAL existant
-  (table `cache_items`), durée de vie d'une heure. La purge des entrées expirées est déjà assurée par
-  `cache:pool:prune` dans le CronJob de purge existant : aucune tâche nouvelle.
+  (table `cache_items`), durée de vie d'une heure. La purge des entrées expirées est assurée par
+  `cache:pool:prune`, **chaque heure dans son propre CronJob** depuis la tâche 5 (#644, décision de l'auteur) :
+  quotidienne, une session expirée restait jusqu'à 25 h en base.
 - **`instructions` du serveur** : décrivent le site comme « le portfolio de l'auteur du site », les
   paliers, et invitent à appeler les outils plutôt qu'à deviner. Elles ne nomment pas l'auteur
   (ADR 0006 D8).
@@ -372,9 +373,9 @@ décision du 2026-10-19, voir « Langue invalide »).
   eux. Les points jeton et révocation, appelés hors navigateur, sont exclus de la garde CSRF et
   n'acceptent pas de cookie.
 - **Purge** : les jetons et codes expirés, et les connexions expirées depuis plus de la durée de
-  conservation du journal, sont purgés par une étape ajoutée au CronJob de purge existant (même
-  cadence que `cache:pool:prune`, un pod de moins qu'un CronJob dédié ; l'ADR dit « un CronJob », ce
-  choix en est une mise en œuvre).
+  conservation du journal, sont purgés par une étape ajoutée au CronJob de ménage quotidien existant (un
+  pod de moins qu'un CronJob dédié ; l'ADR dit « un CronJob », ce choix en est une mise en œuvre ;
+  `cache:pool:prune` l'a quitté pour un CronJob horaire, tâche 5).
 - **Préprod** : l'Ingress de préprod lève Basic Auth sur les seuls chemins MCP et OAuth (ADR 0006,
   conséquences), à revoir avec #339.
 - **Page « Brancher votre assistant »** complétée : comment ouvrir une connexion MCP depuis chaque
@@ -527,3 +528,12 @@ sur les chemins MCP et OAuth qu'à la tâche 14.
   ci-dessus — la relecture « Spec » avait relevé que l'écart figurait déjà au plan, avant le code ; le
   nom de serveur `cp-ghostotof` est une exception acceptée à D8, pour ce serveur uniquement, inscrite
   dans la liste fermée de l'ADR 0006.
+- **2026-10-20 — tâche 5 (#644), décisions de l'auteur et relectures** : tous les reports des commentaires du
+  ticket sont traités dans la tâche. Borne de corps de `/api/mcp` à **16 Kio** (au lieu des 64 Kio du
+  commentaire : une ligne de session pèse jusqu'à trois fois le corps), avec son propre `fastcgi_pass` (un
+  corps chunked y échappait). Purge des sessions **horaire, dans un CronJob dédié**, plutôt qu'un limiteur
+  Symfony ; le ménage quotidien ne lance plus `cache:pool:prune`. Après l'audit de sécurité : zone nginx
+  `mcpsession` par IP sur les créations de session, sans zone globale ; refus avant le SDK des lots (objet à
+  clés numériques compris), d'un `initialize` déclarant plus de 4 Kio et des réponses du client. Le
+  commentaire du CronJob est corrigé sans restreindre ses secrets (même exposition que le ménage
+  quotidien). Règles : `.claude/rules/mcp.md`, `.claude/rules/deploiement-nginx.md`.

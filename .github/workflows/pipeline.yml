@@ -425,6 +425,7 @@ jobs:
           tools/tests/verify-release-merge.test.sh
           tools/tests/finalize-release.test.sh
           tools/tests/smoke-login-throttling.test.sh
+          tools/tests/smoke-mcp.test.sh
           tools/tests/rotate-deployer-token.test.sh
           tools/tests/wait-external-secrets.test.sh
           tools/tests/wait-rollout.test.sh
@@ -837,7 +838,7 @@ jobs:
     needs: [release-version, deploy-preprod]
     if: startsWith(github.ref, 'refs/heads/release/')
     runs-on: ubuntu-latest
-    timeout-minutes: 16 # habituel ~1 min 30, mais au-delà des 3–10× de #285 à dessein : la somme des attentes du pire cas, ~12 min, l'emporte — rollouts bornés à 60 s, curl à 15 s, Job témoin attendu 300 s (+ ~35 s de wait-rollout.sh, + 90 s au plus pour l'arrêter s'il tourne encore à l'échec, #535) ; la sonde pg_hba a son propre job depuis #600
+    timeout-minutes: 18 # habituel ~1 min 30, mais au-delà des 3–10× de #285 à dessein : la somme des attentes du pire cas, ~15 min, l'emporte (3 min de marge) — rollouts bornés à 60 s, curl à 15 s, smoke MCP borné à 3 min (#644), Job témoin attendu 300 s (+ ~35 s de wait-rollout.sh, + 90 s au plus pour l'arrêter s'il tourne encore à l'échec, #535) ; la sonde pg_hba a son propre job depuis #600
     # Les secrets d'environnement ne sont servis qu'aux jobs qui déclarent
     # l'environnement, et sa politique de branche borne d'où ils sont lisibles
     # (audit 2026-09-16, A4).
@@ -885,6 +886,17 @@ jobs:
         env:
           AUDIT_BASIC_AUTH: ${{ secrets.PREPROD_BASIC_AUTH }}
         run: tools/smoke-login-throttling.sh https://preprod.cp-ghostotof.com
+      # Spec 0007, #644 : un `initialize` MCP sur l'hôte réel (allowed_hosts,
+      # dérivé d'APP_FRONTEND_BASE_URL), la session fermée, la borne de corps
+      # de 16 Kio en Content-Length et en chunked (413), puis la zone nginx
+      # `mcp` saturée par des GET sans session — 429 attendu vers la 20e
+      # requête, un pod en préprod. Borné à part : 124 requêtes à 15 s au pire
+      # dépasseraient le budget du job, l'habituel est d'une dizaine de secondes.
+      - name: Serveur MCP (hôte servi, zone mcp en 429)
+        timeout-minutes: 3
+        env:
+          AUDIT_BASIC_AUTH: ${{ secrets.PREPROD_BASIC_AUTH }}
+        run: tools/smoke-mcp.sh https://preprod.cp-ghostotof.com
       # Issue #470 : un worker `Ready` ne prouve pas qu'il décode ce que l'API
       # signe. Un écart de clé de MAC (KEY_CONTEXT mal déployé, worker resté sur
       # l'ancienne release) laissait la préprod verte, chaque message dans

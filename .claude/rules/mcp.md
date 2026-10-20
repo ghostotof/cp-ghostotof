@@ -207,10 +207,13 @@ paths:
   once, `session.ttl` in `mcp.yaml`, 1 h), through the PSR-16 service `app.mcp.session_cache` (`psr/simple-cache`
   is a direct dependency for it): never the bundle's default `file` store under `var/cache` (read-only pod, two
   replicas, ADR 0005). The values carry the cache MAC like every DBAL pool (#468), and `cache:pool:prune` purges
-  them. **A session is bounded** (`Infrastructure/Session/BoundedSessionStore`, an `#[AsDecorator]` of
+  them, **every hour** since #644 (`k8s/base/cache-prune-cronjob.yaml`, `McpSessionsPrunedHourlyTest`): an expired
+  session lived up to 25 h with the daily purge only, now 2 h at most. **A session is bounded** (`Infrastructure/Session/BoundedSessionStore`, an `#[AsDecorator]` of
   `mcp.server.portfolio.session.store`, `MAX_BYTES` 512 KiB): the SDK copies into it what the client declares
   (`clientInfo`, `capabilities` and their free `experimental` fields, « responses » under ids of the client's
-  choosing) and rewrites the whole row on every request — unbounded, an anonymous client filled `cache_items`,
+  choosing, the last request's `_meta`) and rewrites the whole row on every request — since #644 the first two are
+  refused before the SDK (`InboundMessageRefusalListener`, below), the `_meta` is bounded by nginx's 16 KiB body and
+  replaced by each request, not accumulated; unbounded, an anonymous client filled `cache_items`,
   hence PostgreSQL's disk (security review of #640, rated high). Over the bound the session is destroyed and the
   write refused (`warning`, size only, never the id), and **the id stays gone for the rest of the request**
   (#641): draining its outgoing queue, the SDK re-reads the session and writes it back, empty, under the same
@@ -218,9 +221,14 @@ paths:
   version) instead of the 404 that makes a client re-initialise. The decorator remembers the destroyed id
   (`ResetInterface`) and refuses it on `exists`/`read`/`write`; the answer queued for that request is lost
   (it could not fit), the client sees no JSON-RPC answer, then a 404. The **number** of sessions per IP is
-  the nginx `mcp` zone's business (task 5, #644), not the bound's. **The bound must fit the largest legitimate
+  the nginx `mcpsession` zone's business (#644, 10 creations per minute), not the bound's. **The bound must fit the largest legitimate
   answer**: the SDK queues a tool's response in the session before sending it, so every answer goes through
-  `cache_items` — phase 2's nominative corpus included (measure it there). Each MCP request costs three
+  `cache_items` — phase 2's nominative corpus included (measure it there). **Guarded since #644**:
+  `RouteBackedToolsTest::testTheAnswerQueuedInTheSessionStaysFarBelowTheSessionBound` measures, per route-backed tool on
+  the seeds, what is queued — the SDK's JSON answer, JSON-encoded again by `Session::save()` — and keeps it under an eighth
+  of `MAX_BYTES` and under 3 × the route body + 1 KiB (a ratio independent of the content: an SDK change of encoding
+  moves it). Measured on production on 2026-10-20 with the same computation: 2.1 to 2.8 × the route body, 21.6 KB at most
+  (`get_anonymous_cv` fr, 10.2 KB body), 4 % of the bound; the seeds give the same order (12 KB for `list_incidents`). Each MCP request costs three
   round trips on the session row (`has`, `get`, `set`) and two writes per `tools/call` (save, then the queue
   drained): ADR 0006 D6's « no write per call » holds for the authentication, not for the session.
   `Psr16SessionStore` swallows every exception and returns `false`; the decorator logs that `warning` too, on a
@@ -274,8 +282,8 @@ paths:
 - **The call log is `mcp_usage`** (#643, spec 0007 « Journal des appels », not `mcp`: the SDK's channel).
   `Infrastructure/Log/McpCallLog` listens to the SDK's own events, dispatched through Symfony's
   `event_dispatcher` (`Mcp\Event\RequestEvent`, `ResponseEvent`, `ErrorEvent`, `NotificationEvent`), and writes
-  **one `info` line per JSON-RPC message handled**, `MCP call` — an invalid message of a batch (an unknown method)
-  has no event: the class is also a Monolog processor of the `mcp` channel and writes its line, method `null`,
+  **one `info` line per JSON-RPC message handled**, `MCP call` — an invalid message (an unknown method, alone or
+  in a one-message batch, the only batch left since #644) has no event: the class is also a Monolog processor of the `mcp` channel and writes its line, method `null`,
   `-32600`, when the SDK logs « Failed to create message. »: `method`, `name` (the tool or prompt, **only
   when the registry knows it** — the caller's name has no bound), `outcome` (`McpCallOutcome`: `success`,
   `tool-error` for `isError: true`, `protocol-error`), `errorCode` (JSON-RPC), `durationMs`, `ip`
@@ -284,17 +292,39 @@ paths:
   `kernel.request`**: the `RequestStack` is empty at terminate and during an SSE answer) and
   `declaredClient` (`clientInfo` from the session, name and version bounded to 64 characters: declared, never
   checked). **An HTTP request on `/api/mcp` that handled no message** — unreadable JSON, missing or expired
-  session, `GET`, `DELETE`, client responses only, and the whole sessionless `2026-07-28` revision, which the SDK
+  session, `GET`, `DELETE`, a request refused before the SDK (#644: 400, `protocol-error`), and the whole sessionless `2026-07-28` revision, which the SDK
   serves through `StatelessProtocol` with **no event** (follow-up issue) — leaves one `MCP request without call`
   line (`httpMethod`, `httpStatus`, `protocolVersion` — `ProtocolVersion::tryFrom()` of the header, `null` otherwise
   —, `outcome`, `durationMs`, `ip`) at `kernel.terminate`. A `POST` there is a `protocol-error` (the SDK answers a
-  parse error in 200), except a 202 (client responses, accepted) and a modern revision, whose outcome follows the
-  status only. Pending requests are keyed by object (a JSON-RPC id is the client's, a batch may repeat it) and keep
+  parse error in 200), except a 202 (a notification) and a modern revision, whose outcome follows the
+  status only. Pending requests are keyed by object (a JSON-RPC id is the client's; a batch could repeat it before
+  #644, kept: the keying costs nothing and a future SDK may queue several) and keep
   their method, known name and start only. A request left without an answer (an exception the SDK caught outside
   its events) is written at terminate as `protocol-error`; accepted: a suspended exchange (sampling, elicitation —
   no tool does it) is written so too, and its resumption leaves only a fallback line. **Never an argument, a header, a cookie nor the session id**: the
   line is built field by field. Its own `info` handler in `when@prod`, like `ai_usage`, excluded from `main` and
   `console` (`McpLogChannelsTest`); `McpCallLogTest` reads it through the `all_channels_test` probe (sentinels
-  in `role`, `Authorization` and `BEARER`, batch, notification, fallbacks, IPv4/IPv6 callers).
-- **Open, owned elsewhere**: batches of up to 100 calls per HTTP request, the request body size and the number of
-  sessions per IP — task 5 (#644).
+  in `role`, `Authorization` and `BEARER`, one-message batch, notification, fallbacks, IPv4/IPv6 callers).
+- **Three inbound messages are refused before the SDK** (#644): `Infrastructure/Http/InboundMessageRefusalListener`
+  (`kernel.request`, priority 15, `POST` on the canonical path `/api/mcp`, so `/api/%6Dcp` too) decodes once a body
+  starting, after JSON blanks, with `[` or `{`, and answers **400** `application/json`, a JSON-RPC `-32600` without
+  `id` — the form of the SDK transport's own refusals —, the reason and its message in the enum
+  `InboundMessageRefusal`: (1) **a batch of several messages**, with the SDK's own predicate (`json_decode` assoc,
+  then any PHP list is a batch — **an object keyed `"0"`, `"1"`… too**, which passed while only the bracket was read,
+  100 `tools/call` served, measured in the reviews of #644): the SDK 0.8.1 accepts up to 100 per request, hard-coded
+  (`MessageFactory::DEFAULT_MAX_BATCH_SIZE`, built by the `Builder`, not configurable through the bundle), and batches
+  left the protocol at revision 2025-06-18, the only handshake revision served; (2) **an `initialize` whose
+  `clientInfo` + `capabilities`** weigh more than `MAX_DECLARATION_BYTES` (4 096) **as the session stores them**
+  (`declarationBytes()`: `json_encode` without flags, six bytes per accented character) — real clients declare under
+  1 KiB; accepted: a client sending a large icon as a data URI is refused; (3) **a client response** (`result` or
+  `error`, no `method`, the SDK's criterion), which the SDK stored under ids of the client's choosing, accumulating
+  ~30 KB per post up to the session bound (audit of #644, measured) — this server sends the client no request (no
+  sampling, elicitation nor roots); the day a tool asks one, this refusal must learn to recognise the expected answer.
+  A one-message batch is served, its message judged like a single one; unreadable JSON is left to the SDK (`-32700`).
+  The refusal precedes the session and the `Host` check (a foreign host gets this 400, not the SDK's 403: nothing is
+  served either way); `McpCallLog` writes its fallback line (`POST`, 400, `protocol-error`). Its messages are read by
+  `AuthorNeverNamedTest`. **No body bound in the application**: `SdkChannelRecordsTest` sends 100 KB strings through
+  the SDK on purpose, and the bound is nginx's (`.claude/rules/deploiement-nginx.md`, chunked included).
+  `InboundMessageRefusalTest` pins every case; `McpEndpointTest`'s session-bound cases go through `_meta` since.
+- **Rate, body and sessions per IP** (#644): the nginx `mcp` zone and the location's 16 KiB body bound
+  (`.claude/rules/deploiement-nginx.md`).

@@ -45,6 +45,7 @@ final class SystemCachePodVolumeTest extends TestCase
         'messenger-worker-deployment.yaml',
         'watch-refresh-cronjob.yaml',
         'messenger-purge-cronjob.yaml',
+        'cache-prune-cronjob.yaml',
         'migrate-job.yaml',
         'seed-job.yaml',
         'create-user-job.yaml',
