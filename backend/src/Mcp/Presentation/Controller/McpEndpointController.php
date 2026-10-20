@@ -70,12 +70,11 @@ final readonly class McpEndpointController
         private HttpMessageFactoryInterface $psrHttpFactory,
         #[Autowire(service: 'mcp.http_foundation_factory')]
         private HttpFoundationFactoryInterface $httpFoundationFactory,
-        // Le `Psr17Factory` du bundle, par ses interfaces PSR-17 : sa classe
-        // vient de php-http/discovery, que le `require` ne porte pas (#663).
+        // Le Http\Discovery\Psr17Factory du bundle, par ses interfaces PSR-17 :
+        // sa classe vient de php-http/discovery, que le `require` ne porte pas
+        // (#663).
         #[Autowire(service: 'mcp.psr17_factory')]
-        private ResponseFactoryInterface $responseFactory,
-        #[Autowire(service: 'mcp.psr17_factory')]
-        private StreamFactoryInterface $streamFactory,
+        private ResponseFactoryInterface&StreamFactoryInterface $psr17Factory,
         #[Autowire(service: 'mcp.server.portfolio.session.store')]
         private SessionStoreInterface $sessionStore,
     ) {
@@ -125,10 +124,10 @@ final readonly class McpEndpointController
             }
         }
 
-        return $this->responseFactory->createResponse(Response::HTTP_OK)
+        return $this->psr17Factory->createResponse(Response::HTTP_OK)
             ->withHeader('Content-Type', self::EVENT_STREAM)
             ->withHeader('Cache-Control', 'no-store')
-            ->withBody($this->streamFactory->createStream(\sprintf("retry: %d\n\n", self::RECONNECT_DELAY_MS)));
+            ->withBody($this->psr17Factory->createStream(\sprintf("retry: %d\n\n", self::RECONNECT_DELAY_MS)));
     }
 
     /**
@@ -136,15 +135,15 @@ final readonly class McpEndpointController
      */
     private function jsonRpcError(int $status, string $message): ResponseInterface
     {
-        return $this->responseFactory->createResponse($status)
+        return $this->psr17Factory->createResponse($status)
             ->withHeader('Content-Type', 'application/json')
-            ->withBody($this->streamFactory->createStream(json_encode(Error::forInvalidRequest($message), \JSON_THROW_ON_ERROR)));
+            ->withBody($this->psr17Factory->createStream(json_encode(Error::forInvalidRequest($message), \JSON_THROW_ON_ERROR)));
     }
 
     private function plain(int $status, string $message): ResponseInterface
     {
-        return $this->responseFactory->createResponse($status)
+        return $this->psr17Factory->createResponse($status)
             ->withHeader('Content-Type', 'text/plain')
-            ->withBody($this->streamFactory->createStream($message));
+            ->withBody($this->psr17Factory->createStream($message));
     }
 }

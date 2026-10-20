@@ -172,9 +172,10 @@ jobs:
       # pas, le script la construit depuis le rapport JUnit. `if: always()` :
       # c'est précisément quand ça échoue qu'elle sert. Le statut du job reste
       # celui des deux étapes PHPUnit. Une carte par rapport ; le script sort
-      # toujours en 0, rapport absent ou rouge compris
+      # en 0 quel que soit le rapport, absent ou rouge compris
       # (tools/tests/summary-phpunit.test.sh), donc la seconde carte est écrite
-      # quoi que dise la première (#663).
+      # quoi que dise la première (#663). Seule une erreur fatale de PHP l'en
+      # empêcherait (`bash -e`) : l'étape serait alors rouge, donc visible.
       - name: Résumé PHPUnit
         if: always()
         run: |

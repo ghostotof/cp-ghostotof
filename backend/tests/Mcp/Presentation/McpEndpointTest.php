@@ -272,7 +272,8 @@ final class McpEndpointTest extends WebTestCase
     /**
      * `php-http/discovery` n'arrive que par le bundle (son `Psr17Factory`,
      * service `mcp.psr17_factory`) : `src/` dépend des interfaces PSR-17, qui
-     * sont à `psr/http-factory`, jamais de cette classe concrète d'un paquet
+     * sont à `psr/http-factory` (contrat stable, arrivé par `nyholm/psr7`,
+     * que le `require` porte), jamais de cette classe concrète d'un paquet
      * absent du `require` — une montée du bundle qui la retirerait casserait
      * le contrôleur sans qu'aucune contrainte ne le dise (#663, point 3).
      */
@@ -287,7 +288,7 @@ final class McpEndpointTest extends WebTestCase
         foreach (PhpSources::files(RepositoryFiles::backend('src')) as $path) {
             foreach (PhpSources::significantTokens(RepositoryFiles::read($path)) as $token) {
                 if ($token->is([\T_NAME_QUALIFIED, \T_NAME_FULLY_QUALIFIED]) && str_starts_with(ltrim($token->text, '\\'), 'Http\\Discovery\\')) {
-                    $offenders[] = \sprintf('%s:%d %s', basename($path), $token->line, $token->text);
+                    $offenders[] = \sprintf('%s:%d %s', substr($path, \strlen(RepositoryFiles::backend())), $token->line, $token->text);
                 }
             }
         }

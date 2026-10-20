@@ -18,7 +18,7 @@ paths:
   `nyholm/psr7` is the PSR-17 implementation the bundle's `Http\Discovery\Psr17Factory` looks for;
   `php-http/discovery` is `false` in `allow-plugins`, so nothing gets installed behind our back. That package is
   the bundle's, never in our `require`: `src/` takes the service `mcp.psr17_factory` by its PSR-17 interfaces
-  (`ResponseFactoryInterface`, `StreamFactoryInterface`), never by its class (#663, `McpEndpointTest`).
+  (one parameter typed `ResponseFactoryInterface&StreamFactoryInterface`), never by its class (#663, `McpEndpointTest`).
 - **A tool serves exactly what its route serves** (ADR 0006 D1). Every route-backed tool goes through
   `Application/RoutePayloadReaderInterface` (`Infrastructure/ApiPlatform/ApiPlatformRoutePayloadReader`): the
   resource's **single** `GET` operation the server may serve without an MCP connection (else

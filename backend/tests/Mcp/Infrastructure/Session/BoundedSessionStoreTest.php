@@ -37,7 +37,7 @@ final class BoundedSessionStoreTest extends TestCase
         $id = Uuid::v4();
 
         // L'identifiant reçu du client : le SDK en vérifie l'existence avant
-        // de lire la session (Protocol::resolveSession()).
+        // de lire la session (Mcp\Server\Protocol::resolveSession()).
         self::assertTrue($store->exists($id));
         self::assertFalse($store->read($id));
         self::assertTrue($this->mcpLog->hasRecordThatContains('MCP session unreadable', Level::Warning));
