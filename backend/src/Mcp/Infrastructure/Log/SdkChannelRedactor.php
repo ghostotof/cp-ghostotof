@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace App\Mcp\Infrastructure\Log;
 
-use Mcp\Exception\InvalidArgumentException;
 use Mcp\Exception\InvalidInputMessageException;
 use Mcp\Exception\PromptGetException;
 use Mcp\Exception\PromptNotFoundException;
 use Mcp\Exception\RegistryException;
 use Mcp\Exception\ResourceNotFoundException;
 use Mcp\Exception\ToolNotFoundException;
+use Mcp\Schema\JsonRpc\Error;
 use Monolog\Attribute\AsMonologProcessor;
 use Monolog\Level;
 use Monolog\LogRecord;
@@ -36,7 +36,8 @@ use Throwable;
  *    {@see self::MAX_CHARACTERS} caractères, et une exception devient sa forme
  *    normalisée, sans la pile ;
  *  - **le niveau des fautes du client** : le SDK écrit en `error` un outil ou un
- *    prompt inconnu, un refus du prompt, un argument requis absent — un anonyme
+ *    prompt inconnu, un refus du prompt, un argument requis absent ou d'un type
+ *    inconvertible — un anonyme
  *    pouvait écrire une ligne `error` par requête en production. Ces
  *    enregistrements passent en `notice`, sous le plafond `warning` du handler
  *    de production (monolog.yaml) : le journal d'appels `mcp_usage` en garde
@@ -44,10 +45,12 @@ use Throwable;
  *
  * Le classement des fautes du client est une liste fermée, écrite contre le SDK
  * 0.8.1 : par classe d'exception quand le SDK en a une qui ne désigne que le
- * client, par message exact sinon. Une faute serveur (une exception de câblage,
- * `RoleNeutralisationFailedException`) garde son niveau. SdkChannelRecordsTest
- * provoque chaque faute sur le vrai serveur : une montée de version du SDK qui
- * change un message ou une classe le fait rougir.
+ * client, par code (-32602) ou début de message pour une RegistryException, par
+ * message exact sinon. Une faute serveur (une exception de câblage,
+ * {@see \App\Mcp\Presentation\Prompt\RoleNeutralisationFailedException}) garde son
+ * niveau. {@see \App\Tests\Mcp\Infrastructure\Log\SdkChannelRecordsTest} provoque
+ * chaque faute sur le vrai serveur : une montée de version du SDK qui change un
+ * message ou une classe le fait rougir.
  */
 #[AsMonologProcessor(channel: 'mcp')]
 final class SdkChannelRedactor
@@ -81,8 +84,9 @@ final class SdkChannelRedactor
         PromptGetException::class,
         // Message JSON-RPC mal formé, méthode inconnue.
         InvalidInputMessageException::class,
-        // Argument d'un type que le SDK ne sait pas convertir (-32602).
-        InvalidArgumentException::class,
+        // Pas Mcp\Exception\InvalidArgumentException : le SDK la lève aussi pour
+        // un défaut de câblage (« Invalid handler type »), et un argument
+        // inconvertible arrive enveloppé dans une RegistryException.
     ];
 
     /**
@@ -98,8 +102,17 @@ final class SdkChannelRedactor
         'Received an id-less error response from client; cannot correlate it to a pending request.',
     ];
 
-    /** RegistryException est générique ; seul ce message-ci est une faute du client. */
-    private const string MISSING_ARGUMENT = 'Internal error: Missing required argument `';
+    /**
+     * RegistryException est générique : seuls ces débuts de message, levés par
+     * ReferenceHandler sur un argument reçu, sont une faute du client — un
+     * argument requis absent, un argument que le SDK n'a pas su convertir.
+     *
+     * @var list<string>
+     */
+    private const array CLIENT_ARGUMENT_FAULTS = [
+        'Internal error: Missing required argument `',
+        'Internal error: Error processing parameter `',
+    ];
 
     /** Profondeur de la chaîne `previous` gardée. */
     private const int MAX_PREVIOUS = 3;
@@ -134,7 +147,8 @@ final class SdkChannelRedactor
         }
 
         if ($exception instanceof RegistryException) {
-            return str_starts_with($exception->getMessage(), self::MISSING_ARGUMENT);
+            return Error::INVALID_PARAMS === $exception->getCode()
+                || array_any(self::CLIENT_ARGUMENT_FAULTS, static fn (string $prefix): bool => str_starts_with($exception->getMessage(), $prefix));
         }
 
         return array_any(self::CLIENT_FAULTS, static fn (string $class): bool => $exception instanceof $class);

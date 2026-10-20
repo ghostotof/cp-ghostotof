@@ -134,11 +134,44 @@ final class SdkChannelRecordsTest extends WebTestCase
         yield 'outil inconnu au nom démesuré' => ['tools/call', ['name' => str_repeat('z', self::HUGE), 'arguments' => new stdClass()]];
         yield 'méthode inconnue au nom démesuré' => [str_repeat('z', self::HUGE), []];
         yield 'prompt inconnu au nom démesuré' => ['prompts/get', ['name' => str_repeat('z', self::HUGE)]];
-        yield 'rôle refusé pour sa longueur' => ['prompts/get', ['name' => 'present_for_role', 'arguments' => ['role' => str_repeat('z', PromptRole::MAX_CHARACTERS + 1)]]];
         yield 'rôle absent' => ['prompts/get', ['name' => 'present_for_role', 'arguments' => new stdClass()]];
         yield 'langue inconnue du prompt' => ['prompts/get', ['name' => 'present_for_role', 'arguments' => ['role' => 'PHP developer', 'locale' => str_repeat('z', self::HUGE)]]];
         yield 'langue inconnue d\'un outil' => ['tools/call', ['name' => 'get_about', 'arguments' => ['locale' => str_repeat('z', self::HUGE)]]];
         yield 'complétion d\'un prompt inconnu' => ['completion/complete', ['ref' => ['type' => 'ref/prompt', 'name' => str_repeat('z', self::HUGE)], 'argument' => ['name' => 'role', 'value' => 'x']]];
+    }
+
+    /**
+     * Un argument refusé n'est pas plus recopié qu'un argument accepté : ni le
+     * rôle trop long, ni une langue inconnue, ni un rôle d'un autre type.
+     *
+     * @param array<string, mixed> $params
+     */
+    #[DataProvider('refusedArguments')]
+    public function testARefusedArgumentReachesNoRecordOfTheChannel(string $method, array $params): void
+    {
+        $client = self::createClient();
+        $sessionId = $this->initializeMcpSession($client);
+
+        $this->mcpCall($client, $sessionId, $method, $params);
+
+        self::assertNotSame([], $this->sdkRecords());
+        foreach ($this->formattedSdkRecords() as $line) {
+            self::assertStringNotContainsStringIgnoringCase('sentinelle', $line);
+        }
+    }
+
+    /**
+     * @return iterable<string, array{string, array<string, mixed>}>
+     */
+    public static function refusedArguments(): iterable
+    {
+        $tooLong = str_repeat('Sentinelle-643 ', intdiv(PromptRole::MAX_CHARACTERS, 15) + 1);
+        yield 'rôle refusé pour sa longueur' => ['prompts/get', ['name' => 'present_for_role', 'arguments' => ['role' => $tooLong]]];
+        yield 'langue inconnue du prompt' => ['prompts/get', ['name' => 'present_for_role', 'arguments' => ['role' => 'PHP developer', 'locale' => 'Sentinelle-643']]];
+        yield 'langue inconnue d\'un outil' => ['tools/call', ['name' => 'get_about', 'arguments' => ['locale' => 'Sentinelle-643']]];
+        // Le SDK 0.8.1 le convertit en « Array » (avertissement PHP sur le canal
+        // `php`, hors de ce canal) : le prompt répond, rien de la valeur ne sort.
+        yield 'rôle d\'un autre type' => ['prompts/get', ['name' => 'present_for_role', 'arguments' => ['role' => ['Sentinelle-643']]]];
     }
 
     /** Un corps qui n'est pas du JSON : la faute la moins chère à répéter. */

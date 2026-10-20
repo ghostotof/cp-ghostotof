@@ -9,6 +9,7 @@ use App\Mcp\Presentation\Prompt\RoleNeutralisationFailedException;
 use DateTimeImmutable;
 use JsonException;
 use LogicException;
+use Mcp\Exception\InvalidArgumentException;
 use Mcp\Exception\RegistryException;
 use Mcp\Exception\ToolNotFoundException;
 use Monolog\Level;
@@ -19,7 +20,7 @@ use stdClass;
 use Throwable;
 
 /**
- * Le pendant de SdkChannelRecordsTest, qui provoque les fautes du client sur le
+ * Le pendant de {@see SdkChannelRecordsTest}, qui provoque les fautes du client sur le
  * vrai serveur : ce que le processeur laisse passer tel quel. Une panne du
  * serveur garde son niveau — rétrogradée, elle disparaîtrait sous le plafond
  * `warning` du handler de production.
@@ -35,6 +36,9 @@ final class SdkChannelRedactorTest extends TestCase
         yield 'défaut de câblage d\'un outil' => ['Unhandled error during tool execution', new LogicException('wiring')];
         yield 'neutralisation du rôle en échec' => ['Unexpected error while handling prompt "present_for_role": "x".', RoleNeutralisationFailedException::fromPcre()];
         yield 'erreur du registre hors argument absent' => ['Unexpected error while handling prompt "p": "x".', RegistryException::internalError('Handler not callable.')];
+        // Le SDK lève aussi sa propre InvalidArgumentException pour un défaut de
+        // câblage (ReferenceHandler, HandlerResolver) : ce n'est pas le client.
+        yield 'gestionnaire d\'un type invalide' => ['Unhandled error during tool execution', new InvalidArgumentException('Invalid handler type')];
     }
 
     #[DataProvider('serverFaults')]
@@ -52,9 +56,21 @@ final class SdkChannelRedactorTest extends TestCase
         self::assertSame(Level::Info, $record->level);
     }
 
-    public function testAClientFaultIsDowngradedToNotice(): void
+    /**
+     * @return iterable<string, array{string, Throwable}>
+     */
+    public static function clientFaults(): iterable
     {
-        $record = (new SdkChannelRedactor())($this->record(Level::Error, 'Tool not found', ['exception' => new ToolNotFoundException('x')]));
+        yield 'outil inconnu' => ['Tool not found', new ToolNotFoundException('x')];
+        yield 'argument requis absent' => ['Unexpected error while handling prompt "p": "x".', RegistryException::internalError('Missing required argument `role` for p.')];
+        yield 'argument d\'un type inconvertible' => ['Unexpected error while handling prompt "p": "x".', RegistryException::internalError('Error processing parameter `role`: Array to string conversion')];
+        yield 'paramètre invalide (-32602)' => ['Unhandled error during tool execution', RegistryException::invalidParams('Parameter `ids` must be a list of values, not an object.')];
+    }
+
+    #[DataProvider('clientFaults')]
+    public function testAClientFaultIsDowngradedToNotice(string $message, Throwable $exception): void
+    {
+        $record = (new SdkChannelRedactor())($this->record(Level::Error, $message, ['exception' => $exception]));
 
         self::assertSame(Level::Notice, $record->level);
     }
