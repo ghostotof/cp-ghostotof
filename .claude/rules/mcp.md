@@ -314,28 +314,43 @@ paths:
   (`TruncatedIp`, on the bytes: IPv4 /24, IPv6 /48, an IPv4-mapped address written as the IPv4 it carries, a 6to4
   address `2002::/16` keeping only the first three bytes of its IPv4 — a /48 kept it whole; read **once, at
   `kernel.request`**: the `RequestStack` is empty at terminate and during an SSE answer) and
-  `declaredClient` (`clientInfo` from the session, name and version bounded to 64 characters: declared, never
+  `declaredClient` (`clientInfo` from the session, name and version bounded to 64 characters, control and format
+  characters removed — U+202E reverses what follows in `kubectl logs`, #664: declared, never
   checked). **The sessionless `2026-07-28` revision has the same `MCP call` line** (#664, the author's decision of
   2026-10-20: serve it and log it, rather than refuse it through `protocol_versions`, which would pin the handshake
   to one revision). The SDK serves it through `StatelessProtocol`, **`final`, built inside `Builder::build()`,
   with no event**: nothing to listen to nor decorate, so `Infrastructure/Log/ModernExchange` reads it at
   `kernel.terminate` from the HTTP request and response. The era is **the SDK's decision**, its own
-  `InboundClassifier` on the body and headers — never the header alone (an unknown revision in `_meta` is
-  served, and refused, by the modern leg; a modern header without the envelope is refused before any era and
-  keeps the fallback line). The method is the one **the SDK's `MessageFactory` recognises** (the class of the
+  `InboundClassifier` on the body and on the headers **as the SDK receives them**, converted by the bundle's
+  PSR-7 bridge (`mcp.psr_http_factory`, which trims blanks and drops a header carrying a control character) —
+  never the header alone (an unknown revision in `_meta` is served, and refused, by the modern leg; a modern
+  header without the envelope is refused before any era and keeps the fallback line). **Only a protocol answer
+  counts** — JSON, an SSE stream, an acknowledgement without body (which Symfony types `text/html`): an `Origin` or
+  `Host` the SDK refuses at its edge, before classifying (a `text/plain` 403), handled no message and keeps the
+  fallback line, as in the other era; accepted: the SDK's 4 MiB refusal (413) is JSON, read as a protocol error of
+  the method sent — nginx's 16 KiB comes first. The method is the one **the SDK's `MessageFactory` recognises** (the class of the
   typed request or notification), plus the two the stateless protocol serves before it, by its constants
   (`server/discover`, `subscriptions/listen`); any other is the caller's, unbounded, and written `null` — so is a
-  known method whose message is malformed, as in the other era. The outcome is read in the JSON answer (`error`
+  known method whose message is malformed, as in the other era, and one the factory throws on (a `TypeError` on a
+  scalar `_meta`, which the SDK never meets: it acknowledges a notification without building it). The factory is
+  built **without the extension messages** `Builder::build()` adds: bundle 0.14.1 enables none, and
+  `testTheServerEnablesNoExtension` (`server/discover` announces no `extensions`) turns red the day one is — the
+  reading must then get the server's factory. Whatever the reading throws leaves the fallback line, `reset()` in a
+  `finally` (`McpCallLogTerminateTest`). The outcome is read in the JSON answer (`error`
   and its `code`, `result.isError`), else from the status: a 202/400 without body (a notification), an SSE stream
-  (`listen`; a tool that notifies — none does) whose `getContent()` is `false`. `durationMs` is the HTTP
-  request's, `declaredClient` the `clientInfo` of the request's own `_meta`, bounded the same way.
+  (`listen`; a tool that notifies — none does) whose `getContent()` is `false`. **`durationMs` is the whole HTTP
+  request's** (firewall, listeners, sending the answer, `listen`'s 30 s), where the other era measures the
+  message's handling: a duration statistic keeps the two eras apart. `declaredClient` is the `clientInfo` of the
+  request's own `_meta`, bounded the same way.
   `McpCallLogTest` drives the real server in that revision (success, tool error, unknown tool and method,
-  removed method, `server/discover`, notification, unsupported revision, bounded client) through
-  `SpeaksMcp::postModernMcp()`; `ModernExchangeTest` covers what it cannot (the 30-second `listen` stream).
+  removed method, `server/discover`, prompt, notification, unsupported revision, batch, foreign `Origin`, scalar
+  `_meta`, malformed and bounded client) through `SpeaksMcp::postModernMcp()`; `ModernExchangeTest` covers what it
+  cannot (the 30-second `listen` stream, an edge refusal, headers trimmed or dropped by the bridge).
   **An HTTP request on `/api/mcp` that handled no message** — unreadable JSON, missing or expired
   session, `GET`, `DELETE`, a request refused before the SDK (#644: 400, `protocol-error`; under the modern
-  envelope it has a call line instead, method `null` and the refusal's `-32600`, `ModernExchange` reading what the
-  classifier says, not who answered) or by the SDK's classifier — leaves one `MCP request without call`
+  envelope it has a call line instead, `ModernExchange` reading what the classifier says, not who answered: the
+  method the SDK's factory recognises — `null` for a client response, `initialize` for an oversized declaration —
+  and the refusal's `-32600`), an edge refusal or one by the SDK's classifier — leaves one `MCP request without call`
   line (`httpMethod`, `httpStatus`, `protocolVersion` — `ProtocolVersion::tryFrom()` of the header, `null` otherwise
   —, `outcome`, `durationMs`, `ip`) at `kernel.terminate`. A `POST` there is a `protocol-error` (the SDK answers a
   parse error in 200), except a 202. Pending requests are keyed by object (a JSON-RPC id is the client's; a batch could repeat it before
@@ -346,7 +361,7 @@ paths:
   line is built field by field. Its own `info` handler in `when@prod`, like `ai_usage`, excluded from `main` and
   `console` (`McpLogChannelsTest`); `McpCallLogTest` reads it through the `all_channels_test` probe (sentinels
   in `role`, `Authorization` and `BEARER`, one-message batch, notification, fallbacks, IPv4/IPv6 callers).
-- **Three inbound messages are refused before the SDK** (#644): `Infrastructure/Http/InboundMessageRefusalListener`
+- **Five inbound messages are refused before the SDK** (#644, #664): `Infrastructure/Http/InboundMessageRefusalListener`
   (`kernel.request`, priority 15, `POST` on the canonical path `/api/mcp`, so `/api/%6Dcp` too) decodes once a body
   starting, after JSON blanks, with `[` or `{`, and answers **400** `application/json`, a JSON-RPC `-32600` without
   `id` — the form of the SDK transport's own refusals —, the reason and its message in the enum
@@ -373,10 +388,17 @@ paths:
   correct the SDK column, then the table's invariant (refuse every `Response`/`Error`, never a request) forces the
   listener to follow. The SDK stored such responses under ids of the client's choosing, accumulating ~30 KB per post
   up to the session bound (audit of #644, measured) — this server sends the client no request (no sampling,
-  elicitation nor roots); the day a tool asks one, this refusal must learn to recognise the expected answer.
+  elicitation nor roots); the day a tool asks one, this refusal must learn to recognise the expected answer;
+  (4) **a `params._meta` that is not an object** (#664, audit): the SDK's factory stores a notification's into an
+  `?array` property, and a scalar threw a `TypeError` — an `error` line of the `mcp` channel at will in the
+  handshake era, the whole call line lost in the sessionless one; (5) **a sessionless `clientInfo` the SDK cannot
+  read** (#664, audit), judged by `RequestMeta::fromParams()` itself: `StatelessProtocol::handle()` only catches
+  its `MissingRequestMetaException` (an incomplete envelope, a 400 it answers itself, left to it), and a name that
+  is not a string threw out of it — a 500 and a `critical` line at will.
   A one-message batch is served, its message judged like a single one; unreadable JSON is left to the SDK (`-32700`).
   The refusal precedes the session and the `Host` check (a foreign host gets this 400, not the SDK's 403: nothing is
-  served either way); `McpCallLog` writes its fallback line (`POST`, 400, `protocol-error`). Its messages are read by
+  served either way); `McpCallLog` writes its fallback line (`POST`, 400, `protocol-error`; a call line under the
+  modern envelope, above). Its messages are read by
   `AuthorNeverNamedTest`. **No body bound in the application**: `SdkChannelRecordsTest` sends 100 KB strings through
   the SDK on purpose, and the bound is nginx's (`.claude/rules/deploiement-nginx.md`, chunked included).
   `InboundMessageRefusalTest` pins every case; `McpEndpointTest`'s session-bound cases go through `_meta` since.

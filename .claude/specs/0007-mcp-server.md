@@ -296,7 +296,8 @@ décision du 2026-10-19, voir « Langue invalide »).
   horodatage, méthode JSON-RPC, outil ou prompt, issue (succès, erreur d'outil, erreur de protocole),
   durée, IP tronquée (IPv4 en /24, IPv6 en /48), et le `clientInfo` déclaré au `initialize`, noté comme
   déclaré. La révision sans session `2026-07-28`, que le SDK sert sans événement, a la même ligne (#664,
-  lue de la requête et de la réponse HTTP ; son `clientInfo` est celui du `_meta` de chaque requête). Jamais les arguments en clair (le `role` du prompt est du texte libre), jamais un jeton.
+  lue de la requête et de la réponse HTTP ; son `clientInfo` est celui du `_meta` de chaque requête, et
+  sa durée celle de la requête HTTP entière, une autre grandeur que celle de l'autre ère). Jamais les arguments en clair (le `role` du prompt est du texte libre), jamais un jeton.
 - Le registre RGPD (`docs/rgpd/registre-traitements.md`) reçoit ce traitement, et la politique de
   confidentialité du site est relue en conséquence.
 
@@ -362,6 +363,11 @@ décision du 2026-10-19, voir « Langue invalide »).
   `WWW-Authenticate`** (portant `resource_metadata`), renvoyé avant le SDK, pour les clients Claude ;
   des **`securitySchemes`** déclarés sur l'outil et l'erreur portant `_meta["mcp/www_authenticate"]`
   pour ChatGPT (ADR 0006 D3). Voir la question ouverte n°2.
+  *Amendé le 2026-10-20 (#664).* Le serveur sert aussi la révision sans session `2026-07-28` : le 401
+  reconnaît l'appel de l'outil nominatif **sous ses deux formes**, dans une session et sous l'enveloppe
+  `_meta` de chaque requête. L'ère se lit comme le journal la lit (`ModernExchange` : le classifieur du
+  SDK sur les en-têtes que le pont PSR-7 lui passe, puis sa fabrique de messages), jamais par l'en-tête
+  `Mcp-Name` seul : renvoyé avant le SDK, le 401 précède le contrôle qui le confronte au corps.
 - **Journal d'audit** (`SecurityAuditLoggerInterface`, canal `security_audit`) : trois événements
   nouveaux — connexion MCP accordée, connexion MCP révoquée (par la personne, par expiration, par
   réutilisation d'un jeton tourné), corpus nominatif lu (compte, connexion, client, outil ;
