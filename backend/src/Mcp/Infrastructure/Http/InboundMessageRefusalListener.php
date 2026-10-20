@@ -34,11 +34,10 @@ use Symfony\Component\HttpKernel\Event\RequestEvent;
  *   corps, trois fois plus une fois encodés ;
  * - **une réponse du client**, au sens du SDK — `error` ou `result`, lus
  *   avant `method` : une requête qui en porte un en est une (#671). Le SDK
- *   range chaque réponse en session sous
- *   l'identifiant que le client choisit (`Protocol::handleResponse()`), et
- *   elles s'accumulent jusqu'à la borne de session : la ligne réécrite à
- *   chaque requête grossissait de ~30 Ko par réponse postée (audit de #644,
- *   mesuré). Ce serveur n'envoie aucune requête au client (ni sampling, ni
+ *   range chaque réponse en session sous l'identifiant que le client choisit
+ *   (`Protocol::handleResponse()`), et elles s'accumulent jusqu'à la borne de
+ *   session : la ligne réécrite à chaque requête grossissait de ~30 Ko par
+ *   réponse postée (audit de #644, mesuré). Ce serveur n'envoie aucune requête au client (ni sampling, ni
  *   elicitation, ni roots) : aucune réponse n'est attendue. Le jour où un
  *   outil en sollicite une, ce refus doit apprendre à reconnaître la réponse
  *   attendue.
@@ -121,12 +120,16 @@ final readonly class InboundMessageRefusalListener
     }
 
     /**
-     * Le critère du SDK 0.8.1, dans son ordre (`MessageFactory::createMessage()`) :
-     * `error`, puis `result`, lus par `isset` **avant** `method`. Une requête
-     * portant un résultat est donc une réponse pour lui, rangée en session —
-     * exiger l'absence de `method` la laissait passer (#671). Une valeur `null`
-     * ne compte pas : le SDK sert alors la requête.
-     * `InboundMessageClassificationTest` lie ce critère à la `MessageFactory`.
+     * Le critère du SDK 0.8.1, dans son ordre
+     * ({@see \Mcp\JsonRpc\MessageFactory::createMessage()}) : `error`, puis
+     * `result`, lus par `isset` **avant** `method`. Une requête portant un
+     * résultat est donc une réponse pour lui, rangée en session — exiger
+     * l'absence de `method` la laissait passer (#671). Une valeur `null` ne
+     * compte pas : le SDK sert alors la requête. Une valeur fausse mais non
+     * nulle (`false`, `0`, `""`) compte : le SDK la refuse ensuite comme
+     * invalide, ce refus la précède, sans identifiant.
+     * {@see \App\Tests\Mcp\Infrastructure\Http\InboundMessageClassificationTest}
+     * lie ce critère à la `MessageFactory`.
      *
      * @param array<mixed> $message
      */

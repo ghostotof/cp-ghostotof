@@ -5,9 +5,14 @@ declare(strict_types=1);
 namespace App\Tests\Mcp\Infrastructure\Http;
 
 use App\Mcp\Infrastructure\Http\InboundMessageRefusal;
+use App\Mcp\Infrastructure\Session\BoundedSessionStore;
 use App\Tests\Mcp\Support\SpeaksMcp;
 use Doctrine\DBAL\Connection;
 use Doctrine\ORM\EntityManagerInterface;
+use Mcp\Server\Protocol;
+use Mcp\Server\Session\Session;
+use PHPUnit\Framework\Attributes\DataProvider;
+use ReflectionClassConstant;
 use stdClass;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
@@ -251,32 +256,49 @@ final class InboundMessageRefusalTest extends WebTestCase
     }
 
     /**
-     * Le SDK lit `error`, puis `result`, avant `method` (`MessageFactory`) :
-     * une requête qui porte un résultat est pour lui une réponse, rangée en
-     * session sous l'identifiant choisi (#671). Elle passait le refus, qui
-     * exigeait l'absence de `method`, et la session grossissait à chaque envoi.
+     * Le SDK lit `error`, puis `result`, avant `method`
+     * ({@see \Mcp\JsonRpc\MessageFactory}) : une requête qui porte un résultat
+     * ou une erreur est pour lui une réponse, rangée en session sous
+     * l'identifiant choisi (#671). Elle passait le refus, qui exigeait
+     * l'absence de `method`, et la session grossissait à chaque envoi.
      */
-    public function testARequestCarryingAResultIsRefusedAndStoresNoResponse(): void
+    #[DataProvider('requestsCarryingAResponse')]
+    public function testARequestCarryingAResponseIsRefusedAndStoresNoResponse(string $message): void
     {
         $client = self::createClient();
         $sessionId = $this->initializeMcpSession($client);
 
-        $this->postRawMcp($client, $sessionId, '{"jsonrpc":"2.0","id":"a1","method":"ping","result":{}}');
+        $this->postRawMcp($client, $sessionId, $message);
 
         $this->assertRefused($client, InboundMessageRefusal::ClientResponse);
         self::assertSame([], $this->storedClientResponses($sessionId));
     }
 
-    /** De même pour une requête qui porte une erreur. */
-    public function testARequestCarryingAnErrorIsRefusedAndStoresNoResponse(): void
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function requestsCarryingAResponse(): iterable
+    {
+        yield 'résultat' => ['{"jsonrpc":"2.0","id":"a1","method":"ping","result":{}}'];
+        yield 'erreur' => ['{"jsonrpc":"2.0","id":"a1","method":"ping","error":{"code":-32000,"message":"no"}}'];
+    }
+
+    /**
+     * Témoin de la lecture ci-dessus : une réponse rangée comme
+     * {@see Protocol::handleResponse()} la range — sous sa clé, par la
+     * {@see Session} du SDK — est bien relue. Sans lui, une clé renommée par le
+     * SDK laisserait le test précédent vert sans rien prouver.
+     */
+    public function testTheSessionReadingSeesAResponseStoredAsTheSdkStoresIt(): void
     {
         $client = self::createClient();
         $sessionId = $this->initializeMcpSession($client);
 
-        $this->postRawMcp($client, $sessionId, '{"jsonrpc":"2.0","id":"a1","method":"ping","error":{"code":-32000,"message":"no"}}');
+        $session = new Session($this->sessionStore(), Uuid::fromString($sessionId));
+        $session->set($this->sdkResponsesKey().'.a1', ['jsonrpc' => '2.0', 'id' => 'a1', 'result' => []]);
+        self::assertTrue($session->save());
 
-        $this->assertRefused($client, InboundMessageRefusal::ClientResponse);
-        self::assertSame([], $this->storedClientResponses($sessionId));
+        self::assertSame(['a1' => ['jsonrpc' => '2.0', 'id' => 'a1', 'result' => []]], $this->storedClientResponses($sessionId));
     }
 
     /** Une notification n'est pas une réponse : elle passe. */
@@ -345,24 +367,37 @@ final class InboundMessageRefusalTest extends WebTestCase
     }
 
     /**
-     * Les réponses du client que la session a enregistrées, lues dans le store
-     * comme le SDK les écrit (`Protocol::handleResponse()`, clé
-     * `_mcp.responses.<id>`, rangée en tableaux imbriqués par `Session::set()`).
+     * Les réponses du client que la session a enregistrées, lues comme le SDK
+     * les lit : par sa {@see Session}, sous la clé de {@see Protocol}.
      *
      * @return array<mixed>
      */
     private function storedClientResponses(string $sessionId): array
     {
-        $raw = self::getContainer()->get('mcp.server.portfolio.session.store')->read(Uuid::fromString($sessionId));
-        self::assertIsString($raw, 'La session doit exister encore.');
-        $data = json_decode($raw, true, flags: \JSON_THROW_ON_ERROR);
-        self::assertIsArray($data);
-        $internal = $data['_mcp'] ?? [];
-        self::assertIsArray($internal);
-        $responses = $internal['responses'] ?? [];
+        $id = Uuid::fromString($sessionId);
+        self::assertTrue($this->sessionStore()->exists($id), 'La session doit exister encore.');
+        $responses = new Session($this->sessionStore(), $id)->get($this->sdkResponsesKey(), []);
         self::assertIsArray($responses);
 
         return $responses;
+    }
+
+    /**
+     * La clé sous laquelle {@see Protocol::handleResponse()} range les réponses
+     * (`_mcp.responses` en 0.8.1), lue dans le SDK : renommée, elle fait
+     * échouer la lecture au lieu de la laisser vide.
+     */
+    private function sdkResponsesKey(): string
+    {
+        $key = new ReflectionClassConstant(Protocol::class, 'SESSION_RESPONSES')->getValue();
+        self::assertIsString($key);
+
+        return $key;
+    }
+
+    private function sessionStore(): BoundedSessionStore
+    {
+        return self::getContainer()->get('mcp.server.portfolio.session.store');
     }
 
     private function sessionRows(): int

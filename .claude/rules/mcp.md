@@ -338,14 +338,17 @@ paths:
   left the protocol at revision 2025-06-18, the only handshake revision served; (2) **an `initialize` whose
   `clientInfo` + `capabilities`** weigh more than `MAX_DECLARATION_BYTES` (4 096) **as the session stores them**
   (`declarationBytes()`: `json_encode` without flags, six bytes per accented character) — real clients declare under
-  1 KiB; accepted: a client sending a large icon as a data URI is refused; (3) **a client response** — the SDK's
-  criterion in its order (`MessageFactory::createMessage()`): `error`, then `result`, by `isset`, **before** `method`, so a
-  request carrying a result is a response too (#671: requiring no `method` let `{"method":"ping","id":"a1","result":{}}`
-  through, stored under `responses.a1`); a `null` value does not count, the SDK then serves the request.
-  `InboundMessageClassificationTest` runs the SDK's real `MessageFactory` on a hand-written table and fails when its
-  classification moves — realign the listener then, not the table. Such a response the SDK stored under ids of the client's choosing, accumulating
-  ~30 KB per post up to the session bound (audit of #644, measured) — this server sends the client no request (no
-  sampling, elicitation nor roots); the day a tool asks one, this refusal must learn to recognise the expected answer.
+  1 KiB; accepted: a client sending a large icon as a data URI is refused; (3) **a client response**, by the SDK's
+  criterion in its order (`MessageFactory::createMessage()`): `error`, then `result`, by `isset`, **before** `method` —
+  a request carrying either is a response too (#671: requiring no `method` let
+  `{"method":"ping","id":"a1","result":{}}` through, stored under `responses.a1`). A `null` value does not count (the SDK
+  serves the request); a falsy non-null one (`false`, `0`, `""`) does (the SDK then refuses it as invalid, with its id;
+  refused here first, without). `InboundMessageClassificationTest` holds a hand-written table — the message, what the
+  real `MessageFactory` makes of it, whether the listener refuses it — and fails when the SDK classifies otherwise:
+  correct the SDK column, then the table's invariant (refuse every `Response`/`Error`, never a request) forces the
+  listener to follow. The SDK stored such responses under ids of the client's choosing, accumulating ~30 KB per post
+  up to the session bound (audit of #644, measured) — this server sends the client no request (no sampling,
+  elicitation nor roots); the day a tool asks one, this refusal must learn to recognise the expected answer.
   A one-message batch is served, its message judged like a single one; unreadable JSON is left to the SDK (`-32700`).
   The refusal precedes the session and the `Host` check (a foreign host gets this 400, not the SDK's 403: nothing is
   served either way); `McpCallLog` writes its fallback line (`POST`, 400, `protocol-error`). Its messages are read by
