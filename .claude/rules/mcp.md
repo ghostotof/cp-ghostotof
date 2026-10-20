@@ -221,7 +221,7 @@ paths:
   version) instead of the 404 that makes a client re-initialise. The decorator remembers the destroyed id
   (`ResetInterface`) and refuses it on `exists`/`read`/`write`; the answer queued for that request is lost
   (it could not fit), the client sees no JSON-RPC answer, then a 404. The **number** of sessions per IP is
-  the nginx `mcp` zone's business (#644), not the bound's. **The bound must fit the largest legitimate
+  the nginx `mcpsession` zone's business (#644, 10 creations per minute), not the bound's. **The bound must fit the largest legitimate
   answer**: the SDK queues a tool's response in the session before sending it, so every answer goes through
   `cache_items` — phase 2's nominative corpus included (measure it there). **Guarded since #644**:
   `RouteBackedToolsTest::testTheAnswerQueuedInTheSessionStaysFarBelowTheSessionBound` measures, per route-backed tool on

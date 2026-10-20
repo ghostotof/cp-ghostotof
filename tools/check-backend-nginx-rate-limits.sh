@@ -70,25 +70,34 @@ source "${ROOT}/tools/lib/security-headers.sh"
 
 CURL_OPTS=(--connect-timeout 2 --max-time 5)
 
-# <chemin> <méthode> <burst de la zone> <zone>
+# <chemin> <méthode> <burst de la zone> <zone> [<en-tête>:<valeur>, sans espace]
 ZONES=(
   "/api/contact POST 5 contact"
   "/api/account/password-setup POST 10 pwsetup"
   "/api/account/base-access POST 10 baseaccess"
   "/api/login_check POST 10 login"
   "/api/assistant/answers POST 5 assistant"
-  # Serveur MCP (spec 0007, #644) : la location exacte couvre toutes les
-  # méthodes. La ligne GET suit la ligne POST, donc trouve la zone déjà vide :
-  # son 429 immédiat prouve que le GET compte dans la même zone, avant que
-  # `publicapi` ne soit saturée par la ligne suivante.
-  "/api/mcp POST 20 mcp"
-  "/api/mcp GET 20 mcp"
+  # Serveur MCP (spec 0007, #644), location exacte, toutes méthodes. Deux
+  # zones : `mcpsession` ne compte que les créations de session (POST sans
+  # en-tête Mcp-Session-Id), `mcp` toutes les requêtes. La ligne POST de `mcp`
+  # porte donc un identifiant (factice : nginx ne le vérifie pas), sans quoi
+  # `mcpsession` (rafale 5) refuserait la première. La ligne GET a une rafale
+  # de 0 : elle suit la ligne POST, et son 429 dans les sondes ne vient que
+  # d'une zone que le POST vient de vider — le même compteur. Avant la ligne
+  # suivante, qui sature `publicapi`.
+  "/api/mcp POST 5 mcpsession"
+  "/api/mcp POST 20 mcp Mcp-Session-Id:00000000-0000-0000-0000-000000000000"
+  "/api/mcp GET 0 mcp"
   "/api/watch GET 200 publicapi"
 )
 # Bornes de corps propres à une location : <chemin> <octets admis>. Un corps
-# d'un octet de plus doit être refusé en 413 par nginx, avant PHP ; un corps
-# pile à la borne, non. Le 413 naît à la recherche de location (find-config),
-# avant la phase preaccess : ces requêtes ne consomment aucune zone.
+# d'un octet de plus doit être refusé en 413 par nginx, avant PHP, annoncé par
+# Content-Length comme envoyé en `Transfer-Encoding: chunked` ; un corps pile
+# à la borne, non. Avec Content-Length, le 413 naît à la recherche de location
+# (find-config), avant toute zone ; en chunked, à la lecture du corps, dans la
+# location qui fait le `fastcgi_pass` — d'où une location qui le fait
+# elle-même : avec `try_files`, le corps était lu sous `~ ^/index\.php`, qui
+# n'a que le 1 Mo du bloc server (relectures de #644, mesuré).
 BODY_LIMITS=(
   "/api/mcp 16384"
 )
@@ -107,7 +116,7 @@ MAX_PROBES=10
 # avoir jamais été testée.
 declare -A LISTED=()
 for zone in "${ZONES[@]}"; do
-  read -r _ _ _ name <<< "$zone"
+  read -r _ _ _ name _ <<< "$zone"
   LISTED[$name]=1
 done
 for target in "${CONFS[@]}"; do
@@ -120,18 +129,25 @@ for target in "${CONFS[@]}"; do
   done < <(grep -oE '^[[:space:]]*limit_req[[:space:]]+zone=[A-Za-z0-9_]+' "${ROOT}/${conf}" | sed 's/.*zone=//' | sort -u)
 done
 
-# Miroir (#644) : les déclarations de zones, puis chaque location de
-# MIRRORED_LOCATIONS, identiques dans les deux confs. Le sondage ci-dessous
-# prouve qu'une zone répond, pas qu'elle a le même débit des deux côtés.
-# zone_declarations <conf> : les lignes limit_req_zone / limit_conn_zone, nues.
-zone_declarations() {
-  grep -E '^[[:space:]]*limit_(req|conn)_zone[[:space:]]' "$1" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+/ /g' | sort
+# Miroir (#644) : tout le niveau `http` (real_ip, `map`, déclarations de
+# zones), puis chaque location de MIRRORED_LOCATIONS, identiques dans les deux
+# confs. Le sondage ci-dessous prouve qu'une zone répond, pas qu'elle a le
+# même débit des deux côtés.
+# http_level <conf> : les directives avant `server {`, commentaires et blancs
+# retirés.
+http_level() {
+  awk '/^server[[:space:]]*\{/ { exit }
+    { sub(/#.*/, ""); gsub(/^[[:space:]]+|[[:space:]]+$/, ""); gsub(/[[:space:]]+/, " ") }
+    $0 != "" { print }' "$1"
 }
 # location_block <conf> <ouverture> : les directives du bloc `location
 # <ouverture> {`, commentaires et blancs retirés ; rien si le bloc manque.
+# L'amont de `fastcgi_pass` est la seule divergence admise (`backend:9000` en
+# dev, `127.0.0.1:9000` dans le pod) : il est masqué.
 location_block() {
   awk -v opening="location $2 {" '
-    { line = $0; sub(/#.*/, "", line); gsub(/^[[:space:]]+|[[:space:]]+$/, "", line); gsub(/[[:space:]]+/, " ", line) }
+    { line = $0; sub(/#.*/, "", line); gsub(/^[[:space:]]+|[[:space:]]+$/, "", line); gsub(/[[:space:]]+/, " ", line)
+      sub(/^fastcgi_pass [^;]+;$/, "fastcgi_pass <amont>;", line) }
     !inside && line == opening { inside = 1; next }
     inside && line == "}" { exit }
     inside && line != "" { print line }
@@ -139,8 +155,8 @@ location_block() {
 }
 read -r FIRST_CONF _ <<< "${CONFS[0]}"
 read -r SECOND_CONF _ <<< "${CONFS[1]}"
-if ! diff <(zone_declarations "${ROOT}/${FIRST_CONF}") <(zone_declarations "${ROOT}/${SECOND_CONF}") > /dev/null; then
-  printf '  \033[31mMIROIR\033[0m      déclarations de zones différentes entre %s et %s   <-- aligner les deux\n' "$FIRST_CONF" "$SECOND_CONF"
+if ! diff <(http_level "${ROOT}/${FIRST_CONF}") <(http_level "${ROOT}/${SECOND_CONF}") > /dev/null; then
+  printf '  \033[31mMIROIR\033[0m      niveau http (real_ip, map, zones) différent entre %s et %s   <-- aligner les deux\n' "$FIRST_CONF" "$SECOND_CONF"
   FAILURES=$((FAILURES + 1))
 fi
 for opening in "${MIRRORED_LOCATIONS[@]}"; do
@@ -202,20 +218,22 @@ start_nginx() {
 # check_zone <conf> <chemin> <méthode> <burst> <zone> : vide la rafale, puis
 # juge le premier 429 obtenu.
 check_zone() {
-  local conf="$1" path="$2" method="$3" burst="$4" zone="$5" i raw code="" body_file
+  local conf="$1" path="$2" method="$3" burst="$4" zone="$5" header="${6:-}" i raw code="" body_file
+  local -a headers=()
+  [ -n "$header" ] && headers=(-H "${header/:/: }")
   body_file="$(mktemp)"
 
   # Rafale vidée d'un coup : burst + 1 requêtes, 50 à la fois. Le `?n=[…]` ne
   # sert qu'à faire générer les URL par curl ; la zone compte par IP, et la
   # location se choisit sur le chemin seul. Les codes sont ignorés : seule
   # compte la réponse jugée ensuite. `|| true` : un échec ici se reverra plus bas.
-  curl -s "${CURL_OPTS[@]}" --parallel --parallel-max 50 -X "$method" \
+  curl -s "${CURL_OPTS[@]}" --parallel --parallel-max 50 -X "$method" "${headers[@]}" \
     -o /dev/null "${BASE}${path}?n=[0-${burst}]" > /dev/null 2>&1 || true
 
   for i in $(seq 1 "$MAX_PROBES"); do
     # `|| true` : sous `set -e`, un seul curl en échec (délai dépassé)
     # arrêterait tout le script sans dire quelle zone était en cours.
-    raw="$(curl -sS "${CURL_OPTS[@]}" -X "$method" -D - -o "$body_file" \
+    raw="$(curl -sS "${CURL_OPTS[@]}" -X "$method" "${headers[@]}" -D - -o "$body_file" \
       -w 'x-audit-http-code: %{http_code}\n' "${BASE}${path}" 2>&1 || true)"
     code="$(sed -n 's/^x-audit-http-code: //p' <<< "$raw" | tail -1)"
     [ "$code" = "429" ] && break
@@ -250,27 +268,35 @@ check_zone() {
 
 # check_body_limit <conf> <chemin> <octets admis> : un corps d'un octet de
 # trop est refusé en 413, un corps pile à la borne passe la borne (502 ici,
-# faute de php-fpm — tout sauf 413).
+# faute de php-fpm — tout sauf 413), annoncé par Content-Length puis envoyé
+# en chunked. Les sondes portent un identifiant de session factice : elles
+# n'entament pas la zone des créations de session sondée ensuite.
 check_body_limit() {
-  local conf="$1" path="$2" limit="$3" size code expected ok
-  for size in "$((limit + 1))" "$limit"; do
-    head -c "$size" /dev/zero | tr '\0' 'a' > "$BODY_FILE"
-    code="$(curl -s "${CURL_OPTS[@]}" -X POST -H 'Content-Type: application/json' \
-      --data-binary "@${BODY_FILE}" -o /dev/null -w '%{http_code}' "${BASE}${path}" 2>/dev/null || true)"
-    if [ "$size" -gt "$limit" ]; then
-      expected="413"
-      [ "$code" = "413" ] && ok=1 || ok=0
-    else
-      expected="autre que 413"
-      [ -n "$code" ] && [ "$code" != "000" ] && [ "$code" != "413" ] && ok=1 || ok=0
-    fi
-    if [ "$ok" = 1 ]; then
-      printf '  \033[32mOK\033[0m      %s : corps de %s octets → %s\n' "$path" "$size" "$code"
-    else
-      printf '  \033[31mKO\033[0m      %s : corps de %s octets → « %s », %s attendu (borne %s, %s)   <-- client_max_body_size de la location ?\n' \
-        "$path" "$size" "${code:-aucun}" "$expected" "$limit" "$conf"
-      FAILURES=$((FAILURES + 1))
-    fi
+  local conf="$1" path="$2" limit="$3" size code expected ok framing
+  local -a framing_opts
+  for framing in content-length chunked; do
+    framing_opts=()
+    [ "$framing" = chunked ] && framing_opts=(-H 'Transfer-Encoding: chunked')
+    for size in "$((limit + 1))" "$limit"; do
+      head -c "$size" /dev/zero | tr '\0' 'a' > "$BODY_FILE"
+      code="$(curl -s "${CURL_OPTS[@]}" -X POST -H 'Content-Type: application/json' \
+        -H 'Mcp-Session-Id: 00000000-0000-0000-0000-000000000000' "${framing_opts[@]}" \
+        --data-binary "@${BODY_FILE}" -o /dev/null -w '%{http_code}' "${BASE}${path}" 2>/dev/null || true)"
+      if [ "$size" -gt "$limit" ]; then
+        expected="413"
+        [ "$code" = "413" ] && ok=1 || ok=0
+      else
+        expected="autre que 413"
+        [ -n "$code" ] && [ "$code" != "000" ] && [ "$code" != "413" ] && ok=1 || ok=0
+      fi
+      if [ "$ok" = 1 ]; then
+        printf '  \033[32mOK\033[0m      %s : corps de %s octets (%s) → %s\n' "$path" "$size" "$framing" "$code"
+      else
+        printf '  \033[31mKO\033[0m      %s : corps de %s octets (%s) → « %s », %s attendu (borne %s, %s)   <-- client_max_body_size, et fastcgi_pass, de la location ?\n' \
+          "$path" "$size" "$framing" "${code:-aucun}" "$expected" "$limit" "$conf"
+        FAILURES=$((FAILURES + 1))
+      fi
+    done
   done
 }
 BODY_FILE="$(mktemp)"
