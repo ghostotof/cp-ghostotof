@@ -43,5 +43,6 @@ export function usePortfolioContent() {
     additionalTechnologies: computed(() => repository.getAdditionalTechnologies(currentLocale.value)),
     legalNoticeContent: computed(() => repository.getLegalNoticeContent(currentLocale.value)),
     privacyPolicyContent: computed(() => repository.getPrivacyPolicyContent(currentLocale.value)),
+    connectAssistantContent: computed(() => repository.getConnectAssistantContent(currentLocale.value)),
   }
 }
