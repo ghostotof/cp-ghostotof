@@ -8,6 +8,8 @@ use App\Shared\Infrastructure\Http\CanonicalPath;
 use JsonException;
 use Mcp\Schema\JsonRpc\Error;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
+use Symfony\Component\HttpFoundation\JsonResponse;
+use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Event\RequestEvent;
 
@@ -29,7 +31,11 @@ use Symfony\Component\HttpKernel\Event\RequestEvent;
  * JSON-RPC `-32600` sans identifiant (ADR 0006 ; la révision 2025-06-18 veut
  * un statut HTTP d'erreur pour une entrée que le serveur n'accepte pas).
  *
- * Le corps n'est décodé que s'il commence par un crochet : borné à 16 Kio par
+ * Le prédicat est celui du SDK (`MessageFactory::create()`) : `json_decode`
+ * en tableau associatif, puis toute liste PHP est un lot. Un objet aux clés
+ * `"0"`, `"1"`… en est donc un aussi — il passait quand seul le crochet
+ * était regardé (relectures de #644, 100 `tools/call` servis, mesuré). Le
+ * corps n'est décodé que s'il commence par `[` ou `{` : borné à 16 Kio par
  * nginx, il l'est déjà quand il arrive ici.
  */
 #[AsEventListener(event: RequestEvent::class, priority: 15)]
@@ -50,7 +56,7 @@ final readonly class JsonRpcBatchRefusalListener
 
         // Chemin décodé (CanonicalPath, issue #77) : `/api/%6Dcp` est routé
         // vers le serveur MCP, il doit être refusé de même.
-        if ('POST' !== $request->getMethod() || self::ENDPOINT !== CanonicalPath::of($request)) {
+        if (Request::METHOD_POST !== $request->getMethod() || self::ENDPOINT !== CanonicalPath::of($request)) {
             return;
         }
 
@@ -58,17 +64,17 @@ final readonly class JsonRpcBatchRefusalListener
             return;
         }
 
-        $event->setResponse(new Response(
+        $event->setResponse(JsonResponse::fromJsonString(
             json_encode(Error::forInvalidRequest(self::REFUSAL), \JSON_THROW_ON_ERROR),
             Response::HTTP_BAD_REQUEST,
-            ['Content-Type' => 'application/json'],
         ));
     }
 
     private function isBatchOfSeveralMessages(string $body): bool
     {
         // Les blancs JSON seulement (RFC 8259) : ceux que `json_decode` admet.
-        if (!str_starts_with(ltrim($body, " \t\n\r"), '[')) {
+        $head = ltrim($body, " \t\n\r");
+        if (!str_starts_with($head, '[') && !str_starts_with($head, '{')) {
             return false;
         }
 

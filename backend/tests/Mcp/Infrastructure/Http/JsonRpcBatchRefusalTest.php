@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Mcp\Infrastructure\Http;
 
+use App\Mcp\Infrastructure\Http\JsonRpcBatchRefusalListener;
 use App\Tests\Mcp\Support\SpeaksMcp;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
@@ -79,6 +80,45 @@ final class JsonRpcBatchRefusalTest extends WebTestCase
         $this->assertBatchRefused($client);
     }
 
+    /**
+     * Le SDK décode en tableau associatif (`json_decode(..., true)`) puis
+     * tient pour un lot toute liste PHP : un objet aux clés `"0"`, `"1"`…
+     * en est une, et passait le refus quand celui-ci ne regardait que le
+     * crochet (relectures de #644, mesuré : 100 `tools/call` servis).
+     */
+    public function testAnObjectWithListKeysIsABatchToo(): void
+    {
+        $client = self::createClient();
+        $sessionId = $this->initializeMcpSession($client);
+
+        $this->postRawMcp($client, $sessionId, '{"0":{"jsonrpc":"2.0","id":2,"method":"ping"},"1":{"jsonrpc":"2.0","id":3,"method":"ping"}}');
+
+        $this->assertBatchRefused($client);
+    }
+
+    /** Un objet à une seule clé `"0"` est un lot d'un message : le SDK le sert. */
+    public function testAnObjectWithASingleListKeyIsServed(): void
+    {
+        $client = self::createClient();
+        $sessionId = $this->initializeMcpSession($client);
+
+        $this->postRawMcp($client, $sessionId, '{"0":{"jsonrpc":"2.0","id":2,"method":"ping"}}');
+
+        self::assertResponseIsSuccessful();
+        self::assertStringNotContainsString(JsonRpcBatchRefusalListener::REFUSAL, (string) $client->getResponse()->getContent());
+    }
+
+    /** Un lot vide n'est pas un lot de plusieurs messages : le SDK le refuse lui-même. */
+    public function testAnEmptyBatchIsLeftToTheSdk(): void
+    {
+        $client = self::createClient();
+        $sessionId = $this->initializeMcpSession($client);
+
+        $this->postRawMcp($client, $sessionId, '[]');
+
+        self::assertStringNotContainsString(JsonRpcBatchRefusalListener::REFUSAL, (string) $client->getResponse()->getContent());
+    }
+
     /** Un lot d'un seul message coûte un message : le SDK le sert. */
     public function testABatchOfOneMessageIsServed(): void
     {
@@ -88,7 +128,7 @@ final class JsonRpcBatchRefusalTest extends WebTestCase
         $this->postMcp($client, $sessionId, [['jsonrpc' => '2.0', 'id' => 2, 'method' => 'ping']]);
 
         self::assertResponseIsSuccessful();
-        self::assertStringNotContainsString('batches', (string) $client->getResponse()->getContent());
+        self::assertStringNotContainsString(JsonRpcBatchRefusalListener::REFUSAL, (string) $client->getResponse()->getContent());
     }
 
     public function testASingleMessageIsServed(): void
@@ -110,7 +150,7 @@ final class JsonRpcBatchRefusalTest extends WebTestCase
 
         $this->postRawMcp($client, $sessionId, '[{"jsonrpc":');
 
-        self::assertStringNotContainsString('batches', (string) $client->getResponse()->getContent());
+        self::assertStringNotContainsString(JsonRpcBatchRefusalListener::REFUSAL, (string) $client->getResponse()->getContent());
         self::assertSame(-32700, $this->decodeMcpResponse($client)['error']['code']);
     }
 
@@ -123,7 +163,7 @@ final class JsonRpcBatchRefusalTest extends WebTestCase
             'jsonrpc' => '2.0',
             'error' => [
                 'code' => -32600,
-                'message' => 'JSON-RPC batches are not supported: send one message per request.',
+                'message' => JsonRpcBatchRefusalListener::REFUSAL,
             ],
         ], $this->decodeMcpResponse($client));
     }
