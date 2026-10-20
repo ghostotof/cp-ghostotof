@@ -43,6 +43,8 @@
 #     deux débits différents) ;
 #   - les bornes de corps de BODY_LIMITS : 413 d'un octet au-delà, rien à la
 #     borne.
+# Depuis #672, ce que la clé de la zone `mcpsession` compte comme une
+# création de session (check_session_key).
 #
 # Règle à respecter : ajouter une zone `limit_req` dans les confs, c'est
 # ajouter une ligne à ZONES ci-dessous — sinon le script échoue en nommant la
@@ -110,6 +112,15 @@ MIRRORED_LOCATIONS=(
 # Requêtes une à une après la rafale : une ou deux ont pu être rechargées par
 # le taux de la zone pendant qu'on la vidait.
 MAX_PROBES=10
+# Clé de la zone `mcpsession` (#672) : ce que le SDK lit comme une absence de
+# session — pas d'en-tête Mcp-Session-Id, un en-tête vide ou `0` — compte comme
+# une création, sauf la révision sans session 2026-07-28, qui n'écrit rien en
+# base. Rafale de la zone et nombre de requêtes admises avant son 429 : 1 + la
+# rafale, plus une marge pour un jeton rechargé (10 r/min, un toutes les 6 s).
+# Bien en deçà des 21 de la zone `mcp` (rafale 20) : un 429 dans la borne ne
+# peut venir que de `mcpsession`.
+MCPSESSION_BURST=5
+MCPSESSION_MAX_ADMITTED=$((MCPSESSION_BURST + 3))
 
 # Couverture : chaque zone `limit_req` déclarée dans une des confs doit avoir
 # sa ligne dans ZONES. Sans ce contrôle, une zone oubliée resterait verte sans
@@ -299,6 +310,55 @@ check_body_limit() {
     done
   done
 }
+# mcp_post <en-têtes curl…> : un POST sur /api/mcp, code HTTP sur la sortie.
+mcp_post() {
+  curl -s "${CURL_OPTS[@]}" -X POST "$@" -o /dev/null -w '%{http_code}' "${BASE}/api/mcp" 2>/dev/null || true
+}
+
+# check_session_key <conf> : sur des compteurs neufs (le conteneur que vient
+# de lancer start_nginx), ce que la clé de `mcpsession` compte (#672).
+#   1. Des POST portant `Mcp-Session-Id: 0`, une à une : le 429 doit tomber
+#      dans MCPSESSION_MAX_ADMITTED — la zone `mcp` en admettrait 21. Le SDK
+#      lit `0` comme une absence de session : sans cette ligne du `map`, une
+#      création déguisée n'était comptée que par `mcp`.
+#   2. La zone vidée, un POST à l'en-tête vide : 429 (même lecture du SDK).
+#   3. Un POST sans session de la révision 2026-07-28 : pas de 429. Le SDK le
+#      sert sans session (rien en base) ; compté, un client moderne légitime
+#      était bridé à 10 appels par minute.
+#   4. Témoin du 3 : la même requête annonçant une révision du handshake
+#      (2025-06-18) reste comptée, 429 — seule 2026-07-28 est exemptée.
+check_session_key() {
+  local conf="$1" i code="" admitted=""
+  for i in $(seq 1 "$((MCPSESSION_MAX_ADMITTED + 1))"); do
+    code="$(mcp_post -H 'Mcp-Session-Id: 0')"
+    if [ "$code" = "429" ]; then admitted=$((i - 1)); break; fi
+  done
+  if [ -n "$admitted" ] && [ "$admitted" -le "$MCPSESSION_MAX_ADMITTED" ]; then
+    printf '  \033[32mOK\033[0m      mcpsession : « Mcp-Session-Id: 0 » compté, 429 après %s POST\n' "$admitted"
+  else
+    printf '  \033[31mKO\033[0m      mcpsession : %s POST « Mcp-Session-Id: 0 » sans 429 (dernier code « %s », %s)   <-- `0` vaut une absence de session pour le SDK : clé du map $mcp_new_session\n' \
+      "$((MCPSESSION_MAX_ADMITTED + 1))" "${code:-aucun}" "$conf"
+    FAILURES=$((FAILURES + 1))
+    return
+  fi
+
+  local label header expected
+  while IFS='|' read -r label header expected; do
+    code="$(mcp_post -H "$header")"
+    if { [ "$expected" = "429" ] && [ "$code" = "429" ]; } || { [ "$expected" != "429" ] && [ -n "$code" ] && [ "$code" != "000" ] && [ "$code" != "429" ]; }; then
+      printf '  \033[32mOK\033[0m      mcpsession : %s → %s\n' "$label" "$code"
+    else
+      printf '  \033[31mKO\033[0m      mcpsession : %s → « %s », %s attendu (%s)   <-- clé du map $mcp_new_session\n' \
+        "$label" "${code:-aucun}" "$expected" "$conf"
+      FAILURES=$((FAILURES + 1))
+    fi
+  done <<'CASES'
+en-tête Mcp-Session-Id vide, compté|Mcp-Session-Id;|429
+POST sans session de la révision 2026-07-28, non compté|MCP-Protocol-Version: 2026-07-28|autre que 429
+POST sans session de la révision 2025-06-18, compté|MCP-Protocol-Version: 2025-06-18|429
+CASES
+}
+
 BODY_FILE="$(mktemp)"
 trap 'cleanup; rm -f "$BODY_FILE"' EXIT
 
@@ -306,6 +366,10 @@ trap 'cleanup; rm -f "$BODY_FILE"' EXIT
 for target in "${CONFS[@]}"; do
   read -r conf port <<< "$target"
   echo "== ${conf} (image ${IMAGE})"
+  # Un conteneur à part, pour des compteurs neufs : les sondes de ZONES
+  # entament `mcp` et `mcpsession`, ce qui brouillerait la borne du 1.
+  start_nginx "${ROOT}/${conf}" "$port"
+  check_session_key "$conf"
   start_nginx "${ROOT}/${conf}" "$port"
   for limit in "${BODY_LIMITS[@]}"; do
     # shellcheck disable=SC2086 # découpage voulu : deux champs par ligne

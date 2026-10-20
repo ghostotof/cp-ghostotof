@@ -83,19 +83,33 @@ zone429='429|content-type: application/problem+json|{"type":"/errors/rate-limite
 
 mapfile -t twenty_streams < <(repeat 20 "$stream")
 mapfile -t all_streams < <(repeat 120 "$stream")
+# Étape des créations de session (#672) : le SDK refuse en 400 un `ping` sans
+# session valide (`Mcp-Session-Id: 0`), sans rien écrire ; la zone mcpsession
+# en admet 5 (rafale 5, moins le jeton de l'initialize), puis son 429 ; enfin
+# le `tools/list` sans session de la révision 2026-07-28, servi.
+no_session='400|content-type: application/json|{"jsonrpc":"2.0","error":{"code":-32600,"message":"A valid session id is REQUIRED for non-initialize requests."}}'
+modern='200|content-type: application/json|{"jsonrpc":"2.0","id":2,"result":{"tools":[]}}'
+mapfile -t five_no_session < <(repeat 5 "$no_session")
+mapfile -t twelve_no_session < <(repeat 12 "$no_session")
+session_step=("${five_no_session[@]}" "$zone429" "$modern")
 
 # --- Cas nominal : initialize, fin de session, 20 GET admis puis le 429.
-run nominal "$init" "$deleted" "$too_large" "$too_large" "${twenty_streams[@]}" "$zone429"
+run nominal "$init" "$deleted" "$too_large" "$too_large" "${session_step[@]}" "${twenty_streams[@]}" "$zone429"
 if [ "$rc" -eq 0 ] && grep -q 'session ouverte' "$TMP/out" && grep -q 'corps de 16385 octets refusé (content-length)' "$TMP/out" \
    && grep -q 'corps de 16385 octets refusé (chunked)' "$TMP/out" && grep -q '429 de la zone mcp à la requête 21' "$TMP/out"; then
-  pass "initialize, DELETE, deux 413, 20 × 200 puis 429 → succès"
+  pass "initialize, DELETE, deux 413, sessions comptées, 20 × 200 puis 429 → succès"
 else
   fail "cas nominal" "rc=$rc ; out : $(cat "$TMP/out") ; err : $(cat "$TMP/err")"
 fi
-if [ "$(wc -l < "$TMP/nominal.calls")" -eq 25 ]; then pass "s'arrête au premier 429 (25 appels)"; else fail "nombre d'appels" "$(wc -l < "$TMP/nominal.calls")"; fi
+if grep -q '« Mcp-Session-Id: 0 » compté par la zone mcpsession : 429 après 5 POST' "$TMP/out" && grep -q 'révision 2026-07-28 sans session non comptée : 200' "$TMP/out"; then
+  pass "étape des sessions : « 0 » compté, révision 2026-07-28 exemptée"
+else
+  fail "étape des sessions" "out : $(cat "$TMP/out")"
+fi
+if [ "$(wc -l < "$TMP/nominal.calls")" -eq 32 ]; then pass "s'arrête au premier 429 (32 appels)"; else fail "nombre d'appels" "$(wc -l < "$TMP/nominal.calls")"; fi
 
 # --- L'initialize en JSON plutôt qu'en SSE : même verdict.
-run json "200|content-type: application/json;Mcp-Session-Id: $session_id|{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"serverInfo\":{\"name\":\"cp-ghostotof\"}}}" "$deleted" "$too_large" "$too_large" "$zone429"
+run json "200|content-type: application/json;Mcp-Session-Id: $session_id|{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"serverInfo\":{\"name\":\"cp-ghostotof\"}}}" "$deleted" "$too_large" "$too_large" "${session_step[@]}" "$zone429"
 if [ "$rc" -eq 0 ]; then pass "initialize en JSON, en-tête en casse mixte → succès"; else fail "initialize JSON" "rc=$rc ; err : $(cat "$TMP/err")"; fi
 
 # --- Hôte refusé par le SDK : allowed_hosts ne porte pas l'hôte du déploiement.
@@ -115,24 +129,24 @@ run other "200|content-type: application/json;mcp-session-id: $session_id|{\"jso
 if [ "$rc" -eq 1 ] && grep -q 'serverInfo' "$TMP/err"; then pass "initialize d'un autre serveur → échec"; else fail "autre serveur" "rc=$rc ; err : $(cat "$TMP/err")"; fi
 
 # --- Jamais de 429 : la zone mcp manque (publicapi en voudrait plus de 200).
-run never "$init" "$deleted" "$too_large" "$too_large" "${all_streams[@]}"
-if [ "$rc" -eq 1 ] && grep -q 'aucun 429' "$TMP/err" && [ "$(wc -l < "$TMP/never.calls")" -eq 124 ]; then
+run never "$init" "$deleted" "$too_large" "$too_large" "${session_step[@]}" "${all_streams[@]}"
+if [ "$rc" -eq 1 ] && grep -q 'aucun 429 après 120 GET' "$TMP/err" && [ "$(wc -l < "$TMP/never.calls")" -eq 131 ]; then
   pass "120 GET sans 429 → échec (zone mcp absente)"
 else
   fail "jamais freiné" "rc=$rc ; appels=$(wc -l < "$TMP/never.calls") ; err : $(cat "$TMP/err")"
 fi
 
 # --- Un 429 en HTML : l'`error_page` de la zone n'est pas en place.
-run html "$init" "$deleted" "$too_large" "$too_large" '429|content-type: text/html|<html>429 Too Many Requests</html>'
+run html "$init" "$deleted" "$too_large" "$too_large" "${session_step[@]}" '429|content-type: text/html|<html>429 Too Many Requests</html>'
 if [ "$rc" -eq 1 ] && grep -q 'problem+json' "$TMP/err"; then pass "429 HTML → échec"; else fail "429 HTML" "rc=$rc ; err : $(cat "$TMP/err")"; fi
 
 # --- Un 429 problem+json d'un autre type → échec.
-run untyped "$init" "$deleted" "$too_large" "$too_large" '429|content-type: application/problem+json|{"type":"/errors/429","status":429}'
+run untyped "$init" "$deleted" "$too_large" "$too_large" "${session_step[@]}" '429|content-type: application/problem+json|{"type":"/errors/429","status":429}'
 if [ "$rc" -eq 1 ] && grep -q '/errors/rate-limited' "$TMP/err"; then pass "429 sans type rate-limited → échec"; else fail "429 non typé" "rc=$rc ; err : $(cat "$TMP/err")"; fi
 
 # --- Un statut inattendu pendant la saturation → échec immédiat.
-run status "$init" "$deleted" "$too_large" "$too_large" "$stream" '502|content-type: text/html|<html>502</html>'
-if [ "$rc" -eq 1 ] && grep -q '502 reçu' "$TMP/err" && [ "$(wc -l < "$TMP/status.calls")" -eq 6 ]; then
+run status "$init" "$deleted" "$too_large" "$too_large" "${session_step[@]}" "$stream" '502|content-type: text/html|<html>502</html>'
+if [ "$rc" -eq 1 ] && grep -q '502 reçu' "$TMP/err" && [ "$(wc -l < "$TMP/status.calls")" -eq 13 ]; then
   pass "502 pendant la saturation → échec immédiat"
 else
   fail "statut inattendu" "rc=$rc ; err : $(cat "$TMP/err")"
@@ -158,6 +172,32 @@ if [ "$rc" -eq 1 ] && grep -q 'chunked' "$TMP/err" && grep -q 'fastcgi_pass' "$T
   pass "corps chunked de 16 385 octets admis → échec nommant fastcgi_pass"
 else
   fail "borne de corps chunked" "rc=$rc ; err : $(cat "$TMP/err")"
+fi
+
+# --- `Mcp-Session-Id: 0` jamais compté : la clé du map a perdu `0` (#672).
+run zero "$init" "$deleted" "$too_large" "$too_large" "${twelve_no_session[@]}"
+if [ "$rc" -eq 1 ] && grep -q 'aucun 429 après 12 POST « Mcp-Session-Id: 0 »' "$TMP/err" && grep -q 'mcp_without_session' "$TMP/err" \
+   && [ "$(wc -l < "$TMP/zero.calls")" -eq 16 ]; then
+  pass "12 POST « 0 » sans 429 → échec nommant la clé du map"
+else
+  fail "« 0 » non compté" "rc=$rc ; appels=$(wc -l < "$TMP/zero.calls") ; err : $(cat "$TMP/err")"
+fi
+
+# --- La révision sans session comptée comme une création (#672).
+run modern "$init" "$deleted" "$too_large" "$too_large" "${five_no_session[@]}" "$zone429" "$zone429"
+if [ "$rc" -eq 1 ] && grep -q '2026-07-28' "$TMP/err" && grep -q '429' "$TMP/err" && [ "$(wc -l < "$TMP/modern.calls")" -eq 11 ]; then
+  pass "POST 2026-07-28 sans session en 429 → échec"
+else
+  fail "révision moderne comptée" "rc=$rc ; err : $(cat "$TMP/err")"
+fi
+
+# --- Un statut autre que 400 sur un `ping` sans session : le SDK n'a pas
+# refusé, l'étape ne prouve plus rien (et une session a pu s'ouvrir).
+run zerostatus "$init" "$deleted" "$too_large" "$too_large" "$modern"
+if [ "$rc" -eq 1 ] && grep -q 'Mcp-Session-Id: 0' "$TMP/err" && grep -q '200' "$TMP/err" && [ "$(wc -l < "$TMP/zerostatus.calls")" -eq 5 ]; then
+  pass "ping « 0 » en 200 → échec immédiat"
+else
+  fail "statut sur « 0 »" "rc=$rc ; err : $(cat "$TMP/err")"
 fi
 
 # --- Un curl qui échoue (délai, connexion coupée) : l'étape est nommée.
@@ -188,7 +228,9 @@ fi
 # --- Les requêtes : initialize en POST JSON, DELETE de la session, deux corps trop gros, GET en SSE.
 first="$(sed -n 1p "$TMP/nominal.args")"
 second="$(sed -n 2p "$TMP/nominal.args")"
-third="$(sed -n 5p "$TMP/nominal.args")"
+third="$(sed -n 12p "$TMP/nominal.args")"
+zero="$(sed -n 5p "$TMP/nominal.args")"
+modern_request="$(sed -n 11p "$TMP/nominal.args")"
 large="$(sed -n 3p "$TMP/nominal.args")"
 large_chunked="$(sed -n 4p "$TMP/nominal.args")"
 if [[ "$first" == *"-X POST"* && "$first" == *"Content-Type: application/json"* && "$first" == *"Accept: application/json, text/event-stream"* \
@@ -204,6 +246,17 @@ if [[ "$large" == *"-X POST"* && "$large" == *"--data-binary @"* && "$large" != 
 else
   fail "requêtes de corps" "$large | $large_chunked"
 fi
+if [[ "$zero" == *"-X POST"* && "$zero" == *"Mcp-Session-Id: 0"* && "$zero" == *'"method":"ping"'* && "$zero" != *"initialize"* ]]; then
+  pass "sessions : ping sous « Mcp-Session-Id: 0 », jamais un initialize (rien n'est écrit en base)"
+else
+  fail "requête « 0 »" "$zero"
+fi
+if [[ "$modern_request" == *"-X POST"* && "$modern_request" == *"MCP-Protocol-Version: 2026-07-28"* && "$modern_request" == *"Mcp-Method: tools/list"* \
+   && "$modern_request" == *'"io.modelcontextprotocol/protocolVersion":"2026-07-28"'* && "$modern_request" != *"Mcp-Session-Id"* ]]; then
+  pass "sessions : tools/list de la révision 2026-07-28, sans session"
+else
+  fail "requête moderne" "$modern_request"
+fi
 if [[ "$third" == *"-X GET"* && "$third" == *"Accept: text/event-stream"* && "$third" != *"Mcp-Session-Id"* ]]; then
   pass "saturation : GET en SSE, sans session (rien n'est écrit en base)"
 else
@@ -211,7 +264,7 @@ else
 fi
 
 # --- Basic Auth : via un fichier -K, jamais -u ; absente sinon.
-AUDIT_BASIC_AUTH='smoke:p"a\ss' run auth "$init" "$deleted" "$too_large" "$too_large" "$zone429"
+AUDIT_BASIC_AUTH='smoke:p"a\ss' run auth "$init" "$deleted" "$too_large" "$too_large" "${session_step[@]}" "$zone429"
 if grep -q -- ' -K ' "$TMP/auth.args" && ! grep -q -- ' -u ' "$TMP/auth.args"; then
   pass "AUDIT_BASIC_AUTH → -K <fichier>, jamais -u"
 else
