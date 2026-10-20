@@ -54,10 +54,9 @@ paths:
   16 KiB body — re-encoded (an `é` becomes `\u00e9`), 48.8 KB raw for 16 KiB of `é`, which TOAST compresses to
   856 bytes, but ~21 KB stored for incompressible text (random CJK, the audit's figure). At `mcpsession`'s limit,
   ~1 200 sessions per IP and per pod over the two hours a row can live (one-hour TTL, hourly purge), so **~25 MB
-  stored per IP and per pod at worst, ~50 MB in production** (two pods) — against the 2 GiB PostgreSQL volume,
-  some forty addresses at full rate for two hours; before #644's audit fixes, five to ten. Accepted, with
-  these figures: the zones are per IP and per pod, no global ceiling (a global one would let an attacker block
-  every new session); a bound on `_meta` was left to the author's decision. **The site is IPv4 only** (no
+  stored per IP and per pod at worst, ~50 MB in production** (two pods), several times less than before the
+  audit fixes of #644. Accepted: the zones are per IP and per pod, no global ceiling (a global one would let an
+  attacker block every new session); a bound on `_meta` was left to the author's decision. **The site is IPv4 only** (no
   `AAAA` for the production or preprod host, checked on 2026-10-20): `$binary_remote_addr` is a whole address;
   the day an `AAAA` is published, an IPv6 /64 gives 2^64 keys — key the MCP zones by /64 first. A 413
   (`Content-Length` over the bound) is rendered at find-config, before any zone: an unlimited flow of them

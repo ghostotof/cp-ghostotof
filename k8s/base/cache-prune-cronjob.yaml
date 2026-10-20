@@ -1,8 +1,10 @@
 # Purge horaire des entrées expirées de `cache_items` (#644).
 #
 # L'adaptateur Doctrine DBAL n'efface jamais une ligne expirée de lui-même :
-# seul `cache:pool:prune` le fait, et le ménage quotidien
-# (messenger-purge-cronjob.yaml) ne la lance qu'une fois par jour. Or chaque
+# seul `cache:pool:prune` le fait — sans elle, une ligne par (IP, limiteur)
+# et par session MCP s'accumulerait indéfiniment (ADR 0005 : l'état des
+# limiteurs et le cache de résultats vivent en base). Le ménage quotidien
+# (messenger-purge-cronjob.yaml) la lançait une fois par jour ; or chaque
 # `initialize` MCP anonyme écrit une session (pool `cache.mcp_sessions`,
 # `session.ttl` d'une heure), et la zone nginx `mcp` en admet une par requête :
 # purgée chaque jour, une session expirée restait jusqu'à 25 h en base, chaque
@@ -11,11 +13,17 @@
 #
 # `cache:pool:prune` purge tous les pools, pas seulement celui des sessions :
 # la commande ne sait pas en viser un, et chaque pool ne coûte qu'un `DELETE`
-# des lignes expirées de son espace de noms — les limiteurs de débit
-# (`cache.app`) y gagnent aussi. Le ménage quotidien garde sa propre purge.
+# des lignes expirées de son espace de noms (un parcours de la table, sans
+# index sur l'échéance : négligeable à ce volume) — les limiteurs de débit
+# (`cache.app`) y gagnent aussi. C'est désormais la seule purge du cache : le
+# ménage quotidien ne la lance plus (McpSessionsPrunedHourlyTest).
 #
-# Réutilise l'image backend et les mêmes ConfigMap/Secret que le Deployment
-# (DATABASE_URL vient de backend-secrets, rôle `cpg_app` : DELETE suffit).
+# Réutilise l'image backend et les mêmes ConfigMap/Secret que le Deployment :
+# comme le ménage quotidien, le pod reçoit tout `backend-secrets` et le rôle
+# applicatif `cpg_app` entier, bien plus que le `DELETE` sur `cache_items`
+# dont il a besoin. Limite acceptée (relecture de #644) : même exposition que
+# le CronJob existant, et restreindre l'environnement demanderait de prouver
+# ce que le démarrage du noyau exige, au risque d'un Job cassé en production.
 apiVersion: batch/v1
 kind: CronJob
 metadata:
