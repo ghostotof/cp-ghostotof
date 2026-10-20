@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   MCP_SERVER_LOCAL_NAME,
   claudeCodeCommand,
+  clientConfiguration,
   mcpServerUrl,
   mcpServersJson,
 } from '../../../../src/domain/mcp/services/mcpClientConfiguration'
@@ -44,5 +45,18 @@ describe('mcpServersJson', () => {
 
   it('indente le JSON pour être lu et collé tel quel', () => {
     expect(mcpServersJson('https://site.example.test/api/mcp')).toContain('\n  "mcpServers": {')
+  })
+})
+
+describe('clientConfiguration', () => {
+  const SERVER_URL = 'https://site.example.test/api/mcp'
+
+  it.each([
+    ['claude-code-command', claudeCodeCommand(SERVER_URL)],
+    ['mcp-servers-json', mcpServersJson(SERVER_URL)],
+    // Les clients qui font saisir l'URL dans un formulaire (claude.ai, ChatGPT).
+    ['server-url', SERVER_URL],
+  ] as const)('rend la configuration « %s » pour l’URL reçue', (kind, expected) => {
+    expect(clientConfiguration(kind, SERVER_URL)).toBe(expected)
   })
 })

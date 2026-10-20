@@ -5,7 +5,7 @@
  * doit en venir. Avec l'origine par défaut de jsdom (`http://localhost:3000`),
  * une URL écrite en dur sur `localhost` passerait le test.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import ConnectAssistantPage from '../../../src/presentation/pages/ConnectAssistantPage.vue'
@@ -15,6 +15,7 @@ import { createAppI18n } from '../../../src/presentation/i18n'
 import { router as appRouter } from '../../../src/presentation/router'
 import { SUPPORTED_LOCALES, type Locale } from '../../../src/domain/portfolio/entities/Locale'
 import { expectNoAccessibilityViolation } from '../../support/axe'
+import { removeClipboard, stubClipboard, type WriteText } from '../../support/clipboard'
 
 const SERVER_URL = 'https://site.example.test/api/mcp'
 const StubPage = { template: '<div />' }
@@ -58,15 +59,14 @@ async function mountPage(locale: Locale = 'fr') {
 }
 
 describe('ConnectAssistantPage', () => {
-  let writeText: ReturnType<typeof vi.fn<(text: string) => Promise<void>>>
+  let writeText: WriteText
 
   beforeEach(() => {
-    writeText = vi.fn(async () => undefined)
-    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    writeText = stubClipboard()
   })
 
   afterEach(() => {
-    Reflect.deleteProperty(navigator, 'clipboard')
+    removeClipboard()
   })
 
   it('se rend en français, sous un titre de niveau page', async () => {
@@ -128,10 +128,12 @@ describe('ConnectAssistantPage', () => {
     expect(toolsOf('base')).toEqual(BASE_TIER_TOOLS)
   })
 
-  it.each(SUPPORTED_LOCALES)('présente le prompt du serveur (%s)', async (locale) => {
-    const wrapper = await mountPage(locale)
+  it.each(SUPPORTED_LOCALES)('présente le prompt du serveur et ses arguments (%s)', async (locale) => {
+    const prompt = (await mountPage(locale)).find('[data-testid="mcp-prompt"]')
 
-    expect(wrapper.find('[data-testid="mcp-prompt"] code').text()).toBe('present_for_role')
+    expect(prompt.findAll('code').map((code) => code.text())).toEqual(['present_for_role', 'role', 'locale', 'fr', 'en'])
+    // La borne publiée par l'argument (PromptRole::MAX_CHARACTERS côté serveur).
+    expect(prompt.text()).toContain('500')
   })
 
   it('dit ce que le serveur ne sert jamais : rien de nominatif sans connexion MCP, aucune écriture, aucun appel de modèle', async () => {
@@ -165,8 +167,10 @@ describe('ConnectAssistantPage', () => {
   it('nomme chaque bouton de copie différemment', async () => {
     const wrapper = await mountPage()
     const names = wrapper.findAll('button').map((button) => button.text())
+    const guides = new StaticPortfolioContentRepository().getConnectAssistantContent('fr').clients.guides
 
-    expect(names.length).toBe(6)
+    // L'URL du serveur, puis un bloc par client.
+    expect(names.length).toBe(1 + guides.length)
     expect(new Set(names).size).toBe(names.length)
     expect(names.every((name) => name.startsWith('Copier '))).toBe(true)
   })

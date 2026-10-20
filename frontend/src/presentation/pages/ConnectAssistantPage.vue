@@ -2,9 +2,8 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { usePortfolioContent } from '../../application/portfolio/usePortfolioContent'
-import type { McpClientConfigurationKind } from '../../domain/portfolio/entities/ConnectAssistantContent'
 import type { Locale } from '../../domain/portfolio/entities/Locale'
-import { claudeCodeCommand, mcpServerUrl, mcpServersJson } from '../../domain/mcp/services/mcpClientConfiguration'
+import { clientConfiguration, mcpServerUrl } from '../../domain/mcp/services/mcpClientConfiguration'
 import CopyableCode from '../ui/CopyableCode.vue'
 import RichText from '../ui/RichText.vue'
 
@@ -23,18 +22,12 @@ const currentLocale = computed(() => locale.value as Locale)
  * L'origine de la page, celle que le serveur accepte (`allowed_hosts`) : la même
  * image sert la préprod et la prod, aucune URL n'est donc écrite au build. Lue
  * une fois : l'origine ne change pas sans rechargement.
+ *
+ * Juste en préprod et en prod, où l'Ingress sert `/api` sur l'hôte de la page ;
+ * fausse sous le serveur de dev Vite (`localhost:5173`, qui ne relaie pas
+ * `/api`), accepté : la page s'adresse aux visiteurs du site déployé.
  */
 const serverUrl = mcpServerUrl(window.location.origin)
-
-/**
- * Une entrée par type de configuration : un type ajouté au domaine sans entrée
- * ici est une erreur de compilation, pas un bloc vide en production.
- */
-const CONFIGURATIONS: Record<McpClientConfigurationKind, string> = {
-  'claude-code-command': claudeCodeCommand(serverUrl),
-  'mcp-servers-json': mcpServersJson(serverUrl),
-  'server-url': serverUrl,
-}
 </script>
 
 <template>
@@ -122,8 +115,12 @@ const CONFIGURATIONS: Record<McpClientConfigurationKind, string> = {
           {{ content.served.prompt.heading }}
         </h3>
         <p class="text-body-secondary mb-0">
-          <code>{{ content.served.prompt.tool }}</code> — {{ content.served.prompt.description }}
+          <code>{{ content.served.prompt.name }}</code> — {{ content.served.prompt.description }}
         </p>
+        <RichText
+          :text="content.served.prompt.arguments"
+          paragraph-class="text-body-secondary small mt-1 mb-0"
+        />
       </div>
     </section>
 
@@ -192,7 +189,7 @@ const CONFIGURATIONS: Record<McpClientConfigurationKind, string> = {
           </li>
         </ol>
         <CopyableCode
-          :code="CONFIGURATIONS[guide.configuration.kind]"
+          :code="clientConfiguration(guide.configuration.kind, serverUrl)"
           :label="guide.configuration.copyLabel"
         />
         <p

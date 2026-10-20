@@ -47,3 +47,25 @@ export function claudeCodeCommand(serverUrl: string): string {
 export function mcpServersJson(serverUrl: string): string {
   return JSON.stringify({ mcpServers: { [MCP_SERVER_LOCAL_NAME]: { url: serverUrl } } }, null, 2)
 }
+
+/**
+ * Ce qu'un client attend : la commande Claude Code, le fragment JSON
+ * `mcpServers` (Cursor, PhpStorm), ou l'URL seule (les clients qui la font
+ * saisir dans un formulaire : claude.ai, Claude Desktop, ChatGPT).
+ */
+export type McpClientConfigurationKind = 'claude-code-command' | 'mcp-servers-json' | 'server-url'
+
+/**
+ * Une entrée par type : un type ajouté sans entrée ici est une erreur de
+ * compilation, pas un bloc vide en production.
+ */
+const CONFIGURATION_BUILDERS: Record<McpClientConfigurationKind, (serverUrl: string) => string> = {
+  'claude-code-command': claudeCodeCommand,
+  'mcp-servers-json': mcpServersJson,
+  'server-url': (serverUrl) => serverUrl,
+}
+
+/** Le texte à copier dans un client, pour le type de configuration qu'il attend. */
+export function clientConfiguration(kind: McpClientConfigurationKind, serverUrl: string): string {
+  return CONFIGURATION_BUILDERS[kind](serverUrl)
+}

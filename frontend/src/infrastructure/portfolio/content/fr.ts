@@ -194,8 +194,8 @@ const fr: PortfolioLocaleContent = {
       tiers: [
         {
           id: 'anonymous',
-          heading: 'Contenus publics',
-          description: 'Les contenus que le site affiche à tout visiteur.',
+          heading: 'Palier anonyme',
+          description: 'Les contenus que le site affiche à tout visiteur, sans accès ni compte.',
           tools: [
             { tool: 'get_about', description: 'À propos : le site, comment il est construit et pourquoi.' },
             { tool: 'get_quality', description: 'Les principes et les exigences de qualité appliqués au code.' },
@@ -208,7 +208,7 @@ const fr: PortfolioLocaleContent = {
         },
         {
           id: 'base',
-          heading: "Contenus de l'accès de base",
+          heading: 'Palier de base',
           description:
             "Les contenus que le site ouvre d'un clic avec l'accès instantané, sans compte. Sur le serveur MCP, ils sont servis sans jeton ; ils ne nomment personne.",
           tools: [
@@ -219,9 +219,11 @@ const fr: PortfolioLocaleContent = {
       ],
       prompt: {
         heading: 'Un prompt',
-        tool: 'present_for_role',
+        name: 'present_for_role',
         description:
           "Présenter l'auteur du site pour un poste que vous décrivez : votre assistant parcourt les outils ci-dessus, cite celui d'où vient chaque affirmation et dit ce qu'il ne sait pas.",
+        arguments:
+          'Arguments : `role`, la description du poste (texte libre, 500 caractères au plus), et `locale`, `fr` (par défaut) ou `en`.',
       },
     },
     neverServed: {
@@ -234,7 +236,7 @@ const fr: PortfolioLocaleContent = {
       ],
     },
     privacy: {
-      text: "Chaque appel est inscrit au journal technique du site avec une adresse IP tronquée, jamais avec le texte que votre assistant envoie. Le détail est dans la politique de confidentialité.",
+      text: "Chaque appel est inscrit au journal technique du site avec une adresse IP tronquée et le nom que votre logiciel déclare, jamais avec le texte que votre assistant envoie. Le détail est dans la politique de confidentialité.",
       linkLabel: 'Lire la politique de confidentialité',
     },
     clients: {
@@ -268,7 +270,7 @@ const fr: PortfolioLocaleContent = {
           name: 'ChatGPT',
           steps: [
             'Ouvrez Paramètres → Applications et connecteurs → Paramètres avancés, et activez le mode développeur.',
-            "Créez un connecteur, collez l'URL du serveur et choisissez « Aucune authentification ».",
+            "Créez un connecteur, collez l'URL du serveur, choisissez « Aucune authentification » et confirmez faire confiance à l'application si l'interface le demande.",
             'Ajoutez-le ensuite à une conversation, depuis le menu des outils.',
           ],
           configuration: { kind: 'server-url', copyLabel: "l'URL du serveur pour ChatGPT" },
@@ -293,6 +295,7 @@ const fr: PortfolioLocaleContent = {
             "Validez : le serveur est disponible dans le chat de l'AI Assistant.",
           ],
           configuration: { kind: 'mcp-servers-json', copyLabel: 'la configuration PhpStorm' },
+          note: "Un serveur distant par URL demande l'AI Assistant de PhpStorm 2025.2 ou plus récent.",
         },
       ],
     },

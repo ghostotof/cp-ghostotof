@@ -4,17 +4,9 @@ import { nextTick } from 'vue'
 import CopyableCode from '../../../src/presentation/ui/CopyableCode.vue'
 import { createAppI18n } from '../../../src/presentation/i18n'
 import { expectNoAccessibilityViolation } from '../../support/axe'
+import { removeClipboard, stubClipboard, type WriteText } from '../../support/clipboard'
 
 const CODE = 'claude mcp add --transport http cp-ghostotof https://site.example.test/api/mcp'
-
-/**
- * jsdom n'implémente pas `navigator.clipboard` : chaque test pose le sien, et
- * le retire ensuite, pour que l'absence (contexte non sécurisé, navigateur
- * ancien) reste un cas testable à part.
- */
-function stubClipboard(writeText: (text: string) => Promise<void>): void {
-  Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
-}
 
 function mountBlock(locale: 'fr' | 'en' = 'fr', label = 'la commande Claude Code') {
   const i18n = createAppI18n()
@@ -27,15 +19,14 @@ function mountBlock(locale: 'fr' | 'en' = 'fr', label = 'la commande Claude Code
 }
 
 describe('CopyableCode', () => {
-  let writeText: ReturnType<typeof vi.fn<(text: string) => Promise<void>>>
+  let writeText: WriteText
 
   beforeEach(() => {
-    writeText = vi.fn(async () => undefined)
-    stubClipboard(writeText)
+    writeText = stubClipboard()
   })
 
   afterEach(() => {
-    Reflect.deleteProperty(navigator, 'clipboard')
+    removeClipboard()
   })
 
   it('affiche le code à copier tel quel', () => {
@@ -138,7 +129,7 @@ describe('CopyableCode', () => {
    * ailleurs, l'appel lèverait un TypeError que personne ne verrait.
    */
   it('annonce l’échec quand le presse-papiers est indisponible', async () => {
-    Reflect.deleteProperty(navigator, 'clipboard')
+    removeClipboard()
     const wrapper = mountBlock()
 
     await wrapper.find('button').trigger('click')

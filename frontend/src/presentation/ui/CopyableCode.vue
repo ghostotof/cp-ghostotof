@@ -34,14 +34,21 @@ const announcement = ref('')
 async function copy(): Promise<void> {
   announcement.value = ''
 
+  announcement.value = (await writeToClipboard(props.code)) ? t('common.copied') : t('common.copyFailed')
+}
+
+/** Vrai si le texte est dans le presse-papiers ; faux si l'API manque ou refuse. */
+async function writeToClipboard(text: string): Promise<boolean> {
+  if (!navigator.clipboard) {
+    return false
+  }
+
   try {
-    if (!navigator.clipboard) {
-      throw new Error('Clipboard API unavailable')
-    }
-    await navigator.clipboard.writeText(props.code)
-    announcement.value = t('common.copied')
+    await navigator.clipboard.writeText(text)
+
+    return true
   } catch {
-    announcement.value = t('common.copyFailed')
+    return false
   }
 }
 </script>

@@ -194,8 +194,8 @@ const en: PortfolioLocaleContent = {
       tiers: [
         {
           id: 'anonymous',
-          heading: 'Public content',
-          description: 'The content the site shows to every visitor.',
+          heading: 'Anonymous tier',
+          description: 'The content the site shows to every visitor, with no access and no account.',
           tools: [
             { tool: 'get_about', description: 'About: the site, how it is built and why.' },
             { tool: 'get_quality', description: 'The quality principles and requirements applied to the code.' },
@@ -208,7 +208,7 @@ const en: PortfolioLocaleContent = {
         },
         {
           id: 'base',
-          heading: 'Base access content',
+          heading: 'Base tier',
           description:
             'The content the site opens in one click with instant access, without an account. On the MCP server it is served without a token; it names no one.',
           tools: [
@@ -219,9 +219,11 @@ const en: PortfolioLocaleContent = {
       ],
       prompt: {
         heading: 'A prompt',
-        tool: 'present_for_role',
+        name: 'present_for_role',
         description:
           'Present the site’s author for a role you describe: your assistant goes through the tools above, cites the one each statement comes from and says what it does not know.',
+        arguments:
+          'Arguments: `role`, the role’s description (free text, 500 characters at most), and `locale`, `fr` (the default) or `en`.',
       },
     },
     neverServed: {
@@ -234,7 +236,7 @@ const en: PortfolioLocaleContent = {
       ],
     },
     privacy: {
-      text: 'Each call is written to the site’s technical log with a truncated IP address, never with the text your assistant sends. The details are in the privacy policy.',
+      text: 'Each call is written to the site’s technical log with a truncated IP address and the name your software declares, never with the text your assistant sends. The details are in the privacy policy.',
       linkLabel: 'Read the privacy policy',
     },
     clients: {
@@ -268,7 +270,7 @@ const en: PortfolioLocaleContent = {
           name: 'ChatGPT',
           steps: [
             'Open Settings → Apps & Connectors → Advanced settings, and turn developer mode on.',
-            'Create a connector, paste the server URL and choose “No authentication”.',
+            'Create a connector, paste the server URL, choose “No authentication” and confirm you trust the application if the interface asks.',
             'Then add it to a conversation, from the tools menu.',
           ],
           configuration: { kind: 'server-url', copyLabel: 'the server URL for ChatGPT' },
@@ -293,6 +295,7 @@ const en: PortfolioLocaleContent = {
             'Confirm: the server is available in the AI Assistant chat.',
           ],
           configuration: { kind: 'mcp-servers-json', copyLabel: 'the PhpStorm configuration' },
+          note: 'A remote server by URL needs the AI Assistant of PhpStorm 2025.2 or later.',
         },
       ],
     },
