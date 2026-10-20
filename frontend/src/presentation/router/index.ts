@@ -35,6 +35,7 @@ const CaseStudiesPage = () => import('../pages/CaseStudiesPage.vue')
 const AnonymousCvPage = () => import('../pages/AnonymousCvPage.vue')
 const AssistantPage = () => import('../pages/AssistantPage.vue')
 const StackPage = () => import('../pages/StackPage.vue')
+const ConnectAssistantPage = () => import('../pages/ConnectAssistantPage.vue')
 const ContactPage = () => import('../pages/ContactPage.vue')
 const LoginPage = () => import('../pages/LoginPage.vue')
 const SetPasswordPage = () => import('../pages/SetPasswordPage.vue')
@@ -133,6 +134,16 @@ export const router = createRouter({
           name: 'stack',
           component: StackPage,
           meta: { titleKey: 'seo.stack.title', descriptionKey: 'seo.stack.description' },
+        },
+        {
+          // Page « Brancher votre assistant » (spec 0007, #645). Un seul segment
+          // pour les deux langues, comme toutes les routes : la langue est le
+          // préfixe, et LocaleSwitcher comme les hreflang ne remplacent que lui.
+          // Indexable : la page est publique et décrit un service.
+          path: 'connect-your-assistant',
+          name: 'connect-assistant',
+          component: ConnectAssistantPage,
+          meta: { titleKey: 'seo.connectAssistant.title', descriptionKey: 'seo.connectAssistant.description' },
         },
         {
           path: 'experience',

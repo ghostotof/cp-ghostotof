@@ -174,6 +174,129 @@ const fr: PortfolioLocaleContent = {
       },
     ],
   },
+
+  connectAssistant: {
+    eyebrow: 'Serveur MCP',
+    title: 'Brancher votre assistant',
+    introduction: [
+      "Votre assistant IA — Claude, ChatGPT, celui de votre éditeur — peut interroger ce portfolio directement, par le protocole MCP (Model Context Protocol). Ajoutez le serveur du site à votre client MCP, puis posez vos questions : votre assistant lit les contenus à la source au lieu de les deviner.",
+      "Ni compte ni jeton : le serveur se branche tel quel. Le site n'appelle aucun modèle ; c'est votre assistant, chez votre fournisseur d'IA, qui lit les réponses.",
+    ],
+    serverUrl: {
+      heading: 'URL du serveur',
+      description: "L'adresse à donner à votre client MCP (transport Streamable HTTP).",
+      copyLabel: "l'URL du serveur",
+    },
+    served: {
+      heading: 'Ce que le serveur sert',
+      description:
+        "Exactement ce que les pages publiques du site servent déjà, en lecture seule. Les outils qui prennent une langue acceptent `locale` : `fr` (par défaut) ou `en`.",
+      tiers: [
+        {
+          id: 'anonymous',
+          heading: 'Contenus publics',
+          description: 'Les contenus que le site affiche à tout visiteur.',
+          tools: [
+            { tool: 'get_about', description: 'À propos : le site, comment il est construit et pourquoi.' },
+            { tool: 'get_quality', description: 'Les principes et les exigences de qualité appliqués au code.' },
+            { tool: 'get_technical_background', description: 'Le parcours technique : technologies pratiquées et ancienneté.' },
+            { tool: 'list_contributions', description: 'Les contributions techniques, open source comprises.' },
+            { tool: 'list_incidents', description: 'Les incidents de production et les invariants qui en sont sortis.' },
+            { tool: 'get_tech_watch', description: "La veille technique : versions installées et échéances de support." },
+            { tool: 'get_contact_info', description: "L'adresse de la page de contact du site, jamais une adresse email." },
+          ],
+        },
+        {
+          id: 'base',
+          heading: "Contenus de l'accès de base",
+          description:
+            "Les contenus que le site ouvre d'un clic avec l'accès instantané, sans compte. Sur le serveur MCP, ils sont servis sans jeton ; ils ne nomment personne.",
+          tools: [
+            { tool: 'get_anonymous_cv', description: 'Le CV sans identité : domaines de compétence, ancienneté, réalisations.' },
+            { tool: 'list_case_studies', description: 'Les études de cas : problèmes réels et compromis techniques.' },
+          ],
+        },
+      ],
+      prompt: {
+        heading: 'Un prompt',
+        tool: 'present_for_role',
+        description:
+          "Présenter l'auteur du site pour un poste que vous décrivez : votre assistant parcourt les outils ci-dessus, cite celui d'où vient chaque affirmation et dit ce qu'il ne sait pas.",
+      },
+    },
+    neverServed: {
+      heading: 'Ce que le serveur ne sert jamais',
+      items: [
+        "Rien de nominatif sans connexion MCP : ni nom, ni employeurs, ni chronologie professionnelle, ni CV nominatif. L'outil `get_nominative_corpus` est listé, mais répond qu'une connexion MCP est requise ; cette connexion, réservée au palier de confiance, n'est pas encore ouverte.",
+        "Aucune écriture : le serveur ne fait que lire. Il n'envoie pas le formulaire de contact à votre place ; il vous en donne l'adresse.",
+        "Aucun appel de modèle : le site ne fait tourner aucune IA pour vous répondre.",
+        "Jamais le PDF du CV.",
+      ],
+    },
+    privacy: {
+      text: "Chaque appel est inscrit au journal technique du site avec une adresse IP tronquée, jamais avec le texte que votre assistant envoie. Le détail est dans la politique de confidentialité.",
+      linkLabel: 'Lire la politique de confidentialité',
+    },
+    clients: {
+      heading: 'Configurer votre client',
+      description:
+        "Les libellés des menus changent d'une version à l'autre : s'ils diffèrent chez vous, cherchez « MCP » ou « connecteur » dans les réglages.",
+      guides: [
+        {
+          id: 'claude-code',
+          name: 'Claude Code',
+          steps: [
+            'Dans un terminal, lancez la commande ci-dessous.',
+            "Ajoutez `--scope user` après `--transport http` pour brancher le serveur dans tous vos projets, et pas seulement dans le dossier courant.",
+            "Dans une session, `/mcp` affiche l'état du serveur et ses outils.",
+          ],
+          configuration: { kind: 'claude-code-command', copyLabel: 'la commande Claude Code' },
+        },
+        {
+          id: 'claude-apps',
+          name: 'Claude Desktop & claude.ai',
+          steps: [
+            'Ouvrez Paramètres → Connecteurs, puis « Ajouter un connecteur personnalisé ».',
+            "Donnez-lui un nom et collez l'URL du serveur ; laissez vides les réglages d'authentification.",
+            'Activez le connecteur dans une conversation, depuis le menu des outils.',
+          ],
+          configuration: { kind: 'server-url', copyLabel: "l'URL du serveur pour Claude Desktop et claude.ai" },
+          note: "Les connecteurs personnalisés dépendent de votre offre Claude.",
+        },
+        {
+          id: 'chatgpt',
+          name: 'ChatGPT',
+          steps: [
+            'Ouvrez Paramètres → Applications et connecteurs → Paramètres avancés, et activez le mode développeur.',
+            "Créez un connecteur, collez l'URL du serveur et choisissez « Aucune authentification ».",
+            'Ajoutez-le ensuite à une conversation, depuis le menu des outils.',
+          ],
+          configuration: { kind: 'server-url', copyLabel: "l'URL du serveur pour ChatGPT" },
+          note: 'Le mode développeur dépend de votre offre ChatGPT.',
+        },
+        {
+          id: 'cursor',
+          name: 'Cursor',
+          steps: [
+            'Ouvrez `~/.cursor/mcp.json` (tous vos projets) ou `.cursor/mcp.json` à la racine d’un projet.',
+            "Collez le fragment ci-dessous ; si le fichier contient déjà `mcpServers`, ajoutez-y seulement l'entrée `cp-ghostotof`.",
+            'Le serveur apparaît dans les réglages MCP de Cursor.',
+          ],
+          configuration: { kind: 'mcp-servers-json', copyLabel: 'la configuration Cursor' },
+        },
+        {
+          id: 'phpstorm',
+          name: 'PhpStorm',
+          steps: [
+            'Ouvrez Settings → Tools → AI Assistant → Model Context Protocol (MCP), puis « Add ».',
+            'Choisissez la saisie en JSON et collez le fragment ci-dessous.',
+            "Validez : le serveur est disponible dans le chat de l'AI Assistant.",
+          ],
+          configuration: { kind: 'mcp-servers-json', copyLabel: 'la configuration PhpStorm' },
+        },
+      ],
+    },
+  },
 }
 
 export default fr

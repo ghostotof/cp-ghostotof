@@ -619,6 +619,10 @@
       "title": "Ma stack, en vie",
       "description": "Versions installées de ce site et leurs échéances de support, relevées chaque jour auprès d'endoflife.date."
     },
+    "connectAssistant": {
+      "title": "Brancher votre assistant",
+      "description": "Ajoutez le serveur MCP du site à Claude, ChatGPT, Cursor ou PhpStorm : son URL, la configuration de chaque client, ce qu'il sert et ce qu'il ne sert jamais."
+    },
     "adminAnonymousCv": {
       "title": "Administration — CV sans identité",
       "description": "Gestion des sections du CV sans identité (palier de base)."

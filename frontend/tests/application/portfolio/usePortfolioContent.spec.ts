@@ -4,6 +4,7 @@ import { defineComponent, h } from 'vue'
 import { PORTFOLIO_CONTENT_REPOSITORY, usePortfolioContent } from '../../../src/application/portfolio/usePortfolioContent'
 import { createAppI18n } from '../../../src/presentation/i18n'
 import type { PortfolioContentRepository } from '../../../src/domain/portfolio/repositories/PortfolioContentRepository'
+import { StaticPortfolioContentRepository } from '../../../src/infrastructure/portfolio/StaticPortfolioContentRepository'
 
 function createStubRepository(): PortfolioContentRepository {
   return {
@@ -22,6 +23,8 @@ function createStubRepository(): PortfolioContentRepository {
     getAdditionalTechnologies: () => [],
     getLegalNoticeContent: () => ({ eyebrow: '', title: '', lastUpdated: '', sections: [] }),
     getPrivacyPolicyContent: () => ({ eyebrow: '', title: '', lastUpdated: '', sections: [] }),
+    // Contenu structuré trop riche pour un bouchon vide : le vrai, que ce test n'inspecte pas.
+    getConnectAssistantContent: (locale) => new StaticPortfolioContentRepository().getConnectAssistantContent(locale),
   }
 }
 

@@ -619,6 +619,10 @@
       "title": "My stack, alive",
       "description": "Installed versions of this site and their support deadlines, checked daily against endoflife.date."
     },
+    "connectAssistant": {
+      "title": "Connect your assistant",
+      "description": "Add the site’s MCP server to Claude, ChatGPT, Cursor or PhpStorm: its URL, each client’s configuration, what it serves and what it never serves."
+    },
     "adminAnonymousCv": {
       "title": "Administration — CV without identity",
       "description": "Manage the sections of the CV without identity (base tier)."
