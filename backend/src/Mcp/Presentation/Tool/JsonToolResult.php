@@ -29,7 +29,10 @@ final class JsonToolResult
     /**
      * Une route qui rend un objet : `structuredContent` est cet objet, à
      * l'identique. Une liste, vide comprise, s'encoderait en tableau JSON :
-     * refusée.
+     * refusée. Le refus de `[]` est fidèle à la route : sans
+     * `preserve_empty_objects`, le Serializer écrit `[]` un objet dont tous
+     * les champs sont omis — un défaut de la route, que l'outil ne masque pas
+     * (#681, accepté).
      *
      * @param array<mixed> $payload
      *

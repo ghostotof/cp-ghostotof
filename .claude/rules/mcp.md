@@ -73,6 +73,13 @@ paths:
   with a bare `json_encode`, so `structuredContent` carries `1` — the same JSON number, which a tool cannot
   write otherwise. The text block, which `JsonToolResult` encodes itself, takes the flag and stays
   byte-identical; `RouteBackedToolsTest` compares `structuredContent` as a JSON value (`asJsonValue()`).
+  **An empty object is refused, accepted** (#681, the author's decision of 2026-10-21): `forObject([])` throws
+  `ToolPayloadShapeException` (`array_is_list([])` is true), a `-32603`. That is faithful to the route: with no
+  `preserve_empty_objects` (set nowhere) the Serializer writes an object whose fields are all omitted as `[]`, not
+  `{}` (measured), a JSON array no tool can return as `structuredContent`, and one the `required` of every object
+  tool's `outputSchema` refuses (`get_about`, `get_quality`, `get_tech_watch`) — a defect of the route, never an
+  inequality to smooth over. Rejected: `{}` on the tool's side (unequal to the route and to its schema), and
+  `preserve_empty_objects` in the defaults (every route changes, for a case none has). `JsonToolResultTest` pins the refusal.
 - **The catalogue** (#641, spec 0007 « Catalogue des outils »): eight route-backed tools — `get_about`,
   `get_quality`, `list_contributions`, `list_incidents`, `get_technical_background` and `get_tech_watch`
   (the last two without `locale`: their routes take none), and at the base tier, served without a token (ADR 0006 D2),

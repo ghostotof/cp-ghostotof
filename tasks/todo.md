@@ -22,7 +22,7 @@ phase 1 parte en release seule ; puis au merge de clôture, qui archive la spec 
 - [x] Suivi : zone `mcpsession` et borne des paramètres (#672) — `0` et l'en-tête vide comptés, la
       révision 2026-07-28 exemptée quelle que soit la décision de #664, `_meta` accepté hors borne
 - [x] Suivi : reports de faible sévérité des relectures de #663 et #645 (#673)
-- [ ] Suivi : objet vide de `JsonToolResult` et décodages JSON multiples par POST (#681) — relecture de #673
+- [x] Suivi : objet vide de `JsonToolResult` et décodages JSON multiples par POST (#681) — relecture de #673
 - [x] Suivi : `subscriptions/listen` tient un worker php-fpm 30 s, borné par `mcpconn` depuis #672
       (#675) — après la décision de #664, avant la sortie de la phase 1
 
