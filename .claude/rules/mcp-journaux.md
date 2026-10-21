@@ -90,6 +90,16 @@ paths:
   removed method, `server/discover`, prompt, notification, unsupported revision, batch, foreign `Origin`, scalar
   `_meta`, malformed and bounded client) through `SpeaksMcp::postModernMcp()`; `ModernExchangeTest` covers what it
   cannot (the 30-second `listen` stream, an edge refusal, headers trimmed or dropped by the bridge).
+  **Each POST's body is decoded eight times, accepted** (#681, the author's decision of 2026-10-21): four during the
+  request — `InboundMessageRefusalListener`, the bundle's PSR-7 bridge (`PsrHttpFactory` `json_decode`s a JSON body
+  for `getParsedBody()`), the SDK's classifier and its `MessageFactory` — and four at `kernel.terminate` for this
+  reading, on every POST the server answered, whatever its era — the bridge again, the classifier, `decodedObject()`,
+  the factory —, five of them ours. Measured on a 16 KiB body (nginx's bound): ~11 µs a decoding for one long string,
+  ~265 µs for dense tokens (the worst case), so ~65 µs to ~1.3 ms of ours per POST, half of it after the answer is
+  sent (a worker held, no client waiting), under the `mcp` zone's 60 requests a minute per IP. Rejected: memoising
+  the bridge's request per HTTP request (a `WeakMap` decorator of `mcp.psr_http_factory`) and handing the
+  listener's decoded body to the log — two decodings of eight saved, ~530 µs at worst, for two more pieces and a
+  contract between the listener and the log; the classifier and the factory stay the SDK's own, which decide the era.
   **An HTTP request on `/api/mcp` that handled no message** — unreadable JSON, missing or expired
   session, `GET`, `DELETE`, a request refused before the SDK (#644: 400, `protocol-error`; under the modern
   envelope it has a call line instead, the refusal being the server's own answer, and `ModernExchange` reading what
