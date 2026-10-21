@@ -8,7 +8,6 @@ use App\Tests\Mcp\Support\SpeaksMcp;
 use Doctrine\ORM\EntityManagerInterface;
 use Mcp\JsonRpc\MessageFactory;
 use Mcp\Schema\JsonRpc\Request;
-use Mcp\Server\Stateless\RequestMeta;
 use Mcp\Server\Stateless\StatelessProtocol;
 use ReflectionClass;
 use stdClass;
@@ -93,23 +92,31 @@ final class NoAnswerIsAStreamTest extends WebTestCase
             $sdkMethods,
             'Une méthode du SDK que ce test n\'envoie pas : juger si sa réponse peut être un flux, puis lui donner sa ligne dans params().',
         );
+
+        // Une extension ajoute ses méthodes à la fabrique du serveur, pas à la
+        // constante lue ci-dessus : le bundle 0.14.1 n'en active aucune.
+        $client = self::createClient();
+        $this->postModernMcp($client, StatelessProtocol::DISCOVER_METHOD);
+        $capabilities = $this->decodeMcpResponse($client)['result']['capabilities'] ?? null;
+        self::assertIsArray($capabilities);
+        self::assertArrayNotHasKey('extensions', $capabilities, 'Une extension activée : ses méthodes échappent au recensement, les y ajouter.');
     }
 
     public function testNoAnswerOfTheHandshakeEraIsAStream(): void
     {
         $client = self::createClient();
-        $sessionId = $this->initializeMcpSession($client);
-        // La réponse même à `initialize`, rendue par openMcpSession().
-        $this->postMcpInitialize($client, ['name' => 'phpunit', 'version' => '1.0.0']);
+        // Un `initialize` à lui, avec un `progressToken` comme les autres : la
+        // session qu'il ouvre ne sert pas plus loin.
+        $this->postMcp($client, null, $this->withProgressToken('initialize', [
+            'protocolVersion' => self::MCP_PROTOCOL_VERSION,
+            'capabilities' => new stdClass(),
+            'clientInfo' => ['name' => 'phpunit', 'version' => '1.0.0'],
+        ]));
         $this->assertNotAStream($client, 'initialize');
 
+        $sessionId = $this->initializeMcpSession($client);
         foreach ($this->calls($client, $sessionId) as [$method, $params]) {
-            $this->postMcp($client, $sessionId, [
-                'jsonrpc' => '2.0',
-                'id' => 7,
-                'method' => $method,
-                'params' => ['_meta' => ['progressToken' => self::PROGRESS_TOKEN]] + $params,
-            ]);
+            $this->postMcp($client, $sessionId, $this->withProgressToken($method, $params));
             $this->assertNotAStream($client, $method, $params);
         }
     }
@@ -122,7 +129,10 @@ final class NoAnswerIsAStreamTest extends WebTestCase
         $calls[] = ['initialize', []];
 
         foreach ($calls as [$method, $params]) {
-            $this->postModern($client, $method, $params);
+            // Le SDK veut l'URI d'une ressource en `Mcp-Name` ; un nom d'outil
+            // ou de prompt, postModernMcp() l'y met lui-même.
+            $server = \is_string($params['uri'] ?? null) ? ['HTTP_MCP_NAME' => $params['uri']] : [];
+            $this->postModernMcp($client, $method, $params, server: $server, id: 7, meta: ['progressToken' => self::PROGRESS_TOKEN]);
             $this->assertNotAStream($client, $method, $params);
         }
     }
@@ -183,6 +193,15 @@ final class NoAnswerIsAStreamTest extends WebTestCase
             $calls[] = ['prompts/get', ['name' => $name, 'arguments' => ['role' => self::ROLE, 'locale' => 'fr']]];
         }
 
+        // Aucune ressource aujourd'hui (#654) : la première sera lue ici.
+        $resources = $this->mcpCall($client, $sessionId, 'resources/list')['result']['resources'] ?? null;
+        self::assertIsArray($resources, 'resources/list a répondu une erreur de protocole.');
+        foreach ($resources as $resource) {
+            self::assertIsArray($resource);
+            self::assertIsString($resource['uri'] ?? null);
+            $calls[] = ['resources/read', ['uri' => $resource['uri']]];
+        }
+
         return $calls;
     }
 
@@ -206,28 +225,20 @@ final class NoAnswerIsAStreamTest extends WebTestCase
     }
 
     /**
-     * Une requête de la révision sans session, d'un client qui accepte un flux.
+     * Une requête de l'ère à session, d'un client qui accepte un flux.
      *
      * @param array<string, mixed> $params
+     *
+     * @return array<string, mixed>
      */
-    private function postModern(KernelBrowser $client, string $method, array $params): void
+    private function withProgressToken(string $method, array $params): array
     {
-        $headers = ['HTTP_MCP_PROTOCOL_VERSION' => self::MCP_MODERN_REVISION, 'HTTP_MCP_METHOD' => $method];
-        $subject = $params['name'] ?? $params['uri'] ?? null;
-        if (\is_string($subject) && \in_array($method, ['tools/call', 'prompts/get', 'resources/read'], true)) {
-            $headers['HTTP_MCP_NAME'] = $subject;
-        }
-
-        $this->postMcp($client, null, [
+        return [
             'jsonrpc' => '2.0',
             'id' => 7,
             'method' => $method,
-            'params' => ['_meta' => [
-                RequestMeta::PROTOCOL_VERSION => self::MCP_MODERN_REVISION,
-                RequestMeta::CLIENT_CAPABILITIES => new stdClass(),
-                'progressToken' => self::PROGRESS_TOKEN,
-            ]] + $params,
-        ], $headers);
+            'params' => ['_meta' => ['progressToken' => self::PROGRESS_TOKEN]] + $params,
+        ];
     }
 
     /**
