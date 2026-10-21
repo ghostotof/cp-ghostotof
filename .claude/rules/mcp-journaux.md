@@ -45,7 +45,9 @@ paths:
   `tool-error` for `isError: true`, `protocol-error`), `errorCode` (JSON-RPC), `durationMs`, `ip`
   (`TruncatedIp`: IPv4 /24, IPv6 /48 through `IpUtils::anonymize()` since #673, after recognising on the bytes the two
   forms it misses — an IPv4-mapped address written as the IPv4 it carries (Symfony keeps the IPv6 form), a 6to4
-  address `2002::/16` keeping only the first three bytes of its IPv4 (a /48 kept it whole); the deprecated
+  address `2002::/16` keeping only the first three bytes of its IPv4 (a /48 kept it whole), the translation prefix
+  `64:ff9b::/96` (an IPv6 server reached by IPv4 clients through NAT64/SIIT) keeping the /24 of its IPv4 (a /48 erased
+  it); the deprecated
   IPv4-compatible `::a.b.c.d` is truncated to /24 as Symfony does, where a /48 left `::`; read **once, at
   `kernel.request`**: the `RequestStack` is empty at terminate and during an SSE answer) and
   `declaredClient` (`clientInfo` from the session, name and version bounded to 64 characters, control and format

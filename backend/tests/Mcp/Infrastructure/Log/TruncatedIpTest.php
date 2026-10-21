@@ -35,6 +35,12 @@ final class TruncatedIpTest extends TestCase
         // qui le calcul est délégué (#673), la tronque en /24 comme une IPv4 ;
         // un /48 la réduisait à `::`. Ni plus ni moins qu'une IPv4.
         yield 'IPv4 compatible : tronquée en /24' => ['::203.0.113.42', '::cb00:7100'];
+        // Le préfixe bien connu de traduction IPv4/IPv6 (`64:ff9b::/96`, RFC
+        // 6052) : un serveur en IPv6 qui reçoit des clients IPv4 par un
+        // traducteur (NAT64, SIIT) les voit ainsi, l'IPv4 du client dans les
+        // 32 derniers bits ; un /48 n'en gardait rien, tous sous `64:ff9b::`.
+        // Tronquée en /24.
+        yield 'NAT64 : l\'IPv4 portée tombe en /24' => ['64:ff9b::203.0.113.42', '64:ff9b::cb00:7100'];
     }
 
     #[DataProvider('addresses')]
