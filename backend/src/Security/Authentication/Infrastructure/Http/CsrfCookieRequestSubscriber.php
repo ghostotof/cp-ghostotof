@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Security\Authentication\Infrastructure\Http;
 
+use App\Mcp\Infrastructure\Http\McpEndpoint;
 use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use App\Shared\Infrastructure\Http\CanonicalPath;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
@@ -78,7 +79,7 @@ final readonly class CsrfCookieRequestSubscriber
         '/api/account/base-access',
         '/api/account/password-setup',
         '/api/account/password-setup/validate',
-        '/api/mcp',
+        McpEndpoint::PATH,
     ];
 
     // Le nom vient de la fabrique qui pose le cookie (issue #87) : lu et écrit

@@ -22,8 +22,10 @@ mcp:
                 stdio: false
             http:
                 # Sous /api : l'Ingress n'envoie au backend que ce préfixe
-                # (ADR 0006, alternatives écartées).
-                path: /api/mcp
+                # (ADR 0006, alternatives écartées). Écrit une fois, dans la
+                # constante (#673) ; McpEndpointPathTest compare le firewall,
+                # nginx et le front à sa valeur.
+                path: !php/const App\Mcp\Infrastructure\Http\McpEndpoint::PATH
                 # Protection contre le rebond DNS : seul l'hôte du site est servi
                 # (en-têtes Host et Origin). Dérivé de l'URL publique déjà posée
                 # par overlay, pour n'avoir qu'une source ; `localhost` en dev et

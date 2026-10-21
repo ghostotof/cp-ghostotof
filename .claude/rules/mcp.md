@@ -22,7 +22,12 @@ paths:
 | `mcp-journaux.md` | the SDK's `mcp` channel capped and redacted, the call log `mcp_usage` (`McpCallLog`, `ModernExchange`, `TruncatedIp`, the fallback line) |
 
 - **What it is.** `symfony/mcp-bundle` serves one server, `portfolio`, on `/api/mcp` (Streamable HTTP),
-  configured in `config/packages/mcp.yaml`. Read-only, **no model call** (ADR 0006 D1). The bundle and
+  configured in `config/packages/mcp.yaml`. **The path is written once**, `Infrastructure/Http/McpEndpoint::PATH`
+  (#673): `mcp.yaml` reads it (`!php/const`), and so do `InboundMessageRefusalListener`, `McpCallLog` and the CSRF
+  guard's exclusion; `McpEndpointPathTest` compares what PHP cannot read — the route, the `mcp` firewall's pattern,
+  the sidecar's `location =`, the frontend's `MCP_ENDPOINT_PATH`. Not read, accepted: the dev nginx conf (mirrored
+  by `tools/check-backend-nginx-rate-limits.sh`) and the smoke scripts (`tools/`, not mounted; a preprod fails).
+  Read-only, **no model call** (ADR 0006 D1). The bundle and
   `mcp/sdk` are pinned **exact** (`0.14.1`, `0.8.1`; the bundle requires `mcp/sdk ^0.8.1`, so 0.9 is out until
   a bundle release moves) — `McpEndpointTest::testTheMcpPackagesArePinnedExactly` refuses any operator.
   `nyholm/psr7` is the PSR-17 implementation the bundle's `Http\Discovery\Psr17Factory` looks for;

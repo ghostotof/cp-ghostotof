@@ -74,8 +74,6 @@ use Throwable;
 #[AsEventListener(event: RequestEvent::class, priority: 15)]
 final readonly class InboundMessageRefusalListener
 {
-    private const string ENDPOINT = '/api/mcp';
-
     public function __construct(
         private ServerAnswersInterface $serverAnswers,
     ) {
@@ -91,7 +89,7 @@ final readonly class InboundMessageRefusalListener
 
         // Chemin décodé (CanonicalPath, issue #77) : `/api/%6Dcp` est routé
         // vers le serveur MCP, il doit être refusé de même.
-        if (Request::METHOD_POST !== $request->getMethod() || self::ENDPOINT !== CanonicalPath::of($request)) {
+        if (Request::METHOD_POST !== $request->getMethod() || McpEndpoint::PATH !== CanonicalPath::of($request)) {
             return;
         }
 
