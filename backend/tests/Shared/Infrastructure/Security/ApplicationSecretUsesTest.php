@@ -6,6 +6,7 @@ namespace App\Tests\Shared\Infrastructure\Security;
 
 use App\Shared\Infrastructure\Security\SecretKeyDerivation;
 use App\Tests\Support\PhpSources;
+use App\Tests\Support\RepositoryFiles;
 use PhpToken;
 use PHPUnit\Framework\TestCase;
 use RecursiveDirectoryIterator;
@@ -84,9 +85,8 @@ final class ApplicationSecretUsesTest extends TestCase
     public function testEveryUseOfTheApplicationSecretDerivesItsOwnKey(): void
     {
         $uses = [];
-        foreach (PhpSources::files(\dirname(__DIR__, 4).'/src') as $file) {
-            $code = file_get_contents($file);
-            self::assertIsString($code);
+        foreach (PhpSources::files(RepositoryFiles::backend('src')) as $file) {
+            $code = RepositoryFiles::read($file);
             if (!str_ends_with($file, self::KEYED_MAC_FILE) && $this->isAUse($code)) {
                 $uses[$file] = $code;
             }
@@ -111,7 +111,7 @@ final class ApplicationSecretUsesTest extends TestCase
     public function testTheConfigurationNamesTheSecretOnlyForTheFramework(): void
     {
         $offenders = [];
-        $files = new RecursiveIteratorIterator(new RecursiveDirectoryIterator(\dirname(__DIR__, 4).'/config'));
+        $files = new RecursiveIteratorIterator(new RecursiveDirectoryIterator(RepositoryFiles::backend('config')));
         foreach ($files as $file) {
             if (!$file instanceof SplFileInfo || 'yaml' !== $file->getExtension()) {
                 continue;

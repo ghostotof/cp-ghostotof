@@ -221,6 +221,13 @@ final class AccessControlAnchoringTest extends KernelTestCase
         yield '/api/login → api' => ['/api/login', 'api'];
         yield '/api/login_check/extra → api' => ['/api/login_check/extra', 'api'];
 
+        // --- Le serveur MCP (ADR 0006 D4) : son firewall ne lit aucun cookie,
+        // il ne doit couvrir que sa route ; un voisin relève du firewall JWT.
+        yield '/api/mcp → mcp' => ['/api/mcp', 'mcp'];
+        yield '/api/m%63p → mcp' => ['/api/m%63p', 'mcp'];
+        yield '/api/mcpx → api' => ['/api/mcpx', 'api'];
+        yield '/api/mcp/extra → api' => ['/api/mcp/extra', 'api'];
+
         // --- Le reste de l'API.
         yield '/api/me → api' => ['/api/me', 'api'];
         yield '/api/backoffice/users → api' => ['/api/backoffice/users', 'api'];

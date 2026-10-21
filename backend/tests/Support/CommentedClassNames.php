@@ -46,7 +46,7 @@ final class CommentedClassNames
         $found = [];
         foreach ($directories as $directory) {
             foreach (PhpSources::files($directory) as $path) {
-                foreach (self::inCode((string) file_get_contents($path)) as $missing) {
+                foreach (self::inCode(RepositoryFiles::read($path)) as $missing) {
                     $found[] = $path.':'.$missing;
                 }
             }

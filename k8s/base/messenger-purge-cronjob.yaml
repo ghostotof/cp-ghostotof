@@ -1,4 +1,4 @@
-# Ménage quotidien de la base, trois commandes :
+# Ménage quotidien de la base, deux commandes :
 #
 # 1. `app:contact:purge-failed-messages` — rétention des messages de contact
 #    en échec (point d'audit B6, 30 jours par défaut) — voir
@@ -7,11 +7,9 @@
 #    comptes sur invitation jamais activés au-delà de 30 jours depuis leur dernière
 #    invitation — voir
 #    src/Security/User/Presentation/Command/PurgePendingInvitationsCommand.php.
-# 3. `cache:pool:prune` — purge des entrées expirées de `cache_items`, la table
-#    Doctrine DBAL du cache applicatif (ADR 0005 : l'état des limiteurs de
-#    débit et le cache de résultats vivent en base, pas sur le disque du pod).
-#    L'adaptateur n'efface jamais une ligne expirée de lui-même : sans cette
-#    commande, une ligne par (IP, limiteur) s'accumulerait indéfiniment.
+#
+# `cache:pool:prune` y tournait aussi jusqu'à #644 : la purge de `cache_items`
+# est désormais horaire, dans son propre CronJob (cache-prune-cronjob.yaml).
 #
 # Le nom du CronJob date de la première commande et n'a pas été changé :
 # `kubectl apply -k` ne supprime jamais un objet renommé, et le Role du
@@ -74,7 +72,6 @@ spec:
                   set -e
                   php bin/console app:contact:purge-failed-messages --no-interaction
                   php bin/console app:user:purge-pending-invitations --no-interaction
-                  php bin/console cache:pool:prune --no-interaction
               env:
                 # Issue #525 : attentes de verrou PostgreSQL bornées comme sous FPM (valeur
                 # de www.prod.conf ; ConsoleLockWaitBoundTest,

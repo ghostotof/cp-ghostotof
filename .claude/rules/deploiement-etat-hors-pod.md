@@ -41,8 +41,10 @@ paths:
   logins in a row on production were never throttled, while `LoginThrottlingTest` was green
   (CI's disk is writable). `cache.app` is now `cache.adapter.doctrine_dbal` in **every** env
   (`cache.yaml`), table `cache_items` created by migration `Version20260916180000`, pruned
-  daily by `cache:pool:prune` in the housekeeping CronJob (`messenger-purge-cronjob.yaml`, name
-  kept: `apply -k` never deletes a renamed object). `tests/Security/RateLimiterStorageTest`
+  **hourly** by `cache:pool:prune` in its own CronJob, `cache-prune-cronjob.yaml` (#644: an MCP session lives an
+  hour, and every anonymous `initialize` writes one; the only source of that purge, `McpSessionsPrunedHourlyTest`)
+  — until #644 it ran daily in the housekeeping CronJob (`messenger-purge-cronjob.yaml`, name kept: `apply -k`
+  never deletes a renamed object). `tests/Security/RateLimiterStorageTest`
   pins it (every limiter + `cache.app` DBAL-backed, never Filesystem — add a new limiter to its
   list); `tools/smoke-login-throttling.sh`, run by `smoke-test-preprod`, is the only check that
   exercises a real pod (6 wrong logins, the 6th must be a 429 `/errors/rate-limited` **with** a

@@ -29,9 +29,13 @@
     "mobileNavigation": "Navigation mobile",
     "legalNoticeLink": "Mentions légales",
     "privacyPolicyLink": "Politique de confidentialité",
-    "legalNavigation": "Navigation légale",
+    "connectAssistantLink": "Brancher votre assistant",
+    "footerNavigation": "Navigation du pied de page",
     "administration": "Administration",
     "opensInNewTab": "(nouvelle fenêtre)",
+    "copy": "Copier",
+    "copied": "Copié dans le presse-papiers.",
+    "copyFailed": "La copie a échoué : sélectionnez le texte pour le copier à la main.",
     "instantAccess": "Accès instantané",
     "instantAccessGranting": "Accès en cours…",
     "instantAccessRateLimited": "Trop de tentatives depuis cette adresse. Réessayez plus tard.",
@@ -615,6 +619,10 @@
     "stack": {
       "title": "Ma stack, en vie",
       "description": "Versions installées de ce site et leurs échéances de support, relevées chaque jour auprès d'endoflife.date."
+    },
+    "connectAssistant": {
+      "title": "Brancher votre assistant",
+      "description": "Ajoutez le serveur MCP du site à Claude, ChatGPT, Cursor ou PhpStorm : son URL, la configuration de chaque client, ce qu'il sert et ce qu'il ne sert jamais."
     },
     "adminAnonymousCv": {
       "title": "Administration — CV sans identité",

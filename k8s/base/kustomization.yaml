@@ -10,6 +10,7 @@ resources:
   - backend-service.yaml
   - messenger-worker-deployment.yaml
   - messenger-purge-cronjob.yaml
+  - cache-prune-cronjob.yaml
   - watch-refresh-cronjob.yaml
   - frontend-deployment.yaml
   - frontend-service.yaml

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Portfolio\Cv\Presentation\Controller;
 
+use App\Portfolio\Cv\Presentation\Controller\CvFileUnavailableException;
 use App\Portfolio\Cv\Presentation\Controller\DownloadCvController;
 use App\Security\User\Application\CpgUserRegistrarInterface;
 use App\Security\User\Domain\Entity\CpgUser;
@@ -12,7 +13,6 @@ use App\Tests\Support\TestCredentials;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
-use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 /**
  * Couvre GET /api/cv : même protection par authentification que /api/me (cf.
@@ -98,7 +98,9 @@ final class DownloadCvControllerTest extends WebTestCase
     {
         $controller = new DownloadCvController('/path/that/does/not/exist.pdf', 'cv.pdf');
 
-        $this->expectException(NotFoundHttpException::class);
+        // Une 404 nommée, pour un `log_level` à elle : un CV absent est un
+        // défaut du serveur, pas une route inconnue (#678).
+        $this->expectException(CvFileUnavailableException::class);
 
         $controller();
     }

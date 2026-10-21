@@ -16,7 +16,8 @@
   voir D5. En production depuis `v0.9.0` (2026-09-13). Voir « Clôture » en fin de document pour ce
   qui a suivi la release et ce qui reste éditorial. **Amendée le 2026-09-21** (3e audit, constat
   A9) : le risque accepté « le logout ne révoque pas le jeton » est consigné en fin de
-  « Conséquences ».
+  « Conséquences ». **D1 amendée le 2026-10-19** (ADR 0006, issue #379) : le serveur MCP sert le
+  palier de base sans authentification, voir l'encadré sous D1.
 - Date : 2026-09-10
 - Portée : `config/packages/security.yaml`, `src/Security/User`, `src/Security/Authentication`,
   `tests/Security/ApiRouteExposureTest.php`, frontend `presentation/pages/LoginPage.vue` + garde de
@@ -81,6 +82,15 @@ empêcher un lecteur déterminé de lire ne l'est pas.
 
 Conséquence directe et structurante : **la règle d'admission au palier intermédiaire est « accepterais-je
 de publier ceci ? »**. Si la réponse est non, le contenu appartient au palier supérieur.
+
+**Amendement du 2026-10-19 (ADR 0006, issue #379) — « non indexable » ne veut plus dire « exige une
+authentification ».** Le serveur MCP sert les contenus du palier de base **sans jeton**. Ce que la
+discrétion protège tient toujours : un moteur n'indexe pas les réponses à des POST JSON-RPC, et le
+GET du transport MCP n'ouvre qu'un flux d'événements. Ce qui change est le prix de la lecture : un
+appel de protocole au lieu d'une requête authentifiée — et l'un comme l'autre s'obtiennent en une
+requête, ce que le paragraphe précédent assumait déjà. La colonne « Nature réelle » se lit donc :
+publiable, **non servi à un robot d'indexation**. La règle d'admission ne change pas, et rien de
+nominatif ne descend : le palier de confiance passe, côté MCP, par une connexion MCP (ADR 0006 D3).
 
 ### D2 — `ROLE_USER` change de sens, et c'est le cœur de la décision
 

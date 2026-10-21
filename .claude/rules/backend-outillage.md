@@ -28,8 +28,9 @@ its traces carry no call arguments (see the last section, issue #420).
 `build-images` needs it). **No baseline** — level `max` + strict-rules is green across `src/` AND `tests/`, keep
 it that way. Two scoped `ignoreErrors` in `phpstan.dist.neon` cover functional-test JSON payloads (a decoded
 response body is `mixed`; the PHPUnit assertions are the shape check, not PHPStan) — `offsetAccess`/`foreach`
-and `argument.type … mixed given`, `path: tests/` only. `src/Kernel.php` is `excludePaths`-excluded
-(`getAllowedEnvs()` false-positive `method.unused`). The `$uriVariables` mixed-access pattern is solved by the
+and `argument.type … mixed given`, `path: tests/` only. `src/Kernel.php` is analysed since #675 (it registers
+the MCP capabilities compiler pass, `declare(strict_types=1)` added): the `getAllowedEnvs()` false-positive
+`method.unused` that excluded it no longer occurs (measured 2026-10-21). Rector still skips it (Flex skeleton). The `$uriVariables` mixed-access pattern is solved by the
 `App\Shared\Infrastructure\ApiPlatform\ResolvesUriVariables` trait (`uriVariableUuid`/`uriVariableString`/
 `uriVariableLocale`) — reuse it in new Providers/Processors rather than casting `mixed`. Functional tests build request bodies via
 `App\Tests\Support\HttpJson::jsonBody()` (not raw `json_encode`, which is `string|false`).
@@ -86,7 +87,9 @@ channel names an account by its login identifier (issue #363): the `security` ch
 third channel follows the same rule, `ai_usage` (spec 0005): the career assistant's and, since issue
 #356, the translator's token usage, duration and quota refusals, never any content, on its own `info`
 handler — as an `info` of the default channel it never
-left a production pod (`AiUsageLogChannelTest` pins the prod config). The
+left a production pod (`AiUsageLogChannelTest` pins the prod config). Since #643 two more, both kept out of
+`main` and `console` (`McpLogChannelsTest`): `mcp`, the MCP SDK's own channel, capped at `warning` and bounded
+by `SdkChannelRedactor`, and `mcp_usage`, the MCP call log, on an `info` handler (see `.claude/rules/mcp-journaux.md`). The
 `default:` processor takes a *parameter name*, hence `app.log_level` in `services.yaml` — `default:warning:`
 would look for a parameter called `warning` and fail at compile time. No duplication with
 `error_log = /proc/self/fd/2` (`php.prod.ini`) either: Monolog writes to fd 2 itself, `error_log` only
@@ -202,3 +205,29 @@ red: the leftover link is refused anyway by the « account already active » gua
 `testEveryUnusableLinkGetsTheSameResponse` red on its « révoqué par le backoffice » link (204 instead of
 the common 404 — the account is still pending, nothing else refuses the link), measured in #519. No
 concurrency harness for either: the purge is no race.
+
+## Reading a repository file from a test (issue #629)
+
+A test reads a file of `src/`, `config/`, the backend or the repository through
+**`tests/Support/RepositoryFiles`**: `backend('src')` and `repository('k8s/README.md')` are written in that
+class only, from its own location, and `read($absolutePath)` fails the test naming the path and the cause
+— missing, not a regular file (a directory passes `assertFileIsReadable`), unreadable —, never returning
+`''` the way `(string) file_get_contents()` did, the symptom of #615. Every reader of a repository file goes
+through it: `KubernetesManifests`, `PhpImageBuild`, `MigrationSources`, `Runbook`, `EnvironmentConfigKernel`,
+the token censuses of `tests/Support` (`DeclaredClasses`, `MisqualifiedNativeCalls`…) and the tests that walk
+`src/`. A file a test wrote itself (a sandbox, a temporary directory) is not a repository file. Never write
+`\dirname(__DIR__, n)` or `__DIR__.'/../..'` to reach out of `tests/`: such a path depends on the test's depth
+and silently reads elsewhere when the test moves. `tests/Shared/DirPathsStayInTestsTest.php`
+(`tests/Support/PathsLeavingTests`, by tokens) resolves every path built from `__DIR__` lexically from the
+file's directory — `dirname(<__DIR__ and its concatenation>[, n])`, qualified or not, `n` in any base,
+positional or named, trailing comma allowed, or a bare `__DIR__`, each followed by its concatenated pieces
+(literals, `DIRECTORY_SEPARATOR`, the start of an interpolated string) — and fails on one that leaves `tests/`
+or that it cannot resolve. **It judges where a path leads, not how it gets there**: a sibling fixture, and the
+child scripts' `require \dirname(__DIR__, n).'/bootstrap.php'` (which load the autoloader, so cannot use
+`RepositoryFiles`), stay in `tests/` and pass without an exemption — the issue meant to exempt them; a moved
+one fails loudly on its `require`. A path that climbs out and comes back into `tests/` passing is the same
+accepted limit. Its `EXEMPT` list holds pairs (file, resolved path) for the files that run before the
+autoloader (`tests/bootstrap.php`, `tests/object-manager.php`, the child script `await-barrier.php`) and
+`RepositoryFiles` itself, each pair still required to be written; a new path in an exempt file is refused.
+Not seen: a nested call on the result (`\dirname(\dirname(__DIR__))`, `realpath()`), a path carried by a
+variable, one composed by `sprintf()` or `implode()`, a constant other than `DIRECTORY_SEPARATOR`, `__FILE__`.

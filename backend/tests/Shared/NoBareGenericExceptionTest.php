@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Shared;
 
 use App\Tests\Support\BareExceptionInstantiations;
+use App\Tests\Support\RepositoryFiles;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
@@ -24,7 +25,7 @@ final class NoBareGenericExceptionTest extends TestCase
 {
     public function testNoSourceFileInstantiatesABareGenericException(): void
     {
-        self::assertSame([], BareExceptionInstantiations::in(\dirname(__DIR__, 2).'/src'));
+        self::assertSame([], BareExceptionInstantiations::in(RepositoryFiles::backend('src')));
     }
 
     /**
@@ -63,6 +64,11 @@ final class NoBareGenericExceptionTest extends TestCase
         yield 'exception dédiée' => ["<?php\nnamespace App;\nthrow UnsupportedOperationException::for(\$operation);\n", []];
         yield 'InvalidArgumentException' => ["<?php\nnamespace App;\nthrow new \\InvalidArgumentException('x');\n", [3]];
         yield 'InvalidArgumentException importée' => ["<?php\nnamespace App;\nuse InvalidArgumentException;\nthrow new InvalidArgumentException('x');\n", [4]];
+        // Journalisées en `info` depuis #678 (erreurs du client) : nues dans src/,
+        // un défaut du serveur y disparaîtrait des journaux de production.
+        yield 'NotFoundHttpException importée (#678)' => ["<?php\nnamespace App;\nuse Symfony\\Component\\HttpKernel\\Exception\\NotFoundHttpException;\nthrow new NotFoundHttpException('x');\n", [4]];
+        yield 'BadRequestHttpException en nom complet (#678)' => ["<?php\nnamespace App;\nthrow new \\Symfony\\Component\\HttpKernel\\Exception\\BadRequestHttpException('x');\n", [3]];
+        yield 'sous-classe nommée d\'une 404 (#678)' => ["<?php\nnamespace App;\nthrow CvFileUnavailableException::atConfiguredPath();\n", []];
         yield 'autre exception de la SPL, hors périmètre' => ["<?php\nnamespace App;\nthrow new \\DomainException('x');\n", []];
         yield 'simple mention' => ["<?php\nnamespace App;\n\$class = \\LogicException::class;\n", []];
     }

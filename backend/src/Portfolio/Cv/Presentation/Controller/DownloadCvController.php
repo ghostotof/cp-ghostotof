@@ -7,7 +7,6 @@ namespace App\Portfolio\Cv\Presentation\Controller;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpFoundation\ResponseHeaderBag;
-use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\Routing\Attribute\Route;
 
 /**
@@ -32,7 +31,7 @@ final readonly class DownloadCvController
     public function __invoke(): BinaryFileResponse
     {
         if (!is_file($this->cvFilePath)) {
-            throw new NotFoundHttpException('CV non disponible.');
+            throw CvFileUnavailableException::atConfiguredPath();
         }
 
         $response = new BinaryFileResponse($this->cvFilePath);

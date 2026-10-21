@@ -12,6 +12,7 @@ use App\Portfolio\Shared\Domain\Exception\UnknownTranslationGroupException;
 use App\Tests\Support\ClassNameResolver;
 use App\Tests\Support\DeclaredClasses;
 use App\Tests\Support\PhpSources;
+use App\Tests\Support\RepositoryFiles;
 use PhpToken;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -154,8 +155,6 @@ use ReflectionClass;
  */
 final class ProblemDetailStaysStaticTest extends TestCase
 {
-    private const string SOURCES = __DIR__.'/../../../../src';
-
     /**
      * Messages dynamiques admis, parce qu'aucune de ces exceptions ne peut être
      * levée sous /api/assistant : elles appartiennent à des routes de
@@ -194,7 +193,7 @@ final class ProblemDetailStaysStaticTest extends TestCase
 
     public function testEveryProblemDetailInSourcesIsALiteral(): void
     {
-        $problems = DeclaredClasses::implementing(self::SOURCES, ProblemExceptionInterface::class);
+        $problems = DeclaredClasses::implementing(RepositoryFiles::backend('src'), ProblemExceptionInterface::class);
         self::assertNotEmpty($problems, 'Aucune ProblemExceptionInterface trouvée : le garde-fou ne garderait rien.');
         self::assertSame([], array_diff(array_keys(self::DYNAMIC_DETAIL_ALLOWED), $problems), 'Entrée admise qui n\'existe plus : la retirer.');
         $problems = array_values(array_diff($problems, array_keys(self::DYNAMIC_DETAIL_ALLOWED)));
@@ -500,9 +499,9 @@ final class ProblemDetailStaysStaticTest extends TestCase
     public function testTheTokenModelResolvesMethodsAsPhpDoes(): void
     {
         $byName = $this->byName($this->sourceModel());
-        $sources = (string) realpath(self::SOURCES);
+        $sources = (string) realpath(RepositoryFiles::backend('src'));
         $resolved = 0;
-        foreach (DeclaredClasses::implementing(self::SOURCES, ProblemExceptionInterface::class) as $problem) {
+        foreach (DeclaredClasses::implementing(RepositoryFiles::backend('src'), ProblemExceptionInterface::class) as $problem) {
             $class = new ReflectionClass($problem);
             self::assertArrayHasKey(strtolower($problem), $byName, $problem.' : chargée par PHP, le modèle ne la déclare pas.');
             $methods = $this->methodsOf($byName[strtolower($problem)], $byName);
@@ -540,8 +539,8 @@ final class ProblemDetailStaysStaticTest extends TestCase
     private function sourceFiles(): array
     {
         $sources = [];
-        foreach (PhpSources::files(self::SOURCES) as $path) {
-            $sources[$path] = (string) file_get_contents($path);
+        foreach (PhpSources::files(RepositoryFiles::backend('src')) as $path) {
+            $sources[$path] = RepositoryFiles::read($path);
         }
 
         return $sources;

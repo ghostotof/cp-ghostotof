@@ -12,6 +12,7 @@ use App\Security\Authentication\Infrastructure\Log\ThrottledRequestAuditListener
 use App\Shared\Domain\Exception\RetryAfterAware;
 use App\Tests\Security\Authentication\Infrastructure\Log\Fixtures\QuotaSources\UnauditedQuotaFixtureException;
 use App\Tests\Support\DeclaredClasses;
+use App\Tests\Support\RepositoryFiles;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
@@ -45,7 +46,6 @@ use Throwable;
  */
 final class ThrottledRequestAuditCoverageTest extends TestCase
 {
-    private const string SOURCES = __DIR__.'/../../../../../src';
     private const string FIXTURE_SOURCES = __DIR__.'/Fixtures/QuotaSources';
 
     /**
@@ -85,7 +85,7 @@ final class ThrottledRequestAuditCoverageTest extends TestCase
 
     public function testEveryQuotaExceptionIsAuditedByItsOwnEventOrJustified(): void
     {
-        $quotas = $this->quotaExceptions(self::SOURCES);
+        $quotas = $this->quotaExceptions(RepositoryFiles::backend('src'));
         self::assertNotEmpty($quotas, 'Aucune exception de quota recensée : le garde-fou ne garderait rien.');
 
         $audited = [];
@@ -108,7 +108,7 @@ final class ThrottledRequestAuditCoverageTest extends TestCase
      */
     public function testEveryJustifiedQuotaExistsAndIsLeftAloneByTheListener(): void
     {
-        $quotas = $this->quotaExceptions(self::SOURCES);
+        $quotas = $this->quotaExceptions(RepositoryFiles::backend('src'));
         $justified = [
             ...array_map(static fn (): string => 'quota par compte', self::PER_ACCOUNT),
             ...array_map(static fn (): string => 'tracé en amont', self::TRACED_UPSTREAM),

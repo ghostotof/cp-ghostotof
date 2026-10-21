@@ -5,6 +5,7 @@ import type { ExperienceContent } from '../entities/ExperienceContent'
 import type { Technology } from '../entities/Technology'
 import type { Locale } from '../entities/Locale'
 import type { LegalPageContent } from '../entities/LegalPageContent'
+import type { ConnectAssistantContent } from '../entities/ConnectAssistantContent'
 
 /**
  * Abstraction (DIP) dont dépendent l'application et la présentation.
@@ -24,4 +25,5 @@ export interface PortfolioContentRepository {
   getAdditionalTechnologies(locale: Locale): readonly Technology[]
   getLegalNoticeContent(locale: Locale): LegalPageContent
   getPrivacyPolicyContent(locale: Locale): LegalPageContent
+  getConnectAssistantContent(locale: Locale): ConnectAssistantContent
 }

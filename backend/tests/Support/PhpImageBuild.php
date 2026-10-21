@@ -439,10 +439,6 @@ final class PhpImageBuild
      */
     private static function read(string $path): string
     {
-        $absolute = \dirname(__DIR__, 3).'/'.$path;
-        Assert::assertFileIsReadable($absolute);
-        Assert::assertTrue(is_file($absolute), \sprintf('%s n\'est pas un fichier.', $path));
-
-        return (string) file_get_contents($absolute);
+        return RepositoryFiles::read(RepositoryFiles::repository($path));
     }
 }

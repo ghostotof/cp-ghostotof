@@ -76,8 +76,18 @@ const currentLocale = computed<Locale>(() => {
         </template>
       </span>
 
-      <nav :aria-label="t('common.legalNavigation')">
-        <ul class="list-unstyled d-flex align-items-center gap-3 mb-0">
+      <!-- Nommée « pied de page » et non « légale » depuis qu'elle mène aussi à
+           « Brancher votre assistant » (spec 0007, #645). -->
+      <nav :aria-label="t('common.footerNavigation')">
+        <ul class="list-unstyled d-flex flex-wrap align-items-center justify-content-center gap-3 mb-0">
+          <li>
+            <RouterLink
+              :to="`/${currentLocale}/connect-your-assistant`"
+              class="link-secondary link-underline-opacity-0 link-underline-opacity-100-hover"
+            >
+              {{ t('common.connectAssistantLink') }}
+            </RouterLink>
+          </li>
           <li>
             <RouterLink
               :to="`/${currentLocale}/legal-notice`"

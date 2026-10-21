@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Security\Authentication\Infrastructure\Http;
 
+use App\Mcp\Infrastructure\Http\McpEndpoint;
 use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use App\Shared\Infrastructure\Http\CanonicalPath;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
@@ -61,6 +62,12 @@ final readonly class CsrfCookieRequestSubscriber
      *   route sœur future (`…/password-setup-autre`) sans que personne l'ait
      *   décidé.
      *
+     * - /api/mcp (ADR 0006 D4) : un client MCP n'est pas un navigateur, il ne
+     *   porte aucun jeton XSRF. L'exclusion n'est sûre que parce que le
+     *   firewall `mcp` (security.yaml) ne lit jamais de cookie : une requête
+     *   intersite portant le BEARER d'une personne de confiance n'y emprunte
+     *   aucune identité. Chemin EXACT, comme les précédents.
+     *
      * /api/login_check et /api/account/base-access POSENT un cookie BEARER :
      * être hors double-submit ne les met pas hors CSRF pour autant (login-CSRF,
      * issue #76). Elles sont gardées par LoginCsrfRequestListener, qui exige un
@@ -72,6 +79,7 @@ final readonly class CsrfCookieRequestSubscriber
         '/api/account/base-access',
         '/api/account/password-setup',
         '/api/account/password-setup/validate',
+        McpEndpoint::PATH,
     ];
 
     // Le nom vient de la fabrique qui pose le cookie (issue #87) : lu et écrit

@@ -6,6 +6,7 @@ namespace App\Tests\Shared\Infrastructure\Dotenv;
 
 use App\Tests\Support\ChildPhpProcess;
 use App\Tests\Support\PhpImageBuild;
+use App\Tests\Support\RepositoryFiles;
 use App\Tests\Support\TestKeys;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Dotenv\Dotenv;
@@ -42,7 +43,7 @@ final class CompiledDotenvNeverMasksPodVariablesTest extends TestCase
 
     public static function setUpBeforeClass(): void
     {
-        $backend = \dirname(__DIR__, 4);
+        $backend = RepositoryFiles::backend();
         self::$project = sys_get_temp_dir().'/compiled-dotenv-'.bin2hex(random_bytes(6));
         $filesystem = new Filesystem();
         $filesystem->mkdir([self::$project, self::$project.'/home']);
@@ -91,7 +92,7 @@ final class CompiledDotenvNeverMasksPodVariablesTest extends TestCase
 
         $values = include self::$project.'/.env.local.php';
         self::assertIsArray($values);
-        $dotenv = (new Dotenv())->parse((string) file_get_contents(\dirname(__DIR__, 4).'/.env'));
+        $dotenv = (new Dotenv())->parse(RepositoryFiles::read(RepositoryFiles::backend('.env')));
         self::assertSame(array_keys($dotenv), array_keys($values), 'Les clés compilées sont celles de .env, dans le même ordre.');
 
         foreach ($dotenv as $name => $value) {

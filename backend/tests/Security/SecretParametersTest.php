@@ -28,6 +28,7 @@ use App\Tests\Security\Fixtures\SecretParametersFixture;
 use App\Tests\Security\Fixtures\SecretParametersFixtureInterface;
 use App\Tests\Security\Fixtures\UsedTrait\IssuesTokensFixture;
 use App\Tests\Support\DeclaredClasses;
+use App\Tests\Support\RepositoryFiles;
 use App\Tests\Support\SensitiveParameters;
 use PHPUnit\Framework\TestCase;
 use ReflectionMethod;
@@ -293,7 +294,7 @@ final class SecretParametersTest extends TestCase
      */
     private function srcParameters(): array
     {
-        return $this->parametersIn(\dirname(__DIR__, 2).'/src');
+        return $this->parametersIn(RepositoryFiles::backend('src'));
     }
 
     /**

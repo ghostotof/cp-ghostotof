@@ -156,7 +156,7 @@ final class DeclaredClasses
     private static function declaredIn(string $path): array
     {
         $loaded = [];
-        foreach (self::declaredNames((string) file_get_contents($path)) as $name) {
+        foreach (self::declaredNames(RepositoryFiles::read($path)) as $name) {
             if (!self::isDeclared($name)) {
                 // Hors PSR-4 : l'autoload ne sait pas où la trouver.
                 require_once $path;

@@ -2,6 +2,7 @@ import type { HeroContent } from '../../../domain/portfolio/entities/HeroContent
 import type { ExperienceContent } from '../../../domain/portfolio/entities/ExperienceContent'
 import type { Technology } from '../../../domain/portfolio/entities/Technology'
 import type { LegalPageContent } from '../../../domain/portfolio/entities/LegalPageContent'
+import type { ConnectAssistantContent } from '../../../domain/portfolio/entities/ConnectAssistantContent'
 
 /**
  * Contenu "riche" (structuré, pas de simples chaînes courtes) d'une locale donnée.
@@ -19,4 +20,5 @@ export interface PortfolioLocaleContent {
   }
   readonly legalNotice: LegalPageContent
   readonly privacyPolicy: LegalPageContent
+  readonly connectAssistant: ConnectAssistantContent
 }

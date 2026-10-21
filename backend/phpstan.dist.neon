@@ -13,13 +13,12 @@ parameters:
         - src
         - tests
 
-    # Fichiers squelette geres par Symfony Flex (regenerables) : on ne les
-    # analyse pas. src/Kernel.php : getAllowedEnvs() est un faux positif
-    # method.unused (appele par KernelTrait de Symfony, chaine de trait que
-    # PHPStan ne suit pas).
+    # Fichier squelette gere par Symfony Flex (regenerable) : on ne l'analyse
+    # pas. src/Kernel.php l'est depuis #675 (il enregistre une compiler pass) :
+    # le faux positif method.unused de getAllowedEnvs() qui l'excluait ne se
+    # produit plus (mesure le 2026-10-21).
     excludePaths:
         - tests/bootstrap.php
-        - src/Kernel.php
 
     # Charge le .env pour que l'analyse voie les memes variables qu'a l'execution.
     bootstrapFiles:

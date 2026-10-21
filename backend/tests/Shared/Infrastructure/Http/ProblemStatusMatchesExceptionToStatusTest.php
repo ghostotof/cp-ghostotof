@@ -9,6 +9,7 @@ use App\Contact\Domain\Exception\ContactRateLimitExceededException;
 use App\Contact\Presentation\ApiResource\ContactMessageResource;
 use App\Tests\Support\CompiledExceptionConfig;
 use App\Tests\Support\DeclaredClasses;
+use App\Tests\Support\RepositoryFiles;
 use ReflectionClass;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 
@@ -31,8 +32,6 @@ use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
  */
 final class ProblemStatusMatchesExceptionToStatusTest extends KernelTestCase
 {
-    private const string SOURCES = __DIR__.'/../../../../src';
-
     public function testNoExceptionToStatusEntryContradictsAProblemStatus(): void
     {
         $container = self::getContainer();
@@ -49,7 +48,7 @@ final class ProblemStatusMatchesExceptionToStatusTest extends KernelTestCase
         );
 
         $problems = array_filter(
-            DeclaredClasses::implementing(self::SOURCES, ProblemExceptionInterface::class),
+            DeclaredClasses::implementing(RepositoryFiles::backend('src'), ProblemExceptionInterface::class),
             static fn (string $class): bool => !(new ReflectionClass($class))->isAbstract(),
         );
         self::assertNotEmpty($problems, 'Aucune ProblemExceptionInterface recensée : le garde-fou ne garderait rien.');

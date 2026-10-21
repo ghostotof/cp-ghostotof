@@ -10,8 +10,10 @@ use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Security\User\Application\CpgUserRegistrarInterface;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Tests\Support\HttpJson;
+use App\Tests\Support\ReadsAllChannelsLog;
 use App\Tests\Support\TestCredentials;
 use Doctrine\ORM\EntityManagerInterface;
+use Monolog\Level;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 
@@ -23,6 +25,7 @@ use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 final class BackofficeAboutSettingsResourceTest extends WebTestCase
 {
     use HttpJson;
+    use ReadsAllChannelsLog;
 
     private const string SUPER_USERNAME = 'super';
     private const string PLAIN_USERNAME = 'jane';
@@ -69,6 +72,7 @@ final class BackofficeAboutSettingsResourceTest extends WebTestCase
         $client->request('GET', '/api/backoffice/about/settings/fr');
 
         self::assertResponseStatusCodeSame(404);
+        $this->assertMissingSettingsAreLoggedAsADefect();
     }
 
     public function testGetAndPutAsRoleSuper(): void
@@ -121,6 +125,21 @@ final class BackofficeAboutSettingsResourceTest extends WebTestCase
         ]));
 
         self::assertResponseStatusCodeSame(404);
+        $this->assertMissingSettingsAreLoggedAsADefect();
+    }
+
+    /**
+     * Des réglages absents pour une locale valide sont un défaut de données
+     * (seed absent, ligne supprimée), comme sur la route publique : une 404
+     * nommée en `warning`, visible en production — pas la 404 générique d'API
+     * Platform, en `info` depuis #678.
+     */
+    private function assertMissingSettingsAreLoggedAsADefect(): void
+    {
+        $uncaught = self::uncaughtExceptionRecords();
+        self::assertCount(1, $uncaught);
+        self::assertSame(Level::Warning, $uncaught[0]->level, $uncaught[0]->message);
+        self::assertStringContainsString('AboutSettingsNotFoundException', $uncaught[0]->message);
     }
 
     public function testPutWithTooLongFieldIsRejected(): void

@@ -33,6 +33,9 @@ This file only carries what applies everywhere, plus what runs from the shell (g
 | `portfolio-ordre-ecritures.md` | application refusals, writes under the scope lock, detached instances | touching an ordered content's `Administrator` or a write path |
 | `portfolio-watch.md` | `Portfolio/Watch` | touching the tech watch, `/stack`, an outbound call |
 | `ai.md` | `Ai/` (translation, career assistant) | touching anything that calls a language model |
+| `mcp.md` | `Mcp/`, the MCP server on `/api/mcp` — and the index of the two below | touching a tool, `mcp.yaml`, the `mcp` firewall |
+| `mcp-prompt-d8.md` | the prompt `present_for_role`, the D8 guard (the author never named) | touching the prompt, a published description, `AuthorNeverNamedTest` |
+| `mcp-journaux.md` | the SDK's `mcp` channel, the call log `mcp_usage` | touching `Mcp/Infrastructure/Log`, `monolog.yaml`'s MCP handlers |
 | `backoffice-api.md` | backoffice API, API Platform pattern, API errors | adding an endpoint, an API Platform resource, an exception mapping |
 | `seeding.md` | `app:*:seed`, reference-data migrations | touching a seed command or the meaning of seeded data |
 | `frontend.md` | frontend layers, API-backed content, i18n, SEO, lint | any frontend change |
@@ -386,3 +389,7 @@ ADRs (status, dates and amendments live in each ADR):
   new `ai.agent`.
 - `docs/adr/0005-etat-hors-du-pod.md` — no application state on the pod's filesystem. Read it before
   touching `cache.yaml`, adding a rate limiter, or mounting anything under `var/`.
+- `docs/adr/0006-serveur-mcp.md` — the MCP server (issue #379): read-only, no model call, serves
+  nothing a route of the same tier doesn't; anonymous + base tier without a token (amends 0003 D1);
+  the trusted tier through an OAuth 2.1 MCP connection only, checked in DB on every request, never a
+  cookie on `/api/mcp`. Read it before touching `/api/mcp`, `mcp.yaml` or anything OAuth.

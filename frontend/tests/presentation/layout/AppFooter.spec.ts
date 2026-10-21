@@ -20,14 +20,20 @@ async function mountFooter(initialPath = '/fr') {
       { path: '/:locale(fr|en)', name: 'home', component: StubPage },
       { path: '/:locale(fr|en)/legal-notice', name: 'legal-notice', component: StubPage },
       { path: '/:locale(fr|en)/privacy-policy', name: 'privacy-policy', component: StubPage },
+      { path: '/:locale(fr|en)/connect-your-assistant', name: 'connect-assistant', component: StubPage },
     ],
   })
   await router.push(initialPath)
   await router.isReady()
 
+  // Le routeur de l'application synchronise la langue d'i18n sur la route
+  // (beforeEach) ; ce routeur de test ne le fait pas, on la pose donc ici.
+  const i18n = createAppI18n()
+  i18n.global.locale.value = initialPath.startsWith('/en') ? 'en' : 'fr'
+
   return mount(AppFooter, {
     props: { siteIdentity },
-    global: { plugins: [router, createAppI18n()] },
+    global: { plugins: [router, i18n] },
   })
 }
 
@@ -48,6 +54,32 @@ describe('AppFooter', () => {
 
     expect(wrapper.find('a[href="/en/legal-notice"]').exists()).toBe(true)
     expect(wrapper.find('a[href="/en/privacy-policy"]').exists()).toBe(true)
+  })
+
+  /**
+   * Spec 0007 (#645) : la page « Brancher votre assistant » est liée depuis le
+   * pied de page, dans la langue de la route courante.
+   */
+  it.each([
+    ['fr', 'Brancher votre assistant'],
+    ['en', 'Connect your assistant'],
+  ])('lie la page « Brancher votre assistant » dans la langue de la route (%s)', async (locale, label) => {
+    const wrapper = await mountFooter(`/${locale}`)
+    const link = wrapper.find(`a[href="/${locale}/connect-your-assistant"]`)
+
+    expect(link.exists()).toBe(true)
+    expect(link.text()).toBe(label)
+  })
+
+  /**
+   * La liste ne porte plus seulement des liens légaux : un nom de navigation
+   * « légale » annoncerait aux lecteurs d'écran autre chose que ce qu'elle
+   * contient.
+   */
+  it('nomme la navigation du pied de page sans la dire légale', async () => {
+    const wrapper = await mountFooter()
+
+    expect(wrapper.find('footer nav').attributes('aria-label')).toBe('Navigation du pied de page')
   })
 
   it('affiche le copyright avec le nom de marque fourni', async () => {
