@@ -1,65 +1,66 @@
-# v0.27.0 — Procédure des rôles PostgreSQL verrouillée
+# v0.28.0 — Serveur MCP (phase 1) et PHP 8.5.12
 
-Release de durcissement, suite de #593 (v0.26.0). Les bases de l'image PostgreSQL sont fermées au réseau. La
-procédure des rôles contrôle et répare désormais tout ce que le propriétaire de la base, ou un rôle sur
-lui-même, peut altérer, et sa session ne garde rien de ce qu'elle hérite. La préprod vérifie elle-même le
-`pg_hba.conf` à chaque déploiement.
+Cette release apporte deux choses. D'abord le correctif de sécurité de PHP 8.5.12 : deux exécutions de code à
+distance non authentifiées, notées 9.2 en CVSS v4. Ensuite la phase 1 du serveur MCP (spec 0007, ADR 0006) :
+tout assistant compatible MCP peut désormais lire le portfolio sur `/api/mcp`, aux paliers anonyme et de
+base, sans jeton. Le palier de confiance, par connexion OAuth 2.1, viendra avec la phase 2.
 
 ## Ce qui change
 
-- **Bases de l'image fermées** (#597) : `pg_hba.conf` refuse `postgres`, `template0` et `template1` à
-  tout rôle et à toute adresse, avant toute règle qui accepte, loopback compris. `privileges.sql` retire à
-  `PUBLIC` `CONNECT` et `TEMPORARY` sur `postgres` et `template1`. **Adminer exige le nom de la base** : un
-  champ vide vise `postgres`, qui est refusé.
-- **Sonde `pg_hba` en préprod** (#596, #600) : un Job tente le superutilisateur sans mot de passe, ainsi que
-  `cpg_app` sur `postgres`, et exige trois refus du `pg_hba.conf`. Il tourne dans son propre job,
-  `postgres-hba-preprod`, **troisième check requis** de `main`. Un échec de la sonde ne déclenche plus le
-  retour arrière de l'application.
-- **Smoke préprod** (#603) : le contrôle de `postgres` et `rabbitmq` passe en tête du job, pour que le
-  premier rouge nomme le datastore.
-- **Procédure des rôles** (`k8s/README.md`, « Rôles PostgreSQL ») :
-  - `verify.sql` refuse ce qui couperait l'application sans erreur (#608, #611, #634) :
-    - un réglage de la base autre que le fuseau, ou un réglage de rôle propre à la base ;
-    - un réglage posé hors de la base (un rôle pour toutes les bases, tous les rôles, une base de l'image) ;
-    - une limite de connexions, une marque de modèle, un `CONNECT` retiré ;
-    - et tout schéma qui n'est pas celui des migrations, par une empreinte admise par migration.
-  - `roles.sql` répare ce que `verify.sql` refuse sur les réglages et les droits de la base (#610, #634). Un
-    avis `#610` est imprimé à chaque réparation.
-  - La session de la procédure est fixée par `PGOPTIONS`. Tout autre réglage hérité est rendu à sa valeur de
-    démarrage, avant tout mot de passe (#618, #634).
-  - La table des migrations est lue sous le rôle de migration, dans une lecture confinée et annulée
-    elle-même. Le code de son propriétaire ne peut plus rien laisser au superutilisateur, et un garde
-    contrôle le chemin de recherche (#610, #633).
-- **`psql` du lecteur du runbook** (#634) : nouvelles options de session (encodage, bibliothèques, chemin de
-  recherche), et `public.cpg_user` qualifié. La lecture de preuve « avant l'étape 2 » montre aussi les
-  réglages hors de la base.
-- **Vocabulaire** (#602) : `CONTEXT.md` du domaine. Libellés du backoffice « Version of » et « Proposition
-  générée par IA ». La page du CV sans identité propose « demander le CV nominatif ». La description CLI de
-  `app:user:purge-pending-invitations` change.
-- **`/stack`** (#615) : 30 paquets npm de build passent en dépendances de développement dans le lockfile et
-  sortent de la veille. Le compteur de paquets analysés baisse, c'est attendu.
-- **Dépendances** : groupes mineurs et correctifs du frontend (#622), du backend (#623) et des GitHub
-  Actions (#624).
-- **Interne** : règles `.claude` découpées, élaguées et bornées (#605, #620, #627). Tests de `php.prod.ini`
-  et des sources d'ini (#612, #616). CI `test-backend` passée de PostgreSQL 18.4 à 18.6.
+- **PHP 8.5.12** (#687) : corrige CVE-2026-109618 (une corruption après OOM) et CVE-2026-109619 (un état
+  global relu par la requête suivante du même worker). Seul le tag d'image change.
+  `session.upload_progress.enabled` passe à `Off` dans `php.prod.ini` et `php.dev.ini`. Rien ne s'en sert,
+  et l'avis recommande de l'éteindre même après la mise à jour. Suivi : refus du multipart au backend (#686).
+- **Serveur MCP sur `/api/mcp`** (Streamable HTTP, lecture seule, aucun appel de modèle) :
+  - **Catalogue** (#640, #641) : `get_about`, `get_quality`, `get_technical_background`,
+    `list_contributions`, `list_incidents`, `get_tech_watch`, `get_contact_info`, `get_anonymous_cv`,
+    `list_case_studies`. Chaque outil rend ce que sert la route de même palier. `get_nominative_corpus` est
+    listé mais refusé tant que la phase 2 n'est pas livrée.
+  - **Prompt `present_for_role`** (#642, #662) : il présente le profil pour un poste. Le rôle saisi est
+    délimité par une balise à nonce et nettoyé, et l'auteur n'est jamais nommé (garde D8 en CI).
+  - **Refus avant le SDK** (#644, #664, #671, #675) : les lots, les réponses du client, un `initialize`
+    trop lourd et un `_meta` invalide sont refusés. `subscriptions/listen` répond `-32601`, et les
+    capacités annoncées sont celles que le serveur tient vraiment.
+  - **Journaux** (#643, #664) : canal `mcp` du SDK plafonné à `warning`. Le nouveau canal `mcp_usage` écrit
+    une ligne `info` par appel, avec l'IP tronquée (/24, /48) et aucun contenu. Le registre RGPD est mis à
+    jour.
+- **Page « Brancher votre assistant »** (#645) : le pas-à-pas pour Claude, ChatGPT, Cursor et PhpStorm, avec
+  un lien ajouté dans le pied de page.
+- **Assistant de parcours** (#667) : le corpus passe par le même neutraliseur que le rôle du prompt MCP
+  (NFKC, invisibles, sosies de chevrons). Les nombres en exposant, en indice et les fractions gardent leur
+  forme.
+- **Toute l'API ignore `X-HTTP-Method-Override`** (#675) : aucun client du site ne l'envoie.
+- **Journaux** (#678) : en production, les 404, 405 et 400 du framework passent en `info` et ne sortent
+  donc plus dans `kubectl logs` (`LOG_LEVEL=warning`). Une route supprimée qu'un front appelle encore ne se
+  voit plus que dans l'access log de nginx. Le CV absent et les réglages « À propos » absents restent en
+  `warning`.
+- **Procédure des rôles** (#638) : `privileges.sql` n'accorde `pg_read_all_data` au lecteur que s'il lui
+  manque. Le rejouer n'imprime plus l'avis qui nommait le superutilisateur de l'image.
+- **Interne** : une seule racine pour lire les fichiers du dépôt depuis les tests (#629, #639).
 
 ## À savoir pour le déploiement
 
 - **Aucune migration**, aucun changement de clé : pas de fenêtre de maintenance.
-- **PostgreSQL redémarre une fois** (`Recreate`, ConfigMap `postgres-hba` hachée) : coupure courte de l'API,
-  en préprod puis en prod. Le backend fait aussi un rollout sans coupure : le hash de `backend-nginx-conf`
-  change, sur un commentaire seulement.
-- **Avant le merge vers `main`** : vérifier que la base de prod ne s'appelle pas `postgres`, `template0` ou
-  `template1`. Sinon, le nouveau `pg_hba.conf` coupe l'API au redémarrage, sans retour arrière en prod.
-- **Après le déploiement de chaque environnement**, préprod puis prod : **rejouer la procédure des rôles avec
-  la ligne d'`exec` du runbook** (pas celle d'un script plus ancien), après la lecture de preuve sous le
-  lecteur. C'est elle qui applique le `REVOKE` de #597. C'est aussi la première confrontation de l'empreinte
-  `#611` à un schéma réel. Sur une base saine :
-  - la ligne `#618 : réglages hérités rendus…` vaut `{TimeZone}` ;
-  - aucun avis `#610` (un avis signale un incident) ;
-  - la colonne `reglages_hors_de_la_base` vaut `0` ;
-  - la sortie se termine par `conforme`.
+- **Rollout du backend** : le moteur PHP change, et le hash de `backend-nginx-conf` aussi (zones `mcp`,
+  `mcpsession`, `mcpconn` et la location `= /api/mcp`). Le sidecar est remplacé sans coupure. PostgreSQL
+  et RabbitMQ ne redémarrent pas.
+- **Nouveau CronJob `cache-items-prune`** (#644) : il lance `cache:pool:prune` toutes les heures, et le
+  ménage quotidien (`messenger-purge`) ne le fait plus. Une session MCP vit au plus deux heures en base.
+- **Aucune variable d'hôte à poser** : `allowed_hosts` dérive d'`APP_FRONTEND_BASE_URL`. L'`initialize` du
+  smoke MCP sur l'hôte public le prouve : un 403 voudrait dire qu'elle manque.
+- **Smoke préprod** : nouvelle étape `tools/smoke-mcp.sh`, avec `initialize`, `DELETE` de la session, 413
+  au-delà de 16 Kio et 429 de la zone `mcp`. Lire son 429.
+- **Pas besoin de rejouer la procédure des rôles** : ni le schéma ni les rôles ne changent. #638 prendra
+  effet à son prochain passage.
 
-  Un refus `#611` se nomme avec la requête « Un refus `#611` » du runbook, avant toute décision.
-- **Vérifier en préprod** que `postgres-hba-preprod` est vert, et que le check requis est satisfait sur la
-  PR vers `main`.
+## Vérifications
+
+- **Préprod** : brancher Claude Code sur `/api/mcp` avec l'en-tête Basic de la préprod. `tools/list` doit
+  rendre le catalogue, `get_about` et `present_for_role` doivent répondre.
+- **Prod** : brancher claude.ai, ChatGPT, Cursor et PhpStorm en suivant la page « Brancher votre
+  assistant ».
+- **Prod** : `php -v` dans un pod `backend` doit afficher 8.5.12. `/stack` l'affichera au prochain relevé
+  de la veille.
+- **Prod, la première semaine** : relever dans les journaux nginx les 429 de la zone `mcp` (60 req/min par
+  IP). Les IP de sortie de claude.ai et de ChatGPT sont partagées : si ces 429 frappent des appels
+  légitimes, rouvrir le débit de la zone (#673).
