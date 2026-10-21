@@ -239,9 +239,10 @@ framework:
             log_level: info
 
         # Content-Type refusé (415) : une erreur du client, jamais un incident.
-        # Seule entrée de cette liste à ne viser ni une exception métier de
-        # src/ ni une clé de `exception_to_status`, et c'est voulu (issue #320,
-        # justifiée dans ExceptionLogLevelCoverageTest) : la classe est levée
+        # Comme les 4xx du framework plus haut (#678), une entrée qui ne vise
+        # ni une exception métier de src/ ni une clé de `exception_to_status`,
+        # et c'est voulu (issue #320, justifiée dans ExceptionLogLevelCoverageTest
+        # avec elles) : la classe est levée
         # par #[MapRequestPayload(acceptFormat)] sur /api/assistant/answers,
         # mais aussi par ContentNegotiationProvider, DeserializeProvider,
         # ParameterProvider et DeserializeListener d'API Platform — donc sur

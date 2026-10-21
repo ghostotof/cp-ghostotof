@@ -91,7 +91,13 @@ paths:
   `NotFoundHttpException` — the kernel takes the first `instanceof` match: `CvFileUnavailableException` (the
   nominative CV missing on disk, `warning`), `ApiExceptionLogLevelTest` pins the level retained (red when the
   two entries are swapped, measured); a new `throw new NotFoundHttpException` for a server-side absence does
-  the same. `FrameworkClientErrorsLogLevelTest` drives the three on the real stack. The validation 422 and the
+  the same — **`NoBareGenericExceptionTest` refuses a bare `new NotFoundHttpException` or `new BadRequestHttpException`
+  in `src/`**, and a provider never returns `null` for a server-side absence (API Platform turns it into the
+  generic 404): `BackofficeAboutSettingsProvider` throws `AboutSettingsNotFoundException`, `warning`, as the
+  public route does. Not covered, accepted: the vendor's own generic 404s for a wiring defect — a route without
+  controller (`HttpKernel`), an API Platform operation without provider (`ReadProvider`), an identifier it cannot
+  read (`WriteListener`) —, now `info`; the suite and `ApiRouteExposureTest` meet them before production.
+  `FrameworkClientErrorsLogLevelTest` drives the three on the real stack. The validation 422 and the
   403 stay at `error`.
   `tests/Shared/Infrastructure/Http/ExceptionLogLevelCoverageTest.php` pins four things: an entry for
   every exception rendered with a declared status — every `exception_to_status` key, every
@@ -108,7 +114,7 @@ paths:
   `getStatus()` for a problem exception and the kernel's conversion; no entry that targets anything else — a broad `\DomainException` or an
   interface would hide real server faults and shadow the precise entries after it, since the kernel takes
   the first match —; and justified ways out only (`EXEMPT`: the two broad API Platform defaults below,
-  which stay `critical`; `JUSTIFIED_ENTRIES`: the 415 of #320). **An `EXEMPT` entry is exempt from the
+  which stay `critical`; `JUSTIFIED_ENTRIES`: the 415 of #320, the framework's 404/405/400 and the CV's 404 of #678). **An `EXEMPT` entry is exempt from the
   `log_level` entry only, never from the status/level check** (issue #373): it is still judged at the
   kernel's default `critical`, hence at a 5xx; `testTheLevelCheckJudgesEveryExemptedEntry` locks that in.
   An `exception_to_status` key that is an interface or an abstract class (`Serializer\ExceptionInterface`)

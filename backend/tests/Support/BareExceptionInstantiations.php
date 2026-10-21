@@ -9,6 +9,9 @@ use PhpToken;
 /**
  * Recense les `new Exception`, `new LogicException`, `new RuntimeException`
  * et `new InvalidArgumentException` nus d'un répertoire (issues #338 et #383),
+ * et depuis #678 `new NotFoundHttpException` et `new BadRequestHttpException`,
+ * journalisées en `info` comme des erreurs du client (une absence ou un refus
+ * qui dit un défaut du serveur reçoit sa classe, son entrée la précédant),
  * d'après les jetons des sources et non
  * d'après un grep : un `use LogicException;` suivi de `new LogicException`, un
  * alias, un import dans une liste à virgules ou une casse différente désignent
@@ -31,7 +34,16 @@ use PhpToken;
 final class BareExceptionInstantiations
 {
     /** Noms en minuscules, sans `\` initial : PHP résout les classes sans tenir compte de la casse. */
-    private const array FORBIDDEN = ['exception', 'logicexception', 'runtimeexception', 'invalidargumentexception'];
+    private const array FORBIDDEN = [
+        'exception',
+        'logicexception',
+        'runtimeexception',
+        'invalidargumentexception',
+        // En `info` dans framework.exceptions depuis #678 : nue dans src/, un
+        // défaut du serveur rendu en 404 ou en 400 y disparaîtrait.
+        'symfony\\component\\httpkernel\\exception\\notfoundhttpexception',
+        'symfony\\component\\httpkernel\\exception\\badrequesthttpexception',
+    ];
 
     /**
      * @return list<string> `chemin:ligne` de chaque instanciation, triés pour un diagnostic stable
