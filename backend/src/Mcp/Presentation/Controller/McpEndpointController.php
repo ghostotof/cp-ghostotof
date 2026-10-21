@@ -47,9 +47,10 @@ use Symfony\Component\Uid\Uuid;
  * réduite à un hôte refusait au GET un second hôte que le POST acceptait, et
  * lisait mal un hôte IPv6 (relecture de la tâche 2). Puis il répond comme le
  * transport pour une session : 400 si son identifiant n'est pas un UUID, 404
- * si elle n'existe pas ou plus (le client se réinitialise), 406 sans
- * `Accept: text/event-stream` ; un identifiant vide vaut absent, comme au
- * transport.
+ * si elle n'existe pas ou plus, ou ne se relit pas (le client se
+ * réinitialise), 406 sans `Accept: text/event-stream` ; un identifiant vide
+ * vaut absent, comme au transport. Entre les deux, la règle d'en-tête de version du transport
+ * (`ProtocolVersionMiddleware`) : 400 pour une révision qu'il ne négocie pas.
  */
 #[AsDecorator('mcp.server.portfolio.controller')]
 final readonly class McpEndpointController
@@ -99,7 +100,13 @@ final readonly class McpEndpointController
 
         // `null` : allowed_hosts non configuré, les middlewares par défaut du
         // SDK (localhost seulement), comme le transport.
-        $middleware = $this->middlewareFactory->create() ?? StreamableHttpTransport::defaultMiddleware();
+        // Puis la règle d'en-tête de version, que le transport applique au
+        // trafic de l'ère à poignée de main — un GET sans corps en est —, par
+        // sa propre liste (#673).
+        $middleware = [
+            ...$this->middlewareFactory->create() ?? StreamableHttpTransport::defaultMiddleware(),
+            ...StreamableHttpTransport::handshakeMiddleware(),
+        ];
         $response = new MiddlewareRequestHandler($middleware, $this->eventStream(...))
             ->handle($this->psrHttpFactory->createRequest($request));
 
@@ -130,6 +137,10 @@ final readonly class McpEndpointController
                 return $this->jsonRpcError(Response::HTTP_BAD_REQUEST, StreamableHttpTransport::SESSION_HEADER.' header must be a valid UUID.');
             }
 
+            // Une session présente mais illisible (le MAC du cache refusé
+            // après une rotation d'APP_SECRET) n'existe pas pour le store
+            // borné, qui la lit à ce contrôle (#673) : 404, le client se
+            // réinitialise, comme au POST.
             if (!$this->sessionStore->exists($sessionId)) {
                 return $this->jsonRpcError(Response::HTTP_NOT_FOUND, 'Session not found or has expired.');
             }

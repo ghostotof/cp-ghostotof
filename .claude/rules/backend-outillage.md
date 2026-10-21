@@ -89,7 +89,7 @@ third channel follows the same rule, `ai_usage` (spec 0005): the career assistan
 handler — as an `info` of the default channel it never
 left a production pod (`AiUsageLogChannelTest` pins the prod config). Since #643 two more, both kept out of
 `main` and `console` (`McpLogChannelsTest`): `mcp`, the MCP SDK's own channel, capped at `warning` and bounded
-by `SdkChannelRedactor`, and `mcp_usage`, the MCP call log, on an `info` handler (see `.claude/rules/mcp.md`). The
+by `SdkChannelRedactor`, and `mcp_usage`, the MCP call log, on an `info` handler (see `.claude/rules/mcp-journaux.md`). The
 `default:` processor takes a *parameter name*, hence `app.log_level` in `services.yaml` — `default:warning:`
 would look for a parameter called `warning` and fail at compile time. No duplication with
 `error_log = /proc/self/fd/2` (`php.prod.ini`) either: Monolog writes to fd 2 itself, `error_log` only

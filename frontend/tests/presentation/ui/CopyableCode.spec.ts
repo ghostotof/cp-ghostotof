@@ -159,6 +159,26 @@ describe('CopyableCode', () => {
     expect(wrapper.find('[role="status"]').text()).toBe('Copié dans le presse-papiers.')
   })
 
+  /**
+   * Une écriture lente (une invite de permission) qui se résout après le
+   * démontage : le minuteur d'annonce serait armé sur un composant disparu, que
+   * le `clearTimeout` du démontage, passé avant, n'annule plus (#673).
+   */
+  it('n’arme aucun minuteur quand la copie se termine après le démontage', async () => {
+    let resolveWrite: () => void = () => undefined
+    stubClipboard(vi.fn(async () => new Promise<void>((resolve) => {
+      resolveWrite = resolve
+    })))
+    const wrapper = mountBlock()
+
+    await wrapper.find('button').trigger('click')
+    wrapper.unmount()
+    resolveWrite()
+    await flushPromises()
+
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
   it('annonce l’échec et invite à copier à la main quand le navigateur refuse', async () => {
     stubClipboard(vi.fn(async () => Promise.reject(new DOMException('refusé', 'NotAllowedError'))))
     const wrapper = mountBlock()

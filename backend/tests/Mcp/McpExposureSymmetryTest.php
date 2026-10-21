@@ -16,6 +16,7 @@ use App\Tests\Mcp\Fixtures\CallerReadingProvider;
 use App\Tests\Mcp\Infrastructure\ApiPlatform\Fixtures\PrefixedResource;
 use App\Tests\Mcp\Presentation\Tool\GetAboutToolTest;
 use App\Tests\Mcp\Presentation\Tool\RouteBackedToolsTest;
+use App\Tests\Mcp\Support\ReadsPortfolioRegistry;
 use App\Tests\Mcp\Support\UnreadableAccessRuleException;
 use ReflectionClass;
 use ReflectionNamedType;
@@ -60,6 +61,8 @@ use Symfony\Component\Security\Core\Authorization\AuthorizationCheckerInterface;
  */
 final class McpExposureSymmetryTest extends KernelTestCase
 {
+    use ReadsPortfolioRegistry;
+
     /**
      * Routes des paliers anonyme et de base sans outil, chacune justifiée : ni
      * contenu, ni lecture. La clé porte les méthodes exactes de la route : une
@@ -310,7 +313,7 @@ final class McpExposureSymmetryTest extends KernelTestCase
      */
     public function testEveryToolReceivesOnlyWhatItsKindAllows(): void
     {
-        foreach ($this->toolClasses() as $name => $class) {
+        foreach ($this->registeredToolClasses() as $name => $class) {
             $expected = \array_key_exists($name, self::TOOLS_WITHOUT_ROUTE) ? self::TOOLS_WITHOUT_ROUTE[$name][1] : [RoutePayloadReaderInterface::class];
 
             self::assertSame($expected, $this->constructorTypesOf($class), \sprintf('« %s » reçoit d\'autres dépendances que celles de son espèce.', $name));
@@ -566,40 +569,6 @@ final class McpExposureSymmetryTest extends KernelTestCase
      */
     private function tools(): array
     {
-        $tools = [];
-        foreach ($this->toolClasses() as $name => $class) {
-            $attribute = new ReflectionClass($class)->getAttributes(BackedByRoute::class)[0] ?? null;
-            $tools[$name] = $attribute?->newInstance();
-        }
-
-        return $tools;
-    }
-
-    /**
-     * Nom → classe de chaque outil du serveur `portfolio`, lus dans son
-     * registre une fois le serveur construit (le registre se remplit à la
-     * construction, comme à la première requête).
-     *
-     * @return array<string, class-string>
-     */
-    private function toolClasses(): array
-    {
-        $container = self::getContainer();
-        $container->get('mcp.server.portfolio.builder')->build();
-        $registry = $container->get('mcp.server.portfolio.registry');
-
-        $classes = [];
-        foreach ($registry->getTools() as $name => $tool) {
-            self::assertIsString($name);
-            $handler = $registry->getTool($name)->handler;
-            self::assertIsArray($handler, \sprintf('L\'outil « %s » n\'est pas une méthode de classe.', $name));
-            $class = $handler[0];
-            self::assertIsString($class);
-            self::assertTrue(class_exists($class));
-            $classes[$name] = $class;
-        }
-        self::assertNotEmpty($classes, 'Aucun outil au registre : le test ne vérifie plus rien.');
-
-        return $classes;
+        return $this->declaredToolRoutes();
     }
 }

@@ -97,7 +97,7 @@ const fr: PortfolioLocaleContent = {
   privacyPolicy: {
     eyebrow: 'Vie privée',
     title: 'Politique de confidentialité',
-    lastUpdated: 'Dernière mise à jour : 20 octobre 2026',
+    lastUpdated: 'Dernière mise à jour : 21 octobre 2026',
     sections: [
       {
         heading: 'Responsable du traitement',
@@ -113,7 +113,7 @@ const fr: PortfolioLocaleContent = {
           "Compte sur invitation : si l'éditeur vous accorde un accès nominatif, votre adresse email (à laquelle l'invitation est envoyée), un nom d'utilisateur dérivé de cette adresse et le mot de passe que vous choisissez, conservé sous forme hachée. Aucune inscription publique n'est proposée, aucun compte partagé.",
           "Accès instantané : aucun compte n'est créé et aucune donnée vous concernant n'est enregistrée ; l'accès repose sur un jeton anonyme valable 15 minutes.",
           "Adresse IP : utilisée pour limiter les abus (formulaire de contact, connexion, accès instantané, définition du mot de passe) et consignée dans les journaux techniques et de sécurité du serveur.",
-          "Serveur MCP (l'accès du site pour un assistant IA) : pour chaque appel, le journal technique garde la méthode, l'outil ou le prompt appelé, l'issue et son code d'erreur, la durée, le nom et la version que votre logiciel déclare, et votre adresse IP tronquée : le dernier nombre d'une adresse IPv4 et tout ce qui suit les trois premiers groupes d'une adresse IPv6 sont effacés. Elle désigne alors un réseau — souvent celui d'un abonné, un foyer ou une entreprise — et non plus un appareil. Le texte que votre assistant transmet au serveur — la description d'un poste, par exemple — n'est jamais enregistré.",
+          "Serveur MCP (l'accès du site pour un assistant IA) : pour chaque appel, le journal technique garde la méthode, l'outil ou le prompt appelé, l'issue et son code d'erreur, la durée, le nom et la version que votre logiciel déclare, et votre adresse IP tronquée : le dernier nombre d'une adresse IPv4 et tout ce qui suit les trois premiers groupes d'une adresse IPv6 sont effacés. Elle désigne alors un réseau — souvent celui d'un abonné, un foyer ou une entreprise — et non plus un appareil. Le texte que votre assistant transmet au serveur — la description d'un poste, par exemple — n'est jamais conservé : il ne fait que transiter par la base de données, le temps de vous répondre.",
           "Stockage local du navigateur (localStorage) : votre préférence de langue et, le cas échéant, l'heure d'expiration de votre accès instantané. Ces valeurs ne sont jamais transmises au serveur.",
         ],
       },
@@ -187,6 +187,9 @@ const fr: PortfolioLocaleContent = {
       description: "L'adresse à donner à votre client MCP (transport Streamable HTTP).",
       copyLabel: "l'URL du serveur",
     },
+    // Recopie du catalogue du serveur MCP : outils par palier, prompt, ses
+    // arguments et la borne de `role`. ConnectAssistantPageMirrorsCatalogueTest
+    // (backend, #673) la compare au registre réel du serveur, dans chaque langue.
     served: {
       heading: 'Ce que le serveur sert',
       description:

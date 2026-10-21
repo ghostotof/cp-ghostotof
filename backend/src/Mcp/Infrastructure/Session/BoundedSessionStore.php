@@ -34,6 +34,15 @@ use Symfony\Contracts\Service\ResetInterface;
  * fait se réinitialiser le client (relecture de la tâche 2). Un identifiant
  * détruit ici n'existe donc plus, ni en lecture ni en écriture, jusqu'à la fin
  * de la requête (`reset()` pour un runtime persistant).
+ *
+ * **Une session présente mais illisible n'existe pas** (#673) : le MAC du
+ * cache refusé après une rotation d'`APP_SECRET`, ou deux réplicas sur deux
+ * secrets pendant un déploiement. Le SDK la servait vide puis la réécrivait
+ * vide sous le même identifiant, et le client ne se réinitialisait jamais. Le
+ * contrôle d'existence, que le SDK fait pour tout identifiant reçu avant de
+ * le lire, lit donc la session : illisible, il rend `false`, et le SDK répond
+ * 404 — comme le GET de {@see \App\Mcp\Presentation\Controller\McpEndpointController}.
+ * Ce qu'il a lu est rendu à la lecture qui suit, sans seconde requête.
  */
 #[AsDecorator('mcp.server.portfolio.session.store')]
 final class BoundedSessionStore implements SessionStoreInterface, ResetInterface
@@ -45,14 +54,14 @@ final class BoundedSessionStore implements SessionStoreInterface, ResetInterface
     private array $destroyedOverTheBound = [];
 
     /**
-     * Identifiants reçus du client et trouvés au contrôle d'existence que le
-     * SDK fait avant de lire une session existante. Une session neuve
-     * (`initialize`) n'y passe jamais : le SDK la lit dans `save()` sans
-     * l'avoir vérifiée, et sa lecture rend toujours `false`.
+     * Ce que le contrôle d'existence a lu, par identifiant reçu, rendu une
+     * fois à la lecture qui le suit. Une session neuve (`initialize`) n'y
+     * passe jamais : le SDK la lit dans `save()` sans l'avoir vérifiée, et sa
+     * lecture rend toujours `false`.
      *
-     * @var array<string, true>
+     * @var array<string, string>
      */
-    private array $foundOnReceipt = [];
+    private array $readOnReceipt = [];
 
     public function __construct(
         #[AutowireDecorated]
@@ -67,12 +76,25 @@ final class BoundedSessionStore implements SessionStoreInterface, ResetInterface
 
     public function exists(Uuid $id): bool
     {
-        $exists = !$this->wasDestroyedOverTheBound($id) && $this->inner->exists($id);
-        if ($exists) {
-            $this->foundOnReceipt[$id->toRfc4122()] = true;
+        if ($this->wasDestroyedOverTheBound($id)) {
+            return false;
         }
 
-        return $exists;
+        // La lecture d'abord : une requête dans le cas courant. Son échec dit
+        // « absente » ou « illisible » ; seul le store les distingue.
+        $data = $this->inner->read($id);
+        if (false !== $data) {
+            $this->readOnReceipt[$id->toRfc4122()] = $data;
+
+            return true;
+        }
+
+        if ($this->inner->exists($id)) {
+            // Présente mais illisible : Psr16SessionStore a avalé l'échec.
+            $this->logger->warning('MCP session unreadable: present in the store but not read back.');
+        }
+
+        return false;
     }
 
     public function read(Uuid $id): string|false
@@ -81,24 +103,22 @@ final class BoundedSessionStore implements SessionStoreInterface, ResetInterface
             return false;
         }
 
-        $data = $this->inner->read($id);
-        if (false === $data && isset($this->foundOnReceipt[$id->toRfc4122()]) && $this->inner->exists($id)) {
-            // Présente mais illisible : Psr16SessionStore a avalé l'échec (le
-            // MAC du cache refusé après une rotation d'APP_SECRET, par
-            // exemple) et le SDK repart d'une session vide. Le contrôle ne
-            // vaut que pour un identifiant reçu : une session neuve se lit
-            // `false` à chaque `initialize`, et le contrôle y coûtait une
-            // requête de plus pour rien (#663). Revérifié ici plutôt que cru
-            // sur le premier contrôle : expirée entre les deux, la session
-            // est absente, pas illisible.
-            $this->logger->warning('MCP session unreadable: present in the store but not read back.');
+        $key = $id->toRfc4122();
+        if (isset($this->readOnReceipt[$key])) {
+            $data = $this->readOnReceipt[$key];
+            unset($this->readOnReceipt[$key]);
+
+            return $data;
         }
 
-        return $data;
+        return $this->inner->read($id);
     }
 
     public function write(Uuid $id, string $data): bool
     {
+        // Ce que le contrôle avait lu n'est plus la session.
+        unset($this->readOnReceipt[$id->toRfc4122()]);
+
         if ($this->wasDestroyedOverTheBound($id)) {
             return false;
         }
@@ -124,6 +144,8 @@ final class BoundedSessionStore implements SessionStoreInterface, ResetInterface
 
     public function destroy(Uuid $id): bool
     {
+        unset($this->readOnReceipt[$id->toRfc4122()]);
+
         return $this->inner->destroy($id);
     }
 
@@ -135,7 +157,7 @@ final class BoundedSessionStore implements SessionStoreInterface, ResetInterface
     public function reset(): void
     {
         $this->destroyedOverTheBound = [];
-        $this->foundOnReceipt = [];
+        $this->readOnReceipt = [];
     }
 
     private function wasDestroyedOverTheBound(Uuid $id): bool

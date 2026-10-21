@@ -67,6 +67,15 @@ paths:
   to third parties**; since ADR 0004 the `backend` Deployment does too (`api.anthropic.com`, from the
   backoffice only). The namespace's NetworkPolicies restrict ingress only, so nothing extra is needed today —
   but adding an egress policy would break this Job and the translation assistant first.
+- **The three backend CronJobs copy their shared settings, on purpose** (#673, decided 2026-10-21): `cache-prune`,
+  `messenger-purge` and `watch-refresh` repeat concurrency, histories, `backoffLimit`, the whole pod spec but its
+  container (ServiceAccount token, `securityContext`, `seed-cache-system`, volumes) and the container but its name,
+  command and resources. Not a kustomize patch: each manifest reads alone, and the guards requiring those parts in
+  every file (`SystemCachePodVolumeTest`, `ConsoleLockWaitBoundTest`) read `k8s/base`, never the render — kustomize is
+  not in the dev container. `tests/Shared/Infrastructure/Kubernetes/BackendCronJobsShareTheirSettingsTest` keeps the copies equal (measured red
+  with one `fsGroup` changed); a new backend CronJob joins the comparison by itself, and a CronJob of `k8s/base` that
+  does not run the backend image turns it red rather than escape it. A setting meant to differ per job
+  is taken out of the shared parts in that test, with its reason, like `activeDeadlineSeconds`.
 - **The two ConfigMaps hash differently, and each on purpose** (issue #18). `backend-nginx-conf` is a
   **`configMapGenerator`**: its content hash is part of its name, so editing `k8s/base/backend-nginx.conf`
   changes the name, hence the pod template, hence triggers a rollout — which is the only way the

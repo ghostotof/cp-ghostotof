@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Tests\Mcp\Infrastructure\Log;
 
+use App\Mcp\Infrastructure\Log\McpCallLog;
 use App\Tests\Mcp\Support\SpeaksMcp;
+use App\Tests\Support\ProductionMonologHandlers;
 use App\Tests\Support\ReadsAllChannelsLog;
 use Doctrine\ORM\EntityManagerInterface;
 use Monolog\Formatter\JsonFormatter;
@@ -205,6 +207,48 @@ final class McpCallLogTest extends WebTestCase
         self::assertSame(-32600, $line->context['errorCode']);
         self::assertSame(self::LOOPBACK_NETWORK, $line->context['ip']);
         self::assertStringNotContainsString('sentinelle', (new JsonFormatter())->format($line));
+    }
+
+    /**
+     * La ligne d'un message invalide vient du processeur que `McpCallLog`
+     * pose sur le canal `mcp`, faute d'événement du SDK. Or Monolog n'appelle
+     * les processeurs d'un canal que si l'un de ses handlers accepte le
+     * niveau ; en production, le seul est `mcp`, plafonné. Le niveau auquel le
+     * SDK écrit « Failed to create message. » — avant que `SdkChannelRedactor`
+     * ne le rétrograde — doit donc rester au moins celui de ce handler (#673,
+     * point 7). Ici la sonde de test accepte tout, et le test précédent reste
+     * vert quoi qu'il arrive ; un SDK qui l'écrirait en `info`, ou un handler
+     * relevé à `error`, ne laisserait en production que la ligne de repli.
+     */
+    public function testTheSdkLogsAnInvalidMessageAtALevelTheProductionHandlerTakes(): void
+    {
+        $client = self::createClient();
+        // Sans redémarrage du noyau, le processeur ajouté reste au logger que
+        // la requête suivante utilise.
+        $client->disableReboot();
+        $sessionId = $this->initializeMcpSession($client);
+
+        $logger = self::getContainer()->get('monolog.logger.mcp');
+        $levels = [];
+        // En tête de pile, avant les processeurs du bundle : le niveau d'origine.
+        $logger->pushProcessor(static function (LogRecord $record) use (&$levels): LogRecord {
+            if (McpCallLog::SDK_INVALID_MESSAGE === $record->message) {
+                $levels[] = $record->level;
+            }
+
+            return $record;
+        });
+
+        $this->postMcp($client, $sessionId, [['jsonrpc' => '2.0', 'id' => 3, 'method' => 'no/such-method']]);
+
+        self::assertCount(1, $levels, 'Le SDK n\'écrit plus « Failed to create message. » : McpCallLog ne voit plus le message invalide.');
+        $productionLevel = ProductionMonologHandlers::named('mcp')['level'] ?? null;
+        $handlerLevel = array_find(Level::cases(), static fn (Level $level): bool => $level->toPsrLogLevel() === $productionLevel);
+        self::assertNotNull($handlerLevel, 'Niveau du handler mcp de production illisible.');
+        self::assertTrue(
+            $handlerLevel->includes($levels[0]),
+            \sprintf('Le SDK écrit le message invalide en %s, sous le handler mcp de production (%s) : la ligne d\'appel n\'y serait pas écrite.', $levels[0]->getName(), $productionLevel),
+        );
     }
 
     /**

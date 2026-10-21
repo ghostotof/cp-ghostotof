@@ -257,7 +257,7 @@ env_secret production KUBE_CONFIG_PROD
 env_secret production RELEASE_DEPLOY_KEY
 
 # ---- l. secret de la garde D8, Actions et Dependabot (vérification seulement) -
-# Le vrai nom de l'auteur, que le dépôt ne porte jamais (.claude/rules/mcp.md,
+# Le vrai nom de l'auteur, que le dépôt ne porte jamais (.claude/rules/mcp-prompt-d8.md,
 # garde D8). Un push de Dependabot ne lit que les secrets Dependabot : sans le
 # même nom de ce côté, sa garde D8 échoue (#663, aucun repli sur le nom fictif).
 step "l. Secret MCP_D8_AUTHOR_NAME — Actions et Dependabot, présence seulement"

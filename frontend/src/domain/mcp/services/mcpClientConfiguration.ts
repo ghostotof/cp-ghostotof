@@ -11,7 +11,8 @@ import type { McpClientConfigurationKind } from '../entities/McpClientConfigurat
 /**
  * Chemin du serveur MCP (`/api/mcp`, ADR 0006) : sous `/api`, parce que
  * l'Ingress n'envoie que ce préfixe au backend — `/mcp` servirait l'`index.html`
- * du SPA.
+ * du SPA. Recopie de `McpEndpoint::PATH` (backend), que `McpEndpointPathTest`
+ * compare à cette valeur (#673).
  */
 export const MCP_ENDPOINT_PATH = '/api/mcp'
 

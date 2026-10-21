@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Mcp\Infrastructure\Log;
 
+use App\Mcp\Infrastructure\Http\McpEndpoint;
 use App\Mcp\Infrastructure\Http\ServerAnswersInterface;
 use App\Shared\Infrastructure\Http\CanonicalPath;
 use Mcp\Capability\RegistryInterface;
@@ -104,13 +105,16 @@ final class McpCallLog implements EventSubscriberInterface, ResetInterface
 
     public const int MAX_DECLARED_CHARACTERS = 64;
 
-    private const string ENDPOINT = '/api/mcp';
-
     /** Les caractères de contrôle (Cc) et de mise en forme (Cf). */
     private const string INVISIBLE_CHARACTERS = '/[\p{Cc}\p{Cf}]/u';
 
-    /** Ce que le SDK 0.8.1 écrit pour chaque message qu'il n'a pas su lire. */
-    private const string SDK_INVALID_MESSAGE = 'Failed to create message.';
+    /**
+     * Ce que le SDK 0.8.1 écrit pour chaque message qu'il n'a pas su lire, en
+     * `warning` : au niveau du handler `mcp` de production, sans quoi Monolog
+     * n'appellerait pas ce processeur et seule la ligne de repli resterait.
+     * Publique pour `McpCallLogTest`, qui relève ce niveau (#673).
+     */
+    public const string SDK_INVALID_MESSAGE = 'Failed to create message.';
 
     /** La clé de session où le SDK copie le `clientInfo` de l'`initialize`. */
     private const string SDK_CLIENT_INFO = 'client_info';
@@ -162,7 +166,7 @@ final class McpCallLog implements EventSubscriberInterface, ResetInterface
 
     public function onKernelRequest(RequestEvent $event): void
     {
-        if ($event->isMainRequest() && self::ENDPOINT === CanonicalPath::of($event->getRequest())) {
+        if ($event->isMainRequest() && McpEndpoint::PATH === CanonicalPath::of($event->getRequest())) {
             $this->reset();
             $this->httpStartedAt = $this->now();
             $this->callerNetwork = TruncatedIp::tryFrom($event->getRequest()->getClientIp())?->value;
@@ -214,7 +218,7 @@ final class McpCallLog implements EventSubscriberInterface, ResetInterface
     public function onTerminate(TerminateEvent $event): void
     {
         $httpStartedAt = $this->httpStartedAt;
-        if (null === $httpStartedAt || self::ENDPOINT !== CanonicalPath::of($event->getRequest())) {
+        if (null === $httpStartedAt || McpEndpoint::PATH !== CanonicalPath::of($event->getRequest())) {
             return;
         }
 

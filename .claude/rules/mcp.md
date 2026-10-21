@@ -9,10 +9,26 @@ paths:
 # Backend — `Mcp` (the MCP server)
 
 > Decisions: `docs/adr/0006-serveur-mcp.md`; spec `.claude/specs/0007-mcp-server.md` (issue #379). Vocabulary:
-> `CONTEXT.md`, « Accès MCP ». The index of every rule is at the top of `.claude/CLAUDE.md`.
+> `CONTEXT.md`, « Accès MCP ». Since #673 this file keeps only part of the MCP rules, see the
+> index below. The index of every rule is at the top of `.claude/CLAUDE.md`.
+
+**Where the rest lives** (split by #673, past `tools/check-claude-rules.sh`'s 50 000 bytes). A reference elsewhere to
+`.claude/rules/mcp.md`, « <bullet> » points at one of these:
+
+| Rule | Bullets |
+|---|---|
+| this file | the bundle and its pins, route-backed tools, the catalogue, `BackedByRoute`, tools, the `mcp` firewall, capabilities, host check, sessions, `GET /api/mcp`, tests, inbound refusals, no stream, rate per IP |
+| `mcp-prompt-d8.md` | the prompt `present_for_role` (`PromptRole`, the nonce, the cleaning), the D8 guard (`AuthorNeverNamedTest`, the secret `MCP_D8_AUTHOR_NAME`) |
+| `mcp-journaux.md` | the SDK's `mcp` channel capped and redacted, the call log `mcp_usage` (`McpCallLog`, `ModernExchange`, `TruncatedIp`, the fallback line) |
 
 - **What it is.** `symfony/mcp-bundle` serves one server, `portfolio`, on `/api/mcp` (Streamable HTTP),
-  configured in `config/packages/mcp.yaml`. Read-only, **no model call** (ADR 0006 D1). The bundle and
+  configured in `config/packages/mcp.yaml`. **The path is written once**, `Infrastructure/Http/McpEndpoint::PATH`
+  (#673): `mcp.yaml` reads it (`!php/const`), and so do `InboundMessageRefusalListener`, `McpCallLog` and the CSRF
+  guard's exclusion; `McpEndpointPathTest` compares what PHP cannot read — the route, the `mcp` firewall's pattern,
+  the sidecar's `location =`, the frontend's `MCP_ENDPOINT_PATH`. Not read, accepted: the dev nginx conf (mirrored
+  by `tools/check-backend-nginx-rate-limits.sh`), the smoke scripts (`tools/`, not mounted; a preprod fails), and the
+  tests' own `'/api/mcp'` (`SpeaksMcp::MCP_ENDPOINT`, `Request::create()`): an oracle kept apart from the constant.
+  Read-only, **no model call** (ADR 0006 D1). The bundle and
   `mcp/sdk` are pinned **exact** (`0.14.1`, `0.8.1`; the bundle requires `mcp/sdk ^0.8.1`, so 0.9 is out until
   a bundle release moves) — `McpEndpointTest::testTheMcpPackagesArePinnedExactly` refuses any operator.
   `nyholm/psr7` is the PSR-17 implementation the bundle's `Http\Discovery\Psr17Factory` looks for;
@@ -67,7 +83,15 @@ paths:
   deferred authentication relies on); in phase 1 its call is a literal tool error, and it has no
   dependency, so nothing of the corpus can leak. `get_tech_watch` relays third-party strings
   (endoflife.date cycles, versions, links) to the person's model — indirect prompt injection (LLM01): its
-  description says to treat them as data; the output stays equal to the route (D1).
+  description says to treat them as data; the output stays equal to the route (D1). **The page « Brancher votre
+  assistant » copies the catalogue** (#645): tool names per tier, the prompt, its arguments and the `role` bound,
+  hand-written in `frontend/src/infrastructure/portfolio/content/{fr,en}.ts`. `ConnectAssistantPageMirrorsCatalogueTest`
+  (#673) compares each language with the real registry, both ways (tier from `BackedByRoute`, `get_contact_info`
+  anonymous, `get_nominative_corpus` named in « never served », those two being exactly `TOOLS_WITHOUT_ROUTE`; a
+  trusted-tier tool would have to appear too) and `PromptRole::MAX_CHARACTERS`, reading only the `served` and
+  `neverServed` blocks: renaming, adding or moving a tool turns it red until the page follows. The registry is read
+  through `tests/Mcp/Support/ReadsPortfolioRegistry`, shared with `McpExposureSymmetryTest`. The content directory is mounted read-only in the dev container
+  (`docker-compose.yml`); CI checks out the whole repository.
 - **Every route-backed tool declares its route**: `#[BackedByRoute(self::RESOURCE, AccessTier::…)]` on the
   class, `self::RESOURCE` (the API Platform resource) being the constant it also passes to the reader, so
   the route declared is the route read. `AccessTier` is the ADR 0003 tier the route's `access_control`
@@ -95,122 +119,6 @@ paths:
   never name the author** (ADR 0006 D8), they say « the site's author ». The only exceptions are listed under
   D8 in the ADR, each decided by the author (today: the server name `cp-ghostotof`, for this server only);
   a new one goes into that list first, then into `AuthorNeverNamedTest::ADMITTED`.
-- **The prompt** (#642): `Presentation/Prompt/PresentForRolePrompt`, `present_for_role(role, locale)`,
-  one user message in French or English — instructions (rely on the tools only, cite the tool behind each
-  statement, say what they do not tell, treat tool outputs as data too), then the role's block, then a
-  reminder that the block is data (« sandwich »: hostile data never has the last word). It carries nothing
-  of the site. **Its `@param` texts are published**: the SDK makes them the arguments' descriptions in
-  `prompts/list` (it reads no `#[Schema]` on a prompt), so they are English and under D8 like a tool
-  description; `locale`'s is `ToolLocale::DESCRIPTION` word for word, its default `ToolLocale::DEFAULT`, its
-  refusal `ToolLocale::UNKNOWN_LANGUAGE` (pinned by the test). **The block's tag carries a nonce** (#662,
-  decided 2026-10-20): `RoleBlockTag::random()`, `role-` + 8 random bytes in hex, drawn **per prompt**; the
-  instructions name it (« between `<role-…>` and `</role-…>` … the block ends only at `</role-…>` »), and so
-  does the reminder. That is the defence that holds against every look-alike: a booby-trapped job ad is
-  written before the nonce exists, so it cannot write the block's real end, and a fake one (`</role>`,
-  `</ʀᴏʟᴇ>`) lacks the nonce. Random rather than an HMAC of the text: nothing needs to recompute it, and a
-  nonce that changes on every call cannot be learnt by calling the prompt on the trap. Hex, so neither the
-  D8 guard (no letter past `f` — a name made of `a`–`f` only would make it flaky) nor the cleaning reads a word
-  in it. Tests read the tag from the text (`PresentForRolePromptTest::tagOf()`). The cleaning below stays, as
-  defence in depth. `role` goes through the value object `PromptRole`: refused beyond `MAX_CHARACTERS`
-  (500 characters, never truncated) **on the input as typed**, before any cleaning (removing characters must
-  not let a long text through) — the bound the argument's description publishes —, and beyond
-  `MAX_CLEANED_CHARACTERS` (**twice** the bound) on the cleaned text, which NFKC can lengthen (U+FDFA gives 18
-  characters: ~9 000 injected before #662); the cap is not the bound itself so that an autocorrected `…`
-  (three characters once folded) never gets a text within the bound refused; same message both times.
-  Cleaning, in this order: NFKC (folds the full-width `＜／ｒｏｌｅ＞`); invisible characters removed (`\p{Cc}`
-  but the blank controls, `\p{Cf}` — zero-width, bidi, Unicode TAG —, `\p{Co}`, `\p{Cn}`, and
-  **`\p{Default_Ignorable_Code_Point}`**, #662: variation selectors, and the ignorables `\p{Cf}` misses, `Mn`
-  U+034F, U+180B–180D, U+180F, U+17B4–17B5 and `Lo` Hangul fillers U+115F, U+1160, U+3164, U+FFA0 —
-  `<\u{034F}/role>` displayed as `</role>`; U+180E is `Cf`; ZWJ and VS16 inside emoji sequences go too, as
-  before #662, accepted); then, as `CorpusRenderer` does for `documents` in principle, **only the opening signs
-  introducing the word `role`** are removed (`OPENING`): **by class** every `\p{Ps}` and `\p{Pi}` (#662, over a
-  list of look-alikes, which stopped at the last glyph thought of — `《 ❰ «` passed): `‹ 〈 ⟨ ❮`, but also `[`
-  and `{`, which open a tag elsewhere (BBCode, templates); **by name** those that are not punctuation: `<`,
-  `≮` (NFKC composes it from `<` + U+0338), `˂ ˱ ᐸ ᚲ`. They are removed across **anything that is neither a
-  letter nor a digit** (`TAG_RUN`; #662 audit: a list of separators kept the `<` of `<\role`, `<|role`,
-  `<⟋role`, `<⠀/role`) — « équipe <10 personnes, PHP >= 8.4 » keeps its meaning; `(role-based…)` and
-  `“role”` lose their opening sign, accepted. `TAG_RUN` starts only at the head of a run (lookbehind) and is
-  possessive: without them a long run followed by a letter was read again from each position, quadratic
-  (measured 1.9 ms → 0.08 ms on 990 dots then `a`, JIT off; no test pins it, PCRE's limits did not tell
-  the two patterns apart); then **one line**: every run of blanks (`\s`, `\p{Z}`, NEL, and the blank-looking
-  U+2800 braille blank and U+1D159 null notehead) becomes one space (#662 audit: line breaks hid an
-  instruction sixty lines down, or mimicked on its own line an end of block and a fake reminder) — a pasted
-  list becomes one line, accepted —, then trimmed; refused without a letter or digit. `delimited($tag)`
-  writes the block. A refusal (and an unknown language) is a `PromptGetException`, the only
-  error the SDK 0.8.1 renders with its message — `-32603`, where the protocol wants `-32602`. **Both parameters
-  are untyped (`mixed`)** (#663): typed `string`, the SDK cast an argument of another type itself — an array became
-  `"Array"` with a PHP `warning` on the `php` channel (fixed text, no value), a line an anonymous caller produced at
-  will in production. `PromptRole::fromInput()` refuses anything but a string with `NOT_A_TEXT` — a missing `role`
-  too, which the SDK now passes as `null` instead of its generic « Error while handling prompt » —, and a `locale`
-  of another type is an unknown language (`null` stays the default: the SDK reads it as absent).
-  `PresentForRolePromptTest` catches the PHP warning with its own error handler (PHPUnit's keeps vendor warnings
-  away from Monolog) and reads every channel above `notice`. A tool needs none of this: the SDK validates its
-  arguments against the `inputSchema` first. Its message never quotes the
-  text received: the SDK logs it with the error, at `error`, which `SdkChannelRedactor` downgrades to `notice` (#643). A
-  PCRE or NFKC failure is `RoleNeutralisationFailedException`, a server fault (generic `-32603`), never a
-  « role is empty »; a Unicode property the PCRE did not know would fail closed too, but as the compile
-  warning — an `ErrorException` where Symfony turns warnings into exceptions (debug), the named exception
-  elsewhere. `\p{Default_Ignorable_Code_Point}` needs PCRE2 ≥ 10.40: 10.44 in the images (PHP's bundled
-  one), the runner's system library in CI (Ubuntu 24.04: 10.42). **Unicode versions differ**: ICU 78
-  (Unicode 17) folds, PCRE 10.44 (Unicode 15.0) classifies, so a character assigned after Unicode 15.0 is
-  `\p{Cn}` to PCRE and removed — the cautious direction; the reverse (a newer PCRE than ICU) would let
-  unfolded letters through. Not exhaustive, accepted (like the corpus), **the nonce covering each**: letters
-  of other alphabets mimicking `role` (`</r\u{043E}le>`, a Cyrillic `о` NFKC does not fold), same-script
-  look-alikes (small capitals `</ʀᴏʟᴇ>`, `roIe`, `r0le`, `rôle`), a combining mark inside the word (`ró`),
-  letters used as separators (`<ノrole`, `<丿role`), HTML entities, closing quotes used as openers
-  (`»/role«`, `\p{Pf}`), and symbols that are not listed openers (`≺`, `◁`, `\p{Sm}`/`\p{So}`). The raw `prompts/get` arguments, `role` included, are withheld from the SDK's log
-  (#643, below).
-- **The D8 guard** (#642, ADR 0006 D8): `tests/Mcp/AuthorNeverNamedTest` (group `d8`) reads, **over HTTP on
-  the real server**, once per class, what it says or writes of itself: `initialize` (`serverInfo`,
-  `instructions`), `tools/list`, `prompts/list`, `resources/list`, `resources/templates/list` (a `nextCursor`
-  fails it: a next page would escape); every prompt's `prompts/get` in each language it declares and its
-  answers to invalid input (too long, empty, unknown language, required argument missing), all built from
-  what `prompts/list` declares; `completion/complete` on every prompt argument; every tool's answer to an
-  unknown language; and the **output of the tools without a route** (`McpExposureSymmetryTest::TOOLS_WITHOUT_ROUTE`,
-  public for that), which the server writes itself — a route-backed tool's output is its route's content (D1)
-  and is not read. `testEverySurfaceTheServerWritesIsRead` pins that list. Through
-  `tests/Mcp/Support/AuthorMentions` it refuses, after NFKD folding (full width, accents and `\p{Cf}` removed,
-  so a soft hyphen inside the name does not split it), case and punctuation ignored: the full name and each
-  word of three letters or more as whole words; failing that, the name joined or a word of five letters or
-  more inside a word (`prenomnom22@…`); the **initials** in capitals as a word (`XY`, `X. Y.`) or in lower
-  case at the head of an identifier (`xy-…`, `xy_…`, `xy.…`) — which gives `cp-ghostotof` its meaning as an
-  exception —; and any run of six consecutive words of the nominative CV. Every string read, keys included.
-  Each finding is an `AuthorMention` (path, `MentionKind`, term number), **never the term nor the text carrying
-  it**. The exceptions are `AuthorNeverNamedTest::admitted()`, copied from ADR 0006's closed list (the server
-  name, `get_contact_info`'s URL in both its forms), admitted at their path and for their exact value only,
-  and checked to be still published as written (`assertTrue`, no diff that would print the value). The CV is
-  the file `GET /api/cv` serves (`app.cv_file_path`, through the corpus's `PdfTextExtractorInterface`):
-  textless in CI (`dummy.pdf`); any other file present must yield a text, or the guard fails rather than
-  search zero fragments. **The name never enters the repo**: `MCP_D8_AUTHOR_NAME` is a fictive name in
-  `phpunit.dist.xml`, as an `<env>` **without `force`** (PHPUnit then keeps a value the process environment
-  already carries — `<server>` always overwrites). In `test-backend` the suite runs `--exclude-group d8`, and
-  a step of its own, run whenever the suite ran, runs `--group d8` with the **repository secret**
-  `MCP_D8_AUTHOR_NAME`: the rest of the suite and its `vendor/` code never hold it. **No actor falls back on the
-  fictive name** (#663): a Dependabot push reads only the **Dependabot secrets**, so the same secret is set
-  there too — before #663 the empty variable was unset for `dependabot[bot]`, and a bump of `mcp/sdk` or
-  `symfony/mcp-bundle`, which write what the server publishes, was never checked against the real name in its
-  own run (only after its merge, on `develop`'s). Without the Dependabot copy, a Dependabot run fails the guard,
-  saying so, like an empty name anywhere else. Accepted: the name then reaches the dependency code of a
-  Dependabot branch not reviewed yet — the code it would reach on `develop` once merged; the alternative (an
-  `ignore` of the two packages in `dependabot.yml`, bumped by hand) gave up their update PRs.
-  `tools/tests/d8-guard-step.test.sh` (`tools-tests`) pins that step: the secret in its `env`, no fallback in its
-  script, no other line of `pipeline.yml` naming the variable (`.github/` is not mounted in the dev container,
-  hence a shell test rather than PHPUnit); `tools/github-settings.sh` (step `l`) checks both copies exist. **Under `GITHUB_ACTIONS` a failure gives the number
-  of mentions only** — a public log naming the path and the term's number would tell which published word is
-  the name; locally it lists them. Set or rotate the secret from a prompt or a file, never `--body`:
-  `gh secret set MCP_D8_AUTHOR_NAME --repo ghostotof/cp-ghostotof`, then the same with `--app dependabot` (the
-  two stores are distinct; the author decided on 2026-10-20 that his
-  name alone is no secret in an assistant session, so it may be run there too; it stays out of the repo). To
-  check the real name locally: `read -r MCP_D8_AUTHOR_NAME && export MCP_D8_AUTHOR_NAME`, then `docker compose
-  exec -e MCP_D8_AUTHOR_NAME -T -u dev backend php bin/phpunit --group d8` (`-e` without a value: nothing in
-  `ps` nor the history). The guard's in-memory mutations prove it bites (the test name in a tool description
-  — whole, last word in capitals, joined with digits, full width, split by a soft hyphen —; initials at and
-  beside the admitted path; a name at the admitted path; the name in a prompt refusal; a fragment of the
-  fictive CV, taken from its text); measured on the code too (#642: the name in a tool description, in a
-  prompt `@param`, and in `ToolLocale::UNKNOWN_LANGUAGE`, each red — the last at every error surface, and
-  reduced to a count under `GITHUB_ACTIONS`). Accepted limits: the guard runs under the test configuration (a
-  future `%env()%` in `instructions` would be read with its test value), letters of other alphabets mimicking
-  the name, a CV fragment shorter than six words (an employer alone, an address).
 - **The `mcp` firewall never reads a cookie** (ADR 0006 D4). Declared before `api`, `^/api/mcp$`, stateless,
   no authenticator (phase 2 will add the MCP-connection Bearer one, and only it). That is what makes
   `/api/mcp`'s entry in `CsrfCookieRequestSubscriber::EXCLUDED_PATHS` safe: a cross-site request carrying a
@@ -264,12 +172,15 @@ paths:
   round trips on the session row (`has`, `get`, `set`) and two writes per `tools/call` (save, then the queue
   drained): ADR 0006 D6's « no write per call » holds for the authentication, not for the session.
   `Psr16SessionStore` swallows every exception and returns `false`; the decorator logs that `warning` too, on a
-  refused write and on a session **present but unreadable** (`read()` false while `exists()` is true — the cache
-  MAC refused after an `APP_SECRET` rotation, #641): the SDK then starts from an empty session. That second
-  `exists()` is run **only for an id received** — one the SDK's own `exists()` found earlier in the request
-  (`Protocol` checks a received id before reading it) —, and is still re-run then (expired in between: absent,
-  not unreadable): a new session reads `false` in `save()` on every `initialize`, and the check cost it one query
-  for nothing (#663). The memory of received ids is cleared by `reset()`, like the destroyed ones.
+  refused write and on a session **present but unreadable** (the cache MAC refused after an `APP_SECRET` rotation,
+  #641). **Such a session does not exist** (#673, the author's decision of 2026-10-21): the SDK served it empty, then
+  wrote it back empty under the same id, and the client never re-initialised. `Protocol` checks every received id
+  with `exists()` before reading it, so the decorator's `exists()` **reads** the session — one query in the common
+  case —, keeps what it read for the `read()` that follows (dropped by a `write`, a `destroy` and `reset()`), and on
+  a failed read asks the inner store whether the row is there: absent (expired), `false` silently; present, the
+  `warning` and `false` — the SDK answers 404, like the GET. A new session never goes through `exists()` (the SDK
+  reads it in `save()` on every `initialize`, `false`), so it costs nothing more (#663).
+  `McpEndpointTest::testAPostOnAnUnreadableSessionIs404` corrupts a real row.
 - **`GET /api/mcp` answers an empty SSE stream, not 405** (`Presentation/Controller/McpEndpointController`, an
   `#[AsDecorator]` of `mcp.server.portfolio.controller`): `retry: 300000`, then closed. The SDK 0.8.1 answers
   405 (spec-compliant), which PhpStorm's AI Assistant takes for a failure. A finished `Response`, **never a
@@ -279,8 +190,12 @@ paths:
   **The GET goes through the very middlewares of the POST** (#641): `mcp.server.portfolio.middleware_factory`
   (the SDK's DNS-rebinding protection and CORS, built by the bundle from `allowed_hosts`) run by the SDK's
   `MiddlewareRequestHandler` — never a copy of their rules: T1's copy kept one host where `allowed_hosts` is a
-  list, and split `[::1]:8080` into `[`. Then it answers as the transport does for a session: 400 for a
-  malformed or repeated `Mcp-Session-Id`, 404 for an unknown or expired one (the client re-initialises; a GET
+  list, and split `[::1]:8080` into `[`. Then the transport's version rule, `StreamableHttpTransport::handshakeMiddleware()`
+  (`ProtocolVersionMiddleware`: a revision it does not negotiate, `2026-07-28` included, is a 400, as the SDK answers a
+  body-less GET; #673). Then it answers as the transport does for a session: 400 for a
+  malformed or repeated `Mcp-Session-Id`, 404 for an unknown or expired one, **or one present but unreadable** (#673,
+  decided 2026-10-21: the cache MAC refused after an `APP_SECRET` rotation — the bounded store's `exists()` reads it,
+  below, so the POST answers 404 too) (the client re-initialises; a GET
   without the header is still served, and so is one whose header is empty or `0`, which the transport reads
   as absent — #663), 406 without `Accept: text/event-stream`. `McpEndpointGetTest` pins each
   case, the host rules on a several-host list included. Accepted, like the SDK: the `Origin` check ignores
@@ -296,95 +211,6 @@ paths:
   the same endpoint, exercised by #672's tests (no session written, `initialize` refused), by #664's call-log
   tests (`postModernMcp()`, `MCP_MODERN_REVISION`) and the preprod smoke (phase 2's deferred 401 must recognise
   the protected tool in both forms).
-- **The SDK's `mcp` channel is capped and bounded** (#643, security reviews of #640 and #642). McpBundle tags
-  every SDK service on `mcp`, hard-coded: at `info`/`debug` it wrote the raw JSON-RPC message (« Received message
-  to process. », arguments included — `role` is free text), the decoded request and the session ids, and
-  client-chosen strings unbounded at `warning`/`error`. In `when@prod` its own handler is at **`warning`**, and no
-  other handler (`main`, `console`) receives it — preprod's `LOG_LEVEL=debug` included (`McpLogChannelsTest`).
-  `Infrastructure/Log/SdkChannelRedactor` (`#[AsMonologProcessor(channel: 'mcp')]`, every level, every
-  environment) replaces the context keys of `WITHHELD_KEYS` (`message`, `request`, `response`, `arguments`,
-  `session_id`…) by `WITHHELD`, bounds the message and every context string to 256 characters, turns an
-  exception into its normalised form without a trace (three `previous` at most), and **downgrades the client's
-  faults to `notice`** — under the cap; the call log keeps their outcome. Which faults: a closed list written
-  against SDK 0.8.1 — by SDK exception class when one only designates the client (`ToolNotFoundException`,
-  `PromptNotFoundException`, `ResourceNotFoundException`, `PromptGetException`, `InvalidInputMessageException`),
-  by exact message otherwise (unreadable JSON, an id-less error response), and `RegistryException` only by code
-  `-32602` or for a missing or unconvertible argument (message prefix). **Never `Mcp\Exception\InvalidArgumentException`**:
-  the SDK also throws it for wiring defects (« Invalid handler type »), which would vanish under the cap. A server
-  fault (`JsonException` while encoding, a wiring `LogicException`, `RoleNeutralisationFailedException`) keeps its
-  level (`SdkChannelRedactorTest`). An argument of another type than a string (an array for `role`) is refused by
-  the prompt before any cast since #663 (« The prompt », above). `SdkChannelRecordsTest` provokes each client fault on the real server, with
-  100 KB names, and reads the `all_channels_test` probe at `debug`: nothing at `warning` or above, no client
-  string whole, no `role` sentinel, no session id — an SDK upgrade that renames a message or a class turns it red.
-  Accepted: the dev log loses the raw messages too (the processor is not per environment).
-- **The call log is `mcp_usage`** (#643, spec 0007 « Journal des appels », not `mcp`: the SDK's channel).
-  `Infrastructure/Log/McpCallLog` listens to the SDK's own events, dispatched through Symfony's
-  `event_dispatcher` (`Mcp\Event\RequestEvent`, `ResponseEvent`, `ErrorEvent`, `NotificationEvent`), and writes
-  **one `info` line per JSON-RPC message handled**, `MCP call` — an invalid message (an unknown method, alone or
-  in a one-message batch, the only batch left since #644) has no event: the class is also a Monolog processor of the `mcp` channel and writes its line, method `null`,
-  `-32600`, when the SDK logs « Failed to create message. »: `method`, `name` (the tool or prompt, **only
-  when the registry knows it** — the caller's name has no bound), `outcome` (`McpCallOutcome`: `success`,
-  `tool-error` for `isError: true`, `protocol-error`), `errorCode` (JSON-RPC), `durationMs`, `ip`
-  (`TruncatedIp`, on the bytes: IPv4 /24, IPv6 /48, an IPv4-mapped address written as the IPv4 it carries, a 6to4
-  address `2002::/16` keeping only the first three bytes of its IPv4 — a /48 kept it whole; read **once, at
-  `kernel.request`**: the `RequestStack` is empty at terminate and during an SSE answer) and
-  `declaredClient` (`clientInfo` from the session, name and version bounded to 64 characters, control and format
-  characters removed — U+202E reverses what follows in `kubectl logs`, #664: declared, never
-  checked). **The sessionless `2026-07-28` revision has the same `MCP call` line** (#664, the author's decision of
-  2026-10-20: serve it and log it, rather than refuse it through `protocol_versions`, which would pin the handshake
-  to one revision). The SDK serves it through `StatelessProtocol`, **`final`, built inside `Builder::build()`,
-  with no event**: nothing to listen to nor decorate, so `Infrastructure/Log/ModernExchange` reads it at
-  `kernel.terminate` from the HTTP request and response. The era is **the SDK's decision**, its own
-  `InboundClassifier` on the body and on the headers **as the SDK receives them**, converted by the bundle's
-  PSR-7 bridge (`mcp.psr_http_factory`, which trims blanks and drops a header carrying a control character) —
-  never the header alone (an unknown revision in `_meta` is served, and refused, by the modern leg; a modern
-  header without the envelope is refused before any era and keeps the fallback line). **Only the server's own answer
-  counts** (#678, audit C9 of #675): the response the MCP controller or `InboundMessageRefusalListener` returned,
-  recognised **by its object** in `Infrastructure/Http/ServerAnswers` (behind `ServerAnswersInterface`, a `WeakMap` both
-  fill through `record()`) —
-  a 404, 405 or 400 of the framework under `/api` is JSON too (`ApiJsonErrorFormatListener`), and got a call line of
-  the method sent; by object rather than by a request attribute, so that a response a later listener replaces is no
-  longer the server's. Accepted, so: a 5xx raised by the controller, or a served answer a `kernel.response` listener
-  replaces (none in `src/`), keeps the fallback line and loses the method and tool name. `McpCallLogTest` raises a framework 404 from a test listener (and a router 400 on an
-  unreadable `X-Forwarded-Host`, which the PSR-7 bridge also refuses): both keep the fallback line. Then **only a
-  protocol answer counts** — JSON, an SSE stream, an acknowledgement without body (which Symfony types `text/html`): an `Origin` or
-  `Host` the SDK refuses at its edge, before classifying (a `text/plain` 403), handled no message and keeps the
-  fallback line, as in the other era; accepted: the SDK's 4 MiB refusal (413) is JSON, read as a protocol error of
-  the method sent — nginx's 16 KiB comes first. The method is the one **the SDK's `MessageFactory` recognises** (the class of the
-  typed request or notification), plus the two the stateless protocol serves before it, by its constants
-  (`server/discover`, `subscriptions/listen`); any other is the caller's, unbounded, and written `null` — so is a
-  known method whose message is malformed, as in the other era, and one the factory throws on (a `TypeError` on a
-  scalar `_meta`, which the SDK never meets: it acknowledges a notification without building it). The factory is
-  built **without the extension messages** `Builder::build()` adds: bundle 0.14.1 enables none, and
-  `testTheServerEnablesNoExtension` (`server/discover` announces no `extensions`) turns red the day one is — the
-  reading must then get the server's factory. Whatever the reading throws leaves the fallback line, `reset()` in a
-  `finally` (`McpCallLogTerminateTest`). The outcome is read in the JSON answer (`error`
-  and its `code`, `result.isError`), else from the status: a 202/400 without body (a notification), an SSE stream
-  (`listen`, refused before the SDK since #675; a tool that notifies — none does) whose `getContent()` is `false`.
-  **`durationMs` is the whole HTTP request's** (firewall, listeners, sending the answer), where the other era measures the
-  message's handling: a duration statistic keeps the two eras apart. `declaredClient` is the `clientInfo` of the
-  request's own `_meta`, bounded the same way.
-  `McpCallLogTest` drives the real server in that revision (success, tool error, unknown tool and method,
-  removed method, `server/discover`, prompt, notification, unsupported revision, batch, foreign `Origin`, scalar
-  `_meta`, malformed and bounded client) through `SpeaksMcp::postModernMcp()`; `ModernExchangeTest` covers what it
-  cannot (the 30-second `listen` stream, an edge refusal, headers trimmed or dropped by the bridge).
-  **An HTTP request on `/api/mcp` that handled no message** — unreadable JSON, missing or expired
-  session, `GET`, `DELETE`, a request refused before the SDK (#644: 400, `protocol-error`; under the modern
-  envelope it has a call line instead, the refusal being the server's own answer, and `ModernExchange` reading what
-  the classifier says: the
-  method the SDK's factory recognises — `null` for a client response, `initialize` for an oversized declaration —
-  and the refusal's `-32600`), an edge refusal or one by the SDK's classifier, a response the server did not return (a framework 4xx) —
-  leaves one `MCP request without call`
-  line (`httpMethod`, `httpStatus`, `protocolVersion` — `ProtocolVersion::tryFrom()` of the header, `null` otherwise
-  —, `outcome`, `durationMs`, `ip`) at `kernel.terminate`. A `POST` there is a `protocol-error` (the SDK answers a
-  parse error in 200), except a 202. Pending requests are keyed by object (a JSON-RPC id is the client's; a batch could repeat it before
-  #644, kept: the keying costs nothing and a future SDK may queue several) and keep
-  their method, known name and start only. A request left without an answer (an exception the SDK caught outside
-  its events) is written at terminate as `protocol-error`; accepted: a suspended exchange (sampling, elicitation —
-  no tool does it) is written so too, and its resumption leaves only a fallback line. **Never an argument, a header, a cookie nor the session id**: the
-  line is built field by field. Its own `info` handler in `when@prod`, like `ai_usage`, excluded from `main` and
-  `console` (`McpLogChannelsTest`); `McpCallLogTest` reads it through the `all_channels_test` probe (sentinels
-  in `role`, `Authorization` and `BEARER`, one-message batch, notification, fallbacks, IPv4/IPv6 callers).
 - **Six inbound messages are refused before the SDK** (#644, #664, #675): `Infrastructure/Http/InboundMessageRefusalListener`
   (`kernel.request`, priority 15, `POST` on the canonical path `/api/mcp`, so `/api/%6Dcp` too — and a POST stays
   one: `framework.allowed_http_method_override: []` since the audit of #675, where Symfony turned a POST carrying
@@ -395,7 +221,9 @@ paths:
   then any PHP list is a batch — **an object keyed `"0"`, `"1"`… too**, which passed while only the bracket was read,
   100 `tools/call` served, measured in the reviews of #644): the SDK 0.8.1 accepts up to 100 per request, hard-coded
   (`MessageFactory::DEFAULT_MAX_BATCH_SIZE`, built by the `Builder`, not configurable through the bundle), and batches
-  left the protocol at revision 2025-06-18, the only handshake revision served; (2) **an `initialize` whose
+  came with revision 2025-03-26 and left the protocol at the next, 2025-06-18 — of the four handshake revisions SDK
+  0.8.1 negotiates (2024-11-05 to 2025-11-25) only 2025-03-26 knows them, and the sessionless 2026-07-28, served too,
+  has none; (2) **an `initialize` whose
   `clientInfo` + `capabilities`** weigh more than `MAX_DECLARATION_BYTES` (4 096) **as the session stores them**
   (`declarationBytes()`: `json_encode` without flags, six bytes per accented character) — real clients declare under
   1 KiB; accepted: a client sending a large icon as a data URI is refused; **`params._meta` is not counted, accepted**
@@ -460,5 +288,6 @@ paths:
   connections (2 per IP and per pod, of a pod's eight workers): set against `subscriptions/listen`'s 30 s (#672),
   **kept at 2 by decision** (#675, 2026-10-21) once `listen` is refused, as defence in depth — one IP never holds
   more than two workers of a pod, whatever a request becomes (a slow tool, a future stream). A shared egress IP
-  (hosted connectors) meets the `mcp` zone first; both bounds are to be measured again against the real clients
-  in phase 2 (`.claude/rules/deploiement-nginx.md`).
+  (hosted connectors: claude.ai and ChatGPT call from shared IPs, so their users could throttle one another) meets
+  the `mcp` zone first: measured after phase 1's release (#673, point 2, release checklist in `tasks/todo.md`), and
+  both bounds again against the real clients in phase 2 (`.claude/rules/deploiement-nginx.md`).

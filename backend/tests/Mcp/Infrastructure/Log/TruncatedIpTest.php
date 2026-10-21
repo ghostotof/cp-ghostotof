@@ -31,12 +31,34 @@ final class TruncatedIpTest extends TestCase
         // 6to4 (RFC 3056) : les octets 2 à 5 sont l'IPv4 du client ; un /48 la
         // garderait entière. Elle est tronquée en /24 comme toute IPv4.
         yield '6to4 : l\'IPv4 portée tombe en /24' => ['2002:cb00:712a:1::5', '2002:cb00:7100::'];
+        // L'IPv4 « compatible » (RFC 4291, dépréciée) : IpUtils::anonymize, à
+        // qui le calcul est délégué (#673), la tronque en /24 comme une IPv4 ;
+        // un /48 la réduisait à `::`. Ni plus ni moins qu'une IPv4.
+        yield 'IPv4 compatible : tronquée en /24' => ['::203.0.113.42', '::cb00:7100'];
+        // Le préfixe bien connu de traduction IPv4/IPv6 (`64:ff9b::/96`, RFC
+        // 6052) : un serveur en IPv6 qui reçoit des clients IPv4 par un
+        // traducteur (NAT64, SIIT) les voit ainsi, l'IPv4 du client dans les
+        // 32 derniers bits ; un /48 n'en gardait rien, tous sous `64:ff9b::`.
+        // Tronquée en /24.
+        yield 'NAT64 : l\'IPv4 portée tombe en /24' => ['64:ff9b::203.0.113.42', '64:ff9b::cb00:7100'];
     }
 
+    /**
+     * L'attendu est réécrit par la libc qui exécute le test : `inet_ntop()`,
+     * qui écrit le résultat d'`IpUtils::anonymize()`, rend l'IPv4 « compatible »
+     * `::cb00:7100` sous musl (Alpine : le dev et la production) et
+     * `::203.0.113.0` sous glibc (la CI) — les mêmes octets. Le journal écrit la
+     * forme de la plateforme qui le tient, une seule par déploiement.
+     */
     #[DataProvider('addresses')]
     public function testTheAddressIsTruncatedToItsNetwork(string $address, string $truncated): void
     {
-        self::assertSame($truncated, TruncatedIp::tryFrom($address)?->value);
+        self::assertSame($this->writtenByThisLibc($truncated), TruncatedIp::tryFrom($address)?->value);
+    }
+
+    private function writtenByThisLibc(string $address): string
+    {
+        return (string) inet_ntop((string) inet_pton($address));
     }
 
     /**

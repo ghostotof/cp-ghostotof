@@ -29,18 +29,36 @@ final class BoundedSessionStoreTest extends TestCase
     /**
      * Une session présente mais illisible — le MAC du cache refusé après une
      * rotation d'`APP_SECRET`, deux réplicas sur deux secrets pendant un
-     * déploiement — repartait vide sans un mot (relecture de la tâche 2).
+     * déploiement — repartait vide sans un mot (relecture de la tâche 2), puis
+     * vide mais journalisée : le SDK la réécrivait vide sous le même
+     * identifiant, et le client ne se réinitialisait jamais. Elle n'existe
+     * plus (#673) : le SDK répond 404, comme le GET.
      */
-    public function testASessionPresentButUnreadableIsLogged(): void
+    public function testASessionPresentButUnreadableDoesNotExist(): void
     {
         $store = $this->storeOver(exists: true, read: false);
         $id = Uuid::v4();
 
         // L'identifiant reçu du client : le SDK en vérifie l'existence avant
         // de lire la session (Mcp\Server\Protocol::resolveSession()).
-        self::assertTrue($store->exists($id));
-        self::assertFalse($store->read($id));
+        self::assertFalse($store->exists($id));
         self::assertTrue($this->mcpLog->hasRecordThatContains('MCP session unreadable', Level::Warning));
+    }
+
+    /**
+     * Le contrôle d'existence lit la session ; la lecture que le SDK fait
+     * ensuite rend ce qu'il a lu, sans seconde requête.
+     */
+    public function testAReceivedSessionIsReadOnce(): void
+    {
+        $inner = $this->createMock(SessionStoreInterface::class);
+        $inner->method('exists')->willReturn(true);
+        $inner->expects(self::once())->method('read')->willReturn('{"queue":[]}');
+        $store = new BoundedSessionStore($inner, new Logger('mcp', [$this->mcpLog]));
+        $id = Uuid::v4();
+
+        self::assertTrue($store->exists($id));
+        self::assertSame('{"queue":[]}', $store->read($id));
     }
 
     /**
@@ -61,40 +79,36 @@ final class BoundedSessionStoreTest extends TestCase
     }
 
     /**
-     * Un identifiant reçu, présent au contrôle puis disparu à la lecture
-     * (expiré entre les deux) : le second contrôle le dit absent, rien à
-     * journaliser.
+     * Un identifiant reçu dont la session a expiré : la lecture échoue, et le
+     * contrôle qui la suit la dit absente, pas illisible. Rien à journaliser.
      */
-    public function testAReceivedSessionGoneBeforeTheReadIsNotLogged(): void
+    public function testAReceivedSessionThatExpiredIsNotLogged(): void
     {
         $inner = self::createStub(SessionStoreInterface::class);
-        $inner->method('exists')->willReturn(true, false);
+        $inner->method('exists')->willReturn(false);
         $inner->method('read')->willReturn(false);
         $store = new BoundedSessionStore($inner, new Logger('mcp', [$this->mcpLog]));
-        $id = Uuid::v4();
 
-        self::assertTrue($store->exists($id));
-        self::assertFalse($store->read($id));
+        self::assertFalse($store->exists(Uuid::v4()));
         self::assertFalse($this->mcpLog->hasWarningRecords());
     }
 
     /**
-     * Un runtime persistant : ce qu'une requête a reçu ne vaut pas pour la
-     * suivante. Après `reset()`, la lecture ne refait pas le contrôle.
+     * Un runtime persistant : ce qu'une requête a lu ne vaut pas pour la
+     * suivante. Après `reset()`, la lecture repasse par le store.
      */
-    public function testResetForgetsTheSessionsReceivedByTheRequest(): void
+    public function testResetForgetsTheSessionsReadByTheRequest(): void
     {
         $inner = $this->createMock(SessionStoreInterface::class);
-        $inner->expects(self::once())->method('exists')->willReturn(true);
-        $inner->method('read')->willReturn(false);
+        $inner->method('exists')->willReturn(true);
+        $inner->expects(self::exactly(2))->method('read')->willReturn('{"queue":[]}', '{"queue":[1]}');
         $store = new BoundedSessionStore($inner, new Logger('mcp', [$this->mcpLog]));
         $id = Uuid::v4();
 
         $store->exists($id);
         $store->reset();
 
-        self::assertFalse($store->read($id));
-        self::assertFalse($this->mcpLog->hasWarningRecords());
+        self::assertSame('{"queue":[1]}', $store->read($id));
     }
 
     /**

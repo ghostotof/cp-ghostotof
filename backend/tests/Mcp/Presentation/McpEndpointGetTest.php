@@ -92,6 +92,56 @@ final class McpEndpointGetTest extends WebTestCase
         self::assertResponseStatusCodeSame(404);
     }
 
+    /**
+     * Une session présente mais illisible — le MAC du cache refusé après une
+     * rotation d'APP_SECRET — est morte : 404, le client se réinitialise
+     * (#673, point 3, décision du 2026-10-21). `exists()` seul la servait.
+     */
+    public function testAGetWithAnUnreadableSessionIs404(): void
+    {
+        $client = self::createClient();
+        $sessionId = $this->initializeMcpSession($client);
+        $connection = self::getContainer()->get(EntityManagerInterface::class)->getConnection();
+
+        // Une valeur sans le MAC d'AuthenticatedCacheMarshaller : la ligne
+        // existe, sa lecture échoue.
+        self::assertSame(1, $connection->executeStatement(
+            "UPDATE cache_items SET item_data = decode('00', 'hex') WHERE item_id LIKE ?",
+            ['%mcp-portfolio-'.$sessionId.'%'],
+        ));
+
+        $client->request('GET', self::MCP_ENDPOINT, server: ['HTTP_MCP_SESSION_ID' => $sessionId] + self::EVENT_STREAM);
+
+        self::assertResponseStatusCodeSame(404);
+    }
+
+    /**
+     * La règle d'en-tête du SDK (`ProtocolVersionMiddleware`), que le transport
+     * applique au trafic de l'ère à poignée de main — un GET sans corps en est
+     * —, après les middlewares d'hôte : une révision qu'il ne négocie pas est
+     * un 400, la révision sans session comprise (#673, point 3). Absent, l'en-tête
+     * vaut 2025-03-26.
+     *
+     * @return iterable<string, array{string, int}>
+     */
+    public static function protocolVersionHeaders(): iterable
+    {
+        yield 'révision à poignée de main' => ['2025-06-18', 200];
+        yield 'dernière à poignée de main' => ['2025-11-25', 200];
+        yield 'révision inconnue' => ['1999-01-01', 400];
+        yield 'révision sans session' => ['2026-07-28', 400];
+    }
+
+    #[DataProvider('protocolVersionHeaders')]
+    public function testTheGetAppliesTheSdkProtocolVersionRule(string $version, int $expectedStatus): void
+    {
+        $client = self::createClient();
+
+        $client->request('GET', self::MCP_ENDPOINT, server: ['HTTP_MCP_PROTOCOL_VERSION' => $version] + self::EVENT_STREAM);
+
+        self::assertResponseStatusCodeSame($expectedStatus);
+    }
+
     public function testAGetWithAMalformedSessionIdIs400(): void
     {
         $client = self::createClient();

@@ -158,7 +158,7 @@ jobs:
           # Garde D8 du serveur MCP (ADR 0006, AuthorNeverNamedTest) : le vrai
           # nom de l'auteur, que le dépôt ne porte jamais. Il remplace le nom
           # fictif de phpunit.dist.xml (`env` sans `force`). Secret de dépôt
-          # (.claude/rules/mcp.md) ; GitHub masque sa valeur, et sous
+          # (.claude/rules/mcp-prompt-d8.md) ; GitHub masque sa valeur, et sous
           # GITHUB_ACTIONS la garde ne donne que le nombre de mentions.
           MCP_D8_AUTHOR_NAME: ${{ secrets.MCP_D8_AUTHOR_NAME }}
         # Un push de Dependabot ne lit que les secrets Dependabot : le même nom

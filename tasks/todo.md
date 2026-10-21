@@ -17,12 +17,13 @@ phase 1 parte en release seule ; puis au merge de clôture, qui archive la spec 
 - [x] Tâche 5 — Zone nginx `mcp` et smoke 429 (#644) — bloquée par : #640
 - [x] Tâche 6 — Page « Brancher votre assistant » (#645) — bloquée par : #641
 - [x] Suivi des relectures de #643 sur les tâches 1 à 3 (#663)
-- [ ] Suivi : réponses non sollicitées classées autrement que par le SDK (#671) — **avant la sortie
+- [x] Suivi : réponses non sollicitées classées autrement que par le SDK (#671) — **avant la sortie
       de la phase 1**
 - [x] Suivi : zone `mcpsession` et borne des paramètres (#672) — `0` et l'en-tête vide comptés, la
       révision 2026-07-28 exemptée quelle que soit la décision de #664, `_meta` accepté hors borne
-- [ ] Suivi : reports de faible sévérité des relectures de #663 et #645 (#673)
-- [ ] Suivi : `subscriptions/listen` tient un worker php-fpm 30 s, borné par `mcpconn` depuis #672
+- [x] Suivi : reports de faible sévérité des relectures de #663 et #645 (#673)
+- [ ] Suivi : objet vide de `JsonToolResult` et décodages JSON multiples par POST (#681) — relecture de #673
+- [x] Suivi : `subscriptions/listen` tient un worker php-fpm 30 s, borné par `mcpconn` depuis #672
       (#675) — après la décision de #664, avant la sortie de la phase 1
 
 ### Livraison de la phase 1
@@ -37,7 +38,10 @@ phase 1 parte en release seule ; puis au merge de clôture, qui archive la spec 
 - [ ] Release : aucune variable d'hôte à poser — `allowed_hosts` dérive d'`APP_FRONTEND_BASE_URL`
       (`mcp.yaml`), déjà posée par overlay ; l'`initialize` du smoke MCP sur l'hôte public le prouve
       (un 403 dirait qu'il manque) ; smoke 429 lu ; Claude Code branché en préprod (en-tête Basic) ;
-      claude.ai, ChatGPT, Cursor, PhpStorm vérifiés en prod
+      claude.ai, ChatGPT, Cursor, PhpStorm vérifiés en prod ; zone `mcp` (60 req/min par IP) mesurée
+      contre les IP de sortie partagées de claude.ai et ChatGPT (#673, point 2) : relever les 429 de la
+      zone dans les journaux nginx de prod la première semaine, et rouvrir son débit s'ils tombent sur
+      des appels légitimes
 
 ## Phase 2 — connexion MCP (palier de confiance)
 

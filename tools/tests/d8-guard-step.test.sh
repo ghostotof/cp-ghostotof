@@ -10,7 +10,7 @@
 # de lire les secrets du dépôt : une montée de `mcp/sdk` ou de
 # `symfony/mcp-bundle`, qui écrivent ce que le serveur publie, n'était jamais
 # contrôlée contre le vrai nom dans son propre run. Le même secret est posé
-# dans les secrets Dependabot (.claude/rules/mcp.md, garde D8) ; absent, la
+# dans les secrets Dependabot (.claude/rules/mcp-prompt-d8.md, garde D8) ; absent, la
 # garde échoue en le disant.
 #
 # Deux règles, lues sur les lignes hors commentaires de pipeline.yml :
