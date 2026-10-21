@@ -63,7 +63,7 @@ final class ConnectAssistantPageMirrorsCatalogueTest extends KernelTestCase
         foreach ([AccessTier::ANONYMOUS, AccessTier::BASE] as $tier) {
             self::assertSame(
                 $this->toolsServedAt($tier),
-                self::sorted(self::toolsListedUnder($section, $tier)),
+                $this->sorted($this->toolsListedUnder($section, $tier)),
                 \sprintf('%s.ts : la liste du palier « %s » diffère du registre du serveur MCP.', $locale, $tier->value),
             );
         }
@@ -87,7 +87,7 @@ final class ConnectAssistantPageMirrorsCatalogueTest extends KernelTestCase
         self::assertSame(1, preg_match_all("/\\bname: '([a-z_]+)'/", $section, $names), \sprintf('%s.ts : la page doit nommer un seul prompt.', $locale));
         self::assertSame(array_keys($prompts), $names[1], \sprintf('%s.ts : le prompt nommé diffère du registre.', $locale));
 
-        $arguments = self::argumentsLine($section, $locale);
+        $arguments = $this->argumentsLine($section, $locale);
         foreach ($prompts[$names[1][0]]->arguments ?? [] as $argument) {
             self::assertStringContainsString('`'.$argument->name.'`', $arguments, \sprintf('%s.ts : l\'argument « %s » du prompt n\'est pas nommé.', $locale, $argument->name));
         }
@@ -102,7 +102,7 @@ final class ConnectAssistantPageMirrorsCatalogueTest extends KernelTestCase
      *
      * @return list<string>
      */
-    private static function toolsListedUnder(string $section, AccessTier $tier): array
+    private function toolsListedUnder(string $section, AccessTier $tier): array
     {
         $pattern = \sprintf("/id: '%s',(?<block>.*?)(?:id: '|prompt: \\{)/s", $tier->value);
         self::assertSame(1, preg_match($pattern, $section, $match), \sprintf('Palier « %s » introuvable dans la page.', $tier->value));
@@ -111,7 +111,7 @@ final class ConnectAssistantPageMirrorsCatalogueTest extends KernelTestCase
         return $tools[1];
     }
 
-    private static function argumentsLine(string $section, string $locale): string
+    private function argumentsLine(string $section, string $locale): string
     {
         self::assertSame(1, preg_match("/\\barguments:\\s*'(?<line>[^']*)'/", $section, $match), \sprintf('%s.ts : la ligne des arguments du prompt est introuvable.', $locale));
 
@@ -151,7 +151,7 @@ final class ConnectAssistantPageMirrorsCatalogueTest extends KernelTestCase
 
         self::assertNotEmpty($served, \sprintf('Aucun outil au palier « %s » : le test ne vérifie plus rien.', $tier->value));
 
-        return self::sorted($served);
+        return $this->sorted($served);
     }
 
     /**
@@ -206,7 +206,7 @@ final class ConnectAssistantPageMirrorsCatalogueTest extends KernelTestCase
      *
      * @return list<string>
      */
-    private static function sorted(array $names): array
+    private function sorted(array $names): array
     {
         sort($names);
 
