@@ -13,6 +13,8 @@ use App\Portfolio\AnonymousCv\Presentation\ApiResource\AnonymousCvSectionResourc
 use App\Portfolio\CaseStudy\Infrastructure\ApiPlatform\CaseStudyProvider;
 use App\Portfolio\CaseStudy\Presentation\ApiResource\CaseStudyResource;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use App\Shared\Domain\Text\TagWordNeutraliser;
+use App\Shared\Domain\Text\TextNeutralisationFailedException;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
 /**
@@ -39,12 +41,10 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
  */
 final readonly class CorpusRenderer implements CorpusRendererInterface
 {
-    private const string OPENING_TAG = '<documents>';
-    private const string CLOSING_TAG = '</documents>';
-    /** Caractères d'une balise qui peuvent précéder le mot `documents`. */
-    private const array ASCII_TAG_BYTES = [' ', "\t", "\n", "\v", "\f", '/', '<'];
-    private const array MULTIBYTE_TAG_CHARACTERS = ['／', '＜', "\u{00A0}", "\u{3000}"];
-    private const array CHEVRONS = ['<', '＜'];
+    /** Le mot de la balise du bloc, qu'aucune donnée ne peut introduire par un signe ouvrant. */
+    private const string TAG_WORD = 'documents';
+    private const string OPENING_TAG = '<'.self::TAG_WORD.'>';
+    private const string CLOSING_TAG = '</'.self::TAG_WORD.'>';
 
     /**
      * @param ProviderInterface<AnonymousCvSectionResource> $anonymousCvProvider
@@ -230,8 +230,9 @@ final readonly class CorpusRenderer implements CorpusRendererInterface
      *
      * Pas exhaustif non plus, comme la neutralisation des balises : un
      * intertitre Setext (ligne soulignée de `===` ou `---`), un `#` après un
-     * marqueur de bloc (`> # X`, `- # X`), un `＃` pleine chasse ou précédé
-     * d'une espace insécable passent. Contrepartie assumée : un `#` légitime en
+     * marqueur de bloc (`> # X`, `- # X`) passent. Le `＃` pleine chasse et
+     * l'espace insécable devant un `#`, repliés par NFKC avant (#667), sont
+     * échappés comme les autres. Contrepartie assumée : un `#` légitime en
      * tête de ligne (`#1`) arrive au modèle sous la forme `\#1`.
      */
     private static function prose(string $value): string
@@ -243,79 +244,29 @@ final readonly class CorpusRenderer implements CorpusRendererInterface
      * Fins de ligne unifiées (préfixe byte-identique, D8) et balises du bloc
      * neutralisées : une donnée ne referme pas le bloc de documents.
      *
-     * On retire les chevrons qui introduisent `documents` (espaces, barres,
-     * casse et pleine chasse comprises) plutôt que la balise entière : une
-     * balise non fermée n'avale ainsi aucun texte, et sans chevron ce n'est plus
-     * qu'un mot. Voir neutraliseTags() pour le coût.
+     * La neutralisation est celle du rôle du prompt MCP, écrite une fois
+     * ({@see TagWordNeutraliser}, #667) : NFKC, invisibles retirés, et les
+     * signes ouvrants qui introduisent `documents` retirés à travers tout ce
+     * qui n'est ni lettre ni chiffre. Les sauts de ligne restent, le Markdown
+     * en vit. Déterministe, donc le rendu reste byte-identique d'un appel à
+     * l'autre ; linéaire par construction (troisième passe d'audit).
      *
-     * Cette neutralisation n'est **pas exhaustive** et ne prétend pas l'être :
-     * entités HTML, caractères de largeur nulle, homoglyphes (`‹`, `〈`…) ou
-     * lettres d'autres alphabets passent. Une liste d'exclusion ne sera jamais
-     * complète. La parade réelle est ailleurs : le préambule traite tout le
-     * corpus comme de la donnée (règle 6), et seul ROLE_SUPER écrit ce contenu.
+     * **Pas de nonce** sur la balise, contrairement au rôle MCP (décision du
+     * 2026-10-21) : un nonce tiré par appel casserait le cache de prompt du
+     * fournisseur (D8), et un nonce dérivé du contenu ferait entrer
+     * `APP_SECRET` dans le rendu pour un contenu que seul ROLE_SUPER écrit.
+     * Les sosies que le neutraliseur ne voit pas (lettres d'autres alphabets,
+     * petites capitales…) passent donc, accepté : le préambule traite tout le
+     * corpus comme de la donnée (règle 6), et ADR 0004 D7 borne ce qu'une
+     * injection réussie révélerait.
      */
     private static function text(string $value): string
     {
-        return trim(self::neutraliseTags(str_replace(["\r\n", "\r"], "\n", $value)));
-    }
-
-    /**
-     * Linéaire par construction, et c'est le point (troisième passe d'audit) :
-     * une regex en boucle ne retirait qu'un chevron par passe, si bien que k
-     * chevrons en cascade devant `documents` coûtaient k passes sur tout le
-     * texte, à chaque appel de l'assistant. Ici, le texte est découpé sur le mot,
-     * puis la séquence d'espaces, de barres et de chevrons qui précède chaque
-     * occurrence perd tous ses chevrons : chaque octet est lu une fois, et aucun
-     * retrait ne peut en rapprocher un autre.
-     */
-    private static function neutraliseTags(string $value): string
-    {
-        $parts = preg_split('/(documents)/iu', $value, -1, \PREG_SPLIT_DELIM_CAPTURE);
-        if (false === $parts) {
-            throw new CorpusRenderingException(\sprintf('Rendu du corpus impossible : %s.', preg_last_error_msg()));
+        try {
+            return trim((new TagWordNeutraliser(self::TAG_WORD))->neutralise(str_replace(["\r\n", "\r"], "\n", $value)));
+        } catch (TextNeutralisationFailedException $exception) {
+            throw new CorpusRenderingException(\sprintf('Rendu du corpus impossible : %s', $exception->getMessage()), $exception->getCode(), previous: $exception);
         }
-
-        for ($index = 0, $last = \count($parts) - 1; $index < $last; $index += 2) {
-            $piece = $parts[$index];
-            $start = self::tagRunStart($piece);
-            $parts[$index] = substr($piece, 0, $start).str_replace(self::CHEVRONS, '', substr($piece, $start));
-        }
-
-        return implode('', $parts);
-    }
-
-    /** Début de la séquence de caractères de balise qui termine le morceau. */
-    private static function tagRunStart(string $piece): int
-    {
-        $start = \strlen($piece);
-        while ($start > 0) {
-            if (\in_array($piece[$start - 1], self::ASCII_TAG_BYTES, true)) {
-                --$start;
-
-                continue;
-            }
-
-            $character = self::multibyteTagCharacterEndingAt($piece, $start);
-            if (null === $character) {
-                break;
-            }
-
-            $start -= \strlen($character);
-        }
-
-        return $start;
-    }
-
-    private static function multibyteTagCharacterEndingAt(string $piece, int $end): ?string
-    {
-        foreach (self::MULTIBYTE_TAG_CHARACTERS as $character) {
-            $length = \strlen($character);
-            if ($end >= $length && substr($piece, $end - $length, $length) === $character) {
-                return $character;
-            }
-        }
-
-        return null;
     }
 
     /**
