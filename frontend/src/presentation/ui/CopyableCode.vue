@@ -45,12 +45,22 @@ const announcement = ref('')
 let latestCopy = 0
 let pendingTimer: ReturnType<typeof setTimeout> | undefined
 
+/**
+ * Vrai une fois le composant démonté : une écriture lente (une invite de
+ * permission) peut se résoudre après, et le `clearTimeout` du démontage, passé
+ * avant, n'annulerait pas le minuteur qu'elle armerait (#673).
+ */
+let unmounted = false
+
 function schedule(callback: () => void, delay: number): void {
   clearTimeout(pendingTimer)
   pendingTimer = setTimeout(callback, delay)
 }
 
-onBeforeUnmount(() => clearTimeout(pendingTimer))
+onBeforeUnmount(() => {
+  unmounted = true
+  clearTimeout(pendingTimer)
+})
 
 /**
  * Copie par l'API Clipboard, qui n'existe qu'en contexte sécurisé (HTTPS,
@@ -68,7 +78,7 @@ async function copy(): Promise<void> {
   announcement.value = ''
 
   const copied = await writeToClipboard(props.code)
-  if (thisCopy !== latestCopy) {
+  if (unmounted || thisCopy !== latestCopy) {
     return
   }
 
