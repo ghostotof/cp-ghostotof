@@ -176,7 +176,7 @@ fi
 
 # --- `Mcp-Session-Id: 0` jamais compté : la clé du map a perdu `0` (#672).
 run zero "$init" "$deleted" "$too_large" "$too_large" "${twelve_no_session[@]}"
-if [ "$rc" -eq 1 ] && grep -q 'aucun 429 après 12 POST « Mcp-Session-Id: 0 »' "$TMP/err" && grep -q 'mcp_without_session' "$TMP/err" \
+if [ "$rc" -eq 1 ] && grep -q 'aucun 429 après 12 POST « Mcp-Session-Id: 0 »' "$TMP/err" && grep -q 'mcp_with_session' "$TMP/err" \
    && [ "$(wc -l < "$TMP/zero.calls")" -eq 16 ]; then
   pass "12 POST « 0 » sans 429 → échec nommant la clé du map"
 else

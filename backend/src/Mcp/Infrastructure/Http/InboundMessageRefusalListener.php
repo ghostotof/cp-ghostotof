@@ -25,12 +25,11 @@ use Throwable;
  *   jusqu'à 100 par requête HTTP, une borne codée en dur que le bundle ne rend
  *   pas configurable (`MessageFactory::DEFAULT_MAX_BATCH_SIZE`) : 100
  *   `tools/call` — autant d'appels de provider et de lignes `mcp_usage` — pour
- *   une seule requête comptée par la zone nginx `mcp`. Les lots ont disparu du
- *   protocole à la révision 2025-06-18 : des révisions à poignée de main que
- *   le SDK 0.8.1 négocie (2024-11-05 à 2025-11-25), seules les deux premières
- *   les connaissent, et la révision sans session (2026-07-28), servie elle
- *   aussi, n'en a pas. Le
- *   prédicat est celui du SDK (`MessageFactory::create()`) : `json_decode` en
+ *   une seule requête comptée par la zone nginx `mcp`. Les lots, arrivés à la
+ *   révision 2025-03-26, ont disparu à la suivante, 2025-06-18 : des quatre
+ *   révisions à poignée de main que le SDK 0.8.1 négocie (2024-11-05 à
+ *   2025-11-25), seule 2025-03-26 les connaît, et la révision sans session
+ *   (2026-07-28), servie elle aussi, n'en a pas. Le prédicat est celui du SDK (`MessageFactory::create()`) : `json_decode` en
  *   tableau associatif, puis toute liste PHP est un lot — un objet aux clés
  *   `"0"`, `"1"`… aussi, qui passait quand seul le crochet était regardé
  *   (relectures de #644, mesuré). Un lot d'un message coûte un message : il

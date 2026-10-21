@@ -188,7 +188,7 @@ if [ -n "$session_counted" ]; then
   fi
 fi
 if [ -z "$session_counted" ]; then
-  echo "ÉCHEC : aucun 429 après $SESSION_MAX_REQUESTS POST « Mcp-Session-Id: 0 » — la zone mcpsession ne compte pas « 0 » comme une absence de session (map \$mcp_without_session, #672)." >&2
+  echo "ÉCHEC : aucun 429 après $SESSION_MAX_REQUESTS POST « Mcp-Session-Id: 0 » — la zone mcpsession ne compte pas « 0 » comme une absence de session (map \$mcp_with_session, #672)." >&2
   exit 1
 fi
 echo "« Mcp-Session-Id: 0 » compté par la zone mcpsession : 429 après $session_counted POST"

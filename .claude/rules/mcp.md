@@ -26,7 +26,8 @@ paths:
   (#673): `mcp.yaml` reads it (`!php/const`), and so do `InboundMessageRefusalListener`, `McpCallLog` and the CSRF
   guard's exclusion; `McpEndpointPathTest` compares what PHP cannot read — the route, the `mcp` firewall's pattern,
   the sidecar's `location =`, the frontend's `MCP_ENDPOINT_PATH`. Not read, accepted: the dev nginx conf (mirrored
-  by `tools/check-backend-nginx-rate-limits.sh`) and the smoke scripts (`tools/`, not mounted; a preprod fails).
+  by `tools/check-backend-nginx-rate-limits.sh`), the smoke scripts (`tools/`, not mounted; a preprod fails), and the
+  tests' own `'/api/mcp'` (`SpeaksMcp::MCP_ENDPOINT`, `Request::create()`): an oracle kept apart from the constant.
   Read-only, **no model call** (ADR 0006 D1). The bundle and
   `mcp/sdk` are pinned **exact** (`0.14.1`, `0.8.1`; the bundle requires `mcp/sdk ^0.8.1`, so 0.9 is out until
   a bundle release moves) — `McpEndpointTest::testTheMcpPackagesArePinnedExactly` refuses any operator.
@@ -215,8 +216,9 @@ paths:
   then any PHP list is a batch — **an object keyed `"0"`, `"1"`… too**, which passed while only the bracket was read,
   100 `tools/call` served, measured in the reviews of #644): the SDK 0.8.1 accepts up to 100 per request, hard-coded
   (`MessageFactory::DEFAULT_MAX_BATCH_SIZE`, built by the `Builder`, not configurable through the bundle), and batches
-  left the protocol at revision 2025-06-18 — of the handshake revisions SDK 0.8.1 negotiates (2024-11-05 to
-  2025-11-25) only the first two know them, and the sessionless 2026-07-28, served too, has none; (2) **an `initialize` whose
+  came with revision 2025-03-26 and left the protocol at the next, 2025-06-18 — of the four handshake revisions SDK
+  0.8.1 negotiates (2024-11-05 to 2025-11-25) only 2025-03-26 knows them, and the sessionless 2026-07-28, served too,
+  has none; (2) **an `initialize` whose
   `clientInfo` + `capabilities`** weigh more than `MAX_DECLARATION_BYTES` (4 096) **as the session stores them**
   (`declarationBytes()`: `json_encode` without flags, six bytes per accented character) — real clients declare under
   1 KiB; accepted: a client sending a large icon as a data URI is refused; **`params._meta` is not counted, accepted**

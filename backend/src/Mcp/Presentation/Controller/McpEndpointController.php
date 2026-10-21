@@ -48,9 +48,8 @@ use Symfony\Component\Uid\Uuid;
  * lisait mal un hôte IPv6 (relecture de la tâche 2). Puis il répond comme le
  * transport pour une session : 400 si son identifiant n'est pas un UUID, 404
  * si elle n'existe pas ou plus, ou ne se relit pas (le client se
- * réinitialise), 406 sans
- * `Accept: text/event-stream` ; un identifiant vide vaut absent, comme au
- * transport. Entre les deux, la règle d'en-tête de version du transport
+ * réinitialise), 406 sans `Accept: text/event-stream` ; un identifiant vide
+ * vaut absent, comme au transport. Entre les deux, la règle d'en-tête de version du transport
  * (`ProtocolVersionMiddleware`) : 400 pour une révision qu'il ne négocie pas.
  */
 #[AsDecorator('mcp.server.portfolio.controller')]

@@ -1,7 +1,8 @@
 ---
 paths:
-  - "backend/src/Mcp/Presentation/**"
-  - "backend/tests/Mcp/Presentation/**"
+  - "backend/src/Mcp/Presentation/Prompt/**"
+  - "backend/src/Mcp/Presentation/Tool/**"
+  - "backend/tests/Mcp/Presentation/Prompt/**"
   - "backend/tests/Mcp/AuthorNeverNamedTest.php"
   - "backend/tests/Mcp/Support/AuthorMention*.php"
   - "backend/config/packages/mcp.yaml"

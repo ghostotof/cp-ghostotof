@@ -1,7 +1,7 @@
 ---
 paths:
-  - "backend/src/Mcp/Infrastructure/**"
-  - "backend/tests/Mcp/Infrastructure/**"
+  - "backend/src/Mcp/Infrastructure/Log/**"
+  - "backend/tests/Mcp/Infrastructure/Log/**"
   - "backend/config/packages/monolog.yaml"
 ---
 

@@ -73,6 +73,8 @@ services:
       # assistant » (ConnectAssistantPageMirrorsCatalogueTest) et le chemin du
       # serveur (McpEndpointPathTest). Des répertoires, pas des fichiers : un
       # montage de répertoire suit les remplacements de fichiers (éditeur, git).
+      # Un conteneur créé avant ces lignes ne les a pas : `docker compose up -d
+      # backend` le recrée avec.
       - ./frontend/src/infrastructure/portfolio/content:/var/www/frontend/src/infrastructure/portfolio/content:ro
       - ./frontend/src/domain/mcp:/var/www/frontend/src/domain/mcp:ro
     depends_on:
