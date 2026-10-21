@@ -114,9 +114,17 @@ paths:
   role's own step), so the render stays byte-identical across calls (D8) and **linear by construction**:
   a regex in a loop was quadratic on cascading chevrons, a non-possessive run quadratic on a long run of
   punctuation before a letter, and nothing but a timing test sees that (both are pinned, `CorpusRendererTest`).
-  **Accepted** (decided 2026-10-21): NFKC changes what the model reads (`ﬁ` → `fi`, `m²` → `m2`, `…` →
-  `...`, a no-break space → a space; a full-width `＃` is then escaped like `#`); an opening sign before
-  `documents` is lost in plain text too (`[documents](…)`); and **no nonce on `<documents>`**, unlike the role —
+  Every line break Unicode mandates (`\r\n`, `\r`, VT, FF, NEL, U+2028, U+2029: `CorpusRenderer::LINE_BREAKS`)
+  becomes `\n` first, so that `prose()`'s `#` escaping and `title()`'s flattening see it (#667 review). **A number
+  in superscript, subscript or fraction is not folded** (`10⁶`, `m²`, `CO₂`, `½` kept): NFKC read `10⁶` as `106`,
+  a measured result quoted wrong — the decomposition type is read through `IntlChar` on each `\p{No}`; letters in
+  superscript are still folded. **Accepted** (decided 2026-10-21, completed by the review): NFKC otherwise changes what
+  the model reads (`ﬁ` → `fi`, `…` → `...`, `①` → `1`, a no-break space → a space; a full-width `＃` is then escaped
+  like `#`); an opening sign before `documents` is lost in plain text too (`[documents](…)`, `« documents »` keeps
+  only its `»`), **across line breaks** too, since the corpus keeps them (`{` then `"documents"` on the next line loses
+  its `{`); the invisible characters go from the corpus as from the role (`pdftotext`'s private-use bullets, U+F0B7,
+  ZWJ and VS16 inside emoji sequences), and `\p{Cn}` follows the bundled PCRE's Unicode version, so a PHP image
+  bump may change the rendered prefix once (the prompt cache restarts); and **no nonce on `<documents>`**, unlike the role —
   one drawn per call would break the provider's prompt cache, one derived from the content (an HMAC through
   `KeyedMac`) would bring `APP_SECRET` into the render for content only `ROLE_SUPER` writes —, so the
   look-alikes the neutraliser does not see (other alphabets, small capitals, a combining mark inside the
