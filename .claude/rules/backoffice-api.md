@@ -80,8 +80,19 @@ paths:
   third-party outage (503) or for a signal nothing else traces (missing About settings for a valid
   locale). The password-setup unknown token and quota and the translation quota were in that last group
   until issue #356 gave them their own trace (`security_audit`, `ai_usage`) and moved them back to `info`:
-  a client-triggerable 4xx stays `info` once something attributable traces it. That rule covers our domain exceptions
-  only: the framework's own HTTP 4xx (router 404/405, validation 422, 403) stay at `error`.
+  a client-triggerable 4xx stays `info` once something attributable traces it. **The framework's 404, 405 and 400
+  are `info` too** (#678, audit C11 of #675, decided by the author on 2026-10-21): `NotFoundHttpException`,
+  `MethodNotAllowedHttpException`, `BadRequestHttpException` — the router, `HttpKernel`'s conversion of a
+  `RequestExceptionInterface` (an unreadable host, a `SuspiciousOperationException`), API Platform's read and
+  parameter refusals. Any client produced them, each an `error` line at will bounded only by the nginx zones
+  (`publicapi`, `mcp`); their trace is nginx's access log (status, IP), like the unreadable body's. Rejected:
+  keeping `error` (a frontend calling a missing route stays visible in nginx's log), `warning` (the noise
+  remains, only its rank changes). **A 404 that tells a server defect gets its own class**, entered **before**
+  `NotFoundHttpException` — the kernel takes the first `instanceof` match: `CvFileUnavailableException` (the
+  nominative CV missing on disk, `warning`), `ApiExceptionLogLevelTest` pins the level retained (red when the
+  two entries are swapped, measured); a new `throw new NotFoundHttpException` for a server-side absence does
+  the same. `FrameworkClientErrorsLogLevelTest` drives the three on the real stack. The validation 422 and the
+  403 stay at `error`.
   `tests/Shared/Infrastructure/Http/ExceptionLogLevelCoverageTest.php` pins four things: an entry for
   every exception rendered with a declared status — every `exception_to_status` key, every
   `exceptionToStatus` carried by an `#[ApiResource]` or one of its operations (merged by the vendor at

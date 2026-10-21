@@ -85,9 +85,9 @@ framework:
         # d'alertes de production (issue #348). Règle : `info` pour une erreur
         # du client (4xx), `warning` pour la panne d'un tiers (503) ou pour un
         # signal qu'aucune autre trace ne porte, l'un et l'autre visibles en
-        # production. La règle ne vaut que pour ces exceptions métier : les 4xx
-        # HTTP du framework (404/405 du routeur, 422 de validation, 403) restent
-        # en `error`. ExceptionLogLevelCoverageTest exige une entrée pour chaque
+        # production. Les 404/405/400 du framework sont en `info` aussi depuis
+        # #678 (plus bas) ; le 422 de validation et le 403 restent en `error`.
+        # ExceptionLogLevelCoverageTest exige une entrée pour chaque
         # clé de `exception_to_status` et chaque ProblemExceptionInterface de
         # src/, hors dispenses justifiées, et un niveau conforme au statut.
         #
@@ -211,6 +211,31 @@ framework:
         # d'entrée ici, à dessein : un JSON de sortie non encodable reste en
         # `critical`.
         App\Shared\Infrastructure\ApiPlatform\MalformedRequestBodyException:
+            log_level: info
+
+        # CV nominatif absent du disque (#678) : un défaut du déploiement, rendu
+        # en 404, qui doit rester visible en production. **Avant** l'entrée de
+        # NotFoundHttpException, dont il hérite : le noyau retient la première
+        # entrée qui correspond (`instanceof`).
+        App\Portfolio\Cv\Presentation\Controller\CvFileUnavailableException:
+            log_level: warning
+
+        # 4xx du framework (audit de #675, C11, décidé le 2026-10-21) : route
+        # inconnue (404), méthode refusée (405), requête illisible (400 — une
+        # SuspiciousOperationException ou une BadRequestException, que
+        # HttpKernel convertit, un hôte refusé par le routeur, un paramètre
+        # d'API Platform invalide). N'importe quel client les produit : en
+        # `error`, chacun était une ligne d'incident à volonté, bornée par les
+        # seules zones nginx. Leur trace retenue est l'access log de nginx
+        # (statut, IP), comme celle du corps illisible plus haut. Classes
+        # précises, jamais HttpException : un 403 ou un 5xx garde son niveau.
+        # Un 404 qui dit un défaut du serveur a sa propre classe et son entrée
+        # avant celles-ci (CvFileUnavailableException).
+        Symfony\Component\HttpKernel\Exception\NotFoundHttpException:
+            log_level: info
+        Symfony\Component\HttpKernel\Exception\MethodNotAllowedHttpException:
+            log_level: info
+        Symfony\Component\HttpKernel\Exception\BadRequestHttpException:
             log_level: info
 
         # Content-Type refusé (415) : une erreur du client, jamais un incident.

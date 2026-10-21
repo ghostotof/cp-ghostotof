@@ -11,6 +11,7 @@ use App\Ai\Assistant\Infrastructure\Http\RequestBodyTooLargeException;
 use App\Ai\Translation\Domain\Exception\TranslationRateLimitExceededException;
 use App\Ai\Translation\Domain\Exception\TranslationUnavailableException;
 use App\Portfolio\About\Domain\Exception\AboutSettingsNotFoundException;
+use App\Portfolio\Cv\Presentation\Controller\CvFileUnavailableException;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Security\User\Domain\Exception\BaseAccessRateLimitExceededException;
 use App\Security\User\Domain\Exception\CpgUserNotFoundException;
@@ -27,6 +28,9 @@ use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Event\ExceptionEvent;
 use Symfony\Component\HttpKernel\EventListener\ErrorListener;
+use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
+use Symfony\Component\HttpKernel\Exception\MethodNotAllowedHttpException;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\HttpKernel\Exception\UnsupportedMediaTypeHttpException;
 use Symfony\Component\HttpKernel\HttpKernelInterface;
 use Symfony\Component\Serializer\Exception\NotEncodableValueException;
@@ -79,6 +83,15 @@ final class ApiExceptionLogLevelTest extends KernelTestCase
         yield 'quota de définition de mot de passe (429, tracé sur security_audit)' => [new PasswordSetupRateLimitExceededException(new DateTimeImmutable('+1 hour')), Level::Info];
         yield 'quota du traducteur (429, tracé sur ai_usage)' => [new TranslationRateLimitExceededException(new DateTimeImmutable('+1 hour')), Level::Info];
         yield 'réglages « À propos » absents pour une locale valide (404), visible en production' => [AboutSettingsNotFoundException::forLocale(Locale::FR), Level::Warning];
+        // Les 4xx du framework (audit de #675, C11) : n'importe quel client les
+        // produit, leur trace retenue est l'access log de nginx (statut, IP).
+        yield 'route inconnue, 404 du routeur (#678)' => [new NotFoundHttpException('No route found for "GET /api/nowhere"'), Level::Info];
+        yield 'méthode refusée, 405 du routeur (#678)' => [new MethodNotAllowedHttpException(['GET']), Level::Info];
+        yield 'requête illisible, 400 du framework (#678)' => [new BadRequestHttpException('Invalid Host "local host".'), Level::Info];
+        // Le contre-exemple : un CV absent du disque est un défaut du serveur,
+        // une 404 qui doit rester visible en production. Son entrée précède
+        // celle de NotFoundHttpException, que le noyau retiendrait sinon.
+        yield 'CV nominatif absent du disque (404), visible en production (#678)' => [CvFileUnavailableException::atConfiguredPath(), Level::Warning];
         yield 'corps de requête illisible (400, issue #355)' => [MalformedRequestBodyException::fromSerializerFailure(new NotEncodableValueException('Syntax error')), Level::Info];
         // Le contre-exemple de la ligne précédente : la même classe du
         // Serializer, levée hors de la désérialisation d'une requête — un JSON
