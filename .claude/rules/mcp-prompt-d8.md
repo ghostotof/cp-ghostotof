@@ -40,7 +40,9 @@ paths:
   **`\p{Default_Ignorable_Code_Point}`**, #662: variation selectors, and the ignorables `\p{Cf}` misses, `Mn`
   U+034F, U+180B–180D, U+180F, U+17B4–17B5 and `Lo` Hangul fillers U+115F, U+1160, U+3164, U+FFA0 —
   `<\u{034F}/role>` displayed as `</role>`; U+180E is `Cf`; ZWJ and VS16 inside emoji sequences go too, as
-  before #662, accepted); then, as `CorpusRenderer` does for `documents` in principle, **only the opening signs
+  before #662, accepted); then, exactly as `CorpusRenderer` does for `documents` — the first three steps are
+  `Shared/Domain/Text/TagWordNeutraliser`, shared by both since #667 (`.claude/rules/ai.md`), its failure
+  rethrown as `RoleNeutralisationFailedException` —, **only the opening signs
   introducing the word `role`** are removed (`OPENING`): **by class** every `\p{Ps}` and `\p{Pi}` (#662, over a
   list of look-alikes, which stopped at the last glyph thought of — `《 ❰ «` passed): `‹ 〈 ⟨ ❮`, but also `[`
   and `{`, which open a tag elsewhere (BBCode, templates); **by name** those that are not punctuation: `<`,
