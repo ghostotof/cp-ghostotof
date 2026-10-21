@@ -37,7 +37,10 @@ phase 1 parte en release seule ; puis au merge de clôture, qui archive la spec 
 - [ ] Release : aucune variable d'hôte à poser — `allowed_hosts` dérive d'`APP_FRONTEND_BASE_URL`
       (`mcp.yaml`), déjà posée par overlay ; l'`initialize` du smoke MCP sur l'hôte public le prouve
       (un 403 dirait qu'il manque) ; smoke 429 lu ; Claude Code branché en préprod (en-tête Basic) ;
-      claude.ai, ChatGPT, Cursor, PhpStorm vérifiés en prod
+      claude.ai, ChatGPT, Cursor, PhpStorm vérifiés en prod ; zone `mcp` (60 req/min par IP) mesurée
+      contre les IP de sortie partagées de claude.ai et ChatGPT (#673, point 2) : relever les 429 de la
+      zone dans les journaux nginx de prod la première semaine, et rouvrir son débit s'ils tombent sur
+      des appels légitimes
 
 ## Phase 2 — connexion MCP (palier de confiance)
 

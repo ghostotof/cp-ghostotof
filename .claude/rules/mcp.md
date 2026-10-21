@@ -395,7 +395,8 @@ paths:
   then any PHP list is a batch — **an object keyed `"0"`, `"1"`… too**, which passed while only the bracket was read,
   100 `tools/call` served, measured in the reviews of #644): the SDK 0.8.1 accepts up to 100 per request, hard-coded
   (`MessageFactory::DEFAULT_MAX_BATCH_SIZE`, built by the `Builder`, not configurable through the bundle), and batches
-  left the protocol at revision 2025-06-18, the only handshake revision served; (2) **an `initialize` whose
+  left the protocol at revision 2025-06-18 — of the handshake revisions SDK 0.8.1 negotiates (2024-11-05 to
+  2025-11-25) only the first two know them, and the sessionless 2026-07-28, served too, has none; (2) **an `initialize` whose
   `clientInfo` + `capabilities`** weigh more than `MAX_DECLARATION_BYTES` (4 096) **as the session stores them**
   (`declarationBytes()`: `json_encode` without flags, six bytes per accented character) — real clients declare under
   1 KiB; accepted: a client sending a large icon as a data URI is refused; **`params._meta` is not counted, accepted**
@@ -460,5 +461,6 @@ paths:
   connections (2 per IP and per pod, of a pod's eight workers): set against `subscriptions/listen`'s 30 s (#672),
   **kept at 2 by decision** (#675, 2026-10-21) once `listen` is refused, as defence in depth — one IP never holds
   more than two workers of a pod, whatever a request becomes (a slow tool, a future stream). A shared egress IP
-  (hosted connectors) meets the `mcp` zone first; both bounds are to be measured again against the real clients
-  in phase 2 (`.claude/rules/deploiement-nginx.md`).
+  (hosted connectors: claude.ai and ChatGPT call from shared IPs, so their users could throttle one another) meets
+  the `mcp` zone first: measured after phase 1's release (#673, point 2, release checklist in `tasks/todo.md`), and
+  both bounds again against the real clients in phase 2 (`.claude/rules/deploiement-nginx.md`).
