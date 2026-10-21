@@ -338,8 +338,14 @@ paths:
   `InboundClassifier` on the body and on the headers **as the SDK receives them**, converted by the bundle's
   PSR-7 bridge (`mcp.psr_http_factory`, which trims blanks and drops a header carrying a control character) —
   never the header alone (an unknown revision in `_meta` is served, and refused, by the modern leg; a modern
-  header without the envelope is refused before any era and keeps the fallback line). **Only a protocol answer
-  counts** — JSON, an SSE stream, an acknowledgement without body (which Symfony types `text/html`): an `Origin` or
+  header without the envelope is refused before any era and keeps the fallback line). **Only the server's own answer
+  counts** (#678, audit C9 of #675): the response the MCP controller or `InboundMessageRefusalListener` returned,
+  recognised **by its object** in `Infrastructure/Http/ServerAnswers` (a `WeakMap` both fill through `issue()`) —
+  a 404, 405 or 400 of the framework under `/api` is JSON too (`ApiJsonErrorFormatListener`), and got a call line of
+  the method sent; by object rather than by a request attribute, so that a response a later listener replaces is no
+  longer the server's. `McpCallLogTest` raises a framework 404 from a test listener (and a router 400 on an
+  unreadable `X-Forwarded-Host`, which the PSR-7 bridge also refuses): both keep the fallback line. Then **only a
+  protocol answer counts** — JSON, an SSE stream, an acknowledgement without body (which Symfony types `text/html`): an `Origin` or
   `Host` the SDK refuses at its edge, before classifying (a `text/plain` 403), handled no message and keeps the
   fallback line, as in the other era; accepted: the SDK's 4 MiB refusal (413) is JSON, read as a protocol error of
   the method sent — nginx's 16 KiB comes first. The method is the one **the SDK's `MessageFactory` recognises** (the class of the
@@ -362,9 +368,11 @@ paths:
   cannot (the 30-second `listen` stream, an edge refusal, headers trimmed or dropped by the bridge).
   **An HTTP request on `/api/mcp` that handled no message** — unreadable JSON, missing or expired
   session, `GET`, `DELETE`, a request refused before the SDK (#644: 400, `protocol-error`; under the modern
-  envelope it has a call line instead, `ModernExchange` reading what the classifier says, not who answered: the
+  envelope it has a call line instead, the refusal being the server's own answer, and `ModernExchange` reading what
+  the classifier says: the
   method the SDK's factory recognises — `null` for a client response, `initialize` for an oversized declaration —
-  and the refusal's `-32600`), an edge refusal or one by the SDK's classifier — leaves one `MCP request without call`
+  and the refusal's `-32600`), an edge refusal or one by the SDK's classifier, a response the server did not return (a framework 4xx) —
+  leaves one `MCP request without call`
   line (`httpMethod`, `httpStatus`, `protocolVersion` — `ProtocolVersion::tryFrom()` of the header, `null` otherwise
   —, `outcome`, `durationMs`, `ip`) at `kernel.terminate`. A `POST` there is a `protocol-error` (the SDK answers a
   parse error in 200), except a 202. Pending requests are keyed by object (a JSON-RPC id is the client's; a batch could repeat it before

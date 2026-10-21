@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Mcp\Infrastructure\Log;
 
+use App\Mcp\Infrastructure\Http\ServerAnswers;
 use App\Shared\Infrastructure\Http\CanonicalPath;
 use Mcp\Capability\RegistryInterface;
 use Mcp\Event\ErrorEvent;
@@ -57,17 +58,21 @@ use Throwable;
  * la même grandeur** : celle de la requête HTTP entière (pare-feu, écouteurs,
  * envoi de la réponse ; les 30 s d'un `subscriptions/listen` avant qu'il soit
  * refusé, #675), là où l'autre ère mesure le traitement du message — une
- * statistique de durée sépare les deux ères. Elle lit ce que dit le classifieur du SDK, pas qui a répondu : un
- * message refusé avant le SDK sous l'enveloppe moderne a donc sa ligne d'appel,
- * avec la méthode que la fabrique du SDK reconnaît (aucune pour une réponse du
- * client).
+ * statistique de durée sépare les deux ères. Elle n'est écrite que pour une
+ * réponse du serveur MCP — son contrôleur ou le refus avant le SDK
+ * ({@see ServerAnswers}) : un 4xx du framework sous l'enveloppe moderne, du
+ * JSON lui aussi, garde la ligne de repli (audit de #675, C9). Puis elle lit ce
+ * que dit le classifieur du SDK : un message refusé avant le SDK sous
+ * l'enveloppe moderne a donc sa ligne d'appel, avec la méthode que la fabrique
+ * du SDK reconnaît (aucune pour une réponse du client).
  *
  * **Une ligne de repli** ({@see self::REQUEST_WITHOUT_CALL}) pour une requête
  * HTTP sur `/api/mcp` qui n'a traité aucun message : JSON illisible, session
  * absente ou expirée, `GET`, `DELETE`, un message de l'ère à session refusé
  * avant le SDK, un `Origin` ou un `Host` que le SDK refuse à son bord, ou un
  * message refusé avant toute ère par son classifieur (un en-tête de révision
- * moderne sans enveloppe).
+ * moderne sans enveloppe), ou une réponse que le serveur n'a pas rendue (un
+ * 404, 405 ou 400 du framework).
  * La ligne porte la méthode, le statut HTTP et la révision annoncée (une valeur
  * que le SDK connaît, sinon `null`) ; {@see self::fallbackOutcome()} en déduit
  * l'issue.
@@ -134,6 +139,7 @@ final class McpCallLog implements EventSubscriberInterface, ResetInterface
         // en-têtes tels que le SDK les reçoit.
         #[Autowire(service: 'mcp.psr_http_factory')]
         private readonly HttpMessageFactoryInterface $psrHttpFactory,
+        private readonly ServerAnswers $serverAnswers,
     ) {
     }
 
@@ -300,6 +306,12 @@ final class McpCallLog implements EventSubscriberInterface, ResetInterface
      */
     private function writeModernCall(TerminateEvent $event, int $httpStartedAt): void
     {
+        // Un 4xx du framework (routeur, ErrorListener) est du JSON sous `/api`,
+        // qu'aucun code MCP n'a produit : il reste à la ligne de repli (C9).
+        if (!$this->serverAnswers->issued($event->getResponse())) {
+            return;
+        }
+
         try {
             $exchange = ModernExchange::tryRead($event->getRequest(), $event->getResponse(), $this->psrHttpFactory);
         } catch (Throwable) {
