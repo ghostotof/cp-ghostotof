@@ -441,6 +441,12 @@ paths:
   `AuthorNeverNamedTest`. **No body bound in the application**: `SdkChannelRecordsTest` sends 100 KB strings through
   the SDK on purpose, and the bound is nginx's (`.claude/rules/deploiement-nginx.md`, chunked included).
   `InboundMessageRefusalTest` pins every case; `McpEndpointTest`'s session-bound cases go through `_meta` since.
+- **No answer is a stream** (#678, audit C5 of #675): under PHP-FPM a stream holds a worker. `tests/Mcp/NoAnswerIsAStreamTest`
+  sends, in both eras, as a client accepting `text/event-stream` with a `progressToken`, every request the SDK can
+  build (`MessageFactory::REGISTERED_MESSAGES` and `StatelessProtocol`'s `*_METHOD`, read by reflection, against its
+  closed `params()` — an SDK bump adding one turns it red until judged), each listed tool and prompt included, and
+  wants JSON (a `result` for `tools/call`/`prompts/get`). Measured red: a tool calling `ClientGateway::progress()`, and
+  the `listen` refusal lifted. Not covered: a tool notifying only for some arguments.
 - **Rate, body and sessions per IP** (#644): the nginx `mcp` zone and the location's 16 KiB body bound
   (`.claude/rules/deploiement-nginx.md`). The `mcpsession` zone counts every `POST` whose `Mcp-Session-Id` is not
   a well-formed UUID (#672, an allow-list: PHP's PSR-7 bridge trims tabs and drops a header with a control
