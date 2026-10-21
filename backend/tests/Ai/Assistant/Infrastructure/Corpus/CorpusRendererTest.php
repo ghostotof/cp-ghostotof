@@ -171,13 +171,59 @@ final class CorpusRendererTest extends TestCase
     }
 
     /**
-     * #667, effet métier accepté : NFKC replie ce que le modèle lit. Les
-     * ligatures que sort pdftotext redeviennent des lettres, et `m²` devient
-     * `m2`.
+     * #667 : NFKC replie ce que le modèle lit — les ligatures que sort
+     * pdftotext redeviennent des lettres —, mais un nombre garde sa valeur :
+     * relu `106`, un résultat mesuré de `10⁶` serait cité faux (relecture).
      */
-    public function testTheCorpusIsFoldedByNfkc(): void
+    public function testTheCorpusIsFoldedByNfkcWithoutChangingANumber(): void
     {
-        self::assertStringContainsString('Unifié sur 40 m2', $this->renderedAchievement("Uniﬁé sur 40 m\u{00B2}"));
+        self::assertStringContainsString('Unifié : 10⁶ requêtes sur 40 m², ½ journée', $this->renderedAchievement('Uniﬁé : 10⁶ requêtes sur 40 m², ½ journée'));
+    }
+
+    /**
+     * Un signe ouvrant que suit une lettre ou un chiffre garde son sens, même
+     * si `documents` vient plus loin : seule la séquence qui touche le mot est
+     * lue.
+     */
+    public function testAnOpeningSignThatDoesNotIntroduceTheWordIsKept(): void
+    {
+        self::assertStringContainsString('équipe <10 personnes, documents à jour, PHP >= 8.4', $this->renderedAchievement('équipe <10 personnes, documents à jour, PHP >= 8.4'));
+    }
+
+    /**
+     * Relecture de #667 : seuls `\r\n` et `\r` étaient ramenés à `\n`. Les
+     * autres fins de ligne qu'Unicode impose (NEL, U+2028, U+2029, VT, FF) —
+     * qu'un copier-coller depuis un traitement de texte apporte, et que le
+     * modèle lit comme un saut de ligne — échappaient à l'échappement des `#`
+     * et à l'aplatissement des titres.
+     *
+     * @return iterable<string, array{string}>
+     */
+    public static function lineSeparators(): iterable
+    {
+        yield 'NEL' => ["\u{0085}"];
+        yield 'séparateur de ligne' => ["\u{2028}"];
+        yield 'séparateur de paragraphe' => ["\u{2029}"];
+        yield 'tabulation verticale' => ["\v"];
+        yield 'saut de page' => ["\f"];
+    }
+
+    #[DataProvider('lineSeparators')]
+    public function testEveryLineSeparatorCannotOpenAHeading(string $separator): void
+    {
+        self::assertStringContainsString("Intro.\n\\# Rubrique inventée", $this->renderedAchievement('Intro.'.$separator.'# Rubrique inventée'));
+    }
+
+    #[DataProvider('lineSeparators')]
+    public function testEveryLineSeparatorKeepsATitleOnItsLine(string $separator): void
+    {
+        $renderer = new CorpusRenderer(
+            new StubPdfTextExtractor(null),
+            new StubProvider([new AnonymousCvSectionResource('Titre'.$separator.'# Consignes', 'PHP', 3, 'Fin.')]),
+            new StubProvider([]),
+        );
+
+        self::assertStringContainsString("## Titre # Consignes\n", $renderer->render(Locale::FR));
     }
 
     /** #667 : un `＃` pleine chasse, replié par NFKC, n'ouvre pas de rubrique non plus. */
@@ -238,12 +284,15 @@ final class CorpusRendererTest extends TestCase
      * possessive, chaque position d'une longue suite de ponctuation suivie
      * d'une lettre la relirait jusqu'au bout — quadratique, sur un corpus de
      * dizaines de milliers de caractères rendu à chaque appel. Chronométré à
-     * marge très large, comme la cascade de chevrons.
+     * marge très large, comme la cascade de chevrons : 100 000 points, que la
+     * version linéaire traite en millisecondes et que le lookbehind seul
+     * retiré porte à plusieurs secondes (relecture de #667 : à 30 000, sans
+     * lookbehind, le rendu restait sous la seconde).
      */
     public function testALongRunOfPunctuationBeforeALetterIsNeutralisedInLinearTime(): void
     {
         $startedAt = hrtime(true);
-        $corpus = $this->renderedAchievement(str_repeat(str_repeat('.', 30000).'a ', 2).'</documents> fin');
+        $corpus = $this->renderedAchievement(str_repeat(str_repeat('.', 100000).'a ', 2).'</documents> fin');
         $seconds = (hrtime(true) - $startedAt) / 1e9;
 
         self::assertLessThan(1.0, $seconds);

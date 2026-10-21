@@ -45,6 +45,11 @@ final readonly class CorpusRenderer implements CorpusRendererInterface
     private const string TAG_WORD = 'documents';
     private const string OPENING_TAG = '<'.self::TAG_WORD.'>';
     private const string CLOSING_TAG = '</'.self::TAG_WORD.'>';
+    /**
+     * Les fins de ligne obligatoires d'Unicode (UAX #14 : BK, CR, LF, NL),
+     * `\r\n` en tête pour qu'il ne compte qu'une fois.
+     */
+    private const array LINE_BREAKS = ["\r\n", "\r", "\v", "\f", "\u{0085}", "\u{2028}", "\u{2029}"];
 
     /**
      * @param ProviderInterface<AnonymousCvSectionResource> $anonymousCvProvider
@@ -244,6 +249,11 @@ final readonly class CorpusRenderer implements CorpusRendererInterface
      * Fins de ligne unifiées (préfixe byte-identique, D8) et balises du bloc
      * neutralisées : une donnée ne referme pas le bloc de documents.
      *
+     * Toutes les fins de ligne qu'Unicode impose ({@see self::LINE_BREAKS})
+     * deviennent `\n`, pas seulement `\r\n` et `\r` (relecture de #667) : le
+     * modèle lit U+2028 comme un saut de ligne, mais l'échappement des `#` de
+     * prose() et l'aplatissement de title() ne voient que `\n`.
+     *
      * La neutralisation est celle du rôle du prompt MCP, écrite une fois
      * ({@see TagWordNeutraliser}, #667) : NFKC, invisibles retirés, et les
      * signes ouvrants qui introduisent `documents` retirés à travers tout ce
@@ -263,9 +273,11 @@ final readonly class CorpusRenderer implements CorpusRendererInterface
     private static function text(string $value): string
     {
         try {
-            return trim((new TagWordNeutraliser(self::TAG_WORD))->neutralise(str_replace(["\r\n", "\r"], "\n", $value)));
+            return trim((new TagWordNeutraliser(self::TAG_WORD))->neutralise(str_replace(self::LINE_BREAKS, "\n", $value)));
         } catch (TextNeutralisationFailedException $exception) {
-            throw new CorpusRenderingException(\sprintf('Rendu du corpus impossible : %s', $exception->getMessage()), $exception->getCode(), previous: $exception);
+            // La cause technique est celle de l'exception chaînée : le message
+            // ne la répète pas.
+            throw new CorpusRenderingException('Rendu du corpus impossible : la neutralisation d\'un champ a échoué.', $exception->getCode(), previous: $exception);
         }
     }
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Shared\Domain\Text;
 
+use IntlChar;
 use Normalizer;
 
 /**
@@ -18,8 +19,11 @@ use Normalizer;
  *
  *  - **NFKC**, qui replie la pleine chasse (`＜／ｒｏｌｅ＞`), les petits
  *    chevrons `﹤` et compose `≮` d'un `<` suivi de U+0338 — mais change aussi
- *    ce que lit le modèle : `ﬁ` → `fi`, `m²` → `m2`, `…` → `...`, l'espace
- *    insécable → une espace, accepté ;
+ *    ce que lit le modèle : `ﬁ` → `fi`, `…` → `...`, `①` → `1`, l'espace
+ *    insécable → une espace, accepté. **Sauf un nombre en exposant, en indice
+ *    ou en fraction** ({@see self::NUMBER_FORMS}) : replié, `10⁶` devenait
+ *    `106` et `½` devenait `1⁄2`, un résultat mesuré cité faux (relecture de
+ *    #667) ; les lettres en exposant (`ᵈ`), elles, restent repliées ;
  *  - **rien d'invisible** ({@see self::INVISIBLE}) : un texte piégé y porterait
  *    des consignes que personne ne relit, et `</d\u{200B}ocuments>` s'affiche
  *    comme la balise sans que le mot soit reconnu ;
@@ -78,6 +82,13 @@ final readonly class TagWordNeutraliser
     private const string INVISIBLE = '/(?![\t\n\x{0B}\f\r\x{85}])\p{Cc}|[\p{Cf}\p{Co}\p{Cn}\p{Default_Ignorable_Code_Point}]/u';
 
     /**
+     * Les décompositions de compatibilité qu'un nombre (`\p{No}`) ne perd pas
+     * sans changer de valeur : l'exposant (`⁶ ²`), l'indice (`₂`) et la
+     * fraction (`½`). Un chiffre cerclé (`①`, `<circle>`) se replie, lui.
+     */
+    private const array NUMBER_FORMS = [IntlChar::DT_SUPER, IntlChar::DT_SUB, IntlChar::DT_FRACTION];
+
+    /**
      * @param non-empty-string $word le mot de la balise, `role` ou `documents`
      */
     public function __construct(
@@ -93,14 +104,45 @@ final readonly class TagWordNeutraliser
         return $this->withoutTagOpenings($this->withoutInvisibles($this->normalised($text)));
     }
 
+    /**
+     * NFKC, sauf les formes de nombre de {@see self::NUMBER_FORMS} : le texte
+     * est découpé sur les `\p{No}` (les seuls caractères qui puissent en être
+     * une), chaque morceau et chaque autre nombre passent en NFKC, puis le tout
+     * en NFC. C'est exactement NFKC hors exceptions : NFKC(s) = NFC(NFKD(s)),
+     * et le NFC de morceaux déjà normalisés vaut celui de leurs décompositions.
+     * Un texte sans `\p{No}` est un seul morceau.
+     */
     private function normalised(string $text): string
     {
-        $folded = Normalizer::normalize($text, Normalizer::FORM_KC);
-        if (!\is_string($folded)) {
+        $parts = preg_split('/(\p{No})/u', $text, -1, \PREG_SPLIT_DELIM_CAPTURE);
+        if (false === $parts) {
+            throw TextNeutralisationFailedException::fromPcre();
+        }
+
+        foreach ($parts as $index => $part) {
+            if (1 === $index % 2 && $this->isNumberForm($part)) {
+                continue;
+            }
+
+            $parts[$index] = $this->normalisedAs(Normalizer::FORM_KC, $part);
+        }
+
+        return $this->normalisedAs(Normalizer::FORM_C, implode('', $parts));
+    }
+
+    private function isNumberForm(string $character): bool
+    {
+        return \in_array(IntlChar::getIntPropertyValue($character, IntlChar::PROPERTY_DECOMPOSITION_TYPE), self::NUMBER_FORMS, true);
+    }
+
+    private function normalisedAs(int $form, string $text): string
+    {
+        $normalised = Normalizer::normalize($text, $form);
+        if (!\is_string($normalised)) {
             throw TextNeutralisationFailedException::fromNormalizer();
         }
 
-        return $folded;
+        return $normalised;
     }
 
     private function withoutInvisibles(string $text): string

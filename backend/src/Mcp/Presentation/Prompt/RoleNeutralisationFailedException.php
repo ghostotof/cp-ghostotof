@@ -22,9 +22,9 @@ final class RoleNeutralisationFailedException extends RuntimeException
         return new self(\sprintf('Nettoyage du rôle impossible : %s.', preg_last_error_msg()));
     }
 
-    /** Le neutraliseur commun a échoué (#667) : sa cause technique, jamais le texte. */
+    /** Le neutraliseur commun a échoué (#667) : sa cause technique est l'exception chaînée, jamais le texte. */
     public static function fromNeutralisation(TextNeutralisationFailedException $failure): self
     {
-        return new self(\sprintf('Nettoyage du rôle impossible : %s', $failure->getMessage()), $failure->getCode(), $failure);
+        return new self('Nettoyage du rôle impossible : la neutralisation commune a échoué.', $failure->getCode(), $failure);
     }
 }
