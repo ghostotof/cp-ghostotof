@@ -42,7 +42,15 @@ phase 1 parte en release seule ; puis au merge de clôture, qui archive la spec 
       `MCP_D8_AUTHOR_NAME` posé aussi dans les secrets Dependabot (`gh secret set MCP_D8_AUTHOR_NAME
       --app dependabot`, #663) — sinon, une fois `pipeline.yml` dans `develop`, chaque push de Dependabot échoue la garde D8 ;
       `tools/github-settings.sh`, étape `l`, le vérifie
-- [ ] Release : aucune variable d'hôte à poser — `allowed_hosts` dérive d'`APP_FRONTEND_BASE_URL`
+- [x] **v0.28.0 en prod le 2026-10-21** (PR #688, merge e4320a09, images `0.28.0-7cc1b17`, avec PHP
+      8.5.12, #687). Smoke préprod : `initialize` sur l'hôte réel, 413 (content-length et chunked),
+      `mcpsession` en 429 après 6 POST, `mcp` en 429 problem+json à la 43e requête. Prod, au palier
+      anonyme en `curl` : `initialize` 200, `tools/list` (10 outils), `get_about`, `present_for_role`,
+      `get_nominative_corpus` refusé, `DELETE` 200.
+- [ ] **Reste de la release, à faire par l'auteur** : Claude Code branché en préprod (en-tête Basic,
+      secret hors session) ; claude.ai, ChatGPT, Cursor et PhpStorm en prod ; les 429 de la zone `mcp` la
+      première semaine (jusqu'au 2026-10-28).
+- [x] Release (détail d'origine) : aucune variable d'hôte à poser — `allowed_hosts` dérive d'`APP_FRONTEND_BASE_URL`
       (`mcp.yaml`), déjà posée par overlay ; l'`initialize` du smoke MCP sur l'hôte public le prouve
       (un 403 dirait qu'il manque) ; smoke 429 lu ; Claude Code branché en préprod (en-tête Basic) ;
       claude.ai, ChatGPT, Cursor, PhpStorm vérifiés en prod ; zone `mcp` (60 req/min par IP) mesurée
