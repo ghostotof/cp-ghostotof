@@ -43,8 +43,10 @@ paths:
   redactor lowers it, against the production handler; measured red with that handler at `error`): `method`, `name` (the tool or prompt, **only
   when the registry knows it** — the caller's name has no bound), `outcome` (`McpCallOutcome`: `success`,
   `tool-error` for `isError: true`, `protocol-error`), `errorCode` (JSON-RPC), `durationMs`, `ip`
-  (`TruncatedIp`, on the bytes: IPv4 /24, IPv6 /48, an IPv4-mapped address written as the IPv4 it carries, a 6to4
-  address `2002::/16` keeping only the first three bytes of its IPv4 — a /48 kept it whole; read **once, at
+  (`TruncatedIp`: IPv4 /24, IPv6 /48 through `IpUtils::anonymize()` since #673, after recognising on the bytes the two
+  forms it misses — an IPv4-mapped address written as the IPv4 it carries (Symfony keeps the IPv6 form), a 6to4
+  address `2002::/16` keeping only the first three bytes of its IPv4 (a /48 kept it whole); the deprecated
+  IPv4-compatible `::a.b.c.d` is truncated to /24 as Symfony does, where a /48 left `::`; read **once, at
   `kernel.request`**: the `RequestStack` is empty at terminate and during an SSE answer) and
   `declaredClient` (`clientInfo` from the session, name and version bounded to 64 characters, control and format
   characters removed — U+202E reverses what follows in `kubectl logs`, #664: declared, never

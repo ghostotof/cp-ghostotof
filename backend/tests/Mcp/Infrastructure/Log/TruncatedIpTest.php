@@ -31,6 +31,10 @@ final class TruncatedIpTest extends TestCase
         // 6to4 (RFC 3056) : les octets 2 à 5 sont l'IPv4 du client ; un /48 la
         // garderait entière. Elle est tronquée en /24 comme toute IPv4.
         yield '6to4 : l\'IPv4 portée tombe en /24' => ['2002:cb00:712a:1::5', '2002:cb00:7100::'];
+        // L'IPv4 « compatible » (RFC 4291, dépréciée) : IpUtils::anonymize, à
+        // qui le calcul est délégué (#673), la tronque en /24 comme une IPv4 ;
+        // un /48 la réduisait à `::`. Ni plus ni moins qu'une IPv4.
+        yield 'IPv4 compatible : tronquée en /24' => ['::203.0.113.42', '::cb00:7100'];
     }
 
     #[DataProvider('addresses')]
