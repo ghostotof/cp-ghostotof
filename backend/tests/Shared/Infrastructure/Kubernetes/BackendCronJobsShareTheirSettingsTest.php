@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Tests\Shared;
+namespace App\Tests\Shared\Infrastructure\Kubernetes;
 
 use App\Tests\Support\KubernetesManifests;
 use PHPUnit\Framework\TestCase;
@@ -28,6 +28,28 @@ final class BackendCronJobsShareTheirSettingsTest extends TestCase
 {
     /** Clés du conteneur propres à chaque tâche. */
     private const array PER_JOB_CONTAINER_KEYS = ['name', 'command', 'resources'];
+
+    /**
+     * Un CronJob qui cesserait d'exécuter l'image backend sortirait de la
+     * comparaison sans rien dire : chaque CronJob de `k8s/base` doit y être.
+     */
+    public function testEveryCronJobOfTheBaseIsCompared(): void
+    {
+        $manifests = KubernetesManifests::base();
+        $paths = glob($manifests->directory().'/*.y*ml');
+        self::assertIsArray($paths);
+
+        $withCronJob = [];
+        foreach ($paths as $path) {
+            $manifest = basename($path);
+            if ([] !== $this->cronJobsOf($manifests, $manifest)) {
+                $withCronJob[] = $manifest;
+            }
+        }
+        sort($withCronJob);
+
+        self::assertSame($withCronJob, array_keys($this->sharedSettingsByManifest()), 'Un CronJob de k8s/base n\'exécute pas l\'image backend : il échappe à la comparaison des réglages communs.');
+    }
 
     public function testEveryBackendCronJobSharesTheSameSettings(): void
     {
@@ -57,8 +79,7 @@ final class BackendCronJobsShareTheirSettingsTest extends TestCase
 
         $settings = [];
         foreach ($manifests->manifestsRunningTheBackendImage() as $manifest) {
-            $cronJobs = array_filter($manifests->documents($manifest), static fn (array $resource): bool => 'CronJob' === ($resource['kind'] ?? null));
-            if ([] === $cronJobs) {
+            if ([] === $this->cronJobsOf($manifests, $manifest)) {
                 continue;
             }
 
@@ -66,6 +87,14 @@ final class BackendCronJobsShareTheirSettingsTest extends TestCase
         }
 
         return $settings;
+    }
+
+    /**
+     * @return array<mixed>
+     */
+    private function cronJobsOf(KubernetesManifests $manifests, string $manifest): array
+    {
+        return array_filter($manifests->documents($manifest), static fn (array $resource): bool => 'CronJob' === ($resource['kind'] ?? null));
     }
 
     /**
