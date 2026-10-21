@@ -108,8 +108,13 @@ final class McpCallLog implements EventSubscriberInterface, ResetInterface
     /** Les caractères de contrôle (Cc) et de mise en forme (Cf). */
     private const string INVISIBLE_CHARACTERS = '/[\p{Cc}\p{Cf}]/u';
 
-    /** Ce que le SDK 0.8.1 écrit pour chaque message qu'il n'a pas su lire. */
-    private const string SDK_INVALID_MESSAGE = 'Failed to create message.';
+    /**
+     * Ce que le SDK 0.8.1 écrit pour chaque message qu'il n'a pas su lire, en
+     * `warning` : au niveau du handler `mcp` de production, sans quoi Monolog
+     * n'appellerait pas ce processeur et seule la ligne de repli resterait.
+     * Publique pour `McpCallLogTest`, qui relève ce niveau (#673).
+     */
+    public const string SDK_INVALID_MESSAGE = 'Failed to create message.';
 
     /** La clé de session où le SDK copie le `clientInfo` de l'`initialize`. */
     private const string SDK_CLIENT_INFO = 'client_info';

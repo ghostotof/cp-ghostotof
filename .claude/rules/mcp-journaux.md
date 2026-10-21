@@ -36,7 +36,11 @@ paths:
   `event_dispatcher` (`Mcp\Event\RequestEvent`, `ResponseEvent`, `ErrorEvent`, `NotificationEvent`), and writes
   **one `info` line per JSON-RPC message handled**, `MCP call` — an invalid message (an unknown method, alone or
   in a one-message batch, the only batch left since #644) has no event: the class is also a Monolog processor of the `mcp` channel and writes its line, method `null`,
-  `-32600`, when the SDK logs « Failed to create message. »: `method`, `name` (the tool or prompt, **only
+  `-32600`, when the SDK logs « Failed to create message. » — at `warning`, which matters: Monolog runs a channel's
+  processors only when one of its handlers takes the level, and in production the `mcp` handler, at `warning`, is the
+  only one; below it the line would fall back to `MCP request without call` (#673, point 7,
+  `McpCallLogTest::testTheSdkLogsAnInvalidMessageAtALevelTheProductionHandlerTakes` reads the SDK's level before the
+  redactor lowers it, against the production handler; measured red with that handler at `error`): `method`, `name` (the tool or prompt, **only
   when the registry knows it** — the caller's name has no bound), `outcome` (`McpCallOutcome`: `success`,
   `tool-error` for `isError: true`, `protocol-error`), `errorCode` (JSON-RPC), `durationMs`, `ip`
   (`TruncatedIp`, on the bytes: IPv4 /24, IPv6 /48, an IPv4-mapped address written as the IPv4 it carries, a 6to4
