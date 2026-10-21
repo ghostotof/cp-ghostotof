@@ -35,13 +35,15 @@ paths:
   `MAX_CLEANED_CHARACTERS` (**twice** the bound) on the cleaned text, which NFKC can lengthen (U+FDFA gives 18
   characters: ~9 000 injected before #662); the cap is not the bound itself so that an autocorrected `…`
   (three characters once folded) never gets a text within the bound refused; same message both times.
-  Cleaning, in this order: NFKC (folds the full-width `＜／ｒｏｌｅ＞`); invisible characters removed (`\p{Cc}`
+  Cleaning, in this order — its first three steps are `Shared/Domain/Text/TagWordNeutraliser`, shared with the
+  corpus's `CorpusRenderer` since #667 (`.claude/rules/ai.md`), a failure rethrown as
+  `RoleNeutralisationFailedException` —: NFKC (folds the full-width `＜／ｒｏｌｅ＞`), **except a number in
+  superscript, subscript or fraction**, kept as typed (#667 review: `10⁶` became `106`, `½` `1⁄2`); invisible characters removed (`\p{Cc}`
   but the blank controls, `\p{Cf}` — zero-width, bidi, Unicode TAG —, `\p{Co}`, `\p{Cn}`, and
   **`\p{Default_Ignorable_Code_Point}`**, #662: variation selectors, and the ignorables `\p{Cf}` misses, `Mn`
   U+034F, U+180B–180D, U+180F, U+17B4–17B5 and `Lo` Hangul fillers U+115F, U+1160, U+3164, U+FFA0 —
   `<\u{034F}/role>` displayed as `</role>`; U+180E is `Cf`; ZWJ and VS16 inside emoji sequences go too, as
-  before #662, accepted); then, as `CorpusRenderer` does for `documents` in principle, **only the opening signs
-  introducing the word `role`** are removed (`OPENING`): **by class** every `\p{Ps}` and `\p{Pi}` (#662, over a
+  before #662, accepted); then, as for `documents`, **only the opening signs introducing the word `role`** are removed (`OPENING`): **by class** every `\p{Ps}` and `\p{Pi}` (#662, over a
   list of look-alikes, which stopped at the last glyph thought of — `《 ❰ «` passed): `‹ 〈 ⟨ ❮`, but also `[`
   and `{`, which open a tag elsewhere (BBCode, templates); **by name** those that are not punctuation: `<`,
   `≮` (NFKC composes it from `<` + U+0338), `˂ ˱ ᐸ ᚲ`. They are removed across **anything that is neither a

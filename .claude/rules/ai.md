@@ -104,9 +104,32 @@ paths:
   #507, #514; a
   dynamic message elsewhere needs a justified entry in its allow-list), and a `log_level` in
   `framework.exceptions` — never `#[WithLogLevel]`, which would make the domain depend on HttpKernel —
-  or the kernel logs it `critical`. The corpus's `<documents>` neutralisation is **linear by
-  construction** (split on the word, chevrons stripped from the run before it): a regex in a loop was
-  quadratic on cascading chevrons, and nothing but a timing test sees that. `ai.scaleway.http_client` also carries `max_duration: 50`,
+  or the kernel logs it `critical`. **The corpus's `<documents>` neutralisation is the MCP role's**
+  (#667): `Shared/Domain/Text/TagWordNeutraliser`, written once and parameterised by the tag's word, used by
+  `CorpusRenderer` (`documents`) and `PromptRole` (`role`, `.claude/rules/mcp-prompt-d8.md`) — the two copies had
+  drifted, the corpus left behind #662's hardening (`《/documents》`, `<\u{034F}/documents>`, `<\documents>`,
+  `</d\u{200B}ocuments>` passed). NFKC, invisible characters removed, then every opening sign (`\p{Ps}`,
+  `\p{Pi}`, `<≮˂˱ᐸᚲ`) stripped across anything that is neither letter nor digit before the word; never a
+  copy of it in a context again. **Line breaks are kept** (the Markdown lives on them; flattening is the
+  role's own step), so the render stays byte-identical across calls (D8) and **linear by construction**:
+  a regex in a loop was quadratic on cascading chevrons, a non-possessive run quadratic on a long run of
+  punctuation before a letter, and nothing but a timing test sees that (both are pinned, `CorpusRendererTest`).
+  Every line break Unicode mandates (`\r\n`, `\r`, VT, FF, NEL, U+2028, U+2029: `CorpusRenderer::LINE_BREAKS`)
+  becomes `\n` first, so that `prose()`'s `#` escaping and `title()`'s flattening see it (#667 review). **A number
+  in superscript, subscript or fraction is not folded** (`10⁶`, `m²`, `CO₂`, `½` kept): NFKC read `10⁶` as `106`,
+  a measured result quoted wrong — the decomposition type is read through `IntlChar` on each `\p{No}`; letters in
+  superscript are still folded. **Accepted** (decided 2026-10-21, completed by the review): NFKC otherwise changes what
+  the model reads (`ﬁ` → `fi`, `…` → `...`, `①` → `1`, a no-break space → a space; a full-width `＃` is then escaped
+  like `#`); an opening sign before `documents` is lost in plain text too (`[documents](…)`, `« documents »` keeps
+  only its `»`), **across line breaks** too, since the corpus keeps them (`{` then `"documents"` on the next line loses
+  its `{`); the invisible characters go from the corpus as from the role (`pdftotext`'s private-use bullets, U+F0B7,
+  ZWJ and VS16 inside emoji sequences), and `\p{Cn}` follows the bundled PCRE's Unicode version, so a PHP image
+  bump may change the rendered prefix once (the prompt cache restarts); and **no nonce on `<documents>`**, unlike the role —
+  one drawn per call would break the provider's prompt cache, one derived from the content (an HMAC through
+  `KeyedMac`) would bring `APP_SECRET` into the render for content only `ROLE_SUPER` writes —, so the
+  look-alikes the neutraliser does not see (other alphabets, small capitals, a combining mark inside the
+  word, HTML entities, closing quotes used as openers) pass: the preamble treats the corpus as data
+  (rule 6) and ADR 0004 D7 bounds what a successful injection reveals. `ai.scaleway.http_client` also carries `max_duration: 50`,
   `timeout` being an idle timeout only, kept under the 60 s of `fastcgi_read_timeout` and the ingress
   so their HTML 504 never beats the typed 503. The endpoint takes JSON only (`acceptFormat`, 415). **The project id is part of the platform's `baseUrl`**
   (`https://api.scaleway.ai/<project>/v1/...`): without it the API targets the organisation's default project,

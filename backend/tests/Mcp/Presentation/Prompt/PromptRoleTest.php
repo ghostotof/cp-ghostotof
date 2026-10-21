@@ -6,6 +6,7 @@ namespace App\Tests\Mcp\Presentation\Prompt;
 
 use App\Mcp\Presentation\Prompt\PromptRole;
 use App\Mcp\Presentation\Prompt\RoleBlockTag;
+use App\Mcp\Presentation\Prompt\RoleNeutralisationFailedException;
 use Mcp\Exception\PromptGetException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -148,6 +149,25 @@ final class PromptRoleTest extends TestCase
     public function testInvisibleCharactersAreRemoved(string $invisible): void
     {
         self::assertSame('PHP developer', PromptRole::fromInput('PHP '.$invisible.'developer')->text);
+    }
+
+    /** #667 : NFKC ne change pas la valeur d'un nombre (`10⁶` relu `106`). */
+    public function testANumberInSuperscriptOrFractionKeepsItsValue(): void
+    {
+        self::assertSame('Lead dev, 10⁶ users, ½ day remote', PromptRole::fromInput('Lead dev, 10⁶ users, ½ day remote')->text);
+    }
+
+    /**
+     * #667 : un échec du nettoyage commun reste un défaut du serveur nommé
+     * pour le rôle, jamais un « rôle vide ». Un UTF-8 invalide n'arrive pas
+     * du SDK (le décodage JSON l'a refusé), mais c'est le moyen sûr de faire
+     * échouer PCRE.
+     */
+    public function testAFailureOfTheSharedCleaningIsARoleNeutralisationFailure(): void
+    {
+        $this->expectException(RoleNeutralisationFailedException::class);
+
+        PromptRole::fromInput("Dev PHP \xC3(");
     }
 
     /**

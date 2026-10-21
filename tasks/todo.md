@@ -25,6 +25,8 @@ phase 1 parte en release seule ; puis au merge de clôture, qui archive la spec 
 - [x] Suivi : objet vide de `JsonToolResult` et décodages JSON multiples par POST (#681) — relecture de #673
 - [x] Suivi : `subscriptions/listen` tient un worker php-fpm 30 s, borné par `mcpconn` depuis #672
       (#675) — après la décision de #664, avant la sortie de la phase 1
+- [x] Suivi : neutralisation du corpus de l'assistant de parcours alignée sur celle du rôle (#667) —
+      neutraliseur commun `TagWordNeutraliser`, sans nonce sur `<documents>` (décision du 2026-10-21)
 
 ### Livraison de la phase 1
 
