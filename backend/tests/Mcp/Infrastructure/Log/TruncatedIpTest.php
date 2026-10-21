@@ -43,10 +43,22 @@ final class TruncatedIpTest extends TestCase
         yield 'NAT64 : l\'IPv4 portée tombe en /24' => ['64:ff9b::203.0.113.42', '64:ff9b::cb00:7100'];
     }
 
+    /**
+     * L'attendu est réécrit par la libc qui exécute le test : `inet_ntop()`,
+     * qui écrit le résultat d'`IpUtils::anonymize()`, rend l'IPv4 « compatible »
+     * `::cb00:7100` sous musl (Alpine : le dev et la production) et
+     * `::203.0.113.0` sous glibc (la CI) — les mêmes octets. Le journal écrit la
+     * forme de la plateforme qui le tient, une seule par déploiement.
+     */
     #[DataProvider('addresses')]
     public function testTheAddressIsTruncatedToItsNetwork(string $address, string $truncated): void
     {
-        self::assertSame($truncated, TruncatedIp::tryFrom($address)?->value);
+        self::assertSame($this->writtenByThisLibc($truncated), TruncatedIp::tryFrom($address)?->value);
+    }
+
+    private function writtenByThisLibc(string $address): string
+    {
+        return (string) inet_ntop((string) inet_pton($address));
     }
 
     /**
