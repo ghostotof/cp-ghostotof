@@ -30,7 +30,12 @@ phase 1 parte en release seule ; puis au merge de clôture, qui archive la spec 
 
 ### Livraison de la phase 1
 
-- [ ] Premier passage vers `develop` : `tasks/` n'y entre jamais. PR d'une branche
+- [x] **Fait le 2026-10-21** : PR #685, fusionnée dans `develop` (8a621ab4). **Piège pour la suite** :
+      `develop` porte maintenant le commit qui supprime `tasks/` (376ce0bf). Si l'on fusionne
+      `develop` dans la mère, ce commit y entre aussi : `plan-t1-socle.md` disparaît sans conflit, et
+      `todo.md` entre en conflit modification/suppression. À chaque reprise de `develop` dans la mère,
+      restaurer `tasks/` depuis le parent côté mère (`git checkout HEAD -- tasks` avant de conclure la fusion).
+      Premier passage vers `develop` : `tasks/` n'y entre jamais. PR d'une branche
       `feature/379-mcp-phase-1` tirée de la mère, où `tasks/` est retiré par un seul commit
       (`git rm -r tasks`) ; la mère le garde. La spec, encore ouverte, entre dans `develop` sous
       `.claude/specs/`. Pas d'archivage : la feature reste ouverte. **Avant** : le secret
