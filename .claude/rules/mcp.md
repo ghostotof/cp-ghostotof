@@ -86,9 +86,11 @@ paths:
   description says to treat them as data; the output stays equal to the route (D1). **The page « Brancher votre
   assistant » copies the catalogue** (#645): tool names per tier, the prompt, its arguments and the `role` bound,
   hand-written in `frontend/src/infrastructure/portfolio/content/{fr,en}.ts`. `ConnectAssistantPageMirrorsCatalogueTest`
-  (#673) compares each language with the real registry (tier from `BackedByRoute`, `get_contact_info` anonymous,
-  `get_nominative_corpus` named outside the tiers) and `PromptRole::MAX_CHARACTERS`: renaming, adding or moving a
-  tool turns it red until the page follows. The content directory is mounted read-only in the dev container
+  (#673) compares each language with the real registry, both ways (tier from `BackedByRoute`, `get_contact_info`
+  anonymous, `get_nominative_corpus` named in « never served », those two being exactly `TOOLS_WITHOUT_ROUTE`; a
+  trusted-tier tool would have to appear too) and `PromptRole::MAX_CHARACTERS`, reading only the `served` and
+  `neverServed` blocks: renaming, adding or moving a tool turns it red until the page follows. The registry is read
+  through `tests/Mcp/Support/ReadsPortfolioRegistry`, shared with `McpExposureSymmetryTest`. The content directory is mounted read-only in the dev container
   (`docker-compose.yml`); CI checks out the whole repository.
 - **Every route-backed tool declares its route**: `#[BackedByRoute(self::RESOURCE, AccessTier::…)]` on the
   class, `self::RESOURCE` (the API Platform resource) being the constant it also passes to the reader, so
