@@ -217,6 +217,20 @@ paths:
   trusted person's `BEARER` borrows no identity there. `McpEndpointTest::testATrustedBearerCookieIsNeitherRefusedByTheCsrfGuardNorRead`
   pins both halves (each one's removal turns it red, measured). `/api/mcp` is in `ApiRouteExposureTest`'s
   `PUBLIC_PATHS`; `AccessControlAnchoringTest` pins the firewall's bounds.
+- **The capabilities are written, never detected** (#675): `Infrastructure/DependencyInjection/TruthfulCapabilitiesPass`
+  (registered in `Kernel::build()`) adds `setCapabilities()` to `mcp.server.portfolio.builder` — tools, prompts,
+  completions, **no `listChanged`**, no resources, **no `logging`** (nothing sends the client a `notifications/message`;
+  `logging/setLevel`, deprecated since 2026-07-28, is still answered: the SDK's handlers never read the announce) —
+  for both eras (`initialize` and `server/discover`); the enabled extensions are folded in by `Builder::build()`.
+  Detected, the SDK 0.8.1 announced `listChanged` for tools, prompts and resources that do not exist as soon as an
+  event dispatcher is set — the bundle always sets Symfony's, which the call log listens to (#643) —, with no bus
+  (`subscriptions.bus: none`) to carry a single notification: a compliant client opened a `subscriptions/listen`
+  for nothing. The catalogue only changes with a deployment. A compiler pass because bundle 0.14.1 exposes no
+  capability in its configuration; written by hand because the registry is only filled by `build()`, after the
+  call. `tests/Mcp/AnnouncedCapabilitiesTest` pins the announce in both eras and matches each announced kind
+  against the real registry: a resource (#654) added without announcing it turns it red. Announcing a
+  notification again means a bus first, then lifting the `listen` refusal (below), in the same change. After
+  changing `Kernel.php` locally, `rm -rf var/cache/test`: the test container is not rebuilt on its own.
 - **Host check**: `http.allowed_hosts` is `'%env(key:host:url:APP_FRONTEND_BASE_URL)%'` — the site's public
   host, already set per overlay (same host as the API behind the Ingress), `localhost` in dev and test; no
   variable of its own. The SDK's middleware answers 403 on a foreign `Host`, or on a foreign `Origin` when one
@@ -338,8 +352,8 @@ paths:
   reading must then get the server's factory. Whatever the reading throws leaves the fallback line, `reset()` in a
   `finally` (`McpCallLogTerminateTest`). The outcome is read in the JSON answer (`error`
   and its `code`, `result.isError`), else from the status: a 202/400 without body (a notification), an SSE stream
-  (`listen`; a tool that notifies — none does) whose `getContent()` is `false`. **`durationMs` is the whole HTTP
-  request's** (firewall, listeners, sending the answer, `listen`'s 30 s), where the other era measures the
+  (`listen`, refused before the SDK since #675; a tool that notifies — none does) whose `getContent()` is `false`.
+  **`durationMs` is the whole HTTP request's** (firewall, listeners, sending the answer), where the other era measures the
   message's handling: a duration statistic keeps the two eras apart. `declaredClient` is the `clientInfo` of the
   request's own `_meta`, bounded the same way.
   `McpCallLogTest` drives the real server in that revision (success, tool error, unknown tool and method,
@@ -361,10 +375,12 @@ paths:
   line is built field by field. Its own `info` handler in `when@prod`, like `ai_usage`, excluded from `main` and
   `console` (`McpLogChannelsTest`); `McpCallLogTest` reads it through the `all_channels_test` probe (sentinels
   in `role`, `Authorization` and `BEARER`, one-message batch, notification, fallbacks, IPv4/IPv6 callers).
-- **Five inbound messages are refused before the SDK** (#644, #664): `Infrastructure/Http/InboundMessageRefusalListener`
-  (`kernel.request`, priority 15, `POST` on the canonical path `/api/mcp`, so `/api/%6Dcp` too) decodes once a body
+- **Six inbound messages are refused before the SDK** (#644, #664, #675): `Infrastructure/Http/InboundMessageRefusalListener`
+  (`kernel.request`, priority 15, `POST` on the canonical path `/api/mcp`, so `/api/%6Dcp` too — and a POST stays
+  one: `framework.allowed_http_method_override: []` since the audit of #675, where Symfony turned a POST carrying
+  `X-HTTP-Method-Override: DELETE` into a DELETE these refusals did not judge, `HttpMethodOverrideTest`) decodes once a body
   starting, after JSON blanks, with `[` or `{`, and answers **400** `application/json`, a JSON-RPC `-32600` without
-  `id` — the form of the SDK transport's own refusals —, the reason and its message in the enum
+  `id` — the form of the SDK transport's own refusals; `listen` excepted, (6) below —, the reason and its message in the enum
   `InboundMessageRefusal`: (1) **a batch of several messages**, with the SDK's own predicate (`json_decode` assoc,
   then any PHP list is a batch — **an object keyed `"0"`, `"1"`… too**, which passed while only the bracket was read,
   100 `tools/call` served, measured in the reviews of #644): the SDK 0.8.1 accepts up to 100 per request, hard-coded
@@ -394,7 +410,22 @@ paths:
   handshake era, the whole call line lost in the sessionless one; (5) **a sessionless `clientInfo` the SDK cannot
   read** (#664, audit), judged by `RequestMeta::fromParams()` itself: `StatelessProtocol::handle()` only catches
   its `MissingRequestMetaException` (an incomplete envelope, a 400 it answers itself, left to it), and a name that
-  is not a string threw out of it — a 500 and a `critical` line at will.
+  is not a string threw out of it — a 500 and a `critical` line at will; (6) **`subscriptions/listen`** (#675, the
+  author's decision of 2026-10-21), on the method alone (`StatelessProtocol::LISTEN_METHOD`), whatever the era —
+  the SDK's classifier picks it from the body, under any session header too. The SDK held the stream 30 s
+  (measured 30.07 s in dev; `Builder::setSubscriptionLifetime()` is only wired by the bundle with a bus, and `0`
+  there means forever), one php-fpm worker for the whole of it: fourteen `listen`s from one IP took a pod's pool.
+  The server sends and announces no notification (above), so a compliant client has nothing to listen to.
+  Rejected: a short lifetime (a compliant client re-subscribing after each graceful close would spend the `mcp`
+  zone's 60 requests a minute and meet 429s on its real calls), and the refusal alone with `listChanged` still
+  announced (a feature announced, then refused). **Its form is not the others'** (`InboundMessageRefusal::error()`):
+  a well-formed request whose method is not served, so `-32601` « Method not found » **with its id** (none for a
+  notification), as the SDK answers a method it does not serve — to it, the client should stop asking; a client
+  reading `-32600` without id took it for a malformed message it could retry, into the `mcp` zone's 429s (audit
+  of #675). A 400, never the sessionless SDK's 404: in a session a 404 tells the client its session expired. In a
+  session the SDK already answered `-32600` « Unknown method » at once (200). Under the modern envelope its call
+  line names `subscriptions/listen` with `-32601`, where the stream was a `success` of 30 s; in a session it leaves
+  the fallback line (`McpCallLogTest`).
   A one-message batch is served, its message judged like a single one; unreadable JSON is left to the SDK (`-32700`).
   The refusal precedes the session and the `Host` check (a foreign host gets this 400, not the SDK's 403: nothing is
   served either way); `McpCallLog` writes its fallback line (`POST`, 400, `protocol-error`; a call line under the
@@ -409,5 +440,8 @@ paths:
   reads as « no session ») and exempts the sessionless 2026-07-28 revision, served on an in-memory session —
   `McpEndpointTest` pins that an `initialize` under that header opens no session, that the revision writes none,
   and that the conf exempts exactly `ProtocolVersion::modernVersions()`. The `mcpconn` zone bounds simultaneous
-  connections (2 per IP and per pod): `subscriptions/listen` holds a worker 30 s (#675; #664 decided to keep
-  serving the modern revision, so `listen` is to be bounded in the application).
+  connections (2 per IP and per pod, of a pod's eight workers): set against `subscriptions/listen`'s 30 s (#672),
+  **kept at 2 by decision** (#675, 2026-10-21) once `listen` is refused, as defence in depth — one IP never holds
+  more than two workers of a pod, whatever a request becomes (a slow tool, a future stream). A shared egress IP
+  (hosted connectors) meets the `mcp` zone first; both bounds are to be measured again against the real clients
+  in phase 2 (`.claude/rules/deploiement-nginx.md`).

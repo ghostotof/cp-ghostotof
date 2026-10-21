@@ -28,8 +28,9 @@ its traces carry no call arguments (see the last section, issue #420).
 `build-images` needs it). **No baseline** — level `max` + strict-rules is green across `src/` AND `tests/`, keep
 it that way. Two scoped `ignoreErrors` in `phpstan.dist.neon` cover functional-test JSON payloads (a decoded
 response body is `mixed`; the PHPUnit assertions are the shape check, not PHPStan) — `offsetAccess`/`foreach`
-and `argument.type … mixed given`, `path: tests/` only. `src/Kernel.php` is `excludePaths`-excluded
-(`getAllowedEnvs()` false-positive `method.unused`). The `$uriVariables` mixed-access pattern is solved by the
+and `argument.type … mixed given`, `path: tests/` only. `src/Kernel.php` is analysed since #675 (it registers
+the MCP capabilities compiler pass, `declare(strict_types=1)` added): the `getAllowedEnvs()` false-positive
+`method.unused` that excluded it no longer occurs (measured 2026-10-21). Rector still skips it (Flex skeleton). The `$uriVariables` mixed-access pattern is solved by the
 `App\Shared\Infrastructure\ApiPlatform\ResolvesUriVariables` trait (`uriVariableUuid`/`uriVariableString`/
 `uriVariableLocale`) — reuse it in new Providers/Processors rather than casting `mixed`. Functional tests build request bodies via
 `App\Tests\Support\HttpJson::jsonBody()` (not raw `json_encode`, which is `string|false`).

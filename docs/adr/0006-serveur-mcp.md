@@ -183,6 +183,16 @@ le journal d'appels la lit de l'échange HTTP, faute d'événement du SDK ; le 4
 reconnaît l'outil nominatif sous ses deux formes ; `subscriptions/listen`, qui tient un worker 30 s,
 est à borner dans l'application (#675).
 
+*Amendé le 2026-10-21 (#675).* `subscriptions/listen` **n'est plus servi** : le serveur le refuse avant
+le SDK, quelle que soit la révision (400, `-32601` avec l'identifiant de la requête), et n'annonce plus
+aucune notification — ni `listChanged` (outils, prompts, ressources), ni `logging`. Le SDK les déduisait
+de la seule présence d'un répartiteur d'événements, sans aucun bus pour les porter ; le catalogue ne
+change qu'au déploiement. Écartées : une durée de flux courte (un client conforme se réabonnant à chaque
+fin de flux épuiserait la zone de débit de son IP) et le refus seul avec `listChanged` toujours annoncé
+(une capacité annoncée, puis refusée). Servir à nouveau une notification demande d'abord un bus, puis la
+levée de ce refus, dans le même changement. La borne nginx de connexions simultanées (deux par IP et par
+pod) est gardée en défense en profondeur. Le détail est dans `.claude/rules/mcp.md`.
+
 ### D8 — Rien ne nomme l'auteur hors du corpus nominatif
 
 Aucune description d'outil, aucun prompt, ni le champ `instructions` du serveur ne nomme l'auteur :

@@ -28,7 +28,9 @@ use Symfony\Component\Uid\Uuid;
  * - un `initialize` dont les déclarations (`clientInfo`, `capabilities`)
  *   dépassent la borne : le SDK les recopie telles quelles en session ;
  * - une réponse du client : le SDK la range en session sous un identifiant
- *   que le client choisit, et ce serveur n'envoie aucune requête au client.
+ *   que le client choisit, et ce serveur n'envoie aucune requête au client ;
+ * - `subscriptions/listen` (#675) : le SDK tient le flux 30 s, un worker
+ *   php-fpm pris, pour un serveur qui n'émet aucune notification.
  */
 final class InboundMessageRefusalTest extends WebTestCase
 {
@@ -386,6 +388,102 @@ final class InboundMessageRefusalTest extends WebTestCase
 
         self::assertResponseStatusCodeSame(200);
         $this->assertNotRefused($client);
+    }
+
+    /**
+     * `subscriptions/listen` (#675) : le SDK tient le flux 30 s, un worker
+     * php-fpm pris pour toute la durée, alors que ce serveur n'émet aucune
+     * notification. Refusé avant le SDK, sans flux ouvert.
+     */
+    public function testASessionlessListenIsRefused(): void
+    {
+        $client = self::createClient();
+
+        $this->postModernMcp($client, 'subscriptions/listen', ['notifications' => ['toolsListChanged' => true]], id: 'abo-1');
+
+        $this->assertListenRefused($client, 'abo-1');
+    }
+
+    /**
+     * Le classifieur du SDK choisit l'ère d'après le corps : un `listen` de la
+     * révision sans session passe aussi sous un en-tête de session quelconque.
+     * Le refus lit la méthode, pas l'en-tête.
+     */
+    public function testASessionlessListenUnderASessionHeaderIsRefusedToo(): void
+    {
+        $client = self::createClient();
+
+        $this->postModernMcp($client, 'subscriptions/listen', server: ['HTTP_MCP_SESSION_ID' => Uuid::v4()->toRfc4122()], id: 7);
+
+        $this->assertListenRefused($client, 7);
+    }
+
+    /** Dans une session aussi : une seule règle, quelle que soit l'ère. */
+    public function testAListenInASessionIsRefused(): void
+    {
+        $client = self::createClient();
+        $sessionId = $this->initializeMcpSession($client);
+
+        $this->postMcp($client, $sessionId, ['jsonrpc' => '2.0', 'id' => 2, 'method' => 'subscriptions/listen']);
+
+        $this->assertListenRefused($client, 2);
+    }
+
+    /** Un lot d'un message est jugé comme son message. */
+    public function testAListenInABatchOfOneIsRefused(): void
+    {
+        $client = self::createClient();
+        $sessionId = $this->initializeMcpSession($client);
+
+        $this->postMcp($client, $sessionId, [['jsonrpc' => '2.0', 'id' => 3, 'method' => 'subscriptions/listen']]);
+
+        $this->assertListenRefused($client, 3);
+    }
+
+    /** Sans identifiant (une notification), le refus n'en invente pas. */
+    public function testAListenNotificationIsRefusedWithoutAnId(): void
+    {
+        $client = self::createClient();
+
+        $this->postModernMcp($client, 'subscriptions/listen', id: null);
+
+        $this->assertListenRefused($client, null);
+    }
+
+    /**
+     * Le refus lit le JSON décodé, comme le SDK : une méthode écrite avec des
+     * échappements (`s`, `\/`), et un chemin encodé (`%6D`), sont refusés.
+     */
+    public function testAnEscapedListenOnAnEncodedPathIsRefused(): void
+    {
+        $client = self::createClient();
+
+        $client->request('POST', '/api/%6Dcp', server: [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_ACCEPT' => 'application/json, text/event-stream',
+            'HTTP_MCP_PROTOCOL_VERSION' => self::MCP_MODERN_REVISION,
+            'HTTP_MCP_METHOD' => 'subscriptions/listen',
+        ], content: '{"jsonrpc":"2.0","id":4,"method":"subscriptions\/listen","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}');
+
+        $this->assertListenRefused($client, 4);
+    }
+
+    /**
+     * Une requête bien formée dont la méthode n'est pas servie : « Method not
+     * found » (`-32601`) avec son identifiant, comme le SDK pour une méthode
+     * qu'il ne sert pas — pour lui, le client doit cesser de demander. Un 400,
+     * jamais le 404 du SDK sans session : dans une session, un 404 dit au client
+     * que sa session a expiré.
+     */
+    private function assertListenRefused(KernelBrowser $client, int|string|null $id): void
+    {
+        self::assertResponseStatusCodeSame(400);
+        self::assertResponseHeaderSame('Content-Type', 'application/json');
+        $error = ['code' => -32601, 'message' => InboundMessageRefusal::SubscriptionListen->message()];
+        self::assertSame(
+            null === $id ? ['jsonrpc' => '2.0', 'error' => $error] : ['jsonrpc' => '2.0', 'id' => $id, 'error' => $error],
+            $this->decodeMcpResponse($client),
+        );
     }
 
     /** La forme des refus du transport du SDK : un identifiant illisible est omis, jamais `null`. */

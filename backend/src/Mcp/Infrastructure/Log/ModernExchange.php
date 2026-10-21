@@ -50,8 +50,9 @@ use Throwable;
  *
  * **L'issue est lue dans la réponse JSON** : un `error` (son `code`), un
  * `result.isError` à `true` (une erreur d'outil), sinon un succès. Une réponse
- * sans corps lisible — une notification acquittée, un flux SSE (`listen`, un
- * outil qui notifierait : aucun aujourd'hui) — suit son statut HTTP seul.
+ * sans corps lisible — une notification acquittée, un flux SSE (`listen`,
+ * refusé avant le SDK depuis #675, ou un outil qui notifierait : aucun
+ * aujourd'hui) — suit son statut HTTP seul.
  */
 final readonly class ModernExchange
 {
