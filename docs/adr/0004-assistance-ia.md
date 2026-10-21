@@ -13,8 +13,9 @@
   en production ; vérifications restantes de la release dans l'issue #324) ; **D1 amendée le 2026-10-04**
   (issue #308 : `Ai/Shared/Infrastructure/SymfonyAi/ProviderFailure`, voir l'encadré sous D1) ;
   **D5 amendée le 2026-10-10** (issue #406 : 5 000 caractères par message de l'assistant renvoyé,
-  voir l'encadré sous D5)
-- Date : 2026-09-14, amendée le 2026-09-15, le 2026-10-04 et le 2026-10-10
+  voir l'encadré sous D5) ; **D1, D3 et les alternatives écartées amendées le 2026-10-19** (ADR 0006,
+  issue #379 : le serveur MCP est rouvert, voir les encadrés)
+- Date : 2026-09-14, amendée le 2026-09-15, le 2026-10-04, le 2026-10-10 et le 2026-10-19
 - Portée : `src/Ai/` (nouveau contexte borné), `config/packages/ai.yaml`, `config/ai/prompts/`,
   `config/packages/framework.yaml` (clients HTTP `ai.http_client` et, en phase 2, un second client
   dédié à Scaleway), `config/packages/rate_limiter.yaml`, `k8s/overlays/*/external-secrets.yaml`
@@ -93,6 +94,11 @@ phase 2, `symfony/ai-scaleway-platform` — sont **pinnés en version exacte** (
 tant qu'ils sont en 0.x. Une montée de version est un acte délibéré, lu dans le changelog, pas un
 effet de bord d'un `composer update`.
 
+**Amendement du 2026-10-19 (ADR 0006 D7).** La règle s'étend à `symfony/mcp-*` et à `mcp/*`
+(`symfony/mcp-bundle` 0.14.1, `mcp/sdk` 0.8.1) : même monorepo, même namespace `Symfony\AI\`, même
+absence de promesse de compatibilité. Le serveur MCP n'appelle aucun modèle et ne vit donc pas sous
+`src/Ai/` ; seule la règle de pin le concerne ici.
+
 ### D2 — Aucun appel à un fournisseur dans un chemin de rendu public
 
 Règle de l'ADR 0002, étendue : **aucun provider public, aucun handler Messenger déclenché par un
@@ -140,6 +146,14 @@ plateforme de la phase 1, dont c'est la seule chose qu'elle ne verra jamais), pa
 fournisseur, quelle que soit la qualité de son modèle. Un test fonctionnel pince la plateforme de
 l'agent de l'assistant (D7) ; changer ce fournisseur est un nouvel amendement, pas un changement de
 `ai.yaml`.
+
+**Amendement du 2026-10-19 (ADR 0006 D5) — ce que le site n'envoie pas, une personne peut l'emporter.**
+D3 borne ce que **le site** envoie à un fournisseur. Le serveur MCP sert le corpus nominatif, au
+palier de confiance, au client MCP de la personne, qui le transmet au fournisseur de son choix —
+Anthropic compris. La lettre de D3 ne le couvre pas, son esprit le refuse : l'écart est accepté par
+l'ADR 0006, parce que cette personne télécharge déjà le PDF et peut le confier à qui elle veut, et
+compensé par une entrée au journal d'audit à chaque lecture. D3 reste entière pour tout ce que le
+site envoie lui-même.
 
 ### D4 — L'humain reste dans la boucle : une suggestion n'est jamais persistée
 
@@ -278,7 +292,8 @@ plafonds chiffrés, forme de la page) est du ressort de la spec.
 
 ### Ce qui n'est jamais négociable
 
-- Un `^` sur la version d'un paquet `symfony/ai-*` tant qu'il est en 0.x.
+- Un `^` sur la version d'un paquet `symfony/ai-*` tant qu'il est en 0.x — ni, depuis l'ADR 0006,
+  sur `symfony/mcp-*` ou `mcp/*`.
 - Un appel à un modèle depuis un chemin public, un handler déclenché par un visiteur ou un CronJob
   de rendu — ni depuis le palier de base, jeton sans compte compris (amendement du 2026-09-15).
 - Une suggestion persistée sans action explicite d'un humain.
@@ -376,7 +391,10 @@ plafonds chiffrés, forme de la page) est du ressort de la spec.
   9728, PKCE, enregistrement dynamique) pour les connecteurs de claude.ai et Claude Desktop, une
   surface disproportionnée pour un portfolio. Réouvrable : `symfony/mcp-bundle` (0.13.0, même
   monorepo) existe, et le corpus assemblé en D7 serait exactement ce qu'un tel serveur exposerait ;
-  l'authentification resterait à trancher.
+  l'authentification resterait à trancher. *Amendement du 2026-10-19 : rouvert par l'ADR 0006, pour
+  un besoin distinct de l'assistant de carrière — la personne branche son propre assistant. Le
+  serveur n'appelle aucun modèle ; l'authentification est tranchée en faveur d'OAuth 2.1 seul, sans
+  enregistrement dynamique (ADR 0006 D3).*
 - **Un modèle auto-hébergé (Ollama) pour l'assistant** : rien ne quitte le cluster, ce qui aurait
   satisfait D3 sans l'amender. Mais le cluster n'a aucun nœud capable de porter un modèle — les
   pods backend sont limités à 256 Mio — et le pool CPU le moins cher (8 Gio) coûte une vingtaine

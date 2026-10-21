@@ -80,8 +80,25 @@ paths:
   third-party outage (503) or for a signal nothing else traces (missing About settings for a valid
   locale). The password-setup unknown token and quota and the translation quota were in that last group
   until issue #356 gave them their own trace (`security_audit`, `ai_usage`) and moved them back to `info`:
-  a client-triggerable 4xx stays `info` once something attributable traces it. That rule covers our domain exceptions
-  only: the framework's own HTTP 4xx (router 404/405, validation 422, 403) stay at `error`.
+  a client-triggerable 4xx stays `info` once something attributable traces it. **The framework's 404, 405 and 400
+  are `info` too** (#678, audit C11 of #675, decided by the author on 2026-10-21): `NotFoundHttpException`,
+  `MethodNotAllowedHttpException`, `BadRequestHttpException` — the router, `HttpKernel`'s conversion of a
+  `RequestExceptionInterface` (an unreadable host, a `SuspiciousOperationException`), API Platform's read and
+  parameter refusals. Any client produced them, each an `error` line at will bounded only by the nginx zones
+  (`publicapi`, `mcp`); their trace is nginx's access log (status, IP), like the unreadable body's. Rejected:
+  keeping `error` (a frontend calling a missing route stays visible in nginx's log), `warning` (the noise
+  remains, only its rank changes). **A 404 that tells a server defect gets its own class**, entered **before**
+  `NotFoundHttpException` — the kernel takes the first `instanceof` match: `CvFileUnavailableException` (the
+  nominative CV missing on disk, `warning`), `ApiExceptionLogLevelTest` pins the level retained (red when the
+  two entries are swapped, measured); a new `throw new NotFoundHttpException` for a server-side absence does
+  the same — **`NoBareGenericExceptionTest` refuses a bare `new NotFoundHttpException` or `new BadRequestHttpException`
+  in `src/`**, and a provider never returns `null` for a server-side absence (API Platform turns it into the
+  generic 404): `BackofficeAboutSettingsProvider` throws `AboutSettingsNotFoundException`, `warning`, as the
+  public route does. Not covered, accepted: the vendor's own generic 404s for a wiring defect — a route without
+  controller (`HttpKernel`), an API Platform operation without provider (`ReadProvider`), an identifier it cannot
+  read (`WriteListener`) —, now `info`; the suite and `ApiRouteExposureTest` meet them before production.
+  `FrameworkClientErrorsLogLevelTest` drives the three on the real stack. The validation 422 and the
+  403 stay at `error`.
   `tests/Shared/Infrastructure/Http/ExceptionLogLevelCoverageTest.php` pins four things: an entry for
   every exception rendered with a declared status — every `exception_to_status` key, every
   `exceptionToStatus` carried by an `#[ApiResource]` or one of its operations (merged by the vendor at
@@ -97,7 +114,7 @@ paths:
   `getStatus()` for a problem exception and the kernel's conversion; no entry that targets anything else — a broad `\DomainException` or an
   interface would hide real server faults and shadow the precise entries after it, since the kernel takes
   the first match —; and justified ways out only (`EXEMPT`: the two broad API Platform defaults below,
-  which stay `critical`; `JUSTIFIED_ENTRIES`: the 415 of #320). **An `EXEMPT` entry is exempt from the
+  which stay `critical`; `JUSTIFIED_ENTRIES`: the 415 of #320, the framework's 404/405/400 and the CV's 404 of #678). **An `EXEMPT` entry is exempt from the
   `log_level` entry only, never from the status/level check** (issue #373): it is still judged at the
   kernel's default `critical`, hence at a 5xx; `testTheLevelCheckJudgesEveryExemptedEntry` locks that in.
   An `exception_to_status` key that is an interface or an abstract class (`Serializer\ExceptionInterface`)

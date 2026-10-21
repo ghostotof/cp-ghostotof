@@ -193,3 +193,23 @@ Texte produit par l'assistant de traduction, soumis à l'administrateur et jamai
 l'a pas validé.
 _À éviter_ : brouillon (réservé au brouillon d'ordre)
 _En code_ : `TranslationProposal`
+
+## Accès MCP
+
+**Corpus nominatif** :
+Ensemble de ce que le palier de confiance peut lire, assemblé en un seul texte : le contexte de
+l'assistant de carrière. Tout canal qui sert le palier de confiance sert ce même corpus, rien de plus.
+_À éviter_ : contexte complet, CV complet
+
+**Serveur MCP** :
+Canal par lequel l'assistant IA d'une personne interroge le portfolio. Sans authentification, il sert les
+contenus des paliers anonyme et de base ; au palier de confiance, le corpus nominatif.
+
+**Client MCP** :
+Logiciel d'une personne (Claude, un IDE…) qui se branche sur le serveur MCP pour son compte.
+_À éviter_ : application, connecteur (le connecteur est le nom que lui donne un client particulier)
+
+**Connexion MCP** :
+Autorisation qu'une personne du palier de confiance accorde à un client MCP de lire le corpus nominatif en
+son nom. Elle se révoque, par cette personne ou par la perte du palier de confiance, avec effet immédiat.
+_À éviter_ : session MCP, jeton (le jeton est le support technique d'une connexion)

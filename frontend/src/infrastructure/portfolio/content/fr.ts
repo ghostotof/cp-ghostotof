@@ -97,7 +97,7 @@ const fr: PortfolioLocaleContent = {
   privacyPolicy: {
     eyebrow: 'Vie privée',
     title: 'Politique de confidentialité',
-    lastUpdated: 'Dernière mise à jour : 21 septembre 2026',
+    lastUpdated: 'Dernière mise à jour : 21 octobre 2026',
     sections: [
       {
         heading: 'Responsable du traitement',
@@ -113,6 +113,7 @@ const fr: PortfolioLocaleContent = {
           "Compte sur invitation : si l'éditeur vous accorde un accès nominatif, votre adresse email (à laquelle l'invitation est envoyée), un nom d'utilisateur dérivé de cette adresse et le mot de passe que vous choisissez, conservé sous forme hachée. Aucune inscription publique n'est proposée, aucun compte partagé.",
           "Accès instantané : aucun compte n'est créé et aucune donnée vous concernant n'est enregistrée ; l'accès repose sur un jeton anonyme valable 15 minutes.",
           "Adresse IP : utilisée pour limiter les abus (formulaire de contact, connexion, accès instantané, définition du mot de passe) et consignée dans les journaux techniques et de sécurité du serveur.",
+          "Serveur MCP (l'accès du site pour un assistant IA) : pour chaque appel, le journal technique garde la méthode, l'outil ou le prompt appelé, l'issue et son code d'erreur, la durée, le nom et la version que votre logiciel déclare, et votre adresse IP tronquée : le dernier nombre d'une adresse IPv4 et tout ce qui suit les trois premiers groupes d'une adresse IPv6 sont effacés. Elle désigne alors un réseau — souvent celui d'un abonné, un foyer ou une entreprise — et non plus un appareil. Le texte que votre assistant transmet au serveur — la description d'un poste, par exemple — n'est jamais conservé : il ne fait que transiter par la base de données, le temps de vous répondre.",
           "Stockage local du navigateur (localStorage) : votre préférence de langue et, le cas échéant, l'heure d'expiration de votre accès instantané. Ces valeurs ne sont jamais transmises au serveur.",
         ],
       },
@@ -130,6 +131,7 @@ const fr: PortfolioLocaleContent = {
         list: [
           'Répondre à vos demandes de contact — mesures précontractuelles ou intérêt légitime.',
           'Sécuriser le site et prévenir les abus (limitation de débit, journaux techniques) — intérêt légitime.',
+          "Mesurer l'usage du serveur MCP et repérer un usage abusif — intérêt légitime.",
           "Vous inviter à disposer d'un accès nominatif — intérêt légitime de l'éditeur à accorder un accès individuel plutôt qu'un identifiant partagé.",
           "Vous permettre de vous authentifier ou d'utiliser l'accès instantané — exécution du service demandé.",
         ],
@@ -171,6 +173,138 @@ const fr: PortfolioLocaleContent = {
         ],
       },
     ],
+  },
+
+  connectAssistant: {
+    eyebrow: 'Serveur MCP',
+    title: 'Brancher votre assistant',
+    introduction: [
+      "Votre assistant IA — Claude, ChatGPT, celui de votre éditeur — peut interroger ce portfolio directement, par le protocole MCP (Model Context Protocol). Ajoutez le serveur du site à votre client MCP, puis posez vos questions : votre assistant lit les contenus à la source au lieu de les deviner.",
+      "Ni compte ni jeton : le serveur se branche tel quel. Le site n'appelle aucun modèle ; c'est votre assistant, chez votre fournisseur d'IA, qui lit les réponses.",
+    ],
+    serverUrl: {
+      heading: 'URL du serveur',
+      description: "L'adresse à donner à votre client MCP (transport Streamable HTTP).",
+      copyLabel: "l'URL du serveur",
+    },
+    // Recopie du catalogue du serveur MCP : outils par palier, prompt, ses
+    // arguments et la borne de `role`. ConnectAssistantPageMirrorsCatalogueTest
+    // (backend, #673) la compare au registre réel du serveur, dans chaque langue.
+    served: {
+      heading: 'Ce que le serveur sert',
+      description:
+        "Exactement ce que le site sert déjà sans compte, en lecture seule. Les outils qui prennent une langue acceptent `locale` : `fr` (par défaut) ou `en`.",
+      tiers: [
+        {
+          id: 'anonymous',
+          heading: 'Palier anonyme',
+          description: 'Les contenus que le site affiche à tout visiteur, sans accès ni compte.',
+          tools: [
+            { tool: 'get_about', description: 'À propos : le site, comment il est construit et pourquoi.' },
+            { tool: 'get_quality', description: 'Les principes et les exigences de qualité appliqués au code.' },
+            { tool: 'get_technical_background', description: 'Le parcours technique : technologies pratiquées et ancienneté.' },
+            { tool: 'list_contributions', description: 'Les contributions techniques, open source comprises.' },
+            { tool: 'list_incidents', description: 'Les incidents de production et les invariants qui en sont sortis.' },
+            { tool: 'get_tech_watch', description: "La veille technique : versions installées et échéances de support." },
+            { tool: 'get_contact_info', description: "L'adresse de la page de contact du site, jamais une adresse email." },
+          ],
+        },
+        {
+          id: 'base',
+          heading: 'Palier de base',
+          description:
+            "Les contenus que le site ouvre d'un clic avec l'accès instantané, sans compte. Sur le serveur MCP, ils sont servis sans jeton ; ils ne nomment personne.",
+          tools: [
+            { tool: 'get_anonymous_cv', description: 'Le CV sans identité : domaines de compétence, ancienneté, réalisations.' },
+            { tool: 'list_case_studies', description: 'Les études de cas : problèmes réels et compromis techniques.' },
+          ],
+        },
+      ],
+      prompt: {
+        heading: 'Un prompt',
+        name: 'present_for_role',
+        description:
+          "Présenter l'auteur du site pour un poste que vous décrivez : votre assistant parcourt les outils ci-dessus, cite celui d'où vient chaque affirmation et dit ce qu'il ne sait pas.",
+        arguments:
+          'Arguments : `role`, la description du poste (texte libre, 500 caractères au plus), et `locale`, `fr` (par défaut) ou `en`.',
+      },
+    },
+    // « Pas encore ouverte » : vrai en phase 1 seulement. La phase 2 de la spec
+    // 0007 (« Page « Brancher votre assistant » complétée ») réécrit cet élément
+    // en ouvrant la connexion MCP.
+    neverServed: {
+      heading: 'Ce que le serveur ne sert jamais',
+      items: [
+        "Rien de nominatif sans connexion MCP : ni nom, ni employeurs, ni chronologie professionnelle, ni CV nominatif. L'outil `get_nominative_corpus` est listé, mais répond qu'une connexion MCP est requise ; cette connexion, réservée au palier de confiance, n'est pas encore ouverte.",
+        "Aucune écriture : le serveur ne fait que lire. Il n'envoie pas le formulaire de contact à votre place ; il vous en donne l'adresse.",
+        "Aucun appel de modèle : le site ne fait tourner aucune IA pour vous répondre.",
+        "Jamais le PDF du CV.",
+      ],
+    },
+    privacy: {
+      text: "Chaque appel est inscrit au journal technique du site avec une adresse IP tronquée et le nom que votre logiciel déclare, jamais avec le texte que votre assistant envoie. Le détail est dans la politique de confidentialité.",
+      linkLabel: 'Lire la politique de confidentialité',
+    },
+    clients: {
+      heading: 'Configurer votre client',
+      description:
+        "Les libellés des menus changent d'une version à l'autre : s'ils diffèrent chez vous, cherchez « MCP » ou « connecteur » dans les réglages.",
+      guides: [
+        {
+          id: 'claude-code',
+          name: 'Claude Code',
+          steps: [
+            'Dans un terminal, lancez la commande ci-dessous.',
+            "Ajoutez `--scope user` après `--transport http` pour brancher le serveur dans tous vos projets, et pas seulement dans le dossier courant.",
+            "Dans une session, `/mcp` affiche l'état du serveur et ses outils.",
+          ],
+          configuration: { kind: 'claude-code-command', copyLabel: 'la commande Claude Code' },
+        },
+        {
+          id: 'claude-apps',
+          name: 'Claude Desktop & claude.ai',
+          steps: [
+            'Ouvrez Paramètres → Connecteurs, puis « Ajouter un connecteur personnalisé ».',
+            "Donnez-lui un nom et collez l'URL du serveur ; laissez vides les réglages d'authentification.",
+            'Activez le connecteur dans une conversation, depuis le menu des outils.',
+          ],
+          configuration: { kind: 'server-url', copyLabel: "l'URL du serveur pour Claude Desktop et claude.ai" },
+          note: "Les connecteurs personnalisés dépendent de votre offre Claude.",
+        },
+        {
+          id: 'chatgpt',
+          name: 'ChatGPT',
+          steps: [
+            'Ouvrez Paramètres → Applications et connecteurs → Paramètres avancés, et activez le mode développeur.',
+            "Créez un connecteur, collez l'URL du serveur, choisissez « Aucune authentification » et confirmez faire confiance à l'application si l'interface le demande.",
+            'Ajoutez-le ensuite à une conversation, depuis le menu des outils.',
+          ],
+          configuration: { kind: 'server-url', copyLabel: "l'URL du serveur pour ChatGPT" },
+          note: 'Le mode développeur dépend de votre offre ChatGPT.',
+        },
+        {
+          id: 'cursor',
+          name: 'Cursor',
+          steps: [
+            'Ouvrez `~/.cursor/mcp.json` (tous vos projets) ou `.cursor/mcp.json` à la racine d’un projet.',
+            "Collez le fragment ci-dessous ; si le fichier contient déjà `mcpServers`, ajoutez-y seulement l'entrée `cp-ghostotof`.",
+            'Le serveur apparaît dans les réglages MCP de Cursor.',
+          ],
+          configuration: { kind: 'mcp-servers-json', copyLabel: 'la configuration Cursor' },
+        },
+        {
+          id: 'phpstorm',
+          name: 'PhpStorm',
+          steps: [
+            'Ouvrez Settings → Tools → AI Assistant → Model Context Protocol (MCP), puis « Add ».',
+            'Choisissez la saisie en JSON et collez le fragment ci-dessous.',
+            "Validez : le serveur est disponible dans le chat de l'AI Assistant.",
+          ],
+          configuration: { kind: 'mcp-servers-json', copyLabel: 'la configuration PhpStorm' },
+          note: "Un serveur distant par URL demande l'AI Assistant de PhpStorm 2025.2 ou plus récent.",
+        },
+      ],
+    },
   },
 }
 

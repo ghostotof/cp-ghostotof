@@ -2170,12 +2170,13 @@ Aucun pod de ce dépôt n'en a l'usage — vérifié plutôt que supposé :
 
 Le champ est posé au niveau du **pod spec** (`spec.template.spec`, et
 `spec.jobTemplate.spec.template.spec` pour les CronJob), pas sur le
-ServiceAccount `default` que ce dépôt ne gère pas. Les quinze objets concernés :
+ServiceAccount `default` que ce dépôt ne gère pas. Les dix-sept objets concernés :
 `backend`, `worker`, `frontend`, `postgres`, `rabbitmq`, `adminer`, les
-CronJob `watch-refresh` et `contact-failed-messages-purge`, **et les sept Jobs
+CronJob `watch-refresh`, `contact-failed-messages-purge` et `cache-items-prune`
+(issue #644), **et les huit Jobs
 hors kustomize** `migrate-job.yaml`, `seed-job.yaml`, `create-user-job.yaml`
-(issue #386), `messenger-probe-job.yaml` (issue #470) et les trois Jobs de
-`failed` (issue #521). Ces Jobs ne passent par aucun transformateur, ils
+(issue #386), `messenger-probe-job.yaml` (issue #470), `postgres-hba-probe-job.yaml`
+(issue #596) et les trois Jobs de `failed` (issue #521). Ces Jobs ne passent par aucun transformateur, ils
 portent donc le champ directement. (`postgres-roles-job.yaml`, issue #575,
 était le huitième : l'issue #593 l'a retiré.)
 

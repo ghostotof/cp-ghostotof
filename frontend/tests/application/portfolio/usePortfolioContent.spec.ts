@@ -22,6 +22,16 @@ function createStubRepository(): PortfolioContentRepository {
     getAdditionalTechnologies: () => [],
     getLegalNoticeContent: () => ({ eyebrow: '', title: '', lastUpdated: '', sections: [] }),
     getPrivacyPolicyContent: () => ({ eyebrow: '', title: '', lastUpdated: '', sections: [] }),
+    getConnectAssistantContent: () => ({
+      eyebrow: '',
+      title: '',
+      introduction: [],
+      serverUrl: { heading: '', description: '', copyLabel: '' },
+      served: { heading: '', description: '', tiers: [], prompt: { heading: '', name: '', description: '', arguments: '' } },
+      neverServed: { heading: '', items: [] },
+      privacy: { text: '', linkLabel: '' },
+      clients: { heading: '', description: '', guides: [] },
+    }),
   }
 }
 

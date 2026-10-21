@@ -1,0 +1,5 @@
+# Route du serveur MCP (`/api/mcp`, mcp.yaml), déclarée par le chargeur du
+# bundle : GET, POST, DELETE et OPTIONS.
+mcp:
+    resource: .
+    type: mcp

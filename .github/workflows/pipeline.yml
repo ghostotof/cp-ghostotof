@@ -139,19 +139,48 @@ jobs:
         timeout-minutes: 5
         run: RABBITMQ_CONF_KEEP=1 make rabbitmq-conf
       - name: PHPUnit
+        id: phpunit
         working-directory: backend
         env:
           # `guest` est admis hors loopback par le 10-defaults.conf de l'image.
           RABBITMQ_INTEGRATION_DSN: 'amqp://guest:guest@localhost:5672/%2f'
-        run: php bin/phpunit --log-junit "$RUNNER_TEMP/junit.xml"
+        # Toute la suite, sauf la garde D8 : elle seule reçoit le vrai nom de
+        # l'auteur, à l'étape suivante. Ici le processus ne l'a jamais en
+        # mémoire, ni le code de vendor/ que la suite charge.
+        run: php bin/phpunit --exclude-group d8 --log-junit "$RUNNER_TEMP/junit.xml"
+      # Après la suite, quel que soit son résultat, mais seulement si elle a
+      # tourné : derrière une base de test qui n'a pas pu être préparée, elle
+      # échouerait pour rien.
+      - name: PHPUnit — garde D8 (nom réel de l'auteur)
+        if: ${{ !cancelled() && steps.phpunit.outcome != 'skipped' }}
+        working-directory: backend
+        env:
+          # Garde D8 du serveur MCP (ADR 0006, AuthorNeverNamedTest) : le vrai
+          # nom de l'auteur, que le dépôt ne porte jamais. Il remplace le nom
+          # fictif de phpunit.dist.xml (`env` sans `force`). Secret de dépôt
+          # (.claude/rules/mcp-prompt-d8.md) ; GitHub masque sa valeur, et sous
+          # GITHUB_ACTIONS la garde ne donne que le nombre de mentions.
+          MCP_D8_AUTHOR_NAME: ${{ secrets.MCP_D8_AUTHOR_NAME }}
+        # Un push de Dependabot ne lit que les secrets Dependabot : le même nom
+        # y est posé (#663), si bien qu'une montée de mcp/sdk ou du bundle est
+        # contrôlée contre le vrai nom dans son propre run. Aucun repli sur le
+        # nom fictif, pour aucun acteur : un secret absent fait échouer la
+        # garde, qui le dit (tools/tests/d8-guard-step.test.sh).
+        run: php bin/phpunit --group d8 --log-junit "$RUNNER_TEMP/junit-d8.xml"
       # Carte de synthèse sur la page du run, dans l'esprit de celle que Vitest
       # écrit lui-même (reporter github-actions intégré) : PHPUnit n'en produit
       # pas, le script la construit depuis le rapport JUnit. `if: always()` :
       # c'est précisément quand ça échoue qu'elle sert. Le statut du job reste
-      # celui de l'étape PHPUnit.
+      # celui des deux étapes PHPUnit. Une carte par rapport ; le script sort
+      # en 0 quel que soit le rapport, absent ou rouge compris
+      # (tools/tests/summary-phpunit.test.sh), donc la seconde carte est écrite
+      # quoi que dise la première (#663). Seule une erreur fatale de PHP l'en
+      # empêcherait (`bash -e`) : l'étape serait alors rouge, donc visible.
       - name: Résumé PHPUnit
         if: always()
-        run: php .github/scripts/summary-phpunit.php "$RUNNER_TEMP/junit.xml" >> "$GITHUB_STEP_SUMMARY"
+        run: |
+          php .github/scripts/summary-phpunit.php "$RUNNER_TEMP/junit.xml" >> "$GITHUB_STEP_SUMMARY"
+          php .github/scripts/summary-phpunit.php "$RUNNER_TEMP/junit-d8.xml" >> "$GITHUB_STEP_SUMMARY"
 
   test-frontend:
     runs-on: ubuntu-latest
@@ -394,6 +423,7 @@ jobs:
           tools/tests/verify-release-merge.test.sh
           tools/tests/finalize-release.test.sh
           tools/tests/smoke-login-throttling.test.sh
+          tools/tests/smoke-mcp.test.sh
           tools/tests/rotate-deployer-token.test.sh
           tools/tests/wait-external-secrets.test.sh
           tools/tests/wait-rollout.test.sh
@@ -409,6 +439,8 @@ jobs:
           tools/tests/check-claude-rules.test.sh
           tools/tests/check-release-gates.test.sh
           tools/tests/postgres-image-pins.test.sh
+          tools/tests/d8-guard-step.test.sh
+          tools/tests/summary-phpunit.test.sh
       # Seuils : erreurs et avertissements bloquent, `info`/`style` non —
       # audit-prod.sh, antérieur à ce job, porte trois remarques de style que
       # ce job n'a pas vocation à réécrire.
@@ -806,7 +838,7 @@ jobs:
     needs: [release-version, deploy-preprod]
     if: startsWith(github.ref, 'refs/heads/release/')
     runs-on: ubuntu-latest
-    timeout-minutes: 16 # habituel ~1 min 30, mais au-delà des 3–10× de #285 à dessein : la somme des attentes du pire cas, ~12 min, l'emporte — rollouts bornés à 60 s, curl à 15 s, Job témoin attendu 300 s (+ ~35 s de wait-rollout.sh, + 90 s au plus pour l'arrêter s'il tourne encore à l'échec, #535) ; la sonde pg_hba a son propre job depuis #600
+    timeout-minutes: 18 # habituel ~1 min 30, mais au-delà des 3–10× de #285 à dessein : la somme des attentes du pire cas, ~15 min, l'emporte (3 min de marge) — rollouts bornés à 60 s, curl à 15 s, smoke MCP borné à 3 min (#644), Job témoin attendu 300 s (+ ~35 s de wait-rollout.sh, + 90 s au plus pour l'arrêter s'il tourne encore à l'échec, #535) ; la sonde pg_hba a son propre job depuis #600
     # Les secrets d'environnement ne sont servis qu'aux jobs qui déclarent
     # l'environnement, et sa politique de branche borne d'où ils sont lisibles
     # (audit 2026-09-16, A4).
@@ -854,6 +886,17 @@ jobs:
         env:
           AUDIT_BASIC_AUTH: ${{ secrets.PREPROD_BASIC_AUTH }}
         run: tools/smoke-login-throttling.sh https://preprod.cp-ghostotof.com
+      # Spec 0007, #644 : un `initialize` MCP sur l'hôte réel (allowed_hosts,
+      # dérivé d'APP_FRONTEND_BASE_URL), la session fermée, la borne de corps
+      # de 16 Kio en Content-Length et en chunked (413), puis la zone nginx
+      # `mcp` saturée par des GET sans session — 429 attendu vers la 20e
+      # requête, un pod en préprod. Borné à part : 124 requêtes à 15 s au pire
+      # dépasseraient le budget du job, l'habituel est d'une dizaine de secondes.
+      - name: Serveur MCP (hôte servi, zone mcp en 429)
+        timeout-minutes: 3
+        env:
+          AUDIT_BASIC_AUTH: ${{ secrets.PREPROD_BASIC_AUTH }}
+        run: tools/smoke-mcp.sh https://preprod.cp-ghostotof.com
       # Issue #470 : un worker `Ready` ne prouve pas qu'il décode ce que l'API
       # signe. Un écart de clé de MAC (KEY_CONTEXT mal déployé, worker resté sur
       # l'ancienne release) laissait la préprod verte, chaque message dans

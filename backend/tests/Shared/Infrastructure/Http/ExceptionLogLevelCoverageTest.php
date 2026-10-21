@@ -7,6 +7,7 @@ namespace App\Tests\Shared\Infrastructure\Http;
 use ApiPlatform\Metadata\Exception\InvalidArgumentException as ApiPlatformInvalidArgumentException;
 use ApiPlatform\Metadata\Exception\ProblemExceptionInterface;
 use App\Contact\Presentation\ApiResource\ContactMessageResource;
+use App\Portfolio\Cv\Presentation\Controller\CvFileUnavailableException;
 use App\Shared\Domain\Exception\HasProblemType;
 use App\Tests\Shared\Infrastructure\Http\Fixtures\ExceptionToStatusFixtureResource;
 use App\Tests\Shared\Infrastructure\Http\Fixtures\LogLevelAttributes\AbstractAttributedFixtureException;
@@ -27,6 +28,9 @@ use ReflectionClass;
 use RuntimeException;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\HttpKernel\EventListener\ErrorListener;
+use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
+use Symfony\Component\HttpKernel\Exception\MethodNotAllowedHttpException;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\HttpKernel\Exception\UnsupportedMediaTypeHttpException;
 use Symfony\Component\Serializer\Exception\ExceptionInterface as SerializerExceptionInterface;
 use Throwable;
@@ -94,6 +98,10 @@ final class ExceptionLogLevelCoverageTest extends KernelTestCase
      */
     private const array JUSTIFIED_ENTRIES = [
         UnsupportedMediaTypeHttpException::class => '415 levé par #[MapRequestPayload] et par API Platform sur toute route de l\'API (issue #320) : classe précise, erreur du client.',
+        CvFileUnavailableException::class => '404 d\'un CV absent du disque (#678) : défaut du déploiement, en `warning` pour rester visible, son entrée avant celle de NotFoundHttpException dont elle hérite (ApiExceptionLogLevelTest fige le niveau retenu).',
+        NotFoundHttpException::class => '404 du routeur et d\'API Platform (#678, audit de #675 C11) : erreur du client, tracée par l\'access log de nginx.',
+        MethodNotAllowedHttpException::class => '405 du routeur (#678, audit de #675 C11) : erreur du client, tracée par l\'access log de nginx.',
+        BadRequestHttpException::class => '400 du framework, RequestExceptionInterface convertie par HttpKernel comprise (#678, audit de #675 C11) : erreur du client, tracée par l\'access log de nginx.',
     ];
 
     /**

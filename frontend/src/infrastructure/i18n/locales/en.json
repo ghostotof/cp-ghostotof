@@ -29,9 +29,13 @@
     "mobileNavigation": "Mobile navigation",
     "legalNoticeLink": "Legal notice",
     "privacyPolicyLink": "Privacy policy",
-    "legalNavigation": "Legal navigation",
+    "connectAssistantLink": "Connect your assistant",
+    "footerNavigation": "Footer navigation",
     "administration": "Administration",
     "opensInNewTab": "(opens in a new tab)",
+    "copy": "Copy",
+    "copied": "Copied to the clipboard.",
+    "copyFailed": "Copying failed: select the text to copy it by hand.",
     "instantAccess": "Instant access",
     "instantAccessGranting": "Granting access…",
     "instantAccessRateLimited": "Too many attempts from this address. Please try again later.",
@@ -615,6 +619,10 @@
     "stack": {
       "title": "My stack, alive",
       "description": "Installed versions of this site and their support deadlines, checked daily against endoflife.date."
+    },
+    "connectAssistant": {
+      "title": "Connect your assistant",
+      "description": "Add the site’s MCP server to Claude, ChatGPT, Cursor or PhpStorm: its URL, each client’s configuration, what it serves and what it never serves."
     },
     "adminAnonymousCv": {
       "title": "Administration — CV without identity",

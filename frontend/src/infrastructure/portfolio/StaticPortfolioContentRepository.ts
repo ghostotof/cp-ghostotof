@@ -6,6 +6,7 @@ import type { ExperienceContent } from '../../domain/portfolio/entities/Experien
 import type { Technology } from '../../domain/portfolio/entities/Technology'
 import type { Locale } from '../../domain/portfolio/entities/Locale'
 import type { LegalPageContent } from '../../domain/portfolio/entities/LegalPageContent'
+import type { ConnectAssistantContent } from '../../domain/portfolio/entities/ConnectAssistantContent'
 import type { PortfolioLocaleContent } from './content/PortfolioLocaleContent'
 import frContent from './content/fr'
 import enContent from './content/en'
@@ -95,5 +96,9 @@ export class StaticPortfolioContentRepository implements PortfolioContentReposit
 
   getPrivacyPolicyContent(locale: Locale): LegalPageContent {
     return CONTENT[locale].privacyPolicy
+  }
+
+  getConnectAssistantContent(locale: Locale): ConnectAssistantContent {
+    return CONTENT[locale].connectAssistant
   }
 }

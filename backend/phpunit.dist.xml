@@ -41,6 +41,14 @@
              aucun test ne sort sur le réseau, et une fuite échouerait en 401. -->
         <server name="SCALEWAY_AI_API_KEY" value="scw-test-not-a-real-key" force="true" />
         <server name="SCALEWAY_AI_PROJECT_ID" value="00000000-0000-4000-8000-000000000000" force="true" />
+        <!-- Garde D8 du serveur MCP (ADR 0006, AuthorNeverNamedTest) : le nom
+             que rien de ce que le serveur publie de lui-même ne doit contenir.
+             Le vrai nom n'entre jamais dans le dépôt : ici un nom fictif, que
+             la CI remplace par le secret MCP_D8_AUTHOR_NAME (job test-backend).
+             `env` sans `force`, à dessein : PHPUnit ne pose la valeur que si
+             l'environnement du processus n'en porte pas déjà une — `server`,
+             lui, écraserait toujours celle de la CI. -->
+        <env name="MCP_D8_AUTHOR_NAME" value="Ysolde Quarteron" />
     </php>
 
     <testsuites>
