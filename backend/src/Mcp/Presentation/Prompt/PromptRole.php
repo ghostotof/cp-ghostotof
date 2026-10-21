@@ -4,8 +4,9 @@ declare(strict_types=1);
 
 namespace App\Mcp\Presentation\Prompt;
 
+use App\Shared\Domain\Text\TagWordNeutraliser;
+use App\Shared\Domain\Text\TextNeutralisationFailedException;
 use Mcp\Exception\PromptGetException;
-use Normalizer;
 
 /**
  * L'argument `role` du prompt `present_for_role`, tel qu'il entre dans le
@@ -39,12 +40,12 @@ use Normalizer;
  *    l'encadre sous une balise qui porte un nonce ({@see RoleBlockTag}), que
  *    l'auteur d'une annonce piégée ne connaît pas — la défense qui tient
  *    contre tous les sosies. En profondeur, les signes ouvrants qui
- *    introduisent le mot `role` sont retirés aussi : la forme NFKC replie
- *    d'abord la pleine chasse (`＜／ｒｏｌｅ＞`), {@see self::OPENING} couvre ce
- *    qu'elle laisse. Comme le corpus de l'assistant de parcours (son
- *    `CorpusRenderer`), on ne retire **que ceux-là** : « équipe <10 personnes,
- *    PHP >= 8.4 » garde son sens ; « (role-based…) » perd sa parenthèse,
- *    accepté.
+ *    introduisent le mot `role` sont retirés aussi, par le neutraliseur
+ *    commun au corpus de l'assistant de parcours ({@see TagWordNeutraliser},
+ *    #667) : la forme NFKC replie d'abord la pleine chasse
+ *    (`＜／ｒｏｌｅ＞`), le neutraliseur couvre ce qu'elle laisse. On ne retire
+ *    **que ceux-là** : « équipe <10 personnes, PHP >= 8.4 » garde son sens ;
+ *    « (role-based…) » perd sa parenthèse, accepté.
  *
  * Une valeur refusée est une `PromptGetException`, la seule erreur que le SDK
  * 0.8.1 rend avec son message (`-32603`, quand le protocole attendrait
@@ -64,42 +65,6 @@ final readonly class PromptRole
 
     /** Le plafond du texte nettoyé : le double de la borne publiée (décision du 2026-10-20, #662). */
     public const int MAX_CLEANED_CHARACTERS = 2 * self::MAX_CHARACTERS;
-
-    /**
-     * Ce qui peut ouvrir une balise et que NFKC ne replie pas sur `<` (la
-     * pleine chasse `＜` et le petit `﹤`, eux, le sont) : par classe, tout
-     * signe ouvrant (`\p{Ps}` : `〈 ⟨ 《 ❰ ❮ [ {`…) et tout guillemet initial
-     * (`\p{Pi}` : `‹ «`…) — une liste de sosies s'arrêtait au dernier glyphe
-     * qu'on y avait mis (#662) — ; par nom, les sosies qui ne sont pas de la
-     * ponctuation : `<`, `≮` (que NFKC compose avec un `<` suivi de U+0338),
-     * les modificateurs `˂ ˱`, la syllabique `ᐸ` et la runique `ᚲ`.
-     */
-    private const string OPENING = '/[<≮˂˱ᐸᚲ\p{Ps}\p{Pi}]/u';
-
-    /**
-     * La séquence qui peut séparer un signe ouvrant du mot : tout ce qui n'est
-     * ni lettre ni chiffre — blancs, barres, signes combinants, symboles
-     * (#662 : une liste de séparateurs laissait `<\role`, `<|role`, `<⟋role`) —
-     * et les deux signes ouvrants qui sont des lettres (`ᐸ ᚲ`), pour qu'ils
-     * s'enchaînent comme les autres. Une lettre ou un chiffre arrête la
-     * séquence : « <10 personnes, role » garde son chevron.
-     *
-     * Linéaire : la recherche ne part qu'en tête d'une séquence (le
-     * lookbehind refuse un départ au milieu) et ne revient pas sur ce qu'elle
-     * a lu (`*+`). Sans eux, chaque position d'une longue séquence suivie
-     * d'une lettre la relisait jusqu'au bout — quadratique, sur un texte que
-     * NFKC peut porter à ~9 000 caractères avant le plafond.
-     */
-    private const string TAG_RUN = '/(?<![^\p{L}\p{N}]|[ᐸᚲ])(?:[^\p{L}\p{N}]|[ᐸᚲ])*+\z/u';
-
-    /**
-     * Contrôles (hors blancs, que {@see self::BLANKS} réduit ensuite), format,
-     * usage privé, non assignés, et les ignorables par défaut, que `\p{Cf}` ne
-     * couvre pas tous : sélecteurs de variante, U+034F, U+180B–180D, U+180F,
-     * U+17B4–17B5 (`Mn`), lettres de remplissage hangûl U+115F, U+1160, U+3164,
-     * U+FFA0 (`Lo`).
-     */
-    private const string INVISIBLE = '/(?![\t\n\x{0B}\f\r\x{85}])\p{Cc}|[\p{Cf}\p{Co}\p{Cn}\p{Default_Ignorable_Code_Point}]/u';
 
     /**
      * Toute suite de blancs : ceux de PCRE et d'Unicode (sauts de ligne, NEL,
@@ -136,8 +101,7 @@ final readonly class PromptRole
         // trop long.
         self::assertAtMost(self::MAX_CHARACTERS, $input);
 
-        $text = self::withoutInvisibles(self::normalised($input));
-        $text = self::onOneLine(self::withoutTagOpenings($text));
+        $text = self::onOneLine(self::neutralised($input));
 
         // Et le plafond sur ce qui entre dans le message : NFKC peut allonger
         // le texte.
@@ -173,44 +137,22 @@ final readonly class PromptRole
         }
     }
 
-    private static function normalised(string $input): string
-    {
-        $folded = Normalizer::normalize($input, Normalizer::FORM_KC);
-        if (!\is_string($folded)) {
-            throw RoleNeutralisationFailedException::fromNormalizer();
-        }
-
-        return $folded;
-    }
-
-    private static function withoutInvisibles(string $text): string
-    {
-        return self::replaced(self::INVISIBLE, '', $text);
-    }
-
     /**
-     * Découpé sur le mot, chaque morceau qui le précède perd les signes
-     * ouvrants de la séquence de caractères de balise qui le termine. Avant le
-     * plafond, le texte replié peut compter ~9 000 caractères : d'où un
-     * {@see self::TAG_RUN} linéaire par construction.
+     * NFKC, invisibles retirés, signes ouvrants retirés devant `role` : le
+     * nettoyage commun au corpus de l'assistant de parcours, écrit une fois
+     * ({@see TagWordNeutraliser}, #667). Avant le plafond, le texte replié
+     * peut compter ~9 000 caractères : le neutraliseur est linéaire par
+     * construction.
+     *
+     * @throws RoleNeutralisationFailedException échec de PCRE ou de la normalisation
      */
-    private static function withoutTagOpenings(string $text): string
+    private static function neutralised(string $input): string
     {
-        $parts = preg_split('/('.RoleBlockTag::WORD.')/iu', $text, -1, \PREG_SPLIT_DELIM_CAPTURE);
-        if (false === $parts) {
-            throw RoleNeutralisationFailedException::fromPcre();
+        try {
+            return (new TagWordNeutraliser(RoleBlockTag::WORD))->neutralise($input);
+        } catch (TextNeutralisationFailedException $exception) {
+            throw RoleNeutralisationFailedException::fromNeutralisation($exception);
         }
-
-        for ($index = 0, $last = \count($parts) - 1; $index < $last; $index += 2) {
-            if (1 !== preg_match(self::TAG_RUN, $parts[$index], $run, \PREG_OFFSET_CAPTURE)) {
-                throw RoleNeutralisationFailedException::fromPcre();
-            }
-
-            $start = $run[0][1];
-            $parts[$index] = substr($parts[$index], 0, $start).self::replaced(self::OPENING, '', substr($parts[$index], $start));
-        }
-
-        return implode('', $parts);
     }
 
     /**

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Mcp\Presentation\Prompt;
 
+use App\Shared\Domain\Text\TextNeutralisationFailedException;
 use RuntimeException;
 
 /**
@@ -21,8 +22,9 @@ final class RoleNeutralisationFailedException extends RuntimeException
         return new self(\sprintf('Nettoyage du rôle impossible : %s.', preg_last_error_msg()));
     }
 
-    public static function fromNormalizer(): self
+    /** Le neutraliseur commun a échoué (#667) : sa cause technique, jamais le texte. */
+    public static function fromNeutralisation(TextNeutralisationFailedException $failure): self
     {
-        return new self('Nettoyage du rôle impossible : la normalisation NFKC a échoué.');
+        return new self(\sprintf('Nettoyage du rôle impossible : %s', $failure->getMessage()), $failure->getCode(), $failure);
     }
 }
