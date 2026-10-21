@@ -187,6 +187,9 @@ const en: PortfolioLocaleContent = {
       description: 'The address to give your MCP client (Streamable HTTP transport).',
       copyLabel: 'the server URL',
     },
+    // Recopie du catalogue du serveur MCP : outils par palier, prompt, ses
+    // arguments et la borne de `role`. ConnectAssistantPageMirrorsCatalogueTest
+    // (backend, #673) la compare au registre réel du serveur, dans chaque langue.
     served: {
       heading: 'What the server serves',
       description:

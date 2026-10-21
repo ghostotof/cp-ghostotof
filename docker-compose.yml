@@ -68,6 +68,13 @@ services:
       # resynchronisation ne suffisent, `docker compose up -d --force-recreate
       # backend` le recharge.
       - ./.dockerignore:/var/www/.dockerignore:ro
+      # Lecture seule, pour que PHPUnit compare au serveur MCP ce que le front
+      # en publie (#673) : le catalogue recopié par la page « Brancher votre
+      # assistant » (ConnectAssistantPageMirrorsCatalogueTest) et le chemin du
+      # serveur (McpEndpointPathTest). Des répertoires, pas des fichiers : un
+      # montage de répertoire suit les remplacements de fichiers (éditeur, git).
+      - ./frontend/src/infrastructure/portfolio/content:/var/www/frontend/src/infrastructure/portfolio/content:ro
+      - ./frontend/src/domain/mcp:/var/www/frontend/src/domain/mcp:ro
     depends_on:
       database:
         condition: service_healthy
