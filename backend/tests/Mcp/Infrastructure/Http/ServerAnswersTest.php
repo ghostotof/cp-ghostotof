@@ -15,30 +15,30 @@ use Symfony\Component\HttpFoundation\Response;
  */
 final class ServerAnswersTest extends TestCase
 {
-    public function testAnIssuedResponseIsRecognised(): void
+    public function testARecordedResponseIsRecognised(): void
     {
         $answers = new ServerAnswers();
         $response = new Response('{}', 200, ['Content-Type' => 'application/json']);
 
-        self::assertSame($response, $answers->issue($response));
-        self::assertTrue($answers->issued($response));
+        self::assertSame($response, $answers->record($response));
+        self::assertTrue($answers->recorded($response));
     }
 
     public function testAnEqualResponseThatReplacedItIsNot(): void
     {
         $answers = new ServerAnswers();
-        $answers->issue(new Response('{}', 404, ['Content-Type' => 'application/json']));
+        $answers->record(new Response('{}', 404, ['Content-Type' => 'application/json']));
 
-        self::assertFalse($answers->issued(new Response('{}', 404, ['Content-Type' => 'application/json'])));
+        self::assertFalse($answers->recorded(new Response('{}', 404, ['Content-Type' => 'application/json'])));
     }
 
     public function testResetForgetsEveryResponse(): void
     {
         $answers = new ServerAnswers();
-        $response = $answers->issue(new Response());
+        $response = $answers->record(new Response());
 
         $answers->reset();
 
-        self::assertFalse($answers->issued($response));
+        self::assertFalse($answers->recorded($response));
     }
 }

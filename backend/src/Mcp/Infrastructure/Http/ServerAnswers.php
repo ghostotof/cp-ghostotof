@@ -26,7 +26,7 @@ use WeakMap;
  * `kernel.response`, rendue par l'`ErrorListener`) n'est plus celle du serveur.
  * Une `WeakMap` ne retient aucune réponse au-delà de sa vie.
  */
-final class ServerAnswers implements ResetInterface
+final class ServerAnswers implements ServerAnswersInterface, ResetInterface
 {
     /** @var WeakMap<Response, true> */
     private WeakMap $answers;
@@ -36,17 +36,14 @@ final class ServerAnswers implements ResetInterface
         $this->answers = new WeakMap();
     }
 
-    /**
-     * Inscrit la réponse que le serveur rend, et la rend.
-     */
-    public function issue(Response $response): Response
+    public function record(Response $response): Response
     {
         $this->answers[$response] = true;
 
         return $response;
     }
 
-    public function issued(Response $response): bool
+    public function recorded(Response $response): bool
     {
         return isset($this->answers[$response]);
     }

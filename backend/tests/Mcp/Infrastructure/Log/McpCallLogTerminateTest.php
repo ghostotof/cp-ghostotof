@@ -74,7 +74,7 @@ final class McpCallLogTerminateTest extends TestCase
         $http = Request::create('/api/mcp', 'POST', server: ['REMOTE_ADDR' => '203.0.113.42'], content: '{}');
         $log->onKernelRequest(new RequestEvent($kernel, $http, HttpKernelInterface::MAIN_REQUEST));
         // Une réponse du serveur, sans quoi la lecture ne serait pas tentée.
-        $answer = $answers->issue(new Response('{}', 400, ['Content-Type' => 'application/json']));
+        $answer = $answers->record(new Response('{}', 400, ['Content-Type' => 'application/json']));
         $log->onTerminate(new TerminateEvent($kernel, $http, $answer));
 
         $records = $handler->getRecords();

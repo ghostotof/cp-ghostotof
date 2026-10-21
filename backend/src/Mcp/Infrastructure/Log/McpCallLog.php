@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Mcp\Infrastructure\Log;
 
-use App\Mcp\Infrastructure\Http\ServerAnswers;
+use App\Mcp\Infrastructure\Http\ServerAnswersInterface;
 use App\Shared\Infrastructure\Http\CanonicalPath;
 use Mcp\Capability\RegistryInterface;
 use Mcp\Event\ErrorEvent;
@@ -60,8 +60,10 @@ use Throwable;
  * refusé, #675), là où l'autre ère mesure le traitement du message — une
  * statistique de durée sépare les deux ères. Elle n'est écrite que pour une
  * réponse du serveur MCP — son contrôleur ou le refus avant le SDK
- * ({@see ServerAnswers}) : un 4xx du framework sous l'enveloppe moderne, du
- * JSON lui aussi, garde la ligne de repli (audit de #675, C9). Puis elle lit ce
+ * ({@see ServerAnswersInterface}) : un 4xx du framework sous l'enveloppe moderne, du
+ * JSON lui aussi, garde la ligne de repli (audit de #675, C9) — comme, limite
+ * acceptée, un 5xx levé par le contrôleur ou une réponse servie qu'un écouteur
+ * `kernel.response` remplacerait : la méthode et l'outil s'y perdent. Puis elle lit ce
  * que dit le classifieur du SDK : un message refusé avant le SDK sous
  * l'enveloppe moderne a donc sa ligne d'appel, avec la méthode que la fabrique
  * du SDK reconnaît (aucune pour une réponse du client).
@@ -139,7 +141,7 @@ final class McpCallLog implements EventSubscriberInterface, ResetInterface
         // en-têtes tels que le SDK les reçoit.
         #[Autowire(service: 'mcp.psr_http_factory')]
         private readonly HttpMessageFactoryInterface $psrHttpFactory,
-        private readonly ServerAnswers $serverAnswers,
+        private readonly ServerAnswersInterface $serverAnswers,
     ) {
     }
 
@@ -308,7 +310,7 @@ final class McpCallLog implements EventSubscriberInterface, ResetInterface
     {
         // Un 4xx du framework (routeur, ErrorListener) est du JSON sous `/api`,
         // qu'aucun code MCP n'a produit : il reste à la ligne de repli (C9).
-        if (!$this->serverAnswers->issued($event->getResponse())) {
+        if (!$this->serverAnswers->recorded($event->getResponse())) {
             return;
         }
 
