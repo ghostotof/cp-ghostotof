@@ -133,6 +133,30 @@ final class McpEndpointTest extends WebTestCase
      * SDK range en session (`SESSION_ACTIVE_REQUEST_META`), borné en
      * production par le corps de 16 Kio de nginx — absent en test.
      */
+    /**
+     * Une session présente mais illisible — le MAC du cache refusé après une
+     * rotation d'APP_SECRET — est morte au POST comme au GET (#673) : 404, le
+     * client se réinitialise. Le SDK la servait vide, puis la réécrivait vide
+     * sous le même identifiant.
+     */
+    public function testAPostOnAnUnreadableSessionIs404(): void
+    {
+        $client = self::createClient();
+        $sessionId = $this->initializeMcpSession($client);
+        $connection = self::getContainer()->get(EntityManagerInterface::class)->getConnection();
+
+        // Une valeur sans le MAC d'AuthenticatedCacheMarshaller : la ligne
+        // existe, sa lecture échoue.
+        self::assertSame(1, $connection->executeStatement(
+            "UPDATE cache_items SET item_data = decode('00', 'hex') WHERE item_id LIKE ?",
+            ['%mcp-portfolio-'.$sessionId.'%'],
+        ));
+
+        $this->postMcp($client, $sessionId, ['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/list']);
+
+        self::assertResponseStatusCodeSame(404);
+    }
+
     public function testAnOversizedSessionIsNeitherKeptNorReusable(): void
     {
         $client = self::createClient();

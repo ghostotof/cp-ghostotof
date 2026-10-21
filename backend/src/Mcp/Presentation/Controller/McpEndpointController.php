@@ -137,12 +137,11 @@ final readonly class McpEndpointController
                 return $this->jsonRpcError(Response::HTTP_BAD_REQUEST, StreamableHttpTransport::SESSION_HEADER.' header must be a valid UUID.');
             }
 
-            // Lue, pas seulement trouvée : une session présente mais illisible
-            // (le MAC du cache refusé après une rotation d'APP_SECRET) est
-            // morte, et le client doit se réinitialiser (#673). `exists()`
-            // d'abord : le store borné n'écrit son `warning` de session
-            // illisible que pour un identifiant trouvé.
-            if (!$this->sessionStore->exists($sessionId) || false === $this->sessionStore->read($sessionId)) {
+            // Une session présente mais illisible (le MAC du cache refusé
+            // après une rotation d'APP_SECRET) n'existe pas pour le store
+            // borné, qui la lit à ce contrôle (#673) : 404, le client se
+            // réinitialise, comme au POST.
+            if (!$this->sessionStore->exists($sessionId)) {
                 return $this->jsonRpcError(Response::HTTP_NOT_FOUND, 'Session not found or has expired.');
             }
         }

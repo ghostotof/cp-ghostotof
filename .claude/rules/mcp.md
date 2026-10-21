@@ -172,12 +172,15 @@ paths:
   round trips on the session row (`has`, `get`, `set`) and two writes per `tools/call` (save, then the queue
   drained): ADR 0006 D6's « no write per call » holds for the authentication, not for the session.
   `Psr16SessionStore` swallows every exception and returns `false`; the decorator logs that `warning` too, on a
-  refused write and on a session **present but unreadable** (`read()` false while `exists()` is true — the cache
-  MAC refused after an `APP_SECRET` rotation, #641): the SDK then starts from an empty session. That second
-  `exists()` is run **only for an id received** — one the SDK's own `exists()` found earlier in the request
-  (`Protocol` checks a received id before reading it) —, and is still re-run then (expired in between: absent,
-  not unreadable): a new session reads `false` in `save()` on every `initialize`, and the check cost it one query
-  for nothing (#663). The memory of received ids is cleared by `reset()`, like the destroyed ones.
+  refused write and on a session **present but unreadable** (the cache MAC refused after an `APP_SECRET` rotation,
+  #641). **Such a session does not exist** (#673, the author's decision of 2026-10-21): the SDK served it empty, then
+  wrote it back empty under the same id, and the client never re-initialised. `Protocol` checks every received id
+  with `exists()` before reading it, so the decorator's `exists()` **reads** the session — one query in the common
+  case —, keeps what it read for the `read()` that follows (dropped by a `write`, a `destroy` and `reset()`), and on
+  a failed read asks the inner store whether the row is there: absent (expired), `false` silently; present, the
+  `warning` and `false` — the SDK answers 404, like the GET. A new session never goes through `exists()` (the SDK
+  reads it in `save()` on every `initialize`, `false`), so it costs nothing more (#663).
+  `McpEndpointTest::testAPostOnAnUnreadableSessionIs404` corrupts a real row.
 - **`GET /api/mcp` answers an empty SSE stream, not 405** (`Presentation/Controller/McpEndpointController`, an
   `#[AsDecorator]` of `mcp.server.portfolio.controller`): `retry: 300000`, then closed. The SDK 0.8.1 answers
   405 (spec-compliant), which PhpStorm's AI Assistant takes for a failure. A finished `Response`, **never a
@@ -191,8 +194,8 @@ paths:
   (`ProtocolVersionMiddleware`: a revision it does not negotiate, `2026-07-28` included, is a 400, as the SDK answers a
   body-less GET; #673). Then it answers as the transport does for a session: 400 for a
   malformed or repeated `Mcp-Session-Id`, 404 for an unknown or expired one, **or one present but unreadable** (#673,
-  decided 2026-10-21: the cache MAC refused after an `APP_SECRET` rotation; read, not only found — the POST, which the
-  SDK serves on an empty session then, differs, accepted: such a session is dead either way) (the client re-initialises; a GET
+  decided 2026-10-21: the cache MAC refused after an `APP_SECRET` rotation — the bounded store's `exists()` reads it,
+  below, so the POST answers 404 too) (the client re-initialises; a GET
   without the header is still served, and so is one whose header is empty or `0`, which the transport reads
   as absent — #663), 406 without `Accept: text/event-stream`. `McpEndpointGetTest` pins each
   case, the host rules on a several-host list included. Accepted, like the SDK: the `Origin` check ignores
