@@ -6,6 +6,7 @@ namespace App\Tests\Mcp\Infrastructure\Http;
 
 use App\Mcp\Infrastructure\Http\InboundMessageRefusal;
 use App\Mcp\Infrastructure\Http\InboundMessageRefusalListener;
+use App\Mcp\Infrastructure\Http\ServerAnswers;
 use Mcp\Exception\InvalidInputMessageException;
 use Mcp\JsonRpc\MessageFactory;
 use Mcp\Schema\JsonRpc\Error;
@@ -120,7 +121,7 @@ final class InboundMessageClassificationTest extends TestCase
             HttpKernelInterface::MAIN_REQUEST,
         );
 
-        new InboundMessageRefusalListener()($event);
+        new InboundMessageRefusalListener(new ServerAnswers())($event);
 
         $response = $event->getResponse();
         if (null === $response) {

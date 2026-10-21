@@ -11,10 +11,14 @@ paths:
 > Split out of `.claude/rules/backend-architecture.md` (#605), whose index lists every backend-wide rule. The index of every rule is at the top of `.claude/CLAUDE.md`.
 
 **`src/` never instantiates a bare `\Exception`, `\LogicException`, `\RuntimeException` or
-`\InvalidArgumentException`** (#338, #383).
+`\InvalidArgumentException`** (#338, #383) — nor, since #678, a bare `NotFoundHttpException` or `BadRequestHttpException`.
 Every failure gets its own class: a client error implements `ProblemExceptionInterface` (see
 `.claude/rules/backoffice-api.md`, "Exceptions"), and a server fault (wiring defect, broken invariant, build
-step) extends the generic class it replaces, without a mapping, so it stays a `critical` 500. The point is a
+step) extends the generic class it replaces, without a mapping, so it stays a `critical` 500. **One exception, decided
+on 2026-10-21 (#678)**: a server-side absence the API already answered with a 404 keeps that status, so that the
+client sees no change — it extends `NotFoundHttpException` and gets `log_level: warning`, entered before the
+framework's 404 (`CvFileUnavailableException`, like `AboutSettingsNotFoundException`); since #678 a bare
+`NotFoundHttpException` or `BadRequestHttpException` is refused in `src/` too, both being `info`. The point is a
 name that can be targeted in `framework.exceptions` and recognised in the logs. Create it next to the layer
 that throws it, with a named factory (`forOperation()`, `forGroup()`, `forDirectory()`…), and never put a
 client-supplied value in its message without bounding it (`InputContradictsValidationException::nonTextualField()`).

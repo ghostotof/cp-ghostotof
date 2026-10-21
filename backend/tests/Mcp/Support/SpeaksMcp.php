@@ -185,6 +185,7 @@ trait SpeaksMcp
      * @param array<string, mixed>      $params     sans `_meta`, ajouté ici
      * @param array<string, mixed>|null $clientInfo ce que le client déclare, `null` pour ne rien déclarer
      * @param array<string, string>     $server     en-têtes supplémentaires, qui priment
+     * @param array<string, mixed>      $meta       d'autres clés de `_meta` (un `progressToken`)
      */
     private function postModernMcp(
         KernelBrowser $client,
@@ -193,11 +194,12 @@ trait SpeaksMcp
         ?array $clientInfo = null,
         array $server = [],
         int|string|null $id = 1,
+        array $meta = [],
     ): void {
         $meta = [
             RequestMeta::PROTOCOL_VERSION => self::MCP_MODERN_REVISION,
             RequestMeta::CLIENT_CAPABILITIES => new stdClass(),
-        ];
+        ] + $meta;
         if (null !== $clientInfo) {
             $meta[RequestMeta::CLIENT_INFO] = $clientInfo;
         }

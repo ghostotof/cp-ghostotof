@@ -31,7 +31,9 @@ use Throwable;
  * classifieur refuse n'est d'aucune ère : il reste à la ligne de repli.
  *
  * **Seule une réponse du protocole compte** : du JSON, un flux SSE ou un
- * acquittement sans corps. Le SDK refuse à son bord, avant de classer le
+ * acquittement sans corps — et le journal ne lit ici qu'une réponse que le
+ * serveur a rendue ({@see \App\Mcp\Infrastructure\Http\ServerAnswersInterface}) : un
+ * 4xx du framework, du JSON sous `/api`, n'y arrive pas (audit de #675, C9). Le SDK refuse à son bord, avant de classer le
  * message, un `Origin` ou un `Host` étranger (un 403 en texte brut) : aucun
  * outil n'a été appelé, la ligne de repli le dit, comme dans l'autre ère.
  * Limite acceptée : son refus d'un corps de plus de 4 Mio est du JSON, lu

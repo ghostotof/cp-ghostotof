@@ -13,6 +13,9 @@ use Monolog\LogRecord;
 use stdClass;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\BrowserKit\Cookie;
+use Symfony\Component\HttpKernel\Event\RequestEvent;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
+use Symfony\Component\HttpKernel\KernelEvents;
 
 /**
  * Le journal d'appels du serveur MCP, canal `mcp_usage` (spec 0007, « Journal
@@ -585,6 +588,52 @@ final class McpCallLogTest extends WebTestCase
         self::assertResponseStatusCodeSame(403);
 
         $this->assertFallbackLine('POST', 403, 'protocol-error', self::MCP_MODERN_REVISION);
+    }
+
+    /**
+     * Un 4xx du framework sous l'enveloppe moderne (audit de #675, C9) : un
+     * hôte illisible, venu d'un `X-Forwarded-Host` (KernelBrowser appelle depuis
+     * 127.0.0.1, un proxy de confiance), fait lever au routeur une
+     * `SuspiciousOperationException`,
+     * rendue en 400 `application/json` par l'`ErrorListener`, avant que le
+     * contrôleur MCP ou le refus aient vu la requête. Le classifieur du SDK
+     * range pourtant le corps dans l'ère moderne : seule compte la réponse de
+     * l'un des deux, la ligne de repli dit ce que le serveur n'a pas traité.
+     */
+    public function testAModernRouterRefusalLeavesTheFallbackLine(): void
+    {
+        $client = self::createClient();
+
+        $this->postModernMcp($client, 'tools/call', ['name' => 'get_about', 'arguments' => new stdClass()], server: ['HTTP_X_FORWARDED_HOST' => 'local host']);
+        self::assertResponseStatusCodeSame(400);
+        self::assertResponseHeaderSame('Content-Type', 'application/json');
+
+        $this->assertFallbackLine('POST', 400, 'protocol-error', self::MCP_MODERN_REVISION);
+    }
+
+    /**
+     * Le même refus du routeur, l'hôte valide : le pont PSR-7, qui relit l'hôte,
+     * ne lève plus rien, et seule la provenance de la réponse sépare un 404 du
+     * framework (`application/json` sous `/api`) d'une réponse du protocole. Un
+     * écouteur de test, avant le routeur, lève le 404 que celui-ci lèverait.
+     */
+    public function testAModernNotFoundOfTheFrameworkLeavesTheFallbackLine(): void
+    {
+        $client = self::createClient();
+        $client->disableReboot();
+        self::getContainer()->get('event_dispatcher')->addListener(KernelEvents::REQUEST, static function (RequestEvent $event): void {
+            // La requête principale seule : l'ErrorListener rend le 404 par une
+            // sous-requête, qui repasse ici.
+            if ($event->isMainRequest()) {
+                throw new NotFoundHttpException('No route found.');
+            }
+        }, 64);
+
+        $this->postModernMcp($client, 'tools/call', ['name' => 'get_about', 'arguments' => new stdClass()]);
+        self::assertResponseStatusCodeSame(404);
+        self::assertResponseHeaderSame('Content-Type', 'application/json');
+
+        $this->assertFallbackLine('POST', 404, 'protocol-error', self::MCP_MODERN_REVISION);
     }
 
     /**

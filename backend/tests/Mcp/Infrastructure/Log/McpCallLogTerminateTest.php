@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Mcp\Infrastructure\Log;
 
+use App\Mcp\Infrastructure\Http\ServerAnswers;
 use App\Mcp\Infrastructure\Log\McpCallLog;
 use LogicException;
 use Mcp\Capability\Registry;
@@ -36,7 +37,7 @@ final class McpCallLogTerminateTest extends TestCase
     public function testAnUnansweredRequestIsWrittenAtTerminateWithTheCallerNetwork(): void
     {
         $handler = new TestHandler();
-        $log = new McpCallLog(new Logger('mcp_usage', [$handler]), new Registry(), new PsrHttpFactory());
+        $log = new McpCallLog(new Logger('mcp_usage', [$handler]), new Registry(), new PsrHttpFactory(), new ServerAnswers());
         $kernel = self::createStub(HttpKernelInterface::class);
 
         $http = Request::create('/api/mcp', 'POST', server: ['REMOTE_ADDR' => '203.0.113.42']);
@@ -66,12 +67,15 @@ final class McpCallLogTerminateTest extends TestCase
         $handler = new TestHandler();
         $failingBridge = self::createStub(HttpMessageFactoryInterface::class);
         $failingBridge->method('createRequest')->willThrowException(new LogicException('pont en panne'));
-        $log = new McpCallLog(new Logger('mcp_usage', [$handler]), new Registry(), $failingBridge);
+        $answers = new ServerAnswers();
+        $log = new McpCallLog(new Logger('mcp_usage', [$handler]), new Registry(), $failingBridge, $answers);
         $kernel = self::createStub(HttpKernelInterface::class);
 
         $http = Request::create('/api/mcp', 'POST', server: ['REMOTE_ADDR' => '203.0.113.42'], content: '{}');
         $log->onKernelRequest(new RequestEvent($kernel, $http, HttpKernelInterface::MAIN_REQUEST));
-        $log->onTerminate(new TerminateEvent($kernel, $http, new Response('{}', 400, ['Content-Type' => 'application/json'])));
+        // Une réponse du serveur, sans quoi la lecture ne serait pas tentée.
+        $answer = $answers->record(new Response('{}', 400, ['Content-Type' => 'application/json']));
+        $log->onTerminate(new TerminateEvent($kernel, $http, $answer));
 
         $records = $handler->getRecords();
         self::assertCount(1, $records);

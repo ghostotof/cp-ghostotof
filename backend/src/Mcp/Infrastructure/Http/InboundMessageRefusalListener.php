@@ -73,6 +73,11 @@ final readonly class InboundMessageRefusalListener
 {
     private const string ENDPOINT = '/api/mcp';
 
+    public function __construct(
+        private ServerAnswersInterface $serverAnswers,
+    ) {
+    }
+
     public function __invoke(RequestEvent $event): void
     {
         if (!$event->isMainRequest()) {
@@ -92,10 +97,10 @@ final readonly class InboundMessageRefusalListener
             return;
         }
 
-        $event->setResponse(JsonResponse::fromJsonString(
+        $event->setResponse($this->serverAnswers->record(JsonResponse::fromJsonString(
             json_encode($error, \JSON_THROW_ON_ERROR),
             Response::HTTP_BAD_REQUEST,
-        ));
+        )));
     }
 
     private function refusalOf(string $body): ?Error

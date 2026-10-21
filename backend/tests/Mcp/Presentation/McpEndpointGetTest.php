@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Mcp\Presentation;
 
+use App\Mcp\Infrastructure\Http\ServerAnswers;
 use App\Mcp\Presentation\Controller\McpEndpointController;
 use App\Tests\Mcp\Support\SpeaksMcp;
 use Doctrine\ORM\EntityManagerInterface;
@@ -176,6 +177,7 @@ final class McpEndpointGetTest extends WebTestCase
             $container->get('mcp.http_foundation_factory'),
             $container->get('mcp.psr17_factory'),
             $container->get('mcp.server.portfolio.session.store'),
+            new ServerAnswers(),
         );
     }
 }

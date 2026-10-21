@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Mcp\Presentation\Controller;
 
+use App\Mcp\Infrastructure\Http\ServerAnswersInterface;
 use InvalidArgumentException;
 use Mcp\Schema\JsonRpc\Error;
 use Mcp\Server\Session\SessionStoreInterface;
@@ -77,10 +78,20 @@ final readonly class McpEndpointController
         private ResponseFactoryInterface&StreamFactoryInterface $psr17Factory,
         #[Autowire(service: 'mcp.server.portfolio.session.store')]
         private SessionStoreInterface $sessionStore,
+        private ServerAnswersInterface $serverAnswers,
     ) {
     }
 
+    /**
+     * Chaque réponse rendue est inscrite dans {@see ServerAnswersInterface} : le journal
+     * d'appels n'attribue au protocole que ce que le serveur a répondu.
+     */
     public function handle(Request $request): Response
+    {
+        return $this->serverAnswers->record($this->answer($request));
+    }
+
+    private function answer(Request $request): Response
     {
         if (!\in_array($request->getMethod(), [Request::METHOD_GET, Request::METHOD_HEAD], true)) {
             return $this->inner->handle($request);
