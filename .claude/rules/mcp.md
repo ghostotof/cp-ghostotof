@@ -184,8 +184,12 @@ paths:
   **The GET goes through the very middlewares of the POST** (#641): `mcp.server.portfolio.middleware_factory`
   (the SDK's DNS-rebinding protection and CORS, built by the bundle from `allowed_hosts`) run by the SDK's
   `MiddlewareRequestHandler` — never a copy of their rules: T1's copy kept one host where `allowed_hosts` is a
-  list, and split `[::1]:8080` into `[`. Then it answers as the transport does for a session: 400 for a
-  malformed or repeated `Mcp-Session-Id`, 404 for an unknown or expired one (the client re-initialises; a GET
+  list, and split `[::1]:8080` into `[`. Then the transport's version rule, `StreamableHttpTransport::handshakeMiddleware()`
+  (`ProtocolVersionMiddleware`: a revision it does not negotiate, `2026-07-28` included, is a 400, as the SDK answers a
+  body-less GET; #673). Then it answers as the transport does for a session: 400 for a
+  malformed or repeated `Mcp-Session-Id`, 404 for an unknown or expired one, **or one present but unreadable** (#673,
+  decided 2026-10-21: the cache MAC refused after an `APP_SECRET` rotation; read, not only found — the POST, which the
+  SDK serves on an empty session then, differs, accepted: such a session is dead either way) (the client re-initialises; a GET
   without the header is still served, and so is one whose header is empty or `0`, which the transport reads
   as absent — #663), 406 without `Accept: text/event-stream`. `McpEndpointGetTest` pins each
   case, the host rules on a several-host list included. Accepted, like the SDK: the `Origin` check ignores
