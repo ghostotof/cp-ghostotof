@@ -45,6 +45,10 @@
 # `limit_conn` de CONN_LIMITS (check_conn_limit) : faute de php-fpm, une
 # connexion n'est retenue qu'en n'achevant pas son corps — nginx la compte dès
 # ses en-têtes lus, et lit le corps avant de joindre l'amont.
+# Depuis #686, le refus des corps de formulaire (check_content_types) :
+# `multipart/form-data` et `application/x-www-form-urlencoded`, les deux seuls
+# types que PHP analyse lui-même, refusés en 415 problem+json avant PHP, sur
+# toute méthode et toute location ; JSON et une requête sans corps passent.
 #
 # Règle à respecter : ajouter une zone `limit_req` dans les confs, c'est
 # ajouter une ligne à ZONES ci-dessous — sinon le script échoue en nommant la
@@ -135,6 +139,27 @@ done
 MCPSESSION_MAX_ADMITTED=$((MCPSESSION_BURST + 3))
 # Un identifiant de session bien formé, inconnu du serveur.
 WELL_FORMED_SESSION='00000000-0000-0000-0000-000000000000'
+# Corps de formulaire refusés par nginx (#686) :
+# <libellé>|<méthode>|<chemin>|<Content-Type, vide : aucun>|<415 ou « autre »>.
+# PHP analyse ces deux types au démarrage d'un POST, et Symfony les fait
+# analyser pour PUT, DELETE et PATCH (`request_parse_body()` dans
+# `Request::createFromGlobals()`), avant le routeur et le pare-feu : d'où des
+# méthodes et des chemins variés, les locations qui font leur propre
+# `fastcgi_pass` comprises. PHP compare le type en minuscules ; nginx refuse
+# aussi la casse mêlée et un blanc en tête. Les témoins « autre » prouvent que
+# le refus ne vise pas tout corps.
+CONTENT_TYPE_CASES=(
+  "multipart en POST|POST|/api/contact|multipart/form-data; boundary=x|415"
+  "multipart en PUT sur une route inconnue|PUT|/api/inconnue|multipart/form-data; boundary=x|415"
+  "multipart en casse mêlée, DELETE|DELETE|/api/backoffice/users/x|Multipart/Form-Data; boundary=x|415"
+  $'multipart précédé d\'une tabulation|POST|/api/login_check|\tmultipart/form-data; boundary=x|415'
+  "multipart sur /api/mcp|POST|/api/mcp|multipart/form-data; boundary=x|415"
+  "multipart sur /api/assistant/answers|POST|/api/assistant/answers|multipart/form-data; boundary=x|415"
+  "urlencoded en POST|POST|/api/login_check|application/x-www-form-urlencoded|415"
+  "urlencoded avec charset, PATCH|PATCH|/api/inconnue|application/x-www-form-urlencoded; charset=UTF-8|415"
+  "JSON, témoin|POST|/api/contact|application/json|autre"
+  "sans Content-Type ni corps, témoin|POST|/api/logout||autre"
+)
 
 # Couverture : chaque zone `limit_req` déclarée dans une des confs doit avoir
 # sa ligne dans ZONES. Sans ce contrôle, une zone oubliée resterait verte sans
@@ -436,6 +461,44 @@ check_session_key() {
   done
 }
 
+# check_content_types <conf> : chaque cas de CONTENT_TYPE_CASES. Un refus doit
+# être le 415 problem+json `/errors/415` de nginx, avec les 7 en-têtes de
+# sécurité (location nommée sans add_header, comme `@rate_limited`) ; un
+# témoin, tout code sauf 415 — 502 ici, faute de php-fpm.
+check_content_types() {
+  local conf="$1" entry label method path content_type expected raw code body_file
+  local -a ct_opts
+  body_file="$(mktemp)"
+  for entry in "${CONTENT_TYPE_CASES[@]}"; do
+    IFS='|' read -r label method path content_type expected <<< "$entry"
+    ct_opts=()
+    [ -n "$content_type" ] && ct_opts=(-H "Content-Type: ${content_type}" --data-binary 'a=1')
+    raw="$(curl -sS "${CURL_OPTS[@]}" -X "$method" "${ct_opts[@]}" -D - -o "$body_file" \
+      -w 'x-audit-http-code: %{http_code}\n' "${BASE}${path}" 2>&1 || true)"
+    code="$(sed -n 's/^x-audit-http-code: //p' <<< "$raw" | tail -1)"
+    if [ "$expected" != 415 ]; then
+      if [ -n "$code" ] && [ "$code" != "000" ] && [ "$code" != "415" ]; then
+        printf '  \033[32mOK\033[0m      %s → %s\n' "$label" "$code"
+      else
+        printf '  \033[31mKO\033[0m      %s → « %s », autre que 415 attendu (%s)   <-- map $refused_content_type trop large ?\n' \
+          "$label" "${code:-aucun}" "$conf"
+        FAILURES=$((FAILURES + 1))
+      fi
+      continue
+    fi
+    if [ "$code" = "415" ] && grep -qi '^content-type: application/problem+json' <<< "$raw" \
+       && grep -q '"type":"/errors/415"' "$body_file" && grep -q '"status":415' "$body_file"; then
+      printf '  \033[32mOK\033[0m      %s → 415 problem+json\n' "$label"
+      check_security_headers "$label (415)" "$raw"
+    else
+      printf '  \033[31mKO\033[0m      %s → « %s », 415 problem+json /errors/415 attendu (%s) ; corps : %s   <-- refus des corps de formulaire (#686) ?\n' \
+        "$label" "${code:-aucun}" "$conf" "$(head -c 120 "$body_file" | tr '\n' ' ')"
+      FAILURES=$((FAILURES + 1))
+    fi
+  done
+  rm -f "$body_file"
+}
+
 BODY_FILE="$(mktemp)"
 trap 'cleanup; rm -f "$BODY_FILE"' EXIT
 
@@ -458,6 +521,9 @@ for target in "${CONFS[@]}"; do
     # shellcheck disable=SC2086 # découpage voulu : deux champs par ligne
     check_body_limit "$conf" $limit
   done
+  # Avant les zones : le témoin JSON sur /api/contact prend un jeton de
+  # `contact`, que check_zone tolère (la rafale vidée, son 429 vient plus tôt).
+  check_content_types "$conf"
   for zone in "${ZONES[@]}"; do
     # shellcheck disable=SC2086 # découpage voulu : quatre champs par ligne
     check_zone "$conf" $zone
@@ -469,4 +535,4 @@ if [ "$FAILURES" -gt 0 ]; then
   echo "Échecs bloquants : $FAILURES"
   exit 1
 fi
-echo "Toutes les zones limit_req et limit_conn des deux confs répondent 429 en problem+json, avec les 7 en-têtes de sécurité ; clé de mcpsession, zones, locations miroir et bornes de corps alignées."
+echo "Toutes les zones limit_req et limit_conn des deux confs répondent 429 en problem+json, avec les 7 en-têtes de sécurité ; corps de formulaire refusés en 415 ; clé de mcpsession, zones, locations miroir et bornes de corps alignées."

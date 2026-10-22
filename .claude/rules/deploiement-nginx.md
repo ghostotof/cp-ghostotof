@@ -162,6 +162,26 @@ paths:
   missing from the list fails it): with no php-fpm, a connection is held by leaving its body unfinished — nginx
   counts it once its headers are read and reads the body before reaching upstream —, the next request must get
   the problem+json 429 and pass again once they are closed. `assistantconn` was never exercised before.
+- **Form bodies never reach PHP** (issue #686, follow-up of CVE-2026-109618, both confs). A `map` at `http`
+  level sets `$refused_content_type` for a `Content-Type` starting — any case, after optional blanks — with
+  `multipart/form-data` or `application/x-www-form-urlencoded`, and an `if ($refused_content_type) { return
+  415; }` at **`server` level** refuses it before location matching, hence before every zone and every
+  `fastcgi_pass` (the `/api/mcp` and `/api/assistant/` locations included), any method. Why both types and
+  every method: they are the only bodies PHP parses itself — at the start of a POST, and **for PUT, DELETE,
+  PATCH and QUERY through Symfony's `Request::createFromGlobals()`, which calls `request_parse_body()`**,
+  before the router and the firewall (measured on PHP 8.5: an anonymous multipart PUT on any URL ran the
+  parser; `enable_post_data_reading = Off` does not stop that path, `file_uploads = Off` only drops the file
+  parts). No route reads a form: API Platform declares `json` only and already answered these types with a
+  415 `/errors/415`, the assistant demands `acceptFormat: 'json'`, `login_check` is `json_login`, MCP reads
+  JSON, `logout` and `base-access` take no body; no frontend call nor smoke sends one. The 415 is rendered by
+  `@unsupported_media_type`, problem+json `type: /errors/415` (API Platform's own), through `error_page 415`
+  at `server` level — the same mechanics and the same two traps as `@rate_limited` below (no `add_header`
+  there, no `error_page` in a location). A Symfony 415 (`text/plain` on an API Platform route) passes through
+  untouched. `$content_type` is the very value PHP receives (`CONTENT_TYPE` in `fastcgi_params`); the pattern
+  refuses a superset of what PHP matches (lowercased, cut at the first `;`, `,` or space). Guard:
+  `tools/check-backend-nginx-rate-limits.sh`, `CONTENT_TYPE_CASES` (both types, mixed case, a leading tab,
+  four methods, the two `fastcgi_pass` locations, plus JSON and bodiless witnesses that must pass); the `map`
+  is covered by its `http`-level mirror check.
 - **nginx rate limits need `real_ip`** (audit C7). `limit_req_zone` keys on `$binary_remote_addr`, and behind
   the ingress the sidecar's TCP peer is the ingress-nginx pod — without the `set_real_ip_from` block, the whole
   internet shares one counter, which is a self-inflicted DoS. The trusted ranges mirror Symfony's
