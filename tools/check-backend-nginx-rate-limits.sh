@@ -45,10 +45,11 @@
 # `limit_conn` de CONN_LIMITS (check_conn_limit) : faute de php-fpm, une
 # connexion n'est retenue qu'en n'achevant pas son corps — nginx la compte dès
 # ses en-têtes lus, et lit le corps avant de joindre l'amont.
-# Depuis #686, le refus des corps de formulaire (check_content_types) :
-# `multipart/form-data` et `application/x-www-form-urlencoded`, les deux seuls
-# types que PHP analyse lui-même, refusés en 415 problem+json avant PHP, sur
-# toute méthode et toute location ; JSON et une requête sans corps passent.
+# Depuis #686, le refus des corps multipart (check_content_types) :
+# `multipart/form-data`, le parseur visé par CVE-2026-109618, refusé en 415
+# problem+json avant PHP, sur toute méthode et toute location ; JSON,
+# urlencoded (le point de jeton OAuth de la phase 2 MCP en a besoin) et une
+# requête sans corps passent.
 #
 # Règle à respecter : ajouter une zone `limit_req` dans les confs, c'est
 # ajouter une ligne à ZONES ci-dessous — sinon le script échoue en nommant la
@@ -121,6 +122,10 @@ CONN_LIMITS=(
 # que là où il est vérifié.
 MIRRORED_LOCATIONS=(
   "= /api/mcp"
+  # Les corps des refus de nginx (#686) : la sonde ne lit que le statut et le
+  # `type`, une divergence du `title` ou du `detail` ne se verrait pas.
+  "@rate_limited"
+  "@unsupported_media_type"
 )
 # Requêtes une à une après la rafale : une ou deux ont pu être rechargées par
 # le taux de la zone pendant qu'on la vidait.
@@ -139,10 +144,13 @@ done
 MCPSESSION_MAX_ADMITTED=$((MCPSESSION_BURST + 3))
 # Un identifiant de session bien formé, inconnu du serveur.
 WELL_FORMED_SESSION='00000000-0000-0000-0000-000000000000'
-# Corps de formulaire refusés par nginx (#686) :
+# Corps multipart refusés par nginx (#686) :
 # <libellé>|<méthode>|<chemin>|<Content-Type, vide : aucun>|<415 ou « autre »>.
-# PHP analyse ces deux types au démarrage d'un POST, et Symfony les fait
-# analyser pour PUT, DELETE et PATCH (`request_parse_body()` dans
+# Plusieurs en-têtes Content-Type se séparent par `^` : nginx les joint par
+# « , », dans l'ordre, et PHP coupe au premier `,` — les deux retiennent le
+# premier type (mesuré par l'audit de #686), ce que les deux cas de doublon
+# figent. PHP analyse le multipart au démarrage d'un POST, et Symfony le fait
+# analyser pour PUT, DELETE, PATCH et QUERY (`request_parse_body()` dans
 # `Request::createFromGlobals()`), avant le routeur et le pare-feu : d'où des
 # méthodes et des chemins variés, les locations qui font leur propre
 # `fastcgi_pass` comprises. PHP compare le type en minuscules ; nginx refuse
@@ -155,8 +163,10 @@ CONTENT_TYPE_CASES=(
   $'multipart précédé d\'une tabulation|POST|/api/login_check|\tmultipart/form-data; boundary=x|415'
   "multipart sur /api/mcp|POST|/api/mcp|multipart/form-data; boundary=x|415"
   "multipart sur /api/assistant/answers|POST|/api/assistant/answers|multipart/form-data; boundary=x|415"
-  "urlencoded en POST|POST|/api/login_check|application/x-www-form-urlencoded|415"
-  "urlencoded avec charset, PATCH|PATCH|/api/inconnue|application/x-www-form-urlencoded; charset=UTF-8|415"
+  "multipart en QUERY|QUERY|/api/inconnue|multipart/form-data; boundary=x|415"
+  "multipart puis JSON, doublon|POST|/api/contact|multipart/form-data; boundary=x^application/json|415"
+  "JSON puis multipart, doublon, témoin (PHP retient JSON)|POST|/api/contact|application/json^multipart/form-data; boundary=x|autre"
+  "urlencoded, témoin (point de jeton OAuth)|POST|/api/login_check|application/x-www-form-urlencoded|autre"
   "JSON, témoin|POST|/api/contact|application/json|autre"
   "sans Content-Type ni corps, témoin|POST|/api/logout||autre"
 )
@@ -467,12 +477,17 @@ check_session_key() {
 # témoin, tout code sauf 415 — 502 ici, faute de php-fpm.
 check_content_types() {
   local conf="$1" entry label method path content_type expected raw code body_file
-  local -a ct_opts
+  local type
+  local -a ct_opts content_types
   body_file="$(mktemp)"
   for entry in "${CONTENT_TYPE_CASES[@]}"; do
     IFS='|' read -r label method path content_type expected <<< "$entry"
     ct_opts=()
-    [ -n "$content_type" ] && ct_opts=(-H "Content-Type: ${content_type}" --data-binary 'a=1')
+    if [ -n "$content_type" ]; then
+      IFS='^' read -r -a content_types <<< "$content_type"
+      for type in "${content_types[@]}"; do ct_opts+=(-H "Content-Type: ${type}"); done
+      ct_opts+=(--data-binary 'a=1')
+    fi
     raw="$(curl -sS "${CURL_OPTS[@]}" -X "$method" "${ct_opts[@]}" -D - -o "$body_file" \
       -w 'x-audit-http-code: %{http_code}\n' "${BASE}${path}" 2>&1 || true)"
     code="$(sed -n 's/^x-audit-http-code: //p' <<< "$raw" | tail -1)"
@@ -535,4 +550,4 @@ if [ "$FAILURES" -gt 0 ]; then
   echo "Échecs bloquants : $FAILURES"
   exit 1
 fi
-echo "Toutes les zones limit_req et limit_conn des deux confs répondent 429 en problem+json, avec les 7 en-têtes de sécurité ; corps de formulaire refusés en 415 ; clé de mcpsession, zones, locations miroir et bornes de corps alignées."
+echo "Toutes les zones limit_req et limit_conn des deux confs répondent 429 en problem+json, avec les 7 en-têtes de sécurité ; corps multipart refusés en 415 ; clé de mcpsession, zones, locations miroir et bornes de corps alignées."
