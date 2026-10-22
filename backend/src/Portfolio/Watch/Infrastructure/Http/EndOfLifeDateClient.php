@@ -168,14 +168,12 @@ final readonly class EndOfLifeDateClient implements ReleaseCycleSourceInterface
                 continue;
             }
 
-            $cycle = $this->mapCycle($release);
+            // Une entrée illisible, ou dont le nom n'a pas la forme d'un
+            // numéro de version (#658), au milieu d'une réponse valide est
+            // ignorée plutôt que fatale : mieux vaut afficher quatre cycles
+            // sur cinq qu'une page en erreur. `mapCycle()` dit pourquoi.
+            $cycle = $this->mapCycle($slug, $release);
             if (null === $cycle) {
-                // Une entrée illisible, ou dont le nom n'a pas la forme d'un
-                // numéro de version (#658), au milieu d'une réponse valide est
-                // ignorée plutôt que fatale : mieux vaut afficher quatre cycles
-                // sur cinq qu'une page en erreur.
-                $this->logger->warning('Cycle de vie ignoré : entrée illisible.', ['slug' => $slug]);
-
                 continue;
             }
 
@@ -203,16 +201,34 @@ final readonly class EndOfLifeDateClient implements ReleaseCycleSourceInterface
      * cycle, qu'on ne saurait plus rapprocher de la version en service ; une
      * dernière version refusée tombe seule.
      *
+     * Un refus est journalisé à part d'une entrée illisible : il peut être le
+     * signe d'un jeu de données compromis, que l'opérateur doit pouvoir
+     * repérer. Le journal porte le slug, jamais la valeur refusée.
+     *
      * @param array<mixed> $release
      */
-    private function mapCycle(array $release): ?ReleaseCycle
+    private function mapCycle(string $slug, array $release): ?ReleaseCycle
     {
-        $name = $this->versionNameFilter->keepIfWellFormed($this->readString($release, 'name'));
+        $rawName = $this->readString($release, 'name');
+        if (null === $rawName) {
+            $this->logger->warning('Cycle de vie ignoré : entrée illisible.', ['slug' => $slug]);
+
+            return null;
+        }
+
+        $name = $this->versionNameFilter->keepIfWellFormed($rawName);
         if (null === $name) {
+            $this->logger->warning('Cycle de vie ignoré : nom hors de la forme d\'un numéro de version.', ['slug' => $slug]);
+
             return null;
         }
 
         $latest = $release['latest'] ?? null;
+        $rawLatestVersion = \is_array($latest) ? $this->readString($latest, 'name') : null;
+        $latestVersion = $this->versionNameFilter->keepIfWellFormed($rawLatestVersion);
+        if (null !== $rawLatestVersion && null === $latestVersion) {
+            $this->logger->warning('Dernière version ignorée : nom hors de la forme d\'un numéro de version.', ['slug' => $slug]);
+        }
 
         return new ReleaseCycle(
             $name,
@@ -221,7 +237,7 @@ final readonly class EndOfLifeDateClient implements ReleaseCycleSourceInterface
             $this->readDate($release, 'eoasFrom'),
             $this->readBool($release, 'isEol'),
             $this->readDate($release, 'eolFrom'),
-            $this->versionNameFilter->keepIfWellFormed(\is_array($latest) ? $this->readString($latest, 'name') : null),
+            $latestVersion,
         );
     }
 

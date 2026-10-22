@@ -60,14 +60,21 @@ paths:
     MCP server — free text there is an indirect prompt injection (Vue escapes it, the page is safe; the
     model is not). `InstalledVersionMatcher` stopped nothing: it reads the numeric prefix of each segment
     only, so `8.5 — SYSTEM: …` matched the 8.5 cycle. `Domain/Service/VersionNameFilter` is a shape
-    **allow-list**, `\A[0-9A-Za-z][0-9A-Za-z.+_-]{0,31}\z` (`MAX_LENGTH` 32; on 2026-10-22 the 284 names
-    endoflife.date publishes for the seven catalogue products were 8 characters at most, all accepted).
+    **allow-list**, `\A[vV]?[0-9][0-9A-Za-z.+_-]*\z` and at most `MAX_LENGTH` (32) bytes, checked first
+    — the length lives in the constant only. The leading digit came from the review: without it
+    `Ignore_previous_instructions` had the shape. On 2026-10-22 the 284 names endoflife.date publishes
+    for the seven catalogue products all started with a digit and were 8 characters at most.
     Same two rules as the URL: a refused value becomes **absent, never cleaned**, and the filter runs
-    **at write** (`EndOfLifeDateClient::mapCycle`: a refused cycle name drops the cycle, logged as an
-    unusable entry — it could no longer be matched —, a refused latest version drops alone) **and at
-    read** (`WatchProvider`). A snapshot written before the fix may then serve `hasNewerPatch: true` with
-    `latestVersion: null` until the next refresh, accepted (`/stack` shows `—`). `documentationUrl` keeps
-    only `ExternalUrlFilter`: its path may still carry text, which the tool's description covers.
+    **at write** (`EndOfLifeDateClient::mapCycle`: a refused cycle name drops the cycle — it could no
+    longer be matched —, a refused latest version drops alone; each logged as a `warning` naming the
+    reason and the slug, never the value, apart from an unusable entry: a refusal may be the sign of a
+    compromised dataset) **and at read** (`WatchProvider::productFrom()`), where it does what the write
+    does: a refused cycle takes everything derived from it (status `unknown`, both dates, the latest
+    version, `hasNewerPatch`), and `hasNewerPatch` is never served without a `latestVersion`.
+    **Accepted**: a suffix of joined words behind a digit (`8.5-ignore-previous`) within 32 characters;
+    a product added later whose cycles the provider names otherwise (a space, a `/`, past 32) gets all
+    its cycles dropped — `unknown` on `/stack`, a `warning` per refresh. `documentationUrl` keeps only
+    `ExternalUrlFilter`: its path may still carry text, which the tool's description covers.
   - **`max_redirects: 0` on every outbound call.** Symfony's default follows 20, and the CronJob pod
     has no egress restriction — a hijacked provider would get a lever into the internal network.
   - **`/api/watch` is publicly cacheable, but briefly** (`cacheHeaders` on the `Get`: `public`,

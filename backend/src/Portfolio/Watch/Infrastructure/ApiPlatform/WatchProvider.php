@@ -145,29 +145,50 @@ final readonly class WatchProvider implements ProviderInterface
                 continue;
             }
 
-            $products[] = new WatchedProductResource(
-                $slug,
-                $this->readString($entry, 'label') ?? $slug,
-                $this->readString($entry, 'version'),
-                $this->readString($entry, 'status') ?? SupportStatus::UNKNOWN->value,
-                // Seconde barrière sur les trois textes du tiers, et non
-                // redondance : le filtrage principal est posé à l'écriture, dans
-                // le client. Mais un snapshot écrit avant ces correctifs (lien :
-                // revue du 2026-09-08 ; cycle et dernière version : #658)
-                // contient encore la valeur brute du tiers, et c'est cette
-                // lecture-ci qui la republierait — vers la page comme vers le
-                // modèle des clients MCP — jusqu'au prochain rafraîchissement.
-                // Cohérent, du reste, avec la doctrine énoncée plus haut : ce
-                // payload est une donnée non fiable.
-                $this->versionNameFilter->keepIfWellFormed($this->readString($entry, 'cycle')),
-                $this->readString($entry, 'endOfActiveSupportFrom'),
-                $this->readString($entry, 'eolFrom'),
-                $this->versionNameFilter->keepIfWellFormed($this->readString($entry, 'latestVersion')),
-                true === ($entry['hasNewerPatch'] ?? null),
-                $this->urlFilter->keepIfSafe($this->readString($entry, 'documentationUrl')),
-            );
+            $products[] = $this->productFrom($slug, $entry);
         }
 
         return $products;
+    }
+
+    /**
+     * Seconde barrière sur les trois textes du tiers, et non redondance : le
+     * filtrage principal est posé à l'écriture, dans le client. Mais un
+     * snapshot écrit avant ces correctifs (lien : revue du 2026-09-08 ; cycle
+     * et dernière version : #658) contient encore la valeur brute du tiers, et
+     * c'est cette lecture-ci qui la republierait — vers la page comme vers le
+     * modèle des clients MCP — jusqu'au prochain rafraîchissement. Cohérent, du
+     * reste, avec la doctrine énoncée plus haut : ce payload est une donnée non
+     * fiable.
+     *
+     * Un nom de cycle refusé emporte tout ce qui en a été tiré, comme à
+     * l'écriture où un cycle sans nom fiable n'est rapproché de rien : le
+     * produit se lit alors comme non rapproché (statut inconnu, sans
+     * échéance). Une dernière version refusée emporte le correctif qu'elle
+     * annonçait, qu'aucune version ne nommerait plus.
+     *
+     * @param array<mixed> $entry
+     */
+    private function productFrom(string $slug, array $entry): WatchedProductResource
+    {
+        $rawCycle = $this->readString($entry, 'cycle');
+        $cycle = $this->versionNameFilter->keepIfWellFormed($rawCycle);
+        $cycleRefused = null !== $rawCycle && null === $cycle;
+        $latestVersion = $cycleRefused
+            ? null
+            : $this->versionNameFilter->keepIfWellFormed($this->readString($entry, 'latestVersion'));
+
+        return new WatchedProductResource(
+            $slug,
+            $this->readString($entry, 'label') ?? $slug,
+            $this->readString($entry, 'version'),
+            $cycleRefused ? SupportStatus::UNKNOWN->value : ($this->readString($entry, 'status') ?? SupportStatus::UNKNOWN->value),
+            $cycle,
+            $cycleRefused ? null : $this->readString($entry, 'endOfActiveSupportFrom'),
+            $cycleRefused ? null : $this->readString($entry, 'eolFrom'),
+            $latestVersion,
+            null !== $latestVersion && true === ($entry['hasNewerPatch'] ?? null),
+            $this->urlFilter->keepIfSafe($this->readString($entry, 'documentationUrl')),
+        );
     }
 }
