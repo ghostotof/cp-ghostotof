@@ -54,6 +54,20 @@ paths:
     guessing the author's intent, which is how a neutralised payload gets reassembled. It is applied
     **twice, at write and at read** — a snapshot written before the fix still holds the raw value, so
     filtering only on write would leave every deployed installation exposed until the next refresh.
+  - **A third party's version name is republished only in the shape of a version number** (issue
+    #658). A cycle's name (`8.5`) and its latest version (`8.5.10`) come from the same open dataset and
+    reach `/stack` and, through `get_tech_watch`, the model of anyone plugging an assistant into the
+    MCP server — free text there is an indirect prompt injection (Vue escapes it, the page is safe; the
+    model is not). `InstalledVersionMatcher` stopped nothing: it reads the numeric prefix of each segment
+    only, so `8.5 — SYSTEM: …` matched the 8.5 cycle. `Domain/Service/VersionNameFilter` is a shape
+    **allow-list**, `\A[0-9A-Za-z][0-9A-Za-z.+_-]{0,31}\z` (`MAX_LENGTH` 32; on 2026-10-22 the 284 names
+    endoflife.date publishes for the seven catalogue products were 8 characters at most, all accepted).
+    Same two rules as the URL: a refused value becomes **absent, never cleaned**, and the filter runs
+    **at write** (`EndOfLifeDateClient::mapCycle`: a refused cycle name drops the cycle, logged as an
+    unusable entry — it could no longer be matched —, a refused latest version drops alone) **and at
+    read** (`WatchProvider`). A snapshot written before the fix may then serve `hasNewerPatch: true` with
+    `latestVersion: null` until the next refresh, accepted (`/stack` shows `—`). `documentationUrl` keeps
+    only `ExternalUrlFilter`: its path may still carry text, which the tool's description covers.
   - **`max_redirects: 0` on every outbound call.** Symfony's default follows 20, and the CronJob pod
     has no egress restriction — a hijacked provider would get a lever into the internal network.
   - **`/api/watch` is publicly cacheable, but briefly** (`cacheHeaders` on the `Get`: `public`,
