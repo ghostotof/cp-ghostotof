@@ -181,7 +181,7 @@ paths:
   `type: /errors/415` (API Platform's own), through `error_page 415` at `server` level. One trap only: an
   `add_header` there would drop the seven security headers (A16) — a location's own `error_page` cannot
   shadow it, the `return` happens before any location is chosen. A Symfony 415 (`text/plain` on an API
-  Platform route) passes through untouched. No CORS headers, like the 429s below (#368): readable in preprod
+  Platform route) passes through untouched. No CORS headers, like the 429s above (#368): readable in preprod
   and prod (one origin), not in dev. `$content_type` is the very value PHP receives (`CONTENT_TYPE` in
   `fastcgi_params`); duplicated headers are joined by `, ` in order and PHP cuts at the first `,`, so both keep
   the first type (measured on nginx 1.30.4); the pattern refuses a superset of what PHP matches (lowercased,

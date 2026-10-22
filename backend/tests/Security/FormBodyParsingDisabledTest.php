@@ -57,10 +57,12 @@ final class FormBodyParsingDisabledTest extends TestCase
 {
     private const string DEV_INI = 'docker/php/php.dev.ini';
 
+    private const string DEV_POOL = 'docker/php/www.dev.conf';
+
     /**
      * Valeurs brutes attendues, telles qu'écrites dans le fichier.
      */
-    private const array DIRECTIVES = [
+    private const array EXPECTED_DIRECTIVES = [
         'max_multipart_body_parts' => '0',
         'file_uploads' => 'Off',
         'post_max_size' => '1M',
@@ -82,7 +84,7 @@ final class FormBodyParsingDisabledTest extends TestCase
         ."Content-Type: text/plain\r\n\r\nhello\r\n"
         ."--x--\r\n";
 
-    private const string MULTIPART = 'multipart/form-data; boundary=x';
+    private const string MULTIPART_CONTENT_TYPE = 'multipart/form-data; boundary=x';
 
     /**
      * Manifestes qui nomment ces réglages pour une autre image que celle du
@@ -105,7 +107,7 @@ final class FormBodyParsingDisabledTest extends TestCase
      */
     public static function directives(): iterable
     {
-        foreach (self::DIRECTIVES as $name => $value) {
+        foreach (self::EXPECTED_DIRECTIVES as $name => $value) {
             yield $name => [$name, $value];
         }
     }
@@ -120,7 +122,7 @@ final class FormBodyParsingDisabledTest extends TestCase
     }
 
     #[DataProvider('directives')]
-    public function testDeployedImagesSetIt(string $name, string $expected): void
+    public function testTheProductionIniSetsTheDirective(string $name, string $expected): void
     {
         self::assertSame($expected, PhpImageBuild::productionIniDirective($name));
     }
@@ -131,7 +133,7 @@ final class FormBodyParsingDisabledTest extends TestCase
      * change.
      */
     #[DataProvider('directives')]
-    public function testTheDevImageSetsItToo(string $name, string $expected): void
+    public function testTheDevIniSetsTheDirectiveToo(string $name, string $expected): void
     {
         self::assertSame(
             $expected,
@@ -172,6 +174,27 @@ final class FormBodyParsingDisabledTest extends TestCase
     }
 
     /**
+     * Ni le pool FPM de dev, que {@see PhpImageBuild::deployedConfigurationCopies()}
+     * ne lit pas (stage `dev`, non déployé) : un `php_admin_value[…]` y
+     * rouvrirait l'analyse en dev seulement (relecture de #686). Le fichier
+     * lu est bien celui que l'image de dev copie dans `php-fpm.d/`.
+     */
+    public function testTheDevPoolNamesNoneOfThem(): void
+    {
+        self::assertMatchesRegularExpression(
+            '#\ACOPY\s+'.preg_quote(self::DEV_POOL, '#').'\s+/usr/local/etc/php-fpm\.d/[^/\s]+\.conf\z#',
+            PhpImageBuild::instructionContaining(self::DEV_POOL),
+            'www.dev.conf n\'est plus le pool de l\'image de dev.',
+        );
+        $offenders = array_values(array_filter(
+            PhpImageBuild::iniKeys(PhpImageBuild::contextFile(self::DEV_POOL), self::DEV_POOL),
+            fn (string $key): bool => \in_array($this->directiveName($key), $this->watchedDirectives(), true),
+        ));
+
+        self::assertSame([], $offenders, 'Le pool FPM de dev règle l\'analyse des corps de formulaire (#686).');
+    }
+
+    /**
      * Ni un manifeste : un `-d` dans les `args` du conteneur php-fpm, un
      * `PHP_VALUE` ou une ConfigMap les changerait sans toucher l'image (audit
      * de #686). Lu en texte, commentaires compris (#616).
@@ -192,7 +215,7 @@ final class FormBodyParsingDisabledTest extends TestCase
         }
 
         self::assertSame([], $offenders, 'Un manifeste règle l\'analyse des corps de formulaire du backend (#686).');
-        self::assertSame(array_keys(self::OTHER_IMAGES), array_values($exemptionsUsed), 'Une exemption de OTHER_IMAGES ne sert plus : la retirer.');
+        self::assertEqualsCanonicalizing(array_keys(self::OTHER_IMAGES), array_values($exemptionsUsed), 'Une exemption de OTHER_IMAGES ne sert plus : la retirer.');
     }
 
     /**
@@ -206,11 +229,11 @@ final class FormBodyParsingDisabledTest extends TestCase
     {
         $base = $this->startServer($file);
 
-        $post = $this->probe($base, 'POST', self::MULTIPART, self::MULTIPART_BODY);
+        $post = $this->probe($base, 'POST', self::MULTIPART_CONTENT_TYPE, self::MULTIPART_BODY);
         self::assertSame([], $post['post'], 'POST multipart : $_POST rempli.');
         self::assertSame([], $post['files'], 'POST multipart : $_FILES rempli.');
         foreach (['PUT', 'DELETE', 'PATCH'] as $method) {
-            self::assertSame('refused', $this->probe($base, $method, self::MULTIPART, self::MULTIPART_BODY)['parsed'] ?? null, $method.' multipart : analysé.');
+            self::assertSame('refused', $this->probe($base, $method, self::MULTIPART_CONTENT_TYPE, self::MULTIPART_BODY)['parsed'] ?? null, $method.' multipart : analysé.');
         }
     }
 
@@ -230,11 +253,26 @@ final class FormBodyParsingDisabledTest extends TestCase
     }
 
     /**
+     * Témoin : sans ces fichiers (`-n` seul, valeurs intégrées de PHP), la
+     * sonde voit le multipart analysé sur les deux chemins. Sans lui, les deux
+     * tests précédents passeraient aussi pour une sonde aveugle.
+     */
+    public function testTheProbeSeesMultipartParsedUnderPhpDefaults(): void
+    {
+        $base = $this->startServer(null);
+
+        $post = $this->probe($base, 'POST', self::MULTIPART_CONTENT_TYPE, self::MULTIPART_BODY);
+        self::assertSame(['a' => '1'], $post['post']);
+        self::assertSame(['f'], $post['files']);
+        self::assertSame(['a' => '1'], $this->probe($base, 'PUT', self::MULTIPART_CONTENT_TYPE, self::MULTIPART_BODY)['parsed'] ?? null);
+    }
+
+    /**
      * @return list<string>
      */
     private function watchedDirectives(): array
     {
-        return [...array_keys(self::DIRECTIVES), ...array_keys(self::ABSENT_DIRECTIVES)];
+        return [...array_keys(self::EXPECTED_DIRECTIVES), ...array_keys(self::ABSENT_DIRECTIVES)];
     }
 
     /**
@@ -247,37 +285,42 @@ final class FormBodyParsingDisabledTest extends TestCase
     }
 
     /**
-     * Lance le serveur intégré sous le seul fichier `$file` et rend son URL.
+     * Lance le serveur intégré sous le seul fichier `$file` (sous les valeurs
+     * intégrées de PHP si `null`) et rend son URL. Le port, libre quand on le
+     * choisit, peut être pris avant que le serveur s'y lie : celui-ci s'arrête
+     * alors aussitôt, et l'on recommence sur un autre.
      */
-    private function startServer(string $file): string
+    private function startServer(?string $file): string
+    {
+        $iniOptions = null === $file ? [] : ['-c', RepositoryFiles::repository($file)];
+        for ($start = 0; $start < 3; ++$start) {
+            $address = $this->freeAddress();
+            $arguments = ['-n', ...$iniOptions, '-S', $address, __DIR__.'/Fixtures/form-body-probe.php'];
+            $this->server = ChildPhpProcess::inTestEnvironment(30, ...$arguments);
+            $this->server->start();
+            for ($attempt = 0; $attempt < 50 && $this->server->isRunning(); ++$attempt) {
+                $client = @stream_socket_client('tcp://'.$address, timeout: 0.1);
+                if (\is_resource($client)) {
+                    fclose($client);
+
+                    return 'http://'.$address;
+                }
+                usleep(100_000);
+            }
+            $this->server->stop(0);
+        }
+
+        self::fail(\sprintf('Le serveur intégré sous %s ne répond pas : %s', $file ?? 'les valeurs intégrées', $this->server?->getErrorOutput() ?? ''));
+    }
+
+    private function freeAddress(): string
     {
         $socket = stream_socket_server('tcp://127.0.0.1:0');
         self::assertIsResource($socket, 'Aucun port libre.');
         $address = (string) stream_socket_get_name($socket, false);
         fclose($socket);
 
-        $this->server = ChildPhpProcess::inTestEnvironment(
-            30,
-            '-n',
-            '-c',
-            RepositoryFiles::repository($file),
-            '-S',
-            $address,
-            __DIR__.'/Fixtures/form-body-probe.php',
-        );
-        $this->server->start();
-
-        for ($attempt = 0; $attempt < 50; ++$attempt) {
-            $client = @stream_socket_client('tcp://'.$address, timeout: 0.1);
-            if (\is_resource($client)) {
-                fclose($client);
-
-                return 'http://'.$address;
-            }
-            usleep(100_000);
-        }
-
-        self::fail(\sprintf('Le serveur intégré sous %s ne répond pas : %s', $file, $this->server->getErrorOutput()));
+        return $address;
     }
 
     /**

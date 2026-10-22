@@ -99,10 +99,13 @@ prod run the identical PHP engine:
   revisiting that endpoint. `max_input_vars` and `max_input_nesting_level` keep PHP's defaults: they also bound
   `$_GET` and `$_COOKIE`. `FormBodyParsingDisabledTest` pins the values in both files, the two absent
   directives, that no other configuration file of the deployed images (exact name, `php_admin_value[…]` form
-  included) nor any manifest of `k8s/` names them (Adminer's own image exempted), and **measures the effect**:
+  included), nor the dev pool `www.dev.conf`, nor any manifest of `k8s/` names them (Adminer's own image
+  exempted), and **measures the effect**:
   PHP's built-in server under each file alone (`-n -c`, launched through `ChildPhpProcess`) with the router
   `tests/Security/Fixtures/form-body-probe.php` — multipart refused on POST, PUT, DELETE and PATCH, JSON and
-  urlencoded still read. The built-in server answers QUERY with a 501 without running the router, so QUERY is
+  urlencoded still read — and a witness under PHP's defaults (`-n` alone) sees multipart parsed on both paths,
+  so a blind probe cannot pass for a closed parser. The server's port is chosen free, then retried on another
+  if taken before it binds. The built-in server answers QUERY with a 501 without running the router, so QUERY is
   probed by nginx's guard only. The dev container picks `php.dev.ini` up at `make build` (it is copied, not
   mounted).
 

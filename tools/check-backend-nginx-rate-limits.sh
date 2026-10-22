@@ -145,7 +145,7 @@ MCPSESSION_MAX_ADMITTED=$((MCPSESSION_BURST + 3))
 # Un identifiant de session bien formé, inconnu du serveur.
 WELL_FORMED_SESSION='00000000-0000-0000-0000-000000000000'
 # Corps multipart refusés par nginx (#686) :
-# <libellé>|<méthode>|<chemin>|<Content-Type, vide : aucun>|<415 ou « autre »>.
+# <libellé>|<méthode>|<chemin>|<Content-Type, vide : aucun>|<415 ou « autre que 415 »>.
 # Plusieurs en-têtes Content-Type se séparent par `^` : nginx les joint par
 # « , », dans l'ordre, et PHP coupe au premier `,` — les deux retiennent le
 # premier type (mesuré par l'audit de #686), ce que les deux cas de doublon
@@ -154,8 +154,8 @@ WELL_FORMED_SESSION='00000000-0000-0000-0000-000000000000'
 # `Request::createFromGlobals()`), avant le routeur et le pare-feu : d'où des
 # méthodes et des chemins variés, les locations qui font leur propre
 # `fastcgi_pass` comprises. PHP compare le type en minuscules ; nginx refuse
-# aussi la casse mêlée et un blanc en tête. Les témoins « autre » prouvent que
-# le refus ne vise pas tout corps.
+# aussi la casse mêlée et un blanc en tête. Les témoins « autre que 415 »
+# prouvent que le refus ne vise pas tout corps.
 CONTENT_TYPE_CASES=(
   "multipart en POST|POST|/api/contact|multipart/form-data; boundary=x|415"
   "multipart en PUT sur une route inconnue|PUT|/api/inconnue|multipart/form-data; boundary=x|415"
@@ -163,12 +163,13 @@ CONTENT_TYPE_CASES=(
   $'multipart précédé d\'une tabulation|POST|/api/login_check|\tmultipart/form-data; boundary=x|415'
   "multipart sur /api/mcp|POST|/api/mcp|multipart/form-data; boundary=x|415"
   "multipart sur /api/assistant/answers|POST|/api/assistant/answers|multipart/form-data; boundary=x|415"
+  "multipart en PATCH|PATCH|/api/backoffice/users/x|multipart/form-data; boundary=x|415"
   "multipart en QUERY|QUERY|/api/inconnue|multipart/form-data; boundary=x|415"
   "multipart puis JSON, doublon|POST|/api/contact|multipart/form-data; boundary=x^application/json|415"
-  "JSON puis multipart, doublon, témoin (PHP retient JSON)|POST|/api/contact|application/json^multipart/form-data; boundary=x|autre"
-  "urlencoded, témoin (point de jeton OAuth)|POST|/api/login_check|application/x-www-form-urlencoded|autre"
-  "JSON, témoin|POST|/api/contact|application/json|autre"
-  "sans Content-Type ni corps, témoin|POST|/api/logout||autre"
+  "JSON puis multipart, doublon, témoin (PHP retient JSON)|POST|/api/contact|application/json^multipart/form-data; boundary=x|autre que 415"
+  "urlencoded, témoin (point de jeton OAuth)|POST|/api/login_check|application/x-www-form-urlencoded|autre que 415"
+  "JSON, témoin|POST|/api/contact|application/json|autre que 415"
+  "sans Content-Type ni corps, témoin|POST|/api/logout||autre que 415"
 )
 
 # Couverture : chaque zone `limit_req` déclarée dans une des confs doit avoir
