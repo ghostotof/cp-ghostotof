@@ -76,7 +76,8 @@ paths:
     to republish; a suffix of joined words behind a digit (`8.5-ignore-previous`) within 32 characters;
     a product added later whose cycles the provider names otherwise (a space, a `/`, past 32) gets all
     its cycles dropped — `unknown` on `/stack`, a `warning` per refresh. `documentationUrl` keeps only
-    `ExternalUrlFilter`: its path may still carry text, which the tool's description covers.
+    `ExternalUrlFilter`: its path may still carry text, which the tool's description covers (host and
+    length bound: follow-up #695).
   - **`max_redirects: 0` on every outbound call.** Symfony's default follows 20, and the CronJob pod
     has no egress restriction — a hijacked provider would get a lever into the internal network.
   - **`/api/watch` is publicly cacheable, but briefly** (`cacheHeaders` on the `Get`: `public`,
