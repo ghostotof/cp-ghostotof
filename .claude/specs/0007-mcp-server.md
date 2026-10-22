@@ -328,6 +328,20 @@ décision du 2026-10-19, voir « Langue invalide »).
   ticket), complété : métadonnées de serveur d'autorisation (RFC 8414), métadonnées de ressource
   protégée (RFC 9728), audience (RFC 8707, le paramètre `resource` doit désigner l'URL canonique de
   `/api/mcp`, sinon refus), **PKCE S256 obligatoire**, un seul scope `nominative:read`, clients publics.
+  *Tranché le 2026-10-22 (#646, ADR 0006 D3 amendé).* Émetteur `https://<site>/api/oauth`, points
+  d'autorisation, de jeton et de révocation sous `/api/oauth/…`. Les deux documents de métadonnées sont
+  servis par le backend **hors `/api`**, aux URL canoniques :
+  `/.well-known/oauth-protected-resource/api/mcp` (`resource` = l'URL de `/api/mcp`,
+  `authorization_servers` = l'émetteur, `scopes_supported`) et
+  `/.well-known/oauth-authorization-server/api/oauth` (RFC 8414 pur : `issuer`, les trois points,
+  `response_types_supported: ["code"]`, `grant_types_supported`,
+  `code_challenge_methods_supported: ["S256"]`, `token_endpoint_auth_methods_supported: ["none"]`,
+  `client_id_metadata_document_supported: true`, `authorization_response_iss_parameter_supported: true`,
+  `scopes_supported`, **sans** `registration_endpoint`). Leur contenu dérive d'`APP_FRONTEND_BASE_URL`,
+  comme `allowed_hosts`. Un objet Ingress dédié, dans `k8s/base/`, les envoie au backend en chemins `Exact`.
+  Aucun document OIDC. La réponse d'autorisation porte `iss` (RFC 9207). Une redirection de boucle locale
+  se compare **sans son port** (RFC 8252 §7.3) : Claude Code enregistre `http://localhost/callback` et
+  `http://127.0.0.1/callback`, et revient sur un port aléatoire.
 - **Enregistrement des clients** : CIMD (l'identifiant du client est l'URL de son document de
   métadonnées), autorisé seulement pour une **liste de domaines** de configuration, le document étant
   récupéré par le client HTTP sortant du site avec résolution de l'hôte vérifiée (pas d'adresse
@@ -362,7 +376,16 @@ décision du 2026-10-19, voir « Langue invalide »).
 - **Sans connexion**, l'appel de l'outil nominatif déclenche l'autorisation différée : un **401 avec
   `WWW-Authenticate`** (portant `resource_metadata`), renvoyé avant le SDK, pour les clients Claude ;
   des **`securitySchemes`** déclarés sur l'outil et l'erreur portant `_meta["mcp/www_authenticate"]`
-  pour ChatGPT (ADR 0006 D3). Voir la question ouverte n°2.
+  pour ChatGPT (ADR 0006 D3). *Tranché le 2026-10-22 (#646, ADR 0006 D3 amendé)* : le 401 est la forme
+  par défaut, `WWW-Authenticate: Bearer resource_metadata="https://<site>/.well-known/oauth-protected-resource/api/mcp", scope="nominative:read"`,
+  plus `error="invalid_token"` quand un jeton présenté est refusé. Une requête qui porte au moins une clé
+  `_meta` préfixée `openai/` passe le point avant le SDK ; l'outil, qui lit l'identité par `Security`,
+  rend alors `CallToolResult::error` avec `_meta["mcp/www_authenticate"]` (le même défi, plus
+  `error="insufficient_scope"` et un `error_description`) et un texte qui dit à la personne de connecter
+  son compte. Le marqueur ne choisit que la forme du refus, jamais l'accès. `securitySchemes` sur chaque
+  outil (`noauth` ; `oauth2` avec `nominative:read` pour l'outil nominatif), au moins en
+  `_meta["securitySchemes"]` (`#[McpTool(meta: …)]`) ; le champ de premier niveau, que `Mcp\Schema\Tool`
+  0.8.1 ne connaît pas, se tranche à la tâche 9.
   *Amendé le 2026-10-20 (#664).* Le serveur sert aussi la révision sans session `2026-07-28` : le 401
   reconnaît l'appel de l'outil nominatif **sous ses deux formes**, dans une session et sous l'enveloppe
   `_meta` de chaque requête. L'ère se lit comme le journal la lit (`ModernExchange` : le classifieur du
@@ -377,8 +400,10 @@ décision du 2026-10-19, voir « Langue invalide »).
   API correspondante sous `ROLE_TRUSTED`, qui ne rend que les connexions du compte appelant.
 - **Backoffice** : liste de toutes les connexions MCP, et gestion des clients pré-enregistrés, sous
   `ROLE_SUPER` (`/api/backoffice/…`, donc jamais publique par construction).
-- **Exposition** : les points OAuth publics (métadonnées, autorisation, jeton, révocation) entrent
-  dans `PUBLIC_PATHS` avec leur justification ; le consentement et « Mes connexions MCP » n'entrent
+- **Exposition** : les points OAuth publics (autorisation, jeton, révocation) entrent
+  dans `PUBLIC_PATHS` avec leur justification, les deux documents de métadonnées dans `NON_API_PATHS`
+  (`RouterScopeTest`), chacun avec son firewall et sa règle `access_control` ; le 404 du frontend sur le
+  reste de `/.well-known/` est vérifié ; le consentement et « Mes connexions MCP » n'entrent
   dans aucune liste (protégés par défaut, `ROLE_TRUSTED`) ; un jeton d'accès de base reçoit 403 sur
   eux. Les points jeton et révocation, appelés hors navigateur, sont exclus de la garde CSRF et
   n'acceptent pas de cookie.
@@ -386,8 +411,8 @@ décision du 2026-10-19, voir « Langue invalide »).
   conservation du journal, sont purgés par une étape ajoutée au CronJob de ménage quotidien existant (un
   pod de moins qu'un CronJob dédié ; l'ADR dit « un CronJob », ce choix en est une mise en œuvre ;
   `cache:pool:prune` l'a quitté pour un CronJob horaire, tâche 5).
-- **Préprod** : l'Ingress de préprod lève Basic Auth sur les seuls chemins MCP et OAuth (ADR 0006,
-  conséquences), à revoir avec #339.
+- **Préprod** : l'Ingress de préprod lève Basic Auth sur les seuls chemins MCP et OAuth, les deux
+  documents `/.well-known/` compris (ADR 0006, conséquences), à revoir avec #339.
 - **Page « Brancher votre assistant »** complétée : comment ouvrir une connexion MCP depuis chaque
   client, et la mention PhpStorm (palier de confiance par Claude Code dans le terminal de l'IDE).
 
@@ -434,7 +459,14 @@ décision du 2026-10-19, voir « Langue invalide »).
   - rotation : un jeton de rafraîchissement réutilisé révoque la connexion ;
   - **compte de requêtes** : un `tools/call` authentifié coûte exactement une requête de plus que le
     même appel anonyme, et aucune écriture hors de la table des sessions MCP ;
-  - 401 + `WWW-Authenticate` sur l'appel anonyme de l'outil nominatif, avec `resource_metadata` ;
+  - 401 + `WWW-Authenticate` sur l'appel anonyme de l'outil nominatif, avec `resource_metadata` à l'URL
+    canonique et `scope`, dans les deux ères ; `error="invalid_token"` sur un jeton refusé ;
+  - le même appel portant une clé `_meta` `openai/` : 200, `isError`, `_meta["mcp/www_authenticate"]` ;
+    et avec un jeton valide, le marqueur ne change rien à l'ouverture du corpus (ni sans, ni avec) ;
+  - les deux documents de métadonnées : leurs URL, leurs champs (aucun `registration_endpoint`), leur
+    `resource` et leur `issuer` dérivés d'`APP_FRONTEND_BASE_URL` ; `RouterScopeTest` vert ;
+  - redirection de boucle locale : acceptée sur un autre port que celui enregistré, refusée sur un autre
+    hôte ou un autre chemin ; `iss` dans la réponse d'autorisation ;
   - journal d'audit : octroi, révocation, lecture nominative, avec les champs attendus ;
   - « Mes connexions MCP » ne rend que les connexions du compte appelant.
 - **Frontend** (Vitest, au niveau de la page, comme les pages existantes) : page « Brancher votre
@@ -467,7 +499,13 @@ décision du 2026-10-19, voir « Langue invalide »).
 
 ## Further Notes
 
-### Questions ouvertes (à trancher par un ticket de recherche en tête de phase 2)
+### Questions ouvertes (tranchées le 2026-10-22 par le ticket de recherche #646)
+
+**Tranchées le 2026-10-22** (#646, décision de l'auteur sur les recommandations de
+`docs/research/2026-10-22-mcp-decouverte-oauth.md` et `docs/research/2026-10-22-mcp-autorisation-differee.md`) :
+voir l'amendement du même jour à l'ADR 0006 D3 et les sections « Connexion MCP et serveur
+d'autorisation » et « Testing Decisions » ci-dessus. Les deux questions restent telles qu'elles étaient
+posées :
 
 1. **Découverte des métadonnées OAuth.** RFC 8414 et RFC 9728 placent leurs documents sous
    `/.well-known/…` **à la racine du domaine** ; or l'Ingress n'envoie au backend que `/api`, et le
@@ -547,3 +585,11 @@ sur les chemins MCP et OAuth qu'à la tâche 14.
   clés numériques compris), d'un `initialize` déclarant plus de 4 Kio et des réponses du client. Le
   commentaire du CronJob est corrigé sans restreindre ses secrets (même exposition que le ménage
   quotidien). Règles : `.claude/rules/mcp.md`, `.claude/rules/deploiement-nginx.md`.
+- **2026-10-22 — tâche 7 (#646), décision de l'auteur** : les deux recommandations de la recherche sont
+  validées telles quelles. Documents de métadonnées à la racine, aux URL canoniques, par un objet Ingress
+  à chemins `Exact` et deux entrées `NON_API_PATHS` ; émetteur `https://<site>/api/oauth` ; aucun document
+  OIDC. Le 401 par défaut, l'erreur d'outil `_meta["mcp/www_authenticate"]` pour une requête marquée
+  `openai/`, le marqueur ne décidant que de la forme du refus. Amendement du même jour à l'ADR 0006 D3 ;
+  sections de phase 2 et questions ouvertes mises à jour ; tâches 8, 9, 12 et 14 ajustées dans leurs
+  issues. Audit de sensibilité des deux notes de recherche : aucun domaine de production (`<site>`),
+  aucun chemin `/home/…`, aucun nom ; les plages d'IP citées sont celles que publient les fournisseurs.

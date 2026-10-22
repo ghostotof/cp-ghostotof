@@ -2,8 +2,8 @@
 
 - **Issue** : #646 (spec 0007, tâche 7, phase 2 du serveur MCP, ADR 0006 D3)
 - **Date** : 2026-10-22
-- **Statut** : **note de recherche, recommandation sans décision.** La décision s'écrit dans l'ADR 0006
-  (amendement daté) et dans la spec 0007 une fois validée par l'auteur.
+- **Statut** : **note de recherche, recommandation validée par l'auteur le 2026-10-22**, telle quelle. La
+  décision est écrite dans l'ADR 0006 (D3, amendement du 2026-10-22) et dans la spec 0007.
 - **Question** (spec 0007, « Questions ouvertes », n° 2) : l'ADR 0006 D3 prévoit deux mécanismes pour
   déclencher la connexion MCP à l'appel de `get_nominative_corpus` sans jeton : un 401 HTTP avec
   `WWW-Authenticate` pour Claude, une erreur d'outil portant `_meta["mcp/www_authenticate"]` pour ChatGPT. Le

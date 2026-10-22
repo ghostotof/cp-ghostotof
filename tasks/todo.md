@@ -66,8 +66,8 @@ phase 1 parte en release seule ; puis au merge de clôture, qui archive la spec 
 
 - [ ] Tâche 7 — Recherche : découverte OAuth derrière l'Ingress et autorisation différée (#646) —
       bloquée par : #640 — **2026-10-22 : deux notes sous `docs/research/` (sources et expérience Claude
-      Code), recommandation écrite, décision de l'auteur attendue** avant l'amendement de l'ADR 0006 et de la
-      spec, puis la relecture des tâches 8, 9 et 14
+      Code) ; recommandations validées par l'auteur le même jour**, ADR 0006 D3 amendé, questions ouvertes de
+      la spec tranchées, tâches 8, 9, 12 et 14 ajustées dans leurs issues (PR #692)
 - [ ] Tâche 8 — Émission d'une connexion MCP, client pré-enregistré (#647) — bloquée par : #646 —
       plan détaillé recommandé (étape 04)
 - [ ] Tâche 9 — Ouverture du corpus nominatif par la connexion MCP (#648) — bloquée par : #647

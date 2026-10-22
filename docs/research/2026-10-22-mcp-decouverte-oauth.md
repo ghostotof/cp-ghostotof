@@ -2,8 +2,8 @@
 
 - **Issue** : #646 (spec 0007, tâche 7, phase 2 du serveur MCP, ADR 0006)
 - **Date** : 2026-10-22
-- **Statut** : **note de recherche, recommandation sans décision.** La décision s'écrit dans l'ADR 0006
-  (amendement daté) et dans la spec 0007 une fois validée par l'auteur.
+- **Statut** : **note de recherche, recommandation validée par l'auteur le 2026-10-22**, telle quelle. La
+  décision est écrite dans l'ADR 0006 (D3, amendement du 2026-10-22) et dans la spec 0007.
 - **Question** (spec 0007, « Questions ouvertes », n° 1) : RFC 8414 et RFC 9728 placent leurs documents sous
   `/.well-known/…` à la racine du domaine, alors que l'Ingress n'envoie au backend que `/api`. Où publier les
   métadonnées pour que Claude et ChatGPT trouvent le serveur d'autorisation ?
