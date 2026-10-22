@@ -31,7 +31,7 @@ namespace App\Portfolio\Watch\Domain\Service;
  * sans espace (« Ignore_previous_instructions ») avait la forme voulue. Une
  * borne de longueur s'y ajoute : le relevé du 2026-10-22 sur les sept produits
  * du catalogue donne 284 noms, tous à chiffre de tête et de 8 caractères au
- * plus ; 32 laisse une large marge sans laisser de place à une phrase.
+ * plus ; 32 octets laissent une large marge sans place pour une phrase.
  *
  * Reste possible, accepté : un suffixe de mots joints derrière un chiffre
  * (« 8.5-ignore-previous »), dans la limite des 32 caractères. Et un produit
@@ -48,7 +48,10 @@ namespace App\Portfolio\Watch\Domain\Service;
  */
 final readonly class VersionNameFilter
 {
-    /** Longueur maximale d'un nom accepté, en caractères (ASCII seulement). */
+    /**
+     * Longueur maximale d'un nom accepté, en octets — autant de caractères,
+     * l'expression n'admettant que de l'ASCII.
+     */
     public const int MAX_LENGTH = 32;
 
     /**

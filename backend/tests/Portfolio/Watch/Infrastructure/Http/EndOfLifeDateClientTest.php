@@ -13,6 +13,7 @@ use Monolog\Handler\TestHandler;
 use Monolog\Logger;
 use Monolog\LogRecord;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Symfony\Component\HttpClient\Exception\TransportException;
 use Symfony\Component\HttpClient\MockHttpClient;
@@ -70,9 +71,9 @@ final class EndOfLifeDateClientTest extends TestCase
     /**
      * @param callable(string, string, array<string, mixed>): ResponseInterface|ResponseInterface $response
      */
-    private function client(callable|ResponseInterface $response): EndOfLifeDateClient
+    private function client(callable|ResponseInterface $response, LoggerInterface $logger = new NullLogger()): EndOfLifeDateClient
     {
-        return new EndOfLifeDateClient(new MockHttpClient($response), new NullLogger(), new ExternalUrlFilter(), new VersionNameFilter());
+        return new EndOfLifeDateClient(new MockHttpClient($response), $logger, new ExternalUrlFilter(), new VersionNameFilter());
     }
 
     public function testItMapsTheProductAndEveryReleaseCycle(): void
@@ -206,19 +207,13 @@ final class EndOfLifeDateClientTest extends TestCase
             self::PHP_PAYLOAD,
         );
         $logHandler = new TestHandler();
-        $client = new EndOfLifeDateClient(
-            new MockHttpClient(new MockResponse($payload)),
-            new Logger('test', [$logHandler]),
-            new ExternalUrlFilter(),
-            new VersionNameFilter(),
-        );
 
-        $client->fetchProduct('php');
+        $this->client(new MockResponse($payload), new Logger('test', [$logHandler]))->fetchProduct('php');
 
         $messages = array_map(static fn (LogRecord $record): string => $record->message, $logHandler->getRecords());
         self::assertSame([
-            'Cycle de vie ignoré : nom hors de la forme d\'un numéro de version.',
-            'Dernière version ignorée : nom hors de la forme d\'un numéro de version.',
+            "Cycle de vie ignoré : nom hors de la forme d'un numéro de version.",
+            "Dernière version ignorée : nom hors de la forme d'un numéro de version.",
         ], $messages);
         self::assertTrue($logHandler->hasWarningRecords());
         foreach ($logHandler->getRecords() as $record) {

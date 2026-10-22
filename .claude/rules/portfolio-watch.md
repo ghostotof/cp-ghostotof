@@ -71,7 +71,9 @@ paths:
     compromised dataset) **and at read** (`WatchProvider::productFrom()`), where it does what the write
     does: a refused cycle takes everything derived from it (status `unknown`, both dates, the latest
     version, `hasNewerPatch`), and `hasNewerPatch` is never served without a `latestVersion`.
-    **Accepted**: a suffix of joined words behind a digit (`8.5-ignore-previous`) within 32 characters;
+    **Accepted**: a snapshot written before the fix whose cycle is refused shows `unknown` until the
+    next refresh, losing an `eol` it may have carried — a status drawn from a hostile entry is not one
+    to republish; a suffix of joined words behind a digit (`8.5-ignore-previous`) within 32 characters;
     a product added later whose cycles the provider names otherwise (a space, a `/`, past 32) gets all
     its cycles dropped — `unknown` on `/stack`, a `warning` per refresh. `documentationUrl` keeps only
     `ExternalUrlFilter`: its path may still carry text, which the tool's description covers.

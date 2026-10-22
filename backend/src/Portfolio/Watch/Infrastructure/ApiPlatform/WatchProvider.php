@@ -171,24 +171,32 @@ final readonly class WatchProvider implements ProviderInterface
      */
     private function productFrom(string $slug, array $entry): WatchedProductResource
     {
+        $label = $this->readString($entry, 'label') ?? $slug;
+        $version = $this->readString($entry, 'version');
+        $documentationUrl = $this->urlFilter->keepIfSafe($this->readString($entry, 'documentationUrl'));
+
         $rawCycle = $this->readString($entry, 'cycle');
         $cycle = $this->versionNameFilter->keepIfWellFormed($rawCycle);
-        $cycleRefused = null !== $rawCycle && null === $cycle;
-        $latestVersion = $cycleRefused
-            ? null
-            : $this->versionNameFilter->keepIfWellFormed($this->readString($entry, 'latestVersion'));
+
+        if (null !== $rawCycle && null === $cycle) {
+            // Produit non rapproché : seule la version en service, la nôtre,
+            // et le lien, filtré à part, survivent au cycle refusé.
+            return new WatchedProductResource($slug, $label, $version, SupportStatus::UNKNOWN->value, null, null, null, null, false, $documentationUrl);
+        }
+
+        $latestVersion = $this->versionNameFilter->keepIfWellFormed($this->readString($entry, 'latestVersion'));
 
         return new WatchedProductResource(
             $slug,
-            $this->readString($entry, 'label') ?? $slug,
-            $this->readString($entry, 'version'),
-            $cycleRefused ? SupportStatus::UNKNOWN->value : ($this->readString($entry, 'status') ?? SupportStatus::UNKNOWN->value),
+            $label,
+            $version,
+            $this->readString($entry, 'status') ?? SupportStatus::UNKNOWN->value,
             $cycle,
-            $cycleRefused ? null : $this->readString($entry, 'endOfActiveSupportFrom'),
-            $cycleRefused ? null : $this->readString($entry, 'eolFrom'),
+            $this->readString($entry, 'endOfActiveSupportFrom'),
+            $this->readString($entry, 'eolFrom'),
             $latestVersion,
             null !== $latestVersion && true === ($entry['hasNewerPatch'] ?? null),
-            $this->urlFilter->keepIfSafe($this->readString($entry, 'documentationUrl')),
+            $documentationUrl,
         );
     }
 }

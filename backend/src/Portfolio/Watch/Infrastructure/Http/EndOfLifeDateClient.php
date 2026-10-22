@@ -209,25 +209,9 @@ final readonly class EndOfLifeDateClient implements ReleaseCycleSourceInterface
      */
     private function mapCycle(string $slug, array $release): ?ReleaseCycle
     {
-        $rawName = $this->readString($release, 'name');
-        if (null === $rawName) {
-            $this->logger->warning('Cycle de vie ignoré : entrée illisible.', ['slug' => $slug]);
-
-            return null;
-        }
-
-        $name = $this->versionNameFilter->keepIfWellFormed($rawName);
+        $name = $this->cycleName($slug, $release);
         if (null === $name) {
-            $this->logger->warning('Cycle de vie ignoré : nom hors de la forme d\'un numéro de version.', ['slug' => $slug]);
-
             return null;
-        }
-
-        $latest = $release['latest'] ?? null;
-        $rawLatestVersion = \is_array($latest) ? $this->readString($latest, 'name') : null;
-        $latestVersion = $this->versionNameFilter->keepIfWellFormed($rawLatestVersion);
-        if (null !== $rawLatestVersion && null === $latestVersion) {
-            $this->logger->warning('Dernière version ignorée : nom hors de la forme d\'un numéro de version.', ['slug' => $slug]);
         }
 
         return new ReleaseCycle(
@@ -237,8 +221,50 @@ final readonly class EndOfLifeDateClient implements ReleaseCycleSourceInterface
             $this->readDate($release, 'eoasFrom'),
             $this->readBool($release, 'isEol'),
             $this->readDate($release, 'eolFrom'),
-            $latestVersion,
+            $this->latestVersion($slug, $release),
         );
+    }
+
+    /**
+     * Le nom du cycle s'il est lisible et bien formé, `null` sinon, le motif
+     * journalisé.
+     *
+     * @param array<mixed> $release
+     */
+    private function cycleName(string $slug, array $release): ?string
+    {
+        $rawName = $this->readString($release, 'name');
+        if (null === $rawName) {
+            $this->logger->warning('Cycle de vie ignoré : entrée illisible.', ['slug' => $slug]);
+
+            return null;
+        }
+
+        $name = $this->versionNameFilter->keepIfWellFormed($rawName);
+        if (null === $name) {
+            $this->logger->warning("Cycle de vie ignoré : nom hors de la forme d'un numéro de version.", ['slug' => $slug]);
+        }
+
+        return $name;
+    }
+
+    /**
+     * La dernière version du cycle si elle est bien formée, `null` sinon ;
+     * seul un refus est journalisé, une absence est ordinaire.
+     *
+     * @param array<mixed> $release
+     */
+    private function latestVersion(string $slug, array $release): ?string
+    {
+        $latest = $release['latest'] ?? null;
+        $rawLatestVersion = \is_array($latest) ? $this->readString($latest, 'name') : null;
+        $latestVersion = $this->versionNameFilter->keepIfWellFormed($rawLatestVersion);
+
+        if (null !== $rawLatestVersion && null === $latestVersion) {
+            $this->logger->warning("Dernière version ignorée : nom hors de la forme d'un numéro de version.", ['slug' => $slug]);
+        }
+
+        return $latestVersion;
     }
 
 
