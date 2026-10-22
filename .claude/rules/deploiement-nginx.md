@@ -181,7 +181,8 @@ paths:
   refuses a superset of what PHP matches (lowercased, cut at the first `;`, `,` or space). Guard:
   `tools/check-backend-nginx-rate-limits.sh`, `CONTENT_TYPE_CASES` (both types, mixed case, a leading tab,
   four methods, the two `fastcgi_pass` locations, plus JSON and bodiless witnesses that must pass); the `map`
-  is covered by its `http`-level mirror check.
+  is covered by its `http`-level mirror check. PHP itself is the second barrier (`.claude/rules/images-docker.md`,
+  « PHP parses no form body »).
 - **nginx rate limits need `real_ip`** (audit C7). `limit_req_zone` keys on `$binary_remote_addr`, and behind
   the ingress the sidecar's TCP peer is the ingress-nginx pod — without the `set_real_ip_from` block, the whole
   internet shares one counter, which is a self-inflicted DoS. The trusted ranges mirror Symfony's

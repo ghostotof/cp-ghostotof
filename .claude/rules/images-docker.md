@@ -80,6 +80,22 @@ prod run the identical PHP engine:
   `www.conf`) and the `docker-php-ext-*.ini` that `docker-php-ext-enable` writes (one `extension=`
   line each), a `-n`/`-c`/`-y`/`-p` in a pod's command, keys an ExternalSecret would import by `dataFrom`.
 
+- **PHP parses no form body, in every image** (issue #686, follow-up of CVE-2026-109618): `php.prod.ini`
+  and `php.dev.ini` set `enable_post_data_reading = Off`, `max_multipart_body_parts = 0`,
+  `file_uploads = Off` and `post_max_size = 1M` (nginx's `client_max_body_size`), and no longer name
+  `upload_max_filesize`. The second barrier behind the sidecar's 415 (`.claude/rules/deploiement-nginx.md`,
+  « Form bodies never reach PHP »), each directive closing a measured path: `enable_post_data_reading` stops the
+  parsing at the start of a POST but **not** `request_parse_body()`, which Symfony calls for PUT, DELETE, PATCH
+  and QUERY in `Request::createFromGlobals()` — `max_multipart_body_parts = 0` makes that path refuse any
+  multipart part (a `RequestParseBodyException` Symfony catches); `file_uploads = Off` alone only drops the file
+  parts, fields are still parsed. Left, accepted: an urlencoded PUT/DELETE/PATCH body is still parsed by that
+  path, outside the advisory's multipart parser, bounded by `post_max_size` and `max_input_vars`.
+  `max_input_vars` and `max_input_nesting_level` keep PHP's defaults on purpose — they also bound `$_GET` and
+  `$_COOKIE`. `FormBodyParsingDisabledTest` pins the four values in both files, the absence of
+  `upload_max_filesize`, and that no other configuration file of the deployed images names them (the model of
+  `SessionUploadProgressDisabledTest`). The dev container picks `php.dev.ini` up at `make build` (it is copied,
+  not mounted).
+
 The build context is the **repo root**, so `.dockerignore` is what keeps things out of it, and two entries
 are there for secrecy rather than size (audit A13/A22): `backend/config/jwt/` — a workstation that has
 generated its dev RS256 keypair would otherwise ship `private.pem` in an image layer, and the deployed
