@@ -9,6 +9,7 @@ use ApiPlatform\State\ProviderInterface;
 use App\Portfolio\Watch\Domain\Repository\WatchSnapshotRepositoryInterface;
 use App\Portfolio\Watch\Domain\Service\ExternalUrlFilter;
 use App\Portfolio\Watch\Domain\Service\SnapshotFreshnessCalculator;
+use App\Portfolio\Watch\Domain\Service\VersionNameFilter;
 use App\Portfolio\Watch\Domain\ValueObject\SnapshotFreshness;
 use App\Portfolio\Watch\Domain\ValueObject\SupportStatus;
 use App\Portfolio\Watch\Domain\ValueObject\WatchSnapshotType;
@@ -43,6 +44,7 @@ final readonly class WatchProvider implements ProviderInterface
         private WatchSnapshotRepositoryInterface $snapshotRepository,
         private SnapshotFreshnessCalculator $freshnessCalculator,
         private ExternalUrlFilter $urlFilter,
+        private VersionNameFilter $versionNameFilter,
     ) {
     }
 
@@ -148,18 +150,20 @@ final readonly class WatchProvider implements ProviderInterface
                 $this->readString($entry, 'label') ?? $slug,
                 $this->readString($entry, 'version'),
                 $this->readString($entry, 'status') ?? SupportStatus::UNKNOWN->value,
-                $this->readString($entry, 'cycle'),
+                // Seconde barrière sur les trois textes du tiers, et non
+                // redondance : le filtrage principal est posé à l'écriture, dans
+                // le client. Mais un snapshot écrit avant ces correctifs (lien :
+                // revue du 2026-09-08 ; cycle et dernière version : #658)
+                // contient encore la valeur brute du tiers, et c'est cette
+                // lecture-ci qui la republierait — vers la page comme vers le
+                // modèle des clients MCP — jusqu'au prochain rafraîchissement.
+                // Cohérent, du reste, avec la doctrine énoncée plus haut : ce
+                // payload est une donnée non fiable.
+                $this->versionNameFilter->keepIfWellFormed($this->readString($entry, 'cycle')),
                 $this->readString($entry, 'endOfActiveSupportFrom'),
                 $this->readString($entry, 'eolFrom'),
-                $this->readString($entry, 'latestVersion'),
+                $this->versionNameFilter->keepIfWellFormed($this->readString($entry, 'latestVersion')),
                 true === ($entry['hasNewerPatch'] ?? null),
-                // Seconde barrière, et non redondance : le filtrage principal
-                // est posé à l'écriture, dans le client. Mais un snapshot écrit
-                // avant ce correctif contient encore la valeur brute du tiers,
-                // et c'est cette lecture-ci qui la republierait — jusqu'au
-                // prochain rafraîchissement. Cohérent, du reste, avec la
-                // doctrine énoncée plus haut : ce payload est une donnée non
-                // fiable.
                 $this->urlFilter->keepIfSafe($this->readString($entry, 'documentationUrl')),
             );
         }
