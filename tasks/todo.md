@@ -50,6 +50,10 @@ phase 1 parte en release seule ; puis au merge de clôture, qui archive la spec 
 - [ ] **Reste de la release, à faire par l'auteur** : Claude Code branché en préprod (en-tête Basic,
       secret hors session) ; claude.ai, ChatGPT, Cursor et PhpStorm en prod ; les 429 de la zone `mcp` la
       première semaine (jusqu'au 2026-10-28).
+      - 2026-10-22 : l'auteur a branché un Claude Code (environnement non précisé) : outils servis, corpus
+        nominatif refusé, comme attendu en phase 1.
+      - 2026-10-22, 429 de la zone `mcp` relevés dans les journaux nginx des deux pods de prod depuis la
+        release : aucun ; le seul trafic MCP est le smoke `curl` du 2026-10-21. `/stack` affiche PHP 8.5.12.
 - [x] Release (détail d'origine) : aucune variable d'hôte à poser — `allowed_hosts` dérive d'`APP_FRONTEND_BASE_URL`
       (`mcp.yaml`), déjà posée par overlay ; l'`initialize` du smoke MCP sur l'hôte public le prouve
       (un 403 dirait qu'il manque) ; smoke 429 lu ; Claude Code branché en préprod (en-tête Basic) ;
@@ -61,7 +65,9 @@ phase 1 parte en release seule ; puis au merge de clôture, qui archive la spec 
 ## Phase 2 — connexion MCP (palier de confiance)
 
 - [ ] Tâche 7 — Recherche : découverte OAuth derrière l'Ingress et autorisation différée (#646) —
-      bloquée par : #640
+      bloquée par : #640 — **2026-10-22 : deux notes sous `docs/research/` (sources et expérience Claude
+      Code), recommandation écrite, décision de l'auteur attendue** avant l'amendement de l'ADR 0006 et de la
+      spec, puis la relecture des tâches 8, 9 et 14
 - [ ] Tâche 8 — Émission d'une connexion MCP, client pré-enregistré (#647) — bloquée par : #646 —
       plan détaillé recommandé (étape 04)
 - [ ] Tâche 9 — Ouverture du corpus nominatif par la connexion MCP (#648) — bloquée par : #647
