@@ -8,6 +8,7 @@ use App\Portfolio\Watch\Domain\Exception\ReleaseCycleProductNotFoundException;
 use App\Portfolio\Watch\Domain\Exception\ReleaseCycleSourceUnavailableException;
 use App\Portfolio\Watch\Domain\Service\ExternalUrlFilter;
 use App\Portfolio\Watch\Domain\Service\ReleaseCycleSourceInterface;
+use App\Portfolio\Watch\Domain\Service\VersionNameFilter;
 use App\Portfolio\Watch\Domain\ValueObject\ProductReleaseCycles;
 use App\Portfolio\Watch\Domain\ValueObject\ReleaseCycle;
 use App\Portfolio\Watch\Infrastructure\ReadsUntrustedArrays;
@@ -64,6 +65,7 @@ final readonly class EndOfLifeDateClient implements ReleaseCycleSourceInterface
         private HttpClientInterface $httpClient,
         private LoggerInterface $logger,
         private ExternalUrlFilter $urlFilter,
+        private VersionNameFilter $versionNameFilter,
     ) {
     }
 
@@ -168,7 +170,8 @@ final readonly class EndOfLifeDateClient implements ReleaseCycleSourceInterface
 
             $cycle = $this->mapCycle($release);
             if (null === $cycle) {
-                // Une entrée illisible au milieu d'une réponse valide est
+                // Une entrée illisible, ou dont le nom n'a pas la forme d'un
+                // numéro de version (#658), au milieu d'une réponse valide est
                 // ignorée plutôt que fatale : mieux vaut afficher quatre cycles
                 // sur cinq qu'une page en erreur.
                 $this->logger->warning('Cycle de vie ignoré : entrée illisible.', ['slug' => $slug]);
@@ -194,11 +197,17 @@ final readonly class EndOfLifeDateClient implements ReleaseCycleSourceInterface
     }
 
     /**
+     * Le nom du cycle et celui de sa dernière version sont du texte du jeu de
+     * données ouvert, lu jusque par le modèle des clients MCP : seule une forme
+     * de numéro de version passe (issue #658). Un nom refusé fait tomber le
+     * cycle, qu'on ne saurait plus rapprocher de la version en service ; une
+     * dernière version refusée tombe seule.
+     *
      * @param array<mixed> $release
      */
     private function mapCycle(array $release): ?ReleaseCycle
     {
-        $name = $this->readString($release, 'name');
+        $name = $this->versionNameFilter->keepIfWellFormed($this->readString($release, 'name'));
         if (null === $name) {
             return null;
         }
@@ -212,7 +221,7 @@ final readonly class EndOfLifeDateClient implements ReleaseCycleSourceInterface
             $this->readDate($release, 'eoasFrom'),
             $this->readBool($release, 'isEol'),
             $this->readDate($release, 'eolFrom'),
-            \is_array($latest) ? $this->readString($latest, 'name') : null,
+            $this->versionNameFilter->keepIfWellFormed(\is_array($latest) ? $this->readString($latest, 'name') : null),
         );
     }
 
