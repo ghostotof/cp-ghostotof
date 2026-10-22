@@ -5,12 +5,15 @@
 
 - Statut : **accepté** (2026-10-19), à mettre en œuvre — cadrage de l'issue #379, mise en œuvre par
   la spec 0007 (`.claude/specs/0007-mcp-server.md`), en deux phases (paliers anonyme et de base, puis
-  connexion MCP) ; amendé le 2026-10-20 (D7 : la révision sans session est servie, #664)
+  connexion MCP) ; amendé le 2026-10-20 (D7 : la révision sans session est servie, #664), le
+  2026-10-21 (D7 : `subscriptions/listen` refusé, #675) et le 2026-10-22 (D3 : découverte OAuth et
+  autorisation différée, #646)
 - Date : 2026-10-19
 - Portée : `config/packages/mcp.yaml` (nouveau), `config/packages/security.yaml` (firewall dédié),
   `CsrfCookieRequestSubscriber` (une exclusion), `tests/Security/ApiRouteExposureTest.php`
   (`PUBLIC_PATHS`), un test d'exposition MCP symétrique (nouveau), les deux configurations nginx
-  (zones `mcp` et OAuth), l'Ingress de préprod (phase 2), le journal d'audit de
+  (zones `mcp` et OAuth), l'Ingress de préprod (phase 2), un objet Ingress pour les deux documents
+  `/.well-known/` et leur entrée dans `RouterScopeTest` (`NON_API_PATHS`, phase 2), le journal d'audit de
   `Security/Authentication`, le frontend (page « Brancher votre assistant », puis consentement et
   « Mes connexions MCP ») ; **amende** l'ADR 0003 (D1) et l'ADR 0004 (D1, D3, alternatives
   écartées) ; objectifs n°8 (sécurité), n°9 (rien de nominatif sans `ROLE_TRUSTED`), n°11 et n°12
@@ -111,6 +114,46 @@ audience RFC 8707, page de consentement.
 - **Durées de départ**, de la configuration et non de la décision : jeton d'accès 1 h, jeton de
   rafraîchissement 30 jours avec rotation à chaque usage (la spécification l'exige des clients
   publics), connexion expirée après 30 jours sans usage et au plus tard 90 jours après son octroi.
+
+*Amendé le 2026-10-22 (#646).* Les deux questions ouvertes de la spec 0007 sont tranchées par la
+recherche de la tâche 7 (`docs/research/2026-10-22-mcp-decouverte-oauth.md` et
+`docs/research/2026-10-22-mcp-autorisation-differee.md`, expérience rejouable contre Claude Code).
+
+- **Découverte : les deux documents à la racine, aux URL canoniques.** L'émetteur est
+  `https://<site>/api/oauth` ; ses points d'autorisation, de jeton et de révocation restent sous
+  `/api/oauth/…`. Les métadonnées sont servies par le backend à deux chemins exacts hors `/api` :
+  `/.well-known/oauth-protected-resource/api/mcp` (RFC 9728) et
+  `/.well-known/oauth-authorization-server/api/oauth` (RFC 8414 pur : S256, `none` comme méthode
+  d'authentification au point de jeton, `client_id_metadata_document_supported`,
+  `authorization_response_iss_parameter_supported`, aucun `registration_endpoint`). Un objet Ingress
+  dédié les envoie au backend en chemins `Exact` ; chacun a son entrée justifiée dans `NON_API_PATHS`,
+  son firewall et sa règle `access_control`. Le pointeur `resource_metadata` de chaque 401 désigne la
+  même URL : une seule adresse par document, aucun miroir sous `/api`. **Aucun document OIDC** n'est
+  publié. Le 404 du frontend sur tout autre chemin `/.well-known/` devient un invariant vérifié : une
+  page HTML en 200 y arrête la découverte des clients. Pourquoi ce coût, refusé pour `/mcp` (alternatives
+  écartées) : le pointeur seul ne suffit pas. Mesuré sur Claude Code, un `claude mcp login` lancé avant
+  tout refus part de la racine, ne trouve rien et retombe sur un `POST /register` à la racine ; c'est
+  aussi la seule configuration que documentent Claude et ChatGPT. Deux documents statiques en lecture
+  ne coûtent pas ce que coûterait le point d'accès du protocole.
+- **Autorisation différée : le 401 par défaut, l'erreur d'outil pour ChatGPT.** Sans jeton (ou au jeton
+  refusé), l'appel de l'outil nominatif reçoit, avant le SDK et dans les deux ères du protocole, un 401
+  `WWW-Authenticate: Bearer resource_metadata="…", scope="nominative:read"` (plus
+  `error="invalid_token"` quand un jeton présenté est refusé). C'est la forme de la spécification, de
+  l'extension MCP Apps et de Claude, qui ignore une erreur d'outil portant `_meta`. Quand la requête
+  porte au moins une clé `_meta` préfixée `openai/`, le point avant le SDK la laisse passer, et l'outil
+  rend un résultat `isError` portant `_meta["mcp/www_authenticate"]` (le même défi, complété de
+  `error="insufficient_scope"` et d'un `error_description`) et un texte qui dit à la personne de
+  connecter son compte : c'est ce que documente ChatGPT. Les outils déclarent leurs `securitySchemes`
+  (`noauth`, ou `oauth2` avec `nominative:read`) ; leur place, en `_meta` seul ou aussi au premier
+  niveau de l'outil, se tranche à la tâche 9.
+- **Ce critère est déclaratif, et c'est accepté parce qu'il ne décide d'aucun accès.** Aucun critère
+  fiable, non déclaratif et commun aux deux clients n'existe ; les seuls non déclaratifs (certificat
+  client mTLS d'OpenAI, plages d'IP publiées) sont propres à un fournisseur et coûteux. Le marqueur ne
+  choisit que la **forme** du refus : l'ouverture du corpus reste décidée par le jeton seul (D4), et un
+  test le fixe. Un client mal classé voit un refus sous l'autre forme, dont le texte dit quoi faire.
+- **À vérifier en préprod** (tâche 14) : les URL réellement demandées par claude.ai, Claude Code et
+  ChatGPT, la carte de connexion de chacun, et ce que ChatGPT fait d'un 401 — s'il le traite, la branche
+  `openai/` peut disparaître.
 
 ### D4 — L'identité vient du firewall Symfony, vérifiée en base à chaque requête
 
@@ -219,6 +262,8 @@ effet à l'exception du nom du serveur.
 - Un appel à un modèle depuis le serveur MCP.
 - Un cookie accepté par le firewall de `/api/mcp`, ou une identité lue ailleurs que dans `Security`.
 - Un second chemin d'authentification vers le corpus nominatif à côté d'OAuth.
+- Un marqueur déclaratif de la requête (`_meta["openai/…"]`, `clientInfo`, `User-Agent`) qui décide
+  d'un accès, au lieu de la seule forme d'un refus.
 - Une connexion MCP qui survit à sa révocation ou à la perte du palier de confiance.
 - Une lecture nominative absente du journal d'audit.
 - Le nom de l'auteur dans ce que le serveur publie de lui-même, hors des exceptions listées sous D8.
@@ -236,7 +281,12 @@ effet à l'exception du nom du serveur.
 - **Un serveur d'autorisation OAuth** dans le backend (phase 2) : tables de clients, de codes et de
   jetons, deux pages frontend (consentement, « Mes connexions MCP »), une vue backoffice de toutes
   les connexions, un CronJob de purge des jetons expirés, une zone nginx.
-- **La préprod lève Basic Auth sur les seuls chemins MCP et OAuth**, pour la phase 2 : Basic Auth et
+- **Deux routes publiques hors `/api`** en phase 2, les documents de métadonnées OAuth (D3, amendement
+  du 2026-10-22), chacune avec son entrée justifiée dans `NON_API_PATHS`, son firewall et sa règle
+  `access_control`, et un objet Ingress à deux chemins `Exact` dans chaque environnement ; le 404 du
+  frontend sur le reste de `/.well-known/` devient un invariant vérifié.
+- **La préprod lève Basic Auth sur les seuls chemins MCP et OAuth** (les deux documents
+  `/.well-known/` compris), pour la phase 2 : Basic Auth et
   Bearer se disputent l'en-tête `Authorization`, et aucun client ne ferait d'OAuth derrière. Ce qui y
   est servi sans jeton est publiable par construction, et le nominatif exige un compte de préprod ;
   mais du code non encore publié devient joignable sur ces chemins. À revoir quand l'accès VPN à la
@@ -271,6 +321,14 @@ effet à l'exception du nom du serveur.
   révocation immédiate.
 - **`/mcp` hors de `/api`** : l'URL conventionnelle, mais une règle d'Ingress par environnement, une
   entrée `NON_API_PATHS` avec son propre firewall et son `access_control`, et le sidecar à adapter.
+- **Les métadonnées OAuth sous `/api` seul**, trouvées par le pointeur `resource_metadata` et un émetteur
+  à chemin, sans toucher à l'Ingress (2026-10-22) : suffit quand un refus précède la connexion, mais un
+  `claude mcp login` à froid part de la racine et échoue. Un document OIDC à l'émetteur, que Claude Code
+  essaie aussi, exige `jwks_uri` et les champs des jetons d'identité d'un fournisseur qui n'en émet pas.
+- **Une seule forme de refus pour l'autorisation différée** (2026-10-22) : le 401 seul laisse ChatGPT
+  sans écran de liaison selon sa documentation ; l'erreur d'outil seule ne déclenche rien chez Claude.
+  **Un critère non déclaratif** pour les départager (mTLS d'OpenAI, plages d'IP) : une terminaison TLS
+  ou des listes à tenir pour un choix qui ne décide d'aucun accès.
 - **La seule révision sans session du protocole (2026-07-28)** : rien à stocker, mais les clients qui
   ne la parlent pas encore seraient refusés.
 - **Le PDF du CV en ressource binaire** : un second format à garder synchrone avec le corpus, et un
