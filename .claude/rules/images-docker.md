@@ -80,21 +80,31 @@ prod run the identical PHP engine:
   `www.conf`) and the `docker-php-ext-*.ini` that `docker-php-ext-enable` writes (one `extension=`
   line each), a `-n`/`-c`/`-y`/`-p` in a pod's command, keys an ExternalSecret would import by `dataFrom`.
 
-- **PHP parses no form body, in every image** (issue #686, follow-up of CVE-2026-109618): `php.prod.ini`
-  and `php.dev.ini` set `enable_post_data_reading = Off`, `max_multipart_body_parts = 0`,
-  `file_uploads = Off` and `post_max_size = 1M` (nginx's `client_max_body_size`), and no longer name
-  `upload_max_filesize`. The second barrier behind the sidecar's 415 (`.claude/rules/deploiement-nginx.md`,
-  « Form bodies never reach PHP »), each directive closing a measured path: `enable_post_data_reading` stops the
-  parsing at the start of a POST but **not** `request_parse_body()`, which Symfony calls for PUT, DELETE, PATCH
-  and QUERY in `Request::createFromGlobals()` — `max_multipart_body_parts = 0` makes that path refuse any
-  multipart part (a `RequestParseBodyException` Symfony catches); `file_uploads = Off` alone only drops the file
-  parts, fields are still parsed. Left, accepted: an urlencoded PUT/DELETE/PATCH body is still parsed by that
-  path, outside the advisory's multipart parser, bounded by `post_max_size` and `max_input_vars`.
-  `max_input_vars` and `max_input_nesting_level` keep PHP's defaults on purpose — they also bound `$_GET` and
-  `$_COOKIE`. `FormBodyParsingDisabledTest` pins the four values in both files, the absence of
-  `upload_max_filesize`, and that no other configuration file of the deployed images names them (the model of
-  `SessionUploadProgressDisabledTest`). The dev container picks `php.dev.ini` up at `make build` (it is copied,
-  not mounted).
+- **PHP parses no multipart body, in every image** (issue #686, follow-up of CVE-2026-109618): `php.prod.ini`
+  and `php.dev.ini` set `max_multipart_body_parts = 0`, `file_uploads = Off`, `post_max_size = 1M` (nginx's
+  `client_max_body_size`) and `user_ini.filename =` (empty), and name neither `upload_max_filesize` nor
+  `enable_post_data_reading`. The second barrier behind the sidecar's 415 (`.claude/rules/deploiement-nginx.md`,
+  « Multipart bodies never reach PHP »). `max_multipart_body_parts = 0` refuses multipart at its first named
+  field on **both** paths PHP parses it on: the start of a POST, and `request_parse_body()`, which Symfony calls
+  for PUT, DELETE, PATCH and QUERY in `Request::createFromGlobals()` (a `RequestParseBodyException` Symfony
+  catches) — measured on PHP 8.5; the first part's headers and parts without `Content-Disposition` are still
+  walked, bounded by `post_max_size` (audit of #686, `main/rfc1867.c`). `file_uploads = Off` drops the file parts
+  (no temporary file); alone it leaves fields parsed. `post_max_size` bounds form parsing only: a JSON body read
+  from `php://input` was never bounded by it (measured: 3 MB read under `1M`), nginx is its only bound. The empty
+  `user_ini.filename` keeps a `.user.ini` from changing those `PHP_INI_PERDIR` settings (closed in production by
+  the read-only root, open in dev where `public/` is mounted). **`application/x-www-form-urlencoded` stays parsed,
+  on purpose** (decided on 2026-10-22, review of #686): not the advisory's parser, and the token endpoint of
+  phase 2's OAuth 2.1 server (ADR 0006 D3) reads it from `$_POST` — hence no `enable_post_data_reading = Off`,
+  which would empty `$_POST` and close nothing `max_multipart_body_parts` does not; never add it back without
+  revisiting that endpoint. `max_input_vars` and `max_input_nesting_level` keep PHP's defaults: they also bound
+  `$_GET` and `$_COOKIE`. `FormBodyParsingDisabledTest` pins the values in both files, the two absent
+  directives, that no other configuration file of the deployed images (exact name, `php_admin_value[…]` form
+  included) nor any manifest of `k8s/` names them (Adminer's own image exempted), and **measures the effect**:
+  PHP's built-in server under each file alone (`-n -c`, launched through `ChildPhpProcess`) with the router
+  `tests/Security/Fixtures/form-body-probe.php` — multipart refused on POST, PUT, DELETE and PATCH, JSON and
+  urlencoded still read. The built-in server answers QUERY with a 501 without running the router, so QUERY is
+  probed by nginx's guard only. The dev container picks `php.dev.ini` up at `make build` (it is copied, not
+  mounted).
 
 The build context is the **repo root**, so `.dockerignore` is what keeps things out of it, and two entries
 are there for secrecy rather than size (audit A13/A22): `backend/config/jwt/` — a workstation that has
