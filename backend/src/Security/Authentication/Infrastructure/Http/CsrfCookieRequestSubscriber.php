@@ -68,6 +68,16 @@ final readonly class CsrfCookieRequestSubscriber
      *   intersite portant le BEARER d'une personne de confiance n'y emprunte
      *   aucune identité. Chemin EXACT, comme les précédents.
      *
+     * - /api/oauth/token et /api/oauth/revoke (#647, RFC 6749 §3.2, RFC 7009) :
+     *   appelés par le client MCP, hors navigateur, qui ne porte aucun jeton
+     *   XSRF. Même raisonnement que /api/mcp : l'exclusion n'est sûre que parce
+     *   que leur firewall `oauth` (security.yaml) n'a aucun authentificateur et
+     *   ne lit aucun cookie — une requête intersite portant le BEARER d'une
+     *   personne n'y emprunte aucune identité, et n'a rien à faire agir :
+     *   échanger un code exige son vérificateur PKCE, révoquer un jeton exige
+     *   le jeton. Le consentement (/api/oauth/consent), qui lit la personne,
+     *   reste sous la garde. Chemins EXACTS.
+     *
      * /api/login_check et /api/account/base-access POSENT un cookie BEARER :
      * être hors double-submit ne les met pas hors CSRF pour autant (login-CSRF,
      * issue #76). Elles sont gardées par LoginCsrfRequestListener, qui exige un
@@ -80,6 +90,8 @@ final readonly class CsrfCookieRequestSubscriber
         '/api/account/password-setup',
         '/api/account/password-setup/validate',
         McpEndpoint::PATH,
+        '/api/oauth/token',
+        '/api/oauth/revoke',
     ];
 
     // Le nom vient de la fabrique qui pose le cookie (issue #87) : lu et écrit

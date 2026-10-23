@@ -58,13 +58,6 @@ final readonly class AuthorizationRequestValidator implements AuthorizationReque
     /** Les paramètres que league ou ce validateur lisent : chacun doit être une chaîne. */
     public const array EXPECTED_PARAMETERS = ['response_type', 'client_id', 'redirect_uri', 'scope', 'state', 'code_challenge', 'code_challenge_method', 'resource'];
 
-    /**
-     * Le code de l'exception de league, qui ne sert qu'à elle : celui de
-     * `invalid_request`, faute d'un code propre à RFC 8707. Jamais rendu au
-     * client, qui lit `error`.
-     */
-    private const int INVALID_TARGET_CODE = 3;
-
     public function __construct(
         private AuthorizationServer $server,
         private OAuthEndpoints $endpoints,
@@ -161,14 +154,7 @@ final readonly class AuthorizationRequestValidator implements AuthorizationReque
             $redirectUri .= (str_contains($redirectUri, '?') ? '&' : '?').http_build_query(['state' => $state]);
         }
 
-        return new OAuthServerException(
-            'The requested resource is invalid, missing, unknown, or malformed.',
-            self::INVALID_TARGET_CODE,
-            'invalid_target',
-            400,
-            'Check the `resource` parameter: it must be the URL of this site\'s MCP server.',
-            $redirectUri,
-        );
+        return InvalidTarget::refusal($redirectUri);
     }
 
     private function scopeOf(AuthorizationRequestInterface $authorization): string
