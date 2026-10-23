@@ -105,7 +105,10 @@ prod run the identical PHP engine:
   `tests/Security/Fixtures/form-body-probe.php` — multipart refused on POST, PUT, DELETE and PATCH, JSON and
   urlencoded still read — and a witness under PHP's defaults (`-n` alone) sees multipart parsed on both paths,
   so a blind probe cannot pass for a closed parser. The server's port is chosen free, then retried on another
-  if taken before it binds. The built-in server answers QUERY with a 501 without running the router, so QUERY is
+  if taken before it binds. The probe runs with `-d opcache.preload=`: the built-in server (`cli-server` SAPI)
+  runs `php.prod.ini`'s preload at startup — `opcache.enable_cli = 0` only covers the `cli` SAPI, measured —, and
+  outside the image the file's path (`/var/www/backend/config/preload.php`) is missing: on the CI runner PHP
+  died before listening (first Pipeline of PR #694, green in the container). The built-in server answers QUERY with a 501 without running the router, so QUERY is
   probed by nginx's guard only. The dev container picks `php.dev.ini` up at `make build` (it is copied, not
   mounted).
 

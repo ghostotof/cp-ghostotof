@@ -289,10 +289,19 @@ final class FormBodyParsingDisabledTest extends TestCase
      * intégrées de PHP si `null`) et rend son URL. Le port, libre quand on le
      * choisit, peut être pris avant que le serveur s'y lie : celui-ci s'arrête
      * alors aussitôt, et l'on recommence sur un autre.
+     *
+     * Le préchargement est neutralisé (`-d opcache.preload=`, qui l'emporte sur
+     * le fichier) : `php.prod.ini` nomme `/var/www/backend/config/preload.php`,
+     * le chemin de l'image, et le serveur intégré l'exécute au démarrage —
+     * `opcache.enable_cli = 0` ne vaut que pour la SAPI `cli`, pas pour
+     * `cli-server` (mesuré). Hors du conteneur, sur le runner de la CI, le
+     * fichier manque et PHP s'arrête en erreur fatale avant d'écouter ; dans
+     * le conteneur, la sonde chargeait le conteneur DI de Symfony pour rien.
+     * Le préchargement ne touche pas l'analyse des corps, seule mesurée ici.
      */
     private function startServer(?string $file): string
     {
-        $iniOptions = null === $file ? [] : ['-c', RepositoryFiles::repository($file)];
+        $iniOptions = null === $file ? [] : ['-c', RepositoryFiles::repository($file), '-d', 'opcache.preload='];
         for ($start = 0; $start < 3; ++$start) {
             $address = $this->freeAddress();
             $arguments = ['-n', ...$iniOptions, '-S', $address, __DIR__.'/Fixtures/form-body-probe.php'];
