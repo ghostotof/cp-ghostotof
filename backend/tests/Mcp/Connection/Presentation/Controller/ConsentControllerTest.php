@@ -255,7 +255,10 @@ final class ConsentControllerTest extends WebTestCase
         self::assertSame(0, $this->countRows('SELECT COUNT(*) FROM mcp_connection'));
     }
 
-    /** Une mutation sans l'en-tête du double-submit CSRF : refusée, même au palier de confiance. */
+    /**
+     * Une mutation sans l'en-tête du double-submit CSRF : refusée, même au
+     * palier de confiance — et par la garde CSRF, qui le trace.
+     */
     public function testAnApprovalWithoutTheCsrfHeaderIsForbidden(): void
     {
         $this->loginAs(self::TRUSTED_USERNAME, [CpgUser::ROLE_TRUSTED]);
@@ -263,6 +266,8 @@ final class ConsentControllerTest extends WebTestCase
         $this->post(['approved' => true, ...$this->decisionBody()], null);
 
         self::assertSame(Response::HTTP_FORBIDDEN, $this->client->getResponse()->getStatusCode());
+        $rejection = self::singleSecurityAuditEvent('csrf-rejected');
+        self::assertSame(self::PATH, $rejection['path'] ?? null);
         self::assertSame(0, $this->countRows('SELECT COUNT(*) FROM mcp_connection'));
     }
 
@@ -284,6 +289,9 @@ final class ConsentControllerTest extends WebTestCase
 
         $this->post(['approved' => true, ...$this->decisionBody()], $xsrfToken);
         self::assertSame($status, $this->client->getResponse()->getStatusCode(), 'POST');
+        // L'en-tête XSRF est valide : le refus est celui de l'access_control,
+        // jamais celui de la garde CSRF, qui l'aurait tracé (`csrf-rejected`).
+        self::assertSame([], self::securityAuditEvents('csrf-rejected'), 'Le POST doit passer la garde CSRF et buter sur l\'access_control.');
         self::assertSame(0, $this->countRows('SELECT COUNT(*) FROM mcp_connection'));
     }
 

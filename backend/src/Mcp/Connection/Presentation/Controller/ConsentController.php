@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Mcp\Connection\Presentation\Controller;
 
-use App\Mcp\Connection\Application\ConsentDecision;
 use App\Mcp\Connection\Application\ConsentServiceInterface;
+use App\Mcp\Connection\Presentation\Dto\ConsentRequest;
 use App\Security\User\Domain\Entity\CpgUser;
 use Symfony\Bridge\PsrHttpMessage\HttpMessageFactoryInterface;
 use Symfony\Bundle\SecurityBundle\Security;
@@ -36,8 +36,9 @@ use Symfony\Component\Routing\Attribute\Route;
  * jamais une redirection.
  *
  * Léger par construction : conversion PSR-7 de la requête (le pont du bundle
- * MCP, comme AuthorizeController), validation du corps (MapRequestPayload),
- * appel de l'interface, mise en forme. Ni l'une ni l'autre réponse ne se garde
+ * MCP, comme AuthorizeController), validation du corps (MapRequestPayload,
+ * ConsentRequest) puis sa conversion en commande (ConsentDecision), appel de
+ * l'interface, mise en forme. Ni l'une ni l'autre réponse ne se garde
  * en cache : le résumé porte `state` et le défi PKCE, la redirection le code.
  */
 final readonly class ConsentController
@@ -78,7 +79,7 @@ final readonly class ConsentController
     // JSON seulement : un autre format (formulaire, XML) serait sinon
     // désérialisé et validé, une surface dont l'endpoint n'a aucun usage (415).
     #[Route('/api/oauth/consent', name: 'oauth_consent_decide', methods: ['POST'])]
-    public function decide(#[MapRequestPayload(acceptFormat: 'json')] ConsentDecision $decision): JsonResponse
+    public function decide(#[MapRequestPayload(acceptFormat: 'json')] ConsentRequest $request): JsonResponse
     {
         // Un CpgUser par construction : l'access_control exige ROLE_TRUSTED,
         // que le jeton du palier de base ne porte jamais
@@ -86,7 +87,7 @@ final readonly class ConsentController
         /** @var CpgUser $account */
         $account = $this->security->getUser();
 
-        return $this->notStored(new JsonResponse(['redirectUri' => $this->consent->decide($decision, $account)]));
+        return $this->notStored(new JsonResponse(['redirectUri' => $this->consent->decide($request->toDecision(), $account)]));
     }
 
     private function notStored(JsonResponse $response): JsonResponse

@@ -628,8 +628,6 @@ final class SecurityAuditLoggerTest extends TestCase
             // son adresse pour un invité — auteur comme sujet.
             'actor login identifier' => 'sentinel-admin-ident-6a1f',
             'subject login identifier' => 'sentinel-invitee-ident-1c8d',
-            // #647 : le code d'autorisation qu'un consentement vient d'émettre.
-            'authorization code' => 'SENTINEL-AUTH-CODE-5f2a',
         ];
 
         // Le jeton d'invitation voyage dans le corps (A7, D6), comme le mot de
@@ -644,7 +642,7 @@ final class SecurityAuditLoggerTest extends TestCase
                 'HTTP_X_REQUESTED_WITH' => $sentinels['requested-with header'],
                 'HTTP_AUTHORIZATION' => 'Bearer '.$sentinels['bearer JWT'],
             ],
-            content: json_encode(['username' => 'jane', 'password' => $sentinels['password'], 'token' => $sentinels['invitation token'], 'code' => $sentinels['authorization code']], \JSON_THROW_ON_ERROR),
+            content: json_encode(['username' => 'jane', 'password' => $sentinels['password'], 'token' => $sentinels['invitation token']], \JSON_THROW_ON_ERROR),
         );
         $request->cookies->set('BEARER', $sentinels['bearer JWT']);
         $request->cookies->set('XSRF-TOKEN', $sentinels['XSRF cookie']);

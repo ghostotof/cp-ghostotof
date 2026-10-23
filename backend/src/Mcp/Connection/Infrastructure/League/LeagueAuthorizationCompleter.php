@@ -32,6 +32,9 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
  */
 final readonly class LeagueAuthorizationCompleter implements AuthorizationCompleterInterface
 {
+    /** L'erreur OAuth d'un refus (RFC 6749 §4.1.2.1). */
+    private const string ACCESS_DENIED = 'access_denied';
+
     public function __construct(
         private AuthorizationServer $server,
         #[Autowire(service: 'mcp.psr17_factory')]
@@ -47,7 +50,7 @@ final readonly class LeagueAuthorizationCompleter implements AuthorizationComple
 
         $response = $this->server->completeAuthorizationRequest($authorization, $this->responseFactory->createResponse());
 
-        return $this->locationOf($response) ?? throw AuthorizationResponseWithoutRedirectException::afterApproval();
+        return $this->locationOf($response) ?? throw UnexpectedAuthorizationResponseException::approvalWithoutRedirect();
     }
 
     public function deny(AuthorizationRequestSummary $summary): string
@@ -60,11 +63,18 @@ final readonly class LeagueAuthorizationCompleter implements AuthorizationComple
         try {
             $this->server->completeAuthorizationRequest($authorization, $this->responseFactory->createResponse());
         } catch (OAuthServerException $denial) {
+            // Le seul refus que league lève ici. Toute autre erreur, même
+            // munie d'une redirection, est un défaut du serveur : elle ne
+            // part jamais vers le client comme si la personne avait refusé.
+            if (self::ACCESS_DENIED !== $denial->getErrorType()) {
+                throw UnexpectedAuthorizationResponseException::denialOtherThanAccessDenied($denial);
+            }
+
             return $this->locationOf($denial->generateHttpResponse($this->responseFactory->createResponse()))
-                ?? throw AuthorizationResponseWithoutRedirectException::afterDenial();
+                ?? throw UnexpectedAuthorizationResponseException::denialWithoutRedirect();
         }
 
-        throw AuthorizationResponseWithoutRedirectException::afterDenial();
+        throw UnexpectedAuthorizationResponseException::denialWithoutRedirect();
     }
 
     private function locationOf(ResponseInterface $response): ?string

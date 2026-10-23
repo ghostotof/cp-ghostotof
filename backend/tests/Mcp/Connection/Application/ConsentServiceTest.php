@@ -139,14 +139,6 @@ final class ConsentServiceTest extends TestCase
         self::assertSame(['deny'], $this->effects);
     }
 
-    /** Une décision que la validation n'a pas vue (`approved` nul) vaut refus, jamais accord. */
-    public function testAnUnvalidatedDecisionIsADenial(): void
-    {
-        $this->service()->decide($this->decision(null), $this->account);
-
-        self::assertSame(['deny'], $this->effects);
-    }
-
     /**
      * Le client retiré entre la validation et l'écriture : la demande n'est
      * plus valable (400 typé), rien n'est écrit ni journalisé.
@@ -204,6 +196,7 @@ final class ConsentServiceTest extends TestCase
             responseType: 'code',
             clientId: self::CLIENT_ID,
             redirectUri: self::REDIRECT,
+            scope: null,
             state: 'a b&c',
             codeChallenge: 'challenge',
             codeChallengeMethod: 'S256',
@@ -307,7 +300,7 @@ final class ConsentServiceTest extends TestCase
         );
     }
 
-    private function decision(?bool $approved): ConsentDecision
+    private function decision(bool $approved): ConsentDecision
     {
         return new ConsentDecision(
             responseType: 'code',

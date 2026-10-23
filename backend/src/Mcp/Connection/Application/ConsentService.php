@@ -66,7 +66,7 @@ final readonly class ConsentService implements ConsentServiceInterface
     public function decide(ConsentDecision $decision, CpgUser $account): string
     {
         $summary = $this->validated($this->requestOf($decision));
-        $location = $decision->isApproved() ? $this->grant($summary, $account) : $this->completer->deny($summary);
+        $location = $decision->approved ? $this->grant($summary, $account) : $this->completer->deny($summary);
 
         return IssParameter::append($location, $this->endpoints->issuer());
     }
