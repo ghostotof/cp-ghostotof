@@ -104,6 +104,26 @@ security:
             pattern: ^/api/mcp$
             stateless: true
 
+        # Les deux documents de métadonnées OAuth de la connexion MCP (#647,
+        # RFC 9728 et RFC 8414), hors /api parce que la norme fixe leur chemin
+        # (chemin bien connu suivi de celui de la ressource ou de l'émetteur).
+        # Même forme que `mcp` : stateless, aucun authentificateur, aucun
+        # cookie lu — un document public, identique pour tous. Un firewall
+        # chacun, plutôt qu'aucun : une route hors /api a son propre firewall
+        # et sa propre règle access_control (RouterScopeTest), jamais une
+        # exposition implicite. Bornés par `$` sur leur chemin exact, le `.`
+        # échappé : un voisin (`/.well-known/oauth-authorization-server` seul,
+        # `…/api/mcpx`) ne relève d'aucun firewall et le routeur lui répond
+        # 404 (AccessControlAnchoringTest). Placés avant `api` comme `mcp`,
+        # même si leurs chemins ne commencent pas par /api.
+        oauth_resource_metadata:
+            pattern: ^/\.well-known/oauth-protected-resource/api/mcp$
+            stateless: true
+
+        oauth_server_metadata:
+            pattern: ^/\.well-known/oauth-authorization-server/api/oauth$
+            stateless: true
+
         # Toutes les autres routes /api : authentification par JWT extrait du cookie
         # "BEARER" (voir config/packages/lexik_jwt_authentication.yaml). "logout.path"
         # est intercepté par le composant Security avant tout contrôleur : c'est
@@ -159,6 +179,13 @@ security:
         # ROLE_TRUSTED ci-dessus le capturerait (première règle qui matche —
         # l'ancre n'y change rien, /api/cv/anonymous serait dans son sous-arbre).
         - { path: ^/api/anonymous-cv(/|$), roles: ROLE_USER }
+        # Les deux documents de métadonnées OAuth (#647), publics par nature :
+        # un client MCP les lit avant toute connexion. Aux motifs exacts de
+        # leurs firewalls. En dernier : leurs chemins sont hors /api, aucune
+        # règle ci-dessus ne peut les capturer ni être capturée par elles, et
+        # la règle du backoffice reste la première de la liste.
+        - { path: ^/\.well-known/oauth-protected-resource/api/mcp$, roles: PUBLIC_ACCESS }
+        - { path: ^/\.well-known/oauth-authorization-server/api/oauth$, roles: PUBLIC_ACCESS }
 
 when@test:
     security:

@@ -107,6 +107,21 @@ final class AccessControlAnchoringTest extends KernelTestCase
         yield '/api/case-studies-drafts → aucune règle' => ['/api/case-studies-drafts', null];
         yield '/api/anonymous-cv-full → aucune règle' => ['/api/anonymous-cv-full', null];
         yield '/api/assistants → aucune règle' => ['/api/assistants', null];
+
+        // --- Les deux documents de métadonnées OAuth (#647), hors /api :
+        // publics, chacun sur son chemin exact. Ni un voisin par préfixe, ni
+        // le chemin bien connu sans suffixe, ni un `.` pris pour n'importe
+        // quel caractère n'en héritent.
+        yield '/.well-known/oauth-protected-resource/api/mcp → PUBLIC_ACCESS' => ['/.well-known/oauth-protected-resource/api/mcp', ['PUBLIC_ACCESS']];
+        yield '/.well-known/oauth-authorization-server/api/oauth → PUBLIC_ACCESS' => ['/.well-known/oauth-authorization-server/api/oauth', ['PUBLIC_ACCESS']];
+        yield '/.well-known/oauth-protected-resource → aucune règle' => ['/.well-known/oauth-protected-resource', null];
+        yield '/.well-known/oauth-protected-resource/api/mcpx → aucune règle' => ['/.well-known/oauth-protected-resource/api/mcpx', null];
+        yield '/.well-known/oauth-protected-resource/api/mcp/extra → aucune règle' => ['/.well-known/oauth-protected-resource/api/mcp/extra', null];
+        yield '/.well-known/oauth-authorization-server → aucune règle' => ['/.well-known/oauth-authorization-server', null];
+        yield '/.well-known/oauth-authorization-server/api/oauthx → aucune règle' => ['/.well-known/oauth-authorization-server/api/oauthx', null];
+        yield '/.well-known/oauth-authorization-server/api/oauth/extra → aucune règle' => ['/.well-known/oauth-authorization-server/api/oauth/extra', null];
+        yield '/xwell-known/oauth-authorization-server/api/oauth → aucune règle' => ['/xwell-known/oauth-authorization-server/api/oauth', null];
+        yield '/.well-known/openid-configuration → aucune règle' => ['/.well-known/openid-configuration', null];
     }
 
     /**
@@ -232,9 +247,28 @@ final class AccessControlAnchoringTest extends KernelTestCase
         yield '/api/me → api' => ['/api/me', 'api'];
         yield '/api/backoffice/users → api' => ['/api/backoffice/users', 'api'];
 
+        // --- Les deux documents de métadonnées OAuth (#647) : chacun son
+        // firewall, sans authentificateur, borné sur son chemin exact. Le
+        // chemin décodé décide, comme pour /api/mcp.
+        yield '/.well-known/oauth-protected-resource/api/mcp → oauth_resource_metadata' => ['/.well-known/oauth-protected-resource/api/mcp', 'oauth_resource_metadata'];
+        yield '/.well-known/oauth-protected-resource/api/m%63p → oauth_resource_metadata' => ['/.well-known/oauth-protected-resource/api/m%63p', 'oauth_resource_metadata'];
+        yield '/.well-known/oauth-authorization-server/api/oauth → oauth_server_metadata' => ['/.well-known/oauth-authorization-server/api/oauth', 'oauth_server_metadata'];
+        yield '/.well-known/oauth-authorization-server/api/o%61uth → oauth_server_metadata' => ['/.well-known/oauth-authorization-server/api/o%61uth', 'oauth_server_metadata'];
+
         // --- Hors API : aucun firewall (aucune route n'y existe non plus).
         yield '/ → aucun firewall' => ['/', null];
         yield '/healthz → aucun firewall' => ['/healthz', null];
+        // Les voisins des deux documents : ni le chemin bien connu sans
+        // suffixe, ni un prolongement, ni un `.` lu comme n'importe quel
+        // caractère, ni le document OIDC qu'aucun firewall ne doit couvrir.
+        yield '/.well-known/oauth-authorization-server → aucun firewall' => ['/.well-known/oauth-authorization-server', null];
+        yield '/.well-known/oauth-protected-resource → aucun firewall' => ['/.well-known/oauth-protected-resource', null];
+        yield '/.well-known/oauth-protected-resource/api/mcpx → aucun firewall' => ['/.well-known/oauth-protected-resource/api/mcpx', null];
+        yield '/.well-known/oauth-protected-resource/api/mcp/extra → aucun firewall' => ['/.well-known/oauth-protected-resource/api/mcp/extra', null];
+        yield '/.well-known/oauth-authorization-server/api/oauthx → aucun firewall' => ['/.well-known/oauth-authorization-server/api/oauthx', null];
+        yield '/.well-known/oauth-authorization-server/api/oauth/extra → aucun firewall' => ['/.well-known/oauth-authorization-server/api/oauth/extra', null];
+        yield '/xwell-known/oauth-protected-resource/api/mcp → aucun firewall' => ['/xwell-known/oauth-protected-resource/api/mcp', null];
+        yield '/.well-known/openid-configuration → aucun firewall' => ['/.well-known/openid-configuration', null];
     }
 
     #[DataProvider('provideRequestPathsAndExpectedFirewall')]
