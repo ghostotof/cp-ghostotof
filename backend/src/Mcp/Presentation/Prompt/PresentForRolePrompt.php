@@ -6,6 +6,7 @@ namespace App\Mcp\Presentation\Prompt;
 
 use App\Mcp\Presentation\Tool\ToolLocale;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use Mcp\Capability\Attribute\CompletionProvider;
 use Mcp\Capability\Attribute\McpPrompt;
 use Mcp\Exception\PromptGetException;
 use Mcp\Schema\Content\PromptMessage;
@@ -68,7 +69,12 @@ final readonly class PresentForRolePrompt
      * toute conversion ; `prompts/list` n'en publie aucun (MCP ne déclare que
      * des chaînes).
      *
-     * @param mixed $role   The role to present the author for: a job title, optionally with a few key requirements. At most 500 characters.
+     * La langue se complète (#693) : le serveur annonce `completions`, et le
+     * SDK propose les cas de {@see Locale} — ceux que `Locale::tryFrom()`
+     * accepte plus bas, sans liste recopiée —, filtrés par préfixe. `role`,
+     * texte libre, n'a rien à proposer.
+     *
+     * @param mixed $role  The role to present the author for: a job title, optionally with a few key requirements. At most 500 characters.
      * @param mixed $locale Language of the content: "fr" (French, default) or "en" (English).
      *
      * @return list<PromptMessage>
@@ -82,7 +88,11 @@ final readonly class PresentForRolePrompt
         title: 'Present the author for a role',
         description: 'Present the site\'s author for a given role, to a person who is recruiting: the assistant relies only on this server\'s tools, cites the tool behind each statement and says what they do not tell.',
     )]
-    public function __invoke(mixed $role, mixed $locale = ToolLocale::DEFAULT): array
+    public function __invoke(
+        mixed $role,
+        #[CompletionProvider(enum: Locale::class)]
+        mixed $locale = ToolLocale::DEFAULT,
+    ): array
     {
         // La langue d'abord, comme sur les outils : une valeur inconnue est
         // l'erreur que le modèle sait corriger, quel que soit le rôle. D'un

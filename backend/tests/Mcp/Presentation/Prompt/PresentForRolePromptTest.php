@@ -6,6 +6,7 @@ namespace App\Tests\Mcp\Presentation\Prompt;
 
 use App\Mcp\Presentation\Prompt\PromptRole;
 use App\Mcp\Presentation\Tool\ToolLocale;
+use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Tests\Mcp\Support\SpeaksMcp;
 use App\Tests\Support\ReadsAllChannelsLog;
 use Doctrine\ORM\EntityManagerInterface;
@@ -244,6 +245,70 @@ final class PresentForRolePromptTest extends WebTestCase
 
         self::assertSame(self::PROMPT_ERROR, $error['code']);
         self::assertSame(ToolLocale::UNKNOWN_LANGUAGE, $error['message']);
+    }
+
+    /**
+     * La complétion de `locale` (#693) : le serveur annonce `completions`, un
+     * client la demande pour proposer les langues. Elle rend celles que le
+     * prompt accepte, filtrées par préfixe comme le fait le SDK, dans les deux
+     * ères — avec session (`2025-06-18`) et sans (`2026-07-28`).
+     *
+     * @param list<string> $expected
+     */
+    #[DataProvider('localeCompletions')]
+    public function testTheLocaleArgumentCompletesToTheAcceptedLanguages(bool $modern, string $typed, array $expected): void
+    {
+        self::assertSame($expected, $this->completions($modern, 'locale', $typed));
+    }
+
+    /**
+     * @return iterable<string, array{bool, string, list<string>}>
+     */
+    public static function localeCompletions(): iterable
+    {
+        foreach (['avec session' => false, 'sans session' => true] as $era => $modern) {
+            // Sans saisie, toutes les langues, dans l'ordre de leur déclaration.
+            yield $era.', rien de saisi' => [$modern, '', Locale::values()];
+            yield $era.', « e »' => [$modern, 'e', ['en']];
+            yield $era.', « f »' => [$modern, 'f', ['fr']];
+            yield $era.', langue complète' => [$modern, 'fr', ['fr']];
+            // Comparaison exacte, sensible à la casse, comme le SDK.
+            yield $era.', « E »' => [$modern, 'E', []];
+            yield $era.', aucune langue' => [$modern, 'de', []];
+        }
+    }
+
+    /** `role` est un texte libre : rien à proposer. */
+    public function testTheRoleArgumentHasNoCompletion(): void
+    {
+        self::assertSame([], $this->completions(false, 'role', ''));
+    }
+
+    /**
+     * Les valeurs que `completion/complete` propose pour un argument du prompt.
+     *
+     * @return list<mixed>
+     */
+    private function completions(bool $modern, string $argument, string $typed): array
+    {
+        $client = $this->client ??= self::createClient();
+        $params = [
+            'ref' => ['type' => 'ref/prompt', 'name' => self::PROMPT],
+            'argument' => ['name' => $argument, 'value' => $typed],
+        ];
+        if ($modern) {
+            $this->postModernMcp($client, 'completion/complete', $params);
+            self::assertResponseIsSuccessful();
+            $answer = $this->decodeMcpResponse($client);
+        } else {
+            $answer = $this->mcpCall($client, $this->initializeMcpSession($client), 'completion/complete', $params);
+        }
+
+        self::assertArrayHasKey('result', $answer, 'completion/complete a répondu une erreur.');
+        $values = $answer['result']['completion']['values'] ?? null;
+        self::assertIsList($values);
+
+        return $values;
     }
 
     /** La balise que le message a tirée : elle ouvre le bloc, une seule fois, sur sa propre ligne. */
