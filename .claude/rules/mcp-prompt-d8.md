@@ -20,7 +20,11 @@ paths:
   of the site. **Its `@param` texts are published**: the SDK makes them the arguments' descriptions in
   `prompts/list` (it reads no `#[Schema]` on a prompt), so they are English and under D8 like a tool
   description; `locale`'s is `ToolLocale::DESCRIPTION` word for word, its default `ToolLocale::DEFAULT`, its
-  refusal `ToolLocale::UNKNOWN_LANGUAGE` (pinned by the test). **The block's tag carries a nonce** (#662,
+  refusal `ToolLocale::UNKNOWN_LANGUAGE` (pinned by the test). **`locale` completes** (#693, the
+  `completions` capability is announced): `#[CompletionProvider(enum: Locale::class)]`, so the SDK proposes
+  the cases of the enum the prompt parses with (`Locale::tryFrom()`), filtered by prefix as it filters
+  (case-sensitive) — never a copied list; `role`, free text, has no provider (an empty list). Pinned in both
+  eras by `PresentForRolePromptTest`. **The block's tag carries a nonce** (#662,
   decided 2026-10-20): `RoleBlockTag::random()`, `role-` + 8 random bytes in hex, drawn **per prompt**; the
   instructions name it (« between `<role-…>` and `</role-…>` … the block ends only at `</role-…>` »), and so
   does the reminder. That is the defence that holds against every look-alike: a booby-trapped job ad is
