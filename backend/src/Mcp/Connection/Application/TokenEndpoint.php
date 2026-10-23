@@ -12,10 +12,11 @@ use Psr\Http\Message\ServerRequestInterface;
 /**
  * Le point de jeton (#647) : deux contrôles avant league, puis league.
  *
- * 1. **Aucun paramètre lu n'est répété** (RFC 6749 §3.2) : PHP garde la
- *    dernière occurrence d'un corps `application/x-www-form-urlencoded`, un
- *    autre analyseur la première (QueryParameterPollution, la règle du point
- *    d'autorisation). Un refus `invalid_request`.
+ * 1. **Un formulaire, aucun paramètre lu répété** (RFC 6749 §3.2,
+ *    FormEncodedRequest) : un autre type de contenu, ou un paramètre que PHP
+ *    et un autre analyseur liraient différemment (QueryParameterPollution, la
+ *    règle du point d'autorisation), est un `invalid_request` ; league lit les
+ *    paramètres tirés du corps contrôlé.
  * 2. **La ressource** (RFC 8707 §2.2) : facultative ici, mais présente elle
  *    doit être le serveur MCP du site, sinon `invalid_target` — sans
  *    redirection, le point de jeton n'en fait jamais. Un jeton d'accès porte
@@ -36,7 +37,7 @@ final readonly class TokenEndpoint implements TokenEndpointInterface
      * grant. `client_secret` n'y est pas : aucun client n'en a (clients
      * publics seulement), league ne le lit pas pour eux.
      */
-    public const array READ_PARAMETERS = ['grant_type', 'code', 'redirect_uri', 'client_id', 'code_verifier', 'refresh_token', 'scope', 'resource'];
+    private const array READ_PARAMETERS = ['grant_type', 'code', 'redirect_uri', 'client_id', 'code_verifier', 'refresh_token', 'scope', 'resource'];
 
     public function __construct(
         private AuthorizationServer $server,
@@ -46,25 +47,10 @@ final readonly class TokenEndpoint implements TokenEndpointInterface
 
     public function respond(ServerRequestInterface $request, ResponseInterface $response): ResponseInterface
     {
-        $this->refuseRepeatedParameters($request);
+        $request = FormEncodedRequest::parse($request, self::READ_PARAMETERS);
         $this->refuseForeignResource($request);
 
         return $this->server->respondToAccessTokenRequest($request, $response);
-    }
-
-    /**
-     * Lu sur le corps brut, que le pont PSR-7 recopie : les paramètres analysés
-     * n'en gardent déjà plus qu'une occurrence.
-     *
-     * @throws OAuthServerException `invalid_request`
-     */
-    private function refuseRepeatedParameters(ServerRequestInterface $request): void
-    {
-        $polluted = QueryParameterPollution::firstPollutedName((string) $request->getBody(), self::READ_PARAMETERS);
-
-        if (null !== $polluted) {
-            throw OAuthServerException::invalidRequest($polluted, \sprintf('Check the `%s` parameter: it must be given once, under its exact name.', $polluted));
-        }
     }
 
     /**

@@ -159,6 +159,88 @@ final class TokenControllerTest extends WebTestCase
         $this->assertNoTokenIssued();
     }
 
+    /**
+     * Un jeton de rafraîchissement présenté par un autre client que celui à
+     * qui il a été émis : `invalid_grant` (league le lit dans la charge
+     * chiffrée), aucun nouveau jeton.
+     */
+    public function testARefreshTokenIssuedToAnotherClientIsRefused(): void
+    {
+        $issued = $this->json($this->exchange($this->grantedCode()));
+        self::assertIsString($issued['refresh_token'] ?? null);
+
+        $response = $this->refresh($issued['refresh_token'], ['client_id' => self::OTHER_CLIENT_ID]);
+
+        $this->assertOAuthError($response, Response::HTTP_BAD_REQUEST, 'invalid_grant');
+        self::assertSame(1, $this->countRows('SELECT COUNT(*) FROM mcp_access_token'));
+        self::assertSame(1, $this->countRows('SELECT COUNT(*) FROM mcp_refresh_token'));
+        self::assertSame(0, $this->countRows('SELECT COUNT(*) FROM mcp_refresh_token WHERE revoked_at IS NOT NULL'));
+    }
+
+    /**
+     * Un autre corps qu'un formulaire (RFC 6749 §4.1.3) : `invalid_request`
+     * au format de RFC 6749, aucun jeton. Le pont PSR-7 analyse pourtant un
+     * corps JSON en paramètres, que league aurait servis (200 avant le
+     * refus, mesuré).
+     *
+     * @return iterable<string, array{string}>
+     */
+    public static function bodiesOtherThanAForm(): iterable
+    {
+        yield 'JSON' => ['application/json'];
+        yield 'texte' => ['text/plain'];
+    }
+
+    #[DataProvider('bodiesOtherThanAForm')]
+    public function testABodyOtherThanAFormIsInvalidRequest(string $contentType): void
+    {
+        $code = $this->grantedCode();
+
+        $this->client->request('POST', self::TOKEN_PATH, server: ['CONTENT_TYPE' => $contentType, 'HTTP_ACCEPT' => 'application/json'], content: self::jsonBody([
+            'grant_type' => 'authorization_code',
+            'code' => $code,
+            'redirect_uri' => self::LOOPBACK_REDIRECT,
+            'client_id' => self::CLIENT_ID,
+            'code_verifier' => self::CODE_VERIFIER,
+        ]));
+
+        $this->assertOAuthError($this->client->getResponse(), Response::HTTP_BAD_REQUEST, 'invalid_request');
+        $this->assertNoTokenIssued();
+    }
+
+    /** Le type de contenu se lit sans ses paramètres ni sa casse. */
+    public function testAFormWithACharsetIsServed(): void
+    {
+        $code = $this->grantedCode();
+
+        $response = $this->postForm(self::TOKEN_PATH, http_build_query([
+            'grant_type' => 'authorization_code',
+            'code' => $code,
+            'redirect_uri' => self::LOOPBACK_REDIRECT,
+            'client_id' => self::CLIENT_ID,
+            'code_verifier' => self::CODE_VERIFIER,
+        ]), ['CONTENT_TYPE' => 'Application/X-WWW-Form-Urlencoded; charset=UTF-8']);
+
+        self::assertSame(Response::HTTP_OK, $response->getStatusCode(), substr((string) $response->getContent(), 0, 500));
+    }
+
+    /**
+     * Une autre méthode que POST : le 405 du routeur, avant le contrôleur. Il
+     * sort au format commun des erreurs sous `/api` (ApiJsonErrorFormatListener,
+     * un problem+json), pas au format OAuth — accepté : aucun client OAuth
+     * n'appelle ce point autrement qu'en POST ; l'essentiel est qu'il ne
+     * sorte jamais en page HTML.
+     */
+    public function testAGetIsA405InJson(): void
+    {
+        $this->client->request('GET', self::TOKEN_PATH);
+
+        $response = $this->client->getResponse();
+        self::assertSame(Response::HTTP_METHOD_NOT_ALLOWED, $response->getStatusCode());
+        self::assertStringContainsString('json', (string) $response->headers->get('Content-Type'));
+        self::assertSame(Response::HTTP_METHOD_NOT_ALLOWED, $this->json($response)['status'] ?? null);
+    }
+
     /** Un grant que le serveur ne sert pas. */
     public function testAnUnsupportedGrantIsRefused(): void
     {

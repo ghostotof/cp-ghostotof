@@ -202,6 +202,49 @@ final class RevocationControllerTest extends WebTestCase
     }
 
     /**
+     * Le client est authentifié avant que le jeton ne soit lu (RFC 7009
+     * §2.1) : sans client enregistré, `invalid_client`, que le jeton manque
+     * ou non.
+     */
+    #[DataProvider('clientsNotRegistered')]
+    public function testTheClientIsAuthenticatedBeforeTheTokenIsRead(?string $clientId): void
+    {
+        $response = $this->revoke(['client_id' => $clientId]);
+
+        $this->assertOAuthError($response, Response::HTTP_UNAUTHORIZED, 'invalid_client');
+    }
+
+    /** Un corps JSON n'est pas un formulaire (RFC 7009 §2.1) : refusé, rien de révoqué. */
+    public function testAJsonBodyIsInvalidRequest(): void
+    {
+        $tokens = $this->issuedTokens();
+
+        $this->client->request('POST', self::REVOKE_PATH, server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: self::jsonBody([
+            'token' => $tokens['access_token'],
+            'client_id' => self::CLIENT_ID,
+        ]));
+
+        $this->assertOAuthError($this->client->getResponse(), Response::HTTP_BAD_REQUEST, 'invalid_request');
+        $this->assertNothingRevoked();
+    }
+
+    /**
+     * Une autre méthode que POST : le 405 du routeur, avant le contrôleur, au
+     * format commun des erreurs sous `/api` (ApiJsonErrorFormatListener, un
+     * problem+json) plutôt qu'OAuth — accepté, comme au point de jeton ;
+     * jamais une page HTML.
+     */
+    public function testAGetIsA405InJson(): void
+    {
+        $this->client->request('GET', self::REVOKE_PATH);
+
+        $response = $this->client->getResponse();
+        self::assertSame(Response::HTTP_METHOD_NOT_ALLOWED, $response->getStatusCode());
+        self::assertStringContainsString('json', (string) $response->headers->get('Content-Type'));
+        self::assertSame(Response::HTTP_METHOD_NOT_ALLOWED, $this->json($response)['status'] ?? null);
+    }
+
+    /**
      * Un paramètre répété : refusé, jamais lu d'une façon ou de l'autre.
      *
      * @return iterable<string, array{string}>

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Mcp\Connection\Application;
 
+use League\OAuth2\Server\Exception\OAuthServerException;
+
 /**
  * La pollution de paramètres d'une requête d'autorisation (#647) : ce que PHP
  * lit d'une requête n'est pas ce qu'un autre analyseur en lit.
@@ -30,6 +32,26 @@ final class QueryParameterPollution
 {
     private function __construct()
     {
+    }
+
+    /**
+     * Le refus d'une requête polluée, écrit une fois pour les trois points
+     * qui en lisent une — la demande d'autorisation (sa requête), le jeton et
+     * la révocation (leur corps `application/x-www-form-urlencoded`, que PHP
+     * analyse comme une requête) : `invalid_request`, sans redirection, qui ne
+     * nomme que le paramètre.
+     *
+     * @param list<string> $watched
+     *
+     * @throws OAuthServerException `invalid_request` sur le premier nom pollué
+     */
+    public static function refuse(string $rawQuery, array $watched): void
+    {
+        $polluted = self::firstPollutedName($rawQuery, $watched);
+
+        if (null !== $polluted) {
+            throw OAuthServerException::invalidRequest($polluted, \sprintf('Check the `%s` parameter: it must be given once, under its exact name.', $polluted));
+        }
     }
 
     /**

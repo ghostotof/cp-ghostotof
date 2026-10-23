@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Mcp\Connection\Infrastructure\League;
 
-use App\Mcp\Connection\Application\QueryParameterPollution;
+use App\Mcp\Connection\Application\FormEncodedRequest;
 use App\Mcp\Connection\Application\RevocationEndpointInterface;
 use App\Mcp\Connection\Application\TransactionInterface;
 use App\Mcp\Connection\Domain\Entity\McpConnection;
@@ -48,7 +48,7 @@ use SensitiveParameter;
 final readonly class LeagueRevocationEndpoint implements RevocationEndpointInterface
 {
     /** Les paramètres de RFC 7009 que ce point lit, chacun une seule fois. */
-    public const array READ_PARAMETERS = ['token', 'token_type_hint', 'client_id'];
+    private const array READ_PARAMETERS = ['token', 'token_type_hint', 'client_id'];
 
     public function __construct(
         private ClientRepository $clients,
@@ -62,27 +62,26 @@ final readonly class LeagueRevocationEndpoint implements RevocationEndpointInter
 
     public function revoke(ServerRequestInterface $request): void
     {
-        // Lu sur le corps brut, que le pont PSR-7 recopie : les paramètres
-        // analysés n'en gardent déjà plus qu'une occurrence.
-        $polluted = QueryParameterPollution::firstPollutedName((string) $request->getBody(), self::READ_PARAMETERS);
-
-        if (null !== $polluted) {
-            throw OAuthServerException::invalidRequest($polluted, \sprintf('Check the `%s` parameter: it must be given once, under its exact name.', $polluted));
-        }
-
+        // Un formulaire, aucun paramètre répété ; les paramètres sont ceux
+        // tirés de ce corps-là.
+        $request = FormEncodedRequest::parse($request, self::READ_PARAMETERS);
         $body = $request->getParsedBody();
         $parameters = \is_array($body) ? $body : [];
-        $token = $parameters['token'] ?? null;
 
-        if (!\is_string($token) || '' === $token) {
-            throw OAuthServerException::invalidRequest('token', 'Check the `token` parameter: it is required.');
-        }
-
+        // Le client d'abord (RFC 7009 §2.1 : le serveur authentifie le client,
+        // puis lit le jeton) : un client inconnu reçoit `invalid_client`, qu'il
+        // présente un jeton ou non.
         $clientId = $parameters['client_id'] ?? null;
         $client = \is_string($clientId) ? $this->clients->getClientEntity($clientId) : null;
 
         if (null === $client) {
             throw OAuthServerException::invalidClient($request);
+        }
+
+        $token = $parameters['token'] ?? null;
+
+        if (!\is_string($token) || '' === $token) {
+            throw OAuthServerException::invalidRequest('token', 'Check the `token` parameter: it is required.');
         }
 
         if (!$this->revokeAccessToken($token, $client->getIdentifier())) {

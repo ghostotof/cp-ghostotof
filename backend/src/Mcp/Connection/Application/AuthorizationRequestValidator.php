@@ -100,11 +100,7 @@ final readonly class AuthorizationRequestValidator implements AuthorizationReque
      */
     private function wellFormedParameters(ServerRequestInterface $request): array
     {
-        $polluted = QueryParameterPollution::firstPollutedName($request->getUri()->getQuery(), self::EXPECTED_PARAMETERS);
-
-        if (null !== $polluted) {
-            throw OAuthServerException::invalidRequest($polluted, \sprintf('Check the `%s` parameter: it must be given once, under its exact name.', $polluted));
-        }
+        QueryParameterPollution::refuse($request->getUri()->getQuery(), self::EXPECTED_PARAMETERS);
 
         $query = $request->getQueryParams();
         $parameters = [];

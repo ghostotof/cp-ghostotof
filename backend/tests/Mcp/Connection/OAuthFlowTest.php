@@ -16,8 +16,12 @@ use Symfony\Component\HttpFoundation\Response;
  * envoie la personne au point d'autorisation, reçoit le code après son
  * consentement, l'échange, puis rafraîchit.
  *
- * Chaque URL suivie est lue dans la réponse précédente, jamais recopiée : un
- * document qui annoncerait un point faux casserait le parcours ici.
+ * Les points du serveur d'autorisation (autorisation, jeton, révocation) sont
+ * lus dans son document de métadonnées, jamais recopiés : un document qui
+ * annoncerait un point faux casserait le parcours ici. La page de
+ * consentement est une page du frontend : le test vérifie que le point
+ * d'autorisation y renvoie, puis joue la page en appelant ce qu'elle appelle,
+ * `GET|POST /api/oauth/consent`, avec la demande reçue sur la redirection.
  */
 final class OAuthFlowTest extends WebTestCase
 {
@@ -54,6 +58,19 @@ final class OAuthFlowTest extends WebTestCase
         ]), Response::HTTP_BAD_REQUEST, 'invalid_grant');
         self::assertSame(1, $this->countRows('SELECT COUNT(*) FROM mcp_refresh_token WHERE revoked_at IS NULL'));
         self::assertSame(1, $this->countRows('SELECT COUNT(*) FROM mcp_access_token WHERE revoked_at IS NULL'));
+
+        // 6. Le client rend son jeton de rafraîchissement au point de
+        //    révocation annoncé (RFC 7009) : lui et son jeton d'accès meurent,
+        //    le rafraîchissement suivant est refusé.
+        $revoked = $this->postForm($tokens['revocationPath'], ['token' => $tokens['refreshed']['refresh_token'], 'client_id' => self::CLIENT_ID]);
+        self::assertSame(Response::HTTP_OK, $revoked->getStatusCode(), substr((string) $revoked->getContent(), 0, 500));
+        self::assertSame(0, $this->countRows('SELECT COUNT(*) FROM mcp_refresh_token WHERE revoked_at IS NULL'));
+        self::assertSame(0, $this->countRows('SELECT COUNT(*) FROM mcp_access_token WHERE revoked_at IS NULL'));
+        $this->assertOAuthError($this->postForm($tokens['tokenPath'], [
+            'grant_type' => 'refresh_token',
+            'refresh_token' => $tokens['refreshed']['refresh_token'],
+            'client_id' => self::CLIENT_ID,
+        ]), Response::HTTP_BAD_REQUEST, 'invalid_grant');
     }
 
     /**
@@ -108,7 +125,7 @@ final class OAuthFlowTest extends WebTestCase
      * Le parcours d'un client MCP, de la découverte au premier
      * rafraîchissement.
      *
-     * @return array{code: string, tokenPath: string, first: array{token_type: mixed, access_token: string, refresh_token: string}, refreshed: array{token_type: mixed, access_token: string, refresh_token: string}}
+     * @return array{code: string, tokenPath: string, revocationPath: string, first: array{token_type: mixed, access_token: string, refresh_token: string}, refreshed: array{token_type: mixed, access_token: string, refresh_token: string}}
      */
     private function wholeFlow(): array
     {
@@ -126,12 +143,17 @@ final class OAuthFlowTest extends WebTestCase
         self::assertSame($issuer, $serverDocument['issuer'] ?? null);
         $authorizationPath = $this->pathOf($serverDocument['authorization_endpoint'] ?? null);
         $tokenPath = $this->pathOf($serverDocument['token_endpoint'] ?? null);
+        $revocationPath = $this->pathOf($serverDocument['revocation_endpoint'] ?? null);
 
         // 2. Autorisation : la personne est renvoyée à la page de consentement.
-        $this->client->request('GET', $authorizationPath.'?'.http_build_query($this->validParameters()));
+        $this->client->request('GET', $authorizationPath.'?'.http_build_query($this->validParameters()), server: ['HTTP_ACCEPT_LANGUAGE' => 'fr']);
         $redirect = $this->client->getResponse();
         self::assertSame(Response::HTTP_FOUND, $redirect->getStatusCode(), substr((string) $redirect->getContent(), 0, 500));
-        $consentQuery = (string) parse_url((string) $redirect->headers->get('Location'), \PHP_URL_QUERY);
+        $location = (string) $redirect->headers->get('Location');
+        // La page du frontend, dans la langue demandée ; sa base est celle du
+        // frontend, pas de l'API.
+        self::assertStringStartsWith(rtrim(self::getContainer()->getParameter('app.frontend_base_url'), '/').'/fr/oauth/consent?', $location);
+        $consentQuery = (string) parse_url($location, \PHP_URL_QUERY);
 
         // 3. Consentement d'un compte de confiance : la page lit la demande,
         //    puis renvoie la décision ; le code part vers le client.
@@ -164,7 +186,7 @@ final class OAuthFlowTest extends WebTestCase
             'resource' => $this->resource(),
         ]));
 
-        return ['code' => $code, 'tokenPath' => $tokenPath, 'first' => $first, 'refreshed' => $refreshed];
+        return ['code' => $code, 'tokenPath' => $tokenPath, 'revocationPath' => $revocationPath, 'first' => $first, 'refreshed' => $refreshed];
     }
 
     /**
