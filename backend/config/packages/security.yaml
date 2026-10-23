@@ -188,6 +188,13 @@ security:
         # à partir du CV, donc du même palier que lui. Placée avant les règles
         # ROLE_USER ; le préfixe ne commence pas par /api/cv.
         - { path: ^/api/assistant(/|$), roles: ROLE_TRUSTED }
+        # Consentement à une connexion MCP (#647, ADR 0006 D3) : il accorde à un
+        # client la lecture du corpus nominatif au nom de la personne, donc le
+        # palier de confiance, comme /api/cv. Sous le firewall `api` (cookie de
+        # la personne) et la garde CSRF ; les trois autres points OAuth
+        # (`oauth`, sans authentificateur) n'ont pas de règle et ne sont pas
+        # sous ce préfixe. Avant les règles ROLE_USER.
+        - { path: ^/api/oauth/consent(/|$), roles: ROLE_TRUSTED }
         # ADR 0003 D5 : contenu du palier de base — publiable en soi, mais pas
         # anonyme. ROLE_USER suffit (le jeton D6 comme un compte réel).
         - { path: ^/api/case-studies(/|$), roles: ROLE_USER }

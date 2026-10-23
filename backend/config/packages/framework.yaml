@@ -77,6 +77,12 @@ framework:
         # celui d'une erreur du client, déjà tracée par `login-failed`.
         App\Security\Authentication\Infrastructure\Security\SubmittedPasswordTooLongException:
             log_level: info
+        # Demande d'autorisation OAuth refusée au consentement (#647) : la page
+        # renvoie une demande que le serveur ne juge plus valable (redirection
+        # modifiée, client retiré). Une erreur du client, 400 ; le refus de
+        # league, gardé en `previous`, dit au journal lequel des contrôles.
+        App\Mcp\Connection\Domain\Exception\AuthorizationRequestRejectedException:
+            log_level: info
 
         # --- Exceptions rendues par API Platform (`exception_to_status`) ---
         # logKernelException (priorité 0) les voit aussi, avant API Platform

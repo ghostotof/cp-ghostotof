@@ -97,6 +97,12 @@ final class AccessControlAnchoringTest extends KernelTestCase
         yield '/api/anonymous-cv/en → ROLE_USER' => ['/api/anonymous-cv/en', ['ROLE_USER']];
         yield '/api/assistant → ROLE_TRUSTED' => ['/api/assistant', ['ROLE_TRUSTED']];
         yield '/api/assistant/answers → ROLE_TRUSTED' => ['/api/assistant/answers', ['ROLE_TRUSTED']];
+        // Consentement à une connexion MCP (#647) : il accorde la lecture du
+        // corpus nominatif, donc le palier de confiance, comme /api/cv.
+        yield '/api/oauth/consent → ROLE_TRUSTED' => ['/api/oauth/consent', ['ROLE_TRUSTED']];
+        yield '/api/oauth/consent/ → ROLE_TRUSTED' => ['/api/oauth/consent/', ['ROLE_TRUSTED']];
+        // Décidé sur le chemin décodé, comme le firewall et le routeur (#77).
+        yield '/api/oauth/c%6Fnsent → ROLE_TRUSTED' => ['/api/oauth/c%6Fnsent', ['ROLE_TRUSTED']];
 
         // --- Un voisin par préfixe n'hérite d'aucune règle : sa protection
         // doit être écrite, jamais déduite d'une regex trop large.
@@ -107,6 +113,12 @@ final class AccessControlAnchoringTest extends KernelTestCase
         yield '/api/case-studies-drafts → aucune règle' => ['/api/case-studies-drafts', null];
         yield '/api/anonymous-cv-full → aucune règle' => ['/api/anonymous-cv-full', null];
         yield '/api/assistants → aucune règle' => ['/api/assistants', null];
+        yield '/api/oauth/consents → aucune règle' => ['/api/oauth/consents', null];
+        // Les voisins du consentement sous /api/oauth n'en héritent pas : les
+        // trois points du serveur d'autorisation restent sans règle (leur
+        // firewall `oauth` n'a aucun authentificateur), /api/oauth seul aussi.
+        yield '/api/oauth/authorize → aucune règle' => ['/api/oauth/authorize', null];
+        yield '/api/oauth → aucune règle' => ['/api/oauth', null];
 
         // --- Les deux documents de métadonnées OAuth (#647), hors /api :
         // publics, chacun sur son chemin exact. Ni un voisin par préfixe, ni

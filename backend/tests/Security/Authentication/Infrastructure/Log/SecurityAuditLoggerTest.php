@@ -22,6 +22,7 @@ use Symfony\Component\Security\Core\Authentication\Token\Storage\TokenStorage;
 use Symfony\Component\Security\Core\Authentication\Token\UsernamePasswordToken;
 use Symfony\Component\Security\Core\User\InMemoryUser;
 use Symfony\Component\Security\Core\User\UserInterface;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * D5 (audit 2026-09-16, constat A5) : un seul point d'entrée pour le journal
@@ -552,6 +553,32 @@ final class SecurityAuditLoggerTest extends TestCase
     }
 
     /**
+     * Connexion MCP accordée (#647) : le compte par son UUID, la connexion par
+     * le sien, le client par son identifiant public (`client_id` d'OAuth,
+     * celui d'un client public, sans secret). Jamais le code émis ni un jeton.
+     */
+    public function testMcpConnectionGrantedNamesTheAccountTheConnectionAndTheClient(): void
+    {
+        $this->pushRequest('/api/oauth/consent', 'POST');
+        $account = new CpgUser('trusted', 'hashed-password');
+        $account->setRoles([CpgUser::ROLE_TRUSTED]);
+        $this->authenticate($account);
+        $connectionId = Uuid::v7();
+
+        $this->auditLogger->mcpConnectionGranted($account, $connectionId, 'https://client.example.test/metadata.json');
+
+        self::assertSame([
+            'event' => 'mcp-connection-granted',
+            'userId' => $account->getId()->toRfc4122(),
+            'connectionId' => $connectionId->toRfc4122(),
+            'clientId' => 'https://client.example.test/metadata.json',
+            'actor' => $account->getId()->toRfc4122(),
+            'ip' => self::IP,
+            'path' => '/api/oauth/consent',
+        ], $this->singleRecord()->context);
+    }
+
+    /**
      * Hors requête HTTP (commande, handler Messenger) : ni IP ni chemin, mais
      * l'événement sort quand même — l'absence de requête n'est pas une raison
      * de perdre la trace.
@@ -601,6 +628,8 @@ final class SecurityAuditLoggerTest extends TestCase
             // son adresse pour un invité — auteur comme sujet.
             'actor login identifier' => 'sentinel-admin-ident-6a1f',
             'subject login identifier' => 'sentinel-invitee-ident-1c8d',
+            // #647 : le code d'autorisation qu'un consentement vient d'émettre.
+            'authorization code' => 'SENTINEL-AUTH-CODE-5f2a',
         ];
 
         // Le jeton d'invitation voyage dans le corps (A7, D6), comme le mot de
@@ -615,7 +644,7 @@ final class SecurityAuditLoggerTest extends TestCase
                 'HTTP_X_REQUESTED_WITH' => $sentinels['requested-with header'],
                 'HTTP_AUTHORIZATION' => 'Bearer '.$sentinels['bearer JWT'],
             ],
-            content: json_encode(['username' => 'jane', 'password' => $sentinels['password'], 'token' => $sentinels['invitation token']], \JSON_THROW_ON_ERROR),
+            content: json_encode(['username' => 'jane', 'password' => $sentinels['password'], 'token' => $sentinels['invitation token'], 'code' => $sentinels['authorization code']], \JSON_THROW_ON_ERROR),
         );
         $request->cookies->set('BEARER', $sentinels['bearer JWT']);
         $request->cookies->set('XSRF-TOKEN', $sentinels['XSRF cookie']);
@@ -652,9 +681,10 @@ final class SecurityAuditLoggerTest extends TestCase
         $this->auditLogger->passwordSetupThrottled();
         $this->auditLogger->contactThrottled();
         $this->auditLogger->baseAccessThrottled();
+        $this->auditLogger->mcpConnectionGranted($invited, Uuid::v7(), 'https://client.example.test/metadata.json');
 
         $records = $this->handler->getRecords();
-        self::assertCount(22, $records);
+        self::assertCount(23, $records);
 
         foreach ($records as $record) {
             $serialized = json_encode([$record->message, $record->context, $record->extra], \JSON_THROW_ON_ERROR);

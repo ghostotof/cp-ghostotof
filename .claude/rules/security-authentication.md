@@ -179,7 +179,8 @@ paths:
     (`actor: system`, a scheduled command), `user-created` (issue #386, `app:user:create` through `CpgUserRegistrar`,
     with `superAdmin` like `role-changed`, `actor: console` — a person at a terminal the log cannot name, never
     `system` nor `anonymous`) — the two events whose actor is not read from the token storage; `record()` takes an
-    explicit actor for CLI callers). Every record carries
+    explicit actor for CLI callers), `mcp-connection-granted` (#647, `ConsentService` after the COMMIT of the
+    connection and its code: `userId`, `connectionId`, the client's public `clientId`, never the code). Every record carries
     `event` (the stable kebab-case key to filter on), `actor`, `ip`, `path` (canonical), plus the subject.
     **An account is designated by its `userId` (RFC 4122) only, as subject and as `actor`, never by its
     login identifier** (issue #363): an invited account's username is derived from the local part of its

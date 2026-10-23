@@ -1,0 +1,324 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Tests\Mcp\Connection\Application;
+
+use App\Mcp\Connection\Application\AuthorizationCompleterInterface;
+use App\Mcp\Connection\Application\AuthorizationRequestSummary;
+use App\Mcp\Connection\Application\AuthorizationRequestValidatorInterface;
+use App\Mcp\Connection\Application\ConsentDecision;
+use App\Mcp\Connection\Application\ConsentService;
+use App\Mcp\Connection\Application\OAuthEndpoints;
+use App\Mcp\Connection\Application\TransactionInterface;
+use App\Mcp\Connection\Domain\Entity\McpClient;
+use App\Mcp\Connection\Domain\Entity\McpConnection;
+use App\Mcp\Connection\Domain\Exception\AuthorizationRequestRejectedException;
+use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
+use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
+use App\Security\User\Domain\Entity\CpgUser;
+use Closure;
+use DateTimeImmutable;
+use League\OAuth2\Server\Exception\OAuthServerException;
+use League\OAuth2\Server\RequestTypes\AuthorizationRequest;
+use Nyholm\Psr7\Factory\Psr17Factory;
+use PHPUnit\Framework\TestCase;
+use Psr\Http\Message\ServerRequestInterface;
+use RuntimeException;
+use Symfony\Component\Clock\MockClock;
+use Symfony\Component\Uid\Uuid;
+use Throwable;
+
+/**
+ * ConsentService (#647) hors HTTP, sur des doublures qui consignent leurs
+ * effets dans l'ordre : ce que le test fonctionnel ne peut pas provoquer — un
+ * COMMIT refusé, un échec de league dans la transaction, un client retiré
+ * entre la validation et l'écriture — et l'ordre des effets : l'audit
+ * **après** la transaction, jamais pour un refus ni pour un échec.
+ */
+final class ConsentServiceTest extends TestCase
+{
+    private const string CLIENT_ID = 'https://client.example.test/metadata.json';
+    private const string REDIRECT = 'http://localhost:49152/callback';
+    private const string API_BASE = 'https://api.example.test';
+    private const string GRANTED_AT = '2026-10-23T10:00:00+00:00';
+
+    private McpClient $client;
+    private CpgUser $account;
+
+    /** @var list<string> les effets des doublures, dans l'ordre où ils se produisent */
+    private array $effects = [];
+
+    /** La connexion que le dépôt a reçue. */
+    private ?McpConnection $added = null;
+
+    /** @var array{CpgUser, Uuid, string}|null les arguments de la ligne d'audit */
+    private ?array $audited = null;
+
+    /** La requête que le validateur a reçue. */
+    private ?ServerRequestInterface $validated = null;
+
+    /** Ce que le validateur lève au lieu de valider. */
+    private ?Throwable $validatorRefusal = null;
+
+    /** Ce que league lève à l'accord, dans la transaction. */
+    private ?Throwable $approvalFailure = null;
+
+    private bool $commitRefused = false;
+
+    private bool $clientRegistered = true;
+
+    protected function setUp(): void
+    {
+        $this->client = McpClient::register(self::CLIENT_ID, 'Client de test', ['http://localhost/callback'], new DateTimeImmutable());
+        $this->account = new CpgUser('trusted', 'hashed-password');
+        $this->account->setRoles([CpgUser::ROLE_TRUSTED]);
+    }
+
+    /**
+     * Le cas nominal : la connexion du compte, au client, au scope retenu et
+     * à l'instant de l'horloge ; écrite puis complétée dans la transaction ;
+     * l'audit ensuite, avec l'UUID de cette connexion ; `iss` ajouté.
+     */
+    public function testAnApprovalWritesTheConnectionInTheTransactionThenAudits(): void
+    {
+        $location = $this->service()->decide($this->decision(true), $this->account);
+
+        self::assertSame(self::REDIRECT.'?code=c&state=s&'.http_build_query(['iss' => self::API_BASE.'/api/oauth']), $location);
+        self::assertSame(['begin', 'add', 'approve', 'commit', 'audit'], $this->effects);
+        self::assertInstanceOf(McpConnection::class, $this->added);
+        self::assertSame($this->account, $this->added->account());
+        self::assertSame($this->client, $this->added->client());
+        self::assertSame('nominative:read', $this->added->scope());
+        self::assertSame((new DateTimeImmutable(self::GRANTED_AT))->getTimestamp(), $this->added->grantedAt()->getTimestamp());
+        self::assertNotNull($this->audited);
+        [$account, $connectionId, $clientId] = $this->audited;
+        self::assertSame($this->account, $account);
+        self::assertTrue($this->added->getId()->equals($connectionId));
+        self::assertSame(self::CLIENT_ID, $clientId);
+    }
+
+    /** Un COMMIT refusé : l'exception remonte telle quelle, aucune ligne d'audit. */
+    public function testARefusedCommitWritesNoAuditLine(): void
+    {
+        $this->commitRefused = true;
+
+        try {
+            $this->service()->decide($this->decision(true), $this->account);
+            self::fail('Le COMMIT refusé doit remonter.');
+        } catch (RuntimeException $failure) {
+            self::assertSame('COMMIT refusé', $failure->getMessage());
+        }
+
+        self::assertSame(['begin', 'add', 'approve'], $this->effects);
+        self::assertNull($this->audited);
+    }
+
+    /** Un échec de league dans la transaction : il remonte, rien de journalisé non plus. */
+    public function testAFailureToIssueTheCodeWritesNoAuditLine(): void
+    {
+        $this->approvalFailure = OAuthServerException::serverError('Could not create a unique identifier.');
+
+        try {
+            $this->service()->decide($this->decision(true), $this->account);
+            self::fail('L\'échec de league doit remonter.');
+        } catch (OAuthServerException $failure) {
+            self::assertSame($this->approvalFailure, $failure);
+        }
+
+        self::assertSame(['begin', 'add', 'approve'], $this->effects);
+        self::assertNull($this->audited);
+    }
+
+    /** Le refus : la redirection de league, `iss` ajouté ; ni transaction, ni connexion, ni audit. */
+    public function testADenialCreatesNothingAndAuditsNothing(): void
+    {
+        $location = $this->service()->decide($this->decision(false), $this->account);
+
+        self::assertSame(self::REDIRECT.'?state=s&error=access_denied&'.http_build_query(['iss' => self::API_BASE.'/api/oauth']), $location);
+        self::assertSame(['deny'], $this->effects);
+    }
+
+    /** Une décision que la validation n'a pas vue (`approved` nul) vaut refus, jamais accord. */
+    public function testAnUnvalidatedDecisionIsADenial(): void
+    {
+        $this->service()->decide($this->decision(null), $this->account);
+
+        self::assertSame(['deny'], $this->effects);
+    }
+
+    /**
+     * Le client retiré entre la validation et l'écriture : la demande n'est
+     * plus valable (400 typé), rien n'est écrit ni journalisé.
+     */
+    public function testAClientRemovedSinceTheValidationIsRejected(): void
+    {
+        $this->clientRegistered = false;
+
+        try {
+            $this->service()->decide($this->decision(true), $this->account);
+            self::fail('Un client retiré doit être refusé.');
+        } catch (AuthorizationRequestRejectedException $rejection) {
+            self::assertSame(400, $rejection->getStatus());
+            self::assertSame('/errors/authorization-request-rejected', $rejection->getType());
+        }
+
+        self::assertSame([], $this->effects);
+    }
+
+    /**
+     * Tout refus du validateur devient le 400 typé, le refus de league gardé
+     * en `previous` — au résumé comme à la décision, et rien n'est écrit.
+     */
+    public function testAValidatorRefusalBecomesTheRejectionWithTheRefusalAsPrevious(): void
+    {
+        $refusal = OAuthServerException::invalidRequest('redirect_uri');
+        $this->validatorRefusal = $refusal;
+        $calls = [
+            'résumé' => fn(): mixed => $this->service()->summarize((new Psr17Factory())->createServerRequest('GET', '/api/oauth/consent')),
+            'accord' => fn(): mixed => $this->service()->decide($this->decision(true), $this->account),
+            'refus' => fn(): mixed => $this->service()->decide($this->decision(false), $this->account),
+        ];
+
+        foreach ($calls as $label => $call) {
+            try {
+                $call();
+                self::fail(\sprintf('%s : un refus du validateur doit être rejeté.', $label));
+            } catch (AuthorizationRequestRejectedException $rejection) {
+                self::assertSame($refusal, $rejection->getPrevious(), $label);
+                self::assertSame(400, $rejection->getStatus(), $label);
+            }
+        }
+
+        self::assertSame([], $this->effects);
+    }
+
+    /**
+     * La décision est rendue au validateur sous les noms OAuth, comme une
+     * demande du point d'autorisation : la même chaîne de requête que ses
+     * paramètres, un champ absent omis.
+     */
+    public function testTheDecisionReachesTheValidatorAsAnAuthorizationRequest(): void
+    {
+        $this->service()->decide(new ConsentDecision(
+            responseType: 'code',
+            clientId: self::CLIENT_ID,
+            redirectUri: self::REDIRECT,
+            state: 'a b&c',
+            codeChallenge: 'challenge',
+            codeChallengeMethod: 'S256',
+            resource: self::API_BASE.'/api/mcp',
+            approved: false,
+        ), $this->account);
+
+        $expected = [
+            'response_type' => 'code',
+            'client_id' => self::CLIENT_ID,
+            'redirect_uri' => self::REDIRECT,
+            'state' => 'a b&c',
+            'code_challenge' => 'challenge',
+            'code_challenge_method' => 'S256',
+            'resource' => self::API_BASE.'/api/mcp',
+        ];
+        self::assertNotNull($this->validated);
+        self::assertSame($expected, $this->validated->getQueryParams());
+        self::assertSame(http_build_query($expected), $this->validated->getUri()->getQuery());
+        self::assertSame('/api/oauth/authorize', $this->validated->getUri()->getPath());
+    }
+
+    private function service(): ConsentService
+    {
+        $validator = self::createStub(AuthorizationRequestValidatorInterface::class);
+        $validator->method('validate')->willReturnCallback(function (ServerRequestInterface $request): AuthorizationRequestSummary {
+            $this->validated = $request;
+
+            if (null !== $this->validatorRefusal) {
+                throw $this->validatorRefusal;
+            }
+
+            return $this->summary();
+        });
+
+        $completer = self::createStub(AuthorizationCompleterInterface::class);
+        $completer->method('approve')->willReturnCallback(function (): string {
+            $this->effects[] = 'approve';
+
+            if (null !== $this->approvalFailure) {
+                throw $this->approvalFailure;
+            }
+
+            return self::REDIRECT.'?code=c&state=s';
+        });
+        $completer->method('deny')->willReturnCallback(function (): string {
+            $this->effects[] = 'deny';
+
+            return self::REDIRECT.'?state=s&error=access_denied';
+        });
+
+        $transaction = self::createStub(TransactionInterface::class);
+        $transaction->method('run')->willReturnCallback(function (Closure $operation): mixed {
+            $this->effects[] = 'begin';
+            $result = $operation();
+
+            if ($this->commitRefused) {
+                throw new RuntimeException('COMMIT refusé');
+            }
+
+            $this->effects[] = 'commit';
+
+            return $result;
+        });
+
+        $connections = self::createStub(McpConnectionRepositoryInterface::class);
+        $connections->method('add')->willReturnCallback(function (McpConnection $connection): void {
+            $this->effects[] = 'add';
+            $this->added = $connection;
+        });
+
+        $auditLogger = self::createStub(SecurityAuditLoggerInterface::class);
+        $auditLogger->method('mcpConnectionGranted')->willReturnCallback(function (CpgUser $account, Uuid $connectionId, string $clientId): void {
+            $this->effects[] = 'audit';
+            $this->audited = [$account, $connectionId, $clientId];
+        });
+
+        return new ConsentService(
+            $validator,
+            $completer,
+            $transaction,
+            new McpClientRepositoryFake($this->clientRegistered ? $this->client : null, null),
+            $connections,
+            $auditLogger,
+            new OAuthEndpoints(self::API_BASE, 'https://site.example.test'),
+            new MockClock(self::GRANTED_AT),
+            new Psr17Factory(),
+        );
+    }
+
+    private function summary(): AuthorizationRequestSummary
+    {
+        return new AuthorizationRequestSummary(
+            clientId: self::CLIENT_ID,
+            clientName: 'Client de test',
+            redirectUri: self::REDIRECT,
+            redirectHost: 'localhost',
+            scope: 'nominative:read',
+            resource: self::API_BASE.'/api/mcp',
+            authorizationRequest: new AuthorizationRequest(),
+        );
+    }
+
+    private function decision(?bool $approved): ConsentDecision
+    {
+        return new ConsentDecision(
+            responseType: 'code',
+            clientId: self::CLIENT_ID,
+            redirectUri: self::REDIRECT,
+            scope: 'nominative:read',
+            state: 's',
+            codeChallenge: 'challenge',
+            codeChallengeMethod: 'S256',
+            resource: self::API_BASE.'/api/mcp',
+            approved: $approved,
+        );
+    }
+}
