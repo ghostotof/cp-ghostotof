@@ -6,6 +6,7 @@ namespace App\Tests\Mcp\Connection\Presentation\Controller;
 
 use App\Tests\Mcp\Connection\DrivesTheOAuthFlow;
 use App\Tests\Support\ReadsSecurityAuditLog;
+use App\Tests\Support\TestKeys;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\HttpFoundation\Response;
@@ -139,6 +140,34 @@ final class TokenControllerTest extends WebTestCase
 
         $this->assertOAuthError($response, Response::HTTP_BAD_REQUEST, 'invalid_request');
         $this->assertNoTokenIssued();
+    }
+
+    /**
+     * Un `client_secret` qu'un client public n'a pas à envoyer est **ignoré**,
+     * pas refusé : league 9.4.1 ne consulte `ClientRepository::validateClient()`
+     * que pour un client confidentiel, et aucun ne l'est. Dans le corps comme
+     * en HTTP Basic (que league lit aussi), à l'échange comme au
+     * rafraîchissement, la réponse est celle d'une requête sans secret. Si
+     * une montée de league se mettait à le refuser, ce test le dirait — un
+     * client qui l'envoie par habitude serait alors coupé. La valeur est tirée
+     * à l'exécution (TestKeys), jamais un littéral que GitGuardian lirait
+     * comme un secret en dur.
+     */
+    public function testASuperfluousClientSecretIsIgnored(): void
+    {
+        $superfluous = TestKeys::material('superfluous-client');
+        $exchanged = $this->exchange($this->grantedCode(), ['client_secret' => $superfluous]);
+        self::assertSame(Response::HTTP_OK, $exchanged->getStatusCode(), substr((string) $exchanged->getContent(), 0, 500));
+        $refreshToken = $this->json($exchanged)['refresh_token'] ?? null;
+        self::assertIsString($refreshToken);
+
+        $refreshed = $this->postForm(self::TOKEN_PATH, [
+            'grant_type' => 'refresh_token',
+            'refresh_token' => $refreshToken,
+            'client_id' => self::CLIENT_ID,
+        ], ['PHP_AUTH_USER' => self::CLIENT_ID, 'PHP_AUTH_PW' => $superfluous]);
+        self::assertSame(Response::HTTP_OK, $refreshed->getStatusCode(), substr((string) $refreshed->getContent(), 0, 500));
+        self::assertArrayHasKey('access_token', $this->json($refreshed));
     }
 
     /** Un client inconnu : `invalid_client`, 401. */

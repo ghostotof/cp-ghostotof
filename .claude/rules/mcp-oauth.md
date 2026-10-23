@@ -37,6 +37,17 @@ paths:
   `Infrastructure/League/` (league's repositories and entities, the grant, the key), `Infrastructure/Doctrine/`,
   `Presentation/` (thin controllers, `app:mcp:client:register`). Every exception carries the `…Exception`
   suffix, like all of `src/`.
+- **An assumed exception to the context boundaries: `Mcp/Connection` depends on `Security` directly.** It is
+  the first context outside `Security` whose entity references `CpgUser` (`McpConnection::$account`, a
+  `ManyToOne` on `account_id`, `ON DELETE CASCADE`) and whose service depends on
+  `SecurityAuditLoggerInterface` (`ConsentService`, the `mcp-connection-granted` line). Elsewhere a context
+  designates an account through `Shared/Domain/Security/AccountReference` (its UUID, `Ai`'s quotas) and never
+  imports `Security`. Here the spec requires the foreign key — removing the account must kill its connections in
+  the database, not wait for a purge — and Doctrine maps it on the entity class only; and the grant belongs to
+  the security audit log, whose single writer is that interface. Rejected: a bare UUID column with no foreign
+  key (a deleted account would leave live connections until #648's authenticator stumbled on them), and a copy
+  of the audit logger (a second writer of `security_audit`). A new dependency of this context on `Security`
+  goes through the same two doors, nothing else.
 - **League's « user » is the MCP connection, never the account** (`ConnectionAsUser`, its RFC 4122 UUID):
   every code and token hangs on a connection and dies with it; the account appears in no payload handed to
   the client. `ConnectionOfToken` (written once for the three repositories) refuses, as a named server
@@ -97,10 +108,20 @@ paths:
   bridge also parses a JSON body into parameters, which league then served while the pollution check, reading
   the raw body as a form, saw nothing. Another media type is an `invalid_request`; league gets the
   parameters `parse_str()` drew from **that** raw body (`php://input`), never `$_POST` — so
-  `enable_post_data_reading` is irrelevant to them (`.claude/rules/images-docker.md`). The revocation
+  `enable_post_data_reading` is irrelevant to them (`.claude/rules/images-docker.md`); `FormEncodedRequestTest`
+  hands it a parsed body that differs from the raw one (another client, one more parameter, empty, absent) and
+  wants the raw one's (red without the swap, measured). **A `client_secret` from a public client is ignored, not
+  refused**: league 9.4.1 consults `ClientRepository::validateClient()` only for a confidential client
+  (`AbstractGrant::validateClient()`), so a superfluous secret, in the body or in HTTP Basic, changes nothing,
+  and its repetition is not watched (`TokenControllerTest::testASuperfluousClientSecretIsIgnored`: a league bump
+  that starts refusing it turns it red). `validateClient()` stays written, the interface demands it, and refuses
+  a secret for whoever calls it some day (`LeagueRepositoriesTest`). The revocation
   authenticates the client (`client_id`, public, known) **before** reading the token; a token unknown,
-  unreadable or of another client is a 200 without effect (RFC 7009 §2.2); a refresh token takes its
-  access token along, in one transaction; the connection is **not** revoked (#649, #650).
+  unreadable or of another client is a 200 without effect (RFC 7009 §2.2). **Revoking a refresh token kills its
+  access token** too, in one transaction (§2.1's SHOULD); **revoking an access token leaves its refresh token
+  alive** (§2.1 only says MAY): a client handing back its access token alone can still refresh
+  (`RevocationControllerTest::testRevokingAnAccessTokenRevokesItsRowOnly`). The connection
+  is **not** revoked (#649); revoking a whole connection, every token with it, is #650.
   `token_type_hint` is ignored. **Accepted**: the response time differs with the token's fate (one query,
   one decryption), status and body do not. **Known, #649's**: league's races (tokens issued before the code
   is revoked, a refresh token revoked after being checked); a code exchanged twice in sequence is refused.
@@ -186,4 +207,8 @@ paths:
   `HttpOAuthConsentRepository.spec.ts`, `consentParams.spec.ts`.
 - **The whole flow** is driven end to end by `tests/Mcp/Connection/OAuthFlowTest` (trait
   `DrivesTheOAuthFlow`: a registered client, authorize, consent as a trusted account, exchange, refresh,
-  revoke, every table read for a token in clear).
+  revoke, every table read for a token in clear). `testAnAwkwardStateAndARegisteredQueryReachTheClientIntact`
+  sends a `state` holding `+`, `&`, `=`, `%`, a space, `#` and non-ASCII characters, on a registered `https`
+  redirect carrying its own query (`?tenant=a`): the callback keeps that query first, then league's `code` and
+  `state` (byte-exact), then `iss` last. The page's leg is played with the values it would send (the query read
+  decoded, sent back to the `GET`, then camelCase in the `POST`), PHPUnit running no frontend.

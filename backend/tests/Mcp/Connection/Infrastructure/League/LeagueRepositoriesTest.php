@@ -305,7 +305,12 @@ final class LeagueRepositoriesTest extends KernelTestCase
 
     /**
      * Une empreinte déjà prise est rendue à league sous l'exception qu'il
-     * attend pour tirer un autre identifiant.
+     * nomme pour ce cas, jamais la violation de Doctrine (dont le DETAIL cite
+     * l'empreinte). Ce n'est **pas** un nouvel essai qui aboutirait : league
+     * en tenterait un sous un autre identifiant, mais le flush refusé a fermé
+     * l'EntityManager, et cet essai échoue à son tour — la requête finit en
+     * erreur. Accepté : une collision de 40 octets aléatoires n'arrive pas ;
+     * ce test épingle seulement le nom de la cause.
      */
     public function testADuplicateIdentifierIsReportedToLeague(): void
     {
@@ -361,9 +366,12 @@ final class LeagueRepositoriesTest extends KernelTestCase
 
     /**
      * league n'appelle `validateClient()` que pour un client confidentiel ;
-     * aucun ne l'est ici. Écrit quand même pour qui l'appellerait (la
-     * révocation, plus tard) : un client connu, sans secret, et l'un des deux
-     * grants servis.
+     * aucun ne l'est ici, et la révocation ne l'appelle pas non plus. Ce test
+     * épingle la méthode seule, pour qui l'appellerait un jour : un client
+     * connu, sans secret, et l'un des deux grants servis. Ce qu'un secret
+     * présenté devient vraiment au point de jeton (ignoré, league ne lisant
+     * pas ce dépôt) est épinglé par
+     * `TokenControllerTest::testASuperfluousClientSecretIsIgnored`.
      */
     #[DataProvider('clientValidations')]
     public function testValidateClientAcceptsOnlyAKnownPublicClientOnTheServedGrants(string $clientId, ?string $presentedSecret, ?string $grantType, bool $expected): void

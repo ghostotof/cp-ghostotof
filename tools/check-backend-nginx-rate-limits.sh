@@ -98,9 +98,12 @@ ZONES=(
   "/api/mcp GET 0 mcp"
   # Serveur d'autorisation OAuth de la connexion MCP (#647) : une seule zone
   # sur le préfixe `/api/oauth/`. La ligne GET suit la ligne POST sur le même
-  # compteur : son 429 vient vite, la zone étant déjà vidée.
+  # compteur, que le POST vient de vider : sa rafale est donc 0, comme celle
+  # de `mcp GET`. Elle prouve que la location couvre `/authorize` (un 429
+  # problem+json de la zone `oauth`), pas sa rafale — c'est la ligne POST qui
+  # la mesure.
   "/api/oauth/token POST 10 oauth"
-  "/api/oauth/authorize GET 10 oauth"
+  "/api/oauth/authorize GET 0 oauth"
   "/api/watch GET 200 publicapi"
 )
 # Bornes de corps propres à une location : <chemin> <octets admis>. Un corps

@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace App\Tests\Mcp\Connection;
 
+use App\Mcp\Connection\Domain\Entity\McpClient;
+use App\Mcp\Connection\Domain\Repository\McpClientRepositoryInterface;
 use App\Security\User\Domain\Entity\CpgUser;
+use DateTimeImmutable;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\HttpFoundation\Response;
@@ -119,6 +122,72 @@ final class OAuthFlowTest extends WebTestCase
         self::assertStringContainsString(hash('sha256', $codeIdentifier), $tables['mcp_authorization_code']);
         self::assertStringContainsString(hash('sha256', $refreshed['access_token']), $tables['mcp_access_token']);
         self::assertStringContainsString(hash('sha256', $secondRefreshIdentifier), $tables['mcp_refresh_token']);
+    }
+
+    /**
+     * Un `state` qui porte ce qu'un encodage maladroit casserait (`+`, `&`,
+     * `=`, `%`, une espace, `#`, `/`, `?`, des caractères hors ASCII), et une
+     * redirection `https` enregistrée **avec sa propre requête** : le client
+     * reçoit son `state` à l'octet près, sa requête enregistrée intacte et en
+     * tête, `code` et `state` ajoutés derrière par league, puis `iss` en
+     * dernier (IssParameter), sans rien casser de ce qui précède.
+     *
+     * La page de consentement est du frontend, qu'un test PHPUnit ne fait pas
+     * tourner : elle est jouée ici avec les valeurs exactes qu'elle enverrait.
+     * Elle lit la requête reçue déjà décodée (`route.query` de vue-router :
+     * `+` en espace, `%XX` décodé — ce que `parse_str()` fait de la requête
+     * que le point d'autorisation construit par `http_build_query()`), la
+     * renvoie telle quelle au `GET` du résumé, puis dans le corps JSON du
+     * `POST`, en camelCase (`consentParamsFromQuery()`). Ce que la page fait
+     * de ces valeurs est épinglé côté frontend (`consentParams.spec.ts`).
+     */
+    public function testAnAwkwardStateAndARegisteredQueryReachTheClientIntact(): void
+    {
+        $state = 'a+b c&d=e%zz%2B/?#é✓ fin';
+        $redirectUri = 'https://client.example.test/cb?tenant=a';
+        $clientId = 'https://queried-client.example.test/metadata.json';
+        self::getContainer()->get(McpClientRepositoryInterface::class)->add(McpClient::register($clientId, 'Client à requête', [$redirectUri], new DateTimeImmutable()));
+        $overrides = ['client_id' => $clientId, 'redirect_uri' => $redirectUri, 'state' => $state];
+
+        // 1. Autorisation : la demande repart vers la page, `state` compris.
+        $this->client->request('GET', self::AUTHORIZE_PATH.'?'.http_build_query($this->validParameters($overrides)));
+        $redirect = $this->client->getResponse();
+        self::assertSame(Response::HTTP_FOUND, $redirect->getStatusCode(), substr((string) $redirect->getContent(), 0, 500));
+        parse_str((string) parse_url((string) $redirect->headers->get('Location'), \PHP_URL_QUERY), $received);
+        self::assertSame($state, $received['state'] ?? null);
+        self::assertSame($redirectUri, $received['redirect_uri'] ?? null);
+
+        // 2. La page : le résumé lu avec la requête reçue, puis la décision
+        //    renvoyée avec ces mêmes valeurs.
+        $this->loginAs(self::TRUSTED_USERNAME, [CpgUser::ROLE_TRUSTED]);
+        $this->client->request('GET', self::CONSENT_PATH.'?'.http_build_query($received));
+        self::assertSame(Response::HTTP_OK, $this->client->getResponse()->getStatusCode(), substr((string) $this->client->getResponse()->getContent(), 0, 500));
+        self::assertSame('client.example.test', $this->json($this->client->getResponse())['redirectHost'] ?? null);
+        $this->postConsent(['approved' => true, ...$this->asDecisionBody($received)], $this->xsrfToken());
+        $callback = $this->redirectUriOf($this->client->getResponse());
+
+        // 3. Le retour au client : sa requête d'abord, intacte ; `iss` en dernier.
+        self::assertStringStartsWith($redirectUri.'&', $callback);
+        $issuer = $this->publicApiBase().'/api/oauth';
+        self::assertStringEndsWith('&'.http_build_query(['iss' => $issuer]), $callback);
+        $query = $this->queryOf($callback);
+        self::assertSame(['tenant', 'code', 'state', 'iss'], array_keys($query));
+        self::assertSame('a', $query['tenant']);
+        self::assertSame($state, $query['state']);
+        self::assertSame($issuer, $query['iss']);
+        $code = $query['code'];
+        self::assertIsString($code);
+
+        // 4. L'échange, sous la même redirection, requête comprise.
+        $tokens = $this->tokensOf($this->postForm(self::TOKEN_PATH, [
+            'grant_type' => 'authorization_code',
+            'code' => $code,
+            'redirect_uri' => $redirectUri,
+            'client_id' => $clientId,
+            'code_verifier' => self::CODE_VERIFIER,
+            'resource' => $this->resource(),
+        ]));
+        self::assertNotSame('', $tokens['access_token']);
     }
 
     /**

@@ -59,6 +59,18 @@ trait DrivesTheOAuthFlow
 
     private const string TRUSTED_USERNAME = 'trusted';
 
+    /** Le nom OAuth d'un paramètre de la demande, et son nom dans le corps JSON du consentement. */
+    private const array CONSENT_BODY_NAMES = [
+        'response_type' => 'responseType',
+        'client_id' => 'clientId',
+        'redirect_uri' => 'redirectUri',
+        'scope' => 'scope',
+        'state' => 'state',
+        'code_challenge' => 'codeChallenge',
+        'code_challenge_method' => 'codeChallengeMethod',
+        'resource' => 'resource',
+    ];
+
     private KernelBrowser $client;
 
     private function setUpOAuthFlow(): void
@@ -185,24 +197,29 @@ trait DrivesTheOAuthFlow
      *
      * @param array<string, string|null> $overrides
      *
-     * @return array<string, string>
+     * @return array<string, mixed>
      */
     private function decisionBody(array $overrides = []): array
     {
-        $names = [
-            'response_type' => 'responseType',
-            'client_id' => 'clientId',
-            'redirect_uri' => 'redirectUri',
-            'scope' => 'scope',
-            'state' => 'state',
-            'code_challenge' => 'codeChallenge',
-            'code_challenge_method' => 'codeChallengeMethod',
-            'resource' => 'resource',
-        ];
+        return $this->asDecisionBody($this->validParameters($overrides));
+    }
+
+    /**
+     * Des paramètres de la demande sous leur nom OAuth, renommés comme la page
+     * les renvoie dans le corps JSON (`consentParamsFromQuery()`, côté
+     * frontend). Un nom que la page ne lit pas fait échouer le test.
+     *
+     * @param array<int|string, mixed> $parameters
+     *
+     * @return array<string, mixed>
+     */
+    private function asDecisionBody(array $parameters): array
+    {
         $body = [];
 
-        foreach ($this->validParameters($overrides) as $name => $value) {
-            $body[$names[$name]] = $value;
+        foreach ($parameters as $name => $value) {
+            $bodyName = self::CONSENT_BODY_NAMES[$name] ?? self::fail(\sprintf('Paramètre inattendu dans la demande : %s.', $name));
+            $body[$bodyName] = $value;
         }
 
         return $body;

@@ -45,9 +45,17 @@ final readonly class ClientRepository implements ClientRepositoryInterface
 
     /**
      * Vrai pour un client connu, sans secret, sur l'un des deux grants
-     * servis. league ne l'appelle que pour un client confidentiel — aucun ne
-     * l'est ici —, et passe une chaîne vide quand aucun secret n'est présenté :
-     * vide et absent valent « sans secret ».
+     * servis. Exigée par l'interface, mais **jamais appelée** : league 9.4.1
+     * ne la consulte que pour un client confidentiel
+     * (`AbstractGrant::validateClient()`, sous `isConfidential()`) — aucun ne
+     * l'est ici —, et la révocation reconnaît le client sans elle
+     * (LeagueRevocationEndpoint). Un `client_secret` qu'un client public
+     * envoie au point de jeton n'arrive donc pas ici : il est **ignoré**, pas
+     * refusé (`TokenControllerTest::testASuperfluousClientSecretIsIgnored`).
+     * Le refus d'un secret présenté reste écrit pour qui l'appellerait un
+     * jour : la réponse prudente d'un serveur qui n'en délivre aucun. league
+     * passe une chaîne vide quand aucun secret n'est présenté : vide et absent
+     * valent « sans secret ».
      */
     public function validateClient(string $clientIdentifier, #[SensitiveParameter] ?string $clientSecret, ?string $grantType): bool
     {

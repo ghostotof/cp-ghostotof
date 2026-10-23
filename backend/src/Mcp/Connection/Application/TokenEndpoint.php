@@ -35,7 +35,10 @@ final readonly class TokenEndpoint implements TokenEndpointInterface
     /**
      * Les paramètres que league ou ce point lisent, pour l'un ou l'autre
      * grant. `client_secret` n'y est pas : aucun client n'en a (clients
-     * publics seulement), league ne le lit pas pour eux.
+     * publics seulement). league le lit, mais ne le confronte à rien pour un
+     * client public (`AbstractGrant::validateClient()` ne consulte le dépôt
+     * que pour un client confidentiel) : un secret superflu est ignoré, pas
+     * refusé, et sa répétition n'est pas surveillée.
      */
     private const array READ_PARAMETERS = ['grant_type', 'code', 'redirect_uri', 'client_id', 'code_verifier', 'refresh_token', 'scope', 'resource'];
 

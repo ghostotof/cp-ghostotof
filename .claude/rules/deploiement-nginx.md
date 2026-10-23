@@ -44,7 +44,8 @@ paths:
   exchanged), then a refresh an hour; a burst of token calls from one address drains the same counter as that
   address's consent page, accepted. The two metadata documents (`/.well-known/…`) are not under it, they stay
   under `publicapi`. `check-backend-nginx-rate-limits.sh` probes `/api/oauth/token` (POST) then
-  `/api/oauth/authorize` (GET) **on that same counter**, and mirrors the location
+  `/api/oauth/authorize` (GET) **on that same counter** — the GET line with a burst of 0, since the POST
+  drained it: it proves the location covers `/authorize`, not its burst —, and mirrors the location
   (`.claude/rules/mcp-oauth.md`).
   `mcp` (60 r/m, burst 20, #644, ADR 0006 D6) and `mcpsession` (10 r/m, burst 5) sit on the **exact**
   `location = /api/mcp`, every method (the `GET` boots Symfony too; a CORS preflight costs a token as well).

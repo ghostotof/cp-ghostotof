@@ -34,8 +34,10 @@ use SensitiveParameter;
  *   un jeton inconnu, illisible ou d'un autre client ne change rien, et la
  *   réponse est celle d'un succès (RFC 7009 §2.2) — elle ne dit pas qu'il
  *   existe. Un rafraîchissement emporte le jeton d'accès émis avec lui
- *   (RFC 7009 §2.1 le permet), dans une transaction : jamais l'un sans
- *   l'autre.
+ *   (RFC 7009 §2.1 le recommande), dans une transaction : jamais l'un sans
+ *   l'autre. L'inverse non : révoquer un jeton d'accès laisse vivre son
+ *   rafraîchissement (§2.1 ne fait que le permettre), qui en obtiendra un
+ *   autre ; tout couper, c'est révoquer la connexion (#650).
  * - **La connexion n'est pas révoquée** : la révocation d'une connexion, et
  *   sa ligne d'audit « connexion révoquée », sont l'objet des tâches 10 et
  *   11 de la spec (#649, #650). Ici, un client rend un jeton dont il n'a plus
