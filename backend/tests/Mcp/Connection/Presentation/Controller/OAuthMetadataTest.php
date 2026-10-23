@@ -113,16 +113,17 @@ final class OAuthMetadataTest extends WebTestCase
     }
 
     /**
-     * RFC 8414 §3.1 : le chemin bien connu inséré avant le chemin de
-     * l'émetteur, celui qu'un client calcule depuis `issuer()`, est celui que
-     * le routeur sert, par ce contrôleur.
+     * RFC 8414 §3.1 : l'URL du document telle qu'`OAuthEndpoints` la publie —
+     * le chemin bien connu inséré avant le chemin de l'émetteur, celui qu'un
+     * client calcule depuis `issuer()` (`OAuthEndpointsTest` pose cette
+     * dérivation) — est celle que le routeur sert, par ce contrôleur.
      */
-    public function testTheAuthorizationServerMetadataPathDerivedFromTheIssuerIsTheRoutedPath(): void
+    public function testTheAdvertisedAuthorizationServerMetadataUrlIsTheRoutedPath(): void
     {
         self::bootKernel();
-        $issuer = self::getContainer()->get(OAuthEndpoints::class)->issuer();
+        $url = self::getContainer()->get(OAuthEndpoints::class)->authorizationServerMetadataUrl();
 
-        $this->assertRoutedTo('/.well-known/oauth-authorization-server'.$this->pathOf($issuer), AuthorizationServerMetadataController::class);
+        $this->assertRoutedTo($this->pathOf($url), AuthorizationServerMetadataController::class);
     }
 
     /**

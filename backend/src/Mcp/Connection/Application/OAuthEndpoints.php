@@ -25,6 +25,12 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
  */
 final readonly class OAuthEndpoints
 {
+    /**
+     * Le chemin de l'émetteur sous la base publique de l'API : écrit une fois,
+     * il entre dans l'émetteur et dans l'URL de son document de métadonnées.
+     */
+    private const string ISSUER_PATH = '/api/oauth';
+
     private string $publicApiBaseUrl;
     private string $frontendBaseUrl;
 
@@ -41,7 +47,7 @@ final readonly class OAuthEndpoints
     /** L'émetteur (`issuer`, RFC 8414) : le préfixe des points OAuth. */
     public function issuer(): string
     {
-        return $this->publicApiBaseUrl.'/api/oauth';
+        return $this->publicApiBaseUrl.self::ISSUER_PATH;
     }
 
     /**
@@ -75,6 +81,22 @@ final readonly class OAuthEndpoints
     public function protectedResourceMetadataUrl(): string
     {
         return $this->publicApiBaseUrl.'/.well-known/oauth-protected-resource/api/mcp';
+    }
+
+    /**
+     * Le document de métadonnées du serveur d'autorisation, hors `/api` : le
+     * chemin bien connu inséré avant le chemin de l'émetteur (RFC 8414 §3.1),
+     * celui qu'un client calcule depuis {@see self::issuer()}. Écrit ici pour
+     * que la route, l'Ingress dédié et leurs tests le lisent d'une source
+     * unique au lieu de le recomposer.
+     *
+     * Comme pour la ressource protégée, la base publique est une origine sans
+     * chemin (l'API est servie à la racine de son hôte) : une base servie sous
+     * un chemin demanderait d'insérer le segment bien connu avant lui.
+     */
+    public function authorizationServerMetadataUrl(): string
+    {
+        return $this->publicApiBaseUrl.'/.well-known/oauth-authorization-server'.self::ISSUER_PATH;
     }
 
     /**

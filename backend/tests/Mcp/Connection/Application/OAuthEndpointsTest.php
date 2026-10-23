@@ -50,6 +50,7 @@ final class OAuthEndpointsTest extends KernelTestCase
         self::assertSame('https://site.example/api/oauth/token', $endpoints->tokenEndpoint());
         self::assertSame('https://site.example/api/oauth/revoke', $endpoints->revocationEndpoint());
         self::assertSame('https://site.example/.well-known/oauth-protected-resource/api/mcp', $endpoints->protectedResourceMetadataUrl());
+        self::assertSame('https://site.example/.well-known/oauth-authorization-server/api/oauth', $endpoints->authorizationServerMetadataUrl());
         self::assertSame('https://site.example/fr/oauth/consent', $endpoints->consentPage('fr'));
     }
 
@@ -68,6 +69,7 @@ final class OAuthEndpointsTest extends KernelTestCase
         self::assertSame('http://localhost:8080/api/oauth/token', $endpoints->tokenEndpoint());
         self::assertSame('http://localhost:8080/api/oauth/revoke', $endpoints->revocationEndpoint());
         self::assertSame('http://localhost:8080/.well-known/oauth-protected-resource/api/mcp', $endpoints->protectedResourceMetadataUrl());
+        self::assertSame('http://localhost:8080/.well-known/oauth-authorization-server/api/oauth', $endpoints->authorizationServerMetadataUrl());
         self::assertSame('http://localhost:5173/en/oauth/consent', $endpoints->consentPage('en'));
     }
 
@@ -81,6 +83,7 @@ final class OAuthEndpointsTest extends KernelTestCase
         $endpoints = new OAuthEndpoints('https://api.example/', 'https://site.example//');
 
         self::assertSame('https://api.example/api/oauth', $endpoints->issuer());
+        self::assertSame('https://api.example/.well-known/oauth-authorization-server/api/oauth', $endpoints->authorizationServerMetadataUrl());
         self::assertSame('https://site.example/fr/oauth/consent', $endpoints->consentPage('fr'));
     }
 }

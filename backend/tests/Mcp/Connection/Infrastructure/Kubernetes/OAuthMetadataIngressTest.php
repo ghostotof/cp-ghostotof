@@ -98,28 +98,44 @@ final class OAuthMetadataIngressTest extends KernelTestCase
     }
 
     /**
-     * Aucune Basic Auth (ni aucune autre annotation `auth-*`), aucun
-     * certificat propre : le certificat de l'hôte est celui de l'Ingress
+     * Aucune annotation du tout, plutôt qu'une liste d'annotations refusées
+     * (`auth-*`, cert-manager) qui ne se ferme jamais : ingress-nginx lit
+     * des dizaines d'annotations qui changent ce que reçoit le client
+     * (`whitelist-source-range`, `server-snippet`, une redirection…). Aucun
+     * `tls` non plus : le certificat de l'hôte est celui de l'Ingress
      * principal, nginx-ingress fusionnant les objets d'un même hôte, et un
-     * second `tls` ferait gérer le même secret par deux Certificate.
+     * second `tls` ferait gérer le même secret par deux Certificate. La
+     * kustomization de la base n'en ajoute aucune à toutes ses ressources.
      */
-    public function testItCarriesNoAuthenticationNorCertificateOfItsOwn(): void
+    public function testItCarriesNoAnnotationNorCertificateOfItsOwn(): void
     {
         $ingress = $this->ingress();
-        $annotations = $ingress['metadata']['annotations'] ?? [];
-        self::assertIsArray($annotations);
 
-        foreach (array_keys($annotations) as $annotation) {
-            self::assertStringStartsNotWith('nginx.ingress.kubernetes.io/auth-', (string) $annotation);
-            self::assertStringStartsNotWith('cert-manager.io/', (string) $annotation);
-        }
+        self::assertArrayNotHasKey('annotations', $ingress['metadata'] ?? [], self::INGRESS.' ne porte aucune annotation.');
         self::assertArrayNotHasKey('tls', $ingress['spec'] ?? []);
+        self::assertArrayNotHasKey('commonAnnotations', KubernetesManifests::base()->resource('kustomization.yaml', 'Kustomization'));
+    }
+
+    /**
+     * Après les patchs de chaque overlay, tels que ce test les lit, l'objet
+     * n'a toujours aucune annotation : aucune opération ne touche
+     * `/metadata/annotations` (le cas suivant exige d'ailleurs l'hôte seul), et
+     * aucun `commonAnnotations` ne la pose sur toutes les ressources de
+     * l'overlay — la Basic Auth de la préprod n'est posée que sur
+     * `cp-ghostotof`.
+     */
+    #[DataProvider('overlays')]
+    public function testNoOverlayGivesItAnAnnotation(string $overlay): void
+    {
+        foreach ($this->operationsOn($overlay, self::INGRESS) as $operation) {
+            self::assertStringStartsNotWith('/metadata/annotations', KubernetesManifests::text($operation['path'] ?? null), \sprintf('%s : annotation posée sur %s.', $overlay, self::INGRESS));
+        }
+        self::assertArrayNotHasKey('commonAnnotations', KubernetesManifests::overlay($overlay)->resource('kustomization.yaml', 'Kustomization'), \sprintf('%s : commonAnnotations atteindrait %s.', $overlay, self::INGRESS));
     }
 
     /**
      * Chaque overlay ne fait que poser l'hôte, celui de l'Ingress principal :
-     * aucune annotation (la Basic Auth de la préprod n'est posée que sur
-     * `cp-ghostotof`), aucun autre champ.
+     * aucun autre champ.
      */
     #[DataProvider('overlays')]
     public function testEachOverlaySetsTheMainIngressHostAndNothingElse(string $overlay): void
@@ -133,22 +149,42 @@ final class OAuthMetadataIngressTest extends KernelTestCase
     }
 
     /**
-     * Aucun patch ne vise un Ingress sans le nommer : il atteindrait aussi
-     * celui-ci, Basic Auth comprise. Aucun patch par fichier ne le vise non plus.
+     * Aucun autre patch de l'overlay n'atteint l'objet, ce que les cas
+     * précédents ne verraient pas : ils ne lisent que le patch qui le nomme
+     * en clair.
+     *
+     * Les champs d'une cible kustomize sont des expressions régulières
+     * (`name: cp-ghostotof.*` vise aussi celui-ci) : `kind` et `name` sont
+     * exigés et littéraux. Un sélecteur d'étiquettes ou d'annotations sur une
+     * cible Ingress l'atteindrait par ses étiquettes (`part-of`, commune à
+     * tout). Un patch sans cible se lit par son propre `metadata.name`, qu'il
+     * soit écrit dans un fichier ou en ligne. Les champs hérités
+     * `patchesJson6902` et `patchesStrategicMerge` échapperaient à cette
+     * lecture de `patches` : refusés.
      */
     #[DataProvider('overlays')]
     public function testNoOtherPatchOfTheOverlayReachesTheIngress(string $overlay): void
     {
         $manifests = KubernetesManifests::overlay($overlay);
-        foreach (KubernetesManifests::entries($manifests->resource('kustomization.yaml', 'Kustomization'), 'patches') as $patch) {
+        $kustomization = $manifests->resource('kustomization.yaml', 'Kustomization');
+        foreach (['patchesJson6902', 'patchesStrategicMerge'] as $legacy) {
+            self::assertArrayNotHasKey($legacy, $kustomization, \sprintf('%s : %s, champ hérité, est refusé (patches seulement).', $overlay, $legacy));
+        }
+
+        foreach (KubernetesManifests::entries($kustomization, 'patches') as $patch) {
             $target = $patch['target'] ?? null;
-            if (\is_array($target) && 'Ingress' === ($target['kind'] ?? null)) {
-                self::assertIsString($target['name'] ?? null, \sprintf('%s : un patch vise tous les Ingress.', $overlay));
+            if (null !== $target) {
+                self::assertIsArray($target, \sprintf('%s : une cible est une table.', $overlay));
+                $this->assertLiteralTarget($overlay, $target);
+
+                continue;
             }
-            if (isset($patch['path'])) {
-                foreach ($manifests->documents(KubernetesManifests::text($patch['path'])) as $document) {
-                    self::assertNotSame(self::INGRESS, $document['metadata']['name'] ?? null, \sprintf('%s : %s patché par fichier.', $overlay, self::INGRESS));
-                }
+            $documents = isset($patch['path'])
+                ? $manifests->documents(KubernetesManifests::text($patch['path']))
+                : [Yaml::parse(KubernetesManifests::text($patch['patch'] ?? null))];
+            foreach ($documents as $document) {
+                self::assertIsArray($document, \sprintf('%s : un patch sans cible est une ressource.', $overlay));
+                self::assertNotSame(self::INGRESS, $document['metadata']['name'] ?? null, \sprintf('%s : %s patché sans cible.', $overlay, self::INGRESS));
             }
         }
     }
@@ -163,10 +199,31 @@ final class OAuthMetadataIngressTest extends KernelTestCase
     }
 
     /**
-     * Les chemins des deux documents tels que l'application les publie : celui
-     * de la ressource protégée (RFC 9728 §3.1), et celui du serveur
-     * d'autorisation, le chemin bien connu inséré avant le chemin de
-     * l'émetteur (RFC 8414 §3.1). Triés.
+     * Une cible kustomize lue comme elle s'applique : `kind` et `name`
+     * littéraux (sans quoi ils se lisent comme des expressions régulières),
+     * et aucun sélecteur sur une cible Ingress.
+     *
+     * @param array<mixed> $target
+     */
+    private function assertLiteralTarget(string $overlay, array $target): void
+    {
+        $kind = $target['kind'] ?? null;
+        $name = $target['name'] ?? null;
+        self::assertIsString($kind, \sprintf('%s : une cible sans kind vise toutes les sortes de ressources.', $overlay));
+        self::assertMatchesRegularExpression('/\A[A-Za-z]+\z/', $kind, \sprintf('%s : kind de cible non littéral.', $overlay));
+        self::assertIsString($name, \sprintf('%s : une cible %s sans name vise toutes les ressources de ce kind.', $overlay, $kind));
+        self::assertMatchesRegularExpression('/\A[a-z0-9-]+\z/', $name, \sprintf('%s : name de cible non littéral (%s).', $overlay, $name));
+        if ('Ingress' === $kind) {
+            self::assertArrayNotHasKey('labelSelector', $target, \sprintf('%s : labelSelector sur une cible Ingress.', $overlay));
+            self::assertArrayNotHasKey('annotationSelector', $target, \sprintf('%s : annotationSelector sur une cible Ingress.', $overlay));
+        }
+    }
+
+    /**
+     * Les chemins des deux documents tels que l'application les publie
+     * ({@see OAuthEndpoints::protectedResourceMetadataUrl()}, RFC 9728 §3.1, et
+     * {@see OAuthEndpoints::authorizationServerMetadataUrl()}, RFC 8414 §3.1),
+     * jamais recomposés ici. Triés.
      *
      * @return list<string>
      */
@@ -175,7 +232,7 @@ final class OAuthMetadataIngressTest extends KernelTestCase
         $endpoints = new OAuthEndpoints('https://site.example', 'https://site.example');
         $paths = [
             (string) parse_url($endpoints->protectedResourceMetadataUrl(), \PHP_URL_PATH),
-            '/.well-known/oauth-authorization-server'.parse_url($endpoints->issuer(), \PHP_URL_PATH),
+            (string) parse_url($endpoints->authorizationServerMetadataUrl(), \PHP_URL_PATH),
         ];
         sort($paths);
 

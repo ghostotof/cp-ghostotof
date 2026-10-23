@@ -16,7 +16,7 @@
 #   `/assets/`                            -> l'asset réel découvert + /assets/missing-file.js (404)
 #   `= /index.html`                       -> /index.html, / et /route/inconnue (voir note)
 #   `= /config.js`                        -> /config.js
-#   `^~ /.well-known/`                    -> /.well-known/security.txt, plus trois
+#   `^~ /.well-known/`                    -> /.well-known/security.txt, plus quatre
 #                                            chemins en 404 (voir ci-dessous)
 #   `~ /\.`                               -> /.hidden (404)
 #   `~* \.(env|ya?ml|...)$`               -> /anything.env (404)
@@ -46,6 +46,8 @@
 # document illisible) sur :
 #   - le chemin de la ressource protégée lui-même (ce que reçoit le frontend
 #     si l'Ingress dédié manque ou ne correspond plus) ;
+#   - /.well-known/oauth-protected-resource, sans le chemin de la ressource
+#     (RFC 9728 §3.1 : la racine, qu'un client tente en repli) ;
 #   - /.well-known/oauth-authorization-server, sans le chemin de l'émetteur
 #     (RFC 8414 §3.1 : un client le tente pour un émetteur sans chemin) ;
 #   - /.well-known/openid-configuration : aucun document OpenID Connect n'est
@@ -153,6 +155,7 @@ check_path "/.well-known/security.txt" "200" "/.well-known/security.txt"
 # un vrai 404 de `^~ /.well-known/`, jamais le repli SPA.
 check_path "/.well-known/oauth-authorization-server" "404" "/.well-known/oauth-authorization-server (aucun document, 404)"
 check_path "/.well-known/openid-configuration" "404" "/.well-known/openid-configuration (aucun document OIDC, 404)"
+check_path "/.well-known/oauth-protected-resource" "404" "/.well-known/oauth-protected-resource (racine RFC 9728, aucun document, 404)"
 check_path "/.well-known/oauth-protected-resource/api/mcp" "404" "/.well-known/oauth-protected-resource/api/mcp (servi par le backend via l'Ingress dédié, 404 ici)"
 # La seule réponse réellement servie par `location /` (voir la note en-tête) :
 # un fichier statique de la racine du build, jamais rewrité vers index.html.

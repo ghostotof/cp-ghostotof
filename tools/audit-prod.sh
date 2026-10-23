@@ -249,7 +249,10 @@ fi
 #    répond 404 et aucun client MCP ne trouve le serveur d'autorisation. Un
 #    `issuer` ou une `resource` sur un autre hôte (APP_FRONTEND_BASE_URL ou
 #    APP_PUBLIC_API_BASE_URL mal posée) ferait refuser les jetons par le
-#    client, qui compare ces valeurs à l'octet près : d'où le préfixe vérifié.
+#    client, qui compare ces valeurs à l'octet près (RFC 8414 §3.3, RFC 9728
+#    §3.3) : d'où l'égalité exacte avec `${BASE}/api/oauth` et
+#    `${BASE}/api/mcp`, jamais un simple préfixe (une barre finale, un chemin
+#    dérivé passeraient).
 #
 #    Lus SANS la Basic Auth de la préprod (CURL_OPTS_ANONYMOUS) : un client MCP
 #    ne sait pas y répondre, et l'Ingress dédié n'en porte volontairement
@@ -268,10 +271,11 @@ fi
 # ---------------------------------------------------------------------------
 section "Métadonnées OAuth de la connexion MCP (RFC 9728, RFC 8414)"
 
-# check_oauth_metadata <chemin> <champ> : 200, `application/json`, et le champ
-# (`resource` ou `issuer`) commence par l'origine auditée suivie d'une barre.
+# check_oauth_metadata <chemin> <champ> <valeur attendue> : 200,
+# `application/json`, et le champ (`resource` ou `issuer`) vaut exactement la
+# valeur attendue.
 check_oauth_metadata() {
-  local path="$1" field="$2" response meta body code content_type value
+  local path="$1" field="$2" expected="$3" response meta body code content_type value
   # Code et type à la suite du corps, sur une dernière ligne à part.
   response="$(curl -sS "${CURL_OPTS_ANONYMOUS[@]}" -w '\n%{http_code} %{content_type}' "${BASE}${path}")"
   meta="${response##*$'\n'}"
@@ -307,18 +311,17 @@ check_oauth_metadata() {
     FAILURES=$((FAILURES + 1))
     return
   fi
-  # Le motif est cité : aucun caractère de l'origine n'y est lu comme un joker.
-  case "$value" in
-    "${BASE}/"*)
-      printf '  \033[32mOK\033[0m      %s: %s\n' "$field" "$value" ;;
-    *)
-      printf '  \033[31mECHEC\033[0m   %s: %s   <-- attendu sous %s/ !\n' "$field" "$value" "$BASE"
-      FAILURES=$((FAILURES + 1)) ;;
-  esac
+  # Comparaison de chaînes, à l'octet près, comme le client.
+  if [ "$value" = "$expected" ]; then
+    printf '  \033[32mOK\033[0m      %s: %s\n' "$field" "$value"
+  else
+    printf '  \033[31mECHEC\033[0m   %s: %s   <-- attendu exactement %s !\n' "$field" "$value" "$expected"
+    FAILURES=$((FAILURES + 1))
+  fi
 }
 
-check_oauth_metadata /.well-known/oauth-protected-resource/api/mcp resource
-check_oauth_metadata /.well-known/oauth-authorization-server/api/oauth issuer
+check_oauth_metadata /.well-known/oauth-protected-resource/api/mcp resource "${BASE}/api/mcp"
+check_oauth_metadata /.well-known/oauth-authorization-server/api/oauth issuer "${BASE}/api/oauth"
 
 OIDC_CODE="$(curl -sS "${CURL_OPTS[@]}" -o /dev/null -w '%{http_code}' "${BASE}/.well-known/openid-configuration")"
 if [ "$OIDC_CODE" = "404" ]; then
