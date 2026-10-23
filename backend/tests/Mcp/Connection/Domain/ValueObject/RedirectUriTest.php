@@ -113,7 +113,21 @@ final class RedirectUriTest extends TestCase
             'port 0' => ['http://localhost:0/cb'],
             'port 65536' => ['https://app.example:65536/cb'],
             'port 99999' => ['https://app.example:99999/cb'],
+            // Le serveur ajoute son propre `iss` (RFC 9207) : jamais deux.
+            'iss dans la requête' => ['https://app.example/cb?iss=x'],
+            'iss parmi d\'autres paramètres' => ['http://localhost/cb?a=1&iss=x'],
+            'iss %-encodé' => ['https://app.example/cb?%69ss=x'],
+            'iss en tableau' => ['https://app.example/cb?iss%5B%5D=x'],
+            'iss sans valeur' => ['https://app.example/cb?iss'],
         ];
+    }
+
+    /**
+     * Un paramètre dont le nom ne fait que commencer par `iss` n'est pas `iss`.
+     */
+    public function testARegistrationWhoseQueryMerelyStartsWithIssIsAccepted(): void
+    {
+        self::assertSame('https://app.example/cb?issuer=x', (string) RedirectUri::fromString('https://app.example/cb?issuer=x'));
     }
 
     #[DataProvider('refusedRegistrations')]

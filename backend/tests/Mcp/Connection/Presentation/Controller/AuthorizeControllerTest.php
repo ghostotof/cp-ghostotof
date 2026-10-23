@@ -12,6 +12,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\BrowserKit\Cookie;
+use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
@@ -19,8 +20,8 @@ use Symfony\Component\HttpFoundation\Response;
  * `GET /api/oauth/authorize`, de bout en bout par HTTP.
  *
  * Trois issues, et jamais une autre :
- * - une demande valide est renvoyée, telle quelle, à la page de consentement
- *   du frontend, dans la langue de la personne ;
+ * - une demande valide est renvoyée à la page de consentement du frontend,
+ *   dans la langue de la personne, avec ses seuls paramètres validés ;
  * - un refus dont la redirection a été validée revient au client, avec
  *   `error`, `state` et `iss` (RFC 9207) ;
  * - un refus sans redirection validée (client inconnu, redirection non
@@ -69,11 +70,11 @@ final class AuthorizeControllerTest extends WebTestCase
     }
 
     /**
-     * La demande valide part vers la page de consentement, sa requête
-     * d'origine reprise telle quelle : la page la renverra au serveur, qui la
-     * revalidera. Français par défaut.
+     * La demande valide part vers la page de consentement avec ses paramètres
+     * validés : la page la renverra au serveur, qui la revalidera. Français
+     * par défaut.
      */
-    public function testAValidRequestIsSentToTheConsentPageWithItsQueryAsReceived(): void
+    public function testAValidRequestIsSentToTheConsentPageWithItsValidatedParameters(): void
     {
         $query = http_build_query($this->validParameters());
 
@@ -82,6 +83,165 @@ final class AuthorizeControllerTest extends WebTestCase
         self::assertSame(Response::HTTP_FOUND, $response->getStatusCode());
         self::assertSame($this->frontendBase().'/fr/oauth/consent?'.$query, $response->headers->get('Location'));
         $this->assertNotStored($response);
+    }
+
+    /**
+     * Jamais la requête reçue : les seuls paramètres validés, dans un ordre
+     * fixe, un paramètre inconnu non transmis, le scope par défaut écrit.
+     */
+    public function testTheConsentPageGetsOnlyTheValidatedParametersInAFixedOrder(): void
+    {
+        $parameters = $this->validParameters();
+        $received = http_build_query(['extra' => '1', ...array_reverse($parameters), 'other' => 'x']);
+
+        $response = $this->authorizeRaw($received);
+
+        self::assertSame($this->frontendBase().'/fr/oauth/consent?'.http_build_query($parameters), $response->headers->get('Location'));
+
+        $withoutScope = $this->authorize(http_build_query($this->validParameters(['scope' => null])));
+
+        self::assertSame($this->frontendBase().'/fr/oauth/consent?'.http_build_query($parameters), $withoutScope->headers->get('Location'));
+    }
+
+    /**
+     * Un paramètre attendu répété : PHP lirait le dernier, un autre analyseur
+     * le premier. Refusé avant league, sans redirection (RFC 6749 §4.1.2.1).
+     */
+    #[DataProvider('expectedParameters')]
+    public function testARepeatedExpectedParameterIsRefusedWithoutRedirect(string $parameter): void
+    {
+        $parameters = $this->validParameters();
+        $received = http_build_query($parameters).'&'.http_build_query([$parameter => $parameters[$parameter]]);
+
+        $response = $this->authorizeRaw($received);
+
+        $this->assertRefusedWithoutRedirect($response, Response::HTTP_BAD_REQUEST, 'invalid_request');
+    }
+
+    /**
+     * Un nom que seule la réécriture de PHP rend attendu (`client.id` →
+     * `client_id`) : un autre analyseur y lirait un paramètre inconnu. Refusé,
+     * seul ou à côté du vrai.
+     *
+     * @return iterable<string, array{string}>
+     */
+    public static function rewrittenNames(): iterable
+    {
+        yield 'point' => ['client.id'];
+        yield 'espace encodé' => ['client%20id'];
+        yield 'espace en plus' => ['client+id'];
+        yield 'crochet non refermé' => ['client%5Bid'];
+        yield 'espace de tête' => ['+client_id'];
+        yield 'octet nul' => ['client_id%00x'];
+        yield 'tableau' => ['client_id%5B%5D'];
+        yield 'redirection, point' => ['redirect.uri'];
+        yield 'ressource, tableau indexé' => ['resource%5B0%5D'];
+    }
+
+    #[DataProvider('rewrittenNames')]
+    public function testANameOnlyExpectedOnceRewrittenByPhpIsRefused(string $rawName): void
+    {
+        $parameters = $this->validParameters();
+        $target = str_starts_with($rawName, 'redirect') ? 'redirect_uri' : (str_starts_with($rawName, 'resource') ? 'resource' : 'client_id');
+        $value = rawurlencode($parameters[$target]);
+        unset($parameters[$target]);
+
+        $alone = $this->authorizeRaw(http_build_query($parameters).'&'.$rawName.'='.$value);
+        $this->assertRefusedWithoutRedirect($alone, Response::HTTP_BAD_REQUEST, 'invalid_request');
+
+        $besideTheRealOne = $this->authorizeRaw(http_build_query($this->validParameters()).'&'.$rawName.'='.$value);
+        $this->assertRefusedWithoutRedirect($besideTheRealOne, Response::HTTP_BAD_REQUEST, 'invalid_request');
+    }
+
+    /**
+     * Le client se désigne dans la requête : league retomberait, pour un
+     * `client_id` absent ou blanc, sur l'utilisateur d'un en-tête
+     * `Authorization: Basic` (`PHP_AUTH_USER`).
+     *
+     * @return iterable<string, array{string|null}>
+     */
+    public static function clientIdsLeftToBasicAuth(): iterable
+    {
+        yield 'absent' => [null];
+        yield 'vide' => [''];
+        yield 'blanc' => [' '];
+    }
+
+    #[DataProvider('clientIdsLeftToBasicAuth')]
+    public function testAClientIdFromABasicHeaderIsNeverRead(?string $clientId): void
+    {
+        $response = $this->authorize(
+            http_build_query($this->validParameters(['client_id' => $clientId])),
+            ['PHP_AUTH_USER' => self::CLIENT_ID, 'PHP_AUTH_PW' => '', 'HTTP_AUTHORIZATION' => 'Basic '.base64_encode(self::CLIENT_ID.':')],
+        );
+
+        $this->assertRefusedWithoutRedirect($response, Response::HTTP_BAD_REQUEST, 'invalid_request');
+    }
+
+    /**
+     * league rogne chaque paramètre : la redirection validée est la forme
+     * rognée, et c'est elle — jamais la brute — qui part vers la page de
+     * consentement ou porte un refus. Brute, un saut de ligne finissait dans
+     * `Location`, et League\Uri n'y lisait pas d'hôte (un 500).
+     *
+     * @return iterable<string, array{string}>
+     */
+    public static function blankPaddedRedirects(): iterable
+    {
+        yield 'espace final' => [self::LOOPBACK_REDIRECT.' '];
+        yield 'saut de ligne final' => [self::LOOPBACK_REDIRECT."\n"];
+        yield 'tabulation finale' => [self::LOOPBACK_REDIRECT."\t"];
+        yield 'espace de tête' => [' '.self::LOOPBACK_REDIRECT];
+    }
+
+    #[DataProvider('blankPaddedRedirects')]
+    public function testABlankPaddedRedirectIsValidatedAndSentTrimmed(string $redirectUri): void
+    {
+        $response = $this->authorize(http_build_query($this->validParameters(['redirect_uri' => $redirectUri])));
+
+        self::assertSame(Response::HTTP_FOUND, $response->getStatusCode(), substr((string) $response->getContent(), 0, 300));
+        self::assertSame($this->frontendBase().'/fr/oauth/consent?'.http_build_query($this->validParameters()), $response->headers->get('Location'));
+    }
+
+    #[DataProvider('blankPaddedRedirects')]
+    public function testABlankPaddedRedirectCarriesAnInvalidTargetTrimmed(string $redirectUri): void
+    {
+        $response = $this->authorize(http_build_query($this->validParameters(['redirect_uri' => $redirectUri, 'resource' => 'https://other.example.test/api/mcp'])));
+
+        $this->assertRefusedBackToTheClient($response, 'invalid_target');
+        self::assertDoesNotMatchRegularExpression('/\s/', (string) $response->headers->get('Location'));
+    }
+
+    /**
+     * Une redirection vide ou blanche vaut absente — même pour un client qui
+     * n'en a enregistré qu'une, vers laquelle league retomberait (sans le
+     * port d'un client natif). 400, sans redirection, ressource juste ou non.
+     *
+     * @return iterable<string, array{string, string|null}>
+     */
+    public static function blankRedirects(): iterable
+    {
+        foreach (['vide' => '', 'espace' => ' ', 'saut de ligne' => "\n"] as $label => $redirectUri) {
+            yield $label.', ressource juste' => [$redirectUri, null];
+            yield $label.', ressource étrangère' => [$redirectUri, 'https://other.example.test/api/mcp'];
+        }
+    }
+
+    #[DataProvider('blankRedirects')]
+    public function testABlankRedirectIsRefusedEvenForASingleRedirectClient(string $redirectUri, ?string $resource): void
+    {
+        $singleRedirectClient = 'https://single.example.test/metadata.json';
+        self::getContainer()->get(McpClientRepositoryInterface::class)->add(
+            McpClient::register($singleRedirectClient, 'Client à une redirection', ['http://localhost/callback'], new DateTimeImmutable()),
+        );
+        $overrides = ['client_id' => $singleRedirectClient, 'redirect_uri' => $redirectUri];
+        if (null !== $resource) {
+            $overrides['resource'] = $resource;
+        }
+
+        $response = $this->authorize(http_build_query($this->validParameters($overrides)));
+
+        $this->assertRefusedWithoutRedirect($response, Response::HTTP_BAD_REQUEST, 'invalid_request');
     }
 
     /**
@@ -341,6 +501,26 @@ final class AuthorizeControllerTest extends WebTestCase
         $this->client->request('GET', self::PATH.'?'.$query, server: ['HTTP_ACCEPT_LANGUAGE' => '', ...$server]);
 
         return $this->client->getResponse();
+    }
+
+    /**
+     * Une requête dont la chaîne de requête arrive **telle quelle** au
+     * noyau, comme du serveur web : `Request::create()`, par lequel passe le
+     * client de test, la réanalyse et la réécrit (`http_build_query`), ce qui
+     * effacerait une répétition ou un nom réécrit. Les paramètres sont lus
+     * par `parse_str()`, l'analyse même de PHP pour `$_GET`.
+     */
+    private function authorizeRaw(string $rawQuery): Response
+    {
+        $request = Request::create('http://localhost'.self::PATH, server: ['HTTP_ACCEPT_LANGUAGE' => '']);
+        $request->server->set('QUERY_STRING', $rawQuery);
+        $request->server->set('REQUEST_URI', self::PATH.'?'.$rawQuery);
+        parse_str($rawQuery, $query);
+        // Les clés de parse_str() sont des chaînes (une clé numérique n'y est
+        // qu'un nom de variable en chiffres) ; les tests n'en écrivent pas.
+        $request->query->replace(array_filter($query, is_string(...), \ARRAY_FILTER_USE_KEY));
+
+        return $this->client->getKernel()->handle($request);
     }
 
     /**

@@ -69,6 +69,81 @@ final class AuthorizationRequestValidatorTest extends KernelTestCase
     }
 
     /**
+     * league rogne la redirection avant de la valider : le résumé porte la
+     * forme qu'il a retenue, jamais la brute (un saut de ligne final, lu par
+     * League\Uri, laissait une redirection sans hôte : un 500).
+     *
+     * @return iterable<string, array{string}>
+     */
+    public static function paddedRedirects(): iterable
+    {
+        yield 'espace final' => ['http://localhost:49152/callback '];
+        yield 'saut de ligne final' => ["http://localhost:49152/callback\n"];
+        yield 'espace de tête' => [' http://localhost:49152/callback'];
+    }
+
+    #[DataProvider('paddedRedirects')]
+    public function testTheSummaryCarriesTheRedirectLeagueRetained(string $redirectUri): void
+    {
+        $summary = $this->validator()->validate($this->request(['redirect_uri' => $redirectUri]));
+
+        self::assertSame('http://localhost:49152/callback', $summary->redirectUri);
+        self::assertSame($summary->authorizationRequest->getRedirectUri(), $summary->redirectUri);
+        self::assertSame('localhost', $summary->redirectHost);
+        self::assertSame('http://localhost:49152/callback', $summary->consentQuery()['redirect_uri']);
+    }
+
+    #[DataProvider('paddedRedirects')]
+    public function testAnInvalidTargetGoesToTheRedirectLeagueRetained(string $redirectUri): void
+    {
+        try {
+            $this->validator()->validate($this->request(['redirect_uri' => $redirectUri, 'resource' => 'https://other.example.test/api/mcp']));
+            self::fail('La ressource aurait dû être refusée.');
+        } catch (OAuthServerException $exception) {
+            self::assertSame('http://localhost:49152/callback?state=state-1', $exception->getRedirectUri());
+        }
+    }
+
+    /**
+     * Les paramètres transmis à la page de consentement : les validés, dans
+     * l'ordre fixe, le scope par défaut écrit.
+     */
+    public function testTheConsentQueryHoldsTheValidatedParametersOnly(): void
+    {
+        $summary = $this->validator()->validate($this->request(['scope' => null]));
+
+        self::assertSame([
+            'response_type' => 'code',
+            'client_id' => self::CLIENT_ID,
+            'redirect_uri' => 'http://localhost:49152/callback',
+            'scope' => 'nominative:read',
+            'state' => 'state-1',
+            'code_challenge' => self::CODE_CHALLENGE,
+            'code_challenge_method' => 'S256',
+            'resource' => $this->resource(),
+        ], $summary->consentQuery());
+    }
+
+    /**
+     * La pollution se lit sur la requête brute (l'URI), que les paramètres
+     * analysés par PHP ont déjà effacée.
+     */
+    public function testARepeatedParameterInTheRawQueryIsRefused(): void
+    {
+        $parameters = array_filter($this->request()->getQueryParams(), is_string(...));
+        $raw = http_build_query($parameters).'&client_id=https%3A%2F%2Fother.example.test%2Fm.json';
+        parse_str($raw, $parsed);
+
+        try {
+            $this->validator()->validate(new ServerRequest('GET', 'http://localhost/api/oauth/authorize?'.$raw)->withQueryParams($parsed));
+            self::fail('La répétition aurait dû être refusée.');
+        } catch (OAuthServerException $exception) {
+            self::assertSame('invalid_request', $exception->getErrorType());
+            self::assertFalse($exception->hasRedirect());
+        }
+    }
+
+    /**
      * Sans `scope`, league retient le scope par défaut : le résumé le nomme.
      */
     public function testAMissingScopeIsSummarisedAsTheDefaultOne(): void
@@ -102,6 +177,10 @@ final class AuthorizationRequestValidatorTest extends KernelTestCase
     public static function refusedBeforeLeague(): iterable
     {
         yield 'redirection absente' => [['redirect_uri' => null]];
+        yield 'redirection vide' => [['redirect_uri' => '']];
+        yield 'redirection blanche' => [['redirect_uri' => " \n"]];
+        yield 'client absent' => [['client_id' => null]];
+        yield 'client blanc' => [['client_id' => ' ']];
         yield 'client_id en tableau' => [['client_id' => [self::CLIENT_ID]]];
         yield 'state trop long' => [['state' => str_repeat('s', 1025)]];
     }

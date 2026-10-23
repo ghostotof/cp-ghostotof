@@ -23,9 +23,11 @@ use Symfony\Component\Routing\Attribute\Route;
  * juge la demande, ce contrôleur choisit la réponse.
  *
  * - Demande valide : 302 vers la page de consentement du frontend, dans la
- *   langue de la personne, la requête d'origine reprise **telle que reçue** —
- *   la page la renverra au serveur, qui la revalidera (tâche 6) ; rien n'est
- *   gardé côté serveur entre les deux.
+ *   langue de la personne, avec les seuls paramètres validés, sous la forme
+ *   que league a retenue (AuthorizationRequestSummary::consentQuery()) —
+ *   jamais la requête reçue, qu'un autre analyseur lirait autrement. La page
+ *   la renverra au serveur, qui la revalidera (tâche 6) ; rien n'est gardé
+ *   côté serveur entre les deux.
  * - Refus : le format de league (RFC 6749), pas un problem+json. Avec une
  *   redirection validée, 302 vers le client, `error`, `state` et `iss`
  *   (RFC 9207) ; sans, le JSON de league (400 ou 401), **jamais** de
@@ -65,8 +67,8 @@ final readonly class AuthorizeController
     public function __invoke(Request $request): Response
     {
         try {
-            $this->validator->validate($this->psrHttpFactory->createRequest($request));
-            $response = new RedirectResponse($this->consentPage($request));
+            $summary = $this->validator->validate($this->psrHttpFactory->createRequest($request));
+            $response = new RedirectResponse($this->consentPage($request).'?'.http_build_query($summary->consentQuery()));
         } catch (OAuthServerException $refusal) {
             $response = $this->refusal($refusal);
         }
@@ -80,15 +82,15 @@ final readonly class AuthorizeController
 
     /**
      * La page de consentement, dans la langue retenue parmi celles du site —
-     * jamais une valeur de `Accept-Language` recopiée dans l'URL —, suivie de
-     * la requête reçue, octet pour octet (`getQueryString()` la trierait et la
-     * réencoderait).
+     * jamais une valeur de `Accept-Language` recopiée dans l'URL.
      */
     private function consentPage(Request $request): string
     {
+        // Jamais nul pour une liste non vide (Symfony rend alors la première
+        // langue) ; le repli ne sert qu'au type `?string` de la signature.
         $locale = $request->getPreferredLanguage(self::LOCALES) ?? self::LOCALES[0];
 
-        return $this->endpoints->consentPage($locale).'?'.$request->server->getString('QUERY_STRING');
+        return $this->endpoints->consentPage($locale);
     }
 
     /**

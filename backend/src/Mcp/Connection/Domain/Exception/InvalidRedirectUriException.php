@@ -61,6 +61,15 @@ final class InvalidRedirectUriException extends InvalidArgumentException
         return new self('La redirection ne doit porter aucun fragment (« # »).');
     }
 
+    /**
+     * Le serveur ajoute son propre `iss` (RFC 9207) à chaque redirection vers
+     * le client : une redirection qui en porterait déjà un en aurait deux.
+     */
+    public static function withIssParameter(): self
+    {
+        return new self('La redirection ne doit porter aucun paramètre « iss » : le serveur y ajoute le sien (RFC 9207).');
+    }
+
     public static function portOutOfRange(): self
     {
         return new self('Le port de la redirection doit être compris entre 1 et 65535.');

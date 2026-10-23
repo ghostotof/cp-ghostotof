@@ -16,12 +16,20 @@ use Psr\Http\Message\ServerRequestInterface;
  *
  * 1. **Avant league, sans redirection** — rien n'est encore validé, un refus
  *    ne peut donc partir que vers l'appelant (400 JSON) :
+ *    - un paramètre attendu répété, ou dont le nom n'est attendu qu'après
+ *      réécriture par PHP (QueryParameterPollution) : la demande validée ici
+ *      ne serait pas celle qu'un autre analyseur lit ;
  *    - un paramètre attendu reçu autrement qu'en chaîne (`client_id[]=x`) :
- *      league le passerait tel quel à une signature `string`, un TypeError,
- *      un 500 à la main de quiconque ;
- *    - `redirect_uri` absente : league retomberait sur l'unique redirection
- *      enregistrée, sans le port qu'un client natif a ouvert (RFC 8252 §7.3),
- *      et le code partirait où personne n'écoute ;
+ *      league 9.4.1 en refuse déjà la plupart (`parseParam()` exige un
+ *      scalaire), mais pas `response_type` (lu sans lui, comparé à `code`) ni
+ *      `resource` (lu ici) ; un seul contrôle, au même endroit et sous la même
+ *      forme, pour les huit ;
+ *    - `client_id` vide ou blanc : league retomberait sur l'utilisateur d'un
+ *      en-tête `Authorization: Basic` (`PHP_AUTH_USER`) — le client se désigne
+ *      dans la requête, rien d'autre ;
+ *    - `redirect_uri` vide ou blanche : league la lit comme absente (il rogne
+ *      chaque paramètre) et retomberait sur l'unique redirection enregistrée,
+ *      sans le port qu'un client natif a ouvert (RFC 8252 §7.3) ;
  *    - `state` au-delà de STATE_MAX_LENGTH : il serait recopié dans chaque
  *      redirection et dans l'URL de la page de consentement ; jamais renvoyé.
  * 2. **league** : client connu, redirection enregistrée (sinon
@@ -30,6 +38,12 @@ use Psr\Http\Message\ServerRequestInterface;
  * 3. **Après league, avec redirection** — la ressource (RFC 8707) : exigée et
  *    égale au serveur MCP du site, sinon `invalid_target`, renvoyé au client
  *    sur la redirection que league vient de valider, `state` compris.
+ *
+ * **Ce qui sort d'ici est ce que league a retenu**, jamais la valeur brute :
+ * league rogne les paramètres (`trim()`), si bien que
+ * `redirect_uri=http://localhost:5/cb%0A` est validée sous sa forme rognée.
+ * La brute, recopiée dans une redirection, y mettait un saut de ligne ; lue
+ * par League\Uri, elle n'avait pas d'hôte.
  */
 final readonly class AuthorizationRequestValidator implements AuthorizationRequestValidatorInterface
 {
@@ -42,7 +56,7 @@ final readonly class AuthorizationRequestValidator implements AuthorizationReque
     public const int STATE_MAX_LENGTH = 1024;
 
     /** Les paramètres que league ou ce validateur lisent : chacun doit être une chaîne. */
-    private const array EXPECTED_PARAMETERS = ['response_type', 'client_id', 'redirect_uri', 'scope', 'state', 'code_challenge', 'code_challenge_method', 'resource'];
+    public const array EXPECTED_PARAMETERS = ['response_type', 'client_id', 'redirect_uri', 'scope', 'state', 'code_challenge', 'code_challenge_method', 'resource'];
 
     /**
      * Le code de l'exception de league, qui ne sert qu'à elle : celui de
@@ -60,11 +74,10 @@ final readonly class AuthorizationRequestValidator implements AuthorizationReque
     public function validate(ServerRequestInterface $request): AuthorizationRequestSummary
     {
         $parameters = $this->wellFormedParameters($request);
-        $redirectUri = $parameters['redirect_uri']
-            ?? throw OAuthServerException::invalidRequest('redirect_uri', 'Check the `redirect_uri` parameter: it is required.');
-        // league valide cette redirection-là, telle que reçue, et la garde
-        // dans la demande (setRedirectUri()).
         $authorization = $this->server->validateAuthorizationRequest($request);
+        // La redirection que league a validée et retenue (rognée) ; jamais
+        // nulle ici, la demande en portait une non blanche.
+        $redirectUri = $authorization->getRedirectUri() ?? throw $this->missing('redirect_uri');
         $resource = $parameters['resource'] ?? null;
 
         if ($this->endpoints->resource() !== $resource) {
@@ -83,9 +96,10 @@ final readonly class AuthorizationRequestValidator implements AuthorizationReque
     }
 
     /**
-     * Les paramètres attendus présents, chacun une chaîne, `state` borné.
-     * Aucun refus d'ici ne redirige, et aucun ne recopie la valeur reçue (le
-     * message et l'indication de league ne nomment que le paramètre).
+     * Les paramètres attendus présents, chacun une chaîne, ni répété ni
+     * réécrit, `client_id` et `redirect_uri` non blancs, `state` borné. Aucun
+     * refus d'ici ne redirige, et aucun ne recopie la valeur reçue (le message
+     * et l'indication de league ne nomment que le paramètre).
      *
      * @return array<string, string>
      *
@@ -93,6 +107,12 @@ final readonly class AuthorizationRequestValidator implements AuthorizationReque
      */
     private function wellFormedParameters(ServerRequestInterface $request): array
     {
+        $polluted = QueryParameterPollution::firstPollutedName($request->getUri()->getQuery(), self::EXPECTED_PARAMETERS);
+
+        if (null !== $polluted) {
+            throw OAuthServerException::invalidRequest($polluted, \sprintf('Check the `%s` parameter: it must be given once, under its exact name.', $polluted));
+        }
+
         $query = $request->getQueryParams();
         $parameters = [];
 
@@ -110,11 +130,23 @@ final readonly class AuthorizationRequestValidator implements AuthorizationReque
             $parameters[$name] = $value;
         }
 
+        // Blanc au sens de league, qui rogne avec trim() avant de lire.
+        foreach (['client_id', 'redirect_uri'] as $required) {
+            if ('' === trim($parameters[$required] ?? '')) {
+                throw $this->missing($required);
+            }
+        }
+
         if (isset($parameters['state']) && \strlen($parameters['state']) > self::STATE_MAX_LENGTH) {
             throw OAuthServerException::invalidRequest('state', \sprintf('Check the `state` parameter: at most %d characters.', self::STATE_MAX_LENGTH));
         }
 
         return $parameters;
+    }
+
+    private function missing(string $parameter): OAuthServerException
+    {
+        return OAuthServerException::invalidRequest($parameter, \sprintf('Check the `%s` parameter: it is required.', $parameter));
     }
 
     /**

@@ -84,11 +84,34 @@ final readonly class RedirectUri implements Stringable
             throw InvalidRedirectUriException::withFragment();
         }
 
+        if (self::carriesIss($uri)) {
+            throw InvalidRedirectUriException::withIssParameter();
+        }
+
         if (!self::hasPortInRange($uri)) {
             throw InvalidRedirectUriException::portOutOfRange();
         }
 
         return new self($value, $uri);
+    }
+
+    /**
+     * La requête porte-t-elle un `iss` ? Le serveur ajoute le sien (RFC 9207)
+     * à toute redirection vers le client : une redirection qui en porterait
+     * déjà un en aurait deux, et le client lirait peut-être le mauvais. Lu
+     * comme PHP le lit (`parse_str()` : `%69ss`, `iss[]` comptent aussi).
+     */
+    private static function carriesIss(Uri $uri): bool
+    {
+        $query = $uri->getQuery();
+
+        if (null === $query) {
+            return false;
+        }
+
+        parse_str($query, $parameters);
+
+        return \array_key_exists('iss', $parameters);
     }
 
     /**
