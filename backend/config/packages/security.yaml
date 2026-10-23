@@ -124,6 +124,22 @@ security:
             pattern: ^/\.well-known/oauth-authorization-server/api/oauth$
             stateless: true
 
+        # Les trois points du serveur d'autorisation OAuth de la connexion MCP
+        # (#647) : autorisation, jeton, révocation. Même forme que `mcp` :
+        # stateless, aucun authentificateur, aucun cookie lu. Un client MCP
+        # n'est pas un navigateur ; le point d'autorisation, que le navigateur
+        # de la personne atteint, ne fait que valider la demande et renvoyer
+        # vers la page de consentement — l'identité n'est lue qu'au
+        # consentement. Sous le firewall `api`, un cookie BEARER illisible
+        # vaudrait un 401 au lieu de la réponse anonyme. Le consentement
+        # (`/api/oauth/consent`) n'est pas ici : il lit la personne, il reste
+        # sous `api`. Borné par `$` sur les trois chemins exacts : un voisin
+        # (`/api/oauth/authorizex`, `/api/oauth/authorize/x`) retombe dans
+        # `api` (AccessControlAnchoringTest). Avant `api`, comme `mcp`.
+        oauth:
+            pattern: ^/api/oauth/(authorize|token|revoke)$
+            stateless: true
+
         # Toutes les autres routes /api : authentification par JWT extrait du cookie
         # "BEARER" (voir config/packages/lexik_jwt_authentication.yaml). "logout.path"
         # est intercepté par le composant Security avant tout contrôleur : c'est

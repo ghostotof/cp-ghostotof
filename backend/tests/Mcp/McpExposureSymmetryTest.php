@@ -79,6 +79,7 @@ final class McpExposureSymmetryTest extends KernelTestCase
         'POST /api/login_check' => 'Parcours d\'authentification : aucun contenu.',
         'POST /api/logout' => 'Parcours : expire les cookies, aucun contenu.',
         'GET|POST|DELETE|OPTIONS /api/mcp' => 'Le serveur MCP lui-même.',
+        'GET /api/oauth/authorize' => 'Parcours OAuth de la connexion MCP (#647) : valide une demande d\'autorisation et redirige, aucun contenu.',
 
         // --- Infrastructure API Platform : aucune donnée métier.
         'GET|HEAD /api/docs.{_format}' => 'Schéma OpenAPI, désactivé en préprod et en prod (when@prod).',

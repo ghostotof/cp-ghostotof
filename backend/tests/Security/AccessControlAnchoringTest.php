@@ -247,6 +247,20 @@ final class AccessControlAnchoringTest extends KernelTestCase
         yield '/api/mcpx → api' => ['/api/mcpx', 'api'];
         yield '/api/mcp/extra → api' => ['/api/mcp/extra', 'api'];
 
+        // --- Les points du serveur d'autorisation OAuth (#647) : leur firewall
+        // ne lit aucun cookie, il ne couvre que ses trois chemins exacts. Le
+        // consentement, qui lit la personne, et tout voisin relèvent du
+        // firewall JWT.
+        yield '/api/oauth/authorize → oauth' => ['/api/oauth/authorize', 'oauth'];
+        yield '/api/oauth/token → oauth' => ['/api/oauth/token', 'oauth'];
+        yield '/api/oauth/revoke → oauth' => ['/api/oauth/revoke', 'oauth'];
+        yield '/api/oauth/%61uthorize → oauth' => ['/api/oauth/%61uthorize', 'oauth'];
+        yield '/api/oauth/authorizex → api' => ['/api/oauth/authorizex', 'api'];
+        yield '/api/oauth/authorize/x → api' => ['/api/oauth/authorize/x', 'api'];
+        yield '/api/oauth/consent → api' => ['/api/oauth/consent', 'api'];
+        yield '/api/oauth → api' => ['/api/oauth', 'api'];
+        yield '/api/oauthx/authorize → api' => ['/api/oauthx/authorize', 'api'];
+
         // --- Le reste de l'API.
         yield '/api/me → api' => ['/api/me', 'api'];
         yield '/api/backoffice/users → api' => ['/api/backoffice/users', 'api'];
