@@ -23,6 +23,19 @@ paths:
   `ApiRouteExposureTest` flags it. `tests/Security/AccessControlAnchoringTest.php` pins the anchors against
   the compiled `AccessMap`; keep the pattern when adding a rule. The same test also pins the **firewall**
   patterns, which follow a different rule and for a stated reason — see `.claude/rules/security-authentication.md`.
+  **Never declare security or a route for a single environment** (issue #659): every exposure guard
+  (`ApiRouteExposureTest`, `AccessControlAnchoringTest`, `RouterScopeTest`, `McpExposureSymmetryTest`,
+  `AccessMapStaysPathOnlyTest`…) reads the `test` container only, and preprod and prod both run `APP_ENV=prod`.
+  `tests/Security/SecurityConfigEnvironmentParityTest.php` loads every environment of `Kernel::getAllowedEnvs()`
+  without compiling (`EnvironmentConfigKernel::declaredConfiguration()`) and requires the **whole** `security`
+  section, normalized by SecurityBundle, to match `test`'s — not only `access_control`, `firewalls` and
+  `role_hierarchy`: a provider or a decision strategy of `prod` alone would change what prod serves just as
+  much. Its one exempt key is `password_hashers` (cost 4 under `when@test`, pinned per environment by
+  `CpgUserPasswordHasherTest`), checked to still differ; no value of the section may be `%env()%` or
+  `%parameter%`. `tests/Security/RouteEnvironmentParityTest.php` boots each environment
+  (`EnvironmentConfigKernel::routes()`, cache emptied first) and compares its route collection with `test`'s,
+  route by route and in order; its only justified entry is `dev`'s `_preview_error` (FrameworkBundle's error
+  page preview, `when@dev`). Not seen, accepted: a compiler pass changing the access map per environment (none does).
 - **API Platform pattern**, repeated identically across every backoffice resource
   (`BackofficeExperienceTechnologyResource`, `BackofficeQuality{Principle,Trait}Resource`,
   `BackofficeContributionResource`, `BackofficeIncidentResource`, `BackofficeWatchedProductResource`,
