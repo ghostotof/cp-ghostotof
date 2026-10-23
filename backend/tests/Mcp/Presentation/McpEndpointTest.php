@@ -393,7 +393,9 @@ final class McpEndpointTest extends WebTestCase
 
     /**
      * ADR 0006 D7 : pas de `^` sur `symfony/mcp-*` ni `mcp/*` tant qu'ils
-     * sont en 0.x — aucune promesse de compatibilité.
+     * sont en 0.x — aucune promesse de compatibilité. Même règle pour
+     * `league/oauth2-server` (#647), le serveur d'autorisation des connexions
+     * MCP, utilisé sans son bundle : une montée de version se décide.
      */
     public function testTheMcpPackagesArePinnedExactly(): void
     {
@@ -402,7 +404,7 @@ final class McpEndpointTest extends WebTestCase
         self::assertIsArray($composer['require']);
 
         foreach ($composer['require'] as $package => $constraint) {
-            if (!\is_string($package) || (!str_starts_with($package, 'symfony/mcp-') && !str_starts_with($package, 'mcp/'))) {
+            if (!\is_string($package) || (!str_starts_with($package, 'symfony/mcp-') && !str_starts_with($package, 'mcp/') && 'league/oauth2-server' !== $package)) {
                 continue;
             }
 
@@ -412,6 +414,7 @@ final class McpEndpointTest extends WebTestCase
 
         self::assertArrayHasKey('symfony/mcp-bundle', $composer['require']);
         self::assertArrayHasKey('mcp/sdk', $composer['require']);
+        self::assertArrayHasKey('league/oauth2-server', $composer['require']);
     }
 
     /**
