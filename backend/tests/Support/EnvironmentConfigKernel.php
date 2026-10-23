@@ -12,6 +12,8 @@ use ReflectionMethod;
 use Symfony\Component\Config\Definition\NodeInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Extension\ConfigurationExtensionInterface;
+use Symfony\Component\Filesystem\Filesystem;
+use Symfony\Component\Routing\RouteCollection;
 
 /**
  * Le noyau de l'application dans un environnement donné, pour lire ce que sa
@@ -121,6 +123,28 @@ final class EnvironmentConfigKernel extends Kernel
         }
 
         return \is_array($merged) ? $merged : [];
+    }
+
+    /**
+     * Les routes que sert cet environnement : le noyau démarré, la collection
+     * que charge son routeur (issue #659). Le tri par environnement est celui
+     * du noyau lui-même, aucune forme n'est relue à part. Il faut ici le
+     * conteneur compilé : les chargeurs de routes (attributs, API Platform,
+     * MCP) sont des services.
+     *
+     * Le cache est vidé d'abord : hors débogage, le noyau reprendrait sans le
+     * vérifier un conteneur compilé par une exécution précédente, donc des
+     * contrôleurs et des ressources d'avant la modification.
+     */
+    public function routes(): RouteCollection
+    {
+        new Filesystem()->remove($this->getCacheDir());
+        $this->boot();
+        try {
+            return $this->getContainer()->get('router')->getRouteCollection();
+        } finally {
+            $this->shutdown();
+        }
     }
 
     /**
