@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Shared\Infrastructure\Security;
 
+use App\Mcp\Connection\Infrastructure\League\OAuthEncryptionKey;
 use App\Security\Authentication\Infrastructure\Http\CsrfCookieTokenSigner;
 use App\Security\Authentication\Infrastructure\Log\LoginIdentifierFingerprint;
 use App\Shared\Infrastructure\Cache\AuthenticatedCacheMarshaller;
@@ -22,7 +23,7 @@ use Symfony\Component\Messenger\Transport\Serialization\PhpSerializer;
  * (issue #493) : `dump()` d'un service, le profiler, une sortie de débogage
  * collée dans un ticket ou une session d'assistant.
  *
- * Trois des quatre usages gardent le secret pour en dériver la clé plus tard
+ * Quatre des cinq usages gardent le secret pour en dériver la clé plus tard
  * (à chaque appel, ou au premier usage) : ils le tiennent dans un
  * SensitiveParameterValue, comme KeyedMac sa clé dérivée. Chaque service est
  * mis en service avant d'être affiché, pour que ses dérivations paresseuses
@@ -54,7 +55,12 @@ final class ApplicationSecretNeverShowsInADumpTest extends TestCase
         $marshaller = new AuthenticatedCacheMarshaller(new DefaultMarshaller(), TestKeys::material());
         $marshaller->marshall(['key' => 'valeur'], $failed);
 
+        // #647 : la clé de chiffrement d'OAuth, dérivée à chaque key().
+        $oauthEncryptionKey = new OAuthEncryptionKey(TestKeys::material());
+        $oauthEncryptionKey->key();
+
         yield 'cookie CSRF' => [$signer];
+        yield 'chiffrement OAuth' => [$oauthEncryptionKey];
         yield 'empreinte de login' => [$fingerprint];
         yield 'enveloppes Messenger' => [$serializer];
         yield 'valeurs de cache' => [$marshaller];

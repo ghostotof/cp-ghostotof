@@ -32,6 +32,15 @@
              celle (vide) du .env, puisque la variable y figure. -->
         <server name="CONTACT_SENDER_EMAIL" value="noreply@example.test" force="true" />
         <server name="CONTACT_RECIPIENT_EMAIL" value="contact@example.test" force="true" />
+        <!-- Base publique de l'API (#647) forcée à vide, le cas de la préprod et
+             de la prod : elle retombe sur APP_FRONTEND_BASE_URL. Le conteneur de
+             dev la pose en vraie variable d'environnement
+             (docker-compose.override.yml, l'API sur un autre port que Vite), que
+             PHP copie dans $_ENV (variables_order EGPCS) et que Symfony lit avant
+             $_SERVER : un <server> n'y suffit pas (mesuré, 8080 lu), il faut
+             <env force>, qui réécrit $_ENV et getenv(). Sans lui la suite ne
+             serait pas la même en local et en CI. -->
+        <env name="APP_PUBLIC_API_BASE_URL" value="" force="true" />
         <!-- Même mécanique pour la clé Anthropic (ADR 0004) : valeur factice
              forcée, jamais la vraie. Aucun test ne sort sur le réseau — la
              plateforme est remplacée par une implémentation en mémoire ; un test

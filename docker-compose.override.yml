@@ -5,6 +5,14 @@
 
 services:
 
+  backend:
+    environment:
+      # Base publique de l'API (#647) : l'émetteur OAuth et la ressource MCP en
+      # dérivent. En dev seulement l'API (nginx) n'est pas sur l'origine du
+      # frontend (Vite) ; vide ailleurs, elle retombe sur APP_FRONTEND_BASE_URL
+      # (backend/.env). Prise en compte au prochain `docker compose up -d backend`.
+      APP_PUBLIC_API_BASE_URL: "http://localhost:${HTTP_PORT}"
+
   frontend:
     image: node:${NODE_TAG}
     container_name: ${COMPOSE_PROJECT_NAME}_frontend
