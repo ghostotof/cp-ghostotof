@@ -30,7 +30,7 @@ paths:
 
 > Split out of `.claude/rules/deploiement.md` (#605), whose index lists every deployment rule. The index of every rule is at the top of `.claude/CLAUDE.md`.
 
-- **Eight nginx rate-limit zones, two different jobs.** `contact` (10 r/m), `pwsetup` (20 r/m),
+- **Nine nginx rate-limit zones, two different jobs.** `oauth` (10 r/m, burst 10, `^~ /api/oauth/`, #647), `contact` (10 r/m), `pwsetup` (20 r/m),
   `baseaccess` (20 r/m, issue #77 — each call signs an RS256 JWT), `login` (10 r/m, burst 10,
   ADR 0005 — the backstop under Symfony's `login_throttling`, which is the real ceiling) and
   `assistant` (10 r/m, burst 5, plus `limit_conn assistantconn 1` — each call is billed and each
