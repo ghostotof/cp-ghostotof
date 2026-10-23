@@ -90,7 +90,9 @@ paths:
   deferred authentication relies on); in phase 1 its call is a literal tool error, and it has no
   dependency, so nothing of the corpus can leak. `get_tech_watch` relays third-party strings
   (endoflife.date cycles, versions, links) to the person's model — indirect prompt injection (LLM01): its
-  description says to treat them as data; the output stays equal to the route (D1). **The page « Brancher votre
+  description says to treat them as data; the output stays equal to the route (D1). Since #658 cycles and
+  versions only pass in the shape of a version number, filtered in the watch itself, never in the tool
+  (`.claude/rules/portfolio-watch.md`); links stay text past `ExternalUrlFilter`. **The page « Brancher votre
   assistant » copies the catalogue** (#645): tool names per tier, the prompt, its arguments and the `role` bound,
   hand-written in `frontend/src/infrastructure/portfolio/content/{fr,en}.ts`. `ConnectAssistantPageMirrorsCatalogueTest`
   (#673) compares each language with the real registry, both ways (tier from `BackedByRoute`, `get_contact_info`
