@@ -7,12 +7,18 @@ security:
         fixture_users:
             id: fixture.user_provider
     firewalls:
+        # `%%` échappé : se lit `%` partout, pas une valeur paramétrée.
+        login:
+            pattern: ^/api/login%%5Fcheck$
+            stateless: true
         api:
             pattern: ^/api
             stateless: true
             user_checker: security.user_checker
     role_hierarchy:
         ROLE_TRUSTED: [ROLE_USER]
+        # Clé paramétrée : identique à la lecture, résolue selon l'environnement.
+        '%fixture.role%': [ROLE_USER]
     password_hashers:
         App\Security\User\Domain\Entity\CpgUser:
             algorithm: bcrypt
@@ -20,7 +26,7 @@ security:
 
 when@test:
     security:
-        # Exemptée (PROPER_TO_ENVIRONMENT) : aucune différence rapportée.
+        # Exemptée (ENVIRONMENT_SPECIFIC) : aucune différence rapportée.
         password_hashers:
             App\Security\User\Domain\Entity\CpgUser:
                 algorithm: bcrypt

@@ -18,35 +18,62 @@ use PHPUnit\Framework\TestCase;
  * `when@test` les rendrait vertes sur une carte que la production n'a pas.
  *
  * Toute la section `security` est donc comparée, pas seulement ces trois
- * clés : un fournisseur d'utilisateurs ou une stratégie de décision propre à
- * un environnement changerait tout autant ce que la production sert. Seules
- * les clés de PROPER_TO_ENVIRONMENT peuvent différer, chacune justifiée.
+ * clés : une stratégie de décision ou la déclaration d'un fournisseur propre à
+ * un environnement changerait tout autant ce que la production sert. Et
+ * `lexik_jwt_authentication` avec elle : l'authentificateur `jwt` du firewall
+ * `api` y prend où lire le jeton (cookie, en-tête) et ce qu'il pose. Seuls les
+ * chemins d'ENVIRONMENT_SPECIFIC peuvent différer, chacun justifié.
  *
  * Même lecture qu'ExceptionMappingEnvironmentParityTest : chaque environnement
  * est chargé par les chargeurs de Symfony, sans compilation, et chaque
- * fragment normalisé puis fusionné par la configuration de SecurityBundle
+ * fragment normalisé puis fusionné par la configuration de l'extension
  * elle-même (EnvironmentConfigKernel::declaredConfiguration).
  *
- * Non vu, limite acceptée : une passe de compilation qui modifierait la carte
- * selon l'environnement (aucune ne le fait ; Kernel::build() n'en ajoute
- * qu'une, la même partout).
+ * Non vu, limites acceptées (aucun cas aujourd'hui) :
+ *  - un service que la configuration désigne, redéfini pour un environnement
+ *    (`when@prod: services:`, services_prod.yaml) — un fournisseur, un voter,
+ *    un user_checker : la section reste identique, le comportement non ;
+ *  - une passe de compilation qui modifierait la carte selon l'environnement
+ *    ({@see \App\Kernel::build()} n'en ajoute qu'une, la même partout) ;
+ *  - ce qu'un bundle ajoute par `prepend()`, appliqué à la compilation, après
+ *    les fragments lus ici.
  */
 final class SecurityConfigEnvironmentParityTest extends TestCase
 {
     /**
-     * Clé de `security` => pourquoi elle peut différer d'un environnement à
-     * l'autre.
+     * Les extensions comparées.
      */
-    private const array PROPER_TO_ENVIRONMENT = [
-        'password_hashers' => 'Coût bcrypt abaissé à 4 sous when@test pour la vitesse de la suite (issue #590) ; CpgUserPasswordHasherTest fige l\'entrée entière dans chaque environnement.',
+    private const array EXTENSIONS = ['security', 'lexik_jwt_authentication'];
+
+    /**
+     * « extension.chemin.vers.la.clé » qui peut différer d'un environnement à
+     * l'autre => pourquoi. Le chemin est retiré de la comparaison, rien de plus
+     * large.
+     */
+    private const array ENVIRONMENT_SPECIFIC = [
+        'security.password_hashers' => 'Coût bcrypt abaissé à 4 sous when@test pour la vitesse de la suite (issue #590) ; CpgUserPasswordHasherTest fige l\'entrée entière dans chaque environnement.',
+        'lexik_jwt_authentication.set_cookies.BEARER.secure' => 'Secure en prod seulement, la règle d\'AuthCookieFactory (le dev sert localhost en HTTP) ; AuthCookieAttributesTest fige le cookie que Lexik pose contre celui de la fabrique.',
+    ];
+
+    /**
+     * « extension.clé[entrée] » dont la valeur est paramétrée par construction
+     * => pourquoi.
+     */
+    private const array PARAMETERIZED_BY_DESIGN = [
+        'lexik_jwt_authentication.pass_phrase' => 'Secret propre à chaque déploiement : il vient de l\'environnement, jamais du dépôt.',
+        'lexik_jwt_authentication.public_key' => 'Chemin de la clé publique, propre à chaque déploiement comme la paire qu\'elle complète.',
+        'lexik_jwt_authentication.secret_key' => 'Chemin de la clé privée, secret propre à chaque déploiement.',
     ];
 
     private const string FIXTURE_PROJECT = __DIR__.'/Fixtures/EnvironmentProject';
 
     /**
+     * Un noyau par environnement et projet, gardé d'un test à l'autre :
+     * chaque chargement du projet réel parcourt tout src/.
+     *
      * @var array<string, EnvironmentConfigKernel>
      */
-    private array $kernels = [];
+    private static array $kernels = [];
 
     public function testEveryEnvironmentDeclaresTheSameSecurityAsTest(): void
     {
@@ -66,10 +93,13 @@ final class SecurityConfigEnvironmentParityTest extends TestCase
     public function testTheComparisonSeesEveryFormTheKernelLoads(): void
     {
         self::assertSame([
+            // packages/lexik_jwt_authentication.yaml, when@test.
+            'dev ≠ test : lexik_jwt_authentication.token_extractors[authorization_header]',
             // packages/dev/security.yaml, répertoire propre à `dev`.
             'dev ≠ test : security.access_control[0]',
             // packages/security.php, when@dev au format tableau.
             'dev ≠ test : security.access_decision_manager[strategy]',
+            'prod ≠ test : lexik_jwt_authentication.token_extractors[authorization_header]',
             // services_prod.yaml.
             'prod ≠ test : security.access_control[1]',
             // packages/prod/security.php, au format closure.
@@ -83,15 +113,16 @@ final class SecurityConfigEnvironmentParityTest extends TestCase
      * Une exemption qui ne sert plus se retire : sinon elle couvrirait demain
      * une différence que personne n'a justifiée.
      */
-    public function testEveryKeyProperToAnEnvironmentStillDiffers(): void
+    public function testEveryEnvironmentSpecificPathStillDiffers(): void
     {
-        $reference = $this->declared('test', null);
-        foreach (array_keys(self::PROPER_TO_ENVIRONMENT) as $key) {
+        foreach (array_keys(self::ENVIRONMENT_SPECIFIC) as $path) {
+            [$extension, $keys] = $this->split($path);
+            $reference = $this->at($this->declared('test', $extension, null), $keys);
             $differs = false;
-            foreach ($this->environments() as $environment) {
-                $differs = $differs || ($this->declared($environment, null)[$key] ?? null) !== ($reference[$key] ?? null);
+            foreach (EnvironmentConfigKernel::comparedEnvironments() as $environment) {
+                $differs = $differs || $this->at($this->declared($environment, $extension, null), $keys) !== $reference;
             }
-            self::assertTrue($differs, \sprintf('security.%s est identique partout : retirer son exemption de PROPER_TO_ENVIRONMENT.', $key));
+            self::assertTrue($differs, \sprintf('%s est identique partout : retirer son exemption d\'ENVIRONMENT_SPECIFIC.', $path));
         }
     }
 
@@ -99,27 +130,49 @@ final class SecurityConfigEnvironmentParityTest extends TestCase
      * Une valeur paramétrée (`%env(…)%`, `%paramètre%`) se lit à l'identique
      * dans chaque environnement, mais se résout selon lui : la parité ne la
      * verrait pas, et le conteneur de test en retiendrait sa valeur à lui. La
-     * configuration comparée reste donc littérale.
+     * configuration comparée reste donc littérale, clés comprises, hors
+     * PARAMETERIZED_BY_DESIGN.
      */
-    public function testNoSecurityValueIsParameterized(): void
+    public function testNoComparedValueIsParameterized(): void
     {
-        self::assertSame([], $this->parameterized(null), 'Valeur paramétrée dans la configuration de sécurité : l\'écrire en clair.');
+        self::assertSame(
+            [],
+            array_values(array_diff($this->parameterized(null), array_keys(self::PARAMETERIZED_BY_DESIGN))),
+            'Valeur paramétrée dans la configuration de sécurité : l\'écrire en clair.',
+        );
     }
 
-    public function testAParameterizedValueIsFound(): void
+    public function testEveryParameterizedByDesignEntryStillIs(): void
     {
-        self::assertSame(['security.access_control[1]'], $this->parameterized(self::FIXTURE_PROJECT));
+        self::assertSame(
+            [],
+            array_values(array_diff(array_keys(self::PARAMETERIZED_BY_DESIGN), $this->parameterized(null))),
+            'Entrée de PARAMETERIZED_BY_DESIGN écrite en clair désormais : la retirer.',
+        );
     }
 
     /**
-     * @return list<string> « security.clé[entrée] » dont la valeur est paramétrée, dans un environnement au moins
+     * Une valeur ou une clé paramétrée est trouvée ; un `%%` échappé, qui se
+     * lit `%` partout, ne l'est pas (fixture : le firewall `login`).
+     */
+    public function testAParameterizedValueOrKeyIsFound(): void
+    {
+        self::assertSame([
+            'lexik_jwt_authentication.pass_phrase',
+            'security.access_control[1]',
+            'security.role_hierarchy[%fixture.role%]',
+        ], $this->parameterized(self::FIXTURE_PROJECT));
+    }
+
+    /**
+     * @return list<string> « extension.clé[entrée] » dont la clé ou la valeur est paramétrée, dans un environnement au moins, triées
      */
     private function parameterized(?string $projectDirectory): array
     {
         $found = [];
-        foreach (['test', ...$this->environments()] as $environment) {
+        foreach (['test', ...EnvironmentConfigKernel::comparedEnvironments()] as $environment) {
             foreach ($this->entries($environment, $projectDirectory) as $entry => $value) {
-                if (str_contains((string) json_encode($value), '%')) {
+                if (self::isParameterized($entry) || self::isParameterized($value)) {
                     $found[] = $entry;
                 }
             }
@@ -131,13 +184,30 @@ final class SecurityConfigEnvironmentParityTest extends TestCase
     }
 
     /**
-     * @return list<string> « env ≠ test : security.clé[entrée] », triées
+     * Une référence de paramètre, `%…%`, dans une chaîne, une clé ou une
+     * valeur imbriquée. `%%` est l'échappement de Symfony : il se lit `%` dans
+     * tout environnement, il est donc écarté d'abord.
+     */
+    private static function isParameterized(mixed $value): bool
+    {
+        if (\is_string($value)) {
+            return 1 === preg_match('/%[^%\s]+%/', str_replace('%%', '', $value));
+        }
+        if (!\is_array($value)) {
+            return false;
+        }
+
+        return array_any($value, static fn (mixed $item, int|string $key): bool => self::isParameterized((string) $key) || self::isParameterized($item));
+    }
+
+    /**
+     * @return list<string> « env ≠ test : extension.clé[entrée] », triées
      */
     private function differences(?string $projectDirectory): array
     {
         $found = [];
         $reference = $this->entries('test', $projectDirectory);
-        foreach ($this->environments() as $environment) {
+        foreach (EnvironmentConfigKernel::comparedEnvironments() as $environment) {
             $declared = $this->entries($environment, $projectDirectory);
             foreach (array_unique([...array_keys($declared), ...array_keys($reference)]) as $entry) {
                 if (($declared[$entry] ?? null) !== ($reference[$entry] ?? null)) {
@@ -155,19 +225,28 @@ final class SecurityConfigEnvironmentParityTest extends TestCase
      * règle `access_control` par index, un firewall, un fournisseur ou un
      * rôle par nom — le diagnostic désigne ainsi l'entrée en cause.
      *
-     * @return array<string, mixed> « security.clé[entrée] » ou « security.clé » => valeur
+     * @return array<string, mixed> « extension.clé[entrée] » ou « extension.clé » => valeur
      */
     private function entries(string $environment, ?string $projectDirectory): array
     {
         $entries = [];
-        foreach (array_diff_key($this->declared($environment, $projectDirectory), self::PROPER_TO_ENVIRONMENT) as $key => $value) {
-            if (!\is_array($value)) {
-                $entries['security.'.$key] = $value;
-
-                continue;
+        foreach (self::EXTENSIONS as $extension) {
+            $declared = $this->declared($environment, $extension, $projectDirectory);
+            foreach (array_keys(self::ENVIRONMENT_SPECIFIC) as $path) {
+                [$exemptExtension, $keys] = $this->split($path);
+                if ($exemptExtension === $extension) {
+                    $declared = self::without($declared, $keys);
+                }
             }
-            foreach ($value as $entry => $entryValue) {
-                $entries[\sprintf('security.%s[%s]', $key, $entry)] = $entryValue;
+            foreach ($declared as $key => $value) {
+                if (!\is_array($value)) {
+                    $entries[\sprintf('%s.%s', $extension, $key)] = $value;
+
+                    continue;
+                }
+                foreach ($value as $entry => $entryValue) {
+                    $entries[\sprintf('%s.%s[%s]', $extension, $key, $entry)] = $entryValue;
+                }
             }
         }
 
@@ -175,23 +254,65 @@ final class SecurityConfigEnvironmentParityTest extends TestCase
     }
 
     /**
-     * Les environnements que le noyau admet, hors `test`
-     * ({@see EnvironmentConfigKernel::allowedEnvironments()}).
-     *
-     * @return list<string>
+     * @return array{string, list<string>} l'extension, puis le chemin de clés en dessous
      */
-    private function environments(): array
+    private function split(string $path): array
     {
-        return array_values(array_diff(EnvironmentConfigKernel::allowedEnvironments(), ['test']));
+        $keys = explode('.', $path);
+
+        return [array_shift($keys), $keys];
+    }
+
+    /**
+     * La valeur au bout d'un chemin de clés, `null` si le chemin n'existe pas.
+     *
+     * @param list<string> $keys
+     */
+    private function at(mixed $value, array $keys): mixed
+    {
+        foreach ($keys as $key) {
+            if (!\is_array($value) || !\array_key_exists($key, $value)) {
+                return null;
+            }
+            $value = $value[$key];
+        }
+
+        return $value;
+    }
+
+    /**
+     * La configuration sans la clé au bout du chemin — et sans rien d'autre.
+     *
+     * @param array<array-key, mixed> $config
+     * @param list<string>            $keys
+     *
+     * @return array<array-key, mixed>
+     */
+    private static function without(array $config, array $keys): array
+    {
+        $key = array_shift($keys);
+        if (null === $key || !\array_key_exists($key, $config)) {
+            return $config;
+        }
+        if ([] === $keys) {
+            unset($config[$key]);
+
+            return $config;
+        }
+        if (\is_array($config[$key])) {
+            $config[$key] = self::without($config[$key], $keys);
+        }
+
+        return $config;
     }
 
     /**
      * @return array<array-key, mixed>
      */
-    private function declared(string $environment, ?string $projectDirectory): array
+    private function declared(string $environment, string $extension, ?string $projectDirectory): array
     {
-        $kernel = $this->kernels[$environment.'|'.$projectDirectory] ??= new EnvironmentConfigKernel($environment, $projectDirectory);
+        $kernel = self::$kernels[$environment.'|'.$projectDirectory] ??= new EnvironmentConfigKernel($environment, $projectDirectory);
 
-        return $kernel->declaredConfiguration('security');
+        return $kernel->declaredConfiguration($extension);
     }
 }

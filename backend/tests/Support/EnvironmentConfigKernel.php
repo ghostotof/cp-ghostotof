@@ -16,18 +16,32 @@ use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Routing\RouteCollection;
 
 /**
- * Le noyau de l'application dans un environnement donné, pour lire ce que sa
- * configuration déclare — sans compiler le conteneur (issue #357).
+ * Le noyau de l'application dans un environnement donné, pour comparer les
+ * environnements entre eux. Deux lectures :
  *
- * Les chargeurs de Symfony font le tri par environnement (`when@<env>`,
- * config/packages/<env>/, services_<env>.*, en YAML comme en PHP) ; le
- * ContainerBuilder qu'ils remplissent garde, avant compilation, les fragments
- * de chaque extension, que la configuration de l'extension sait normaliser. Le projet lu peut être une fixture : son
- * config/bundles.php doit alors rendre ceux de l'application.
+ *  - ce que sa configuration déclare, **sans compiler** le conteneur (issue
+ *    #357) : les chargeurs de Symfony font le tri par environnement
+ *    (`when@<env>`, config/packages/<env>/, services_<env>.*, en YAML comme en
+ *    PHP) ; le ContainerBuilder qu'ils remplissent garde, avant compilation,
+ *    les fragments de chaque extension, que la configuration de l'extension
+ *    sait normaliser. Le projet lu peut être une fixture : son
+ *    config/bundles.php doit alors rendre ceux de l'application ;
+ *  - les routes qu'il sert, noyau **démarré** (issue #659) : les chargeurs de
+ *    routes sont des services, il faut le conteneur compilé.
+ *
+ * Toujours hors débogage, comme la production : un environnement qui ne
+ * tourne qu'en débogage (`dev`, `test` sous KernelTestCase) est donc lu tel
+ * qu'il serait sans — une route ou une règle qui dépendrait de
+ * `%kernel.debug%` échapperait à la comparaison, limite acceptée (aucune).
  */
 final class EnvironmentConfigKernel extends Kernel
 {
     private ?ContainerBuilder $builder = null;
+
+    /**
+     * Le cache où routes() compile, propre à l'appel ; `null` hors de lui.
+     */
+    private ?string $bootCacheDirectory = null;
 
     /**
      * Les environnements que le noyau admet, lus dans {@see Kernel::getAllowedEnvs()}
@@ -46,6 +60,18 @@ final class EnvironmentConfigKernel extends Kernel
         return $allowed;
     }
 
+    /**
+     * Les environnements qu'une garde de parité compare à `test`, la
+     * référence : tous ceux que le noyau admet, sauf lui (issue #659, écrit
+     * jusque-là dans chaque garde).
+     *
+     * @return list<string>
+     */
+    public static function comparedEnvironments(): array
+    {
+        return array_values(array_diff(self::allowedEnvironments(), ['test']));
+    }
+
     public function __construct(string $environment, private readonly ?string $projectDirectory = null)
     {
         parent::__construct($environment, false);
@@ -58,11 +84,12 @@ final class EnvironmentConfigKernel extends Kernel
 
     /**
      * Sous var/ de l'application, jamais sous la fixture, et à part du cache
-     * de chaque environnement.
+     * de chaque environnement — ou celui de routes() pendant qu'il compile.
      */
     public function getCacheDir(): string
     {
-        return RepositoryFiles::backend('var/cache/environment_config/'.$this->environment.'-'.hash('xxh3', $this->getProjectDir()));
+        return $this->bootCacheDirectory
+            ?? RepositoryFiles::backend('var/cache/environment_config/'.$this->environment.'-'.hash('xxh3', $this->getProjectDir()));
     }
 
     /**
@@ -132,18 +159,31 @@ final class EnvironmentConfigKernel extends Kernel
      * conteneur compilé : les chargeurs de routes (attributs, API Platform,
      * MCP) sont des services.
      *
-     * Le cache est vidé d'abord : hors débogage, le noyau reprendrait sans le
-     * vérifier un conteneur compilé par une exécution précédente, donc des
-     * contrôleurs et des ressources d'avant la modification.
+     * Le conteneur est compilé dans un cache propre au processus, vide au
+     * départ et supprimé après lecture : hors débogage, le noyau reprendrait
+     * sans le vérifier un conteneur compilé par une exécution précédente (des
+     * contrôleurs et des ressources d'avant la modification), et un cache
+     * partagé pourrait être effacé sous les pieds d'une autre suite qui
+     * tourne en même temps.
      */
     public function routes(): RouteCollection
     {
-        new Filesystem()->remove($this->getCacheDir());
-        $this->boot();
+        $filesystem = new Filesystem();
+        $this->bootCacheDirectory = RepositoryFiles::backend(\sprintf(
+            'var/cache/environment_routes/%s-%s-%d',
+            $this->environment,
+            hash('xxh3', $this->getProjectDir()),
+            getmypid(),
+        ));
+        $filesystem->remove($this->bootCacheDirectory);
         try {
+            $this->boot();
+
             return $this->getContainer()->get('router')->getRouteCollection();
         } finally {
             $this->shutdown();
+            $filesystem->remove($this->bootCacheDirectory);
+            $this->bootCacheDirectory = null;
         }
     }
 
