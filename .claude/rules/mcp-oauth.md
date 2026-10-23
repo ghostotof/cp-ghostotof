@@ -18,7 +18,7 @@ paths:
 > Decisions: `docs/adr/0006-serveur-mcp.md`, D3 (amended 2026-10-22 and 2026-10-23) and D4; spec
 > `.claude/specs/0007-mcp-server.md`, « Connexion MCP et serveur d'autorisation (phase 2) » (issue #647).
 > Split out of `.claude/rules/mcp.md` from the start (its 31 KB plus this would have neared
-> `tools/check-claude-rules.sh`'s 50 000 bytes, and tasks 9 to 13 of the spec add to it). Vocabulary:
+> `tools/check-claude-rules.sh`'s 50 000 bytes, and #648 to #652 add to it). Vocabulary:
 > `CONTEXT.md`, « Accès MCP » (**connexion MCP**, **client MCP**). The index of every rule is at the top
 > of `.claude/CLAUDE.md`.
 
@@ -43,7 +43,7 @@ paths:
   fault, an unknown connection, one of another client, a revoked one (`LeagueRepositoriesTest`).
 - **Opaque access tokens, every secret stored as its SHA-256 only.** `OpaqueAccessToken`: the string the
   client gets **is** league's 80-hex identifier, nothing signed, nothing readable — `/api/mcp`'s
-  authenticator (task 9, #648) will find the row by its hash and re-read the connection in one query
+  authenticator (#648) will find the row by its hash and re-read the connection in one query
   (ADR 0006 D4). `NoSigningKey` is the « private key » league demands at construction: league 9.4.1 only
   passes it on, and every read throws (`AccessTokensAreNotSignedException`, `NoSigningKeyTest`) — never an
   empty or fallback key. Codes, access and refresh tokens are stored as `TokenIdentifierHash::of()`
@@ -53,7 +53,7 @@ paths:
   or the audit log: `LeagueRepositoriesTest` (stored as the hash only), `OAuthFlowTest::testNoTokenIsStoredInClear`
   (the whole flow, every table read), `McpTokenEntitiesTest`. Timestamps `datetimetz_immutable`, keys
   `Uuid::v7()`. `mcp_connection.mcp_client_id` (never `client_id`, which is the client's public OAuth id in
-  `mcp_client`) cascades on delete — **accepted**: removing a client (backoffice, task 13) cuts its
+  `mcp_client`) cascades on delete — **accepted**: removing a client (backoffice, #652) cuts its
   connections; the grant stays in the audit log (`McpConnectionRepositoryTest`).
 - **The encryption key of codes and refresh tokens** (league's `CryptTrait`, defuse) is
   `OAuthEncryptionKey`, derived from `APP_SECRET` under `cp-ghostotof/oauth-encryption/v1`
@@ -106,9 +106,14 @@ paths:
   is revoked, a refresh token revoked after being checked); a code exchanged twice in sequence is refused.
 - **OAuth answers are league's (RFC 6749 §5.2), rendered by the controller, never thrown**:
   `ApiProblemResponseListener` / `ApiJsonErrorFormatListener` would rewrite them as problem+json, which
-  OAuth clients do not read. Every response is `Cache-Control: no-store`. The PSR-7 bridge is the MCP
+  OAuth clients do not read. **What the controllers render is `Cache-Control: no-store`**: the authorize
+  redirects and refusals, the token and revocation answers, league's errors, the consent's 200s (the summary
+  carries `state` and the PKCE challenge, the decision the code). The consent's 400/401/403/422
+  problem+json come from the shared listeners, the firewall and the CSRF guard, without it — accepted: they
+  carry no `state`, challenge nor code (a constant message, or the names of the refused fields). The PSR-7 bridge is the MCP
   bundle's (`mcp.psr_http_factory`, `mcp.http_foundation_factory`, `mcp.psr17_factory`, by interface).
-  The one problem+json is the consent's 400 (`AuthorizationRequestRejectedException`, `log_level: info`).
+  The consent's refusal of a revalidated request is its 400 (`AuthorizationRequestRejectedException`,
+  `log_level: info`).
 - **`iss` (RFC 9207) on every redirect to a client**, refusals included, written once (`IssParameter`):
   the authorize endpoint's redirected refusals and both consent outcomes. The metadata announce it
   (`authorization_response_iss_parameter_supported`), so a compliant client refuses a response without it.
@@ -146,14 +151,15 @@ paths:
   (`MetadataDocumentResponseFactory`). What is announced is what the server does, nothing more
   (`OAuthServerMetadata`): `S256` only, `none` auth, `response_modes_supported: ["query"]` (omitted, RFC 8414
   defaults to query **and** fragment), no `registration_endpoint`, **no OIDC document**.
-  **Accepted on this branch**: `client_id_metadata_document_supported: true` before CIMD lands (#651); phase
-  2 only ships whole. `OAuthMetadataTest` pins both documents exactly, their routed paths, a POST 405, the
+  **Two announcements ahead of the code, accepted** (phase 2 only ships whole): `client_id_metadata_document_supported: true`
+  until CIMD (#651) lands, and `bearer_methods_supported: ["header"]` while `/api/mcp` accepts no token
+  until its authenticator (#648) lands. `OAuthMetadataTest` pins both documents exactly, their routed paths, a POST 405, the
   `BEARER` changing nothing, no `openid-configuration`.
 - **A dedicated Ingress carries the two documents**, `k8s/base/ingress-oauth-metadata.yaml`: two `Exact`
   paths to `backend:80` (an `Exact` beats the main Ingress's `/` prefix), **no annotation, no `tls`** —
   ingress-nginx applies `auth-*` annotations to every path of one object, and preprod's Basic Auth sits on
   the main one; a client cannot answer a Basic Auth. Each overlay patches the host only (the main Ingress's,
-  whose certificate covers it). `/api/oauth/*` and `/api/mcp` stay behind preprod's Basic Auth until task 14.
+  whose certificate covers it). `/api/oauth/*` and `/api/mcp` stay behind preprod's Basic Auth until phase 2's delivery (#653).
   `OAuthMetadataIngressTest` pins paths against `OAuthEndpoints` and the router, no annotation nor
   certificate, and that no overlay patches anything else. **The frontend answers a real 404** under
   `/.well-known/` for those paths and the RFC roots and `openid-configuration` (never the SPA's 200,

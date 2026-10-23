@@ -154,8 +154,10 @@ when@test:
         # AuthorizationServerTest lit le serveur d'autorisation tel que la
         # configuration commune le construit (#647) : un alias public, jamais
         # une copie de sa définition, qui remplacerait celle de la production
-        # dans le conteneur de test. L'alias garde aussi en vie le service privé,
-        # qu'aucun contrôleur n'injecte encore et que la compilation retirerait.
+        # dans le conteneur de test. Le service reste privé partout ailleurs :
+        # les services OAuth le reçoivent par injection (validateur de la
+        # demande, point de jeton, achèvement du consentement), seul ce test le
+        # lit dans le conteneur.
         test.oauth.authorization_server:
             alias: League\OAuth2\Server\AuthorizationServer
             public: true

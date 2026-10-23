@@ -83,7 +83,7 @@ paths:
   against `OAuthEndpoints` and the router, no annotation nor certificate, and no overlay patch beyond the
   host. Preprod's Basic Auth thus no longer covers **all** of the Ingress: `/healthz` and these two
   documents escape it (`k8s/README.md` §2bis); `/api/oauth/*` and `/api/mcp` stay behind it until phase 2's
-  delivery (spec 0007, task 14). `tools/audit-prod.sh` §6ter reads both documents **without** it. Details:
+  delivery (#653). `tools/audit-prod.sh` §6ter reads both documents **without** it. Details:
   `.claude/rules/mcp-oauth.md`.
 - **The three backend CronJobs copy their shared settings, on purpose** (#673, decided 2026-10-21): `cache-prune`,
   `messenger-purge` and `watch-refresh` repeat concurrency, histories, `backoffLimit`, the whole pod spec but its

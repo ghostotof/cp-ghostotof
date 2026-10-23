@@ -16,7 +16,7 @@
 #   `/assets/`                            -> l'asset réel découvert + /assets/missing-file.js (404)
 #   `= /index.html`                       -> /index.html, / et /route/inconnue (voir note)
 #   `= /config.js`                        -> /config.js
-#   `^~ /.well-known/`                    -> /.well-known/security.txt, plus quatre
+#   `^~ /.well-known/`                    -> /.well-known/security.txt, plus cinq
 #                                            chemins en 404 (voir ci-dessous)
 #   `~ /\.`                               -> /.hidden (404)
 #   `~* \.(env|ya?ml|...)$`               -> /anything.env (404)
@@ -44,8 +44,8 @@
 # l'image du frontend, elle, n'en sert aucun. Ce garde vérifie qu'elle répond
 # un vrai 404 (jamais le repli SPA en 200, qu'un client OAuth lirait comme un
 # document illisible) sur :
-#   - le chemin de la ressource protégée lui-même (ce que reçoit le frontend
-#     si l'Ingress dédié manque ou ne correspond plus) ;
+#   - les chemins des deux documents eux-mêmes (ce que reçoit le frontend si
+#     l'Ingress dédié manque ou ne correspond plus) ;
 #   - /.well-known/oauth-protected-resource, sans le chemin de la ressource
 #     (RFC 9728 §3.1 : la racine, qu'un client tente en repli) ;
 #   - /.well-known/oauth-authorization-server, sans le chemin de l'émetteur
@@ -157,6 +157,7 @@ check_path "/.well-known/oauth-authorization-server" "404" "/.well-known/oauth-a
 check_path "/.well-known/openid-configuration" "404" "/.well-known/openid-configuration (aucun document OIDC, 404)"
 check_path "/.well-known/oauth-protected-resource" "404" "/.well-known/oauth-protected-resource (racine RFC 9728, aucun document, 404)"
 check_path "/.well-known/oauth-protected-resource/api/mcp" "404" "/.well-known/oauth-protected-resource/api/mcp (servi par le backend via l'Ingress dédié, 404 ici)"
+check_path "/.well-known/oauth-authorization-server/api/oauth" "404" "/.well-known/oauth-authorization-server/api/oauth (servi par le backend via l'Ingress dédié, 404 ici)"
 # La seule réponse réellement servie par `location /` (voir la note en-tête) :
 # un fichier statique de la racine du build, jamais rewrité vers index.html.
 check_path "/favicon.svg" "200" "/favicon.svg (fichier statique racine — la vraie location /)"
