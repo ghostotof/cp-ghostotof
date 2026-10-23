@@ -30,6 +30,6 @@ final readonly class AuthorizationServerMetadataController
     #[Route('/.well-known/oauth-authorization-server/api/oauth', name: 'oauth_authorization_server_metadata', methods: ['GET'])]
     public function __invoke(): JsonResponse
     {
-        return MetadataDocumentResponse::of($this->metadata->authorizationServer());
+        return MetadataDocumentResponseFactory::create($this->metadata->authorizationServer());
     }
 }

@@ -16,6 +16,10 @@ use App\Mcp\Connection\Domain\Entity\McpConnection;
  *  - un seul scope, `nominative:read` ;
  *  - le seul flux `authorization_code` (et son rafraîchissement), PKCE `S256`
  *    obligatoire, `plain` refusé ;
+ *  - la réponse d'autorisation en paramètres de requête seulement
+ *    (`response_modes_supported: ["query"]`) : omise, la clé vaudrait
+ *    `["query", "fragment"]` (RFC 8414 §2), et le serveur ne répond jamais en
+ *    fragment ;
  *  - des clients publics seulement : aucune authentification au point de jeton
  *    ni à celui de révocation (`none`) ;
  *  - aucun enregistrement dynamique (pas de `registration_endpoint`), aucun
@@ -51,6 +55,7 @@ final readonly class OAuthServerMetadata implements OAuthServerMetadataInterface
             'token_endpoint' => $this->endpoints->tokenEndpoint(),
             'revocation_endpoint' => $this->endpoints->revocationEndpoint(),
             'response_types_supported' => ['code'],
+            'response_modes_supported' => ['query'],
             'grant_types_supported' => ['authorization_code', 'refresh_token'],
             'code_challenge_methods_supported' => ['S256'],
             'token_endpoint_auth_methods_supported' => ['none'],

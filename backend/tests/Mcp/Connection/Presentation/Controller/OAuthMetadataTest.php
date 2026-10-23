@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Tests\Mcp\Connection\Presentation\Controller;
 
+use App\Mcp\Connection\Application\OAuthEndpoints;
+use App\Mcp\Connection\Presentation\Controller\AuthorizationServerMetadataController;
+use App\Mcp\Connection\Presentation\Controller\ProtectedResourceMetadataController;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
@@ -62,6 +65,7 @@ final class OAuthMetadataTest extends WebTestCase
                 'token_endpoint' => $base.'/api/oauth/token',
                 'revocation_endpoint' => $base.'/api/oauth/revoke',
                 'response_types_supported' => ['code'],
+                'response_modes_supported' => ['query'],
                 'grant_types_supported' => ['authorization_code', 'refresh_token'],
                 'code_challenge_methods_supported' => ['S256'],
                 'token_endpoint_auth_methods_supported' => ['none'],
@@ -91,6 +95,34 @@ final class OAuthMetadataTest extends WebTestCase
         $server = $this->getDocument($client, self::AUTHORIZATION_SERVER_PATH);
 
         self::assertSame([$server['issuer']], $resource['authorization_servers']);
+    }
+
+    /**
+     * RFC 9728 §3.1 : l'URL du document telle qu'`OAuthEndpoints` la publie —
+     * et la publiera dans le `resource_metadata` du `WWW-Authenticate` — est
+     * celle que le routeur sert, par ce contrôleur. Une dérive entre la route,
+     * `OAuthEndpoints` et ce pointeur rougit ici, au lieu d'envoyer les
+     * clients sur un 404.
+     */
+    public function testTheAdvertisedProtectedResourceMetadataUrlIsTheRoutedPath(): void
+    {
+        self::bootKernel();
+        $url = self::getContainer()->get(OAuthEndpoints::class)->protectedResourceMetadataUrl();
+
+        $this->assertRoutedTo($this->pathOf($url), ProtectedResourceMetadataController::class);
+    }
+
+    /**
+     * RFC 8414 §3.1 : le chemin bien connu inséré avant le chemin de
+     * l'émetteur, celui qu'un client calcule depuis `issuer()`, est celui que
+     * le routeur sert, par ce contrôleur.
+     */
+    public function testTheAuthorizationServerMetadataPathDerivedFromTheIssuerIsTheRoutedPath(): void
+    {
+        self::bootKernel();
+        $issuer = self::getContainer()->get(OAuthEndpoints::class)->issuer();
+
+        $this->assertRoutedTo('/.well-known/oauth-authorization-server'.$this->pathOf($issuer), AuthorizationServerMetadataController::class);
     }
 
     /**
@@ -188,6 +220,24 @@ final class OAuthMetadataTest extends WebTestCase
         self::assertNotSame('', $base);
 
         return rtrim($base, '/');
+    }
+
+    private function pathOf(string $url): string
+    {
+        $path = parse_url($url, PHP_URL_PATH);
+        self::assertIsString($path, \sprintf('%s n\'a pas de chemin.', $url));
+
+        return $path;
+    }
+
+    /**
+     * @param class-string $controller
+     */
+    private function assertRoutedTo(string $path, string $controller): void
+    {
+        $route = self::getContainer()->get('router')->match($path);
+
+        self::assertSame($controller, $route['_controller'] ?? null, \sprintf('%s n\'est pas servi par %s.', $path, $controller));
     }
 
     /**

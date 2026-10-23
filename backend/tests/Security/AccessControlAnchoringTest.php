@@ -114,12 +114,16 @@ final class AccessControlAnchoringTest extends KernelTestCase
         // quel caractère n'en héritent.
         yield '/.well-known/oauth-protected-resource/api/mcp → PUBLIC_ACCESS' => ['/.well-known/oauth-protected-resource/api/mcp', ['PUBLIC_ACCESS']];
         yield '/.well-known/oauth-authorization-server/api/oauth → PUBLIC_ACCESS' => ['/.well-known/oauth-authorization-server/api/oauth', ['PUBLIC_ACCESS']];
+        // L'access_control décide sur le chemin décodé, comme le firewall.
+        yield '/.well-known/oauth-protected-resource/api/m%63p → PUBLIC_ACCESS' => ['/.well-known/oauth-protected-resource/api/m%63p', ['PUBLIC_ACCESS']];
+        yield '/.well-known/oauth-authorization-server/api/o%61uth → PUBLIC_ACCESS' => ['/.well-known/oauth-authorization-server/api/o%61uth', ['PUBLIC_ACCESS']];
         yield '/.well-known/oauth-protected-resource → aucune règle' => ['/.well-known/oauth-protected-resource', null];
         yield '/.well-known/oauth-protected-resource/api/mcpx → aucune règle' => ['/.well-known/oauth-protected-resource/api/mcpx', null];
         yield '/.well-known/oauth-protected-resource/api/mcp/extra → aucune règle' => ['/.well-known/oauth-protected-resource/api/mcp/extra', null];
         yield '/.well-known/oauth-authorization-server → aucune règle' => ['/.well-known/oauth-authorization-server', null];
         yield '/.well-known/oauth-authorization-server/api/oauthx → aucune règle' => ['/.well-known/oauth-authorization-server/api/oauthx', null];
         yield '/.well-known/oauth-authorization-server/api/oauth/extra → aucune règle' => ['/.well-known/oauth-authorization-server/api/oauth/extra', null];
+        yield '/xwell-known/oauth-protected-resource/api/mcp → aucune règle' => ['/xwell-known/oauth-protected-resource/api/mcp', null];
         yield '/xwell-known/oauth-authorization-server/api/oauth → aucune règle' => ['/xwell-known/oauth-authorization-server/api/oauth', null];
         yield '/.well-known/openid-configuration → aucune règle' => ['/.well-known/openid-configuration', null];
     }
@@ -268,6 +272,7 @@ final class AccessControlAnchoringTest extends KernelTestCase
         yield '/.well-known/oauth-authorization-server/api/oauthx → aucun firewall' => ['/.well-known/oauth-authorization-server/api/oauthx', null];
         yield '/.well-known/oauth-authorization-server/api/oauth/extra → aucun firewall' => ['/.well-known/oauth-authorization-server/api/oauth/extra', null];
         yield '/xwell-known/oauth-protected-resource/api/mcp → aucun firewall' => ['/xwell-known/oauth-protected-resource/api/mcp', null];
+        yield '/xwell-known/oauth-authorization-server/api/oauth → aucun firewall' => ['/xwell-known/oauth-authorization-server/api/oauth', null];
         yield '/.well-known/openid-configuration → aucun firewall' => ['/.well-known/openid-configuration', null];
     }
 

@@ -26,6 +26,6 @@ final readonly class ProtectedResourceMetadataController
     #[Route('/.well-known/oauth-protected-resource/api/mcp', name: 'oauth_protected_resource_metadata', methods: ['GET'])]
     public function __invoke(): JsonResponse
     {
-        return MetadataDocumentResponse::of($this->metadata->protectedResource());
+        return MetadataDocumentResponseFactory::create($this->metadata->protectedResource());
     }
 }

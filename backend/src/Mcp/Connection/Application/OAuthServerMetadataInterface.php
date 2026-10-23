@@ -27,7 +27,21 @@ interface OAuthServerMetadataInterface
      * Le document du serveur d'autorisation, servi à
      * `/.well-known/oauth-authorization-server/api/oauth`.
      *
-     * @return array<string, string|bool|list<string>>
+     * @return array{
+     *     issuer: string,
+     *     authorization_endpoint: string,
+     *     token_endpoint: string,
+     *     revocation_endpoint: string,
+     *     response_types_supported: list<string>,
+     *     response_modes_supported: list<string>,
+     *     grant_types_supported: list<string>,
+     *     code_challenge_methods_supported: list<string>,
+     *     token_endpoint_auth_methods_supported: list<string>,
+     *     revocation_endpoint_auth_methods_supported: list<string>,
+     *     scopes_supported: list<string>,
+     *     client_id_metadata_document_supported: bool,
+     *     authorization_response_iss_parameter_supported: bool,
+     * }
      */
     public function authorizationServer(): array;
 }

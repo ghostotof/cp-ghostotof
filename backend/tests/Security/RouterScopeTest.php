@@ -35,14 +35,13 @@ use Symfony\Component\Routing\RouterInterface;
  * chemins compilés via `array_diff` et affirme que la différence est vide :
  * l'assertion s'exécute toujours, même sur une liste vide (elle affirme alors
  * que « aucune entrée morte » est vrai d'un ensemble vide), donc la suite ne
- * termine jamais sur un statut « risky ». Elle a été écrite avant la première
- * entrée, exactement comme `ApiRouteExposureTest::testThePublicAllowListHasNoStaleEntry`
- * et `ItemRouteRequirementTest::testTheExemptionListHasNoStaleEntry`, pour que
- * cette entrée soit immédiatement couverte : les deux documents de
- * métadonnées OAuth de la connexion MCP (#647), les premières routes hors
- * `/api`, l'ont été. Tant que la liste était vide, un helper restaurait son
- * type déclaré (PHPStan jugeait sinon la forme littérale `[]`) ; il est
- * retiré avec elles.
+ * termine jamais sur un statut « risky », comme
+ * `ApiRouteExposureTest::testThePublicAllowListHasNoStaleEntry` et
+ * `ItemRouteRequirementTest::testTheExemptionListHasNoStaleEntry`.
+ *
+ * Si `NON_API_PATHS` redevenait vide, PHPStan jugerait la constante sur sa
+ * forme littérale `[]` (`impossibleType`, `foreach.emptyArray`) : passer alors
+ * par une méthode dont le `@return` restaure `array<string, string>`.
  */
 final class RouterScopeTest extends KernelTestCase
 {
