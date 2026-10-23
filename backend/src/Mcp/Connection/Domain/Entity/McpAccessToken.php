@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Mcp\Connection\Domain\Entity;
 
+use App\Mcp\Connection\Domain\Exception\MalformedTokenHashException;
+use App\Mcp\Connection\Domain\Service\TokenHashShape;
 use App\Mcp\Connection\Infrastructure\Doctrine\McpAccessTokenRepository;
 use DateTimeImmutable;
 use Doctrine\DBAL\Types\Types;
@@ -49,8 +51,13 @@ class McpAccessToken
     #[ORM\Column(type: Types::DATETIMETZ_IMMUTABLE)]
     private DateTimeImmutable $expiresAt;
 
+    /**
+     * @throws MalformedTokenHashException quand `$tokenHash` n'est pas un SHA-256 hexadécimal minuscule
+     */
     public function __construct(McpConnection $connection, string $tokenHash, string $audience, DateTimeImmutable $expiresAt)
     {
+        TokenHashShape::assertWellFormed($tokenHash);
+
         $this->id = Uuid::v7();
         $this->connection = $connection;
         $this->tokenHash = $tokenHash;

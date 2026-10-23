@@ -286,17 +286,37 @@ final class McpConnectionRepositoryTest extends KernelTestCase
         self::assertSame(1, $this->rowCount('mcp_client'));
     }
 
-    public function testTokensAreRevokedInMemoryAtTheGivenInstant(): void
+    /**
+     * Un client retiré n'a plus de connexion, ni de code ni de jeton : la
+     * cascade passe par `mcp_connection.mcp_client_id`. La connexion d'un autre
+     * client reste, et les comptes aussi.
+     */
+    public function testDeletingAClientDeletesItsConnectionsAndTokens(): void
     {
-        $connection = McpConnection::grant(new CpgUser('jane', 'hashed-password'), McpClient::register('https://client.example.test/metadata.json', 'Client de test', [], new DateTimeImmutable()), self::SCOPE, new DateTimeImmutable());
-        $code = new McpAuthorizationCode($connection, hash('sha256', 'clear-code'), new DateTimeImmutable('+10 minutes'));
-        $at = new DateTimeImmutable('2026-10-23T10:00:00+02:00');
+        $account = $this->persistAccount('jane');
+        $client = $this->registerClient('https://client.example.test/metadata.json');
+        $connection = McpConnection::grant($account, $client, self::SCOPE, new DateTimeImmutable());
+        $this->connections()->add($connection);
+        $accessToken = new McpAccessToken($connection, hash('sha256', 'clear-access-token'), self::AUDIENCE, new DateTimeImmutable('+1 hour'));
+        $this->authorizationCodes()->add(new McpAuthorizationCode($connection, hash('sha256', 'clear-code'), new DateTimeImmutable('+10 minutes')));
+        $this->accessTokens()->add($accessToken);
+        $this->refreshTokens()->add(new McpRefreshToken($connection, hash('sha256', 'clear-refresh-token'), $accessToken, new DateTimeImmutable('+30 days')));
+        // Une connexion du même compte à un autre client, qui doit survivre.
+        $survivor = McpConnection::grant($account, $this->registerClient('https://other.example.test/metadata.json'), self::SCOPE, new DateTimeImmutable());
+        $this->connections()->add($survivor);
+        $this->accessTokens()->add(new McpAccessToken($survivor, hash('sha256', 'survivor-access-token'), self::AUDIENCE, new DateTimeImmutable('+1 hour')));
 
-        self::assertFalse($code->isRevoked());
-        $code->revoke($at);
+        $this->em->getConnection()->executeStatement('DELETE FROM mcp_client WHERE id = :id', ['id' => $client->getId()], ['id' => UuidType::NAME]);
+        $this->em->clear();
 
-        self::assertTrue($code->isRevoked());
-        self::assertSame($at, $code->revokedAt());
+        self::assertSame(1, $this->rowCount('mcp_connection'));
+        self::assertNotNull($this->connections()->findOneById($survivor->getId()));
+        self::assertNull($this->connections()->findOneById($connection->getId()));
+        self::assertSame(0, $this->rowCount('mcp_authorization_code'));
+        self::assertSame(1, $this->rowCount('mcp_access_token'));
+        self::assertNotNull($this->accessTokens()->findOneByHash(hash('sha256', 'survivor-access-token')));
+        self::assertSame(0, $this->rowCount('mcp_refresh_token'));
+        self::assertSame(1, $this->rowCount('cpg_user'));
     }
 
     private function purge(): void

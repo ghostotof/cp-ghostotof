@@ -20,8 +20,8 @@ use Symfony\Component\Uid\Uuid;
  * Le nom est **déclaré** par le client : la page de consentement le marque
  * comme tel, c'est le domaine de l'identifiant qui fait foi. Les redirections
  * sont stockées telles qu'enregistrées, en liste JSON ; leur forme (https
- * exacte, ou boucle locale comparée sans port) est jugée par la tâche 2 de
- * #647, pas ici.
+ * exacte, ou boucle locale comparée sans port) est jugée par le Value Object
+ * RedirectUri (#647), pas ici.
  */
 #[ORM\Entity(repositoryClass: McpClientRepository::class)]
 #[ORM\Table(name: 'mcp_client')]

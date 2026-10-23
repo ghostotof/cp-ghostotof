@@ -18,7 +18,9 @@ use Doctrine\Migrations\AbstractMigration;
  * ouvert disparaît avec lui, par la base (`mcp_connection.account_id` en
  * cascade vers `cpg_user`, chaque code et jeton en cascade vers sa
  * connexion) : la purge des invitations ou une suppression en SQL ne laissent
- * aucun jeton orphelin, encore moins utilisable. Le lien d'un jeton de
+ * aucun jeton orphelin, encore moins utilisable. Un client retiré emporte de
+ * même ses connexions (`mcp_connection.mcp_client_id`, nommée ainsi parce que
+ * `client_id` est, dans `mcp_client`, l'identifiant public d'OAuth). Le lien d'un jeton de
  * rafraîchissement vers son jeton d'accès est `ON DELETE SET NULL` : la purge
  * d'un jeton d'accès expiré (1 h) n'emporte pas le rafraîchissement (30 j).
  *
@@ -39,11 +41,11 @@ final class Version20261023120000 extends AbstractMigration
         $this->addSql('CREATE TABLE mcp_client (id UUID NOT NULL, client_id VARCHAR(512) NOT NULL, name VARCHAR(255) NOT NULL, redirect_uris JSON NOT NULL, registered_at TIMESTAMP(0) WITH TIME ZONE NOT NULL, PRIMARY KEY (id))');
         $this->addSql('CREATE UNIQUE INDEX uniq_mcp_client_client_id ON mcp_client (client_id)');
 
-        $this->addSql('CREATE TABLE mcp_connection (id UUID NOT NULL, scope VARCHAR(255) NOT NULL, granted_at TIMESTAMP(0) WITH TIME ZONE NOT NULL, last_used_at TIMESTAMP(0) WITH TIME ZONE DEFAULT NULL, revoked_at TIMESTAMP(0) WITH TIME ZONE DEFAULT NULL, account_id UUID NOT NULL, client_id UUID NOT NULL, PRIMARY KEY (id))');
+        $this->addSql('CREATE TABLE mcp_connection (id UUID NOT NULL, scope VARCHAR(255) NOT NULL, granted_at TIMESTAMP(0) WITH TIME ZONE NOT NULL, last_used_at TIMESTAMP(0) WITH TIME ZONE DEFAULT NULL, revoked_at TIMESTAMP(0) WITH TIME ZONE DEFAULT NULL, account_id UUID NOT NULL, mcp_client_id UUID NOT NULL, PRIMARY KEY (id))');
         $this->addSql('CREATE INDEX IDX_5CD483239B6B5FBA ON mcp_connection (account_id)');
-        $this->addSql('CREATE INDEX IDX_5CD4832319EB6921 ON mcp_connection (client_id)');
+        $this->addSql('CREATE INDEX IDX_5CD4832350B8B0E3 ON mcp_connection (mcp_client_id)');
         $this->addSql('ALTER TABLE mcp_connection ADD CONSTRAINT FK_5CD483239B6B5FBA FOREIGN KEY (account_id) REFERENCES cpg_user (id) ON DELETE CASCADE NOT DEFERRABLE');
-        $this->addSql('ALTER TABLE mcp_connection ADD CONSTRAINT FK_5CD4832319EB6921 FOREIGN KEY (client_id) REFERENCES mcp_client (id) ON DELETE CASCADE NOT DEFERRABLE');
+        $this->addSql('ALTER TABLE mcp_connection ADD CONSTRAINT FK_5CD4832350B8B0E3 FOREIGN KEY (mcp_client_id) REFERENCES mcp_client (id) ON DELETE CASCADE NOT DEFERRABLE');
 
         $this->addSql('CREATE TABLE mcp_authorization_code (id UUID NOT NULL, code_hash CHAR(64) NOT NULL, expires_at TIMESTAMP(0) WITH TIME ZONE NOT NULL, revoked_at TIMESTAMP(0) WITH TIME ZONE DEFAULT NULL, connection_id UUID NOT NULL, PRIMARY KEY (id))');
         $this->addSql('CREATE UNIQUE INDEX uniq_mcp_authorization_code_hash ON mcp_authorization_code (code_hash)');

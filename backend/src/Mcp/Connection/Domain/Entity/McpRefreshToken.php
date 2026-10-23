@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Mcp\Connection\Domain\Entity;
 
+use App\Mcp\Connection\Domain\Exception\MalformedTokenHashException;
+use App\Mcp\Connection\Domain\Service\TokenHashShape;
 use App\Mcp\Connection\Infrastructure\Doctrine\McpRefreshTokenRepository;
 use DateTimeImmutable;
 use Doctrine\DBAL\Types\Types;
@@ -15,8 +17,8 @@ use Symfony\Component\Uid\Uuid;
  * Jeton de rafraîchissement d'une connexion MCP (30 jours de vie).
  *
  * Seule l'empreinte SHA-256 de son identifiant est stockée (`token_hash`,
- * unique). Il garde le jeton d'accès émis avec lui, que league révoque à la
- * rotation ; ce lien est `ON DELETE SET NULL` : la purge d'un jeton d'accès
+ * unique). Il garde le jeton d'accès émis avec lui, que la rotation (#649)
+ * révoque ; ce lien est `ON DELETE SET NULL` : la purge d'un jeton d'accès
  * expiré n'emporte pas le rafraîchissement, qui lui survit de 30 jours.
  * Rattaché à sa connexion en cascade.
  */
@@ -50,8 +52,13 @@ class McpRefreshToken
     #[ORM\Column(type: Types::DATETIMETZ_IMMUTABLE)]
     private DateTimeImmutable $expiresAt;
 
+    /**
+     * @throws MalformedTokenHashException quand `$tokenHash` n'est pas un SHA-256 hexadécimal minuscule
+     */
     public function __construct(McpConnection $connection, string $tokenHash, ?McpAccessToken $accessToken, DateTimeImmutable $expiresAt)
     {
+        TokenHashShape::assertWellFormed($tokenHash);
+
         $this->id = Uuid::v7();
         $this->connection = $connection;
         $this->tokenHash = $tokenHash;

@@ -21,9 +21,9 @@ use Symfony\Component\Uid\Uuid;
  * Le compte et le client sont des clés étrangères en cascade : un compte
  * supprimé n'a plus de connexion (ni, par cascade, de code ou de jeton), un
  * client retiré n'en laisse aucune derrière lui. Le dernier usage est écrit au
- * rafraîchissement (tâche 10 de la spec, #649), jamais à chaque appel ; la
- * révocation, par la personne, par expiration ou par réutilisation d'un jeton
- * tourné, l'est aussi plus tard — ce modèle n'en porte que les colonnes.
+ * rafraîchissement (#649), jamais à chaque appel ; la révocation, par la
+ * personne, par expiration ou par réutilisation d'un jeton tourné, l'est aussi
+ * par #649 — ce modèle n'en porte que les colonnes.
  */
 #[ORM\Entity(repositoryClass: McpConnectionRepository::class)]
 #[ORM\Table(name: 'mcp_connection')]
@@ -38,8 +38,12 @@ class McpConnection
     #[ORM\JoinColumn(name: 'account_id', nullable: false, onDelete: 'CASCADE')]
     private CpgUser $account;
 
+    /**
+     * `mcp_client_id`, pas `client_id` : ce dernier nom est, dans `mcp_client`,
+     * l'identifiant public d'OAuth (un texte), et ici une clé UUID.
+     */
     #[ORM\ManyToOne(targetEntity: McpClient::class)]
-    #[ORM\JoinColumn(nullable: false, onDelete: 'CASCADE')]
+    #[ORM\JoinColumn(name: 'mcp_client_id', nullable: false, onDelete: 'CASCADE')]
     private McpClient $client;
 
     #[ORM\Column(length: 255)]
