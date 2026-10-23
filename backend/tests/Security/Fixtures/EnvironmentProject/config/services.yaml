@@ -1,0 +1,8 @@
+# Fixture de SecurityConfigEnvironmentParityTest (issue #659) : clé à tirets
+# sous when@dev, même valeur que l'entrée commune de packages/security.yaml —
+# aucune différence une fois normalisée.
+when@dev:
+    security:
+        firewalls:
+            api:
+                user-checker: security.user_checker

@@ -32,7 +32,8 @@ paths:
     that config to the factory by comparing the real `Set-Cookie` of login, base-access and logout per
     name. Any new auth cookie goes through the factory, never `Cookie::create()` or `clearCookie()`
     inline. `__Host-` prefixing is a separate, preprod-tested step (it renames what Lexik and the frontend
-    read by name).
+    read by name). That `secure` is the **only** Lexik key allowed to differ per environment (issue #659,
+    `SecurityConfigEnvironmentParityTest`, see `.claude/rules/backoffice-api.md`, « Authorization »).
   - **Tokens, JWTs and CSRF values are hidden from stack traces** (`#[SensitiveParameter]`, issue #414): the
     guard covers all of `src/`, so its rule lives in `.claude/rules/backend-conventions.md`.
   - `Infrastructure/Http/CsrfCookieRequestSubscriber.php` — double-submit-cookie CSRF check, a `kernel.request`
@@ -78,7 +79,9 @@ paths:
     `/apix` out of *every* firewall, hence out of every `access_control` (the `AccessListener` is a firewall
     listener), i.e. remove protection rather than add it; it is allow-listed with that justification in
     `tests/Security/AccessControlAnchoringTest.php`, which pins firewall patterns as well as access rules.
-    `tests/Security/Authentication/LoginFirewallScopeTest.php` pins the behaviour.
+    `tests/Security/Authentication/LoginFirewallScopeTest.php` pins the behaviour. Both read `test`'s container;
+    that every environment declares the same firewalls and rules is `SecurityConfigEnvironmentParityTest`'s job
+    (issue #659, `.claude/rules/backoffice-api.md`, « Authorization »).
   - **No session, in any environment** (`framework.session: false`, audit A23). Nothing needs one — both
     firewalls are `stateless`, auth is a JWT in a cookie, the CSRF is a double-submit cookie, there is no
     Symfony form. The point is not tidiness: the default handler writes under `var/`, and on a

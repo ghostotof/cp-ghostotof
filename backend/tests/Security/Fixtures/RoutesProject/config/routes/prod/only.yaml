@@ -1,0 +1,4 @@
+# Fixture de RouteEnvironmentParityTest (issue #659) : répertoire propre à
+# `prod`.
+fixture_directory_prod_only:
+    path: /fixture/directory-prod-only

@@ -27,6 +27,9 @@ use Symfony\Component\Routing\RouterInterface;
  * environnement `dev` — jamais en `test` ni en `prod` — donc jamais rencontré
  * par ce test. S'il apparaissait un jour hors `dev`, c'est cette route qu'il
  * faudrait questionner, pas relâcher ce test pour l'accueillir.
+ * RouteEnvironmentParityTest le vérifie (issue #659) : il la justifie comme
+ * propre à `dev`, et rougit sur toute autre route qu'un environnement aurait
+ * en propre.
  *
  * `testTheAllowListHasNoStaleEntry()` compare `NON_API_PATHS` à l'ensemble des
  * chemins compilés via `array_diff` et affirme que la différence est vide :
