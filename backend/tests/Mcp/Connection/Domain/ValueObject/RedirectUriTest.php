@@ -31,6 +31,8 @@ final class RedirectUriTest extends TestCase
             'schéma et hôte sans casse (RFC 3986)' => ['http://localhost/callback', 'HTTP://LocalHost:5/callback'],
             'requête égale' => ['http://localhost/cb?client=a', 'http://localhost:5/cb?client=a'],
             'https, elle-même' => ['https://app.example/cb', 'https://app.example/cb'],
+            'port 65535' => ['http://localhost/callback', 'http://localhost:65535/callback'],
+            'encodage %xx déjà écrit' => ['http://localhost/c%20b', 'http://localhost:5/c%20b'],
         ];
     }
 
@@ -63,6 +65,18 @@ final class RedirectUriTest extends TestCase
             'https, hôte en majuscules' => ['https://app.example/cb', 'https://APP.example/cb'],
             'https, barre finale' => ['https://app.example/cb', 'https://app.example/cb/'],
             'https, requête ajoutée' => ['https://app.example/cb', 'https://app.example/cb?x=1'],
+            // Revue de #647 : la demande doit être écrite sous sa forme
+            // normalisée, le serveur redirigeant vers la chaîne demandée.
+            'espace brute, que League encoderait' => ['http://localhost/c%20b', 'http://localhost:5/c b'],
+            'https, espace brute' => ['https://app.example/c%20b', 'https://app.example/c b'],
+            'hôte en pleine chasse' => ['http://localhost/callback', "http://\u{FF4C}\u{FF4F}\u{FF43}\u{FF41}\u{FF4C}\u{FF48}\u{FF4F}\u{FF53}\u{FF54}:5/callback"],
+            'hôte %-encodé' => ['http://localhost/callback', 'http://%6Cocalhost:5/callback'],
+            'hôte %-encodé, minuscules' => ['http://localhost/callback', 'http://%6cocalhost:5/callback'],
+            'port vide (refusé, choix de #647)' => ['http://localhost/callback', 'http://localhost:/callback'],
+            'port à zéro de tête' => ['http://localhost/callback', 'http://localhost:05/callback'],
+            'port 0' => ['http://localhost/callback', 'http://localhost:0/callback'],
+            'port 65536' => ['http://localhost/callback', 'http://localhost:65536/callback'],
+            'port 99999' => ['http://localhost/callback', 'http://localhost:99999/callback'],
         ];
     }
 
@@ -94,6 +108,11 @@ final class RedirectUriTest extends TestCase
             'pas sous sa forme normalisée (schéma)' => ['HTTPS://app.example/cb'],
             'pas sous sa forme normalisée (espace)' => ['https://app.example/c b'],
             'pas sous sa forme normalisée (port vide)' => ['https://app.example:/cb'],
+            'pas sous sa forme normalisée (pleine chasse)' => ["http://\u{FF4C}\u{FF4F}\u{FF43}\u{FF41}\u{FF4C}\u{FF48}\u{FF4F}\u{FF53}\u{FF54}/cb"],
+            'pas sous sa forme normalisée (hôte %-encodé)' => ['http://%6Cocalhost/cb'],
+            'port 0' => ['http://localhost:0/cb'],
+            'port 65536' => ['https://app.example:65536/cb'],
+            'port 99999' => ['https://app.example:99999/cb'],
         ];
     }
 
@@ -124,6 +143,8 @@ final class RedirectUriTest extends TestCase
     {
         self::assertSame('http://[::1]:8000/cb', (string) RedirectUri::fromString('http://[::1]:8000/cb'));
         self::assertSame('https://app.example/cb?client=a', (string) RedirectUri::fromString('https://app.example/cb?client=a'));
+        self::assertSame('https://app.example:65535/cb', (string) RedirectUri::fromString('https://app.example:65535/cb'));
+        self::assertSame('http://localhost:1/cb', (string) RedirectUri::fromString('http://localhost:1/cb'));
     }
 
     public function testOnlyAPlainHttpRedirectIsALoopback(): void

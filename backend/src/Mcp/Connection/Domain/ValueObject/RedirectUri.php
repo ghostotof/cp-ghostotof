@@ -27,12 +27,21 @@ use Stringable;
  * League\Uri est l'analyseur de `league/oauth2-server` : la redirection est lue
  * comme le serveur d'autorisation la lira. Une redirection enregistrée doit
  * être écrite sous la forme que League\Uri en rend, sans quoi l'égalité
- * stricte comparerait deux écritures d'une même URI.
+ * stricte comparerait deux écritures d'une même URI. Une redirection demandée
+ * aussi, à la casse ASCII du schéma et de l'hôte près (revue de #647) : le
+ * serveur redirige vers la chaîne **demandée**, telle quelle, et non vers la
+ * forme normalisée qui a été comparée — `http://ｌｏｃａｌｈｏｓｔ:5/cb` (pleine
+ * chasse), `http://%6Cocalhost:5/cb` ou `…/c b` se normalisent en une boucle
+ * locale enregistrée, mais ce n'est pas elles qu'un navigateur ou un client
+ * suivrait à coup sûr.
  */
 final readonly class RedirectUri implements Stringable
 {
     /** Les seuls hôtes admis en `http`, tels que League\Uri les rend. */
     private const array LOOPBACK_HOSTS = ['localhost', '127.0.0.1', '[::1]'];
+
+    /** Le plus grand port TCP ; League\Uri lit `:0` et `:99999` sans broncher. */
+    private const int MAX_PORT = 65535;
 
     private function __construct(
         private string $value,
@@ -75,20 +84,30 @@ final readonly class RedirectUri implements Stringable
             throw InvalidRedirectUriException::withFragment();
         }
 
+        if (!self::hasPortInRange($uri)) {
+            throw InvalidRedirectUriException::portOutOfRange();
+        }
+
         return new self($value, $uri);
     }
 
     /**
      * Vrai si la redirection demandée par le client désigne celle-ci. Une
-     * demande illisible, ou qui porte un fragment ou des identifiants (même
-     * vides : `#`, `@`), n'en désigne aucune — jamais d'exception ici, le point
+     * demande illisible, pas écrite sous sa forme normalisée (hors casse du
+     * schéma et de l'hôte ; un port vide, `localhost:/`, est donc refusé), qui
+     * porte un fragment ou des identifiants (même vides : `#`, `@`) ou un port
+     * hors de 1 à 65535 n'en désigne aucune — jamais d'exception ici, le point
      * d'autorisation répond par un refus.
      */
     public function matches(string $requested): bool
     {
         $candidate = Uri::parse($requested);
 
-        if (null === $candidate || null !== $candidate->getFragment() || null !== $candidate->getUserInfo()) {
+        if (null === $candidate
+            || !$this->isNormalizedButForCase($candidate, $requested)
+            || null !== $candidate->getFragment()
+            || null !== $candidate->getUserInfo()
+            || !self::hasPortInRange($candidate)) {
             return false;
         }
 
@@ -100,6 +119,28 @@ final readonly class RedirectUri implements Stringable
         // deux écritures sans port est celle de RFC 3986 pour ces parties, et
         // l'égalité pour le chemin et la requête.
         return $candidate->withPort(null)->toString() === $this->uri->withPort(null)->toString();
+    }
+
+    /**
+     * La chaîne demandée est-elle la forme que League\Uri en rend, à la casse
+     * ASCII près ? League\Uri ne change la casse que du schéma et de l'hôte
+     * (RFC 3986 §6.2.2.1 : insensibles à la casse) ; chemin, requête et
+     * encodages `%xx` gardent la leur. Toute autre réécriture — encodage d'un
+     * caractère, hôte en pleine chasse ou `%`-encodé ramené à l'ASCII, port vide
+     * ou `:05` retiré — change autre chose que la casse, et la demande est
+     * refusée. `strtolower()` ne touche que l'ASCII.
+     */
+    private function isNormalizedButForCase(Uri $candidate, string $requested): bool
+    {
+        return strtolower($candidate->toString()) === strtolower($requested);
+    }
+
+    /** Aucun port, ou un port TCP utilisable : 1 à 65535. */
+    private static function hasPortInRange(Uri $uri): bool
+    {
+        $port = $uri->getPort();
+
+        return null === $port || ($port >= 1 && $port <= self::MAX_PORT);
     }
 
     /** Une redirection `http` : la boucle locale, seule admise sans TLS. */

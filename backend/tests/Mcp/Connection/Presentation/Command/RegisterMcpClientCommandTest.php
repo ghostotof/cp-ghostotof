@@ -111,6 +111,11 @@ final class RegisterMcpClientCommandTest extends KernelTestCase
             'nom de 101 caractères' => [['--name' => str_repeat('é', 101)] + $valid, '--name'],
             'nom avec un caractère de contrôle' => [['--name' => "Claude\u{0007}Code"] + $valid, '--name'],
             'nom en UTF-8 invalide' => [['--name' => "Claude \xC3"] + $valid, '--name'],
+            'nom fait d\'espaces insécables' => [['--name' => "\u{00A0}\u{00A0}"] + $valid, '--name'],
+            'nom fait d\'espaces idéographiques' => [['--name' => "\u{3000}\u{3000}"] + $valid, '--name'],
+            'nom avec un séparateur de ligne' => [['--name' => "Claude\u{2028}Code"] + $valid, '--name'],
+            'nom avec un séparateur de paragraphe' => [['--name' => "Claude\u{2029}Code"] + $valid, '--name'],
+            'redirection au port 0' => [['--redirect-uri' => ['http://localhost:0/callback']] + $valid, 'n°1'],
         ];
     }
 
@@ -127,6 +132,41 @@ final class RegisterMcpClientCommandTest extends KernelTestCase
         self::assertSame(Command::FAILURE, $exitCode);
         self::assertStringContainsString($namedInMessage, $tester->getDisplay());
         self::assertSame(0, $this->clientCount());
+    }
+
+    /**
+     * Le nom est rogné des blancs Unicode, pas seulement ASCII ; une espace
+     * insécable à l'intérieur reste.
+     */
+    public function testTheNameIsTrimmedOfUnicodeBlanks(): void
+    {
+        $tester = $this->commandTester();
+
+        $exitCode = $tester->execute([
+            '--client-id' => self::CLIENT_ID,
+            '--name' => "\u{3000}Claude\u{00A0}Code\u{00A0} ",
+            '--redirect-uri' => ['http://localhost/callback'],
+        ], ['interactive' => false]);
+
+        self::assertSame(Command::SUCCESS, $exitCode, $tester->getDisplay());
+        $this->entityManager()->clear();
+        self::assertSame("Claude\u{00A0}Code", $this->clients()->findOneByClientId(self::CLIENT_ID)?->getName());
+    }
+
+    /** Une redirection répétée à l'identique n'est enregistrée qu'une fois. */
+    public function testARepeatedRedirectIsRegisteredOnce(): void
+    {
+        $tester = $this->commandTester();
+
+        $exitCode = $tester->execute([
+            '--client-id' => self::CLIENT_ID,
+            '--name' => 'Claude Code',
+            '--redirect-uri' => ['http://localhost/callback', 'https://app.example/cb', 'http://localhost/callback'],
+        ], ['interactive' => false]);
+
+        self::assertSame(Command::SUCCESS, $exitCode, $tester->getDisplay());
+        $this->entityManager()->clear();
+        self::assertSame(['http://localhost/callback', 'https://app.example/cb'], $this->clients()->findOneByClientId(self::CLIENT_ID)?->redirectUris());
     }
 
     /** Les bornes elles-mêmes passent : 255 caractères d'identifiant, 100 de nom. */

@@ -42,10 +42,19 @@ final class RegisterMcpClientCommand extends Command
     /**
      * Le nom déclaré, affiché sur la page de consentement : 1 à 100
      * caractères (rognés), en UTF-8 valide (le motif `u` refuse le reste),
-     * sans caractère de contrôle ni de format (`\p{C}`), qui tromperaient
-     * l'affichage.
+     * sans caractère de contrôle ni de format (`\p{C}`) ni séparateur de ligne
+     * ou de paragraphe (U+2028, U+2029 : `\p{Zl}`, `\p{Zp}`), qui tromperaient
+     * l'affichage. Les espaces Unicode (`\p{Zs}`, insécable comprise) restent
+     * admises à l'intérieur du nom.
      */
-    private const string NAME_PATTERN = '/^[^\p{C}]{1,100}\z/u';
+    private const string NAME_PATTERN = '/^[^\p{C}\p{Zl}\p{Zp}]{1,100}\z/u';
+
+    /**
+     * Les blancs rognés aux deux bouts du nom : ceux d'Unicode (`\p{Z}`,
+     * U+00A0 et U+3000 compris) et ceux de `\s`, que trim() ne connaît pas
+     * au-delà de l'ASCII — un nom fait d'espaces insécables n'est pas un nom.
+     */
+    private const string NAME_EDGE_BLANKS = '/^[\p{Z}\s]+|[\p{Z}\s]+\z/u';
 
     public function __construct(
         private readonly McpClientRegistrarInterface $registrar,
@@ -117,11 +126,12 @@ final class RegisterMcpClientCommand extends Command
     private function resolveName(InputInterface $input, SymfonyStyle $io): ?string
     {
         $name = $input->getOption('name');
-        $name = \is_string($name) ? trim($name) : null;
+        // preg_replace() rend null, et preg_match() false, sur de l'UTF-8
+        // invalide : refusé comme le reste.
+        $name = \is_string($name) ? preg_replace(self::NAME_EDGE_BLANKS, '', $name) : null;
 
-        // preg_match() rend false sur de l'UTF-8 invalide : refusé comme le reste.
         if (null === $name || 1 !== preg_match(self::NAME_PATTERN, $name)) {
-            $io->error('--name est requis : 1 à 100 caractères en UTF-8, sans caractère de contrôle.');
+            $io->error('--name est requis : 1 à 100 caractères en UTF-8, sans caractère de contrôle ni saut de ligne.');
 
             return null;
         }
@@ -130,16 +140,18 @@ final class RegisterMcpClientCommand extends Command
     }
 
     /**
-     * Chaque redirection passe RedirectUri avant tout enregistrement. Null
-     * après un message d'erreur qui désigne la redirection refusée par son
-     * rang, sans la citer.
+     * Chaque redirection passe RedirectUri avant tout enregistrement ; une
+     * valeur répétée à l'identique n'est enregistrée qu'une fois. Null après
+     * un message d'erreur qui désigne la redirection refusée par son rang
+     * parmi les valeurs distinctes, sans la citer.
      *
      * @return non-empty-list<RedirectUri>|null
      */
     private function resolveRedirectUris(InputInterface $input, SymfonyStyle $io): ?array
     {
-        /** @var list<string> $values */
-        $values = $input->getOption('redirect-uri');
+        /** @var list<string> $options */
+        $options = $input->getOption('redirect-uri');
+        $values = array_values(array_unique($options));
 
         if ([] === $values) {
             $io->error('Au moins une --redirect-uri est requise.');

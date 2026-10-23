@@ -60,4 +60,9 @@ final class InvalidRedirectUriException extends InvalidArgumentException
     {
         return new self('La redirection ne doit porter aucun fragment (« # »).');
     }
+
+    public static function portOutOfRange(): self
+    {
+        return new self('Le port de la redirection doit être compris entre 1 et 65535.');
+    }
 }
