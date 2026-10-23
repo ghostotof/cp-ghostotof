@@ -32,7 +32,7 @@ paths:
 | `deploiement-pipeline.md` | migrations as a Job, what « never `kubectl exec` » covers (#520), the migration before the rollout, one rule for every Job's deadline, ExternalSecrets synced first, `smoke-test-preprod`'s message probe, deploy waits failing early, `DEPLOY_MAINTENANCE_WINDOW` |
 | `deploiement-postgres.md` | the two PostgreSQL roles (#575), the bootstrap superuser reachable from the pod only (#593) |
 | `deploiement-etat-hors-pod.md` | no application state on the pod's filesystem (ADR 0005): cache pools, locks, rate limiters, `lock_timeout` and `ConsoleLockWaitBoundTest` |
-| `deploiement-nginx.md` | the eight rate-limit zones (`mcp`, `mcpsession` and the MCP body bound included), `/api/assistant/`'s `fastcgi_pass`, nginx 429s as problem+json, `real_ip`, `add_header` inheritance, `security.txt` |
+| `deploiement-nginx.md` | the eight rate-limit zones (`mcp`, `mcpsession` and the MCP body bound included), `/api/assistant/`'s `fastcgi_pass`, nginx 429s as problem+json, multipart bodies refused in 415 (#686), `real_ip`, `add_header` inheritance, `security.txt` |
 
 - **A PHPUnit test reads a manifest through `tests/Support/KubernetesManifests`, never by hand**
   (issue #541). `KubernetesManifests::base()` (`k8s/base`) or `::overlay('prod')` (the overlay's
