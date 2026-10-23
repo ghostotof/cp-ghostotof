@@ -155,13 +155,41 @@ paths:
   `limit_req` zone and checks the body, the type and the headers; it fails naming any `limit_req`
   zone of the confs missing from its `ZONES` list. Since #644 it also checks the two confs are mirrors where
   it matters — the whole `http` level identical (`real_ip`, `map`, zone declarations), and identical
-  directives in each `MIRRORED_LOCATIONS` block (`= /api/mcp`, `fastcgi_pass`'s upstream masked), comments
+  directives in each `MIRRORED_LOCATIONS` block (`= /api/mcp`, `fastcgi_pass`'s upstream masked; since #686
+  `@rate_limited` and `@unsupported_media_type`, whose `title` and `detail` the probes do not read), comments
   ignored — and each `BODY_LIMITS` bound (413 one byte over, none at the bound, with `Content-Length` and in
   `chunked`).
   **Every `limit_conn` zone is exercised since #672** (`CONN_LIMITS`, `check_conn_limit`; a zone of the confs
   missing from the list fails it): with no php-fpm, a connection is held by leaving its body unfinished — nginx
   counts it once its headers are read and reads the body before reaching upstream —, the next request must get
   the problem+json 429 and pass again once they are closed. `assistantconn` was never exercised before.
+- **Multipart bodies never reach PHP** (issue #686, follow-up of CVE-2026-109618, both confs). A `map` at `http`
+  level sets `$refused_content_type` for a `Content-Type` starting — any case, after optional blanks — with
+  `multipart/form-data`, and an `if ($refused_content_type) { return 415; }` at **`server` level** refuses it
+  in the server-rewrite phase, before location matching, hence before every zone and every `fastcgi_pass` (the
+  `/api/mcp` and `/api/assistant/` locations included), any method. Why every method: the advisory's OOM comes
+  from the multipart parser PHP runs itself — at the start of a POST, and **for PUT, DELETE, PATCH and QUERY
+  through Symfony's `Request::createFromGlobals()`, which calls `request_parse_body()`**, before the router and
+  the firewall (measured on PHP 8.5: an anonymous multipart PUT on any URL ran the parser). No route reads
+  multipart: API Platform declares `json` only and already answered it with a 415 `/errors/415`, the assistant
+  demands `acceptFormat: 'json'`, `login_check` is `json_login`, MCP reads JSON, `logout` and `base-access` take
+  no body; no frontend call nor smoke sends one. **`application/x-www-form-urlencoded` is let through on
+  purpose** (decided on 2026-10-22, review of #686): it is not the advisory's parser, and the token endpoint of
+  phase 2's OAuth 2.1 server (ADR 0006 D3) receives it by standard (RFC 6749) — refusing it, here or with
+  `enable_post_data_reading = Off`, would break that endpoint in preprod only, since PHPUnit goes through
+  neither nginx nor the image's ini. The 415 is rendered by `@unsupported_media_type`, problem+json
+  `type: /errors/415` (API Platform's own), through `error_page 415` at `server` level. One trap only: an
+  `add_header` there would drop the seven security headers (A16) — a location's own `error_page` cannot
+  shadow it, the `return` happens before any location is chosen. A Symfony 415 (`text/plain` on an API
+  Platform route) passes through untouched. No CORS headers, like the 429s above (#368): readable in preprod
+  and prod (one origin), not in dev. `$content_type` is the very value PHP receives (`CONTENT_TYPE` in
+  `fastcgi_params`); duplicated headers are joined by `, ` in order and PHP cuts at the first `,`, so both keep
+  the first type (measured on nginx 1.30.4); the pattern refuses a superset of what PHP matches (lowercased,
+  cut at the first `;`, `,` or space). Guard: `tools/check-backend-nginx-rate-limits.sh`, `CONTENT_TYPE_CASES`
+  (mixed case, a leading tab, five methods QUERY included, both duplicate orders, the two `fastcgi_pass`
+  locations, plus urlencoded, JSON and bodiless witnesses that must pass); the `map` is covered by the
+  `http`-level mirror check, `@unsupported_media_type` and `@rate_limited` by `MIRRORED_LOCATIONS`. PHP
+  itself is the second barrier (`.claude/rules/images-docker.md`, « PHP parses no multipart body »).
 - **nginx rate limits need `real_ip`** (audit C7). `limit_req_zone` keys on `$binary_remote_addr`, and behind
   the ingress the sidecar's TCP peer is the ingress-nginx pod — without the `set_real_ip_from` block, the whole
   internet shares one counter, which is a self-inflicted DoS. The trusted ranges mirror Symfony's

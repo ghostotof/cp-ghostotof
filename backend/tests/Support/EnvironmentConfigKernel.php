@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Support;
 
 use App\Kernel;
+use Closure;
 use LogicException;
 use PHPUnit\Framework\Assert;
 use ReflectionMethod;
@@ -14,13 +15,18 @@ use Symfony\Component\DependencyInjection\Extension\ConfigurationExtensionInterf
 
 /**
  * Le noyau de l'application dans un environnement donné, pour lire ce que sa
- * configuration déclare — sans compiler le conteneur (issue #357).
+ * configuration déclare — sans compiler le conteneur (issue #357). Les routes
+ * qu'il sert, qui demandent le conteneur compilé, se lisent avec
+ * {@see EnvironmentRoutesKernel} (issue #659).
  *
  * Les chargeurs de Symfony font le tri par environnement (`when@<env>`,
  * config/packages/<env>/, services_<env>.*, en YAML comme en PHP) ; le
  * ContainerBuilder qu'ils remplissent garde, avant compilation, les fragments
- * de chaque extension, que la configuration de l'extension sait normaliser. Le projet lu peut être une fixture : son
- * config/bundles.php doit alors rendre ceux de l'application.
+ * de chaque extension, que la configuration de l'extension sait normaliser.
+ * Le projet lu peut être une fixture : son config/bundles.php doit alors
+ * rendre ceux de l'application. Hors débogage, comme la production : une
+ * règle qui dépendrait de `%kernel.debug%` échapperait à la comparaison,
+ * limite acceptée (aucune).
  */
 final class EnvironmentConfigKernel extends Kernel
 {
@@ -41,6 +47,18 @@ final class EnvironmentConfigKernel extends Kernel
         Assert::assertContains('prod', $allowed, 'Le noyau n\'admet plus `prod` : revoir les gardes qui lisent chaque environnement.');
 
         return $allowed;
+    }
+
+    /**
+     * Les environnements qu'une garde de parité compare à `test`, la
+     * référence : tous ceux que le noyau admet, sauf lui (issue #659, écrit
+     * jusque-là dans chaque garde).
+     *
+     * @return list<string>
+     */
+    public static function comparedEnvironments(): array
+    {
+        return array_values(array_diff(self::allowedEnvironments(), ['test']));
     }
 
     public function __construct(string $environment, private readonly ?string $projectDirectory = null)
@@ -75,19 +93,51 @@ final class EnvironmentConfigKernel extends Kernel
      */
     public function declaredMapping(string $extension, string $key): array
     {
+        $value = $this->mergedFragments(
+            $extension,
+            static fn (array $fragment): array => array_intersect_key($fragment, [$key => true, str_replace('_', '-', $key) => true]),
+        )[$key] ?? [];
+
+        return \is_array($value) ? $value : [];
+    }
+
+    /**
+     * Toute la configuration d'une extension dans cet environnement, lue
+     * comme {@see self::declaredMapping()} lit une clé : chaque fragment
+     * normalisé, puis fusionné dans l'ordre de chargement, sans validation ni
+     * défauts (issue #659, la section `security` comparée d'un environnement
+     * à l'autre).
+     *
+     * @return array<array-key, mixed>
+     */
+    public function declaredConfiguration(string $extension): array
+    {
+        return $this->mergedFragments($extension, static fn (array $fragment): array => $fragment);
+    }
+
+    /**
+     * La fusion commune aux deux lectures : `$select` retient, dans chaque
+     * fragment, ce qui doit l'être ; un fragment qui n'en garde rien est
+     * sauté.
+     *
+     * @param Closure(array<array-key, mixed>): array<array-key, mixed> $select
+     *
+     * @return array<array-key, mixed>
+     */
+    private function mergedFragments(string $extension, Closure $select): array
+    {
         $builder = $this->builder();
         $tree = $this->configurationTree($builder, $extension);
 
         $merged = [];
         foreach ($builder->getExtensionConfig($extension) as $fragment) {
-            $declared = array_intersect_key($fragment, [$key => true, str_replace('_', '-', $key) => true]);
+            $declared = $select($fragment);
             if ([] !== $declared) {
                 $merged = $tree->merge($merged, $tree->normalize($declared));
             }
         }
-        $value = \is_array($merged) ? ($merged[$key] ?? []) : [];
 
-        return \is_array($value) ? $value : [];
+        return \is_array($merged) ? $merged : [];
     }
 
     /**

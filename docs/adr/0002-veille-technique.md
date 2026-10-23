@@ -114,6 +114,11 @@ Les dix décisions structurantes, dans l'ordre où elles se rencontrent en lisan
 - **Une chaîne venue d'un tiers ne devient jamais un `href` sans liste blanche de schémas**
   (`ExternalUrlFilter`, `https` seul). Voir ci-dessous : c'est une faille réelle, pas une précaution
   théorique.
+- **Un nom de cycle ou de version venu d'un tiers n'est republié que s'il a la forme d'un numéro de
+  version** (`VersionNameFilter`, issue #658, ajouté le 2026-10-22) : ces textes atteignent aussi le
+  modèle des clients du serveur MCP (ADR 0006), où un texte libre est une injection de prompt
+  indirecte. Même doctrine que l'URL — liste blanche, valeur refusée absente, filtre à l'écriture et
+  à la lecture.
 - **Aucun appel sortant ne suit de redirection** (`max_redirects: 0`).
 
 ## Conséquences

@@ -1,0 +1,4 @@
+# Fixture de RouteEnvironmentParityTest (issue #659) : un bloc when@prod.
+when@prod:
+    fixture_prod_only:
+        path: /fixture/prod-only

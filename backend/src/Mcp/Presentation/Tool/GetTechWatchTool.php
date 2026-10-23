@@ -23,7 +23,9 @@ use Mcp\Schema\ToolAnnotations;
  * d'endoflife.date, une source d'injection de prompt indirecte. Le site
  * n'appelle aucun modèle, le risque est pour le client ; la description le
  * dit, et la sortie reste égale à la route (D1) plutôt que d'en retirer ces
- * champs.
+ * champs. Depuis #658, cycles et versions ne passent qu'avec la forme d'un
+ * numéro de version : le filtre vit dans la veille, à l'écriture et à la
+ * lecture du relevé, jamais ici — l'outil reste la route.
  */
 #[BackedByRoute(self::RESOURCE, AccessTier::ANONYMOUS)]
 final readonly class GetTechWatchTool

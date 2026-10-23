@@ -23,6 +23,30 @@ paths:
   `ApiRouteExposureTest` flags it. `tests/Security/AccessControlAnchoringTest.php` pins the anchors against
   the compiled `AccessMap`; keep the pattern when adding a rule. The same test also pins the **firewall**
   patterns, which follow a different rule and for a stated reason — see `.claude/rules/security-authentication.md`.
+  **Never declare security or a route for a single environment** (issue #659): every exposure guard
+  (`ApiRouteExposureTest`, `AccessControlAnchoringTest`, `RouterScopeTest`, `McpExposureSymmetryTest`,
+  `AccessMapStaysPathOnlyTest`…) reads the `test` container only, and preprod and prod both run `APP_ENV=prod`.
+  `tests/Security/SecurityConfigEnvironmentParityTest.php` loads every environment of `Kernel::getAllowedEnvs()`
+  without compiling (`EnvironmentConfigKernel::declaredConfiguration()`) and requires the **whole** `security`
+  section, normalized by SecurityBundle, to match `test`'s — not only `access_control`, `firewalls` and
+  `role_hierarchy`: a decision strategy or a provider declaration of `prod` alone would change what prod serves
+  just as much — and `lexik_jwt_authentication` with it (where the `jwt` authenticator reads the token, what it
+  sets). Its `ENVIRONMENT_SPECIFIC` exemptions are exact paths, each checked to still differ:
+  `security.password_hashers` (cost 4 under `when@test`, pinned per environment by `CpgUserPasswordHasherTest`)
+  and `lexik_jwt_authentication.set_cookies.BEARER.secure` (`Secure` in prod only, `AuthCookieAttributesTest`).
+  No key nor value of either may hold a `%env()%` or `%parameter%` reference (`%%` is an escape, fine), save
+  `PARAMETERIZED_BY_DESIGN`: Lexik's `secret_key`, `public_key`, `pass_phrase`, per-deployment secrets. The
+  order of a map's common entries is compared too (`firewalls (ordre)`: Symfony takes the first matching one).
+  `tests/Security/RouteEnvironmentParityTest.php` boots each environment (`tests/Support/EnvironmentRoutesKernel`,
+  in a per-process cache removed afterwards) and compares its route collection with `test`'s, route by route,
+  in order, aliases included; its only justified entry is `dev`'s `_preview_error` (FrameworkBundle's error page
+  preview, `when@dev`), its path pinned so the justification cannot follow it under `/api`. It also refuses the
+  forms themselves, even redeclaring identical routes: a `config/routes/<env>/` directory, a `when@<env>` block
+  or a `->env()` in a routes file (save `ENVIRONMENT_BLOCKS`: `routes/framework.yaml`'s `when@dev`, which imports
+  `_preview_error`), a `#[Route(env: …)]` in `src/`. Every environment is read with `debug` off. Not seen,
+  accepted (none today): a service the configuration names, redefined for one environment (`when@prod: services:`
+  — a provider, a voter, a user checker; follow-up #698), a compiler pass or a bundle's `prepend()` changing the
+  map per environment, a route or rule depending on `%kernel.debug%`.
 - **API Platform pattern**, repeated identically across every backoffice resource
   (`BackofficeExperienceTechnologyResource`, `BackofficeQuality{Principle,Trait}Resource`,
   `BackofficeContributionResource`, `BackofficeIncidentResource`, `BackofficeWatchedProductResource`,

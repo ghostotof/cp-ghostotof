@@ -107,9 +107,9 @@ final class ExceptionMappingEnvironmentParityTest extends TestCase
     {
         $found = [];
         foreach (self::MAPPINGS as $extension => $key) {
-            foreach (['test', ...$this->environments()] as $environment) {
+            foreach (['test', ...EnvironmentConfigKernel::comparedEnvironments()] as $environment) {
                 foreach ($this->declared($environment, $extension, $key, $projectDirectory) as $class => $value) {
-                    if (str_contains((string) json_encode($value), '%')) {
+                    if (str_contains(json_encode($value, \JSON_THROW_ON_ERROR), '%')) {
                         $found[] = \sprintf('%s.%s[%s]', $extension, $key, $class);
                     }
                 }
@@ -129,7 +129,7 @@ final class ExceptionMappingEnvironmentParityTest extends TestCase
         $found = [];
         foreach (self::MAPPINGS as $extension => $key) {
             $reference = $this->declared('test', $extension, $key, $projectDirectory);
-            foreach ($this->environments() as $environment) {
+            foreach (EnvironmentConfigKernel::comparedEnvironments() as $environment) {
                 $declared = $this->declared($environment, $extension, $key, $projectDirectory);
                 foreach (array_unique([...array_keys($declared), ...array_keys($reference)]) as $class) {
                     if (($declared[$class] ?? null) !== ($reference[$class] ?? null)) {
@@ -143,16 +143,6 @@ final class ExceptionMappingEnvironmentParityTest extends TestCase
         return $found;
     }
 
-    /**
-     * Les environnements que le noyau admet, hors `test`
-     * ({@see EnvironmentConfigKernel::allowedEnvironments()}).
-     *
-     * @return list<string>
-     */
-    private function environments(): array
-    {
-        return array_values(array_diff(EnvironmentConfigKernel::allowedEnvironments(), ['test']));
-    }
 
     /**
      * Le mapping que déclare un environnement, normalisé et fusionné par la

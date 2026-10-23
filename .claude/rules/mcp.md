@@ -56,7 +56,9 @@ paths:
   the template, which ignored a `routePrefix` and failed open; an operation with no route is refused
   (`UnroutedOperationException`). The read runs on a synthetic request (`127.0.0.1`, `localhost`, GET), so
   `AccessMapStaysPathOnlyTest` refuses any `access_control` rule conditioned on anything but its path (`ips`,
-  `host`, `port`, `methods`, `allow_if`). The provider is called with no request nor token:
+  `host`, `port`, `methods`, `allow_if`). Both guards read `test`'s container; that prod declares the same map
+  and routes is `SecurityConfigEnvironmentParityTest`'s and `RouteEnvironmentParityTest`'s job (issue #659,
+  `.claude/rules/backoffice-api.md`, « Authorization »). The provider is called with no request nor token:
   `McpExposureSymmetryTest` refuses a served provider depending on `RequestStack`, `Security`, the token
   storage or the authorization checker. Not covered, accepted: a property guarded by
   `#[ApiProperty(security: …)]` would be omitted (no token), an inequality with the route, never a leak — none
@@ -90,7 +92,9 @@ paths:
   deferred authentication relies on); in phase 1 its call is a literal tool error, and it has no
   dependency, so nothing of the corpus can leak. `get_tech_watch` relays third-party strings
   (endoflife.date cycles, versions, links) to the person's model — indirect prompt injection (LLM01): its
-  description says to treat them as data; the output stays equal to the route (D1). **The page « Brancher votre
+  description says to treat them as data; the output stays equal to the route (D1). Since #658 cycles and
+  versions only pass in the shape of a version number, filtered in the watch itself, never in the tool
+  (`.claude/rules/portfolio-watch.md`); links stay text past `ExternalUrlFilter`. **The page « Brancher votre
   assistant » copies the catalogue** (#645): tool names per tier, the prompt, its arguments and the `role` bound,
   hand-written in `frontend/src/infrastructure/portfolio/content/{fr,en}.ts`. `ConnectAssistantPageMirrorsCatalogueTest`
   (#673) compares each language with the real registry, both ways (tier from `BackedByRoute`, `get_contact_info`
