@@ -16,7 +16,8 @@
 #   `/assets/`                            -> l'asset réel découvert + /assets/missing-file.js (404)
 #   `= /index.html`                       -> /index.html, / et /route/inconnue (voir note)
 #   `= /config.js`                        -> /config.js
-#   `^~ /.well-known/`                    -> /.well-known/security.txt
+#   `^~ /.well-known/`                    -> /.well-known/security.txt, plus trois
+#                                            chemins en 404 (voir ci-dessous)
 #   `~ /\.`                               -> /.hidden (404)
 #   `~* \.(env|ya?ml|...)$`               -> /anything.env (404)
 #   `/`                                   -> /favicon.svg (fichier statique racine)
@@ -34,6 +35,21 @@
 # repris par une autre location — `/favicon.svg` (frontend/public/,
 # référencé par frontend/index.html) — c'est ce chemin qui couvre cette
 # location.
+#
+# Les 404 sous `/.well-known/` (#647) : le serveur MCP publie deux documents de
+# métadonnées OAuth hors de /api, servis par le BACKEND —
+# /.well-known/oauth-protected-resource/api/mcp et
+# /.well-known/oauth-authorization-server/api/oauth. Seul l'Ingress dédié
+# (k8s/base/ingress-oauth-metadata.yaml, deux chemins `Exact`) les y envoie ;
+# l'image du frontend, elle, n'en sert aucun. Ce garde vérifie qu'elle répond
+# un vrai 404 (jamais le repli SPA en 200, qu'un client OAuth lirait comme un
+# document illisible) sur :
+#   - le chemin de la ressource protégée lui-même (ce que reçoit le frontend
+#     si l'Ingress dédié manque ou ne correspond plus) ;
+#   - /.well-known/oauth-authorization-server, sans le chemin de l'émetteur
+#     (RFC 8414 §3.1 : un client le tente pour un émetteur sans chemin) ;
+#   - /.well-known/openid-configuration : aucun document OpenID Connect n'est
+#     servi, le serveur n'émet pas de jeton d'identité.
 #
 # Règle à respecter : ajouter une `location` dans docker/node/nginx.conf, c'est
 # ajouter son chemin dans la liste CHECKS ci-dessous — sinon elle n'est pas
@@ -133,6 +149,11 @@ check_path "/index.html" "200" "/index.html"
 check_path "/config.js" "200" "/config.js"
 check_path "/healthz" "200" "/healthz"
 check_path "/.well-known/security.txt" "200" "/.well-known/security.txt"
+# Aucun document OAuth ni OpenID Connect dans l'image (#647, voir l'en-tête) :
+# un vrai 404 de `^~ /.well-known/`, jamais le repli SPA.
+check_path "/.well-known/oauth-authorization-server" "404" "/.well-known/oauth-authorization-server (aucun document, 404)"
+check_path "/.well-known/openid-configuration" "404" "/.well-known/openid-configuration (aucun document OIDC, 404)"
+check_path "/.well-known/oauth-protected-resource/api/mcp" "404" "/.well-known/oauth-protected-resource/api/mcp (servi par le backend via l'Ingress dédié, 404 ici)"
 # La seule réponse réellement servie par `location /` (voir la note en-tête) :
 # un fichier statique de la racine du build, jamais rewrité vers index.html.
 check_path "/favicon.svg" "200" "/favicon.svg (fichier statique racine — la vraie location /)"

@@ -21,6 +21,11 @@ BASE="https://${DOMAIN}"
 # faire tourner le job en boucle jusqu'au timeout du runner CI.
 CURL_OPTS=(--connect-timeout 5 --max-time 15)
 
+# Les mêmes options, sans jamais la Basic Auth ci-dessous : pour les seuls
+# chemins qui doivent répondre SANS elle, même en préprod (section 6ter, les
+# métadonnées OAuth qu'un client MCP lit sans savoir répondre à une Basic Auth).
+CURL_OPTS_ANONYMOUS=("${CURL_OPTS[@]}")
+
 # Préprod exige une Basic Auth (point de sécurité 2026-09-12) : sans elle,
 # chaque requête de cet audit recevrait 401 au lieu du vrai contenu, et les
 # sections 6/7 ci-dessous interpréteraient ce 401 comme des chemins
@@ -232,6 +237,95 @@ elif [ "$SECURITY_TXT_EXPIRES_TS" -le "$(date -u +%s)" ]; then
 else
   printf '  \033[32mOK\033[0m      Expires: %s (encore %s jours)\n' "$SECURITY_TXT_EXPIRES" \
     "$(( (SECURITY_TXT_EXPIRES_TS - $(date -u +%s)) / 86400 ))"
+fi
+
+# ---------------------------------------------------------------------------
+# 6ter. Métadonnées OAuth de la connexion MCP (#647) : BLOQUANT.
+#
+#    Le serveur MCP publie deux documents hors de /api, là où la norme les
+#    place : la ressource protégée (RFC 9728) et le serveur d'autorisation
+#    (RFC 8414). Servis par le backend, ils n'y arrivent que par l'Ingress
+#    dédié (k8s/base/ingress-oauth-metadata.yaml) ; sans lui, le frontend
+#    répond 404 et aucun client MCP ne trouve le serveur d'autorisation. Un
+#    `issuer` ou une `resource` sur un autre hôte (APP_FRONTEND_BASE_URL ou
+#    APP_PUBLIC_API_BASE_URL mal posée) ferait refuser les jetons par le
+#    client, qui compare ces valeurs à l'octet près : d'où le préfixe vérifié.
+#
+#    Lus SANS la Basic Auth de la préprod (CURL_OPTS_ANONYMOUS) : un client MCP
+#    ne sait pas y répondre, et l'Ingress dédié n'en porte volontairement
+#    aucune. Les lire avec elle masquerait précisément sa régression.
+#    Sans -L : un document servi ailleurs après une redirection n'est pas
+#    celui que le client attend à cette adresse.
+#
+#    Le JSON est lu par jq (préinstallé sur ubuntu-latest) : Symfony échappe
+#    les barres (`https:\/\/…`), une lecture par grep comparerait n'importe
+#    quoi. Absent, c'est un échec franc, jamais un saut.
+#
+#    Aucun document OpenID Connect n'est servi (le serveur n'émet pas de jeton
+#    d'identité) : /.well-known/openid-configuration doit rester le 404 du
+#    frontend. Celui-là passe par l'Ingress principal, donc avec la Basic
+#    Auth en préprod (sans elle, ce serait un 401).
+# ---------------------------------------------------------------------------
+section "Métadonnées OAuth de la connexion MCP (RFC 9728, RFC 8414)"
+
+# check_oauth_metadata <chemin> <champ> : 200, `application/json`, et le champ
+# (`resource` ou `issuer`) commence par l'origine auditée suivie d'une barre.
+check_oauth_metadata() {
+  local path="$1" field="$2" response meta body code content_type value
+  # Code et type à la suite du corps, sur une dernière ligne à part.
+  response="$(curl -sS "${CURL_OPTS_ANONYMOUS[@]}" -w '\n%{http_code} %{content_type}' "${BASE}${path}")"
+  meta="${response##*$'\n'}"
+  body="${response%$'\n'*}"
+  read -r code content_type <<< "$meta"
+  content_type="$(tr '[:upper:]' '[:lower:]' <<< "${content_type:-}")"
+
+  if [ "$code" = "200" ]; then
+    printf '  \033[32mOK\033[0m      HTTP 200 sur %s\n' "$path"
+  else
+    printf '  \033[31mECHEC\033[0m   HTTP %s sur %s   <-- attendu 200, sans Basic Auth !\n' "${code:-?}" "$path"
+    FAILURES=$((FAILURES + 1))
+    return
+  fi
+
+  # `application/json` seul ou suivi de paramètres : jamais un préfixe nu, qui
+  # admettrait `application/json-patch+json`.
+  case "$content_type" in
+    application/json|application/json\;*)
+      printf '  \033[32mOK\033[0m      Content-Type: %s\n' "$content_type" ;;
+    *)
+      printf '  \033[31mECHEC\033[0m   Content-Type: %s   <-- application/json attendu !\n' "${content_type:-absent}"
+      FAILURES=$((FAILURES + 1)) ;;
+  esac
+
+  if ! command -v jq > /dev/null; then
+    printf '  \033[31mECHEC\033[0m   jq absent : champ %s non vérifié   <-- installer jq !\n' "$field"
+    FAILURES=$((FAILURES + 1))
+    return
+  fi
+  if ! value="$(jq -er --arg field "$field" '.[$field] | strings' <<< "$body" 2> /dev/null)"; then
+    printf '  \033[31mECHEC\033[0m   champ %s absent, non textuel ou JSON illisible   <-- à vérifier !\n' "$field"
+    FAILURES=$((FAILURES + 1))
+    return
+  fi
+  # Le motif est cité : aucun caractère de l'origine n'y est lu comme un joker.
+  case "$value" in
+    "${BASE}/"*)
+      printf '  \033[32mOK\033[0m      %s: %s\n' "$field" "$value" ;;
+    *)
+      printf '  \033[31mECHEC\033[0m   %s: %s   <-- attendu sous %s/ !\n' "$field" "$value" "$BASE"
+      FAILURES=$((FAILURES + 1)) ;;
+  esac
+}
+
+check_oauth_metadata /.well-known/oauth-protected-resource/api/mcp resource
+check_oauth_metadata /.well-known/oauth-authorization-server/api/oauth issuer
+
+OIDC_CODE="$(curl -sS "${CURL_OPTS[@]}" -o /dev/null -w '%{http_code}' "${BASE}/.well-known/openid-configuration")"
+if [ "$OIDC_CODE" = "404" ]; then
+  printf '  \033[32mOK\033[0m      HTTP 404 sur /.well-known/openid-configuration (aucun document OIDC)\n'
+else
+  printf '  \033[31mECHEC\033[0m   HTTP %s sur /.well-known/openid-configuration   <-- attendu 404 !\n' "${OIDC_CODE:-?}"
+  FAILURES=$((FAILURES + 1))
 fi
 
 # ---------------------------------------------------------------------------

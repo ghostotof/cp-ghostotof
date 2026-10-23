@@ -1,0 +1,55 @@
+# Les deux documents de métadonnées OAuth de la connexion MCP (#647) :
+# RFC 9728 (ressource protégée) et RFC 8414 (serveur d'autorisation). La norme
+# les place HORS de /api, au chemin bien connu suivi de celui de la ressource
+# ou de l'émetteur ; l'ingress principal (ingress.yaml) n'envoie au backend
+# que /api et donne tout le reste au frontend, dont le nginx répond 404 sous
+# /.well-known/ (docker/node/nginx.conf, vérifié par
+# tools/check-frontend-image-headers.sh). Sans cet objet, aucun client MCP ne
+# trouverait le serveur d'autorisation.
+#
+# Deux chemins `Exact`, pas un préfixe : un Exact l'emporte sur le préfixe `/`
+# de l'ingress principal, et rien d'autre sous /.well-known/ ne quitte le
+# frontend (security.txt y reste, /.well-known/openid-configuration y reçoit
+# son 404 : aucun document OpenID Connect n'est servi). Les chemins sont ceux
+# que publie App\Mcp\Connection\Application\OAuthEndpoints et que sert le
+# routeur ; OAuthMetadataIngressTest les confronte.
+#
+# Un objet à part plutôt que deux chemins de plus dans l'ingress principal :
+# ingress-nginx applique les annotations auth-* à TOUS les chemins d'un même
+# objet, sans exclusion par chemin, et l'overlay préprod pose une Basic Auth
+# sur l'ingress principal. Ces deux documents publics et statiques (aucune
+# donnée, aucun secret) n'en portent volontairement aucune, en préprod
+# comme en prod : un client MCP ne sait pas répondre à une Basic Auth. Même
+# motif que k8s/overlays/preprod/ingress-healthz.yaml. Les points OAuth
+# eux-mêmes (/api/oauth/*) et /api/mcp restent derrière la Basic Auth de la
+# préprod, par l'ingress principal.
+#
+# host est un placeholder patché par chaque overlay (celui de l'ingress
+# principal). Pas de bloc `tls` ni d'annotation cert-manager : nginx-ingress
+# fusionne les objets Ingress d'un même host dans un seul bloc serveur HTTPS,
+# couvert par le certificat de l'ingress principal ; dupliquer `tls` ferait
+# gérer le même secret par deux Certificate cert-manager.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: cp-ghostotof-oauth-metadata
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: PLACEHOLDER
+      http:
+        paths:
+          - path: /.well-known/oauth-protected-resource/api/mcp
+            pathType: Exact
+            backend:
+              service:
+                name: backend
+                port:
+                  number: 80
+          - path: /.well-known/oauth-authorization-server/api/oauth
+            pathType: Exact
+            backend:
+              service:
+                name: backend
+                port:
+                  number: 80

@@ -19,6 +19,9 @@ resources:
   - adminer.yaml
   - network-policies.yaml
   - ingress.yaml
+  # Métadonnées OAuth de la connexion MCP, hors /api (#647) : objet à part,
+  # sans la Basic Auth que l'overlay préprod pose sur l'ingress principal.
+  - ingress-oauth-metadata.yaml
   - secretstore.yaml
   - cluster-issuer.yaml
   # github-actions-rbac délibérément PAS ici : `kubectl apply -k .` tourne
