@@ -29,6 +29,13 @@ use Symfony\Component\Uid\Uuid;
 #[ORM\Table(name: 'mcp_connection')]
 class McpConnection
 {
+    /**
+     * Le seul scope qu'une connexion accorde (spec 0007 phase 2) : lire le
+     * corpus nominatif au nom de la personne qui a consenti. Écrit ici, dans
+     * le domaine ; le serveur d'autorisation le relit (NominativeReadScope).
+     */
+    public const string SCOPE_NOMINATIVE_READ = 'nominative:read';
+
     /** Spec 0003 : UUID v7 posé par le constructeur. */
     #[ORM\Id]
     #[ORM\Column(type: UuidType::NAME)]

@@ -10,8 +10,8 @@ use App\Mcp\Connection\Domain\Entity\McpConnection;
 use App\Mcp\Connection\Domain\Repository\McpClientRepositoryInterface;
 use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
 use App\Mcp\Connection\Infrastructure\League\ConnectionAsUser;
-use App\Mcp\Connection\Infrastructure\League\NominativeReadScope;
 use App\Security\User\Domain\Entity\CpgUser;
+use DateInterval;
 use DateTimeImmutable;
 use Doctrine\ORM\EntityManagerInterface;
 use League\OAuth2\Server\AuthorizationServer;
@@ -70,7 +70,7 @@ final class AuthorizationServerTest extends KernelTestCase
 
         self::assertSame($redirectUri, $request->getRedirectUri());
         self::assertSame(self::CLIENT_ID, $request->getClient()->getIdentifier());
-        self::assertSame([NominativeReadScope::IDENTIFIER], $this->scopeIdentifiers($request));
+        self::assertSame([McpConnection::SCOPE_NOMINATIVE_READ], $this->scopeIdentifiers($request));
     }
 
     /**
@@ -123,6 +123,67 @@ final class AuthorizationServerTest extends KernelTestCase
         yield 'https en http' => ['http://client.example.test/callback'];
     }
 
+    /**
+     * PKCE `S256` seul (#647) : league admettrait `plain` et lirait une méthode
+     * absente comme `plain`. Le refus est un `invalid_request` renvoyé au
+     * client sur sa redirection validée, `state` compris, comme league le fait
+     * pour un scope invalide.
+     *
+     * @param array<string, string> $pkce
+     */
+    #[DataProvider('refusedPkce')]
+    public function testAnAuthorizationRequestWithoutS256PkceIsRefusedBackToTheClient(array $pkce, string $parameter): void
+    {
+        try {
+            $this->server()->validateAuthorizationRequest($this->authorizationRequest('http://localhost:49152/callback', $pkce));
+            self::fail('La demande aurait dû être refusée.');
+        } catch (OAuthServerException $exception) {
+            self::assertSame('invalid_request', $exception->getErrorType());
+            self::assertStringContainsString('`'.$parameter.'`', (string) $exception->getHint());
+            self::assertSame('http://localhost:49152/callback?state=state-1', $exception->getRedirectUri());
+        }
+    }
+
+    /**
+     * @return iterable<string, array{array<string, string>, string}>
+     */
+    public static function refusedPkce(): iterable
+    {
+        yield 'aucun défi' => [[], 'code_challenge'];
+        yield 'méthode sans défi' => [['code_challenge_method' => 'S256'], 'code_challenge'];
+        yield 'plain' => [['code_challenge' => self::codeChallenge(), 'code_challenge_method' => 'plain'], 'code_challenge_method'];
+        yield 'défi sans méthode (plain pour league)' => [['code_challenge' => self::codeChallenge()], 'code_challenge_method'];
+        yield 's256 en minuscules' => [['code_challenge' => self::codeChallenge(), 'code_challenge_method' => 's256'], 'code_challenge_method'];
+    }
+
+    /**
+     * Un PKCE refusé ne fait jamais rediriger vers une URI que rien n'a
+     * validée : une redirection inconnue reste un `invalid_client`, sans
+     * redirection, et un client inconnu aussi.
+     */
+    public function testAPkceRefusalNeverRedirectsToAnUnvalidatedUri(): void
+    {
+        $plain = ['code_challenge' => self::codeChallenge(), 'code_challenge_method' => 'plain'];
+
+        foreach ([
+            $this->authorizationRequest('http://localhost:49152/other', $plain),
+            new ServerRequest('GET', 'http://localhost/api/oauth/authorize')->withQueryParams([
+                'response_type' => 'code',
+                'client_id' => 'https://unknown.example.test/metadata.json',
+                'redirect_uri' => 'http://localhost:49152/callback',
+                ...$plain,
+            ]),
+        ] as $request) {
+            try {
+                $this->server()->validateAuthorizationRequest($request);
+                self::fail('La demande aurait dû être refusée.');
+            } catch (OAuthServerException $exception) {
+                self::assertSame('invalid_client', $exception->getErrorType());
+                self::assertFalse($exception->hasRedirect());
+            }
+        }
+    }
+
     public function testAnHttpsRedirectIsAcceptedOnExactMatch(): void
     {
         $request = $this->server()->validateAuthorizationRequest($this->authorizationRequest('https://client.example.test/callback'));
@@ -156,6 +217,7 @@ final class AuthorizationServerTest extends KernelTestCase
         $code = $query['code'] ?? null;
         self::assertIsString($code);
         self::assertSame(1, $this->rowCount('mcp_authorization_code'));
+        self::assertEqualsWithDelta($this->nowPlus('PT10M'), $this->latestExpiry('mcp_authorization_code'), 5, 'Un code vit 10 minutes.');
 
         $tokens = $this->decode($server->respondToAccessTokenRequest($this->tokenRequest([
             'grant_type' => 'authorization_code',
@@ -174,6 +236,8 @@ final class AuthorizationServerTest extends KernelTestCase
         $access = $this->em->getConnection()->fetchAssociative('SELECT token_hash, audience FROM mcp_access_token');
         self::assertSame(['token_hash' => hash('sha256', $tokens['access_token']), 'audience' => $this->endpoints()->resource()], $access);
         self::assertSame(1, $this->revokedCount('mcp_authorization_code'), 'Le code échangé doit être révoqué.');
+        self::assertEqualsWithDelta($this->nowPlus('PT1H'), $this->latestExpiry('mcp_access_token'), 5, 'Un jeton d\'accès vit une heure.');
+        self::assertEqualsWithDelta($this->nowPlus('P30D'), $this->latestExpiry('mcp_refresh_token'), 5, 'Un rafraîchissement émis au code vit 30 jours.');
 
         $refreshed = $this->decode($server->respondToAccessTokenRequest($this->tokenRequest([
             'grant_type' => 'refresh_token',
@@ -187,6 +251,10 @@ final class AuthorizationServerTest extends KernelTestCase
         self::assertSame(1, $this->revokedCount('mcp_access_token'), 'L\'ancien jeton d\'accès doit être révoqué.');
         self::assertSame(1, $this->revokedCount('mcp_refresh_token'), 'L\'ancien rafraîchissement doit être révoqué.');
         self::assertSame(2, $this->rowCount('mcp_refresh_token'));
+        self::assertIsInt($refreshed['expires_in']);
+        self::assertEqualsWithDelta(3600, $refreshed['expires_in'], 5);
+        self::assertEqualsWithDelta($this->nowPlus('PT1H'), $this->latestExpiry('mcp_access_token'), 5);
+        self::assertEqualsWithDelta($this->nowPlus('P30D'), $this->latestExpiry('mcp_refresh_token'), 5, 'Un rafraîchissement émis au rafraîchissement vit 30 jours.');
     }
 
     /**
@@ -229,6 +297,12 @@ final class AuthorizationServerTest extends KernelTestCase
         }
     }
 
+    /**
+     * La définition de la configuration commune, la production : `when@test`
+     * n'en déclare qu'un alias public (`test.oauth.authorization_server`), qui
+     * garde le service privé en vie pour le conteneur de test, sans le
+     * redéfinir.
+     */
     private function server(): AuthorizationServer
     {
         return self::getContainer()->get(AuthorizationServer::class);
@@ -244,18 +318,39 @@ final class AuthorizationServerTest extends KernelTestCase
         return new OAuthEndpoints($publicApi, $frontend);
     }
 
-    private function authorizationRequest(string $redirectUri): ServerRequest
+    /**
+     * @param array<string, string>|null $pkce les paramètres PKCE, un défi S256 valide par défaut
+     */
+    private function authorizationRequest(string $redirectUri, ?array $pkce = null): ServerRequest
     {
-        $challenge = rtrim(strtr(base64_encode(hash('sha256', self::CODE_VERIFIER, true)), '+/', '-_'), '=');
-
         return new ServerRequest('GET', 'http://localhost/api/oauth/authorize')->withQueryParams([
             'response_type' => 'code',
             'client_id' => self::CLIENT_ID,
             'redirect_uri' => $redirectUri,
             'state' => 'state-1',
-            'code_challenge' => $challenge,
-            'code_challenge_method' => 'S256',
+            ...($pkce ?? ['code_challenge' => self::codeChallenge(), 'code_challenge_method' => 'S256']),
         ]);
+    }
+
+    /** Le défi S256 de CODE_VERIFIER (RFC 7636 §4.2). */
+    private static function codeChallenge(): string
+    {
+        return rtrim(strtr(base64_encode(hash('sha256', self::CODE_VERIFIER, true)), '+/', '-_'), '=');
+    }
+
+    /** L'échéance d'une colonne, en secondes, pour la ligne la plus récente. */
+    private function latestExpiry(string $table): int
+    {
+        $expiry = $this->em->getConnection()->fetchOne('SELECT EXTRACT(EPOCH FROM expires_at)::bigint FROM '.$table.' ORDER BY id DESC LIMIT 1');
+        self::assertIsInt($expiry);
+
+        return $expiry;
+    }
+
+    /** Maintenant plus une durée, comme league la compte (`add()` dans le fuseau de PHP). */
+    private function nowPlus(string $duration): int
+    {
+        return new DateTimeImmutable()->add(new DateInterval($duration))->getTimestamp();
     }
 
     /**
@@ -306,7 +401,7 @@ final class AuthorizationServerTest extends KernelTestCase
         $this->em->flush();
         $client = self::getContainer()->get(McpClientRepositoryInterface::class)->findOneByClientId(self::CLIENT_ID);
         self::assertInstanceOf(McpClient::class, $client);
-        $connection = McpConnection::grant($account, $client, NominativeReadScope::IDENTIFIER, new DateTimeImmutable());
+        $connection = McpConnection::grant($account, $client, McpConnection::SCOPE_NOMINATIVE_READ, new DateTimeImmutable());
         self::getContainer()->get(McpConnectionRepositoryInterface::class)->add($connection);
 
         return $connection;

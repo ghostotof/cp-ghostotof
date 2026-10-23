@@ -22,9 +22,10 @@ use League\OAuth2\Server\Grant\RefreshTokenGrant;
  *
  * - jetons d'accès opaques (OpaqueAccessToken), donc NoSigningKey ;
  * - codes et rafraîchissements chiffrés sous la clé d'OAuthEncryptionKey ;
- * - code d'autorisation de 10 minutes, PKCE exigé des clients publics (le
- *   réglage par défaut de league, que rien ne lève ici ; S256 seul est
- *   imposé par le point d'autorisation, avant league) ;
+ * - code d'autorisation de 10 minutes, PKCE `S256` exigé par
+ *   LoopbackAwareAuthCodeGrant, seul à en décider (league admettrait `plain`
+ *   et une méthode absente) ; l'exigence de league pour les clients publics
+ *   reste en place derrière, jamais levée ici ;
  * - jeton d'accès d'une heure, rafraîchissement de 30 jours, chaque
  *   rafraîchissement révoquant le précédent.
  */

@@ -55,6 +55,7 @@ final readonly class AccessTokenRepository implements AccessTokenRepositoryInter
      * @throws UniqueTokenIdentifierConstraintViolationException quand l'empreinte est déjà prise
      * @throws UnknownMcpConnectionException                     quand le jeton n'est pas celui d'une connexion
      * @throws McpConnectionOfAnotherClientException             quand la connexion est celle d'un autre client
+     * @throws RevokedMcpConnectionException                     quand la connexion est déjà révoquée
      */
     public function persistNewAccessToken(#[SensitiveParameter] AccessTokenEntityInterface $accessTokenEntity): void
     {
@@ -68,8 +69,9 @@ final readonly class AccessTokenRepository implements AccessTokenRepositoryInter
                 $accessTokenEntity->getExpiryDateTime(),
             ));
         } catch (UniqueConstraintViolationException) {
-            // L'exception attendue par league pour tirer un autre identifiant.
-            // La violation n'est pas gardée : son `DETAIL` cite l'empreinte.
+            // Nomme la cause, rien de plus : le flush refusé a fermé
+            // l'EntityManager, le nouvel essai que league tenterait échouerait.
+            // La violation n'est pas gardée : son DETAIL cite l'empreinte.
             throw UniqueTokenIdentifierConstraintViolationException::create();
         }
     }

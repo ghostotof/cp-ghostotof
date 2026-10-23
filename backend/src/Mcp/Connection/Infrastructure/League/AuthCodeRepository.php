@@ -38,6 +38,7 @@ final readonly class AuthCodeRepository implements AuthCodeRepositoryInterface
      * @throws UniqueTokenIdentifierConstraintViolationException quand l'empreinte est déjà prise
      * @throws UnknownMcpConnectionException                     quand le code n'est pas celui d'une connexion
      * @throws McpConnectionOfAnotherClientException             quand la connexion est celle d'un autre client
+     * @throws RevokedMcpConnectionException                     quand la connexion est déjà révoquée
      */
     public function persistNewAuthCode(#[SensitiveParameter] AuthCodeEntityInterface $authCodeEntity): void
     {
@@ -50,6 +51,9 @@ final readonly class AuthCodeRepository implements AuthCodeRepositoryInterface
                 $authCodeEntity->getExpiryDateTime(),
             ));
         } catch (UniqueConstraintViolationException) {
+            // Nomme la cause, rien de plus : le flush refusé a fermé
+            // l'EntityManager, le nouvel essai que league tenterait échouerait.
+            // La violation n'est pas gardée : son DETAIL cite l'empreinte.
             throw UniqueTokenIdentifierConstraintViolationException::create();
         }
     }

@@ -40,22 +40,30 @@ final readonly class RefreshTokenRepository implements RefreshTokenRepositoryInt
      * @throws UniqueTokenIdentifierConstraintViolationException quand l'empreinte est déjà prise
      * @throws UnknownMcpConnectionException                     quand le jeton n'est pas celui d'une connexion
      * @throws McpConnectionOfAnotherClientException             quand la connexion est celle d'un autre client
+     * @throws RevokedMcpConnectionException                     quand la connexion est déjà révoquée
+     * @throws AccessTokenOfRefreshTokenNotFoundException        quand le jeton d'accès n'est pas en base
      */
     public function persistNewRefreshToken(#[SensitiveParameter] RefreshTokenEntityInterface $refreshTokenEntity): void
     {
         $accessToken = $refreshTokenEntity->getAccessToken();
         $connection = $this->connectionOfToken->of($accessToken->getUserIdentifier(), $accessToken->getClient());
+        // Le jeton d'accès vient d'être enregistré dans la même requête
+        // (league émet l'un puis l'autre) : absent, c'est un défaut du serveur,
+        // jamais un rafraîchissement enregistré sans son lien.
+        $persistedAccessToken = $this->accessTokens->findOneByHash(TokenIdentifierHash::of($accessToken->getIdentifier()))
+            ?? throw AccessTokenOfRefreshTokenNotFoundException::notPersisted();
 
         try {
             $this->tokens->add(new McpRefreshToken(
                 $connection,
                 TokenIdentifierHash::of($refreshTokenEntity->getIdentifier()),
-                // Le jeton d'accès vient d'être enregistré dans la même
-                // requête (league émet l'un puis l'autre) : il est retrouvé.
-                $this->accessTokens->findOneByHash(TokenIdentifierHash::of($accessToken->getIdentifier())),
+                $persistedAccessToken,
                 $refreshTokenEntity->getExpiryDateTime(),
             ));
         } catch (UniqueConstraintViolationException) {
+            // Nomme la cause, rien de plus : le flush refusé a fermé
+            // l'EntityManager, le nouvel essai que league tenterait échouerait.
+            // La violation n'est pas gardée : son DETAIL cite l'empreinte.
             throw UniqueTokenIdentifierConstraintViolationException::create();
         }
     }

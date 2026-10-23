@@ -12,6 +12,7 @@ use App\Mcp\Connection\Domain\Repository\McpAuthorizationCodeRepositoryInterface
 use App\Mcp\Connection\Domain\Repository\McpClientRepositoryInterface;
 use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
 use App\Mcp\Connection\Domain\Repository\McpRefreshTokenRepositoryInterface;
+use App\Mcp\Connection\Infrastructure\League\AccessTokenOfRefreshTokenNotFoundException;
 use App\Mcp\Connection\Infrastructure\League\AccessTokenRepository;
 use App\Mcp\Connection\Infrastructure\League\AuthCodeRepository;
 use App\Mcp\Connection\Infrastructure\League\ClientRepository;
@@ -20,6 +21,7 @@ use App\Mcp\Connection\Infrastructure\League\McpConnectionOfAnotherClientExcepti
 use App\Mcp\Connection\Infrastructure\League\NominativeReadScope;
 use App\Mcp\Connection\Infrastructure\League\OAuthClient;
 use App\Mcp\Connection\Infrastructure\League\RefreshTokenRepository;
+use App\Mcp\Connection\Infrastructure\League\RevokedMcpConnectionException;
 use App\Mcp\Connection\Infrastructure\League\ScopeRepository;
 use App\Mcp\Connection\Infrastructure\League\UnknownMcpConnectionException;
 use App\Security\User\Domain\Entity\CpgUser;
@@ -244,6 +246,64 @@ final class LeagueRepositoriesTest extends KernelTestCase
     }
 
     /**
+     * Rien ne naît d'une connexion révoquée : ni code, ni jeton d'accès, ni
+     * rafraîchissement, même si league ne l'a pas vue révoquée un instant
+     * plus tôt (une course).
+     */
+    public function testNothingIsIssuedForARevokedConnection(): void
+    {
+        $connection = $this->grantConnection();
+        $accessToken = $this->persistAccessToken($connection, $this->identifier());
+        $this->em->getConnection()->executeStatement(
+            'UPDATE mcp_connection SET revoked_at = NOW() WHERE id = :id',
+            ['id' => $connection->getId()],
+            ['id' => UuidType::NAME],
+        );
+        $this->em->clear();
+
+        $issuances = [
+            'code' => fn () => $this->persistAuthCode($connection, $this->identifier()),
+            'jeton d\'accès' => fn (): AccessTokenEntityInterface => $this->persistAccessToken($connection, $this->identifier()),
+            'rafraîchissement' => fn () => $this->persistRefreshToken($accessToken, $this->identifier()),
+        ];
+
+        foreach ($issuances as $kind => $issue) {
+            try {
+                $issue();
+                self::fail(\sprintf('Le %s aurait dû être refusé.', $kind));
+            } catch (RevokedMcpConnectionException) {
+                // Attendu.
+            }
+        }
+
+        self::assertSame(0, $this->rowCount('mcp_authorization_code'));
+        self::assertSame(1, $this->rowCount('mcp_access_token'), 'Seul le jeton émis avant la révocation reste.');
+        self::assertSame(0, $this->rowCount('mcp_refresh_token'));
+    }
+
+    /**
+     * Un rafraîchissement dont le jeton d'accès n'est pas en base est un
+     * défaut du serveur : jamais enregistré sans son lien, que la rotation
+     * (#649) lit.
+     */
+    public function testARefreshTokenWhoseAccessTokenIsNotPersistedIsRefused(): void
+    {
+        $connection = $this->grantConnection();
+        $accessToken = $this->accessTokens()->getNewToken(new OAuthClient($connection->client()), [new NominativeReadScope()], $connection->getId()->toRfc4122());
+        $accessToken->setExpiryDateTime($this->clock->now()->add(new DateInterval('PT1H')));
+        $accessToken->setIdentifier($this->identifier());
+
+        try {
+            $this->persistRefreshToken($accessToken, $this->identifier());
+            self::fail('Le rafraîchissement aurait dû être refusé.');
+        } catch (AccessTokenOfRefreshTokenNotFoundException) {
+            // Attendu.
+        }
+
+        self::assertSame(0, $this->rowCount('mcp_refresh_token'));
+    }
+
+    /**
      * Une empreinte déjà prise est rendue à league sous l'exception qu'il
      * attend pour tirer un autre identifiant.
      */
@@ -417,6 +477,14 @@ final class LeagueRepositoriesTest extends KernelTestCase
         return $identifier;
     }
 
+    private function rowCount(string $table): int
+    {
+        $count = $this->em->getConnection()->fetchOne('SELECT COUNT(*) FROM '.$table);
+        self::assertIsInt($count);
+
+        return $count;
+    }
+
     private function purge(): void
     {
         $connection = $this->em->getConnection();
@@ -440,7 +508,7 @@ final class LeagueRepositoriesTest extends KernelTestCase
         $account = new CpgUser('jane', 'hashed-password');
         $this->em->persist($account);
         $this->em->flush();
-        $connection = McpConnection::grant($account, $this->registerClient(self::CLIENT_ID), NominativeReadScope::IDENTIFIER, new DateTimeImmutable());
+        $connection = McpConnection::grant($account, $this->registerClient(self::CLIENT_ID), McpConnection::SCOPE_NOMINATIVE_READ, new DateTimeImmutable());
         $this->connections()->add($connection);
 
         return $connection;
