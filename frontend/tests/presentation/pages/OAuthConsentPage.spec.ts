@@ -11,6 +11,7 @@ import type { ConsentParams, ConsentRequest } from '../../../src/domain/mcp/enti
 import { InvalidConsentRequestError } from '../../../src/domain/mcp/errors/InvalidConsentRequestError'
 import { SessionExpiredError } from '../../../src/domain/mcp/errors/SessionExpiredError'
 import { ConsentFailedError } from '../../../src/domain/mcp/errors/ConsentFailedError'
+import { MalformedConsentDecisionError } from '../../../src/domain/mcp/errors/MalformedConsentDecisionError'
 import { createAppI18n, i18n as appI18n } from '../../../src/presentation/i18n'
 import { router as appRouter } from '../../../src/presentation/router'
 import { applySeoMeta } from '../../../src/presentation/router/seo'
@@ -40,10 +41,10 @@ const PARAMS: ConsentParams = {
   resource: 'https://site.example.test/api/mcp',
 }
 
-/** Nom choisi pour être reconnaissable dans le texte, et distinct de l'identifiant. */
+/** Nom choisi pour être reconnaissable dans le texte, et distinct de l'identifiant ; l'hôte, celui des URL rendues. */
 const SUMMARY: ConsentRequest = {
   client: { id: 'claude-code', name: 'Assistant Déclaré', registration: 'preregistered' },
-  redirectHost: 'retour.client.example',
+  redirectHost: '127.0.0.1',
   scope: 'nominative:read',
   resource: 'https://site.example.test/api/mcp',
 }
@@ -136,12 +137,12 @@ describe('OAuthConsentPage — résumé de la demande', () => {
     expect(wrapper.find('h1').text()).toBe('Autoriser une connexion MCP')
     expect(wrapper.find('[data-testid="consent-client-name"]').text()).toContain('Assistant Déclaré')
     expect(text).toContain('Nom déclaré par le client')
-    expect(text).toContain('le site ne l’a pas vérifié')
-    expect(text).toContain('enregistré à l’avance par l’administrateur du site')
-    expect(wrapper.find('[data-testid="consent-redirect-host"]').text()).toBe('retour.client.example')
+    expect(text).toContain("le site ne l'a pas vérifié")
+    expect(text).toContain("enregistré à l'avance par l'administrateur du site")
+    expect(wrapper.find('[data-testid="consent-redirect-host"]').text()).toBe('127.0.0.1')
     expect(text).toContain('corpus nominatif')
     expect(text).toContain('en lecture seule')
-    expect(text).toContain('fournisseur d’IA de ce client')
+    expect(text).toContain("fournisseur d'IA de ce client")
     expect(button(wrapper, 'approve').text()).toBe('Autoriser')
     expect(button(wrapper, 'deny').text()).toBe('Refuser')
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
@@ -156,7 +157,7 @@ describe('OAuthConsentPage — résumé de la demande', () => {
     expect(text).toContain('Name declared by the client')
     expect(text).toContain('the site has not verified it')
     expect(text).toContain('registered in advance by the site’s administrator')
-    expect(wrapper.find('[data-testid="consent-redirect-host"]').text()).toBe('retour.client.example')
+    expect(wrapper.find('[data-testid="consent-redirect-host"]').text()).toBe('127.0.0.1')
     expect(text).toContain('nominative corpus')
     expect(text).toContain('read-only')
     expect(text).toContain('this client’s AI provider')
@@ -240,10 +241,36 @@ describe('OAuthConsentPage — décision', () => {
       await flushPromises()
 
       expect(navigate).not.toHaveBeenCalled()
-      expect(wrapper.find('[role="alert"]').text()).toContain('n’est pas une adresse web')
+      expect(wrapper.find('[role="alert"]').text()).toContain("n'est pas une adresse web de l'hôte annoncé")
       expect(button(wrapper, 'approve').exists()).toBe(false)
     },
   )
+
+  it('URL rendue en https vers un autre hôte que celui annoncé : aucune navigation, message d’erreur', async () => {
+    const { wrapper, navigate } = await mountPage({ decide: vi.fn(async () => 'https://evil.example/callback?code=abc') })
+
+    await button(wrapper, 'approve').trigger('click')
+    await flushPromises()
+
+    expect(navigate).not.toHaveBeenCalled()
+    expect(wrapper.find('[role="alert"]').text()).toContain("n'est pas une adresse web de l'hôte annoncé")
+    expect(wrapper.findAll('button')).toHaveLength(0)
+  })
+
+  it('422 à la décision : message terminal, plus aucun bouton, aucun nouvel envoi', async () => {
+    const decide = vi.fn(async () => {
+      throw new MalformedConsentDecisionError()
+    })
+    const { wrapper, navigate } = await mountPage({ decide })
+
+    await button(wrapper, 'approve').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[role="alert"]').text()).toContain("La page n'a pas pu transmettre votre décision")
+    expect(wrapper.findAll('button')).toHaveLength(0)
+    expect(decide).toHaveBeenCalledOnce()
+    expect(navigate).not.toHaveBeenCalled()
+  })
 
   it('échec générique de la décision : message, les boutons reviennent pour réessayer', async () => {
     const decide = vi.fn().mockRejectedValueOnce(new ConsentFailedError()).mockResolvedValueOnce(APPROVED_URL)
@@ -330,6 +357,17 @@ describe('OAuthConsentPage — session', () => {
     expect(redirect.name).toBe('oauth-consent')
     expect(redirect.query).toEqual(router.currentRoute.value.query)
     expect(button(wrapper, 'approve').exists()).toBe(false)
+  })
+
+  it('401/403 en anglais : lien « Sign in again »', async () => {
+    const { wrapper } = await mountPage({
+      locale: 'en',
+      describeRequest: vi.fn(async () => {
+        throw new SessionExpiredError()
+      }),
+    })
+
+    expect(wrapper.find('[role="alert"] a').text()).toBe('Sign in again')
   })
 
   it('401/403 à la décision : session marquée expirée, aucune navigation', async () => {

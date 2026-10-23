@@ -53,6 +53,8 @@ const errorMessage = computed<string | null>(() => {
       return t('oauthConsent.errors.sessionExpired')
     case 'unsafe-redirect':
       return t('oauthConsent.errors.unsafeRedirect')
+    case 'malformed-decision':
+      return t('oauthConsent.errors.malformedDecision')
     case 'unknown':
       return t('oauthConsent.errors.unknown')
     default:

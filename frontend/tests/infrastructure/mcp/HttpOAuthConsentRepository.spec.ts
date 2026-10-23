@@ -4,6 +4,7 @@ import type { ConsentParams } from '../../../src/domain/mcp/entities/ConsentRequ
 import { InvalidConsentRequestError } from '../../../src/domain/mcp/errors/InvalidConsentRequestError'
 import { SessionExpiredError } from '../../../src/domain/mcp/errors/SessionExpiredError'
 import { ConsentFailedError } from '../../../src/domain/mcp/errors/ConsentFailedError'
+import { MalformedConsentDecisionError } from '../../../src/domain/mcp/errors/MalformedConsentDecisionError'
 
 const PARAMS: ConsentParams = {
   responseType: 'code',
@@ -18,10 +19,13 @@ const PARAMS: ConsentParams = {
 
 const SUMMARY = {
   client: { id: 'claude-code', name: 'Claude Code', registration: 'preregistered' },
-  redirectHost: '127.0.0.1:33418',
+  redirectHost: '127.0.0.1',
   scope: 'nominative:read',
   resource: 'https://site.example.test/api/mcp',
 }
+
+/** Le corps du 400 que le serveur rend quand il refuse la demande à la revalidation. */
+const REJECTED = { type: '/errors/authorization-request-rejected', title: 'Bad Request', status: 400 }
 
 function jsonResponse(body: unknown, status = 200, contentType = 'application/json'): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': contentType } })
@@ -81,12 +85,21 @@ describe('HttpOAuthConsentRepository', () => {
       await expect(repository.describe(PARAMS)).resolves.toEqual(SUMMARY)
     })
 
-    it('400 : demande invalide ou altérée', async () => {
-      fetchMock.mockResolvedValue(
-        jsonResponse({ type: '/errors/authorization-request-rejected' }, 400, 'application/problem+json'),
-      )
+    it('400 de type authorization-request-rejected : demande invalide ou altérée', async () => {
+      fetchMock.mockResolvedValue(jsonResponse(REJECTED, 400, 'application/problem+json'))
 
       await expect(repository.describe(PARAMS)).rejects.toBeInstanceOf(InvalidConsentRequestError)
+    })
+
+    it.each([
+      ['un autre type', jsonResponse({ type: '/errors/malformed-request-body' }, 400, 'application/problem+json')],
+      ['sans type', jsonResponse({}, 400)],
+      ['un type qui ne fait que contenir le slug', jsonResponse({ type: '/errors/authorization-request-rejected/x' }, 400)],
+      ['un corps non JSON', new Response('<html>', { status: 400 })],
+    ])('400 avec %s : échec générique, pas une demande invalide', async (_label, response) => {
+      fetchMock.mockResolvedValue(response)
+
+      await expect(repository.describe(PARAMS)).rejects.toBeInstanceOf(ConsentFailedError)
     })
 
     it.each([401, 403])('%i : session absente, expirée ou sans le palier de confiance', async (status) => {
@@ -112,6 +125,9 @@ describe('HttpOAuthConsentRepository', () => {
       ['nom absent', jsonResponse({ ...SUMMARY, client: { id: 'x', registration: 'preregistered' } })],
       ["mode d'enregistrement inconnu", jsonResponse({ ...SUMMARY, client: { ...SUMMARY.client, registration: 'dynamic' } })],
       ['hôte de retour absent', jsonResponse({ ...SUMMARY, redirectHost: undefined })],
+      // Le texte de la page décrit ce seul scope : un autre ouvrirait autre chose que ce qu'elle annonce.
+      ['autre scope', jsonResponse({ ...SUMMARY, scope: 'nominative:write' })],
+      ['scope élargi', jsonResponse({ ...SUMMARY, scope: 'nominative:read admin' })],
     ])('200 mal formé (%s) : échec générique, rien d’affiché à moitié', async (_label, response) => {
       fetchMock.mockResolvedValue(response)
 
@@ -169,10 +185,22 @@ describe('HttpOAuthConsentRepository', () => {
       )
     })
 
-    it('400 : demande invalide ou altérée', async () => {
-      fetchMock.mockResolvedValue(jsonResponse({}, 400, 'application/problem+json'))
+    it('400 de type authorization-request-rejected : demande invalide ou altérée', async () => {
+      fetchMock.mockResolvedValue(jsonResponse(REJECTED, 400, 'application/problem+json'))
 
       await expect(repository.decide(PARAMS, true)).rejects.toBeInstanceOf(InvalidConsentRequestError)
+    })
+
+    it('400 d’un autre type : échec générique', async () => {
+      fetchMock.mockResolvedValue(jsonResponse({ type: '/errors/other' }, 400, 'application/problem+json'))
+
+      await expect(repository.decide(PARAMS, true)).rejects.toBeInstanceOf(ConsentFailedError)
+    })
+
+    it('422 : corps de la décision mal formé, un défaut de la page', async () => {
+      fetchMock.mockResolvedValue(jsonResponse({ violations: [] }, 422, 'application/problem+json'))
+
+      await expect(repository.decide(PARAMS, true)).rejects.toBeInstanceOf(MalformedConsentDecisionError)
     })
 
     it.each([401, 403])('%i (CSRF refusé compris) : session expirée', async (status) => {
@@ -181,7 +209,7 @@ describe('HttpOAuthConsentRepository', () => {
       await expect(repository.decide(PARAMS, true)).rejects.toBeInstanceOf(SessionExpiredError)
     })
 
-    it.each([422, 500])('%i : échec générique', async (status) => {
+    it.each([429, 500])('%i : échec générique', async (status) => {
       fetchMock.mockResolvedValue(jsonResponse({}, status))
 
       await expect(repository.decide(PARAMS, true)).rejects.toBeInstanceOf(ConsentFailedError)

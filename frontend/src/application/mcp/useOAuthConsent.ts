@@ -2,6 +2,7 @@ import { inject, readonly, ref, shallowRef, type DeepReadonly, type InjectionKey
 import type { ConsentParams, ConsentRequest } from '../../domain/mcp/entities/ConsentRequest'
 import type { OAuthConsentRepository } from '../../domain/mcp/repositories/OAuthConsentRepository'
 import { InvalidConsentRequestError } from '../../domain/mcp/errors/InvalidConsentRequestError'
+import { MalformedConsentDecisionError } from '../../domain/mcp/errors/MalformedConsentDecisionError'
 import { SessionExpiredError } from '../../domain/mcp/errors/SessionExpiredError'
 import { isNavigableRedirect } from '../../domain/mcp/services/consentParams'
 import { markSessionExpired } from '../auth/useAuth'
@@ -10,7 +11,10 @@ export const OAUTH_CONSENT_REPOSITORY: InjectionKey<OAuthConsentRepository> = Sy
 
 /**
  * Comment quitter le site vers le client après la décision. Par défaut
- * `window.location.assign` : aucun `provide` n'est nécessaire en production.
+ * `window.location.replace` : aucun `provide` n'est nécessaire en production.
+ * `replace`, jamais `assign` : la page de consentement ne doit pas rester dans
+ * l'historique — « Précédent » depuis le client la rechargerait, demande
+ * comprise, et offrirait de consentir une seconde fois.
  * La clé existe pour les tests, jsdom ne sachant ni naviguer ni laisser
  * espionner `window.location`.
  */
@@ -32,12 +36,15 @@ export const CLIENT_REDIRECT: InjectionKey<(url: string) => void> = Symbol('Clie
 export type OAuthConsentState = 'loading' | 'ready' | 'submitting' | 'invalid' | 'error'
 
 /**
- * - `session-expired` : 401/403, la session est marquée expirée ;
- * - `unsafe-redirect` : l'URL de retour n'est ni `http:` ni `https:`, la page
- *                       ne l'a pas suivie ;
- * - `unknown`         : réseau, 5xx, réponse inattendue.
+ * - `session-expired`    : 401/403, la session est marquée expirée ;
+ * - `unsafe-redirect`    : l'URL de retour n'est ni `http:` ni `https:`, ou ne
+ *                          mène pas à l'hôte annoncé : la page ne l'a pas suivie ;
+ * - `malformed-decision` : 422, le serveur a refusé le corps de la décision —
+ *                          un défaut de la page, terminal (réessayer renverrait
+ *                          le même corps) ;
+ * - `unknown`            : réseau, 5xx, réponse inattendue.
  */
-export type OAuthConsentFailure = 'session-expired' | 'unsafe-redirect' | 'unknown'
+export type OAuthConsentFailure = 'session-expired' | 'unsafe-redirect' | 'malformed-decision' | 'unknown'
 
 export interface UseOAuthConsentResult {
   state: DeepReadonly<Ref<OAuthConsentState>>
@@ -65,7 +72,7 @@ export function useOAuthConsent(): UseOAuthConsentResult {
     )
   }
 
-  const redirect = inject(CLIENT_REDIRECT, (url: string) => window.location.assign(url))
+  const redirect = inject(CLIENT_REDIRECT, (url: string) => window.location.replace(url))
 
   const state = ref<OAuthConsentState>('loading')
   const request = shallowRef<ConsentRequest | null>(null)
@@ -83,6 +90,11 @@ export function useOAuthConsent(): UseOAuthConsentResult {
       markSessionExpired()
       state.value = 'error'
       failure.value = 'session-expired'
+      return
+    }
+    if (caught instanceof MalformedConsentDecisionError) {
+      state.value = 'error'
+      failure.value = 'malformed-decision'
       return
     }
     state.value = onUnknown
@@ -118,6 +130,9 @@ export function useOAuthConsent(): UseOAuthConsentResult {
     state.value = 'submitting'
     failure.value = null
 
+    // L'hôte annoncé à la personne, lu avant l'appel : c'est sur lui qu'elle a consenti.
+    const announcedHost = request.value?.redirectHost ?? ''
+
     let url: string
     try {
       url = await repository.decide(params, approved)
@@ -126,7 +141,7 @@ export function useOAuthConsent(): UseOAuthConsentResult {
       return
     }
 
-    if (!isNavigableRedirect(url)) {
+    if (!isNavigableRedirect(url, announcedHost)) {
       state.value = 'error'
       failure.value = 'unsafe-redirect'
       return

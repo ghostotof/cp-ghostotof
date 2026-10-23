@@ -64,8 +64,14 @@ describe('consentQuery', () => {
 })
 
 describe('isNavigableRedirect', () => {
-  it.each(['https://client.example/cb?code=a', 'http://127.0.0.1:33418/callback?code=a'])('accepte %s', (url) => {
-    expect(isNavigableRedirect(url)).toBe(true)
+  it.each([
+    ['https://client.example/cb?code=a', 'client.example'],
+    ['http://127.0.0.1:33418/callback?code=a', '127.0.0.1'],
+    ['http://[::1]:33418/callback?code=a', '[::1]'],
+    // L'hôte annoncé vient du serveur tel que l'URL enregistrée l'écrit ; le navigateur le met en minuscules.
+    ['https://Client.Example/cb?code=a', 'Client.Example'],
+  ])('accepte %s vers l’hôte annoncé %s', (url, host) => {
+    expect(isNavigableRedirect(url, host)).toBe(true)
   })
 
   it.each([
@@ -73,11 +79,20 @@ describe('isNavigableRedirect', () => {
     'JavaScript:alert(1)',
     'data:text/html,<script>alert(1)</script>',
     'vbscript:msgbox(1)',
-    'cursor://anysphere.cursor-retrieval/oauth/callback?code=a',
+    'cursor://client.example/oauth/callback?code=a',
     '/relative/path',
     '',
     'pas une url',
-  ])('refuse %s', (url) => {
-    expect(isNavigableRedirect(url)).toBe(false)
+  ])('refuse le schéma ou la forme de %s', (url) => {
+    expect(isNavigableRedirect(url, 'client.example')).toBe(false)
+  })
+
+  it.each([
+    'https://other.example/cb?code=a',
+    'https://client.example.evil.test/cb?code=a',
+    'https://evil.test/client.example?code=a',
+    'https://client.example@evil.test/cb?code=a',
+  ])('refuse %s : http(s), mais pas l’hôte annoncé', (url) => {
+    expect(isNavigableRedirect(url, 'client.example')).toBe(false)
   })
 })

@@ -71,23 +71,35 @@ export function consentQuery(params: ConsentParams): Record<string, string> {
 
 /**
  * Vrai si la page peut suivre cette URL de retour : `http:` ou `https:`
- * seulement.
+ * seulement, et vers l'hôte que la page a annoncé à la personne.
  *
  * L'URL vient du serveur, qui la construit à partir de la redirection
- * enregistrée du client ; la page la suit par `window.location.assign`. Un
+ * enregistrée du client ; la page la suit par `window.location.replace`. Un
  * `javascript:` ou un `data:` y exécuterait du code dans l'origine du site — la
  * session de la personne avec. Garde de défense en profondeur, donc, qui ne
  * présume pas de ce que le serveur admet à l'enregistrement. Un schéma propre à
  * une application (`cursor://`…) est refusé aussi : la consigne est stricte.
+ *
+ * L'hôte : la personne a consenti en lisant « vous serez renvoyé vers <hôte> » ;
+ * une URL qui mènerait ailleurs ne part pas. Comparé au `hostname` (sans port),
+ * puisque l'hôte annoncé n'en porte pas — c'est celui que League\Uri lit
+ * (`getHost()`), crochets compris pour une IPv6, comme le `hostname` du
+ * navigateur. Sans casse : le navigateur met l'hôte en minuscules, le serveur le
+ * rend tel qu'enregistré. Un hôte internationalisé enregistré en Unicode ne
+ * correspondrait pas à sa forme punycode : refusé, le côté sûr.
  */
-export function isNavigableRedirect(url: string): boolean {
-  let protocol: string
+export function isNavigableRedirect(url: string, expectedHost: string): boolean {
+  let parsed: URL
   try {
-    protocol = new URL(url).protocol
+    parsed = new URL(url)
   } catch {
     // Relative ou mal formée : rien que la page sache suivre hors de son origine.
     return false
   }
 
-  return 'http:' === protocol || 'https:' === protocol
+  if ('http:' !== parsed.protocol && 'https:' !== parsed.protocol) {
+    return false
+  }
+
+  return parsed.hostname === expectedHost.toLowerCase()
 }

@@ -36,11 +36,23 @@ export interface ConsentClient {
   registration: ConsentClientRegistration
 }
 
+/**
+ * Le seul scope qu'une connexion MCP peut demander (spec 0007 phase 2) : la
+ * lecture du corpus nominatif. Le texte de la page, qui dit ce que la connexion
+ * ouvre, est écrit pour lui seul ; un résumé portant un autre scope est refusé
+ * plutôt qu'affiché sous un texte qui ne le décrirait pas.
+ */
+export const NOMINATIVE_READ_SCOPE = 'nominative:read'
+
 /** Le résumé de la demande, revalidée par le serveur, que la personne lit avant de décider. */
 export interface ConsentRequest {
   client: ConsentClient
-  /** L'hôte vers lequel la personne sera renvoyée après sa décision. */
+  /**
+   * L'hôte vers lequel la personne sera renvoyée après sa décision, sans port
+   * (tel que le serveur le lit dans l'URL de redirection enregistrée). La page
+   * ne suit l'URL de retour que si elle mène à cet hôte.
+   */
   redirectHost: string
-  scope: string
+  scope: typeof NOMINATIVE_READ_SCOPE
   resource: string
 }

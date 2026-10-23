@@ -811,8 +811,9 @@
     "errors": {
       "invalid": "This connection request is invalid or has expired. Start again from your assistant.",
       "sessionExpired": "Your session has expired or does not allow you to authorize this connection.",
-      "relogin": "Log in again",
-      "unsafeRedirect": "The client’s return address is not a web address: the page did not follow it.",
+      "relogin": "Sign in again",
+      "unsafeRedirect": "The return address received is not a web address on the announced host: the page did not follow it.",
+      "malformedDecision": "The page could not send your decision. Start again from your assistant.",
       "unknown": "An unexpected error occurred. Try again."
     }
   }
