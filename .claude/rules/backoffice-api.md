@@ -29,13 +29,20 @@ paths:
   `tests/Security/SecurityConfigEnvironmentParityTest.php` loads every environment of `Kernel::getAllowedEnvs()`
   without compiling (`EnvironmentConfigKernel::declaredConfiguration()`) and requires the **whole** `security`
   section, normalized by SecurityBundle, to match `test`'s — not only `access_control`, `firewalls` and
-  `role_hierarchy`: a provider or a decision strategy of `prod` alone would change what prod serves just as
-  much. Its one exempt key is `password_hashers` (cost 4 under `when@test`, pinned per environment by
-  `CpgUserPasswordHasherTest`), checked to still differ; no value of the section may be `%env()%` or
-  `%parameter%`. `tests/Security/RouteEnvironmentParityTest.php` boots each environment
-  (`EnvironmentConfigKernel::routes()`, cache emptied first) and compares its route collection with `test`'s,
-  route by route and in order; its only justified entry is `dev`'s `_preview_error` (FrameworkBundle's error
-  page preview, `when@dev`). Not seen, accepted: a compiler pass changing the access map per environment (none does).
+  `role_hierarchy`: a decision strategy or a provider declaration of `prod` alone would change what prod serves
+  just as much — and `lexik_jwt_authentication` with it (where the `jwt` authenticator reads the token, what it
+  sets). Its `ENVIRONMENT_SPECIFIC` exemptions are exact paths, each checked to still differ:
+  `security.password_hashers` (cost 4 under `when@test`, pinned per environment by `CpgUserPasswordHasherTest`)
+  and `lexik_jwt_authentication.set_cookies.BEARER.secure` (`Secure` in prod only, `AuthCookieAttributesTest`).
+  No key nor value of either may hold a `%env()%` or `%parameter%` reference (`%%` is an escape, fine), save
+  `PARAMETERIZED_BY_DESIGN`: Lexik's `secret_key`, `public_key`, `pass_phrase`, per-deployment secrets.
+  `tests/Security/RouteEnvironmentParityTest.php` boots each environment (`EnvironmentConfigKernel::routes()`,
+  in a per-process cache removed afterwards) and compares its route collection with `test`'s, route by route,
+  in order, aliases included; its only justified entry is `dev`'s `_preview_error` (FrameworkBundle's error page
+  preview, `when@dev`), its path pinned so the justification cannot follow it under `/api`. Every environment is
+  read with `debug` off. Not seen, accepted (none today): a service the configuration names, redefined for one
+  environment (`when@prod: services:` — a provider, a voter, a user checker), a compiler pass or a bundle's
+  `prepend()` changing the map per environment, a route or rule depending on `%kernel.debug%`.
 - **API Platform pattern**, repeated identically across every backoffice resource
   (`BackofficeExperienceTechnologyResource`, `BackofficeQuality{Principle,Trait}Resource`,
   `BackofficeContributionResource`, `BackofficeIncidentResource`, `BackofficeWatchedProductResource`,
