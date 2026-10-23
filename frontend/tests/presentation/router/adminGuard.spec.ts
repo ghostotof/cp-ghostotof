@@ -226,3 +226,81 @@ describe('router — garde /assistant (ROLE_TRUSTED ou ROLE_SUPER)', () => {
     wrapper.unmount()
   })
 })
+
+describe('router — garde /oauth/consent (ROLE_TRUSTED ou ROLE_SUPER, #647)', () => {
+  /** La requête posée par le point d'autorisation : elle doit survivre au détour par la connexion. */
+  const CONSENT_PATH =
+    '/fr/oauth/consent?response_type=code&client_id=claude-code' +
+    '&redirect_uri=http%3A%2F%2F127.0.0.1%3A33418%2Fcallback&scope=nominative%3Aread&state=a%26b%3Dc' +
+    '&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&code_challenge_method=S256' +
+    '&resource=https%3A%2F%2Fsite.example.test%2Fapi%2Fmcp'
+
+  beforeEach(async () => {
+    await router.push('/fr')
+    await router.isReady()
+  })
+
+  it('anonyme : redirige vers /login, le redirect garde toute la requête de la demande', async () => {
+    await primeAuthState(null)
+
+    await router.push(CONSENT_PATH)
+
+    expect(router.currentRoute.value.name).toBe('login')
+    const redirect = router.currentRoute.value.query.redirect
+    expect(typeof redirect).toBe('string')
+    // Le chemin que LoginPage acceptera (un seul `/` en tête), et qui ramène à
+    // la même demande, paramètre par paramètre — `state` compris, avec ses `&` et `=`.
+    expect(String(redirect).startsWith('/') && !String(redirect).startsWith('//')).toBe(true)
+    const back = router.resolve(String(redirect))
+    expect(back.name).toBe('oauth-consent')
+    expect(back.query).toEqual(router.resolve(CONSENT_PATH).query)
+    expect(back.query.state).toBe('a&b=c')
+  })
+
+  it('compte ROLE_USER seul : redirige vers /forbidden', async () => {
+    await primeAuthState({ username: 'jane', roles: ['ROLE_USER'] })
+
+    await router.push(CONSENT_PATH)
+
+    expect(router.currentRoute.value.name).toBe('forbidden')
+  })
+
+  it('palier de base sans compte : redirige vers /login', async () => {
+    const repository: AuthRepository = {
+      login: vi.fn(),
+      logout: vi.fn(),
+      me: vi.fn(async () => BASE_ACCESS_SESSION),
+    }
+    const Probe = defineComponent({
+      setup() {
+        return { auth: useAuth() }
+      },
+      template: '<div />',
+    })
+    const wrapper = mount(Probe, { global: { provide: { [AUTH_REPOSITORY as symbol]: repository } } })
+    await wrapper.vm.auth.checkAuth()
+    wrapper.unmount()
+
+    await router.push(CONSENT_PATH)
+
+    expect(router.currentRoute.value.name).toBe('login')
+  })
+
+  it('ROLE_TRUSTED : accède à la page, non indexée', async () => {
+    await primeAuthState({ username: 'guest', roles: ['ROLE_USER', 'ROLE_TRUSTED'] })
+
+    await router.push(CONSENT_PATH)
+
+    expect(router.currentRoute.value.name).toBe('oauth-consent')
+    expect(router.currentRoute.value.meta.noindex).toBe(true)
+    expect(router.currentRoute.value.meta.requiresAuth).toBe(true)
+  })
+
+  it('ROLE_SUPER sans ROLE_TRUSTED en clair : accède à la page', async () => {
+    await primeAuthState({ username: 'super', roles: ['ROLE_SUPER'] })
+
+    await router.push(CONSENT_PATH.replace('/fr/', '/en/'))
+
+    expect(router.currentRoute.value.name).toBe('oauth-consent')
+  })
+})

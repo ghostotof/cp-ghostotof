@@ -36,6 +36,7 @@ const AnonymousCvPage = () => import('../pages/AnonymousCvPage.vue')
 const AssistantPage = () => import('../pages/AssistantPage.vue')
 const StackPage = () => import('../pages/StackPage.vue')
 const ConnectAssistantPage = () => import('../pages/ConnectAssistantPage.vue')
+const OAuthConsentPage = () => import('../pages/OAuthConsentPage.vue')
 const ContactPage = () => import('../pages/ContactPage.vue')
 const LoginPage = () => import('../pages/LoginPage.vue')
 const SetPasswordPage = () => import('../pages/SetPasswordPage.vue')
@@ -144,6 +145,25 @@ export const router = createRouter({
           name: 'connect-assistant',
           component: ConnectAssistantPage,
           meta: { titleKey: 'seo.connectAssistant.title', descriptionKey: 'seo.connectAssistant.description' },
+        },
+        {
+          // Consentement à une connexion MCP (#647, spec 0007 phase 2) : le point
+          // d'autorisation y renvoie la personne, la demande du client dans la
+          // requête. Palier de confiance, comme l'assistant : une connexion lit
+          // le corpus nominatif (ADR 0006 D3). Anonyme : détour par login, dont
+          // le `redirect` (`to.fullPath`) garde toute la requête. noindex : la
+          // page porte `state` et le défi PKCE, rien à indexer — canonical et
+          // hreflang partent de `to.path`, sans la requête.
+          path: 'oauth/consent',
+          name: 'oauth-consent',
+          component: OAuthConsentPage,
+          meta: {
+            requiresAuth: true,
+            roles: [ROLE_TRUSTED, ROLE_SUPER],
+            noindex: true,
+            titleKey: 'seo.oauthConsent.title',
+            descriptionKey: 'seo.oauthConsent.description',
+          },
         },
         {
           path: 'experience',

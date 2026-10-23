@@ -624,6 +624,10 @@
       "title": "Connect your assistant",
       "description": "Add the site’s MCP server to Claude, ChatGPT, Cursor or PhpStorm: its URL, each client’s configuration, what it serves and what it never serves."
     },
+    "oauthConsent": {
+      "title": "Authorize an MCP connection",
+      "description": "Authorize or deny an assistant’s connection to the site’s MCP server."
+    },
     "adminAnonymousCv": {
       "title": "Administration — CV without identity",
       "description": "Manage the sections of the CV without identity (base tier)."
@@ -778,6 +782,37 @@
       "rateLimitedIn": "Too many questions asked. Try again in {minutes} minute | Too many questions asked. Try again in {minutes} minutes",
       "unavailable": "The assistant is temporarily unavailable. Try again later.",
       "network": "The connection was interrupted. Try again.",
+      "unknown": "An unexpected error occurred. Try again."
+    }
+  },
+  "oauthConsent": {
+    "title": "Authorize an MCP connection",
+    "intro": "An MCP client is asking to connect to this site’s MCP server on your behalf. Check the request before deciding.",
+    "loading": "Loading the request…",
+    "submitting": "Sending your decision…",
+    "client": {
+      "heading": "The client",
+      "nameLabel": "Name declared by the client",
+      "nameNotice": "This name is supplied by the client itself: the site has not verified it.",
+      "registrationLabel": "Registration",
+      "registration": {
+        "preregistered": "Client registered in advance by the site’s administrator."
+      },
+      "redirectLabel": "Return after your decision",
+      "redirectNotice": "The page will send you back to this host, whether you authorize the connection or not."
+    },
+    "access": {
+      "heading": "What this connection will open",
+      "corpus": "The nominative corpus: the professional career, identity and employers included, read-only.",
+      "provider": "This content will leave for this client’s AI provider, which will process it under its own terms."
+    },
+    "approve": "Authorize",
+    "deny": "Deny",
+    "errors": {
+      "invalid": "This connection request is invalid or has expired. Start again from your assistant.",
+      "sessionExpired": "Your session has expired or does not allow you to authorize this connection.",
+      "relogin": "Log in again",
+      "unsafeRedirect": "The client’s return address is not a web address: the page did not follow it.",
       "unknown": "An unexpected error occurred. Try again."
     }
   }

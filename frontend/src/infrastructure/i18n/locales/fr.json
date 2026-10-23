@@ -624,6 +624,10 @@
       "title": "Brancher votre assistant",
       "description": "Ajoutez le serveur MCP du site à Claude, ChatGPT, Cursor ou PhpStorm : son URL, la configuration de chaque client, ce qu'il sert et ce qu'il ne sert jamais."
     },
+    "oauthConsent": {
+      "title": "Autoriser une connexion MCP",
+      "description": "Autoriser ou refuser la connexion d’un assistant au serveur MCP du site."
+    },
     "adminAnonymousCv": {
       "title": "Administration — CV sans identité",
       "description": "Gestion des sections du CV sans identité (palier de base)."
@@ -778,6 +782,37 @@
       "rateLimitedIn": "Trop de questions posées. Réessayez dans {minutes} minute | Trop de questions posées. Réessayez dans {minutes} minutes",
       "unavailable": "L'assistant est momentanément indisponible. Réessayez plus tard.",
       "network": "La connexion a été interrompue. Réessayez.",
+      "unknown": "Une erreur inattendue est survenue. Réessayez."
+    }
+  },
+  "oauthConsent": {
+    "title": "Autoriser une connexion MCP",
+    "intro": "Un client MCP demande à se connecter au serveur MCP de ce site en votre nom. Vérifiez la demande avant de décider.",
+    "loading": "Chargement de la demande…",
+    "submitting": "Transmission de votre décision…",
+    "client": {
+      "heading": "Le client",
+      "nameLabel": "Nom déclaré par le client",
+      "nameNotice": "Ce nom est fourni par le client lui-même : le site ne l’a pas vérifié.",
+      "registrationLabel": "Enregistrement",
+      "registration": {
+        "preregistered": "Client enregistré à l’avance par l’administrateur du site."
+      },
+      "redirectLabel": "Retour après votre décision",
+      "redirectNotice": "La page vous renverra vers cet hôte, que vous autorisiez ou non la connexion."
+    },
+    "access": {
+      "heading": "Ce que cette connexion ouvrira",
+      "corpus": "Le corpus nominatif : le parcours professionnel, identité et employeurs compris, en lecture seule.",
+      "provider": "Ce contenu partira vers le fournisseur d’IA de ce client, qui le traitera selon ses propres conditions."
+    },
+    "approve": "Autoriser",
+    "deny": "Refuser",
+    "errors": {
+      "invalid": "Cette demande de connexion est invalide ou a expiré. Recommencez depuis votre assistant.",
+      "sessionExpired": "Votre session a expiré ou ne permet pas d’autoriser cette connexion.",
+      "relogin": "Se reconnecter",
+      "unsafeRedirect": "L’adresse de retour du client n’est pas une adresse web : la page ne l’a pas suivie.",
       "unknown": "Une erreur inattendue est survenue. Réessayez."
     }
   }
