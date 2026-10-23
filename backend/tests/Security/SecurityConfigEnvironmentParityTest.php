@@ -110,6 +110,29 @@ final class SecurityConfigEnvironmentParityTest extends TestCase
     }
 
     /**
+     * L'ordre des entrées, que la comparaison entrée par entrée ne voit pas,
+     * sur deux configurations construites ici — la fusion de Config garde la
+     * place d'une clé existante, aucune fixture ne le produirait. Firewalls
+     * inversés : rapportés ; un rôle ajouté en fin de hiérarchie, les autres
+     * dans le même ordre : rien, l'ajout est rapporté pour lui-même.
+     */
+    public function testTheComparisonSeesTheOrderOfTheFirewalls(): void
+    {
+        $reference = [
+            'firewalls' => ['login' => ['pattern' => '^/api/login_check$'], 'api' => ['pattern' => '^/api']],
+            'role_hierarchy' => ['ROLE_TRUSTED' => ['ROLE_USER']],
+            'access_control' => [['path' => '^/a'], ['path' => '^/b']],
+        ];
+        $other = [
+            'firewalls' => ['api' => ['pattern' => '^/api'], 'login' => ['pattern' => '^/api/login_check$']],
+            'role_hierarchy' => ['ROLE_TRUSTED' => ['ROLE_USER'], 'ROLE_SUPER' => ['ROLE_TRUSTED']],
+            'access_control' => [['path' => '^/a'], ['path' => '^/b']],
+        ];
+
+        self::assertSame(['firewalls'], $this->orderDifferences($reference, $other));
+    }
+
+    /**
      * Une exemption qui ne sert plus se retire : sinon elle couvrirait demain
      * une différence que personne n'a justifiée.
      */
@@ -214,10 +237,67 @@ final class SecurityConfigEnvironmentParityTest extends TestCase
                     $found[] = \sprintf('%s ≠ test : %s', $environment, $entry);
                 }
             }
+            foreach (self::EXTENSIONS as $extension) {
+                $ordered = $this->orderDifferences(
+                    $this->compared('test', $extension, $projectDirectory),
+                    $this->compared($environment, $extension, $projectDirectory),
+                );
+                foreach ($ordered as $key) {
+                    $found[] = \sprintf('%s ≠ test : %s.%s (ordre)', $environment, $extension, $key);
+                }
+            }
         }
         sort($found);
 
         return $found;
+    }
+
+    /**
+     * Les clés dont les entrées communes se suivent autrement d'un côté et de
+     * l'autre. L'ordre décide pour les firewalls — Symfony retient le premier
+     * dont le motif correspond —, et la comparaison entrée par entrée ne le
+     * voit pas. Seules les entrées communes comptent : une entrée en plus est
+     * déjà rapportée pour elle-même. Une liste (`access_control`) est déjà
+     * comparée index par index.
+     *
+     * @param array<array-key, mixed> $reference
+     * @param array<array-key, mixed> $other
+     *
+     * @return list<string> les clés, dans l'ordre de la référence
+     */
+    private function orderDifferences(array $reference, array $other): array
+    {
+        $found = [];
+        foreach ($reference as $key => $value) {
+            $otherValue = $other[$key] ?? null;
+            if (!\is_array($value) || !\is_array($otherValue) || array_is_list($value) || array_is_list($otherValue)) {
+                continue;
+            }
+            if (array_keys(array_intersect_key($value, $otherValue)) !== array_keys(array_intersect_key($otherValue, $value))) {
+                $found[] = (string) $key;
+            }
+        }
+
+        return $found;
+    }
+
+    /**
+     * Ce que l'environnement déclare pour une extension, hors exemptions
+     * d'ENVIRONMENT_SPECIFIC.
+     *
+     * @return array<array-key, mixed>
+     */
+    private function compared(string $environment, string $extension, ?string $projectDirectory): array
+    {
+        $declared = $this->declared($environment, $extension, $projectDirectory);
+        foreach (array_keys(self::ENVIRONMENT_SPECIFIC) as $path) {
+            [$exemptExtension, $keys] = $this->split($path);
+            if ($exemptExtension === $extension) {
+                $declared = self::without($declared, $keys);
+            }
+        }
+
+        return $declared;
     }
 
     /**
@@ -231,14 +311,7 @@ final class SecurityConfigEnvironmentParityTest extends TestCase
     {
         $entries = [];
         foreach (self::EXTENSIONS as $extension) {
-            $declared = $this->declared($environment, $extension, $projectDirectory);
-            foreach (array_keys(self::ENVIRONMENT_SPECIFIC) as $path) {
-                [$exemptExtension, $keys] = $this->split($path);
-                if ($exemptExtension === $extension) {
-                    $declared = self::without($declared, $keys);
-                }
-            }
-            foreach ($declared as $key => $value) {
+            foreach ($this->compared($environment, $extension, $projectDirectory) as $key => $value) {
                 if (!\is_array($value)) {
                     $entries[\sprintf('%s.%s', $extension, $key)] = $value;
 

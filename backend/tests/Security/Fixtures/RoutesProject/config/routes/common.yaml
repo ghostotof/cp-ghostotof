@@ -1,0 +1,4 @@
+# Fixture de RouteEnvironmentParityTest (issue #659) : un fichier sans bloc
+# d'environnement, qui ne ressort pas.
+fixture_other:
+    path: /fixture/other

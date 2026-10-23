@@ -4,11 +4,20 @@ declare(strict_types=1);
 
 namespace App\Tests\Security;
 
+use App\Tests\Security\Fixtures\RouteAttributes\EnvironmentRoutedController;
+use App\Tests\Support\DeclaredClasses;
 use App\Tests\Support\EnvironmentConfigKernel;
+use App\Tests\Support\EnvironmentRoutesKernel;
+use App\Tests\Support\RepositoryFiles;
 use PHPUnit\Framework\TestCase;
+use ReflectionAttribute;
+use ReflectionClass;
+use ReflectionMethod;
 use Symfony\Component\Routing\Alias;
+use Symfony\Component\Routing\Attribute\Route as RouteAttribute;
 use Symfony\Component\Routing\Route;
 use Symfony\Component\Routing\RouteCollection;
+use Symfony\Component\Yaml\Yaml;
 
 /**
  * ApiRouteExposureTest, RouterScopeTest et ItemRouteRequirementTest parcourent
@@ -18,7 +27,7 @@ use Symfony\Component\Routing\RouteCollection;
  * vue ; une route propre à `test` les rendrait verts sur un routeur que la
  * production n'a pas.
  *
- * Chaque environnement est donc démarré (EnvironmentConfigKernel::routes()) et
+ * Chaque environnement est donc démarré (EnvironmentRoutesKernel::routes()) et
  * sa collection comparée à celle de `test`, route par route et dans l'ordre —
  * le routeur retient la première qui correspond —, alias compris. Le tri par
  * environnement est celui du noyau lui-même : config/routes/<env>/,
@@ -26,14 +35,32 @@ use Symfony\Component\Routing\RouteCollection;
  * part. Une route propre à un environnement doit figurer dans
  * ENVIRONMENT_SPECIFIC, justifiée et son chemin figé.
  *
+ * Les formes elles-mêmes sont refusées aussi, à la lettre : un répertoire
+ * config/routes/<env>/, un bloc `when@<env>` ou un `->env()` dans un fichier
+ * de routes (sauf ENVIRONMENT_BLOCKS), un `#[Route(env: …)]` dans src/. Une
+ * telle forme qui redéclarerait des routes identiques serait sans effet sur
+ * la comparaison, mais elle invite la suivante à diverger.
+ *
  * Pas de garde sur les valeurs paramétrées, à la différence de
  * SecurityConfigEnvironmentParityTest : le routeur résout un `%paramètre%` au
  * chargement, la comparaison porte donc sur la valeur de chaque environnement,
  * et il refuse `%env()%` dans une route. Chaque environnement est lu hors
- * débogage (voir EnvironmentConfigKernel).
+ * débogage (voir EnvironmentRoutesKernel).
  */
 final class RouteEnvironmentParityTest extends TestCase
 {
+    /**
+     * « fichier de routes : when@<env> » => pourquoi le bloc est là, le
+     * fichier relatif à config/.
+     */
+    private const array ENVIRONMENT_BLOCKS = [
+        'routes/framework.yaml : when@dev' => 'Importe `_preview_error`, justifiée dans ENVIRONMENT_SPECIFIC.',
+    ];
+
+    private const string ROUTES_FIXTURE_CONFIG = __DIR__.'/Fixtures/RoutesProject/config';
+
+    private const string ROUTE_ATTRIBUTES_FIXTURE = __DIR__.'/Fixtures/RouteAttributes';
+
     /**
      * Environnement => nom de route => son chemin, figé, et pourquoi elle
      * n'existe que là. Le chemin figé empêche la justification de couvrir une
@@ -151,6 +178,133 @@ final class RouteEnvironmentParityTest extends TestCase
         self::assertSame([self::ROUTE_ORDER_DIFFERS], $this->differingRoutes($reference, $other));
     }
 
+    public function testNoRouteDirectoryIsSpecificToAnEnvironment(): void
+    {
+        self::assertSame([], $this->environmentDirectories(RepositoryFiles::backend('config')), 'Répertoire de routes propre à un environnement : déclarer ses routes pour tous.');
+    }
+
+    public function testNoRouteFileDeclaresAnUnjustifiedEnvironmentBlock(): void
+    {
+        self::assertSame(
+            [],
+            array_values(array_diff($this->environmentBlocks(RepositoryFiles::backend('config')), array_keys(self::ENVIRONMENT_BLOCKS))),
+            'Bloc d\'environnement dans un fichier de routes : déclarer ses routes pour tous, ou le justifier dans ENVIRONMENT_BLOCKS.',
+        );
+    }
+
+    public function testNoRouteAttributeIsRestrictedToEnvironments(): void
+    {
+        self::assertSame([], $this->environmentRouteAttributes(RepositoryFiles::backend('src')), '#[Route(env: …)] dans src/ : déclarer la route pour tous les environnements.');
+    }
+
+    public function testEveryJustifiedBlockStillExists(): void
+    {
+        self::assertSame(
+            [],
+            array_values(array_diff(array_keys(self::ENVIRONMENT_BLOCKS), $this->environmentBlocks(RepositoryFiles::backend('config')))),
+            'Bloc justifié dans ENVIRONMENT_BLOCKS mais absent : retirer l\'entrée.',
+        );
+    }
+
+    /**
+     * Chaque forme littérale, sur des fixtures : un répertoire, un bloc YAML
+     * dans le point d'entrée et dans un fichier importé, un bloc PHP au format
+     * tableau, un `->env()` au format closure, un attribut sur la classe et
+     * sur une méthode ; un fichier et une méthode communs ne ressortent pas.
+     */
+    public function testEveryLiteralFormIsFound(): void
+    {
+        self::assertSame(['routes/prod/'], $this->environmentDirectories(self::ROUTES_FIXTURE_CONFIG));
+        self::assertSame([
+            'routes.yaml : when@test',
+            'routes/array_form.php : when@dev',
+            'routes/blocks.yaml : when@prod',
+            'routes/closure_form.php : ->env()',
+        ], $this->environmentBlocks(self::ROUTES_FIXTURE_CONFIG));
+        self::assertSame([
+            EnvironmentRoutedController::class,
+            EnvironmentRoutedController::class.'::devOnly',
+        ], $this->environmentRouteAttributes(self::ROUTE_ATTRIBUTES_FIXTURE));
+    }
+
+    /**
+     * @return list<string> « routes/<env>/ » pour chaque environnement admis qui a son répertoire
+     */
+    private function environmentDirectories(string $configDirectory): array
+    {
+        return array_values(array_map(
+            static fn (string $environment): string => 'routes/'.$environment.'/',
+            array_filter(EnvironmentConfigKernel::allowedEnvironments(), static fn (string $environment): bool => is_dir($configDirectory.'/routes/'.$environment)),
+        ));
+    }
+
+    /**
+     * Les fichiers que le noyau charge comme routes — routes.{yaml,php} et
+     * routes/*.{yaml,php} — et, dans chacun, les blocs `when@<env>` (clés YAML
+     * de premier niveau, chaînes PHP) et les `->env()` d'une closure PHP.
+     *
+     * @return list<string> « fichier : when@<env> » ou « fichier : ->env() », triées
+     */
+    private function environmentBlocks(string $configDirectory): array
+    {
+        $files = array_values(array_filter(['routes.yaml', 'routes.php'], static fn (string $file): bool => is_file($configDirectory.'/'.$file)));
+        $paths = glob($configDirectory.'/routes/*');
+        foreach (\is_array($paths) ? $paths : [] as $path) {
+            if (is_file($path)) {
+                $files[] = 'routes/'.basename($path);
+            }
+        }
+
+        $found = [];
+        foreach ($files as $file) {
+            $content = RepositoryFiles::read($configDirectory.'/'.$file);
+            if (str_ends_with($file, '.yaml')) {
+                $parsed = Yaml::parse($content);
+                foreach (\is_array($parsed) ? array_keys($parsed) : [] as $key) {
+                    if (str_starts_with((string) $key, 'when@')) {
+                        $found[] = \sprintf('%s : %s', $file, $key);
+                    }
+                }
+            } elseif (str_ends_with($file, '.php')) {
+                preg_match_all('/when@\w+/', $content, $blocks);
+                foreach (array_unique($blocks[0]) as $block) {
+                    $found[] = \sprintf('%s : %s', $file, $block);
+                }
+                if (str_contains($content, '->env()')) {
+                    $found[] = \sprintf('%s : ->env()', $file);
+                }
+            }
+        }
+        sort($found);
+
+        return $found;
+    }
+
+    /**
+     * Les classes et méthodes du répertoire qui portent un `#[Route]` restreint
+     * à des environnements.
+     *
+     * @return list<string> « Classe » ou « Classe::méthode », triées
+     */
+    private function environmentRouteAttributes(string $directory): array
+    {
+        $found = [];
+        foreach (DeclaredClasses::classes($directory) as $class) {
+            $reflection = new ReflectionClass($class);
+            foreach ([$reflection, ...$reflection->getMethods()] as $target) {
+                foreach ($target->getAttributes(RouteAttribute::class, ReflectionAttribute::IS_INSTANCEOF) as $attribute) {
+                    if ([] !== $attribute->newInstance()->envs) {
+                        $found[] = $target instanceof ReflectionMethod ? $class.'::'.$target->getName() : $class;
+                    }
+                }
+            }
+        }
+        $found = array_values(array_unique($found));
+        sort($found);
+
+        return $found;
+    }
+
     /**
      * @return list<string> « env ≠ test : route » d'ENVIRONMENT_SPECIFIC
      */
@@ -247,6 +401,6 @@ final class RouteEnvironmentParityTest extends TestCase
 
     private function routes(string $environment): RouteCollection
     {
-        return self::$routes[$environment] ??= new EnvironmentConfigKernel($environment)->routes();
+        return self::$routes[$environment] ??= new EnvironmentRoutesKernel($environment)->routes();
     }
 }
