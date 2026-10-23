@@ -27,6 +27,10 @@ phase 1 parte en release seule ; puis au merge de clôture, qui archive la spec 
       (#675) — après la décision de #664, avant la sortie de la phase 1
 - [x] Suivi : neutralisation du corpus de l'assistant de parcours alignée sur celle du rôle (#667) —
       neutraliseur commun `TagWordNeutraliser`, sans nonce sur `<documents>` (décision du 2026-10-21)
+- [x] Suivi : neutralisation du rôle du prompt contournée — invisibles, crochets, borne avant NFKC (#662)
+- [x] Suivi : journaliser la révision sans session 2026-07-28 (#664)
+- [x] Suivi de l'audit de #675 : flux longs futurs, ligne d'appel mal attribuée, 4xx du routeur (#678)
+- [x] Suivi : la complétion de l'argument `locale` du prompt rend une liste vide (#693) — livré en v0.29.0
 
 ### Livraison de la phase 1
 
@@ -74,11 +78,30 @@ phase 1 parte en release seule ; puis au merge de clôture, qui archive la spec 
       serveur d'autorisation, consentement, métadonnées et leur Ingress, zone nginx `oauth` ; règle
       `.claude/rules/mcp-oauth.md`. Case cochée à la fusion dans la mère
 - [ ] Tâche 9 — Ouverture du corpus nominatif par la connexion MCP (#648) — bloquée par : #647
-- [ ] Tâche 10 — Durée de vie des jetons, rotation et purge (#649) — bloquée par : #647
-- [ ] Tâche 11 — « Mes connexions MCP » (#650) — bloquée par : #648
-- [ ] Tâche 12 — Enregistrement des clients par CIMD (#651) — bloquée par : #647
-- [ ] Tâche 13 — Backoffice MCP (#652) — bloquée par : #647
-- [ ] Tâche 14 — Livrer la phase 2 : préprod, page, registre (#653) — bloquée par : #648, #646
+      — reports de la tâche 8 : registre RGPD §8 (le fournisseur d'IA du client reçoit les jetons) ;
+      `bearer_methods_supported` annoncé avant l'authentificateur ; au point de jeton league lit
+      `client_id` dans `Authorization: Basic`, la révocation non
+- [ ] Tâche 10 — Durée de vie des jetons, rotation et purge (#649) — bloquée par : #647 — reports de
+      la tâche 8, **dont deux importants, à livrer avant la release de la phase 2** : (1) un nouvel
+      accord n'éteint pas l'accord précédent du même couple compte/client (avec #650) ; (2) point de
+      jeton hors transaction, league révoque le code en dernier (rejeu concurrent → deux paires) —
+      `revokeByHash` rendant le nombre de lignes. Aussi : `RevokedOnce` contre `McpConnection::revokedAt`,
+      course révocation/rafraîchissement en 500, refus OAuth non journalisés, `is*Revoked` lit la carte
+      d'identité Doctrine, deux horloges (league `time()` / `ClockInterface`)
+- [ ] Tâche 11 — « Mes connexions MCP » (#650) — bloquée par : #648 — reports de la tâche 8 :
+      connexions accumulées visibles et révocables ; révoquer la connexion, jamais les jetons un à un
+- [ ] Tâche 12 — Enregistrement des clients par CIMD (#651) — bloquée par : #647 — reports de la
+      tâche 8 : `client_id_metadata_document_supported: true` déjà annoncé ; domaine du client sur la page
+- [ ] Tâche 13 — Backoffice MCP (#652) — bloquée par : #647 — reports de la tâche 8 : audit de
+      l'enregistrement d'un client ; bornes de `register()` et des redirections (longueur, `parse_str`) ;
+      borne du `client_id` (255 à la commande, 512 en base) ; second `findOneByClientId()` du
+      consentement et course de suppression (FK en 500) ; regex de l'index violé dupliquée
+- [ ] Tâche 14 — Livrer la phase 2 : préprod, page, registre (#653) — bloquée par : #648, #646 —
+      reports de la tâche 8 : **Job k8s pour `app:mcp:client:register`** (jamais `kubectl exec`, sans
+      lui rien n'est testable en préprod) ; Basic Auth préprod encore sur `/api/oauth` et `/api/mcp` ;
+      `PrivacyPolicyPage.vue` à aligner sur le registre §3.4 ; CORS absent sur les deux documents ;
+      documents servis aussi en HTTP clair (pas de `ssl-redirect` sur l'objet dédié) ; 10 req/min par
+      pod sur `/token` face aux IP de sortie partagées de claude.ai et ChatGPT
 
 ### Clôture
 
@@ -89,3 +112,14 @@ phase 1 parte en release seule ; puis au merge de clôture, qui archive la spec 
 - Ressources MCP (#654) — bloqué par : #653
 - Palier de confiance depuis l'AI Assistant de PhpStorm, tickets JetBrains LLM-25012 et IJPL-226161
   (#655) — veille
+
+## Nés pendant la spec, hors de son périmètre (sur `develop`, pas sur la mère)
+
+- [x] Veille : format et longueur des chaînes d'endoflife.date (#658) — livré en v0.29.0
+- [x] Sécurité : aucune règle `access_control` ni route propre à un environnement (#659) — livré en v0.29.0
+- [x] Sécurité : multipart refusé au backend, `file_uploads` coupé (#686, suivi CVE-2026-109618) — livré en v0.29.0
+- [ ] Veille : borner le lien de documentation d'endoflife.date, hôte et longueur (#695) — suivi de #658, sévérité basse
+- [ ] Sécurité : aucun service de sécurité redéfini pour un seul environnement (#698) — suivi de #659,
+      sévérité nulle aujourd'hui, moyenne si le cas apparaissait
+- [ ] Dépendances : API Platform hors du mélange 4.3/4.4, puis évaluer la 5.0 (#701) — dépréciation
+      écrite en prod à chaque `POST /api/contact`
