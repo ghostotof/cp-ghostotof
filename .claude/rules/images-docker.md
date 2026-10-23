@@ -93,10 +93,13 @@ prod run the identical PHP engine:
   from `php://input` was never bounded by it (measured: 3 MB read under `1M`), nginx is its only bound. The empty
   `user_ini.filename` keeps a `.user.ini` from changing those `PHP_INI_PERDIR` settings (closed in production by
   the read-only root, open in dev where `public/` is mounted). **`application/x-www-form-urlencoded` stays parsed,
-  on purpose** (decided on 2026-10-22, review of #686): not the advisory's parser, and the token endpoint of
-  phase 2's OAuth 2.1 server (ADR 0006 D3) reads it from `$_POST` — hence no `enable_post_data_reading = Off`,
-  which would empty `$_POST` and close nothing `max_multipart_body_parts` does not; never add it back without
-  revisiting that endpoint. `max_input_vars` and `max_input_nesting_level` keep PHP's defaults: they also bound
+  on purpose** (decided on 2026-10-22, review of #686): not the advisory's parser, and phase 2's OAuth 2.1
+  token and revocation endpoints (ADR 0006 D3) receive it by standard. **No `enable_post_data_reading = Off`
+  either**, still by #686's decision, for one reason only since #647: it would close nothing
+  `max_multipart_body_parts` does not. The other reason first written here — the token endpoint reading
+  `$_POST` — no longer holds: since #647 both endpoints parse the **raw body** (`php://input`) themselves
+  (`FormEncodedRequest`, `.claude/rules/mcp-oauth.md`), which that directive leaves readable; adding it is a
+  decision of its own, not a break of those endpoints. `max_input_vars` and `max_input_nesting_level` keep PHP's defaults: they also bound
   `$_GET` and `$_COOKIE`. `FormBodyParsingDisabledTest` pins the values in both files, the two absent
   directives, that no other configuration file of the deployed images (exact name, `php_admin_value[…]` form
   included), nor the dev pool `www.dev.conf`, nor any manifest of `k8s/` names them (Adminer's own image

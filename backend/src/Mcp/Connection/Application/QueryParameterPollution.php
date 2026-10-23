@@ -7,8 +7,11 @@ namespace App\Mcp\Connection\Application;
 use League\OAuth2\Server\Exception\OAuthServerException;
 
 /**
- * La pollution de paramètres d'une requête d'autorisation (#647) : ce que PHP
- * lit d'une requête n'est pas ce qu'un autre analyseur en lit.
+ * La pollution de paramètres d'une requête OAuth (#647) : ce que PHP lit d'une
+ * requête n'est pas ce qu'un autre analyseur en lit. Elle guette la requête
+ * de la demande d'autorisation et le corps `application/x-www-form-urlencoded`
+ * des points de jeton et de révocation (FormEncodedRequest), que PHP analyse
+ * de la même façon (RFC 6749 §3.1 et §3.2).
  *
  * - **Répétition** : PHP garde la **dernière** occurrence (`client_id=a&client_id=b`
  *   → `b`), `URLSearchParams.get()` la **première**, comme bien des clients.
@@ -21,8 +24,9 @@ use League\OAuth2\Server\Exception\OAuthServerException;
  * rejouer, sous une autre. RFC 6749 §4.1.2.1 tient un paramètre répété pour
  * une demande malformée : ce sont des refus, jamais des corrections.
  *
- * La lecture se fait sur la requête **brute** (`QUERY_STRING`, que le pont
- * PSR-7 recopie dans l'URI), nom décodé comme PHP le décode (`+` → espace,
+ * La lecture se fait sur la chaîne **brute** — `QUERY_STRING`, que le pont
+ * PSR-7 recopie dans l'URI, ou le corps reçu tel quel —, nom décodé comme PHP
+ * le décode (`+` → espace,
  * `%xx`), puis réécrit comme PHP le réécrit. La réécriture est volontairement
  * un peu plus large que celle de PHP (tout espace, point ou `[` du nom quand
  * aucun `]` ne le referme) : un nom attendu atteint par excès est refusé, ce

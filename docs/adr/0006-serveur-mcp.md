@@ -6,8 +6,8 @@
 - Statut : **accepté** (2026-10-19), à mettre en œuvre — cadrage de l'issue #379, mise en œuvre par
   la spec 0007 (`.claude/specs/0007-mcp-server.md`), en deux phases (paliers anonyme et de base, puis
   connexion MCP) ; amendé le 2026-10-20 (D7 : la révision sans session est servie, #664), le
-  2026-10-21 (D7 : `subscriptions/listen` refusé, #675) et le 2026-10-22 (D3 : découverte OAuth et
-  autorisation différée, #646)
+  2026-10-21 (D7 : `subscriptions/listen` refusé, #675), le 2026-10-22 (D3 : découverte OAuth et
+  autorisation différée, #646) et le 2026-10-23 (D3 : `league/oauth2-server` sans son bundle, #647)
 - Date : 2026-10-19
 - Portée : `config/packages/mcp.yaml` (nouveau), `config/packages/security.yaml` (firewall dédié),
   `CsrfCookieRequestSubscriber` (une exclusion), `tests/Security/ApiRouteExposureTest.php`
@@ -154,6 +154,40 @@ recherche de la tâche 7 (`docs/research/2026-10-22-mcp-decouverte-oauth.md` et
 - **À vérifier en préprod** (tâche 14) : les URL réellement demandées par claude.ai, Claude Code et
   ChatGPT, la carte de connexion de chacun, et ce que ChatGPT fait d'un 401 — s'il le traite, la branche
   `openai/` peut disparaître.
+
+*Amendé le 2026-10-23 (#647, décision de l'auteur).* Le serveur d'autorisation repose sur
+**`league/oauth2-server` 9.4.1 seul, sans `league/oauth2-server-bundle`**, pinné en version exacte
+comme le SDK (D7). Ce que le bundle aurait apporté ne servait pas, ou desservait :
+
+- **une paire de clés RSA imposée**, pour signer des jetons d'accès JWT que ce serveur n'émet pas :
+  un secret de plus à générer, publier et faire tourner, pour rien ;
+- **un contrôleur d'autorisation à session**, qui garde la demande côté serveur entre l'autorisation
+  et le consentement : l'API n'a aucune session (ADR 0005), et le consentement est une page du
+  frontend qui renvoie la demande, que le serveur juge de nouveau ;
+- **une persistance Doctrine qui stocke les identifiants en clair** et ignore la connexion MCP, à
+  laquelle chaque code et chaque jeton doit se rattacher ;
+- **son authentificateur**, que D4 écarte de toute façon (un authentificateur à nous, qui relit la
+  connexion) ; et la révocation par la personne, absente des deux.
+
+Ce qui en découle, et qui vaut décision :
+
+- **Jetons d'accès opaques** : la chaîne remise au client est un identifiant aléatoire, stocké en
+  base sous son empreinte SHA-256 seulement, comme les codes et les jetons de rafraîchissement.
+  L'authentificateur de `/api/mcp` le retrouvera par cette empreinte et relira la connexion en une
+  requête (D4, tâche 9 de la spec) ; aucune clé de signature n'existe.
+- **La clé qui chiffre les codes et les jetons de rafraîchissement** (le format de league) est
+  **dérivée d'`APP_SECRET`** sous son propre contexte (`cp-ghostotof/oauth-encryption/v1`), jamais le
+  secret brut ni une clé à part. Une rotation d'`APP_SECRET`, ou un changement de ce contexte, rend
+  illisibles les codes en vol et les jetons de rafraîchissement remis : chaque client MCP se
+  reconnecte. Une rotation se décide et s'annonce.
+- **L'« utilisateur » de league est la connexion MCP**, jamais le compte : un code ou un jeton meurt
+  avec sa connexion, et le compte n'apparaît dans aucune charge remise au client.
+- **Les URL publiques dérivent d'`APP_PUBLIC_API_BASE_URL`**, vide hors dev : vide, elle retombe sur
+  `APP_FRONTEND_BASE_URL`, juste en préprod et en prod où l'API est servie sur l'origine du frontend ;
+  seul le dev l'en sépare (nginx et Vite sur deux ports). La page de consentement suit toujours le
+  frontend.
+
+Le détail et les tests qui gardent ces choix sont dans `.claude/rules/mcp-oauth.md`.
 
 ### D4 — L'identité vient du firewall Symfony, vérifiée en base à chaque requête
 

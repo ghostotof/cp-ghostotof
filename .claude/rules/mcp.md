@@ -20,6 +20,7 @@ paths:
 | this file | the bundle and its pins, route-backed tools, the catalogue, `BackedByRoute`, tools, the `mcp` firewall, capabilities, host check, sessions, `GET /api/mcp`, tests, inbound refusals, no stream, rate per IP |
 | `mcp-prompt-d8.md` | the prompt `present_for_role` (`PromptRole`, the nonce, the cleaning), the D8 guard (`AuthorNeverNamedTest`, the secret `MCP_D8_AUTHOR_NAME`) |
 | `mcp-journaux.md` | the SDK's `mcp` channel capped and redacted, the call log `mcp_usage` (`McpCallLog`, `ModernExchange`, `TruncatedIp`, the fallback line) |
+| `mcp-oauth.md` | phase 2's authorization server, `Mcp/Connection` (#647): league without its bundle, opaque hashed tokens, the derived encryption key, PKCE `S256`, `resource`, redirect matching, parameter pollution, the `oauth` firewall, consent, metadata outside `/api` and their Ingress, the consent page, accepted limits |
 
 - **What it is.** `symfony/mcp-bundle` serves one server, `portfolio`, on `/api/mcp` (Streamable HTTP),
   configured in `config/packages/mcp.yaml`. **The path is written once**, `Infrastructure/Http/McpEndpoint::PATH`

@@ -28,11 +28,11 @@ paths:
 
 | Rule | Bullets |
 |---|---|
-| this file | `tests/Support/KubernetesManifests`, `watch-refresh-cronjob.yaml` in `resources:`, the two ConfigMaps' hashing, Xdebug, ServiceAccount tokens and Pod Security Admission, Postgres/RabbitMQ state on a PVC |
+| this file | `tests/Support/KubernetesManifests`, `watch-refresh-cronjob.yaml` in `resources:`, the OAuth metadata Ingress, the two ConfigMaps' hashing, Xdebug, ServiceAccount tokens and Pod Security Admission, Postgres/RabbitMQ state on a PVC |
 | `deploiement-pipeline.md` | migrations as a Job, what « never `kubectl exec` » covers (#520), the migration before the rollout, one rule for every Job's deadline, ExternalSecrets synced first, `smoke-test-preprod`'s message probe, deploy waits failing early, `DEPLOY_MAINTENANCE_WINDOW` |
 | `deploiement-postgres.md` | the two PostgreSQL roles (#575), the bootstrap superuser reachable from the pod only (#593) |
 | `deploiement-etat-hors-pod.md` | no application state on the pod's filesystem (ADR 0005): cache pools, locks, rate limiters, `lock_timeout` and `ConsoleLockWaitBoundTest` |
-| `deploiement-nginx.md` | the eight rate-limit zones (`mcp`, `mcpsession` and the MCP body bound included), `/api/assistant/`'s `fastcgi_pass`, nginx 429s as problem+json, multipart bodies refused in 415 (#686), `real_ip`, `add_header` inheritance, `security.txt` |
+| `deploiement-nginx.md` | the nine rate-limit zones (`mcp`, `mcpsession` and the MCP body bound included, `oauth` since #647), `/api/assistant/`'s `fastcgi_pass`, nginx 429s as problem+json, multipart bodies refused in 415 (#686), `real_ip`, `add_header` inheritance, `security.txt` |
 
 - **A PHPUnit test reads a manifest through `tests/Support/KubernetesManifests`, never by hand**
   (issue #541). `KubernetesManifests::base()` (`k8s/base`) or `::overlay('prod')` (the overlay's
@@ -67,6 +67,24 @@ paths:
   to third parties**; since ADR 0004 the `backend` Deployment does too (`api.anthropic.com`, from the
   backoffice only). The namespace's NetworkPolicies restrict ingress only, so nothing extra is needed today —
   but adding an egress policy would break this Job and the translation assistant first.
+- **A second Ingress object, `k8s/base/ingress-oauth-metadata.yaml`, and why it is apart** (#647, ADR 0006
+  D3). The main Ingress sends `/api` to `backend` and everything else to `frontend`, whose nginx answers 404
+  under `/.well-known/`; the two OAuth metadata documents live **outside `/api`** by standard
+  (`/.well-known/oauth-protected-resource/api/mcp`, `/.well-known/oauth-authorization-server/api/oauth`), so
+  this object routes those two paths, `pathType: Exact` (an `Exact` beats the main object's `/` prefix,
+  nothing else under `/.well-known/` leaves the frontend), to `backend:80`. **Apart, without any
+  annotation**: ingress-nginx applies `auth-*` annotations to every path of one object, and the preprod
+  overlay puts its Basic Auth on the main one — two public, static documents that an MCP client must read
+  without a Basic Auth (it cannot answer one), the reasoning of preprod's `ingress-healthz.yaml`. **No `tls`
+  block nor cert-manager annotation**: ingress-nginx merges the objects of one host into one HTTPS server,
+  covered by the main Ingress's certificate; a second `tls` would make two `Certificate`s manage one Secret.
+  The host is a placeholder each overlay patches to the main Ingress's, and nothing else.
+  `OAuthMetadataIngressTest` (`backend/tests/Mcp/Connection/Infrastructure/Kubernetes/`) pins the paths
+  against `OAuthEndpoints` and the router, no annotation nor certificate, and no overlay patch beyond the
+  host. Preprod's Basic Auth thus no longer covers **all** of the Ingress: `/healthz` and these two
+  documents escape it (`k8s/README.md` §2bis); `/api/oauth/*` and `/api/mcp` stay behind it until phase 2's
+  delivery (spec 0007, task 14). `tools/audit-prod.sh` §6ter reads both documents **without** it. Details:
+  `.claude/rules/mcp-oauth.md`.
 - **The three backend CronJobs copy their shared settings, on purpose** (#673, decided 2026-10-21): `cache-prune`,
   `messenger-purge` and `watch-refresh` repeat concurrency, histories, `backoffLimit`, the whole pod spec but its
   container (ServiceAccount token, `securityContext`, `seed-cache-system`, volumes) and the container but its name,

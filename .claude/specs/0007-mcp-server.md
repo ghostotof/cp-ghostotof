@@ -325,7 +325,8 @@ décision du 2026-10-19, voir « Langue invalide »).
 ### Connexion MCP et serveur d'autorisation (phase 2)
 
 - **Serveur d'autorisation interne** sur `league/oauth2-server-bundle` v2 (version exacte vérifiée au
-  ticket), complété : métadonnées de serveur d'autorisation (RFC 8414), métadonnées de ressource
+  ticket) — *tranché le 2026-10-23 (#647, ADR 0006 D3 amendé)* : `league/oauth2-server` 9.4.1 **seul,
+  sans le bundle**, jetons d'accès opaques, clé de chiffrement dérivée d'`APP_SECRET` —, complété : métadonnées de serveur d'autorisation (RFC 8414), métadonnées de ressource
   protégée (RFC 9728), audience (RFC 8707, le paramètre `resource` doit désigner l'URL canonique de
   `/api/mcp`, sinon refus), **PKCE S256 obligatoire**, un seul scope `nominative:read`, clients publics.
   *Tranché le 2026-10-22 (#646, ADR 0006 D3 amendé).* Émetteur `https://<site>/api/oauth`, points
@@ -338,7 +339,8 @@ décision du 2026-10-19, voir « Langue invalide »).
   `code_challenge_methods_supported: ["S256"]`, `token_endpoint_auth_methods_supported: ["none"]`,
   `client_id_metadata_document_supported: true`, `authorization_response_iss_parameter_supported: true`,
   `scopes_supported`, **sans** `registration_endpoint`). Leur contenu dérive d'`APP_FRONTEND_BASE_URL`,
-  comme `allowed_hosts`. Un objet Ingress dédié, dans `k8s/base/`, les envoie au backend en chemins `Exact`.
+  comme `allowed_hosts` (*précisé le 2026-10-23, #647* : d'`APP_PUBLIC_API_BASE_URL`, vide hors dev, qui
+  retombe sur elle). Un objet Ingress dédié, dans `k8s/base/`, les envoie au backend en chemins `Exact`.
   Aucun document OIDC. La réponse d'autorisation porte `iss` (RFC 9207). Une redirection de boucle locale
   se compare **sans son port** (RFC 8252 §7.3) : Claude Code enregistre `http://localhost/callback` et
   `http://127.0.0.1/callback`, et revient sur un port aléatoire.
@@ -593,3 +595,11 @@ sur les chemins MCP et OAuth qu'à la tâche 14.
   sections de phase 2 et questions ouvertes mises à jour ; tâches 8, 9, 12 et 14 ajustées dans leurs
   issues. Audit de sensibilité des deux notes de recherche : aucun domaine de production (`<site>`),
   aucun chemin `/home/…`, aucun nom ; les plages d'IP citées sont celles que publient les fournisseurs.
+- **2026-10-23 — tâche 8 (#647), décision de l'auteur** : `league/oauth2-server` 9.4.1 **seul**, sans
+  `league/oauth2-server-bundle` (paire de clés RSA imposée, contrôleur d'autorisation à session,
+  persistance en clair et ignorant la connexion, authentificateur écarté par D4). Jetons d'accès
+  opaques en empreinte, clé de chiffrement dérivée d'`APP_SECRET`, la connexion MCP comme « utilisateur »
+  de league, `APP_PUBLIC_API_BASE_URL` vide hors dev. Amendement du même jour à l'ADR 0006 D3 ; règle
+  d'implémentation : `.claude/rules/mcp-oauth.md`. Les reports nés de l'implémentation (pollution de
+  paramètres refusée, redirection du consentement reconstruite, formulaire seul aux points de jeton et
+  de révocation, limites acceptées) y sont écrits.
