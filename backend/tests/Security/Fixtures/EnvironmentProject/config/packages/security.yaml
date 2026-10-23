@@ -1,0 +1,37 @@
+# Fixture de SecurityConfigEnvironmentParityTest (issue #659). Chaque forme de
+# déclaration propre à un environnement porte sur sa propre entrée, pour se
+# reconnaître dans le diagnostic.
+security:
+    # Communs à tous les environnements : aucune différence.
+    providers:
+        fixture_users:
+            id: fixture.user_provider
+    firewalls:
+        api:
+            pattern: ^/api
+            stateless: true
+            user_checker: security.user_checker
+    role_hierarchy:
+        ROLE_TRUSTED: [ROLE_USER]
+    password_hashers:
+        App\Security\User\Domain\Entity\CpgUser:
+            algorithm: bcrypt
+            cost: 13
+
+when@test:
+    security:
+        # Exemptée (PROPER_TO_ENVIRONMENT) : aucune différence rapportée.
+        password_hashers:
+            App\Security\User\Domain\Entity\CpgUser:
+                algorithm: bcrypt
+                cost: 4
+        # Vue du seul conteneur de test : le faux vert. `access_control` ne se
+        # fusionne pas d'un fragment à l'autre (cannotBeOverwritten) ; il ne
+        # peut différer que déclaré environnement par environnement, comme ici.
+        access_control:
+            - { path: ^/api/cv(/|$), roles: ROLE_TRUSTED }
+
+when@prod:
+    security:
+        role_hierarchy:
+            ROLE_USER: [ROLE_TRUSTED]

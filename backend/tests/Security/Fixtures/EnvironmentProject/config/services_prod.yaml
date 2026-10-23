@@ -1,0 +1,7 @@
+# Fixture de SecurityConfigEnvironmentParityTest (issue #659) : services
+# propres à `prod`. La première règle est celle de test ; la seconde n'existe
+# qu'ici, et sa valeur est paramétrée.
+security:
+    access_control:
+        - { path: ^/api/cv(/|$), roles: ROLE_TRUSTED }
+        - { path: ^/api/me(/|$), roles: '%env(FIXTURE_ROLE)%' }

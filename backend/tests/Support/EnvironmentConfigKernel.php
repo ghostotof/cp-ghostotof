@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Support;
 
 use App\Kernel;
+use Closure;
 use LogicException;
 use PHPUnit\Framework\Assert;
 use ReflectionMethod;
@@ -75,19 +76,51 @@ final class EnvironmentConfigKernel extends Kernel
      */
     public function declaredMapping(string $extension, string $key): array
     {
+        $value = $this->mergedFragments(
+            $extension,
+            static fn (array $fragment): array => array_intersect_key($fragment, [$key => true, str_replace('_', '-', $key) => true]),
+        )[$key] ?? [];
+
+        return \is_array($value) ? $value : [];
+    }
+
+    /**
+     * Toute la configuration d'une extension dans cet environnement, lue
+     * comme {@see self::declaredMapping()} lit une clé : chaque fragment
+     * normalisé, puis fusionné dans l'ordre de chargement, sans validation ni
+     * défauts (issue #659, la section `security` comparée d'un environnement
+     * à l'autre).
+     *
+     * @return array<array-key, mixed>
+     */
+    public function declaredConfiguration(string $extension): array
+    {
+        return $this->mergedFragments($extension, static fn (array $fragment): array => $fragment);
+    }
+
+    /**
+     * La fusion commune aux deux lectures : `$select` retient, dans chaque
+     * fragment, ce qui doit l'être ; un fragment qui n'en garde rien est
+     * sauté.
+     *
+     * @param Closure(array<array-key, mixed>): array<array-key, mixed> $select
+     *
+     * @return array<array-key, mixed>
+     */
+    private function mergedFragments(string $extension, Closure $select): array
+    {
         $builder = $this->builder();
         $tree = $this->configurationTree($builder, $extension);
 
         $merged = [];
         foreach ($builder->getExtensionConfig($extension) as $fragment) {
-            $declared = array_intersect_key($fragment, [$key => true, str_replace('_', '-', $key) => true]);
+            $declared = $select($fragment);
             if ([] !== $declared) {
                 $merged = $tree->merge($merged, $tree->normalize($declared));
             }
         }
-        $value = \is_array($merged) ? ($merged[$key] ?? []) : [];
 
-        return \is_array($value) ? $value : [];
+        return \is_array($merged) ? $merged : [];
     }
 
     /**
