@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Mcp\Connection\Domain\Entity;
 
+use App\Mcp\Connection\Domain\Exception\InvalidRedirectUriException;
+use App\Mcp\Connection\Domain\ValueObject\RedirectUri;
 use App\Mcp\Connection\Infrastructure\Doctrine\McpClientRepository;
 use DateTimeImmutable;
 use Doctrine\DBAL\Types\Types;
@@ -21,7 +23,8 @@ use Symfony\Component\Uid\Uuid;
  * comme tel, c'est le domaine de l'identifiant qui fait foi. Les redirections
  * sont stockées telles qu'enregistrées, en liste JSON ; leur forme (https
  * exacte, ou boucle locale comparée sans port) est jugée par le Value Object
- * RedirectUri (#647), pas ici.
+ * {@see RedirectUri} (#647), pas ici : `app:mcp:client:register` les y fait
+ * passer avant l'enregistrement, et allowsRedirect() les y relit.
  */
 #[ORM\Entity(repositoryClass: McpClientRepository::class)]
 #[ORM\Table(name: 'mcp_client')]
@@ -105,5 +108,30 @@ class McpClient
     public function registeredAt(): DateTimeImmutable
     {
         return $this->registeredAt;
+    }
+
+    /**
+     * Vrai si la redirection demandée désigne l'une des redirections
+     * enregistrées, selon la règle de RedirectUri::matches().
+     *
+     * Une valeur enregistrée que RedirectUri ne lit plus (écrite à la main en
+     * base, ou avant une règle plus stricte) n'autorise rien, sans exception :
+     * le point d'autorisation doit répondre par un refus, jamais par un 500.
+     */
+    public function allowsRedirect(string $requested): bool
+    {
+        foreach ($this->redirectUris as $registered) {
+            try {
+                $redirectUri = RedirectUri::fromString($registered);
+            } catch (InvalidRedirectUriException) {
+                continue;
+            }
+
+            if ($redirectUri->matches($requested)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }
