@@ -56,7 +56,9 @@ paths:
   the template, which ignored a `routePrefix` and failed open; an operation with no route is refused
   (`UnroutedOperationException`). The read runs on a synthetic request (`127.0.0.1`, `localhost`, GET), so
   `AccessMapStaysPathOnlyTest` refuses any `access_control` rule conditioned on anything but its path (`ips`,
-  `host`, `port`, `methods`, `allow_if`). The provider is called with no request nor token:
+  `host`, `port`, `methods`, `allow_if`). Both guards read `test`'s container; that prod declares the same map
+  and routes is `SecurityConfigEnvironmentParityTest`'s and `RouteEnvironmentParityTest`'s job (issue #659,
+  `.claude/rules/backoffice-api.md`, « Authorization »). The provider is called with no request nor token:
   `McpExposureSymmetryTest` refuses a served provider depending on `RequestStack`, `Security`, the token
   storage or the authorization checker. Not covered, accepted: a property guarded by
   `#[ApiProperty(security: …)]` would be omitted (no token), an inequality with the route, never a leak — none

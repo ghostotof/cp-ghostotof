@@ -1,0 +1,8 @@
+# Fixture de RouteEnvironmentParityTest (issue #659) : le point d'entrée des
+# routes, un bloc propre à `test` — le faux vert.
+fixture_common:
+    path: /fixture/common
+
+when@test:
+    fixture_test_only:
+        path: /fixture/test-only

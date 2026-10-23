@@ -1,0 +1,27 @@
+# Fixture de SecurityConfigEnvironmentParityTest (issue #659) : la
+# configuration de l'authentificateur `jwt`, comparée avec `security`.
+lexik_jwt_authentication:
+    # Paramétrée par construction (PARAMETERIZED_BY_DESIGN) : trouvée par la
+    # garde, que le test du projet réel tolère pour cette seule entrée.
+    pass_phrase: '%env(FIXTURE_PASSPHRASE)%'
+    token_extractors:
+        cookie:
+            enabled: true
+            name: BEARER
+    set_cookies:
+        BEARER:
+            secure: false
+
+when@prod:
+    lexik_jwt_authentication:
+        set_cookies:
+            BEARER:
+                # Exemptée (ENVIRONMENT_SPECIFIC) : aucune différence rapportée.
+                secure: true
+
+when@test:
+    lexik_jwt_authentication:
+        # Le jeton lu dans l'en-tête en test seulement : le faux vert.
+        token_extractors:
+            authorization_header:
+                enabled: true

@@ -1,0 +1,5 @@
+# Fixture de SecurityConfigEnvironmentParityTest (issue #659) : répertoire
+# propre à `dev`, une règle au rôle relâché.
+security:
+    access_control:
+        - { path: ^/api/cv(/|$), roles: PUBLIC_ACCESS }
