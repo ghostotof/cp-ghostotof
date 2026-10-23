@@ -97,7 +97,7 @@ Ailleurs : `backend/config/packages/security.yaml`, `backend/config/services.yam
 
 ---
 
-### Tâche 1 : dépendance, modèle et migration
+### Task 1 : dépendance, modèle et migration
 
 **Files:**
 - Modify: `backend/composer.json` (+ lock) — `"league/oauth2-server": "9.4.1"`, `"symfony/psr-http-message-bridge": "8.1.*"` (usage direct)
@@ -121,7 +121,7 @@ Ailleurs : `backend/config/packages/security.yaml`, `backend/config/services.yam
 - [ ] **Step 4 : vérifier** — `make back-test` vert (dont `DatabaseOwnerSettingsVerificationTest`, `TimestampColumnsCarryTheirOffsetTest`).
 - [ ] **Step 5 : commit** `feat(mcp): modèle de la connexion MCP et de ses jetons (#647)`.
 
-### Tâche 2 : redirection enregistrée et commande `app:mcp:client:register`
+### Task 2 : redirection enregistrée et commande `app:mcp:client:register`
 
 **Files:**
 - Create: `backend/src/Mcp/Connection/Domain/ValueObject/RedirectUri.php`, `Domain/Exception/InvalidRedirectUri.php`, `Domain/Exception/McpClientAlreadyRegistered.php`
@@ -143,7 +143,7 @@ Ailleurs : `backend/config/packages/security.yaml`, `backend/config/services.yam
 - [ ] **Step 4 : vérifier** — tests verts.
 - [ ] **Step 5 : commit** `feat(mcp): pré-enregistrer un client MCP en ligne de commande (#647)`.
 
-### Tâche 3 : adaptateurs league et serveur d'autorisation
+### Task 3 : adaptateurs league et serveur d'autorisation
 
 **Files:**
 - Create: `backend/src/Mcp/Connection/Infrastructure/League/` — `OAuthClient.php` (`ClientEntityInterface`), `ConnectionAsUser.php` (`UserEntityInterface`), `NominativeReadScope.php` (`ScopeEntityInterface`), `OpaqueAccessToken.php` (`AccessTokenEntityInterface`), `RefreshToken.php`, `AuthCode.php`, `ClientRepository.php`, `ScopeRepository.php`, `AccessTokenRepository.php`, `RefreshTokenRepository.php`, `AuthCodeRepository.php`, `LoopbackAwareAuthCodeGrant.php`, `NoSigningKey.php` (`CryptKeyInterface`), `AccessTokensAreNotSigned.php`, `OAuthEncryptionKey.php`, `AuthorizationServerFactory.php`
@@ -169,7 +169,7 @@ Ailleurs : `backend/config/packages/security.yaml`, `backend/config/services.yam
 - [ ] **Step 4 : vérifier** — tests verts, `ApplicationSecretUsesTest` et `SecretParametersTest` verts.
 - [ ] **Step 5 : commit** `feat(mcp): serveur d'autorisation league branché sur la connexion MCP (#647)`.
 
-### Tâche 4 : documents de métadonnées hors `/api`
+### Task 4 : documents de métadonnées hors `/api`
 
 **Files:**
 - Create: `Application/OAuthServerMetadataInterface.php` + `OAuthServerMetadata.php`, `Presentation/Controller/ProtectedResourceMetadataController.php`, `Presentation/Controller/AuthorizationServerMetadataController.php`
@@ -189,7 +189,7 @@ Ailleurs : `backend/config/packages/security.yaml`, `backend/config/services.yam
 - [ ] **Step 4 : vérifier** — `RouterScopeTest`, `AccessControlAnchoringTest`, `SecurityConfigEnvironmentParityTest`, `RouteEnvironmentParityTest` verts.
 - [ ] **Step 5 : commit** `feat(mcp): métadonnées OAuth aux URL canoniques (#647)`.
 
-### Tâche 5 : point d'autorisation
+### Task 5 : point d'autorisation
 
 **Files:**
 - Create: `Application/AuthorizationRequestValidatorInterface.php` + `AuthorizationRequestValidator.php`, `Application/AuthorizationRequestSummary.php`, `Application/IssParameter.php`, `Presentation/Controller/AuthorizeController.php`
@@ -210,7 +210,7 @@ Ailleurs : `backend/config/packages/security.yaml`, `backend/config/services.yam
 - [ ] **Step 4 : vérifier** — `ApiRouteExposureTest`, `McpExposureSymmetryTest` verts.
 - [ ] **Step 5 : commit** `feat(mcp): point d'autorisation OAuth, PKCE S256 et audience exigés (#647)`.
 
-### Tâche 6 : consentement et audit « connexion MCP accordée »
+### Task 6 : consentement et audit « connexion MCP accordée »
 
 **Files:**
 - Create: `Application/ConsentServiceInterface.php` + `ConsentService.php`, `Application/ConsentDecision.php` (DTO), `Domain/Exception/AuthorizationRequestRejected.php` (`ProblemExceptionInterface`, 400, `use HasProblemType`), `Presentation/Controller/ConsentController.php`
@@ -234,7 +234,7 @@ Ailleurs : `backend/config/packages/security.yaml`, `backend/config/services.yam
 - [ ] **Step 4 : vérifier** — `ApiRouteExposureTest` (invariant 6 : 403 au jeton de base), `ExceptionLogLevelCoverageTest`, `ProblemDetailStaysStaticTest`, `SecurityAuditLoggerTest` verts.
 - [ ] **Step 5 : commit** `feat(mcp): consentement à une connexion MCP, palier de confiance exigé (#647)`.
 
-### Tâche 7 : jeton et révocation — parcours complet
+### Task 7 : jeton et révocation — parcours complet
 
 **Files:**
 - Create: `Application/TokenEndpointInterface.php` + impl., `Application/RevocationEndpointInterface.php` + impl., `Infrastructure/League/RefreshTokenPayloadReader.php` (`CryptTrait`), `Presentation/Controller/TokenController.php`, `Presentation/Controller/RevocationController.php`
@@ -257,7 +257,7 @@ Ailleurs : `backend/config/packages/security.yaml`, `backend/config/services.yam
 - [ ] **Step 4 : vérifier** — suite complète `make back-test` verte, `make back-quality` vert.
 - [ ] **Step 5 : commit** `feat(mcp): points de jeton et de révocation OAuth (#647)`.
 
-### Tâche 8 : zone nginx `oauth`
+### Task 8 : zone nginx `oauth`
 
 **Files:**
 - Modify: `docker/nginx/default.conf` et `k8s/base/backend-nginx.conf` (miroirs) — `limit_req_zone $binary_remote_addr zone=oauth:1m rate=10r/m;` au niveau `http` (identique dans les deux), `location ^~ /api/oauth/ { limit_req zone=oauth burst=10 nodelay; try_files $uri /index.php$is_args$args; }`
@@ -268,7 +268,7 @@ Ailleurs : `backend/config/packages/security.yaml`, `backend/config/services.yam
 - [ ] **Step 3 : vérifier** — `make back-nginx-rate-limits` vert (les deux confs, 429 problem+json au-delà de la rafale) ; `docker compose restart web` puis `curl -s -o /dev/null -w '%{http_code}' localhost:8080/.well-known/oauth-authorization-server/api/oauth` → 200.
 - [ ] **Step 4 : commit** `feat(nginx): zone oauth sur les points OAuth publics (#647)`.
 
-### Tâche 9 : Ingress dédié et 404 du frontend sous `/.well-known/`
+### Task 9 : Ingress dédié et 404 du frontend sous `/.well-known/`
 
 **Files:**
 - Create: `k8s/base/ingress-oauth-metadata.yaml` — `Ingress` `cp-ghostotof-oauth-metadata`, `host: PLACEHOLDER`, deux chemins `pathType: Exact` vers `backend:80`, **sans** annotation `auth-*` ni `cert-manager`, sans `tls` (motif de `ingress-healthz.yaml`, en-tête qui dit pourquoi)
@@ -284,7 +284,7 @@ Ailleurs : `backend/config/packages/security.yaml`, `backend/config/services.yam
 - [ ] **Step 3 : vérifier** — test vert ; `kubectl kustomize k8s/overlays/preprod | grep -B3 -A20 'cp-ghostotof-oauth-metadata'` puis la même chose en prod : hôte de l'environnement, deux chemins `Exact`, aucune annotation d'auth ; `make front-image-headers` vert ; `bash -n tools/audit-prod.sh` et `make tools-tests` (shellcheck) verts.
 - [ ] **Step 4 : commit** `feat(k8s): Ingress dédié aux métadonnées OAuth, 404 du frontend vérifié (#647)`.
 
-### Tâche 10 : page de consentement (frontend)
+### Task 10 : page de consentement (frontend)
 
 **Files:**
 - Create: `frontend/src/domain/mcp/entities/ConsentRequest.ts`, `frontend/src/domain/mcp/repositories/OAuthConsentRepository.ts`, `frontend/src/infrastructure/mcp/HttpOAuthConsentRepository.ts`, `frontend/src/application/mcp/useOAuthConsent.ts`, `frontend/src/presentation/pages/OAuthConsentPage.vue`
@@ -304,7 +304,7 @@ Ailleurs : `backend/config/packages/security.yaml`, `backend/config/services.yam
 - [ ] **Step 4 : vérifier** — `make front-test`, `make front-lint`, `make front-build` verts.
 - [ ] **Step 5 : commit** `feat(front): page de consentement à une connexion MCP (#647)`.
 
-### Tâche 11 : documentation et décision écrite
+### Task 11 : documentation et décision écrite
 
 **Files:**
 - Modify: `docs/adr/0006-serveur-mcp.md` — amendement daté du 2026-10-23 sous D3 : `league/oauth2-server` 9.4.1 **sans le bundle** (paire de clés imposée, contrôleur d'autorisation à session, persistance en clair, authentificateur écarté par D4), jetons d'accès opaques, clé de chiffrement dérivée d'`APP_SECRET` (sa rotation invalide codes et jetons de rafraîchissement en cours), « la personne de league est la connexion » ; et `APP_PUBLIC_API_BASE_URL`, vide hors dev.
@@ -317,7 +317,7 @@ Ailleurs : `backend/config/packages/security.yaml`, `backend/config/services.yam
 - [ ] **Step 1** — écrire ; `make tools-tests` (`check-claude-rules.sh` : `paths:` qui touchent un fichier suivi, < 50 000 octets).
 - [ ] **Step 2 : commit** `docs(mcp): serveur d'autorisation sans le bundle, règles et registre (#647)`.
 
-### Tâche 12 : vérification de bout en bout
+### Task 12 : vérification de bout en bout
 
 - [ ] **Step 1** — `make back-quality`, `make back-test`, `make front-test`, `make front-lint`, `make front-build`, `make back-nginx-rate-limits`, `make front-image-headers` : tous verts, sorties lues.
 - [ ] **Step 2 : rejeu du laboratoire contre la stack de dev** (`docs/research/2026-10-22-mcp-oauth-labo/README.md`, adapté) — dans un dossier vide hors du dépôt :
