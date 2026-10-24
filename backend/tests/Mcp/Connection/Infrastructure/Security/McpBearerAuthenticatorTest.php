@@ -149,6 +149,20 @@ final class McpBearerAuthenticatorTest extends WebTestCase
     }
 
     /**
+     * Le scope stocké sur la connexion est relu à chaque requête : réécrit en
+     * base sans `nominative:read`, la connexion n'ouvre plus rien, et le
+     * client reçoit le même 401 `invalid_token` que pour toute autre cause.
+     */
+    public function testAConnectionWithoutTheNominativeReadScopeIsRefused(): void
+    {
+        $held = $this->heldAndServedOnce();
+
+        $this->alterHeldConnection($held, "scope = 'profile'");
+
+        $this->assertNextCallRefusedBecause($held, BearerRefusal::InsufficientScope);
+    }
+
+    /**
      * Le report de la tâche 8 : league ne regarde pas l'échéance d'un jeton
      * opaque, c'est l'authentificateur qui la juge.
      */
@@ -219,6 +233,36 @@ final class McpBearerAuthenticatorTest extends WebTestCase
         $sessionId = $this->initializeMcpSession($this->client, $basic);
 
         $this->callContactInfo($sessionId, $basic);
+
+        self::assertResponseIsSuccessful();
+        self::assertFalse($this->client->getResponse()->headers->has('WWW-Authenticate'));
+        self::assertNull(self::getContainer()->get('security.token_storage')->getToken());
+    }
+
+    /**
+     * Le schéma est `Bearer` suivi d'une espace, ou seul : collé au jeton, ou
+     * suivi d'une tabulation, ce n'est plus ce schéma, et la requête reste
+     * anonyme — même quand ce qui suit est un jeton valide, qui n'est alors
+     * pas lu. Ce n'est pas un 401 : un client qui ne présente pas de Bearer
+     * n'a rien à rafraîchir.
+     *
+     * @return iterable<string, array{string}>
+     */
+    public static function otherSchemes(): iterable
+    {
+        yield 'tabulation' => ["Bearer\t%s"];
+        yield 'collé au jeton' => ['Bearer%s'];
+        yield 'un autre mot' => ['Bearerxyz'];
+    }
+
+    #[DataProvider('otherSchemes')]
+    public function testAnotherSchemeLeavesTheRequestAnonymous(string $authorization): void
+    {
+        $held = $this->holdMcpConnection();
+        $server = ['HTTP_AUTHORIZATION' => \sprintf($authorization, $held->accessToken)];
+        $sessionId = $this->initializeMcpSession($this->client, $server);
+
+        $this->callContactInfo($sessionId, $server);
 
         self::assertResponseIsSuccessful();
         self::assertFalse($this->client->getResponse()->headers->has('WWW-Authenticate'));

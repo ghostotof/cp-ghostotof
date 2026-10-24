@@ -119,6 +119,17 @@ class McpConnection
         return $this->scope;
     }
 
+    /**
+     * La connexion accorde-t-elle `nominative:read` ? Le scope stocké est la
+     * liste que league a retenue, séparée par une espace (RFC 6749 §3.3) :
+     * comparé mot pour mot et à la casse près (un scope est sensible à la
+     * casse), jamais par préfixe.
+     */
+    public function grantsNominativeRead(): bool
+    {
+        return \in_array(self::SCOPE_NOMINATIVE_READ, explode(' ', $this->scope), true);
+    }
+
     public function grantedAt(): DateTimeImmutable
     {
         return $this->grantedAt;

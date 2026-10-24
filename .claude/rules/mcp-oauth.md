@@ -54,11 +54,13 @@ paths:
   goes through the same two doors, nothing else. **`Mcp/Presentation` uses the second door too** (#648):
   `GetNominativeCorpusTool` writes `nominative-corpus-read` through `SecurityAuditLoggerInterface`, for the same
   reason (the single writer of `security_audit`); it designates the account through the firewall's
-  `McpConnectionPrincipal`, an `AccountReference`, never a `CpgUser`. The consent's recency rule (below) is no third one: it reads
+  `McpConnectionPrincipal`, an `AccountReference`, never a `CpgUser`. The consent's recency rule (below) is no third
+  one: it reads
   the token Symfony's firewall authenticated and Lexik's manager (vendor), never a class of `App\Security`.
 - **League's « user » is the MCP connection, never the account** (`ConnectionAsUser`, its RFC 4122 UUID):
   every code and token hangs on a connection and dies with it; the account appears in no payload handed to
-  the client. The `mcp` firewall's user is the connection too (`McpConnectionUser`, below). `ConnectionOfToken` (written once for the three repositories) refuses, as a named server
+  the client. The `mcp` firewall's user is the connection too (`McpConnectionUser`, below). `ConnectionOfToken`
+  (written once for the three repositories) refuses, as a named server
   fault, an unknown connection, one of another client, a revoked one (`LeagueRepositoriesTest`).
 - **Opaque access tokens, every secret stored as its SHA-256 only.** `OpaqueAccessToken`: the string the
   client gets **is** league's 80-hex identifier, nothing signed, nothing readable — `/api/mcp`'s
@@ -190,13 +192,19 @@ paths:
   loads and refreshes nothing — the badge carries its loader, the firewall is stateless — and never names the
   identifier it was asked). **Only `Authorization` is read, scheme `Bearer`** case-insensitive (RFC 7235), followed by
   a space or alone; never a cookie. **Any other scheme leaves the request anonymous** — preprod's Ingress Basic Auth
-  sends `Authorization: Basic …` on every request, never a 401 for it (`testABasicAuthorizationHeaderLeavesTheRequestAnonymous`).
+  sends `Authorization: Basic …` on every request, never a 401 for it
+  (`testABasicAuthorizationHeaderLeavesTheRequestAnonymous`); so does a scheme glued to the token or followed by a
+  tab (`Bearer<token>`, `Bearer\t<token>`, `Bearerxyz`: `testAnotherSchemeLeavesTheRequestAnonymous`, a valid token
+  then not read). **Several `Authorization` headers**: Symfony reads the first; nginx may join them into one,
+  comma-separated, before PHP-FPM — `Bearer <token>, Basic …` is then refused `Malformed` (a 401), `Basic …, Bearer
+  <token>` left anonymous, depending on the order. Accepted: the first header decides, never the second.
   The judgement, first cause wins (`Domain/ValueObject/BearerRefusal`): the shape `^[0-9a-f]{80}\z` **before any
   query** (`Malformed`: `Bearer` alone, a second space, 79/81 characters, upper case, 10 KiB — zero SQL, measured with
   a positive witness); then `TokenIdentifierHash::of()` and **one query** joining token, connection, account and client
   (`findOneByHash()`, `Unknown`); then `McpAccessToken::refusalAt(now, OAuthEndpoints::resource())` — token revoked,
   expired (league never checks an opaque token's expiry), foreign audience byte for byte, connection revoked,
-  expired —; then `ROLE_TRUSTED` reached through `RoleHierarchyInterface` from the **stored** roles
+  expired, without `nominative:read` in its stored scope (`InsufficientScope`, word for word, final review of
+  #648) —; then `ROLE_TRUSTED` reached through `RoleHierarchyInterface` from the **stored** roles
   (`AccountNotTrusted`: a `ROLE_SUPER` without stored `ROLE_TRUSTED` passes, the base tier does not). The role name is
   a local constant, not `CpgUser::ROLE_TRUSTED`, so the context's dependency on `Security` keeps its two doors. **No
   write per call** (no `last_used_at`, #649 writes it at refresh; `testNoRequestWritesOutsideTheMcpSessions`), and
@@ -205,7 +213,8 @@ paths:
   **A presented and refused token is a 401 on every request** of `/api/mcp` (the author's decision of 2026-10-24):
   `initialize`, a public or the nominative tool, either era, `openai/` marker or not (RFC 6750 §3.1: it makes the
   client refresh) — **save what is answered before the firewall** (priority 8): the refusals before the SDK
-  (`InboundMessageRefusalListener`, 15, a 400) and the router's 404/405 (`RouterListener`, 32) keep their own answer. Empty body, `WWW-Authenticate: <BearerChallenge::refusedToken()>`, `no-store`, the same for every
+  (`InboundMessageRefusalListener`, 15, a 400) and the router's 404/405 (`RouterListener`, 32) keep their own answer.
+  Empty body, `WWW-Authenticate: <BearerChallenge::refusedToken()>`, `no-store`, the same for every
   cause, recorded through `ServerAnswersInterface::record()` (the call log reads it as the server's answer). The cause
   is named only in `McpBearerRefusedException`'s constant message (`MCP access token refused: <cause>`, never the
   token, its hash nor a UUID), logged by the `security` channel's « Authenticator failed. »; the `AuthenticatorManager`
@@ -261,13 +270,15 @@ paths:
   (`OAuthServerMetadata`): `S256` only, `none` auth, `response_modes_supported: ["query"]` (omitted, RFC 8414
   defaults to query **and** fragment), no `registration_endpoint`, **no OIDC document**.
   **One announcement ahead of the code, accepted** (phase 2 only ships whole): `client_id_metadata_document_supported: true`
-  until CIMD (#651) lands; `bearer_methods_supported: ["header"]` is true since #648's authenticator. `OAuthMetadataTest` pins both documents exactly, their routed paths, a POST 405, the
+  until CIMD (#651) lands; `bearer_methods_supported: ["header"]` is true since #648's authenticator.
+  `OAuthMetadataTest` pins both documents exactly, their routed paths, a POST 405, the
   `BEARER` changing nothing, no `openid-configuration`.
 - **A dedicated Ingress carries the two documents**, `k8s/base/ingress-oauth-metadata.yaml`: two `Exact`
   paths to `backend:80` (an `Exact` beats the main Ingress's `/` prefix), **no annotation, no `tls`** —
   ingress-nginx applies `auth-*` annotations to every path of one object, and preprod's Basic Auth sits on
   the main one; a client cannot answer a Basic Auth. Each overlay patches the host only (the main Ingress's,
-  whose certificate covers it). `/api/oauth/*` and `/api/mcp` stay behind preprod's Basic Auth until phase 2's delivery (#653).
+  whose certificate covers it). `/api/oauth/*` and `/api/mcp` stay behind preprod's Basic Auth until phase 2's
+  delivery (#653).
   `OAuthMetadataIngressTest` pins paths against `OAuthEndpoints` and the router, no annotation nor
   certificate, and that no overlay patches anything else. **The frontend answers a real 404** under
   `/.well-known/` for those paths and the RFC roots and `openid-configuration` (never the SPA's 200,

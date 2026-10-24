@@ -10,7 +10,7 @@ namespace App\Mcp\Connection\Domain\ValueObject;
  * même réponse, un 401 `error="invalid_token"` (RFC 6750 §3.1) : la cause ne
  * sert qu'à nommer le refus côté serveur, jamais à le décrire au client.
  *
- * Les cinq premières se lisent sur le jeton et sa connexion, dans cet ordre
+ * Les six premières se lisent sur le jeton et sa connexion, dans cet ordre
  * ({@see \App\Mcp\Connection\Domain\Entity\McpAccessToken::refusalAt()}) ;
  * `AccountNotTrusted`, `Malformed` et `Unknown` sont posées par
  * l'authentificateur du firewall `mcp`, qui voit ce que le domaine du jeton
@@ -36,6 +36,9 @@ enum BearerRefusal: string
 
     /** La connexion MCP du jeton a expiré : trop longtemps sans usage, ou trop longtemps après l'octroi. */
     case ConnectionExpired = 'connection-expired';
+
+    /** La connexion MCP du jeton n'accorde pas le scope `nominative:read`, le seul que `/api/mcp` honore. */
+    case InsufficientScope = 'insufficient-scope';
 
     /** Le compte de la connexion n'atteint plus `ROLE_TRUSTED` (posé par l'authentificateur). */
     case AccountNotTrusted = 'account-not-trusted';

@@ -11,13 +11,15 @@ use App\Security\User\Domain\Entity\CpgUser;
 use App\Tests\Mcp\Connection\RegisteredMcpClient;
 use DateInterval;
 use DateTimeImmutable;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use ReflectionProperty;
 
 /**
  * Ce qui refuse un jeton d'accès à un instant donné (#648) : le jeton lui-même
  * (révoqué, expiré, d'une autre audience), puis sa connexion (révoquée,
- * expirée après 30 jours sans usage ou 90 jours après l'octroi).
+ * expirée après 30 jours sans usage ou 90 jours après l'octroi, sans le
+ * scope `nominative:read`).
  *
  * Les instants portent un décalage fixe (`+02:00`) : l'arithmétique des jours
  * n'y croise aucun changement d'heure, chaque borne tombe à la seconde près.
@@ -121,8 +123,40 @@ final class McpAccessTokenRefusalTest extends TestCase
     }
 
     /**
+     * Une connexion qui n'accorde pas `nominative:read` n'ouvre rien : le
+     * scope stocké est comparé, mot par mot (RFC 6749 §3.3, séparés par une
+     * espace), jamais présumé du seul fait qu'une connexion existe — le jour
+     * où un second scope apparaît, une connexion qui ne l'a pas reçu ne lit
+     * pas le corpus. Un scope voisin (`nominative:readx`) n'est pas le sien.
+     *
+     * @return iterable<string, array{string, BearerRefusal|null}>
+     */
+    public static function scopes(): iterable
+    {
+        yield 'le scope seul' => [McpConnection::SCOPE_NOMINATIVE_READ, null];
+        yield 'parmi d\'autres' => ['profile '.McpConnection::SCOPE_NOMINATIVE_READ, null];
+        yield 'vide' => ['', BearerRefusal::InsufficientScope];
+        yield 'un autre scope' => ['profile', BearerRefusal::InsufficientScope];
+        yield 'un préfixe' => [McpConnection::SCOPE_NOMINATIVE_READ.'x', BearerRefusal::InsufficientScope];
+        yield 'la casse' => [strtoupper(McpConnection::SCOPE_NOMINATIVE_READ), BearerRefusal::InsufficientScope];
+    }
+
+    #[DataProvider('scopes')]
+    public function testTheConnectionMustGrantTheNominativeReadScope(string $scope, ?BearerRefusal $expected): void
+    {
+        $connection = McpConnection::grant(
+            new CpgUser('jane', 'hashed-password'),
+            RegisteredMcpClient::of('https://client.example.test/metadata.json', 'Client de test', []),
+            $scope,
+            $this->now->sub(new DateInterval('P1D')),
+        );
+
+        self::assertSame($expected, $this->token($connection)->refusalAt($this->now, self::AUDIENCE));
+    }
+
+    /**
      * Les causes se jugent dans un ordre fixe — jeton révoqué, jeton expiré,
-     * audience, connexion révoquée, connexion expirée — : un jeton qui les
+     * audience, connexion révoquée, connexion expirée, scope — : un jeton qui les
      * cumule toutes rend la première, et chacune se découvre quand on lève
      * celle d'avant.
      */
@@ -145,6 +179,11 @@ final class McpAccessTokenRefusalTest extends TestCase
 
         $this->setConnectionInstant($connection, 'revokedAt', null);
         self::assertSame(BearerRefusal::ConnectionExpired, $live->refusalAt($this->now, self::AUDIENCE));
+
+        new ReflectionProperty(McpConnection::class, 'scope')->setValue($connection, '');
+        self::assertSame(BearerRefusal::ConnectionExpired, $live->refusalAt($this->now, self::AUDIENCE));
+        $this->setConnectionInstant($connection, 'grantedAt', $this->now->sub(new DateInterval('P1D')));
+        self::assertSame(BearerRefusal::InsufficientScope, $live->refusalAt($this->now, self::AUDIENCE));
     }
 
     /** Un jeton d'accès de l'audience attendue, valide une heure encore. */
