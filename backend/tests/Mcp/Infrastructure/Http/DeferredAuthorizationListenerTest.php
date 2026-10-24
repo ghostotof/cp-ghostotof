@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace App\Tests\Mcp\Infrastructure\Http;
 
+use App\Ai\Assistant\Infrastructure\Corpus\CorpusRenderer;
+use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Tests\Mcp\Support\HoldsAnMcpConnection;
 use App\Tests\Mcp\Support\SpeaksMcp;
 use App\Tests\Support\ReadsAllChannelsLog;
+use App\Tests\Support\ReadsSecurityAuditLog;
 use Doctrine\ORM\EntityManagerInterface;
 use Mcp\Schema\JsonRpc\Error;
 use Mcp\Server\Stateless\RequestMeta;
@@ -37,6 +40,7 @@ final class DeferredAuthorizationListenerTest extends WebTestCase
 {
     use HoldsAnMcpConnection;
     use ReadsAllChannelsLog;
+    use ReadsSecurityAuditLog;
     use SpeaksMcp;
 
     private const string NOMINATIVE_TOOL = 'get_nominative_corpus';
@@ -81,8 +85,10 @@ final class DeferredAuthorizationListenerTest extends WebTestCase
 
     /**
      * Le marqueur de ChatGPT laisse passer l'appel jusqu'au SDK, qui sert
-     * l'outil : la réponse de l'outil à un appel anonyme marqué est la tâche
-     * 5 ; ici, seul compte qu'aucun 401 ne l'a précédé.
+     * l'outil : aucun 401 ne l'a précédé, et l'outil rend son refus — une
+     * erreur d'outil portant le défi dans `_meta["mcp/www_authenticate"]`,
+     * rien du corpus —, dans les deux ères (GetNominativeCorpusToolTest en lit
+     * le détail dans une session).
      */
     #[DataProvider('eras')]
     public function testAMarkedAnonymousCallPassesToTheTool(string $era): void
@@ -90,6 +96,13 @@ final class DeferredAuthorizationListenerTest extends WebTestCase
         $this->callTool($era, self::NOMINATIVE_TOOL, meta: self::OPENAI_MARKER);
 
         $this->assertServedBySdk();
+        $result = $this->toolResult();
+        self::assertTrue($result['isError'] ?? null);
+        self::assertArrayNotHasKey('structuredContent', $result);
+        self::assertIsArray($result['_meta'] ?? null);
+        self::assertIsArray($result['_meta']['mcp/www_authenticate'] ?? null);
+        self::assertCount(1, $result['_meta']['mcp/www_authenticate']);
+        self::assertStringContainsString('error="insufficient_scope"', (string) $result['_meta']['mcp/www_authenticate'][0]);
     }
 
     /** Un `_meta` sans clé `openai/` n'est pas un marqueur : le défi tient. */
@@ -112,7 +125,10 @@ final class DeferredAuthorizationListenerTest extends WebTestCase
 
     /**
      * Une connexion MCP valide (jeton du vrai parcours OAuth) : le firewall
-     * a posé l'identité avant l'écouteur, qui la laisse passer.
+     * a posé l'identité avant l'écouteur, qui la laisse passer — et l'outil
+     * rend le corpus et l'audite, dans les deux ères : sous l'enveloppe sans
+     * session, rien ne passe par le store des sessions, la lecture est la
+     * même.
      */
     #[DataProvider('eras')]
     public function testAnAuthenticatedCallIsNotDeferred(string $era): void
@@ -122,6 +138,13 @@ final class DeferredAuthorizationListenerTest extends WebTestCase
         $this->callTool($era, self::NOMINATIVE_TOOL, bearer: self::bearer($held->accessToken));
 
         $this->assertServedBySdk();
+        $result = $this->toolResult();
+        self::assertFalse($result['isError'] ?? false);
+        self::assertIsArray($result['structuredContent'] ?? null);
+        self::assertSame(self::getContainer()->get(CorpusRenderer::class)->render(Locale::EN), $result['structuredContent']['corpus'] ?? null);
+        $line = self::singleSecurityAuditEvent('nominative-corpus-read');
+        self::assertSame($held->accountId, $line['userId'] ?? null);
+        self::assertSame($held->connectionId, $line['connectionId'] ?? null);
     }
 
     /**

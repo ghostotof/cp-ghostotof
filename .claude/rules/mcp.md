@@ -388,7 +388,8 @@ paths:
   sends, in both eras, as a client accepting `text/event-stream` with a `progressToken`, every request the SDK can
   build (`MessageFactory::REGISTERED_MESSAGES` and `StatelessProtocol`'s `*_METHOD`, read by reflection, against its
   closed `params()` — an SDK bump adding one turns it red until judged; `server/discover` must announce no extension,
-  whose methods escape that reading), each listed tool, prompt and resource included, and
+  whose methods escape that reading), each listed tool, prompt and resource included — the nominative tool also read with
+  a connection (#648) —, and
   wants JSON (a `result` for `tools/call`/`prompts/get`). Measured red: a tool calling `ClientGateway::progress()`, and
   the `listen` refusal lifted. Not covered: a tool notifying only for some arguments.
 - **No answer is stored** (#648, security review): `Infrastructure/Http/NoStoreResponseListener` (`kernel.response`,

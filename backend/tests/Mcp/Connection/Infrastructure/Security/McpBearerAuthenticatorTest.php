@@ -429,6 +429,55 @@ final class McpBearerAuthenticatorTest extends WebTestCase
         self::assertSame([], array_filter($this->executedSql(), static fn (string $sql): bool => str_contains($sql, 'mcp_access_token') || str_contains($sql, 'cpg_user')));
     }
 
+    /**
+     * @return iterable<string, array{bool}>
+     */
+    public static function openAiMarking(): iterable
+    {
+        yield 'non marqué' => [false];
+        yield 'marqué openai/' => [true];
+    }
+
+    /**
+     * Le même cookie de confiance, sur l'appel qui compte : l'outil nominatif
+     * (relecture de sécurité de #648). Ni la garde CSRF (un 403) ne refuse
+     * la requête, ni le cookie n'ouvre le corpus — l'appel est anonyme : non
+     * marqué, le 401 différé, sans `error=` puisqu'aucun jeton n'a été
+     * présenté ; marqué `openai/`, l'erreur d'outil.
+     */
+    #[DataProvider('openAiMarking')]
+    public function testATrustedBearerCookieNeverOpensTheNominativeCorpus(bool $marked): void
+    {
+        $this->loginAs('mcp.cookie', [CpgUser::ROLE_TRUSTED]);
+        self::assertNotNull($this->client->getCookieJar()->get('BEARER'));
+        $sessionId = $this->initializeMcpSession($this->client);
+
+        $params = ['name' => 'get_nominative_corpus', 'arguments' => ['locale' => 'en']];
+        if ($marked) {
+            $params['_meta'] = ['openai/subject' => 'subject-1'];
+        }
+        $this->mcpRequest($sessionId, 'tools/call', $params, []);
+
+        $response = $this->client->getResponse();
+        self::assertNull(self::getContainer()->get('security.token_storage')->getToken());
+        self::assertStringNotContainsString('structuredContent', (string) $response->getContent());
+        if (!$marked) {
+            self::assertSame(Response::HTTP_UNAUTHORIZED, $response->getStatusCode());
+            self::assertSame(
+                'Bearer resource_metadata="'.$this->publicApiBase().'/.well-known/oauth-protected-resource/api/mcp", scope="nominative:read"',
+                $response->headers->get('WWW-Authenticate'),
+            );
+
+            return;
+        }
+
+        self::assertSame(Response::HTTP_OK, $response->getStatusCode());
+        $result = $this->decodeMcpResponse($this->client)['result'] ?? null;
+        self::assertIsArray($result);
+        self::assertTrue($result['isError']);
+        self::assertArrayHasKey('mcp/www_authenticate', $result['_meta'] ?? []);
+    }
+
     /** Une connexion, une session ouverte avec son jeton, un premier appel servi. */
     private function heldAndServedOnce(): HeldMcpConnection
     {
