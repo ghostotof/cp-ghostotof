@@ -390,6 +390,13 @@ paths:
   whose methods escape that reading), each listed tool, prompt and resource included, and
   wants JSON (a `result` for `tools/call`/`prompts/get`). Measured red: a tool calling `ClientGateway::progress()`, and
   the `listen` refusal lifted. Not covered: a tool notifying only for some arguments.
+- **No answer is stored** (#648, security review): `Infrastructure/Http/NoStoreResponseListener` (`kernel.response`,
+  priority -1024, main request, canonical path `McpEndpoint::PATH`, any method and status) adds `Cache-Control: no-store`
+  to every answer of `/api/mcp`. The SDK's JSON answer carries no cache header, and Symfony computed `no-cache, private`
+  (measured): a private cache (a corporate proxy, a client library's HTTP cache) could store it, nominative corpus
+  included. The whole endpoint, public tools too, rather than a sort per tool or identity that the next tool would
+  forget. `NoStoreResponseListenerTest` (an authenticated read, a public tool's anonymous answer, `initialize`,
+  `/api/%6Dcp`, another route untouched).
 - **Rate, body and sessions per IP** (#644): the nginx `mcp` zone and the location's 16 KiB body bound
   (`.claude/rules/deploiement-nginx.md`). The `mcpsession` zone counts every `POST` whose `Mcp-Session-Id` is not
   a well-formed UUID (#672, an allow-list: PHP's PSR-7 bridge trims tabs and drops a header with a control
