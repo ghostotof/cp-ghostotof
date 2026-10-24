@@ -270,8 +270,12 @@ paths:
   otherwise; LoginPage announces why it opened, and its open-redirect guard on `redirect` is unchanged
   (`LoginPage.spec.ts`, `adminGuard.spec.ts`). **Double-clickjacking** (`presentation/ui/useDeliberateActivation`):
   Authorize and Deny are enabled only once the page has been visible (`document.visibilityState`) and
-  focused (`document.hasFocus()`) for `ACTIVATION_DELAY_MS` (600 ms); hidden or blurred, they are disabled
-  and the delay restarts on return; a pointer click (`detail` > 0) whose `pointerdown` (captured on the
+  focused (`document.hasFocus()`) for `ACTIVATION_DELAY_MS` (600 ms), **counted from when the buttons appear**
+  (`useDeliberateActivation(showRequest)`), never from the page's mount — they only render once
+  `GET /api/oauth/consent` answers, and a load longer than the delay made them appear already active (round 2
+  of the reviews; `OAuthConsentPage.spec.ts`, « résumé reçu après le délai »); the delay restarts on each
+  appearance, on refocus and when the page becomes visible again; hidden, blurred or with the buttons gone,
+  they are disabled; a pointer click (`detail` > 0) whose `pointerdown` (captured on the
   document) came before the activation is ignored, a keyboard click depends on the activation alone.
   `frame-ancestors 'none'` already covers framing; this covers a window brought in front between two clicks.
   The page spec runs it under fake timers (`setTimeout` only, `flushPromises` keeps `setImmediate`; axe needs
