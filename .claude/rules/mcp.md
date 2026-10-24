@@ -146,7 +146,8 @@ paths:
   `mcp.yaml` lists that namespace (and `Presentation/Prompt/` for prompts) only, and **the bundle refuses a
   pattern that matches no service** (the server does not boot). `readOnlyHint: true`. **Every tool declares
   its `securitySchemes`** (#648, ADR 0006 D3, decided 2026-10-24: at both places) in `#[McpTool(meta:
-  ['securitySchemes' => …])]`, the single source — `[['type' => 'noauth']]`, or for the nominative tool
+  [ToolSecuritySchemes::KEY => …])]`, the single source — `ToolSecuritySchemes::NO_AUTH` for a public tool (key and value
+  written once, in `Application/`, never copied into a tool, review of #648), or for the nominative tool
   `[['type' => 'oauth2', 'scopes' => [McpConnection::SCOPE_NOMINATIVE_READ]]]` —, and
   `Infrastructure/Registry/SecuritySchemesRegistry` (an `#[AsDecorator]` of `mcp.server.portfolio.registry`)
   republishes it at the top level of each `tools/list` entry, which the Apps SDK reference reads (`_meta` is its

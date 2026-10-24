@@ -130,10 +130,11 @@ security:
         # public, identique pour tous. Un firewall chacun, plutôt qu'aucun :
         # une route hors /api a son propre firewall et sa propre règle
         # access_control (RouterScopeTest), jamais une exposition implicite.
-        # Bornés par `$` sur leur chemin exact, le `.` échappé : un voisin (`/.well-known/oauth-authorization-server` seul,
-        # `…/api/mcpx`) ne relève d'aucun firewall et le routeur lui répond
-        # 404 (AccessControlAnchoringTest). Placés avant `api` comme `mcp`,
-        # même si leurs chemins ne commencent pas par /api.
+        # Bornés par `$` sur leur chemin exact, le `.` échappé : un voisin
+        # (`/.well-known/oauth-authorization-server` seul, `…/api/mcpx`) ne
+        # relève d'aucun firewall et le routeur lui répond 404
+        # (AccessControlAnchoringTest). Placés avant `api` comme `mcp`, même
+        # si leurs chemins ne commencent pas par /api.
         oauth_resource_metadata:
             pattern: ^/\.well-known/oauth-protected-resource/api/mcp$
             stateless: true

@@ -6,6 +6,7 @@ namespace App\Mcp\Presentation\Tool;
 
 use App\Mcp\Application\NominativeCorpusReaderInterface;
 use App\Mcp\Application\ProtectedTools;
+use App\Mcp\Application\ToolSecuritySchemes;
 use App\Mcp\Connection\Application\BearerChallenge;
 use App\Mcp\Connection\Domain\Entity\McpConnection;
 use App\Mcp\Infrastructure\Session\BoundedSessionStore;
@@ -146,7 +147,7 @@ final readonly class GetNominativeCorpusTool
         annotations: new ToolAnnotations(readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false),
         // Lié à un compte (ADR 0006 D3) : ce que ChatGPT lit pour offrir la
         // liaison ; SecuritySchemesRegistry le publie aussi au premier niveau.
-        meta: ['securitySchemes' => [['type' => 'oauth2', 'scopes' => [McpConnection::SCOPE_NOMINATIVE_READ]]]],
+        meta: [ToolSecuritySchemes::KEY => [['type' => 'oauth2', 'scopes' => [McpConnection::SCOPE_NOMINATIVE_READ]]]],
         outputSchema: self::OUTPUT_SCHEMA,
     )]
     public function __invoke(

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Mcp\Presentation\Tool;
 
 use App\Mcp\Application\RoutePayloadReaderInterface;
+use App\Mcp\Application\ToolSecuritySchemes;
 use App\Portfolio\AnonymousCv\Presentation\ApiResource\AnonymousCvSectionResource;
 use Mcp\Capability\Attribute\McpTool;
 use Mcp\Capability\Attribute\Schema;
@@ -61,9 +62,7 @@ final readonly class GetAnonymousCvTool
         title: 'Anonymous CV',
         description: 'The CV of the site\'s author without identity: skills, years of experience and achievements per domain, with no name, employer, client nor career chronology. Returns exactly what the "Anonymous CV" page shows to base access.',
         annotations: new ToolAnnotations(readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false),
-        // Appelable sans compte (ADR 0006 D3) ; SecuritySchemesRegistry le
-        // publie aussi au premier niveau de tools/list.
-        meta: ['securitySchemes' => [['type' => 'noauth']]],
+        meta: [ToolSecuritySchemes::KEY => ToolSecuritySchemes::NO_AUTH],
         outputSchema: self::OUTPUT_SCHEMA,
     )]
     public function __invoke(

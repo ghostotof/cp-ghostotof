@@ -13,10 +13,21 @@ use InvalidArgumentException;
  * RFC 7235, une barre oblique inverse l'échapperait, un retour à la ligne
  * couperait l'en-tête.
  *
- * La description est écrite par le serveur (l'outil nominatif, ADR 0006 D3),
- * jamais par le client : un refus est donc une faute du serveur, un 500
- * `critical`, sans entrée de journalisation propre. Le message ne cite pas
- * la valeur refusée.
+ * La description est écrite par le serveur, jamais par le client : un refus
+ * est une faute du serveur, sans entrée de journalisation propre. Le message
+ * ne cite pas la valeur refusée.
+ *
+ * Un seul chemin la lève, BearerChallenge::insufficientScope(), et un seul
+ * appelant : l'outil nominatif (ADR 0006 D3), pour une constante —
+ * GetNominativeCorpusToolTest lit le défi qu'elle produit, la faute ne
+ * survivrait pas à la suite. Levée dans l'outil, elle n'atteint jamais le
+ * noyau HTTP : le `CallToolHandler` du SDK 0.8.1 attrape tout `Throwable`,
+ * l'écrit en `error` sur le canal `mcp` (« Unhandled error during tool
+ * execution », que SdkChannelRedactor ne range pas parmi les fautes du
+ * client) et répond **HTTP 200**, une erreur JSON-RPC `-32603` « Error while
+ * executing tool ». L'authentificateur et l'autorisation différée n'y
+ * mènent pas : leurs défis (`refusedToken()`, `missingToken()`) ne portent
+ * aucune description et ne lèvent rien.
  */
 final class InvalidChallengeDescriptionException extends InvalidArgumentException
 {

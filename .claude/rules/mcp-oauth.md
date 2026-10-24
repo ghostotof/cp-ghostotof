@@ -273,10 +273,10 @@ paths:
   (`MetadataDocumentResponseFactory`). What is announced is what the server does, nothing more
   (`OAuthServerMetadata`): `S256` only, `none` auth, `response_modes_supported: ["query"]` (omitted, RFC 8414
   defaults to query **and** fragment), no `registration_endpoint`, **no OIDC document**.
-  **One announcement ahead of the code, accepted** (phase 2 only ships whole): `client_id_metadata_document_supported: true`
-  until CIMD (#651) lands; `bearer_methods_supported: ["header"]` is true since #648's authenticator.
-  `OAuthMetadataTest` pins both documents exactly, their routed paths, a POST 405, the
-  `BEARER` changing nothing, no `openid-configuration`.
+  **One announcement ahead of the code, accepted** (phase 2 only ships whole):
+  `client_id_metadata_document_supported: true` until CIMD (#651) lands; `bearer_methods_supported: ["header"]` is
+  true since #648's authenticator. `OAuthMetadataTest` pins both documents exactly, their routed paths, a POST 405,
+  the `BEARER` changing nothing, no `openid-configuration`.
 - **A dedicated Ingress carries the two documents**, `k8s/base/ingress-oauth-metadata.yaml`: two `Exact`
   paths to `backend:80` (an `Exact` beats the main Ingress's `/` prefix), **no annotation, no `tls`** —
   ingress-nginx applies `auth-*` annotations to every path of one object, and preprod's Basic Auth sits on

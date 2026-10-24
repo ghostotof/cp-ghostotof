@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Mcp\Infrastructure\Registry;
 
+use App\Mcp\Application\ToolSecuritySchemes;
 use Mcp\Schema\Icon;
 use Mcp\Schema\Tool;
 use Mcp\Schema\ToolAnnotations;
@@ -18,8 +19,9 @@ use stdClass;
  * `_meta["securitySchemes"]` pour un miroir de rétrocompatibilité) : sans lui,
  * ChatGPT n'offre pas la liaison de compte. La valeur est **lue** dans le
  * `_meta["securitySchemes"]` de l'outil, que l'attribut `#[McpTool(meta: …)]`
- * déclare — une seule source —, jamais déduite ni complétée : un outil qui
- * n'en déclare pas lève {@see ToolWithoutSecuritySchemesException}.
+ * déclare sous ToolSecuritySchemes::KEY — une seule source —, jamais déduite
+ * ni complétée : un outil qui n'en déclare pas lève
+ * {@see ToolWithoutSecuritySchemesException}.
  *
  * Une sous-classe plutôt qu'un objet `JsonSerializable` à part : la page de
  * `tools/list` (`Mcp\Schema\Page`) et son résultat sont typés `Tool`, et ce
@@ -33,9 +35,6 @@ use stdClass;
  */
 final class ToolWithSecuritySchemes extends Tool
 {
-    /** La clé, en `_meta` comme au premier niveau (référence de l'Apps SDK d'OpenAI). */
-    public const string KEY = 'securitySchemes';
-
     /**
      * @param list<array<string, mixed>> $securitySchemes
      */
@@ -62,7 +61,7 @@ final class ToolWithSecuritySchemes extends Tool
      */
     public static function of(Tool $tool): self
     {
-        $schemes = $tool->meta[self::KEY] ?? null;
+        $schemes = $tool->meta[ToolSecuritySchemes::KEY] ?? null;
         if (!\is_array($schemes) || [] === $schemes || !array_is_list($schemes)) {
             throw ToolWithoutSecuritySchemesException::forTool($tool->name);
         }
@@ -98,6 +97,6 @@ final class ToolWithSecuritySchemes extends Tool
      */
     public function jsonSerialize(): array
     {
-        return parent::jsonSerialize() + [self::KEY => $this->securitySchemes];
+        return parent::jsonSerialize() + [ToolSecuritySchemes::KEY => $this->securitySchemes];
     }
 }

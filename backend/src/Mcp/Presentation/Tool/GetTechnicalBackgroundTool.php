@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Mcp\Presentation\Tool;
 
 use App\Mcp\Application\RoutePayloadReaderInterface;
+use App\Mcp\Application\ToolSecuritySchemes;
 use App\Portfolio\Experience\Presentation\ApiResource\ExperienceTechnologyResource;
 use Mcp\Capability\Attribute\McpTool;
 use Mcp\Schema\Result\CallToolResult;
@@ -68,9 +69,7 @@ final readonly class GetTechnicalBackgroundTool
         title: 'Technical background',
         description: 'The technologies the site\'s author has practised, with the years of practice of each. Returns exactly what the "Experience" page shows.',
         annotations: new ToolAnnotations(readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false),
-        // Appelable sans compte (ADR 0006 D3) ; SecuritySchemesRegistry le
-        // publie aussi au premier niveau de tools/list.
-        meta: ['securitySchemes' => [['type' => 'noauth']]],
+        meta: [ToolSecuritySchemes::KEY => ToolSecuritySchemes::NO_AUTH],
         outputSchema: self::OUTPUT_SCHEMA,
     )]
     public function __invoke(): CallToolResult

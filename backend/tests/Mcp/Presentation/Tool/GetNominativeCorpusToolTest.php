@@ -506,9 +506,15 @@ final class GetNominativeCorpusToolTest extends WebTestCase
      *
      * Seules les requêtes SQL de `doctrine` (debug) sont écartées, comme dans
      * AccountIdentifierReachesNoLogTest : elles portent la valeur écrite dans
-     * `cache_items`, donc la file de la session et le corpus, mais ne sortent
-     * que sous `kernel.debug` (`doctrine.dbal.logging`), jamais en préprod ni
-     * en prod (APP_DEBUG=0), où le gestionnaire `main` exclut de plus le canal.
+     * `cache_items`, donc la file de la session et le corpus. Le gestionnaire
+     * `main` de prod **ne les exclut pas** (`monolog.yaml` n'écarte pas le
+     * canal `doctrine`), et la préprod tourne à `LOG_LEVEL=debug` : ce qui les
+     * coupe est l'absence de `kernel.debug`, seule condition sous laquelle
+     * DoctrineBundle journalise le SQL (`doctrine.dbal.logging`, que
+     * `doctrine.yaml` laisse à sa valeur par défaut, `%kernel.debug%`). Elles
+     * ne sortent donc ni en préprod ni en prod **tant qu'`APP_DEBUG` y vaut
+     * 0** (décision de l'auteur, relecture de #648 : la phrase corrigée, pas
+     * la configuration).
      */
     private function assertNoLogCarries(string ...$fragments): void
     {
