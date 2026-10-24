@@ -12,7 +12,8 @@ mentions légales pour le détail du statut), joignable à
 
 **Dernière mise à jour** : 2026-10-24 (§3.4, §6 et §8, issue #648 : le corpus nominatif est servi au
 client MCP d'une connexion, chaque lecture inscrite au journal d'audit, transfert possible hors UE par le
-fournisseur d'IA de la personne. Précédente : 2026-10-23, nouveau §3.4, §2 et §6, issue #647 : connexions MCP du
+fournisseur d'IA de la personne ; relecture finale : le corpus transite par la session MCP le temps de la
+réponse, §3.4, et les jetons de la connexion, données de la personne, passent par ce fournisseur, §8. Précédente : 2026-10-23, nouveau §3.4, §2 et §6, issue #647 : connexions MCP du
 palier de confiance, jetons stockés en empreinte, octroi inscrit au journal d'audit. Précédente :
 2026-10-21, §6 bis, issue #673 : le texte du `role` transite par la
 session MCP le temps de la réponse. Précédente : 2026-10-20, §5 et nouveau §6 bis, issue #643 :
@@ -103,7 +104,7 @@ l'ADR 0001 (`docs/adr/0001-admin-user-provisioning.md`) : l'**accès de base** s
 | **Base légale** | Exécution du service demandé par la personne (art. 6-1-b RGPD) : la connexion n'existe que sur son accord explicite, donné sur la page de consentement |
 | **Personnes concernées** | Les titulaires d'un compte au palier de confiance (§3.2) qui connectent un client MCP. Aucune connexion n'est possible sans compte |
 | **Données traitées** | Par connexion : le **compte** (son UUID, clé étrangère), le **client** (son identifiant public OAuth et son nom, saisis par l'éditeur à l'enregistrement — un client n'est pas une personne), le scope (`nominative:read`), les dates d'**octroi**, de **dernier usage** et de **révocation**. Codes d'autorisation, jetons d'accès et de rafraîchissement : **seule leur empreinte SHA-256 est stockée**, avec leur échéance et leur date de révocation, jamais leur valeur ; aucun ne porte l'identité du compte (le serveur les rattache à la connexion). L'octroi est inscrit au journal d'audit (§6, événement `mcp-connection-granted`) |
-| **Durée de conservation** | **Jusqu'à la purge planifiée de la tâche 10 de la spec (issue #649)**, qui reste à livrer : elle retirera les jetons et codes expirés, et les connexions expirées ou révoquées au-delà de la durée de conservation du journal. D'ici là, les lignes restent en base. La suppression du compte emporte ses connexions et leurs jetons (`ON DELETE CASCADE`), comme le retrait d'un client par l'éditeur. Durées de validité : code 10 minutes, jeton d'accès 1 heure, jeton de rafraîchissement 30 jours |
+| **Durée de conservation** | **Jusqu'à la purge planifiée de la tâche 10 de la spec (issue #649)**, qui reste à livrer : elle retirera les jetons et codes expirés, et les connexions expirées ou révoquées au-delà de la durée de conservation du journal. D'ici là, les lignes restent en base. La suppression du compte emporte ses connexions et leurs jetons (`ON DELETE CASCADE`), comme le retrait d'un client par l'éditeur. Durées de validité : code 10 minutes, jeton d'accès 1 heure, jeton de rafraîchissement 30 jours. Le corpus nominatif servi n'est pas conservé, mais il **transite** par la base (issue #648, comme le `role` du §6 bis) : le SDK met la réponse de l'outil dans la file de la session MCP (table `cache_items` de PostgreSQL, valeur authentifiée par un MAC, **non chiffrée**), session liée à la connexion qui l'a demandée, et l'en efface avant la fin de la même requête. Hors de ce chemin nominal : un traitement interrompu entre les deux (processus arrêté) laisse le corpus dans la session jusqu'à son expiration (une heure), et sa ligne jusqu'à la purge horaire (deux heures au plus) ; comme toute écriture PostgreSQL, l'ancienne version de la ligne reste sur le disque jusqu'au nettoyage automatique (`VACUUM`) et passe par le journal de transactions (WAL). La révision du protocole sans session (`2026-07-28`) n'écrit pas de session : le corpus n'y transite pas par la base |
 | **Destinataires** | L'éditeur (base applicative). Le client MCP choisi par la personne, et le fournisseur d'IA derrière lui (Anthropic, OpenAI ou un autre, que la personne choisit, pas l'éditeur), reçoivent les jetons et, à chaque appel de l'outil nominatif, **le corpus nominatif** — les données d'identité et de parcours de l'éditeur, non celles de la personne (ADR 0006 D5, issue #648). Accepté parce que la personne, du palier de confiance, télécharge déjà le PDF et peut le confier à l'assistant de son choix ; chaque lecture est inscrite au journal d'audit (§6, `nominative-corpus-read`). Transfert hors UE possible : §8 |
 | **Mesures de sécurité** | Consentement réservé au palier de confiance, sous la garde CSRF ; PKCE `S256` obligatoire ; redirection du client comparée à celle enregistrée ; jetons opaques stockés en empreinte ; codes et jetons de rafraîchissement chiffrés sous une clé dérivée du secret de l'application ; points OAuth limités en débit par IP (zone nginx `oauth`, §2) ; aucun cookie lu par les points appelés par le client. Détail : `.claude/rules/mcp-oauth.md` |
 
@@ -213,7 +214,11 @@ la connexion — ils transitent par lui — et, à chaque appel de l'outil nomin
 le corpus nominatif. Ce fournisseur est choisi par la personne, non par
 l'éditeur, qui n'a de contrat avec aucun : c'est la personne qui envoie le corpus
 à l'assistant de son choix, comme elle pourrait lui confier le PDF qu'elle
-télécharge déjà. Les données ainsi transférées sont celles de l'éditeur lui-même
-(son identité et son parcours), qui l'accepte par décision écrite ; aucune donnée
-de la personne n'est transmise par le site à ce fournisseur. Chaque lecture est
-inscrite au journal d'audit (§6).
+télécharge déjà. Le corpus est fait des données de l'éditeur lui-même (son
+identité et son parcours), qui l'accepte par décision écrite. Des données de la
+personne passent aussi par ce fournisseur : les **jetons de sa connexion**, que le
+site remet à son client MCP et que celui-ci présente à chaque appel. Ils sont
+pseudonymes — ils ne portent ni son nom ni son identifiant, mais le site les
+rattache à sa connexion, donc à son compte : ce sont des données personnelles
+(art. 4-5 RGPD). Leur transfert est le fait du client que la personne a choisi
+et connecté elle-même. Chaque lecture est inscrite au journal d'audit (§6).

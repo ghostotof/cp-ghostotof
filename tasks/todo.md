@@ -88,7 +88,10 @@ phase 1 parte en release seule ; puis au merge de clôture, qui archive la spec 
       jeton hors transaction, league révoque le code en dernier (rejeu concurrent → deux paires) —
       `revokeByHash` rendant le nombre de lignes. Aussi : `RevokedOnce` contre `McpConnection::revokedAt`,
       course révocation/rafraîchissement en 500, refus OAuth non journalisés, `is*Revoked` lit la carte
-      d'identité Doctrine, deux horloges (league `time()` / `ClockInterface`)
+      d'identité Doctrine, deux horloges (league `time()` / `ClockInterface`). Reports de la tâche 9 :
+      `lastUsedAt` écrit au rafraîchissement (jamais par appel) ; durées 30 j / 90 j de
+      `McpConnection::IDLE_LIFETIME` / `MAX_LIFETIME` passées en configuration ; bornes au passage
+      d'heure Europe/Paris, non testées (`McpAccessTokenRefusalTest` est à décalage fixe)
 - [ ] Tâche 11 — « Mes connexions MCP » (#650) — bloquée par : #648 — reports de la tâche 8 :
       connexions accumulées visibles et révocables ; révoquer la connexion, jamais les jetons un à un
 - [ ] Tâche 12 — Enregistrement des clients par CIMD (#651) — bloquée par : #647 — reports de la
@@ -102,7 +105,15 @@ phase 1 parte en release seule ; puis au merge de clôture, qui archive la spec 
       lui rien n'est testable en préprod) ; Basic Auth préprod encore sur `/api/oauth` et `/api/mcp` ;
       `PrivacyPolicyPage.vue` à aligner sur le registre §3.4 ; CORS absent sur les deux documents ;
       documents servis aussi en HTTP clair (pas de `ssl-redirect` sur l'objet dédié) ; 10 req/min par
-      pod sur `/token` face aux IP de sortie partagées de claude.ai et ChatGPT
+      pod sur `/token` face aux IP de sortie partagées de claude.ai et ChatGPT. Reports de la tâche 9 :
+      vérifier en préprod ce que ChatGPT lit de `securitySchemes` (premier niveau ou `_meta`) et la
+      forme liste de `_meta["mcp/www_authenticate"]` ; le 401 `invalid_token` sur toute requête au
+      jeton refusé, face aux vrais clients ; mesurer la taille réelle en file du corpus (la taille
+      seule, jamais le texte) contre `QUEUED_ANSWER_MAX_BYTES` ; CORS n'expose pas `WWW-Authenticate` ;
+      la page publique de confidentialité dit encore « Aucun transfert de données hors de l'Union
+      européenne » (`frontend/src/infrastructure/portfolio/content/fr.ts` et `en.ts`), contredite par
+      le registre §8 à la sortie de la phase 2 ; un `pdftotext` et une ligne d'audit par appel de
+      l'outil nominatif, sans quota par connexion
 
 ### Clôture
 
