@@ -8,8 +8,9 @@ use League\OAuth2\Server\RequestTypes\AuthorizationRequestInterface;
 
 /**
  * Une demande d'autorisation validée (#647), résumée pour la page de
- * consentement : ce que la personne doit voir avant d'accepter — le nom
- * **déclaré** du client, l'hôte où partira le code, le scope, la ressource —,
+ * consentement : ce que la personne doit voir avant d'accepter — le nom du
+ * client (celui que l'administrateur du site a enregistré, McpClientName),
+ * l'hôte où partira le code, le scope, la ressource —,
  * et la demande de league, que la tâche 6 complète puis renvoie au client.
  *
  * Tout y a été validé : le client et sa redirection par league (la

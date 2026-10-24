@@ -27,7 +27,9 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
  * Le secret est gardé dans un {@see SensitiveParameterValue} (aucun dump ne
  * l'affiche, #493) et la clé dérivée à chaque key(), jamais à la
  * construction : le `cache:clear` du `docker build` n'a pas d'`APP_SECRET`
- * (#474).
+ * (#474). La clé dérivée, elle, une fois remise à league, vit dans ses
+ * propriétés privées pour la vie du service (limite acceptée,
+ * `.claude/rules/backend-integrite.md`).
  */
 final readonly class OAuthEncryptionKey
 {

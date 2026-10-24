@@ -23,7 +23,12 @@ use SensitiveParameter;
  *
  * La clé n'est posée que le temps de la lecture, puis retirée : dérivée à
  * l'usage (le `cache:clear` du `docker build` n'a pas d'`APP_SECRET`, #474),
- * jamais gardée dans une propriété qu'un dump afficherait (#493).
+ * ce lecteur ne la garde pas entre deux lectures. Ce n'est pas une promesse
+ * sur le processus : **limite acceptée** (`.claude/rules/backend-integrite.md`),
+ * league garde la même clé dérivée dans ses propres propriétés privées
+ * (`AuthorizationServer`, ses grants, sa réponse, par `CryptTrait`) pour
+ * toute la vie du service, qu'un dump de ces objets afficherait — rien du
+ * projet ne les dumpe.
  */
 final class RefreshTokenPayloadReader
 {

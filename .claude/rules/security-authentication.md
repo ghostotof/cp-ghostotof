@@ -34,6 +34,12 @@ paths:
     inline. `__Host-` prefixing is a separate, preprod-tested step (it renames what Lexik and the frontend
     read by name). That `secure` is the **only** Lexik key allowed to differ per environment (issue #659,
     `SecurityConfigEnvironmentParityTest`, see `.claude/rules/backoffice-api.md`, « Authorization »).
+  - **A JWT's `iat` is the instant the password was typed, and something relies on it** (#647): granting an
+    MCP connection requires an authentication under ten minutes old, read from the `iat` of the session's JWT
+    (`Mcp/Connection/Infrastructure/Security/JwtAuthenticationInstant`, `.claude/rules/mcp-oauth.md`). That
+    holds because the site issues a JWT at login only — no refresh endpoint, no sliding renewal. **A JWT
+    refresh added some day must carry the original authentication instant in a claim of its own** and that
+    reader must read it, or a stolen cookie renewed in a loop would pass for a fresh login.
   - **Tokens, JWTs and CSRF values are hidden from stack traces** (`#[SensitiveParameter]`, issue #414): the
     guard covers all of `src/`, so its rule lives in `.claude/rules/backend-conventions.md`.
   - `Infrastructure/Http/CsrfCookieRequestSubscriber.php` — double-submit-cookie CSRF check, a `kernel.request`
