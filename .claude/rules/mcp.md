@@ -364,7 +364,8 @@ paths:
   canonical path) answers a `tools/call` of `ProtectedTools::NOMINATIVE_CORPUS` made **without** an MCP connection (the
   token storage's user is no `McpConnectionPrincipal`) with a **401 without body**, `WWW-Authenticate:
   BearerChallenge::missingToken()` (no `error=`: no token was presented), `no-store`, recorded through
-  `ServerAnswersInterface::record()` — what makes a Claude client open the OAuth flow. **The body decides, read by the
+  `ServerAnswersInterface::record()` — built by `Infrastructure/Http/UnauthorizedAnswers::missingToken()`, the authenticator's
+  401 by its `refusedToken()`: one template, only the challenge differs —, what makes a Claude client open the OAuth flow. **The body decides, read by the
   SDK's own `MessageFactory::create()`** (as `ModernExchange` reads it): a message is that call exactly when the SDK
   would build a `CallToolRequest` of that name from it, in a session and under the sessionless 2026-07-28 envelope
   alike. A one-message batch is judged as a single message — served by the SDK in a session, refused by it under the

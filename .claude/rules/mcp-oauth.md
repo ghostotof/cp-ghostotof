@@ -218,7 +218,8 @@ paths:
   client refresh) — **save what is answered before the firewall** (priority 8): the refusals before the SDK
   (`InboundMessageRefusalListener`, 15, a 400) and the router's 404/405 (`RouterListener`, 32) keep their own answer.
   Empty body, `WWW-Authenticate: <BearerChallenge::refusedToken()>`, `no-store`, the same for every
-  cause, recorded through `ServerAnswersInterface::record()` (the call log reads it as the server's answer). The cause
+  cause, recorded through `ServerAnswersInterface::record()` (the call log reads it as the server's answer), built by
+  `Mcp/Infrastructure/Http/UnauthorizedAnswers::refusedToken()`, shared with the deferred 401. The cause
   is named only in `McpBearerRefusedException`'s constant message (`MCP access token refused: <cause>`, never the
   token, its hash nor a UUID), logged by the `security` channel's « Authenticator failed. »; the `AuthenticatorManager`
   catches it, its `log_level: info` is never used (like `SubmittedPasswordTooLongException`). On success the request

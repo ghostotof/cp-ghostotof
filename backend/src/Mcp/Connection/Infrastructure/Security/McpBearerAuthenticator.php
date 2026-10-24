@@ -4,13 +4,12 @@ declare(strict_types=1);
 
 namespace App\Mcp\Connection\Infrastructure\Security;
 
-use App\Mcp\Connection\Application\BearerChallenge;
 use App\Mcp\Connection\Application\McpConnectionPrincipal;
 use App\Mcp\Connection\Application\OAuthEndpoints;
 use App\Mcp\Connection\Domain\Repository\McpAccessTokenRepositoryInterface;
 use App\Mcp\Connection\Domain\ValueObject\BearerRefusal;
 use App\Mcp\Connection\Infrastructure\League\TokenIdentifierHash;
-use App\Mcp\Infrastructure\Http\ServerAnswersInterface;
+use App\Mcp\Infrastructure\Http\UnauthorizedAnswers;
 use Psr\Clock\ClockInterface;
 use SensitiveParameter;
 use Symfony\Component\HttpFoundation\Request;
@@ -69,12 +68,12 @@ use Symfony\Component\Security\Http\Authenticator\Passport\SelfValidatingPasspor
  * ({@see \App\Mcp\Infrastructure\Http\InboundMessageRefusalListener}, 15, un
  * 400) et les 404/405 du routeur (32) gardent leur réponse. Sans corps,
  * `WWW-Authenticate` portant `error="invalid_token"`
- * (BearerChallenge::refusedToken()), `no-store`, et la
- * même pour toutes les causes : la cause n'est nommée que dans
- * l'exception, que le canal `security` journalise (McpBearerRefusedException).
- * La réponse passe par ServerAnswersInterface::record() : le journal d'appels
- * (`mcp_usage`) la lit comme une réponse du serveur, pas comme un 4xx du
- * framework.
+ * ({@see \App\Mcp\Connection\Application\BearerChallenge::refusedToken()}),
+ * `no-store`, et la même pour toutes les causes : la cause n'est nommée que
+ * dans l'exception, que le canal `security` journalise
+ * (McpBearerRefusedException). La réponse est celle d'UnauthorizedAnswers,
+ * qui l'inscrit pour le journal d'appels (`mcp_usage`) comme une réponse du
+ * serveur.
  */
 final class McpBearerAuthenticator extends AbstractAuthenticator
 {
@@ -92,8 +91,7 @@ final class McpBearerAuthenticator extends AbstractAuthenticator
         private readonly ClockInterface $clock,
         private readonly OAuthEndpoints $endpoints,
         private readonly RoleHierarchyInterface $roleHierarchy,
-        private readonly BearerChallenge $challenge,
-        private readonly ServerAnswersInterface $serverAnswers,
+        private readonly UnauthorizedAnswers $unauthorized,
     ) {
     }
 
@@ -146,10 +144,7 @@ final class McpBearerAuthenticator extends AbstractAuthenticator
 
     public function onAuthenticationFailure(Request $request, AuthenticationException $exception): Response
     {
-        $response = new Response('', Response::HTTP_UNAUTHORIZED, ['WWW-Authenticate' => $this->challenge->refusedToken()]);
-        $response->headers->addCacheControlDirective('no-store');
-
-        return $this->serverAnswers->record($response);
+        return $this->unauthorized->refusedToken();
     }
 
     private function isBearer(#[SensitiveParameter] string $authorization): bool

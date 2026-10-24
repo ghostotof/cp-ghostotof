@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Mcp\Infrastructure\Http;
 
 use App\Mcp\Application\ProtectedTools;
-use App\Mcp\Connection\Application\BearerChallenge;
 use App\Mcp\Connection\Application\McpConnectionPrincipal;
 use App\Shared\Infrastructure\Http\CanonicalPath;
 use JsonException;
@@ -15,7 +14,6 @@ use Mcp\Schema\JsonRpc\MessageInterface;
 use Mcp\Schema\Request\CallToolRequest;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 use Symfony\Component\HttpFoundation\Request;
-use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Event\RequestEvent;
 use Symfony\Component\Security\Core\Authentication\Token\Storage\TokenStorageInterface;
 
@@ -24,8 +22,9 @@ use Symfony\Component\Security\Core\Authentication\Token\Storage\TokenStorageInt
  * « Sans connexion ») : sans connexion MCP, un `tools/call` de
  * {@see ProtectedTools::NOMINATIVE_CORPUS} reçoit, **avant le SDK**, un 401
  * sans corps portant le défi `WWW-Authenticate`
- * ({@see BearerChallenge::missingToken()} : l'URL des métadonnées de la
- * ressource et le scope, sans `error=` puisqu'aucun jeton n'a été présenté) —
+ * ({@see \App\Mcp\Connection\Application\BearerChallenge::missingToken()} :
+ * l'URL des métadonnées de la ressource et le scope, sans `error=` puisqu'aucun
+ * jeton n'a été présenté) —
  * c'est ce qui fait ouvrir le parcours OAuth aux clients Claude. Rien du
  * catalogue ne change : l'outil reste listé, les autres outils restent servis
  * sans connexion.
@@ -57,17 +56,15 @@ use Symfony\Component\Security\Core\Authentication\Token\Storage\TokenStorageInt
  * fait lire l'identité par `Security`, que seul le firewall pose (ADR 0006
  * D4), à {@see \App\Mcp\Application\NominativeCorpusReaderInterface}.
  *
- * La réponse passe par ServerAnswersInterface::record() : le journal d'appels
- * (`mcp_usage`) la lit comme une réponse du serveur, pas comme un 4xx du
- * framework.
+ * La réponse est celle d'{@see UnauthorizedAnswers}, qui l'inscrit pour le
+ * journal d'appels (`mcp_usage`) comme une réponse du serveur.
  */
 #[AsEventListener(event: RequestEvent::class, priority: 7)]
 final readonly class DeferredAuthorizationListener
 {
     public function __construct(
         private TokenStorageInterface $tokenStorage,
-        private BearerChallenge $challenge,
-        private ServerAnswersInterface $serverAnswers,
+        private UnauthorizedAnswers $unauthorized,
     ) {
     }
 
@@ -95,10 +92,7 @@ final readonly class DeferredAuthorizationListener
             return;
         }
 
-        $response = new Response('', Response::HTTP_UNAUTHORIZED, ['WWW-Authenticate' => $this->challenge->missingToken()]);
-        $response->headers->addCacheControlDirective('no-store');
-
-        $event->setResponse($this->serverAnswers->record($response));
+        $event->setResponse($this->unauthorized->missingToken());
     }
 
     /**
