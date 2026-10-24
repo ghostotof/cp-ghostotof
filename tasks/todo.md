@@ -123,3 +123,8 @@ phase 1 parte en release seule ; puis au merge de clôture, qui archive la spec 
       sévérité nulle aujourd'hui, moyenne si le cas apparaissait
 - [ ] Dépendances : API Platform hors du mélange 4.3/4.4, puis évaluer la 5.0 (#701) — dépréciation
       écrite en prod à chaque `POST /api/contact`
+- [ ] Sécurité : le refus multipart de nginx passe avant `limit_req`, `limit_conn` et la borne de corps
+      (#702) — suivi de #686, relevé par la relecture de l'étape 07 de #647
+- [ ] Sécurité : épingler `BEARER.secure` à `true` en prod, l'exemption de parité n'a pas de filet (#703) — suivi de #659
+- [ ] Veille : un cycle refusé laisse un cycle plus grossier prendre sa place (#704) — suivi de #658
+- [ ] Tests : caches de parité orphelins, coût des trois conteneurs, traces cosmétiques (#705) — suivi de #659
