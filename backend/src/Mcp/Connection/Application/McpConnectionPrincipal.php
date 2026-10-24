@@ -24,9 +24,25 @@ use Symfony\Component\Uid\Uuid;
  */
 interface McpConnectionPrincipal extends AccountReference
 {
+    /**
+     * Le rôle du palier de confiance (ADR 0003) qu'une connexion exige de son
+     * compte, tel que `security.yaml` l'écrit : nommé ici plutôt que lu sur
+     * CpgUser, pour que ce contexte ne dépende de `Security` que par ses deux
+     * portes admises (`.claude/rules/mcp-oauth.md`). L'authentificateur le
+     * juge à chaque requête, l'outil nominatif le revérifie ;
+     * McpConnectionPrincipalTest le compare à `CpgUser::ROLE_TRUSTED`.
+     */
+    public const string TRUSTED_TIER = 'ROLE_TRUSTED';
+
     /** La connexion MCP dont le jeton présenté a été relu. */
     public function connectionId(): Uuid;
 
     /** L'identifiant public OAuth du client de la connexion (`mcp_client.client_id`). */
     public function clientId(): string;
+
+    /**
+     * Vrai quand le scope stocké de la connexion, relu avec le jeton, accorde
+     * `nominative:read` (McpConnection::grantsNominativeRead()).
+     */
+    public function grantsNominativeRead(): bool;
 }

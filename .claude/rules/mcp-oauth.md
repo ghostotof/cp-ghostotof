@@ -51,10 +51,12 @@ paths:
   the security audit log, whose single writer is that interface. Rejected: a bare UUID column with no foreign
   key (a deleted account would leave live connections until #648's authenticator stumbled on them), and a copy
   of the audit logger (a second writer of `security_audit`). A new dependency of this context on `Security`
-  goes through the same two doors, nothing else. **`Mcp/Presentation` uses the second door too** (#648):
-  `GetNominativeCorpusTool` writes `nominative-corpus-read` through `SecurityAuditLoggerInterface`, for the same
-  reason (the single writer of `security_audit`); it designates the account through the firewall's
-  `McpConnectionPrincipal`, an `AccountReference`, never a `CpgUser`. The consent's recency rule (below) is no third
+  goes through the same two doors, nothing else. **`Mcp/Infrastructure` uses the second door too** (#648):
+  `Corpus/NominativeCorpusReader`, behind `GetNominativeCorpusTool`, writes `nominative-corpus-read` through
+  `SecurityAuditLoggerInterface`, for the same reason (the single writer of `security_audit`); it designates the account
+  through the firewall's `McpConnectionPrincipal`, an `AccountReference`, never a `CpgUser`. The trusted tier's role is
+  no third door either: `McpConnectionPrincipal::TRUSTED_TIER`, a copy that `McpConnectionPrincipalTest` compares with
+  `CpgUser::ROLE_TRUSTED`. The consent's recency rule (below) is no third
   one: it reads
   the token Symfony's firewall authenticated and Lexik's manager (vendor), never a class of `App\Security`.
 - **League's « user » is the MCP connection, never the account** (`ConnectionAsUser`, its RFC 4122 UUID):
@@ -206,7 +208,8 @@ paths:
   expired, without `nominative:read` in its stored scope (`InsufficientScope`, word for word, final review of
   #648) —; then `ROLE_TRUSTED` reached through `RoleHierarchyInterface` from the **stored** roles
   (`AccountNotTrusted`: a `ROLE_SUPER` without stored `ROLE_TRUSTED` passes, the base tier does not). The role name is
-  a local constant, not `CpgUser::ROLE_TRUSTED`, so the context's dependency on `Security` keeps its two doors. **No
+  `McpConnectionPrincipal::TRUSTED_TIER`, not `CpgUser::ROLE_TRUSTED`, so the context's dependency on `Security` keeps
+  its two doors (`McpConnectionPrincipalTest` compares the two). **No
   write per call** (no `last_used_at`, #649 writes it at refresh; `testNoRequestWritesOutsideTheMcpSessions`), and
   exactly **one query more** than the same anonymous call (`testAnAuthenticatedCallCostsExactlyOneQueryMore`). Nothing
   loads the account before that query: a join does not refresh an instance the EntityManager already manages.

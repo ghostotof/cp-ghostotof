@@ -93,17 +93,27 @@ paths:
   deferred authentication relies on); its name is `Application/ProtectedTools::NOMINATIVE_CORPUS`, read by the
   deferred 401 below. **With an MCP connection** (#648) it returns `{"corpus": <CorpusRenderer's text for the
   language>, "cvPageUrl": "<APP_FRONTEND_BASE_URL>/<locale>/assistant"}` (closed `outputSchema`, never the PDF) and,
-  after the render, the audit line `nominative-corpus-read` (`userId`, `connectionId`, `clientId`, `tool`) — it records
-  the corpus as rendered, an unavailable detailed CV included (accepted: the connection read what the server had to
-  serve, not necessarily the CV); without
+  once the answer fits its bound, the audit line `nominative-corpus-read` (`userId`, `connectionId`, `clientId`, `tool`)
+  — it records the corpus as rendered, an unavailable detailed CV included (accepted: the connection read what the
+  server had to serve, not necessarily the CV), and **an answer the tool served, not one the client received**
+  (accepted, review of #648: a session write lost afterwards — the store down, the binding race below, a session
+  over its bound once the answer is queued — over-counts, the safe direction); without
   one, an unmarked call gets that 401, a call marked `openai/` the tool's error — `CONNECTION_REQUIRED` and
   `_meta["mcp/www_authenticate"]` = a list of one `BearerChallenge::insufficientScope()` challenge (the Apps SDK
-  reference types it « string or string[] ») —, the same marked or not, nothing read. **The identity is read
-  through `Security` only** (`McpConnectionPrincipal`, ADR 0006 D4): never `_meta`, the token nor the SDK's
-  authorization middlewares, and no `RequestContext` (nothing would read it). Its constructor takes `Security`,
-  `CorpusRendererInterface`, `SecurityAuditLoggerInterface` (the second door of `mcp-oauth.md`'s « assumed
-  exception », used by `Mcp/Presentation` now), `BearerChallenge`, the logger and `app.frontend_base_url`, pinned in
-  `McpExposureSymmetryTest::TOOLS_WITHOUT_ROUTE`. **Its queued answer is bounded** (`QUEUED_ANSWER_MAX_BYTES`, sessions below); for it `Mcp/Presentation` imports
+  reference types it « string or string[] ») —, the same marked or not, nothing read. **The tool is a thin adapter**
+  (review of #648): it parses the language, calls `Application/NominativeCorpusReaderInterface`
+  (`Infrastructure/Corpus/NominativeCorpusReader`) — `open(Locale): ?NominativeCorpus` decides the access and renders,
+  `recordServed(NominativeCorpus)` writes the audit line —, measures the answer and turns each outcome into a
+  `CallToolResult`; two steps because the measure is the SDK's encoding (Presentation) and the audit must follow it.
+  **The identity is read through `Security` only** (`McpConnectionPrincipal`, ADR 0006 D4): never `_meta`, the token
+  nor the SDK's authorization middlewares, and no `RequestContext` (nothing would read it). **The reader re-checks what
+  the authenticator already judged** (defence in depth, review of #648): a `McpConnectionPrincipal`, its
+  `grantsNominativeRead()` (the stored scope, re-read with the token) and `isGranted(McpConnectionPrincipal::TRUSTED_TIER)`
+  (the `role_hierarchy`); any of the three missing is the same refusal as without a connection, nothing rendered nor
+  logged (`NominativeCorpusReaderTest`, a fixture principal lacking the tier, then the scope: red without each check,
+  measured). The reader takes `Security`, `CorpusRendererInterface`, `SecurityAuditLoggerInterface` (the second door
+  of `mcp-oauth.md`'s « assumed exception ») and `app.frontend_base_url`; the tool takes the reader's interface,
+  `BearerChallenge` and the logger, pinned in `McpExposureSymmetryTest::TOOLS_WITHOUT_ROUTE`. **Its queued answer is bounded** (`QUEUED_ANSWER_MAX_BYTES`, sessions below); for it `Mcp/Presentation` imports
   `Infrastructure/Session/BoundedSessionStore`, assumed like the controller's `ServerAnswersInterface` (the bound lives
   with the code that enforces it). `get_tech_watch` relays third-party strings
   (endoflife.date cycles, versions, links) to the person's model — indirect prompt injection (LLM01): its

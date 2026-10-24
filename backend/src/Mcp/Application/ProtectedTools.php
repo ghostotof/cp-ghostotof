@@ -15,8 +15,9 @@ namespace App\Mcp\Application;
  * Le préfixe `openai/` est celui des clés `_meta` que ChatGPT ajoute à ses
  * appels : un message qui en porte une passe le point avant le SDK, et l'outil
  * rend alors le refus dans la forme que ce client lit. **Il ne choisit que la
- * forme du refus, jamais l'accès** : l'accès est décidé par l'authentificateur
- * du firewall `mcp` seul (ADR 0006 D4).
+ * forme du refus, jamais l'accès** : l'accès se décide sur l'identité que
+ * l'authentificateur du firewall `mcp` pose, seule (ADR 0006 D4), rejugée par
+ * {@see NominativeCorpusReaderInterface::open()}.
  */
 final class ProtectedTools
 {

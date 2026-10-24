@@ -15,11 +15,22 @@ use Symfony\Component\Uid\Uuid;
  * ({@see \App\Mcp\Connection\Infrastructure\Security\McpConnectionUser}) ne
  * se construit que depuis une connexion hydratée. Hors de `src/`, jamais
  * chargé par l'application.
+ *
+ * Par défaut une connexion que l'authentificateur laisserait passer (le
+ * palier de confiance, `nominative:read`) ; les deux autres paramètres
+ * fabriquent celles qu'il refuse, pour éprouver la défense en profondeur de
+ * ce qui la lit après lui.
  */
 final readonly class ConnectionPrincipal implements UserInterface, McpConnectionPrincipal
 {
-    public function __construct(private Uuid $connectionId)
-    {
+    /**
+     * @param list<string> $roles les rôles stockés du compte
+     */
+    public function __construct(
+        private Uuid $connectionId,
+        private array $roles = [McpConnectionPrincipal::TRUSTED_TIER],
+        private bool $grantsNominativeRead = true,
+    ) {
     }
 
     public function accountId(): string
@@ -37,9 +48,14 @@ final readonly class ConnectionPrincipal implements UserInterface, McpConnection
         return 'test-client';
     }
 
+    public function grantsNominativeRead(): bool
+    {
+        return $this->grantsNominativeRead;
+    }
+
     public function getRoles(): array
     {
-        return ['ROLE_TRUSTED'];
+        return $this->roles;
     }
 
     public function getUserIdentifier(): string

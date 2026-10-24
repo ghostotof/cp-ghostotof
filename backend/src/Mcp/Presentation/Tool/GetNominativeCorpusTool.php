@@ -4,58 +4,48 @@ declare(strict_types=1);
 
 namespace App\Mcp\Presentation\Tool;
 
-use App\Ai\Assistant\Application\Corpus\CorpusRendererInterface;
+use App\Mcp\Application\NominativeCorpusReaderInterface;
 use App\Mcp\Application\ProtectedTools;
 use App\Mcp\Connection\Application\BearerChallenge;
-use App\Mcp\Connection\Application\McpConnectionPrincipal;
 use App\Mcp\Connection\Domain\Entity\McpConnection;
 use App\Mcp\Infrastructure\Session\BoundedSessionStore;
-use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use Mcp\Capability\Attribute\McpTool;
 use Mcp\Capability\Attribute\Schema;
 use Mcp\Schema\Content\TextContent;
 use Mcp\Schema\Result\CallToolResult;
 use Mcp\Schema\ToolAnnotations;
 use Psr\Log\LoggerInterface;
-use Symfony\Bundle\SecurityBundle\Security;
-use Symfony\Component\DependencyInjection\Attribute\Autowire;
 
 /**
  * `get_nominative_corpus` : le corpus nominatif, réservé au palier de
  * confiance par une connexion MCP (ADR 0006 D3, D5 ; #648).
  *
  * **Toujours listé**, et sa description dit qu'il exige une connexion MCP :
- * c'est ce sur quoi s'appuie l'authentification différée des clients. L'accès
- * se décide sur l'identité que le firewall `mcp` a posée (D4) et sur elle
- * seule, lue par `Security` : un {@see McpConnectionPrincipal}, c'est un jeton
- * d'accès relu en base à cette requête — connexion vivante, compte encore du
- * palier de confiance. L'outil ne lit ni `_meta`, ni le jeton, ni les
- * middlewares d'autorisation du SDK.
+ * c'est ce sur quoi s'appuie l'authentification différée des clients. Un
+ * adaptateur mince : la décision d'accès, le rendu et l'audit sont ceux de
+ * {@see NominativeCorpusReaderInterface} ; l'outil lit la langue, met le
+ * corpus à la forme MCP, mesure la réponse telle que le SDK la mettra en file
+ * — une affaire de SDK, donc de Presentation — et traduit chaque issue en
+ * `CallToolResult`.
  *
- *  - **Avec une connexion** : le corpus, rendu par le renderer de l'assistant
- *    de parcours (les mêmes sources, que `CorpusSourcesTest` fixe : le texte du
- *    CV que sert `GET /api/cv`, le CV sans identité, les études de cas), et
- *    l'adresse de la page du site où se télécharge le CV (spec 0007) ;
- *    jamais le PDF. Puis la ligne `nominative-corpus-read` du journal de
- *    sécurité, **après** le rendu : une lecture journalisée est une lecture
- *    faite. Elle consigne la lecture du corpus **tel que rendu** : un CV
- *    détaillé indisponible (fichier absent, extraction en échec) laisse un
- *    corpus qui le dit à sa place, et la ligne est écrite quand même — limite
- *    acceptée (relecture finale de #648) : elle dit qu'une connexion a lu ce
- *    que le serveur avait à servir, pas que le CV y était. Au-delà de {@see self::QUEUED_ANSWER_MAX_BYTES}, une erreur d'outil qui
- *    donne l'adresse de la page du CV, un `warning` aux tailles seules, et
+ *  - **Corpus ouvert, réponse dans sa borne** : le corpus et l'adresse de la
+ *    page du CV, puis `recordServed()` — la ligne d'audit **après** la mesure :
+ *    une lecture journalisée est une réponse que l'outil sert.
+ *  - **Au-delà de {@see self::QUEUED_ANSWER_MAX_BYTES}** : une erreur d'outil
+ *    qui donne l'adresse de la page du CV, un `warning` aux tailles seules, et
  *    aucune ligne d'audit : rien n'a été servi.
- *  - **Sans** : l'erreur d'outil que ChatGPT sait suivre — le défi
+ *  - **Refusé** (pas de connexion, ou une connexion sans le scope ou le
+ *    palier) : l'erreur d'outil que ChatGPT sait suivre — le défi
  *    `insufficient_scope` dans `_meta["mcp/www_authenticate"]`, qui lui fait
- *    ouvrir le parcours OAuth, et un texte qui dit quoi faire. Un appel non
- *    marqué `openai/` a déjà reçu le 401 différé avant le SDK
+ *    ouvrir le parcours OAuth, et un texte qui dit quoi faire. Un appel
+ *    anonyme non marqué `openai/` a déjà reçu le 401 différé avant le SDK
  *    (DeferredAuthorizationListener) : ce chemin ne l'atteint que si
  *    l'écouteur manque, et il ne sert alors pas davantage — marqué ou non, le
  *    même refus, sans rien lire.
  *
  * Aucun `RequestContext` du SDK n'est demandé (accepté par le contrôleur de la
- * tâche 9) : rien ne le lirait, la branche sans connexion répondant la même
- * chose avec ou sans le marqueur, et l'identité venant de `Security`.
+ * tâche 9) : rien ne le lirait, la branche refusée répondant la même chose
+ * avec ou sans le marqueur, et l'identité venant de `Security`.
  *
  * La valeur de `_meta["mcp/www_authenticate"]` est une **liste** de défis RFC
  * 7235 : la référence de l'Apps SDK d'OpenAI (« Error tool result »,
@@ -143,13 +133,9 @@ final readonly class GetNominativeCorpusTool
     ];
 
     public function __construct(
-        private Security $security,
-        private CorpusRendererInterface $corpusRenderer,
-        private SecurityAuditLoggerInterface $auditLogger,
+        private NominativeCorpusReaderInterface $corpusReader,
         private BearerChallenge $challenge,
         private LoggerInterface $logger,
-        #[Autowire(param: 'app.frontend_base_url')]
-        private string $frontendBaseUrl,
     ) {
     }
 
@@ -171,16 +157,15 @@ final readonly class GetNominativeCorpusTool
         // inconnue reste l'erreur que le modèle sait corriger, connexion ou non.
         $language = ToolLocale::parse($locale);
 
-        $connection = $this->security->getUser();
-        if (!$connection instanceof McpConnectionPrincipal) {
+        $corpus = $this->corpusReader->open($language);
+        if (null === $corpus) {
             return CallToolResult::error(
                 [new TextContent(self::CONNECTION_REQUIRED)],
                 meta: [self::WWW_AUTHENTICATE_META_KEY => [$this->challenge->insufficientScope(self::CONNECTION_REQUIRED_DESCRIPTION)]],
             );
         }
 
-        $cvPageUrl = \sprintf('%s/%s/assistant', rtrim($this->frontendBaseUrl, '/'), $language->value);
-        $result = JsonToolResult::forObject(['corpus' => $this->corpusRenderer->render($language), 'cvPageUrl' => $cvPageUrl]);
+        $result = JsonToolResult::forObject($corpus->payload());
 
         // Mesurée telle que le SDK la met en file : c'est elle, pas le texte,
         // qui doit tenir dans la session.
@@ -189,10 +174,10 @@ final readonly class GetNominativeCorpusTool
             // Les tailles seules : jamais le texte, qui nomme l'auteur.
             $this->logger->warning('Nominative corpus refused over MCP: queued answer over its bound.', ['queuedBytes' => $queuedBytes, 'maxBytes' => self::QUEUED_ANSWER_MAX_BYTES]);
 
-            return CallToolResult::error([new TextContent(\sprintf(self::CORPUS_TOO_LARGE, $cvPageUrl))]);
+            return CallToolResult::error([new TextContent(\sprintf(self::CORPUS_TOO_LARGE, $corpus->cvPageUrl))]);
         }
 
-        $this->auditLogger->nominativeCorpusRead($connection, $connection->connectionId(), $connection->clientId(), ProtectedTools::NOMINATIVE_CORPUS);
+        $this->corpusReader->recordServed($corpus);
 
         return $result;
     }

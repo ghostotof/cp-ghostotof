@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Mcp\Connection\Infrastructure\Security;
 
 use App\Mcp\Connection\Application\BearerChallenge;
+use App\Mcp\Connection\Application\McpConnectionPrincipal;
 use App\Mcp\Connection\Application\OAuthEndpoints;
 use App\Mcp\Connection\Domain\Repository\McpAccessTokenRepositoryInterface;
 use App\Mcp\Connection\Domain\ValueObject\BearerRefusal;
@@ -86,14 +87,6 @@ final class McpBearerAuthenticator extends AbstractAuthenticator
     /** Un identifiant de jeton de league : 40 octets aléatoires en hexadécimal minuscule. */
     private const string ISSUED_TOKEN_SHAPE = '/^[0-9a-f]{80}\z/';
 
-    /**
-     * Le rôle du palier de confiance (ADR 0003), tel que `security.yaml`
-     * l'écrit : nommé ici plutôt que lu sur CpgUser, pour que ce contexte
-     * ne dépende de `Security` que par ses deux portes admises
-     * (`.claude/rules/mcp-oauth.md`).
-     */
-    private const string TRUSTED_TIER = 'ROLE_TRUSTED';
-
     public function __construct(
         private readonly McpAccessTokenRepositoryInterface $accessTokens,
         private readonly ClockInterface $clock,
@@ -134,7 +127,7 @@ final class McpBearerAuthenticator extends AbstractAuthenticator
 
         $connection = $token->connection();
 
-        if (!\in_array(self::TRUSTED_TIER, $this->roleHierarchy->getReachableRoleNames($connection->account()->getRoles()), true)) {
+        if (!\in_array(McpConnectionPrincipal::TRUSTED_TIER, $this->roleHierarchy->getReachableRoleNames($connection->account()->getRoles()), true)) {
             throw McpBearerRefusedException::because(BearerRefusal::AccountNotTrusted);
         }
 

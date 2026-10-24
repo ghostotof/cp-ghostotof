@@ -20,7 +20,9 @@ use Symfony\Component\Uid\Uuid;
  *  - `getRoles()` sont les rôles **stockés** du compte (`CpgUser::getRoles()`,
  *    `ROLE_USER` compris), relus avec le jeton : la `role_hierarchy` se joue
  *    au vote, comme sur le firewall `api` — un ROLE_SUPER y atteint
- *    ROLE_TRUSTED.
+ *    ROLE_TRUSTED ;
+ *  - `grantsNominativeRead()` est le scope **stocké** de la connexion, relu
+ *    avec le jeton.
  *
  * Construit par McpBearerAuthenticator, qui le rend par le chargeur du badge :
  * le firewall est sans état, l'utilisateur n'est jamais rechargé ni
@@ -36,6 +38,7 @@ final readonly class McpConnectionUser implements UserInterface, McpConnectionPr
         private Uuid $connectionId,
         private string $clientId,
         private array $roles,
+        private bool $grantsNominativeRead,
     ) {
     }
 
@@ -44,7 +47,7 @@ final readonly class McpConnectionUser implements UserInterface, McpConnectionPr
     {
         $account = $connection->account();
 
-        return new self($account->accountId(), $connection->getId(), $connection->client()->getClientId(), $account->getRoles());
+        return new self($account->accountId(), $connection->getId(), $connection->client()->getClientId(), $account->getRoles(), $connection->grantsNominativeRead());
     }
 
     public function accountId(): string
@@ -60,6 +63,11 @@ final readonly class McpConnectionUser implements UserInterface, McpConnectionPr
     public function clientId(): string
     {
         return $this->clientId;
+    }
+
+    public function grantsNominativeRead(): bool
+    {
+        return $this->grantsNominativeRead;
     }
 
     /**

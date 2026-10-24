@@ -54,7 +54,8 @@ use Symfony\Component\Security\Core\Authentication\Token\Storage\TokenStorageInt
  * **Le marqueur `openai/`** : un appel dont le `_meta` porte une clé de ce
  * préfixe (ChatGPT) passe jusqu'à l'outil, qui rend le refus dans la forme que
  * ce client lit. Il ne choisit que la forme du refus, jamais l'accès : l'outil
- * lit l'identité par `Security`, que seul le firewall pose (ADR 0006 D4).
+ * fait lire l'identité par `Security`, que seul le firewall pose (ADR 0006
+ * D4), à {@see \App\Mcp\Application\NominativeCorpusReaderInterface}.
  *
  * La réponse passe par ServerAnswersInterface::record() : le journal d'appels
  * (`mcp_usage`) la lit comme une réponse du serveur, pas comme un 4xx du

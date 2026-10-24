@@ -7,14 +7,13 @@ namespace App\Tests\Mcp;
 use ApiPlatform\Metadata\Exception\OperationNotFoundException;
 use ApiPlatform\Metadata\HttpOperation;
 use ApiPlatform\Metadata\Resource\Factory\ResourceMetadataCollectionFactoryInterface;
-use App\Ai\Assistant\Application\Corpus\CorpusRendererInterface;
+use App\Mcp\Application\NominativeCorpusReaderInterface;
 use App\Mcp\Application\RoutePayloadReaderInterface;
 use App\Mcp\Connection\Application\BearerChallenge;
 use App\Mcp\Presentation\Tool\AccessTier;
 use App\Mcp\Presentation\Tool\BackedByRoute;
 use App\Portfolio\Contribution\Presentation\ApiResource\ContributionResource;
 use App\Portfolio\Quality\Presentation\ApiResource\QualityContentResource;
-use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use App\Tests\Mcp\Fixtures\CallerReadingProvider;
 use App\Tests\Mcp\Infrastructure\ApiPlatform\Fixtures\PrefixedResource;
 use App\Tests\Mcp\Presentation\Tool\GetAboutToolTest;
@@ -108,8 +107,8 @@ final class McpExposureSymmetryTest extends KernelTestCase
     public const array TOOLS_WITHOUT_ROUTE = [
         'get_contact_info' => ['Adresse de la page publique du formulaire de contact (palier anonyme) : la route /api/contact est une écriture.', ['string']],
         'get_nominative_corpus' => [
-            'Corpus nominatif (palier de confiance, connexion MCP, #648) : ses sources sont celles que CorpusSourcesTest fixe, rendues par le renderer de l\'assistant de parcours. L\'outil lit l\'identité par Security seulement (ADR 0006 D4) : sans connexion, l\'erreur d\'outil et son défi (BearerChallenge) ; avec, le corpus puis la ligne d\'audit (SecurityAuditLoggerInterface) ; au-delà de sa borne, le refus et un warning aux tailles seules (LoggerInterface) ; l\'adresse de la page du CV (app.frontend_base_url).',
-            [Security::class, CorpusRendererInterface::class, SecurityAuditLoggerInterface::class, BearerChallenge::class, LoggerInterface::class, 'string'],
+            'Corpus nominatif (palier de confiance, connexion MCP, #648) : ses sources sont celles que CorpusSourcesTest fixe, rendues par le renderer de l\'assistant de parcours. L\'outil délègue l\'accès, le rendu et l\'audit à NominativeCorpusReaderInterface, qui lit l\'identité par Security seulement (ADR 0006 D4) ; refusé, l\'erreur d\'outil et son défi (BearerChallenge) ; au-delà de sa borne, le refus et un warning aux tailles seules (LoggerInterface).',
+            [NominativeCorpusReaderInterface::class, BearerChallenge::class, LoggerInterface::class],
         ],
     ];
 

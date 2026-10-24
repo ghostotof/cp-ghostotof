@@ -199,7 +199,8 @@ paths:
     `system` nor `anonymous`) — the two events whose actor is not read from the token storage; `record()` takes an
     explicit actor for CLI callers), `mcp-connection-granted` (#647, `ConsentService` after the COMMIT of the
     connection and its code: `userId`, `connectionId`, the client's public `clientId`, never the code),
-    `nominative-corpus-read` (#648, `GetNominativeCorpusTool` after the render, never on a refusal: `userId` — also the
+    `nominative-corpus-read` (#648, `NominativeCorpusReader::recordServed()`, called by `GetNominativeCorpusTool` once the
+    answer fits its bound, never on a refusal: `userId` — also the
     `actor`, the `mcp` firewall's `McpConnectionPrincipal` being an `AccountReference` —, `connectionId`, `clientId`,
     `tool`; never the token, its hash nor anything of the corpus). Every record carries
     `event` (the stable kebab-case key to filter on), `actor`, `ip`, `path` (canonical), plus the subject.
