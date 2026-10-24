@@ -5,12 +5,12 @@ declare(strict_types=1);
 namespace App\Tests\Mcp\Connection\Infrastructure\League;
 
 use App\Mcp\Connection\Application\AuthorizationRequestSummary;
-use App\Mcp\Connection\Domain\Entity\McpClient;
 use App\Mcp\Connection\Domain\Entity\McpConnection;
 use App\Mcp\Connection\Infrastructure\League\DeniedRequestUser;
 use App\Mcp\Connection\Infrastructure\League\LeagueAuthorizationCompleter;
 use App\Mcp\Connection\Infrastructure\League\UnexpectedAuthorizationResponseException;
 use App\Security\User\Domain\Entity\CpgUser;
+use App\Tests\Mcp\Connection\RegisteredMcpClient;
 use DateTimeImmutable;
 use League\OAuth2\Server\AuthorizationServer;
 use League\OAuth2\Server\Exception\OAuthServerException;
@@ -137,7 +137,7 @@ final class LeagueAuthorizationCompleterTest extends TestCase
     {
         return McpConnection::grant(
             new CpgUser('trusted', 'hashed-password'),
-            McpClient::register('https://client.example.test/metadata.json', 'Client de test', ['http://localhost/callback'], new DateTimeImmutable()),
+            RegisteredMcpClient::of('https://client.example.test/metadata.json', 'Client de test', ['http://localhost/callback']),
             'nominative:read',
             new DateTimeImmutable(),
         );

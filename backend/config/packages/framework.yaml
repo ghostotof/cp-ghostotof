@@ -83,6 +83,11 @@ framework:
         # league, gardé en `previous`, dit au journal lequel des contrôles.
         App\Mcp\Connection\Domain\Exception\AuthorizationRequestRejectedException:
             log_level: info
+        # Accord d'une connexion MCP sur une authentification de plus de dix
+        # minutes (#647, F1) : 401 typé, la page renvoie à la connexion. Une
+        # issue ordinaire d'une page restée ouverte, pas une alerte.
+        App\Mcp\Connection\Domain\Exception\ReauthenticationRequiredException:
+            log_level: info
 
         # --- Exceptions rendues par API Platform (`exception_to_status`) ---
         # logKernelException (priorité 0) les voit aussi, avant API Platform

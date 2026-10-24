@@ -6,10 +6,12 @@ namespace App\Mcp\Connection\Application;
 
 use App\Mcp\Connection\Domain\Entity\McpConnection;
 use App\Mcp\Connection\Domain\Exception\AuthorizationRequestRejectedException;
+use App\Mcp\Connection\Domain\Exception\ReauthenticationRequiredException;
 use App\Mcp\Connection\Domain\Repository\McpClientRepositoryInterface;
 use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
 use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use App\Security\User\Domain\Entity\CpgUser;
+use DateInterval;
 use League\OAuth2\Server\Exception\OAuthServerException;
 use Psr\Clock\ClockInterface;
 use Psr\Http\Message\ServerRequestFactoryInterface;
@@ -30,6 +32,11 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
  * redirection : au consentement, rien ne part vers une URI qui n'a pas été
  * revalidée.
  *
+ * **L'accord exige une authentification récente** (MAX_AUTHENTICATION_AGE,
+ * l'instant lu dans le jeton signé par AuthenticationInstantInterface) : au
+ * delà, ReauthenticationRequiredException (401 typé), rien d'écrit ni de
+ * journalisé.
+ *
  * **L'accord** crée la connexion puis, par league, son code, dans une seule
  * transaction (TransactionInterface) : le dépôt de codes de league retrouve la
  * connexion par son identifiant, elle doit être écrite avant. La ligne
@@ -42,6 +49,16 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
  */
 final readonly class ConsentService implements ConsentServiceInterface
 {
+    /**
+     * L'âge au-delà duquel une authentification ne suffit plus à accorder une
+     * connexion (F1 de la relecture de #647, décision de l'auteur) : dix
+     * minutes, le temps de lire la page de consentement après s'être
+     * connecté. Une constante plutôt qu'un paramètre : la même règle en
+     * développement, en test, en préproduction et en production (#659), et
+     * aucune configuration de sécurité propre à un environnement.
+     */
+    public const string MAX_AUTHENTICATION_AGE = 'PT10M';
+
     public function __construct(
         private AuthorizationRequestValidatorInterface $validator,
         private AuthorizationCompleterInterface $completer,
@@ -55,6 +72,7 @@ final readonly class ConsentService implements ConsentServiceInterface
         // mcp.md) : le framework n'en publie pas.
         #[Autowire(service: 'mcp.psr17_factory')]
         private ServerRequestFactoryInterface $requestFactory,
+        private AuthenticationInstantInterface $authenticationInstant,
     ) {
     }
 
@@ -72,10 +90,33 @@ final readonly class ConsentService implements ConsentServiceInterface
     }
 
     /**
-     * La connexion et son code, ensemble ou pas du tout ; l'audit ensuite.
+     * L'accord seul l'exige : il ouvre une connexion de trente jours au
+     * corpus nominatif, qu'un cookie `BEARER` volé (une heure, non révocable,
+     * ADR 0003) ne doit pas suffire à ouvrir. Le résumé et le refus n'ouvrent
+     * rien : les exiger aussi ne protégerait rien, et renverrait à la
+     * connexion une personne qui veut seulement dire non. Jugé **après** la
+     * demande : une demande devenue invalide reste son 400, qu'une nouvelle
+     * connexion ne réparerait pas. Un instant inconnu vaut trop ancien.
+     *
+     * @throws ReauthenticationRequiredException
+     */
+    private function requireRecentAuthentication(): void
+    {
+        $authenticatedAt = $this->authenticationInstant->authenticatedAt();
+
+        if (null === $authenticatedAt || $authenticatedAt->add(new DateInterval(self::MAX_AUTHENTICATION_AGE)) < $this->clock->now()) {
+            throw ReauthenticationRequiredException::toGrantAConnection();
+        }
+    }
+
+    /**
+     * L'authentification récente d'abord ; puis la connexion et son code,
+     * ensemble ou pas du tout ; l'audit ensuite.
      */
     private function grant(AuthorizationRequestSummary $summary, CpgUser $account): string
     {
+        $this->requireRecentAuthentication();
+
         $client = $this->clients->findOneByClientId($summary->clientId)
             ?? throw AuthorizationRequestRejectedException::clientNoLongerRegistered();
         $connection = McpConnection::grant($account, $client, $summary->scope, $this->clock->now());

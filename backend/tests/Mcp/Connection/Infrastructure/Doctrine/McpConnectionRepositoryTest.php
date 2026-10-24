@@ -15,6 +15,7 @@ use App\Mcp\Connection\Domain\Repository\McpClientRepositoryInterface;
 use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
 use App\Mcp\Connection\Domain\Repository\McpRefreshTokenRepositoryInterface;
 use App\Security\User\Domain\Entity\CpgUser;
+use App\Tests\Mcp\Connection\RegisteredMcpClient;
 use DateTimeImmutable;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\ORM\EntityManagerInterface;
@@ -348,7 +349,7 @@ final class McpConnectionRepositoryTest extends KernelTestCase
 
     private function registerClient(string $clientId): McpClient
     {
-        $client = McpClient::register($clientId, 'Client de test', ['https://client.example.test/callback', 'http://127.0.0.1/callback'], new DateTimeImmutable());
+        $client = RegisteredMcpClient::of($clientId, 'Client de test', ['https://client.example.test/callback', 'http://127.0.0.1/callback']);
         $this->clients()->add($client);
 
         return $client;

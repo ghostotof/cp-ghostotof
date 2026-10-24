@@ -7,6 +7,7 @@ namespace App\Mcp\Connection\Presentation\Controller;
 use App\Mcp\Connection\Application\AuthorizationRequestValidatorInterface;
 use App\Mcp\Connection\Application\IssParameter;
 use App\Mcp\Connection\Application\OAuthEndpoints;
+use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use League\OAuth2\Server\Exception\OAuthServerException;
 use Psr\Http\Message\ResponseFactoryInterface;
 use Symfony\Bridge\PsrHttpMessage\HttpFoundationFactoryInterface;
@@ -48,9 +49,6 @@ use Symfony\Component\Routing\Attribute\Route;
  */
 final readonly class AuthorizeController
 {
-    /** Les deux langues du site ; la première vaut par défaut. */
-    private const array LOCALES = ['fr', 'en'];
-
     public function __construct(
         private AuthorizationRequestValidatorInterface $validator,
         private OAuthEndpoints $endpoints,
@@ -81,14 +79,17 @@ final readonly class AuthorizeController
     }
 
     /**
-     * La page de consentement, dans la langue retenue parmi celles du site —
-     * jamais une valeur de `Accept-Language` recopiée dans l'URL.
+     * La page de consentement, dans la langue retenue parmi celles du site
+     * (Locale, la liste du projet : une langue ajoutée y est servie sans
+     * toucher ici, spec 0004 D2) — jamais une valeur de `Accept-Language`
+     * recopiée dans l'URL. La première déclarée vaut par défaut.
      */
     private function consentPage(Request $request): string
     {
+        $locales = Locale::values();
         // Jamais nul pour une liste non vide (Symfony rend alors la première
         // langue) ; le repli ne sert qu'au type `?string` de la signature.
-        $locale = $request->getPreferredLanguage(self::LOCALES) ?? self::LOCALES[0];
+        $locale = $request->getPreferredLanguage($locales) ?? Locale::FR->value;
 
         return $this->endpoints->consentPage($locale);
     }
@@ -96,12 +97,21 @@ final readonly class AuthorizeController
     /**
      * Le refus rendu par league ; une redirection vers le client y reçoit
      * `iss`.
+     *
+     * Sans `WWW-Authenticate` : league le pose sur un `invalid_client` quand la
+     * requête porte un en-tête `Authorization` (RFC 6749 §5.2, écrit pour le
+     * point de jeton, où le client s'authentifie). Ici l'appelant est le
+     * navigateur de la personne, et celui qui passe l'authentification Basic
+     * de la préproduction la renvoie à chaque requête : `Basic realm="OAuth"`
+     * lui ferait ouvrir une demande d'identifiants sur le point
+     * d'autorisation. Aucun client ne s'authentifie à ce point.
      */
     private function refusal(OAuthServerException $refusal): Response
     {
         $response = $this->httpFoundationFactory->createResponse(
             $refusal->generateHttpResponse($this->responseFactory->createResponse()),
         );
+        $response->headers->remove('WWW-Authenticate');
         $location = $response->headers->get('Location');
 
         if (null !== $location) {

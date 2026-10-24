@@ -5,9 +5,8 @@ declare(strict_types=1);
 namespace App\Tests\Mcp\Connection\Application;
 
 use App\Mcp\Connection\Application\AuthorizationRequestValidatorInterface;
-use App\Mcp\Connection\Domain\Entity\McpClient;
 use App\Mcp\Connection\Domain\Repository\McpClientRepositoryInterface;
-use DateTimeImmutable;
+use App\Tests\Mcp\Connection\RegisteredMcpClient;
 use Doctrine\ORM\EntityManagerInterface;
 use League\OAuth2\Server\Exception\OAuthServerException;
 use Nyholm\Psr7\ServerRequest;
@@ -33,7 +32,7 @@ final class AuthorizationRequestValidatorTest extends KernelTestCase
         self::bootKernel();
         $this->purge();
         self::getContainer()->get(McpClientRepositoryInterface::class)->add(
-            McpClient::register(self::CLIENT_ID, 'Client de test', ['http://localhost/callback', 'https://client.example.test/callback'], new DateTimeImmutable()),
+            RegisteredMcpClient::of(self::CLIENT_ID, 'Client de test', ['http://localhost/callback', 'https://client.example.test/callback']),
         );
     }
 

@@ -153,14 +153,22 @@ final readonly class AuthorizationRequestValidator implements AuthorizationReque
         return InvalidTarget::refusal($redirectUri);
     }
 
+    /**
+     * Les scopes accordés, chacun une fois : league juge `scope=a a` scope par
+     * scope et garde la répétition, que la page de consentement afficherait
+     * et que la connexion enregistrerait telle quelle. Un ensemble, comme
+     * RFC 6749 §3.3 le définit — et, le serveur n'ayant qu'un scope
+     * (ScopeRepository refuse tout autre), toujours exactement
+     * McpConnection::SCOPE_NOMINATIVE_READ.
+     */
     private function scopeOf(AuthorizationRequestInterface $authorization): string
     {
         $identifiers = [];
 
         foreach ($authorization->getScopes() as $scope) {
-            $identifiers[] = $scope->getIdentifier();
+            $identifiers[$scope->getIdentifier()] = true;
         }
 
-        return implode(' ', $identifiers);
+        return implode(' ', array_keys($identifiers));
     }
 }

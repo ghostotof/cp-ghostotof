@@ -6,11 +6,11 @@ namespace App\Tests\Mcp\Connection\Domain\Entity;
 
 use App\Mcp\Connection\Domain\Entity\McpAccessToken;
 use App\Mcp\Connection\Domain\Entity\McpAuthorizationCode;
-use App\Mcp\Connection\Domain\Entity\McpClient;
 use App\Mcp\Connection\Domain\Entity\McpConnection;
 use App\Mcp\Connection\Domain\Entity\McpRefreshToken;
 use App\Mcp\Connection\Domain\Exception\MalformedTokenHashException;
 use App\Security\User\Domain\Entity\CpgUser;
+use App\Tests\Mcp\Connection\RegisteredMcpClient;
 use Closure;
 use DateTimeImmutable;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -111,7 +111,7 @@ final class McpTokenEntitiesTest extends TestCase
     {
         return McpConnection::grant(
             new CpgUser('jane', 'hashed-password'),
-            McpClient::register('https://client.example.test/metadata.json', 'Client de test', [], new DateTimeImmutable()),
+            RegisteredMcpClient::of('https://client.example.test/metadata.json', 'Client de test', []),
             'nominative:read',
             new DateTimeImmutable(),
         );

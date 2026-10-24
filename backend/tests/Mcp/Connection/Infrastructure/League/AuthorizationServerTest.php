@@ -11,6 +11,7 @@ use App\Mcp\Connection\Domain\Repository\McpClientRepositoryInterface;
 use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
 use App\Mcp\Connection\Infrastructure\League\ConnectionAsUser;
 use App\Security\User\Domain\Entity\CpgUser;
+use App\Tests\Mcp\Connection\RegisteredMcpClient;
 use DateInterval;
 use DateTimeImmutable;
 use Doctrine\ORM\EntityManagerInterface;
@@ -390,7 +391,7 @@ final class AuthorizationServerTest extends KernelTestCase
     private function registerClient(): void
     {
         self::getContainer()->get(McpClientRepositoryInterface::class)->add(
-            McpClient::register(self::CLIENT_ID, 'Client de test', ['http://localhost/callback', 'https://client.example.test/callback'], new DateTimeImmutable()),
+            RegisteredMcpClient::of(self::CLIENT_ID, 'Client de test', ['http://localhost/callback', 'https://client.example.test/callback']),
         );
     }
 

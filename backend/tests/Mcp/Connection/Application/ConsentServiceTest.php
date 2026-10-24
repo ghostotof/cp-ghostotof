@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Mcp\Connection\Application;
 
+use App\Mcp\Connection\Application\AuthenticationInstantInterface;
 use App\Mcp\Connection\Application\AuthorizationCompleterInterface;
 use App\Mcp\Connection\Application\AuthorizationRequestSummary;
 use App\Mcp\Connection\Application\AuthorizationRequestValidatorInterface;
@@ -14,14 +15,18 @@ use App\Mcp\Connection\Application\TransactionInterface;
 use App\Mcp\Connection\Domain\Entity\McpClient;
 use App\Mcp\Connection\Domain\Entity\McpConnection;
 use App\Mcp\Connection\Domain\Exception\AuthorizationRequestRejectedException;
+use App\Mcp\Connection\Domain\Exception\ReauthenticationRequiredException;
 use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
 use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use App\Security\User\Domain\Entity\CpgUser;
+use App\Tests\Mcp\Connection\RegisteredMcpClient;
 use Closure;
+use DateInterval;
 use DateTimeImmutable;
 use League\OAuth2\Server\Exception\OAuthServerException;
 use League\OAuth2\Server\RequestTypes\AuthorizationRequest;
 use Nyholm\Psr7\Factory\Psr17Factory;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Http\Message\ServerRequestInterface;
 use RuntimeException;
@@ -68,11 +73,19 @@ final class ConsentServiceTest extends TestCase
 
     private bool $clientRegistered = true;
 
+    /**
+     * L'instant d'authentification que le port rend : par défaut celui de
+     * l'horloge (une connexion fraîche) ; null, un jeton dont l'instant ne
+     * peut être établi.
+     */
+    private ?DateTimeImmutable $authenticatedAt;
+
     protected function setUp(): void
     {
-        $this->client = McpClient::register(self::CLIENT_ID, 'Client de test', ['http://localhost/callback'], new DateTimeImmutable());
+        $this->client = RegisteredMcpClient::of(self::CLIENT_ID, 'Client de test', ['http://localhost/callback']);
         $this->account = new CpgUser('trusted', 'hashed-password');
         $this->account->setRoles([CpgUser::ROLE_TRUSTED]);
+        $this->authenticatedAt = new DateTimeImmutable(self::GRANTED_AT);
     }
 
     /**
@@ -219,6 +232,81 @@ final class ConsentServiceTest extends TestCase
         self::assertSame('/api/oauth/authorize', $this->validated->getUri()->getPath());
     }
 
+    /**
+     * La borne elle-même : une authentification d'exactement dix minutes
+     * (ConsentService::MAX_AUTHENTICATION_AGE) suffit encore à accorder.
+     */
+    public function testAnApprovalAtTheAgeLimitIsGranted(): void
+    {
+        $this->authenticatedAt = new DateTimeImmutable(self::GRANTED_AT)->sub(new DateInterval(ConsentService::MAX_AUTHENTICATION_AGE));
+
+        $this->service()->decide($this->decision(true), $this->account);
+
+        self::assertSame(['begin', 'add', 'approve', 'commit', 'audit'], $this->effects);
+    }
+
+    /**
+     * Une seconde au-delà : une authentification trop ancienne n'accorde
+     * rien — un cookie volé (JWT d'une heure, non révocable, ADR 0003) ne
+     * suffit pas à ouvrir une connexion de trente jours. Le 401 typé, ni
+     * transaction, ni connexion, ni code, ni audit.
+     *
+     * @return iterable<string, array{DateTimeImmutable|null}>
+     */
+    public static function staleAuthentications(): iterable
+    {
+        yield 'une seconde au-delà de la borne' => [new DateTimeImmutable(self::GRANTED_AT)->sub(new DateInterval(ConsentService::MAX_AUTHENTICATION_AGE))->modify('-1 second')];
+        yield 'une heure' => [new DateTimeImmutable(self::GRANTED_AT)->sub(new DateInterval('PT1H'))];
+        yield 'instant inconnu' => [null];
+    }
+
+    #[DataProvider('staleAuthentications')]
+    public function testAnApprovalOnAStaleAuthenticationRequiresReauthentication(?DateTimeImmutable $authenticatedAt): void
+    {
+        $this->authenticatedAt = $authenticatedAt;
+
+        try {
+            $this->service()->decide($this->decision(true), $this->account);
+            self::fail('Une authentification trop ancienne ne doit rien accorder.');
+        } catch (ReauthenticationRequiredException $refusal) {
+            self::assertSame(401, $refusal->getStatus());
+            self::assertSame('/errors/reauthentication-required', $refusal->getType());
+        }
+
+        self::assertSame([], $this->effects);
+        self::assertNull($this->added);
+        self::assertNull($this->audited);
+    }
+
+    /**
+     * Le refus n'exige pas d'authentification récente : il n'accorde rien, et
+     * une personne qui refuse n'a pas à se reconnecter pour le dire.
+     */
+    public function testADenialNeedsNoRecentAuthentication(): void
+    {
+        $this->authenticatedAt = null;
+
+        $location = $this->service()->decide($this->decision(false), $this->account);
+
+        self::assertStringContainsString('error=access_denied', $location);
+        self::assertSame(['deny'], $this->effects);
+    }
+
+    /**
+     * La demande est jugée d'abord : une demande devenue invalide reste le
+     * 400 typé, même sur une authentification trop ancienne — se reconnecter
+     * n'y changerait rien.
+     */
+    public function testAnInvalidRequestIsRejectedBeforeTheAuthenticationAgeIsJudged(): void
+    {
+        $this->authenticatedAt = null;
+        $this->validatorRefusal = OAuthServerException::invalidRequest('redirect_uri');
+
+        $this->expectException(AuthorizationRequestRejectedException::class);
+
+        $this->service()->decide($this->decision(true), $this->account);
+    }
+
     private function service(): ConsentService
     {
         $validator = self::createStub(AuthorizationRequestValidatorInterface::class);
@@ -284,7 +372,16 @@ final class ConsentServiceTest extends TestCase
             new OAuthEndpoints(self::API_BASE, 'https://site.example.test'),
             new MockClock(self::GRANTED_AT),
             new Psr17Factory(),
+            $this->authenticationInstant(),
         );
+    }
+
+    private function authenticationInstant(): AuthenticationInstantInterface
+    {
+        $instant = self::createStub(AuthenticationInstantInterface::class);
+        $instant->method('authenticatedAt')->willReturn($this->authenticatedAt);
+
+        return $instant;
     }
 
     private function summary(): AuthorizationRequestSummary

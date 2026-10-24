@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Mcp\Connection\Domain\Entity;
 
 use App\Mcp\Connection\Domain\Exception\InvalidRedirectUriException;
+use App\Mcp\Connection\Domain\ValueObject\McpClientId;
+use App\Mcp\Connection\Domain\ValueObject\McpClientName;
 use App\Mcp\Connection\Domain\ValueObject\RedirectUri;
 use App\Mcp\Connection\Infrastructure\Doctrine\McpClientRepository;
 use DateTimeImmutable;
@@ -19,12 +21,15 @@ use Symfony\Component\Uid\Uuid;
  * de métadonnées pour un client CIMD), son nom déclaré et ses redirections
  * enregistrées.
  *
- * Le nom est **déclaré** par le client : la page de consentement le marque
- * comme tel, c'est le domaine de l'identifiant qui fait foi. Les redirections
- * sont stockées telles qu'enregistrées, en liste JSON ; leur forme (https
- * exacte, ou boucle locale comparée sans port) est jugée par le Value Object
- * {@see RedirectUri} (#647), pas ici : `app:mcp:client:register` les y fait
- * passer avant l'enregistrement, et allowsRedirect() les y relit.
+ * Chaque valeur est jugée par son Value Object avant d'arriver ici
+ * (register() ne prend qu'eux) : l'identifiant par McpClientId, le nom par
+ * McpClientName, chaque redirection par {@see RedirectUri} (https exacte, ou
+ * boucle locale comparée sans port). La commande `app:mcp:client:register` et
+ * le futur backoffice (#652) partagent ainsi les mêmes règles. Le nom d'un
+ * client pré-enregistré est celui que l'administrateur du site a saisi ; un
+ * client CIMD (#651) déclarera le sien, que la page de consentement marquera
+ * comme tel. Les redirections sont stockées en liste JSON, et
+ * allowsRedirect() les relit par RedirectUri.
  */
 #[ORM\Entity(repositoryClass: McpClientRepository::class)]
 #[ORM\Table(name: 'mcp_client')]
@@ -35,14 +40,16 @@ class McpClient
     public const string CLIENT_ID_UNIQUE_INDEX = 'uniq_mcp_client_client_id';
 
     /**
-     * 512 caractères : une URL de document de métadonnées plus longue n'a rien
-     * de raisonnable, et 512 caractères de 4 octets (2 048) tiennent sous la
-     * limite d'une entrée d'index B-tree de PostgreSQL (~2 700 octets) — une
-     * insertion ne peut pas échouer sur l'index pour sa seule longueur.
+     * La borne du domaine (McpClientId), pas une autre : la colonne ne refuse
+     * rien que le domaine admette, et n'admet rien qu'il refuse. 255
+     * caractères ASCII tiennent largement sous la limite d'une entrée d'index
+     * B-tree de PostgreSQL (~2 700 octets) — une insertion ne peut pas échouer
+     * sur l'index pour sa seule longueur.
      */
-    public const int CLIENT_ID_MAX_LENGTH = 512;
+    public const int CLIENT_ID_MAX_LENGTH = McpClientId::MAX_LENGTH;
 
-    public const int NAME_MAX_LENGTH = 255;
+    /** La borne du domaine (McpClientName), en caractères comme `VARCHAR`. */
+    public const int NAME_MAX_LENGTH = McpClientName::MAX_LENGTH;
 
     /** Spec 0003 : UUID v7 posé par le constructeur. */
     #[ORM\Id]
@@ -75,13 +82,18 @@ class McpClient
     }
 
     /**
-     * Enregistre un client à l'instant `$at`.
+     * Enregistre un client à l'instant `$at`, à partir de valeurs que le
+     * domaine a déjà jugées : le type l'impose, aucune chaîne brute n'atteint
+     * l'entité par ici. Une redirection répétée à l'identique n'est gardée
+     * qu'une fois, dans l'ordre reçu.
      *
-     * @param list<string> $redirectUris
+     * @param list<RedirectUri> $redirectUris
      */
-    public static function register(string $clientId, string $name, array $redirectUris, DateTimeImmutable $at): self
+    public static function register(McpClientId $clientId, McpClientName $name, array $redirectUris, DateTimeImmutable $at): self
     {
-        return new self($clientId, $name, $redirectUris, $at);
+        $distinct = array_values(array_unique(array_map(static fn(RedirectUri $redirectUri): string => (string) $redirectUri, $redirectUris)));
+
+        return new self((string) $clientId, (string) $name, $distinct, $at);
     }
 
     public function getId(): Uuid

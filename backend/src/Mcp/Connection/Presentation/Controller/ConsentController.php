@@ -8,12 +8,12 @@ use App\Mcp\Connection\Application\ConsentServiceInterface;
 use App\Mcp\Connection\Presentation\Dto\ConsentRequest;
 use App\Security\User\Domain\Entity\CpgUser;
 use Symfony\Bridge\PsrHttpMessage\HttpMessageFactoryInterface;
-use Symfony\Bundle\SecurityBundle\Security;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Attribute\MapRequestPayload;
 use Symfony\Component\Routing\Attribute\Route;
+use Symfony\Component\Security\Http\Attribute\CurrentUser;
 
 /**
  * Le consentement à une connexion MCP (#647, spec 0007 phase 2), servi à la
@@ -53,7 +53,6 @@ final readonly class ConsentController
 
     public function __construct(
         private ConsentServiceInterface $consent,
-        private Security $security,
         #[Autowire(service: 'mcp.psr_http_factory')]
         private HttpMessageFactoryInterface $psrHttpFactory,
     ) {
@@ -79,14 +78,18 @@ final readonly class ConsentController
     // JSON seulement : un autre format (formulaire, XML) serait sinon
     // désérialisé et validé, une surface dont l'endpoint n'a aucun usage (415).
     #[Route('/api/oauth/consent', name: 'oauth_consent_decide', methods: ['POST'])]
-    public function decide(#[MapRequestPayload(acceptFormat: 'json')] ConsentRequest $request): JsonResponse
-    {
-        // Un CpgUser par construction : l'access_control exige ROLE_TRUSTED,
-        // que le jeton du palier de base ne porte jamais
-        // (App\Security\User\Domain\ValueObject\BaseAccessUser).
-        /** @var CpgUser $account */
-        $account = $this->security->getUser();
-
+    /**
+     * Un CpgUser par construction : l'access_control exige ROLE_TRUSTED, que
+     * le jeton du palier de base ne porte jamais
+     * (App\Security\User\Domain\ValueObject\BaseAccessUser). `#[CurrentUser]`
+     * le vérifie plutôt que de le supposer : un autre utilisateur ferait
+     * échouer la résolution de l'argument, jamais passer un objet d'un autre
+     * type à l'accord.
+     */
+    public function decide(
+        #[MapRequestPayload(acceptFormat: 'json')] ConsentRequest $request,
+        #[CurrentUser] CpgUser $account,
+    ): JsonResponse {
         return $this->notStored(new JsonResponse(['redirectUri' => $this->consent->decide($request->toDecision(), $account)]));
     }
 

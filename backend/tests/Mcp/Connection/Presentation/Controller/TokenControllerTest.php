@@ -7,6 +7,7 @@ namespace App\Tests\Mcp\Connection\Presentation\Controller;
 use App\Tests\Mcp\Connection\DrivesTheOAuthFlow;
 use App\Tests\Support\ReadsSecurityAuditLog;
 use App\Tests\Support\TestKeys;
+use Doctrine\ORM\EntityManagerInterface;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\HttpFoundation\Response;
@@ -33,6 +34,8 @@ final class TokenControllerTest extends WebTestCase
     use DrivesTheOAuthFlow;
     use ReadsSecurityAuditLog;
 
+    private const string DROP_REFUSAL_TRIGGER = 'DROP TRIGGER IF EXISTS mcp_test_refuse_refresh_token ON mcp_refresh_token';
+
     protected function setUp(): void
     {
         $this->setUpOAuthFlow();
@@ -40,6 +43,7 @@ final class TokenControllerTest extends WebTestCase
 
     protected function tearDown(): void
     {
+        $this->allowRefreshTokenInserts();
         $this->tearDownOAuthFlow();
         parent::tearDown();
     }
@@ -339,9 +343,147 @@ final class TokenControllerTest extends WebTestCase
         self::assertSame($refusedWithCookie->getContent(), $refusedWithoutCookie->getContent());
     }
 
+    /**
+     * Un code présenté comme jeton de rafraîchissement : chiffré sous la même
+     * clé, il se déchiffre, mais sa charge n'a pas la forme d'un
+     * rafraîchissement (`auth_code_id`, aucun `refresh_token_id`). Un
+     * `invalid_grant`, jamais le 500 d'une clé absente lue par league.
+     */
+    public function testACodePresentedAsARefreshTokenIsInvalidGrant(): void
+    {
+        $response = $this->refresh($this->grantedCode());
+
+        $this->assertOAuthError($response, Response::HTTP_BAD_REQUEST, 'invalid_grant');
+        $this->assertNoTokenIssued();
+    }
+
+    /**
+     * L'inverse, que league refuse déjà (`auth_code_id` absent) : un jeton de
+     * rafraîchissement présenté comme code n'est pas un code.
+     */
+    public function testARefreshTokenPresentedAsACodeIsRefused(): void
+    {
+        $issued = $this->json($this->exchange($this->grantedCode()));
+        self::assertIsString($issued['refresh_token'] ?? null);
+
+        $response = $this->exchange($issued['refresh_token']);
+
+        $this->assertOAuthError($response, Response::HTTP_BAD_REQUEST, 'invalid_request');
+        self::assertSame(1, $this->countRows('SELECT COUNT(*) FROM mcp_access_token'));
+    }
+
+    /**
+     * Le client d'abord, comme à la révocation : un client inconnu reçoit
+     * `invalid_client`, qu'il demande une ressource étrangère ou non — jamais
+     * un `invalid_target` qui jugerait la demande d'un client non authentifié.
+     */
+    public function testAnUnknownClientAskingForAForeignResourceIsInvalidClient(): void
+    {
+        $response = $this->exchange($this->grantedCode(), [
+            'client_id' => 'https://unknown.example.test/metadata.json',
+            'resource' => 'https://other.example.test/api/mcp',
+        ]);
+
+        $this->assertOAuthError($response, Response::HTTP_UNAUTHORIZED, 'invalid_client');
+        $this->assertNoTokenIssued();
+    }
+
+    /**
+     * Un client sans `client_id` dans le corps, ressource étrangère comprise :
+     * `invalid_client` aussi (un client public se désigne dans le corps, la
+     * méthode `none` que les métadonnées annoncent).
+     */
+    public function testAForeignResourceWithoutClientIdIsInvalidClient(): void
+    {
+        $response = $this->exchange($this->grantedCode(), [
+            'client_id' => null,
+            'resource' => 'https://other.example.test/api/mcp',
+        ]);
+
+        $this->assertOAuthError($response, Response::HTTP_UNAUTHORIZED, 'invalid_client');
+        $this->assertNoTokenIssued();
+    }
+
+    /**
+     * L'échange est atomique : une panne de la base à l'écriture du jeton de
+     * rafraîchissement (après le jeton d'accès, avant la révocation du code)
+     * ne laisse aucun jeton d'accès orphelin — valable une heure, sans
+     * rafraîchissement — et le code reste échangeable une fois la panne levée.
+     * Sans transaction, le jeton d'accès restait écrit (mesuré).
+     */
+    public function testAFailedExchangeLeavesNoTokenAndTheCodeExchangeable(): void
+    {
+        $code = $this->grantedCode();
+        $this->refuseRefreshTokenInserts();
+
+        $failed = $this->exchange($code);
+
+        self::assertSame(Response::HTTP_INTERNAL_SERVER_ERROR, $failed->getStatusCode());
+        $this->assertNoTokenIssued();
+        self::assertSame(0, $this->countRows('SELECT COUNT(*) FROM mcp_authorization_code WHERE revoked_at IS NOT NULL'));
+
+        $this->allowRefreshTokenInserts();
+        $retried = $this->exchange($code);
+        self::assertSame(Response::HTTP_OK, $retried->getStatusCode(), substr((string) $retried->getContent(), 0, 500));
+        self::assertSame(1, $this->countRows('SELECT COUNT(*) FROM mcp_access_token'));
+    }
+
+    /**
+     * Le rafraîchissement est atomique : league révoque l'ancien jeton d'accès
+     * et l'ancien rafraîchissement **avant** d'émettre les nouveaux ; une panne
+     * à l'écriture du nouveau rafraîchissement annule tout — l'ancien reste
+     * utilisable, aucun nouveau jeton d'accès ne survit. Sans transaction,
+     * l'ancien était révoqué et le client perdait sa connexion (mesuré).
+     */
+    public function testAFailedRefreshLeavesTheOldRefreshTokenUsable(): void
+    {
+        $issued = $this->json($this->exchange($this->grantedCode()));
+        self::assertIsString($issued['refresh_token'] ?? null);
+        $this->refuseRefreshTokenInserts();
+
+        $failed = $this->refresh($issued['refresh_token']);
+
+        self::assertSame(Response::HTTP_INTERNAL_SERVER_ERROR, $failed->getStatusCode());
+        self::assertSame(1, $this->countRows('SELECT COUNT(*) FROM mcp_access_token'));
+        self::assertSame(0, $this->countRows('SELECT COUNT(*) FROM mcp_access_token WHERE revoked_at IS NOT NULL'));
+        self::assertSame(0, $this->countRows('SELECT COUNT(*) FROM mcp_refresh_token WHERE revoked_at IS NOT NULL'));
+
+        $this->allowRefreshTokenInserts();
+        $retried = $this->refresh($issued['refresh_token']);
+        self::assertSame(Response::HTTP_OK, $retried->getStatusCode(), substr((string) $retried->getContent(), 0, 500));
+    }
+
     private function assertNoTokenIssued(): void
     {
         self::assertSame(0, $this->countRows('SELECT COUNT(*) FROM mcp_access_token'));
         self::assertSame(0, $this->countRows('SELECT COUNT(*) FROM mcp_refresh_token'));
+    }
+
+    /**
+     * Une panne de la base, forcée là où league écrit en dernier : un
+     * déclencheur qui refuse toute insertion d'un jeton de rafraîchissement.
+     * Un objet réel, pas temporaire : la requête passe par une autre session
+     * que celle du test. Retiré par allowRefreshTokenInserts(), et par le
+     * tearDown quoi qu'il arrive.
+     */
+    private function refuseRefreshTokenInserts(): void
+    {
+        $connection = self::getContainer()->get(EntityManagerInterface::class)->getConnection();
+        $connection->executeStatement(<<<'SQL'
+            CREATE OR REPLACE FUNCTION mcp_test_refuse_refresh_token() RETURNS trigger LANGUAGE plpgsql AS $$
+            BEGIN
+                RAISE EXCEPTION 'panne de test : insertion refusée';
+            END
+            $$
+            SQL);
+        $connection->executeStatement(self::DROP_REFUSAL_TRIGGER);
+        $connection->executeStatement('CREATE TRIGGER mcp_test_refuse_refresh_token BEFORE INSERT ON mcp_refresh_token FOR EACH ROW EXECUTE FUNCTION mcp_test_refuse_refresh_token()');
+    }
+
+    private function allowRefreshTokenInserts(): void
+    {
+        $connection = self::getContainer()->get(EntityManagerInterface::class)->getConnection();
+        $connection->executeStatement(self::DROP_REFUSAL_TRIGGER);
+        $connection->executeStatement('DROP FUNCTION IF EXISTS mcp_test_refuse_refresh_token()');
     }
 }

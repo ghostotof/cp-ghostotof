@@ -8,7 +8,10 @@ use App\Mcp\Connection\Application\McpClientRegistrar;
 use App\Mcp\Connection\Domain\Entity\McpClient;
 use App\Mcp\Connection\Domain\Exception\McpClientAlreadyRegisteredException;
 use App\Mcp\Connection\Domain\Repository\McpClientRepositoryInterface;
+use App\Mcp\Connection\Domain\ValueObject\McpClientId;
+use App\Mcp\Connection\Domain\ValueObject\McpClientName;
 use App\Mcp\Connection\Domain\ValueObject\RedirectUri;
+use App\Tests\Mcp\Connection\RegisteredMcpClient;
 use DateTimeImmutable;
 use Doctrine\DBAL\Driver\AbstractException;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
@@ -31,7 +34,7 @@ final class McpClientRegistrarTest extends TestCase
         $repository = $this->repository();
         $clock = new MockClock(new DateTimeImmutable('2026-10-25T02:30:00+02:00'));
 
-        $client = new McpClientRegistrar($repository, $clock)->register(self::CLIENT_ID, 'Claude Code', [
+        $client = new McpClientRegistrar($repository, $clock)->register(McpClientId::fromString(self::CLIENT_ID), McpClientName::fromString('Claude Code'), [
             RedirectUri::fromString('http://localhost/callback'),
             RedirectUri::fromString('https://app.example/cb'),
         ]);
@@ -45,7 +48,7 @@ final class McpClientRegistrarTest extends TestCase
 
     public function testAClientIdAlreadyRegisteredIsRefusedBeforeAnyWrite(): void
     {
-        $repository = $this->repository(existing: McpClient::register(self::CLIENT_ID, 'Premier', ['http://localhost/callback'], new DateTimeImmutable()));
+        $repository = $this->repository(existing: RegisteredMcpClient::of(self::CLIENT_ID, 'Premier', ['http://localhost/callback']));
 
         try {
             $this->register($repository);
@@ -116,7 +119,7 @@ final class McpClientRegistrarTest extends TestCase
 
     private function register(McpClientRepositoryInterface $repository): McpClient
     {
-        return new McpClientRegistrar($repository, new MockClock())->register(self::CLIENT_ID, 'Claude Code', [RedirectUri::fromString('http://localhost/callback')]);
+        return new McpClientRegistrar($repository, new MockClock())->register(McpClientId::fromString(self::CLIENT_ID), McpClientName::fromString('Claude Code'), [RedirectUri::fromString('http://localhost/callback')]);
     }
 
     private static function english(string $index, string $column, string $value): string

@@ -25,6 +25,7 @@ use App\Mcp\Connection\Infrastructure\League\RevokedMcpConnectionException;
 use App\Mcp\Connection\Infrastructure\League\ScopeRepository;
 use App\Mcp\Connection\Infrastructure\League\UnknownMcpConnectionException;
 use App\Security\User\Domain\Entity\CpgUser;
+use App\Tests\Mcp\Connection\RegisteredMcpClient;
 use DateInterval;
 use DateTimeImmutable;
 use Doctrine\ORM\EntityManagerInterface;
@@ -340,7 +341,7 @@ final class LeagueRepositoriesTest extends KernelTestCase
     }
 
     /**
-     * Un identifiant que la colonne ne peut pas contenir n'est pas cherché :
+     * Un identifiant hors de la forme du domaine (McpClientId) n'est pas cherché :
      * PostgreSQL lit un paramètre texte comme une chaîne C (`…\0x` trouverait
      * le client `…`) et refuse un octet hors UTF-8 par une erreur — un 500 à
      * la main de quiconque.
@@ -505,7 +506,7 @@ final class LeagueRepositoriesTest extends KernelTestCase
 
     private function registerClient(string $clientId): McpClient
     {
-        $client = McpClient::register($clientId, 'Client de test', ['https://client.example.test/callback', 'http://localhost/callback'], new DateTimeImmutable());
+        $client = RegisteredMcpClient::of($clientId, 'Client de test', ['https://client.example.test/callback', 'http://localhost/callback']);
         self::getContainer()->get(McpClientRepositoryInterface::class)->add($client);
 
         return $client;

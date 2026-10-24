@@ -4,10 +4,8 @@ declare(strict_types=1);
 
 namespace App\Tests\Mcp\Connection;
 
-use App\Mcp\Connection\Domain\Entity\McpClient;
 use App\Mcp\Connection\Domain\Repository\McpClientRepositoryInterface;
 use App\Security\User\Domain\Entity\CpgUser;
-use DateTimeImmutable;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\HttpFoundation\Response;
@@ -146,7 +144,7 @@ final class OAuthFlowTest extends WebTestCase
         $state = 'a+b c&d=e%zz%2B/?#é✓ fin';
         $redirectUri = 'https://client.example.test/cb?tenant=a';
         $clientId = 'https://queried-client.example.test/metadata.json';
-        self::getContainer()->get(McpClientRepositoryInterface::class)->add(McpClient::register($clientId, 'Client à requête', [$redirectUri], new DateTimeImmutable()));
+        self::getContainer()->get(McpClientRepositoryInterface::class)->add(RegisteredMcpClient::of($clientId, 'Client à requête', [$redirectUri]));
         $overrides = ['client_id' => $clientId, 'redirect_uri' => $redirectUri, 'state' => $state];
 
         // 1. Autorisation : la demande repart vers la page, `state` compris.

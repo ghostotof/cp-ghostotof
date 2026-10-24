@@ -4,8 +4,9 @@ declare(strict_types=1);
 
 namespace App\Mcp\Connection\Infrastructure\League;
 
-use App\Mcp\Connection\Domain\Entity\McpClient;
+use App\Mcp\Connection\Domain\Exception\InvalidMcpClientIdException;
 use App\Mcp\Connection\Domain\Repository\McpClientRepositoryInterface;
+use App\Mcp\Connection\Domain\ValueObject\McpClientId;
 use League\OAuth2\Server\Repositories\ClientRepositoryInterface;
 use SensitiveParameter;
 
@@ -16,29 +17,28 @@ use SensitiveParameter;
  */
 final readonly class ClientRepository implements ClientRepositoryInterface
 {
-    /**
-     * Ce que la colonne `client_id` peut contenir : 1 à 512 caractères UTF-8,
-     * aucun caractère de contrôle. Un identifiant hors de cette forme n'est
-     * pas cherché : PostgreSQL lit un paramètre texte comme une chaîne C
-     * (`…\0x` trouverait le client `…`, le piège de #418 côté comptes) et
-     * refuse un octet hors UTF-8 par une erreur — un 500 à la main de
-     * quiconque appelle le point d'autorisation. Le `u` fait échouer
-     * `preg_match()` sur un UTF-8 invalide.
-     */
-    private const string SEARCHABLE_CLIENT_ID = '/\A[^\x00-\x1F\x7F]{1,'.McpClient::CLIENT_ID_MAX_LENGTH.'}\z/u';
-
     public function __construct(
         private McpClientRepositoryInterface $clients,
     ) {
     }
 
+    /**
+     * Un identifiant hors de la forme du domaine (McpClientId, la seule
+     * qu'un client enregistré puisse avoir) n'est pas cherché : PostgreSQL
+     * lit un paramètre texte comme une chaîne C (`…\0x` trouverait le client
+     * `…`, le piège de #418 côté comptes) et refuse un octet hors UTF-8 par
+     * une erreur — un 500 à la main de quiconque appelle le point
+     * d'autorisation.
+     */
     public function getClientEntity(string $clientIdentifier): ?OAuthClient
     {
-        if (1 !== preg_match(self::SEARCHABLE_CLIENT_ID, $clientIdentifier)) {
+        try {
+            $clientId = McpClientId::fromString($clientIdentifier);
+        } catch (InvalidMcpClientIdException) {
             return null;
         }
 
-        $client = $this->clients->findOneByClientId($clientIdentifier);
+        $client = $this->clients->findOneByClientId((string) $clientId);
 
         return null === $client ? null : new OAuthClient($client);
     }

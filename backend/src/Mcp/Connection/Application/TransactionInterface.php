@@ -10,7 +10,8 @@ use Closure;
  * Une transaction de base de données, vue de l'application (#647) : tout ce
  * que l'opération écrit est validé ensemble, ou rien. L'accord d'un
  * consentement y crée la connexion et, par league, son code : jamais l'une
- * sans l'autre.
+ * sans l'autre ; le point de jeton y émet et révoque (TokenEndpoint) ; la
+ * révocation d'un rafraîchissement y emporte son jeton d'accès.
  *
  * Une interface plutôt que l'EntityManager : la couche Application ne dépend
  * pas de Doctrine (Infrastructure\Doctrine\DoctrineTransaction).

@@ -38,7 +38,7 @@ final class Version20261023120000 extends AbstractMigration
 
     public function up(Schema $schema): void
     {
-        $this->addSql('CREATE TABLE mcp_client (id UUID NOT NULL, client_id VARCHAR(512) NOT NULL, name VARCHAR(255) NOT NULL, redirect_uris JSON NOT NULL, registered_at TIMESTAMP(0) WITH TIME ZONE NOT NULL, PRIMARY KEY (id))');
+        $this->addSql('CREATE TABLE mcp_client (id UUID NOT NULL, client_id VARCHAR(255) NOT NULL, name VARCHAR(100) NOT NULL, redirect_uris JSON NOT NULL, registered_at TIMESTAMP(0) WITH TIME ZONE NOT NULL, PRIMARY KEY (id))');
         $this->addSql('CREATE UNIQUE INDEX uniq_mcp_client_client_id ON mcp_client (client_id)');
 
         $this->addSql('CREATE TABLE mcp_connection (id UUID NOT NULL, scope VARCHAR(255) NOT NULL, granted_at TIMESTAMP(0) WITH TIME ZONE NOT NULL, last_used_at TIMESTAMP(0) WITH TIME ZONE DEFAULT NULL, revoked_at TIMESTAMP(0) WITH TIME ZONE DEFAULT NULL, account_id UUID NOT NULL, mcp_client_id UUID NOT NULL, PRIMARY KEY (id))');

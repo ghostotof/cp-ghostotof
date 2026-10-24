@@ -4,14 +4,12 @@ declare(strict_types=1);
 
 namespace App\Tests\Mcp\Connection;
 
-use App\Mcp\Connection\Domain\Entity\McpClient;
 use App\Mcp\Connection\Domain\Repository\McpClientRepositoryInterface;
 use App\Mcp\Connection\Infrastructure\League\OAuthEncryptionKey;
 use App\Security\User\Application\CpgUserRegistrarInterface;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Tests\Support\HttpJson;
 use App\Tests\Support\TestCredentials;
-use DateTimeImmutable;
 use Defuse\Crypto\Crypto;
 use Defuse\Crypto\Key;
 use Doctrine\ORM\EntityManagerInterface;
@@ -81,8 +79,8 @@ trait DrivesTheOAuthFlow
         // et partagé d'un test à l'autre : chaque test repart de zéro.
         self::getContainer()->get('cache.rate_limiter')->clear();
         $clients = self::getContainer()->get(McpClientRepositoryInterface::class);
-        $clients->add(McpClient::register(self::CLIENT_ID, self::CLIENT_NAME, ['http://localhost/callback', 'https://client.example.test/callback'], new DateTimeImmutable()));
-        $clients->add(McpClient::register(self::OTHER_CLIENT_ID, 'Autre client', ['http://localhost/callback'], new DateTimeImmutable()));
+        $clients->add(RegisteredMcpClient::of(self::CLIENT_ID, self::CLIENT_NAME, ['http://localhost/callback', 'https://client.example.test/callback']));
+        $clients->add(RegisteredMcpClient::of(self::OTHER_CLIENT_ID, 'Autre client', ['http://localhost/callback']));
     }
 
     private function tearDownOAuthFlow(): void

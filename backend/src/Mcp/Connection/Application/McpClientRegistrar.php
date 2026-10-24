@@ -7,7 +7,8 @@ namespace App\Mcp\Connection\Application;
 use App\Mcp\Connection\Domain\Entity\McpClient;
 use App\Mcp\Connection\Domain\Exception\McpClientAlreadyRegisteredException;
 use App\Mcp\Connection\Domain\Repository\McpClientRepositoryInterface;
-use App\Mcp\Connection\Domain\ValueObject\RedirectUri;
+use App\Mcp\Connection\Domain\ValueObject\McpClientId;
+use App\Mcp\Connection\Domain\ValueObject\McpClientName;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Psr\Clock\ClockInterface;
 
@@ -28,18 +29,13 @@ final readonly class McpClientRegistrar implements McpClientRegistrarInterface
     ) {
     }
 
-    public function register(string $clientId, string $name, array $redirectUris): McpClient
+    public function register(McpClientId $clientId, McpClientName $name, array $redirectUris): McpClient
     {
-        if (null !== $this->clients->findOneByClientId($clientId)) {
+        if (null !== $this->clients->findOneByClientId((string) $clientId)) {
             throw McpClientAlreadyRegisteredException::alreadyTaken();
         }
 
-        $client = McpClient::register(
-            $clientId,
-            $name,
-            array_map(static fn (RedirectUri $redirectUri): string => (string) $redirectUri, $redirectUris),
-            $this->clock->now(),
-        );
+        $client = McpClient::register($clientId, $name, $redirectUris, $this->clock->now());
 
         try {
             $this->clients->add($client);

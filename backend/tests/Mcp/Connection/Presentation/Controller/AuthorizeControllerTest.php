@@ -4,9 +4,8 @@ declare(strict_types=1);
 
 namespace App\Tests\Mcp\Connection\Presentation\Controller;
 
-use App\Mcp\Connection\Domain\Entity\McpClient;
 use App\Mcp\Connection\Domain\Repository\McpClientRepositoryInterface;
-use DateTimeImmutable;
+use App\Tests\Mcp\Connection\RegisteredMcpClient;
 use Doctrine\ORM\EntityManagerInterface;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
@@ -59,7 +58,7 @@ final class AuthorizeControllerTest extends WebTestCase
         $this->client = self::createClient();
         $this->purge();
         self::getContainer()->get(McpClientRepositoryInterface::class)->add(
-            McpClient::register(self::CLIENT_ID, 'Client de test', ['http://localhost/callback', 'https://client.example.test/callback'], new DateTimeImmutable()),
+            RegisteredMcpClient::of(self::CLIENT_ID, 'Client de test', ['http://localhost/callback', 'https://client.example.test/callback']),
         );
     }
 
@@ -232,7 +231,7 @@ final class AuthorizeControllerTest extends WebTestCase
     {
         $singleRedirectClient = 'https://single.example.test/metadata.json';
         self::getContainer()->get(McpClientRepositoryInterface::class)->add(
-            McpClient::register($singleRedirectClient, 'Client à une redirection', ['http://localhost/callback'], new DateTimeImmutable()),
+            RegisteredMcpClient::of($singleRedirectClient, 'Client à une redirection', ['http://localhost/callback']),
         );
         $overrides = ['client_id' => $singleRedirectClient, 'redirect_uri' => $redirectUri];
         if (null !== $resource) {
@@ -372,6 +371,27 @@ final class AuthorizeControllerTest extends WebTestCase
 
             $this->assertRefusedWithoutRedirect($response, Response::HTTP_UNAUTHORIZED, 'invalid_client');
         }
+    }
+
+    /**
+     * Un navigateur derrière l'authentification Basic de la préproduction
+     * envoie `Authorization: Basic …` à chaque requête ; league y répond par
+     * `WWW-Authenticate: Basic realm="OAuth"` sur un `invalid_client`, que le
+     * navigateur prend pour une demande d'identifiants (une fenêtre
+     * d'authentification sur le point d'autorisation). Le refus reste le JSON
+     * de league, 401, sans cet en-tête.
+     *
+     * @param array<string, string|null> $overrides
+     */
+    #[DataProvider('refusedClients')]
+    public function testARefusalNeverAsksTheBrowserForCredentials(array $overrides): void
+    {
+        $response = $this->authorize(http_build_query($this->validParameters($overrides)), [
+            'HTTP_AUTHORIZATION' => 'Basic '.base64_encode('preprod:'.bin2hex(random_bytes(8))),
+        ]);
+
+        $this->assertRefusedWithoutRedirect($response, Response::HTTP_UNAUTHORIZED, 'invalid_client');
+        self::assertFalse($response->headers->has('WWW-Authenticate'), (string) $response->headers->get('WWW-Authenticate'));
     }
 
     /**

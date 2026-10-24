@@ -8,8 +8,10 @@ use App\Security\User\Domain\Entity\CpgUser;
 use App\Tests\Mcp\Connection\DrivesTheOAuthFlow;
 use App\Tests\Support\ReadsSecurityAuditLog;
 use Doctrine\ORM\EntityManagerInterface;
+use Lexik\Bundle\JWTAuthenticationBundle\Services\JWTTokenManagerInterface;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
+use Symfony\Component\BrowserKit\Cookie;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
@@ -129,6 +131,86 @@ final class ConsentControllerTest extends WebTestCase
         self::assertSame(0, $this->countRows('SELECT COUNT(*) FROM mcp_connection'));
         self::assertSame(0, $this->countRows('SELECT COUNT(*) FROM mcp_authorization_code'));
         self::assertSame([], self::securityAuditEvents('mcp-connection-granted'));
+    }
+
+    /**
+     * Un scope répété (`nominative:read nominative:read`, que league admet
+     * scope par scope) : le résumé montre le seul scope accordé, et la
+     * connexion n'enregistre que lui — jamais la concaténation reçue.
+     */
+    public function testARepeatedScopeIsSummarisedAndStoredOnce(): void
+    {
+        $this->loginAs(self::TRUSTED_USERNAME, [CpgUser::ROLE_TRUSTED]);
+        $overrides = ['scope' => 'nominative:read nominative:read'];
+
+        $this->client->request('GET', self::PATH.'?'.http_build_query($this->validParameters($overrides)));
+        $summary = $this->client->getResponse();
+        self::assertSame(Response::HTTP_OK, $summary->getStatusCode(), substr((string) $summary->getContent(), 0, 500));
+        self::assertSame('nominative:read', $this->json($summary)['scope'] ?? null);
+
+        $response = $this->decide(approved: true, overrides: $overrides);
+
+        self::assertSame(Response::HTTP_OK, $response->getStatusCode(), substr((string) $response->getContent(), 0, 500));
+        self::assertSame('nominative:read', $this->connectionRows()[0]['scope'] ?? null);
+    }
+
+    /**
+     * Une authentification de plus de dix minutes n'accorde rien (F1 de la
+     * relecture de #647) : le cookie `BEARER` d'une personne (JWT d'une heure,
+     * non révocable, ADR 0003) ne suffit pas, volé, à ouvrir une connexion de
+     * trente jours. L'instant est le `iat` du jeton signé, jamais une valeur
+     * que le client enverrait : un jeton forgé ici, signé par la clé du site,
+     * onze minutes dans le passé. 401 problem+json typé, ni connexion, ni code,
+     * ni ligne d'audit d'accord, et le corps ne porte aucune redirection.
+     */
+    public function testAnApprovalOnAnAuthenticationOlderThanTheLimitRequiresReauthentication(): void
+    {
+        $account = $this->loginAs(self::TRUSTED_USERNAME, [CpgUser::ROLE_TRUSTED]);
+        $this->replaceTheBearerWithAnAuthenticationOf($account, secondsAgo: 660);
+
+        $response = $this->decide(approved: true);
+
+        self::assertSame(Response::HTTP_UNAUTHORIZED, $response->getStatusCode(), substr((string) $response->getContent(), 0, 500));
+        self::assertSame('application/problem+json', $response->headers->get('Content-Type'));
+        $body = $this->json($response);
+        self::assertSame('/errors/reauthentication-required', $body['type'] ?? null);
+        self::assertArrayNotHasKey('redirectUri', $body);
+        self::assertSame(0, $this->countRows('SELECT COUNT(*) FROM mcp_connection'));
+        self::assertSame(0, $this->countRows('SELECT COUNT(*) FROM mcp_authorization_code'));
+        self::assertSame([], self::securityAuditEvents('mcp-connection-granted'));
+    }
+
+    /**
+     * Sur la même authentification ancienne, lire le résumé et refuser
+     * restent permis : ni l'un ni l'autre n'accorde quoi que ce soit, et la
+     * page doit pouvoir montrer la demande avant de renvoyer à la connexion.
+     */
+    public function testTheSummaryAndADenialNeedNoRecentAuthentication(): void
+    {
+        $account = $this->loginAs(self::TRUSTED_USERNAME, [CpgUser::ROLE_TRUSTED]);
+        $this->replaceTheBearerWithAnAuthenticationOf($account, secondsAgo: 660);
+
+        $this->client->request('GET', self::PATH.'?'.http_build_query($this->validParameters()));
+        self::assertSame(Response::HTTP_OK, $this->client->getResponse()->getStatusCode());
+
+        $response = $this->decide(approved: false);
+        self::assertSame(Response::HTTP_OK, $response->getStatusCode(), substr((string) $response->getContent(), 0, 500));
+        self::assertSame('access_denied', $this->queryOf($this->redirectUriOf($response))['error'] ?? null);
+    }
+
+    /**
+     * Une authentification récente, mais pas toute fraîche (cinq minutes) :
+     * l'accord passe — la borne laisse le temps de lire la page.
+     */
+    public function testAnApprovalOnARecentAuthenticationIsGranted(): void
+    {
+        $account = $this->loginAs(self::TRUSTED_USERNAME, [CpgUser::ROLE_TRUSTED]);
+        $this->replaceTheBearerWithAnAuthenticationOf($account, secondsAgo: 300);
+
+        $response = $this->decide(approved: true);
+
+        self::assertSame(Response::HTTP_OK, $response->getStatusCode(), substr((string) $response->getContent(), 0, 500));
+        self::assertCount(1, $this->connectionRows());
     }
 
     /** `ROLE_SUPER` hérite du palier de confiance (`role_hierarchy`). */
@@ -279,6 +361,22 @@ final class ConsentControllerTest extends WebTestCase
         self::assertSame('/errors/authorization-request-rejected', $body['type'] ?? null);
         self::assertArrayNotHasKey('redirectUri', $body);
         self::assertArrayNotHasKey('error', $body);
+    }
+
+    /**
+     * Remplace le cookie `BEARER` du compte par un JWT signé par la clé du
+     * site, émis `$secondsAgo` secondes plus tôt (`iat`), valable une heure à
+     * partir de maintenant : seul l'instant d'authentification change.
+     */
+    private function replaceTheBearerWithAnAuthenticationOf(string $accountId, int $secondsAgo): void
+    {
+        $account = self::getContainer()->get(EntityManagerInterface::class)->find(CpgUser::class, $accountId);
+        self::assertInstanceOf(CpgUser::class, $account);
+        $jwt = self::getContainer()->get(JWTTokenManagerInterface::class)->createFromPayload($account, ['iat' => time() - $secondsAgo]);
+
+        $jar = $this->client->getCookieJar();
+        $issued = $jar->get('BEARER') ?? self::fail('Aucun cookie BEARER après la connexion.');
+        $jar->set(new Cookie('BEARER', $jwt, null, $issued->getPath(), $issued->getDomain(), $issued->isSecure(), $issued->isHttpOnly(), false, $issued->getSameSite()));
     }
 
     /**

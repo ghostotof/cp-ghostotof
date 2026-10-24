@@ -5,8 +5,12 @@ declare(strict_types=1);
 namespace App\Mcp\Connection\Presentation\Command;
 
 use App\Mcp\Connection\Application\McpClientRegistrarInterface;
+use App\Mcp\Connection\Domain\Exception\InvalidMcpClientIdException;
+use App\Mcp\Connection\Domain\Exception\InvalidMcpClientNameException;
 use App\Mcp\Connection\Domain\Exception\InvalidRedirectUriException;
 use App\Mcp\Connection\Domain\Exception\McpClientAlreadyRegisteredException;
+use App\Mcp\Connection\Domain\ValueObject\McpClientId;
+use App\Mcp\Connection\Domain\ValueObject\McpClientName;
 use App\Mcp\Connection\Domain\ValueObject\RedirectUri;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
@@ -23,7 +27,10 @@ use Symfony\Component\Console\Style\SymfonyStyle;
  * Usage scripté uniquement, toutes les valeurs en options : rien n'est secret
  * (un client public n'a pas de secret), et une commande sans invite échappe
  * aux pièges du QuestionHelper (#383). Aucun message ne reprend une valeur
- * saisie, hormis le récapitulatif du succès.
+ * saisie, hormis le récapitulatif du succès. Les règles de chaque valeur sont
+ * celles du domaine (McpClientId, McpClientName, RedirectUri), que le futur
+ * backoffice (#652) partagera : la commande ne fait que les appliquer et
+ * dire laquelle a refusé.
  */
 #[AsCommand(
     name: 'app:mcp:client:register',
@@ -31,31 +38,6 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 )]
 final class RegisterMcpClientCommand extends Command
 {
-    /**
-     * 1 à 255 caractères d'un alphabet d'URL sans `?`, `#`, `%` ni espace :
-     * un identifiant court (`claude-code`) ou l'URL d'un document de
-     * métadonnées (CIMD). Plus strict que la colonne (512) : la commande est
-     * seule à en décider, la colonne n'est qu'une borne de stockage.
-     */
-    private const string CLIENT_ID_PATTERN = '#^[A-Za-z0-9._:/-]{1,255}\z#';
-
-    /**
-     * Le nom déclaré, affiché sur la page de consentement : 1 à 100
-     * caractères (rognés), en UTF-8 valide (le motif `u` refuse le reste),
-     * sans caractère de contrôle ni de format (`\p{C}`) ni séparateur de ligne
-     * ou de paragraphe (U+2028, U+2029 : `\p{Zl}`, `\p{Zp}`), qui tromperaient
-     * l'affichage. Les espaces Unicode (`\p{Zs}`, insécable comprise) restent
-     * admises à l'intérieur du nom.
-     */
-    private const string NAME_PATTERN = '/^[^\p{C}\p{Zl}\p{Zp}]{1,100}\z/u';
-
-    /**
-     * Les blancs rognés aux deux bouts du nom : ceux d'Unicode (`\p{Z}`,
-     * U+00A0 et U+3000 compris) et ceux de `\s`, que trim() ne connaît pas
-     * au-delà de l'ASCII — un nom fait d'espaces insécables n'est pas un nom.
-     */
-    private const string NAME_EDGE_BLANKS = '/^[\p{Z}\s]+|[\p{Z}\s]+\z/u';
-
     public function __construct(
         private readonly McpClientRegistrarInterface $registrar,
     ) {
@@ -108,35 +90,50 @@ final class RegisterMcpClientCommand extends Command
         return Command::SUCCESS;
     }
 
-    /** L'identifiant public, ou null après un message d'erreur. */
-    private function resolveClientId(InputInterface $input, SymfonyStyle $io): ?string
+    /**
+     * L'identifiant public, jugé par le domaine (McpClientId), ou null après
+     * un message d'erreur qui ne le cite pas.
+     */
+    private function resolveClientId(InputInterface $input, SymfonyStyle $io): ?McpClientId
     {
         $clientId = $input->getOption('client-id');
 
-        if (!\is_string($clientId) || 1 !== preg_match(self::CLIENT_ID_PATTERN, $clientId)) {
-            $io->error('--client-id est requis : 1 à 255 caractères parmi A-Z a-z 0-9 . _ : / -.');
+        if (!\is_string($clientId)) {
+            $io->error('--client-id est requis.');
 
             return null;
         }
 
-        return $clientId;
+        try {
+            return McpClientId::fromString($clientId);
+        } catch (InvalidMcpClientIdException $exception) {
+            $io->error(\sprintf('--client-id est refusé. %s', $exception->getMessage()));
+
+            return null;
+        }
     }
 
-    /** Le nom déclaré, rogné, ou null après un message d'erreur. */
-    private function resolveName(InputInterface $input, SymfonyStyle $io): ?string
+    /**
+     * Le nom, rogné et jugé par le domaine (McpClientName), ou null après un
+     * message d'erreur qui ne le cite pas.
+     */
+    private function resolveName(InputInterface $input, SymfonyStyle $io): ?McpClientName
     {
         $name = $input->getOption('name');
-        // preg_replace() rend null, et preg_match() false, sur de l'UTF-8
-        // invalide : refusé comme le reste.
-        $name = \is_string($name) ? preg_replace(self::NAME_EDGE_BLANKS, '', $name) : null;
 
-        if (null === $name || 1 !== preg_match(self::NAME_PATTERN, $name)) {
-            $io->error('--name est requis : 1 à 100 caractères en UTF-8, sans caractère de contrôle ni saut de ligne.');
+        if (!\is_string($name)) {
+            $io->error('--name est requis.');
 
             return null;
         }
 
-        return $name;
+        try {
+            return McpClientName::fromString($name);
+        } catch (InvalidMcpClientNameException $exception) {
+            $io->error(\sprintf('--name est refusé. %s', $exception->getMessage()));
+
+            return null;
+        }
     }
 
     /**

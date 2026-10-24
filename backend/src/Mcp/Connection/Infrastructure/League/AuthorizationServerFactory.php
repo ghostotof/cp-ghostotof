@@ -6,7 +6,6 @@ namespace App\Mcp\Connection\Infrastructure\League;
 
 use DateInterval;
 use League\OAuth2\Server\AuthorizationServer;
-use League\OAuth2\Server\Grant\RefreshTokenGrant;
 
 /**
  * Construit le serveur d'autorisation de league (#647), sans le bundle :
@@ -27,7 +26,9 @@ use League\OAuth2\Server\Grant\RefreshTokenGrant;
  *   et une méthode absente) ; l'exigence de league pour les clients publics
  *   reste en place derrière, jamais levée ici ;
  * - jeton d'accès d'une heure, rafraîchissement de 30 jours, chaque
- *   rafraîchissement révoquant le précédent.
+ *   rafraîchissement révoquant le précédent ; la charge d'un rafraîchissement
+ *   vérifiée avant que league ne la lise (PayloadCheckedRefreshTokenGrant :
+ *   un code présenté à sa place est un `invalid_grant`, pas un 500).
  */
 final readonly class AuthorizationServerFactory
 {
@@ -61,7 +62,7 @@ final readonly class AuthorizationServerFactory
         $authCodeGrant->setRefreshTokenTTL(new DateInterval(self::REFRESH_TOKEN_TTL));
         $server->enableGrantType($authCodeGrant, new DateInterval(self::ACCESS_TOKEN_TTL));
 
-        $refreshTokenGrant = new RefreshTokenGrant($this->refreshTokens);
+        $refreshTokenGrant = new PayloadCheckedRefreshTokenGrant($this->refreshTokens);
         $refreshTokenGrant->setRefreshTokenTTL(new DateInterval(self::REFRESH_TOKEN_TTL));
         $server->enableGrantType($refreshTokenGrant, new DateInterval(self::ACCESS_TOKEN_TTL));
 
