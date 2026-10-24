@@ -132,7 +132,8 @@ paths:
   D8 in the ADR, each decided by the author (today: the server name `cp-ghostotof`, for this server only);
   a new one goes into that list first, then into `AuthorNeverNamedTest::ADMITTED`.
 - **The `mcp` firewall never reads a cookie** (ADR 0006 D4). Declared before `api`, `^/api/mcp$`, stateless,
-  no authenticator (phase 2 will add the MCP-connection Bearer one, and only it). That is what makes
+  one authenticator since #648, the MCP connection's (`Authorization: Bearer`, nothing else — no `jwt`; its rules
+  in `.claude/rules/mcp-oauth.md`, « The authenticator of `/api/mcp` »). That is what makes
   `/api/mcp`'s entry in `CsrfCookieRequestSubscriber::EXCLUDED_PATHS` safe: a cross-site request carrying a
   trusted person's `BEARER` borrows no identity there. `McpEndpointTest::testATrustedBearerCookieIsNeitherRefusedByTheCsrfGuardNorRead`
   pins both halves (each one's removal turns it red, measured). `/api/mcp` is in `ApiRouteExposureTest`'s

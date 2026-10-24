@@ -9,6 +9,8 @@ use App\Security\User\Application\CpgUserInviterInterface;
 use App\Security\User\Application\CpgUserRegistrarInterface;
 use App\Security\User\Application\PendingInvitationPurgerInterface;
 use App\Security\User\Domain\Entity\CpgUser;
+use App\Tests\Mcp\Support\HoldsAnMcpConnection;
+use App\Tests\Mcp\Support\SpeaksMcp;
 use App\Tests\Support\HttpJson;
 use App\Tests\Support\InvitesUsers;
 use App\Tests\Support\ReadsAllChannelsLog;
@@ -18,6 +20,8 @@ use Doctrine\ORM\EntityManagerInterface;
 use Monolog\Formatter\JsonFormatter;
 use Monolog\Handler\TestHandler;
 use Monolog\Level;
+use Monolog\LogRecord;
+use stdClass;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\BrowserKit\Cookie;
@@ -55,15 +59,20 @@ use Symfony\Component\RateLimiter\RateLimiterFactoryInterface;
  */
 final class AccountIdentifierReachesNoLogTest extends WebTestCase
 {
+    use HoldsAnMcpConnection;
     use HttpJson;
     use InvitesUsers;
     use ReadsAllChannelsLog;
+    use SpeaksMcp;
 
     private const string SENTINEL = 'sentinelle';
     private const string ADMIN_USERNAME = 'admin.sentinelle';
     private const string INVITEE_EMAIL = 'prenom.sentinelle@example.com';
     private const string PURGED_EMAIL = 'autre.sentinelle@example.com';
     private const string PENDING_SUPER_EMAIL = 'chef.sentinelle@example.com';
+
+    /** Le compte de confiance qui accorde une connexion MCP (#648). */
+    private const string MCP_USERNAME = 'mcp.sentinelle';
 
     /** Doivent refléter rate_limiter.yaml (career_assistant.limit, translation_assistant.limit). */
     private const int ASSISTANT_QUOTA = 30;
@@ -88,7 +97,11 @@ final class AccountIdentifierReachesNoLogTest extends WebTestCase
     {
         $connection = self::getContainer()->get(EntityManagerInterface::class)->getConnection();
         $connection->executeStatement('DELETE FROM password_setup_token');
+        // Les connexions MCP, leurs codes et leurs jetons partent en cascade
+        // avec les comptes ; les clients enregistrés, non.
         $connection->executeStatement('DELETE FROM cpg_user');
+        $connection->executeStatement('DELETE FROM mcp_client');
+        self::forgetMcpSessions($connection);
         parent::tearDown();
     }
 
@@ -100,6 +113,7 @@ final class AccountIdentifierReachesNoLogTest extends WebTestCase
 
         $inviteeId = $this->inviteeActivatedThroughTheBackoffice($client);
         $inviteeJwt = $this->inviteeSession($client, $inviteeId);
+        $this->mcpConnectionSession($client);
         $this->adminSession($client, $admin, $inviteeId);
         $this->deletedAccountJwtIsRefused($client, $inviteeJwt);
         $this->pendingInvitationsPurged();
@@ -118,6 +132,9 @@ final class AccountIdentifierReachesNoLogTest extends WebTestCase
             'security_audit/User deleted.',
             'security/Authenticator successful!',
             'security/Authenticator failed.',
+            'security_audit/MCP connection granted.',
+            'mcp_usage/MCP call',
+            'mcp_usage/MCP request without call',
             'ai_usage/Assistant de parcours : quota atteint.',
             'ai_usage/Assistant de traduction : quota atteint.',
         ] as $expected) {
@@ -198,6 +215,64 @@ final class AccountIdentifierReachesNoLogTest extends WebTestCase
         $this->collect('déconnexion de l\'invité');
 
         return $jwt;
+    }
+
+    /**
+     * Une connexion MCP (#648) accordée par un compte de confiance au nom
+     * dérivé comme celui d'un invité, par le vrai parcours OAuth : un
+     * `tools/call` authentifié par son jeton — le canal `security` écrit
+     * « Authenticator successful! » à chaque requête authentifiée, son jeton
+     * désignant une connexion MCP, réécrit par SecurityChannelAccountRedactor,
+     * qui doit la désigner par l'UUID du compte (`AccountReference`) —, puis
+     * le même jeton, révoqué, refusé (« Authenticator failed. »).
+     */
+    private function mcpConnectionSession(KernelBrowser $client): void
+    {
+        $client->getCookieJar()->clear();
+        $this->client = $client;
+        $this->registerOAuthClients();
+        $this->collect('enregistrement des clients MCP');
+
+        // Le parcours étape par étape : la sonde est vidée à chaque requête.
+        $this->loginAs(self::MCP_USERNAME, [CpgUser::ROLE_TRUSTED]);
+        $this->collect('login du compte MCP');
+        $client->request('GET', self::AUTHORIZE_PATH.'?'.http_build_query($this->validParameters()));
+        self::assertResponseStatusCodeSame(302);
+        $this->collect('demande d\'autorisation MCP');
+        $code = $this->queryOf($this->redirectUriOf($this->decide(approved: true)))['code'] ?? null;
+        self::assertIsString($code);
+        $this->collect('consentement MCP');
+        $held = $this->heldMcpConnectionOf($this->exchange($code));
+        $this->collect('échange du code MCP');
+
+        $sessionId = $this->initializeMcpSession($client, self::bearer($held->accessToken));
+        $this->collect('initialize MCP authentifié');
+
+        $this->mcpCall($client, $sessionId, 'tools/call', ['name' => 'get_contact_info', 'arguments' => new stdClass()], self::bearer($held->accessToken));
+        self::assertResponseIsSuccessful();
+        $this->assertTheSecurityChannelDesignatesTheAccount($held->accountId);
+        $this->collect('tools/call MCP authentifié');
+
+        $this->alterHeldAccessToken($held, 'revoked_at = now()');
+        $this->postMcp($client, $sessionId, ['jsonrpc' => '2.0', 'id' => 3, 'method' => 'tools/list'], self::bearer($held->accessToken));
+        self::assertResponseStatusCodeSame(401);
+        $this->collect('jeton MCP révoqué');
+    }
+
+    /**
+     * « Authenticator successful! » de la requête MCP désigne la connexion par
+     * le compte, sous son UUID (`userId`) — jamais muet, jamais l'identifiant
+     * de connexion.
+     */
+    private function assertTheSecurityChannelDesignatesTheAccount(string $accountId): void
+    {
+        $successes = array_values(array_filter(
+            self::allChannelsLogRecordsOf('security'),
+            static fn (LogRecord $record): bool => 'Authenticator successful!' === $record->message,
+        ));
+        self::assertCount(1, $successes);
+        // Le processeur du canal a déjà réécrit le jeton en chaîne quand le handler le reçoit.
+        self::assertSame(\sprintf('PostAuthenticationToken(userId="%s", roles="ROLE_TRUSTED, ROLE_USER")', $accountId), $successes[0]->context['token'] ?? null);
     }
 
     /**

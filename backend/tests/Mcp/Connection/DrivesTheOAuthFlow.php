@@ -78,6 +78,16 @@ trait DrivesTheOAuthFlow
         // `login_throttling` compte dans cache.rate_limiter, en base (ADR 0005)
         // et partagé d'un test à l'autre : chaque test repart de zéro.
         self::getContainer()->get('cache.rate_limiter')->clear();
+        $this->registerOAuthClients();
+    }
+
+    /**
+     * Enregistre CLIENT_ID et OTHER_CLIENT_ID. Appelée par setUpOAuthFlow() ;
+     * seule, par un test qui crée lui-même son `KernelBrowser` (et l'assigne à
+     * `$this->client`) avant de traverser le parcours.
+     */
+    private function registerOAuthClients(): void
+    {
         $clients = self::getContainer()->get(McpClientRepositoryInterface::class);
         $clients->add(RegisteredMcpClient::of(self::CLIENT_ID, self::CLIENT_NAME, ['http://localhost/callback', 'https://client.example.test/callback']));
         $clients->add(RegisteredMcpClient::of(self::OTHER_CLIENT_ID, 'Autre client', ['http://localhost/callback']));

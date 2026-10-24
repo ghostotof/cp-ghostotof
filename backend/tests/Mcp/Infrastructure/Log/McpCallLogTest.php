@@ -160,16 +160,31 @@ final class McpCallLogTest extends WebTestCase
         self::assertStringNotContainsStringIgnoringCase('sentinelle', (new JsonFormatter())->format($line));
     }
 
-    /** Ni l'en-tête `Authorization`, ni le cookie `BEARER`, ni l'identifiant de session. */
+    /**
+     * Ni l'en-tête `Authorization`, ni le cookie `BEARER`, ni l'identifiant de
+     * session. Depuis #648, un `Bearer` présenté est jugé par le firewall
+     * `mcp` : celui-ci, qui n'a pas la forme d'un jeton émis, est refusé en
+     * 401 avant le SDK, et la ligne de repli ne le cite pas davantage. Un
+     * autre schéma (le `Basic` du Basic Auth de la préprod) laisse l'appel
+     * servi, avec sa ligne d'appel.
+     */
     public function testNoTokenNorSessionIdReachesTheLine(): void
     {
         $client = self::createClient();
         $sessionId = $this->initializeMcpSession($client);
         $client->getCookieJar()->set(new Cookie('BEARER', 'cookie-sentinelle-643'));
 
-        $this->mcpCall($client, $sessionId, 'tools/list', server: ['HTTP_AUTHORIZATION' => 'Bearer jeton-sentinelle-643']);
+        $this->mcpCall($client, $sessionId, 'tools/list', server: ['HTTP_AUTHORIZATION' => 'Basic jeton-sentinelle-643']);
 
         $formatted = (new JsonFormatter())->format($this->onlyCallLine());
+        self::assertStringNotContainsString('sentinelle', $formatted);
+        self::assertStringNotContainsString($sessionId, $formatted);
+
+        $this->postMcp($client, $sessionId, ['jsonrpc' => '2.0', 'id' => 3, 'method' => 'tools/list'], ['HTTP_AUTHORIZATION' => 'Bearer jeton-sentinelle-643']);
+
+        self::assertResponseStatusCodeSame(401);
+        $this->assertFallbackLine('POST', 401, 'protocol-error', self::MCP_PROTOCOL_VERSION);
+        $formatted = (new JsonFormatter())->format($this->usageRecords()[0]);
         self::assertStringNotContainsString('sentinelle', $formatted);
         self::assertStringNotContainsString($sessionId, $formatted);
     }

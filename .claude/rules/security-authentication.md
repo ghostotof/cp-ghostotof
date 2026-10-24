@@ -49,7 +49,9 @@ paths:
     `XSRF-TOKEN` to echo. Safe for the reason `/api/mcp`'s exclusion is (ADR 0006 D4): their `oauth`
     firewall has no authenticator and reads no cookie, so a cross-site request carrying a person's
     `BEARER` borrows no identity, and has nothing to make act — exchanging a code needs its PKCE verifier,
-    revoking a token needs the token. `TokenControllerTest` and `RevocationControllerTest`
+    revoking a token needs the token. `/api/mcp`'s `mcp` firewall **has** an authenticator since #648, the MCP
+    connection's, and it reads the `Authorization: Bearer` header only, never a cookie: its exclusion stays safe
+    for the same reason (`.claude/rules/mcp-oauth.md`, « The authenticator of `/api/mcp` »). `TokenControllerTest` and `RevocationControllerTest`
     (`testABearerCookieWithoutTheXsrfHeaderIsNeitherRefusedNorRead`) pin both halves. **The consent,
     `/api/oauth/consent`, stays under the guard**: it reads the person (`ROLE_TRUSTED`) and grants in their
     name (`ConsentControllerTest::testAnApprovalWithoutTheCsrfHeaderIsForbidden`). Never exclude a prefix
@@ -237,7 +239,10 @@ paths:
     processor on the `security` channel only. It also rewrites the token of `Authenticator successful!`,
     written at `info` on **every authenticated request** of the `api` firewall, which `JsonFormatter`
     rendered by its `__toString()` (`JWTPostAuthenticationToken(user="jean.dupont", roles="…")`):
-    now `Class(userId="…", roles="…")` (`user="guest-…"` for the base tier, roles only otherwise). Any
+    now `Class(userId="…", roles="…")` (`user="guest-…"` for the base tier, roles only otherwise). The `mcp`
+    firewall writes it on every authenticated request too (#648): its `McpConnectionUser` is an
+    `AccountReference`, so the line names the connection's account by `userId`, never the connection's UUID
+    alone nor a login identifier (`AccountIdentifierReachesNoLogTest`). Any
     exception whose chain holds a `UserNotFoundException` becomes its normalised form (class, message,
     code, `file:line`, `previous`, no trace), that link's message replaced by `WITHHELD`. Both lines stay:
     `Authenticator failed.` is the trace of a forged or expired JWT — raising the handler to `notice` was

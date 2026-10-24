@@ -43,6 +43,17 @@ security:
             chain:
                 providers: [base_access_users, cpg_users]
 
+        # Firewall `mcp` (#648) : l'utilisateur est une connexion MCP, relue
+        # avec son jeton par McpBearerAuthenticator, dont le badge porte son
+        # propre chargeur. Ce fournisseur ne charge donc rien (tout chargement
+        # par identifiant échoue, sans le citer) et ne rafraîchit rien (le
+        # firewall est sans état) ; il n'existe que parce que SecurityBundle en
+        # exige un par firewall dès que plusieurs sont déclarés. Jamais
+        # `cpg_users` ici : ce serait un chemin qui charge un compte par son
+        # identifiant de connexion sur /api/mcp.
+        mcp_connections:
+            id: App\Mcp\Connection\Infrastructure\Security\McpConnectionUserProvider
+
     firewalls:
         # Pas de firewall `dev` (`^/(_profiler|_wdt|assets|build)/`,
         # `security: false`) : celui du squelette Symfony a été supprimé le
@@ -96,22 +107,29 @@ security:
         # lit donc pas le cookie BEARER : c'est ce qui rend sûre l'exclusion de
         # /api/mcp de la garde CSRF (CsrfCookieRequestSubscriber) — une page
         # tierce qui ferait poster le navigateur d'une personne de confiance n'y
-        # emprunterait aucune identité. Aucun authentificateur en phase 1 ; la
-        # phase 2 n'y ajoutera que celui de la connexion MCP (Bearer en en-tête).
+        # emprunterait aucune identité. Son seul authentificateur (#648) est
+        # celui de la connexion MCP : `Authorization: Bearer <jeton opaque>`,
+        # relu en base à chaque requête avec la connexion, le compte et ses
+        # rôles, en une requête (McpBearerAuthenticator). Sans cet en-tête, ou
+        # sous un autre schéma (le `Basic` du Basic Auth de la préprod), la
+        # requête reste anonyme ; un jeton présenté et refusé est un 401
+        # `invalid_token` sur toute requête. Pas de `jwt`, aucun cookie lu.
         # Borné par `$` : la route n'a pas de sous-chemin, un voisin
         # (`/api/mcpx`) retombe dans `api` (AccessControlAnchoringTest).
         mcp:
             pattern: ^/api/mcp$
             stateless: true
+            provider: mcp_connections
+            custom_authenticators:
+                - App\Mcp\Connection\Infrastructure\Security\McpBearerAuthenticator
 
         # Les deux documents de métadonnées OAuth de la connexion MCP (#647,
         # RFC 9728 et RFC 8414), hors /api parce que la norme fixe leur chemin
         # (chemin bien connu suivi de celui de la ressource ou de l'émetteur).
-        # Même forme que `mcp` : stateless, aucun authentificateur, aucun
-        # cookie lu — un document public, identique pour tous. Un firewall
-        # chacun, plutôt qu'aucun : une route hors /api a son propre firewall
-        # et sa propre règle access_control (RouterScopeTest), jamais une
-        # exposition implicite. Bornés par `$` sur leur chemin exact, le `.`
+        # Stateless, aucun authentificateur, aucun cookie lu — un document
+        # public, identique pour tous. Un firewall chacun, plutôt qu'aucun :
+        # une route hors /api a son propre firewall et sa propre règle
+        # access_control (RouterScopeTest), jamais une exposition implicite. Bornés par `$` sur leur chemin exact, le `.`
         # échappé : un voisin (`/.well-known/oauth-authorization-server` seul,
         # `…/api/mcpx`) ne relève d'aucun firewall et le routeur lui répond
         # 404 (AccessControlAnchoringTest). Placés avant `api` comme `mcp`,
@@ -125,10 +143,10 @@ security:
             stateless: true
 
         # Les trois points du serveur d'autorisation OAuth de la connexion MCP
-        # (#647) : autorisation, jeton, révocation. Même forme que `mcp` :
-        # stateless, aucun authentificateur, aucun cookie lu. Un client MCP
-        # n'est pas un navigateur ; le point d'autorisation, que le navigateur
-        # de la personne atteint, ne fait que valider la demande et renvoyer
+        # (#647) : autorisation, jeton, révocation. Stateless, aucun
+        # authentificateur, aucun cookie lu. Un client MCP n'est pas un
+        # navigateur ; le point d'autorisation, que le navigateur de la
+        # personne atteint, ne fait que valider la demande et renvoyer
         # vers la page de consentement — l'identité n'est lue qu'au
         # consentement. Sous le firewall `api`, un cookie BEARER illisible
         # vaudrait un 401 au lieu de la réponse anonyme. Le consentement
