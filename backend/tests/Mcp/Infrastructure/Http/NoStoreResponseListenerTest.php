@@ -84,6 +84,54 @@ final class NoStoreResponseListenerTest extends WebTestCase
         $this->assertNotStoredResponse();
     }
 
+    /**
+     * Quel que soit le statut (`.claude/rules/mcp.md` : « any method and
+     * status ») : le 401 différé d'un appel anonyme de l'outil nominatif, le
+     * 404 d'une session inconnue, le 202 d'une notification et la réponse au
+     * GET passent tous par l'écouteur, pas seulement les 200 du SDK. Le 401
+     * (UnauthorizedAnswers) et le GET (McpEndpointController) posent déjà
+     * `no-store` eux-mêmes : leurs deux tests restent verts sans l'écouteur
+     * (mesuré), ils pincent la propriété du point, pas l'écouteur ; le 404 et
+     * le 202 rougissent sans lui.
+     */
+    public function testTheDeferred401IsNotStored(): void
+    {
+        $sessionId = $this->initializeMcpSession($this->client);
+
+        $this->postMcp($this->client, $sessionId, $this->toolCall('get_nominative_corpus'));
+
+        self::assertResponseStatusCodeSame(Response::HTTP_UNAUTHORIZED);
+        $this->assertNotStoredResponse();
+    }
+
+    public function testTheNotFoundOfAnUnknownSessionIsNotStored(): void
+    {
+        $this->postMcp($this->client, '0199c3a4-7d1e-7b2a-9f3c-5e6d7a8b9c0d', $this->toolCall('get_contact_info'));
+
+        self::assertResponseStatusCodeSame(Response::HTTP_NOT_FOUND);
+        $this->assertNotStoredResponse();
+    }
+
+    public function testTheAcceptedNotificationIsNotStored(): void
+    {
+        $sessionId = $this->initializeMcpSession($this->client);
+
+        $this->postMcp($this->client, $sessionId, ['jsonrpc' => '2.0', 'method' => 'notifications/initialized']);
+
+        self::assertResponseStatusCodeSame(Response::HTTP_ACCEPTED);
+        $this->assertNotStoredResponse();
+    }
+
+    public function testTheGetAnswerIsNotStored(): void
+    {
+        $this->client->request('GET', '/api/mcp', server: [
+            'HTTP_ACCEPT' => 'text/event-stream',
+            'HTTP_MCP_PROTOCOL_VERSION' => self::MCP_PROTOCOL_VERSION,
+        ]);
+
+        $this->assertNotStoredResponse();
+    }
+
     /** Hors du point MCP, rien ne change : la règle est la sienne. */
     public function testAnotherApiRouteKeepsItsOwnCacheControl(): void
     {

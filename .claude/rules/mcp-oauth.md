@@ -208,11 +208,11 @@ paths:
   expired, without `nominative:read` in its stored scope (`InsufficientScope`, word for word, final review of
   #648; **accepted**, security review of #648: it answers the common 401 `invalid_token`, not RFC 6750 §3.1's 403
   `insufficient_scope`, so a client would refresh into the same scope — unreachable while league grants
-  `nominative:read` only; to decide before any second scope) —; then `ROLE_TRUSTED` reached through `RoleHierarchyInterface` from the **stored** roles
-  (`AccountNotTrusted`: a `ROLE_SUPER` without stored `ROLE_TRUSTED` passes, the base tier does not). The role name is
-  `McpConnectionPrincipal::TRUSTED_TIER`, not `CpgUser::ROLE_TRUSTED`, so the context's dependency on `Security` keeps
-  its two doors (`McpConnectionPrincipalTest` compares the two). **No
-  write per call** (no `last_used_at`, #649 writes it at refresh; `testNoRequestWritesOutsideTheMcpSessions`), and
+  `nominative:read` only; to decide before any second scope) —; then `ROLE_TRUSTED` reached through
+  `RoleHierarchyInterface` from the **stored** roles (`AccountNotTrusted`: a `ROLE_SUPER` without stored
+  `ROLE_TRUSTED` passes, the base tier does not). The role name is `McpConnectionPrincipal::TRUSTED_TIER`, not
+  `CpgUser::ROLE_TRUSTED`, so the context's dependency on `Security` keeps its two doors (`McpConnectionPrincipalTest`
+  compares the two). **No write per call** (no `last_used_at`, #649 writes it at refresh; `testNoRequestWritesOutsideTheMcpSessions`), and
   exactly **one query more** than the same anonymous call (`testAnAuthenticatedCallCostsExactlyOneQueryMore`). Nothing
   loads the account before that query: a join does not refresh an instance the EntityManager already manages.
   **A presented and refused token is a 401 on every request** of `/api/mcp` (the author's decision of 2026-10-24):

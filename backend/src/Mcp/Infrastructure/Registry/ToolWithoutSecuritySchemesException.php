@@ -8,7 +8,8 @@ use LogicException;
 
 /**
  * Un outil du registre ne déclare pas ses `securitySchemes` dans son
- * `_meta` (`#[McpTool(meta: ['securitySchemes' => …])]`) : défaut de câblage,
+ * `_meta` (`#[McpTool(meta: [ToolSecuritySchemes::KEY => …])]`,
+ * {@see \App\Mcp\Application\ToolSecuritySchemes}) : défaut de câblage,
  * jamais une erreur du client. `tools/list` n'est pas servi plutôt qu'un
  * outil publié sans schéma, ou complété d'un schéma inventé ({@see SecuritySchemesRegistry}).
  *

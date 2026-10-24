@@ -12,6 +12,7 @@ use App\Tests\Mcp\Support\HeldMcpConnection;
 use App\Tests\Mcp\Support\HoldsAnMcpConnection;
 use App\Tests\Mcp\Support\SpeaksMcp;
 use App\Tests\Support\ReadsAllChannelsLog;
+use App\Tests\Support\ReadsSecurityAuditLog;
 use Doctrine\ORM\EntityManagerInterface;
 use Monolog\Formatter\JsonFormatter;
 use Monolog\Handler\TestHandler;
@@ -48,6 +49,7 @@ final class McpBearerAuthenticatorTest extends WebTestCase
 {
     use HoldsAnMcpConnection;
     use ReadsAllChannelsLog;
+    use ReadsSecurityAuditLog;
     use SpeaksMcp;
 
     /** Un jeton émis par league : 40 octets aléatoires… */
@@ -461,6 +463,7 @@ final class McpBearerAuthenticatorTest extends WebTestCase
         $response = $this->client->getResponse();
         self::assertNull(self::getContainer()->get('security.token_storage')->getToken());
         self::assertStringNotContainsString('structuredContent', (string) $response->getContent());
+        self::assertSame([], self::securityAuditEvents('nominative-corpus-read'), 'Un cookie n\'ouvre aucune lecture.');
         if (!$marked) {
             self::assertSame(Response::HTTP_UNAUTHORIZED, $response->getStatusCode());
             self::assertSame(

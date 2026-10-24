@@ -108,12 +108,14 @@ paths:
   **The identity is read through `Security` only** (`McpConnectionPrincipal`, ADR 0006 D4): never `_meta`, the token
   nor the SDK's authorization middlewares, and no `RequestContext` (nothing would read it). **The reader re-checks what
   the authenticator already judged** (defence in depth, review of #648): a `McpConnectionPrincipal`, its
-  `grantsNominativeRead()` (the stored scope, re-read with the token) and `isGranted(McpConnectionPrincipal::TRUSTED_TIER)`
-  (the `role_hierarchy`); any of the three missing is the same refusal as without a connection, nothing rendered nor
-  logged (`NominativeCorpusReaderTest`, a fixture principal lacking the tier, then the scope: red without each check,
-  measured). The reader takes `Security`, `CorpusRendererInterface`, `SecurityAuditLoggerInterface` (the second door
-  of `mcp-oauth.md`'s « assumed exception ») and `app.frontend_base_url`; the tool takes the reader's interface,
-  `BearerChallenge` and the logger, pinned in `McpExposureSymmetryTest::TOOLS_WITHOUT_ROUTE`. **Its queued answer is bounded** (`QUEUED_ANSWER_MAX_BYTES`, sessions below); for it `Mcp/Presentation` imports
+  `grantsNominativeRead()` (the stored scope, re-read with the token) and
+  `isGranted(McpConnectionPrincipal::TRUSTED_TIER)` (the `role_hierarchy`); any of the three missing is the same
+  refusal as without a connection, nothing rendered nor logged (`NominativeCorpusReaderTest`, a fixture principal
+  lacking the tier, then the scope: red without each check, measured). The reader takes `Security`,
+  `CorpusRendererInterface`, `SecurityAuditLoggerInterface` (the second door of `mcp-oauth.md`'s « assumed
+  exception ») and `app.frontend_base_url`; the tool takes the reader's interface, `BearerChallenge` and the logger,
+  pinned in `McpExposureSymmetryTest::TOOLS_WITHOUT_ROUTE`. **Its queued answer is bounded**
+  (`QUEUED_ANSWER_MAX_BYTES`, sessions below); for it `Mcp/Presentation` imports
   `Infrastructure/Session/BoundedSessionStore`, assumed like the controller's `ServerAnswersInterface` (the bound lives
   with the code that enforces it). `get_tech_watch` relays third-party strings
   (endoflife.date cycles, versions, links) to the person's model — indirect prompt injection (LLM01): its
@@ -269,8 +271,8 @@ paths:
   connection's answer, then lost like any concurrent update, and never another connection's corpus (the drain re-reads
   the store and refuses a foreign binding); likewise a connection that knows the id of a session opened anonymously
   can take it, its anonymous holder then getting a 404 (ids are the server's UUID v4s); and one refused request may
-  write two `warning`s (the drain's read, then the refused write) — security review of #648. `MAX_BYTES` counts the SDK's session, not the header. The sessionless 2026-07-28 revision is not
-  concerned: `StatelessProtocol` serves each request on an in-memory session, never on this store.
+  write two `warning`s (the drain's read, then the refused write) — security review of #648. `MAX_BYTES` counts the
+  SDK's session, not the header. The sessionless 2026-07-28 revision is not concerned: `StatelessProtocol` serves each request on an in-memory session, never on this store.
   `BoundedSessionStoreTest` replays the SDK's sequence with its `Session` (every write bound, the full queue included);
   `GetNominativeCorpusToolTest` plays an anonymous `ping`, GET and `DELETE`, another connection, a session opened
   anonymously and reads the `cache_items` row.
@@ -369,9 +371,9 @@ paths:
   canonical path) answers a `tools/call` of `ProtectedTools::NOMINATIVE_CORPUS` made **without** an MCP connection (the
   token storage's user is no `McpConnectionPrincipal`) with a **401 without body**, `WWW-Authenticate:
   BearerChallenge::missingToken()` (no `error=`: no token was presented), `no-store`, recorded through
-  `ServerAnswersInterface::record()` — built by `Infrastructure/Http/UnauthorizedAnswers::missingToken()`, the authenticator's
-  401 by its `refusedToken()`: one template, only the challenge differs —, what makes a Claude client open the OAuth flow. **The body decides, read by the
-  SDK's own `MessageFactory::create()`** (as `ModernExchange` reads it): a message is that call exactly when the SDK
+  `ServerAnswersInterface::record()` — built by `Infrastructure/Http/UnauthorizedAnswers::missingToken()`, the
+  authenticator's 401 by its `refusedToken()`: one template, only the challenge differs —, what makes a Claude client
+  open the OAuth flow. **The body decides, read by the SDK's own `MessageFactory::create()`** (as `ModernExchange` reads it): a message is that call exactly when the SDK
   would build a `CallToolRequest` of that name from it, in a session and under the sessionless 2026-07-28 envelope
   alike. A one-message batch is judged as a single message — served by the SDK in a session, refused by it under the
   2026-07-28 envelope, which this 401 precedes, as it precedes the SDK's session validation and its `Host` check (an

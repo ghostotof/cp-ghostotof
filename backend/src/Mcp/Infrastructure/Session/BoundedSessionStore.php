@@ -71,9 +71,18 @@ use Symfony\Contracts\Service\ResetInterface;
  *    connexion sans la désigner.
  *
  * Une course reste celle du SDK, qui n'a aucun verrou : une requête qui a lu
- * la session avant sa liaison peut la réécrire une fois non liée — avec ce
- * qu'elle avait lu, donc sans la réponse de la connexion (perdue, comme toute
- * mise à jour concurrente d'une même session). La révision sans session
+ * la session avant sa liaison peut la réécrire une fois, avec ce qu'elle
+ * avait lu, non liée **ou liée à sa propre connexion** (la dernière écriture
+ * gagne, la première connexion reçoit alors un 404), ou la détruire si son
+ * écriture dépasse {@see self::MAX_BYTES} — jamais avec la réponse de la
+ * connexion (perdue, comme toute mise à jour concurrente d'une même session),
+ * jamais en livrant le corpus d'une autre connexion : la vidange relit le
+ * store et refuse une liaison étrangère. De même, une connexion qui connaît
+ * l'identifiant d'une session ouverte en anonyme peut la prendre, son
+ * titulaire anonyme recevant un 404 (des UUID v4 du serveur) ; et une même
+ * requête refusée peut écrire deux `warning` (la lecture de la vidange, puis
+ * l'écriture refusée). Limites acceptées, relecture de sécurité de #648
+ * (`.claude/rules/mcp.md`). La révision sans session
  * 2026-07-28 n'est pas concernée : `StatelessProtocol` sert chaque requête
  * sur une session en mémoire, jamais sur ce store.
  */

@@ -16,7 +16,7 @@ namespace App\Mcp\Application;
  * n'offre pas la liaison de compte.
  *
  * Dans l'Application plutôt qu'à côté du registre (Infrastructure) : les
- * outils (Presentation) et le registre la lisent tous deux, et aucun des onze
+ * outils (Presentation) et le registre la lisent tous deux, et aucun des dix
  * outils n'a à importer une classe d'Infrastructure pour la déclarer. Des
  * expressions constantes, pour être écrites dans l'attribut.
  */

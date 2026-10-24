@@ -13,8 +13,13 @@ use App\Mcp\Connection\Application\McpConnectionPrincipal;
  * que la ligne d'audit désignera s'il est servi
  * ({@see NominativeCorpusReaderInterface::recordServed()}).
  *
- * Ne se construit que par {@see NominativeCorpusReaderInterface::open()},
- * après la décision d'accès : il n'existe pas de corpus « refusé ». Il ne
+ * Construit par {@see NominativeCorpusReaderInterface::open()} seul, après la
+ * décision d'accès : il n'existe pas de corpus « refusé ». Le constructeur
+ * reste public (un objet de valeur `readonly`, que les tests construisent) :
+ * rien ne l'impose donc au compilateur. Un corpus construit ailleurs ne
+ * donne accès à rien — le texte, il faut déjà l'avoir —, il ne peut que
+ * faire écrire une ligne d'audit de trop à {@see NominativeCorpusReaderInterface::recordServed()} :
+ * limite acceptée (relecture de la vague de correction de #648). Il ne
  * porte ni jeton ni empreinte, seulement ce que le principal du firewall
  * désigne déjà (des UUID et l'identifiant public OAuth du client).
  */
