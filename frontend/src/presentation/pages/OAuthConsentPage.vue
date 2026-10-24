@@ -31,9 +31,6 @@ import { REAUTH_QUERY, REAUTH_VALUE } from '../router/reauthentication'
 const { t, locale: i18nLocale } = useI18n()
 const route = useRoute()
 const { state, request, failure, load, approve, deny } = useOAuthConsent()
-const { isArmed, guard } = useDeliberateActivation()
-const onApprove = guard(approve)
-const onDeny = guard(deny)
 
 const currentLocale = computed<Locale>(() => {
   const routeLocale = route.params.locale
@@ -41,10 +38,14 @@ const currentLocale = computed<Locale>(() => {
 })
 
 const isSubmitting = computed(() => 'submitting' === state.value)
-/** Inactifs pendant la transmission, et tant que la page n'a pas été vue le délai voulu. */
-const buttonsDisabled = computed(() => isSubmitting.value || !isArmed.value)
 /** La demande et les boutons ne se montrent que tant qu'une décision est possible. */
 const showRequest = computed(() => null !== request.value && ('ready' === state.value || isSubmitting.value))
+// Le délai d'activation court depuis l'apparition des boutons, pas depuis le montage.
+const { isArmed, guard } = useDeliberateActivation(showRequest)
+const onApprove = guard(approve)
+const onDeny = guard(deny)
+/** Inactifs pendant la transmission, et tant que la page n'a pas été vue le délai voulu. */
+const buttonsDisabled = computed(() => isSubmitting.value || !isArmed.value)
 
 /** Le seul role="status" de la page : vide hors chargement et transmission. */
 const statusMessage = computed<string>(() => {

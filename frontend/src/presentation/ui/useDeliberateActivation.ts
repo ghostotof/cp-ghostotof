@@ -1,4 +1,4 @@
-import { onBeforeUnmount, onMounted, readonly, ref, type Ref } from 'vue'
+import { onBeforeUnmount, onMounted, readonly, ref, watch, type Ref, type WatchSource } from 'vue'
 
 /**
  * Le temps pendant lequel la page doit avoir été visible **et** active avant
@@ -28,8 +28,11 @@ export interface DeliberateActivation {
  * Deux règles, qui se complètent :
  * - **activation différée** : les boutons ne s'activent qu'après
  *   ACTIVATION_DELAY_MS de page visible (`document.visibilityState`) et active
- *   (`document.hasFocus()`) ; une page cachée ou qui perd le focus les
- *   désactive, et le délai repart à son retour ;
+ *   (`document.hasFocus()`), **comptés depuis leur apparition** (`shown`) : un
+ *   délai compté depuis le montage serait déjà écoulé quand des boutons
+ *   apparaissent après un chargement plus long que lui, et ils apparaîtraient
+ *   actifs ; une page cachée, qui perd le focus ou qui retire les boutons les
+ *   désactive, et le délai repart à leur retour ;
  * - **appui antérieur ignoré** : un clic dont l'appui (`pointerdown`) a eu lieu
  *   avant l'activation ne compte pas — le second clic d'un double-clic posé
  *   pendant le délai, relâché juste après. Un clic au clavier n'a pas d'appui
@@ -38,7 +41,7 @@ export interface DeliberateActivation {
  * Les en-têtes `frame-ancestors`/`X-Frame-Options` couvrent déjà le
  * clickjacking par cadre ; ceci couvre la fenêtre, qu'aucun en-tête n'atteint.
  */
-export function useDeliberateActivation(delayMs: number = ACTIVATION_DELAY_MS): DeliberateActivation {
+export function useDeliberateActivation(shown: WatchSource<boolean>, delayMs: number = ACTIVATION_DELAY_MS): DeliberateActivation {
   const isArmed = ref(false)
   let timer: ReturnType<typeof setTimeout> | null = null
   /** L'appui du pointeur le plus récent a-t-il commencé avant l'activation ? */
@@ -51,7 +54,9 @@ export function useDeliberateActivation(delayMs: number = ACTIVATION_DELAY_MS): 
     }
   }
 
-  const isVisibleAndActive = (): boolean => 'visible' === document.visibilityState && document.hasFocus()
+  let buttonsShown = false
+
+  const isVisibleAndActive = (): boolean => buttonsShown && 'visible' === document.visibilityState && document.hasFocus()
 
   const disarm = (): void => {
     clearTimer()
@@ -73,6 +78,17 @@ export function useDeliberateActivation(delayMs: number = ACTIVATION_DELAY_MS): 
   const onPointerDown = (): void => {
     pressStartedBeforeActivation = !isArmed.value
   }
+
+  // Les boutons apparaissent (résumé reçu) ou disparaissent (échec) : le délai
+  // repart de zéro à chaque apparition, jamais d'un instant antérieur.
+  watch(
+    shown,
+    (value) => {
+      buttonsShown = value
+      restart()
+    },
+    { immediate: true, flush: 'sync' },
+  )
 
   onMounted(() => {
     document.addEventListener('visibilitychange', onVisibilityChange)

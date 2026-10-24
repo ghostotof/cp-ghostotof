@@ -503,6 +503,34 @@ describe('OAuthConsentPage — authentification récente (#647, F1)', () => {
 })
 
 describe('OAuthConsentPage — clic délibéré (double-clickjacking)', () => {
+  it('résumé reçu après le délai : les boutons apparaissent inactifs, le délai court à leur apparition', async () => {
+    // Le résumé arrive 700 ms après le montage, fenêtre déjà active : un délai
+    // compté depuis le montage serait écoulé à l'apparition des boutons.
+    const describeRequest = vi.fn(() => new Promise<ConsentRequest>((resolve) => setTimeout(() => resolve(SUMMARY), ACTIVATION_DELAY_MS + 100)))
+    const { wrapper, decide } = await mountPage({ arm: false, describeRequest })
+
+    vi.advanceTimersByTime(ACTIVATION_DELAY_MS + 100)
+    await flushPromises()
+
+    expect(button(wrapper, 'approve').exists()).toBe(true)
+    expect(button(wrapper, 'approve').attributes('disabled')).toBeDefined()
+    expect(button(wrapper, 'deny').attributes('disabled')).toBeDefined()
+
+    // Un clic juste après l'apparition (le second clic d'un double-clic) : ignoré.
+    pointerDown()
+    await pointerClick(wrapper, 'approve')
+    await flushPromises()
+    expect(decide).not.toHaveBeenCalled()
+
+    vi.advanceTimersByTime(ACTIVATION_DELAY_MS - 1)
+    await nextTick()
+    expect(button(wrapper, 'approve').attributes('disabled')).toBeDefined()
+    vi.advanceTimersByTime(1)
+    await nextTick()
+    expect(button(wrapper, 'approve').attributes('disabled')).toBeUndefined()
+    expect(decide).not.toHaveBeenCalled()
+  })
+
   it(`les boutons ne s’activent qu’après ${ACTIVATION_DELAY_MS} ms de page visible et active`, async () => {
     const { wrapper } = await mountPage({ arm: false })
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAuth } from '../../application/auth/useAuth'
@@ -12,7 +12,14 @@ import { isReauthentication } from '../router/reauthentication'
 const { t, locale } = useI18n()
 const route = useRoute()
 const router = useRouter()
-const { login } = useAuth()
+const { login, user } = useAuth()
+
+/**
+ * L'annonce « confirmez votre identité » ne vaut que pour une session encore
+ * ouverte (`reauth=1` posé par le consentement MCP, #647) : une personne dont
+ * la session a expiré entre-temps se connecte, tout simplement.
+ */
+const isReauthenticatingASession = computed(() => null !== user.value && isReauthentication(route))
 
 const username = ref('')
 const password = ref('')
@@ -79,9 +86,9 @@ async function handleSubmit(): Promise<void> {
         {{ t('auth.heading') }}
       </h1>
 
-      <!-- La personne est peut-être déjà connectée : la page dit pourquoi elle s'ouvre. -->
+      <!-- La personne est déjà connectée : la page dit pourquoi elle s'ouvre. -->
       <p
-        v-if="isReauthentication(route)"
+        v-if="isReauthenticatingASession"
         class="text-body-secondary small"
         data-testid="login-reauth-notice"
       >
