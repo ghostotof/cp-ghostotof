@@ -10,6 +10,7 @@
         "ext-intl": "*",
         "api-platform/doctrine-orm": "^4.3",
         "api-platform/symfony": "4.3.19",
+        "defuse/php-encryption": "2.4.0",
         "doctrine/doctrine-bundle": "^3.3",
         "doctrine/doctrine-migrations-bundle": "^4.0",
         "doctrine/orm": "^3.6",
