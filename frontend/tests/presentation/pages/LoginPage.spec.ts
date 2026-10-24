@@ -1,11 +1,13 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { defineComponent } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import LoginPage from '../../../src/presentation/pages/LoginPage.vue'
-import { AUTH_REPOSITORY } from '../../../src/application/auth/useAuth'
+import { AUTH_REPOSITORY, useAuth } from '../../../src/application/auth/useAuth'
 import { InvalidCredentialsError } from '../../../src/domain/auth/errors/InvalidCredentialsError'
 import { LoginRateLimitedError } from '../../../src/domain/auth/errors/LoginRateLimitedError'
 import type { AuthRepository } from '../../../src/domain/auth/repositories/AuthRepository'
+import type { AuthenticatedUser } from '../../../src/domain/auth/entities/AuthenticatedUser'
 import { createAppI18n } from '../../../src/presentation/i18n'
 import { sessionFor } from '../../support/authSession'
 
@@ -20,15 +22,16 @@ function createStubRepository(overrides: Partial<AuthRepository> = {}): AuthRepo
   }
 }
 
-async function mountLoginPage(repository: AuthRepository, locale = 'fr') {
+async function mountLoginPage(repository: AuthRepository, locale = 'fr', query: Record<string, string> = {}) {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
       { path: '/:locale(fr|en)', name: 'home', component: StubPage },
       { path: '/:locale(fr|en)/login', name: 'login', component: LoginPage },
+      { path: '/:locale(fr|en)/oauth/consent', name: 'oauth-consent', component: StubPage },
     ],
   })
-  await router.push(`/${locale}/login`)
+  await router.push({ name: 'login', params: { locale }, query })
   await router.isReady()
 
   const i18n = createAppI18n()
@@ -98,6 +101,78 @@ describe('LoginPage', () => {
     await flushPromises()
 
     expect(wrapper.get('[role="alert"]').text()).toBe(message)
+  })
+
+  describe('reconnexion demandée par le consentement MCP (`reauth`, #647)', () => {
+    const CONSENT = '/fr/oauth/consent?client_id=claude-code&state=a%26b'
+
+    /** La session que le reste de l'application voit (authState, partagé d'un test à l'autre). */
+    async function primeSession(user: AuthenticatedUser | null): Promise<void> {
+      const repository = createStubRepository({ me: vi.fn(async () => sessionFor(user)) })
+      const Probe = defineComponent({
+        setup() {
+          return { auth: useAuth() }
+        },
+        template: '<div />',
+      })
+      const probe = mount(Probe, { global: { provide: { [AUTH_REPOSITORY as symbol]: repository } } })
+      await probe.vm.auth.checkAuth()
+      probe.unmount()
+    }
+
+    afterEach(async () => {
+      await primeSession(null)
+    })
+
+    it.each([
+      ['fr', 'Confirmez votre identité'],
+      ['en', 'Confirm your identity'],
+    ])('annonce pourquoi la page de connexion s’ouvre alors que la personne est connectée (%s)', async (locale, notice) => {
+      await primeSession({ username: 'jane', roles: ['ROLE_USER', 'ROLE_TRUSTED'] })
+      const { wrapper } = await mountLoginPage(createStubRepository(), locale, { reauth: '1', redirect: CONSENT })
+
+      expect(wrapper.get('[data-testid="login-reauth-notice"]').text()).toContain(notice)
+    })
+
+    it.each(['fr', 'en'])(
+      'drapeau présent mais plus aucune session (expirée entre-temps) : aucune annonce de reconfirmation (%s)',
+      async (locale) => {
+        await primeSession(null)
+        const { wrapper } = await mountLoginPage(createStubRepository(), locale, { reauth: '1', redirect: CONSENT })
+
+        expect(wrapper.find('[data-testid="login-reauth-notice"]').exists()).toBe(false)
+        expect(wrapper.text()).not.toContain('Confirmez votre identité')
+        expect(wrapper.text()).not.toContain('Confirm your identity')
+      },
+    )
+
+    it('sans le drapeau : aucune annonce', async () => {
+      const { wrapper } = await mountLoginPage(createStubRepository(), 'fr', { redirect: CONSENT })
+
+      expect(wrapper.find('[data-testid="login-reauth-notice"]').exists()).toBe(false)
+    })
+
+    it('après la connexion, retour à la même demande, requête comprise', async () => {
+      const { wrapper, router } = await mountLoginPage(createStubRepository(), 'fr', { reauth: '1', redirect: CONSENT })
+
+      await wrapper.get('#login-username').setValue('jane')
+      await wrapper.get('#login-password').setValue('password123')
+      await wrapper.get('form').trigger('submit')
+      await flushPromises()
+
+      expect(router.currentRoute.value.fullPath).toBe(CONSENT)
+    })
+
+    it('le drapeau n’affaiblit pas la garde de redirection ouverte', async () => {
+      const { wrapper, router } = await mountLoginPage(createStubRepository(), 'fr', { reauth: '1', redirect: '//evil.example/fr/oauth/consent' })
+
+      await wrapper.get('#login-username').setValue('jane')
+      await wrapper.get('#login-password').setValue('password123')
+      await wrapper.get('form').trigger('submit')
+      await flushPromises()
+
+      expect(router.currentRoute.value.path).toBe('/fr')
+    })
   })
 
   it('affiche un message générique pour les autres erreurs', async () => {

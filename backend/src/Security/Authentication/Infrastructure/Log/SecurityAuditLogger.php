@@ -14,6 +14,7 @@ use SensitiveParameter;
 use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\Security\Core\Authentication\Token\Storage\TokenStorageInterface;
 use Symfony\Component\Security\Core\User\UserInterface;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * Implémentation Monolog du journal de sécurité (D5), sur le canal
@@ -184,6 +185,15 @@ final readonly class SecurityAuditLogger implements SecurityAuditLoggerInterface
             [...$this->account($user), 'superAdmin' => $user->isSuperAdmin()],
             self::CONSOLE,
         );
+    }
+
+    public function mcpConnectionGranted(CpgUser $account, Uuid $connectionId, string $clientId): void
+    {
+        $this->record('mcp-connection-granted', 'MCP connection granted.', [
+            ...$this->account($account),
+            'connectionId' => $connectionId->toRfc4122(),
+            'clientId' => $clientId,
+        ]);
     }
 
     /**

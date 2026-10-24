@@ -18,6 +18,14 @@ parameters:
     # URL publique du frontend, pour construire les liens des e-mails sortants
     # (ex. lien de définition de mot de passe d'un utilisateur invité).
     app.frontend_base_url: '%env(APP_FRONTEND_BASE_URL)%'
+    # Base publique de l'API, d'où dérivent l'émetteur OAuth, la ressource MCP
+    # et leurs points (Mcp/Connection/Application/OAuthEndpoints, #647). Vide —
+    # le cas de la préprod et de la prod, où l'API est servie sur l'origine du
+    # frontend —, elle retombe sur app.frontend_base_url : le processeur
+    # `default:` traite une valeur vide comme absente (EnvVarProcessor). Seul le
+    # dev la pose (docker-compose.override.yml), l'API n'y étant pas sur
+    # l'origine de Vite.
+    app.public_api_base_url: '%env(default:app.frontend_base_url:APP_PUBLIC_API_BASE_URL)%'
     # Manifeste des paquets déployés, produit au build et embarqué dans l'image.
     # Sous config/ et non var/ : c'est une donnée du déploiement, figée avec lui,
     # là où var/ est le seul répertoire inscriptible en production.
@@ -108,6 +116,13 @@ services:
         class: Symfony\Component\Cache\Psr16Cache
         arguments: ['@cache.mcp_sessions']
 
+    # Serveur d'autorisation OAuth 2.1 de la connexion MCP (#647), league sans
+    # son bundle : construit par sa fabrique, injecté tel quel dans les
+    # contrôleurs OAuth. La fabrique dit pourquoi l'ordre de sa configuration
+    # compte.
+    League\OAuth2\Server\AuthorizationServer:
+        factory: ['@App\Mcp\Connection\Infrastructure\League\AuthorizationServerFactory', 'create']
+
 when@test:
     services:
         _defaults:
@@ -134,4 +149,15 @@ when@test:
         # retiré à la compilation, il serait introuvable dans le conteneur de
         # test sans ceci.
         App\Ai\Assistant\Infrastructure\Corpus\CorpusRenderer:
+            public: true
+
+        # AuthorizationServerTest lit le serveur d'autorisation tel que la
+        # configuration commune le construit (#647) : un alias public, jamais
+        # une copie de sa définition, qui remplacerait celle de la production
+        # dans le conteneur de test. Le service reste privé partout ailleurs :
+        # les services OAuth le reçoivent par injection (validateur de la
+        # demande, point de jeton, achèvement du consentement), seul ce test le
+        # lit dans le conteneur.
+        test.oauth.authorization_server:
+            alias: League\OAuth2\Server\AuthorizationServer
             public: true

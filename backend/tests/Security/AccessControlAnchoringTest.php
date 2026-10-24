@@ -97,6 +97,12 @@ final class AccessControlAnchoringTest extends KernelTestCase
         yield '/api/anonymous-cv/en → ROLE_USER' => ['/api/anonymous-cv/en', ['ROLE_USER']];
         yield '/api/assistant → ROLE_TRUSTED' => ['/api/assistant', ['ROLE_TRUSTED']];
         yield '/api/assistant/answers → ROLE_TRUSTED' => ['/api/assistant/answers', ['ROLE_TRUSTED']];
+        // Consentement à une connexion MCP (#647) : il accorde la lecture du
+        // corpus nominatif, donc le palier de confiance, comme /api/cv.
+        yield '/api/oauth/consent → ROLE_TRUSTED' => ['/api/oauth/consent', ['ROLE_TRUSTED']];
+        yield '/api/oauth/consent/ → ROLE_TRUSTED' => ['/api/oauth/consent/', ['ROLE_TRUSTED']];
+        // Décidé sur le chemin décodé, comme le firewall et le routeur (#77).
+        yield '/api/oauth/c%6Fnsent → ROLE_TRUSTED' => ['/api/oauth/c%6Fnsent', ['ROLE_TRUSTED']];
 
         // --- Un voisin par préfixe n'hérite d'aucune règle : sa protection
         // doit être écrite, jamais déduite d'une regex trop large.
@@ -107,6 +113,31 @@ final class AccessControlAnchoringTest extends KernelTestCase
         yield '/api/case-studies-drafts → aucune règle' => ['/api/case-studies-drafts', null];
         yield '/api/anonymous-cv-full → aucune règle' => ['/api/anonymous-cv-full', null];
         yield '/api/assistants → aucune règle' => ['/api/assistants', null];
+        yield '/api/oauth/consents → aucune règle' => ['/api/oauth/consents', null];
+        // Les voisins du consentement sous /api/oauth n'en héritent pas : les
+        // trois points du serveur d'autorisation restent sans règle (leur
+        // firewall `oauth` n'a aucun authentificateur), /api/oauth seul aussi.
+        yield '/api/oauth/authorize → aucune règle' => ['/api/oauth/authorize', null];
+        yield '/api/oauth → aucune règle' => ['/api/oauth', null];
+
+        // --- Les deux documents de métadonnées OAuth (#647), hors /api :
+        // publics, chacun sur son chemin exact. Ni un voisin par préfixe, ni
+        // le chemin bien connu sans suffixe, ni un `.` pris pour n'importe
+        // quel caractère n'en héritent.
+        yield '/.well-known/oauth-protected-resource/api/mcp → PUBLIC_ACCESS' => ['/.well-known/oauth-protected-resource/api/mcp', ['PUBLIC_ACCESS']];
+        yield '/.well-known/oauth-authorization-server/api/oauth → PUBLIC_ACCESS' => ['/.well-known/oauth-authorization-server/api/oauth', ['PUBLIC_ACCESS']];
+        // L'access_control décide sur le chemin décodé, comme le firewall.
+        yield '/.well-known/oauth-protected-resource/api/m%63p → PUBLIC_ACCESS' => ['/.well-known/oauth-protected-resource/api/m%63p', ['PUBLIC_ACCESS']];
+        yield '/.well-known/oauth-authorization-server/api/o%61uth → PUBLIC_ACCESS' => ['/.well-known/oauth-authorization-server/api/o%61uth', ['PUBLIC_ACCESS']];
+        yield '/.well-known/oauth-protected-resource → aucune règle' => ['/.well-known/oauth-protected-resource', null];
+        yield '/.well-known/oauth-protected-resource/api/mcpx → aucune règle' => ['/.well-known/oauth-protected-resource/api/mcpx', null];
+        yield '/.well-known/oauth-protected-resource/api/mcp/extra → aucune règle' => ['/.well-known/oauth-protected-resource/api/mcp/extra', null];
+        yield '/.well-known/oauth-authorization-server → aucune règle' => ['/.well-known/oauth-authorization-server', null];
+        yield '/.well-known/oauth-authorization-server/api/oauthx → aucune règle' => ['/.well-known/oauth-authorization-server/api/oauthx', null];
+        yield '/.well-known/oauth-authorization-server/api/oauth/extra → aucune règle' => ['/.well-known/oauth-authorization-server/api/oauth/extra', null];
+        yield '/xwell-known/oauth-protected-resource/api/mcp → aucune règle' => ['/xwell-known/oauth-protected-resource/api/mcp', null];
+        yield '/xwell-known/oauth-authorization-server/api/oauth → aucune règle' => ['/xwell-known/oauth-authorization-server/api/oauth', null];
+        yield '/.well-known/openid-configuration → aucune règle' => ['/.well-known/openid-configuration', null];
     }
 
     /**
@@ -228,13 +259,47 @@ final class AccessControlAnchoringTest extends KernelTestCase
         yield '/api/mcpx → api' => ['/api/mcpx', 'api'];
         yield '/api/mcp/extra → api' => ['/api/mcp/extra', 'api'];
 
+        // --- Les points du serveur d'autorisation OAuth (#647) : leur firewall
+        // ne lit aucun cookie, il ne couvre que ses trois chemins exacts. Le
+        // consentement, qui lit la personne, et tout voisin relèvent du
+        // firewall JWT.
+        yield '/api/oauth/authorize → oauth' => ['/api/oauth/authorize', 'oauth'];
+        yield '/api/oauth/token → oauth' => ['/api/oauth/token', 'oauth'];
+        yield '/api/oauth/revoke → oauth' => ['/api/oauth/revoke', 'oauth'];
+        yield '/api/oauth/%61uthorize → oauth' => ['/api/oauth/%61uthorize', 'oauth'];
+        yield '/api/oauth/authorizex → api' => ['/api/oauth/authorizex', 'api'];
+        yield '/api/oauth/authorize/x → api' => ['/api/oauth/authorize/x', 'api'];
+        yield '/api/oauth/consent → api' => ['/api/oauth/consent', 'api'];
+        yield '/api/oauth → api' => ['/api/oauth', 'api'];
+        yield '/api/oauthx/authorize → api' => ['/api/oauthx/authorize', 'api'];
+
         // --- Le reste de l'API.
         yield '/api/me → api' => ['/api/me', 'api'];
         yield '/api/backoffice/users → api' => ['/api/backoffice/users', 'api'];
 
+        // --- Les deux documents de métadonnées OAuth (#647) : chacun son
+        // firewall, sans authentificateur, borné sur son chemin exact. Le
+        // chemin décodé décide, comme pour /api/mcp.
+        yield '/.well-known/oauth-protected-resource/api/mcp → oauth_resource_metadata' => ['/.well-known/oauth-protected-resource/api/mcp', 'oauth_resource_metadata'];
+        yield '/.well-known/oauth-protected-resource/api/m%63p → oauth_resource_metadata' => ['/.well-known/oauth-protected-resource/api/m%63p', 'oauth_resource_metadata'];
+        yield '/.well-known/oauth-authorization-server/api/oauth → oauth_server_metadata' => ['/.well-known/oauth-authorization-server/api/oauth', 'oauth_server_metadata'];
+        yield '/.well-known/oauth-authorization-server/api/o%61uth → oauth_server_metadata' => ['/.well-known/oauth-authorization-server/api/o%61uth', 'oauth_server_metadata'];
+
         // --- Hors API : aucun firewall (aucune route n'y existe non plus).
         yield '/ → aucun firewall' => ['/', null];
         yield '/healthz → aucun firewall' => ['/healthz', null];
+        // Les voisins des deux documents : ni le chemin bien connu sans
+        // suffixe, ni un prolongement, ni un `.` lu comme n'importe quel
+        // caractère, ni le document OIDC qu'aucun firewall ne doit couvrir.
+        yield '/.well-known/oauth-authorization-server → aucun firewall' => ['/.well-known/oauth-authorization-server', null];
+        yield '/.well-known/oauth-protected-resource → aucun firewall' => ['/.well-known/oauth-protected-resource', null];
+        yield '/.well-known/oauth-protected-resource/api/mcpx → aucun firewall' => ['/.well-known/oauth-protected-resource/api/mcpx', null];
+        yield '/.well-known/oauth-protected-resource/api/mcp/extra → aucun firewall' => ['/.well-known/oauth-protected-resource/api/mcp/extra', null];
+        yield '/.well-known/oauth-authorization-server/api/oauthx → aucun firewall' => ['/.well-known/oauth-authorization-server/api/oauthx', null];
+        yield '/.well-known/oauth-authorization-server/api/oauth/extra → aucun firewall' => ['/.well-known/oauth-authorization-server/api/oauth/extra', null];
+        yield '/xwell-known/oauth-protected-resource/api/mcp → aucun firewall' => ['/xwell-known/oauth-protected-resource/api/mcp', null];
+        yield '/xwell-known/oauth-authorization-server/api/oauth → aucun firewall' => ['/xwell-known/oauth-authorization-server/api/oauth', null];
+        yield '/.well-known/openid-configuration → aucun firewall' => ['/.well-known/openid-configuration', null];
     }
 
     #[DataProvider('provideRequestPathsAndExpectedFirewall')]

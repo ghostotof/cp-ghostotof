@@ -34,10 +34,26 @@ paths:
     inline. `__Host-` prefixing is a separate, preprod-tested step (it renames what Lexik and the frontend
     read by name). That `secure` is the **only** Lexik key allowed to differ per environment (issue #659,
     `SecurityConfigEnvironmentParityTest`, see `.claude/rules/backoffice-api.md`, « Authorization »).
+  - **A JWT's `iat` is the instant the password was typed, and something relies on it** (#647): granting an
+    MCP connection requires an authentication under ten minutes old, read from the `iat` of the session's JWT
+    (`Mcp/Connection/Infrastructure/Security/JwtAuthenticationInstant`, `.claude/rules/mcp-oauth.md`). That
+    holds because the site issues a JWT at login only — no refresh endpoint, no sliding renewal. **A JWT
+    refresh added some day must carry the original authentication instant in a claim of its own** and that
+    reader must read it, or a stolen cookie renewed in a loop would pass for a fresh login.
   - **Tokens, JWTs and CSRF values are hidden from stack traces** (`#[SensitiveParameter]`, issue #414): the
     guard covers all of `src/`, so its rule lives in `.claude/rules/backend-conventions.md`.
   - `Infrastructure/Http/CsrfCookieRequestSubscriber.php` — double-submit-cookie CSRF check, a `kernel.request`
     listener at priority 20 (must run *above* the Security firewall's priority 8 — see the class docblock).
+    Its `EXCLUDED_PATHS` are **exact** paths, each justified in the docblock. Two since #647,
+    **`/api/oauth/token` and `/api/oauth/revoke`**: called by the MCP client, never a browser, so no
+    `XSRF-TOKEN` to echo. Safe for the reason `/api/mcp`'s exclusion is (ADR 0006 D4): their `oauth`
+    firewall has no authenticator and reads no cookie, so a cross-site request carrying a person's
+    `BEARER` borrows no identity, and has nothing to make act — exchanging a code needs its PKCE verifier,
+    revoking a token needs the token. `TokenControllerTest` and `RevocationControllerTest`
+    (`testABearerCookieWithoutTheXsrfHeaderIsNeitherRefusedNorRead`) pin both halves. **The consent,
+    `/api/oauth/consent`, stays under the guard**: it reads the person (`ROLE_TRUSTED`) and grants in their
+    name (`ConsentControllerTest::testAnApprovalWithoutTheCsrfHeaderIsForbidden`). Never exclude a prefix
+    such as `/api/oauth/`. See `.claude/rules/mcp-oauth.md`.
   - `Infrastructure/Http/LoginCsrfRequestListener.php` — **login-CSRF guard** (issue #76) on the two anonymous
     routes that *set* a `BEARER` cookie, `POST /api/login_check` and `POST /api/account/base-access`. Both are
     rightly outside the double-submit (an anonymous caller has no `XSRF-TOKEN` to echo), but a cross-site
@@ -179,7 +195,8 @@ paths:
     (`actor: system`, a scheduled command), `user-created` (issue #386, `app:user:create` through `CpgUserRegistrar`,
     with `superAdmin` like `role-changed`, `actor: console` — a person at a terminal the log cannot name, never
     `system` nor `anonymous`) — the two events whose actor is not read from the token storage; `record()` takes an
-    explicit actor for CLI callers). Every record carries
+    explicit actor for CLI callers), `mcp-connection-granted` (#647, `ConsentService` after the COMMIT of the
+    connection and its code: `userId`, `connectionId`, the client's public `clientId`, never the code). Every record carries
     `event` (the stable kebab-case key to filter on), `actor`, `ip`, `path` (canonical), plus the subject.
     **An account is designated by its `userId` (RFC 4122) only, as subject and as `actor`, never by its
     login identifier** (issue #363): an invited account's username is derived from the local part of its

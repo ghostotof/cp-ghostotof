@@ -471,7 +471,8 @@
     "invalidCredentials": "Incorrect username or password.",
     "rateLimited": "Too many login attempts. Please try again in a few minutes.",
     "rateLimitedIn": "Too many login attempts. Please try again in {minutes} minute. | Too many login attempts. Please try again in {minutes} minutes.",
-    "genericError": "Something went wrong, please try again."
+    "genericError": "Something went wrong, please try again.",
+    "reauthNotice": "Confirm your identity: authorizing an MCP connection requires having signed in less than ten minutes ago. You will then come back to the request."
   },
   "contact": {
     "eyebrow": "Contact",
@@ -623,6 +624,10 @@
     "connectAssistant": {
       "title": "Connect your assistant",
       "description": "Add the site’s MCP server to Claude, ChatGPT, Cursor or PhpStorm: its URL, each client’s configuration, what it serves and what it never serves."
+    },
+    "oauthConsent": {
+      "title": "Authorize an MCP connection",
+      "description": "Authorize or deny an assistant’s connection to the site’s MCP server."
     },
     "adminAnonymousCv": {
       "title": "Administration — CV without identity",
@@ -778,6 +783,40 @@
       "rateLimitedIn": "Too many questions asked. Try again in {minutes} minute | Too many questions asked. Try again in {minutes} minutes",
       "unavailable": "The assistant is temporarily unavailable. Try again later.",
       "network": "The connection was interrupted. Try again.",
+      "unknown": "An unexpected error occurred. Try again."
+    }
+  },
+  "oauthConsent": {
+    "title": "Authorize an MCP connection",
+    "intro": "An MCP client is asking to connect to this site’s MCP server on your behalf. Check the request before deciding.",
+    "loading": "Loading the request…",
+    "submitting": "Sending your decision…",
+    "client": {
+      "heading": "The client",
+      "nameLabel": "Client name",
+      "nameNotice": "The name under which the site’s administrator registered this client.",
+      "registrationLabel": "Registration",
+      "registration": {
+        "preregistered": "Client registered in advance by the site’s administrator."
+      },
+      "redirectLabel": "Return after your decision",
+      "redirectNotice": "The page will send you back to this host, whether you authorize the connection or not."
+    },
+    "access": {
+      "heading": "What this connection will open",
+      "corpus": "The nominative corpus: the professional career, identity and employers included, read-only.",
+      "provider": "This content will leave for this client’s AI provider, which will process it under its own terms."
+    },
+    "approve": "Authorize",
+    "deny": "Deny",
+    "errors": {
+      "invalid": "This connection request is invalid or has expired. Start again from your assistant.",
+      "sessionExpired": "Your session has expired or does not allow you to authorize this connection.",
+      "relogin": "Sign in again",
+      "reauthenticationRequired": "To authorize this connection, sign in again: you signed in to the site more than ten minutes ago. You will then come back to this same request.",
+      "reauthenticate": "Sign in again to authorize",
+      "unsafeRedirect": "The return address received is not a web address on the announced host: the page did not follow it.",
+      "malformedDecision": "The page could not send your decision. Start again from your assistant.",
       "unknown": "An unexpected error occurred. Try again."
     }
   }

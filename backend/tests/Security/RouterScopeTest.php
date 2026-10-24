@@ -35,22 +35,33 @@ use Symfony\Component\Routing\RouterInterface;
  * chemins compilés via `array_diff` et affirme que la différence est vide :
  * l'assertion s'exécute toujours, même sur une liste vide (elle affirme alors
  * que « aucune entrée morte » est vrai d'un ensemble vide), donc la suite ne
- * termine jamais sur un statut « risky ». Elle reste écrite dès maintenant,
- * exactement comme `ApiRouteExposureTest::testThePublicAllowListHasNoStaleEntry`
- * et `ItemRouteRequirementTest::testTheExemptionListHasNoStaleEntry`, pour que
- * la première entrée ajoutée à `NON_API_PATHS` soit immédiatement couverte.
+ * termine jamais sur un statut « risky », comme
+ * `ApiRouteExposureTest::testThePublicAllowListHasNoStaleEntry` et
+ * `ItemRouteRequirementTest::testTheExemptionListHasNoStaleEntry`.
+ *
+ * Si `NON_API_PATHS` redevenait vide, PHPStan jugerait la constante sur sa
+ * forme littérale `[]` (`impossibleType`, `foreach.emptyArray`) : passer alors
+ * par une méthode dont le `@return` restaure `array<string, string>`.
  */
 final class RouterScopeTest extends KernelTestCase
 {
     /**
      * Routes hors `/api` explicitement acceptées, chacune avec sa
      * justification et — l'énoncé de la règle l'exige — son propre firewall
-     * et sa propre règle `access_control`. Vide aujourd'hui : aucune route
-     * hors `/api` n'est compilée en environnement `test` ou `prod`.
+     * et sa propre règle `access_control`.
      *
      * @var array<string, string> chemin de route (tel que déclaré au routeur) => raison
      */
-    private const array NON_API_PATHS = [];
+    private const array NON_API_PATHS = [
+        '/.well-known/oauth-protected-resource/api/mcp' => 'Métadonnées de la ressource protégée MCP (#647, RFC 9728 §3.1) : '
+            .'un client MCP les cherche au chemin bien connu suivi du chemin de la ressource, hors /api par la norme. '
+            .'Document public, sans donnée de personne, GET seulement. Son propre firewall (oauth_resource_metadata, '
+            .'sans authentificateur, borné par $) et sa propre règle access_control (PUBLIC_ACCESS, même motif).',
+        '/.well-known/oauth-authorization-server/api/oauth' => 'Métadonnées du serveur d\'autorisation (#647, RFC 8414 §3.1) : '
+            .'un client MCP les cherche au chemin bien connu suivi du chemin de l\'émetteur, hors /api par la norme. '
+            .'Document public, sans donnée de personne, GET seulement. Son propre firewall (oauth_server_metadata, '
+            .'sans authentificateur, borné par $) et sa propre règle access_control (PUBLIC_ACCESS, même motif).',
+    ];
 
     /**
      * L'invariant central : toute route compilée est `/api` ou commence par
@@ -60,7 +71,7 @@ final class RouterScopeTest extends KernelTestCase
     {
         self::bootKernel();
         $checked = 0;
-        $nonApiPaths = $this->nonApiPaths();
+        $nonApiPaths = self::NON_API_PATHS;
 
         foreach ($this->router()->getRouteCollection() as $name => $route) {
             $path = $route->getPath();
@@ -109,7 +120,7 @@ final class RouterScopeTest extends KernelTestCase
             $compiledPaths[] = $route->getPath();
         }
 
-        $staleEntries = array_diff(array_keys($this->nonApiPaths()), $compiledPaths);
+        $staleEntries = array_diff(array_keys(self::NON_API_PATHS), $compiledPaths);
 
         self::assertSame(
             [],
@@ -125,27 +136,5 @@ final class RouterScopeTest extends KernelTestCase
     private function router(): RouterInterface
     {
         return self::getContainer()->get('router');
-    }
-
-    /**
-     * NON_API_PATHS est vide aujourd'hui : PHPStan connaît sa valeur exacte
-     * au niveau de la constante (littéral `[]`) et signalerait tout usage
-     * direct comme figé sur ce type (`impossibleType`, `foreach.emptyArray`),
-     * indépendamment du `@var` porté par la constante — ce dernier ne
-     * « certifie » pas le type d'une constante comme il le ferait pour une
-     * variable locale. Le passage par cette méthode, avec son propre
-     * `@return`, restaure le type déclaré (array<string, string>) — celui
-     * d'une liste appelée à recevoir des entrées, pas celui, plus étroit, de
-     * son état vide actuel. Les deux tests de cette classe l'appellent plutôt
-     * que de dupliquer ce contournement.
-     *
-     * @return array<string, string>
-     */
-    private function nonApiPaths(): array
-    {
-        /** @var array<string, string> $nonApiPaths */
-        $nonApiPaths = self::NON_API_PATHS;
-
-        return $nonApiPaths;
     }
 }

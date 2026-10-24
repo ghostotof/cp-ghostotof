@@ -124,7 +124,16 @@ every database pool found through `cache.global_clearer` must carry the marshall
 32 bytes, an empty secret refused with `EmptyApplicationSecretException`), and each class receiving
 `kernel.secret` declares a versioned `KEY_CONTEXT` (`cp-ghostotof/<use>/v<n>`): the CSRF cookie signer, the
 login-identifier fingerprint, the Messenger envelope MAC (`v2` since #450, see above), the database cache
-value MAC (#468). Keyed by the raw secret and told apart only in the message (a prefix, or nothing), any
+value MAC (#468), and since #647 the **encryption key of the OAuth server** (`Mcp/Connection/Infrastructure/League/OAuthEncryptionKey`,
+`cp-ghostotof/oauth-encryption/v1`) — not a MAC: the 32 derived bytes become a defuse `Key` with which
+league encrypts the authorization codes and refresh tokens it hands to MCP clients, and decrypts them back
+(`.claude/rules/mcp-oauth.md`). It keeps the raw secret in a `SensitiveParameterValue` and derives at each
+`key()`, never at construction (#474). **Rotating `APP_SECRET`, or that context, makes every code in flight
+and every refresh token handed out unreadable**: each MCP client reconnects (`k8s/README.md`, « Cas
+d'`APP_SECRET` »). **Accepted limit**: once handed over, the derived key lives in league's own private
+properties (`AuthorizationServer`, its grants, `CryptTrait`), which a `dump()` of those vendor objects would
+show — nothing of ours holds it, and no code dumps them; `RefreshTokenPayloadReader` sets it on its reader
+only for the read, then removes it. Keyed by the raw secret and told apart only in the message (a prefix, or nothing), any
 future feature returning `HMAC(APP_SECRET, x)` for a client-chosen `x` would have been a signing oracle for every other use. Changing a context is a targeted rotation. The
 switch itself changed every login fingerprint and invalidated the `XSRF-TOKEN` cookies already issued, and
 so does a **rolling update** (two prod replicas, old and new keys for a moment) or a **rollback**: writes,
@@ -172,8 +181,8 @@ release notes, never slipped in by a refactoring. `sign()`'s `$data` and both of
 `print_r()`, `var_export()`, an array cast, `json_encode()` and Symfony's VarDumper (`dump()`, the profiler) all
 show empty, and which PHP refuses to serialize. Not a `__debugInfo()`: VarDumper reads the private properties
 first and only adds what it returns (`Caster::castObject`, measured in the review of #487). **Nor does the raw
-`APP_SECRET`** (issue #493): the CSRF signer, the fingerprint and the cache marshaller keep it to derive later,
-in a `SensitiveParameterValue` too. `ApplicationSecretNeverShowsInADumpTest` dumps the four services, put to
+`APP_SECRET`** (issue #493): the CSRF signer, the fingerprint, the cache marshaller and, since #647,
+`OAuthEncryptionKey` keep it to derive later, in a `SensitiveParameterValue` too. `ApplicationSecretNeverShowsInADumpTest` dumps the five services, put to
 use first so that their lazy derivations have run, through every channel (`tests/Support/Dumps`, shared with
 `KeyedMacTest`), and `ApplicationSecretUsesTest` refuses a `string` / `?string` property, declared or promoted,
 whose name says "secret" in a class of the census. **A MAC is only ever checked by `verifies()`** (issue

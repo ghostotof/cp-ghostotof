@@ -38,6 +38,9 @@ final class McpEndpointTest extends WebTestCase
     /** Un `_meta` sous les 16 Kio du corps que nginx admet. */
     private const int META_PADDING_BYTES = 10 * 1024;
 
+    /** Les paquets pinnés en version exacte par leur nom, au-delà des préfixes MCP. */
+    private const array EXACTLY_PINNED = ['symfony/mcp-bundle', 'mcp/sdk', 'league/oauth2-server', 'defuse/php-encryption'];
+
     protected function setUp(): void
     {
         self::ensureKernelShutdown();
@@ -393,7 +396,12 @@ final class McpEndpointTest extends WebTestCase
 
     /**
      * ADR 0006 D7 : pas de `^` sur `symfony/mcp-*` ni `mcp/*` tant qu'ils
-     * sont en 0.x — aucune promesse de compatibilité.
+     * sont en 0.x — aucune promesse de compatibilité. Même règle pour
+     * `league/oauth2-server` (#647), le serveur d'autorisation des connexions
+     * MCP, utilisé sans son bundle : une montée de version se décide. Et pour
+     * `defuse/php-encryption`, que `OAuthEncryptionKey` appelle directement
+     * (la clé de chiffrement des codes et des jetons de rafraîchissement) :
+     * une dépendance directe, déclarée et pinnée comme league qui l'amène.
      */
     public function testTheMcpPackagesArePinnedExactly(): void
     {
@@ -402,7 +410,7 @@ final class McpEndpointTest extends WebTestCase
         self::assertIsArray($composer['require']);
 
         foreach ($composer['require'] as $package => $constraint) {
-            if (!\is_string($package) || (!str_starts_with($package, 'symfony/mcp-') && !str_starts_with($package, 'mcp/'))) {
+            if (!\is_string($package) || (!str_starts_with($package, 'symfony/mcp-') && !str_starts_with($package, 'mcp/') && !\in_array($package, self::EXACTLY_PINNED, true))) {
                 continue;
             }
 
@@ -412,6 +420,9 @@ final class McpEndpointTest extends WebTestCase
 
         self::assertArrayHasKey('symfony/mcp-bundle', $composer['require']);
         self::assertArrayHasKey('mcp/sdk', $composer['require']);
+        foreach (self::EXACTLY_PINNED as $package) {
+            self::assertArrayHasKey($package, $composer['require']);
+        }
     }
 
     /**

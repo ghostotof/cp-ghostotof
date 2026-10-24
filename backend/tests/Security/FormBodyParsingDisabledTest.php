@@ -41,10 +41,14 @@ use Symfony\Component\Process\Process;
  *   lecture seule, ouvert en dev, où `public/` est monté.
  *
  * **L'urlencoded reste analysé, par décision** (2026-10-22, relectures de
- * #686) : ce n'est pas le parseur de l'avis, et le point de jeton du serveur
- * OAuth 2.1 de la phase 2 MCP (ADR 0006 D3) le reçoit par norme dans `$_POST`.
- * D'où l'absence voulue d'`enable_post_data_reading = Off`, qui viderait
- * `$_POST` sans rien fermer de plus. `max_input_vars` et
+ * #686) : ce n'est pas le parseur de l'avis, et les points de jeton et de
+ * révocation du serveur OAuth 2.1 de la phase 2 MCP (ADR 0006 D3) le
+ * reçoivent par norme. L'absence d'`enable_post_data_reading = Off` reste
+ * voulue : il viderait `$_POST` sans rien fermer de plus que
+ * `max_multipart_body_parts`. Ces deux points ne lisent pas `$_POST` : depuis
+ * #647, ils analysent eux-mêmes le corps brut (`php://input`,
+ * {@see \App\Mcp\Connection\Application\FormEncodedRequest}), que la directive
+ * laisserait lisible. `max_input_vars` et
  * `max_input_nesting_level` gardent leur valeur intégrée : ils bornent aussi
  * `$_GET` et `$_COOKIE`.
  *
@@ -74,7 +78,7 @@ final class FormBodyParsingDisabledTest extends TestCase
      */
     private const array ABSENT_DIRECTIVES = [
         'upload_max_filesize' => 'sans objet une fois file_uploads éteint',
-        'enable_post_data_reading' => 'Off, il viderait $_POST pour le point de jeton OAuth de la phase 2, sans rien fermer que max_multipart_body_parts ne ferme déjà',
+        'enable_post_data_reading' => 'Off, il viderait $_POST sans rien fermer que max_multipart_body_parts ne ferme déjà (décision de #686)',
     ];
 
     private const string MULTIPART_BODY = "--x\r\n"
@@ -238,9 +242,10 @@ final class FormBodyParsingDisabledTest extends TestCase
     }
 
     /**
-     * Ce que l'API et la phase 2 lisent reste lisible : un corps JSON sur
-     * `php://input`, un corps urlencoded dans `$_POST` (le point de jeton
-     * OAuth) et par `request_parse_body()`.
+     * Ce que l'API lit reste lisible : un corps JSON sur `php://input`, et un
+     * corps urlencoded, analysé par PHP dans `$_POST` et par
+     * `request_parse_body()` (les points OAuth de la phase 2, eux, relisent le
+     * corps brut sur `php://input`, #647).
      */
     #[DataProvider('iniFiles')]
     public function testJsonAndUrlencodedBodiesStayReadable(string $file): void

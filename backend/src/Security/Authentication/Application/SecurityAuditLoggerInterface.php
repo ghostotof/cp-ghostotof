@@ -7,6 +7,7 @@ namespace App\Security\Authentication\Application;
 use App\Security\User\Domain\Entity\CpgUser;
 use SensitiveParameter;
 use Symfony\Component\Security\Core\User\UserInterface;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * Journal de sécurité (D5, constat A5 du 3e audit) : l'unique point d'entrée
@@ -30,7 +31,9 @@ use Symfony\Component\Security\Core\User\UserInterface;
  *  - la purge automatique des invitations jamais activées (issue #238) :
  *    PendingInvitationPurger, une par compte supprimé ;
  *  - la création d'un compte en ligne de commande (issue #386) :
- *    CpgUserRegistrar, après l'enregistrement.
+ *    CpgUserRegistrar, après l'enregistrement ;
+ *  - une connexion MCP accordée (#647) : ConsentService, après le COMMIT de
+ *    la connexion et de son code.
  *
  * Ce qui sort, et rien d'autre : `event` (kebab-case, stable — c'est la clé
  * sur laquelle on filtre), le sujet (`userId`, l'UUID d'un compte ; `user`,
@@ -160,4 +163,15 @@ interface SecurityAuditLoggerInterface
      * nommer, distincte de `system` (un traitement planifié).
      */
     public function userCreated(CpgUser $user): void;
+
+    /**
+     * Connexion MCP accordée par une personne du palier de confiance (#647,
+     * ADR 0006 D3) : un client lira le corpus nominatif en son nom. Désigne le
+     * compte (`userId`), la connexion (`connectionId`, l'UUID que la
+     * révocation et la liste « Mes connexions MCP » désignent aussi) et le
+     * client par son identifiant public (`clientId`, le `client_id` d'OAuth
+     * d'un client public : aucun secret). Jamais le code d'autorisation émis,
+     * ni un jeton, ni leur empreinte.
+     */
+    public function mcpConnectionGranted(CpgUser $account, Uuid $connectionId, string $clientId): void;
 }

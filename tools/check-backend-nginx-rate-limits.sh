@@ -96,6 +96,14 @@ ZONES=(
   "/api/mcp POST 5 mcpsession"
   "/api/mcp POST 20 mcp Mcp-Session-Id:00000000-0000-0000-0000-000000000000"
   "/api/mcp GET 0 mcp"
+  # Serveur d'autorisation OAuth de la connexion MCP (#647) : une seule zone
+  # sur le préfixe `/api/oauth/`. La ligne GET suit la ligne POST sur le même
+  # compteur, que le POST vient de vider : sa rafale est donc 0, comme celle
+  # de `mcp GET`. Elle prouve que la location couvre `/authorize` (un 429
+  # problem+json de la zone `oauth`), pas sa rafale — c'est la ligne POST qui
+  # la mesure.
+  "/api/oauth/token POST 10 oauth"
+  "/api/oauth/authorize GET 0 oauth"
   "/api/watch GET 200 publicapi"
 )
 # Bornes de corps propres à une location : <chemin> <octets admis>. Un corps
@@ -126,6 +134,9 @@ MIRRORED_LOCATIONS=(
   # `type`, une divergence du `title` ou du `detail` ne se verrait pas.
   "@rate_limited"
   "@unsupported_media_type"
+  # Points OAuth (#647) : la sonde prouve un 429, pas la même rafale des deux
+  # côtés.
+  "^~ /api/oauth/"
 )
 # Requêtes une à une après la rafale : une ou deux ont pu être rechargées par
 # le taux de la zone pendant qu'on la vidait.
@@ -168,6 +179,7 @@ CONTENT_TYPE_CASES=(
   "multipart puis JSON, doublon|POST|/api/contact|multipart/form-data; boundary=x^application/json|415"
   "JSON puis multipart, doublon, témoin (PHP retient JSON)|POST|/api/contact|application/json^multipart/form-data; boundary=x|autre que 415"
   "urlencoded, témoin (point de jeton OAuth)|POST|/api/login_check|application/x-www-form-urlencoded|autre que 415"
+  "urlencoded sur le point de jeton OAuth, témoin (#647)|POST|/api/oauth/token|application/x-www-form-urlencoded|autre que 415"
   "JSON, témoin|POST|/api/contact|application/json|autre que 415"
   "sans Content-Type ni corps, témoin|POST|/api/logout||autre que 415"
 )

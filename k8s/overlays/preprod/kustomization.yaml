@@ -110,3 +110,15 @@ patches:
       - op: add
         path: /metadata/annotations/nginx.ingress.kubernetes.io~1auth-realm
         value: "Preprod - acces restreint"
+  # Métadonnées OAuth de la connexion MCP (#647, k8s/base/ingress-oauth-metadata.yaml) :
+  # l'hôte seul, celui de l'ingress principal. Aucune annotation auth-* ici,
+  # volontairement : ces deux documents publics échappent à la Basic Auth
+  # (un client MCP ne sait pas y répondre) ; /api/oauth/* et /api/mcp y
+  # restent, par l'ingress principal. OAuthMetadataIngressTest y veille.
+  - target:
+      kind: Ingress
+      name: cp-ghostotof-oauth-metadata
+    patch: |-
+      - op: replace
+        path: /spec/rules/0/host
+        value: preprod.cp-ghostotof.com

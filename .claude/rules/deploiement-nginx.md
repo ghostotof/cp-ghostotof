@@ -30,13 +30,23 @@ paths:
 
 > Split out of `.claude/rules/deploiement.md` (#605), whose index lists every deployment rule. The index of every rule is at the top of `.claude/CLAUDE.md`.
 
-- **Eight nginx rate-limit zones, two different jobs.** `contact` (10 r/m), `pwsetup` (20 r/m),
+- **Nine nginx rate-limit zones, two different jobs.** `oauth` (10 r/m, burst 10, `^~ /api/oauth/`, #647), `contact` (10 r/m), `pwsetup` (20 r/m),
   `baseaccess` (20 r/m, issue #77 — each call signs an RS256 JWT), `login` (10 r/m, burst 10,
   ADR 0005 — the backstop under Symfony's `login_throttling`, which is the real ceiling) and
   `assistant` (10 r/m, burst 5, plus `limit_conn assistantconn 1` — each call is billed and each
   stream holds one of a pod's 8 php-fpm workers; the zones live in each sidecar, so an IP gets N times
   these ceilings with N backend pods) protect a *side effect* — sending mail, guessing a token,
   minting a token, guessing a password, spending money.
+  **`oauth` is one counter for the whole authorization server** (#647, ADR 0006 D6): the prefix location
+  covers `/authorize`, `/consent` (its GET and its POST) and the public `/token` and `/revoke` alike, keyed by
+  IP, per pod like every zone — no Symfony limiter behind it, it is the only ceiling tighter than
+  `publicapi`. A legitimate connection costs four or five requests (authorize, consent read then given, code
+  exchanged), then a refresh an hour; a burst of token calls from one address drains the same counter as that
+  address's consent page, accepted. The two metadata documents (`/.well-known/…`) are not under it, they stay
+  under `publicapi`. `check-backend-nginx-rate-limits.sh` probes `/api/oauth/token` (POST) then
+  `/api/oauth/authorize` (GET) **on that same counter** — the GET line with a burst of 0, since the POST
+  drained it: it proves the location covers `/authorize`, not its burst —, and mirrors the location
+  (`.claude/rules/mcp-oauth.md`).
   `mcp` (60 r/m, burst 20, #644, ADR 0006 D6) and `mcpsession` (10 r/m, burst 5) sit on the **exact**
   `location = /api/mcp`, every method (the `GET` boots Symfony too; a CORS preflight costs a token as well).
   `mcp` protects the resource like `publicapi`, at a tenth of its rate, since each request reads and rewrites a
@@ -174,10 +184,11 @@ paths:
   multipart: API Platform declares `json` only and already answered it with a 415 `/errors/415`, the assistant
   demands `acceptFormat: 'json'`, `login_check` is `json_login`, MCP reads JSON, `logout` and `base-access` take
   no body; no frontend call nor smoke sends one. **`application/x-www-form-urlencoded` is let through on
-  purpose** (decided on 2026-10-22, review of #686): it is not the advisory's parser, and the token endpoint of
-  phase 2's OAuth 2.1 server (ADR 0006 D3) receives it by standard (RFC 6749) — refusing it, here or with
-  `enable_post_data_reading = Off`, would break that endpoint in preprod only, since PHPUnit goes through
-  neither nginx nor the image's ini. The 415 is rendered by `@unsupported_media_type`, problem+json
+  purpose** (decided on 2026-10-22, review of #686): it is not the advisory's parser, and the token and
+  revocation endpoints of phase 2's OAuth 2.1 server (ADR 0006 D3) receive it by standard (RFC 6749, RFC 7009)
+  — refusing it here would break them in preprod only, since PHPUnit goes through neither nginx nor the
+  image's ini. Since #647 they parse the **raw body** themselves (`FormEncodedRequest`, `php://input`), never
+  `$_POST`, so `enable_post_data_reading` no longer bears on them (`.claude/rules/images-docker.md`). The 415 is rendered by `@unsupported_media_type`, problem+json
   `type: /errors/415` (API Platform's own), through `error_page 415` at `server` level. One trap only: an
   `add_header` there would drop the seven security headers (A16) — a location's own `error_page` cannot
   shadow it, the `return` happens before any location is chosen. A Symfony 415 (`text/plain` on an API

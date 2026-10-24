@@ -3,6 +3,7 @@ import { isSupportedLocale, type Locale } from '../../domain/portfolio/entities/
 import { i18n } from '../i18n'
 import { applySeoMeta } from './seo'
 import { LOCALE_STORAGE_KEY, resolvePreferredLocale } from './preferredLocale'
+import { isReauthentication } from './reauthentication'
 import { authState, waitForAuthCheck } from '../../application/auth/useAuth'
 import { hasRole } from '../../domain/auth/services/hasRole'
 import { ROLE_SUPER, ROLE_TRUSTED } from '../../domain/auth/entities/Role'
@@ -36,6 +37,7 @@ const AnonymousCvPage = () => import('../pages/AnonymousCvPage.vue')
 const AssistantPage = () => import('../pages/AssistantPage.vue')
 const StackPage = () => import('../pages/StackPage.vue')
 const ConnectAssistantPage = () => import('../pages/ConnectAssistantPage.vue')
+const OAuthConsentPage = () => import('../pages/OAuthConsentPage.vue')
 const ContactPage = () => import('../pages/ContactPage.vue')
 const LoginPage = () => import('../pages/LoginPage.vue')
 const SetPasswordPage = () => import('../pages/SetPasswordPage.vue')
@@ -146,6 +148,25 @@ export const router = createRouter({
           meta: { titleKey: 'seo.connectAssistant.title', descriptionKey: 'seo.connectAssistant.description' },
         },
         {
+          // Consentement à une connexion MCP (#647, spec 0007 phase 2) : le point
+          // d'autorisation y renvoie la personne, la demande du client dans la
+          // requête. Palier de confiance, comme l'assistant : une connexion lit
+          // le corpus nominatif (ADR 0006 D3). Anonyme : détour par login, dont
+          // le `redirect` (`to.fullPath`) garde toute la requête. noindex : la
+          // page porte `state` et le défi PKCE, rien à indexer — canonical et
+          // hreflang partent de `to.path`, sans la requête.
+          path: 'oauth/consent',
+          name: 'oauth-consent',
+          component: OAuthConsentPage,
+          meta: {
+            requiresAuth: true,
+            roles: [ROLE_TRUSTED, ROLE_SUPER],
+            noindex: true,
+            titleKey: 'seo.oauthConsent.title',
+            descriptionKey: 'seo.oauthConsent.description',
+          },
+        },
+        {
           path: 'experience',
           name: 'experience',
           component: ExperiencePage,
@@ -163,8 +184,13 @@ export const router = createRouter({
           component: LoginPage,
           meta: { titleKey: 'seo.login.title', descriptionKey: 'seo.login.description' },
           beforeEnter: (to) => {
-            // Déjà connecté : la page de login n'a rien à offrir de plus.
-            if (authState.user) {
+            // Déjà connecté : la page de login n'a rien à offrir de plus — sauf
+            // quand le consentement MCP demande une authentification récente
+            // (`reauth=1`, #647) : la personne, connectée depuis plus de dix
+            // minutes, doit pouvoir se reconnecter pour accorder. Le drapeau
+            // n'ouvre que cette page ; la cible du retour reste jugée par
+            // LoginPage (un chemin interne, un seul `/` en tête).
+            if (authState.user && !isReauthentication(to)) {
               return `/${to.params.locale}`
             }
           },

@@ -1,0 +1,174 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Mcp\Connection\Application;
+
+use League\OAuth2\Server\AuthorizationServer;
+use League\OAuth2\Server\Exception\OAuthServerException;
+use League\OAuth2\Server\RequestTypes\AuthorizationRequestInterface;
+use League\Uri\Uri;
+use Psr\Http\Message\ServerRequestInterface;
+
+/**
+ * La demande d'autorisation de la connexion MCP (#647), jugée en trois temps,
+ * dans un ordre qui décide de la forme du refus :
+ *
+ * 1. **Avant league, sans redirection** — rien n'est encore validé, un refus
+ *    ne peut donc partir que vers l'appelant (400 JSON) :
+ *    - un paramètre attendu répété, ou dont le nom n'est attendu qu'après
+ *      réécriture par PHP (QueryParameterPollution) : la demande validée ici
+ *      ne serait pas celle qu'un autre analyseur lit ;
+ *    - un paramètre attendu reçu autrement qu'en chaîne (`client_id[]=x`) :
+ *      league 9.4.1 en refuse déjà la plupart (`parseParam()` exige un
+ *      scalaire), mais pas `response_type` (lu sans lui, comparé à `code`) ni
+ *      `resource` (lu ici) ; un seul contrôle, au même endroit et sous la même
+ *      forme, pour les huit ;
+ *    - `client_id` vide ou blanc : league retomberait sur l'utilisateur d'un
+ *      en-tête `Authorization: Basic` (`PHP_AUTH_USER`) — le client se désigne
+ *      dans la requête, rien d'autre ;
+ *    - `redirect_uri` vide ou blanche : league la lit comme absente (il rogne
+ *      chaque paramètre) et retomberait sur l'unique redirection enregistrée,
+ *      sans le port qu'un client natif a ouvert (RFC 8252 §7.3) ;
+ *    - `state` au-delà de STATE_MAX_LENGTH : il serait recopié dans chaque
+ *      redirection et dans l'URL de la page de consentement ; jamais renvoyé.
+ * 2. **league** : client connu, redirection enregistrée (sinon
+ *    `invalid_client`, sans redirection), PKCE `S256` (le grant, seul à en
+ *    décider), scope (`invalid_scope`, redirigé).
+ * 3. **Après league, avec redirection** — la ressource (RFC 8707) : exigée et
+ *    égale au serveur MCP du site, sinon `invalid_target`, renvoyé au client
+ *    sur la redirection que league vient de valider, `state` compris.
+ *
+ * **Ce qui sort d'ici est ce que league a retenu**, jamais la valeur brute :
+ * league rogne les paramètres (`trim()`), si bien que
+ * `redirect_uri=http://localhost:5/cb%0A` est validée sous sa forme rognée.
+ * La brute, recopiée dans une redirection, y mettait un saut de ligne ; lue
+ * par League\Uri, elle n'avait pas d'hôte.
+ */
+final readonly class AuthorizationRequestValidator implements AuthorizationRequestValidatorInterface
+{
+    /**
+     * La borne de `state`. RFC 6749 (annexe A.5) le veut en VSCHAR, un octet
+     * par caractère : la borne compte des octets. 1024 laisse sa place à un
+     * `state` qui porte un JWT ou un état chiffré, comme certains clients le
+     * font, et tient sous la limite de ligne de requête de nginx.
+     */
+    public const int STATE_MAX_LENGTH = 1024;
+
+    /** Les paramètres que league ou ce validateur lisent : chacun doit être une chaîne. */
+    public const array EXPECTED_PARAMETERS = ['response_type', 'client_id', 'redirect_uri', 'scope', 'state', 'code_challenge', 'code_challenge_method', 'resource'];
+
+    public function __construct(
+        private AuthorizationServer $server,
+        private OAuthEndpoints $endpoints,
+    ) {
+    }
+
+    public function validate(ServerRequestInterface $request): AuthorizationRequestSummary
+    {
+        $parameters = $this->wellFormedParameters($request);
+        $authorization = $this->server->validateAuthorizationRequest($request);
+        // La redirection que league a validée et retenue (rognée) ; jamais
+        // nulle ici, la demande en portait une non blanche.
+        $redirectUri = $authorization->getRedirectUri() ?? throw $this->missing('redirect_uri');
+        $resource = $parameters['resource'] ?? null;
+
+        if ($this->endpoints->resource() !== $resource) {
+            throw $this->invalidTarget($redirectUri, $authorization->getState());
+        }
+
+        return new AuthorizationRequestSummary(
+            clientId: $authorization->getClient()->getIdentifier(),
+            clientName: $authorization->getClient()->getName(),
+            redirectUri: $redirectUri,
+            redirectHost: Uri::parse($redirectUri)?->getHost() ?? throw ValidatedRedirectWithoutHostException::create(),
+            scope: $this->scopeOf($authorization),
+            resource: $resource,
+            authorizationRequest: $authorization,
+        );
+    }
+
+    /**
+     * Les paramètres attendus présents, chacun une chaîne, ni répété ni
+     * réécrit, `client_id` et `redirect_uri` non blancs, `state` borné. Aucun
+     * refus d'ici ne redirige, et aucun ne recopie la valeur reçue (le message
+     * et l'indication de league ne nomment que le paramètre).
+     *
+     * @return array<string, string>
+     *
+     * @throws OAuthServerException `invalid_request`, sans redirection
+     */
+    private function wellFormedParameters(ServerRequestInterface $request): array
+    {
+        QueryParameterPollution::refuse($request->getUri()->getQuery(), self::EXPECTED_PARAMETERS);
+
+        $query = $request->getQueryParams();
+        $parameters = [];
+
+        foreach (self::EXPECTED_PARAMETERS as $name) {
+            if (!\array_key_exists($name, $query)) {
+                continue;
+            }
+
+            $value = $query[$name];
+
+            if (!\is_string($value)) {
+                throw OAuthServerException::invalidRequest($name, \sprintf('Check the `%s` parameter: it must be a single string.', $name));
+            }
+
+            $parameters[$name] = $value;
+        }
+
+        // Blanc au sens de league, qui rogne avec trim() avant de lire.
+        foreach (['client_id', 'redirect_uri'] as $required) {
+            if ('' === trim($parameters[$required] ?? '')) {
+                throw $this->missing($required);
+            }
+        }
+
+        if (isset($parameters['state']) && \strlen($parameters['state']) > self::STATE_MAX_LENGTH) {
+            throw OAuthServerException::invalidRequest('state', \sprintf('Check the `state` parameter: at most %d characters.', self::STATE_MAX_LENGTH));
+        }
+
+        return $parameters;
+    }
+
+    private function missing(string $parameter): OAuthServerException
+    {
+        return OAuthServerException::invalidRequest($parameter, \sprintf('Check the `%s` parameter: it is required.', $parameter));
+    }
+
+    /**
+     * `invalid_target` (RFC 8707 §2), vers la redirection validée, `state`
+     * repris comme league le reprend pour un scope invalide
+     * (`makeRedirectUri()` : `?` ou `&` selon que la redirection a déjà une
+     * requête).
+     */
+    private function invalidTarget(string $redirectUri, ?string $state): OAuthServerException
+    {
+        if (null !== $state) {
+            $redirectUri .= (str_contains($redirectUri, '?') ? '&' : '?').http_build_query(['state' => $state]);
+        }
+
+        return InvalidTarget::refusal($redirectUri);
+    }
+
+    /**
+     * Les scopes accordés, chacun une fois : league juge `scope=a a` scope par
+     * scope et garde la répétition, que la page de consentement afficherait
+     * et que la connexion enregistrerait telle quelle. Un ensemble, comme
+     * RFC 6749 §3.3 le définit — et, le serveur n'ayant qu'un scope
+     * (ScopeRepository refuse tout autre), toujours exactement
+     * McpConnection::SCOPE_NOMINATIVE_READ.
+     */
+    private function scopeOf(AuthorizationRequestInterface $authorization): string
+    {
+        $identifiers = [];
+
+        foreach ($authorization->getScopes() as $scope) {
+            $identifiers[$scope->getIdentifier()] = true;
+        }
+
+        return implode(' ', array_keys($identifiers));
+    }
+}

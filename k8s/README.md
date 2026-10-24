@@ -544,9 +544,17 @@ défaire.
 
 ### 2bis. Basic Auth de la préprod (restriction d'accès, posée le 2026-09-12)
 
-La préprod n'est plus censée être publique : Basic Auth sur tout l'ingress
-(annotations `nginx.ingress.kubernetes.io/auth-*` dans l'overlay `preprod`
-uniquement — `prod` reste public). Choisi plutôt qu'un allowlist par IP
+La préprod n'est plus censée être publique : Basic Auth sur l'ingress
+principal (annotations `nginx.ingress.kubernetes.io/auth-*` dans l'overlay
+`preprod` uniquement — `prod` reste public). Deux objets Ingress y échappent
+volontairement, ingress-nginx appliquant ces annotations à tous les chemins
+d'un même objet : `/healthz` (`k8s/overlays/preprod/ingress-healthz.yaml`) et
+les deux documents de métadonnées OAuth de la connexion MCP,
+`/.well-known/oauth-protected-resource/api/mcp` et
+`/.well-known/oauth-authorization-server/api/oauth`
+(`k8s/base/ingress-oauth-metadata.yaml`, #647) — publics et statiques, qu'un
+client MCP lit sans savoir répondre à une Basic Auth. `/api/oauth/*` et
+`/api/mcp` restent derrière elle. Choisi plutôt qu'un allowlist par IP
 source (`whitelist-source-range`) : une IP mobile (4G/5G) vient du CGNAT de
 l'opérateur, partagée et changeante — impossible à allowlister sans soit
 laisser passer une partie du réseau de l'opérateur, soit devoir la mettre à
@@ -839,6 +847,14 @@ relancer. Seul le worker vérifie ; l'API ne décode jamais. Accepter l'ancienne
 le temps d'une rotation éviterait cette perte : non fait, à reprendre si les rotations deviennent
 fréquentes. Garder des secrets distincts en préprod et en prod, sans quoi un message capturé dans
 l'une serait accepté par l'autre.
+
+**Connexions MCP** (#647) : la clé qui chiffre les codes d'autorisation et les jetons de
+rafraîchissement du serveur d'autorisation OAuth est dérivée du secret
+(`cp-ghostotof/oauth-encryption/v1`). Une rotation rend illisibles les codes en cours (10 minutes)
+et **tous les jetons de rafraîchissement remis** (30 jours) : chaque client MCP connecté devra se
+reconnecter une fois son jeton d'accès expiré (1 heure au plus), ce qui ouvre une nouvelle
+connexion. Les anciennes restent en base, sans jeton de rafraîchissement utilisable, jusqu'à leur
+expiration ou leur révocation (#649, #650). À annoncer avec la rotation.
 
 ### Cas du `KEY_CONTEXT` des enveloppes Messenger
 
