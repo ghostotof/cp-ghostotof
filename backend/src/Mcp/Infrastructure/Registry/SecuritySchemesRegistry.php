@@ -35,12 +35,17 @@ use Symfony\Component\DependencyInjection\Attribute\AutowireDecorated;
  * n'en déclare pas fait échouer `tools/list` ({@see ToolWithoutSecuritySchemesException},
  * `-32603`) plutôt que d'être publié sans schéma ou avec un schéma inventé.
  *
- * Le registre, plutôt que le gestionnaire de `tools/list` : celui-ci est
- * construit par `Builder::build()` du SDK, hors du conteneur, alors que le
- * registre est un service du bundle (`mcp.server.portfolio.registry`), et le
- * seul point par lequel passent les deux ères du protocole (`tools/list` dans
- * une session comme sous l'enveloppe sans session 2026-07-28 ; `server/discover`
- * ne liste pas d'outil en 0.8.1, `SecuritySchemesTest` le vérifie).
+ * Le registre, plutôt qu'un gestionnaire de `tools/list` à nous (relecture
+ * finale de #648, le motif d'abord écrit était faux). Le bundle en
+ * accepterait un : il autoconfigure tout `RequestHandlerInterface` en
+ * `mcp.request_handler`, que `Builder::build()` place avant ceux du SDK, dans
+ * les deux ères. Mais il recopierait `ListToolsHandler` (la page de
+ * `paginationLimit`, le curseur et son refus) et masquerait en silence celui
+ * du SDK, réponse entière comprise. Décoré, le registre ne change que la
+ * donnée que lit le gestionnaire du SDK, qui reste le seul à répondre — dans
+ * une session comme sous l'enveloppe sans session 2026-07-28 ;
+ * `server/discover` ne liste pas d'outil en 0.8.1, `SecuritySchemesTest` le
+ * vérifie.
  *
  * Tout le reste est délégué tel quel, **`getTool()` compris** : l'appel d'un
  * outil, le journal des appels ({@see \App\Mcp\Infrastructure\Log\McpCallLog},

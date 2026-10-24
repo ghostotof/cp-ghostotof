@@ -222,6 +222,54 @@ final class DeferredAuthorizationListenerTest extends WebTestCase
         }
     }
 
+    /**
+     * Ce que le docblock du test précédent accepte, épinglé (relecture finale
+     * de #648) : le 401 d'un Bearer refusé laisse **la même ligne** au journal
+     * d'appels que le 401 différé, dans les deux ères — même message, même
+     * contexte hors durée —, et seul le refus du jeton a sa ligne
+     * « Authenticator failed. » au canal `security`, qui les distingue.
+     */
+    #[DataProvider('eras')]
+    public function testARefusedTokenLeavesTheSameCallLineAsTheDeferred401(string $era): void
+    {
+        $this->callTool($era, self::NOMINATIVE_TOOL);
+        $this->assertDeferred();
+        $deferred = self::allChannelsLogRecordsOf('mcp_usage');
+        self::assertCount(1, $deferred);
+        self::assertSame([], $this->authenticatorFailures());
+
+        $this->callTool($era, self::NOMINATIVE_TOOL, server: ['HTTP_AUTHORIZATION' => 'Bearer x']);
+        self::assertSame(Response::HTTP_UNAUTHORIZED, $this->client->getResponse()->getStatusCode());
+        self::assertStringEndsWith(', error="invalid_token"', (string) $this->client->getResponse()->headers->get('WWW-Authenticate'));
+        $refused = self::allChannelsLogRecordsOf('mcp_usage');
+        self::assertCount(1, $refused);
+
+        self::assertSame($deferred[0]->message, $refused[0]->message);
+        self::assertSame($this->withoutDuration($deferred[0]->context), $this->withoutDuration($refused[0]->context));
+        self::assertCount(1, $this->authenticatorFailures());
+    }
+
+    /** @return list<LogRecord> les lignes « Authenticator failed. » du canal `security` */
+    private function authenticatorFailures(): array
+    {
+        return array_values(array_filter(
+            self::allChannelsLogRecordsOf('security'),
+            static fn (LogRecord $record): bool => 'Authenticator failed.' === $record->message,
+        ));
+    }
+
+    /**
+     * @param array<mixed> $context
+     *
+     * @return array<mixed>
+     */
+    private function withoutDuration(array $context): array
+    {
+        unset($context['durationMs']);
+
+        return $context;
+    }
+
     private function assertFallbackLine(LogRecord $line): void
     {
         self::assertSame('MCP request without call', $line->message);

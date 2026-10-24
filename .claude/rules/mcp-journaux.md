@@ -90,8 +90,9 @@ paths:
   removed method, `server/discover`, prompt, notification, unsupported revision, batch, foreign `Origin`, scalar
   `_meta`, malformed and bounded client) through `SpeaksMcp::postModernMcp()`; `ModernExchangeTest` covers what it
   cannot (the 30-second `listen` stream, an edge refusal, headers trimmed or dropped by the bridge).
-  **Each POST's body is decoded eight times, accepted** (#681, the author's decision of 2026-10-21): four during the
-  request — `InboundMessageRefusalListener`, the bundle's PSR-7 bridge (`PsrHttpFactory` `json_decode`s a JSON body
+  **Each POST's body is decoded eight times, accepted** (#681, the author's decision of 2026-10-21) — **nine for an
+  anonymous POST** since #648, the deferred 401's `MessageFactory` (`mcp.md`; an authenticated one pays nothing, the
+  identity is read first): four during the request — `InboundMessageRefusalListener`, the bundle's PSR-7 bridge (`PsrHttpFactory` `json_decode`s a JSON body
   for `getParsedBody()`), the SDK's classifier and its `MessageFactory` — and four at `kernel.terminate` for this
   reading, on every POST the server answered, whatever its era — the bridge again, the classifier, `decodedObject()`,
   the factory —, five of them ours. Measured on a 16 KiB body (nginx's bound): ~11 µs a decoding for one long string,
@@ -104,7 +105,11 @@ paths:
   (`POST`, 401, `protocol-error`); under the modern envelope a call line `tools/call`, `protocol-error`, no `errorCode`,
   no `httpStatus` and no `name` — the registry a name is checked against is only filled by the server's build, which
   this 401 precedes —, accepted: a refused token's 401 has the same line, and only that one has its « Authenticator
-  failed. » on the `security` channel; nginx's access log carries the status (`DeferredAuthorizationListenerTest`).
+  failed. » on the `security` channel; nginx's access log carries the status (`DeferredAuthorizationListenerTest`,
+  `testARefusedTokenLeavesTheSameCallLineAsTheDeferred401` in both eras). **The nominative tool's size refusal**
+  (`Nominative corpus refused over MCP: …`, sizes only, `mcp.md`) is a `warning` of the default `app` channel — the
+  tool's `LoggerInterface`, autowired without a channel —, so it leaves through the `main` handler (`LOG_LEVEL`,
+  `warning` in production), neither on `mcp` nor on `mcp_usage`; its call line is an ordinary `tool-error`.
   **An HTTP request on `/api/mcp` that handled no message** — unreadable JSON, missing or expired
   session, `GET`, `DELETE`, a request refused before the SDK (#644: 400, `protocol-error`; under the modern
   envelope it has a call line instead, the refusal being the server's own answer, and `ModernExchange` reading what

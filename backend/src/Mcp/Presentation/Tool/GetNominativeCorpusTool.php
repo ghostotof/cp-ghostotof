@@ -38,7 +38,11 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
  *    l'adresse de la page du site où se télécharge le CV (spec 0007) ;
  *    jamais le PDF. Puis la ligne `nominative-corpus-read` du journal de
  *    sécurité, **après** le rendu : une lecture journalisée est une lecture
- *    faite. Au-delà de {@see self::QUEUED_ANSWER_MAX_BYTES}, une erreur d'outil qui
+ *    faite. Elle consigne la lecture du corpus **tel que rendu** : un CV
+ *    détaillé indisponible (fichier absent, extraction en échec) laisse un
+ *    corpus qui le dit à sa place, et la ligne est écrite quand même — limite
+ *    acceptée (relecture finale de #648) : elle dit qu'une connexion a lu ce
+ *    que le serveur avait à servir, pas que le CV y était. Au-delà de {@see self::QUEUED_ANSWER_MAX_BYTES}, une erreur d'outil qui
  *    donne l'adresse de la page du CV, un `warning` aux tailles seules, et
  *    aucune ligne d'audit : rien n'a été servi.
  *  - **Sans** : l'erreur d'outil que ChatGPT sait suivre — le défi
@@ -88,6 +92,13 @@ final readonly class GetNominativeCorpusTool
      * moitié de la borne de session, l'autre moitié restant au reste de la
      * session (décision de l'auteur du 2026-10-24, tâche 9, puis de la
      * relecture de la tâche 5).
+     *
+     * La borne est celle du store de sessions, d'où l'import d'une classe
+     * d'Infrastructure par la Presentation, assumé (relecture finale de
+     * #648) comme celui de ServerAnswersInterface par le contrôleur MCP : la
+     * borne vit avec le code qui l'applique ; la déplacer dans l'Application
+     * y mettrait un détail de stockage (la taille d'une ligne de
+     * `cache_items`) que seul ce store fait respecter.
      *
      * Au-delà de {@see BoundedSessionStore::MAX_BYTES}, la session est
      * détruite et le client ne reçoit rien. Or la réponse grossit bien plus que

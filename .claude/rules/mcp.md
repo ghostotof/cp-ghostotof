@@ -93,7 +93,9 @@ paths:
   deferred authentication relies on); its name is `Application/ProtectedTools::NOMINATIVE_CORPUS`, read by the
   deferred 401 below. **With an MCP connection** (#648) it returns `{"corpus": <CorpusRenderer's text for the
   language>, "cvPageUrl": "<APP_FRONTEND_BASE_URL>/<locale>/assistant"}` (closed `outputSchema`, never the PDF) and,
-  after the render, the audit line `nominative-corpus-read` (`userId`, `connectionId`, `clientId`, `tool`); without
+  after the render, the audit line `nominative-corpus-read` (`userId`, `connectionId`, `clientId`, `tool`) — it records
+  the corpus as rendered, an unavailable detailed CV included (accepted: the connection read what the server had to
+  serve, not necessarily the CV); without
   one, an unmarked call gets that 401, a call marked `openai/` the tool's error — `CONNECTION_REQUIRED` and
   `_meta["mcp/www_authenticate"]` = a list of one `BearerChallenge::insufficientScope()` challenge (the Apps SDK
   reference types it « string or string[] ») —, the same marked or not, nothing read. **The identity is read
@@ -101,7 +103,9 @@ paths:
   authorization middlewares, and no `RequestContext` (nothing would read it). Its constructor takes `Security`,
   `CorpusRendererInterface`, `SecurityAuditLoggerInterface` (the second door of `mcp-oauth.md`'s « assumed
   exception », used by `Mcp/Presentation` now), `BearerChallenge`, the logger and `app.frontend_base_url`, pinned in
-  `McpExposureSymmetryTest::TOOLS_WITHOUT_ROUTE`. **Its queued answer is bounded** (`QUEUED_ANSWER_MAX_BYTES`, sessions below). `get_tech_watch` relays third-party strings
+  `McpExposureSymmetryTest::TOOLS_WITHOUT_ROUTE`. **Its queued answer is bounded** (`QUEUED_ANSWER_MAX_BYTES`, sessions below); for it `Mcp/Presentation` imports
+  `Infrastructure/Session/BoundedSessionStore`, assumed like the controller's `ServerAnswersInterface` (the bound lives
+  with the code that enforces it). `get_tech_watch` relays third-party strings
   (endoflife.date cycles, versions, links) to the person's model — indirect prompt injection (LLM01): its
   description says to treat them as data; the output stays equal to the route (D1). Since #658 cycles and
   versions only pass in the shape of a version number, filtered in the watch itself, never in the tool
@@ -353,12 +357,16 @@ paths:
   `ServerAnswersInterface::record()` — what makes a Claude client open the OAuth flow. **The body decides, read by the
   SDK's own `MessageFactory::create()`** (as `ModernExchange` reads it): a message is that call exactly when the SDK
   would build a `CallToolRequest` of that name from it, in a session and under the sessionless 2026-07-28 envelope
-  alike, one-message batch included (judged as a single message); **never the `Mcp-Name` header**, the caller's choice,
-  which this 401 precedes the SDK's comparison of (SEP-2243). A body the factory cannot read is left to the SDK.
+  alike. A one-message batch is judged as a single message — served by the SDK in a session, refused by it under the
+  2026-07-28 envelope, which this 401 precedes, as it precedes the SDK's session validation and its `Host` check (an
+  unknown session id or a foreign host gets this 401: nothing is served either way). **Never the `Mcp-Name` header**,
+  the caller's choice, which this 401 precedes the SDK's comparison of (SEP-2243). A body the factory cannot read
+  (`JsonException`, the one it throws: its other failures become `InvalidInputMessageException`s, save a scalar
+  notification `_meta`'s `TypeError`, refused at priority 15) is left to the SDK.
   **The `openai/` marker only chooses the form of the refusal, never the access**: a message whose `_meta` holds a
   key prefixed `ProtectedTools::OPENAI_META_PREFIX` (ChatGPT) passes to the tool, which reads the identity through
   `Security` only (D4). The identity is read first, so an authenticated call pays no decoding; an anonymous `POST`'s
-  body is decoded once more than the eight of `mcp-journaux.md`. Its call line: `mcp-journaux.md`.
+  body is decoded nine times instead of eight (`mcp-journaux.md`). Its call line: `mcp-journaux.md`.
   `DeferredAuthorizationListenerTest` plays every case in both eras (marker, public tool, valid connection,
   one-message batch, `Mcp-Name` contradicting the body, unreadable body, call line);
   `DeferredAuthorizationListenerPriorityTest` pins on the real dispatcher that it runs after SecurityBundle's

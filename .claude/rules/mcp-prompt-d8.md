@@ -95,7 +95,9 @@ paths:
   its refusal without a connection, text and `_meta["mcp/www_authenticate"]` challenge included, is read past the
   deferred 401 (#648), the other tools called unmarked, as Claude clients call them; **never its authenticated
   output**, the corpus, which names the author by design — a route-backed tool's output is its route's content (D1)
-  and is not read —; and that 401's `WWW-Authenticate` challenge. `testEverySurfaceTheServerWritesIsRead` pins that list. Through
+  and is not read —; that 401's `WWW-Authenticate` challenge, and the one of the `invalid_token` 401 any anonymous
+  caller gets by presenting a refused Bearer (a malformed `Bearer x`, final review of #648).
+  `testEverySurfaceTheServerWritesIsRead` pins that list. Through
   `tests/Mcp/Support/AuthorMentions` it refuses, after NFKD folding (full width, accents and `\p{Cf}` removed,
   so a soft hyphen inside the name does not split it), case and punctuation ignored: the full name and each
   word of three letters or more as whole words; failing that, the name joined or a word of five letters or
@@ -105,7 +107,8 @@ paths:
   Each finding is an `AuthorMention` (path, `MentionKind`, term number), **never the term nor the text carrying
   it**. The exceptions are `AuthorNeverNamedTest::admitted()`, copied from ADR 0006's closed list (the server
   name, `get_contact_info`'s URL in both its forms, and since #648 the challenge's `resource_metadata` URL — the
-  deferred 401's header and the nominative refusal's `_meta`, each challenge written out whole in the test,
+  deferred 401's header, the refused Bearer's (`, error="invalid_token"` appended) and the nominative refusal's
+  `_meta`, each challenge written out whole in the test,
   `error_description` included, copied from the ADR and never read from `src/` — neither `BearerChallenge` nor the
   tool's constant, which would carry a name slipped into them), admitted at their path and for their exact value only,
   and checked to be still published as written (`assertTrue`, no diff that would print the value). The CV is
