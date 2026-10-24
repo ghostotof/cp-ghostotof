@@ -102,7 +102,9 @@ final class DeferredAuthorizationListenerTest extends WebTestCase
         self::assertIsArray($result['_meta'] ?? null);
         self::assertIsArray($result['_meta']['mcp/www_authenticate'] ?? null);
         self::assertCount(1, $result['_meta']['mcp/www_authenticate']);
-        self::assertStringContainsString('error="insufficient_scope"', (string) $result['_meta']['mcp/www_authenticate'][0]);
+        $challenge = $result['_meta']['mcp/www_authenticate'][0] ?? null;
+        self::assertIsString($challenge);
+        self::assertStringContainsString('error="insufficient_scope"', $challenge);
     }
 
     /** Un `_meta` sans clé `openai/` n'est pas un marqueur : le défi tient. */
