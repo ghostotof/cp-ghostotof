@@ -6,6 +6,7 @@ import type { OAuthConsentRepository } from '../../../src/domain/mcp/repositorie
 import type { ConsentParams, ConsentRequest } from '../../../src/domain/mcp/entities/ConsentRequest'
 import { ConsentFailedError } from '../../../src/domain/mcp/errors/ConsentFailedError'
 import { MalformedConsentDecisionError } from '../../../src/domain/mcp/errors/MalformedConsentDecisionError'
+import { ReauthenticationRequiredError } from '../../../src/domain/mcp/errors/ReauthenticationRequiredError'
 
 enableAutoUnmount(afterEach)
 
@@ -112,6 +113,24 @@ describe('useOAuthConsent', () => {
 
     expect(consent.state.value).toBe('error')
     expect(consent.failure.value).toBe('malformed-decision')
+    await consent.approve()
+    expect(decide).toHaveBeenCalledOnce()
+    expect(navigate).not.toHaveBeenCalled()
+  })
+
+  it('authentification trop ancienne à l’accord : état terminal, à recommencer après reconnexion', async () => {
+    const decide = vi.fn(async () => {
+      throw new ReauthenticationRequiredError()
+    })
+    const { consent, navigate } = mountComposable(decide)
+    await consent.load(PARAMS)
+
+    await consent.approve()
+
+    expect(consent.state.value).toBe('error')
+    expect(consent.failure.value).toBe('reauthentication-required')
+    // La demande reste lisible : la page la montre au-dessus du lien de reconnexion.
+    expect(consent.request.value).toEqual(SUMMARY)
     await consent.approve()
     expect(decide).toHaveBeenCalledOnce()
     expect(navigate).not.toHaveBeenCalled()

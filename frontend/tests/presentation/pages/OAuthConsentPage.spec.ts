@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { defineComponent } from 'vue'
+import { defineComponent, nextTick } from 'vue'
 import { enableAutoUnmount, flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createMemoryHistory, createRouter, type RouteLocationNormalized, type Router } from 'vue-router'
 import OAuthConsentPage from '../../../src/presentation/pages/OAuthConsentPage.vue'
@@ -12,6 +12,8 @@ import { InvalidConsentRequestError } from '../../../src/domain/mcp/errors/Inval
 import { SessionExpiredError } from '../../../src/domain/mcp/errors/SessionExpiredError'
 import { ConsentFailedError } from '../../../src/domain/mcp/errors/ConsentFailedError'
 import { MalformedConsentDecisionError } from '../../../src/domain/mcp/errors/MalformedConsentDecisionError'
+import { ReauthenticationRequiredError } from '../../../src/domain/mcp/errors/ReauthenticationRequiredError'
+import { ACTIVATION_DELAY_MS } from '../../../src/presentation/ui/useDeliberateActivation'
 import { createAppI18n, i18n as appI18n } from '../../../src/presentation/i18n'
 import { router as appRouter } from '../../../src/presentation/router'
 import { applySeoMeta } from '../../../src/presentation/router/seo'
@@ -20,6 +22,11 @@ import { sessionFor } from '../../support/authSession'
 import { expectNoAccessibilityViolation } from '../../support/axe'
 
 enableAutoUnmount(afterEach)
+
+afterEach(() => {
+  vi.useRealTimers()
+  vi.restoreAllMocks()
+})
 
 const StubPage = { template: '<div />' }
 
@@ -65,6 +72,12 @@ interface Options {
   query?: string
   describeRequest?: ReturnType<typeof vi.fn>
   decide?: ReturnType<typeof vi.fn>
+  /**
+   * Faux : la page n'a pas encore été visible et active le délai voulu, les
+   * boutons restent inactifs (protection contre le double-clickjacking). Vrai
+   * par défaut : le harnais fait passer le délai, la page a le focus.
+   */
+  arm?: boolean
 }
 
 async function mountPage(options: Options = {}): Promise<Harness> {
@@ -86,6 +99,11 @@ async function mountPage(options: Options = {}): Promise<Harness> {
   await router.push(`/${locale}/oauth/consent?${options.query ?? QUERY}`)
   await router.isReady()
 
+  // jsdom n'a le focus que si un élément l'a reçu : la page, ici, l'a. Les
+  // minuteries seules sont simulées (setImmediate reste réel pour flushPromises).
+  vi.spyOn(document, 'hasFocus').mockReturnValue(true)
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+
   const wrapper = mount(OAuthConsentPage, {
     global: {
       plugins: [router, i18n],
@@ -97,7 +115,41 @@ async function mountPage(options: Options = {}): Promise<Harness> {
   })
   await flushPromises()
 
+  if (false !== options.arm) {
+    await passActivationDelay()
+  }
+
   return { wrapper, router, describeRequest, decide, navigate }
+}
+
+async function passActivationDelay(): Promise<void> {
+  vi.advanceTimersByTime(ACTIVATION_DELAY_MS)
+  await nextTick()
+}
+
+/**
+ * Un clic de pointeur (`detail` 1, comme un navigateur le compte), envoyé à la
+ * main : `trigger()` ne sait pas poser `detail`, en lecture seule sur un
+ * UIEvent construit.
+ */
+async function pointerClick(wrapper: VueWrapper, name: 'approve' | 'deny'): Promise<void> {
+  button(wrapper, name).element.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }))
+  await nextTick()
+}
+
+/**
+ * Un appui de pointeur, tel que la page le note (en capture, sur le document) :
+ * le composant est monté détaché, un événement parti du bouton n'atteindrait
+ * pas le document.
+ */
+function pointerDown(): void {
+  document.dispatchEvent(new Event('pointerdown'))
+}
+
+/** Un clic au clavier (Entrée, Espace) : `detail` 0, aucun appui de pointeur. */
+async function keyboardClick(wrapper: VueWrapper, name: 'approve' | 'deny'): Promise<void> {
+  button(wrapper, name).element.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 0 }))
+  await nextTick()
 }
 
 function button(wrapper: VueWrapper, name: 'approve' | 'deny') {
@@ -130,14 +182,18 @@ describe('OAuthConsentPage — résumé de la demande', () => {
     expect(describeRequest).toHaveBeenCalledWith(PARAMS)
   })
 
-  it('en français : titre, nom déclaré par le client, enregistrement, hôte de retour, corpus et fournisseur d’IA', async () => {
+  it('en français : titre, nom enregistré par l’administrateur, enregistrement, hôte de retour, corpus et fournisseur d’IA', async () => {
     const { wrapper } = await mountPage()
     const text = wrapper.text()
 
     expect(wrapper.find('h1').text()).toBe('Autoriser une connexion MCP')
     expect(wrapper.find('[data-testid="consent-client-name"]').text()).toContain('Assistant Déclaré')
-    expect(text).toContain('Nom déclaré par le client')
-    expect(text).toContain("le site ne l'a pas vérifié")
+    expect(text).toContain('Nom du client')
+    expect(text).toContain("Le nom sous lequel l'administrateur du site a enregistré ce client")
+    // Un client pré-enregistré ne s'est pas nommé lui-même : rien ne le dit « déclaré ».
+    expect(text).not.toContain('Nom déclaré')
+    expect(text).not.toContain('fourni par le client')
+    expect(text).not.toContain('pas vérifié')
     expect(text).toContain("enregistré à l'avance par l'administrateur du site")
     expect(wrapper.find('[data-testid="consent-redirect-host"]').text()).toBe('127.0.0.1')
     expect(text).toContain('corpus nominatif')
@@ -154,8 +210,11 @@ describe('OAuthConsentPage — résumé de la demande', () => {
 
     expect(wrapper.find('h1').text()).toBe('Authorize an MCP connection')
     expect(wrapper.find('[data-testid="consent-client-name"]').text()).toContain('Assistant Déclaré')
-    expect(text).toContain('Name declared by the client')
-    expect(text).toContain('the site has not verified it')
+    expect(text).toContain('Client name')
+    expect(text).toContain('The name under which the site’s administrator registered this client')
+    expect(text).not.toContain('Name declared')
+    expect(text).not.toContain('supplied by the client')
+    expect(text).not.toContain('not verified')
     expect(text).toContain('registered in advance by the site’s administrator')
     expect(wrapper.find('[data-testid="consent-redirect-host"]').text()).toBe('127.0.0.1')
     expect(text).toContain('nominative corpus')
@@ -165,7 +224,7 @@ describe('OAuthConsentPage — résumé de la demande', () => {
     expect(button(wrapper, 'deny').text()).toBe('Deny')
   })
 
-  it('rend un nom déclaré contenant du HTML en texte, jamais en éléments', async () => {
+  it('rend un nom contenant du HTML en texte, jamais en éléments', async () => {
     const describeRequest = vi.fn(async () => ({
       ...SUMMARY,
       client: { ...SUMMARY.client, name: '<img src=x onerror=alert(1)>' },
@@ -398,9 +457,153 @@ describe('OAuthConsentPage — session', () => {
   })
 })
 
+describe('OAuthConsentPage — authentification récente (#647, F1)', () => {
+  it('401 « authentification trop ancienne » à l’accord : message, lien de reconnexion qui revient à la même demande', async () => {
+    await primeTrustedSession()
+    const { wrapper, router, navigate } = await mountPage({
+      decide: vi.fn(async () => {
+        throw new ReauthenticationRequiredError()
+      }),
+    })
+
+    await button(wrapper, 'approve').trigger('click')
+    await flushPromises()
+
+    // La session vaut toujours pour le reste du site : elle n'est pas marquée expirée.
+    expect(authState.user).not.toBeNull()
+    expect(navigate).not.toHaveBeenCalled()
+    const alert = wrapper.find('[role="alert"]')
+    expect(alert.text()).toContain('reconnectez-vous')
+    const link = alert.find('a')
+    expect(link.text()).toBe('Me reconnecter pour autoriser')
+    const target = router.resolve(link.attributes('href') ?? '')
+    expect(target.name).toBe('login')
+    // Le drapeau que la route de connexion honore pour une personne déjà connectée.
+    expect(target.query.reauth).toBe('1')
+    const back = router.resolve(String(target.query.redirect))
+    expect(back.name).toBe('oauth-consent')
+    expect(back.query).toEqual(router.currentRoute.value.query)
+    expect(wrapper.findAll('button')).toHaveLength(0)
+  })
+
+  it('en anglais', async () => {
+    const { wrapper } = await mountPage({
+      locale: 'en',
+      decide: vi.fn(async () => {
+        throw new ReauthenticationRequiredError()
+      }),
+    })
+
+    await button(wrapper, 'approve').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[role="alert"]').text()).toContain('sign in again')
+    expect(wrapper.find('[role="alert"] a').text()).toBe('Sign in again to authorize')
+  })
+})
+
+describe('OAuthConsentPage — clic délibéré (double-clickjacking)', () => {
+  it(`les boutons ne s’activent qu’après ${ACTIVATION_DELAY_MS} ms de page visible et active`, async () => {
+    const { wrapper } = await mountPage({ arm: false })
+
+    expect(button(wrapper, 'approve').attributes('disabled')).toBeDefined()
+    expect(button(wrapper, 'deny').attributes('disabled')).toBeDefined()
+
+    vi.advanceTimersByTime(ACTIVATION_DELAY_MS - 1)
+    await nextTick()
+    expect(button(wrapper, 'approve').attributes('disabled')).toBeDefined()
+
+    vi.advanceTimersByTime(1)
+    await nextTick()
+    expect(button(wrapper, 'approve').attributes('disabled')).toBeUndefined()
+    expect(button(wrapper, 'deny').attributes('disabled')).toBeUndefined()
+  })
+
+  it('page cachée : rien ne s’active ; le délai court de nouveau quand elle redevient visible', async () => {
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden')
+    const { wrapper } = await mountPage({ arm: false })
+
+    vi.advanceTimersByTime(ACTIVATION_DELAY_MS * 2)
+    await nextTick()
+    expect(button(wrapper, 'approve').attributes('disabled')).toBeDefined()
+
+    visibility.mockReturnValue('visible')
+    document.dispatchEvent(new Event('visibilitychange'))
+    vi.advanceTimersByTime(ACTIVATION_DELAY_MS - 1)
+    await nextTick()
+    expect(button(wrapper, 'approve').attributes('disabled')).toBeDefined()
+    vi.advanceTimersByTime(1)
+    await nextTick()
+    expect(button(wrapper, 'approve').attributes('disabled')).toBeUndefined()
+  })
+
+  it('page sans le focus : rien ne s’active avant qu’elle le reçoive, puis le délai', async () => {
+    const focus = vi.spyOn(document, 'hasFocus')
+    const { wrapper } = await mountPage({ arm: false })
+    // La fenêtre perd le focus avant la fin du délai (une autre fenêtre passe devant).
+    focus.mockReturnValue(false)
+    window.dispatchEvent(new Event('blur'))
+    vi.advanceTimersByTime(ACTIVATION_DELAY_MS * 2)
+    await nextTick()
+    expect(button(wrapper, 'approve').attributes('disabled')).toBeDefined()
+
+    focus.mockReturnValue(true)
+    window.dispatchEvent(new Event('focus'))
+    vi.advanceTimersByTime(ACTIVATION_DELAY_MS)
+    await nextTick()
+    expect(button(wrapper, 'approve').attributes('disabled')).toBeUndefined()
+  })
+
+  it('la page perd le focus une fois active : les boutons se désactivent, le délai repart au retour', async () => {
+    const { wrapper } = await mountPage()
+    expect(button(wrapper, 'approve').attributes('disabled')).toBeUndefined()
+
+    vi.spyOn(document, 'hasFocus').mockReturnValue(false)
+    window.dispatchEvent(new Event('blur'))
+    await nextTick()
+    expect(button(wrapper, 'approve').attributes('disabled')).toBeDefined()
+
+    vi.spyOn(document, 'hasFocus').mockReturnValue(true)
+    window.dispatchEvent(new Event('focus'))
+    await nextTick()
+    expect(button(wrapper, 'approve').attributes('disabled')).toBeDefined()
+    await passActivationDelay()
+    expect(button(wrapper, 'approve').attributes('disabled')).toBeUndefined()
+  })
+
+  it('un clic dont l’appui a commencé avant l’activation est ignoré ; un appui suivant passe', async () => {
+    const { wrapper, decide } = await mountPage({ arm: false })
+
+    // L'appui arrive pendant le délai (le second clic d'un double-clic posé sur une autre fenêtre)…
+    pointerDown()
+    await passActivationDelay()
+    // … et son relâchement, une fois les boutons actifs : ignoré.
+    await pointerClick(wrapper, 'approve')
+    await flushPromises()
+    expect(decide).not.toHaveBeenCalled()
+
+    pointerDown()
+    await pointerClick(wrapper, 'approve')
+    await flushPromises()
+    expect(decide).toHaveBeenCalledOnce()
+    expect(decide).toHaveBeenCalledWith(PARAMS, true)
+  })
+
+  it('au clavier (un clic sans appui de pointeur), une fois actifs : la décision part', async () => {
+    const { wrapper, decide } = await mountPage()
+
+    await keyboardClick(wrapper, 'deny')
+    await flushPromises()
+
+    expect(decide).toHaveBeenCalledWith(PARAMS, false)
+  })
+})
+
 describe('OAuthConsentPage — accessibilité', () => {
   it.each(SUPPORTED_LOCALES)('aucune violation détectable, demande affichée (%s)', async (locale) => {
     const { wrapper } = await mountPage({ locale })
+    // axe programme ses propres minuteries : elles doivent tourner.
+    vi.useRealTimers()
 
     await expectNoAccessibilityViolation(wrapper)
   })
@@ -411,6 +614,7 @@ describe('OAuthConsentPage — accessibilité', () => {
         throw new InvalidConsentRequestError()
       }),
     })
+    vi.useRealTimers()
 
     await expectNoAccessibilityViolation(wrapper)
   })

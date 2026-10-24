@@ -3,6 +3,7 @@ import type { ConsentParams, ConsentRequest } from '../../domain/mcp/entities/Co
 import type { OAuthConsentRepository } from '../../domain/mcp/repositories/OAuthConsentRepository'
 import { InvalidConsentRequestError } from '../../domain/mcp/errors/InvalidConsentRequestError'
 import { MalformedConsentDecisionError } from '../../domain/mcp/errors/MalformedConsentDecisionError'
+import { ReauthenticationRequiredError } from '../../domain/mcp/errors/ReauthenticationRequiredError'
 import { SessionExpiredError } from '../../domain/mcp/errors/SessionExpiredError'
 import { isNavigableRedirect } from '../../domain/mcp/services/consentParams'
 import { markSessionExpired } from '../auth/useAuth'
@@ -37,6 +38,11 @@ export type OAuthConsentState = 'loading' | 'ready' | 'submitting' | 'invalid' |
 
 /**
  * - `session-expired`    : 401/403, la session est marquée expirée ;
+ * - `reauthentication-required` : 401 typé à l'accord, l'authentification
+ *                          date de plus de dix minutes — terminal ici, la page
+ *                          propose de se reconnecter puis ramène à la même
+ *                          demande ; la session n'est pas marquée expirée,
+ *                          elle vaut toujours pour le reste du site ;
  * - `unsafe-redirect`    : l'URL de retour n'est ni `http:` ni `https:`, ou ne
  *                          mène pas à l'hôte annoncé : la page ne l'a pas suivie ;
  * - `malformed-decision` : 422, le serveur a refusé le corps de la décision —
@@ -44,7 +50,7 @@ export type OAuthConsentState = 'loading' | 'ready' | 'submitting' | 'invalid' |
  *                          le même corps) ;
  * - `unknown`            : réseau, 5xx, réponse inattendue.
  */
-export type OAuthConsentFailure = 'session-expired' | 'unsafe-redirect' | 'malformed-decision' | 'unknown'
+export type OAuthConsentFailure = 'session-expired' | 'reauthentication-required' | 'unsafe-redirect' | 'malformed-decision' | 'unknown'
 
 export interface UseOAuthConsentResult {
   state: DeepReadonly<Ref<OAuthConsentState>>
@@ -90,6 +96,11 @@ export function useOAuthConsent(): UseOAuthConsentResult {
       markSessionExpired()
       state.value = 'error'
       failure.value = 'session-expired'
+      return
+    }
+    if (caught instanceof ReauthenticationRequiredError) {
+      state.value = 'error'
+      failure.value = 'reauthentication-required'
       return
     }
     if (caught instanceof MalformedConsentDecisionError) {

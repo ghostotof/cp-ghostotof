@@ -471,7 +471,8 @@
     "invalidCredentials": "Nom d'utilisateur ou mot de passe incorrect.",
     "rateLimited": "Trop de tentatives de connexion. Réessayez dans quelques minutes.",
     "rateLimitedIn": "Trop de tentatives de connexion. Réessayez dans {minutes} minute. | Trop de tentatives de connexion. Réessayez dans {minutes} minutes.",
-    "genericError": "Une erreur est survenue, veuillez réessayer."
+    "genericError": "Une erreur est survenue, veuillez réessayer.",
+    "reauthNotice": "Confirmez votre identité : autoriser une connexion MCP demande de vous être connecté il y a moins de dix minutes. Vous reviendrez ensuite à la demande."
   },
   "contact": {
     "eyebrow": "Contact",
@@ -792,8 +793,8 @@
     "submitting": "Transmission de votre décision…",
     "client": {
       "heading": "Le client",
-      "nameLabel": "Nom déclaré par le client",
-      "nameNotice": "Ce nom est fourni par le client lui-même : le site ne l'a pas vérifié.",
+      "nameLabel": "Nom du client",
+      "nameNotice": "Le nom sous lequel l'administrateur du site a enregistré ce client.",
       "registrationLabel": "Enregistrement",
       "registration": {
         "preregistered": "Client enregistré à l'avance par l'administrateur du site."
@@ -812,6 +813,8 @@
       "invalid": "Cette demande de connexion est invalide ou a expiré. Recommencez depuis votre assistant.",
       "sessionExpired": "Votre session a expiré ou ne permet pas d'autoriser cette connexion.",
       "relogin": "Se reconnecter",
+      "reauthenticationRequired": "Pour autoriser cette connexion, reconnectez-vous : votre connexion au site date de plus de dix minutes. Vous reviendrez ensuite à cette même demande.",
+      "reauthenticate": "Me reconnecter pour autoriser",
       "unsafeRedirect": "L'adresse de retour reçue n'est pas une adresse web de l'hôte annoncé : la page ne l'a pas suivie.",
       "malformedDecision": "La page n'a pas pu transmettre votre décision. Recommencez depuis votre assistant.",
       "unknown": "Une erreur inattendue est survenue. Réessayez."

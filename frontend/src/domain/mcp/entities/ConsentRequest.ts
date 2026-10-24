@@ -29,8 +29,11 @@ export type ConsentClientRegistration = 'preregistered'
 export interface ConsentClient {
   id: string
   /**
-   * Le nom que le client s'est **déclaré** à l'enregistrement : le site ne l'a
-   * pas vérifié, la page le présente comme tel.
+   * Le nom sous lequel le client est connu du site. Pour un client
+   * `preregistered`, celui que l'administrateur du site a saisi à
+   * l'enregistrement — la page le dit ainsi, sans le donner pour « déclaré par
+   * le client ». Un futur mode CIMD (#651) portera un nom déclaré par le client
+   * lui-même, et son propre texte.
    */
   name: string
   registration: ConsentClientRegistration

@@ -4,6 +4,7 @@ import { consentQuery } from '../../domain/mcp/services/consentParams'
 import { ConsentFailedError } from '../../domain/mcp/errors/ConsentFailedError'
 import { InvalidConsentRequestError } from '../../domain/mcp/errors/InvalidConsentRequestError'
 import { MalformedConsentDecisionError } from '../../domain/mcp/errors/MalformedConsentDecisionError'
+import { ReauthenticationRequiredError } from '../../domain/mcp/errors/ReauthenticationRequiredError'
 import { SessionExpiredError } from '../../domain/mcp/errors/SessionExpiredError'
 import { readCsrfToken } from '../auth/csrfCookie'
 import type { ApiProblemBody } from '../admin/shared/BackofficeHttpClient'
@@ -20,6 +21,14 @@ const PATH = '/api/oauth/consent'
  * backend, il se renomme ici dans le même changement.
  */
 export const AUTHORIZATION_REQUEST_REJECTED = 'authorization-request-rejected'
+
+/**
+ * Le slug du 401 que le serveur rend quand l'authentification de la personne
+ * est trop ancienne pour accorder une connexion
+ * (`ReauthenticationRequiredException`, #647). Reconnu par le `type`, comme
+ * le précédent : tout autre 401 reste une session absente ou expirée.
+ */
+export const REAUTHENTICATION_REQUIRED = 'reauthentication-required'
 
 /** Ce que veut dire un 422 : sur la décision, un corps que la page a mal formé. */
 type UnprocessableMeaning = 'malformed-decision' | 'generic'
@@ -105,7 +114,7 @@ export class HttpOAuthConsentRepository implements OAuthConsentRepository {
     const status = response.status
     switch (status) {
       case 400:
-        return (await this.isRejectedRequest(response))
+        return (await this.hasType(response, AUTHORIZATION_REQUEST_REJECTED))
           ? new InvalidConsentRequestError()
           : new ConsentFailedError('The consent request failed with an unrecognised 400')
       case 422:
@@ -113,6 +122,11 @@ export class HttpOAuthConsentRepository implements OAuthConsentRepository {
           ? new MalformedConsentDecisionError()
           : new ConsentFailedError('The consent request failed with status 422')
       case 401:
+        // L'accord sur une authentification trop ancienne a son propre type ;
+        // tout autre 401 (cookie absent ou expiré) est une session expirée.
+        return (await this.hasType(response, REAUTHENTICATION_REQUIRED))
+          ? new ReauthenticationRequiredError()
+          : new SessionExpiredError()
       case 403:
         // 403 couvre aussi le refus CSRF : dans les deux cas, se reconnecter
         // repose un cookie de session et un jeton CSRF neufs.
@@ -122,11 +136,11 @@ export class HttpOAuthConsentRepository implements OAuthConsentRepository {
     }
   }
 
-  /** Le 400 de la revalidation, reconnu par son `type` ; un corps illisible n'en est pas un. */
-  private async isRejectedRequest(response: Response): Promise<boolean> {
+  /** Le problem+json porte-t-il ce `type` ? Un corps illisible n'en porte aucun. */
+  private async hasType(response: Response, slug: string): Promise<boolean> {
     const body = (await response.json().catch(() => null)) as ApiProblemBody | null
 
-    return null !== body && hasProblemType(body, AUTHORIZATION_REQUEST_REJECTED)
+    return null !== body && hasProblemType(body, slug)
   }
 
   private async readJson(response: Response): Promise<unknown> {

@@ -5,6 +5,8 @@ import { useI18n } from 'vue-i18n'
 import { useOAuthConsent } from '../../application/mcp/useOAuthConsent'
 import { consentParamsFromQuery } from '../../domain/mcp/services/consentParams'
 import { isSupportedLocale, type Locale } from '../../domain/portfolio/entities/Locale'
+import { useDeliberateActivation } from '../ui/useDeliberateActivation'
+import { REAUTH_QUERY, REAUTH_VALUE } from '../router/reauthentication'
 
 /**
  * Consentement à une connexion MCP (#647, spec 0007 phase 2) : le point
@@ -13,15 +15,25 @@ import { isSupportedLocale, type Locale } from '../../domain/portfolio/entities/
  * décision et suit l'URL de retour vers le client.
  *
  * Ce que la personne doit pouvoir juger avant de cliquer : le nom du client
- * — **déclaré** par lui, jamais vérifié —, qu'il a été enregistré par
- * l'administrateur du site, l'hôte vers lequel elle repartira, ce que la
- * connexion ouvre (le corpus nominatif, en lecture) et qu'il partira vers le
- * fournisseur d'IA du client. Aucun texte ne nomme l'auteur du site.
+ * — celui sous lequel l'administrateur du site l'a enregistré (un client CIMD,
+ * #651, déclarera le sien, que la page dira tel) —, l'hôte vers lequel elle
+ * repartira, ce que la connexion ouvre (le corpus nominatif, en lecture) et
+ * qu'il partira vers le fournisseur d'IA du client. Aucun texte ne nomme
+ * l'auteur du site.
+ *
+ * Les deux boutons ne s'activent qu'une fois la page visible et active depuis
+ * un court délai (useDeliberateActivation, double-clickjacking). Accorder
+ * exige une connexion au site de moins de dix minutes : au-delà, le serveur
+ * refuse (`reauthentication-required`) et la page propose de se reconnecter,
+ * la route de connexion honorant `reauth=1` pour une personne déjà connectée.
  */
 
 const { t, locale: i18nLocale } = useI18n()
 const route = useRoute()
 const { state, request, failure, load, approve, deny } = useOAuthConsent()
+const { isArmed, guard } = useDeliberateActivation()
+const onApprove = guard(approve)
+const onDeny = guard(deny)
 
 const currentLocale = computed<Locale>(() => {
   const routeLocale = route.params.locale
@@ -29,6 +41,8 @@ const currentLocale = computed<Locale>(() => {
 })
 
 const isSubmitting = computed(() => 'submitting' === state.value)
+/** Inactifs pendant la transmission, et tant que la page n'a pas été vue le délai voulu. */
+const buttonsDisabled = computed(() => isSubmitting.value || !isArmed.value)
 /** La demande et les boutons ne se montrent que tant qu'une décision est possible. */
 const showRequest = computed(() => null !== request.value && ('ready' === state.value || isSubmitting.value))
 
@@ -51,6 +65,8 @@ const errorMessage = computed<string | null>(() => {
   switch (failure.value) {
     case 'session-expired':
       return t('oauthConsent.errors.sessionExpired')
+    case 'reauthentication-required':
+      return t('oauthConsent.errors.reauthenticationRequired')
     case 'unsafe-redirect':
       return t('oauthConsent.errors.unsafeRedirect')
     case 'malformed-decision':
@@ -62,12 +78,26 @@ const errorMessage = computed<string | null>(() => {
   }
 })
 
-/** Se reconnecter ramène à cette même demande : `fullPath` garde toute la requête. */
+/**
+ * Se reconnecter ramène à cette même demande : `fullPath` garde toute la
+ * requête. Après un refus pour authentification trop ancienne, la personne
+ * est toujours connectée : `reauth=1` demande à la route de connexion de
+ * s'ouvrir quand même (elle renvoie sinon une personne connectée à l'accueil).
+ */
 const reloginTarget = computed(() => ({
   name: 'login',
   params: { locale: currentLocale.value },
-  query: { redirect: route.fullPath },
+  query:
+    'reauthentication-required' === failure.value
+      ? { redirect: route.fullPath, [REAUTH_QUERY]: REAUTH_VALUE }
+      : { redirect: route.fullPath },
 }))
+
+const reloginLabel = computed(() =>
+  'reauthentication-required' === failure.value ? t('oauthConsent.errors.reauthenticate') : t('oauthConsent.errors.relogin'),
+)
+
+const offersRelogin = computed(() => 'session-expired' === failure.value || 'reauthentication-required' === failure.value)
 
 onMounted(() => {
   // La requête telle que reçue ; une requête illisible donne `null`, que la
@@ -101,10 +131,10 @@ onMounted(() => {
     >
       {{ errorMessage }}
       <RouterLink
-        v-if="'session-expired' === failure"
+        v-if="offersRelogin"
         :to="reloginTarget"
       >
-        {{ t('oauthConsent.errors.relogin') }}
+        {{ reloginLabel }}
       </RouterLink>
     </p>
 
@@ -122,7 +152,7 @@ onMounted(() => {
         <dl class="mb-0">
           <dt>{{ t('oauthConsent.client.nameLabel') }}</dt>
           <dd data-testid="consent-client-name">
-            <!-- Texte interpolé, jamais v-html : le nom vient du client. -->
+            <!-- Texte interpolé, jamais v-html : le nom vient d'une saisie, demain du client (CIMD). -->
             <span class="fw-semibold">{{ request.client.name }}</span>
             <span class="d-block small text-body-secondary">{{ t('oauthConsent.client.nameNotice') }}</span>
           </dd>
@@ -157,8 +187,8 @@ onMounted(() => {
           type="button"
           class="btn btn-gradient"
           data-testid="consent-approve"
-          :disabled="isSubmitting"
-          @click="approve"
+          :disabled="buttonsDisabled"
+          @click="onApprove"
         >
           {{ t('oauthConsent.approve') }}
         </button>
@@ -166,8 +196,8 @@ onMounted(() => {
           type="button"
           class="btn btn-outline-light"
           data-testid="consent-deny"
-          :disabled="isSubmitting"
-          @click="deny"
+          :disabled="buttonsDisabled"
+          @click="onDeny"
         >
           {{ t('oauthConsent.deny') }}
         </button>

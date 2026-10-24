@@ -20,15 +20,16 @@ function createStubRepository(overrides: Partial<AuthRepository> = {}): AuthRepo
   }
 }
 
-async function mountLoginPage(repository: AuthRepository, locale = 'fr') {
+async function mountLoginPage(repository: AuthRepository, locale = 'fr', query: Record<string, string> = {}) {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
       { path: '/:locale(fr|en)', name: 'home', component: StubPage },
       { path: '/:locale(fr|en)/login', name: 'login', component: LoginPage },
+      { path: '/:locale(fr|en)/oauth/consent', name: 'oauth-consent', component: StubPage },
     ],
   })
-  await router.push(`/${locale}/login`)
+  await router.push({ name: 'login', params: { locale }, query })
   await router.isReady()
 
   const i18n = createAppI18n()
@@ -98,6 +99,47 @@ describe('LoginPage', () => {
     await flushPromises()
 
     expect(wrapper.get('[role="alert"]').text()).toBe(message)
+  })
+
+  describe('reconnexion demandée par le consentement MCP (`reauth`, #647)', () => {
+    const CONSENT = '/fr/oauth/consent?client_id=claude-code&state=a%26b'
+
+    it.each([
+      ['fr', 'Confirmez votre identité'],
+      ['en', 'Confirm your identity'],
+    ])('annonce pourquoi la page de connexion s’ouvre alors que la personne est connectée (%s)', async (locale, notice) => {
+      const { wrapper } = await mountLoginPage(createStubRepository(), locale, { reauth: '1', redirect: CONSENT })
+
+      expect(wrapper.get('[data-testid="login-reauth-notice"]').text()).toContain(notice)
+    })
+
+    it('sans le drapeau : aucune annonce', async () => {
+      const { wrapper } = await mountLoginPage(createStubRepository(), 'fr', { redirect: CONSENT })
+
+      expect(wrapper.find('[data-testid="login-reauth-notice"]').exists()).toBe(false)
+    })
+
+    it('après la connexion, retour à la même demande, requête comprise', async () => {
+      const { wrapper, router } = await mountLoginPage(createStubRepository(), 'fr', { reauth: '1', redirect: CONSENT })
+
+      await wrapper.get('#login-username').setValue('jane')
+      await wrapper.get('#login-password').setValue('password123')
+      await wrapper.get('form').trigger('submit')
+      await flushPromises()
+
+      expect(router.currentRoute.value.fullPath).toBe(CONSENT)
+    })
+
+    it('le drapeau n’affaiblit pas la garde de redirection ouverte', async () => {
+      const { wrapper, router } = await mountLoginPage(createStubRepository(), 'fr', { reauth: '1', redirect: '//evil.example/fr/oauth/consent' })
+
+      await wrapper.get('#login-username').setValue('jane')
+      await wrapper.get('#login-password').setValue('password123')
+      await wrapper.get('form').trigger('submit')
+      await flushPromises()
+
+      expect(router.currentRoute.value.path).toBe('/fr')
+    })
   })
 
   it('affiche un message générique pour les autres erreurs', async () => {

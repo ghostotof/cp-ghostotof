@@ -3,6 +3,7 @@ import { isSupportedLocale, type Locale } from '../../domain/portfolio/entities/
 import { i18n } from '../i18n'
 import { applySeoMeta } from './seo'
 import { LOCALE_STORAGE_KEY, resolvePreferredLocale } from './preferredLocale'
+import { isReauthentication } from './reauthentication'
 import { authState, waitForAuthCheck } from '../../application/auth/useAuth'
 import { hasRole } from '../../domain/auth/services/hasRole'
 import { ROLE_SUPER, ROLE_TRUSTED } from '../../domain/auth/entities/Role'
@@ -183,8 +184,13 @@ export const router = createRouter({
           component: LoginPage,
           meta: { titleKey: 'seo.login.title', descriptionKey: 'seo.login.description' },
           beforeEnter: (to) => {
-            // Déjà connecté : la page de login n'a rien à offrir de plus.
-            if (authState.user) {
+            // Déjà connecté : la page de login n'a rien à offrir de plus — sauf
+            // quand le consentement MCP demande une authentification récente
+            // (`reauth=1`, #647) : la personne, connectée depuis plus de dix
+            // minutes, doit pouvoir se reconnecter pour accorder. Le drapeau
+            // n'ouvre que cette page ; la cible du retour reste jugée par
+            // LoginPage (un chemin interne, un seul `/` en tête).
+            if (authState.user && !isReauthentication(to)) {
               return `/${to.params.locale}`
             }
           },

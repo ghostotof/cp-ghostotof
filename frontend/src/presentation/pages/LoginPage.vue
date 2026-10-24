@@ -7,6 +7,7 @@ import { InvalidCredentialsError } from '../../domain/auth/errors/InvalidCredent
 import { LoginRateLimitedError } from '../../domain/auth/errors/LoginRateLimitedError'
 import { retryAfterMinutes } from '../ui/retryAfterMinutes'
 import { isSupportedLocale, type Locale } from '../../domain/portfolio/entities/Locale'
+import { isReauthentication } from '../router/reauthentication'
 
 const { t, locale } = useI18n()
 const route = useRoute()
@@ -77,6 +78,15 @@ async function handleSubmit(): Promise<void> {
       <h1 class="h3 fw-bold text-white mb-4">
         {{ t('auth.heading') }}
       </h1>
+
+      <!-- La personne est peut-être déjà connectée : la page dit pourquoi elle s'ouvre. -->
+      <p
+        v-if="isReauthentication(route)"
+        class="text-body-secondary small"
+        data-testid="login-reauth-notice"
+      >
+        {{ t('auth.reauthNotice') }}
+      </p>
 
       <form
         novalidate

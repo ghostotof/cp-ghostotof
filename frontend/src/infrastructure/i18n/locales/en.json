@@ -471,7 +471,8 @@
     "invalidCredentials": "Incorrect username or password.",
     "rateLimited": "Too many login attempts. Please try again in a few minutes.",
     "rateLimitedIn": "Too many login attempts. Please try again in {minutes} minute. | Too many login attempts. Please try again in {minutes} minutes.",
-    "genericError": "Something went wrong, please try again."
+    "genericError": "Something went wrong, please try again.",
+    "reauthNotice": "Confirm your identity: authorizing an MCP connection requires having signed in less than ten minutes ago. You will then come back to the request."
   },
   "contact": {
     "eyebrow": "Contact",
@@ -792,8 +793,8 @@
     "submitting": "Sending your decision…",
     "client": {
       "heading": "The client",
-      "nameLabel": "Name declared by the client",
-      "nameNotice": "This name is supplied by the client itself: the site has not verified it.",
+      "nameLabel": "Client name",
+      "nameNotice": "The name under which the site’s administrator registered this client.",
       "registrationLabel": "Registration",
       "registration": {
         "preregistered": "Client registered in advance by the site’s administrator."
@@ -812,6 +813,8 @@
       "invalid": "This connection request is invalid or has expired. Start again from your assistant.",
       "sessionExpired": "Your session has expired or does not allow you to authorize this connection.",
       "relogin": "Sign in again",
+      "reauthenticationRequired": "To authorize this connection, sign in again: you signed in to the site more than ten minutes ago. You will then come back to this same request.",
+      "reauthenticate": "Sign in again to authorize",
       "unsafeRedirect": "The return address received is not a web address on the announced host: the page did not follow it.",
       "malformedDecision": "The page could not send your decision. Start again from your assistant.",
       "unknown": "An unexpected error occurred. Try again."

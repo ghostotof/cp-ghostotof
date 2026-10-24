@@ -227,6 +227,40 @@ describe('router — garde /assistant (ROLE_TRUSTED ou ROLE_SUPER)', () => {
   })
 })
 
+describe('router — page de connexion d’une personne déjà connectée', () => {
+  const CONSENT = '/fr/oauth/consent?client_id=claude-code&state=a%26b'
+
+  beforeEach(async () => {
+    await router.push('/fr')
+    await router.isReady()
+  })
+
+  it('sans drapeau : renvoyée à l’accueil, la page de connexion n’a rien à lui offrir', async () => {
+    await primeAuthState({ username: 'guest', roles: ['ROLE_USER', 'ROLE_TRUSTED'] })
+
+    await router.push({ name: 'login', params: { locale: 'fr' }, query: { redirect: CONSENT } })
+
+    expect(router.currentRoute.value.path).toBe('/fr')
+  })
+
+  it('`reauth=1` (le consentement MCP exige une authentification récente, #647) : la page de connexion s’ouvre, la requête intacte', async () => {
+    await primeAuthState({ username: 'guest', roles: ['ROLE_USER', 'ROLE_TRUSTED'] })
+
+    await router.push({ name: 'login', params: { locale: 'fr' }, query: { reauth: '1', redirect: CONSENT } })
+
+    expect(router.currentRoute.value.name).toBe('login')
+    expect(router.currentRoute.value.query.redirect).toBe(CONSENT)
+  })
+
+  it.each(['true', '0', ''])('une autre valeur que `1` (`reauth=%s`) ne compte pas', async (value) => {
+    await primeAuthState({ username: 'guest', roles: ['ROLE_USER', 'ROLE_TRUSTED'] })
+
+    await router.push({ name: 'login', params: { locale: 'fr' }, query: { reauth: value } })
+
+    expect(router.currentRoute.value.path).toBe('/fr')
+  })
+})
+
 describe('router — garde /oauth/consent (ROLE_TRUSTED ou ROLE_SUPER, #647)', () => {
   /** La requête posée par le point d'autorisation : elle doit survivre au détour par la connexion. */
   const CONSENT_PATH =

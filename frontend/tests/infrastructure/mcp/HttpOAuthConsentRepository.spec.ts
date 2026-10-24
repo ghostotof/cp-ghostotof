@@ -5,6 +5,7 @@ import { InvalidConsentRequestError } from '../../../src/domain/mcp/errors/Inval
 import { SessionExpiredError } from '../../../src/domain/mcp/errors/SessionExpiredError'
 import { ConsentFailedError } from '../../../src/domain/mcp/errors/ConsentFailedError'
 import { MalformedConsentDecisionError } from '../../../src/domain/mcp/errors/MalformedConsentDecisionError'
+import { ReauthenticationRequiredError } from '../../../src/domain/mcp/errors/ReauthenticationRequiredError'
 
 const PARAMS: ConsentParams = {
   responseType: 'code',
@@ -26,6 +27,9 @@ const SUMMARY = {
 
 /** Le corps du 400 que le serveur rend quand il refuse la demande à la revalidation. */
 const REJECTED = { type: '/errors/authorization-request-rejected', title: 'Bad Request', status: 400 }
+
+/** Le corps du 401 que le serveur rend quand l'authentification est trop ancienne pour accorder. */
+const REAUTHENTICATION_REQUIRED = { type: '/errors/reauthentication-required', title: 'reauthentication-required', status: 401 }
 
 function jsonResponse(body: unknown, status = 200, contentType = 'application/json'): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': contentType } })
@@ -205,6 +209,24 @@ describe('HttpOAuthConsentRepository', () => {
 
     it.each([401, 403])('%i (CSRF refusé compris) : session expirée', async (status) => {
       fetchMock.mockResolvedValue(jsonResponse({}, status))
+
+      await expect(repository.decide(PARAMS, true)).rejects.toBeInstanceOf(SessionExpiredError)
+    })
+
+    it('401 de type reauthentication-required : authentification trop ancienne pour accorder', async () => {
+      fetchMock.mockResolvedValue(jsonResponse(REAUTHENTICATION_REQUIRED, 401, 'application/problem+json'))
+
+      await expect(repository.decide(PARAMS, true)).rejects.toBeInstanceOf(ReauthenticationRequiredError)
+    })
+
+    it('403 portant ce type : reste une session expirée (seul le 401 le dit)', async () => {
+      fetchMock.mockResolvedValue(jsonResponse(REAUTHENTICATION_REQUIRED, 403, 'application/problem+json'))
+
+      await expect(repository.decide(PARAMS, true)).rejects.toBeInstanceOf(SessionExpiredError)
+    })
+
+    it('401 au corps illisible : session expirée', async () => {
+      fetchMock.mockResolvedValue(new Response('<html>', { status: 401, headers: { 'Content-Type': 'text/html' } }))
 
       await expect(repository.decide(PARAMS, true)).rejects.toBeInstanceOf(SessionExpiredError)
     })
