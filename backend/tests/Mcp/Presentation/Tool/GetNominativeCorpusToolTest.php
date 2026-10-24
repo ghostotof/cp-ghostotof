@@ -140,6 +140,11 @@ final class GetNominativeCorpusToolTest extends WebTestCase
         self::assertFalse($schema['additionalProperties']);
         self::assertSame(['corpus', 'cvPageUrl'], $schema['required']);
         self::assertSame([], new SchemaValidator()->validateAgainstJsonSchema($result['structuredContent'], $schema));
+
+        // Une lecture réussie ne laisse le corpus dans aucun journal, aucun
+        // canal ni niveau (la sonde all_channels_test est au niveau debug) :
+        // ni le canal du SDK, qui reçoit la réponse, ni l'audit.
+        $this->assertNoLogCarries(...$this->fictionalCvLines());
     }
 
     /**
@@ -258,13 +263,16 @@ final class GetNominativeCorpusToolTest extends WebTestCase
     }
 
     /**
-     * Une session n'est pas liée à la connexion qui l'a ouverte (#648, relecture
-     * de la tâche 3) : un appelant anonyme qui rejoue l'identifiant d'une
-     * session où le corpus a été servi n'en obtient rien, ni par le `GET` du
-     * flux ni par un `POST` — la réponse mise en file a été vidée par la
-     * requête qui l'a rendue.
+     * Une session est liée à la première connexion qui l'utilise (#648,
+     * décision de l'auteur du 2026-10-24) : le SDK vide toute la file de
+     * sortie d'une session vers n'importe quel `POST` qui porte son
+     * identifiant, et un appelant anonyme concurrent aurait reçu le corpus mis
+     * en file par l'appel authentifié. Liée, la session n'existe plus pour
+     * lui : un `ping` et le `GET` du flux reçoivent le 404 qui fait se
+     * réinitialiser un client, rien du corpus ; son `DELETE` ne la détruit
+     * pas — la connexion continue de s'en servir.
      */
-    public function testAnAnonymousReuseOfTheSessionGetsNothingOfTheCorpus(): void
+    public function testABoundSessionDoesNotExistForAnAnonymousCaller(): void
     {
         $held = $this->holdMcpConnection();
         $this->useFictionalCv();
@@ -272,16 +280,80 @@ final class GetNominativeCorpusToolTest extends WebTestCase
         $result = $this->toolResult($sessionId, ['locale' => 'fr'], bearer: self::bearer($held->accessToken));
         self::assertFalse($result['isError'] ?? false, 'Le corpus devait être servi d\'abord.');
 
-        $this->client->request('GET', '/api/mcp', server: [
-            'HTTP_ACCEPT' => 'text/event-stream',
+        $this->postMcp($this->client, $sessionId, ['jsonrpc' => '2.0', 'id' => 7, 'method' => 'ping']);
+        self::assertSame(Response::HTTP_NOT_FOUND, $this->client->getResponse()->getStatusCode());
+        $this->assertNothingOfTheCorpusIn((string) $this->client->getResponse()->getContent());
+
+        $this->getMcpStream($sessionId);
+        self::assertSame(Response::HTTP_NOT_FOUND, $this->client->getResponse()->getStatusCode());
+        $this->assertNothingOfTheCorpusIn((string) $this->client->getResponse()->getContent());
+
+        $this->client->request('DELETE', '/api/mcp', server: [
             'HTTP_MCP_SESSION_ID' => $sessionId,
             'HTTP_MCP_PROTOCOL_VERSION' => self::MCP_PROTOCOL_VERSION,
         ]);
+        $this->assertSessionServes($sessionId, self::bearer($held->accessToken));
+    }
+
+    /**
+     * La liaison désigne une connexion, pas « un appelant authentifié » :
+     * reprise par une autre connexion de confiance, la session est inexistante
+     * pour elle aussi, et reste celle de la première.
+     */
+    public function testABoundSessionDoesNotExistForAnotherConnection(): void
+    {
+        $first = $this->holdMcpConnection();
+        $second = $this->holdAnotherMcpConnection();
+        self::assertNotSame($first->connectionId, $second->connectionId);
+        $this->useFictionalCv();
+        $sessionId = $this->initializeMcpSession($this->client, self::bearer($first->accessToken));
+        $this->toolResult($sessionId, ['locale' => 'en'], bearer: self::bearer($first->accessToken));
+
+        $this->postMcp($this->client, $sessionId, $this->callMessage(['locale' => 'en']), self::bearer($second->accessToken));
+        self::assertSame(Response::HTTP_NOT_FOUND, $this->client->getResponse()->getStatusCode());
         $this->assertNothingOfTheCorpusIn((string) $this->client->getResponse()->getContent());
 
+        $this->assertSessionServes($sessionId, self::bearer($first->accessToken));
+    }
+
+    /**
+     * Une session ouverte anonymement reste servie en anonyme tant qu'aucune
+     * connexion ne l'a utilisée ; la connexion qui l'utilise ensuite y lit le
+     * corpus, et la session est désormais la sienne : le `ping` anonyme
+     * suivant reçoit le 404.
+     */
+    public function testASessionOpenedAnonymouslyIsBoundByTheConnectionThatUsesIt(): void
+    {
+        $held = $this->holdMcpConnection();
+        $renderer = $this->useFictionalCv();
+        $sessionId = $this->initializeMcpSession($this->client);
+        $this->assertSessionServes($sessionId, []);
+
+        $result = $this->toolResult($sessionId, ['locale' => 'fr'], bearer: self::bearer($held->accessToken));
+        self::assertSame($renderer->render(Locale::FR), $result['structuredContent']['corpus'] ?? null);
+
         $this->postMcp($this->client, $sessionId, ['jsonrpc' => '2.0', 'id' => 7, 'method' => 'ping']);
-        self::assertSame(Response::HTTP_OK, $this->client->getResponse()->getStatusCode());
-        $this->assertNothingOfTheCorpusIn((string) $this->client->getResponse()->getContent());
+        self::assertSame(Response::HTTP_NOT_FOUND, $this->client->getResponse()->getStatusCode());
+    }
+
+    /**
+     * La ligne `cache_items` d'une session où le corpus a été servi porte la
+     * connexion : la liaison est écrite par le décorateur borné dans la même
+     * écriture que la session (BoundedSessionStoreTest rejoue chaque écriture
+     * de la séquence du SDK, file pleine comprise).
+     */
+    public function testTheSessionRowWhereTheCorpusWasServedIsBound(): void
+    {
+        $held = $this->holdMcpConnection();
+        $this->useFictionalCv();
+        $sessionId = $this->initializeMcpSession($this->client);
+
+        $this->toolResult($sessionId, ['locale' => 'fr'], bearer: self::bearer($held->accessToken));
+
+        self::assertTrue((bool) $this->mcpRows()->fetchOne(
+            "SELECT position(convert_to(:binding, 'UTF8') IN item_data) > 0 FROM cache_items WHERE item_id LIKE :key",
+            ['binding' => 'mcp-connection:'.$held->connectionId."\n", 'key' => '%mcp-portfolio-'.$sessionId.'%'],
+        ), 'La session doit être liée à la connexion.');
     }
 
     /**
@@ -362,9 +434,7 @@ final class GetNominativeCorpusToolTest extends WebTestCase
             'queuedBytes' => $this->queuedBytesOf($corpus, 'en'),
             'maxBytes' => GetNominativeCorpusTool::QUEUED_ANSWER_MAX_BYTES,
         ], $warnings[0]->context);
-        foreach (self::allChannelsLogRecords() as $record) {
-            self::assertStringNotContainsString(self::CORPUS_SENTINEL, $record->message.json_encode($record->context, \JSON_UNESCAPED_UNICODE | \JSON_PARTIAL_OUTPUT_ON_ERROR));
-        }
+        $this->assertNoLogCarries(self::CORPUS_SENTINEL);
     }
 
     /**
@@ -418,25 +488,68 @@ final class GetNominativeCorpusToolTest extends WebTestCase
 
     /**
      * Aucune ligne du corpus fictif (hors balises et intertitres, qui ne
-     * disent rien du CV) dans `$body`.
+     * disent rien du CV) dans `$body`, en clair ni échappée en JSON.
      */
     private function assertNothingOfTheCorpusIn(string $body): void
+    {
+        foreach ($this->fictionalCvLines() as $line) {
+            self::assertStringNotContainsString($line, $body);
+            self::assertStringNotContainsString($this->jsonEscaped($line), $body);
+        }
+    }
+
+    /**
+     * Aucun enregistrement de la sonde (tous canaux, tous niveaux) ne porte
+     * l'un des fragments, en clair ni échappé en JSON (`\u00e9`, `\ud83d`,
+     * `\"`) : le message, et le contexte encodé des deux façons dont un
+     * gestionnaire peut l'écrire.
+     *
+     * Seules les requêtes SQL de `doctrine` (debug) sont écartées, comme dans
+     * AccountIdentifierReachesNoLogTest : elles portent la valeur écrite dans
+     * `cache_items`, donc la file de la session et le corpus, mais ne sortent
+     * que sous `kernel.debug` (`doctrine.dbal.logging`), jamais en préprod ni
+     * en prod (APP_DEBUG=0), où le gestionnaire `main` exclut de plus le canal.
+     */
+    private function assertNoLogCarries(string ...$fragments): void
+    {
+        foreach (self::allChannelsLogRecords() as $record) {
+            if ('doctrine' === $record->channel && Level::Debug === $record->level) {
+                continue;
+            }
+
+            $written = $record->message
+                .json_encode($record->context, \JSON_UNESCAPED_UNICODE | \JSON_UNESCAPED_SLASHES | \JSON_PARTIAL_OUTPUT_ON_ERROR)
+                .json_encode($record->context, \JSON_PARTIAL_OUTPUT_ON_ERROR);
+            foreach ($fragments as $fragment) {
+                self::assertStringNotContainsString($fragment, $written, $record->channel.' : '.$record->message);
+                self::assertStringNotContainsString($this->jsonEscaped($fragment), $written, $record->channel.' : '.$record->message);
+            }
+        }
+    }
+
+    /**
+     * Les lignes du CV fictif assez longues pour ne rien désigner d'autre
+     * (douze caractères au moins) : ce qu'une fuite du corpus laisserait voir.
+     *
+     * @return non-empty-list<string>
+     */
+    private function fictionalCvLines(): array
     {
         $cvText = new PopplerPdfTextExtractor(self::FICTIONAL_CV, new ExtractedTextNormalizer(), new NullLogger())->extract();
         self::assertIsString($cvText, 'Le CV fictif doit donner un texte.');
 
         $lines = preg_split('/\R/u', $cvText);
         self::assertIsArray($lines);
-        $checked = 0;
-        foreach ($lines as $line) {
-            $line = trim($line);
-            if (mb_strlen($line) >= 12) {
-                ++$checked;
-                self::assertStringNotContainsString($line, $body);
-                self::assertStringNotContainsString(trim(json_encode($line, \JSON_THROW_ON_ERROR), '"'), $body);
-            }
-        }
-        self::assertGreaterThan(0, $checked, 'Aucune ligne du CV fictif à chercher.');
+        $long = array_values(array_filter(array_map(trim(...), $lines), static fn (string $line): bool => mb_strlen($line) >= 12));
+        self::assertNotSame([], $long, 'Aucune ligne du CV fictif à chercher.');
+
+        return $long;
+    }
+
+    /** `$text` tel que l'écrit un `json_encode()` sans drapeau, guillemets d'encadrement ôtés. */
+    private function jsonEscaped(string $text): string
+    {
+        return trim(json_encode($text, \JSON_THROW_ON_ERROR), '"');
     }
 
     /**
@@ -473,6 +586,29 @@ final class GetNominativeCorpusToolTest extends WebTestCase
 
         /** @var array<string, mixed> $result */
         return $result;
+    }
+
+    /**
+     * Un `ping` porté par `$bearer` (anonyme si vide) est servi dans la
+     * session : elle existe pour cet appelant.
+     *
+     * @param array<string, string> $bearer
+     */
+    private function assertSessionServes(string $sessionId, array $bearer): void
+    {
+        $this->postMcp($this->client, $sessionId, ['jsonrpc' => '2.0', 'id' => 9, 'method' => 'ping'], $bearer);
+        self::assertSame(Response::HTTP_OK, $this->client->getResponse()->getStatusCode());
+        self::assertSame([], $this->decodeMcpResponse($this->client)['result'] ?? null);
+    }
+
+    /** Le `GET` du flux, anonyme, sur la session. */
+    private function getMcpStream(string $sessionId): void
+    {
+        $this->client->request('GET', '/api/mcp', server: [
+            'HTTP_ACCEPT' => 'text/event-stream',
+            'HTTP_MCP_SESSION_ID' => $sessionId,
+            'HTTP_MCP_PROTOCOL_VERSION' => self::MCP_PROTOCOL_VERSION,
+        ]);
     }
 
     private function frontendBaseUrl(): string

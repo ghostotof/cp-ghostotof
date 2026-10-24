@@ -235,7 +235,26 @@ paths:
   a failed read asks the inner store whether the row is there: absent (expired), `false` silently; present, the
   `warning` and `false` — the SDK answers 404, like the GET. A new session never goes through `exists()` (the SDK
   reads it in `save()` on every `initialize`, `false`), so it costs nothing more (#663).
-  `McpEndpointTest::testAPostOnAnUnreadableSessionIs404` corrupts a real row.
+  `McpEndpointTest::testAPostOnAnUnreadableSessionIs404` corrupts a real row. **A session is bound to the first MCP
+  connection that uses it** (#648, the author's decision of 2026-10-24): the SDK drains a session's **whole** outgoing
+  queue to any `POST` carrying its id (`Protocol::consumeOutgoingMessages()`, from `StreamableHttpTransport::createJsonResponse()`),
+  so a concurrent anonymous `POST` holding the id would have received the corpus queued by the authenticated call. The
+  decorator reads the request's connection in the token storage (`McpConnectionPrincipal`, set by the `mcp` firewall
+  before the SDK) and writes the binding **in the same write** as the session: the stored value is
+  `mcp-connection:<connection UUID>\n` then the SDK's session, never decoded (the SDK's starts with `{` or `[`, so an
+  unbound row reads as before; a malformed header is an unreadable session). Bound, the session **does not exist** for
+  any other request, anonymous or another connection: `exists()` is `false` before the SDK reads or drains anything
+  (404) — the GET's too —, a read returns nothing, a write is refused, a `DELETE` destroys nothing (the SDK answers 200,
+  as to an unknown id; one read more); a `warning` without any id. Not used by a connection yet, a session is served as
+  before, and the first one to use it binds it (an anonymous `initialize`, then the OAuth flow). On clients: one that
+  stops presenting its token, or comes back under a new connection, gets a 404 and re-initialises; a refresh keeps the
+  connection, hence the session. Accepted, the SDK's own race (no lock): a request that read the session before it was
+  bound may write it back unbound once, with what it had read — never the connection's answer, then lost like any
+  concurrent update. `MAX_BYTES` counts the SDK's session, not the header. The sessionless 2026-07-28 revision is not
+  concerned: `StatelessProtocol` serves each request on an in-memory session, never on this store.
+  `BoundedSessionStoreTest` replays the SDK's sequence with its `Session` (every write bound, the full queue included);
+  `GetNominativeCorpusToolTest` plays an anonymous `ping`, GET and `DELETE`, another connection, a session opened
+  anonymously and reads the `cache_items` row.
 - **`GET /api/mcp` answers an empty SSE stream, not 405** (`Presentation/Controller/McpEndpointController`, an
   `#[AsDecorator]` of `mcp.server.portfolio.controller`): `retry: 300000`, then closed. The SDK 0.8.1 answers
   405 (spec-compliant), which PhpStorm's AI Assistant takes for a failure. A finished `Response`, **never a
@@ -344,10 +363,8 @@ paths:
   one-message batch, `Mcp-Name` contradicting the body, unreadable body, call line);
   `DeferredAuthorizationListenerPriorityTest` pins on the real dispatcher that it runs after SecurityBundle's
   `FirewallListener` and after `InboundMessageRefusalListener`. A test that reads the nominative tool's own answer
-  without a connection marks its call `openai/` (`AuthorNeverNamedTest`, `NoAnswerIsAStreamTest`). **A session is
-  not bound to the connection that opened it**: an anonymous `GET` or `POST` reusing the id of a session where the
-  corpus was served gets nothing of it — the queued answer is drained by the request that returned it
-  (`GetNominativeCorpusToolTest::testAnAnonymousReuseOfTheSessionGetsNothingOfTheCorpus`).
+  without a connection marks its call `openai/` (`AuthorNeverNamedTest`, `NoAnswerIsAStreamTest`). The session where
+  the corpus was served is the connection's: « Sessions » above.
 - **No answer is a stream** (#678, audit C5 of #675): under PHP-FPM a stream holds a worker. `tests/Mcp/NoAnswerIsAStreamTest`
   sends, in both eras, as a client accepting `text/event-stream` with a `progressToken`, every request the SDK can
   build (`MessageFactory::REGISTERED_MESSAGES` and `StatelessProtocol`'s `*_METHOD`, read by reflection, against its

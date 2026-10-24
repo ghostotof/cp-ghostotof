@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Mcp\Support;
 
 use App\Tests\Mcp\Connection\DrivesTheOAuthFlow;
+use App\Tests\Support\TestCredentials;
 use Doctrine\DBAL\Connection;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\HttpFoundation\Response;
@@ -22,6 +23,7 @@ use Symfony\Component\HttpFoundation\Response;
  *  - {@see self::holdMcpConnection()} rend la connexion
  *    ({@see HeldMcpConnection} : jeton, compte, connexion, client), les
  *    cookies du site vidés — le client MCP ne présente que son jeton ;
+ *    {@see self::holdAnotherMcpConnection()} une seconde, du même compte ;
  *    {@see self::heldMcpConnectionOf()} la lit dans la réponse du point de
  *    jeton, pour un test qui traverse lui-même les étapes du parcours ;
  *  - {@see self::bearer()} donne l'en-tête `Authorization` à passer en
@@ -49,6 +51,19 @@ trait HoldsAnMcpConnection
     private function holdMcpConnection(): HeldMcpConnection
     {
         return $this->heldMcpConnectionOf($this->exchange($this->grantedCode()));
+    }
+
+    /**
+     * Une seconde connexion du compte de confiance de
+     * {@see self::holdMcpConnection()}, appelé avant : le même compte se
+     * reconnecte au site et consent une seconde fois — une autre ligne
+     * `mcp_connection`, un autre jeton.
+     */
+    private function holdAnotherMcpConnection(): HeldMcpConnection
+    {
+        $this->signInAs(self::TRUSTED_USERNAME, TestCredentials::superPassword());
+
+        return $this->heldMcpConnectionOf($this->exchange($this->codeGrantedByTheSignedInAccount()));
     }
 
     /**

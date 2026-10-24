@@ -13,6 +13,7 @@ use App\Tests\Support\TestCredentials;
 use Defuse\Crypto\Crypto;
 use Defuse\Crypto\Key;
 use Doctrine\ORM\EntityManagerInterface;
+use SensitiveParameter;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -109,6 +110,17 @@ trait DrivesTheOAuthFlow
     {
         $this->loginAs(self::TRUSTED_USERNAME, [CpgUser::ROLE_TRUSTED]);
 
+        return $this->codeGrantedByTheSignedInAccount($overrides);
+    }
+
+    /**
+     * Le code qu'accorde le compte déjà connecté (cookies du client) : une
+     * seconde connexion du même compte, sans le recréer.
+     *
+     * @param array<string, string|null> $overrides paramètres de la demande, sous leur nom OAuth
+     */
+    private function codeGrantedByTheSignedInAccount(array $overrides = []): string
+    {
         $this->client->request('GET', self::AUTHORIZE_PATH.'?'.http_build_query($this->validParameters($overrides)));
         self::assertSame(Response::HTTP_FOUND, $this->client->getResponse()->getStatusCode(), substr((string) $this->client->getResponse()->getContent(), 0, 500));
 
@@ -278,14 +290,19 @@ trait DrivesTheOAuthFlow
     {
         $password = [] === $roles ? TestCredentials::plainPassword() : TestCredentials::superPassword();
         $account = self::getContainer()->get(CpgUserRegistrarInterface::class)->register($username, $password, $roles);
+        $this->signInAs($username, $password);
 
+        return $account->getId()->toRfc4122();
+    }
+
+    /** Connecte un compte existant : les cookies BEARER et XSRF-TOKEN posés sur le client. */
+    private function signInAs(string $username, #[SensitiveParameter] string $password): void
+    {
         $this->client->request('POST', '/api/login_check', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_X_REQUESTED_WITH' => 'fetch'], content: self::jsonBody([
             'username' => $username,
             'password' => $password,
         ]));
         self::assertResponseIsSuccessful();
-
-        return $account->getId()->toRfc4122();
     }
 
     private function xsrfToken(): string
