@@ -86,6 +86,9 @@ final readonly class GetAboutTool
         title: 'About',
         description: 'The "About" page of the site: what the site is and how it is built, then the site\'s author from a technical, personal and hobbies angle. Returns exactly what the page shows.',
         annotations: new ToolAnnotations(readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false),
+        // Appelable sans compte (ADR 0006 D3) ; SecuritySchemesRegistry le
+        // publie aussi au premier niveau de tools/list.
+        meta: ['securitySchemes' => [['type' => 'noauth']]],
         outputSchema: self::OUTPUT_SCHEMA,
     )]
     public function __invoke(

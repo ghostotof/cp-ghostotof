@@ -43,6 +43,9 @@ final readonly class GetContactInfoTool
         title: 'Contact',
         description: 'How to contact the site\'s author: the address of the site\'s contact form, to give to the user. No e-mail address is published.',
         annotations: new ToolAnnotations(readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false),
+        // Appelable sans compte (ADR 0006 D3) ; SecuritySchemesRegistry le
+        // publie aussi au premier niveau de tools/list.
+        meta: ['securitySchemes' => [['type' => 'noauth']]],
         outputSchema: self::OUTPUT_SCHEMA,
     )]
     public function __invoke(

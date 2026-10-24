@@ -61,6 +61,9 @@ final readonly class ListCaseStudiesTool
         title: 'Case studies',
         description: 'Technical case studies of the site\'s author: the problem, the solution, its trade-offs and the measured result, with no name, employer nor client. Returns exactly what the "Case studies" page shows to base access.',
         annotations: new ToolAnnotations(readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false),
+        // Appelable sans compte (ADR 0006 D3) ; SecuritySchemesRegistry le
+        // publie aussi au premier niveau de tools/list.
+        meta: ['securitySchemes' => [['type' => 'noauth']]],
         outputSchema: self::OUTPUT_SCHEMA,
     )]
     public function __invoke(

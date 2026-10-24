@@ -145,7 +145,7 @@ recherche de la tâche 7 (`docs/research/2026-10-22-mcp-decouverte-oauth.md` et
   `error="insufficient_scope"` et d'un `error_description`) et un texte qui dit à la personne de
   connecter son compte : c'est ce que documente ChatGPT. Les outils déclarent leurs `securitySchemes`
   (`noauth`, ou `oauth2` avec `nominative:read`) ; leur place, en `_meta` seul ou aussi au premier
-  niveau de l'outil, se tranche à la tâche 9.
+  niveau de l'outil, se tranche à la tâche 9 (tranché le 2026-10-24 : aux deux places, ci-dessous).
 - **Ce critère est déclaratif, et c'est accepté parce qu'il ne décide d'aucun accès.** Aucun critère
   fiable, non déclaratif et commun aux deux clients n'existe ; les seuls non déclaratifs (certificat
   client mTLS d'OpenAI, plages d'IP publiées) sont propres à un fournisseur et coûteux. Le marqueur ne
@@ -188,6 +188,23 @@ Ce qui en découle, et qui vaut décision :
   frontend.
 
 Le détail et les tests qui gardent ces choix sont dans `.claude/rules/mcp-oauth.md`.
+
+*Tranché le 2026-10-24 (#648, décision de l'auteur).* Les `securitySchemes` de chaque outil sont
+publiés **aux deux places** : dans `_meta["securitySchemes"]` et au premier niveau de l'outil dans
+`tools/list`. `[{"type": "noauth"}]` pour les dix outils publics, `[{"type": "oauth2", "scopes":
+["nominative:read"]}]` pour l'outil nominatif. Pourquoi les deux : la référence de l'Apps SDK
+d'OpenAI lit le champ de premier niveau et tient `_meta` pour un miroir de rétrocompatibilité, destiné
+aux clients qui ne lisent que lui ; et ChatGPT fige la liste des outils à l'approbation du connecteur,
+si bien qu'une place manquante à la première publication ne se rattrape qu'à la main, chez chaque
+personne. Attendre la préprod (tâche 14) pour savoir laquelle il lit aurait publié une liste
+incomplète d'ici là. **Une seule source** : l'attribut `#[McpTool(meta: …)]` de l'outil ; le champ de
+premier niveau en est relu, jamais déduit, et un outil qui n'en déclare pas fait échouer `tools/list`
+(`-32603`) plutôt que d'être publié sans schéma ou avec un schéma inventé. Le coût : `Mcp\Schema\Tool`
+0.8.1 ne connaît pas ce champ, d'où un décorateur du registre du SDK (`SecuritySchemesRegistry`), qui
+recopie chaque outil de la page avec le champ ajouté et délègue tout le reste — l'appel d'un outil
+compris. Un test rougit si une montée du SDK ajoute au type `Tool` un champ que la recopie perdrait ;
+une montée qui connaîtrait `securitySchemes` rendrait le décorateur inutile. Ces valeurs ne décident
+d'aucun accès (D4) : elles disent à ChatGPT quand proposer la liaison du compte.
 
 ### D4 — L'identité vient du firewall Symfony, vérifiée en base à chaque requête
 

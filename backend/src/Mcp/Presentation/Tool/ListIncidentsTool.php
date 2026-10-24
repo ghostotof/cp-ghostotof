@@ -62,6 +62,9 @@ final readonly class ListIncidentsTool
         title: 'Production incidents',
         description: 'Post-mortems of the site\'s production outages: impact, root cause, resolution and the invariant drawn from each. Returns exactly what the "Incidents" page shows.',
         annotations: new ToolAnnotations(readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false),
+        // Appelable sans compte (ADR 0006 D3) ; SecuritySchemesRegistry le
+        // publie aussi au premier niveau de tools/list.
+        meta: ['securitySchemes' => [['type' => 'noauth']]],
         outputSchema: self::OUTPUT_SCHEMA,
     )]
     public function __invoke(

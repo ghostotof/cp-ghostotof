@@ -130,7 +130,23 @@ paths:
   route therefore turns the suite red until it is exposed or excluded.
 - **Tools** are services `#[McpTool]` on `__invoke()`, under `Presentation/Tool/` — the `registry` of
   `mcp.yaml` lists that namespace (and `Presentation/Prompt/` for prompts) only, and **the bundle refuses a
-  pattern that matches no service** (the server does not boot). `readOnlyHint: true`. A language
+  pattern that matches no service** (the server does not boot). `readOnlyHint: true`. **Every tool declares
+  its `securitySchemes`** (#648, ADR 0006 D3, decided 2026-10-24: at both places) in `#[McpTool(meta:
+  ['securitySchemes' => …])]`, the single source — `[['type' => 'noauth']]`, or for the nominative tool
+  `[['type' => 'oauth2', 'scopes' => [McpConnection::SCOPE_NOMINATIVE_READ]]]` —, and
+  `Infrastructure/Registry/SecuritySchemesRegistry` (an `#[AsDecorator]` of `mcp.server.portfolio.registry`)
+  republishes it at the top level of each `tools/list` entry, which the Apps SDK reference reads (`_meta` is its
+  back-compat mirror; ChatGPT freezes the list when the connector is approved, hence both from the first
+  publication). Its `getTools()` copies each `Tool` of the page into a `ToolWithSecuritySchemes` (every
+  constructor field, plus the key in `jsonSerialize()`); a tool without a valid `_meta["securitySchemes"]` (a
+  non-empty list of objects with a `type`) throws `ToolWithoutSecuritySchemesException`, a `-32603` for the whole
+  list, never a tool published without one or with a guessed one. Everything else is delegated, **`getTool()`
+  included**: a call, `McpCallLog` and `ReadsPortfolioRegistry` read the inner references. Pinned by
+  `SecuritySchemesTest` (both eras; `server/discover` lists no tool in 0.8.1, the day it does the test turns
+  red) and `SecuritySchemesRegistryTest` (the copy against `Tool`'s constructor parameters: an SDK bump adding
+  one turns it red). Accepted: decorated, the registry is loaded without `Registry::loadFrom()` (the builder
+  only uses it on its own `final` class), so each registration dispatches a `*ListChangedEvent` on Symfony's
+  dispatcher at every server build — no listener exists without a notification bus. A language
   parameter is a **string**, never an enum (decided 2026-10-19): `#[Schema(description: ToolLocale::DESCRIPTION)]
   string $locale = ToolLocale::DEFAULT`, parsed by `ToolLocale::parse()`, which turns an unknown value into a
   tool error the model can correct (MCP 2025-11-25) — with a PHP enum type the SDK derived an `enum` and

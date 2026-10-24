@@ -8,6 +8,7 @@ use App\Ai\Assistant\Application\Corpus\CorpusRendererInterface;
 use App\Mcp\Application\ProtectedTools;
 use App\Mcp\Connection\Application\BearerChallenge;
 use App\Mcp\Connection\Application\McpConnectionPrincipal;
+use App\Mcp\Connection\Domain\Entity\McpConnection;
 use App\Mcp\Infrastructure\Session\BoundedSessionStore;
 use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use Mcp\Capability\Attribute\McpTool;
@@ -146,6 +147,9 @@ final readonly class GetNominativeCorpusTool
         title: 'Nominative CV',
         description: 'The full CV of the site\'s author: identity, employers and career history. Requires an MCP connection, granted to a person of the site\'s trusted tier; without one, the call fails and returns nothing of the CV.',
         annotations: new ToolAnnotations(readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false),
+        // Lié à un compte (ADR 0006 D3) : ce que ChatGPT lit pour offrir la
+        // liaison ; SecuritySchemesRegistry le publie aussi au premier niveau.
+        meta: ['securitySchemes' => [['type' => 'oauth2', 'scopes' => [McpConnection::SCOPE_NOMINATIVE_READ]]]],
         outputSchema: self::OUTPUT_SCHEMA,
     )]
     public function __invoke(

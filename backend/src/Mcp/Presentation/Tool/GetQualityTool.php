@@ -68,6 +68,9 @@ final readonly class GetQualityTool
         title: 'Quality principles',
         description: 'The quality principles the site\'s author works by, and the traits that sum them up. Returns exactly what the home page shows.',
         annotations: new ToolAnnotations(readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false),
+        // Appelable sans compte (ADR 0006 D3) ; SecuritySchemesRegistry le
+        // publie aussi au premier niveau de tools/list.
+        meta: ['securitySchemes' => [['type' => 'noauth']]],
         outputSchema: self::OUTPUT_SCHEMA,
     )]
     public function __invoke(

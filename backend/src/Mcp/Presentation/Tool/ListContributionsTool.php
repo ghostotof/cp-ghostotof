@@ -61,6 +61,9 @@ final readonly class ListContributionsTool
         title: 'Contributions',
         description: 'Technical contributions of the site\'s author to public projects, each with its link and its argument. Returns exactly what the "Contributions" page shows.',
         annotations: new ToolAnnotations(readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false),
+        // Appelable sans compte (ADR 0006 D3) ; SecuritySchemesRegistry le
+        // publie aussi au premier niveau de tools/list.
+        meta: ['securitySchemes' => [['type' => 'noauth']]],
         outputSchema: self::OUTPUT_SCHEMA,
     )]
     public function __invoke(
