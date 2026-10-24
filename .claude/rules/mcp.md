@@ -264,8 +264,12 @@ paths:
   before, and the first one to use it binds it (an anonymous `initialize`, then the OAuth flow). On clients: one that
   stops presenting its token, or comes back under a new connection, gets a 404 and re-initialises; a refresh keeps the
   connection, hence the session. Accepted, the SDK's own race (no lock): a request that read the session before it was
-  bound may write it back unbound once, with what it had read — never the connection's answer, then lost like any
-  concurrent update. `MAX_BYTES` counts the SDK's session, not the header. The sessionless 2026-07-28 revision is not
+  bound may write it back once, with what it had read, unbound **or bound to its own connection** (the last writer
+  wins, the first connection then gets a 404), or destroy it when its write crosses `MAX_BYTES` — never the
+  connection's answer, then lost like any concurrent update, and never another connection's corpus (the drain re-reads
+  the store and refuses a foreign binding); likewise a connection that knows the id of a session opened anonymously
+  can take it, its anonymous holder then getting a 404 (ids are the server's UUID v4s); and one refused request may
+  write two `warning`s (the drain's read, then the refused write) — security review of #648. `MAX_BYTES` counts the SDK's session, not the header. The sessionless 2026-07-28 revision is not
   concerned: `StatelessProtocol` serves each request on an in-memory session, never on this store.
   `BoundedSessionStoreTest` replays the SDK's sequence with its `Session` (every write bound, the full queue included);
   `GetNominativeCorpusToolTest` plays an anonymous `ping`, GET and `DELETE`, another connection, a session opened

@@ -206,7 +206,9 @@ paths:
   (`findOneByHash()`, `Unknown`); then `McpAccessToken::refusalAt(now, OAuthEndpoints::resource())` — token revoked,
   expired (league never checks an opaque token's expiry), foreign audience byte for byte, connection revoked,
   expired, without `nominative:read` in its stored scope (`InsufficientScope`, word for word, final review of
-  #648) —; then `ROLE_TRUSTED` reached through `RoleHierarchyInterface` from the **stored** roles
+  #648; **accepted**, security review of #648: it answers the common 401 `invalid_token`, not RFC 6750 §3.1's 403
+  `insufficient_scope`, so a client would refresh into the same scope — unreachable while league grants
+  `nominative:read` only; to decide before any second scope) —; then `ROLE_TRUSTED` reached through `RoleHierarchyInterface` from the **stored** roles
   (`AccountNotTrusted`: a `ROLE_SUPER` without stored `ROLE_TRUSTED` passes, the base tier does not). The role name is
   `McpConnectionPrincipal::TRUSTED_TIER`, not `CpgUser::ROLE_TRUSTED`, so the context's dependency on `Security` keeps
   its two doors (`McpConnectionPrincipalTest` compares the two). **No

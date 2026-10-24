@@ -91,11 +91,23 @@ phase 1 parte en release seule ; puis au merge de clôture, qui archive la spec 
       d'identité Doctrine, deux horloges (league `time()` / `ClockInterface`). Reports de la tâche 9 :
       `lastUsedAt` écrit au rafraîchissement (jamais par appel) ; durées 30 j / 90 j de
       `McpConnection::IDLE_LIFETIME` / `MAX_LIFETIME` passées en configuration ; bornes au passage
-      d'heure Europe/Paris, non testées (`McpAccessTokenRefusalTest` est à décalage fixe)
+      d'heure Europe/Paris, non testées (`McpAccessTokenRefusalTest` est à décalage fixe) ;
+      **à livrer avant la release de la phase 2** (relecture de sécurité de la tâche 9) : le
+      rafraîchissement (`ConnectionOfToken`, `RefreshTokenRepository::isRefreshTokenRevoked()`) ne juge
+      ni `McpConnection::isExpiredAt()` ni le palier du compte — une connexion expirée ou un compte
+      déchu obtient des jetons neufs, refusés ensuite : boucle refus/rafraîchissement, lignes de jetons
+      accumulées ; le refus d'un jeton **connu** (révoqué, expiré, audience, connexion, scope, palier)
+      n'écrit aucune ligne `security_audit` (événement `mcp-access-token-refused` par UUID, jamais pour
+      `Malformed` ni `Unknown`)
 - [ ] Tâche 11 — « Mes connexions MCP » (#650) — bloquée par : #648 — reports de la tâche 8 :
-      connexions accumulées visibles et révocables ; révoquer la connexion, jamais les jetons un à un
+      connexions accumulées visibles et révocables ; révoquer la connexion, jamais les jetons un à un.
+      Reports de la tâche 9 : une connexion MCP survit au changement de mot de passe et de rôles du
+      compte (révoquer les connexions du compte, ou comparer `grantedAt` à une date de changement des
+      identifiants)
 - [ ] Tâche 12 — Enregistrement des clients par CIMD (#651) — bloquée par : #647 — reports de la
-      tâche 8 : `client_id_metadata_document_supported: true` déjà annoncé ; domaine du client sur la page
+      tâche 8 : `client_id_metadata_document_supported: true` déjà annoncé ; domaine du client sur la page.
+      Reports de la tâche 9 : borner la longueur du `client_id` CIMD écrit dans l'audit
+      `nominative-corpus-read` (ou y écrire l'UUID interne du client)
 - [ ] Tâche 13 — Backoffice MCP (#652) — bloquée par : #647 — reports de la tâche 8 : audit de
       l'enregistrement d'un client ; bornes de `register()` et des redirections (longueur, `parse_str`) ;
       borne du `client_id` (255 à la commande, 512 en base) ; second `findOneByClientId()` du
@@ -113,7 +125,9 @@ phase 1 parte en release seule ; puis au merge de clôture, qui archive la spec 
       la page publique de confidentialité dit encore « Aucun transfert de données hors de l'Union
       européenne » (`frontend/src/infrastructure/portfolio/content/fr.ts` et `en.ts`), contredite par
       le registre §8 à la sortie de la phase 2 ; un `pdftotext` et une ligne d'audit par appel de
-      l'outil nominatif, sans quota par connexion
+      l'outil nominatif, sans quota par connexion — et le corpus rendu en entier avant d'être refusé
+      pour sa taille (le refus coûte une lecture), à traiter avec ce quota ; contrôler au smoke
+      préprod le `WWW-Authenticate` réel par la recherche de mentions D8
 
 ### Clôture
 
