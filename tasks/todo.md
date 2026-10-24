@@ -72,11 +72,12 @@ phase 1 parte en release seule ; puis au merge de clôture, qui archive la spec 
       bloquée par : #640 — **2026-10-22 : deux notes sous `docs/research/` (sources et expérience Claude
       Code) ; recommandations validées par l'auteur le même jour**, ADR 0006 D3 amendé, questions ouvertes de
       la spec tranchées, tâches 8, 9, 12 et 14 ajustées dans leurs issues ; PR #692 fusionnée dans la mère (3eae019e)
-- [ ] Tâche 8 — Émission d'une connexion MCP, client pré-enregistré (#647) — bloquée par : #646 —
-      **en cours** sur `feature/spec-0007-t8-emission-connexion` (plan `tasks/plan-t8-emission-connexion.md`) :
+- [x] Tâche 8 — Émission d'une connexion MCP, client pré-enregistré (#647) — bloquée par : #646 —
+      **close le 2026-10-24** : PR #706 fusionnée dans la mère (f47f6cb2), plan `tasks/plan-t8-emission-connexion.md` ;
       `league/oauth2-server` 9.4.1 sans le bundle (décision de l'auteur du 2026-10-23, ADR 0006 D3 amendé),
-      serveur d'autorisation, consentement, métadonnées et leur Ingress, zone nginx `oauth` ; règle
-      `.claude/rules/mcp-oauth.md`. Case cochée à la fusion dans la mère
+      serveur d'autorisation, consentement (authentification de moins de 10 min exigée pour accorder),
+      métadonnées et leur Ingress, zone nginx `oauth` ; règle `.claude/rules/mcp-oauth.md`. `claude mcp login`
+      à froid prouvé contre la stack de dev le 2026-10-24 ; reports rangés sous les tâches 9 à 14
 - [ ] Tâche 9 — Ouverture du corpus nominatif par la connexion MCP (#648) — bloquée par : #647
       — reports de la tâche 8 : registre RGPD §8 (le fournisseur d'IA du client reçoit les jetons) ;
       `bearer_methods_supported` annoncé avant l'authentificateur ; au point de jeton league lit
