@@ -9,7 +9,6 @@ use App\Ai\Assistant\Infrastructure\Pdf\ExtractedTextNormalizer;
 use App\Ai\Assistant\Infrastructure\Pdf\PopplerPdfTextExtractor;
 use App\Mcp\Application\ProtectedTools;
 use App\Mcp\Infrastructure\Http\InboundMessageRefusal;
-use App\Mcp\Presentation\Tool\GetNominativeCorpusTool;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Tests\Mcp\Support\AuthorMention;
 use App\Tests\Mcp\Support\AuthorMentions;
@@ -277,14 +276,16 @@ final class AuthorNeverNamedTest extends WebTestCase
         // d'authentification publie l'URL du document de métadonnées de la
         // ressource (`resource_metadata`, RFC 9728), sur le domaine du site —
         // dans l'en-tête du 401 différé et dans le `_meta` du refus de l'outil
-        // nominatif, chacun pour sa valeur exacte. Recomposée ici, jamais lue
-        // dans BearerChallenge : la garde ne prend pas sa valeur au code gardé.
+        // nominatif, chacun pour sa valeur exacte, `error_description`
+        // comprise. Écrite ici en entier, recopiée de l'ADR, jamais lue dans
+        // `src/` (ni BearerChallenge, ni la constante de l'outil) : une valeur
+        // prise au code gardé y suivrait le nom qu'on y glisserait.
         $apiBase = self::getContainer()->getParameter('app.public_api_base_url');
         self::assertIsString($apiBase);
         $missingToken = 'Bearer resource_metadata="'.rtrim($apiBase, '/').'/.well-known/oauth-protected-resource/api/mcp", scope="nominative:read"';
         $admitted['401 différé get_nominative_corpus.WWW-Authenticate'] = $missingToken;
         foreach (Locale::values() as $locale) {
-            $admitted['tools/call get_nominative_corpus '.$locale.'._meta.mcp/www_authenticate[0]'] = $missingToken.', error="insufficient_scope", error_description="'.GetNominativeCorpusTool::CONNECTION_REQUIRED_DESCRIPTION.'"';
+            $admitted['tools/call get_nominative_corpus '.$locale.'._meta.mcp/www_authenticate[0]'] = $missingToken.', error="insufficient_scope", error_description="An MCP connection to the site is required to read the nominative corpus"';
         }
 
         return $admitted;

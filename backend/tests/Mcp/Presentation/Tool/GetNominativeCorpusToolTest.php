@@ -10,6 +10,8 @@ use App\Ai\Assistant\Infrastructure\Pdf\ExtractedTextNormalizer;
 use App\Ai\Assistant\Infrastructure\Pdf\PopplerPdfTextExtractor;
 use App\Mcp\Infrastructure\Session\BoundedSessionStore;
 use App\Mcp\Presentation\Tool\GetNominativeCorpusTool;
+use App\Mcp\Presentation\Tool\JsonToolResult;
+use App\Mcp\Presentation\Tool\QueuedAnswer;
 use App\Mcp\Presentation\Tool\ToolLocale;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Tests\Ai\Assistant\Support\StubCorpusRenderer;
@@ -65,11 +67,8 @@ final class GetNominativeCorpusToolTest extends WebTestCase
 
     private const string FICTIONAL_CV = __DIR__.'/../../../Ai/Assistant/Infrastructure/Pdf/Fixtures/cv-fictif.pdf';
 
-    /**
-     * Le plus large des caractères UTF-8 (U+1F600, quatre octets) : le JSON
-     * sans drapeau du SDK l'écrit en paire de substitution, douze octets.
-     */
-    private const string WIDEST_CHARACTER = "\u{1F600}";
+    /** Un témoin en tête des corpus de la borne : sa présence dirait une fuite. */
+    private const string CORPUS_SENTINEL = 'CORPUS-SENTINEL-5c2e';
 
     protected function setUp(): void
     {
@@ -286,18 +285,37 @@ final class GetNominativeCorpusToolTest extends WebTestCase
     }
 
     /**
-     * La relation entre les deux bornes (décision de l'auteur du 2026-10-24) :
-     * un payload juste sous `PAYLOAD_MAX_BYTES`, fait du pire échappement
-     * (des caractères de quatre octets, douze une fois encodés par le SDK),
-     * est servi, et ce que le SDK en met en file dans la session — calcul de
-     * RouteBackedToolsTest : la réponse JSON-RPC, réencodée par
-     * `Session::save()` — reste sous la borne de la session, sans quoi
-     * celle-ci serait détruite et le client ne recevrait rien.
+     * La mesure de l'outil ({@see QueuedAnswer::bytes()}) est ce que le SDK
+     * met réellement en file : la réponse JSON-RPC qu'il a encodée, réencodée
+     * comme `Session::save()` la réencode (calcul de RouteBackedToolsTest). Le
+     * SDK n'expose ni l'une ni l'autre de ces deux étapes : ce test rougit le
+     * jour où une montée de version change l'encodage. Même longueur
+     * d'identifiant (`2` ici, `0` dans la mesure), donc égalité exacte.
      */
-    public function testAPayloadAtTheBoundFitsInTheSession(): void
+    public function testTheToolMeasuresWhatTheSdkQueues(): void
     {
         $held = $this->holdMcpConnection();
-        $corpus = $this->corpusOfPayloadBytes(GetNominativeCorpusTool::PAYLOAD_MAX_BYTES);
+        $renderer = $this->useFictionalCv();
+        $sessionId = $this->initializeMcpSession($this->client, self::bearer($held->accessToken));
+
+        $this->toolResult($sessionId, ['locale' => 'fr'], bearer: self::bearer($held->accessToken));
+
+        $expected = JsonToolResult::forObject(['corpus' => $renderer->render(Locale::FR), 'cvPageUrl' => $this->frontendBaseUrl().'/fr/assistant']);
+        self::assertSame(\strlen(json_encode($this->rawMcpAnswer($this->client), \JSON_THROW_ON_ERROR)), QueuedAnswer::bytes($expected));
+    }
+
+    /**
+     * La relation entre les deux bornes : une réponse juste sous
+     * `QUEUED_ANSWER_MAX_BYTES`, de la pire composition (un corpus de
+     * guillemets : 12 octets en file par octet de texte, deux copies
+     * réencodées deux fois), est servie, et ce que le SDK en met en file
+     * dans une vraie session reste sous la borne de la session, sans quoi
+     * celle-ci serait détruite et le client ne recevrait rien.
+     */
+    public function testAQueuedAnswerAtTheBoundFitsInTheSession(): void
+    {
+        $held = $this->holdMcpConnection();
+        $corpus = $this->longestCorpusUnder(GetNominativeCorpusTool::QUEUED_ANSWER_MAX_BYTES, 'fr');
         $this->useRenderer(new StubCorpusRenderer($corpus));
         $sessionId = $this->initializeMcpSession($this->client, self::bearer($held->accessToken));
 
@@ -310,18 +328,20 @@ final class GetNominativeCorpusToolTest extends WebTestCase
         self::assertFalse($result['isError'] ?? false);
         self::assertSame($corpus, $result['structuredContent']['corpus'] ?? null);
         $queuedBytes = \strlen(json_encode($answer, \JSON_THROW_ON_ERROR));
-        self::assertLessThanOrEqual(BoundedSessionStore::MAX_BYTES, $queuedBytes, \sprintf('%d octets en file (réponse de %d octets), borne de session %d.', $queuedBytes, \strlen($answer), BoundedSessionStore::MAX_BYTES));
+        self::assertGreaterThan(GetNominativeCorpusTool::QUEUED_ANSWER_MAX_BYTES - 12, $queuedBytes, 'La réponse doit être à la borne.');
+        self::assertLessThan(BoundedSessionStore::MAX_BYTES, $queuedBytes, \sprintf('%d octets en file, borne de session %d.', $queuedBytes, BoundedSessionStore::MAX_BYTES));
     }
 
     /**
-     * Un caractère de plus que la borne : une erreur d'outil qui donne la page
-     * du site où se télécharge le CV, un `warning` aux tailles seules, rien du
-     * corpus, et aucune ligne d'audit — rien n'a été servi.
+     * Un guillemet de plus que la borne : une erreur d'outil qui donne la
+     * page du site où se télécharge le CV, un `warning` aux tailles seules,
+     * rien du corpus (ni dans la réponse ni dans aucun journal), et aucune
+     * ligne d'audit — rien n'a été servi.
      */
     public function testAnOversizedCorpusIsRefusedWithTheCvPageLink(): void
     {
         $held = $this->holdMcpConnection();
-        $corpus = $this->corpusOfPayloadBytes(GetNominativeCorpusTool::PAYLOAD_MAX_BYTES).self::WIDEST_CHARACTER;
+        $corpus = $this->longestCorpusUnder(GetNominativeCorpusTool::QUEUED_ANSWER_MAX_BYTES, 'en').'"';
         $this->useRenderer(new StubCorpusRenderer($corpus));
         $sessionId = $this->initializeMcpSession($this->client, self::bearer($held->accessToken));
 
@@ -330,9 +350,7 @@ final class GetNominativeCorpusToolTest extends WebTestCase
         self::assertTrue($result['isError']);
         self::assertArrayNotHasKey('structuredContent', $result);
         self::assertSame([['type' => 'text', 'text' => 'The nominative corpus is too large to be served over MCP. The CV can be downloaded from the site: '.$this->frontendBaseUrl().'/en/assistant']], $result['content']);
-        $answer = $this->rawMcpAnswer($this->client);
-        self::assertStringNotContainsString(self::WIDEST_CHARACTER, $answer);
-        self::assertStringNotContainsStringIgnoringCase('\\ud83d', $answer);
+        self::assertStringNotContainsString(self::CORPUS_SENTINEL, $this->rawMcpAnswer($this->client));
         self::assertSame([], self::securityAuditEvents('nominative-corpus-read'));
 
         $warnings = array_values(array_filter(
@@ -341,35 +359,35 @@ final class GetNominativeCorpusToolTest extends WebTestCase
         ));
         self::assertCount(1, $warnings);
         self::assertSame([
-            'payloadBytes' => $this->sdkEncodedPayloadBytes($corpus, 'en'),
-            'maxBytes' => GetNominativeCorpusTool::PAYLOAD_MAX_BYTES,
+            'queuedBytes' => $this->queuedBytesOf($corpus, 'en'),
+            'maxBytes' => GetNominativeCorpusTool::QUEUED_ANSWER_MAX_BYTES,
         ], $warnings[0]->context);
         foreach (self::allChannelsLogRecords() as $record) {
-            self::assertStringNotContainsString(self::WIDEST_CHARACTER, $record->message.json_encode($record->context, \JSON_UNESCAPED_UNICODE | \JSON_PARTIAL_OUTPUT_ON_ERROR));
+            self::assertStringNotContainsString(self::CORPUS_SENTINEL, $record->message.json_encode($record->context, \JSON_UNESCAPED_UNICODE | \JSON_PARTIAL_OUTPUT_ON_ERROR));
         }
     }
 
     /**
-     * Le plus long corpus de caractères de quatre octets dont le payload,
-     * encodé comme le SDK l'encode (sans drapeau), tient dans `$bound` octets :
-     * un caractère de plus le fait dépasser.
+     * Le plus long corpus de guillemets (précédé d'un témoin, pour qu'une fuite
+     * se voie) dont la réponse, mesurée comme la mesure l'outil, tient dans
+     * `$bound` octets : un guillemet de plus la fait dépasser.
      */
-    private function corpusOfPayloadBytes(int $bound): string
+    private function longestCorpusUnder(int $bound, string $locale): string
     {
-        $envelope = $this->sdkEncodedPayloadBytes('', 'fr');
-        $perCharacter = $this->sdkEncodedPayloadBytes(self::WIDEST_CHARACTER, 'fr') - $envelope;
-        self::assertSame(12, $perCharacter, 'Une paire de substitution échappée : douze octets.');
+        $base = $this->queuedBytesOf(self::CORPUS_SENTINEL, $locale);
+        $perQuote = $this->queuedBytesOf(self::CORPUS_SENTINEL.'"', $locale) - $base;
+        self::assertSame(12, $perQuote, 'Un guillemet : douze octets en file.');
 
-        $corpus = str_repeat(self::WIDEST_CHARACTER, intdiv($bound - $envelope, $perCharacter));
-        self::assertLessThanOrEqual($bound, $this->sdkEncodedPayloadBytes($corpus, 'fr'));
-        self::assertGreaterThan($bound, $this->sdkEncodedPayloadBytes($corpus.self::WIDEST_CHARACTER, 'fr'));
+        $corpus = self::CORPUS_SENTINEL.str_repeat('"', intdiv($bound - $base, $perQuote));
+        self::assertLessThanOrEqual($bound, $this->queuedBytesOf($corpus, $locale));
+        self::assertGreaterThan($bound, $this->queuedBytesOf($corpus.'"', $locale));
 
         return $corpus;
     }
 
-    private function sdkEncodedPayloadBytes(string $corpus, string $locale): int
+    private function queuedBytesOf(string $corpus, string $locale): int
     {
-        return \strlen(json_encode(['corpus' => $corpus, 'cvPageUrl' => $this->frontendBaseUrl().'/'.$locale.'/assistant'], \JSON_THROW_ON_ERROR));
+        return QueuedAnswer::bytes(JsonToolResult::forObject(['corpus' => $corpus, 'cvPageUrl' => $this->frontendBaseUrl().'/'.$locale.'/assistant']));
     }
 
     /**

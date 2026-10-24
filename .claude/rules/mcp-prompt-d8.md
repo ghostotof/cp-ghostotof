@@ -105,8 +105,9 @@ paths:
   Each finding is an `AuthorMention` (path, `MentionKind`, term number), **never the term nor the text carrying
   it**. The exceptions are `AuthorNeverNamedTest::admitted()`, copied from ADR 0006's closed list (the server
   name, `get_contact_info`'s URL in both its forms, and since #648 the challenge's `resource_metadata` URL — the
-  deferred 401's header and the nominative refusal's `_meta`, each challenge recomposed literally in the test, never
-  read from `BearerChallenge`), admitted at their path and for their exact value only,
+  deferred 401's header and the nominative refusal's `_meta`, each challenge written out whole in the test,
+  `error_description` included, copied from the ADR and never read from `src/` — neither `BearerChallenge` nor the
+  tool's constant, which would carry a name slipped into them), admitted at their path and for their exact value only,
   and checked to be still published as written (`assertTrue`, no diff that would print the value). The CV is
   the file `GET /api/cv` serves (`app.cv_file_path`, through the corpus's `PdfTextExtractorInterface`):
   textless in CI (`dummy.pdf`); any other file present must yield a text, or the guard fails rather than

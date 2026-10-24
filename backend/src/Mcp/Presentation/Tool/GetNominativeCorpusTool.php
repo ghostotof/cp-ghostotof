@@ -37,7 +37,7 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
  *    l'adresse de la page du site où se télécharge le CV (spec 0007) ;
  *    jamais le PDF. Puis la ligne `nominative-corpus-read` du journal de
  *    sécurité, **après** le rendu : une lecture journalisée est une lecture
- *    faite. Au-delà de {@see self::PAYLOAD_MAX_BYTES}, une erreur d'outil qui
+ *    faite. Au-delà de {@see self::QUEUED_ANSWER_MAX_BYTES}, une erreur d'outil qui
  *    donne l'adresse de la page du CV, un `warning` aux tailles seules, et
  *    aucune ligne d'audit : rien n'a été servi.
  *  - **Sans** : l'erreur d'outil que ChatGPT sait suivre — le défi
@@ -81,37 +81,41 @@ final readonly class GetNominativeCorpusTool
     public const string CORPUS_TOO_LARGE = 'The nominative corpus is too large to be served over MCP. The CV can be downloaded from the site: %s';
 
     /**
-     * La taille maximale du payload `{corpus, cvPageUrl}` **tel que le SDK
-     * l'encode** (`json_encode` sans drapeau), en octets : le quart de la
-     * borne de session (décision de l'auteur du 2026-10-24, tâche 9).
+     * La taille maximale de la réponse **telle que le SDK la met en file dans
+     * la session** ({@see QueuedAnswer::bytes()} : la réponse JSON-RPC encodée
+     * sans drapeau, puis réencodée par `Session::save()`), en octets : la
+     * moitié de la borne de session, l'autre moitié restant au reste de la
+     * session (décision de l'auteur du 2026-10-24, tâche 9, puis de la
+     * relecture de la tâche 5).
      *
-     * Le SDK met la réponse en file dans la session avant de la rendre
-     * (`.claude/rules/mcp.md`, sessions) ; au-delà de
-     * {@see BoundedSessionStore::MAX_BYTES}, la session est détruite et le
-     * client ne reçoit rien. Or la réponse grossit bien plus que le texte :
-     * le SDK encode toute la réponse JSON-RPC sans drapeau, donc tout
-     * caractère hors ASCII en `\uXXXX` (6 octets, 12 pour une paire de
-     * substitution) ; le corpus y est **deux fois** (`structuredContent` et le
-     * bloc texte de JsonToolResult) ; et `Session::save()` réencode la file,
-     * chaque barre oblique inverse doublée. Et rien ne borne le corpus
-     * entier : `PopplerPdfTextExtractor::MAX_CHARACTERS` (30 000) ne borne que
-     * le texte du CV, le CV sans identité et les études de cas n'ont aucune
-     * borne de longueur. Mesuré le 2026-10-24 sur la pile réelle, taille mise
-     * en file (calcul de RouteBackedToolsTest), borne 524 288 :
+     * Au-delà de {@see BoundedSessionStore::MAX_BYTES}, la session est
+     * détruite et le client ne reçoit rien. Or la réponse grossit bien plus que
+     * le texte, et pas d'un rapport fixe : le corpus y est **deux fois**
+     * (`structuredContent`, et le bloc texte de JsonToolResult, déjà du JSON),
+     * le SDK encode la réponse sans drapeau (tout caractère hors ASCII en
+     * `\uXXXX`, 12 octets pour une paire de substitution ; `/` en `\/`), et
+     * `Session::save()` réencode la file, chaque barre oblique inverse et
+     * chaque guillemet doublés. Rien ne borne le corpus entier :
+     * `PopplerPdfTextExtractor::MAX_CHARACTERS` (30 000) ne borne que le texte
+     * du CV, le CV sans identité et les études de cas n'ont aucune borne de
+     * longueur. Mesuré le 2026-10-24 sur la pile réelle, taille en file pour
+     * 30 000 caractères de CV (borne 524 288) :
      *
      *  - CV fictif des tests : 2 880 octets ;
-     *  - 30 000 caractères ASCII : 60 806 ;
-     *  - 30 000 caractères de 2 ou 3 octets : 420 806 ;
-     *  - 30 000 caractères de 4 octets : 841 076 — session détruite.
+     *  - ASCII : 60 806 ;
+     *  - 2 ou 3 octets : 420 806 ;
+     *  - 4 octets : 841 076 — session détruite.
      *
-     * Le payload mesuré ici compte déjà l'échappement du SDK ; mis en file,
-     * il pèse un peu plus du double (deux copies, la seconde réencodée par
-     * JsonToolResult puis par le SDK), soit ~2,3 × pour le pire échappement :
-     * au quart de la borne, la réponse tient avec de la marge.
-     * GetNominativeCorpusToolTest::testAPayloadAtTheBoundFitsInTheSession
-     * pince cette relation entre les deux constantes.
+     * Rapporté au payload `{corpus, cvPageUrl}` encodé sans drapeau, la file
+     * pèse 2 × (ASCII), ~2,3 × (accents, emoji), 4 × (`/`, saut de ligne) et
+     * 6 × (`"`, `\`) ; en octets de texte, jusqu'à 12 par guillemet. Une borne
+     * sur le payload laissait donc passer une réponse qui détruisait la
+     * session (relecture de la tâche 5 : 786 432 octets pour un corpus de
+     * guillemets à la borne d'alors) : c'est la file elle-même qui est
+     * mesurée. GetNominativeCorpusToolTest compare la mesure à la file réelle
+     * et pince la relation avec la borne de session par la pire composition.
      */
-    public const int PAYLOAD_MAX_BYTES = BoundedSessionStore::MAX_BYTES / 4;
+    public const int QUEUED_ANSWER_MAX_BYTES = BoundedSessionStore::MAX_BYTES / 2;
 
     /** La clé `_meta` du défi dans un résultat d'outil en erreur (Apps SDK d'OpenAI). */
     private const string WWW_AUTHENTICATE_META_KEY = 'mcp/www_authenticate';
@@ -161,19 +165,18 @@ final readonly class GetNominativeCorpusTool
         }
 
         $cvPageUrl = \sprintf('%s/%s/assistant', rtrim($this->frontendBaseUrl, '/'), $language->value);
-        $payload = ['corpus' => $this->corpusRenderer->render($language), 'cvPageUrl' => $cvPageUrl];
+        $result = JsonToolResult::forObject(['corpus' => $this->corpusRenderer->render($language), 'cvPageUrl' => $cvPageUrl]);
 
-        // Mesuré comme le SDK l'encode, sans drapeau : l'échappement des
-        // caractères hors ASCII est ce qui fait grossir la réponse.
-        $payloadBytes = \strlen(json_encode($payload, \JSON_THROW_ON_ERROR));
-        if ($payloadBytes > self::PAYLOAD_MAX_BYTES) {
+        // Mesurée telle que le SDK la met en file : c'est elle, pas le texte,
+        // qui doit tenir dans la session.
+        $queuedBytes = QueuedAnswer::bytes($result);
+        if ($queuedBytes > self::QUEUED_ANSWER_MAX_BYTES) {
             // Les tailles seules : jamais le texte, qui nomme l'auteur.
-            $this->logger->warning('Nominative corpus refused over MCP: payload over its bound.', ['payloadBytes' => $payloadBytes, 'maxBytes' => self::PAYLOAD_MAX_BYTES]);
+            $this->logger->warning('Nominative corpus refused over MCP: queued answer over its bound.', ['queuedBytes' => $queuedBytes, 'maxBytes' => self::QUEUED_ANSWER_MAX_BYTES]);
 
             return CallToolResult::error([new TextContent(\sprintf(self::CORPUS_TOO_LARGE, $cvPageUrl))]);
         }
 
-        $result = JsonToolResult::forObject($payload);
         $this->auditLogger->nominativeCorpusRead($connection, $connection->connectionId(), $connection->clientId(), ProtectedTools::NOMINATIVE_CORPUS);
 
         return $result;

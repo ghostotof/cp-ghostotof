@@ -101,7 +101,7 @@ paths:
   authorization middlewares, and no `RequestContext` (nothing would read it). Its constructor takes `Security`,
   `CorpusRendererInterface`, `SecurityAuditLoggerInterface` (the second door of `mcp-oauth.md`'s « assumed
   exception », used by `Mcp/Presentation` now), `BearerChallenge`, the logger and `app.frontend_base_url`, pinned in
-  `McpExposureSymmetryTest::TOOLS_WITHOUT_ROUTE`. **Its payload is bounded** (`PAYLOAD_MAX_BYTES`, sessions below). `get_tech_watch` relays third-party strings
+  `McpExposureSymmetryTest::TOOLS_WITHOUT_ROUTE`. **Its queued answer is bounded** (`QUEUED_ANSWER_MAX_BYTES`, sessions below). `get_tech_watch` relays third-party strings
   (endoflife.date cycles, versions, links) to the person's model — indirect prompt injection (LLM01): its
   description says to treat them as data; the output stays equal to the route (D1). Since #658 cycles and
   versions only pass in the shape of a version number, filtered in the watch itself, never in the tool
@@ -191,12 +191,18 @@ paths:
   flags (`\uXXXX`, 12 bytes for a 4-byte character), the corpus is in it twice (`structuredContent` and the text
   block), and `Session::save()` encodes it again; `MAX_CHARACTERS` bounds the CV's text only, the anonymous CV and the
   case studies have no length bound. Queued, the fictive CV gives 2 880 bytes, 30 000 ASCII characters 60 806, 30 000
-  of 2 or 3 bytes 420 806, 30 000 of 4 bytes **841 076 — session destroyed**. Decided by the author (2026-10-24): the
-  tool bounds its payload, `GetNominativeCorpusTool::PAYLOAD_MAX_BYTES` = `MAX_BYTES / 4` (128 KiB), measured as the
-  SDK encodes it; over it, a tool error giving `cvPageUrl` (download the CV from the site), a `warning` with the
-  sizes only, no audit line. The session bound, `MAX_CHARACTERS` and the career assistant's corpus are unchanged;
-  `GetNominativeCorpusToolTest::testAPayloadAtTheBoundFitsInTheSession` pins the relation between the two
-  constants (a payload of 4-byte characters at the bound, queued under `MAX_BYTES`). **Guarded since #644**:
+  of 2 or 3 bytes 420 806, 30 000 of 4 bytes **841 076 — session destroyed**. Decided by the author (2026-10-24), corrected by the
+  review of task 5: the tool bounds **the queued answer itself**, `GetNominativeCorpusTool::QUEUED_ANSWER_MAX_BYTES` =
+  `MAX_BYTES / 2` (half left to the rest of the session), measured by `Presentation/Tool/QueuedAnswer::bytes()` (the
+  `CallToolResult` as returned, wrapped in the SDK's `Response`, `json_encode`d as `Protocol::queueOutgoing()` does,
+  then again as `Session::save()` does) — a bound on the payload was not enough: against the flag-less payload the
+  queue weighs 2 × (ASCII), ~2.3 × (accents, emoji), 4 × (`/`, line feed) and 6 × (`"`, `\`), up to 12 queued bytes
+  per byte of text. Over it, a tool error giving `cvPageUrl` (download the CV from the site), a `warning` with the sizes
+  only, no audit line. The session bound, `MAX_CHARACTERS` and the career assistant's corpus are unchanged.
+  `GetNominativeCorpusToolTest::testTheToolMeasuresWhatTheSdkQueues` compares the measure with the real queue (two SDK
+  internals no API publishes: an SDK bump changing either turns it red), and
+  `testAQueuedAnswerAtTheBoundFitsInTheSession` pins the relation with `MAX_BYTES` on the worst composition (a corpus of
+  `"`) in a real session. **Guarded since #644**:
   `RouteBackedToolsTest::testTheAnswerQueuedInTheSessionStaysFarBelowTheSessionBound` measures, per route-backed tool on
   the seeds, what is queued — the SDK's JSON answer, JSON-encoded again by `Session::save()` — and keeps it under an eighth
   of `MAX_BYTES` and under 3 × the route body + 1 KiB (a ratio independent of the content: an SDK change of encoding
