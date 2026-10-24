@@ -27,12 +27,23 @@ class McpAccessTokenRepository extends ServiceEntityRepository implements McpAcc
         $this->getEntityManager()->flush();
     }
 
+    /**
+     * Une requête, jointures explicites et entités hydratées (ADR 0006 D4) :
+     * l'authentificateur de `/api/mcp` lit à chaque appel la connexion, les
+     * rôles et l'UUID du compte, l'identifiant du client. Sans `addSelect`, le
+     * compte et le client resteraient des objets paresseux, chacun chargé par
+     * sa propre requête au premier accès — trois requêtes au lieu d'une
+     * (`McpAccessTokenRepositoryTest`). Les jointures sont internes : les trois
+     * clés étrangères sont non nulles, en cascade.
+     */
     public function findOneByHash(string $tokenHash): ?McpAccessToken
     {
         /** @var McpAccessToken|null */
         return $this->createQueryBuilder('token')
-            ->addSelect('connection')
+            ->addSelect('connection', 'account', 'client')
             ->innerJoin('token.connection', 'connection')
+            ->innerJoin('connection.account', 'account')
+            ->innerJoin('connection.client', 'client')
             ->where('token.tokenHash = :tokenHash')
             ->setParameter('tokenHash', $tokenHash)
             ->getQuery()
