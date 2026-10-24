@@ -91,8 +91,9 @@ paths:
   answers to invalid input (too long, empty, unknown language, required argument missing), all built from
   what `prompts/list` declares; `completion/complete` on every prompt argument; every tool's answer to an
   unknown language; and the **output of the tools without a route** (`McpExposureSymmetryTest::TOOLS_WITHOUT_ROUTE`,
-  public for that), which the server writes itself — a route-backed tool's output is its route's content (D1)
-  and is not read. `testEverySurfaceTheServerWritesIsRead` pins that list. Through
+  public for that), which the server writes itself, each call marked `openai/` so that the nominative tool's
+  answer is read past the deferred 401 (#648) — a route-backed tool's output is its route's content (D1)
+  and is not read —; and that 401's `WWW-Authenticate` challenge. `testEverySurfaceTheServerWritesIsRead` pins that list. Through
   `tests/Mcp/Support/AuthorMentions` it refuses, after NFKD folding (full width, accents and `\p{Cf}` removed,
   so a soft hyphen inside the name does not split it), case and punctuation ignored: the full name and each
   word of three letters or more as whole words; failing that, the name joined or a word of five letters or

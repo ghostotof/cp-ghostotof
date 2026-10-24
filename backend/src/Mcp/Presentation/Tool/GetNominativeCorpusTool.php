@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Mcp\Presentation\Tool;
 
+use App\Mcp\Application\ProtectedTools;
 use Mcp\Capability\Attribute\McpTool;
 use Mcp\Capability\Attribute\Schema;
 use Mcp\Exception\ToolCallException;
@@ -26,7 +27,7 @@ use Mcp\Schema\ToolAnnotations;
 final readonly class GetNominativeCorpusTool
 {
     #[McpTool(
-        name: 'get_nominative_corpus',
+        name: ProtectedTools::NOMINATIVE_CORPUS,
         title: 'Nominative CV',
         description: 'The full CV of the site\'s author: identity, employers and career history. Requires an MCP connection, granted to a person of the site\'s trusted tier; without one, the call fails and returns nothing of the CV.',
         annotations: new ToolAnnotations(readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false),

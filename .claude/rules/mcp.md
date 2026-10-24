@@ -17,7 +17,7 @@ paths:
 
 | Rule | Bullets |
 |---|---|
-| this file | the bundle and its pins, route-backed tools, the catalogue, `BackedByRoute`, tools, the `mcp` firewall, capabilities, host check, sessions, `GET /api/mcp`, tests, inbound refusals, no stream, rate per IP |
+| this file | the bundle and its pins, route-backed tools, the catalogue, `BackedByRoute`, tools, the `mcp` firewall, capabilities, host check, sessions, `GET /api/mcp`, tests, inbound refusals, the deferred 401, no stream, rate per IP |
 | `mcp-prompt-d8.md` | the prompt `present_for_role` (`PromptRole`, the nonce, the cleaning), the D8 guard (`AuthorNeverNamedTest`, the secret `MCP_D8_AUTHOR_NAME`) |
 | `mcp-journaux.md` | the SDK's `mcp` channel capped and redacted, the call log `mcp_usage` (`McpCallLog`, `ModernExchange`, `TruncatedIp`, the fallback line) |
 | `mcp-oauth.md` | phase 2's authorization server, `Mcp/Connection` (#647): league without its bundle, opaque hashed tokens, the derived encryption key, PKCE `S256`, `resource`, redirect matching, parameter pollution, the `oauth` firewall, consent, metadata outside `/api` and their Ingress, the consent page, accepted limits |
@@ -90,8 +90,9 @@ paths:
   `get_contact_info` (`{"contactPageUrl": "<APP_FRONTEND_BASE_URL>/<locale>/contact"}`, nothing else, no
   e-mail; `app.frontend_base_url`, the variable `allowed_hosts` reads) and `get_nominative_corpus`,
   **always listed**, its description saying it requires an MCP connection (ADR 0006 D3, what phase 2's
-  deferred authentication relies on); in phase 1 its call is a literal tool error, and it has no
-  dependency, so nothing of the corpus can leak. `get_tech_watch` relays third-party strings
+  deferred authentication relies on); its name is `Application/ProtectedTools::NOMINATIVE_CORPUS`, read by the
+  deferred 401 below; without a connection, an unmarked call gets that 401, a call marked `openai/` the tool's
+  literal error, and the tool has no dependency, so nothing of the corpus can leak. `get_tech_watch` relays third-party strings
   (endoflife.date cycles, versions, links) to the person's model — indirect prompt injection (LLM01): its
   description says to treat them as data; the output stays equal to the route (D1). Since #658 cycles and
   versions only pass in the shape of a version number, filtered in the watch itself, never in the tool
@@ -222,8 +223,7 @@ paths:
   the tool is called without one. The tools are exercised in the
   handshake-era revision (`2025-06-18`); the SDK also serves the sessionless 2026-07-28 revision on
   the same endpoint, exercised by #672's tests (no session written, `initialize` refused), by #664's call-log
-  tests (`postModernMcp()`, `MCP_MODERN_REVISION`) and the preprod smoke (phase 2's deferred 401 must recognise
-  the protected tool in both forms).
+  tests (`postModernMcp()`, `MCP_MODERN_REVISION`), by the deferred 401's (both eras, below) and the preprod smoke.
 - **Six inbound messages are refused before the SDK** (#644, #664, #675): `Infrastructure/Http/InboundMessageRefusalListener`
   (`kernel.request`, priority 15, `POST` on the canonical path `/api/mcp`, so `/api/%6Dcp` too — and a POST stays
   one: `framework.allowed_http_method_override: []` since the audit of #675, where Symfony turned a POST carrying
@@ -284,6 +284,26 @@ paths:
   `AuthorNeverNamedTest`. **No body bound in the application**: `SdkChannelRecordsTest` sends 100 KB strings through
   the SDK on purpose, and the bound is nginx's (`.claude/rules/deploiement-nginx.md`, chunked included).
   `InboundMessageRefusalTest` pins every case; `McpEndpointTest`'s session-bound cases go through `_meta` since.
+- **The deferred 401** (#648, ADR 0006 D3, spec 0007 « Sans connexion »): `Infrastructure/Http/DeferredAuthorizationListener`
+  (`kernel.request`, **priority 7**, after the `mcp` firewall's 8 — which has already read a valid connection's token, or
+  answered its own 401 `invalid_token` for a refused one — and after the refusals above; main request, `POST` on the
+  canonical path) answers a `tools/call` of `ProtectedTools::NOMINATIVE_CORPUS` made **without** an MCP connection (the
+  token storage's user is no `McpConnectionPrincipal`) with a **401 without body**, `WWW-Authenticate:
+  BearerChallenge::missingToken()` (no `error=`: no token was presented), `no-store`, recorded through
+  `ServerAnswersInterface::record()` — what makes a Claude client open the OAuth flow. **The body decides, read by the
+  SDK's own `MessageFactory::create()`** (as `ModernExchange` reads it): a message is that call exactly when the SDK
+  would build a `CallToolRequest` of that name from it, in a session and under the sessionless 2026-07-28 envelope
+  alike, one-message batch included (judged as a single message); **never the `Mcp-Name` header**, the caller's choice,
+  which this 401 precedes the SDK's comparison of (SEP-2243). A body the factory cannot read is left to the SDK.
+  **The `openai/` marker only chooses the form of the refusal, never the access**: a message whose `_meta` holds a
+  key prefixed `ProtectedTools::OPENAI_META_PREFIX` (ChatGPT) passes to the tool, which reads the identity through
+  `Security` only (D4). The identity is read first, so an authenticated call pays no decoding; an anonymous `POST`'s
+  body is decoded once more than the eight of `mcp-journaux.md`. Its call line: `mcp-journaux.md`.
+  `DeferredAuthorizationListenerTest` plays every case in both eras (marker, public tool, valid connection,
+  one-message batch, `Mcp-Name` contradicting the body, unreadable body, call line);
+  `DeferredAuthorizationListenerPriorityTest` pins on the real dispatcher that it runs after SecurityBundle's
+  `FirewallListener` and after `InboundMessageRefusalListener`. A test that reads the nominative tool's own answer
+  without a connection marks its call `openai/` (`AuthorNeverNamedTest`, `NoAnswerIsAStreamTest`).
 - **No answer is a stream** (#678, audit C5 of #675): under PHP-FPM a stream holds a worker. `tests/Mcp/NoAnswerIsAStreamTest`
   sends, in both eras, as a client accepting `text/event-stream` with a `progressToken`, every request the SDK can
   build (`MessageFactory::REGISTERED_MESSAGES` and `StatelessProtocol`'s `*_METHOD`, read by reflection, against its

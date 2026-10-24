@@ -7,6 +7,7 @@ namespace App\Tests\Mcp;
 use App\Ai\Assistant\Application\Corpus\PdfTextExtractorInterface;
 use App\Ai\Assistant\Infrastructure\Pdf\ExtractedTextNormalizer;
 use App\Ai\Assistant\Infrastructure\Pdf\PopplerPdfTextExtractor;
+use App\Mcp\Application\ProtectedTools;
 use App\Mcp\Infrastructure\Http\InboundMessageRefusal;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Tests\Mcp\Support\AuthorMention;
@@ -38,7 +39,8 @@ use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
  *  - l'erreur de chaque outil à une langue inconnue, et la sortie des outils
  *    **sans route** (`McpExposureSymmetryTest::TOOLS_WITHOUT_ROUTE`), que le
  *    serveur écrit lui-même. La sortie d'un outil adossé, elle, est le contenu
- *    de sa route, public par décision d'auteur (D1), et n'est pas lue.
+ *    de sa route, public par décision d'auteur (D1), et n'est pas lue ;
+ *  - le défi `WWW-Authenticate` du 401 différé de l'outil nominatif (#648).
  *
  * Le nom vient de la configuration de test (`MCP_D8_AUTHOR_NAME`,
  * `phpunit.dist.xml`), jamais du test : fictif en local, le vrai en CI par un
@@ -117,6 +119,7 @@ final class AuthorNeverNamedTest extends WebTestCase
         self::assertArrayHasKey('tools/call get_about langue inconnue', $published);
         self::assertArrayHasKey('tools/call get_contact_info fr', $published);
         self::assertArrayHasKey('tools/call get_nominative_corpus en', $published);
+        self::assertIsString($published['401 différé get_nominative_corpus']['WWW-Authenticate'] ?? null);
         // Chaque refus écrit avant le SDK est lu, tel que le serveur le rend : un
         // cas ajouté à l'enum sans requête qui le provoque ici rougit.
         foreach (InboundMessageRefusal::cases() as $refusal) {
@@ -322,6 +325,12 @@ final class AuthorNeverNamedTest extends WebTestCase
             $published += $this->toolAnswers($client, $session->id, $tool);
         }
 
+        // Le 401 différé de l'outil nominatif (#648), sans corps : son défi
+        // `WWW-Authenticate` est ce qu'il publie.
+        $this->postMcp($client, $session->id, ['jsonrpc' => '2.0', 'id' => 2, 'method' => 'tools/call', 'params' => ['name' => ProtectedTools::NOMINATIVE_CORPUS, 'arguments' => new stdClass()]]);
+        self::assertSame(401, $client->getResponse()->getStatusCode(), 'L\'appel anonyme de l\'outil nominatif n\'a pas reçu le 401 différé.');
+        $published['401 différé get_nominative_corpus'] = ['WWW-Authenticate' => $client->getResponse()->headers->get('WWW-Authenticate')];
+
         // Les refus écrits par le serveur avant le SDK (#644, #664, #675,
         // InboundMessageRefusalListener), un par cas de l'enum : un lot, une
         // réponse du client, un `initialize` qui déclare trop, un `_meta`
@@ -427,7 +436,11 @@ final class AuthorNeverNamedTest extends WebTestCase
     }
 
     /**
-     * Le `result` d'un appel d'outil, erreur d'outil comprise.
+     * Le `result` d'un appel d'outil, erreur d'outil comprise. Chaque appel
+     * porte le marqueur `openai/` de ChatGPT : sans lui, l'appel anonyme de
+     * l'outil nominatif reçoit le 401 différé avant le SDK (#648, lu à part
+     * dans read()) et sa sortie ne serait pas lue ; il est sans effet sur un
+     * outil public.
      *
      * @param array<string, string> $arguments
      *
@@ -435,7 +448,11 @@ final class AuthorNeverNamedTest extends WebTestCase
      */
     private function toolCall(KernelBrowser $client, string $sessionId, string $name, array $arguments): array
     {
-        $answer = $this->answer($client, $sessionId, 'tools/call', ['name' => $name, 'arguments' => [] === $arguments ? new stdClass() : $arguments]);
+        $answer = $this->answer($client, $sessionId, 'tools/call', [
+            'name' => $name,
+            'arguments' => [] === $arguments ? new stdClass() : $arguments,
+            '_meta' => [ProtectedTools::OPENAI_META_PREFIX.'subject' => 'd8-subject'],
+        ]);
         self::assertIsArray($answer['result'] ?? null, 'tools/call « '.$name.' » a répondu une erreur de protocole.');
 
         return $answer['result'];

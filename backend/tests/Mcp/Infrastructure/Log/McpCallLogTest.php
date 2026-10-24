@@ -371,12 +371,16 @@ final class McpCallLogTest extends WebTestCase
         self::assertSame(self::DECLARED_CLIENT, $line->context['declaredClient']);
     }
 
-    /** L'outil sans route rend une erreur d'outil en phase 1 (ADR 0006 D3). */
+    /**
+     * L'outil sans route rend une erreur d'outil en phase 1 (ADR 0006 D3) à un
+     * appel anonyme marqué `openai/` ; sans le marqueur, le 401 différé le
+     * précède (#648, DeferredAuthorizationListenerTest).
+     */
     public function testAModernToolErrorIsTold(): void
     {
         $client = self::createClient();
 
-        $this->postModernMcp($client, 'tools/call', ['name' => 'get_nominative_corpus', 'arguments' => new stdClass()]);
+        $this->postModernMcp($client, 'tools/call', ['name' => 'get_nominative_corpus', 'arguments' => new stdClass()], meta: ['openai/subject' => 'subject-1']);
         self::assertResponseStatusCodeSame(200);
         self::assertTrue($this->decodeMcpResponse($client)['result']['isError'] ?? null);
 

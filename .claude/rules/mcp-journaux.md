@@ -100,6 +100,11 @@ paths:
   the bridge's request per HTTP request (a `WeakMap` decorator of `mcp.psr_http_factory`) and handing the
   listener's decoded body to the log — two decodings of eight saved, ~530 µs at worst, for two more pieces and a
   contract between the listener and the log; the classifier and the factory stay the SDK's own, which decide the era.
+  **The deferred 401** (#648, `mcp.md`) is the server's own answer too: in a session it leaves the fallback line
+  (`POST`, 401, `protocol-error`); under the modern envelope a call line `tools/call`, `protocol-error`, no `errorCode`,
+  no `httpStatus` and no `name` — the registry a name is checked against is only filled by the server's build, which
+  this 401 precedes —, accepted: a refused token's 401 has the same line, and only that one has its « Authenticator
+  failed. » on the `security` channel; nginx's access log carries the status (`DeferredAuthorizationListenerTest`).
   **An HTTP request on `/api/mcp` that handled no message** — unreadable JSON, missing or expired
   session, `GET`, `DELETE`, a request refused before the SDK (#644: 400, `protocol-error`; under the modern
   envelope it has a call line instead, the refusal being the server's own answer, and `ModernExchange` reading what

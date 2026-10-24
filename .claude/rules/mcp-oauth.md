@@ -201,7 +201,8 @@ paths:
   loads the account before that query: a join does not refresh an instance the EntityManager already manages.
   **A presented and refused token is a 401 on every request** of `/api/mcp` (the author's decision of 2026-10-24):
   `initialize`, a public or the nominative tool, either era, `openai/` marker or not (RFC 6750 §3.1: it makes the
-  client refresh). Empty body, `WWW-Authenticate: <BearerChallenge::refusedToken()>`, `no-store`, the same for every
+  client refresh) — **save what is answered before the firewall** (priority 8): the refusals before the SDK
+  (`InboundMessageRefusalListener`, 15, a 400) and the router's 404/405 (`RouterListener`, 32) keep their own answer. Empty body, `WWW-Authenticate: <BearerChallenge::refusedToken()>`, `no-store`, the same for every
   cause, recorded through `ServerAnswersInterface::record()` (the call log reads it as the server's answer). The cause
   is named only in `McpBearerRefusedException`'s constant message (`MCP access token refused: <cause>`, never the
   token, its hash nor a UUID), logged by the `security` channel's « Authenticator failed. »; the `AuthenticatorManager`

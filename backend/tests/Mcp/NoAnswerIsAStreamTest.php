@@ -49,6 +49,13 @@ final class NoAnswerIsAStreamTest extends WebTestCase
 
     private const string ROLE = 'Senior PHP developer';
 
+    /**
+     * Le marqueur de ChatGPT, sur chaque `tools/call` : sans lui, l'appel
+     * anonyme de l'outil nominatif reçoit le 401 différé avant le SDK (#648) et
+     * l'outil ne tournerait pas — ce test ne garderait rien de sa réponse.
+     */
+    private const array OPENAI_MARKER = ['openai/subject' => 'c5-subject'];
+
     /** Les méthodes dont le traitement exécute du code du site, qui peut se suspendre. */
     private const array SUSPENDABLE = ['tools/call', 'prompts/get'];
 
@@ -132,7 +139,7 @@ final class NoAnswerIsAStreamTest extends WebTestCase
             // Le SDK veut l'URI d'une ressource en `Mcp-Name` ; un nom d'outil
             // ou de prompt, postModernMcp() l'y met lui-même.
             $server = \is_string($params['uri'] ?? null) ? ['HTTP_MCP_NAME' => $params['uri']] : [];
-            $this->postModernMcp($client, $method, $params, server: $server, id: 7, meta: ['progressToken' => self::PROGRESS_TOKEN]);
+            $this->postModernMcp($client, $method, $params, server: $server, id: 7, meta: $this->metaOf($method));
             $this->assertNotAStream($client, $method, $params);
         }
     }
@@ -237,8 +244,19 @@ final class NoAnswerIsAStreamTest extends WebTestCase
             'jsonrpc' => '2.0',
             'id' => 7,
             'method' => $method,
-            'params' => ['_meta' => ['progressToken' => self::PROGRESS_TOKEN]] + $params,
+            'params' => ['_meta' => $this->metaOf($method)] + $params,
         ];
+    }
+
+    /**
+     * Le `_meta` d'un client qui veut bien d'un flux, plus le marqueur
+     * `openai/` sur un `tools/call` (OPENAI_MARKER).
+     *
+     * @return array<string, string>
+     */
+    private function metaOf(string $method): array
+    {
+        return ['progressToken' => self::PROGRESS_TOKEN] + ('tools/call' === $method ? self::OPENAI_MARKER : []);
     }
 
     /**

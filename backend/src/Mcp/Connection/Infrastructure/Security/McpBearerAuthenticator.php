@@ -63,8 +63,12 @@ use Symfony\Component\Security\Http\Authenticator\Passport\SelfValidatingPasspor
  * **Un jeton présenté et refusé est un 401 sur toute requête** de
  * `/api/mcp` (décision de l'auteur du 2026-10-24) : `initialize`, outil
  * public ou nominatif, marqueur `openai/` ou non — RFC 6750 §3.1, c'est ce qui
- * fait rafraîchir le client. Sans corps, `WWW-Authenticate` portant
- * `error="invalid_token"` (BearerChallenge::refusedToken()), `no-store`, et la
+ * fait rafraîchir le client. Sauf ce qui est répondu avant le firewall
+ * (priorité 8) : les refus d'avant le SDK
+ * ({@see \App\Mcp\Infrastructure\Http\InboundMessageRefusalListener}, 15, un
+ * 400) et les 404/405 du routeur (32) gardent leur réponse. Sans corps,
+ * `WWW-Authenticate` portant `error="invalid_token"`
+ * (BearerChallenge::refusedToken()), `no-store`, et la
  * même pour toutes les causes : la cause n'est nommée que dans
  * l'exception, que le canal `security` journalise (McpBearerRefusedException).
  * La réponse passe par ServerAnswersInterface::record() : le journal d'appels
