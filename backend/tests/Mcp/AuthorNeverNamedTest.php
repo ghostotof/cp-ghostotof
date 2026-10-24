@@ -9,6 +9,7 @@ use App\Ai\Assistant\Infrastructure\Pdf\ExtractedTextNormalizer;
 use App\Ai\Assistant\Infrastructure\Pdf\PopplerPdfTextExtractor;
 use App\Mcp\Application\ProtectedTools;
 use App\Mcp\Infrastructure\Http\InboundMessageRefusal;
+use App\Mcp\Presentation\Tool\GetNominativeCorpusTool;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Tests\Mcp\Support\AuthorMention;
 use App\Tests\Mcp\Support\AuthorMentions;
@@ -38,8 +39,11 @@ use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
  *  - `completion/complete` sur chaque argument de prompt ;
  *  - l'erreur de chaque outil à une langue inconnue, et la sortie des outils
  *    **sans route** (`McpExposureSymmetryTest::TOOLS_WITHOUT_ROUTE`), que le
- *    serveur écrit lui-même. La sortie d'un outil adossé, elle, est le contenu
- *    de sa route, public par décision d'auteur (D1), et n'est pas lue ;
+ *    serveur écrit lui-même : pour l'outil nominatif, son refus sans connexion
+ *    (appel marqué `openai/`), `_meta["mcp/www_authenticate"]` compris — jamais
+ *    sa sortie authentifiée, le corpus, qui nomme l'auteur par objet. La sortie
+ *    d'un outil adossé, elle, est le contenu de sa route, public par décision
+ *    d'auteur (D1), et n'est pas lue ;
  *  - le défi `WWW-Authenticate` du 401 différé de l'outil nominatif (#648).
  *
  * Le nom vient de la configuration de test (`MCP_D8_AUTHOR_NAME`,
@@ -118,7 +122,15 @@ final class AuthorNeverNamedTest extends WebTestCase
         self::assertArrayHasKey('completion/complete present_for_role role', $published);
         self::assertArrayHasKey('tools/call get_about langue inconnue', $published);
         self::assertArrayHasKey('tools/call get_contact_info fr', $published);
-        self::assertArrayHasKey('tools/call get_nominative_corpus en', $published);
+        foreach (Locale::values() as $locale) {
+            // Le refus de l'outil nominatif sans connexion, défi compris : la
+            // sortie authentifiée (le corpus, qui nomme l'auteur : c'est son
+            // objet) n'est jamais lue.
+            $source = 'tools/call get_nominative_corpus '.$locale;
+            self::assertTrue($published[$source]['isError'] ?? null, $source);
+            self::assertArrayNotHasKey('structuredContent', $published[$source]);
+            self::assertIsString($published[$source]['_meta']['mcp/www_authenticate'][0] ?? null, $source);
+        }
         self::assertIsString($published['401 différé get_nominative_corpus']['WWW-Authenticate'] ?? null);
         // Chaque refus écrit avant le SDK est lu, tel que le serveur le rend : un
         // cas ajouté à l'enum sans requête qui le provoque ici rougit.
@@ -235,7 +247,8 @@ final class AuthorNeverNamedTest extends WebTestCase
 
     /**
      * Les exceptions acceptées à D8, **recopiées de la liste fermée de l'ADR
-     * 0006** : chacune décidée par l'auteur, admise à son chemin et pour sa
+     * 0006** (le nom du serveur, l'URL de `get_contact_info`, l'URL des
+     * métadonnées dans le défi d'authentification) : chacune décidée par l'auteur, admise à son chemin et pour sa
      * valeur exactes, nulle part ailleurs. Une exception nouvelle s'ajoute
      * d'abord à l'ADR, puis ici.
      *
@@ -258,6 +271,20 @@ final class AuthorNeverNamedTest extends WebTestCase
             $source = 'tools/call get_contact_info '.$locale;
             $admitted[$source.'.structuredContent.contactPageUrl'] = $payload['contactPageUrl'];
             $admitted[$source.'.content[0].text'] = json_encode($payload, \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE | \JSON_PRESERVE_ZERO_FRACTION);
+        }
+
+        // 2026-10-24, tâche 9 (#648), décision 3 de l'auteur : le défi
+        // d'authentification publie l'URL du document de métadonnées de la
+        // ressource (`resource_metadata`, RFC 9728), sur le domaine du site —
+        // dans l'en-tête du 401 différé et dans le `_meta` du refus de l'outil
+        // nominatif, chacun pour sa valeur exacte. Recomposée ici, jamais lue
+        // dans BearerChallenge : la garde ne prend pas sa valeur au code gardé.
+        $apiBase = self::getContainer()->getParameter('app.public_api_base_url');
+        self::assertIsString($apiBase);
+        $missingToken = 'Bearer resource_metadata="'.rtrim($apiBase, '/').'/.well-known/oauth-protected-resource/api/mcp", scope="nominative:read"';
+        $admitted['401 différé get_nominative_corpus.WWW-Authenticate'] = $missingToken;
+        foreach (Locale::values() as $locale) {
+            $admitted['tools/call get_nominative_corpus '.$locale.'._meta.mcp/www_authenticate[0]'] = $missingToken.', error="insufficient_scope", error_description="'.GetNominativeCorpusTool::CONNECTION_REQUIRED_DESCRIPTION.'"';
         }
 
         return $admitted;
@@ -436,11 +463,13 @@ final class AuthorNeverNamedTest extends WebTestCase
     }
 
     /**
-     * Le `result` d'un appel d'outil, erreur d'outil comprise. Chaque appel
-     * porte le marqueur `openai/` de ChatGPT : sans lui, l'appel anonyme de
-     * l'outil nominatif reçoit le 401 différé avant le SDK (#648, lu à part
-     * dans read()) et sa sortie ne serait pas lue ; il est sans effet sur un
-     * outil public.
+     * Le `result` d'un appel d'outil, erreur d'outil comprise, `_meta`
+     * compris. Seuls les appels de l'outil nominatif portent le marqueur
+     * `openai/` de ChatGPT : sans lui, l'appel anonyme reçoit le 401 différé
+     * avant le SDK (#648, lu à part dans read()) et le refus de l'outil — son
+     * texte et son défi `_meta["mcp/www_authenticate"]` — ne serait pas lu.
+     * Les autres outils sont appelés sans marqueur, comme les clients Claude
+     * les appellent.
      *
      * @param array<string, string> $arguments
      *
@@ -448,11 +477,11 @@ final class AuthorNeverNamedTest extends WebTestCase
      */
     private function toolCall(KernelBrowser $client, string $sessionId, string $name, array $arguments): array
     {
-        $answer = $this->answer($client, $sessionId, 'tools/call', [
-            'name' => $name,
-            'arguments' => [] === $arguments ? new stdClass() : $arguments,
-            '_meta' => [ProtectedTools::OPENAI_META_PREFIX.'subject' => 'd8-subject'],
-        ]);
+        $params = ['name' => $name, 'arguments' => [] === $arguments ? new stdClass() : $arguments];
+        if (ProtectedTools::NOMINATIVE_CORPUS === $name) {
+            $params['_meta'] = [ProtectedTools::OPENAI_META_PREFIX.'subject' => 'd8-subject'];
+        }
+        $answer = $this->answer($client, $sessionId, 'tools/call', $params);
         self::assertIsArray($answer['result'] ?? null, 'tools/call « '.$name.' » a répondu une erreur de protocole.');
 
         return $answer['result'];

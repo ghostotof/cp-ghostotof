@@ -91,8 +91,17 @@ paths:
   e-mail; `app.frontend_base_url`, the variable `allowed_hosts` reads) and `get_nominative_corpus`,
   **always listed**, its description saying it requires an MCP connection (ADR 0006 D3, what phase 2's
   deferred authentication relies on); its name is `Application/ProtectedTools::NOMINATIVE_CORPUS`, read by the
-  deferred 401 below; without a connection, an unmarked call gets that 401, a call marked `openai/` the tool's
-  literal error, and the tool has no dependency, so nothing of the corpus can leak. `get_tech_watch` relays third-party strings
+  deferred 401 below. **With an MCP connection** (#648) it returns `{"corpus": <CorpusRenderer's text for the
+  language>, "cvPageUrl": "<APP_FRONTEND_BASE_URL>/<locale>/assistant"}` (closed `outputSchema`, never the PDF) and,
+  after the render, the audit line `nominative-corpus-read` (`userId`, `connectionId`, `clientId`, `tool`); without
+  one, an unmarked call gets that 401, a call marked `openai/` the tool's error — `CONNECTION_REQUIRED` and
+  `_meta["mcp/www_authenticate"]` = a list of one `BearerChallenge::insufficientScope()` challenge (the Apps SDK
+  reference types it « string or string[] ») —, the same marked or not, nothing read. **The identity is read
+  through `Security` only** (`McpConnectionPrincipal`, ADR 0006 D4): never `_meta`, the token nor the SDK's
+  authorization middlewares, and no `RequestContext` (nothing would read it). Its constructor takes `Security`,
+  `CorpusRendererInterface`, `SecurityAuditLoggerInterface` (the second door of `mcp-oauth.md`'s « assumed
+  exception », used by `Mcp/Presentation` now), `BearerChallenge`, the logger and `app.frontend_base_url`, pinned in
+  `McpExposureSymmetryTest::TOOLS_WITHOUT_ROUTE`. **Its payload is bounded** (`PAYLOAD_MAX_BYTES`, sessions below). `get_tech_watch` relays third-party strings
   (endoflife.date cycles, versions, links) to the person's model — indirect prompt injection (LLM01): its
   description says to treat them as data; the output stays equal to the route (D1). Since #658 cycles and
   versions only pass in the shape of a version number, filtered in the watch itself, never in the tool
@@ -130,7 +139,8 @@ paths:
   (`isError: true`), never an unhandled exception (`-32603`, which tells the model nothing). Descriptions,
   titles, schemas, `instructions` and `serverInfo` are read by any client, i.e. at the anonymous tier: **they
   never name the author** (ADR 0006 D8), they say « the site's author ». The only exceptions are listed under
-  D8 in the ADR, each decided by the author (today: the server name `cp-ghostotof`, for this server only);
+  D8 in the ADR, each decided by the author (today: the server name `cp-ghostotof`, for this server only,
+  `get_contact_info`'s URL, and the metadata URL of the authentication challenge, #648);
   a new one goes into that list first, then into `AuthorNeverNamedTest::ADMITTED`.
 - **The `mcp` firewall never reads a cookie** (ADR 0006 D4). Declared before `api`, `^/api/mcp$`, stateless,
   one authenticator since #648, the MCP connection's (`Authorization: Bearer`, nothing else — no `jwt`; its rules
@@ -177,7 +187,16 @@ paths:
   (it could not fit), the client sees no JSON-RPC answer, then a 404. The **number** of sessions per IP is
   the nginx `mcpsession` zone's business (#644, 10 creations per minute), not the bound's. **The bound must fit the largest legitimate
   answer**: the SDK queues a tool's response in the session before sending it, so every answer goes through
-  `cache_items` — phase 2's nominative corpus included (measure it there). **Guarded since #644**:
+  `cache_items` — phase 2's nominative corpus included, **measured in #648**: the SDK encodes the answer without
+  flags (`\uXXXX`, 12 bytes for a 4-byte character), the corpus is in it twice (`structuredContent` and the text
+  block), and `Session::save()` encodes it again; `MAX_CHARACTERS` bounds the CV's text only, the anonymous CV and the
+  case studies have no length bound. Queued, the fictive CV gives 2 880 bytes, 30 000 ASCII characters 60 806, 30 000
+  of 2 or 3 bytes 420 806, 30 000 of 4 bytes **841 076 — session destroyed**. Decided by the author (2026-10-24): the
+  tool bounds its payload, `GetNominativeCorpusTool::PAYLOAD_MAX_BYTES` = `MAX_BYTES / 4` (128 KiB), measured as the
+  SDK encodes it; over it, a tool error giving `cvPageUrl` (download the CV from the site), a `warning` with the
+  sizes only, no audit line. The session bound, `MAX_CHARACTERS` and the career assistant's corpus are unchanged;
+  `GetNominativeCorpusToolTest::testAPayloadAtTheBoundFitsInTheSession` pins the relation between the two
+  constants (a payload of 4-byte characters at the bound, queued under `MAX_BYTES`). **Guarded since #644**:
   `RouteBackedToolsTest::testTheAnswerQueuedInTheSessionStaysFarBelowTheSessionBound` measures, per route-backed tool on
   the seeds, what is queued — the SDK's JSON answer, JSON-encoded again by `Session::save()` — and keeps it under an eighth
   of `MAX_BYTES` and under 3 × the route body + 1 KiB (a ratio independent of the content: an SDK change of encoding
@@ -303,7 +322,10 @@ paths:
   one-message batch, `Mcp-Name` contradicting the body, unreadable body, call line);
   `DeferredAuthorizationListenerPriorityTest` pins on the real dispatcher that it runs after SecurityBundle's
   `FirewallListener` and after `InboundMessageRefusalListener`. A test that reads the nominative tool's own answer
-  without a connection marks its call `openai/` (`AuthorNeverNamedTest`, `NoAnswerIsAStreamTest`).
+  without a connection marks its call `openai/` (`AuthorNeverNamedTest`, `NoAnswerIsAStreamTest`). **A session is
+  not bound to the connection that opened it**: an anonymous `GET` or `POST` reusing the id of a session where the
+  corpus was served gets nothing of it — the queued answer is drained by the request that returned it
+  (`GetNominativeCorpusToolTest::testAnAnonymousReuseOfTheSessionGetsNothingOfTheCorpus`).
 - **No answer is a stream** (#678, audit C5 of #675): under PHP-FPM a stream holds a worker. `tests/Mcp/NoAnswerIsAStreamTest`
   sends, in both eras, as a client accepting `text/event-stream` with a `progressToken`, every request the SDK can
   build (`MessageFactory::REGISTERED_MESSAGES` and `StatelessProtocol`'s `*_METHOD`, read by reflection, against its

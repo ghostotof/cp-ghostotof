@@ -25,7 +25,7 @@ final class CorpusSourcesTest extends KernelTestCase
     private const array ALLOWED_SOURCES = [
         AnonymousCvProvider::class => 'CV sans identité : lu par le palier de base, donc par tout ROLE_TRUSTED (ADR 0003 D5). Provider public, mêmes données que GET /api/anonymous-cv/{locale}.',
         CaseStudyProvider::class => 'Études de cas : même palier, même raison. Provider public, mêmes données que GET /api/case-studies/{locale}.',
-        PopplerPdfTextExtractor::class => "CV nominatif : le fichier même que GET /api/cv sert à ROLE_TRUSTED, le palier exigé par ^/api/assistant (spec 0005 D7). Lecteur dédié plutôt que provider : le CV n'a ni entité ni ressource API Platform, seulement le paramètre app.cv_file_path que le contrôleur lit aussi. Il ne part que chez Scaleway, l'hébergeur du site (ADR 0004 D3 amendée).",
+        PopplerPdfTextExtractor::class => "CV nominatif : le fichier même que GET /api/cv sert à ROLE_TRUSTED, le palier exigé par ^/api/assistant (spec 0005 D7). Lecteur dédié plutôt que provider : le CV n'a ni entité ni ressource API Platform, seulement le paramètre app.cv_file_path que le contrôleur lit aussi. Il part chez Scaleway, l'hébergeur du site, pour l'assistant de parcours (ADR 0004 D3 amendée), et, par l'outil MCP get_nominative_corpus, vers le client MCP d'une personne du palier de confiance munie d'une connexion MCP, donc chez le fournisseur d'IA qu'elle a choisi (ADR 0006 D5).",
     ];
 
     public function testTheCorpusReadsExactlyTheAllowedSources(): void

@@ -196,6 +196,16 @@ final readonly class SecurityAuditLogger implements SecurityAuditLoggerInterface
         ]);
     }
 
+    public function nominativeCorpusRead(AccountReference $account, Uuid $connectionId, string $clientId, string $tool): void
+    {
+        $this->record('nominative-corpus-read', 'Nominative corpus read.', [
+            ...$this->account($account),
+            'connectionId' => $connectionId->toRfc4122(),
+            'clientId' => $clientId,
+            'tool' => $tool,
+        ]);
+    }
+
     /**
      * Un compte se désigne par son UUID seul (issue #363) : ni son adresse
      * e-mail, ni son identifiant de connexion, qui pour un invité en est

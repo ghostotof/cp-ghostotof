@@ -51,7 +51,10 @@ paths:
   the security audit log, whose single writer is that interface. Rejected: a bare UUID column with no foreign
   key (a deleted account would leave live connections until #648's authenticator stumbled on them), and a copy
   of the audit logger (a second writer of `security_audit`). A new dependency of this context on `Security`
-  goes through the same two doors, nothing else. The consent's recency rule (below) is no third one: it reads
+  goes through the same two doors, nothing else. **`Mcp/Presentation` uses the second door too** (#648):
+  `GetNominativeCorpusTool` writes `nominative-corpus-read` through `SecurityAuditLoggerInterface`, for the same
+  reason (the single writer of `security_audit`); it designates the account through the firewall's
+  `McpConnectionPrincipal`, an `AccountReference`, never a `CpgUser`. The consent's recency rule (below) is no third one: it reads
   the token Symfony's firewall authenticated and Lexik's manager (vendor), never a class of `App\Security`.
 - **League's « user » is the MCP connection, never the account** (`ConnectionAsUser`, its RFC 4122 UUID):
   every code and token hangs on a connection and dies with it; the account appears in no payload handed to

@@ -19,7 +19,8 @@ paths:
   translation assistant, `POST /api/backoffice/translations`, `ROLE_SUPER`) and `Ai/Assistant/` (phase 2,
   **D7 amended on 2026-09-15**: a conversational "ask about my career" assistant on the site, reserved to
   `ROLE_TRUSTED`, on Scaleway Generative APIs — the site's own host, `fr-par` — which is the one operator the
-  nominative CV may reach (D3 amended); corpus injected in the context from the tier's existing providers,
+  site sends the nominative CV to (D3 amended; the same corpus also leaves through the MCP tool
+  `get_nominative_corpus` to the provider a trusted person chose, ADR 0006 D5, `.claude/rules/mcp.md`); corpus injected in the context from the tier's existing providers,
   no tools, no vector store, nothing persisted, streamed response; the MCP server originally planned is
   now an *alternative écartée*; **delivered in v0.19.0 on 2026-10-04** (closed in `develop` by PR #267 — all six tasks and the
   review follow-ups #318–#320/#323 merged —, released by #341; the remaining release checks live in #324),

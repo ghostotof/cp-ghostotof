@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Security\Authentication\Application;
 
 use App\Security\User\Domain\Entity\CpgUser;
+use App\Shared\Domain\Security\AccountReference;
 use SensitiveParameter;
 use Symfony\Component\Security\Core\User\UserInterface;
 use Symfony\Component\Uid\Uuid;
@@ -33,7 +34,9 @@ use Symfony\Component\Uid\Uuid;
  *  - la création d'un compte en ligne de commande (issue #386) :
  *    CpgUserRegistrar, après l'enregistrement ;
  *  - une connexion MCP accordée (#647) : ConsentService, après le COMMIT de
- *    la connexion et de son code.
+ *    la connexion et de son code ;
+ *  - le corpus nominatif lu par une connexion MCP (#648) :
+ *    GetNominativeCorpusTool, après le rendu du corpus.
  *
  * Ce qui sort, et rien d'autre : `event` (kebab-case, stable — c'est la clé
  * sur laquelle on filtre), le sujet (`userId`, l'UUID d'un compte ; `user`,
@@ -174,4 +177,16 @@ interface SecurityAuditLoggerInterface
      * ni un jeton, ni leur empreinte.
      */
     public function mcpConnectionGranted(CpgUser $account, Uuid $connectionId, string $clientId): void;
+
+    /**
+     * Corpus nominatif lu par une connexion MCP (#648, ADR 0006 D5) : l'outil
+     * l'a rendu au client, qui le passe au modèle de son fournisseur. Désigne
+     * le compte dont la connexion a été authentifiée (`userId` — c'est aussi
+     * l'auteur, lu dans le jeton de sécurité), la connexion (`connectionId`),
+     * le client par son identifiant public (`clientId`) et l'outil (`tool`).
+     * Reçoit un AccountReference et non un CpgUser : l'outil, hors de ce
+     * contexte, ne connaît le compte que par l'identité du firewall `mcp`.
+     * Jamais le jeton présenté, son empreinte, ni rien du corpus.
+     */
+    public function nominativeCorpusRead(AccountReference $account, Uuid $connectionId, string $clientId, string $tool): void;
 }

@@ -91,8 +91,10 @@ paths:
   answers to invalid input (too long, empty, unknown language, required argument missing), all built from
   what `prompts/list` declares; `completion/complete` on every prompt argument; every tool's answer to an
   unknown language; and the **output of the tools without a route** (`McpExposureSymmetryTest::TOOLS_WITHOUT_ROUTE`,
-  public for that), which the server writes itself, each call marked `openai/` so that the nominative tool's
-  answer is read past the deferred 401 (#648) — a route-backed tool's output is its route's content (D1)
+  public for that), which the server writes itself — the nominative tool's calls alone marked `openai/`, so that
+  its refusal without a connection, text and `_meta["mcp/www_authenticate"]` challenge included, is read past the
+  deferred 401 (#648), the other tools called unmarked, as Claude clients call them; **never its authenticated
+  output**, the corpus, which names the author by design — a route-backed tool's output is its route's content (D1)
   and is not read —; and that 401's `WWW-Authenticate` challenge. `testEverySurfaceTheServerWritesIsRead` pins that list. Through
   `tests/Mcp/Support/AuthorMentions` it refuses, after NFKD folding (full width, accents and `\p{Cf}` removed,
   so a soft hyphen inside the name does not split it), case and punctuation ignored: the full name and each
@@ -102,7 +104,9 @@ paths:
   exception —; and any run of six consecutive words of the nominative CV. Every string read, keys included.
   Each finding is an `AuthorMention` (path, `MentionKind`, term number), **never the term nor the text carrying
   it**. The exceptions are `AuthorNeverNamedTest::admitted()`, copied from ADR 0006's closed list (the server
-  name, `get_contact_info`'s URL in both its forms), admitted at their path and for their exact value only,
+  name, `get_contact_info`'s URL in both its forms, and since #648 the challenge's `resource_metadata` URL — the
+  deferred 401's header and the nominative refusal's `_meta`, each challenge recomposed literally in the test, never
+  read from `BearerChallenge`), admitted at their path and for their exact value only,
   and checked to be still published as written (`assertTrue`, no diff that would print the value). The CV is
   the file `GET /api/cv` serves (`app.cv_file_path`, through the corpus's `PdfTextExtractorInterface`):
   textless in CI (`dummy.pdf`); any other file present must yield a text, or the guard fails rather than

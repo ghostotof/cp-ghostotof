@@ -198,7 +198,10 @@ paths:
     with `superAdmin` like `role-changed`, `actor: console` — a person at a terminal the log cannot name, never
     `system` nor `anonymous`) — the two events whose actor is not read from the token storage; `record()` takes an
     explicit actor for CLI callers), `mcp-connection-granted` (#647, `ConsentService` after the COMMIT of the
-    connection and its code: `userId`, `connectionId`, the client's public `clientId`, never the code). Every record carries
+    connection and its code: `userId`, `connectionId`, the client's public `clientId`, never the code),
+    `nominative-corpus-read` (#648, `GetNominativeCorpusTool` after the render, never on a refusal: `userId` — also the
+    `actor`, the `mcp` firewall's `McpConnectionPrincipal` being an `AccountReference` —, `connectionId`, `clientId`,
+    `tool`; never the token, its hash nor anything of the corpus). Every record carries
     `event` (the stable kebab-case key to filter on), `actor`, `ip`, `path` (canonical), plus the subject.
     **An account is designated by its `userId` (RFC 4122) only, as subject and as `actor`, never by its
     login identifier** (issue #363): an invited account's username is derived from the local part of its
