@@ -52,7 +52,7 @@ final class SecurityConfigEnvironmentParityTest extends TestCase
      */
     private const array ENVIRONMENT_SPECIFIC = [
         'security.password_hashers' => 'Coût bcrypt abaissé à 4 sous when@test pour la vitesse de la suite (issue #590) ; CpgUserPasswordHasherTest fige l\'entrée entière dans chaque environnement.',
-        'lexik_jwt_authentication.set_cookies.BEARER.secure' => 'Secure en prod seulement, la règle d\'AuthCookieFactory (le dev sert localhost en HTTP) ; AuthCookieAttributesTest fige le cookie que Lexik pose contre celui de la fabrique.',
+        'lexik_jwt_authentication.set_cookies.BEARER.secure' => 'Secure en prod seulement, la règle d\'AuthCookieFactory (le dev sert localhost en HTTP) ; BearerCookieSecurePerEnvironmentTest fige la valeur déclarée dans chaque environnement contre celle de la fabrique (issue #703), AuthCookieAttributesTest le cookie réellement posé en test.',
     ];
 
     /**
@@ -134,18 +134,25 @@ final class SecurityConfigEnvironmentParityTest extends TestCase
 
     /**
      * Une exemption qui ne sert plus se retire : sinon elle couvrirait demain
-     * une différence que personne n'a justifiée.
+     * une différence que personne n'a justifiée. Mais une exemption qui ne
+     * sert plus et un écart voulu qui a disparu rougissent de la même façon,
+     * et retirer `Secure` en prod en est un (issue #703) : le message renvoie
+     * donc à la raison écrite avant d'inviter à retirer quoi que ce soit.
      */
     public function testEveryEnvironmentSpecificPathStillDiffers(): void
     {
-        foreach (array_keys(self::ENVIRONMENT_SPECIFIC) as $path) {
+        foreach (self::ENVIRONMENT_SPECIFIC as $path => $reason) {
             [$extension, $keys] = $this->split($path);
             $reference = $this->at($this->declared('test', $extension, null), $keys);
             $differs = false;
             foreach (EnvironmentConfigKernel::comparedEnvironments() as $environment) {
                 $differs = $differs || $this->at($this->declared($environment, $extension, null), $keys) !== $reference;
             }
-            self::assertTrue($differs, \sprintf('%s est identique partout : retirer son exemption d\'ENVIRONMENT_SPECIFIC.', $path));
+            self::assertTrue($differs, \sprintf(
+                '%s est identique dans tous les environnements. Son exemption d\'ENVIRONMENT_SPECIFIC dit pourquoi il devait différer : « %s » Si cet écart est toujours voulu, c\'est la configuration qu\'il faut rétablir ; ne retirer l\'exemption qu\'après avoir vérifié que sa raison ne tient plus, et le test qu\'elle nomme avec.',
+                $path,
+                $reason,
+            ));
         }
     }
 

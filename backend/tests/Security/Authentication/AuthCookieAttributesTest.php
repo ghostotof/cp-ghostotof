@@ -89,8 +89,9 @@ final class AuthCookieAttributesTest extends WebTestCase
         self::assertSame('/', $baseAccess[AuthCookieFactory::BEARER]->getPath());
         self::assertSame(Cookie::SAMESITE_LAX, $baseAccess[AuthCookieFactory::BEARER]->getSameSite());
         // Env test, servi en http : Secure est faux ici et vrai en prod
-        // (AuthCookieFactoryTest le pince ; lexik_jwt_authentication.yaml suit
-        // par `when@prod`).
+        // (AuthCookieFactoryTest le pince pour la fabrique,
+        // BearerCookieSecurePerEnvironmentTest pour le `when@prod` de
+        // lexik_jwt_authentication.yaml, que ce test-ci ne voit pas).
         self::assertFalse($baseAccess[AuthCookieFactory::BEARER]->isSecure());
     }
 
