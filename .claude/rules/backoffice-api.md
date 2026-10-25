@@ -39,7 +39,15 @@ paths:
   required `true` in prod, so removing the `when@prod` block turned the « still differs » check red with an
   invitation to drop the exemption, and the suite went green on a JWT sent without `Secure`. Each entry is
   therefore `[reason, PinningTest::class]` — a renamed or deleted pinning test turns PHPStan red — and the
-  check's message quotes the reason and names that test before inviting any removal.
+  check's message quotes the reason and names that test before inviting any removal. The same test requires
+  `set_cookies` to declare `BEARER` alone and the cookie extractor to read it: a second entry would set a
+  copy of the JWT without `Secure`, common to every environment, so the parity saw nothing. **Accepted
+  limits** (audit of #703, follow-up #714): the guard reads the *declared* value, and `test` pins the
+  insecure one, so nothing sees the real chain set `Secure` — a redefinition of
+  `lexik_jwt_authentication.cookie_provider.BEARER` or a decorator in `services.yaml`, a `kernel.response`
+  listener rewriting the cookie, a `prod`-only service redefinition (#698), a bundle's `prepend()` or a
+  compiler pass would send it in clear with the suite green; HSTS on the API narrows the exposure, it does
+  not close it.
   No key nor value of either may hold a `%env()%` or `%parameter%` reference (`%%` is an escape, fine), save
   `PARAMETERIZED_BY_DESIGN`: Lexik's `secret_key`, `public_key`, `pass_phrase`, per-deployment secrets. The
   order of a map's common entries is compared too (`firewalls (ordre)`: Symfony takes the first matching one).
