@@ -27,6 +27,9 @@ final class PurgeFailedContactMessagesCommandTest extends KernelTestCase
 {
     use ClockSensitiveTrait;
 
+    /** `date.timezone` des images (php.*.ini) : le fuseau où la commande compte ses jours. */
+    private const string PHP_TIMEZONE = 'Europe/Paris';
+
     private Connection $connection;
     private TransportInterface $failedTransport;
 
@@ -46,16 +49,17 @@ final class PurgeFailedContactMessagesCommandTest extends KernelTestCase
 
     public function testPurgesOnlyMessagesOlderThanRetentionWindow(): void
     {
+        $nowUtc = $this->freezeClockAt('2026-10-15 12:00:00');
+
         // Deux messages en échec : la table messenger_messages est créée au
         // premier send() par le transport Doctrine (auto_setup).
         $this->failedTransport->send(new Envelope($this->message('old@example.com')));
         $this->failedTransport->send(new Envelope($this->message('recent@example.com')));
 
-        // On vieillit artificiellement le premier au-delà de la fenêtre.
-        $this->connection->executeStatement(
-            "UPDATE messenger_messages SET created_at = :old WHERE body LIKE '%old@example.com%'",
-            ['old' => (new DateTimeImmutable('-40 days'))->format('Y-m-d H:i:s')],
-        );
+        // Le premier au-delà de la fenêtre, le second en deçà, dans l'heure
+        // murale UTC du transport.
+        $this->setCreatedAt('old@example.com', $nowUtc->modify('-40 days'));
+        $this->setCreatedAt('recent@example.com', $nowUtc->modify('-1 day'));
 
         $exitCode = $this->commandTester()->execute(['--older-than' => '30 days']);
 
@@ -83,12 +87,11 @@ final class PurgeFailedContactMessagesCommandTest extends KernelTestCase
      * et le test ne verrait plus la règle des jours de calendrier.
      */
     #[DataProvider('retentionThresholds')]
-    public function testTheRetentionWindowIsCountedInTheTransportsUtcClock(string $nowUtc, string $expectedThresholdUtc): void
+    public function testTheRetentionWindowCountsCalendarDaysThenComparesInTheTransportsUtcClock(string $nowUtc, string $expectedThresholdUtc): void
     {
-        self::assertSame('Europe/Paris', date_default_timezone_get(), 'Les seuils attendus sont écrits pour le fuseau de PHP du projet.');
-        $utc = new DateTimeZone('UTC');
-        self::mockTime((new DateTimeImmutable($nowUtc, $utc))->setTimezone(new DateTimeZone(date_default_timezone_get())));
-        $threshold = new DateTimeImmutable($expectedThresholdUtc, $utc);
+        self::assertSame(self::PHP_TIMEZONE, date_default_timezone_get(), 'Les seuils attendus sont écrits pour le fuseau de PHP du projet, celui de l\'horloge de production.');
+        $this->freezeClockAt($nowUtc);
+        $threshold = new DateTimeImmutable($expectedThresholdUtc, new DateTimeZone('UTC'));
 
         $this->failedTransport->send(new Envelope($this->message('inside@example.com')));
         $this->failedTransport->send(new Envelope($this->message('outside@example.com')));
@@ -99,7 +102,9 @@ final class PurgeFailedContactMessagesCommandTest extends KernelTestCase
         $exitCode = $tester->execute(['--older-than' => '30 days']);
 
         self::assertSame(0, $exitCode);
-        self::assertStringContainsString('antérieur(s) à '.$expectedThresholdUtc.' UTC', $tester->getDisplay());
+        // SymfonyStyle replie la ligne à la largeur du terminal : le seuil
+        // peut y être coupé entre la date et l'heure.
+        self::assertStringContainsString($expectedThresholdUtc.' UTC', (string) preg_replace('/\s+/', ' ', $tester->getDisplay()));
         self::assertSame(1, $this->countByRecipient('inside@example.com'), 'Un message encore dans sa fenêtre de rétention a été purgé.');
         self::assertSame(0, $this->countByRecipient('outside@example.com'), 'Un message sorti de sa fenêtre de rétention a été conservé.');
     }
@@ -119,6 +124,18 @@ final class PurgeFailedContactMessagesCommandTest extends KernelTestCase
         // Ni l'un ni l'autre : le seuil reste à 30 × 24 heures, en été puis en hiver.
         yield 'été sans changement d\'heure' => ['2026-10-15 12:00:00', '2026-09-15 12:00:00'];
         yield 'hiver sans changement d\'heure' => ['2027-01-15 12:00:00', '2026-12-16 12:00:00'];
+    }
+
+    /**
+     * Fige l'horloge à cet instant UTC, exprimé dans le fuseau de PHP comme le
+     * rend l'horloge native, et le renvoie en UTC.
+     */
+    private function freezeClockAt(string $nowUtc): DateTimeImmutable
+    {
+        $now = new DateTimeImmutable($nowUtc, new DateTimeZone('UTC'));
+        self::mockTime($now->setTimezone(new DateTimeZone(self::PHP_TIMEZONE)));
+
+        return $now;
     }
 
     /**
