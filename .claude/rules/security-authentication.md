@@ -29,11 +29,13 @@ paths:
     three sites (`LoginSuccessSubscriber`, `BaseAccessController`, `CookieLogoutListener`) go through it;
     the one exception is the login `BEARER`, still set by Lexik from `lexik_jwt_authentication.yaml`
     (`set_cookies` + `when@prod`), and `tests/Security/Authentication/AuthCookieAttributesTest.php` pins
-    that config to the factory by comparing the real `Set-Cookie` of login, base-access and logout per
-    name. Any new auth cookie goes through the factory, never `Cookie::create()` or `clearCookie()`
+    that config to the factory **in `test` only** by comparing the real `Set-Cookie` of login, base-access
+    and logout per name. Any new auth cookie goes through the factory, never `Cookie::create()` or `clearCookie()`
     inline. `__Host-` prefixing is a separate, preprod-tested step (it renames what Lexik and the frontend
     read by name). That `secure` is the **only** Lexik key allowed to differ per environment (issue #659,
-    `SecurityConfigEnvironmentParityTest`, see `.claude/rules/backoffice-api.md`, « Authorization »).
+    `SecurityConfigEnvironmentParityTest`, see `.claude/rules/backoffice-api.md`, « Authorization »), and
+    `BearerCookieSecurePerEnvironmentTest` pins its declared value in every environment to the factory's
+    (`true` in `prod`, issue #703): `AuthCookieAttributesTest` only sees `test`'s cookie.
   - **A JWT's `iat` is the instant the password was typed, and something relies on it** (#647): granting an
     MCP connection requires an authentication under ten minutes old, read from the `iat` of the session's JWT
     (`Mcp/Connection/Infrastructure/Security/JwtAuthenticationInstant`, `.claude/rules/mcp-oauth.md`). That
