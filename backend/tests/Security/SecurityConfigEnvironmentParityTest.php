@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Tests\Security;
 
+use App\Tests\Security\Authentication\BearerCookieSecurePerEnvironmentTest;
+use App\Tests\Security\Authentication\CpgUserPasswordHasherTest;
 use App\Tests\Support\EnvironmentConfigKernel;
 use PHPUnit\Framework\TestCase;
 
@@ -47,12 +49,23 @@ final class SecurityConfigEnvironmentParityTest extends TestCase
 
     /**
      * « extension.chemin.vers.la.clé » qui peut différer d'un environnement à
-     * l'autre => pourquoi. Le chemin est retiré de la comparaison, rien de plus
-     * large.
+     * l'autre => pourquoi, et le test qui fige sa valeur dans chaque
+     * environnement. Le chemin est retiré de la comparaison, rien de plus
+     * large. Sans ce test, l'exemption n'a pas de filet : la valeur de prod
+     * peut changer sans que rien rougisse ici (issue #703). Écrit en `::class`
+     * pour qu'un renommage ou une suppression du test fasse rougir PHPStan.
+     *
+     * @var array<string, array{string, class-string<TestCase>}>
      */
     private const array ENVIRONMENT_SPECIFIC = [
-        'security.password_hashers' => 'Coût bcrypt abaissé à 4 sous when@test pour la vitesse de la suite (issue #590) ; CpgUserPasswordHasherTest fige l\'entrée entière dans chaque environnement.',
-        'lexik_jwt_authentication.set_cookies.BEARER.secure' => 'Secure en prod seulement, la règle d\'AuthCookieFactory (le dev sert localhost en HTTP) ; BearerCookieSecurePerEnvironmentTest fige la valeur déclarée dans chaque environnement contre celle de la fabrique (issue #703), AuthCookieAttributesTest le cookie réellement posé en test.',
+        'security.password_hashers' => [
+            'Coût bcrypt abaissé à 4 sous when@test pour la vitesse de la suite (issue #590).',
+            CpgUserPasswordHasherTest::class,
+        ],
+        'lexik_jwt_authentication.set_cookies.BEARER.secure' => [
+            'Secure en prod seulement, la règle d\'AuthCookieFactory (le dev sert localhost en HTTP) ; AuthCookieAttributesTest le vérifie sur le cookie réellement posé, en test seulement.',
+            BearerCookieSecurePerEnvironmentTest::class,
+        ],
     ];
 
     /**
@@ -137,11 +150,12 @@ final class SecurityConfigEnvironmentParityTest extends TestCase
      * une différence que personne n'a justifiée. Mais une exemption qui ne
      * sert plus et un écart voulu qui a disparu rougissent de la même façon,
      * et retirer `Secure` en prod en est un (issue #703) : le message renvoie
-     * donc à la raison écrite avant d'inviter à retirer quoi que ce soit.
+     * donc à la raison écrite et au test qui fige la valeur avant d'inviter à
+     * retirer quoi que ce soit.
      */
     public function testEveryEnvironmentSpecificPathStillDiffers(): void
     {
-        foreach (self::ENVIRONMENT_SPECIFIC as $path => $reason) {
+        foreach (self::ENVIRONMENT_SPECIFIC as $path => [$reason, $pinnedBy]) {
             [$extension, $keys] = $this->split($path);
             $reference = $this->at($this->declared('test', $extension, null), $keys);
             $differs = false;
@@ -149,9 +163,10 @@ final class SecurityConfigEnvironmentParityTest extends TestCase
                 $differs = $differs || $this->at($this->declared($environment, $extension, null), $keys) !== $reference;
             }
             self::assertTrue($differs, \sprintf(
-                '%s est identique dans tous les environnements. Son exemption d\'ENVIRONMENT_SPECIFIC dit pourquoi il devait différer : « %s » Si cet écart est toujours voulu, c\'est la configuration qu\'il faut rétablir ; ne retirer l\'exemption qu\'après avoir vérifié que sa raison ne tient plus, et le test qu\'elle nomme avec.',
+                '%s est identique dans tous les environnements. Son exemption d\'ENVIRONMENT_SPECIFIC dit pourquoi il devait différer : « %s » Si cet écart est toujours voulu, c\'est la configuration qu\'il faut rétablir : %s fige la valeur attendue de chaque environnement. Ne retirer l\'exemption qu\'après avoir vérifié que sa raison ne tient plus, et adapter ce test plutôt que le supprimer.',
                 $path,
                 $reason,
+                $pinnedBy,
             ));
         }
     }

@@ -24,6 +24,7 @@ lexik_jwt_authentication:
             path: /
             httpOnly: true
             # http en dev (localhost:8080 sans TLS) : passé à true en prod, voir when@prod ci-dessous.
+            # BearerCookieSecurePerEnvironmentTest exige cette valeur dans chaque environnement (#703).
             secure: false
 
 when@prod:

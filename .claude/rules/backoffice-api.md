@@ -37,8 +37,9 @@ paths:
   `BearerCookieSecurePerEnvironmentTest`, issue #703 — `AuthCookieAttributesTest` runs in `test` only, where it
   is false). **An exemption is a net that must pin its own value in every environment**: until #703 nothing
   required `true` in prod, so removing the `when@prod` block turned the « still differs » check red with an
-  invitation to drop the exemption, and the suite went green on a JWT sent without `Secure`. That check's
-  message now quotes the exemption's reason before inviting any removal.
+  invitation to drop the exemption, and the suite went green on a JWT sent without `Secure`. Each entry is
+  therefore `[reason, PinningTest::class]` — a renamed or deleted pinning test turns PHPStan red — and the
+  check's message quotes the reason and names that test before inviting any removal.
   No key nor value of either may hold a `%env()%` or `%parameter%` reference (`%%` is an escape, fine), save
   `PARAMETERIZED_BY_DESIGN`: Lexik's `secret_key`, `public_key`, `pass_phrase`, per-deployment secrets. The
   order of a map's common entries is compared too (`firewalls (ordre)`: Symfony takes the first matching one).

@@ -28,8 +28,12 @@ use Symfony\Component\HttpFoundation\Cookie;
  *   n'y reviendrait jamais.
  *
  * La pose du `BEARER` au login reste faite par Lexik depuis
- * config/packages/lexik_jwt_authentication.yaml ; AuthCookieAttributesTest
- * vérifie que ses attributs sont ceux de cette fabrique, à chaque nom.
+ * config/packages/lexik_jwt_authentication.yaml ;
+ * {@see \App\Tests\Security\Authentication\AuthCookieAttributesTest} vérifie,
+ * en `test` seulement, que ses attributs sont ceux de cette fabrique, à chaque
+ * nom, et {@see \App\Tests\Security\Authentication\BearerCookieSecurePerEnvironmentTest}
+ * que son `Secure` déclaré suit la règle ci-dessus dans chaque environnement
+ * (issue #703).
  */
 final readonly class AuthCookieFactory
 {
