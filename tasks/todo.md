@@ -78,8 +78,10 @@ phase 1 parte en release seule ; puis au merge de clôture, qui archive la spec 
       serveur d'autorisation, consentement (authentification de moins de 10 min exigée pour accorder),
       métadonnées et leur Ingress, zone nginx `oauth` ; règle `.claude/rules/mcp-oauth.md`. `claude mcp login`
       à froid prouvé contre la stack de dev le 2026-10-24 ; reports rangés sous les tâches 9 à 14
-- [ ] Tâche 9 — Ouverture du corpus nominatif par la connexion MCP (#648) — bloquée par : #647
-      — reports de la tâche 8 : registre RGPD §8 (le fournisseur d'IA du client reçoit les jetons) ;
+- [x] Tâche 9 — Ouverture du corpus nominatif par la connexion MCP (#648) — bloquée par : #647 —
+      **close le 2026-10-25** : PR #708 fusionnée dans la mère (eff0357c), plan `tasks/plan-t9-corpus-nominatif.md` ;
+      Bearer relu en base, 401 différé, `securitySchemes`, session liée à sa connexion, `no-store` sur
+      `/api/mcp` ; reports rangés sous les tâches 10, 11, 12 et 14 — reports de la tâche 8 : registre RGPD §8 (le fournisseur d'IA du client reçoit les jetons) ;
       `bearer_methods_supported` annoncé avant l'authentificateur ; au point de jeton league lit
       `client_id` dans `Authorization: Basic`, la révocation non
 - [ ] Tâche 10 — Durée de vie des jetons, rotation et purge (#649) — bloquée par : #647 — reports de
