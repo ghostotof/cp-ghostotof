@@ -6,6 +6,7 @@ namespace App\Mcp\Connection\Domain\Entity;
 
 use App\Mcp\Connection\Domain\Exception\MalformedTokenHashException;
 use App\Mcp\Connection\Domain\Service\TokenHashShape;
+use App\Mcp\Connection\Domain\ValueObject\BearerRefusal;
 use App\Mcp\Connection\Infrastructure\Doctrine\McpAccessTokenRepository;
 use DateTimeImmutable;
 use Doctrine\DBAL\Types\Types;
@@ -88,5 +89,36 @@ class McpAccessToken
     public function expiresAt(): DateTimeImmutable
     {
         return $this->expiresAt;
+    }
+
+    /**
+     * Ce qui refuse ce jeton à l'instant `$now` pour la ressource
+     * `$expectedAudience`, ou `null` s'il est recevable. Les causes se jugent
+     * dans un ordre fixe, la première trouvée est rendue : jeton révoqué,
+     * jeton expiré, audience, connexion révoquée, connexion expirée, scope de
+     * la connexion — le jeton d'abord, sa connexion ensuite.
+     *
+     * L'échéance du jeton est exclusive (`expiresAt <= now` : à la seconde de
+     * son échéance, il est mort) ; league ne la vérifie pas sur un jeton
+     * opaque, c'est donc ici qu'elle l'est. L'audience se compare octet pour
+     * octet (RFC 8707) : une barre oblique finale de plus est une autre
+     * ressource. Le palier du compte n'est pas jugé ici — le domaine du jeton
+     * ne connaît pas la hiérarchie des rôles — mais par l'authentificateur
+     * ({@see BearerRefusal::AccountNotTrusted}). Le scope est celui que la
+     * connexion a stocké au consentement, comparé mot pour mot : `/api/mcp`
+     * n'honore que `nominative:read`, jamais présumé du seul fait qu'une
+     * connexion existe ({@see McpConnection::grantsNominativeRead()}).
+     */
+    public function refusalAt(DateTimeImmutable $now, string $expectedAudience): ?BearerRefusal
+    {
+        return match (true) {
+            $this->isRevoked() => BearerRefusal::TokenRevoked,
+            $this->expiresAt <= $now => BearerRefusal::TokenExpired,
+            $this->audience !== $expectedAudience => BearerRefusal::ForeignAudience,
+            $this->connection->isRevoked() => BearerRefusal::ConnectionRevoked,
+            $this->connection->isExpiredAt($now) => BearerRefusal::ConnectionExpired,
+            !$this->connection->grantsNominativeRead() => BearerRefusal::InsufficientScope,
+            default => null,
+        };
     }
 }

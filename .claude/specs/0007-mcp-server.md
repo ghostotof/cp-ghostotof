@@ -387,7 +387,9 @@ décision du 2026-10-19, voir « Langue invalide »).
   son compte. Le marqueur ne choisit que la forme du refus, jamais l'accès. `securitySchemes` sur chaque
   outil (`noauth` ; `oauth2` avec `nominative:read` pour l'outil nominatif), au moins en
   `_meta["securitySchemes"]` (`#[McpTool(meta: …)]`) ; le champ de premier niveau, que `Mcp\Schema\Tool`
-  0.8.1 ne connaît pas, se tranche à la tâche 9.
+  0.8.1 ne connaît pas, se tranche à la tâche 9. *Tranché le 2026-10-24 (#648)* : aux deux places, en
+  `_meta["securitySchemes"]` et au premier niveau de chaque outil de `tools/list` (un décorateur du registre,
+  `SecuritySchemesRegistry`), comme le dit l'ADR 0006 D3.
   *Amendé le 2026-10-20 (#664).* Le serveur sert aussi la révision sans session `2026-07-28` : le 401
   reconnaît l'appel de l'outil nominatif **sous ses deux formes**, dans une session et sous l'enveloppe
   `_meta` de chaque requête. L'ère se lit comme le journal la lit (`ModernExchange` : le classifieur du

@@ -13,6 +13,7 @@ use App\Tests\Support\TestCredentials;
 use Defuse\Crypto\Crypto;
 use Defuse\Crypto\Key;
 use Doctrine\ORM\EntityManagerInterface;
+use SensitiveParameter;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -78,6 +79,16 @@ trait DrivesTheOAuthFlow
         // `login_throttling` compte dans cache.rate_limiter, en base (ADR 0005)
         // et partagé d'un test à l'autre : chaque test repart de zéro.
         self::getContainer()->get('cache.rate_limiter')->clear();
+        $this->registerOAuthClients();
+    }
+
+    /**
+     * Enregistre CLIENT_ID et OTHER_CLIENT_ID. Appelée par setUpOAuthFlow() ;
+     * seule, par un test qui crée lui-même son `KernelBrowser` (et l'assigne à
+     * `$this->client`) avant de traverser le parcours.
+     */
+    private function registerOAuthClients(): void
+    {
         $clients = self::getContainer()->get(McpClientRepositoryInterface::class);
         $clients->add(RegisteredMcpClient::of(self::CLIENT_ID, self::CLIENT_NAME, ['http://localhost/callback', 'https://client.example.test/callback']));
         $clients->add(RegisteredMcpClient::of(self::OTHER_CLIENT_ID, 'Autre client', ['http://localhost/callback']));
@@ -99,6 +110,17 @@ trait DrivesTheOAuthFlow
     {
         $this->loginAs(self::TRUSTED_USERNAME, [CpgUser::ROLE_TRUSTED]);
 
+        return $this->codeGrantedByTheSignedInAccount($overrides);
+    }
+
+    /**
+     * Le code qu'accorde le compte déjà connecté (cookies du client) : une
+     * seconde connexion du même compte, sans le recréer.
+     *
+     * @param array<string, string|null> $overrides paramètres de la demande, sous leur nom OAuth
+     */
+    private function codeGrantedByTheSignedInAccount(array $overrides = []): string
+    {
         $this->client->request('GET', self::AUTHORIZE_PATH.'?'.http_build_query($this->validParameters($overrides)));
         self::assertSame(Response::HTTP_FOUND, $this->client->getResponse()->getStatusCode(), substr((string) $this->client->getResponse()->getContent(), 0, 500));
 
@@ -268,14 +290,19 @@ trait DrivesTheOAuthFlow
     {
         $password = [] === $roles ? TestCredentials::plainPassword() : TestCredentials::superPassword();
         $account = self::getContainer()->get(CpgUserRegistrarInterface::class)->register($username, $password, $roles);
+        $this->signInAs($username, $password);
 
+        return $account->getId()->toRfc4122();
+    }
+
+    /** Connecte un compte existant : les cookies BEARER et XSRF-TOKEN posés sur le client. */
+    private function signInAs(string $username, #[SensitiveParameter] string $password): void
+    {
         $this->client->request('POST', '/api/login_check', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_X_REQUESTED_WITH' => 'fetch'], content: self::jsonBody([
             'username' => $username,
             'password' => $password,
         ]));
         self::assertResponseIsSuccessful();
-
-        return $account->getId()->toRfc4122();
     }
 
     private function xsrfToken(): string

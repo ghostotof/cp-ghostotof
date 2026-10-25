@@ -19,7 +19,12 @@ interface McpAccessTokenRepositoryInterface
      */
     public function add(McpAccessToken $token): void;
 
-    /** Le jeton, avec sa connexion, par l'empreinte SHA-256 de son identifiant. */
+    /**
+     * Le jeton, par l'empreinte SHA-256 de son identifiant, avec sa connexion,
+     * le compte et le client de celle-ci, en une seule requête (ADR 0006 D4) :
+     * l'authentificateur de `/api/mcp` les lit à chaque appel, sans autre
+     * aller-retour vers la base.
+     */
     public function findOneByHash(string $tokenHash): ?McpAccessToken;
 
     /**

@@ -51,16 +51,23 @@ paths:
   the security audit log, whose single writer is that interface. Rejected: a bare UUID column with no foreign
   key (a deleted account would leave live connections until #648's authenticator stumbled on them), and a copy
   of the audit logger (a second writer of `security_audit`). A new dependency of this context on `Security`
-  goes through the same two doors, nothing else. The consent's recency rule (below) is no third one: it reads
+  goes through the same two doors, nothing else. **`Mcp/Infrastructure` uses the second door too** (#648):
+  `Corpus/NominativeCorpusReader`, behind `GetNominativeCorpusTool`, writes `nominative-corpus-read` through
+  `SecurityAuditLoggerInterface`, for the same reason (the single writer of `security_audit`); it designates the account
+  through the firewall's `McpConnectionPrincipal`, an `AccountReference`, never a `CpgUser`. The trusted tier's role is
+  no third door either: `McpConnectionPrincipal::TRUSTED_TIER`, a copy that `McpConnectionPrincipalTest` compares with
+  `CpgUser::ROLE_TRUSTED`. The consent's recency rule (below) is no third
+  one: it reads
   the token Symfony's firewall authenticated and Lexik's manager (vendor), never a class of `App\Security`.
 - **League's « user » is the MCP connection, never the account** (`ConnectionAsUser`, its RFC 4122 UUID):
   every code and token hangs on a connection and dies with it; the account appears in no payload handed to
-  the client. `ConnectionOfToken` (written once for the three repositories) refuses, as a named server
+  the client. The `mcp` firewall's user is the connection too (`McpConnectionUser`, below). `ConnectionOfToken`
+  (written once for the three repositories) refuses, as a named server
   fault, an unknown connection, one of another client, a revoked one (`LeagueRepositoriesTest`).
 - **Opaque access tokens, every secret stored as its SHA-256 only.** `OpaqueAccessToken`: the string the
   client gets **is** league's 80-hex identifier, nothing signed, nothing readable — `/api/mcp`'s
-  authenticator (#648) will find the row by its hash and re-read the connection in one query
-  (ADR 0006 D4). `NoSigningKey` is the « private key » league demands at construction: league 9.4.1 only
+  authenticator (#648) finds the row by its hash and re-reads the connection in one query
+  (ADR 0006 D4, below). `NoSigningKey` is the « private key » league demands at construction: league 9.4.1 only
   passes it on, and every read throws (`AccessTokensAreNotSignedException`, `NoSigningKeyTest`) — never an
   empty or fallback key. Codes, access and refresh tokens are stored as `TokenIdentifierHash::of()`
   (`hash('sha256', …)`, written once for the three repositories: a hash computed otherwise at read time
@@ -182,6 +189,50 @@ paths:
   `McpExposureSymmetryTest::EXCLUDED_ROUTES` with their reasons; `AccessControlAnchoringTest` pins the
   bounds (a neighbour such as `/api/oauth/authorizex` falls back into `api`). No `%env()%` in
   `security.yaml`, nothing per environment (#659).
+- **The authenticator of `/api/mcp`** (#648, ADR 0006 D4): `Infrastructure/Security/McpBearerAuthenticator`, the
+  `mcp` firewall's only one (`custom_authenticators`, provider `mcp_connections` = `McpConnectionUserProvider`, which
+  loads and refreshes nothing — the badge carries its loader, the firewall is stateless — and never names the
+  identifier it was asked). **Only `Authorization` is read, scheme `Bearer`** case-insensitive (RFC 7235), followed by
+  a space or alone; never a cookie. **Any other scheme leaves the request anonymous** — preprod's Ingress Basic Auth
+  sends `Authorization: Basic …` on every request, never a 401 for it
+  (`testABasicAuthorizationHeaderLeavesTheRequestAnonymous`); so does a scheme glued to the token or followed by a
+  tab (`Bearer<token>`, `Bearer\t<token>`, `Bearerxyz`: `testAnotherSchemeLeavesTheRequestAnonymous`, a valid token
+  then not read). **Several `Authorization` headers**: Symfony reads the first; nginx may join them into one,
+  comma-separated, before PHP-FPM — `Bearer <token>, Basic …` is then refused `Malformed` (a 401), `Basic …, Bearer
+  <token>` left anonymous, depending on the order. Accepted: the first header decides, never the second.
+  The judgement, first cause wins (`Domain/ValueObject/BearerRefusal`): the shape `^[0-9a-f]{80}\z` **before any
+  query** (`Malformed`: `Bearer` alone, a second space, 79/81 characters, upper case, 10 KiB — zero SQL, measured with
+  a positive witness); then `TokenIdentifierHash::of()` and **one query** joining token, connection, account and client
+  (`findOneByHash()`, `Unknown`); then `McpAccessToken::refusalAt(now, OAuthEndpoints::resource())` — token revoked,
+  expired (league never checks an opaque token's expiry), foreign audience byte for byte, connection revoked,
+  expired, without `nominative:read` in its stored scope (`InsufficientScope`, word for word, final review of
+  #648; **accepted**, security review of #648: it answers the common 401 `invalid_token`, not RFC 6750 §3.1's 403
+  `insufficient_scope`, so a client would refresh into the same scope — unreachable while league grants
+  `nominative:read` only; to decide before any second scope) —; then `ROLE_TRUSTED` reached through
+  `RoleHierarchyInterface` from the **stored** roles (`AccountNotTrusted`: a `ROLE_SUPER` without stored
+  `ROLE_TRUSTED` passes, the base tier does not). The role name is `McpConnectionPrincipal::TRUSTED_TIER`, not
+  `CpgUser::ROLE_TRUSTED`, so the context's dependency on `Security` keeps its two doors (`McpConnectionPrincipalTest`
+  compares the two). **No write per call** (no `last_used_at`, #649 writes it at refresh; `testNoRequestWritesOutsideTheMcpSessions`), and
+  exactly **one query more** than the same anonymous call (`testAnAuthenticatedCallCostsExactlyOneQueryMore`). Nothing
+  loads the account before that query: a join does not refresh an instance the EntityManager already manages.
+  **A presented and refused token is a 401 on every request** of `/api/mcp` (the author's decision of 2026-10-24):
+  `initialize`, a public or the nominative tool, either era, `openai/` marker or not (RFC 6750 §3.1: it makes the
+  client refresh) — **save what is answered before the firewall** (priority 8): the refusals before the SDK
+  (`InboundMessageRefusalListener`, 15, a 400) and the router's 404/405 (`RouterListener`, 32) keep their own answer.
+  Empty body, `WWW-Authenticate: <BearerChallenge::refusedToken()>`, `no-store`, the same for every
+  cause, recorded through `ServerAnswersInterface::record()` (the call log reads it as the server's answer), built by
+  `Mcp/Infrastructure/Http/UnauthorizedAnswers::refusedToken()`, shared with the deferred 401. The cause
+  is named only in `McpBearerRefusedException`'s constant message (`MCP access token refused: <cause>`, never the
+  token, its hash nor a UUID), logged by the `security` channel's « Authenticator failed. »; the `AuthenticatorManager`
+  catches it, its `log_level: info` is never used (like `SubmittedPasswordTooLongException`). On success the request
+  goes on as `McpConnectionUser` (`Application/McpConnectionPrincipal`, an `AccountReference`): identifier = the
+  **connection**'s UUID, roles = the account's stored roles, `accountId()`, `connectionId()`, `clientId()` (public
+  OAuth id); the `security` channel's « Authenticator successful! » designates it by `userId`
+  (`AccountIdentifierReachesNoLogTest`). **The challenge is written once**, `Application/BearerChallenge`:
+  `missingToken()`, `refusedToken()` (`, error="invalid_token"`), `insufficientScope($description)` (the description
+  checked against RFC 6749 A.2's set, `InvalidChallengeDescriptionException` otherwise). Tests hold a connection
+  through the real flow, `tests/Mcp/Support/HoldsAnMcpConnection` (`holdMcpConnection()`, `bearer()`, SQL alterations
+  of the account, connection and token rows); `McpBearerAuthenticatorTest` reads each refusal's cause in the log.
 - **Consent: `GET|POST /api/oauth/consent`, `ROLE_TRUSTED`** (`access_control ^/api/oauth/consent(/|$)`,
   before the `ROLE_USER` rules; `ROLE_SUPER` through the hierarchy), under the `api` firewall (the person's
   cookie) and the CSRF guard for the POST, JSON only (`MapRequestPayload(acceptFormat: 'json')`). **One
@@ -224,15 +275,16 @@ paths:
   (`MetadataDocumentResponseFactory`). What is announced is what the server does, nothing more
   (`OAuthServerMetadata`): `S256` only, `none` auth, `response_modes_supported: ["query"]` (omitted, RFC 8414
   defaults to query **and** fragment), no `registration_endpoint`, **no OIDC document**.
-  **Two announcements ahead of the code, accepted** (phase 2 only ships whole): `client_id_metadata_document_supported: true`
-  until CIMD (#651) lands, and `bearer_methods_supported: ["header"]` while `/api/mcp` accepts no token
-  until its authenticator (#648) lands. `OAuthMetadataTest` pins both documents exactly, their routed paths, a POST 405, the
-  `BEARER` changing nothing, no `openid-configuration`.
+  **One announcement ahead of the code, accepted** (phase 2 only ships whole):
+  `client_id_metadata_document_supported: true` until CIMD (#651) lands; `bearer_methods_supported: ["header"]` is
+  true since #648's authenticator. `OAuthMetadataTest` pins both documents exactly, their routed paths, a POST 405,
+  the `BEARER` changing nothing, no `openid-configuration`.
 - **A dedicated Ingress carries the two documents**, `k8s/base/ingress-oauth-metadata.yaml`: two `Exact`
   paths to `backend:80` (an `Exact` beats the main Ingress's `/` prefix), **no annotation, no `tls`** —
   ingress-nginx applies `auth-*` annotations to every path of one object, and preprod's Basic Auth sits on
   the main one; a client cannot answer a Basic Auth. Each overlay patches the host only (the main Ingress's,
-  whose certificate covers it). `/api/oauth/*` and `/api/mcp` stay behind preprod's Basic Auth until phase 2's delivery (#653).
+  whose certificate covers it). `/api/oauth/*` and `/api/mcp` stay behind preprod's Basic Auth until phase 2's
+  delivery (#653).
   `OAuthMetadataIngressTest` pins paths against `OAuthEndpoints` and the router, no annotation nor
   certificate, and that no overlay patches anything else. **The frontend answers a real 404** under
   `/.well-known/` for those paths and the RFC roots and `openid-configuration` (never the SPA's 200,

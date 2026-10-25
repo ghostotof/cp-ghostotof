@@ -66,7 +66,10 @@ final readonly class CsrfCookieRequestSubscriber
      *   porte aucun jeton XSRF. L'exclusion n'est sûre que parce que le
      *   firewall `mcp` (security.yaml) ne lit jamais de cookie : une requête
      *   intersite portant le BEARER d'une personne de confiance n'y emprunte
-     *   aucune identité. Chemin EXACT, comme les précédents.
+     *   aucune identité. Son seul authentificateur (#648, McpBearerAuthenticator)
+     *   lit l'en-tête `Authorization: Bearer`, jamais un cookie : le
+     *   navigateur ne l'ajoute jamais de lui-même, et une page tierce n'a pas
+     *   le jeton d'une connexion MCP. Chemin EXACT, comme les précédents.
      *
      * - /api/oauth/token et /api/oauth/revoke (#647, RFC 6749 §3.2, RFC 7009) :
      *   appelés par le client MCP, hors navigateur, qui ne porte aucun jeton

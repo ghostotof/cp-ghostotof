@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Mcp\Presentation\Tool;
 
+use App\Mcp\Application\ToolSecuritySchemes;
 use Mcp\Capability\Attribute\McpTool;
 use Mcp\Capability\Attribute\Schema;
 use Mcp\Schema\Result\CallToolResult;
@@ -43,6 +44,7 @@ final readonly class GetContactInfoTool
         title: 'Contact',
         description: 'How to contact the site\'s author: the address of the site\'s contact form, to give to the user. No e-mail address is published.',
         annotations: new ToolAnnotations(readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false),
+        meta: [ToolSecuritySchemes::KEY => ToolSecuritySchemes::NO_AUTH],
         outputSchema: self::OUTPUT_SCHEMA,
     )]
     public function __invoke(

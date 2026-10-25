@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Mcp;
 
+use App\Tests\Mcp\Support\HoldsAnMcpConnection;
 use App\Tests\Mcp\Support\SpeaksMcp;
 use Doctrine\ORM\EntityManagerInterface;
 use Mcp\JsonRpc\MessageFactory;
@@ -43,11 +44,21 @@ use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
  */
 final class NoAnswerIsAStreamTest extends WebTestCase
 {
+    use HoldsAnMcpConnection;
     use SpeaksMcp;
 
     private const string PROGRESS_TOKEN = 'c5-progress';
 
     private const string ROLE = 'Senior PHP developer';
+
+    /**
+     * Le marqueur de ChatGPT, sur chaque `tools/call` : sans lui, l'appel
+     * anonyme de l'outil nominatif reçoit le 401 différé avant le SDK (#648) et
+     * l'outil ne tournerait pas — ce test ne garderait rien de sa réponse.
+     */
+    private const array OPENAI_MARKER = ['openai/subject' => 'c5-subject'];
+
+    private const string NOMINATIVE_TOOL = 'get_nominative_corpus';
 
     /** Les méthodes dont le traitement exécute du code du site, qui peut se suspendre. */
     private const array SUSPENDABLE = ['tools/call', 'prompts/get'];
@@ -132,8 +143,36 @@ final class NoAnswerIsAStreamTest extends WebTestCase
             // Le SDK veut l'URI d'une ressource en `Mcp-Name` ; un nom d'outil
             // ou de prompt, postModernMcp() l'y met lui-même.
             $server = \is_string($params['uri'] ?? null) ? ['HTTP_MCP_NAME' => $params['uri']] : [];
-            $this->postModernMcp($client, $method, $params, server: $server, id: 7, meta: ['progressToken' => self::PROGRESS_TOKEN]);
+            $this->postModernMcp($client, $method, $params, server: $server, id: 7, meta: $this->metaOf($method));
             $this->assertNotAStream($client, $method, $params);
+        }
+    }
+
+    /**
+     * L'outil nominatif **avec** une connexion (relecture de #648) : les tests
+     * ci-dessus l'appellent sans jeton, marqué `openai/`, et n'en gardent que
+     * le refus ; c'est la lecture du corpus, la plus longue réponse du
+     * serveur, qui ne doit pas davantage devenir un flux. Dans les deux ères,
+     * le jeton du vrai parcours OAuth sur chaque requête.
+     */
+    public function testTheNominativeToolReadWithAConnectionIsNotAStream(): void
+    {
+        $this->setUpOAuthFlow();
+
+        try {
+            $bearer = self::bearer($this->holdMcpConnection()->accessToken);
+            $params = ['name' => self::NOMINATIVE_TOOL, 'arguments' => new stdClass()];
+
+            $sessionId = $this->initializeMcpSession($this->client, $bearer);
+            $this->postMcp($this->client, $sessionId, $this->withProgressToken('tools/call', $params), $bearer);
+            $this->assertNotAStream($this->client, 'tools/call', $params);
+            $this->assertTheCorpusWasServed($this->client);
+
+            $this->postModernMcp($this->client, 'tools/call', $params, server: $bearer, id: 7, meta: $this->metaOf('tools/call'));
+            $this->assertNotAStream($this->client, 'tools/call', $params);
+            $this->assertTheCorpusWasServed($this->client);
+        } finally {
+            $this->tearDownOAuthFlow();
         }
     }
 
@@ -237,8 +276,29 @@ final class NoAnswerIsAStreamTest extends WebTestCase
             'jsonrpc' => '2.0',
             'id' => 7,
             'method' => $method,
-            'params' => ['_meta' => ['progressToken' => self::PROGRESS_TOKEN]] + $params,
+            'params' => ['_meta' => $this->metaOf($method)] + $params,
         ];
+    }
+
+    /**
+     * Le `_meta` d'un client qui veut bien d'un flux, plus le marqueur
+     * `openai/` sur un `tools/call` (OPENAI_MARKER).
+     *
+     * @return array<string, string>
+     */
+    private function metaOf(string $method): array
+    {
+        return ['progressToken' => self::PROGRESS_TOKEN] + ('tools/call' === $method ? self::OPENAI_MARKER : []);
+    }
+
+    /** Le corpus, pas le refus : sans quoi le test ne garderait que ce que les autres gardent. */
+    private function assertTheCorpusWasServed(KernelBrowser $client): void
+    {
+        $result = $this->decodeMcpResponse($client)['result'] ?? null;
+        self::assertIsArray($result);
+        self::assertFalse($result['isError'] ?? false);
+        self::assertIsArray($result['structuredContent'] ?? null);
+        self::assertIsString($result['structuredContent']['corpus'] ?? null);
     }
 
     /**

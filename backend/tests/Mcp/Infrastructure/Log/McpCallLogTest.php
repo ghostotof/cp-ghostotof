@@ -160,16 +160,31 @@ final class McpCallLogTest extends WebTestCase
         self::assertStringNotContainsStringIgnoringCase('sentinelle', (new JsonFormatter())->format($line));
     }
 
-    /** Ni l'en-tête `Authorization`, ni le cookie `BEARER`, ni l'identifiant de session. */
+    /**
+     * Ni l'en-tête `Authorization`, ni le cookie `BEARER`, ni l'identifiant de
+     * session. Depuis #648, un `Bearer` présenté est jugé par le firewall
+     * `mcp` : celui-ci, qui n'a pas la forme d'un jeton émis, est refusé en
+     * 401 avant le SDK, et la ligne de repli ne le cite pas davantage. Un
+     * autre schéma (le `Basic` du Basic Auth de la préprod) laisse l'appel
+     * servi, avec sa ligne d'appel.
+     */
     public function testNoTokenNorSessionIdReachesTheLine(): void
     {
         $client = self::createClient();
         $sessionId = $this->initializeMcpSession($client);
         $client->getCookieJar()->set(new Cookie('BEARER', 'cookie-sentinelle-643'));
 
-        $this->mcpCall($client, $sessionId, 'tools/list', server: ['HTTP_AUTHORIZATION' => 'Bearer jeton-sentinelle-643']);
+        $this->mcpCall($client, $sessionId, 'tools/list', server: ['HTTP_AUTHORIZATION' => 'Basic jeton-sentinelle-643']);
 
         $formatted = (new JsonFormatter())->format($this->onlyCallLine());
+        self::assertStringNotContainsString('sentinelle', $formatted);
+        self::assertStringNotContainsString($sessionId, $formatted);
+
+        $this->postMcp($client, $sessionId, ['jsonrpc' => '2.0', 'id' => 3, 'method' => 'tools/list'], ['HTTP_AUTHORIZATION' => 'Bearer jeton-sentinelle-643']);
+
+        self::assertResponseStatusCodeSame(401);
+        $this->assertFallbackLine('POST', 401, 'protocol-error', self::MCP_PROTOCOL_VERSION);
+        $formatted = (new JsonFormatter())->format($this->usageRecords()[0]);
         self::assertStringNotContainsString('sentinelle', $formatted);
         self::assertStringNotContainsString($sessionId, $formatted);
     }
@@ -356,12 +371,16 @@ final class McpCallLogTest extends WebTestCase
         self::assertSame(self::DECLARED_CLIENT, $line->context['declaredClient']);
     }
 
-    /** L'outil sans route rend une erreur d'outil en phase 1 (ADR 0006 D3). */
+    /**
+     * L'outil sans route rend une erreur d'outil en phase 1 (ADR 0006 D3) à un
+     * appel anonyme marqué `openai/` ; sans le marqueur, le 401 différé le
+     * précède (#648, DeferredAuthorizationListenerTest).
+     */
     public function testAModernToolErrorIsTold(): void
     {
         $client = self::createClient();
 
-        $this->postModernMcp($client, 'tools/call', ['name' => 'get_nominative_corpus', 'arguments' => new stdClass()]);
+        $this->postModernMcp($client, 'tools/call', ['name' => 'get_nominative_corpus', 'arguments' => new stdClass()], meta: ['openai/subject' => 'subject-1']);
         self::assertResponseStatusCodeSame(200);
         self::assertTrue($this->decodeMcpResponse($client)['result']['isError'] ?? null);
 

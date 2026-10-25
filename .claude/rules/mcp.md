@@ -17,7 +17,7 @@ paths:
 
 | Rule | Bullets |
 |---|---|
-| this file | the bundle and its pins, route-backed tools, the catalogue, `BackedByRoute`, tools, the `mcp` firewall, capabilities, host check, sessions, `GET /api/mcp`, tests, inbound refusals, no stream, rate per IP |
+| this file | the bundle and its pins, route-backed tools, the catalogue, `BackedByRoute`, tools, the `mcp` firewall, capabilities, host check, sessions, `GET /api/mcp`, tests, inbound refusals, the deferred 401, no stream, rate per IP |
 | `mcp-prompt-d8.md` | the prompt `present_for_role` (`PromptRole`, the nonce, the cleaning), the D8 guard (`AuthorNeverNamedTest`, the secret `MCP_D8_AUTHOR_NAME`) |
 | `mcp-journaux.md` | the SDK's `mcp` channel capped and redacted, the call log `mcp_usage` (`McpCallLog`, `ModernExchange`, `TruncatedIp`, the fallback line) |
 | `mcp-oauth.md` | phase 2's authorization server, `Mcp/Connection` (#647): league without its bundle, opaque hashed tokens, the derived encryption key, PKCE `S256`, `resource`, redirect matching, parameter pollution, the `oauth` firewall, consent, metadata outside `/api` and their Ingress, the consent page, accepted limits |
@@ -90,8 +90,34 @@ paths:
   `get_contact_info` (`{"contactPageUrl": "<APP_FRONTEND_BASE_URL>/<locale>/contact"}`, nothing else, no
   e-mail; `app.frontend_base_url`, the variable `allowed_hosts` reads) and `get_nominative_corpus`,
   **always listed**, its description saying it requires an MCP connection (ADR 0006 D3, what phase 2's
-  deferred authentication relies on); in phase 1 its call is a literal tool error, and it has no
-  dependency, so nothing of the corpus can leak. `get_tech_watch` relays third-party strings
+  deferred authentication relies on); its name is `Application/ProtectedTools::NOMINATIVE_CORPUS`, read by the
+  deferred 401 below. **With an MCP connection** (#648) it returns `{"corpus": <CorpusRenderer's text for the
+  language>, "cvPageUrl": "<APP_FRONTEND_BASE_URL>/<locale>/assistant"}` (closed `outputSchema`, never the PDF) and,
+  once the answer fits its bound, the audit line `nominative-corpus-read` (`userId`, `connectionId`, `clientId`, `tool`)
+  — it records the corpus as rendered, an unavailable detailed CV included (accepted: the connection read what the
+  server had to serve, not necessarily the CV), and **an answer the tool served, not one the client received**
+  (accepted, review of #648: a session write lost afterwards — the store down, the binding race below, a session
+  over its bound once the answer is queued — over-counts, the safe direction); without
+  one, an unmarked call gets that 401, a call marked `openai/` the tool's error — `CONNECTION_REQUIRED` and
+  `_meta["mcp/www_authenticate"]` = a list of one `BearerChallenge::insufficientScope()` challenge (the Apps SDK
+  reference types it « string or string[] ») —, the same marked or not, nothing read. **The tool is a thin adapter**
+  (review of #648): it parses the language, calls `Application/NominativeCorpusReaderInterface`
+  (`Infrastructure/Corpus/NominativeCorpusReader`) — `open(Locale): ?NominativeCorpus` decides the access and renders,
+  `recordServed(NominativeCorpus)` writes the audit line —, measures the answer and turns each outcome into a
+  `CallToolResult`; two steps because the measure is the SDK's encoding (Presentation) and the audit must follow it.
+  **The identity is read through `Security` only** (`McpConnectionPrincipal`, ADR 0006 D4): never `_meta`, the token
+  nor the SDK's authorization middlewares, and no `RequestContext` (nothing would read it). **The reader re-checks what
+  the authenticator already judged** (defence in depth, review of #648): a `McpConnectionPrincipal`, its
+  `grantsNominativeRead()` (the stored scope, re-read with the token) and
+  `isGranted(McpConnectionPrincipal::TRUSTED_TIER)` (the `role_hierarchy`); any of the three missing is the same
+  refusal as without a connection, nothing rendered nor logged (`NominativeCorpusReaderTest`, a fixture principal
+  lacking the tier, then the scope: red without each check, measured). The reader takes `Security`,
+  `CorpusRendererInterface`, `SecurityAuditLoggerInterface` (the second door of `mcp-oauth.md`'s « assumed
+  exception ») and `app.frontend_base_url`; the tool takes the reader's interface, `BearerChallenge` and the logger,
+  pinned in `McpExposureSymmetryTest::TOOLS_WITHOUT_ROUTE`. **Its queued answer is bounded**
+  (`QUEUED_ANSWER_MAX_BYTES`, sessions below); for it `Mcp/Presentation` imports
+  `Infrastructure/Session/BoundedSessionStore`, assumed like the controller's `ServerAnswersInterface` (the bound lives
+  with the code that enforces it). `get_tech_watch` relays third-party strings
   (endoflife.date cycles, versions, links) to the person's model — indirect prompt injection (LLM01): its
   description says to treat them as data; the output stays equal to the route (D1). Since #658 cycles and
   versions only pass in the shape of a version number, filtered in the watch itself, never in the tool
@@ -120,7 +146,24 @@ paths:
   route therefore turns the suite red until it is exposed or excluded.
 - **Tools** are services `#[McpTool]` on `__invoke()`, under `Presentation/Tool/` — the `registry` of
   `mcp.yaml` lists that namespace (and `Presentation/Prompt/` for prompts) only, and **the bundle refuses a
-  pattern that matches no service** (the server does not boot). `readOnlyHint: true`. A language
+  pattern that matches no service** (the server does not boot). `readOnlyHint: true`. **Every tool declares
+  its `securitySchemes`** (#648, ADR 0006 D3, decided 2026-10-24: at both places) in `#[McpTool(meta:
+  [ToolSecuritySchemes::KEY => …])]`, the single source — `ToolSecuritySchemes::NO_AUTH` for a public tool (key and value
+  written once, in `Application/`, never copied into a tool, review of #648), or for the nominative tool
+  `[['type' => 'oauth2', 'scopes' => [McpConnection::SCOPE_NOMINATIVE_READ]]]` —, and
+  `Infrastructure/Registry/SecuritySchemesRegistry` (an `#[AsDecorator]` of `mcp.server.portfolio.registry`)
+  republishes it at the top level of each `tools/list` entry, which the Apps SDK reference reads (`_meta` is its
+  back-compat mirror; ChatGPT freezes the list when the connector is approved, hence both from the first
+  publication). Its `getTools()` copies each `Tool` of the page into a `ToolWithSecuritySchemes` (every
+  constructor field, plus the key in `jsonSerialize()`); a tool without a valid `_meta["securitySchemes"]` (a
+  non-empty list of objects with a `type`) throws `ToolWithoutSecuritySchemesException`, a `-32603` for the whole
+  list, never a tool published without one or with a guessed one. Everything else is delegated, **`getTool()`
+  included**: a call, `McpCallLog` and `ReadsPortfolioRegistry` read the inner references. Pinned by
+  `SecuritySchemesTest` (both eras; `server/discover` lists no tool in 0.8.1, the day it does the test turns
+  red) and `SecuritySchemesRegistryTest` (the copy against `Tool`'s constructor parameters: an SDK bump adding
+  one turns it red). Accepted: decorated, the registry is loaded without `Registry::loadFrom()` (the builder
+  only uses it on its own `final` class), so each registration dispatches a `*ListChangedEvent` on Symfony's
+  dispatcher at every server build — no listener exists without a notification bus. A language
   parameter is a **string**, never an enum (decided 2026-10-19): `#[Schema(description: ToolLocale::DESCRIPTION)]
   string $locale = ToolLocale::DEFAULT`, parsed by `ToolLocale::parse()`, which turns an unknown value into a
   tool error the model can correct (MCP 2025-11-25) — with a PHP enum type the SDK derived an `enum` and
@@ -129,10 +172,12 @@ paths:
   (`isError: true`), never an unhandled exception (`-32603`, which tells the model nothing). Descriptions,
   titles, schemas, `instructions` and `serverInfo` are read by any client, i.e. at the anonymous tier: **they
   never name the author** (ADR 0006 D8), they say « the site's author ». The only exceptions are listed under
-  D8 in the ADR, each decided by the author (today: the server name `cp-ghostotof`, for this server only);
+  D8 in the ADR, each decided by the author (today: the server name `cp-ghostotof`, for this server only,
+  `get_contact_info`'s URL, and the metadata URL of the authentication challenge, #648);
   a new one goes into that list first, then into `AuthorNeverNamedTest::ADMITTED`.
 - **The `mcp` firewall never reads a cookie** (ADR 0006 D4). Declared before `api`, `^/api/mcp$`, stateless,
-  no authenticator (phase 2 will add the MCP-connection Bearer one, and only it). That is what makes
+  one authenticator since #648, the MCP connection's (`Authorization: Bearer`, nothing else — no `jwt`; its rules
+  in `.claude/rules/mcp-oauth.md`, « The authenticator of `/api/mcp` »). That is what makes
   `/api/mcp`'s entry in `CsrfCookieRequestSubscriber::EXCLUDED_PATHS` safe: a cross-site request carrying a
   trusted person's `BEARER` borrows no identity there. `McpEndpointTest::testATrustedBearerCookieIsNeitherRefusedByTheCsrfGuardNorRead`
   pins both halves (each one's removal turns it red, measured). `/api/mcp` is in `ApiRouteExposureTest`'s
@@ -175,7 +220,22 @@ paths:
   (it could not fit), the client sees no JSON-RPC answer, then a 404. The **number** of sessions per IP is
   the nginx `mcpsession` zone's business (#644, 10 creations per minute), not the bound's. **The bound must fit the largest legitimate
   answer**: the SDK queues a tool's response in the session before sending it, so every answer goes through
-  `cache_items` — phase 2's nominative corpus included (measure it there). **Guarded since #644**:
+  `cache_items` — phase 2's nominative corpus included, **measured in #648**: the SDK encodes the answer without
+  flags (`\uXXXX`, 12 bytes for a 4-byte character), the corpus is in it twice (`structuredContent` and the text
+  block), and `Session::save()` encodes it again; `MAX_CHARACTERS` bounds the CV's text only, the anonymous CV and the
+  case studies have no length bound. Queued, the fictive CV gives 2 880 bytes, 30 000 ASCII characters 60 806, 30 000
+  of 2 or 3 bytes 420 806, 30 000 of 4 bytes **841 076 — session destroyed**. Decided by the author (2026-10-24), corrected by the
+  review of task 5: the tool bounds **the queued answer itself**, `GetNominativeCorpusTool::QUEUED_ANSWER_MAX_BYTES` =
+  `MAX_BYTES / 2` (half left to the rest of the session), measured by `Presentation/Tool/QueuedAnswer::bytes()` (the
+  `CallToolResult` as returned, wrapped in the SDK's `Response`, `json_encode`d as `Protocol::queueOutgoing()` does,
+  then again as `Session::save()` does) — a bound on the payload was not enough: against the flag-less payload the
+  queue weighs 2 × (ASCII), ~2.3 × (accents, emoji), 4 × (`/`, line feed) and 6 × (`"`, `\`), up to 12 queued bytes
+  per byte of text. Over it, a tool error giving `cvPageUrl` (download the CV from the site), a `warning` with the sizes
+  only, no audit line. The session bound, `MAX_CHARACTERS` and the career assistant's corpus are unchanged.
+  `GetNominativeCorpusToolTest::testTheToolMeasuresWhatTheSdkQueues` compares the measure with the real queue (two SDK
+  internals no API publishes: an SDK bump changing either turns it red), and
+  `testAQueuedAnswerAtTheBoundFitsInTheSession` pins the relation with `MAX_BYTES` on the worst composition (a corpus of
+  `"`) in a real session. **Guarded since #644**:
   `RouteBackedToolsTest::testTheAnswerQueuedInTheSessionStaysFarBelowTheSessionBound` measures, per route-backed tool on
   the seeds, what is queued — the SDK's JSON answer, JSON-encoded again by `Session::save()` — and keeps it under an eighth
   of `MAX_BYTES` and under 3 × the route body + 1 KiB (a ratio independent of the content: an SDK change of encoding
@@ -192,7 +252,30 @@ paths:
   a failed read asks the inner store whether the row is there: absent (expired), `false` silently; present, the
   `warning` and `false` — the SDK answers 404, like the GET. A new session never goes through `exists()` (the SDK
   reads it in `save()` on every `initialize`, `false`), so it costs nothing more (#663).
-  `McpEndpointTest::testAPostOnAnUnreadableSessionIs404` corrupts a real row.
+  `McpEndpointTest::testAPostOnAnUnreadableSessionIs404` corrupts a real row. **A session is bound to the first MCP
+  connection that uses it** (#648, the author's decision of 2026-10-24): the SDK drains a session's **whole** outgoing
+  queue to any `POST` carrying its id (`Protocol::consumeOutgoingMessages()`, from `StreamableHttpTransport::createJsonResponse()`),
+  so a concurrent anonymous `POST` holding the id would have received the corpus queued by the authenticated call. The
+  decorator reads the request's connection in the token storage (`McpConnectionPrincipal`, set by the `mcp` firewall
+  before the SDK) and writes the binding **in the same write** as the session: the stored value is
+  `mcp-connection:<connection UUID>\n` then the SDK's session, never decoded (the SDK's starts with `{` or `[`, so an
+  unbound row reads as before; a malformed header is an unreadable session). Bound, the session **does not exist** for
+  any other request, anonymous or another connection: `exists()` is `false` before the SDK reads or drains anything
+  (404) — the GET's too —, a read returns nothing, a write is refused, a `DELETE` destroys nothing (the SDK answers 200,
+  as to an unknown id; one read more); a `warning` without any id. Not used by a connection yet, a session is served as
+  before, and the first one to use it binds it (an anonymous `initialize`, then the OAuth flow). On clients: one that
+  stops presenting its token, or comes back under a new connection, gets a 404 and re-initialises; a refresh keeps the
+  connection, hence the session. Accepted, the SDK's own race (no lock): a request that read the session before it was
+  bound may write it back once, with what it had read, unbound **or bound to its own connection** (the last writer
+  wins, the first connection then gets a 404), or destroy it when its write crosses `MAX_BYTES` — never the
+  connection's answer, then lost like any concurrent update, and never another connection's corpus (the drain re-reads
+  the store and refuses a foreign binding); likewise a connection that knows the id of a session opened anonymously
+  can take it, its anonymous holder then getting a 404 (ids are the server's UUID v4s); and one refused request may
+  write two `warning`s (the drain's read, then the refused write) — security review of #648. `MAX_BYTES` counts the
+  SDK's session, not the header. The sessionless 2026-07-28 revision is not concerned: `StatelessProtocol` serves each request on an in-memory session, never on this store.
+  `BoundedSessionStoreTest` replays the SDK's sequence with its `Session` (every write bound, the full queue included);
+  `GetNominativeCorpusToolTest` plays an anonymous `ping`, GET and `DELETE`, another connection, a session opened
+  anonymously and reads the `cache_items` row.
 - **`GET /api/mcp` answers an empty SSE stream, not 405** (`Presentation/Controller/McpEndpointController`, an
   `#[AsDecorator]` of `mcp.server.portfolio.controller`): `retry: 300000`, then closed. The SDK 0.8.1 answers
   405 (spec-compliant), which PhpStorm's AI Assistant takes for a failure. A finished `Response`, **never a
@@ -221,8 +304,7 @@ paths:
   the tool is called without one. The tools are exercised in the
   handshake-era revision (`2025-06-18`); the SDK also serves the sessionless 2026-07-28 revision on
   the same endpoint, exercised by #672's tests (no session written, `initialize` refused), by #664's call-log
-  tests (`postModernMcp()`, `MCP_MODERN_REVISION`) and the preprod smoke (phase 2's deferred 401 must recognise
-  the protected tool in both forms).
+  tests (`postModernMcp()`, `MCP_MODERN_REVISION`), by the deferred 401's (both eras, below) and the preprod smoke.
 - **Six inbound messages are refused before the SDK** (#644, #664, #675): `Infrastructure/Http/InboundMessageRefusalListener`
   (`kernel.request`, priority 15, `POST` on the canonical path `/api/mcp`, so `/api/%6Dcp` too — and a POST stays
   one: `framework.allowed_http_method_override: []` since the audit of #675, where Symfony turned a POST carrying
@@ -283,13 +365,47 @@ paths:
   `AuthorNeverNamedTest`. **No body bound in the application**: `SdkChannelRecordsTest` sends 100 KB strings through
   the SDK on purpose, and the bound is nginx's (`.claude/rules/deploiement-nginx.md`, chunked included).
   `InboundMessageRefusalTest` pins every case; `McpEndpointTest`'s session-bound cases go through `_meta` since.
+- **The deferred 401** (#648, ADR 0006 D3, spec 0007 « Sans connexion »): `Infrastructure/Http/DeferredAuthorizationListener`
+  (`kernel.request`, **priority 7**, after the `mcp` firewall's 8 — which has already read a valid connection's token, or
+  answered its own 401 `invalid_token` for a refused one — and after the refusals above; main request, `POST` on the
+  canonical path) answers a `tools/call` of `ProtectedTools::NOMINATIVE_CORPUS` made **without** an MCP connection (the
+  token storage's user is no `McpConnectionPrincipal`) with a **401 without body**, `WWW-Authenticate:
+  BearerChallenge::missingToken()` (no `error=`: no token was presented), `no-store`, recorded through
+  `ServerAnswersInterface::record()` — built by `Infrastructure/Http/UnauthorizedAnswers::missingToken()`, the
+  authenticator's 401 by its `refusedToken()`: one template, only the challenge differs —, what makes a Claude client
+  open the OAuth flow. **The body decides, read by the SDK's own `MessageFactory::create()`** (as `ModernExchange` reads it): a message is that call exactly when the SDK
+  would build a `CallToolRequest` of that name from it, in a session and under the sessionless 2026-07-28 envelope
+  alike. A one-message batch is judged as a single message — served by the SDK in a session, refused by it under the
+  2026-07-28 envelope, which this 401 precedes, as it precedes the SDK's session validation and its `Host` check (an
+  unknown session id or a foreign host gets this 401: nothing is served either way). **Never the `Mcp-Name` header**,
+  the caller's choice, which this 401 precedes the SDK's comparison of (SEP-2243). A body the factory cannot read
+  (`JsonException`, the one it throws: its other failures become `InvalidInputMessageException`s, save a scalar
+  notification `_meta`'s `TypeError`, refused at priority 15) is left to the SDK.
+  **The `openai/` marker only chooses the form of the refusal, never the access**: a message whose `_meta` holds a
+  key prefixed `ProtectedTools::OPENAI_META_PREFIX` (ChatGPT) passes to the tool, which reads the identity through
+  `Security` only (D4). The identity is read first, so an authenticated call pays no decoding; an anonymous `POST`'s
+  body is decoded nine times instead of eight (`mcp-journaux.md`). Its call line: `mcp-journaux.md`.
+  `DeferredAuthorizationListenerTest` plays every case in both eras (marker, public tool, valid connection,
+  one-message batch, `Mcp-Name` contradicting the body, unreadable body, call line);
+  `DeferredAuthorizationListenerPriorityTest` pins on the real dispatcher that it runs after SecurityBundle's
+  `FirewallListener` and after `InboundMessageRefusalListener`. A test that reads the nominative tool's own answer
+  without a connection marks its call `openai/` (`AuthorNeverNamedTest`, `NoAnswerIsAStreamTest`). The session where
+  the corpus was served is the connection's: « Sessions » above.
 - **No answer is a stream** (#678, audit C5 of #675): under PHP-FPM a stream holds a worker. `tests/Mcp/NoAnswerIsAStreamTest`
   sends, in both eras, as a client accepting `text/event-stream` with a `progressToken`, every request the SDK can
   build (`MessageFactory::REGISTERED_MESSAGES` and `StatelessProtocol`'s `*_METHOD`, read by reflection, against its
   closed `params()` — an SDK bump adding one turns it red until judged; `server/discover` must announce no extension,
-  whose methods escape that reading), each listed tool, prompt and resource included, and
+  whose methods escape that reading), each listed tool, prompt and resource included — the nominative tool also read with
+  a connection (#648) —, and
   wants JSON (a `result` for `tools/call`/`prompts/get`). Measured red: a tool calling `ClientGateway::progress()`, and
   the `listen` refusal lifted. Not covered: a tool notifying only for some arguments.
+- **No answer is stored** (#648, security review): `Infrastructure/Http/NoStoreResponseListener` (`kernel.response`,
+  priority -1024, main request, canonical path `McpEndpoint::PATH`, any method and status) adds `Cache-Control: no-store`
+  to every answer of `/api/mcp`. The SDK's JSON answer carries no cache header, and Symfony computed `no-cache, private`
+  (measured): a private cache (a corporate proxy, a client library's HTTP cache) could store it, nominative corpus
+  included. The whole endpoint, public tools too, rather than a sort per tool or identity that the next tool would
+  forget. `NoStoreResponseListenerTest` (an authenticated read, a public tool's anonymous answer, `initialize`,
+  `/api/%6Dcp`, another route untouched).
 - **Rate, body and sessions per IP** (#644): the nginx `mcp` zone and the location's 16 KiB body bound
   (`.claude/rules/deploiement-nginx.md`). The `mcpsession` zone counts every `POST` whose `Mcp-Session-Id` is not
   a well-formed UUID (#672, an allow-list: PHP's PSR-7 bridge trims tabs and drops a header with a control

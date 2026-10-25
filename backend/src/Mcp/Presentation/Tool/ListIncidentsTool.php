@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Mcp\Presentation\Tool;
 
 use App\Mcp\Application\RoutePayloadReaderInterface;
+use App\Mcp\Application\ToolSecuritySchemes;
 use App\Portfolio\Incident\Presentation\ApiResource\IncidentResource;
 use Mcp\Capability\Attribute\McpTool;
 use Mcp\Capability\Attribute\Schema;
@@ -62,6 +63,7 @@ final readonly class ListIncidentsTool
         title: 'Production incidents',
         description: 'Post-mortems of the site\'s production outages: impact, root cause, resolution and the invariant drawn from each. Returns exactly what the "Incidents" page shows.',
         annotations: new ToolAnnotations(readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false),
+        meta: [ToolSecuritySchemes::KEY => ToolSecuritySchemes::NO_AUTH],
         outputSchema: self::OUTPUT_SCHEMA,
     )]
     public function __invoke(

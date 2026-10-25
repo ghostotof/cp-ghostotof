@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Mcp\Presentation\Tool;
 
 use App\Mcp\Application\RoutePayloadReaderInterface;
+use App\Mcp\Application\ToolSecuritySchemes;
 use App\Portfolio\Contribution\Presentation\ApiResource\ContributionResource;
 use Mcp\Capability\Attribute\McpTool;
 use Mcp\Capability\Attribute\Schema;
@@ -61,6 +62,7 @@ final readonly class ListContributionsTool
         title: 'Contributions',
         description: 'Technical contributions of the site\'s author to public projects, each with its link and its argument. Returns exactly what the "Contributions" page shows.',
         annotations: new ToolAnnotations(readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false),
+        meta: [ToolSecuritySchemes::KEY => ToolSecuritySchemes::NO_AUTH],
         outputSchema: self::OUTPUT_SCHEMA,
     )]
     public function __invoke(

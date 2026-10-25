@@ -579,6 +579,37 @@ final class SecurityAuditLoggerTest extends TestCase
     }
 
     /**
+     * Lecture du corpus nominatif par une connexion MCP (#648, ADR 0006 D5) :
+     * le compte par son UUID — sujet et auteur, puisque c'est le jeton de sa
+     * connexion qui a été authentifié —, la connexion par le sien, le client
+     * par son identifiant public, l'outil par son nom. Jamais le jeton
+     * présenté, son empreinte, ni rien du corpus.
+     */
+    public function testNominativeCorpusReadNamesTheAccountTheConnectionTheClientAndTheTool(): void
+    {
+        $this->pushRequest('/api/mcp', 'POST');
+        $account = new CpgUser('trusted', 'hashed-password');
+        $account->setRoles([CpgUser::ROLE_TRUSTED]);
+        $this->authenticate($account);
+        $connectionId = Uuid::v7();
+
+        $this->auditLogger->nominativeCorpusRead($account, $connectionId, 'https://client.example.test/metadata.json', 'get_nominative_corpus');
+
+        $record = $this->singleRecord();
+        self::assertSame('Nominative corpus read.', $record->message);
+        self::assertSame([
+            'event' => 'nominative-corpus-read',
+            'userId' => $account->getId()->toRfc4122(),
+            'connectionId' => $connectionId->toRfc4122(),
+            'clientId' => 'https://client.example.test/metadata.json',
+            'tool' => 'get_nominative_corpus',
+            'actor' => $account->getId()->toRfc4122(),
+            'ip' => self::IP,
+            'path' => '/api/mcp',
+        ], $record->context);
+    }
+
+    /**
      * Hors requête HTTP (commande, handler Messenger) : ni IP ni chemin, mais
      * l'événement sort quand même — l'absence de requête n'est pas une raison
      * de perdre la trace.
@@ -680,9 +711,10 @@ final class SecurityAuditLoggerTest extends TestCase
         $this->auditLogger->contactThrottled();
         $this->auditLogger->baseAccessThrottled();
         $this->auditLogger->mcpConnectionGranted($invited, Uuid::v7(), 'https://client.example.test/metadata.json');
+        $this->auditLogger->nominativeCorpusRead($invited, Uuid::v7(), 'https://client.example.test/metadata.json', 'get_nominative_corpus');
 
         $records = $this->handler->getRecords();
-        self::assertCount(23, $records);
+        self::assertCount(24, $records);
 
         foreach ($records as $record) {
             $serialized = json_encode([$record->message, $record->context, $record->extra], \JSON_THROW_ON_ERROR);

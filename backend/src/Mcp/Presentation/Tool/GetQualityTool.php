@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Mcp\Presentation\Tool;
 
 use App\Mcp\Application\RoutePayloadReaderInterface;
+use App\Mcp\Application\ToolSecuritySchemes;
 use App\Portfolio\Quality\Presentation\ApiResource\QualityContentResource;
 use Mcp\Capability\Attribute\McpTool;
 use Mcp\Capability\Attribute\Schema;
@@ -68,6 +69,7 @@ final readonly class GetQualityTool
         title: 'Quality principles',
         description: 'The quality principles the site\'s author works by, and the traits that sum them up. Returns exactly what the home page shows.',
         annotations: new ToolAnnotations(readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false),
+        meta: [ToolSecuritySchemes::KEY => ToolSecuritySchemes::NO_AUTH],
         outputSchema: self::OUTPUT_SCHEMA,
     )]
     public function __invoke(

@@ -77,6 +77,15 @@ framework:
         # celui d'une erreur du client, déjà tracée par `login-failed`.
         App\Security\Authentication\Infrastructure\Security\SubmittedPasswordTooLongException:
             log_level: info
+        # Jeton d'accès MCP refusé sur /api/mcp (#648) : même cas que
+        # ci-dessus. Levée par McpBearerAuthenticator, rattrapée par
+        # l'AuthenticatorManager du firewall `mcp`, rendue en 401
+        # `invalid_token` par l'authentificateur : elle n'atteint pas
+        # logKernelException. L'entrée dit le niveau qu'elle aurait si elle
+        # s'échappait, celui d'une erreur du client, déjà tracée par la ligne
+        # « Authenticator failed. » du canal `security` (sa cause comprise).
+        App\Mcp\Connection\Infrastructure\Security\McpBearerRefusedException:
+            log_level: info
         # Demande d'autorisation OAuth refusée au consentement (#647) : la page
         # renvoie une demande que le serveur ne juge plus valable (redirection
         # modifiée, client retiré). Une erreur du client, 400 ; le refus de

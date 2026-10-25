@@ -6,6 +6,7 @@ namespace App\Mcp\Connection\Domain\Entity;
 
 use App\Mcp\Connection\Infrastructure\Doctrine\McpConnectionRepository;
 use App\Security\User\Domain\Entity\CpgUser;
+use DateInterval;
 use DateTimeImmutable;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
@@ -35,6 +36,24 @@ class McpConnection
      * le domaine ; le serveur d'autorisation le relit (NominativeReadScope).
      */
     public const string SCOPE_NOMINATIVE_READ = 'nominative:read';
+
+    /**
+     * Délai d'inactivité (`DateInterval`) : une connexion inutilisée pendant
+     * 30 jours expire, comptés depuis son dernier usage, ou depuis l'octroi
+     * tant qu'aucun usage n'est écrit. Des jours de calendrier, comme la
+     * durée d'un jeton de rafraîchissement (`P30D`).
+     *
+     * Une constante du domaine jusqu'à #649, qui la passe en configuration.
+     */
+    public const string IDLE_LIFETIME = 'P30D';
+
+    /**
+     * Durée maximale (`DateInterval`) : 90 jours après l'octroi, la connexion
+     * expire quel que soit son usage — la personne consent de nouveau.
+     *
+     * Une constante du domaine jusqu'à #649, qui la passe en configuration.
+     */
+    public const string MAX_LIFETIME = 'P90D';
 
     /** Spec 0003 : UUID v7 posé par le constructeur. */
     #[ORM\Id]
@@ -100,6 +119,17 @@ class McpConnection
         return $this->scope;
     }
 
+    /**
+     * La connexion accorde-t-elle `nominative:read` ? Le scope stocké est la
+     * liste que league a retenue, séparée par une espace (RFC 6749 §3.3) :
+     * comparé mot pour mot et à la casse près (un scope est sensible à la
+     * casse), jamais par préfixe.
+     */
+    public function grantsNominativeRead(): bool
+    {
+        return \in_array(self::SCOPE_NOMINATIVE_READ, explode(' ', $this->scope), true);
+    }
+
     public function grantedAt(): DateTimeImmutable
     {
         return $this->grantedAt;
@@ -118,5 +148,31 @@ class McpConnection
     public function isRevoked(): bool
     {
         return null !== $this->revokedAt;
+    }
+
+    /**
+     * La connexion a-t-elle expiré à l'instant `$now` ? Deux échéances, la
+     * première atteinte l'emporte, et chacune est exclusive (atteinte à la
+     * seconde près, la connexion est morte) :
+     *
+     * - le délai d'inactivité, {@see self::IDLE_LIFETIME} après
+     *   `lastUsedAt ?? grantedAt` ;
+     * - la durée maximale, {@see self::MAX_LIFETIME} après `grantedAt`.
+     *
+     * `lastUsedAt` n'est écrit qu'au rafraîchissement, à partir de #649 —
+     * jamais à chaque appel (ADR 0006 D6). D'ici là il reste nul, et une
+     * connexion meurt 30 jours après l'octroi même utilisée chaque jour :
+     * accepté, la phase 2 ne sort qu'entière.
+     *
+     * Les durées s'ajoutent par `add(new DateInterval(…))`, jamais par
+     * `modify()` (règle des durées écoulées, #445). La révocation n'est pas
+     * une expiration : {@see self::isRevoked()} se lit à part.
+     */
+    public function isExpiredAt(DateTimeImmutable $now): bool
+    {
+        $idleDeadline = ($this->lastUsedAt ?? $this->grantedAt)->add(new DateInterval(self::IDLE_LIFETIME));
+        $maxDeadline = $this->grantedAt->add(new DateInterval(self::MAX_LIFETIME));
+
+        return $now >= $idleDeadline || $now >= $maxDeadline;
     }
 }

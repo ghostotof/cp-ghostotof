@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Mcp\Presentation\Tool;
 
 use App\Mcp\Application\RoutePayloadReaderInterface;
+use App\Mcp\Application\ToolSecuritySchemes;
 use App\Portfolio\About\Domain\Exception\AboutSettingsNotFoundException;
 use App\Portfolio\About\Presentation\ApiResource\AboutContentResource;
 use Mcp\Capability\Attribute\McpTool;
@@ -86,6 +87,7 @@ final readonly class GetAboutTool
         title: 'About',
         description: 'The "About" page of the site: what the site is and how it is built, then the site\'s author from a technical, personal and hobbies angle. Returns exactly what the page shows.',
         annotations: new ToolAnnotations(readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false),
+        meta: [ToolSecuritySchemes::KEY => ToolSecuritySchemes::NO_AUTH],
         outputSchema: self::OUTPUT_SCHEMA,
     )]
     public function __invoke(
