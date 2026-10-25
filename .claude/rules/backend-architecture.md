@@ -102,7 +102,10 @@ walks every entity's metadata and fails on any `datetime`, `datetime_immutable`,
 `messenger_messages.created_at`/`available_at`/`delivered_at` are `TIMESTAMP WITHOUT TIME ZONE` holding
 **UTC wall time** (the Doctrine transport writes `new DateTimeImmutable('UTC')`), so a value compared with
 them in SQL is converted to UTC first — `PurgeFailedContactMessagesCommand` formatted its threshold in
-Paris time and purged one to two hours early (issue #446).
+Paris time and purged one to two hours early (issue #446). Converted **after** counting: its days are
+calendar days of PHP's zone (#445), so a window holding a clock change lasts 721 or 719 hours. A test
+reference built as « now in UTC − 30 days » is an hour off for the 30 days after each change — it turned
+the whole CI red from 2026-10-25 (issue #709); write the expected thresholds out, under a frozen clock.
 **The database's sessions read wall times in PHP's zone** (`ALTER DATABASE … SET timezone TO
 'Europe/Paris'`, same migration, settled in the review of #434): the second net, for a time without
 offset that still reaches the database — an untyped query parameter, which the ORM infers as
