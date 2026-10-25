@@ -190,6 +190,35 @@ paths:
   locations, plus urlencoded, JSON and bodiless witnesses that must pass); the `map` is covered by the
   `http`-level mirror check, `@unsupported_media_type` and `@rate_limited` by `MIRRORED_LOCATIONS`. PHP
   itself is the second barrier (`.claude/rules/images-docker.md`, « PHP parses no multipart body »).
+  **Accepted: a multipart request is counted by no zone** (issue #702, decided on 2026-10-25), neither
+  `limit_req` nor `limit_conn`: the server-rewrite phase runs before preaccess, and before find-config, so a
+  multipart body over a location's bound gets the 415, not the 413. Measured on nginx 1.30.4: twelve multipart
+  POSTs on `/api/contact` (burst 5) got twelve 415s, and a multipart sent while `assistantconn` was full got a
+  415. Why it costs nothing: none of them reaches PHP, which is what the zones protect, and **every refusal of
+  a request whose body is still coming goes through the same lingering close**: nginx discards what the client
+  keeps sending, up to `lingering_time` (nginx's default 30 s, `lingering_timeout` 5 s between reads — neither
+  set in the confs; a change of either moves all three refusals alike) — measured at 31 s, with a client
+  sending 1 KiB a second, for a multipart 415, for a 413 (accepted above, `/api/mcp`) and for a `limit_conn`
+  429. A complete body is refused at once. Refusing after the zones would free nothing: each multipart would
+  take a token of the zone first — of `contact` or `login`, draining the burst of that address's real JSON
+  requests — and get a 429 once the zone is drained, the 413 still coming first past a `Content-Length` bound.
+  And it cannot be done with an `if` in each location: a location's `return` runs in the rewrite phase, before
+  preaccess too (measured). It would take a precontent refusal (`try_files` to a named location chosen by a
+  `map`), which `= /api/mcp` and `/api/assistant/` cannot use without an internal redirect that reads the body
+  under another location's bound (#644's trap). In preprod and prod the ingress-nginx in front should buffer
+  the whole body before reaching the sidecar (`proxy-request-buffering on`, `proxy-body-size 1m`: the
+  controller's defaults, not set in `k8s/ingress-nginx-values.yaml`, **not checked on the cluster** —
+  `helm upgrade --reuse-values` keeps whatever was set by hand; pinning it is #712), so a slow body would
+  not reach the sidecar slowly, and an oversized one gets the ingress's 413. In dev nothing fronts the `web`
+  nginx: accepted, dev only. Guard: `check_refused_before_zone`, run as each `limit_req` zone has just
+  refused and while each `limit_conn` zone is full: the multipart must still get the 415 problem+json, then a
+  bodiless witness on the same path the 429 — a witness let through means the zone reopened meanwhile (a
+  token refilled: `publicapi` every 100 ms, `mcp` every second; a held connection dropped), a false green
+  otherwise: a failure for `limit_conn`, « non concluant » without failure for `limit_req`, whose refills
+  would make the guard flaky. And `check_body_limit` sends a multipart one byte over the bound, which must get
+  the 415, not the 413. Measured red with the refusal removed, and with it moved after the zones on
+  `/api/contact` (the old `/api/contact` multipart line stays green there, the new one goes red). A 429 there
+  means the refusal was moved: not wrong in itself, but read this bullet first.
 - **nginx rate limits need `real_ip`** (audit C7). `limit_req_zone` keys on `$binary_remote_addr`, and behind
   the ingress the sidecar's TCP peer is the ingress-nginx pod — without the `set_real_ip_from` block, the whole
   internet shares one counter, which is a self-inflicted DoS. The trusted ranges mirror Symfony's
