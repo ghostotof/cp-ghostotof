@@ -50,6 +50,9 @@
 # problem+json avant PHP, sur toute méthode et toute location ; JSON,
 # urlencoded (le point de jeton OAuth de la phase 2 MCP en a besoin) et une
 # requête sans corps passent.
+# Depuis #702, l'ordre de ce refus (check_refused_before_zone) : une zone
+# `limit_req` vidée ou une zone `limit_conn` pleine laisse un multipart en 415,
+# le refus passant avant les zones.
 #
 # Règle à respecter : ajouter une zone `limit_req` dans les confs, c'est
 # ajouter une ligne à ZONES ci-dessous — sinon le script échoue en nommant la
@@ -292,6 +295,34 @@ start_nginx() {
   exit 1
 }
 
+# check_refused_before_zone <libellé> <méthode> <chemin> [<options curl>…] :
+# appelée quand une zone vient de refuser (limit_req vidée, limit_conn pleine),
+# exige qu'un multipart sur le même chemin reçoive encore le 415 problem+json,
+# pas le 429 (#702). Le refus est au niveau server, en phase de réécriture,
+# avant la phase preaccess des zones : décidé, et non subi. Un 429 ici dirait
+# que le refus a été déplacé derrière les zones. Ce n'est pas faux en soi (rien
+# n'atteindrait PHP non plus), mais le changement doit être voulu : lire alors
+# `.claude/rules/deploiement-nginx.md`, « Multipart bodies never reach PHP ».
+# Pour `publicapi` (10 r/s), un jeton rechargé avant la sonde ferait passer
+# celle-ci même sous un refus déplacé : un faux vert possible, jamais un faux
+# rouge. Les zones lentes (10 à 60 r/min) n'ont pas ce jeu.
+check_refused_before_zone() {
+  local label="$1" method="$2" path="$3" raw code body_file
+  shift 3
+  body_file="$(mktemp)"
+  raw="$(curl -sS "${CURL_OPTS[@]}" -X "$method" "$@" -H 'Content-Type: multipart/form-data; boundary=x' \
+    --data-binary 'a=1' -D - -o "$body_file" -w 'x-audit-http-code: %{http_code}\n' "${BASE}${path}" 2>&1 || true)"
+  code="$(sed -n 's/^x-audit-http-code: //p' <<< "$raw" | tail -1)"
+  if [ "$code" = "415" ] && grep -q '"type":"/errors/415"' "$body_file"; then
+    printf '    \033[32mOK\033[0m      multipart sur %s → 415, refusé avant la zone\n' "$label"
+  else
+    printf '    \033[31mKO\033[0m      multipart sur %s → « %s », 415 /errors/415 attendu   <-- refus multipart déplacé derrière les zones (#702) ?\n' \
+      "$label" "${code:-aucun}"
+    FAILURES=$((FAILURES + 1))
+  fi
+  rm -f "$body_file"
+}
+
 # check_zone <conf> <chemin> <méthode> <burst> <zone> : vide la rafale, puis
 # juge le premier 429 obtenu.
 check_zone() {
@@ -326,6 +357,8 @@ check_zone() {
   fi
 
   printf '  %s (zone %s) : 429 après la rafale de %s, à la requête %s\n' "$path" "$zone" "$burst" "$i"
+  # La zone vidée, un multipart sur le même chemin reste un 415 (#702).
+  check_refused_before_zone "$path (zone ${zone} vidée)" "$method" "$path" "${headers[@]}"
   if grep -qi '^content-type: application/problem+json' <<< "$raw"; then
     printf '    \033[32mOK\033[0m      content-type problem+json\n'
   else
@@ -404,6 +437,8 @@ check_conn_limit() {
   sleep 1
   code="$(curl -s "${CURL_OPTS[@]}" -X POST -H "Mcp-Session-Id: ${WELL_FORMED_SESSION}" \
     -o "$body_file" -w '%{http_code}' "${BASE}${path}" 2>/dev/null || true)"
+  # Les connexions encore tenues, un multipart reste un 415 (#702).
+  check_refused_before_zone "$path (zone ${zone} pleine)" POST "$path" -H "Mcp-Session-Id: ${WELL_FORMED_SESSION}"
   for fd in "${fds[@]}"; do exec {fd}>&-; done
   sleep 1
   after="$(curl -s "${CURL_OPTS[@]}" -X POST -H "Mcp-Session-Id: ${WELL_FORMED_SESSION}" \

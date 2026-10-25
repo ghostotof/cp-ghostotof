@@ -190,6 +190,24 @@ paths:
   locations, plus urlencoded, JSON and bodiless witnesses that must pass); the `map` is covered by the
   `http`-level mirror check, `@unsupported_media_type` and `@rate_limited` by `MIRRORED_LOCATIONS`. PHP
   itself is the second barrier (`.claude/rules/images-docker.md`, « PHP parses no multipart body »).
+  **Accepted: a multipart request is counted by no zone** (issue #702, decided on 2026-10-25), neither
+  `limit_req` nor `limit_conn`: the server-rewrite phase runs before preaccess, and before find-config, so a
+  multipart body over a location's bound gets the 415, not the 413. Measured on nginx 1.30.4: twelve multipart
+  POSTs on `/api/contact` (burst 5) got twelve 415s, and a multipart sent while `assistantconn` was full got a
+  415. Why it costs nothing: none of them reaches PHP, which is what the zones protect, and **every refusal of
+  a request with a body holds its connection the same `lingering_time`** (30 s) while nginx discards what the
+  client keeps sending — measured at 31 s for a multipart 415, for a 413 (accepted above, `/api/mcp`) and for
+  a `limit_conn` 429. Refusing after the zones would only turn the 415 into a 429. And it cannot be done with an
+  `if` in each location: a location's `return` runs in the rewrite phase, before preaccess too (measured). It
+  would take a precontent refusal (`try_files` to a named location chosen by a `map`), which `= /api/mcp` and
+  `/api/assistant/` cannot use without an internal redirect that reads the body under another location's bound
+  (#644's trap). In preprod and prod the ingress-nginx in front buffers the whole body by default
+  (`proxy-request-buffering`, `proxy-body-size 1m`, chart defaults, not set in `k8s/ingress-nginx-values.yaml`)
+  before reaching the sidecar, so a slow body never reaches the sidecar slowly. Guard:
+  `check_refused_before_zone`, run as each `limit_req` zone has just refused and while each `limit_conn` zone
+  is full: the multipart must still get the 415 (measured red with the refusal removed, and with it moved
+  after the zones on `/api/contact`). A 429 there means the refusal was moved: not wrong in itself, but read
+  this bullet first.
 - **nginx rate limits need `real_ip`** (audit C7). `limit_req_zone` keys on `$binary_remote_addr`, and behind
   the ingress the sidecar's TCP peer is the ingress-nginx pod — without the `set_real_ip_from` block, the whole
   internet shares one counter, which is a self-inflicted DoS. The trusted ranges mirror Symfony's
