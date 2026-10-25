@@ -36,6 +36,11 @@ use Symfony\Component\Console\Style\SymfonyStyle;
  * le transport Doctrine de Messenger écrit `created_at`
  * (`new DateTimeImmutable('UTC')`, colonne sans fuseau). Formaté dans le
  * fuseau de PHP (Europe/Paris), il purgeait une à deux heures trop tôt.
+ *
+ * La conversion vient **après** le calcul : « 30 days » se compte en jours du
+ * calendrier de Paris (règle de #445), si bien qu'une fenêtre qui contient un
+ * changement d'heure dure 721 ou 719 heures. Ce n'est donc pas « maintenant UTC
+ * moins 30 jours » (issue #709).
  */
 #[AsCommand(
     name: 'app:contact:purge-failed-messages',
