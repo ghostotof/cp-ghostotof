@@ -50,6 +50,9 @@
 # problem+json avant PHP, sur toute méthode et toute location ; JSON,
 # urlencoded (le point de jeton OAuth de la phase 2 MCP en a besoin) et une
 # requête sans corps passent.
+# Depuis #702, l'ordre de ce refus (check_refused_before_zone) : une zone
+# `limit_req` vidée, une zone `limit_conn` pleine ou un corps au-delà d'une
+# borne laissent un multipart en 415, le refus passant avant les zones.
 #
 # Règle à respecter : ajouter une zone `limit_req` dans les confs, c'est
 # ajouter une ligne à ZONES ci-dessous — sinon le script échoue en nommant la
@@ -304,6 +307,48 @@ start_nginx() {
   exit 1
 }
 
+# check_refused_before_zone <libellé> <strict> <méthode> <chemin> [<options curl>…] :
+# appelée quand une zone vient de refuser (limit_req vidée, limit_conn pleine),
+# exige qu'un multipart sur le même chemin reçoive encore le 415 problem+json
+# (statut, `type`, Content-Type), pas le 429 (#702). Le refus est au niveau
+# server, en phase de réécriture, avant la phase preaccess des zones : décidé,
+# et non subi. Un 429 ici dirait que le refus a été déplacé derrière les zones.
+# Ce n'est pas faux en soi (rien n'atteindrait PHP non plus), mais le
+# changement doit être voulu : lire alors `.claude/rules/deploiement-nginx.md`,
+# « Multipart bodies never reach PHP ».
+# Un témoin sans corps, envoyé juste après sur le même chemin, doit recevoir
+# le 429 : sans lui, une zone rouverte entre-temps (un jeton rechargé, une
+# connexion tenue tombée) laisserait passer la sonde même sous un refus
+# déplacé, un faux vert. <strict> à 1 (limit_conn : les connexions restent
+# tenues) fait échouer un témoin admis ; à 0 (limit_req), il n'est que « non
+# concluant », sans échec : `publicapi` recharge un jeton toutes les 100 ms,
+# `mcp` chaque seconde, et la garde deviendrait instable.
+check_refused_before_zone() {
+  local label="$1" strict="$2" method="$3" path="$4" raw code witness body_file
+  shift 4
+  body_file="$(mktemp)"
+  raw="$(curl -sS "${CURL_OPTS[@]}" -X "$method" "$@" -H 'Content-Type: multipart/form-data; boundary=x' \
+    --data-binary 'a=1' -D - -o "$body_file" -w 'x-audit-http-code: %{http_code}\n' "${BASE}${path}" 2>&1 || true)"
+  code="$(sed -n 's/^x-audit-http-code: //p' <<< "$raw" | tail -1)"
+  witness="$(curl -s "${CURL_OPTS[@]}" -X "$method" "$@" -o /dev/null -w '%{http_code}' "${BASE}${path}" 2>/dev/null || true)"
+  if [ "$code" != "415" ] || ! grep -qi '^content-type: application/problem+json' <<< "$raw" \
+     || ! grep -q '"type":"/errors/415"' "$body_file" || ! grep -q '"status":415' "$body_file"; then
+    printf '    \033[31mKO\033[0m      multipart sur %s → « %s », 415 problem+json /errors/415 attendu   <-- refus multipart déplacé derrière les zones (#702) ?\n' \
+      "$label" "${code:-aucun}"
+    FAILURES=$((FAILURES + 1))
+  elif [ "$witness" = "429" ]; then
+    printf '    \033[32mOK\033[0m      multipart sur %s → 415, refusé avant la zone (témoin : 429)\n' "$label"
+  elif [ "$strict" = 1 ]; then
+    printf '    \033[31mKO\033[0m      multipart sur %s → 415, mais le témoin a reçu « %s », 429 attendu : zone rouverte, sonde non concluante\n' \
+      "$label" "${witness:-aucun}"
+    FAILURES=$((FAILURES + 1))
+  else
+    printf '    \033[33mNON CONCLUANT\033[0m  multipart sur %s → 415, mais le témoin a reçu « %s » : zone rechargée entre-temps, l'\''ordre n'\''est pas prouvé ici\n' \
+      "$label" "${witness:-aucun}"
+  fi
+  rm -f "$body_file"
+}
+
 # check_zone <conf> <chemin> <méthode> <burst> <zone> : vide la rafale, puis
 # juge le premier 429 obtenu.
 check_zone() {
@@ -352,6 +397,9 @@ check_zone() {
     FAILURES=$((FAILURES + 1))
   fi
   check_security_headers "$path (429)" "$raw"
+  # La zone vidée, un multipart sur le même chemin reste un 415 (#702). Après
+  # les contrôles du 429 : chaque bloc de sortie ne parle que de sa réponse.
+  check_refused_before_zone "$path (zone ${zone} vidée)" 0 "$method" "$path" "${headers[@]}"
   rm -f "$body_file"
 }
 
@@ -386,6 +434,20 @@ check_body_limit() {
         FAILURES=$((FAILURES + 1))
       fi
     done
+    # Un multipart au-delà de la borne reçoit le 415, pas le 413 (#702) : le
+    # refus tourne au niveau server, avant que la location et sa borne soient
+    # choisies. Accepté : voir check_refused_before_zone.
+    head -c "$((limit + 1))" /dev/zero | tr '\0' 'a' > "$BODY_FILE"
+    code="$(curl -s "${CURL_OPTS[@]}" -X POST -H 'Content-Type: multipart/form-data; boundary=x' \
+      -H 'Mcp-Session-Id: 00000000-0000-0000-0000-000000000000' "${framing_opts[@]}" \
+      --data-binary "@${BODY_FILE}" -o /dev/null -w '%{http_code}' "${BASE}${path}" 2>/dev/null || true)"
+    if [ "$code" = "415" ]; then
+      printf '  \033[32mOK\033[0m      %s : multipart de %s octets (%s) → 415, refusé avant la borne\n' "$path" "$((limit + 1))" "$framing"
+    else
+      printf '  \033[31mKO\033[0m      %s : multipart de %s octets (%s) → « %s », 415 attendu (%s)   <-- refus multipart déplacé après la borne (#702) ?\n' \
+        "$path" "$((limit + 1))" "$framing" "${code:-aucun}" "$conf"
+      FAILURES=$((FAILURES + 1))
+    fi
   done
 }
 
@@ -416,6 +478,12 @@ check_conn_limit() {
   sleep 1
   code="$(curl -s "${CURL_OPTS[@]}" -X POST -H "Mcp-Session-Id: ${WELL_FORMED_SESSION}" \
     -o "$body_file" -w '%{http_code}' "${BASE}${path}" 2>/dev/null || true)"
+  # Les connexions encore tenues, un multipart reste un 415 (#702) — sondé
+  # seulement si la zone a bien refusé, sans quoi « pleine » serait affirmé
+  # sans preuve (le KO de la zone suit plus bas).
+  if [ "$code" = "429" ]; then
+    check_refused_before_zone "$path (zone ${zone} pleine)" 1 POST "$path" -H "Mcp-Session-Id: ${WELL_FORMED_SESSION}"
+  fi
   for fd in "${fds[@]}"; do exec {fd}>&-; done
   sleep 1
   after="$(curl -s "${CURL_OPTS[@]}" -X POST -H "Mcp-Session-Id: ${WELL_FORMED_SESSION}" \
@@ -563,4 +631,4 @@ if [ "$FAILURES" -gt 0 ]; then
   echo "Échecs bloquants : $FAILURES"
   exit 1
 fi
-echo "Toutes les zones limit_req et limit_conn des deux confs répondent 429 en problem+json, avec les 7 en-têtes de sécurité ; corps multipart refusés en 415 ; clé de mcpsession, zones, locations miroir et bornes de corps alignées."
+echo "Toutes les zones limit_req et limit_conn des deux confs répondent 429 en problem+json, avec les 7 en-têtes de sécurité ; corps multipart refusés en 415, avant les zones et les bornes ; clé de mcpsession, zones, locations miroir et bornes de corps alignées."
