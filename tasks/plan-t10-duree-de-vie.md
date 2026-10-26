@@ -101,7 +101,9 @@ revoked_at IS NULL RETURNING`, avec sa cause en colonne : une seule fois, une se
 5. **La purge et l'authentificateur doivent juger la même échéance à la seconde près** : une connexion que
    `isExpiredAt()` dit vivante ne doit pas être marquée expirée par la purge, ni l'inverse —
    `McpConnectionPurgerTest::testThePurgeAndIsExpiredAtAgreeAtTheBoundary` (tâche 9), et une seule définition
-   des seuils (`ConnectionLifetimes::idleThreshold()` / `maximumThreshold()`) lue par les deux.
+   de l'échéance, `McpConnection::isExpiredAt()`, que la purge applique ligne par ligne après une présélection SQL
+   (*amendé en cours d'exécution, relecture de la tâche 1* : les seuils `now − durée` n'étaient pas monotones
+   pendant l'heure répétée d'automne).
 
 ---
 
@@ -558,12 +560,16 @@ au-delà de 10 minutes, les jetons issus du code vivent déjà sous rotation.
 - Test : `backend/tests/Mcp/Connection/Infrastructure/Kubernetes/McpConnectionsPurgedDailyTest.php` (modèle : `McpSessionsPrunedHourlyTest`)
 
 **Interfaces :**
-- Consumes : `ConnectionLifetimes::idleThreshold()` / `maximumThreshold()` (tâche 1), `RetentionPeriod`,
+- Consumes : `McpConnection::isExpiredAt()` et `ConnectionLifetimes` (tâche 1, forme échéance `idleDeadline()` /
+  `maximumDeadline()`), `RetentionPeriod`,
   `mcpConnectionExpired()` (tâche 2).
 - Produces :
-  - `McpConnectionRepositoryInterface::revokeExpired(DateTimeImmutable $idleThreshold, DateTimeImmutable $maximumThreshold, DateTimeImmutable $at): list<RevokedConnection>`
-    (`WHERE revoked_at IS NULL AND (COALESCE(last_used_at, granted_at) <= :idle OR granted_at <= :maximum)`,
-    cause `expired`, `RETURNING` comme `revokeActive()`) ;
+  - *Amendé (relecture de la tâche 1)* : `McpConnectionRepositoryInterface::findActiveCandidatesForExpiry(DateTimeImmutable $idleBefore, DateTimeImmutable $maximumBefore): list<McpConnection>`
+    — présélection SQL **large** (`revoked_at IS NULL AND (COALESCE(last_used_at, granted_at) <= :idleBefore OR granted_at <= :maximumBefore)`,
+    les deux bornes calculées en PHP avec **un jour de marge** : `now − durée + P1D`), puis le purgeur juge chaque
+    connexion par `isExpiredAt($now, $lifetimes)` — la seule définition — et révoque celles qu'elle dit expirées par
+    `revokeExpired(list<Uuid> $connectionIds, DateTimeImmutable $at): list<RevokedConnection>` (cause `expired`,
+    `revoked_at IS NULL` gardé, `RETURNING` comme `revokeActive()`) ;
     `deleteRevokedBefore(DateTimeImmutable $threshold): int` (`revoked_at < :threshold`).
   - `deleteDead(DateTimeImmutable $now): int` sur les trois dépôts de jetons : `expires_at <= :now` **ou**
     connexion révoquée.
@@ -600,7 +606,7 @@ sous `set -e`, avec `PGOPTIONS` `-c lock_timeout=5s` ; `testNoOtherManifestRunsT
 - [ ] **Étape 2 : lancer, constater l'échec.**
 
 - [ ] **Étape 3 : implémenter.** `purge()` : seuil de rétention refusé sous un jour ; dans **une** transaction :
-  `revokeExpired()`, puis les trois `deleteDead()`, puis `deleteRevokedBefore()` ; après le COMMIT, une ligne
+  présélection + jugement `isExpiredAt()` + `revokeExpired()`, puis les trois `deleteDead()`, puis `deleteRevokedBefore()` ; après le COMMIT, une ligne
   `mcpConnectionExpired()` par connexion marquée. Paramètres typés `Types::DATETIMETZ_IMMUTABLE`. Commande :
   sortie par UUID et compteurs, succès même à zéro (habillage de `PurgePendingInvitationsCommand`). CronJob :
   lire `.claude/rules/deploiement.md` d'abord ; ajouter la ligne après les invitations. Règle : ordre des
