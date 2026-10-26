@@ -45,6 +45,15 @@ final readonly class RetentionPeriod
     /** Voir {@see designatesADate()} : un mercredi en milieu de mois, hors de minuit. */
     private const string REFERENCE_INSTANT = '1970-01-14 13:37:42';
 
+    /**
+     * Un nombre de 14 chiffres ou plus (relecture de #710). PHP lit exactement
+     * jusqu'à 13 chiffres et toujours de travers au-delà, mesuré sous PHP 8.5 :
+     * « 98765432109876 seconds » donne 5432109876 secondes, acceptées en
+     * silence, « 9223372036854775807 seconds » 36854775807. Treize chiffres de
+     * secondes font déjà 316 000 ans, que la borne de l'an 1 refuse.
+     */
+    private const string NUMBER_PHP_MISREADS = '/\d{14,}/';
+
     private function __construct(
         private DateTimeImmutable $threshold,
         private string $expression,
@@ -53,14 +62,37 @@ final readonly class RetentionPeriod
 
     /**
      * @throws InvalidRetentionPeriodException si l'expression est vide, illisible,
-     *         désigne une date plutôt qu'une durée, ou ne produit pas un seuil
-     *         strictement antérieur à `$now`
+     *         désigne une date plutôt qu'une durée, ne produit pas un seuil
+     *         strictement antérieur à `$now`, ou un seuil antérieur à l'an 1
      */
     public static function fromString(string $expression, DateTimeImmutable $now): self
     {
         $trimmed = trim($expression);
+        $threshold = $now->sub(self::durationOf($trimmed, $expression));
 
-        if ('' === $trimmed) {
+        if ($threshold >= $now) {
+            throw InvalidRetentionPeriodException::notStrictlyPositive($expression);
+        }
+
+        // Avant l'an 1, le seuil s'écrit « -2974-… » ou « 0000-… », que
+        // PostgreSQL refuse (relecture de #710). Jugé en UTC, l'heure murale
+        // où les commandes de purge le comparent.
+        if ((int) $threshold->setTimezone(new DateTimeZone('UTC'))->format('Y') < 1) {
+            throw InvalidRetentionPeriodException::tooLong($expression);
+        }
+
+        return new self($threshold, $trimmed);
+    }
+
+    /**
+     * Lit l'expression en un intervalle qui suit les règles de #445, ou la refuse.
+     *
+     * @throws InvalidRetentionPeriodException si l'expression est vide, illisible
+     *         ou désigne une date
+     */
+    private static function durationOf(string $trimmed, string $expression): DateInterval
+    {
+        if ('' === $trimmed || 1 === preg_match(self::NUMBER_PHP_MISREADS, $trimmed)) {
             throw InvalidRetentionPeriodException::unreadable($expression);
         }
 
@@ -76,13 +108,7 @@ final readonly class RetentionPeriod
             throw InvalidRetentionPeriodException::designatesADate($trimmed);
         }
 
-        $threshold = $now->sub($interval);
-
-        if ($threshold >= $now) {
-            throw InvalidRetentionPeriodException::notStrictlyPositive($expression);
-        }
-
-        return new self($threshold, $trimmed);
+        return $interval;
     }
 
     /**

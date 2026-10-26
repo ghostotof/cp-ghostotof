@@ -40,6 +40,65 @@ final class RetentionPeriodTest extends TestCase
         yield '30 jours' => ['30 days', '2026-08-23 12:00:00'];
         yield '12 heures' => ['12 hours', '2026-09-22 00:00:00'];
         yield 'signe + explicite' => ['+30 days', '2026-08-23 12:00:00'];
+        yield 'la plus longue qui reste après l\'an 1' => ['2025 years', '0001-09-22 12:00:00'];
+        // 10^12 µs = 11 jours 13:46:40.
+        yield 'treize chiffres, lus exactement' => ['1000000000000 usec', '2026-09-10 22:13:20'];
+    }
+
+    /**
+     * Relecture de #710 : un seuil antérieur à l'an 1 s'écrit « -2974-… »,
+     * que PostgreSQL refuse ; la commande sortait en trace. Il est refusé ici.
+     */
+    #[DataProvider('tooLongExpressions')]
+    public function testFromStringRejectsAThresholdBeforeYearOne(string $expression): void
+    {
+        try {
+            RetentionPeriod::fromString($expression, $this->now());
+            self::fail('InvalidRetentionPeriodException attendue.');
+        } catch (InvalidRetentionPeriodException $exception) {
+            self::assertStringContainsString('trop longue', $exception->getMessage());
+        }
+    }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function tooLongExpressions(): iterable
+    {
+        yield 'l\'an 0' => ['2026 years'];
+        yield 'un an de trop' => ['2027 years'];
+        yield 'des millénaires' => ['5000 years'];
+        yield 'neuf chiffres d\'années' => ['999999999 years'];
+        yield 'treize chiffres de secondes' => ['9999999999999 seconds'];
+    }
+
+    /**
+     * Relecture de #710 : PHP lit un nombre exactement jusqu'à 13 chiffres, et
+     * toujours de travers au-delà (mesuré : « 9223372036854775807 seconds »
+     * donne 36854775807 secondes, « 999999999999999999 days » 9999999999
+     * jours). La durée lue n'est pas celle demandée : l'expression est
+     * illisible.
+     */
+    #[DataProvider('numbersPhpMisreads')]
+    public function testFromStringRejectsANumberPhpCannotReadExactly(string $expression): void
+    {
+        try {
+            RetentionPeriod::fromString($expression, $this->now());
+            self::fail('InvalidRetentionPeriodException attendue.');
+        } catch (InvalidRetentionPeriodException $exception) {
+            self::assertStringContainsString('illisible', $exception->getMessage());
+        }
+    }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function numbersPhpMisreads(): iterable
+    {
+        // Lu 5432109876 secondes (172 ans) : accepté en silence, sans la garde.
+        yield 'quatorze chiffres' => ['98765432109876 seconds'];
+        yield 'plus grand entier' => ['9223372036854775807 seconds'];
+        yield 'dix-huit chiffres' => ['999999999999999999 days'];
     }
 
     /**

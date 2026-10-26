@@ -42,6 +42,18 @@ final class InvalidRetentionPeriodException extends DomainException
     }
 
     /**
+     * La durée place le seuil avant l'an 1, que PostgreSQL ne sait pas lire
+     * ("5000 years"). Relecture de #710.
+     */
+    public static function tooLong(string $expression): self
+    {
+        return new self(\sprintf(
+            'La durée de rétention "%s" est trop longue : le seuil calculé tombe avant l\'an 1.',
+            $expression,
+        ));
+    }
+
+    /**
      * L'expression est vide ou n'est pas un intervalle relatif PHP valide.
      */
     public static function unreadable(string $expression): self

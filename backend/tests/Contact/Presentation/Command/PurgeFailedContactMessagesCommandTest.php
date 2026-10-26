@@ -216,6 +216,22 @@ final class PurgeFailedContactMessagesCommandTest extends KernelTestCase
         self::assertSame(1, $this->countByRecipient('recent@example.com'));
     }
 
+    /**
+     * Relecture de #710 : « 5000 years » donnait un seuil « -2974-… », que
+     * PostgreSQL refusait dans le DELETE ; la commande sortait en trace.
+     */
+    public function testRejectsAnOlderThanReachingBeforeYearOne(): void
+    {
+        $this->failedTransport->send(new Envelope($this->message('recent@example.com')));
+        $tester = $this->commandTester();
+
+        $exitCode = $tester->execute(['--older-than' => '5000 years']);
+
+        self::assertSame(2, $exitCode); // Command::INVALID
+        self::assertStringContainsString('trop longue', (string) preg_replace('/\s+/', ' ', $tester->getDisplay()));
+        self::assertSame(1, $this->countByRecipient('recent@example.com'));
+    }
+
     private function message(string $senderEmail): SendContactMessageMessage
     {
         return new SendContactMessageMessage(
