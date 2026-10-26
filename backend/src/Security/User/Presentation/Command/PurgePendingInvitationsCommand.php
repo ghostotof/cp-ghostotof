@@ -6,9 +6,10 @@ namespace App\Security\User\Presentation\Command;
 
 use App\Security\User\Application\PendingInvitationPurgerInterface;
 use App\Security\User\Domain\Exception\InvalidPurgeRetentionException;
+use App\Shared\Domain\Exception\InvalidRetentionPeriodException;
+use App\Shared\Domain\ValueObject\RetentionPeriod;
 use DateInterval;
-use DateTimeImmutable;
-use Exception;
+use Psr\Clock\ClockInterface;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -45,8 +46,10 @@ final class PurgePendingInvitationsCommand extends Command
 {
     private const string DEFAULT_MAX_AGE = '30 days';
 
-    public function __construct(private readonly PendingInvitationPurgerInterface $purger)
-    {
+    public function __construct(
+        private readonly PendingInvitationPurgerInterface $purger,
+        private readonly ClockInterface $clock,
+    ) {
         parent::__construct();
     }
 
@@ -122,26 +125,23 @@ final class PurgePendingInvitationsCommand extends Command
         return Command::SUCCESS;
     }
 
+    /**
+     * Lue par {@see RetentionPeriod}, comme app:contact:purge-failed-messages
+     * (relecture de #710) : jours sur le calendrier, heures en temps écoulé,
+     * et refus d'une expression illisible, négative, nulle, qui désigne une
+     * date ou dont PHP lit mal un nombre. L'ancienne lecture
+     * (`createFromDateString()` après une garde `new DateTimeImmutable('-'.$x)`)
+     * comptait « 36 hours » en heure murale et laissait « 3 weekdays » lever une
+     * erreur native au `sub()` du purgeur. Le plancher d'un jour reste celui de
+     * `PendingInvitationPurger::purge()`, qui retranche l'intervalle à son
+     * propre instant.
+     */
     private function parseMaxAge(string $olderThan, SymfonyStyle $io): ?DateInterval
     {
         try {
-            // Même garde que app:contact:purge-failed-messages : un intervalle
-            // relatif que DateTimeImmutable elle-même refuse est rejeté ici,
-            // avant de demander la même chaîne à DateInterval ci-dessous.
-            // Exception seul suffit à couvrir les deux cas réels : depuis
-            // PHP 8.3, une chaîne illisible fait lever
-            // DateMalformedStringException ici puis
-            // DateMalformedIntervalStringException plus bas — les deux
-            // étendent directement Exception, jamais l'une l'autre. Cette
-            // garde ne juge que la *syntaxe* de l'intervalle ; qu'il soit
-            // positif, négatif ou nul est vérifié plus loin par
-            // PendingInvitationPurger::purge() (InvalidPurgeRetentionException),
-            // seul endroit qui connaît "maintenant".
-            new DateTimeImmutable('-'.$olderThan);
-
-            return DateInterval::createFromDateString($olderThan);
-        } catch (Exception) {
-            $io->error(\sprintf('Intervalle invalide : "%s". Exemples valides : "30 days", "12 hours".', $olderThan));
+            return RetentionPeriod::fromString($olderThan, $this->clock->now())->interval();
+        } catch (InvalidRetentionPeriodException $exception) {
+            $io->error($exception->getMessage());
 
             return null;
         }

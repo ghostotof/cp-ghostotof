@@ -9,10 +9,13 @@ use App\Security\User\Domain\Entity\PasswordSetupToken;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use App\Security\User\Domain\Repository\PasswordSetupTokenRepositoryInterface;
 use App\Tests\Support\ReadsSecurityAuditLog;
+use DateInterval;
 use DateTimeImmutable;
+use DateTimeZone;
 use Doctrine\DBAL\Connection;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
+use Symfony\Component\Clock\Test\ClockSensitiveTrait;
 use Symfony\Component\Console\Tester\CommandTester;
 use Symfony\Component\HttpKernel\KernelInterface;
 
@@ -26,6 +29,7 @@ use Symfony\Component\HttpKernel\KernelInterface;
  */
 final class PurgePendingInvitationsCommandTest extends KernelTestCase
 {
+    use ClockSensitiveTrait;
     use ReadsSecurityAuditLog;
 
     private Connection $connection;
@@ -180,7 +184,55 @@ final class PurgePendingInvitationsCommandTest extends KernelTestCase
         $exitCode = $tester->execute(['--older-than' => 'not-an-interval']);
 
         self::assertSame(2, $exitCode); // Command::INVALID
-        self::assertStringContainsString('Intervalle invalide', $tester->getDisplay());
+        self::assertStringContainsString('illisible', $tester->getDisplay());
+    }
+
+    /**
+     * Relecture de #710 : cette commande lisait `--older-than` par
+     * `DateInterval::createFromDateString()`, dont les heures se comptent en
+     * heure murale. La nuit du passage à l'heure d'hiver (2026-10-25 01:00
+     * UTC), « 36 hours » reculait de 37 heures écoulées, et une invitation
+     * vieille de 36 h 30 restait. Elle passe désormais par `RetentionPeriod`.
+     */
+    public function testARetentionInHoursIsCountedAsElapsedHoursAcrossAClockChange(): void
+    {
+        $utc = new DateTimeZone('UTC');
+        $now = new DateTimeImmutable('2026-10-25 12:00:00', $utc);
+        self::mockTime($now->setTimezone(new DateTimeZone('Europe/Paris')));
+        $threshold = $now->sub(new DateInterval('PT36H')); // 2026-10-24 00:00 UTC
+
+        $outside = new CpgUser('outside-invitee', '');
+        $outside->markInvited($threshold->modify('-30 minutes'));
+        $this->userRepository->save($outside);
+        $inside = new CpgUser('inside-invitee', '');
+        $inside->markInvited($threshold->modify('+30 minutes'));
+        $this->userRepository->save($inside);
+
+        $exitCode = $this->commandTester()->execute(['--older-than' => '36 hours']);
+
+        self::assertSame(0, $exitCode);
+        self::assertNull($this->userRepository->findOneByUsername('outside-invitee'), 'Une invitation sortie de sa fenêtre de 36 heures écoulées a été conservée.');
+        self::assertNotNull($this->userRepository->findOneByUsername('inside-invitee'), 'Une invitation encore dans sa fenêtre a été purgée.');
+    }
+
+    /**
+     * Relecture de #710 : « 3 weekdays » passait la garde syntaxique, puis
+     * `sub()` levait une erreur native que rien ne rattrapait (sortie 1,
+     * trace). Une expression qui désigne une date est refusée, rien n'est purgé.
+     */
+    public function testAnOlderThanThatDesignatesADateIsRejectedAndPurgesNothing(): void
+    {
+        $stale = new CpgUser('weekday-guard-invitee', '');
+        $stale->markInvited(new DateTimeImmutable('-40 days'));
+        $this->userRepository->save($stale);
+
+        $tester = $this->commandTester();
+        $exitCode = $tester->execute(['--older-than' => '3 weekdays']);
+
+        self::assertSame(2, $exitCode); // Command::INVALID
+        self::assertStringContainsString('pas une durée', (string) preg_replace('/\s+/', ' ', $tester->getDisplay()));
+        self::assertNotNull($this->userRepository->findOneByUsername('weekday-guard-invitee'));
+        self::assertSame([], self::securityAuditEvents('user-purged'));
     }
 
     /**
