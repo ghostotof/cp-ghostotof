@@ -216,12 +216,26 @@ paths:
   And it cannot be done with an `if` in each location: a location's `return` runs in the rewrite phase, before
   preaccess too (measured). It would take a precontent refusal (`try_files` to a named location chosen by a
   `map`), which `= /api/mcp` and `/api/assistant/` cannot use without an internal redirect that reads the body
-  under another location's bound (#644's trap). In preprod and prod the ingress-nginx in front should buffer
-  the whole body before reaching the sidecar (`proxy-request-buffering on`, `proxy-body-size 1m`: the
-  controller's defaults, not set in `k8s/ingress-nginx-values.yaml`, **not checked on the cluster** —
-  `helm upgrade --reuse-values` keeps whatever was set by hand; pinning it is #712), so a slow body would
-  not reach the sidecar slowly, and an oversized one gets the ingress's 413. In dev nothing fronts the `web`
-  nginx: accepted, dev only. Guard: `check_refused_before_zone`, run as each `limit_req` zone has just
+  under another location's bound (#644's trap). **In preprod and prod the ingress-nginx in front buffers the
+  whole body before reaching the sidecar** (issue #712): `proxy-request-buffering: "on"`, `proxy-body-size:
+  "1m"` and `allowSnippetAnnotations: false`, the controller's and the chart's defaults, are pinned in
+  `k8s/ingress-nginx-values.yaml` — read on the cluster on 2026-10-26, read-only: the controller's ConfigMap
+  set none of them, no Ingress overrode them by annotation; applied the same day by `helm upgrade` (release
+  revision 3), the ConfigMap now carries both, checked read-only. `helm upgrade --reuse-values` keeps a value
+  set by hand, so the runbook's prerequisite n°2 ends on that read-only check. So a slow body never reaches the sidecar
+  slowly, and an oversized one gets the ingress's 413 — **before** the sidecar: there a multipart over 1 MiB
+  gets that HTML 413, not the 415 problem+json, and the sidecar's `chunked` 413 is never seen, the ingress
+  forwarding a `Content-Length`; `check_body_limit` measures the sidecar alone. A snippet annotation
+  (`proxy_request_buffering off;` in a `configuration-snippet`) would bypass both for its Ingress: the chart
+  renders `allow-snippet-annotations` only when `true`, so the pinned `false` replaces a kept `true`.
+  `IngressBuffersRequestBodiesTest` requires the three values, the first two **quoted** (Helm reads YAML 1.1,
+  where a bare `on` is the boolean the chart renders `"true"` — measured with `helm template`; Symfony's YAML
+  1.2 reads the string `on`), a closed list of `controller.config` keys, and the ingress bound equal to the
+  sidecar's `server`-level `client_max_body_size` (lower, the ingress would refuse what the sidecar admits);
+  it refuses, anywhere else under `k8s/`, either key (an Ingress annotation replaces the ConfigMap for its
+  Ingress), the `proxy_request_buffering` directive, any `nginx.ingress.kubernetes.io/…snippet` annotation key
+  and the snippet switch. Each case measured red by mutation. It cannot see the cluster. In dev nothing fronts
+  the `web` nginx: accepted, dev only. Guard: `check_refused_before_zone`, run as each `limit_req` zone has just
   refused and while each `limit_conn` zone is full: the multipart must still get the 415 problem+json, then a
   bodiless witness on the same path the 429 — a witness let through means the zone reopened meanwhile (a
   token refilled: `publicapi` every 100 ms, `mcp` every second; a held connection dropped), a false green
