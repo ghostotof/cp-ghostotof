@@ -101,12 +101,21 @@ final class AuthCookieAttributesTest extends WebTestCase
     }
 
     /**
+     * Un seul cookie par nom (relectures de #714) : un second `BEARER` sur un
+     * autre `Path` ou `Domain` serait gardé par le navigateur à côté du
+     * premier, et, indexé par nom, l'un des deux échapperait à la comparaison.
+     *
      * @return array<string, Cookie>
      */
     private function cookiesByName(KernelBrowser $client): array
     {
         $cookies = [];
         foreach ($client->getResponse()->headers->getCookies() as $cookie) {
+            self::assertArrayNotHasKey(
+                $cookie->getName(),
+                $cookies,
+                \sprintf('%s posé deux fois par la même réponse : le navigateur garderait les deux.', $cookie->getName()),
+            );
             $cookies[$cookie->getName()] = $cookie;
         }
 
