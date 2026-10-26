@@ -318,6 +318,62 @@ final class McpConnectionRepositoryTest extends KernelTestCase
     }
 
     /**
+     * Un nouvel accord remplace l'accord actif du même couple compte/client
+     * (#649, décision 2) : `revokeOtherActiveOf()` révoque, en une
+     * instruction, toute autre connexion active de ce couple — et rien
+     * d'autre : ni la connexion gardée, ni celle d'un autre client, ni celle
+     * d'un autre compte, ni une déjà révoquée, qui garde sa première
+     * révocation. Elle rend de quoi auditer chaque connexion remplacée.
+     */
+    public function testRevokeOtherActiveOfRevokesTheOtherActiveGrantsOfThePairOnly(): void
+    {
+        $account = $this->persistAccount('jane');
+        $client = $this->registerClient('https://client.example.test/metadata.json');
+        $otherClient = $this->registerClient('https://other-client.example.test/metadata.json');
+        $previous = McpConnection::grant($account, $client, self::SCOPE, new DateTimeImmutable());
+        $older = McpConnection::grant($account, $client, self::SCOPE, new DateTimeImmutable());
+        $alreadyRevoked = McpConnection::grant($account, $client, self::SCOPE, new DateTimeImmutable());
+        $ofAnotherClient = McpConnection::grant($account, $otherClient, self::SCOPE, new DateTimeImmutable());
+        $ofAnotherAccount = McpConnection::grant($this->persistAccount('john'), $client, self::SCOPE, new DateTimeImmutable());
+        $kept = McpConnection::grant($account, $client, self::SCOPE, new DateTimeImmutable());
+        foreach ([$previous, $older, $alreadyRevoked, $ofAnotherClient, $ofAnotherAccount, $kept] as $connection) {
+            $this->connections()->add($connection);
+        }
+        $firstRevocation = new DateTimeImmutable('2026-10-23T10:00:00+02:00');
+        $this->connections()->revokeActive($alreadyRevoked->getId(), RevocationCause::Client, $firstRevocation);
+        $at = new DateTimeImmutable('2026-10-25T02:30:00+02:00');
+
+        $revoked = $this->connections()->revokeOtherActiveOf($kept, RevocationCause::Superseded, $at);
+
+        $revokedIds = array_map(static fn(RevokedConnection $connection): string => $connection->connectionId->toRfc4122(), $revoked);
+        sort($revokedIds);
+        $expectedIds = [$previous->getId()->toRfc4122(), $older->getId()->toRfc4122()];
+        sort($expectedIds);
+        self::assertSame($expectedIds, $revokedIds);
+        foreach ($revoked as $connection) {
+            self::assertSame($account->getId()->toRfc4122(), $connection->accountId());
+            self::assertSame('https://client.example.test/metadata.json', $connection->clientId);
+            self::assertSame(RevocationCause::Superseded, $connection->cause);
+        }
+        foreach ([$previous, $older] as $connection) {
+            self::assertSame(['revoked_at' => $at->getTimestamp(), 'revocation_cause' => 'superseded'], $this->revocationRow($connection));
+        }
+        self::assertSame(['revoked_at' => $firstRevocation->getTimestamp(), 'revocation_cause' => 'client'], $this->revocationRow($alreadyRevoked));
+        foreach ([$ofAnotherClient, $ofAnotherAccount, $kept] as $connection) {
+            self::assertSame(['revoked_at' => null, 'revocation_cause' => null], $this->revocationRow($connection));
+        }
+    }
+
+    /** Sans autre accord actif du couple, rien n'est révoqué ni rendu. */
+    public function testRevokeOtherActiveOfAloneRevokesNothing(): void
+    {
+        $kept = $this->grantConnection();
+
+        self::assertSame([], $this->connections()->revokeOtherActiveOf($kept, RevocationCause::Superseded, new DateTimeImmutable()));
+        self::assertSame(['revoked_at' => null, 'revocation_cause' => null], $this->revocationRow($kept));
+    }
+
+    /**
      * La révocation est appelée après une transaction annulée (#649), dont
      * `wrapInTransaction()` a fermé l'EntityManager : elle passe par la
      * connexion DBAL, jamais par l'unité de travail, et tient donc encore.

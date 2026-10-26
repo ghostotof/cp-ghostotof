@@ -242,7 +242,9 @@ paths:
     answer fits its bound, never on a refusal: `userId` — also the
     `actor`, the `mcp` firewall's `McpConnectionPrincipal` being an `AccountReference` —, `connectionId`, `clientId`,
     `tool`; never the token, its hash nor anything of the corpus), `mcp-connection-revoked` (#649,
-    `McpConnectionRevoker` once the repository's revocation took effect, never for a connection already revoked:
+    `McpConnectionRevoker` once the repository's revocation took effect — or, inside a transaction, its caller after
+    the COMMIT: the revocation endpoint, and `ConsentService` for `superseded`, after `mcp-connection-granted` —, never
+    for a connection already revoked:
     `userId`, `connectionId`, `clientId`, `cause` — `client`, `refresh-token-reuse`, `code-replay`, `superseded`
     through `mcpConnectionRevoked()`, actor read as usual; `expired` through `mcpConnectionExpired()`, actor `system`
     like `user-purged`, the purge being a scheduled command; never the token or code presented). Every record carries

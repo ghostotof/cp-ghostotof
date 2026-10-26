@@ -9,6 +9,8 @@ use App\Mcp\Connection\Domain\Exception\AuthorizationRequestRejectedException;
 use App\Mcp\Connection\Domain\Exception\ReauthenticationRequiredException;
 use App\Mcp\Connection\Domain\Repository\McpClientRepositoryInterface;
 use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
+use App\Mcp\Connection\Domain\ValueObject\RevocationCause;
+use App\Mcp\Connection\Domain\ValueObject\RevokedConnection;
 use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use App\Security\User\Domain\Entity\CpgUser;
 use DateInterval;
@@ -39,10 +41,23 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
  *
  * **L'accord** crée la connexion puis, par league, son code, dans une seule
  * transaction (TransactionInterface) : le dépôt de codes de league retrouve la
- * connexion par son identifiant, elle doit être écrite avant. La ligne
- * d'audit `mcp-connection-granted` est écrite **après** le COMMIT : une
- * connexion journalisée est une connexion qui existe. **Le refus** ne crée
- * rien et n'est pas journalisé (une absence d'action n'est pas une action).
+ * connexion par son identifiant, elle doit être écrite avant. **Il remplace
+ * l'accord actif du même couple compte/client** (#649, décision 2) : dans la
+ * même transaction, juste après l'ajout, les autres connexions actives du
+ * couple sont révoquées, cause `superseded` — un client ré-autorisé, ou une
+ * décision renvoyée après un 5xx, ne laisse qu'une connexion active. La ligne
+ * d'audit `mcp-connection-granted` est écrite **après** le COMMIT, puis une
+ * ligne `mcp-connection-revoked` par connexion remplacée : une connexion
+ * journalisée est une connexion qui existe, une révocation journalisée une
+ * révocation qui a eu lieu. **Le refus** ne crée ni ne révoque rien et n'est
+ * pas journalisé (une absence d'action n'est pas une action).
+ *
+ * **Limite acceptée** : deux accords simultanés du même couple (un double
+ * clic, que `useDeliberateActivation` rend improbable) peuvent laisser deux
+ * connexions actives — chaque transaction ne voit pas la connexion encore
+ * non validée de l'autre. La seconde n'a jamais servi et expire au bout du
+ * délai d'inactivité. Une contrainte d'unicité partielle a été écartée : elle
+ * ferait de ce double clic un 500.
  *
  * Dans les deux cas, la redirection vers le client reçoit `iss` (RFC 9207),
  * comme les refus du point d'autorisation.
@@ -110,8 +125,9 @@ final readonly class ConsentService implements ConsentServiceInterface
     }
 
     /**
-     * L'authentification récente d'abord ; puis la connexion et son code,
-     * ensemble ou pas du tout ; l'audit ensuite.
+     * L'authentification récente d'abord ; puis la connexion, le remplacement
+     * des accords précédents du couple et le code, ensemble ou pas du tout ;
+     * l'audit ensuite — l'accord, puis chaque connexion remplacée.
      */
     private function grant(AuthorizationRequestSummary $summary, CpgUser $account): string
     {
@@ -119,15 +135,25 @@ final readonly class ConsentService implements ConsentServiceInterface
 
         $client = $this->clients->findOneByClientId($summary->clientId)
             ?? throw AuthorizationRequestRejectedException::clientNoLongerRegistered();
-        $connection = McpConnection::grant($account, $client, $summary->scope, $this->clock->now());
+        $now = $this->clock->now();
+        $connection = McpConnection::grant($account, $client, $summary->scope, $now);
 
-        $location = $this->transaction->run(function () use ($summary, $connection): string {
+        /** @var array{string, list<RevokedConnection>} $written */
+        $written = $this->transaction->run(function () use ($summary, $connection, $now): array {
             $this->connections->add($connection);
+            // Dans la transaction : la nouvelle connexion, son code et les
+            // anciennes révoquées, ou rien de tout cela.
+            $superseded = $this->connections->revokeOtherActiveOf($connection, RevocationCause::Superseded, $now);
 
-            return $this->completer->approve($summary, $connection);
+            return [$this->completer->approve($summary, $connection), $superseded];
         });
+        [$location, $superseded] = $written;
 
+        // Après le COMMIT seulement : une transaction annulée n'a rien révoqué.
         $this->auditLogger->mcpConnectionGranted($account, $connection->getId(), $summary->clientId);
+        foreach ($superseded as $revoked) {
+            $this->auditLogger->mcpConnectionRevoked($revoked, $revoked->connectionId, $revoked->clientId, $revoked->cause->value);
+        }
 
         return $location;
     }

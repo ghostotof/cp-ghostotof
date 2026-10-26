@@ -200,6 +200,32 @@ paths:
   league (« not issued to this client ») after a repository call that writes nothing: the code stays exchangeable by
   its client, the connection intact, no line (`testACodePresentedFirstByAnotherClientConsumesNothing`).
   `LeagueRepositoriesTest` judges a code under a rolled-back transaction, like a refresh token (the lock requires one).
+- **A new grant supersedes the previous one** (task 7 of #649, decision 2). `ConsentService::grant()`, in its
+  transaction, right after adding the new connection, calls
+  `McpConnectionRepositoryInterface::revokeOtherActiveOf($kept, RevocationCause::Superseded, $now)` — the second
+  path above, inside a transaction: **one native SQL statement** like `revokeActive()` (`UPDATE mcp_connection c …
+  FROM mcp_client cl WHERE c.account_id = :account AND c.mcp_client_id = :client AND c.id <> :kept AND c.revoked_at
+  IS NULL … RETURNING c.id, c.account_id, cl.client_id`, the row mapping written once for both), served by the
+  partial index `idx_mcp_connection_active_pair`; it returns a `list<RevokedConnection>`. After the COMMIT,
+  `mcp-connection-granted` first, then one `mcp-connection-revoked` per superseded connection (cause `superseded`,
+  the person as actor); a rolled-back grant audits nothing, a denial revokes nothing (`ConsentServiceTest`). One
+  account and one client hold one active connection: a client re-authorised, or a decision sent again after a 5xx,
+  leaves only the newest — its code is the one the client receives; the old connection's refresh and access tokens
+  are refused with nothing written (the connection is judged, decision 6), its rows untouched.
+  `ConsentControllerTest::testASecondGrantSupersedesTheFirstConnection` (audit order on the grant's request, the old
+  refresh refused `invalid_grant` with no second line, the new code exchanged),
+  `testAGrantForAnotherClientLeavesTheFirstAlone`, `testARetriedApprovalLeavesOneActiveConnection`;
+  `McpConnectionRepositoryTest` (the kept one, another client's, another account's and an already revoked one
+  untouched). **The price, decided**: two workstations using the same pre-registered client do not stay connected
+  together — the second consent cuts the first. **Lock order**: the statement locks only the **other** connections'
+  rows, never a token row, so it inverts nothing of the token endpoint's order (connection, then tokens); a refresh
+  holding a superseded connection's row `FOR UPDATE` makes the consent wait for its COMMIT (bounded by FPM's
+  `lock_timeout`), after which PostgreSQL re-evaluates `revoked_at IS NULL` on the committed row. **Accepted
+  limit**: two simultaneous approvals of the same pair (a double click, which `useDeliberateActivation` makes
+  unlikely) may leave two active connections — neither transaction sees the other's uncommitted row; the extra one
+  has never been used and expires after `connection_idle`. A partial unique constraint was rejected: it would turn
+  that double click into a 500. Tests that need two active connections of one account use another client
+  (`HoldsAnMcpConnection::holdAnotherMcpConnection()`, `OTHER_CLIENT_ID`).
 - **The last use is written at the refresh only, at most once per elapsed hour** (`McpConnection::USAGE_WRITE_INTERVAL`,
   `PT1H`, `recordUseAt($at)`: writes and returns `true` when no use is noted or when the interval has elapsed since
   the previous one — `add(new DateInterval(…))`, elapsed time, #445: across the repeated autumn hour the two

@@ -47,4 +47,20 @@ interface McpConnectionRepositoryInterface
      * @return RevokedConnection|null ce qui a été révoqué ; `null` si la connexion est inconnue ou déjà révoquée
      */
     public function revokeActive(Uuid $connectionId, RevocationCause $cause, DateTimeImmutable $at): ?RevokedConnection;
+
+    /**
+     * Révoque toute **autre** connexion active du même couple compte/client
+     * que `$kept` (#649, décision 2 : un nouvel accord remplace l'ancien) —
+     * même compte, même client, autre identifiant, pas encore révoquée ; une
+     * connexion déjà révoquée garde sa première révocation. Une instruction
+     * SQL, comme `revokeActive()`, servie par l'index partiel des couples
+     * actifs ; appelée **dans** la transaction de l'accord, l'audit revenant à
+     * l'appelant après le COMMIT. `$kept` doit déjà être écrite (son compte et
+     * son client sont lus sur l'instance). Les lignes des codes et jetons des
+     * connexions révoquées ne sont pas touchées — tout lecteur juge la
+     * connexion.
+     *
+     * @return list<RevokedConnection> ce qui a été révoqué, une entrée par connexion remplacée
+     */
+    public function revokeOtherActiveOf(McpConnection $kept, RevocationCause $cause, DateTimeImmutable $at): array;
 }
