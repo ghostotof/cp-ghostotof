@@ -360,10 +360,13 @@ décision du 2026-10-19, voir « Langue invalide »).
   la base refuse une date sans cause ou l'inverse (contrainte `CHECK`). Révoquer une connexion **ne touche
   pas les lignes de ses codes et jetons** : tout lecteur juge la connexion, et la révocation d'un jeton
   garde son seul sens — l'usage unique d'un code, la rotation d'un rafraîchissement —, ce qui rend un
-  rejeu reconnaissable. **Un seul accord actif par compte et par client** : un nouvel accord révoque le
-  précédent (cause `superseded`, décision de l'auteur du 2026-10-26 ; prix accepté : deux postes sur le
-  même client pré-enregistré ne restent pas connectés ensemble), servi par un index partiel sur les
-  connexions actives. Règle : `.claude/rules/mcp-oauth-cycle-de-vie.md`.
+  rejeu reconnaissable. **Un nouvel accord révoque l'accord actif précédent** du même compte au même
+  client (cause `superseded`, décision de l'auteur du 2026-10-26 ; prix accepté : deux postes sur le même
+  client pré-enregistré ne restent pas connectés ensemble), servi par un index partiel, **non unique**,
+  sur les connexions actives. Limite acceptée : deux approbations simultanées du même couple (un double
+  clic) peuvent laisser deux connexions actives, la seconde jamais utilisée, qui expire après 30 jours
+  sans usage — une contrainte d'unicité partielle, écartée, ferait de ce double clic un 500. Règle :
+  `.claude/rules/mcp-oauth-cycle-de-vie.md`.
 - **Durées** (configuration) : jeton d'accès 1 h ; jeton de rafraîchissement 30 jours, **rotation à
   chaque usage** et refus de la réutilisation d'un jeton déjà tourné (qui révoque la connexion) ;
   connexion expirée après 30 jours sans usage et au plus tard 90 jours après son octroi.
@@ -371,21 +374,22 @@ décision du 2026-10-19, voir « Langue invalide »).
   code `PT10M`, jeton d'accès `PT1H`, rafraîchissement `P30D`, inactivité `P30D`, maximum `P90D` —, une
   seule valeur pour tous les environnements (jamais `%env()%`, #659), lus par `ConnectionLifetimes`, qui
   refuse à sa construction (au premier usage du service) une durée illisible, nulle, une inactivité
-  au-delà du maximum ou un jeton d'accès qui survivrait à son rafraîchissement. L'expiration se juge en **échéances** monotones
-  (`McpConnection::isExpiredAt()`, seule définition, partagée par l'authentificateur, le rafraîchissement
-  et la purge) : jours de calendrier de Paris, l'échéance à la même heure murale au passage d'heure (721 h
-  à l'automne). Le dernier usage s'écrit au rafraîchissement seulement, au plus une fois par heure
-  écoulée. Le rafraîchissement se juge **sous le verrou de sa connexion** (`FOR UPDATE`) sur l'horloge de
-  l'application : un jeton déjà tourné présenté sur une connexion active la révoque
-  (`refresh-token-reuse`) ; un code déjà échangé, présenté une seconde fois en même temps ou après, aussi
-  (`code-replay`, OAuth 2.1 §4.1.2) ; une connexion expirée ou un compte sorti du palier de confiance
-  n'obtient aucun jeton neuf, rien n'est écrit. Les refus restent ceux de league, mot pour mot. Révoquer
-  un jeton de rafraîchissement au point de révocation révoque la connexion (cause `client`, RFC 7009
-  §2.1, décision de l'auteur du 2026-10-26) ; révoquer un jeton d'accès seul la laisse active. **Prix
-  accepté de la rotation** : un client qui rejoue son rafraîchissement après une réponse perdue perd sa
-  connexion et doit se reconnecter. Limites acceptées : un code rejoué après ses dix minutes est un
-  simple `invalid_grant` sans révocation (league le juge sur sa charge chiffrée) ; un code rejoué sous un
-  autre `client_id` révoque aussi la connexion de son vrai client.
+  au-delà du maximum ou un jeton d'accès qui survivrait à son rafraîchissement. L'expiration se juge en
+  **échéances** monotones (`McpConnection::isExpiredAt()`, seule définition, partagée par
+  l'authentificateur, le rafraîchissement et la purge) : jours de calendrier de Paris, l'échéance à la
+  même heure murale au passage d'heure (721 h à l'automne). Le dernier usage s'écrit au rafraîchissement
+  seulement, au plus une fois par heure écoulée. Le rafraîchissement se juge **sous le verrou de sa
+  connexion** (`FOR UPDATE`) sur l'horloge de l'application : un jeton déjà tourné présenté sur une
+  connexion active la révoque (`refresh-token-reuse`) ; un code déjà échangé, présenté une seconde fois en
+  même temps ou après, aussi (`code-replay`, OAuth 2.1 §4.1.2) ; une connexion expirée ou un compte sorti
+  du palier de confiance n'obtient aucun jeton neuf, rien n'est écrit. Les refus restent ceux de league,
+  mot pour mot. Révoquer un jeton de rafraîchissement au point de révocation révoque la connexion (cause
+  `client`, RFC 7009 §2.1, décision de l'auteur du 2026-10-26 ; `refresh-token-reuse` si le jeton remis
+  avait déjà été tourné, même signal qu'au point de jeton) ; révoquer un jeton d'accès seul la laisse
+  active. **Prix accepté de la rotation** : un client qui rejoue son rafraîchissement après une réponse
+  perdue perd sa connexion et doit se reconnecter. Limites acceptées : un code rejoué après ses dix
+  minutes est un simple `invalid_grant` sans révocation (league le juge sur sa charge chiffrée) ; un code
+  rejoué sous un autre `client_id` révoque aussi la connexion de son vrai client.
 - **Parcours d'autorisation.** Le point d'autorisation valide la requête (client, redirection exacte,
   PKCE, `resource`, scope) puis renvoie le navigateur vers la page de consentement du frontend. La page
   exige une session du site au palier de confiance (sinon passage par la connexion, puis retour). Le
@@ -466,10 +470,10 @@ décision du 2026-10-19, voir « Langue invalide »).
   active reste jusqu'à son échéance, sa ligne reconnaissant le rejeu) ; supprime les connexions révoquées
   depuis plus de la rétention, **6 mois** (décision de l'auteur du 2026-10-26 ; la « durée de conservation
   du journal » ci-dessus n'est pas une durée fixe, bornée par la vie du pod, registre §6), paramètre
-  `app.mcp.revoked_connection_retention` lu comme défaut de `--older-than` (au moins un jour). Une ligne d'audit par connexion marquée, après le
-  COMMIT. **Pas de `--dry-run`** : elle ne supprime que des jetons morts et des connexions mortes depuis
-  des mois, rien qu'une personne pourrait regretter (la purge des invitations a le sien parce qu'elle
-  supprime des comptes).
+  `app.mcp.revoked_connection_retention` lu comme défaut de `--older-than` (au moins un jour). Une ligne
+  d'audit par connexion marquée, après le COMMIT. **Pas de `--dry-run`** : elle ne supprime que des jetons
+  morts et des connexions mortes depuis des mois, rien qu'une personne pourrait regretter (la purge des
+  invitations a le sien parce qu'elle supprime des comptes).
 - **Préprod** : l'Ingress de préprod lève Basic Auth sur les seuls chemins MCP et OAuth, les deux
   documents `/.well-known/` compris (ADR 0006, conséquences), à revoir avec #339.
 - **Page « Brancher votre assistant »** complétée : comment ouvrir une connexion MCP depuis chaque
