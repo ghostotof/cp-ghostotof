@@ -8,9 +8,9 @@ use App\Security\Authentication\Infrastructure\Http\AuthCookieFactory;
 use App\Security\User\Application\CpgUserRegistrarInterface;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Tests\Support\HttpJson;
+use App\Tests\Support\ReadsResponseCookies;
 use App\Tests\Support\TestCredentials;
 use Doctrine\ORM\EntityManagerInterface;
-use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\HttpFoundation\Cookie;
 
@@ -28,6 +28,7 @@ use Symfony\Component\HttpFoundation\Cookie;
 final class AuthCookieAttributesTest extends WebTestCase
 {
     use HttpJson;
+    use ReadsResponseCookies;
 
     private const string USERNAME = 'cookie-attributes';
 
@@ -98,44 +99,5 @@ final class AuthCookieAttributesTest extends WebTestCase
         // en épingle la valeur déclarée.
         self::assertTrue($baseAccess[AuthCookieFactory::BEARER]->isSecure(), 'Le JWT doit être posé `Secure` hors de `dev`.');
         self::assertTrue($baseAccess[AuthCookieFactory::XSRF_TOKEN]->isSecure(), 'Le jeton CSRF doit être posé `Secure` hors de `dev`.');
-    }
-
-    /**
-     * Un seul cookie par nom (relectures de #714) : un second `BEARER` sur un
-     * autre `Path` ou `Domain` serait gardé par le navigateur à côté du
-     * premier, et, indexé par nom, l'un des deux échapperait à la comparaison.
-     *
-     * @return array<string, Cookie>
-     */
-    private function cookiesByName(KernelBrowser $client): array
-    {
-        $cookies = [];
-        foreach ($client->getResponse()->headers->getCookies() as $cookie) {
-            self::assertArrayNotHasKey(
-                $cookie->getName(),
-                $cookies,
-                \sprintf('%s posé deux fois par la même réponse : le navigateur garderait les deux.', $cookie->getName()),
-            );
-            $cookies[$cookie->getName()] = $cookie;
-        }
-
-        return $cookies;
-    }
-
-    /**
-     * Les attributs qui doivent coïncider entre pose et expiration. La valeur
-     * et l'échéance en sont exclus par nature.
-     *
-     * @return array{path: string, domain: string|null, secure: bool, httpOnly: bool, sameSite: string|null}
-     */
-    private function attributes(Cookie $cookie): array
-    {
-        return [
-            'path' => $cookie->getPath(),
-            'domain' => $cookie->getDomain(),
-            'secure' => $cookie->isSecure(),
-            'httpOnly' => $cookie->isHttpOnly(),
-            'sameSite' => $cookie->getSameSite(),
-        ];
     }
 }
