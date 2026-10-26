@@ -84,23 +84,33 @@ phase 1 parte en release seule ; puis au merge de clôture, qui archive la spec 
       `/api/mcp` ; reports rangés sous les tâches 10, 11, 12 et 14 — reports de la tâche 8 : registre RGPD §8 (le fournisseur d'IA du client reçoit les jetons) ;
       `bearer_methods_supported` annoncé avant l'authentificateur ; au point de jeton league lit
       `client_id` dans `Authorization: Basic`, la révocation non
-- [ ] Tâche 10 — Durée de vie des jetons, rotation et purge (#649) — bloquée par : #647 — reports de
-      la tâche 8, **dont deux importants, à livrer avant la release de la phase 2** : (1) un nouvel
-      accord n'éteint pas l'accord précédent du même couple compte/client (avec #650) ; (2) point de
-      jeton hors transaction, league révoque le code en dernier (rejeu concurrent → deux paires) —
-      `revokeByHash` rendant le nombre de lignes. Aussi : `RevokedOnce` contre `McpConnection::revokedAt`,
-      course révocation/rafraîchissement en 500, refus OAuth non journalisés, `is*Revoked` lit la carte
-      d'identité Doctrine, deux horloges (league `time()` / `ClockInterface`). Reports de la tâche 9 :
-      `lastUsedAt` écrit au rafraîchissement (jamais par appel) ; durées 30 j / 90 j de
-      `McpConnection::IDLE_LIFETIME` / `MAX_LIFETIME` passées en configuration ; bornes au passage
-      d'heure Europe/Paris, non testées (`McpAccessTokenRefusalTest` est à décalage fixe) ;
-      **à livrer avant la release de la phase 2** (relecture de sécurité de la tâche 9) : le
-      rafraîchissement (`ConnectionOfToken`, `RefreshTokenRepository::isRefreshTokenRevoked()`) ne juge
-      ni `McpConnection::isExpiredAt()` ni le palier du compte — une connexion expirée ou un compte
-      déchu obtient des jetons neufs, refusés ensuite : boucle refus/rafraîchissement, lignes de jetons
-      accumulées ; le refus d'un jeton **connu** (révoqué, expiré, audience, connexion, scope, palier)
-      n'écrit aucune ligne `security_audit` (événement `mcp-access-token-refused` par UUID, jamais pour
-      `Malformed` ni `Unknown`)
+- [x] Tâche 10 — Durée de vie des jetons, rotation et purge (#649) — bloquée par : #647 —
+      **faite le 2026-10-26** sur `feature/spec-0007-t10-duree-de-vie` (plan `tasks/plan-t10-duree-de-vie.md`,
+      dix tâches relues), PR vers la mère à ouvrir ; règle `.claude/rules/mcp-oauth-cycle-de-vie.md`.
+      Durées en configuration (`ConnectionLifetimes`), échéances monotones (`isExpiredAt()`), cause de
+      révocation, rotation et rejeu sous le verrou de la connexion, révocation par le client, accord
+      remplacé, audits `mcp-connection-revoked` et `mcp-access-token-refused`, purge `app:mcp:purge`.
+      Reports traités, tous : ~~(1) un nouvel accord n'éteint pas l'accord précédent~~ (cause
+      `superseded`) ; ~~(2) rejeu concurrent d'un code → deux paires~~ (verrou `FOR UPDATE` de la
+      connexion, prouvé en processus réels, au lieu de `revokeByHash` rendant le nombre de lignes) ;
+      ~~`RevokedOnce` contre `McpConnection::revokedAt`~~ (décision 6 : la connexion se juge, les lignes
+      de jetons gardent leur sens) ; ~~course révocation/rafraîchissement en 500~~ (verrou de la
+      connexion, ordre des verrous du point de révocation corrigé) ; ~~refus OAuth non journalisés~~ (le
+      minimum demandé : révocation par le client, réutilisation, rejeu ; les autres refus de league —
+      PKCE, client inconnu, code échu — restent sans ligne, voir plus bas) ; ~~`is*Revoked` lit la carte
+      d'identité Doctrine~~ (`HINT_REFRESH`) ; ~~deux horloges~~ (`ClockInterface` juge, `time()` second
+      filet) ; ~~réessai du consentement après un 5xx → seconde connexion~~ (remplacée) ;
+      ~~`lastUsedAt` écrit au rafraîchissement~~ ; ~~durées 30 j / 90 j en configuration~~ ; ~~bornes au
+      passage d'heure non testées~~ (`ConnectionLifetimesTest`, `McpConnectionExpiryTest` ;
+      `McpAccessTokenRefusalTest` reste à décalage fixe, voulu, son docblock le dit) ; ~~rafraîchissement
+      d'une connexion expirée ou d'un compte déchu~~ (refusé, rien d'écrit) ; ~~refus d'un jeton connu non
+      audité~~ (`mcp-access-token-refused`). **Restent, portés ailleurs** : la cause `person` et les
+      connexions accumulées visibles et révocables (#650, corps et commentaire) ; l'audit de la
+      suppression en cascade des connexions au retrait d'un client (#652, commentaire). **Restent, portés
+      par aucune issue** : les autres refus OAuth de league non journalisés ; la connexion jamais utilisée
+      d'un double clic sur l'approbation (limite acceptée, à montrer dans #650). Notes de la release :
+      migration `Version20261026120000` (colonne `revocation_cause`, contrainte `CHECK`, index partiel) ;
+      troisième commande `app:mcp:purge` au CronJob de ménage quotidien
 - [ ] Tâche 11 — « Mes connexions MCP » (#650) — bloquée par : #648 — reports de la tâche 8 :
       connexions accumulées visibles et révocables ; révoquer la connexion, jamais les jetons un à un.
       Reports de la tâche 9 : une connexion MCP survit au changement de mot de passe et de rôles du
