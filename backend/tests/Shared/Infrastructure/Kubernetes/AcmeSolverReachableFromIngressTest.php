@@ -53,6 +53,19 @@ final class AcmeSolverReachableFromIngressTest extends TestCase
     }
 
     /**
+     * La même source que le trafic web : un ingress déplacé dans un autre
+     * namespace, corrigé pour le frontend et le backend seulement, laisserait
+     * les solveurs injoignables sans que rien d'autre ne le dise.
+     */
+    public function testTheSolverPolicyAdmitsTheSameSourceAsTheWebTraffic(): void
+    {
+        $web = $this->policies()['allow-web-from-ingress-nginx'] ?? null;
+        self::assertIsArray($web, 'allow-web-from-ingress-nginx manquante.');
+
+        self::assertSame($web['ingress'][0]['from'] ?? null, $this->policySpec()['ingress'][0]['from'] ?? null, self::POLICY.' et allow-web-from-ingress-nginx doivent admettre la même source.');
+    }
+
+    /**
      * La règle qui la rend nécessaire est toujours là : sans elle, ce test
      * garderait une ouverture devenue sans objet.
      */
@@ -77,7 +90,11 @@ final class AcmeSolverReachableFromIngressTest extends TestCase
     }
 
     /**
-     * Le `spec` de chaque NetworkPolicy du manifeste, par nom.
+     * Le `spec` de chaque NetworkPolicy du manifeste, par nom. Un nom écrit
+     * deux fois est refusé, comme le fait {@see KubernetesManifests} : le
+     * cluster appliquerait les deux documents l'un après l'autre, et un
+     * index qui garde le dernier jugerait un document que le cluster ne
+     * garde pas forcément.
      *
      * @return array<string, array<mixed>>
      */
@@ -90,6 +107,7 @@ final class AcmeSolverReachableFromIngressTest extends TestCase
             $spec = $resource['spec'] ?? null;
             self::assertIsString($name);
             self::assertIsArray($spec);
+            self::assertArrayNotHasKey($name, $policies, \sprintf('%s : NetworkPolicy %s écrite deux fois.', self::MANIFEST, $name));
             $policies[$name] = $spec;
         }
 

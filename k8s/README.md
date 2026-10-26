@@ -43,7 +43,13 @@ détail des jobs.
    ```
 3. **Installer cert-manager** + un `ClusterIssuer` nommé `letsencrypt` (référencé
    par l'annotation `cert-manager.io/cluster-issuer` de l'Ingress) : gère les
-   certificats TLS Let's Encrypt automatiquement.
+   certificats TLS Let's Encrypt automatiquement. Les challenges HTTP-01 passent
+   par un pod solveur (label `acme.cert-manager.io/http01-solver: "true"`, port
+   8089), que seule la NetworkPolicy `allow-acme-solver-from-ingress-nginx` rend
+   joignable derrière `default-deny-ingress` (incident du 2026-10-26 :
+   renouvellement bloqué 17 jours). Après une installation ou une mise à jour de
+   cert-manager, vérifier qu'un challenge aboutit : `kubectl get challenges -A`
+   vide ou `valid`, et le `notAfter` des certificats qui avance.
 4. **ServiceAccount dédié au pipeline GitHub Actions** (remplace le tunnel GitLab
    Agent for Kubernetes) : manifests sous `k8s/base/github-actions-rbac/`
    (`ServiceAccount` + `Role`/`RoleBinding` namespaced, scope limité aux kinds
