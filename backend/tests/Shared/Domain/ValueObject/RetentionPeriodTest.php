@@ -196,6 +196,35 @@ final class RetentionPeriodTest extends TestCase
         yield 'demi-seconde' => ['500 msec', '2026-09-22 11:59:59.500000'];
     }
 
+    /**
+     * Relecture de #710 : `app:user:purge-pending-invitations` retranche
+     * l'intervalle lui-même, à l'instant de son service. L'intervalle exposé
+     * suit les mêmes règles que le seuil : retranché la veille du passage à
+     * l'heure d'hiver, « 36 hours » dure 36 heures écoulées.
+     */
+    public function testTheIntervalFollowsTheSameRulesAsTheThreshold(): void
+    {
+        $utc = new DateTimeZone('UTC');
+        $now = (new DateTimeImmutable('2026-10-25 12:00:00', $utc))->setTimezone(new DateTimeZone('Europe/Paris'));
+        $period = RetentionPeriod::fromString('36 hours', $now);
+
+        self::assertSame(36 * 3600, $now->getTimestamp() - $now->sub($period->interval())->getTimestamp());
+        self::assertSame($period->threshold()->getTimestamp(), $now->sub($period->interval())->getTimestamp());
+    }
+
+    /**
+     * Un `DateInterval` est mutable : le modifier ne doit pas changer la durée
+     * du Value Object.
+     */
+    public function testTheIntervalIsACopy(): void
+    {
+        $period = RetentionPeriod::fromString('30 days', $this->now());
+
+        $period->interval()->d = 1;
+
+        self::assertSame(30, $period->interval()->d);
+    }
+
     #[DataProvider('rejectedAsNotStrictlyPositive')]
     public function testFromStringRejectsAnExpressionThatDoesNotYieldAPastThreshold(string $expression): void
     {

@@ -63,6 +63,7 @@ final readonly class RetentionPeriod
 
     private function __construct(
         private DateTimeImmutable $threshold,
+        private DateInterval $interval,
         private string $expression,
     ) {
     }
@@ -75,7 +76,8 @@ final readonly class RetentionPeriod
     public static function fromString(string $expression, DateTimeImmutable $now): self
     {
         $trimmed = trim($expression);
-        $threshold = $now->sub(self::durationOf($trimmed, $expression));
+        $interval = self::durationOf($trimmed, $expression);
+        $threshold = $now->sub($interval);
 
         if ($threshold >= $now) {
             throw InvalidRetentionPeriodException::notStrictlyPositive($expression);
@@ -88,7 +90,7 @@ final readonly class RetentionPeriod
             throw InvalidRetentionPeriodException::tooLong($expression);
         }
 
-        return new self($threshold, $trimmed);
+        return new self($threshold, $interval, $trimmed);
     }
 
     /**
@@ -223,6 +225,17 @@ final readonly class RetentionPeriod
     public function threshold(): DateTimeImmutable
     {
         return $this->threshold;
+    }
+
+    /**
+     * La durée elle-même, pour un appelant qui la retranche à son propre
+     * instant (`PendingInvitationPurger`, relecture de #710) : un intervalle
+     * construit, qui compte les jours sur le calendrier et les heures en temps
+     * écoulé. Une copie, `DateInterval` étant mutable.
+     */
+    public function interval(): DateInterval
+    {
+        return clone $this->interval;
     }
 
     public function expression(): string
