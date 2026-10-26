@@ -92,7 +92,10 @@ use Symfony\Component\DependencyInjection\Compiler\ResolveNoPreloadPass;
  *    lu hors débogage, comme la préproduction et la production ;
  *  - un service hors périmètre redéfini sous son propre identifiant, qu'une
  *    référence seule désigne — testThePerimeterHoldsTheServicesTheIssueNames
- *    épingle ceux que l'issue et ses relectures nomment.
+ *    épingle ceux que l'issue et ses relectures nomment ;
+ *  - les handlers Monolog, qui diffèrent à bon droit (un handler de test en
+ *    `test`) : ceux du journal de sécurité en production sont figés à part
+ *    ({@see \App\Tests\Security\Authentication\SecurityAuditLogChannelTest}).
  * Une passe enregistrée après l'instantané, elle, est refusée
  * (testThePassesAfterTheSnapshotAreTheExpectedOnes).
  */

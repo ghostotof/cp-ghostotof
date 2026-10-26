@@ -78,7 +78,9 @@ same `APP_ENV`) every handler is a `stream` to `php://stderr` with `monolog.form
 Kubernetes only collects a container's stdout/stderr — `kubectl logs … | jq` is the whole tooling. The
 `security` (Symfony's own) and `security_audit` (ours, declared in `monolog.channels`) channels get
 their own handler at a hard-coded `info`, never `fingers_crossed`: a run of failed logins with no error
-after it is exactly the trace worth keeping, and buffering would discard it. Everything else goes to
+after it is exactly the trace worth keeping, and buffering would discard it (`SecurityAuditLogChannelTest`
+pins both, and their exclusion from `main` and `console` — the environment parity guards do not compare
+Monolog handlers, which rightly differ in `test`; audit of #698). Everything else goes to
 the `main` handler at `%env(default:app.log_level:LOG_LEVEL)%` (`LOG_LEVEL=warning` in `backend/.env`,
 `debug` in the preprod image), which excludes those two channels so an event is emitted **once**. No
 channel names an account by its login identifier (issue #363): the `security` channel goes through
