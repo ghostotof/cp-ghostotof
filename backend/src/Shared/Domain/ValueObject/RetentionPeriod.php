@@ -102,6 +102,10 @@ final readonly class RetentionPeriod
             throw InvalidRetentionPeriodException::unreadable($expression);
         }
 
+        if (self::mixesSigns($relative)) {
+            throw InvalidRetentionPeriodException::mixesSigns($expression);
+        }
+
         $interval = self::calendarDaysThenElapsedTime($relative);
 
         if (self::designatesADate($trimmed, $interval)) {
@@ -141,6 +145,19 @@ final readonly class RetentionPeriod
         $interval->invert = $relative->invert;
 
         return $interval;
+    }
+
+    /**
+     * Vrai si des champs de l'intervalle ont des signes opposés (« 1 day -23
+     * hours »), relecture de #710. Les jours se comptent sur le calendrier, les
+     * heures en temps écoulé : leur différence varie avec les changements
+     * d'heure, et l'option changerait de sens selon le jour (1 heure, 2, ou 0).
+     */
+    private static function mixesSigns(DateInterval $relative): bool
+    {
+        $fields = [$relative->y, $relative->m, $relative->d, $relative->h, $relative->i, $relative->s, $relative->f];
+
+        return min($fields) < 0 && max($fields) > 0;
     }
 
     /**

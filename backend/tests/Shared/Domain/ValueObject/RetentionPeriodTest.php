@@ -251,6 +251,34 @@ final class RetentionPeriodTest extends TestCase
         yield 'hier, ramené à minuit' => ['yesterday', self::NOW];
     }
 
+    /**
+     * Relecture de #710 : « 1 day -23 hours » retranche un jour du calendrier
+     * puis ajoute 23 heures écoulées. Elle durait 1 heure, 2 le jour du passage
+     * à l'heure d'hiver, et 0 (refusée) le jour du passage à l'heure d'été :
+     * la même option ne doit pas changer de sens selon le jour.
+     */
+    #[DataProvider('expressionsMixingSigns')]
+    public function testFromStringRejectsAnExpressionMixingSigns(string $expression): void
+    {
+        try {
+            RetentionPeriod::fromString($expression, $this->now());
+            self::fail('InvalidRetentionPeriodException attendue.');
+        } catch (InvalidRetentionPeriodException $exception) {
+            self::assertStringContainsString('signes opposés', $exception->getMessage());
+        }
+    }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function expressionsMixingSigns(): iterable
+    {
+        yield 'jour moins heures' => ['1 day -23 hours'];
+        yield 'heures moins un jour' => ['-1 day 25 hours'];
+        yield 'mois moins un jour' => ['1 month -1 day'];
+        yield 'seconde moins des millisecondes' => ['1 sec -500 msec'];
+    }
+
     #[DataProvider('unreadableExpressions')]
     public function testFromStringRejectsAnUnreadableExpression(string $expression): void
     {

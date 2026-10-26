@@ -42,6 +42,18 @@ final class InvalidRetentionPeriodException extends DomainException
     }
 
     /**
+     * L'expression mêle des termes de signes opposés ("1 day -23 hours"),
+     * dont la durée varierait avec les changements d'heure. Relecture de #710.
+     */
+    public static function mixesSigns(string $expression): self
+    {
+        return new self(\sprintf(
+            'La durée de rétention "%s" mêle des termes de signes opposés, dont la durée varierait selon le jour. Exemples valides : "30 days", "12 hours".',
+            $expression,
+        ));
+    }
+
+    /**
      * La durée place le seuil avant l'an 1, que PostgreSQL ne sait pas lire
      * ("5000 years"). Relecture de #710.
      */
