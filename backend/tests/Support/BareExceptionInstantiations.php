@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace App\Tests\Support;
 
-use PhpToken;
-
 /**
  * Recense les `new Exception`, `new LogicException`, `new RuntimeException`
  * et `new InvalidArgumentException` nus d'un répertoire (issues #338 et #383),
@@ -50,14 +48,7 @@ final class BareExceptionInstantiations
      */
     public static function in(string $directory): array
     {
-        $found = [];
-        foreach (PhpSources::files($directory) as $path) {
-            foreach (self::inCode(RepositoryFiles::read($path)) as $line) {
-                $found[] = $path.':'.$line;
-            }
-        }
-
-        return $found;
+        return PhpSources::sites($directory, self::inCode(...));
     }
 
     /**
@@ -67,51 +58,18 @@ final class BareExceptionInstantiations
     {
         $tokens = PhpSources::significantTokens($code);
 
-        $namespace = '';
-        /** @var array<string, string> $imports alias en minuscules => classe importée en minuscules */
-        $imports = [];
         $lines = [];
-        foreach ($tokens as $index => $token) {
-            if ($token->is(\T_NAMESPACE)) {
-                $namespace = ClassNameResolver::namespaceDeclaredAt($tokens, $index);
-                $imports = [];
-            } elseif ($token->is(\T_USE)) {
-                $imports = array_merge($imports, ClassNameResolver::imports($tokens, $index + 1));
-            } elseif ($token->is(\T_NEW)) {
-                $class = self::instantiatedName($tokens, $index + 1);
-                if (null !== $class && \in_array(ClassNameResolver::resolve($class, $namespace, $imports), self::FORBIDDEN, true)) {
-                    $lines[] = $token->line;
-                }
+        foreach (ClassNameResolver::scopes($tokens) as $index => [$namespace, $imports]) {
+            if (!$tokens[$index]->is(\T_NEW)) {
+                continue;
+            }
+
+            $class = ClassNameResolver::instantiatedName($tokens, $index + 1);
+            if (null !== $class && \in_array(ClassNameResolver::resolve($class, $namespace, $imports), self::FORBIDDEN, true)) {
+                $lines[] = $tokens[$index]->line;
             }
         }
 
         return $lines;
-    }
-
-    /**
-     * Le nom écrit après `new` : la classe instanciée, ou celle qu'étend une
-     * classe anonyme (`new class(…) extends X {}`). Null pour une expression
-     * (`new $class`) ou une classe anonyme sans parent. Lu aussi par
-     * {@see CookieConstructions} (issue #714).
-     *
-     * @param list<PhpToken> $tokens
-     */
-    public static function instantiatedName(array $tokens, int $index): ?PhpToken
-    {
-        $next = $tokens[$index] ?? null;
-        if (null === $next || !$next->is(\T_CLASS)) {
-            return null !== $next && $next->is(ClassNameResolver::NAMES) ? $next : null;
-        }
-
-        // Classe anonyme : son parent se lit avant l'accolade du corps.
-        for ($cursor = $index + 1; null !== ($token = $tokens[$cursor] ?? null) && '{' !== $token->text; ++$cursor) {
-            if ($token->is(\T_EXTENDS)) {
-                $parent = $tokens[$cursor + 1] ?? null;
-
-                return null !== $parent && $parent->is(ClassNameResolver::NAMES) ? $parent : null;
-            }
-        }
-
-        return null;
     }
 }

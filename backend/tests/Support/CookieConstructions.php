@@ -65,14 +65,7 @@ final class CookieConstructions
      */
     public static function in(string $directory): array
     {
-        $found = [];
-        foreach (PhpSources::files($directory) as $path) {
-            foreach (self::inCode(RepositoryFiles::read($path)) as $line) {
-                $found[] = $path.':'.$line;
-            }
-        }
-
-        return $found;
+        return PhpSources::sites($directory, self::inCode(...));
     }
 
     /**
@@ -82,18 +75,10 @@ final class CookieConstructions
     {
         $tokens = PhpSources::significantTokens($code);
 
-        $namespace = '';
-        /** @var array<string, string> $imports alias en minuscules => classe importée en minuscules */
-        $imports = [];
         $lines = [];
-        foreach ($tokens as $index => $token) {
-            if ($token->is(\T_NAMESPACE)) {
-                $namespace = ClassNameResolver::namespaceDeclaredAt($tokens, $index);
-                $imports = [];
-            } elseif ($token->is(\T_USE)) {
-                $imports = array_merge($imports, ClassNameResolver::imports($tokens, $index + 1));
-            } elseif (self::buildsACookie($tokens, $index, $namespace, $imports)) {
-                $lines[] = $token->line;
+        foreach (ClassNameResolver::scopes($tokens) as $index => [$namespace, $imports]) {
+            if (self::buildsACookie($tokens, $index, $namespace, $imports)) {
+                $lines[] = $tokens[$index]->line;
             }
         }
 
@@ -109,7 +94,7 @@ final class CookieConstructions
         $token = $tokens[$index];
 
         if ($token->is(\T_NEW)) {
-            $class = BareExceptionInstantiations::instantiatedName($tokens, $index + 1);
+            $class = ClassNameResolver::instantiatedName($tokens, $index + 1);
 
             return null !== $class && self::COOKIE_CLASS === ClassNameResolver::resolve($class, $namespace, $imports);
         }

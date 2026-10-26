@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Support;
 
+use Generator;
 use PhpToken;
 
 /**
@@ -86,6 +87,60 @@ final class ClassNameResolver
         }
 
         return $imports;
+    }
+
+    /**
+     * Chaque jeton du code avec l'espace de noms et les imports qui valent à
+     * cet endroit : la boucle que partagent les recenseurs de sites
+     * ({@see BareExceptionInstantiations}, {@see CookieConstructions}). Les
+     * jetons `namespace` et `use` eux-mêmes ne sont pas rendus ; les imports
+     * repartent de zéro à chaque `namespace`.
+     *
+     * @param list<PhpToken> $tokens
+     *
+     * @return Generator<int, array{string, array<string, string>}> index du jeton => [espace de noms, imports]
+     */
+    public static function scopes(array $tokens): Generator
+    {
+        $namespace = '';
+        /** @var array<string, string> $imports alias en minuscules => classe importée en minuscules */
+        $imports = [];
+        foreach ($tokens as $index => $token) {
+            if ($token->is(\T_NAMESPACE)) {
+                $namespace = self::namespaceDeclaredAt($tokens, $index);
+                $imports = [];
+            } elseif ($token->is(\T_USE)) {
+                $imports = array_merge($imports, self::imports($tokens, $index + 1));
+            } else {
+                yield $index => [$namespace, $imports];
+            }
+        }
+    }
+
+    /**
+     * Le nom écrit après `new` en $index - 1 : la classe instanciée, ou celle
+     * qu'étend une classe anonyme (`new class(…) extends X {}`). Null pour une
+     * expression (`new $class`) ou une classe anonyme sans parent.
+     *
+     * @param list<PhpToken> $tokens
+     */
+    public static function instantiatedName(array $tokens, int $index): ?PhpToken
+    {
+        $next = $tokens[$index] ?? null;
+        if (null === $next || !$next->is(\T_CLASS)) {
+            return null !== $next && $next->is(self::NAMES) ? $next : null;
+        }
+
+        // Classe anonyme : son parent se lit avant l'accolade du corps.
+        for ($cursor = $index + 1; null !== ($token = $tokens[$cursor] ?? null) && '{' !== $token->text; ++$cursor) {
+            if ($token->is(\T_EXTENDS)) {
+                $parent = $tokens[$cursor + 1] ?? null;
+
+                return null !== $parent && $parent->is(self::NAMES) ? $parent : null;
+            }
+        }
+
+        return null;
     }
 
     /**
