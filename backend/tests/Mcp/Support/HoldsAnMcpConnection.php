@@ -126,7 +126,7 @@ trait HoldsAnMcpConnection
 
     /**
      * Altère la ligne de la connexion : `$assignments` est la clause `SET`
-     * (`revoked_at = now()`, `granted_at = granted_at - INTERVAL '91 days'`).
+     * (`revoked_at = now(), revocation_cause = 'client'`, `granted_at = granted_at - INTERVAL '91 days'`).
      */
     private function alterHeldConnection(HeldMcpConnection $held, string $assignments): void
     {

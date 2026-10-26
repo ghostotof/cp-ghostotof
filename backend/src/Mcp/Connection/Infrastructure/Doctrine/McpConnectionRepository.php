@@ -6,7 +6,11 @@ namespace App\Mcp\Connection\Infrastructure\Doctrine;
 
 use App\Mcp\Connection\Domain\Entity\McpConnection;
 use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
+use App\Mcp\Connection\Domain\ValueObject\RevocationCause;
+use App\Mcp\Connection\Domain\ValueObject\RevokedConnection;
+use DateTimeImmutable;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
+use Doctrine\DBAL\Types\Types;
 use Doctrine\Persistence\ManagerRegistry;
 use Symfony\Bridge\Doctrine\Types\UuidType;
 use Symfony\Component\Uid\Uuid;
@@ -43,5 +47,53 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
     {
         $this->getEntityManager()->persist($connection);
         $this->getEntityManager()->flush();
+    }
+
+    /**
+     * Une instruction, par la connexion DBAL de l'EntityManager et jamais par
+     * l'unité de travail : la révocation suit une transaction que
+     * `wrapInTransaction()` a annulée **et** fermé l'EntityManager, et doit
+     * tenir quand même (un EntityManager fermé garde sa connexion). La base
+     * décide : `revoked_at IS NULL` fait de la première révocation la seule,
+     * `RETURNING` rend ce qui a été révoqué — compte et identifiant public du
+     * client par la jointure — sans seconde requête ni instance chargée.
+     * L'instant est typé comme sa colonne, avec fuseau (#434).
+     */
+    public function revokeActive(Uuid $connectionId, RevocationCause $cause, DateTimeImmutable $at): ?RevokedConnection
+    {
+        $row = $this->getEntityManager()->getConnection()->fetchAssociative(
+            'UPDATE mcp_connection c SET revoked_at = :at, revocation_cause = :cause'
+            .' FROM mcp_client cl'
+            .' WHERE c.id = :id AND c.revoked_at IS NULL AND cl.id = c.mcp_client_id'
+            .' RETURNING c.id, c.account_id, cl.client_id',
+            ['at' => $at, 'cause' => $cause->value, 'id' => $connectionId],
+            ['at' => Types::DATETIMETZ_IMMUTABLE, 'id' => UuidType::NAME],
+        );
+        if (false === $row) {
+            return null;
+        }
+
+        return new RevokedConnection(
+            Uuid::fromString($this->text($row, 'id')),
+            Uuid::fromString($this->text($row, 'account_id'))->toRfc4122(),
+            $this->text($row, 'client_id'),
+            $cause,
+        );
+    }
+
+    /**
+     * Une colonne texte de la ligne rendue (`uuid` et `varchar` arrivent en
+     * chaînes de pdo_pgsql) ; tout autre type serait un défaut du schéma.
+     *
+     * @param array<string, mixed> $row
+     */
+    private function text(array $row, string $column): string
+    {
+        $value = $row[$column] ?? null;
+        if (!\is_string($value)) {
+            throw UnexpectedRevocationRowException::forColumn($column);
+        }
+
+        return $value;
     }
 }

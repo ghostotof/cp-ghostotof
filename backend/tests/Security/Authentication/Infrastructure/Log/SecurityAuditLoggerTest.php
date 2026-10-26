@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Security\Authentication\Infrastructure\Log;
 
+use App\Mcp\Connection\Domain\ValueObject\RevocationCause;
 use App\Security\Authentication\Infrastructure\Log\LoginIdentifierFingerprint;
 use App\Security\Authentication\Infrastructure\Log\SecurityAuditLogger;
 use App\Security\User\Domain\Entity\CpgUser;
@@ -610,6 +611,60 @@ final class SecurityAuditLoggerTest extends TestCase
     }
 
     /**
+     * Connexion MCP révoquée (#649) : le compte par son UUID, la connexion par
+     * le sien, le client par son identifiant public, la cause en un mot
+     * stable. L'acteur est lu comme d'habitude : au point de jeton ou de
+     * révocation, aucun firewall n'authentifie personne, d'où `anonymous`.
+     */
+    public function testMcpConnectionRevokedNamesTheAccountTheConnectionTheClientAndTheCause(): void
+    {
+        $this->pushRequest('/api/oauth/token', 'POST');
+        $account = new CpgUser('trusted', 'hashed-password');
+        $connectionId = Uuid::v7();
+
+        $this->auditLogger->mcpConnectionRevoked($account, $connectionId, 'https://client.example.test/metadata.json', 'refresh-token-reuse');
+
+        $record = $this->singleRecord();
+        self::assertSame('MCP connection revoked.', $record->message);
+        self::assertSame([
+            'event' => 'mcp-connection-revoked',
+            'userId' => $account->getId()->toRfc4122(),
+            'connectionId' => $connectionId->toRfc4122(),
+            'clientId' => 'https://client.example.test/metadata.json',
+            'cause' => 'refresh-token-reuse',
+            'actor' => 'anonymous',
+            'ip' => self::IP,
+            'path' => '/api/oauth/token',
+        ], $record->context);
+    }
+
+    /**
+     * L'expiration d'une connexion MCP, constatée par la purge planifiée
+     * (#649) : le même événement que la révocation, cause `expired`, et
+     * l'acteur `system`, comme la purge des invitations — jamais le jeton de
+     * sécurité, qu'une commande n'a pas.
+     */
+    public function testMcpConnectionExpiredIsARevocationWithSystemAsActor(): void
+    {
+        $account = new CpgUser('trusted', 'hashed-password');
+        $connectionId = Uuid::v7();
+
+        $this->auditLogger->mcpConnectionExpired($account, $connectionId, 'https://client.example.test/metadata.json');
+
+        self::assertSame([
+            'event' => 'mcp-connection-revoked',
+            'userId' => $account->getId()->toRfc4122(),
+            'connectionId' => $connectionId->toRfc4122(),
+            'clientId' => 'https://client.example.test/metadata.json',
+            // Le mot de la cause du domaine MCP, que le journal écrit sans en dépendre.
+            'cause' => RevocationCause::Expired->value,
+            'actor' => 'system',
+            'ip' => null,
+            'path' => null,
+        ], $this->singleRecord()->context);
+    }
+
+    /**
      * Hors requête HTTP (commande, handler Messenger) : ni IP ni chemin, mais
      * l'événement sort quand même — l'absence de requête n'est pas une raison
      * de perdre la trace.
@@ -712,9 +767,11 @@ final class SecurityAuditLoggerTest extends TestCase
         $this->auditLogger->baseAccessThrottled();
         $this->auditLogger->mcpConnectionGranted($invited, Uuid::v7(), 'https://client.example.test/metadata.json');
         $this->auditLogger->nominativeCorpusRead($invited, Uuid::v7(), 'https://client.example.test/metadata.json', 'get_nominative_corpus');
+        $this->auditLogger->mcpConnectionRevoked($invited, Uuid::v7(), 'https://client.example.test/metadata.json', 'client');
+        $this->auditLogger->mcpConnectionExpired($invited, Uuid::v7(), 'https://client.example.test/metadata.json');
 
         $records = $this->handler->getRecords();
-        self::assertCount(24, $records);
+        self::assertCount(26, $records);
 
         foreach ($records as $record) {
             $serialized = json_encode([$record->message, $record->context, $record->extra], \JSON_THROW_ON_ERROR);

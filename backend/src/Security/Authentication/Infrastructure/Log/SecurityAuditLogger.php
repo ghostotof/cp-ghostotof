@@ -48,6 +48,12 @@ final readonly class SecurityAuditLogger implements SecurityAuditLoggerInterface
     /** Acteur d'un événement déclenché par une commande CLI planifiée, jamais par une personne. */
     private const string SYSTEM = 'system';
 
+    /**
+     * Cause de révocation d'une connexion MCP expirée (#649), le mot de
+     * `RevocationCause::Expired` : écrit ici, ce contexte ne dépend pas de `Mcp`.
+     */
+    private const string EXPIRED = 'expired';
+
     /** Acteur d'un événement déclenché à la main en ligne de commande, par une personne que rien n'identifie. */
     private const string CONSOLE = 'console';
 
@@ -206,6 +212,23 @@ final readonly class SecurityAuditLogger implements SecurityAuditLoggerInterface
         ]);
     }
 
+    public function mcpConnectionRevoked(AccountReference $account, Uuid $connectionId, string $clientId, string $cause): void
+    {
+        $this->record('mcp-connection-revoked', 'MCP connection revoked.', $this->revokedConnection($account, $connectionId, $clientId, $cause));
+    }
+
+    public function mcpConnectionExpired(AccountReference $account, Uuid $connectionId, string $clientId): void
+    {
+        // Acteur forcé à `system`, comme userPurged() : l'expiration naît de
+        // la purge planifiée, hors de toute requête HTTP.
+        $this->record(
+            'mcp-connection-revoked',
+            'MCP connection revoked.',
+            $this->revokedConnection($account, $connectionId, $clientId, self::EXPIRED),
+            self::SYSTEM,
+        );
+    }
+
     /**
      * Un compte se désigne par son UUID seul (issue #363) : ni son adresse
      * e-mail, ni son identifiant de connexion, qui pour un invité en est
@@ -221,6 +244,22 @@ final readonly class SecurityAuditLogger implements SecurityAuditLoggerInterface
     private function account(AccountReference $user): array
     {
         return ['userId' => $user->accountId()];
+    }
+
+    /**
+     * Le sujet d'une révocation de connexion MCP (#649) : le compte, la
+     * connexion, le client par son identifiant public, la cause.
+     *
+     * @return array{userId: string, connectionId: string, clientId: string, cause: string}
+     */
+    private function revokedConnection(AccountReference $account, Uuid $connectionId, string $clientId, string $cause): array
+    {
+        return [
+            ...$this->account($account),
+            'connectionId' => $connectionId->toRfc4122(),
+            'clientId' => $clientId,
+            'cause' => $cause,
+        ];
     }
 
     /**

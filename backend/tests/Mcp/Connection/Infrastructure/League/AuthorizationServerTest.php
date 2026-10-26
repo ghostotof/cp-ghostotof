@@ -283,7 +283,7 @@ final class AuthorizationServerTest extends KernelTestCase
         self::assertIsString($refreshToken);
         // Révoquée par une autre requête : l'EntityManager de celle-ci, qui a
         // chargé la connexion, est vidé comme le serait celui d'une requête neuve.
-        $this->em->getConnection()->executeStatement('UPDATE mcp_connection SET revoked_at = NOW()');
+        $this->em->getConnection()->executeStatement("UPDATE mcp_connection SET revoked_at = NOW(), revocation_cause = 'client'");
         $this->em->clear();
 
         try {

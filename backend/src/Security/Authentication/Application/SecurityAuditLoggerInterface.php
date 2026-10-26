@@ -37,7 +37,10 @@ use Symfony\Component\Uid\Uuid;
  *    la connexion et de son code ;
  *  - le corpus nominatif lu par une connexion MCP (#648) :
  *    {@see \App\Mcp\Infrastructure\Corpus\NominativeCorpusReader}, pour une
- *    réponse que l'outil `get_nominative_corpus` sert, après sa mesure.
+ *    réponse que l'outil `get_nominative_corpus` sert, après sa mesure ;
+ *  - une connexion MCP révoquée ou expirée (#649) :
+ *    {@see \App\Mcp\Connection\Application\McpConnectionRevoker}, après la
+ *    révocation effective, une ligne par connexion.
  *
  * Ce qui sort, et rien d'autre : `event` (kebab-case, stable — c'est la clé
  * sur laquelle on filtre), le sujet (`userId`, l'UUID d'un compte ; `user`,
@@ -191,4 +194,25 @@ interface SecurityAuditLoggerInterface
      * Jamais le jeton présenté, son empreinte, ni rien du corpus.
      */
     public function nominativeCorpusRead(AccountReference $account, Uuid $connectionId, string $clientId, string $tool): void;
+
+    /**
+     * Connexion MCP révoquée (#649) : désigne le compte (`userId`), la
+     * connexion (`connectionId`), le client par son identifiant public
+     * (`clientId`) et la cause (`cause`, le mot stable de
+     * {@see \App\Mcp\Connection\Domain\ValueObject\RevocationCause} :
+     * `client`, `refresh-token-reuse`, `code-replay`, `superseded`). Une
+     * chaîne plutôt que l'enum : ce contexte ne dépend pas de `Mcp`. L'auteur
+     * est lu comme pour tout événement. Jamais le jeton ou le code présenté,
+     * ni leur empreinte.
+     */
+    public function mcpConnectionRevoked(AccountReference $account, Uuid $connectionId, string $clientId, string $cause): void;
+
+    /**
+     * Connexion MCP expirée, constatée et révoquée par la purge planifiée
+     * (#649) : le même événement `mcp-connection-revoked`, cause `expired`.
+     * L'acteur journalisé est `system`, comme pour {@see self::userPurged()} :
+     * une commande planifiée n'a pas de jeton de sécurité, et `anonymous`
+     * suggérerait un appelant humain.
+     */
+    public function mcpConnectionExpired(AccountReference $account, Uuid $connectionId, string $clientId): void;
 }

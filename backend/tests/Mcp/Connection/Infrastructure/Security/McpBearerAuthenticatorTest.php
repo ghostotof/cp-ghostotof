@@ -122,7 +122,7 @@ final class McpBearerAuthenticatorTest extends WebTestCase
     {
         $held = $this->heldAndServedOnce();
 
-        $this->alterHeldConnection($held, 'revoked_at = now()');
+        $this->alterHeldConnection($held, "revoked_at = now(), revocation_cause = 'client'");
 
         $this->assertNextCallRefusedBecause($held, BearerRefusal::ConnectionRevoked);
     }

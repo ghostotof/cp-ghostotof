@@ -135,7 +135,7 @@ final class LeagueRepositoriesTest extends KernelTestCase
         self::assertFalse($this->refreshTokens()->isRefreshTokenRevoked($refreshIdentifier));
 
         $this->em->getConnection()->executeStatement(
-            'UPDATE mcp_connection SET revoked_at = NOW() WHERE id = :id',
+            "UPDATE mcp_connection SET revoked_at = NOW(), revocation_cause = 'client' WHERE id = :id",
             ['id' => $connection->getId()],
             ['id' => UuidType::NAME],
         );
@@ -256,7 +256,7 @@ final class LeagueRepositoriesTest extends KernelTestCase
         $connection = $this->grantConnection();
         $accessToken = $this->persistAccessToken($connection, $this->identifier());
         $this->em->getConnection()->executeStatement(
-            'UPDATE mcp_connection SET revoked_at = NOW() WHERE id = :id',
+            "UPDATE mcp_connection SET revoked_at = NOW(), revocation_cause = 'client' WHERE id = :id",
             ['id' => $connection->getId()],
             ['id' => UuidType::NAME],
         );

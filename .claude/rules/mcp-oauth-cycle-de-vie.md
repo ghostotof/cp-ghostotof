@@ -58,3 +58,31 @@ paths:
   gap (`03:30` CEST): one hour more, never less. `ConnectionLifetimesTest` (deadlines, the skipped hour),
   `McpConnectionExpiryTest` (boundary second by second, the fixed offset, the review's reproduction, a 15-minute
   sweep across both changes asserting monotonicity).
+- **A connection is revoked once, with its cause, by the repository only.** `McpConnection` has no mutator of
+  `revokedAt` nor of `revocationCause` (`Domain/ValueObject/RevocationCause`: `client`, `refresh-token-reuse`,
+  `code-replay`, `superseded`, `expired`; #650 adds `person`). `McpConnectionRepositoryInterface::revokeActive($id,
+  $cause, $at)` is **one native SQL statement through the EntityManager's DBAL connection, never the unit of work**:
+  `UPDATE mcp_connection c SET revoked_at, revocation_cause FROM mcp_client cl WHERE c.id = :id AND c.revoked_at IS
+  NULL … RETURNING c.id, c.account_id, cl.client_id` (`:at` typed `Types::DATETIMETZ_IMMUTABLE`, `:id`
+  `UuidType::NAME`). Why: league detects a reused refresh token or a replayed code **inside** `TokenEndpoint`'s
+  transaction, whose `wrapInTransaction()` rolls back **and closes the EntityManager** on the refusal — the
+  revocation must be written after that, and a closed EntityManager keeps its connection
+  (`testRevokeActiveWorksOnAClosedEntityManager`). The database decides: the first revocation keeps its instant and
+  cause, a second one (or an unknown id) returns `null`; it returns a `RevokedConnection` (an `AccountReference`:
+  the account's UUID, the client's **public** `client_id`, the cause) read from the written row, never from an
+  instance loaded earlier — which is **not** refreshed, like the tokens' `revokeByHash()`. The database refuses a
+  half revocation, an instant without a cause or the reverse (`chk_mcp_connection_revocation_cause`,
+  `CHECK ((revoked_at IS NULL) = (revocation_cause IS NULL))`, SQLSTATE 23514 — DBAL 4.5 has no dedicated
+  exception class, the tests read the SQLSTATE and the constraint's name). **Revoking a connection does not touch
+  its codes' and tokens' rows** (decision 6 of #649): every reader judges the connection (`isRevoked()`), and a
+  token's `revoked_at` keeps its one meaning — a code's single use, a refresh token's rotation —, which is what
+  makes a rotated refresh token's reuse recognisable. The partial index `idx_mcp_connection_active_pair`
+  (`account_id, mcp_client_id WHERE revoked_at IS NULL`, declared on the entity too so that `migrations:diff` stays
+  empty) serves the search for a pair's active grant, which a new grant supersedes. `McpConnectionRepositoryTest`.
+- **Application code revokes through `McpConnectionRevokerInterface::revoke($id, $cause)` only**: the clock's
+  instant, the repository's revocation, then — only when it took effect — the audit line `mcp-connection-revoked`
+  (`userId`, `connectionId`, `clientId`, `cause`; `.claude/rules/security-authentication.md`), **after** the write.
+  Outside any transaction, one statement: callable after a rolled-back exchange. `expired` is audited through
+  `SecurityAuditLoggerInterface::mcpConnectionExpired()` (actor `system`, the purge being a scheduled command), any
+  other cause through `mcpConnectionRevoked()` (actor read from the token storage). `McpConnectionRevokerTest`
+  (audited once with what the repository returned, never when it returned `null`).

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Mcp\Connection\Domain\Entity;
 
 use App\Mcp\Connection\Domain\ValueObject\ConnectionLifetimes;
+use App\Mcp\Connection\Domain\ValueObject\RevocationCause;
 use App\Mcp\Connection\Infrastructure\Doctrine\McpConnectionRepository;
 use App\Security\User\Domain\Entity\CpgUser;
 use DateTimeImmutable;
@@ -22,12 +23,35 @@ use Symfony\Component\Uid\Uuid;
  * Le compte et le client sont des clés étrangères en cascade : un compte
  * supprimé n'a plus de connexion (ni, par cascade, de code ou de jeton), un
  * client retiré n'en laisse aucune derrière lui. Le dernier usage est écrit au
- * rafraîchissement (#649), jamais à chaque appel ; la révocation, par la
- * personne, par expiration ou par réutilisation d'un jeton tourné, l'est aussi
- * par #649 — ce modèle n'en porte que les colonnes.
+ * rafraîchissement (#649), jamais à chaque appel.
+ *
+ * **Une connexion se révoque par le dépôt seulement** (#649,
+ * {@see \App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface::revokeActive()}) :
+ * ce modèle n'a aucun mutateur de `revokedAt` ni de `revocationCause`. La
+ * révocation est une instruction SQL, `UPDATE … WHERE revoked_at IS NULL` : la
+ * base fait de la première la seule (instant et cause gardés), sans lecture
+ * préalable qu'une révocation concurrente rendrait fausse, et elle tient
+ * après une transaction annulée qui a fermé l'EntityManager — c'est là que
+ * league constate un rafraîchissement réutilisé ou un code rejoué, et l'unité
+ * de travail n'y écrit plus rien. Une instance déjà chargée n'est pas
+ * rafraîchie. La base refuse un instant sans cause et une cause sans instant
+ * (`chk_mcp_connection_revocation_cause`).
+ *
+ * **Révoquer une connexion ne touche pas les lignes de ses codes et jetons**
+ * (décision 6 de #649) : tout lecteur juge la connexion
+ * ({@see self::isRevoked()} — l'authentificateur de `/api/mcp`, les dépôts de
+ * league), et `revoked_at` d'un code ou d'un jeton garde son seul sens,
+ * l'usage unique d'un code et la rotation d'un rafraîchissement — c'est ce qui
+ * permet de reconnaître la réutilisation d'un rafraîchissement tourné. Une
+ * seule écriture par révocation, quel que soit le nombre de jetons.
+ *
+ * L'index partiel `idx_mcp_connection_active_pair` sert la recherche de
+ * l'accord actif d'un couple compte/client, qu'un nouvel accord remplace
+ * (cause `superseded`).
  */
 #[ORM\Entity(repositoryClass: McpConnectionRepository::class)]
 #[ORM\Table(name: 'mcp_connection')]
+#[ORM\Index(name: 'idx_mcp_connection_active_pair', columns: ['account_id', 'mcp_client_id'], options: ['where' => '(revoked_at IS NULL)'])]
 class McpConnection
 {
     /**
@@ -65,6 +89,10 @@ class McpConnection
 
     #[ORM\Column(type: Types::DATETIMETZ_IMMUTABLE, nullable: true)]
     private ?DateTimeImmutable $revokedAt = null;
+
+    /** Écrite avec `revokedAt`, par le dépôt seulement (voir la classe). */
+    #[ORM\Column(length: 32, nullable: true, enumType: RevocationCause::class)]
+    private ?RevocationCause $revocationCause = null;
 
     private function __construct(CpgUser $account, McpClient $client, string $scope, DateTimeImmutable $grantedAt)
     {
@@ -130,6 +158,12 @@ class McpConnection
     public function isRevoked(): bool
     {
         return null !== $this->revokedAt;
+    }
+
+    /** Pourquoi la connexion a été révoquée ; `null` tant qu'elle ne l'est pas. */
+    public function revocationCause(): ?RevocationCause
+    {
+        return $this->revocationCause;
     }
 
     /**
