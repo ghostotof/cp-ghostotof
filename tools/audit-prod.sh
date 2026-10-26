@@ -92,7 +92,18 @@ done
 # ---------------------------------------------------------------------------
 
 # shellcheck source=tools/lib/security-headers.sh
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/security-headers.sh"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/security-headers.sh" 2> /dev/null || {
+  echo "bibliothèque introuvable : tools/lib/security-headers.sh" >&2
+  exit 2
+}
+# Section 5 ci-dessous. Sans -e, un `source` en échec ne s'arrête pas : la
+# fonction manquerait, FAILURES ne compterait rien, et l'audit lancé hors du
+# dépôt (sans tools/lib/) passerait au vert sans avoir rien vérifié.
+# shellcheck source=tools/lib/tls-certificate.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/tls-certificate.sh" 2> /dev/null || {
+  echo "bibliothèque introuvable : tools/lib/tls-certificate.sh" >&2
+  exit 2
+}
 
 # En-têtes d'une URL, suivis d'une pseudo-ligne portant le code HTTP final.
 # Le préfixe `x-audit-` ne peut entrer en collision avec aucun en-tête
@@ -133,25 +144,22 @@ section "Fuites d'information (server_tokens, X-Powered-By...)"
 grep -E '^(server|x-powered-by|x-aspnet|x-generator|x-debug-token)' <<< "$HEADERS" || echo "  rien de bavard, bien"
 
 # ---------------------------------------------------------------------------
-# 5. Certificat TLS : date d'expiration + nom couvert.
-#    Le jugement vit dans tools/lib/tls-certificate.sh, partagé avec
-#    tools/check-tls-expiry.sh, que le workflow tls-expiry.yml lance tous les
-#    jours à 25 jours contre la prod, www et la préprod (issue #719).
+# 5. Certificat TLS : échéance, nom couvert, chaîne de confiance.
+#    Le jugement vit dans tools/lib/tls-certificate.sh, partagé avec le
+#    contrôle quotidien (tools/check-tls-expiry.sh, issue #719).
 #
-#    Ici le seuil reste à 14 jours, et c'est voulu : cet audit est le gate
-#    d'audit-preprod, check requis de `main`. Au seuil du job planifié, un
-#    certificat sain mais à 20 jours de l'échéance bloquerait une release,
-#    celle d'un hotfix de certificat comprise. L'alerte précoce est le rôle du
-#    job planifié, pas de ce gate.
+#    Ici un seuil fixe de 14 jours, plus bas que celui du contrôle quotidien,
+#    et c'est voulu : cet audit est le gate d'audit-preprod, check requis de
+#    `main`. Un seuil plus haut bloquerait une release quand le renouvellement
+#    est en échec, celle du hotfix qui le répare comprise ; l'alerte précoce
+#    est le rôle du contrôle quotidien. 14 reste sous le point de
+#    renouvellement de cert-manager pour 90, 64 et 45 jours de vie (30, 21,
+#    15) : un certificat sain ne l'atteint jamais.
 # ---------------------------------------------------------------------------
 section "Certificat TLS"
-CERT="$(echo | timeout 10 openssl s_client -connect "${DOMAIN}:443" -servername "$DOMAIN" 2>/dev/null)"
-openssl x509 -noout -subject -issuer -dates <<< "$CERT"
-
-# shellcheck source=tools/lib/tls-certificate.sh
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/tls-certificate.sh"
-CERT_MIN_VALIDITY_DAYS=14
-check_tls_certificate "$DOMAIN" "$CERT_MIN_VALIDITY_DAYS" "$CERT"
+CERT="$(fetch_tls_certificate "$DOMAIN" "${DOMAIN}:443")"
+openssl x509 -noout -subject -issuer <<< "$CERT"
+check_tls_certificate "$DOMAIN" 14 "$CERT"
 
 # ---------------------------------------------------------------------------
 # 6. Fichiers publics attendus : leur absence est surtout un sujet SEO.
