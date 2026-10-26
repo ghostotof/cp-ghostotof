@@ -98,8 +98,13 @@ paths:
   ROLLBACK, bounded by FPM's `lock_timeout=5s` (gone → dead) —; **the token re-read under the lock**
   (`findOneByHash()` carries `HINT_REFRESH` on the refresh-token and code repositories: without it Doctrine hands
   back the managed instance unrefreshed, and a rotation a concurrent request committed during the wait would stay
-  unseen; the sequential tests cannot tell, task 5's concurrency harness can — measured: `forUpdate: false` leaves
-  every sequential test green); the connection revoked → dead, no second revocation, no audit; **the token
+  unseen; the sequential tests cannot tell — measured: `forUpdate: false` leaves every one of them green —,
+  `TokenEndpointConcurrencyTest::testTwoSimultaneousRefreshesOfOneTokenRevokeTheConnection` can (task 5: two real
+  processes present one refresh token, the second released at the first's first flush — the last use, written
+  under the lock — and blocked on the `FOR UPDATE` until the COMMIT; it must then be refused « Token has been
+  revoked », the connection revoked `refresh-token-reuse`, one new pair in rows; under the mutation it is served a
+  second pair, red, see `.claude/rules/backend-outillage.md`, « Concurrency tests »)); the connection revoked →
+  dead, no second revocation, no audit; **the token
   revoked on an active connection → `RotatedRefreshTokenReusedException`** (a `CompromisedMcpConnectionException`,
   `Domain/Exception`: `connectionId()`, `revocationCause()`, a constant message, never the token), judged
   **before** the deadlines so that a rotated token coming back on an expired, not yet purged connection is a reuse
@@ -136,7 +141,11 @@ paths:
   replayed after its ten minutes is a plain `invalid_grant`, with no revocation, and no `MockClock` reaches it**:
   accepted limit, the tokens issued by the code already live under rotation by then. In order: the code by its hash
   (unknown → dead); **its connection re-read `FOR UPDATE`** (`lockForIssuance()`, the same lock as the refresh's, so
-  two simultaneous exchanges of one code serialize — task 5's harness proves it in real processes); **the code re-read
+  two simultaneous exchanges of one code serialize —
+  `TokenEndpointConcurrencyTest::testTwoSimultaneousExchangesOfOneCodeRevokeTheConnection` proves it in real
+  processes, the second released at the first's first flush, the new access token, and refused « Authorization code
+  has been revoked » once the first committed, the connection revoked `code-replay`, one pair in rows; under
+  `forUpdate: false` both are served, red); **the code re-read
   under the lock** (`HINT_REFRESH`); the connection revoked → dead, no second revocation, no audit
   (`CodeReplayTest::testAReplayOnARevokedConnectionWritesNoSecondLine`: a third exchange leaves the first revocation's
   instant and cause, and the journal's single line); **the code revoked on an active connection →

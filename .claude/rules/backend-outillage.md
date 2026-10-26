@@ -155,7 +155,7 @@ once, at the cost of dev CLI traces: not done, an open question of #420.
 
 A test that puts real processes in a race (`RateLimiterConcurrencyTest`, `ContributionOrderConcurrencyTest`,
 `SendAccountInvitationConcurrencyTest`, `PasswordSetupActivationConcurrencyTest`, `ReinviteConcurrencyTest`,
-`InviteUsernameConcurrencyTest`)
+`InviteUsernameConcurrencyTest`, `AccountAdministrationConcurrencyTest`, `TokenEndpointConcurrencyTest`)
 goes through **one harness, written once**. `tests/Support/ChildPhpProcess::inTestEnvironment()` builds the
 child's `Process`: its command line (above) and a copy of the test's `$_SERVER`, where `phpunit.dist.xml`'s
 `<server force="true">` values live (a real `ANTHROPIC_API_KEY` exported in the shell must not reach the
@@ -193,9 +193,21 @@ before and after the extraction: remove the **lock and keep its transaction** �
 `PostgresAccountRowLock` (#435 and #458 red on their token counts), the `pg_advisory_xact_lock` call out
 of `PostgresUsernameAllocationLock` (#364: the parent's invitation fails on the username taken meanwhile)
 or `PostgresAdvisoryOrderScopeLock` (#389) — since #512, the statement inside the adapter's `acquire`
-closure, the transaction being `PostgresLockedTransaction`'s (measured again after the extraction). Every
+closure, the transaction being `PostgresLockedTransaction`'s (measured again after the extraction) — and
+`forUpdate: false` in `McpConnectionRepository::lockForIssuance()` (#649, task 5: the lock out, the transaction
+and the re-read under `HINT_REFRESH` kept), which turns both tests of `TokenEndpointConcurrencyTest` red on
+the child's `issued 200`, then on the connection left active and on the token rows (three access tokens and
+three refresh tokens after two simultaneous refreshes of one token, two and two after two exchanges of one
+code, instead of two and two, one and one); every sequential test of `Mcp/Connection` stays green under it.
+That test's child (`tests/Mcp/Connection/Fixtures/present-at-token-endpoint.php`) presents the form body to
+`TokenEndpointInterface` in PSR-7 and **reads it on its standard input** (`Process::setInput()`), never as an
+argument: the command line is copied into the harness's failure messages, and the body carries the refresh
+token or the code; it prints the refusal's JSON (league's, no token) and only the **status** of an issued
+answer. Every
 test that waits on a held lock to prove the bound carries a `statement_timeout = '3s'` safety net, so
-that a mutation removing the bound (`boundTheWait()`) fails it in `57014` instead of hanging the suite. Removing `whileLocked()` from the invitation handler entirely
+that a mutation removing the bound (`boundTheWait()`) fails it in `57014` instead of hanging the suite — a
+child session that waits (a console session, so no FPM `lock_timeout`) sets it on itself before the barrier,
+as that fixture does. Removing `whileLocked()` from the invitation handler entirely
 proves nothing for #435: its flush then commits on its own before the `postFlush`, the child purges a
 committed token and the count is right. Removing the purge of unused tokens from the activation leaves
 #458's test green: with the lock, the handler waits and drops the message (« constaté sous verrou »); the
