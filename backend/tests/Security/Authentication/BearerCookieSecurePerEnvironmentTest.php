@@ -15,18 +15,22 @@ use PHPUnit\Framework\TestCase;
  * l'autre, et {@see \App\Tests\Security\SecurityConfigEnvironmentParityTest}
  * l'exempte pour cette raison ; mais
  * {@see \App\Tests\Security\Authentication\AuthCookieAttributesTest}, qui
- * aligne ce cookie sur la fabrique, ne tourne qu'en `test`, où `Secure` est
- * faux. Rien n'épinglait la valeur de `prod` (préproduction et production
- * tournent en APP_ENV=prod) : le bloc `when@prod` retiré, la garde de parité
- * demandait de retirer l'exemption, et la production posait le JWT sans
- * `Secure`.
+ * aligne ce cookie sur la fabrique, ne tourne qu'en `test`. Rien n'épinglait
+ * la valeur de `prod` (préproduction et production tournent en APP_ENV=prod) :
+ * le bloc qui la posait retiré, la garde de parité demandait de retirer
+ * l'exemption, et la production posait le JWT sans `Secure`.
+ *
+ * Depuis #714, `test` porte `Secure` comme `prod`, et c'est `dev` qui fait
+ * exception : AuthCookieAttributesTest lit donc `Secure` sur la vraie chaîne
+ * de pose (surcharge de service, décorateur, listener compris). Ce test-ci
+ * reste le seul à voir `prod` et `dev`, que ne charge aucun test fonctionnel.
  *
  * Même lecture que la garde de parité ({@see EnvironmentConfigKernel}, sans
  * compilation), et même pas que
  * {@see \App\Tests\Security\Authentication\CpgUserPasswordHasherTest} pour
  * l'autre exemption : la valeur déclarée, écrite en clair, dans chaque
  * environnement que le noyau admet. La valeur attendue est celle de la
- * fabrique, qui suit la règle « `Secure` si et seulement si `prod` »
+ * fabrique, qui suit la règle « `Secure` partout sauf en `dev` »
  * ({@see \App\Tests\Security\Authentication\Infrastructure\Http\AuthCookieFactoryTest}) :
  * un environnement ajouté demain est vérifié sans qu'on y pense.
  */

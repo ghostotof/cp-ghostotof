@@ -6,6 +6,7 @@ namespace App\Tests\Security;
 
 use App\Security\User\Application\CpgUserRegistrarInterface;
 use App\Tests\Support\HttpJson;
+use App\Tests\Support\ReadsResponseCookies;
 use App\Tests\Support\TestCredentials;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
@@ -23,7 +24,7 @@ use Symfony\Component\Routing\RouterInterface;
  * servie sans authentification, il faut l'inscrire **explicitement** dans
  * PUBLIC_PATHS avec sa justification — un choix conscient, jamais un oubli.
  *
- * Six invariants :
+ * Sept invariants :
  *  1. toute route hors PUBLIC_PATHS refuse un appelant anonyme (401 ou 403) ;
  *  2. aucune route /api/backoffice ne peut être inscrite dans PUBLIC_PATHS ;
  *  3. tout le backoffice refuse un compte authentifié mais sans ROLE_SUPER
@@ -32,11 +33,18 @@ use Symfony\Component\Routing\RouterInterface;
  *  5. idem pour le jeton du palier de base émis sans compte (D6) ;
  *  6. ce jeton n'ouvre **rien** hors PUBLIC_PATHS ∪ BASE_TIER_PATHS — la
  *     liste de ce que le palier de base porte est explicite, comme
- *     PUBLIC_PATHS l'est pour l'anonyme.
+ *     PUBLIC_PATHS l'est pour l'anonyme ;
+ *  7. aucune réponse ne pose d'autre cookie que `BEARER` et `XSRF-TOKEN`,
+ *     avec les attributs exacts d'AuthCookieFactory (issue #714) — vérifié
+ *     après chaque requête de ce test, et sur chaque route publique. Le
+ *     pendant à l'exécution d'AuthCookiesComeFromTheFactoryTest, qui ne lit
+ *     que `src/` : il voit aussi le vendor, la configuration et les appels
+ *     dynamiques, sur les seules réponses produites ici.
  */
 final class ApiRouteExposureTest extends WebTestCase
 {
     use HttpJson;
+    use ReadsResponseCookies;
 
     private const string PLAIN_USERNAME = 'jane';
 
@@ -125,6 +133,7 @@ final class ApiRouteExposureTest extends WebTestCase
 
         foreach ($routes as [$path, $method]) {
             $client->request($method, $this->concreteUrl($path));
+            $this->assertOnlyFactoryCookies($client, $method.' '.$path);
 
             self::assertContains(
                 $client->getResponse()->getStatusCode(),
@@ -174,6 +183,31 @@ final class ApiRouteExposureTest extends WebTestCase
     }
 
     /**
+     * Invariant n°7 (issue #714), sur les routes que les autres invariants
+     * n'appellent jamais : chacune de PUBLIC_PATHS, en anonyme, ne pose que
+     * des cookies de la fabrique. C'est là que le vendor sert seul — le SDK
+     * MCP derrière /api/mcp, dont le pont PSR-7 convertit tout `Set-Cookie`.
+     * Corps `{}` et en-têtes des appels du frontend, pour aller au-delà des
+     * gardes de requête ; les quotas par IP sont remis à zéro d'abord.
+     */
+    public function testEveryPublicRouteSetsOnlyTheFactoryCookies(): void
+    {
+        $client = self::createClient();
+        self::getContainer()->get('cache.rate_limiter')->clear();
+
+        foreach (array_keys(self::PUBLIC_PATHS) as $path) {
+            foreach ($this->requestableMethods($this->routeMethods($path)) as $method) {
+                $client->request($method, $this->concreteUrl($path), server: [
+                    'CONTENT_TYPE' => 'application/json',
+                    'HTTP_ACCEPT' => 'application/json',
+                    'HTTP_X_REQUESTED_WITH' => 'fetch',
+                ], content: self::jsonBody([]));
+                $this->assertOnlyFactoryCookies($client, $method.' '.$path);
+            }
+        }
+    }
+
+    /**
      * Invariant n°3 — authentifié ne veut pas dire autorisé. Un compte valide
      * mais sans ROLE_SUPER doit se voir refuser l'intégralité du backoffice.
      */
@@ -195,6 +229,7 @@ final class ApiRouteExposureTest extends WebTestCase
                 'CONTENT_TYPE' => 'application/json',
                 'HTTP_X_XSRF_TOKEN' => $csrfToken,
             ], content: self::jsonBody([]));
+            $this->assertOnlyFactoryCookies($client, $method.' '.$path);
 
             self::assertSame(
                 403,
@@ -218,6 +253,7 @@ final class ApiRouteExposureTest extends WebTestCase
 
         foreach (['/api/cv', '/api/me'] as $path) {
             $client->request('GET', $path);
+            $this->assertOnlyFactoryCookies($client, 'GET '.$path);
 
             self::assertSame(
                 403,
@@ -241,6 +277,7 @@ final class ApiRouteExposureTest extends WebTestCase
 
         foreach (['/api/cv', '/api/me'] as $path) {
             $client->request('GET', $path);
+            $this->assertOnlyFactoryCookies($client, 'GET '.$path);
 
             self::assertSame(
                 403,
@@ -278,6 +315,7 @@ final class ApiRouteExposureTest extends WebTestCase
                 'CONTENT_TYPE' => 'application/json',
                 'HTTP_X_XSRF_TOKEN' => $csrfToken,
             ], content: self::jsonBody([]));
+            $this->assertOnlyFactoryCookies($client, $method.' '.$path);
 
             self::assertSame(
                 403,
@@ -317,6 +355,7 @@ final class ApiRouteExposureTest extends WebTestCase
                     'CONTENT_TYPE' => 'application/json',
                     'HTTP_X_XSRF_TOKEN' => $csrfToken,
                 ], content: self::jsonBody([]));
+                $this->assertOnlyFactoryCookies($client, $method.' '.$path);
 
                 self::assertNotContains(
                     $client->getResponse()->getStatusCode(),
@@ -462,6 +501,7 @@ final class ApiRouteExposureTest extends WebTestCase
         self::getContainer()->get('cache.rate_limiter')->clear();
         $client->request('POST', '/api/account/base-access', server: ['HTTP_X_REQUESTED_WITH' => 'fetch']);
         self::assertResponseIsSuccessful();
+        $this->assertOnlyFactoryCookies($client, 'POST /api/account/base-access');
 
         $csrfCookie = $client->getCookieJar()->get('XSRF-TOKEN');
         self::assertNotNull($csrfCookie);
@@ -476,6 +516,7 @@ final class ApiRouteExposureTest extends WebTestCase
             'password' => $password,
         ]));
         self::assertResponseIsSuccessful();
+        $this->assertOnlyFactoryCookies($client, 'POST /api/login_check');
 
         $csrfCookie = $client->getCookieJar()->get('XSRF-TOKEN');
         self::assertNotNull($csrfCookie);

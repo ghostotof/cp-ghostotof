@@ -8,9 +8,9 @@ use App\Security\Authentication\Infrastructure\Http\AuthCookieFactory;
 use App\Security\User\Application\CpgUserRegistrarInterface;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Tests\Support\HttpJson;
+use App\Tests\Support\ReadsResponseCookies;
 use App\Tests\Support\TestCredentials;
 use Doctrine\ORM\EntityManagerInterface;
-use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\HttpFoundation\Cookie;
 
@@ -28,6 +28,7 @@ use Symfony\Component\HttpFoundation\Cookie;
 final class AuthCookieAttributesTest extends WebTestCase
 {
     use HttpJson;
+    use ReadsResponseCookies;
 
     private const string USERNAME = 'cookie-attributes';
 
@@ -88,42 +89,15 @@ final class AuthCookieAttributesTest extends WebTestCase
         self::assertFalse($baseAccess[AuthCookieFactory::XSRF_TOKEN]->isHttpOnly());
         self::assertSame('/', $baseAccess[AuthCookieFactory::BEARER]->getPath());
         self::assertSame(Cookie::SAMESITE_LAX, $baseAccess[AuthCookieFactory::BEARER]->getSameSite());
-        // Env test, servi en http : Secure est faux ici et vrai en prod
-        // (App\Tests\Security\Authentication\Infrastructure\Http\AuthCookieFactoryTest
-        // le pince pour la fabrique,
+        // `Secure` partout sauf en `dev` (issue #714) : ce test le lit donc sur
+        // la vraie chaîne de pose, Lexik compris. Une surcharge du fournisseur
+        // de cookie de Lexik, un décorateur du gestionnaire de succès ou un
+        // listener `kernel.response` qui réécrirait le BEARER sans `Secure`
+        // rougit ici (les deux sites étant comparés au palier de base
+        // ci-dessus). Seul `dev` reste en http :
         // App\Tests\Security\Authentication\BearerCookieSecurePerEnvironmentTest
-        // pour le `when@prod` de lexik_jwt_authentication.yaml, que ce test-ci
-        // ne voit pas).
-        self::assertFalse($baseAccess[AuthCookieFactory::BEARER]->isSecure());
-    }
-
-    /**
-     * @return array<string, Cookie>
-     */
-    private function cookiesByName(KernelBrowser $client): array
-    {
-        $cookies = [];
-        foreach ($client->getResponse()->headers->getCookies() as $cookie) {
-            $cookies[$cookie->getName()] = $cookie;
-        }
-
-        return $cookies;
-    }
-
-    /**
-     * Les attributs qui doivent coïncider entre pose et expiration. La valeur
-     * et l'échéance en sont exclus par nature.
-     *
-     * @return array{path: string, domain: string|null, secure: bool, httpOnly: bool, sameSite: string|null}
-     */
-    private function attributes(Cookie $cookie): array
-    {
-        return [
-            'path' => $cookie->getPath(),
-            'domain' => $cookie->getDomain(),
-            'secure' => $cookie->isSecure(),
-            'httpOnly' => $cookie->isHttpOnly(),
-            'sameSite' => $cookie->getSameSite(),
-        ];
+        // en épingle la valeur déclarée.
+        self::assertTrue($baseAccess[AuthCookieFactory::BEARER]->isSecure(), 'Le JWT doit être posé `Secure` hors de `dev`.');
+        self::assertTrue($baseAccess[AuthCookieFactory::XSRF_TOKEN]->isSecure(), 'Le jeton CSRF doit être posé `Secure` hors de `dev`.');
     }
 }
