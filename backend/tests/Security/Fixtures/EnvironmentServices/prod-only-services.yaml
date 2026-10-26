@@ -1,0 +1,29 @@
+# Fixture de SecurityServicesEnvironmentParityTest (issue #698) : chargée après
+# la configuration de l'application, dans chaque environnement, et n'agissant
+# qu'en `prod` — la forme `when@prod: services:` que la parité déclarée de #659
+# ne voyait pas. Une entrée par forme de surcharge, chacune sur un service que
+# la garde doit couvrir.
+when@prod:
+    services:
+        _defaults:
+            autowire: true
+            autoconfigure: true
+
+        # Un voter autoconfiguré : étiqueté `security.voter` par l'autoconfiguration
+        # seule, aucune étiquette écrite ici.
+        App\Tests\Security\Fixtures\EnvironmentServices\GrantsTrustedVoter: ~
+
+        # Un décorateur du fournisseur du palier de base.
+        App\Tests\Security\Fixtures\EnvironmentServices\DecoratingUserProvider:
+            decorates: App\Security\User\Infrastructure\Security\BaseAccessUserProvider
+
+        # Un écouteur `kernel.response` dont la classe n'est pas de sécurité.
+        App\Tests\Security\Fixtures\EnvironmentServices\CookieRewritingListener:
+            tags:
+                - { name: kernel.event_listener, event: kernel.response }
+
+        # La redéfinition d'un service de Lexik : le cookie BEARER sans `Secure`
+        # (commentaire de #714 sur l'issue).
+        lexik_jwt_authentication.cookie_provider.BEARER:
+            class: Lexik\Bundle\JWTAuthenticationBundle\Security\Http\Cookie\JWTCookieProvider
+            arguments: ['BEARER', 3600, 'lax', '/', null, false, true, [], false]
