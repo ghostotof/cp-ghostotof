@@ -133,22 +133,25 @@ section "Fuites d'information (server_tokens, X-Powered-By...)"
 grep -E '^(server|x-powered-by|x-aspnet|x-generator|x-debug-token)' <<< "$HEADERS" || echo "  rien de bavard, bien"
 
 # ---------------------------------------------------------------------------
-# 5. Certificat TLS : date d'expiration + chaîne.
-#    Important si tu gères le renouvellement toi-même (cert-manager, Let's Encrypt).
+# 5. Certificat TLS : date d'expiration + nom couvert.
+#    Le jugement vit dans tools/lib/tls-certificate.sh, partagé avec
+#    tools/check-tls-expiry.sh, que le workflow tls-expiry.yml lance tous les
+#    jours à 25 jours contre la prod, www et la préprod (issue #719).
+#
+#    Ici le seuil reste à 14 jours, et c'est voulu : cet audit est le gate
+#    d'audit-preprod, check requis de `main`. Au seuil du job planifié, un
+#    certificat sain mais à 20 jours de l'échéance bloquerait une release,
+#    celle d'un hotfix de certificat comprise. L'alerte précoce est le rôle du
+#    job planifié, pas de ce gate.
 # ---------------------------------------------------------------------------
 section "Certificat TLS"
 CERT="$(echo | timeout 10 openssl s_client -connect "${DOMAIN}:443" -servername "$DOMAIN" 2>/dev/null)"
 openssl x509 -noout -subject -issuer -dates <<< "$CERT"
 
-# cert-manager/Let's Encrypt renouvelle normalement ~30 jours avant expiration :
-# moins de 14 jours de validité restante signale un renouvellement en échec.
+# shellcheck source=tools/lib/tls-certificate.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/tls-certificate.sh"
 CERT_MIN_VALIDITY_DAYS=14
-if openssl x509 -noout -checkend "$((CERT_MIN_VALIDITY_DAYS * 86400))" <<< "$CERT" > /dev/null 2>&1; then
-  printf '  \033[32mOK\033[0m      valide plus de %s jours\n' "$CERT_MIN_VALIDITY_DAYS"
-else
-  printf '  \033[31mALERTE\033[0m  expire dans moins de %s jours — renouvellement à vérifier !\n' "$CERT_MIN_VALIDITY_DAYS"
-  FAILURES=$((FAILURES + 1))
-fi
+check_tls_certificate "$DOMAIN" "$CERT_MIN_VALIDITY_DAYS" "$CERT"
 
 # ---------------------------------------------------------------------------
 # 6. Fichiers publics attendus : leur absence est surtout un sujet SEO.
