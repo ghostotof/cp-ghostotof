@@ -28,7 +28,7 @@ paths:
 
 | Rule | Bullets |
 |---|---|
-| this file | `tests/Support/KubernetesManifests`, `watch-refresh-cronjob.yaml` in `resources:`, the two ConfigMaps' hashing, Xdebug, ServiceAccount tokens and Pod Security Admission, Postgres/RabbitMQ state on a PVC |
+| this file | `tests/Support/KubernetesManifests`, `watch-refresh-cronjob.yaml` in `resources:`, the two ConfigMaps' hashing, Xdebug, ServiceAccount tokens and Pod Security Admission, Postgres/RabbitMQ state on a PVC, the ACME solvers behind the NetworkPolicies |
 | `deploiement-pipeline.md` | migrations as a Job, what « never `kubectl exec` » covers (#520), the migration before the rollout, one rule for every Job's deadline, ExternalSecrets synced first, `smoke-test-preprod`'s message probe, deploy waits failing early, `DEPLOY_MAINTENANCE_WINDOW` |
 | `deploiement-postgres.md` | the two PostgreSQL roles (#575), the bootstrap superuser reachable from the pod only (#593) |
 | `deploiement-etat-hors-pod.md` | no application state on the pod's filesystem (ADR 0005): cache pools, locks, rate limiters, `lock_timeout` and `ConsoleLockWaitBoundTest` |
@@ -174,3 +174,21 @@ paths:
   BusyBox, bounded at 5 min then `exit 1`) before `messenger:consume` starts: a deploy that
   recreates both pods used to start the worker first, which crashed on "Could not connect to the
   AMQP server" and backed off (3 restarts in prod at v0.18.5). `WorkerWaitsForRabbitMqTest` pins it.
+- **The HTTP-01 solvers must stay reachable from ingress-nginx** (incident of 2026-10-26). cert-manager
+  renews every certificate through a solver pod it creates in the certificate's namespace for the time of
+  a challenge (label `acme.cert-manager.io/http01-solver: "true"`, port 8089), behind a solver Ingress.
+  `default-deny-ingress` (`network-policies.yaml`, 2026-09-02) cut it off: the ingress answered the public
+  challenge path with a 504 after three 5 s connect attempts, and the first renewal under those rules,
+  due 2026-10-09, stayed blocked **17 days without any signal** on all three certificates (preprod,
+  prod, www — expiry 2026-11-08), Let's Encrypt's pending authorizations expiring meanwhile.
+  `allow-acme-solver-from-ingress-nginx` opens exactly that: solver pods, from the `ingress-nginx`
+  namespace, 8089/TCP. `AcmeSolverReachableFromIngressTest` pins it, its source equal to
+  `allow-web-from-ingress-nginx`'s, and `default-deny-ingress` still there. **Any change to the
+  NetworkPolicies, the ingress namespace or the issuer** (DNS-01, a solver `podTemplate`, a cert-manager
+  upgrade changing the label or the port — cert-manager is a cluster prerequisite, not pinned here) must
+  be followed by a challenge seen through: `kubectl get challenges -A` empty or `valid`, and the
+  certificates' `notAfter` moving. The policy reaches the cluster by `apply -k` like the others; what
+  watches expiry is `tools/audit-prod.sh` (14 days, blocking, but run by `audit-preprod` at release time
+  only) — a scheduled check is #719. After a long block, cert-manager's old orders fail with `404 No
+  order for ID` once unblocked and it retries after its backoff (one hour after a first failure): no
+  manual cleanup needed.
