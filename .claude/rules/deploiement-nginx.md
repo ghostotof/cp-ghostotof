@@ -209,8 +209,9 @@ paths:
   whole body before reaching the sidecar** (issue #712): `proxy-request-buffering: "on"`, `proxy-body-size:
   "1m"` and `allowSnippetAnnotations: false`, the controller's and the chart's defaults, are pinned in
   `k8s/ingress-nginx-values.yaml` — read on the cluster on 2026-10-26, read-only: the controller's ConfigMap
-  set none of them, no Ingress overrode them by annotation; `helm upgrade --reuse-values` keeps a value set by
-  hand, so the runbook's prerequisite n°2 ends on a read-only check. So a slow body never reaches the sidecar
+  set none of them, no Ingress overrode them by annotation; applied the same day by `helm upgrade` (release
+  revision 3), the ConfigMap now carries both, checked read-only. `helm upgrade --reuse-values` keeps a value
+  set by hand, so the runbook's prerequisite n°2 ends on that read-only check. So a slow body never reaches the sidecar
   slowly, and an oversized one gets the ingress's 413 — **before** the sidecar: there a multipart over 1 MiB
   gets that HTML 413, not the 415 problem+json, and the sidecar's `chunked` 413 is never seen, the ingress
   forwarding a `Content-Length`; `check_body_limit` measures the sidecar alone. A snippet annotation
