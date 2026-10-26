@@ -121,5 +121,10 @@ of the autumn change and 47 h on the eve of the spring one (the invitation link 
 the tech watch's 36-hour freshness threshold). `modify()` stays exact for minutes, and a number of days is
 meant as calendar days. `tests/Shared/ElapsedDurationsTest.php` walks the tokens of `src/` and fails on
 any string literal adding or subtracting hours (`'+48 hours'` in a constant, `'+%d hours'` for `sprintf()`),
-comments excluded.
+comments excluded. **`DateInterval::createFromDateString()` has the same trap** (issue #710): the interval it
+returns is relative, and `sub()`/`add()` count it like `modify()`, hours included, so `--older-than "12
+hours"` lasted 13 elapsed hours across the autumn change. A constructed interval (`new DateInterval(…)`)
+counts years, months and days on the calendar, then hours, minutes and seconds as elapsed time — both rules
+at once: `RetentionPeriod` copies the fields of the interval it reads into one. An expression read from an
+option or a variable escapes `ElapsedDurationsTest`; its value object's test pins both clock changes.
 

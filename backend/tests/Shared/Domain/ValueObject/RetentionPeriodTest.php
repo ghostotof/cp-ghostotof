@@ -71,6 +71,45 @@ final class RetentionPeriodTest extends TestCase
         yield 'sans changement d\'heure' => ['2026-10-15 12:00:00', '2026-09-15 12:00:00', 720];
     }
 
+    /**
+     * Issue #710 : une durée en heures, minutes ou secondes se compte en temps
+     * écoulé (règle de #445), même quand elle enjambe un changement d'heure.
+     * `DateInterval::createFromDateString()` la comptait en heure murale du
+     * fuseau de `$now` : « 12 hours » durait 13 heures en automne, 11 au
+     * printemps. Dans une expression mixte, les jours restent des jours du
+     * calendrier, retranchés avant les heures.
+     */
+    #[DataProvider('elapsedTimeAcrossClockChanges')]
+    public function testHoursMinutesAndSecondsAreCountedAsElapsedTime(string $nowUtc, string $expression, string $expectedThresholdUtc, int $expectedElapsedHours): void
+    {
+        $utc = new DateTimeZone('UTC');
+        $now = (new DateTimeImmutable($nowUtc, $utc))->setTimezone(new DateTimeZone('Europe/Paris'));
+
+        $threshold = RetentionPeriod::fromString($expression, $now)->threshold();
+
+        self::assertSame($expectedThresholdUtc, $threshold->setTimezone($utc)->format('Y-m-d H:i:s'));
+        self::assertSame($expectedElapsedHours * 3600, $now->getTimestamp() - $threshold->getTimestamp());
+    }
+
+    /**
+     * Instant UTC, expression, seuil UTC attendu, heures écoulées entre les deux.
+     * Changements d'heure : 2026-10-25 01:00 UTC (hiver), 2027-03-28 01:00 UTC (été).
+     *
+     * @return iterable<string, array{string, string, string, int}>
+     */
+    public static function elapsedTimeAcrossClockChanges(): iterable
+    {
+        yield '12 heures, heure d\'hiver entrée dans la fenêtre' => ['2026-10-25 12:00:00', '12 hours', '2026-10-25 00:00:00', 12];
+        yield '12 heures, heure d\'été entrée dans la fenêtre' => ['2027-03-28 12:00:00', '12 hours', '2027-03-28 00:00:00', 12];
+        yield 'minutes, heure d\'hiver entrée dans la fenêtre' => ['2026-10-25 12:00:00', '720 minutes', '2026-10-25 00:00:00', 12];
+        yield 'secondes, heure d\'été entrée dans la fenêtre' => ['2027-03-28 12:00:00', '43200 seconds', '2027-03-28 00:00:00', 12];
+        // 2026-10-25 13:00 CET − 1 jour = 2026-10-24 13:00 CEST (25 h), puis − 12 h écoulées.
+        yield 'jour puis heures, heure d\'hiver' => ['2026-10-25 12:00:00', '1 day 12 hours', '2026-10-23 23:00:00', 37];
+        // 2027-03-28 14:00 CEST − 1 jour = 2027-03-27 14:00 CET (23 h), puis − 12 h écoulées.
+        yield 'jour puis heures, heure d\'été' => ['2027-03-28 12:00:00', '1 day 12 hours', '2027-03-27 01:00:00', 35];
+        yield 'sans changement d\'heure' => ['2026-10-15 12:00:00', '12 hours', '2026-10-15 00:00:00', 12];
+    }
+
     #[DataProvider('rejectedAsNotStrictlyPositive')]
     public function testFromStringRejectsAnExpressionThatDoesNotYieldAPastThreshold(string $expression): void
     {

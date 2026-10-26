@@ -60,18 +60,50 @@ final readonly class RetentionPeriod
         }
 
         try {
-            $interval = DateInterval::createFromDateString($trimmed);
+            $relative = DateInterval::createFromDateString($trimmed);
         } catch (DateMalformedIntervalStringException) {
             throw InvalidRetentionPeriodException::unreadable($expression);
         }
 
-        $threshold = $now->sub($interval);
+        $threshold = $now->sub(self::calendarDaysThenElapsedTime($relative));
 
         if ($threshold >= $now) {
             throw InvalidRetentionPeriodException::notStrictlyPositive($expression);
         }
 
         return new self($threshold, $trimmed);
+    }
+
+    /**
+     * Recopie les champs d'un intervalle lu par {@see \DateInterval::createFromDateString()}
+     * dans un intervalle construit, que PHP retranche autrement (issue #710).
+     *
+     * L'intervalle lu est « relatif » : `sub()` le traite comme `modify()` et
+     * compte **tout** en heure murale du fuseau de `$now`, si bien que « 12 hours »
+     * durait 13 heures écoulées la nuit du passage à l'heure d'hiver et 11 la
+     * nuit du passage à l'heure d'été. L'intervalle construit compte les
+     * années, mois et jours sur le calendrier de ce fuseau, puis les heures,
+     * minutes et secondes en temps écoulé : les deux règles de #445, dans cet
+     * ordre (mesuré sous PHP 8.5 : « 1 day 12 hours » dure 37 heures la veille
+     * du passage à l'heure d'hiver, 25 + 12).
+     *
+     * Les champs sont recopiés un à un, signe compris (« -30 days » donne
+     * `d = -30`) : la garde de {@see fromString()} voit donc le même seuil
+     * qu'avant pour une expression sans heures.
+     */
+    private static function calendarDaysThenElapsedTime(DateInterval $relative): DateInterval
+    {
+        $interval = new DateInterval('PT0S');
+        $interval->y = $relative->y;
+        $interval->m = $relative->m;
+        $interval->d = $relative->d;
+        $interval->h = $relative->h;
+        $interval->i = $relative->i;
+        $interval->s = $relative->s;
+        $interval->f = $relative->f;
+        $interval->invert = $relative->invert;
+
+        return $interval;
     }
 
     public function threshold(): DateTimeImmutable
