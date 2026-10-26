@@ -205,11 +205,16 @@ paths:
   And it cannot be done with an `if` in each location: a location's `return` runs in the rewrite phase, before
   preaccess too (measured). It would take a precontent refusal (`try_files` to a named location chosen by a
   `map`), which `= /api/mcp` and `/api/assistant/` cannot use without an internal redirect that reads the body
-  under another location's bound (#644's trap). In preprod and prod the ingress-nginx in front should buffer
-  the whole body before reaching the sidecar (`proxy-request-buffering on`, `proxy-body-size 1m`: the
-  controller's defaults, not set in `k8s/ingress-nginx-values.yaml`, **not checked on the cluster** —
-  `helm upgrade --reuse-values` keeps whatever was set by hand; pinning it is #712), so a slow body would
-  not reach the sidecar slowly, and an oversized one gets the ingress's 413. In dev nothing fronts the `web`
+  under another location's bound (#644's trap). In preprod and prod the ingress-nginx in front buffers
+  the whole body before reaching the sidecar (`proxy-request-buffering: "on"`, `proxy-body-size: "1m"`, the
+  controller's defaults, **pinned in `k8s/ingress-nginx-values.yaml`** since #712 — read on the cluster on
+  2026-10-26: the controller's ConfigMap set neither, no Ingress overrode them by annotation; `helm upgrade
+  --reuse-values` keeps a value set by hand, so the runbook's prerequisite n°2 gives the read-only check), so a
+  slow body never reaches the sidecar slowly, and an oversized one gets the ingress's 413.
+  `IngressBuffersRequestBodiesTest` requires both values in the Helm file and refuses either key anywhere else
+  under `k8s/` (an Ingress annotation replaces the ConfigMap for its Ingress; measured red with
+  `proxy-request-buffering: "off"` on the base Ingress). It cannot see the cluster, nor a snippet annotation
+  (`configuration-snippet`, disabled by the controller's default `allow-snippet-annotations: false`). In dev nothing fronts the `web`
   nginx: accepted, dev only. Guard: `check_refused_before_zone`, run as each `limit_req` zone has just
   refused and while each `limit_conn` zone is full: the multipart must still get the 415 problem+json, then a
   bodiless witness on the same path the 429 — a witness let through means the zone reopened meanwhile (a
