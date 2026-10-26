@@ -195,25 +195,45 @@ paths:
   watches expiry is the next bullet. After a long block, cert-manager's old orders fail with `404 No
   order for ID` once unblocked and it retries after its backoff (one hour after a first failure): no
   manual cleanup needed.
-- **The served certificates are checked every day, at two thresholds** (#719). Until then only
-  `tools/audit-prod.sh` looked, at release time, in preprod only — hence the 17 silent days above.
-  `.github/workflows/tls-expiry.yml` (`schedule` daily, plus `workflow_dispatch`) runs
-  `tools/check-tls-expiry.sh` against the three certificates — `cp-ghostotof.com`, `www.cp-ghostotof.com`
-  (its own `cp-ghostotof-www-tls`, checked by nothing before: the audit's `curl` on `www` only fails, it
-  reads no date) and `preprod.cp-ghostotof.com` — at **25 days** by default: cert-manager renews at 30, so
-  the alert falls 5 days after a first failed renewal and leaves 25 to repair. The signal is the failed
-  run, e-mailed by GitHub to whoever last changed the cron. **A workflow of its own, never a `schedule:`
-  in `pipeline.yml`**: a scheduled run is on `refs/heads/main`, where `pipeline.yml`'s
-  `github.ref == 'refs/heads/main'` conditions would start `deploy-prod`. It does one TLS handshake per
-  host, no HTTP, so it needs no secret, no environment and no Basic Auth. Two GitHub limits: a
-  `schedule` runs from the default branch only (active once a release ships it), and GitHub disables it
-  after 60 days without repository activity. **`audit-prod.sh` keeps 14 days, on purpose**: it is
-  `audit-preprod`'s gate, a required check of `main`, and at 25 a healthy certificate 20 days from expiry
-  would block a release — a certificate hotfix's included. Both share the verdict,
-  `tools/lib/tls-certificate.sh` (`check_tls_certificate <host> <days> <pem>`, increments the caller's
-  `FAILURES`), which also fails a certificate that **does not cover the host**: what ingress-nginx serves
-  when the TLS Secret is missing, its « Fake Certificate », valid a year, invisible to an expiry check
-  alone. `tools/tests/tls-certificate.test.sh` (`tools-tests`) proves both on self-signed certificates
-  and the script end to end against a local `openssl s_server` (`NAME@ADDRESS:PORT`); each verdict
-  measured red by mutation. Not covered: a `Certificate` stuck at `Issuing=False` (it needs the cluster,
-  which the scheduled job has no token for), the chain's validity, and an OCSP or CT problem.
+- **The served certificates are checked every day, at two thresholds** (#719). Until then
+  `tools/audit-prod.sh` looked at release time only: blocking in preprod (`audit-preprod`), after the
+  promotion in prod (`audit-prod`, `continue-on-error`, so a red there signals nothing) — hence the 17
+  silent days above. `.github/workflows/tls-expiry.yml` (`schedule` daily, plus `workflow_dispatch`) runs
+  `tools/check-tls-expiry.sh` against every TLS host of the Ingresses — `cp-ghostotof.com`,
+  `www.cp-ghostotof.com` (its own `cp-ghostotof-www-tls`, checked by nothing before: the audit's `curl` on
+  `www` only fails, it reads no date) and `preprod.cp-ghostotof.com`. **Its threshold follows the
+  certificate's lifetime**: no manifest sets `renewBefore`, so cert-manager renews at a third of it — 30
+  days for 90, 21 for 64 (Let's Encrypt's default from 2027-02-10), 15 for 45 (2028) —, and the alert falls
+  `TLS_RENEWAL_GRACE_DAYS` (5) after that point: 25, 16, 10. A fixed 25 would go red for days at every
+  cycle of a 64-day certificate (review of #719). Lifetime and renewal point are rounded to the nearest day:
+  Let's Encrypt writes `notAfter` = `notBefore` + 90 days − 1 s, read 89 and 29 rounded down. The signal is
+  the failed run (one `::error::` per failed host), e-mailed by GitHub to whoever last changed the cron, if
+  their Actions notifications are on. **A workflow of its own, never a `schedule:` in `pipeline.yml`**: a
+  scheduled run is on `refs/heads/main`, where `pipeline.yml`'s `github.ref == 'refs/heads/main'`
+  conditions would start `deploy-prod`. It does one TLS handshake per host, no HTTP, so it needs no
+  secret, no environment and no Basic Auth. Two GitHub limits, neither watched: a `schedule` runs from the
+  default branch only (active once a release ships it), and GitHub disables it silently after 60 days
+  without activity on a public repository. **`audit-prod.sh` keeps a fixed 14 days, on purpose**: it is
+  `audit-preprod`'s gate, a required check of `main`, and a higher bound would block the release of the
+  hotfix that repairs a failed renewal; 14 stays under the renewal point for all three lifetimes, so a
+  healthy certificate never reaches it. Both share `tools/lib/tls-certificate.sh` —
+  `fetch_tls_certificate <name> <address:port>` (`s_client`, SNI = the name) and
+  `check_tls_certificate <host> <days|auto> <s_client output>` (increments the caller's `FAILURES`) —,
+  whose three verdicts each count: the expiry; the **host covered** (what ingress-nginx serves when the TLS
+  Secret is missing is its « Fake Certificate », valid a year, invisible to an expiry check alone); the
+  **chain**, from `s_client`'s last `Verify return code` against the default trust store (a certificate of
+  Let's Encrypt's staging CA, or a missing intermediate, has the right name and expiry). An unreadable
+  certificate, an invalid threshold or a missing verification line fails, never passes. Both scripts stop
+  in 2 when a library fails to load (without `-e`, a failed `source` let the check pass, review of #719 —
+  `security-headers.sh` included). `tools/tests/tls-certificate.test.sh` (`tools-tests`) proves each verdict on
+  certificates of a test CA (`openssl ca`, any start and end), and the script end to end against local
+  `openssl s_server`s (`NAME@ADDRESS:PORT`, the test CA given by OpenSSL's own `SSL_CERT_FILE`); each
+  measured red by mutation (chain never judged, a fixed 25 in `auto`, rounding down). **The host list is
+  tied to the manifests**: `TlsExpiryWatchCoversEveryIngressHostTest` collects every `spec.tls[].hosts` of
+  an Ingress written in `k8s/base` or an overlay, and every `/spec/tls/<n>/hosts` of an overlay's inline
+  JSON 6902 patch, and requires exactly the workflow's arguments — it refuses a patch form it cannot read
+  (a whole `tls`, an Ingress patched by file) rather than skip it; measured red with `www` removed from the
+  workflow and with a host added to preprod's patch. It reads `.github/workflows`, mounted read-only in the
+  dev `backend` container for it (`docker compose up -d backend` on a container created before).
+  Not covered: a `Certificate` stuck at `Issuing=False` (it needs the cluster, which the scheduled job has
+  no token for — #722), OCSP and CT.

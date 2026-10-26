@@ -405,8 +405,10 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # tools-tests — les scripts de tools/ (release, spec 0006 ; smoke tests ;
-  # rotation ; en-têtes) et le lint du workflow lui-même. Les tests construisent
-  # un dépôt git temporaire et ne touchent ni au réseau ni au dépôt courant ;
+  # rotation ; en-têtes ; certificats TLS) et le lint du workflow lui-même. Les
+  # tests ne touchent ni au réseau extérieur ni au dépôt courant : ceux de la
+  # release construisent un dépôt git temporaire, celui des certificats sert
+  # ses propres certificats sur 127.0.0.1 (#719) ;
   # git-config-isolation.test.sh les rejoue sous un environnement git hostile,
   # pour qu'aucune ne dépende du poste qui la lance (#304). actionlint attrape
   # les erreurs de syntaxe et d'expressions de ce fichier avant qu'un push de
@@ -417,7 +419,7 @@ jobs:
     timeout-minutes: 10 # habituel ~20 s
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Tests des scripts de release (dépôt git temporaire, hors ligne)
+      - name: Tests des scripts de tools/ (hors ligne)
         run: |
           tools/tests/next-version.test.sh
           tools/tests/verify-release-merge.test.sh
