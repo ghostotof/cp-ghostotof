@@ -146,11 +146,11 @@ services:
     App\Mcp\Connection\Domain\ValueObject\ConnectionLifetimes:
         factory: ['App\Mcp\Connection\Domain\ValueObject\ConnectionLifetimes', 'fromConfiguration']
         arguments:
-            $authorizationCode: '%app.mcp.lifetime.authorization_code%'
-            $accessToken: '%app.mcp.lifetime.access_token%'
-            $refreshToken: '%app.mcp.lifetime.refresh_token%'
-            $idle: '%app.mcp.lifetime.connection_idle%'
-            $maximum: '%app.mcp.lifetime.connection_maximum%'
+            $codeLifetime: '%app.mcp.lifetime.authorization_code%'
+            $accessLifetime: '%app.mcp.lifetime.access_token%'
+            $refreshLifetime: '%app.mcp.lifetime.refresh_token%'
+            $idleLifetime: '%app.mcp.lifetime.connection_idle%'
+            $maximumLifetime: '%app.mcp.lifetime.connection_maximum%'
 
 when@test:
     services:

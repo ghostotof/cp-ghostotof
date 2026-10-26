@@ -134,21 +134,29 @@ class McpConnection
 
     /**
      * La connexion a-t-elle expiré à l'instant `$now` ? **La seule définition
-     * de l'échéance** (#649) : deux seuils de ConnectionLifetimes, la première
-     * échéance atteinte l'emporte, et chacune est exclusive (atteinte à la
+     * de l'échéance** (#649) : deux échéances de ConnectionLifetimes, la
+     * première atteinte l'emporte, et chacune est exclusive (atteinte à la
      * seconde près, la connexion est morte) :
      *
-     * - l'inactivité : `lastUsedAt ?? grantedAt` au plus tard
-     *   {@see ConnectionLifetimes::idleThreshold()} ;
-     * - la durée maximale : `grantedAt` au plus tard
-     *   {@see ConnectionLifetimes::maximumThreshold()}.
+     * - l'inactivité : {@see ConnectionLifetimes::idleDeadline()} de
+     *   `lastUsedAt ?? grantedAt` ;
+     * - la durée maximale : {@see ConnectionLifetimes::maximumDeadline()} de
+     *   `grantedAt`.
      *
-     * Comparer l'usage au seuil (`$now` moins la durée) plutôt que `$now` à
-     * l'échéance (l'usage plus la durée) : c'est la forme que la purge relit
-     * en SQL, une colonne comparée à un paramètre, sur les mêmes seuils — les
-     * deux jugent la même seconde. Les jours se comptent sur le calendrier du
-     * fuseau de `$now` (721 heures pour 30 jours à travers le passage à
-     * l'heure d'hiver), jamais par `modify()` (#445).
+     * Des échéances, jamais des seuils (`$now` moins la durée) : une échéance
+     * ne dépend que de la connexion, l'expiration est donc monotone — morte à
+     * un instant, morte à tout instant suivant. Un seuil reculait d'une heure
+     * pendant l'heure répétée du passage à l'heure d'hiver, et la connexion
+     * revivait (relecture de la tâche 1). La purge (#649) présélectionnera ses
+     * candidates en SQL puis jugera chacune ici : une seule définition.
+     *
+     * Les jours se comptent sur le calendrier du fuseau de `$now` (721 heures
+     * pour 30 jours à Paris à travers le passage à l'heure d'hiver), jamais par
+     * `modify()` (#445) : les instants y sont ramenés avant l'ajout, car
+     * Doctrine hydrate une colonne `datetimetz_immutable` avec un décalage fixe
+     * (`+02:00`), sur lequel 30 jours dureraient 720 heures — une connexion lue
+     * en base n'expirerait pas à la même seconde qu'une connexion en mémoire.
+     * L'horloge rend toujours le même fuseau : l'échéance reste fixe.
      *
      * `lastUsedAt` n'est écrit qu'au rafraîchissement — jamais à chaque appel
      * (ADR 0006 D6). La révocation n'est pas une expiration :
@@ -156,7 +164,10 @@ class McpConnection
      */
     public function isExpiredAt(DateTimeImmutable $now, ConnectionLifetimes $lifetimes): bool
     {
-        return ($this->lastUsedAt ?? $this->grantedAt) <= $lifetimes->idleThreshold($now)
-            || $this->grantedAt <= $lifetimes->maximumThreshold($now);
+        $zone = $now->getTimezone();
+        $lastActivity = ($this->lastUsedAt ?? $this->grantedAt)->setTimezone($zone);
+
+        return $now >= $lifetimes->idleDeadline($lastActivity)
+            || $now >= $lifetimes->maximumDeadline($this->grantedAt->setTimezone($zone));
     }
 }

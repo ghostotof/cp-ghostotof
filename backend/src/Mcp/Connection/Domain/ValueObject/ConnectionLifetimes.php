@@ -8,7 +8,6 @@ use App\Mcp\Connection\Domain\Exception\InvalidConnectionLifetimeException;
 use DateInterval;
 use DateMalformedIntervalStringException;
 use DateTimeImmutable;
-use SensitiveParameter;
 
 /**
  * Les durées d'une connexion MCP et de ses jetons (#649) : code
@@ -26,12 +25,16 @@ use SensitiveParameter;
  * fuseau de l'instant, les heures en temps écoulé (#445, #710). Trente jours
  * à Paris durent donc 721 heures à travers le passage à l'heure d'hiver.
  *
- * **L'échéance d'une connexion se définit par deux seuils**,
- * {@see self::idleThreshold()} et {@see self::maximumThreshold()} : l'instant
- * jugé moins la durée. La connexion est morte quand son dernier usage (ou son
- * octroi) est au plus tard le premier, ou son octroi au plus tard le second
- * ({@see \App\Mcp\Connection\Domain\Entity\McpConnection::isExpiredAt()}). La
- * purge les relit tels quels en SQL : une seule définition, la même seconde.
+ * **L'échéance d'une connexion se définit par deux échéances fixes**,
+ * {@see self::idleDeadline()} et {@see self::maximumDeadline()} : le dernier
+ * usage (ou l'octroi) plus le délai d'inactivité, l'octroi plus la durée
+ * maximale ({@see \App\Mcp\Connection\Domain\Entity\McpConnection::isExpiredAt()}).
+ * Une échéance ne dépend que de la connexion, jamais de l'instant jugé : une
+ * fois atteinte, la connexion reste morte. Des seuils (l'instant jugé moins la
+ * durée) ne le garantissaient pas : pendant l'heure répétée du passage à
+ * l'heure d'hiver, `$now->sub(P30D)` recule d'une heure quand `$now` avance,
+ * et une connexion expirée à 02:45 CEST revivait à 02:15 CET (relecture de la
+ * tâche 1 de #649).
  *
  * Un objet valeur immuable ; `DateInterval` étant mutable, chaque lecture en
  * rend une copie.
@@ -55,28 +58,21 @@ final readonly class ConnectionLifetimes
     }
 
     /**
-     * `#[SensitiveParameter]` sur les trois durées de jeton : ce ne sont pas
-     * des secrets, mais leur nom dit « token » ou « authorization », que
-     * `SecretParametersTest` (#414) exige masqué sans liste d'exemption — et
-     * masquer une durée dans une trace ne coûte rien.
+     * Chaque paramètre se nomme `…Lifetime` : une durée, que le message d'un
+     * refus désigne par ce nom.
      *
      * @throws InvalidConnectionLifetimeException si une durée est illisible ou
      *         nulle, si l'inactivité dépasse la durée maximale, ou si le jeton
      *         d'accès survit à son jeton de rafraîchissement
      */
-    public static function fromConfiguration(
-        #[SensitiveParameter] string $authorizationCode,
-        #[SensitiveParameter] string $accessToken,
-        #[SensitiveParameter] string $refreshToken,
-        string $idle,
-        string $maximum,
-    ): self {
+    public static function fromConfiguration(string $codeLifetime, string $accessLifetime, string $refreshLifetime, string $idleLifetime, string $maximumLifetime): self
+    {
         $durations = [
-            'authorizationCode' => self::read('authorizationCode', $authorizationCode),
-            'accessToken' => self::read('accessToken', $accessToken),
-            'refreshToken' => self::read('refreshToken', $refreshToken),
-            'idle' => self::read('idle', $idle),
-            'maximum' => self::read('maximum', $maximum),
+            'codeLifetime' => self::read('codeLifetime', $codeLifetime),
+            'accessLifetime' => self::read('accessLifetime', $accessLifetime),
+            'refreshLifetime' => self::read('refreshLifetime', $refreshLifetime),
+            'idleLifetime' => self::read('idleLifetime', $idleLifetime),
+            'maximumLifetime' => self::read('maximumLifetime', $maximumLifetime),
         ];
 
         $reference = new DateTimeImmutable(self::REFERENCE_INSTANT);
@@ -87,15 +83,21 @@ final readonly class ConnectionLifetimes
             }
         }
 
-        if ($reference->add($durations['idle']) > $reference->add($durations['maximum'])) {
+        if ($reference->add($durations['idleLifetime']) > $reference->add($durations['maximumLifetime'])) {
             throw InvalidConnectionLifetimeException::idleExceedsMaximum();
         }
 
-        if ($reference->add($durations['accessToken']) > $reference->add($durations['refreshToken'])) {
+        if ($reference->add($durations['accessLifetime']) > $reference->add($durations['refreshLifetime'])) {
             throw InvalidConnectionLifetimeException::accessTokenOutlivesRefreshToken();
         }
 
-        return new self(...$durations);
+        return new self(
+            $durations['codeLifetime'],
+            $durations['accessLifetime'],
+            $durations['refreshLifetime'],
+            $durations['idleLifetime'],
+            $durations['maximumLifetime'],
+        );
     }
 
     /** Durée d'un code d'autorisation, de son émission à son échange. */
@@ -129,22 +131,27 @@ final readonly class ConnectionLifetimes
     }
 
     /**
-     * L'instant à partir duquel un dernier usage est trop ancien à `$now` :
-     * un dernier usage (ou un octroi, à défaut) **au plus tard** égal à ce
-     * seuil fait expirer la connexion.
+     * L'instant où une connexion inactive depuis `$lastActivity` (son dernier
+     * usage, ou son octroi) expire : atteint, elle est morte.
+     *
+     * Les jours se comptent sur le calendrier du fuseau de `$lastActivity`
+     * (McpConnection::isExpiredAt() l'y ramène à celui de l'instant jugé). Une
+     * heure murale qui n'existe pas à l'échéance (02:30 le jour du passage à
+     * l'heure d'été) est reportée par PHP d'une heure plus tard : la connexion
+     * vit alors une heure de plus, jamais de moins, et l'échéance reste fixe.
      */
-    public function idleThreshold(DateTimeImmutable $now): DateTimeImmutable
+    public function idleDeadline(DateTimeImmutable $lastActivity): DateTimeImmutable
     {
-        return $now->sub($this->idle);
+        return $lastActivity->add($this->idle);
     }
 
     /**
-     * L'instant à partir duquel un octroi est trop ancien à `$now` : un octroi
-     * **au plus tard** égal à ce seuil fait expirer la connexion.
+     * L'instant où une connexion octroyée à `$grantedAt` expire quel que soit
+     * son usage : atteint, elle est morte. Même calendrier qu'idleDeadline().
      */
-    public function maximumThreshold(DateTimeImmutable $now): DateTimeImmutable
+    public function maximumDeadline(DateTimeImmutable $grantedAt): DateTimeImmutable
     {
-        return $now->sub($this->maximum);
+        return $grantedAt->add($this->maximum);
     }
 
     /**

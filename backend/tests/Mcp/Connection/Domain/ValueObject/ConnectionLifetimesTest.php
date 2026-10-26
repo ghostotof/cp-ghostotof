@@ -22,11 +22,11 @@ final class ConnectionLifetimesTest extends TestCase
 {
     /** Les valeurs de `config/services.yaml`, dans l'ordre de fromConfiguration(). */
     private const array CONFIGURED = [
-        'authorizationCode' => 'PT10M',
-        'accessToken' => 'PT1H',
-        'refreshToken' => 'P30D',
-        'idle' => 'P30D',
-        'maximum' => 'P90D',
+        'codeLifetime' => 'PT10M',
+        'accessLifetime' => 'PT1H',
+        'refreshLifetime' => 'P30D',
+        'idleLifetime' => 'P30D',
+        'maximumLifetime' => 'P90D',
     ];
 
     public function testTheConfiguredValuesAreRead(): void
@@ -104,12 +104,12 @@ final class ConnectionLifetimesTest extends TestCase
      */
     public function testAnIdleLifetimeBeyondTheMaximumIsRefused(): void
     {
-        self::assertSame('90 0 0', $this->lifetimes(['idle' => 'P90D', 'maximum' => 'P90D'])->idle()->format('%d %h %i'));
+        self::assertSame('90 0 0', $this->lifetimes(['idleLifetime' => 'P90D', 'maximumLifetime' => 'P90D'])->idle()->format('%d %h %i'));
 
         $this->expectException(InvalidConnectionLifetimeException::class);
         $this->expectExceptionMessage(InvalidConnectionLifetimeException::idleExceedsMaximum()->getMessage());
 
-        $this->lifetimes(['idle' => 'P91D', 'maximum' => 'P90D']);
+        $this->lifetimes(['idleLifetime' => 'P91D', 'maximumLifetime' => 'P90D']);
     }
 
     /** Un jeton d'accès qui survivrait à son rafraîchissement n'aurait plus de quoi se renouveler. */
@@ -118,27 +118,43 @@ final class ConnectionLifetimesTest extends TestCase
         $this->expectException(InvalidConnectionLifetimeException::class);
         $this->expectExceptionMessage(InvalidConnectionLifetimeException::accessTokenOutlivesRefreshToken()->getMessage());
 
-        $this->lifetimes(['accessToken' => 'P31D', 'refreshToken' => 'P30D']);
+        $this->lifetimes(['accessLifetime' => 'P31D', 'refreshLifetime' => 'P30D']);
     }
 
     /**
      * Revue n° 4 : 30 jours de calendrier à Paris, comptés à travers le
-     * passage à l'heure d'hiver (2026-10-25), durent 721 heures. Le seuil
+     * passage à l'heure d'hiver (2026-10-25), durent 721 heures. L'échéance
      * tombe à la même heure murale, ni une heure avant ni une heure après —
-     * de même pour la durée maximale, 90 jours en arrière.
+     * de même pour la durée maximale, 90 jours après l'octroi.
      */
-    public function testThresholdsCountCalendarDaysAcrossTheAutumnClockChange(): void
+    public function testDeadlinesCountCalendarDaysAcrossTheAutumnClockChange(): void
     {
         $paris = new DateTimeZone('Europe/Paris');
-        $now = new DateTimeImmutable('2026-10-26 10:00:00', $paris);
+        $lastActivity = new DateTimeImmutable('2026-09-26 10:00:00', $paris);
+        $grantedAt = new DateTimeImmutable('2026-07-28 10:00:00', $paris);
 
-        $idleThreshold = $this->lifetimes()->idleThreshold($now);
-        $maximumThreshold = $this->lifetimes()->maximumThreshold($now);
+        $idleDeadline = $this->lifetimes()->idleDeadline($lastActivity);
+        $maximumDeadline = $this->lifetimes()->maximumDeadline($grantedAt);
 
-        self::assertEquals(new DateTimeImmutable('2026-09-26 10:00:00', $paris), $idleThreshold);
-        self::assertSame(721 * 3600, $now->getTimestamp() - $idleThreshold->getTimestamp());
-        self::assertEquals(new DateTimeImmutable('2026-07-28 10:00:00', $paris), $maximumThreshold);
-        self::assertSame((90 * 24 + 1) * 3600, $now->getTimestamp() - $maximumThreshold->getTimestamp());
+        self::assertEquals(new DateTimeImmutable('2026-10-26 10:00:00', $paris), $idleDeadline);
+        self::assertSame(721 * 3600, $idleDeadline->getTimestamp() - $lastActivity->getTimestamp());
+        self::assertEquals(new DateTimeImmutable('2026-10-26 10:00:00', $paris), $maximumDeadline);
+        self::assertSame((90 * 24 + 1) * 3600, $maximumDeadline->getTimestamp() - $grantedAt->getTimestamp());
+    }
+
+    /**
+     * Une heure murale qui n'existe pas (02:30 le 29 mars 2026, passage à
+     * l'heure d'été) : PHP reporte l'échéance d'une heure, à 03:30 CEST — la
+     * connexion vit une heure de plus, jamais de moins, et l'échéance reste
+     * un instant fixe.
+     */
+    public function testADeadlineOnAMissingWallTimeIsPushedPastTheGap(): void
+    {
+        $paris = new DateTimeZone('Europe/Paris');
+
+        $deadline = $this->lifetimes()->idleDeadline(new DateTimeImmutable('2026-02-27 02:30:00', $paris));
+
+        self::assertSame('2026-03-29T03:30:00+02:00', $deadline->format(DATE_ATOM));
     }
 
     /**
@@ -151,11 +167,11 @@ final class ConnectionLifetimesTest extends TestCase
         $values = [...self::CONFIGURED, ...$overrides];
 
         return ConnectionLifetimes::fromConfiguration(
-            $values['authorizationCode'],
-            $values['accessToken'],
-            $values['refreshToken'],
-            $values['idle'],
-            $values['maximum'],
+            $values['codeLifetime'],
+            $values['accessLifetime'],
+            $values['refreshLifetime'],
+            $values['idleLifetime'],
+            $values['maximumLifetime'],
         );
     }
 }

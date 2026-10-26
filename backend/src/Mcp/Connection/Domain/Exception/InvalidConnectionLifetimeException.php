@@ -15,7 +15,7 @@ use InvalidArgumentException;
  * du service {@see \App\Mcp\Connection\Domain\ValueObject\ConnectionLifetimes},
  * aucune entrée `framework.exceptions`, un 500 `critical` au premier usage.
  *
- * Le message nomme le paramètre (`authorizationCode`, `accessToken`…), jamais
+ * Le message nomme le paramètre (`codeLifetime`, `accessLifetime`…), jamais
  * la valeur reçue ; l'exception native de PHP sur une durée illisible n'est
  * pas chaînée, son message citant la valeur.
  */
@@ -33,11 +33,11 @@ final class InvalidConnectionLifetimeException extends InvalidArgumentException
 
     public static function idleExceedsMaximum(): self
     {
-        return new self('Le délai d\'inactivité « idle » des connexions ne peut dépasser leur durée maximale « maximum ».');
+        return new self('Le délai d\'inactivité « idleLifetime » des connexions ne peut dépasser leur durée maximale « maximumLifetime ».');
     }
 
     public static function accessTokenOutlivesRefreshToken(): self
     {
-        return new self('La durée « accessToken » ne peut dépasser celle du jeton de rafraîchissement « refreshToken ».');
+        return new self('La durée « accessLifetime » ne peut dépasser celle du jeton de rafraîchissement « refreshLifetime ».');
     }
 }
