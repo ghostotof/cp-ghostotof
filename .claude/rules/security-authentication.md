@@ -23,19 +23,26 @@ paths:
   - **`Infrastructure/Http/AuthCookieFactory.php` is the only place that builds a `BEARER` or `XSRF-TOKEN`
     cookie** (issue #87): names (`AuthCookieFactory::BEARER` / `::XSRF_TOKEN`, also what
     `CsrfCookieRequestSubscriber` reads), `Path=/`, no `Domain`, `SameSite=Lax`, `HttpOnly` on `BEARER`
-    only, `Secure` iff `prod`. `bearer()` / `xsrf()` take an optional expiry (session cookie without),
+    only, `Secure` everywhere but `dev` (issue #714 — `test` included, see below). `bearer()` / `xsrf()` take an optional expiry (session cookie without),
     `expired()` mirrors the issued attributes with a past date — a cleared cookie whose attributes differ
     from the set one is *not* removed by the browser, which is the drift the factory exists to prevent. The
     three sites (`LoginSuccessSubscriber`, `BaseAccessController`, `CookieLogoutListener`) go through it;
     the one exception is the login `BEARER`, still set by Lexik from `lexik_jwt_authentication.yaml`
-    (`set_cookies` + `when@prod`), and `tests/Security/Authentication/AuthCookieAttributesTest.php` pins
-    that config to the factory **in `test` only** by comparing the real `Set-Cookie` of login, base-access
-    and logout per name. Any new auth cookie goes through the factory, never `Cookie::create()` or `clearCookie()`
+    (`set_cookies` + `when@dev`), and `tests/Security/Authentication/AuthCookieAttributesTest.php` pins
+    that config to the factory **in `test`** by comparing the real `Set-Cookie` of login, base-access
+    and logout per name. **`test` carries `Secure` on purpose** (issue #714): that test then reads it on the
+    real chain — a redefined `lexik_jwt_authentication.cookie_provider.BEARER`, a decorator of the success
+    handler or a `kernel.response` listener dropping it turns it red (measured with the redefinition), which a
+    guard of the declared value cannot see. Functional clients stay in http and lose nothing: BrowserKit's
+    `Cookie::fromString()` drops the `secure` flag of a cookie received on a non-`https` URI, so the jar sends
+    it back (measured; the issue had assumed every test would need HTTPS). Never make `test` insecure again to
+    « match » `dev`. Any new auth cookie goes through the factory, never `Cookie::create()` or `clearCookie()`
     inline. `__Host-` prefixing is a separate, preprod-tested step (it renames what Lexik and the frontend
     read by name). That `secure` is the **only** Lexik key allowed to differ per environment (issue #659,
     `SecurityConfigEnvironmentParityTest`, see `.claude/rules/backoffice-api.md`, « Authorization »), and
     `BearerCookieSecurePerEnvironmentTest` pins its declared value in every environment to the factory's
-    (`true` in `prod`, issue #703): `AuthCookieAttributesTest` only sees `test`'s cookie.
+    (`true` in `prod`, issue #703): `AuthCookieAttributesTest` only sees `test`'s cookie, and no functional
+    test loads `prod` — a `prod`-only redefinition stays its blind spot (#698).
   - **Tokens, JWTs and CSRF values are hidden from stack traces** (`#[SensitiveParameter]`, issue #414): the
     guard covers all of `src/`, so its rule lives in `.claude/rules/backend-conventions.md`.
   - `Infrastructure/Http/CsrfCookieRequestSubscriber.php` — double-submit-cookie CSRF check, a `kernel.request`

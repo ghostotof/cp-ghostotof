@@ -43,9 +43,11 @@ final class AuthCookieFactoryTest extends TestCase
     }
 
     /**
-     * `Secure` vrai si et seulement si l'environnement est `prod` : le dev
-     * tourne en http (localhost:8080 sans TLS), un cookie Secure n'y serait
-     * jamais renvoyé par le navigateur.
+     * `Secure` partout sauf en `dev` (issue #714) : le dev tourne en http
+     * (localhost:8080 sans TLS), un cookie Secure n'y serait jamais renvoyé
+     * par le navigateur. `test` le porte, pour que les tests fonctionnels
+     * voient la vraie chaîne de pose produire `Secure`, et tout environnement
+     * ajouté demain l'a sans qu'on y pense.
      *
      * @return iterable<string, array{string, bool}>
      */
@@ -53,7 +55,8 @@ final class AuthCookieFactoryTest extends TestCase
     {
         yield 'prod' => ['prod', true];
         yield 'dev' => ['dev', false];
-        yield 'test' => ['test', false];
+        yield 'test' => ['test', true];
+        yield 'environnement inconnu' => ['staging', true];
     }
 
     #[DataProvider('provideEnvironments')]

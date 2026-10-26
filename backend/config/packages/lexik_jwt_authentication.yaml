@@ -23,12 +23,14 @@ lexik_jwt_authentication:
             samesite: lax
             path: /
             httpOnly: true
-            # http en dev (localhost:8080 sans TLS) : passé à true en prod, voir when@prod ci-dessous.
+            # Secure partout sauf en dev (#714), comme AuthCookieFactory : test le porte,
+            # pour qu'AuthCookieAttributesTest le lise sur la vraie chaîne de pose.
             # BearerCookieSecurePerEnvironmentTest exige cette valeur dans chaque environnement (#703).
-            secure: false
+            secure: true
 
-when@prod:
+# http en dev (localhost:8080 sans TLS) : un cookie Secure n'y reviendrait jamais.
+when@dev:
     lexik_jwt_authentication:
         set_cookies:
             BEARER:
-                secure: true
+                secure: false

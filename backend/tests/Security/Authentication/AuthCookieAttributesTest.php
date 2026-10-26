@@ -88,13 +88,16 @@ final class AuthCookieAttributesTest extends WebTestCase
         self::assertFalse($baseAccess[AuthCookieFactory::XSRF_TOKEN]->isHttpOnly());
         self::assertSame('/', $baseAccess[AuthCookieFactory::BEARER]->getPath());
         self::assertSame(Cookie::SAMESITE_LAX, $baseAccess[AuthCookieFactory::BEARER]->getSameSite());
-        // Env test, servi en http : Secure est faux ici et vrai en prod
-        // (App\Tests\Security\Authentication\Infrastructure\Http\AuthCookieFactoryTest
-        // le pince pour la fabrique,
+        // `Secure` partout sauf en `dev` (issue #714) : ce test le lit donc sur
+        // la vraie chaîne de pose, Lexik compris. Une surcharge du fournisseur
+        // de cookie de Lexik, un décorateur du gestionnaire de succès ou un
+        // listener `kernel.response` qui réécrirait le BEARER sans `Secure`
+        // rougit ici (les deux sites étant comparés au palier de base
+        // ci-dessus). Seul `dev` reste en http :
         // App\Tests\Security\Authentication\BearerCookieSecurePerEnvironmentTest
-        // pour le `when@prod` de lexik_jwt_authentication.yaml, que ce test-ci
-        // ne voit pas).
-        self::assertFalse($baseAccess[AuthCookieFactory::BEARER]->isSecure());
+        // en épingle la valeur déclarée.
+        self::assertTrue($baseAccess[AuthCookieFactory::BEARER]->isSecure(), 'Le JWT doit être posé `Secure` hors de `dev`.');
+        self::assertTrue($baseAccess[AuthCookieFactory::XSRF_TOKEN]->isSecure(), 'Le jeton CSRF doit être posé `Secure` hors de `dev`.');
     }
 
     /**

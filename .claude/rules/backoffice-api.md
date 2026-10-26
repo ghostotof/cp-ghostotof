@@ -33,21 +33,22 @@ paths:
   just as much — and `lexik_jwt_authentication` with it (where the `jwt` authenticator reads the token, what it
   sets). Its `ENVIRONMENT_SPECIFIC` exemptions are exact paths, each checked to still differ:
   `security.password_hashers` (cost 4 under `when@test`, pinned per environment by `CpgUserPasswordHasherTest`)
-  and `lexik_jwt_authentication.set_cookies.BEARER.secure` (`Secure` in prod only, pinned per environment by
-  `BearerCookieSecurePerEnvironmentTest`, issue #703 — `AuthCookieAttributesTest` runs in `test` only, where it
-  is false). **An exemption is a net that must pin its own value in every environment**: until #703 nothing
+  and `lexik_jwt_authentication.set_cookies.BEARER.secure` (`Secure` everywhere but `dev`, pinned per environment
+  by `BearerCookieSecurePerEnvironmentTest`, issue #703 — `AuthCookieAttributesTest` runs in `test` only, where
+  it is true since #714). **An exemption is a net that must pin its own value in every environment**: until #703 nothing
   required `true` in prod, so removing the `when@prod` block turned the « still differs » check red with an
   invitation to drop the exemption, and the suite went green on a JWT sent without `Secure`. Each entry is
   therefore `[reason, PinningTest::class]` — a renamed or deleted pinning test turns PHPStan red — and the
   check's message quotes the reason and names that test before inviting any removal. The same test requires
   `set_cookies` to declare `BEARER` alone and the cookie extractor to read it: a second entry would set a
-  copy of the JWT without `Secure`, common to every environment, so the parity saw nothing. **Accepted
-  limits** (audit of #703, follow-up #714): the guard reads the *declared* value, and `test` pins the
-  insecure one, so nothing sees the real chain set `Secure` — a redefinition of
-  `lexik_jwt_authentication.cookie_provider.BEARER` or a decorator in `services.yaml`, a `kernel.response`
-  listener rewriting the cookie, a `prod`-only service redefinition (#698), a bundle's `prepend()` or a
-  compiler pass would send it in clear with the suite green; HSTS on the API narrows the exposure, it does
-  not close it.
+  copy of the JWT without `Secure`, common to every environment, so the parity saw nothing. The guard reads
+  the *declared* value; since #714 `test` declares the secure one too, so `AuthCookieAttributesTest` sees the
+  real chain set `Secure` — a redefinition of `lexik_jwt_authentication.cookie_provider.BEARER` or a decorator
+  in `services.yaml`, a `kernel.response` listener rewriting the cookie, a bundle's `prepend()` or a compiler
+  pass now turn it red when they act in `test` too (`.claude/rules/security-authentication.md`). **Accepted
+  limits** (#714): whatever acts in `prod` alone — a `prod`-only service redefinition (#698), a `prepend()`,
+  a compiler pass or a listener conditioned on the environment or on `%kernel.debug%` — still sends it in clear
+  with the suite green; HSTS on the API narrows the exposure, it does not close it.
   No key nor value of either may hold a `%env()%` or `%parameter%` reference (`%%` is an escape, fine), save
   `PARAMETERIZED_BY_DESIGN`: Lexik's `secret_key`, `public_key`, `pass_phrase`, per-deployment secrets. The
   order of a map's common entries is compared too (`firewalls (ordre)`: Symfony takes the first matching one).

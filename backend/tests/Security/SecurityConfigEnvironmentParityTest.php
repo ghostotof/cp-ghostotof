@@ -63,7 +63,7 @@ final class SecurityConfigEnvironmentParityTest extends TestCase
             CpgUserPasswordHasherTest::class,
         ],
         'lexik_jwt_authentication.set_cookies.BEARER.secure' => [
-            'Secure en prod seulement, la règle d\'AuthCookieFactory (le dev sert localhost en HTTP) ; AuthCookieAttributesTest le vérifie sur le cookie réellement posé, en test seulement.',
+            'Secure partout sauf en dev, la règle d\'AuthCookieFactory (le dev sert localhost en HTTP, issue #714) ; AuthCookieAttributesTest le vérifie sur le cookie réellement posé, en test.',
             BearerCookieSecurePerEnvironmentTest::class,
         ],
     ];

@@ -24,14 +24,20 @@ use Symfony\Component\HttpFoundation\Cookie;
  *   couvre le reste, cf. CsrfCookieRequestSubscriber), mais envoyé sur une
  *   navigation de premier niveau — ce qui permet le login-CSRF de l'issue #76,
  *   traité par LoginCsrfRequestListener et non par le cookie.
- * - `Secure` en `prod` uniquement : le dev est servi en http, un cookie Secure
- *   n'y reviendrait jamais.
+ * - `Secure` partout sauf en `dev` (issue #714) : le dev est servi en http, un
+ *   cookie Secure n'y reviendrait jamais. `test` le porte aussi, pour que les
+ *   tests fonctionnels voient la vraie chaîne de pose le produire ; et un
+ *   environnement ajouté demain l'a par défaut. Leurs clients restent en http
+ *   sans rien perdre : le `CookieJar` de BrowserKit ignore le drapeau `secure`
+ *   d'un cookie reçu sur une URI qui n'est pas `https`
+ *   ({@see \Symfony\Component\BrowserKit\Cookie::fromString()}), et le renvoie
+ *   donc.
  *
  * La pose du `BEARER` au login reste faite par Lexik depuis
  * config/packages/lexik_jwt_authentication.yaml ;
  * {@see \App\Tests\Security\Authentication\AuthCookieAttributesTest} vérifie,
- * en `test` seulement, que ses attributs sont ceux de cette fabrique, à chaque
- * nom, et {@see \App\Tests\Security\Authentication\BearerCookieSecurePerEnvironmentTest}
+ * en `test`, que ses attributs sont ceux de cette fabrique, à chaque nom,
+ * `Secure` compris, et {@see \App\Tests\Security\Authentication\BearerCookieSecurePerEnvironmentTest}
  * que son `Secure` déclaré suit la règle ci-dessus dans chaque environnement
  * (issue #703).
  */
@@ -101,7 +107,7 @@ final readonly class AuthCookieFactory
             ->withExpires($expiresAt ?? 0)
             ->withPath(self::PATH)
             ->withDomain(null)
-            ->withSecure('prod' === $this->environment)
+            ->withSecure('dev' !== $this->environment)
             ->withHttpOnly(self::BEARER === $name)
             ->withSameSite(Cookie::SAMESITE_LAX);
     }
