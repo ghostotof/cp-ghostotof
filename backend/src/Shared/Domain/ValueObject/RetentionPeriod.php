@@ -8,6 +8,7 @@ use App\Shared\Domain\Exception\InvalidRetentionPeriodException;
 use DateInterval;
 use DateMalformedIntervalStringException;
 use DateTimeImmutable;
+use DateTimeZone;
 
 /**
  * Durée de rétention strictement positive, exprimée en intervalle relatif PHP
@@ -41,6 +42,9 @@ use DateTimeImmutable;
  */
 final readonly class RetentionPeriod
 {
+    /** Voir {@see designatesADate()} : un mercredi en milieu de mois, hors de minuit. */
+    private const string REFERENCE_INSTANT = '1970-01-14 13:37:42';
+
     private function __construct(
         private DateTimeImmutable $threshold,
         private string $expression,
@@ -49,7 +53,8 @@ final readonly class RetentionPeriod
 
     /**
      * @throws InvalidRetentionPeriodException si l'expression est vide, illisible,
-     *         ou ne produit pas un seuil strictement antérieur à `$now`
+     *         désigne une date plutôt qu'une durée, ou ne produit pas un seuil
+     *         strictement antérieur à `$now`
      */
     public static function fromString(string $expression, DateTimeImmutable $now): self
     {
@@ -65,7 +70,13 @@ final readonly class RetentionPeriod
             throw InvalidRetentionPeriodException::unreadable($expression);
         }
 
-        $threshold = $now->sub(self::calendarDaysThenElapsedTime($relative));
+        $interval = self::calendarDaysThenElapsedTime($relative);
+
+        if (self::designatesADate($trimmed, $interval)) {
+            throw InvalidRetentionPeriodException::designatesADate($trimmed);
+        }
+
+        $threshold = $now->sub($interval);
 
         if ($threshold >= $now) {
             throw InvalidRetentionPeriodException::notStrictlyPositive($expression);
@@ -104,6 +115,34 @@ final readonly class RetentionPeriod
         $interval->invert = $relative->invert;
 
         return $interval;
+    }
+
+    /**
+     * Vrai si l'expression porte plus que les champs de son intervalle : un
+     * jour de la semaine, un "first/last … of", une heure du jour (issue #710).
+     *
+     * Ces parts ne sont visibles dans aucun champ de {@see \DateInterval}, et
+     * PHP les traite mal en arithmétique d'intervalle : `sub()` lève une erreur
+     * native sur un jour de la semaine, `add()` comme `sub()` ignorent "first/last
+     * day of". Seul `modify()` interprète l'expression entière. Une durée
+     * ordinaire y donne, en UTC (où heure murale et temps écoulé coïncident),
+     * exactement l'instant que donne son intervalle ; une expression qui désigne
+     * une date s'en écarte (mesuré sous PHP 8.5 sur deux années d'instants :
+     * aucun écart pour une durée, "yesterday" excepté, qui ramène à minuit).
+     *
+     * Un instant de référence fixe, plutôt que `$now`, pour que le verdict ne
+     * dépende pas du moment où la commande tourne : `$now` un 1er du mois
+     * laisserait passer "first day of next month". Il tombe en milieu de mois
+     * (aucun "first/last … of" n'y retombe) et hors de minuit (un jour de la
+     * semaine ramène à minuit, celui de la référence compris). Limite acceptée :
+     * une expression qui nomme cet instant même ("wednesday 13:37:42") passe.
+     */
+    private static function designatesADate(string $expression, DateInterval $interval): bool
+    {
+        $reference = new DateTimeImmutable(self::REFERENCE_INSTANT, new DateTimeZone('UTC'));
+
+        // L'instant à la microseconde : "500 msec" porte des fractions de seconde.
+        return $reference->modify($expression)->format('U.u') !== $reference->add($interval)->format('U.u');
     }
 
     public function threshold(): DateTimeImmutable

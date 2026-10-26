@@ -199,6 +199,23 @@ final class PurgeFailedContactMessagesCommandTest extends KernelTestCase
         self::assertSame(1, $this->countByRecipient('recent@example.com'));
     }
 
+    /**
+     * Issue #710 : « monday » faisait lever à `sub()` une erreur native que
+     * la commande ne rattrapait pas (sortie 1, trace affichée). Elle est
+     * refusée comme toute expression invalide, sans rien supprimer.
+     */
+    public function testRejectsAnOlderThanThatDesignatesADate(): void
+    {
+        $this->failedTransport->send(new Envelope($this->message('recent@example.com')));
+        $tester = $this->commandTester();
+
+        $exitCode = $tester->execute(['--older-than' => 'monday']);
+
+        self::assertSame(2, $exitCode); // Command::INVALID
+        self::assertStringContainsString('pas une durée', (string) preg_replace('/\s+/', ' ', $tester->getDisplay()));
+        self::assertSame(1, $this->countByRecipient('recent@example.com'));
+    }
+
     private function message(string $senderEmail): SendContactMessageMessage
     {
         return new SendContactMessageMessage(

@@ -128,6 +128,43 @@ final class RetentionPeriodTest extends TestCase
         yield 'expression déjà tournée vers le futur' => ['2 days ago'];
     }
 
+    /**
+     * Issue #710 : une expression qui désigne une date (jour de la semaine,
+     * « first/last … of », heure du jour) n'est pas une durée. `sub()` levait
+     * une erreur native sur certaines (« monday », « 3 weekdays »), qui
+     * traversait la commande ; d'autres se réduisaient en silence à leurs
+     * champs (« last day of next month » purgeait à un mois). Elles sont
+     * refusées, avec un message qui le dit, quel que soit l'instant.
+     */
+    #[DataProvider('expressionsDesignatingADate')]
+    public function testFromStringRejectsAnExpressionThatDesignatesADate(string $expression, string $nowInParis): void
+    {
+        try {
+            RetentionPeriod::fromString($expression, new DateTimeImmutable($nowInParis, new DateTimeZone('Europe/Paris')));
+            self::fail('InvalidRetentionPeriodException attendue.');
+        } catch (InvalidRetentionPeriodException $exception) {
+            self::assertStringContainsString('pas une durée', $exception->getMessage());
+            self::assertStringContainsString($expression, $exception->getMessage());
+        }
+    }
+
+    /**
+     * @return iterable<string, array{string, string}>
+     */
+    public static function expressionsDesignatingADate(): iterable
+    {
+        yield 'jour de la semaine' => ['monday', self::NOW];
+        // Le jour de la semaine de l'instant de référence : vu parce qu'il ramène à minuit.
+        yield 'jour de la semaine de la référence' => ['wednesday', self::NOW];
+        yield 'jours ouvrés' => ['3 weekdays', self::NOW];
+        yield 'premier lundi du mois suivant' => ['first monday of next month', self::NOW];
+        yield 'dernier jour du mois suivant' => ['last day of next month', self::NOW];
+        // Un 1er du mois : un verdict pris sur `$now` la laisserait passer.
+        yield 'premier jour du mois suivant, un 1er du mois' => ['first day of next month', '2026-10-01 12:00:00'];
+        yield 'heure du jour' => ['noon tomorrow', self::NOW];
+        yield 'hier, ramené à minuit' => ['yesterday', self::NOW];
+    }
+
     #[DataProvider('unreadableExpressions')]
     public function testFromStringRejectsAnUnreadableExpression(string $expression): void
     {

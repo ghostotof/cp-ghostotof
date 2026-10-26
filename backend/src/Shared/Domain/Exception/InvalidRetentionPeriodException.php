@@ -29,6 +29,19 @@ final class InvalidRetentionPeriodException extends DomainException
     }
 
     /**
+     * L'expression est lisible mais désigne une date plutôt qu'une durée :
+     * jour de la semaine ("monday", "3 weekdays"), "first/last … of", heure
+     * du jour ("noon tomorrow", "yesterday" qui ramène à minuit). Issue #710.
+     */
+    public static function designatesADate(string $expression): self
+    {
+        return new self(\sprintf(
+            'La durée de rétention "%s" désigne une date (jour de la semaine, "first/last … of", heure du jour), pas une durée. Exemples valides : "30 days", "12 hours".',
+            $expression,
+        ));
+    }
+
+    /**
      * L'expression est vide ou n'est pas un intervalle relatif PHP valide.
      */
     public static function unreadable(string $expression): self
