@@ -148,12 +148,15 @@ final class EnvironmentConfigKernel extends Kernel
      */
     private function builder(): ContainerBuilder
     {
-        if (null === $this->builder) {
-            // Ce que boot() ferait avant d'en venir au conteneur : les bundles
-            // de l'environnement, qui enregistrent les extensions.
+        // Sous l'environnement lu ({@see ProcessEnvironment}) : un fichier PHP
+        // qui lirait APP_ENV prend la branche de l'image (#698).
+        $this->builder ??= ProcessEnvironment::whileRunningAs($this->environment, function (): ContainerBuilder {
+            // Ce que boot() ferait avant d'en venir au conteneur : les
+            // bundles de l'environnement, qui enregistrent les extensions.
             $this->initializeBundles();
-            $this->builder = $this->buildContainer();
-        }
+
+            return $this->buildContainer();
+        });
 
         return $this->builder;
     }
