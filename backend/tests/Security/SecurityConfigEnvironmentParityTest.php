@@ -31,14 +31,18 @@ use PHPUnit\Framework\TestCase;
  * fragment normalisé puis fusionné par la configuration de l'extension
  * elle-même (EnvironmentConfigKernel::declaredConfiguration).
  *
- * Non vu, limites acceptées (aucun cas aujourd'hui) :
+ * Non vu ici, et vu par {@see SecurityServicesEnvironmentParityTest}
+ * (issue #698), qui compare les définitions compilées des services de
+ * sécurité — la carte d'accès et les contextes de firewall compris :
  *  - un service que la configuration désigne, redéfini pour un environnement
  *    (`when@prod: services:`, services_prod.yaml) — un fournisseur, un voter,
  *    un user_checker : la section reste identique, le comportement non ;
- *  - une passe de compilation qui modifierait la carte selon l'environnement
- *    ({@see \App\Kernel::build()} n'en ajoute qu'une, la même partout) ;
+ *  - une passe de compilation qui modifierait la carte selon l'environnement ;
  *  - ce qu'un bundle ajoute par `prepend()`, appliqué à la compilation, après
  *    les fragments lus ici.
+ * Ce test-ci reste la garde de la configuration écrite : il nomme le chemin
+ * déclaré en cause et refuse une valeur paramétrée, ce qu'une définition
+ * compilée, paramètres résolus, ne sait plus dire.
  */
 final class SecurityConfigEnvironmentParityTest extends TestCase
 {

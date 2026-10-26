@@ -17,7 +17,9 @@ use Symfony\Component\DependencyInjection\Extension\ConfigurationExtensionInterf
  * Le noyau de l'application dans un environnement donné, pour lire ce que sa
  * configuration déclare — sans compiler le conteneur (issue #357). Les routes
  * qu'il sert, qui demandent le conteneur compilé, se lisent avec
- * {@see EnvironmentRoutesKernel} (issue #659).
+ * {@see EnvironmentRoutesKernel} (issue #659) ; les définitions de ses
+ * services de sécurité, après les passes et avant leur retrait, avec
+ * {@see EnvironmentServicesKernel} (issue #698).
  *
  * Les chargeurs de Symfony font le tri par environnement (`when@<env>`,
  * config/packages/<env>/, services_<env>.*, en YAML comme en PHP) ; le
