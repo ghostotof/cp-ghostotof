@@ -14,7 +14,7 @@ use Symfony\Component\Security\Http\Authentication\ExposeSecurityLevel;
 /**
  * Fixture de SecurityServicesEnvironmentParityTest (relecture de #698) : une
  * passe de compilation qui n'agit qu'en `prod`, enregistrée par
- * prod-only-services.php. Trois surcharges que l'audit a mesurées, chacune
+ * prod-only-services.php. Les surcharges que les relectures ont relevées, chacune
  * invisible de la garde déclarée comme de la première version de la garde
  * compilée :
  *  - la hiérarchie des rôles, un paramètre tableau que la compilation ne
@@ -22,7 +22,9 @@ use Symfony\Component\Security\Http\Authentication\ExposeSecurityLevel;
  *  - le matcher de la première règle `access_control`, un identifiant caché
  *    (`.security.request_matcher.<hash>`) redéfini sous le même nom ;
  *  - le niveau d'exposition des erreurs du login, un paramètre enum que
- *    reçoit le gestionnaire d'authentification de chaque firewall.
+ *    reçoit le gestionnaire d'authentification de chaque firewall ;
+ *  - un abonné ajouté au dispatcher principal par `addSubscriber`, que la
+ *    liste des `addListener` ne voit pas.
  * Jamais chargé hors de ce test.
  */
 final class ProdOnlyOverridesPass implements CompilerPassInterface
@@ -41,5 +43,7 @@ final class ProdOnlyOverridesPass implements CompilerPassInterface
         }
 
         $container->setParameter('.security.authentication.expose_security_errors', ExposeSecurityLevel::All);
+
+        $container->findDefinition('event_dispatcher')->addMethodCall('addSubscriber', [new Reference(JwtPayloadListener::class)]);
     }
 }

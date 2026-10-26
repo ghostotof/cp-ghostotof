@@ -4,12 +4,16 @@ declare(strict_types=1);
 
 namespace App\Tests\Security;
 
+use App\Ai\Assistant\Infrastructure\Corpus\CorpusRenderer;
+use App\Portfolio\Watch\Infrastructure\Http\EndOfLifeDateClient;
 use App\Security\Authentication\Infrastructure\Http\AuthCookieFactory;
 use App\Security\Authentication\Infrastructure\Http\CsrfCookieRequestSubscriber;
 use App\Security\Authentication\Infrastructure\Security\LoginThrottlingRefusalListener;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Infrastructure\Doctrine\CpgUserRepository;
 use App\Security\User\Infrastructure\Security\BaseAccessUserProvider;
+use App\Tests\Ai\Assistant\Infrastructure\Corpus\CorpusSourcesTest;
+use App\Tests\Portfolio\Watch\Presentation\ApiResource\BackofficeWatchedProductResourceTest;
 use App\Tests\Security\Authentication\BearerCookieSecurePerEnvironmentTest;
 use App\Tests\Security\Authentication\CpgUserPasswordHasherTest;
 use App\Tests\Security\Authentication\Infrastructure\Http\AuthCookieFactoryTest;
@@ -190,6 +194,9 @@ final class SecurityServicesEnvironmentParityTest extends TestCase
         'proxys de confiance' => 'prod ≠ test : paramètre kernel.trusted_proxies',
         'défaut env()' => 'prod ≠ test : paramètre env(JWT_PASSPHRASE)',
         'branche sur APP_ENV du processus' => 'prod ≠ test : service fixture.env_branch_voter (seulement dans prod)',
+        'abonné ajouté au dispatcher par une passe' => 'prod ≠ test : service event_dispatcher [calls]',
+        'en-tête X-Sendfile-Type de confiance' => 'prod ≠ test : paramètre kernel.trust_x_sendfile_type_header',
+        'service rendu public' => 'prod ≠ test : service fixture.visibility_service [public]',
     ];
 
     /**
@@ -199,6 +206,13 @@ final class SecurityServicesEnvironmentParityTest extends TestCase
      * @var array<string, SecurityServicesSnapshot>
      */
     private static array $snapshots = [];
+
+    /**
+     * Construites une fois : chaque comparaison de service les relit.
+     *
+     * @var list<EnvironmentSpecificPath>|null
+     */
+    private static ?array $environmentSpecificPaths = null;
 
     public function testEveryEnvironmentDefinesTheSameSecurityServicesAsTest(): void
     {
@@ -322,6 +336,14 @@ final class SecurityServicesEnvironmentParityTest extends TestCase
      */
     private function environmentSpecificPaths(): array
     {
+        return self::$environmentSpecificPaths ??= $this->buildEnvironmentSpecificPaths();
+    }
+
+    /**
+     * @return list<EnvironmentSpecificPath>
+     */
+    private function buildEnvironmentSpecificPaths(): array
+    {
         $environments = EnvironmentConfigKernel::allowedEnvironments();
         $byEnvironment = static fn (callable $value): array => array_combine($environments, array_map($value, $environments));
 
@@ -346,6 +368,20 @@ final class SecurityServicesEnvironmentParityTest extends TestCase
                 $byEnvironment(static fn (string $environment): string => $environment),
                 'La fabrique reçoit l\'environnement (%kernel.environment%) pour décider de Secure (issue #714) ; c\'est sa règle elle-même que fige son test.',
                 AuthCookieFactoryTest::class,
+            ),
+            new EnvironmentSpecificPath(
+                EndOfLifeDateClient::class,
+                ['public'],
+                $byEnvironment(static fn (string $environment): bool => 'test' === $environment),
+                'Rendu public sous when@test (services.yaml) pour qu\'un test fonctionnel remplace la seule source d\'appels sortants ; privé partout ailleurs.',
+                BackofficeWatchedProductResourceTest::class,
+            ),
+            new EnvironmentSpecificPath(
+                CorpusRenderer::class,
+                ['public'],
+                $byEnvironment(static fn (string $environment): bool => 'test' === $environment),
+                'Rendu public sous when@test (services.yaml) pour que CorpusSourcesTest lise les sources réellement injectées ; privé partout ailleurs.',
+                CorpusSourcesTest::class,
             ),
             new EnvironmentSpecificPath(
                 'messenger.transport.async',
@@ -391,7 +427,7 @@ final class SecurityServicesEnvironmentParityTest extends TestCase
                 'service' => $this->serviceDifferences($reference, $other, $environment),
                 'alias' => $this->mapDifferences($reference->aliases, $other->aliases, $environment),
                 'écouteur' => $this->listenerDifferences($this->comparedListeners($reference), $this->comparedListeners($other), $environment),
-                'écouteur Doctrine' => $this->presenceDifferences($reference->doctrineListeners, $other->doctrineListeners, $environment),
+                'écouteur Doctrine' => $this->listenerDifferences($reference->doctrineListeners, $other->doctrineListeners, $environment),
                 'paramètre' => $this->mapDifferences($reference->parameters, $other->parameters, $environment),
             ];
             foreach ($sections as $section => $differences) {
@@ -458,8 +494,10 @@ final class SecurityServicesEnvironmentParityTest extends TestCase
     {
         $found = [];
         foreach (array_unique([...array_keys($reference), ...array_keys($other)]) as $key) {
-            if (($reference[$key] ?? null) !== ($other[$key] ?? null)) {
-                $found[] = \sprintf('%s : %s dans test, %s dans %s', $key, $this->export($reference[$key] ?? null), $this->export($other[$key] ?? null), $environment);
+            $inReference = \array_key_exists($key, $reference);
+            $inOther = \array_key_exists($key, $other);
+            if ($inReference !== $inOther || ($inReference && $reference[$key] !== $other[$key])) {
+                $found[] = \sprintf('%s : %s dans test, %s dans %s', $key, $inReference ? $this->export($reference[$key]) : 'absent', $inOther ? $this->export($other[$key]) : 'absent', $environment);
             }
         }
 
@@ -492,7 +530,9 @@ final class SecurityServicesEnvironmentParityTest extends TestCase
                 default => \sprintf('%s (%d fois dans test, %d dans %s)', $listener, $inReference, $inOther, $environment),
             };
         }
-        if (array_values(array_intersect($reference, $other)) !== array_values(array_intersect($other, $reference))) {
+        // L'ordre n'a de sens qu'entre les mêmes écouteurs, en même nombre :
+        // array_intersect garde les doublons de son premier tableau.
+        if ([] === $found && array_values(array_intersect($reference, $other)) !== array_values(array_intersect($other, $reference))) {
             $found[] = '(ordre)';
         }
 
@@ -587,9 +627,13 @@ final class SecurityServicesEnvironmentParityTest extends TestCase
         return $path;
     }
 
+    /**
+     * Une valeur sur une ligne : var_export rend aussi un enum pur ou NAN,
+     * que json_encode refuse.
+     */
     private function export(mixed $value): string
     {
-        return null === $value ? 'absent' : json_encode($value, \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE | \JSON_THROW_ON_ERROR);
+        return (string) preg_replace('/\s+/', ' ', var_export($value, true));
     }
 
     /**

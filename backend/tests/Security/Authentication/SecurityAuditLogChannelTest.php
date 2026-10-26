@@ -24,6 +24,8 @@ use PHPUnit\Framework\TestCase;
  */
 final class SecurityAuditLogChannelTest extends TestCase
 {
+    private const string DEDICATED_HANDLER = 'security';
+
     /**
      * @return iterable<string, array{string}>
      */
@@ -34,34 +36,25 @@ final class SecurityAuditLogChannelTest extends TestCase
     }
 
     /**
-     * Un handler dédié, à niveau fixe — jamais `fingers_crossed`, qui
-     * jetterait la série si aucune erreur ne la suit —, en JSON sur stderr,
-     * seul flux que Kubernetes recueille.
+     * Un et un seul handler le reçoit — par son nom ou parce qu'il prend tous
+     * les canaux qu'il n'exclut pas (`main`, `console`, un handler sans
+     * `channels`) : un enregistrement ne sort qu'une fois, et jamais par un
+     * `fingers_crossed` qui jetterait la série si aucune erreur ne la suit.
+     * Ce handler est à niveau fixe, en JSON sur stderr, seul flux que
+     * Kubernetes recueille.
      */
     #[DataProvider('channels')]
     public function testTheChannelHasItsOwnInfoLevelHandlerInProduction(string $channel): void
     {
-        $dedicated = array_filter(
+        $receiving = array_filter(
             ProductionMonologHandlers::all(),
-            static fn (array $handler): bool => \in_array($channel, (array) ($handler['channels'] ?? []), true),
+            static fn (array $handler): bool => ProductionMonologHandlers::receives($handler, $channel),
         );
 
-        self::assertCount(1, $dedicated, \sprintf('Un et un seul handler doit porter le canal %s en production.', $channel));
-        $handler = array_first($dedicated);
+        self::assertSame([self::DEDICATED_HANDLER], array_keys($receiving), \sprintf('Seul le handler %s doit recevoir le canal %s en production.', self::DEDICATED_HANDLER, $channel));
         self::assertSame(
             ['type' => 'stream', 'path' => 'php://stderr', 'level' => 'info', 'formatter' => 'monolog.formatter.json'],
-            array_intersect_key($handler, array_flip(['type', 'path', 'level', 'formatter'])),
+            array_intersect_key($receiving[self::DEDICATED_HANDLER], array_flip(['type', 'path', 'level', 'formatter'])),
         );
-    }
-
-    /**
-     * `main` et `console` l'excluent : un enregistrement ne sort qu'une fois.
-     */
-    #[DataProvider('channels')]
-    public function testTheOtherHandlersExcludeIt(string $channel): void
-    {
-        foreach (['main', 'console'] as $other) {
-            self::assertContains('!'.$channel, ProductionMonologHandlers::named($other)['channels'] ?? [], \sprintf('Le handler %s doit exclure %s.', $other, $channel));
-        }
     }
 }

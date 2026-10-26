@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Tests\Support;
 
 use ApiPlatform\Metadata\ResourceAccessCheckerInterface;
-use Error;
 use Lexik\Bundle\JWTAuthenticationBundle\Encoder\JWTEncoderInterface;
 use Lexik\Bundle\JWTAuthenticationBundle\Services\JWTTokenManagerInterface;
 use Lexik\Bundle\JWTAuthenticationBundle\Services\KeyLoader\KeyLoaderInterface;
@@ -147,6 +146,7 @@ final class SecurityServicesSnapshotPass implements CompilerPassInterface
         'kernel.trusted_hosts',
         'kernel.http_method_override',
         'kernel.allowed_http_method_override',
+        'kernel.trust_x_sendfile_type_header',
     ];
 
     private const array DOCTRINE_LISTENER_TAGS = ['doctrine.event_listener', 'doctrine.event_subscriber', 'doctrine.orm.entity_listener'];
@@ -166,6 +166,22 @@ final class SecurityServicesSnapshotPass implements CompilerPassInterface
         'Lexik\\Bundle\\JWTAuthenticationBundle\\',
     ];
 
+    /**
+     * Les espaces de noms dont un alias nommé est comparé quelle que soit sa
+     * cible : l'alias d'autowiring d'une interface de sécurité peut viser un
+     * service hors périmètre.
+     */
+    private const array ALIAS_NAMESPACES = [
+        'Symfony\\Component\\Security\\',
+        'Symfony\\Bundle\\SecurityBundle\\',
+        'Symfony\\Component\\PasswordHasher\\',
+        'Symfony\\Component\\RateLimiter\\',
+        'Lexik\\Bundle\\JWTAuthenticationBundle\\',
+        'Psr\\Clock\\',
+    ];
+
+    private const string MAIN_DISPATCHER = 'event_dispatcher';
+
     private const string FIREWALL_DISPATCHER_PREFIX = 'security.event_dispatcher.';
 
     private ?SecurityServicesSnapshot $snapshot = null;
@@ -177,7 +193,7 @@ final class SecurityServicesSnapshotPass implements CompilerPassInterface
             throw new LogicException('L\'instantané des services de sécurité doit être la dernière passe de TYPE_BEFORE_REMOVING.');
         }
 
-        $mainListeners = $this->listenerCalls($container->findDefinition('event_dispatcher'));
+        $mainListeners = $this->listenerCalls($container->findDefinition(self::MAIN_DISPATCHER));
         $securityListeners = array_filter($mainListeners, fn (array $call): bool => $this->isSecurityEvent($call[0]));
         $services = $this->services($container, [...$securityListeners, ...$this->firewallListenerCalls($container)]);
         $passConfig = $container->getCompilerPassConfig();
@@ -207,16 +223,35 @@ final class SecurityServicesSnapshotPass implements CompilerPassInterface
         $listeners = array_fill_keys(array_column($listenerCalls, 1), true);
         $services = [];
         foreach ($container->getDefinitions() as $id => $definition) {
-            if ($this->isInPerimeter($id, $definition, isset($listeners[$id]))) {
+            if ($this->isInPerimeter($container, $id, $definition, isset($listeners[$id]))) {
                 $described = $container->resolveEnvPlaceholders($this->describe($container, $definition), '%%env(%s)%%');
                 \assert(\is_array($described));
                 /** @var array<string, mixed> $described */
                 $services[$id] = $described;
             }
         }
+        $services[self::MAIN_DISPATCHER] = $this->describedDispatcher($container);
         ksort($services);
 
         return $services;
+    }
+
+    /**
+     * Le dispatcher principal lui-même — sa classe, ses arguments, tout appel
+     * qui n'est pas un `addListener` (un `addSubscriber` qu'ajouterait une
+     * passe) —, ses `addListener` étant comparés à part, comptés, dans la
+     * liste des écouteurs.
+     *
+     * @return array<string, mixed>
+     */
+    private function describedDispatcher(ContainerBuilder $container): array
+    {
+        $dispatcher = clone $container->findDefinition(self::MAIN_DISPATCHER);
+        $dispatcher->setMethodCalls(array_values(array_filter($dispatcher->getMethodCalls(), static fn (mixed $call): bool => !\is_array($call) || 'addListener' !== ($call[0] ?? null))));
+        $described = $container->resolveEnvPlaceholders($this->describe($container, $dispatcher), '%%env(%s)%%');
+        \assert(\is_array($described));
+        /** @var array<string, mixed> $described */
+        return $described;
     }
 
     /**
@@ -228,8 +263,8 @@ final class SecurityServicesSnapshotPass implements CompilerPassInterface
     {
         $aliases = [];
         foreach ($container->getAliases() as $id => $alias) {
-            if ($this->isPerimeterId($id) || isset($services[(string) $alias])) {
-                $aliases[$id] = (string) $alias;
+            if ($this->isPerimeterId($id) || isset($services[(string) $alias]) || array_any(self::ALIAS_NAMESPACES, static fn (string $namespace): bool => str_starts_with($id, $namespace))) {
+                $aliases[$id] = $alias.($alias->isPublic() ? ' (public)' : '').($alias->isDeprecated() ? ' (déprécié)' : '');
             }
         }
         ksort($aliases);
@@ -290,7 +325,7 @@ final class SecurityServicesSnapshotPass implements CompilerPassInterface
      * (`.instanceof.…`) —, et RemoveAbstractDefinitionsPass la retire : elle
      * n'est pas comparée.
      */
-    private function isInPerimeter(string $id, Definition $definition, bool $listens): bool
+    private function isInPerimeter(ContainerBuilder $container, string $id, Definition $definition, bool $listens): bool
     {
         if ($definition->isAbstract()) {
             return false;
@@ -300,7 +335,7 @@ final class SecurityServicesSnapshotPass implements CompilerPassInterface
         }
         $class = $definition->getClass();
 
-        return null !== $class && (str_starts_with($class, 'App\\') || $this->implementsAContract($class));
+        return null !== $class && (str_starts_with($class, 'App\\') || $this->implementsAContract($container, $class));
     }
 
     private function isSecurityEvent(string $event): bool
@@ -314,21 +349,17 @@ final class SecurityServicesSnapshotPass implements CompilerPassInterface
             || array_any(self::SERVICE_PREFIXES, static fn (string $prefix): bool => str_starts_with($id, $prefix) || str_starts_with($id, '.'.$prefix));
     }
 
-    private function implementsAContract(string $class): bool
+    /**
+     * Par la réflexion du ContainerBuilder, qui rend `null` pour une classe
+     * qui ne se charge pas — une classe du vendor dont une dépendance
+     * facultative manque, le fournisseur d'expressions d'API Platform sans
+     * ExpressionLanguage —, plutôt que l'Error de l'autoload.
+     */
+    private function implementsAContract(ContainerBuilder $container, string $class): bool
     {
-        try {
-            return array_any(self::CONTRACTS, static fn (string $contract): bool => is_a($class, $contract, true));
-        } catch (Error $error) {
-            // Une classe du vendor dont une dépendance facultative manque ne
-            // se charge pas (le fournisseur d'expressions d'API Platform, sans
-            // ExpressionLanguage installé) : elle ne sert alors aucun contrat.
-            // Toute autre erreur reste une erreur.
-            if (!str_contains($error->getMessage(), 'not found')) {
-                throw $error;
-            }
+        $reflection = $container->getReflectionClass($class, false);
 
-            return false;
-        }
+        return null !== $reflection && array_any(self::CONTRACTS, static fn (string $contract): bool => $reflection->implementsInterface($contract));
     }
 
     /**
@@ -383,6 +414,8 @@ final class SecurityServicesSnapshotPass implements CompilerPassInterface
                 'tags' => $this->describe($container, $value->getTags()),
                 'decorated' => $this->describe($container, $value->getDecoratedService()),
                 'errors' => $value->getErrors(),
+                'public' => $value->isPublic(),
+                'deprecated' => $value->isDeprecated(),
                 'lazy' => $value->isLazy(),
                 'shared' => $value->isShared(),
                 'synthetic' => $value->isSynthetic(),
