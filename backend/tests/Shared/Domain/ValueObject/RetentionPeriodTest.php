@@ -110,6 +110,33 @@ final class RetentionPeriodTest extends TestCase
         yield 'sans changement d\'heure' => ['2026-10-15 12:00:00', '12 hours', '2026-10-15 00:00:00', 12];
     }
 
+    /**
+     * Relecture de #710 : `DateInterval::$f` est un flottant (« 498 usec » y vaut
+     * 0.000497999…), que `add()`/`sub()` tronquent à la microseconde inférieure.
+     * Recopié tel quel, il décalait le seuil d'une microseconde et faisait
+     * prendre la durée pour une date.
+     */
+    #[DataProvider('fractionsOfASecond')]
+    public function testFractionsOfASecondAreKeptToTheMicrosecond(string $expression, string $expectedThreshold): void
+    {
+        $now = new DateTimeImmutable(self::NOW.'.000000');
+
+        self::assertSame($expectedThreshold, RetentionPeriod::fromString($expression, $now)->threshold()->format('Y-m-d H:i:s.u'));
+    }
+
+    /**
+     * @return iterable<string, array{string, string}>
+     */
+    public static function fractionsOfASecond(): iterable
+    {
+        yield 'microsecondes' => ['498 usec', '2026-09-22 11:59:59.999502'];
+        // Arrondie à six décimales, cette fraction reste en deçà de 249 µs.
+        yield 'microsecondes que l\'arrondi seul manque' => ['249 usec', '2026-09-22 11:59:59.999751'];
+        yield 'millisecondes au-delà d\'une seconde' => ['1009 msec', '2026-09-22 11:59:58.991000'];
+        yield 'secondes et microsecondes' => ['1 sec 498 usec', '2026-09-22 11:59:58.999502'];
+        yield 'demi-seconde' => ['500 msec', '2026-09-22 11:59:59.500000'];
+    }
+
     #[DataProvider('rejectedAsNotStrictlyPositive')]
     public function testFromStringRejectsAnExpressionThatDoesNotYieldAPastThreshold(string $expression): void
     {

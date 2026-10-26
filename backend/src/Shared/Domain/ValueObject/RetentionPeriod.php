@@ -111,10 +111,32 @@ final readonly class RetentionPeriod
         $interval->h = $relative->h;
         $interval->i = $relative->i;
         $interval->s = $relative->s;
-        $interval->f = $relative->f;
+        $interval->f = self::middleOfTheMicrosecond($relative->f);
         $interval->invert = $relative->invert;
 
         return $interval;
+    }
+
+    /**
+     * La fraction de seconde, ramenée au milieu de sa microseconde.
+     *
+     * `DateInterval::$f` est un flottant : « 498 usec » y vaut 0.000497999…,
+     * et `add()`/`sub()` le tronquent à la microseconde (497), là où `modify()`
+     * lit 498. Arrondir à six décimales ne suffit pas, le flottant le plus
+     * proche restant parfois en deçà. Viser le milieu de la microseconde
+     * laisse une demi-microseconde de marge à la troncature : mesuré sous
+     * PHP 8.5 sur 120 000 durées (usec, msec, sec, deux signes), `add()`,
+     * `sub()` et `modify()` donnent alors le même instant.
+     */
+    private static function middleOfTheMicrosecond(float $fraction): float
+    {
+        $microseconds = (int) round($fraction * 1_000_000);
+
+        if (0 === $microseconds) {
+            return 0.0;
+        }
+
+        return ($microseconds + ($microseconds > 0 ? 0.5 : -0.5)) / 1_000_000;
     }
 
     /**
