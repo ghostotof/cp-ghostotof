@@ -40,6 +40,31 @@ spec:
         - protocol: TCP
           port: 8080
 ---
+# Les challenges HTTP-01 de Let's Encrypt passent par l'ingress-nginx jusqu'au
+# pod solveur que cert-manager crée dans ce namespace le temps d'un challenge
+# (label acme.cert-manager.io/http01-solver, port 8089). Sans cette règle,
+# default-deny-ingress le rend injoignable : l'ingress répond 504 et le
+# renouvellement des certificats reste bloqué en silence — ce qui est arrivé du
+# 2026-10-09 au 2026-10-26, premier renouvellement depuis ces règles.
+# AcmeSolverReachableFromIngressTest la garde.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-acme-solver-from-ingress-nginx
+spec:
+  podSelector:
+    matchLabels:
+      acme.cert-manager.io/http01-solver: 'true'
+  policyTypes: ['Ingress']
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8089
+---
 # php-fpm (port 9000) n'est appelé que par le sidecar nginx DU MÊME POD : le
 # trafic loopback intra-pod n'est jamais soumis aux NetworkPolicy, aucune
 # règle n'est donc nécessaire pour 9000.
