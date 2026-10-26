@@ -43,12 +43,14 @@ paths:
   `set_cookies` to declare `BEARER` alone and the cookie extractor to read it: a second entry would set a
   copy of the JWT without `Secure`, common to every environment, so the parity saw nothing. The guard reads
   the *declared* value; since #714 `test` declares the secure one too, so `AuthCookieAttributesTest` sees the
-  real chain set `Secure` — a redefinition of `lexik_jwt_authentication.cookie_provider.BEARER` or a decorator
-  in `services.yaml`, a `kernel.response` listener rewriting the cookie, a bundle's `prepend()` or a compiler
-  pass now turn it red when they act in `test` too (`.claude/rules/security-authentication.md`). **Accepted
-  limits** (#714): whatever acts in `prod` alone — a `prod`-only service redefinition (#698), a `prepend()`,
-  a compiler pass or a listener conditioned on the environment or on `%kernel.debug%` — still sends it in clear
-  with the suite green; HSTS on the API narrows the exposure, it does not close it.
+  real chain set `Secure` — a redefinition of `lexik_jwt_authentication.cookie_provider.BEARER` turns it red
+  (measured), and by construction so do a decorator in `services.yaml`, a `kernel.response` listener rewriting
+  the cookie, a bundle's `prepend()` or a compiler pass, when they act in `test` too; `ApiRouteExposureTest`
+  checks every cookie of its responses against the factory as well (`.claude/rules/security-authentication.md`).
+  **Accepted limits** (#714): whatever acts in `prod` alone — a `prod`-only service redefinition (#698), a
+  `prepend()`, a compiler pass or a listener conditioned on the environment or on `%kernel.debug%` —, and code
+  conditioned on the request being `https` (functional clients stay in http), still send it in clear with the
+  suite green; HSTS on the API narrows the exposure, it does not close it.
   No key nor value of either may hold a `%env()%` or `%parameter%` reference (`%%` is an escape, fine), save
   `PARAMETERIZED_BY_DESIGN`: Lexik's `secret_key`, `public_key`, `pass_phrase`, per-deployment secrets. The
   order of a map's common entries is compared too (`firewalls (ordre)`: Symfony takes the first matching one).

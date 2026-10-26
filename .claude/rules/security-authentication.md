@@ -23,33 +23,52 @@ paths:
   - **`Infrastructure/Http/AuthCookieFactory.php` is the only place that builds a `BEARER` or `XSRF-TOKEN`
     cookie** (issue #87): names (`AuthCookieFactory::BEARER` / `::XSRF_TOKEN`, also what
     `CsrfCookieRequestSubscriber` reads), `Path=/`, no `Domain`, `SameSite=Lax`, `HttpOnly` on `BEARER`
-    only, `Secure` everywhere but `dev` (issue #714 — `test` included, see below). `bearer()` / `xsrf()` take an optional expiry (session cookie without),
+    only, `Secure` everywhere but `dev` (issue #714 — `test` included, see below; `dev` is served in http,
+    where Chrome and Firefox accept a `Secure` cookie on `localhost`, a secure context, but not every browser,
+    and none on another address). `bearer()` / `xsrf()` take an optional expiry (session cookie without),
     `expired()` mirrors the issued attributes with a past date — a cleared cookie whose attributes differ
     from the set one is *not* removed by the browser, which is the drift the factory exists to prevent. The
     three sites (`LoginSuccessSubscriber`, `BaseAccessController`, `CookieLogoutListener`) go through it;
     the one exception is the login `BEARER`, still set by Lexik from `lexik_jwt_authentication.yaml`
     (`set_cookies` + `when@dev`), and `tests/Security/Authentication/AuthCookieAttributesTest.php` pins
     that config to the factory **in `test`** by comparing the real `Set-Cookie` of login, base-access
-    and logout per name. **`test` carries `Secure` on purpose** (issue #714): that test then reads it on the
-    real chain — a redefined `lexik_jwt_authentication.cookie_provider.BEARER`, a decorator of the success
-    handler or a `kernel.response` listener dropping it turns it red (measured with the redefinition), which a
-    guard of the declared value cannot see. Functional clients stay in http and lose nothing: BrowserKit's
-    `Cookie::fromString()` drops the `secure` flag of a cookie received on a non-`https` URI, so the jar sends
-    it back (measured; the issue had assumed every test would need HTTPS). Never make `test` insecure again to
-    « match » `dev`. Any new auth cookie goes through the factory, never `Cookie::create()` or `clearCookie()`
-    inline: **the factory is the only file of `src/` that builds a cookie** (issue #714),
-    `AuthCookiesComeFromTheFactoryTest` (census `tests/Support/CookieConstructions`, by tokens) refuses anywhere
-    else `new Cookie` (an anonymous subclass too), any static call of HttpFoundation's `Cookie`, `->clearCookie()`,
-    the attribute rewrites `->with{Secure,HttpOnly,SameSite,Domain,Path,Partitioned,Raw}()` — on the factory's own
-    cookie too —, `setcookie()` / `setrawcookie()` and a string starting with `Set-Cookie`; the factory's
-    exemption must stay needed. Not seen, accepted: a dynamic call, the header built by concatenation, the
-    vendor (Lexik's login cookie, which the attributes test reads on the response). A `with…()` homonym of
-    another class is refused by name: rename it, no allow-list. `__Host-` prefixing is a separate, preprod-tested step (it renames what Lexik and the frontend
-    read by name). That `secure` is the **only** Lexik key allowed to differ per environment (issue #659,
+    and logout per name, one cookie per name and response (a second `BEARER` on another `Path`, set first,
+    was masked — measured). **`test` carries `Secure` on purpose** (issue #714): that test then reads it on
+    the real chain — a redefined `lexik_jwt_authentication.cookie_provider.BEARER` turns it red (measured),
+    and so, by construction, do a decorator of the success handler, a `kernel.response` listener, a bundle's
+    `prepend()` or a compiler pass dropping it, as long as they act in `test` too; a guard of the declared
+    value sees none of them. Functional clients stay in http and lose nothing: BrowserKit's
+    `Cookie::fromString()` drops the `secure` flag of a cookie received on a non-`https` URI, so the jar
+    sends it back (measured; the issue had assumed every test would need HTTPS) — which also means a test
+    reads `Secure` on `getResponse()->headers->getCookies()`, never in the jar. Never make `test` insecure
+    again to « match » `dev`.
+  - **No other cookie, anywhere** (issue #714). Any new auth cookie goes through the factory, never
+    `Cookie::create()` or `clearCookie()` inline, and two guards hold it. **By tokens**,
+    `AuthCookiesComeFromTheFactoryTest` (census `tests/Support/CookieConstructions`) makes the factory the
+    only file of `src/` that builds a cookie: it refuses elsewhere `new`, any static call or any `extends`
+    (named or anonymous class) of HttpFoundation's `Cookie` or of Lexik's `JWTCookieProvider`,
+    `->clearCookie()`, `->createCookie()`, the security attribute rewrites
+    `->with{Secure,HttpOnly,SameSite,Partitioned,Domain}()` — on the factory's own cookie too —,
+    `setcookie()` / `setrawcookie()` and a string starting with the `Set-Cookie` header, normalized as
+    `HeaderBag` normalizes a name (`set_cookie` counts) and unescaped between double quotes, even to read or
+    remove it (`ResponseHeaderBag::getCookies()` / `removeCookie()` do that); the factory's exemption must
+    stay needed. Not `withPath()` / `withRaw()`: the first is also a PSR-7 URI method (league), and neither
+    drops a protection. A `with…()` homonym of another class is refused by name: rename it, no allow-list.
+    Not seen, accepted: a dynamic call, the header composed (`'Set-'.'Cookie'`, `sprintf()`) or written with
+    `\u{…}`, a grouped import or `use function` (both refused in `src/` by `ImportsStaySortedTest`), the
+    vendor and the configuration. **At run time**, `ApiRouteExposureTest` (invariant 7, trait
+    `tests/Support/ReadsResponseCookies`) requires every response it produces — after each of its requests,
+    and on each `PUBLIC_PATHS` route called anonymously, `/api/mcp` and its PSR-7 bridge included — to set
+    only `BEARER` and `XSRF-TOKEN`, with the factory's exact attributes: it sees the vendor, the
+    configuration and dynamic calls (measured with the Lexik provider redefined and a composed header the
+    census misses), on those responses only.
+  - `__Host-` prefixing is a separate, preprod-tested step (it renames what Lexik and the frontend read by
+    name). That `secure` is the **only** Lexik key allowed to differ per environment (issue #659,
     `SecurityConfigEnvironmentParityTest`, see `.claude/rules/backoffice-api.md`, « Authorization »), and
     `BearerCookieSecurePerEnvironmentTest` pins its declared value in every environment to the factory's
-    (`true` in `prod`, issue #703): `AuthCookieAttributesTest` only sees `test`'s cookie, and no functional
-    test loads `prod` — a `prod`-only redefinition stays its blind spot (#698).
+    (`true` in `prod`, issue #703): the functional tests only see `test`'s cookies, and none loads `prod` —
+    what acts in `prod` alone stays their blind spot (#698), as does code conditioned on the request being
+    `https` (`isSecure()`, the scheme), since functional clients stay in http.
   - **Tokens, JWTs and CSRF values are hidden from stack traces** (`#[SensitiveParameter]`, issue #414): the
     guard covers all of `src/`, so its rule lives in `.claude/rules/backend-conventions.md`.
   - `Infrastructure/Http/CsrfCookieRequestSubscriber.php` — double-submit-cookie CSRF check, a `kernel.request`

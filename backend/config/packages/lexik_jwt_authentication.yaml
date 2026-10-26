@@ -28,7 +28,8 @@ lexik_jwt_authentication:
             # BearerCookieSecurePerEnvironmentTest exige cette valeur dans chaque environnement (#703).
             secure: true
 
-# http en dev (localhost:8080 sans TLS) : un cookie Secure n'y reviendrait jamais.
+# http en dev (localhost:8080 sans TLS) : Chrome et Firefox y acceptent un cookie Secure
+# (localhost est un contexte sûr), pas tous les navigateurs, et aucun sur une autre adresse.
 when@dev:
     lexik_jwt_authentication:
         set_cookies:

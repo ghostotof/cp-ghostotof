@@ -24,8 +24,11 @@ use Symfony\Component\HttpFoundation\Cookie;
  *   couvre le reste, cf. CsrfCookieRequestSubscriber), mais envoyé sur une
  *   navigation de premier niveau — ce qui permet le login-CSRF de l'issue #76,
  *   traité par LoginCsrfRequestListener et non par le cookie.
- * - `Secure` partout sauf en `dev` (issue #714) : le dev est servi en http, un
- *   cookie Secure n'y reviendrait jamais. `test` le porte aussi, pour que les
+ * - `Secure` partout sauf en `dev` (issue #714) : le dev est servi en http.
+ *   Chrome et Firefox tiennent http://localhost pour un contexte sûr et y
+ *   acceptent un cookie Secure, mais pas tous les navigateurs, et aucun sur
+ *   une autre adresse (IP du réseau local, nom d'hôte) : l'exception évite
+ *   un dev qui marche selon le navigateur. `test` le porte aussi, pour que les
  *   tests fonctionnels voient la vraie chaîne de pose le produire ; et un
  *   environnement ajouté demain l'a par défaut. Leurs clients restent en http
  *   sans rien perdre : le `CookieJar` de BrowserKit ignore le drapeau `secure`
