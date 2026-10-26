@@ -7,6 +7,7 @@ namespace App\Tests\Security;
 use App\Tests\Security\Authentication\BearerCookieSecurePerEnvironmentTest;
 use App\Tests\Security\Authentication\CpgUserPasswordHasherTest;
 use App\Tests\Support\EnvironmentConfigKernel;
+use App\Tests\Support\KeyPaths;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -31,14 +32,18 @@ use PHPUnit\Framework\TestCase;
  * fragment normalisé puis fusionné par la configuration de l'extension
  * elle-même (EnvironmentConfigKernel::declaredConfiguration).
  *
- * Non vu, limites acceptées (aucun cas aujourd'hui) :
+ * Non vu ici, et vu par {@see SecurityServicesEnvironmentParityTest}
+ * (issue #698), qui compare les définitions compilées des services de
+ * sécurité — la carte d'accès et les contextes de firewall compris :
  *  - un service que la configuration désigne, redéfini pour un environnement
  *    (`when@prod: services:`, services_prod.yaml) — un fournisseur, un voter,
  *    un user_checker : la section reste identique, le comportement non ;
- *  - une passe de compilation qui modifierait la carte selon l'environnement
- *    ({@see \App\Kernel::build()} n'en ajoute qu'une, la même partout) ;
+ *  - une passe de compilation qui modifierait la carte selon l'environnement ;
  *  - ce qu'un bundle ajoute par `prepend()`, appliqué à la compilation, après
  *    les fragments lus ici.
+ * Ce test-ci reste la garde de la configuration écrite : il nomme le chemin
+ * déclaré en cause et refuse une valeur paramétrée, ce qu'une définition
+ * compilée, paramètres résolus, ne sait plus dire.
  */
 final class SecurityConfigEnvironmentParityTest extends TestCase
 {
@@ -157,10 +162,10 @@ final class SecurityConfigEnvironmentParityTest extends TestCase
     {
         foreach (self::ENVIRONMENT_SPECIFIC as $path => [$reason, $pinnedBy]) {
             [$extension, $keys] = $this->split($path);
-            $reference = $this->at($this->declared('test', $extension, null), $keys);
+            $reference = KeyPaths::at($this->declared('test', $extension, null), $keys);
             $differs = false;
             foreach (EnvironmentConfigKernel::comparedEnvironments() as $environment) {
-                $differs = $differs || $this->at($this->declared($environment, $extension, null), $keys) !== $reference;
+                $differs = $differs || KeyPaths::at($this->declared($environment, $extension, null), $keys) !== $reference;
             }
             self::assertTrue($differs, \sprintf(
                 '%s est identique dans tous les environnements. Son exemption d\'ENVIRONMENT_SPECIFIC dit pourquoi il devait différer : « %s » Si cet écart est toujours voulu, c\'est la configuration qu\'il faut rétablir : %s fige la valeur attendue de chaque environnement. Ne retirer l\'exemption qu\'après avoir vérifié que sa raison ne tient plus, et adapter ce test plutôt que le supprimer.',
@@ -315,7 +320,7 @@ final class SecurityConfigEnvironmentParityTest extends TestCase
         foreach (array_keys(self::ENVIRONMENT_SPECIFIC) as $path) {
             [$exemptExtension, $keys] = $this->split($path);
             if ($exemptExtension === $extension) {
-                $declared = self::without($declared, $keys);
+                $declared = KeyPaths::without($declared, $keys);
             }
         }
 
@@ -356,49 +361,6 @@ final class SecurityConfigEnvironmentParityTest extends TestCase
         $keys = explode('.', $path);
 
         return [array_shift($keys), $keys];
-    }
-
-    /**
-     * La valeur au bout d'un chemin de clés, `null` si le chemin n'existe pas.
-     *
-     * @param list<string> $keys
-     */
-    private function at(mixed $value, array $keys): mixed
-    {
-        foreach ($keys as $key) {
-            if (!\is_array($value) || !\array_key_exists($key, $value)) {
-                return null;
-            }
-            $value = $value[$key];
-        }
-
-        return $value;
-    }
-
-    /**
-     * La configuration sans la clé au bout du chemin — et sans rien d'autre.
-     *
-     * @param array<array-key, mixed> $config
-     * @param list<string>            $keys
-     *
-     * @return array<array-key, mixed>
-     */
-    private static function without(array $config, array $keys): array
-    {
-        $key = array_shift($keys);
-        if (null === $key || !\array_key_exists($key, $config)) {
-            return $config;
-        }
-        if ([] === $keys) {
-            unset($config[$key]);
-
-            return $config;
-        }
-        if (\is_array($config[$key])) {
-            $config[$key] = self::without($config[$key], $keys);
-        }
-
-        return $config;
     }
 
     /**
