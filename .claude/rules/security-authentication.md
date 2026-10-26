@@ -68,7 +68,8 @@ paths:
     `BearerCookieSecurePerEnvironmentTest` pins its declared value in every environment to the factory's
     (`true` in `prod`, issue #703): the functional tests only see `test`'s cookies, and none loads `prod`.
     What acts in `prod` alone through the container — a redefined or decorated `cookie_provider.BEARER`, a
-    `kernel.response` listener, a `prepend()`, a compiler pass — is `SecurityServicesEnvironmentParityTest`'s
+    `kernel.response` or `lexik_jwt_authentication.on_authentication_success` listener, a `prepend()`, a
+    compiler pass, a PHP config file branching on `APP_ENV` — is `SecurityServicesEnvironmentParityTest`'s
     (issue #698): it compiles each environment and requires the provider's compiled `secure` to be the
     factory's in each. Still their blind spot: code that decides on the environment at run time, and code
     conditioned on the request being `https` (`isSecure()`, the scheme), since functional clients stay in http.

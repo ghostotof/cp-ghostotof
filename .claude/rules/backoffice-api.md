@@ -47,10 +47,10 @@ paths:
   (measured), and by construction so do a decorator in `services.yaml`, a `kernel.response` listener rewriting
   the cookie, a bundle's `prepend()` or a compiler pass, when they act in `test` too; `ApiRouteExposureTest`
   checks every cookie of its responses against the factory as well (`.claude/rules/security-authentication.md`).
-  What acts in `prod` alone through the container is `SecurityServicesEnvironmentParityTest`'s (#698, below). **Accepted limits** (#714): code that decides on
-  the environment or on `%kernel.debug%` at run time, and code conditioned on the request being `https`
-  (functional clients stay in http), still send it in clear with the suite green; HSTS on the API narrows the
-  exposure, it does not close it.
+  What acts in `prod` alone through the container is `SecurityServicesEnvironmentParityTest`'s (#698, below).
+  **Accepted limits** (#714): code that decides on the environment or on `%kernel.debug%` at run time, and code
+  conditioned on the request being `https` (functional clients stay in http), still send it in clear with the
+  suite green; HSTS on the API narrows the exposure, it does not close it.
   No key nor value of either may hold a `%env()%` or `%parameter%` reference (`%%` is an escape, fine), save
   `PARAMETERIZED_BY_DESIGN`: Lexik's `secret_key`, `public_key`, `pass_phrase`, per-deployment secrets. The
   order of a map's common entries is compared too (`firewalls (ordre)`: Symfony takes the first matching one).
@@ -65,29 +65,44 @@ paths:
   section, not the services it names, so a `when@prod: services:` redefinition — a provider, an autoconfigured
   voter granting `ROLE_TRUSTED`, a decorator, Lexik's `cookie_provider.BEARER` without `Secure` — left every
   guard green. `tests/Security/SecurityServicesEnvironmentParityTest.php` compiles each environment's
-  `ContainerBuilder` in memory (`tests/Support/EnvironmentServicesKernel`, `debug` off, 0.3–0.7 s each) and
-  snapshots the definitions **after every optimization pass and before the removing ones**
-  (`SecurityServicesSnapshotPass`, last of `TYPE_BEFORE_REMOVING`): autoconfiguration, decorators, bundles'
-  `prepend()`, compiler passes and parameters are applied, and no private service is inlined yet — the
+  `ContainerBuilder` in memory (`tests/Support/EnvironmentServicesKernel`, `debug` off, 0.3–0.7 s each, a
+  per-process cache removed afterwards) and snapshots the definitions **after every optimization pass and before
+  the removing ones** (`SecurityServicesSnapshotPass`, last of `TYPE_BEFORE_REMOVING`): autoconfiguration,
+  decorators, bundles' `prepend()` and compiler passes are applied, and no private service is inlined yet — the
   fully dumped container (`EnvironmentRoutesKernel`'s read) no longer has voters and providers by id, the
-  declared read (`EnvironmentConfigKernel`) has neither autoconfiguration nor decorators. The perimeter:
-  `security.*` and `lexik_jwt_authentication.*` ids (the access map and firewall contexts included, so a pass
-  or a `prepend()` changing the map is seen too), classes under `App\Security\` or implementing a security
-  contract (`CONTRACTS`), `security.voter` tags, the firewall dispatchers' listeners, and the main
-  dispatcher's on `kernel.*` and security events — **their list too**, so a `prod`-only `kernel.response`
-  listener shows whatever its class; aliases under those prefixes. Not the transitive closure: measured, it
-  reaches 723 services (loggers, caches, the router), which rightly differ; a service outside is seen through
-  the reference only. Abstract definitions are skipped (templates, removed anyway). Its `ENVIRONMENT_SPECIFIC`
-  entries are exact paths in a definition **with the value expected in every environment**, checked there
-  (`test` included, an environment without its value fails): exempting the path alone hid a `prod`
-  redefinition of the `BEARER` provider without `Secure` (measured with its fixture) — the #703 trap again.
-  Today: the hasher factory's cost (`4` in `test`), the `BEARER` provider's `secure` (`false` in `dev`),
-  `AuthCookieFactory`'s `%kernel.environment%`. Its fixture `Fixtures/EnvironmentServices/prod-only-services.yaml`,
-  loaded after the app's config, proves each form is seen. Accepted (none today): a pass registered after the
-  snapshot (`TYPE_REMOVE`/`TYPE_AFTER_REMOVING` — the test requires none from `App\` and the same list
-  everywhere), code deciding on the environment at run time, an `%env()%` value (compared by name), a rule
-  depending on `%kernel.debug%`, a security service outside the perimeter (the test pins the services the
-  issue names). The declared guard stays: it names the written path and refuses parameterized values.
+  declared read (`EnvironmentConfigKernel`) has neither autoconfiguration nor decorators. **The guard resolves
+  parameters itself, arrays included**: `ResolveParameterPlaceHoldersPass` leaves an array parameter under its
+  name, so `security.role_hierarchy` read `%security.role_hierarchy.roles%` and a `prod`-only pass giving
+  `ROLE_TRUSTED` to `ROLE_USER` stayed green (measured in the review). A definition is described in full: enum
+  cases, `file:`, a reference's mode (`@?`, `@!`). The perimeter: ids under `security.`, `lexik_jwt_authentication.`,
+  `limiter.`, `nelmio_cors.`, `messenger.`, hidden ones included (`.security.request_matcher.<hash>` *is* the
+  `access_control` rule), `clock`, every `App\` class, classes implementing a security contract (`CONTRACTS`),
+  `security.voter` tags, the firewall dispatchers' listeners and the main dispatcher's on security events; their
+  aliases. Three lists are compared whatever the class: **every** listener of the main dispatcher, counted
+  (events are also named by strings — Lexik's `on_jwt_decoded`, `security.switch_user` —, which a filter on
+  event classes missed), save `ENVIRONMENT_SPECIFIC_LISTENERS` (the mailer's logger in `test`, Monolog's
+  console handler, Maker in `dev`); Doctrine's listeners; the parameters the kernel applies outside any
+  definition (`kernel.trusted_proxies`, `kernel.trusted_hosts`, `kernel.trusted_headers`,
+  `kernel.http_method_override`, `kernel.allowed_http_method_override`) and every `env(…)` default. The
+  configuration is loaded **under the environment read** (`tests/Support/ProcessEnvironment`, in all three
+  parity kernels): PHPUnit runs `APP_ENV=test`, so a PHP config file branching on `$_SERVER['APP_ENV']` took
+  `test`'s branch everywhere while the production image takes the other. Not the transitive closure: measured,
+  it reaches 723 services (loggers, caches, the router), which rightly differ; a service outside is seen through
+  the reference only. Abstract definitions are skipped (templates, removed anyway). Its exemptions
+  (`EnvironmentSpecificPath`) are exact paths in a definition **with the value expected in every environment**,
+  checked there (`test` included, an environment without its value fails): exempting the path alone hid a
+  `prod` redefinition of the `BEARER` provider without `Secure` (measured) — the #703 trap again. Today: the
+  hasher factory's cost (`4` in `test`), the `BEARER` provider's `secure` (expected value taken from
+  `AuthCookieFactory`), `AuthCookieFactory`'s `%kernel.environment%`, the `async` transport's DSN
+  (`in-memory://` in `test`). The passes after the snapshot must be exactly `EXPECTED_LATER_PASSES` in every
+  environment (a prefix filter on `App\` let an anonymous class through). Its fixtures
+  `Fixtures/EnvironmentServices/prod-only-services.{yaml,php}`, loaded after the app's config, override one
+  service of each form in `prod` alone; the test requires each form's line (by its start, so a vendor change
+  does not rewrite the list) and nothing outside `prod`. Accepted (none today): code deciding on the environment
+  at run time, a deployment variable (compared by name; its `env(…)` default is compared), a rule depending on
+  `%kernel.debug%` (preprod and prod run `APP_DEBUG=0`), a service outside the perimeter redefined under its own
+  id that only a reference names. The declared guard stays: it names the written path and refuses parameterized
+  values.
 - **API Platform pattern**, repeated identically across every backoffice resource
   (`BackofficeExperienceTechnologyResource`, `BackofficeQuality{Principle,Trait}Resource`,
   `BackofficeContributionResource`, `BackofficeIncidentResource`, `BackofficeWatchedProductResource`,
