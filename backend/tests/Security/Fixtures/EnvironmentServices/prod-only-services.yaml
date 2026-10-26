@@ -1,0 +1,104 @@
+# Fixture de SecurityServicesEnvironmentParityTest (issue #698) : chargée après
+# la configuration de l'application, dans chaque environnement, avec
+# prod-only-services.php. Elle surcharge, en `prod` seul, un service de chaque
+# forme que l'issue et ses relectures redoutent — la forme `when@prod:` que la
+# parité déclarée de #659 ne voyait pas. Une entrée par forme, chacune
+# commentée par ce qu'elle ouvrirait.
+
+# Deux services communs à tous les environnements, dont `prod` ne change qu'un
+# argument (plus bas).
+services:
+    fixture.enum_service:
+        class: App\Tests\Security\Fixtures\EnvironmentServices\TieredService
+        arguments: [!php/enum App\Tests\Security\Fixtures\EnvironmentServices\AccessTier::Base, '@logger']
+
+    fixture.reference_service:
+        class: App\Tests\Security\Fixtures\EnvironmentServices\TieredService
+        arguments: [!php/enum App\Tests\Security\Fixtures\EnvironmentServices\AccessTier::Base, '@logger']
+
+    fixture.visibility_service:
+        class: App\Tests\Security\Fixtures\EnvironmentServices\TieredService
+        arguments: [!php/enum App\Tests\Security\Fixtures\EnvironmentServices\AccessTier::Base, '@logger']
+
+when@prod:
+    parameters:
+        # Le défaut d'une variable d'environnement : de la configuration, pas
+        # une valeur de déploiement.
+        env(JWT_PASSPHRASE): 'constant-default'
+
+    framework:
+        # Lu au démarrage du noyau, pas par un service : X-Forwarded-For
+        # usurpable, plafonds par IP contournés.
+        trusted_proxies: '0.0.0.0/0'
+        # BinaryFileResponse se fierait à l'en-tête X-Sendfile-Type du client.
+        trust_x_sendfile_type_header: true
+        # Un limiteur relevé.
+        rate_limiter:
+            base_access: { policy: 'sliding_window', limit: 1000000, interval: '1 hour' }
+
+    # Toute origine admise avec les cookies.
+    nelmio_cors:
+        paths:
+            '^/api': { allow_origin: ['^https?://.*$'], allow_credentials: true }
+
+    services:
+        _defaults:
+            autowire: true
+            autoconfigure: true
+
+        # Un voter autoconfiguré : étiqueté `security.voter` par
+        # l'autoconfiguration seule, aucune étiquette écrite ici.
+        App\Tests\Security\Fixtures\EnvironmentServices\GrantsTrustedVoter: ~
+
+        # Un décorateur du fournisseur du palier de base.
+        App\Tests\Security\Fixtures\EnvironmentServices\DecoratingUserProvider:
+            decorates: App\Security\User\Infrastructure\Security\BaseAccessUserProvider
+
+        # Un écouteur `kernel.response` dont la classe n'est pas de sécurité.
+        App\Tests\Security\Fixtures\EnvironmentServices\CookieRewritingListener:
+            tags:
+                - { name: kernel.event_listener, event: kernel.response }
+
+        # Un écouteur d'un événement de Lexik, nommé par une chaîne.
+        App\Tests\Security\Fixtures\EnvironmentServices\JwtPayloadListener:
+            tags:
+                - { name: kernel.event_listener, event: lexik_jwt_authentication.on_jwt_decoded, method: onJwtDecoded }
+
+        # Un écouteur Doctrine.
+        App\Tests\Security\Fixtures\EnvironmentServices\RolesRewritingDoctrineListener:
+            tags:
+                - { name: doctrine.event_listener, event: postLoad }
+
+        # La redéfinition d'un service de Lexik : le cookie BEARER sans
+        # `Secure` (commentaire de #714 sur l'issue).
+        lexik_jwt_authentication.cookie_provider.BEARER:
+            class: Lexik\Bundle\JWTAuthenticationBundle\Security\Http\Cookie\JWTCookieProvider
+            arguments:
+                $defaultName: 'BEARER'
+                $defaultSecure: false
+
+        # Un fichier inclus avant l'instanciation, qui pourrait définir la
+        # classe avant l'autoloader.
+        App\Security\Authentication\Infrastructure\Http\CsrfCookieRequestSubscriber:
+            file: '%kernel.project_dir%/tests/Security/Fixtures/EnvironmentServices/AccessTier.php'
+
+        # Un autre cas d'enum.
+        fixture.enum_service:
+            class: App\Tests\Security\Fixtures\EnvironmentServices\TieredService
+            arguments: [!php/enum App\Tests\Security\Fixtures\EnvironmentServices\AccessTier::Trusted, '@logger']
+
+        # Une référence devenue facultative.
+        fixture.reference_service:
+            class: App\Tests\Security\Fixtures\EnvironmentServices\TieredService
+            arguments: [!php/enum App\Tests\Security\Fixtures\EnvironmentServices\AccessTier::Base, '@?logger']
+
+        # Un service privé rendu public : lisible par $container->get().
+        fixture.visibility_service:
+            class: App\Tests\Security\Fixtures\EnvironmentServices\TieredService
+            public: true
+            arguments: [!php/enum App\Tests\Security\Fixtures\EnvironmentServices\AccessTier::Base, '@logger']
+
+        # L'horloge des expirations, remplacée par une horloge figée.
+        fixture.frozen_clock:
+            class: Symfony\Component\Clock\MockClock
+        Psr\Clock\ClockInterface: '@fixture.frozen_clock'

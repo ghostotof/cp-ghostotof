@@ -23,7 +23,10 @@ use PHPUnit\Framework\TestCase;
  * Depuis #714, `test` porte `Secure` comme `prod`, et c'est `dev` qui fait
  * exception : AuthCookieAttributesTest lit donc `Secure` sur la vraie chaîne
  * de pose (surcharge de service, décorateur, listener compris). Ce test-ci
- * reste le seul à voir `prod` et `dev`, que ne charge aucun test fonctionnel.
+ * voit `prod` et `dev`, que ne charge aucun test fonctionnel, par la valeur
+ * déclarée ; {@see \App\Tests\Security\SecurityServicesEnvironmentParityTest}
+ * y ajoute la définition compilée du fournisseur du cookie (issue #698) — une
+ * redéfinition du service propre à `prod`, que la valeur déclarée ne dit pas.
  *
  * Même lecture que la garde de parité ({@see EnvironmentConfigKernel}, sans
  * compilation), et même pas que

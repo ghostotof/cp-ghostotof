@@ -44,9 +44,13 @@ final class EnvironmentRoutesKernel extends Kernel
         $filesystem = new Filesystem();
         $filesystem->remove($this->getCacheDir());
         try {
-            $this->boot();
+            // Sous l'environnement lu ({@see ProcessEnvironment}) : un fichier
+            // PHP qui lirait APP_ENV prend la branche de l'image (#698).
+            return ProcessEnvironment::whileRunningAs($this->environment, function (): RouteCollection {
+                $this->boot();
 
-            return $this->getContainer()->get('router')->getRouteCollection();
+                return $this->getContainer()->get('router')->getRouteCollection();
+            });
         } finally {
             $this->shutdown();
             $filesystem->remove($this->getCacheDir());

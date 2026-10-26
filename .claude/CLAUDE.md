@@ -155,8 +155,9 @@ Content management for all of the bounded contexts (see `.claude/rules/`), plus 
   own justified entry there, and a `ROLE_USER` rule on an identifying route turns the suite red. Never
   weaken or delete that test to make a new route pass.
   **Every one of these guards reads the `test` container only, so never declare security or a route for a
-  single environment** (issue #659; preprod and prod run `APP_ENV=prod`): `SecurityConfigEnvironmentParityTest`
-  and `RouteEnvironmentParityTest` enforce it — details in `.claude/rules/backoffice-api.md`, « Authorization ».
+  single environment** (issue #659; preprod and prod run `APP_ENV=prod`): `SecurityConfigEnvironmentParityTest`,
+  `RouteEnvironmentParityTest` and, for the security services' compiled definitions (issue #698),
+  `SecurityServicesEnvironmentParityTest` enforce it — details in `.claude/rules/backoffice-api.md`, « Authorization ».
 ### Deployment invariants (learned the hard way — don't undo these)
 
 - **A secret is never passed as a process argument, and never typed in an agent session.** Arguments are
