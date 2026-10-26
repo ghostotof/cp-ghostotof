@@ -7,11 +7,14 @@ namespace App\Tests\Mcp\Connection\Infrastructure\League;
 use App\Mcp\Connection\Application\OAuthEndpoints;
 use App\Mcp\Connection\Domain\Entity\McpClient;
 use App\Mcp\Connection\Domain\Entity\McpConnection;
+use App\Mcp\Connection\Domain\Exception\RotatedRefreshTokenReusedException;
 use App\Mcp\Connection\Domain\Repository\McpAccessTokenRepositoryInterface;
 use App\Mcp\Connection\Domain\Repository\McpAuthorizationCodeRepositoryInterface;
 use App\Mcp\Connection\Domain\Repository\McpClientRepositoryInterface;
 use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
 use App\Mcp\Connection\Domain\Repository\McpRefreshTokenRepositoryInterface;
+use App\Mcp\Connection\Domain\ValueObject\ConnectionLifetimes;
+use App\Mcp\Connection\Domain\ValueObject\RevocationCause;
 use App\Mcp\Connection\Infrastructure\League\AccessTokenOfRefreshTokenNotFoundException;
 use App\Mcp\Connection\Infrastructure\League\AccessTokenRepository;
 use App\Mcp\Connection\Infrastructure\League\AuthCodeRepository;
@@ -24,6 +27,7 @@ use App\Mcp\Connection\Infrastructure\League\RefreshTokenRepository;
 use App\Mcp\Connection\Infrastructure\League\RevokedMcpConnectionException;
 use App\Mcp\Connection\Infrastructure\League\ScopeRepository;
 use App\Mcp\Connection\Infrastructure\League\UnknownMcpConnectionException;
+use App\Mcp\Connection\Infrastructure\Security\TrustedTier;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Tests\Mcp\Connection\RegisteredMcpClient;
 use DateInterval;
@@ -132,7 +136,7 @@ final class LeagueRepositoriesTest extends KernelTestCase
 
         self::assertFalse($this->authCodes()->isAuthCodeRevoked($codeIdentifier));
         self::assertFalse($this->accessTokens()->isAccessTokenRevoked($accessIdentifier));
-        self::assertFalse($this->refreshTokens()->isRefreshTokenRevoked($refreshIdentifier));
+        self::assertFalse($this->refreshTokenIsRevoked($refreshIdentifier));
 
         $this->em->getConnection()->executeStatement(
             "UPDATE mcp_connection SET revoked_at = NOW(), revocation_cause = 'client' WHERE id = :id",
@@ -143,7 +147,7 @@ final class LeagueRepositoriesTest extends KernelTestCase
 
         self::assertTrue($this->authCodes()->isAuthCodeRevoked($codeIdentifier));
         self::assertTrue($this->accessTokens()->isAccessTokenRevoked($accessIdentifier));
-        self::assertTrue($this->refreshTokens()->isRefreshTokenRevoked($refreshIdentifier));
+        self::assertTrue($this->refreshTokenIsRevoked($refreshIdentifier));
     }
 
     /**
@@ -154,7 +158,30 @@ final class LeagueRepositoriesTest extends KernelTestCase
     {
         self::assertTrue($this->authCodes()->isAuthCodeRevoked($this->identifier()));
         self::assertTrue($this->accessTokens()->isAccessTokenRevoked($this->identifier()));
-        self::assertTrue($this->refreshTokens()->isRefreshTokenRevoked($this->identifier()));
+        self::assertTrue($this->refreshTokenIsRevoked($this->identifier()));
+    }
+
+    /**
+     * L'échéance d'un rafraîchissement se juge sur l'horloge de l'application
+     * (ClockInterface), jamais sur `time()` (#649, le report « deux
+     * horloges ») : un jeton dont l'échéance, réelle, est encore à venir pour
+     * `time()` — le contrôle de league, qui précède ce dépôt et reste un
+     * second filet, le dirait valide — est mort dès que l'horloge de
+     * l'application l'atteint, à la seconde près, et vivant la seconde d'avant.
+     */
+    public function testARefreshTokenExpiryIsJudgedOnTheApplicationClock(): void
+    {
+        $connection = $this->grantConnection();
+        $refreshIdentifier = $this->identifier();
+        $expiresAt = new DateTimeImmutable('+1 day');
+        $this->persistRefreshToken($this->persistAccessToken($connection, $this->identifier()), $refreshIdentifier, $expiresAt);
+        self::assertLessThan($expiresAt->getTimestamp(), time(), 'Pour `time()`, le jeton vaut encore.');
+
+        $this->clock = new MockClock($expiresAt->sub(new DateInterval('PT1S')));
+        self::assertFalse($this->refreshTokenIsRevoked($refreshIdentifier));
+
+        $this->clock = new MockClock($expiresAt);
+        self::assertTrue($this->refreshTokenIsRevoked($refreshIdentifier));
     }
 
     /**
@@ -180,7 +207,17 @@ final class LeagueRepositoriesTest extends KernelTestCase
         self::assertTrue($this->authCodes()->isAuthCodeRevoked($codeIdentifier));
         self::assertTrue($this->accessTokens()->isAccessTokenRevoked($revoked));
         self::assertFalse($this->accessTokens()->isAccessTokenRevoked($kept));
-        self::assertTrue($this->refreshTokens()->isRefreshTokenRevoked($refreshIdentifier));
+        // Un rafraîchissement n'est révoqué que par sa rotation : revenu sur
+        // une connexion active, il est réutilisé (#649), et le dépôt le dit
+        // par l'exception que le point de jeton rattrape pour révoquer la
+        // connexion — jamais par un simple « révoqué ».
+        try {
+            $this->refreshTokenIsRevoked($refreshIdentifier);
+            self::fail('Un rafraîchissement tourné qui revient est une réutilisation.');
+        } catch (RotatedRefreshTokenReusedException $reuse) {
+            self::assertTrue($reuse->connectionId()->equals($connection->getId()));
+            self::assertSame(RevocationCause::RefreshTokenReuse, $reuse->revocationCause());
+        }
         $revokedAt = $this->em->getConnection()->fetchOne(
             'SELECT EXTRACT(EPOCH FROM revoked_at)::bigint FROM mcp_access_token WHERE token_hash = :hash',
             ['hash' => hash('sha256', $revoked)],
@@ -464,11 +501,11 @@ final class LeagueRepositoriesTest extends KernelTestCase
     /**
      * @param non-empty-string $identifier
      */
-    private function persistRefreshToken(AccessTokenEntityInterface $accessToken, string $identifier): void
+    private function persistRefreshToken(AccessTokenEntityInterface $accessToken, string $identifier, ?DateTimeImmutable $expiresAt = null): void
     {
         $refresh = $this->refreshTokens()->getNewRefreshToken();
         $refresh->setAccessToken($accessToken);
-        $refresh->setExpiryDateTime($this->clock->now()->add(new DateInterval('P30D')));
+        $refresh->setExpiryDateTime($expiresAt ?? $this->clock->now()->add(new DateInterval('P30D')));
         $refresh->setIdentifier($identifier);
         $this->refreshTokens()->persistNewRefreshToken($refresh);
     }
@@ -514,7 +551,9 @@ final class LeagueRepositoriesTest extends KernelTestCase
 
     private function grantConnection(): McpConnection
     {
+        // Le palier de confiance, que le rafraîchissement exige du compte (#649).
         $account = new CpgUser('jane', 'hashed-password');
+        $account->setRoles([CpgUser::ROLE_TRUSTED]);
         $this->em->persist($account);
         $this->em->flush();
         $connection = McpConnection::grant($account, $this->registerClient(self::CLIENT_ID), McpConnection::SCOPE_NOMINATIVE_READ, new DateTimeImmutable());
@@ -562,8 +601,29 @@ final class LeagueRepositoriesTest extends KernelTestCase
         return new RefreshTokenRepository(
             self::getContainer()->get(McpRefreshTokenRepositoryInterface::class),
             self::getContainer()->get(McpAccessTokenRepositoryInterface::class),
+            $this->connections(),
             new ConnectionOfToken($this->connections()),
+            self::getContainer()->get(ConnectionLifetimes::class),
+            self::getContainer()->get(TrustedTier::class),
             $this->clock,
         );
+    }
+
+    /**
+     * Le jugement d'un rafraîchissement se fait sous le verrou de sa
+     * connexion (#649), qui exige une transaction : celle du point de jeton
+     * en production, une transaction annulée ici — ce que le jugement écrit
+     * (le dernier usage) ne survit pas au test.
+     */
+    private function refreshTokenIsRevoked(string $identifier): bool
+    {
+        $this->em->beginTransaction();
+
+        try {
+            return $this->refreshTokens()->isRefreshTokenRevoked($identifier);
+        } finally {
+            $this->em->rollback();
+            $this->em->clear();
+        }
     }
 }

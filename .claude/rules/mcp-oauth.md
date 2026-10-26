@@ -161,9 +161,11 @@ paths:
   code's payload (no `refresh_token_id`) reached league's read as a `TypeError`, a 500 at will; the payload's
   exact shape is checked before league's validation, which stays whole behind (an undecryptable one is left
   to league's own refusal; a valid one is decrypted twice, accepted). The reverse league refuses itself
-  (`auth_code_id` absent). **Known, #649's**: league's races (two simultaneous exchanges of one code, two
-  simultaneous refreshes, each reading the code or token unrevoked before the other revokes it) — the
-  transaction neither worsens nor closes them (`READ COMMITTED`); a code exchanged twice in sequence is refused.
+  (`auth_code_id` absent). **League's races are closed under the connection's row lock** (#649): a refresh is
+  judged `FOR UPDATE` on its connection, inside the token endpoint's transaction, and a rotated refresh token
+  presented again revokes the connection — the lock, the order of judgement and the two clocks are in
+  `.claude/rules/mcp-oauth-cycle-de-vie.md`, « The refresh is judged under the lock of its connection ». A code
+  exchanged twice in sequence is refused; its replay's revocation is the next task of #649.
 - **OAuth answers are league's (RFC 6749 §5.2), rendered by the controller, never thrown**:
   `ApiProblemResponseListener` / `ApiJsonErrorFormatListener` would rewrite them as problem+json, which
   OAuth clients do not read. **What the controllers render is `Cache-Control: no-store`**: the authorize
@@ -211,9 +213,10 @@ paths:
   `insufficient_scope`, so a client would refresh into the same scope — unreachable while league grants
   `nominative:read` only; to decide before any second scope) —; then `ROLE_TRUSTED` reached through
   `RoleHierarchyInterface` from the **stored** roles (`AccountNotTrusted`: a `ROLE_SUPER` without stored
-  `ROLE_TRUSTED` passes, the base tier does not). The role name is `McpConnectionPrincipal::TRUSTED_TIER`, not
-  `CpgUser::ROLE_TRUSTED`, so the context's dependency on `Security` keeps its two doors (`McpConnectionPrincipalTest`
-  compares the two). **No write per call** (no `last_used_at`, #649 writes it at refresh; `testNoRequestWritesOutsideTheMcpSessions`), and
+  `ROLE_TRUSTED` passes, the base tier does not), judged by `Infrastructure/Security/TrustedTier::reaches()`, the
+  one judge of the tier, shared with the refresh (#649, `.claude/rules/mcp-oauth-cycle-de-vie.md`). The role name
+  is `McpConnectionPrincipal::TRUSTED_TIER`, not `CpgUser::ROLE_TRUSTED`, so the context's dependency on `Security`
+  keeps its two doors (`McpConnectionPrincipalTest` compares the two). **No write per call** (no `last_used_at`, #649 writes it at refresh; `testNoRequestWritesOutsideTheMcpSessions`), and
   exactly **one query more** than the same anonymous call (`testAnAuthenticatedCallCostsExactlyOneQueryMore`). Nothing
   loads the account before that query: a join does not refresh an instance the EntityManager already manages.
   **A presented and refused token is a 401 on every request** of `/api/mcp` (the author's decision of 2026-10-24):

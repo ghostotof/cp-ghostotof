@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace App\Mcp\Connection\Application;
 
+use App\Mcp\Connection\Domain\Exception\CompromisedMcpConnectionException;
 use App\Mcp\Connection\Domain\Exception\InvalidMcpClientIdException;
 use App\Mcp\Connection\Domain\Repository\McpClientRepositoryInterface;
 use App\Mcp\Connection\Domain\ValueObject\McpClientId;
+use App\Mcp\Connection\Domain\ValueObject\RevocationCause;
 use League\OAuth2\Server\AuthorizationServer;
 use League\OAuth2\Server\Exception\OAuthServerException;
 use Psr\Http\Message\ResponseInterface;
@@ -42,14 +44,25 @@ use Psr\Http\Message\ServerRequestInterface;
  *    jeton d'accès orphelin avec un code encore échangeable, jamais un client
  *    privé de son ancien rafraîchissement sans en avoir reçu un nouveau
  *    (`TokenControllerTest`, panne forcée par un déclencheur).
- *
- * Non traité ici, connu : les courses de league — deux échanges simultanés
- * d'un même code, ou deux rafraîchissements simultanés, lisent chacun le
- * code ou le jeton non révoqué avant que l'autre l'ait révoqué — sont l'objet
- * de #649 (rotation, réutilisation) ; la transaction ne les aggrave pas
- * (chaque requête voit ce que l'autre a validé, `READ COMMITTED`) et ne les
- * ferme pas non plus. Un code échangé deux fois **l'une après l'autre** est
- * refusé la seconde fois.
+ * 4. **Une connexion compromise est révoquée après la transaction** (#649).
+ *    league juge le rafraîchissement dans sa validation, par
+ *    `RefreshTokenRepository::isRefreshTokenRevoked()`, **sous le verrou de
+ *    la ligne de la connexion** (`FOR UPDATE`, tenu jusqu'au COMMIT ou au
+ *    ROLLBACK) : deux rafraîchissements simultanés d'un même jeton — la
+ *    course de league, chacun lisant le jeton non révoqué avant que l'autre
+ *    l'ait tourné — se suivent, le second relit la rotation du premier. Un
+ *    jeton déjà tourné qui revient sur une connexion active est une
+ *    réutilisation (OAuth 2.1 §4.3.1) : le dépôt lève
+ *    CompromisedMcpConnectionException, la transaction est annulée (rien de
+ *    l'échange ne survit, l'EntityManager est fermé), et c'est **ici, hors de
+ *    la transaction**, que la connexion est révoquée avec sa cause par
+ *    McpConnectionRevokerInterface — une instruction SQL, valable
+ *    EntityManager fermé, puis la ligne d'audit `mcp-connection-revoked`. Le
+ *    client reçoit le refus ordinaire de league, mot pour mot : la détection
+ *    ne lui apprend rien. Un client qui rejoue un rafraîchissement après une
+ *    réponse perdue y perd sa connexion — le prix de la rotation, accepté
+ *    (`RefreshRotationTest`). Un code échangé deux fois **l'une après l'autre**
+ *    est refusé la seconde fois ; sa révocation à part est la tâche suivante.
  */
 final readonly class TokenEndpoint implements TokenEndpointInterface
 {
@@ -68,6 +81,7 @@ final readonly class TokenEndpoint implements TokenEndpointInterface
         private OAuthEndpoints $endpoints,
         private McpClientRepositoryInterface $clients,
         private TransactionInterface $transaction,
+        private McpConnectionRevokerInterface $revoker,
     ) {
     }
 
@@ -76,7 +90,33 @@ final readonly class TokenEndpoint implements TokenEndpointInterface
         $request = FormEncodedRequest::parse($request, self::READ_PARAMETERS);
         $this->refuseForeignResource($request);
 
-        return $this->transaction->run(fn(): ResponseInterface => $this->server->respondToAccessTokenRequest($request, $response));
+        try {
+            return $this->transaction->run(fn(): ResponseInterface => $this->server->respondToAccessTokenRequest($request, $response));
+        } catch (CompromisedMcpConnectionException $compromise) {
+            // La transaction est déjà annulée : la révocation s'écrit hors
+            // d'elle, et survit au ROLLBACK de l'échange.
+            $this->revoker->revoke($compromise->connectionId(), $compromise->revocationCause());
+
+            throw $this->refusalOf($compromise->revocationCause());
+        }
+    }
+
+    /**
+     * Le refus que league aurait rendu sans la révocation, mot pour mot
+     * (`OAuthServerException`, RFC 6749 §5.2) : un attaquant n'apprend rien
+     * de plus qu'avant. Un jeton de rafraîchissement réutilisé est le refus
+     * d'un jeton révoqué ; un code rejoué (tâche suivante), celui d'un code
+     * révoqué. Les autres causes ne naissent pas au point de jeton (le client
+     * au point de révocation, un nouvel accord au consentement, l'échéance à
+     * la purge) : le refus générique d'un grant invalide, fermé.
+     */
+    private function refusalOf(RevocationCause $cause): OAuthServerException
+    {
+        return match ($cause) {
+            RevocationCause::RefreshTokenReuse => OAuthServerException::invalidRefreshToken('Token has been revoked'),
+            RevocationCause::CodeReplay => OAuthServerException::invalidGrant('Authorization code has been revoked'),
+            RevocationCause::Client, RevocationCause::Superseded, RevocationCause::Expired => OAuthServerException::invalidGrant(),
+        };
     }
 
     /**

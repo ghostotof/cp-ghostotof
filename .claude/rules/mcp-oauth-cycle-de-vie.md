@@ -86,3 +86,58 @@ paths:
   `SecurityAuditLoggerInterface::mcpConnectionExpired()` (actor `system`, the purge being a scheduled command), any
   other cause through `mcpConnectionRevoked()` (actor read from the token storage). `McpConnectionRevokerTest`
   (audited once with what the repository returned, never when it returned `null`).
+- **The refresh is judged under the lock of its connection** (task 3 of #649, `Infrastructure/League/RefreshTokenRepository::isRefreshTokenRevoked()`
+  — league's name; what it judges is everything that makes a refresh token unacceptable). League calls it from
+  `validateOldRefreshToken()`, inside `TokenEndpoint`'s transaction, **after** binding the token to the client
+  (« Token is not linked to client »: a refresh token presented under another `client_id` never reaches this
+  repository, so it never revokes its real client's connection —
+  `RefreshRotationTest::testARefreshTokenPresentedByAnotherClientLeavesTheConnectionAlone`) and after its own
+  `expire_time < time()` check, kept as a second net. In order: the token by its hash (unknown → dead); **its
+  connection re-read `FOR UPDATE`** through `McpConnectionRepositoryInterface::lockForIssuance()` —
+  `RereadUnderLock::row(…, forUpdate: true)`, the project's one re-read under a lock, held until the COMMIT or
+  ROLLBACK, bounded by FPM's `lock_timeout=5s` (gone → dead) —; **the token re-read under the lock**
+  (`findOneByHash()` carries `HINT_REFRESH` on the refresh-token and code repositories: without it Doctrine hands
+  back the managed instance unrefreshed, and a rotation a concurrent request committed during the wait would stay
+  unseen; the sequential tests cannot tell, task 5's concurrency harness can — measured: `forUpdate: false` leaves
+  every sequential test green); the connection revoked → dead, no second revocation, no audit; **the token
+  revoked on an active connection → `RotatedRefreshTokenReusedException`** (a `CompromisedMcpConnectionException`,
+  `Domain/Exception`: `connectionId()`, `revocationCause()`, a constant message, never the token), judged
+  **before** the deadlines so that a rotated token coming back on an expired, not yet purged connection is a reuse
+  too (`testAReusedTokenOnAnExpiredConnectionIsStillAReuse`); the token past its `expiresAt` (`<= now`, exclusive
+  like the access token's), the connection past `isExpiredAt()`, the account below the trusted tier → dead, **nothing
+  written**: a client refreshing in a loop accumulates no token row (`testAnExpiredConnectionCannotRefresh`,
+  `testAConnectionPastItsMaximumCannotRefresh`, `testAnAccountNoLongerTrustedCannotRefresh` count the rows before
+  and after; the connection is not revoked, the purge will mark it); else `McpConnection::recordUseAt($now)` and
+  `save()` when it wrote. **Every judgement reads `ClockInterface::now()`** (Paris), the token's expiry included:
+  the answer to the « two clocks » review — league's `time()` is a second net, identical in production, never the
+  judge here (`LeagueRepositoriesTest::testARefreshTokenExpiryIsJudgedOnTheApplicationClock`: a token still valid
+  for `time()`, dead for a `MockClock` at its deadline, alive one second before).
+- **A compromised connection is revoked after the ROLLBACK, by the token endpoint.** The exception leaves league
+  through `wrapInTransaction()`, which rolls back (nothing of the exchange survives: no token issued, the old pair
+  still unrevoked in rows, the last use unwritten) and closes the EntityManager; `TokenEndpoint::respond()` catches
+  `CompromisedMcpConnectionException` **outside** the transaction, calls `McpConnectionRevokerInterface::revoke()`
+  (native SQL, works on the closed manager; the audit line `mcp-connection-revoked` with `cause`), then throws
+  league's own refusal word for word, chosen by cause in one `match` (`RefreshTokenReuse` →
+  `invalidRefreshToken('Token has been revoked')`, `CodeReplay` → `invalidGrant('Authorization code has been
+  revoked')`, the three other causes — which never arise at the token endpoint — a bare `invalidGrant()`): an
+  attacker learns nothing the refusal did not say before. **Accepted, documented, never worked around**: a client
+  that replays its refresh after a lost answer (the network cut after the COMMIT) presents a rotated token, loses
+  its connection and must reconnect — the price OAuth 2.1's rotation accepts
+  (`RefreshRotationTest::testReusingARotatedRefreshTokenRevokesTheConnection`, which also reads the audit line:
+  `userId`, `connectionId`, the public `clientId`, `cause`, no token value). Revoking the connection leaves its
+  token rows as they are (decision 6): `OAuthFlowTest` sees the successor still unrevoked in rows and worthless at
+  the endpoint. Until task 6, a refresh token the client revoked at the revocation endpoint comes back on an active
+  connection and is read as a reuse (`RevocationControllerTest`'s refresh after revocation, noted there); task 6
+  makes that revocation revoke the connection itself, cause `client`.
+- **The last use is written at the refresh only, at most once per elapsed hour** (`McpConnection::USAGE_WRITE_INTERVAL`,
+  `PT1H`, `recordUseAt($at)`: writes and returns `true` when no use is noted or when the interval has elapsed since
+  the previous one — `add(new DateInterval(…))`, elapsed time, #445: across the repeated autumn hour the two
+  instants of one hour read the same wall time, `02:30`,
+  `McpConnectionExpiryTest::testTheLastUseIsWrittenAtMostOncePerElapsedHour`). Never on a call of `/api/mcp`
+  (ADR 0006 D6, `testNoRequestWritesOutsideTheMcpSessions` stays green). The price: the idle deadline counts from a
+  use up to an hour old. `RefreshRotationTest::testARefreshRecordsTheLastUseAtMostOncePerHour` (null after the
+  exchange, set by the first refresh, left alone 30 minutes later, rewritten 61 minutes later).
+- **The trusted tier has one judge**, `Infrastructure/Security/TrustedTier::reaches(CpgUser)`: the stored roles
+  through `RoleHierarchyInterface`, the name `McpConnectionPrincipal::TRUSTED_TIER` — used by
+  `McpBearerAuthenticator` on every request of `/api/mcp` (behaviour unchanged, `McpBearerAuthenticatorTest`) and
+  by the refresh. A new site that judges the tier goes through it.

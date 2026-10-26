@@ -8,6 +8,7 @@ use App\Mcp\Connection\Domain\ValueObject\ConnectionLifetimes;
 use App\Mcp\Connection\Domain\ValueObject\RevocationCause;
 use App\Mcp\Connection\Infrastructure\Doctrine\McpConnectionRepository;
 use App\Security\User\Domain\Entity\CpgUser;
+use DateInterval;
 use DateTimeImmutable;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
@@ -23,7 +24,8 @@ use Symfony\Component\Uid\Uuid;
  * Le compte et le client sont des clés étrangères en cascade : un compte
  * supprimé n'a plus de connexion (ni, par cascade, de code ou de jeton), un
  * client retiré n'en laisse aucune derrière lui. Le dernier usage est écrit au
- * rafraîchissement (#649), jamais à chaque appel.
+ * rafraîchissement (#649, {@see self::recordUseAt()}), au plus une fois par
+ * heure écoulée, jamais à chaque appel.
  *
  * **Une connexion se révoque par le dépôt seulement** (#649,
  * {@see \App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface::revokeActive()}) :
@@ -60,6 +62,14 @@ class McpConnection
      * le domaine ; le serveur d'autorisation le relit (NominativeReadScope).
      */
     public const string SCOPE_NOMINATIVE_READ = 'nominative:read';
+
+    /**
+     * Le dernier usage ne se réécrit qu'une fois cette durée **écoulée**
+     * depuis le précédent (#649, {@see self::recordUseAt()}) : une heure, en
+     * temps écoulé — jamais une heure de pendule, qui vaut zéro ou deux
+     * pendant l'heure répétée du passage à l'heure d'hiver (#445).
+     */
+    public const string USAGE_WRITE_INTERVAL = 'PT1H';
 
     /** Spec 0003 : UUID v7 posé par le constructeur. */
     #[ORM\Id]
@@ -150,6 +160,31 @@ class McpConnection
         return $this->lastUsedAt;
     }
 
+    /**
+     * Note l'usage de la connexion à l'instant `$at` — au rafraîchissement
+     * seulement, jamais à chaque appel de `/api/mcp` (ADR 0006 D6) — et dit
+     * si l'instant a été écrit : il l'est quand aucun usage n'est encore noté,
+     * ou quand {@see self::USAGE_WRITE_INTERVAL} s'est écoulé depuis le
+     * précédent ; sinon le précédent reste, et rien n'est à sauver. C'est ce
+     * qui borne les écritures d'un client qui rafraîchirait sans cesse à une
+     * par heure, au prix d'un délai d'inactivité compté depuis un usage vieux
+     * d'au plus une heure.
+     *
+     * L'intervalle est construit (`new DateInterval`), ajouté en temps écoulé,
+     * et les instants se comparent entre eux, quel que soit leur fuseau : un
+     * usage lu en base porte un décalage fixe, l'instant jugé celui de Paris.
+     */
+    public function recordUseAt(DateTimeImmutable $at): bool
+    {
+        if (null !== $this->lastUsedAt && $this->lastUsedAt->add(new DateInterval(self::USAGE_WRITE_INTERVAL)) > $at) {
+            return false;
+        }
+
+        $this->lastUsedAt = $at;
+
+        return true;
+    }
+
     public function revokedAt(): ?DateTimeImmutable
     {
         return $this->revokedAt;
@@ -192,9 +227,10 @@ class McpConnection
      * en base n'expirerait pas à la même seconde qu'une connexion en mémoire.
      * L'horloge rend toujours le même fuseau : l'échéance reste fixe.
      *
-     * `lastUsedAt` n'est écrit qu'au rafraîchissement — jamais à chaque appel
-     * (ADR 0006 D6). La révocation n'est pas une expiration :
-     * {@see self::isRevoked()} se lit à part.
+     * `lastUsedAt` n'est écrit qu'au rafraîchissement, par
+     * {@see self::recordUseAt()} — jamais à chaque appel (ADR 0006 D6). La
+     * révocation n'est pas une expiration : {@see self::isRevoked()} se lit à
+     * part.
      */
     public function isExpiredAt(DateTimeImmutable $now, ConnectionLifetimes $lifetimes): bool
     {

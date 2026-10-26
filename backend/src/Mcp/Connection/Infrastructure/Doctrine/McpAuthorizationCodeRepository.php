@@ -9,6 +9,7 @@ use App\Mcp\Connection\Domain\Repository\McpAuthorizationCodeRepositoryInterface
 use DateTimeImmutable;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\DBAL\Types\Types;
+use Doctrine\ORM\Query;
 use Doctrine\Persistence\ManagerRegistry;
 
 /**
@@ -27,6 +28,13 @@ class McpAuthorizationCodeRepository extends ServiceEntityRepository implements 
         $this->getEntityManager()->flush();
     }
 
+    /**
+     * Relu tel qu'en base (`HINT_REFRESH`), jamais tel que l'EntityManager le
+     * tient (#649) : un code relu sous le verrou de sa connexion doit montrer
+     * l'échange qu'une requête concurrente a validé entre-temps, et sans
+     * l'indice Doctrine rendrait l'instance déjà gérée sans la rafraîchir. La
+     * connexion jointe est rafraîchie de même.
+     */
     public function findOneByHash(string $codeHash): ?McpAuthorizationCode
     {
         /** @var McpAuthorizationCode|null */
@@ -36,6 +44,7 @@ class McpAuthorizationCodeRepository extends ServiceEntityRepository implements 
             ->where('code.codeHash = :codeHash')
             ->setParameter('codeHash', $codeHash)
             ->getQuery()
+            ->setHint(Query::HINT_REFRESH, true)
             ->getOneOrNullResult();
     }
 

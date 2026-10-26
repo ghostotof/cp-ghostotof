@@ -51,18 +51,22 @@ final class OAuthFlowTest extends WebTestCase
         self::assertNotSame($tokens['first']['refresh_token'], $tokens['refreshed']['refresh_token']);
 
         // Le jeton de rafraîchissement remplacé est refusé (rotation, RFC 9700
-        // §4.14.2) ; son successeur reste bon.
+        // §4.14.2) — et, depuis #649, sa réutilisation révoque la connexion
+        // (RefreshRotationTest) sans toucher aux lignes de ses jetons : son
+        // successeur reste non révoqué en base, mais ne vaut plus rien.
         $this->assertOAuthError($this->postForm($tokens['tokenPath'], [
             'grant_type' => 'refresh_token',
             'refresh_token' => $tokens['first']['refresh_token'],
             'client_id' => self::CLIENT_ID,
         ]), Response::HTTP_BAD_REQUEST, 'invalid_grant');
+        self::assertSame(1, $this->countRows("SELECT COUNT(*) FROM mcp_connection WHERE revocation_cause = 'refresh-token-reuse'"));
         self::assertSame(1, $this->countRows('SELECT COUNT(*) FROM mcp_refresh_token WHERE revoked_at IS NULL'));
         self::assertSame(1, $this->countRows('SELECT COUNT(*) FROM mcp_access_token WHERE revoked_at IS NULL'));
 
         // 6. Le client rend son jeton de rafraîchissement au point de
-        //    révocation annoncé (RFC 7009) : lui et son jeton d'accès meurent,
-        //    le rafraîchissement suivant est refusé.
+        //    révocation annoncé (RFC 7009) : lui et son jeton d'accès meurent
+        //    (la connexion déjà révoquée n'y change rien, RFC 7009 §2.2), le
+        //    rafraîchissement suivant est refusé.
         $revoked = $this->postForm($tokens['revocationPath'], ['token' => $tokens['refreshed']['refresh_token'], 'client_id' => self::CLIENT_ID]);
         self::assertSame(Response::HTTP_OK, $revoked->getStatusCode(), substr((string) $revoked->getContent(), 0, 500));
         self::assertSame(0, $this->countRows('SELECT COUNT(*) FROM mcp_refresh_token WHERE revoked_at IS NULL'));

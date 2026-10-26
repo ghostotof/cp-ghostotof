@@ -8,6 +8,7 @@ use App\Mcp\Connection\Domain\Entity\McpConnection;
 use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
 use App\Mcp\Connection\Domain\ValueObject\RevocationCause;
 use App\Mcp\Connection\Domain\ValueObject\RevokedConnection;
+use App\Shared\Infrastructure\Doctrine\RereadUnderLock;
 use DateTimeImmutable;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\DBAL\Types\Types;
@@ -20,8 +21,10 @@ use Symfony\Component\Uid\Uuid;
  */
 class McpConnectionRepository extends ServiceEntityRepository implements McpConnectionRepositoryInterface
 {
-    public function __construct(ManagerRegistry $registry)
-    {
+    public function __construct(
+        ManagerRegistry $registry,
+        private readonly RereadUnderLock $rereadUnderLock,
+    ) {
         parent::__construct($registry, McpConnection::class);
     }
 
@@ -46,6 +49,25 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
     public function add(McpConnection $connection): void
     {
         $this->getEntityManager()->persist($connection);
+        $this->getEntityManager()->flush();
+    }
+
+    /**
+     * La relecture sous verrou du projet ({@see RereadUnderLock::row()},
+     * `.claude/rules/backend-architecture.md`) : une requête DQL `FOR UPDATE`
+     * avec `HINT_REFRESH`, jamais une copie. Le verrou tient jusqu'au COMMIT
+     * ou au ROLLBACK de la transaction du point de jeton ; sous FPM, l'attente
+     * est bornée par le `lock_timeout` de la session (5 s). Le compte et le
+     * client ne sont pas joints : ce que l'appelant en lit ensuite (les
+     * rôles stockés) est chargé à la demande, sous le même verrou.
+     */
+    public function lockForIssuance(Uuid $connectionId): ?McpConnection
+    {
+        return $this->rereadUnderLock->row($this->getEntityManager(), McpConnection::class, $connectionId, forUpdate: true);
+    }
+
+    public function save(McpConnection $connection): void
+    {
         $this->getEntityManager()->flush();
     }
 

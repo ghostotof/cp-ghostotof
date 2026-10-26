@@ -22,6 +22,20 @@ interface McpConnectionRepositoryInterface
     public function add(McpConnection $connection): void;
 
     /**
+     * La connexion relue **sous le verrou de sa ligne** (`FOR UPDATE`), pour
+     * la transaction en cours, avant qu'un jeton en soit jugé ou émis (#649) :
+     * deux rafraîchissements simultanés d'un même jeton se suivent au lieu de
+     * se croiser — le second relit ce que le premier a validé, la rotation
+     * faite, et reconnaît la réutilisation. Une instance déjà chargée est
+     * rafraîchie sur place ; `null` si la ligne a disparu (l'instance périmée
+     * détachée). Exige une transaction ouverte.
+     */
+    public function lockForIssuance(Uuid $connectionId): ?McpConnection;
+
+    /** Écrit en base ce qui a changé sur la connexion (le dernier usage). */
+    public function save(McpConnection $connection): void;
+
+    /**
      * Révoque la connexion si elle ne l'est pas encore (#649) : l'instant et
      * la cause écrits ensemble, une seule fois — une connexion déjà révoquée
      * garde sa première révocation. Une instruction SQL, hors de l'unité de

@@ -16,6 +16,14 @@ use Symfony\Component\Uid\Uuid;
  * pas être révoquée. Lue telle que l'EntityManager la tient : une révocation
  * écrite en DQL dans la même requête n'est vue qu'après un `clear()`.
  *
+ * Au point de jeton, la lecture se fait déjà **sous le verrou de la ligne de
+ * la connexion** (#649) : `RefreshTokenRepository::isRefreshTokenRevoked()`
+ * l'a relue `FOR UPDATE` dans la même transaction avant que league n'émette
+ * quoi que ce soit, et l'instance que `findOneById()` rend ici est celle-là,
+ * rafraîchie — la course entre deux émissions sur une même connexion est
+ * fermée en amont, et le refus d'une connexion révoquée reste un filet, pas
+ * le juge.
+ *
  * Écrit une fois pour les trois dépôts de league : chaque refus est un
  * défaut du serveur, nommé, jamais une erreur OAuth.
  */

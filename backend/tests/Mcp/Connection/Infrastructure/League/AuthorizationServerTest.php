@@ -240,11 +240,13 @@ final class AuthorizationServerTest extends KernelTestCase
         self::assertEqualsWithDelta($this->nowPlus('PT1H'), $this->latestExpiry('mcp_access_token'), 5, 'Un jeton d\'accès vit une heure.');
         self::assertEqualsWithDelta($this->nowPlus('P30D'), $this->latestExpiry('mcp_refresh_token'), 5, 'Un rafraîchissement émis au code vit 30 jours.');
 
-        $refreshed = $this->decode($server->respondToAccessTokenRequest($this->tokenRequest([
+        // Le rafraîchissement se juge sous le verrou de la connexion (#649),
+        // dans la transaction que le point de jeton ouvre : ouverte ici de même.
+        $refreshed = $this->decode($this->em->wrapInTransaction(fn (): ResponseInterface => $server->respondToAccessTokenRequest($this->tokenRequest([
             'grant_type' => 'refresh_token',
             'client_id' => self::CLIENT_ID,
             'refresh_token' => $tokens['refresh_token'],
-        ]), new Response()));
+        ]), new Response())));
 
         self::assertIsString($refreshed['access_token']);
         self::assertNotSame($tokens['access_token'], $refreshed['access_token']);
@@ -286,6 +288,10 @@ final class AuthorizationServerTest extends KernelTestCase
         $this->em->getConnection()->executeStatement("UPDATE mcp_connection SET revoked_at = NOW(), revocation_cause = 'client'");
         $this->em->clear();
 
+        // Sous une transaction, comme au point de jeton (le verrou de la
+        // connexion l'exige, #649) ; annulée, comme le point de jeton le ferait.
+        $this->em->beginTransaction();
+
         try {
             $server->respondToAccessTokenRequest($this->tokenRequest([
                 'grant_type' => 'refresh_token',
@@ -295,6 +301,8 @@ final class AuthorizationServerTest extends KernelTestCase
             self::fail('Le rafraîchissement aurait dû être refusé.');
         } catch (OAuthServerException $exception) {
             self::assertSame('invalid_grant', $exception->getErrorType());
+        } finally {
+            $this->em->rollback();
         }
     }
 
@@ -397,7 +405,9 @@ final class AuthorizationServerTest extends KernelTestCase
 
     private function grantConnection(): McpConnection
     {
+        // Le palier de confiance, que le rafraîchissement exige du compte (#649).
         $account = new CpgUser('jane', 'hashed-password');
+        $account->setRoles([CpgUser::ROLE_TRUSTED]);
         $this->em->persist($account);
         $this->em->flush();
         $client = self::getContainer()->get(McpClientRepositoryInterface::class)->findOneByClientId(self::CLIENT_ID);

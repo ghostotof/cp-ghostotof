@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Mcp\Connection\Infrastructure\Security;
 
-use App\Mcp\Connection\Application\McpConnectionPrincipal;
 use App\Mcp\Connection\Application\OAuthEndpoints;
 use App\Mcp\Connection\Domain\Repository\McpAccessTokenRepositoryInterface;
 use App\Mcp\Connection\Domain\ValueObject\BearerRefusal;
@@ -17,7 +16,6 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Security\Core\Authentication\Token\TokenInterface;
 use Symfony\Component\Security\Core\Exception\AuthenticationException;
-use Symfony\Component\Security\Core\Role\RoleHierarchyInterface;
 use Symfony\Component\Security\Http\Authenticator\AbstractAuthenticator;
 use Symfony\Component\Security\Http\Authenticator\Passport\Badge\UserBadge;
 use Symfony\Component\Security\Http\Authenticator\Passport\SelfValidatingPassport;
@@ -52,9 +50,10 @@ use Symfony\Component\Security\Http\Authenticator\Passport\SelfValidatingPasspor
  *     league ne regarde pas l'échéance d'un jeton opaque —, d'une autre
  *     audience, connexion révoquée, expirée (sur les durées configurées,
  *     ConnectionLifetimes, #649) ;
- *  4. le palier du compte : ROLE_TRUSTED atteint par la `role_hierarchy`
- *     depuis les rôles stockés (un ROLE_SUPER sans ROLE_TRUSTED stocké passe,
- *     comme partout sur le site ; le palier de base non) — `AccountNotTrusted`.
+ *  4. le palier du compte (TrustedTier, le même juge qu'au rafraîchissement,
+ *     #649) : ROLE_TRUSTED atteint par la `role_hierarchy` depuis les rôles
+ *     stockés (un ROLE_SUPER sans ROLE_TRUSTED stocké passe, comme partout
+ *     sur le site ; le palier de base non) — `AccountNotTrusted`.
  *
  * **Aucune écriture** : ni `last_used_at` (écrit au rafraîchissement, #649),
  * ni rien d'autre (ADR 0006 D4). Le compte n'est chargé par aucun autre
@@ -92,7 +91,7 @@ final class McpBearerAuthenticator extends AbstractAuthenticator
         private readonly McpAccessTokenRepositoryInterface $accessTokens,
         private readonly ClockInterface $clock,
         private readonly OAuthEndpoints $endpoints,
-        private readonly RoleHierarchyInterface $roleHierarchy,
+        private readonly TrustedTier $trustedTier,
         private readonly UnauthorizedAnswers $unauthorized,
         private readonly ConnectionLifetimes $lifetimes,
     ) {
@@ -128,7 +127,7 @@ final class McpBearerAuthenticator extends AbstractAuthenticator
 
         $connection = $token->connection();
 
-        if (!\in_array(McpConnectionPrincipal::TRUSTED_TIER, $this->roleHierarchy->getReachableRoleNames($connection->account()->getRoles()), true)) {
+        if (!$this->trustedTier->reaches($connection->account())) {
             throw McpBearerRefusedException::because(BearerRefusal::AccountNotTrusted);
         }
 

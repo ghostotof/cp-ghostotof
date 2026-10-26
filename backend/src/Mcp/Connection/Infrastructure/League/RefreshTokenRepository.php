@@ -5,8 +5,12 @@ declare(strict_types=1);
 namespace App\Mcp\Connection\Infrastructure\League;
 
 use App\Mcp\Connection\Domain\Entity\McpRefreshToken;
+use App\Mcp\Connection\Domain\Exception\RotatedRefreshTokenReusedException;
 use App\Mcp\Connection\Domain\Repository\McpAccessTokenRepositoryInterface;
+use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
 use App\Mcp\Connection\Domain\Repository\McpRefreshTokenRepositoryInterface;
+use App\Mcp\Connection\Domain\ValueObject\ConnectionLifetimes;
+use App\Mcp\Connection\Infrastructure\Security\TrustedTier;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use League\OAuth2\Server\Entities\RefreshTokenEntityInterface;
 use League\OAuth2\Server\Exception\UniqueTokenIdentifierConstraintViolationException;
@@ -19,14 +23,22 @@ use SensitiveParameter;
  *
  * Le client reçoit une charge chiffrée par league ; la base n'en garde que
  * l'empreinte de l'identifiant, et le jeton d'accès émis avec lui, que la
- * rotation (#649) révoquera. La connexion est celle de ce jeton d'accès.
+ * rotation révoque (#649). La connexion est celle de ce jeton d'accès.
+ *
+ * C'est ici, dans {@see self::isRefreshTokenRevoked()}, que le
+ * rafraîchissement est jugé **sous le verrou de sa connexion** : league
+ * l'appelle depuis sa validation, dans la transaction du point de jeton, avant
+ * de révoquer l'ancien couple et d'émettre le nouveau.
  */
 final readonly class RefreshTokenRepository implements RefreshTokenRepositoryInterface
 {
     public function __construct(
         private McpRefreshTokenRepositoryInterface $tokens,
         private McpAccessTokenRepositoryInterface $accessTokens,
+        private McpConnectionRepositoryInterface $connections,
         private ConnectionOfToken $connectionOfToken,
+        private ConnectionLifetimes $lifetimes,
+        private TrustedTier $trustedTier,
         private ClockInterface $clock,
     ) {
     }
@@ -73,10 +85,78 @@ final readonly class RefreshTokenRepository implements RefreshTokenRepositoryInt
         $this->tokens->revokeByHash(TokenIdentifierHash::of($tokenId), $this->clock->now());
     }
 
+    /**
+     * Le nom est celui de l'interface de league ; ce qu'elle juge est tout ce
+     * qui rend un rafraîchissement irrecevable (#649), **sous le verrou de la
+     * ligne de sa connexion**, dans la transaction du point de jeton :
+     *
+     *  1. le jeton, par son empreinte — inconnu, il est mort ;
+     *  2. sa connexion, relue `FOR UPDATE` (`lockForIssuance()`) : deux
+     *     rafraîchissements simultanés d'un même jeton se suivent désormais au
+     *     lieu de se croiser, chacun lisant le jeton non révoqué avant que
+     *     l'autre l'ait tourné (la course de league, fermée ici) — disparue,
+     *     le jeton est mort ;
+     *  3. le jeton **relu sous le verrou** : une rotation qu'une requête
+     *     concurrente a validée pendant l'attente se voit maintenant ;
+     *  4. la connexion révoquée : mort, sans seconde révocation ni audit ;
+     *  5. le jeton révoqué sur une connexion active : il a été tourné, et
+     *     revient — {@see RotatedRefreshTokenReusedException}, que le point
+     *     de jeton rattrape après le ROLLBACK pour révoquer la connexion
+     *     (OAuth 2.1 §4.3.1). Jugé avant l'échéance : un jeton tourné qui
+     *     revient sur une connexion expirée mais pas encore purgée est une
+     *     réutilisation aussi ;
+     *  6. le jeton échu, la connexion expirée (McpConnection::isExpiredAt(),
+     *     sur les durées configurées), le compte déchu du palier de confiance
+     *     (TrustedTier, rôles stockés relus) : mort, rien d'émis — un client
+     *     qui rafraîchirait en boucle n'accumule aucune ligne ;
+     *  7. sinon le jeton est bon : le dernier usage de la connexion est noté,
+     *     écrit seulement quand une heure s'est écoulée depuis le précédent
+     *     (McpConnection::recordUseAt()).
+     *
+     * **Chaque jugement lit l'horloge de l'application** (ClockInterface, le
+     * fuseau de Paris) — l'échéance du jeton comprise, exclusive comme celle
+     * du jeton d'accès (`expiresAt <= now`). league compare aussi
+     * `expire_time` à `time()` avant d'appeler ce dépôt : un second filet, le
+     * même en production, que ce dépôt ne remplace pas et n'attend pas (deux
+     * horloges, une seule qui juge ici).
+     *
+     * @throws RotatedRefreshTokenReusedException quand un jeton déjà tourné revient sur une connexion active
+     */
     public function isRefreshTokenRevoked(#[SensitiveParameter] string $tokenId): bool
     {
-        $token = $this->tokens->findOneByHash(TokenIdentifierHash::of($tokenId));
+        $hash = TokenIdentifierHash::of($tokenId);
+        $token = $this->tokens->findOneByHash($hash);
+        if (null === $token) {
+            return true;
+        }
 
-        return null === $token || $token->isRevoked() || $token->connection()->isRevoked();
+        $connection = $this->connections->lockForIssuance($token->connection()->getId());
+        if (null === $connection) {
+            return true;
+        }
+
+        $token = $this->tokens->findOneByHash($hash);
+        if (null === $token) {
+            return true;
+        }
+
+        if ($connection->isRevoked()) {
+            return true;
+        }
+
+        if ($token->isRevoked()) {
+            throw RotatedRefreshTokenReusedException::forConnection($connection->getId());
+        }
+
+        $now = $this->clock->now();
+        if ($token->expiresAt() <= $now || $connection->isExpiredAt($now, $this->lifetimes) || !$this->trustedTier->reaches($connection->account())) {
+            return true;
+        }
+
+        if ($connection->recordUseAt($now)) {
+            $this->connections->save($connection);
+        }
+
+        return false;
     }
 }

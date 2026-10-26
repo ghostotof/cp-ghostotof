@@ -7,11 +7,9 @@ namespace App\Tests\Mcp\Connection\Presentation\Controller;
 use App\Mcp\Connection\Application\OAuthEndpoints;
 use App\Mcp\Connection\Domain\Repository\McpAccessTokenRepositoryInterface;
 use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
-use App\Mcp\Connection\Domain\Repository\McpRefreshTokenRepositoryInterface;
 use App\Mcp\Connection\Infrastructure\League\AccessTokenRepository;
 use App\Mcp\Connection\Infrastructure\League\ConnectionOfToken;
 use App\Mcp\Connection\Infrastructure\League\OAuthEncryptionKey;
-use App\Mcp\Connection\Infrastructure\League\RefreshTokenRepository;
 use App\Tests\Mcp\Connection\DrivesTheOAuthFlow;
 use App\Tests\Support\ReadsSecurityAuditLog;
 use App\Tests\Support\TestKeys;
@@ -63,7 +61,7 @@ final class RevocationControllerTest extends WebTestCase
 
         $this->assertRevocationAccepted($response);
         self::assertTrue($this->accessTokens()->isAccessTokenRevoked($tokens['access_token']));
-        self::assertFalse($this->refreshTokens()->isRefreshTokenRevoked($this->refreshTokenIdentifier($tokens['refresh_token'])));
+        self::assertFalse($this->refreshTokenRowIsRevoked($tokens['refresh_token']));
         self::assertSame(0, $this->countRows('SELECT COUNT(*) FROM mcp_connection WHERE revoked_at IS NOT NULL'));
     }
 
@@ -78,10 +76,15 @@ final class RevocationControllerTest extends WebTestCase
         $response = $this->revoke(['token' => $tokens['refresh_token'], 'client_id' => self::CLIENT_ID]);
 
         $this->assertRevocationAccepted($response);
-        self::assertTrue($this->refreshTokens()->isRefreshTokenRevoked($this->refreshTokenIdentifier($tokens['refresh_token'])));
+        self::assertTrue($this->refreshTokenRowIsRevoked($tokens['refresh_token']));
         self::assertTrue($this->accessTokens()->isAccessTokenRevoked($tokens['access_token']));
         self::assertSame(0, $this->countRows('SELECT COUNT(*) FROM mcp_connection WHERE revoked_at IS NOT NULL'));
 
+        // À ce stade de #649 la connexion reste active après cette révocation,
+        // et le rafraîchissement révoqué qui revient est lu comme une
+        // réutilisation (la connexion est alors révoquée, cause
+        // `refresh-token-reuse`) ; la tâche 6 fait révoquer la connexion ici
+        // même, cause `client`. Le refus, lui, ne change pas.
         $this->assertOAuthError($this->refresh($tokens['refresh_token']), Response::HTTP_BAD_REQUEST, 'invalid_grant');
     }
 
@@ -335,9 +338,9 @@ final class RevocationControllerTest extends WebTestCase
     }
 
     /**
-     * Les dépôts de league, tels que le serveur les lit, sur un EntityManager
-     * vidé : une révocation écrite en DQL par la requête n'est vue qu'après un
-     * `clear()`.
+     * Le dépôt des jetons d'accès de league, tel que le serveur le lit, sur un
+     * EntityManager vidé : une révocation écrite en DQL par la requête n'est
+     * vue qu'après un `clear()`.
      */
     private function accessTokens(): AccessTokenRepository
     {
@@ -351,15 +354,18 @@ final class RevocationControllerTest extends WebTestCase
         );
     }
 
-    private function refreshTokens(): RefreshTokenRepository
+    /**
+     * La ligne du rafraîchissement, par l'empreinte de l'identifiant que sa
+     * charge porte : révoquée ou non. Lue en SQL plutôt que par le dépôt de
+     * league, dont le jugement (#649) se fait sous le verrou de la connexion
+     * et lit un rafraîchissement révoqué sur une connexion active comme une
+     * réutilisation.
+     */
+    private function refreshTokenRowIsRevoked(string $refreshToken): bool
     {
-        self::getContainer()->get(EntityManagerInterface::class)->clear();
-
-        return new RefreshTokenRepository(
-            self::getContainer()->get(McpRefreshTokenRepositoryInterface::class),
-            self::getContainer()->get(McpAccessTokenRepositoryInterface::class),
-            new ConnectionOfToken(self::getContainer()->get(McpConnectionRepositoryInterface::class)),
-            self::getContainer()->get(ClockInterface::class),
+        return 1 === $this->countRows(
+            'SELECT COUNT(*) FROM mcp_refresh_token WHERE token_hash = :hash AND revoked_at IS NOT NULL',
+            ['hash' => hash('sha256', $this->refreshTokenIdentifier($refreshToken))],
         );
     }
 }

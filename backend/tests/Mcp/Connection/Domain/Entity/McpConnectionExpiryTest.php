@@ -13,7 +13,6 @@ use DateTimeImmutable;
 use DateTimeZone;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
-use ReflectionProperty;
 
 /**
  * L'échéance d'une connexion MCP (#649, revue n° 4), jugée par
@@ -58,9 +57,7 @@ final class McpConnectionExpiryTest extends TestCase
     {
         $lifetimes = ConnectionLifetimes::fromConfiguration('PT10M', 'PT1H', 'P30D', 'P90D', 'P90D');
         $connection = $this->connectionGrantedAt($this->paris('2026-07-28 10:00:00'));
-        // Le dernier usage n'a pas encore de mutateur (tâche suivante de #649) :
-        // posé par réflexion, comme la base le rendrait.
-        new ReflectionProperty(McpConnection::class, 'lastUsedAt')->setValue($connection, $this->paris('2026-10-26 09:00:00'));
+        self::assertTrue($connection->recordUseAt($this->paris('2026-10-26 09:00:00')));
 
         self::assertFalse($connection->isExpiredAt($this->paris('2026-10-26 09:59:59'), $lifetimes));
         self::assertTrue($connection->isExpiredAt($this->paris('2026-10-26 10:00:00'), $lifetimes));
@@ -139,6 +136,40 @@ final class McpConnectionExpiryTest extends TestCase
         }
 
         self::assertNotNull($expiredAt, 'Toujours vivante après la fenêtre.');
+    }
+
+    /**
+     * Le dernier usage s'écrit au plus une fois par **heure écoulée**
+     * (`McpConnection::recordUseAt()`, #649) : nul, il s'écrit ; cinquante-neuf
+     * minutes plus tard, non ; soixante, oui. Jugé à cheval sur l'heure
+     * répétée du passage à l'heure d'hiver, où les deux instants d'une heure
+     * d'écart affichent la même heure murale, 02:30 : une heure comptée sur
+     * la pendule aurait vu zéro minute, ou deux heures.
+     */
+    public function testTheLastUseIsWrittenAtMostOncePerElapsedHour(): void
+    {
+        $connection = $this->connectionGrantedAt($this->paris('2026-10-25 01:00:00'));
+        $firstUse = new DateTimeImmutable('2026-10-25T00:30:00Z')->setTimezone($this->paris);
+        $fiftyNineMinutesLater = $firstUse->add(new DateInterval('PT59M'));
+        $oneHourLater = $firstUse->add(new DateInterval('PT1H'));
+        self::assertSame('02:30 CEST', $firstUse->format('H:i T'));
+        self::assertSame('02:30 CET', $oneHourLater->format('H:i T'));
+        self::assertNull($this->lastUseOf($connection));
+
+        self::assertTrue($connection->recordUseAt($firstUse));
+        self::assertSame($firstUse->getTimestamp(), $this->lastUseOf($connection));
+
+        self::assertFalse($connection->recordUseAt($fiftyNineMinutesLater));
+        self::assertSame($firstUse->getTimestamp(), $this->lastUseOf($connection), 'Un usage de moins d\'une heure ne déplace pas le précédent.');
+
+        self::assertTrue($connection->recordUseAt($oneHourLater));
+        self::assertSame($oneHourLater->getTimestamp(), $this->lastUseOf($connection));
+    }
+
+    /** L'instant du dernier usage noté (époque Unix), ou `null`. */
+    private function lastUseOf(McpConnection $connection): ?int
+    {
+        return $connection->lastUsedAt()?->getTimestamp();
     }
 
     private function connectionGrantedAt(DateTimeImmutable $grantedAt): McpConnection
