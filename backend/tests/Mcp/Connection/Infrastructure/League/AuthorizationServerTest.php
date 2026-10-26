@@ -220,13 +220,16 @@ final class AuthorizationServerTest extends KernelTestCase
         self::assertSame(1, $this->rowCount('mcp_authorization_code'));
         self::assertEqualsWithDelta($this->nowPlus('PT10M'), $this->latestExpiry('mcp_authorization_code'), 5, 'Un code vit 10 minutes.');
 
-        $tokens = $this->decode($server->respondToAccessTokenRequest($this->tokenRequest([
+        // L'échange, comme le rafraîchissement, se juge sous le verrou de la
+        // connexion (#649), dans la transaction que le point de jeton ouvre :
+        // ouverte ici de même.
+        $tokens = $this->decode($this->em->wrapInTransaction(fn (): ResponseInterface => $server->respondToAccessTokenRequest($this->tokenRequest([
             'grant_type' => 'authorization_code',
             'client_id' => self::CLIENT_ID,
             'code' => $code,
             'redirect_uri' => $redirectUri,
             'code_verifier' => self::CODE_VERIFIER,
-        ]), new Response()));
+        ]), new Response())));
 
         self::assertSame('Bearer', $tokens['token_type']);
         self::assertIsString($tokens['access_token']);
@@ -240,8 +243,6 @@ final class AuthorizationServerTest extends KernelTestCase
         self::assertEqualsWithDelta($this->nowPlus('PT1H'), $this->latestExpiry('mcp_access_token'), 5, 'Un jeton d\'accès vit une heure.');
         self::assertEqualsWithDelta($this->nowPlus('P30D'), $this->latestExpiry('mcp_refresh_token'), 5, 'Un rafraîchissement émis au code vit 30 jours.');
 
-        // Le rafraîchissement se juge sous le verrou de la connexion (#649),
-        // dans la transaction que le point de jeton ouvre : ouverte ici de même.
         $refreshed = $this->decode($this->em->wrapInTransaction(fn (): ResponseInterface => $server->respondToAccessTokenRequest($this->tokenRequest([
             'grant_type' => 'refresh_token',
             'client_id' => self::CLIENT_ID,
@@ -274,13 +275,15 @@ final class AuthorizationServerTest extends KernelTestCase
         parse_str((string) parse_url($server->completeAuthorizationRequest($authorization, new Response())->getHeaderLine('Location'), \PHP_URL_QUERY), $query);
         $code = $query['code'] ?? null;
         self::assertIsString($code);
-        $tokens = $this->decode($server->respondToAccessTokenRequest($this->tokenRequest([
+        // Sous une transaction, comme au point de jeton (le verrou de la
+        // connexion l'exige, #649).
+        $tokens = $this->decode($this->em->wrapInTransaction(fn (): ResponseInterface => $server->respondToAccessTokenRequest($this->tokenRequest([
             'grant_type' => 'authorization_code',
             'client_id' => self::CLIENT_ID,
             'code' => $code,
             'redirect_uri' => 'https://client.example.test/callback',
             'code_verifier' => self::CODE_VERIFIER,
-        ]), new Response()));
+        ]), new Response())));
         $refreshToken = $tokens['refresh_token'] ?? null;
         self::assertIsString($refreshToken);
         // Révoquée par une autre requête : l'EntityManager de celle-ci, qui a
@@ -288,8 +291,7 @@ final class AuthorizationServerTest extends KernelTestCase
         $this->em->getConnection()->executeStatement("UPDATE mcp_connection SET revoked_at = NOW(), revocation_cause = 'client'");
         $this->em->clear();
 
-        // Sous une transaction, comme au point de jeton (le verrou de la
-        // connexion l'exige, #649) ; annulée, comme le point de jeton le ferait.
+        // Sous une transaction de même ; annulée, comme le point de jeton le ferait.
         $this->em->beginTransaction();
 
         try {

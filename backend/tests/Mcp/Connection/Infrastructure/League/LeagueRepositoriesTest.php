@@ -7,6 +7,7 @@ namespace App\Tests\Mcp\Connection\Infrastructure\League;
 use App\Mcp\Connection\Application\OAuthEndpoints;
 use App\Mcp\Connection\Domain\Entity\McpClient;
 use App\Mcp\Connection\Domain\Entity\McpConnection;
+use App\Mcp\Connection\Domain\Exception\AuthorizationCodeReplayedException;
 use App\Mcp\Connection\Domain\Exception\RotatedRefreshTokenReusedException;
 use App\Mcp\Connection\Domain\Repository\McpAccessTokenRepositoryInterface;
 use App\Mcp\Connection\Domain\Repository\McpAuthorizationCodeRepositoryInterface;
@@ -134,7 +135,7 @@ final class LeagueRepositoriesTest extends KernelTestCase
         $this->persistAuthCode($connection, $codeIdentifier);
         $this->persistRefreshToken($this->persistAccessToken($connection, $accessIdentifier), $refreshIdentifier);
 
-        self::assertFalse($this->authCodes()->isAuthCodeRevoked($codeIdentifier));
+        self::assertFalse($this->authCodeIsRevoked($codeIdentifier));
         self::assertFalse($this->accessTokens()->isAccessTokenRevoked($accessIdentifier));
         self::assertFalse($this->refreshTokenIsRevoked($refreshIdentifier));
 
@@ -145,7 +146,7 @@ final class LeagueRepositoriesTest extends KernelTestCase
         );
         $this->em->clear();
 
-        self::assertTrue($this->authCodes()->isAuthCodeRevoked($codeIdentifier));
+        self::assertTrue($this->authCodeIsRevoked($codeIdentifier));
         self::assertTrue($this->accessTokens()->isAccessTokenRevoked($accessIdentifier));
         self::assertTrue($this->refreshTokenIsRevoked($refreshIdentifier));
     }
@@ -156,7 +157,7 @@ final class LeagueRepositoriesTest extends KernelTestCase
      */
     public function testAnUnknownTokenIsRevoked(): void
     {
-        self::assertTrue($this->authCodes()->isAuthCodeRevoked($this->identifier()));
+        self::assertTrue($this->authCodeIsRevoked($this->identifier()));
         self::assertTrue($this->accessTokens()->isAccessTokenRevoked($this->identifier()));
         self::assertTrue($this->refreshTokenIsRevoked($this->identifier()));
     }
@@ -204,13 +205,22 @@ final class LeagueRepositoriesTest extends KernelTestCase
         $this->refreshTokens()->revokeRefreshToken($refreshIdentifier);
         $this->em->clear();
 
-        self::assertTrue($this->authCodes()->isAuthCodeRevoked($codeIdentifier));
         self::assertTrue($this->accessTokens()->isAccessTokenRevoked($revoked));
         self::assertFalse($this->accessTokens()->isAccessTokenRevoked($kept));
-        // Un rafraîchissement n'est révoqué que par sa rotation : revenu sur
-        // une connexion active, il est réutilisé (#649), et le dépôt le dit
-        // par l'exception que le point de jeton rattrape pour révoquer la
+        // Un code n'est révoqué que par son échange : revenu sur une
+        // connexion active, il est rejoué (#649), et le dépôt le dit par
+        // l'exception que le point de jeton rattrape pour révoquer la
         // connexion — jamais par un simple « révoqué ».
+        try {
+            $this->authCodeIsRevoked($codeIdentifier);
+            self::fail('Un code échangé qui revient est un rejeu.');
+        } catch (AuthorizationCodeReplayedException $replay) {
+            self::assertTrue($replay->connectionId()->equals($connection->getId()));
+            self::assertSame(RevocationCause::CodeReplay, $replay->revocationCause());
+        }
+        // Un rafraîchissement n'est révoqué que par sa rotation : revenu sur
+        // une connexion active, il est réutilisé (#649), même exception, même
+        // rattrapage.
         try {
             $this->refreshTokenIsRevoked($refreshIdentifier);
             self::fail('Un rafraîchissement tourné qui revient est une réutilisation.');
@@ -591,9 +601,27 @@ final class LeagueRepositoriesTest extends KernelTestCase
     {
         return new AuthCodeRepository(
             self::getContainer()->get(McpAuthorizationCodeRepositoryInterface::class),
+            $this->connections(),
             new ConnectionOfToken($this->connections()),
             $this->clock,
         );
+    }
+
+    /**
+     * Le jugement d'un code se fait sous le verrou de sa connexion (#649),
+     * qui exige une transaction : celle du point de jeton en production, une
+     * transaction annulée ici.
+     */
+    private function authCodeIsRevoked(string $identifier): bool
+    {
+        $this->em->beginTransaction();
+
+        try {
+            return $this->authCodes()->isAuthCodeRevoked($identifier);
+        } finally {
+            $this->em->rollback();
+            $this->em->clear();
+        }
     }
 
     private function refreshTokens(): RefreshTokenRepository

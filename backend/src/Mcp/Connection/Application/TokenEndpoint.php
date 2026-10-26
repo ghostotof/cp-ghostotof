@@ -61,8 +61,11 @@ use Psr\Http\Message\ServerRequestInterface;
  *    client reçoit le refus ordinaire de league, mot pour mot : la détection
  *    ne lui apprend rien. Un client qui rejoue un rafraîchissement après une
  *    réponse perdue y perd sa connexion — le prix de la rotation, accepté
- *    (`RefreshRotationTest`). Un code échangé deux fois **l'une après l'autre**
- *    est refusé la seconde fois ; sa révocation à part est la tâche suivante.
+ *    (`RefreshRotationTest`). Un code déjà échangé qui revient — l'un après
+ *    l'autre comme en concurrence — est jugé de même, sous le même verrou,
+ *    par `AuthCodeRepository::isAuthCodeRevoked()` (OAuth 2.1 §4.1.2) : la
+ *    connexion est révoquée, cause `code-replay`, et les jetons que le code
+ *    avait émis meurent avec elle (`CodeReplayTest`).
  */
 final readonly class TokenEndpoint implements TokenEndpointInterface
 {
@@ -105,8 +108,8 @@ final readonly class TokenEndpoint implements TokenEndpointInterface
      * Le refus que league aurait rendu sans la révocation, mot pour mot
      * (`OAuthServerException`, RFC 6749 §5.2) : un attaquant n'apprend rien
      * de plus qu'avant. Un jeton de rafraîchissement réutilisé est le refus
-     * d'un jeton révoqué ; un code rejoué (tâche suivante), celui d'un code
-     * révoqué. Les autres causes ne naissent pas au point de jeton (le client
+     * d'un jeton révoqué ; un code rejoué, celui d'un code révoqué. Les
+     * autres causes ne naissent pas au point de jeton (le client
      * au point de révocation, un nouvel accord au consentement, l'échéance à
      * la purge) : le refus générique d'un grant invalide, fermé.
      */

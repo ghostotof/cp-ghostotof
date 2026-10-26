@@ -129,6 +129,42 @@ paths:
   the endpoint. Until task 6, a refresh token the client revoked at the revocation endpoint comes back on an active
   connection and is read as a reuse (`RevocationControllerTest`'s refresh after revocation, noted there); task 6
   makes that revocation revoke the connection itself, cause `client`.
+- **A replayed code is judged under the same lock** (task 4 of #649, `Infrastructure/League/AuthCodeRepository::isAuthCodeRevoked()`,
+  written on the refresh's model; OAuth 2.1 §4.1.2). League's code grant calls it from `validateAuthorizationCode()`,
+  inside `TokenEndpoint`'s transaction, after authenticating the client, decrypting the payload and judging the
+  code's expiry **on the encrypted payload alone** (`expire_time` against `time()`, the real clock) — so **a code
+  replayed after its ten minutes is a plain `invalid_grant`, with no revocation, and no `MockClock` reaches it**:
+  accepted limit, the tokens issued by the code already live under rotation by then. In order: the code by its hash
+  (unknown → dead); **its connection re-read `FOR UPDATE`** (`lockForIssuance()`, the same lock as the refresh's, so
+  two simultaneous exchanges of one code serialize — task 5's harness proves it in real processes); **the code re-read
+  under the lock** (`HINT_REFRESH`); the connection revoked → dead, no second revocation, no audit
+  (`CodeReplayTest::testAReplayOnARevokedConnectionWritesNoSecondLine`: a third exchange leaves the first revocation's
+  instant and cause, and the journal's single line); **the code revoked on an active connection →
+  `AuthorizationCodeReplayedException`** (a `CompromisedMcpConnectionException`, cause `code-replay`) — a code is only
+  ever revoked by its exchange, which league does **last**, after both tokens (a failed exchange leaves it exchangeable,
+  `TokenControllerTest::testAFailedExchangeLeavesNoTokenAndTheCodeExchangeable`), so a revoked code coming back has been
+  exchanged, and `TokenEndpoint` revokes the connection after the ROLLBACK, then answers
+  `invalidGrant('Authorization code has been revoked')` word for word; the tokens the code issued die with the
+  connection — the refresh token received at the first exchange is refused with nothing written
+  (`testExchangingACodeTwiceRevokesTheConnection`: the audit line is read on the request that writes it, and
+  **every later refusal is read in turn and must write none** — the `security_audit` `TestHandler` holds the last
+  request's records only, since MonologBundle tags every logger `kernel.reset` and the services resetter runs
+  between two requests of a `KernelBrowser` whether the kernel reboots or not, `disableReboot()` included,
+  measured in task 4: a line counted « after the last request » would always read zero). **The exception is a
+  `RuntimeException`, never a `LogicException` nor an `InvalidArgumentException`**: league's code grant wraps its
+  validation in a `catch` of each and turns them into `invalidRequest('code', 'Issue decrypting the authorization
+  code')` — as a `DomainException` the compromise never left league and the connection stayed active (measured;
+  `CompromisedMcpConnectionExceptionTest` reads the ancestors by reflection, a typed `assertNotInstanceOf` being
+  « always true » for PHPStan). **League binds the code to the client after the
+  repository**, unlike the refresh grant (`client_id !== $client->getIdentifier()` comes after `isAuthCodeRevoked()`): a
+  code replayed under another registered `client_id` revokes its real client's connection too — **accepted and pinned**
+  (`testAReplayUnderAnotherClientRevokesTheConnectionToo`): a public client's `client_id` is public (it is in the
+  authorization request), whoever replays a code can name the right one, a code that comes back has leaked whatever the
+  name it comes back under, and the refusal is the one league gave before the revocation, word for word; the audit line
+  names the connection's client, never the replayer's. A code presented **first** by another client is refused by
+  league (« not issued to this client ») after a repository call that writes nothing: the code stays exchangeable by
+  its client, the connection intact, no line (`testACodePresentedFirstByAnotherClientConsumesNothing`).
+  `LeagueRepositoriesTest` judges a code under a rolled-back transaction, like a refresh token (the lock requires one).
 - **The last use is written at the refresh only, at most once per elapsed hour** (`McpConnection::USAGE_WRITE_INTERVAL`,
   `PT1H`, `recordUseAt($at)`: writes and returns `true` when no use is noted or when the interval has elapsed since
   the previous one — `add(new DateInterval(…))`, elapsed time, #445: across the repeated autumn hour the two

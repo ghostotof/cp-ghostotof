@@ -165,7 +165,8 @@ paths:
   judged `FOR UPDATE` on its connection, inside the token endpoint's transaction, and a rotated refresh token
   presented again revokes the connection — the lock, the order of judgement and the two clocks are in
   `.claude/rules/mcp-oauth-cycle-de-vie.md`, « The refresh is judged under the lock of its connection ». A code
-  exchanged twice in sequence is refused; its replay's revocation is the next task of #649.
+  exchanged twice is judged the same way, and its replay revokes the connection too — « A replayed code is judged
+  under the same lock », in the same rule.
 - **OAuth answers are league's (RFC 6749 §5.2), rendered by the controller, never thrown**:
   `ApiProblemResponseListener` / `ApiJsonErrorFormatListener` would rewrite them as problem+json, which
   OAuth clients do not read. **What the controllers render is `Cache-Control: no-store`**: the authorize

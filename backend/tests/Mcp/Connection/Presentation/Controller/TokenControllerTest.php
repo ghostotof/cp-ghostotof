@@ -114,7 +114,11 @@ final class TokenControllerTest extends WebTestCase
         $this->assertNoTokenIssued();
     }
 
-    /** Un code ne s'échange qu'une fois. */
+    /**
+     * Un code ne s'échange qu'une fois. Ce que le second échange emporte —
+     * la connexion révoquée, cause `code-replay`, et ses jetons avec elle
+     * (#649) — est épinglé par `CodeReplayTest`.
+     */
     public function testACodeExchangedTwiceIsRefusedTheSecondTime(): void
     {
         $code = $this->grantedCode();

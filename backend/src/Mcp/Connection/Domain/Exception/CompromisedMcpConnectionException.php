@@ -5,14 +5,14 @@ declare(strict_types=1);
 namespace App\Mcp\Connection\Domain\Exception;
 
 use App\Mcp\Connection\Domain\ValueObject\RevocationCause;
-use DomainException;
+use RuntimeException;
 use Symfony\Component\Uid\Uuid;
 
 /**
  * Une connexion MCP compromise, constatée au point de jeton (#649) : un
  * rafraîchissement déjà tourné présenté de nouveau
  * ({@see \App\Mcp\Connection\Domain\Exception\RotatedRefreshTokenReusedException}), un code déjà échangé rejoué
- * (tâche suivante). Le jeton ou le code présenté a fuité, ou son client
+ * ({@see \App\Mcp\Connection\Domain\Exception\AuthorizationCodeReplayedException}). Le jeton ou le code présenté a fuité, ou son client
  * rejoue une réponse perdue : les deux se ressemblent trait pour trait, et
  * la connexion doit mourir.
  *
@@ -25,8 +25,16 @@ use Symfony\Component\Uid\Uuid;
  * Elle porte ce que la révocation demande, l'identifiant de la connexion et
  * la cause, rien d'autre : son message est constant, sans jeton, sans code,
  * sans empreinte ni UUID — il peut finir dans un journal.
+ *
+ * Une RuntimeException, **jamais une LogicException** (DomainException
+ * comprise) ni une InvalidArgumentException : league entoure la validation
+ * du code de ces deux `catch` et en fait un `invalid_request` « Issue
+ * decrypting the authorization code » — l'exception n'en sortait pas, la
+ * connexion restait active (mesuré, tâche 4 de #649). Un rejeu est une
+ * condition d'exécution, pas une erreur du programme : le parent est juste
+ * aussi. `CompromisedMcpConnectionExceptionTest` l'épingle.
  */
-abstract class CompromisedMcpConnectionException extends DomainException
+abstract class CompromisedMcpConnectionException extends RuntimeException
 {
     final protected function __construct(
         string $message,
