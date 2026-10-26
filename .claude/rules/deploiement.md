@@ -9,6 +9,10 @@ paths:
   - ".github/workflows/pipeline.yml"
   - "tools/check-rabbitmq-conf.sh"
   - "tools/wait-rollout.sh"
+  - ".github/workflows/tls-expiry.yml"
+  - "tools/check-tls-expiry.sh"
+  - "tools/lib/tls-certificate.sh"
+  - "tools/tests/tls-certificate.test.sh"
   - "backend/config/packages/messenger.yaml"
   - "backend/tests/Support/KubernetesManifests.php"
   - "backend/tests/Shared/KubernetesManifestsTest.php"
@@ -28,7 +32,7 @@ paths:
 
 | Rule | Bullets |
 |---|---|
-| this file | `tests/Support/KubernetesManifests`, `watch-refresh-cronjob.yaml` in `resources:`, the two ConfigMaps' hashing, Xdebug, ServiceAccount tokens and Pod Security Admission, Postgres/RabbitMQ state on a PVC, the ACME solvers behind the NetworkPolicies |
+| this file | `tests/Support/KubernetesManifests`, `watch-refresh-cronjob.yaml` in `resources:`, the two ConfigMaps' hashing, Xdebug, ServiceAccount tokens and Pod Security Admission, Postgres/RabbitMQ state on a PVC, the ACME solvers behind the NetworkPolicies, the daily certificate check (#719) |
 | `deploiement-pipeline.md` | migrations as a Job, what « never `kubectl exec` » covers (#520), the migration before the rollout, one rule for every Job's deadline, ExternalSecrets synced first, `smoke-test-preprod`'s message probe, deploy waits failing early, `DEPLOY_MAINTENANCE_WINDOW` |
 | `deploiement-postgres.md` | the two PostgreSQL roles (#575), the bootstrap superuser reachable from the pod only (#593) |
 | `deploiement-etat-hors-pod.md` | no application state on the pod's filesystem (ADR 0005): cache pools, locks, rate limiters, `lock_timeout` and `ConsoleLockWaitBoundTest` |
@@ -188,7 +192,28 @@ paths:
   upgrade changing the label or the port — cert-manager is a cluster prerequisite, not pinned here) must
   be followed by a challenge seen through: `kubectl get challenges -A` empty or `valid`, and the
   certificates' `notAfter` moving. The policy reaches the cluster by `apply -k` like the others; what
-  watches expiry is `tools/audit-prod.sh` (14 days, blocking, but run by `audit-preprod` at release time
-  only) — a scheduled check is #719. After a long block, cert-manager's old orders fail with `404 No
+  watches expiry is the next bullet. After a long block, cert-manager's old orders fail with `404 No
   order for ID` once unblocked and it retries after its backoff (one hour after a first failure): no
   manual cleanup needed.
+- **The served certificates are checked every day, at two thresholds** (#719). Until then only
+  `tools/audit-prod.sh` looked, at release time, in preprod only — hence the 17 silent days above.
+  `.github/workflows/tls-expiry.yml` (`schedule` daily, plus `workflow_dispatch`) runs
+  `tools/check-tls-expiry.sh` against the three certificates — `cp-ghostotof.com`, `www.cp-ghostotof.com`
+  (its own `cp-ghostotof-www-tls`, checked by nothing before: the audit's `curl` on `www` only fails, it
+  reads no date) and `preprod.cp-ghostotof.com` — at **25 days** by default: cert-manager renews at 30, so
+  the alert falls 5 days after a first failed renewal and leaves 25 to repair. The signal is the failed
+  run, e-mailed by GitHub to whoever last changed the cron. **A workflow of its own, never a `schedule:`
+  in `pipeline.yml`**: a scheduled run is on `refs/heads/main`, where `pipeline.yml`'s
+  `github.ref == 'refs/heads/main'` conditions would start `deploy-prod`. It does one TLS handshake per
+  host, no HTTP, so it needs no secret, no environment and no Basic Auth. Two GitHub limits: a
+  `schedule` runs from the default branch only (active once a release ships it), and GitHub disables it
+  after 60 days without repository activity. **`audit-prod.sh` keeps 14 days, on purpose**: it is
+  `audit-preprod`'s gate, a required check of `main`, and at 25 a healthy certificate 20 days from expiry
+  would block a release — a certificate hotfix's included. Both share the verdict,
+  `tools/lib/tls-certificate.sh` (`check_tls_certificate <host> <days> <pem>`, increments the caller's
+  `FAILURES`), which also fails a certificate that **does not cover the host**: what ingress-nginx serves
+  when the TLS Secret is missing, its « Fake Certificate », valid a year, invisible to an expiry check
+  alone. `tools/tests/tls-certificate.test.sh` (`tools-tests`) proves both on self-signed certificates
+  and the script end to end against a local `openssl s_server` (`NAME@ADDRESS:PORT`); each verdict
+  measured red by mutation. Not covered: a `Certificate` stuck at `Issuing=False` (it needs the cluster,
+  which the scheduled job has no token for), the chain's validity, and an OCSP or CT problem.

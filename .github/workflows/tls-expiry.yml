@@ -1,0 +1,43 @@
+name: Certificats TLS
+
+# Issue #719. Le renouvellement Let's Encrypt des trois certificats est resté
+# bloqué 17 jours sans signal (2026-10-09 → 2026-10-26, incident ACME) :
+# audit-prod.sh contrôlait le certificat, mais seulement au push d'une branche
+# release/*, et seulement en préprod. Entre deux releases, rien ne regardait.
+#
+# Un workflow à part, jamais un `schedule:` dans pipeline.yml : un run planifié
+# s'exécute sur `refs/heads/main`, où les conditions `github.ref ==
+# 'refs/heads/main'` de pipeline.yml lanceraient deploy-prod.
+#
+# Le signal est l'échec du run : GitHub l'envoie par e-mail à qui a modifié le
+# cron en dernier. Deux limites de GitHub à connaître :
+#   - un `schedule` ne tourne que depuis la branche par défaut (`main`) : ce
+#     workflow n'est actif qu'une fois livré par une release ;
+#   - sur un dépôt public, GitHub désactive les `schedule` après 60 jours sans
+#     activité du dépôt (le réactiver depuis l'onglet Actions).
+
+on:
+  schedule:
+    # Tous les jours à 06:17 UTC, hors de l'heure pile où GitHub retarde les
+    # runs planifiés.
+    - cron: '17 6 * * *'
+  # Pour un contrôle à la demande, après un renouvellement par exemple.
+  workflow_dispatch:
+
+# Une poignée de main TLS par hôte : rien à écrire, aucun secret, aucun
+# environnement (la Basic Auth de préprod ne joue qu'au niveau HTTP).
+permissions:
+  contents: read
+
+jobs:
+  tls-expiry:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5 # habituel ~15 s, checkout compris ; 10 s au plus par hôte
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Les trois certificats de cert-manager : prod (apex), redirection www,
+      # préprod. Seuil par défaut du script, 25 jours (renouvellement à 30).
+      - name: Validité des certificats servis
+        run: tools/check-tls-expiry.sh cp-ghostotof.com www.cp-ghostotof.com preprod.cp-ghostotof.com

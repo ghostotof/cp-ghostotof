@@ -50,6 +50,11 @@ détail des jobs.
    renouvellement bloqué 17 jours). Après une installation ou une mise à jour de
    cert-manager, vérifier qu'un challenge aboutit : `kubectl get challenges -A`
    vide ou `valid`, et le `notAfter` des certificats qui avance.
+   Le workflow `Certificats TLS` (`.github/workflows/tls-expiry.yml`, #719)
+   contrôle chaque jour les trois certificats servis et échoue à moins de 25
+   jours de l'échéance : un run rouge, reçu par e-mail, veut dire un
+   renouvellement en échec depuis au moins 5 jours. Le relancer à la demande
+   (onglet Actions, *Run workflow*) confirme un renouvellement réparé.
 4. **ServiceAccount dédié au pipeline GitHub Actions** (remplace le tunnel GitLab
    Agent for Kubernetes) : manifests sous `k8s/base/github-actions-rbac/`
    (`ServiceAccount` + `Role`/`RoleBinding` namespaced, scope limité aux kinds
