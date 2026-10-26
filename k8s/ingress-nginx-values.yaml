@@ -36,9 +36,16 @@ controller:
     # jamais lentement, et un corps démesuré ne l'atteint pas
     # (.claude/rules/deploiement-nginx.md, « Multipart bodies never reach
     # PHP »). Aucune annotation d'Ingress ne doit les surcharger :
-    # IngressBuffersRequestBodiesTest le garde.
+    # IngressBuffersRequestBodiesTest le garde. Guillemets obligatoires :
+    # Helm lit en YAML 1.1, où un `on` nu devient le booléen rendu "true".
+    # La borne égale le client_max_body_size du server du sidecar.
     proxy-request-buffering: "on"
     proxy-body-size: "1m"
+  # Issue #712 : une annotation de snippet contournerait les deux réglages
+  # ci-dessus pour son Ingress. C'est déjà le défaut du chart et du
+  # contrôleur ; l'écrire remplace un `true` qu'un --reuse-values
+  # conserverait (le chart ne rend la clé de ConfigMap que pour `true`).
+  allowSnippetAnnotations: false
   service:
     annotations:
       # Cloud Controller Manager Scaleway : active le proxy-protocol v2 sur

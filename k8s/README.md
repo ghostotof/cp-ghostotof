@@ -19,23 +19,27 @@ détail des jobs.
    erronées depuis une seule machine (`tools/smoke-login-throttling.sh`) sont
    freinées à la sixième, et l'access log du sidecar (`kubectl logs deploy/backend
    -c nginx`) montre l'IP publique du visiteur, pas `100.64.x.x` ni celle du LB.
-   Le même fichier épingle `proxy-request-buffering: "on"` et `proxy-body-size: "1m"`
-   (issue #712) : l'ingress lit tout le corps avant de joindre le pod et refuse en
-   413 un corps de plus d'1 Mo, ce sur quoi s'appuie l'acceptation de #702
-   (`.claude/rules/deploiement-nginx.md`). `--reuse-values` conserve toute valeur
-   posée à la main : vérifier, en lecture seule, que la ConfigMap du contrôleur
-   porte bien les deux valeurs et qu'aucun Ingress ne les surcharge par annotation.
-   ```bash
-   kubectl -n ingress-nginx get configmap ingress-nginx-controller -o jsonpath='{.data}'; echo
-   kubectl get ingress -A -o json | jq -r '.items[] | select(.metadata.annotations // {} | keys
-     | any(test("proxy-(request-buffering|body-size)"))) | "\(.metadata.namespace)/\(.metadata.name)"'
-   ```
-   La seconde commande ne doit rien afficher.
    ```bash
    helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
    helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
      --namespace ingress-nginx --create-namespace --version 4.15.1 \
      --reuse-values -f k8s/ingress-nginx-values.yaml
+   ```
+   Le même fichier épingle `proxy-request-buffering: "on"` et `proxy-body-size: "1m"`,
+   et laisse les annotations de snippet désactivées (issue #712) : l'ingress lit
+   tout le corps avant de joindre le pod et refuse en 413 un corps de plus d'1 Mo,
+   ce sur quoi s'appuie l'acceptation de #702 (`.claude/rules/deploiement-nginx.md`).
+   `--reuse-values` conserve toute valeur posée à la main. Après application,
+   vérifier en lecture seule que la ConfigMap du contrôleur porte les deux valeurs
+   et n'autorise pas les snippets (la première commande affiche `true`, code de
+   sortie 0), et qu'aucun Ingress ne les surcharge par annotation (la seconde
+   n'affiche rien) :
+   ```bash
+   kubectl -n ingress-nginx get configmap ingress-nginx-controller -o json | jq -e '.data
+     | .["proxy-request-buffering"] == "on" and .["proxy-body-size"] == "1m"
+       and (.["allow-snippet-annotations"] // "false") == "false"'
+   kubectl get ingress -A -o json | jq -r '.items[] | select(.metadata.annotations // {} | keys
+     | any(test("proxy-(request-buffering|body-size)|snippet"))) | "\(.metadata.namespace)/\(.metadata.name)"'
    ```
 3. **Installer cert-manager** + un `ClusterIssuer` nommé `letsencrypt` (référencé
    par l'annotation `cert-manager.io/cluster-issuer` de l'Ingress) : gère les
