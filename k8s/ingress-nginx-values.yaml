@@ -27,6 +27,25 @@ controller:
     # ingress-nginx lit l'en-tête PROXY et en fait $remote_addr, donc la
     # valeur de X-Forwarded-For envoyée aux pods.
     use-proxy-protocol: "true"
+    # Issue #712 : l'ingress lit tout le corps avant de joindre le pod, et
+    # refuse en 413 un corps de plus d'1 Mo. Ce sont les valeurs par défaut du
+    # contrôleur (relevées sur le cluster le 2026-10-26), écrites ici pour
+    # qu'un changement de chart ou une valeur posée à la main ne les déplace
+    # pas en silence. L'acceptation de #702 en dépend : un multipart n'est
+    # compté par aucune zone du sidecar, mais un corps lent ne lui arrive
+    # jamais lentement, et un corps démesuré ne l'atteint pas
+    # (.claude/rules/deploiement-nginx.md, « Multipart bodies never reach
+    # PHP »). Aucune annotation d'Ingress ne doit les surcharger :
+    # IngressBuffersRequestBodiesTest le garde. Guillemets obligatoires :
+    # Helm lit en YAML 1.1, où un `on` nu devient le booléen rendu "true".
+    # La borne égale le client_max_body_size du server du sidecar.
+    proxy-request-buffering: "on"
+    proxy-body-size: "1m"
+  # Issue #712 : une annotation de snippet contournerait les deux réglages
+  # ci-dessus pour son Ingress. C'est déjà le défaut du chart et du
+  # contrôleur ; l'écrire remplace un `true` qu'un --reuse-values
+  # conserverait (le chart ne rend la clé de ConfigMap que pour `true`).
+  allowSnippetAnnotations: false
   service:
     annotations:
       # Cloud Controller Manager Scaleway : active le proxy-protocol v2 sur
