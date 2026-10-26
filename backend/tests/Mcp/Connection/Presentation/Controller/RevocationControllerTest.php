@@ -111,6 +111,31 @@ final class RevocationControllerTest extends WebTestCase
         self::assertSame($revokedAt, $this->revokedAtEpoch());
     }
 
+    /**
+     * Un rafraîchissement **déjà tourné** rendu au point de révocation, sa
+     * connexion encore active : le même signal qu'une réutilisation au point
+     * de jeton (décision 3 — sur une connexion active, un rafraîchissement
+     * révoqué ne peut venir que d'une rotation). La connexion est révoquée
+     * pour réutilisation, cause `refresh-token-reuse`, une ligne d'audit ; la
+     * réponse reste le 200 de RFC 7009 §2.2, qui ne dit rien de plus.
+     */
+    public function testRevokingAnAlreadyRotatedRefreshTokenIsAuditedAsReuse(): void
+    {
+        $tokens = $this->issuedTokens();
+        [$connectionId] = $this->theConnection();
+        $refreshed = $this->refresh($tokens['refresh_token']);
+        self::assertSame(Response::HTTP_OK, $refreshed->getStatusCode(), substr((string) $refreshed->getContent(), 0, 500));
+        $this->assertConnectionActive();
+
+        $response = $this->revoke(['token' => $tokens['refresh_token'], 'client_id' => self::CLIENT_ID]);
+
+        $this->assertRevocationAccepted($response);
+        $event = self::singleSecurityAuditEvent(self::REVOKED_EVENT);
+        self::assertSame($connectionId, $event['connectionId'] ?? null);
+        self::assertSame('refresh-token-reuse', $event['cause'] ?? null);
+        self::assertSame('refresh-token-reuse', $this->revocationCause());
+    }
+
     /** Le `token_type_hint` est lu comme une indication, jamais comme une règle (RFC 7009 §2.1). */
     public function testAWrongTokenTypeHintStillRevokesTheToken(): void
     {

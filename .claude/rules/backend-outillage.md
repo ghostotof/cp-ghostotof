@@ -155,7 +155,8 @@ once, at the cost of dev CLI traces: not done, an open question of #420.
 
 A test that puts real processes in a race (`RateLimiterConcurrencyTest`, `ContributionOrderConcurrencyTest`,
 `SendAccountInvitationConcurrencyTest`, `PasswordSetupActivationConcurrencyTest`, `ReinviteConcurrencyTest`,
-`InviteUsernameConcurrencyTest`, `AccountAdministrationConcurrencyTest`, `TokenEndpointConcurrencyTest`)
+`InviteUsernameConcurrencyTest`, `AccountAdministrationConcurrencyTest`, `TokenEndpointConcurrencyTest`,
+`RevocationEndpointConcurrencyTest`)
 goes through **one harness, written once**. `tests/Support/ChildPhpProcess::inTestEnvironment()` builds the
 child's `Process`: its command line (above) and a copy of the test's `$_SERVER`, where `phpunit.dist.xml`'s
 `<server force="true">` values live (a real `ANTHROPIC_API_KEY` exported in the shell must not reach the
@@ -203,7 +204,12 @@ That test's child (`tests/Mcp/Connection/Fixtures/present-at-token-endpoint.php`
 `TokenEndpointInterface` in PSR-7 and **reads it on its standard input** (`Process::setInput()`), never as an
 argument: the command line is copied into the harness's failure messages, and the body carries the refresh
 token or the code; it prints the refusal's JSON (league's, no token) and only the **status** of an issued
-answer. Every
+answer. `RevocationEndpointConcurrencyTest` (#649, task 6) is a **lock-order** test, not a lock-presence one: its
+child (`Fixtures/revoke-at-revocation-endpoint.php`, same stdin rule, prints `revoked`, the refusal's JSON or
+`failed <SQLSTATE>` — never the driver's message) revokes a refresh token while the parent rotates it, released at
+the parent's first flush with the connection locked. Its mutation is the **order**: the token rows revoked before
+the connection, without `lockForIssuance()` — measured, a deadlock, the child aborted in `40P01`, the parent served
+`200` and the connection left active. Every
 test that waits on a held lock to prove the bound carries a `statement_timeout = '3s'` safety net, so
 that a mutation removing the bound (`boundTheWait()`) fails it in `57014` instead of hanging the suite — a
 child session that waits (a console session, so no FPM `lock_timeout`) sets it on itself before the barrier,

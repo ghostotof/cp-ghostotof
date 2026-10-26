@@ -139,11 +139,21 @@ paths:
   the endpoint.
 - **Revoking a refresh token at the revocation endpoint revokes its connection** (task 6 of #649, decision 3: RFC
   7009 §2.1 — revoking a refresh token may revoke the whole authorization it carries), cause `client`.
-  `LeagueRevocationEndpoint::revokeRefreshToken()` revokes the token, its access token and, through `revokeActive()`,
-  the connection in **one transaction**, which returns the `?RevokedConnection`; the audit line is written after the
+  `LeagueRevocationEndpoint::revokeRefreshToken()` revokes the connection, through `revokeActive()`, the token and its
+  access token in **one transaction**, which returns the `?RevokedConnection`; the audit line is written after the
   COMMIT, only when this revocation took effect (a connection already revoked keeps its first instant, cause and
-  line). Only a refresh token issued to the client presenting it (`issuedTo()`): another client's token, unknown or
-  unreadable, is the same 200 with nothing revoked. **Revoking an access token alone leaves the connection active**
+  line). **The lock order is the token endpoint's**: the connection first, re-read `FOR UPDATE`
+  (`lockForIssuance()`), then `revokeActive()`, then the refresh token and the access token (`revokeByHash()`). The
+  refresh takes C, then A, then R; a revocation taking R and A before C deadlocked with a refresh of the same token
+  held between its lock and its rotation — measured in real processes, the revocation aborted in `40P01` (a 500), the
+  refresh served and the connection **left active** with the new pair
+  (`RevocationEndpointConcurrencyTest::testARevocationCrossingTheRotationOfItsTokenRevokesTheConnection`: red under
+  the old order, green since — the revocation waits on C, then revokes). **The cause is decided under the lock**, on
+  the refresh token re-read there (`HINT_REFRESH`): already revoked while the connection is active, it was rotated,
+  and handing it back is the same signal as presenting it at the token endpoint — cause `refresh-token-reuse`
+  (`RevocationControllerTest::testRevokingAnAlreadyRotatedRefreshTokenIsAuditedAsReuse`; the concurrency test ends
+  there too, the rotation committed during the wait); otherwise `client`. Only a refresh token issued to the client
+  presenting it (`issuedTo()`): another client's token, unknown or unreadable, is the same 200 with nothing revoked. **Revoking an access token alone leaves the connection active**
   (§2.1 only allows cutting the rest). The intended consequence: a revoked refresh token presented on a **still
   active** connection can only come from a rotation, so its reuse is recognised without ambiguity; presented after
   the client revoked it, it meets a revoked connection — a plain `invalid_grant`, no second line, the cause stays
