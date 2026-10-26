@@ -84,10 +84,11 @@ paths:
   revocation, then, only when it took effect, the audit line `mcp-connection-revoked` (`userId`, `connectionId`,
   `clientId`, `cause`; `.claude/rules/security-authentication.md`), **after** the write; one statement, callable
   after a rolled-back exchange (the token endpoint's reuse and replay, below). Inside a transaction: **the
-  repository's `revokeActive()`** in the transaction, which returns its `?RevokedConnection`, and the audit written by
-  the caller **after the COMMIT** — the revoker there would audit before it, and a ROLLBACK would leave a line for a
-  revocation that never happened (the revocation endpoint's, below). Either way, no line when `revokeActive()`
-  returns `null`. `expired` is audited through
+  dedicated repository method** — `revokeActive()` (the revocation endpoint's, below), `revokeOtherActiveOf()` (the
+  superseding grant's), `revokeExpired()` (the purge's) — in the transaction, which returns what it revoked
+  (`?RevokedConnection` or a `list<RevokedConnection>`), and the audit written by the caller **after the COMMIT** —
+  the revoker there would audit before it, and a ROLLBACK would leave a line for a revocation that never happened.
+  Either way, no line for a connection the statement did not revoke (unknown or already revoked). `expired` is audited through
   `SecurityAuditLoggerInterface::mcpConnectionExpired()` (actor `system`, the purge being a scheduled command), any
   other cause through `mcpConnectionRevoked()` (actor read from the token storage). `McpConnectionRevokerTest`
   (audited once with what the repository returned, never when it returned `null`).
@@ -247,6 +248,37 @@ paths:
   join (`testARefusedKnownTokenCostsNoExtraQuery`: the refused call costs exactly the accepted call's
   authentication query, judged on the token and on the tier). Never the token nor its hash in the line
   (`testAKnownRefusedTokenIsAudited`, one case per cause, the common 401 unchanged).
+- **The daily purge** (task 9 of #649): `app:mcp:purge` (`Presentation/Command/PurgeMcpConnectionsCommand`, a thin
+  wrapper) → `Application/McpConnectionPurgerInterface::purge(RetentionPeriod)` → `McpConnectionPurgeResult`, run every
+  night by the housekeeping CronJob, third line after the invitations (`k8s/base/messenger-purge-cronjob.yaml`, under
+  `set -e`, `PGOPTIONS=-c lock_timeout=5s`; `McpConnectionsPurgedDailyTest` pins the line and that no other manifest
+  runs it). **The order, in one transaction, is the token endpoint's** — connections first, tokens after (the reverse
+  deadlocked in `40P01`, task 6): (1) `findActiveCandidatesForExpiry($idleBefore, $maximumBefore)`, a **wide** SQL
+  pre-selection (`revoked_at IS NULL AND (COALESCE(last_used_at, granted_at) <= :idleBefore OR granted_at <=
+  :maximumBefore)`, both bounds `now − duration + P1D`, computed in PHP with `new DateInterval`, typed
+  `DATETIMETZ_IMMUTABLE`), **locked `FOR UPDATE`** on the connection rows only (no join: the account's and client's rows
+  stay unlocked), `HINT_REFRESH`, ordered by id — a refresh in flight commits first and its new `last_used_at` is
+  judged, instead of a stale row revoked a few milliseconds after a legitimate use; (2) each candidate judged by
+  `isExpiredAt(now, lifetimes)`, **the only definition**, the SQL never decides; (3) `revokeExpired(list<Uuid>, $at)`,
+  one statement like `revokeActive()` (`WHERE c.id IN (:ids) AND c.revoked_at IS NULL … RETURNING`), cause `expired`;
+  (4) `deleteDead($now)` on codes, refresh tokens, then access tokens (fewer `ON DELETE SET NULL` rewrites): `expires_at
+  <= :now` **or** a revoked connection (`DELETE … USING mcp_connection`) — a rotated refresh token or an exchanged code
+  of an **active** connection stays until its expiry, its row being what recognises a reuse or a replay; the tokens of a
+  connection marked in (3) go in the same run; (5) `deleteRevokedBefore($threshold)`, `revoked_at < :threshold`, strict,
+  cascading. **After the COMMIT**, one `mcpConnectionExpired()` line per connection marked (actor `system`); a rolled-back
+  purge audits nothing (`testARolledBackPurgeAuditsNothing`, red with the audit moved inside, measured). Every instant is
+  `ClockInterface::now()` (Paris). **Retention**: `app.mcp.revoked_connection_retention` (`'6 months'`, one value for every
+  environment), the default of `--older-than`, read by `RetentionPeriod` (a date or an unreadable expression:
+  `Command::INVALID`); under one day, `McpPurgeRetentionTooShortException::belowOneDay()` before any write, `INVALID` too.
+  **No `--dry-run`** (decision 6): it only deletes dead tokens and connections dead for months, nothing a person could
+  regret — the invitation purge has one because it deletes accounts. The output names connections by UUID only, with the
+  four counters, a success even at zero. **Volumes**: the token tables stay bounded by this purge (an access token lives
+  an hour, a refresh token is rotated at each use); no index on `expires_at` (sequential scans of bounded tables), to
+  revisit if the volume asks — the partial index of task 2 serves the grant. **Accepted, unpinned**: no concurrency test
+  proves the `FOR UPDATE` of (1) (the sequential suite stays green without it). `McpConnectionPurgerTest` (frozen clock
+  across the autumn change; `testThePurgeAndIsExpiredAtAgreeAtTheBoundary`: last use at the idle threshold and one second
+  after, grant at the maximum threshold and one second after, marked ⇔ `isExpiredAt()` re-read from the database — red
+  when every candidate is revoked unjudged, measured), `PurgeMcpConnectionsCommandTest`.
 - **The trusted tier has one judge**, `Infrastructure/Security/TrustedTier::reaches(CpgUser)`: the stored roles
   through `RoleHierarchyInterface`, the name `McpConnectionPrincipal::TRUSTED_TIER` — used by
   `McpBearerAuthenticator` on every request of `/api/mcp` (behaviour unchanged, `McpBearerAuthenticatorTest`) and

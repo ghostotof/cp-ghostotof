@@ -63,4 +63,44 @@ interface McpConnectionRepositoryInterface
      * @return list<RevokedConnection> ce qui a été révoqué, une entrée par connexion remplacée
      */
     public function revokeOtherActiveOf(McpConnection $kept, RevocationCause $cause, DateTimeImmutable $at): array;
+
+    /**
+     * Les connexions actives **peut-être** expirées, verrouillées (`FOR
+     * UPDATE`) jusqu'à la fin de la transaction en cours, que la méthode exige
+     * (#649, la purge) : non révoquées, et dont le dernier usage (ou l'octroi)
+     * n'est pas postérieur à `$idleBefore`, ou l'octroi à `$maximumBefore`.
+     *
+     * Une présélection **large**, jamais le jugement : l'appelant passe des
+     * bornes reculées d'une marge, puis juge chaque connexion par
+     * McpConnection::isExpiredAt(), la seule définition de l'échéance. Le
+     * verrou est celui du point de jeton (la connexion d'abord) : un
+     * rafraîchissement en cours se valide avant la lecture, qui relit alors
+     * son dernier usage (`HINT_REFRESH`) au lieu de juger une ligne périmée.
+     * La connexion seule est lue — ni compte ni client, dont les lignes ne
+     * doivent pas être verrouillées avec elle.
+     *
+     * @return list<McpConnection>
+     */
+    public function findActiveCandidatesForExpiry(DateTimeImmutable $idleBefore, DateTimeImmutable $maximumBefore): array;
+
+    /**
+     * Révoque, cause `expired`, celles de ces connexions qui ne le sont pas
+     * encore (#649, la purge) : une instruction SQL, comme `revokeActive()`,
+     * dont `RETURNING` rend ce qui a été révoqué — une connexion déjà révoquée
+     * garde sa première révocation et n'est pas rendue. Appelée **dans** la
+     * transaction de la purge, l'audit revenant à l'appelant après le COMMIT.
+     * Les lignes des codes et jetons ne sont pas touchées.
+     *
+     * @param list<Uuid> $connectionIds
+     *
+     * @return list<RevokedConnection> une entrée par connexion révoquée par cet appel
+     */
+    public function revokeExpired(array $connectionIds, DateTimeImmutable $at): array;
+
+    /**
+     * Supprime les connexions révoquées (ou expirées) **avant** `$threshold`
+     * (#649, rétention de la purge) ; leurs codes et jetons partent avec elles
+     * (`ON DELETE CASCADE`). Rend le nombre de connexions supprimées.
+     */
+    public function deleteRevokedBefore(DateTimeImmutable $threshold): int;
 }

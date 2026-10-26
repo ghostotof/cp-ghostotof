@@ -11,7 +11,10 @@ use App\Mcp\Connection\Domain\ValueObject\RevokedConnection;
 use App\Shared\Infrastructure\Doctrine\RereadUnderLock;
 use DateTimeImmutable;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
+use Doctrine\DBAL\ArrayParameterType;
+use Doctrine\DBAL\LockMode;
 use Doctrine\DBAL\Types\Types;
+use Doctrine\ORM\Query;
 use Doctrine\Persistence\ManagerRegistry;
 use Symfony\Bridge\Doctrine\Types\UuidType;
 use Symfony\Component\Uid\Uuid;
@@ -137,8 +140,74 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
     }
 
     /**
+     * Une requête DQL sur la connexion seule — une jointure étendrait le
+     * `FOR UPDATE` aux lignes du compte et du client —, ordonnée par
+     * identifiant pour que deux purges lancées ensemble prennent leurs verrous
+     * dans le même ordre. `HINT_REFRESH` : une instance déjà gérée est relue
+     * telle que le verrou la montre, comme {@see RereadUnderLock::row()}. Les
+     * bornes sont typées comme leurs colonnes, avec fuseau (#434). Doctrine
+     * refuse le verrou hors transaction (`TransactionRequiredException`).
+     */
+    public function findActiveCandidatesForExpiry(DateTimeImmutable $idleBefore, DateTimeImmutable $maximumBefore): array
+    {
+        /** @var list<McpConnection> */
+        return $this->createQueryBuilder('connection')
+            ->where('connection.revokedAt IS NULL')
+            ->andWhere('(COALESCE(connection.lastUsedAt, connection.grantedAt) <= :idleBefore OR connection.grantedAt <= :maximumBefore)')
+            ->orderBy('connection.id')
+            ->setParameter('idleBefore', $idleBefore, Types::DATETIMETZ_IMMUTABLE)
+            ->setParameter('maximumBefore', $maximumBefore, Types::DATETIMETZ_IMMUTABLE)
+            ->getQuery()
+            ->setLockMode(LockMode::PESSIMISTIC_WRITE)
+            ->setHint(Query::HINT_REFRESH, true)
+            ->getResult();
+    }
+
+    /**
+     * La même instruction que {@see self::revokeActive()}, sur une liste
+     * d'identifiants, cause `expired` : `revoked_at IS NULL` garde la première
+     * révocation, `RETURNING` rend chaque connexion révoquée pour l'audit. Une
+     * liste vide n'interroge pas la base.
+     */
+    public function revokeExpired(array $connectionIds, DateTimeImmutable $at): array
+    {
+        if ([] === $connectionIds) {
+            return [];
+        }
+
+        $rows = $this->getEntityManager()->getConnection()->fetchAllAssociative(
+            'UPDATE mcp_connection c SET revoked_at = :at, revocation_cause = :cause'
+            .' FROM mcp_client cl'
+            .' WHERE c.id IN (:ids) AND c.revoked_at IS NULL AND cl.id = c.mcp_client_id'
+            .' RETURNING c.id, c.account_id, cl.client_id',
+            [
+                'at' => $at,
+                'cause' => RevocationCause::Expired->value,
+                'ids' => array_map(static fn (Uuid $id): string => $id->toRfc4122(), $connectionIds),
+            ],
+            ['at' => Types::DATETIMETZ_IMMUTABLE, 'ids' => ArrayParameterType::STRING],
+        );
+
+        return array_map(fn (array $row): RevokedConnection => $this->revokedConnectionOf($row, RevocationCause::Expired), $rows);
+    }
+
+    /**
+     * Une instruction : le seuil est strict, typé comme sa colonne. Les codes
+     * et jetons suivent par `ON DELETE CASCADE` (la purge les a déjà
+     * supprimés, ceux d'une connexion révoquée étant morts).
+     */
+    public function deleteRevokedBefore(DateTimeImmutable $threshold): int
+    {
+        return (int) $this->getEntityManager()->getConnection()->executeStatement(
+            'DELETE FROM mcp_connection WHERE revoked_at < :threshold',
+            ['threshold' => $threshold],
+            ['threshold' => Types::DATETIMETZ_IMMUTABLE],
+        );
+    }
+
+    /**
      * Ce qu'une ligne rendue par `RETURNING c.id, c.account_id, cl.client_id`
-     * a révoqué : écrit une fois pour les deux révocations.
+     * a révoqué : écrit une fois pour les trois révocations.
      *
      * @param array<string, mixed> $row
      */

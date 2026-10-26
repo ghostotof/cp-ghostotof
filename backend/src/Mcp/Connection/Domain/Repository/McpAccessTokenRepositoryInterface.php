@@ -33,4 +33,13 @@ interface McpAccessTokenRepositoryInterface
      * une erreur. Une instance déjà chargée n'est pas rafraîchie.
      */
     public function revokeByHash(string $tokenHash, DateTimeImmutable $at): void;
+
+    /**
+     * Supprime les jetons morts (#649, la purge quotidienne) : échus
+     * (`expires_at <= $now`, exclusif comme leur jugement), ou d'une connexion
+     * révoquée, que plus rien n'accepte. Un rafraîchissement qui gardait un
+     * jeton supprimé lui survit (`ON DELETE SET NULL`). Rend le nombre de
+     * lignes supprimées.
+     */
+    public function deleteDead(DateTimeImmutable $now): int;
 }

@@ -29,4 +29,13 @@ interface McpAuthorizationCodeRepositoryInterface
      * une erreur. Une instance déjà chargée n'est pas rafraîchie.
      */
     public function revokeByHash(string $codeHash, DateTimeImmutable $at): void;
+
+    /**
+     * Supprime les codes morts (#649, la purge quotidienne) : échus
+     * (`expires_at <= $now`), ou d'une connexion révoquée. Un code échangé
+     * (révoqué) mais non échu d'une connexion active reste : sa ligne est ce
+     * qui fait reconnaître un rejeu dans ses dix minutes. Rend le nombre de
+     * lignes supprimées.
+     */
+    public function deleteDead(DateTimeImmutable $now): int;
 }

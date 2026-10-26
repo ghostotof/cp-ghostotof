@@ -54,6 +54,11 @@ parameters:
     app.mcp.lifetime.refresh_token: 'P30D'
     app.mcp.lifetime.connection_idle: 'P30D'
     app.mcp.lifetime.connection_maximum: 'P90D'
+    # Rétention des connexions MCP révoquées ou expirées (#649) : la purge
+    # quotidienne (`app:mcp:purge`, défaut de `--older-than`) supprime celles
+    # révoquées avant ce délai. Une expression relative PHP, lue par
+    # RetentionPeriod comme toute durée de purge, d'au moins un jour.
+    app.mcp.revoked_connection_retention: '6 months'
 
 services:
     # default configuration for services in *this* file
