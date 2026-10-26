@@ -9,8 +9,10 @@ use DomainException;
 /**
  * Exception métier levée par {@see \App\Shared\Domain\ValueObject\RetentionPeriod}
  * lorsque l'expression relative fournie (typiquement l'option `--older-than`
- * d'une commande de purge) ne décrit pas une durée strictement positive, ou
- * n'est pas un intervalle relatif PHP lisible.
+ * d'une commande de purge) n'est pas un intervalle relatif PHP lisible, ne
+ * décrit pas une durée strictement positive, désigne une date plutôt qu'une
+ * durée, mêle des termes de signes opposés, ou place le seuil avant l'an 1.
+ * Une fabrique par cause, pour un message qui la nomme.
  */
 final class InvalidRetentionPeriodException extends DomainException
 {

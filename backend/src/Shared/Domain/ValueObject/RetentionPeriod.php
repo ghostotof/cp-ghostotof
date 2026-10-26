@@ -15,6 +15,13 @@ use DateTimeZone;
  * (ex. "30 days", "12 hours") — utilisée par les commandes de purge pour
  * calculer un seuil d'ancienneté sûr.
  *
+ * Les jours, mois et années se comptent sur le calendrier du fuseau de `$now`,
+ * les heures, minutes et secondes en temps écoulé (règles de #445, issue #710).
+ * Toute expression relative PHP n'est pas une durée : sont refusées celles qui
+ * désignent une date ("monday", "first day of next month", "yesterday"), qui
+ * mêlent des termes de signes opposés, dont PHP lit mal un nombre, ou qui
+ * placent le seuil avant l'an 1 (relecture de #710).
+ *
  * Piège corrigé (issue #248) : la commande de purge des messages de contact en
  * échec construisait auparavant `new DateTimeImmutable('-'.$olderThan)`. Avec
  * un `$olderThan` déjà négatif (ex. "-30 days"), la concaténation produit
@@ -109,14 +116,14 @@ final readonly class RetentionPeriod
         $interval = self::calendarDaysThenElapsedTime($relative);
 
         if (self::designatesADate($trimmed, $interval)) {
-            throw InvalidRetentionPeriodException::designatesADate($trimmed);
+            throw InvalidRetentionPeriodException::designatesADate($expression);
         }
 
         return $interval;
     }
 
     /**
-     * Recopie les champs d'un intervalle lu par {@see \DateInterval::createFromDateString()}
+     * Recopie les champs d'un intervalle lu par {@see DateInterval::createFromDateString()}
      * dans un intervalle construit, que PHP retranche autrement (issue #710).
      *
      * L'intervalle lu est « relatif » : `sub()` le traite comme `modify()` et
@@ -186,7 +193,7 @@ final readonly class RetentionPeriod
      * Vrai si l'expression porte plus que les champs de son intervalle : un
      * jour de la semaine, un "first/last … of", une heure du jour (issue #710).
      *
-     * Ces parts ne sont visibles dans aucun champ de {@see \DateInterval}, et
+     * Ces parts ne sont visibles dans aucun champ de {@see DateInterval}, et
      * PHP les traite mal en arithmétique d'intervalle : `sub()` lève une erreur
      * native sur un jour de la semaine, `add()` comme `sub()` ignorent "first/last
      * day of". Seul `modify()` interprète l'expression entière. Une durée
@@ -199,8 +206,11 @@ final readonly class RetentionPeriod
      * dépende pas du moment où la commande tourne : `$now` un 1er du mois
      * laisserait passer "first day of next month". Il tombe en milieu de mois
      * (aucun "first/last … of" n'y retombe) et hors de minuit (un jour de la
-     * semaine ramène à minuit, celui de la référence compris). Limite acceptée :
-     * une expression qui nomme cet instant même ("wednesday 13:37:42") passe.
+     * semaine ramène à minuit, celui de la référence compris). Une heure
+     * explicite ("wednesday 13:37:42") ne peut pas tomber sur la référence :
+     * {@see DateInterval::createFromDateString()} la refuse avant, illisible.
+     * La comparaison reste une heuristique : sans écart sur le catalogue des
+     * tests, elle n'est pas prouvée sur toute la grammaire relative de PHP.
      */
     private static function designatesADate(string $expression, DateInterval $interval): bool
     {
