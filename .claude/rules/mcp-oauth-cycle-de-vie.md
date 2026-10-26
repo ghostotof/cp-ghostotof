@@ -79,10 +79,15 @@ paths:
   makes a rotated refresh token's reuse recognisable. The partial index `idx_mcp_connection_active_pair`
   (`account_id, mcp_client_id WHERE revoked_at IS NULL`, declared on the entity too so that `migrations:diff` stays
   empty) serves the search for a pair's active grant, which a new grant supersedes. `McpConnectionRepositoryTest`.
-- **Application code revokes through `McpConnectionRevokerInterface::revoke($id, $cause)` only**: the clock's
-  instant, the repository's revocation, then — only when it took effect — the audit line `mcp-connection-revoked`
-  (`userId`, `connectionId`, `clientId`, `cause`; `.claude/rules/security-authentication.md`), **after** the write.
-  Outside any transaction, one statement: callable after a rolled-back exchange. `expired` is audited through
+- **Two application paths revoke a connection, chosen by the transaction.** Outside a transaction, after a
+  rolled-back one: **`McpConnectionRevokerInterface::revoke($id, $cause)`** — the clock's instant, the repository's
+  revocation, then, only when it took effect, the audit line `mcp-connection-revoked` (`userId`, `connectionId`,
+  `clientId`, `cause`; `.claude/rules/security-authentication.md`), **after** the write; one statement, callable
+  after a rolled-back exchange (the token endpoint's reuse and replay, below). Inside a transaction: **the
+  repository's `revokeActive()`** in the transaction, which returns its `?RevokedConnection`, and the audit written by
+  the caller **after the COMMIT** — the revoker there would audit before it, and a ROLLBACK would leave a line for a
+  revocation that never happened (the revocation endpoint's, below). Either way, no line when `revokeActive()`
+  returns `null`. `expired` is audited through
   `SecurityAuditLoggerInterface::mcpConnectionExpired()` (actor `system`, the purge being a scheduled command), any
   other cause through `mcpConnectionRevoked()` (actor read from the token storage). `McpConnectionRevokerTest`
   (audited once with what the repository returned, never when it returned `null`).
@@ -131,9 +136,20 @@ paths:
   (`RefreshRotationTest::testReusingARotatedRefreshTokenRevokesTheConnection`, which also reads the audit line:
   `userId`, `connectionId`, the public `clientId`, `cause`, no token value). Revoking the connection leaves its
   token rows as they are (decision 6): `OAuthFlowTest` sees the successor still unrevoked in rows and worthless at
-  the endpoint. Until task 6, a refresh token the client revoked at the revocation endpoint comes back on an active
-  connection and is read as a reuse (`RevocationControllerTest`'s refresh after revocation, noted there); task 6
-  makes that revocation revoke the connection itself, cause `client`.
+  the endpoint.
+- **Revoking a refresh token at the revocation endpoint revokes its connection** (task 6 of #649, decision 3: RFC
+  7009 §2.1 — revoking a refresh token may revoke the whole authorization it carries), cause `client`.
+  `LeagueRevocationEndpoint::revokeRefreshToken()` revokes the token, its access token and, through `revokeActive()`,
+  the connection in **one transaction**, which returns the `?RevokedConnection`; the audit line is written after the
+  COMMIT, only when this revocation took effect (a connection already revoked keeps its first instant, cause and
+  line). Only a refresh token issued to the client presenting it (`issuedTo()`): another client's token, unknown or
+  unreadable, is the same 200 with nothing revoked. **Revoking an access token alone leaves the connection active**
+  (§2.1 only allows cutting the rest). The intended consequence: a revoked refresh token presented on a **still
+  active** connection can only come from a rotation, so its reuse is recognised without ambiguity; presented after
+  the client revoked it, it meets a revoked connection — a plain `invalid_grant`, no second line, the cause stays
+  `client`. `RevocationControllerTest::testRevokingARefreshTokenRevokesItsConnection` (the audit line read on the
+  revocation's request, none on the later refresh), `testRevokingAnAccessTokenRevokesItsRowOnly` and
+  `testATokenIssuedToAnotherClientIsLeftAlone` (the connection active, no line).
 - **A replayed code is judged under the same lock** (task 4 of #649, `Infrastructure/League/AuthCodeRepository::isAuthCodeRevoked()`,
   written on the refresh's model; OAuth 2.1 §4.1.2). League's code grant calls it from `validateAuthorizationCode()`,
   inside `TokenEndpoint`'s transaction, after authenticating the client, decrypting the payload and judging the

@@ -9,10 +9,18 @@ use App\Mcp\Connection\Domain\ValueObject\RevokedConnection;
 use Symfony\Component\Uid\Uuid;
 
 /**
- * Révoque une connexion MCP et l'audite (#649) : le seul chemin par lequel le
- * code applicatif révoque une connexion — un rafraîchissement réutilisé, un
- * code rejoué, un jeton révoqué par le client, un accord remplacé,
- * l'expiration constatée par la purge.
+ * Révoque une connexion MCP et l'audite (#649), **hors transaction** : le
+ * chemin du code applicatif qui révoque une connexion après une transaction
+ * annulée — un rafraîchissement réutilisé, un code rejoué, que league refuse
+ * dans la transaction du point de jeton (TokenEndpoint).
+ *
+ * Dans une transaction, ce révocateur ne convient pas : son audit suivrait
+ * l'écriture avant le COMMIT, et survivrait à un ROLLBACK. Là, le code appelle
+ * la méthode de dépôt dédiée
+ * ({@see \App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface::revokeActive()}),
+ * fait rendre à la transaction la {@see RevokedConnection}, et écrit l'audit
+ * après le COMMIT — ainsi la révocation d'un rafraîchissement par le client
+ * ({@see \App\Mcp\Connection\Infrastructure\League\LeagueRevocationEndpoint}).
  */
 interface McpConnectionRevokerInterface
 {

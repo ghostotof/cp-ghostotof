@@ -9,7 +9,11 @@ use App\Mcp\Connection\Application\RevocationEndpointInterface;
 use App\Mcp\Connection\Application\TransactionInterface;
 use App\Mcp\Connection\Domain\Entity\McpConnection;
 use App\Mcp\Connection\Domain\Repository\McpAccessTokenRepositoryInterface;
+use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
 use App\Mcp\Connection\Domain\Repository\McpRefreshTokenRepositoryInterface;
+use App\Mcp\Connection\Domain\ValueObject\RevocationCause;
+use App\Mcp\Connection\Domain\ValueObject\RevokedConnection;
+use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use League\OAuth2\Server\Exception\OAuthServerException;
 use Psr\Clock\ClockInterface;
 use Psr\Http\Message\ServerRequestInterface;
@@ -37,11 +41,19 @@ use SensitiveParameter;
  *   (RFC 7009 §2.1 le recommande), dans une transaction : jamais l'un sans
  *   l'autre. L'inverse non : révoquer un jeton d'accès laisse vivre son
  *   rafraîchissement (§2.1 ne fait que le permettre), qui en obtiendra un
- *   autre ; tout couper, c'est révoquer la connexion (#650).
- * - **La connexion n'est pas révoquée** : la révocation d'une connexion, et
- *   sa ligne d'audit « connexion révoquée », sont l'objet des tâches 10 et
- *   11 de la spec (#649, #650). Ici, un client rend un jeton dont il n'a plus
- *   l'usage, rien de plus.
+ *   autre ; tout couper, c'est rendre le rafraîchissement (ci-dessous) ou
+ *   révoquer la connexion (#650).
+ * - **Un rafraîchissement révoqué révoque sa connexion** (#649, décision 3 ;
+ *   RFC 7009 §2.1 : révoquer un rafraîchissement peut révoquer toute
+ *   l'autorisation qu'il porte), cause `client`, dans la même transaction que
+ *   ses deux jetons — par McpConnectionRepositoryInterface::revokeActive(),
+ *   une instruction SQL que la base n'applique qu'une fois. La ligne d'audit
+ *   `mcp-connection-revoked` s'écrit **après** le COMMIT, et seulement si
+ *   cette révocation-ci a eu lieu : une connexion déjà révoquée n'en reçoit
+ *   pas de seconde. Conséquence voulue : un rafraîchissement révoqué qui
+ *   revient sur une connexion encore active ne peut venir que d'une rotation,
+ *   et sa réutilisation se reconnaît sans ambiguïté (RefreshTokenRepository).
+ *   Un jeton d'accès rendu seul ne touche pas la connexion.
  *
  * Non traité, accepté : le temps de réponse diffère selon que le jeton est
  * trouvé, déchiffré ou non (une requête, un déchiffrement) ; le statut et le
@@ -56,8 +68,10 @@ final readonly class LeagueRevocationEndpoint implements RevocationEndpointInter
         private ClientRepository $clients,
         private McpAccessTokenRepositoryInterface $accessTokens,
         private McpRefreshTokenRepositoryInterface $refreshTokens,
+        private McpConnectionRepositoryInterface $connections,
         private RefreshTokenPayloadReader $refreshTokenReader,
         private TransactionInterface $transaction,
+        private SecurityAuditLoggerInterface $auditLogger,
         private ClockInterface $clock,
     ) {
     }
@@ -120,10 +134,11 @@ final readonly class LeagueRevocationEndpoint implements RevocationEndpointInter
         }
 
         $at = $this->clock->now();
-        // Lu avant la transaction : son empreinte seule sert dedans.
+        // Lus avant la transaction : leurs identifiants seuls servent dedans.
         $accessTokenHash = $refreshToken->accessToken()?->tokenHash();
+        $connectionId = $refreshToken->connection()->getId();
 
-        $this->transaction->run(function () use ($refreshToken, $accessTokenHash, $at): void {
+        $revoked = $this->transaction->run(function () use ($refreshToken, $accessTokenHash, $connectionId, $at): ?RevokedConnection {
             $this->refreshTokens->revokeByHash($refreshToken->tokenHash(), $at);
 
             // Le lien est nul quand le jeton d'accès a été purgé (`ON DELETE
@@ -131,7 +146,18 @@ final readonly class LeagueRevocationEndpoint implements RevocationEndpointInter
             if (null !== $accessTokenHash) {
                 $this->accessTokens->revokeByHash($accessTokenHash, $at);
             }
+
+            // La connexion avec ses jetons, ou rien (RFC 7009 §2.1) ; `null`
+            // quand elle était déjà révoquée : la première révocation garde
+            // son instant, sa cause et sa ligne d'audit.
+            return $this->connections->revokeActive($connectionId, RevocationCause::Client, $at);
         });
+
+        // Après le COMMIT : jamais une ligne d'audit pour une révocation que
+        // la base aurait annulée.
+        if (null !== $revoked) {
+            $this->auditLogger->mcpConnectionRevoked($revoked, $revoked->connectionId, $revoked->clientId, $revoked->cause->value);
+        }
     }
 
     private function issuedTo(McpConnection $connection, string $clientId): bool

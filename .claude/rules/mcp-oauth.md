@@ -145,8 +145,9 @@ paths:
   unreadable or of another client is a 200 without effect (RFC 7009 §2.2). **Revoking a refresh token kills its
   access token** too, in one transaction (§2.1's SHOULD); **revoking an access token leaves its refresh token
   alive** (§2.1 only says MAY): a client handing back its access token alone can still refresh
-  (`RevocationControllerTest::testRevokingAnAccessTokenRevokesItsRowOnly`). The connection
-  is **not** revoked (#649); revoking a whole connection, every token with it, is #650.
+  (`RevocationControllerTest::testRevokingAnAccessTokenRevokesItsRowOnly`). **Revoking a refresh
+  token revokes its connection** too, cause `client` (#649): `.claude/rules/mcp-oauth-cycle-de-vie.md`, « Revoking a
+  refresh token at the revocation endpoint revokes its connection »; revoking a connection from the site is #650.
   `token_type_hint` is ignored. **Accepted**: the response time differs with the token's fate (one query,
   one decryption), status and body do not. **The token endpoint is atomic** (`TokenEndpoint`): league runs
   inside `TransactionInterface` — it writes in several steps (the exchange: access token, refresh token, then
