@@ -1,20 +1,18 @@
 name: Certificats TLS
 
-# Issue #719. Le renouvellement Let's Encrypt des trois certificats est resté
-# bloqué 17 jours sans signal (2026-10-09 → 2026-10-26, incident ACME) :
-# audit-prod.sh contrôlait le certificat, mais seulement au push d'une branche
-# release/*, et seulement en préprod. Entre deux releases, rien ne regardait.
+# Contrôle quotidien des certificats servis (issue #719). Pourquoi, avec quels
+# seuils et quelles limites : .claude/rules/deploiement.md, puce « The served
+# certificates are checked every day ». Le statut des `Certificate`
+# cert-manager, qui demande un accès au cluster, est suivi dans #722.
 #
 # Un workflow à part, jamais un `schedule:` dans pipeline.yml : un run planifié
 # s'exécute sur `refs/heads/main`, où les conditions `github.ref ==
 # 'refs/heads/main'` de pipeline.yml lanceraient deploy-prod.
 #
-# Le signal est l'échec du run : GitHub l'envoie par e-mail à qui a modifié le
-# cron en dernier. Deux limites de GitHub à connaître :
-#   - un `schedule` ne tourne que depuis la branche par défaut (`main`) : ce
-#     workflow n'est actif qu'une fois livré par une release ;
-#   - sur un dépôt public, GitHub désactive les `schedule` après 60 jours sans
-#     activité du dépôt (le réactiver depuis l'onglet Actions).
+# Le signal est le run rouge, envoyé par e-mail à qui a modifié le cron en
+# dernier (si ses notifications Actions sont actives). Deux limites de GitHub :
+# un `schedule` ne tourne que depuis la branche par défaut, et GitHub le
+# désactive sans bruit après 60 jours sans activité sur un dépôt public.
 
 on:
   schedule:
@@ -37,7 +35,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # Les trois certificats de cert-manager : prod (apex), redirection www,
-      # préprod. Seuil par défaut du script, 25 jours (renouvellement à 30).
+      # Chaque hôte TLS des Ingress de k8s/, ni plus ni moins :
+      # TlsExpiryWatchCoversEveryIngressHostTest compare cette ligne aux
+      # manifests.
       - name: Validité des certificats servis
         run: tools/check-tls-expiry.sh cp-ghostotof.com www.cp-ghostotof.com preprod.cp-ghostotof.com
