@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Support;
 
+use Closure;
 use FilesystemIterator;
 use PhpToken;
 use RecursiveDirectoryIterator;
@@ -44,6 +45,25 @@ final class PhpSources
         sort($paths);
 
         return $paths;
+    }
+
+    /**
+     * Les sites que trouve un recenseur dans chaque fichier du répertoire.
+     *
+     * @param Closure(string): list<int> $linesIn les lignes des sites d'un code source
+     *
+     * @return list<string> `chemin:ligne` de chaque site, triés par fichier pour un diagnostic stable
+     */
+    public static function sites(string $directory, Closure $linesIn): array
+    {
+        $found = [];
+        foreach (self::files($directory) as $path) {
+            foreach ($linesIn(RepositoryFiles::read($path)) as $line) {
+                $found[] = $path.':'.$line;
+            }
+        }
+
+        return $found;
     }
 
     /**

@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace App\Tests\Security;
 
+use App\Tests\Security\Authentication\BearerCookieSecurePerEnvironmentTest;
+use App\Tests\Security\Authentication\CpgUserPasswordHasherTest;
 use App\Tests\Support\EnvironmentConfigKernel;
+use App\Tests\Support\KeyPaths;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -29,14 +32,18 @@ use PHPUnit\Framework\TestCase;
  * fragment normalisé puis fusionné par la configuration de l'extension
  * elle-même (EnvironmentConfigKernel::declaredConfiguration).
  *
- * Non vu, limites acceptées (aucun cas aujourd'hui) :
+ * Non vu ici, et vu par {@see SecurityServicesEnvironmentParityTest}
+ * (issue #698), qui compare les définitions compilées des services de
+ * sécurité — la carte d'accès et les contextes de firewall compris :
  *  - un service que la configuration désigne, redéfini pour un environnement
  *    (`when@prod: services:`, services_prod.yaml) — un fournisseur, un voter,
  *    un user_checker : la section reste identique, le comportement non ;
- *  - une passe de compilation qui modifierait la carte selon l'environnement
- *    ({@see \App\Kernel::build()} n'en ajoute qu'une, la même partout) ;
+ *  - une passe de compilation qui modifierait la carte selon l'environnement ;
  *  - ce qu'un bundle ajoute par `prepend()`, appliqué à la compilation, après
  *    les fragments lus ici.
+ * Ce test-ci reste la garde de la configuration écrite : il nomme le chemin
+ * déclaré en cause et refuse une valeur paramétrée, ce qu'une définition
+ * compilée, paramètres résolus, ne sait plus dire.
  */
 final class SecurityConfigEnvironmentParityTest extends TestCase
 {
@@ -47,12 +54,23 @@ final class SecurityConfigEnvironmentParityTest extends TestCase
 
     /**
      * « extension.chemin.vers.la.clé » qui peut différer d'un environnement à
-     * l'autre => pourquoi. Le chemin est retiré de la comparaison, rien de plus
-     * large.
+     * l'autre => pourquoi, et le test qui fige sa valeur dans chaque
+     * environnement. Le chemin est retiré de la comparaison, rien de plus
+     * large. Sans ce test, l'exemption n'a pas de filet : la valeur de prod
+     * peut changer sans que rien rougisse ici (issue #703). Écrit en `::class`
+     * pour qu'un renommage ou une suppression du test fasse rougir PHPStan.
+     *
+     * @var array<string, array{string, class-string<TestCase>}>
      */
     private const array ENVIRONMENT_SPECIFIC = [
-        'security.password_hashers' => 'Coût bcrypt abaissé à 4 sous when@test pour la vitesse de la suite (issue #590) ; CpgUserPasswordHasherTest fige l\'entrée entière dans chaque environnement.',
-        'lexik_jwt_authentication.set_cookies.BEARER.secure' => 'Secure en prod seulement, la règle d\'AuthCookieFactory (le dev sert localhost en HTTP) ; AuthCookieAttributesTest fige le cookie que Lexik pose contre celui de la fabrique.',
+        'security.password_hashers' => [
+            'Coût bcrypt abaissé à 4 sous when@test pour la vitesse de la suite (issue #590).',
+            CpgUserPasswordHasherTest::class,
+        ],
+        'lexik_jwt_authentication.set_cookies.BEARER.secure' => [
+            'Secure partout sauf en dev, la règle d\'AuthCookieFactory (le dev est servi en HTTP, où tous les navigateurs n\'acceptent pas un cookie Secure, issue #714) ; AuthCookieAttributesTest le vérifie sur le cookie réellement posé, en test.',
+            BearerCookieSecurePerEnvironmentTest::class,
+        ],
     ];
 
     /**
@@ -134,18 +152,27 @@ final class SecurityConfigEnvironmentParityTest extends TestCase
 
     /**
      * Une exemption qui ne sert plus se retire : sinon elle couvrirait demain
-     * une différence que personne n'a justifiée.
+     * une différence que personne n'a justifiée. Mais une exemption qui ne
+     * sert plus et un écart voulu qui a disparu rougissent de la même façon,
+     * et retirer `Secure` en prod en est un (issue #703) : le message renvoie
+     * donc à la raison écrite et au test qui fige la valeur avant d'inviter à
+     * retirer quoi que ce soit.
      */
     public function testEveryEnvironmentSpecificPathStillDiffers(): void
     {
-        foreach (array_keys(self::ENVIRONMENT_SPECIFIC) as $path) {
+        foreach (self::ENVIRONMENT_SPECIFIC as $path => [$reason, $pinnedBy]) {
             [$extension, $keys] = $this->split($path);
-            $reference = $this->at($this->declared('test', $extension, null), $keys);
+            $reference = KeyPaths::at($this->declared('test', $extension, null), $keys);
             $differs = false;
             foreach (EnvironmentConfigKernel::comparedEnvironments() as $environment) {
-                $differs = $differs || $this->at($this->declared($environment, $extension, null), $keys) !== $reference;
+                $differs = $differs || KeyPaths::at($this->declared($environment, $extension, null), $keys) !== $reference;
             }
-            self::assertTrue($differs, \sprintf('%s est identique partout : retirer son exemption d\'ENVIRONMENT_SPECIFIC.', $path));
+            self::assertTrue($differs, \sprintf(
+                '%s est identique dans tous les environnements. Son exemption d\'ENVIRONMENT_SPECIFIC dit pourquoi il devait différer : « %s » Si cet écart est toujours voulu, c\'est la configuration qu\'il faut rétablir : %s fige la valeur attendue de chaque environnement. Ne retirer l\'exemption qu\'après avoir vérifié que sa raison ne tient plus, et adapter ce test plutôt que le supprimer.',
+                $path,
+                $reason,
+                $pinnedBy,
+            ));
         }
     }
 
@@ -293,7 +320,7 @@ final class SecurityConfigEnvironmentParityTest extends TestCase
         foreach (array_keys(self::ENVIRONMENT_SPECIFIC) as $path) {
             [$exemptExtension, $keys] = $this->split($path);
             if ($exemptExtension === $extension) {
-                $declared = self::without($declared, $keys);
+                $declared = KeyPaths::without($declared, $keys);
             }
         }
 
@@ -334,49 +361,6 @@ final class SecurityConfigEnvironmentParityTest extends TestCase
         $keys = explode('.', $path);
 
         return [array_shift($keys), $keys];
-    }
-
-    /**
-     * La valeur au bout d'un chemin de clés, `null` si le chemin n'existe pas.
-     *
-     * @param list<string> $keys
-     */
-    private function at(mixed $value, array $keys): mixed
-    {
-        foreach ($keys as $key) {
-            if (!\is_array($value) || !\array_key_exists($key, $value)) {
-                return null;
-            }
-            $value = $value[$key];
-        }
-
-        return $value;
-    }
-
-    /**
-     * La configuration sans la clé au bout du chemin — et sans rien d'autre.
-     *
-     * @param array<array-key, mixed> $config
-     * @param list<string>            $keys
-     *
-     * @return array<array-key, mixed>
-     */
-    private static function without(array $config, array $keys): array
-    {
-        $key = array_shift($keys);
-        if (null === $key || !\array_key_exists($key, $config)) {
-            return $config;
-        }
-        if ([] === $keys) {
-            unset($config[$key]);
-
-            return $config;
-        }
-        if (\is_array($config[$key])) {
-            $config[$key] = self::without($config[$key], $keys);
-        }
-
-        return $config;
     }
 
     /**

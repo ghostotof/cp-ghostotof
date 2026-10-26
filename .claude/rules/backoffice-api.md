@@ -33,7 +33,24 @@ paths:
   just as much — and `lexik_jwt_authentication` with it (where the `jwt` authenticator reads the token, what it
   sets). Its `ENVIRONMENT_SPECIFIC` exemptions are exact paths, each checked to still differ:
   `security.password_hashers` (cost 4 under `when@test`, pinned per environment by `CpgUserPasswordHasherTest`)
-  and `lexik_jwt_authentication.set_cookies.BEARER.secure` (`Secure` in prod only, `AuthCookieAttributesTest`).
+  and `lexik_jwt_authentication.set_cookies.BEARER.secure` (`Secure` everywhere but `dev`, pinned per environment
+  by `BearerCookieSecurePerEnvironmentTest`, issue #703 — `AuthCookieAttributesTest` runs in `test` only, where
+  it is true since #714). **An exemption is a net that must pin its own value in every environment**: until #703 nothing
+  required `true` in prod, so removing the `when@prod` block turned the « still differs » check red with an
+  invitation to drop the exemption, and the suite went green on a JWT sent without `Secure`. Each entry is
+  therefore `[reason, PinningTest::class]` — a renamed or deleted pinning test turns PHPStan red — and the
+  check's message quotes the reason and names that test before inviting any removal. The same test requires
+  `set_cookies` to declare `BEARER` alone and the cookie extractor to read it: a second entry would set a
+  copy of the JWT without `Secure`, common to every environment, so the parity saw nothing. The guard reads
+  the *declared* value; since #714 `test` declares the secure one too, so `AuthCookieAttributesTest` sees the
+  real chain set `Secure` — a redefinition of `lexik_jwt_authentication.cookie_provider.BEARER` turns it red
+  (measured), and by construction so do a decorator in `services.yaml`, a `kernel.response` listener rewriting
+  the cookie, a bundle's `prepend()` or a compiler pass, when they act in `test` too; `ApiRouteExposureTest`
+  checks every cookie of its responses against the factory as well (`.claude/rules/security-authentication.md`).
+  What acts in `prod` alone through the container is `SecurityServicesEnvironmentParityTest`'s (#698, below).
+  **Accepted limits** (#714): code that decides on the environment or on `%kernel.debug%` at run time, and code
+  conditioned on the request being `https` (functional clients stay in http), still send it in clear with the
+  suite green; HSTS on the API narrows the exposure, it does not close it.
   No key nor value of either may hold a `%env()%` or `%parameter%` reference (`%%` is an escape, fine), save
   `PARAMETERIZED_BY_DESIGN`: Lexik's `secret_key`, `public_key`, `pass_phrase`, per-deployment secrets. The
   order of a map's common entries is compared too (`firewalls (ordre)`: Symfony takes the first matching one).
@@ -43,10 +60,51 @@ paths:
   preview, `when@dev`), its path pinned so the justification cannot follow it under `/api`. It also refuses the
   forms themselves, even redeclaring identical routes: a `config/routes/<env>/` directory, a `when@<env>` block
   or a `->env()` in a routes file (save `ENVIRONMENT_BLOCKS`: `routes/framework.yaml`'s `when@dev`, which imports
-  `_preview_error`), a `#[Route(env: …)]` in `src/`. Every environment is read with `debug` off. Not seen,
-  accepted (none today): a service the configuration names, redefined for one environment (`when@prod: services:`
-  — a provider, a voter, a user checker; follow-up #698), a compiler pass or a bundle's `prepend()` changing the
-  map per environment, a route or rule depending on `%kernel.debug%`.
+  `_preview_error`), a `#[Route(env: …)]` in `src/`. Every environment is read with `debug` off.
+  **The security services themselves are compared too, compiled** (issue #698): the declared parity saw the section,
+  not the services it names, so a `when@prod: services:` redefinition — a provider, an autoconfigured voter granting
+  `ROLE_TRUSTED`, a decorator, Lexik's `cookie_provider.BEARER` without `Secure` — left every guard green.
+  `tests/Security/SecurityServicesEnvironmentParityTest.php` compiles each environment's `ContainerBuilder` in
+  memory (`tests/Support/EnvironmentServicesKernel`, `debug` off, 0.3–0.7 s each, a per-process cache removed
+  afterwards) and snapshots the definitions **after every optimization pass and before the removing ones**
+  (`SecurityServicesSnapshotPass`, last of `TYPE_BEFORE_REMOVING`): autoconfiguration, decorators, bundles'
+  `prepend()` and compiler passes are applied, and no private service is inlined yet — the fully dumped container
+  (`EnvironmentRoutesKernel`'s read) no longer has voters and providers by id, the declared read
+  (`EnvironmentConfigKernel`) has neither autoconfiguration nor decorators. **The guard resolves parameters itself,
+  arrays included**: `ResolveParameterPlaceHoldersPass` leaves an array parameter under its name, so
+  `security.role_hierarchy` read `%security.role_hierarchy.roles%` and a `prod`-only pass giving `ROLE_TRUSTED` to
+  `ROLE_USER` stayed green (measured in the review). A definition is described in full: enum cases, `file:`, a
+  reference's mode (`@?`, `@!`), visibility and deprecation. The perimeter: ids under `security.`,
+  `lexik_jwt_authentication.`, `limiter.`, `nelmio_cors.`, `messenger.`, hidden ones included
+  (`.security.request_matcher.<hash>` *is* the `access_control` rule), `clock`, every `App\` class, classes
+  implementing a security contract (`CONTRACTS`), `security.voter` tags, the firewall dispatchers' listeners and the
+  main dispatcher's on security events, the main dispatcher's own definition minus its `addListener` calls (an
+  `addSubscriber` added by a pass); their aliases, and any alias named under a security namespace (Symfony Security,
+  PasswordHasher, RateLimiter, Lexik, `Psr\Clock`) whatever its target. Three lists are compared whatever the class:
+  **every** listener of the main dispatcher, counted (events are also named by strings — Lexik's `on_jwt_decoded`,
+  `security.switch_user` —, which a filter on event classes missed), save `ENVIRONMENT_SPECIFIC_LISTENERS` (the
+  mailer's logger in `test`, Monolog's console handler, Maker in `dev`); Doctrine's listeners, counted too; the
+  parameters `FrameworkBundle::boot()` applies outside any definition (`kernel.trusted_proxies`,
+  `kernel.trusted_hosts`, `kernel.trusted_headers`, `kernel.http_method_override`,
+  `kernel.allowed_http_method_override`, `kernel.trust_x_sendfile_type_header`) and every `env(…)` default. The
+  configuration is loaded **under the environment read** (`tests/Support/ProcessEnvironment`, in all three parity
+  kernels): PHPUnit runs `APP_ENV=test`, so a PHP config file branching on `$_SERVER['APP_ENV']` took `test`'s
+  branch everywhere while the production image takes the other. Not the transitive closure: measured, it reaches 723
+  services (loggers, caches, the router), which rightly differ; a service outside is seen through the reference
+  only. Abstract definitions are skipped (templates, removed anyway). Its exemptions (`EnvironmentSpecificPath`) are
+  exact paths in a definition **with the value expected in every environment**, checked there (`test` included, an
+  environment without its value fails): exempting the path alone hid a `prod` redefinition of the `BEARER` provider
+  without `Secure` (measured) — the #703 trap again. Today: the hasher factory's cost (`4` in `test`), the `BEARER`
+  provider's `secure` (expected value taken from `AuthCookieFactory`), `AuthCookieFactory`'s `%kernel.environment%`,
+  the `async` transport's DSN (`in-memory://` in `test`), and the two services `services.yaml` makes public under
+  `when@test` (`EndOfLifeDateClient`, `CorpusRenderer`). The passes after the snapshot must be exactly
+  `EXPECTED_LATER_PASSES` in every environment (a prefix filter on `App\` let an anonymous class through). Its
+  fixtures `Fixtures/EnvironmentServices/prod-only-services.{yaml,php}`, loaded after the app's config, override one
+  service of each form in `prod` alone; the test requires each form's line (by its start, so a vendor change does
+  not rewrite the list) and nothing outside `prod`. Accepted (none today): code deciding on the environment at run
+  time, a deployment variable (compared by name; its `env(…)` default is compared), a rule depending on
+  `%kernel.debug%` (preprod and prod run `APP_DEBUG=0`), a service outside the perimeter redefined under its own id
+  that only a reference names. The declared guard stays: it names the written path and refuses parameterized values.
 - **API Platform pattern**, repeated identically across every backoffice resource
   (`BackofficeExperienceTechnologyResource`, `BackofficeQuality{Principle,Trait}Resource`,
   `BackofficeContributionResource`, `BackofficeIncidentResource`, `BackofficeWatchedProductResource`,
