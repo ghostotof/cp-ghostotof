@@ -215,4 +215,19 @@ interface SecurityAuditLoggerInterface
      * suggérerait un appelant humain.
      */
     public function mcpConnectionExpired(AccountReference $account, Uuid $connectionId, string $clientId): void;
+
+    /**
+     * Jeton d'accès MCP connu, présenté sur `/api/mcp` et refusé (#649) :
+     * désigne le compte de sa connexion (`userId`), la connexion
+     * (`connectionId`), le client par son identifiant public (`clientId`) et
+     * la cause (`cause`, le mot stable de
+     * {@see \App\Mcp\Connection\Domain\ValueObject\BearerRefusal} : jeton
+     * révoqué ou échu, autre audience, connexion révoquée ou expirée, scope,
+     * compte hors palier de confiance). Une chaîne plutôt que l'enum : ce
+     * contexte ne dépend pas de `Mcp`. Jamais pour un Bearer mal formé ni un
+     * jeton inconnu, qui ne désignent aucune connexion. L'auteur est lu comme
+     * pour tout événement (`anonymous` : le refus précède toute
+     * authentification). Jamais le jeton présenté ni son empreinte.
+     */
+    public function mcpAccessTokenRefused(AccountReference $account, Uuid $connectionId, string $clientId, string $cause): void;
 }

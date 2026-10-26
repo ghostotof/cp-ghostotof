@@ -247,7 +247,12 @@ paths:
     for a connection already revoked:
     `userId`, `connectionId`, `clientId`, `cause` — `client`, `refresh-token-reuse`, `code-replay`, `superseded`
     through `mcpConnectionRevoked()`, actor read as usual; `expired` through `mcpConnectionExpired()`, actor `system`
-    like `user-purged`, the purge being a scheduled command; never the token or code presented). Every record carries
+    like `user-purged`, the purge being a scheduled command; never the token or code presented),
+    `mcp-access-token-refused` (#649, `McpBearerAuthenticator` right before refusing a **known** access token on
+    `/api/mcp` — a cause of `McpAccessToken::refusalAt()` or the trusted tier, never `malformed` nor `unknown`, which
+    designate no connection: `userId`, `connectionId`, `clientId`, `cause` = the `BearerRefusal` value, actor
+    `anonymous`; at most one line per connection and per hour in normal use, `.claude/rules/mcp-oauth-cycle-de-vie.md`;
+    never the token nor its hash). Every record carries
     `event` (the stable kebab-case key to filter on), `actor`, `ip`, `path` (canonical), plus the subject.
     **An account is designated by its `userId` (RFC 4122) only, as subject and as `actor`, never by its
     login identifier** (issue #363): an invited account's username is derived from the local part of its

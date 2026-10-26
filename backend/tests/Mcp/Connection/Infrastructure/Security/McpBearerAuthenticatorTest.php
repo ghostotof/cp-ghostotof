@@ -42,8 +42,9 @@ use Symfony\Component\HttpFoundation\Response;
  * Chaque refus est vérifié sous ses deux faces : la réponse (401 sans corps,
  * le défi `error="invalid_token"`, `no-store`, aucun jeton dans le
  * `token_storage`) et sa cause, lue dans la ligne « Authenticator failed. »
- * du canal `security` — la seule chose qui distingue un jeton révoqué d'un
- * jeton inconnu, le client recevant la même réponse.
+ * du canal `security` — avec, pour un jeton connu, la ligne d'audit
+ * `mcp-access-token-refused` (#649), la seule chose qui distingue un jeton
+ * révoqué d'un jeton inconnu, le client recevant la même réponse.
  */
 final class McpBearerAuthenticatorTest extends WebTestCase
 {
@@ -57,6 +58,18 @@ final class McpBearerAuthenticatorTest extends WebTestCase
 
     /** …écrits en 80 hexadécimaux minuscules. */
     private const int TOKEN_LENGTH = 2 * self::TOKEN_BYTES;
+
+    /** L'événement d'audit du refus d'un jeton connu (#649). */
+    private const string ACCESS_TOKEN_REFUSED = 'mcp-access-token-refused';
+
+    /** La ligne altérée par un cas de refus : le jeton d'accès… */
+    private const string ACCESS_TOKEN_ROW = 'access-token';
+
+    /** …sa connexion… */
+    private const string CONNECTION_ROW = 'connection';
+
+    /** …ou le compte, dont les rôles stockés sont vidés (le palier de base). */
+    private const string ACCOUNT_ROW = 'account';
 
     /** La session ouverte par heldAndServedOnce(), où la requête suivante est refusée. */
     private ?string $heldSessionId = null;
@@ -415,6 +428,107 @@ final class McpBearerAuthenticatorTest extends WebTestCase
     }
 
     /**
+     * Les refus d'un jeton connu (#649) : la ligne, la cause et la table
+     * altérée, avec les mêmes altérations SQL que les tests de refus
+     * ci-dessus.
+     *
+     * @return iterable<string, array{self::ACCESS_TOKEN_ROW|self::CONNECTION_ROW|self::ACCOUNT_ROW, string, BearerRefusal}>
+     */
+    public static function knownRefusals(): iterable
+    {
+        yield 'jeton révoqué' => [self::ACCESS_TOKEN_ROW, 'revoked_at = now()', BearerRefusal::TokenRevoked];
+        yield 'jeton échu' => [self::ACCESS_TOKEN_ROW, "expires_at = now() - INTERVAL '1 second'", BearerRefusal::TokenExpired];
+        yield 'audience étrangère' => [self::ACCESS_TOKEN_ROW, "audience = audience || '/'", BearerRefusal::ForeignAudience];
+        yield 'connexion révoquée' => [self::CONNECTION_ROW, "revoked_at = now(), revocation_cause = 'client'", BearerRefusal::ConnectionRevoked];
+        yield 'connexion expirée' => [self::CONNECTION_ROW, "granted_at = granted_at - INTERVAL '91 days'", BearerRefusal::ConnectionExpired];
+        yield 'scope' => [self::CONNECTION_ROW, "scope = 'profile'", BearerRefusal::InsufficientScope];
+        yield 'compte hors palier' => [self::ACCOUNT_ROW, '', BearerRefusal::AccountNotTrusted];
+    }
+
+    /**
+     * Le refus d'un jeton connu est audité (#649) : une ligne
+     * `mcp-access-token-refused` désignant le compte par son UUID, la
+     * connexion, le client par son identifiant public et la cause — le mot de
+     * BearerRefusal. Jamais le jeton ni son empreinte (#363, #648). L'auteur
+     * est `anonymous` : le refus a lieu avant toute authentification. La
+     * réponse reste le 401 commun, quelle que soit la cause.
+     *
+     * @param self::ACCESS_TOKEN_ROW|self::CONNECTION_ROW|self::ACCOUNT_ROW $row
+     */
+    #[DataProvider('knownRefusals')]
+    public function testAKnownRefusedTokenIsAudited(string $row, string $assignments, BearerRefusal $cause): void
+    {
+        $held = $this->heldAndServedOnce();
+        self::assertSame([], self::securityAuditEvents(self::ACCESS_TOKEN_REFUSED), 'Un appel accepté n\'écrit aucun refus.');
+
+        $this->alterHeldRow($held, $row, $assignments);
+        $this->assertNextCallRefusedBecause($held, $cause);
+
+        $line = self::singleSecurityAuditEvent(self::ACCESS_TOKEN_REFUSED);
+        self::assertSame($held->accountId, $line['userId']);
+        self::assertSame($held->connectionId, $line['connectionId']);
+        self::assertSame($held->clientId, $line['clientId']);
+        self::assertSame($cause->value, $line['cause']);
+        self::assertSame('anonymous', $line['actor']);
+        self::assertSame(self::MCP_ENDPOINT, $line['path']);
+        $serialized = json_encode($line, \JSON_THROW_ON_ERROR);
+        self::assertStringNotContainsString($held->accessToken, $serialized);
+        self::assertStringNotContainsString(hash('sha256', $held->accessToken), $serialized);
+    }
+
+    /**
+     * Ni un Bearer mal formé ni un jeton inconnu ne sont audités (#649) :
+     * aucune connexion n'y est connue, et un déluge de jetons fantaisistes ne
+     * doit pas écrire de lignes d'audit. Témoin : chaque refus a bien eu lieu.
+     */
+    public function testAMalformedOrUnknownTokenIsNotAudited(): void
+    {
+        $this->postMcpInitialize($this->client, ['name' => 'phpunit', 'version' => '1.0.0'], ['HTTP_AUTHORIZATION' => 'Bearer not-a-token']);
+        $this->assertRefusedBecause(BearerRefusal::Malformed);
+        self::assertSame([], self::securityAuditRecords(), 'Un Bearer mal formé n\'écrit rien dans l\'audit.');
+
+        $this->postMcpInitialize($this->client, ['name' => 'phpunit', 'version' => '1.0.0'], self::bearer($this->unknownToken()));
+        $this->assertRefusedBecause(BearerRefusal::Unknown);
+        self::assertSame([], self::securityAuditRecords(), 'Un jeton inconnu n\'écrit rien dans l\'audit.');
+    }
+
+    /**
+     * Un refus jugé sur le jeton et sa connexion, un autre jugé sur le palier
+     * du compte, le dernier contrôle de l'authentificateur.
+     *
+     * @return iterable<string, array{self::ACCESS_TOKEN_ROW|self::CONNECTION_ROW|self::ACCOUNT_ROW, string, BearerRefusal}>
+     */
+    public static function refusalsAtEachStage(): iterable
+    {
+        yield 'jugé par le jeton' => [self::ACCESS_TOKEN_ROW, 'revoked_at = now()', BearerRefusal::TokenRevoked];
+        yield 'jugé par le palier' => [self::ACCOUNT_ROW, '', BearerRefusal::AccountNotTrusted];
+    }
+
+    /**
+     * L'audit du refus ne coûte aucune requête (#649) : il part sur le canal
+     * Monolog `security_audit`, jamais en base. Un jeton connu refusé coûte la
+     * requête de l'authentification, la même que celle de l'appel accepté, et
+     * rien d'autre — ni compte, ni client, ni connexion relus pour la ligne
+     * d'audit : la requête du jeton les a joints. Le refus précède la session
+     * MCP, qui n'est pas lue.
+     *
+     * @param self::ACCESS_TOKEN_ROW|self::CONNECTION_ROW|self::ACCOUNT_ROW $row
+     */
+    #[DataProvider('refusalsAtEachStage')]
+    public function testARefusedKnownTokenCostsNoExtraQuery(string $row, string $assignments, BearerRefusal $cause): void
+    {
+        $held = $this->heldAndServedOnce();
+        $accepted = array_values(array_filter($this->executedSql(), static fn (string $sql): bool => str_contains($sql, 'mcp_') || str_contains($sql, 'cpg_user')));
+        self::assertCount(1, $accepted, implode("\n", $accepted));
+
+        $this->alterHeldRow($held, $row, $assignments);
+        $this->assertNextCallRefusedBecause($held, $cause);
+        self::assertCount(1, self::securityAuditEvents(self::ACCESS_TOKEN_REFUSED), 'Témoin : le refus a bien été audité.');
+
+        self::assertSame($accepted, $this->executedSql());
+    }
+
+    /**
      * Le firewall `mcp` ne lit jamais de cookie (ADR 0006 D4) : un `BEARER`
      * de confiance sans en-tête `Authorization` laisse la requête anonyme, et
      * rien n'est lu en base pour lui.
@@ -492,6 +606,20 @@ final class McpBearerAuthenticatorTest extends WebTestCase
         $this->heldSessionId = $sessionId;
 
         return $held;
+    }
+
+    /**
+     * Altère la ligne nommée par un cas de refus, par le même SQL que les tests de refus.
+     *
+     * @param self::ACCESS_TOKEN_ROW|self::CONNECTION_ROW|self::ACCOUNT_ROW $row
+     */
+    private function alterHeldRow(HeldMcpConnection $held, string $row, string $assignments): void
+    {
+        match ($row) {
+            self::ACCESS_TOKEN_ROW => $this->alterHeldAccessToken($held, $assignments),
+            self::CONNECTION_ROW => $this->alterHeldConnection($held, $assignments),
+            self::ACCOUNT_ROW => $this->rewriteHeldAccountRoles($held, []),
+        };
     }
 
     private function assertNextCallRefusedBecause(HeldMcpConnection $held, BearerRefusal $cause): void

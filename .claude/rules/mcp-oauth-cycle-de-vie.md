@@ -234,6 +234,19 @@ paths:
   (ADR 0006 D6, `testNoRequestWritesOutsideTheMcpSessions` stays green). The price: the idle deadline counts from a
   use up to an hour old. `RefreshRotationTest::testARefreshRecordsTheLastUseAtMostOncePerHour` (null after the
   exchange, set by the first refresh, left alone 30 minutes later, rewritten 61 minutes later).
+- **A known token refused is audited** (task 8 of #649). `McpBearerAuthenticator` writes
+  `SecurityAuditLoggerInterface::mcpAccessTokenRefused()` — event `mcp-access-token-refused`, `userId` (the
+  connection's account, `McpConnection::account()`, an `AccountReference`), `connectionId`, the public `clientId`,
+  `cause` = the `BearerRefusal` value; actor `anonymous`, the refusal precedes any authentication — right before
+  throwing `McpBearerRefusedException` for a refusal of `McpAccessToken::refusalAt()` or of `TrustedTier`. **Never for
+  `Malformed` nor `Unknown`**: no connection is known there, and a flood of garbage tokens must write no audit line
+  (`testAMalformedOrUnknownTokenIsNotAudited`). **Volume**: a healthy client sees its access token expire once an
+  hour (`access_token`, `PT1H`), then refreshes — at most one line per connection and per hour in normal use; more
+  means a client that does not refresh, or a connection used after its revocation or expiry. **No query more**: the
+  line goes to the Monolog channel, and the connection, its account and its client are those of the token's single
+  join (`testARefusedKnownTokenCostsNoExtraQuery`: the refused call costs exactly the accepted call's
+  authentication query, judged on the token and on the tier). Never the token nor its hash in the line
+  (`testAKnownRefusedTokenIsAudited`, one case per cause, the common 401 unchanged).
 - **The trusted tier has one judge**, `Infrastructure/Security/TrustedTier::reaches(CpgUser)`: the stored roles
   through `RoleHierarchyInterface`, the name `McpConnectionPrincipal::TRUSTED_TIER` — used by
   `McpBearerAuthenticator` on every request of `/api/mcp` (behaviour unchanged, `McpBearerAuthenticatorTest`) and

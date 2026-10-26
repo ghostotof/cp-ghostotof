@@ -639,6 +639,34 @@ final class SecurityAuditLoggerTest extends TestCase
     }
 
     /**
+     * Refus d'un jeton d'accès MCP connu (#649) : le compte par son UUID, la
+     * connexion, le client par son identifiant public, la cause — le mot de
+     * `BearerRefusal`. L'acteur est lu comme d'habitude : le refus a lieu
+     * avant toute authentification, d'où `anonymous`.
+     */
+    public function testMcpAccessTokenRefusedNamesTheAccountTheConnectionTheClientAndTheCause(): void
+    {
+        $this->pushRequest('/api/mcp', 'POST');
+        $account = new CpgUser('trusted', 'hashed-password');
+        $connectionId = Uuid::v7();
+
+        $this->auditLogger->mcpAccessTokenRefused($account, $connectionId, 'https://client.example.test/metadata.json', 'connection-expired');
+
+        $record = $this->singleRecord();
+        self::assertSame('MCP access token refused.', $record->message);
+        self::assertSame([
+            'event' => 'mcp-access-token-refused',
+            'userId' => $account->getId()->toRfc4122(),
+            'connectionId' => $connectionId->toRfc4122(),
+            'clientId' => 'https://client.example.test/metadata.json',
+            'cause' => 'connection-expired',
+            'actor' => 'anonymous',
+            'ip' => self::IP,
+            'path' => '/api/mcp',
+        ], $record->context);
+    }
+
+    /**
      * L'expiration d'une connexion MCP, constatée par la purge planifiée
      * (#649) : le même événement que la révocation, cause `expired`, et
      * l'acteur `system`, comme la purge des invitations — jamais le jeton de
@@ -769,9 +797,10 @@ final class SecurityAuditLoggerTest extends TestCase
         $this->auditLogger->nominativeCorpusRead($invited, Uuid::v7(), 'https://client.example.test/metadata.json', 'get_nominative_corpus');
         $this->auditLogger->mcpConnectionRevoked($invited, Uuid::v7(), 'https://client.example.test/metadata.json', 'client');
         $this->auditLogger->mcpConnectionExpired($invited, Uuid::v7(), 'https://client.example.test/metadata.json');
+        $this->auditLogger->mcpAccessTokenRefused($invited, Uuid::v7(), 'https://client.example.test/metadata.json', 'token-expired');
 
         $records = $this->handler->getRecords();
-        self::assertCount(26, $records);
+        self::assertCount(27, $records);
 
         foreach ($records as $record) {
             $serialized = json_encode([$record->message, $record->context, $record->extra], \JSON_THROW_ON_ERROR);

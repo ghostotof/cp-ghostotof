@@ -214,7 +214,7 @@ final readonly class SecurityAuditLogger implements SecurityAuditLoggerInterface
 
     public function mcpConnectionRevoked(AccountReference $account, Uuid $connectionId, string $clientId, string $cause): void
     {
-        $this->record('mcp-connection-revoked', 'MCP connection revoked.', $this->revokedConnection($account, $connectionId, $clientId, $cause));
+        $this->record('mcp-connection-revoked', 'MCP connection revoked.', $this->connectionSubject($account, $connectionId, $clientId, $cause));
     }
 
     public function mcpConnectionExpired(AccountReference $account, Uuid $connectionId, string $clientId): void
@@ -224,9 +224,14 @@ final readonly class SecurityAuditLogger implements SecurityAuditLoggerInterface
         $this->record(
             'mcp-connection-revoked',
             'MCP connection revoked.',
-            $this->revokedConnection($account, $connectionId, $clientId, self::EXPIRED),
+            $this->connectionSubject($account, $connectionId, $clientId, self::EXPIRED),
             self::SYSTEM,
         );
+    }
+
+    public function mcpAccessTokenRefused(AccountReference $account, Uuid $connectionId, string $clientId, string $cause): void
+    {
+        $this->record('mcp-access-token-refused', 'MCP access token refused.', $this->connectionSubject($account, $connectionId, $clientId, $cause));
     }
 
     /**
@@ -247,12 +252,13 @@ final readonly class SecurityAuditLogger implements SecurityAuditLoggerInterface
     }
 
     /**
-     * Le sujet d'une révocation de connexion MCP (#649) : le compte, la
+     * Le sujet d'un événement d'une connexion MCP portant une cause (#649) —
+     * sa révocation, le refus d'un de ses jetons d'accès : le compte, la
      * connexion, le client par son identifiant public, la cause.
      *
      * @return array{userId: string, connectionId: string, clientId: string, cause: string}
      */
-    private function revokedConnection(AccountReference $account, Uuid $connectionId, string $clientId, string $cause): array
+    private function connectionSubject(AccountReference $account, Uuid $connectionId, string $clientId, string $cause): array
     {
         return [
             ...$this->account($account),

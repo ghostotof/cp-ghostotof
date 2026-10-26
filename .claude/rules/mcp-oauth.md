@@ -229,7 +229,9 @@ paths:
   cause, recorded through `ServerAnswersInterface::record()` (the call log reads it as the server's answer), built by
   `Mcp/Infrastructure/Http/UnauthorizedAnswers::refusedToken()`, shared with the deferred 401. The cause
   is named only in `McpBearerRefusedException`'s constant message (`MCP access token refused: <cause>`, never the
-  token, its hash nor a UUID), logged by the `security` channel's « Authenticator failed. »; the `AuthenticatorManager`
+  token, its hash nor a UUID), logged by the `security` channel's « Authenticator failed. », and — for a **known**
+  token (every cause but `Malformed` and `Unknown`) — in the audit line `mcp-access-token-refused` (#649,
+  `.claude/rules/mcp-oauth-cycle-de-vie.md`, « A known token refused is audited »); the `AuthenticatorManager`
   catches it, its `log_level: info` is never used (like `SubmittedPasswordTooLongException`). On success the request
   goes on as `McpConnectionUser` (`Application/McpConnectionPrincipal`, an `AccountReference`): identifier = the
   **connection**'s UUID, roles = the account's stored roles, `accountId()`, `connectionId()`, `clientId()` (public
