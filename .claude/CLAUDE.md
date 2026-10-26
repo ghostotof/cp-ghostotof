@@ -37,6 +37,7 @@ This file only carries what applies everywhere, plus what runs from the shell (g
 | `mcp-prompt-d8.md` | the prompt `present_for_role`, the D8 guard (the author never named) | touching the prompt, a published description, `AuthorNeverNamedTest` |
 | `mcp-journaux.md` | the SDK's `mcp` channel, the call log `mcp_usage` | touching `Mcp/Infrastructure/Log`, `monolog.yaml`'s MCP handlers |
 | `mcp-oauth.md` | `Mcp/Connection`, the OAuth 2.1 authorization server of phase 2, the consent page | touching an OAuth endpoint, a token, the consent, `ingress-oauth-metadata.yaml` |
+| `mcp-oauth-cycle-de-vie.md` | lifetime of an MCP connection and its tokens (#649): durations in configuration, expiry thresholds | touching a token or connection lifetime, `ConnectionLifetimes`, the expiry, `messenger-purge-cronjob.yaml` |
 | `backoffice-api.md` | backoffice API, API Platform pattern, API errors | adding an endpoint, an API Platform resource, an exception mapping |
 | `seeding.md` | `app:*:seed`, reference-data migrations | touching a seed command or the meaning of seeded data |
 | `frontend.md` | frontend layers, API-backed content, i18n, SEO, lint | any frontend change |

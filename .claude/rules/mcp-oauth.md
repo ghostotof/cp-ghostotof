@@ -32,8 +32,9 @@ paths:
   `League\OAuth2\Server\AuthorizationServer`, declared in `config/services.yaml` by that factory (a test
   alias, `test.oauth.authorization_server`, reads the very definition). **Order matters**: the default
   scope and `revokeRefreshTokens(true)` are **copied** into each grant by `enableGrantType()`, so they are
-  set first. Durations live there only: code `PT10M`, access token `PT1H`, refresh token `P30D` (rotation,
-  reuse and expiry of the connection are #649's). Layers: `Domain/` (entities `McpClient`,
+  set first. Its durations (code, access token, refresh token) are read from `ConnectionLifetimes`, in
+  configuration since #649: where they live, why without `%env()%`, the connection's expiry, rotation and
+  reuse are in `.claude/rules/mcp-oauth-cycle-de-vie.md`. Layers: `Domain/` (entities `McpClient`,
   `McpConnection`, `McpAuthorizationCode`, `McpAccessToken`, `McpRefreshToken`, the value objects
   `RedirectUri`, `McpClientId`, `McpClientName`, `TokenHashShape`), `Application/` (validator, consent, token
   endpoint, URLs, the port `AuthenticationInstantInterface`, the pure helpers `QueryParameterPollution`,

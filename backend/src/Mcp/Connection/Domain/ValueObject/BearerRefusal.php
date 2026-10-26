@@ -34,7 +34,11 @@ enum BearerRefusal: string
     /** La connexion MCP du jeton a été révoquée. */
     case ConnectionRevoked = 'connection-revoked';
 
-    /** La connexion MCP du jeton a expiré : trop longtemps sans usage, ou trop longtemps après l'octroi. */
+    /**
+     * La connexion MCP du jeton a expiré : trop longtemps sans usage, ou trop
+     * longtemps après l'octroi — les seuils de ConnectionLifetimes, durées en
+     * configuration (#649).
+     */
     case ConnectionExpired = 'connection-expired';
 
     /** La connexion MCP du jeton n'accorde pas le scope `nominative:read`, le seul que `/api/mcp` honore. */

@@ -140,7 +140,7 @@ final class McpBearerAuthenticatorTest extends WebTestCase
         $this->assertNextCallRefusedBecause($held, BearerRefusal::AccountNotTrusted);
     }
 
-    /** 90 jours après l'octroi, la connexion expire quel que soit son usage (McpConnection::MAX_LIFETIME). */
+    /** 90 jours après l'octroi, la connexion expire quel que soit son usage (ConnectionLifetimes::maximum(), en configuration). */
     public function testAnExpiredConnectionIsRefusedAtTheNextRequest(): void
     {
         $held = $this->heldAndServedOnce();

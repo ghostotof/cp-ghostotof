@@ -38,6 +38,22 @@ parameters:
     # La valeur courante vient de LOG_LEVEL (backend/.env, `debug` dans l'image
     # préprod) ; ce paramètre ne sert que si la variable disparaît.
     app.log_level: 'warning'
+    # Durées de la connexion MCP et de ses jetons (#649), intervalles ISO 8601
+    # lus par ConnectionLifetimes (Mcp/Connection/Domain/ValueObject), qui les
+    # refuse illisibles, nulles ou contradictoires. Une seule valeur pour tous
+    # les environnements, jamais de `%env()%` : SecurityServicesEnvironmentParityTest
+    # compare toute définition `App\` d'un environnement à l'autre (#659), une
+    # durée propre à la prod échapperait à tous les tests.
+    #  - code d'autorisation, de l'émission à l'échange ;
+    #  - jeton d'accès (`expires_in`) ;
+    #  - jeton de rafraîchissement, tourné à chaque usage ;
+    #  - inactivité : sans usage aussi longtemps, la connexion expire ;
+    #  - durée maximale après l'octroi, quel que soit l'usage.
+    app.mcp.lifetime.authorization_code: 'PT10M'
+    app.mcp.lifetime.access_token: 'PT1H'
+    app.mcp.lifetime.refresh_token: 'P30D'
+    app.mcp.lifetime.connection_idle: 'P30D'
+    app.mcp.lifetime.connection_maximum: 'P90D'
 
 services:
     # default configuration for services in *this* file
@@ -122,6 +138,19 @@ services:
     # compte.
     League\OAuth2\Server\AuthorizationServer:
         factory: ['@App\Mcp\Connection\Infrastructure\League\AuthorizationServerFactory', 'create']
+
+    # Les durées de la connexion MCP (#649), construites depuis les paramètres
+    # `app.mcp.lifetime.*` ci-dessus : le serveur d'autorisation en lit les
+    # trois de league, l'authentificateur de /api/mcp l'échéance de la
+    # connexion. Un objet valeur à constructeur privé, d'où la fabrique.
+    App\Mcp\Connection\Domain\ValueObject\ConnectionLifetimes:
+        factory: ['App\Mcp\Connection\Domain\ValueObject\ConnectionLifetimes', 'fromConfiguration']
+        arguments:
+            $authorizationCode: '%app.mcp.lifetime.authorization_code%'
+            $accessToken: '%app.mcp.lifetime.access_token%'
+            $refreshToken: '%app.mcp.lifetime.refresh_token%'
+            $idle: '%app.mcp.lifetime.connection_idle%'
+            $maximum: '%app.mcp.lifetime.connection_maximum%'
 
 when@test:
     services:

@@ -7,6 +7,7 @@ namespace App\Tests\Mcp\Connection\Domain\Entity;
 use App\Mcp\Connection\Domain\Entity\McpAccessToken;
 use App\Mcp\Connection\Domain\Entity\McpConnection;
 use App\Mcp\Connection\Domain\ValueObject\BearerRefusal;
+use App\Mcp\Connection\Domain\ValueObject\ConnectionLifetimes;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Tests\Mcp\Connection\RegisteredMcpClient;
 use DateInterval;
@@ -30,16 +31,20 @@ final class McpAccessTokenRefusalTest extends TestCase
 
     private DateTimeImmutable $now;
 
+    /** Les durées de `config/services.yaml` : 30 jours d'inactivité, 90 au plus. */
+    private ConnectionLifetimes $lifetimes;
+
     protected function setUp(): void
     {
         $this->now = new DateTimeImmutable('2026-10-24T12:00:00+02:00');
+        $this->lifetimes = ConnectionLifetimes::fromConfiguration('PT10M', 'PT1H', 'P30D', 'P30D', 'P90D');
     }
 
     public function testAFreshTokenOfALiveConnectionIsAccepted(): void
     {
         $token = $this->token($this->connectionGrantedAt($this->now->sub(new DateInterval('PT1H'))));
 
-        self::assertNull($token->refusalAt($this->now, self::AUDIENCE));
+        self::assertNull($token->refusalAt($this->now, self::AUDIENCE, $this->lifetimes));
     }
 
     /**
@@ -49,8 +54,8 @@ final class McpAccessTokenRefusalTest extends TestCase
     {
         $token = new McpAccessToken($this->liveConnection(), $this->hash(), self::AUDIENCE, $this->now);
 
-        self::assertSame(BearerRefusal::TokenExpired, $token->refusalAt($this->now, self::AUDIENCE));
-        self::assertNull($token->refusalAt($this->now->sub(new DateInterval('PT1S')), self::AUDIENCE));
+        self::assertSame(BearerRefusal::TokenExpired, $token->refusalAt($this->now, self::AUDIENCE, $this->lifetimes));
+        self::assertNull($token->refusalAt($this->now->sub(new DateInterval('PT1S')), self::AUDIENCE, $this->lifetimes));
     }
 
     public function testARevokedTokenIsRefusedBeforeItsExpiry(): void
@@ -58,7 +63,7 @@ final class McpAccessTokenRefusalTest extends TestCase
         $token = $this->token($this->liveConnection());
         $token->revoke($this->now->sub(new DateInterval('PT1M')));
 
-        self::assertSame(BearerRefusal::TokenRevoked, $token->refusalAt($this->now, self::AUDIENCE));
+        self::assertSame(BearerRefusal::TokenRevoked, $token->refusalAt($this->now, self::AUDIENCE, $this->lifetimes));
     }
 
     /**
@@ -69,7 +74,7 @@ final class McpAccessTokenRefusalTest extends TestCase
     {
         $token = $this->token($this->liveConnection());
 
-        self::assertSame(BearerRefusal::ForeignAudience, $token->refusalAt($this->now, self::AUDIENCE.'/'));
+        self::assertSame(BearerRefusal::ForeignAudience, $token->refusalAt($this->now, self::AUDIENCE.'/', $this->lifetimes));
     }
 
     public function testARevokedConnectionRefusesItsLiveToken(): void
@@ -78,7 +83,7 @@ final class McpAccessTokenRefusalTest extends TestCase
         $token = $this->token($connection);
         $this->setConnectionInstant($connection, 'revokedAt', $this->now->sub(new DateInterval('PT1M')));
 
-        self::assertSame(BearerRefusal::ConnectionRevoked, $token->refusalAt($this->now, self::AUDIENCE));
+        self::assertSame(BearerRefusal::ConnectionRevoked, $token->refusalAt($this->now, self::AUDIENCE, $this->lifetimes));
     }
 
     /**
@@ -92,8 +97,8 @@ final class McpAccessTokenRefusalTest extends TestCase
         $expired = $this->token($this->connectionGrantedAt($thirtyDaysAgo));
         $alive = $this->token($this->connectionGrantedAt($thirtyDaysAgo->add(new DateInterval('PT1S'))));
 
-        self::assertSame(BearerRefusal::ConnectionExpired, $expired->refusalAt($this->now, self::AUDIENCE));
-        self::assertNull($alive->refusalAt($this->now, self::AUDIENCE));
+        self::assertSame(BearerRefusal::ConnectionExpired, $expired->refusalAt($this->now, self::AUDIENCE, $this->lifetimes));
+        self::assertNull($alive->refusalAt($this->now, self::AUDIENCE, $this->lifetimes));
     }
 
     public function testLastUseRestartsTheIdleDelay(): void
@@ -101,7 +106,7 @@ final class McpAccessTokenRefusalTest extends TestCase
         $connection = $this->connectionGrantedAt($this->now->sub(new DateInterval('P60D')));
         $this->setConnectionInstant($connection, 'lastUsedAt', $this->now->sub(new DateInterval('P1D')));
 
-        self::assertNull($this->token($connection)->refusalAt($this->now, self::AUDIENCE));
+        self::assertNull($this->token($connection)->refusalAt($this->now, self::AUDIENCE, $this->lifetimes));
     }
 
     /**
@@ -118,8 +123,8 @@ final class McpAccessTokenRefusalTest extends TestCase
         $alive = $this->connectionGrantedAt($ninetyDaysAgo->add(new DateInterval('PT1S')));
         $this->setConnectionInstant($alive, 'lastUsedAt', $anHourAgo);
 
-        self::assertSame(BearerRefusal::ConnectionExpired, $this->token($expired)->refusalAt($this->now, self::AUDIENCE));
-        self::assertNull($this->token($alive)->refusalAt($this->now, self::AUDIENCE));
+        self::assertSame(BearerRefusal::ConnectionExpired, $this->token($expired)->refusalAt($this->now, self::AUDIENCE, $this->lifetimes));
+        self::assertNull($this->token($alive)->refusalAt($this->now, self::AUDIENCE, $this->lifetimes));
     }
 
     /**
@@ -151,7 +156,7 @@ final class McpAccessTokenRefusalTest extends TestCase
             $this->now->sub(new DateInterval('P1D')),
         );
 
-        self::assertSame($expected, $this->token($connection)->refusalAt($this->now, self::AUDIENCE));
+        self::assertSame($expected, $this->token($connection)->refusalAt($this->now, self::AUDIENCE, $this->lifetimes));
     }
 
     /**
@@ -168,22 +173,22 @@ final class McpAccessTokenRefusalTest extends TestCase
         $token->revoke($this->now->sub(new DateInterval('PT1M')));
         $foreign = self::AUDIENCE.'/';
 
-        self::assertSame(BearerRefusal::TokenRevoked, $token->refusalAt($this->now, $foreign));
+        self::assertSame(BearerRefusal::TokenRevoked, $token->refusalAt($this->now, $foreign, $this->lifetimes));
 
         $unrevoked = new McpAccessToken($connection, $this->hash(), self::AUDIENCE, $this->now);
-        self::assertSame(BearerRefusal::TokenExpired, $unrevoked->refusalAt($this->now, $foreign));
+        self::assertSame(BearerRefusal::TokenExpired, $unrevoked->refusalAt($this->now, $foreign, $this->lifetimes));
 
         $live = $this->token($connection);
-        self::assertSame(BearerRefusal::ForeignAudience, $live->refusalAt($this->now, $foreign));
-        self::assertSame(BearerRefusal::ConnectionRevoked, $live->refusalAt($this->now, self::AUDIENCE));
+        self::assertSame(BearerRefusal::ForeignAudience, $live->refusalAt($this->now, $foreign, $this->lifetimes));
+        self::assertSame(BearerRefusal::ConnectionRevoked, $live->refusalAt($this->now, self::AUDIENCE, $this->lifetimes));
 
         $this->setConnectionInstant($connection, 'revokedAt', null);
-        self::assertSame(BearerRefusal::ConnectionExpired, $live->refusalAt($this->now, self::AUDIENCE));
+        self::assertSame(BearerRefusal::ConnectionExpired, $live->refusalAt($this->now, self::AUDIENCE, $this->lifetimes));
 
         new ReflectionProperty(McpConnection::class, 'scope')->setValue($connection, '');
-        self::assertSame(BearerRefusal::ConnectionExpired, $live->refusalAt($this->now, self::AUDIENCE));
+        self::assertSame(BearerRefusal::ConnectionExpired, $live->refusalAt($this->now, self::AUDIENCE, $this->lifetimes));
         $this->setConnectionInstant($connection, 'grantedAt', $this->now->sub(new DateInterval('P1D')));
-        self::assertSame(BearerRefusal::InsufficientScope, $live->refusalAt($this->now, self::AUDIENCE));
+        self::assertSame(BearerRefusal::InsufficientScope, $live->refusalAt($this->now, self::AUDIENCE, $this->lifetimes));
     }
 
     /** Un jeton d'accès de l'audience attendue, valide une heure encore. */

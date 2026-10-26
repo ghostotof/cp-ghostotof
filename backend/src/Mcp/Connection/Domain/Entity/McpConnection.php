@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Mcp\Connection\Domain\Entity;
 
+use App\Mcp\Connection\Domain\ValueObject\ConnectionLifetimes;
 use App\Mcp\Connection\Infrastructure\Doctrine\McpConnectionRepository;
 use App\Security\User\Domain\Entity\CpgUser;
-use DateInterval;
 use DateTimeImmutable;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
@@ -36,24 +36,6 @@ class McpConnection
      * le domaine ; le serveur d'autorisation le relit (NominativeReadScope).
      */
     public const string SCOPE_NOMINATIVE_READ = 'nominative:read';
-
-    /**
-     * Délai d'inactivité (`DateInterval`) : une connexion inutilisée pendant
-     * 30 jours expire, comptés depuis son dernier usage, ou depuis l'octroi
-     * tant qu'aucun usage n'est écrit. Des jours de calendrier, comme la
-     * durée d'un jeton de rafraîchissement (`P30D`).
-     *
-     * Une constante du domaine jusqu'à #649, qui la passe en configuration.
-     */
-    public const string IDLE_LIFETIME = 'P30D';
-
-    /**
-     * Durée maximale (`DateInterval`) : 90 jours après l'octroi, la connexion
-     * expire quel que soit son usage — la personne consent de nouveau.
-     *
-     * Une constante du domaine jusqu'à #649, qui la passe en configuration.
-     */
-    public const string MAX_LIFETIME = 'P90D';
 
     /** Spec 0003 : UUID v7 posé par le constructeur. */
     #[ORM\Id]
@@ -151,28 +133,30 @@ class McpConnection
     }
 
     /**
-     * La connexion a-t-elle expiré à l'instant `$now` ? Deux échéances, la
-     * première atteinte l'emporte, et chacune est exclusive (atteinte à la
+     * La connexion a-t-elle expiré à l'instant `$now` ? **La seule définition
+     * de l'échéance** (#649) : deux seuils de ConnectionLifetimes, la première
+     * échéance atteinte l'emporte, et chacune est exclusive (atteinte à la
      * seconde près, la connexion est morte) :
      *
-     * - le délai d'inactivité, {@see self::IDLE_LIFETIME} après
-     *   `lastUsedAt ?? grantedAt` ;
-     * - la durée maximale, {@see self::MAX_LIFETIME} après `grantedAt`.
+     * - l'inactivité : `lastUsedAt ?? grantedAt` au plus tard
+     *   {@see ConnectionLifetimes::idleThreshold()} ;
+     * - la durée maximale : `grantedAt` au plus tard
+     *   {@see ConnectionLifetimes::maximumThreshold()}.
      *
-     * `lastUsedAt` n'est écrit qu'au rafraîchissement, à partir de #649 —
-     * jamais à chaque appel (ADR 0006 D6). D'ici là il reste nul, et une
-     * connexion meurt 30 jours après l'octroi même utilisée chaque jour :
-     * accepté, la phase 2 ne sort qu'entière.
+     * Comparer l'usage au seuil (`$now` moins la durée) plutôt que `$now` à
+     * l'échéance (l'usage plus la durée) : c'est la forme que la purge relit
+     * en SQL, une colonne comparée à un paramètre, sur les mêmes seuils — les
+     * deux jugent la même seconde. Les jours se comptent sur le calendrier du
+     * fuseau de `$now` (721 heures pour 30 jours à travers le passage à
+     * l'heure d'hiver), jamais par `modify()` (#445).
      *
-     * Les durées s'ajoutent par `add(new DateInterval(…))`, jamais par
-     * `modify()` (règle des durées écoulées, #445). La révocation n'est pas
-     * une expiration : {@see self::isRevoked()} se lit à part.
+     * `lastUsedAt` n'est écrit qu'au rafraîchissement — jamais à chaque appel
+     * (ADR 0006 D6). La révocation n'est pas une expiration :
+     * {@see self::isRevoked()} se lit à part.
      */
-    public function isExpiredAt(DateTimeImmutable $now): bool
+    public function isExpiredAt(DateTimeImmutable $now, ConnectionLifetimes $lifetimes): bool
     {
-        $idleDeadline = ($this->lastUsedAt ?? $this->grantedAt)->add(new DateInterval(self::IDLE_LIFETIME));
-        $maxDeadline = $this->grantedAt->add(new DateInterval(self::MAX_LIFETIME));
-
-        return $now >= $idleDeadline || $now >= $maxDeadline;
+        return ($this->lastUsedAt ?? $this->grantedAt) <= $lifetimes->idleThreshold($now)
+            || $this->grantedAt <= $lifetimes->maximumThreshold($now);
     }
 }

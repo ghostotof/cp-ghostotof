@@ -7,6 +7,7 @@ namespace App\Mcp\Connection\Domain\Entity;
 use App\Mcp\Connection\Domain\Exception\MalformedTokenHashException;
 use App\Mcp\Connection\Domain\Service\TokenHashShape;
 use App\Mcp\Connection\Domain\ValueObject\BearerRefusal;
+use App\Mcp\Connection\Domain\ValueObject\ConnectionLifetimes;
 use App\Mcp\Connection\Infrastructure\Doctrine\McpAccessTokenRepository;
 use DateTimeImmutable;
 use Doctrine\DBAL\Types\Types;
@@ -15,7 +16,8 @@ use Symfony\Bridge\Doctrine\Types\UuidType;
 use Symfony\Component\Uid\Uuid;
 
 /**
- * Jeton d'accès d'une connexion MCP (1 heure de vie), présenté en
+ * Jeton d'accès d'une connexion MCP (une heure de vie, en configuration :
+ * {@see ConnectionLifetimes::accessToken()}), présenté en
  * `Authorization: Bearer` sur `/api/mcp`.
  *
  * Seule l'empreinte SHA-256 de son identifiant est stockée (`token_hash`,
@@ -108,15 +110,17 @@ class McpAccessToken
      * connexion a stocké au consentement, comparé mot pour mot : `/api/mcp`
      * n'honore que `nominative:read`, jamais présumé du seul fait qu'une
      * connexion existe ({@see McpConnection::grantsNominativeRead()}).
+     * L'échéance de la connexion est celle que jugent ses durées configurées
+     * (`$lifetimes`, {@see McpConnection::isExpiredAt()}).
      */
-    public function refusalAt(DateTimeImmutable $now, string $expectedAudience): ?BearerRefusal
+    public function refusalAt(DateTimeImmutable $now, string $expectedAudience, ConnectionLifetimes $lifetimes): ?BearerRefusal
     {
         return match (true) {
             $this->isRevoked() => BearerRefusal::TokenRevoked,
             $this->expiresAt <= $now => BearerRefusal::TokenExpired,
             $this->audience !== $expectedAudience => BearerRefusal::ForeignAudience,
             $this->connection->isRevoked() => BearerRefusal::ConnectionRevoked,
-            $this->connection->isExpiredAt($now) => BearerRefusal::ConnectionExpired,
+            $this->connection->isExpiredAt($now, $lifetimes) => BearerRefusal::ConnectionExpired,
             !$this->connection->grantsNominativeRead() => BearerRefusal::InsufficientScope,
             default => null,
         };

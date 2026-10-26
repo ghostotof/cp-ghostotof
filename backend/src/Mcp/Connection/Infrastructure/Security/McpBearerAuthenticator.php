@@ -8,6 +8,7 @@ use App\Mcp\Connection\Application\McpConnectionPrincipal;
 use App\Mcp\Connection\Application\OAuthEndpoints;
 use App\Mcp\Connection\Domain\Repository\McpAccessTokenRepositoryInterface;
 use App\Mcp\Connection\Domain\ValueObject\BearerRefusal;
+use App\Mcp\Connection\Domain\ValueObject\ConnectionLifetimes;
 use App\Mcp\Connection\Infrastructure\League\TokenIdentifierHash;
 use App\Mcp\Infrastructure\Http\UnauthorizedAnswers;
 use Psr\Clock\ClockInterface;
@@ -49,7 +50,8 @@ use Symfony\Component\Security\Http\Authenticator\Passport\SelfValidatingPasspor
  *  3. ce que le domaine du jeton juge à cet instant pour l'audience
  *     `/api/mcp` (McpAccessToken::refusalAt()) : jeton révoqué, expiré —
  *     league ne regarde pas l'échéance d'un jeton opaque —, d'une autre
- *     audience, connexion révoquée, expirée ;
+ *     audience, connexion révoquée, expirée (sur les durées configurées,
+ *     ConnectionLifetimes, #649) ;
  *  4. le palier du compte : ROLE_TRUSTED atteint par la `role_hierarchy`
  *     depuis les rôles stockés (un ROLE_SUPER sans ROLE_TRUSTED stocké passe,
  *     comme partout sur le site ; le palier de base non) — `AccountNotTrusted`.
@@ -92,6 +94,7 @@ final class McpBearerAuthenticator extends AbstractAuthenticator
         private readonly OAuthEndpoints $endpoints,
         private readonly RoleHierarchyInterface $roleHierarchy,
         private readonly UnauthorizedAnswers $unauthorized,
+        private readonly ConnectionLifetimes $lifetimes,
     ) {
     }
 
@@ -117,7 +120,7 @@ final class McpBearerAuthenticator extends AbstractAuthenticator
             throw McpBearerRefusedException::because(BearerRefusal::Unknown);
         }
 
-        $refusal = $token->refusalAt($this->clock->now(), $this->endpoints->resource());
+        $refusal = $token->refusalAt($this->clock->now(), $this->endpoints->resource(), $this->lifetimes);
 
         if (null !== $refusal) {
             throw McpBearerRefusedException::because($refusal);
