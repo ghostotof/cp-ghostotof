@@ -30,9 +30,10 @@ final class AuthCookiesComeFromTheFactoryTest extends TestCase
 {
     public function testNoSourceFileBuildsACookieOutsideTheFactory(): void
     {
+        $factorySite = $this->factoryPath().':';
         $outsideTheFactory = array_values(array_filter(
             CookieConstructions::in(RepositoryFiles::backend('src')),
-            static fn (string $site): bool => !str_starts_with($site, self::factoryPath().':'),
+            static fn (string $site): bool => !str_starts_with($site, $factorySite),
         ));
 
         self::assertSame(
@@ -51,7 +52,7 @@ final class AuthCookiesComeFromTheFactoryTest extends TestCase
     {
         self::assertNotSame(
             [],
-            CookieConstructions::inCode(RepositoryFiles::read(self::factoryPath())),
+            CookieConstructions::inCode(RepositoryFiles::read($this->factoryPath())),
             'AuthCookieFactory ne construit plus de cookie que le recensement reconnaisse : revoir l\'exemption ou le recensement.',
         );
     }
@@ -90,6 +91,23 @@ final class AuthCookiesComeFromTheFactoryTest extends TestCase
         yield 'en-tête écrit à la main' => ["<?php\nnamespace App;\n\$response->headers->set('Set-Cookie', \$raw);\n", [3]];
         yield 'en-tête natif interpolé' => ["<?php\nnamespace App;\nheader(\"set-cookie: BEARER=\$jwt\");\n", [3]];
         yield 'plusieurs sites, dans l\'ordre' => [$use."\$a = Cookie::create('a');\n\$b = new Cookie('b');\n", [4, 5]];
+        yield 'nom partiellement qualifié' => ["<?php\nnamespace App;\nuse Symfony\\Component\\HttpFoundation;\n\$c = HttpFoundation\\Cookie::create('x');\n", [4]];
+        yield 'retouche de Partitioned' => ["<?php\nnamespace App;\n\$c = \$cookie->withPartitioned(false);\n", [3]];
+        // Une sous-classe nommée porte ses propres défauts ; ses `new` et ses
+        // appels statiques se résolvent ensuite vers elle, c'est donc sa
+        // déclaration qui est refusée (relectures de #714).
+        yield 'sous-classe nommée' => [$use."final class WeakCookie extends Cookie {}\n", [4]];
+        yield 'sous-classe nommée, nom complet' => ["<?php\nnamespace App;\nclass WeakCookie extends \\Symfony\\Component\\HttpFoundation\\Cookie {}\n", [3]];
+        // Le fournisseur de cookie de Lexik construit un Cookie aux attributs
+        // passés en arguments, `secure` compris.
+        yield 'fournisseur de Lexik appelé' => ["<?php\nnamespace App;\n\$c = \$this->bearerProvider->createCookie(\$jwt, secure: false);\n", [3]];
+        yield 'fournisseur de Lexik instancié' => ["<?php\nnamespace App;\nuse Lexik\\Bundle\\JWTAuthenticationBundle\\Security\\Http\\Cookie\\JWTCookieProvider;\n\$p = new JWTCookieProvider('BEARER', 3600, 'lax', '/', null, false);\n", [4]];
+        // HeaderBag normalise `_` en `-` et ignore la casse : `set_cookie`
+        // pose un cookie comme `Set-Cookie`, y compris dans les en-têtes passés
+        // au constructeur d'une réponse.
+        yield 'en-tête au souligné' => ["<?php\nnamespace App;\n\$response->headers->set('set_cookie', \$raw);\n", [3]];
+        yield 'en-têtes du constructeur d\'une réponse' => ["<?php\nnamespace App;\n\$r = new JsonResponse(\$data, 200, ['SET_COOKIE' => \$raw]);\n", [3]];
+        yield 'en-tête écrit par échappements' => ["<?php\nnamespace App;\nheader(\"\\x53et-Cookie: BEARER=\$jwt\");\n", [3]];
 
         // Ce qui ne construit aucun cookie.
         yield 'poser un cookie de la fabrique' => ["<?php\nnamespace App;\n\$response->headers->setCookie(\$this->factory->bearer(\$jwt));\n", []];
@@ -101,9 +119,14 @@ final class AuthCookiesComeFromTheFactoryTest extends TestCase
         yield 'méthode homonyme appelée' => ["<?php\nnamespace App;\n\$a->setcookie();\n", []];
         yield 'commentaire' => ["<?php\nnamespace App;\n// Cookie::create('x'), clearCookie(), Set-Cookie\n", []];
         yield 'autre en-tête' => ["<?php\nnamespace App;\n\$response->headers->set('Cache-Control', 'no-store');\n", []];
+        // `withPath()` est aussi la méthode d'une URI PSR-7, qu'on ne renomme
+        // pas (league/oauth2-server travaille en PSR-7) : seuls les attributs
+        // de sécurité d'un cookie sont refusés par leur nom.
+        yield 'URI PSR-7' => ["<?php\nnamespace App;\n\$uri = \$uri->withPath('/callback');\n", []];
+        yield 'sous-classe d\'une autre classe' => ["<?php\nnamespace App;\nfinal class A extends B {}\n", []];
     }
 
-    private static function factoryPath(): string
+    private function factoryPath(): string
     {
         $path = new ReflectionClass(AuthCookieFactory::class)->getFileName();
         self::assertIsString($path);
