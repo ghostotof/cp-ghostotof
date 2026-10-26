@@ -91,11 +91,12 @@ final class BareExceptionInstantiations
     /**
      * Le nom écrit après `new` : la classe instanciée, ou celle qu'étend une
      * classe anonyme (`new class(…) extends X {}`). Null pour une expression
-     * (`new $class`) ou une classe anonyme sans parent.
+     * (`new $class`) ou une classe anonyme sans parent. Lu aussi par
+     * {@see CookieConstructions} (issue #714).
      *
      * @param list<PhpToken> $tokens
      */
-    private static function instantiatedName(array $tokens, int $index): ?PhpToken
+    public static function instantiatedName(array $tokens, int $index): ?PhpToken
     {
         $next = $tokens[$index] ?? null;
         if (null === $next || !$next->is(\T_CLASS)) {

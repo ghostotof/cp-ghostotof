@@ -37,7 +37,14 @@ paths:
     `Cookie::fromString()` drops the `secure` flag of a cookie received on a non-`https` URI, so the jar sends
     it back (measured; the issue had assumed every test would need HTTPS). Never make `test` insecure again to
     « match » `dev`. Any new auth cookie goes through the factory, never `Cookie::create()` or `clearCookie()`
-    inline. `__Host-` prefixing is a separate, preprod-tested step (it renames what Lexik and the frontend
+    inline: **the factory is the only file of `src/` that builds a cookie** (issue #714),
+    `AuthCookiesComeFromTheFactoryTest` (census `tests/Support/CookieConstructions`, by tokens) refuses anywhere
+    else `new Cookie` (an anonymous subclass too), any static call of HttpFoundation's `Cookie`, `->clearCookie()`,
+    the attribute rewrites `->with{Secure,HttpOnly,SameSite,Domain,Path,Partitioned,Raw}()` — on the factory's own
+    cookie too —, `setcookie()` / `setrawcookie()` and a string starting with `Set-Cookie`; the factory's
+    exemption must stay needed. Not seen, accepted: a dynamic call, the header built by concatenation, the
+    vendor (Lexik's login cookie, which the attributes test reads on the response). A `with…()` homonym of
+    another class is refused by name: rename it, no allow-list. `__Host-` prefixing is a separate, preprod-tested step (it renames what Lexik and the frontend
     read by name). That `secure` is the **only** Lexik key allowed to differ per environment (issue #659,
     `SecurityConfigEnvironmentParityTest`, see `.claude/rules/backoffice-api.md`, « Authorization »), and
     `BearerCookieSecurePerEnvironmentTest` pins its declared value in every environment to the factory's
