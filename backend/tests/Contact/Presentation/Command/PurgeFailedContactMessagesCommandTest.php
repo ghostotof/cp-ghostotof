@@ -82,12 +82,16 @@ final class PurgeFailedContactMessagesCommandTest extends KernelTestCase
      * attendus sont donc écrits en clair, pour une horloge figée de part et
      * d'autre des deux changements d'heure.
      *
+     * Issue #710 : une durée en heures, elle, se compte en temps écoulé (même
+     * règle). L'aide de l'option cite « 12 hours », qu'aucun littéral de `src/`
+     * ne porte : `ElapsedDurationsTest` ne pouvait pas le voir, ce cas si.
+     *
      * L'instant figé l'est dans le fuseau de PHP, comme le donne l'horloge
      * native en production : figé en UTC, la commande compterait des jours UTC
      * et le test ne verrait plus la règle des jours de calendrier.
      */
     #[DataProvider('retentionThresholds')]
-    public function testTheRetentionWindowCountsCalendarDaysThenComparesInTheTransportsUtcClock(string $nowUtc, string $expectedThresholdUtc): void
+    public function testTheRetentionWindowFollowsTheDurationRulesThenComparesInTheTransportsUtcClock(string $nowUtc, string $olderThan, string $expectedThresholdUtc): void
     {
         self::assertSame(self::PHP_TIMEZONE, date_default_timezone_get(), 'Les seuils attendus sont écrits pour le fuseau de PHP du projet, celui de l\'horloge de production.');
         $this->freezeClockAt($nowUtc);
@@ -99,7 +103,7 @@ final class PurgeFailedContactMessagesCommandTest extends KernelTestCase
         $this->setCreatedAt('outside@example.com', $threshold->modify('-30 minutes'));
 
         $tester = $this->commandTester();
-        $exitCode = $tester->execute(['--older-than' => '30 days']);
+        $exitCode = $tester->execute(['--older-than' => $olderThan]);
 
         self::assertSame(0, $exitCode);
         // SymfonyStyle replie la ligne à la largeur du terminal : le seuil
@@ -110,20 +114,24 @@ final class PurgeFailedContactMessagesCommandTest extends KernelTestCase
     }
 
     /**
-     * Instant figé, puis seuil attendu : 30 jours du calendrier de Paris avant
-     * cet instant, en heure murale UTC.
+     * Instant figé, `--older-than`, puis seuil attendu en heure murale UTC :
+     * 30 jours du calendrier de Paris, ou 12 heures écoulées, avant cet instant.
      *
-     * @return iterable<string, array{string, string}>
+     * @return iterable<string, array{string, string, string}>
      */
     public static function retentionThresholds(): iterable
     {
         // 2026-10-25 04:28 CET − 30 jours = 2026-09-25 04:28 CEST : l'instant mesuré de #709.
-        yield 'heure d\'hiver entrée dans la fenêtre' => ['2026-10-25 03:28:00', '2026-09-25 02:28:00'];
+        yield 'heure d\'hiver entrée dans la fenêtre' => ['2026-10-25 03:28:00', '30 days', '2026-09-25 02:28:00'];
         // 2027-04-10 14:00 CEST − 30 jours = 2027-03-11 14:00 CET (passage du 2027-03-28).
-        yield 'heure d\'été entrée dans la fenêtre' => ['2027-04-10 12:00:00', '2027-03-11 13:00:00'];
+        yield 'heure d\'été entrée dans la fenêtre' => ['2027-04-10 12:00:00', '30 days', '2027-03-11 13:00:00'];
         // Ni l'un ni l'autre : le seuil reste à 30 × 24 heures, en été puis en hiver.
-        yield 'été sans changement d\'heure' => ['2026-10-15 12:00:00', '2026-09-15 12:00:00'];
-        yield 'hiver sans changement d\'heure' => ['2027-01-15 12:00:00', '2026-12-16 12:00:00'];
+        yield 'été sans changement d\'heure' => ['2026-10-15 12:00:00', '30 days', '2026-09-15 12:00:00'];
+        yield 'hiver sans changement d\'heure' => ['2027-01-15 12:00:00', '30 days', '2026-12-16 12:00:00'];
+        // #710 : l'instant mesuré du ticket, qui donnait 2026-10-24 23:00 (13 h écoulées).
+        yield '12 heures, heure d\'hiver entrée dans la fenêtre' => ['2026-10-25 12:00:00', '12 hours', '2026-10-25 00:00:00'];
+        // Au printemps, 2027-03-28 01:00 (11 h écoulées) : la purge passait une heure trop tôt.
+        yield '12 heures, heure d\'été entrée dans la fenêtre' => ['2027-03-28 12:00:00', '12 hours', '2027-03-28 00:00:00'];
     }
 
     /**
@@ -188,6 +196,39 @@ final class PurgeFailedContactMessagesCommandTest extends KernelTestCase
         $exitCode = $this->commandTester()->execute(['--older-than' => '0 days']);
 
         self::assertSame(2, $exitCode); // Command::INVALID
+        self::assertSame(1, $this->countByRecipient('recent@example.com'));
+    }
+
+    /**
+     * Issue #710 : « monday » faisait lever à `sub()` une erreur native que
+     * la commande ne rattrapait pas (sortie 1, trace affichée). Elle est
+     * refusée comme toute expression invalide, sans rien supprimer.
+     */
+    public function testRejectsAnOlderThanThatDesignatesADate(): void
+    {
+        $this->failedTransport->send(new Envelope($this->message('recent@example.com')));
+        $tester = $this->commandTester();
+
+        $exitCode = $tester->execute(['--older-than' => 'monday']);
+
+        self::assertSame(2, $exitCode); // Command::INVALID
+        self::assertStringContainsString('pas une durée', (string) preg_replace('/\s+/', ' ', $tester->getDisplay()));
+        self::assertSame(1, $this->countByRecipient('recent@example.com'));
+    }
+
+    /**
+     * Relecture de #710 : « 5000 years » donnait un seuil « -2974-… », que
+     * PostgreSQL refusait dans le DELETE ; la commande sortait en trace.
+     */
+    public function testRejectsAnOlderThanReachingBeforeYearOne(): void
+    {
+        $this->failedTransport->send(new Envelope($this->message('recent@example.com')));
+        $tester = $this->commandTester();
+
+        $exitCode = $tester->execute(['--older-than' => '5000 years']);
+
+        self::assertSame(2, $exitCode); // Command::INVALID
+        self::assertStringContainsString('trop longue', (string) preg_replace('/\s+/', ' ', $tester->getDisplay()));
         self::assertSame(1, $this->countByRecipient('recent@example.com'));
     }
 

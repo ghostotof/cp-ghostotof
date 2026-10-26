@@ -9,8 +9,10 @@ use DomainException;
 /**
  * Exception métier levée par {@see \App\Shared\Domain\ValueObject\RetentionPeriod}
  * lorsque l'expression relative fournie (typiquement l'option `--older-than`
- * d'une commande de purge) ne décrit pas une durée strictement positive, ou
- * n'est pas un intervalle relatif PHP lisible.
+ * d'une commande de purge) n'est pas un intervalle relatif PHP lisible, ne
+ * décrit pas une durée strictement positive, désigne une date plutôt qu'une
+ * durée, mêle des termes de signes opposés, ou place le seuil avant l'an 1.
+ * Une fabrique par cause, pour un message qui la nomme.
  */
 final class InvalidRetentionPeriodException extends DomainException
 {
@@ -24,6 +26,43 @@ final class InvalidRetentionPeriodException extends DomainException
     {
         return new self(\sprintf(
             'La durée de rétention "%s" doit être strictement positive (le seuil calculé se situe dans le futur ou au moment présent).',
+            $expression,
+        ));
+    }
+
+    /**
+     * L'expression est lisible mais désigne une date plutôt qu'une durée :
+     * jour de la semaine ("monday", "3 weekdays"), "first/last … of", heure
+     * du jour ("noon tomorrow", "yesterday" qui ramène à minuit). Issue #710.
+     */
+    public static function designatesADate(string $expression): self
+    {
+        return new self(\sprintf(
+            'La durée de rétention "%s" désigne une date (jour de la semaine, "first/last … of", heure du jour), pas une durée. Exemples valides : "30 days", "12 hours".',
+            $expression,
+        ));
+    }
+
+    /**
+     * L'expression mêle des termes de signes opposés ("1 day -23 hours"),
+     * dont la durée varierait avec les changements d'heure. Relecture de #710.
+     */
+    public static function mixesSigns(string $expression): self
+    {
+        return new self(\sprintf(
+            'La durée de rétention "%s" mêle des termes de signes opposés, dont la durée varierait selon le jour. Exemples valides : "30 days", "12 hours".',
+            $expression,
+        ));
+    }
+
+    /**
+     * La durée place le seuil avant l'an 1, que PostgreSQL ne sait pas lire
+     * ("5000 years"). Relecture de #710.
+     */
+    public static function tooLong(string $expression): self
+    {
+        return new self(\sprintf(
+            'La durée de rétention "%s" est trop longue : le seuil calculé tombe avant l\'an 1.',
             $expression,
         ));
     }

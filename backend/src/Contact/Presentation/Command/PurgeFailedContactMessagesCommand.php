@@ -40,7 +40,8 @@ use Symfony\Component\Console\Style\SymfonyStyle;
  * La conversion vient **après** le calcul : « 30 days » se compte en jours du
  * calendrier de Paris (règle de #445), si bien qu'une fenêtre qui contient un
  * changement d'heure dure 721 ou 719 heures. Ce n'est donc pas « maintenant UTC
- * moins 30 jours » (issue #709).
+ * moins 30 jours » (issue #709). Une durée en heures, minutes ou secondes
+ * (« 12 hours ») se compte en revanche en temps écoulé (issue #710).
  */
 #[AsCommand(
     name: 'app:contact:purge-failed-messages',
