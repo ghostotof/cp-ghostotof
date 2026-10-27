@@ -115,9 +115,12 @@ paths:
   `invalid_target` sent back on the validated redirect with `state`. At the token endpoint `resource` may
   be omitted but, present, must be the same (`invalid_target`, JSON) — **the client authenticated first**, as
   at the revocation: a foreign `resource` from an unknown client, or with no `client_id` in the body (a public
-  client's `none` method; one naming itself through HTTP Basic only is refused too, accepted), is
-  `invalid_client`, never an `invalid_target` judging an unauthenticated request; an absent or own `resource`
-  leaves league to authenticate the client. Every access token carries that audience whatever was asked
+  client's `none` method), is `invalid_client`, never an `invalid_target` judging an unauthenticated request; an
+  absent or own `resource` leaves league to authenticate the client. **Since #725 the token endpoint requires the
+  `client_id` in the body whatever the `resource`** (`TokenEndpoint::refuseClientOutsideTheBody()`, `invalid_client`
+  before league): league also read it from HTTP Basic, where the audit of a refused grant did not see who presented
+  it (`.claude/rules/mcp-oauth-cycle-de-vie.md`, « Every refusal of an authentic grant is audited »). A client
+  identifier holding a `:` never passed in Basic anyway — league splits the user at the first colon. Every access token carries that audience whatever was asked
   (`AccessTokenRepository`). **The scope summarised, sent back to the page and stored on the connection is the
   set granted**, never the raw repetition (`scope=nominative:read%20nominative:read` gives `nominative:read`,
   `ConsentControllerTest::testARepeatedScopeIsSummarisedAndStoredOnce`). `AuthorizeControllerTest`,
@@ -135,7 +138,10 @@ paths:
   parameters `parse_str()` drew from **that** raw body (`php://input`), never `$_POST` — so
   `enable_post_data_reading` is irrelevant to them (`.claude/rules/images-docker.md`); `FormEncodedRequestTest`
   hands it a parsed body that differs from the raw one (another client, one more parameter, empty, absent) and
-  wants the raw one's (red without the swap, measured). **A `client_secret` from a public client is ignored, not
+  wants the raw one's (red without the swap, measured). **A read value starting or ending with a blank is an
+  `invalid_request`** (#725, refused, never corrected): league trims every parameter (`AbstractGrant::parseParam()`)
+  before reading it, any other reader of the same body — the audit of a refusal — would read it untrimmed
+  (`FormEncodedRequestTest`, the blanks of `trim()` one by one). **A `client_secret` from a public client is ignored, not
   refused**: league 9.4.1 consults `ClientRepository::validateClient()` only for a confidential client
   (`AbstractGrant::validateClient()`), so a superfluous secret, in the body or in HTTP Basic, changes nothing,
   and its repetition is not watched (`TokenControllerTest::testASuperfluousClientSecretIsIgnored`: a league bump

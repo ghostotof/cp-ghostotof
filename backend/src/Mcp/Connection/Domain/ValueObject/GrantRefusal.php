@@ -63,7 +63,11 @@ enum GrantRefusal: string
     /** Artefact authentique présenté comme jeton de rafraîchissement, qui n'en est pas un (un code). */
     case NotARefreshToken = 'not-a-refresh-token';
 
-    /** Scope demandé au rafraîchissement inconnu ou absent de la connexion. */
+    /**
+     * Scope refusé : demandé au rafraîchissement, inconnu ou absent de la
+     * connexion ; ou, à l'échange d'un code, un scope de sa charge devenu
+     * inconnu depuis l'autorisation.
+     */
     case InvalidScope = 'invalid-scope';
 
     /** Code ou jeton présenté par un autre client enregistré que le sien. */

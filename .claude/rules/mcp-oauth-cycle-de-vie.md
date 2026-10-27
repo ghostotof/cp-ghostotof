@@ -300,43 +300,61 @@ paths:
   join (`testARefusedKnownTokenCostsNoExtraQuery`: the refused call costs exactly the accepted call's
   authentication query, judged on the token and on the tier). Never the token nor its hash in the line
   (`testAKnownRefusedTokenIsAudited`, one case per cause, the common 401 unchanged).
-- **Every refusal of an authentic grant is audited at the token endpoint** (#725, the author's three decisions of
-  2026-10-27: which refusals, where, what bound). **The criterion is the access token's**: a code or refresh token the
-  server **decrypts** is one it issued (only it holds the key, `Infrastructure/League/GrantPayloadReader::connectionOf()`,
-  the payload's `user_id` as RFC 4122), so it designates a connection and only whoever holds a real one writes a line.
-  Event `mcp-grant-refused`: `userId`, `connectionId`, `clientId` (the connection's, through
-  `McpConnectionRepositoryInterface::referenceOf()`, native SQL — the token endpoint's `wrapInTransaction()` closed the
-  EntityManager), `cause` (`Domain/ValueObject/GrantRefusal`), `grantType`, `presentingClientId` (the body's
-  `client_id`, a registered client since league authenticates it first; `null` for HTTP Basic only — it is what makes a
-  code presented by another client readable); actor `anonymous`. **Audited, with their cause**: PKCE `verifier-missing`,
+- **Every refusal of an authentic grant is audited at the token endpoint** (#725, the author's decisions of
+  2026-10-27: which refusals, where, what bound, then the four of the step-07 reviews). **The criterion is the access
+  token's**: a code or refresh token the server **decrypts** is one it issued (only it holds the key,
+  `Infrastructure/League/GrantPayloadReader::connectionIdOf()`, the payload's `user_id` as RFC 4122), so it designates a
+  connection and only whoever holds a real one writes a line. Event `mcp-grant-refused`: `userId`, `connectionId`,
+  `clientId` (the connection's, through `McpConnectionRepositoryInterface::referenceOf()`, native SQL — the token
+  endpoint's `wrapInTransaction()` closed the EntityManager), `cause` (`Domain/ValueObject/GrantRefusal`), `grantType`,
+  `presentingClientId` (the body's `client_id`, always a registered client as league read it — what makes a code
+  presented by another client readable); actor `anonymous`. **Audited, with their cause**: PKCE `verifier-missing`,
   `verifier-malformed`, `verifier-mismatch` (a wrong verifier on a live code: the interception signal, judged after the
   repository); `code-expired`, `token-expired` (league's clock, on the payload — a code replayed after its ten minutes,
   never recognised as a replay, the accepted limit of « A replayed code is judged under the same lock », now leaves a
   trace); `code-refused` (dead under the lock: row purged, connection revoked) and `token-refused` (the same, plus the
   token or the connection past its deadline on the application's clock, the account no longer trusted) — never a
-  compromise;
-  `foreign-client`, `redirect-mismatch`, `not-a-code`, `not-a-refresh-token`, `invalid-scope`, `foreign-resource`
-  (`invalid_target` with an authentic grant), and `unrecognised` for any other league refusal of an authentic grant,
-  so none is lost. **Not audited, and why**: the authorize endpoint's refusals (unknown client, unregistered
-  `redirect_uri`, PKCE method — no connection exists yet, nothing to designate, and any caller can produce them), an
-  unknown client at the token endpoint (`invalid_client`, refused for itself before the grant),
-  an unreadable grant or one without a connection UUID, a connection no longer in the database (nobody to designate),
-  a body `FormEncodedRequest` refuses (its parameters do not read unambiguously), a grant type carrying no artifact,
-  and **a compromise** — reuse and replay already write `mcp-connection-revoked`; the audit is a sibling `catch` of
-  `TokenEndpoint::respond()`, never reached by the compromise's own refusal. **Classified by league's hint**
-  (`Infrastructure/League/LeagueGrantRefusals`, one table, `invalid_scope` and `invalid_target` by type): league names its
-  refusals by sentence only, pinned 9.4.1; a bump changing one drops it to `unrecognised` and its case turns red.
-  **Hook, decided**: `TokenEndpoint`, after the ROLLBACK, through `Application/GrantRefusalAuditInterface`
-  (`Infrastructure/League/LeagueGrantRefusalAudit`) — rejected: league's events (only `client.authentication.failed`
-  and `refresh_token.client.failed`, nothing for PKCE, expiry or redirect) and a witness filled by the repositories
-  (blind to the refusals league makes before them). **Cost**, on a refused authentic grant only: one decryption more
-  than league's and one query. **Volume, decided**: one line per refused request, bounded by the nginx `oauth` zone
-  alone (10 a minute per IP and per pod, `burst=10 nodelay`: up to 20 the first minute) — the access token's decision;
-  an application dedup was rejected (state to keep in a DBAL pool, ADR 0005, a query more per refusal, an attack burst
-  shrunk to one line). `GrantRefusalAuditTest` produces each cause through the real league (forged payloads re-encrypted
-  under the server's key for the expiries and a vanished connection) and reads the exact keys, no grant, verifier nor
-  hash in the journal; the unknown client and the compromise turn red when audited, measured, as does
-  `LeagueGrantRefusalsTest`'s fallback.
+  compromise; `foreign-client`, `redirect-mismatch`, `not-a-code`, `not-a-refresh-token`, `invalid-scope` (at a refresh,
+  or at an exchange whose payload names a scope gone since), `foreign-resource` (`invalid_target` with an authentic
+  grant), and `unrecognised` for any other league refusal of an authentic grant, so none is lost. **Not audited, and
+  why**: the authorize endpoint's refusals (unknown client, unregistered `redirect_uri`, PKCE method — no connection
+  exists yet, nothing to designate, and any caller can produce them); an unknown client (`invalid_client`, refused for
+  itself before the grant); an unreadable grant or one without a connection UUID; a connection no longer in the
+  database (nobody to designate); a grant type carrying no artifact; a **5xx** (`LeagueGrantRefusalAudit::SERVER_FAULT`:
+  league failing, sometimes *after* validating the grant — a unique-identifier collision, a `server_error` — where a
+  line would accuse a legitimate account of a valid code); and **a compromise** — reuse and replay already write
+  `mcp-connection-revoked`; the audit is a sibling `catch` of `TokenEndpoint::respond()`, never reached by the
+  compromise's own refusal. **Two doors closed before league, by decision** (the security review measured both
+  escaping the audit): `FormEncodedRequest` refuses, `invalid_request`, any read value starting or ending with a blank
+  of `trim()` — league trims every parameter (`AbstractGrant::parseParam()`), so a code wrapped in a space reached
+  league while the audit, reading the raw body, decrypted nothing, and a `client_id` followed by 50 000 tabs entered the
+  journal as such; refused, never corrected, like parameter pollution. And `TokenEndpoint` requires the `client_id`
+  **in the body** (the `none` method, the only one the metadata announce; `invalid_client` otherwise): league also
+  read it from HTTP Basic, where the audit did not see who presented the grant. A body those two refuse is not audited:
+  its parameters do not read unambiguously. **An audit failure never changes the answer** (decided):
+  `TokenEndpoint::audit()` catches any `Throwable` of the audit, logs `Grant refusal not audited.` at `critical` on the
+  main channel (the class only, never a message that could quote the grant), then throws league's refusal unchanged —
+  `testAnAuditFailureLeavesLeaguesRefusalUnchanged` renames `mcp_connection` for one request (500 before, measured).
+  **Classified by league's hint** (`Infrastructure/League/LeagueGrantRefusals`, one table, `invalid_scope` and
+  `invalid_target` by type; the project's own hint is `PayloadCheckedRefreshTokenGrant::NOT_A_REFRESH_TOKEN_HINT`, never
+  copied): league names its refusals by sentence only, pinned 9.4.1; a bump changing one drops it to `unrecognised` and
+  its case turns red. **Hook, decided**: `TokenEndpoint`, after the ROLLBACK, through
+  `Application/GrantRefusalAuditInterface` (`Infrastructure/League/LeagueGrantRefusalAudit`) — rejected: league's events
+  (only `client.authentication.failed` and `refresh_token.client.failed`, nothing for PKCE, expiry or redirect) and a
+  witness filled by the repositories (blind to the refusals league makes before them). **Cost**: one decryption more
+  than league's on **every** 4xx refusal of a known client carrying a grant, authentic or not (decrypting is how it is
+  told), and one query for an authentic one. **Volume, decided**: one line per refused request, bounded by the nginx
+  `oauth` zone alone — 10 a minute per IP **and per pod**, `burst=10 nodelay`, so with production's two replicas up to
+  40 the first minute, then 20 a minute per IP; a grant stays « authentic » as long as its connection row lives (six
+  months after a revocation), and N addresses multiply the bound — the access token's decision; an application dedup
+  was rejected (state to keep in a DBAL pool, ADR 0005, a query more per refusal, an attack burst shrunk to one line).
+  **To revisit with CIMD (#651)**: a client known by its metadata URL makes `presentingClientId` an URL the caller
+  chose (≤ 255 characters of `McpClientId`'s alphabet), and its own volume. `GrantRefusalAuditTest` produces each cause
+  through the real league (forged payloads re-encrypted under the server's key for the expiries and a vanished
+  connection, SQL alterations for every death under the lock) and, through `assertAudited()`, reads the exact keys and
+  finds no grant, verifier nor hash in the journal; the unknown client, the compromise, the blank-wrapped code and the
+  dead refresh tokens turn red under their mutation, measured, as do `LeagueGrantRefusalsTest`'s fallback and
+  `LeagueGrantRefusalAuditTest`'s 5xx.
 - **The daily purge** (task 9 of #649): `app:mcp:purge` (`Presentation/Command/PurgeMcpConnectionsCommand`, a thin
   wrapper) → `Application/McpConnectionPurgerInterface::purge(RetentionPeriod)` → `McpConnectionPurgeResult`, run every
   night by the housekeeping CronJob, third line after the invitations (`k8s/base/messenger-purge-cronjob.yaml`, under
