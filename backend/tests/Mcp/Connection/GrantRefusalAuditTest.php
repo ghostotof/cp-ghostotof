@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Mcp\Connection;
 
+use App\Mcp\Connection\Application\GrantRefusalAuditInterface;
 use App\Mcp\Connection\Infrastructure\League\TokenIdentifierHash;
 use App\Tests\Support\ReadsAllChannelsLog;
 use App\Tests\Support\ReadsSecurityAuditLog;
@@ -12,6 +13,7 @@ use Doctrine\ORM\EntityManagerInterface;
 use Monolog\Level;
 use Monolog\LogRecord;
 use PHPUnit\Framework\Attributes\DataProvider;
+use RuntimeException;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Uid\Uuid;
@@ -335,6 +337,51 @@ final class GrantRefusalAuditTest extends WebTestCase
         self::assertCount(1, $failures);
         self::assertSame(Level::Critical, $failures[0]->level);
         self::assertSame(['exceptionClass'], array_keys($failures[0]->context));
+    }
+
+    /**
+     * Le jumeau du précédent pour le rejeu non prouvé (#726) : sa ligne
+     * `replay-unproven` s'écrit depuis le `catch` de la compromission, par
+     * `recordUnprovenReplay()`, et sa panne ne change pas davantage la
+     * réponse — le refus de league mot pour mot (« Authorization code has been
+     * revoked », `invalid_grant`), aucune révocation, aucune ligne, et la
+     * panne en `critical`, la classe seule.
+     *
+     * La panne est celle d'un écrivain remplacé, non d'une table renommée :
+     * league lit la connexion sous verrou avant que le rejeu soit reconnu
+     * (`isAuthCodeRevoked()`), la cacher ferait échouer league avant l'audit.
+     * Le premier échange a construit le point de jeton : le noyau du client
+     * est redémarré — un conteneur neuf, rien d'initialisé, la base gardée —,
+     * le service remplacé, puis le client ne redémarre plus jusqu'au rejeu.
+     * **Mesuré** : l'appel de `auditUnprovenReplay()` sans
+     * `FailSafeAudit::attempt()` le fait rougir — la panne sort en 500.
+     */
+    public function testAnUnprovenReplayAuditFailureLeavesLeaguesRefusalUnchanged(): void
+    {
+        $code = $this->grantedCode();
+        self::assertSame(Response::HTTP_OK, $this->exchange($code)->getStatusCode());
+        $failing = self::createStub(GrantRefusalAuditInterface::class);
+        $failing->method('recordUnprovenReplay')->willThrowException(new RuntimeException('Journal de sécurité indisponible'));
+        $kernel = $this->client->getKernel();
+        $kernel->shutdown();
+        $kernel->boot();
+        self::getContainer()->set(GrantRefusalAuditInterface::class, $failing);
+        $this->client->disableReboot();
+
+        $replay = $this->exchange($code, ['code_verifier' => null]);
+
+        $this->assertOAuthError($replay, Response::HTTP_BAD_REQUEST, 'invalid_grant');
+        self::assertSame('Authorization code has been revoked', $this->json($replay)['hint'] ?? null);
+        self::assertSame(0, $this->countRows('SELECT COUNT(*) FROM mcp_connection WHERE revoked_at IS NOT NULL'), 'Un rejeu non prouvé a révoqué la connexion.');
+        self::assertSame([], self::securityAuditEvents('mcp-connection-revoked'));
+        self::assertSame([], self::securityAuditEvents(self::EVENT));
+        $failures = array_values(array_filter(
+            self::allChannelsLogRecords(),
+            static fn(LogRecord $record): bool => 'Grant refusal not audited.' === $record->message,
+        ));
+        self::assertCount(1, $failures);
+        self::assertSame(Level::Critical, $failures[0]->level);
+        self::assertSame(['exceptionClass' => RuntimeException::class], $failures[0]->context);
     }
 
     public function testAServedExchangeIsNotAudited(): void

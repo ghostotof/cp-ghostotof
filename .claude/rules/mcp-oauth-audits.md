@@ -82,11 +82,17 @@ paths:
   read it from HTTP Basic, where the audit did not see who presented the grant. A body those two refuse is not audited:
   its parameters do not read unambiguously. **An audit failure never changes the answer** (decided):
   `TokenEndpoint::audit()` (and its unproven-replay twin) goes through `Application/FailSafeAudit::attempt($write,
-  $message)` — written once (#726, S1) for the token endpoint's two audits and the purge's: it catches any `Throwable`
-  of the write and logs the caller's constant message, here `Grant refusal not audited.`, at `critical` on the main
+  $message)` — written once (#726, S1) for its four sites: `TokenEndpoint::audit()` and
+  `TokenEndpoint::auditUnprovenReplay()` (both `Grant refusal not audited.`), `CodeExchangeSupersession::auditSuperseded()`
+  (`Superseded connection not audited.`, after the exchange's COMMIT) and the purge's `McpConnectionPurger::auditExpired()`
+  (`Expired connection not audited.`): it catches any `Throwable` of the write and logs the caller's constant message,
+  here `Grant refusal not audited.`, at `critical` on the main
   channel (`['exceptionClass' => …]`, the class only, never a message that could quote the grant;
   `FailSafeAuditTest`); league's refusal is then thrown unchanged —
-  `testAnAuditFailureLeavesLeaguesRefusalUnchanged` renames `mcp_connection` for one request (500 before, measured).
+  `testAnAuditFailureLeavesLeaguesRefusalUnchanged` renames `mcp_connection` for one request (500 before, measured);
+  its twin `testAnUnprovenReplayAuditFailureLeavesLeaguesRefusalUnchanged` replaces the refusal audit's writer (league
+  reads the connection under its lock before the replay is recognised, so the table cannot be hidden): « Authorization
+  code has been revoked », `invalid_grant`, nothing revoked, the `critical` line (500 without the `attempt()`, measured).
   **Classified by league's hint** (`Infrastructure/League/LeagueGrantRefusals`, one table, `invalid_scope` and
   `invalid_target` by type; the project's own hint is `PayloadCheckedRefreshTokenGrant::NOT_A_REFRESH_TOKEN_HINT`, never
   copied): league names its refusals by sentence only, pinned 9.4.1; a bump changing one drops it to `unrecognised` and

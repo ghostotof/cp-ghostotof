@@ -6,6 +6,7 @@ namespace App\Tests\Mcp\Connection\Domain\ValueObject;
 
 use App\Mcp\Connection\Domain\Exception\InvalidConnectionLifetimeException;
 use App\Mcp\Connection\Domain\ValueObject\ConnectionLifetimes;
+use Closure;
 use DateInterval;
 use DateTimeImmutable;
 use DateTimeZone;
@@ -179,41 +180,106 @@ final class ConnectionLifetimesTest extends TestCase
      * à aucune seconde autour des deux changements d'heure de 2026 à Paris,
      * une minute de jeu laissée à son octroi.
      *
-     * La borne est celle de la purge, écrite comme elle (`$now->sub(durée)
-     * ->add(P1D)`, {@see \App\Mcp\Connection\Application\McpConnectionPurger})
-     * et comparée à l'octroi le plus ancien d'un code encore échangeable
-     * (`$now − code`, temps écoulé : league refuse un code passé son
-     * `expire_time`), avancé d'une minute : l'octroi tronqué à la seconde,
-     * l'écart entre l'octroi et le code, le décalage d'horloge entre le nœud
-     * du Job et celui de FPM. Témoins : au plancher refusé (`P1DT1H11M`) le
-     * jeu est consommé à la seconde près, et sans l'heure (`P1DT10M1S`, la
-     * mesure de #726 : 3 599 s de recouvrement) la borne atteint l'octroi.
+     * La borne est celle de la purge, lue à sa source
+     * ({@see ConnectionLifetimes::preselectionBoundsAt()}, #726) et comparée à
+     * l'octroi le plus ancien d'un code encore échangeable (`$now − code`,
+     * temps écoulé : league refuse un code passé son `expire_time`), avancé
+     * d'une minute : l'octroi tronqué à la seconde, l'écart entre l'octroi et
+     * le code, le décalage d'horloge entre le nœud du Job et celui de FPM.
+     * Témoins, sur des durées que fromConfiguration() refuse — la borne y est
+     * donc écrite comme preselectionBoundsAt() la calcule, `$now->sub(durée)
+     * ->add(P1D)` : au plancher refusé (`P1DT1H11M`) le jeu est consommé à la
+     * seconde près, et sans l'heure (`P1DT10M1S`, la mesure de #726 : 3 599 s
+     * de recouvrement) la borne atteint l'octroi.
      */
     public function testAFreshConnectionIsNeverPreselectedAcrossTheClockChanges(): void
     {
         $code = new DateInterval(self::CONFIGURED['codeLifetime']);
         $shortest = $this->lifetimes(['idleLifetime' => 'P1DT1H11M1S', 'maximumLifetime' => 'P1DT1H11M1S']);
 
-        foreach ([$shortest->idle(), $shortest->maximum()] as $duration) {
-            self::assertNull($this->firstFreshConnectionPreselected($duration, $code), 'Une connexion fraîche est candidate de la purge.');
+        foreach ([
+            'inactivité' => static fn (DateTimeImmutable $now): DateTimeImmutable => $shortest->preselectionBoundsAt($now)->idleBefore(),
+            'durée maximale' => static fn (DateTimeImmutable $now): DateTimeImmutable => $shortest->preselectionBoundsAt($now)->maximumBefore(),
+        ] as $bound => $boundAt) {
+            self::assertNull($this->firstFreshConnectionPreselected($boundAt, $code), 'Une connexion fraîche est candidate de la purge, borne : '.$bound.'.');
         }
 
-        self::assertNotNull($this->firstFreshConnectionPreselected(new DateInterval('P1DT1H11M'), $code), 'Le témoin au plancher n\'est pas atteint : le balayage ne voit rien.');
-        self::assertNotNull($this->firstFreshConnectionPreselected(new DateInterval('P1DT10M1S'), $code), 'Le plancher sans l\'heure n\'est plus atteint : le balayage ne voit rien.');
+        self::assertNotNull($this->firstFreshConnectionPreselected($this->boundWritten(new DateInterval('P1DT1H11M')), $code), 'Le témoin au plancher n\'est pas atteint : le balayage ne voit rien.');
+        self::assertNotNull($this->firstFreshConnectionPreselected($this->boundWritten(new DateInterval('P1DT10M1S')), $code), 'Le plancher sans l\'heure n\'est plus atteint : le balayage ne voit rien.');
     }
 
     /**
-     * Le premier instant de purge où la borne de présélection (pour `$duration`)
+     * Les bornes de la présélection de la purge (#726), à un instant en UTC
+     * (aucun changement d'heure) : `maintenant − durée + un jour`, pour l'inactivité
+     * puis pour la durée maximale, chacune à sa place — un couple positionnel
+     * inversé ne se verrait pas, deux accesseurs nommés si. L'instant passé
+     * n'est pas touché, et deux lectures rendent les mêmes bornes.
+     */
+    public function testThePreselectionBoundsAreNowMinusEachDurationPlusOneDay(): void
+    {
+        $now = new DateTimeImmutable('2026-06-15T10:00:00+00:00');
+        $lifetimes = $this->lifetimes();
+
+        $bounds = $lifetimes->preselectionBoundsAt($now);
+
+        self::assertSame('2026-05-17T10:00:00+00:00', $bounds->idleBefore()->format(DATE_ATOM));
+        self::assertSame('2026-03-18T10:00:00+00:00', $bounds->maximumBefore()->format(DATE_ATOM));
+        self::assertSame('2026-06-15T10:00:00+00:00', $now->format(DATE_ATOM), 'L\'instant passé a été modifié.');
+        self::assertEquals($bounds, $lifetimes->preselectionBoundsAt($now));
+    }
+
+    /**
+     * À travers le passage à l'heure d'hiver (2026-10-25), les bornes comptent
+     * des jours de calendrier, comme les échéances (#445 : `new DateInterval`,
+     * jamais `modify()`) : à `2026-10-26T10:00` CET, la borne d'inactivité est
+     * le `2026-09-27T10:00` CEST — même heure murale, 29 jours et une heure
+     * écoulés —, celle de la durée maximale le `2026-07-29T10:00` CEST. Et
+     * une connexion à son échéance d'inactivité exacte est présélectionnée :
+     * la présélection est large, jamais plus étroite que l'échéance.
+     */
+    public function testThePreselectionBoundsCountCalendarDaysAcrossTheAutumnClockChange(): void
+    {
+        $paris = new DateTimeZone('Europe/Paris');
+        $now = new DateTimeImmutable('2026-10-26 10:00:00', $paris);
+        $lifetimes = $this->lifetimes();
+
+        $bounds = $lifetimes->preselectionBoundsAt($now);
+
+        self::assertSame('2026-09-27T10:00:00+02:00', $bounds->idleBefore()->format(DATE_ATOM));
+        self::assertSame((29 * 24 + 1) * 3600, $now->getTimestamp() - $bounds->idleBefore()->getTimestamp());
+        self::assertSame('2026-07-29T10:00:00+02:00', $bounds->maximumBefore()->format(DATE_ATOM));
+        $lastUseDeadNow = new DateTimeImmutable('2026-09-26 10:00:00', $paris);
+        self::assertEquals($now, $lifetimes->idleDeadline($lastUseDeadNow));
+        self::assertLessThanOrEqual($bounds->idleBefore(), $lastUseDeadNow, 'Une connexion échue à cet instant échappe à la présélection.');
+    }
+
+    /**
+     * La borne de présélection pour une durée que fromConfiguration() refuse,
+     * écrite comme {@see ConnectionLifetimes::preselectionBoundsAt()} la
+     * calcule : le témoin des planchers.
+     *
+     * @return Closure(DateTimeImmutable): DateTimeImmutable
+     */
+    private function boundWritten(DateInterval $duration): Closure
+    {
+        $margin = new DateInterval(ConnectionLifetimes::MINIMUM_CONNECTION_LIFETIME);
+
+        return static fn (DateTimeImmutable $now): DateTimeImmutable => $now->sub($duration)->add($margin);
+    }
+
+    /**
+     * Le premier instant de purge où la borne de présélection (`$boundAt`)
      * atteint l'octroi le plus ancien d'un code encore échangeable, une minute
      * de jeu comprise, ou `null`. Balayage à la seconde de 00:00 à 02:00 UTC
      * les jours où la mesure a trouvé un recouvrement (le 29 et le 30 mars, le
      * 25 et le 26 octobre 2026), à la minute sur les cinq jours autour de
      * chaque changement.
+     *
+     * @param Closure(DateTimeImmutable): DateTimeImmutable $boundAt
      */
-    private function firstFreshConnectionPreselected(DateInterval $duration, DateInterval $code): ?DateTimeImmutable
+    private function firstFreshConnectionPreselected(Closure $boundAt, DateInterval $code): ?DateTimeImmutable
     {
         $paris = new DateTimeZone('Europe/Paris');
-        $margin = new DateInterval(ConnectionLifetimes::MINIMUM_CONNECTION_LIFETIME);
         // La minute de jeu du plancher (troncature, écart octroi-code, décalage
         // d'horloge), privée dans ConnectionLifetimes : écrite ici en clair.
         $slack = new DateInterval('PT1M');
@@ -229,7 +295,7 @@ final class ConnectionLifetimesTest extends TestCase
         foreach ($sweeps as [$start, $length, $step]) {
             for ($elapsed = 0; $elapsed < $length; $elapsed += $step) {
                 $now = $start->add(new DateInterval('PT'.$elapsed.'S'))->setTimezone($paris);
-                if ($now->sub($duration)->add($margin) >= $now->sub($code)->sub($slack)) {
+                if ($boundAt($now) >= $now->sub($code)->sub($slack)) {
                     return $now;
                 }
             }

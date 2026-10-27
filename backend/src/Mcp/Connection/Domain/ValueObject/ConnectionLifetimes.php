@@ -51,7 +51,8 @@ final readonly class ConnectionLifetimes
      * changement d'heure, un jour les couvre. Une durée plus courte que la
      * marge mettrait la borne dans le futur : chaque connexion active serait
      * verrouillée `FOR UPDATE` à chaque nuit. Une seule constante pour les
-     * deux, que la purge lit ici.
+     * deux, que {@see self::preselectionBoundsAt()} lit (#726 : les bornes de
+     * la purge calculées ici, plus dans la purge).
      *
      * **Le vrai plancher est au-delà : cette marge plus la durée d'un code plus
      * {@see self::CLOCK_CHANGE_MARGIN} plus
@@ -244,6 +245,38 @@ final readonly class ConnectionLifetimes
     public function maximumDeadline(DateTimeImmutable $grantedAt): DateTimeImmutable
     {
         return $grantedAt->add($this->maximum);
+    }
+
+    /**
+     * Les deux bornes de la présélection SQL de la purge à `$now` (#726) :
+     * `$now − durée + MINIMUM_CONNECTION_LIFETIME`, pour l'inactivité puis
+     * pour la durée maximale. **Calculées ici seulement**, où vivent les
+     * durées et la marge : la purge les passe à
+     * `findActiveCandidatesForExpiry()`, et `McpConnectionPurgeLockOrderTest`
+     * les lit ici pour affirmer, avant sa course, qu'une connexion est bien
+     * candidate — une marge recopiée dans le test laisserait une marge
+     * changée ici le rendre vide sans rougir.
+     *
+     * **Pourquoi la marge** : les bornes (maintenant moins la durée) sont
+     * reculées d'un jour pour qu'aucune connexion qu'`isExpiredAt()` dit
+     * expirée n'y échappe — `$now − P30D` et l'échéance `dernier usage + P30D`
+     * ne se répondent qu'à l'heure près autour d'un changement d'heure. La
+     * présélection est large, le jugement exact ({@see self::idleDeadline()},
+     * {@see self::maximumDeadline()}).
+     *
+     * Même arithmétique que les échéances : des intervalles construits
+     * (`new DateInterval`, jamais `modify()`, #445), les jours sur le
+     * calendrier du fuseau de `$now` — à Paris, une borne recule de 30 jours
+     * de calendrier, 721 heures à travers le passage à l'heure d'hiver.
+     */
+    public function preselectionBoundsAt(DateTimeImmutable $now): PreselectionBounds
+    {
+        $margin = new DateInterval(self::MINIMUM_CONNECTION_LIFETIME);
+
+        return new PreselectionBounds(
+            $now->sub($this->idle)->add($margin),
+            $now->sub($this->maximum)->add($margin),
+        );
     }
 
     /**

@@ -13,7 +13,6 @@ use App\Mcp\Connection\Domain\ValueObject\ConnectionLifetimes;
 use App\Mcp\Connection\Domain\ValueObject\RevokedConnection;
 use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use App\Shared\Domain\ValueObject\RetentionPeriod;
-use DateInterval;
 use DateTimeImmutable;
 use Psr\Clock\ClockInterface;
 use Symfony\Component\Uid\Uuid;
@@ -65,23 +64,6 @@ use Symfony\Component\Uid\Uuid;
  */
 final readonly class McpConnectionPurger implements McpConnectionPurgerInterface
 {
-    /**
-     * Marge de la présélection SQL : ses bornes (maintenant moins la durée)
-     * sont reculées d'un jour, pour qu'aucune connexion qu'`isExpiredAt()` dit
-     * expirée n'y échappe — `$now - P30D` et l'échéance `dernier usage + P30D`
-     * ne se répondent qu'à l'heure près autour d'un changement d'heure. La
-     * présélection est large, le jugement exact. C'est aussi le plancher des
-     * deux durées de connexion, que {@see ConnectionLifetimes} refuse en
-     * dessous (relecture du lot B de #649) : plus courtes que la marge, la
-     * borne serait dans le futur et chaque connexion active serait verrouillée
-     * à chaque nuit — une constante pour les deux, lue là. Les durées doivent
-     * même dépasser cette marge plus la durée d'un code plus l'heure d'un
-     * changement d'heure et une minute de jeu (#726) : la connexion
-     * d'un code encore échangeable, que l'échange verrouille la première,
-     * n'est alors jamais candidate du marquage.
-     */
-    private const string PRESELECTION_MARGIN = ConnectionLifetimes::MINIMUM_CONNECTION_LIFETIME;
-
     public function __construct(
         private McpConnectionRepositoryInterface $connections,
         private McpAuthorizationCodeRepositoryInterface $authorizationCodes,
@@ -173,27 +155,6 @@ final readonly class McpConnectionPurger implements McpConnectionPurgerInterface
     }
 
     /**
-     * Les deux bornes de la présélection à `$now` — inactivité, puis maximum :
-     * `now − durée + PRESELECTION_MARGIN`, une durée construite
-     * (`new DateInterval`, #445). **Calculées ici seulement** (#726) : la
-     * purge les passe à `findActiveCandidatesForExpiry()`, et
-     * `McpConnectionPurgeLockOrderTest` les lit ici pour affirmer, avant sa
-     * course, qu'une connexion est bien candidate — une marge recopiée dans
-     * le test laisserait une marge changée ici le rendre vide sans rougir.
-     *
-     * @return array{DateTimeImmutable, DateTimeImmutable}
-     */
-    public static function preselectionBounds(DateTimeImmutable $now, ConnectionLifetimes $lifetimes): array
-    {
-        $margin = new DateInterval(self::PRESELECTION_MARGIN);
-
-        return [
-            $now->sub($lifetimes->idle())->add($margin),
-            $now->sub($lifetimes->maximum())->add($margin),
-        ];
-    }
-
-    /**
      * Présélectionne en SQL, juge en PHP, révoque ce que le jugement retient :
      * la purge et l'authentificateur ne peuvent pas diverger sur l'échéance,
      * fût-ce d'une seconde ou d'une heure de changement d'heure.
@@ -202,8 +163,10 @@ final readonly class McpConnectionPurger implements McpConnectionPurgerInterface
      */
     private function revokeExpired(DateTimeImmutable $now): array
     {
-        [$idleBefore, $maximumBefore] = self::preselectionBounds($now, $this->lifetimes);
-        $candidates = $this->connections->findActiveCandidatesForExpiry($idleBefore, $maximumBefore);
+        // Les bornes à leur source, où vivent les durées et la marge (#726) :
+        // une présélection large, `maintenant − durée + un jour`.
+        $bounds = $this->lifetimes->preselectionBoundsAt($now);
+        $candidates = $this->connections->findActiveCandidatesForExpiry($bounds->idleBefore(), $bounds->maximumBefore());
 
         $expired = array_values(array_filter(
             $candidates,

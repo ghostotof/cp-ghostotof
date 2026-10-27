@@ -33,7 +33,7 @@ paths:
   `idleLifetime`, `maximumLifetime`: names that are no secret's, so `SecretParametersTest` asks for no
   `#[SensitiveParameter]`) and never the value, an unreadable interval, a zero one, **a connection idle or maximum
   duration under one day** (`ConnectionLifetimes::MINIMUM_CONNECTION_LIFETIME`, `P1D`, lot B of the #649 reviews: it
-  is the purge's pre-selection margin, read there as `PRESELECTION_MARGIN` — shorter, the bound `now − duration +
+  is the purge's pre-selection margin, read by `preselectionBoundsAt()` (#726: the bounds computed here) — shorter, the bound `now − duration +
   margin` would lie in the future and the purge would lock every active connection `FOR UPDATE` each night; a second
   less than `P1D` refused `belowOneDay`), **a connection idle or maximum duration up to that margin plus the code's
   duration plus an elapsed hour and minute, included** (#726, CR1, `notBeyondFreshConnectionWindow`: with a `PT10M`
@@ -126,8 +126,11 @@ paths:
   receives `refresh-token-reuse` and `code-replay` — an expiry audited there would carry the request's actor instead
   of `system`, a supersession would lack `supersededBy`. The runtime refusals of lot C and of #726's T6
   (`RevocationCauseReserved…Exception`, before any write) are gone with their guards: the invalid call no longer
-  type-checks, PHPStan judges it. `McpConnectionRevokerTest` (each compromise audited once with what the repository
-  returned, never when it returned `null`).
+  type-checks, PHPStan judges it. **So #650's `person` cause never goes through the revoker** (it takes a compromise
+  only): it goes through the transactional path — a repository method in the person's transaction, the audit
+  after its COMMIT — or a dedicated method of its own; never by reopening `revoke()` to a generic cause, which would
+  bring back the runtime guards CR6 removed. `McpConnectionRevokerTest` (each compromise
+  audited once with what the repository returned, never when it returned `null`).
 - **The refresh is judged under the lock of its connection** (task 3 of #649, `Infrastructure/League/RefreshTokenRepository::isRefreshTokenRevoked()`
   — league's name; what it judges is everything that makes a refresh token unacceptable). League calls it from
   `validateOldRefreshToken()`, inside `TokenEndpoint`'s transaction, **after** binding the token to the client
