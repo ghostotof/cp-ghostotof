@@ -3,11 +3,13 @@ paths:
   - "backend/src/Mcp/Connection/Application/GrantRefusalAuditInterface.php"
   - "backend/src/Mcp/Connection/Application/TokenEndpoint.php"
   - "backend/src/Mcp/Connection/Application/FormEncodedRequest.php"
+  - "backend/src/Mcp/Connection/Application/FailSafeAudit.php"
   - "backend/src/Mcp/Connection/Domain/ValueObject/BearerRefusal.php"
   - "backend/src/Mcp/Connection/Domain/ValueObject/GrantRefusal.php"
   - "backend/src/Mcp/Connection/Infrastructure/League/LeagueGrantRefusal*.php"
   - "backend/src/Mcp/Connection/Infrastructure/Security/McpBearerAuthenticator.php"
   - "backend/tests/Mcp/Connection/GrantRefusalAuditTest.php"
+  - "backend/tests/Mcp/Connection/Application/FailSafeAuditTest.php"
   - "backend/tests/Mcp/Connection/Infrastructure/League/LeagueGrantRefusal*Test.php"
   - "backend/tests/Mcp/Connection/Infrastructure/Security/McpBearerAuthenticatorTest.php"
 ---
@@ -55,10 +57,12 @@ paths:
   trace); `code-refused` (dead under the lock: row purged, connection revoked) and `token-refused` (the same, plus the
   token or the connection past its deadline on the application's clock, the account no longer trusted) — never a
   compromise; `replay-unproven` (#726: an exchanged code replayed on an active connection without the proof of its PKCE
-  verifier — no revocation, « A replayed code is judged under the same lock »; named by `TokenEndpoint`, which passes
-  it to `GrantRefusalAuditInterface::record($request, $refusal, $cause)`, `$cause ?? LeagueGrantRefusals::causeOf()`:
-  league's hint is `code-refused`'s; `LeagueGrantRefusalAuditTest` pins that a passed cause wins and that none leaves
-  the classification unchanged); `foreign-client`, `redirect-mismatch`, `not-a-code`, `not-a-refresh-token`, `invalid-scope` (at a refresh,
+  verifier — no revocation, « A replayed code is judged under the same lock »; named by `TokenEndpoint`, which calls
+  `GrantRefusalAuditInterface::recordUnprovenReplay($request, $compromise->connectionId())` — a dedicated variant (#726,
+  CR4): the connection is the one the compromise already designates under league's lock, so the code is **not
+  decrypted again**, and `record($request, $refusal)` keeps league's hint alone, which says `code-refused` here;
+  `LeagueGrantRefusalAuditTest` pins the line on the passed connection, that an unreadable code changes nothing there
+  (while `record()` writes nothing for it), and `record()`'s classification unchanged); `foreign-client`, `redirect-mismatch`, `not-a-code`, `not-a-refresh-token`, `invalid-scope` (at a refresh,
   or at an exchange whose payload names a scope gone since), `foreign-resource` (`invalid_target` with an authentic
   grant), and `unrecognised` for any other league refusal of an authentic grant, so none is lost. **Not audited, and
   why**: the authorize endpoint's refusals (unknown client, unregistered `redirect_uri`, PKCE method — no connection
@@ -77,8 +81,11 @@ paths:
   **in the body** (the `none` method, the only one the metadata announce; `invalid_client` otherwise): league also
   read it from HTTP Basic, where the audit did not see who presented the grant. A body those two refuse is not audited:
   its parameters do not read unambiguously. **An audit failure never changes the answer** (decided):
-  `TokenEndpoint::audit()` catches any `Throwable` of the audit, logs `Grant refusal not audited.` at `critical` on the
-  main channel (the class only, never a message that could quote the grant), then throws league's refusal unchanged —
+  `TokenEndpoint::audit()` (and its unproven-replay twin) goes through `Application/FailSafeAudit::attempt($write,
+  $message)` — written once (#726, S1) for the token endpoint's two audits and the purge's: it catches any `Throwable`
+  of the write and logs the caller's constant message, here `Grant refusal not audited.`, at `critical` on the main
+  channel (`['exceptionClass' => …]`, the class only, never a message that could quote the grant;
+  `FailSafeAuditTest`); league's refusal is then thrown unchanged —
   `testAnAuditFailureLeavesLeaguesRefusalUnchanged` renames `mcp_connection` for one request (500 before, measured).
   **Classified by league's hint** (`Infrastructure/League/LeagueGrantRefusals`, one table, `invalid_scope` and
   `invalid_target` by type; the project's own hint is `PayloadCheckedRefreshTokenGrant::NOT_A_REFRESH_TOKEN_HINT`, never
@@ -88,7 +95,9 @@ paths:
   (only `client.authentication.failed` and `refresh_token.client.failed`, nothing for PKCE, expiry or redirect) and a
   witness filled by the repositories (blind to the refusals league makes before them). **Cost**: one decryption more
   than league's on **every** 4xx refusal of a known client carrying a grant, authentic or not (decrypting is how it is
-  told), and one query for an authentic one. **Volume, decided**: one line per refused request, bounded by the nginx
+  told), and one query for an authentic one — save the unproven replay, which decrypts nothing more (its query, the
+  connection's reference, stays: the line names the account and the client). Every body parameter is read through
+  `FormEncodedRequest::stringParameter()` (#726, CR7). **Volume, decided**: one line per refused request, bounded by the nginx
   `oauth` zone alone — 10 a minute per IP **and per pod**, `burst=10 nodelay`, so with production's two replicas up to
   40 the first minute, then 20 a minute per IP; a grant stays « authentic » as long as its connection row lives (six
   months after a revocation), and N addresses multiply the bound — the access token's decision; an application dedup

@@ -9,15 +9,12 @@ use App\Mcp\Connection\Domain\Exception\CompromisedMcpConnectionException;
 use App\Mcp\Connection\Domain\Exception\InvalidMcpClientIdException;
 use App\Mcp\Connection\Domain\Exception\RotatedRefreshTokenReusedException;
 use App\Mcp\Connection\Domain\Repository\McpClientRepositoryInterface;
-use App\Mcp\Connection\Domain\ValueObject\GrantRefusal;
 use App\Mcp\Connection\Domain\ValueObject\McpClientId;
 use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use League\OAuth2\Server\AuthorizationServer;
 use League\OAuth2\Server\Exception\OAuthServerException;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
-use Psr\Log\LoggerInterface;
-use Throwable;
 
 /**
  * Le point de jeton (#647) : deux contrôles avant league, puis league, dans
@@ -109,6 +106,9 @@ final readonly class TokenEndpoint implements TokenEndpointInterface
      */
     private const array READ_PARAMETERS = ['grant_type', 'code', 'redirect_uri', 'client_id', 'code_verifier', 'refresh_token', 'scope', 'resource'];
 
+    /** Le message d'une panne de l'audit d'un refus, constant (#725). */
+    private const string GRANT_REFUSAL_NOT_AUDITED = 'Grant refusal not audited.';
+
     public function __construct(
         private AuthorizationServer $server,
         private OAuthEndpoints $endpoints,
@@ -119,7 +119,7 @@ final readonly class TokenEndpoint implements TokenEndpointInterface
         private ReplayProofInterface $replayProof,
         private CodeExchangeSupersessionInterface $supersession,
         private SecurityAuditLoggerInterface $auditLogger,
-        private LoggerInterface $logger,
+        private FailSafeAudit $failSafeAudit,
     ) {
     }
 
@@ -150,12 +150,12 @@ final readonly class TokenEndpoint implements TokenEndpointInterface
             // lui-même.
             $refusal = $this->refusalOf($compromise);
             if ($compromise instanceof AuthorizationCodeReplayedException && !$this->replayProof->provesPossession($request)) {
-                $this->audit($request, $refusal, GrantRefusal::ReplayUnproven);
+                $this->auditUnprovenReplay($request, $compromise);
 
                 throw $refusal;
             }
 
-            $this->revoker->revoke($compromise->connectionId(), $compromise->revocationCause());
+            $this->revoker->revoke($compromise);
 
             throw $refusal;
         } catch (OAuthServerException $refusal) {
@@ -183,7 +183,8 @@ final readonly class TokenEndpoint implements TokenEndpointInterface
      * révoquée ; rendu en 500, le client rejouerait son code avec son
      * vérificateur — un rejeu prouvé, qui révoquerait la nouvelle connexion à
      * son tour. La panne sort en `critical` sur le canal principal, la classe
-     * seule ; chaque connexion est tentée, une panne n'en tait pas d'autre.
+     * seule ({@see FailSafeAudit}) ; chaque connexion est tentée, une panne
+     * n'en tait pas d'autre.
      */
     private function auditSuperseded(?Supersession $supersession): void
     {
@@ -192,11 +193,12 @@ final readonly class TokenEndpoint implements TokenEndpointInterface
         }
 
         foreach ($supersession->revoked as $revoked) {
-            try {
-                $this->auditLogger->mcpConnectionSuperseded($revoked, $supersession->kept);
-            } catch (Throwable $failure) {
-                $this->logger->critical('Superseded connection not audited.', ['exceptionClass' => $failure::class]);
-            }
+            $this->failSafeAudit->attempt(
+                function () use ($revoked, $supersession): void {
+                    $this->auditLogger->mcpConnectionSuperseded($revoked, $supersession->kept);
+                },
+                'Superseded connection not audited.',
+            );
         }
     }
 
@@ -238,15 +240,33 @@ final readonly class TokenEndpoint implements TokenEndpointInterface
      * (#725, décision de l'auteur du 2026-10-27) : le client reçoit le refus
      * de league, et la panne sort en `critical` sur le canal principal — un
      * refus non audité reste visible. La classe seule, jamais le message :
-     * une erreur du pilote ou du chiffrement pourrait citer l'artefact.
+     * une erreur du pilote ou du chiffrement pourrait citer l'artefact
+     * ({@see FailSafeAudit}).
      */
-    private function audit(ServerRequestInterface $request, OAuthServerException $refusal, ?GrantRefusal $cause = null): void
+    private function audit(ServerRequestInterface $request, OAuthServerException $refusal): void
     {
-        try {
-            $this->refusalAudit->record($request, $refusal, $cause);
-        } catch (Throwable $failure) {
-            $this->logger->critical('Grant refusal not audited.', ['exceptionClass' => $failure::class]);
-        }
+        $this->failSafeAudit->attempt(
+            function () use ($request, $refusal): void {
+                $this->refusalAudit->record($request, $refusal);
+            },
+            self::GRANT_REFUSAL_NOT_AUDITED,
+        );
+    }
+
+    /**
+     * Le rejeu non prouvé, audité `replay-unproven` comme tout refus d'un
+     * artefact authentique, même message en cas de panne : sa connexion est
+     * celle que la compromission désigne déjà (#726, CR4), le code n'est pas
+     * redéchiffré pour la retrouver.
+     */
+    private function auditUnprovenReplay(ServerRequestInterface $request, AuthorizationCodeReplayedException $compromise): void
+    {
+        $this->failSafeAudit->attempt(
+            function () use ($request, $compromise): void {
+                $this->refusalAudit->recordUnprovenReplay($request, $compromise->connectionId());
+            },
+            self::GRANT_REFUSAL_NOT_AUDITED,
+        );
     }
 
     /**
@@ -283,10 +303,9 @@ final readonly class TokenEndpoint implements TokenEndpointInterface
      */
     private function refuseClientOutsideTheBody(ServerRequestInterface $request): void
     {
-        $body = $request->getParsedBody();
-        $clientId = \is_array($body) ? ($body['client_id'] ?? null) : null;
+        $clientId = FormEncodedRequest::stringParameter($request, 'client_id');
 
-        if (!\is_string($clientId) || '' === $clientId) {
+        if (null === $clientId || '' === $clientId) {
             throw OAuthServerException::invalidClient($request);
         }
     }
@@ -307,7 +326,7 @@ final readonly class TokenEndpoint implements TokenEndpointInterface
             return;
         }
 
-        if (!$this->isKnownClient($body['client_id'] ?? null)) {
+        if (!$this->isKnownClient(FormEncodedRequest::stringParameter($request, 'client_id'))) {
             throw OAuthServerException::invalidClient($request);
         }
 
@@ -319,9 +338,9 @@ final readonly class TokenEndpoint implements TokenEndpointInterface
      * aucun client : il n'est pas cherché (un octet nul ou un UTF-8 invalide
      * n'atteignent pas PostgreSQL).
      */
-    private function isKnownClient(mixed $clientId): bool
+    private function isKnownClient(?string $clientId): bool
     {
-        if (!\is_string($clientId)) {
+        if (null === $clientId) {
             return false;
         }
 

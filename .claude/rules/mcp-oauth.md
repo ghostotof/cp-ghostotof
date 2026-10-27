@@ -38,7 +38,7 @@ paths:
   `McpConnection`, `McpAuthorizationCode`, `McpAccessToken`, `McpRefreshToken`, the value objects
   `RedirectUri`, `McpClientId`, `McpClientName`, `TokenHashShape`), `Application/` (validator, consent, token
   endpoint, URLs, the port `AuthenticationInstantInterface`, the pure helpers `QueryParameterPollution`,
-  `FormEncodedRequest`, `IssParameter`, `InvalidTarget`), `Infrastructure/League/` (league's repositories and
+  `FormEncodedRequest`, `IssParameter`, `InvalidTarget`, the constants of `OAuthProfile`), `Infrastructure/League/` (league's repositories and
   entities, the two grants, the key), `Infrastructure/Doctrine/`, `Infrastructure/Security/`
   (`JwtAuthenticationInstant`), `Presentation/` (thin controllers, `app:mcp:client:register`). Every exception
   carries the `…Exception` suffix, like all of `src/`.
@@ -291,7 +291,9 @@ paths:
   (`oauth_resource_metadata`, `oauth_server_metadata`, `$`-anchored, no authenticator), its `PUBLIC_ACCESS`
   rule and its justified entry in `RouterScopeTest::NON_API_PATHS`; public JSON cached an hour
   (`MetadataDocumentResponseFactory`). What is announced is what the server does, nothing more
-  (`OAuthServerMetadata`): `S256` only, `none` auth, `response_modes_supported: ["query"]` (omitted, RFC 8414
+  (`OAuthServerMetadata`): `S256` only, `none` auth,
+  the grant types and the PKCE method read from `Application/OAuthProfile` (#726), the one source the grant
+  (`LoopbackAwareAuthCodeGrant`), the client (`OAuthClient`, `ClientRepository`) and the payload reader apply, `response_modes_supported: ["query"]` (omitted, RFC 8414
   defaults to query **and** fragment), no `registration_endpoint`, **no OIDC document**.
   **One announcement ahead of the code, accepted** (phase 2 only ships whole):
   `client_id_metadata_document_supported: true` until CIMD (#651) lands; `bearer_methods_supported: ["header"]` is

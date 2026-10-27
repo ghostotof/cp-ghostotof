@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Mcp\Connection\Application;
 
 use App\Mcp\Connection\Application\CodeExchangeSupersessionInterface;
+use App\Mcp\Connection\Application\FailSafeAudit;
 use App\Mcp\Connection\Application\GrantRefusalAuditInterface;
 use App\Mcp\Connection\Application\McpConnectionRevokerInterface;
 use App\Mcp\Connection\Application\OAuthEndpoints;
@@ -172,7 +173,7 @@ final class TokenEndpointSupersessionAuditTest extends WebTestCase
             $container->get(ReplayProofInterface::class),
             $container->get(CodeExchangeSupersessionInterface::class),
             $auditLogger,
-            $container->get(LoggerInterface::class),
+            new FailSafeAudit($container->get(LoggerInterface::class)),
         );
     }
 

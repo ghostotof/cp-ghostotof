@@ -231,7 +231,9 @@ the connection then its access token (the revocation endpoint's order) and askin
 reddens its own test only. A third test pins how long the candidates stay locked (#726: the marking, then the deletions,
 in two transactions): holding another connection's expired access token, it asks for a live candidate `FOR UPDATE NOWAIT`
 once the purge blocks in its deletions; mutation, the two `run()`s merged back into one — measured, the parent refused
-in `55P03`, the two order tests green. **The supersession's order is one too** (#726, final review):
+in `55P03`, the two order tests green. Its precondition (`assertALiveCandidate()`: pre-selected, not yet expired) reads
+the purge's bounds through `McpConnectionPurger::preselectionBounds()`, never a copied margin, so a change of the
+purge's margin cannot leave the `NOWAIT` free for nothing. **The supersession's order is one too** (#726, final review):
 `TokenEndpointConcurrencyTest::testASupersessionLocksTheOtherConnectionsInIdOrder` holds the lower of two other active
 connections of the pair `FOR UPDATE`, waits for the exchanging child (`present-at-token-endpoint.php`) to block
 (`SessionLockWait::untilBlocked()`), then asks for the higher one `FOR UPDATE NOWAIT`. The heap order must

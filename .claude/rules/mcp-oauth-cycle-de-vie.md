@@ -80,9 +80,10 @@ paths:
   FROM mcp_connection c WHERE c.id = :id AND c.revoked_at IS NULL ORDER BY c.id FOR NO KEY UPDATE) AND revoked.revoked_at IS
   NULL … RETURNING revoked.id, revoked.account_id, cl.client_id` — **the rows locked in id order** by the sub-query
   (#726, final review: a bare `UPDATE` locks them in the order its plan reads them, the heap's or an index's; the purge
-  locks by id) in **`FOR NO KEY UPDATE`**, the strength the `UPDATE` itself takes (#726, T6: no key column rewritten;
-  `FOR UPDATE` also blocked the `FOR KEY SHARE` an insertion referencing the connection takes, and still conflicts with
-  it, so the order and the exclusion between revocations are unchanged); a row revoked during the wait is neither
+  locks by id) in **`FOR NO KEY UPDATE`**, the strength the `UPDATE` itself takes (#726, T6: no key column rewritten).
+  It no longer conflicts with the `FOR KEY SHARE` an insertion referencing the connection takes (a code or token row),
+  which `FOR UPDATE` blocked; it still conflicts with the purge's and `lockForUpdate()`'s `FOR UPDATE` and with another
+  revocation's `FOR NO KEY UPDATE`, so the order and the exclusion between revocations are unchanged; a row revoked during the wait is neither
   returned nor rewritten, and stays locked until the end of the transaction; the one
   shape of the three revocations (`:at` typed `Types::DATETIMETZ_IMMUTABLE`, `:id`
   `UuidType::NAME`). Why: league detects a reused refresh token or a replayed code **inside** `TokenEndpoint`'s
@@ -108,7 +109,8 @@ paths:
   (`account_id, mcp_client_id WHERE revoked_at IS NULL`, declared on the entity too so that `migrations:diff` stays
   empty) serves the search for a pair's active grant, which a new grant supersedes. `McpConnectionRepositoryTest`.
 - **Two application paths revoke a connection, chosen by the transaction.** Outside a transaction, after a
-  rolled-back one: **`McpConnectionRevokerInterface::revoke($id, $cause)`** — the clock's instant, the repository's
+  rolled-back one: **`McpConnectionRevokerInterface::revoke(CompromisedMcpConnectionException $compromise)`** — the
+  connection and the cause read from the compromise (#726, CR6), the clock's instant, the repository's
   revocation, then, only when it took effect, the audit line `mcp-connection-revoked` (`userId`, `connectionId`,
   `clientId`, `cause`; `.claude/rules/security-authentication.md`), **after** the write; one statement, callable
   after a rolled-back exchange (the token endpoint's reuse and replay, below). Inside a transaction: **the
@@ -119,12 +121,13 @@ paths:
   Either way, no line for a connection the statement did not revoke (unknown or already revoked). `expired` is audited through
   `SecurityAuditLoggerInterface::mcpConnectionExpired()` (actor `system`, the purge being a scheduled command),
   `superseded` through `mcpConnectionSuperseded($revoked, $supersededBy)` (#726, below), any other cause through
-  `mcpConnectionRevoked()` (actor read from the token storage, as for `superseded`). **The revoker never writes
-  `expired`** (lot C of the reviews: its expiry branch had no caller): asked for it, it throws
-  `Application/RevocationCauseReservedToThePurgeException` before any write — an expiry audited there would carry
-  the request's actor instead of `system`; **nor `superseded`** (#726): `RevocationCauseReservedToTheExchangeException`,
-  its line would lack `supersededBy`. `McpConnectionRevokerTest` (audited once with what the repository
-  returned, never when it returned `null`; `expired` and `superseded` refused, nothing written nor audited).
+  `mcpConnectionRevoked()` (actor read from the token storage, as for `superseded`). **The revoker cannot write
+  `expired`, `superseded` nor `client`** (#726, CR6): typed by the compromise, sealed on its two subclasses, it only
+  receives `refresh-token-reuse` and `code-replay` — an expiry audited there would carry the request's actor instead
+  of `system`, a supersession would lack `supersededBy`. The runtime refusals of lot C and of #726's T6
+  (`RevocationCauseReserved…Exception`, before any write) are gone with their guards: the invalid call no longer
+  type-checks, PHPStan judges it. `McpConnectionRevokerTest` (each compromise audited once with what the repository
+  returned, never when it returned `null`).
 - **The refresh is judged under the lock of its connection** (task 3 of #649, `Infrastructure/League/RefreshTokenRepository::isRefreshTokenRevoked()`
   — league's name; what it judges is everything that makes a refresh token unacceptable). League calls it from
   `validateOldRefreshToken()`, inside `TokenEndpoint`'s transaction, **after** binding the token to the client
@@ -170,7 +173,7 @@ paths:
   `CompromisedMcpConnectionException` **outside** the transaction and — for every `RotatedRefreshTokenReusedException`,
   for an `AuthorizationCodeReplayedException` only when `ReplayProofInterface` proves the PKCE verifier's possession
   (#726, « A replayed code is judged under the same lock »; unproven, it audits `replay-unproven` and throws the same
-  refusal, revoking nothing) — calls `McpConnectionRevokerInterface::revoke()`
+  refusal, revoking nothing) — calls `McpConnectionRevokerInterface::revoke($compromise)`
   (native SQL, works on the closed manager; the audit line `mcp-connection-revoked` with `cause`), then throws
   league's own refusal word for word, chosen by the exception's **type** in one `match` (lot C of the reviews: no
   arm left for the causes that never arise there) — `RotatedRefreshTokenReusedException` →
@@ -251,11 +254,15 @@ paths:
   `Application/ReplayProofInterface::provesPossession($request)` (`Infrastructure/League/PkceReplayProof`) is true
   only when the body's `code` and `code_verifier` are strings, `GrantPayloadReader::s256ChallengeOf()` reads the
   payload's `code_challenge` under a `code_challenge_method` exactly `S256` (a non-empty string, `null` otherwise),
-  and league's own `S256Verifier` (`hash_equals()`) verifies the verifier against it — never a copy of the rule.
+  and league's own `S256Verifier` (`hash_equals()`) verifies the verifier against it — never a copy of the rule;
+  `new S256Verifier()` stays instantiated there, by decision (#726, S5: a stateless vendor object, no business
+  service — injecting it would declare a vendor class as a service for nothing); the body is read through
+  `FormEncodedRequest::stringParameter()` (#726, CR7, written once for the token endpoint and its collaborators); the
+  method `S256` and the grant types come from `Application/OAuthProfile`, the one source the metadata announce too.
   **Without the proof** (verifier absent, wrong, the public challenge itself, a code without an `S256` challenge):
   the same refusal word for word, **no revocation**, no `mcp-connection-revoked`, and one `mcp-grant-refused` line,
-  cause `replay-unproven` (`GrantRefusal::ReplayUnproven`, passed by the caller: league's hint alone would say
-  `code-refused`) — the signal of an interception: whoever reads a code on the redirect holds the code, not the
+  cause `replay-unproven` (`GrantRefusalAuditInterface::recordUnprovenReplay()`, on the compromise's connection, the
+  code not decrypted again: league's hint alone would say `code-refused`) — the signal of an interception: whoever reads a code on the redirect holds the code, not the
   verifier, which the legitimate client only ever sends to the token endpoint (RFC 7636 §1). The connection lives,
   its refresh token is served (`CodeReplayTest::testAReplayWithoutTheVerifierLeavesTheConnectionActive`,
   `testAReplayWithAWrongVerifierLeavesTheConnectionActive`; `PkceReplayProofTest`, the real flow's code and forged

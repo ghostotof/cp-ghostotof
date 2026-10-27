@@ -16,9 +16,7 @@ use App\Shared\Domain\ValueObject\RetentionPeriod;
 use DateInterval;
 use DateTimeImmutable;
 use Psr\Clock\ClockInterface;
-use Psr\Log\LoggerInterface;
 use Symfony\Component\Uid\Uuid;
-use Throwable;
 
 /**
  * La purge quotidienne des connexions MCP et de leurs jetons (#649).
@@ -93,7 +91,7 @@ final readonly class McpConnectionPurger implements McpConnectionPurgerInterface
         private ConnectionLifetimes $lifetimes,
         private SecurityAuditLoggerInterface $auditLogger,
         private ClockInterface $clock,
-        private LoggerInterface $logger,
+        private FailSafeAudit $failSafeAudit,
     ) {
     }
 
@@ -158,19 +156,41 @@ final readonly class McpConnectionPurger implements McpConnectionPurgerInterface
      * l'écrivain ne tait pas les suivantes et ne saute pas les suppressions
      * (#726, B4). Elle sort en `critical` sur le canal principal, la classe
      * seule, jamais le message : une erreur du pilote pourrait citer la
-     * connexion.
+     * connexion ({@see FailSafeAudit}).
      *
      * @param list<RevokedConnection> $expired
      */
     private function auditExpired(array $expired): void
     {
         foreach ($expired as $revoked) {
-            try {
-                $this->auditLogger->mcpConnectionExpired($revoked);
-            } catch (Throwable $failure) {
-                $this->logger->critical('Expired connection not audited.', ['exceptionClass' => $failure::class]);
-            }
+            $this->failSafeAudit->attempt(
+                function () use ($revoked): void {
+                    $this->auditLogger->mcpConnectionExpired($revoked);
+                },
+                'Expired connection not audited.',
+            );
         }
+    }
+
+    /**
+     * Les deux bornes de la présélection à `$now` — inactivité, puis maximum :
+     * `now − durée + PRESELECTION_MARGIN`, une durée construite
+     * (`new DateInterval`, #445). **Calculées ici seulement** (#726) : la
+     * purge les passe à `findActiveCandidatesForExpiry()`, et
+     * `McpConnectionPurgeLockOrderTest` les lit ici pour affirmer, avant sa
+     * course, qu'une connexion est bien candidate — une marge recopiée dans
+     * le test laisserait une marge changée ici le rendre vide sans rougir.
+     *
+     * @return array{DateTimeImmutable, DateTimeImmutable}
+     */
+    public static function preselectionBounds(DateTimeImmutable $now, ConnectionLifetimes $lifetimes): array
+    {
+        $margin = new DateInterval(self::PRESELECTION_MARGIN);
+
+        return [
+            $now->sub($lifetimes->idle())->add($margin),
+            $now->sub($lifetimes->maximum())->add($margin),
+        ];
     }
 
     /**
@@ -182,11 +202,8 @@ final readonly class McpConnectionPurger implements McpConnectionPurgerInterface
      */
     private function revokeExpired(DateTimeImmutable $now): array
     {
-        $margin = new DateInterval(self::PRESELECTION_MARGIN);
-        $candidates = $this->connections->findActiveCandidatesForExpiry(
-            $now->sub($this->lifetimes->idle())->add($margin),
-            $now->sub($this->lifetimes->maximum())->add($margin),
-        );
+        [$idleBefore, $maximumBefore] = self::preselectionBounds($now, $this->lifetimes);
+        $candidates = $this->connections->findActiveCandidatesForExpiry($idleBefore, $maximumBefore);
 
         $expired = array_values(array_filter(
             $candidates,

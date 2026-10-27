@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Mcp\Connection\Application;
 
+use App\Mcp\Connection\Application\FailSafeAudit;
 use App\Mcp\Connection\Application\McpConnectionPurger;
 use App\Mcp\Connection\Application\McpConnectionPurgerInterface;
 use App\Mcp\Connection\Application\TransactionInterface;
@@ -408,7 +409,7 @@ final class McpConnectionPurgerTest extends KernelTestCase
             $container->get(ConnectionLifetimes::class),
             $auditLogger,
             $container->get(ClockInterface::class),
-            $container->get(LoggerInterface::class),
+            new FailSafeAudit($container->get(LoggerInterface::class)),
         );
     }
 

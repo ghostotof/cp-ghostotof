@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Mcp\Connection\Infrastructure\League;
 
+use App\Mcp\Connection\Application\FormEncodedRequest;
 use App\Mcp\Connection\Application\ReplayProofInterface;
 use League\OAuth2\Server\CodeChallengeVerifiers\S256Verifier;
 use Psr\Http\Message\ServerRequestInterface;
@@ -32,15 +33,19 @@ final readonly class PkceReplayProof implements ReplayProofInterface
 
     public function provesPossession(ServerRequestInterface $request): bool
     {
-        $body = $request->getParsedBody();
-        $code = \is_array($body) ? ($body['code'] ?? null) : null;
-        $verifier = \is_array($body) ? ($body['code_verifier'] ?? null) : null;
-        if (!\is_string($code) || !\is_string($verifier)) {
+        $code = FormEncodedRequest::stringParameter($request, 'code');
+        $verifier = FormEncodedRequest::stringParameter($request, 'code_verifier');
+        if (null === $code || null === $verifier) {
             return false;
         }
 
         $challenge = $this->payloadReader->s256ChallengeOf($code);
 
+        // Instancié ici, pas injecté (#726, S5, décision) : un objet de league
+        // sans état ni dépendance, pas un service métier — l'injecter
+        // demanderait de déclarer en service une classe du vendor pour n'y
+        // rien configurer, et ne permettrait aucune substitution utile : la
+        // preuve doit être la vérification même de league, jamais un double.
         return null !== $challenge && new S256Verifier()->verifyCodeChallenge($verifier, $challenge);
     }
 }

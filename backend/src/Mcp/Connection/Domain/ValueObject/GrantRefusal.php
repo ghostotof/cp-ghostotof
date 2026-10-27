@@ -11,9 +11,13 @@ namespace App\Mcp\Connection\Domain\ValueObject;
  * cause ne sert qu'à nommer le refus au journal de sécurité, jamais à le
  * décrire au client.
  *
- * Classée d'après l'indication de league
- * ({@see \App\Mcp\Connection\Infrastructure\League\LeagueGrantRefusals}),
- * sauf ReplayUnproven, que le point de jeton nomme lui-même ; une
+ * La cause vient de l'indication de league
+ * ({@see \App\Mcp\Connection\Infrastructure\League\LeagueGrantRefusals}) **ou
+ * de l'appelant qui la connaît** : ReplayUnproven, que le point de jeton
+ * nomme lui-même — league rend pour ce refus l'indication de CodeRefused —
+ * par une porte dédiée de l'audit
+ * ({@see \App\Mcp\Connection\Application\GrantRefusalAuditInterface::recordUnprovenReplay()},
+ * #726) ; une
  * compromission (réutilisation d'un jeton remplacé, rejeu d'un code prouvé)
  * n'en est pas une : elle révoque la connexion, cause RevocationCause.
  *

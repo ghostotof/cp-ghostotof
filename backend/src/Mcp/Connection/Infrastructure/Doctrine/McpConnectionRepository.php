@@ -193,6 +193,12 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
      * PostgreSQL elle rend le texte de l'uuid natif, que la base compare à la
      * colonne `uuid` ; un `toRfc4122()` écrit à la main aurait décidé à la
      * place du type (binaire sur une plateforme sans uuid natif).
+     *
+     * **`ArrayParameterType::STRING` est choisi à la main, pour l'uuid natif
+     * de PostgreSQL** (#726) : la conversion suit la plateforme, pas le type
+     * de la liste. Une plateforme sans uuid natif rendrait les 16 octets
+     * bruts, à lier en `ArrayParameterType::BINARY` — un changement de base
+     * reprend ce choix ici, la conversion seule n'y suffit pas.
      */
     public function revokeExpired(array $connectionIds, DateTimeImmutable $at): array
     {

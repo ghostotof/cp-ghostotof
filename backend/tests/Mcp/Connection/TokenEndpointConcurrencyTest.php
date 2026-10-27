@@ -209,7 +209,8 @@ final class TokenEndpointConcurrencyTest extends WebTestCase
      * quelques lignes ; un plan par index le laisserait vert sans
      * `ORDER BY` (`.claude/rules/backend-outillage.md`, « Concurrency
      * tests »). Le test tient Ca `FOR UPDATE` (le premier verrou de la
-     * purge), l'enfant échange le code de C3 et doit bloquer sur Ca ; le test demande alors Cb `FOR UPDATE NOWAIT` : dans l'ordre des
+     * purge), l'enfant échange le code de C3 et doit bloquer sur Ca ; le
+     * test demande alors Cb `FOR UPDATE NOWAIT` : dans l'ordre des
      * identifiants l'enfant n'a encore rien pris d'autre, elle est libre ; il
      * relâche, l'enfant rend `issued 200`, Ca et Cb révoquées `superseded`.
      *

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Mcp\Connection\Infrastructure\League;
 
+use App\Mcp\Connection\Application\OAuthProfile;
 use League\OAuth2\Server\Entities\ClientEntityInterface;
 use League\OAuth2\Server\Exception\OAuthServerException;
 use League\OAuth2\Server\Grant\AuthCodeGrant;
@@ -36,9 +37,6 @@ use Psr\Http\Message\ServerRequestInterface;
  */
 final class LoopbackAwareAuthCodeGrant extends AuthCodeGrant
 {
-    /** La seule méthode PKCE admise. */
-    public const string CODE_CHALLENGE_METHOD = 'S256';
-
     /**
      * @throws OAuthServerException `invalid_request` redirigé quand PKCE n'est pas `S256` ; les refus de league sinon
      */
@@ -87,7 +85,9 @@ final class LoopbackAwareAuthCodeGrant extends AuthCodeGrant
             return 'Check the `code_challenge` parameter: PKCE with the `S256` method is required.';
         }
 
-        if (self::CODE_CHALLENGE_METHOD !== $this->getQueryStringParameter('code_challenge_method', $request)) {
+        // La méthode admise est celle que les métadonnées annoncent, lue à la
+        // même source (OAuthProfile).
+        if (OAuthProfile::CODE_CHALLENGE_METHOD !== $this->getQueryStringParameter('code_challenge_method', $request)) {
             return 'Check the `code_challenge_method` parameter: only `S256` is supported.';
         }
 

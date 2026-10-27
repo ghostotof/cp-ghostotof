@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Mcp\Connection\Infrastructure\League;
 
+use App\Mcp\Connection\Application\OAuthProfile;
 use App\Mcp\Connection\Domain\Exception\InvalidMcpClientIdException;
 use App\Mcp\Connection\Domain\Repository\McpClientRepositoryInterface;
 use App\Mcp\Connection\Domain\ValueObject\McpClientId;
@@ -63,7 +64,7 @@ final readonly class ClientRepository implements ClientRepositoryInterface
             return false;
         }
 
-        if (!\in_array($grantType, OAuthClient::SERVED_GRANTS, true)) {
+        if (!\in_array($grantType, OAuthProfile::SERVED_GRANTS, true)) {
             return false;
         }
 

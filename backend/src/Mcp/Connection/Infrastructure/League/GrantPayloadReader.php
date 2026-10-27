@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Mcp\Connection\Infrastructure\League;
 
+use App\Mcp\Connection\Application\OAuthProfile;
 use InvalidArgumentException;
 use League\OAuth2\Server\CryptTrait;
 use SensitiveParameter;
@@ -83,11 +84,12 @@ final class GrantPayloadReader
         $payload = $this->payloadOf($code);
         $challenge = $payload['code_challenge'] ?? null;
 
-        // La méthode admise est lue chez son seul juge (#726, S2), jamais
-        // recopiée.
+        // La méthode admise est lue à sa source (#726, S2), celle que
+        // LoopbackAwareAuthCodeGrant exige et que les métadonnées annoncent,
+        // jamais recopiée.
         $method = $payload['code_challenge_method'] ?? null;
 
-        return LoopbackAwareAuthCodeGrant::CODE_CHALLENGE_METHOD === $method && \is_string($challenge) && '' !== $challenge ? $challenge : null;
+        return OAuthProfile::CODE_CHALLENGE_METHOD === $method && \is_string($challenge) && '' !== $challenge ? $challenge : null;
     }
 
     /**

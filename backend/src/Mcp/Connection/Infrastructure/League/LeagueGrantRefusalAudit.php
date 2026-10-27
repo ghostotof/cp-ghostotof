@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 namespace App\Mcp\Connection\Infrastructure\League;
 
+use App\Mcp\Connection\Application\FormEncodedRequest;
 use App\Mcp\Connection\Application\GrantRefusalAuditInterface;
+use App\Mcp\Connection\Application\OAuthProfile;
 use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
 use App\Mcp\Connection\Domain\ValueObject\GrantRefusal;
 use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use League\OAuth2\Server\Exception\OAuthServerException;
 use Psr\Http\Message\ServerRequestInterface;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * L'audit des refus du point de jeton (#725) : **tout refus d'un code ou d'un
@@ -42,14 +45,15 @@ use Psr\Http\Message\ServerRequestInterface;
  * d'un client connu qui porte un artefact, authentique ou non — il faut
  * déchiffrer pour le savoir ; une requête SQL native en plus pour un artefact
  * authentique seulement, l'EntityManager étant fermé par la transaction
- * annulée.
+ * annulée. Le rejeu non prouvé (recordUnprovenReplay(), #726) ne déchiffre
+ * rien : sa connexion est celle de la compromission ; sa requête reste.
  */
 final readonly class LeagueGrantRefusalAudit implements GrantRefusalAuditInterface
 {
     /** Le paramètre qui porte l'artefact, par grant (RFC 6749 §4.1.3, §6). */
     private const array ARTIFACT_PARAMETER = [
-        OAuthClient::AUTHORIZATION_CODE_GRANT => 'code',
-        OAuthClient::REFRESH_TOKEN_GRANT => 'refresh_token',
+        OAuthProfile::AUTHORIZATION_CODE_GRANT => 'code',
+        OAuthProfile::REFRESH_TOKEN_GRANT => 'refresh_token',
     ];
 
     /**
@@ -68,28 +72,56 @@ final readonly class LeagueGrantRefusalAudit implements GrantRefusalAuditInterfa
     ) {
     }
 
-    public function record(ServerRequestInterface $request, OAuthServerException $refusal, ?GrantRefusal $cause = null): void
+    public function record(ServerRequestInterface $request, OAuthServerException $refusal): void
     {
         if ($refusal->getHttpStatusCode() >= self::SERVER_FAULT || 'invalid_client' === $refusal->getErrorType()) {
             return;
         }
 
-        $body = $request->getParsedBody();
-        if (!\is_array($body)) {
+        $grantType = FormEncodedRequest::stringParameter($request, 'grant_type');
+        $parameter = null !== $grantType ? (self::ARTIFACT_PARAMETER[$grantType] ?? null) : null;
+        if (null === $grantType || null === $parameter) {
             return;
         }
 
-        $grantType = $body['grant_type'] ?? null;
-        $parameter = \is_string($grantType) ? (self::ARTIFACT_PARAMETER[$grantType] ?? null) : null;
-        $artifact = null !== $parameter ? ($body[$parameter] ?? null) : null;
-        // Le `client_id` du corps, que league a authentifié avant l'artefact.
-        $presentingClientId = $body['client_id'] ?? null;
-        if (!\is_string($grantType) || !\is_string($artifact) || !\is_string($presentingClientId)) {
+        $artifact = FormEncodedRequest::stringParameter($request, $parameter);
+        // Le `client_id` du corps, que league a authentifié avant l'artefact :
+        // lu avant de déchiffrer, comme la ligne l'exige.
+        $presentingClientId = FormEncodedRequest::stringParameter($request, 'client_id');
+        if (null === $artifact || null === $presentingClientId) {
             return;
         }
 
         $connectionId = $this->payloadReader->connectionIdOf($artifact);
-        $connection = null !== $connectionId ? $this->connections->referenceOf($connectionId) : null;
+        if (null === $connectionId) {
+            return;
+        }
+
+        $this->write($connectionId, $grantType, LeagueGrantRefusals::causeOf($refusal), $presentingClientId);
+    }
+
+    /**
+     * La connexion est connue de l'appelant (la compromission) : aucun
+     * déchiffrement, une requête pour sa référence. Le grant est celui du
+     * code, le seul qui lève un rejeu.
+     */
+    public function recordUnprovenReplay(ServerRequestInterface $request, Uuid $connectionId): void
+    {
+        $presentingClientId = FormEncodedRequest::stringParameter($request, 'client_id');
+        if (null === $presentingClientId) {
+            return;
+        }
+
+        $this->write($connectionId, OAuthProfile::AUTHORIZATION_CODE_GRANT, GrantRefusal::ReplayUnproven, $presentingClientId);
+    }
+
+    /**
+     * La ligne, pour une connexion encore en base. Une requête SQL native :
+     * l'EntityManager est fermé par la transaction annulée.
+     */
+    private function write(Uuid $connectionId, string $grantType, GrantRefusal $cause, string $presentingClientId): void
+    {
+        $connection = $this->connections->referenceOf($connectionId);
         if (null === $connection) {
             return;
         }
@@ -97,9 +129,7 @@ final readonly class LeagueGrantRefusalAudit implements GrantRefusalAuditInterfa
         $this->auditLogger->mcpGrantRefused(
             connection: $connection,
             grantType: $grantType,
-            // La cause que l'appelant connaît (un rejeu sans preuve PKCE, #726)
-            // l'emporte sur l'indication de league, qui ne la distingue pas.
-            cause: ($cause ?? LeagueGrantRefusals::causeOf($refusal))->value,
+            cause: $cause->value,
             presentingClientId: $presentingClientId,
         );
     }

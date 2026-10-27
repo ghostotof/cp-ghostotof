@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Mcp\Connection;
 
+use App\Mcp\Connection\Application\McpConnectionPurger;
 use App\Mcp\Connection\Domain\Entity\McpConnection;
 use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
 use App\Mcp\Connection\Domain\ValueObject\ConnectionLifetimes;
@@ -30,7 +31,7 @@ use Symfony\Component\Process\Process;
  * `openProbeBeside()`), une ligne dans l'ordre de l'autre côté — et lui en
  * demande une seconde une fois le fils bloqué.
  *
- * Deux ordres de {@see \App\Mcp\Connection\Application\McpConnectionPurger},
+ * Deux ordres de {@see McpConnectionPurger},
  * documentés et jusqu'ici pincés par aucun test (chacun inversé, la suite
  * séquentielle restait verte) :
  *
@@ -217,22 +218,21 @@ final class McpConnectionPurgeLockOrderTest extends WebTestCase
 
     /**
      * La connexion est une candidate de la purge à `$now` — présélectionnée
-     * par les bornes que la purge calcule (`now − durée + P1D`, la marge de
-     * McpConnectionPurger, ConnectionLifetimes::MINIMUM_CONNECTION_LIFETIME)
-     * — et pas encore échue. La présélection verrouille `FOR UPDATE` : lue
-     * dans une transaction annulée aussitôt, qui ne laisse aucun verrou.
+     * par les bornes **que la purge calcule**, lues à leur source
+     * (`McpConnectionPurger::preselectionBounds()`, #726 : `now − durée +`
+     * sa marge, jamais une marge recopiée ici, qu'un changement de la purge
+     * laisserait derrière en rendant le test vide sans rougir) — et pas
+     * encore échue. La présélection verrouille `FOR UPDATE` : lue dans une
+     * transaction annulée aussitôt, qui ne laisse aucun verrou.
      */
     private function assertALiveCandidate(HeldMcpConnection $held, DateTimeImmutable $now, ConnectionLifetimes $lifetimes): void
     {
         $entityManager = self::getContainer()->get(EntityManagerInterface::class);
-        $margin = new DateInterval(ConnectionLifetimes::MINIMUM_CONNECTION_LIFETIME);
+        [$idleBefore, $maximumBefore] = McpConnectionPurger::preselectionBounds($now, $lifetimes);
         $entityManager->beginTransaction();
 
         try {
-            $candidates = self::getContainer()->get(McpConnectionRepositoryInterface::class)->findActiveCandidatesForExpiry(
-                $now->sub($lifetimes->idle())->add($margin),
-                $now->sub($lifetimes->maximum())->add($margin),
-            );
+            $candidates = self::getContainer()->get(McpConnectionRepositoryInterface::class)->findActiveCandidatesForExpiry($idleBefore, $maximumBefore);
         } finally {
             $entityManager->rollback();
         }

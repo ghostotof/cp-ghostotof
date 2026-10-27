@@ -6,7 +6,6 @@ namespace App\Tests\Mcp\Connection\Infrastructure\League;
 
 use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
 use App\Mcp\Connection\Domain\ValueObject\ConnectionReference;
-use App\Mcp\Connection\Domain\ValueObject\GrantRefusal;
 use App\Mcp\Connection\Infrastructure\League\GrantPayloadReader;
 use App\Mcp\Connection\Infrastructure\League\LeagueGrantRefusalAudit;
 use App\Mcp\Connection\Infrastructure\League\OAuthEncryptionKey;
@@ -67,38 +66,89 @@ final class LeagueGrantRefusalAuditTest extends TestCase
     }
 
     /**
-     * La cause que l'appelant connaît l'emporte sur l'indication de league
-     * (#726) : un code rejoué sans preuve PKCE reçoit le refus d'un code
-     * révoqué, mot pour mot, que l'indication seule classerait
+     * Le rejeu non prouvé (#726) : un code rejoué sans preuve PKCE reçoit le
+     * refus d'un code révoqué, mot pour mot, que l'indication seule classerait
      * `code-refused` ; TokenEndpoint, qui sait qu'il s'agit d'un rejeu non
-     * prouvé, le nomme `replay-unproven`.
+     * prouvé, l'audite `replay-unproven` sur la connexion que la compromission
+     * désigne.
      */
-    public function testACauseKnownToTheCallerWinsOverLeaguesHint(): void
+    public function testAnUnprovenReplayIsAuditedOnTheKnownConnection(): void
     {
+        $connectionId = Uuid::v7();
+        $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
+        $auditLogger->expects(self::once())->method('mcpGrantRefused')
+            ->with(
+                self::callback(static fn (ConnectionReference $connection): bool => $connection->connectionId()->equals($connectionId)),
+                'authorization_code',
+                'replay-unproven',
+                self::CLIENT_ID,
+            );
+
+        $this->audit($auditLogger)->recordUnprovenReplay($this->exchangeOfAnAuthenticCode(), $connectionId);
+    }
+
+    /**
+     * Le code n'est pas redéchiffré (#726, CR4) : un code que le serveur ne
+     * lit pas — record() n'écrirait rien — laisse la ligne du rejeu non
+     * prouvé intacte, sur la connexion passée. La seule requête est la
+     * lecture de sa référence.
+     */
+    public function testAnUnprovenReplayDecryptsNothing(): void
+    {
+        $connectionId = Uuid::v7();
+        $request = $this->exchangeOfAnAuthenticCode()->withParsedBody([
+            'grant_type' => 'authorization_code',
+            'code' => 'illisible',
+            'client_id' => self::CLIENT_ID,
+        ]);
+        $connections = $this->createMock(McpConnectionRepositoryInterface::class);
+        $connections->expects(self::once())->method('referenceOf')
+            ->with(self::callback(static fn (Uuid $id): bool => $id->equals($connectionId)))
+            ->willReturn(new ConnectionReference($connectionId, Uuid::v7()->toRfc4122(), self::CLIENT_ID));
         $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
         $auditLogger->expects(self::once())->method('mcpGrantRefused')
             ->with(self::isInstanceOf(ConnectionReference::class), 'authorization_code', 'replay-unproven', self::CLIENT_ID);
 
-        $this->audit($auditLogger)->record($this->exchangeOfAnAuthenticCode(), OAuthServerException::invalidGrant(self::REVOKED_CODE_HINT), GrantRefusal::ReplayUnproven);
+        $this->auditWith($connections, $auditLogger)->recordUnprovenReplay($request, $connectionId);
+
+        // Le témoin : le même corps, refusé par league, n'est pas audité —
+        // record() déchiffre, et ne lit rien.
+        $witnessLogger = $this->createMock(SecurityAuditLoggerInterface::class);
+        $witnessLogger->expects(self::never())->method('mcpGrantRefused');
+        $this->audit($witnessLogger)->record($request, OAuthServerException::invalidGrant(self::REVOKED_CODE_HINT));
     }
 
-    /** Sans cause, le classement par l'indication de league est inchangé. */
-    public function testWithoutACauseTheHintClassifiesTheRefusal(): void
+    /** Un corps sans `client_id` en chaîne ne nomme pas qui a présenté le code : aucune ligne, aucune requête. */
+    public function testAnUnprovenReplayWithoutAPresentingClientIsNotAudited(): void
+    {
+        $request = $this->exchangeOfAnAuthenticCode()->withParsedBody(['grant_type' => 'authorization_code', 'code' => 'c']);
+        $connections = $this->createMock(McpConnectionRepositoryInterface::class);
+        $connections->expects(self::never())->method('referenceOf');
+        $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
+        $auditLogger->expects(self::never())->method('mcpGrantRefused');
+
+        $this->auditWith($connections, $auditLogger)->recordUnprovenReplay($request, Uuid::v7());
+    }
+
+    /** Une connexion qui n'est plus en base ne désigne personne : aucune ligne. */
+    public function testAnUnprovenReplayOnAVanishedConnectionIsNotAudited(): void
+    {
+        $connections = self::createStub(McpConnectionRepositoryInterface::class);
+        $connections->method('referenceOf')->willReturn(null);
+        $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
+        $auditLogger->expects(self::never())->method('mcpGrantRefused');
+
+        $this->auditWith($connections, $auditLogger)->recordUnprovenReplay($this->exchangeOfAnAuthenticCode(), Uuid::v7());
+    }
+
+    /** Le classement par l'indication de league : le même refus, par record(), reste `code-refused`. */
+    public function testRecordClassifiesTheRefusalByLeaguesHint(): void
     {
         $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
         $auditLogger->expects(self::once())->method('mcpGrantRefused')
             ->with(self::isInstanceOf(ConnectionReference::class), 'authorization_code', 'code-refused', self::CLIENT_ID);
 
         $this->audit($auditLogger)->record($this->exchangeOfAnAuthenticCode(), OAuthServerException::invalidGrant(self::REVOKED_CODE_HINT));
-    }
-
-    /** Une cause passée ne fait pas auditer une panne du serveur. */
-    public function testACauseDoesNotMakeAServerFaultAudited(): void
-    {
-        $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
-        $auditLogger->expects(self::never())->method('mcpGrantRefused');
-
-        $this->audit($auditLogger)->record($this->exchangeOfAnAuthenticCode(), OAuthServerException::serverError('panne'), GrantRefusal::ReplayUnproven);
     }
 
     private function audit(SecurityAuditLoggerInterface $auditLogger): LeagueGrantRefusalAudit
@@ -108,6 +158,11 @@ final class LeagueGrantRefusalAuditTest extends TestCase
             static fn(Uuid $id): ConnectionReference => new ConnectionReference($id, Uuid::v7()->toRfc4122(), self::CLIENT_ID),
         );
 
+        return $this->auditWith($connections, $auditLogger);
+    }
+
+    private function auditWith(McpConnectionRepositoryInterface $connections, SecurityAuditLoggerInterface $auditLogger): LeagueGrantRefusalAudit
+    {
         return new LeagueGrantRefusalAudit(new GrantPayloadReader(new OAuthEncryptionKey(TestKeys::material())), $connections, $auditLogger);
     }
 

@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Mcp\Connection\Infrastructure\League;
 
 use App\Mcp\Connection\Application\CodeExchangeSupersessionInterface;
+use App\Mcp\Connection\Application\FormEncodedRequest;
+use App\Mcp\Connection\Application\OAuthProfile;
 use App\Mcp\Connection\Application\Supersession;
 use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
 use App\Mcp\Connection\Domain\ValueObject\RevocationCause;
@@ -44,10 +46,8 @@ final readonly class LeagueCodeExchangeSupersession implements CodeExchangeSuper
 
     public function supersedeOthersOf(ServerRequestInterface $request): ?Supersession
     {
-        $body = $request->getParsedBody();
-        $grantType = \is_array($body) ? ($body['grant_type'] ?? null) : null;
-        $code = \is_array($body) ? ($body['code'] ?? null) : null;
-        if (OAuthClient::AUTHORIZATION_CODE_GRANT !== $grantType || !\is_string($code)) {
+        $code = FormEncodedRequest::stringParameter($request, 'code');
+        if (OAuthProfile::AUTHORIZATION_CODE_GRANT !== FormEncodedRequest::stringParameter($request, 'grant_type') || null === $code) {
             return null;
         }
 

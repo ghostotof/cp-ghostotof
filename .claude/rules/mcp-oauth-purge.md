@@ -30,7 +30,8 @@ paths:
   token endpoint's order — connection rows first, tokens after (the reverse deadlocked in `40P01`, task 6). The
   candidates' lock lasts only their judgement. (1) `findActiveCandidatesForExpiry($idleBefore, $maximumBefore)`, a
   **wide** SQL pre-selection (`revoked_at IS NULL AND (COALESCE(last_used_at, granted_at) <= :idleBefore OR granted_at
-  <= :maximumBefore)`, both bounds `now − duration + P1D`, `new DateInterval`, typed `DATETIMETZ_IMMUTABLE`), **locked
+  <= :maximumBefore)`, both bounds `now − duration + P1D`, `new DateInterval`, computed once in
+  `McpConnectionPurger::preselectionBounds()`, typed `DATETIMETZ_IMMUTABLE`), **locked
   `FOR UPDATE`** on the connection rows only (no join), `HINT_REFRESH`, by id, through `RereadUnderLock::rowsMatching()`
   (`.claude/rules/backend-architecture.md`; nothing detached): a refresh in flight commits first and its new
   `last_used_at` is judged, instead of a stale row revoked a few milliseconds after a legitimate use; (2) each candidate judged by `isExpiredAt(now, lifetimes)`, **the only definition**;
@@ -51,8 +52,12 @@ paths:
   `Fixtures/purge-mcp-connections.php`, `.claude/rules/backend-outillage.md`): the test holds the other side's first
   row, waits for the purge to block, asks for the second — an old revoked connection then its access token for (4)
   before (5), the connection, its access token, then its refresh token for A before R, each inverted order a `40P01`;
-  and the lock's duration: a live candidate (last used 29 days 12 hours ago) is free `FOR UPDATE NOWAIT` while the
-  purge waits in (5) — `55P03` under one transaction, measured, the other two green. **Accepted, unpinned**: no
+  and the lock's duration: a live candidate (last used twelve hours before its idle deadline, derived from the
+  configuration's `connection_idle`) is free `FOR UPDATE NOWAIT` while the purge waits in (5) — `55P03` under one
+  transaction, measured, the other two green. **Its precondition reads the purge's bounds at their source**
+  (`assertALiveCandidate()`: the candidate pre-selected by `McpConnectionPurger::preselectionBounds()`, the one
+  computation of `now − duration + PRESELECTION_MARGIN` that `purge()` calls too, #726; and not yet expired by
+  `isExpiredAt()`): a copied margin would let a change of the purge's make the `NOWAIT` free for nothing, green. **Accepted, unpinned**: no
   concurrency test proves the `FOR UPDATE` of (1) itself (the sequential suite stays green without it). **Accepted limit**: a cycle between `mcp_connection` rows
   alone — candidates (1, by id) or old revoked rows (4) against a cascade taking an account's connections in its
   plan's order; PostgreSQL aborts one, the Job retries (`backoffLimit: 2`). **Closed** (#726, final review): the marking
@@ -69,7 +74,8 @@ paths:
   (`testARolledBackPurgeAuditsNothing`, red with the audit moved inside, measured); failed deletions leave the marking
   and its lines, the next night deletes (`testTheMarkingIsAuditedEvenWhenTheDeletionsRollBack`). **An audit failure
   never changes the outcome** (#725's rule, applied to the purge by #726, audit B4, like
-  `TokenEndpoint::auditSuperseded()`): each line is tried on its own, a failure logs `Expired connection not audited.` at
+  `TokenEndpoint::auditSuperseded()`, both through `Application/FailSafeAudit`, `.claude/rules/mcp-oauth-audits.md`): each
+  line is tried on its own, a failure logs `Expired connection not audited.` at
   `critical` on the main channel (`['exceptionClass' => …]` only, never a message that could quote the connection), and
   the other lines and the deletions run whatever happened — the revocation took place
   (`testAnAuditFailureSkipsNeitherTheOtherLinesNorTheDeletions`: the first line fails, the second is written, the dead

@@ -4,9 +4,8 @@ declare(strict_types=1);
 
 namespace App\Mcp\Connection\Application;
 
-use App\Mcp\Connection\Domain\ValueObject\RevocationCause;
+use App\Mcp\Connection\Domain\Exception\CompromisedMcpConnectionException;
 use App\Mcp\Connection\Domain\ValueObject\RevokedConnection;
-use Symfony\Component\Uid\Uuid;
 
 /**
  * Révoque une connexion MCP et l'audite (#649), **hors transaction** : le
@@ -25,21 +24,19 @@ use Symfony\Component\Uid\Uuid;
 interface McpConnectionRevokerInterface
 {
     /**
-     * Révoque la connexion à l'instant de l'horloge, avec sa cause, puis écrit
-     * la ligne d'audit `mcp-connection-revoked` — seulement si la révocation a
-     * eu lieu : une connexion inconnue ou déjà révoquée rend `null` et ne
-     * laisse aucune ligne (la première révocation a déjà la sienne).
+     * Révoque la connexion que la compromission désigne, à l'instant de
+     * l'horloge, avec sa cause (`refresh-token-reuse` ou `code-replay`), puis
+     * écrit la ligne d'audit `mcp-connection-revoked` — seulement si la
+     * révocation a eu lieu : une connexion inconnue ou déjà révoquée rend
+     * `null` et ne laisse aucune ligne (la première révocation a déjà la
+     * sienne).
      *
      * **Hors transaction**, une instruction : appelée après une transaction
      * annulée, EntityManager fermé compris (league refuse alors le jeton ou
      * le code, la révocation doit survivre au ROLLBACK de l'échange).
      *
-     * @throws RevocationCauseReservedToThePurgeException    pour la cause `expired`, avant toute écriture :
-     *                                                       l'expiration est révoquée par la purge seule
-     * @throws RevocationCauseReservedToTheExchangeException pour la cause `superseded`, avant toute écriture :
-     *                                                       le remplacement est révoqué au premier échange du
-     *                                                       code d'un nouvel accord, qui nomme la connexion
-     *                                                       qui remplace
+     * Typé par la compromission (#726, CR6) : une cause née ailleurs —
+     * l'expiration, le remplacement, le client — ne peut pas s'y demander.
      */
-    public function revoke(Uuid $connectionId, RevocationCause $cause): ?RevokedConnection;
+    public function revoke(CompromisedMcpConnectionException $compromise): ?RevokedConnection;
 }
