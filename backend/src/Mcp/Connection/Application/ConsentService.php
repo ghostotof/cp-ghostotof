@@ -10,7 +10,6 @@ use App\Mcp\Connection\Domain\Exception\ReauthenticationRequiredException;
 use App\Mcp\Connection\Domain\Repository\McpClientRepositoryInterface;
 use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
 use App\Mcp\Connection\Domain\ValueObject\RevocationCause;
-use App\Mcp\Connection\Domain\ValueObject\RevokedConnection;
 use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use App\Security\User\Domain\Entity\CpgUser;
 use DateInterval;
@@ -138,24 +137,22 @@ final readonly class ConsentService implements ConsentServiceInterface
         $now = $this->clock->now();
         $connection = McpConnection::grant($account, $client, $summary->scope, $now);
 
-        /** @var array{string, list<RevokedConnection>} $written */
-        $written = $this->transaction->run(function () use ($summary, $connection, $now): array {
+        $written = $this->transaction->run(function () use ($summary, $connection, $now): WrittenGrant {
             $this->connections->add($connection);
             // Dans la transaction : la nouvelle connexion, son code et les
             // anciennes révoquées, ou rien de tout cela.
             $superseded = $this->connections->revokeOtherActiveOf($connection, RevocationCause::Superseded, $now);
 
-            return [$this->completer->approve($summary, $connection), $superseded];
+            return new WrittenGrant($this->completer->approve($summary, $connection), $superseded);
         });
-        [$location, $superseded] = $written;
 
         // Après le COMMIT seulement : une transaction annulée n'a rien révoqué.
         $this->auditLogger->mcpConnectionGranted($connection);
-        foreach ($superseded as $revoked) {
+        foreach ($written->superseded as $revoked) {
             $this->auditLogger->mcpConnectionRevoked($revoked, $revoked->cause->value);
         }
 
-        return $location;
+        return $written->location;
     }
 
     /**

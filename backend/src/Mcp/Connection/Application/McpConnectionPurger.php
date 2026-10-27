@@ -109,12 +109,12 @@ final readonly class McpConnectionPurger implements McpConnectionPurgerInterface
         }
 
         return new McpConnectionPurgeResult(
-            array_map(static fn (RevokedConnection $revoked): string => $revoked->connectionId()->toRfc4122(), $purged['expired']),
-            $purged['codes'],
-            $purged['accessTokens'],
-            $purged['refreshTokens'],
-            $purged['connections'],
-            $threshold,
+            expired: array_map(static fn (RevokedConnection $revoked): string => $revoked->connectionId()->toRfc4122(), $purged['expired']),
+            deletedAuthorizationCodes: $purged['codes'],
+            deletedAccessTokens: $purged['accessTokens'],
+            deletedRefreshTokens: $purged['refreshTokens'],
+            deletedConnections: $purged['connections'],
+            threshold: $threshold,
         );
     }
 
