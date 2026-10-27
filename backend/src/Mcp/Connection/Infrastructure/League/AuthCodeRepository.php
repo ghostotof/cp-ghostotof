@@ -82,9 +82,14 @@ final readonly class AuthCodeRepository implements AuthCodeRepositoryInterface
      * {@see TokenUnderConnectionLock::judge()}, qui en écrit l'ordre. Ce que
      * ce dépôt y apporte : la relecture du code (rereadUnderConnectionLock())
      * et la compromission qu'un code échangé qui revient nomme,
-     * {@see AuthorizationCodeReplayedException} — le point de jeton la
-     * rattrape après le ROLLBACK pour révoquer la connexion (OAuth 2.1
-     * §4.1.2), et avec elle les jetons que le code a émis. Mort, le code est
+     * {@see AuthorizationCodeReplayedException} — levée sur toute requête,
+     * que le jugement de league précède le lien au client et le vérificateur
+     * PKCE : rendu ici, le rejeu n'est encore prouvé par rien. Le point de
+     * jeton la rattrape après le ROLLBACK et ne révoque la connexion (OAuth
+     * 2.1 §4.1.2), et avec elle les jetons que le code a émis, que sur preuve
+     * PKCE — le bon `code_verifier` dans le corps (#726) ; sans elle, le même
+     * refus, la connexion vivante, la ligne `mcp-grant-refused` cause
+     * `replay-unproven`. Mort, le code est
      * révoqué pour league ; rendu, il est bon : league vérifie ensuite le
      * client, la redirection et le vérificateur PKCE, émet les jetons, et
      * révoque le code en dernier — une panne au milieu le laisse échangeable.
@@ -95,8 +100,9 @@ final readonly class AuthCodeRepository implements AuthCodeRepositoryInterface
      * révocation — limite acceptée, les jetons issus du code vivant déjà sous
      * rotation. League lie aussi le code à son client **après** ce dépôt,
      * l'inverse du rafraîchissement : un code rejoué sous un autre `client_id`
-     * révoque la connexion de son vrai client aussi — accepté, l'identifiant
-     * d'un client public étant public (`CodeReplayTest`).
+     * **avec le bon vérificateur** révoque la connexion de son vrai client
+     * aussi — accepté, l'identifiant d'un client public étant public, la
+     * preuve est le vérificateur (`CodeReplayTest`).
      *
      * @throws AuthorizationCodeReplayedException quand un code déjà échangé revient sur une connexion active
      */

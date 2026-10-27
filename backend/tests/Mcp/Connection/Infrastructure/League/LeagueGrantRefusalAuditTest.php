@@ -6,6 +6,7 @@ namespace App\Tests\Mcp\Connection\Infrastructure\League;
 
 use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
 use App\Mcp\Connection\Domain\ValueObject\ConnectionReference;
+use App\Mcp\Connection\Domain\ValueObject\GrantRefusal;
 use App\Mcp\Connection\Infrastructure\League\GrantPayloadReader;
 use App\Mcp\Connection\Infrastructure\League\LeagueGrantRefusalAudit;
 use App\Mcp\Connection\Infrastructure\League\OAuthEncryptionKey;
@@ -34,6 +35,9 @@ final class LeagueGrantRefusalAuditTest extends TestCase
 {
     private const string CLIENT_ID = 'https://client.example.test/metadata.json';
 
+    /** L'indication de league pour un code révoqué, mot pour mot. */
+    private const string REVOKED_CODE_HINT = 'Authorization code has been revoked';
+
     /**
      * @return iterable<string, array{OAuthServerException}>
      */
@@ -60,6 +64,41 @@ final class LeagueGrantRefusalAuditTest extends TestCase
             ->with(self::isInstanceOf(ConnectionReference::class), 'authorization_code', 'verifier-mismatch', self::CLIENT_ID);
 
         $this->audit($auditLogger)->record($this->exchangeOfAnAuthenticCode(), OAuthServerException::invalidGrant('Failed to verify `code_verifier`.'));
+    }
+
+    /**
+     * La cause que l'appelant connaît l'emporte sur l'indication de league
+     * (#726) : un code rejoué sans preuve PKCE reçoit le refus d'un code
+     * révoqué, mot pour mot, que l'indication seule classerait
+     * `code-refused` ; TokenEndpoint, qui sait qu'il s'agit d'un rejeu non
+     * prouvé, le nomme `replay-unproven`.
+     */
+    public function testACauseKnownToTheCallerWinsOverLeaguesHint(): void
+    {
+        $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
+        $auditLogger->expects(self::once())->method('mcpGrantRefused')
+            ->with(self::isInstanceOf(ConnectionReference::class), 'authorization_code', 'replay-unproven', self::CLIENT_ID);
+
+        $this->audit($auditLogger)->record($this->exchangeOfAnAuthenticCode(), OAuthServerException::invalidGrant(self::REVOKED_CODE_HINT), GrantRefusal::ReplayUnproven);
+    }
+
+    /** Sans cause, le classement par l'indication de league est inchangé. */
+    public function testWithoutACauseTheHintClassifiesTheRefusal(): void
+    {
+        $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
+        $auditLogger->expects(self::once())->method('mcpGrantRefused')
+            ->with(self::isInstanceOf(ConnectionReference::class), 'authorization_code', 'code-refused', self::CLIENT_ID);
+
+        $this->audit($auditLogger)->record($this->exchangeOfAnAuthenticCode(), OAuthServerException::invalidGrant(self::REVOKED_CODE_HINT));
+    }
+
+    /** Une cause passée ne fait pas auditer une panne du serveur. */
+    public function testACauseDoesNotMakeAServerFaultAudited(): void
+    {
+        $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
+        $auditLogger->expects(self::never())->method('mcpGrantRefused');
+
+        $this->audit($auditLogger)->record($this->exchangeOfAnAuthenticCode(), OAuthServerException::serverError('panne'), GrantRefusal::ReplayUnproven);
     }
 
     private function audit(SecurityAuditLoggerInterface $auditLogger): LeagueGrantRefusalAudit

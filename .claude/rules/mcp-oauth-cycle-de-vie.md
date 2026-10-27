@@ -148,7 +148,10 @@ paths:
 - **A compromised connection is revoked after the ROLLBACK, by the token endpoint.** The exception leaves league
   through `wrapInTransaction()`, which rolls back (nothing of the exchange survives: no token issued, the old pair
   still unrevoked in rows, the last use unwritten) and closes the EntityManager; `TokenEndpoint::respond()` catches
-  `CompromisedMcpConnectionException` **outside** the transaction, calls `McpConnectionRevokerInterface::revoke()`
+  `CompromisedMcpConnectionException` **outside** the transaction and — for every `RotatedRefreshTokenReusedException`,
+  for an `AuthorizationCodeReplayedException` only when `ReplayProofInterface` proves the PKCE verifier's possession
+  (#726, « A replayed code is judged under the same lock »; unproven, it audits `replay-unproven` and throws the same
+  refusal, revoking nothing) — calls `McpConnectionRevokerInterface::revoke()`
   (native SQL, works on the closed manager; the audit line `mcp-connection-revoked` with `cause`), then throws
   league's own refusal word for word, chosen by the exception's **type** in one `match` (lot C of the reviews: no
   arm left for the causes that never arise there) — `RotatedRefreshTokenReusedException` →
@@ -223,9 +226,27 @@ paths:
   `AuthorizationCodeReplayedException`** (a `CompromisedMcpConnectionException`, cause `code-replay`) — a code is only
   ever revoked by its exchange, which league does **last**, after both tokens (a failed exchange leaves it exchangeable,
   `TokenControllerTest::testAFailedExchangeLeavesNoTokenAndTheCodeExchangeable`), so a revoked code coming back has been
-  exchanged, and `TokenEndpoint` revokes the connection after the ROLLBACK, then answers
-  `invalidGrant('Authorization code has been revoked')` word for word; the tokens the code issued die with the
-  connection — the refresh token received at the first exchange is refused with nothing written
+  exchanged. **It is raised whatever the request**: league judges the revocation before the client binding and
+  before PKCE, so at that point nothing proves the replay comes from the code's holder. **`TokenEndpoint` revokes
+  only on a PKCE proof** (#726, the author's decision of 2026-10-27, lifting #649's accepted limit 3):
+  `Application/ReplayProofInterface::provesPossession($request)` (`Infrastructure/League/PkceReplayProof`) is true
+  only when the body's `code` and `code_verifier` are strings, `GrantPayloadReader::s256ChallengeOf()` reads the
+  payload's `code_challenge` under a `code_challenge_method` exactly `S256` (a non-empty string, `null` otherwise),
+  and league's own `S256Verifier` (`hash_equals()`) verifies the verifier against it — never a copy of the rule.
+  **Without the proof** (verifier absent, wrong, the public challenge itself, a code without an `S256` challenge):
+  the same refusal word for word, **no revocation**, no `mcp-connection-revoked`, and one `mcp-grant-refused` line,
+  cause `replay-unproven` (`GrantRefusal::ReplayUnproven`, passed by the caller: league's hint alone would say
+  `code-refused`) — the signal of an interception: whoever reads a code on the redirect holds the code, not the
+  verifier, which the legitimate client only ever sends to the token endpoint (RFC 7636 §1). The connection lives,
+  its refresh token is served (`CodeReplayTest::testAReplayWithoutTheVerifierLeavesTheConnectionActive`,
+  `testAReplayWithAWrongVerifierLeavesTheConnectionActive`; `PkceReplayProofTest`, the real flow's code and forged
+  payloads re-encrypted under the server's key). **Measured**: `provesPossession()` always `true` turns those two
+  red (`code-replay` written); always `false`, the proven replays (`CodeReplayTest`'s other three,
+  `GrantRefusalAuditTest::testACompromiseIsNotAuditedTwice`, `TokenEndpointConcurrencyTest`'s code exchange, whose two
+  requests present the right verifier); the method check out of `s256ChallengeOf()`, `PkceReplayProofTest`'s `plain`,
+  absent and `s256` cases. **With the proof**, `TokenEndpoint` revokes the connection after the
+  ROLLBACK, then answers `invalidGrant('Authorization code has been revoked')` word for word; the tokens the code
+  issued die with the connection — the refresh token received at the first exchange is refused with nothing written
   (`testExchangingACodeTwiceRevokesTheConnection`: the audit line is read on the request that writes it, and
   **every later refusal is read in turn and must write none** — the `security_audit` `TestHandler` holds the last
   request's records only, since MonologBundle tags every logger `kernel.reset` and the services resetter runs
@@ -239,11 +260,11 @@ paths:
   `CompromisedMcpConnectionExceptionTest` reads the ancestors by reflection, a typed `assertNotInstanceOf` being
   « always true » for PHPStan). **League binds the code to the client after the
   repository**, unlike the refresh grant (`client_id !== $client->getIdentifier()` comes after `isAuthCodeRevoked()`): a
-  code replayed under another registered `client_id` revokes its real client's connection too — **accepted and pinned**
-  (`testAReplayUnderAnotherClientRevokesTheConnectionToo`): a public client's `client_id` is public (it is in the
-  authorization request), whoever replays a code can name the right one, a code that comes back has leaked whatever the
-  name it comes back under, and the refusal is the one league gave before the revocation, word for word; the audit line
-  names the connection's client, never the replayer's. A code presented **first** by another client is refused by
+  code replayed under another registered `client_id` **with the right verifier** revokes its real client's connection
+  too — **accepted and pinned** (`testAReplayUnderAnotherClientRevokesTheConnectionToo`): the verifier is the proof, a
+  public client's `client_id` is none (it is in the authorization request, whoever replays a code can name the right
+  one), and the refusal is the one league gave before the revocation, word for word; the audit line names the
+  connection's client, never the replayer's. A code presented **first** by another client is refused by
   league (« not issued to this client ») after a repository call that writes nothing: the code stays exchangeable by
   its client, the connection intact, no line (`testACodePresentedFirstByAnotherClientConsumesNothing`).
   `LeagueRepositoriesTest` judges a code under a rolled-back transaction, like a refresh token (the lock requires one).
@@ -314,7 +335,11 @@ paths:
   never recognised as a replay, the accepted limit of « A replayed code is judged under the same lock », now leaves a
   trace); `code-refused` (dead under the lock: row purged, connection revoked) and `token-refused` (the same, plus the
   token or the connection past its deadline on the application's clock, the account no longer trusted) — never a
-  compromise; `foreign-client`, `redirect-mismatch`, `not-a-code`, `not-a-refresh-token`, `invalid-scope` (at a refresh,
+  compromise; `replay-unproven` (#726: an exchanged code replayed on an active connection without the proof of its PKCE
+  verifier — no revocation, « A replayed code is judged under the same lock »; named by `TokenEndpoint`, which passes
+  it to `GrantRefusalAuditInterface::record($request, $refusal, $cause)`, `$cause ?? LeagueGrantRefusals::causeOf()`:
+  league's hint is `code-refused`'s; `LeagueGrantRefusalAuditTest` pins that a passed cause wins and that none leaves
+  the classification unchanged); `foreign-client`, `redirect-mismatch`, `not-a-code`, `not-a-refresh-token`, `invalid-scope` (at a refresh,
   or at an exchange whose payload names a scope gone since), `foreign-resource` (`invalid_target` with an authentic
   grant), and `unrecognised` for any other league refusal of an authentic grant, so none is lost. **Not audited, and
   why**: the authorize endpoint's refusals (unknown client, unregistered `redirect_uri`, PKCE method — no connection
@@ -322,9 +347,10 @@ paths:
   itself before the grant); an unreadable grant or one without a connection UUID; a connection no longer in the
   database (nobody to designate); a grant type carrying no artifact; a **5xx** (`LeagueGrantRefusalAudit::SERVER_FAULT`:
   league failing, sometimes *after* validating the grant — a unique-identifier collision, a `server_error` — where a
-  line would accuse a legitimate account of a valid code); and **a compromise** — reuse and replay already write
-  `mcp-connection-revoked`; the audit is a sibling `catch` of `TokenEndpoint::respond()`, never reached by the
-  compromise's own refusal. **Two doors closed before league, by decision** (the security review measured both
+  line would accuse a legitimate account of a valid code); and **a compromise** — reuse and proven replay already
+  write `mcp-connection-revoked`; the audit is a sibling `catch` of `TokenEndpoint::respond()`, never reached by the
+  compromise's own refusal — **save an unproven replay** (#726), audited `replay-unproven` from the compromise's own
+  `catch`, since it revokes nothing and writes no other line. **Two doors closed before league, by decision** (the security review measured both
   escaping the audit): `FormEncodedRequest` refuses, `invalid_request`, any read value starting or ending with a blank
   of `trim()` — league trims every parameter (`AbstractGrant::parseParam()`), so a code wrapped in a space reached
   league while the audit, reading the raw body, decrypted nothing, and a `client_id` followed by 50 000 tabs entered the
@@ -414,18 +440,21 @@ paths:
   `McpBearerAuthenticator` on every request of `/api/mcp` (behaviour unchanged, `McpBearerAuthenticatorTest`) and
   by the refresh. A new site that judges the tier goes through it.
 - **Accepted limits of #649, decided by the author on 2026-10-27, kept as they are and tracked by issue #726** (the
-  reviews' lot C; each is behaviour, not a defect to fix in passing — revisit through #726 only):
+  reviews' lot C; each is behaviour, not a defect to fix in passing — revisit through #726 only). The former third
+  (a replayed code cutting the connection without the verifier) is lifted by #726: « A replayed code is judged under
+  the same lock ».
   1. **Two concurrent legitimate refreshes of one token revoke the connection** (`refresh-token-reuse`): the second,
      serialized behind the first's lock, re-reads the rotated token and is judged a reuse. No grace window (a reuse
      interval some providers offer; RFC 6819 §5.2.2.3 only notes the problem of clustered environments): a client that retries a refresh whose answer
-     was lost, or two workers of one client refreshing together, lose their connection and reconnect.
+     was lost, or two workers of one client refreshing together, lose their connection and reconnect. **Kept by the
+     author's decision of 2026-10-27 (#726)**, to revisit on the `mcp-connection-revoked` lines of cause
+     `refresh-token-reuse` once phase 2 is out. A grace window handing out a new pair is rejected: an attacker
+     refreshing just before the legitimate client would keep the connection; « handing back the same pair » is
+     impossible, only the hashes are stored.
   2. **A new grant revokes the previous one at approval**, in the consent's transaction, before the new code is
      exchanged: an approval whose flow is then abandoned (the client never exchanges the code, the redirect fails)
      leaves the person with no connection at all until they consent again.
-  3. **A replayed code is judged before the client binding and before PKCE** (league's order, `isAuthCodeRevoked()`
-     first): whoever intercepts a code can, within its ten minutes, present it a second time under any registered
-     `client_id` and without the verifier, and cut the connection it issued — without being able to exchange anything.
-  4. **The purge holds its candidate connections locked (`FOR UPDATE`, (1) above) during all its deletions**: a refresh
+  3. **The purge holds its candidate connections locked (`FOR UPDATE`, (1) above) during all its deletions**: a refresh
      of a still-live candidate (last used 29 days ago, say, pre-selected by the wide bound) waits on that lock up to
      FPM's `lock_timeout` (5 s) and answers 500 if the purge's transaction lasts longer — a few milliseconds on bounded
      tables today.

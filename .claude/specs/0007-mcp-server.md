@@ -384,7 +384,9 @@ décision du 2026-10-19, voir « Langue invalide »).
   seulement, au plus une fois par heure écoulée. Le rafraîchissement se juge **sous le verrou de sa
   connexion** (`FOR UPDATE`) sur l'horloge de l'application : un jeton déjà tourné présenté sur une
   connexion active la révoque (`refresh-token-reuse`) ; un code déjà échangé, présenté une seconde fois en
-  même temps ou après, aussi (`code-replay`, OAuth 2.1 §4.1.2) ; une connexion expirée ou un compte sorti
+  même temps ou après, aussi (`code-replay`, OAuth 2.1 §4.1.2) — **sur preuve PKCE seulement** (#726, décision
+  de l'auteur du 2026-10-27) : le corps doit porter le bon `code_verifier` ; sans lui, ou avec un faux, le même
+  refus mot pour mot, aucune révocation, et la ligne `mcp-grant-refused` cause `replay-unproven` ; une connexion expirée ou un compte sorti
   du palier de confiance n'obtient aucun jeton neuf, rien n'est écrit. Les refus restent ceux de league,
   mot pour mot. Révoquer un jeton de rafraîchissement au point de révocation révoque la connexion (cause
   `client`, RFC 7009 §2.1, décision de l'auteur du 2026-10-26 ; `refresh-token-reuse` si le jeton remis
@@ -392,12 +394,16 @@ décision du 2026-10-19, voir « Langue invalide »).
   active. **Prix accepté de la rotation** : un client qui rejoue son rafraîchissement après une réponse
   perdue perd sa connexion et doit se reconnecter. Limites acceptées : un code rejoué après ses dix
   minutes est un simple `invalid_grant` sans révocation (league le juge sur sa charge chiffrée) ; un code
-  rejoué sous un autre `client_id` révoque aussi la connexion de son vrai client. Limites acceptées aussi
-  (décision de l'auteur du 2026-10-27, suivies par #726) : deux rafraîchissements **légitimes** et
-  simultanés d'un même jeton révoquent la connexion (`refresh-token-reuse`, le second relisant sous le
-  verrou le jeton que le premier a tourné), sans fenêtre de grâce ; et un code rejoué est jugé **avant** la
-  liaison au client et avant PKCE (l'ordre de league) — qui intercepte un code peut, dans ses dix minutes,
-  couper la connexion qu'il a émise sans pouvoir rien échanger.
+  rejoué sous un autre `client_id` **avec le bon vérificateur** révoque aussi la connexion de son vrai client
+  (le `client_id` d'un client public est public, la preuve est le vérificateur). **Limite gardée par décision
+  de l'auteur du 2026-10-27 (#726)** : deux rafraîchissements **légitimes** et simultanés d'un même jeton
+  révoquent la connexion (`refresh-token-reuse`, le second relisant sous le verrou le jeton que le premier a
+  tourné), sans fenêtre de grâce — à revoir sur les lignes `mcp-connection-revoked` de cause
+  `refresh-token-reuse` après la sortie de la phase 2. Une fenêtre de grâce rendant un nouveau couple est
+  écartée : un attaquant rafraîchissant juste avant le client légitime garderait la connexion ; « rendre le
+  même couple » est impossible, seules les empreintes sont stockées. Le rejeu d'un code jugé avant la
+  liaison au client et avant PKCE (l'ordre de league), qui laissait quiconque intercepte un code couper la
+  connexion, n'en est plus une : la preuve PKCE ci-dessus.
 - **Parcours d'autorisation.** Le point d'autorisation valide la requête (client, redirection exacte,
   PKCE, `resource`, scope) puis renvoie le navigateur vers la page de consentement du frontend. La page
   exige une session du site au palier de confiance (sinon passage par la connexion, puis retour). Le

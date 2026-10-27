@@ -9,6 +9,7 @@ use App\Mcp\Connection\Domain\Exception\CompromisedMcpConnectionException;
 use App\Mcp\Connection\Domain\Exception\InvalidMcpClientIdException;
 use App\Mcp\Connection\Domain\Exception\RotatedRefreshTokenReusedException;
 use App\Mcp\Connection\Domain\Repository\McpClientRepositoryInterface;
+use App\Mcp\Connection\Domain\ValueObject\GrantRefusal;
 use App\Mcp\Connection\Domain\ValueObject\McpClientId;
 use League\OAuth2\Server\AuthorizationServer;
 use League\OAuth2\Server\Exception\OAuthServerException;
@@ -69,9 +70,14 @@ use Throwable;
  *    réponse perdue y perd sa connexion — le prix de la rotation, accepté
  *    (`RefreshRotationTest`). Un code déjà échangé qui revient — l'un après
  *    l'autre comme en concurrence — est jugé de même, sous le même verrou,
- *    par `AuthCodeRepository::isAuthCodeRevoked()` (OAuth 2.1 §4.1.2) : la
- *    connexion est révoquée, cause `code-replay`, et les jetons que le code
- *    avait émis meurent avec elle (`CodeReplayTest`).
+ *    par `AuthCodeRepository::isAuthCodeRevoked()` (OAuth 2.1 §4.1.2) : si
+ *    le corps prouve la possession du vérificateur PKCE du code
+ *    (ReplayProofInterface, #726), la connexion est révoquée, cause
+ *    `code-replay`, et les jetons que le code avait émis meurent avec elle ;
+ *    sans cette preuve — un code intercepté sur la redirection, présenté
+ *    sans son vérificateur ou avec un faux —, le même refus, aucune
+ *    révocation, et la ligne `mcp-grant-refused` cause `replay-unproven`
+ *    (`CodeReplayTest`).
  * 5. **Tout autre refus d'un artefact authentique est audité** (#725) : la
  *    ressource étrangère comme les refus de league, hors de la transaction,
  *    par GrantRefusalAuditInterface — la ligne `mcp-grant-refused`, pour un
@@ -101,6 +107,7 @@ final readonly class TokenEndpoint implements TokenEndpointInterface
         private TransactionInterface $transaction,
         private McpConnectionRevokerInterface $revoker,
         private GrantRefusalAuditInterface $refusalAudit,
+        private ReplayProofInterface $replayProof,
         private LoggerInterface $logger,
     ) {
     }
@@ -119,9 +126,25 @@ final readonly class TokenEndpoint implements TokenEndpointInterface
             // d'elle, et survit au ROLLBACK de l'échange. Le refus levé ici
             // n'atteint pas le `catch` voisin : une compromission a déjà sa
             // ligne, `mcp-connection-revoked`.
+            //
+            // Un code rejoué ne révoque que sur preuve PKCE (#726) : league le
+            // juge avant le lien au client et avant le vérificateur, et un
+            // code se lit sur la redirection, qu'on intercepte. Sans le bon
+            // vérificateur, le même refus mot pour mot, aucune révocation, et
+            // la ligne `mcp-grant-refused` cause `replay-unproven`, écrite ici
+            // — le signal d'une interception. Un jeton de rafraîchissement
+            // réutilisé révoque toujours : il n'a pas d'autre preuve que
+            // lui-même.
+            $refusal = $this->refusalOf($compromise);
+            if ($compromise instanceof AuthorizationCodeReplayedException && !$this->replayProof->provesPossession($request)) {
+                $this->audit($request, $refusal, GrantRefusal::ReplayUnproven);
+
+                throw $refusal;
+            }
+
             $this->revoker->revoke($compromise->connectionId(), $compromise->revocationCause());
 
-            throw $this->refusalOf($compromise);
+            throw $refusal;
         } catch (OAuthServerException $refusal) {
             $this->audit($request, $refusal);
 
@@ -137,10 +160,10 @@ final readonly class TokenEndpoint implements TokenEndpointInterface
      * refus non audité reste visible. La classe seule, jamais le message :
      * une erreur du pilote ou du chiffrement pourrait citer l'artefact.
      */
-    private function audit(ServerRequestInterface $request, OAuthServerException $refusal): void
+    private function audit(ServerRequestInterface $request, OAuthServerException $refusal, ?GrantRefusal $cause = null): void
     {
         try {
-            $this->refusalAudit->record($request, $refusal);
+            $this->refusalAudit->record($request, $refusal, $cause);
         } catch (Throwable $failure) {
             $this->logger->critical('Grant refusal not audited.', ['exceptionClass' => $failure::class]);
         }

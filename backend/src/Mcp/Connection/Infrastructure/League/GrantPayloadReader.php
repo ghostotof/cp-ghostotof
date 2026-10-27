@@ -72,6 +72,21 @@ final class GrantPayloadReader
     }
 
     /**
+     * Le défi PKCE qu'un code porte (`code_challenge`, RFC 7636 §4.2), quand
+     * sa méthode est exactement `S256` — la seule que le point d'autorisation
+     * admet (LoopbackAwareAuthCodeGrant) — et que c'est une chaîne non vide ;
+     * null sinon : un code illisible, sans défi, ou d'une autre méthode ne
+     * permet de prouver la possession d'aucun vérificateur (#726).
+     */
+    public function s256ChallengeOf(#[SensitiveParameter] string $code): ?string
+    {
+        $payload = $this->payloadOf($code);
+        $challenge = $payload['code_challenge'] ?? null;
+
+        return 'S256' === ($payload['code_challenge_method'] ?? null) && \is_string($challenge) && '' !== $challenge ? $challenge : null;
+    }
+
+    /**
      * La charge déchiffrée, si c'est un objet JSON ; `[]` sinon.
      *
      * @return array<array-key, mixed>

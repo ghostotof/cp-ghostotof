@@ -12,9 +12,10 @@ namespace App\Mcp\Connection\Domain\ValueObject;
  * décrire au client.
  *
  * Classée d'après l'indication de league
- * ({@see \App\Mcp\Connection\Infrastructure\League\LeagueGrantRefusals}) ;
- * une compromission (réutilisation d'un jeton remplacé, rejeu d'un code) n'en
- * est pas une : elle révoque la connexion, cause RevocationCause.
+ * ({@see \App\Mcp\Connection\Infrastructure\League\LeagueGrantRefusals}),
+ * sauf ReplayUnproven, que le point de jeton nomme lui-même ; une
+ * compromission (réutilisation d'un jeton remplacé, rejeu d'un code prouvé)
+ * n'en est pas une : elle révoque la connexion, cause RevocationCause.
  *
  * La valeur est un mot stable (kebab), sans rien de l'artefact : elle peut
  * entrer dans une ligne de journal telle quelle.
@@ -42,6 +43,16 @@ enum GrantRefusal: string
      * compromission.
      */
     case CodeRefused = 'code-refused';
+
+    /**
+     * Code déjà échangé, rejoué sur une connexion active **sans** la preuve
+     * de son vérificateur PKCE (absent ou faux, #726) : refusé comme un code
+     * révoqué, mais la connexion n'est pas révoquée — quiconque a intercepté
+     * la redirection détient le code, pas le vérificateur. Le signal d'une
+     * interception ; nommée par le point de jeton, jamais par l'indication de
+     * league, qui est celle de CodeRefused.
+     */
+    case ReplayUnproven = 'replay-unproven';
 
     /** Artefact authentique présenté comme code, qui n'en est pas un (un jeton de rafraîchissement). */
     case NotACode = 'not-a-code';

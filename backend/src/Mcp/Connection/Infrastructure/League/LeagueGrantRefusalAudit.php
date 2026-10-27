@@ -6,6 +6,7 @@ namespace App\Mcp\Connection\Infrastructure\League;
 
 use App\Mcp\Connection\Application\GrantRefusalAuditInterface;
 use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
+use App\Mcp\Connection\Domain\ValueObject\GrantRefusal;
 use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use League\OAuth2\Server\Exception\OAuthServerException;
 use Psr\Http\Message\ServerRequestInterface;
@@ -67,7 +68,7 @@ final readonly class LeagueGrantRefusalAudit implements GrantRefusalAuditInterfa
     ) {
     }
 
-    public function record(ServerRequestInterface $request, OAuthServerException $refusal): void
+    public function record(ServerRequestInterface $request, OAuthServerException $refusal, ?GrantRefusal $cause = null): void
     {
         if ($refusal->getHttpStatusCode() >= self::SERVER_FAULT || 'invalid_client' === $refusal->getErrorType()) {
             return;
@@ -96,7 +97,9 @@ final readonly class LeagueGrantRefusalAudit implements GrantRefusalAuditInterfa
         $this->auditLogger->mcpGrantRefused(
             connection: $connection,
             grantType: $grantType,
-            cause: LeagueGrantRefusals::causeOf($refusal)->value,
+            // La cause que l'appelant connaît (un rejeu sans preuve PKCE, #726)
+            // l'emporte sur l'indication de league, qui ne la distingue pas.
+            cause: ($cause ?? LeagueGrantRefusals::causeOf($refusal))->value,
             presentingClientId: $presentingClientId,
         );
     }

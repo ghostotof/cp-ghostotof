@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Mcp\Connection\Application;
 
+use App\Mcp\Connection\Domain\ValueObject\GrantRefusal;
 use League\OAuth2\Server\Exception\OAuthServerException;
 use Psr\Http\Message\ServerRequestInterface;
 
@@ -25,6 +26,12 @@ interface GrantRefusalAuditInterface
      *
      * Appelée après la transaction du point de jeton, annulée : la lecture de
      * la connexion vaut EntityManager fermé.
+     *
+     * `$cause`, quand l'appelant la connaît — un rejeu de code sans preuve
+     * PKCE, `GrantRefusal::ReplayUnproven` (#726), dont le refus est mot pour
+     * mot celui d'un code révoqué —, nomme le refus ; sans elle, il est classé
+     * d'après l'indication de league. Elle ne change rien d'autre : une panne
+     * du serveur ou un client inconnu ne sont pas audités davantage.
      */
-    public function record(ServerRequestInterface $request, OAuthServerException $refusal): void;
+    public function record(ServerRequestInterface $request, OAuthServerException $refusal, ?GrantRefusal $cause = null): void;
 }
