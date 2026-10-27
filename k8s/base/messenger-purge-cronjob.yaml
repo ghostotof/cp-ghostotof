@@ -1,4 +1,4 @@
-# Ménage quotidien de la base, deux commandes :
+# Ménage quotidien de la base, trois commandes :
 #
 # 1. `app:contact:purge-failed-messages` — rétention des messages de contact
 #    en échec (point d'audit B6, 30 jours par défaut) — voir
@@ -7,6 +7,13 @@
 #    comptes sur invitation jamais activés au-delà de 30 jours depuis leur dernière
 #    invitation — voir
 #    src/Security/User/Presentation/Command/PurgePendingInvitationsCommand.php.
+# 3. `app:mcp:purge` — connexions MCP (issue #649) : marque expirées celles dont
+#    l'échéance est passée (audit `mcp-connection-revoked`, cause `expired`),
+#    supprime les codes et jetons morts et les connexions révoquées depuis plus
+#    de six mois — voir
+#    src/Mcp/Connection/Presentation/Command/PurgeMcpConnectionsCommand.php.
+#    Elle verrouille les connexions qu'elle juge, comme un rafraîchissement :
+#    PGOPTIONS ci-dessous borne ses attentes (McpConnectionsPurgedDailyTest).
 #
 # `cache:pool:prune` y tournait aussi jusqu'à #644 : la purge de `cache_items`
 # est désormais horaire, dans son propre CronJob (cache-prune-cronjob.yaml).
@@ -72,6 +79,7 @@ spec:
                   set -e
                   php bin/console app:contact:purge-failed-messages --no-interaction
                   php bin/console app:user:purge-pending-invitations --no-interaction
+                  php bin/console app:mcp:purge --no-interaction
               env:
                 # Issue #525 : attentes de verrou PostgreSQL bornées comme sous FPM (valeur
                 # de www.prod.conf ; ConsoleLockWaitBoundTest,

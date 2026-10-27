@@ -4,19 +4,20 @@ declare(strict_types=1);
 
 namespace App\Mcp\Connection\Infrastructure\Security;
 
-use App\Mcp\Connection\Application\McpConnectionPrincipal;
 use App\Mcp\Connection\Application\OAuthEndpoints;
+use App\Mcp\Connection\Domain\Entity\McpConnection;
 use App\Mcp\Connection\Domain\Repository\McpAccessTokenRepositoryInterface;
 use App\Mcp\Connection\Domain\ValueObject\BearerRefusal;
+use App\Mcp\Connection\Domain\ValueObject\ConnectionLifetimes;
 use App\Mcp\Connection\Infrastructure\League\TokenIdentifierHash;
 use App\Mcp\Infrastructure\Http\UnauthorizedAnswers;
+use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use Psr\Clock\ClockInterface;
 use SensitiveParameter;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Security\Core\Authentication\Token\TokenInterface;
 use Symfony\Component\Security\Core\Exception\AuthenticationException;
-use Symfony\Component\Security\Core\Role\RoleHierarchyInterface;
 use Symfony\Component\Security\Http\Authenticator\AbstractAuthenticator;
 use Symfony\Component\Security\Http\Authenticator\Passport\Badge\UserBadge;
 use Symfony\Component\Security\Http\Authenticator\Passport\SelfValidatingPassport;
@@ -49,13 +50,24 @@ use Symfony\Component\Security\Http\Authenticator\Passport\SelfValidatingPasspor
  *  3. ce que le domaine du jeton juge à cet instant pour l'audience
  *     `/api/mcp` (McpAccessToken::refusalAt()) : jeton révoqué, expiré —
  *     league ne regarde pas l'échéance d'un jeton opaque —, d'une autre
- *     audience, connexion révoquée, expirée ;
- *  4. le palier du compte : ROLE_TRUSTED atteint par la `role_hierarchy`
- *     depuis les rôles stockés (un ROLE_SUPER sans ROLE_TRUSTED stocké passe,
- *     comme partout sur le site ; le palier de base non) — `AccountNotTrusted`.
+ *     audience, connexion révoquée, expirée (sur les durées configurées,
+ *     ConnectionLifetimes, #649) ;
+ *  4. le palier du compte (TrustedTier, le même juge qu'au rafraîchissement,
+ *     #649) : ROLE_TRUSTED atteint par la `role_hierarchy` depuis les rôles
+ *     stockés (un ROLE_SUPER sans ROLE_TRUSTED stocké passe, comme partout
+ *     sur le site ; le palier de base non) — `AccountNotTrusted`.
  *
- * **Aucune écriture** : ni `last_used_at` (écrit au rafraîchissement, #649),
- * ni rien d'autre (ADR 0006 D4). Le compte n'est chargé par aucun autre
+ * **Le refus d'un jeton connu est audité** (#649) : pour les causes 3 et 4,
+ * une ligne `mcp-access-token-refused` (compte par son UUID, connexion,
+ * client public, cause) juste avant l'exception — jamais pour `Malformed` ni
+ * `Unknown`, qui ne désignent aucune connexion : un déluge de jetons
+ * fantaisistes n'écrit rien. Un client sain voit son jeton échoir une fois
+ * par heure, puis rafraîchit : au plus une ligne par connexion et par heure
+ * en usage normal. Elle part sur le canal Monolog `security_audit`, sans
+ * requête : la connexion, son compte et son client sont ceux de la jointure.
+ *
+ * **Aucune écriture en base** : ni `last_used_at` (écrit au rafraîchissement,
+ * #649), ni rien d'autre (ADR 0006 D4). Le compte n'est chargé par aucun autre
  * chemin avant la requête du jeton : une jointure ne rafraîchit pas une
  * instance que l'EntityManager gérerait déjà, et c'est ce qui garantit que
  * les rôles lus sont ceux de la base à cette requête.
@@ -90,8 +102,10 @@ final class McpBearerAuthenticator extends AbstractAuthenticator
         private readonly McpAccessTokenRepositoryInterface $accessTokens,
         private readonly ClockInterface $clock,
         private readonly OAuthEndpoints $endpoints,
-        private readonly RoleHierarchyInterface $roleHierarchy,
+        private readonly TrustedTier $trustedTier,
         private readonly UnauthorizedAnswers $unauthorized,
+        private readonly ConnectionLifetimes $lifetimes,
+        private readonly SecurityAuditLoggerInterface $auditLogger,
     ) {
     }
 
@@ -117,16 +131,15 @@ final class McpBearerAuthenticator extends AbstractAuthenticator
             throw McpBearerRefusedException::because(BearerRefusal::Unknown);
         }
 
-        $refusal = $token->refusalAt($this->clock->now(), $this->endpoints->resource());
+        $connection = $token->connection();
+        $refusal = $token->refusalAt($this->clock->now(), $this->endpoints->resource(), $this->lifetimes);
 
         if (null !== $refusal) {
-            throw McpBearerRefusedException::because($refusal);
+            throw $this->auditedRefusal($connection, $refusal);
         }
 
-        $connection = $token->connection();
-
-        if (!\in_array(McpConnectionPrincipal::TRUSTED_TIER, $this->roleHierarchy->getReachableRoleNames($connection->account()->getRoles()), true)) {
-            throw McpBearerRefusedException::because(BearerRefusal::AccountNotTrusted);
+        if (!$this->trustedTier->reaches($connection->account())) {
+            throw $this->auditedRefusal($connection, BearerRefusal::AccountNotTrusted);
         }
 
         $user = McpConnectionUser::ofConnection($connection);
@@ -145,6 +158,17 @@ final class McpBearerAuthenticator extends AbstractAuthenticator
     public function onAuthenticationFailure(Request $request, AuthenticationException $exception): Response
     {
         return $this->unauthorized->refusedToken();
+    }
+
+    /**
+     * Le refus d'un jeton connu, audité avant d'être levé (#649) : la
+     * connexion du jeton désigne le compte, elle-même et son client.
+     */
+    private function auditedRefusal(McpConnection $connection, BearerRefusal $cause): McpBearerRefusedException
+    {
+        $this->auditLogger->mcpAccessTokenRefused($connection, $cause->value);
+
+        return McpBearerRefusedException::because($cause);
     }
 
     private function isBearer(#[SensitiveParameter] string $authorization): bool

@@ -49,6 +49,12 @@ use DateTimeZone;
  */
 final readonly class RetentionPeriod
 {
+    /**
+     * Le plancher d'une purge qui l'exige ({@see thresholdAtLeastOneDayBefore()}) :
+     * un jour du calendrier du fuseau de l'instant donné.
+     */
+    private const string PURGE_FLOOR = 'P1D';
+
     /** Voir {@see designatesADate()} : un mercredi en milieu de mois, hors de minuit. */
     private const string REFERENCE_INSTANT = '1970-01-14 13:37:42';
 
@@ -241,5 +247,33 @@ final readonly class RetentionPeriod
     public function expression(): string
     {
         return $this->expression;
+    }
+
+    /**
+     * Le seuil de cette durée retranchée à `$now`, à condition qu'il tombe au
+     * plus tard « `$now` moins un jour » : le plancher des purges des
+     * invitations jamais activées et des connexions MCP révoquées (lot C des
+     * relectures de #649, écrit une fois ici au lieu d'une constante et d'une
+     * exception par purge). Sans lui, un lancement manuel imprudent
+     * (`--older-than "1 hour"`) supprimerait d'un coup ce que la rétention
+     * doit garder ; le CronJob n'utilise que la valeur par défaut.
+     *
+     * L'instant est celui de l'appelant (l'horloge du purgeur), pas celui de
+     * {@see fromString()}. Le jour est un jour du calendrier de son fuseau,
+     * comme l'écrivaient les deux purges : 25 heures le jour du passage à
+     * l'heure d'hiver, 23 celui de l'heure d'été. La purge du formulaire de
+     * contact n'a pas de plancher et ne l'appelle pas.
+     *
+     * @throws InvalidRetentionPeriodException si la durée est plus courte qu'un jour
+     */
+    public function thresholdAtLeastOneDayBefore(DateTimeImmutable $now): DateTimeImmutable
+    {
+        $threshold = $now->sub($this->interval);
+
+        if ($threshold > $now->sub(new DateInterval(self::PURGE_FLOOR))) {
+            throw InvalidRetentionPeriodException::shorterThanOneDay($this->expression);
+        }
+
+        return $threshold;
     }
 }

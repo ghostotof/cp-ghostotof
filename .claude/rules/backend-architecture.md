@@ -67,12 +67,19 @@ and a row gone is detached through `VanishedEntities::detachVanished()`, never `
 the detached instance re-inserted the deleted row, silently. The service remembers the instance in a
 `WeakMap` and its `prePersist` listener refuses it (`VanishedEntitySavedAgainException`, unmapped, a
 `critical` 500). `RereadUnderLock` (#560) is the one place that re-reads under a lock — `row()` (one row, one
-DQL query with `HINT_REFRESH`, `FOR UPDATE` on demand, `null` when the row is gone) and
-`everyManagedInstanceOf()` (the order scope's #402 re-read) —, the one place that skips an instance awaiting
+DQL query with `HINT_REFRESH`, `FOR UPDATE` on demand, `null` when the row is gone),
+`everyManagedInstanceOf()` (the order scope's #402 re-read) and, since lot B of the #649 reviews, `rowsMatching()`
+(the rows a criterion retains, where and in what order, `FOR UPDATE` on demand, each managed instance refreshed in
+place — the MCP purge's pre-selection; **it detaches nothing**: a managed instance the query does not return may
+have stopped matching or have vanished, and nothing tells them apart there, so such an instance is left as it is)
+—, the one place that skips an instance awaiting
 an insertion or a deletion (detaching it would cancel that write), and the one caller of `detachVanished()`.
-Used by the order scope lock, the technology row lock, the account administration lock and, since #560, the
-account row lock (`.claude/rules/security-user.md`); a new lock that re-reads goes through it, never a copy
-(there were four, and the account row lock's did not detach). Since #557 `VanishedEntities`' `postRemove` listener also
+Used by the order scope lock, the technology row lock, the account administration lock, since #560 the
+account row lock (`.claude/rules/security-user.md`) and, since #649, the MCP connection's row lock
+(`lockForUpdate()`), the purge's pre-selection and the re-read of a code or a refresh token under its connection's
+lock (`rereadUnderConnectionLock()`, `row()` without `FOR UPDATE`, `.claude/rules/mcp-oauth-cycle-de-vie.md`); a new lock that re-reads goes through it, never a copy
+(there were four, and the account row lock's did not detach; the MCP repositories carried three more until lot B,
+and a `findOneByHash()` with `HINT_REFRESH` is such a copy). Since #557 `VanishedEntities`' `postRemove` listener also
 remembers every instance the same manager removed and flushed — Doctrine took it for new as well, its UUID
 kept — so re-saving a deleted entity is refused too (a restoration creates a new entity). **A DQL `DELETE` by
 id** emits no `postRemove`: since #569 the repository runs it through `VanishedEntities::deleteById(Query, entity)`

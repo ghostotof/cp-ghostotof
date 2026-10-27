@@ -5,10 +5,9 @@ declare(strict_types=1);
 namespace App\Security\Authentication\Application;
 
 use App\Security\User\Domain\Entity\CpgUser;
-use App\Shared\Domain\Security\AccountReference;
+use App\Shared\Domain\Security\McpConnectionReference;
 use SensitiveParameter;
 use Symfony\Component\Security\Core\User\UserInterface;
-use Symfony\Component\Uid\Uuid;
 
 /**
  * Journal de sécurité (D5, constat A5 du 3e audit) : l'unique point d'entrée
@@ -37,7 +36,18 @@ use Symfony\Component\Uid\Uuid;
  *    la connexion et de son code ;
  *  - le corpus nominatif lu par une connexion MCP (#648) :
  *    {@see \App\Mcp\Infrastructure\Corpus\NominativeCorpusReader}, pour une
- *    réponse que l'outil `get_nominative_corpus` sert, après sa mesure.
+ *    réponse que l'outil `get_nominative_corpus` sert, après sa mesure ;
+ *  - une connexion MCP révoquée ou expirée (#649), `mcp-connection-revoked`,
+ *    une ligne par connexion, seulement pour une révocation effective :
+ *    {@see \App\Mcp\Connection\Application\McpConnectionRevoker} (après la
+ *    révocation : réutilisation d'un rafraîchissement tourné, rejeu d'un
+ *    code), {@see \App\Mcp\Connection\Infrastructure\League\LeagueRevocationEndpoint}
+ *    (révocation par le client), {@see \App\Mcp\Connection\Application\ConsentService}
+ *    (accord remplacé) et {@see \App\Mcp\Connection\Application\McpConnectionPurger}
+ *    (expiration, acteur `system`), ces trois-là après le COMMIT ;
+ *  - un jeton d'accès MCP connu refusé (#649), `mcp-access-token-refused` :
+ *    {@see \App\Mcp\Connection\Infrastructure\Security\McpBearerAuthenticator},
+ *    avant de lever le refus, jamais pour un jeton mal formé ou inconnu.
  *
  * Ce qui sort, et rien d'autre : `event` (kebab-case, stable — c'est la clé
  * sur laquelle on filtre), le sujet (`userId`, l'UUID d'un compte ; `user`,
@@ -174,10 +184,11 @@ interface SecurityAuditLoggerInterface
      * compte (`userId`), la connexion (`connectionId`, l'UUID que la
      * révocation et la liste « Mes connexions MCP » désignent aussi) et le
      * client par son identifiant public (`clientId`, le `client_id` d'OAuth
-     * d'un client public : aucun secret). Jamais le code d'autorisation émis,
-     * ni un jeton, ni leur empreinte.
+     * d'un client public : aucun secret), tous trois lus sur la connexion
+     * accordée. Jamais le code d'autorisation émis, ni un jeton, ni leur
+     * empreinte.
      */
-    public function mcpConnectionGranted(CpgUser $account, Uuid $connectionId, string $clientId): void;
+    public function mcpConnectionGranted(McpConnectionReference $connection): void;
 
     /**
      * Corpus nominatif lu par une connexion MCP (#648, ADR 0006 D5) : l'outil
@@ -185,10 +196,46 @@ interface SecurityAuditLoggerInterface
      * le compte dont la connexion a été authentifiée (`userId` — c'est aussi
      * l'auteur, lu dans le jeton de sécurité), la connexion (`connectionId`),
      * le client par son identifiant public (`clientId`) et l'outil (`tool`).
-     * Reçoit un AccountReference et non un CpgUser : le lecteur du corpus,
-     * hors de ce contexte, ne connaît le compte que par l'identité du
+     * Reçoit un McpConnectionReference et non un CpgUser : le lecteur du
+     * corpus, hors de ce contexte, ne connaît le compte que par l'identité du
      * firewall `mcp`.
      * Jamais le jeton présenté, son empreinte, ni rien du corpus.
      */
-    public function nominativeCorpusRead(AccountReference $account, Uuid $connectionId, string $clientId, string $tool): void;
+    public function nominativeCorpusRead(McpConnectionReference $connection, string $tool): void;
+
+    /**
+     * Connexion MCP révoquée (#649) : désigne le compte (`userId`), la
+     * connexion (`connectionId`), le client par son identifiant public
+     * (`clientId`) et la cause (`cause`, le mot stable de
+     * {@see \App\Mcp\Connection\Domain\ValueObject\RevocationCause} :
+     * `client`, `refresh-token-reuse`, `code-replay`, `superseded`). Une
+     * chaîne plutôt que l'enum : ce contexte ne dépend pas de `Mcp`. L'auteur
+     * est lu comme pour tout événement. Jamais le jeton ou le code présenté,
+     * ni leur empreinte.
+     */
+    public function mcpConnectionRevoked(McpConnectionReference $connection, string $cause): void;
+
+    /**
+     * Connexion MCP expirée, constatée et révoquée par la purge planifiée
+     * (#649) : le même événement `mcp-connection-revoked`, cause `expired`.
+     * L'acteur journalisé est `system`, comme pour {@see self::userPurged()} :
+     * une commande planifiée n'a pas de jeton de sécurité, et `anonymous`
+     * suggérerait un appelant humain.
+     */
+    public function mcpConnectionExpired(McpConnectionReference $connection): void;
+
+    /**
+     * Jeton d'accès MCP connu, présenté sur `/api/mcp` et refusé (#649) :
+     * désigne le compte de sa connexion (`userId`), la connexion
+     * (`connectionId`), le client par son identifiant public (`clientId`) et
+     * la cause (`cause`, le mot stable de
+     * {@see \App\Mcp\Connection\Domain\ValueObject\BearerRefusal} : jeton
+     * révoqué ou échu, autre audience, connexion révoquée ou expirée, scope,
+     * compte hors palier de confiance). Une chaîne plutôt que l'enum : ce
+     * contexte ne dépend pas de `Mcp`. Jamais pour un Bearer mal formé ni un
+     * jeton inconnu, qui ne désignent aucune connexion. L'auteur est lu comme
+     * pour tout événement (`anonymous` : le refus précède toute
+     * authentification). Jamais le jeton présenté ni son empreinte.
+     */
+    public function mcpAccessTokenRefused(McpConnectionReference $connection, string $cause): void;
 }

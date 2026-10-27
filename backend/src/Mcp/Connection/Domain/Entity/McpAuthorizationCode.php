@@ -15,7 +15,9 @@ use Symfony\Component\Uid\Uuid;
 
 /**
  * Code d'autorisation émis au consentement d'une connexion MCP, échangé une
- * seule fois contre des jetons au point de jeton (10 minutes de vie).
+ * seule fois contre des jetons au point de jeton (sa durée de vie est celle
+ * de la configuration,
+ * {@see \App\Mcp\Connection\Domain\ValueObject\ConnectionLifetimes::authorizationCode()}).
  *
  * Seule l'empreinte SHA-256 de son identifiant est stockée (`code_hash`,
  * unique) : un code lu en base ne s'échange pas. Rattaché à sa connexion en

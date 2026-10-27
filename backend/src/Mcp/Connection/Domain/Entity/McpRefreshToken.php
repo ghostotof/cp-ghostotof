@@ -14,12 +14,14 @@ use Symfony\Bridge\Doctrine\Types\UuidType;
 use Symfony\Component\Uid\Uuid;
 
 /**
- * Jeton de rafraîchissement d'une connexion MCP (30 jours de vie).
+ * Jeton de rafraîchissement d'une connexion MCP (sa durée de vie est celle
+ * de la configuration,
+ * {@see \App\Mcp\Connection\Domain\ValueObject\ConnectionLifetimes::refreshToken()}).
  *
  * Seule l'empreinte SHA-256 de son identifiant est stockée (`token_hash`,
  * unique). Il garde le jeton d'accès émis avec lui, que la rotation (#649)
  * révoque ; ce lien est `ON DELETE SET NULL` : la purge d'un jeton d'accès
- * expiré n'emporte pas le rafraîchissement, qui lui survit de 30 jours.
+ * expiré n'emporte pas le rafraîchissement, qui lui survit.
  * Rattaché à sa connexion en cascade.
  */
 #[ORM\Entity(repositoryClass: McpRefreshTokenRepository::class)]

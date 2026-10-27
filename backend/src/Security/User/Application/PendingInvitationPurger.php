@@ -7,9 +7,8 @@ namespace App\Security\User\Application;
 use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Exception\CpgUserNotFoundException;
-use App\Security\User\Domain\Exception\InvalidPurgeRetentionException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
-use DateInterval;
+use App\Shared\Domain\ValueObject\RetentionPeriod;
 use DateTimeImmutable;
 use Psr\Clock\ClockInterface;
 use Psr\Log\LoggerInterface;
@@ -25,25 +24,19 @@ final readonly class PendingInvitationPurger implements PendingInvitationPurgerI
     ) {
     }
 
-    public function purge(DateInterval $maxAge, bool $dryRun = false): PendingInvitationPurgeResult
+    public function purge(RetentionPeriod $retention, bool $dryRun = false): PendingInvitationPurgeResult
     {
         $now = $this->clock->now();
-        $threshold = $now->sub($maxAge);
-        // Round de correction (M6) : plancher de rétention d'un jour. Sans
-        // lui, un lancement manuel imprudent ("--older-than=1 hour") purgerait
-        // la quasi-totalité des comptes en attente d'un coup — le CronJob,
-        // lui, n'utilise jamais que la valeur par défaut (30 jours), le risque
-        // ne vient que d'un appel humain direct. Un seuil devenu >= now
-        // (intervalle négatif ou nul) reste un cas particulier de cette même
-        // garde : le futur est encore plus proche que "maintenant − 1 jour".
-        $minimumThreshold = $now->sub(new DateInterval('P1D'));
-
-        // Garde métier, avant toute lecture du dépôt : protège tout appelant,
-        // pas seulement la commande CLI qui, elle, ne fait qu'attraper
-        // l'exception.
-        if ($threshold > $minimumThreshold) {
-            throw InvalidPurgeRetentionException::forThreshold($threshold, $now);
-        }
+        // Round de correction (M6) : plancher de rétention d'un jour, celui de
+        // RetentionPeriod (lot C des relectures de #649, partagé avec la purge
+        // des connexions MCP). Sans lui, un lancement manuel imprudent
+        // ("--older-than=1 hour") purgerait la quasi-totalité des comptes en
+        // attente d'un coup — le CronJob, lui, n'utilise jamais que la valeur
+        // par défaut (30 jours), le risque ne vient que d'un appel humain
+        // direct. Garde métier, avant toute lecture du dépôt : protège tout
+        // appelant, pas seulement la commande CLI qui, elle, ne fait
+        // qu'attraper l'exception.
+        $threshold = $retention->thresholdAtLeastOneDayBefore($now);
 
         $purged = [];
         $skipped = [];

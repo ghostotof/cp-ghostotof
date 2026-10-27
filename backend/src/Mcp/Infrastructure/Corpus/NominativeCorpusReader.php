@@ -78,6 +78,6 @@ final readonly class NominativeCorpusReader implements NominativeCorpusReaderInt
     {
         $reader = $corpus->reader;
 
-        $this->auditLogger->nominativeCorpusRead($reader, $reader->connectionId(), $reader->clientId(), ProtectedTools::NOMINATIVE_CORPUS);
+        $this->auditLogger->nominativeCorpusRead($reader, ProtectedTools::NOMINATIVE_CORPUS);
     }
 }

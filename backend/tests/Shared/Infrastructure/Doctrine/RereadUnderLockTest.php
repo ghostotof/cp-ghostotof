@@ -11,6 +11,7 @@ use App\Shared\Infrastructure\Doctrine\RereadUnderLock;
 use App\Shared\Infrastructure\Doctrine\VanishedEntitySavedAgainException;
 use App\Tests\Support\ProbesLocks;
 use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\ORM\QueryBuilder;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Uid\Uuid;
 
@@ -161,6 +162,71 @@ final class RereadUnderLockTest extends KernelTestCase
         self::assertTrue($this->entityManager->getUnitOfWork()->isScheduledForInsert($pending), "L'insertion en attente a été annulée.");
         $this->expectException(VanishedEntitySavedAgainException::class);
         $this->entityManager->persist($vanished);
+    }
+
+    /**
+     * Les lignes qu'un critère retient, en une requête et dans l'ordre
+     * demandé (la présélection de la purge MCP, #649) : chaque instance déjà
+     * gérée rafraîchie sur place, une écriture validée par une autre session
+     * lue. Une instance gérée que le critère écarte est laissée telle quelle
+     * — gérée, non rafraîchie : rien ne la distingue ici d'une ligne disparue.
+     */
+    public function testRowsMatchingRereadsTheRowsOfTheCriterionInPlaceAndLeavesTheOthers(): void
+    {
+        $php = $this->storedTechnology('PHP');
+        $perl = $this->storedTechnology('Perl');
+        $go = $this->storedTechnology('Go');
+        $connection = $this->entityManager->getConnection();
+        $connection->executeStatement('UPDATE experience_technology SET name = ? WHERE id = ?', ['Symfony', $php->getId()->toRfc4122()]);
+        $connection->executeStatement('UPDATE experience_technology SET name = ? WHERE id = ?', ['Rust', $go->getId()->toRfc4122()]);
+        $connection->executeStatement('UPDATE experience_technology SET name = ? WHERE id = ?', ['Python', $perl->getId()->toRfc4122()]);
+
+        $reread = $this->reread()->rowsMatching(
+            $this->entityManager,
+            ExperienceTechnology::class,
+            static function (QueryBuilder $query, string $alias): void {
+                $query->andWhere($alias.'.name <> :excluded')
+                    ->setParameter('excluded', 'Python')
+                    ->orderBy($alias.'.name', 'DESC');
+            },
+            forUpdate: false,
+        );
+
+        self::assertSame([$php, $go], $reread, "La relecture n'a pas rendu les instances déjà gérées, dans l'ordre demandé.");
+        self::assertSame('Symfony', $php->getName(), "L'instance retenue n'a pas été rafraîchie.");
+        self::assertSame('Rust', $go->getName(), "L'instance retenue n'a pas été rafraîchie.");
+        self::assertSame('Perl', $perl->getName(), "L'instance écartée par le critère a été rafraîchie.");
+        self::assertTrue($this->entityManager->contains($perl), "L'instance écartée par le critère a été détachée.");
+    }
+
+    /**
+     * `forUpdate` verrouille les lignes rendues, et elles seules ; sans lui,
+     * la relecture par critère ne verrouille rien.
+     */
+    public function testRowsMatchingForUpdateLocksTheRowsReturnedOnly(): void
+    {
+        $php = $this->storedTechnology('PHP');
+        $perl = $this->storedTechnology('Perl');
+        $connection = $this->entityManager->getConnection();
+        $probe = self::openProbeBeside($connection);
+        $onlyPhp = static function (QueryBuilder $query, string $alias): void {
+            $query->andWhere($alias.'.name = :name')->setParameter('name', 'PHP');
+        };
+
+        try {
+            $connection->beginTransaction();
+            $this->reread()->rowsMatching($this->entityManager, ExperienceTechnology::class, $onlyPhp, forUpdate: false);
+            self::assertTrue($this->probeCanLockTheRow($probe, 'experience_technology', $php->getId()), 'Une relecture simple a verrouillé la ligne.');
+
+            $this->reread()->rowsMatching($this->entityManager, ExperienceTechnology::class, $onlyPhp, forUpdate: true);
+            self::assertFalse($this->probeCanLockTheRow($probe, 'experience_technology', $php->getId()), "La relecture FOR UPDATE n'a pas verrouillé la ligne retenue.");
+            self::assertTrue($this->probeCanLockTheRow($probe, 'experience_technology', $perl->getId()), 'La relecture FOR UPDATE a verrouillé une ligne que le critère écarte.');
+        } finally {
+            if ($connection->isTransactionActive()) {
+                $connection->rollBack();
+            }
+            $probe->close();
+        }
     }
 
     /**

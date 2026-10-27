@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace App\Mcp\Connection\Domain\Entity;
 
+use App\Mcp\Connection\Domain\ValueObject\ConnectionLifetimes;
+use App\Mcp\Connection\Domain\ValueObject\RevocationCause;
 use App\Mcp\Connection\Infrastructure\Doctrine\McpConnectionRepository;
 use App\Security\User\Domain\Entity\CpgUser;
+use App\Shared\Domain\Security\McpConnectionReference;
 use DateInterval;
 use DateTimeImmutable;
 use Doctrine\DBAL\Types\Types;
@@ -22,13 +25,42 @@ use Symfony\Component\Uid\Uuid;
  * Le compte et le client sont des clés étrangères en cascade : un compte
  * supprimé n'a plus de connexion (ni, par cascade, de code ou de jeton), un
  * client retiré n'en laisse aucune derrière lui. Le dernier usage est écrit au
- * rafraîchissement (#649), jamais à chaque appel ; la révocation, par la
- * personne, par expiration ou par réutilisation d'un jeton tourné, l'est aussi
- * par #649 — ce modèle n'en porte que les colonnes.
+ * rafraîchissement (#649, {@see self::recordUseAt()}), au plus une fois par
+ * heure écoulée, jamais à chaque appel.
+ *
+ * **Une connexion se révoque par le dépôt seulement** (#649,
+ * {@see \App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface::revokeActive()}) :
+ * ce modèle n'a aucun mutateur de `revokedAt` ni de `revocationCause`. La
+ * révocation est une instruction SQL, `UPDATE … WHERE revoked_at IS NULL` : la
+ * base fait de la première la seule (instant et cause gardés), sans lecture
+ * préalable qu'une révocation concurrente rendrait fausse, et elle tient
+ * après une transaction annulée qui a fermé l'EntityManager — c'est là que
+ * league constate un rafraîchissement réutilisé ou un code rejoué, et l'unité
+ * de travail n'y écrit plus rien. Une instance déjà chargée n'est pas
+ * rafraîchie. La base refuse un instant sans cause et une cause sans instant
+ * (`chk_mcp_connection_revocation_cause`).
+ *
+ * **Révoquer une connexion ne touche pas les lignes de ses codes et jetons**
+ * (décision 6 de #649) : tout lecteur juge la connexion
+ * ({@see self::isRevoked()} — l'authentificateur de `/api/mcp`, les dépôts de
+ * league), et `revoked_at` d'un code ou d'un jeton garde son seul sens,
+ * l'usage unique d'un code et la rotation d'un rafraîchissement — c'est ce qui
+ * permet de reconnaître la réutilisation d'un rafraîchissement tourné. Une
+ * seule écriture par révocation, quel que soit le nombre de jetons.
+ *
+ * L'index partiel `idx_mcp_connection_active_pair` sert la recherche de
+ * l'accord actif d'un couple compte/client, qu'un nouvel accord remplace
+ * (cause `superseded`).
+ *
+ * Un McpConnectionReference : le journal de sécurité la reçoit telle quelle
+ * (l'accord, le refus d'un de ses jetons d'accès), son compte par son UUID,
+ * son client par son identifiant public — lus sur le compte et le client
+ * qu'elle tient déjà, sans requête de plus quand ils ont été joints.
  */
 #[ORM\Entity(repositoryClass: McpConnectionRepository::class)]
 #[ORM\Table(name: 'mcp_connection')]
-class McpConnection
+#[ORM\Index(name: 'idx_mcp_connection_active_pair', columns: ['account_id', 'mcp_client_id'], options: ['where' => '(revoked_at IS NULL)'])]
+class McpConnection implements McpConnectionReference
 {
     /**
      * Le seul scope qu'une connexion accorde (spec 0007 phase 2) : lire le
@@ -38,22 +70,12 @@ class McpConnection
     public const string SCOPE_NOMINATIVE_READ = 'nominative:read';
 
     /**
-     * Délai d'inactivité (`DateInterval`) : une connexion inutilisée pendant
-     * 30 jours expire, comptés depuis son dernier usage, ou depuis l'octroi
-     * tant qu'aucun usage n'est écrit. Des jours de calendrier, comme la
-     * durée d'un jeton de rafraîchissement (`P30D`).
-     *
-     * Une constante du domaine jusqu'à #649, qui la passe en configuration.
+     * Le dernier usage ne se réécrit qu'une fois cette durée **écoulée**
+     * depuis le précédent (#649, {@see self::recordUseAt()}) : une heure, en
+     * temps écoulé — jamais une heure de pendule, qui vaut zéro ou deux
+     * pendant l'heure répétée du passage à l'heure d'hiver (#445).
      */
-    public const string IDLE_LIFETIME = 'P30D';
-
-    /**
-     * Durée maximale (`DateInterval`) : 90 jours après l'octroi, la connexion
-     * expire quel que soit son usage — la personne consent de nouveau.
-     *
-     * Une constante du domaine jusqu'à #649, qui la passe en configuration.
-     */
-    public const string MAX_LIFETIME = 'P90D';
+    public const string USAGE_WRITE_INTERVAL = 'PT1H';
 
     /** Spec 0003 : UUID v7 posé par le constructeur. */
     #[ORM\Id]
@@ -83,6 +105,10 @@ class McpConnection
 
     #[ORM\Column(type: Types::DATETIMETZ_IMMUTABLE, nullable: true)]
     private ?DateTimeImmutable $revokedAt = null;
+
+    /** Écrite avec `revokedAt`, par le dépôt seulement (voir la classe). */
+    #[ORM\Column(length: 32, nullable: true, enumType: RevocationCause::class)]
+    private ?RevocationCause $revocationCause = null;
 
     private function __construct(CpgUser $account, McpClient $client, string $scope, DateTimeImmutable $grantedAt)
     {
@@ -114,6 +140,24 @@ class McpConnection
         return $this->client;
     }
 
+    /** L'UUID du compte qui a consenti, forme RFC 4122 : celui de {@see self::account()}. */
+    public function accountId(): string
+    {
+        return $this->account->accountId();
+    }
+
+    /** L'UUID de la connexion : {@see self::getId()}, sous le nom que le journal de sécurité lit. */
+    public function connectionId(): Uuid
+    {
+        return $this->id;
+    }
+
+    /** L'identifiant public OAuth de son client (`mcp_client.client_id`). */
+    public function clientId(): string
+    {
+        return $this->client->getClientId();
+    }
+
     public function scope(): string
     {
         return $this->scope;
@@ -140,6 +184,31 @@ class McpConnection
         return $this->lastUsedAt;
     }
 
+    /**
+     * Note l'usage de la connexion à l'instant `$at` — au rafraîchissement
+     * seulement, jamais à chaque appel de `/api/mcp` (ADR 0006 D6) — et dit
+     * si l'instant a été écrit : il l'est quand aucun usage n'est encore noté,
+     * ou quand {@see self::USAGE_WRITE_INTERVAL} s'est écoulé depuis le
+     * précédent ; sinon le précédent reste, et rien n'est à sauver. C'est ce
+     * qui borne les écritures d'un client qui rafraîchirait sans cesse à une
+     * par heure, au prix d'un délai d'inactivité compté depuis un usage vieux
+     * d'au plus une heure.
+     *
+     * L'intervalle est construit (`new DateInterval`), ajouté en temps écoulé,
+     * et les instants se comparent entre eux, quel que soit leur fuseau : un
+     * usage lu en base porte un décalage fixe, l'instant jugé celui de Paris.
+     */
+    public function recordUseAt(DateTimeImmutable $at): bool
+    {
+        if (null !== $this->lastUsedAt && $this->lastUsedAt->add(new DateInterval(self::USAGE_WRITE_INTERVAL)) > $at) {
+            return false;
+        }
+
+        $this->lastUsedAt = $at;
+
+        return true;
+    }
+
     public function revokedAt(): ?DateTimeImmutable
     {
         return $this->revokedAt;
@@ -150,29 +219,49 @@ class McpConnection
         return null !== $this->revokedAt;
     }
 
+    /** Pourquoi la connexion a été révoquée ; `null` tant qu'elle ne l'est pas. */
+    public function revocationCause(): ?RevocationCause
+    {
+        return $this->revocationCause;
+    }
+
     /**
-     * La connexion a-t-elle expiré à l'instant `$now` ? Deux échéances, la
+     * La connexion a-t-elle expiré à l'instant `$now` ? **La seule définition
+     * de l'échéance** (#649) : deux échéances de ConnectionLifetimes, la
      * première atteinte l'emporte, et chacune est exclusive (atteinte à la
      * seconde près, la connexion est morte) :
      *
-     * - le délai d'inactivité, {@see self::IDLE_LIFETIME} après
+     * - l'inactivité : {@see ConnectionLifetimes::idleDeadline()} de
      *   `lastUsedAt ?? grantedAt` ;
-     * - la durée maximale, {@see self::MAX_LIFETIME} après `grantedAt`.
+     * - la durée maximale : {@see ConnectionLifetimes::maximumDeadline()} de
+     *   `grantedAt`.
      *
-     * `lastUsedAt` n'est écrit qu'au rafraîchissement, à partir de #649 —
-     * jamais à chaque appel (ADR 0006 D6). D'ici là il reste nul, et une
-     * connexion meurt 30 jours après l'octroi même utilisée chaque jour :
-     * accepté, la phase 2 ne sort qu'entière.
+     * Des échéances, jamais des seuils (`$now` moins la durée) : une échéance
+     * ne dépend que de la connexion, l'expiration est donc monotone — morte à
+     * un instant, morte à tout instant suivant. Un seuil reculait d'une heure
+     * pendant l'heure répétée du passage à l'heure d'hiver, et la connexion
+     * revivait (relecture de la tâche 1). La purge (#649) présélectionnera ses
+     * candidates en SQL puis jugera chacune ici : une seule définition.
      *
-     * Les durées s'ajoutent par `add(new DateInterval(…))`, jamais par
-     * `modify()` (règle des durées écoulées, #445). La révocation n'est pas
-     * une expiration : {@see self::isRevoked()} se lit à part.
+     * Les jours se comptent sur le calendrier du fuseau de `$now` (721 heures
+     * pour 30 jours à Paris à travers le passage à l'heure d'hiver), jamais par
+     * `modify()` (#445) : les instants y sont ramenés avant l'ajout, car
+     * Doctrine hydrate une colonne `datetimetz_immutable` avec un décalage fixe
+     * (`+02:00`), sur lequel 30 jours dureraient 720 heures — une connexion lue
+     * en base n'expirerait pas à la même seconde qu'une connexion en mémoire.
+     * L'horloge rend toujours le même fuseau : l'échéance reste fixe.
+     *
+     * `lastUsedAt` n'est écrit qu'au rafraîchissement, par
+     * {@see self::recordUseAt()} — jamais à chaque appel (ADR 0006 D6). La
+     * révocation n'est pas une expiration : {@see self::isRevoked()} se lit à
+     * part.
      */
-    public function isExpiredAt(DateTimeImmutable $now): bool
+    public function isExpiredAt(DateTimeImmutable $now, ConnectionLifetimes $lifetimes): bool
     {
-        $idleDeadline = ($this->lastUsedAt ?? $this->grantedAt)->add(new DateInterval(self::IDLE_LIFETIME));
-        $maxDeadline = $this->grantedAt->add(new DateInterval(self::MAX_LIFETIME));
+        $zone = $now->getTimezone();
+        $lastActivity = ($this->lastUsedAt ?? $this->grantedAt)->setTimezone($zone);
 
-        return $now >= $idleDeadline || $now >= $maxDeadline;
+        return $now >= $lifetimes->idleDeadline($lastActivity)
+            || $now >= $lifetimes->maximumDeadline($this->grantedAt->setTimezone($zone));
     }
 }

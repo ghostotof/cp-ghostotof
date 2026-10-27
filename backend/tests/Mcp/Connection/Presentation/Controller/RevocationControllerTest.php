@@ -7,11 +7,9 @@ namespace App\Tests\Mcp\Connection\Presentation\Controller;
 use App\Mcp\Connection\Application\OAuthEndpoints;
 use App\Mcp\Connection\Domain\Repository\McpAccessTokenRepositoryInterface;
 use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
-use App\Mcp\Connection\Domain\Repository\McpRefreshTokenRepositoryInterface;
 use App\Mcp\Connection\Infrastructure\League\AccessTokenRepository;
 use App\Mcp\Connection\Infrastructure\League\ConnectionOfToken;
 use App\Mcp\Connection\Infrastructure\League\OAuthEncryptionKey;
-use App\Mcp\Connection\Infrastructure\League\RefreshTokenRepository;
 use App\Tests\Mcp\Connection\DrivesTheOAuthFlow;
 use App\Tests\Support\ReadsSecurityAuditLog;
 use App\Tests\Support\TestKeys;
@@ -26,16 +24,16 @@ use Symfony\Component\HttpFoundation\Response;
  * Le point de révocation OAuth de la connexion MCP (#647, RFC 7009),
  * `POST /api/oauth/revoke`, de bout en bout par HTTP.
  *
- * - Un jeton d'accès révoque sa ligne ; un jeton de rafraîchissement, lu
- *   sous la clé dérivée de league, révoque la sienne et le jeton d'accès
- *   émis avec lui.
+ * - Un jeton d'accès révoque sa ligne, et elle seule : la connexion reste
+ *   active. Un jeton de rafraîchissement, lu sous la clé dérivée de league,
+ *   révoque la sienne, le jeton d'accès émis avec lui **et sa connexion**
+ *   (#649, RFC 7009 §2.1), cause `client`, auditée une fois.
  * - Un jeton inconnu, illisible ou émis à un autre client : 200 sans effet
  *   (RFC 7009 §2.2), la même réponse qu'un succès — rien ne dit à l'appelant
  *   qu'un jeton existe.
  * - `token` manquant : 400 `invalid_request` ; `client_id` manquant ou
  *   inconnu : 401 `invalid_client`. Le JSON de RFC 6749, jamais un
  *   problem+json.
- * - La connexion elle-même n'est pas révoquée ici (#649, #650).
  */
 final class RevocationControllerTest extends WebTestCase
 {
@@ -43,6 +41,8 @@ final class RevocationControllerTest extends WebTestCase
     use ReadsSecurityAuditLog;
 
     private const string REVOKE_PATH = '/api/oauth/revoke';
+
+    private const string REVOKED_EVENT = 'mcp-connection-revoked';
 
     protected function setUp(): void
     {
@@ -63,26 +63,79 @@ final class RevocationControllerTest extends WebTestCase
 
         $this->assertRevocationAccepted($response);
         self::assertTrue($this->accessTokens()->isAccessTokenRevoked($tokens['access_token']));
-        self::assertFalse($this->refreshTokens()->isRefreshTokenRevoked($this->refreshTokenIdentifier($tokens['refresh_token'])));
-        self::assertSame(0, $this->countRows('SELECT COUNT(*) FROM mcp_connection WHERE revoked_at IS NOT NULL'));
+        self::assertFalse($this->refreshTokenRowIsRevoked($tokens['refresh_token']));
+        // RFC 7009 §2.1 permet seulement de couper le reste : le client garde
+        // sa connexion, et son rafraîchissement lui obtiendra un autre jeton.
+        $this->assertConnectionActive();
+        self::assertSame([], self::securityAuditEvents(self::REVOKED_EVENT));
     }
 
     /**
-     * Le jeton de rafraîchissement et son jeton d'accès : révoqués tous deux,
-     * et le rafraîchissement refusé ensuite au point de jeton.
+     * Le jeton de rafraîchissement et son jeton d'accès révoqués tous deux, et
+     * la connexion avec eux (#649, décision 3 : RFC 7009 §2.1, un
+     * rafraîchissement rendu révoque l'autorisation qu'il porte), cause
+     * `client`, une ligne d'audit lue sur la requête qui l'écrit — le compte
+     * par son UUID, la connexion, le client public, jamais un jeton.
+     *
+     * Le rafraîchissement révoqué qui revient ensuite est un `invalid_grant`
+     * sur une connexion déjà révoquée : ni seconde ligne, ni changement de
+     * cause — ce n'est pas une réutilisation, que seul un jeton tourné sur une
+     * connexion encore active peut être.
      */
-    public function testRevokingARefreshTokenRevokesItAndItsAccessToken(): void
+    public function testRevokingARefreshTokenRevokesItsConnection(): void
     {
         $tokens = $this->issuedTokens();
+        [$connectionId, $accountId] = $this->theConnection();
 
         $response = $this->revoke(['token' => $tokens['refresh_token'], 'client_id' => self::CLIENT_ID]);
 
         $this->assertRevocationAccepted($response);
-        self::assertTrue($this->refreshTokens()->isRefreshTokenRevoked($this->refreshTokenIdentifier($tokens['refresh_token'])));
+        $event = self::singleSecurityAuditEvent(self::REVOKED_EVENT);
+        self::assertSame($accountId, $event['userId'] ?? null);
+        self::assertSame($connectionId, $event['connectionId'] ?? null);
+        self::assertSame(self::CLIENT_ID, $event['clientId'] ?? null);
+        self::assertSame('client', $event['cause'] ?? null);
+        $context = json_encode($event, \JSON_THROW_ON_ERROR);
+        foreach ($tokens as $secret) {
+            // Ni l'aiguille ni la meule dans le message d'échec : un échec
+            // publierait le secret dans le journal de la CI.
+            self::assertFalse(str_contains($context, $secret), 'La ligne d\'audit cite un jeton.');
+        }
+
+        self::assertTrue($this->refreshTokenRowIsRevoked($tokens['refresh_token']));
         self::assertTrue($this->accessTokens()->isAccessTokenRevoked($tokens['access_token']));
-        self::assertSame(0, $this->countRows('SELECT COUNT(*) FROM mcp_connection WHERE revoked_at IS NOT NULL'));
+        self::assertSame('client', $this->revocationCause());
+        $revokedAt = $this->revokedAtEpoch();
 
         $this->assertOAuthError($this->refresh($tokens['refresh_token']), Response::HTTP_BAD_REQUEST, 'invalid_grant');
+        self::assertSame([], self::securityAuditEvents(self::REVOKED_EVENT));
+        self::assertSame('client', $this->revocationCause());
+        self::assertSame($revokedAt, $this->revokedAtEpoch());
+    }
+
+    /**
+     * Un rafraîchissement **déjà tourné** rendu au point de révocation, sa
+     * connexion encore active : le même signal qu'une réutilisation au point
+     * de jeton (décision 3 — sur une connexion active, un rafraîchissement
+     * révoqué ne peut venir que d'une rotation). La connexion est révoquée
+     * pour réutilisation, cause `refresh-token-reuse`, une ligne d'audit ; la
+     * réponse reste le 200 de RFC 7009 §2.2, qui ne dit rien de plus.
+     */
+    public function testRevokingAnAlreadyRotatedRefreshTokenIsAuditedAsReuse(): void
+    {
+        $tokens = $this->issuedTokens();
+        [$connectionId] = $this->theConnection();
+        $refreshed = $this->refresh($tokens['refresh_token']);
+        self::assertSame(Response::HTTP_OK, $refreshed->getStatusCode(), substr((string) $refreshed->getContent(), 0, 500));
+        $this->assertConnectionActive();
+
+        $response = $this->revoke(['token' => $tokens['refresh_token'], 'client_id' => self::CLIENT_ID]);
+
+        $this->assertRevocationAccepted($response);
+        $event = self::singleSecurityAuditEvent(self::REVOKED_EVENT);
+        self::assertSame($connectionId, $event['connectionId'] ?? null);
+        self::assertSame('refresh-token-reuse', $event['cause'] ?? null);
+        self::assertSame('refresh-token-reuse', $this->revocationCause());
     }
 
     /** Le `token_type_hint` est lu comme une indication, jamais comme une règle (RFC 7009 §2.1). */
@@ -120,6 +173,8 @@ final class RevocationControllerTest extends WebTestCase
 
         $this->assertRevocationAccepted($response);
         $this->assertNothingRevoked();
+        $this->assertConnectionActive();
+        self::assertSame([], self::securityAuditEvents(self::REVOKED_EVENT));
     }
 
     /**
@@ -325,6 +380,49 @@ final class RevocationControllerTest extends WebTestCase
         self::assertSame(0, $this->countRows('SELECT COUNT(*) FROM mcp_connection WHERE revoked_at IS NOT NULL'));
     }
 
+    /**
+     * L'identifiant de la seule connexion du test et celui de son compte,
+     * en RFC 4122, tels que la ligne d'audit les écrit.
+     *
+     * @return array{string, string}
+     */
+    private function theConnection(): array
+    {
+        $rows = self::getContainer()->get(EntityManagerInterface::class)->getConnection()
+            ->fetchAllNumeric('SELECT id, account_id FROM mcp_connection');
+        self::assertCount(1, $rows);
+        [$connectionId, $accountId] = $rows[0];
+        self::assertIsString($connectionId);
+        self::assertIsString($accountId);
+
+        return [$connectionId, $accountId];
+    }
+
+    /** La seule connexion du test est active : ni instant, ni cause de révocation. */
+    private function assertConnectionActive(): void
+    {
+        self::assertSame(1, $this->countRows('SELECT COUNT(*) FROM mcp_connection WHERE revoked_at IS NULL AND revocation_cause IS NULL'));
+    }
+
+    private function revocationCause(): ?string
+    {
+        $cause = self::getContainer()->get(EntityManagerInterface::class)->getConnection()
+            ->fetchOne('SELECT revocation_cause FROM mcp_connection');
+        self::assertTrue(null === $cause || \is_string($cause));
+
+        return $cause;
+    }
+
+    /** L'instant de révocation de la seule connexion, en secondes : la première révocation le garde. */
+    private function revokedAtEpoch(): ?int
+    {
+        $epoch = self::getContainer()->get(EntityManagerInterface::class)->getConnection()
+            ->fetchOne('SELECT EXTRACT(EPOCH FROM revoked_at)::bigint FROM mcp_connection');
+        self::assertTrue(null === $epoch || \is_int($epoch));
+
+        return $epoch;
+    }
+
     /** L'identifiant que la charge chiffrée du jeton de rafraîchissement porte. */
     private function refreshTokenIdentifier(string $refreshToken): string
     {
@@ -335,9 +433,9 @@ final class RevocationControllerTest extends WebTestCase
     }
 
     /**
-     * Les dépôts de league, tels que le serveur les lit, sur un EntityManager
-     * vidé : une révocation écrite en DQL par la requête n'est vue qu'après un
-     * `clear()`.
+     * Le dépôt des jetons d'accès de league, tel que le serveur le lit, sur un
+     * EntityManager vidé : une révocation écrite en DQL par la requête n'est
+     * vue qu'après un `clear()`.
      */
     private function accessTokens(): AccessTokenRepository
     {
@@ -351,15 +449,18 @@ final class RevocationControllerTest extends WebTestCase
         );
     }
 
-    private function refreshTokens(): RefreshTokenRepository
+    /**
+     * La ligne du rafraîchissement, par l'empreinte de l'identifiant que sa
+     * charge porte : révoquée ou non. Lue en SQL plutôt que par le dépôt de
+     * league, dont le jugement (#649) se fait sous le verrou de la connexion
+     * et lit un rafraîchissement révoqué sur une connexion active comme une
+     * réutilisation.
+     */
+    private function refreshTokenRowIsRevoked(string $refreshToken): bool
     {
-        self::getContainer()->get(EntityManagerInterface::class)->clear();
-
-        return new RefreshTokenRepository(
-            self::getContainer()->get(McpRefreshTokenRepositoryInterface::class),
-            self::getContainer()->get(McpAccessTokenRepositoryInterface::class),
-            new ConnectionOfToken(self::getContainer()->get(McpConnectionRepositoryInterface::class)),
-            self::getContainer()->get(ClockInterface::class),
+        return 1 === $this->countRows(
+            'SELECT COUNT(*) FROM mcp_refresh_token WHERE token_hash = :hash AND revoked_at IS NOT NULL',
+            ['hash' => hash('sha256', $this->refreshTokenIdentifier($refreshToken))],
         );
     }
 }

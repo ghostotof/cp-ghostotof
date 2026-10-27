@@ -9,13 +9,14 @@ use App\Security\User\Application\CpgUserInviterInterface;
 use App\Security\User\Application\CpgUserRegistrarInterface;
 use App\Security\User\Application\PendingInvitationPurgerInterface;
 use App\Security\User\Domain\Entity\CpgUser;
+use App\Shared\Domain\ValueObject\RetentionPeriod;
 use App\Tests\Mcp\Support\HoldsAnMcpConnection;
 use App\Tests\Mcp\Support\SpeaksMcp;
 use App\Tests\Support\HttpJson;
 use App\Tests\Support\InvitesUsers;
 use App\Tests\Support\ReadsAllChannelsLog;
 use App\Tests\Support\TestCredentials;
-use DateInterval;
+use DateTimeImmutable;
 use Doctrine\ORM\EntityManagerInterface;
 use Monolog\Formatter\JsonFormatter;
 use Monolog\Handler\TestHandler;
@@ -342,7 +343,7 @@ final class AccountIdentifierReachesNoLogTest extends WebTestCase
         self::getContainer()->get(EntityManagerInterface::class)->clear();
         $this->collect('invitations à purger');
 
-        $result = self::getContainer()->get(PendingInvitationPurgerInterface::class)->purge(new DateInterval('P30D'));
+        $result = self::getContainer()->get(PendingInvitationPurgerInterface::class)->purge(RetentionPeriod::fromString('30 days', new DateTimeImmutable()));
         self::assertCount(1, $result->purged);
         self::assertCount(1, $result->skipped);
         $this->collect('purge');

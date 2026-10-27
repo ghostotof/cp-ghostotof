@@ -23,7 +23,8 @@ use Symfony\Component\HttpFoundation\Response;
  *  - {@see self::holdMcpConnection()} rend la connexion
  *    ({@see HeldMcpConnection} : jeton, compte, connexion, client), les
  *    cookies du site vidés — le client MCP ne présente que son jeton ;
- *    {@see self::holdAnotherMcpConnection()} une seconde, du même compte ;
+ *    {@see self::holdAnotherMcpConnection()} une seconde, du même compte à
+ *    un autre client ;
  *    {@see self::heldMcpConnectionOf()} la lit dans la réponse du point de
  *    jeton, pour un test qui traverse lui-même les étapes du parcours ;
  *  - {@see self::bearer()} donne l'en-tête `Authorization` à passer en
@@ -57,13 +58,17 @@ trait HoldsAnMcpConnection
      * Une seconde connexion du compte de confiance de
      * {@see self::holdMcpConnection()}, appelé avant : le même compte se
      * reconnecte au site et consent une seconde fois — une autre ligne
-     * `mcp_connection`, un autre jeton.
+     * `mcp_connection`, un autre jeton. **À un autre client**
+     * (OTHER_CLIENT_ID) : un second accord au même client remplacerait le
+     * premier (#649, décision 2), et les deux connexions ne seraient plus
+     * actives ensemble.
      */
     private function holdAnotherMcpConnection(): HeldMcpConnection
     {
         $this->signInAs(self::TRUSTED_USERNAME, TestCredentials::superPassword());
+        $otherClient = ['client_id' => self::OTHER_CLIENT_ID];
 
-        return $this->heldMcpConnectionOf($this->exchange($this->codeGrantedByTheSignedInAccount()));
+        return $this->heldMcpConnectionOf($this->exchange($this->codeGrantedByTheSignedInAccount($otherClient), $otherClient));
     }
 
     /**
@@ -126,7 +131,7 @@ trait HoldsAnMcpConnection
 
     /**
      * Altère la ligne de la connexion : `$assignments` est la clause `SET`
-     * (`revoked_at = now()`, `granted_at = granted_at - INTERVAL '91 days'`).
+     * (`revoked_at = now(), revocation_cause = 'client'`, `granted_at = granted_at - INTERVAL '91 days'`).
      */
     private function alterHeldConnection(HeldMcpConnection $held, string $assignments): void
     {

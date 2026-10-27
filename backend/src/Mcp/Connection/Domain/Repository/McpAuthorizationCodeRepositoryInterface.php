@@ -6,6 +6,7 @@ namespace App\Mcp\Connection\Domain\Repository;
 
 use App\Mcp\Connection\Domain\Entity\McpAuthorizationCode;
 use DateTimeImmutable;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * Les codes d'autorisation des connexions MCP, désignés par leur seule
@@ -20,8 +21,23 @@ interface McpAuthorizationCodeRepositoryInterface
      */
     public function add(McpAuthorizationCode $code): void;
 
-    /** Le code, avec sa connexion, par l'empreinte SHA-256 de son identifiant. */
+    /**
+     * Le code, avec sa connexion, par l'empreinte SHA-256 de son identifiant,
+     * tel que l'EntityManager le tient : une instance déjà chargée n'est pas
+     * rafraîchie — la relecture sous verrou est rereadUnderConnectionLock().
+     */
     public function findOneByHash(string $codeHash): ?McpAuthorizationCode;
+
+    /**
+     * Le code relu **sous le verrou de sa connexion**, que l'appelant tient
+     * (McpConnectionRepositoryInterface::lockForUpdate()), pour la transaction
+     * en cours (#649) : la relecture sous verrou du projet, une instance déjà
+     * chargée rafraîchie sur place — l'échange qu'une requête concurrente a
+     * validé pendant l'attente se voit —, `null` si la ligne a disparu
+     * (l'instance périmée détachée, #560). Ne verrouille rien elle-même : le
+     * verrou est celui de la connexion.
+     */
+    public function rereadUnderConnectionLock(Uuid $codeId): ?McpAuthorizationCode;
 
     /**
      * Révoque en base le code de cette empreinte, s'il ne l'est pas déjà : la
@@ -29,4 +45,13 @@ interface McpAuthorizationCodeRepositoryInterface
      * une erreur. Une instance déjà chargée n'est pas rafraîchie.
      */
     public function revokeByHash(string $codeHash, DateTimeImmutable $at): void;
+
+    /**
+     * Supprime les codes morts (#649, la purge quotidienne) : échus
+     * (`expires_at <= $now`), ou d'une connexion révoquée. Un code échangé
+     * (révoqué) mais non échu d'une connexion active reste : sa ligne est ce
+     * qui fait reconnaître un rejeu dans ses dix minutes. Rend le nombre de
+     * lignes supprimées.
+     */
+    public function deleteDead(DateTimeImmutable $now): int;
 }

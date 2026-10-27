@@ -32,8 +32,9 @@ paths:
   `League\OAuth2\Server\AuthorizationServer`, declared in `config/services.yaml` by that factory (a test
   alias, `test.oauth.authorization_server`, reads the very definition). **Order matters**: the default
   scope and `revokeRefreshTokens(true)` are **copied** into each grant by `enableGrantType()`, so they are
-  set first. Durations live there only: code `PT10M`, access token `PT1H`, refresh token `P30D` (rotation,
-  reuse and expiry of the connection are #649's). Layers: `Domain/` (entities `McpClient`,
+  set first. Its durations (code, access token, refresh token) are read from `ConnectionLifetimes`, in
+  configuration since #649: where they live, why without `%env()%`, the connection's expiry, rotation and
+  reuse are in `.claude/rules/mcp-oauth-cycle-de-vie.md`. Layers: `Domain/` (entities `McpClient`,
   `McpConnection`, `McpAuthorizationCode`, `McpAccessToken`, `McpRefreshToken`, the value objects
   `RedirectUri`, `McpClientId`, `McpClientName`, `TokenHashShape`), `Application/` (validator, consent, token
   endpoint, URLs, the port `AuthenticationInstantInterface`, the pure helpers `QueryParameterPollution`,
@@ -144,8 +145,9 @@ paths:
   unreadable or of another client is a 200 without effect (RFC 7009 §2.2). **Revoking a refresh token kills its
   access token** too, in one transaction (§2.1's SHOULD); **revoking an access token leaves its refresh token
   alive** (§2.1 only says MAY): a client handing back its access token alone can still refresh
-  (`RevocationControllerTest::testRevokingAnAccessTokenRevokesItsRowOnly`). The connection
-  is **not** revoked (#649); revoking a whole connection, every token with it, is #650.
+  (`RevocationControllerTest::testRevokingAnAccessTokenRevokesItsRowOnly`). **Revoking a refresh
+  token revokes its connection** too, cause `client` (#649): `.claude/rules/mcp-oauth-cycle-de-vie.md`, « Revoking a
+  refresh token at the revocation endpoint revokes its connection »; revoking a connection from the site is #650.
   `token_type_hint` is ignored. **Accepted**: the response time differs with the token's fate (one query,
   one decryption), status and body do not. **The token endpoint is atomic** (`TokenEndpoint`): league runs
   inside `TransactionInterface` — it writes in several steps (the exchange: access token, refresh token, then
@@ -160,9 +162,12 @@ paths:
   code's payload (no `refresh_token_id`) reached league's read as a `TypeError`, a 500 at will; the payload's
   exact shape is checked before league's validation, which stays whole behind (an undecryptable one is left
   to league's own refusal; a valid one is decrypted twice, accepted). The reverse league refuses itself
-  (`auth_code_id` absent). **Known, #649's**: league's races (two simultaneous exchanges of one code, two
-  simultaneous refreshes, each reading the code or token unrevoked before the other revokes it) — the
-  transaction neither worsens nor closes them (`READ COMMITTED`); a code exchanged twice in sequence is refused.
+  (`auth_code_id` absent). **League's races are closed under the connection's row lock** (#649): a refresh is
+  judged `FOR UPDATE` on its connection, inside the token endpoint's transaction, and a rotated refresh token
+  presented again revokes the connection — the lock, the order of judgement and the two clocks are in
+  `.claude/rules/mcp-oauth-cycle-de-vie.md`, « The refresh is judged under the lock of its connection ». A code
+  exchanged twice is judged the same way, and its replay revokes the connection too — « A replayed code is judged
+  under the same lock », in the same rule.
 - **OAuth answers are league's (RFC 6749 §5.2), rendered by the controller, never thrown**:
   `ApiProblemResponseListener` / `ApiJsonErrorFormatListener` would rewrite them as problem+json, which
   OAuth clients do not read. **What the controllers render is `Cache-Control: no-store`**: the authorize
@@ -210,9 +215,10 @@ paths:
   `insufficient_scope`, so a client would refresh into the same scope — unreachable while league grants
   `nominative:read` only; to decide before any second scope) —; then `ROLE_TRUSTED` reached through
   `RoleHierarchyInterface` from the **stored** roles (`AccountNotTrusted`: a `ROLE_SUPER` without stored
-  `ROLE_TRUSTED` passes, the base tier does not). The role name is `McpConnectionPrincipal::TRUSTED_TIER`, not
-  `CpgUser::ROLE_TRUSTED`, so the context's dependency on `Security` keeps its two doors (`McpConnectionPrincipalTest`
-  compares the two). **No write per call** (no `last_used_at`, #649 writes it at refresh; `testNoRequestWritesOutsideTheMcpSessions`), and
+  `ROLE_TRUSTED` passes, the base tier does not), judged by `Infrastructure/Security/TrustedTier::reaches()`, the
+  one judge of the tier, shared with the refresh (#649, `.claude/rules/mcp-oauth-cycle-de-vie.md`). The role name
+  is `McpConnectionPrincipal::TRUSTED_TIER`, not `CpgUser::ROLE_TRUSTED`, so the context's dependency on `Security`
+  keeps its two doors (`McpConnectionPrincipalTest` compares the two). **No write per call** (no `last_used_at`, #649 writes it at refresh; `testNoRequestWritesOutsideTheMcpSessions`), and
   exactly **one query more** than the same anonymous call (`testAnAuthenticatedCallCostsExactlyOneQueryMore`). Nothing
   loads the account before that query: a join does not refresh an instance the EntityManager already manages.
   **A presented and refused token is a 401 on every request** of `/api/mcp` (the author's decision of 2026-10-24):
@@ -223,7 +229,9 @@ paths:
   cause, recorded through `ServerAnswersInterface::record()` (the call log reads it as the server's answer), built by
   `Mcp/Infrastructure/Http/UnauthorizedAnswers::refusedToken()`, shared with the deferred 401. The cause
   is named only in `McpBearerRefusedException`'s constant message (`MCP access token refused: <cause>`, never the
-  token, its hash nor a UUID), logged by the `security` channel's « Authenticator failed. »; the `AuthenticatorManager`
+  token, its hash nor a UUID), logged by the `security` channel's « Authenticator failed. », and — for a **known**
+  token (every cause but `Malformed` and `Unknown`) — in the audit line `mcp-access-token-refused` (#649,
+  `.claude/rules/mcp-oauth-cycle-de-vie.md`, « A known token refused is audited »); the `AuthenticatorManager`
   catches it, its `log_level: info` is never used (like `SubmittedPasswordTooLongException`). On success the request
   goes on as `McpConnectionUser` (`Application/McpConnectionPrincipal`, an `AccountReference`): identifier = the
   **connection**'s UUID, roles = the account's stored roles, `accountId()`, `connectionId()`, `clientId()` (public
@@ -239,8 +247,10 @@ paths:
   judge**: `ConsentService` revalidates the request through the same validator on both calls, keeping
   nothing in between; a refusal there is a 400 problem+json, never a redirect. The approval writes the
   connection and, through league, its code in one transaction (`TransactionInterface`), then the audit
-  line `mcp-connection-granted` **after** the COMMIT (`ConsentServiceTest`); a denial creates and logs
-  nothing and sends league's `access_denied`. The POST answers a 200 JSON `redirectUri`, not a 302
+  line `mcp-connection-granted` **after** the COMMIT (`ConsentServiceTest`); **it supersedes the active grant of
+  the same account and client** in that transaction, cause `superseded`, one `mcp-connection-revoked` line per
+  superseded connection after the grant's (#649: `.claude/rules/mcp-oauth-cycle-de-vie.md`, « A new grant
+  supersedes the previous one »); a denial creates, revokes and logs nothing and sends league's `access_denied`. The POST answers a 200 JSON `redirectUri`, not a 302
   (`fetch()` would follow it). `ConsentControllerTest` (base tier and non-trusted 403, anonymous 401 on the GET and
   the CSRF guard's 403 on the POST, CSRF 403 at the trusted tier, 422 without `approved`). The account is read
   by `#[CurrentUser] CpgUser`, checked rather than cast. **An approval requires a recent authentication**

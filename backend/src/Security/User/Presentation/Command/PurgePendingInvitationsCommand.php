@@ -5,10 +5,8 @@ declare(strict_types=1);
 namespace App\Security\User\Presentation\Command;
 
 use App\Security\User\Application\PendingInvitationPurgerInterface;
-use App\Security\User\Domain\Exception\InvalidPurgeRetentionException;
 use App\Shared\Domain\Exception\InvalidRetentionPeriodException;
 use App\Shared\Domain\ValueObject\RetentionPeriod;
-use DateInterval;
 use Psr\Clock\ClockInterface;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
@@ -80,18 +78,17 @@ final class PurgePendingInvitationsCommand extends Command
         $olderThan = trim($rawOlderThan);
         $dryRun = (bool) $input->getOption('dry-run');
 
-        $maxAge = $this->parseMaxAge($olderThan, $io);
+        $retention = $this->parseRetention($olderThan, $io);
 
-        if (null === $maxAge) {
+        if (null === $retention) {
             return Command::INVALID;
         }
 
         try {
-            $result = $this->purger->purge($maxAge, $dryRun);
-        } catch (InvalidPurgeRetentionException $e) {
+            $result = $this->purger->purge($retention, $dryRun);
+        } catch (InvalidRetentionPeriodException $e) {
             // Garde métier du purgeur (protège tout appelant, pas seulement
-            // cette commande) : un "--older-than" négatif ou nul avance le
-            // seuil au lieu de le reculer.
+            // cette commande) : une durée de moins d'un jour.
             $io->error($e->getMessage());
 
             return Command::INVALID;
@@ -132,14 +129,14 @@ final class PurgePendingInvitationsCommand extends Command
      * date ou dont PHP lit mal un nombre. L'ancienne lecture
      * (`createFromDateString()` après une garde `new DateTimeImmutable('-'.$x)`)
      * comptait « 36 hours » en heure murale et laissait « 3 weekdays » lever une
-     * erreur native au `sub()` du purgeur. Le plancher d'un jour reste celui de
-     * `PendingInvitationPurger::purge()`, qui retranche l'intervalle à son
-     * propre instant.
+     * erreur native au `sub()` du purgeur. Le plancher d'un jour est jugé par
+     * `PendingInvitationPurger::purge()`, à son propre instant
+     * (RetentionPeriod::thresholdAtLeastOneDayBefore()).
      */
-    private function parseMaxAge(string $olderThan, SymfonyStyle $io): ?DateInterval
+    private function parseRetention(string $olderThan, SymfonyStyle $io): ?RetentionPeriod
     {
         try {
-            return RetentionPeriod::fromString($olderThan, $this->clock->now())->interval();
+            return RetentionPeriod::fromString($olderThan, $this->clock->now());
         } catch (InvalidRetentionPeriodException $exception) {
             $io->error($exception->getMessage());
 

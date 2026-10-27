@@ -27,6 +27,8 @@ use Symfony\Component\HttpFoundation\Response;
  *   problem+json — jamais une redirection, jamais un code.
  * - L'accord crée la connexion et son code dans une transaction, puis écrit
  *   `mcp-connection-granted` au journal de sécurité ; le refus ne crée rien.
+ * - Un nouvel accord du même compte au même client remplace l'accord actif
+ *   précédent (#649, décision 2) : révoqué `superseded`, et journalisé.
  *
  * Le parcours (client, compte, demande) est celui de DrivesTheOAuthFlow.
  */
@@ -36,6 +38,9 @@ final class ConsentControllerTest extends WebTestCase
     use ReadsSecurityAuditLog;
 
     private const string PATH = self::CONSENT_PATH;
+
+    private const string GRANTED_EVENT = 'mcp-connection-granted';
+    private const string REVOKED_EVENT = 'mcp-connection-revoked';
 
     private const string PLAIN_USERNAME = 'plain';
     private const string SUPER_USERNAME = 'super';
@@ -109,7 +114,9 @@ final class ConsentControllerTest extends WebTestCase
         self::assertSame(self::CLIENT_ID, $audit['clientId'] ?? null);
         self::assertSame($account, $audit['actor'] ?? null);
         self::assertSame(self::PATH, $audit['path'] ?? null);
-        self::assertStringNotContainsString($query['code'], json_encode(self::securityAuditRecords(), \JSON_THROW_ON_ERROR));
+        // Un message qui ne cite pas le code : un échec le publierait dans le
+        // journal de la CI.
+        self::assertFalse(str_contains(json_encode(self::securityAuditRecords(), \JSON_THROW_ON_ERROR), $query['code']), 'Le journal d\'audit cite le code.');
     }
 
     /** Le refus : `access_denied` au client, `state` et `iss` compris, et rien de créé. */
@@ -211,6 +218,94 @@ final class ConsentControllerTest extends WebTestCase
 
         self::assertSame(Response::HTTP_OK, $response->getStatusCode(), substr((string) $response->getContent(), 0, 500));
         self::assertCount(1, $this->connectionRows());
+    }
+
+    /**
+     * Un second accord du même compte au même client remplace le premier
+     * (#649, décision 2) : la première connexion est révoquée, cause
+     * `superseded` ; son rafraîchissement n'obtient plus rien (`invalid_grant`,
+     * sans seconde ligne d'audit), le code de la seconde s'échange. Sur la
+     * requête du second accord, l'audit dit l'accord d'abord, puis le
+     * remplacement — ni code ni jeton dans l'une ou l'autre ligne.
+     */
+    public function testASecondGrantSupersedesTheFirstConnection(): void
+    {
+        $account = $this->loginAs(self::TRUSTED_USERNAME, [CpgUser::ROLE_TRUSTED]);
+        $issued = $this->exchange($this->codeGrantedByTheSignedInAccount());
+        self::assertSame(Response::HTTP_OK, $issued->getStatusCode(), substr((string) $issued->getContent(), 0, 500));
+        $firstRefreshToken = $this->json($issued)['refresh_token'] ?? null;
+        self::assertIsString($firstRefreshToken);
+        $firstConnectionId = $this->connectionRows()[0]['id'];
+
+        $secondCode = $this->codeGrantedByTheSignedInAccount();
+
+        $events = $this->grantAndRevocationEvents();
+        self::assertSame([self::GRANTED_EVENT, self::REVOKED_EVENT], array_column($events, 'event'));
+        $secondConnectionId = $this->activeConnectionIds()[0] ?? self::fail('Aucune connexion active après le second accord.');
+        self::assertNotSame($firstConnectionId, $secondConnectionId);
+        self::assertSame($secondConnectionId, $events[0]['connectionId'] ?? null);
+        self::assertSame($account, $events[1]['userId'] ?? null);
+        self::assertSame($firstConnectionId, $events[1]['connectionId'] ?? null);
+        self::assertSame(self::CLIENT_ID, $events[1]['clientId'] ?? null);
+        self::assertSame('superseded', $events[1]['cause'] ?? null);
+        $logged = json_encode($events, \JSON_THROW_ON_ERROR);
+        // Des messages qui ne citent pas la valeur : un échec la publierait
+        // dans le journal de la CI.
+        self::assertFalse(str_contains($logged, $secondCode), 'Le journal d\'audit cite le second code.');
+        self::assertFalse(str_contains($logged, $firstRefreshToken), 'Le journal d\'audit cite le premier rafraîchissement.');
+
+        self::assertSame([$secondConnectionId], $this->activeConnectionIds());
+        self::assertSame('superseded', $this->connectionRow($firstConnectionId)['revocation_cause']);
+
+        $this->assertOAuthError($this->refresh($firstRefreshToken), Response::HTTP_BAD_REQUEST, 'invalid_grant');
+        self::assertSame([], self::securityAuditEvents(self::REVOKED_EVENT));
+        self::assertSame('superseded', $this->connectionRow($firstConnectionId)['revocation_cause']);
+
+        $exchanged = $this->exchange($secondCode);
+        self::assertSame(Response::HTTP_OK, $exchanged->getStatusCode(), substr((string) $exchanged->getContent(), 0, 500));
+        self::assertSame([$secondConnectionId], $this->activeConnectionIds());
+    }
+
+    /**
+     * Le remplacement porte sur le couple compte/client : un accord au même
+     * compte pour un autre client laisse la première connexion active, et ne
+     * journalise aucune révocation.
+     */
+    public function testAGrantForAnotherClientLeavesTheFirstAlone(): void
+    {
+        $this->loginAs(self::TRUSTED_USERNAME, [CpgUser::ROLE_TRUSTED]);
+        $this->codeGrantedByTheSignedInAccount();
+
+        $this->codeGrantedByTheSignedInAccount(['client_id' => self::OTHER_CLIENT_ID]);
+
+        self::assertSame([self::GRANTED_EVENT], array_column($this->grantAndRevocationEvents(), 'event'));
+        self::assertCount(2, $this->activeConnectionIds());
+        self::assertSame(0, $this->countRows('SELECT COUNT(*) FROM mcp_connection WHERE revoked_at IS NOT NULL'));
+    }
+
+    /**
+     * La même décision envoyée deux fois (le réessai d'une page après un 5xx,
+     * report de T8) : deux accords, mais une seule connexion active — la
+     * seconde, dont le code part au client ; la première est remplacée.
+     */
+    public function testARetriedApprovalLeavesOneActiveConnection(): void
+    {
+        $this->loginAs(self::TRUSTED_USERNAME, [CpgUser::ROLE_TRUSTED]);
+        $this->client->request('GET', self::AUTHORIZE_PATH.'?'.http_build_query($this->validParameters()));
+        self::assertSame(Response::HTTP_FOUND, $this->client->getResponse()->getStatusCode());
+
+        $first = $this->decide(approved: true);
+        self::assertSame(Response::HTTP_OK, $first->getStatusCode(), substr((string) $first->getContent(), 0, 500));
+        $retried = $this->decide(approved: true);
+        self::assertSame(Response::HTTP_OK, $retried->getStatusCode(), substr((string) $retried->getContent(), 0, 500));
+
+        self::assertSame(2, $this->countRows('SELECT COUNT(*) FROM mcp_connection'));
+        self::assertCount(1, $this->activeConnectionIds());
+        self::assertSame(1, $this->countRows("SELECT COUNT(*) FROM mcp_connection WHERE revocation_cause = 'superseded'"));
+        $code = $this->queryOf($this->redirectUriOf($retried))['code'] ?? null;
+        self::assertIsString($code);
+        $exchanged = $this->exchange($code);
+        self::assertSame(Response::HTTP_OK, $exchanged->getStatusCode(), substr((string) $exchanged->getContent(), 0, 500));
     }
 
     /** `ROLE_SUPER` hérite du palier de confiance (`role_hierarchy`). */
@@ -382,13 +477,61 @@ final class ConsentControllerTest extends WebTestCase
     /**
      * Les connexions en base, avec l'identifiant public de leur client.
      *
-     * @return list<array{id: string, account_id: string, client_id: string, scope: string, revoked_at: string|null}>
+     * @return list<array{id: string, account_id: string, client_id: string, scope: string, revoked_at: string|null, revocation_cause: string|null}>
      */
     private function connectionRows(): array
     {
-        /** @var list<array{id: string, account_id: string, client_id: string, scope: string, revoked_at: string|null}> */
+        /** @var list<array{id: string, account_id: string, client_id: string, scope: string, revoked_at: string|null, revocation_cause: string|null}> */
         return self::getContainer()->get(EntityManagerInterface::class)->getConnection()->fetchAllAssociative(
-            'SELECT c.id, c.account_id, cl.client_id, c.scope, c.revoked_at FROM mcp_connection c INNER JOIN mcp_client cl ON cl.id = c.mcp_client_id',
+            'SELECT c.id, c.account_id, cl.client_id, c.scope, c.revoked_at, c.revocation_cause FROM mcp_connection c INNER JOIN mcp_client cl ON cl.id = c.mcp_client_id ORDER BY c.id',
         );
+    }
+
+    /**
+     * Une connexion en base, par son identifiant.
+     *
+     * @return array{id: string, account_id: string, client_id: string, scope: string, revoked_at: string|null, revocation_cause: string|null}
+     */
+    private function connectionRow(string $id): array
+    {
+        foreach ($this->connectionRows() as $row) {
+            if ($id === $row['id']) {
+                return $row;
+            }
+        }
+
+        self::fail(\sprintf('Aucune connexion %s en base.', $id));
+    }
+
+    /**
+     * Les identifiants des connexions actives (non révoquées).
+     *
+     * @return list<string>
+     */
+    private function activeConnectionIds(): array
+    {
+        return array_column(array_filter($this->connectionRows(), static fn(array $row): bool => null === $row['revoked_at']), 'id');
+    }
+
+    /**
+     * Les lignes d'accord et de révocation de la dernière requête, dans
+     * l'ordre où elles ont été écrites.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function grantAndRevocationEvents(): array
+    {
+        $events = [];
+
+        foreach (self::securityAuditRecords() as $record) {
+            /** @var array<string, mixed> $context */
+            $context = $record->context;
+
+            if (\in_array($context['event'] ?? null, [self::GRANTED_EVENT, self::REVOKED_EVENT], true)) {
+                $events[] = $context;
+            }
+        }
+
+        return $events;
     }
 }

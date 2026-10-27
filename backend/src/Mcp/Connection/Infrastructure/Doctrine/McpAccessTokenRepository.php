@@ -16,6 +16,8 @@ use Doctrine\Persistence\ManagerRegistry;
  */
 class McpAccessTokenRepository extends ServiceEntityRepository implements McpAccessTokenRepositoryInterface
 {
+    use DeletesDeadTokens;
+
     public function __construct(ManagerRegistry $registry)
     {
         parent::__construct($registry, McpAccessToken::class);

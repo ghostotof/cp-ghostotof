@@ -11,7 +11,8 @@ use Closure;
  * que l'opération écrit est validé ensemble, ou rien. L'accord d'un
  * consentement y crée la connexion et, par league, son code : jamais l'une
  * sans l'autre ; le point de jeton y émet et révoque (TokenEndpoint) ; la
- * révocation d'un rafraîchissement y emporte son jeton d'accès.
+ * révocation d'un rafraîchissement y emporte son jeton d'accès et sa
+ * connexion.
  *
  * Une interface plutôt que l'EntityManager : la couche Application ne dépend
  * pas de Doctrine (Infrastructure\Doctrine\DoctrineTransaction).

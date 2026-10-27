@@ -141,7 +141,22 @@ trait DrivesTheOAuthFlow
      */
     private function exchange(string $code, array $overrides = []): Response
     {
-        return $this->postForm(self::TOKEN_PATH, [
+        return $this->postForm(self::TOKEN_PATH, $this->exchangeParameters($code, $overrides));
+    }
+
+    /**
+     * Les paramètres de l'échange d'un code par un client honnête, ceux que
+     * {@see self::exchange()} envoie ; `$overrides` les remplace (`null`
+     * retire le paramètre). Pour un test qui présente le corps lui-même, hors
+     * HTTP (TokenEndpointConcurrencyTest), avec {@see self::formBody()}.
+     *
+     * @param array<string, string|null> $overrides
+     *
+     * @return array<string, string|null>
+     */
+    private function exchangeParameters(string $code, array $overrides = []): array
+    {
+        return [
             'grant_type' => 'authorization_code',
             'code' => $code,
             'redirect_uri' => self::LOOPBACK_REDIRECT,
@@ -149,7 +164,7 @@ trait DrivesTheOAuthFlow
             'code_verifier' => self::CODE_VERIFIER,
             'resource' => $this->resource(),
             ...$overrides,
-        ]);
+        ];
     }
 
     /**
@@ -159,12 +174,36 @@ trait DrivesTheOAuthFlow
      */
     private function refresh(string $refreshToken, array $overrides = []): Response
     {
-        return $this->postForm(self::TOKEN_PATH, [
+        return $this->postForm(self::TOKEN_PATH, self::refreshParameters($refreshToken, $overrides));
+    }
+
+    /**
+     * Les paramètres d'un rafraîchissement, ceux que {@see self::refresh()}
+     * envoie ; `$overrides` les remplace (`null` retire le paramètre).
+     *
+     * @param array<string, string|null> $overrides
+     *
+     * @return array<string, string|null>
+     */
+    private static function refreshParameters(#[SensitiveParameter] string $refreshToken, array $overrides = []): array
+    {
+        return [
             'grant_type' => 'refresh_token',
             'refresh_token' => $refreshToken,
             'client_id' => self::CLIENT_ID,
             ...$overrides,
-        ]);
+        ];
+    }
+
+    /**
+     * Le corps `application/x-www-form-urlencoded` de ces paramètres, tel que
+     * {@see self::postForm()} l'envoie (`null` retire le paramètre).
+     *
+     * @param array<string, string|null> $parameters
+     */
+    private static function formBody(array $parameters): string
+    {
+        return http_build_query(array_filter($parameters, static fn(?string $value): bool => null !== $value));
     }
 
     /**
@@ -178,7 +217,7 @@ trait DrivesTheOAuthFlow
      */
     private function postForm(string $path, array|string $parameters, array $server = []): Response
     {
-        $body = \is_string($parameters) ? $parameters : http_build_query(array_filter($parameters, static fn(?string $value): bool => null !== $value));
+        $body = \is_string($parameters) ? $parameters : self::formBody($parameters);
         parse_str($body, $parsed);
 
         $this->client->request('POST', $path, $parsed, server: ['CONTENT_TYPE' => 'application/x-www-form-urlencoded', 'HTTP_ACCEPT' => 'application/json', ...$server], content: $body);

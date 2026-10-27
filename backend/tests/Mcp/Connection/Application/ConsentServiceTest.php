@@ -17,8 +17,11 @@ use App\Mcp\Connection\Domain\Entity\McpConnection;
 use App\Mcp\Connection\Domain\Exception\AuthorizationRequestRejectedException;
 use App\Mcp\Connection\Domain\Exception\ReauthenticationRequiredException;
 use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
+use App\Mcp\Connection\Domain\ValueObject\RevocationCause;
+use App\Mcp\Connection\Domain\ValueObject\RevokedConnection;
 use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use App\Security\User\Domain\Entity\CpgUser;
+use App\Shared\Domain\Security\McpConnectionReference;
 use App\Tests\Mcp\Connection\RegisteredMcpClient;
 use Closure;
 use DateInterval;
@@ -57,8 +60,22 @@ final class ConsentServiceTest extends TestCase
     /** La connexion que le dépôt a reçue. */
     private ?McpConnection $added = null;
 
-    /** @var array{CpgUser, Uuid, string}|null les arguments de la ligne d'audit */
+    /** @var array{string, Uuid, string}|null le compte, la connexion et le client que la ligne d'audit désigne */
     private ?array $audited = null;
+
+    /**
+     * Les connexions que le dépôt dit avoir remplacées (#649, décision 2) :
+     * ce que `revokeOtherActiveOf()` rend, dans la transaction.
+     *
+     * @var list<RevokedConnection>
+     */
+    private array $superseded = [];
+
+    /** @var array{McpConnection, RevocationCause, DateTimeImmutable}|null les arguments du remplacement */
+    private ?array $supersededWith = null;
+
+    /** @var list<array{McpConnectionReference, string}> les arguments de chaque ligne `mcp-connection-revoked` */
+    private array $revokedAudits = [];
 
     /** La requête que le validateur a reçue. */
     private ?ServerRequestInterface $validated = null;
@@ -98,23 +115,28 @@ final class ConsentServiceTest extends TestCase
         $location = $this->service()->decide($this->decision(true), $this->account);
 
         self::assertSame(self::REDIRECT.'?code=c&state=s&'.http_build_query(['iss' => self::API_BASE.'/api/oauth']), $location);
-        self::assertSame(['begin', 'add', 'approve', 'commit', 'audit'], $this->effects);
+        self::assertSame(['begin', 'add', 'supersede', 'approve', 'commit', 'audit'], $this->effects);
         self::assertInstanceOf(McpConnection::class, $this->added);
         self::assertSame($this->account, $this->added->account());
         self::assertSame($this->client, $this->added->client());
         self::assertSame('nominative:read', $this->added->scope());
         self::assertSame((new DateTimeImmutable(self::GRANTED_AT))->getTimestamp(), $this->added->grantedAt()->getTimestamp());
         self::assertNotNull($this->audited);
-        [$account, $connectionId, $clientId] = $this->audited;
-        self::assertSame($this->account, $account);
+        [$accountId, $connectionId, $clientId] = $this->audited;
+        self::assertSame($this->account->accountId(), $accountId);
         self::assertTrue($this->added->getId()->equals($connectionId));
         self::assertSame(self::CLIENT_ID, $clientId);
     }
 
-    /** Un COMMIT refusé : l'exception remonte telle quelle, aucune ligne d'audit. */
+    /**
+     * Un COMMIT refusé : l'exception remonte telle quelle, aucune ligne
+     * d'audit — ni l'accord, ni le remplacement que la transaction annulée
+     * n'a jamais écrit.
+     */
     public function testARefusedCommitWritesNoAuditLine(): void
     {
         $this->commitRefused = true;
+        $this->superseded = [$this->revokedConnection()];
 
         try {
             $this->service()->decide($this->decision(true), $this->account);
@@ -123,14 +145,16 @@ final class ConsentServiceTest extends TestCase
             self::assertSame('COMMIT refusé', $failure->getMessage());
         }
 
-        self::assertSame(['begin', 'add', 'approve'], $this->effects);
+        self::assertSame(['begin', 'add', 'supersede', 'approve'], $this->effects);
         self::assertNull($this->audited);
+        self::assertSame([], $this->revokedAudits);
     }
 
     /** Un échec de league dans la transaction : il remonte, rien de journalisé non plus. */
     public function testAFailureToIssueTheCodeWritesNoAuditLine(): void
     {
         $this->approvalFailure = OAuthServerException::serverError('Could not create a unique identifier.');
+        $this->superseded = [$this->revokedConnection()];
 
         try {
             $this->service()->decide($this->decision(true), $this->account);
@@ -139,8 +163,9 @@ final class ConsentServiceTest extends TestCase
             self::assertSame($this->approvalFailure, $failure);
         }
 
-        self::assertSame(['begin', 'add', 'approve'], $this->effects);
+        self::assertSame(['begin', 'add', 'supersede', 'approve'], $this->effects);
         self::assertNull($this->audited);
+        self::assertSame([], $this->revokedAudits);
     }
 
     /** Le refus : la redirection de league, `iss` ajouté ; ni transaction, ni connexion, ni audit. */
@@ -150,6 +175,51 @@ final class ConsentServiceTest extends TestCase
 
         self::assertSame(self::REDIRECT.'?state=s&error=access_denied&'.http_build_query(['iss' => self::API_BASE.'/api/oauth']), $location);
         self::assertSame(['deny'], $this->effects);
+    }
+
+    /**
+     * Un nouvel accord remplace l'accord actif du même couple compte/client
+     * (#649, décision 2) : dans la transaction, juste après l'ajout de la
+     * nouvelle connexion, le dépôt révoque les autres — la connexion gardée
+     * est la nouvelle, la cause `superseded`, l'instant celui de l'horloge.
+     * Après le COMMIT, l'audit de l'accord d'abord, puis une ligne
+     * `mcp-connection-revoked` par connexion remplacée, avec ce que le dépôt
+     * a rendu (lu dans la ligne écrite, jamais dans une instance chargée).
+     */
+    public function testTheSupersededConnectionsAreAuditedAfterTheGrant(): void
+    {
+        $first = $this->revokedConnection();
+        $second = $this->revokedConnection();
+        $this->superseded = [$first, $second];
+
+        $this->service()->decide($this->decision(true), $this->account);
+
+        self::assertSame(['begin', 'add', 'supersede', 'approve', 'commit', 'audit', 'revoked', 'revoked'], $this->effects);
+        self::assertNotNull($this->supersededWith);
+        [$kept, $cause, $at] = $this->supersededWith;
+        self::assertSame($this->added, $kept);
+        self::assertSame(RevocationCause::Superseded, $cause);
+        self::assertSame((new DateTimeImmutable(self::GRANTED_AT))->getTimestamp(), $at->getTimestamp());
+        self::assertSame([
+            [$first, 'superseded'],
+            [$second, 'superseded'],
+        ], $this->revokedAudits);
+    }
+
+    /**
+     * Le refus ne remplace rien : aucune révocation demandée au dépôt, aucune
+     * ligne `mcp-connection-revoked` — dire non à une demande ne coupe pas la
+     * connexion que la personne a déjà accordée.
+     */
+    public function testADenialRevokesNothing(): void
+    {
+        $this->superseded = [$this->revokedConnection()];
+
+        $this->service()->decide($this->decision(false), $this->account);
+
+        self::assertSame(['deny'], $this->effects);
+        self::assertNull($this->supersededWith);
+        self::assertSame([], $this->revokedAudits);
     }
 
     /**
@@ -242,7 +312,7 @@ final class ConsentServiceTest extends TestCase
 
         $this->service()->decide($this->decision(true), $this->account);
 
-        self::assertSame(['begin', 'add', 'approve', 'commit', 'audit'], $this->effects);
+        self::assertSame(['begin', 'add', 'supersede', 'approve', 'commit', 'audit'], $this->effects);
     }
 
     /**
@@ -355,11 +425,21 @@ final class ConsentServiceTest extends TestCase
             $this->effects[] = 'add';
             $this->added = $connection;
         });
+        $connections->method('revokeOtherActiveOf')->willReturnCallback(function (McpConnection $kept, RevocationCause $cause, DateTimeImmutable $at): array {
+            $this->effects[] = 'supersede';
+            $this->supersededWith = [$kept, $cause, $at];
+
+            return $this->superseded;
+        });
 
         $auditLogger = self::createStub(SecurityAuditLoggerInterface::class);
-        $auditLogger->method('mcpConnectionGranted')->willReturnCallback(function (CpgUser $account, Uuid $connectionId, string $clientId): void {
+        $auditLogger->method('mcpConnectionGranted')->willReturnCallback(function (McpConnectionReference $connection): void {
             $this->effects[] = 'audit';
-            $this->audited = [$account, $connectionId, $clientId];
+            $this->audited = [$connection->accountId(), $connection->connectionId(), $connection->clientId()];
+        });
+        $auditLogger->method('mcpConnectionRevoked')->willReturnCallback(function (McpConnectionReference $connection, string $cause): void {
+            $this->effects[] = 'revoked';
+            $this->revokedAudits[] = [$connection, $cause];
         });
 
         return new ConsentService(
@@ -374,6 +454,12 @@ final class ConsentServiceTest extends TestCase
             new Psr17Factory(),
             $this->authenticationInstant(),
         );
+    }
+
+    /** Une connexion que le dépôt dit avoir remplacée : le même compte, le même client. */
+    private function revokedConnection(): RevokedConnection
+    {
+        return new RevokedConnection(Uuid::v7(), $this->account->getId()->toRfc4122(), self::CLIENT_ID, RevocationCause::Superseded);
     }
 
     private function authenticationInstant(): AuthenticationInstantInterface

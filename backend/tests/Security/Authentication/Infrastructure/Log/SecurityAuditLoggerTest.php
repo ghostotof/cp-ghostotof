@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace App\Tests\Security\Authentication\Infrastructure\Log;
 
+use App\Mcp\Connection\Domain\ValueObject\RevocationCause;
 use App\Security\Authentication\Infrastructure\Log\LoginIdentifierFingerprint;
 use App\Security\Authentication\Infrastructure\Log\SecurityAuditLogger;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\ValueObject\BaseAccessUser;
+use App\Tests\Security\Authentication\Fixtures\AuditedMcpConnection;
 use App\Tests\Support\TestCredentials;
 use Closure;
 use Monolog\Handler\TestHandler;
@@ -565,7 +567,7 @@ final class SecurityAuditLoggerTest extends TestCase
         $this->authenticate($account);
         $connectionId = Uuid::v7();
 
-        $this->auditLogger->mcpConnectionGranted($account, $connectionId, 'https://client.example.test/metadata.json');
+        $this->auditLogger->mcpConnectionGranted(new AuditedMcpConnection($account, $connectionId, 'https://client.example.test/metadata.json'));
 
         self::assertSame([
             'event' => 'mcp-connection-granted',
@@ -593,7 +595,7 @@ final class SecurityAuditLoggerTest extends TestCase
         $this->authenticate($account);
         $connectionId = Uuid::v7();
 
-        $this->auditLogger->nominativeCorpusRead($account, $connectionId, 'https://client.example.test/metadata.json', 'get_nominative_corpus');
+        $this->auditLogger->nominativeCorpusRead(new AuditedMcpConnection($account, $connectionId, 'https://client.example.test/metadata.json'), 'get_nominative_corpus');
 
         $record = $this->singleRecord();
         self::assertSame('Nominative corpus read.', $record->message);
@@ -607,6 +609,88 @@ final class SecurityAuditLoggerTest extends TestCase
             'ip' => self::IP,
             'path' => '/api/mcp',
         ], $record->context);
+    }
+
+    /**
+     * Connexion MCP révoquée (#649) : le compte par son UUID, la connexion par
+     * le sien, le client par son identifiant public, la cause en un mot
+     * stable. L'acteur est lu comme d'habitude : au point de jeton ou de
+     * révocation, aucun firewall n'authentifie personne, d'où `anonymous`.
+     */
+    public function testMcpConnectionRevokedNamesTheAccountTheConnectionTheClientAndTheCause(): void
+    {
+        $this->pushRequest('/api/oauth/token', 'POST');
+        $account = new CpgUser('trusted', 'hashed-password');
+        $connectionId = Uuid::v7();
+
+        $this->auditLogger->mcpConnectionRevoked(new AuditedMcpConnection($account, $connectionId, 'https://client.example.test/metadata.json'), 'refresh-token-reuse');
+
+        $record = $this->singleRecord();
+        self::assertSame('MCP connection revoked.', $record->message);
+        self::assertSame([
+            'event' => 'mcp-connection-revoked',
+            'userId' => $account->getId()->toRfc4122(),
+            'connectionId' => $connectionId->toRfc4122(),
+            'clientId' => 'https://client.example.test/metadata.json',
+            'cause' => 'refresh-token-reuse',
+            'actor' => 'anonymous',
+            'ip' => self::IP,
+            'path' => '/api/oauth/token',
+        ], $record->context);
+    }
+
+    /**
+     * Refus d'un jeton d'accès MCP connu (#649) : le compte par son UUID, la
+     * connexion, le client par son identifiant public, la cause — le mot de
+     * `BearerRefusal`. L'acteur est lu comme d'habitude : le refus a lieu
+     * avant toute authentification, d'où `anonymous`.
+     */
+    public function testMcpAccessTokenRefusedNamesTheAccountTheConnectionTheClientAndTheCause(): void
+    {
+        $this->pushRequest('/api/mcp', 'POST');
+        $account = new CpgUser('trusted', 'hashed-password');
+        $connectionId = Uuid::v7();
+
+        $this->auditLogger->mcpAccessTokenRefused(new AuditedMcpConnection($account, $connectionId, 'https://client.example.test/metadata.json'), 'connection-expired');
+
+        $record = $this->singleRecord();
+        self::assertSame('MCP access token refused.', $record->message);
+        self::assertSame([
+            'event' => 'mcp-access-token-refused',
+            'userId' => $account->getId()->toRfc4122(),
+            'connectionId' => $connectionId->toRfc4122(),
+            'clientId' => 'https://client.example.test/metadata.json',
+            'cause' => 'connection-expired',
+            'actor' => 'anonymous',
+            'ip' => self::IP,
+            'path' => '/api/mcp',
+        ], $record->context);
+    }
+
+    /**
+     * L'expiration d'une connexion MCP, constatée par la purge planifiée
+     * (#649) : le même événement que la révocation, cause `expired`, et
+     * l'acteur `system`, comme la purge des invitations — jamais le jeton de
+     * sécurité, qu'une commande n'a pas.
+     */
+    public function testMcpConnectionExpiredIsARevocationWithSystemAsActor(): void
+    {
+        $account = new CpgUser('trusted', 'hashed-password');
+        $connectionId = Uuid::v7();
+
+        $this->auditLogger->mcpConnectionExpired(new AuditedMcpConnection($account, $connectionId, 'https://client.example.test/metadata.json'));
+
+        self::assertSame([
+            'event' => 'mcp-connection-revoked',
+            'userId' => $account->getId()->toRfc4122(),
+            'connectionId' => $connectionId->toRfc4122(),
+            'clientId' => 'https://client.example.test/metadata.json',
+            // Le mot de la cause du domaine MCP, que le journal écrit sans en dépendre.
+            'cause' => RevocationCause::Expired->value,
+            'actor' => 'system',
+            'ip' => null,
+            'path' => null,
+        ], $this->singleRecord()->context);
     }
 
     /**
@@ -710,11 +794,14 @@ final class SecurityAuditLoggerTest extends TestCase
         $this->auditLogger->passwordSetupThrottled();
         $this->auditLogger->contactThrottled();
         $this->auditLogger->baseAccessThrottled();
-        $this->auditLogger->mcpConnectionGranted($invited, Uuid::v7(), 'https://client.example.test/metadata.json');
-        $this->auditLogger->nominativeCorpusRead($invited, Uuid::v7(), 'https://client.example.test/metadata.json', 'get_nominative_corpus');
+        $this->auditLogger->mcpConnectionGranted(new AuditedMcpConnection($invited, Uuid::v7(), 'https://client.example.test/metadata.json'));
+        $this->auditLogger->nominativeCorpusRead(new AuditedMcpConnection($invited, Uuid::v7(), 'https://client.example.test/metadata.json'), 'get_nominative_corpus');
+        $this->auditLogger->mcpConnectionRevoked(new AuditedMcpConnection($invited, Uuid::v7(), 'https://client.example.test/metadata.json'), 'client');
+        $this->auditLogger->mcpConnectionExpired(new AuditedMcpConnection($invited, Uuid::v7(), 'https://client.example.test/metadata.json'));
+        $this->auditLogger->mcpAccessTokenRefused(new AuditedMcpConnection($invited, Uuid::v7(), 'https://client.example.test/metadata.json'), 'token-expired');
 
         $records = $this->handler->getRecords();
-        self::assertCount(24, $records);
+        self::assertCount(27, $records);
 
         foreach ($records as $record) {
             $serialized = json_encode([$record->message, $record->context, $record->extra], \JSON_THROW_ON_ERROR);

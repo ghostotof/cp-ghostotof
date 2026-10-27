@@ -9,6 +9,7 @@ use App\Tests\Support\FlushInterleaving;
 use App\Tests\Support\PhpSources;
 use App\Tests\Support\ProcessBarrier;
 use App\Tests\Support\RepositoryFiles;
+use App\Tests\Support\SessionLockWait;
 use PhpToken;
 use PHPUnit\Framework\AssertionFailedError;
 use PHPUnit\Framework\TestCase;
@@ -45,7 +46,7 @@ final class ChildProcessHarnessTest extends TestCase
 
     private const string PROCESS_ON_COMMAND = 'new Process(ChildPhpProcess::command(';
 
-    /** Un littéral qui nomme la vue : l'attente « fini ou bloqué » de FlushInterleaving. */
+    /** Un littéral qui nomme la vue : les attentes « fini ou bloqué » et « bloqué » de SessionLockWait. */
     private const string PG_STAT_ACTIVITY = 'pg_stat_activity';
 
     /** Un écouteur de flush : celui d'entrelacement s'arme par FlushInterleaving. */
@@ -264,9 +265,10 @@ final class ChildProcessHarnessTest extends TestCase
     /**
      * Ni `flock()` hors de ProcessBarrier, ni copie de `$_SERVER` hors de
      * ChildPhpProcess, ni `new Process(ChildPhpProcess::command(…` qui
-     * oublierait l'environnement, ni écouteur de flush ou requête sur
-     * `pg_stat_activity` hors de FlushInterleaving (issue #510) : un nouveau
-     * test de concurrence passe par eux. Par jetons, comme les autres
+     * oublierait l'environnement, ni écouteur de flush hors de
+     * FlushInterleaving (issue #510), ni requête sur `pg_stat_activity` hors
+     * de SessionLockWait (lot C de #649) : un nouveau test de concurrence passe
+     * par eux. Par jetons, comme les autres
      * recenseurs ({@see PhpSources}) : un appel est un nom suivi de `(`, une
      * copie un `foreach ($_SERVER`, un écouteur une constante `preFlush`,
      * `onFlush` ou `postFlush` lue sur une classe, quel que soit son nom
@@ -286,8 +288,11 @@ final class ChildProcessHarnessTest extends TestCase
             self::FLOCK => [(string) (new ReflectionClass(ProcessBarrier::class))->getFileName()],
             self::SERVER_COPY => [(string) (new ReflectionClass(ChildPhpProcess::class))->getFileName()],
             self::PROCESS_ON_COMMAND => [(string) (new ReflectionClass(ChildPhpProcess::class))->getFileName()],
-            // Ce test-ci nomme la vue pour la chercher.
-            self::PG_STAT_ACTIVITY => [$interleaving, __FILE__],
+            // L'attente « fini ou bloqué » et l'attente « bloqué » lisent la
+            // vue dans SessionLockWait seul (FlushInterleaving et les tests
+            // d'ordre des verrous passent par lui) ; ce test-ci la nomme pour
+            // la chercher.
+            self::PG_STAT_ACTIVITY => [(string) (new ReflectionClass(SessionLockWait::class))->getFileName(), __FILE__],
             // FlushInterleavingTest vérifie que l'écouteur se retire.
             self::FLUSH_EVENT => [$interleaving, __DIR__.'/FlushInterleavingTest.php'],
         ];

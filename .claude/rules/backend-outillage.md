@@ -155,7 +155,8 @@ once, at the cost of dev CLI traces: not done, an open question of #420.
 
 A test that puts real processes in a race (`RateLimiterConcurrencyTest`, `ContributionOrderConcurrencyTest`,
 `SendAccountInvitationConcurrencyTest`, `PasswordSetupActivationConcurrencyTest`, `ReinviteConcurrencyTest`,
-`InviteUsernameConcurrencyTest`)
+`InviteUsernameConcurrencyTest`, `AccountAdministrationConcurrencyTest`, `TokenEndpointConcurrencyTest`,
+`RevocationEndpointConcurrencyTest`, `RevocationEndpointPurgeDeadlockTest`, `McpConnectionPurgeLockOrderTest`)
 goes through **one harness, written once**. `tests/Support/ChildPhpProcess::inTestEnvironment()` builds the
 child's `Process`: its command line (above) and a copy of the test's `$_SERVER`, where `phpunit.dist.xml`'s
 `<server force="true">` values live (a real `ANTHROPIC_API_KEY` exported in the shell must not reach the
@@ -180,11 +181,20 @@ given the EntityManager, the barrier, the started child and the timeout. It wait
 `ready <pid>`, arms a one-shot listener that removes itself on the first flush, releases the child, then
 returns as soon as the child has **finished** or **its** session waits on any `Lock` in `pg_stat_activity`
 (read from a separate probe connection, outside any transaction), and fails the test past the timeout.
-`tests/Shared/FlushInterleavingTest.php` exercises it on a real child (blocked on an advisory lock the test
-holds, finished, neither); `ChildProcessHarnessTest` also refuses, in `tests/`, any class constant
+**That wait is written once too, in `tests/Support/SessionLockWait`** (lot C of the #649 reviews): built
+`beside($connection, $child, $childSessionPid, $timeoutSeconds)` (its own probe connection, closed when the wait
+returns, failure included), it offers `untilDoneOrBlocked()` — `FlushInterleaving`'s — and `untilBlocked()`, for
+the lock-order tests whose operation goes through **no ORM flush** (the revocation endpoint, the purge: native SQL
+all the way, so `FlushInterleaving` cannot interleave them): the window is opened by a row the test holds `FOR
+UPDATE`, the child **must** block on it, and a child that finishes without waiting fails the wait at once — it
+raced nothing (`RevocationEndpointPurgeDeadlockTest`, `McpConnectionPurgeLockOrderTest`). Both failure messages
+quote the child's command line and output: a child reads any secret on stdin and writes none.
+`tests/Shared/FlushInterleavingTest.php` exercises the interleaving on a real child (blocked on an advisory lock
+the test holds, finished, neither); `ChildProcessHarnessTest` also refuses, in `tests/`, any class constant
 `::preFlush` / `::onFlush` / `::postFlush` (whatever the class is called: `Events`, an alias, inside an
-attribute) and any string literal naming `pg_stat_activity` outside it (plus that test, and the guard
-naming the view) — broad on purpose: a test with another use joins its pattern's owners with its reason.
+attribute) outside `FlushInterleaving` and `FlushInterleavingTest`, and any string literal naming
+`pg_stat_activity` outside its **two owners**: `SessionLockWait` and the guard itself (it names the view to look
+for it) — broad on purpose: a test with another use joins its pattern's owners with its reason.
 Not seen: a listener armed on the event's name written as a string (`'preFlush'`), a view name built by
 concatenation. The wait returns once the child has finished **whatever its exit code**: each caller checks
 it, and names the refusal it expects or denounces.
@@ -193,9 +203,36 @@ before and after the extraction: remove the **lock and keep its transaction** �
 `PostgresAccountRowLock` (#435 and #458 red on their token counts), the `pg_advisory_xact_lock` call out
 of `PostgresUsernameAllocationLock` (#364: the parent's invitation fails on the username taken meanwhile)
 or `PostgresAdvisoryOrderScopeLock` (#389) — since #512, the statement inside the adapter's `acquire`
-closure, the transaction being `PostgresLockedTransaction`'s (measured again after the extraction). Every
+closure, the transaction being `PostgresLockedTransaction`'s (measured again after the extraction) — and
+`forUpdate: false` in `McpConnectionRepository::lockForUpdate()` (#649, task 5: the lock out, the transaction
+and the re-read under `HINT_REFRESH` kept), which turns both tests of `TokenEndpointConcurrencyTest` red on
+the child's `issued 200`, then on the connection left active and on the token rows (three access tokens and
+three refresh tokens after two simultaneous refreshes of one token, two and two after two exchanges of one
+code, instead of two and two, one and one); every sequential test of `Mcp/Connection` stays green under it.
+That test's child (`tests/Mcp/Connection/Fixtures/present-at-token-endpoint.php`) presents the form body to
+`TokenEndpointInterface` in PSR-7 and **reads it on its standard input** (`Process::setInput()`), never as an
+argument: the command line is copied into the harness's failure messages, and the body carries the refresh
+token or the code; it prints the refusal's JSON (league's, no token) and only the **status** of an issued
+answer. `RevocationEndpointConcurrencyTest` (#649, task 6) is a **lock-order** test, not a lock-presence one: its
+child (`Fixtures/revoke-at-revocation-endpoint.php`, same stdin rule, prints `revoked`, the refusal's JSON or
+`failed <SQLSTATE>` — never the driver's message) revokes a refresh token while the parent rotates it, released at
+the parent's first flush with the connection locked. Its mutation is the **order**: the token rows revoked before
+the connection, without `lockForUpdate()` — measured, a deadlock, the child aborted in `40P01`, the parent served
+`200` and the connection left active. **The purge's two orders are lock-order tests as well**
+(`McpConnectionPurgeLockOrderTest`, lot C of the reviews; child `Fixtures/purge-mcp-connections.php`, which runs the
+real `McpConnectionPurgerInterface` with the configured retention, no stdin — the purge reads no secret — and prints
+`purged <connections> <codes> <access> <refresh>` or `failed <SQLSTATE>`): the test holds the other side's first row
+`FOR UPDATE`, waits for the purge's session to block (`SessionLockWait::untilBlocked()`), then asks for the second row.
+Mutation for « connections before tokens »: the `'connections' =>` line of `McpConnectionPurger::purge()` moved after
+the token `deleteDead()`s — measured, the child `failed 40P01` on the old revoked connection the test held, the test
+holding it then asking for its access token as a cascading account deletion does. Mutation for « A before R »: the
+`'accessTokens' =>` and `'refreshTokens' =>` lines swapped — measured, the child `failed 40P01` with the test holding
+the connection then its access token (the revocation endpoint's order) and asking for the refresh token. Each mutation
+reddens its own test only. Every
 test that waits on a held lock to prove the bound carries a `statement_timeout = '3s'` safety net, so
-that a mutation removing the bound (`boundTheWait()`) fails it in `57014` instead of hanging the suite. Removing `whileLocked()` from the invitation handler entirely
+that a mutation removing the bound (`boundTheWait()`) fails it in `57014` instead of hanging the suite — a
+child session that waits (a console session, so no FPM `lock_timeout`) sets it on itself before the barrier,
+as that fixture does. Removing `whileLocked()` from the invitation handler entirely
 proves nothing for #435: its flush then commits on its own before the `postFlush`, the child purges a
 committed token and the count is right. Removing the purge of unused tokens from the activation leaves
 #458's test green: with the lock, the handler waits and drops the message (« constaté sous verrou »); the

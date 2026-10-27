@@ -11,8 +11,9 @@ use DomainException;
  * lorsque l'expression relative fournie (typiquement l'option `--older-than`
  * d'une commande de purge) n'est pas un intervalle relatif PHP lisible, ne
  * décrit pas une durée strictement positive, désigne une date plutôt qu'une
- * durée, mêle des termes de signes opposés, ou place le seuil avant l'an 1.
- * Une fabrique par cause, pour un message qui la nomme.
+ * durée, mêle des termes de signes opposés, place le seuil avant l'an 1, ou —
+ * pour une purge qui l'exige — dure moins d'un jour. Une fabrique par cause,
+ * pour un message qui la nomme.
  */
 final class InvalidRetentionPeriodException extends DomainException
 {
@@ -63,6 +64,22 @@ final class InvalidRetentionPeriodException extends DomainException
     {
         return new self(\sprintf(
             'La durée de rétention "%s" est trop longue : le seuil calculé tombe avant l\'an 1.',
+            $expression,
+        ));
+    }
+
+    /**
+     * La durée est lisible et positive, mais plus courte que le plancher d'un
+     * jour qu'une purge exige ({@see \App\Shared\Domain\ValueObject\RetentionPeriod::thresholdAtLeastOneDayBefore()}) :
+     * un lancement manuel imprudent ("1 hour") supprimerait d'un coup ce que
+     * la rétention doit garder. Lot C des relectures de #649, qui remplace
+     * les deux exceptions propres aux purges des invitations et des
+     * connexions MCP.
+     */
+    public static function shorterThanOneDay(string $expression): self
+    {
+        return new self(\sprintf(
+            'La durée de rétention "%s" doit être d\'au moins un jour.',
             $expression,
         ));
     }

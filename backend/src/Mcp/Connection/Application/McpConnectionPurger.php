@@ -1,0 +1,149 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Mcp\Connection\Application;
+
+use App\Mcp\Connection\Domain\Entity\McpConnection;
+use App\Mcp\Connection\Domain\Repository\McpAccessTokenRepositoryInterface;
+use App\Mcp\Connection\Domain\Repository\McpAuthorizationCodeRepositoryInterface;
+use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
+use App\Mcp\Connection\Domain\Repository\McpRefreshTokenRepositoryInterface;
+use App\Mcp\Connection\Domain\ValueObject\ConnectionLifetimes;
+use App\Mcp\Connection\Domain\ValueObject\RevokedConnection;
+use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
+use App\Shared\Domain\ValueObject\RetentionPeriod;
+use DateInterval;
+use DateTimeImmutable;
+use Psr\Clock\ClockInterface;
+use Symfony\Component\Uid\Uuid;
+
+/**
+ * La purge quotidienne des connexions MCP et de leurs jetons (#649).
+ *
+ * **Une transaction, dans l'ordre du point de jeton** — toutes les lignes
+ * de connexion d'abord, les jetons ensuite (l'ordre inverse a été mesuré en
+ * interblocage `40P01`, tâche 6) : présélection des connexions peut-être
+ * expirées, sous verrou ; jugement de chacune par
+ * {@see McpConnection::isExpiredAt()}, la seule définition de l'échéance ;
+ * révocation de celles qu'il dit expirées (cause `expired`) ; suppression des
+ * connexions révoquées avant la rétention — une suppression verrouille ses
+ * lignes, et la placer après celle des jetons prendrait des connexions après
+ * des jetons, l'ordre qu'une suppression de compte en cascade (`cpg_user` →
+ * `mcp_connection` → jetons) croiserait ; puis suppression des codes, des
+ * jetons d'accès et des rafraîchissements morts — A avant R, l'ordre de qui
+ * touche les deux (le point de révocation, le grant de league, la cascade de
+ * la suppression d'un jeton d'accès). **L'audit suit le COMMIT** : une
+ * ligne `mcp-connection-revoked` (acteur `system`) par connexion marquée, aucune
+ * si la transaction est annulée.
+ *
+ * Tout instant vient de l'horloge (`ClockInterface::now()`, Paris) : c'est
+ * celui que juge l'authentificateur, et `isExpiredAt()` compte les jours sur
+ * le calendrier de son fuseau.
+ */
+final readonly class McpConnectionPurger implements McpConnectionPurgerInterface
+{
+    /**
+     * Marge de la présélection SQL : ses bornes (maintenant moins la durée)
+     * sont reculées d'un jour, pour qu'aucune connexion qu'`isExpiredAt()` dit
+     * expirée n'y échappe — `$now - P30D` et l'échéance `dernier usage + P30D`
+     * ne se répondent qu'à l'heure près autour d'un changement d'heure. La
+     * présélection est large, le jugement exact. C'est aussi le plancher des
+     * deux durées de connexion, que {@see ConnectionLifetimes} refuse en
+     * dessous (relecture du lot B de #649) : plus courtes que la marge, la
+     * borne serait dans le futur et chaque connexion active serait verrouillée
+     * à chaque nuit — une constante pour les deux, lue là.
+     */
+    private const string PRESELECTION_MARGIN = ConnectionLifetimes::MINIMUM_CONNECTION_LIFETIME;
+
+    public function __construct(
+        private McpConnectionRepositoryInterface $connections,
+        private McpAuthorizationCodeRepositoryInterface $authorizationCodes,
+        private McpAccessTokenRepositoryInterface $accessTokens,
+        private McpRefreshTokenRepositoryInterface $refreshTokens,
+        private TransactionInterface $transaction,
+        private ConnectionLifetimes $lifetimes,
+        private SecurityAuditLoggerInterface $auditLogger,
+        private ClockInterface $clock,
+    ) {
+    }
+
+    public function purge(RetentionPeriod $retention): McpConnectionPurgeResult
+    {
+        $now = $this->clock->now();
+        // Avant toute écriture, le plancher d'un jour de RetentionPeriod : une
+        // rétention de quelques heures supprimerait les connexions révoquées
+        // dans la journée, leur seule trace en base.
+        $threshold = $retention->thresholdAtLeastOneDayBefore($now);
+
+        $purged = $this->transaction->run(fn (): array => [
+            // La révocation d'abord : elle verrouille les connexions avant
+            // qu'une suppression touche à leurs jetons, et les jetons des
+            // connexions qu'elle marque partent dans la même transaction.
+            'expired' => $this->revokeExpired($now),
+            // Les connexions révoquées depuis la rétention, avant tout jeton :
+            // leurs lignes sont verrouillées avant qu'une suppression de jeton
+            // en verrouille une, comme partout ailleurs. Leurs jetons partent
+            // par la cascade — il n'en reste pas, en principe : ceux d'une
+            // connexion révoquée sont morts, supprimés la nuit suivante.
+            'connections' => $this->connections->deleteRevokedBefore($threshold),
+            'codes' => $this->authorizationCodes->deleteDead($now),
+            // Les jetons d'accès avant les rafraîchissements : A puis R, comme
+            // le point de révocation, le grant de rafraîchissement de league et
+            // la cascade `ON DELETE SET NULL` d'un jeton d'accès supprimé. Dans
+            // l'ordre inverse, une révocation d'un rafraîchissement sur une
+            // connexion déjà révoquée dont les jetons ne sont pas encore purgés
+            // tenait A et attendait R quand cette purge tenait R (son `DELETE`)
+            // et attendait A : un interblocage (40P01). Chaque jeton d'accès
+            // supprimé remet à NULL le lien des rafraîchissements qui lui
+            // survivent, dans un ordre comme dans l'autre — un rafraîchissement
+            // vivant dont le jeton d'accès a expiré compris. Le surcoût de A
+            // puis R sur R puis A, lui, ne touche que des lignes mortes : les
+            // rafraîchissements morts que l'instruction suivante supprime,
+            // réécrits pour rien. McpConnectionPurgeLockOrderTest pince les
+            // deux ordres de cette transaction en processus réels.
+            'accessTokens' => $this->accessTokens->deleteDead($now),
+            'refreshTokens' => $this->refreshTokens->deleteDead($now),
+        ]);
+
+        // Après le COMMIT : une transaction annulée n'a rien révoqué.
+        foreach ($purged['expired'] as $revoked) {
+            $this->auditLogger->mcpConnectionExpired($revoked);
+        }
+
+        return new McpConnectionPurgeResult(
+            expired: array_map(static fn (RevokedConnection $revoked): string => $revoked->connectionId()->toRfc4122(), $purged['expired']),
+            deletedAuthorizationCodes: $purged['codes'],
+            deletedAccessTokens: $purged['accessTokens'],
+            deletedRefreshTokens: $purged['refreshTokens'],
+            deletedConnections: $purged['connections'],
+            threshold: $threshold,
+        );
+    }
+
+    /**
+     * Présélectionne en SQL, juge en PHP, révoque ce que le jugement retient :
+     * la purge et l'authentificateur ne peuvent pas diverger sur l'échéance,
+     * fût-ce d'une seconde ou d'une heure de changement d'heure.
+     *
+     * @return list<RevokedConnection>
+     */
+    private function revokeExpired(DateTimeImmutable $now): array
+    {
+        $margin = new DateInterval(self::PRESELECTION_MARGIN);
+        $candidates = $this->connections->findActiveCandidatesForExpiry(
+            $now->sub($this->lifetimes->idle())->add($margin),
+            $now->sub($this->lifetimes->maximum())->add($margin),
+        );
+
+        $expired = array_values(array_filter(
+            $candidates,
+            fn (McpConnection $connection): bool => $connection->isExpiredAt($now, $this->lifetimes),
+        ));
+
+        return $this->connections->revokeExpired(
+            array_map(static fn (McpConnection $connection): Uuid => $connection->getId(), $expired),
+            $now,
+        );
+    }
+}

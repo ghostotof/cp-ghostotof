@@ -14,11 +14,15 @@ use App\Mcp\Connection\Domain\Repository\McpAuthorizationCodeRepositoryInterface
 use App\Mcp\Connection\Domain\Repository\McpClientRepositoryInterface;
 use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
 use App\Mcp\Connection\Domain\Repository\McpRefreshTokenRepositoryInterface;
+use App\Mcp\Connection\Domain\ValueObject\RevocationCause;
+use App\Mcp\Connection\Domain\ValueObject\RevokedConnection;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Tests\Mcp\Connection\RegisteredMcpClient;
 use DateTimeImmutable;
+use Doctrine\DBAL\Exception\DriverException;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\ORM\EntityManagerInterface;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bridge\Doctrine\Types\UuidType;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Uid\Uuid;
@@ -35,6 +39,9 @@ final class McpConnectionRepositoryTest extends KernelTestCase
 {
     /** Les tables du modèle, des feuilles vers la racine. */
     private const array TABLES = ['mcp_refresh_token', 'mcp_access_token', 'mcp_authorization_code', 'mcp_connection', 'mcp_client'];
+
+    /** SQLSTATE de PostgreSQL pour une contrainte CHECK violée. */
+    private const string CHECK_VIOLATION = '23514';
 
     private const string SCOPE = 'nominative:read';
     private const string AUDIENCE = 'https://example.test/api/mcp';
@@ -236,6 +243,219 @@ final class McpConnectionRepositoryTest extends KernelTestCase
     }
 
     /**
+     * La révocation d'une connexion (#649) : une instruction, qui rend de quoi
+     * l'auditer — la connexion, le compte par son UUID, le client par son
+     * identifiant public, la cause — et écrit l'instant et la cause en base.
+     */
+    public function testRevokeActiveRevokesOnceAndNamesTheAccountAndClient(): void
+    {
+        $account = $this->persistAccount('jane');
+        $connection = McpConnection::grant($account, $this->registerClient('https://client.example.test/metadata.json'), self::SCOPE, new DateTimeImmutable());
+        $this->connections()->add($connection);
+        $at = new DateTimeImmutable('2026-10-25T02:30:00+02:00');
+
+        $revoked = $this->connections()->revokeActive($connection->getId(), RevocationCause::Client, $at);
+
+        self::assertInstanceOf(RevokedConnection::class, $revoked);
+        self::assertTrue($connection->getId()->equals($revoked->connectionId()));
+        self::assertSame($account->getId()->toRfc4122(), $revoked->accountId());
+        self::assertSame('https://client.example.test/metadata.json', $revoked->clientId());
+        self::assertSame(RevocationCause::Client, $revoked->cause());
+        self::assertSame(
+            ['revoked_at' => $at->getTimestamp(), 'revocation_cause' => 'client'],
+            $this->revocationRow($connection),
+        );
+        $this->em->clear();
+        $found = $this->connections()->findOneById($connection->getId());
+        self::assertTrue($found?->isRevoked());
+        self::assertSame(RevocationCause::Client, $found->revocationCause());
+    }
+
+    /**
+     * La première révocation garde son instant et sa cause : une seconde,
+     * quelle qu'en soit la cause, ne révoque rien et ne rend rien à auditer.
+     */
+    public function testASecondRevocationKeepsTheFirstInstantAndCause(): void
+    {
+        $connection = $this->grantConnection();
+        $first = new DateTimeImmutable('2026-10-23T10:00:00+02:00');
+        $this->connections()->revokeActive($connection->getId(), RevocationCause::RefreshTokenReuse, $first);
+
+        $second = $this->connections()->revokeActive($connection->getId(), RevocationCause::Expired, new DateTimeImmutable('2026-10-23T11:00:00+02:00'));
+
+        self::assertNull($second);
+        self::assertSame(
+            ['revoked_at' => $first->getTimestamp(), 'revocation_cause' => 'refresh-token-reuse'],
+            $this->revocationRow($connection),
+        );
+    }
+
+    public function testAnUnknownConnectionIsNotRevoked(): void
+    {
+        $connection = $this->grantConnection();
+
+        self::assertNull($this->connections()->revokeActive(Uuid::v7(), RevocationCause::Client, new DateTimeImmutable()));
+        self::assertSame(['revoked_at' => null, 'revocation_cause' => null], $this->revocationRow($connection));
+    }
+
+    /**
+     * Une autre connexion du même compte au même client reste active : la
+     * révocation désigne une ligne par son identifiant, jamais un couple.
+     */
+    public function testRevokeActiveLeavesTheOtherConnectionsAlone(): void
+    {
+        $account = $this->persistAccount('jane');
+        $client = $this->registerClient('https://client.example.test/metadata.json');
+        $revoked = McpConnection::grant($account, $client, self::SCOPE, new DateTimeImmutable());
+        $other = McpConnection::grant($account, $client, self::SCOPE, new DateTimeImmutable());
+        $this->connections()->add($revoked);
+        $this->connections()->add($other);
+
+        $this->connections()->revokeActive($revoked->getId(), RevocationCause::Superseded, new DateTimeImmutable());
+
+        self::assertSame('superseded', $this->revocationRow($revoked)['revocation_cause']);
+        self::assertSame(['revoked_at' => null, 'revocation_cause' => null], $this->revocationRow($other));
+    }
+
+    /**
+     * Un nouvel accord remplace l'accord actif du même couple compte/client
+     * (#649, décision 2) : `revokeOtherActiveOf()` révoque, en une
+     * instruction, toute autre connexion active de ce couple — et rien
+     * d'autre : ni la connexion gardée, ni celle d'un autre client, ni celle
+     * d'un autre compte, ni une déjà révoquée, qui garde sa première
+     * révocation. Elle rend de quoi auditer chaque connexion remplacée.
+     */
+    public function testRevokeOtherActiveOfRevokesTheOtherActiveGrantsOfThePairOnly(): void
+    {
+        $account = $this->persistAccount('jane');
+        $client = $this->registerClient('https://client.example.test/metadata.json');
+        $otherClient = $this->registerClient('https://other-client.example.test/metadata.json');
+        $previous = McpConnection::grant($account, $client, self::SCOPE, new DateTimeImmutable());
+        $older = McpConnection::grant($account, $client, self::SCOPE, new DateTimeImmutable());
+        $alreadyRevoked = McpConnection::grant($account, $client, self::SCOPE, new DateTimeImmutable());
+        $ofAnotherClient = McpConnection::grant($account, $otherClient, self::SCOPE, new DateTimeImmutable());
+        $ofAnotherAccount = McpConnection::grant($this->persistAccount('john'), $client, self::SCOPE, new DateTimeImmutable());
+        $kept = McpConnection::grant($account, $client, self::SCOPE, new DateTimeImmutable());
+        foreach ([$previous, $older, $alreadyRevoked, $ofAnotherClient, $ofAnotherAccount, $kept] as $connection) {
+            $this->connections()->add($connection);
+        }
+        $firstRevocation = new DateTimeImmutable('2026-10-23T10:00:00+02:00');
+        $this->connections()->revokeActive($alreadyRevoked->getId(), RevocationCause::Client, $firstRevocation);
+        $at = new DateTimeImmutable('2026-10-25T02:30:00+02:00');
+
+        $revoked = $this->connections()->revokeOtherActiveOf($kept, RevocationCause::Superseded, $at);
+
+        $revokedIds = array_map(static fn(RevokedConnection $connection): string => $connection->connectionId()->toRfc4122(), $revoked);
+        sort($revokedIds);
+        $expectedIds = [$previous->getId()->toRfc4122(), $older->getId()->toRfc4122()];
+        sort($expectedIds);
+        self::assertSame($expectedIds, $revokedIds);
+        foreach ($revoked as $connection) {
+            self::assertSame($account->getId()->toRfc4122(), $connection->accountId());
+            self::assertSame('https://client.example.test/metadata.json', $connection->clientId());
+            self::assertSame(RevocationCause::Superseded, $connection->cause());
+        }
+        foreach ([$previous, $older] as $connection) {
+            self::assertSame(['revoked_at' => $at->getTimestamp(), 'revocation_cause' => 'superseded'], $this->revocationRow($connection));
+        }
+        self::assertSame(['revoked_at' => $firstRevocation->getTimestamp(), 'revocation_cause' => 'client'], $this->revocationRow($alreadyRevoked));
+        foreach ([$ofAnotherClient, $ofAnotherAccount, $kept] as $connection) {
+            self::assertSame(['revoked_at' => null, 'revocation_cause' => null], $this->revocationRow($connection));
+        }
+    }
+
+    /** Sans autre accord actif du couple, rien n'est révoqué ni rendu. */
+    public function testRevokeOtherActiveOfAloneRevokesNothing(): void
+    {
+        $kept = $this->grantConnection();
+
+        self::assertSame([], $this->connections()->revokeOtherActiveOf($kept, RevocationCause::Superseded, new DateTimeImmutable()));
+        self::assertSame(['revoked_at' => null, 'revocation_cause' => null], $this->revocationRow($kept));
+    }
+
+    /**
+     * La révocation est appelée après une transaction annulée (#649), dont
+     * `wrapInTransaction()` a fermé l'EntityManager : elle passe par la
+     * connexion DBAL, jamais par l'unité de travail, et tient donc encore.
+     */
+    public function testRevokeActiveWorksOnAClosedEntityManager(): void
+    {
+        $connection = $this->grantConnection();
+        $this->em->close();
+
+        $revoked = $this->connections()->revokeActive($connection->getId(), RevocationCause::CodeReplay, new DateTimeImmutable());
+
+        self::assertFalse($this->em->isOpen());
+        self::assertSame(RevocationCause::CodeReplay, $revoked?->cause());
+        self::assertSame('code-replay', $this->revocationRow($connection)['revocation_cause']);
+    }
+
+    /**
+     * Une révocation sans cause, ou une cause sans révocation, est refusée
+     * par la base elle-même : une écriture SQL qui contournerait le dépôt ne
+     * peut laisser ni l'une ni l'autre.
+     *
+     * @return iterable<string, array{string}>
+     */
+    public static function halfRevocations(): iterable
+    {
+        yield 'un instant sans cause' => ['UPDATE mcp_connection SET revoked_at = now() WHERE id = :id'];
+        yield 'une cause sans instant' => ["UPDATE mcp_connection SET revocation_cause = 'client' WHERE id = :id"];
+    }
+
+    #[DataProvider('halfRevocations')]
+    public function testTheDatabaseRefusesARevocationWithoutCause(string $update): void
+    {
+        $connection = $this->grantConnection();
+
+        try {
+            $this->em->getConnection()->executeStatement($update, ['id' => $connection->getId()], ['id' => UuidType::NAME]);
+            self::fail('La base aurait dû refuser une révocation à moitié écrite.');
+        } catch (DriverException $exception) {
+            self::assertSame(self::CHECK_VIOLATION, $exception->getSQLState(), $exception->getMessage());
+            self::assertStringContainsString('chk_mcp_connection_revocation_cause', $exception->getMessage());
+        }
+    }
+
+    /**
+     * La base n'admet que les causes de {@see RevocationCause}
+     * (`chk_mcp_connection_revocation_cause_value`, relecture du lot B de
+     * #649) : une valeur inconnue en base ferait lever `ValueError` à
+     * l'hydratation de l'énumération — un 500 à la place du 401 sur chaque
+     * lecture de la connexion. Chaque cas de l'énumération passe, une valeur
+     * hors d'elle est refusée sous le nom de la contrainte ; la cause `person`
+     * de #650 élargit la contrainte par migration **avant** d'être écrite —
+     * ajoutée à l'énumération seule, ce test la voit refusée.
+     */
+    public function testTheDatabaseAdmitsEveryRevocationCauseAndRefusesAnUnknownOne(): void
+    {
+        $id = $this->grantConnection()->getId();
+        $connection = $this->em->getConnection();
+
+        foreach (RevocationCause::cases() as $cause) {
+            $connection->beginTransaction();
+            try {
+                $written = $connection->executeStatement(
+                    'UPDATE mcp_connection SET revoked_at = now(), revocation_cause = :cause WHERE id = :id',
+                    ['cause' => $cause->value, 'id' => $id],
+                    ['id' => UuidType::NAME],
+                );
+                self::assertSame(1, $written, \sprintf('La cause « %s » est refusée par la base.', $cause->value));
+            } finally {
+                $connection->rollBack();
+            }
+        }
+
+        try {
+            $connection->executeStatement("UPDATE mcp_connection SET revoked_at = now(), revocation_cause = 'unknown-cause' WHERE id = :id", ['id' => $id], ['id' => UuidType::NAME]);
+            self::fail('La base aurait dû refuser une cause de révocation inconnue.');
+        } catch (DriverException $exception) {
+            self::assertSame(self::CHECK_VIOLATION, $exception->getSQLState(), $exception->getMessage());
+            self::assertStringContainsString('chk_mcp_connection_revocation_cause_value', $exception->getMessage());
+        }
+    }
+
+    /**
      * Le rafraîchissement survit au jeton d'accès qu'il a accompagné : la
      * purge d'un jeton d'accès expiré ne doit pas emporter la possibilité de
      * rafraîchir (`ON DELETE SET NULL`).
@@ -336,6 +556,26 @@ final class McpConnectionRepositoryTest extends KernelTestCase
         self::assertIsInt($count);
 
         return $count;
+    }
+
+    /**
+     * L'instant (en secondes) et la cause de révocation de la connexion, lus
+     * en base, hors de l'unité de travail.
+     *
+     * @return array{revoked_at: int|null, revocation_cause: string|null}
+     */
+    private function revocationRow(McpConnection $connection): array
+    {
+        $row = $this->em->getConnection()->fetchAssociative(
+            'SELECT EXTRACT(EPOCH FROM revoked_at)::bigint AS revoked_at, revocation_cause FROM mcp_connection WHERE id = :id',
+            ['id' => $connection->getId()],
+            ['id' => UuidType::NAME],
+        );
+        self::assertIsArray($row);
+        self::assertTrue(null === $row['revoked_at'] || \is_int($row['revoked_at']));
+        self::assertTrue(null === $row['revocation_cause'] || \is_string($row['revocation_cause']));
+
+        return ['revoked_at' => $row['revoked_at'], 'revocation_cause' => $row['revocation_cause']];
     }
 
     private function persistAccount(string $username): CpgUser

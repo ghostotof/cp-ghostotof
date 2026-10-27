@@ -4,8 +4,7 @@ declare(strict_types=1);
 
 namespace App\Mcp\Connection\Application;
 
-use App\Shared\Domain\Security\AccountReference;
-use Symfony\Component\Uid\Uuid;
+use App\Shared\Domain\Security\McpConnectionReference;
 
 /**
  * Ce que le firewall `mcp` a authentifié (#648, ADR 0006 D4) : une connexion
@@ -18,11 +17,14 @@ use Symfony\Component\Uid\Uuid;
  * journal d'audit (#648, tâches suivantes) lisent l'identité par `Security`
  * sans dépendre de la classe d'utilisateur du firewall
  * ({@see \App\Mcp\Connection\Infrastructure\Security\McpConnectionUser}).
- * Elle étend AccountReference : tout ce qui désigne déjà un compte par son
- * UUID (PrincipalDesignation, donc le canal `security` et `security_audit`)
- * désigne aussi le compte d'une connexion, sans rien apprendre de plus.
+ * Elle étend McpConnectionReference, donc AccountReference : tout ce qui
+ * désigne déjà un compte par son UUID (PrincipalDesignation, donc le canal
+ * `security` et `security_audit`) désigne aussi le compte d'une connexion,
+ * sans rien apprendre de plus ; la connexion (`connectionId()`) et le client
+ * (`clientId()`, son identifiant public OAuth) sont ceux que le journal de
+ * sécurité lit sur toute connexion.
  */
-interface McpConnectionPrincipal extends AccountReference
+interface McpConnectionPrincipal extends McpConnectionReference
 {
     /**
      * Le rôle du palier de confiance (ADR 0003) qu'une connexion exige de son
@@ -33,12 +35,6 @@ interface McpConnectionPrincipal extends AccountReference
      * McpConnectionPrincipalTest le compare à `CpgUser::ROLE_TRUSTED`.
      */
     public const string TRUSTED_TIER = 'ROLE_TRUSTED';
-
-    /** La connexion MCP dont le jeton présenté a été relu. */
-    public function connectionId(): Uuid;
-
-    /** L'identifiant public OAuth du client de la connexion (`mcp_client.client_id`). */
-    public function clientId(): string;
 
     /**
      * Vrai quand le scope stocké de la connexion, relu avec le jeton, accorde
