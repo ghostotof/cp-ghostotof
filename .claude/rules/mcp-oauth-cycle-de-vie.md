@@ -149,9 +149,9 @@ paths:
   league's own refusal word for word, chosen by the exception's **type** in one `match` (lot C of the reviews: no
   arm left for the causes that never arise there) — `RotatedRefreshTokenReusedException` →
   `invalidRefreshToken('Token has been revoked')`, `AuthorizationCodeReplayedException` → `invalidGrant('Authorization
-  code has been revoked')`; PHPStan does not judge a `match (true)` exhaustive (measured), so
-  `CompromisedMcpConnectionExceptionTest` lists the subclasses of `src/` and fails on a third until it has its
-  refusal —: an attacker learns nothing the refusal did not say before. **Accepted, documented, never worked around**: a client
+  code has been revoked')`; the parent is `@phpstan-sealed` on those two, so PHPStan judges the `match`
+  exhaustive (an arm removed: `match.unhandled`, measured) —: an attacker learns nothing the refusal did not say
+  before. **Accepted, documented, never worked around**: a client
   that replays its refresh after a lost answer (the network cut after the COMMIT) presents a rotated token, loses
   its connection and must reconnect — the price OAuth 2.1's rotation accepts
   (`RefreshRotationTest::testReusingARotatedRefreshTokenRevokesTheConnection`, which also reads the audit line:

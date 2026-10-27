@@ -36,11 +36,14 @@ use Symfony\Component\Uid\Uuid;
  * condition d'exécution, pas une erreur du programme : le parent est juste
  * aussi. `CompromisedMcpConnectionExceptionTest` l'épingle.
  *
- * Le point de jeton choisit le refus de league par le type de la sous-classe
- * ({@see \App\Mcp\Connection\Application\TokenEndpoint}), sans bras par défaut : une
- * nouvelle compromission s'ajoute **aussi** à ce choix —
- * `CompromisedMcpConnectionExceptionTest` recense les sous-classes de `src/`
- * et échoue sur une inconnue.
+ * Scellée sur ses deux sous-classes : le point de jeton choisit le refus de
+ * league par leur type
+ * ({@see \App\Mcp\Connection\Application\TokenEndpoint}), sans bras par
+ * défaut, et PHPStan juge ce choix exhaustif grâce au scellement (un bras
+ * retiré : `match.unhandled`, mesuré). Une nouvelle compromission s'ajoute à
+ * la liste ci-dessous **et** à son refus.
+ *
+ * @phpstan-sealed RotatedRefreshTokenReusedException|AuthorizationCodeReplayedException
  */
 abstract class CompromisedMcpConnectionException extends RuntimeException
 {

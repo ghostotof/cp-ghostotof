@@ -112,13 +112,13 @@ final readonly class TokenEndpoint implements TokenEndpointInterface
      * d'un jeton révoqué ; un code rejoué, celui d'un code révoqué.
      *
      * Choisi par le type de la compromission, pas par sa cause (lot C des
-     * relectures de #649) : seules ces deux sous-classes existent, et aucun
-     * bras ne reste pour les causes qui ne naissent jamais ici (le client, un
-     * nouvel accord, l'échéance). `CompromisedMcpConnectionExceptionTest`
-     * recense les sous-classes de `src/` : une troisième le fait échouer
-     * tant qu'elle n'a pas son refus ici (PHPStan ne juge pas l'exhaustivité
-     * d'un `match (true)`, mesuré). Le refus reste ici plutôt que sur
-     * l'exception : le domaine ne dépend pas de league.
+     * relectures de #649) : CompromisedMcpConnectionException est scellée
+     * (`@phpstan-sealed`) sur ces deux sous-classes, PHPStan tient ce `match`
+     * pour exhaustif — un bras retiré ou une troisième sous-classe sans son
+     * refus le font échouer — et aucun bras ne reste pour les causes qui ne
+     * naissent jamais ici (le client, un nouvel accord, l'échéance). Le refus
+     * reste ici plutôt que sur l'exception : le domaine ne dépend pas de
+     * league.
      */
     private function refusalOf(CompromisedMcpConnectionException $compromise): OAuthServerException
     {
