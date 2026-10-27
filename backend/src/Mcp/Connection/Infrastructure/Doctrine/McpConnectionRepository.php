@@ -23,6 +23,19 @@ use Symfony\Component\Uid\Uuid;
  */
 class McpConnectionRepository extends ServiceEntityRepository implements McpConnectionRepositoryInterface
 {
+    /**
+     * Les trois choix de connexions de {@see self::revokeWhere()}, alias `c`,
+     * écrits ici seuls : aucun appelant ne compose de SQL. Une ligne au plus,
+     * l'identifiant étant la clé primaire ({@see self::revokeActive()}).
+     */
+    private const string WHERE_ONE = 'c.id = :id';
+
+    /** Les autres connexions actives du couple compte/client ({@see self::revokeOtherActiveOf()}). */
+    private const string WHERE_OTHERS_OF_PAIR = 'c.account_id = :account AND c.mcp_client_id = :client AND c.id <> :kept';
+
+    /** Une liste d'identifiants ({@see self::revokeExpired()}). */
+    private const string WHERE_AMONG = 'c.id IN (:ids)';
+
     public function __construct(
         ManagerRegistry $registry,
         private readonly RereadUnderLock $rereadUnderLock,
@@ -88,7 +101,7 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
     public function revokeActive(Uuid $connectionId, RevocationCause $cause, DateTimeImmutable $at): ?RevokedConnection
     {
         // Une ligne au plus : l'identifiant est la clé primaire.
-        return $this->revokeWhere('c.id = :id', ['id' => $connectionId], ['id' => UuidType::NAME], $cause, $at)[0] ?? null;
+        return $this->revokeWhere(self::WHERE_ONE, ['id' => $connectionId], ['id' => UuidType::NAME], $cause, $at)[0] ?? null;
     }
 
     /**
@@ -106,7 +119,7 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
     public function revokeOtherActiveOf(McpConnection $kept, RevocationCause $cause, DateTimeImmutable $at): array
     {
         return $this->revokeWhere(
-            'c.account_id = :account AND c.mcp_client_id = :client AND c.id <> :kept',
+            self::WHERE_OTHERS_OF_PAIR,
             ['account' => $kept->account()->getId(), 'client' => $kept->client()->getId(), 'kept' => $kept->getId()],
             ['account' => UuidType::NAME, 'client' => UuidType::NAME, 'kept' => UuidType::NAME],
             $cause,
@@ -154,7 +167,7 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
         }
 
         return $this->revokeWhere(
-            'c.id IN (:ids)',
+            self::WHERE_AMONG,
             ['ids' => array_map(static fn (Uuid $id): string => $id->toRfc4122(), $connectionIds)],
             ['ids' => ArrayParameterType::STRING],
             RevocationCause::Expired,
@@ -180,7 +193,9 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
 
     /**
      * L'instruction des trois révocations, écrite une fois (lot C des
-     * relectures de #649) : seul le choix des connexions change, `$where`.
+     * relectures de #649) : seul le choix des connexions change, `$where`,
+     * l'une des trois constantes `WHERE_*` de cette classe — jamais une chaîne
+     * composée par un appelant.
      * Du SQL natif par la connexion DBAL de l'EntityManager, jamais l'unité de
      * travail ni le DQL (`.claude/rules/mcp-oauth-cycle-de-vie.md`) : la
      * révocation du point de jeton suit une transaction que
@@ -190,7 +205,7 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
      * garde la première révocation, la jointure lit le client ; l'instant est
      * typé comme sa colonne, avec fuseau (#434).
      *
-     * @param string                                      $where  le choix des connexions, alias `c`, sans paramètre écrit en clair
+     * @param self::WHERE_*                               $where  le choix des connexions, alias `c`, sans paramètre écrit en clair
      * @param array<string, mixed>                        $params ses paramètres nommés (ni `at` ni `cause`, ceux de l'instruction)
      * @param array<string, string|ArrayParameterType>    $types  leurs types DBAL
      *

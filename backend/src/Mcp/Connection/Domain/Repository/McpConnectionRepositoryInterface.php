@@ -36,11 +36,11 @@ interface McpConnectionRepositoryInterface
     public function lockForUpdate(Uuid $connectionId): ?McpConnection;
 
     /**
-     * Enregistre la connexion (le dernier usage, #649), comme le `save()` des
-     * autres dépôts du projet : `persist()` puis `flush()`. Une connexion
-     * déjà gérée — relue sous verrou — n'est pas persistée une seconde fois ;
-     * le `flush()` écrit, comme partout, tout ce que l'unité de travail a en
-     * attente.
+     * Écrit en base l'état courant de la connexion (le dernier usage, #649),
+     * comme le `save()` des autres dépôts du projet. Une connexion déjà
+     * connue du dépôt — relue sous verrou — est mise à jour, jamais insérée
+     * une seconde fois ; l'écriture emporte, comme partout, tout ce que le
+     * dépôt a encore en attente.
      */
     public function save(McpConnection $connection): void;
 

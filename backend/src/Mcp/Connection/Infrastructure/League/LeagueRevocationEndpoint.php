@@ -147,6 +147,11 @@ final readonly class LeagueRevocationEndpoint implements RevocationEndpointInter
 
         $at = $this->clock->now();
         // Lus avant la transaction : leurs identifiants seuls servent dedans.
+        // Le jeton d'accès est chargé avec le rafraîchissement (findOneByHash()
+        // le joint), jamais un proxy : la purge peut supprimer sa ligne entre
+        // cette lecture et la transaction, et un proxy initialisé ici lèverait
+        // `EntityNotFoundException` (un 500) ; chargé, son empreinte se lit, et
+        // la révocation d'une ligne déjà supprimée ne touche rien.
         $refreshTokenId = $refreshToken->getId();
         $tokenHash = $refreshToken->tokenHash();
         $accessTokenHash = $refreshToken->accessToken()?->tokenHash();
@@ -159,7 +164,7 @@ final readonly class LeagueRevocationEndpoint implements RevocationEndpointInter
         // Après le COMMIT : jamais une ligne d'audit pour une révocation que
         // la base aurait annulée.
         if (null !== $revoked) {
-            $this->auditLogger->mcpConnectionRevoked($revoked, $revoked->cause->value);
+            $this->auditLogger->mcpConnectionRevoked($revoked, $revoked->cause()->value);
         }
     }
 

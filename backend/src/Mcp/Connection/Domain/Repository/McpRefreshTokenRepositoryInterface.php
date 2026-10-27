@@ -22,9 +22,12 @@ interface McpRefreshTokenRepositoryInterface
     public function add(McpRefreshToken $token): void;
 
     /**
-     * Le jeton, avec sa connexion, par l'empreinte SHA-256 de son identifiant,
-     * tel que l'EntityManager le tient : une instance déjà chargée n'est pas
-     * rafraîchie — la relecture sous verrou est rereadUnderConnectionLock().
+     * Le jeton, avec sa connexion et son jeton d'accès (chargé, jamais un
+     * proxy : sa ligne peut disparaître sous la purge entre cette lecture et
+     * une transaction, et son empreinte doit rester lisible), par l'empreinte
+     * SHA-256 de son identifiant, tel que l'EntityManager le tient : une
+     * instance déjà chargée n'est pas rafraîchie — la relecture sous verrou
+     * est rereadUnderConnectionLock().
      */
     public function findOneByHash(string $tokenHash): ?McpRefreshToken;
 

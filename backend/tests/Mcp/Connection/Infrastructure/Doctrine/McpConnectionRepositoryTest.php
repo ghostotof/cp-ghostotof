@@ -260,7 +260,7 @@ final class McpConnectionRepositoryTest extends KernelTestCase
         self::assertTrue($connection->getId()->equals($revoked->connectionId()));
         self::assertSame($account->getId()->toRfc4122(), $revoked->accountId());
         self::assertSame('https://client.example.test/metadata.json', $revoked->clientId());
-        self::assertSame(RevocationCause::Client, $revoked->cause);
+        self::assertSame(RevocationCause::Client, $revoked->cause());
         self::assertSame(
             ['revoked_at' => $at->getTimestamp(), 'revocation_cause' => 'client'],
             $this->revocationRow($connection),
@@ -353,7 +353,7 @@ final class McpConnectionRepositoryTest extends KernelTestCase
         foreach ($revoked as $connection) {
             self::assertSame($account->getId()->toRfc4122(), $connection->accountId());
             self::assertSame('https://client.example.test/metadata.json', $connection->clientId());
-            self::assertSame(RevocationCause::Superseded, $connection->cause);
+            self::assertSame(RevocationCause::Superseded, $connection->cause());
         }
         foreach ([$previous, $older] as $connection) {
             self::assertSame(['revoked_at' => $at->getTimestamp(), 'revocation_cause' => 'superseded'], $this->revocationRow($connection));
@@ -386,7 +386,7 @@ final class McpConnectionRepositoryTest extends KernelTestCase
         $revoked = $this->connections()->revokeActive($connection->getId(), RevocationCause::CodeReplay, new DateTimeImmutable());
 
         self::assertFalse($this->em->isOpen());
-        self::assertSame(RevocationCause::CodeReplay, $revoked?->cause);
+        self::assertSame(RevocationCause::CodeReplay, $revoked?->cause());
         self::assertSame('code-replay', $this->revocationRow($connection)['revocation_cause']);
     }
 
@@ -399,17 +399,17 @@ final class McpConnectionRepositoryTest extends KernelTestCase
      */
     public static function halfRevocations(): iterable
     {
-        yield 'un instant sans cause' => ['UPDATE mcp_connection SET revoked_at = now()'];
-        yield 'une cause sans instant' => ["UPDATE mcp_connection SET revocation_cause = 'client'"];
+        yield 'un instant sans cause' => ['UPDATE mcp_connection SET revoked_at = now() WHERE id = :id'];
+        yield 'une cause sans instant' => ["UPDATE mcp_connection SET revocation_cause = 'client' WHERE id = :id"];
     }
 
     #[DataProvider('halfRevocations')]
     public function testTheDatabaseRefusesARevocationWithoutCause(string $update): void
     {
-        $this->grantConnection();
+        $connection = $this->grantConnection();
 
         try {
-            $this->em->getConnection()->executeStatement($update);
+            $this->em->getConnection()->executeStatement($update, ['id' => $connection->getId()], ['id' => UuidType::NAME]);
             self::fail('La base aurait dû refuser une révocation à moitié écrite.');
         } catch (DriverException $exception) {
             self::assertSame(self::CHECK_VIOLATION, $exception->getSQLState(), $exception->getMessage());
@@ -429,13 +429,17 @@ final class McpConnectionRepositoryTest extends KernelTestCase
      */
     public function testTheDatabaseAdmitsEveryRevocationCauseAndRefusesAnUnknownOne(): void
     {
-        $this->grantConnection();
+        $id = $this->grantConnection()->getId();
         $connection = $this->em->getConnection();
 
         foreach (RevocationCause::cases() as $cause) {
             $connection->beginTransaction();
             try {
-                $written = $connection->executeStatement('UPDATE mcp_connection SET revoked_at = now(), revocation_cause = :cause', ['cause' => $cause->value]);
+                $written = $connection->executeStatement(
+                    'UPDATE mcp_connection SET revoked_at = now(), revocation_cause = :cause WHERE id = :id',
+                    ['cause' => $cause->value, 'id' => $id],
+                    ['id' => UuidType::NAME],
+                );
                 self::assertSame(1, $written, \sprintf('La cause « %s » est refusée par la base.', $cause->value));
             } finally {
                 $connection->rollBack();
@@ -443,7 +447,7 @@ final class McpConnectionRepositoryTest extends KernelTestCase
         }
 
         try {
-            $connection->executeStatement("UPDATE mcp_connection SET revoked_at = now(), revocation_cause = 'unknown-cause'");
+            $connection->executeStatement("UPDATE mcp_connection SET revoked_at = now(), revocation_cause = 'unknown-cause' WHERE id = :id", ['id' => $id], ['id' => UuidType::NAME]);
             self::fail('La base aurait dû refuser une cause de révocation inconnue.');
         } catch (DriverException $exception) {
             self::assertSame(self::CHECK_VIOLATION, $exception->getSQLState(), $exception->getMessage());

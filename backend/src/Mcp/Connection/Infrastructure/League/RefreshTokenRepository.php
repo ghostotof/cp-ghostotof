@@ -89,34 +89,26 @@ final readonly class RefreshTokenRepository implements RefreshTokenRepositoryInt
     /**
      * Le nom est celui de l'interface de league ; ce qu'elle juge est tout ce
      * qui rend un rafraîchissement irrecevable (#649), **sous le verrou de la
-     * ligne de sa connexion**, dans la transaction du point de jeton — les
-     * étapes 1 à 5 partagées avec le code, écrites une fois dans
-     * {@see TokenUnderConnectionLock::judge()} :
+     * ligne de sa connexion**, dans la transaction du point de jeton. Le
+     * tronc commun avec le code — le jeton par son empreinte, sa connexion
+     * relue `FOR UPDATE`, le jeton relu sous ce verrou, la connexion révoquée,
+     * le jeton révoqué sur une connexion active — est celui de
+     * {@see TokenUnderConnectionLock::judge()}, qui en écrit l'ordre. Ce que
+     * ce dépôt y apporte : la relecture du jeton (rereadUnderConnectionLock())
+     * et la compromission qu'un jeton tourné qui revient nomme,
+     * {@see RotatedRefreshTokenReusedException} — le point de jeton la
+     * rattrape après le ROLLBACK pour révoquer la connexion (OAuth 2.1
+     * §4.3.1) ; jugée là, avant toute échéance, un jeton tourné qui revient
+     * sur une connexion expirée mais pas encore purgée est une réutilisation
+     * aussi. Puis ses propres étapes, après ce tronc :
      *
-     *  1. le jeton, par son empreinte — inconnu, il est mort ;
-     *  2. sa connexion, relue `FOR UPDATE` (`lockForUpdate()`) : deux
-     *     rafraîchissements simultanés d'un même jeton se suivent désormais au
-     *     lieu de se croiser, chacun lisant le jeton non révoqué avant que
-     *     l'autre l'ait tourné (la course de league, fermée ici) — disparue,
-     *     le jeton est mort ;
-     *  3. le jeton **relu sous le verrou** (rereadUnderConnectionLock(), la
-     *     relecture sous verrou du projet, #560) : une rotation qu'une requête
-     *     concurrente a validée pendant l'attente se voit maintenant —
-     *     disparu (purgé pendant l'attente), le jeton est mort ;
-     *  4. la connexion révoquée : mort, sans seconde révocation ni audit ;
-     *  5. le jeton révoqué sur une connexion active : il a été tourné, et
-     *     revient — {@see RotatedRefreshTokenReusedException}, que le point
-     *     de jeton rattrape après le ROLLBACK pour révoquer la connexion
-     *     (OAuth 2.1 §4.3.1). Jugé avant l'échéance : un jeton tourné qui
-     *     revient sur une connexion expirée mais pas encore purgée est une
-     *     réutilisation aussi ;
-     *  6. le jeton échu, la connexion expirée (McpConnection::isExpiredAt(),
-     *     sur les durées configurées), le compte déchu du palier de confiance
-     *     (TrustedTier, rôles stockés relus) : mort, rien d'émis — un client
-     *     qui rafraîchirait en boucle n'accumule aucune ligne ;
-     *  7. sinon le jeton est bon : le dernier usage de la connexion est noté,
-     *     écrit seulement quand une heure s'est écoulée depuis le précédent
-     *     (McpConnection::recordUseAt()).
+     *  - le jeton échu, la connexion expirée (McpConnection::isExpiredAt(),
+     *    sur les durées configurées), le compte déchu du palier de confiance
+     *    (TrustedTier, rôles stockés relus) : mort, rien d'émis — un client
+     *    qui rafraîchirait en boucle n'accumule aucune ligne ;
+     *  - sinon le jeton est bon : le dernier usage de la connexion est noté,
+     *    écrit seulement quand une heure s'est écoulée depuis le précédent
+     *    (McpConnection::recordUseAt()).
      *
      * **Chaque jugement lit l'horloge de l'application** (ClockInterface, le
      * fuseau de Paris) — l'échéance du jeton comprise, exclusive comme celle
@@ -138,7 +130,8 @@ final readonly class RefreshTokenRepository implements RefreshTokenRepositoryInt
             return true;
         }
 
-        // Après la réutilisation, jamais avant (étape 6).
+        // Après la réutilisation, jamais avant : les étapes propres au
+        // rafraîchissement.
         $connection = $locked->connection;
         $now = $this->clock->now();
         if ($locked->token->expiresAt() <= $now || $connection->isExpiredAt($now, $this->lifetimes) || !$this->trustedTier->reaches($connection->account())) {

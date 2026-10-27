@@ -48,7 +48,7 @@ final readonly class McpConnectionRevoker implements McpConnectionRevokerInterfa
             return null;
         }
 
-        $this->auditLogger->mcpConnectionRevoked($revoked, $revoked->cause->value);
+        $this->auditLogger->mcpConnectionRevoked($revoked, $revoked->cause()->value);
 
         return $revoked;
     }

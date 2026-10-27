@@ -34,16 +34,24 @@ class McpRefreshTokenRepository extends ServiceEntityRepository implements McpRe
     }
 
     /**
-     * Une lecture ordinaire, la connexion jointe : aucun `HINT_REFRESH` — la
-     * relecture sous verrou n'est écrite qu'une fois dans le projet,
-     * {@see self::rereadUnderConnectionLock()} (relecture du lot B de #649).
+     * Une lecture ordinaire, la connexion et le jeton d'accès joints : aucun
+     * `HINT_REFRESH` — la relecture sous verrou n'est écrite qu'une fois dans
+     * le projet, {@see self::rereadUnderConnectionLock()} (relecture du lot B
+     * de #649). Le jeton d'accès est **chargé**, jamais un proxy (lot C) : le
+     * point de révocation lit son empreinte avant d'ouvrir sa transaction, et
+     * un proxy initialisé après que la purge a supprimé la ligne lève
+     * `EntityNotFoundException` — un 500 — là où le lien, remis à NULL par la
+     * cascade, se lit `null`. Chargé avec le jeton, il reste lisible quoi
+     * qu'il advienne de sa ligne ensuite ; révoquer un jeton d'accès déjà
+     * supprimé ne touche alors aucune ligne.
      */
     public function findOneByHash(string $tokenHash): ?McpRefreshToken
     {
         /** @var McpRefreshToken|null */
         return $this->createQueryBuilder('token')
-            ->addSelect('connection')
+            ->addSelect('connection', 'accessToken')
             ->innerJoin('token.connection', 'connection')
+            ->leftJoin('token.accessToken', 'accessToken')
             ->where('token.tokenHash = :tokenHash')
             ->setParameter('tokenHash', $tokenHash)
             ->getQuery()

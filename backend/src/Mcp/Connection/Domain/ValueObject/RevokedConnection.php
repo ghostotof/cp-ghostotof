@@ -27,7 +27,7 @@ final readonly class RevokedConnection implements McpConnectionReference
         private Uuid $connectionId,
         private string $accountId,
         private string $clientId,
-        public RevocationCause $cause,
+        private RevocationCause $cause,
     ) {
     }
 
@@ -44,5 +44,10 @@ final readonly class RevokedConnection implements McpConnectionReference
     public function clientId(): string
     {
         return $this->clientId;
+    }
+
+    public function cause(): RevocationCause
+    {
+        return $this->cause;
     }
 }

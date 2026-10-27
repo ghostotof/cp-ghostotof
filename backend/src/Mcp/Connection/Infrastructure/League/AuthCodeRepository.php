@@ -75,28 +75,19 @@ final readonly class AuthCodeRepository implements AuthCodeRepositoryInterface
      * Le nom est celui de l'interface de league ; ce qu'elle juge est tout ce
      * qui rend un code irrecevable (#649), **sous le verrou de la ligne de sa
      * connexion**, dans la transaction du point de jeton — le modèle est le
-     * rafraîchissement ({@see RefreshTokenRepository::isRefreshTokenRevoked()}),
-     * les étapes 1 à 5 étant celles qu'ils partagent, écrites une fois dans
-     * {@see TokenUnderConnectionLock::judge()} :
-     *
-     *  1. le code, par son empreinte — inconnu, il est mort ;
-     *  2. sa connexion, relue `FOR UPDATE` (`lockForUpdate()`) : deux
-     *     échanges simultanés d'un même code se suivent désormais au lieu de
-     *     se croiser, chacun lisant le code non révoqué avant que l'autre
-     *     l'ait échangé (la course de league, fermée ici) — disparue, le code
-     *     est mort ;
-     *  3. le code **relu sous le verrou** (rereadUnderConnectionLock(), la
-     *     relecture sous verrou du projet, #560) : l'échange qu'une requête
-     *     concurrente a validé pendant l'attente se voit maintenant —
-     *     disparu (purgé pendant l'attente), le code est mort ;
-     *  4. la connexion révoquée : mort, sans seconde révocation ni audit ;
-     *  5. le code révoqué sur une connexion active : il a été échangé, et
-     *     revient — {@see AuthorizationCodeReplayedException}, que le point
-     *     de jeton rattrape après le ROLLBACK pour révoquer la connexion
-     *     (OAuth 2.1 §4.1.2), et avec elle les jetons que le code a émis ;
-     *  6. sinon le code est bon : league vérifie ensuite le client, la
-     *     redirection et le vérificateur PKCE, émet les jetons, et révoque
-     *     le code en dernier — une panne au milieu le laisse échangeable.
+     * rafraîchissement ({@see RefreshTokenRepository::isRefreshTokenRevoked()}).
+     * Le tronc commun — le code par son empreinte, sa connexion relue `FOR
+     * UPDATE`, le code relu sous ce verrou, la connexion révoquée, le code
+     * révoqué sur une connexion active — est celui de
+     * {@see TokenUnderConnectionLock::judge()}, qui en écrit l'ordre. Ce que
+     * ce dépôt y apporte : la relecture du code (rereadUnderConnectionLock())
+     * et la compromission qu'un code échangé qui revient nomme,
+     * {@see AuthorizationCodeReplayedException} — le point de jeton la
+     * rattrape après le ROLLBACK pour révoquer la connexion (OAuth 2.1
+     * §4.1.2), et avec elle les jetons que le code a émis. Mort, le code est
+     * révoqué pour league ; rendu, il est bon : league vérifie ensuite le
+     * client, la redirection et le vérificateur PKCE, émet les jetons, et
+     * révoque le code en dernier — une panne au milieu le laisse échangeable.
      *
      * L'échéance du code est jugée par league seul, sur la charge chiffrée
      * (`expire_time` contre `time()`), **avant** d'appeler ce dépôt : un code
@@ -117,7 +108,7 @@ final readonly class AuthCodeRepository implements AuthCodeRepositoryInterface
             AuthorizationCodeReplayedException::forConnection(...),
         );
 
-        // Mort (étapes 1 à 4) : révoqué pour league ; rendu, il est bon (étape 6).
+        // Mort : révoqué pour league ; rendu, il est bon.
         return null === $locked;
     }
 }
