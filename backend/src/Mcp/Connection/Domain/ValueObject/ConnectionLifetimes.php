@@ -51,9 +51,57 @@ final readonly class ConnectionLifetimes
      * changement d'heure, un jour les couvre. Une durée plus courte que la
      * marge mettrait la borne dans le futur : chaque connexion active serait
      * verrouillée `FOR UPDATE` à chaque nuit. Une seule constante pour les
-     * deux, que la purge lit ici.
+     * deux, que {@see self::preselectionBoundsAt()} lit (#726 : les bornes de
+     * la purge calculées ici, plus dans la purge).
+     *
+     * **Le vrai plancher est au-delà : cette marge plus la durée d'un code plus
+     * {@see self::CLOCK_CHANGE_MARGIN} plus
+     * {@see self::SECOND_TRUNCATION_AND_SKEW_MARGIN}, exclu** (#726, CR1),
+     * {@see self::fromConfiguration()}. L'échange d'un code verrouille la
+     * connexion du code la première (league, `FOR UPDATE`), puis les autres
+     * connexions actives de la paire par id (le remplacement) ; le marquage de
+     * la purge verrouille ses candidates par id. Si la connexion du code était
+     * candidate, la purge pourrait la vouloir en tenant une autre que l'échange
+     * attend — `40P01`. Octroyée il y a au plus la durée d'un code (son code
+     * est encore échangeable), elle n'est candidate que si « maintenant −
+     * durée + marge » l'atteint, donc jamais au-delà du plancher : la purge ne
+     * la veut jamais, toutes les autres prises des deux côtés suivent l'ordre
+     * des ids (tâche 6 de #726), et le croisement marquage × remplacement est
+     * fermé par construction.
      */
     public const string MINIMUM_CONNECTION_LIFETIME = 'P1D';
+
+    /**
+     * L'heure que le plancher ajoute pour les changements d'heure (#726, CR1),
+     * en temps écoulé. La borne de la purge, `$now->sub(durée)->add(P1D)`,
+     * compte ses jours sur le calendrier de Paris : un jour de 23 ou 25 heures
+     * la rapproche de « maintenant » d'une heure au plus. Mesuré à la seconde
+     * sous PHP 8.5 : au plancher sans cette heure (`P1DT10M1S`), une purge
+     * lancée le 29 mars 2026 de 03:00 à 03:10 CEST, le 30 mars de 02:10 à
+     * 03:00 CEST ou le 26 octobre de 02:00 à 02:10 CET présélectionnait une
+     * connexion dont le code était encore échangeable (3 599 s de
+     * recouvrement) ; avec elle (`P1DT1H10M1S`), aucune seconde — ce que
+     * `ConnectionLifetimesTest::testAFreshConnectionIsNeverPreselectedAcrossTheClockChanges()`
+     * rejoue. Le CronJob (`17 3 * * *`, `k8s/base/messenger-purge-cronjob.yaml`,
+     * sans `timeZone`) ne tombe jamais dans ces fenêtres (00:10–01:10 UTC) :
+     * l'heure couvre une purge lancée à la main ou un Job relancé.
+     */
+    private const string CLOCK_CHANGE_MARGIN = 'PT1H';
+
+    /**
+     * La minute que le plancher ajoute pour les effets sous la seconde et les
+     * horloges (#726, CR1, relecture de la tâche 8), en temps écoulé : sans
+     * elle, au plancher admis, il ne restait qu'une seconde de jeu. Elle couvre
+     * la troncature à la seconde de `granted_at` (l'instant de l'horloge dans
+     * `ConsentService`, stocké à la seconde), l'écart entre cet octroi et
+     * l'`expire_time` du code, que league calcule plus tard avec sa propre
+     * horloge, après avoir persisté le code, et accepte jusqu'à
+     * `expire_time + 0,999 s` (`time() > expire_time`), et le décalage
+     * d'horloge entre le nœud du Job de purge et celui de FPM. Publique comme
+     * {@see self::MINIMUM_CONNECTION_LIFETIME} : `ConnectionLifetimesTest` la
+     * lit ici plutôt que d'en recopier la valeur.
+     */
+    public const string SECOND_TRUNCATION_AND_SKEW_MARGIN = 'PT1M';
 
     /**
      * L'instant fixe où les durées se comparent, pour que le verdict ne
@@ -76,10 +124,20 @@ final readonly class ConnectionLifetimes
      * Chaque paramètre se nomme `…Lifetime` : une durée, que le message d'un
      * refus désigne par ce nom.
      *
+     * Les refus, dans l'ordre où ils sont jugés : la lecture, la positivité
+     * (des cinq), puis, l'inactivité avant la durée maximale, chacune sous un
+     * jour et jusqu'à un jour plus la durée du code plus une heure et une
+     * minute (#726 : la connexion d'un code encore échangeable n'est alors
+     * jamais candidate de la purge, voir {@see self::MINIMUM_CONNECTION_LIFETIME},
+     * {@see self::CLOCK_CHANGE_MARGIN} et
+     * {@see self::SECOND_TRUNCATION_AND_SKEW_MARGIN}), enfin les deux ordres.
+     *
      * @throws InvalidConnectionLifetimeException si une durée est illisible ou
      *         nulle, si l'inactivité ou la durée maximale est sous un jour
-     *         (la marge de présélection de la purge), si l'inactivité dépasse
-     *         la durée maximale, ou si le jeton d'accès survit à son jeton de
+     *         (la marge de présélection de la purge) ou ne dépasse pas un jour
+     *         plus la durée d'un code plus une heure et une minute, si
+     *         l'inactivité dépasse la durée
+     *         maximale, ou si le jeton d'accès survit à son jeton de
      *         rafraîchissement
      */
     public static function fromConfiguration(string $codeLifetime, string $accessLifetime, string $refreshLifetime, string $idleLifetime, string $maximumLifetime): self
@@ -100,13 +158,25 @@ final readonly class ConnectionLifetimes
             }
         }
 
-        // Le plancher avant l'ordre des deux durées : une durée maximale sous
-        // un jour est refusée pour cette cause, pas parce que l'inactivité la
-        // dépasse.
+        // Les deux planchers, après la positivité (le second lit la durée du
+        // code, qui doit l'avoir passée) et avant l'ordre des deux durées : une
+        // durée maximale trop courte est refusée pour cette cause, pas parce que
+        // l'inactivité la dépasse. Jugés paramètre par paramètre, l'inactivité
+        // d'abord, chacun sous un jour puis jusqu'à la fenêtre d'un code (plus
+        // l'heure d'un changement d'heure et la minute de jeu, en temps écoulé).
         $oneDay = $reference->add(new DateInterval(self::MINIMUM_CONNECTION_LIFETIME));
+        $freshConnectionWindowEnd = $oneDay
+            ->add($durations['codeLifetime'])
+            ->add(new DateInterval(self::CLOCK_CHANGE_MARGIN))
+            ->add(new DateInterval(self::SECOND_TRUNCATION_AND_SKEW_MARGIN));
         foreach (['idleLifetime', 'maximumLifetime'] as $parameter) {
-            if ($reference->add($durations[$parameter]) < $oneDay) {
+            $end = $reference->add($durations[$parameter]);
+            if ($end < $oneDay) {
                 throw InvalidConnectionLifetimeException::belowOneDay($parameter);
+            }
+
+            if ($end <= $freshConnectionWindowEnd) {
+                throw InvalidConnectionLifetimeException::notBeyondFreshConnectionWindow($parameter);
             }
         }
 
@@ -179,6 +249,38 @@ final readonly class ConnectionLifetimes
     public function maximumDeadline(DateTimeImmutable $grantedAt): DateTimeImmutable
     {
         return $grantedAt->add($this->maximum);
+    }
+
+    /**
+     * Les deux bornes de la présélection SQL de la purge à `$now` (#726) :
+     * `$now − durée + MINIMUM_CONNECTION_LIFETIME`, pour l'inactivité puis
+     * pour la durée maximale. **Calculées ici seulement**, où vivent les
+     * durées et la marge : la purge les passe à
+     * `findActiveCandidatesForExpiry()`, et `McpConnectionPurgeLockOrderTest`
+     * les lit ici pour affirmer, avant sa course, qu'une connexion est bien
+     * candidate — une marge recopiée dans le test laisserait une marge
+     * changée ici le rendre vide sans rougir.
+     *
+     * **Pourquoi la marge** : les bornes (maintenant moins la durée) sont
+     * reculées d'un jour pour qu'aucune connexion qu'`isExpiredAt()` dit
+     * expirée n'y échappe — `$now − P30D` et l'échéance `dernier usage + P30D`
+     * ne se répondent qu'à l'heure près autour d'un changement d'heure. La
+     * présélection est large, le jugement exact ({@see self::idleDeadline()},
+     * {@see self::maximumDeadline()}).
+     *
+     * Même arithmétique que les échéances : des intervalles construits
+     * (`new DateInterval`, jamais `modify()`, #445), les jours sur le
+     * calendrier du fuseau de `$now` — à Paris, une borne recule de 30 jours
+     * de calendrier, 721 heures à travers le passage à l'heure d'hiver.
+     */
+    public function preselectionBoundsAt(DateTimeImmutable $now): PreselectionBounds
+    {
+        $margin = new DateInterval(self::MINIMUM_CONNECTION_LIFETIME);
+
+        return new PreselectionBounds(
+            $now->sub($this->idle)->add($margin),
+            $now->sub($this->maximum)->add($margin),
+        );
     }
 
     /**

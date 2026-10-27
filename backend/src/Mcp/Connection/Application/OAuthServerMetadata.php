@@ -9,7 +9,10 @@ use App\Mcp\Connection\Domain\Entity\McpConnection;
 /**
  * Assemble les deux documents de métadonnées à partir des URL publiques,
  * écrites une fois dans {@see OAuthEndpoints} : aucune URL n'est reconstruite
- * ici.
+ * ici. Les grants et la méthode PKCE annoncés sont ceux qu'appliquent le
+ * grant, le client et le lecteur de charge, écrits une fois dans
+ * {@see OAuthProfile} (#726) : jamais une liste recopiée qui pourrait
+ * annoncer ce que le serveur ne fait plus.
  *
  * Ce qui est annoncé est ce que le serveur fait, et rien de plus — un client
  * tente tout ce qu'un document lui annonce :
@@ -56,8 +59,8 @@ final readonly class OAuthServerMetadata implements OAuthServerMetadataInterface
             'revocation_endpoint' => $this->endpoints->revocationEndpoint(),
             'response_types_supported' => ['code'],
             'response_modes_supported' => ['query'],
-            'grant_types_supported' => ['authorization_code', 'refresh_token'],
-            'code_challenge_methods_supported' => ['S256'],
+            'grant_types_supported' => OAuthProfile::SERVED_GRANTS,
+            'code_challenge_methods_supported' => [OAuthProfile::CODE_CHALLENGE_METHOD],
             'token_endpoint_auth_methods_supported' => ['none'],
             'revocation_endpoint_auth_methods_supported' => ['none'],
             'scopes_supported' => [McpConnection::SCOPE_NOMINATIVE_READ],

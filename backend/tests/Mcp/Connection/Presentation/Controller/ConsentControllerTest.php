@@ -28,7 +28,9 @@ use Symfony\Component\HttpFoundation\Response;
  * - L'accord crée la connexion et son code dans une transaction, puis écrit
  *   `mcp-connection-granted` au journal de sécurité ; le refus ne crée rien.
  * - Un nouvel accord du même compte au même client remplace l'accord actif
- *   précédent (#649, décision 2) : révoqué `superseded`, et journalisé.
+ *   précédent (#649, décision 2) au premier échange de son code, jamais à
+ *   l'approbation (#726, D2) : révoqué `superseded`, et journalisé sur la
+ *   requête de l'échange.
  *
  * Le parcours (client, compte, demande) est celui de DrivesTheOAuthFlow.
  */
@@ -222,13 +224,17 @@ final class ConsentControllerTest extends WebTestCase
 
     /**
      * Un second accord du même compte au même client remplace le premier
-     * (#649, décision 2) : la première connexion est révoquée, cause
-     * `superseded` ; son rafraîchissement n'obtient plus rien (`invalid_grant`,
-     * sans seconde ligne d'audit), le code de la seconde s'échange. Sur la
-     * requête du second accord, l'audit dit l'accord d'abord, puis le
-     * remplacement — ni code ni jeton dans l'une ou l'autre ligne.
+     * **au premier échange de son code** (#726, D2) : l'approbation ne révoque
+     * rien — sa requête n'audite que `mcp-connection-granted`, la première
+     * connexion reste active. L'échange du second code révoque la première,
+     * cause `superseded`, dans la transaction du point de jeton ; la ligne
+     * `mcp-connection-revoked` est lue sur la requête de l'échange, acteur
+     * `anonymous` (le firewall `oauth` n'authentifie personne), et nomme la
+     * connexion qui remplace (`supersededBy`, celle du code échangé). L'ancien
+     * rafraîchissement n'obtient plus rien (`invalid_grant`, sans seconde
+     * ligne). Ni code ni jeton dans aucune ligne.
      */
-    public function testASecondGrantSupersedesTheFirstConnection(): void
+    public function testASecondGrantSupersedesTheFirstAtItsExchange(): void
     {
         $account = $this->loginAs(self::TRUSTED_USERNAME, [CpgUser::ROLE_TRUSTED]);
         $issued = $this->exchange($this->codeGrantedByTheSignedInAccount());
@@ -239,56 +245,90 @@ final class ConsentControllerTest extends WebTestCase
 
         $secondCode = $this->codeGrantedByTheSignedInAccount();
 
-        $events = $this->grantAndRevocationEvents();
-        self::assertSame([self::GRANTED_EVENT, self::REVOKED_EVENT], array_column($events, 'event'));
-        $secondConnectionId = $this->activeConnectionIds()[0] ?? self::fail('Aucune connexion active après le second accord.');
+        $granted = $this->grantAndRevocationEvents();
+        self::assertSame([self::GRANTED_EVENT], array_column($granted, 'event'), 'L\'approbation ne révoque plus rien (#726).');
+        self::assertCount(2, $this->activeConnectionIds());
+        $secondConnectionId = $granted[0]['connectionId'] ?? null;
+        self::assertIsString($secondConnectionId);
         self::assertNotSame($firstConnectionId, $secondConnectionId);
-        self::assertSame($secondConnectionId, $events[0]['connectionId'] ?? null);
-        self::assertSame($account, $events[1]['userId'] ?? null);
-        self::assertSame($firstConnectionId, $events[1]['connectionId'] ?? null);
-        self::assertSame(self::CLIENT_ID, $events[1]['clientId'] ?? null);
-        self::assertSame('superseded', $events[1]['cause'] ?? null);
-        $logged = json_encode($events, \JSON_THROW_ON_ERROR);
+
+        $exchanged = $this->exchange($secondCode);
+        self::assertSame(Response::HTTP_OK, $exchanged->getStatusCode(), substr((string) $exchanged->getContent(), 0, 500));
+
+        $revoked = $this->grantAndRevocationEvents();
+        self::assertSame([self::REVOKED_EVENT], array_column($revoked, 'event'));
+        self::assertSame($account, $revoked[0]['userId'] ?? null);
+        self::assertSame($firstConnectionId, $revoked[0]['connectionId'] ?? null);
+        self::assertSame(self::CLIENT_ID, $revoked[0]['clientId'] ?? null);
+        self::assertSame('superseded', $revoked[0]['cause'] ?? null);
+        self::assertSame('anonymous', $revoked[0]['actor'] ?? null);
+        // La connexion qui remplace (#726, B3) : celle du code échangé, seul
+        // lien entre la coupure et l'accord qui l'a causée.
+        self::assertSame($secondConnectionId, $revoked[0]['supersededBy'] ?? null);
+        $logged = json_encode([...$granted, ...$revoked], \JSON_THROW_ON_ERROR);
         // Des messages qui ne citent pas la valeur : un échec la publierait
         // dans le journal de la CI.
         self::assertFalse(str_contains($logged, $secondCode), 'Le journal d\'audit cite le second code.');
         self::assertFalse(str_contains($logged, $firstRefreshToken), 'Le journal d\'audit cite le premier rafraîchissement.');
-
         self::assertSame([$secondConnectionId], $this->activeConnectionIds());
         self::assertSame('superseded', $this->connectionRow($firstConnectionId)['revocation_cause']);
 
         $this->assertOAuthError($this->refresh($firstRefreshToken), Response::HTTP_BAD_REQUEST, 'invalid_grant');
         self::assertSame([], self::securityAuditEvents(self::REVOKED_EVENT));
         self::assertSame('superseded', $this->connectionRow($firstConnectionId)['revocation_cause']);
-
-        $exchanged = $this->exchange($secondCode);
-        self::assertSame(Response::HTTP_OK, $exchanged->getStatusCode(), substr((string) $exchanged->getContent(), 0, 500));
-        self::assertSame([$secondConnectionId], $this->activeConnectionIds());
     }
 
     /**
-     * Le remplacement porte sur le couple compte/client : un accord au même
-     * compte pour un autre client laisse la première connexion active, et ne
-     * journalise aucune révocation.
+     * La reproduction de D2 (#726) : un second accord approuvé dont le code
+     * n'est **jamais** échangé (le client abandonne, la redirection échoue)
+     * laisse la première connexion vivante — active, aucune ligne
+     * `mcp-connection-revoked`, et son rafraîchissement servi. Révoquée à
+     * l'approbation, la personne restait sans aucune connexion.
+     */
+    public function testAnAbandonedSecondGrantLeavesTheFirstConnection(): void
+    {
+        $this->loginAs(self::TRUSTED_USERNAME, [CpgUser::ROLE_TRUSTED]);
+        $issued = $this->exchange($this->codeGrantedByTheSignedInAccount());
+        self::assertSame(Response::HTTP_OK, $issued->getStatusCode(), substr((string) $issued->getContent(), 0, 500));
+        $firstRefreshToken = $this->json($issued)['refresh_token'] ?? null;
+        self::assertIsString($firstRefreshToken);
+        $firstConnectionId = $this->connectionRows()[0]['id'];
+
+        $this->codeGrantedByTheSignedInAccount();
+
+        self::assertSame([], self::securityAuditEvents(self::REVOKED_EVENT));
+        self::assertNull($this->connectionRow($firstConnectionId)['revoked_at'], 'L\'approbation a révoqué la connexion précédente (#726, D2).');
+        $refreshed = $this->refresh($firstRefreshToken);
+        self::assertSame(Response::HTTP_OK, $refreshed->getStatusCode(), substr((string) $refreshed->getContent(), 0, 500));
+        self::assertNull($this->connectionRow($firstConnectionId)['revoked_at']);
+    }
+
+    /**
+     * Le remplacement porte sur le couple compte/client : l'échange du code
+     * d'un accord au même compte pour un autre client laisse la première
+     * connexion active, et ne journalise aucune révocation.
      */
     public function testAGrantForAnotherClientLeavesTheFirstAlone(): void
     {
         $this->loginAs(self::TRUSTED_USERNAME, [CpgUser::ROLE_TRUSTED]);
         $this->codeGrantedByTheSignedInAccount();
 
-        $this->codeGrantedByTheSignedInAccount(['client_id' => self::OTHER_CLIENT_ID]);
-
+        $otherCode = $this->codeGrantedByTheSignedInAccount(['client_id' => self::OTHER_CLIENT_ID]);
         self::assertSame([self::GRANTED_EVENT], array_column($this->grantAndRevocationEvents(), 'event'));
+        $exchanged = $this->exchange($otherCode, ['client_id' => self::OTHER_CLIENT_ID]);
+        self::assertSame(Response::HTTP_OK, $exchanged->getStatusCode(), substr((string) $exchanged->getContent(), 0, 500));
+
+        self::assertSame([], self::securityAuditEvents(self::REVOKED_EVENT));
         self::assertCount(2, $this->activeConnectionIds());
         self::assertSame(0, $this->countRows('SELECT COUNT(*) FROM mcp_connection WHERE revoked_at IS NOT NULL'));
     }
 
     /**
      * La même décision envoyée deux fois (le réessai d'une page après un 5xx,
-     * report de T8) : deux accords, mais une seule connexion active — la
-     * seconde, dont le code part au client ; la première est remplacée.
+     * report de T8) : deux accords, deux connexions actives tant qu'aucun
+     * code n'est échangé ; l'échange de l'un n'en laisse qu'une — la sienne.
      */
-    public function testARetriedApprovalLeavesOneActiveConnection(): void
+    public function testARetriedApprovalLeavesOneActiveConnectionOnceExchanged(): void
     {
         $this->loginAs(self::TRUSTED_USERNAME, [CpgUser::ROLE_TRUSTED]);
         $this->client->request('GET', self::AUTHORIZE_PATH.'?'.http_build_query($this->validParameters()));
@@ -300,12 +340,66 @@ final class ConsentControllerTest extends WebTestCase
         self::assertSame(Response::HTTP_OK, $retried->getStatusCode(), substr((string) $retried->getContent(), 0, 500));
 
         self::assertSame(2, $this->countRows('SELECT COUNT(*) FROM mcp_connection'));
-        self::assertCount(1, $this->activeConnectionIds());
-        self::assertSame(1, $this->countRows("SELECT COUNT(*) FROM mcp_connection WHERE revocation_cause = 'superseded'"));
+        self::assertCount(2, $this->activeConnectionIds());
         $code = $this->queryOf($this->redirectUriOf($retried))['code'] ?? null;
         self::assertIsString($code);
         $exchanged = $this->exchange($code);
         self::assertSame(Response::HTTP_OK, $exchanged->getStatusCode(), substr((string) $exchanged->getContent(), 0, 500));
+
+        self::assertCount(1, $this->activeConnectionIds());
+        self::assertSame(1, $this->countRows("SELECT COUNT(*) FROM mcp_connection WHERE revocation_cause = 'superseded'"));
+    }
+
+    /**
+     * Deux accords, aucun échangé ; le code du plus récent s'échange d'abord
+     * et remplace le premier. Le code du premier, échangé ensuite, est mort :
+     * sa connexion est révoquée, league le refuse comme un code révoqué
+     * (`invalid_grant`, « Authorization code has been revoked »), sans
+     * révocation de plus — la seconde connexion reste active.
+     */
+    public function testAnOlderCodeExchangedAfterANewerOneIsRefused(): void
+    {
+        $this->loginAs(self::TRUSTED_USERNAME, [CpgUser::ROLE_TRUSTED]);
+        $firstCode = $this->codeGrantedByTheSignedInAccount();
+        $secondCode = $this->codeGrantedByTheSignedInAccount();
+
+        $exchanged = $this->exchange($secondCode);
+        self::assertSame(Response::HTTP_OK, $exchanged->getStatusCode(), substr((string) $exchanged->getContent(), 0, 500));
+        self::assertCount(1, self::securityAuditEvents(self::REVOKED_EVENT));
+        $active = $this->activeConnectionIds();
+        self::assertCount(1, $active);
+
+        $refused = $this->exchange($firstCode);
+
+        $this->assertOAuthError($refused, Response::HTTP_BAD_REQUEST, 'invalid_grant');
+        self::assertSame('Authorization code has been revoked', $this->json($refused)['hint'] ?? null);
+        self::assertSame([], self::securityAuditEvents(self::REVOKED_EVENT));
+        // Le refus d'un code authentique dont la connexion est révoquée (#725).
+        self::assertSame('code-refused', self::singleSecurityAuditEvent('mcp-grant-refused')['cause'] ?? null);
+        self::assertSame($active, $this->activeConnectionIds());
+        self::assertSame(1, $this->countRows('SELECT COUNT(*) FROM mcp_connection WHERE revoked_at IS NOT NULL'));
+    }
+
+    /**
+     * Un rafraîchissement ne remplace rien : seul l'échange d'un code le
+     * fait. Le premier accord échangé, le second approuvé sans échange, le
+     * rafraîchissement de la première connexion est servi et la seconde reste
+     * active.
+     */
+    public function testARefreshSupersedesNothing(): void
+    {
+        $this->loginAs(self::TRUSTED_USERNAME, [CpgUser::ROLE_TRUSTED]);
+        $issued = $this->exchange($this->codeGrantedByTheSignedInAccount());
+        self::assertSame(Response::HTTP_OK, $issued->getStatusCode(), substr((string) $issued->getContent(), 0, 500));
+        $firstRefreshToken = $this->json($issued)['refresh_token'] ?? null;
+        self::assertIsString($firstRefreshToken);
+        $this->codeGrantedByTheSignedInAccount();
+
+        $refreshed = $this->refresh($firstRefreshToken);
+
+        self::assertSame(Response::HTTP_OK, $refreshed->getStatusCode(), substr((string) $refreshed->getContent(), 0, 500));
+        self::assertSame([], self::securityAuditEvents(self::REVOKED_EVENT));
+        self::assertCount(2, $this->activeConnectionIds());
     }
 
     /** `ROLE_SUPER` hérite du palier de confiance (`role_hierarchy`). */

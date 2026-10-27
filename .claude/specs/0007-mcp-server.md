@@ -363,13 +363,20 @@ décision du 2026-10-19, voir « Langue invalide »).
   rejeu reconnaissable. **Un nouvel accord révoque l'accord actif précédent** du même compte au même
   client (cause `superseded`, décision de l'auteur du 2026-10-26 ; prix accepté : deux postes sur le même
   client pré-enregistré ne restent pas connectés ensemble), servi par un index partiel, **non unique**,
-  sur les connexions actives. Limite acceptée : deux approbations simultanées du même couple (un double
-  clic) peuvent laisser deux connexions actives, la seconde jamais utilisée, qui expire après 30 jours
-  sans usage — une contrainte d'unicité partielle, écartée, ferait de ce double clic un 500. Limite
-  acceptée aussi (décision de l'auteur du 2026-10-27, suivie par #726) : l'accord précédent est révoqué
-  **à l'approbation**, avant que le nouveau code soit échangé — un parcours abandonné après l'approbation
-  (code jamais échangé, redirection perdue) laisse la personne sans connexion jusqu'à un nouveau
-  consentement. Règle : `.claude/rules/mcp-oauth-cycle-de-vie.md`.
+  sur les connexions actives. *Corrigé le 2026-10-27 (#726, D2)* : la révocation a lieu **au premier
+  échange réussi du nouveau code**, dans la transaction du point de jeton, jamais à l'approbation — un
+  parcours abandonné après l'approbation (code jamais échangé, redirection perdue) laisse l'accord
+  précédent vivant ; le premier code échangé, ancien ou récent, remplace les autres, et un code plus
+  ancien échangé après un plus récent est mort. Ré-autoriser ne coupe donc l'ancienne connexion qu'à
+  l'échange du nouveau code : tant que la personne ne peut pas révoquer elle-même ses connexions (#650,
+  « Mes connexions MCP »), un parcours abandonné laisse vivante une connexion peut-être volée — **#650 est
+  un préalable à l'ouverture publique de la phase 2** (#726, audit B1, décision de l'auteur du
+  2026-10-27), comme le disent la règle et le registre des traitements (§3.4). Un double clic laisse deux
+  connexions actives jusqu'au premier échange, qui n'en laisse qu'une (celle d'un client qui n'échange
+  aucun code expire après 30 jours sans usage) — une contrainte d'unicité partielle, écartée, ferait de ce
+  double clic un 500. Limite acceptée, nouvelle : deux échanges simultanés de deux codes du même couple
+  s'interbloquent, PostgreSQL en annule un (`40P01`, un 500), l'autre passe et révoque la connexion du
+  premier. Règle : `.claude/rules/mcp-oauth-cycle-de-vie.md`.
 - **Durées** (configuration) : jeton d'accès 1 h ; jeton de rafraîchissement 30 jours, **rotation à
   chaque usage** et refus de la réutilisation d'un jeton déjà tourné (qui révoque la connexion) ;
   connexion expirée après 30 jours sans usage et au plus tard 90 jours après son octroi.
@@ -377,14 +384,19 @@ décision du 2026-10-19, voir « Langue invalide »).
   code `PT10M`, jeton d'accès `PT1H`, rafraîchissement `P30D`, inactivité `P30D`, maximum `P90D` —, une
   seule valeur pour tous les environnements (jamais `%env()%`, #659), lus par `ConnectionLifetimes`, qui
   refuse à sa construction (au premier usage du service) une durée illisible, nulle, une inactivité
-  au-delà du maximum ou un jeton d'accès qui survivrait à son rafraîchissement. L'expiration se juge en
+  ou une durée maximale sous un jour (la marge de présélection de la purge, lot B de #649) ou qui ne
+  dépasse pas un jour plus la durée d'un code, une heure et une minute (#726, CR1 : la connexion d'un
+  code encore échangeable n'est jamais candidate de la purge — croisement fermé par construction), une
+  inactivité au-delà du maximum ou un jeton d'accès qui survivrait à son rafraîchissement. L'expiration se juge en
   **échéances** monotones (`McpConnection::isExpiredAt()`, seule définition, partagée par
   l'authentificateur, le rafraîchissement et la purge) : jours de calendrier de Paris, l'échéance à la
   même heure murale au passage d'heure (721 h à l'automne). Le dernier usage s'écrit au rafraîchissement
   seulement, au plus une fois par heure écoulée. Le rafraîchissement se juge **sous le verrou de sa
   connexion** (`FOR UPDATE`) sur l'horloge de l'application : un jeton déjà tourné présenté sur une
   connexion active la révoque (`refresh-token-reuse`) ; un code déjà échangé, présenté une seconde fois en
-  même temps ou après, aussi (`code-replay`, OAuth 2.1 §4.1.2) ; une connexion expirée ou un compte sorti
+  même temps ou après, aussi (`code-replay`, OAuth 2.1 §4.1.2) — **sur preuve PKCE seulement** (#726, décision
+  de l'auteur du 2026-10-27) : le corps doit porter le bon `code_verifier` ; sans lui, ou avec un faux, le même
+  refus mot pour mot, aucune révocation, et la ligne `mcp-grant-refused` cause `replay-unproven` ; une connexion expirée ou un compte sorti
   du palier de confiance n'obtient aucun jeton neuf, rien n'est écrit. Les refus restent ceux de league,
   mot pour mot. Révoquer un jeton de rafraîchissement au point de révocation révoque la connexion (cause
   `client`, RFC 7009 §2.1, décision de l'auteur du 2026-10-26 ; `refresh-token-reuse` si le jeton remis
@@ -392,12 +404,16 @@ décision du 2026-10-19, voir « Langue invalide »).
   active. **Prix accepté de la rotation** : un client qui rejoue son rafraîchissement après une réponse
   perdue perd sa connexion et doit se reconnecter. Limites acceptées : un code rejoué après ses dix
   minutes est un simple `invalid_grant` sans révocation (league le juge sur sa charge chiffrée) ; un code
-  rejoué sous un autre `client_id` révoque aussi la connexion de son vrai client. Limites acceptées aussi
-  (décision de l'auteur du 2026-10-27, suivies par #726) : deux rafraîchissements **légitimes** et
-  simultanés d'un même jeton révoquent la connexion (`refresh-token-reuse`, le second relisant sous le
-  verrou le jeton que le premier a tourné), sans fenêtre de grâce ; et un code rejoué est jugé **avant** la
-  liaison au client et avant PKCE (l'ordre de league) — qui intercepte un code peut, dans ses dix minutes,
-  couper la connexion qu'il a émise sans pouvoir rien échanger.
+  rejoué sous un autre `client_id` **avec le bon vérificateur** révoque aussi la connexion de son vrai client
+  (le `client_id` d'un client public est public, la preuve est le vérificateur). **Limite gardée par décision
+  de l'auteur du 2026-10-27 (#726)** : deux rafraîchissements **légitimes** et simultanés d'un même jeton
+  révoquent la connexion (`refresh-token-reuse`, le second relisant sous le verrou le jeton que le premier a
+  tourné), sans fenêtre de grâce — à revoir sur les lignes `mcp-connection-revoked` de cause
+  `refresh-token-reuse` après la sortie de la phase 2. Une fenêtre de grâce rendant un nouveau couple est
+  écartée : un attaquant rafraîchissant juste avant le client légitime garderait la connexion ; « rendre le
+  même couple » est impossible, seules les empreintes sont stockées. Le rejeu d'un code jugé avant la
+  liaison au client et avant PKCE (l'ordre de league), qui laissait quiconque intercepte un code couper la
+  connexion, n'en est plus une : la preuve PKCE ci-dessus.
 - **Parcours d'autorisation.** Le point d'autorisation valide la requête (client, redirection exacte,
   PKCE, `resource`, scope) puis renvoie le navigateur vers la page de consentement du frontend. La page
   exige une session du site au palier de confiance (sinon passage par la connexion, puis retour). Le
@@ -439,15 +455,15 @@ décision du 2026-10-19, voir « Langue invalide »).
   `Mcp-Name` seul : renvoyé avant le SDK, le 401 précède le contrôle qui le confronte au corps.
 - **Journal d'audit** (`SecurityAuditLoggerInterface`, canal `security_audit`) : trois événements
   nouveaux — connexion MCP accordée, connexion MCP révoquée (par la personne, par expiration, par
-  réutilisation d'un jeton tourné), corpus nominatif lu (compte, connexion, client, outil ;
+  réutilisation d'un jeton tourné, par remplacement au premier échange du code d'un nouvel accord), corpus nominatif lu (compte, connexion, client, outil ;
   l'horodatage est celui de la ligne). Le compte y est désigné comme les événements existants le
   désignent (même rédaction).
   *Précisé le 2026-10-26 (#649)* : la révocation est l'événement `mcp-connection-revoked` (`userId`,
   `connectionId`, `clientId` public, `cause` : `client`, `refresh-token-reuse`, `code-replay`,
   `superseded`, `expired` ; `person` viendra avec #650), écrit **après le COMMIT** et seulement quand
   la révocation a pris effet — aucune ligne pour une connexion inconnue ou déjà révoquée, aucune pour une
-  transaction annulée. Acteur : `anonymous` aux points de jeton et de révocation, la personne pour un
-  accord remplacé (après la ligne `mcp-connection-granted` du nouvel accord), `system` pour l'expiration
+  transaction annulée. Acteur : `anonymous` aux points de jeton et de révocation — un accord remplacé
+  compris, écrit au point de jeton depuis #726 —, `system` pour l'expiration
   marquée par la purge. Un quatrième événement, **`mcp-access-token-refused`** (mêmes champs, `cause` =
   la valeur de `BearerRefusal`), trace le refus sur `/api/mcp` d'un jeton d'accès **connu** — révoqué,
   échu, d'une autre audience, d'une connexion révoquée ou expirée, sans le scope, d'un compte hors du
@@ -473,10 +489,12 @@ décision du 2026-10-19, voir « Langue invalide »).
   pod de moins qu'un CronJob dédié ; l'ADR dit « un CronJob », ce choix en est une mise en œuvre ;
   `cache:pool:prune` l'a quitté pour un CronJob horaire, tâche 5).
   *Précisé le 2026-10-26 (#649)* : `app:mcp:purge`, troisième commande du ménage quotidien
-  (`k8s/base/messenger-purge-cronjob.yaml`, après la purge des invitations, `lock_timeout` de 5 s). En une
-  transaction, connexions d'abord puis jetons (l'ordre du point de jeton) : elle **marque expirées** les
+  (`k8s/base/messenger-purge-cronjob.yaml`, après la purge des invitations, `lock_timeout` de 5 s). En deux
+  transactions depuis #726, le marquage puis les suppressions : elle **marque expirées** les
   connexions arrivées à échéance — présélection SQL large, verrouillée `FOR UPDATE`, puis chaque ligne
-  jugée par `isExpiredAt()`, jamais par le SQL —, cause `expired` ; supprime les connexions révoquées
+  jugée par `isExpiredAt()`, jamais par le SQL —, cause `expired`, et valide ; une ligne d'audit par
+  connexion marquée suit ce COMMIT. Puis, dans une seconde transaction, connexions d'abord et jetons
+  ensuite (l'ordre du point de jeton), sans le verrou des candidates : elle supprime les connexions révoquées
   depuis plus de la rétention, **6 mois** (décision de l'auteur du 2026-10-26 ; la « durée de conservation
   du journal » ci-dessus n'est pas une durée fixe, bornée par la vie du pod, registre §6), paramètre
   `app.mcp.revoked_connection_retention` lu comme défaut de `--older-than` (au moins un jour) — avant
@@ -491,14 +509,13 @@ décision du 2026-10-19, voir « Langue invalide »).
   l'autre, un rafraîchissement vivant dont le jeton d'accès a expiré compris — le **surcoût** de A puis R
   sur R puis A, lui, ne touche que des lignes mortes, les rafraîchissements que l'instruction suivante
   supprime). Les deux ordres sont pincés en processus réels, la vraie purge contre un test qui tient les
-  lignes de l'autre côté (`McpConnectionPurgeLockOrderTest`, lot C des relectures). Limite acceptée : un cycle entre lignes de `mcp_connection` seules (la purge, puis une
-  suppression de compte en cascade) reste possible ; PostgreSQL annule l'une, le Job réessaie. Limite
-  acceptée aussi (décision de l'auteur du 2026-10-27, suivie par #726) : la purge garde ses connexions
-  candidates verrouillées (`FOR UPDATE`) pendant toutes ses suppressions — le rafraîchissement d'une
-  candidate encore vivante (présélection large) attend ce verrou jusqu'au `lock_timeout` de FPM (5 s) et
-  répond 500 si la transaction de la purge dure plus, quelques millisecondes aujourd'hui sur des tables
-  bornées. Une ligne
-  d'audit par connexion marquée, après le COMMIT. **Pas de `--dry-run`** : elle ne supprime que des jetons
+  lignes de l'autre côté (`McpConnectionPurgeLockOrderTest`, lot C des relectures). Le même test pince la coupure (#726) : une
+  candidate encore vivante (présélection large) n'est plus verrouillée pendant les suppressions, son
+  rafraîchissement n'attend plus la fin de la purge. Qu'une seconde transaction en échec laisse le marquage
+  et ses lignes d'audit, la nuit suivante supprimant, c'est
+  `McpConnectionPurgerTest::testTheMarkingIsAuditedEvenWhenTheDeletionsRollBack` qui le pince. Limite acceptée : un cycle entre lignes de `mcp_connection`
+  seules (la purge, puis une suppression de compte en cascade) reste possible ; PostgreSQL annule l'une, le
+  Job réessaie. **Pas de `--dry-run`** : elle ne supprime que des jetons
   morts et des connexions mortes depuis des mois, rien qu'une personne pourrait regretter (la purge des
   invitations a le sien parce qu'elle supprime des comptes).
 - **Préprod** : l'Ingress de préprod lève Basic Auth sur les seuls chemins MCP et OAuth, les deux
@@ -692,7 +709,8 @@ sur les chemins MCP et OAuth qu'à la tâche 14.
   paramètres refusée, redirection du consentement reconstruite, formulaire seul aux points de jeton et
   de révocation, limites acceptées) y sont écrits.
 - **2026-10-26 — tâche 10 (#649), décisions de l'auteur** : périmètre étendu à tous les reports du ticket ;
-  un nouvel accord du même compte au même client remplace l'accord actif (`superseded`) ; révoquer un
+  un nouvel accord du même compte au même client remplace l'accord actif (`superseded`, au premier
+  échange de son code depuis #726) ; révoquer un
   jeton de rafraîchissement révoque la connexion (`client`, RFC 7009 §2.1) ; rétention de 6 mois des
   connexions révoquées ou expirées ; colonne `revocation_cause`, la purge marquant l'expiration. Précisions
   reportées plus haut (« Modèle », « Durées », « Journal d'audit », « Purge ») ; règle d'implémentation :

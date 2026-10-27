@@ -130,11 +130,14 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
      * quoi l'auditer sans seconde requête. La recherche du couple actif est
      * servie par l'index partiel `idx_mcp_connection_active_pair`
      * (`account_id, mcp_client_id WHERE revoked_at IS NULL`). Elle ne
-     * verrouille que les lignes des **autres** connexions du couple, jamais
-     * celles de leurs jetons : l'ordre du point de jeton (la connexion, puis
-     * ses jetons) n'est pas inversé — un rafraîchissement qui tient le verrou
-     * d'une connexion remplacée fait attendre l'accord jusqu'à son COMMIT,
-     * puis la ligne est relue (`revoked_at IS NULL` réévalué).
+     * verrouille que les lignes des **autres** connexions du couple, dans
+     * l'ordre des identifiants comme la purge ({@see self::revokeWhere()}),
+     * jamais celles de leurs jetons : appelée par l'échange d'un code (#726), après
+     * la connexion de ce code et ses jetons, elle n'inverse pas l'ordre d'un
+     * rafraîchissement (sa connexion, puis ses jetons) — un rafraîchissement
+     * qui tient le verrou d'une connexion remplacée fait attendre l'échange
+     * jusqu'à son COMMIT, puis la ligne est relue (`revoked_at IS NULL`
+     * réévalué ; `TokenEndpointConcurrencyTest`).
      */
     public function revokeOtherActiveOf(McpConnection $kept, RevocationCause $cause, DateTimeImmutable $at): array
     {
@@ -179,6 +182,23 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
      * d'identifiants, cause `expired` : `revoked_at IS NULL` garde la première
      * révocation, `RETURNING` rend chaque connexion révoquée pour l'audit. Une
      * liste vide n'interroge pas la base.
+     *
+     * **La liste est typée par le type de sa colonne** (#726, T6) : chaque
+     * identifiant est converti par UuidType (`UuidType::NAME`), comme
+     * `:id` ou `:kept`, puis lié en chaînes. DBAL 4 n'admet pas de type
+     * personnalisé pour une liste (`ArrayParameterType` n'a que `INTEGER`,
+     * `STRING`, `ASCII` et `BINARY`, la forme `type + ARRAY_PARAM_OFFSET` de
+     * DBAL 2 et 3 a disparu) : la conversion explicite par la connexion est
+     * la seule qu'il laisse, celle de {@see RereadUnderLock} déjà. Sur
+     * PostgreSQL elle rend le texte de l'uuid natif, que la base compare à la
+     * colonne `uuid` ; un `toRfc4122()` écrit à la main aurait décidé à la
+     * place du type (binaire sur une plateforme sans uuid natif).
+     *
+     * **`ArrayParameterType::STRING` est choisi à la main, pour l'uuid natif
+     * de PostgreSQL** (#726) : la conversion suit la plateforme, pas le type
+     * de la liste. Une plateforme sans uuid natif rendrait les 16 octets
+     * bruts, à lier en `ArrayParameterType::BINARY` — un changement de base
+     * reprend ce choix ici, la conversion seule n'y suffit pas.
      */
     public function revokeExpired(array $connectionIds, DateTimeImmutable $at): array
     {
@@ -186,9 +206,11 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
             return [];
         }
 
+        $connection = $this->getEntityManager()->getConnection();
+
         return $this->revokeWhere(
             self::WHERE_AMONG,
-            ['ids' => array_map(static fn (Uuid $id): string => $id->toRfc4122(), $connectionIds)],
+            ['ids' => array_map(static fn (Uuid $id): mixed => $connection->convertToDatabaseValue($id, UuidType::NAME), $connectionIds)],
             ['ids' => ArrayParameterType::STRING],
             RevocationCause::Expired,
             $at,
@@ -225,6 +247,34 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
      * garde la première révocation, la jointure lit le client ; l'instant est
      * typé comme sa colonne, avec fuseau (#434).
      *
+     * **Les lignes sont verrouillées dans l'ordre des identifiants** (#726,
+     * relecture finale) : la sous-requête `… ORDER BY c.id FOR NO KEY UPDATE`
+     * les prend une à une dans cet ordre (le verrou suit le tri), avant que
+     * l'`UPDATE` ne les écrive — un `UPDATE` seul les verrouille dans l'ordre
+     * où son plan les lit, celui du tas (parcours séquentiel) ou de l'index.
+     * **`FOR NO KEY UPDATE`, la force de l'`UPDATE` lui-même** (#726, T6) :
+     * l'instruction ne réécrit aucune colonne de clé, PostgreSQL y prend ce
+     * mode-là ; `FOR UPDATE` l'aurait renforcé sans raison, et bloqué le
+     * `FOR KEY SHARE` que prend toute insertion d'une ligne qui référence la
+     * connexion (un code, un jeton : la clé étrangère). Il entre en conflit
+     * avec le `FOR UPDATE` de la purge et de `lockForUpdate()` comme avec un
+     * autre `FOR NO KEY UPDATE` : l'ordre et l'exclusion entre révocations ne
+     * changent pas. C'est
+     * l'ordre où la purge verrouille ses candidates
+     * ({@see self::findActiveCandidatesForExpiry()}) : sans lui, le
+     * remplacement de deux autres connexions d'un couple, toutes deux
+     * candidates, pouvait croiser le marquage de la purge en `40P01`
+     * (`TokenEndpointConcurrencyTest::testASupersessionLocksTheOtherConnectionsInIdOrder`).
+     * Une seule forme pour les trois révocations : pour une ligne
+     * (`revokeActive()`) l'ordre ne change rien, pour la purge
+     * (`revokeExpired()`) ses lignes sont déjà verrouillées, par identifiant,
+     * dans la même transaction. Le `revoked_at IS NULL` de la sous-requête est
+     * réévalué sur la ligne validée après une attente (READ COMMITTED) : une
+     * connexion révoquée entre-temps n'est ni rendue ni réécrite — sa ligne
+     * reste verrouillée jusqu'à la fin de la transaction, PostgreSQL prenant
+     * le verrou avant de réévaluer la condition ; celui de l'`UPDATE` est
+     * gardé, il le dit sur la ligne écrite.
+     *
      * @param self::WHERE_*                               $where  le choix des connexions, alias `c`, sans paramètre écrit en clair
      * @param array<string, mixed>                        $params ses paramètres nommés (ni `at` ni `cause`, ceux de l'instruction)
      * @param array<string, string|ArrayParameterType>    $types  leurs types DBAL
@@ -234,10 +284,13 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
     private function revokeWhere(string $where, array $params, array $types, RevocationCause $cause, DateTimeImmutable $at): array
     {
         $rows = $this->getEntityManager()->getConnection()->fetchAllAssociative(
-            'UPDATE mcp_connection c SET revoked_at = :at, revocation_cause = :cause'
+            // L'alias `c` est celui des constantes WHERE_*, dans la
+            // sous-requête ; la ligne écrite s'appelle `revoked`.
+            'UPDATE mcp_connection revoked SET revoked_at = :at, revocation_cause = :cause'
             .' FROM mcp_client cl'
-            .' WHERE '.$where.' AND c.revoked_at IS NULL AND cl.id = c.mcp_client_id'
-            .' RETURNING c.id, c.account_id, cl.client_id',
+            .' WHERE revoked.id IN (SELECT c.id FROM mcp_connection c WHERE '.$where.' AND c.revoked_at IS NULL ORDER BY c.id FOR NO KEY UPDATE)'
+            .' AND revoked.revoked_at IS NULL AND cl.id = revoked.mcp_client_id'
+            .' RETURNING revoked.id, revoked.account_id, cl.client_id',
             ['at' => $at, 'cause' => $cause->value, ...$params],
             ['at' => Types::DATETIMETZ_IMMUTABLE, ...$types],
         );
@@ -246,8 +299,9 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
     }
 
     /**
-     * Ce qu'une ligne rendue par `RETURNING c.id, c.account_id, cl.client_id`
-     * a révoqué : écrit une fois pour les trois révocations.
+     * Ce qu'une ligne rendue par `RETURNING revoked.id, revoked.account_id,
+     * cl.client_id` ({@see self::revokeWhere()}) a révoqué : écrit une fois
+     * pour les trois révocations.
      *
      * @param array<string, mixed> $row
      */

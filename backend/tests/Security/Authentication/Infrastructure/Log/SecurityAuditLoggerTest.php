@@ -640,6 +640,39 @@ final class SecurityAuditLoggerTest extends TestCase
     }
 
     /**
+     * Connexion MCP remplacée au premier échange du code d'un nouvel accord
+     * (#726, B3) : le même événement que la révocation, cause `superseded`,
+     * et la connexion qui la remplace (`supersededBy`, son UUID RFC 4122) —
+     * la ligne s'écrit sur la requête de l'échange, plus sur celle du
+     * consentement, et rien d'autre ne relie la coupure à l'accord qui l'a
+     * causée. L'acteur est lu comme d'habitude : `anonymous` au point de jeton.
+     */
+    public function testMcpConnectionSupersededNamesTheConnectionThatReplacesIt(): void
+    {
+        $this->pushRequest('/api/oauth/token', 'POST');
+        $account = new CpgUser('trusted', 'hashed-password');
+        $revokedId = Uuid::v7();
+        $keptId = Uuid::v7();
+
+        $this->auditLogger->mcpConnectionSuperseded(new AuditedMcpConnection($account, $revokedId, 'https://client.example.test/metadata.json'), $keptId);
+
+        $record = $this->singleRecord();
+        self::assertSame('MCP connection revoked.', $record->message);
+        self::assertSame([
+            'event' => 'mcp-connection-revoked',
+            'userId' => $account->getId()->toRfc4122(),
+            'connectionId' => $revokedId->toRfc4122(),
+            'clientId' => 'https://client.example.test/metadata.json',
+            // Le mot de la cause du domaine MCP, que le journal écrit sans en dépendre.
+            'cause' => RevocationCause::Superseded->value,
+            'supersededBy' => $keptId->toRfc4122(),
+            'actor' => 'anonymous',
+            'ip' => self::IP,
+            'path' => '/api/oauth/token',
+        ], $record->context);
+    }
+
+    /**
      * Refus d'un jeton d'accès MCP connu (#649) : le compte par son UUID, la
      * connexion, le client par son identifiant public, la cause — le mot de
      * `BearerRefusal`. L'acteur est lu comme d'habitude : le refus a lieu
@@ -834,11 +867,12 @@ final class SecurityAuditLoggerTest extends TestCase
         $this->auditLogger->nominativeCorpusRead(new AuditedMcpConnection($invited, Uuid::v7(), 'https://client.example.test/metadata.json'), 'get_nominative_corpus');
         $this->auditLogger->mcpConnectionRevoked(new AuditedMcpConnection($invited, Uuid::v7(), 'https://client.example.test/metadata.json'), 'client');
         $this->auditLogger->mcpConnectionExpired(new AuditedMcpConnection($invited, Uuid::v7(), 'https://client.example.test/metadata.json'));
+        $this->auditLogger->mcpConnectionSuperseded(new AuditedMcpConnection($invited, Uuid::v7(), 'https://client.example.test/metadata.json'), Uuid::v7());
         $this->auditLogger->mcpAccessTokenRefused(new AuditedMcpConnection($invited, Uuid::v7(), 'https://client.example.test/metadata.json'), 'token-expired');
         $this->auditLogger->mcpGrantRefused(new AuditedMcpConnection($invited, Uuid::v7(), 'https://client.example.test/metadata.json'), 'refresh_token', 'token-refused', 'https://client.example.test/metadata.json');
 
         $records = $this->handler->getRecords();
-        self::assertCount(28, $records);
+        self::assertCount(29, $records);
 
         foreach ($records as $record) {
             $serialized = json_encode([$record->message, $record->context, $record->extra], \JSON_THROW_ON_ERROR);

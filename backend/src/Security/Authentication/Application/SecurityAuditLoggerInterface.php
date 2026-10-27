@@ -8,6 +8,7 @@ use App\Security\User\Domain\Entity\CpgUser;
 use App\Shared\Domain\Security\McpConnectionReference;
 use SensitiveParameter;
 use Symfony\Component\Security\Core\User\UserInterface;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * Journal de sécurité (D5, constat A5 du 3e audit) : l'unique point d'entrée
@@ -42,8 +43,10 @@ use Symfony\Component\Security\Core\User\UserInterface;
  *    {@see \App\Mcp\Connection\Application\McpConnectionRevoker} (après la
  *    révocation : réutilisation d'un rafraîchissement tourné, rejeu d'un
  *    code), {@see \App\Mcp\Connection\Infrastructure\League\LeagueRevocationEndpoint}
- *    (révocation par le client), {@see \App\Mcp\Connection\Application\ConsentService}
- *    (accord remplacé) et {@see \App\Mcp\Connection\Application\McpConnectionPurger}
+ *    (révocation par le client), {@see \App\Mcp\Connection\Application\TokenEndpoint}
+ *    (accord remplacé au premier échange de son successeur, #726, qu'il
+ *    nomme : `supersededBy`) et
+ *    {@see \App\Mcp\Connection\Application\McpConnectionPurger}
  *    (expiration, acteur `system`), ces trois-là après le COMMIT ;
  *  - un jeton d'accès MCP connu refusé (#649), `mcp-access-token-refused` :
  *    {@see \App\Mcp\Connection\Infrastructure\Security\McpBearerAuthenticator},
@@ -208,12 +211,30 @@ interface SecurityAuditLoggerInterface
      * connexion (`connectionId`), le client par son identifiant public
      * (`clientId`) et la cause (`cause`, le mot stable de
      * {@see \App\Mcp\Connection\Domain\ValueObject\RevocationCause} :
-     * `client`, `refresh-token-reuse`, `code-replay`, `superseded`). Une
-     * chaîne plutôt que l'enum : ce contexte ne dépend pas de `Mcp`. L'auteur
-     * est lu comme pour tout événement. Jamais le jeton ou le code présenté,
-     * ni leur empreinte.
+     * `client`, `refresh-token-reuse`, `code-replay`). Une chaîne plutôt que
+     * l'enum : ce contexte ne dépend pas de `Mcp`. L'auteur est lu comme pour
+     * tout événement. Jamais le jeton ou le code présenté, ni leur empreinte.
+     * Un remplacement passe par {@see self::mcpConnectionSuperseded()}, une
+     * expiration par {@see self::mcpConnectionExpired()}.
      */
     public function mcpConnectionRevoked(McpConnectionReference $connection, string $cause): void;
+
+    /**
+     * Connexion MCP remplacée au premier échange du code d'un nouvel accord
+     * du même compte au même client (#726, D2) : le même événement
+     * `mcp-connection-revoked`, cause `superseded`, et la connexion qui la
+     * remplace (`supersededBy`, l'UUID RFC 4122 de la connexion du code
+     * échangé, constat B3 de l'audit de #726). La ligne s'écrit sur la requête
+     * de l'échange, après son COMMIT, plus sur celle du consentement : sans ce
+     * champ, rien ne relierait la coupure à l'accord qui l'a causée. L'UUID
+     * d'une connexion, rien d'autre — ni son code, ni ses jetons, ni leur
+     * empreinte. L'auteur est lu comme pour tout événement (`anonymous` : le
+     * point de jeton n'authentifie personne).
+     *
+     * @param McpConnectionReference $revoked      la connexion remplacée
+     * @param Uuid                   $supersededBy la connexion qui la remplace
+     */
+    public function mcpConnectionSuperseded(McpConnectionReference $revoked, Uuid $supersededBy): void;
 
     /**
      * Connexion MCP expirée, constatée et révoquée par la purge planifiée

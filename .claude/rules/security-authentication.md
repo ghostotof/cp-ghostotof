@@ -243,22 +243,24 @@ paths:
     `actor`, the `mcp` firewall's `McpConnectionPrincipal` being an `AccountReference` —, `connectionId`, `clientId`,
     `tool`; never the token, its hash nor anything of the corpus), `mcp-connection-revoked` (#649,
     `McpConnectionRevoker` once the repository's revocation took effect — or, inside a transaction, its caller after
-    the COMMIT: the revocation endpoint, `ConsentService` for `superseded`, after `mcp-connection-granted`, and
+    the COMMIT: the revocation endpoint, `TokenEndpoint` for `superseded` (at the new code's first exchange, #726), and
     `McpConnectionPurger` for `expired` —, never for a connection already revoked:
-    `userId`, `connectionId`, `clientId`, `cause` — `client`, `refresh-token-reuse`, `code-replay`, `superseded`
-    through `mcpConnectionRevoked()`, actor read as usual; `expired` through `mcpConnectionExpired()`, actor `system`
+    `userId`, `connectionId`, `clientId`, `cause` — `client`, `refresh-token-reuse`, `code-replay` through
+    `mcpConnectionRevoked()`, actor read as usual; `superseded` through `mcpConnectionSuperseded()`, actor read as usual,
+    plus `supersededBy`, the RFC 4122 UUID of the connection that replaces it (#726, audit B3: nothing else ties the
+    line, written at the exchange, to the grant that caused it); `expired` through `mcpConnectionExpired()`, actor `system`
     like `user-purged`, the purge being a scheduled command; never the token or code presented),
     `mcp-access-token-refused` (#649, `McpBearerAuthenticator` right before refusing a **known** access token on
     `/api/mcp` — a cause of `McpAccessToken::refusalAt()` or the trusted tier, never `malformed` nor `unknown`, which
     designate no connection: `userId`, `connectionId`, `clientId`, `cause` = the `BearerRefusal` value, actor
-    `anonymous`; at most one line per connection and per hour in normal use, `.claude/rules/mcp-oauth-cycle-de-vie.md`;
+    `anonymous`; at most one line per connection and per hour in normal use, `.claude/rules/mcp-oauth-audits.md`;
     never the token nor its hash), `mcp-grant-refused` (#725, `TokenEndpoint` after the ROLLBACK, through
     `GrantRefusalAuditInterface`, for every refusal of a code or refresh token the server **decrypts** — never an
     unreadable one, an unknown client, a vanished connection, nor a compromise, which writes `mcp-connection-revoked`:
     `userId`, `connectionId`, `clientId`, `cause` = the `GrantRefusal` value, `grantType`, `presentingClientId` (the
     registered client that presented it, named in the body — the token endpoint refuses any other), actor `anonymous`;
     never for a 5xx, and an audit failure leaves league's refusal unchanged (`critical` on the main channel); bounded by
-    the nginx `oauth` zone, `.claude/rules/mcp-oauth-cycle-de-vie.md`; never the grant, the PKCE verifier nor a hash).
+    the nginx `oauth` zone, `.claude/rules/mcp-oauth-audits.md`; never the grant, the PKCE verifier nor a hash).
     Every record carries `event` (the stable kebab-case key to filter on), `actor`, `ip`, `path` (canonical), plus the subject.
     **An account is designated by its `userId` (RFC 4122) only, as subject and as `actor`, never by its
     login identifier** (issue #363): an invited account's username is derived from the local part of its
@@ -267,10 +269,11 @@ paths:
     `unidentified` for any other `UserInterface` (none exists). `user` now only ever carries that
     `guest-…` marker (`base-access-issued`, a base access's `logged-out`). Both go through
     `App\Shared\Domain\Security\AccountReference` (`CpgUser::accountId()`), the interface `Ai` reads too,
-    so no context depends on `Security`. The five MCP methods take one `Shared/Domain/Security/McpConnectionReference`
+    so no context depends on `Security`. The seven MCP methods take one `Shared/Domain/Security/McpConnectionReference`
     (an `AccountReference` with `connectionId()` and the public `clientId()`, lot C of #649's reviews), which the
     connection, a `RevokedConnection` and the `mcp` firewall's `McpConnectionPrincipal` implement — never the three
-    fields unpacked by the caller; the cause or the tool follows it, a string (`Security` does not depend on `Mcp`). To name an account during an incident:
+    fields unpacked by the caller; scalars follow it (cause, tool, grant type, presenting client), or a `Uuid` for
+    `supersededBy` — `Security` still depends on no class of `Mcp`. To name an account during an incident:
     `SELECT username, email FROM cpg_user WHERE id = '<userId>'` — once deleted, its lines designate no one,
     which is the point (minimisation, RGPD register §6; not Goal #9, which is about what the API exposes).
     It runs through a human's read-only `kubectl exec` on the `postgres` pod (`k8s/README.md`, « Journal de

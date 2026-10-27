@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Mcp\Connection\Application;
 
 use App\Mcp\Connection\Application\FormEncodedRequest;
+use ArrayObject;
 use League\OAuth2\Server\Exception\OAuthServerException;
 use Nyholm\Psr7\ServerRequest;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -124,6 +125,52 @@ final class FormEncodedRequestTest extends TestCase
         } catch (OAuthServerException $exception) {
             self::assertSame('invalid_request', $exception->getErrorType());
         }
+    }
+
+    /**
+     * stringParameter() (#726, CR7) : la chaîne du corps analysé, telle
+     * quelle — vide comprise, chaque lecteur juge la sienne.
+     *
+     * @return iterable<string, array{string, string}>
+     */
+    public static function stringValues(): iterable
+    {
+        yield 'une valeur' => ['grant_type=authorization_code&code=abc', 'abc'];
+        yield 'une valeur vide' => ['grant_type=authorization_code&code=', ''];
+        yield 'un blanc intérieur' => ['grant_type=authorization_code&code=c+d', 'c d'];
+    }
+
+    #[DataProvider('stringValues')]
+    public function testAStringParameterIsReadFromTheParsedBody(string $raw, string $expected): void
+    {
+        $parsed = FormEncodedRequest::parse($this->request($raw, null), self::READ);
+
+        self::assertSame($expected, FormEncodedRequest::stringParameter($parsed, 'code'));
+    }
+
+    /**
+     * Rien d'autre qu'une chaîne : un paramètre absent, un tableau
+     * (`parse_str()` lit `x[]=…` ainsi ; parse() le refuse pour un nom lu,
+     * stringParameter() ne s'y fie pas), un entier d'un corps forgé, ou un
+     * corps qui n'a pas été analysé en tableau.
+     *
+     * @return iterable<string, array{ServerRequestInterface}>
+     */
+    public static function noStringValue(): iterable
+    {
+        $form = new ServerRequest('POST', '/api/oauth/token', ['Content-Type' => self::FORM]);
+
+        yield 'absent' => [$form->withParsedBody(['grant_type' => 'authorization_code'])];
+        yield 'en tableau' => [$form->withParsedBody(['code' => ['abc']])];
+        yield 'un entier' => [$form->withParsedBody(['code' => 42])];
+        yield 'aucun corps analysé' => [$form];
+        yield 'un corps objet' => [$form->withParsedBody(new ArrayObject(['code' => 'abc']))];
+    }
+
+    #[DataProvider('noStringValue')]
+    public function testAnythingButAStringParameterIsNull(ServerRequestInterface $request): void
+    {
+        self::assertNull(FormEncodedRequest::stringParameter($request, 'code'));
     }
 
     /**

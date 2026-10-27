@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Mcp\Connection\Infrastructure\League;
 
+use App\Mcp\Connection\Application\OAuthProfile;
 use App\Mcp\Connection\Domain\Entity\McpClient;
 use League\OAuth2\Server\Entities\ClientEntityInterface;
 
@@ -17,9 +18,6 @@ use League\OAuth2\Server\Entities\ClientEntityInterface;
  */
 final readonly class OAuthClient implements ClientEntityInterface
 {
-    /** Les deux grants servis : le code d'autorisation (PKCE) et le rafraîchissement. */
-    public const array SERVED_GRANTS = ['authorization_code', 'refresh_token'];
-
     public function __construct(
         private McpClient $client,
     ) {
@@ -67,10 +65,11 @@ final readonly class OAuthClient implements ClientEntityInterface
     /**
      * Lu par league (`AbstractGrant::supportsGrantType()`, par
      * `method_exists`) avant de servir un grant à ce client : tout autre
-     * grant est un `unauthorized_client`.
+     * grant est un `unauthorized_client`. Les grants servis sont ceux que
+     * les métadonnées annoncent, lus à la même source (OAuthProfile).
      */
     public function supportsGrantType(string $grantType): bool
     {
-        return \in_array($grantType, self::SERVED_GRANTS, true);
+        return \in_array($grantType, OAuthProfile::SERVED_GRANTS, true);
     }
 }

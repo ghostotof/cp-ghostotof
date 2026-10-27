@@ -8,7 +8,10 @@ use App\Mcp\Connection\Application\TokenEndpointInterface;
 use App\Tests\Mcp\Support\HoldsAnMcpConnection;
 use App\Tests\Support\ChildPhpProcess;
 use App\Tests\Support\FlushInterleaving;
+use App\Tests\Support\OpensProbeConnection;
 use App\Tests\Support\ProcessBarrier;
+use App\Tests\Support\SessionLockWait;
+use Doctrine\DBAL\Exception\DriverException;
 use Doctrine\ORM\EntityManagerInterface;
 use Nyholm\Psr7\Response;
 use Nyholm\Psr7\ServerRequest;
@@ -61,6 +64,7 @@ use Symfony\Component\Process\Process;
 final class TokenEndpointConcurrencyTest extends WebTestCase
 {
     use HoldsAnMcpConnection;
+    use OpensProbeConnection;
 
     private const int TIMEOUT_SECONDS = 30;
 
@@ -138,6 +142,172 @@ final class TokenEndpointConcurrencyTest extends WebTestCase
             $this->tokenRowCounts(),
             'Deux échanges simultanés d\'un même code ont émis deux paires (#649).',
         );
+    }
+
+    /**
+     * Le remplacement au premier échange (#726, D2) croise un
+     * rafraîchissement de la connexion qu'il remplace. C1 échangée, un second
+     * accord approuvé (C2, son code) ; A rafraîchit C1 — C1 tenue `FOR
+     * UPDATE` à son premier flush —, pendant que B échange le code de C2. B
+     * verrouille C2, émet ses jetons, puis son `UPDATE` des autres connexions
+     * du couple attend C1 : il attend le COMMIT de A, relit `revoked_at IS
+     * NULL` sur la ligne validée et révoque C1, cause `superseded`. L'ordre
+     * des verrous (la connexion du code, ses jetons, puis les autres
+     * connexions ; un rafraîchissement ne prend que la sienne puis ses
+     * jetons) ne laisse aucun cycle : aucune `40P01`, B rend `issued 200`.
+     *
+     * **Mesuré** : l'`UPDATE` de `revokeOtherActiveOf()` réécrit en `SKIP
+     * LOCKED` (`c.id IN (SELECT id … FOR UPDATE SKIP LOCKED)`) saute C1, tenue
+     * par A : C1 reste active, rouge.
+     */
+    public function testAnExchangeCrossingARefreshOfTheSupersededConnectionRevokesIt(): void
+    {
+        $issued = $this->exchange($this->grantedCode());
+        $firstRefreshToken = $this->json($issued)['refresh_token'] ?? null;
+        self::assertIsString($firstRefreshToken);
+        $secondCode = $this->codeGrantedByTheSignedInAccount();
+        $first = $this->heldMcpConnectionOf($issued);
+
+        $concurrent = $this->presentAtTheNextFlushOfThisProcess(self::formBody($this->exchangeParameters($secondCode)));
+        $response = $this->presentHere(self::formBody(self::refreshParameters($firstRefreshToken)));
+        $concurrent->wait();
+
+        self::assertSame(200, $response->getStatusCode(), 'Le rafraîchissement de A aurait dû aboutir.');
+        $written = $concurrent->getOutput().$concurrent->getErrorOutput();
+        // Des messages qui ne citent pas la valeur : un échec la publierait
+        // dans le journal de la CI.
+        foreach ([$secondCode, $firstRefreshToken, $first->accessToken] as $secret) {
+            self::assertFalse(str_contains($written, $secret), 'La sortie du fils cite un secret.');
+        }
+        self::assertSame(0, $concurrent->getExitCode(), 'L\'échange concurrent aurait dû aboutir : '.$written);
+        self::assertSame(1, preg_match('/^issued 200$/m', $concurrent->getOutput()), $written);
+        $causes = $this->mcpRows()->fetchAllKeyValue('SELECT id, revocation_cause FROM mcp_connection');
+        self::assertCount(2, $causes);
+        self::assertSame('superseded', $causes[$first->connectionId] ?? null, 'L\'échange a laissé active la connexion qu\'il remplace (#726).');
+        unset($causes[$first->connectionId]);
+        self::assertSame([null], array_values($causes), 'La connexion du code échangé doit rester active.');
+    }
+
+    /**
+     * L'ordre des verrous du remplacement (#726, relecture finale) : l'`UPDATE`
+     * des autres connexions actives du couple les verrouille **dans l'ordre
+     * des identifiants**, celui où la purge verrouille ses candidates (`FOR
+     * UPDATE … ORDER BY id`, `findActiveCandidatesForExpiry()`). Pris dans
+     * l'ordre où le plan les lit, deux candidates de la purge, autres
+     * connexions d'un même couple, pouvaient croiser son marquage : l'échange
+     * tenait Cb et attendait Ca, la purge tenait Ca et attendait Cb — `40P01`.
+     *
+     * Trois accords du même compte au même client : Ca < Cb (par identifiant)
+     * et la connexion C3 dont l'enfant échange le code. **L'ordre du tas
+     * contredit celui des identifiants** : Ca est réécrite (une mise à jour
+     * sans effet), sa version vivante part après Cb dans le tas — le test le
+     * vérifie par `ctid` avant tout. **Seul l'ordre du tas est contredit** :
+     * la mise à jour est HOT (aucune colonne indexée ne change), l'entrée
+     * d'index de Ca pointe toujours sur la racine de sa chaîne HOT, et un
+     * parcours par index garderait l'ordre des identifiants. Le test ne
+     * discrimine donc que sous le plan actuel, un parcours séquentiel de
+     * quelques lignes ; un plan par index le laisserait vert sans
+     * `ORDER BY` (`.claude/rules/backend-outillage.md`, « Concurrency
+     * tests »). Le test tient Ca `FOR UPDATE` (le premier verrou de la
+     * purge), l'enfant échange le code de C3 et doit bloquer sur Ca ; le
+     * test demande alors Cb `FOR UPDATE NOWAIT` : dans l'ordre des
+     * identifiants l'enfant n'a encore rien pris d'autre, elle est libre ; il
+     * relâche, l'enfant rend `issued 200`, Ca et Cb révoquées `superseded`.
+     *
+     * **Mesuré** sous l'`UPDATE` sans `ORDER BY` (la sous-requête ordonnée
+     * retirée de `revokeWhere()`) : l'enfant a pris Cb, dans l'ordre du tas,
+     * avant de bloquer sur Ca — le `NOWAIT` du test refusé en `55P03`, rouge.
+     */
+    public function testASupersessionLocksTheOtherConnectionsInIdOrder(): void
+    {
+        $this->grantedCode();
+        $this->codeGrantedByTheSignedInAccount();
+        $code = $this->codeGrantedByTheSignedInAccount();
+        $kept = $this->payloadOf($code)['user_id'] ?? null;
+        self::assertIsString($kept);
+        $others = $this->mcpRows()->fetchFirstColumn('SELECT id FROM mcp_connection WHERE id <> ? ORDER BY id', [$kept]);
+        self::assertCount(2, $others);
+        [$lower, $higher] = $others;
+        self::assertIsString($lower);
+        self::assertIsString($higher);
+
+        // Une nouvelle version de la ligne de Ca : elle prend place après Cb
+        // dans le tas, l'ordre d'un parcours séquentiel. Mise à jour HOT :
+        // l'index ne bouge pas, un parcours par index lirait encore Ca avant
+        // Cb.
+        $this->alterMcpRows('UPDATE mcp_connection SET granted_at = granted_at WHERE id = :id', ['id' => $lower]);
+        self::assertSame(
+            [$higher, $lower],
+            $this->mcpRows()->fetchFirstColumn('SELECT id FROM mcp_connection WHERE id IN (?, ?) ORDER BY ctid', [$lower, $higher]),
+            'L\'ordre du tas ne contredit pas celui des identifiants : le test ne discriminerait rien.',
+        );
+
+        [$holderSqlState, $concurrent] = $this->exchangeWhileHolding(
+            self::formBody($this->exchangeParameters($code)),
+            $lower,
+            $higher,
+        );
+
+        $written = $concurrent->getOutput().$concurrent->getErrorOutput();
+        // Un message qui ne cite pas la valeur : un échec la publierait dans
+        // le journal de la CI.
+        self::assertFalse(str_contains($written, $code), 'La sortie du fils cite un secret.');
+        self::assertNull($holderSqlState, 'L\'échange a verrouillé Cb avant Ca : hors de l\'ordre des identifiants (#726). '.$written);
+        self::assertSame(0, $concurrent->getExitCode(), 'L\'échange concurrent aurait dû aboutir : '.$written);
+        self::assertSame(1, preg_match('/^issued 200$/m', $concurrent->getOutput()), $written);
+        self::assertSame(
+            [$lower => 'superseded', $higher => 'superseded', $kept => null],
+            $this->mcpRows()->fetchAllKeyValue('SELECT id, revocation_cause FROM mcp_connection ORDER BY id'),
+        );
+    }
+
+    /**
+     * Tient `$heldId` `FOR UPDATE` dans une transaction à part, lance l'échange
+     * de `$body` dans un fils et attend que sa session bloque sur ce verrou
+     * ({@see SessionLockWait::untilBlocked()}), puis demande `$thenId` `FOR
+     * UPDATE NOWAIT`. Rend le SQLSTATE de cette demande (`null` si elle a
+     * abouti) et le fils, terminé. La transaction est close dans tous les cas.
+     *
+     * @return array{string|null, Process}
+     */
+    private function exchangeWhileHolding(#[SensitiveParameter] string $body, string $heldId, string $thenId): array
+    {
+        $holder = self::openProbeBeside($this->mcpRows());
+        $holderSqlState = null;
+        // Hors du try : le finally l'attend toujours, le fils ne survit jamais au test.
+        $concurrent = null;
+
+        try {
+            $holder->beginTransaction();
+            // Le filet : une attente que rien ne relâcherait échoue en 57014
+            // plutôt que de suspendre la suite.
+            $holder->executeStatement("SET statement_timeout = '3s'");
+            $holder->executeQuery('SELECT id FROM mcp_connection WHERE id = ? FOR UPDATE', [$heldId]);
+
+            $barrier = ProcessBarrier::hold('token-endpoint-lock-order-');
+            $concurrent = ChildPhpProcess::inTestEnvironment(self::TIMEOUT_SECONDS, self::CHILD_SCRIPT, $barrier->path());
+            $concurrent->setInput($body);
+            $concurrent->start();
+            $childPid = $barrier->sessionPidOf($concurrent, self::TIMEOUT_SECONDS);
+            $barrier->release();
+            SessionLockWait::beside($holder, $concurrent, $childPid, self::TIMEOUT_SECONDS)->untilBlocked();
+
+            try {
+                $holder->executeQuery('SELECT id FROM mcp_connection WHERE id = ? FOR UPDATE NOWAIT', [$thenId]);
+            } catch (DriverException $failure) {
+                $holderSqlState = $failure->getSQLState() ?? 'inconnu';
+            }
+        } finally {
+            if ($holder->isTransactionActive()) {
+                $holder->rollBack();
+            }
+            $holder->close();
+            $concurrent?->wait();
+        }
+
+        self::assertNotSame(ChildPhpProcess::SETUP_FAILED, $concurrent->getExitCode(), $concurrent->getErrorOutput());
+
+        return [$holderSqlState, $concurrent];
     }
 
     /**

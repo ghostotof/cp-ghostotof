@@ -14,8 +14,6 @@ use League\OAuth2\Server\AuthorizationServer;
 use League\OAuth2\Server\Exception\OAuthServerException;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
-use Psr\Log\LoggerInterface;
-use Throwable;
 
 /**
  * Le point de jeton (#647) : deux contrôles avant league, puis league, dans
@@ -49,7 +47,16 @@ use Throwable;
  *    l'émission des nouveaux. Une panne au milieu annule tout : jamais un
  *    jeton d'accès orphelin avec un code encore échangeable, jamais un client
  *    privé de son ancien rafraîchissement sans en avoir reçu un nouveau
- *    (`TokenControllerTest`, panne forcée par un déclencheur).
+ *    (`TokenControllerTest`, panne forcée par un déclencheur). **L'échange
+ *    réussi d'un code remplace l'accord précédent** (#726, D2, jamais à
+ *    l'approbation) : dans la même transaction, les autres connexions
+ *    actives du couple compte/client sont révoquées, cause `superseded`
+ *    (CodeExchangeSupersessionInterface), puis, après le COMMIT, une ligne
+ *    `mcp-connection-revoked` par connexion remplacée, qui nomme la
+ *    connexion du code échangé (`supersededBy`, `ConsentControllerTest`),
+ *    écrite par le même service (#726, S4 : ce point n'écrit plus lui-même au
+ *    journal de sécurité) ; une panne de cet audit ne change pas la réponse
+ *    (`TokenEndpointSupersessionAuditTest`).
  * 4. **Une connexion compromise est révoquée après la transaction** (#649).
  *    league juge le rafraîchissement dans sa validation, par
  *    `RefreshTokenRepository::isRefreshTokenRevoked()`, **sous le verrou de
@@ -69,9 +76,14 @@ use Throwable;
  *    réponse perdue y perd sa connexion — le prix de la rotation, accepté
  *    (`RefreshRotationTest`). Un code déjà échangé qui revient — l'un après
  *    l'autre comme en concurrence — est jugé de même, sous le même verrou,
- *    par `AuthCodeRepository::isAuthCodeRevoked()` (OAuth 2.1 §4.1.2) : la
- *    connexion est révoquée, cause `code-replay`, et les jetons que le code
- *    avait émis meurent avec elle (`CodeReplayTest`).
+ *    par `AuthCodeRepository::isAuthCodeRevoked()` (OAuth 2.1 §4.1.2) : si
+ *    le corps prouve la possession du vérificateur PKCE du code
+ *    (ReplayProofInterface, #726), la connexion est révoquée, cause
+ *    `code-replay`, et les jetons que le code avait émis meurent avec elle ;
+ *    sans cette preuve — un code intercepté sur la redirection, présenté
+ *    sans son vérificateur ou avec un faux —, le même refus, aucune
+ *    révocation, et la ligne `mcp-grant-refused` cause `replay-unproven`
+ *    (`CodeReplayTest`).
  * 5. **Tout autre refus d'un artefact authentique est audité** (#725) : la
  *    ressource étrangère comme les refus de league, hors de la transaction,
  *    par GrantRefusalAuditInterface — la ligne `mcp-grant-refused`, pour un
@@ -94,6 +106,9 @@ final readonly class TokenEndpoint implements TokenEndpointInterface
      */
     private const array READ_PARAMETERS = ['grant_type', 'code', 'redirect_uri', 'client_id', 'code_verifier', 'refresh_token', 'scope', 'resource'];
 
+    /** Le message d'une panne de l'audit d'un refus, constant (#725). */
+    private const string GRANT_REFUSAL_NOT_AUDITED = 'Grant refusal not audited.';
+
     public function __construct(
         private AuthorizationServer $server,
         private OAuthEndpoints $endpoints,
@@ -101,7 +116,9 @@ final readonly class TokenEndpoint implements TokenEndpointInterface
         private TransactionInterface $transaction,
         private McpConnectionRevokerInterface $revoker,
         private GrantRefusalAuditInterface $refusalAudit,
-        private LoggerInterface $logger,
+        private ReplayProofInterface $replayProof,
+        private CodeExchangeSupersessionInterface $supersession,
+        private FailSafeAudit $failSafeAudit,
     ) {
     }
 
@@ -113,20 +130,78 @@ final readonly class TokenEndpoint implements TokenEndpointInterface
             $this->refuseClientOutsideTheBody($request);
             $this->refuseForeignResource($request);
 
-            return $this->transaction->run(fn(): ResponseInterface => $this->server->respondToAccessTokenRequest($request, $response));
+            $outcome = $this->transaction->run(fn(): TokenExchangeOutcome => $this->issue($request, $response));
         } catch (CompromisedMcpConnectionException $compromise) {
             // La transaction est déjà annulée : la révocation s'écrit hors
             // d'elle, et survit au ROLLBACK de l'échange. Le refus levé ici
-            // n'atteint pas le `catch` voisin : une compromission a déjà sa
-            // ligne, `mcp-connection-revoked`.
-            $this->revoker->revoke($compromise->connectionId(), $compromise->revocationCause());
+            // n'atteint pas le `catch` voisin : une compromission révoquée a
+            // déjà sa ligne, `mcp-connection-revoked` — sauf le rejeu non
+            // prouvé ci-dessous, qui ne révoque rien et que ce `catch` audite
+            // lui-même.
+            //
+            // Un code rejoué ne révoque que sur preuve PKCE (#726) : league le
+            // juge avant le lien au client et avant le vérificateur, et un
+            // code se lit sur la redirection, qu'on intercepte. Sans le bon
+            // vérificateur, le même refus mot pour mot, aucune révocation, et
+            // la ligne `mcp-grant-refused` cause `replay-unproven`, écrite ici
+            // — le signal d'une interception. Un jeton de rafraîchissement
+            // réutilisé révoque toujours : il n'a pas d'autre preuve que
+            // lui-même.
+            $refusal = $this->refusalOf($compromise);
+            if ($compromise instanceof AuthorizationCodeReplayedException && !$this->replayProof->provesPossession($request)) {
+                $this->auditUnprovenReplay($request, $compromise);
 
-            throw $this->refusalOf($compromise);
+                throw $refusal;
+            }
+
+            $this->revoker->revoke($compromise);
+
+            throw $refusal;
         } catch (OAuthServerException $refusal) {
             $this->audit($request, $refusal);
 
             throw $refusal;
         }
+
+        // Après le COMMIT seulement : une transaction annulée n'a rien
+        // remplacé. L'audit ne lève jamais (CodeExchangeSupersessionInterface).
+        if (null !== $outcome->supersession) {
+            $this->supersession->auditSuperseded($outcome->supersession);
+        }
+
+        return $outcome->response;
+    }
+
+    /**
+     * Dans la transaction : league émet (ou refuse), puis, l'échange d'un
+     * code validé, les autres connexions actives du couple sont remplacées
+     * (#726, D2) — l'échange et le remplacement ensemble, ou rien.
+     *
+     * **Ordre des verrous** : la connexion du code (league, `FOR UPDATE` dans
+     * `AuthCodeRepository::isAuthCodeRevoked()`), ses jetons (le code révoqué,
+     * les jetons émis), puis les **autres** connexions du couple (l'`UPDATE`
+     * de `revokeOtherActiveOf()`, par id). Un rafraîchissement ne prend que
+     * sa connexion puis ses jetons : il ne tient jamais une autre connexion
+     * en attendant celle-ci, aucun cycle avec lui — un rafraîchissement d'une
+     * connexion remplacée fait attendre l'échange jusqu'à son COMMIT, après
+     * quoi PostgreSQL réévalue `revoked_at IS NULL` sur la ligne validée.
+     * **Deux croisements acceptés**, où l'ordre des ids ne ferme rien
+     * puisque l'échange tient sa propre connexion d'abord (PostgreSQL en
+     * annule un, `40P01`) : deux échanges simultanés de deux codes du même
+     * couple, qui tiennent chacun sa connexion et attendent celle de
+     * l'autre ; et une suppression de compte en cascade (`cpg_user` →
+     * `mcp_connection`, dans l'ordre où son plan les lit, du tas ou d'un
+     * index), qui peut tenir une autre connexion du couple, que l'échange
+     * attend, en voulant celle du code, que l'échange tient — l'échange
+     * annulé n'a rien écrit, la suppression annulée se redemande à la main
+     * (`.claude/rules/mcp-oauth-cycle-de-vie.md`, « A new grant supersedes
+     * the previous one »).
+     */
+    private function issue(ServerRequestInterface $request, ResponseInterface $response): TokenExchangeOutcome
+    {
+        $answer = $this->server->respondToAccessTokenRequest($request, $response);
+
+        return new TokenExchangeOutcome($answer, $this->supersession->supersedeOthersOf($request));
     }
 
     /**
@@ -135,15 +210,33 @@ final readonly class TokenEndpoint implements TokenEndpointInterface
      * (#725, décision de l'auteur du 2026-10-27) : le client reçoit le refus
      * de league, et la panne sort en `critical` sur le canal principal — un
      * refus non audité reste visible. La classe seule, jamais le message :
-     * une erreur du pilote ou du chiffrement pourrait citer l'artefact.
+     * une erreur du pilote ou du chiffrement pourrait citer l'artefact
+     * ({@see FailSafeAudit}).
      */
     private function audit(ServerRequestInterface $request, OAuthServerException $refusal): void
     {
-        try {
-            $this->refusalAudit->record($request, $refusal);
-        } catch (Throwable $failure) {
-            $this->logger->critical('Grant refusal not audited.', ['exceptionClass' => $failure::class]);
-        }
+        $this->failSafeAudit->attempt(
+            function () use ($request, $refusal): void {
+                $this->refusalAudit->record($request, $refusal);
+            },
+            self::GRANT_REFUSAL_NOT_AUDITED,
+        );
+    }
+
+    /**
+     * Le rejeu non prouvé, audité `replay-unproven` comme tout refus d'un
+     * artefact authentique, même message en cas de panne : sa connexion est
+     * celle que la compromission désigne déjà (#726, CR4), le code n'est pas
+     * redéchiffré pour la retrouver.
+     */
+    private function auditUnprovenReplay(ServerRequestInterface $request, AuthorizationCodeReplayedException $compromise): void
+    {
+        $this->failSafeAudit->attempt(
+            function () use ($request, $compromise): void {
+                $this->refusalAudit->recordUnprovenReplay($request, $compromise->connectionId());
+            },
+            self::GRANT_REFUSAL_NOT_AUDITED,
+        );
     }
 
     /**
@@ -180,10 +273,9 @@ final readonly class TokenEndpoint implements TokenEndpointInterface
      */
     private function refuseClientOutsideTheBody(ServerRequestInterface $request): void
     {
-        $body = $request->getParsedBody();
-        $clientId = \is_array($body) ? ($body['client_id'] ?? null) : null;
+        $clientId = FormEncodedRequest::stringParameter($request, 'client_id');
 
-        if (!\is_string($clientId) || '' === $clientId) {
+        if (null === $clientId || '' === $clientId) {
             throw OAuthServerException::invalidClient($request);
         }
     }
@@ -204,7 +296,7 @@ final readonly class TokenEndpoint implements TokenEndpointInterface
             return;
         }
 
-        if (!$this->isKnownClient($body['client_id'] ?? null)) {
+        if (!$this->isKnownClient(FormEncodedRequest::stringParameter($request, 'client_id'))) {
             throw OAuthServerException::invalidClient($request);
         }
 
@@ -216,9 +308,9 @@ final readonly class TokenEndpoint implements TokenEndpointInterface
      * aucun client : il n'est pas cherché (un octet nul ou un UTF-8 invalide
      * n'atteignent pas PostgreSQL).
      */
-    private function isKnownClient(mixed $clientId): bool
+    private function isKnownClient(?string $clientId): bool
     {
-        if (!\is_string($clientId)) {
+        if (null === $clientId) {
             return false;
         }
 

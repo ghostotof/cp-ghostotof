@@ -6,6 +6,7 @@ namespace App\Tests\Mcp\Connection\Domain\ValueObject;
 
 use App\Mcp\Connection\Domain\Exception\InvalidConnectionLifetimeException;
 use App\Mcp\Connection\Domain\ValueObject\ConnectionLifetimes;
+use Closure;
 use DateInterval;
 use DateTimeImmutable;
 use DateTimeZone;
@@ -15,7 +16,8 @@ use PHPUnit\Framework\TestCase;
 /**
  * Les durées d'une connexion MCP et de ses jetons (#649), lues en
  * configuration : chacune doit être un intervalle ISO 8601 lisible et
- * strictement positif, l'inactivité ne dépasse pas la durée maximale, le jeton
+ * strictement positif, l'inactivité et la durée maximale dépassent un jour plus
+ * la durée d'un code, une heure et une minute, l'inactivité ne dépasse pas la durée maximale, le jeton
  * d'accès ne survit pas à son rafraîchissement. Un refus nomme le paramètre,
  * jamais la valeur.
  */
@@ -123,46 +125,211 @@ final class ConnectionLifetimesTest extends TestCase
     }
 
     /**
-     * Le délai d'inactivité et la durée maximale d'une connexion valent au
-     * moins un jour (relecture du lot B de #649) : la purge présélectionne ses
+     * Les deux planchers du délai d'inactivité et de la durée maximale d'une
+     * connexion, jugés paramètre par paramètre, l'inactivité d'abord, chacun
+     * avant l'ordre des deux durées.
+     *
+     * Sous un jour (relecture du lot B de #649) : la purge présélectionne ses
      * candidates par `maintenant − durée + P1D`, et une durée plus courte
      * mettrait cette borne dans le futur — chaque connexion active serait
-     * verrouillée `FOR UPDATE` à chaque nuit. Un jour exactement est admis
-     * (`P1D` comme `PT24H`, égaux sur l'instant de référence) ; une seconde de
-     * moins est refusée, le plancher jugé avant l'ordre des deux durées.
+     * verrouillée `FOR UPDATE` à chaque nuit. Une seconde de moins qu'un jour
+     * reste refusée pour cette cause.
      *
-     * @return iterable<string, array{array<string, string>, ?string}>
+     * Jusqu'à un jour plus la durée d'un code plus une heure plus une minute,
+     * inclus (#726, CR1) : la connexion d'un code encore échangeable pourrait
+     * être candidate de la purge, et le marquage (`FOR UPDATE … ORDER BY id`)
+     * croiserait le remplacement de l'échange, qui tient cette connexion la
+     * première. L'heure couvre les changements d'heure (le jour de calendrier
+     * de la borne de la purge dure alors 23 ou 25 heures, voir
+     * testAFreshConnectionIsNeverPreselectedAcrossTheClockChanges()), la
+     * minute la troncature à la seconde, l'écart entre l'octroi et le code et
+     * le décalage d'horloge entre nœuds. Avec un code de `PT10M`, `P1D`,
+     * `P1DT1H10M1S` et `P1DT1H11M` sont refusés, une seconde de plus est
+     * admise. La borne suit la durée configurée du code.
+     *
+     * @return iterable<string, array{array<string, string>, ?string, ?string}>
      */
-    public static function connectionDurationsAroundOneDay(): iterable
+    public static function connectionDurationsAroundTheFloors(): iterable
     {
-        yield 'inactivité d\'un jour' => [['idleLifetime' => 'P1D'], null];
-        yield 'inactivité de vingt-quatre heures' => [['idleLifetime' => 'PT24H'], null];
-        yield 'inactivité d\'une seconde sous le jour' => [['idleLifetime' => 'PT23H59M59S'], 'idleLifetime'];
-        yield 'inactivité de douze heures' => [['idleLifetime' => 'PT12H'], 'idleLifetime'];
-        yield 'durée maximale d\'un jour' => [['idleLifetime' => 'P1D', 'maximumLifetime' => 'P1D'], null];
-        yield 'durée maximale d\'une seconde sous le jour' => [['idleLifetime' => 'P1D', 'maximumLifetime' => 'PT23H59M59S'], 'maximumLifetime'];
-        yield 'durée maximale de douze heures' => [['idleLifetime' => 'PT12H', 'maximumLifetime' => 'PT12H'], 'idleLifetime'];
+        yield 'inactivité de douze heures' => [['idleLifetime' => 'PT12H'], 'idleLifetime', 'belowOneDay'];
+        yield 'inactivité d\'une seconde sous le jour' => [['idleLifetime' => 'PT23H59M59S'], 'idleLifetime', 'belowOneDay'];
+        yield 'inactivité d\'un jour' => [['idleLifetime' => 'P1D'], 'idleLifetime', 'freshConnection'];
+        yield 'inactivité de vingt-quatre heures' => [['idleLifetime' => 'PT24H'], 'idleLifetime', 'freshConnection'];
+        yield 'inactivité d\'un jour, d\'un code et d\'une seconde' => [['idleLifetime' => 'P1DT10M1S'], 'idleLifetime', 'freshConnection'];
+        yield 'inactivité d\'un jour, d\'un code, d\'une heure et d\'une seconde' => [['idleLifetime' => 'P1DT1H10M1S'], 'idleLifetime', 'freshConnection'];
+        yield 'inactivité au plancher' => [['idleLifetime' => 'P1DT1H11M'], 'idleLifetime', 'freshConnection'];
+        yield 'inactivité au plancher, en heures' => [['idleLifetime' => 'PT25H11M'], 'idleLifetime', 'freshConnection'];
+        yield 'inactivité d\'une seconde au-delà du plancher' => [['idleLifetime' => 'P1DT1H11M1S'], null, null];
+        yield 'inactivité d\'une seconde au-delà du plancher, en heures' => [['idleLifetime' => 'PT25H11M1S'], null, null];
+        yield 'durée maximale de douze heures' => [['idleLifetime' => 'PT12H', 'maximumLifetime' => 'PT12H'], 'idleLifetime', 'belowOneDay'];
+        yield 'durée maximale d\'une seconde sous le jour' => [['idleLifetime' => 'P1DT1H11M1S', 'maximumLifetime' => 'PT23H59M59S'], 'maximumLifetime', 'belowOneDay'];
+        yield 'durée maximale d\'un jour' => [['idleLifetime' => 'P1DT1H11M1S', 'maximumLifetime' => 'P1D'], 'maximumLifetime', 'freshConnection'];
+        yield 'durée maximale au plancher' => [['idleLifetime' => 'P1DT1H11M1S', 'maximumLifetime' => 'P1DT1H11M'], 'maximumLifetime', 'freshConnection'];
+        yield 'durée maximale d\'une seconde au-delà du plancher' => [['idleLifetime' => 'P1DT1H11M1S', 'maximumLifetime' => 'P1DT1H11M1S'], null, null];
+        yield 'inactivité d\'un jour sous une durée maximale admise' => [['idleLifetime' => 'P1D', 'maximumLifetime' => 'P1DT1H11M1S'], 'idleLifetime', 'freshConnection'];
+        yield 'code d\'une heure, inactivité d\'un jour, une heure et onze minutes' => [['codeLifetime' => 'PT1H', 'idleLifetime' => 'P1DT1H11M1S'], 'idleLifetime', 'freshConnection'];
+        yield 'code d\'une heure, inactivité au plancher' => [['codeLifetime' => 'PT1H', 'idleLifetime' => 'P1DT2H1M'], 'idleLifetime', 'freshConnection'];
+        yield 'code d\'une heure, inactivité d\'une seconde au-delà du plancher' => [['codeLifetime' => 'PT1H', 'idleLifetime' => 'P1DT2H1M1S'], null, null];
+        yield 'code d\'une heure, durée maximale au plancher' => [['codeLifetime' => 'PT1H', 'idleLifetime' => 'P1DT2H1M1S', 'maximumLifetime' => 'P1DT2H1M'], 'maximumLifetime', 'freshConnection'];
+    }
+
+    /**
+     * Le plancher ferme le croisement par construction, changements d'heure
+     * compris (#726, CR1) : à la plus courte durée admise, aucune connexion
+     * dont le code est encore échangeable n'est présélectionnée par la purge,
+     * à aucune seconde autour des deux changements d'heure de 2026 à Paris,
+     * une minute de jeu laissée à son octroi.
+     *
+     * La borne est celle de la purge, lue à sa source
+     * ({@see ConnectionLifetimes::preselectionBoundsAt()}, #726) et comparée à
+     * l'octroi le plus ancien d'un code encore échangeable (`$now − code`,
+     * temps écoulé : league refuse un code passé son `expire_time`), avancé
+     * d'une minute : l'octroi tronqué à la seconde, l'écart entre l'octroi et
+     * le code, le décalage d'horloge entre le nœud du Job et celui de FPM.
+     * Témoins, sur des durées que fromConfiguration() refuse — la borne y est
+     * donc écrite comme preselectionBoundsAt() la calcule, `$now->sub(durée)
+     * ->add(P1D)` : au plancher refusé (`P1DT1H11M`) le jeu est consommé à la
+     * seconde près, et sans l'heure (`P1DT10M1S`, la mesure de #726 : 3 599 s
+     * de recouvrement) la borne atteint l'octroi.
+     */
+    public function testAFreshConnectionIsNeverPreselectedAcrossTheClockChanges(): void
+    {
+        $code = new DateInterval(self::CONFIGURED['codeLifetime']);
+        $shortest = $this->lifetimes(['idleLifetime' => 'P1DT1H11M1S', 'maximumLifetime' => 'P1DT1H11M1S']);
+
+        foreach ([
+            'inactivité' => static fn (DateTimeImmutable $now): DateTimeImmutable => $shortest->preselectionBoundsAt($now)->idleBefore(),
+            'durée maximale' => static fn (DateTimeImmutable $now): DateTimeImmutable => $shortest->preselectionBoundsAt($now)->maximumBefore(),
+        ] as $bound => $boundAt) {
+            self::assertNull($this->firstFreshConnectionPreselected($boundAt, $code), 'Une connexion fraîche est candidate de la purge, borne : '.$bound.'.');
+        }
+
+        self::assertNotNull($this->firstFreshConnectionPreselected($this->boundWritten(new DateInterval('P1DT1H11M')), $code), 'Le témoin au plancher n\'est pas atteint : le balayage ne voit rien.');
+        self::assertNotNull($this->firstFreshConnectionPreselected($this->boundWritten(new DateInterval('P1DT10M1S')), $code), 'Le plancher sans l\'heure n\'est plus atteint : le balayage ne voit rien.');
+    }
+
+    /**
+     * Les bornes de la présélection de la purge (#726), à un instant en UTC
+     * (aucun changement d'heure) : `maintenant − durée + un jour`, pour l'inactivité
+     * puis pour la durée maximale, chacune à sa place — un couple positionnel
+     * inversé ne se verrait pas, deux accesseurs nommés si. L'instant passé
+     * n'est pas touché, et deux lectures rendent les mêmes bornes.
+     */
+    public function testThePreselectionBoundsAreNowMinusEachDurationPlusOneDay(): void
+    {
+        $now = new DateTimeImmutable('2026-06-15T10:00:00+00:00');
+        $lifetimes = $this->lifetimes();
+
+        $bounds = $lifetimes->preselectionBoundsAt($now);
+
+        self::assertSame('2026-05-17T10:00:00+00:00', $bounds->idleBefore()->format(DATE_ATOM));
+        self::assertSame('2026-03-18T10:00:00+00:00', $bounds->maximumBefore()->format(DATE_ATOM));
+        self::assertSame('2026-06-15T10:00:00+00:00', $now->format(DATE_ATOM), 'L\'instant passé a été modifié.');
+        self::assertEquals($bounds, $lifetimes->preselectionBoundsAt($now));
+    }
+
+    /**
+     * À travers le passage à l'heure d'hiver (2026-10-25), les bornes comptent
+     * des jours de calendrier, comme les échéances (#445 : `new DateInterval`,
+     * jamais `modify()`) : à `2026-10-26T10:00` CET, la borne d'inactivité est
+     * le `2026-09-27T10:00` CEST — même heure murale, 29 jours et une heure
+     * écoulés —, celle de la durée maximale le `2026-07-29T10:00` CEST. Et
+     * une connexion à son échéance d'inactivité exacte est présélectionnée :
+     * la présélection est large, jamais plus étroite que l'échéance.
+     */
+    public function testThePreselectionBoundsCountCalendarDaysAcrossTheAutumnClockChange(): void
+    {
+        $paris = new DateTimeZone('Europe/Paris');
+        $now = new DateTimeImmutable('2026-10-26 10:00:00', $paris);
+        $lifetimes = $this->lifetimes();
+
+        $bounds = $lifetimes->preselectionBoundsAt($now);
+
+        self::assertSame('2026-09-27T10:00:00+02:00', $bounds->idleBefore()->format(DATE_ATOM));
+        self::assertSame((29 * 24 + 1) * 3600, $now->getTimestamp() - $bounds->idleBefore()->getTimestamp());
+        self::assertSame('2026-07-29T10:00:00+02:00', $bounds->maximumBefore()->format(DATE_ATOM));
+        $lastUseDeadNow = new DateTimeImmutable('2026-09-26 10:00:00', $paris);
+        self::assertEquals($now, $lifetimes->idleDeadline($lastUseDeadNow));
+        self::assertLessThanOrEqual($bounds->idleBefore(), $lastUseDeadNow, 'Une connexion échue à cet instant échappe à la présélection.');
+    }
+
+    /**
+     * La borne de présélection pour une durée que fromConfiguration() refuse,
+     * écrite comme {@see ConnectionLifetimes::preselectionBoundsAt()} la
+     * calcule : le témoin des planchers.
+     *
+     * @return Closure(DateTimeImmutable): DateTimeImmutable
+     */
+    private function boundWritten(DateInterval $duration): Closure
+    {
+        $margin = new DateInterval(ConnectionLifetimes::MINIMUM_CONNECTION_LIFETIME);
+
+        return static fn (DateTimeImmutable $now): DateTimeImmutable => $now->sub($duration)->add($margin);
+    }
+
+    /**
+     * Le premier instant de purge où la borne de présélection (`$boundAt`)
+     * atteint l'octroi le plus ancien d'un code encore échangeable, une minute
+     * de jeu comprise, ou `null`. Balayage à la seconde de 00:00 à 02:00 UTC
+     * les jours où la mesure a trouvé un recouvrement (le 29 et le 30 mars, le
+     * 25 et le 26 octobre 2026), à la minute sur les cinq jours autour de
+     * chaque changement.
+     *
+     * @param Closure(DateTimeImmutable): DateTimeImmutable $boundAt
+     */
+    private function firstFreshConnectionPreselected(Closure $boundAt, DateInterval $code): ?DateTimeImmutable
+    {
+        $paris = new DateTimeZone('Europe/Paris');
+        // La minute de jeu du plancher (troncature, écart octroi-code, décalage
+        // d'horloge), lue à sa source : une marge changée là suit ici.
+        $slack = new DateInterval(ConnectionLifetimes::SECOND_TRUNCATION_AND_SKEW_MARGIN);
+        $sweeps = [];
+        foreach (['2026-03-29', '2026-03-30', '2026-10-25', '2026-10-26'] as $day) {
+            $sweeps[] = [new DateTimeImmutable($day.'T00:00:00+00:00'), 2 * 3600, 1];
+        }
+
+        foreach (['2026-03-27', '2026-10-23'] as $day) {
+            $sweeps[] = [new DateTimeImmutable($day.'T00:00:00+00:00'), 5 * 24 * 3600, 60];
+        }
+
+        foreach ($sweeps as [$start, $length, $step]) {
+            for ($elapsed = 0; $elapsed < $length; $elapsed += $step) {
+                $now = $start->add(new DateInterval('PT'.$elapsed.'S'))->setTimezone($paris);
+                if ($boundAt($now) >= $now->sub($code)->sub($slack)) {
+                    return $now;
+                }
+            }
+        }
+
+        return null;
     }
 
     /**
      * @param array<string, string> $overrides
      * @param ?string               $refusedParameter le paramètre que le refus nomme ; `null` si la configuration est admise
+     * @param ?string               $floor            le plancher franchi : `belowOneDay` ou `freshConnection`
      */
-    #[DataProvider('connectionDurationsAroundOneDay')]
-    public function testAConnectionDurationUnderOneDayIsRefused(array $overrides, ?string $refusedParameter): void
+    #[DataProvider('connectionDurationsAroundTheFloors')]
+    public function testAConnectionDurationAtOrBelowItsFloorsIsRefused(array $overrides, ?string $refusedParameter, ?string $floor): void
     {
         if (null === $refusedParameter) {
             $lifetimes = $this->lifetimes($overrides);
-            self::assertSame(24 * 3600, $this->seconds($lifetimes->idle()), 'Une durée d\'un jour est admise, lue telle quelle.');
+            $expected = [...self::CONFIGURED, ...$overrides];
+            self::assertSame($this->seconds(new DateInterval($expected['idleLifetime'])), $this->seconds($lifetimes->idle()), 'Une durée admise est lue telle quelle.');
+            self::assertSame($this->seconds(new DateInterval($expected['maximumLifetime'])), $this->seconds($lifetimes->maximum()), 'Une durée admise est lue telle quelle.');
 
             return;
         }
 
+        $expectedRefusal = 'belowOneDay' === $floor
+            ? InvalidConnectionLifetimeException::belowOneDay($refusedParameter)
+            : InvalidConnectionLifetimeException::notBeyondFreshConnectionWindow($refusedParameter);
+
         try {
             $this->lifetimes($overrides);
-            self::fail('Une durée de connexion sous un jour a été acceptée.');
+            self::fail('Une durée de connexion à son plancher ou en dessous a été acceptée.');
         } catch (InvalidConnectionLifetimeException $refusal) {
-            self::assertSame(InvalidConnectionLifetimeException::belowOneDay($refusedParameter)->getMessage(), $refusal->getMessage());
+            self::assertSame($expectedRefusal->getMessage(), $refusal->getMessage());
             self::assertStringContainsString($refusedParameter, $refusal->getMessage());
             self::assertStringNotContainsString($overrides[$refusedParameter], $refusal->getMessage(), 'Le refus cite la valeur.');
         }

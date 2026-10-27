@@ -60,8 +60,8 @@ trait HoldsAnMcpConnection
      * reconnecte au site et consent une seconde fois — une autre ligne
      * `mcp_connection`, un autre jeton. **À un autre client**
      * (OTHER_CLIENT_ID) : un second accord au même client remplacerait le
-     * premier (#649, décision 2), et les deux connexions ne seraient plus
-     * actives ensemble.
+     * premier au premier échange de son code (#649, décision 2 ; #726, D2),
+     * et les deux connexions ne seraient plus actives ensemble.
      */
     private function holdAnotherMcpConnection(): HeldMcpConnection
     {

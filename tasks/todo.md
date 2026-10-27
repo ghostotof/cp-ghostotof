@@ -111,7 +111,8 @@ phase 1 parte en release seule ; puis au merge de clôture, qui archive la spec 
       d'un double clic sur l'approbation (limite acceptée, à montrer dans #650) → #650, commentaire du
       2026-10-27 ; les quatre limites acceptées du lot C des relectures (deux rafraîchissements légitimes
       simultanés révoquent, l'accord précédent révoqué à l'approbation, le code rejoué jugé avant la liaison
-      au client et PKCE, les candidates de la purge verrouillées pendant ses suppressions) → #726, écrites
+      au client et PKCE, les candidates de la purge verrouillées pendant ses suppressions) → #726 (tranchées le
+      2026-10-27 : D1 gardée, D2-D4 corrigées), écrites
       dans la règle `mcp-oauth-cycle-de-vie.md` et la spec. Notes de la release :
       migration `Version20261026120000` (colonne `revocation_cause`, contrainte `CHECK`, index partiel) ;
       troisième commande `app:mcp:purge` au CronJob de ménage quotidien

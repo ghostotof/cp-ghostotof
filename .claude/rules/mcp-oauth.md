@@ -38,14 +38,15 @@ paths:
   `McpConnection`, `McpAuthorizationCode`, `McpAccessToken`, `McpRefreshToken`, the value objects
   `RedirectUri`, `McpClientId`, `McpClientName`, `TokenHashShape`), `Application/` (validator, consent, token
   endpoint, URLs, the port `AuthenticationInstantInterface`, the pure helpers `QueryParameterPollution`,
-  `FormEncodedRequest`, `IssParameter`, `InvalidTarget`), `Infrastructure/League/` (league's repositories and
+  `FormEncodedRequest`, `IssParameter`, `InvalidTarget`, the constants of `OAuthProfile`), `Infrastructure/League/` (league's repositories and
   entities, the two grants, the key), `Infrastructure/Doctrine/`, `Infrastructure/Security/`
   (`JwtAuthenticationInstant`), `Presentation/` (thin controllers, `app:mcp:client:register`). Every exception
   carries the `…Exception` suffix, like all of `src/`.
 - **An assumed exception to the context boundaries: `Mcp/Connection` depends on `Security` directly.** It is
   the first context outside `Security` whose entity references `CpgUser` (`McpConnection::$account`, a
   `ManyToOne` on `account_id`, `ON DELETE CASCADE`) and whose service depends on
-  `SecurityAuditLoggerInterface` (`ConsentService`, the `mcp-connection-granted` line). Elsewhere a context
+  `SecurityAuditLoggerInterface` (`ConsentService`, the `mcp-connection-granted` line; `CodeExchangeSupersession`, the
+  `superseded` lines after the exchange's COMMIT, #726 — `TokenEndpoint` no longer imports `Security` since S4). Elsewhere a context
   designates an account through `Shared/Domain/Security/AccountReference` (its UUID, `Ai`'s quotas) and never
   imports `Security`. Here the spec requires the foreign key — removing the account must kill its connections in
   the database, not wait for a purge — and Doctrine maps it on the entity class only; and the grant belongs to
@@ -119,7 +120,7 @@ paths:
   absent or own `resource` leaves league to authenticate the client. **Since #725 the token endpoint requires the
   `client_id` in the body whatever the `resource`** (`TokenEndpoint::refuseClientOutsideTheBody()`, `invalid_client`
   before league): league also read it from HTTP Basic, where the audit of a refused grant did not see who presented
-  it (`.claude/rules/mcp-oauth-cycle-de-vie.md`, « Every refusal of an authentic grant is audited »). A client
+  it (`.claude/rules/mcp-oauth-audits.md`, « Every refusal of an authentic grant is audited »). A client
   identifier holding a `:` never passed in Basic anyway — league splits the user at the first colon. Every access token carries that audience whatever was asked
   (`AccessTokenRepository`). **The scope summarised, sent back to the page and stored on the connection is the
   set granted**, never the raw repetition (`scope=nominative:read%20nominative:read` gives `nominative:read`,
@@ -172,8 +173,9 @@ paths:
   judged `FOR UPDATE` on its connection, inside the token endpoint's transaction, and a rotated refresh token
   presented again revokes the connection — the lock, the order of judgement and the two clocks are in
   `.claude/rules/mcp-oauth-cycle-de-vie.md`, « The refresh is judged under the lock of its connection ». A code
-  exchanged twice is judged the same way, and its replay revokes the connection too — « A replayed code is judged
-  under the same lock », in the same rule.
+  exchanged twice is judged the same way, and its replay revokes the connection too **when the body proves the
+  code's PKCE verifier** (#726; otherwise the same refusal, no revocation, `replay-unproven`) — « A replayed code
+  is judged under the same lock », in the same rule.
 - **OAuth answers are league's (RFC 6749 §5.2), rendered by the controller, never thrown**:
   `ApiProblemResponseListener` / `ApiJsonErrorFormatListener` would rewrite them as problem+json, which
   OAuth clients do not read. **What the controllers render is `Cache-Control: no-store`**: the authorize
@@ -237,7 +239,7 @@ paths:
   is named only in `McpBearerRefusedException`'s constant message (`MCP access token refused: <cause>`, never the
   token, its hash nor a UUID), logged by the `security` channel's « Authenticator failed. », and — for a **known**
   token (every cause but `Malformed` and `Unknown`) — in the audit line `mcp-access-token-refused` (#649,
-  `.claude/rules/mcp-oauth-cycle-de-vie.md`, « A known token refused is audited »); the `AuthenticatorManager`
+  `.claude/rules/mcp-oauth-audits.md`, « A known token refused is audited »); the `AuthenticatorManager`
   catches it, its `log_level: info` is never used (like `SubmittedPasswordTooLongException`). On success the request
   goes on as `McpConnectionUser` (`Application/McpConnectionPrincipal`, an `AccountReference`): identifier = the
   **connection**'s UUID, roles = the account's stored roles, `accountId()`, `connectionId()`, `clientId()` (public
@@ -253,10 +255,10 @@ paths:
   judge**: `ConsentService` revalidates the request through the same validator on both calls, keeping
   nothing in between; a refusal there is a 400 problem+json, never a redirect. The approval writes the
   connection and, through league, its code in one transaction (`TransactionInterface`), then the audit
-  line `mcp-connection-granted` **after** the COMMIT (`ConsentServiceTest`); **it supersedes the active grant of
-  the same account and client** in that transaction, cause `superseded`, one `mcp-connection-revoked` line per
-  superseded connection after the grant's (#649: `.claude/rules/mcp-oauth-cycle-de-vie.md`, « A new grant
-  supersedes the previous one »); a denial creates, revokes and logs nothing and sends league's `access_denied`. The POST answers a 200 JSON `redirectUri`, not a 302
+  line `mcp-connection-granted` **after** the COMMIT (`ConsentServiceTest`); **the active grant of the same account
+  and client is superseded at the first exchange of the new code**, never at the approval (#726, D2): in the token
+  endpoint's transaction, cause `superseded`, one `mcp-connection-revoked` line per superseded connection after its
+  COMMIT, naming the connection that replaces it (`supersededBy`, #726 audit B3) (#649: `.claude/rules/mcp-oauth-cycle-de-vie.md`, « A new grant supersedes the previous one »); a denial creates, revokes and logs nothing and sends league's `access_denied`. The POST answers a 200 JSON `redirectUri`, not a 302
   (`fetch()` would follow it). `ConsentControllerTest` (base tier and non-trusted 403, anonymous 401 on the GET and
   the CSRF guard's 403 on the POST, CSRF 403 at the trusted tier, 422 without `approved`). The account is read
   by `#[CurrentUser] CpgUser`, checked rather than cast. **An approval requires a recent authentication**
@@ -289,7 +291,9 @@ paths:
   (`oauth_resource_metadata`, `oauth_server_metadata`, `$`-anchored, no authenticator), its `PUBLIC_ACCESS`
   rule and its justified entry in `RouterScopeTest::NON_API_PATHS`; public JSON cached an hour
   (`MetadataDocumentResponseFactory`). What is announced is what the server does, nothing more
-  (`OAuthServerMetadata`): `S256` only, `none` auth, `response_modes_supported: ["query"]` (omitted, RFC 8414
+  (`OAuthServerMetadata`): `S256` only, `none` auth,
+  the grant types and the PKCE method read from `Application/OAuthProfile` (#726), the one source the grant
+  (`LoopbackAwareAuthCodeGrant`), the client (`OAuthClient`, `ClientRepository`) and the payload reader apply, `response_modes_supported: ["query"]` (omitted, RFC 8414
   defaults to query **and** fragment), no `registration_endpoint`, **no OIDC document**.
   **One announcement ahead of the code, accepted** (phase 2 only ships whole):
   `client_id_metadata_document_supported: true` until CIMD (#651) lands; `bearer_methods_supported: ["header"]` is

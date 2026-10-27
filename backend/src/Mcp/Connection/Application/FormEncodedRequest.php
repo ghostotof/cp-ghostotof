@@ -52,6 +52,27 @@ final class FormEncodedRequest
     }
 
     /**
+     * La valeur d'un paramètre du corps analysé, quand c'est une chaîne —
+     * vide comprise, chaque lecteur juge la sienne ; `null` sinon : un corps
+     * non analysé, un paramètre absent, ou reçu en tableau (`code[]=…`).
+     * Écrite une fois (#726, CR7) pour le point de jeton et ses
+     * collaborateurs, qui lisent tous le corps que {@see self::parse()} a
+     * tiré du corps brut contrôlé — le même que league a lu.
+     *
+     * La valeur peut être un secret (un code, un vérificateur, un jeton de
+     * rafraîchissement) : rendue, jamais reçue en paramètre — `$name` est un
+     * nom, jamais une valeur —, elle n'appelle aucun `#[SensitiveParameter]`
+     * ici ; c'est à celui qui la reçoit ensuite d'en porter un.
+     */
+    public static function stringParameter(ServerRequestInterface $request, string $name): ?string
+    {
+        $body = $request->getParsedBody();
+        $value = \is_array($body) ? ($body[$name] ?? null) : null;
+
+        return \is_string($value) ? $value : null;
+    }
+
+    /**
      * Une valeur lue entourée de blancs est refusée, jamais corrigée (#725) :
      * league la lit sans eux (`AbstractGrant::parseParam()` fait un `trim()`),
      * tout autre lecteur du même corps la lirait avec. Un code entouré d'une
