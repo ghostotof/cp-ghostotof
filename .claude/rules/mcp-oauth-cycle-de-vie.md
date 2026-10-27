@@ -294,7 +294,7 @@ paths:
   hour (`access_token`, `PT1H`), then refreshes — at most one line per connection and per hour in normal use; more
   means a client that does not refresh, or a connection used after its revocation or expiry — and that bound holds
   for **normal use only**: a known refused token replayed on purpose writes one line per request, bounded by nothing
-  but the nginx `mcp` zone (60 a minute per IP and per pod), accepted since the line names a connection that exists and
+  but the nginx `mcp` zone (60 a minute per IP and per pod, `burst=20 nodelay`: up to 80 the first minute), accepted since the line names a connection that exists and
   a client that keeps presenting it. **No query more**: the
   line goes to the Monolog channel, and the connection, its account and its client are those of the token's single
   join (`testARefusedKnownTokenCostsNoExtraQuery`: the refused call costs exactly the accepted call's
@@ -361,8 +361,8 @@ paths:
 - **Accepted limits of #649, decided by the author on 2026-10-27, kept as they are and tracked by issue #726** (the
   reviews' lot C; each is behaviour, not a defect to fix in passing — revisit through #726 only):
   1. **Two concurrent legitimate refreshes of one token revoke the connection** (`refresh-token-reuse`): the second,
-     serialized behind the first's lock, re-reads the rotated token and is judged a reuse. No grace window (RFC 6819
-     §5.2.2.3's « short period » where the old token is still accepted): a client that retries a refresh whose answer
+     serialized behind the first's lock, re-reads the rotated token and is judged a reuse. No grace window (a reuse
+     interval some providers offer; RFC 6819 §5.2.2.3 only notes the problem of clustered environments): a client that retries a refresh whose answer
      was lost, or two workers of one client refreshing together, lose their connection and reconnect.
   2. **A new grant revokes the previous one at approval**, in the consent's transaction, before the new code is
      exchanged: an approval whose flow is then abandoned (the client never exchanges the code, the redirect fails)

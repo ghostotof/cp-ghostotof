@@ -22,9 +22,9 @@ interface McpRefreshTokenRepositoryInterface
     public function add(McpRefreshToken $token): void;
 
     /**
-     * Le jeton, avec sa connexion et son jeton d'accès (chargé, jamais un
-     * proxy : sa ligne peut disparaître sous la purge entre cette lecture et
-     * une transaction, et son empreinte doit rester lisible), par l'empreinte
+     * Le jeton, avec sa connexion et son jeton d'accès (rendu chargé :
+     * lisible même si sa ligne disparaît ensuite sous la purge, entre cette
+     * lecture et une transaction, son empreinte comprise), par l'empreinte
      * SHA-256 de son identifiant, tel que l'EntityManager le tient : une
      * instance déjà chargée n'est pas rafraîchie — la relecture sous verrou
      * est rereadUnderConnectionLock().

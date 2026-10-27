@@ -455,7 +455,7 @@ décision du 2026-10-19, voir « Langue invalide »).
   rien), sans requête de plus que l'authentification. Volume : au plus une ligne par connexion et par
   heure **en usage normal seulement** (un client qui rafraîchit) ; un jeton connu et refusé, rejoué à
   dessein, écrit **une ligne par requête**, borné par la seule zone nginx `mcp` (60 requêtes par minute,
-  par IP et par pod) — accepté, la ligne désigne une connexion qui existe et un client qui la présente
+  `burst=20 nodelay` : jusqu'à 80 la première minute, par IP et par pod) — accepté, la ligne désigne une connexion qui existe et un client qui la présente
   encore. Jamais un jeton, un code ni leur empreinte dans une ligne.
 - **« Mes connexions MCP »** : page frontend réservée au palier de confiance, liste et révocation ;
   API correspondante sous `ROLE_TRUSTED`, qui ne rend que les connexions du compte appelant.

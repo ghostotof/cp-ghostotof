@@ -166,6 +166,8 @@ final class McpConnectionPurgeLockOrderTest extends WebTestCase
     {
         $holder = self::openProbeBeside($this->mcpRows());
         $holderSqlState = null;
+        // Hors du try : le finally l'attend toujours, le fils ne survit jamais au test.
+        $concurrent = null;
 
         try {
             $holder->beginTransaction();
@@ -188,9 +190,13 @@ final class McpConnectionPurgeLockOrderTest extends WebTestCase
                 $holder->rollBack();
             }
             $holder->close();
+            // Si startThePurge() a levé après avoir libéré le fils, ou si la
+            // demande ci-dessus a levé autre chose qu'un DriverException, le
+            // fils est attendu ici plutôt que laissé à purger pendant le teardown.
+            $concurrent?->wait();
         }
 
-        $concurrent->wait();
+        self::assertNotNull($concurrent);
         self::assertNotSame(ChildPhpProcess::SETUP_FAILED, $concurrent->getExitCode(), $concurrent->getErrorOutput());
 
         return [$holderSqlState, $concurrent];
