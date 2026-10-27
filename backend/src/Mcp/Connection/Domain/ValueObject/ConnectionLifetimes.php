@@ -53,8 +53,9 @@ final readonly class ConnectionLifetimes
      * verrouillée `FOR UPDATE` à chaque nuit. Une seule constante pour les
      * deux, que la purge lit ici.
      *
-     * **Le vrai plancher est au-delà : cette marge plus la durée d'un code,
-     * exclue** (#726, CR1), {@see self::fromConfiguration()}. L'échange d'un
+     * **Le vrai plancher est au-delà : cette marge plus la durée d'un code plus
+     * {@see self::CLOCK_CHANGE_MARGIN}, exclu** (#726, CR1),
+     * {@see self::fromConfiguration()}. L'échange d'un
      * code verrouille la connexion du code la première (league, `FOR UPDATE`),
      * puis les autres connexions actives de la paire par id (le remplacement) ;
      * le marquage de la purge verrouille ses candidates par id. La connexion
@@ -63,20 +64,27 @@ final readonly class ConnectionLifetimes
      * celle-ci, que l'échange tient en attendant l'autre — `40P01`. Octroyée
      * il y a au plus la durée d'un code (son code est encore échangeable), elle
      * n'est candidate que si « maintenant − durée + marge » l'atteint, donc
-     * jamais quand la durée dépasse marge plus code : l'échange ne prend alors
-     * que des connexions dans l'ordre des ids, comme la purge, et le croisement
-     * marquage × remplacement est fermé par la tâche 6 de #726. **Sauf autour
-     * d'un changement d'heure**, mesuré à la seconde sous PHP 8.5 (Paris) :
-     * la borne de la purge (`$now->sub(durée)->add(P1D)`, jours de calendrier)
-     * atteint alors « maintenant − code », de 3 599 s au plus, pour une durée
-     * de `P1DT10M1S` lancée le 29 mars 2026 de 03:00 à 03:10 CEST, le 30 mars
-     * de 02:10 à 03:00 CEST ou le 26 octobre de 02:00 à 02:10 CET (entre 00:10
-     * et 01:10 UTC) ; une heure de plus (`P1DT1H10M1S`) n'en laisse aucune.
-     * Les valeurs configurées (`P30D`, `P90D`) en sont loin, et la purge
-     * quotidienne tourne à 03:17 (`messenger-purge-cronjob.yaml`, sans
-     * `timeZone`), hors de ces fenêtres.
+     * jamais au-delà du plancher : l'échange ne prend alors que des connexions
+     * dans l'ordre des ids, comme la purge, et le croisement marquage ×
+     * remplacement est fermé par construction (l'ordre des ids, tâche 6 de
+     * #726).
      */
     public const string MINIMUM_CONNECTION_LIFETIME = 'P1D';
+
+    /**
+     * L'heure que le plancher ajoute pour les changements d'heure (#726, CR1),
+     * en temps écoulé. La borne de la purge, `$now->sub(durée)->add(P1D)`,
+     * compte ses jours sur le calendrier de Paris : un jour de 23 ou 25 heures
+     * la rapproche de « maintenant » d'une heure au plus. Mesuré à la seconde
+     * sous PHP 8.5 : au plancher sans cette heure (`P1DT10M1S`), une purge
+     * lancée le 29 mars 2026 de 03:00 à 03:10 CEST, le 30 mars de 02:10 à
+     * 03:00 CEST ou le 26 octobre de 02:00 à 02:10 CET présélectionnait une
+     * connexion dont le code était encore échangeable (3 599 s de
+     * recouvrement) ; avec elle (`P1DT1H10M1S`), aucune seconde — ce que
+     * `ConnectionLifetimesTest::testAFreshConnectionIsNeverPreselectedAcrossTheClockChanges()`
+     * rejoue.
+     */
+    private const string CLOCK_CHANGE_MARGIN = 'PT1H';
 
     /**
      * L'instant fixe où les durées se comparent, pour que le verdict ne
@@ -101,14 +109,15 @@ final readonly class ConnectionLifetimes
      *
      * Les refus, dans l'ordre où ils sont jugés : la lecture, la positivité
      * (des cinq), puis, l'inactivité avant la durée maximale, chacune sous un
-     * jour et jusqu'à un jour plus la durée du code (#726 : la connexion d'un
-     * code encore échangeable n'est alors jamais candidate de la purge, voir
-     * {@see self::MINIMUM_CONNECTION_LIFETIME}), enfin les deux ordres.
+     * jour et jusqu'à un jour plus la durée du code plus une heure (#726 : la
+     * connexion d'un code encore échangeable n'est alors jamais candidate de
+     * la purge, voir {@see self::MINIMUM_CONNECTION_LIFETIME} et
+     * {@see self::CLOCK_CHANGE_MARGIN}), enfin les deux ordres.
      *
      * @throws InvalidConnectionLifetimeException si une durée est illisible ou
      *         nulle, si l'inactivité ou la durée maximale est sous un jour
      *         (la marge de présélection de la purge) ou ne dépasse pas un jour
-     *         plus la durée d'un code, si l'inactivité dépasse la durée
+     *         plus la durée d'un code plus une heure, si l'inactivité dépasse la durée
      *         maximale, ou si le jeton d'accès survit à son jeton de
      *         rafraîchissement
      */
@@ -134,16 +143,17 @@ final readonly class ConnectionLifetimes
         // code, qui doit l'avoir passée) et avant l'ordre des deux durées : une
         // durée maximale trop courte est refusée pour cette cause, pas parce que
         // l'inactivité la dépasse. Jugés paramètre par paramètre, l'inactivité
-        // d'abord, chacun sous un jour puis jusqu'à la fenêtre d'un code.
+        // d'abord, chacun sous un jour puis jusqu'à la fenêtre d'un code (plus
+        // l'heure d'un changement d'heure, en temps écoulé).
         $oneDay = $reference->add(new DateInterval(self::MINIMUM_CONNECTION_LIFETIME));
-        $oneDayAndACode = $oneDay->add($durations['codeLifetime']);
+        $freshConnectionWindowEnd = $oneDay->add($durations['codeLifetime'])->add(new DateInterval(self::CLOCK_CHANGE_MARGIN));
         foreach (['idleLifetime', 'maximumLifetime'] as $parameter) {
             $end = $reference->add($durations[$parameter]);
             if ($end < $oneDay) {
                 throw InvalidConnectionLifetimeException::belowOneDay($parameter);
             }
 
-            if ($end <= $oneDayAndACode) {
+            if ($end <= $freshConnectionWindowEnd) {
                 throw InvalidConnectionLifetimeException::notBeyondFreshConnectionWindow($parameter);
             }
         }

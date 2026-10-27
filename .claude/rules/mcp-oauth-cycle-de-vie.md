@@ -36,14 +36,14 @@ paths:
   is the purge's pre-selection margin, read there as `PRESELECTION_MARGIN` — shorter, the bound `now − duration +
   margin` would lie in the future and the purge would lock every active connection `FOR UPDATE` each night; a second
   less than `P1D` refused `belowOneDay`), **a connection idle or maximum duration up to that margin plus the code's
-  duration, included** (#726, CR1, `notBeyondFreshConnectionWindow`: `P1D`, `PT24H` and `P1DT10M` refused with a
-  `PT10M` code, `P1DT10M1S` accepted; the bound follows the configured code — a connection whose code is still
-  exchangeable would otherwise be a purge candidate, and the marking, holding an older candidate, would wait on the
-  newest connection the exchange already holds, `40P01`; above the window the exchange only takes connections in id
-  order, like the marking. **Not closed around a clock change, measured**: the purge's bound counts calendar days, and
-  with `P1DT10M1S` reaches « now − code » by up to 3 599 s for a purge started between 00:10 and 01:10 UTC on
-  2026-03-29, 2026-03-30 or 2026-10-26 — `P1DT1H10M1S` leaves none; the configured `P30D`/`P90D` are far from it and
-  the Job runs at 03:17), both judged per parameter, idle first, after positivity and before the two orderings, an
+  duration plus an elapsed hour, included** (#726, CR1, `notBeyondFreshConnectionWindow`: with a `PT10M` code,
+  `P1DT1H10M` refused, `P1DT1H10M1S` accepted) — below, a connection whose code is still exchangeable is a purge
+  candidate, and the marking, holding an older candidate, waits on the newest connection the exchange already holds,
+  `40P01`; above, the exchange only takes connections in id order, like the marking: **closed by construction**. The
+  hour (`CLOCK_CHANGE_MARGIN`) is the clock changes': the purge's bound counts a calendar day of 23 or 25 hours —
+  without it, measured second by second, `P1DT10M1S` let a fresh connection be pre-selected (3 599 s of overlap) on
+  2026-03-29, 2026-03-30 and 2026-10-26; `testAFreshConnectionIsNeverPreselectedAcrossTheClockChanges` replays the
+  sweep. Both judged per parameter, idle first, after positivity and before the two orderings), an
   idle delay beyond the maximum and an access token outliving its refresh token — compared on one fixed
   instant (`2026-01-01T00:00:00+00:00`), so the verdict never depends on the day the container is built. Each
   getter returns a **copy** (`DateInterval` is mutable). `AuthorizationServerFactory` reads league's three
