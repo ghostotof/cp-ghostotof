@@ -363,13 +363,15 @@ décision du 2026-10-19, voir « Langue invalide »).
   rejeu reconnaissable. **Un nouvel accord révoque l'accord actif précédent** du même compte au même
   client (cause `superseded`, décision de l'auteur du 2026-10-26 ; prix accepté : deux postes sur le même
   client pré-enregistré ne restent pas connectés ensemble), servi par un index partiel, **non unique**,
-  sur les connexions actives. Limite acceptée : deux approbations simultanées du même couple (un double
-  clic) peuvent laisser deux connexions actives, la seconde jamais utilisée, qui expire après 30 jours
-  sans usage — une contrainte d'unicité partielle, écartée, ferait de ce double clic un 500. Limite
-  acceptée aussi (décision de l'auteur du 2026-10-27, suivie par #726) : l'accord précédent est révoqué
-  **à l'approbation**, avant que le nouveau code soit échangé — un parcours abandonné après l'approbation
-  (code jamais échangé, redirection perdue) laisse la personne sans connexion jusqu'à un nouveau
-  consentement. Règle : `.claude/rules/mcp-oauth-cycle-de-vie.md`.
+  sur les connexions actives. *Corrigé le 2026-10-27 (#726, D2)* : la révocation a lieu **au premier
+  échange réussi du nouveau code**, dans la transaction du point de jeton, jamais à l'approbation — un
+  parcours abandonné après l'approbation (code jamais échangé, redirection perdue) laisse l'accord
+  précédent vivant ; un code plus ancien échangé après un plus récent est mort. Un double clic laisse deux
+  connexions actives jusqu'au premier échange, qui n'en laisse qu'une (celle d'un client qui n'échange
+  aucun code expire après 30 jours sans usage) — une contrainte d'unicité partielle, écartée, ferait de ce
+  double clic un 500. Limite acceptée, nouvelle : deux échanges simultanés de deux codes du même couple
+  s'interbloquent, PostgreSQL en annule un (`40P01`, un 500), l'autre passe et révoque la connexion du
+  premier. Règle : `.claude/rules/mcp-oauth-cycle-de-vie.md`.
 - **Durées** (configuration) : jeton d'accès 1 h ; jeton de rafraîchissement 30 jours, **rotation à
   chaque usage** et refus de la réutilisation d'un jeton déjà tourné (qui révoque la connexion) ;
   connexion expirée après 30 jours sans usage et au plus tard 90 jours après son octroi.
@@ -445,15 +447,15 @@ décision du 2026-10-19, voir « Langue invalide »).
   `Mcp-Name` seul : renvoyé avant le SDK, le 401 précède le contrôle qui le confronte au corps.
 - **Journal d'audit** (`SecurityAuditLoggerInterface`, canal `security_audit`) : trois événements
   nouveaux — connexion MCP accordée, connexion MCP révoquée (par la personne, par expiration, par
-  réutilisation d'un jeton tourné), corpus nominatif lu (compte, connexion, client, outil ;
+  réutilisation d'un jeton tourné, par remplacement au premier échange du code d'un nouvel accord), corpus nominatif lu (compte, connexion, client, outil ;
   l'horodatage est celui de la ligne). Le compte y est désigné comme les événements existants le
   désignent (même rédaction).
   *Précisé le 2026-10-26 (#649)* : la révocation est l'événement `mcp-connection-revoked` (`userId`,
   `connectionId`, `clientId` public, `cause` : `client`, `refresh-token-reuse`, `code-replay`,
   `superseded`, `expired` ; `person` viendra avec #650), écrit **après le COMMIT** et seulement quand
   la révocation a pris effet — aucune ligne pour une connexion inconnue ou déjà révoquée, aucune pour une
-  transaction annulée. Acteur : `anonymous` aux points de jeton et de révocation, la personne pour un
-  accord remplacé (après la ligne `mcp-connection-granted` du nouvel accord), `system` pour l'expiration
+  transaction annulée. Acteur : `anonymous` aux points de jeton et de révocation — un accord remplacé
+  compris, écrit au point de jeton depuis #726 —, `system` pour l'expiration
   marquée par la purge. Un quatrième événement, **`mcp-access-token-refused`** (mêmes champs, `cause` =
   la valeur de `BearerRefusal`), trace le refus sur `/api/mcp` d'un jeton d'accès **connu** — révoqué,
   échu, d'une autre audience, d'une connexion révoquée ou expirée, sans le scope, d'un compte hors du
@@ -698,7 +700,8 @@ sur les chemins MCP et OAuth qu'à la tâche 14.
   paramètres refusée, redirection du consentement reconstruite, formulaire seul aux points de jeton et
   de révocation, limites acceptées) y sont écrits.
 - **2026-10-26 — tâche 10 (#649), décisions de l'auteur** : périmètre étendu à tous les reports du ticket ;
-  un nouvel accord du même compte au même client remplace l'accord actif (`superseded`) ; révoquer un
+  un nouvel accord du même compte au même client remplace l'accord actif (`superseded`, au premier
+  échange de son code depuis #726) ; révoquer un
   jeton de rafraîchissement révoque la connexion (`client`, RFC 7009 §2.1) ; rétention de 6 mois des
   connexions révoquées ou expirées ; colonne `revocation_cause`, la purge marquant l'expiration. Précisions
   reportées plus haut (« Modèle », « Durées », « Journal d'audit », « Purge ») ; règle d'implémentation :

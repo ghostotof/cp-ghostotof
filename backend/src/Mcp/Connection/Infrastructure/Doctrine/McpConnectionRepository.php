@@ -131,10 +131,12 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
      * servie par l'index partiel `idx_mcp_connection_active_pair`
      * (`account_id, mcp_client_id WHERE revoked_at IS NULL`). Elle ne
      * verrouille que les lignes des **autres** connexions du couple, jamais
-     * celles de leurs jetons : l'ordre du point de jeton (la connexion, puis
-     * ses jetons) n'est pas inversé — un rafraîchissement qui tient le verrou
-     * d'une connexion remplacée fait attendre l'accord jusqu'à son COMMIT,
-     * puis la ligne est relue (`revoked_at IS NULL` réévalué).
+     * celles de leurs jetons : appelée par l'échange d'un code (#726), après
+     * la connexion de ce code et ses jetons, elle n'inverse pas l'ordre d'un
+     * rafraîchissement (sa connexion, puis ses jetons) — un rafraîchissement
+     * qui tient le verrou d'une connexion remplacée fait attendre l'échange
+     * jusqu'à son COMMIT, puis la ligne est relue (`revoked_at IS NULL`
+     * réévalué ; `TokenEndpointConcurrencyTest`).
      */
     public function revokeOtherActiveOf(McpConnection $kept, RevocationCause $cause, DateTimeImmutable $at): array
     {

@@ -42,8 +42,9 @@ use Symfony\Component\Security\Core\User\UserInterface;
  *    {@see \App\Mcp\Connection\Application\McpConnectionRevoker} (après la
  *    révocation : réutilisation d'un rafraîchissement tourné, rejeu d'un
  *    code), {@see \App\Mcp\Connection\Infrastructure\League\LeagueRevocationEndpoint}
- *    (révocation par le client), {@see \App\Mcp\Connection\Application\ConsentService}
- *    (accord remplacé) et {@see \App\Mcp\Connection\Application\McpConnectionPurger}
+ *    (révocation par le client), {@see \App\Mcp\Connection\Application\TokenEndpoint}
+ *    (accord remplacé au premier échange de son successeur, #726) et
+ *    {@see \App\Mcp\Connection\Application\McpConnectionPurger}
  *    (expiration, acteur `system`), ces trois-là après le COMMIT ;
  *  - un jeton d'accès MCP connu refusé (#649), `mcp-access-token-refused` :
  *    {@see \App\Mcp\Connection\Infrastructure\Security\McpBearerAuthenticator},

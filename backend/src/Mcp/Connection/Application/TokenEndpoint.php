@@ -11,6 +11,7 @@ use App\Mcp\Connection\Domain\Exception\RotatedRefreshTokenReusedException;
 use App\Mcp\Connection\Domain\Repository\McpClientRepositoryInterface;
 use App\Mcp\Connection\Domain\ValueObject\GrantRefusal;
 use App\Mcp\Connection\Domain\ValueObject\McpClientId;
+use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use League\OAuth2\Server\AuthorizationServer;
 use League\OAuth2\Server\Exception\OAuthServerException;
 use Psr\Http\Message\ResponseInterface;
@@ -50,7 +51,12 @@ use Throwable;
  *    l'émission des nouveaux. Une panne au milieu annule tout : jamais un
  *    jeton d'accès orphelin avec un code encore échangeable, jamais un client
  *    privé de son ancien rafraîchissement sans en avoir reçu un nouveau
- *    (`TokenControllerTest`, panne forcée par un déclencheur).
+ *    (`TokenControllerTest`, panne forcée par un déclencheur). **L'échange
+ *    réussi d'un code remplace l'accord précédent** (#726, D2, jamais à
+ *    l'approbation) : dans la même transaction, les autres connexions
+ *    actives du couple compte/client sont révoquées, cause `superseded`
+ *    (CodeExchangeSupersessionInterface), puis, après le COMMIT, une ligne
+ *    `mcp-connection-revoked` par connexion remplacée (`ConsentControllerTest`).
  * 4. **Une connexion compromise est révoquée après la transaction** (#649).
  *    league juge le rafraîchissement dans sa validation, par
  *    `RefreshTokenRepository::isRefreshTokenRevoked()`, **sous le verrou de
@@ -108,6 +114,8 @@ final readonly class TokenEndpoint implements TokenEndpointInterface
         private McpConnectionRevokerInterface $revoker,
         private GrantRefusalAuditInterface $refusalAudit,
         private ReplayProofInterface $replayProof,
+        private CodeExchangeSupersessionInterface $supersession,
+        private SecurityAuditLoggerInterface $auditLogger,
         private LoggerInterface $logger,
     ) {
     }
@@ -120,7 +128,7 @@ final readonly class TokenEndpoint implements TokenEndpointInterface
             $this->refuseClientOutsideTheBody($request);
             $this->refuseForeignResource($request);
 
-            return $this->transaction->run(fn(): ResponseInterface => $this->server->respondToAccessTokenRequest($request, $response));
+            $issued = $this->transaction->run(fn(): IssuedTokens => $this->issue($request, $response));
         } catch (CompromisedMcpConnectionException $compromise) {
             // La transaction est déjà annulée : la révocation s'écrit hors
             // d'elle, et survit au ROLLBACK de l'échange. Le refus levé ici
@@ -150,6 +158,39 @@ final readonly class TokenEndpoint implements TokenEndpointInterface
 
             throw $refusal;
         }
+
+        // Après le COMMIT seulement : une transaction annulée n'a rien
+        // remplacé. La deuxième porte de `mcp-oauth.md` (« An assumed
+        // exception… ») : le seul écrivain de `security_audit`.
+        foreach ($issued->superseded as $revoked) {
+            $this->auditLogger->mcpConnectionRevoked($revoked, $revoked->cause()->value);
+        }
+
+        return $issued->response;
+    }
+
+    /**
+     * Dans la transaction : league émet (ou refuse), puis, l'échange d'un
+     * code validé, les autres connexions actives du couple sont remplacées
+     * (#726, D2) — l'échange et le remplacement ensemble, ou rien.
+     *
+     * **Ordre des verrous** : la connexion du code (league, `FOR UPDATE` dans
+     * `AuthCodeRepository::isAuthCodeRevoked()`), ses jetons (le code révoqué,
+     * les jetons émis), puis les **autres** connexions du couple (l'`UPDATE`
+     * de `revokeOtherActiveOf()`). Un rafraîchissement ne prend que sa
+     * connexion puis ses jetons : il ne tient jamais une autre connexion en
+     * attendant celle-ci, pas de cycle — un rafraîchissement d'une connexion
+     * remplacée fait attendre l'échange jusqu'à son COMMIT, après quoi
+     * PostgreSQL réévalue `revoked_at IS NULL` sur la ligne validée.
+     * **Limite acceptée** : deux échanges simultanés de deux codes du même
+     * couple tiennent chacun sa connexion et attendent celle de l'autre —
+     * PostgreSQL en annule un (`40P01`).
+     */
+    private function issue(ServerRequestInterface $request, ResponseInterface $response): IssuedTokens
+    {
+        $answer = $this->server->respondToAccessTokenRequest($request, $response);
+
+        return new IssuedTokens($answer, $this->supersession->supersedeOthersOf($request));
     }
 
     /**

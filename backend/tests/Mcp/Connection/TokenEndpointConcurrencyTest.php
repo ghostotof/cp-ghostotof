@@ -141,6 +141,50 @@ final class TokenEndpointConcurrencyTest extends WebTestCase
     }
 
     /**
+     * Le remplacement au premier échange (#726, D2) croise un
+     * rafraîchissement de la connexion qu'il remplace. C1 échangée, un second
+     * accord approuvé (C2, son code) ; A rafraîchit C1 — C1 tenue `FOR
+     * UPDATE` à son premier flush —, pendant que B échange le code de C2. B
+     * verrouille C2, émet ses jetons, puis son `UPDATE` des autres connexions
+     * du couple attend C1 : il attend le COMMIT de A, relit `revoked_at IS
+     * NULL` sur la ligne validée et révoque C1, cause `superseded`. L'ordre
+     * des verrous (la connexion du code, ses jetons, puis les autres
+     * connexions ; un rafraîchissement ne prend que la sienne puis ses
+     * jetons) ne laisse aucun cycle : aucune `40P01`, B rend `issued 200`.
+     *
+     * **Mesuré** : l'`UPDATE` de `revokeOtherActiveOf()` réécrit en `SKIP
+     * LOCKED` (`c.id IN (SELECT id … FOR UPDATE SKIP LOCKED)`) saute C1, tenue
+     * par A : C1 reste active, rouge.
+     */
+    public function testAnExchangeCrossingARefreshOfTheSupersededConnectionRevokesIt(): void
+    {
+        $issued = $this->exchange($this->grantedCode());
+        $firstRefreshToken = $this->json($issued)['refresh_token'] ?? null;
+        self::assertIsString($firstRefreshToken);
+        $secondCode = $this->codeGrantedByTheSignedInAccount();
+        $first = $this->heldMcpConnectionOf($issued);
+
+        $concurrent = $this->presentAtTheNextFlushOfThisProcess(self::formBody($this->exchangeParameters($secondCode)));
+        $response = $this->presentHere(self::formBody(self::refreshParameters($firstRefreshToken)));
+        $concurrent->wait();
+
+        self::assertSame(200, $response->getStatusCode(), 'Le rafraîchissement de A aurait dû aboutir.');
+        $written = $concurrent->getOutput().$concurrent->getErrorOutput();
+        // Des messages qui ne citent pas la valeur : un échec la publierait
+        // dans le journal de la CI.
+        foreach ([$secondCode, $firstRefreshToken, $first->accessToken] as $secret) {
+            self::assertFalse(str_contains($written, $secret), 'La sortie du fils cite un secret.');
+        }
+        self::assertSame(0, $concurrent->getExitCode(), 'L\'échange concurrent aurait dû aboutir : '.$written);
+        self::assertSame(1, preg_match('/^issued 200$/m', $concurrent->getOutput()), $written);
+        $causes = $this->mcpRows()->fetchAllKeyValue('SELECT id, revocation_cause FROM mcp_connection');
+        self::assertCount(2, $causes);
+        self::assertSame('superseded', $causes[$first->connectionId] ?? null, 'L\'échange a laissé active la connexion qu\'il remplace (#726).');
+        unset($causes[$first->connectionId]);
+        self::assertSame([null], array_values($causes), 'La connexion du code échangé doit rester active.');
+    }
+
+    /**
      * Démarre B avec le corps sur son entrée standard et le relâche au
      * prochain `postFlush` de ce processus ({@see FlushInterleaving}) : l'écriture
      * de A est faite, pas encore validée, le verrou de la connexion tenu.

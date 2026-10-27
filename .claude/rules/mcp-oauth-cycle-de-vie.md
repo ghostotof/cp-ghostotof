@@ -96,7 +96,7 @@ paths:
   `clientId`, `cause`; `.claude/rules/security-authentication.md`), **after** the write; one statement, callable
   after a rolled-back exchange (the token endpoint's reuse and replay, below). Inside a transaction: **the
   dedicated repository method** — `revokeActive()` (the revocation endpoint's, below), `revokeOtherActiveOf()` (the
-  superseding grant's), `revokeExpired()` (the purge's) — in the transaction, which returns what it revoked
+  token endpoint's, at a code's first exchange), `revokeExpired()` (the purge's) — in the transaction, which returns what it revoked
   (`?RevokedConnection` or a `list<RevokedConnection>`), and the audit written by the caller **after the COMMIT** —
   the revoker there would audit before it, and a ROLLBACK would leave a line for a revocation that never happened.
   Either way, no line for a connection the statement did not revoke (unknown or already revoked). `expired` is audited through
@@ -268,33 +268,45 @@ paths:
   league (« not issued to this client ») after a repository call that writes nothing: the code stays exchangeable by
   its client, the connection intact, no line (`testACodePresentedFirstByAnotherClientConsumesNothing`).
   `LeagueRepositoriesTest` judges a code under a rolled-back transaction, like a refresh token (the lock requires one).
-- **A new grant supersedes the previous one** (task 7 of #649, decision 2). `ConsentService::grant()`, in its
-  transaction, right after adding the new connection, calls
-  `McpConnectionRepositoryInterface::revokeOtherActiveOf($kept, RevocationCause::Superseded, $now)` — the second
-  path above, inside a transaction: **one native SQL statement** like `revokeActive()` (`UPDATE mcp_connection c …
-  FROM mcp_client cl WHERE c.account_id = :account AND c.mcp_client_id = :client AND c.id <> :kept AND c.revoked_at
-  IS NULL … RETURNING c.id, c.account_id, cl.client_id`; the statement and its row mapping are written once for the
-  three revocations, `McpConnectionRepository::revokeWhere()`, only the `WHERE` differing, one of its three private
-  `WHERE_*` constants — `@param self::WHERE_*`, so no caller composes SQL — lot C of the reviews), served by the
-  partial index `idx_mcp_connection_active_pair`; it returns a `list<RevokedConnection>`. After the COMMIT,
-  `mcp-connection-granted` first, then one `mcp-connection-revoked` per superseded connection (cause `superseded`,
-  the person as actor); a rolled-back grant audits nothing, a denial revokes nothing (`ConsentServiceTest`). One
-  account and one client hold one active connection: a client re-authorised, or a decision sent again after a 5xx,
-  leaves only the newest — its code is the one the client receives; the old connection's refresh and access tokens
-  are refused with nothing written (the connection is judged, decision 6), its rows untouched.
-  `ConsentControllerTest::testASecondGrantSupersedesTheFirstConnection` (audit order on the grant's request, the old
-  refresh refused `invalid_grant` with no second line, the new code exchanged),
-  `testAGrantForAnotherClientLeavesTheFirstAlone`, `testARetriedApprovalLeavesOneActiveConnection`;
-  `McpConnectionRepositoryTest` (the kept one, another client's, another account's and an already revoked one
-  untouched). **The price, decided**: two workstations using the same pre-registered client do not stay connected
-  together — the second consent cuts the first. **Lock order**: the statement locks only the **other** connections'
-  rows, never a token row, so it inverts nothing of the token endpoint's order (connection, then tokens); a refresh
-  holding a superseded connection's row `FOR UPDATE` makes the consent wait for its COMMIT (bounded by FPM's
-  `lock_timeout`), after which PostgreSQL re-evaluates `revoked_at IS NULL` on the committed row. **Accepted
-  limit**: two simultaneous approvals of the same pair (a double click, which `useDeliberateActivation` makes
-  unlikely) may leave two active connections — neither transaction sees the other's uncommitted row; the extra one
-  has never been used and expires after `connection_idle`. A partial unique constraint was rejected: it would turn
-  that double click into a 500. Tests that need two active connections of one account use another client
+- **A new grant supersedes the previous one at the first exchange of its code** (task 7 of #649, decision 2; moved
+  from the approval by #726, D2, the author's decision of 2026-10-27). `ConsentService::grant()` revokes nothing: its
+  transaction adds the connection and returns league's code, then `mcp-connection-granted` alone after the COMMIT.
+  `TokenEndpoint::respond()`, in its transaction, once league answered, calls
+  `Application/CodeExchangeSupersessionInterface::supersedeOthersOf($request)` (`Infrastructure/League/LeagueCodeExchangeSupersession`:
+  `[]` but for `grant_type=authorization_code`; the code's connection through `GrantPayloadReader::connectionIdOf()`
+  and `findOneById()` — the managed instance `isAuthCodeRevoked()` locked `FOR UPDATE` —, then
+  `McpConnectionRepositoryInterface::revokeOtherActiveOf($kept, RevocationCause::Superseded, $now)`) — the second path
+  above: **one native SQL statement** like `revokeActive()` (`UPDATE … WHERE c.account_id = :account AND
+  c.mcp_client_id = :client AND c.id <> :kept AND c.revoked_at IS NULL … RETURNING …`; statement and row mapping
+  written once for the three revocations, `McpConnectionRepository::revokeWhere()`, only the `WHERE` differing, one of
+  its three private `WHERE_*` constants — `@param self::WHERE_*`, no caller composes SQL, lot C), served by
+  `idx_mcp_connection_active_pair`. Its `list<RevokedConnection>` leaves the transaction with league's response
+  (`Application/IssuedTokens`); after the COMMIT, one `mcp-connection-revoked` per superseded connection (cause
+  `superseded`, actor `anonymous`: the `oauth` firewall authenticates nobody), `mcp-oauth.md`'s second door. A
+  rolled-back exchange revokes nothing, a refresh supersedes nothing. So: an abandoned grant (code never exchanged,
+  failed redirect) leaves the previous connection alive; a decision sent again after a 5xx, or a double click, leaves
+  two active connections until the first exchange, which leaves one; an older code exchanged after a newer one is
+  dead (its connection superseded: `invalid_grant` « Authorization code has been revoked », audited `code-refused`,
+  nothing revoked); a superseded connection's tokens are refused with nothing written (decision 6), its rows untouched.
+  `ConsentControllerTest::testASecondGrantSupersedesTheFirstAtItsExchange` (the approval audits the grant only, the
+  revocation read on the exchange's request, the old refresh `invalid_grant` with no second line),
+  `testAnAbandonedSecondGrantLeavesTheFirstConnection` (D2's reproduction), `testAGrantForAnotherClientLeavesTheFirstAlone`,
+  `testARetriedApprovalLeavesOneActiveConnectionOnceExchanged`, `testAnOlderCodeExchangedAfterANewerOneIsRefused`,
+  `testARefreshSupersedesNothing`; `ConsentServiceTest::testAnApprovalRevokesNothing`; `McpConnectionRepositoryTest`
+  (the kept one, another client's, another account's and an already revoked one untouched). **The price, decided**:
+  two workstations using the same pre-registered client do not stay connected together — the second exchange cuts the
+  first. **Lock order**: the code's connection (league, `FOR UPDATE`), its tokens, then the **other** connections of
+  the pair (the `UPDATE`); a refresh takes its connection then its tokens only — no cycle: a refresh holding a
+  superseded connection makes the exchange wait for its COMMIT (FPM's `lock_timeout`), then PostgreSQL re-evaluates
+  `revoked_at IS NULL` on the committed row
+  (`TokenEndpointConcurrencyTest::testAnExchangeCrossingARefreshOfTheSupersededConnectionRevokesIt`, real processes,
+  the exchange released at the refresh's first flush: `issued 200`, C1 revoked `superseded`, no `40P01`; measured red
+  with the `UPDATE` in `SKIP LOCKED`, C1 left active). **Accepted limit, new** (#726): two simultaneous exchanges of
+  **two** codes of one pair (two grants of one account to one client, exchanged in the same millisecond) each hold
+  their connection and wait for the other's — PostgreSQL aborts one (`40P01`, a 500), the other passes and revokes the
+  first's connection, whose code is then dead. #649's double-click limit is gone, save a client exchanging no code (the
+  unused connection expires after `connection_idle`). A partial unique constraint was rejected: it would turn that
+  double click into a 500. Tests that need two active connections of one account use another client
   (`HoldsAnMcpConnection::holdAnotherMcpConnection()`, `OTHER_CLIENT_ID`).
 - **The last use is written at the refresh only, at most once per elapsed hour** (`McpConnection::USAGE_WRITE_INTERVAL`,
   `PT1H`, `recordUseAt($at)`: writes and returns `true` when no use is noted or when the interval has elapsed since
@@ -432,9 +444,10 @@ paths:
   `McpBearerAuthenticator` on every request of `/api/mcp` (behaviour unchanged, `McpBearerAuthenticatorTest`) and
   by the refresh. A new site that judges the tier goes through it.
 - **Accepted limits of #649, decided by the author on 2026-10-27, kept as they are and tracked by issue #726** (the
-  reviews' lot C; each is behaviour, not a defect to fix in passing — revisit through #726 only). Two former ones
+  reviews' lot C; each is behaviour, not a defect to fix in passing — revisit through #726 only). Three former ones
   are lifted by #726: a replayed code cutting the connection without the verifier (« A replayed code is judged under
-  the same lock »), and the purge holding its candidates locked during its deletions (« The daily purge »).
+  the same lock »), the purge holding its candidates locked during its deletions (« The daily purge »), and a new
+  grant revoking the previous one at approval (« A new grant supersedes the previous one »).
   1. **Two concurrent legitimate refreshes of one token revoke the connection** (`refresh-token-reuse`): the second,
      serialized behind the first's lock, re-reads the rotated token and is judged a reuse. No grace window (a reuse
      interval some providers offer; RFC 6819 §5.2.2.3 only notes the problem of clustered environments): a client that retries a refresh whose answer
@@ -443,6 +456,3 @@ paths:
      `refresh-token-reuse` once phase 2 is out. A grace window handing out a new pair is rejected: an attacker
      refreshing just before the legitimate client would keep the connection; « handing back the same pair » is
      impossible, only the hashes are stored.
-  2. **A new grant revokes the previous one at approval**, in the consent's transaction, before the new code is
-     exchanged: an approval whose flow is then abandoned (the client never exchanges the code, the redirect fails)
-     leaves the person with no connection at all until they consent again.
