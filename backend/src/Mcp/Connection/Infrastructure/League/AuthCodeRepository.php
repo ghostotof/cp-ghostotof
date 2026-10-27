@@ -7,7 +7,6 @@ namespace App\Mcp\Connection\Infrastructure\League;
 use App\Mcp\Connection\Domain\Entity\McpAuthorizationCode;
 use App\Mcp\Connection\Domain\Exception\AuthorizationCodeReplayedException;
 use App\Mcp\Connection\Domain\Repository\McpAuthorizationCodeRepositoryInterface;
-use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use League\OAuth2\Server\Entities\AuthCodeEntityInterface;
 use League\OAuth2\Server\Exception\UniqueTokenIdentifierConstraintViolationException;
@@ -32,7 +31,7 @@ final readonly class AuthCodeRepository implements AuthCodeRepositoryInterface
 {
     public function __construct(
         private McpAuthorizationCodeRepositoryInterface $codes,
-        private McpConnectionRepositoryInterface $connections,
+        private TokenUnderConnectionLock $underConnectionLock,
         private ConnectionOfToken $connectionOfToken,
         private ClockInterface $clock,
     ) {
@@ -76,7 +75,9 @@ final readonly class AuthCodeRepository implements AuthCodeRepositoryInterface
      * Le nom est celui de l'interface de league ; ce qu'elle juge est tout ce
      * qui rend un code irrecevable (#649), **sous le verrou de la ligne de sa
      * connexion**, dans la transaction du point de jeton — le modèle est le
-     * rafraîchissement ({@see RefreshTokenRepository::isRefreshTokenRevoked()}) :
+     * rafraîchissement ({@see RefreshTokenRepository::isRefreshTokenRevoked()}),
+     * les étapes 1 à 5 étant celles qu'ils partagent, écrites une fois dans
+     * {@see TokenUnderConnectionLock::judge()} :
      *
      *  1. le code, par son empreinte — inconnu, il est mort ;
      *  2. sa connexion, relue `FOR UPDATE` (`lockForUpdate()`) : deux
@@ -110,30 +111,13 @@ final readonly class AuthCodeRepository implements AuthCodeRepositoryInterface
      */
     public function isAuthCodeRevoked(#[SensitiveParameter] string $codeId): bool
     {
-        $hash = TokenIdentifierHash::of($codeId);
-        $code = $this->codes->findOneByHash($hash);
-        if (null === $code) {
-            return true;
-        }
+        $locked = $this->underConnectionLock->judge(
+            $this->codes->findOneByHash(TokenIdentifierHash::of($codeId)),
+            $this->codes->rereadUnderConnectionLock(...),
+            AuthorizationCodeReplayedException::forConnection(...),
+        );
 
-        $connection = $this->connections->lockForUpdate($code->connection()->getId());
-        if (null === $connection) {
-            return true;
-        }
-
-        $code = $this->codes->rereadUnderConnectionLock($code->getId());
-        if (null === $code) {
-            return true;
-        }
-
-        if ($connection->isRevoked()) {
-            return true;
-        }
-
-        if ($code->isRevoked()) {
-            throw AuthorizationCodeReplayedException::forConnection($connection->getId());
-        }
-
-        return false;
+        // Mort (étapes 1 à 4) : révoqué pour league ; rendu, il est bon (étape 6).
+        return null === $locked;
     }
 }

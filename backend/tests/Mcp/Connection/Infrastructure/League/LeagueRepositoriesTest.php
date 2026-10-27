@@ -27,6 +27,7 @@ use App\Mcp\Connection\Infrastructure\League\OAuthClient;
 use App\Mcp\Connection\Infrastructure\League\RefreshTokenRepository;
 use App\Mcp\Connection\Infrastructure\League\RevokedMcpConnectionException;
 use App\Mcp\Connection\Infrastructure\League\ScopeRepository;
+use App\Mcp\Connection\Infrastructure\League\TokenUnderConnectionLock;
 use App\Mcp\Connection\Infrastructure\League\UnknownMcpConnectionException;
 use App\Mcp\Connection\Infrastructure\Security\TrustedTier;
 use App\Security\User\Domain\Entity\CpgUser;
@@ -603,7 +604,7 @@ final class LeagueRepositoriesTest extends KernelTestCase
     {
         return new AuthCodeRepository(
             self::getContainer()->get(McpAuthorizationCodeRepositoryInterface::class),
-            $this->connections(),
+            new TokenUnderConnectionLock($this->connections()),
             new ConnectionOfToken($this->connections()),
             $this->clock,
         );
@@ -632,6 +633,7 @@ final class LeagueRepositoriesTest extends KernelTestCase
             self::getContainer()->get(McpRefreshTokenRepositoryInterface::class),
             self::getContainer()->get(McpAccessTokenRepositoryInterface::class),
             $this->connections(),
+            new TokenUnderConnectionLock($this->connections()),
             new ConnectionOfToken($this->connections()),
             self::getContainer()->get(ConnectionLifetimes::class),
             self::getContainer()->get(TrustedTier::class),

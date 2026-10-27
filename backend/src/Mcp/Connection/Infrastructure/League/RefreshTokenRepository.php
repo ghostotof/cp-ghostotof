@@ -36,6 +36,7 @@ final readonly class RefreshTokenRepository implements RefreshTokenRepositoryInt
         private McpRefreshTokenRepositoryInterface $tokens,
         private McpAccessTokenRepositoryInterface $accessTokens,
         private McpConnectionRepositoryInterface $connections,
+        private TokenUnderConnectionLock $underConnectionLock,
         private ConnectionOfToken $connectionOfToken,
         private ConnectionLifetimes $lifetimes,
         private TrustedTier $trustedTier,
@@ -88,7 +89,9 @@ final readonly class RefreshTokenRepository implements RefreshTokenRepositoryInt
     /**
      * Le nom est celui de l'interface de league ; ce qu'elle juge est tout ce
      * qui rend un rafraîchissement irrecevable (#649), **sous le verrou de la
-     * ligne de sa connexion**, dans la transaction du point de jeton :
+     * ligne de sa connexion**, dans la transaction du point de jeton — les
+     * étapes 1 à 5 partagées avec le code, écrites une fois dans
+     * {@see TokenUnderConnectionLock::judge()} :
      *
      *  1. le jeton, par son empreinte — inconnu, il est mort ;
      *  2. sa connexion, relue `FOR UPDATE` (`lockForUpdate()`) : deux
@@ -126,32 +129,19 @@ final readonly class RefreshTokenRepository implements RefreshTokenRepositoryInt
      */
     public function isRefreshTokenRevoked(#[SensitiveParameter] string $tokenId): bool
     {
-        $hash = TokenIdentifierHash::of($tokenId);
-        $token = $this->tokens->findOneByHash($hash);
-        if (null === $token) {
+        $locked = $this->underConnectionLock->judge(
+            $this->tokens->findOneByHash(TokenIdentifierHash::of($tokenId)),
+            $this->tokens->rereadUnderConnectionLock(...),
+            RotatedRefreshTokenReusedException::forConnection(...),
+        );
+        if (null === $locked) {
             return true;
         }
 
-        $connection = $this->connections->lockForUpdate($token->connection()->getId());
-        if (null === $connection) {
-            return true;
-        }
-
-        $token = $this->tokens->rereadUnderConnectionLock($token->getId());
-        if (null === $token) {
-            return true;
-        }
-
-        if ($connection->isRevoked()) {
-            return true;
-        }
-
-        if ($token->isRevoked()) {
-            throw RotatedRefreshTokenReusedException::forConnection($connection->getId());
-        }
-
+        // Après la réutilisation, jamais avant (étape 6).
+        $connection = $locked->connection;
         $now = $this->clock->now();
-        if ($token->expiresAt() <= $now || $connection->isExpiredAt($now, $this->lifetimes) || !$this->trustedTier->reaches($connection->account())) {
+        if ($locked->token->expiresAt() <= $now || $connection->isExpiredAt($now, $this->lifetimes) || !$this->trustedTier->reaches($connection->account())) {
             return true;
         }
 

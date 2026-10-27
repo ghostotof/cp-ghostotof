@@ -112,7 +112,11 @@ paths:
   (« Token is not linked to client »: a refresh token presented under another `client_id` never reaches this
   repository, so it never revokes its real client's connection —
   `RefreshRotationTest::testARefreshTokenPresentedByAnotherClientLeavesTheConnectionAlone`) and after its own
-  `expire_time < time()` check, kept as a second net. In order: the token by its hash (unknown → dead); **its
+  `expire_time < time()` check, kept as a second net. **Steps one to five are the code's too, written once**
+  (lot C of the reviews): `Infrastructure/League/TokenUnderConnectionLock::judge($found, $reread, $compromised)`
+  — the token found by the caller, its re-read and its compromise passed as closures — returns the locked
+  connection and the re-read token (`LockedToken`) or `null` for dead; each repository keeps its own lookup, re-read
+  and exception, and the refresh its later steps. In order: the token by its hash (unknown → dead); **its
   connection re-read `FOR UPDATE`** through `McpConnectionRepositoryInterface::lockForUpdate()` —
   `RereadUnderLock::row(…, forUpdate: true)`, the project's one re-read under a lock, held until the COMMIT or
   ROLLBACK, bounded by FPM's `lock_timeout=5s` (gone → dead) —; **the token re-read under the lock**
