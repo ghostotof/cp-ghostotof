@@ -133,11 +133,11 @@ phase 1 parte en release seule ; puis au merge de clôture, qui archive la spec 
   - [ ] 7. #730 : `code_exchanged_at`, durée `connection_unexchanged` (`PT1H`), troisième borne de la purge — **sensible (migration, concurrence)**
   - [ ] 8. La page de consentement dit quel compte accorde
   - [ ] 9. Frontend : dépôt et composable des connexions
-  - [ ] 10. Frontend : page « Mes connexions MCP », route, liens du compte, a11y
+  - [ ] 10. Frontend : page « Mes connexions MCP », route, menu du compte desktop (disclosure) et lien mobile, a11y
   - [ ] 11. Documentation (nouvelle règle `mcp-oauth-revocation-personne.md`, spec, registre, `CONTEXT.md`) ; fermer #650 et #730 à la main
       Notes de la release : migrations `Version20261028120000` (le `CHECK`) et `Version20261028140000`
       (`code_exchanged_at`, rattrapage) avant le rollout ; paramètre `app.mcp.lifetime.connection_unexchanged`.
-      Questions ouvertes : fin du plan (sept points)
+      Sept questions tranchées par l'auteur le 2026-10-28 (fin du plan) ; seul écart au défaut : vrai menu du compte desktop
 - [ ] Tâche 12 — Enregistrement des clients par CIMD (#651) — bloquée par : #647 — reports de la
       tâche 8 : `client_id_metadata_document_supported: true` déjà annoncé ; domaine du client sur la page.
       Reports de la tâche 9 : borner la longueur du `client_id` CIMD écrit dans l'audit

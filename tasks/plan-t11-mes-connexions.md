@@ -486,14 +486,22 @@ connexions MCP » ; « Phase 2, backend » et « Frontend » des Testing Decisio
   404 → message « déjà terminée » ; erreur de chargement → `role="alert"` ; `affiche un libellé générique pour une
   cause inconnue` ; `aria-busy` pendant le chargement ; `expectNoAccessibilityViolation()` (liste et état vide).
   `AppHeader.spec.ts` : le lien vers `/<locale>/mcp-connections` présent au palier de confiance et pour
-  `ROLE_SUPER` (menu du compte mobile et actions desktop), absent aux paliers anonyme et de base. Routeur :
+  `ROLE_SUPER` (menu du compte mobile et menu du compte desktop), absent aux paliers anonyme et de base. Routeur :
   anonyme → login avec `redirect`, palier de base → page interdite.
+  Menu du compte desktop (décision de l'auteur du 2026-10-28, question 2) : `AppHeader.spec.ts` (ou la spec d'un
+  composant extrait, `AccountMenu.spec.ts`) couvre le bouton `aria-expanded` (faux puis vrai au clic), `aria-controls`
+  vers la liste, Échap qui ferme et rend le focus au bouton, un clic hors du menu qui le ferme, la fermeture à la
+  navigation, et `expectNoAccessibilityViolation()` menu ouvert.
 - [ ] **Step 2 : rouges.** **Step 3 : implémenter.** `<h1>`, un tableau (`<caption>`, `<th scope="col">`), une
   `<h2>` par groupe si les connexions terminées sont séparées des actives (au choix motivé, sans saut de niveau),
-  `window.confirm()` nommant le client ; texte via `t()` seulement (`no-raw-text`). Lien desktop : bouton
-  compact du même style que « Assistant », icône lucide `plug` `aria-hidden` et libellé visible ou
-  `visually-hidden` selon la largeur — vérifier à 768 px et 1024 px que l'en-tête ne déborde pas (le débordement
-  de #265 est le précédent).
+  `window.confirm()` nommant le client ; texte via `t()` seulement (`no-raw-text`). Lien desktop : **un vrai menu
+  du compte desktop** (décision de l'auteur du 2026-10-28), pas un bouton de plus dans les actions. Motif WAI-ARIA
+  « disclosure » (bouton `aria-expanded` + `aria-controls`, liste de liens ordinaires), pas `role="menu"` : ce
+  dernier impose la navigation aux flèches et sert aux menus d'application, pas à des liens de site. Il regroupe
+  les actions de compte que l'en-tête desktop montre aujourd'hui à plat et que le menu mobile contient déjà (les
+  relever dans `AppHeader.vue` avant d'écrire), plus « Mes connexions MCP » ; extraire un composant
+  `AccountMenu.vue` si `AppHeader.vue` grossit trop. Vérifier à 768 px et 1024 px que l'en-tête ne déborde pas (le
+  débordement de #265 est le précédent) et que le menu ouvert reste dans la fenêtre.
 - [ ] **Step 4 : vert** : `make front-test`, `make front-lint`, `make front-build` ; contrôle manuel au navigateur
   (tabulation, focus visible, contraste — ce que jsdom ne voit pas, `frontend-a11y.md`) noté dans la PR.
 - [ ] **Step 5 : commit** `feat(front): page « Mes connexions MCP » (#650)`.
@@ -550,21 +558,14 @@ connexions MCP » ; « Phase 2, backend » et « Frontend » des Testing Decisio
   les 30 jours. Voir la question 5.
 - **Une connexion échue non marquée, révoquée par la personne, porte la cause `person`**, pas `expired`.
 
-## Questions ouvertes pour l'auteur
+## Questions tranchées par l'auteur (2026-10-28)
 
-1. **Liste** : montrer aussi les connexions révoquées et expirées gardées 6 mois (choix par défaut du plan :
-   oui, avec leur état et leur cause), ou seulement les actives et les échues non marquées ?
-2. **Lien desktop** : il n'existe aujourd'hui de « menu du compte » que sous 768 px. Bouton compact de plus dans
-   les actions desktop (choix par défaut), ou un vrai menu de compte desktop (changement plus large de l'en-tête) ?
-3. **#730** : `connection_unexchanged` à `PT1H`, en temps écoulé seulement (choix par défaut) — ou `P2D`, qui
-   réutiliserait le plancher et la marge d'un jour existants sans troisième marge (plus simple, borne 48 fois
-   plus lâche) ?
-4. **Lier la décision au compte affiché** : faut-il que le `POST /api/oauth/consent` refuse (409) si le compte du
-   cookie n'est plus celui que le `GET` a montré (un autre onglet s'est reconnecté entre-temps) ? Hors du plan
-   par défaut.
-5. **Course consentement × perte du palier** : limite acceptée (choix par défaut), ou `ConsentService::grant()`
-   rejuge-t-il le palier sous un `FOR SHARE` du compte dans sa transaction ?
-6. **DELETE d'une connexion échue non marquée** : la révoquer `person` (choix par défaut, une instruction), ou
-   répondre 204 sans écrire (une lecture de plus, la purge la marquera `expired`) ?
-7. **Noms des causes** `password-changed` et `trusted-tier-withdrawn` : à confirmer (ils entrent dans le journal
-   d'audit et dans le `CHECK`, coûteux à renommer ensuite).
+1. **Liste** : les connexions révoquées et expirées gardées 6 mois sont listées, avec leur état et leur cause.
+2. **Lien desktop** : **un vrai menu du compte desktop** (motif disclosure), pas un bouton compact — Task 10.
+3. **#730** : `connection_unexchanged` à `PT1H`, en temps écoulé seulement.
+4. **Lier la décision au compte affiché** : hors de #650. Le `POST /api/oauth/consent` accorde au compte du
+   cookie à l'envoi ; la limite est écrite dans la règle nouvelle (Task 11), un suivi peut être ouvert.
+5. **Course consentement × perte du palier** : limite acceptée, écrite dans la règle nouvelle (l'authentificateur
+   refuse la connexion à l'usage ; elle n'est simplement pas marquée révoquée).
+6. **DELETE d'une connexion échue non marquée** : révoquée `person`, auditée.
+7. **Noms des causes** : `person`, `password-changed`, `trusted-tier-withdrawn` confirmés.
