@@ -77,9 +77,13 @@ paths:
   `code-replay`, `superseded`, `expired`; #650 adds `person`). `McpConnectionRepositoryInterface::revokeActive($id,
   $cause, $at)` is **one native SQL statement through the EntityManager's DBAL connection, never the unit of work**:
   `UPDATE mcp_connection revoked SET revoked_at, revocation_cause FROM mcp_client cl WHERE revoked.id IN (SELECT c.id
-  FROM mcp_connection c WHERE c.id = :id AND c.revoked_at IS NULL ORDER BY c.id FOR UPDATE) AND revoked.revoked_at IS
+  FROM mcp_connection c WHERE c.id = :id AND c.revoked_at IS NULL ORDER BY c.id FOR NO KEY UPDATE) AND revoked.revoked_at IS
   NULL … RETURNING revoked.id, revoked.account_id, cl.client_id` — **the rows locked in id order** by the sub-query
-  (#726, final review: a bare `UPDATE` locks them in its plan's, physical, order; the purge locks by id), the one
+  (#726, final review: a bare `UPDATE` locks them in the order its plan reads them, the heap's or an index's; the purge
+  locks by id) in **`FOR NO KEY UPDATE`**, the strength the `UPDATE` itself takes (#726, T6: no key column rewritten;
+  `FOR UPDATE` also blocked the `FOR KEY SHARE` an insertion referencing the connection takes, and still conflicts with
+  it, so the order and the exclusion between revocations are unchanged); a row revoked during the wait is neither
+  returned nor rewritten, and stays locked until the end of the transaction; the one
   shape of the three revocations (`:at` typed `Types::DATETIMETZ_IMMUTABLE`, `:id`
   `UuidType::NAME`). Why: league detects a reused refresh token or a replayed code **inside** `TokenEndpoint`'s
   transaction, whose `wrapInTransaction()` rolls back **and closes the EntityManager** on the refusal — the
@@ -315,7 +319,7 @@ paths:
   leaves the previous connection alive — **re-authorizing cuts the old connection only at the new code's exchange**
   (#726, audit B1): until the person can revoke one herself (#650, « Mes connexions MCP »), an abandoned flow keeps a
   possibly stolen connection alive, so **#650 is a prerequisite to opening phase 2 publicly** (the author's decision
-  of 2026-10-27); a decision sent again after a 5xx, or a double click, leaves two active connections until the first exchange, which leaves one; an older code exchanged after a newer one is
+  of 2026-10-27); a decision sent again after a 5xx, or a double click, leaves two active connections until the first exchange, which leaves one; **the first code exchanged, older or newer, supersedes the others**, so an older code exchanged after a newer one is
   dead (its connection superseded: `invalid_grant` « Authorization code has been revoked », audited `code-refused`,
   nothing revoked); a superseded connection's tokens are refused with nothing written (decision 6), its rows untouched.
   `ConsentControllerTest::testASecondGrantSupersedesTheFirstAtItsExchange` (the approval audits the grant only, the
@@ -326,9 +330,11 @@ paths:
   (the kept one, another client's, another account's and an already revoked one untouched). **The price, decided**:
   two workstations using the same pre-registered client do not stay connected together — the second exchange cuts the
   first. **Lock order**: the code's connection (league, `FOR UPDATE`), its tokens, then the **other** connections of
-  the pair **by id** (the sub-query; #726: in physical order, two of them both purge candidates crossed the purge's
+  the pair **by id** (the sub-query; #726: in the plan's order, heap or index, two of them both purge candidates crossed the purge's
   marking, `FOR UPDATE … ORDER BY id`, in `40P01` — `TokenEndpointConcurrencyTest::testASupersessionLocksTheOtherConnectionsInIdOrder`,
-  the lower one's row rewritten so that the heap contradicts the ids, `ctid` checked: held by the test, the exchange
+  the lower one's row rewritten so that the heap contradicts the ids, `ctid` checked — a HOT update, so only the heap
+  order is contradicted and an index scan would keep the ids' order: the test discriminates under today's sequential
+  scan only —: held by the test, the exchange
   blocks on it, the higher one free `NOWAIT`; measured `55P03` without the `ORDER BY`); a refresh takes its connection then its tokens only — no cycle: a refresh holding a
   superseded connection makes the exchange wait for its COMMIT (FPM's `lock_timeout`), then PostgreSQL re-evaluates
   `revoked_at IS NULL` on the committed row
@@ -336,7 +342,7 @@ paths:
   the exchange released at the refresh's first flush: `issued 200`, C1 revoked `superseded`, no `40P01`; measured red
   with the `UPDATE` in `SKIP LOCKED`, C1 left active). **Accepted, unpinned** (#726, audit I7): the
   supersession's `UPDATE` (holding the code's connection, wanting the pair's others) can cross a cascading account
-  deletion (`cpg_user` → `mcp_connection`, physical order; the id order closes nothing there, the exchange holding its
+  deletion (`cpg_user` → `mcp_connection`, in its plan's order; the id order closes nothing there, the exchange holding its
   own connection first) — `40P01`, harmless: an aborted exchange wrote nothing and
   the account goes; nothing retries a `40P01`, so an aborted deletion — the backoffice's
   `CpgUserAdministrator::delete()`, the only path that can reach an account holding a connection (the pending-invitation

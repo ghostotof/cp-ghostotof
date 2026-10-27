@@ -135,8 +135,10 @@ final readonly class TokenEndpoint implements TokenEndpointInterface
         } catch (CompromisedMcpConnectionException $compromise) {
             // La transaction est déjà annulée : la révocation s'écrit hors
             // d'elle, et survit au ROLLBACK de l'échange. Le refus levé ici
-            // n'atteint pas le `catch` voisin : une compromission a déjà sa
-            // ligne, `mcp-connection-revoked`.
+            // n'atteint pas le `catch` voisin : une compromission révoquée a
+            // déjà sa ligne, `mcp-connection-revoked` — sauf le rejeu non
+            // prouvé ci-dessous, qui ne révoque rien et que ce `catch` audite
+            // lui-même.
             //
             // Un code rejoué ne révoque que sur preuve PKCE (#726) : league le
             // juge avant le lien au client et avant le vérificateur, et un
@@ -206,14 +208,22 @@ final readonly class TokenEndpoint implements TokenEndpointInterface
      * **Ordre des verrous** : la connexion du code (league, `FOR UPDATE` dans
      * `AuthCodeRepository::isAuthCodeRevoked()`), ses jetons (le code révoqué,
      * les jetons émis), puis les **autres** connexions du couple (l'`UPDATE`
-     * de `revokeOtherActiveOf()`). Un rafraîchissement ne prend que sa
-     * connexion puis ses jetons : il ne tient jamais une autre connexion en
-     * attendant celle-ci, pas de cycle — un rafraîchissement d'une connexion
-     * remplacée fait attendre l'échange jusqu'à son COMMIT, après quoi
-     * PostgreSQL réévalue `revoked_at IS NULL` sur la ligne validée.
-     * **Limite acceptée** : deux échanges simultanés de deux codes du même
-     * couple tiennent chacun sa connexion et attendent celle de l'autre —
-     * PostgreSQL en annule un (`40P01`).
+     * de `revokeOtherActiveOf()`, par id). Un rafraîchissement ne prend que
+     * sa connexion puis ses jetons : il ne tient jamais une autre connexion
+     * en attendant celle-ci, aucun cycle avec lui — un rafraîchissement d'une
+     * connexion remplacée fait attendre l'échange jusqu'à son COMMIT, après
+     * quoi PostgreSQL réévalue `revoked_at IS NULL` sur la ligne validée.
+     * **Deux croisements acceptés**, où l'ordre des ids ne ferme rien
+     * puisque l'échange tient sa propre connexion d'abord (PostgreSQL en
+     * annule un, `40P01`) : deux échanges simultanés de deux codes du même
+     * couple, qui tiennent chacun sa connexion et attendent celle de
+     * l'autre ; et une suppression de compte en cascade (`cpg_user` →
+     * `mcp_connection`, dans l'ordre où son plan les lit, du tas ou d'un
+     * index), qui peut tenir une autre connexion du couple, que l'échange
+     * attend, en voulant celle du code, que l'échange tient — l'échange
+     * annulé n'a rien écrit, la suppression annulée se redemande à la main
+     * (`.claude/rules/mcp-oauth-cycle-de-vie.md`, « A new grant supersedes
+     * the previous one »).
      */
     private function issue(ServerRequestInterface $request, ResponseInterface $response): IssuedTokens
     {

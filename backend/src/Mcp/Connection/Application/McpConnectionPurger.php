@@ -53,7 +53,8 @@ use Throwable;
  * lecteur juge la connexion, ses jetons ne servent plus).
  *
  * **Une panne de l'audit ne change pas l'issue** (#726, B4 ; la règle de
- * #725, comme {@see \App\Mcp\Connection\Application\TokenEndpoint::auditSuperseded()}) : entre les deux
+ * #725, appliquée au point de jeton comme à la purge :
+ * `.claude/rules/mcp-oauth-purge.md`, « The daily purge ») : entre les deux
  * transactions, chaque `mcpConnectionExpired()` est tenté pour lui-même ; une
  * panne sort en `critical` sur le canal principal, la classe seule — jamais
  * le message, qui pourrait citer une connexion —, et n'interrompt ni les

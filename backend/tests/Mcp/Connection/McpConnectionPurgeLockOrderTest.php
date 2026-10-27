@@ -4,14 +4,21 @@ declare(strict_types=1);
 
 namespace App\Tests\Mcp\Connection;
 
+use App\Mcp\Connection\Domain\Entity\McpConnection;
+use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
+use App\Mcp\Connection\Domain\ValueObject\ConnectionLifetimes;
 use App\Tests\Mcp\Support\HeldMcpConnection;
 use App\Tests\Mcp\Support\HoldsAnMcpConnection;
 use App\Tests\Support\ChildPhpProcess;
 use App\Tests\Support\OpensProbeConnection;
 use App\Tests\Support\ProcessBarrier;
 use App\Tests\Support\SessionLockWait;
+use DateInterval;
+use DateTimeImmutable;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception\DriverException;
+use Doctrine\ORM\EntityManagerInterface;
+use Psr\Clock\ClockInterface;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\Process\Process;
 
@@ -19,8 +26,9 @@ use Symfony\Component\Process\Process;
  * L'ordre des verrous de la purge quotidienne, en processus réels (#649,
  * lot C des relectures) : la **vraie** purge (Fixtures/purge-mcp-connections.php,
  * McpConnectionPurgerInterface) tourne dans un fils pendant que le test tient,
- * dans sa propre transaction, une ligne dans l'ordre de l'autre côté — et lui
- * en demande une seconde une fois le fils bloqué.
+ * dans la transaction de son détenteur (une connexion à part,
+ * `openProbeBeside()`), une ligne dans l'ordre de l'autre côté — et lui en
+ * demande une seconde une fois le fils bloqué.
  *
  * Deux ordres de {@see \App\Mcp\Connection\Application\McpConnectionPurger},
  * documentés et jusqu'ici pincés par aucun test (chacun inversé, la suite
@@ -157,10 +165,14 @@ final class McpConnectionPurgeLockOrderTest extends WebTestCase
     /**
      * La durée du verrou des candidates (#726) : la purge marque dans une
      * transaction, puis supprime dans une seconde, si bien qu'une connexion
-     * présélectionnée mais encore vivante (dernier usage il y a 29 jours et
-     * 12 heures : dans la borne large, à douze heures de son échéance) n'est
-     * plus verrouillée pendant les suppressions — un rafraîchissement de
-     * cette connexion n'attend plus la fin de la purge.
+     * présélectionnée mais encore vivante (dernier usage douze heures avant
+     * son échéance d'inactivité, `connection_idle` de ConnectionLifetimes :
+     * dans la borne large, `P1D` de marge) n'est plus verrouillée pendant les
+     * suppressions — un rafraîchissement de cette connexion n'attend plus la
+     * fin de la purge. **Le test affirme avant la course** que la candidate
+     * est présélectionnée (`findActiveCandidatesForExpiry()`, les bornes de
+     * la purge) et vivante (`isExpiredAt()`) : sans quoi le `NOWAIT` serait
+     * libre de toute façon, et le test vert sans rien prouver.
      *
      * Le test tient le jeton d'accès échu d'**une autre** connexion active ;
      * la purge bute sur lui dans `deleteDead()` des jetons d'accès, sa seconde
@@ -173,7 +185,16 @@ final class McpConnectionPurgeLockOrderTest extends WebTestCase
     public function testALiveCandidateIsUnlockedDuringTheDeletions(): void
     {
         $candidate = $this->holdMcpConnection();
-        $this->alterHeldConnection($candidate, "last_used_at = now() - INTERVAL '29 days 12 hours'");
+        $lifetimes = self::getContainer()->get(ConnectionLifetimes::class);
+        $now = self::getContainer()->get(ClockInterface::class)->now();
+        // Douze heures avant son échéance d'inactivité, dérivée de la
+        // configuration : jamais une durée recopiée.
+        $lastUse = $now->sub($lifetimes->idle())->add(new DateInterval('PT12H'));
+        $this->alterMcpRows(
+            'UPDATE mcp_connection SET last_used_at = :lastUse WHERE id = :id',
+            ['lastUse' => $lastUse->format(DateTimeImmutable::ATOM), 'id' => $candidate->connectionId],
+        );
+        $this->assertALiveCandidate($candidate, $now, $lifetimes);
         $other = $this->holdAnotherMcpConnection();
         $this->alterHeldAccessToken($other, "expires_at = now() - INTERVAL '1 minute'");
 
@@ -192,6 +213,37 @@ final class McpConnectionPurgeLockOrderTest extends WebTestCase
         );
         self::assertSame(2, $this->rowCount('mcp_connection'), $observed);
         self::assertSame(1, $this->rowCount('mcp_access_token'), $observed);
+    }
+
+    /**
+     * La connexion est une candidate de la purge à `$now` — présélectionnée
+     * par les bornes que la purge calcule (`now − durée + P1D`, la marge de
+     * McpConnectionPurger, ConnectionLifetimes::MINIMUM_CONNECTION_LIFETIME)
+     * — et pas encore échue. La présélection verrouille `FOR UPDATE` : lue
+     * dans une transaction annulée aussitôt, qui ne laisse aucun verrou.
+     */
+    private function assertALiveCandidate(HeldMcpConnection $held, DateTimeImmutable $now, ConnectionLifetimes $lifetimes): void
+    {
+        $entityManager = self::getContainer()->get(EntityManagerInterface::class);
+        $margin = new DateInterval(ConnectionLifetimes::MINIMUM_CONNECTION_LIFETIME);
+        $entityManager->beginTransaction();
+
+        try {
+            $candidates = self::getContainer()->get(McpConnectionRepositoryInterface::class)->findActiveCandidatesForExpiry(
+                $now->sub($lifetimes->idle())->add($margin),
+                $now->sub($lifetimes->maximum())->add($margin),
+            );
+        } finally {
+            $entityManager->rollback();
+        }
+
+        $matching = array_values(array_filter(
+            $candidates,
+            static fn (McpConnection $connection): bool => $connection->getId()->toRfc4122() === $held->connectionId,
+        ));
+        self::assertCount(1, $matching, 'La connexion n\'est pas présélectionnée par la purge : le NOWAIT ne prouverait rien.');
+        self::assertFalse($matching[0]->isExpiredAt($now, $lifetimes), 'La candidate est déjà échue : la purge la révoquerait.');
+        $entityManager->clear();
     }
 
     /**

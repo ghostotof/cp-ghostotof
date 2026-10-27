@@ -34,8 +34,9 @@ paths:
   `FOR UPDATE`** on the connection rows only (no join), `HINT_REFRESH`, by id, through `RereadUnderLock::rowsMatching()`
   (`.claude/rules/backend-architecture.md`; nothing detached): a refresh in flight commits first and its new
   `last_used_at` is judged, instead of a stale row revoked a few milliseconds after a legitimate use; (2) each candidate judged by `isExpiredAt(now, lifetimes)`, **the only definition**;
-  (3) `revokeExpired(list<Uuid>, $at)`, one statement like `revokeActive()` (`WHERE c.id IN (:ids) AND c.revoked_at IS
-  NULL … RETURNING`), cause `expired`; (4) `deleteRevokedBefore($threshold)`, `revoked_at < :threshold`, strict,
+  (3) `revokeExpired(list<Uuid>, $at)`, one statement like `revokeActive()` (`… WHERE revoked.id IN (SELECT c.id FROM
+  mcp_connection c WHERE c.id IN (:ids) AND c.revoked_at IS NULL ORDER BY c.id FOR NO KEY UPDATE) … RETURNING`, the
+  ids converted through `UuidType`), cause `expired`; (4) `deleteRevokedBefore($threshold)`, `revoked_at < :threshold`, strict,
   cascading — **before any token deletion**: run last, it locked old revoked connections after (5) had locked token
   rows, the order a cascading account deletion (`cpg_user` → `mcp_connection` → tokens) crosses (final review of
   #649); the cascade carries what tokens are left, normally none; (5) `deleteDead($now)` on codes, **access tokens,
@@ -53,8 +54,8 @@ paths:
   and the lock's duration: a live candidate (last used 29 days 12 hours ago) is free `FOR UPDATE NOWAIT` while the
   purge waits in (5) — `55P03` under one transaction, measured, the other two green. **Accepted, unpinned**: no
   concurrency test proves the `FOR UPDATE` of (1) itself (the sequential suite stays green without it). **Accepted limit**: a cycle between `mcp_connection` rows
-  alone — candidates (1, by id) or old revoked rows (4) against a cascade taking an account's connections in physical
-  order; PostgreSQL aborts one, the Job retries (`backoffLimit: 2`). **Closed** (#726, final review): the marking
+  alone — candidates (1, by id) or old revoked rows (4) against a cascade taking an account's connections in its
+  plan's order; PostgreSQL aborts one, the Job retries (`backoffLimit: 2`). **Closed** (#726, final review): the marking
   against a code exchange's supersession of two candidates of one pair — the three revocations lock their rows by id
   too (`McpConnectionRepository::revokeWhere()`, `.claude/rules/mcp-oauth-cycle-de-vie.md`, « A new grant supersedes
   the previous one ») — **and the code's own connection, which the exchange locks first, is never a candidate**

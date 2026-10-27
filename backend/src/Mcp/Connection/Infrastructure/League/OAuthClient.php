@@ -17,8 +17,20 @@ use League\OAuth2\Server\Entities\ClientEntityInterface;
  */
 final readonly class OAuthClient implements ClientEntityInterface
 {
+    /**
+     * L'identifiant du grant du code d'autorisation (RFC 6749 §4.1.3), écrit
+     * une fois (#726, S2) : league n'en a pas de constante — c'est le retour
+     * de `AuthCodeGrant::getIdentifier()`, une méthode d'instance — et ce
+     * client est déjà la liste des grants servis, que ClientRepository lit.
+     * LeagueCodeExchangeSupersession et LeagueGrantRefusalAudit le lisent ici.
+     */
+    public const string AUTHORIZATION_CODE_GRANT = 'authorization_code';
+
+    /** L'identifiant du grant du rafraîchissement (RFC 6749 §6), de même. */
+    public const string REFRESH_TOKEN_GRANT = 'refresh_token';
+
     /** Les deux grants servis : le code d'autorisation (PKCE) et le rafraîchissement. */
-    public const array SERVED_GRANTS = ['authorization_code', 'refresh_token'];
+    public const array SERVED_GRANTS = [self::AUTHORIZATION_CODE_GRANT, self::REFRESH_TOKEN_GRANT];
 
     public function __construct(
         private McpClient $client,

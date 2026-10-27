@@ -6,7 +6,8 @@ declare(strict_types=1);
  * Processus fils de McpConnectionPurgeLockOrderTest (#649, lot C des
  * relectures) : lance la **vraie** purge quotidienne des connexions MCP
  * (McpConnectionPurgerInterface, celle d'`app:mcp:purge`) pendant que le test
- * tient, dans sa propre transaction, une ligne que la purge devra prendre —
+ * tient, dans la transaction de son détenteur, une ligne que la purge devra
+ * prendre —
  * une nuit où la purge croise une suppression de compte en cascade, ou une
  * révocation au point de révocation.
  *

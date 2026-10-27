@@ -193,22 +193,28 @@ final class TokenEndpointConcurrencyTest extends WebTestCase
      * des autres connexions actives du couple les verrouille **dans l'ordre
      * des identifiants**, celui où la purge verrouille ses candidates (`FOR
      * UPDATE … ORDER BY id`, `findActiveCandidatesForExpiry()`). Pris dans
-     * l'ordre physique, deux candidates de la purge, autres connexions d'un
-     * même couple, pouvaient croiser son marquage : l'échange tenait Cb et
-     * attendait Ca, la purge tenait Ca et attendait Cb — `40P01`.
+     * l'ordre où le plan les lit, deux candidates de la purge, autres
+     * connexions d'un même couple, pouvaient croiser son marquage : l'échange
+     * tenait Cb et attendait Ca, la purge tenait Ca et attendait Cb — `40P01`.
      *
      * Trois accords du même compte au même client : Ca < Cb (par identifiant)
-     * et la connexion C3 dont l'enfant échange le code. **L'ordre physique
+     * et la connexion C3 dont l'enfant échange le code. **L'ordre du tas
      * contredit celui des identifiants** : Ca est réécrite (une mise à jour
      * sans effet), sa version vivante part après Cb dans le tas — le test le
-     * vérifie par `ctid` avant tout. Le test tient Ca `FOR UPDATE` (le premier
-     * verrou de la purge), l'enfant échange le code de C3 et doit bloquer sur
-     * Ca ; le test demande alors Cb `FOR UPDATE NOWAIT` : dans l'ordre des
+     * vérifie par `ctid` avant tout. **Seul l'ordre du tas est contredit** :
+     * la mise à jour est HOT (aucune colonne indexée ne change), l'entrée
+     * d'index de Ca pointe toujours sur la racine de sa chaîne HOT, et un
+     * parcours par index garderait l'ordre des identifiants. Le test ne
+     * discrimine donc que sous le plan actuel, un parcours séquentiel de
+     * quelques lignes ; un plan par index le laisserait vert sans
+     * `ORDER BY` (`.claude/rules/backend-outillage.md`, « Concurrency
+     * tests »). Le test tient Ca `FOR UPDATE` (le premier verrou de la
+     * purge), l'enfant échange le code de C3 et doit bloquer sur Ca ; le test demande alors Cb `FOR UPDATE NOWAIT` : dans l'ordre des
      * identifiants l'enfant n'a encore rien pris d'autre, elle est libre ; il
      * relâche, l'enfant rend `issued 200`, Ca et Cb révoquées `superseded`.
      *
      * **Mesuré** sous l'`UPDATE` sans `ORDER BY` (la sous-requête ordonnée
-     * retirée de `revokeWhere()`) : l'enfant a pris Cb, dans l'ordre physique,
+     * retirée de `revokeWhere()`) : l'enfant a pris Cb, dans l'ordre du tas,
      * avant de bloquer sur Ca — le `NOWAIT` du test refusé en `55P03`, rouge.
      */
     public function testASupersessionLocksTheOtherConnectionsInIdOrder(): void
@@ -225,13 +231,14 @@ final class TokenEndpointConcurrencyTest extends WebTestCase
         self::assertIsString($higher);
 
         // Une nouvelle version de la ligne de Ca : elle prend place après Cb
-        // dans le tas, l'ordre d'un parcours séquentiel comme d'un index
-        // B-tree (les doublons y sont rangés par ctid).
+        // dans le tas, l'ordre d'un parcours séquentiel. Mise à jour HOT :
+        // l'index ne bouge pas, un parcours par index lirait encore Ca avant
+        // Cb.
         $this->alterMcpRows('UPDATE mcp_connection SET granted_at = granted_at WHERE id = :id', ['id' => $lower]);
         self::assertSame(
             [$higher, $lower],
             $this->mcpRows()->fetchFirstColumn('SELECT id FROM mcp_connection WHERE id IN (?, ?) ORDER BY ctid', [$lower, $higher]),
-            'L\'ordre physique ne contredit pas celui des identifiants : le test ne discriminerait rien.',
+            'L\'ordre du tas ne contredit pas celui des identifiants : le test ne discriminerait rien.',
         );
 
         [$holderSqlState, $concurrent] = $this->exchangeWhileHolding(

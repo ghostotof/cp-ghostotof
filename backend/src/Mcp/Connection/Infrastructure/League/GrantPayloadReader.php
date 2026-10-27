@@ -83,7 +83,11 @@ final class GrantPayloadReader
         $payload = $this->payloadOf($code);
         $challenge = $payload['code_challenge'] ?? null;
 
-        return 'S256' === ($payload['code_challenge_method'] ?? null) && \is_string($challenge) && '' !== $challenge ? $challenge : null;
+        // La méthode admise est lue chez son seul juge (#726, S2), jamais
+        // recopiée.
+        $method = $payload['code_challenge_method'] ?? null;
+
+        return LoopbackAwareAuthCodeGrant::CODE_CHALLENGE_METHOD === $method && \is_string($challenge) && '' !== $challenge ? $challenge : null;
     }
 
     /**

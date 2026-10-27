@@ -76,7 +76,14 @@ final class ConsentServiceTest extends TestCase
     /** @var array{McpConnection, RevocationCause, DateTimeImmutable}|null les arguments du remplacement */
     private ?array $supersededWith = null;
 
-    /** @var list<array{McpConnectionReference, string}> les arguments de chaque ligne `mcp-connection-revoked` */
+    /**
+     * Les arguments de chaque ligne `mcp-connection-revoked` : la connexion et
+     * la cause de `mcpConnectionRevoked()`, ou la connexion et l'UUID de celle
+     * qui la remplace pour `mcpConnectionSuperseded()` — enregistrés tels que
+     * reçus, jamais recomposés en chaîne.
+     *
+     * @var list<array{McpConnectionReference, string|Uuid}>
+     */
     private array $revokedAudits = [];
 
     /** La requête que le validateur a reçue. */
@@ -433,7 +440,7 @@ final class ConsentServiceTest extends TestCase
         // `superseded` écrite à l'approbation passerait par elle.
         $auditLogger->method('mcpConnectionSuperseded')->willReturnCallback(function (McpConnectionReference $connection, Uuid $supersededBy): void {
             $this->effects[] = 'revoked';
-            $this->revokedAudits[] = [$connection, RevocationCause::Superseded->value.' by '.$supersededBy->toRfc4122()];
+            $this->revokedAudits[] = [$connection, $supersededBy];
         });
 
         return new ConsentService(

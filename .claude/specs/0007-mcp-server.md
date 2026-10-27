@@ -366,7 +366,12 @@ décision du 2026-10-19, voir « Langue invalide »).
   sur les connexions actives. *Corrigé le 2026-10-27 (#726, D2)* : la révocation a lieu **au premier
   échange réussi du nouveau code**, dans la transaction du point de jeton, jamais à l'approbation — un
   parcours abandonné après l'approbation (code jamais échangé, redirection perdue) laisse l'accord
-  précédent vivant ; un code plus ancien échangé après un plus récent est mort. Un double clic laisse deux
+  précédent vivant ; le premier code échangé, ancien ou récent, remplace les autres, et un code plus
+  ancien échangé après un plus récent est mort. Ré-autoriser ne coupe donc l'ancienne connexion qu'à
+  l'échange du nouveau code : tant que la personne ne peut pas révoquer elle-même ses connexions (#650,
+  « Mes connexions MCP »), un parcours abandonné laisse vivante une connexion peut-être volée — **#650 est
+  un préalable à l'ouverture publique de la phase 2** (#726, audit B1, décision de l'auteur du
+  2026-10-27), comme le disent la règle et le registre des traitements (§3.4). Un double clic laisse deux
   connexions actives jusqu'au premier échange, qui n'en laisse qu'une (celle d'un client qui n'échange
   aucun code expire après 30 jours sans usage) — une contrainte d'unicité partielle, écartée, ferait de ce
   double clic un 500. Limite acceptée, nouvelle : deux échanges simultanés de deux codes du même couple

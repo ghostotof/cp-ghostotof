@@ -302,7 +302,7 @@ final class McpConnectionPurgerTest extends KernelTestCase
     {
         $expired = $this->connection(new DateTimeImmutable('2026-10-01T10:00:00+02:00'), new DateTimeImmutable(self::IDLE_DEADLINE_LAST_USE));
         $deadCode = $this->code($expired, $this->now()->sub(new DateInterval('PT1H')));
-        $purger = $this->purgerRunningIn(new RollingBackTheSecondRun(self::getContainer()->get(TransactionInterface::class)));
+        $purger = $this->purgerRunningIn(new RollingBackTransaction(self::getContainer()->get(TransactionInterface::class), rolledBackRun: 2));
 
         try {
             $purger->purge($this->retention());

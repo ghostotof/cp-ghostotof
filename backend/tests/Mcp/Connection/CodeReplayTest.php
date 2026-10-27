@@ -238,7 +238,9 @@ final class CodeReplayTest extends WebTestCase
         // RFC 7636 §4.1), tiré à chaque exécution : jamais celui du flux.
         $otherVerifier = rtrim(strtr(base64_encode(random_bytes(32)), '+/', '-_'), '=');
         self::assertSame(43, \strlen($otherVerifier));
-        self::assertNotSame(self::CODE_VERIFIER, $otherVerifier);
+        // Une assertion qui ne cite pas les valeurs : `assertNotSame()`
+        // publierait les deux vérificateurs dans le journal de la CI.
+        self::assertTrue(self::CODE_VERIFIER !== $otherVerifier, 'Le vérificateur tiré est celui du flux.');
 
         $this->assertAnUnprovenReplayLeavesTheConnectionActive(['code_verifier' => $otherVerifier]);
     }

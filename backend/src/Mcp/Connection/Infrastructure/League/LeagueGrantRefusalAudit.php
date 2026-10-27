@@ -48,8 +48,8 @@ final readonly class LeagueGrantRefusalAudit implements GrantRefusalAuditInterfa
 {
     /** Le paramètre qui porte l'artefact, par grant (RFC 6749 §4.1.3, §6). */
     private const array ARTIFACT_PARAMETER = [
-        'authorization_code' => 'code',
-        'refresh_token' => 'refresh_token',
+        OAuthClient::AUTHORIZATION_CODE_GRANT => 'code',
+        OAuthClient::REFRESH_TOKEN_GRANT => 'refresh_token',
     ];
 
     /**

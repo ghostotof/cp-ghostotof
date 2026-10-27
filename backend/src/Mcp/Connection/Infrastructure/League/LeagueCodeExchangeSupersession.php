@@ -35,8 +35,6 @@ use Psr\Http\Message\ServerRequestInterface;
  */
 final readonly class LeagueCodeExchangeSupersession implements CodeExchangeSupersessionInterface
 {
-    private const string AUTHORIZATION_CODE_GRANT = 'authorization_code';
-
     public function __construct(
         private GrantPayloadReader $payloadReader,
         private McpConnectionRepositoryInterface $connections,
@@ -49,7 +47,7 @@ final readonly class LeagueCodeExchangeSupersession implements CodeExchangeSuper
         $body = $request->getParsedBody();
         $grantType = \is_array($body) ? ($body['grant_type'] ?? null) : null;
         $code = \is_array($body) ? ($body['code'] ?? null) : null;
-        if (self::AUTHORIZATION_CODE_GRANT !== $grantType || !\is_string($code)) {
+        if (OAuthClient::AUTHORIZATION_CODE_GRANT !== $grantType || !\is_string($code)) {
             return null;
         }
 
