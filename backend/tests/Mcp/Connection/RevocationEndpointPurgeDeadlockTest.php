@@ -8,8 +8,8 @@ use App\Tests\Mcp\Support\HoldsAnMcpConnection;
 use App\Tests\Support\ChildPhpProcess;
 use App\Tests\Support\OpensProbeConnection;
 use App\Tests\Support\ProcessBarrier;
+use App\Tests\Support\SessionLockWait;
 use Doctrine\DBAL\Exception\DriverException;
-use PHPUnit\Framework\Assert;
 use SensitiveParameter;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\Process\Process;
@@ -50,9 +50,12 @@ use Symfony\Component\Process\Process;
  *     dans l'ancien ordre — révoque R (il prend le verrou de R) avant de buter
  *     sur A, que le parent tient : **la révocation est alors suspendue entre R
  *     et A**, non par un écouteur mais par le verrou ;
- *  3. le test attend que la session du fils soit **bloquée sur un verrou**,
- *     puis interpose la cascade de la purge : il demande R (`FOR UPDATE`),
- *     exactement ce que ferait la mise à NULL de `access_token_id` ;
+ *  3. le test attend que la session du fils soit **bloquée sur un verrou**
+ *     ({@see \App\Tests\Support\SessionLockWait::untilBlocked()}, l'attente
+ *     partagée avec McpConnectionPurgeLockOrderTest, qui joue l'autre côté :
+ *     la vraie purge contre un test qui tient A), puis interpose la cascade
+ *     de la purge : il demande R (`FOR UPDATE`), exactement ce que ferait la
+ *     mise à NULL de `access_token_id` ;
  *  4. dans l'ancien ordre, le parent tient A et attend R, le fils tient R et
  *     attend A : PostgreSQL détecte le cycle et annule l'un des deux. Dans le
  *     nouvel ordre (A avant R), le fils n'a jamais pris R ; la cascade du
@@ -76,12 +79,6 @@ final class RevocationEndpointPurgeDeadlockTest extends WebTestCase
     private const int TIMEOUT_SECONDS = 30;
 
     private const string CHILD_SCRIPT = __DIR__.'/Fixtures/revoke-at-revocation-endpoint.php';
-
-    /** Vrai tant que la session du pid donné attend un verrou (`Lock`). */
-    private const string SESSION_WAITS_FOR_A_LOCK = "SELECT wait_event_type IS NOT DISTINCT FROM 'Lock' FROM pg_stat_activity WHERE pid = ?";
-
-    /** Intervalle entre deux lectures de pg_stat_activity. */
-    private const int POLL_MICROSECONDS = 10_000;
 
     protected function setUp(): void
     {
@@ -177,8 +174,9 @@ final class RevocationEndpointPurgeDeadlockTest extends WebTestCase
 
     /**
      * Démarre B avec le corps sur son entrée standard, le relâche, puis attend
-     * que sa session soit bloquée sur un verrou : le fils a pris C et R (ancien
-     * ordre) ou va prendre A (nouvel ordre), et bute sur A que le parent tient.
+     * que sa session soit bloquée sur un verrou ({@see SessionLockWait}) : le
+     * fils a pris C et R (ancien ordre) ou va prendre A (nouvel ordre), et bute
+     * sur A que le parent tient.
      */
     private function revokeWhileHoldingTheAccessToken(#[SensitiveParameter] string $refreshToken): Process
     {
@@ -189,36 +187,8 @@ final class RevocationEndpointPurgeDeadlockTest extends WebTestCase
 
         $childPid = $barrier->sessionPidOf($concurrent, self::TIMEOUT_SECONDS);
         $barrier->release();
-        $this->waitUntilBlockedOnLock($concurrent, $childPid);
+        SessionLockWait::beside($this->mcpRows(), $concurrent, $childPid, self::TIMEOUT_SECONDS)->untilBlocked();
 
         return $concurrent;
-    }
-
-    /**
-     * Attend, depuis une sonde hors transaction, que la session du fils attende
-     * un verrou ; fait échouer le test au-delà du délai plutôt que de le
-     * suspendre.
-     */
-    private function waitUntilBlockedOnLock(Process $child, int $childPid): void
-    {
-        $probe = self::openProbeBeside($this->mcpRows());
-        $deadline = microtime(true) + self::TIMEOUT_SECONDS;
-
-        try {
-            while (true) {
-                if (true === $probe->fetchOne(self::SESSION_WAITS_FOR_A_LOCK, [$childPid])) {
-                    return;
-                }
-                if (!$child->isRunning()) {
-                    Assert::fail(\sprintf("Le fils s'est arrêté sans se bloquer sur un verrou :\n%s\n%s", $child->getOutput(), $child->getErrorOutput()));
-                }
-                if (microtime(true) > $deadline) {
-                    Assert::fail(\sprintf("La session du fils n'attend aucun verrou après %d s :\n%s%s", self::TIMEOUT_SECONDS, $child->getOutput(), $child->getErrorOutput()));
-                }
-                usleep(self::POLL_MICROSECONDS);
-            }
-        } finally {
-            $probe->close();
-        }
     }
 }
