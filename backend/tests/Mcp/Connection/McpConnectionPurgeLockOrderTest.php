@@ -196,7 +196,6 @@ final class McpConnectionPurgeLockOrderTest extends WebTestCase
             $concurrent?->wait();
         }
 
-        self::assertNotNull($concurrent);
         self::assertNotSame(ChildPhpProcess::SETUP_FAILED, $concurrent->getExitCode(), $concurrent->getErrorOutput());
 
         return [$holderSqlState, $concurrent];
