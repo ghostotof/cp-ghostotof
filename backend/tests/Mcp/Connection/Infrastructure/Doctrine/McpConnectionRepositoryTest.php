@@ -391,6 +391,29 @@ final class McpConnectionRepositoryTest extends KernelTestCase
     }
 
     /**
+     * La référence d'une connexion se lit après un ROLLBACK qui a fermé
+     * l'EntityManager (#725) : l'audit d'un refus au point de jeton. Révoquée
+     * ou non, une connexion qui existe est désignée ; une connexion disparue
+     * ne l'est pas.
+     */
+    public function testReferenceOfNamesTheAccountAndClientOnAClosedEntityManager(): void
+    {
+        $account = $this->persistAccount('jane');
+        $connection = McpConnection::grant($account, $this->registerClient('https://client.example.test/metadata.json'), self::SCOPE, new DateTimeImmutable());
+        $this->connections()->add($connection);
+        $this->connections()->revokeActive($connection->getId(), RevocationCause::Client, new DateTimeImmutable());
+        $this->em->close();
+
+        $reference = $this->connections()->referenceOf($connection->getId());
+
+        self::assertFalse($this->em->isOpen());
+        self::assertTrue($connection->getId()->equals($reference?->connectionId()));
+        self::assertSame($account->getId()->toRfc4122(), $reference->accountId());
+        self::assertSame('https://client.example.test/metadata.json', $reference->clientId());
+        self::assertNull($this->connections()->referenceOf(Uuid::v7()));
+    }
+
+    /**
      * Une révocation sans cause, ou une cause sans révocation, est refusée
      * par la base elle-même : une écriture SQL qui contournerait le dépôt ne
      * peut laisser ni l'une ni l'autre.

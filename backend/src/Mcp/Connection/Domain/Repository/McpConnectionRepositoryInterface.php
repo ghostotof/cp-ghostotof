@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Mcp\Connection\Domain\Repository;
 
 use App\Mcp\Connection\Domain\Entity\McpConnection;
+use App\Mcp\Connection\Domain\ValueObject\ConnectionReference;
 use App\Mcp\Connection\Domain\ValueObject\RevocationCause;
 use App\Mcp\Connection\Domain\ValueObject\RevokedConnection;
 use DateTimeImmutable;
@@ -20,6 +21,16 @@ interface McpConnectionRepositoryInterface
     public function findOneById(Uuid $id): ?McpConnection;
 
     public function add(McpConnection $connection): void;
+
+    /**
+     * Ce par quoi la connexion se désigne — son compte, son client public —,
+     * révoquée ou non (#725). Une instruction SQL, hors de l'unité de
+     * travail : valable après une transaction annulée qui a fermé
+     * l'EntityManager, comme {@see self::revokeActive()}.
+     *
+     * @return ConnectionReference|null `null` si la connexion n'existe pas (ou plus)
+     */
+    public function referenceOf(Uuid $connectionId): ?ConnectionReference;
 
     /**
      * La connexion relue **sous le verrou de sa ligne** (`FOR UPDATE`), pour
