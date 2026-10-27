@@ -34,8 +34,17 @@ paths:
   `#[SensitiveParameter]`) and never the value, an unreadable interval, a zero one, **a connection idle or maximum
   duration under one day** (`ConnectionLifetimes::MINIMUM_CONNECTION_LIFETIME`, `P1D`, lot B of the #649 reviews: it
   is the purge's pre-selection margin, read there as `PRESELECTION_MARGIN` — shorter, the bound `now − duration +
-  margin` would lie in the future and the purge would lock every active connection `FOR UPDATE` each night; `P1D`
-  and `PT24H` accepted, a second less refused, judged before the two orderings), an idle delay beyond the maximum and an access token outliving its refresh token — compared on one fixed
+  margin` would lie in the future and the purge would lock every active connection `FOR UPDATE` each night; a second
+  less than `P1D` refused `belowOneDay`), **a connection idle or maximum duration up to that margin plus the code's
+  duration, included** (#726, CR1, `notBeyondFreshConnectionWindow`: `P1D`, `PT24H` and `P1DT10M` refused with a
+  `PT10M` code, `P1DT10M1S` accepted; the bound follows the configured code — a connection whose code is still
+  exchangeable would otherwise be a purge candidate, and the marking, holding an older candidate, would wait on the
+  newest connection the exchange already holds, `40P01`; above the window the exchange only takes connections in id
+  order, like the marking. **Not closed around a clock change, measured**: the purge's bound counts calendar days, and
+  with `P1DT10M1S` reaches « now − code » by up to 3 599 s for a purge started between 00:10 and 01:10 UTC on
+  2026-03-29, 2026-03-30 or 2026-10-26 — `P1DT1H10M1S` leaves none; the configured `P30D`/`P90D` are far from it and
+  the Job runs at 03:17), both judged per parameter, idle first, after positivity and before the two orderings, an
+  idle delay beyond the maximum and an access token outliving its refresh token — compared on one fixed
   instant (`2026-01-01T00:00:00+00:00`), so the verdict never depends on the day the container is built. Each
   getter returns a **copy** (`DateInterval` is mutable). `AuthorizationServerFactory` reads league's three
   durations from it and `McpBearerAuthenticator` hands it to `McpAccessToken::refusalAt()`: no constant keeps a

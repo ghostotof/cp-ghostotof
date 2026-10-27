@@ -75,7 +75,10 @@ final readonly class McpConnectionPurger implements McpConnectionPurgerInterface
      * deux durées de connexion, que {@see ConnectionLifetimes} refuse en
      * dessous (relecture du lot B de #649) : plus courtes que la marge, la
      * borne serait dans le futur et chaque connexion active serait verrouillée
-     * à chaque nuit — une constante pour les deux, lue là.
+     * à chaque nuit — une constante pour les deux, lue là. Les durées doivent
+     * même dépasser cette marge plus la durée d'un code (#726) : la connexion
+     * d'un code encore échangeable, que l'échange verrouille la première,
+     * n'est alors jamais candidate du marquage.
      */
     private const string PRESELECTION_MARGIN = ConnectionLifetimes::MINIMUM_CONNECTION_LIFETIME;
 

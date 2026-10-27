@@ -15,7 +15,8 @@ use PHPUnit\Framework\TestCase;
 /**
  * Les durées d'une connexion MCP et de ses jetons (#649), lues en
  * configuration : chacune doit être un intervalle ISO 8601 lisible et
- * strictement positif, l'inactivité ne dépasse pas la durée maximale, le jeton
+ * strictement positif, l'inactivité et la durée maximale dépassent un jour plus
+ * la durée d'un code, l'inactivité ne dépasse pas la durée maximale, le jeton
  * d'accès ne survit pas à son rafraîchissement. Un refus nomme le paramètre,
  * jamais la valeur.
  */
@@ -123,46 +124,75 @@ final class ConnectionLifetimesTest extends TestCase
     }
 
     /**
-     * Le délai d'inactivité et la durée maximale d'une connexion valent au
-     * moins un jour (relecture du lot B de #649) : la purge présélectionne ses
+     * Les deux planchers du délai d'inactivité et de la durée maximale d'une
+     * connexion, jugés paramètre par paramètre, l'inactivité d'abord, chacun
+     * avant l'ordre des deux durées.
+     *
+     * Sous un jour (relecture du lot B de #649) : la purge présélectionne ses
      * candidates par `maintenant − durée + P1D`, et une durée plus courte
      * mettrait cette borne dans le futur — chaque connexion active serait
-     * verrouillée `FOR UPDATE` à chaque nuit. Un jour exactement est admis
-     * (`P1D` comme `PT24H`, égaux sur l'instant de référence) ; une seconde de
-     * moins est refusée, le plancher jugé avant l'ordre des deux durées.
+     * verrouillée `FOR UPDATE` à chaque nuit. Une seconde de moins qu'un jour
+     * reste refusée pour cette cause.
      *
-     * @return iterable<string, array{array<string, string>, ?string}>
+     * Jusqu'à un jour plus la durée d'un code, inclus (#726, CR1) : la
+     * connexion d'un code encore échangeable serait candidate de la purge, et
+     * son marquage (`FOR UPDATE … ORDER BY id`) croiserait le remplacement de
+     * l'échange, qui tient cette connexion — la plus récente — la première.
+     * `P1D` et `PT24H`, admis avant #726, sont refusés ; `P1DT10M` (un code de
+     * `PT10M`) aussi, l'égalité laissant une seconde où la connexion est à la
+     * fois candidate et échangeable ; une seconde de plus est admise. La borne
+     * suit la durée configurée du code.
+     *
+     * @return iterable<string, array{array<string, string>, ?string, ?string}>
      */
-    public static function connectionDurationsAroundOneDay(): iterable
+    public static function connectionDurationsAroundTheFloors(): iterable
     {
-        yield 'inactivité d\'un jour' => [['idleLifetime' => 'P1D'], null];
-        yield 'inactivité de vingt-quatre heures' => [['idleLifetime' => 'PT24H'], null];
-        yield 'inactivité d\'une seconde sous le jour' => [['idleLifetime' => 'PT23H59M59S'], 'idleLifetime'];
-        yield 'inactivité de douze heures' => [['idleLifetime' => 'PT12H'], 'idleLifetime'];
-        yield 'durée maximale d\'un jour' => [['idleLifetime' => 'P1D', 'maximumLifetime' => 'P1D'], null];
-        yield 'durée maximale d\'une seconde sous le jour' => [['idleLifetime' => 'P1D', 'maximumLifetime' => 'PT23H59M59S'], 'maximumLifetime'];
-        yield 'durée maximale de douze heures' => [['idleLifetime' => 'PT12H', 'maximumLifetime' => 'PT12H'], 'idleLifetime'];
+        yield 'inactivité de douze heures' => [['idleLifetime' => 'PT12H'], 'idleLifetime', 'belowOneDay'];
+        yield 'inactivité d\'une seconde sous le jour' => [['idleLifetime' => 'PT23H59M59S'], 'idleLifetime', 'belowOneDay'];
+        yield 'inactivité d\'un jour' => [['idleLifetime' => 'P1D'], 'idleLifetime', 'freshConnection'];
+        yield 'inactivité de vingt-quatre heures' => [['idleLifetime' => 'PT24H'], 'idleLifetime', 'freshConnection'];
+        yield 'inactivité d\'un jour et d\'un code' => [['idleLifetime' => 'P1DT10M'], 'idleLifetime', 'freshConnection'];
+        yield 'inactivité de vingt-quatre heures et d\'un code' => [['idleLifetime' => 'PT24H10M'], 'idleLifetime', 'freshConnection'];
+        yield 'inactivité d\'une seconde au-delà du jour et du code' => [['idleLifetime' => 'P1DT10M1S'], null, null];
+        yield 'inactivité de vingt-quatre heures, un code et une seconde' => [['idleLifetime' => 'PT24H10M1S'], null, null];
+        yield 'durée maximale de douze heures' => [['idleLifetime' => 'PT12H', 'maximumLifetime' => 'PT12H'], 'idleLifetime', 'belowOneDay'];
+        yield 'durée maximale d\'une seconde sous le jour' => [['idleLifetime' => 'P1DT10M1S', 'maximumLifetime' => 'PT23H59M59S'], 'maximumLifetime', 'belowOneDay'];
+        yield 'durée maximale d\'un jour' => [['idleLifetime' => 'P1DT10M1S', 'maximumLifetime' => 'P1D'], 'maximumLifetime', 'freshConnection'];
+        yield 'durée maximale d\'un jour et d\'un code' => [['idleLifetime' => 'P1DT10M1S', 'maximumLifetime' => 'P1DT10M'], 'maximumLifetime', 'freshConnection'];
+        yield 'durée maximale d\'une seconde au-delà du jour et du code' => [['idleLifetime' => 'P1DT10M1S', 'maximumLifetime' => 'P1DT10M1S'], null, null];
+        yield 'inactivité d\'un jour sous une durée maximale admise' => [['idleLifetime' => 'P1D', 'maximumLifetime' => 'P1DT10M1S'], 'idleLifetime', 'freshConnection'];
+        yield 'code d\'une heure, inactivité d\'un jour et dix minutes' => [['codeLifetime' => 'PT1H', 'idleLifetime' => 'P1DT10M1S'], 'idleLifetime', 'freshConnection'];
+        yield 'code d\'une heure, inactivité d\'un jour et d\'une heure' => [['codeLifetime' => 'PT1H', 'idleLifetime' => 'P1DT1H'], 'idleLifetime', 'freshConnection'];
+        yield 'code d\'une heure, inactivité d\'un jour, une heure et une seconde' => [['codeLifetime' => 'PT1H', 'idleLifetime' => 'P1DT1H1S'], null, null];
+        yield 'code d\'une heure, durée maximale d\'un jour et d\'une heure' => [['codeLifetime' => 'PT1H', 'idleLifetime' => 'P1DT1H1S', 'maximumLifetime' => 'P1DT1H'], 'maximumLifetime', 'freshConnection'];
     }
 
     /**
      * @param array<string, string> $overrides
      * @param ?string               $refusedParameter le paramètre que le refus nomme ; `null` si la configuration est admise
+     * @param ?string               $floor            le plancher franchi : `belowOneDay` ou `freshConnection`
      */
-    #[DataProvider('connectionDurationsAroundOneDay')]
-    public function testAConnectionDurationUnderOneDayIsRefused(array $overrides, ?string $refusedParameter): void
+    #[DataProvider('connectionDurationsAroundTheFloors')]
+    public function testAConnectionDurationAtOrBelowItsFloorsIsRefused(array $overrides, ?string $refusedParameter, ?string $floor): void
     {
         if (null === $refusedParameter) {
             $lifetimes = $this->lifetimes($overrides);
-            self::assertSame(24 * 3600, $this->seconds($lifetimes->idle()), 'Une durée d\'un jour est admise, lue telle quelle.');
+            $expected = [...self::CONFIGURED, ...$overrides];
+            self::assertSame($this->seconds(new DateInterval($expected['idleLifetime'])), $this->seconds($lifetimes->idle()), 'Une durée admise est lue telle quelle.');
+            self::assertSame($this->seconds(new DateInterval($expected['maximumLifetime'])), $this->seconds($lifetimes->maximum()), 'Une durée admise est lue telle quelle.');
 
             return;
         }
 
+        $expectedRefusal = 'belowOneDay' === $floor
+            ? InvalidConnectionLifetimeException::belowOneDay($refusedParameter)
+            : InvalidConnectionLifetimeException::notBeyondFreshConnectionWindow($refusedParameter);
+
         try {
             $this->lifetimes($overrides);
-            self::fail('Une durée de connexion sous un jour a été acceptée.');
+            self::fail('Une durée de connexion à son plancher ou en dessous a été acceptée.');
         } catch (InvalidConnectionLifetimeException $refusal) {
-            self::assertSame(InvalidConnectionLifetimeException::belowOneDay($refusedParameter)->getMessage(), $refusal->getMessage());
+            self::assertSame($expectedRefusal->getMessage(), $refusal->getMessage());
             self::assertStringContainsString($refusedParameter, $refusal->getMessage());
             self::assertStringNotContainsString($overrides[$refusedParameter], $refusal->getMessage(), 'Le refus cite la valeur.');
         }
