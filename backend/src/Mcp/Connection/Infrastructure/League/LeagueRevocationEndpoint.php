@@ -50,10 +50,12 @@ use Symfony\Component\Uid\Uuid;
  *   l'autorisation qu'il porte), cause `client`, dans la même transaction que
  *   ses deux jetons — par McpConnectionRepositoryInterface::revokeActive(),
  *   une instruction SQL que la base n'applique qu'une fois —, **dans l'ordre
- *   des verrous du point de jeton** : la connexion d'abord, relue `FOR
- *   UPDATE` (lockForIssuance()), puis le rafraîchissement et le jeton
- *   d'accès ; l'ordre inverse interbloquait une révocation croisant la
- *   rotation du même jeton. Un rafraîchissement déjà tourné, rendu sur une
+ *   C → A → R** : la connexion d'abord, relue `FOR UPDATE`
+ *   (lockForIssuance()), puis le jeton d'accès, puis le rafraîchissement.
+ *   C avant les jetons est l'ordre des verrous du point de jeton (l'ordre
+ *   inverse interbloquait une révocation croisant la rotation du même
+ *   jeton) ; A avant R est l'ordre du grant de rafraîchissement de league et
+ *   de la cascade de la purge (sinon un interblocage avec celle-ci). Un rafraîchissement déjà tourné, rendu sur une
  *   connexion active, la révoque pour réutilisation (`refresh-token-reuse`),
  *   décidé sous le verrou. La ligne d'audit
  *   `mcp-connection-revoked` s'écrit **après** le COMMIT, et seulement si
@@ -159,13 +161,25 @@ final readonly class LeagueRevocationEndpoint implements RevocationEndpointInter
     }
 
     /**
-     * Dans la transaction : la connexion, le rafraîchissement et son jeton
-     * d'accès révoqués ensemble, **dans l'ordre des verrous du point de
-     * jeton** — la connexion d'abord (`FOR UPDATE`), puis ses jetons. Dans
+     * Dans la transaction : la connexion, son jeton d'accès et le
+     * rafraîchissement révoqués ensemble, **dans l'ordre C → A → R** — la
+     * connexion d'abord (`FOR UPDATE`), puis le jeton d'accès A, puis le
+     * rafraîchissement R.
+     *
+     * C avant les jetons est l'ordre des verrous du point de jeton : dans
      * l'ordre inverse, une révocation croisant la rotation du même jeton
      * tenait R et A en attendant la connexion que le rafraîchissement tenait
      * en attendant A : un interblocage, et la connexion restait active quand
      * PostgreSQL annulait la révocation (RevocationEndpointConcurrencyTest).
+     *
+     * A avant R est l'ordre de tous les autres : le grant de rafraîchissement
+     * de league révoque A puis R, et la purge supprime A, dont la clé
+     * étrangère `ON DELETE SET NULL` sur `mcp_refresh_token.access_token_id`
+     * met ensuite R à jour. Dans l'ordre R puis A, cette révocation tenait R
+     * et attendait A quand la purge tenait A (son `DELETE`) et attendait R (la
+     * mise à NULL de la cascade) : un interblocage (40P01), un 500, la
+     * connexion laissée active et aucune ligne d'audit, quand la personne se
+     * croit déconnectée (RevocationEndpointPurgeDeadlockTest).
      *
      * La cause se décide sous le verrou, sur le rafraîchissement relu : déjà
      * révoqué alors que la connexion est active, il a été tourné — rendu ici,
@@ -190,13 +204,18 @@ final readonly class LeagueRevocationEndpoint implements RevocationEndpointInter
             $revoked = $this->connections->revokeActive($connectionId, $rotated ? RevocationCause::RefreshTokenReuse : RevocationCause::Client, $at);
         }
 
-        $this->refreshTokens->revokeByHash($tokenHash, $at);
-
+        // Le jeton d'accès avant le rafraîchissement : A puis R, l'ordre de
+        // tous les autres (le grant de rafraîchissement de league, la purge
+        // dont la cascade `ON DELETE SET NULL` touche R après avoir supprimé
+        // A). L'ordre inverse interbloquait avec la purge, qui tient A et
+        // attend R quand cette révocation tient R et attend A.
         // Le lien est nul quand le jeton d'accès a été purgé (`ON DELETE
         // SET NULL`) : il n'y a plus rien à révoquer.
         if (null !== $accessTokenHash) {
             $this->accessTokens->revokeByHash($accessTokenHash, $at);
         }
+
+        $this->refreshTokens->revokeByHash($tokenHash, $at);
 
         return $revoked;
     }

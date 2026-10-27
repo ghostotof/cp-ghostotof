@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Shared;
 
+use App\Tests\Mcp\Connection\RevocationEndpointPurgeDeadlockTest;
 use App\Tests\Support\ChildPhpProcess;
 use App\Tests\Support\FlushInterleaving;
 use App\Tests\Support\PhpSources;
@@ -286,8 +287,12 @@ final class ChildProcessHarnessTest extends TestCase
             self::FLOCK => [(string) (new ReflectionClass(ProcessBarrier::class))->getFileName()],
             self::SERVER_COPY => [(string) (new ReflectionClass(ChildPhpProcess::class))->getFileName()],
             self::PROCESS_ON_COMMAND => [(string) (new ReflectionClass(ChildPhpProcess::class))->getFileName()],
-            // Ce test-ci nomme la vue pour la chercher.
-            self::PG_STAT_ACTIVITY => [$interleaving, __FILE__],
+            // Ce test-ci nomme la vue pour la chercher ;
+            // RevocationEndpointPurgeDeadlockTest (#649, B1) l'interroge
+            // lui-même : la révocation ne passe par aucun flush de l'ORM, donc
+            // FlushInterleaving ne peut pas l'entrelacer — il attend que la
+            // session du fils soit bloquée sur un verrou par sa propre sonde.
+            self::PG_STAT_ACTIVITY => [$interleaving, __FILE__, (string) (new ReflectionClass(RevocationEndpointPurgeDeadlockTest::class))->getFileName()],
             // FlushInterleavingTest vérifie que l'écouteur se retire.
             self::FLUSH_EVENT => [$interleaving, __DIR__.'/FlushInterleavingTest.php'],
         ];

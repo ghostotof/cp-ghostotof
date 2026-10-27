@@ -25,7 +25,10 @@ use Symfony\Component\Process\Process;
  * **L'ordre des verrous** est celui du point de jeton : la connexion C
  * d'abord (`lockForIssuance()`, `FOR UPDATE`), puis le jeton d'accès A et le
  * rafraîchissement R que league révoque. La révocation prend C en premier
- * elle aussi, puis révoque C, R et A. Dans l'ordre inverse (R, A, puis C), la
+ * elle aussi, puis révoque C, A et R (le jeton d'accès avant le
+ * rafraîchissement, l'ordre du grant de league et de la cascade de la purge ;
+ * l'interblocage avec celle-ci est pincé par RevocationEndpointPurgeDeadlockTest).
+ * Dans l'ordre inverse (R, A, puis C), la
  * révocation tenait R et A en attendant C pendant que le rafraîchissement,
  * qui tenait C, attendait A : un interblocage (40P01), un 500 au point de
  * révocation, et quand c'est elle que PostgreSQL annulait, la connexion

@@ -143,13 +143,23 @@ paths:
   `LeagueRevocationEndpoint::revokeRefreshToken()` revokes the connection, through `revokeActive()`, the token and its
   access token in **one transaction**, which returns the `?RevokedConnection`; the audit line is written after the
   COMMIT, only when this revocation took effect (a connection already revoked keeps its first instant, cause and
-  line). **The lock order is the token endpoint's**: the connection first, re-read `FOR UPDATE`
-  (`lockForIssuance()`), then `revokeActive()`, then the refresh token and the access token (`revokeByHash()`). The
-  refresh takes C, then A, then R; a revocation taking R and A before C deadlocked with a refresh of the same token
-  held between its lock and its rotation — measured in real processes, the revocation aborted in `40P01` (a 500), the
-  refresh served and the connection **left active** with the new pair
+  line). **The lock order is C → A → R**: the connection first, re-read `FOR UPDATE` (`lockForIssuance()`), then
+  `revokeActive()`, then the access token and **then** the refresh token (`revokeByHash()`). Two reasons, not the
+  token endpoint's own order (which fixes C before the tokens only). **C before the tokens** is the token endpoint's:
+  the refresh takes C, then A, then R; a revocation taking R and A before C deadlocked with a refresh of the same
+  token held between its lock and its rotation — measured in real processes, the revocation aborted in `40P01` (a
+  500), the refresh served and the connection **left active** with the new pair
   (`RevocationEndpointConcurrencyTest::testARevocationCrossingTheRotationOfItsTokenRevokesTheConnection`: red under
-  the old order, green since — the revocation waits on C, then revokes). **The cause is decided under the lock**, on
+  the old order, green since — the revocation waits on C, then revokes). **A before R** is the order of everyone
+  else: league's refresh grant revokes A then R (`RefreshTokenGrant`), and the nightly purge's
+  `McpAccessTokenRepository::deleteDead()` deletes A, whose FK `mcp_refresh_token.access_token_id … ON DELETE SET
+  NULL` then updates R — so A, then R. Revoking R before A (the first delivery of #649) deadlocked with that purge:
+  the revocation held R and waited on A, the purge held A (its `DELETE`) and waited on R (the cascade's SET NULL) —
+  `40P01`; the purge does not hold C for a non-candidate (active) connection, so C guards nothing here. When the
+  revocation was the victim, it answered a 500, the connection stayed active and no audit line was written while the
+  client believed it had logged out (`RevocationEndpointPurgeDeadlockTest::testARevocationCrossingThePurgeOfItsAccessTokenRevokesTheConnection`:
+  the test holds A and then takes R in the purge's order while the real revocation child runs — red under the old
+  order, green since). **The cause is decided under the lock**, on
   the refresh token re-read there (`HINT_REFRESH`): already revoked while the connection is active, it was rotated,
   and handing it back is the same signal as presenting it at the token endpoint — cause `refresh-token-reuse`
   (`RevocationControllerTest::testRevokingAnAlreadyRotatedRefreshTokenIsAuditedAsReuse`; the concurrency test ends
