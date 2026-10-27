@@ -146,10 +146,12 @@ paths:
   still unrevoked in rows, the last use unwritten) and closes the EntityManager; `TokenEndpoint::respond()` catches
   `CompromisedMcpConnectionException` **outside** the transaction, calls `McpConnectionRevokerInterface::revoke()`
   (native SQL, works on the closed manager; the audit line `mcp-connection-revoked` with `cause`), then throws
-  league's own refusal word for word, chosen by cause in one `match` (`RefreshTokenReuse` →
-  `invalidRefreshToken('Token has been revoked')`, `CodeReplay` → `invalidGrant('Authorization code has been
-  revoked')`, the three other causes — which never arise at the token endpoint — a bare `invalidGrant()`): an
-  attacker learns nothing the refusal did not say before. **Accepted, documented, never worked around**: a client
+  league's own refusal word for word, chosen by the exception's **type** in one `match` (lot C of the reviews: no
+  arm left for the causes that never arise there) — `RotatedRefreshTokenReusedException` →
+  `invalidRefreshToken('Token has been revoked')`, `AuthorizationCodeReplayedException` → `invalidGrant('Authorization
+  code has been revoked')`; PHPStan does not judge a `match (true)` exhaustive (measured), so
+  `CompromisedMcpConnectionExceptionTest` lists the subclasses of `src/` and fails on a third until it has its
+  refusal —: an attacker learns nothing the refusal did not say before. **Accepted, documented, never worked around**: a client
   that replays its refresh after a lost answer (the network cut after the COMMIT) presents a rotated token, loses
   its connection and must reconnect — the price OAuth 2.1's rotation accepts
   (`RefreshRotationTest::testReusingARotatedRefreshTokenRevokesTheConnection`, which also reads the audit line:

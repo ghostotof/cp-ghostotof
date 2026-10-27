@@ -35,6 +35,12 @@ use Symfony\Component\Uid\Uuid;
  * restait active (mesuré, tâche 4 de #649). Un rejeu est une
  * condition d'exécution, pas une erreur du programme : le parent est juste
  * aussi. `CompromisedMcpConnectionExceptionTest` l'épingle.
+ *
+ * Le point de jeton choisit le refus de league par le type de la sous-classe
+ * ({@see \App\Mcp\Connection\Application\TokenEndpoint}), sans bras par défaut : une
+ * nouvelle compromission s'ajoute **aussi** à ce choix —
+ * `CompromisedMcpConnectionExceptionTest` recense les sous-classes de `src/`
+ * et échoue sur une inconnue.
  */
 abstract class CompromisedMcpConnectionException extends RuntimeException
 {

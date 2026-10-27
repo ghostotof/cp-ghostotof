@@ -8,6 +8,8 @@ use App\Mcp\Connection\Domain\Exception\AuthorizationCodeReplayedException;
 use App\Mcp\Connection\Domain\Exception\CompromisedMcpConnectionException;
 use App\Mcp\Connection\Domain\Exception\RotatedRefreshTokenReusedException;
 use App\Mcp\Connection\Domain\ValueObject\RevocationCause;
+use App\Tests\Support\DeclaredClasses;
+use App\Tests\Support\RepositoryFiles;
 use InvalidArgumentException;
 use LogicException;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -52,6 +54,23 @@ final class CompromisedMcpConnectionExceptionTest extends TestCase
         self::assertContains(RuntimeException::class, $ancestors);
         self::assertNotContains(LogicException::class, $ancestors);
         self::assertNotContains(InvalidArgumentException::class, $ancestors);
+    }
+
+    /**
+     * Le point de jeton choisit le refus de league par le type de la
+     * compromission (`TokenEndpoint::refusalOf()`, lot C des relectures de
+     * #649), sans bras par défaut : les sous-classes de `src/` sont exactement
+     * celles de {@see self::compromises()}, chacune avec son refus. Une
+     * nouvelle fait échouer ce test tant que le point de jeton et ce
+     * fournisseur ne la connaissent pas — sinon un `UnhandledMatchError`
+     * après la révocation, un 500.
+     */
+    public function testTheTokenEndpointKnowsEveryCompromise(): void
+    {
+        self::assertSame(
+            [AuthorizationCodeReplayedException::class, RotatedRefreshTokenReusedException::class],
+            DeclaredClasses::implementing(RepositoryFiles::backend('src'), CompromisedMcpConnectionException::class),
+        );
     }
 
     /**

@@ -4,11 +4,12 @@ declare(strict_types=1);
 
 namespace App\Mcp\Connection\Application;
 
+use App\Mcp\Connection\Domain\Exception\AuthorizationCodeReplayedException;
 use App\Mcp\Connection\Domain\Exception\CompromisedMcpConnectionException;
 use App\Mcp\Connection\Domain\Exception\InvalidMcpClientIdException;
+use App\Mcp\Connection\Domain\Exception\RotatedRefreshTokenReusedException;
 use App\Mcp\Connection\Domain\Repository\McpClientRepositoryInterface;
 use App\Mcp\Connection\Domain\ValueObject\McpClientId;
-use App\Mcp\Connection\Domain\ValueObject\RevocationCause;
 use League\OAuth2\Server\AuthorizationServer;
 use League\OAuth2\Server\Exception\OAuthServerException;
 use Psr\Http\Message\ResponseInterface;
@@ -100,7 +101,7 @@ final readonly class TokenEndpoint implements TokenEndpointInterface
             // d'elle, et survit au ROLLBACK de l'échange.
             $this->revoker->revoke($compromise->connectionId(), $compromise->revocationCause());
 
-            throw $this->refusalOf($compromise->revocationCause());
+            throw $this->refusalOf($compromise);
         }
     }
 
@@ -108,17 +109,22 @@ final readonly class TokenEndpoint implements TokenEndpointInterface
      * Le refus que league aurait rendu sans la révocation, mot pour mot
      * (`OAuthServerException`, RFC 6749 §5.2) : un attaquant n'apprend rien
      * de plus qu'avant. Un jeton de rafraîchissement réutilisé est le refus
-     * d'un jeton révoqué ; un code rejoué, celui d'un code révoqué. Les
-     * autres causes ne naissent pas au point de jeton (le client
-     * au point de révocation, un nouvel accord au consentement, l'échéance à
-     * la purge) : le refus générique d'un grant invalide, fermé.
+     * d'un jeton révoqué ; un code rejoué, celui d'un code révoqué.
+     *
+     * Choisi par le type de la compromission, pas par sa cause (lot C des
+     * relectures de #649) : seules ces deux sous-classes existent, et aucun
+     * bras ne reste pour les causes qui ne naissent jamais ici (le client, un
+     * nouvel accord, l'échéance). `CompromisedMcpConnectionExceptionTest`
+     * recense les sous-classes de `src/` : une troisième le fait échouer
+     * tant qu'elle n'a pas son refus ici (PHPStan ne juge pas l'exhaustivité
+     * d'un `match (true)`, mesuré). Le refus reste ici plutôt que sur
+     * l'exception : le domaine ne dépend pas de league.
      */
-    private function refusalOf(RevocationCause $cause): OAuthServerException
+    private function refusalOf(CompromisedMcpConnectionException $compromise): OAuthServerException
     {
-        return match ($cause) {
-            RevocationCause::RefreshTokenReuse => OAuthServerException::invalidRefreshToken('Token has been revoked'),
-            RevocationCause::CodeReplay => OAuthServerException::invalidGrant('Authorization code has been revoked'),
-            RevocationCause::Client, RevocationCause::Superseded, RevocationCause::Expired => OAuthServerException::invalidGrant(),
+        return match (true) {
+            $compromise instanceof RotatedRefreshTokenReusedException => OAuthServerException::invalidRefreshToken('Token has been revoked'),
+            $compromise instanceof AuthorizationCodeReplayedException => OAuthServerException::invalidGrant('Authorization code has been revoked'),
         };
     }
 
