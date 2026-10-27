@@ -326,3 +326,75 @@ git commit -m "fix(mcp): un nouvel accord remplace l'ancien au premier échange 
 ```
 
 (Ajouter `backend/tests/Mcp/Connection/Fixtures/present-at-token-endpoint.php` s'il a changé.)
+
+---
+
+## Tâches 4 à 7 — suivis de la relecture finale et de l'audit de sécurité (décisions de l'auteur du 2026-10-27)
+
+> Ajoutées après la relecture finale de la branche et l'audit `agent-skills:security-auditor`. L'auteur a décidé :
+> B1 (ré-autoriser ne coupe plus une connexion volée si le nouveau flux est abandonné) **documenté**, #650 devenant un
+> préalable à l'ouverture publique de la phase 2 ; B2 (accumulation de connexions jamais échangées) **issue de suivi avec
+> #650**, hors de cette branche ; les suivis techniques **dans cette branche**. Les Global Constraints ci-dessus
+> s'appliquent ; la marge de `mcp-oauth-cycle-de-vie.md` étant de 42 octets, la tâche 4 la découpe d'abord.
+
+### Task 4 : découper la règle, écrire B1, I2 et I7
+
+**Files :**
+- Create : `.claude/rules/mcp-oauth-purge.md` (la puce « The daily purge » déplacée telle quelle, frontmatter `paths:`)
+- Modify : `.claude/rules/mcp-oauth-cycle-de-vie.md` (la puce retirée, une ligne de renvoi à sa place ; le renvoi « (« The daily purge ») » de la liste des limites pointe vers la nouvelle règle), `.claude/CLAUDE.md` (tableau des règles), `.claude/rules/mcp.md` (tableau d'index), `docs/rgpd/registre-traitements.md` (B1)
+- Test : `bash tools/check-claude-rules.sh`
+
+**Interfaces :** Produces : `.claude/rules/mcp-oauth-purge.md`, que les tâches 5 et 6 complètent.
+
+- [ ] **Step 1 : constater la borne** — `bash tools/check-claude-rules.sh` vert ; ajouter une phrase de 100 octets à `mcp-oauth-cycle-de-vie.md` → rouge (la mesure du RED, puis l'annuler).
+- [ ] **Step 2 : découper.** `paths:` de la nouvelle règle : uniquement des globs qui désignent des fichiers suivis — `backend/src/Mcp/Connection/Application/McpConnectionPurger*.php`, `backend/src/Mcp/Connection/Application/McpConnectionPurgeResult.php`, `backend/src/Mcp/Connection/Presentation/Command/PurgeMcpConnectionsCommand.php`, `backend/tests/Mcp/Connection/Application/McpConnectionPurgerTest.php`, `backend/tests/Mcp/Connection/McpConnectionPurgeLockOrderTest.php`, `backend/tests/Mcp/Connection/Fixtures/purge-mcp-connections.php`, `backend/tests/Mcp/Connection/Presentation/Command/PurgeMcpConnectionsCommandTest.php` (si suivi), `k8s/base/messenger-purge-cronjob.yaml` ; retirer `k8s/base/messenger-purge-cronjob.yaml` des `paths:` de `mcp-oauth-cycle-de-vie.md` s'il n'y sert plus. En-tête de la nouvelle règle sur le modèle de celle de `mcp-oauth-cycle-de-vie.md` (décisions, d'où elle vient, #726). Aucun mot de la puce déplacée ne change.
+- [ ] **Step 3 : écrire B1, I2, I7 dans `mcp-oauth-cycle-de-vie.md`.** B1, dans « A new grant supersedes… » : ré-autoriser le client ne coupe l'ancienne connexion qu'une fois le nouveau flux mené jusqu'à l'échange du code ; tant que la personne ne peut pas révoquer elle-même (#650), un flux abandonné laisse vivante une connexion peut-être volée — **#650 est un préalable à l'ouverture publique de la phase 2** (décision du 2026-10-27). I2, dans « A replayed code is judged… » : la preuve ne juge que le vérificateur — un rejeu prouvé révoque même sous un autre `client_id` **ou une autre `redirect_uri`**. I7, dans l'ordre des verrous de « A new grant supersedes… » : l'`UPDATE` du remplacement (tient la connexion du code, veut les autres) peut croiser une suppression de compte en cascade (ordre physique) → `40P01`, sans gravité (l'échange annulé n'a rien écrit, le compte disparaît). Registre RGPD §3.4 (« Mesures de sécurité » ou « Révocation ») : la phrase B1 en français.
+- [ ] **Step 4 : vérifier** — `bash tools/check-claude-rules.sh` vert ; `wc -c` des deux règles (chacune ≤ 45 000 octets souhaité) ; `git grep -n "The daily purge"` ne renvoie plus qu'à la nouvelle règle.
+- [ ] **Step 5 : commit** `docs(mcp): la purge dans sa propre règle ; ré-autorisation, redirection et cascade écrites (#726)` (fichiers nommés).
+
+### Task 5 : B4 — une panne de l'audit d'expiration ne saute ni les autres lignes ni les suppressions
+
+**Files :**
+- Modify : `backend/src/Mcp/Connection/Application/McpConnectionPurger.php` (la boucle d'audit entre les deux `run()`, le constructeur reçoit `LoggerInterface` du canal principal)
+- Test : `backend/tests/Mcp/Connection/Application/McpConnectionPurgerTest.php`
+- Docs : `.claude/rules/mcp-oauth-purge.md`
+
+**Interfaces :** Consumes : la règle de la tâche 4.
+
+- [ ] **Step 1 : test rouge** `testAnAuditFailureSkipsNeitherTheOtherLinesNorTheDeletions` : deux connexions échues et un jeton mort ; un `SecurityAuditLoggerInterface` qui lève à la **première** `mcpConnectionExpired()` et enregistre les suivantes ; la purge rend son résultat (aucune exception), les deux connexions révoquées `expired`, la seconde auditée, le jeton mort supprimé, une ligne `critical` `Expired connection not audited.` de contexte `['exceptionClass' => <classe>]` seul.
+- [ ] **Step 2 : le lancer** — rouge (l'exception sort de `purge()`).
+- [ ] **Step 3 : implémenter** comme `TokenEndpoint::auditSuperseded()` : `try/catch (Throwable)` par ligne, `critical` classe seule, puis la seconde transaction quoi qu'il arrive. Docblock de la classe : la phrase « une panne de l'audit… » à jour.
+- [ ] **Step 4 : vert + mutation** (le `try` retiré → rouge) ; `tests/Mcp/Connection/` entier.
+- [ ] **Step 5 : doc** dans `mcp-oauth-purge.md` (« An audit failure never changes the outcome », #725, appliqué à la purge ; le test nommé).
+- [ ] **Step 6 : `make back-test`, `make back-quality`, commit** `fix(mcp): une panne de l'audit d'expiration n'interrompt pas la purge (#726)`.
+
+### Task 6 : les révocations verrouillent leurs connexions dans l'ordre des identifiants
+
+**Files :**
+- Modify : `backend/src/Mcp/Connection/Infrastructure/Doctrine/McpConnectionRepository.php` (`revokeWhere()`, écrit une fois pour les trois révocations)
+- Test : `backend/tests/Mcp/Connection/TokenEndpointConcurrencyTest.php` (ou un test d'ordre de verrous voisin, au choix motivé de l'implémenteur)
+- Docs : `.claude/rules/mcp-oauth-cycle-de-vie.md` (« A connection is revoked once… » : la forme de l'instruction ; « A new grant supersedes… » : l'ordre), `.claude/rules/mcp-oauth-purge.md` (la phrase « Accepted limit: a cycle between `mcp_connection` rows alone » : le croisement marquage × remplacement fermé), `.claude/rules/backend-outillage.md` (le test et sa mutation)
+
+**Interfaces :** Produces : `revokeWhere()` inchangé dans sa signature ; l'instruction devient `UPDATE mcp_connection … WHERE <alias>.id IN (SELECT id FROM mcp_connection c WHERE <WHERE_*> AND c.revoked_at IS NULL ORDER BY c.id FOR UPDATE) … RETURNING …` (les constantes `WHERE_*` gardent l'alias `c`).
+
+- [ ] **Step 1 : test rouge** `testASupersessionLocksTheOtherConnectionsInIdOrder` (processus réels) : deux autres connexions actives Ca < Cb (par id) du même couple, **insérées Cb d'abord** (en SQL, ids explicites UUID v7 : l'ordre physique contredit l'ordre des ids) ; le test tient Ca `FOR UPDATE` ; l'enfant échange le code d'une troisième connexion du couple et doit bloquer (`SessionLockWait::untilBlocked()`) ; le test demande alors Cb `FOR UPDATE NOWAIT` → doit réussir (l'enfant n'a encore rien pris d'autre) ; relâche ; l'enfant rend `issued 200`, Ca et Cb révoquées `superseded`. Filet `statement_timeout = '3s'`.
+- [ ] **Step 2 : le lancer** — rouge en `55P03` sur le `NOWAIT` (l'`UPDATE` sans ordre a pris Cb, dans l'ordre physique, avant de bloquer sur Ca). Si le test passe sans correctif (le planificateur suivrait l'ordre des ids), le dire et chercher une disposition qui le rende discriminant ; sinon, rapporter DONE_WITH_CONCERNS avec la mesure.
+- [ ] **Step 3 : implémenter** la sous-requête ordonnée dans `revokeWhere()` ; les trois révocations la prennent (une seule forme).
+- [ ] **Step 4 : vert + mutation** (`ORDER BY` retiré → rouge) ; `tests/Mcp/Connection/` entier, les tests de concurrence et d'ordre existants compris.
+- [ ] **Step 5 : doc** (fichiers ci-dessus) ; le cycle « deux codes d'un même couple échangés à la fois » reste une limite acceptée (chacun tient d'abord sa propre connexion), comme le croisement avec une suppression de compte en cascade.
+- [ ] **Step 6 : `make back-test`, `make back-quality`, `bash tools/check-claude-rules.sh`, commit** `fix(mcp): les révocations verrouillent leurs connexions dans l'ordre des identifiants (#726)`.
+
+### Task 7 : B3 — la ligne `superseded` nomme la connexion qui remplace
+
+**Files :**
+- Create : `backend/src/Mcp/Connection/Application/Supersession.php` (final readonly : `Uuid $kept`, `list<RevokedConnection> $revoked`)
+- Modify : `backend/src/Mcp/Connection/Application/CodeExchangeSupersessionInterface.php` (`supersedeOthersOf(ServerRequestInterface $request): ?Supersession` — `null` hors échange de code ou sans connexion désignée), `backend/src/Mcp/Connection/Infrastructure/League/LeagueCodeExchangeSupersession.php`, `backend/src/Mcp/Connection/Application/IssuedTokens.php` (`?Supersession $supersession` au lieu de la liste), `backend/src/Mcp/Connection/Application/TokenEndpoint.php` (`auditSuperseded()`), `backend/src/Security/Authentication/Application/SecurityAuditLoggerInterface.php` + son implémentation (`mcpConnectionSuperseded(McpConnectionReference $revoked, Uuid $supersededBy): void` — événement `mcp-connection-revoked`, cause `superseded`, champ `supersededBy` = UUID RFC 4122 de la connexion gardée, acteur comme `mcpConnectionRevoked()`)
+- Test : `backend/tests/Mcp/Connection/Presentation/Controller/ConsentControllerTest.php` (`testASecondGrantSupersedesTheFirstAtItsExchange` lit `supersededBy` = la connexion du code échangé), `backend/tests/Mcp/Connection/TokenEndpointSupersessionAuditTest.php`, le test du journaliseur d'audit (`SecurityAuditLoggerTest` ou son équivalent : les clés exactes de la ligne)
+- Docs : `.claude/rules/mcp-oauth-cycle-de-vie.md` (« A new grant supersedes… »), `.claude/rules/security-authentication.md` (le paragraphe de l'audit, s'il liste les champs), `docs/rgpd/registre-traitements.md` §6 (le champ `supersededBy`, UUID d'une connexion, rien d'autre)
+
+- [ ] **Step 1 : tests rouges** — la ligne `superseded` lue sur la requête de l'échange porte `supersededBy` égal à l'UUID de la connexion du code échangé, et les clés exactes de l'événement (le test du journaliseur).
+- [ ] **Step 2 : les lancer** — rouges (champ absent).
+- [ ] **Step 3 : implémenter** ; `mcpConnectionRevoked()` reste pour les autres causes ; aucun autre appelant ne change.
+- [ ] **Step 4 : vert** ; `tests/Mcp/Connection/` et `tests/Security/` entiers.
+- [ ] **Step 5 : doc** (fichiers ci-dessus).
+- [ ] **Step 6 : `make back-test`, `make back-quality`, `bash tools/check-claude-rules.sh`, commit** `feat(mcp): la ligne de remplacement nomme la connexion qui remplace (#726)`.
