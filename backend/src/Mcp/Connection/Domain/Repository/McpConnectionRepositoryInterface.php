@@ -23,16 +23,25 @@ interface McpConnectionRepositoryInterface
 
     /**
      * La connexion relue **sous le verrou de sa ligne** (`FOR UPDATE`), pour
-     * la transaction en cours, avant qu'un jeton en soit jugé ou émis (#649) :
-     * deux rafraîchissements simultanés d'un même jeton se suivent au lieu de
-     * se croiser — le second relit ce que le premier a validé, la rotation
-     * faite, et reconnaît la réutilisation. Une instance déjà chargée est
-     * rafraîchie sur place ; `null` si la ligne a disparu (l'instance périmée
-     * détachée). Exige une transaction ouverte.
+     * la transaction en cours (#649) : le premier pas de qui juge ou touche
+     * ses jetons — l'échange d'un code, un rafraîchissement, la révocation
+     * d'un rafraîchissement au point de révocation —, l'ordre C → A → R de
+     * `.claude/rules/mcp-oauth-cycle-de-vie.md`. Deux rafraîchissements
+     * simultanés d'un même jeton se suivent au lieu de se croiser — le second
+     * relit ce que le premier a validé, la rotation faite, et reconnaît la
+     * réutilisation. Une instance déjà chargée est rafraîchie sur place ;
+     * `null` si la ligne a disparu (l'instance périmée détachée). Exige une
+     * transaction ouverte.
      */
-    public function lockForIssuance(Uuid $connectionId): ?McpConnection;
+    public function lockForUpdate(Uuid $connectionId): ?McpConnection;
 
-    /** Écrit en base ce qui a changé sur la connexion (le dernier usage). */
+    /**
+     * Enregistre la connexion (le dernier usage, #649), comme le `save()` des
+     * autres dépôts du projet : `persist()` puis `flush()`. Une connexion
+     * déjà gérée — relue sous verrou — n'est pas persistée une seconde fois ;
+     * le `flush()` écrit, comme partout, tout ce que l'unité de travail a en
+     * attente.
+     */
     public function save(McpConnection $connection): void;
 
     /**

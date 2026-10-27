@@ -26,7 +26,7 @@ use Symfony\Component\Process\Process;
  * League lit le jeton (ou le code) avant de le révoquer ; en `READ COMMITTED`
  * chaque requête le lit non révoqué tant que l'autre n'a pas validé : c'est la
  * course de league, et chacune émettrait sa paire. Le dépôt la ferme en
- * relisant la connexion `FOR UPDATE` (`McpConnectionRepository::lockForIssuance()`)
+ * relisant la connexion `FOR UPDATE` (`McpConnectionRepository::lockForUpdate()`)
  * puis le jeton sous ce verrou (`HINT_REFRESH`) : la seconde requête attend le
  * COMMIT de la première, relit la rotation (ou l'échange) qu'elle vient de
  * valider, et la juge comme une réutilisation — la connexion est révoquée.
@@ -47,7 +47,7 @@ use Symfony\Component\Process\Process;
  * Ce que les tests séquentiels (RefreshRotationTest, CodeReplayTest) ne
  * peuvent pas pincer : sans le verrou, B lit le jeton non révoqué pendant la
  * pause et obtient sa propre paire. **Mesuré** avec `forUpdate: false` dans
- * `lockForIssuance()` (le verrou retiré, la transaction et la relecture
+ * `lockForUpdate()` (le verrou retiré, la transaction et la relecture
  * gardées) : les deux tests rouges — B répond `issued 200` au lieu du refus,
  * la connexion reste active, et la base porte deux paires neuves (trois
  * jetons d'accès et trois rafraîchissements après le rafraîchissement, deux

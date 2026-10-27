@@ -79,7 +79,7 @@ final readonly class AuthCodeRepository implements AuthCodeRepositoryInterface
      * rafraîchissement ({@see RefreshTokenRepository::isRefreshTokenRevoked()}) :
      *
      *  1. le code, par son empreinte — inconnu, il est mort ;
-     *  2. sa connexion, relue `FOR UPDATE` (`lockForIssuance()`) : deux
+     *  2. sa connexion, relue `FOR UPDATE` (`lockForUpdate()`) : deux
      *     échanges simultanés d'un même code se suivent désormais au lieu de
      *     se croiser, chacun lisant le code non révoqué avant que l'autre
      *     l'ait échangé (la course de league, fermée ici) — disparue, le code
@@ -116,7 +116,7 @@ final readonly class AuthCodeRepository implements AuthCodeRepositoryInterface
             return true;
         }
 
-        $connection = $this->connections->lockForIssuance($code->connection()->getId());
+        $connection = $this->connections->lockForUpdate($code->connection()->getId());
         if (null === $connection) {
             return true;
         }

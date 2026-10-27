@@ -58,18 +58,20 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
      * La relecture sous verrou du projet ({@see RereadUnderLock::row()},
      * `.claude/rules/backend-architecture.md`) : une requête DQL `FOR UPDATE`
      * avec `HINT_REFRESH`, jamais une copie. Le verrou tient jusqu'au COMMIT
-     * ou au ROLLBACK de la transaction du point de jeton ; sous FPM, l'attente
+     * ou au ROLLBACK de la transaction qui le prend — celle du point de jeton
+     * ou du point de révocation ; sous FPM, l'attente
      * est bornée par le `lock_timeout` de la session (5 s). Le compte et le
      * client ne sont pas joints : ce que l'appelant en lit ensuite (les
      * rôles stockés) est chargé à la demande, sous le même verrou.
      */
-    public function lockForIssuance(Uuid $connectionId): ?McpConnection
+    public function lockForUpdate(Uuid $connectionId): ?McpConnection
     {
         return $this->rereadUnderLock->row($this->getEntityManager(), McpConnection::class, $connectionId, forUpdate: true);
     }
 
     public function save(McpConnection $connection): void
     {
+        $this->getEntityManager()->persist($connection);
         $this->getEntityManager()->flush();
     }
 

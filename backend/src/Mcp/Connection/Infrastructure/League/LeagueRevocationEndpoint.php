@@ -51,7 +51,7 @@ use Symfony\Component\Uid\Uuid;
  *   ses deux jetons — par McpConnectionRepositoryInterface::revokeActive(),
  *   une instruction SQL que la base n'applique qu'une fois —, **dans l'ordre
  *   C → A → R** : la connexion d'abord, relue `FOR UPDATE`
- *   (lockForIssuance()), puis le jeton d'accès, puis le rafraîchissement.
+ *   (lockForUpdate()), puis le jeton d'accès, puis le rafraîchissement.
  *   C avant les jetons est l'ordre des verrous du point de jeton (l'ordre
  *   inverse interbloquait une révocation croisant la rotation du même
  *   jeton) ; A avant R est l'ordre de qui touche les deux lignes : le grant
@@ -203,7 +203,7 @@ final readonly class LeagueRevocationEndpoint implements RevocationEndpointInter
      */
     private function revokeUnderTheConnectionLock(Uuid $connectionId, Uuid $refreshTokenId, string $tokenHash, ?string $accessTokenHash, DateTimeImmutable $at): ?RevokedConnection
     {
-        $connection = $this->connections->lockForIssuance($connectionId);
+        $connection = $this->connections->lockForUpdate($connectionId);
         // Relu sous le verrou, par la relecture du projet : une rotation
         // validée pendant l'attente est vue.
         $current = $this->refreshTokens->rereadUnderConnectionLock($refreshTokenId);

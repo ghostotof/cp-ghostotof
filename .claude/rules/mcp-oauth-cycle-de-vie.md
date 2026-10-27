@@ -113,7 +113,7 @@ paths:
   repository, so it never revokes its real client's connection —
   `RefreshRotationTest::testARefreshTokenPresentedByAnotherClientLeavesTheConnectionAlone`) and after its own
   `expire_time < time()` check, kept as a second net. In order: the token by its hash (unknown → dead); **its
-  connection re-read `FOR UPDATE`** through `McpConnectionRepositoryInterface::lockForIssuance()` —
+  connection re-read `FOR UPDATE`** through `McpConnectionRepositoryInterface::lockForUpdate()` —
   `RereadUnderLock::row(…, forUpdate: true)`, the project's one re-read under a lock, held until the COMMIT or
   ROLLBACK, bounded by FPM's `lock_timeout=5s` (gone → dead) —; **the token re-read under the lock**
   (`McpRefreshTokenRepositoryInterface::rereadUnderConnectionLock($id)`, and the code repository's twin —
@@ -163,7 +163,7 @@ paths:
   `LeagueRevocationEndpoint::revokeRefreshToken()` revokes the connection, through `revokeActive()`, the token and its
   access token in **one transaction**, which returns the `?RevokedConnection`; the audit line is written after the
   COMMIT, only when this revocation took effect (a connection already revoked keeps its first instant, cause and
-  line). **The lock order is C → A → R**: the connection first, re-read `FOR UPDATE` (`lockForIssuance()`), then
+  line). **The lock order is C → A → R**: the connection first, re-read `FOR UPDATE` (`lockForUpdate()`), then
   `revokeActive()`, then the access token and **then** the refresh token (`revokeByHash()`). Two reasons, not the
   token endpoint's own order (which fixes C before the tokens only). **C before the tokens** is the token endpoint's:
   the refresh takes C, then A, then R; a revocation taking R and A before C deadlocked with a refresh of the same
@@ -201,7 +201,7 @@ paths:
   code's expiry **on the encrypted payload alone** (`expire_time` against `time()`, the real clock) — so **a code
   replayed after its ten minutes is a plain `invalid_grant`, with no revocation, and no `MockClock` reaches it**:
   accepted limit, the tokens issued by the code already live under rotation by then. In order: the code by its hash
-  (unknown → dead); **its connection re-read `FOR UPDATE`** (`lockForIssuance()`, the same lock as the refresh's, so
+  (unknown → dead); **its connection re-read `FOR UPDATE`** (`lockForUpdate()`, the same lock as the refresh's, so
   two simultaneous exchanges of one code serialize —
   `TokenEndpointConcurrencyTest::testTwoSimultaneousExchangesOfOneCodeRevokeTheConnection` proves it in real
   processes, the second released at the first's first flush, the new access token, and refused « Authorization code

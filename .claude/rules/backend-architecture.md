@@ -76,7 +76,7 @@ have stopped matching or have vanished, and nothing tells them apart there, so s
 an insertion or a deletion (detaching it would cancel that write), and the one caller of `detachVanished()`.
 Used by the order scope lock, the technology row lock, the account administration lock, since #560 the
 account row lock (`.claude/rules/security-user.md`) and, since #649, the MCP connection's row lock
-(`lockForIssuance()`), the purge's pre-selection and the re-read of a code or a refresh token under its connection's
+(`lockForUpdate()`), the purge's pre-selection and the re-read of a code or a refresh token under its connection's
 lock (`rereadUnderConnectionLock()`, `row()` without `FOR UPDATE`, `.claude/rules/mcp-oauth-cycle-de-vie.md`); a new lock that re-reads goes through it, never a copy
 (there were four, and the account row lock's did not detach; the MCP repositories carried three more until lot B,
 and a `findOneByHash()` with `HINT_REFRESH` is such a copy). Since #557 `VanishedEntities`' `postRemove` listener also

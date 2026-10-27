@@ -51,7 +51,7 @@ class McpAuthorizationCodeRepository extends ServiceEntityRepository implements 
     /**
      * La relecture sous verrou du projet ({@see RereadUnderLock::row()},
      * `.claude/rules/backend-architecture.md`), sans `FOR UPDATE` : le verrou
-     * tenu est celui de la connexion (`lockForIssuance()`), et c'est lui qui
+     * tenu est celui de la connexion (`lockForUpdate()`), et c'est lui qui
      * sérialise deux échanges d'un même code. `HINT_REFRESH` : l'échange
      * qu'une requête concurrente a validé pendant l'attente se voit ; sans
      * lui Doctrine rendrait l'instance déjà gérée sans la rafraîchir. La

@@ -51,7 +51,7 @@ class McpRefreshTokenRepository extends ServiceEntityRepository implements McpRe
     /**
      * La relecture sous verrou du projet ({@see RereadUnderLock::row()},
      * `.claude/rules/backend-architecture.md`), sans `FOR UPDATE` : le verrou
-     * tenu est celui de la connexion (`lockForIssuance()`), et c'est lui qui
+     * tenu est celui de la connexion (`lockForUpdate()`), et c'est lui qui
      * sérialise deux rafraîchissements d'un même jeton. `HINT_REFRESH` : la
      * rotation qu'une requête concurrente a validée pendant l'attente se voit
      * ; sans lui Doctrine rendrait l'instance déjà gérée sans la rafraîchir.

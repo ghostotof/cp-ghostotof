@@ -23,7 +23,7 @@ use Symfony\Component\Process\Process;
  * autre worker PHP-FPM est en train de faire tourner au point de jeton.
  *
  * **L'ordre des verrous** est celui du point de jeton : la connexion C
- * d'abord (`lockForIssuance()`, `FOR UPDATE`), puis le jeton d'accès A et le
+ * d'abord (`lockForUpdate()`, `FOR UPDATE`), puis le jeton d'accès A et le
  * rafraîchissement R que league révoque. La révocation prend C en premier
  * elle aussi, puis révoque C, A et R (le jeton d'accès avant le
  * rafraîchissement, l'ordre du grant de league et de la cascade de la purge ;
@@ -47,7 +47,7 @@ use Symfony\Component\Process\Process;
  *  4. une fois B terminé, le test lit sa sortie, la connexion et les jetons.
  *
  * **Mesuré** : dans l'ordre inverse (la mutation : les deux `revokeByHash()`
- * avant `revokeActive()`, sans `lockForIssuance()`), B attend C en tenant R et
+ * avant `revokeActive()`, sans `lockForUpdate()`), B attend C en tenant R et
  * A ; A bute sur A ; PostgreSQL détecte le cycle et annule B, qui sort sur
  * « failed 40P01 » — la connexion reste active, une paire neuve active en
  * base. La mutation retirée, vert à chaque passage : B attend C, relit R

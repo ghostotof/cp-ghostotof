@@ -91,7 +91,7 @@ final readonly class RefreshTokenRepository implements RefreshTokenRepositoryInt
      * ligne de sa connexion**, dans la transaction du point de jeton :
      *
      *  1. le jeton, par son empreinte — inconnu, il est mort ;
-     *  2. sa connexion, relue `FOR UPDATE` (`lockForIssuance()`) : deux
+     *  2. sa connexion, relue `FOR UPDATE` (`lockForUpdate()`) : deux
      *     rafraîchissements simultanés d'un même jeton se suivent désormais au
      *     lieu de se croiser, chacun lisant le jeton non révoqué avant que
      *     l'autre l'ait tourné (la course de league, fermée ici) — disparue,
@@ -132,7 +132,7 @@ final readonly class RefreshTokenRepository implements RefreshTokenRepositoryInt
             return true;
         }
 
-        $connection = $this->connections->lockForIssuance($token->connection()->getId());
+        $connection = $this->connections->lockForUpdate($token->connection()->getId());
         if (null === $connection) {
             return true;
         }

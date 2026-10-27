@@ -30,7 +30,7 @@ interface McpAuthorizationCodeRepositoryInterface
 
     /**
      * Le code relu **sous le verrou de sa connexion**, que l'appelant tient
-     * (McpConnectionRepositoryInterface::lockForIssuance()), pour la transaction
+     * (McpConnectionRepositoryInterface::lockForUpdate()), pour la transaction
      * en cours (#649) : la relecture sous verrou du projet, une instance déjà
      * chargée rafraîchie sur place — l'échange qu'une requête concurrente a
      * validé pendant l'attente se voit —, `null` si la ligne a disparu
