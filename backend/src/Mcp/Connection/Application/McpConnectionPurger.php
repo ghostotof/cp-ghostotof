@@ -16,7 +16,9 @@ use App\Shared\Domain\ValueObject\RetentionPeriod;
 use DateInterval;
 use DateTimeImmutable;
 use Psr\Clock\ClockInterface;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\Uid\Uuid;
+use Throwable;
 
 /**
  * La purge quotidienne des connexions MCP et de leurs jetons (#649).
@@ -50,6 +52,14 @@ use Symfony\Component\Uid\Uuid;
  * les supprime ; leurs audits sont écrits, et la révocation a eu lieu (chaque
  * lecteur juge la connexion, ses jetons ne servent plus).
  *
+ * **Une panne de l'audit ne change pas l'issue** (#726, B4 ; la règle de
+ * #725, comme {@see \App\Mcp\Connection\Application\TokenEndpoint::auditSuperseded()}) : entre les deux
+ * transactions, chaque `mcpConnectionExpired()` est tenté pour lui-même ; une
+ * panne sort en `critical` sur le canal principal, la classe seule — jamais
+ * le message, qui pourrait citer une connexion —, et n'interrompt ni les
+ * lignes suivantes ni les suppressions : la révocation a eu lieu, ses
+ * jetons morts partent la même nuit.
+ *
  * Tout instant vient de l'horloge (`ClockInterface::now()`, Paris) : c'est
  * celui que juge l'authentificateur, et `isExpiredAt()` compte les jours sur
  * le calendrier de son fuseau.
@@ -78,6 +88,7 @@ final readonly class McpConnectionPurger implements McpConnectionPurgerInterface
         private ConnectionLifetimes $lifetimes,
         private SecurityAuditLoggerInterface $auditLogger,
         private ClockInterface $clock,
+        private LoggerInterface $logger,
     ) {
     }
 
@@ -95,10 +106,8 @@ final readonly class McpConnectionPurger implements McpConnectionPurgerInterface
 
         // Après le COMMIT du marquage : une transaction annulée n'a rien
         // révoqué ; validée, la révocation a eu lieu, que les suppressions
-        // qui suivent aboutissent ou non.
-        foreach ($expired as $revoked) {
-            $this->auditLogger->mcpConnectionExpired($revoked);
-        }
+        // qui suivent aboutissent ou non — et que son audit aboutisse ou non.
+        $this->auditExpired($expired);
 
         // Les suppressions dans une seconde transaction, sans le verrou des
         // candidates (McpConnectionPurgeLockOrderTest pince la coupure).
@@ -136,6 +145,27 @@ final readonly class McpConnectionPurger implements McpConnectionPurgerInterface
             deletedConnections: $purged['connections'],
             threshold: $threshold,
         );
+    }
+
+    /**
+     * Une ligne `mcp-connection-revoked` (cause `expired`, acteur `system`)
+     * par connexion marquée, chacune tentée pour elle-même : une panne de
+     * l'écrivain ne tait pas les suivantes et ne saute pas les suppressions
+     * (#726, B4). Elle sort en `critical` sur le canal principal, la classe
+     * seule, jamais le message : une erreur du pilote pourrait citer la
+     * connexion.
+     *
+     * @param list<RevokedConnection> $expired
+     */
+    private function auditExpired(array $expired): void
+    {
+        foreach ($expired as $revoked) {
+            try {
+                $this->auditLogger->mcpConnectionExpired($revoked);
+            } catch (Throwable $failure) {
+                $this->logger->critical('Expired connection not audited.', ['exceptionClass' => $failure::class]);
+            }
+        }
     }
 
     /**

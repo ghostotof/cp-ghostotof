@@ -48,6 +48,13 @@ final class CodeReplayTest extends WebTestCase
     /** Le refus de league pour un code révoqué, mot pour mot. */
     private const string REPLAY_HINT = 'Authorization code has been revoked';
 
+    /**
+     * L'autre redirection enregistrée du client du flux (DrivesTheOAuthFlow) :
+     * league valide la redirection présentée contre le client avant le code,
+     * une redirection inconnue serait un `invalid_client` sans jugement du rejeu.
+     */
+    private const string OTHER_REGISTERED_REDIRECT = 'https://client.example.test/callback';
+
     protected function setUp(): void
     {
         $this->setUpOAuthFlow();
@@ -174,6 +181,26 @@ final class CodeReplayTest extends WebTestCase
         self::assertSame('code-replay', $this->revocationCauseOf($held));
         $event = self::singleSecurityAuditEvent(self::REVOKED_EVENT);
         self::assertSame(self::CLIENT_ID, $event['clientId'] ?? null, 'La ligne nomme le client de la connexion, pas celui qui rejoue.');
+    }
+
+    /**
+     * Le jumeau du précédent pour la redirection (#726, audit I2) : league
+     * compare aussi le `redirect_uri` à celui du code **après** le dépôt, si
+     * bien qu'un rejeu prouvé sous une autre redirection enregistrée du même
+     * client révoque la connexion lui aussi — la preuve juge le vérificateur
+     * seul. Le même refus mot pour mot, la cause `code-replay`.
+     */
+    public function testAReplayUnderAnotherRedirectRevokesTheConnectionToo(): void
+    {
+        $code = $this->grantedCode();
+        $held = $this->heldMcpConnectionOf($this->exchange($code));
+
+        $replay = $this->exchange($code, ['redirect_uri' => self::OTHER_REGISTERED_REDIRECT]);
+
+        $this->assertOAuthError($replay, Response::HTTP_BAD_REQUEST, 'invalid_grant');
+        self::assertSame(self::REPLAY_HINT, $this->json($replay)['hint'] ?? null);
+        self::assertSame('code-replay', $this->revocationCauseOf($held));
+        self::assertSame('code-replay', self::singleSecurityAuditEvent(self::REVOKED_EVENT)['cause'] ?? null);
     }
 
     /**

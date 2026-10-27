@@ -2,6 +2,7 @@
 paths:
   - "backend/src/Mcp/Connection/Application/McpConnectionPurger*.php"
   - "backend/src/Mcp/Connection/Application/McpConnectionPurgeResult.php"
+  - "backend/src/Mcp/Connection/Infrastructure/Doctrine/DeletesDeadTokens.php"
   - "backend/src/Mcp/Connection/Presentation/Command/PurgeMcpConnectionsCommand.php"
   - "backend/tests/Mcp/Connection/Application/McpConnectionPurgerTest.php"
   - "backend/tests/Mcp/Connection/McpConnectionPurgeLockOrderTest.php"
@@ -14,7 +15,7 @@ paths:
 # Backend — `Mcp/Connection`: the daily purge of MCP connections and their tokens (#649, #726)
 
 > Decisions: `docs/adr/0006-serveur-mcp.md`, D3 and D6; spec `.claude/specs/0007-mcp-server.md`, phase 2 (issue
-> #649, task 9: expiry marked, dead tokens and old revoked connections deleted; issue #726, D4: the marking and the
+> #649, task 9: expiry marked, old revoked connections, then dead tokens, deleted; issue #726, D4: the marking and the
 > deletions in two transactions). Split out of `.claude/rules/mcp-oauth-cycle-de-vie.md` by #726 (49 958 bytes, a
 > sentence short of `tools/check-claude-rules.sh`'s 50 000 bytes), its « The daily purge » bullet moved here word
 > for word; that rule keeps the lifetimes, the expiry (`isExpiredAt()`, the purge's only judge), the revocations
@@ -56,7 +57,13 @@ paths:
   order; PostgreSQL aborts one, the Job retries (`backoffLimit: 2`). **After the marking's COMMIT**, one
   `mcpConnectionExpired()` line per connection marked (actor `system`); a rolled-back marking audits nothing
   (`testARolledBackPurgeAuditsNothing`, red with the audit moved inside, measured); failed deletions leave the marking
-  and its lines, the next night deletes (`testTheMarkingIsAuditedEvenWhenTheDeletionsRollBack`). Every instant is
+  and its lines, the next night deletes (`testTheMarkingIsAuditedEvenWhenTheDeletionsRollBack`). **An audit failure
+  never changes the outcome** (#725's rule, applied to the purge by #726, audit B4, like
+  `TokenEndpoint::auditSuperseded()`): each line is tried on its own, a failure logs `Expired connection not audited.` at
+  `critical` on the main channel (`['exceptionClass' => …]` only, never a message that could quote the connection), and
+  the other lines and the deletions run whatever happened — the revocation took place
+  (`testAnAuditFailureSkipsNeitherTheOtherLinesNorTheDeletions`: the first line fails, the second is written, the dead
+  token deleted, the result returned; the exception escapes `purge()` without the `try`, measured). Every instant is
   `ClockInterface::now()` (Paris). **Retention**: `app.mcp.revoked_connection_retention` (`'6 months'`, every
   environment), the default of `--older-than`, read by `RetentionPeriod` (a date or an unreadable expression:
   `Command::INVALID`); under one day, `thresholdAtLeastOneDayBefore()` refuses it before any write

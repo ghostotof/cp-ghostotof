@@ -265,7 +265,9 @@ paths:
   one), and the refusal is the one league gave before the revocation, word for word; the audit line names the
   connection's client, never the replayer's. **The proof judges the verifier alone** (#726, audit I2):
   league checks the `redirect_uri` after the repository too, so a proven replay revokes under another `client_id`
-  **or another `redirect_uri`** alike. A code presented **first** by another client is refused by
+  **or another registered `redirect_uri`** alike (`testAReplayUnderAnotherRedirectRevokesTheConnectionToo`, the
+  client's other registered redirect: an unregistered one is league's `invalid_client`, judged before the code). A code
+  presented **first** by another client is refused by
   league (« not issued to this client ») after a repository call that writes nothing: the code stays exchangeable by
   its client, the connection intact, no line (`testACodePresentedFirstByAnotherClientConsumesNothing`).
   `LeagueRepositoriesTest` judges a code under a rolled-back transaction, like a refresh token (the lock requires one).
@@ -310,7 +312,9 @@ paths:
   with the `UPDATE` in `SKIP LOCKED`, C1 left active). **Accepted, unpinned** (#726, audit I7): the
   supersession's `UPDATE` (holding the code's connection, wanting the pair's others) can cross a cascading account
   deletion (`cpg_user` → `mcp_connection`, physical order) — `40P01`, harmless: an aborted exchange wrote nothing and
-  the account goes; an aborted deletion is asked again.
+  the account goes; nothing retries a `40P01`, so an aborted deletion — the backoffice's
+  `CpgUserAdministrator::delete()`, the only path that can reach an account holding a connection (the pending-invitation
+  purge removes accounts never activated) — answers a 500, deletes and audits nothing, and is asked again by hand.
   **Accepted limit, new** (#726): two simultaneous exchanges of
   **two** codes of one pair (two grants of one account to one client, same millisecond) each hold
   their connection and wait for the other's — PostgreSQL aborts one (`40P01`, a 500), the other passes and revokes the

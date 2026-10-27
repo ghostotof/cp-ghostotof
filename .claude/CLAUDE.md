@@ -38,7 +38,7 @@ This file only carries what applies everywhere, plus what runs from the shell (g
 | `mcp-journaux.md` | the SDK's `mcp` channel, the call log `mcp_usage` | touching `Mcp/Infrastructure/Log`, `monolog.yaml`'s MCP handlers |
 | `mcp-oauth.md` | `Mcp/Connection`, the OAuth 2.1 authorization server of phase 2, the consent page | touching an OAuth endpoint, a token, the consent, `ingress-oauth-metadata.yaml` |
 | `mcp-oauth-cycle-de-vie.md` | lifetime of an MCP connection and its tokens (#649): durations in configuration, monotone expiry deadlines, revocation and its cause, rotation and replay under lock, a superseding grant, refusal audit | touching a token or connection lifetime, `ConnectionLifetimes`, the expiry, a revocation, the refresh or code repository |
-| `mcp-oauth-purge.md` | the daily purge `app:mcp:purge` (#649, #726): expiry marked, then dead tokens and old revoked connections deleted, in two transactions | touching `McpConnectionPurger`, `app:mcp:purge`, its lock order, `messenger-purge-cronjob.yaml` |
+| `mcp-oauth-purge.md` | the daily purge `app:mcp:purge` (#649, #726): expiry marked, then old revoked connections, then dead tokens, deleted, in two transactions | touching `McpConnectionPurger`, `app:mcp:purge`, its lock order, `messenger-purge-cronjob.yaml` |
 | `backoffice-api.md` | backoffice API, API Platform pattern, API errors | adding an endpoint, an API Platform resource, an exception mapping |
 | `seeding.md` | `app:*:seed`, reference-data migrations | touching a seed command or the meaning of seeded data |
 | `frontend.md` | frontend layers, API-backed content, i18n, SEO, lint | any frontend change |

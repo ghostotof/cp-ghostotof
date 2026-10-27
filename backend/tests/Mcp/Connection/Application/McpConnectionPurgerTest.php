@@ -21,14 +21,20 @@ use App\Mcp\Connection\Domain\ValueObject\ConnectionLifetimes;
 use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Shared\Domain\Exception\InvalidRetentionPeriodException;
+use App\Shared\Domain\Security\McpConnectionReference;
 use App\Shared\Domain\ValueObject\RetentionPeriod;
 use App\Tests\Mcp\Connection\RegisteredMcpClient;
+use App\Tests\Support\ReadsAllChannelsLog;
 use App\Tests\Support\ReadsSecurityAuditLog;
 use DateInterval;
 use DateTimeImmutable;
 use DateTimeZone;
 use Doctrine\ORM\EntityManagerInterface;
+use Monolog\Level;
+use Monolog\LogRecord;
 use Psr\Clock\ClockInterface;
+use Psr\Log\LoggerInterface;
+use RuntimeException;
 use Symfony\Bridge\Doctrine\Types\UuidType;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Clock\Test\ClockSensitiveTrait;
@@ -51,6 +57,7 @@ use Symfony\Component\Uid\Uuid;
 final class McpConnectionPurgerTest extends KernelTestCase
 {
     use ClockSensitiveTrait;
+    use ReadsAllChannelsLog;
     use ReadsSecurityAuditLog;
 
     /** Les tables du modèle, des feuilles vers la racine. */
@@ -66,6 +73,7 @@ final class McpConnectionPurgerTest extends KernelTestCase
     private const string SCOPE = 'nominative:read';
     private const string AUDIENCE = 'https://example.test/api/mcp';
     private const string REVOKED_EVENT = 'mcp-connection-revoked';
+    private const string NOT_AUDITED = 'Expired connection not audited.';
 
     private EntityManagerInterface $em;
 
@@ -311,6 +319,60 @@ final class McpConnectionPurgerTest extends KernelTestCase
         self::assertSame([$deadCode->getId()->toRfc4122()], $this->idsIn('mcp_authorization_code'), 'Les suppressions ont été annulées.');
     }
 
+    /**
+     * Une panne de l'audit d'expiration ne saute ni les autres lignes ni les
+     * suppressions (#726, B4 ; la règle de #725, « An audit failure never
+     * changes the outcome ») : le marquage est validé, la révocation a eu
+     * lieu. Le premier appel lève, le second est écrit, le jeton mort part
+     * dans la seconde transaction, la purge rend son résultat, et la panne
+     * sort une fois en `critical` sur le canal principal, la classe seule.
+     *
+     * L'ordre des lignes rendues par `RETURNING` n'est pas garanti : le test
+     * ne suppose pas laquelle des deux connexions échoue.
+     */
+    public function testAnAuditFailureSkipsNeitherTheOtherLinesNorTheDeletions(): void
+    {
+        $first = $this->connection(new DateTimeImmutable('2026-10-01T10:00:00+02:00'), new DateTimeImmutable(self::IDLE_DEADLINE_LAST_USE));
+        $second = $this->connection(new DateTimeImmutable('2026-10-01T10:00:00+02:00'), new DateTimeImmutable(self::IDLE_DEADLINE_LAST_USE));
+        $live = $this->connection($this->now()->sub(new DateInterval('P1D')), null);
+        $deadToken = $this->accessToken($live, $this->now()->sub(new DateInterval('PT1S')));
+
+        /** @var list<string> $attempted les connexions dont l'audit a été tenté, dans l'ordre */
+        $attempted = [];
+        /** @var list<string> $audited les connexions dont l'audit a été écrit */
+        $audited = [];
+        $auditLogger = self::createStub(SecurityAuditLoggerInterface::class);
+        $auditLogger->method('mcpConnectionExpired')->willReturnCallback(
+            static function (McpConnectionReference $connection) use (&$attempted, &$audited): void {
+                $attempted[] = $connection->connectionId()->toRfc4122();
+                if (1 === \count($attempted)) {
+                    throw new RuntimeException('Journal de sécurité indisponible');
+                }
+                $audited[] = $connection->connectionId()->toRfc4122();
+            },
+        );
+
+        $result = $this->purgerWith(self::getContainer()->get(TransactionInterface::class), $auditLogger)->purge($this->retention());
+
+        $expected = [$first->getId()->toRfc4122(), $second->getId()->toRfc4122()];
+        self::assertEqualsCanonicalizing($expected, $result->expired);
+        self::assertSame('expired', $this->revocationOf($first)['cause']);
+        self::assertSame('expired', $this->revocationOf($second)['cause']);
+        self::assertEqualsCanonicalizing($expected, $attempted, 'Chaque connexion marquée est tentée.');
+        self::assertSame([$attempted[1]], $audited, 'La seconde est auditée malgré la panne de la première.');
+        self::assertSame(1, $result->deletedAccessTokens);
+        self::assertNotContains($deadToken->getId()->toRfc4122(), $this->idsIn('mcp_access_token'), 'Les suppressions ont eu lieu.');
+
+        $failures = array_values(array_filter(
+            self::allChannelsLogRecords(),
+            static fn (LogRecord $record): bool => self::NOT_AUDITED === $record->message,
+        ));
+        self::assertCount(1, $failures);
+        self::assertSame('app', $failures[0]->channel, 'Le canal principal, jamais `security_audit`.');
+        self::assertSame(Level::Critical, $failures[0]->level);
+        self::assertSame(['exceptionClass' => RuntimeException::class], $failures[0]->context);
+    }
+
     private function now(): DateTimeImmutable
     {
         return new DateTimeImmutable(self::NOW, new DateTimeZone('Europe/Paris'));
@@ -329,6 +391,12 @@ final class McpConnectionPurgerTest extends KernelTestCase
     /** La purge du conteneur, sa transaction remplacée par un double. */
     private function purgerRunningIn(TransactionInterface $transaction): McpConnectionPurger
     {
+        return $this->purgerWith($transaction, self::getContainer()->get(SecurityAuditLoggerInterface::class));
+    }
+
+    /** La purge du conteneur, sa transaction et l'écrivain du journal de sécurité remplacés. */
+    private function purgerWith(TransactionInterface $transaction, SecurityAuditLoggerInterface $auditLogger): McpConnectionPurger
+    {
         $container = self::getContainer();
 
         return new McpConnectionPurger(
@@ -338,8 +406,9 @@ final class McpConnectionPurgerTest extends KernelTestCase
             $container->get(McpRefreshTokenRepositoryInterface::class),
             $transaction,
             $container->get(ConnectionLifetimes::class),
-            $container->get(SecurityAuditLoggerInterface::class),
+            $auditLogger,
             $container->get(ClockInterface::class),
+            $container->get(LoggerInterface::class),
         );
     }
 
