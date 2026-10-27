@@ -398,3 +398,56 @@ git commit -m "fix(mcp): un nouvel accord remplace l'ancien au premier échange 
 - [ ] **Step 4 : vert** ; `tests/Mcp/Connection/` et `tests/Security/` entiers.
 - [ ] **Step 5 : doc** (fichiers ci-dessus).
 - [ ] **Step 6 : `make back-test`, `make back-quality`, `bash tools/check-claude-rules.sh`, commit** `feat(mcp): la ligne de remplacement nomme la connexion qui remplace (#726)`.
+
+---
+
+## Tâches 8 à 11 — suites de l'étape 07 (`/code-review`, `mattpocock-skills:code-review`), décisions de l'auteur du 2026-10-27
+
+> CR1 **fermé par construction** ; **tous** les autres constats traités dans cette branche. Références : `CR*` (`/code-review`),
+> `S*` (axe Standards), `T<n>-m` (mineurs différés des relectures de tâche, registre de suivi du contrôleur). Global
+> Constraints inchangées.
+
+### Task 8 : CR1 — une connexion fraîche n'est jamais candidate de la purge
+
+**Files :** Modify `backend/src/Mcp/Connection/Domain/ValueObject/ConnectionLifetimes.php` ; Test `backend/tests/Mcp/Connection/Domain/ValueObject/ConnectionLifetimesTest.php` ; Docs `.claude/rules/mcp-oauth-cycle-de-vie.md` (« The durations live in configuration »), `.claude/rules/mcp-oauth-purge.md` (le « Closed » de la ligne d'interblocage, conditionné à ce refus), spec 0007 si elle cite le plancher.
+
+- [ ] **Step 1 : tests rouges** — `fromConfiguration()` refuse, avec `InvalidConnectionLifetimeException` nommant le paramètre, une durée d'inactivité ou maximale **inférieure ou égale** à `MINIMUM_CONNECTION_LIFETIME` (la marge de présélection, P1D) **plus la durée d'un code** (`authorization_code`) : `P1D` refusé, `P1DT10M` (avec un code de `PT10M`) refusé, `P1DT10M1S` accepté ; jugé sur l'instant fixe déjà utilisé par la classe. Les cas existants « P1D et PT24H acceptés » changent : les réécrire.
+- [ ] **Step 2 : rouge** ; **Step 3 : implémenter** (la comparaison avec `add(new DateInterval(…))`, jamais `modify()`) ; le docblock dit pourquoi : la connexion du code, verrouillée la première par l'échange, n'est alors jamais candidate, et l'ordre des ids de la tâche 6 ferme le croisement marquage × remplacement.
+- [ ] **Step 4 : vert** (`tests/Mcp/Connection/` entier, `ConnectionLifetimesWiringTest`) ; **Step 5 : doc** ; **Step 6 : `make back-test`, `make back-quality`, `bash tools/check-claude-rules.sh`, commit** `fix(mcp): une connexion fraîche n'est jamais candidate de la purge (#726)`.
+
+### Task 9 : justesse — commentaires, règles, constantes et tests secondaires
+
+Aucun comportement ne change, sauf le mode de verrou (point 3). Un commit.
+
+1. CR2 — docblock de `TokenEndpoint::issue()` : « no cycle » → nommer les deux croisements acceptés (deux codes d'un même couple, suppression de compte en cascade), comme la règle.
+2. T6 — commentaire du test `testASupersessionLocksTheOtherConnectionsInIdOrder` (la mise à jour est HOT : seul l'ordre du tas est contredit, un parcours par index garderait l'ordre des ids ; le test ne discrimine que sous le parcours séquentiel actuel — le dire aussi dans `.claude/rules/backend-outillage.md`) ; docblock de `revokeWhere()` (« ni rendue ni réécrite », la ligne reste verrouillée) ; docblock de `revokedConnectionOf()` (`RETURNING revoked.*`) ; `.claude/rules/mcp-oauth-purge.md` (≈ l. 37, la forme de l'instruction (3)) ; « physical order » → ordre du tas ou de l'index dans `mcp-oauth-cycle-de-vie.md`.
+3. T6 — la sous-requête de `revokeWhere()` prend `FOR NO KEY UPDATE` (la force de l'ancien `UPDATE`, sans conflit avec le `FOR KEY SHARE` des clés étrangères) ; les tests de concurrence et d'ordre existants restent verts, la mutation de la tâche 6 (`ORDER BY` retiré) rouge. T6 — `revokeExpired()` type sa liste `ids` en UUID (`ArrayParameterType` adapté au type `UuidType`, ou la conversion explicite que DBAL 4 admet ; justifier).
+4. S2 — `'S256'` de `GrantPayloadReader::s256ChallengeOf()` → `LoopbackAwareAuthCodeGrant::CODE_CHALLENGE_METHOD` ; `'authorization_code'` lu d'une seule source (la constante de league ou d'`OAuthClient`, au choix motivé).
+5. S9 — docblock de `McpConnectionPurger` : ne plus citer une méthode privée d'une autre classe (citer la règle).
+6. Spec 0007 — #650 préalable à l'ouverture publique de la phase 2 (B1), comme la règle et le registre.
+7. T1 — commentaire du `catch` de compromission (« une compromission a déjà sa ligne », sauf le rejeu non prouvé) ; `CodeReplayTest` : `assertNotSame` des deux vérificateurs remplacé par une assertion qui ne cite pas les valeurs.
+8. T2 — test `NOWAIT` de la purge : la candidate affirmée présélectionnée (`findActiveCandidatesForExpiry()`) avant la course, l'intervalle dérivé de `ConnectionLifetimes` plutôt que `29 days 12 hours` en dur ; docblock « sa propre transaction » → celle du détenteur ; `RollingBackTheSecondRun` et `RollingBackTransaction` fusionnés en un double paramétré par le rang de l'exécution annulée.
+9. T3 — docblock de `tests/Mcp/Support/HoldsAnMcpConnection.php` (≈ l. 62 : « au premier échange de son code, #726 ») ; règle : le premier code échangé, ancien ou récent, remplace les autres.
+10. T7 — doublure de `ConsentServiceTest` : un enregistrement `[connexion, uuid]` au lieu de la chaîne `'superseded by <uuid>'`.
+
+Commit `docs(mcp): commentaires, règles et tests secondaires justes (#726)` (préfixe `fix` si le point 3 est le seul changement de comportement : `fix(mcp): …`). `make back-test`, `make back-quality`, `bash tools/check-claude-rules.sh`.
+
+### Task 10 : refactors du point de jeton et du révocateur
+
+1. CR6 — `McpConnectionRevokerInterface::revoke(CompromisedMcpConnectionException $compromise): ?RevokedConnection` : la cause et l'id lus de la compromission ; `RevocationCauseReservedToThePurgeException` et `RevocationCauseReservedToTheExchangeException` supprimées avec leurs gardes (l'état invalide devient impossible à écrire, PHPStan le juge) ; tests adaptés (le jeu de données devient les deux sous-classes de compromission).
+2. CR7 — `FormEncodedRequest::stringParameter(ServerRequestInterface $request, string $name): ?string` (la chaîne du corps analysé, `null` sinon), employée par `TokenEndpoint`, `LeagueGrantRefusalAudit`, `PkceReplayProof`, `LeagueCodeExchangeSupersession` ; test unitaire.
+3. S1 — l'audit tolérant aux pannes écrit une fois : une petite classe `Application/FailSafeAudit` (`attempt(Closure $write, string $failureMessage): void`, le journal principal injecté, `critical` classe seule) employée par les trois sites ; messages constants inchangés ; test unitaire.
+4. CR4 — le rejeu non prouvé ne redéchiffre plus le code pour l'audit : `GrantRefusalAuditInterface` reçoit la connexion déjà connue (`$compromise->connectionId()`), ou une variante dédiée ; une requête et deux déchiffrements de moins, mesurés par un compteur de requêtes si le projet en a un (sinon le dire).
+5. S8 — docblock de `GrantRefusal` : la cause vient de l'indication de league **ou** de l'appelant qui la connaît (`replay-unproven`).
+6. S5 — `new S256Verifier()` : **garder**, par décision (objet de league sans état ni dépendance, pas un service métier ; l'injecter demanderait un service déclaré pour une classe vendor) — écrire la raison en commentaire.
+
+Commit `refactor(mcp): révocateur typé par la compromission, paramètre et audit écrits une fois (#726)`. `make back-test`, `make back-quality`, `bash tools/check-claude-rules.sh` ; règles à jour (`mcp-oauth-cycle-de-vie.md` « Two application paths revoke a connection »).
+
+### Task 11 : le remplacement décidé en Application
+
+1. S3/CR5 — la décision métier (garder la connexion du code, révoquer les autres du couple, cause `superseded`, l'instant de l'horloge) passe en Application : `Application/CodeExchangeSupersession` (service final readonly, implémente `CodeExchangeSupersessionInterface`) prend un port `Application/ExchangedCodeConnectionInterface::connectionIdOf(ServerRequestInterface $request): ?Uuid` (la connexion que désigne le code d'un échange de code, `null` sinon), implémenté en `Infrastructure/League/` sur `GrantPayloadReader` ; `LeagueCodeExchangeSupersession` supprimée. L'accroche à `revokeAuthCode` avec un collecteur (CR5) est **écartée** : un état par requête à vider, et l'audit après COMMIT resterait au point de jeton — le dire dans la règle.
+2. S6 — test unitaire de `CodeExchangeSupersession` (autre grant → `null`, connexion inconnue → `null`, nominal → la connexion gardée et la liste du dépôt) et du port (code illisible → `null`).
+3. S7 — `IssuedTokens` → `TokenExchangeOutcome`.
+4. S4 — après 1 à 3, si `TokenEndpoint` garde plus de huit dépendances, extraire le collaborateur « après la réponse » (audit des remplacements) ; sinon le dire. `TokenEndpointSupersessionAuditTest` ne construit plus `TokenEndpoint` à la main si le conteneur de test le permet (service remplacé), sinon le dire.
+
+Commit `refactor(mcp): le remplacement décidé en Application (#726)`. `make back-test`, `make back-quality`, `bash tools/check-claude-rules.sh` ; règles à jour (`mcp-oauth-cycle-de-vie.md` « A new grant supersedes… »).
