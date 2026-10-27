@@ -114,8 +114,8 @@ paths:
   revocation, then, only when it took effect, the audit line `mcp-connection-revoked` (`userId`, `connectionId`,
   `clientId`, `cause`; `.claude/rules/security-authentication.md`), **after** the write; one statement, callable
   after a rolled-back exchange (the token endpoint's reuse and replay, below). Inside a transaction: **the
-  dedicated repository method** — `revokeActive()` (the revocation endpoint's, below), `revokeOtherActiveOf()` (the
-  token endpoint's, at a code's first exchange), `revokeExpired()` (the purge's) — in the transaction, which returns what it revoked
+  dedicated repository method** — `revokeActive()` (the revocation endpoint's, below), `revokeOtherActiveOf()` (`CodeExchangeSupersession`'s,
+  in the token endpoint's transaction, at a code's first exchange), `revokeExpired()` (the purge's) — in the transaction, which returns what it revoked
   (`?RevokedConnection` or a `list<RevokedConnection>`), and the audit written by the caller **after the COMMIT** —
   the revoker there would audit before it, and a ROLLBACK would leave a line for a revocation that never happened.
   Either way, no line for a connection the statement did not revoke (unknown or already revoked). `expired` is audited through

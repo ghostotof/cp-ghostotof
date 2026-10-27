@@ -131,7 +131,11 @@ final class CodeExchangeSupersessionTest extends TestCase
         $exchangedCode = self::createStub(ExchangedCodeConnectionInterface::class);
         $exchangedCode->method('connectionIdOf')->willReturn($kept->getId());
         $connections = $this->createMock(McpConnectionRepositoryInterface::class);
-        $connections->method('findOneById')->willReturn($kept);
+        $keptId = $kept->getId();
+        $connections->expects(self::once())
+            ->method('findOneById')
+            ->with(self::callback(static fn (Uuid $id): bool => $id->equals($keptId)))
+            ->willReturn($kept);
         $connections->expects(self::once())
             ->method('revokeOtherActiveOf')
             ->with(

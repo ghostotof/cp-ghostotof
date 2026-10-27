@@ -82,7 +82,9 @@ final readonly class ConnectionLifetimes
      * connexion dont le code était encore échangeable (3 599 s de
      * recouvrement) ; avec elle (`P1DT1H10M1S`), aucune seconde — ce que
      * `ConnectionLifetimesTest::testAFreshConnectionIsNeverPreselectedAcrossTheClockChanges()`
-     * rejoue.
+     * rejoue. Le CronJob (`17 3 * * *`, `k8s/base/messenger-purge-cronjob.yaml`,
+     * sans `timeZone`) ne tombe jamais dans ces fenêtres (00:10–01:10 UTC) :
+     * l'heure couvre une purge lancée à la main ou un Job relancé.
      */
     private const string CLOCK_CHANGE_MARGIN = 'PT1H';
 
@@ -95,9 +97,11 @@ final readonly class ConnectionLifetimes
      * l'`expire_time` du code, que league calcule plus tard avec sa propre
      * horloge, après avoir persisté le code, et accepte jusqu'à
      * `expire_time + 0,999 s` (`time() > expire_time`), et le décalage
-     * d'horloge entre le nœud du Job de purge et celui de FPM.
+     * d'horloge entre le nœud du Job de purge et celui de FPM. Publique comme
+     * {@see self::MINIMUM_CONNECTION_LIFETIME} : `ConnectionLifetimesTest` la
+     * lit ici plutôt que d'en recopier la valeur.
      */
-    private const string SECOND_TRUNCATION_AND_SKEW_MARGIN = 'PT1M';
+    public const string SECOND_TRUNCATION_AND_SKEW_MARGIN = 'PT1M';
 
     /**
      * L'instant fixe où les durées se comparent, pour que le verdict ne

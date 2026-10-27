@@ -281,8 +281,8 @@ final class ConnectionLifetimesTest extends TestCase
     {
         $paris = new DateTimeZone('Europe/Paris');
         // La minute de jeu du plancher (troncature, écart octroi-code, décalage
-        // d'horloge), privée dans ConnectionLifetimes : écrite ici en clair.
-        $slack = new DateInterval('PT1M');
+        // d'horloge), lue à sa source : une marge changée là suit ici.
+        $slack = new DateInterval(ConnectionLifetimes::SECOND_TRUNCATION_AND_SKEW_MARGIN);
         $sweeps = [];
         foreach (['2026-03-29', '2026-03-30', '2026-10-25', '2026-10-26'] as $day) {
             $sweeps[] = [new DateTimeImmutable($day.'T00:00:00+00:00'), 2 * 3600, 1];

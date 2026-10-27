@@ -384,7 +384,10 @@ décision du 2026-10-19, voir « Langue invalide »).
   code `PT10M`, jeton d'accès `PT1H`, rafraîchissement `P30D`, inactivité `P30D`, maximum `P90D` —, une
   seule valeur pour tous les environnements (jamais `%env()%`, #659), lus par `ConnectionLifetimes`, qui
   refuse à sa construction (au premier usage du service) une durée illisible, nulle, une inactivité
-  au-delà du maximum ou un jeton d'accès qui survivrait à son rafraîchissement. L'expiration se juge en
+  ou une durée maximale sous un jour (la marge de présélection de la purge, lot B de #649) ou qui ne
+  dépasse pas un jour plus la durée d'un code, une heure et une minute (#726, CR1 : la connexion d'un
+  code encore échangeable n'est jamais candidate de la purge — croisement fermé par construction), une
+  inactivité au-delà du maximum ou un jeton d'accès qui survivrait à son rafraîchissement. L'expiration se juge en
   **échéances** monotones (`McpConnection::isExpiredAt()`, seule définition, partagée par
   l'authentificateur, le rafraîchissement et la purge) : jours de calendrier de Paris, l'échéance à la
   même heure murale au passage d'heure (721 h à l'automne). Le dernier usage s'écrit au rafraîchissement

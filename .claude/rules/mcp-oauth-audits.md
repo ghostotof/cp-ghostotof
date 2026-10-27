@@ -20,7 +20,7 @@ paths:
 > #649, task 8: a known access token refused; issue #725: every refusal of an authentic grant at the token endpoint;
 > issue #726: the unproven replay). Split out of `.claude/rules/mcp-oauth-cycle-de-vie.md` by #726 (49 035 bytes,
 > past which the ten corrections of its task 9 would have pushed `tools/check-claude-rules.sh`'s 50 000 bytes), its
-> two audit bullets moved here word for word; that rule keeps the lifetimes, the expiry, the revocations and their
+> two audit bullets moved here (#726), then kept up to date; that rule keeps the lifetimes, the expiry, the revocations and their
 > lock orders, and points here — a bullet quoted below by its title alone (« A replayed code is judged under the
 > same lock ») is one of that rule's. Vocabulary: `CONTEXT.md`, « Accès MCP ». The index of every rule is at the top
 > of `.claude/CLAUDE.md`.
@@ -90,7 +90,7 @@ paths:
   channel (`['exceptionClass' => …]`, the class only, never a message that could quote the grant;
   `FailSafeAuditTest`); league's refusal is then thrown unchanged —
   `testAnAuditFailureLeavesLeaguesRefusalUnchanged` renames `mcp_connection` for one request (500 before, measured);
-  its twin `testAnUnprovenReplayAuditFailureLeavesLeaguesRefusalUnchanged` replaces the refusal audit's writer (league
+  its twin `testAnUnprovenReplayAuditFailureLeavesLeaguesRefusalUnchanged` replaces `GrantRefusalAuditInterface` (league
   reads the connection under its lock before the replay is recognised, so the table cannot be hidden): « Authorization
   code has been revoked », `invalid_grant`, nothing revoked, the `critical` line (500 without the `attempt()`, measured).
   **Classified by league's hint** (`Infrastructure/League/LeagueGrantRefusals`, one table, `invalid_scope` and
