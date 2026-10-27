@@ -23,7 +23,10 @@ use Psr\Http\Message\ServerRequestInterface;
  *    FormEncodedRequest) : un autre type de contenu, ou un paramètre que PHP
  *    et un autre analyseur liraient différemment (QueryParameterPollution, la
  *    règle du point d'autorisation), est un `invalid_request` ; league lit les
- *    paramètres tirés du corps contrôlé.
+ *    paramètres tirés du corps contrôlé. **Le client se nomme dans ce corps**
+ *    (#725) : `client_id`, la méthode `none` que les métadonnées annoncent
+ *    (RFC 6749 §2.3.1), sinon `invalid_client` avant league — qui l'aurait lu
+ *    aussi en HTTP Basic, où l'audit d'un refus ne le voyait pas.
  * 2. **La ressource** (RFC 8707 §2.2) : facultative ici, mais présente elle
  *    doit être le serveur MCP du site, sinon `invalid_target` — sans
  *    redirection, le point de jeton n'en fait jamais. Un jeton d'accès porte
@@ -102,6 +105,7 @@ final readonly class TokenEndpoint implements TokenEndpointInterface
         $request = FormEncodedRequest::parse($request, self::READ_PARAMETERS);
 
         try {
+            $this->refuseClientOutsideTheBody($request);
             $this->refuseForeignResource($request);
 
             return $this->transaction->run(fn(): ResponseInterface => $this->server->respondToAccessTokenRequest($request, $response));
@@ -143,6 +147,25 @@ final readonly class TokenEndpoint implements TokenEndpointInterface
             $compromise instanceof RotatedRefreshTokenReusedException => OAuthServerException::invalidRefreshToken('Token has been revoked'),
             $compromise instanceof AuthorizationCodeReplayedException => OAuthServerException::invalidGrant('Authorization code has been revoked'),
         };
+    }
+
+    /**
+     * Un client qui ne se nomme pas dans le corps n'est pas authentifié ici,
+     * Basic ou non (#725) : league le lirait en HTTP Basic, et son refus
+     * serait audité sans savoir qui l'a présenté. FormEncodedRequest a déjà
+     * refusé une valeur entourée de blancs ; une chaîne vide ne nomme
+     * personne.
+     *
+     * @throws OAuthServerException `invalid_client`
+     */
+    private function refuseClientOutsideTheBody(ServerRequestInterface $request): void
+    {
+        $body = $request->getParsedBody();
+        $clientId = \is_array($body) ? ($body['client_id'] ?? null) : null;
+
+        if (!\is_string($clientId) || '' === $clientId) {
+            throw OAuthServerException::invalidClient($request);
+        }
     }
 
     /**
