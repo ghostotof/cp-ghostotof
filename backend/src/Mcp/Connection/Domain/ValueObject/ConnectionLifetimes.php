@@ -42,9 +42,24 @@ use DateTimeImmutable;
 final readonly class ConnectionLifetimes
 {
     /**
+     * Plancher du délai d'inactivité et de la durée maximale d'une connexion,
+     * et marge de la présélection de la purge (relecture du lot B de #649) :
+     * la purge retient en SQL les connexions dont le dernier usage (ou
+     * l'octroi) précède « maintenant − durée + cette marge », puis juge chacune
+     * par {@see \App\Mcp\Connection\Domain\Entity\McpConnection::isExpiredAt()} —
+     * la borne SQL et l'échéance ne se répondent qu'à l'heure près autour d'un
+     * changement d'heure, un jour les couvre. Une durée plus courte que la
+     * marge mettrait la borne dans le futur : chaque connexion active serait
+     * verrouillée `FOR UPDATE` à chaque nuit. Une seule constante pour les
+     * deux, que la purge lit ici.
+     */
+    public const string MINIMUM_CONNECTION_LIFETIME = 'P1D';
+
+    /**
      * L'instant fixe où les durées se comparent, pour que le verdict ne
      * dépende pas du jour où le conteneur se construit (un mois de 28 jours
-     * contre 30 jours, par exemple) : positivité et ordres jugés sur le même.
+     * contre 30 jours, par exemple) : positivité, plancher et ordres jugés
+     * sur le même.
      */
     private const string REFERENCE_INSTANT = '2026-01-01T00:00:00+00:00';
 
@@ -62,8 +77,10 @@ final readonly class ConnectionLifetimes
      * refus désigne par ce nom.
      *
      * @throws InvalidConnectionLifetimeException si une durée est illisible ou
-     *         nulle, si l'inactivité dépasse la durée maximale, ou si le jeton
-     *         d'accès survit à son jeton de rafraîchissement
+     *         nulle, si l'inactivité ou la durée maximale est sous un jour
+     *         (la marge de présélection de la purge), si l'inactivité dépasse
+     *         la durée maximale, ou si le jeton d'accès survit à son jeton de
+     *         rafraîchissement
      */
     public static function fromConfiguration(string $codeLifetime, string $accessLifetime, string $refreshLifetime, string $idleLifetime, string $maximumLifetime): self
     {
@@ -80,6 +97,16 @@ final readonly class ConnectionLifetimes
         foreach ($durations as $parameter => $duration) {
             if ($reference->add($duration) <= $reference) {
                 throw InvalidConnectionLifetimeException::notPositive($parameter);
+            }
+        }
+
+        // Le plancher avant l'ordre des deux durées : une durée maximale sous
+        // un jour est refusée pour cette cause, pas parce que l'inactivité la
+        // dépasse.
+        $oneDay = $reference->add(new DateInterval(self::MINIMUM_CONNECTION_LIFETIME));
+        foreach (['idleLifetime', 'maximumLifetime'] as $parameter) {
+            if ($reference->add($durations[$parameter]) < $oneDay) {
+                throw InvalidConnectionLifetimeException::belowOneDay($parameter);
             }
         }
 

@@ -21,10 +21,14 @@ use Symfony\Component\Process\Process;
  *
  * **L'ordre A → R.** La révocation prend la connexion C (`FOR UPDATE`), la
  * révoque, puis révoque le jeton d'accès A et le rafraîchissement R. A avant R
- * est l'ordre de tous les autres : le grant de rafraîchissement de league
- * révoque A puis R, et la purge (`McpAccessTokenRepository::deleteDead()`)
- * supprime A, dont la clé étrangère `mcp_refresh_token.access_token_id … ON
- * DELETE SET NULL` met ensuite R à jour. Dans l'ordre inverse (R puis A), la
+ * est l'ordre de qui touche les deux lignes, et ils sont trois : le grant de
+ * rafraîchissement de league révoque A puis R ; la purge
+ * (`McpAccessTokenRepository::deleteDead()`) supprime A, dont la clé étrangère
+ * `mcp_refresh_token.access_token_id … ON DELETE SET NULL` met ensuite R à
+ * jour (sa cascade) ; et la purge supprime ses jetons morts A puis R (ses
+ * propres `DELETE`, depuis la relecture du lot B de #649 — R puis A laissait
+ * un cycle avec une révocation sur une connexion déjà révoquée, dont les jetons
+ * morts n'étaient pas encore purgés). Dans l'ordre inverse (R puis A), la
  * révocation tenait R et attendait A pendant que la purge tenait A (son
  * `DELETE`) et attendait R (la mise à NULL de la cascade) : un interblocage
  * (40P01) ; quand c'est la révocation que PostgreSQL annulait, elle sortait en

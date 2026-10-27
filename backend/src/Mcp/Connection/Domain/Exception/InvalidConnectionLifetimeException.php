@@ -31,6 +31,17 @@ final class InvalidConnectionLifetimeException extends InvalidArgumentException
         return new self(\sprintf('La durée « %s » des connexions doit être strictement positive.', $parameter));
     }
 
+    /**
+     * Le délai d'inactivité ou la durée maximale d'une connexion sous un jour
+     * (relecture du lot B de #649) : la purge présélectionne par « maintenant
+     * moins la durée, plus un jour », et une durée plus courte mettrait cette
+     * borne dans le futur.
+     */
+    public static function belowOneDay(string $parameter): self
+    {
+        return new self(\sprintf('La durée « %s » des connexions doit être d\'au moins un jour, la marge de présélection de la purge.', $parameter));
+    }
+
     public static function idleExceedsMaximum(): self
     {
         return new self('Le délai d\'inactivité « idleLifetime » des connexions ne peut dépasser leur durée maximale « maximumLifetime ».');

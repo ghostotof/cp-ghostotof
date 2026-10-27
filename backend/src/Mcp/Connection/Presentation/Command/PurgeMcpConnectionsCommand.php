@@ -21,8 +21,8 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
 /**
  * La purge quotidienne des connexions MCP et de leurs jetons (#649) : marque
  * expirées les connexions dont l'échéance est passée (cause `expired`, audit
- * acteur `system`), supprime les codes et jetons morts, puis les connexions
- * révoquées ou expirées depuis plus que la rétention. La règle vit dans
+ * acteur `system`), supprime les connexions révoquées ou expirées depuis plus
+ * que la rétention, puis les codes et jetons morts. La règle vit dans
  * {@see McpConnectionPurgerInterface} ; cette commande n'en est que
  * l'habillage CLI, planifiée chaque nuit par
  * `k8s/base/messenger-purge-cronjob.yaml`.
@@ -35,7 +35,7 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
  */
 #[AsCommand(
     name: 'app:mcp:purge',
-    description: 'Marque les connexions MCP expirées, supprime les codes et jetons morts et les connexions révoquées au-delà de la rétention.',
+    description: 'Marque les connexions MCP expirées, supprime les connexions révoquées au-delà de la rétention, puis les codes et jetons morts.',
 )]
 final class PurgeMcpConnectionsCommand extends Command
 {

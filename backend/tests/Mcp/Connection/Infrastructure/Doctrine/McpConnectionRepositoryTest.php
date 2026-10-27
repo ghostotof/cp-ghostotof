@@ -418,6 +418,40 @@ final class McpConnectionRepositoryTest extends KernelTestCase
     }
 
     /**
+     * La base n'admet que les causes de {@see RevocationCause}
+     * (`chk_mcp_connection_revocation_cause_value`, relecture du lot B de
+     * #649) : une valeur inconnue en base ferait lever `ValueError` à
+     * l'hydratation de l'énumération — un 500 à la place du 401 sur chaque
+     * lecture de la connexion. Chaque cas de l'énumération passe, une valeur
+     * hors d'elle est refusée sous le nom de la contrainte ; la cause `person`
+     * de #650 élargit la contrainte par migration **avant** d'être écrite —
+     * ajoutée à l'énumération seule, ce test la voit refusée.
+     */
+    public function testTheDatabaseAdmitsEveryRevocationCauseAndRefusesAnUnknownOne(): void
+    {
+        $this->grantConnection();
+        $connection = $this->em->getConnection();
+
+        foreach (RevocationCause::cases() as $cause) {
+            $connection->beginTransaction();
+            try {
+                $written = $connection->executeStatement('UPDATE mcp_connection SET revoked_at = now(), revocation_cause = :cause', ['cause' => $cause->value]);
+                self::assertSame(1, $written, \sprintf('La cause « %s » est refusée par la base.', $cause->value));
+            } finally {
+                $connection->rollBack();
+            }
+        }
+
+        try {
+            $connection->executeStatement("UPDATE mcp_connection SET revoked_at = now(), revocation_cause = 'unknown-cause'");
+            self::fail('La base aurait dû refuser une cause de révocation inconnue.');
+        } catch (DriverException $exception) {
+            self::assertSame(self::CHECK_VIOLATION, $exception->getSQLState(), $exception->getMessage());
+            self::assertStringContainsString('chk_mcp_connection_revocation_cause_value', $exception->getMessage());
+        }
+    }
+
+    /**
      * Le rafraîchissement survit au jeton d'accès qu'il a accompagné : la
      * purge d'un jeton d'accès expiré ne doit pas emporter la possibilité de
      * rafraîchir (`ON DELETE SET NULL`).

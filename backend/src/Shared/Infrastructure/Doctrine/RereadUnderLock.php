@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace App\Shared\Infrastructure\Doctrine;
 
+use Closure;
 use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\DBAL\LockMode;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Query;
+use Doctrine\ORM\QueryBuilder;
 use Doctrine\ORM\UnitOfWork;
 
 /**
@@ -28,8 +30,8 @@ use Doctrine\ORM\UnitOfWork;
  *   et ne rend pas une ligne disparue. Ni `refresh()` — il n'hydrate rien sur
  *   une ligne supprimée et garde l'instance —, ni `find($id, LockMode)`, qui
  *   sur une instance gérée n'est qu'un `refresh()` avec `FOR UPDATE`.
- * - **`FOR UPDATE` à la demande** ({@see self::row()}) : le verrou de ligne
- *   et la relecture en une seule requête.
+ * - **`FOR UPDATE` à la demande** ({@see self::row()}, {@see self::rowsMatching()}) :
+ *   le verrou de ligne et la relecture en une seule requête.
  * - **Ligne disparue : détachée par {@see VanishedEntities::detachVanished()}**,
  *   seul point de détachement, qui refuse ensuite sa re-sauvegarde (#548) :
  *   Doctrine tiendrait l'instance pour neuve et réinsérerait la ligne.
@@ -146,6 +148,47 @@ final readonly class RereadUnderLock
                 $this->vanishedEntities->detachVanished($entityManager, $entry);
             }
         }
+    }
+
+    /**
+     * Relit en une requête les lignes de `$class` que `$narrow` retient — où,
+     * dans quel ordre —, `FOR UPDATE` à la demande : chaque instance déjà
+     * gérée est rafraîchie sur place, une ligne nouvelle hydratée. La
+     * présélection de la purge des connexions MCP (#649) : des lignes choisies
+     * par critère, verrouillées dans un ordre fixe.
+     *
+     * Ce qu'elle ne peut pas dire : une instance gérée que la requête ne rend
+     * pas a peut-être cessé de satisfaire le critère, ou a disparu — rien ne
+     * les distingue ici, elle est laissée gérée, telle quelle ; aucun
+     * détachement, donc rien à filtrer parmi les écritures en attente. Une
+     * relecture par identifiant ({@see self::row()}, {@see self::everyManagedInstanceOf()})
+     * tranche, elle. Le critère ne sélectionne que l'alias donné : une
+     * jointure sélectionnée étendrait le `FOR UPDATE` à ses lignes.
+     *
+     * @template T of object
+     *
+     * @param class-string<T>                    $class
+     * @param Closure(QueryBuilder, string): void $narrow    restreint et ordonne la requête, sur l'alias donné
+     * @param bool                               $forUpdate verrouille les lignes rendues (`FOR UPDATE`) pour la transaction en cours
+     *
+     * @return list<T>
+     */
+    public function rowsMatching(EntityManagerInterface $entityManager, string $class, Closure $narrow, bool $forUpdate): array
+    {
+        $queryBuilder = $entityManager->createQueryBuilder()
+            ->select('entry')
+            ->from($entityManager->getClassMetadata($class)->rootEntityName, 'entry');
+        $narrow($queryBuilder, 'entry');
+
+        $query = $queryBuilder->getQuery()->setHint(Query::HINT_REFRESH, true);
+        if ($forUpdate) {
+            $query->setLockMode(LockMode::PESSIMISTIC_WRITE);
+        }
+
+        /** @var list<T> $rows aucun héritage n'est mappé : chaque ligne est une instance de `$class` (voir row()) */
+        $rows = $query->getResult();
+
+        return $rows;
     }
 
     /**

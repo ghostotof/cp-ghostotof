@@ -54,8 +54,10 @@ use Symfony\Component\Uid\Uuid;
  *   (lockForIssuance()), puis le jeton d'accès, puis le rafraîchissement.
  *   C avant les jetons est l'ordre des verrous du point de jeton (l'ordre
  *   inverse interbloquait une révocation croisant la rotation du même
- *   jeton) ; A avant R est l'ordre du grant de rafraîchissement de league et
- *   de la cascade de la purge (sinon un interblocage avec celle-ci). Un rafraîchissement déjà tourné, rendu sur une
+ *   jeton) ; A avant R est l'ordre de qui touche les deux lignes : le grant
+ *   de rafraîchissement de league, la cascade de la purge (supprimer A met R
+ *   à jour) et les suppressions de la purge elle-même (sinon un interblocage
+ *   avec celle-ci). Un rafraîchissement déjà tourné, rendu sur une
  *   connexion active, la révoque pour réutilisation (`refresh-token-reuse`),
  *   décidé sous le verrou. La ligne d'audit
  *   `mcp-connection-revoked` s'écrit **après** le COMMIT, et seulement si
@@ -145,12 +147,13 @@ final readonly class LeagueRevocationEndpoint implements RevocationEndpointInter
 
         $at = $this->clock->now();
         // Lus avant la transaction : leurs identifiants seuls servent dedans.
+        $refreshTokenId = $refreshToken->getId();
         $tokenHash = $refreshToken->tokenHash();
         $accessTokenHash = $refreshToken->accessToken()?->tokenHash();
         $connectionId = $refreshToken->connection()->getId();
 
         $revoked = $this->transaction->run(
-            fn(): ?RevokedConnection => $this->revokeUnderTheConnectionLock($connectionId, $tokenHash, $accessTokenHash, $at),
+            fn (): ?RevokedConnection => $this->revokeUnderTheConnectionLock($connectionId, $refreshTokenId, $tokenHash, $accessTokenHash, $at),
         );
 
         // Après le COMMIT : jamais une ligne d'audit pour une révocation que
@@ -172,31 +175,38 @@ final readonly class LeagueRevocationEndpoint implements RevocationEndpointInter
      * en attendant A : un interblocage, et la connexion restait active quand
      * PostgreSQL annulait la révocation (RevocationEndpointConcurrencyTest).
      *
-     * A avant R est l'ordre de tous les autres : le grant de rafraîchissement
-     * de league révoque A puis R, et la purge supprime A, dont la clé
-     * étrangère `ON DELETE SET NULL` sur `mcp_refresh_token.access_token_id`
-     * met ensuite R à jour. Dans l'ordre R puis A, cette révocation tenait R
-     * et attendait A quand la purge tenait A (son `DELETE`) et attendait R (la
+     * A avant R est l'ordre de qui touche les deux lignes, et ils sont trois :
+     * le grant de rafraîchissement de league révoque A puis R ; la purge
+     * supprime A, dont la clé étrangère `ON DELETE SET NULL` sur
+     * `mcp_refresh_token.access_token_id` met ensuite R à jour (sa cascade) ;
+     * et la purge supprime ses jetons morts A puis R (ses propres `DELETE`,
+     * depuis la relecture du lot B de #649 — avant, R puis A laissait un
+     * cycle : une révocation sur une connexion déjà révoquée, dont les jetons
+     * ne sont pas encore purgés, tenait A et attendait R quand la purge tenait
+     * R et attendait A). Dans l'ordre R puis A, cette révocation tenait R et
+     * attendait A quand la purge tenait A (son `DELETE`) et attendait R (la
      * mise à NULL de la cascade) : un interblocage (40P01), un 500, la
      * connexion laissée active et aucune ligne d'audit, quand la personne se
      * croit déconnectée (RevocationEndpointPurgeDeadlockTest).
      *
-     * La cause se décide sous le verrou, sur le rafraîchissement relu : déjà
-     * révoqué alors que la connexion est active, il a été tourné — rendu ici,
-     * c'est le signal d'une réutilisation (décision 3), cause
-     * `refresh-token-reuse` ; sinon `client`.
+     * La cause se décide sous le verrou, sur le rafraîchissement relu par la
+     * relecture sous verrou du projet (rereadUnderConnectionLock(), #560) :
+     * déjà révoqué alors que la connexion est active, il a été tourné — rendu
+     * ici, c'est le signal d'une réutilisation (décision 3), cause
+     * `refresh-token-reuse` ; sinon `client`. Disparu pendant l'attente (la
+     * purge l'a supprimé), la cause reste `client`.
      *
      * @return RevokedConnection|null `null` quand la connexion a disparu ou
      *                                était déjà révoquée : la première
      *                                révocation garde son instant, sa cause et
      *                                sa ligne d'audit
      */
-    private function revokeUnderTheConnectionLock(Uuid $connectionId, string $tokenHash, ?string $accessTokenHash, DateTimeImmutable $at): ?RevokedConnection
+    private function revokeUnderTheConnectionLock(Uuid $connectionId, Uuid $refreshTokenId, string $tokenHash, ?string $accessTokenHash, DateTimeImmutable $at): ?RevokedConnection
     {
         $connection = $this->connections->lockForIssuance($connectionId);
-        // Relu sous le verrou (`HINT_REFRESH`) : une rotation validée pendant
-        // l'attente est vue.
-        $current = $this->refreshTokens->findOneByHash($tokenHash);
+        // Relu sous le verrou, par la relecture du projet : une rotation
+        // validée pendant l'attente est vue.
+        $current = $this->refreshTokens->rereadUnderConnectionLock($refreshTokenId);
 
         $revoked = null;
         if (null !== $connection) {
@@ -205,10 +215,11 @@ final readonly class LeagueRevocationEndpoint implements RevocationEndpointInter
         }
 
         // Le jeton d'accès avant le rafraîchissement : A puis R, l'ordre de
-        // tous les autres (le grant de rafraîchissement de league, la purge
-        // dont la cascade `ON DELETE SET NULL` touche R après avoir supprimé
-        // A). L'ordre inverse interbloquait avec la purge, qui tient A et
-        // attend R quand cette révocation tient R et attend A.
+        // qui touche les deux (le grant de rafraîchissement de league, la
+        // cascade `ON DELETE SET NULL` de la purge, qui touche R après avoir
+        // supprimé A, et les suppressions de la purge elle-même, A puis R).
+        // L'ordre inverse interbloquait avec la purge, qui tient A et attend R
+        // quand cette révocation tient R et attend A.
         // Le lien est nul quand le jeton d'accès a été purgé (`ON DELETE
         // SET NULL`) : il n'y a plus rien à révoquer.
         if (null !== $accessTokenHash) {

@@ -6,6 +6,7 @@ namespace App\Tests\Mcp\Connection\Domain\ValueObject;
 
 use App\Mcp\Connection\Domain\Exception\InvalidConnectionLifetimeException;
 use App\Mcp\Connection\Domain\ValueObject\ConnectionLifetimes;
+use DateInterval;
 use DateTimeImmutable;
 use DateTimeZone;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -119,6 +120,60 @@ final class ConnectionLifetimesTest extends TestCase
         $this->expectExceptionMessage(InvalidConnectionLifetimeException::accessTokenOutlivesRefreshToken()->getMessage());
 
         $this->lifetimes(['accessLifetime' => 'P31D', 'refreshLifetime' => 'P30D']);
+    }
+
+    /**
+     * Le délai d'inactivité et la durée maximale d'une connexion valent au
+     * moins un jour (relecture du lot B de #649) : la purge présélectionne ses
+     * candidates par `maintenant − durée + P1D`, et une durée plus courte
+     * mettrait cette borne dans le futur — chaque connexion active serait
+     * verrouillée `FOR UPDATE` à chaque nuit. Un jour exactement est admis
+     * (`P1D` comme `PT24H`, égaux sur l'instant de référence) ; une seconde de
+     * moins est refusée, le plancher jugé avant l'ordre des deux durées.
+     *
+     * @return iterable<string, array{array<string, string>, ?string}>
+     */
+    public static function connectionDurationsAroundOneDay(): iterable
+    {
+        yield 'inactivité d\'un jour' => [['idleLifetime' => 'P1D'], null];
+        yield 'inactivité de vingt-quatre heures' => [['idleLifetime' => 'PT24H'], null];
+        yield 'inactivité d\'une seconde sous le jour' => [['idleLifetime' => 'PT23H59M59S'], 'idleLifetime'];
+        yield 'inactivité de douze heures' => [['idleLifetime' => 'PT12H'], 'idleLifetime'];
+        yield 'durée maximale d\'un jour' => [['idleLifetime' => 'P1D', 'maximumLifetime' => 'P1D'], null];
+        yield 'durée maximale d\'une seconde sous le jour' => [['idleLifetime' => 'P1D', 'maximumLifetime' => 'PT23H59M59S'], 'maximumLifetime'];
+        yield 'durée maximale de douze heures' => [['idleLifetime' => 'PT12H', 'maximumLifetime' => 'PT12H'], 'idleLifetime'];
+    }
+
+    /**
+     * @param array<string, string> $overrides
+     * @param ?string               $refusedParameter le paramètre que le refus nomme ; `null` si la configuration est admise
+     */
+    #[DataProvider('connectionDurationsAroundOneDay')]
+    public function testAConnectionDurationUnderOneDayIsRefused(array $overrides, ?string $refusedParameter): void
+    {
+        if (null === $refusedParameter) {
+            $lifetimes = $this->lifetimes($overrides);
+            self::assertSame(24 * 3600, $this->seconds($lifetimes->idle()), 'Une durée d\'un jour est admise, lue telle quelle.');
+
+            return;
+        }
+
+        try {
+            $this->lifetimes($overrides);
+            self::fail('Une durée de connexion sous un jour a été acceptée.');
+        } catch (InvalidConnectionLifetimeException $refusal) {
+            self::assertSame(InvalidConnectionLifetimeException::belowOneDay($refusedParameter)->getMessage(), $refusal->getMessage());
+            self::assertStringContainsString($refusedParameter, $refusal->getMessage());
+            self::assertStringNotContainsString($overrides[$refusedParameter], $refusal->getMessage(), 'Le refus cite la valeur.');
+        }
+    }
+
+    /** Les secondes qu'un intervalle ajoute à l'instant de référence (hors changement d'heure : UTC). */
+    private function seconds(DateInterval $interval): int
+    {
+        $reference = new DateTimeImmutable('2026-01-01T00:00:00+00:00');
+
+        return $reference->add($interval)->getTimestamp() - $reference->getTimestamp();
     }
 
     /**

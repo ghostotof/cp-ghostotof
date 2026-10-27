@@ -12,9 +12,8 @@ use App\Shared\Infrastructure\Doctrine\RereadUnderLock;
 use DateTimeImmutable;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\DBAL\ArrayParameterType;
-use Doctrine\DBAL\LockMode;
 use Doctrine\DBAL\Types\Types;
-use Doctrine\ORM\Query;
+use Doctrine\ORM\QueryBuilder;
 use Doctrine\Persistence\ManagerRegistry;
 use Symfony\Bridge\Doctrine\Types\UuidType;
 use Symfony\Component\Uid\Uuid;
@@ -140,27 +139,30 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
     }
 
     /**
-     * Une requête DQL sur la connexion seule — une jointure étendrait le
-     * `FOR UPDATE` aux lignes du compte et du client —, ordonnée par
-     * identifiant pour que deux purges lancées ensemble prennent leurs verrous
-     * dans le même ordre. `HINT_REFRESH` : une instance déjà gérée est relue
-     * telle que le verrou la montre, comme {@see RereadUnderLock::row()}. Les
-     * bornes sont typées comme leurs colonnes, avec fuseau (#434). Doctrine
-     * refuse le verrou hors transaction (`TransactionRequiredException`).
+     * La relecture par critère du projet ({@see RereadUnderLock::rowsMatching()},
+     * `.claude/rules/backend-architecture.md`) : une requête DQL `FOR UPDATE`
+     * avec `HINT_REFRESH`, jamais une copie — une instance déjà gérée est relue
+     * telle que le verrou la montre. Sur la connexion seule (une jointure
+     * étendrait le `FOR UPDATE` aux lignes du compte et du client), ordonnée
+     * par identifiant pour que deux purges lancées ensemble prennent leurs
+     * verrous dans le même ordre. Les bornes sont typées comme leurs colonnes,
+     * avec fuseau (#434). Doctrine refuse le verrou hors transaction
+     * (`TransactionRequiredException`).
      */
     public function findActiveCandidatesForExpiry(DateTimeImmutable $idleBefore, DateTimeImmutable $maximumBefore): array
     {
-        /** @var list<McpConnection> */
-        return $this->createQueryBuilder('connection')
-            ->where('connection.revokedAt IS NULL')
-            ->andWhere('(COALESCE(connection.lastUsedAt, connection.grantedAt) <= :idleBefore OR connection.grantedAt <= :maximumBefore)')
-            ->orderBy('connection.id')
-            ->setParameter('idleBefore', $idleBefore, Types::DATETIMETZ_IMMUTABLE)
-            ->setParameter('maximumBefore', $maximumBefore, Types::DATETIMETZ_IMMUTABLE)
-            ->getQuery()
-            ->setLockMode(LockMode::PESSIMISTIC_WRITE)
-            ->setHint(Query::HINT_REFRESH, true)
-            ->getResult();
+        return $this->rereadUnderLock->rowsMatching(
+            $this->getEntityManager(),
+            McpConnection::class,
+            static function (QueryBuilder $query, string $connection) use ($idleBefore, $maximumBefore): void {
+                $query->andWhere($connection.'.revokedAt IS NULL')
+                    ->andWhere('(COALESCE('.$connection.'.lastUsedAt, '.$connection.'.grantedAt) <= :idleBefore OR '.$connection.'.grantedAt <= :maximumBefore)')
+                    ->orderBy($connection.'.id')
+                    ->setParameter('idleBefore', $idleBefore, Types::DATETIMETZ_IMMUTABLE)
+                    ->setParameter('maximumBefore', $maximumBefore, Types::DATETIMETZ_IMMUTABLE);
+            },
+            forUpdate: true,
+        );
     }
 
     /**

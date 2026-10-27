@@ -471,9 +471,12 @@ décision du 2026-10-19, voir « Langue invalide »).
   `app.mcp.revoked_connection_retention` lu comme défaut de `--older-than` (au moins un jour) — avant
   toute suppression de jeton, pour que toutes ses lignes de connexion soient verrouillées avant une ligne
   de jeton (relecture finale de #649 : en dernier, elle croisait une suppression de compte en cascade) ;
-  puis supprime les codes et jetons **morts** (échus, ou d'une connexion révoquée ; un code échangé ou un
-  rafraîchissement tourné d'une connexion active reste jusqu'à son échéance, sa ligne reconnaissant le
-  rejeu). Limite acceptée : un cycle entre lignes de `mcp_connection` seules (la purge, puis une
+  puis supprime les codes, les jetons d'accès puis les rafraîchissements **morts** (échus, ou d'une
+  connexion révoquée ; un code échangé ou un rafraîchissement tourné d'une connexion active reste jusqu'à
+  son échéance, sa ligne reconnaissant le rejeu) — A avant R, l'ordre du point de révocation, du grant de
+  league et de la cascade (relecture du lot B de #649 : R puis A laissait un cycle avec la révocation d'un
+  rafraîchissement sur une connexion déjà révoquée aux jetons pas encore purgés ; le prix, des remises à
+  NULL sur des lignes mortes seulement). Limite acceptée : un cycle entre lignes de `mcp_connection` seules (la purge, puis une
   suppression de compte en cascade) reste possible ; PostgreSQL annule l'une, le Job réessaie. Une ligne
   d'audit par connexion marquée, après le COMMIT. **Pas de `--dry-run`** : elle ne supprime que des jetons
   morts et des connexions mortes depuis des mois, rien qu'une personne pourrait regretter (la purge des

@@ -156,7 +156,7 @@ once, at the cost of dev CLI traces: not done, an open question of #420.
 A test that puts real processes in a race (`RateLimiterConcurrencyTest`, `ContributionOrderConcurrencyTest`,
 `SendAccountInvitationConcurrencyTest`, `PasswordSetupActivationConcurrencyTest`, `ReinviteConcurrencyTest`,
 `InviteUsernameConcurrencyTest`, `AccountAdministrationConcurrencyTest`, `TokenEndpointConcurrencyTest`,
-`RevocationEndpointConcurrencyTest`)
+`RevocationEndpointConcurrencyTest`, `RevocationEndpointPurgeDeadlockTest`)
 goes through **one harness, written once**. `tests/Support/ChildPhpProcess::inTestEnvironment()` builds the
 child's `Process`: its command line (above) and a copy of the test's `$_SERVER`, where `phpunit.dist.xml`'s
 `<server force="true">` values live (a real `ANTHROPIC_API_KEY` exported in the shell must not reach the
@@ -184,8 +184,12 @@ returns as soon as the child has **finished** or **its** session waits on any `L
 `tests/Shared/FlushInterleavingTest.php` exercises it on a real child (blocked on an advisory lock the test
 holds, finished, neither); `ChildProcessHarnessTest` also refuses, in `tests/`, any class constant
 `::preFlush` / `::onFlush` / `::postFlush` (whatever the class is called: `Events`, an alias, inside an
-attribute) and any string literal naming `pg_stat_activity` outside it (plus that test, and the guard
-naming the view) — broad on purpose: a test with another use joins its pattern's owners with its reason.
+attribute) and any string literal naming `pg_stat_activity` outside its **three owners**: `FlushInterleaving`,
+the guard itself (it names the view to look for it) and `RevocationEndpointPurgeDeadlockTest` (#649, B1), which
+polls the view with a wait loop of its own — the revocation and the purge go through no ORM flush, so
+`FlushInterleaving` cannot interleave them, and the test waits for the child's session to block on a lock; that
+loop duplicates `FlushInterleaving`'s and lot C of the #649 reviews will extract it, the guard's list then shrinking
+back — broad on purpose: a test with another use joins its pattern's owners with its reason.
 Not seen: a listener armed on the event's name written as a string (`'preFlush'`), a view name built by
 concatenation. The wait returns once the child has finished **whatever its exit code**: each caller checks
 it, and names the refusal it expects or denounces.

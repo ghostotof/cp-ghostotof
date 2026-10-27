@@ -31,8 +31,10 @@ use Symfony\Component\Uid\Uuid;
  * connexions révoquées avant la rétention — une suppression verrouille ses
  * lignes, et la placer après celle des jetons prendrait des connexions après
  * des jetons, l'ordre qu'une suppression de compte en cascade (`cpg_user` →
- * `mcp_connection` → jetons) croiserait ; puis suppression des codes et
- * jetons morts. **L'audit suit le COMMIT** : une
+ * `mcp_connection` → jetons) croiserait ; puis suppression des codes, des
+ * jetons d'accès et des rafraîchissements morts — A avant R, l'ordre de qui
+ * touche les deux (le point de révocation, le grant de league, la cascade de
+ * la suppression d'un jeton d'accès). **L'audit suit le COMMIT** : une
  * ligne `mcp-connection-revoked` (acteur `system`) par connexion marquée, aucune
  * si la transaction est annulée.
  *
@@ -50,9 +52,13 @@ final readonly class McpConnectionPurger implements McpConnectionPurgerInterface
      * sont reculées d'un jour, pour qu'aucune connexion qu'`isExpiredAt()` dit
      * expirée n'y échappe — `$now - P30D` et l'échéance `dernier usage + P30D`
      * ne se répondent qu'à l'heure près autour d'un changement d'heure. La
-     * présélection est large, le jugement exact.
+     * présélection est large, le jugement exact. C'est aussi le plancher des
+     * deux durées de connexion, que {@see ConnectionLifetimes} refuse en
+     * dessous (relecture du lot B de #649) : plus courtes que la marge, la
+     * borne serait dans le futur et chaque connexion active serait verrouillée
+     * à chaque nuit — une constante pour les deux, lue là.
      */
-    private const string PRESELECTION_MARGIN = 'P1D';
+    private const string PRESELECTION_MARGIN = ConnectionLifetimes::MINIMUM_CONNECTION_LIFETIME;
 
     public function __construct(
         private McpConnectionRepositoryInterface $connections,
@@ -89,11 +95,19 @@ final readonly class McpConnectionPurger implements McpConnectionPurgerInterface
             // connexion révoquée sont morts, supprimés la nuit suivante.
             'connections' => $this->connections->deleteRevokedBefore($threshold),
             'codes' => $this->authorizationCodes->deleteDead($now),
-            // Les rafraîchissements avant les jetons d'accès : chaque jeton
-            // d'accès supprimé remet à NULL le lien des rafraîchissements
-            // restants (`ON DELETE SET NULL`), moins nombreux ainsi.
-            'refreshTokens' => $this->refreshTokens->deleteDead($now),
+            // Les jetons d'accès avant les rafraîchissements : A puis R, comme
+            // le point de révocation, le grant de rafraîchissement de league et
+            // la cascade `ON DELETE SET NULL` d'un jeton d'accès supprimé. Dans
+            // l'ordre inverse, une révocation d'un rafraîchissement sur une
+            // connexion déjà révoquée dont les jetons ne sont pas encore purgés
+            // tenait A et attendait R quand cette purge tenait R (son `DELETE`)
+            // et attendait A : un interblocage (40P01). Le prix : chaque jeton
+            // d'accès supprimé remet à NULL le lien des rafraîchissements qui
+            // lui survivent encore — parmi eux les rafraîchissements morts que
+            // l'instruction suivante supprime, réécrits pour rien ; des lignes
+            // mortes seulement.
             'accessTokens' => $this->accessTokens->deleteDead($now),
+            'refreshTokens' => $this->refreshTokens->deleteDead($now),
         ]);
 
         // Après le COMMIT : une transaction annulée n'a rien révoqué.

@@ -84,8 +84,10 @@ final readonly class AuthCodeRepository implements AuthCodeRepositoryInterface
      *     se croiser, chacun lisant le code non révoqué avant que l'autre
      *     l'ait échangé (la course de league, fermée ici) — disparue, le code
      *     est mort ;
-     *  3. le code **relu sous le verrou** : l'échange qu'une requête
-     *     concurrente a validé pendant l'attente se voit maintenant ;
+     *  3. le code **relu sous le verrou** (rereadUnderConnectionLock(), la
+     *     relecture sous verrou du projet, #560) : l'échange qu'une requête
+     *     concurrente a validé pendant l'attente se voit maintenant —
+     *     disparu (purgé pendant l'attente), le code est mort ;
      *  4. la connexion révoquée : mort, sans seconde révocation ni audit ;
      *  5. le code révoqué sur une connexion active : il a été échangé, et
      *     revient — {@see AuthorizationCodeReplayedException}, que le point
@@ -119,7 +121,7 @@ final readonly class AuthCodeRepository implements AuthCodeRepositoryInterface
             return true;
         }
 
-        $code = $this->codes->findOneByHash($hash);
+        $code = $this->codes->rereadUnderConnectionLock($code->getId());
         if (null === $code) {
             return true;
         }

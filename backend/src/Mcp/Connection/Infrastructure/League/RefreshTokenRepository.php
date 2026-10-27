@@ -96,8 +96,10 @@ final readonly class RefreshTokenRepository implements RefreshTokenRepositoryInt
      *     lieu de se croiser, chacun lisant le jeton non révoqué avant que
      *     l'autre l'ait tourné (la course de league, fermée ici) — disparue,
      *     le jeton est mort ;
-     *  3. le jeton **relu sous le verrou** : une rotation qu'une requête
-     *     concurrente a validée pendant l'attente se voit maintenant ;
+     *  3. le jeton **relu sous le verrou** (rereadUnderConnectionLock(), la
+     *     relecture sous verrou du projet, #560) : une rotation qu'une requête
+     *     concurrente a validée pendant l'attente se voit maintenant —
+     *     disparu (purgé pendant l'attente), le jeton est mort ;
      *  4. la connexion révoquée : mort, sans seconde révocation ni audit ;
      *  5. le jeton révoqué sur une connexion active : il a été tourné, et
      *     revient — {@see RotatedRefreshTokenReusedException}, que le point
@@ -135,7 +137,7 @@ final readonly class RefreshTokenRepository implements RefreshTokenRepositoryInt
             return true;
         }
 
-        $token = $this->tokens->findOneByHash($hash);
+        $token = $this->tokens->rereadUnderConnectionLock($token->getId());
         if (null === $token) {
             return true;
         }

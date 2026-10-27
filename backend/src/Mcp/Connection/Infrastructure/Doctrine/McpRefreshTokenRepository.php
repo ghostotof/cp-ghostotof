@@ -6,19 +6,22 @@ namespace App\Mcp\Connection\Infrastructure\Doctrine;
 
 use App\Mcp\Connection\Domain\Entity\McpRefreshToken;
 use App\Mcp\Connection\Domain\Repository\McpRefreshTokenRepositoryInterface;
+use App\Shared\Infrastructure\Doctrine\RereadUnderLock;
 use DateTimeImmutable;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\DBAL\Types\Types;
-use Doctrine\ORM\Query;
 use Doctrine\Persistence\ManagerRegistry;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * @extends ServiceEntityRepository<McpRefreshToken>
  */
 class McpRefreshTokenRepository extends ServiceEntityRepository implements McpRefreshTokenRepositoryInterface
 {
-    public function __construct(ManagerRegistry $registry)
-    {
+    public function __construct(
+        ManagerRegistry $registry,
+        private readonly RereadUnderLock $rereadUnderLock,
+    ) {
         parent::__construct($registry, McpRefreshToken::class);
     }
 
@@ -29,12 +32,9 @@ class McpRefreshTokenRepository extends ServiceEntityRepository implements McpRe
     }
 
     /**
-     * Relu tel qu'en base (`HINT_REFRESH`), jamais tel que l'EntityManager le
-     * tient (#649) : le point de jeton lit le jeton, verrouille sa connexion,
-     * puis le relit sous le verrou — une rotation qu'une requête concurrente
-     * a validée entre-temps doit se voir, et sans l'indice Doctrine rendrait
-     * l'instance déjà gérée sans la rafraîchir. La connexion jointe est
-     * rafraîchie de même.
+     * Une lecture ordinaire, la connexion jointe : aucun `HINT_REFRESH` — la
+     * relecture sous verrou n'est écrite qu'une fois dans le projet,
+     * {@see self::rereadUnderConnectionLock()} (relecture du lot B de #649).
      */
     public function findOneByHash(string $tokenHash): ?McpRefreshToken
     {
@@ -45,8 +45,21 @@ class McpRefreshTokenRepository extends ServiceEntityRepository implements McpRe
             ->where('token.tokenHash = :tokenHash')
             ->setParameter('tokenHash', $tokenHash)
             ->getQuery()
-            ->setHint(Query::HINT_REFRESH, true)
             ->getOneOrNullResult();
+    }
+
+    /**
+     * La relecture sous verrou du projet ({@see RereadUnderLock::row()},
+     * `.claude/rules/backend-architecture.md`), sans `FOR UPDATE` : le verrou
+     * tenu est celui de la connexion (`lockForIssuance()`), et c'est lui qui
+     * sérialise deux rafraîchissements d'un même jeton. `HINT_REFRESH` : la
+     * rotation qu'une requête concurrente a validée pendant l'attente se voit
+     * ; sans lui Doctrine rendrait l'instance déjà gérée sans la rafraîchir.
+     * La connexion n'est pas jointe : elle vient d'être relue sous son verrou.
+     */
+    public function rereadUnderConnectionLock(Uuid $tokenId): ?McpRefreshToken
+    {
+        return $this->rereadUnderLock->row($this->getEntityManager(), McpRefreshToken::class, $tokenId, forUpdate: false);
     }
 
     /**
