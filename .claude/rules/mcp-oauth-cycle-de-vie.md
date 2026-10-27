@@ -264,9 +264,11 @@ paths:
   public client's `client_id` is none (it is in the authorization request, whoever replays a code can name the right
   one), and the refusal is the one league gave before the revocation, word for word; the audit line names the
   connection's client, never the replayer's. **The proof judges the verifier alone** (#726, audit I2):
-  league checks the `redirect_uri` after the repository too, so a proven replay revokes under another `client_id`
-  **or another registered `redirect_uri`** alike (`testAReplayUnderAnotherRedirectRevokesTheConnectionToo`, the
-  client's other registered redirect: an unregistered one is league's `invalid_client`, judged before the code). A code
+  at the token endpoint league compares the presented `redirect_uri` only with the code's own, after the repository
+  (`validateAuthorizationCode()`; never with the client's registered list, and `TokenEndpoint` adds no check), so a
+  proven replay revokes under another `client_id` **or another `redirect_uri`, registered or not**, alike
+  (`testAReplayUnderAnotherRedirectRevokesTheConnectionToo`, both cases; red under a proof also requiring the code's
+  `redirect_uri`, measured). A code
   presented **first** by another client is refused by
   league (« not issued to this client ») after a repository call that writes nothing: the code stays exchangeable by
   its client, the connection intact, no line (`testACodePresentedFirstByAnotherClientConsumesNothing`).
@@ -314,7 +316,8 @@ paths:
   deletion (`cpg_user` → `mcp_connection`, physical order) — `40P01`, harmless: an aborted exchange wrote nothing and
   the account goes; nothing retries a `40P01`, so an aborted deletion — the backoffice's
   `CpgUserAdministrator::delete()`, the only path that can reach an account holding a connection (the pending-invitation
-  purge removes accounts never activated) — answers a 500, deletes and audits nothing, and is asked again by hand.
+  purge removes accounts awaiting password setup, without a password, which cannot sign in, and
+  `CpgUserInviter::invite()`'s removal on a full queue only reaches the account it just created, without a password) — answers a 500, deletes and audits nothing, and is asked again by hand.
   **Accepted limit, new** (#726): two simultaneous exchanges of
   **two** codes of one pair (two grants of one account to one client, same millisecond) each hold
   their connection and wait for the other's — PostgreSQL aborts one (`40P01`, a 500), the other passes and revokes the

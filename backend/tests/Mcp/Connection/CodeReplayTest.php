@@ -8,6 +8,7 @@ use App\Tests\Mcp\Support\HeldMcpConnection;
 use App\Tests\Mcp\Support\HoldsAnMcpConnection;
 use App\Tests\Support\ReadsSecurityAuditLog;
 use Monolog\LogRecord;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -47,13 +48,6 @@ final class CodeReplayTest extends WebTestCase
 
     /** Le refus de league pour un code révoqué, mot pour mot. */
     private const string REPLAY_HINT = 'Authorization code has been revoked';
-
-    /**
-     * L'autre redirection enregistrée du client du flux (DrivesTheOAuthFlow) :
-     * league valide la redirection présentée contre le client avant le code,
-     * une redirection inconnue serait un `invalid_client` sans jugement du rejeu.
-     */
-    private const string OTHER_REGISTERED_REDIRECT = 'https://client.example.test/callback';
 
     protected function setUp(): void
     {
@@ -184,23 +178,39 @@ final class CodeReplayTest extends WebTestCase
     }
 
     /**
-     * Le jumeau du précédent pour la redirection (#726, audit I2) : league
-     * compare aussi le `redirect_uri` à celui du code **après** le dépôt, si
-     * bien qu'un rejeu prouvé sous une autre redirection enregistrée du même
-     * client révoque la connexion lui aussi — la preuve juge le vérificateur
+     * Le jumeau du précédent pour la redirection (#726, audit I2) : au point
+     * de jeton, league 9.4.1 ne compare le `redirect_uri` présenté qu'à celui
+     * du code (`validateAuthorizationCode()`), **après** le dépôt — jamais à
+     * la liste enregistrée du client, et `TokenEndpoint` n'en ajoute aucune
+     * vérification. Un rejeu prouvé sous une autre redirection, enregistrée ou
+     * non, révoque donc la connexion lui aussi : la preuve juge le vérificateur
      * seul. Le même refus mot pour mot, la cause `code-replay`.
      */
-    public function testAReplayUnderAnotherRedirectRevokesTheConnectionToo(): void
+    #[DataProvider('otherRedirects')]
+    public function testAReplayUnderAnotherRedirectRevokesTheConnectionToo(string $otherRedirect): void
     {
         $code = $this->grantedCode();
         $held = $this->heldMcpConnectionOf($this->exchange($code));
 
-        $replay = $this->exchange($code, ['redirect_uri' => self::OTHER_REGISTERED_REDIRECT]);
+        $replay = $this->exchange($code, ['redirect_uri' => $otherRedirect]);
 
         $this->assertOAuthError($replay, Response::HTTP_BAD_REQUEST, 'invalid_grant');
         self::assertSame(self::REPLAY_HINT, $this->json($replay)['hint'] ?? null);
         self::assertSame('code-replay', $this->revocationCauseOf($held));
         self::assertSame('code-replay', self::singleSecurityAuditEvent(self::REVOKED_EVENT)['cause'] ?? null);
+    }
+
+    /**
+     * Une redirection autre que celle du code (le flux présente la boucle
+     * locale de DrivesTheOAuthFlow) : l'autre redirection enregistrée du
+     * client, puis une que personne n'a enregistrée.
+     *
+     * @return iterable<string, array{string}>
+     */
+    public static function otherRedirects(): iterable
+    {
+        yield 'enregistrée' => ['https://client.example.test/callback'];
+        yield 'non enregistrée' => ['https://unregistered.example.test/elsewhere'];
     }
 
     /**
