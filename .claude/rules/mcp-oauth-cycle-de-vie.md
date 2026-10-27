@@ -74,7 +74,7 @@ paths:
   (`testRevokeActiveWorksOnAClosedEntityManager`). The database decides: the first revocation keeps its instant and
   cause, a second one (or an unknown id) returns `null`; it returns a `RevokedConnection` (a
   `Shared/Domain/Security/McpConnectionReference`: the account's UUID, the connection's, the client's **public**
-  `client_id` — plus the cause) read from the written row, never from an
+  `client_id` — plus `cause()`; four accessors, no public property) read from the written row, never from an
   instance loaded earlier — which is **not** refreshed, like the tokens' `revokeByHash()`. The database refuses a
   half revocation, an instant without a cause or the reverse (`chk_mcp_connection_revocation_cause`,
   `CHECK ((revoked_at IS NULL) = (revocation_cause IS NULL))`, SQLSTATE 23514 — DBAL 4.5 has no dedicated
@@ -167,7 +167,11 @@ paths:
   `LeagueRevocationEndpoint::revokeRefreshToken()` revokes the connection, through `revokeActive()`, the token and its
   access token in **one transaction**, which returns the `?RevokedConnection`; the audit line is written after the
   COMMIT, only when this revocation took effect (a connection already revoked keeps its first instant, cause and
-  line). **The lock order is C → A → R**: the connection first, re-read `FOR UPDATE` (`lockForUpdate()`), then
+  line). The access token's hash is read **before** the transaction, on the instance
+  `McpRefreshTokenRepository::findOneByHash()` loads with the refresh token (a `leftJoin`, lot C of the reviews): left a
+  lazy proxy, it was initialised there, and the purge deleting A in between made it throw `EntityNotFoundException`, a
+  500, where the cascade's NULL reads `null`; loaded, the hash stays readable and revoking a row already gone touches
+  nothing (`McpRefreshTokenRepositoryTest`, red without the join, measured). **The lock order is C → A → R**: the connection first, re-read `FOR UPDATE` (`lockForUpdate()`), then
   `revokeActive()`, then the access token and **then** the refresh token (`revokeByHash()`). Two reasons, not the
   token endpoint's own order (which fixes C before the tokens only). **C before the tokens** is the token endpoint's:
   the refresh takes C, then A, then R; a revocation taking R and A before C deadlocked with a refresh of the same
@@ -180,8 +184,10 @@ paths:
   SET NULL` then updates R (its cascade); and the purge's own `DELETE`s run A then R (lot B of the reviews — delivered
   R then A, « fewer SET NULL rewrites », they left a residual cycle: a `/revoke` of a refresh token on an **already
   revoked** connection whose dead tokens were not purged yet held A and waited on R while the purge held R, its
-  refresh-token `DELETE`, and waited on A, `40P01`; the price of A then R is a SET NULL rewrite on the dead R rows the
-  next statement deletes, nothing on a live row). Revoking R before A (the first delivery of #649) deadlocked with that purge:
+  refresh-token `DELETE`, and waited on A, `40P01`; deleting an A rewrites every R that outlives it in either order, a
+  live R whose access token expired included — the *extra* cost of A then R over R then A is the SET NULL rewrite on
+  the dead R rows the next statement deletes, nothing more; pinned in real processes by
+  `McpConnectionPurgeLockOrderTest`, lot C). Revoking R before A (the first delivery of #649) deadlocked with that purge:
   the revocation held R and waited on A, the purge held A (its `DELETE`) and waited on R (the cascade's SET NULL) —
   `40P01`; the purge does not hold C for a non-candidate (active) connection, so C guards nothing here. When the
   revocation was the victim, it answered a 500, the connection stayed active and no audit line was written while the
@@ -247,7 +253,8 @@ paths:
   path above, inside a transaction: **one native SQL statement** like `revokeActive()` (`UPDATE mcp_connection c …
   FROM mcp_client cl WHERE c.account_id = :account AND c.mcp_client_id = :client AND c.id <> :kept AND c.revoked_at
   IS NULL … RETURNING c.id, c.account_id, cl.client_id`; the statement and its row mapping are written once for the
-  three revocations, `McpConnectionRepository::revokeWhere()`, only the `WHERE` differing — lot C of the reviews), served by the
+  three revocations, `McpConnectionRepository::revokeWhere()`, only the `WHERE` differing, one of its three private
+  `WHERE_*` constants — `@param self::WHERE_*`, so no caller composes SQL — lot C of the reviews), served by the
   partial index `idx_mcp_connection_active_pair`; it returns a `list<RevokedConnection>`. After the COMMIT,
   `mcp-connection-granted` first, then one `mcp-connection-revoked` per superseded connection (cause `superseded`,
   the person as actor); a rolled-back grant audits nothing, a denial revokes nothing (`ConsentServiceTest`). One
@@ -285,7 +292,10 @@ paths:
   `Malformed` nor `Unknown`**: no connection is known there, and a flood of garbage tokens must write no audit line
   (`testAMalformedOrUnknownTokenIsNotAudited`). **Volume**: a healthy client sees its access token expire once an
   hour (`access_token`, `PT1H`), then refreshes — at most one line per connection and per hour in normal use; more
-  means a client that does not refresh, or a connection used after its revocation or expiry. **No query more**: the
+  means a client that does not refresh, or a connection used after its revocation or expiry — and that bound holds
+  for **normal use only**: a known refused token replayed on purpose writes one line per request, bounded by nothing
+  but the nginx `mcp` zone (60 a minute per IP and per pod), accepted since the line names a connection that exists and
+  a client that keeps presenting it. **No query more**: the
   line goes to the Monolog channel, and the connection, its account and its client are those of the token's single
   join (`testARefusedKnownTokenCostsNoExtraQuery`: the refused call costs exactly the accepted call's
   authentication query, judged on the token and on the tier). Never the token nor its hash in the line
@@ -312,8 +322,15 @@ paths:
   dead and went the night after its revocation, so the counters are unchanged; (5) `deleteDead($now)` on codes, **access
   tokens, then refresh tokens** — A before R, the order of the revocation endpoint, of league's refresh grant and of
   the cascade (lot B of the reviews: R then A left the residual cycle told in « Revoking a refresh token at the
-  revocation endpoint », above; the price is a SET NULL rewrite on dead R rows the next statement deletes, measured
-  by no counter: `McpConnectionPurgerTest` counts the same two, two, two): `expires_at <= :now` **or** a revoked connection
+  revocation endpoint », above; deleting an A rewrites every R that outlives it whatever the order — a live R whose
+  access token expired included —, the *extra* cost of A then R being the SET NULL rewrite on dead R rows the next
+  statement deletes, measured by no counter: `McpConnectionPurgerTest` counts the same two, two, two). **Both orders are
+  pinned in real processes** (lot C of the reviews, `McpConnectionPurgeLockOrderTest`, child
+  `Fixtures/purge-mcp-connections.php` running the real purger, `.claude/rules/backend-outillage.md`): the test holds the
+  other side's first row, waits for the purge's session to block, then asks for the second — an old revoked connection
+  then its access token (the cascade's order) for (4) before (5); the connection, its access token, then its refresh
+  token (the revocation endpoint's) for A before R; each inverted order deadlocks the purge in `40P01`, measured, the
+  other test staying green: `expires_at <= :now` **or** a revoked connection
   (one DQL `DELETE … WHERE expires_at <= :now OR connection_id IN (SELECT … revoked_at IS NOT NULL)`, written once
   for the three tables in `Infrastructure/Doctrine/DeletesDeadTokens` since lot C — the rows of the former `DELETE …
   USING mcp_connection`, the foreign key being non-null —, which locks no connection row) — a rotated refresh token or an exchanged code of an
@@ -341,3 +358,19 @@ paths:
   through `RoleHierarchyInterface`, the name `McpConnectionPrincipal::TRUSTED_TIER` — used by
   `McpBearerAuthenticator` on every request of `/api/mcp` (behaviour unchanged, `McpBearerAuthenticatorTest`) and
   by the refresh. A new site that judges the tier goes through it.
+- **Accepted limits of #649, decided by the author on 2026-10-27, kept as they are and tracked by issue #726** (the
+  reviews' lot C; each is behaviour, not a defect to fix in passing — revisit through #726 only):
+  1. **Two concurrent legitimate refreshes of one token revoke the connection** (`refresh-token-reuse`): the second,
+     serialized behind the first's lock, re-reads the rotated token and is judged a reuse. No grace window (RFC 6819
+     §5.2.2.3's « short period » where the old token is still accepted): a client that retries a refresh whose answer
+     was lost, or two workers of one client refreshing together, lose their connection and reconnect.
+  2. **A new grant revokes the previous one at approval**, in the consent's transaction, before the new code is
+     exchanged: an approval whose flow is then abandoned (the client never exchanges the code, the redirect fails)
+     leaves the person with no connection at all until they consent again.
+  3. **A replayed code is judged before the client binding and before PKCE** (league's order, `isAuthCodeRevoked()`
+     first): whoever intercepts a code can, within its ten minutes, present it a second time under any registered
+     `client_id` and without the verifier, and cut the connection it issued — without being able to exchange anything.
+  4. **The purge holds its candidate connections locked (`FOR UPDATE`, (1) above) during all its deletions**: a refresh
+     of a still-live candidate (last used 29 days ago, say, pre-selected by the wide bound) waits on that lock up to
+     FPM's `lock_timeout` (5 s) and answers 500 if the purge's transaction lasts longer — a few milliseconds on bounded
+     tables today.

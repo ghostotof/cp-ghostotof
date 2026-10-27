@@ -365,8 +365,11 @@ décision du 2026-10-19, voir « Langue invalide »).
   client pré-enregistré ne restent pas connectés ensemble), servi par un index partiel, **non unique**,
   sur les connexions actives. Limite acceptée : deux approbations simultanées du même couple (un double
   clic) peuvent laisser deux connexions actives, la seconde jamais utilisée, qui expire après 30 jours
-  sans usage — une contrainte d'unicité partielle, écartée, ferait de ce double clic un 500. Règle :
-  `.claude/rules/mcp-oauth-cycle-de-vie.md`.
+  sans usage — une contrainte d'unicité partielle, écartée, ferait de ce double clic un 500. Limite
+  acceptée aussi (décision de l'auteur du 2026-10-27, suivie par #726) : l'accord précédent est révoqué
+  **à l'approbation**, avant que le nouveau code soit échangé — un parcours abandonné après l'approbation
+  (code jamais échangé, redirection perdue) laisse la personne sans connexion jusqu'à un nouveau
+  consentement. Règle : `.claude/rules/mcp-oauth-cycle-de-vie.md`.
 - **Durées** (configuration) : jeton d'accès 1 h ; jeton de rafraîchissement 30 jours, **rotation à
   chaque usage** et refus de la réutilisation d'un jeton déjà tourné (qui révoque la connexion) ;
   connexion expirée après 30 jours sans usage et au plus tard 90 jours après son octroi.
@@ -389,7 +392,12 @@ décision du 2026-10-19, voir « Langue invalide »).
   active. **Prix accepté de la rotation** : un client qui rejoue son rafraîchissement après une réponse
   perdue perd sa connexion et doit se reconnecter. Limites acceptées : un code rejoué après ses dix
   minutes est un simple `invalid_grant` sans révocation (league le juge sur sa charge chiffrée) ; un code
-  rejoué sous un autre `client_id` révoque aussi la connexion de son vrai client.
+  rejoué sous un autre `client_id` révoque aussi la connexion de son vrai client. Limites acceptées aussi
+  (décision de l'auteur du 2026-10-27, suivies par #726) : deux rafraîchissements **légitimes** et
+  simultanés d'un même jeton révoquent la connexion (`refresh-token-reuse`, le second relisant sous le
+  verrou le jeton que le premier a tourné), sans fenêtre de grâce ; et un code rejoué est jugé **avant** la
+  liaison au client et avant PKCE (l'ordre de league) — qui intercepte un code peut, dans ses dix minutes,
+  couper la connexion qu'il a émise sans pouvoir rien échanger.
 - **Parcours d'autorisation.** Le point d'autorisation valide la requête (client, redirection exacte,
   PKCE, `resource`, scope) puis renvoie le navigateur vers la page de consentement du frontend. La page
   exige une session du site au palier de confiance (sinon passage par la connexion, puis retour). Le
@@ -444,8 +452,11 @@ décision du 2026-10-19, voir « Langue invalide »).
   la valeur de `BearerRefusal`), trace le refus sur `/api/mcp` d'un jeton d'accès **connu** — révoqué,
   échu, d'une autre audience, d'une connexion révoquée ou expirée, sans le scope, d'un compte hors du
   palier de confiance —, jamais d'un jeton mal formé ou inconnu (un flot de jetons quelconques n'écrit
-  rien), sans requête de plus que l'authentification ; au plus une ligne par connexion et par heure pour
-  un client qui rafraîchit normalement. Jamais un jeton, un code ni leur empreinte dans une ligne.
+  rien), sans requête de plus que l'authentification. Volume : au plus une ligne par connexion et par
+  heure **en usage normal seulement** (un client qui rafraîchit) ; un jeton connu et refusé, rejoué à
+  dessein, écrit **une ligne par requête**, borné par la seule zone nginx `mcp` (60 requêtes par minute,
+  par IP et par pod) — accepté, la ligne désigne une connexion qui existe et un client qui la présente
+  encore. Jamais un jeton, un code ni leur empreinte dans une ligne.
 - **« Mes connexions MCP »** : page frontend réservée au palier de confiance, liste et révocation ;
   API correspondante sous `ROLE_TRUSTED`, qui ne rend que les connexions du compte appelant.
 - **Backoffice** : liste de toutes les connexions MCP, et gestion des clients pré-enregistrés, sous
@@ -475,9 +486,18 @@ décision du 2026-10-19, voir « Langue invalide »).
   connexion révoquée ; un code échangé ou un rafraîchissement tourné d'une connexion active reste jusqu'à
   son échéance, sa ligne reconnaissant le rejeu) — A avant R, l'ordre du point de révocation, du grant de
   league et de la cascade (relecture du lot B de #649 : R puis A laissait un cycle avec la révocation d'un
-  rafraîchissement sur une connexion déjà révoquée aux jetons pas encore purgés ; le prix, des remises à
-  NULL sur des lignes mortes seulement). Limite acceptée : un cycle entre lignes de `mcp_connection` seules (la purge, puis une
-  suppression de compte en cascade) reste possible ; PostgreSQL annule l'une, le Job réessaie. Une ligne
+  rafraîchissement sur une connexion déjà révoquée aux jetons pas encore purgés ; supprimer un jeton
+  d'accès remet à NULL le lien de chaque rafraîchissement qui lui survit, dans un ordre comme dans
+  l'autre, un rafraîchissement vivant dont le jeton d'accès a expiré compris — le **surcoût** de A puis R
+  sur R puis A, lui, ne touche que des lignes mortes, les rafraîchissements que l'instruction suivante
+  supprime). Les deux ordres sont pincés en processus réels, la vraie purge contre un test qui tient les
+  lignes de l'autre côté (`McpConnectionPurgeLockOrderTest`, lot C des relectures). Limite acceptée : un cycle entre lignes de `mcp_connection` seules (la purge, puis une
+  suppression de compte en cascade) reste possible ; PostgreSQL annule l'une, le Job réessaie. Limite
+  acceptée aussi (décision de l'auteur du 2026-10-27, suivie par #726) : la purge garde ses connexions
+  candidates verrouillées (`FOR UPDATE`) pendant toutes ses suppressions — le rafraîchissement d'une
+  candidate encore vivante (présélection large) attend ce verrou jusqu'au `lock_timeout` de FPM (5 s) et
+  répond 500 si la transaction de la purge dure plus, quelques millisecondes aujourd'hui sur des tables
+  bornées. Une ligne
   d'audit par connexion marquée, après le COMMIT. **Pas de `--dry-run`** : elle ne supprime que des jetons
   morts et des connexions mortes depuis des mois, rien qu'une personne pourrait regretter (la purge des
   invitations a le sien parce qu'elle supprime des comptes).

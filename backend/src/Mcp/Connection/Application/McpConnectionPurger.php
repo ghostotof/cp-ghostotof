@@ -94,11 +94,14 @@ final readonly class McpConnectionPurger implements McpConnectionPurgerInterface
             // l'ordre inverse, une révocation d'un rafraîchissement sur une
             // connexion déjà révoquée dont les jetons ne sont pas encore purgés
             // tenait A et attendait R quand cette purge tenait R (son `DELETE`)
-            // et attendait A : un interblocage (40P01). Le prix : chaque jeton
-            // d'accès supprimé remet à NULL le lien des rafraîchissements qui
-            // lui survivent encore — parmi eux les rafraîchissements morts que
-            // l'instruction suivante supprime, réécrits pour rien ; des lignes
-            // mortes seulement.
+            // et attendait A : un interblocage (40P01). Chaque jeton d'accès
+            // supprimé remet à NULL le lien des rafraîchissements qui lui
+            // survivent, dans un ordre comme dans l'autre — un rafraîchissement
+            // vivant dont le jeton d'accès a expiré compris. Le surcoût de A
+            // puis R sur R puis A, lui, ne touche que des lignes mortes : les
+            // rafraîchissements morts que l'instruction suivante supprime,
+            // réécrits pour rien. McpConnectionPurgeLockOrderTest pince les
+            // deux ordres de cette transaction en processus réels.
             'accessTokens' => $this->accessTokens->deleteDead($now),
             'refreshTokens' => $this->refreshTokens->deleteDead($now),
         ]);

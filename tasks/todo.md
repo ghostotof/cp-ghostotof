@@ -106,9 +106,13 @@ phase 1 parte en release seule ; puis au merge de clôture, qui archive la spec 
       d'une connexion expirée ou d'un compte déchu~~ (refusé, rien d'écrit) ; ~~refus d'un jeton connu non
       audité~~ (`mcp-access-token-refused`). **Restent, portés ailleurs** : la cause `person` et les
       connexions accumulées visibles et révocables (#650, corps et commentaire) ; l'audit de la
-      suppression en cascade des connexions au retrait d'un client (#652, commentaire). **Restent, portés
-      par aucune issue** : les autres refus OAuth de league non journalisés ; la connexion jamais utilisée
-      d'un double clic sur l'approbation (limite acceptée, à montrer dans #650). Notes de la release :
+      suppression en cascade des connexions au retrait d'un client (#652, commentaire). **Portés depuis le
+      2026-10-27** : les autres refus OAuth de league non journalisés → #725 ; la connexion jamais utilisée
+      d'un double clic sur l'approbation (limite acceptée, à montrer dans #650) → #650, commentaire du
+      2026-10-27 ; les quatre limites acceptées du lot C des relectures (deux rafraîchissements légitimes
+      simultanés révoquent, l'accord précédent révoqué à l'approbation, le code rejoué jugé avant la liaison
+      au client et PKCE, les candidates de la purge verrouillées pendant ses suppressions) → #726, écrites
+      dans la règle `mcp-oauth-cycle-de-vie.md` et la spec. Notes de la release :
       migration `Version20261026120000` (colonne `revocation_cause`, contrainte `CHECK`, index partiel) ;
       troisième commande `app:mcp:purge` au CronJob de ménage quotidien
 - [ ] Tâche 11 — « Mes connexions MCP » (#650) — bloquée par : #648 — reports de la tâche 8 :
@@ -136,7 +140,7 @@ phase 1 parte en release seule ; puis au merge de clôture, qui archive la spec 
       seule, jamais le texte) contre `QUEUED_ANSWER_MAX_BYTES` ; CORS n'expose pas `WWW-Authenticate` ;
       la page publique de confidentialité dit encore « Aucun transfert de données hors de l'Union
       européenne » (`frontend/src/infrastructure/portfolio/content/fr.ts` et `en.ts`), contredite par
-      le registre §8 à la sortie de la phase 2 ; un `pdftotext` et une ligne d'audit par appel de
+      le registre §8 à la sortie de la phase 2 (→ #653, commentaire du 2026-10-27) ; un `pdftotext` et une ligne d'audit par appel de
       l'outil nominatif, sans quota par connexion — et le corpus rendu en entier avant d'être refusé
       pour sa taille (le refus coûte une lecture), à traiter avec ce quota ; contrôler au smoke
       préprod le `WWW-Authenticate` réel par la recherche de mentions D8

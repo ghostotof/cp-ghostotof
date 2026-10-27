@@ -1,5 +1,12 @@
 # Tâche 10 (#649) — Durée de vie des jetons, rotation et purge : plan d'implémentation
 
+> **Plan exécuté** (les dix tâches faites et relues le 2026-10-26), gardé tel quel comme trace. Deux noms
+> qu'il cite ont changé sous les relectures qui ont suivi, voir l'historique git de la branche :
+> `lockForIssuance()` est devenu `McpConnectionRepositoryInterface::lockForUpdate()`, et le plancher d'un
+> jour de la purge (`McpPurgeRetentionTooShortException::belowOneDay()`) vit dans
+> `RetentionPeriod::thresholdAtLeastOneDayBefore()` (`InvalidRetentionPeriodException::shorterThanOneDay()`),
+> partagé avec la purge des invitations.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal :** une connexion MCP se renouvelle sans nouveau consentement tant qu'elle vit, meurt après 30 jours
