@@ -65,8 +65,11 @@ paths:
   `revokedAt` nor of `revocationCause` (`Domain/ValueObject/RevocationCause`: `client`, `refresh-token-reuse`,
   `code-replay`, `superseded`, `expired`; #650 adds `person`). `McpConnectionRepositoryInterface::revokeActive($id,
   $cause, $at)` is **one native SQL statement through the EntityManager's DBAL connection, never the unit of work**:
-  `UPDATE mcp_connection c SET revoked_at, revocation_cause FROM mcp_client cl WHERE c.id = :id AND c.revoked_at IS
-  NULL … RETURNING c.id, c.account_id, cl.client_id` (`:at` typed `Types::DATETIMETZ_IMMUTABLE`, `:id`
+  `UPDATE mcp_connection revoked SET revoked_at, revocation_cause FROM mcp_client cl WHERE revoked.id IN (SELECT c.id
+  FROM mcp_connection c WHERE c.id = :id AND c.revoked_at IS NULL ORDER BY c.id FOR UPDATE) AND revoked.revoked_at IS
+  NULL … RETURNING revoked.id, revoked.account_id, cl.client_id` — **the rows locked in id order** by the sub-query
+  (#726, final review: a bare `UPDATE` locks them in its plan's, physical, order; the purge locks by id), the one
+  shape of the three revocations (`:at` typed `Types::DATETIMETZ_IMMUTABLE`, `:id`
   `UuidType::NAME`). Why: league detects a reused refresh token or a replayed code **inside** `TokenEndpoint`'s
   transaction, whose `wrapInTransaction()` rolls back **and closes the EntityManager** on the refusal — the
   revocation must be written after that, and a closed EntityManager keeps its connection
@@ -281,8 +284,8 @@ paths:
   `[]` but for `grant_type=authorization_code`; the code's connection through `GrantPayloadReader::connectionIdOf()`
   and `findOneById()` — the managed instance `isAuthCodeRevoked()` locked `FOR UPDATE` —, then
   `McpConnectionRepositoryInterface::revokeOtherActiveOf($kept, RevocationCause::Superseded, $now)`) — the second path
-  above: **one native SQL statement** like `revokeActive()` (`UPDATE … WHERE c.account_id = :account AND
-  c.mcp_client_id = :client AND c.id <> :kept AND c.revoked_at IS NULL … RETURNING …`; statement and row mapping
+  above: **one native SQL statement** like `revokeActive()` (its sub-query choosing `c.account_id = :account AND
+  c.mcp_client_id = :client AND c.id <> :kept AND c.revoked_at IS NULL`, locked `ORDER BY c.id`; statement and row mapping
   written once for the three revocations, `McpConnectionRepository::revokeWhere()`, only the `WHERE` differing, one of
   its three private `WHERE_*` constants — `@param self::WHERE_*`, no caller composes SQL, lot C), served by
   `idx_mcp_connection_active_pair`. Its `list<RevokedConnection>` leaves the transaction with league's response
@@ -306,21 +309,25 @@ paths:
   (the kept one, another client's, another account's and an already revoked one untouched). **The price, decided**:
   two workstations using the same pre-registered client do not stay connected together — the second exchange cuts the
   first. **Lock order**: the code's connection (league, `FOR UPDATE`), its tokens, then the **other** connections of
-  the pair (the `UPDATE`); a refresh takes its connection then its tokens only — no cycle: a refresh holding a
+  the pair **by id** (the sub-query; #726: in physical order, two of them both purge candidates crossed the purge's
+  marking, `FOR UPDATE … ORDER BY id`, in `40P01` — `TokenEndpointConcurrencyTest::testASupersessionLocksTheOtherConnectionsInIdOrder`,
+  the lower one's row rewritten so that the heap contradicts the ids, `ctid` checked: held by the test, the exchange
+  blocks on it, the higher one free `NOWAIT`; measured `55P03` without the `ORDER BY`); a refresh takes its connection then its tokens only — no cycle: a refresh holding a
   superseded connection makes the exchange wait for its COMMIT (FPM's `lock_timeout`), then PostgreSQL re-evaluates
   `revoked_at IS NULL` on the committed row
   (`TokenEndpointConcurrencyTest::testAnExchangeCrossingARefreshOfTheSupersededConnectionRevokesIt`, real processes,
   the exchange released at the refresh's first flush: `issued 200`, C1 revoked `superseded`, no `40P01`; measured red
   with the `UPDATE` in `SKIP LOCKED`, C1 left active). **Accepted, unpinned** (#726, audit I7): the
   supersession's `UPDATE` (holding the code's connection, wanting the pair's others) can cross a cascading account
-  deletion (`cpg_user` → `mcp_connection`, physical order) — `40P01`, harmless: an aborted exchange wrote nothing and
+  deletion (`cpg_user` → `mcp_connection`, physical order; the id order closes nothing there, the exchange holding its
+  own connection first) — `40P01`, harmless: an aborted exchange wrote nothing and
   the account goes; nothing retries a `40P01`, so an aborted deletion — the backoffice's
   `CpgUserAdministrator::delete()`, the only path that can reach an account holding a connection (the pending-invitation
   purge removes accounts awaiting password setup, without a password, which cannot sign in, and
   `CpgUserInviter::invite()`'s removal on a full queue only reaches the account it just created, without a password) — answers a 500, deletes and audits nothing, and is asked again by hand.
   **Accepted limit, new** (#726): two simultaneous exchanges of
   **two** codes of one pair (two grants of one account to one client, same millisecond) each hold
-  their connection and wait for the other's — PostgreSQL aborts one (`40P01`, a 500), the other passes and revokes the
+  their connection first and wait for the other's (the id order of the `UPDATE` cannot close it) — PostgreSQL aborts one (`40P01`, a 500), the other passes and revokes the
   first's connection, whose code is then dead. #649's double-click limit is gone, save a client exchanging no code (the
   unused connection expires after `connection_idle`). A partial unique constraint was rejected: it would turn that
   double click into a 500. Tests that need two active connections of one account use another client

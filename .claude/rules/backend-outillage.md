@@ -231,7 +231,14 @@ the connection then its access token (the revocation endpoint's order) and askin
 reddens its own test only. A third test pins how long the candidates stay locked (#726: the marking, then the deletions,
 in two transactions): holding another connection's expired access token, it asks for a live candidate `FOR UPDATE NOWAIT`
 once the purge blocks in its deletions; mutation, the two `run()`s merged back into one — measured, the parent refused
-in `55P03`, the two order tests green. Every
+in `55P03`, the two order tests green. **The supersession's order is one too** (#726, final review):
+`TokenEndpointConcurrencyTest::testASupersessionLocksTheOtherConnectionsInIdOrder` holds the lower of two other active
+connections of the pair `FOR UPDATE`, waits for the exchanging child (`present-at-token-endpoint.php`) to block
+(`SessionLockWait::untilBlocked()`), then asks for the higher one `FOR UPDATE NOWAIT`. The physical order must
+contradict the ids, or the test proves nothing: the lower one's row is rewritten (a no-op `UPDATE`, its live version
+moves after the other in the heap), checked by `ctid` before anything — without that rewrite the unfixed `UPDATE` passes,
+measured. Mutation, the `ORDER BY c.id` out of `revokeWhere()`'s sub-query — measured, `55P03` on the `NOWAIT`, the
+other three tests of the class green. Every
 test that waits on a held lock to prove the bound carries a `statement_timeout = '3s'` safety net, so
 that a mutation removing the bound (`boundTheWait()`) fails it in `57014` instead of hanging the suite — a
 child session that waits (a console session, so no FPM `lock_timeout`) sets it on itself before the barrier,

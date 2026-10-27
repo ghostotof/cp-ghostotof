@@ -54,7 +54,10 @@ paths:
   purge waits in (5) — `55P03` under one transaction, measured, the other two green. **Accepted, unpinned**: no
   concurrency test proves the `FOR UPDATE` of (1) itself (the sequential suite stays green without it). **Accepted limit**: a cycle between `mcp_connection` rows
   alone — candidates (1, by id) or old revoked rows (4) against a cascade taking an account's connections in physical
-  order; PostgreSQL aborts one, the Job retries (`backoffLimit: 2`). **After the marking's COMMIT**, one
+  order; PostgreSQL aborts one, the Job retries (`backoffLimit: 2`). **Closed** (#726, final review): the marking
+  against a code exchange's supersession of two candidates of one pair — the three revocations lock their rows by id
+  too (`McpConnectionRepository::revokeWhere()`, `.claude/rules/mcp-oauth-cycle-de-vie.md`, « A new grant supersedes
+  the previous one »). **After the marking's COMMIT**, one
   `mcpConnectionExpired()` line per connection marked (actor `system`); a rolled-back marking audits nothing
   (`testARolledBackPurgeAuditsNothing`, red with the audit moved inside, measured); failed deletions leave the marking
   and its lines, the next night deletes (`testTheMarkingIsAuditedEvenWhenTheDeletionsRollBack`). **An audit failure

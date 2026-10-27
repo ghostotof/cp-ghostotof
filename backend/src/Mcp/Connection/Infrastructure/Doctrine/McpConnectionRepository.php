@@ -130,8 +130,9 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
      * quoi l'auditer sans seconde requête. La recherche du couple actif est
      * servie par l'index partiel `idx_mcp_connection_active_pair`
      * (`account_id, mcp_client_id WHERE revoked_at IS NULL`). Elle ne
-     * verrouille que les lignes des **autres** connexions du couple, jamais
-     * celles de leurs jetons : appelée par l'échange d'un code (#726), après
+     * verrouille que les lignes des **autres** connexions du couple, dans
+     * l'ordre des identifiants comme la purge ({@see self::revokeWhere()}),
+     * jamais celles de leurs jetons : appelée par l'échange d'un code (#726), après
      * la connexion de ce code et ses jetons, elle n'inverse pas l'ordre d'un
      * rafraîchissement (sa connexion, puis ses jetons) — un rafraîchissement
      * qui tient le verrou d'une connexion remplacée fait attendre l'échange
@@ -227,6 +228,24 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
      * garde la première révocation, la jointure lit le client ; l'instant est
      * typé comme sa colonne, avec fuseau (#434).
      *
+     * **Les lignes sont verrouillées dans l'ordre des identifiants** (#726,
+     * relecture finale) : la sous-requête `… ORDER BY c.id FOR UPDATE` les
+     * prend une à une dans cet ordre (le verrou suit le tri), avant que
+     * l'`UPDATE` ne les écrive — un `UPDATE` seul les verrouille dans l'ordre
+     * où son plan les lit, l'ordre physique du tas ou de l'index. C'est
+     * l'ordre où la purge verrouille ses candidates
+     * ({@see self::findActiveCandidatesForExpiry()}) : sans lui, le
+     * remplacement de deux autres connexions d'un couple, toutes deux
+     * candidates, pouvait croiser le marquage de la purge en `40P01`
+     * (`TokenEndpointConcurrencyTest::testASupersessionLocksTheOtherConnectionsInIdOrder`).
+     * Une seule forme pour les trois révocations : pour une ligne
+     * (`revokeActive()`) l'ordre ne change rien, pour la purge
+     * (`revokeExpired()`) ses lignes sont déjà verrouillées, par identifiant,
+     * dans la même transaction. Le `revoked_at IS NULL` de la sous-requête est
+     * réévalué sur la ligne validée après une attente (READ COMMITTED) : une
+     * connexion révoquée entre-temps n'est ni verrouillée ni réécrite ; celui
+     * de l'`UPDATE` est gardé, il le dit sur la ligne écrite.
+     *
      * @param self::WHERE_*                               $where  le choix des connexions, alias `c`, sans paramètre écrit en clair
      * @param array<string, mixed>                        $params ses paramètres nommés (ni `at` ni `cause`, ceux de l'instruction)
      * @param array<string, string|ArrayParameterType>    $types  leurs types DBAL
@@ -236,10 +255,13 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
     private function revokeWhere(string $where, array $params, array $types, RevocationCause $cause, DateTimeImmutable $at): array
     {
         $rows = $this->getEntityManager()->getConnection()->fetchAllAssociative(
-            'UPDATE mcp_connection c SET revoked_at = :at, revocation_cause = :cause'
+            // L'alias `c` est celui des constantes WHERE_*, dans la
+            // sous-requête ; la ligne écrite s'appelle `revoked`.
+            'UPDATE mcp_connection revoked SET revoked_at = :at, revocation_cause = :cause'
             .' FROM mcp_client cl'
-            .' WHERE '.$where.' AND c.revoked_at IS NULL AND cl.id = c.mcp_client_id'
-            .' RETURNING c.id, c.account_id, cl.client_id',
+            .' WHERE revoked.id IN (SELECT c.id FROM mcp_connection c WHERE '.$where.' AND c.revoked_at IS NULL ORDER BY c.id FOR UPDATE)'
+            .' AND revoked.revoked_at IS NULL AND cl.id = revoked.mcp_client_id'
+            .' RETURNING revoked.id, revoked.account_id, cl.client_id',
             ['at' => $at, 'cause' => $cause->value, ...$params],
             ['at' => Types::DATETIMETZ_IMMUTABLE, ...$types],
         );
