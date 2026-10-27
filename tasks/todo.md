@@ -120,7 +120,24 @@ phase 1 parte en release seule ; puis au merge de clôture, qui archive la spec 
       connexions accumulées visibles et révocables ; révoquer la connexion, jamais les jetons un à un.
       Reports de la tâche 9 : une connexion MCP survit au changement de mot de passe et de rôles du
       compte (révoquer les connexions du compte, ou comparer `grantedAt` à une date de changement des
-      identifiants)
+      identifiants). **Préalable à l'ouverture publique de la phase 2** (#726, B1).
+      Périmètre tranché par l'auteur le 2026-10-28, plan `tasks/plan-t11-mes-connexions.md`, branche
+      `feature/spec-0007-t11-mes-connexions` ; traite aussi #730 (piste 1, expiration précoce d'un accord
+      jamais échangé). Onze tâches, **sensibles** marquées :
+  - [ ] 1. Élargir le `CHECK` des causes (`person`, `password-changed`, `trusted-tier-withdrawn`) — **sensible (migration)**
+  - [ ] 2. `GET /api/me/mcp-connections` : ses connexions, état jugé par `isExpiredAt()` via `McpConnection::deadline()`
+  - [ ] 3. `DELETE /api/me/mcp-connections/{id}` : cause `person`, 404 indistinct, 204 idempotent, bout en bout — **sensible (sécurité)**
+  - [ ] 4. Révocation par la personne × rafraîchissement × marquage de la purge, en processus réels — **sensible (concurrence)**
+  - [ ] 5. Changement de mot de passe → toutes les connexions du compte, port de `Shared`, atomique — **sensible (sécurité, transaction)**
+  - [ ] 6. Perte de `ROLE_TRUSTED` → toutes les connexions du compte — **sensible (sécurité)**
+  - [ ] 7. #730 : `code_exchanged_at`, durée `connection_unexchanged` (`PT1H`), troisième borne de la purge — **sensible (migration, concurrence)**
+  - [ ] 8. La page de consentement dit quel compte accorde
+  - [ ] 9. Frontend : dépôt et composable des connexions
+  - [ ] 10. Frontend : page « Mes connexions MCP », route, liens du compte, a11y
+  - [ ] 11. Documentation (nouvelle règle `mcp-oauth-revocation-personne.md`, spec, registre, `CONTEXT.md`) ; fermer #650 et #730 à la main
+      Notes de la release : migrations `Version20261028120000` (le `CHECK`) et `Version20261028140000`
+      (`code_exchanged_at`, rattrapage) avant le rollout ; paramètre `app.mcp.lifetime.connection_unexchanged`.
+      Questions ouvertes : fin du plan (sept points)
 - [ ] Tâche 12 — Enregistrement des clients par CIMD (#651) — bloquée par : #647 — reports de la
       tâche 8 : `client_id_metadata_document_supported: true` déjà annoncé ; domaine du client sur la page.
       Reports de la tâche 9 : borner la longueur du `client_id` CIMD écrit dans l'audit
