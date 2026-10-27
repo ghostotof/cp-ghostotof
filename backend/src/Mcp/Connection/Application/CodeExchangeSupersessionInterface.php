@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Mcp\Connection\Application;
 
-use App\Mcp\Connection\Domain\ValueObject\RevokedConnection;
 use Psr\Http\Message\ServerRequestInterface;
 
 /**
@@ -26,11 +25,12 @@ interface CodeExchangeSupersessionInterface
      * de league : la connexion du code y est déjà verrouillée `FOR UPDATE`
      * (`AuthCodeRepository::isAuthCodeRevoked()`), et la révocation suit le
      * sort de l'échange — annulé, rien n'est révoqué. L'audit revient à
-     * l'appelant, après le COMMIT.
+     * l'appelant, après le COMMIT : chaque ligne nomme la connexion gardée
+     * (`supersededBy`, #726 B3), d'où Supersession plutôt que la seule liste.
      *
-     * @return list<RevokedConnection> les connexions remplacées ; `[]` pour un `grant_type` autre que
-     *                                 `authorization_code`, un code dont la charge ne désigne aucune connexion
-     *                                 connue, ou un couple sans autre connexion active
+     * @return Supersession|null la connexion gardée et les connexions remplacées (une liste vide pour un
+     *                           couple sans autre connexion active) ; `null` pour un `grant_type` autre que
+     *                           `authorization_code` ou un code dont la charge ne désigne aucune connexion connue
      */
-    public function supersedeOthersOf(ServerRequestInterface $request): array;
+    public function supersedeOthersOf(ServerRequestInterface $request): ?Supersession;
 }

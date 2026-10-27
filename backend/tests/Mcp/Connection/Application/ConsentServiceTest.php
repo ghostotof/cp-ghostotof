@@ -429,6 +429,12 @@ final class ConsentServiceTest extends TestCase
             $this->effects[] = 'revoked';
             $this->revokedAudits[] = [$connection, $cause];
         });
+        // Le remplacement a sa propre méthode depuis #726 (B3) : une ligne
+        // `superseded` écrite à l'approbation passerait par elle.
+        $auditLogger->method('mcpConnectionSuperseded')->willReturnCallback(function (McpConnectionReference $connection, Uuid $supersededBy): void {
+            $this->effects[] = 'revoked';
+            $this->revokedAudits[] = [$connection, RevocationCause::Superseded->value.' by '.$supersededBy->toRfc4122()];
+        });
 
         return new ConsentService(
             $validator,

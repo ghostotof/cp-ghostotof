@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Mcp\Connection\Infrastructure\League;
 
 use App\Mcp\Connection\Application\CodeExchangeSupersessionInterface;
+use App\Mcp\Connection\Application\Supersession;
 use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
 use App\Mcp\Connection\Domain\ValueObject\RevocationCause;
 use Psr\Clock\ClockInterface;
@@ -43,21 +44,26 @@ final readonly class LeagueCodeExchangeSupersession implements CodeExchangeSuper
     ) {
     }
 
-    public function supersedeOthersOf(ServerRequestInterface $request): array
+    public function supersedeOthersOf(ServerRequestInterface $request): ?Supersession
     {
         $body = $request->getParsedBody();
         $grantType = \is_array($body) ? ($body['grant_type'] ?? null) : null;
         $code = \is_array($body) ? ($body['code'] ?? null) : null;
         if (self::AUTHORIZATION_CODE_GRANT !== $grantType || !\is_string($code)) {
-            return [];
+            return null;
         }
 
         $connectionId = $this->payloadReader->connectionIdOf($code);
         $kept = null !== $connectionId ? $this->connections->findOneById($connectionId) : null;
         if (null === $kept) {
-            return [];
+            return null;
         }
 
-        return $this->connections->revokeOtherActiveOf($kept, RevocationCause::Superseded, $this->clock->now());
+        // L'identifiant de l'instance gérée, celle que league a verrouillée :
+        // la connexion qui remplace, nommée par chaque ligne d'audit (B3).
+        return new Supersession(
+            $kept->getId(),
+            $this->connections->revokeOtherActiveOf($kept, RevocationCause::Superseded, $this->clock->now()),
+        );
     }
 }

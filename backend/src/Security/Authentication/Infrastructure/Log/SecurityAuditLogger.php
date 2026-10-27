@@ -15,6 +15,7 @@ use SensitiveParameter;
 use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\Security\Core\Authentication\Token\Storage\TokenStorageInterface;
 use Symfony\Component\Security\Core\User\UserInterface;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * Implémentation Monolog du journal de sécurité (D5), sur le canal
@@ -53,6 +54,13 @@ final readonly class SecurityAuditLogger implements SecurityAuditLoggerInterface
      * `RevocationCause::Expired` : écrit ici, ce contexte ne dépend pas de `Mcp`.
      */
     private const string EXPIRED = 'expired';
+
+    /**
+     * Cause de révocation d'une connexion MCP remplacée par un nouvel accord
+     * (#726), le mot de `RevocationCause::Superseded` : écrit ici, ce contexte
+     * ne dépend pas de `Mcp`.
+     */
+    private const string SUPERSEDED = 'superseded';
 
     /** Acteur d'un événement déclenché à la main en ligne de commande, par une personne que rien n'identifie. */
     private const string CONSOLE = 'console';
@@ -206,6 +214,15 @@ final readonly class SecurityAuditLogger implements SecurityAuditLoggerInterface
     public function mcpConnectionRevoked(McpConnectionReference $connection, string $cause): void
     {
         $this->record('mcp-connection-revoked', 'MCP connection revoked.', [...$this->connection($connection), 'cause' => $cause]);
+    }
+
+    public function mcpConnectionSuperseded(McpConnectionReference $revoked, Uuid $supersededBy): void
+    {
+        $this->record('mcp-connection-revoked', 'MCP connection revoked.', [
+            ...$this->connection($revoked),
+            'cause' => self::SUPERSEDED,
+            'supersededBy' => $supersededBy->toRfc4122(),
+        ]);
     }
 
     public function mcpConnectionExpired(McpConnectionReference $connection): void

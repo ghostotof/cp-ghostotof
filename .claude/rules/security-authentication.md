@@ -245,8 +245,10 @@ paths:
     `McpConnectionRevoker` once the repository's revocation took effect — or, inside a transaction, its caller after
     the COMMIT: the revocation endpoint, `TokenEndpoint` for `superseded` (at the new code's first exchange, #726), and
     `McpConnectionPurger` for `expired` —, never for a connection already revoked:
-    `userId`, `connectionId`, `clientId`, `cause` — `client`, `refresh-token-reuse`, `code-replay`, `superseded`
-    through `mcpConnectionRevoked()`, actor read as usual; `expired` through `mcpConnectionExpired()`, actor `system`
+    `userId`, `connectionId`, `clientId`, `cause` — `client`, `refresh-token-reuse`, `code-replay` through
+    `mcpConnectionRevoked()`, actor read as usual; `superseded` through `mcpConnectionSuperseded()`, actor read as usual,
+    plus `supersededBy`, the RFC 4122 UUID of the connection that replaces it (#726, audit B3: nothing else ties the
+    line, written at the exchange, to the grant that caused it); `expired` through `mcpConnectionExpired()`, actor `system`
     like `user-purged`, the purge being a scheduled command; never the token or code presented),
     `mcp-access-token-refused` (#649, `McpBearerAuthenticator` right before refusing a **known** access token on
     `/api/mcp` — a cause of `McpAccessToken::refusalAt()` or the trusted tier, never `malformed` nor `unknown`, which
@@ -267,7 +269,7 @@ paths:
     `unidentified` for any other `UserInterface` (none exists). `user` now only ever carries that
     `guest-…` marker (`base-access-issued`, a base access's `logged-out`). Both go through
     `App\Shared\Domain\Security\AccountReference` (`CpgUser::accountId()`), the interface `Ai` reads too,
-    so no context depends on `Security`. The five MCP methods take one `Shared/Domain/Security/McpConnectionReference`
+    so no context depends on `Security`. The six MCP methods take one `Shared/Domain/Security/McpConnectionReference`
     (an `AccountReference` with `connectionId()` and the public `clientId()`, lot C of #649's reviews), which the
     connection, a `RevokedConnection` and the `mcp` firewall's `McpConnectionPrincipal` implement — never the three
     fields unpacked by the caller; the cause or the tool follows it, a string (`Security` does not depend on `Mcp`). To name an account during an incident:

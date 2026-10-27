@@ -104,7 +104,7 @@ final class TokenEndpointSupersessionAuditTest extends WebTestCase
     {
         [$firstConnectionId, $secondCode] = $this->firstExchangedThenSecondGranted();
         $failing = self::createStub(SecurityAuditLoggerInterface::class);
-        $failing->method('mcpConnectionRevoked')->willThrowException(new RuntimeException('Journal de sécurité indisponible'));
+        $failing->method('mcpConnectionSuperseded')->willThrowException(new RuntimeException('Journal de sécurité indisponible'));
 
         $response = $this->endpoint(self::getContainer()->get(TransactionInterface::class), $failing)
             ->respond($this->exchangeRequest($secondCode), new Response());
@@ -176,11 +176,15 @@ final class TokenEndpointSupersessionAuditTest extends WebTestCase
         );
     }
 
-    /** Un écrivain du journal de sécurité qui consigne les révocations journalisées. */
+    /**
+     * Un écrivain du journal de sécurité qui consigne les remplacements
+     * journalisés (`mcpConnectionSuperseded()`, #726 B3 : la connexion
+     * remplacée et celle qui la remplace).
+     */
     private function recordingAuditLogger(): SecurityAuditLoggerInterface
     {
         $auditLogger = self::createStub(SecurityAuditLoggerInterface::class);
-        $auditLogger->method('mcpConnectionRevoked')->willReturnCallback(function (McpConnectionReference $connection): void {
+        $auditLogger->method('mcpConnectionSuperseded')->willReturnCallback(function (McpConnectionReference $connection): void {
             $this->revokedAudits[] = $connection;
         });
 

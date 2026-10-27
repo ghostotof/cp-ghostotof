@@ -11,7 +11,6 @@ use App\Mcp\Connection\Domain\Exception\RotatedRefreshTokenReusedException;
 use App\Mcp\Connection\Domain\Repository\McpClientRepositoryInterface;
 use App\Mcp\Connection\Domain\ValueObject\GrantRefusal;
 use App\Mcp\Connection\Domain\ValueObject\McpClientId;
-use App\Mcp\Connection\Domain\ValueObject\RevokedConnection;
 use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use League\OAuth2\Server\AuthorizationServer;
 use League\OAuth2\Server\Exception\OAuthServerException;
@@ -57,7 +56,8 @@ use Throwable;
  *    l'approbation) : dans la même transaction, les autres connexions
  *    actives du couple compte/client sont révoquées, cause `superseded`
  *    (CodeExchangeSupersessionInterface), puis, après le COMMIT, une ligne
- *    `mcp-connection-revoked` par connexion remplacée (`ConsentControllerTest`) ;
+ *    `mcp-connection-revoked` par connexion remplacée, qui nomme la
+ *    connexion du code échangé (`supersededBy`, `ConsentControllerTest`) ;
  *    une panne de cet audit ne change pas la réponse
  *    (`TokenEndpointSupersessionAuditTest`).
  * 4. **Une connexion compromise est révoquée après la transaction** (#649).
@@ -164,7 +164,7 @@ final readonly class TokenEndpoint implements TokenEndpointInterface
 
         // Après le COMMIT seulement : une transaction annulée n'a rien
         // remplacé.
-        $this->auditSuperseded($issued->superseded);
+        $this->auditSuperseded($issued->supersession);
 
         return $issued->response;
     }
@@ -172,21 +172,26 @@ final readonly class TokenEndpoint implements TokenEndpointInterface
     /**
      * Une ligne `mcp-connection-revoked` par connexion remplacée, après le
      * COMMIT — la deuxième porte de `mcp-oauth.md` (« An assumed
-     * exception… ») : le seul écrivain de `security_audit`. **Sa panne ne
+     * exception… ») : le seul écrivain de `security_audit`. Chaque ligne
+     * nomme la connexion qui remplace (`supersededBy`, #726 B3) : écrite sur
+     * la requête de l'échange, rien d'autre ne la relie à l'accord qui a
+     * causé la coupure. **Sa panne ne
      * change jamais la réponse** (la règle de #725, comme {@see self::audit()}) :
      * les jetons sont écrits, le code consommé, l'ancienne connexion
      * révoquée ; rendu en 500, le client rejouerait son code avec son
      * vérificateur — un rejeu prouvé, qui révoquerait la nouvelle connexion à
      * son tour. La panne sort en `critical` sur le canal principal, la classe
      * seule ; chaque connexion est tentée, une panne n'en tait pas d'autre.
-     *
-     * @param list<RevokedConnection> $superseded
      */
-    private function auditSuperseded(array $superseded): void
+    private function auditSuperseded(?Supersession $supersession): void
     {
-        foreach ($superseded as $revoked) {
+        if (null === $supersession) {
+            return;
+        }
+
+        foreach ($supersession->revoked as $revoked) {
             try {
-                $this->auditLogger->mcpConnectionRevoked($revoked, $revoked->cause()->value);
+                $this->auditLogger->mcpConnectionSuperseded($revoked, $supersession->kept);
             } catch (Throwable $failure) {
                 $this->logger->critical('Superseded connection not audited.', ['exceptionClass' => $failure::class]);
             }

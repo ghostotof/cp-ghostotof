@@ -258,7 +258,7 @@ paths:
   line `mcp-connection-granted` **after** the COMMIT (`ConsentServiceTest`); **the active grant of the same account
   and client is superseded at the first exchange of the new code**, never at the approval (#726, D2): in the token
   endpoint's transaction, cause `superseded`, one `mcp-connection-revoked` line per superseded connection after its
-  COMMIT (#649: `.claude/rules/mcp-oauth-cycle-de-vie.md`, « A new grant supersedes the previous one »); a denial creates, revokes and logs nothing and sends league's `access_denied`. The POST answers a 200 JSON `redirectUri`, not a 302
+  COMMIT, naming the connection that replaces it (`supersededBy`, #726 audit B3) (#649: `.claude/rules/mcp-oauth-cycle-de-vie.md`, « A new grant supersedes the previous one »); a denial creates, revokes and logs nothing and sends league's `access_denied`. The POST answers a 200 JSON `redirectUri`, not a 302
   (`fetch()` would follow it). `ConsentControllerTest` (base tier and non-trusted 403, anonymous 401 on the GET and
   the CSRF guard's 403 on the POST, CSRF 403 at the trusted tier, 422 without `approved`). The account is read
   by `#[CurrentUser] CpgUser`, checked rather than cast. **An approval requires a recent authentication**

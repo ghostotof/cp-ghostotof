@@ -229,7 +229,8 @@ final class ConsentControllerTest extends WebTestCase
      * connexion reste active. L'échange du second code révoque la première,
      * cause `superseded`, dans la transaction du point de jeton ; la ligne
      * `mcp-connection-revoked` est lue sur la requête de l'échange, acteur
-     * `anonymous` (le firewall `oauth` n'authentifie personne). L'ancien
+     * `anonymous` (le firewall `oauth` n'authentifie personne), et nomme la
+     * connexion qui remplace (`supersededBy`, celle du code échangé). L'ancien
      * rafraîchissement n'obtient plus rien (`invalid_grant`, sans seconde
      * ligne). Ni code ni jeton dans aucune ligne.
      */
@@ -261,6 +262,9 @@ final class ConsentControllerTest extends WebTestCase
         self::assertSame(self::CLIENT_ID, $revoked[0]['clientId'] ?? null);
         self::assertSame('superseded', $revoked[0]['cause'] ?? null);
         self::assertSame('anonymous', $revoked[0]['actor'] ?? null);
+        // La connexion qui remplace (#726, B3) : celle du code échangé, seul
+        // lien entre la coupure et l'accord qui l'a causée.
+        self::assertSame($secondConnectionId, $revoked[0]['supersededBy'] ?? null);
         $logged = json_encode([...$granted, ...$revoked], \JSON_THROW_ON_ERROR);
         // Des messages qui ne citent pas la valeur : un échec la publierait
         // dans le journal de la CI.
