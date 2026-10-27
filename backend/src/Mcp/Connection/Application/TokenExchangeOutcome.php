@@ -12,8 +12,11 @@ use Psr\Http\Message\ResponseInterface;
  * jetons compris, et le remplacement que le premier échange du code a écrit
  * — la connexion gardée et celles qu'elle remplace. Interne au point de
  * jeton, jamais persisté ni exposé.
+ *
+ * Nommé par ce qu'il est, l'issue d'un échange au point de jeton (#726, S7),
+ * pas par les seuls jetons : il porte aussi le remplacement.
  */
-final readonly class IssuedTokens
+final readonly class TokenExchangeOutcome
 {
     /**
      * @param ResponseInterface $response     la réponse de league, celle que le client reçoit

@@ -304,24 +304,36 @@ paths:
   from the approval by #726, D2, the author's decision of 2026-10-27). `ConsentService::grant()` revokes nothing: its
   transaction adds the connection and returns league's code, then `mcp-connection-granted` alone after the COMMIT.
   `TokenEndpoint::respond()`, in its transaction, once league answered, calls
-  `Application/CodeExchangeSupersessionInterface::supersedeOthersOf($request): ?Supersession` (`Infrastructure/League/LeagueCodeExchangeSupersession`:
-  `null` but for `grant_type=authorization_code` with a code naming a known connection; the code's connection through `GrantPayloadReader::connectionIdOf()`
-  and `findOneById()` — the managed instance `isAuthCodeRevoked()` locked `FOR UPDATE` —, then
-  `McpConnectionRepositoryInterface::revokeOtherActiveOf($kept, RevocationCause::Superseded, $now)`) — the second path
+  `Application/CodeExchangeSupersessionInterface::supersedeOthersOf($request): ?Supersession` — **decided in
+  Application** (#726, S3: `Application/CodeExchangeSupersession`; `null` but for `grant_type=authorization_code`, read
+  through `FormEncodedRequest` against `OAuthProfile`, with a code naming a known connection), behind one port, the
+  only part that needs league: `Application/ExchangedCodeConnectionInterface::connectionIdOf($request): ?Uuid`
+  (`Infrastructure/League/LeagueExchangedCodeConnection`, the body's `code` read by `GrantPayloadReader::connectionIdOf()`,
+  `null` without a string `code` or for an unreadable one); then `findOneById()` — the managed instance
+  `isAuthCodeRevoked()` locked `FOR UPDATE` — and
+  `McpConnectionRepositoryInterface::revokeOtherActiveOf($kept, RevocationCause::Superseded, $now)` at the clock's instant
+  (`CodeExchangeSupersessionTest`: another grant, an unreadable code, an unknown connection, the nominal case;
+  `LeagueExchangedCodeConnectionTest`: the port). **Rejected** (#726, CR5): hooking the supersession onto league's
+  `AuthCodeRepository::revokeAuthCode()` with a collector of the superseded connections — a per-request state to
+  empty on a shared service, and the audit after the COMMIT would stay at the token endpoint anyway — the second path
   above: **one native SQL statement** like `revokeActive()` (its sub-query choosing `c.account_id = :account AND
   c.mcp_client_id = :client AND c.id <> :kept AND c.revoked_at IS NULL`, locked `ORDER BY c.id`; statement and row mapping
   written once for the three revocations, `McpConnectionRepository::revokeWhere()`, only the `WHERE` differing, one of
   its three private `WHERE_*` constants — `@param self::WHERE_*`, no caller composes SQL, lot C), served by
   `idx_mcp_connection_active_pair`. Its `Application/Supersession` — the kept connection's UUID and the
-  `list<RevokedConnection>` — leaves the transaction with league's response (`Application/IssuedTokens`); after the
-  COMMIT, one `mcp-connection-revoked` per superseded connection through `mcpConnectionSuperseded()` (cause
+  `list<RevokedConnection>` — leaves the transaction with league's response (`Application/TokenExchangeOutcome`, #726
+  S7, formerly `IssuedTokens`); after the COMMIT, `TokenEndpoint` calls the same service's `auditSuperseded()` (#726, S4:
+  the token endpoint no longer writes to the security log itself), one `mcp-connection-revoked` per superseded
+  connection through `mcpConnectionSuperseded()` (cause
   `superseded`, actor `anonymous`: the `oauth` firewall authenticates nobody), **naming the connection that replaces
   it**, `supersededBy` (the kept one's RFC 4122 UUID, #726 audit B3: written on the exchange's request, no longer the
   consent's, nothing else ties the cut to the grant that caused it; `ConsentControllerTest` reads it,
   `SecurityAuditLoggerTest` the exact keys), `mcp-oauth.md`'s second door; its
   failure leaves the answer unchanged (#725's rule: `critical`, class only):
   `TokenEndpointSupersessionAuditTest::testAnAuditFailureAfterTheCommitLeavesTheTokensIssued`,
-  `testARolledBackExchangeAuditsNoSupersededConnection` (red with the audit inside, measured). A rolled-back
+  `testARolledBackExchangeAuditsNoSupersededConnection` (red with the audit inside, measured; both on the container's
+  `TokenEndpointInterface`, the transaction or the audit writer replaced after a reboot of the client's kernel, never
+  built by hand). A rolled-back
   exchange revokes nothing, a refresh supersedes nothing. So: an abandoned grant (code never exchanged, failed redirect)
   leaves the previous connection alive — **re-authorizing cuts the old connection only at the new code's exchange**
   (#726, audit B1): until the person can revoke one herself (#650, « Mes connexions MCP »), an abandoned flow keeps a

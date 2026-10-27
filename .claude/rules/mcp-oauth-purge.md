@@ -74,7 +74,7 @@ paths:
   (`testARolledBackPurgeAuditsNothing`, red with the audit moved inside, measured); failed deletions leave the marking
   and its lines, the next night deletes (`testTheMarkingIsAuditedEvenWhenTheDeletionsRollBack`). **An audit failure
   never changes the outcome** (#725's rule, applied to the purge by #726, audit B4, like
-  `TokenEndpoint::auditSuperseded()`, both through `Application/FailSafeAudit`, `.claude/rules/mcp-oauth-audits.md`): each
+  `CodeExchangeSupersession::auditSuperseded()`, both through `Application/FailSafeAudit`, `.claude/rules/mcp-oauth-audits.md`): each
   line is tried on its own, a failure logs `Expired connection not audited.` at
   `critical` on the main channel (`['exceptionClass' => …]` only, never a message that could quote the connection), and
   the other lines and the deletions run whatever happened — the revocation took place

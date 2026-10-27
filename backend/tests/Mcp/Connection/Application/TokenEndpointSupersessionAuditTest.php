@@ -4,28 +4,21 @@ declare(strict_types=1);
 
 namespace App\Tests\Mcp\Connection\Application;
 
-use App\Mcp\Connection\Application\CodeExchangeSupersessionInterface;
-use App\Mcp\Connection\Application\FailSafeAudit;
-use App\Mcp\Connection\Application\GrantRefusalAuditInterface;
-use App\Mcp\Connection\Application\McpConnectionRevokerInterface;
-use App\Mcp\Connection\Application\OAuthEndpoints;
-use App\Mcp\Connection\Application\ReplayProofInterface;
-use App\Mcp\Connection\Application\TokenEndpoint;
+use App\Mcp\Connection\Application\TokenEndpointInterface;
 use App\Mcp\Connection\Application\TransactionInterface;
-use App\Mcp\Connection\Domain\Repository\McpClientRepositoryInterface;
+use App\Mcp\Connection\Infrastructure\Doctrine\DoctrineTransaction;
 use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use App\Shared\Domain\Security\McpConnectionReference;
 use App\Tests\Mcp\Connection\DrivesTheOAuthFlow;
 use App\Tests\Support\ReadsAllChannelsLog;
+use Closure;
 use Doctrine\DBAL\Connection;
 use Doctrine\ORM\EntityManagerInterface;
-use League\OAuth2\Server\AuthorizationServer;
 use Monolog\Formatter\JsonFormatter;
 use Monolog\Level;
 use Monolog\LogRecord;
 use Nyholm\Psr7\Response;
 use Nyholm\Psr7\ServerRequest;
-use Psr\Log\LoggerInterface;
 use RuntimeException;
 use SensitiveParameter;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
@@ -36,10 +29,11 @@ use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
  * peut pas provoquer par HTTP — une transaction annulée **après** le
  * remplacement, une panne de l'audit **après** le COMMIT.
  *
- * TokenEndpoint est construit ici avec les services du conteneur, sauf la
- * doublure du test : la transaction (RollingBackTransaction) ou l'écrivain du
- * journal de sécurité. Chaque test part du même état : C1 échangée (ses
- * jetons), un second accord approuvé (C2), son code pas encore échangé.
+ * Le point de jeton est celui du conteneur, la doublure du test remplaçant
+ * un service : la transaction (RollingBackTransaction) ou l'écrivain du
+ * journal de sécurité (#726, S4 : plus construit à la main). Chaque test part
+ * du même état : C1 échangée (ses jetons), un second accord approuvé (C2), son
+ * code pas encore échangé.
  */
 final class TokenEndpointSupersessionAuditTest extends WebTestCase
 {
@@ -70,17 +64,14 @@ final class TokenEndpointSupersessionAuditTest extends WebTestCase
      * fait n'a rien remplacé, et n'écrit aucune ligne `mcp-connection-revoked`.
      * C1 reste active, le code de C2 échangeable.
      *
-     * **Mesuré** : la boucle d'audit déplacée dans `TokenEndpoint::issue()`
-     * (dans la transaction) le fait rougir — une ligne pour une révocation
-     * annulée.
+     * **Mesuré** : l'appel de `auditSuperseded()` déplacé dans
+     * `TokenEndpoint::issue()` (dans la transaction) le fait rougir — une
+     * ligne pour une révocation annulée.
      */
     public function testARolledBackExchangeAuditsNoSupersededConnection(): void
     {
         [$firstConnectionId, $secondCode] = $this->firstExchangedThenSecondGranted();
-        $endpoint = $this->endpoint(
-            new RollingBackTransaction(self::getContainer()->get(TransactionInterface::class)),
-            $this->recordingAuditLogger(),
-        );
+        $endpoint = $this->endpoint($this->rolledBack(...), $this->recordingAuditLogger());
 
         try {
             $endpoint->respond($this->exchangeRequest($secondCode), new Response());
@@ -107,7 +98,7 @@ final class TokenEndpointSupersessionAuditTest extends WebTestCase
         $failing = self::createStub(SecurityAuditLoggerInterface::class);
         $failing->method('mcpConnectionSuperseded')->willThrowException(new RuntimeException('Journal de sécurité indisponible'));
 
-        $response = $this->endpoint(self::getContainer()->get(TransactionInterface::class), $failing)
+        $response = $this->endpoint(null, $failing)
             ->respond($this->exchangeRequest($secondCode), new Response());
 
         self::assertSame(200, $response->getStatusCode());
@@ -156,25 +147,43 @@ final class TokenEndpointSupersessionAuditTest extends WebTestCase
     }
 
     /**
-     * Le point de jeton tel que le conteneur le construit, sauf la
-     * transaction et l'écrivain du journal de sécurité.
+     * Le point de jeton du conteneur, ses services remplacés : l'écrivain du
+     * journal de sécurité, et la transaction quand le test en donne une (#726, S4 — il n'est
+     * plus construit à la main : une dépendance ajoutée à TokenEndpoint ou à
+     * CodeExchangeSupersession n'oblige plus ce test à suivre, et c'est bien
+     * le câblage du conteneur qui est exercé).
+     *
+     * Le parcours HTTP qui précède a déjà construit ces services : le
+     * conteneur de test refuse de remplacer un service initialisé. Le noyau
+     * du client est donc redémarré — un conteneur neuf, rien d'initialisé —,
+     * comme le client le fait entre deux requêtes ; la base, elle, garde
+     * l'état du parcours. La vraie transaction que RollingBackTransaction
+     * enveloppe est construite sur l'EntityManager de ce conteneur, sans
+     * initialiser le service que le double remplace.
+     *
+     * @param (Closure(EntityManagerInterface): TransactionInterface)|null $transactionOf la transaction, sur l'EntityManager
+     *                                                                     du conteneur neuf ; `null` garde celle de l'application
      */
-    private function endpoint(TransactionInterface $transaction, SecurityAuditLoggerInterface $auditLogger): TokenEndpoint
+    private function endpoint(?Closure $transactionOf, SecurityAuditLoggerInterface $auditLogger): TokenEndpointInterface
     {
+        $kernel = $this->client->getKernel();
+        $kernel->shutdown();
+        $kernel->boot();
         $container = self::getContainer();
 
-        return new TokenEndpoint(
-            $container->get(AuthorizationServer::class),
-            $container->get(OAuthEndpoints::class),
-            $container->get(McpClientRepositoryInterface::class),
-            $transaction,
-            $container->get(McpConnectionRevokerInterface::class),
-            $container->get(GrantRefusalAuditInterface::class),
-            $container->get(ReplayProofInterface::class),
-            $container->get(CodeExchangeSupersessionInterface::class),
-            $auditLogger,
-            new FailSafeAudit($container->get(LoggerInterface::class)),
-        );
+        if (null !== $transactionOf) {
+            $container->set(TransactionInterface::class, $transactionOf($container->get(EntityManagerInterface::class)));
+        }
+
+        $container->set(SecurityAuditLoggerInterface::class, $auditLogger);
+
+        return $container->get(TokenEndpointInterface::class);
+    }
+
+    /** La vraie transaction de l'application, annulée au COMMIT de sa première exécution. */
+    private function rolledBack(EntityManagerInterface $entityManager): TransactionInterface
+    {
+        return new RollingBackTransaction(new DoctrineTransaction($entityManager));
     }
 
     /**

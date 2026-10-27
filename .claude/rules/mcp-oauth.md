@@ -45,8 +45,8 @@ paths:
 - **An assumed exception to the context boundaries: `Mcp/Connection` depends on `Security` directly.** It is
   the first context outside `Security` whose entity references `CpgUser` (`McpConnection::$account`, a
   `ManyToOne` on `account_id`, `ON DELETE CASCADE`) and whose service depends on
-  `SecurityAuditLoggerInterface` (`ConsentService`, the `mcp-connection-granted` line; `TokenEndpoint`, the
-  `superseded` lines after the exchange's COMMIT, #726). Elsewhere a context
+  `SecurityAuditLoggerInterface` (`ConsentService`, the `mcp-connection-granted` line; `CodeExchangeSupersession`, the
+  `superseded` lines after the exchange's COMMIT, #726 — `TokenEndpoint` no longer imports `Security` since S4). Elsewhere a context
   designates an account through `Shared/Domain/Security/AccountReference` (its UUID, `Ai`'s quotas) and never
   imports `Security`. Here the spec requires the foreign key — removing the account must kill its connections in
   the database, not wait for a purge — and Doctrine maps it on the entity class only; and the grant belongs to

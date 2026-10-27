@@ -10,7 +10,6 @@ use App\Mcp\Connection\Domain\Exception\InvalidMcpClientIdException;
 use App\Mcp\Connection\Domain\Exception\RotatedRefreshTokenReusedException;
 use App\Mcp\Connection\Domain\Repository\McpClientRepositoryInterface;
 use App\Mcp\Connection\Domain\ValueObject\McpClientId;
-use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use League\OAuth2\Server\AuthorizationServer;
 use League\OAuth2\Server\Exception\OAuthServerException;
 use Psr\Http\Message\ResponseInterface;
@@ -54,8 +53,9 @@ use Psr\Http\Message\ServerRequestInterface;
  *    actives du couple compte/client sont révoquées, cause `superseded`
  *    (CodeExchangeSupersessionInterface), puis, après le COMMIT, une ligne
  *    `mcp-connection-revoked` par connexion remplacée, qui nomme la
- *    connexion du code échangé (`supersededBy`, `ConsentControllerTest`) ;
- *    une panne de cet audit ne change pas la réponse
+ *    connexion du code échangé (`supersededBy`, `ConsentControllerTest`),
+ *    écrite par le même service (#726, S4 : ce point n'écrit plus lui-même au
+ *    journal de sécurité) ; une panne de cet audit ne change pas la réponse
  *    (`TokenEndpointSupersessionAuditTest`).
  * 4. **Une connexion compromise est révoquée après la transaction** (#649).
  *    league juge le rafraîchissement dans sa validation, par
@@ -118,7 +118,6 @@ final readonly class TokenEndpoint implements TokenEndpointInterface
         private GrantRefusalAuditInterface $refusalAudit,
         private ReplayProofInterface $replayProof,
         private CodeExchangeSupersessionInterface $supersession,
-        private SecurityAuditLoggerInterface $auditLogger,
         private FailSafeAudit $failSafeAudit,
     ) {
     }
@@ -131,7 +130,7 @@ final readonly class TokenEndpoint implements TokenEndpointInterface
             $this->refuseClientOutsideTheBody($request);
             $this->refuseForeignResource($request);
 
-            $issued = $this->transaction->run(fn(): IssuedTokens => $this->issue($request, $response));
+            $outcome = $this->transaction->run(fn(): TokenExchangeOutcome => $this->issue($request, $response));
         } catch (CompromisedMcpConnectionException $compromise) {
             // La transaction est déjà annulée : la révocation s'écrit hors
             // d'elle, et survit au ROLLBACK de l'échange. Le refus levé ici
@@ -165,41 +164,12 @@ final readonly class TokenEndpoint implements TokenEndpointInterface
         }
 
         // Après le COMMIT seulement : une transaction annulée n'a rien
-        // remplacé.
-        $this->auditSuperseded($issued->supersession);
-
-        return $issued->response;
-    }
-
-    /**
-     * Une ligne `mcp-connection-revoked` par connexion remplacée, après le
-     * COMMIT — la deuxième porte de `mcp-oauth.md` (« An assumed
-     * exception… ») : le seul écrivain de `security_audit`. Chaque ligne
-     * nomme la connexion qui remplace (`supersededBy`, #726 B3) : écrite sur
-     * la requête de l'échange, rien d'autre ne la relie à l'accord qui a
-     * causé la coupure. **Sa panne ne
-     * change jamais la réponse** (la règle de #725, comme {@see self::audit()}) :
-     * les jetons sont écrits, le code consommé, l'ancienne connexion
-     * révoquée ; rendu en 500, le client rejouerait son code avec son
-     * vérificateur — un rejeu prouvé, qui révoquerait la nouvelle connexion à
-     * son tour. La panne sort en `critical` sur le canal principal, la classe
-     * seule ({@see FailSafeAudit}) ; chaque connexion est tentée, une panne
-     * n'en tait pas d'autre.
-     */
-    private function auditSuperseded(?Supersession $supersession): void
-    {
-        if (null === $supersession) {
-            return;
+        // remplacé. L'audit ne lève jamais (CodeExchangeSupersessionInterface).
+        if (null !== $outcome->supersession) {
+            $this->supersession->auditSuperseded($outcome->supersession);
         }
 
-        foreach ($supersession->revoked as $revoked) {
-            $this->failSafeAudit->attempt(
-                function () use ($revoked, $supersession): void {
-                    $this->auditLogger->mcpConnectionSuperseded($revoked, $supersession->kept);
-                },
-                'Superseded connection not audited.',
-            );
-        }
+        return $outcome->response;
     }
 
     /**
@@ -227,11 +197,11 @@ final readonly class TokenEndpoint implements TokenEndpointInterface
      * (`.claude/rules/mcp-oauth-cycle-de-vie.md`, « A new grant supersedes
      * the previous one »).
      */
-    private function issue(ServerRequestInterface $request, ResponseInterface $response): IssuedTokens
+    private function issue(ServerRequestInterface $request, ResponseInterface $response): TokenExchangeOutcome
     {
         $answer = $this->server->respondToAccessTokenRequest($request, $response);
 
-        return new IssuedTokens($answer, $this->supersession->supersedeOthersOf($request));
+        return new TokenExchangeOutcome($answer, $this->supersession->supersedeOthersOf($request));
     }
 
     /**

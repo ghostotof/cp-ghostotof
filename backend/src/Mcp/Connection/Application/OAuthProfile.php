@@ -14,8 +14,8 @@ namespace App\Mcp\Connection\Application;
  * charge d'Infrastructure\League appliquent — `LoopbackAwareAuthCodeGrant`
  * (la méthode exigée à l'autorisation), `OAuthClient` et `ClientRepository`
  * (les grants servis), `GrantPayloadReader` (la méthode d'un code),
- * `LeagueCodeExchangeSupersession` et `LeagueGrantRefusalAudit` (le grant
- * d'une requête). Une annonce et une règle lues à la même constante ne
+ * `LeagueGrantRefusalAudit` (le grant d'une requête) — et, en Application,
+ * `CodeExchangeSupersession` (seul l'échange d'un code remplace). Une annonce et une règle lues à la même constante ne
  * divergent pas : un client tente tout ce qu'un document lui annonce.
  *
  * league n'a pas de constante pour ses grants — c'est le retour de
