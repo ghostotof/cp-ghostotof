@@ -253,14 +253,14 @@ paths:
     `mcp-access-token-refused` (#649, `McpBearerAuthenticator` right before refusing a **known** access token on
     `/api/mcp` — a cause of `McpAccessToken::refusalAt()` or the trusted tier, never `malformed` nor `unknown`, which
     designate no connection: `userId`, `connectionId`, `clientId`, `cause` = the `BearerRefusal` value, actor
-    `anonymous`; at most one line per connection and per hour in normal use, `.claude/rules/mcp-oauth-cycle-de-vie.md`;
+    `anonymous`; at most one line per connection and per hour in normal use, `.claude/rules/mcp-oauth-audits.md`;
     never the token nor its hash), `mcp-grant-refused` (#725, `TokenEndpoint` after the ROLLBACK, through
     `GrantRefusalAuditInterface`, for every refusal of a code or refresh token the server **decrypts** — never an
     unreadable one, an unknown client, a vanished connection, nor a compromise, which writes `mcp-connection-revoked`:
     `userId`, `connectionId`, `clientId`, `cause` = the `GrantRefusal` value, `grantType`, `presentingClientId` (the
     registered client that presented it, named in the body — the token endpoint refuses any other), actor `anonymous`;
     never for a 5xx, and an audit failure leaves league's refusal unchanged (`critical` on the main channel); bounded by
-    the nginx `oauth` zone, `.claude/rules/mcp-oauth-cycle-de-vie.md`; never the grant, the PKCE verifier nor a hash).
+    the nginx `oauth` zone, `.claude/rules/mcp-oauth-audits.md`; never the grant, the PKCE verifier nor a hash).
     Every record carries `event` (the stable kebab-case key to filter on), `actor`, `ip`, `path` (canonical), plus the subject.
     **An account is designated by its `userId` (RFC 4122) only, as subject and as `actor`, never by its
     login identifier** (issue #363): an invited account's username is derived from the local part of its

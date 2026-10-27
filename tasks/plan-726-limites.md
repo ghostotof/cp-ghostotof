@@ -18,8 +18,7 @@ inchangé), PHPUnit.
 
 **Spec :** ticket #726 et les décisions ci-dessus ; `.claude/specs/0007-mcp-server.md` (passages « Un nouvel accord
 révoque… », « Limites acceptées aussi… », purge) ; règle `.claude/rules/mcp-oauth-cycle-de-vie.md` (puces « A replayed
-code… », « A compromised connection… », « A new grant supersedes… », « Every refusal of an authentic grant… », « The
-daily purge », « Accepted limits of #649 ») ; `.claude/rules/mcp-oauth.md` (puce « Consent ») ;
+code… », « A compromised connection… », « A new grant supersedes… », « The daily purge » (puce passée dans `.claude/rules/mcp-oauth-purge.md`), « Every refusal of an authentic grant… » (puce passée dans `.claude/rules/mcp-oauth-audits.md`), « Accepted limits of #649 ») ; `.claude/rules/mcp-oauth.md` (puce « Consent ») ;
 `docs/rgpd/registre-traitements.md` §3.4 (ligne 112) et §6 (ligne 155).
 
 ## Global Constraints

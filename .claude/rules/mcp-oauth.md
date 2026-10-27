@@ -120,7 +120,7 @@ paths:
   absent or own `resource` leaves league to authenticate the client. **Since #725 the token endpoint requires the
   `client_id` in the body whatever the `resource`** (`TokenEndpoint::refuseClientOutsideTheBody()`, `invalid_client`
   before league): league also read it from HTTP Basic, where the audit of a refused grant did not see who presented
-  it (`.claude/rules/mcp-oauth-cycle-de-vie.md`, « Every refusal of an authentic grant is audited »). A client
+  it (`.claude/rules/mcp-oauth-audits.md`, « Every refusal of an authentic grant is audited »). A client
   identifier holding a `:` never passed in Basic anyway — league splits the user at the first colon. Every access token carries that audience whatever was asked
   (`AccessTokenRepository`). **The scope summarised, sent back to the page and stored on the connection is the
   set granted**, never the raw repetition (`scope=nominative:read%20nominative:read` gives `nominative:read`,
@@ -239,7 +239,7 @@ paths:
   is named only in `McpBearerRefusedException`'s constant message (`MCP access token refused: <cause>`, never the
   token, its hash nor a UUID), logged by the `security` channel's « Authenticator failed. », and — for a **known**
   token (every cause but `Malformed` and `Unknown`) — in the audit line `mcp-access-token-refused` (#649,
-  `.claude/rules/mcp-oauth-cycle-de-vie.md`, « A known token refused is audited »); the `AuthenticatorManager`
+  `.claude/rules/mcp-oauth-audits.md`, « A known token refused is audited »); the `AuthenticatorManager`
   catches it, its `log_level: info` is never used (like `SubmittedPasswordTooLongException`). On success the request
   goes on as `McpConnectionUser` (`Application/McpConnectionPrincipal`, an `AccountReference`): identifier = the
   **connection**'s UUID, roles = the account's stored roles, `accountId()`, `connectionId()`, `clientId()` (public
