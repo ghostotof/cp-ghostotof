@@ -84,7 +84,8 @@ final class GrantRefusalAuditTest extends WebTestCase
     /**
      * Un code présenté après ses dix minutes : league le juge sur sa charge,
      * avant le dépôt — le rejeu tardif d'un code intercepté, que le rejeu
-     * sous verrou ne voit pas (limite 3 de #726), laisse une trace.
+     * sous verrou ne voit pas (limite acceptée de #649, « A replayed code is
+     * judged under the same lock »), laisse une trace.
      */
     public function testAnExpiredCodeIsAudited(): void
     {
