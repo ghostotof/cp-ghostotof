@@ -407,7 +407,8 @@ final class McpConnectionRepositoryTest extends KernelTestCase
         $reference = $this->connections()->referenceOf($connection->getId());
 
         self::assertFalse($this->em->isOpen());
-        self::assertTrue($connection->getId()->equals($reference?->connectionId()));
+        self::assertNotNull($reference);
+        self::assertTrue($connection->getId()->equals($reference->connectionId()));
         self::assertSame($account->getId()->toRfc4122(), $reference->accountId());
         self::assertSame('https://client.example.test/metadata.json', $reference->clientId());
         self::assertNull($this->connections()->referenceOf(Uuid::v7()));

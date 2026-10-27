@@ -225,6 +225,16 @@ final readonly class SecurityAuditLogger implements SecurityAuditLoggerInterface
         $this->record('mcp-access-token-refused', 'MCP access token refused.', [...$this->connection($connection), 'cause' => $cause]);
     }
 
+    public function mcpGrantRefused(McpConnectionReference $connection, string $grantType, string $cause, ?string $presentingClientId): void
+    {
+        $this->record('mcp-grant-refused', 'MCP grant refused.', [
+            ...$this->connection($connection),
+            'cause' => $cause,
+            'grantType' => $grantType,
+            'presentingClientId' => $presentingClientId,
+        ]);
+    }
+
     /**
      * Un compte se désigne par son UUID seul (issue #363) : ni son adresse
      * e-mail, ni son identifiant de connexion, qui pour un invité en est

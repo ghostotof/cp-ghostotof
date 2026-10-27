@@ -67,6 +67,13 @@ use Psr\Http\Message\ServerRequestInterface;
  *    par `AuthCodeRepository::isAuthCodeRevoked()` (OAuth 2.1 §4.1.2) : la
  *    connexion est révoquée, cause `code-replay`, et les jetons que le code
  *    avait émis meurent avec elle (`CodeReplayTest`).
+ * 5. **Tout autre refus d'un artefact authentique est audité** (#725) : la
+ *    ressource étrangère comme les refus de league, hors de la transaction,
+ *    par GrantRefusalAuditInterface — la ligne `mcp-grant-refused`, pour un
+ *    code ou un jeton de rafraîchissement que le serveur a émis
+ *    (`GrantRefusalAuditTest`). Le refus rendu au client est celui de
+ *    league, inchangé. Un corps refusé par FormEncodedRequest ne l'est pas :
+ *    ses paramètres ne se lisent pas sans ambiguïté.
  */
 final readonly class TokenEndpoint implements TokenEndpointInterface
 {
@@ -86,22 +93,32 @@ final readonly class TokenEndpoint implements TokenEndpointInterface
         private McpClientRepositoryInterface $clients,
         private TransactionInterface $transaction,
         private McpConnectionRevokerInterface $revoker,
+        private GrantRefusalAuditInterface $refusalAudit,
     ) {
     }
 
     public function respond(ServerRequestInterface $request, ResponseInterface $response): ResponseInterface
     {
         $request = FormEncodedRequest::parse($request, self::READ_PARAMETERS);
-        $this->refuseForeignResource($request);
 
         try {
+            $this->refuseForeignResource($request);
+
             return $this->transaction->run(fn(): ResponseInterface => $this->server->respondToAccessTokenRequest($request, $response));
         } catch (CompromisedMcpConnectionException $compromise) {
             // La transaction est déjà annulée : la révocation s'écrit hors
-            // d'elle, et survit au ROLLBACK de l'échange.
+            // d'elle, et survit au ROLLBACK de l'échange. Le refus levé ici
+            // n'atteint pas le `catch` voisin : une compromission a déjà sa
+            // ligne, `mcp-connection-revoked`.
             $this->revoker->revoke($compromise->connectionId(), $compromise->revocationCause());
 
             throw $this->refusalOf($compromise);
+        } catch (OAuthServerException $refusal) {
+            // Hors de la transaction, annulée : l'audit lit la connexion en
+            // SQL natif, EntityManager fermé.
+            $this->refusalAudit->record($request, $refusal);
+
+            throw $refusal;
         }
     }
 
