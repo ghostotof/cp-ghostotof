@@ -101,8 +101,11 @@ paths:
   the revoker there would audit before it, and a ROLLBACK would leave a line for a revocation that never happened.
   Either way, no line for a connection the statement did not revoke (unknown or already revoked). `expired` is audited through
   `SecurityAuditLoggerInterface::mcpConnectionExpired()` (actor `system`, the purge being a scheduled command), any
-  other cause through `mcpConnectionRevoked()` (actor read from the token storage). `McpConnectionRevokerTest`
-  (audited once with what the repository returned, never when it returned `null`).
+  other cause through `mcpConnectionRevoked()` (actor read from the token storage). **The revoker never writes
+  `expired`** (lot C of the reviews: its expiry branch had no caller): asked for it, it throws
+  `Application/RevocationCauseReservedToThePurgeException` before any write — an expiry audited there would carry
+  the request's actor instead of `system`. `McpConnectionRevokerTest` (audited once with what the repository
+  returned, never when it returned `null`; `expired` refused, nothing written nor audited).
 - **The refresh is judged under the lock of its connection** (task 3 of #649, `Infrastructure/League/RefreshTokenRepository::isRefreshTokenRevoked()`
   — league's name; what it judges is everything that makes a refresh token unacceptable). League calls it from
   `validateOldRefreshToken()`, inside `TokenEndpoint`'s transaction, **after** binding the token to the client

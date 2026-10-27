@@ -21,10 +21,12 @@ use Symfony\Component\Uid\Uuid;
  * pour la révocation effective — la ligne porte ce que la base a rendu, jamais
  * ce que l'appelant croyait savoir de la connexion.
  *
- * L'expiration n'est pas l'acte d'un appelant identifié : elle naît de la
- * purge planifiée, hors requête, et son audit a pour acteur `system`
- * ({@see SecurityAuditLoggerInterface::mcpConnectionExpired()}) ; toute autre
- * cause garde l'acteur lu dans le jeton de sécurité de la requête.
+ * L'expiration n'est pas une de ses causes : elle naît de la purge
+ * planifiée, qui révoque dans sa transaction et audite avec l'acteur `system`
+ * ({@see SecurityAuditLoggerInterface::mcpConnectionExpired()}) après le
+ * COMMIT. Demandée ici, elle est refusée avant toute écriture
+ * ({@see RevocationCauseReservedToThePurgeException}) ; toute autre cause est
+ * auditée avec l'acteur lu dans le jeton de sécurité de la requête.
  */
 final readonly class McpConnectionRevoker implements McpConnectionRevokerInterface
 {
@@ -37,16 +39,16 @@ final readonly class McpConnectionRevoker implements McpConnectionRevokerInterfa
 
     public function revoke(Uuid $connectionId, RevocationCause $cause): ?RevokedConnection
     {
+        if (RevocationCause::Expired === $cause) {
+            throw RevocationCauseReservedToThePurgeException::expired();
+        }
+
         $revoked = $this->connections->revokeActive($connectionId, $cause, $this->clock->now());
         if (null === $revoked) {
             return null;
         }
 
-        if (RevocationCause::Expired === $revoked->cause) {
-            $this->auditLogger->mcpConnectionExpired($revoked);
-        } else {
-            $this->auditLogger->mcpConnectionRevoked($revoked, $revoked->cause->value);
-        }
+        $this->auditLogger->mcpConnectionRevoked($revoked, $revoked->cause->value);
 
         return $revoked;
     }

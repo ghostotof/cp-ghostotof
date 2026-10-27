@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Mcp\Connection\Application;
 
 use App\Mcp\Connection\Application\McpConnectionRevoker;
+use App\Mcp\Connection\Application\RevocationCauseReservedToThePurgeException;
 use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
 use App\Mcp\Connection\Domain\ValueObject\RevocationCause;
 use App\Mcp\Connection\Domain\ValueObject\RevokedConnection;
@@ -62,23 +63,23 @@ final class McpConnectionRevokerTest extends TestCase
     }
 
     /**
-     * L'expiration constatée par la purge planifiée est la même révocation,
-     * mais son audit a pour acteur `system` : aucune personne ne l'a voulue,
-     * et une commande n'a pas de jeton de sécurité à lire.
+     * L'expiration n'est pas une cause du révocateur : la purge planifiée la
+     * constate et la révoque elle-même, dans sa transaction, et l'audite avec
+     * l'acteur `system` après le COMMIT (McpConnectionPurger). Demandée ici,
+     * c'est un défaut du programme : refusée avant toute écriture, rien
+     * audité — ni comme une révocation, ni comme une expiration.
      */
-    public function testAnExpiryIsAuditedWithItsOwnMethod(): void
+    public function testTheExpiredCauseIsRefusedBeforeAnyWrite(): void
     {
-        $connectionId = Uuid::v7();
-        $connections = self::createStub(McpConnectionRepositoryInterface::class);
-        $revoked = new RevokedConnection($connectionId, self::ACCOUNT_ID, self::CLIENT_ID, RevocationCause::Expired);
-        $connections->method('revokeActive')->willReturn($revoked);
+        $connections = $this->createMock(McpConnectionRepositoryInterface::class);
+        $connections->expects(self::never())->method('revokeActive');
         $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
-        $auditLogger->expects(self::once())
-            ->method('mcpConnectionExpired')
-            ->with($revoked);
         $auditLogger->expects(self::never())->method('mcpConnectionRevoked');
+        $auditLogger->expects(self::never())->method('mcpConnectionExpired');
 
-        $this->revoker($connections, $auditLogger)->revoke($connectionId, RevocationCause::Expired);
+        $this->expectException(RevocationCauseReservedToThePurgeException::class);
+
+        $this->revoker($connections, $auditLogger)->revoke(Uuid::v7(), RevocationCause::Expired);
     }
 
     /**

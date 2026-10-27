@@ -33,6 +33,9 @@ interface McpConnectionRevokerInterface
      * **Hors transaction**, une instruction : appelée après une transaction
      * annulée, EntityManager fermé compris (league refuse alors le jeton ou
      * le code, la révocation doit survivre au ROLLBACK de l'échange).
+     *
+     * @throws RevocationCauseReservedToThePurgeException pour la cause `expired`, avant toute écriture :
+     *                                                    l'expiration est révoquée par la purge seule
      */
     public function revoke(Uuid $connectionId, RevocationCause $cause): ?RevokedConnection;
 }
