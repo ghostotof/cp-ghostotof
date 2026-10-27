@@ -64,7 +64,7 @@ final class LeagueGrantRefusalAuditTest extends TestCase
 
     private function audit(SecurityAuditLoggerInterface $auditLogger): LeagueGrantRefusalAudit
     {
-        $connections = $this->createStub(McpConnectionRepositoryInterface::class);
+        $connections = self::createStub(McpConnectionRepositoryInterface::class);
         $connections->method('referenceOf')->willReturnCallback(
             static fn(Uuid $id): ConnectionReference => new ConnectionReference($id, Uuid::v7()->toRfc4122(), self::CLIENT_ID),
         );
