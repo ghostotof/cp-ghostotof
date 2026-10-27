@@ -80,8 +80,7 @@ final class GrantRefusalAuditTest extends WebTestCase
 
         $this->assertRefused($this->exchange($code, $overrides));
 
-        $this->assertAudited($cause, 'authorization_code', $presentingClientId);
-        $this->assertNoSecretIsLogged([$code, self::CODE_VERIFIER, $this->hashOf($code, 'auth_code_id')]);
+        $this->assertAudited($cause, 'authorization_code', $presentingClientId, $code);
     }
 
     /**
@@ -92,22 +91,34 @@ final class GrantRefusalAuditTest extends WebTestCase
      */
     public function testAnExpiredCodeIsAudited(): void
     {
-        $code = $this->grantedCode();
-
-        $this->assertRefused($this->exchange($this->reencrypted($code, ['expire_time' => time() - 60])));
-
-        $this->assertAudited('code-expired', 'authorization_code', self::CLIENT_ID);
-    }
-
-    /** Le code d'une connexion révoquée : refusé sous verrou, sans compromission. */
-    public function testACodeOfARevokedConnectionIsAudited(): void
-    {
-        $code = $this->grantedCode();
-        $this->revokeTheConnection();
+        $code = $this->reencrypted($this->grantedCode(), ['expire_time' => time() - 60]);
 
         $this->assertRefused($this->exchange($code));
 
-        $this->assertAudited('code-refused', 'authorization_code', self::CLIENT_ID);
+        $this->assertAudited('code-expired', 'authorization_code', self::CLIENT_ID, $code);
+    }
+
+    /**
+     * Ce que le juge sous verrou tient pour mort (TokenUnderConnectionLock),
+     * sans compromission : refusé « has been revoked » par league.
+     *
+     * @return iterable<string, array{string}>
+     */
+    public static function codesDeadUnderTheLock(): iterable
+    {
+        yield 'connexion révoquée' => ["UPDATE mcp_connection SET revoked_at = now(), revocation_cause = 'client'"];
+        yield 'ligne du code purgée' => ['DELETE FROM mcp_authorization_code'];
+    }
+
+    #[DataProvider('codesDeadUnderTheLock')]
+    public function testACodeDeadUnderTheLockIsAudited(string $alteration): void
+    {
+        $code = $this->grantedCode();
+        $this->executeStatement($alteration);
+
+        $this->assertRefused($this->exchange($code));
+
+        $this->assertAudited('code-refused', 'authorization_code', self::CLIENT_ID, $code);
     }
 
     /** Un jeton de rafraîchissement présenté comme code : authentique, mais pas un code. */
@@ -117,8 +128,7 @@ final class GrantRefusalAuditTest extends WebTestCase
 
         $this->assertRefused($this->exchange($refreshToken));
 
-        $this->assertAudited('not-a-code', 'authorization_code', self::CLIENT_ID);
-        $this->assertNoSecretIsLogged([$refreshToken, $this->hashOf($refreshToken, 'refresh_token_id')]);
+        $this->assertAudited('not-a-code', 'authorization_code', self::CLIENT_ID, $refreshToken);
     }
 
     /**
@@ -143,28 +153,45 @@ final class GrantRefusalAuditTest extends WebTestCase
 
         $this->assertRefused($this->refresh($refreshToken, $overrides));
 
-        $this->assertAudited($cause, 'refresh_token', $presentingClientId);
-        $this->assertNoSecretIsLogged([$refreshToken, $this->hashOf($refreshToken, 'refresh_token_id')]);
+        $this->assertAudited($cause, 'refresh_token', $presentingClientId, $refreshToken);
     }
 
     public function testAnExpiredRefreshTokenIsAudited(): void
     {
-        $refreshToken = $this->issuedRefreshToken();
-
-        $this->assertRefused($this->refresh($this->reencrypted($refreshToken, ['expire_time' => time() - 60])));
-
-        $this->assertAudited('token-expired', 'refresh_token', self::CLIENT_ID);
-    }
-
-    /** Le rafraîchissement d'une connexion révoquée : refusé sous verrou, rien n'est écrit en base. */
-    public function testARefreshOfARevokedConnectionIsAudited(): void
-    {
-        $refreshToken = $this->issuedRefreshToken();
-        $this->revokeTheConnection();
+        $refreshToken = $this->reencrypted($this->issuedRefreshToken(), ['expire_time' => time() - 60]);
 
         $this->assertRefused($this->refresh($refreshToken));
 
-        $this->assertAudited('token-refused', 'refresh_token', self::CLIENT_ID);
+        $this->assertAudited('token-expired', 'refresh_token', self::CLIENT_ID, $refreshToken);
+    }
+
+    /**
+     * Chaque mort que le juge sous verrou prononce sur un rafraîchissement,
+     * sans compromission (`.claude/rules/mcp-oauth-cycle-de-vie.md`, « The
+     * refresh is judged under the lock of its connection ») : refusé « has
+     * been revoked » par league, rien n'est écrit en base.
+     *
+     * @return iterable<string, array{string}>
+     */
+    public static function refreshTokensDeadUnderTheLock(): iterable
+    {
+        yield 'connexion révoquée' => ["UPDATE mcp_connection SET revoked_at = now(), revocation_cause = 'client'"];
+        yield 'ligne du jeton purgée' => ['DELETE FROM mcp_refresh_token'];
+        // La charge reste valide pour `time()` : seule l'horloge du serveur le juge échu.
+        yield 'jeton échu à l\'horloge du serveur' => ["UPDATE mcp_refresh_token SET expires_at = now() - interval '1 minute'"];
+        yield 'connexion expirée' => ["UPDATE mcp_connection SET granted_at = now() - interval '91 days', last_used_at = NULL"];
+        yield 'compte hors palier de confiance' => ["UPDATE cpg_user SET roles = '[]'"];
+    }
+
+    #[DataProvider('refreshTokensDeadUnderTheLock')]
+    public function testARefreshTokenDeadUnderTheLockIsAudited(string $alteration): void
+    {
+        $refreshToken = $this->issuedRefreshToken();
+        $this->executeStatement($alteration);
+
+        $this->assertRefused($this->refresh($refreshToken));
+
+        $this->assertAudited('token-refused', 'refresh_token', self::CLIENT_ID, $refreshToken);
     }
 
     /** Un code présenté comme jeton de rafraîchissement : authentique, mais pas un rafraîchissement. */
@@ -174,8 +201,7 @@ final class GrantRefusalAuditTest extends WebTestCase
 
         $this->assertRefused($this->refresh($code));
 
-        $this->assertAudited('not-a-refresh-token', 'refresh_token', self::CLIENT_ID);
-        $this->assertNoSecretIsLogged([$code, $this->hashOf($code, 'auth_code_id')]);
+        $this->assertAudited('not-a-refresh-token', 'refresh_token', self::CLIENT_ID, $code);
     }
 
     /**
@@ -224,6 +250,34 @@ final class GrantRefusalAuditTest extends WebTestCase
         $response = $this->exchange($this->grantedCode(), ['client_id' => 'https://unknown.example.test/metadata.json']);
 
         $this->assertOAuthError($response, Response::HTTP_UNAUTHORIZED, 'invalid_client');
+        self::assertSame([], self::securityAuditEvents(self::EVENT));
+    }
+
+    /**
+     * Les refus qui précèdent la lecture de l'artefact : aucun client dans le
+     * corps (TokenEndpoint), un corps aux paramètres ambigus
+     * (FormEncodedRequest), un grant qui ne porte aucun artefact (league).
+     *
+     * @return iterable<string, array{array<string, string|null>|string}>
+     */
+    public static function refusalsBeforeTheGrantIsRead(): iterable
+    {
+        yield 'aucun client' => [['client_id' => null]];
+        yield 'paramètre répété' => ['grant_type=authorization_code&client_id=a&client_id=b&code=%s'];
+        yield 'grant sans artefact' => [['grant_type' => 'client_credentials']];
+    }
+
+    /**
+     * @param array<string, string|null>|string $parameters les paramètres de l'échange à remplacer, ou un corps brut (`%s` : le code)
+     */
+    #[DataProvider('refusalsBeforeTheGrantIsRead')]
+    public function testARefusalBeforeTheGrantIsReadIsNotAudited(array|string $parameters): void
+    {
+        $code = $this->grantedCode();
+        $body = \is_string($parameters) ? \sprintf($parameters, rawurlencode($code)) : $this->exchangeParameters($code, $parameters);
+
+        $this->assertRefused($this->postForm(self::TOKEN_PATH, $body));
+
         self::assertSame([], self::securityAuditEvents(self::EVENT));
     }
 
@@ -299,9 +353,11 @@ final class GrantRefusalAuditTest extends WebTestCase
     /**
      * Une ligne et une seule, qui désigne la connexion de la base — le compte
      * par son UUID, le client par son identifiant public —, la cause, le grant
-     * et le client qui a présenté l'artefact ; ses clés exactement.
+     * et le client qui a présenté l'artefact ; ses clés exactement. Ni
+     * l'artefact présenté, ni le vérificateur, ni l'empreinte de son
+     * identifiant ne sont au journal.
      */
-    private function assertAudited(string $cause, string $grantType, string $presentingClientId): void
+    private function assertAudited(string $cause, string $grantType, string $presentingClientId, string $presented): void
     {
         $line = self::singleSecurityAuditEvent(self::EVENT);
         $connection = $this->theConnection();
@@ -315,6 +371,7 @@ final class GrantRefusalAuditTest extends WebTestCase
         self::assertSame($presentingClientId, $line['presentingClientId']);
         self::assertSame('anonymous', $line['actor']);
         self::assertSame(self::TOKEN_PATH, $line['path']);
+        $this->assertNoSecretIsLogged([$presented, self::CODE_VERIFIER, $this->hashOf($presented)]);
     }
 
     /**
@@ -352,18 +409,14 @@ final class GrantRefusalAuditTest extends WebTestCase
         return Crypto::encrypt(json_encode([...$this->payloadOf($grant), ...$changes], \JSON_THROW_ON_ERROR), $this->encryptionKey());
     }
 
-    /** L'empreinte que la base garde de l'identifiant que porte la charge. */
-    private function hashOf(string $grant, string $identifierField): string
+    /** L'empreinte que la base garde de l'identifiant que porte la charge, celui d'un code ou d'un rafraîchissement. */
+    private function hashOf(string $grant): string
     {
-        $identifier = $this->payloadOf($grant)[$identifierField] ?? null;
+        $payload = $this->payloadOf($grant);
+        $identifier = $payload['auth_code_id'] ?? $payload['refresh_token_id'] ?? null;
         self::assertIsString($identifier);
 
         return TokenIdentifierHash::of($identifier);
-    }
-
-    private function revokeTheConnection(): void
-    {
-        $this->executeStatement("UPDATE mcp_connection SET revoked_at = now(), revocation_cause = 'client'");
     }
 
     private function executeStatement(string $sql): void
