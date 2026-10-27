@@ -228,7 +228,10 @@ the token `deleteDead()`s — measured, the child `failed 40P01` on the old revo
 holding it then asking for its access token as a cascading account deletion does. Mutation for « A before R »: the
 `'accessTokens' =>` and `'refreshTokens' =>` lines swapped — measured, the child `failed 40P01` with the test holding
 the connection then its access token (the revocation endpoint's order) and asking for the refresh token. Each mutation
-reddens its own test only. Every
+reddens its own test only. A third test pins how long the candidates stay locked (#726: the marking, then the deletions,
+in two transactions): holding another connection's expired access token, it asks for a live candidate `FOR UPDATE NOWAIT`
+once the purge blocks in its deletions; mutation, the two `run()`s merged back into one — measured, the parent refused
+in `55P03`, the two order tests green. Every
 test that waits on a held lock to prove the bound carries a `statement_timeout = '3s'` safety net, so
 that a mutation removing the bound (`boundTheWait()`) fails it in `57014` instead of hanging the suite — a
 child session that waits (a console session, so no FPM `lock_timeout`) sets it on itself before the barrier,

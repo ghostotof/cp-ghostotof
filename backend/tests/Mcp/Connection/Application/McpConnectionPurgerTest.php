@@ -271,17 +271,7 @@ final class McpConnectionPurgerTest extends KernelTestCase
     public function testARolledBackPurgeAuditsNothing(): void
     {
         $expired = $this->connection(new DateTimeImmutable('2026-10-01T10:00:00+02:00'), new DateTimeImmutable(self::IDLE_DEADLINE_LAST_USE));
-        $container = self::getContainer();
-        $purger = new McpConnectionPurger(
-            $container->get(McpConnectionRepositoryInterface::class),
-            $container->get(McpAuthorizationCodeRepositoryInterface::class),
-            $container->get(McpAccessTokenRepositoryInterface::class),
-            $container->get(McpRefreshTokenRepositoryInterface::class),
-            new RollingBackTransaction($container->get(TransactionInterface::class)),
-            $container->get(ConnectionLifetimes::class),
-            $container->get(SecurityAuditLoggerInterface::class),
-            $container->get(ClockInterface::class),
-        );
+        $purger = $this->purgerRunningIn(new RollingBackTransaction(self::getContainer()->get(TransactionInterface::class)));
 
         try {
             $purger->purge($this->retention());
@@ -291,6 +281,34 @@ final class McpConnectionPurgerTest extends KernelTestCase
 
         self::assertNull($this->revocationOf($expired)['revokedAt'], 'La révocation a été annulée avec la transaction.');
         self::assertSame([], self::securityAuditEvents(self::REVOKED_EVENT), 'Une purge annulée n\'audite rien.');
+    }
+
+    /**
+     * Le marquage et les suppressions sont deux transactions (#726) : le
+     * marquage validé reste quand les suppressions sont annulées — la
+     * connexion révoquée `expired`, sa ligne d'audit écrite après le premier
+     * COMMIT —, et ce que la seconde transaction supprimait est toujours là,
+     * pour la nuit suivante.
+     */
+    public function testTheMarkingIsAuditedEvenWhenTheDeletionsRollBack(): void
+    {
+        $expired = $this->connection(new DateTimeImmutable('2026-10-01T10:00:00+02:00'), new DateTimeImmutable(self::IDLE_DEADLINE_LAST_USE));
+        $deadCode = $this->code($expired, $this->now()->sub(new DateInterval('PT1H')));
+        $purger = $this->purgerRunningIn(new RollingBackTheSecondRun(self::getContainer()->get(TransactionInterface::class)));
+
+        try {
+            $purger->purge($this->retention());
+            self::fail('Les suppressions annulées n\'ont pas fait échouer la purge.');
+        } catch (RolledBackOnPurposeException) {
+        }
+
+        $row = $this->revocationOf($expired);
+        self::assertSame('expired', $row['cause'], 'Le marquage a été validé avant les suppressions.');
+        self::assertSame($this->now()->getTimestamp(), $row['revokedAt']?->getTimestamp());
+        $event = self::singleSecurityAuditEvent(self::REVOKED_EVENT);
+        self::assertSame('expired', $event['cause']);
+        self::assertSame($expired->getId()->toRfc4122(), $event['connectionId']);
+        self::assertSame([$deadCode->getId()->toRfc4122()], $this->idsIn('mcp_authorization_code'), 'Les suppressions ont été annulées.');
     }
 
     private function now(): DateTimeImmutable
@@ -306,6 +324,23 @@ final class McpConnectionPurgerTest extends KernelTestCase
     private function purger(): McpConnectionPurgerInterface
     {
         return self::getContainer()->get(McpConnectionPurgerInterface::class);
+    }
+
+    /** La purge du conteneur, sa transaction remplacée par un double. */
+    private function purgerRunningIn(TransactionInterface $transaction): McpConnectionPurger
+    {
+        $container = self::getContainer();
+
+        return new McpConnectionPurger(
+            $container->get(McpConnectionRepositoryInterface::class),
+            $container->get(McpAuthorizationCodeRepositoryInterface::class),
+            $container->get(McpAccessTokenRepositoryInterface::class),
+            $container->get(McpRefreshTokenRepositoryInterface::class),
+            $transaction,
+            $container->get(ConnectionLifetimes::class),
+            $container->get(SecurityAuditLoggerInterface::class),
+            $container->get(ClockInterface::class),
+        );
     }
 
     /** Une connexion du compte et du client du test, accordée et utilisée aux instants donnés. */

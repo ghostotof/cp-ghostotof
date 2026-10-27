@@ -479,10 +479,12 @@ décision du 2026-10-19, voir « Langue invalide »).
   pod de moins qu'un CronJob dédié ; l'ADR dit « un CronJob », ce choix en est une mise en œuvre ;
   `cache:pool:prune` l'a quitté pour un CronJob horaire, tâche 5).
   *Précisé le 2026-10-26 (#649)* : `app:mcp:purge`, troisième commande du ménage quotidien
-  (`k8s/base/messenger-purge-cronjob.yaml`, après la purge des invitations, `lock_timeout` de 5 s). En une
-  transaction, connexions d'abord puis jetons (l'ordre du point de jeton) : elle **marque expirées** les
+  (`k8s/base/messenger-purge-cronjob.yaml`, après la purge des invitations, `lock_timeout` de 5 s). En deux
+  transactions depuis #726, le marquage puis les suppressions : elle **marque expirées** les
   connexions arrivées à échéance — présélection SQL large, verrouillée `FOR UPDATE`, puis chaque ligne
-  jugée par `isExpiredAt()`, jamais par le SQL —, cause `expired` ; supprime les connexions révoquées
+  jugée par `isExpiredAt()`, jamais par le SQL —, cause `expired`, et valide ; une ligne d'audit par
+  connexion marquée suit ce COMMIT. Puis, dans une seconde transaction, connexions d'abord et jetons
+  ensuite (l'ordre du point de jeton), sans le verrou des candidates : elle supprime les connexions révoquées
   depuis plus de la rétention, **6 mois** (décision de l'auteur du 2026-10-26 ; la « durée de conservation
   du journal » ci-dessus n'est pas une durée fixe, bornée par la vie du pod, registre §6), paramètre
   `app.mcp.revoked_connection_retention` lu comme défaut de `--older-than` (au moins un jour) — avant
@@ -497,14 +499,12 @@ décision du 2026-10-19, voir « Langue invalide »).
   l'autre, un rafraîchissement vivant dont le jeton d'accès a expiré compris — le **surcoût** de A puis R
   sur R puis A, lui, ne touche que des lignes mortes, les rafraîchissements que l'instruction suivante
   supprime). Les deux ordres sont pincés en processus réels, la vraie purge contre un test qui tient les
-  lignes de l'autre côté (`McpConnectionPurgeLockOrderTest`, lot C des relectures). Limite acceptée : un cycle entre lignes de `mcp_connection` seules (la purge, puis une
-  suppression de compte en cascade) reste possible ; PostgreSQL annule l'une, le Job réessaie. Limite
-  acceptée aussi (décision de l'auteur du 2026-10-27, suivie par #726) : la purge garde ses connexions
-  candidates verrouillées (`FOR UPDATE`) pendant toutes ses suppressions — le rafraîchissement d'une
-  candidate encore vivante (présélection large) attend ce verrou jusqu'au `lock_timeout` de FPM (5 s) et
-  répond 500 si la transaction de la purge dure plus, quelques millisecondes aujourd'hui sur des tables
-  bornées. Une ligne
-  d'audit par connexion marquée, après le COMMIT. **Pas de `--dry-run`** : elle ne supprime que des jetons
+  lignes de l'autre côté (`McpConnectionPurgeLockOrderTest`, lot C des relectures). Le même test pince la coupure (#726) : une
+  candidate encore vivante (présélection large) n'est plus verrouillée pendant les suppressions, son
+  rafraîchissement n'attend plus la fin de la purge ; une seconde transaction en échec laisse le marquage et
+  ses lignes d'audit, la nuit suivante supprime. Limite acceptée : un cycle entre lignes de `mcp_connection`
+  seules (la purge, puis une suppression de compte en cascade) reste possible ; PostgreSQL annule l'une, le
+  Job réessaie. **Pas de `--dry-run`** : elle ne supprime que des jetons
   morts et des connexions mortes depuis des mois, rien qu'une personne pourrait regretter (la purge des
   invitations a le sien parce qu'elle supprime des comptes).
 - **Préprod** : l'Ingress de préprod lève Basic Auth sur les seuls chemins MCP et OAuth, les deux

@@ -63,6 +63,12 @@ use Symfony\Component\Process\Process;
  * échangées) : un interblocage à chaque passage, 40P01 sur le fils (« failed
  * 40P01 », exit 3) ou sur le parent. L'ordre rétabli, vert à chaque passage.
  *
+ * **Et la durée du verrou des candidates** (#726) : la purge marque dans une
+ * transaction, supprime dans une seconde, si bien qu'une candidate vivante
+ * n'est plus verrouillée pendant les suppressions. **Mesuré** sous les deux
+ * `run()` refusionnées en une : ce troisième test rouge en `55P03` sur son
+ * `NOWAIT`, les deux tests d'ordre verts.
+ *
  * Le fils n'écrit que ses compteurs ou un SQLSTATE, jamais un jeton.
  */
 final class McpConnectionPurgeLockOrderTest extends WebTestCase
@@ -146,6 +152,46 @@ final class McpConnectionPurgeLockOrderTest extends WebTestCase
         self::assertSame(1, $this->rowCount('mcp_connection'), $observed);
         self::assertSame(0, $this->rowCount('mcp_access_token'), $observed);
         self::assertSame(0, $this->rowCount('mcp_refresh_token'), $observed);
+    }
+
+    /**
+     * La durée du verrou des candidates (#726) : la purge marque dans une
+     * transaction, puis supprime dans une seconde, si bien qu'une connexion
+     * présélectionnée mais encore vivante (dernier usage il y a 29 jours et
+     * 12 heures : dans la borne large, à douze heures de son échéance) n'est
+     * plus verrouillée pendant les suppressions — un rafraîchissement de
+     * cette connexion n'attend plus la fin de la purge.
+     *
+     * Le test tient le jeton d'accès échu d'**une autre** connexion active ;
+     * la purge bute sur lui dans `deleteDead()` des jetons d'accès, sa seconde
+     * transaction. Le test demande alors la candidate `FOR UPDATE NOWAIT` :
+     * libre, le verrou du jugement a été relâché au premier COMMIT ; en une
+     * seule transaction, la purge la tient encore, refus en `55P03`
+     * (lock_not_available). Il relâche, la purge supprime le jeton échu, la
+     * candidate reste active.
+     */
+    public function testALiveCandidateIsUnlockedDuringTheDeletions(): void
+    {
+        $candidate = $this->holdMcpConnection();
+        $this->alterHeldConnection($candidate, "last_used_at = now() - INTERVAL '29 days 12 hours'");
+        $other = $this->holdAnotherMcpConnection();
+        $this->alterHeldAccessToken($other, "expires_at = now() - INTERVAL '1 minute'");
+
+        [$holderSqlState, $concurrent] = $this->purgeWhileHolding(
+            [['SELECT id FROM mcp_access_token WHERE id = ? FOR UPDATE', $this->accessTokenIdOf($other)]],
+            ['SELECT id FROM mcp_connection WHERE id = ? FOR UPDATE NOWAIT', $candidate->connectionId],
+        );
+
+        $observed = $this->observed($concurrent, $holderSqlState);
+        self::assertNull($holderSqlState, 'La candidate vivante est restée verrouillée pendant les suppressions de la purge. '.$observed);
+        self::assertSame(1, preg_match('/^purged 0 0 1 0$/m', $concurrent->getOutput()), 'La purge aurait dû supprimer le seul jeton d\'accès échu. '.$observed);
+        self::assertSame(0, $concurrent->getExitCode(), $observed);
+        self::assertNull(
+            $this->mcpRows()->fetchOne('SELECT revoked_at FROM mcp_connection WHERE id = ?', [$candidate->connectionId]),
+            'La candidate vivante a été révoquée. '.$observed,
+        );
+        self::assertSame(2, $this->rowCount('mcp_connection'), $observed);
+        self::assertSame(1, $this->rowCount('mcp_access_token'), $observed);
     }
 
     /**
