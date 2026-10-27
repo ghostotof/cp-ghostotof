@@ -77,7 +77,7 @@ final readonly class McpConnectionPurger implements McpConnectionPurgerInterface
      * borne serait dans le futur et chaque connexion active serait verrouillée
      * à chaque nuit — une constante pour les deux, lue là. Les durées doivent
      * même dépasser cette marge plus la durée d'un code plus l'heure d'un
-     * changement d'heure (#726) : la connexion
+     * changement d'heure et une minute de jeu (#726) : la connexion
      * d'un code encore échangeable, que l'échange verrouille la première,
      * n'est alors jamais candidate du marquage.
      */

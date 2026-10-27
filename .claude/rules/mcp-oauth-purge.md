@@ -59,9 +59,10 @@ paths:
   too (`McpConnectionRepository::revokeWhere()`, `.claude/rules/mcp-oauth-cycle-de-vie.md`, « A new grant supersedes
   the previous one ») — **and the code's own connection, which the exchange locks first, is never a candidate**
   (#726, CR1): `ConnectionLifetimes::fromConfiguration()` refuses an idle or maximum duration up to `P1D` plus the
-  code's duration plus an elapsed hour, the clock changes' (`.claude/rules/mcp-oauth-cycle-de-vie.md`, « The durations
-  live in configuration »); below it, a fresh connection was a candidate, the marking held an older one and waited on
-  it while the exchange held it and waited on the older one, `40P01`. Closed by construction under that refusal,
+  code's duration plus an elapsed hour (the clock changes) and minute (truncation, clock skew)
+  (`.claude/rules/mcp-oauth-cycle-de-vie.md`, « The durations live in configuration »); below it, a fresh connection
+  could be a candidate, the marking holding another one the exchange waited on while wanting the one the exchange held,
+  `40P01`. Closed by construction under that refusal,
   every second of both clock changes included (measured, same bullet). **After the marking's COMMIT**, one
   `mcpConnectionExpired()` line per connection marked (actor `system`); a rolled-back marking audits nothing
   (`testARolledBackPurgeAuditsNothing`, red with the audit moved inside, measured); failed deletions leave the marking

@@ -54,20 +54,19 @@ final readonly class ConnectionLifetimes
      * deux, que la purge lit ici.
      *
      * **Le vrai plancher est au-delà : cette marge plus la durée d'un code plus
-     * {@see self::CLOCK_CHANGE_MARGIN}, exclu** (#726, CR1),
-     * {@see self::fromConfiguration()}. L'échange d'un
-     * code verrouille la connexion du code la première (league, `FOR UPDATE`),
-     * puis les autres connexions actives de la paire par id (le remplacement) ;
-     * le marquage de la purge verrouille ses candidates par id. La connexion
-     * du code est la plus récente (UUID v7 le plus grand) : si elle était
-     * candidate, la purge tiendrait une connexion plus ancienne en attendant
-     * celle-ci, que l'échange tient en attendant l'autre — `40P01`. Octroyée
-     * il y a au plus la durée d'un code (son code est encore échangeable), elle
-     * n'est candidate que si « maintenant − durée + marge » l'atteint, donc
-     * jamais au-delà du plancher : l'échange ne prend alors que des connexions
-     * dans l'ordre des ids, comme la purge, et le croisement marquage ×
-     * remplacement est fermé par construction (l'ordre des ids, tâche 6 de
-     * #726).
+     * {@see self::CLOCK_CHANGE_MARGIN} plus
+     * {@see self::SECOND_TRUNCATION_AND_SKEW_MARGIN}, exclu** (#726, CR1),
+     * {@see self::fromConfiguration()}. L'échange d'un code verrouille la
+     * connexion du code la première (league, `FOR UPDATE`), puis les autres
+     * connexions actives de la paire par id (le remplacement) ; le marquage de
+     * la purge verrouille ses candidates par id. Si la connexion du code était
+     * candidate, la purge pourrait la vouloir en tenant une autre que l'échange
+     * attend — `40P01`. Octroyée il y a au plus la durée d'un code (son code
+     * est encore échangeable), elle n'est candidate que si « maintenant −
+     * durée + marge » l'atteint, donc jamais au-delà du plancher : la purge ne
+     * la veut jamais, toutes les autres prises des deux côtés suivent l'ordre
+     * des ids (tâche 6 de #726), et le croisement marquage × remplacement est
+     * fermé par construction.
      */
     public const string MINIMUM_CONNECTION_LIFETIME = 'P1D';
 
@@ -85,6 +84,19 @@ final readonly class ConnectionLifetimes
      * rejoue.
      */
     private const string CLOCK_CHANGE_MARGIN = 'PT1H';
+
+    /**
+     * La minute que le plancher ajoute pour les effets sous la seconde et les
+     * horloges (#726, CR1, relecture de la tâche 8), en temps écoulé : sans
+     * elle, au plancher admis, il ne restait qu'une seconde de jeu. Elle couvre
+     * la troncature à la seconde de `granted_at` (l'instant de l'horloge dans
+     * `ConsentService`, stocké à la seconde), l'écart entre cet octroi et
+     * l'`expire_time` du code, que league calcule plus tard avec sa propre
+     * horloge, après avoir persisté le code, et accepte jusqu'à
+     * `expire_time + 0,999 s` (`time() > expire_time`), et le décalage
+     * d'horloge entre le nœud du Job de purge et celui de FPM.
+     */
+    private const string SECOND_TRUNCATION_AND_SKEW_MARGIN = 'PT1M';
 
     /**
      * L'instant fixe où les durées se comparent, pour que le verdict ne
@@ -109,15 +121,17 @@ final readonly class ConnectionLifetimes
      *
      * Les refus, dans l'ordre où ils sont jugés : la lecture, la positivité
      * (des cinq), puis, l'inactivité avant la durée maximale, chacune sous un
-     * jour et jusqu'à un jour plus la durée du code plus une heure (#726 : la
-     * connexion d'un code encore échangeable n'est alors jamais candidate de
-     * la purge, voir {@see self::MINIMUM_CONNECTION_LIFETIME} et
-     * {@see self::CLOCK_CHANGE_MARGIN}), enfin les deux ordres.
+     * jour et jusqu'à un jour plus la durée du code plus une heure et une
+     * minute (#726 : la connexion d'un code encore échangeable n'est alors
+     * jamais candidate de la purge, voir {@see self::MINIMUM_CONNECTION_LIFETIME},
+     * {@see self::CLOCK_CHANGE_MARGIN} et
+     * {@see self::SECOND_TRUNCATION_AND_SKEW_MARGIN}), enfin les deux ordres.
      *
      * @throws InvalidConnectionLifetimeException si une durée est illisible ou
      *         nulle, si l'inactivité ou la durée maximale est sous un jour
      *         (la marge de présélection de la purge) ou ne dépasse pas un jour
-     *         plus la durée d'un code plus une heure, si l'inactivité dépasse la durée
+     *         plus la durée d'un code plus une heure et une minute, si
+     *         l'inactivité dépasse la durée
      *         maximale, ou si le jeton d'accès survit à son jeton de
      *         rafraîchissement
      */
@@ -144,9 +158,12 @@ final readonly class ConnectionLifetimes
         // durée maximale trop courte est refusée pour cette cause, pas parce que
         // l'inactivité la dépasse. Jugés paramètre par paramètre, l'inactivité
         // d'abord, chacun sous un jour puis jusqu'à la fenêtre d'un code (plus
-        // l'heure d'un changement d'heure, en temps écoulé).
+        // l'heure d'un changement d'heure et la minute de jeu, en temps écoulé).
         $oneDay = $reference->add(new DateInterval(self::MINIMUM_CONNECTION_LIFETIME));
-        $freshConnectionWindowEnd = $oneDay->add($durations['codeLifetime'])->add(new DateInterval(self::CLOCK_CHANGE_MARGIN));
+        $freshConnectionWindowEnd = $oneDay
+            ->add($durations['codeLifetime'])
+            ->add(new DateInterval(self::CLOCK_CHANGE_MARGIN))
+            ->add(new DateInterval(self::SECOND_TRUNCATION_AND_SKEW_MARGIN));
         foreach (['idleLifetime', 'maximumLifetime'] as $parameter) {
             $end = $reference->add($durations[$parameter]);
             if ($end < $oneDay) {

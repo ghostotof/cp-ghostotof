@@ -45,14 +45,15 @@ final class InvalidConnectionLifetimeException extends InvalidArgumentException
     /**
      * Le délai d'inactivité ou la durée maximale d'une connexion ne dépasse
      * pas un jour (la marge de présélection de la purge) plus la durée d'un
-     * code plus une heure, celle d'un changement d'heure (#726, CR1) : la
+     * code plus une heure, celle d'un changement d'heure, plus une minute de
+     * jeu (troncature à la seconde, horloges) (#726, CR1) : la
      * connexion d'un code encore échangeable serait candidate de la purge,
      * dont le marquage croiserait le remplacement de l'échange en
      * interblocage.
      */
     public static function notBeyondFreshConnectionWindow(string $parameter): self
     {
-        return new self(\sprintf('La durée « %s » des connexions doit dépasser un jour, la marge de présélection de la purge, plus la durée « codeLifetime » d\'un code et une heure de changement d\'heure : une connexion dont le code est encore échangeable serait candidate de la purge.', $parameter));
+        return new self(\sprintf('La durée « %s » des connexions doit dépasser un jour, la marge de présélection de la purge, plus la durée « codeLifetime » d\'un code, une heure de changement d\'heure et une minute de jeu : une connexion dont le code est encore échangeable serait candidate de la purge.', $parameter));
     }
 
     public static function idleExceedsMaximum(): self
