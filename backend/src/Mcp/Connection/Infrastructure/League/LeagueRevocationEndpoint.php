@@ -33,7 +33,7 @@ use Symfony\Component\Uid\Uuid;
  * - **Le jeton** est cherché d'abord comme jeton d'accès (l'identifiant d'un
  *   jeton opaque **est** le jeton, OpaqueAccessToken), puis comme jeton de
  *   rafraîchissement, déchiffré sous la clé de league
- *   (RefreshTokenPayloadReader). `token_type_hint` n'est pas lu : RFC 7009
+ *   (GrantPayloadReader). `token_type_hint` n'est pas lu : RFC 7009
  *   §2.1 permet de l'ignorer, et les deux recherches coûtent une requête
  *   chacune.
  * - **Révoqué s'il a été émis au client qui le présente**, et à lui seul :
@@ -81,7 +81,7 @@ final readonly class LeagueRevocationEndpoint implements RevocationEndpointInter
         private McpAccessTokenRepositoryInterface $accessTokens,
         private McpRefreshTokenRepositoryInterface $refreshTokens,
         private McpConnectionRepositoryInterface $connections,
-        private RefreshTokenPayloadReader $refreshTokenReader,
+        private GrantPayloadReader $payloadReader,
         private TransactionInterface $transaction,
         private SecurityAuditLoggerInterface $auditLogger,
         private ClockInterface $clock,
@@ -138,7 +138,7 @@ final readonly class LeagueRevocationEndpoint implements RevocationEndpointInter
 
     private function revokeRefreshToken(#[SensitiveParameter] string $token, string $clientId): void
     {
-        $identifier = $this->refreshTokenReader->identifierOf($token);
+        $identifier = $this->payloadReader->refreshTokenIdentifierOf($token);
         $refreshToken = null === $identifier ? null : $this->refreshTokens->findOneByHash(TokenIdentifierHash::of($identifier));
 
         if (null === $refreshToken || !$this->issuedTo($refreshToken->connection(), $clientId)) {

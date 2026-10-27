@@ -83,7 +83,7 @@ paths:
   `OAuthEncryptionKey`, derived from `APP_SECRET` under `cp-ghostotof/oauth-encryption/v1`
   (`.claude/rules/backend-integrite.md`), handed to league as a defuse `Key` (a string would be read as a
   password, a PBKDF2 per encryption), derived at each `key()`, never at construction (#474).
-  `RefreshTokenPayloadReader` decrypts with league's own code, the key set on it only for the read.
+  `GrantPayloadReader` decrypts with league's own code, the key set on it only for the read.
   **Accepted limit, never promised away**: once handed over, the derived key lives in league's own private
   properties — `AuthorizationServer`, both grants, the response type, through `CryptTrait` — for the
   service's whole life, which a `dump()` of those objects would show; nothing of the project dumps them

@@ -132,7 +132,7 @@ league encrypts the authorization codes and refresh tokens it hands to MCP clien
 and every refresh token handed out unreadable**: each MCP client reconnects (`k8s/README.md`, « Cas
 d'`APP_SECRET` »). **Accepted limit**: once handed over, the derived key lives in league's own private
 properties (`AuthorizationServer`, its grants, `CryptTrait`), which a `dump()` of those vendor objects would
-show — nothing of ours holds it, and no code dumps them; `RefreshTokenPayloadReader` sets it on its reader
+show — nothing of ours holds it, and no code dumps them; `GrantPayloadReader` sets it on its reader
 only for the read, then removes it. Keyed by the raw secret and told apart only in the message (a prefix, or nothing), any
 future feature returning `HMAC(APP_SECRET, x)` for a client-chosen `x` would have been a signing oracle for every other use. Changing a context is a targeted rotation. The
 switch itself changed every login fingerprint and invalidated the `XSRF-TOKEN` cookies already issued, and
