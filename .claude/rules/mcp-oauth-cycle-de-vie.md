@@ -314,7 +314,9 @@ paths:
   the cascade (lot B of the reviews: R then A left the residual cycle told in « Revoking a refresh token at the
   revocation endpoint », above; the price is a SET NULL rewrite on dead R rows the next statement deletes, measured
   by no counter: `McpConnectionPurgerTest` counts the same two, two, two): `expires_at <= :now` **or** a revoked connection
-  (`DELETE … USING mcp_connection`, which locks no connection row) — a rotated refresh token or an exchanged code of an
+  (one DQL `DELETE … WHERE expires_at <= :now OR connection_id IN (SELECT … revoked_at IS NOT NULL)`, written once
+  for the three tables in `Infrastructure/Doctrine/DeletesDeadTokens` since lot C — the rows of the former `DELETE …
+  USING mcp_connection`, the foreign key being non-null —, which locks no connection row) — a rotated refresh token or an exchanged code of an
   **active** connection stays until its expiry, its row being what recognises a reuse or a replay; the tokens of a
   connection marked in (3) go in the same run. **Accepted limit**: no order of steps covers a cycle between
   `mcp_connection` rows alone — the purge locks its candidates (1, by id) then its old revoked rows (4), a deletion

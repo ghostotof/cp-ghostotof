@@ -18,6 +18,8 @@ use Symfony\Component\Uid\Uuid;
  */
 class McpAuthorizationCodeRepository extends ServiceEntityRepository implements McpAuthorizationCodeRepositoryInterface
 {
+    use DeletesDeadTokens;
+
     public function __construct(
         ManagerRegistry $registry,
         private readonly RereadUnderLock $rereadUnderLock,
@@ -78,23 +80,5 @@ class McpAuthorizationCodeRepository extends ServiceEntityRepository implements 
             ->setParameter('codeHash', $codeHash)
             ->getQuery()
             ->execute();
-    }
-
-    /**
-     * Une instruction, jointe à la connexion pour lire sa révocation, par la
-     * connexion DBAL : une suppression en masse, sans instance à charger.
-     * L'instant est typé comme sa colonne, avec fuseau (#434). Un code échangé
-     * non échu d'une connexion active n'est pas visé : sa ligne fait
-     * reconnaître son rejeu. Aucun index sur `expires_at` : la table reste
-     * bornée par cette purge quotidienne, à revoir si la volumétrie le demande.
-     */
-    public function deleteDead(DateTimeImmutable $now): int
-    {
-        return (int) $this->getEntityManager()->getConnection()->executeStatement(
-            'DELETE FROM mcp_authorization_code t USING mcp_connection c'
-            .' WHERE c.id = t.connection_id AND (t.expires_at <= :now OR c.revoked_at IS NOT NULL)',
-            ['now' => $now],
-            ['now' => Types::DATETIMETZ_IMMUTABLE],
-        );
     }
 }
