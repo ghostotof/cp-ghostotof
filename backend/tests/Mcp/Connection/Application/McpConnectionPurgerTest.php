@@ -12,7 +12,6 @@ use App\Mcp\Connection\Domain\Entity\McpAuthorizationCode;
 use App\Mcp\Connection\Domain\Entity\McpClient;
 use App\Mcp\Connection\Domain\Entity\McpConnection;
 use App\Mcp\Connection\Domain\Entity\McpRefreshToken;
-use App\Mcp\Connection\Domain\Exception\McpPurgeRetentionTooShortException;
 use App\Mcp\Connection\Domain\Repository\McpAccessTokenRepositoryInterface;
 use App\Mcp\Connection\Domain\Repository\McpAuthorizationCodeRepositoryInterface;
 use App\Mcp\Connection\Domain\Repository\McpClientRepositoryInterface;
@@ -21,6 +20,7 @@ use App\Mcp\Connection\Domain\Repository\McpRefreshTokenRepositoryInterface;
 use App\Mcp\Connection\Domain\ValueObject\ConnectionLifetimes;
 use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use App\Security\User\Domain\Entity\CpgUser;
+use App\Shared\Domain\Exception\InvalidRetentionPeriodException;
 use App\Shared\Domain\ValueObject\RetentionPeriod;
 use App\Tests\Mcp\Connection\RegisteredMcpClient;
 use App\Tests\Support\ReadsSecurityAuditLog;
@@ -254,7 +254,7 @@ final class McpConnectionPurgerTest extends KernelTestCase
         try {
             $this->purger()->purge(RetentionPeriod::fromString('12 hours', $this->now()));
             self::fail('Une rétention de douze heures a été acceptée.');
-        } catch (McpPurgeRetentionTooShortException) {
+        } catch (InvalidRetentionPeriodException) {
         }
 
         self::assertNull($this->revocationOf($expired)['revokedAt']);

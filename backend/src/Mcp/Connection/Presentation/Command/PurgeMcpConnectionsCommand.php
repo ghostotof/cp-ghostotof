@@ -6,7 +6,6 @@ namespace App\Mcp\Connection\Presentation\Command;
 
 use App\Mcp\Connection\Application\McpConnectionPurgeResult;
 use App\Mcp\Connection\Application\McpConnectionPurgerInterface;
-use App\Mcp\Connection\Domain\Exception\McpPurgeRetentionTooShortException;
 use App\Shared\Domain\Exception\InvalidRetentionPeriodException;
 use App\Shared\Domain\ValueObject\RetentionPeriod;
 use Psr\Clock\ClockInterface;
@@ -68,7 +67,7 @@ final class PurgeMcpConnectionsCommand extends Command
         try {
             $retention = RetentionPeriod::fromString($olderThan, $this->clock->now());
             $result = $this->purger->purge($retention);
-        } catch (InvalidRetentionPeriodException|McpPurgeRetentionTooShortException $exception) {
+        } catch (InvalidRetentionPeriodException $exception) {
             $io->error($exception->getMessage());
 
             return Command::INVALID;

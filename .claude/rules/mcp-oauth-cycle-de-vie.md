@@ -325,7 +325,9 @@ paths:
   purge audits nothing (`testARolledBackPurgeAuditsNothing`, red with the audit moved inside, measured). Every instant is
   `ClockInterface::now()` (Paris). **Retention**: `app.mcp.revoked_connection_retention` (`'6 months'`, one value for every
   environment), the default of `--older-than`, read by `RetentionPeriod` (a date or an unreadable expression:
-  `Command::INVALID`); under one day, `McpPurgeRetentionTooShortException::belowOneDay()` before any write, `INVALID` too.
+  `Command::INVALID`); under one day, `RetentionPeriod::thresholdAtLeastOneDayBefore()` refuses it before any write
+  (`InvalidRetentionPeriodException::shorterThanOneDay()`, the floor shared with the invitation purge since lot C of the
+  reviews), `INVALID` too.
   **No `--dry-run`** (decision 6): it only deletes dead tokens and connections dead for months, nothing a person could
   regret — the invitation purge has one because it deletes accounts. The output names connections by UUID only, with the
   four counters, a success even at zero. **Volumes**: the token tables stay bounded by this purge (an access token lives

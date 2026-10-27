@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Mcp\Connection\Application;
 
-use App\Mcp\Connection\Domain\Exception\McpPurgeRetentionTooShortException;
+use App\Shared\Domain\Exception\InvalidRetentionPeriodException;
 use App\Shared\Domain\ValueObject\RetentionPeriod;
 
 /**
@@ -27,7 +27,8 @@ use App\Shared\Domain\ValueObject\RetentionPeriod;
 interface McpConnectionPurgerInterface
 {
     /**
-     * @throws McpPurgeRetentionTooShortException si la rétention est inférieure à un jour, avant toute écriture
+     * @throws InvalidRetentionPeriodException si la rétention est inférieure à un jour, avant toute écriture
+     *                                         (RetentionPeriod::thresholdAtLeastOneDayBefore())
      */
     public function purge(RetentionPeriod $retention): McpConnectionPurgeResult;
 }

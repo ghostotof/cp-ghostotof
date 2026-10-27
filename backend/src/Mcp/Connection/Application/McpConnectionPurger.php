@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Mcp\Connection\Application;
 
 use App\Mcp\Connection\Domain\Entity\McpConnection;
-use App\Mcp\Connection\Domain\Exception\McpPurgeRetentionTooShortException;
 use App\Mcp\Connection\Domain\Repository\McpAccessTokenRepositoryInterface;
 use App\Mcp\Connection\Domain\Repository\McpAuthorizationCodeRepositoryInterface;
 use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
@@ -44,9 +43,6 @@ use Symfony\Component\Uid\Uuid;
  */
 final readonly class McpConnectionPurger implements McpConnectionPurgerInterface
 {
-    /** Plancher de la rétention, comme la purge des invitations. */
-    private const string MINIMUM_RETENTION = 'P1D';
-
     /**
      * Marge de la présélection SQL : ses bornes (maintenant moins la durée)
      * sont reculées d'un jour, pour qu'aucune connexion qu'`isExpiredAt()` dit
@@ -75,13 +71,10 @@ final readonly class McpConnectionPurger implements McpConnectionPurgerInterface
     public function purge(RetentionPeriod $retention): McpConnectionPurgeResult
     {
         $now = $this->clock->now();
-        $threshold = $now->sub($retention->interval());
-
-        // Avant toute écriture : une rétention de quelques heures supprimerait
-        // les connexions révoquées dans la journée, leur seule trace en base.
-        if ($threshold > $now->sub(new DateInterval(self::MINIMUM_RETENTION))) {
-            throw McpPurgeRetentionTooShortException::belowOneDay();
-        }
+        // Avant toute écriture, le plancher d'un jour de RetentionPeriod : une
+        // rétention de quelques heures supprimerait les connexions révoquées
+        // dans la journée, leur seule trace en base.
+        $threshold = $retention->thresholdAtLeastOneDayBefore($now);
 
         $purged = $this->transaction->run(fn (): array => [
             // La révocation d'abord : elle verrouille les connexions avant

@@ -185,8 +185,10 @@ paths:
     definition of "never activated", issue #238, so a password set for the person from the backoffice
     exempts the account — invited more than N days ago, 30 by default, never a `ROLE_SUPER` one;
     `app:user:purge-pending-invitations`, daily in the housekeeping CronJob, `--dry-run` for a hand run;
-    retention ≥ 1 day, `InvalidPurgeRetentionException` → exit 2, a shorter one would otherwise purge nearly
-    every pending account in one manual run; `--older-than` is read through `Shared/Domain/ValueObject/RetentionPeriod`,
+    retention ≥ 1 day, `RetentionPeriod::thresholdAtLeastOneDayBefore()` (the floor shared with the MCP purge since
+    lot C of #649's reviews: one calendar day of the clock's zone, `InvalidRetentionPeriodException::shorterThanOneDay()`)
+    → exit 2, a shorter one would otherwise purge nearly every pending account in one manual run; the purger takes
+    a `RetentionPeriod`, never a bare `DateInterval`, so a negative or zero one cannot reach it; `--older-than` is read through `Shared/Domain/ValueObject/RetentionPeriod`,
     like the contact purge (#710: calendar days, elapsed hours, a date or a misread number refused), never
     `createFromDateString()` directly; each deletion runs under the account lock, `AccountLockInterface`,
     and re-checks the criteria on the re-read account — a resend, an activation or a password set from the

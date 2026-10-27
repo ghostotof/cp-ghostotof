@@ -340,6 +340,84 @@ final class RetentionPeriodTest extends TestCase
         }
     }
 
+    /**
+     * Le plancher d'un jour des deux purges qui le demandent (invitations,
+     * connexions MCP ; lot C des relectures de #649, écrit une fois ici) : le
+     * seuil retranché à l'instant de l'appelant, s'il tombe au plus tard
+     * « maintenant moins un jour ».
+     */
+    #[DataProvider('atLeastOneDay')]
+    public function testAThresholdAtLeastOneDayBackIsReturned(string $expression, string $expectedThreshold): void
+    {
+        $retention = RetentionPeriod::fromString($expression, $this->now());
+
+        self::assertEquals(new DateTimeImmutable($expectedThreshold), $retention->thresholdAtLeastOneDayBefore($this->now()));
+    }
+
+    /**
+     * @return iterable<string, array{string, string}>
+     */
+    public static function atLeastOneDay(): iterable
+    {
+        yield 'un jour, le plancher exactement' => ['1 day', '2026-09-21 12:00:00'];
+        yield 'vingt-quatre heures, hors changement d\'heure' => ['24 hours', '2026-09-21 12:00:00'];
+        yield 'trente jours' => ['30 days', '2026-08-23 12:00:00'];
+        yield 'six mois' => ['6 months', '2026-03-22 12:00:00'];
+    }
+
+    /**
+     * Sous un jour, refusé, l'expression nommée : la commande l'affiche et
+     * rend `Command::INVALID`, avant toute écriture du purgeur.
+     */
+    #[DataProvider('underOneDay')]
+    public function testAThresholdLessThanOneDayBackIsRefused(string $expression): void
+    {
+        $retention = RetentionPeriod::fromString($expression, $this->now());
+
+        try {
+            $retention->thresholdAtLeastOneDayBefore($this->now());
+            self::fail('InvalidRetentionPeriodException attendue.');
+        } catch (InvalidRetentionPeriodException $exception) {
+            self::assertStringContainsString('au moins un jour', $exception->getMessage());
+            self::assertStringContainsString($expression, $exception->getMessage());
+        }
+    }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function underOneDay(): iterable
+    {
+        yield 'une heure' => ['1 hour'];
+        yield 'vingt-trois heures' => ['23 hours'];
+        yield 'un jour moins une seconde' => ['86399 seconds'];
+    }
+
+    /**
+     * Le jour du plancher est un jour du calendrier du fuseau de `$now`, comme
+     * l'écrivaient les deux purgeurs (`$now->sub(new DateInterval('P1D'))`) :
+     * le jour du passage à l'heure d'hiver, il dure 25 heures, et « 24 hours »
+     * n'y suffit plus ; le jour du passage à l'heure d'été, 23 heures, et
+     * « 23 hours » y suffit.
+     */
+    public function testTheFloorIsOneCalendarDayOfNowsTimeZone(): void
+    {
+        $afterAutumnChange = new DateTimeImmutable('2026-10-25 12:00:00', new DateTimeZone('Europe/Paris'));
+        $afterSpringChange = new DateTimeImmutable('2026-03-29 12:00:00', new DateTimeZone('Europe/Paris'));
+
+        self::assertEquals(
+            new DateTimeImmutable('2026-10-24 12:00:00', new DateTimeZone('Europe/Paris')),
+            RetentionPeriod::fromString('1 day', $afterAutumnChange)->thresholdAtLeastOneDayBefore($afterAutumnChange),
+        );
+        self::assertEquals(
+            new DateTimeImmutable('2026-03-28 12:00:00', new DateTimeZone('Europe/Paris')),
+            RetentionPeriod::fromString('23 hours', $afterSpringChange)->thresholdAtLeastOneDayBefore($afterSpringChange),
+        );
+
+        $this->expectException(InvalidRetentionPeriodException::class);
+        RetentionPeriod::fromString('24 hours', $afterAutumnChange)->thresholdAtLeastOneDayBefore($afterAutumnChange);
+    }
+
     private function now(): DateTimeImmutable
     {
         return new DateTimeImmutable(self::NOW);

@@ -12,6 +12,7 @@ use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Entity\PasswordSetupToken;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use App\Security\User\Domain\Repository\PasswordSetupTokenRepositoryInterface;
+use App\Shared\Domain\ValueObject\RetentionPeriod;
 use App\Tests\Support\HttpJson;
 use App\Tests\Support\InvitesUsers;
 use App\Tests\Support\TestCredentials;
@@ -523,7 +524,7 @@ final class AccountPasswordSetupResourceTest extends WebTestCase
         $links['purgé'] = $this->inviteAndCollectSetupToken('purged@example.com', Locale::FR);
         self::getContainer()->get(EntityManagerInterface::class)->getConnection()
             ->executeStatement("UPDATE cpg_user SET invited_at = now() - interval '40 days' WHERE email = 'purged@example.com'");
-        $purge = self::getContainer()->get(PendingInvitationPurgerInterface::class)->purge(new DateInterval('P30D'));
+        $purge = self::getContainer()->get(PendingInvitationPurgerInterface::class)->purge(RetentionPeriod::fromString('30 days', self::getContainer()->get(ClockInterface::class)->now()));
         self::assertCount(1, $purge->purged);
         self::getContainer()->get(EntityManagerInterface::class)->clear();
 
