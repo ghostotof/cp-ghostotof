@@ -8,6 +8,7 @@ use App\Mcp\Connection\Domain\ValueObject\ConnectionLifetimes;
 use App\Mcp\Connection\Domain\ValueObject\RevocationCause;
 use App\Mcp\Connection\Infrastructure\Doctrine\McpConnectionRepository;
 use App\Security\User\Domain\Entity\CpgUser;
+use App\Shared\Domain\Security\McpConnectionReference;
 use DateInterval;
 use DateTimeImmutable;
 use Doctrine\DBAL\Types\Types;
@@ -50,11 +51,16 @@ use Symfony\Component\Uid\Uuid;
  * L'index partiel `idx_mcp_connection_active_pair` sert la recherche de
  * l'accord actif d'un couple compte/client, qu'un nouvel accord remplace
  * (cause `superseded`).
+ *
+ * Un McpConnectionReference : le journal de sécurité la reçoit telle quelle
+ * (l'accord, le refus d'un de ses jetons d'accès), son compte par son UUID,
+ * son client par son identifiant public — lus sur le compte et le client
+ * qu'elle tient déjà, sans requête de plus quand ils ont été joints.
  */
 #[ORM\Entity(repositoryClass: McpConnectionRepository::class)]
 #[ORM\Table(name: 'mcp_connection')]
 #[ORM\Index(name: 'idx_mcp_connection_active_pair', columns: ['account_id', 'mcp_client_id'], options: ['where' => '(revoked_at IS NULL)'])]
-class McpConnection
+class McpConnection implements McpConnectionReference
 {
     /**
      * Le seul scope qu'une connexion accorde (spec 0007 phase 2) : lire le
@@ -132,6 +138,24 @@ class McpConnection
     public function client(): McpClient
     {
         return $this->client;
+    }
+
+    /** L'UUID du compte qui a consenti, forme RFC 4122 : celui de {@see self::account()}. */
+    public function accountId(): string
+    {
+        return $this->account->accountId();
+    }
+
+    /** L'UUID de la connexion : {@see self::getId()}, sous le nom que le journal de sécurité lit. */
+    public function connectionId(): Uuid
+    {
+        return $this->id;
+    }
+
+    /** L'identifiant public OAuth de son client (`mcp_client.client_id`). */
+    public function clientId(): string
+    {
+        return $this->client->getClientId();
     }
 
     public function scope(): string

@@ -21,7 +21,7 @@ use App\Mcp\Connection\Domain\ValueObject\RevocationCause;
 use App\Mcp\Connection\Domain\ValueObject\RevokedConnection;
 use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use App\Security\User\Domain\Entity\CpgUser;
-use App\Shared\Domain\Security\AccountReference;
+use App\Shared\Domain\Security\McpConnectionReference;
 use App\Tests\Mcp\Connection\RegisteredMcpClient;
 use Closure;
 use DateInterval;
@@ -60,7 +60,7 @@ final class ConsentServiceTest extends TestCase
     /** La connexion que le dépôt a reçue. */
     private ?McpConnection $added = null;
 
-    /** @var array{CpgUser, Uuid, string}|null les arguments de la ligne d'audit */
+    /** @var array{string, Uuid, string}|null le compte, la connexion et le client que la ligne d'audit désigne */
     private ?array $audited = null;
 
     /**
@@ -74,7 +74,7 @@ final class ConsentServiceTest extends TestCase
     /** @var array{McpConnection, RevocationCause, DateTimeImmutable}|null les arguments du remplacement */
     private ?array $supersededWith = null;
 
-    /** @var list<array{AccountReference, Uuid, string, string}> les arguments de chaque ligne `mcp-connection-revoked` */
+    /** @var list<array{McpConnectionReference, string}> les arguments de chaque ligne `mcp-connection-revoked` */
     private array $revokedAudits = [];
 
     /** La requête que le validateur a reçue. */
@@ -122,8 +122,8 @@ final class ConsentServiceTest extends TestCase
         self::assertSame('nominative:read', $this->added->scope());
         self::assertSame((new DateTimeImmutable(self::GRANTED_AT))->getTimestamp(), $this->added->grantedAt()->getTimestamp());
         self::assertNotNull($this->audited);
-        [$account, $connectionId, $clientId] = $this->audited;
-        self::assertSame($this->account, $account);
+        [$accountId, $connectionId, $clientId] = $this->audited;
+        self::assertSame($this->account->accountId(), $accountId);
         self::assertTrue($this->added->getId()->equals($connectionId));
         self::assertSame(self::CLIENT_ID, $clientId);
     }
@@ -201,8 +201,8 @@ final class ConsentServiceTest extends TestCase
         self::assertSame(RevocationCause::Superseded, $cause);
         self::assertSame((new DateTimeImmutable(self::GRANTED_AT))->getTimestamp(), $at->getTimestamp());
         self::assertSame([
-            [$first, $first->connectionId, self::CLIENT_ID, 'superseded'],
-            [$second, $second->connectionId, self::CLIENT_ID, 'superseded'],
+            [$first, 'superseded'],
+            [$second, 'superseded'],
         ], $this->revokedAudits);
     }
 
@@ -433,13 +433,13 @@ final class ConsentServiceTest extends TestCase
         });
 
         $auditLogger = self::createStub(SecurityAuditLoggerInterface::class);
-        $auditLogger->method('mcpConnectionGranted')->willReturnCallback(function (CpgUser $account, Uuid $connectionId, string $clientId): void {
+        $auditLogger->method('mcpConnectionGranted')->willReturnCallback(function (McpConnectionReference $connection): void {
             $this->effects[] = 'audit';
-            $this->audited = [$account, $connectionId, $clientId];
+            $this->audited = [$connection->accountId(), $connection->connectionId(), $connection->clientId()];
         });
-        $auditLogger->method('mcpConnectionRevoked')->willReturnCallback(function (AccountReference $account, Uuid $connectionId, string $clientId, string $cause): void {
+        $auditLogger->method('mcpConnectionRevoked')->willReturnCallback(function (McpConnectionReference $connection, string $cause): void {
             $this->effects[] = 'revoked';
-            $this->revokedAudits[] = [$account, $connectionId, $clientId, $cause];
+            $this->revokedAudits[] = [$connection, $cause];
         });
 
         return new ConsentService(

@@ -257,9 +257,9 @@ final class McpConnectionRepositoryTest extends KernelTestCase
         $revoked = $this->connections()->revokeActive($connection->getId(), RevocationCause::Client, $at);
 
         self::assertInstanceOf(RevokedConnection::class, $revoked);
-        self::assertTrue($connection->getId()->equals($revoked->connectionId));
+        self::assertTrue($connection->getId()->equals($revoked->connectionId()));
         self::assertSame($account->getId()->toRfc4122(), $revoked->accountId());
-        self::assertSame('https://client.example.test/metadata.json', $revoked->clientId);
+        self::assertSame('https://client.example.test/metadata.json', $revoked->clientId());
         self::assertSame(RevocationCause::Client, $revoked->cause);
         self::assertSame(
             ['revoked_at' => $at->getTimestamp(), 'revocation_cause' => 'client'],
@@ -345,14 +345,14 @@ final class McpConnectionRepositoryTest extends KernelTestCase
 
         $revoked = $this->connections()->revokeOtherActiveOf($kept, RevocationCause::Superseded, $at);
 
-        $revokedIds = array_map(static fn(RevokedConnection $connection): string => $connection->connectionId->toRfc4122(), $revoked);
+        $revokedIds = array_map(static fn(RevokedConnection $connection): string => $connection->connectionId()->toRfc4122(), $revoked);
         sort($revokedIds);
         $expectedIds = [$previous->getId()->toRfc4122(), $older->getId()->toRfc4122()];
         sort($expectedIds);
         self::assertSame($expectedIds, $revokedIds);
         foreach ($revoked as $connection) {
             self::assertSame($account->getId()->toRfc4122(), $connection->accountId());
-            self::assertSame('https://client.example.test/metadata.json', $connection->clientId);
+            self::assertSame('https://client.example.test/metadata.json', $connection->clientId());
             self::assertSame(RevocationCause::Superseded, $connection->cause);
         }
         foreach ([$previous, $older] as $connection) {

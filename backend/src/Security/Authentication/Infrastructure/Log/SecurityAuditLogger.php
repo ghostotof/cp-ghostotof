@@ -7,6 +7,7 @@ namespace App\Security\Authentication\Infrastructure\Log;
 use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Shared\Domain\Security\AccountReference;
+use App\Shared\Domain\Security\McpConnectionReference;
 use App\Shared\Infrastructure\Http\CanonicalPath;
 use Monolog\Attribute\WithMonologChannel;
 use Psr\Log\LoggerInterface;
@@ -14,7 +15,6 @@ use SensitiveParameter;
 use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\Security\Core\Authentication\Token\Storage\TokenStorageInterface;
 use Symfony\Component\Security\Core\User\UserInterface;
-use Symfony\Component\Uid\Uuid;
 
 /**
  * Implémentation Monolog du journal de sécurité (D5), sur le canal
@@ -193,45 +193,36 @@ final readonly class SecurityAuditLogger implements SecurityAuditLoggerInterface
         );
     }
 
-    public function mcpConnectionGranted(CpgUser $account, Uuid $connectionId, string $clientId): void
+    public function mcpConnectionGranted(McpConnectionReference $connection): void
     {
-        $this->record('mcp-connection-granted', 'MCP connection granted.', [
-            ...$this->account($account),
-            'connectionId' => $connectionId->toRfc4122(),
-            'clientId' => $clientId,
-        ]);
+        $this->record('mcp-connection-granted', 'MCP connection granted.', $this->connection($connection));
     }
 
-    public function nominativeCorpusRead(AccountReference $account, Uuid $connectionId, string $clientId, string $tool): void
+    public function nominativeCorpusRead(McpConnectionReference $connection, string $tool): void
     {
-        $this->record('nominative-corpus-read', 'Nominative corpus read.', [
-            ...$this->account($account),
-            'connectionId' => $connectionId->toRfc4122(),
-            'clientId' => $clientId,
-            'tool' => $tool,
-        ]);
+        $this->record('nominative-corpus-read', 'Nominative corpus read.', [...$this->connection($connection), 'tool' => $tool]);
     }
 
-    public function mcpConnectionRevoked(AccountReference $account, Uuid $connectionId, string $clientId, string $cause): void
+    public function mcpConnectionRevoked(McpConnectionReference $connection, string $cause): void
     {
-        $this->record('mcp-connection-revoked', 'MCP connection revoked.', $this->connectionSubject($account, $connectionId, $clientId, $cause));
+        $this->record('mcp-connection-revoked', 'MCP connection revoked.', [...$this->connection($connection), 'cause' => $cause]);
     }
 
-    public function mcpConnectionExpired(AccountReference $account, Uuid $connectionId, string $clientId): void
+    public function mcpConnectionExpired(McpConnectionReference $connection): void
     {
         // Acteur forcé à `system`, comme userPurged() : l'expiration naît de
         // la purge planifiée, hors de toute requête HTTP.
         $this->record(
             'mcp-connection-revoked',
             'MCP connection revoked.',
-            $this->connectionSubject($account, $connectionId, $clientId, self::EXPIRED),
+            [...$this->connection($connection), 'cause' => self::EXPIRED],
             self::SYSTEM,
         );
     }
 
-    public function mcpAccessTokenRefused(AccountReference $account, Uuid $connectionId, string $clientId, string $cause): void
+    public function mcpAccessTokenRefused(McpConnectionReference $connection, string $cause): void
     {
-        $this->record('mcp-access-token-refused', 'MCP access token refused.', $this->connectionSubject($account, $connectionId, $clientId, $cause));
+        $this->record('mcp-access-token-refused', 'MCP access token refused.', [...$this->connection($connection), 'cause' => $cause]);
     }
 
     /**
@@ -252,19 +243,18 @@ final readonly class SecurityAuditLogger implements SecurityAuditLoggerInterface
     }
 
     /**
-     * Le sujet d'un événement d'une connexion MCP portant une cause (#649) —
-     * sa révocation, le refus d'un de ses jetons d'accès : le compte, la
-     * connexion, le client par son identifiant public, la cause.
+     * Le sujet de tout événement d'une connexion MCP (#647, #648, #649) : le
+     * compte, la connexion, le client par son identifiant public — dans cet
+     * ordre, le même pour chacun ; l'appelant y ajoute sa cause ou son outil.
      *
-     * @return array{userId: string, connectionId: string, clientId: string, cause: string}
+     * @return array{userId: string, connectionId: string, clientId: string}
      */
-    private function connectionSubject(AccountReference $account, Uuid $connectionId, string $clientId, string $cause): array
+    private function connection(McpConnectionReference $connection): array
     {
         return [
-            ...$this->account($account),
-            'connectionId' => $connectionId->toRfc4122(),
-            'clientId' => $clientId,
-            'cause' => $cause,
+            ...$this->account($connection),
+            'connectionId' => $connection->connectionId()->toRfc4122(),
+            'clientId' => $connection->clientId(),
         ];
     }
 

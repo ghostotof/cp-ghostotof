@@ -166,7 +166,7 @@ final class McpBearerAuthenticator extends AbstractAuthenticator
      */
     private function auditedRefusal(McpConnection $connection, BearerRefusal $cause): McpBearerRefusedException
     {
-        $this->auditLogger->mcpAccessTokenRefused($connection->account(), $connection->getId(), $connection->client()->getClientId(), $cause->value);
+        $this->auditLogger->mcpAccessTokenRefused($connection, $cause->value);
 
         return McpBearerRefusedException::because($cause);
     }

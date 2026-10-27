@@ -9,6 +9,7 @@ use App\Security\Authentication\Infrastructure\Log\LoginIdentifierFingerprint;
 use App\Security\Authentication\Infrastructure\Log\SecurityAuditLogger;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\ValueObject\BaseAccessUser;
+use App\Tests\Security\Authentication\Fixtures\AuditedMcpConnection;
 use App\Tests\Support\TestCredentials;
 use Closure;
 use Monolog\Handler\TestHandler;
@@ -566,7 +567,7 @@ final class SecurityAuditLoggerTest extends TestCase
         $this->authenticate($account);
         $connectionId = Uuid::v7();
 
-        $this->auditLogger->mcpConnectionGranted($account, $connectionId, 'https://client.example.test/metadata.json');
+        $this->auditLogger->mcpConnectionGranted(new AuditedMcpConnection($account, $connectionId, 'https://client.example.test/metadata.json'));
 
         self::assertSame([
             'event' => 'mcp-connection-granted',
@@ -594,7 +595,7 @@ final class SecurityAuditLoggerTest extends TestCase
         $this->authenticate($account);
         $connectionId = Uuid::v7();
 
-        $this->auditLogger->nominativeCorpusRead($account, $connectionId, 'https://client.example.test/metadata.json', 'get_nominative_corpus');
+        $this->auditLogger->nominativeCorpusRead(new AuditedMcpConnection($account, $connectionId, 'https://client.example.test/metadata.json'), 'get_nominative_corpus');
 
         $record = $this->singleRecord();
         self::assertSame('Nominative corpus read.', $record->message);
@@ -622,7 +623,7 @@ final class SecurityAuditLoggerTest extends TestCase
         $account = new CpgUser('trusted', 'hashed-password');
         $connectionId = Uuid::v7();
 
-        $this->auditLogger->mcpConnectionRevoked($account, $connectionId, 'https://client.example.test/metadata.json', 'refresh-token-reuse');
+        $this->auditLogger->mcpConnectionRevoked(new AuditedMcpConnection($account, $connectionId, 'https://client.example.test/metadata.json'), 'refresh-token-reuse');
 
         $record = $this->singleRecord();
         self::assertSame('MCP connection revoked.', $record->message);
@@ -650,7 +651,7 @@ final class SecurityAuditLoggerTest extends TestCase
         $account = new CpgUser('trusted', 'hashed-password');
         $connectionId = Uuid::v7();
 
-        $this->auditLogger->mcpAccessTokenRefused($account, $connectionId, 'https://client.example.test/metadata.json', 'connection-expired');
+        $this->auditLogger->mcpAccessTokenRefused(new AuditedMcpConnection($account, $connectionId, 'https://client.example.test/metadata.json'), 'connection-expired');
 
         $record = $this->singleRecord();
         self::assertSame('MCP access token refused.', $record->message);
@@ -677,7 +678,7 @@ final class SecurityAuditLoggerTest extends TestCase
         $account = new CpgUser('trusted', 'hashed-password');
         $connectionId = Uuid::v7();
 
-        $this->auditLogger->mcpConnectionExpired($account, $connectionId, 'https://client.example.test/metadata.json');
+        $this->auditLogger->mcpConnectionExpired(new AuditedMcpConnection($account, $connectionId, 'https://client.example.test/metadata.json'));
 
         self::assertSame([
             'event' => 'mcp-connection-revoked',
@@ -793,11 +794,11 @@ final class SecurityAuditLoggerTest extends TestCase
         $this->auditLogger->passwordSetupThrottled();
         $this->auditLogger->contactThrottled();
         $this->auditLogger->baseAccessThrottled();
-        $this->auditLogger->mcpConnectionGranted($invited, Uuid::v7(), 'https://client.example.test/metadata.json');
-        $this->auditLogger->nominativeCorpusRead($invited, Uuid::v7(), 'https://client.example.test/metadata.json', 'get_nominative_corpus');
-        $this->auditLogger->mcpConnectionRevoked($invited, Uuid::v7(), 'https://client.example.test/metadata.json', 'client');
-        $this->auditLogger->mcpConnectionExpired($invited, Uuid::v7(), 'https://client.example.test/metadata.json');
-        $this->auditLogger->mcpAccessTokenRefused($invited, Uuid::v7(), 'https://client.example.test/metadata.json', 'token-expired');
+        $this->auditLogger->mcpConnectionGranted(new AuditedMcpConnection($invited, Uuid::v7(), 'https://client.example.test/metadata.json'));
+        $this->auditLogger->nominativeCorpusRead(new AuditedMcpConnection($invited, Uuid::v7(), 'https://client.example.test/metadata.json'), 'get_nominative_corpus');
+        $this->auditLogger->mcpConnectionRevoked(new AuditedMcpConnection($invited, Uuid::v7(), 'https://client.example.test/metadata.json'), 'client');
+        $this->auditLogger->mcpConnectionExpired(new AuditedMcpConnection($invited, Uuid::v7(), 'https://client.example.test/metadata.json'));
+        $this->auditLogger->mcpAccessTokenRefused(new AuditedMcpConnection($invited, Uuid::v7(), 'https://client.example.test/metadata.json'), 'token-expired');
 
         $records = $this->handler->getRecords();
         self::assertCount(27, $records);

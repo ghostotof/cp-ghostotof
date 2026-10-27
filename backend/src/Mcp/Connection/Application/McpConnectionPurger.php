@@ -112,11 +112,11 @@ final readonly class McpConnectionPurger implements McpConnectionPurgerInterface
 
         // Après le COMMIT : une transaction annulée n'a rien révoqué.
         foreach ($purged['expired'] as $revoked) {
-            $this->auditLogger->mcpConnectionExpired($revoked, $revoked->connectionId, $revoked->clientId);
+            $this->auditLogger->mcpConnectionExpired($revoked);
         }
 
         return new McpConnectionPurgeResult(
-            array_map(static fn (RevokedConnection $revoked): string => $revoked->connectionId->toRfc4122(), $purged['expired']),
+            array_map(static fn (RevokedConnection $revoked): string => $revoked->connectionId()->toRfc4122(), $purged['expired']),
             $purged['codes'],
             $purged['accessTokens'],
             $purged['refreshTokens'],

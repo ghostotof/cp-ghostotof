@@ -9,7 +9,6 @@ use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
 use App\Mcp\Connection\Domain\ValueObject\RevocationCause;
 use App\Mcp\Connection\Domain\ValueObject\RevokedConnection;
 use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
-use App\Shared\Domain\Security\AccountReference;
 use DateTimeImmutable;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -54,12 +53,7 @@ final class McpConnectionRevokerTest extends TestCase
         $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
         $auditLogger->expects(self::once())
             ->method('mcpConnectionRevoked')
-            ->with(
-                self::callback(static fn (AccountReference $account): bool => self::ACCOUNT_ID === $account->accountId()),
-                self::callback(static fn (Uuid $id): bool => $id->equals($connectionId)),
-                self::CLIENT_ID,
-                $cause->value,
-            );
+            ->with($revoked, $cause->value);
         $auditLogger->expects(self::never())->method('mcpConnectionExpired');
 
         $result = $this->revoker($connections, $auditLogger)->revoke($connectionId, $cause);
@@ -76,15 +70,12 @@ final class McpConnectionRevokerTest extends TestCase
     {
         $connectionId = Uuid::v7();
         $connections = self::createStub(McpConnectionRepositoryInterface::class);
-        $connections->method('revokeActive')->willReturn(new RevokedConnection($connectionId, self::ACCOUNT_ID, self::CLIENT_ID, RevocationCause::Expired));
+        $revoked = new RevokedConnection($connectionId, self::ACCOUNT_ID, self::CLIENT_ID, RevocationCause::Expired);
+        $connections->method('revokeActive')->willReturn($revoked);
         $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
         $auditLogger->expects(self::once())
             ->method('mcpConnectionExpired')
-            ->with(
-                self::callback(static fn (AccountReference $account): bool => self::ACCOUNT_ID === $account->accountId()),
-                self::callback(static fn (Uuid $id): bool => $id->equals($connectionId)),
-                self::CLIENT_ID,
-            );
+            ->with($revoked);
         $auditLogger->expects(self::never())->method('mcpConnectionRevoked');
 
         $this->revoker($connections, $auditLogger)->revoke($connectionId, RevocationCause::Expired);

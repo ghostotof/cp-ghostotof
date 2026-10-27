@@ -5,10 +5,9 @@ declare(strict_types=1);
 namespace App\Security\Authentication\Application;
 
 use App\Security\User\Domain\Entity\CpgUser;
-use App\Shared\Domain\Security\AccountReference;
+use App\Shared\Domain\Security\McpConnectionReference;
 use SensitiveParameter;
 use Symfony\Component\Security\Core\User\UserInterface;
-use Symfony\Component\Uid\Uuid;
 
 /**
  * Journal de sécurité (D5, constat A5 du 3e audit) : l'unique point d'entrée
@@ -185,10 +184,11 @@ interface SecurityAuditLoggerInterface
      * compte (`userId`), la connexion (`connectionId`, l'UUID que la
      * révocation et la liste « Mes connexions MCP » désignent aussi) et le
      * client par son identifiant public (`clientId`, le `client_id` d'OAuth
-     * d'un client public : aucun secret). Jamais le code d'autorisation émis,
-     * ni un jeton, ni leur empreinte.
+     * d'un client public : aucun secret), tous trois lus sur la connexion
+     * accordée. Jamais le code d'autorisation émis, ni un jeton, ni leur
+     * empreinte.
      */
-    public function mcpConnectionGranted(CpgUser $account, Uuid $connectionId, string $clientId): void;
+    public function mcpConnectionGranted(McpConnectionReference $connection): void;
 
     /**
      * Corpus nominatif lu par une connexion MCP (#648, ADR 0006 D5) : l'outil
@@ -196,12 +196,12 @@ interface SecurityAuditLoggerInterface
      * le compte dont la connexion a été authentifiée (`userId` — c'est aussi
      * l'auteur, lu dans le jeton de sécurité), la connexion (`connectionId`),
      * le client par son identifiant public (`clientId`) et l'outil (`tool`).
-     * Reçoit un AccountReference et non un CpgUser : le lecteur du corpus,
-     * hors de ce contexte, ne connaît le compte que par l'identité du
+     * Reçoit un McpConnectionReference et non un CpgUser : le lecteur du
+     * corpus, hors de ce contexte, ne connaît le compte que par l'identité du
      * firewall `mcp`.
      * Jamais le jeton présenté, son empreinte, ni rien du corpus.
      */
-    public function nominativeCorpusRead(AccountReference $account, Uuid $connectionId, string $clientId, string $tool): void;
+    public function nominativeCorpusRead(McpConnectionReference $connection, string $tool): void;
 
     /**
      * Connexion MCP révoquée (#649) : désigne le compte (`userId`), la
@@ -213,7 +213,7 @@ interface SecurityAuditLoggerInterface
      * est lu comme pour tout événement. Jamais le jeton ou le code présenté,
      * ni leur empreinte.
      */
-    public function mcpConnectionRevoked(AccountReference $account, Uuid $connectionId, string $clientId, string $cause): void;
+    public function mcpConnectionRevoked(McpConnectionReference $connection, string $cause): void;
 
     /**
      * Connexion MCP expirée, constatée et révoquée par la purge planifiée
@@ -222,7 +222,7 @@ interface SecurityAuditLoggerInterface
      * une commande planifiée n'a pas de jeton de sécurité, et `anonymous`
      * suggérerait un appelant humain.
      */
-    public function mcpConnectionExpired(AccountReference $account, Uuid $connectionId, string $clientId): void;
+    public function mcpConnectionExpired(McpConnectionReference $connection): void;
 
     /**
      * Jeton d'accès MCP connu, présenté sur `/api/mcp` et refusé (#649) :
@@ -237,5 +237,5 @@ interface SecurityAuditLoggerInterface
      * pour tout événement (`anonymous` : le refus précède toute
      * authentification). Jamais le jeton présenté ni son empreinte.
      */
-    public function mcpAccessTokenRefused(AccountReference $account, Uuid $connectionId, string $clientId, string $cause): void;
+    public function mcpAccessTokenRefused(McpConnectionReference $connection, string $cause): void;
 }

@@ -43,9 +43,9 @@ final readonly class McpConnectionRevoker implements McpConnectionRevokerInterfa
         }
 
         if (RevocationCause::Expired === $revoked->cause) {
-            $this->auditLogger->mcpConnectionExpired($revoked, $revoked->connectionId, $revoked->clientId);
+            $this->auditLogger->mcpConnectionExpired($revoked);
         } else {
-            $this->auditLogger->mcpConnectionRevoked($revoked, $revoked->connectionId, $revoked->clientId, $revoked->cause->value);
+            $this->auditLogger->mcpConnectionRevoked($revoked, $revoked->cause->value);
         }
 
         return $revoked;

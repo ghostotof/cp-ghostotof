@@ -72,8 +72,9 @@ paths:
   transaction, whose `wrapInTransaction()` rolls back **and closes the EntityManager** on the refusal — the
   revocation must be written after that, and a closed EntityManager keeps its connection
   (`testRevokeActiveWorksOnAClosedEntityManager`). The database decides: the first revocation keeps its instant and
-  cause, a second one (or an unknown id) returns `null`; it returns a `RevokedConnection` (an `AccountReference`:
-  the account's UUID, the client's **public** `client_id`, the cause) read from the written row, never from an
+  cause, a second one (or an unknown id) returns `null`; it returns a `RevokedConnection` (a
+  `Shared/Domain/Security/McpConnectionReference`: the account's UUID, the connection's, the client's **public**
+  `client_id` — plus the cause) read from the written row, never from an
   instance loaded earlier — which is **not** refreshed, like the tokens' `revokeByHash()`. The database refuses a
   half revocation, an instant without a cause or the reverse (`chk_mcp_connection_revocation_cause`,
   `CHECK ((revoked_at IS NULL) = (revocation_cause IS NULL))`, SQLSTATE 23514 — DBAL 4.5 has no dedicated
@@ -267,7 +268,8 @@ paths:
   exchange, set by the first refresh, left alone 30 minutes later, rewritten 61 minutes later).
 - **A known token refused is audited** (task 8 of #649). `McpBearerAuthenticator` writes
   `SecurityAuditLoggerInterface::mcpAccessTokenRefused()` — event `mcp-access-token-refused`, `userId` (the
-  connection's account, `McpConnection::account()`, an `AccountReference`), `connectionId`, the public `clientId`,
+  connection's account), `connectionId`, the public `clientId` (the three read on the connection itself, a
+  `McpConnectionReference`),
   `cause` = the `BearerRefusal` value; actor `anonymous`, the refusal precedes any authentication — right before
   throwing `McpBearerRefusedException` for a refusal of `McpAccessToken::refusalAt()` or of `TrustedTier`. **Never for
   `Malformed` nor `Unknown`**: no connection is known there, and a flood of garbage tokens must write no audit line

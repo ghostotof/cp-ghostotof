@@ -150,9 +150,9 @@ final readonly class ConsentService implements ConsentServiceInterface
         [$location, $superseded] = $written;
 
         // Après le COMMIT seulement : une transaction annulée n'a rien révoqué.
-        $this->auditLogger->mcpConnectionGranted($account, $connection->getId(), $summary->clientId);
+        $this->auditLogger->mcpConnectionGranted($connection);
         foreach ($superseded as $revoked) {
-            $this->auditLogger->mcpConnectionRevoked($revoked, $revoked->connectionId, $revoked->clientId, $revoked->cause->value);
+            $this->auditLogger->mcpConnectionRevoked($revoked, $revoked->cause->value);
         }
 
         return $location;

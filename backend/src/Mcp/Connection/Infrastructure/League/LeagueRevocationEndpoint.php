@@ -159,7 +159,7 @@ final readonly class LeagueRevocationEndpoint implements RevocationEndpointInter
         // Après le COMMIT : jamais une ligne d'audit pour une révocation que
         // la base aurait annulée.
         if (null !== $revoked) {
-            $this->auditLogger->mcpConnectionRevoked($revoked, $revoked->connectionId, $revoked->clientId, $revoked->cause->value);
+            $this->auditLogger->mcpConnectionRevoked($revoked, $revoked->cause->value);
         }
     }
 

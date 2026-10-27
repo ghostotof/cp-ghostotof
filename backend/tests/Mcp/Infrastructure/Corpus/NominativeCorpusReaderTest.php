@@ -67,7 +67,7 @@ final class NominativeCorpusReaderTest extends KernelTestCase
         $renderer->method('render')->willReturn(self::CORPUS);
         $audit = $this->createMock(SecurityAuditLoggerInterface::class);
         $audit->expects($this->once())->method('nominativeCorpusRead')
-            ->with($principal, $principal->connectionId(), 'test-client', ProtectedTools::NOMINATIVE_CORPUS);
+            ->with($principal, ProtectedTools::NOMINATIVE_CORPUS);
         $reader = $this->reader($renderer, $audit);
 
         $corpus = $reader->open(Locale::FR);
