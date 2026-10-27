@@ -14,7 +14,6 @@ paths:
   - "frontend/src/presentation/router/reauthentication.ts"
   - "frontend/tests/**/*OAuthConsent*"
   - "frontend/tests/domain/mcp/services/consentParams.spec.ts"
-  - "k8s/base/messenger-purge-cronjob.yaml"
 ---
 
 # Backend — `Mcp/Connection`: lifetime of a connection and its tokens (#649)
@@ -264,7 +263,9 @@ paths:
   too — **accepted and pinned** (`testAReplayUnderAnotherClientRevokesTheConnectionToo`): the verifier is the proof, a
   public client's `client_id` is none (it is in the authorization request, whoever replays a code can name the right
   one), and the refusal is the one league gave before the revocation, word for word; the audit line names the
-  connection's client, never the replayer's. A code presented **first** by another client is refused by
+  connection's client, never the replayer's. **The proof judges the verifier alone** (#726, audit I2):
+  league checks the `redirect_uri` after the repository too, so a proven replay revokes under another `client_id`
+  **or another `redirect_uri`** alike. A code presented **first** by another client is refused by
   league (« not issued to this client ») after a repository call that writes nothing: the code stays exchangeable by
   its client, the connection intact, no line (`testACodePresentedFirstByAnotherClientConsumesNothing`).
   `LeagueRepositoriesTest` judges a code under a rolled-back transaction, like a refresh token (the lock requires one).
@@ -287,7 +288,10 @@ paths:
   `TokenEndpointSupersessionAuditTest::testAnAuditFailureAfterTheCommitLeavesTheTokensIssued`,
   `testARolledBackExchangeAuditsNoSupersededConnection` (red with the audit inside, measured). A rolled-back
   exchange revokes nothing, a refresh supersedes nothing. So: an abandoned grant (code never exchanged, failed redirect)
-  leaves the previous connection alive; a decision sent again after a 5xx, or a double click, leaves two active connections until the first exchange, which leaves one; an older code exchanged after a newer one is
+  leaves the previous connection alive — **re-authorizing cuts the old connection only at the new code's exchange**
+  (#726, audit B1): until the person can revoke one herself (#650, « Mes connexions MCP »), an abandoned flow keeps a
+  possibly stolen connection alive, so **#650 is a prerequisite to opening phase 2 publicly** (the author's decision
+  of 2026-10-27); a decision sent again after a 5xx, or a double click, leaves two active connections until the first exchange, which leaves one; an older code exchanged after a newer one is
   dead (its connection superseded: `invalid_grant` « Authorization code has been revoked », audited `code-refused`,
   nothing revoked); a superseded connection's tokens are refused with nothing written (decision 6), its rows untouched.
   `ConsentControllerTest::testASecondGrantSupersedesTheFirstAtItsExchange` (the approval audits the grant only, the
@@ -303,7 +307,11 @@ paths:
   `revoked_at IS NULL` on the committed row
   (`TokenEndpointConcurrencyTest::testAnExchangeCrossingARefreshOfTheSupersededConnectionRevokesIt`, real processes,
   the exchange released at the refresh's first flush: `issued 200`, C1 revoked `superseded`, no `40P01`; measured red
-  with the `UPDATE` in `SKIP LOCKED`, C1 left active). **Accepted limit, new** (#726): two simultaneous exchanges of
+  with the `UPDATE` in `SKIP LOCKED`, C1 left active). **Accepted, unpinned** (#726, audit I7): the
+  supersession's `UPDATE` (holding the code's connection, wanting the pair's others) can cross a cascading account
+  deletion (`cpg_user` → `mcp_connection`, physical order) — `40P01`, harmless: an aborted exchange wrote nothing and
+  the account goes; an aborted deletion is asked again.
+  **Accepted limit, new** (#726): two simultaneous exchanges of
   **two** codes of one pair (two grants of one account to one client, same millisecond) each hold
   their connection and wait for the other's — PostgreSQL aborts one (`40P01`, a 500), the other passes and revokes the
   first's connection, whose code is then dead. #649's double-click limit is gone, save a client exchanging no code (the
@@ -395,52 +403,7 @@ paths:
   finds no grant, verifier nor hash in the journal; the unknown client, the compromise, the blank-wrapped code and the
   dead refresh tokens turn red under their mutation, measured, as do `LeagueGrantRefusalsTest`'s fallback and
   `LeagueGrantRefusalAuditTest`'s 5xx.
-- **The daily purge** (task 9 of #649): `app:mcp:purge` (`Presentation/Command/PurgeMcpConnectionsCommand`, a thin
-  wrapper) → `Application/McpConnectionPurgerInterface::purge(RetentionPeriod)` → `McpConnectionPurgeResult`, run every
-  night by the housekeeping CronJob, third line after the invitations (`k8s/base/messenger-purge-cronjob.yaml`, under
-  `set -e`, `PGOPTIONS=-c lock_timeout=5s`; `McpConnectionsPurgedDailyTest` pins the line and that no other manifest
-  runs it). **Two transactions** (#726): the marking, (1)–(3), COMMIT, then its audits; the deletions, (4)–(5), in the
-  token endpoint's order — connection rows first, tokens after (the reverse deadlocked in `40P01`, task 6). The
-  candidates' lock lasts only their judgement. (1) `findActiveCandidatesForExpiry($idleBefore, $maximumBefore)`, a
-  **wide** SQL pre-selection (`revoked_at IS NULL AND (COALESCE(last_used_at, granted_at) <= :idleBefore OR granted_at
-  <= :maximumBefore)`, both bounds `now − duration + P1D`, `new DateInterval`, typed `DATETIMETZ_IMMUTABLE`), **locked
-  `FOR UPDATE`** on the connection rows only (no join), `HINT_REFRESH`, by id, through `RereadUnderLock::rowsMatching()`
-  (`.claude/rules/backend-architecture.md`; nothing detached): a refresh in flight commits first and its new
-  `last_used_at` is judged, instead of a stale row revoked a few milliseconds after a legitimate use; (2) each candidate judged by `isExpiredAt(now, lifetimes)`, **the only definition**;
-  (3) `revokeExpired(list<Uuid>, $at)`, one statement like `revokeActive()` (`WHERE c.id IN (:ids) AND c.revoked_at IS
-  NULL … RETURNING`), cause `expired`; (4) `deleteRevokedBefore($threshold)`, `revoked_at < :threshold`, strict,
-  cascading — **before any token deletion**: run last, it locked old revoked connections after (5) had locked token
-  rows, the order a cascading account deletion (`cpg_user` → `mcp_connection` → tokens) crosses (final review of
-  #649); the cascade carries what tokens are left, normally none; (5) `deleteDead($now)` on codes, **access tokens,
-  then refresh tokens**, dead = `expires_at <= :now` **or** a revoked connection (one DQL `DELETE … OR connection_id IN
-  (SELECT … revoked_at IS NOT NULL)`, written once in `Infrastructure/Doctrine/DeletesDeadTokens`, locking no
-  connection row) — a rotated refresh token or an exchanged code of an **active** connection stays until its expiry,
-  its row recognising a reuse or a replay; those of a connection marked in (3) go the same night. A before R is the
-  order of the revocation endpoint, league's refresh grant and the cascade (lot B: R then A left the cycle told in
-  « Revoking a refresh token at the revocation endpoint »; deleting an A rewrites every R that outlives it whatever the
-  order, a live R whose access token expired included — the *extra* cost is the SET NULL rewrite of dead R rows the
-  next statement deletes, measured by no counter: `McpConnectionPurgerTest` counts the same two, two, two). **Pinned in real processes** (`McpConnectionPurgeLockOrderTest`, child
-  `Fixtures/purge-mcp-connections.php`, `.claude/rules/backend-outillage.md`): the test holds the other side's first
-  row, waits for the purge to block, asks for the second — an old revoked connection then its access token for (4)
-  before (5), the connection, its access token, then its refresh token for A before R, each inverted order a `40P01`;
-  and the lock's duration: a live candidate (last used 29 days 12 hours ago) is free `FOR UPDATE NOWAIT` while the
-  purge waits in (5) — `55P03` under one transaction, measured, the other two green. **Accepted, unpinned**: no
-  concurrency test proves the `FOR UPDATE` of (1) itself (the sequential suite stays green without it). **Accepted limit**: a cycle between `mcp_connection` rows
-  alone — candidates (1, by id) or old revoked rows (4) against a cascade taking an account's connections in physical
-  order; PostgreSQL aborts one, the Job retries (`backoffLimit: 2`). **After the marking's COMMIT**, one
-  `mcpConnectionExpired()` line per connection marked (actor `system`); a rolled-back marking audits nothing
-  (`testARolledBackPurgeAuditsNothing`, red with the audit moved inside, measured); failed deletions leave the marking
-  and its lines, the next night deletes (`testTheMarkingIsAuditedEvenWhenTheDeletionsRollBack`). Every instant is
-  `ClockInterface::now()` (Paris). **Retention**: `app.mcp.revoked_connection_retention` (`'6 months'`, every
-  environment), the default of `--older-than`, read by `RetentionPeriod` (a date or an unreadable expression:
-  `Command::INVALID`); under one day, `thresholdAtLeastOneDayBefore()` refuses it before any write
-  (`InvalidRetentionPeriodException::shorterThanOneDay()`, shared with the invitation purge), `INVALID` too. **No
-  `--dry-run`** (decision 6): it deletes nothing a person could regret — the invitation purge deletes accounts. The
-  output names connections by UUID only, with the four counters, a success even at zero. **Volumes**: the token tables
-  stay bounded by this purge; no index on `expires_at`, to revisit if the volume asks. `McpConnectionPurgerTest` (frozen
-  clock across the autumn change; `testThePurgeAndIsExpiredAtAgreeAtTheBoundary`: each threshold and one second after,
-  marked ⇔ `isExpiredAt()` re-read — red when every candidate is revoked unjudged, measured),
-  `PurgeMcpConnectionsCommandTest`.
+- **The daily purge** (`app:mcp:purge`): `.claude/rules/mcp-oauth-purge.md`, split out by #726.
 - **The trusted tier has one judge**, `Infrastructure/Security/TrustedTier::reaches(CpgUser)`: the stored roles
   through `RoleHierarchyInterface`, the name `McpConnectionPrincipal::TRUSTED_TIER` — used by
   `McpBearerAuthenticator` on every request of `/api/mcp` (behaviour unchanged, `McpBearerAuthenticatorTest`) and
@@ -448,7 +411,7 @@ paths:
 - **Accepted limits of #649, decided by the author on 2026-10-27, kept as they are and tracked by issue #726** (the
   reviews' lot C; each is behaviour, not a defect to fix in passing — revisit through #726 only). Three former ones
   are lifted by #726: a replayed code cutting the connection without the verifier (« A replayed code is judged under
-  the same lock »), the purge holding its candidates locked during its deletions (« The daily purge »), and a new
+  the same lock »), the purge holding its candidates locked during its deletions (`.claude/rules/mcp-oauth-purge.md`, « The daily purge »), and a new
   grant revoking the previous one at approval (« A new grant supersedes the previous one »).
   1. **Two concurrent legitimate refreshes of one token revoke the connection** (`refresh-token-reuse`): the second,
      serialized behind the first's lock, re-reads the rotated token and is judged a reuse. No grace window (a reuse
