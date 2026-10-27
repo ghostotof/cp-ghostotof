@@ -269,10 +269,11 @@ paths:
     `unidentified` for any other `UserInterface` (none exists). `user` now only ever carries that
     `guest-…` marker (`base-access-issued`, a base access's `logged-out`). Both go through
     `App\Shared\Domain\Security\AccountReference` (`CpgUser::accountId()`), the interface `Ai` reads too,
-    so no context depends on `Security`. The six MCP methods take one `Shared/Domain/Security/McpConnectionReference`
+    so no context depends on `Security`. The seven MCP methods take one `Shared/Domain/Security/McpConnectionReference`
     (an `AccountReference` with `connectionId()` and the public `clientId()`, lot C of #649's reviews), which the
     connection, a `RevokedConnection` and the `mcp` firewall's `McpConnectionPrincipal` implement — never the three
-    fields unpacked by the caller; the cause or the tool follows it, a string (`Security` does not depend on `Mcp`). To name an account during an incident:
+    fields unpacked by the caller; scalars follow it (cause, tool, grant type, presenting client), or a `Uuid` for
+    `supersededBy` — `Security` still depends on no class of `Mcp`. To name an account during an incident:
     `SELECT username, email FROM cpg_user WHERE id = '<userId>'` — once deleted, its lines designate no one,
     which is the point (minimisation, RGPD register §6; not Goal #9, which is about what the API exposes).
     It runs through a human's read-only `kubectl exec` on the `postgres` pod (`k8s/README.md`, « Journal de

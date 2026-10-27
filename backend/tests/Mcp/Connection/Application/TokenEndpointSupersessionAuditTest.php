@@ -177,14 +177,19 @@ final class TokenEndpointSupersessionAuditTest extends WebTestCase
     }
 
     /**
-     * Un écrivain du journal de sécurité qui consigne les remplacements
-     * journalisés (`mcpConnectionSuperseded()`, #726 B3 : la connexion
-     * remplacée et celle qui la remplace).
+     * Un écrivain du journal de sécurité qui consigne les connexions dont la
+     * révocation est journalisée, par `mcpConnectionSuperseded()` (#726 B3)
+     * comme par `mcpConnectionRevoked()`.
      */
     private function recordingAuditLogger(): SecurityAuditLoggerInterface
     {
         $auditLogger = self::createStub(SecurityAuditLoggerInterface::class);
         $auditLogger->method('mcpConnectionSuperseded')->willReturnCallback(function (McpConnectionReference $connection): void {
+            $this->revokedAudits[] = $connection;
+        });
+        // L'ancienne méthode aussi : un retour à `mcpConnectionRevoked()` pour
+        // le remplacement serait consigné, et le test resterait autonome.
+        $auditLogger->method('mcpConnectionRevoked')->willReturnCallback(function (McpConnectionReference $connection): void {
             $this->revokedAudits[] = $connection;
         });
 

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Mcp\Connection\Application;
 
 use App\Mcp\Connection\Application\McpConnectionRevoker;
+use App\Mcp\Connection\Application\RevocationCauseReservedToTheExchangeException;
 use App\Mcp\Connection\Application\RevocationCauseReservedToThePurgeException;
 use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
 use App\Mcp\Connection\Domain\ValueObject\ConnectionReference;
@@ -35,7 +36,6 @@ final class McpConnectionRevokerTest extends TestCase
         yield 'révoquée par le client' => [RevocationCause::Client];
         yield 'rafraîchissement réutilisé' => [RevocationCause::RefreshTokenReuse];
         yield 'code rejoué' => [RevocationCause::CodeReplay];
-        yield 'remplacée par un nouvel accord' => [RevocationCause::Superseded];
     }
 
     #[DataProvider('auditedAsRevocations')]
@@ -81,6 +81,27 @@ final class McpConnectionRevokerTest extends TestCase
         $this->expectException(RevocationCauseReservedToThePurgeException::class);
 
         $this->revoker($connections, $auditLogger)->revoke(Uuid::v7(), RevocationCause::Expired);
+    }
+
+    /**
+     * Le remplacement n'est pas une cause du révocateur (#726, B3) : le point
+     * de jeton révoque les autres connexions du couple dans la transaction de
+     * l'échange et audite chacune après le COMMIT en nommant la connexion qui
+     * la remplace (`supersededBy`). Demandé ici, la ligne n'aurait pas ce
+     * champ : refusé avant toute écriture, rien audité — ni comme une
+     * révocation, ni comme un remplacement.
+     */
+    public function testTheSupersededCauseIsRefusedBeforeAnyWrite(): void
+    {
+        $connections = $this->createMock(McpConnectionRepositoryInterface::class);
+        $connections->expects(self::never())->method('revokeActive');
+        $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
+        $auditLogger->expects(self::never())->method('mcpConnectionRevoked');
+        $auditLogger->expects(self::never())->method('mcpConnectionSuperseded');
+
+        $this->expectException(RevocationCauseReservedToTheExchangeException::class);
+
+        $this->revoker($connections, $auditLogger)->revoke(Uuid::v7(), RevocationCause::Superseded);
     }
 
     /**

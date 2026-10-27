@@ -34,8 +34,12 @@ interface McpConnectionRevokerInterface
      * annulée, EntityManager fermé compris (league refuse alors le jeton ou
      * le code, la révocation doit survivre au ROLLBACK de l'échange).
      *
-     * @throws RevocationCauseReservedToThePurgeException pour la cause `expired`, avant toute écriture :
-     *                                                    l'expiration est révoquée par la purge seule
+     * @throws RevocationCauseReservedToThePurgeException    pour la cause `expired`, avant toute écriture :
+     *                                                       l'expiration est révoquée par la purge seule
+     * @throws RevocationCauseReservedToTheExchangeException pour la cause `superseded`, avant toute écriture :
+     *                                                       le remplacement est révoqué au premier échange du
+     *                                                       code d'un nouvel accord, qui nomme la connexion
+     *                                                       qui remplace
      */
     public function revoke(Uuid $connectionId, RevocationCause $cause): ?RevokedConnection;
 }

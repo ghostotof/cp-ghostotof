@@ -25,8 +25,13 @@ use Symfony\Component\Uid\Uuid;
  * planifiée, qui révoque dans sa transaction et audite avec l'acteur `system`
  * ({@see SecurityAuditLoggerInterface::mcpConnectionExpired()}) après le
  * COMMIT. Demandée ici, elle est refusée avant toute écriture
- * ({@see RevocationCauseReservedToThePurgeException}) ; toute autre cause est
- * auditée avec l'acteur lu dans le jeton de sécurité de la requête.
+ * ({@see RevocationCauseReservedToThePurgeException}). Le remplacement non
+ * plus (#726, B3) : le premier échange du code d'un nouvel accord révoque dans
+ * sa transaction et audite après le COMMIT en nommant la connexion qui
+ * remplace ({@see SecurityAuditLoggerInterface::mcpConnectionSuperseded()}) ;
+ * demandé ici, il est refusé avant toute écriture
+ * ({@see RevocationCauseReservedToTheExchangeException}). Toute autre cause
+ * est auditée avec l'acteur lu dans le jeton de sécurité de la requête.
  */
 final readonly class McpConnectionRevoker implements McpConnectionRevokerInterface
 {
@@ -41,6 +46,10 @@ final readonly class McpConnectionRevoker implements McpConnectionRevokerInterfa
     {
         if (RevocationCause::Expired === $cause) {
             throw RevocationCauseReservedToThePurgeException::expired();
+        }
+
+        if (RevocationCause::Superseded === $cause) {
+            throw RevocationCauseReservedToTheExchangeException::superseded();
         }
 
         $revoked = $this->connections->revokeActive($connectionId, $cause, $this->clock->now());
