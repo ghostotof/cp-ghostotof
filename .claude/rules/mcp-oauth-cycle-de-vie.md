@@ -282,10 +282,12 @@ paths:
   its three private `WHERE_*` constants — `@param self::WHERE_*`, no caller composes SQL, lot C), served by
   `idx_mcp_connection_active_pair`. Its `list<RevokedConnection>` leaves the transaction with league's response
   (`Application/IssuedTokens`); after the COMMIT, one `mcp-connection-revoked` per superseded connection (cause
-  `superseded`, actor `anonymous`: the `oauth` firewall authenticates nobody), `mcp-oauth.md`'s second door. A
-  rolled-back exchange revokes nothing, a refresh supersedes nothing. So: an abandoned grant (code never exchanged,
-  failed redirect) leaves the previous connection alive; a decision sent again after a 5xx, or a double click, leaves
-  two active connections until the first exchange, which leaves one; an older code exchanged after a newer one is
+  `superseded`, actor `anonymous`: the `oauth` firewall authenticates nobody), `mcp-oauth.md`'s second door; its
+  failure leaves the answer unchanged (#725's rule: `critical`, class only):
+  `TokenEndpointSupersessionAuditTest::testAnAuditFailureAfterTheCommitLeavesTheTokensIssued`,
+  `testARolledBackExchangeAuditsNoSupersededConnection` (red with the audit inside, measured). A rolled-back
+  exchange revokes nothing, a refresh supersedes nothing. So: an abandoned grant (code never exchanged, failed redirect)
+  leaves the previous connection alive; a decision sent again after a 5xx, or a double click, leaves two active connections until the first exchange, which leaves one; an older code exchanged after a newer one is
   dead (its connection superseded: `invalid_grant` « Authorization code has been revoked », audited `code-refused`,
   nothing revoked); a superseded connection's tokens are refused with nothing written (decision 6), its rows untouched.
   `ConsentControllerTest::testASecondGrantSupersedesTheFirstAtItsExchange` (the approval audits the grant only, the
@@ -302,7 +304,7 @@ paths:
   (`TokenEndpointConcurrencyTest::testAnExchangeCrossingARefreshOfTheSupersededConnectionRevokesIt`, real processes,
   the exchange released at the refresh's first flush: `issued 200`, C1 revoked `superseded`, no `40P01`; measured red
   with the `UPDATE` in `SKIP LOCKED`, C1 left active). **Accepted limit, new** (#726): two simultaneous exchanges of
-  **two** codes of one pair (two grants of one account to one client, exchanged in the same millisecond) each hold
+  **two** codes of one pair (two grants of one account to one client, same millisecond) each hold
   their connection and wait for the other's — PostgreSQL aborts one (`40P01`, a 500), the other passes and revokes the
   first's connection, whose code is then dead. #649's double-click limit is gone, save a client exchanging no code (the
   unused connection expires after `connection_idle`). A partial unique constraint was rejected: it would turn that
