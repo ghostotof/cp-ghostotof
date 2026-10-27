@@ -668,6 +668,42 @@ final class SecurityAuditLoggerTest extends TestCase
     }
 
     /**
+     * Un code ou un jeton de rafraîchissement authentique refusé au point de
+     * jeton (#725) : la connexion qu'il désigne, la cause — le mot de
+     * `GrantRefusal` —, le grant et le client qui l'a présenté, ici un autre
+     * que celui de la connexion. L'acteur est `anonymous` : le point de jeton
+     * n'authentifie personne.
+     */
+    public function testMcpGrantRefusedNamesTheConnectionTheCauseTheGrantAndThePresentingClient(): void
+    {
+        $this->pushRequest('/api/oauth/token', 'POST');
+        $account = new CpgUser('trusted', 'hashed-password');
+        $connectionId = Uuid::v7();
+
+        $this->auditLogger->mcpGrantRefused(
+            new AuditedMcpConnection($account, $connectionId, 'https://client.example.test/metadata.json'),
+            'authorization_code',
+            'foreign-client',
+            'https://other-client.example.test/metadata.json',
+        );
+
+        $record = $this->singleRecord();
+        self::assertSame('MCP grant refused.', $record->message);
+        self::assertSame([
+            'event' => 'mcp-grant-refused',
+            'userId' => $account->getId()->toRfc4122(),
+            'connectionId' => $connectionId->toRfc4122(),
+            'clientId' => 'https://client.example.test/metadata.json',
+            'cause' => 'foreign-client',
+            'grantType' => 'authorization_code',
+            'presentingClientId' => 'https://other-client.example.test/metadata.json',
+            'actor' => 'anonymous',
+            'ip' => self::IP,
+            'path' => '/api/oauth/token',
+        ], $record->context);
+    }
+
+    /**
      * L'expiration d'une connexion MCP, constatée par la purge planifiée
      * (#649) : le même événement que la révocation, cause `expired`, et
      * l'acteur `system`, comme la purge des invitations — jamais le jeton de
@@ -799,9 +835,10 @@ final class SecurityAuditLoggerTest extends TestCase
         $this->auditLogger->mcpConnectionRevoked(new AuditedMcpConnection($invited, Uuid::v7(), 'https://client.example.test/metadata.json'), 'client');
         $this->auditLogger->mcpConnectionExpired(new AuditedMcpConnection($invited, Uuid::v7(), 'https://client.example.test/metadata.json'));
         $this->auditLogger->mcpAccessTokenRefused(new AuditedMcpConnection($invited, Uuid::v7(), 'https://client.example.test/metadata.json'), 'token-expired');
+        $this->auditLogger->mcpGrantRefused(new AuditedMcpConnection($invited, Uuid::v7(), 'https://client.example.test/metadata.json'), 'refresh_token', 'token-refused', 'https://client.example.test/metadata.json');
 
         $records = $this->handler->getRecords();
-        self::assertCount(27, $records);
+        self::assertCount(28, $records);
 
         foreach ($records as $record) {
             $serialized = json_encode([$record->message, $record->context, $record->extra], \JSON_THROW_ON_ERROR);

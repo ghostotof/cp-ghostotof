@@ -17,6 +17,7 @@ use App\Mcp\Connection\Domain\Entity\McpConnection;
 use App\Mcp\Connection\Domain\Exception\AuthorizationRequestRejectedException;
 use App\Mcp\Connection\Domain\Exception\ReauthenticationRequiredException;
 use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
+use App\Mcp\Connection\Domain\ValueObject\ConnectionReference;
 use App\Mcp\Connection\Domain\ValueObject\RevocationCause;
 use App\Mcp\Connection\Domain\ValueObject\RevokedConnection;
 use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
@@ -459,7 +460,7 @@ final class ConsentServiceTest extends TestCase
     /** Une connexion que le dépôt dit avoir remplacée : le même compte, le même client. */
     private function revokedConnection(): RevokedConnection
     {
-        return new RevokedConnection(Uuid::v7(), $this->account->getId()->toRfc4122(), self::CLIENT_ID, RevocationCause::Superseded);
+        return new RevokedConnection(new ConnectionReference(Uuid::v7(), $this->account->getId()->toRfc4122(), self::CLIENT_ID), RevocationCause::Superseded);
     }
 
     private function authenticationInstant(): AuthenticationInstantInterface

@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Tests\Mcp\Connection\Presentation\Controller;
 
+use App\Mcp\Connection\Domain\Repository\McpClientRepositoryInterface;
 use App\Tests\Mcp\Connection\DrivesTheOAuthFlow;
+use App\Tests\Mcp\Connection\RegisteredMcpClient;
 use App\Tests\Support\ReadsSecurityAuditLog;
 use App\Tests\Support\TestKeys;
 use Doctrine\ORM\EntityManagerInterface;
@@ -33,6 +35,9 @@ final class TokenControllerTest extends WebTestCase
 {
     use DrivesTheOAuthFlow;
     use ReadsSecurityAuditLog;
+
+    /** Un client enregistré dont l'identifiant passe en HTTP Basic : sans deux-points. */
+    private const string PLAIN_CLIENT_ID = 'plain-client';
 
     private const string DROP_REFUSAL_TRIGGER = 'DROP TRIGGER IF EXISTS mcp_test_refuse_refresh_token ON mcp_refresh_token';
 
@@ -409,6 +414,53 @@ final class TokenControllerTest extends WebTestCase
     }
 
     /**
+     * Le client se désigne **dans le corps**, ou pas du tout (#725, décision de
+     * l'auteur du 2026-10-27) : la seule méthode que les métadonnées annoncent
+     * est `none`, le `client_id` du formulaire (RFC 6749 §2.3.1). league le
+     * lisait aussi en HTTP Basic, et un code présenté ainsi avec un
+     * vérificateur faux était refusé sans que l'audit de son refus sache qui
+     * l'avait présenté. Sans `client_id` dans le corps : `invalid_client`
+     * avant league, à l'échange comme au rafraîchissement, Basic ou non.
+     *
+     * Le client de ces cas a un identifiant sans deux-points : league coupe
+     * l'utilisateur Basic au premier `:`, un identifiant en URL n'y passe
+     * jamais (il y désignerait le client `https`, inconnu) — le cas Basic n'y
+     * prouverait rien.
+     *
+     * @return iterable<string, array{bool}>
+     */
+    public static function clientsNotNamedInTheBody(): iterable
+    {
+        yield 'en HTTP Basic seulement' => [true];
+        yield 'nulle part' => [false];
+    }
+
+    #[DataProvider('clientsNotNamedInTheBody')]
+    public function testAnExchangeWithoutClientIdInTheBodyIsInvalidClient(bool $namedInBasic): void
+    {
+        $code = $this->codeOfAPlainClient();
+
+        $response = $this->postForm(self::TOKEN_PATH, $this->exchangeParameters($code, ['client_id' => null]), $this->basicNaming(self::PLAIN_CLIENT_ID, $namedInBasic));
+
+        $this->assertOAuthError($response, Response::HTTP_UNAUTHORIZED, 'invalid_client');
+        $this->assertNoTokenIssued();
+        self::assertSame(Response::HTTP_OK, $this->exchange($code, ['client_id' => self::PLAIN_CLIENT_ID])->getStatusCode(), 'Le code doit rester échangeable par son client, nommé dans le corps.');
+    }
+
+    #[DataProvider('clientsNotNamedInTheBody')]
+    public function testARefreshWithoutClientIdInTheBodyIsInvalidClient(bool $namedInBasic): void
+    {
+        $issued = $this->json($this->exchange($this->codeOfAPlainClient(), ['client_id' => self::PLAIN_CLIENT_ID]));
+        self::assertIsString($issued['refresh_token'] ?? null);
+
+        $response = $this->postForm(self::TOKEN_PATH, self::refreshParameters($issued['refresh_token'], ['client_id' => null]), $this->basicNaming(self::PLAIN_CLIENT_ID, $namedInBasic));
+
+        $this->assertOAuthError($response, Response::HTTP_UNAUTHORIZED, 'invalid_client');
+        self::assertSame(1, $this->countRows('SELECT COUNT(*) FROM mcp_access_token'));
+        self::assertSame(0, $this->countRows('SELECT COUNT(*) FROM mcp_refresh_token WHERE revoked_at IS NOT NULL'));
+    }
+
+    /**
      * L'échange est atomique : une panne de la base à l'écriture du jeton de
      * rafraîchissement (après le jeton d'accès, avant la révocation du code)
      * ne laisse aucun jeton d'accès orphelin — valable une heure, sans
@@ -455,6 +507,25 @@ final class TokenControllerTest extends WebTestCase
         $this->allowRefreshTokenInserts();
         $retried = $this->refresh($issued['refresh_token']);
         self::assertSame(Response::HTTP_OK, $retried->getStatusCode(), substr((string) $retried->getContent(), 0, 500));
+    }
+
+    /** Le code qu'un compte de confiance accorde à PLAIN_CLIENT_ID, enregistré pour l'occasion. */
+    private function codeOfAPlainClient(): string
+    {
+        self::getContainer()->get(McpClientRepositoryInterface::class)->add(RegisteredMcpClient::of(self::PLAIN_CLIENT_ID, 'Client sans deux-points', ['http://localhost/callback']));
+
+        return $this->grantedCode(['client_id' => self::PLAIN_CLIENT_ID]);
+    }
+
+    /**
+     * Le client nommé en HTTP Basic (RFC 6749 §2.3.1), mot de passe vide : un
+     * client public n'a pas de secret.
+     *
+     * @return array<string, string>
+     */
+    private function basicNaming(string $clientId, bool $named): array
+    {
+        return $named ? ['PHP_AUTH_USER' => $clientId, 'PHP_AUTH_PW' => ''] : [];
     }
 
     private function assertNoTokenIssued(): void

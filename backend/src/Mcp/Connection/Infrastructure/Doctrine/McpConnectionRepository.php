@@ -6,6 +6,7 @@ namespace App\Mcp\Connection\Infrastructure\Doctrine;
 
 use App\Mcp\Connection\Domain\Entity\McpConnection;
 use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
+use App\Mcp\Connection\Domain\ValueObject\ConnectionReference;
 use App\Mcp\Connection\Domain\ValueObject\RevocationCause;
 use App\Mcp\Connection\Domain\ValueObject\RevokedConnection;
 use App\Shared\Infrastructure\Doctrine\RereadUnderLock;
@@ -65,6 +66,25 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
     {
         $this->getEntityManager()->persist($connection);
         $this->getEntityManager()->flush();
+    }
+
+    /**
+     * Du SQL natif par la connexion DBAL de l'EntityManager, comme les
+     * révocations : l'audit d'un refus au point de jeton la lit après une
+     * transaction que `wrapInTransaction()` a annulée et dont l'EntityManager
+     * est fermé (#725). Une requête, la jointure lit le client.
+     */
+    public function referenceOf(Uuid $connectionId): ?ConnectionReference
+    {
+        $row = $this->getEntityManager()->getConnection()->fetchAssociative(
+            'SELECT c.id, c.account_id, cl.client_id FROM mcp_connection c'
+            .' INNER JOIN mcp_client cl ON cl.id = c.mcp_client_id'
+            .' WHERE c.id = :id',
+            ['id' => $connectionId],
+            ['id' => UuidType::NAME],
+        );
+
+        return false === $row ? null : $this->referenceInRow($row);
     }
 
     /**
@@ -233,11 +253,21 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
      */
     private function revokedConnectionOf(array $row, RevocationCause $cause): RevokedConnection
     {
-        return new RevokedConnection(
+        return new RevokedConnection($this->referenceInRow($row), $cause);
+    }
+
+    /**
+     * La connexion que désigne une ligne `c.id, c.account_id, cl.client_id` :
+     * lue une fois pour les révocations et pour {@see self::referenceOf()}.
+     *
+     * @param array<string, mixed> $row
+     */
+    private function referenceInRow(array $row): ConnectionReference
+    {
+        return new ConnectionReference(
             Uuid::fromString($this->text($row, 'id')),
             Uuid::fromString($this->text($row, 'account_id'))->toRfc4122(),
             $this->text($row, 'client_id'),
-            $cause,
         );
     }
 

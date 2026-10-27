@@ -14,6 +14,8 @@ use League\OAuth2\Server\AuthorizationServer;
 use League\OAuth2\Server\Exception\OAuthServerException;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
+use Psr\Log\LoggerInterface;
+use Throwable;
 
 /**
  * Le point de jeton (#647) : deux contrôles avant league, puis league, dans
@@ -23,7 +25,10 @@ use Psr\Http\Message\ServerRequestInterface;
  *    FormEncodedRequest) : un autre type de contenu, ou un paramètre que PHP
  *    et un autre analyseur liraient différemment (QueryParameterPollution, la
  *    règle du point d'autorisation), est un `invalid_request` ; league lit les
- *    paramètres tirés du corps contrôlé.
+ *    paramètres tirés du corps contrôlé. **Le client se nomme dans ce corps**
+ *    (#725) : `client_id`, la méthode `none` que les métadonnées annoncent
+ *    (RFC 6749 §2.3.1), sinon `invalid_client` avant league — qui l'aurait lu
+ *    aussi en HTTP Basic, où l'audit d'un refus ne le voyait pas.
  * 2. **La ressource** (RFC 8707 §2.2) : facultative ici, mais présente elle
  *    doit être le serveur MCP du site, sinon `invalid_target` — sans
  *    redirection, le point de jeton n'en fait jamais. Un jeton d'accès porte
@@ -67,6 +72,15 @@ use Psr\Http\Message\ServerRequestInterface;
  *    par `AuthCodeRepository::isAuthCodeRevoked()` (OAuth 2.1 §4.1.2) : la
  *    connexion est révoquée, cause `code-replay`, et les jetons que le code
  *    avait émis meurent avec elle (`CodeReplayTest`).
+ * 5. **Tout autre refus d'un artefact authentique est audité** (#725) : la
+ *    ressource étrangère comme les refus de league, hors de la transaction,
+ *    par GrantRefusalAuditInterface — la ligne `mcp-grant-refused`, pour un
+ *    code ou un jeton de rafraîchissement que le serveur a émis
+ *    (`GrantRefusalAuditTest`). Le refus rendu au client est celui de
+ *    league, inchangé — même quand l'audit tombe en panne. Un corps refusé
+ *    par FormEncodedRequest ne l'est pas : ses paramètres ne se lisent pas
+ *    sans ambiguïté. Un refus de statut 5xx non plus : une panne du serveur
+ *    après la validation n'est pas un refus de l'artefact.
  */
 final readonly class TokenEndpoint implements TokenEndpointInterface
 {
@@ -86,22 +100,49 @@ final readonly class TokenEndpoint implements TokenEndpointInterface
         private McpClientRepositoryInterface $clients,
         private TransactionInterface $transaction,
         private McpConnectionRevokerInterface $revoker,
+        private GrantRefusalAuditInterface $refusalAudit,
+        private LoggerInterface $logger,
     ) {
     }
 
     public function respond(ServerRequestInterface $request, ResponseInterface $response): ResponseInterface
     {
         $request = FormEncodedRequest::parse($request, self::READ_PARAMETERS);
-        $this->refuseForeignResource($request);
 
         try {
+            $this->refuseClientOutsideTheBody($request);
+            $this->refuseForeignResource($request);
+
             return $this->transaction->run(fn(): ResponseInterface => $this->server->respondToAccessTokenRequest($request, $response));
         } catch (CompromisedMcpConnectionException $compromise) {
             // La transaction est déjà annulée : la révocation s'écrit hors
-            // d'elle, et survit au ROLLBACK de l'échange.
+            // d'elle, et survit au ROLLBACK de l'échange. Le refus levé ici
+            // n'atteint pas le `catch` voisin : une compromission a déjà sa
+            // ligne, `mcp-connection-revoked`.
             $this->revoker->revoke($compromise->connectionId(), $compromise->revocationCause());
 
             throw $this->refusalOf($compromise);
+        } catch (OAuthServerException $refusal) {
+            $this->audit($request, $refusal);
+
+            throw $refusal;
+        }
+    }
+
+    /**
+     * Hors de la transaction, annulée : l'audit lit la connexion en SQL
+     * natif, EntityManager fermé. Sa panne ne change jamais la réponse
+     * (#725, décision de l'auteur du 2026-10-27) : le client reçoit le refus
+     * de league, et la panne sort en `critical` sur le canal principal — un
+     * refus non audité reste visible. La classe seule, jamais le message :
+     * une erreur du pilote ou du chiffrement pourrait citer l'artefact.
+     */
+    private function audit(ServerRequestInterface $request, OAuthServerException $refusal): void
+    {
+        try {
+            $this->refusalAudit->record($request, $refusal);
+        } catch (Throwable $failure) {
+            $this->logger->critical('Grant refusal not audited.', ['exceptionClass' => $failure::class]);
         }
     }
 
@@ -126,6 +167,25 @@ final readonly class TokenEndpoint implements TokenEndpointInterface
             $compromise instanceof RotatedRefreshTokenReusedException => OAuthServerException::invalidRefreshToken('Token has been revoked'),
             $compromise instanceof AuthorizationCodeReplayedException => OAuthServerException::invalidGrant('Authorization code has been revoked'),
         };
+    }
+
+    /**
+     * Un client qui ne se nomme pas dans le corps n'est pas authentifié ici,
+     * Basic ou non (#725) : league le lirait en HTTP Basic, et son refus
+     * serait audité sans savoir qui l'a présenté. FormEncodedRequest a déjà
+     * refusé une valeur entourée de blancs ; une chaîne vide ne nomme
+     * personne.
+     *
+     * @throws OAuthServerException `invalid_client`
+     */
+    private function refuseClientOutsideTheBody(ServerRequestInterface $request): void
+    {
+        $body = $request->getParsedBody();
+        $clientId = \is_array($body) ? ($body['client_id'] ?? null) : null;
+
+        if (!\is_string($clientId) || '' === $clientId) {
+            throw OAuthServerException::invalidClient($request);
+        }
     }
 
     /**

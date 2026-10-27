@@ -238,4 +238,23 @@ interface SecurityAuditLoggerInterface
      * authentification). Jamais le jeton présenté ni son empreinte.
      */
     public function mcpAccessTokenRefused(McpConnectionReference $connection, string $cause): void;
+
+    /**
+     * Code d'autorisation ou jeton de rafraîchissement authentique — que le
+     * serveur a émis — refusé au point de jeton (#725) : désigne le compte de
+     * sa connexion (`userId`), la connexion (`connectionId`), le client de la
+     * connexion par son identifiant public (`clientId`), la cause (`cause`,
+     * le mot stable de {@see \App\Mcp\Connection\Domain\ValueObject\GrantRefusal}),
+     * le grant (`grantType`, `authorization_code` ou `refresh_token`) et le
+     * client qui l'a présenté (`presentingClientId`, identifiant public du
+     * client enregistré nommé dans le corps de la requête) — c'est ce dernier
+     * qui rend lisible un code présenté par un autre client. Des chaînes
+     * plutôt que les enums : ce contexte ne dépend pas de `Mcp` ; deux
+     * chaînes voisines, que l'appelant passe par leur nom.
+     * Jamais pour un artefact illisible, un client inconnu ni une connexion
+     * disparue. L'auteur est lu comme pour tout événement (`anonymous` : le
+     * point de jeton n'authentifie personne). Jamais l'artefact présenté, le
+     * vérificateur PKCE ni une empreinte.
+     */
+    public function mcpGrantRefused(McpConnectionReference $connection, string $grantType, string $cause, string $presentingClientId): void;
 }

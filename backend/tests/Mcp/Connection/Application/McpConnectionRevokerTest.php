@@ -7,6 +7,7 @@ namespace App\Tests\Mcp\Connection\Application;
 use App\Mcp\Connection\Application\McpConnectionRevoker;
 use App\Mcp\Connection\Application\RevocationCauseReservedToThePurgeException;
 use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
+use App\Mcp\Connection\Domain\ValueObject\ConnectionReference;
 use App\Mcp\Connection\Domain\ValueObject\RevocationCause;
 use App\Mcp\Connection\Domain\ValueObject\RevokedConnection;
 use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
@@ -41,7 +42,7 @@ final class McpConnectionRevokerTest extends TestCase
     public function testARevocationIsAuditedOnce(RevocationCause $cause): void
     {
         $connectionId = Uuid::v7();
-        $revoked = new RevokedConnection($connectionId, self::ACCOUNT_ID, self::CLIENT_ID, $cause);
+        $revoked = new RevokedConnection(new ConnectionReference($connectionId, self::ACCOUNT_ID, self::CLIENT_ID), $cause);
         $connections = $this->createMock(McpConnectionRepositoryInterface::class);
         $connections->expects(self::once())
             ->method('revokeActive')
