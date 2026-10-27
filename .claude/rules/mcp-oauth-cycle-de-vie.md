@@ -246,7 +246,8 @@ paths:
   `McpConnectionRepositoryInterface::revokeOtherActiveOf($kept, RevocationCause::Superseded, $now)` — the second
   path above, inside a transaction: **one native SQL statement** like `revokeActive()` (`UPDATE mcp_connection c …
   FROM mcp_client cl WHERE c.account_id = :account AND c.mcp_client_id = :client AND c.id <> :kept AND c.revoked_at
-  IS NULL … RETURNING c.id, c.account_id, cl.client_id`, the row mapping written once for both), served by the
+  IS NULL … RETURNING c.id, c.account_id, cl.client_id`; the statement and its row mapping are written once for the
+  three revocations, `McpConnectionRepository::revokeWhere()`, only the `WHERE` differing — lot C of the reviews), served by the
   partial index `idx_mcp_connection_active_pair`; it returns a `list<RevokedConnection>`. After the COMMIT,
   `mcp-connection-granted` first, then one `mcp-connection-revoked` per superseded connection (cause `superseded`,
   the person as actor); a rolled-back grant audits nothing, a denial revokes nothing (`ConsentServiceTest`). One

@@ -87,19 +87,8 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
      */
     public function revokeActive(Uuid $connectionId, RevocationCause $cause, DateTimeImmutable $at): ?RevokedConnection
     {
-        $row = $this->getEntityManager()->getConnection()->fetchAssociative(
-            'UPDATE mcp_connection c SET revoked_at = :at, revocation_cause = :cause'
-            .' FROM mcp_client cl'
-            .' WHERE c.id = :id AND c.revoked_at IS NULL AND cl.id = c.mcp_client_id'
-            .' RETURNING c.id, c.account_id, cl.client_id',
-            ['at' => $at, 'cause' => $cause->value, 'id' => $connectionId],
-            ['at' => Types::DATETIMETZ_IMMUTABLE, 'id' => UuidType::NAME],
-        );
-        if (false === $row) {
-            return null;
-        }
-
-        return $this->revokedConnectionOf($row, $cause);
+        // Une ligne au plus : l'identifiant est la clé primaire.
+        return $this->revokeWhere('c.id = :id', ['id' => $connectionId], ['id' => UuidType::NAME], $cause, $at)[0] ?? null;
     }
 
     /**
@@ -116,28 +105,13 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
      */
     public function revokeOtherActiveOf(McpConnection $kept, RevocationCause $cause, DateTimeImmutable $at): array
     {
-        $rows = $this->getEntityManager()->getConnection()->fetchAllAssociative(
-            'UPDATE mcp_connection c SET revoked_at = :at, revocation_cause = :cause'
-            .' FROM mcp_client cl'
-            .' WHERE c.account_id = :account AND c.mcp_client_id = :client AND c.id <> :kept'
-            .' AND c.revoked_at IS NULL AND cl.id = c.mcp_client_id'
-            .' RETURNING c.id, c.account_id, cl.client_id',
-            [
-                'at' => $at,
-                'cause' => $cause->value,
-                'account' => $kept->account()->getId(),
-                'client' => $kept->client()->getId(),
-                'kept' => $kept->getId(),
-            ],
-            [
-                'at' => Types::DATETIMETZ_IMMUTABLE,
-                'account' => UuidType::NAME,
-                'client' => UuidType::NAME,
-                'kept' => UuidType::NAME,
-            ],
+        return $this->revokeWhere(
+            'c.account_id = :account AND c.mcp_client_id = :client AND c.id <> :kept',
+            ['account' => $kept->account()->getId(), 'client' => $kept->client()->getId(), 'kept' => $kept->getId()],
+            ['account' => UuidType::NAME, 'client' => UuidType::NAME, 'kept' => UuidType::NAME],
+            $cause,
+            $at,
         );
-
-        return array_map(fn(array $row): RevokedConnection => $this->revokedConnectionOf($row, $cause), $rows);
     }
 
     /**
@@ -179,20 +153,13 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
             return [];
         }
 
-        $rows = $this->getEntityManager()->getConnection()->fetchAllAssociative(
-            'UPDATE mcp_connection c SET revoked_at = :at, revocation_cause = :cause'
-            .' FROM mcp_client cl'
-            .' WHERE c.id IN (:ids) AND c.revoked_at IS NULL AND cl.id = c.mcp_client_id'
-            .' RETURNING c.id, c.account_id, cl.client_id',
-            [
-                'at' => $at,
-                'cause' => RevocationCause::Expired->value,
-                'ids' => array_map(static fn (Uuid $id): string => $id->toRfc4122(), $connectionIds),
-            ],
-            ['at' => Types::DATETIMETZ_IMMUTABLE, 'ids' => ArrayParameterType::STRING],
+        return $this->revokeWhere(
+            'c.id IN (:ids)',
+            ['ids' => array_map(static fn (Uuid $id): string => $id->toRfc4122(), $connectionIds)],
+            ['ids' => ArrayParameterType::STRING],
+            RevocationCause::Expired,
+            $at,
         );
-
-        return array_map(fn (array $row): RevokedConnection => $this->revokedConnectionOf($row, RevocationCause::Expired), $rows);
     }
 
     /**
@@ -209,6 +176,38 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
             ['threshold' => $threshold],
             ['threshold' => Types::DATETIMETZ_IMMUTABLE],
         );
+    }
+
+    /**
+     * L'instruction des trois révocations, écrite une fois (lot C des
+     * relectures de #649) : seul le choix des connexions change, `$where`.
+     * Du SQL natif par la connexion DBAL de l'EntityManager, jamais l'unité de
+     * travail ni le DQL (`.claude/rules/mcp-oauth-cycle-de-vie.md`) : la
+     * révocation du point de jeton suit une transaction que
+     * `wrapInTransaction()` a annulée **et** fermé l'EntityManager, et
+     * `RETURNING` rend ce qui a été révoqué — compte et identifiant public du
+     * client par la jointure — sans seconde requête. `revoked_at IS NULL`
+     * garde la première révocation, la jointure lit le client ; l'instant est
+     * typé comme sa colonne, avec fuseau (#434).
+     *
+     * @param string                                      $where  le choix des connexions, alias `c`, sans paramètre écrit en clair
+     * @param array<string, mixed>                        $params ses paramètres nommés (ni `at` ni `cause`, ceux de l'instruction)
+     * @param array<string, string|ArrayParameterType>    $types  leurs types DBAL
+     *
+     * @return list<RevokedConnection> ce que l'instruction a effectivement révoqué
+     */
+    private function revokeWhere(string $where, array $params, array $types, RevocationCause $cause, DateTimeImmutable $at): array
+    {
+        $rows = $this->getEntityManager()->getConnection()->fetchAllAssociative(
+            'UPDATE mcp_connection c SET revoked_at = :at, revocation_cause = :cause'
+            .' FROM mcp_client cl'
+            .' WHERE '.$where.' AND c.revoked_at IS NULL AND cl.id = c.mcp_client_id'
+            .' RETURNING c.id, c.account_id, cl.client_id',
+            ['at' => $at, 'cause' => $cause->value, ...$params],
+            ['at' => Types::DATETIMETZ_IMMUTABLE, ...$types],
+        );
+
+        return array_map(fn (array $row): RevokedConnection => $this->revokedConnectionOf($row, $cause), $rows);
     }
 
     /**
