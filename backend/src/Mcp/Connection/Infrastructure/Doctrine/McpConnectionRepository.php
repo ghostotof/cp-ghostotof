@@ -253,9 +253,7 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
      */
     private function revokedConnectionOf(array $row, RevocationCause $cause): RevokedConnection
     {
-        $reference = $this->referenceInRow($row);
-
-        return new RevokedConnection($reference->connectionId(), $reference->accountId(), $reference->clientId(), $cause);
+        return new RevokedConnection($this->referenceInRow($row), $cause);
     }
 
     /**

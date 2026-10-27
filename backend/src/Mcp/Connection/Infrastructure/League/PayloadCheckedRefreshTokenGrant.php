@@ -36,6 +36,12 @@ use SensitiveParameter;
 final class PayloadCheckedRefreshTokenGrant extends RefreshTokenGrant
 {
     /**
+     * L'indication du refus, écrite ici seule : LeagueGrantRefusals la lit
+     * pour classer le refus (#725), une copie divergerait en silence.
+     */
+    public const string NOT_A_REFRESH_TOKEN_HINT = 'Check the `refresh_token` parameter: it is not a refresh token.';
+
+    /**
      * @return array<string, mixed>
      *
      * @throws OAuthServerException `invalid_grant` quand la charge n'a pas la forme d'un rafraîchissement ; les refus de league sinon
@@ -45,7 +51,7 @@ final class PayloadCheckedRefreshTokenGrant extends RefreshTokenGrant
         $encryptedRefreshToken = $this->getRequestParameter('refresh_token', $request);
 
         if (null !== $encryptedRefreshToken && false === $this->hasRefreshTokenShape($encryptedRefreshToken)) {
-            throw OAuthServerException::invalidRefreshToken('Check the `refresh_token` parameter: it is not a refresh token.');
+            throw OAuthServerException::invalidRefreshToken(self::NOT_A_REFRESH_TOKEN_HINT);
         }
 
         return parent::validateOldRefreshToken($request, $clientId);

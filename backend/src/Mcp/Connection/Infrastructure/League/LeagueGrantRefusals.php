@@ -35,8 +35,8 @@ final class LeagueGrantRefusals
         'Token has expired' => GrantRefusal::TokenExpired,
         'Token has been revoked' => GrantRefusal::TokenRefused,
         'Token is not linked to client' => GrantRefusal::ForeignClient,
-        // PayloadCheckedRefreshTokenGrant : un code présenté comme rafraîchissement.
-        'Check the `refresh_token` parameter: it is not a refresh token.' => GrantRefusal::NotARefreshToken,
+        // Un code présenté comme rafraîchissement, refusé par ce dépôt.
+        PayloadCheckedRefreshTokenGrant::NOT_A_REFRESH_TOKEN_HINT => GrantRefusal::NotARefreshToken,
     ];
 
     private function __construct()

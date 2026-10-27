@@ -16,11 +16,13 @@ use Symfony\Component\Uid\Uuid;
  * Un seul type pour ce trio que chaque événement MCP du journal portait en
  * trois paramètres (`mcp-connection-granted`, `nominative-corpus-read`,
  * `mcp-connection-revoked`, `mcp-access-token-refused`, lot C des relectures
- * de #649) : l'appelant tenait déjà un objet qui les porte tous, et les
- * dépliait. Une interface dans `Shared`, comme AccountReference, plutôt
- * qu'une classe de `Mcp` : `Security` ne dépend pas de `Mcp`, et chaque
- * porteur l'implémente — la connexion (McpConnection), la révocation que la
- * base vient d'écrire (RevokedConnection), l'identité du firewall `mcp`
+ * de #649 ; `mcp-grant-refused` depuis #725) : l'appelant tenait déjà un
+ * objet qui les porte tous, et les dépliait. Une interface dans `Shared`,
+ * comme AccountReference, plutôt qu'une classe de `Mcp` : `Security` ne
+ * dépend pas de `Mcp`, et chaque porteur l'implémente — la connexion
+ * (McpConnection), sa référence lue en SQL sans l'entité
+ * (ConnectionReference), la révocation que la base vient d'écrire
+ * (RevokedConnection), l'identité du firewall `mcp`
  * (McpConnectionPrincipal).
  */
 interface McpConnectionReference extends AccountReference
