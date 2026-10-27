@@ -69,6 +69,50 @@ final class FormEncodedRequestTest extends TestCase
         self::assertSame([], $parsed);
     }
 
+    /**
+     * Les blancs que league retire d'une valeur (`AbstractGrant::parseParam()`,
+     * `trim()`) avant de la lire : en tête ou en fin d'un paramètre lu.
+     *
+     * @return iterable<string, array{string}>
+     */
+    public static function valuesWithSurroundingBlanks(): iterable
+    {
+        yield 'espace en tête' => ['code=%20c'];
+        yield 'espace en fin, par +' => ['code=c+'];
+        yield 'saut de ligne en fin' => ['code=c%0A'];
+        yield 'retour chariot' => ['code=c%0D'];
+        yield 'tabulation' => ['code=%09c'];
+        yield 'tabulation verticale' => ['code=c%0B'];
+        yield 'octet nul' => ['code=c%00'];
+        yield 'client_id entouré' => ['code=c&client_id=%09https%3A%2F%2Fclient.example.test%2Fmetadata.json'];
+    }
+
+    /**
+     * Refusée, jamais corrigée (#725, la règle de QueryParameterPollution) :
+     * league lit la valeur sans ses blancs, et tout autre lecteur du même
+     * corps — l'audit d'un refus — la lirait avec. Un code entouré de blancs
+     * échappait ainsi à l'audit tout en atteignant league, et un `client_id`
+     * suivi de 50 000 tabulations entrait tel quel au journal (mesuré).
+     */
+    #[DataProvider('valuesWithSurroundingBlanks')]
+    public function testAReadValueWithSurroundingBlanksIsInvalidRequest(string $raw): void
+    {
+        try {
+            FormEncodedRequest::parse($this->request('grant_type=authorization_code&'.$raw, null), self::READ);
+            self::fail('Une valeur entourée de blancs aurait dû être refusée.');
+        } catch (OAuthServerException $exception) {
+            self::assertSame('invalid_request', $exception->getErrorType());
+        }
+    }
+
+    /** Un blanc à l'intérieur d'une valeur, ou dans un paramètre que le point ne lit pas, ne change rien. */
+    public function testBlanksInsideAValueOrOutsideTheReadParametersAreKept(): void
+    {
+        $parsed = FormEncodedRequest::parse($this->request('grant_type=authorization_code&code=c+d&state=%20s%20', null), self::READ)->getParsedBody();
+
+        self::assertSame(['grant_type' => 'authorization_code', 'code' => 'c d', 'state' => ' s '], $parsed);
+    }
+
     /** Un autre type de contenu : `invalid_request`, avant toute lecture. */
     public function testAnotherMediaTypeIsInvalidRequest(): void
     {

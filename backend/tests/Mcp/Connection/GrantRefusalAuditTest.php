@@ -196,6 +196,25 @@ final class GrantRefusalAuditTest extends WebTestCase
         self::assertSame([], self::securityAuditEvents(self::EVENT));
     }
 
+    /**
+     * Régression de la relecture de #725 : league retire les blancs d'une
+     * valeur, l'audit les lisait. Un code entouré d'une espace, avec un
+     * vérificateur faux, atteignait league — refusé `verifier-mismatch`
+     * comme le code nu — sans écrire de ligne. Il est désormais refusé avant
+     * league (`invalid_request`, FormEncodedRequest), qui ne juge donc rien :
+     * plus de vérificateur éprouvé en silence, et le code reste échangeable.
+     */
+    public function testACodeWithSurroundingBlanksNeverReachesLeague(): void
+    {
+        $code = $this->grantedCode();
+
+        $response = $this->exchange(' '.$code, ['code_verifier' => str_repeat('a', 43)]);
+
+        $this->assertOAuthError($response, Response::HTTP_BAD_REQUEST, 'invalid_request');
+        self::assertStringContainsString('must not start or end with a blank', (string) $response->getContent());
+        self::assertSame(Response::HTTP_OK, $this->exchange($code)->getStatusCode());
+    }
+
     /** Un client inconnu est refusé pour lui-même, avant l'artefact : il ne désigne rien. */
     public function testAnUnknownClientIsNotAudited(): void
     {

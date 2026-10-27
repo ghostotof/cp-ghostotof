@@ -46,7 +46,32 @@ final class FormEncodedRequest
         $body = (string) $request->getBody();
         QueryParameterPollution::refuse($body, $read);
         parse_str($body, $parameters);
+        self::refuseSurroundingBlanks($parameters, $read);
 
         return $request->withParsedBody($parameters);
+    }
+
+    /**
+     * Une valeur lue entourée de blancs est refusée, jamais corrigée (#725) :
+     * league la lit sans eux (`AbstractGrant::parseParam()` fait un `trim()`),
+     * tout autre lecteur du même corps la lirait avec. Un code entouré d'une
+     * espace atteignait league et échappait à l'audit de son refus ; un
+     * `client_id` suivi de 50 000 tabulations entrait tel quel au journal.
+     * Les blancs sont ceux de `trim()`, ceux que league retire.
+     *
+     * @param array<array-key, mixed> $parameters
+     * @param list<string>            $read
+     *
+     * @throws OAuthServerException `invalid_request`
+     */
+    private static function refuseSurroundingBlanks(array $parameters, array $read): void
+    {
+        foreach ($read as $name) {
+            $value = $parameters[$name] ?? null;
+
+            if (\is_string($value) && trim($value) !== $value) {
+                throw OAuthServerException::invalidRequest($name, \sprintf('Check the `%s` parameter: it must not start or end with a blank.', $name));
+            }
+        }
     }
 }
