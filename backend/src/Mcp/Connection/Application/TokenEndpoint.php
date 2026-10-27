@@ -14,6 +14,8 @@ use League\OAuth2\Server\AuthorizationServer;
 use League\OAuth2\Server\Exception\OAuthServerException;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
+use Psr\Log\LoggerInterface;
+use Throwable;
 
 /**
  * Le point de jeton (#647) : deux contrôles avant league, puis league, dans
@@ -75,8 +77,10 @@ use Psr\Http\Message\ServerRequestInterface;
  *    par GrantRefusalAuditInterface — la ligne `mcp-grant-refused`, pour un
  *    code ou un jeton de rafraîchissement que le serveur a émis
  *    (`GrantRefusalAuditTest`). Le refus rendu au client est celui de
- *    league, inchangé. Un corps refusé par FormEncodedRequest ne l'est pas :
- *    ses paramètres ne se lisent pas sans ambiguïté.
+ *    league, inchangé — même quand l'audit tombe en panne. Un corps refusé
+ *    par FormEncodedRequest ne l'est pas : ses paramètres ne se lisent pas
+ *    sans ambiguïté. Un refus de statut 5xx non plus : une panne du serveur
+ *    après la validation n'est pas un refus de l'artefact.
  */
 final readonly class TokenEndpoint implements TokenEndpointInterface
 {
@@ -97,6 +101,7 @@ final readonly class TokenEndpoint implements TokenEndpointInterface
         private TransactionInterface $transaction,
         private McpConnectionRevokerInterface $revoker,
         private GrantRefusalAuditInterface $refusalAudit,
+        private LoggerInterface $logger,
     ) {
     }
 
@@ -118,11 +123,26 @@ final readonly class TokenEndpoint implements TokenEndpointInterface
 
             throw $this->refusalOf($compromise);
         } catch (OAuthServerException $refusal) {
-            // Hors de la transaction, annulée : l'audit lit la connexion en
-            // SQL natif, EntityManager fermé.
-            $this->refusalAudit->record($request, $refusal);
+            $this->audit($request, $refusal);
 
             throw $refusal;
+        }
+    }
+
+    /**
+     * Hors de la transaction, annulée : l'audit lit la connexion en SQL
+     * natif, EntityManager fermé. Sa panne ne change jamais la réponse
+     * (#725, décision de l'auteur du 2026-10-27) : le client reçoit le refus
+     * de league, et la panne sort en `critical` sur le canal principal — un
+     * refus non audité reste visible. La classe seule, jamais le message :
+     * une erreur du pilote ou du chiffrement pourrait citer l'artefact.
+     */
+    private function audit(ServerRequestInterface $request, OAuthServerException $refusal): void
+    {
+        try {
+            $this->refusalAudit->record($request, $refusal);
+        } catch (Throwable $failure) {
+            $this->logger->critical('Grant refusal not audited.', ['exceptionClass' => $failure::class]);
         }
     }
 

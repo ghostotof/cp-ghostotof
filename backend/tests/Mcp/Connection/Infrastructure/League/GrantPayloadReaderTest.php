@@ -38,7 +38,7 @@ final class GrantPayloadReaderTest extends TestCase
     #[DataProvider('authenticPayloads')]
     public function testAnAuthenticGrantNamesItsConnection(array $payload): void
     {
-        $connection = $this->reader()->connectionOf($this->encrypted($payload));
+        $connection = $this->reader()->connectionIdOf($this->encrypted($payload));
 
         self::assertNotNull($connection);
         self::assertTrue(Uuid::fromString(self::CONNECTION)->equals($connection));
@@ -56,14 +56,14 @@ final class GrantPayloadReaderTest extends TestCase
     #[DataProvider('grantsNamingNoConnection')]
     public function testAnUnreadableGrantNamesNoConnection(string $grant): void
     {
-        self::assertNull($this->reader()->connectionOf($grant));
+        self::assertNull($this->reader()->connectionIdOf($grant));
     }
 
     public function testAGrantEncryptedUnderAnotherKeyNamesNoConnection(): void
     {
         $grant = Crypto::encrypt(json_encode(['user_id' => self::CONNECTION], \JSON_THROW_ON_ERROR), OAuthEncryptionKey::fromSecret(TestKeys::material('autre')));
 
-        self::assertNull($this->reader()->connectionOf($grant));
+        self::assertNull($this->reader()->connectionIdOf($grant));
     }
 
     /**
@@ -86,7 +86,7 @@ final class GrantPayloadReaderTest extends TestCase
     #[DataProvider('payloadsWithoutAConnection')]
     public function testAPayloadWithoutAConnectionUuidNamesNone(mixed $payload): void
     {
-        self::assertNull($this->reader()->connectionOf($this->encrypted($payload)));
+        self::assertNull($this->reader()->connectionIdOf($this->encrypted($payload)));
     }
 
     public function testARefreshTokenIdentifierIsRead(): void

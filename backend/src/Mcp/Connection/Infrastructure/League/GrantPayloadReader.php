@@ -59,7 +59,7 @@ final class GrantPayloadReader
      * quel (RFC 4122, minuscules) ; null si l'artefact est illisible ou n'en
      * porte pas.
      */
-    public function connectionOf(#[SensitiveParameter] string $grant): ?Uuid
+    public function connectionIdOf(#[SensitiveParameter] string $grant): ?Uuid
     {
         $identifier = $this->payloadOf($grant)['user_id'] ?? null;
         if (!\is_string($identifier) || !Uuid::isValid($identifier)) {

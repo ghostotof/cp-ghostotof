@@ -225,7 +225,7 @@ final readonly class SecurityAuditLogger implements SecurityAuditLoggerInterface
         $this->record('mcp-access-token-refused', 'MCP access token refused.', [...$this->connection($connection), 'cause' => $cause]);
     }
 
-    public function mcpGrantRefused(McpConnectionReference $connection, string $grantType, string $cause, ?string $presentingClientId): void
+    public function mcpGrantRefused(McpConnectionReference $connection, string $grantType, string $cause, string $presentingClientId): void
     {
         $this->record('mcp-grant-refused', 'MCP grant refused.', [
             ...$this->connection($connection),

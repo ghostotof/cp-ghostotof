@@ -23,9 +23,13 @@ use Psr\Http\Message\ServerRequestInterface;
  * minute et une rafale de 10, par IP et par pod), décision de #725.
  *
  * Aucune ligne, et la raison :
+ * - un refus de statut 5xx (SERVER_FAULT) : une panne, pas un refus de
+ *   l'artefact ;
  * - un client inconnu (`invalid_client`) : refusé pour lui-même, avant
- *   l'artefact, il ne désigne rien — et le `presentingClientId` d'une ligne
- *   écrite est donc toujours celui d'un client enregistré ;
+ *   l'artefact, il ne désigne rien. TokenEndpoint refuse aussi ainsi un
+ *   client absent du corps, et FormEncodedRequest une valeur entourée de
+ *   blancs : le `presentingClientId` d'une ligne écrite est donc toujours le
+ *   `client_id` d'un client enregistré, tel que league l'a lu ;
  * - un artefact illisible, ou dont la charge ne porte pas un UUID de
  *   connexion ;
  * - une connexion qui n'est plus en base (supprimée avec son compte, purgée) :
@@ -33,9 +37,11 @@ use Psr\Http\Message\ServerRequestInterface;
  * - un autre grant que `authorization_code` et `refresh_token`, qui ne porte
  *   aucun artefact (league le refuse `unsupported_grant_type`).
  *
- * Coût, payé sur un refus d'artefact authentique seulement : un déchiffrement
- * de plus que celui de league, et une requête SQL native — l'EntityManager
- * est fermé par la transaction annulée.
+ * Coût : un déchiffrement de plus que celui de league sur **tout** refus 4xx
+ * d'un client connu qui porte un artefact, authentique ou non — il faut
+ * déchiffrer pour le savoir ; une requête SQL native en plus pour un artefact
+ * authentique seulement, l'EntityManager étant fermé par la transaction
+ * annulée.
  */
 final readonly class LeagueGrantRefusalAudit implements GrantRefusalAuditInterface
 {
@@ -44,6 +50,15 @@ final readonly class LeagueGrantRefusalAudit implements GrantRefusalAuditInterfa
         'authorization_code' => 'code',
         'refresh_token' => 'refresh_token',
     ];
+
+    /**
+     * À partir de ce statut, league ne refuse pas l'artefact, il tombe en
+     * panne — parfois **après** l'avoir validé (une collision d'identifiant à
+     * l'écriture d'un jeton, `UniqueTokenIdentifierConstraintViolationException`,
+     * `access_denied` en 500 ; un `server_error`) : l'auditer désignerait un
+     * compte légitime pour un code valide.
+     */
+    private const int SERVER_FAULT = 500;
 
     public function __construct(
         private GrantPayloadReader $payloadReader,
@@ -54,7 +69,7 @@ final readonly class LeagueGrantRefusalAudit implements GrantRefusalAuditInterfa
 
     public function record(ServerRequestInterface $request, OAuthServerException $refusal): void
     {
-        if ('invalid_client' === $refusal->getErrorType()) {
+        if ($refusal->getHttpStatusCode() >= self::SERVER_FAULT || 'invalid_client' === $refusal->getErrorType()) {
             return;
         }
 
@@ -66,26 +81,23 @@ final readonly class LeagueGrantRefusalAudit implements GrantRefusalAuditInterfa
         $grantType = $body['grant_type'] ?? null;
         $parameter = \is_string($grantType) ? (self::ARTIFACT_PARAMETER[$grantType] ?? null) : null;
         $artifact = null !== $parameter ? ($body[$parameter] ?? null) : null;
-        if (!\is_string($grantType) || !\is_string($artifact)) {
+        // Le `client_id` du corps, que league a authentifié avant l'artefact.
+        $presentingClientId = $body['client_id'] ?? null;
+        if (!\is_string($grantType) || !\is_string($artifact) || !\is_string($presentingClientId)) {
             return;
         }
 
-        $connectionId = $this->payloadReader->connectionOf($artifact);
+        $connectionId = $this->payloadReader->connectionIdOf($artifact);
         $connection = null !== $connectionId ? $this->connections->referenceOf($connectionId) : null;
         if (null === $connection) {
             return;
         }
 
-        // Le `client_id` du corps, que league a authentifié avant l'artefact
-        // (il le lit avant HTTP Basic) ; null pour un client qui ne se
-        // désigne qu'en HTTP Basic.
-        $presentingClientId = $body['client_id'] ?? null;
-
         $this->auditLogger->mcpGrantRefused(
-            $connection,
-            $grantType,
-            LeagueGrantRefusals::causeOf($refusal)->value,
-            \is_string($presentingClientId) ? $presentingClientId : null,
+            connection: $connection,
+            grantType: $grantType,
+            cause: LeagueGrantRefusals::causeOf($refusal)->value,
+            presentingClientId: $presentingClientId,
         );
     }
 }

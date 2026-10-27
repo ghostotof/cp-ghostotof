@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace App\Tests\Mcp\Connection;
 
 use App\Mcp\Connection\Infrastructure\League\TokenIdentifierHash;
+use App\Tests\Support\ReadsAllChannelsLog;
 use App\Tests\Support\ReadsSecurityAuditLog;
 use Defuse\Crypto\Crypto;
 use Doctrine\ORM\EntityManagerInterface;
+use Monolog\Level;
 use Monolog\LogRecord;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
@@ -32,6 +34,7 @@ use Symfony\Component\Uid\Uuid;
 final class GrantRefusalAuditTest extends WebTestCase
 {
     use DrivesTheOAuthFlow;
+    use ReadsAllChannelsLog;
     use ReadsSecurityAuditLog;
 
     private const string EVENT = 'mcp-grant-refused';
@@ -250,6 +253,36 @@ final class GrantRefusalAuditTest extends WebTestCase
         self::assertSame([], self::securityAuditEvents(self::EVENT));
     }
 
+    /**
+     * Une panne de l'audit ne change pas la réponse (#725, décision de
+     * l'auteur du 2026-10-27) : le client reçoit le refus de league, et la
+     * panne sort en `critical` sur le canal principal — un refus non audité
+     * reste visible. La lecture de la connexion échoue ici pour de vrai : sa
+     * table renommée le temps de la requête, que league n'a pas lue pour un
+     * code échu (refusé sur sa charge, avant le dépôt).
+     */
+    public function testAnAuditFailureLeavesLeaguesRefusalUnchanged(): void
+    {
+        $code = $this->reencrypted($this->grantedCode(), ['expire_time' => time() - 60]);
+        $this->executeStatement('ALTER TABLE mcp_connection RENAME TO mcp_connection_hidden');
+
+        try {
+            $response = $this->exchange($code);
+        } finally {
+            $this->executeStatement('ALTER TABLE mcp_connection_hidden RENAME TO mcp_connection');
+        }
+
+        $this->assertOAuthError($response, Response::HTTP_BAD_REQUEST, 'invalid_grant');
+        self::assertSame([], self::securityAuditEvents(self::EVENT));
+        $failures = array_values(array_filter(
+            self::allChannelsLogRecords(),
+            static fn(LogRecord $record): bool => 'Grant refusal not audited.' === $record->message,
+        ));
+        self::assertCount(1, $failures);
+        self::assertSame(Level::Critical, $failures[0]->level);
+        self::assertSame(['exceptionClass'], array_keys($failures[0]->context));
+    }
+
     public function testAServedExchangeIsNotAudited(): void
     {
         self::assertSame(Response::HTTP_OK, $this->exchange($this->grantedCode())->getStatusCode());
@@ -330,8 +363,12 @@ final class GrantRefusalAuditTest extends WebTestCase
 
     private function revokeTheConnection(): void
     {
-        self::getContainer()->get(EntityManagerInterface::class)->getConnection()
-            ->executeStatement("UPDATE mcp_connection SET revoked_at = now(), revocation_cause = 'client'");
+        $this->executeStatement("UPDATE mcp_connection SET revoked_at = now(), revocation_cause = 'client'");
+    }
+
+    private function executeStatement(string $sql): void
+    {
+        self::getContainer()->get(EntityManagerInterface::class)->getConnection()->executeStatement($sql);
     }
 
     /**
