@@ -317,7 +317,9 @@ paths:
   compromise;
   `foreign-client`, `redirect-mismatch`, `not-a-code`, `not-a-refresh-token`, `invalid-scope`, `foreign-resource`
   (`invalid_target` with an authentic grant), and `unrecognised` for any other league refusal of an authentic grant,
-  so none is lost. **Not audited, and why**: an unknown client (`invalid_client`, refused for itself before the grant),
+  so none is lost. **Not audited, and why**: the authorize endpoint's refusals (unknown client, unregistered
+  `redirect_uri`, PKCE method — no connection exists yet, nothing to designate, and any caller can produce them), an
+  unknown client at the token endpoint (`invalid_client`, refused for itself before the grant),
   an unreadable grant or one without a connection UUID, a connection no longer in the database (nobody to designate),
   a body `FormEncodedRequest` refuses (its parameters do not read unambiguously), a grant type carrying no artifact,
   and **a compromise** — reuse and replay already write `mcp-connection-revoked`; the audit is a sibling `catch` of
