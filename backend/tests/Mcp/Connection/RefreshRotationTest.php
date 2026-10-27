@@ -95,7 +95,9 @@ final class RefreshRotationTest extends WebTestCase
         self::assertSame('refresh-token-reuse', $event['cause'] ?? null);
         $context = json_encode($event, \JSON_THROW_ON_ERROR);
         foreach ([$held->accessToken, $firstRefreshToken, $refreshed['access_token'], $refreshed['refresh_token']] as $secret) {
-            self::assertStringNotContainsString($secret, $context);
+            // Ni l'aiguille ni la meule dans le message d'échec : un échec
+            // publierait le secret dans le journal de la CI.
+            self::assertFalse(str_contains($context, $secret), 'La ligne d\'audit cite un jeton.');
         }
 
         // Le successeur du jeton réutilisé meurt avec la connexion, et aucun

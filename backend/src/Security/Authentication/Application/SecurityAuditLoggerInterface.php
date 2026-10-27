@@ -38,9 +38,17 @@ use Symfony\Component\Uid\Uuid;
  *  - le corpus nominatif lu par une connexion MCP (#648) :
  *    {@see \App\Mcp\Infrastructure\Corpus\NominativeCorpusReader}, pour une
  *    réponse que l'outil `get_nominative_corpus` sert, après sa mesure ;
- *  - une connexion MCP révoquée ou expirée (#649) :
- *    {@see \App\Mcp\Connection\Application\McpConnectionRevoker}, après la
- *    révocation effective, une ligne par connexion.
+ *  - une connexion MCP révoquée ou expirée (#649), `mcp-connection-revoked`,
+ *    une ligne par connexion, seulement pour une révocation effective :
+ *    {@see \App\Mcp\Connection\Application\McpConnectionRevoker} (après la
+ *    révocation : réutilisation d'un rafraîchissement tourné, rejeu d'un
+ *    code), {@see \App\Mcp\Connection\Infrastructure\League\LeagueRevocationEndpoint}
+ *    (révocation par le client), {@see \App\Mcp\Connection\Application\ConsentService}
+ *    (accord remplacé) et {@see \App\Mcp\Connection\Application\McpConnectionPurger}
+ *    (expiration, acteur `system`), ces trois-là après le COMMIT ;
+ *  - un jeton d'accès MCP connu refusé (#649), `mcp-access-token-refused` :
+ *    {@see \App\Mcp\Connection\Infrastructure\Security\McpBearerAuthenticator},
+ *    avant de lever le refus, jamais pour un jeton mal formé ou inconnu.
  *
  * Ce qui sort, et rien d'autre : `event` (kebab-case, stable — c'est la clé
  * sur laquelle on filtre), le sujet (`userId`, l'UUID d'un compte ; `user`,

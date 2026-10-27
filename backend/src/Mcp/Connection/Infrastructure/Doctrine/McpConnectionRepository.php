@@ -193,8 +193,10 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
 
     /**
      * Une instruction : le seuil est strict, typé comme sa colonne. Les codes
-     * et jetons suivent par `ON DELETE CASCADE` (la purge les a déjà
-     * supprimés, ceux d'une connexion révoquée étant morts).
+     * et jetons suivent par `ON DELETE CASCADE` (la cascade les emporte, s'il
+     * en reste : ceux d'une connexion révoquée sont morts, et la purge les a
+     * supprimés la nuit qui a suivi la révocation). La purge l'appelle avant
+     * ses suppressions de jetons, pour verrouiller ses connexions d'abord.
      */
     public function deleteRevokedBefore(DateTimeImmutable $threshold): int
     {

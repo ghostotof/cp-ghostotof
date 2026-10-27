@@ -88,7 +88,9 @@ final class CodeReplayTest extends WebTestCase
         self::assertSame('code-replay', $event['cause'] ?? null);
         $context = json_encode($event, \JSON_THROW_ON_ERROR);
         foreach ([$code, $held->accessToken, $refreshToken] as $secret) {
-            self::assertStringNotContainsString($secret, $context);
+            // Ni l'aiguille ni la meule dans le message d'échec : un échec
+            // publierait le secret dans le journal de la CI.
+            self::assertFalse(str_contains($context, $secret), 'La ligne d\'audit cite un code ou un jeton.');
         }
 
         // Les jetons issus du code meurent avec la connexion : rien d'émis,

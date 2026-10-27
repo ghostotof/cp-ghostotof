@@ -472,8 +472,10 @@ final class McpBearerAuthenticatorTest extends WebTestCase
         self::assertSame('anonymous', $line['actor']);
         self::assertSame(self::MCP_ENDPOINT, $line['path']);
         $serialized = json_encode($line, \JSON_THROW_ON_ERROR);
-        self::assertStringNotContainsString($held->accessToken, $serialized);
-        self::assertStringNotContainsString(hash('sha256', $held->accessToken), $serialized);
+        // Des messages qui ne citent pas la valeur : un échec la publierait
+        // dans le journal de la CI.
+        self::assertFalse(str_contains($serialized, $held->accessToken), 'La ligne d\'audit cite le jeton.');
+        self::assertFalse(str_contains($serialized, hash('sha256', $held->accessToken)), 'La ligne d\'audit cite l\'empreinte du jeton.');
     }
 
     /**
@@ -730,7 +732,9 @@ final class McpBearerAuthenticatorTest extends WebTestCase
             $seen[] = $record->channel.'/'.$record->message;
             $line = $formatter->format($record);
             foreach ($secrets as $secret) {
-                self::assertStringNotContainsString($secret, $line, $record->channel.'/'.$record->message);
+                // Le message nomme l'enregistrement, jamais la valeur ni la
+                // ligne : un échec les publierait dans le journal de la CI.
+                self::assertFalse(str_contains($line, $secret), 'Un journal cite un secret : '.$record->channel.'/'.$record->message);
             }
         }
 

@@ -465,12 +465,16 @@ décision du 2026-10-19, voir « Langue invalide »).
   (`k8s/base/messenger-purge-cronjob.yaml`, après la purge des invitations, `lock_timeout` de 5 s). En une
   transaction, connexions d'abord puis jetons (l'ordre du point de jeton) : elle **marque expirées** les
   connexions arrivées à échéance — présélection SQL large, verrouillée `FOR UPDATE`, puis chaque ligne
-  jugée par `isExpiredAt()`, jamais par le SQL —, cause `expired` ; supprime les codes et jetons **morts**
-  (échus, ou d'une connexion révoquée ; un code échangé ou un rafraîchissement tourné d'une connexion
-  active reste jusqu'à son échéance, sa ligne reconnaissant le rejeu) ; supprime les connexions révoquées
+  jugée par `isExpiredAt()`, jamais par le SQL —, cause `expired` ; supprime les connexions révoquées
   depuis plus de la rétention, **6 mois** (décision de l'auteur du 2026-10-26 ; la « durée de conservation
   du journal » ci-dessus n'est pas une durée fixe, bornée par la vie du pod, registre §6), paramètre
-  `app.mcp.revoked_connection_retention` lu comme défaut de `--older-than` (au moins un jour). Une ligne
+  `app.mcp.revoked_connection_retention` lu comme défaut de `--older-than` (au moins un jour) — avant
+  toute suppression de jeton, pour que toutes ses lignes de connexion soient verrouillées avant une ligne
+  de jeton (relecture finale de #649 : en dernier, elle croisait une suppression de compte en cascade) ;
+  puis supprime les codes et jetons **morts** (échus, ou d'une connexion révoquée ; un code échangé ou un
+  rafraîchissement tourné d'une connexion active reste jusqu'à son échéance, sa ligne reconnaissant le
+  rejeu). Limite acceptée : un cycle entre lignes de `mcp_connection` seules (la purge, puis une
+  suppression de compte en cascade) reste possible ; PostgreSQL annule l'une, le Job réessaie. Une ligne
   d'audit par connexion marquée, après le COMMIT. **Pas de `--dry-run`** : elle ne supprime que des jetons
   morts et des connexions mortes depuis des mois, rien qu'une personne pourrait regretter (la purge des
   invitations a le sien parce qu'elle supprime des comptes).

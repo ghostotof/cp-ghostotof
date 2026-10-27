@@ -16,8 +16,8 @@ use Symfony\Bridge\Doctrine\Types\UuidType;
 use Symfony\Component\Uid\Uuid;
 
 /**
- * Jeton d'accès d'une connexion MCP (une heure de vie, en configuration :
- * {@see ConnectionLifetimes::accessToken()}), présenté en
+ * Jeton d'accès d'une connexion MCP (sa durée de vie est celle de la
+ * configuration, {@see ConnectionLifetimes::accessToken()}), présenté en
  * `Authorization: Bearer` sur `/api/mcp`.
  *
  * Seule l'empreinte SHA-256 de son identifiant est stockée (`token_hash`,

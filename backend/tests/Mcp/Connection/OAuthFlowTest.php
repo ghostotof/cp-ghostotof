@@ -116,7 +116,9 @@ final class OAuthFlowTest extends WebTestCase
             self::assertNotSame('', $secret, $name);
 
             foreach ($tables as $table => $json) {
-                self::assertStringNotContainsString($secret, $json, \sprintf('%s en clair dans %s', $name, $table));
+                // Le message nomme le secret et la table, jamais la valeur ni la
+                // ligne : un échec les publierait dans le journal de la CI.
+                self::assertFalse(str_contains($json, $secret), \sprintf('%s en clair dans %s', $name, $table));
             }
         }
 

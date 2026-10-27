@@ -178,7 +178,9 @@ final class TokenEndpointConcurrencyTest extends WebTestCase
     {
         $written = $concurrent->getOutput().$concurrent->getErrorOutput();
         foreach ($secrets as $secret) {
-            self::assertStringNotContainsString($secret, $written, 'La sortie du fils cite un secret.');
+            // Un message qui ne cite pas la valeur : un échec la publierait
+            // dans le journal de la CI.
+            self::assertFalse(str_contains($written, $secret), 'La sortie du fils cite un secret.');
         }
         self::assertNotSame(ChildPhpProcess::SETUP_FAILED, $concurrent->getExitCode(), $concurrent->getErrorOutput());
         self::assertSame(1, $concurrent->getExitCode(), 'La requête concurrente aurait dû être refusée : '.$written);

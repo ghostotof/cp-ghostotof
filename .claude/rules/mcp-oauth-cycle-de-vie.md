@@ -188,8 +188,10 @@ paths:
   between two requests of a `KernelBrowser` whether the kernel reboots or not, `disableReboot()` included,
   measured in task 4: a line counted « after the last request » would always read zero). **The exception is a
   `RuntimeException`, never a `LogicException` nor an `InvalidArgumentException`**: league's code grant wraps its
-  validation in a `catch` of each and turns them into `invalidRequest('code', 'Issue decrypting the authorization
-  code')` — as a `DomainException` the compromise never left league and the connection stayed active (measured;
+  validation in a `catch` of each (`AuthCodeGrant::respondToAccessTokenRequest()`, 9.4.1) — an `InvalidArgumentException`
+  becomes `invalidGrant('Cannot validate the provided authorization code')`, a `LogicException` `invalidRequest('code',
+  'Issue decrypting the authorization code')` — as a `DomainException` (a `LogicException`) the compromise never left
+  league, answered that `invalid_request`, and the connection stayed active (measured;
   `CompromisedMcpConnectionExceptionTest` reads the ancestors by reflection, a typed `assertNotInstanceOf` being
   « always true » for PHPStan). **League binds the code to the client after the
   repository**, unlike the refresh grant (`client_id !== $client->getIdentifier()` comes after `isAuthCodeRevoked()`): a
@@ -252,8 +254,8 @@ paths:
   wrapper) → `Application/McpConnectionPurgerInterface::purge(RetentionPeriod)` → `McpConnectionPurgeResult`, run every
   night by the housekeeping CronJob, third line after the invitations (`k8s/base/messenger-purge-cronjob.yaml`, under
   `set -e`, `PGOPTIONS=-c lock_timeout=5s`; `McpConnectionsPurgedDailyTest` pins the line and that no other manifest
-  runs it). **The order, in one transaction, is the token endpoint's** — connections first, tokens after (the reverse
-  deadlocked in `40P01`, task 6): (1) `findActiveCandidatesForExpiry($idleBefore, $maximumBefore)`, a **wide** SQL
+  runs it). **The order, in one transaction, is the token endpoint's** — every connection row first, tokens after (the
+  reverse deadlocked in `40P01`, task 6): (1) `findActiveCandidatesForExpiry($idleBefore, $maximumBefore)`, a **wide** SQL
   pre-selection (`revoked_at IS NULL AND (COALESCE(last_used_at, granted_at) <= :idleBefore OR granted_at <=
   :maximumBefore)`, both bounds `now − duration + P1D`, computed in PHP with `new DateInterval`, typed
   `DATETIMETZ_IMMUTABLE`), **locked `FOR UPDATE`** on the connection rows only (no join: the account's and client's rows
@@ -261,11 +263,18 @@ paths:
   judged, instead of a stale row revoked a few milliseconds after a legitimate use; (2) each candidate judged by
   `isExpiredAt(now, lifetimes)`, **the only definition**, the SQL never decides; (3) `revokeExpired(list<Uuid>, $at)`,
   one statement like `revokeActive()` (`WHERE c.id IN (:ids) AND c.revoked_at IS NULL … RETURNING`), cause `expired`;
-  (4) `deleteDead($now)` on codes, refresh tokens, then access tokens (fewer `ON DELETE SET NULL` rewrites): `expires_at
-  <= :now` **or** a revoked connection (`DELETE … USING mcp_connection`) — a rotated refresh token or an exchanged code
-  of an **active** connection stays until its expiry, its row being what recognises a reuse or a replay; the tokens of a
-  connection marked in (3) go in the same run; (5) `deleteRevokedBefore($threshold)`, `revoked_at < :threshold`, strict,
-  cascading. **After the COMMIT**, one `mcpConnectionExpired()` line per connection marked (actor `system`); a rolled-back
+  (4) `deleteRevokedBefore($threshold)`, `revoked_at < :threshold`, strict, cascading — **before any token deletion**:
+  a `DELETE` locks the rows it removes, and run last it locked old revoked connections after (5) had locked token rows
+  of other connections, the order a cascading account deletion (`cpg_user` → `mcp_connection` → tokens) crosses
+  (final review of #649); the cascade carries what tokens are left, normally none — those of a revoked connection are
+  dead and went the night after its revocation, so the counters are unchanged; (5) `deleteDead($now)` on codes, refresh
+  tokens, then access tokens (fewer `ON DELETE SET NULL` rewrites): `expires_at <= :now` **or** a revoked connection
+  (`DELETE … USING mcp_connection`, which locks no connection row) — a rotated refresh token or an exchanged code of an
+  **active** connection stays until its expiry, its row being what recognises a reuse or a replay; the tokens of a
+  connection marked in (3) go in the same run. **Accepted limit**: no order of steps covers a cycle between
+  `mcp_connection` rows alone — the purge locks its candidates (1, by id) then its old revoked rows (4), a deletion
+  cascade takes the account's connections in physical order; PostgreSQL aborts one of the two (`40P01`) and the Job
+  retries (`backoffLimit: 2`). **After the COMMIT**, one `mcpConnectionExpired()` line per connection marked (actor `system`); a rolled-back
   purge audits nothing (`testARolledBackPurgeAuditsNothing`, red with the audit moved inside, measured). Every instant is
   `ClockInterface::now()` (Paris). **Retention**: `app.mcp.revoked_connection_retention` (`'6 months'`, one value for every
   environment), the default of `--older-than`, read by `RetentionPeriod` (a date or an unreadable expression:

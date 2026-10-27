@@ -476,7 +476,9 @@ final class LeagueRepositoriesTest extends KernelTestCase
     private function assertNoColumnHolds(string $identifier, array $row): void
     {
         foreach ($row as $column => $value) {
-            self::assertStringNotContainsString($identifier, (string) (\is_scalar($value) ? $value : ''), \sprintf('La colonne %s contient l\'identifiant en clair.', $column));
+            // Le message nomme la colonne, jamais l'identifiant ni sa valeur :
+            // un échec les publierait dans le journal de la CI.
+            self::assertFalse(str_contains((string) (\is_scalar($value) ? $value : ''), $identifier), \sprintf('La colonne %s contient l\'identifiant en clair.', $column));
         }
     }
 

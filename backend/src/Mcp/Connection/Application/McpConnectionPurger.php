@@ -22,13 +22,17 @@ use Symfony\Component\Uid\Uuid;
 /**
  * La purge quotidienne des connexions MCP et de leurs jetons (#649).
  *
- * **Une transaction, dans l'ordre du point de jeton** — les connexions
- * d'abord, les jetons ensuite (l'ordre inverse a été mesuré en interblocage
- * `40P01`, tâche 6) : présélection des connexions peut-être expirées, sous
- * verrou ; jugement de chacune par {@see McpConnection::isExpiredAt()}, la
- * seule définition de l'échéance ; révocation de celles qu'il dit expirées
- * (cause `expired`) ; suppression des codes et jetons morts, puis des
- * connexions révoquées avant la rétention. **L'audit suit le COMMIT** : une
+ * **Une transaction, dans l'ordre du point de jeton** — toutes les lignes
+ * de connexion d'abord, les jetons ensuite (l'ordre inverse a été mesuré en
+ * interblocage `40P01`, tâche 6) : présélection des connexions peut-être
+ * expirées, sous verrou ; jugement de chacune par
+ * {@see McpConnection::isExpiredAt()}, la seule définition de l'échéance ;
+ * révocation de celles qu'il dit expirées (cause `expired`) ; suppression des
+ * connexions révoquées avant la rétention — une suppression verrouille ses
+ * lignes, et la placer après celle des jetons prendrait des connexions après
+ * des jetons, l'ordre qu'une suppression de compte en cascade (`cpg_user` →
+ * `mcp_connection` → jetons) croiserait ; puis suppression des codes et
+ * jetons morts. **L'audit suit le COMMIT** : une
  * ligne `mcp-connection-revoked` (acteur `system`) par connexion marquée, aucune
  * si la transaction est annulée.
  *
@@ -78,13 +82,18 @@ final readonly class McpConnectionPurger implements McpConnectionPurgerInterface
             // qu'une suppression touche à leurs jetons, et les jetons des
             // connexions qu'elle marque partent dans la même transaction.
             'expired' => $this->revokeExpired($now),
+            // Les connexions révoquées depuis la rétention, avant tout jeton :
+            // leurs lignes sont verrouillées avant qu'une suppression de jeton
+            // en verrouille une, comme partout ailleurs. Leurs jetons partent
+            // par la cascade — il n'en reste pas, en principe : ceux d'une
+            // connexion révoquée sont morts, supprimés la nuit suivante.
+            'connections' => $this->connections->deleteRevokedBefore($threshold),
             'codes' => $this->authorizationCodes->deleteDead($now),
             // Les rafraîchissements avant les jetons d'accès : chaque jeton
             // d'accès supprimé remet à NULL le lien des rafraîchissements
             // restants (`ON DELETE SET NULL`), moins nombreux ainsi.
             'refreshTokens' => $this->refreshTokens->deleteDead($now),
             'accessTokens' => $this->accessTokens->deleteDead($now),
-            'connections' => $this->connections->deleteRevokedBefore($threshold),
         ]);
 
         // Après le COMMIT : une transaction annulée n'a rien révoqué.

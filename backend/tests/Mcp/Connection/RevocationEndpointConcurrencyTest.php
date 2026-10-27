@@ -25,7 +25,7 @@ use Symfony\Component\Process\Process;
  * **L'ordre des verrous** est celui du point de jeton : la connexion C
  * d'abord (`lockForIssuance()`, `FOR UPDATE`), puis le jeton d'accès A et le
  * rafraîchissement R que league révoque. La révocation prend C en premier
- * elle aussi, puis révoque C, A et R. Dans l'ordre inverse (R, A, puis C), la
+ * elle aussi, puis révoque C, R et A. Dans l'ordre inverse (R, A, puis C), la
  * révocation tenait R et A en attendant C pendant que le rafraîchissement,
  * qui tenait C, attendait A : un interblocage (40P01), un 500 au point de
  * révocation, et quand c'est elle que PostgreSQL annulait, la connexion
@@ -95,7 +95,9 @@ final class RevocationEndpointConcurrencyTest extends WebTestCase
 
         $written = $concurrent->getOutput().$concurrent->getErrorOutput();
         foreach ([$firstRefreshToken, $held->accessToken] as $secret) {
-            self::assertStringNotContainsString($secret, $written, 'La sortie du fils cite un secret.');
+            // Un message qui ne cite pas la valeur : un échec la publierait
+            // dans le journal de la CI.
+            self::assertFalse(str_contains($written, $secret), 'La sortie du fils cite un secret.');
         }
         self::assertNotSame(ChildPhpProcess::SETUP_FAILED, $concurrent->getExitCode(), $concurrent->getErrorOutput());
         self::assertSame(1, $this->countRows('SELECT COUNT(*) FROM mcp_connection'));

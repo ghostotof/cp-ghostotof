@@ -114,7 +114,9 @@ final class ConsentControllerTest extends WebTestCase
         self::assertSame(self::CLIENT_ID, $audit['clientId'] ?? null);
         self::assertSame($account, $audit['actor'] ?? null);
         self::assertSame(self::PATH, $audit['path'] ?? null);
-        self::assertStringNotContainsString($query['code'], json_encode(self::securityAuditRecords(), \JSON_THROW_ON_ERROR));
+        // Un message qui ne cite pas le code : un échec le publierait dans le
+        // journal de la CI.
+        self::assertFalse(str_contains(json_encode(self::securityAuditRecords(), \JSON_THROW_ON_ERROR), $query['code']), 'Le journal d\'audit cite le code.');
     }
 
     /** Le refus : `access_denied` au client, `state` et `iss` compris, et rien de créé. */
@@ -247,8 +249,10 @@ final class ConsentControllerTest extends WebTestCase
         self::assertSame(self::CLIENT_ID, $events[1]['clientId'] ?? null);
         self::assertSame('superseded', $events[1]['cause'] ?? null);
         $logged = json_encode($events, \JSON_THROW_ON_ERROR);
-        self::assertStringNotContainsString($secondCode, $logged);
-        self::assertStringNotContainsString($firstRefreshToken, $logged);
+        // Des messages qui ne citent pas la valeur : un échec la publierait
+        // dans le journal de la CI.
+        self::assertFalse(str_contains($logged, $secondCode), 'Le journal d\'audit cite le second code.');
+        self::assertFalse(str_contains($logged, $firstRefreshToken), 'Le journal d\'audit cite le premier rafraîchissement.');
 
         self::assertSame([$secondConnectionId], $this->activeConnectionIds());
         self::assertSame('superseded', $this->connectionRow($firstConnectionId)['revocation_cause']);

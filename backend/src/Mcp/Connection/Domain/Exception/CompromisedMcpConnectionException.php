@@ -28,9 +28,11 @@ use Symfony\Component\Uid\Uuid;
  *
  * Une RuntimeException, **jamais une LogicException** (DomainException
  * comprise) ni une InvalidArgumentException : league entoure la validation
- * du code de ces deux `catch` et en fait un `invalid_request` « Issue
- * decrypting the authorization code » — l'exception n'en sortait pas, la
- * connexion restait active (mesuré, tâche 4 de #649). Un rejeu est une
+ * du code de ces deux `catch` — une InvalidArgumentException y devient un
+ * `invalid_grant` « Cannot validate the provided authorization code », une
+ * LogicException un `invalid_request` « Issue decrypting the authorization
+ * code ». Sous DomainException, l'exception n'en sortait pas, la connexion
+ * restait active (mesuré, tâche 4 de #649). Un rejeu est une
  * condition d'exécution, pas une erreur du programme : le parent est juste
  * aussi. `CompromisedMcpConnectionExceptionTest` l'épingle.
  */
