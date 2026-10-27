@@ -392,7 +392,7 @@ paths:
   <= :maximumBefore)`, both bounds `now − duration + P1D`, `new DateInterval`, typed `DATETIMETZ_IMMUTABLE`), **locked
   `FOR UPDATE`** on the connection rows only (no join), `HINT_REFRESH`, by id, through `RereadUnderLock::rowsMatching()`
   (`.claude/rules/backend-architecture.md`; nothing detached): a refresh in flight commits first and its new
-  `last_used_at` is judged; (2) each candidate judged by `isExpiredAt(now, lifetimes)`, **the only definition**;
+  `last_used_at` is judged, instead of a stale row revoked a few milliseconds after a legitimate use; (2) each candidate judged by `isExpiredAt(now, lifetimes)`, **the only definition**;
   (3) `revokeExpired(list<Uuid>, $at)`, one statement like `revokeActive()` (`WHERE c.id IN (:ids) AND c.revoked_at IS
   NULL … RETURNING`), cause `expired`; (4) `deleteRevokedBefore($threshold)`, `revoked_at < :threshold`, strict,
   cascading — **before any token deletion**: run last, it locked old revoked connections after (5) had locked token
@@ -403,14 +403,15 @@ paths:
   connection row) — a rotated refresh token or an exchanged code of an **active** connection stays until its expiry,
   its row recognising a reuse or a replay; those of a connection marked in (3) go the same night. A before R is the
   order of the revocation endpoint, league's refresh grant and the cascade (lot B: R then A left the cycle told in
-  « Revoking a refresh token at the revocation endpoint »; the *extra* cost is the SET NULL rewrite of dead R rows the
-  next statement deletes). **Pinned in real processes** (`McpConnectionPurgeLockOrderTest`, child
+  « Revoking a refresh token at the revocation endpoint »; deleting an A rewrites every R that outlives it whatever the
+  order, a live R whose access token expired included — the *extra* cost is the SET NULL rewrite of dead R rows the
+  next statement deletes, measured by no counter: `McpConnectionPurgerTest` counts the same two, two, two). **Pinned in real processes** (`McpConnectionPurgeLockOrderTest`, child
   `Fixtures/purge-mcp-connections.php`, `.claude/rules/backend-outillage.md`): the test holds the other side's first
   row, waits for the purge to block, asks for the second — an old revoked connection then its access token for (4)
   before (5), the connection, its access token, then its refresh token for A before R, each inverted order a `40P01`;
   and the lock's duration: a live candidate (last used 29 days 12 hours ago) is free `FOR UPDATE NOWAIT` while the
   purge waits in (5) — `55P03` under one transaction, measured, the other two green. **Accepted, unpinned**: no
-  concurrency test proves the `FOR UPDATE` of (1) itself. **Accepted limit**: a cycle between `mcp_connection` rows
+  concurrency test proves the `FOR UPDATE` of (1) itself (the sequential suite stays green without it). **Accepted limit**: a cycle between `mcp_connection` rows
   alone — candidates (1, by id) or old revoked rows (4) against a cascade taking an account's connections in physical
   order; PostgreSQL aborts one, the Job retries (`backoffLimit: 2`). **After the marking's COMMIT**, one
   `mcpConnectionExpired()` line per connection marked (actor `system`); a rolled-back marking audits nothing
