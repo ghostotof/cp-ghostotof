@@ -141,24 +141,24 @@ connexions MCP » ; « Phase 2, backend » et « Frontend » des Testing Decisio
 - Produces : `RevocationCause::Person = 'person'`, `RevocationCause::PasswordChanged = 'password-changed'`,
   `RevocationCause::TrustedTierWithdrawn = 'trusted-tier-withdrawn'`.
 
-- [ ] **Step 1 : tests rouges.** Ajouter les trois cas à l'énumération **sans** migration ; lancer
+- [x] **Step 1 : tests rouges.** Ajouter les trois cas à l'énumération **sans** migration ; lancer
   `McpConnectionRepositoryTest` → rouge en SQLSTATE 23514 (`chk_mcp_connection_revocation_cause_value`) sur les
   trois nouvelles valeurs (la mesure de l'expand/contract). Écrire `Version20261028120000Test` :
   `testUpAdmitsTheThreeNewCauses` (une connexion écrite en SQL, révoquée en SQL avec chacune), `testDownRestoresTheFiveCauses`
   (après `down()`, `person` refusé en 23514), `testDownRefusesWhileANewCauseIsStored` (une ligne `person` : `down()`
   échoue sur l'`ADD CONSTRAINT`, la base inchangée — le retour arrière exige de décider quoi faire de ces lignes,
   jamais de les réécrire en silence). Transactions annulées, comme le test modèle.
-- [ ] **Step 2 : implémenter la migration.** `up()` : `ALTER TABLE mcp_connection DROP CONSTRAINT
+- [x] **Step 2 : implémenter la migration.** `up()` : `ALTER TABLE mcp_connection DROP CONSTRAINT
   chk_mcp_connection_revocation_cause_value`, puis `ADD CONSTRAINT` du même nom avec les huit valeurs **écrites en
   clair** (`client`, `refresh-token-reuse`, `code-replay`, `superseded`, `expired`, `person`, `password-changed`,
   `trusted-tier-withdrawn`). `down()` : la contrainte à cinq valeurs. Docblock : pourquoi avant le code (#175),
   aucune ligne existante ne peut violer l'élargissement, verrou bref borné par le `lock_timeout` du Job (#525),
   migration avant rollout sans fenêtre.
-- [ ] **Step 3 : empreinte.** `docker compose exec -u dev backend php bin/phpunit tests/Shared/Infrastructure/Postgres/DatabaseOwnerSettingsVerificationTest.php`
+- [x] **Step 3 : empreinte.** `docker compose exec -u dev backend php bin/phpunit tests/Shared/Infrastructure/Postgres/DatabaseOwnerSettingsVerificationTest.php`
   → rouge, imprime la ligne ; l'ajouter à `verify.sql` (`('DoctrineMigrations\Version20261028120000', 36, '<empreinte>')`).
-- [ ] **Step 4 : vert.** `tests/Migrations/`, `McpConnectionRepositoryTest`, puis `make back-test`, `make back-quality`.
+- [x] **Step 4 : vert.** `tests/Migrations/`, `McpConnectionRepositoryTest`, puis `make back-test`, `make back-quality`.
   `php bin/console doctrine:migrations:diff` (dans le conteneur) ne propose rien.
-- [ ] **Step 5 : commit** `feat(mcp): trois causes de révocation admises par la base avant le code (#650)`.
+- [x] **Step 5 : commit** `feat(mcp): trois causes de révocation admises par la base avant le code (#650)`.
 
 ### Task 2 : lister ses connexions — `GET /api/me/mcp-connections`
 

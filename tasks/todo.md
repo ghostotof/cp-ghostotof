@@ -124,7 +124,7 @@ phase 1 parte en release seule ; puis au merge de clôture, qui archive la spec 
       Périmètre tranché par l'auteur le 2026-10-28, plan `tasks/plan-t11-mes-connexions.md`, branche
       `feature/spec-0007-t11-mes-connexions` ; traite aussi #730 (piste 1, expiration précoce d'un accord
       jamais échangé). Onze tâches, **sensibles** marquées :
-  - [ ] 1. Élargir le `CHECK` des causes (`person`, `password-changed`, `trusted-tier-withdrawn`) — **sensible (migration)**
+  - [x] 1. Élargir le `CHECK` des causes (`person`, `password-changed`, `trusted-tier-withdrawn`) — **sensible (migration)**
   - [ ] 2. `GET /api/me/mcp-connections` : ses connexions, état jugé par `isExpiredAt()` via `McpConnection::deadline()`
   - [ ] 3. `DELETE /api/me/mcp-connections/{id}` : cause `person`, 404 indistinct, 204 idempotent, bout en bout — **sensible (sécurité)**
   - [ ] 4. Révocation par la personne × rafraîchissement × marquage de la purge, en processus réels — **sensible (concurrence)**
