@@ -23,6 +23,19 @@ interface McpConnectionRepositoryInterface
     public function add(McpConnection $connection): void;
 
     /**
+     * Toutes les connexions d'un compte (#650, « Mes connexions MCP »), avec
+     * leur client, **en une requête** : actives, expirées, et révoquées — la
+     * purge ne supprime ces dernières que six mois après leur révocation, la
+     * personne les voit tant qu'elles existent. La plus récemment octroyée
+     * d'abord, l'identifiant décroissant départageant deux octrois de la même
+     * seconde (un ordre qui ne dépend pas du plan de la requête). Aucun verrou :
+     * une lecture, que ni un rafraîchissement ni la purge n'attendent.
+     *
+     * @return list<McpConnection>
+     */
+    public function findAllOfAccount(Uuid $accountId): array;
+
+    /**
      * Ce par quoi la connexion se désigne — son compte, son client public —,
      * révoquée ou non (#725). Une instruction SQL, hors de l'unité de
      * travail : valable après une transaction annulée qui a fermé

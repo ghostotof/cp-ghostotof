@@ -62,6 +62,27 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
             ->getOneOrNullResult();
     }
 
+    /**
+     * Le client est joint (`innerJoin` + `addSelect`) : la liste affiche son
+     * nom, et une jointure évite une requête par connexion. Le compte n'est
+     * pas joint — l'appelant le tient déjà, et la colonne `account_id` suffit
+     * au filtre ; seul son identifiant est lu. L'identifiant du compte est
+     * typé comme sa colonne.
+     */
+    public function findAllOfAccount(Uuid $accountId): array
+    {
+        /** @var list<McpConnection> */
+        return $this->createQueryBuilder('connection')
+            ->addSelect('client')
+            ->innerJoin('connection.client', 'client')
+            ->where('IDENTITY(connection.account) = :account')
+            ->setParameter('account', $accountId, UuidType::NAME)
+            ->orderBy('connection.grantedAt', 'DESC')
+            ->addOrderBy('connection.id', 'DESC')
+            ->getQuery()
+            ->getResult();
+    }
+
     public function add(McpConnection $connection): void
     {
         $this->getEntityManager()->persist($connection);

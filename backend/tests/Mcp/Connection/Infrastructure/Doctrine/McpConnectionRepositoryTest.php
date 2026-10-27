@@ -564,6 +564,60 @@ final class McpConnectionRepositoryTest extends KernelTestCase
         self::assertSame(1, $this->rowCount('cpg_user'));
     }
 
+    /**
+     * « Mes connexions MCP » (#650) : toutes les connexions du compte — les
+     * révoquées comprises, que la purge garde six mois —, la plus récemment
+     * octroyée d'abord, celles d'un autre compte jamais. Le client arrive avec
+     * elles, par jointure : lire le nom de chacune ne coûte aucune requête de
+     * plus.
+     */
+    public function testFindAllOfAccountListsEveryConnectionOfTheAccountNewestFirstWithItsClient(): void
+    {
+        $account = $this->persistAccount('jane');
+        $client = $this->registerClient('https://client.example.test/metadata.json');
+        $otherClient = $this->registerClient('https://other-client.example.test/metadata.json');
+        $oldest = McpConnection::grant($account, $client, self::SCOPE, new DateTimeImmutable('2026-10-01T10:00:00+02:00'));
+        $revoked = McpConnection::grant($account, $otherClient, self::SCOPE, new DateTimeImmutable('2026-10-10T10:00:00+02:00'));
+        $newest = McpConnection::grant($account, $client, self::SCOPE, new DateTimeImmutable('2026-10-20T10:00:00+02:00'));
+        $ofAnotherAccount = McpConnection::grant($this->persistAccount('john'), $client, self::SCOPE, new DateTimeImmutable('2026-10-15T10:00:00+02:00'));
+        foreach ([$oldest, $revoked, $newest, $ofAnotherAccount] as $connection) {
+            $this->connections()->add($connection);
+        }
+        $this->connections()->revokeActive($revoked->getId(), RevocationCause::Client, new DateTimeImmutable('2026-10-11T10:00:00+02:00'));
+        $this->em->clear();
+
+        $found = $this->connections()->findAllOfAccount($account->getId());
+
+        self::assertSame(
+            [$newest->getId()->toRfc4122(), $revoked->getId()->toRfc4122(), $oldest->getId()->toRfc4122()],
+            array_map(static fn(McpConnection $connection): string => $connection->getId()->toRfc4122(), $found),
+        );
+        self::assertSame(RevocationCause::Client, $found[1]->revocationCause());
+        foreach ($found as $connection) {
+            self::assertFalse($this->em->getUnitOfWork()->isUninitializedObject($connection->client()), 'Le client est joint, pas chargé à la demande.');
+        }
+        self::assertSame([], $this->connections()->findAllOfAccount(Uuid::v7()));
+    }
+
+    /** Deux octrois de la même seconde se rangent par identifiant décroissant : l'ordre ne dépend pas du plan de la requête. */
+    public function testFindAllOfAccountBreaksTiesByDescendingId(): void
+    {
+        $account = $this->persistAccount('jane');
+        $client = $this->registerClient('https://client.example.test/metadata.json');
+        $grantedAt = new DateTimeImmutable('2026-10-20T10:00:00+02:00');
+        $first = McpConnection::grant($account, $client, self::SCOPE, $grantedAt);
+        $second = McpConnection::grant($account, $client, self::SCOPE, $grantedAt);
+        $this->connections()->add($first);
+        $this->connections()->add($second);
+        $this->em->clear();
+
+        $ids = array_map(static fn(McpConnection $connection): string => $connection->getId()->toRfc4122(), $this->connections()->findAllOfAccount($account->getId()));
+
+        $expected = [$first->getId()->toRfc4122(), $second->getId()->toRfc4122()];
+        rsort($expected);
+        self::assertSame($expected, $ids);
+    }
+
     private function purge(): void
     {
         $connection = $this->em->getConnection();

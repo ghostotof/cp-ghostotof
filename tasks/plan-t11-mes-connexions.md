@@ -188,10 +188,10 @@ connexions MCP » ; « Phase 2, backend » et « Frontend » des Testing Decisio
     instants en `DateTimeInterface::ATOM` dans le fuseau de l'horloge, `Cache-Control: no-store`, compte lu par
     `#[CurrentUser] CpgUser`.
 
-- [ ] **Step 1 : tests rouges du domaine.** `McpConnectionExpiryTest::testTheDeadlineIsTheEarliestOfIdleAndMaximum`
+- [x] **Step 1 : tests rouges du domaine.** `McpConnectionExpiryTest::testTheDeadlineIsTheEarliestOfIdleAndMaximum`
   (dernier usage récent : maximum ; ancien : inactivité) ; `testIsExpiredAtAgreesWithTheDeadlineSecondBySecond`
   (la seconde de l'échéance et celle d'avant, dans les deux changements d'heure, comme le balayage existant).
-- [ ] **Step 2 : tests rouges du contrôleur** (`OwnMcpConnectionsControllerTest`) :
+- [x] **Step 2 : tests rouges du contrôleur** (`OwnMcpConnectionsControllerTest`) :
   `testItListsOnlyTheCallersConnections` (deux connexions du compte `trusted` — `holdMcpConnection()`,
   `holdAnotherMcpConnection()` —, une d'un compte `other-trusted` : la liste du premier en a deux, aucune
   `id` de l'autre) ; `testTheShapeIsExact` (clés exactes, `client.name` celui de `RegisteredMcpClient`,
@@ -204,14 +204,14 @@ connexions MCP » ; « Phase 2, backend » et « Frontend » des Testing Decisio
   `testAnAnonymousCallerIsUnauthorized` (401) ; `testTheListCostsOneQuery` (trois connexions, une seule requête
   pour la liste en plus de l'authentification, mesurée comme `testAnAuthenticatedCallCostsExactlyOneQueryMore`) ;
   `testNoTokenReachesTheBody` (ni le jeton d'accès ni son empreinte dans le corps).
-- [ ] **Step 3 : les lancer** : rouges (route absente, méthode absente).
-- [ ] **Step 4 : implémenter.** `deadline()` puis `isExpiredAt()` dessus (même arithmétique : instants ramenés
+- [x] **Step 3 : les lancer** : rouges (route absente, méthode absente).
+- [x] **Step 4 : implémenter.** `deadline()` puis `isExpiredAt()` dessus (même arithmétique : instants ramenés
   au fuseau, `add(new DateInterval)` dans `ConnectionLifetimes`) ; `findAllOfAccount()` ; `OwnMcpConnections::of()`
   (règle d'état de la décision 8, aucune autre requête : le client est joint) ; contrôleur léger (aucun calcul :
   il formate les vues). `ApiRouteExposureTest`, `ItemRouteRequirementTest`, `McpExposureSymmetryTest` (palier de
   confiance : hors de son sens 1), `RouteEnvironmentParityTest` doivent rester verts sans entrée nouvelle.
-- [ ] **Step 5 : vert.** Les fichiers ci-dessus, puis `tests/Mcp/`, `tests/Security/`, `make back-test`, `make back-quality`.
-- [ ] **Step 6 : commit** `feat(mcp): la personne liste ses connexions MCP (#650)`.
+- [x] **Step 5 : vert.** Les fichiers ci-dessus, puis `tests/Mcp/`, `tests/Security/`, `make back-test`, `make back-quality`.
+- [x] **Step 6 : commit** `feat(mcp): la personne liste ses connexions MCP (#650)`.
 
 ### Task 3 : révoquer une de ses connexions — `DELETE /api/me/mcp-connections/{id}` — **Sensible (sécurité)**
 

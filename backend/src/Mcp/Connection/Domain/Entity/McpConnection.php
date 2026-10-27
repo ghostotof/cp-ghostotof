@@ -11,6 +11,7 @@ use App\Security\User\Domain\Entity\CpgUser;
 use App\Shared\Domain\Security\McpConnectionReference;
 use DateInterval;
 use DateTimeImmutable;
+use DateTimeZone;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Bridge\Doctrine\Types\UuidType;
@@ -226,10 +227,10 @@ class McpConnection implements McpConnectionReference
     }
 
     /**
-     * La connexion a-t-elle expiré à l'instant `$now` ? **La seule définition
-     * de l'échéance** (#649) : deux échéances de ConnectionLifetimes, la
-     * première atteinte l'emporte, et chacune est exclusive (atteinte à la
-     * seconde près, la connexion est morte) :
+     * L'instant où la connexion expire : **la plus proche de ses échéances**,
+     * dans le fuseau `$zone` (#650). **La seule définition de l'échéance**
+     * (#649) — celle que {@see self::isExpiredAt()} juge et que « Mes
+     * connexions MCP » affiche, jamais deux calculs qui pourraient se séparer :
      *
      * - l'inactivité : {@see ConnectionLifetimes::idleDeadline()} de
      *   `lastUsedAt ?? grantedAt` ;
@@ -240,28 +241,38 @@ class McpConnection implements McpConnectionReference
      * ne dépend que de la connexion, l'expiration est donc monotone — morte à
      * un instant, morte à tout instant suivant. Un seuil reculait d'une heure
      * pendant l'heure répétée du passage à l'heure d'hiver, et la connexion
-     * revivait (relecture de la tâche 1). La purge (#649) présélectionnera ses
-     * candidates en SQL puis jugera chacune ici : une seule définition.
+     * revivait (relecture de la tâche 1). La purge (#649) présélectionne ses
+     * candidates en SQL puis juge chacune par {@see self::isExpiredAt()}.
      *
-     * Les jours se comptent sur le calendrier du fuseau de `$now` (721 heures
-     * pour 30 jours à Paris à travers le passage à l'heure d'hiver), jamais par
+     * Les jours se comptent sur le calendrier de `$zone` (721 heures pour 30
+     * jours à Paris à travers le passage à l'heure d'hiver), jamais par
      * `modify()` (#445) : les instants y sont ramenés avant l'ajout, car
-     * Doctrine hydrate une colonne `datetimetz_immutable` avec un décalage fixe
-     * (`+02:00`), sur lequel 30 jours dureraient 720 heures — une connexion lue
-     * en base n'expirerait pas à la même seconde qu'une connexion en mémoire.
+     * Doctrine hydrate une colonne `datetimetz_immutable` avec un décalage
+     * fixe (`+02:00`), sur lequel 30 jours dureraient 720 heures — une connexion
+     * lue en base n'expirerait pas à la même seconde qu'une connexion en mémoire.
      * L'horloge rend toujours le même fuseau : l'échéance reste fixe.
      *
      * `lastUsedAt` n'est écrit qu'au rafraîchissement, par
-     * {@see self::recordUseAt()} — jamais à chaque appel (ADR 0006 D6). La
-     * révocation n'est pas une expiration : {@see self::isRevoked()} se lit à
-     * part.
+     * {@see self::recordUseAt()} — jamais à chaque appel (ADR 0006 D6).
+     */
+    public function deadline(DateTimeZone $zone, ConnectionLifetimes $lifetimes): DateTimeImmutable
+    {
+        $lastActivity = ($this->lastUsedAt ?? $this->grantedAt)->setTimezone($zone);
+
+        return min(
+            $lifetimes->idleDeadline($lastActivity),
+            $lifetimes->maximumDeadline($this->grantedAt->setTimezone($zone)),
+        );
+    }
+
+    /**
+     * La connexion a-t-elle expiré à l'instant `$now` ? Exclusif : atteinte à
+     * la seconde de {@see self::deadline()}, la connexion est morte. Les
+     * échéances se comptent dans le fuseau de `$now`. La révocation n'est pas
+     * une expiration : {@see self::isRevoked()} se lit à part.
      */
     public function isExpiredAt(DateTimeImmutable $now, ConnectionLifetimes $lifetimes): bool
     {
-        $zone = $now->getTimezone();
-        $lastActivity = ($this->lastUsedAt ?? $this->grantedAt)->setTimezone($zone);
-
-        return $now >= $lifetimes->idleDeadline($lastActivity)
-            || $now >= $lifetimes->maximumDeadline($this->grantedAt->setTimezone($zone));
+        return $now >= $this->deadline($now->getTimezone(), $lifetimes);
     }
 }
