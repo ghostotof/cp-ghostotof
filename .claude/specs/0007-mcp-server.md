@@ -503,8 +503,9 @@ décision du 2026-10-19, voir « Langue invalide »).
   supprime). Les deux ordres sont pincés en processus réels, la vraie purge contre un test qui tient les
   lignes de l'autre côté (`McpConnectionPurgeLockOrderTest`, lot C des relectures). Le même test pince la coupure (#726) : une
   candidate encore vivante (présélection large) n'est plus verrouillée pendant les suppressions, son
-  rafraîchissement n'attend plus la fin de la purge ; une seconde transaction en échec laisse le marquage et
-  ses lignes d'audit, la nuit suivante supprime. Limite acceptée : un cycle entre lignes de `mcp_connection`
+  rafraîchissement n'attend plus la fin de la purge. Qu'une seconde transaction en échec laisse le marquage
+  et ses lignes d'audit, la nuit suivante supprimant, c'est
+  `McpConnectionPurgerTest::testTheMarkingIsAuditedEvenWhenTheDeletionsRollBack` qui le pince. Limite acceptée : un cycle entre lignes de `mcp_connection`
   seules (la purge, puis une suppression de compte en cascade) reste possible ; PostgreSQL annule l'une, le
   Job réessaie. **Pas de `--dry-run`** : elle ne supprime que des jetons
   morts et des connexions mortes depuis des mois, rien qu'une personne pourrait regretter (la purge des

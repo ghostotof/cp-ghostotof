@@ -45,7 +45,8 @@ paths:
 - **An assumed exception to the context boundaries: `Mcp/Connection` depends on `Security` directly.** It is
   the first context outside `Security` whose entity references `CpgUser` (`McpConnection::$account`, a
   `ManyToOne` on `account_id`, `ON DELETE CASCADE`) and whose service depends on
-  `SecurityAuditLoggerInterface` (`ConsentService`, the `mcp-connection-granted` line). Elsewhere a context
+  `SecurityAuditLoggerInterface` (`ConsentService`, the `mcp-connection-granted` line; `TokenEndpoint`, the
+  `superseded` lines after the exchange's COMMIT, #726). Elsewhere a context
   designates an account through `Shared/Domain/Security/AccountReference` (its UUID, `Ai`'s quotas) and never
   imports `Security`. Here the spec requires the foreign key — removing the account must kill its connections in
   the database, not wait for a purge — and Doctrine maps it on the entity class only; and the grant belongs to
@@ -172,8 +173,9 @@ paths:
   judged `FOR UPDATE` on its connection, inside the token endpoint's transaction, and a rotated refresh token
   presented again revokes the connection — the lock, the order of judgement and the two clocks are in
   `.claude/rules/mcp-oauth-cycle-de-vie.md`, « The refresh is judged under the lock of its connection ». A code
-  exchanged twice is judged the same way, and its replay revokes the connection too — « A replayed code is judged
-  under the same lock », in the same rule.
+  exchanged twice is judged the same way, and its replay revokes the connection too **when the body proves the
+  code's PKCE verifier** (#726; otherwise the same refusal, no revocation, `replay-unproven`) — « A replayed code
+  is judged under the same lock », in the same rule.
 - **OAuth answers are league's (RFC 6749 §5.2), rendered by the controller, never thrown**:
   `ApiProblemResponseListener` / `ApiJsonErrorFormatListener` would rewrite them as problem+json, which
   OAuth clients do not read. **What the controllers render is `Cache-Control: no-store`**: the authorize
