@@ -148,7 +148,7 @@ phase 1 parte en release seule ; puis au merge de clôture, qui archive la spec 
   - [x] R4. Relecture CR3/F1 : `code_exchanged_at` robuste ; interblocage écrit et épinglé — **sensible**
   - [x] R5. Relecture : corrections mineures et documentation
   - [x] S1. Seconde relecture F-A : version des identifiants dans le JWT — **sensible**
-  - [ ] S2. Seconde relecture CR1 : un 401 du backoffice ne démonte plus la page
+  - [x] S2. Seconde relecture CR1 : un 401 du backoffice ne démonte plus la page
   - [ ] S3. Seconde relecture CR4 : relance unique sur interblocage — **sensible**
   - [ ] S4. Seconde relecture : liste (tri, instantané), audit du refus, garde `_test`, `redirect` durci
   - [ ] S5. Seconde relecture : documentation, découpage de `security-authentication.md`

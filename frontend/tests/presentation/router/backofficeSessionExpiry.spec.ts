@@ -2,8 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { defineComponent } from 'vue'
 import { router } from '../../../src/presentation/router'
-import { createBackofficeSessionExpiryHandler } from '../../../src/presentation/router/backofficeSessionExpiry'
-import { AUTH_REPOSITORY, authState, markSessionExpired, useAuth } from '../../../src/application/auth/useAuth'
+import { onBackofficeUnauthorized } from '../../../src/presentation/router/backofficeSessionExpiry'
+import { AUTH_REPOSITORY, authState, useAuth } from '../../../src/application/auth/useAuth'
 import type { AuthRepository } from '../../../src/domain/auth/repositories/AuthRepository'
 import type { AuthenticatedUser } from '../../../src/domain/auth/entities/AuthenticatedUser'
 import { sessionFor } from '../../support/authSession'
@@ -26,8 +26,10 @@ async function signIn(user: AuthenticatedUser): Promise<void> {
 }
 
 /**
- * Un 401 du backoffice ferme la session côté interface et mène à la connexion,
- * avec un retour à la page où se trouvait la personne (#650 R1c).
+ * Un 401 du backoffice ferme la session côté interface, **sans déplacer la
+ * personne** (#650 R1c, corrigé en S2) : la page reste montée, avec ce qu'elle
+ * porte (une étude de cas à moitié rédigée). Le bandeau d'AdminLayout annonce la
+ * fin de session et offre le lien de reconnexion.
  */
 describe('backofficeSessionExpiry', () => {
   beforeEach(async () => {
@@ -36,53 +38,31 @@ describe('backofficeSessionExpiry', () => {
     await router.isReady()
   })
 
-  it('marque la session expirée et mène à la connexion avec redirect vers la page courante', async () => {
-    expect(router.currentRoute.value.name).toBe('admin-users')
-
-    createBackofficeSessionExpiryHandler(router)()
-    // La navigation est asynchrone (composant de page chargé à la demande).
-    await vi.waitFor(() => expect(router.currentRoute.value.name).toBe('login'))
-
-    expect(authState.user).toBeNull()
-    expect(router.currentRoute.value.params.locale).toBe('fr')
-    expect(router.currentRoute.value.query.redirect).toBe('/fr/admin/users')
-    // La page de connexion dit pourquoi elle s'ouvre (#650, R5a).
-    expect(router.currentRoute.value.query.expired).toBe('1')
-  })
-
-  it('garde la langue de la page courante', async () => {
-    await router.push('/en/admin/users')
-
-    createBackofficeSessionExpiryHandler(router)()
-    await vi.waitFor(() => expect(router.currentRoute.value.name).toBe('login'))
-
-    expect(router.currentRoute.value.params.locale).toBe('en')
-    expect(router.currentRoute.value.query.redirect).toBe('/en/admin/users')
-  })
-
-  it('plusieurs 401 simultanés (listes chargées en parallèle) ne font qu\'une navigation', async () => {
-    const handler = createBackofficeSessionExpiryHandler(router)
+  it('marque la session expirée (en-tête anonyme, fin de session annoncée) sans quitter la page', async () => {
     const replace = vi.spyOn(router, 'replace')
+    const push = vi.spyOn(router, 'push')
 
-    handler()
-    handler()
-    handler()
-    await vi.waitFor(() => expect(router.currentRoute.value.name).toBe('login'))
-
-    expect(router.currentRoute.value.query.redirect).toBe('/fr/admin/users')
-    expect(replace).toHaveBeenCalledTimes(1)
-    replace.mockRestore()
-  })
-
-  it('déjà sur la page de connexion : ne renavigue pas (redirect conservé)', async () => {
-    // La page de connexion n'ouvre pas à une personne encore connectée : la session est déjà finie.
-    markSessionExpired()
-    await router.push({ name: 'login', params: { locale: 'fr' }, query: { redirect: '/fr/admin/users' } })
-
-    createBackofficeSessionExpiryHandler(router)()
+    onBackofficeUnauthorized()
     await new Promise((resolve) => setTimeout(resolve, 0))
 
-    expect(router.currentRoute.value.name).toBe('login')
-    expect(router.currentRoute.value.query.redirect).toBe('/fr/admin/users')
+    expect(authState.user).toBeNull()
+    expect(authState.sessionEnded).toBe(true)
+    expect(router.currentRoute.value.name).toBe('admin-users')
+    expect(router.currentRoute.value.fullPath).toBe('/fr/admin/users')
+    expect(replace).not.toHaveBeenCalled()
+    expect(push).not.toHaveBeenCalled()
+    replace.mockRestore()
+    push.mockRestore()
+  })
+
+  it('plusieurs 401 simultanés (listes chargées en parallèle) laissent un seul état de fin de session', async () => {
+    const handler = onBackofficeUnauthorized
+
+    handler()
+    handler()
+    handler()
+
+    expect(authState.sessionEnded).toBe(true)
+    expect(router.currentRoute.value.fullPath).toBe('/fr/admin/users')
   })
 })

@@ -1,42 +1,23 @@
-import type { Router } from 'vue-router'
 import { markSessionExpired } from '../../application/auth/useAuth'
-import { isSupportedLocale, type Locale } from '../../domain/portfolio/entities/Locale'
-import { resolvePreferredLocale } from './preferredLocale'
-import { SESSION_ENDED_QUERY, SESSION_ENDED_VALUE } from './sessionEnded'
 
 /**
- * La réaction du backoffice à un 401 (#650 R1c), branchée dans `main.ts` sur
+ * La réaction du backoffice à un 401, branchée dans `main.ts` sur
  * `setBackofficeUnauthorizedHandler` : la session est finie (JWT expiré, ou
- * ouverte avant un changement de mot de passe, R1b). L'en-tête repasse à
- * « anonyme » et la personne est menée à la connexion, qui la ramènera à la page
- * où elle se trouvait (`redirect`, jugé par LoginPage : chemin interne seulement),
- * et qui dit pourquoi elle s'ouvre (`expired=1`, voir `sessionEnded.ts`).
+ * ouverte avant un changement de mot de passe, #650 R1b). L'en-tête repasse à
+ * « anonyme » et l'état « session finie » est levé — le bandeau d'`AdminLayout`
+ * (`SessionEndedBanner`) l'annonce et offre le lien de reconnexion.
  *
- * `replace` plutôt que `push` : le retour arrière ne ramène pas à une page dont
- * l'API refuse tout. Une page du backoffice charge plusieurs listes en
- * parallèle, et chacune en 401 appelle cette réaction : seule la première
- * navigue, sans quoi la suivante écraserait le `redirect` par la page de
- * connexion elle-même.
+ * **Aucune navigation, délibérément** (#650, S2 ; R1c menait à la connexion) : un
+ * `router.replace` ici démontait la page au moment où la personne cliquait
+ * « Enregistrer », et une étude de cas rédigée pendant plus d'une heure (la durée
+ * du JWT) était perdue avec elle. Le garde de route (`requiresAuth`) continue de
+ * mener à la connexion à la navigation suivante : la saisie est alors enregistrée
+ * ou abandonnée.
+ *
+ * Une page du backoffice charge plusieurs listes en parallèle, et chacune en 401
+ * appelle cette réaction : elle est idempotente (un état, pas un événement), il
+ * n'y a rien à dédoublonner.
  */
-export function createBackofficeSessionExpiryHandler(router: Router): () => void {
-  let isRedirecting = false
-
-  return () => {
-    markSessionExpired()
-
-    const current = router.currentRoute.value
-    if (isRedirecting || 'login' === current.name) {
-      return
-    }
-
-    isRedirecting = true
-    const routeLocale = current.params.locale
-    const locale: Locale = 'string' === typeof routeLocale && isSupportedLocale(routeLocale) ? routeLocale : resolvePreferredLocale()
-
-    void router
-      .replace({ name: 'login', params: { locale }, query: { redirect: current.fullPath, [SESSION_ENDED_QUERY]: SESSION_ENDED_VALUE } })
-      .finally(() => {
-        isRedirecting = false
-      })
-  }
+export function onBackofficeUnauthorized(): void {
+  markSessionExpired()
 }

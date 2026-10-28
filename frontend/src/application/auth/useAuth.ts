@@ -21,10 +21,14 @@ export const AUTH_REPOSITORY: InjectionKey<AuthRepository> = Symbol('AuthReposit
  * les consommateurs existants — le garde de routeur lit `authState.user` —
  * n'aient pas à changer.
  */
-const state = reactive<{ tier: AccessTier; user: AuthenticatedUser | null; isChecking: boolean }>({
+const state = reactive<{ tier: AccessTier; user: AuthenticatedUser | null; isChecking: boolean; sessionEnded: boolean }>({
   tier: ANONYMOUS_SESSION.tier,
   user: ANONYMOUS_SESSION.user,
   isChecking: true,
+  // Le serveur a refusé la session pendant qu'une page était ouverte (voir
+  // markSessionExpired). Distinct de « anonyme » : c'est ce qui permet au
+  // backoffice d'annoncer la fin de session sans quitter la page (#650, S2).
+  sessionEnded: false,
 })
 
 /**
@@ -44,6 +48,12 @@ let baseAccessExpiryTimer: ReturnType<typeof setTimeout> | null = null
 function applySession(session: AuthSession): void {
   state.tier = session.tier
   state.user = session.user
+  // Un compte qui revient (connexion, relecture de /api/me) referme l'annonce ;
+  // une session encore anonyme ou de base ne la referme pas : rien n'est revenu
+  // qui rouvre le backoffice.
+  if (null !== session.user) {
+    state.sessionEnded = false
+  }
   // Tout changement de session rend la minuterie précédente caduque : un
   // login remplace le cookie D6 par celui du compte, un logout l'efface.
   clearBaseAccessExpiry()
@@ -158,6 +168,7 @@ export function markBaseAccessExpired(): void {
  */
 export function markSessionExpired(): void {
   applySession(ANONYMOUS_SESSION)
+  state.sessionEnded = true
 }
 
 export interface UseAuthResult {
@@ -167,6 +178,11 @@ export interface UseAuthResult {
   /** Vrai dès qu'un jeton valide existe, palier de base compris. */
   isAuthenticated: ComputedRef<boolean>
   isChecking: ComputedRef<boolean>
+  /**
+   * Vrai depuis qu'un refus du serveur (markSessionExpired) a fermé la session et
+   * jusqu'au retour d'un compte : le bandeau du backoffice s'appuie dessus.
+   */
+  hasSessionEnded: ComputedRef<boolean>
   /** ROLE_TRUSTED (ou ROLE_SUPER) : le seul palier qui ouvre le CV et /api/me. */
   isTrusted: ComputedRef<boolean>
   isSuperAdmin: ComputedRef<boolean>
@@ -223,6 +239,7 @@ export function useAuth(): UseAuthResult {
     tier: computed(() => state.tier),
     isAuthenticated: computed(() => 'anonymous' !== state.tier),
     isChecking: computed(() => state.isChecking),
+    hasSessionEnded: computed(() => state.sessionEnded),
     isTrusted: computed(() => 'trusted' === state.tier),
     isSuperAdmin: computed(() => hasRole(state.user, ROLE_SUPER)),
     login,

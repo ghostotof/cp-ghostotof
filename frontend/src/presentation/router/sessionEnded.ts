@@ -3,9 +3,9 @@ import type { LocationQuery } from 'vue-router'
 /**
  * Le drapeau qui dit à la page de connexion qu'elle s'ouvre parce que la
  * session de la personne a pris fin (#650, R5a) : le serveur a refusé sa
- * session (un 401 du backoffice, voir `backofficeSessionExpiry.ts`, ou celui
+ * session (un 401 du backoffice, que `SessionEndedBanner` annonce, ou celui
  * d'une page de la personne comme « Mes connexions MCP »). Écrit une fois, posé
- * par ces deux sites, lu par LoginPage, qui annonce pourquoi elle s'ouvre —
+ * par les liens de reconnexion de ces deux sites, lu par LoginPage, qui annonce pourquoi elle s'ouvre —
  * sans lui, la personne arrive sur un formulaire de connexion sans savoir
  * qu'elle y a été menée.
  *

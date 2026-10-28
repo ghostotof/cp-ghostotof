@@ -66,7 +66,7 @@ import { HttpMcpConnectionsRepository } from './infrastructure/mcp/HttpMcpConnec
 import { BASE_ACCESS_REPOSITORY } from './application/baseAccess/useBaseAccess'
 import { HttpBaseAccessRepository } from './infrastructure/baseAccess/HttpBaseAccessRepository'
 import { setBackofficeUnauthorizedHandler } from './infrastructure/admin/shared/BackofficeHttpClient'
-import { createBackofficeSessionExpiryHandler } from './presentation/router/backofficeSessionExpiry'
+import { onBackofficeUnauthorized } from './presentation/router/backofficeSessionExpiry'
 import { getApiUrl } from './infrastructure/config/getApiUrl'
 
 const app = createApp(App)
@@ -110,8 +110,9 @@ app.use(i18n)
 app.use(router)
 
 // Un 401 du backoffice (JWT expiré, session antérieure à un changement de mot
-// de passe) ferme la session côté interface et mène à la connexion (#650 R1c).
-setBackofficeUnauthorizedHandler(createBackofficeSessionExpiryHandler(router))
+// de passe) ferme la session côté interface et l'annonce par un bandeau, sans
+// quitter la page (#650 R1c, S2) : le texte en cours de saisie n'est pas perdu.
+setBackofficeUnauthorizedHandler(onBackofficeUnauthorized)
 
 app.mount('#app')
 

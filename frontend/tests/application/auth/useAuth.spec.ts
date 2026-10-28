@@ -135,6 +135,44 @@ describe('useAuth', () => {
     expect(auth.user.value).toBeNull()
   })
 
+  describe('fin de session annoncée (#650, S2)', () => {
+    it("markSessionExpired() repasse à anonyme et lève hasSessionEnded, qu'une session de compte efface", async () => {
+      const auth = mountWithComposable(createStubRepository())
+      await auth.login('jane', 'password')
+      expect(auth.hasSessionEnded.value).toBe(false)
+
+      markSessionExpired()
+
+      expect(auth.user.value).toBeNull()
+      expect(auth.hasSessionEnded.value).toBe(true)
+      expect(authState.sessionEnded).toBe(true)
+
+      await auth.login('jane', 'password')
+      expect(auth.hasSessionEnded.value).toBe(false)
+    })
+
+    it("une relecture qui répond encore « anonyme » ne lève pas l'annonce (la session n'est pas revenue)", async () => {
+      const auth = mountWithComposable(createStubRepository())
+      await auth.login('jane', 'password')
+      markSessionExpired()
+
+      await auth.checkAuth()
+
+      expect(auth.hasSessionEnded.value).toBe(true)
+    })
+
+    it("une relecture qui retrouve un compte (reconnexion dans un autre onglet) lève l'annonce", async () => {
+      const repository = createStubRepository({ me: vi.fn(async () => sessionFor({ username: 'jane', roles: ['ROLE_USER'] })) })
+      const auth = mountWithComposable(repository)
+      markSessionExpired()
+      expect(auth.hasSessionEnded.value).toBe(true)
+
+      await auth.checkAuth()
+
+      expect(auth.hasSessionEnded.value).toBe(false)
+    })
+  })
+
   describe('palier d\'accès (ADR 0003 D1 — trois cas)', () => {
     it('anonyme par défaut : tier=anonymous, ni authentifié ni de confiance', async () => {
       const auth = mountWithComposable(createStubRepository())

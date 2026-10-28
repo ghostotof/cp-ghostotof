@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useCvDownload } from '../../application/cv/useCvDownload'
+import SessionEndedBanner from '../ui/admin/SessionEndedBanner.vue'
 import IconDownload from '~icons/lucide/download'
 
 const route = useRoute()
@@ -154,6 +155,9 @@ onBeforeUnmount(() => {
     >
       {{ t('common.downloadCvError') }}
     </p>
+
+    <!-- Un 401 d'une page ne la déplace pas : la fin de session s'annonce ici, une fois (#650, S2). -->
+    <SessionEndedBanner />
 
     <RouterView />
   </section>

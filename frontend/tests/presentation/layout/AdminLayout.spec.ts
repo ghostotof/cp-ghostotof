@@ -5,6 +5,9 @@ import { nextTick } from 'vue'
 import AdminLayout from '../../../src/presentation/layout/AdminLayout.vue'
 import { createAppI18n } from '../../../src/presentation/i18n'
 import { CV_REPOSITORY } from '../../../src/application/cv/useCvDownload'
+import { AUTH_REPOSITORY } from '../../../src/application/auth/useAuth'
+import type { AuthRepository } from '../../../src/domain/auth/repositories/AuthRepository'
+import { sessionFor } from '../../support/authSession'
 import type { CvRepository } from '../../../src/domain/cv/repositories/CvRepository'
 
 const StubPage = { template: '<div />' }
@@ -38,6 +41,13 @@ function createStubCvRepository(overrides: Partial<CvRepository> = {}): CvReposi
   }
 }
 
+/** Le bandeau de fin de session (#650, S2) relit la session au retour sur l'onglet : il a besoin du dépôt d'authentification. */
+const authRepository: AuthRepository = {
+  login: async () => ({ username: 'super', roles: ['ROLE_SUPER', 'ROLE_USER'] }),
+  logout: async () => undefined,
+  me: async () => sessionFor(null),
+}
+
 async function mountLayout(initialPath: string, cvRepository: CvRepository = createStubCvRepository()) {
   const router = createTestRouter()
   await router.push(initialPath)
@@ -45,7 +55,7 @@ async function mountLayout(initialPath: string, cvRepository: CvRepository = cre
 
   const wrapper = mount(AdminLayout, {
     attachTo: document.body,
-    global: { plugins: [router, createAppI18n()], provide: { [CV_REPOSITORY as symbol]: cvRepository } },
+    global: { plugins: [router, createAppI18n()], provide: { [CV_REPOSITORY as symbol]: cvRepository, [AUTH_REPOSITORY as symbol]: authRepository } },
   })
   await wrapper.vm.$nextTick()
 

@@ -49,6 +49,11 @@
   "admin": {
     "heading": "Administration",
     "navigation": "Navigation d'administration",
+    "sessionEnded": {
+      "message": "Votre session a pris fin : ce que vous avez saisi est toujours là, mais l'enregistrement est refusé tant que vous n'êtes pas reconnecté.",
+      "signInAgain": "Se reconnecter",
+      "newTab": "(s'ouvre dans un nouvel onglet)"
+    },
     "contentNavigation": "Navigation du contenu",
     "comingSoon": "Cette section sera bientôt disponible.",
     "localeLabel": "Langue",

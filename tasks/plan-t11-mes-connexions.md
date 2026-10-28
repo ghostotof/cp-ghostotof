@@ -818,7 +818,23 @@ service réel, jeton créé deux secondes après : rouge avec l'ancienne règle)
 comparaison retirée (écouteur, consentement), revendication non posée, re-hachage qui avance la version.
 
 ### Task S2 : un 401 du backoffice ne démonte plus la page (CR1)
-- [ ] Bandeau persistant « Votre session a pris fin » + lien de reconnexion (`expired=1`, `redirect`), sans navigation.
+- [x] Bandeau persistant « Votre session a pris fin » + lien de reconnexion (`expired=1`, `redirect`), sans navigation.
+
+**S2 (2026-10-28)** — décisions : (1) **état** : `sessionEnded` dans l'état partagé de `useAuth` (`hasSessionEnded`,
+`authState.sessionEnded`), levé par `markSessionExpired()`, baissé quand une session **de compte** est appliquée
+(connexion, relecture de `/api/me` qui retrouve un compte) ; une relecture encore anonyme ne le baisse pas. (2) **Lieu** :
+`presentation/ui/admin/SessionEndedBanner.vue`, rendu une fois par `AdminLayout` au-dessus de la `RouterView`.
+(3) **Réaction** : `backofficeSessionExpiry.ts` n'exporte plus que `onBackofficeUnauthorized()` = `markSessionExpired()`,
+sans navigation ni `isRedirecting` (idempotent : un état, pas un événement). (4) **ARIA** : `role="alert"` (suit un geste
+« Enregistrer » qui vient d'échouer, bloque la suite) ; inséré par `v-if`, donc annoncé, contrairement à la région de
+`LoginPage` présente au premier rendu ; **aucun** `focus()`. (5) **Lien** : `target="_blank" rel="noopener"` + texte
+masqué « (s'ouvre dans un nouvel onglet) » : dans le même onglet la saisie serait perdue ; le cookie de session est
+partagé, `redirect` ramène l'autre onglet à la page. (6) **Retour sur l'onglet** : au `focus` de la fenêtre, tant que la
+session est finie, `checkAuth()` relit `/api/me` : un compte retrouvé efface le bandeau (et « Enregistrer » refonctionne,
+le jeton CSRF étant relu du cookie à chaque appel). (7) Mutation : réintroduire le `router.replace` (ancien code de R1c)
+→ `AdminLayout.sessionEnded.spec.ts` rouge (`expected '' to be 'Un moteur de tarification asynchrone'`, le formulaire est
+démonté). **À écrire en S5** : `frontend-backoffice.md` (puce « A 401 mid-page »), `frontend-a11y.md` (alerte insérée vs
+région présente au premier rendu), `frontend.md` si elle cite R1c ; vérification en navigateur à ajouter à celles de la tâche 10.
 
 ### Task S3 : relance unique sur interblocage (CR4) — **Sensible (concurrence)**
 - [ ] Changement de mot de passe et rétrogradation relancés une fois sur `40P01` ; test de concurrence (la victime

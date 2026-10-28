@@ -49,6 +49,11 @@
   "admin": {
     "heading": "Administration",
     "navigation": "Administration navigation",
+    "sessionEnded": {
+      "message": "Your session has ended: what you typed is still here, but saving is refused until you sign in again.",
+      "signInAgain": "Sign in again",
+      "newTab": "(opens in a new tab)"
+    },
     "contentNavigation": "Content navigation",
     "comingSoon": "This section will be available soon.",
     "localeLabel": "Language",
