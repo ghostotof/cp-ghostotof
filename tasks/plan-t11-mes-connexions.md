@@ -609,13 +609,13 @@ Relectures au point fixe `19d8323e...HEAD` : `/code-review medium`, audit de sé
 les corrections ci-dessous sont faites dans cette branche (décision de l'auteur du 2026-10-28).
 
 ### Task R1 : le cookie d'avant un changement de mot de passe n'accorde plus (F2) ; re-hachage sous condition (F3) — **Sensible (sécurité, migration)**
-- [ ] `CpgUser::credentialsChangedAt` (`datetimetz_immutable`, nullable), migration + empreinte `verify.sql` ; écrit dans
+- [x] `CpgUser::credentialsChangedAt` (`datetimetz_immutable`, nullable), migration + empreinte `verify.sql` ; écrit dans
   la même fermeture que `setPassword()` par `CpgUserAdministrator::changePassword()` et `PasswordSetupService::activate()`
-  (quand un mot de passe est remplacé comme quand il est posé).
-- [ ] `ConsentService` refuse (le 401 « réauthentification » existant) un JWT dont l'instant d'authentification est
-  antérieur à `credentialsChangedAt` ; tests GET et POST du consentement.
-- [ ] F3 : `CpgUserRepository::upgradePassword()` n'écrase pas un mot de passe changé entre-temps (`UPDATE … WHERE
-  password = :ancien`, ou verrou du compte) ; test qui reproduit la course.
+  (quand un mot de passe est remplacé comme quand il est posé). *Fait : `Version20261028160000`, empreinte n° 38, `CpgUser::replacePassword()` ; 0958fd02.*
+- [x] `ConsentService` refuse (le 401 « réauthentification » existant) un JWT dont l'instant d'authentification est
+  antérieur à `credentialsChangedAt` ; tests GET et POST du consentement. *Fait : résumé, refus et accord, `hasChangedCredentialsSince()` (égalité comprise) ; 0958fd02.*
+- [x] F3 : `CpgUserRepository::upgradePassword()` n'écrase pas un mot de passe changé entre-temps (`UPDATE … WHERE
+  password = :ancien`, ou verrou du compte) ; test qui reproduit la course. *Fait : `UPDATE … WHERE password = :ancien`, a2787cc4.*
 
 ### Task R2 : le consentement est lié au compte affiché (F5)
 - [ ] Le `GET` du consentement renvoie l'UUID du compte affiché ; le `POST` le renvoie et reçoit 409 s'il diffère du
