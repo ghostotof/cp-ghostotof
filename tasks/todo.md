@@ -150,7 +150,7 @@ phase 1 parte en release seule ; puis au merge de clôture, qui archive la spec 
   - [x] S1. Seconde relecture F-A : version des identifiants dans le JWT — **sensible**
   - [x] S2. Seconde relecture CR1 : un 401 du backoffice ne démonte plus la page
   - [x] S3. Seconde relecture CR4 : relance unique sur interblocage — **sensible**
-  - [ ] S4. Seconde relecture : liste (tri, instantané), audit du refus, garde `_test`, `redirect` durci
+  - [x] S4. Seconde relecture : liste (tri, instantané), audit du refus, garde `_test`, `redirect` durci, retrait de `credentials_changed_at`
   - [ ] S5. Seconde relecture : documentation, découpage de `security-authentication.md`
       R5a (partie code) et R5b (règles, spec, registre RGPD, plan) faites le 2026-10-28 (plan, « Corrections de relecture »).
       **Notes de la release** (tâche 11, PR de la mère vers `develop`) :

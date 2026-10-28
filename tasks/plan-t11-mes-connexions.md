@@ -894,10 +894,45 @@ out of scope): the OAuth client gets a 500 from the token endpoint, its code is 
 service dont l'opération se rejoue le demande ; un verrou de compte ne relance jamais de lui-même).
 
 ### Task S4 : petits points
-- [ ] CR2/CR3 : terminées triées par instant de fin ; deux lectures dans un même instantané.
-- [ ] F-C : audit `session-refused-after-password-change` (sans jeton).
-- [ ] F-D : garde `_test` avant `TRUNCATE`/`DELETE` dans les tests ; CR8/F-I2 : docblocks périmés.
-- [ ] F-I1 : `redirect` de `LoginPage` durci.
+- [x] CR2/CR3 : terminées triées par instant de fin ; deux lectures dans un même instantané.
+- [x] F-C : audit `session-refused-after-credentials-change` (sans jeton).
+- [x] F-D : garde `_test` avant `TRUNCATE`/`DELETE` dans les tests ; CR8/F-I2 : docblocks périmés.
+- [x] F-I1 : `redirect` de `LoginPage` durci.
+- [x] Retrait de `cpg_user.credentials_changed_at` (décision de l'auteur : plus lue depuis S1) : migration `Version20261028200000`, empreinte n° 40.
+
+**S4 (2026-10-28)** — un commit par point. Décisions : (1) **CR2** : les terminées se *choisissent* par `revoked_at DESC, id DESC`
+(`findTerminatedOfAccount()`), le service les remet dans l'ordre d'**octroi** décroissant pour l'*affichage* (fusion PHP de R3
+inchangée : l'instant de fin décide quelles on garde, pas l'ordre où on les montre). Le socle `ofAccountNewestFirst()` devient
+`ofAccount()` sans ordre : chaque moitié écrit le sien. (2) **CR3** : port `Mcp/Connection/Application/ReadSnapshotInterface::read(Closure)`,
+adaptateur `DoctrineReadSnapshot` = transaction `SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY` (le projet n'avait aucun
+usage d'un niveau d'isolation ; DBAL 4 : `beginTransaction()` puis `SET TRANSACTION` avant toute requête), refus d'une transaction déjà
+ouverte (`ReadSnapshotInsideTransactionException`, `LogicException` sans mapping). Écartés : `TransactionInterface` (écrit, vide l'unité de
+travail, ferme l'EntityManager sur échec) ; une requête unique (DQL sans `LIMIT` en sous-requête, SQL natif + mapping : plus de code que le
+port). Mesuré : en lecture validée, une révocation validée entre les deux requêtes fait disparaître la connexion (rouge vu). (3) **F-C** :
+`SecurityAuditLoggerInterface::sessionRefusedAfterCredentialsChange(CpgUser, ?int $presentedVersion)`, événement
+`session-refused-after-credentials-change` (« credentials » : le prédicat est une égalité de versions, une session *plus récente* que
+le compte — base restaurée — est refusée aussi, ce n'est pas un changement de mot de passe) ; contexte `userId`, `presentedVersion` (0 si
+la revendication manque, `null` si illisible), `currentVersion`, `actor` `anonymous`, `ip`, `path`. **Pas de dédoublonnage** : le cache
+`cache.app` est en base (conforme à l'ADR 0005) mais coûterait une lecture et une écriture SQL par requête refusée, sur le chemin même
+qu'un rejeu martèlerait, pour retirer une ligne parmi des `Authenticator failed.` déjà écrites une à une ; après le premier 401 les
+cookies sont effacés. (4) **F-D** : `tests/Support/TestDatabase::assertSafeToWipe()` (lit `current_database()`, exige `_test` + `TEST_TOKEN`),
+appliquée à `TokenEndpointConcurrencyTest` (`TRUNCATE … CASCADE`), `SessionBeforePasswordChangeTest` et aux 13 nettoyages de `tests/Mcp`
+(+ `DoctrineReadSnapshotTest`, `McpConnectionRepositoryTest`). Non appliquée aux ~110 autres fichiers de `tests/` qui font un
+`DELETE FROM` sans `WHERE` : tous passent par la connexion du noyau de test, dont `doctrine.yaml` suffixe déjà le nom — la garde ferme le
+cas d'une connexion ouverte autrement ; à étendre quand un test en ouvre une (`OpensProbeConnection`, `DriverManager`). CR8 : docblocks de
+`CodeExchangeSupersession` et `McpConnection::$codeExchangedAt`. F-I2 : sans objet dans le code (le passage a disparu avec S1) ; il reste
+dans `security-authentication.md:97` (S5). (5) **F-I1** : `presentation/router/internalRedirect.ts` : `/` seul en tête, ni `\` ni
+caractère de contrôle (`/\hôte` = `//hôte`, `/<TAB>/hôte` = `//hôte` pour un navigateur) ; la résolution d'origine par l'analyseur d'URL
+est **écartée** (mesuré : elle ne refuse rien de plus une fois la règle syntaxique posée, et juge la forme normalisée, pas la chaîne passée
+au routeur). `LoginPage` est le seul lecteur de `redirect`. `%5C` n'est pas refusé (non décodé dans un chemin). (6) **Retrait de
+`credentials_changed_at`** : `Version20261028200000` (`DROP COLUMN`, `down()` la recrée nullable), `CpgUser` sans champ ni accesseur,
+`replacePassword($hash)` sans instant, `CpgUserAdministrator` sans horloge ; `Version20261028160000` non touchée (son test recrée la colonne
+dans sa transaction annulée avant de rejouer) ; retrait dans la livraison qui cesse de la lire, sans enfreindre expand/contract (la colonne
+n'a jamais été livrée). **Mutations mesurées** : `REPEATABLE READ`→`READ COMMITTED` (1 rouge) ; lecture d'une moitié hors de l'instantané
+(1 rouge) ; tri par `grantedAt` (1 rouge) ; appel d'audit retiré (7 rouges) ; `user` ajouté au contexte (4 rouges) ; barre oblique inverse
+non refusée (3) ; contrôles non refusés (6) ; `up()` de la migration sans effet (1). **Pour S5** : voir le rendu de la tâche (règles
+`mcp-oauth-revocation-personne.md`, `security-authentication.md`, `security-user.md`, `backend-outillage.md`, `frontend.md`, notes de release :
+cinq migrations dont `Version20261028200000`, empreinte n° 40, plus de colonne `credentials_changed_at` dans le déploiement final).
 
 ### Task S5 : documentation et découpage de `security-authentication.md` (> 48,9 Ko)
 - [ ] Règles, spec, registre à jour de S1–S4 ; `security-authentication.md` découpée par sous-domaine (procédure de
