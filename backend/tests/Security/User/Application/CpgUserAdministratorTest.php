@@ -15,12 +15,16 @@ use App\Security\User\Domain\Exception\CannotDeleteOwnAccountException;
 use App\Security\User\Domain\Exception\CpgUserNotFoundException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use App\Security\User\Domain\Repository\PasswordSetupTokenRepositoryInterface;
+use App\Shared\Application\Security\AccountAccessWithdrawal;
+use App\Shared\Application\Security\AccountMcpConnectionsRevokerInterface;
+use App\Shared\Application\Security\RevokedAccountMcpConnections;
 use App\Tests\Support\TestCredentials;
 use Closure;
 use DateTimeImmutable;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
+use RuntimeException;
 use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
 use Symfony\Component\Uid\Uuid;
 
@@ -273,6 +277,89 @@ final class CpgUserAdministratorTest extends TestCase
             ->changePassword($user->getId(), TestCredentials::variant('new'));
     }
 
+    /**
+     * #650, tâche 5 : le mot de passe et la révocation des connexions MCP du
+     * compte valident ensemble. L'ordre observé : le verrou s'ouvre, le mot de
+     * passe est écrit, `revokeAllOf()` est appelé **dans** la fermeture (sur le
+     * compte relu sous le verrou, raison « mot de passe changé »), le verrou
+     * se referme (COMMIT), puis seulement `passwordChanged()` et
+     * `auditRevoked()` — avec ce que la révocation a rendu. Un audit passé
+     * avant la fermeture du verrou décrirait une écriture que le COMMIT peut
+     * encore défaire.
+     */
+    public function testChangePasswordRevokesTheMcpConnectionsInsideTheLockAndAuditsAfterIt(): void
+    {
+        $user = $this->user('jane');
+        $steps = [];
+        $revoked = new RevokedAccountMcpConnections(AccountAccessWithdrawal::PasswordChanged, []);
+
+        $accountLock = self::createStub(AccountLockInterface::class);
+        $accountLock->method('whileLocked')->willReturnCallback(
+            static function (CpgUser $target, Closure $operation) use (&$steps): mixed {
+                $steps[] = 'lock opened';
+                $result = $operation($target);
+                $steps[] = 'lock closed';
+
+                return $result;
+            },
+        );
+        $repository = $this->repositoryFinding($user);
+        $mcpConnections = $this->createMock(AccountMcpConnectionsRevokerInterface::class);
+        $mcpConnections->expects(self::once())->method('revokeAllOf')
+            ->with($user, AccountAccessWithdrawal::PasswordChanged)
+            ->willReturnCallback(static function () use (&$steps, $revoked): RevokedAccountMcpConnections {
+                $steps[] = 'connections revoked';
+
+                return $revoked;
+            });
+        $mcpConnections->expects(self::once())->method('auditRevoked')->with($revoked)
+            ->willReturnCallback(static function () use (&$steps): void {
+                $steps[] = 'connections audited';
+            });
+        $auditLogger = self::createStub(SecurityAuditLoggerInterface::class);
+        $auditLogger->method('passwordChanged')->willReturnCallback(static function () use (&$steps): void {
+            $steps[] = 'password audited';
+        });
+
+        $this->administrator($repository, $this->hasher(), $auditLogger, mcpConnections: $mcpConnections, accountLock: $accountLock)
+            ->changePassword($user->getId(), TestCredentials::variant('new'));
+
+        self::assertSame(['lock opened', 'connections revoked', 'lock closed', 'password audited', 'connections audited'], $steps);
+    }
+
+    /**
+     * La révocation échoue dans la fermeture : l'exception sort, le verrou
+     * annule (le mot de passe avec lui), et rien n'est audité — ni le mot de
+     * passe, ni les connexions.
+     */
+    public function testARevocationFailureAuditsNothing(): void
+    {
+        $user = $this->user('jane');
+        $mcpConnections = $this->createMock(AccountMcpConnectionsRevokerInterface::class);
+        $mcpConnections->method('revokeAllOf')->willThrowException(new RuntimeException('révocation refusée'));
+        $mcpConnections->expects(self::never())->method('auditRevoked');
+
+        $this->expectException(RuntimeException::class);
+
+        $this->administrator($this->repositoryFinding($user), $this->hasher(), $this->auditLoggerExpectingNothing(), mcpConnections: $mcpConnections)
+            ->changePassword($user->getId(), TestCredentials::variant('new'));
+    }
+
+    /** Un compte disparu avant le verrou : 404, aucune révocation tentée ni auditée. */
+    public function testAVanishedAccountRevokesNoConnection(): void
+    {
+        $repository = self::createStub(CpgUserRepositoryInterface::class);
+        $repository->method('findOneById')->willReturn(null);
+        $mcpConnections = $this->createMock(AccountMcpConnectionsRevokerInterface::class);
+        $mcpConnections->expects(self::never())->method('revokeAllOf');
+        $mcpConnections->expects(self::never())->method('auditRevoked');
+
+        $this->expectException(CpgUserNotFoundException::class);
+
+        $this->administrator($repository, self::createStub(UserPasswordHasherInterface::class), $this->auditLoggerExpectingNothing(), mcpConnections: $mcpConnections)
+            ->changePassword(Uuid::v7(), TestCredentials::variant('new'));
+    }
+
     private function repositoryFinding(CpgUser $user): CpgUserRepositoryInterface
     {
         $repository = self::createStub(CpgUserRepositoryInterface::class);
@@ -300,11 +387,19 @@ final class CpgUserAdministratorTest extends TestCase
         SecurityAuditLoggerInterface $auditLogger,
         ?PasswordSetupTokenRepositoryInterface $tokenRepository = null,
         ?AccountAdministrationLockInterface $administrationLock = null,
+        ?AccountMcpConnectionsRevokerInterface $mcpConnections = null,
+        ?AccountLockInterface $accountLock = null,
     ): CpgUserAdministrator {
-        $accountLock = self::createStub(AccountLockInterface::class);
-        $accountLock->method('whileLocked')->willReturnCallback(
-            static fn (CpgUser $user, Closure $operation): mixed => $operation($user),
-        );
+        if (null === $accountLock) {
+            $accountLock = self::createStub(AccountLockInterface::class);
+            $accountLock->method('whileLocked')->willReturnCallback(
+                static fn (CpgUser $user, Closure $operation): mixed => $operation($user),
+            );
+        }
+        if (null === $mcpConnections) {
+            $mcpConnections = self::createStub(AccountMcpConnectionsRevokerInterface::class);
+            $mcpConnections->method('revokeAllOf')->willReturn(new RevokedAccountMcpConnections(AccountAccessWithdrawal::PasswordChanged, []));
+        }
         if (null === $administrationLock) {
             $administrationLock = self::createStub(AccountAdministrationLockInterface::class);
             $administrationLock->method('whileAdministering')->willReturnCallback(
@@ -312,7 +407,7 @@ final class CpgUserAdministratorTest extends TestCase
             );
         }
 
-        return new CpgUserAdministrator($repository, $hasher, $auditLogger, $tokenRepository ?? self::createStub(PasswordSetupTokenRepositoryInterface::class), $accountLock, $administrationLock);
+        return new CpgUserAdministrator($repository, $hasher, $auditLogger, $tokenRepository ?? self::createStub(PasswordSetupTokenRepositoryInterface::class), $accountLock, $administrationLock, $mcpConnections);
     }
 
     /**

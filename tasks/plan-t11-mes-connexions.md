@@ -315,7 +315,7 @@ connexions MCP » ; « Phase 2, backend » et « Frontend » des Testing Decisio
     non mappée, `critical` 500) si aucune transaction n'est ouverte sur la connexion de l'EntityManager.
   - Correspondance `AccountAccessWithdrawal` → `RevocationCause` par un `match` exhaustif dans l'implémentation.
 
-- [ ] **Step 1 : tests rouges.** `AccountWideRevocationTest::testAPasswordChangeRevokesEveryConnectionOfTheAccount`
+- [x] **Step 1 : tests rouges.** `AccountWideRevocationTest::testAPasswordChangeRevokesEveryConnectionOfTheAccount`
   (le compte `trusted` tient deux connexions, `other-trusted` une ; un compte `admin` `ROLE_SUPER`
   `PUT /api/backoffice/users/{id}/password` → 204 ; les deux connexions révoquées `password-changed`, celle de
   l'autre intacte ; sur la requête du PUT : `password-changed` (`event`) puis deux `mcp-connection-revoked`, `actor`
@@ -327,16 +327,16 @@ connexions MCP » ; « Phase 2, backend » et « Frontend » des Testing Decisio
   `AccountMcpConnectionsRevokerTest::testItRefusesOutsideATransaction` ; `testEachRevokedConnectionIsAuditedOnceAfterwards`
   (doublure du journaliseur, deux connexions, la seconde audit en panne → la première écrite, une ligne `critical`).
   `McpConnectionRepositoryTest::testRevokeAllActiveOfAccountLeavesRevokedAndForeignRowsAlone`.
-- [ ] **Step 2 : les lancer** : rouges.
-- [ ] **Step 3 : implémenter.** `changePassword()` : dans la fermeture de `whileLocked()`, après `save()` et la
+- [x] **Step 2 : les lancer** : rouges.
+- [x] **Step 3 : implémenter.** `changePassword()` : dans la fermeture de `whileLocked()`, après `save()` et la
   purge des jetons d'invitation, `return $this->mcpConnections->revokeAllOf($locked, AccountAccessWithdrawal::PasswordChanged);`
   ; après le verrou : `passwordChanged()`, puis `auditRevoked()`. Docblocks : l'ordre des verrous (le compte
   `FOR UPDATE`, puis ses connexions par id — aucun chemin ne prend une connexion puis le compte : le point de
   jeton lit le compte sans verrou, le consentement prend un `FOR KEY SHARE` sur le compte avant d'insérer, la
   suppression en cascade suit le même sens) ; pourquoi un port de `Shared` (décision 3).
-- [ ] **Step 4 : vert** ; `tests/Security/`, `tests/Mcp/`, `PlainPasswordInputsTest` (le paramètre du mot de passe
+- [x] **Step 4 : vert** ; `tests/Security/`, `tests/Mcp/`, `PlainPasswordInputsTest` (le paramètre du mot de passe
   inchangé), `make back-test`, `make back-quality`.
-- [ ] **Step 5 : commit** `feat(security): un changement de mot de passe révoque les connexions MCP du compte (#650)`.
+- [x] **Step 5 : commit** `feat(security): un changement de mot de passe révoque les connexions MCP du compte (#650)`.
 
 ### Task 6 : révoquer les connexions d'un compte qui perd `ROLE_TRUSTED` — **Sensible (sécurité)**
 

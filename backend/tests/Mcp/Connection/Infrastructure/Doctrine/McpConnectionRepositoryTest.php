@@ -16,6 +16,7 @@ use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
 use App\Mcp\Connection\Domain\Repository\McpRefreshTokenRepositoryInterface;
 use App\Mcp\Connection\Domain\ValueObject\RevocationCause;
 use App\Mcp\Connection\Domain\ValueObject\RevokedConnection;
+use App\Mcp\Connection\Infrastructure\Doctrine\RevocationOutsideTransactionException;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Tests\Mcp\Connection\RegisteredMcpClient;
 use DateTimeImmutable;
@@ -370,6 +371,83 @@ final class McpConnectionRepositoryTest extends KernelTestCase
         self::assertTrue($this->connections()->belongsToAccount($connection->getId(), $owner));
         self::assertFalse($this->connections()->belongsToAccount($connection->getId(), Uuid::v7()));
         self::assertFalse($this->connections()->belongsToAccount(Uuid::v7(), $owner));
+    }
+
+    /**
+     * Toutes les connexions actives d'un compte (#650, mot de passe changé,
+     * palier retiré), dans la transaction de l'appelant : celles du compte
+     * seulement, jamais celle d'un autre ; une déjà révoquée garde son instant
+     * et sa cause, et n'est pas rendue (donc jamais auditée une seconde fois).
+     */
+    public function testRevokeAllActiveOfAccountLeavesRevokedAndForeignRowsAlone(): void
+    {
+        $owner = $this->persistAccount('jane');
+        $stranger = $this->persistAccount('john');
+        $first = McpConnection::grant($owner, $this->registerClient('https://client.example.test/one.json'), self::SCOPE, new DateTimeImmutable());
+        $second = McpConnection::grant($owner, $this->registerClient('https://client.example.test/two.json'), self::SCOPE, new DateTimeImmutable());
+        $alreadyRevoked = McpConnection::grant($owner, $this->registerClient('https://client.example.test/three.json'), self::SCOPE, new DateTimeImmutable());
+        $foreign = McpConnection::grant($stranger, $this->registerClient('https://client.example.test/four.json'), self::SCOPE, new DateTimeImmutable());
+        foreach ([$first, $second, $alreadyRevoked, $foreign] as $connection) {
+            $this->connections()->add($connection);
+        }
+        $earlier = new DateTimeImmutable('2026-10-23T10:00:00+02:00');
+        $this->connections()->revokeActive($alreadyRevoked->getId(), RevocationCause::Client, $earlier);
+        $at = new DateTimeImmutable('2026-10-28T10:00:00+01:00');
+
+        $database = $this->em->getConnection();
+        $database->beginTransaction();
+        try {
+            $revoked = $this->connections()->revokeAllActiveOfAccount($owner->getId(), RevocationCause::PasswordChanged, $at);
+        } finally {
+            $database->commit();
+        }
+
+        $ids = array_map(static fn (RevokedConnection $connection): string => $connection->connectionId()->toRfc4122(), $revoked);
+        $expected = [$first->getId()->toRfc4122(), $second->getId()->toRfc4122()];
+        sort($ids);
+        sort($expected);
+        self::assertSame($expected, $ids, 'Seules les deux actives du compte sont rendues.');
+        foreach ($revoked as $connection) {
+            self::assertSame(RevocationCause::PasswordChanged, $connection->cause());
+            self::assertSame($owner->getId()->toRfc4122(), $connection->accountId());
+        }
+        self::assertSame(['revoked_at' => $at->getTimestamp(), 'revocation_cause' => 'password-changed'], $this->revocationRow($first));
+        self::assertSame(['revoked_at' => $at->getTimestamp(), 'revocation_cause' => 'password-changed'], $this->revocationRow($second));
+        self::assertSame(['revoked_at' => $earlier->getTimestamp(), 'revocation_cause' => 'client'], $this->revocationRow($alreadyRevoked));
+        self::assertSame(['revoked_at' => null, 'revocation_cause' => null], $this->revocationRow($foreign));
+    }
+
+    /** Un compte sans connexion active : rien à révoquer, une liste vide. */
+    public function testRevokeAllActiveOfAccountWithoutConnectionsRevokesNothing(): void
+    {
+        $owner = $this->persistAccount('jane');
+
+        $database = $this->em->getConnection();
+        $database->beginTransaction();
+        try {
+            $revoked = $this->connections()->revokeAllActiveOfAccount($owner->getId(), RevocationCause::TrustedTierWithdrawn, new DateTimeImmutable());
+        } finally {
+            $database->commit();
+        }
+
+        self::assertSame([], $revoked);
+    }
+
+    /**
+     * Hors transaction, l'instruction seule serait validée avant le reste de
+     * l'opération de l'appelant (le mot de passe, le rôle) : la garde refuse,
+     * sous une exception nommée, et rien n'est écrit.
+     */
+    public function testRevokeAllActiveOfAccountRefusesOutsideATransaction(): void
+    {
+        $connection = $this->grantConnection();
+
+        try {
+            $this->connections()->revokeAllActiveOfAccount($connection->account()->getId(), RevocationCause::PasswordChanged, new DateTimeImmutable());
+            self::fail('La révocation de tout un compte hors transaction aurait dû être refusée.');
+        } catch (RevocationOutsideTransactionException) {
+            self::assertSame(['revoked_at' => null, 'revocation_cause' => null], $this->revocationRow($connection));
+        }
     }
 
     /**

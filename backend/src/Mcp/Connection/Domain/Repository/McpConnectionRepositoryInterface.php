@@ -105,6 +105,24 @@ interface McpConnectionRepositoryInterface
     public function belongsToAccount(Uuid $connectionId, Uuid $accountId): bool;
 
     /**
+     * Révoque toutes les connexions actives d'un compte (#650 : son mot de
+     * passe a changé, ou il a perdu le palier de confiance) : la même
+     * instruction que {@see self::revokeActive()}, sur le compte au lieu d'un
+     * identifiant — une connexion déjà révoquée garde sa première révocation
+     * et n'est pas rendue, celle d'un autre compte n'est pas touchée.
+     *
+     * **Dans la transaction de l'appelant, exigée** : l'instruction seule est
+     * atomique, mais elle doit valider avec l'écriture qui la motive (le mot
+     * de passe, le rôle). Hors transaction, `RevocationOutsideTransactionException`,
+     * avant d'écrire. L'audit revient à l'appelant, après le COMMIT. Les
+     * lignes sont verrouillées par identifiant, après celle du compte que
+     * l'appelant tient déjà (`FOR UPDATE` du verrou du compte).
+     *
+     * @return list<RevokedConnection> ce qui a été révoqué, une entrée par connexion
+     */
+    public function revokeAllActiveOfAccount(Uuid $accountId, RevocationCause $cause, DateTimeImmutable $at): array;
+
+    /**
      * Révoque toute **autre** connexion active du même couple compte/client
      * que `$kept` (#649, décision 2 : un nouvel accord remplace l'ancien) —
      * même compte, même client, autre identifiant, pas encore révoquée ; une

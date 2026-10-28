@@ -25,7 +25,7 @@ use Symfony\Component\Uid\Uuid;
 class McpConnectionRepository extends ServiceEntityRepository implements McpConnectionRepositoryInterface
 {
     /**
-     * Les quatre choix de connexions de {@see self::revokeWhere()}, alias `c`,
+     * Les cinq choix de connexions de {@see self::revokeWhere()}, alias `c`,
      * écrits ici seuls : aucun appelant ne compose de SQL. Une ligne au plus,
      * l'identifiant étant la clé primaire ({@see self::revokeActive()}).
      */
@@ -36,6 +36,9 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
 
     /** Les autres connexions actives du couple compte/client ({@see self::revokeOtherActiveOf()}). */
     private const string WHERE_OTHERS_OF_PAIR = 'c.account_id = :account AND c.mcp_client_id = :client AND c.id <> :kept';
+
+    /** Toutes les connexions de ce compte ({@see self::revokeAllActiveOfAccount()}). */
+    private const string WHERE_ALL_OF_ACCOUNT = 'c.account_id = :account';
 
     /** Une liste d'identifiants ({@see self::revokeExpired()}). */
     private const string WHERE_AMONG = 'c.id IN (:ids)';
@@ -181,6 +184,38 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
     }
 
     /**
+     * La même instruction que {@see self::revokeActive()}, sur toutes les
+     * connexions du compte (`c.account_id = :account`) : le mot de passe a
+     * changé, ou le palier de confiance est retiré (#650). Servie par
+     * l'index partiel des couples actifs (`account_id` en tête).
+     *
+     * **Refusée hors transaction** : l'instruction seule est validée tout de
+     * suite, alors que sa raison d'être est de valider *avec* l'écriture de
+     * l'appelant (le mot de passe, le rôle) ; la garde lit la connexion DBAL
+     * de l'EntityManager, celle de l'appelant, avant d'écrire quoi que ce
+     * soit. **Ordre des verrous** : l'appelant tient la ligne du compte
+     * (`FOR UPDATE`) ; les connexions suivent, par identifiant
+     * ({@see self::revokeWhere()}). Aucun chemin ne prend une connexion puis
+     * le compte : le point de jeton lit le compte sans verrou, le
+     * consentement prend un `FOR KEY SHARE` du compte avant d'insérer, la
+     * suppression en cascade suit le même sens.
+     */
+    public function revokeAllActiveOfAccount(Uuid $accountId, RevocationCause $cause, DateTimeImmutable $at): array
+    {
+        if (!$this->getEntityManager()->getConnection()->isTransactionActive()) {
+            throw RevocationOutsideTransactionException::forAccount($accountId->toRfc4122());
+        }
+
+        return $this->revokeWhere(
+            self::WHERE_ALL_OF_ACCOUNT,
+            ['account' => $accountId],
+            ['account' => UuidType::NAME],
+            $cause,
+            $at,
+        );
+    }
+
+    /**
      * La même instruction que {@see self::revokeActive()}, sur un couple au
      * lieu d'un identifiant : `RETURNING` rend chaque connexion remplacée, de
      * quoi l'auditer sans seconde requête. La recherche du couple actif est
@@ -321,7 +356,7 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
      * remplacement de deux autres connexions d'un couple, toutes deux
      * candidates, pouvait croiser le marquage de la purge en `40P01`
      * (`TokenEndpointConcurrencyTest::testASupersessionLocksTheOtherConnectionsInIdOrder`).
-     * Une seule forme pour les quatre révocations : pour une ligne
+     * Une seule forme pour les cinq révocations : pour une ligne
      * (`revokeActive()`) l'ordre ne change rien, pour la purge
      * (`revokeExpired()`) ses lignes sont déjà verrouillées, par identifiant,
      * dans la même transaction. Le `revoked_at IS NULL` de la sous-requête est
@@ -357,7 +392,7 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
     /**
      * Ce qu'une ligne rendue par `RETURNING revoked.id, revoked.account_id,
      * cl.client_id` ({@see self::revokeWhere()}) a révoqué : écrit une fois
-     * pour les quatre révocations.
+     * pour les cinq révocations.
      *
      * @param array<string, mixed> $row
      */

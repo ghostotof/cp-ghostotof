@@ -11,6 +11,9 @@ use App\Security\User\Domain\Exception\CannotDeleteOwnAccountException;
 use App\Security\User\Domain\Exception\CpgUserNotFoundException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use App\Security\User\Domain\Repository\PasswordSetupTokenRepositoryInterface;
+use App\Shared\Application\Security\AccountAccessWithdrawal;
+use App\Shared\Application\Security\AccountMcpConnectionsRevokerInterface;
+use App\Shared\Application\Security\RevokedAccountMcpConnections;
 use SensitiveParameter;
 use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
 use Symfony\Component\Uid\Uuid;
@@ -24,6 +27,7 @@ final readonly class CpgUserAdministrator implements CpgUserAdministratorInterfa
         private PasswordSetupTokenRepositoryInterface $passwordSetupTokenRepository,
         private AccountLockInterface $accountLock,
         private AccountAdministrationLockInterface $administrationLock,
+        private AccountMcpConnectionsRevokerInterface $mcpConnections,
     ) {
     }
 
@@ -73,8 +77,21 @@ final readonly class CpgUserAdministrator implements CpgUserAdministratorInterfa
         // Le hachage hors verrou (il est lent), l'écriture sous le verrou du
         // compte, celui de l'invitation et de l'activation (issue #460) : une
         // activation concurrente ne se mêle pas à ce changement.
+        //
+        // La révocation des connexions MCP du compte (#650) a lieu **dans** la
+        // fermeture : le nouveau mot de passe et la coupure des connexions
+        // valident ensemble ou pas du tout — l'une qui échoue annule l'autre.
+        // Un événement après le COMMIT n'aurait pas cette atomicité (un échec
+        // laisserait un mot de passe changé et des connexions vivantes).
+        // **Ordre des verrous** : la ligne du compte (`FOR UPDATE`, prise par
+        // le verrou), puis ses connexions par identifiant — aucun chemin ne
+        // prend une connexion puis le compte (le point de jeton lit le compte
+        // sans verrou, le consentement ne prend qu'un `FOR KEY SHARE` du
+        // compte avant d'insérer, la suppression en cascade suit le même
+        // sens). Un port de `Shared` plutôt qu'une classe de `Mcp` : `Security`
+        // ne dépend d'aucune classe de `Mcp`.
         $hashedPassword = $this->passwordHasher->hashPassword($user, $newPlainPassword);
-        $this->accountLock->whileLocked($user, function (CpgUser $locked) use ($hashedPassword): void {
+        $revoked = $this->accountLock->whileLocked($user, function (CpgUser $locked) use ($hashedPassword): RevokedAccountMcpConnections {
             $locked->setPassword($hashedPassword);
             $this->cpgUserRepository->save($locked);
             // Compte encore en attente d'activation : le mot de passe posé ici
@@ -85,8 +102,12 @@ final readonly class CpgUserAdministrator implements CpgUserAdministratorInterfa
             if ($locked->isPendingActivation()) {
                 $this->passwordSetupTokenRepository->deleteUnusedForUser($locked);
             }
+
+            return $this->mcpConnections->revokeAllOf($locked, AccountAccessWithdrawal::PasswordChanged);
         });
-        // Le compte, jamais le mot de passe (D5).
+        // Le compte, jamais le mot de passe (D5), puis une ligne par connexion
+        // coupée : après le COMMIT, un acte journalisé est un acte validé.
         $this->auditLogger->passwordChanged($user);
+        $this->mcpConnections->auditRevoked($revoked);
     }
 }
