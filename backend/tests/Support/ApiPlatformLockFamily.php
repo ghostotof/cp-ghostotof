@@ -20,17 +20,46 @@ namespace App\Tests\Support;
  * bundle tirera demain en sera sans que le test change. Une liste de noms
  * écrite à la main ferait l'inverse : elle ignorerait le nouveau composant.
  *
- * Limite : un paquet `api-platform/*` hors monorepo qu'une racine exige
- * entrerait dans la famille — c'est alors une dépendance du bundle, et ce qui
- * est tiré ensemble doit l'être à la même version.
+ * Limite : un paquet `api-platform/*` hors monorepo qu'une racine tire, ou que
+ * `composer.json` exige lui-même (`require-dev` compris : c'est une racine),
+ * entrerait dans la famille. Tiré par le bundle, il doit être à la version des
+ * autres ; exigé par le projet, c'est le test qui dit qu'on l'y a mis.
  */
 final class ApiPlatformLockFamily
 {
     private const string PREFIX = 'api-platform/';
 
     /**
+     * Les racines : les paquets `api-platform/*` que `composer.json` exige, dans
+     * `require` ou `require-dev`. Aucune liste écrite à la main : un composant
+     * exigé demain entre dans la famille sans que le test change.
+     *
+     * @param array<mixed> $composer le contenu décodé de `composer.json`
+     *
+     * @return list<string>
+     */
+    public static function roots(array $composer): array
+    {
+        $roots = [];
+        foreach (['require', 'require-dev'] as $section) {
+            $requirements = $composer[$section] ?? [];
+            if (!\is_array($requirements)) {
+                continue;
+            }
+
+            foreach (array_keys($requirements) as $name) {
+                if (\is_string($name) && str_starts_with($name, self::PREFIX)) {
+                    $roots[] = $name;
+                }
+            }
+        }
+
+        return array_values(array_unique($roots));
+    }
+
+    /**
      * @param array<mixed> $lock  le contenu décodé de `composer.lock`
-     * @param list<string> $roots les paquets `api-platform/*` que `composer.json` exige
+     * @param list<string> $roots les paquets `api-platform/*` que `composer.json` exige ({@see self::roots()})
      *
      * @return array<string, string> la version par nom de paquet, dans l'ordre du lock
      */

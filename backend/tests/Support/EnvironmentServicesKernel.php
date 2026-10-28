@@ -39,8 +39,10 @@ final class EnvironmentServicesKernel extends Kernel
 
     /**
      * @param list<string>                $extraConfigFiles
-     * @param list<CompilerPassInterface> $extraPasses      des passes de lecture, posées en tout début de compilation
-     *                                                      ({@see DeprecatedReferencesOfApiPlatform}) ; aucune par défaut
+     * @param list<CompilerPassInterface> $extraPasses      des passes de lecture ({@see DeprecatedReferencesOfApiPlatform}), posées
+     *                                                      en `TYPE_BEFORE_OPTIMIZATION` avec la priorité `PHP_INT_MIN` : en fin de
+     *                                                      cette phase, après les autres passes qui ajoutent des références, et
+     *                                                      avant l'optimisation qui remplace un alias par sa cible ; aucune par défaut
      */
     public function __construct(string $environment, private readonly array $extraConfigFiles, private readonly array $extraPasses = [])
     {
@@ -82,7 +84,8 @@ final class EnvironmentServicesKernel extends Kernel
     protected function build(ContainerBuilder $container): void
     {
         parent::build($container);
-        // Avant l'optimisation, qui remplace les références à un alias par sa cible.
+        // En fin de phase `TYPE_BEFORE_OPTIMIZATION` (`PHP_INT_MIN`), donc avant
+        // l'optimisation, qui remplace les références à un alias par sa cible.
         foreach ($this->extraPasses as $pass) {
             $container->addCompilerPass($pass, PassConfig::TYPE_BEFORE_OPTIMIZATION, \PHP_INT_MIN);
         }

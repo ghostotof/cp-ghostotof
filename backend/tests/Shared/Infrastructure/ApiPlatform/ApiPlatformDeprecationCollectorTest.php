@@ -89,11 +89,15 @@ final class ApiPlatformDeprecationCollectorTest extends TestCase
             [$trigger, '/var/www/vendor/symfony/serializer/src/Normalizer.php', '/var/www/vendor/api-platform/state/Foo.php'],
             true,
         ];
-        // C2 : la sous-requête de l'ErrorListener d'API Platform passe par le
-        // noyau de Symfony, qui appelle une API dépréciée de Symfony : API
-        // Platform n'appelle pas cette API, il n'a rien à migrer. Le premier
-        // appelant hors du paquet qui lève décide, et c'est ici le noyau.
-        yield 'API Platform appelle le noyau, qui appelle une API dépréciée de Symfony' => [
+        // Faux positif assumé : la sous-requête de l'ErrorListener d'API
+        // Platform passe par le noyau de Symfony, qui appelle une API
+        // dépréciée de Symfony, et API Platform n'a rien à migrer. Mais « API
+        // Platform est dans la pile avant le projet » est tout ce que la garde
+        // sait dire sans deviner où un paquet intermédiaire s'arrête : un
+        // faux positif est bruyant et se corrige d'une ligne, un faux négatif
+        // est silencieux (le critère du premier appelant extérieur, essayé
+        // puis retiré, laissait passer un proxy ou un autoloader en travers).
+        yield 'faux positif assumé : API Platform appelle le noyau, qui appelle une API dépréciée de Symfony' => [
             'Since symfony/bar 8.1: x',
             [
                 $trigger,
@@ -102,7 +106,47 @@ final class ApiPlatformDeprecationCollectorTest extends TestCase
                 '/var/www/vendor/api-platform/x/Caller.php',
                 RepositoryFiles::backend('src/Contact/Foo.php'),
             ],
-            false,
+            true,
+        ];
+        // D1 : une dépréciation levée au chargement d'une classe (au niveau du
+        // fichier) a l'autoloader de Composer pour premier appelant.
+        yield 'D1 : levée au chargement d\'une classe, par un autoloader appelé depuis API Platform' => [
+            'Since symfony/serializer 8.1: The class is deprecated.',
+            [
+                $trigger,
+                '/var/www/vendor/symfony/serializer/Legacy.php',
+                '/var/www/vendor/composer/ClassLoader.php',
+                '/var/www/vendor/composer/ClassLoader.php',
+                '/var/www/vendor/api-platform/serializer/Factory.php',
+                RepositoryFiles::backend('src/Contact/Foo.php'),
+            ],
+            true,
+        ];
+        // D2 : une couche d'un autre paquet entre API Platform et la
+        // dépréciation (un proxy paresseux, un décorateur) ne la masque pas.
+        yield 'D2 : un proxy de var-exporter entre API Platform et la dépréciation' => [
+            'Since symfony/serializer 8.1: x',
+            [
+                $trigger,
+                '/var/www/vendor/symfony/serializer/Normalizer.php',
+                '/var/www/vendor/symfony/var-exporter/LazyObjectRegistry.php',
+                '/var/www/vendor/api-platform/serializer/ItemNormalizer.php',
+                RepositoryFiles::backend('src/Contact/Foo.php'),
+            ],
+            true,
+        ];
+        // D7 : un fichier hors du projet et hors d'API Platform n'est « le
+        // paquet » de personne, même sous un dossier nommé `vendor` (un clone
+        // placé sous `/…/vendor/clone/`) : le conteneur compilé est une colle.
+        yield 'D7 : le conteneur compilé d\'un clone sous un dossier vendor/ n\'est pas un paquet' => [
+            'Since symfony/serializer 8.1: x',
+            [
+                $trigger,
+                '/var/www/vendor/symfony/serializer/Normalizer.php',
+                '/home/x/vendor/clone/backend/var/cache/test/ContainerAbc/getFooService.php',
+                '/var/www/vendor/api-platform/state/Processor.php',
+            ],
+            true,
         ];
         yield 'le paquet qui lève s\'appelle lui-même avant API Platform' => [
             'Since symfony/serializer 8.1: x',
@@ -186,6 +230,26 @@ final class ApiPlatformDeprecationCollectorTest extends TestCase
 
         self::assertSame([], $findings);
         self::assertSame(['Since symfony/foo 8.1: Calling "legacy()" is deprecated.'], $received);
+    }
+
+    /**
+     * D1, sur de vrais fichiers : une dépréciation levée au niveau du fichier,
+     * au chargement d'une classe, a pour premier appelant l'autoloader de
+     * Composer (`vendor/composer/`), pas API Platform qui a demandé la classe.
+     * Elle reste la sienne : la pile traverse un fichier d'API Platform avant
+     * le premier fichier du projet.
+     */
+    public function testItReportsADeprecationRaisedWhenAClassFileIsLoadedOnBehalfOfApiPlatform(): void
+    {
+        $caller = $this->writeFileLevelChain();
+
+        $findings = ApiPlatformDeprecations::during(static function () use ($caller): void {
+            new ReflectionMethod($caller, 'run')->invoke(null);
+        });
+
+        self::assertCount(1, $findings);
+        self::assertStringContainsString('Since symfony/legacy-class 8.1: The class is deprecated.', $findings[0]);
+        self::assertStringContainsString('/vendor/api-platform/core/Caller.php', $findings[0]);
     }
 
     public function testItReportsTheDeprecationAndWhereItWasRaised(): void
@@ -348,6 +412,76 @@ final class ApiPlatformDeprecationCollectorTest extends TestCase
             $this->fixtureDirectory = null;
         }
         parent::tearDown();
+    }
+
+    /**
+     * Écrit, sous un dossier temporaire, un fichier de classe qui lève sa
+     * dépréciation au niveau du fichier (`vendor/symfony/legacy-class`), un
+     * chargeur de fichiers (`vendor/composer`, l'autoloader) et un appelant
+     * d'API Platform (`vendor/api-platform/core`) qui demande le chargement.
+     *
+     * @return class-string la classe d'API Platform, dont `run()` charge le fichier
+     */
+    private function writeFileLevelChain(): string
+    {
+        $namespace = 'ApiPlatformFileLevelFixture'.bin2hex(random_bytes(4));
+        $this->fixtureDirectory = sys_get_temp_dir().'/'.$namespace;
+        $filesystem = new Filesystem();
+
+        $classFile = $this->fixtureDirectory.'/vendor/symfony/legacy-class/LegacyClass.php';
+        $loaderFile = $this->fixtureDirectory.'/vendor/composer/Loader.php';
+        $callerFile = $this->fixtureDirectory.'/vendor/api-platform/core/Caller.php';
+        $filesystem->dumpFile($classFile, <<<PHP
+            <?php
+
+            declare(strict_types=1);
+
+            namespace {$namespace};
+
+            trigger_deprecation('symfony/legacy-class', '8.1', 'The class is deprecated.');
+
+            final class LegacyClass
+            {
+            }
+            PHP);
+        $filesystem->dumpFile($loaderFile, <<<PHP
+            <?php
+
+            declare(strict_types=1);
+
+            namespace {$namespace};
+
+            final class Loader
+            {
+                public static function load(string \$file): void
+                {
+                    require_once \$file;
+                }
+            }
+            PHP);
+        $filesystem->dumpFile($callerFile, <<<PHP
+            <?php
+
+            declare(strict_types=1);
+
+            namespace {$namespace};
+
+            final class Caller
+            {
+                public static function run(): void
+                {
+                    Loader::load('{$classFile}');
+                }
+            }
+            PHP);
+
+        require_once $loaderFile;
+        require_once $callerFile;
+
+        /** @var class-string $caller */
+        $caller = $namespace.'\\Caller';
+
+        return $caller;
     }
 
     /**

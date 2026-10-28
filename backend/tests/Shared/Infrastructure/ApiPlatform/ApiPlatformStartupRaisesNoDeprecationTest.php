@@ -40,9 +40,9 @@ use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
  *   écrire le conteneur — de 0,3 à 0,7 s, quand écrire et recharger tout le
  *   cache l'alourdirait sans rien voir de plus. Une passe de lecture
  *   (`DeprecatedReferencesOfApiPlatform`) relève en plus les services
- *   d'API Platform qui référencent un alias ou un service déprécié d'un autre
- *   paquet : cette dépréciation-là est levée par une passe de Symfony, sans
- *   trame d'API Platform ;
+ *   d'API Platform qui référencent un alias déprécié d'un autre paquet : cette
+ *   dépréciation-là est levée par une passe de Symfony, sans trame d'API
+ *   Platform ;
  * - **les métadonnées à froid** : les pools de métadonnées d'API Platform sont
  *   vidés, puis la collection de métadonnées de **toutes** les ressources est
  *   construite, puis **chaque opération** est résolue par son nom
@@ -50,6 +50,13 @@ use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
  *   de routes du serveur MCP emprunte, et dont le pool est le quatrième de la
  *   liste). Vider ces pools ne coûte rien aux tests suivants : la
  *   construction qui suit les remplit de nouveau à l'identique.
+ *   Un appel par opération nommée, et toutes doivent être résolues : un
+ *   `create()` qui rend `null` n'a rien fait construire, et le compter
+ *   rendrait la garde aveugle sans qu'elle rougisse. La factory n'a pas
+ *   d'index : à chaque nom qu'elle n'a pas encore vu elle reparcourt les
+ *   ressources, d'où un coût quadratique qu'on ne peut pas éviter d'ici ;
+ *   mesuré en 4.4.6 (2026-10-28), 39 ressources et 112 opérations coûtent
+ *   1,1 s à froid pour les métadonnées et 0,1 s pour les 112 appels.
  *
  * Limites : la compilation est lue hors débogage, comme les noyaux de parité
  * (`ProcessEnvironment`) ; une dépréciation qui ne naît qu'au premier usage
@@ -92,7 +99,7 @@ final class ApiPlatformStartupRaisesNoDeprecationTest extends KernelTestCase
 
         self::assertSame([], $findings, "API Platform déprécie ce que la compilation du conteneur emprunte :\n - ".implode("\n - ", $findings));
         // Ce que les passes de Symfony lèvent sans trame d'API Platform : un
-        // service d'API Platform qui référence un alias ou un service déprécié.
+        // service d'API Platform qui référence un alias déprécié.
         self::assertSame([], $references->found(), "Un service d'API Platform référence une API dépréciée :\n - ".implode("\n - ", $references->found()));
     }
 
@@ -110,13 +117,20 @@ final class ApiPlatformStartupRaisesNoDeprecationTest extends KernelTestCase
         $operations = $container->get(OperationMetadataFactoryInterface::class);
         $built = 0;
         $resolved = 0;
+        $unresolved = [];
 
-        $findings = ApiPlatformDeprecations::during(static function () use ($names, $metadata, $operations, &$built, &$resolved): void {
+        $findings = ApiPlatformDeprecations::during(static function () use ($names, $metadata, $operations, &$built, &$resolved, &$unresolved): void {
             foreach ($names->create() as $resourceClass) {
                 foreach ($metadata->create($resourceClass) as $resource) {
                     ++$built;
                     foreach ($resource->getOperations() ?? [] as $operationName => $operation) {
-                        $operations->create($operationName);
+                        // `create()` rend `null` pour un nom qu'aucune opération ne porte :
+                        // une opération non résolue n'a rien fait construire.
+                        if (null === $operations->create($operationName)) {
+                            $unresolved[] = $operationName;
+
+                            continue;
+                        }
                         ++$resolved;
                     }
                 }
@@ -125,6 +139,7 @@ final class ApiPlatformStartupRaisesNoDeprecationTest extends KernelTestCase
 
         self::assertGreaterThan(0, $built, 'Aucune ressource construite : la garde ne verrait rien.');
         self::assertGreaterThan(0, $resolved, 'Aucune opération résolue : la garde ne verrait rien de leur factory.');
+        self::assertSame([], $unresolved, "Des opérations nommées par leur ressource ne sont pas résolues par OperationMetadataFactoryInterface::create() :\n - ".implode("\n - ", $unresolved));
         self::assertSame([], $findings, "API Platform déprécie ce que la construction des métadonnées emprunte :\n - ".implode("\n - ", $findings));
     }
 }

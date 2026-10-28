@@ -16,25 +16,32 @@ use PHPUnit\Runner\ErrorHandler;
  * `ItemNormalizer::denormalize()` a écrit dans les journaux de production
  * sans qu'aucun test ne rougisse. Ce réglage reste, parce qu'il évite le bruit
  * de tout le reste du vendor ; ce collecteur, lui, ne regarde qu'API
- * Platform. Une dépréciation lui appartient (`concerns()`) dans trois cas :
+ * Platform. Une dépréciation lui appartient (`concerns()`) dans deux cas :
  *
  * - son message commence par `Since api-platform/` — la forme de
  *   `trigger_deprecation()` pour un paquet d'API Platform ;
- * - ou elle est levée par un fichier d'un paquet `api-platform/*` (un message
- *   libre, sans ce préfixe) ;
- * - ou **le premier appelant extérieur au paquet qui la lève** est un fichier
- *   de `vendor/api-platform/`. En remontant la pile depuis la méthode
- *   dépréciée, on saute les trames du paquet qui lève (`vendor/<vendor>/<paquet>/`,
- *   et `deprecation-contracts`, qui n'est que le relais de `trigger_error()`) :
- *   le premier fichier d'un autre paquet décide. C'est le cas d'API Platform
- *   qui appelle une API dépréciée de Symfony (« Since symfony/serializer
+ * - ou **la pile traverse un fichier de `vendor/api-platform/` avant le premier
+ *   fichier du projet**. En remontant depuis l'appel déprécié (les trames de
+ *   `trigger_error()` et de `deprecation-contracts`, qui n'en sont que le
+ *   relais, ne décident de rien), le premier fichier du projet clôt la
+ *   recherche : le projet appelle, c'est son affaire, et PHPUnit la compte ; un
+ *   fichier d'API Platform rencontré avant lui la retient. C'est le cas d'API
+ *   Platform qui appelle une API dépréciée de Symfony (« Since symfony/serializer
  *   8.x ») : le message est celui de Symfony, mais c'est API Platform qu'il
- *   faut migrer, et c'est l'angle mort de l'indirect ignoré. Si cet appelant
- *   est le projet, l'affaire est la sienne et PHPUnit la compte ; si c'est un
- *   autre paquet, API Platform n'appelle pas l'API dépréciée (la sous-requête
- *   de son `ErrorListener` passe par le noyau de Symfony, par exemple) : il
- *   n'a rien à migrer. Un fichier hors du projet et hors de `vendor/` (le
- *   conteneur compilé de `var/cache/`) est une colle, sautée aussi.
+ *   faut migrer, et c'est l'angle mort de l'indirect ignoré.
+ *
+ * **Le critère est volontairement large.** Entre API Platform et la
+ * dépréciation, rien n'est supposé : un proxy paresseux de `var-exporter`, un
+ * décorateur, l'autoloader de Composer (une dépréciation levée au chargement
+ * d'une classe) ne la masquent pas. Le prix est un faux positif : la
+ * sous-requête de l'`ErrorListener` d'API Platform passe par le noyau de
+ * Symfony, et une dépréciation interne à Symfony qu'elle lève y est imputée à
+ * API Platform, qui n'a rien à migrer. Pour une garde, un faux positif est
+ * bruyant et se corrige d'une ligne ; un faux négatif est silencieux et coûte
+ * cher. Un critère plus fin (le premier appelant extérieur au paquet qui lève)
+ * a été essayé : il rendait la garde aveugle dans ces cas.
+ * Un fichier hors du projet et hors d'API Platform (le conteneur compilé de
+ * `var/cache/`) est une colle : ni l'un ni l'autre, la remontée continue.
  *
  * **Il ne masque rien d'autre.** Le gestionnaire qu'il pose ne garde que les
  * dépréciations d'API Platform ; toute autre erreur est rendue au gestionnaire
@@ -53,9 +60,9 @@ use PHPUnit\Runner\ErrorHandler;
  *
  * Limites : une `E_USER_DEPRECATED` seulement. Une dépréciation du moteur PHP
  * (`E_DEPRECATED`) levée par le code d'API Platform n'est pas relevée : PHPUnit
- * la compte, elle, hors du réglage indirect. Le premier appelant extérieur
- * seul décide : API Platform qui appelle un paquet intermédiaire de Symfony,
- * lequel appelle une API dépréciée d'un troisième, n'est pas relevé.
+ * la compte, elle, hors du réglage indirect. Une API dépréciée que le projet
+ * appelle lui-même reste au gestionnaire en place, même si API Platform figure
+ * plus haut dans la pile : c'est le projet qui appelle.
  *
  * @phpstan-type Frame array{file?: string, line?: int, class?: string, type?: string, function?: string}
  */
@@ -64,14 +71,8 @@ final class ApiPlatformDeprecations
     /** Le préfixe que `trigger_deprecation('api-platform/…', …)` donne au message. */
     private const string MESSAGE_PREFIX = 'Since api-platform/';
 
-    /** Les paquets d'API Platform ; le `/` final écarte `api-platform-bridge`. */
-    private const string PACKAGE_PREFIX = 'api-platform/';
-
-    /** Le paquet qui relaie `trigger_error()` pour tout le monde : jamais « celui qui lève ». */
-    private const string RELAY_PACKAGE = 'symfony/deprecation-contracts';
-
-    /** Le paquet d'un fichier : `vendor/<vendor>/<paquet>`, le dernier `vendor/` du chemin. */
-    private const string PACKAGE_PATTERN = '#^.*/vendor/([^/]+)/([^/]+)#';
+    /** Un fichier d'API Platform ; le `/` final écarte `api-platform-bridge`. */
+    private const string VENDOR_DIRECTORY = '/vendor/api-platform/';
 
     /** La fonction de `symfony/deprecation-contracts` qui appelle `trigger_error()` pour tout le monde. */
     private const string TRIGGER_DEPRECATION_FUNCTION = 'trigger_deprecation';
@@ -158,8 +159,16 @@ final class ApiPlatformDeprecations
      * (`ApiPlatformDeprecationHandoverTest`).
      *
      * Le prix : ce n'est lisible qu'en connaissant `ErrorHandler`, qui est
-     * `@internal` à PHPUnit — d'où le repli sur la closure
-     * telle quelle si la classe n'existe pas ou si la liaison est refusée.
+     * `@internal` à PHPUnit — d'où le repli sur la closure telle quelle si la
+     * classe n'existe pas ou si la liaison est refusée.
+     *
+     * **Limite : ce repli est silencieux ici.** Si PHPUnit renomme cette
+     * classe, ou si elle n'est pas chargée au moment de l'appel, rien ne
+     * l'annonce : le collecteur redevient celui qui laissait compter une
+     * dépréciation indirecte brute. Le bruit est ailleurs :
+     * `ApiPlatformDeprecationHandoverTest` rougit, d'abord parce que la classe
+     * attendue n'est plus là, puis parce que son PHPUnit enfant compte la
+     * dépréciation.
      *
      * @param Closure(int, string, string, int): bool $handler
      *
@@ -183,53 +192,32 @@ final class ApiPlatformDeprecations
      */
     public static function concerns(string $message, array $frames): bool
     {
-        return str_starts_with($message, self::MESSAGE_PREFIX) || null !== self::decidingFrame($frames);
+        return str_starts_with($message, self::MESSAGE_PREFIX) || null !== self::apiPlatformFrame($frames);
     }
 
     /**
-     * La trame d'API Platform qui fait de la dépréciation la sienne, ou `null`.
+     * La première trame appelée depuis un fichier d'API Platform, avant tout
+     * fichier du projet, ou `null`.
      *
-     * En remontant la pile, la première trame d'un paquet fixe « le paquet qui
-     * lève » ; si c'est un paquet d'API Platform, c'est elle. Sinon les trames
-     * de ce paquet sont sautées, et la première d'un autre paquet décide : elle
-     * est d'API Platform, ou non. Le projet qui s'y trouve avant décide « non ».
+     * Le premier fichier du projet clôt la recherche (« le projet appelle ») ;
+     * un fichier d'un autre paquet ne décide de rien et la remontée continue,
+     * de même qu'un fichier de ni l'un ni l'autre (le conteneur compilé).
      *
      * @param list<Frame> $frames
      *
      * @return Frame|null
      */
-    private static function decidingFrame(array $frames): ?array
+    private static function apiPlatformFrame(array $frames): ?array
     {
-        $raising = null;
         foreach ($frames as $frame) {
             $file = $frame['file'] ?? '';
-            if ('' === $file) {
-                continue;
-            }
-
             if (self::isProjectFile($file)) {
                 return null;
             }
 
-            $package = self::packageOf($file);
-            if (null === $package || self::RELAY_PACKAGE === $package) {
-                continue;
+            if (str_contains($file, self::VENDOR_DIRECTORY)) {
+                return $frame;
             }
-
-            if (null === $raising) {
-                $raising = $package;
-                if (self::isApiPlatformPackage($package)) {
-                    return $frame;
-                }
-
-                continue;
-            }
-
-            if ($package === $raising) {
-                continue;
-            }
-
-            return self::isApiPlatformPackage($package) ? $frame : null;
         }
 
         return null;
@@ -244,19 +232,6 @@ final class ApiPlatformDeprecations
     {
         return str_starts_with($file, RepositoryFiles::backend('src').'/')
             || str_starts_with($file, RepositoryFiles::backend('tests').'/');
-    }
-
-    /**
-     * `vendor/<vendor>/<paquet>` d'un fichier du vendor, ou `null` hors vendor.
-     */
-    private static function packageOf(string $file): ?string
-    {
-        return 1 === preg_match(self::PACKAGE_PATTERN, $file, $matches) ? $matches[1].'/'.$matches[2] : null;
-    }
-
-    private static function isApiPlatformPackage(string $package): bool
-    {
-        return str_starts_with($package, self::PACKAGE_PREFIX);
     }
 
     /**
@@ -288,7 +263,7 @@ final class ApiPlatformDeprecations
             \sprintf('levée à %s', self::location($raisedAt)),
         ];
 
-        $apiPlatform = self::decidingFrame($frames);
+        $apiPlatform = self::apiPlatformFrame($frames);
         // Quand c'est API Platform qui lève lui-même, l'endroit est déjà dit.
         if (null !== $apiPlatform && self::location($apiPlatform) !== self::location($raisedAt)) {
             $parts[] = \sprintf('appelée depuis API Platform à %s', self::location($apiPlatform));

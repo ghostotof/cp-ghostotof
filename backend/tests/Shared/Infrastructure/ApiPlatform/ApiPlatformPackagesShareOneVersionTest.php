@@ -31,16 +31,18 @@ use PHPUnit\Framework\TestCase;
  */
 final class ApiPlatformPackagesShareOneVersionTest extends TestCase
 {
-    /** Les deux paquets d'API Platform que `composer.json` nomme ; sans eux, le test ne lirait pas le bon lock. */
-    private const array ROOTS = ['api-platform/symfony', 'api-platform/doctrine-orm'];
-
     public function testEveryApiPlatformPackageOfTheLockIsAtTheSameVersion(): void
     {
+        $composer = json_decode(RepositoryFiles::read(RepositoryFiles::backend('composer.json')), true, flags: \JSON_THROW_ON_ERROR);
         $lock = json_decode(RepositoryFiles::read(RepositoryFiles::backend('composer.lock')), true, flags: \JSON_THROW_ON_ERROR);
+        self::assertIsArray($composer);
         self::assertIsArray($lock);
-        $versions = ApiPlatformLockFamily::versions($lock, self::ROOTS);
+        $roots = ApiPlatformLockFamily::roots($composer);
+        $versions = ApiPlatformLockFamily::versions($lock, $roots);
 
-        foreach (self::ROOTS as $root) {
+        // Sans racine, ou avec une racine absente du lock, le test ne lirait pas le bon lock.
+        self::assertNotSame([], $roots, 'composer.json n\'exige aucun paquet api-platform/*.');
+        foreach ($roots as $root) {
             self::assertArrayHasKey($root, $versions);
         }
 
@@ -48,50 +50,77 @@ final class ApiPlatformPackagesShareOneVersionTest extends TestCase
     }
 
     /**
-     * @return iterable<string, array{array<mixed>, list<string>, bool}> un lock, ses racines, et s'il doit passer
+     * @return iterable<string, array{array<mixed>, array<mixed>, bool}> un `composer.json`, un lock, et s'il doit passer
      */
     public static function locks(): iterable
     {
         $family = ['api-platform/symfony' => ['v4.4.6', ['api-platform/state', 'symfony/framework-bundle']], 'api-platform/state' => ['v4.4.6', []], 'api-platform/doctrine-orm' => ['v4.4.6', ['api-platform/state']]];
+        $composer = self::composer(['api-platform/symfony', 'api-platform/doctrine-orm']);
 
-        yield 'la famille au complet, à une version' => [self::lock($family), self::ROOTS, true];
+        yield 'la famille au complet, à une version' => [$composer, self::lock($family), true];
         yield 'un outil api-platform/* hors famille, à sa propre version' => [
+            $composer,
             self::lock([...$family, 'api-platform/outil' => ['1.2.0', []]]),
-            self::ROOTS,
             true,
         ];
         yield 'une divergence réelle dans la famille' => [
+            $composer,
             self::lock([...$family, 'api-platform/state' => ['v4.4.0', []]]),
-            self::ROOTS,
             false,
         ];
         yield 'une divergence d\'un composant que seul un autre tire' => [
+            $composer,
             self::lock([
                 'api-platform/symfony' => ['v4.4.6', ['api-platform/state']],
                 'api-platform/state' => ['v4.4.6', ['api-platform/metadata']],
                 'api-platform/metadata' => ['v4.3.0', []],
                 'api-platform/doctrine-orm' => ['v4.4.6', []],
             ]),
-            self::ROOTS,
             false,
         ];
         yield 'un outil hors famille et une divergence dans la famille' => [
+            $composer,
             self::lock([...$family, 'api-platform/outil' => ['1.2.0', []], 'api-platform/state' => ['v4.3.19', []]]),
-            self::ROOTS,
             false,
+        ];
+        // D8 : les racines sont ce que composer.json exige, pas une liste écrite
+        // dans le test. Un composant exigé directement, que personne d'autre ne
+        // tire, entre dans la famille le jour où on l'ajoute à composer.json.
+        yield 'D8 : un composant exigé directement (require) qui diverge' => [
+            self::composer(['api-platform/symfony', 'api-platform/doctrine-orm', 'api-platform/graphql']),
+            self::lock([...$family, 'api-platform/graphql' => ['v4.3.0', []]]),
+            false,
+        ];
+        yield 'D8 : une racine de require-dev qui diverge' => [
+            self::composer(['api-platform/symfony'], ['api-platform/graphql']),
+            self::lock([...$family, 'api-platform/graphql' => ['v4.3.0', []]]),
+            false,
+        ];
+        yield 'D8 : le même composant, pas exigé, n\'est pas de la famille' => [
+            $composer,
+            self::lock([...$family, 'api-platform/graphql' => ['v4.3.0', []]]),
+            true,
         ];
     }
 
     /**
+     * @param array<mixed> $composer
      * @param array<mixed> $lock
-     * @param list<string> $roots
      */
     #[DataProvider('locks')]
-    public function testItJudgesTheFamilyNotTheVendorPrefix(array $lock, array $roots, bool $shouldPass): void
+    public function testItJudgesTheFamilyNotTheVendorPrefix(array $composer, array $lock, bool $shouldPass): void
     {
-        $versions = ApiPlatformLockFamily::versions($lock, $roots);
+        $versions = ApiPlatformLockFamily::versions($lock, ApiPlatformLockFamily::roots($composer));
 
         self::assertSame($shouldPass, 1 === \count(array_unique($versions)), $this->failure($versions));
+    }
+
+    public function testTheRootsAreTheApiPlatformPackagesComposerJsonRequires(): void
+    {
+        $composer = self::composer(['api-platform/symfony', 'symfony/framework-bundle', 'api-platform/symfony'], ['api-platform/graphql', 'phpunit/phpunit', 'api-platform-bridge/x']);
+
+        self::assertSame(['api-platform/symfony', 'api-platform/graphql'], ApiPlatformLockFamily::roots($composer));
+        self::assertSame([], ApiPlatformLockFamily::roots([]));
     }
 
     public function testTheFailureNamesOnlyTheFamilyAndACommandThatCanRun(): void
@@ -107,6 +136,17 @@ final class ApiPlatformPackagesShareOneVersionTest extends TestCase
         self::assertStringNotContainsString('api-platform/outil', $message, 'Un paquet hors famille ne se met pas à jour avec elle.');
         self::assertStringContainsString('composer update api-platform/symfony api-platform/state', $message);
         self::assertStringNotContainsString('api-platform/*', $message);
+    }
+
+    /**
+     * @param list<string> $require    les paquets de `require`
+     * @param list<string> $requireDev ceux de `require-dev`
+     *
+     * @return array<mixed>
+     */
+    private static function composer(array $require, array $requireDev = []): array
+    {
+        return ['require' => array_fill_keys($require, '*'), 'require-dev' => array_fill_keys($requireDev, '*')];
     }
 
     /**
