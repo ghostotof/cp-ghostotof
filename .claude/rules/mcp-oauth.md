@@ -154,7 +154,8 @@ paths:
   alive** (§2.1 only says MAY): a client handing back its access token alone can still refresh
   (`RevocationControllerTest::testRevokingAnAccessTokenRevokesItsRowOnly`). **Revoking a refresh
   token revokes its connection** too, cause `client` (#649): `.claude/rules/mcp-oauth-cycle-de-vie.md`, « Revoking a
-  refresh token at the revocation endpoint revokes its connection »; revoking a connection from the site is #650.
+  refresh token at the revocation endpoint revokes its connection »; revoking a connection from the site is #650, done
+  (`GET|DELETE /api/me/mcp-connections`, `.claude/rules/mcp-oauth-revocation-personne.md`).
   `token_type_hint` is ignored. **Accepted**: the response time differs with the token's fate (one query,
   one decryption), status and body do not. **The token endpoint is atomic** (`TokenEndpoint`): league runs
   inside `TransactionInterface` — it writes in several steps (the exchange: access token, refresh token, then
@@ -327,7 +328,11 @@ paths:
   pre-registered client's name is the one the site's administrator typed, and the consent page says so — never
   « declared by the client, not verified »; a CIMD client (#651) will declare its own, with its own wording.
 - **The consent page** (`/<locale>/oauth/consent`, `requiresAuth`, `ROLE_TRUSTED`/`ROLE_SUPER`, `noindex`;
-  an anonymous visitor goes through login, whose `redirect` keeps the query). `consentParamsFromQuery()`
+  an anonymous visitor goes through login, whose `redirect` keeps the query). **It names the account that grants**
+  (#650): `GET /api/oauth/consent` returns `account.username`, read from `#[CurrentUser]` — the cookie of this very
+  request, never a state the page kept — shown in its own section with a « Changer de compte » link (login with
+  `redirect` and `reauth=1`). The `POST` still grants to the cookie's account **at sending**, not the one the `GET`
+  displayed: an accepted limit (`.claude/rules/mcp-oauth-revocation-personne.md`). `consentParamsFromQuery()`
   refuses a repeated or valueless parameter (no call); the page sends back what it received, computes
   nothing. It follows the returned URL with **`window.location.replace`**, never `assign` (the page must
   not stay in history: « Back » would offer to grant the same request again), and only an `http:`/`https:`

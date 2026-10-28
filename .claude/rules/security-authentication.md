@@ -246,7 +246,12 @@ paths:
     the COMMIT: the revocation endpoint, `TokenEndpoint` for `superseded` (at the new code's first exchange, #726), and
     `McpConnectionPurger` for `expired` —, never for a connection already revoked:
     `userId`, `connectionId`, `clientId`, `cause` — `client`, `refresh-token-reuse`, `code-replay` through
-    `mcpConnectionRevoked()`, actor read as usual; `superseded` through `mcpConnectionSuperseded()`, actor read as usual,
+    `mcpConnectionRevoked()`, actor read as usual — as are #650's three causes, `person` (the person revoking one of
+    hers from « Mes connexions MCP », `OwnMcpConnections`), `password-changed` and `trusted-tier-withdrawn` (every
+    connection of an account, through the `Shared` port, audited by its caller **after the COMMIT** that holds the
+    password or the role; the actor of `password-changed` is the administrator on the backoffice `PUT` and `anonymous`
+    when an invitation link *replaces* a password, `PasswordSetupService`; `trusted-tier-withdrawn`'s is the
+    administrator demoting — `.claude/rules/mcp-oauth-revocation-personne.md`); `superseded` through `mcpConnectionSuperseded()`, actor read as usual,
     plus `supersededBy`, the RFC 4122 UUID of the connection that replaces it (#726, audit B3: nothing else ties the
     line, written at the exchange, to the grant that caused it); `expired` through `mcpConnectionExpired()`, actor `system`
     like `user-purged`, the purge being a scheduled command; never the token or code presented),
@@ -273,7 +278,8 @@ paths:
     (an `AccountReference` with `connectionId()` and the public `clientId()`, lot C of #649's reviews), which the
     connection, a `RevokedConnection` and the `mcp` firewall's `McpConnectionPrincipal` implement — never the three
     fields unpacked by the caller; scalars follow it (cause, tool, grant type, presenting client), or a `Uuid` for
-    `supersededBy` — `Security` still depends on no class of `Mcp`. To name an account during an incident:
+    `supersededBy` — `Security` still depends on no class of `Mcp`: what `Security/User` needs from `Mcp/Connection` (revoking an
+    account's connections, #650) goes through `Shared/Application/Security/AccountMcpConnectionsRevokerInterface`. To name an account during an incident:
     `SELECT username, email FROM cpg_user WHERE id = '<userId>'` — once deleted, its lines designate no one,
     which is the point (minimisation, RGPD register §6; not Goal #9, which is about what the API exposes).
     It runs through a human's read-only `kubectl exec` on the `postgres` pod (`k8s/README.md`, « Journal de

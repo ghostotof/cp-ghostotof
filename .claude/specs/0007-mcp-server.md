@@ -122,11 +122,14 @@ peut alors interroger le portfolio avec les jetons de la personne, et le site n'
 33. En tant que personne du palier de confiance, je veux recevoir avec le corpus un lien vers la page
     du site où se télécharge le CV, afin d'obtenir le document lui-même.
 34. En tant que personne du palier de confiance, je veux lister mes connexions MCP (client, date
-    d'octroi, dernier usage, expiration), afin de savoir quels outils lisent mon accès.
+    d'octroi, dernier usage, expiration, état et, si elle est coupée, quand et pourquoi), afin de savoir
+    quels outils lisent mon accès.
 35. En tant que personne du palier de confiance, je veux révoquer une connexion MCP, afin qu'elle
     n'ouvre plus rien dès la requête suivante.
 36. En tant que personne du palier de confiance, je veux qu'une connexion inutilisée expire d'elle-même
-    après 30 jours et au plus tard 90 jours après son octroi, afin de ne pas laisser d'accès dormant.
+    après 30 jours et au plus tard 90 jours après son octroi, afin de ne pas laisser d'accès dormant ;
+    et qu'un accord que mon client n'a jamais mené jusqu'à l'échange de son code expire au bout d'une
+    heure (#730).
 37. En tant que personne dont le client se reconnecte, je veux que le renouvellement du jeton soit
     transparent tant que la connexion est valide, afin de ne pas consentir à chaque session.
 38. En tant que personne utilisant Claude (Code, Desktop, claude.ai), je veux que le client déclenche
@@ -354,8 +357,8 @@ décision du 2026-10-19, voir « Langue invalide »).
   rattachent. Clés UUID v7, horodatages `datetimetz_immutable`, comme le reste du schéma. Les jetons
   ne sont stockés qu'en empreinte, jamais en clair.
   *Précisé le 2026-10-26 (#649)* : la connexion porte aussi la **cause** de sa révocation (colonne
-  `revocation_cause` : `client`, `refresh-token-reuse`, `code-replay`, `superseded`, `expired` ; #650
-  ajoutera `person`), posée avec sa date par une seule instruction SQL qui ne révoque qu'une connexion
+  `revocation_cause` : `client`, `refresh-token-reuse`, `code-replay`, `superseded`, `expired`, plus
+  `person`, `password-changed` et `trusted-tier-withdrawn` depuis #650), posée avec sa date par une seule instruction SQL qui ne révoque qu'une connexion
   encore active — une connexion se révoque **une fois**, la première cause et le premier instant restent ;
   la base refuse une date sans cause ou l'inverse (contrainte `CHECK`). Révoquer une connexion **ne touche
   pas les lignes de ses codes et jetons** : tout lecteur juge la connexion, et la révocation d'un jeton
@@ -368,12 +371,12 @@ décision du 2026-10-19, voir « Langue invalide »).
   parcours abandonné après l'approbation (code jamais échangé, redirection perdue) laisse l'accord
   précédent vivant ; le premier code échangé, ancien ou récent, remplace les autres, et un code plus
   ancien échangé après un plus récent est mort. Ré-autoriser ne coupe donc l'ancienne connexion qu'à
-  l'échange du nouveau code : tant que la personne ne peut pas révoquer elle-même ses connexions (#650,
-  « Mes connexions MCP »), un parcours abandonné laisse vivante une connexion peut-être volée — **#650 est
-  un préalable à l'ouverture publique de la phase 2** (#726, audit B1, décision de l'auteur du
-  2026-10-27), comme le disent la règle et le registre des traitements (§3.4). Un double clic laisse deux
+  l'échange du nouveau code : un parcours abandonné laissait vivante une connexion peut-être volée tant que
+  la personne ne pouvait pas la révoquer elle-même — **#650 était un préalable à l'ouverture publique de la
+  phase 2** (#726, audit B1, décision de l'auteur du 2026-10-27), **levé** par « Mes connexions MCP »
+  (ci-dessous). Un double clic laisse deux
   connexions actives jusqu'au premier échange, qui n'en laisse qu'une (celle d'un client qui n'échange
-  aucun code expire après 30 jours sans usage) — une contrainte d'unicité partielle, écartée, ferait de ce
+  aucun code expire au bout d'une heure depuis #730, voir « Durées ») — une contrainte d'unicité partielle, écartée, ferait de ce
   double clic un 500. Limite acceptée, nouvelle : deux échanges simultanés de deux codes du même couple
   s'interbloquent, PostgreSQL en annule un (`40P01`, un 500), l'autre passe et révoque la connexion du
   premier. Règle : `.claude/rules/mcp-oauth-cycle-de-vie.md`.
@@ -414,6 +417,17 @@ décision du 2026-10-19, voir « Langue invalide »).
   même couple » est impossible, seules les empreintes sont stockées. Le rejeu d'un code jugé avant la
   liaison au client et avant PKCE (l'ordre de league), qui laissait quiconque intercepte un code couper la
   connexion, n'en est plus une : la preuve PKCE ci-dessus.
+  *Précisé le 2026-10-28 (#730, tâche 11)* : une **sixième durée**, `app.mcp.lifetime.connection_unexchanged`
+  (`PT1H`), borne la vie d'une connexion **dont le code n'a jamais été échangé** — une approbation abandonnée,
+  que ni le remplacement (au premier échange, #726) ni l'usage ne tiennent : elle restait active 30 jours et
+  elles s'accumulaient. Une troisième échéance de `McpConnection::deadline()`, appliquée tant que la colonne
+  `code_exchanged_at` est nulle ; cette colonne s'écrit au premier échange réussi du code, dans la transaction
+  de l'échange. `ConnectionLifetimes` refuse la durée si elle compte un jour, un mois ou une année (temps
+  écoulé seulement), si elle ne dépasse pas la durée d'un code de deux minutes de jeu, ou si elle atteint
+  l'inactivité. La purge ajoute une troisième borne de présélection (`maintenant − durée + une minute`) : la
+  connexion d'un code encore échangeable n'est jamais candidate (CR1 de #726 préservé). La migration
+  `Version20261028140000` ajoute la colonne et rattrape les connexions déjà échangées (un dernier usage ou un
+  jeton) avant le déploiement du code. Règle : `.claude/rules/mcp-oauth-revocation-personne.md`.
 - **Parcours d'autorisation.** Le point d'autorisation valide la requête (client, redirection exacte,
   PKCE, `resource`, scope) puis renvoie le navigateur vers la page de consentement du frontend. La page
   exige une session du site au palier de confiance (sinon passage par la connexion, puis retour). Le
@@ -460,7 +474,7 @@ décision du 2026-10-19, voir « Langue invalide »).
   désignent (même rédaction).
   *Précisé le 2026-10-26 (#649)* : la révocation est l'événement `mcp-connection-revoked` (`userId`,
   `connectionId`, `clientId` public, `cause` : `client`, `refresh-token-reuse`, `code-replay`,
-  `superseded`, `expired` ; `person` viendra avec #650), écrit **après le COMMIT** et seulement quand
+  `superseded`, `expired`, plus `person`, `password-changed` et `trusted-tier-withdrawn` depuis #650), écrit **après le COMMIT** et seulement quand
   la révocation a pris effet — aucune ligne pour une connexion inconnue ou déjà révoquée, aucune pour une
   transaction annulée. Acteur : `anonymous` aux points de jeton et de révocation — un accord remplacé
   compris, écrit au point de jeton depuis #726 —, `system` pour l'expiration
@@ -473,8 +487,32 @@ décision du 2026-10-19, voir « Langue invalide »).
   dessein, écrit **une ligne par requête**, borné par la seule zone nginx `mcp` (60 requêtes par minute,
   `burst=20 nodelay` : jusqu'à 80 la première minute, par IP et par pod) — accepté, la ligne désigne une connexion qui existe et un client qui la présente
   encore. Jamais un jeton, un code ni leur empreinte dans une ligne.
+  *Précisé le 2026-10-28 (#650)* : trois causes de plus pour `mcp-connection-revoked`. `person` : la
+  personne révoque l'une des siennes (acteur : elle-même). `password-changed` : le mot de passe du compte
+  change, **toutes** ses connexions sont coupées dans la transaction du changement — deux écrivains, le `PUT`
+  du backoffice (acteur : l'administrateur) et le lien d'invitation **quand il remplace** un mot de passe déjà
+  posé (acteur : `anonymous`) ; un lien qui pose le premier mot de passe ne coupe rien. `trusted-tier-withdrawn` :
+  la rétrogradation d'un `ROLE_SUPER` dont la liste de rôles écrite perd `ROLE_TRUSTED` (compte sans e-mail,
+  ADR 0003 D1) coupe toutes ses connexions (acteur : l'administrateur). Une ligne par connexion coupée, écrite
+  après le COMMIT de l'opération qui l'a motivée, à la suite de `password-changed` / `role-changed`.
 - **« Mes connexions MCP »** : page frontend réservée au palier de confiance, liste et révocation ;
   API correspondante sous `ROLE_TRUSTED`, qui ne rend que les connexions du compte appelant.
+  *Précisé le 2026-10-28 (#650, tâche 11)* : `GET /api/me/mcp-connections` rend **toutes** les connexions du
+  compte — actives, expirées et révoquées conservées six mois — avec leur état (`active`, `expired`, `revoked`,
+  jugé par `McpConnection::isExpiredAt()`, l'échéance affichée étant celle que l'on juge), la date et la cause
+  d'une révocation. `DELETE /api/me/mcp-connections/{id}` : 204, effet à la requête suivante du client ; la
+  connexion d'un autre compte et un UUID inconnu répondent le même 404 (pas d'oracle), la connexion déjà
+  révoquée de la personne un 204 sans rien écrire (idempotent) ; une connexion échue que la purge n'a pas encore
+  marquée est révoquée `person`. Sous `/api/me/`, donc derrière la règle `ROLE_TRUSTED` existante : aucune entrée
+  de liste d'exposition. Page `/<locale>/mcp-connections` (tableau, confirmation, annonce du résultat) ; menu du
+  compte du palier de confiance à partir de 768 px (motif disclosure), lien dans le menu à icône en dessous ; le
+  palier de base garde ses actions à plat (décision de l'auteur du 2026-10-28). La page de consentement nomme le
+  compte qui accorde (lu sur le cookie de la requête) et propose de changer de compte. **Limites acceptées**
+  (décisions de l'auteur du 2026-10-28) : le cookie de session survit au changement de mot de passe (JWT non
+  révocable, ADR 0003) ; le `POST` du consentement accorde au compte du cookie à l'envoi, pas à celui que le
+  `GET` a affiché ; une approbation en vol croisant la perte du palier insère une connexion refusée à l'usage mais
+  non marquée révoquée ; `upgradePassword()` ne révoque rien ; les rôles modifiés à la main en SQL ne sont pas
+  couverts. Règle : `.claude/rules/mcp-oauth-revocation-personne.md`.
 - **Backoffice** : liste de toutes les connexions MCP, et gestion des clients pré-enregistrés, sous
   `ROLE_SUPER` (`/api/backoffice/…`, donc jamais publique par construction).
 - **Exposition** : les points OAuth publics (autorisation, jeton, révocation) entrent
@@ -715,3 +753,13 @@ sur les chemins MCP et OAuth qu'à la tâche 14.
   connexions révoquées ou expirées ; colonne `revocation_cause`, la purge marquant l'expiration. Précisions
   reportées plus haut (« Modèle », « Durées », « Journal d'audit », « Purge ») ; règle d'implémentation :
   `.claude/rules/mcp-oauth-cycle-de-vie.md`.
+- **2026-10-28 — tâche 11 (#650) et #730, décisions de l'auteur** : périmètre étendu à #730 (piste 1,
+  expiration d'une heure d'un accord jamais échangé) ; la liste montre aussi les connexions révoquées et
+  expirées gardées six mois ; un vrai menu du compte desktop (disclosure), le palier de base gardant ses
+  actions à plat ; le consentement nomme le compte, sans lier la décision à ce compte ; noms des causes
+  confirmés ; la révocation d'une connexion échue non marquée porte `person`. **Correction en cours de route** :
+  le lien d'invitation peut *remplacer* un mot de passe (compte invité auquel un `ROLE_SUPER` en a posé un,
+  #460) et révoque alors les connexions — la prémisse du plan d'origine était inexacte. Règle d'implémentation :
+  `.claude/rules/mcp-oauth-revocation-personne.md`. Audit de sensibilité : aucun compte réel, secret ni domaine ;
+  des comptes de test fictifs seulement. Reste de la tâche : le contrôle d'accessibilité au navigateur (session
+  du palier de confiance) et la fermeture de #650 et #730 après la fusion.

@@ -568,15 +568,15 @@ Ajoutée par décision de l'auteur du 2026-10-28 (prémisse inexacte de la déci
   (journal d'audit) ; la décision 6 du plan a été corrigée, ne pas reprendre l'ancienne prémisse
 - Modify : `tasks/todo.md` (T11 cochée, #730, notes de release)
 
-- [ ] **Step 1 : écrire** les fichiers ci-dessus ; nouvelle règle sur le modèle d'en-tête de `mcp-oauth-purge.md`.
-- [ ] **Step 2 : vérifier** : `bash tools/check-claude-rules.sh` vert (aucune règle sans `paths:`, aucun glob vide,
+- [x] **Step 1 : écrire** les fichiers ci-dessus ; nouvelle règle sur le modèle d'en-tête de `mcp-oauth-purge.md`.
+- [x] **Step 2 : vérifier** : `bash tools/check-claude-rules.sh` vert (aucune règle sans `paths:`, aucun glob vide,
   aucune au-delà de 50 000 octets) ; `git grep -n "#650 adds\|will come with #650\|viendra avec #650"` vide ;
   `git grep -n "#650 is a prerequisite"` réécrit au passé.
-- [ ] **Step 3 : `tasks/todo.md`** — notes de release : deux migrations (`Version20261028120000`, `Version20261028140000`)
+- [x] **Step 3 : `tasks/todo.md`** *(notes écrites ; fermer #650 et #730 reste à faire à la main, après la fusion)* — notes de release : deux migrations (`Version20261028120000`, `Version20261028140000`)
   avant le rollout, une durée nouvelle (`connection_unexchanged`), aucune variable d'environnement ; rappel :
   `Closes #650`/`Closes #730` ne ferment rien vers une base qui n'est pas `main` — fermer les deux issues à la
   main après la fusion dans la mère.
-- [ ] **Step 4 : commit** `docs(mcp): spec, règles, registre et vocabulaire de « Mes connexions MCP » (#650, #730)`.
+- [x] **Step 4 : commit** `docs(mcp): spec, règles, registre et vocabulaire de « Mes connexions MCP » (#650, #730)`.
 
 ---
 

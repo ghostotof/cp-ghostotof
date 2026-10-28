@@ -121,7 +121,16 @@ paths:
     2026-10-11, issue #460; a new invitation remains possible) · `CpgUserRoleAdministrator`
     (`setSuperAdmin`, idempotent, anti-lockout guards; on demotion `ROLE_TRUSTED` is kept **only if the account
     has an `email`** — nominative grant, ADR 0003 D1, issue #78 pt 3 — a CLI account falls back to the base
-    tier). **Both administer under one lock** (issues #551, #552): `Application/AccountAdministrationLockInterface::whileAdministering(target, actingUser, Closure(CpgUser): T)`,
+    tier; **a demotion that writes a list without `ROLE_TRUSTED` revokes the account's MCP connections** in the
+    lock's closure, #650). **Three writers cut an account's MCP connections inside their own lock transaction**
+    (#650, through the `Shared` port `AccountMcpConnectionsRevokerInterface`, `Security` naming no class of `Mcp`;
+    audited after the COMMIT, `mcp-connection-revoked`): `CpgUserAdministrator::changePassword()` (cause
+    `password-changed`), `PasswordSetupService::activate()` **when the link replaces a password** — `hasPassword()`
+    read before `setPassword()`, on the account re-read under the lock; a first password is *set*, nothing to revoke —
+    and `CpgUserRoleAdministrator::setSuperAdmin()` on the loss of the tier (`trusted-tier-withdrawn`, judged on the
+    list it **writes**, never `getRoles()`). A refused revocation undoes the password, the activation or the role.
+    `upgradePassword()` (same secret) and `CpgUserRegistrar` revoke nothing; the mechanics and the accepted limits:
+    `.claude/rules/mcp-oauth-revocation-personne.md`. **Both administer under one lock** (issues #551, #552): `Application/AccountAdministrationLockInterface::whileAdministering(target, actingUser, Closure(CpgUser): T)`,
     adapter `Infrastructure/Doctrine/PostgresAccountAdministrationLock` on the shared skeleton (see the
     account lock below), the fifth PostgreSQL lock. The anti-lockout guard « never the last `ROLE_SUPER` »
     used to count then act, with no lock nor transaction: two `ROLE_SUPER` deleting or demoting each other

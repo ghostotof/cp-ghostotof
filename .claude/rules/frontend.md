@@ -63,6 +63,13 @@ incremental parser `serverEvents.ts`) → `application/assistant/useAssistant.ts
 in code points, never `.length`; a 401/403 calls `markSessionExpired()`) →
 `presentation/pages/AssistantPage.vue`.
 
+The MCP connection slice follows it too (#650): `domain/mcp` → `infrastructure/mcp/HttpMcpConnectionsRepository.ts`
+→ `application/mcp/useMcpConnections.ts` → `presentation/pages/McpConnectionsPage.vue` (route `mcp-connections`,
+`ROLE_TRUSTED`/`ROLE_SUPER`, `noindex`; the list re-read from the server after a revocation, no state recomputed).
+On desktop the trusted tier's header actions sit in `presentation/layout/AccountMenu.vue`, a WAI-ARIA **disclosure**
+(not `role="menu"`); **the base tier keeps its actions flat on desktop** (the author's decision of 2026-10-28).
+Details: `.claude/rules/mcp-oauth-revocation-personne.md`.
+
 #### i18n (French/English)
 
 Every route is prefixed by locale (`/fr`, `/en/about`…), the single source of truth for the active language —

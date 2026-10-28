@@ -42,6 +42,11 @@ paths:
   join (`testARefusedKnownTokenCostsNoExtraQuery`: the refused call costs exactly the accepted call's
   authentication query, judged on the token and on the tier). Never the token nor its hash in the line
   (`testAKnownRefusedTokenIsAudited`, one case per cause, the common 401 unchanged).
+- **#650 and #730 change which cause a refused token reads** (nothing in the audit's code): a connection the person
+  revoked, or that a password change or the loss of the trusted tier cut, now answers `connection-revoked` (before, a
+  demoted account answered `account-not-trusted`, which stays for the race where an approval in flight inserted a
+  connection after the revocation — `.claude/rules/mcp-oauth-revocation-personne.md`, accepted limits). An abandoned grant (#730) holds no
+  token, so it never reaches this audit.
 - **Every refusal of an authentic grant is audited at the token endpoint** (#725, the author's decisions of
   2026-10-27: which refusals, where, what bound, then the four of the step-07 reviews). **The criterion is the access
   token's**: a code or refresh token the server **decrypts** is one it issued (only it holds the key,

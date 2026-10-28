@@ -135,10 +135,28 @@ phase 1 parte en release seule ; puis au merge de clôture, qui archive la spec 
   - [x] 8. La page de consentement dit quel compte accorde
   - [x] 9. Frontend : dépôt et composable des connexions
   - [x] 10. Frontend : page « Mes connexions MCP », route, menu du compte desktop (disclosure) et lien mobile, a11y
-  - [ ] 11. Documentation (nouvelle règle `mcp-oauth-revocation-personne.md`, spec, registre, `CONTEXT.md`) ; fermer #650 et #730 à la main
+  - [x] 11. Documentation (nouvelle règle `mcp-oauth-revocation-personne.md`, spec, registre, `CONTEXT.md`)
+  - [ ] Fermer #650 et #730 à la main après la fusion (`Closes #n` ne ferme rien vers une base qui n'est pas `main`)
       Notes de la release : migrations `Version20261028120000` (le `CHECK`) et `Version20261028140000`
       (`code_exchanged_at`, rattrapage) avant le rollout ; paramètre `app.mcp.lifetime.connection_unexchanged`.
       Sept questions tranchées par l'auteur le 2026-10-28 (fin du plan) ; seul écart au défaut : vrai menu du compte desktop
+      **Notes de la release** (tâche 11, PR de la mère vers `develop`) :
+      - deux migrations **avant le rollout**, dans l'ordre : `Version20261028120000` (le `CHECK` des causes de
+        révocation, huit valeurs) puis `Version20261028140000` (colonne `code_exchanged_at` et rattrapage des
+        connexions déjà échangées) ; aucune variable d'environnement ;
+      - un paramètre nouveau, `app.mcp.lifetime.connection_unexchanged` (`PT1H`, `config/services.yaml`, une
+        valeur pour tous les environnements) : une approbation dont le code n'est jamais échangé expire au bout
+        d'une heure ;
+      - une page et un menu du compte desktop pour le palier de confiance (le palier de base garde ses actions
+        à plat) : **le contrôle d'accessibilité au navigateur de la tâche 10 n'est pas fait** (tabulation,
+        focus visible, contraste, largeurs 768 et 1024 px, session du palier de confiance requise) — à faire
+        avant de fusionner et à noter dans la PR ;
+      - à la sortie de la phase 2, le préalable posé par #726 (B1) est levé : la personne révoque elle-même.
+      **À trancher en relecture** (point ouvert, non résolu) : `Version20261028140000` rattrape `code_exchanged_at`
+      avant le rollout ; une connexion **échangée par l'ancien code entre la migration et la fin du rollout** reste
+      à `NULL` et serait jugée expirée au bout d'une heure. La phase 2 n'étant pas sortie, aucune base de production
+      n'a de ligne (le docblock de la migration le dit) ; à confirmer pour la préprod, ou à fermer par une seconde
+      passe de rattrapage après le rollout.
 - [ ] Tâche 12 — Enregistrement des clients par CIMD (#651) — bloquée par : #647 — reports de la
       tâche 8 : `client_id_metadata_document_supported: true` déjà annoncé ; domaine du client sur la page.
       Reports de la tâche 9 : borner la longueur du `client_id` CIMD écrit dans l'audit
