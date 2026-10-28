@@ -145,7 +145,7 @@ phase 1 parte en release seule ; puis au merge de clôture, qui archive la spec 
   - [x] R1c. Relecture R1b côté interface : un 401 du backoffice ferme la session et ramène à la connexion (décision de l'auteur du 2026-10-28), frontend seul
   - [x] R2. Relecture F5 : consentement lié au compte affiché (409)
   - [x] R3. Relecture F6 : liste bornée (non révoquées + 50 dernières terminées)
-  - [ ] R4. Relecture CR3/F1 : `code_exchanged_at` robuste ; interblocage écrit et épinglé — **sensible**
+  - [x] R4. Relecture CR3/F1 : `code_exchanged_at` robuste ; interblocage écrit et épinglé — **sensible**
   - [ ] R5. Relecture : corrections mineures et documentation
       **Notes de la release** (tâche 11, PR de la mère vers `develop`) :
       - deux migrations **avant le rollout**, dans l'ordre : `Version20261028120000` (le `CHECK` des causes de
