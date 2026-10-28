@@ -14,7 +14,6 @@ use App\Security\User\Domain\Repository\PasswordSetupTokenRepositoryInterface;
 use App\Shared\Application\Security\AccountAccessWithdrawal;
 use App\Shared\Application\Security\AccountMcpConnectionsRevokerInterface;
 use App\Shared\Application\Security\RevokedAccountMcpConnections;
-use Psr\Clock\ClockInterface;
 use SensitiveParameter;
 use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
 use Symfony\Component\Uid\Uuid;
@@ -29,7 +28,6 @@ final readonly class CpgUserAdministrator implements CpgUserAdministratorInterfa
         private AccountLockInterface $accountLock,
         private AccountAdministrationLockInterface $administrationLock,
         private AccountMcpConnectionsRevokerInterface $mcpConnections,
-        private ClockInterface $clock,
         private DeadlockRetryInterface $deadlockRetry,
     ) {
     }
@@ -124,15 +122,15 @@ final readonly class CpgUserAdministrator implements CpgUserAdministratorInterfa
      */
     private function replacePasswordOf(CpgUser $locked, string $hashedPassword): RevokedAccountMcpConnections
     {
-        // Le mot de passe, **sa date et la version des identifiants** (F2 de
-        // la relecture de #650, S1 de la seconde) : tout cookie de session qui
+        // Le mot de passe **et la version des identifiants** (F2 de la
+        // relecture de #650, S1 de la seconde) : tout cookie de session qui
         // porte l'ancienne version est refusé par l'API entière
         // (`CpgUser::claimsAStaleCredentialsVersion()`), ce que la seule
         // coupure des connexions existantes ne couvrait pas. Écrit sur le
         // compte relu sous le verrou — l'incrément en mémoire n'est sûr que
         // là —, dans la même transaction que le mot de passe : jamais l'un
         // sans l'autre.
-        $locked->replacePassword($hashedPassword, $this->clock->now());
+        $locked->replacePassword($hashedPassword);
         $this->cpgUserRepository->save($locked);
         // Compte encore en attente d'activation : le mot de passe posé ici
         // fait foi, le lien d'invitation en circulation meurt (décision du

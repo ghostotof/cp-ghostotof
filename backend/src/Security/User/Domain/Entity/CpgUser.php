@@ -156,24 +156,6 @@ class CpgUser implements UserInterface, PasswordAuthenticatedUserInterface, Acco
     private ?DateTimeImmutable $activatedAt = null;
 
     /**
-     * L'instant du dernier changement de mot de passe **du compte** (#650, F2 de
-     * la relecture) : le `PUT` du backoffice, ou le lien d'invitation qui pose le
-     * premier mot de passe ou en remplace un. Nul tant qu'aucun n'a eu lieu, et
-     * pour tout compte antérieur à la colonne. Écrit par replacePassword(),
-     * dans la fermeture du verrou du compte, avec le mot de passe lui-même ; le
-     * re-hachage à la connexion (même secret) ne l'écrit pas.
-     *
-     * **Ce n'est plus lui qui juge une session** (S1 de la seconde relecture) :
-     * la date comparée à l'`iat` d'un JWT refusait à tort ou laissait passer
-     * selon l'horloge et la seconde de la connexion — c'est
-     * {@see self::$credentialsVersion} qui décide désormais. La colonne n'est plus
-     * lue par aucune règle ; elle date seulement le dernier changement.
-     */
-    #[ORM\Column(type: Types::DATETIMETZ_IMMUTABLE, nullable: true)]
-    #[Ignore]
-    private ?DateTimeImmutable $credentialsChangedAt = null;
-
-    /**
      * La **version des identifiants** du compte (#650, S1 de la seconde
      * relecture, F-A et F-B) : avancée d'un cran par chaque remplacement de mot
      * de passe, jamais par un re-hachage (même secret). Le JWT de session en porte
@@ -373,26 +355,21 @@ class CpgUser implements UserInterface, PasswordAuthenticatedUserInterface, Acco
     }
 
     /**
-     * Remplace le mot de passe, **date le changement et avance la version des
-     * identifiants**, ensemble : les deux écrivains d'un changement de mot de
-     * passe (`CpgUserAdministrator::changePassword()` et
-     * `PasswordSetupService::activate()`) passent par ici, jamais par
-     * setPassword() seul — le re-hachage à la connexion, lui, garde le même
-     * secret et n'a rien à dater ni à avancer.
+     * Remplace le mot de passe **et avance la version des identifiants**,
+     * ensemble : les deux écrivains d'un changement de mot de passe
+     * (`CpgUserAdministrator::changePassword()` et `PasswordSetupService::activate()`)
+     * passent par ici, jamais par setPassword() seul — le re-hachage à la
+     * connexion, lui, garde le même secret et n'a rien à avancer. Aucune date
+     * n'est écrite : la colonne `credentials_changed_at` que la version a
+     * remplacée est retirée (Version20261028200000).
      *
      * À appeler sur l'instance relue sous le verrou du compte : l'incrément en
      * mémoire n'est sûr que là (voir {@see self::$credentialsVersion}).
      */
-    public function replacePassword(string $hashedPassword, DateTimeImmutable $at): void
+    public function replacePassword(string $hashedPassword): void
     {
         $this->password = $hashedPassword;
-        $this->credentialsChangedAt = $at;
         ++$this->credentialsVersion;
-    }
-
-    public function getCredentialsChangedAt(): ?DateTimeImmutable
-    {
-        return $this->credentialsChangedAt;
     }
 
     public function getCredentialsVersion(): int

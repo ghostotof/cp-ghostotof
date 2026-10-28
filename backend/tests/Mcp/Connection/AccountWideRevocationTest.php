@@ -438,8 +438,6 @@ final class AccountWideRevocationTest extends WebTestCase
         $this->changePasswordOf($held->accountId);
         self::assertSame(Response::HTTP_NO_CONTENT, $this->client->getResponse()->getStatusCode());
 
-        self::assertNotNull($this->credentialsChangedAtOf($held->accountId), 'Le PUT n\'a pas daté le changement de mot de passe.');
-        self::assertNull($this->credentialsChangedAtOf($foreign->accountId), 'Le compte d\'un autre n\'est pas concerné.');
         self::assertSame(1, $this->credentialsVersionOf($held->accountId), 'Le PUT n\'a pas avancé la version des identifiants (#650, S1).');
         self::assertSame(0, $this->credentialsVersionOf($foreign->accountId), 'Le compte d\'un autre n\'est pas concerné.');
 
@@ -450,7 +448,7 @@ final class AccountWideRevocationTest extends WebTestCase
 
     /**
      * F2, second écrivain : le lien d'invitation qui **remplace** un mot de
-     * passe date le changement, et le cookie d'avant ne consent plus.
+     * passe avance la version des identifiants, et le cookie d'avant ne consent plus.
      */
     public function testAnInvitationLinkReplacingAPasswordStalesTheCookieHeldBeforeAtTheConsent(): void
     {
@@ -461,17 +459,16 @@ final class AccountWideRevocationTest extends WebTestCase
         $response = $this->completeSetupLink($linkToken);
 
         self::assertSame(Response::HTTP_NO_CONTENT, $response->getStatusCode(), substr((string) $response->getContent(), 0, 500));
-        self::assertNotNull($this->credentialsChangedAtOf($held->accountId), 'Le lien n\'a pas daté le remplacement du mot de passe.');
         self::assertSame(1, $this->credentialsVersionOf($held->accountId), 'Le lien n\'a pas avancé la version des identifiants (#650, S1).');
 
         $this->assertConsentRefusedAsAStaleSession($cookiesHeldBefore);
     }
 
     /**
-     * F2, le lien qui **pose** un premier mot de passe date aussi le changement
+     * F2, le lien qui **pose** un premier mot de passe avance aussi la version
      * (aucune condition à oublier : un chemin, une écriture).
      */
-    public function testAnInvitationLinkSettingAFirstPasswordDatesTheChangeToo(): void
+    public function testAnInvitationLinkSettingAFirstPasswordAdvancesTheVersionToo(): void
     {
         $newcomer = new CpgUser('newcomer', '');
         $newcomer->markInvited(self::getContainer()->get(ClockInterface::class)->now());
@@ -480,7 +477,6 @@ final class AccountWideRevocationTest extends WebTestCase
 
         $this->completeSetupLink($linkToken);
 
-        self::assertNotNull($this->credentialsChangedAtOf($newcomer->getId()->toRfc4122()), 'Le lien n\'a pas daté le premier mot de passe.');
         self::assertSame(1, $this->credentialsVersionOf($newcomer->getId()->toRfc4122()), 'Le lien n\'a pas avancé la version des identifiants du premier mot de passe.');
     }
 
@@ -546,13 +542,6 @@ final class AccountWideRevocationTest extends WebTestCase
         self::assertIsInt($value);
 
         return $value;
-    }
-
-    private function credentialsChangedAtOf(string $accountId): ?string
-    {
-        $value = $this->mcpRows()->fetchOne('SELECT credentials_changed_at FROM cpg_user WHERE id = :id', ['id' => $accountId]);
-
-        return \is_string($value) ? $value : null;
     }
 
     /**

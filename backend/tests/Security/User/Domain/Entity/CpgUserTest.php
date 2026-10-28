@@ -283,7 +283,6 @@ final class CpgUserTest extends TestCase
     {
         $user = new CpgUser('jane', 'hashed-password');
 
-        self::assertNull($user->getCredentialsChangedAt());
         self::assertSame(0, $user->getCredentialsVersion());
         self::assertFalse($user->claimsAStaleCredentialsVersion(0));
         self::assertFalse(
@@ -292,16 +291,14 @@ final class CpgUserTest extends TestCase
         );
     }
 
-    /** `replacePassword()` change le mot de passe, DATE le changement et AVANCE la version, ensemble (#650, F-A). */
-    public function testReplacingThePasswordRecordsTheInstantAndAdvancesTheVersion(): void
+    /** `replacePassword()` change le mot de passe et AVANCE la version, ensemble (#650, F-A). */
+    public function testReplacingThePasswordAdvancesTheVersion(): void
     {
         $user = new CpgUser('jane', 'hashed-password');
-        $at = new DateTimeImmutable('2026-10-28 10:00:00');
 
-        $user->replacePassword('another-hash', $at);
+        $user->replacePassword('another-hash');
 
         self::assertSame('another-hash', $user->getPassword());
-        self::assertEquals($at, $user->getCredentialsChangedAt());
         self::assertSame(1, $user->getCredentialsVersion());
     }
 
@@ -310,23 +307,22 @@ final class CpgUserTest extends TestCase
     {
         $user = new CpgUser('jane', 'hashed-password');
 
-        $user->replacePassword('second-hash', new DateTimeImmutable('2026-10-28 10:00:00'));
-        $user->replacePassword('third-hash', new DateTimeImmutable('2026-10-28 10:00:00'));
+        $user->replacePassword('second-hash');
+        $user->replacePassword('third-hash');
 
         self::assertSame(2, $user->getCredentialsVersion());
     }
 
     /**
      * Le simple re-hachage (`PasswordUpgraderInterface`, même secret) passe par
-     * `setPassword()` et ne date ni n'avance rien : il ne doit pas périmer les sessions.
+     * `setPassword()` et n'avance rien : il ne doit pas périmer les sessions.
      */
-    public function testSettingThePasswordAloneChangesNeitherTheInstantNorTheVersion(): void
+    public function testSettingThePasswordAloneDoesNotAdvanceTheVersion(): void
     {
         $user = new CpgUser('jane', 'hashed-password');
 
         $user->setPassword('rehashed-same-secret');
 
-        self::assertNull($user->getCredentialsChangedAt());
         self::assertSame(0, $user->getCredentialsVersion());
     }
 
@@ -340,7 +336,7 @@ final class CpgUserTest extends TestCase
     {
         $user = new CpgUser('jane', 'hashed-password');
         for ($i = 0; $i < $current; ++$i) {
-            $user->replacePassword('hash-'.$i, new DateTimeImmutable('2026-10-28 10:00:00'));
+            $user->replacePassword('hash-'.$i);
         }
 
         self::assertSame($stale, $user->claimsAStaleCredentialsVersion($claimed));

@@ -10,7 +10,6 @@ use App\Security\Authentication\Infrastructure\Security\SessionPredatesPasswordC
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\ValueObject\BaseAccessUser;
 use App\Shared\Domain\Security\CredentialsVersionClaim;
-use DateTimeImmutable;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Security\Core\User\UserInterface;
@@ -184,7 +183,7 @@ final class SessionBeforePasswordChangeRefusalListenerTest extends TestCase
     {
         $account = new CpgUser('jane', 'hashed-password');
         for ($i = 0; $i < $version; ++$i) {
-            $account->replacePassword('hash-'.$i, new DateTimeImmutable('@1793000000'));
+            $account->replacePassword('hash-'.$i);
         }
 
         return $account;

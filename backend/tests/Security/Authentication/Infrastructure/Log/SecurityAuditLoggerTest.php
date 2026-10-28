@@ -12,7 +12,6 @@ use App\Security\User\Domain\ValueObject\BaseAccessUser;
 use App\Tests\Security\Authentication\Fixtures\AuditedMcpConnection;
 use App\Tests\Support\TestCredentials;
 use Closure;
-use DateTimeImmutable;
 use Monolog\Handler\TestHandler;
 use Monolog\Level;
 use Monolog\Logger;
@@ -772,7 +771,7 @@ final class SecurityAuditLoggerTest extends TestCase
     {
         $this->pushRequest('/api/me', 'GET');
         $jane = new CpgUser('jane', 'hashed-password');
-        $jane->replacePassword('another-hash', new DateTimeImmutable('2026-10-28T10:00:00+01:00'));
+        $jane->replacePassword('another-hash');
 
         $this->auditLogger->sessionRefusedAfterCredentialsChange($jane, 0);
 

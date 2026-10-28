@@ -20,7 +20,6 @@ use App\Tests\Support\ReadsSecurityAuditLog;
 use App\Tests\Support\TestCredentials;
 use Doctrine\DBAL\Exception\DeadlockException;
 use Doctrine\ORM\EntityManagerInterface;
-use Psr\Clock\ClockInterface;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
 
@@ -122,7 +121,6 @@ final class DeadlockRetryIntegrationTest extends KernelTestCase
             $this->container(AccountLockInterface::class),
             $this->container(AccountAdministrationLockInterface::class),
             $revoker,
-            $this->container(ClockInterface::class),
             $this->container(DeadlockRetryInterface::class),
         );
     }

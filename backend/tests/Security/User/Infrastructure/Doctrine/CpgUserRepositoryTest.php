@@ -427,12 +427,12 @@ final class CpgUserRepositoryTest extends KernelTestCase
 
     /**
      * Le cas nominal : le hachage en base est celui que la connexion a lu, le
-     * nouveau le remplace. L'instance en main le porte, ne date pas le changement
-     * ni n'avance la version des identifiants (même secret : aucune session n'est
+     * nouveau le remplace. L'instance en main le porte, n'avance pas
+     * la version des identifiants (même secret : aucune session n'est
      * périmée, #650 S1) et n'est pas « sale » — un
      * `flush()` ultérieur ne réécrit pas ce hachage par-dessus un autre.
      */
-    public function testARehashOfTheCurrentHashIsWrittenWithoutDatingAChangeNorAdvancingTheVersion(): void
+    public function testARehashOfTheCurrentHashIsWrittenWithoutAdvancingTheVersion(): void
     {
         $user = $this->storedUser('rehash-nominal', 'old-hash', []);
 
@@ -440,7 +440,6 @@ final class CpgUserRepositoryTest extends KernelTestCase
 
         self::assertSame('rehashed', $this->storedPasswordOf($user));
         self::assertSame('rehashed', $user->getPassword());
-        self::assertNull($this->em->getConnection()->fetchOne('SELECT credentials_changed_at FROM cpg_user WHERE id = :id', ['id' => $user->getId()], ['id' => UuidType::NAME]));
         self::assertSame(0, $this->em->getConnection()->fetchOne('SELECT credentials_version FROM cpg_user WHERE id = :id', ['id' => $user->getId()], ['id' => UuidType::NAME]), 'Un re-hachage a avancé la version des identifiants : il périmerait les sessions.');
         self::assertSame(0, $user->getCredentialsVersion());
 

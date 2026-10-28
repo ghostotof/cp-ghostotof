@@ -440,7 +440,7 @@ final class ConsentServiceTest extends TestCase
         $this->validatorRefusal = null;
         $this->authenticatedAt = null;
         $this->claimedVersion = 0;
-        $this->account->replacePassword('another-hash', new DateTimeImmutable(self::GRANTED_AT)->modify('+1 day'));
+        $this->account->replacePassword('another-hash');
         $this->expectException(ConsentAccountChangedException::class);
 
         $this->service()->decide($this->decision(true, Uuid::v7()), $this->account);
@@ -482,7 +482,7 @@ final class ConsentServiceTest extends TestCase
     #[DataProvider('everyCallWithAStaleClaim')]
     public function testASessionAuthenticatedBeforeAPasswordChangeIsRefusedReauthentication(string $call, ?int $claimedVersion): void
     {
-        $this->account->replacePassword('another-hash', new DateTimeImmutable(self::GRANTED_AT));
+        $this->account->replacePassword('another-hash');
         $this->claimedVersion = $claimedVersion;
 
         try {
@@ -507,7 +507,7 @@ final class ConsentServiceTest extends TestCase
     #[DataProvider('consentCalls')]
     public function testASessionAuthenticatedAfterAPasswordChangeIsServed(string $call): void
     {
-        $this->account->replacePassword('another-hash', new DateTimeImmutable(self::GRANTED_AT));
+        $this->account->replacePassword('another-hash');
         $this->claimedVersion = 1;
 
         $this->consentCall($call);
@@ -538,7 +538,7 @@ final class ConsentServiceTest extends TestCase
      */
     public function testAnInvalidRequestIsRejectedBeforeThePasswordChangeIsJudged(): void
     {
-        $this->account->replacePassword('another-hash', new DateTimeImmutable(self::GRANTED_AT));
+        $this->account->replacePassword('another-hash');
         $this->claimedVersion = 0;
         $this->validatorRefusal = OAuthServerException::invalidRequest('redirect_uri');
 

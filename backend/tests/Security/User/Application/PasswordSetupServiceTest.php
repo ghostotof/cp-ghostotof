@@ -551,8 +551,6 @@ final class PasswordSetupServiceTest extends TestCase
             ->complete(self::CLEAR_TOKEN, TestCredentials::variant('setup'));
 
         self::assertSame('hashed-new-password', $locked->getPassword());
-        self::assertEquals($clock->now(), $locked->getCredentialsChangedAt(), 'Le lien n\'a pas daté le changement de mot de passe.');
-        self::assertNull($user->getCredentialsChangedAt(), 'L\'instant a été écrit sur le compte d\'avant le verrou.');
         self::assertSame(1, $locked->getCredentialsVersion(), 'Le lien n\'a pas avancé la version des identifiants (#650, S1).');
         self::assertSame(0, $user->getCredentialsVersion(), 'La version a été avancée sur le compte d\'avant le verrou.');
     }

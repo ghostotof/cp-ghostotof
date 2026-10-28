@@ -142,7 +142,7 @@ final readonly class PasswordSetupService implements PasswordSetupServiceInterfa
         // accorder une connexion : le mot de passe est *posé*, aucun appel.
         $replacesAPassword = $user->hasPassword();
 
-        // Le mot de passe, **sa date et la version des identifiants**, qu'il soit
+        // Le mot de passe **et la version des identifiants**, qu'il soit
         // posé ou remplacé (F2 de la relecture de #650, S1 de la seconde) : un
         // cookie de session ouvert avant ce lien porte l'ancienne version et n'est
         // plus servi (`CpgUser::claimsAStaleCredentialsVersion()`). Sans condition :
@@ -150,7 +150,7 @@ final readonly class PasswordSetupService implements PasswordSetupServiceInterfa
         // passe ne refuse aucune session qui existe déjà (un jeton sans
         // revendication vaut 0, et la version passe à 1 : il est refusé, or aucun
         // jeton ne peut exister pour un compte sans mot de passe).
-        $user->replacePassword($hashedPassword, $now);
+        $user->replacePassword($hashedPassword);
         $user->markActivated($now);
         $token->markUsed($now);
 

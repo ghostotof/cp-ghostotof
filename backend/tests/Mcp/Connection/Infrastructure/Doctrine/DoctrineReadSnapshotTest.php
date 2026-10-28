@@ -113,7 +113,7 @@ final class DoctrineReadSnapshotTest extends KernelTestCase
         $raised = null;
 
         try {
-            $this->snapshot()->read(static function () use ($failure): void {
+            $this->snapshot()->read(static function () use ($failure): never {
                 throw $failure;
             });
         } catch (RuntimeException $caught) {

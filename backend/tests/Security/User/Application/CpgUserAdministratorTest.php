@@ -30,10 +30,8 @@ use Doctrine\Persistence\ManagerRegistry;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
-use Psr\Clock\ClockInterface;
 use Psr\Log\NullLogger;
 use RuntimeException;
-use Symfony\Component\Clock\MockClock;
 use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
 use Symfony\Component\Uid\Uuid;
 
@@ -233,27 +231,24 @@ final class CpgUserAdministratorTest extends TestCase
     }
 
     /**
-     * F2 de la relecture de #650 : le changement de mot de passe est daté, sur le
-     * compte **relu sous le verrou** (le double que le verrou rend à la place de
-     * celui du dépôt), à l'instant de l'horloge — le consentement MCP refuse un
-     * cookie de session d'avant cet instant.
+     * F2 de la relecture de #650, S1 de la seconde : le changement de mot de passe
+     * avance la version des identifiants du compte **relu sous le verrou** (le
+     * double que le verrou rend à la place de celui du dépôt), pas du compte lu
+     * avant — l'API refuse tout cookie de session qui porte l'ancienne version.
      */
-    public function testChangePasswordRecordsTheInstantOfTheChangeOnTheAccountReadUnderTheLock(): void
+    public function testChangePasswordAdvancesTheCredentialsVersionOfTheAccountReadUnderTheLock(): void
     {
         $user = $this->user('jane');
         $locked = clone $user;
-        $clock = new MockClock('2026-10-28 10:00:00');
         $accountLock = self::createStub(AccountLockInterface::class);
         $accountLock->method('whileLocked')->willReturnCallback(
             static fn (CpgUser $ignored, Closure $operation): mixed => $operation($locked),
         );
 
-        $this->administrator($this->repositoryFinding($user), $this->hasher(), self::createStub(SecurityAuditLoggerInterface::class), accountLock: $accountLock, clock: $clock)
+        $this->administrator($this->repositoryFinding($user), $this->hasher(), self::createStub(SecurityAuditLoggerInterface::class), accountLock: $accountLock)
             ->changePassword($user->getId(), TestCredentials::variant('new'));
 
         self::assertSame('new-hashed-password', $locked->getPassword());
-        self::assertEquals($clock->now(), $locked->getCredentialsChangedAt(), 'Le changement de mot de passe n\'est pas daté.');
-        self::assertNull($user->getCredentialsChangedAt(), 'L\'instant a été écrit sur le compte d\'avant le verrou.');
         self::assertSame(1, $locked->getCredentialsVersion(), 'Le changement de mot de passe n\'a pas avancé la version des identifiants (#650, S1).');
         self::assertSame(0, $user->getCredentialsVersion(), 'La version a été avancée sur le compte d\'avant le verrou.');
     }
@@ -503,7 +498,6 @@ final class CpgUserAdministratorTest extends TestCase
         ?AccountAdministrationLockInterface $administrationLock = null,
         ?AccountMcpConnectionsRevokerInterface $mcpConnections = null,
         ?AccountLockInterface $accountLock = null,
-        ?ClockInterface $clock = null,
         ?DeadlockRetryInterface $deadlockRetry = null,
     ): CpgUserAdministrator {
         if (null === $accountLock) {
@@ -523,7 +517,7 @@ final class CpgUserAdministratorTest extends TestCase
             );
         }
 
-        return new CpgUserAdministrator($repository, $hasher, $auditLogger, $tokenRepository ?? self::createStub(PasswordSetupTokenRepositoryInterface::class), $accountLock, $administrationLock, $mcpConnections, $clock ?? new MockClock(), $deadlockRetry ?? new DoctrineDeadlockRetry(self::createStub(ManagerRegistry::class), new NullLogger()));
+        return new CpgUserAdministrator($repository, $hasher, $auditLogger, $tokenRepository ?? self::createStub(PasswordSetupTokenRepositoryInterface::class), $accountLock, $administrationLock, $mcpConnections, $deadlockRetry ?? new DoctrineDeadlockRetry(self::createStub(ManagerRegistry::class), new NullLogger()));
     }
 
     /**

@@ -8,7 +8,6 @@ use App\Security\Authentication\Infrastructure\Jwt\CredentialsVersionClaimListen
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\ValueObject\BaseAccessUser;
 use App\Shared\Domain\Security\CredentialsVersionClaim;
-use DateTimeImmutable;
 use Lexik\Bundle\JWTAuthenticationBundle\Event\JWTCreatedEvent;
 use PHPUnit\Framework\TestCase;
 
@@ -24,8 +23,8 @@ final class CredentialsVersionClaimListenerTest extends TestCase
     public function testTheTokenCarriesTheVersionOfTheAccountItWasCreatedFor(): void
     {
         $account = new CpgUser('jane', 'hashed-password');
-        $account->replacePassword('second-hash', new DateTimeImmutable('2026-10-28 10:00:00'));
-        $account->replacePassword('third-hash', new DateTimeImmutable('2026-10-28 11:00:00'));
+        $account->replacePassword('second-hash');
+        $account->replacePassword('third-hash');
         $event = new JWTCreatedEvent(['username' => 'jane', 'roles' => ['ROLE_USER']], $account);
 
         (new CredentialsVersionClaimListener())($event);

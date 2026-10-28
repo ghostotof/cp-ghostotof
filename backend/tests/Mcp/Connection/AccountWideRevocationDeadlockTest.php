@@ -187,8 +187,8 @@ final class AccountWideRevocationDeadlockTest extends WebTestCase
      * ensuite et a remplacé l'ancienne, et le second essai a coupé ce qui
      * restait actif — C2 — puis écrit l'audit, une seule fois.
      *
-     * @param array{password: mixed, changed: mixed, version: mixed} $passwordBefore
-     * @param array{password: mixed, changed: mixed, version: mixed} $accountAfter
+     * @param array{password: mixed, version: mixed} $passwordBefore
+     * @param array{password: mixed, version: mixed} $accountAfter
      * @param array<array-key, mixed>                                $causes
      */
     private function assertTheRevocationWasRetriedAndTheExchangeServed(
@@ -209,7 +209,6 @@ final class AccountWideRevocationDeadlockTest extends WebTestCase
         self::assertSame(1, preg_match('/^issued 200$/m', $exchangeOutput), $exchangeOutput);
 
         self::assertNotSame($passwordBefore['password'], $accountAfter['password'], 'Le mot de passe aurait dû changer au second essai. '.$observed);
-        self::assertNotSame($passwordBefore['changed'], $accountAfter['changed'], $observed);
         // Une seule fois : le premier essai, annulé, n'a rien laissé, et le second
         // ne rejoue pas le premier — sinon les sessions ouvertes seraient refusées deux fois
         // (et un incrément perdu en cas de course).
@@ -230,8 +229,8 @@ final class AccountWideRevocationDeadlockTest extends WebTestCase
      * L'échange est la victime : aucun jeton, le code toujours échangeable, la
      * connexion non notée ; la révocation a coupé les deux connexions du compte.
      *
-     * @param array{password: mixed, changed: mixed, version: mixed} $passwordBefore
-     * @param array{password: mixed, changed: mixed, version: mixed} $accountAfter
+     * @param array{password: mixed, version: mixed} $passwordBefore
+     * @param array{password: mixed, version: mixed} $accountAfter
      * @param array<array-key, mixed>                                $causes
      */
     private function assertTheExchangeWasRolledBackAndTheRevocationServed(
@@ -341,14 +340,14 @@ final class AccountWideRevocationDeadlockTest extends WebTestCase
      * identifiants : les trois écrits par la révocation, relus tels quels pour
      * être comparés.
      *
-     * @return array{password: mixed, changed: mixed, version: mixed}
+     * @return array{password: mixed, version: mixed}
      */
     private function accountCredentials(HeldMcpConnection $held): array
     {
-        $row = $this->mcpRows()->fetchAssociative('SELECT password, credentials_changed_at, credentials_version FROM cpg_user WHERE id = ?', [$held->accountId]);
+        $row = $this->mcpRows()->fetchAssociative('SELECT password, credentials_version FROM cpg_user WHERE id = ?', [$held->accountId]);
         self::assertIsArray($row);
 
-        return ['password' => $row['password'], 'changed' => $row['credentials_changed_at'], 'version' => $row['credentials_version']];
+        return ['password' => $row['password'], 'version' => $row['credentials_version']];
     }
 
     /** Le nombre de jetons d'une table (`mcp_access_token` ou `mcp_refresh_token`) pour une connexion. */

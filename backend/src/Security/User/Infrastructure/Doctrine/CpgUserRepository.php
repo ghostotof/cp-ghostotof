@@ -256,7 +256,7 @@ class CpgUserRepository extends ServiceEntityRepository implements CpgUserReposi
      * état d'origine, comme `advanceInvitationGeneration()` : sans quoi un
      * `flush()` ultérieur la croirait sale et réécrirait son hachage par-dessus
      * un autre changement. Le re-hachage garde le même secret : il ne date
-     * aucun changement de mot de passe (`credentialsChangedAt`).
+     * aucun changement de mot de passe (`credentialsVersion` n'avance pas).
      */
     public function upgradePassword(PasswordAuthenticatedUserInterface $user, string $newHashedPassword): void
     {

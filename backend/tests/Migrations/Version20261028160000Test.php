@@ -24,6 +24,12 @@ use Symfony\Component\Uid\UuidV7;
  *
  * Rejouée dans une transaction annulée : `down()` retire la colonne, `up()`
  * l'ajoute sur les comptes que le test a écrits.
+ *
+ * **La colonne n'existe plus dans la base migrée** : `Version20261028200000` la
+ * retire (S4 de la seconde relecture, la version des identifiants l'a remplacée).
+ * Le test commence donc, dans sa transaction annulée, par l'état que cette migration
+ * défait — la colonne recréée comme son `down()` la recrée — avant de rejouer
+ * `down()`/`up()` de celle-ci.
  */
 final class Version20261028160000Test extends KernelTestCase
 {
@@ -39,6 +45,8 @@ final class Version20261028160000Test extends KernelTestCase
         $this->connection = self::getContainer()->get(EntityManagerInterface::class)->getConnection();
         self::assertFalse($this->connection->isTransactionActive(), 'Une transaction est déjà ouverte avant le test.');
         $this->connection->beginTransaction();
+        // L'état d'avant Version20261028200000, comme son down() le rétablit.
+        $this->connection->executeStatement('ALTER TABLE cpg_user ADD credentials_changed_at TIMESTAMP(0) WITH TIME ZONE DEFAULT NULL');
     }
 
     protected function tearDown(): void
