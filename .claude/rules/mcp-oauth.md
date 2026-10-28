@@ -276,7 +276,7 @@ paths:
   is refused on all three** (#650, R1: `CpgUser::hasChangedCredentialsSince()`, the same `ReauthenticationRequiredException`
   and `type`, a sentence of its own, `afterAPasswordChange()`) — the remedy for a stolen password leaves a session
   from before no use of this door, and the person sent back to sign in gains a clean one. Since R1b the `api`
-  firewall refuses such a session before any controller (`.claude/rules/security-authentication.md`), so by HTTP this
+  firewall refuses such a session before any controller (`.claude/rules/security-authentication-sessions.md`), so by HTTP this
   check is **not reached**; it stays as defence in depth, the door granting thirty days (the author's decision).
   **The site has no JWT refresh**: a token is only issued at
   login (and by the base access, which never reaches the consent), so `iat` is the instant the password was

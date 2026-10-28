@@ -26,7 +26,10 @@ This file only carries what applies everywhere, plus what runs from the shell (g
 | `backend-integrite.md` | authenticated envelopes and cache values, derived keys, `KeyedMac` | touching Messenger serialization, a cache pool, an HMAC, `APP_SECRET` |
 | `backend-conventions.md` | exceptions, `#[SensitiveParameter]`, regexes, imports, `sprintf` | writing any backend class |
 | `security-user.md` | `Security/User` | touching accounts, invitations, password setup |
-| `security-authentication.md` | `Security/Authentication` | touching login, JWT, cookies, CSRF, a `kernel.request` guard, the audit log |
+| `security-authentication.md` | `Security/Authentication`: CSRF guards, base access, `CanonicalPath`, firewall anchoring — and the index of the three below | touching CSRF, a `kernel.request` guard, a firewall or `access_control` pattern, `/api/account/base-access` |
+| `security-authentication-sessions.md` | `BEARER` / `XSRF-TOKEN` cookies, JWT claims (`iat`, `cv`), the refusal of a session opened before the last password change | touching a cookie, a JWT claim, `lexik_jwt_authentication.yaml`, `SessionBeforePasswordChangeRefusalListener` |
+| `security-authentication-connexion.md` | login failure timing, overlong password, `password_hashers` | touching the `login` firewall's failures, `security.yaml`'s `password_hashers` |
+| `security-authentication-audit.md` | `SecurityAuditLogger`: events, contexts, what a record never carries, redactions | touching an audit event, a log context, a Monolog handler, an exception message |
 | `portfolio-contenus.md` | `Portfolio/*` content contexts — and the index of the three below | touching a content context |
 | `portfolio-ordre.md` | ordering and translation groups: model, trigger, scope lock | touching `position`, `translation_group`, the order scope lock |
 | `portfolio-ordre-migrations.md` | migrations on the eight ordered tables, the trigger's blind spots | writing a migration that touches an ordered table |

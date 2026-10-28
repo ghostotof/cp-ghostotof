@@ -117,7 +117,7 @@ paths:
   rolled-back one: **`McpConnectionRevokerInterface::revoke(CompromisedMcpConnectionException $compromise)`** — the
   connection and the cause read from the compromise (#726, CR6), the clock's instant, the repository's
   revocation, then, only when it took effect, the audit line `mcp-connection-revoked` (`userId`, `connectionId`,
-  `clientId`, `cause`; `.claude/rules/security-authentication.md`), **after** the write; one statement, callable
+  `clientId`, `cause`; `.claude/rules/security-authentication-audit.md`), **after** the write; one statement, callable
   after a rolled-back exchange (the token endpoint's reuse and replay, below). Inside a transaction: **the
   dedicated repository method** — `revokeActive()` (the revocation endpoint's, below), `revokeOtherActiveOf()` (`CodeExchangeSupersession`'s,
   in the token endpoint's transaction, at a code's first exchange), `revokeExpired()` (the purge's), and #650's

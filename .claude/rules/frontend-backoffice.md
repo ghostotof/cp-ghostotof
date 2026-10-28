@@ -198,7 +198,7 @@ version" copies nothing and the assistant sends all five fields.
   plain function (no Vue `inject()`) so it also works inside this router guard, outside component context.
 - **A 401 mid-page ends the session on the interface too** (#650, R1c): the route guard plays at navigation only, it
   never sees a session that dies while a page is open (the JWT expiring, or a password change cutting every
-  session opened before it, `.claude/rules/security-authentication.md`). So `BackofficeHttpClient` (`get` and
+  session opened before it, `.claude/rules/security-authentication-sessions.md`). So `BackofficeHttpClient` (`get` and
   `mutate`) calls, on any 401, a reaction registered once through `setBackofficeUnauthorizedHandler()` and returns the
   response as it came — repositories keep their own mapping, **none repeats the reaction**. `main.ts` registers
   `setBackofficeUnauthorizedHandler(createBackofficeSessionExpiryHandler(router))`

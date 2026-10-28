@@ -73,7 +73,7 @@ path, never a generic cause on the revoker.
 | `password-changed` | `CpgUserAdministrator::changePassword()`; `PasswordSetupService::complete()` when the link **replaces** a password | `revokeAllActiveOfAccount($account, …)` through the port | the caller's, required | the administrator; `anonymous` for the link |
 | `trusted-tier-withdrawn` | `CpgUserRoleAdministrator::setSuperAdmin()` on a demotion that loses `ROLE_TRUSTED` | same | the caller's, required | the administrator |
 
-Every audit line (`mcp-connection-revoked`, `.claude/rules/security-authentication.md`) is written **after the
+Every audit line (`mcp-connection-revoked`, `.claude/rules/security-authentication-audit.md`) is written **after the
 COMMIT**, once per connection **the call revoked**, none for an unknown or already revoked one, by
 **`Application/RevokedConnectionAudit::record($connection, $cause)`**, the one writer of that line for these three
 causes (#650, R5a: `OwnMcpConnections` and `AccountMcpConnectionsRevoker` repeated it): the call to the security log
@@ -131,7 +131,7 @@ theirs). The expiry (actor `system`), the supersession (`supersededBy`) and a co
 
 ## The account-wide revocations: a port of `Shared`, called inside the lock
 
-`Security/User` must name no class of `Mcp` (`.claude/rules/security-authentication.md`), and `Mcp` opens no third
+`Security/User` must name no class of `Mcp` (`.claude/rules/security-authentication-audit.md`), and `Mcp` opens no third
 door towards `Security`: `Shared/Application/Security/AccountMcpConnectionsRevokerInterface` is the port,
 `Mcp/Connection/Application/AccountMcpConnectionsRevoker` its implementation. Two calls, in two moments:
 
@@ -181,7 +181,7 @@ afterwards. So the same two password writers also date the change: `CpgUser::rep
 password **and** `credentials_changed_at` (`Version20261028160000`, nullable, **no backfill** — writing `now()` would
 have voided every open session without any password having changed; `Version20261028160000Test`, fingerprint n° 38 of
 `verify.sql`) in the lock's closure. The consent refuses a session opened before it (`.claude/rules/mcp-oauth.md`) and,
-since R1b, the whole `api` firewall does (`.claude/rules/security-authentication.md`): the account-wide revocation and
+since R1b, the whole `api` firewall does (`.claude/rules/security-authentication-sessions.md`): the account-wide revocation and
 the cookie's refusal together close the window. `AccountWideRevocationTest`, `CpgUserTest`, `CpgUserRepositoryTest`.
 
 ## The abandoned grant (#730): a connection whose code is never exchanged expires after an hour
@@ -292,7 +292,7 @@ which reads the request again under the current account. `OAuthConsentPage.spec.
 The first delivery listed three; review R1, R1b and R2 **lifted two of them** and R3 and R4 added two.
 
 1. ~~**The session cookie survives a password change.**~~ **Lifted** (R1 for the consent, R1b for the whole API): a session
-   opened before the last password change is refused (`.claude/rules/security-authentication.md`). What stays, written
+   opened before the last password change is refused (`.claude/rules/security-authentication-sessions.md`). What stays, written
    there: the same second as the change is refused too, and the JWT is otherwise not revocable (ADR 0003).
 2. ~~**The `POST /api/oauth/consent` grants to the account of the cookie at sending.**~~ **Lifted** (R2): the decision
    is bound to the account the summary named, a 409 otherwise.

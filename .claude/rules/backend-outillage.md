@@ -84,7 +84,7 @@ Monolog handlers, which rightly differ in `test`; audit of #698). Everything els
 the `main` handler at `%env(default:app.log_level:LOG_LEVEL)%` (`LOG_LEVEL=warning` in `backend/.env`,
 `debug` in the preprod image), which excludes those two channels so an event is emitted **once**. No
 channel names an account by its login identifier (issue #363): the `security` channel goes through
-`SecurityChannelAccountRedactor` (see `.claude/rules/security-authentication.md`), and
+`SecurityChannelAccountRedactor` (see `.claude/rules/security-authentication-audit.md`), and
 `AccountIdentifierReachesNoLogTest` reads every channel at every level, preprod's `debug` included. A
 third channel follows the same rule, `ai_usage` (spec 0005): the career assistant's and, since issue
 #356, the translator's token usage, duration and quota refusals, never any content, on its own `info`

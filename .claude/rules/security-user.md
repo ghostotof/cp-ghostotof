@@ -34,7 +34,7 @@ paths:
     **The login reads `MAX_PASSWORD_LENGTH` as a bound, not as a validation** (issue #588, decided on
     2026-10-13): `OverlongPasswordRefusalListener` compares the submitted password's `strlen()` with it, the
     one `strlen()` the rule above allows, because no account can answer yes past it (see
-    `.claude/rules/security-authentication.md`). Never `PlainPasswordLength` there: its minimum would refuse
+    `.claude/rules/security-authentication-connexion.md`). Never `PlainPasswordLength` there: its minimum would refuse
     an account whose password was set when the CLI counted the minimum in bytes (#386).
     On both DTOs it sits inside one `Assert\Sequentially([NotBlank, PlainPasswordLength, NotCompromisedPassword])`
     — each constraint only if the previous one passed — so a password already refused never reaches
@@ -140,7 +140,7 @@ paths:
     session that exists) —, the date written **with the password inside the lock's closure**, never one without the
     other. `setPassword()` and `upgradePassword()` write no date. `hasChangedCredentialsSince(?DateTimeImmutable)` is
     the one predicate (`<=`, an unknown instant counts as earlier, false without a change; the reasons in
-    `.claude/rules/security-authentication.md`), read by the whole `api` firewall and the consent.
+    `.claude/rules/security-authentication-sessions.md`), read by the whole `api` firewall and the consent.
     **`upgradePassword()` is an `UPDATE … SET password = :new WHERE id = :id AND password = :old`** (F3): a rehash at
     sign-in no longer restores a password changed in between by the backoffice or a link. The price: a rehash lost when
     the password changed, harmless — the next sign-in rehashes the new one; zero rows is not an error; the instance

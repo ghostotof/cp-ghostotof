@@ -17,7 +17,7 @@ namespace App\Shared\Application\Security;
  *
  * Un port de `Shared` plutôt qu'une classe de `Mcp` importée par `Security` :
  * `Security` ne dépend d'aucune classe de `Mcp`
- * (`.claude/rules/security-authentication.md`).
+ * (`.claude/rules/security-authentication-audit.md`).
  */
 enum AccountAccessWithdrawal: string
 {
