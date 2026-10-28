@@ -46,6 +46,8 @@ describe('backofficeSessionExpiry', () => {
     expect(authState.user).toBeNull()
     expect(router.currentRoute.value.params.locale).toBe('fr')
     expect(router.currentRoute.value.query.redirect).toBe('/fr/admin/users')
+    // La page de connexion dit pourquoi elle s'ouvre (#650, R5a).
+    expect(router.currentRoute.value.query.expired).toBe('1')
   })
 
   it('garde la langue de la page courante', async () => {

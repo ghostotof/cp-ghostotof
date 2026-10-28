@@ -474,7 +474,8 @@
     "rateLimited": "Too many login attempts. Please try again in a few minutes.",
     "rateLimitedIn": "Too many login attempts. Please try again in {minutes} minute. | Too many login attempts. Please try again in {minutes} minutes.",
     "genericError": "Something went wrong, please try again.",
-    "reauthNotice": "Confirm your identity: authorizing an MCP connection requires having signed in less than ten minutes ago. You will then come back to the request."
+    "reauthNotice": "Confirm your identity: authorizing an MCP connection requires having signed in less than ten minutes ago. You will then come back to the request.",
+    "sessionEnded": "Your session has ended, please sign in again."
   },
   "contact": {
     "eyebrow": "Contact",
@@ -848,7 +849,9 @@
       "actions": "Actions"
     },
     "terminatedTruncated": "History is limited: only the most recent ended connections are shown.",
-    "neverUsed": "Never used",
+    "neverCompleted": "Never completed",
+    "notRenewedYet": "Not renewed yet",
+    "noExpiry": "No expiry",
     "states": {
       "active": "Active",
       "expired": "Expired"
@@ -875,7 +878,9 @@
     "errors": {
       "load": "Your connections could not be loaded.",
       "retry": "Try again",
-      "revoke": "The connection could not be revoked. Try again later."
+      "revoke": "The connection could not be revoked. Try again later.",
+      "sessionEnded": "Your session has ended.",
+      "signInAgain": "Sign in again"
     },
     "empty": "No connection yet: no assistant is connected to your account."
   }

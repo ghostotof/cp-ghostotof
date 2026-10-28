@@ -2,13 +2,15 @@ import type { Router } from 'vue-router'
 import { markSessionExpired } from '../../application/auth/useAuth'
 import { isSupportedLocale, type Locale } from '../../domain/portfolio/entities/Locale'
 import { resolvePreferredLocale } from './preferredLocale'
+import { SESSION_ENDED_QUERY, SESSION_ENDED_VALUE } from './sessionEnded'
 
 /**
  * La réaction du backoffice à un 401 (#650 R1c), branchée dans `main.ts` sur
  * `setBackofficeUnauthorizedHandler` : la session est finie (JWT expiré, ou
  * ouverte avant un changement de mot de passe, R1b). L'en-tête repasse à
  * « anonyme » et la personne est menée à la connexion, qui la ramènera à la page
- * où elle se trouvait (`redirect`, jugé par LoginPage : chemin interne seulement).
+ * où elle se trouvait (`redirect`, jugé par LoginPage : chemin interne seulement),
+ * et qui dit pourquoi elle s'ouvre (`expired=1`, voir `sessionEnded.ts`).
  *
  * `replace` plutôt que `push` : le retour arrière ne ramène pas à une page dont
  * l'API refuse tout. Une page du backoffice charge plusieurs listes en
@@ -32,7 +34,7 @@ export function createBackofficeSessionExpiryHandler(router: Router): () => void
     const locale: Locale = 'string' === typeof routeLocale && isSupportedLocale(routeLocale) ? routeLocale : resolvePreferredLocale()
 
     void router
-      .replace({ name: 'login', params: { locale }, query: { redirect: current.fullPath } })
+      .replace({ name: 'login', params: { locale }, query: { redirect: current.fullPath, [SESSION_ENDED_QUERY]: SESSION_ENDED_VALUE } })
       .finally(() => {
         isRedirecting = false
       })

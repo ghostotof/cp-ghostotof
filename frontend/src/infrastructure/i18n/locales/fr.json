@@ -474,7 +474,8 @@
     "rateLimited": "Trop de tentatives de connexion. Réessayez dans quelques minutes.",
     "rateLimitedIn": "Trop de tentatives de connexion. Réessayez dans {minutes} minute. | Trop de tentatives de connexion. Réessayez dans {minutes} minutes.",
     "genericError": "Une erreur est survenue, veuillez réessayer.",
-    "reauthNotice": "Confirmez votre identité : autoriser une connexion MCP demande de vous être connecté il y a moins de dix minutes. Vous reviendrez ensuite à la demande."
+    "reauthNotice": "Confirmez votre identité : autoriser une connexion MCP demande de vous être connecté il y a moins de dix minutes. Vous reviendrez ensuite à la demande.",
+    "sessionEnded": "Votre session a pris fin, reconnectez-vous."
   },
   "contact": {
     "eyebrow": "Contact",
@@ -848,7 +849,9 @@
       "actions": "Actions"
     },
     "terminatedTruncated": "L'historique est limité : seules les dernières connexions terminées sont affichées.",
-    "neverUsed": "Jamais utilisée",
+    "neverCompleted": "Jamais aboutie",
+    "notRenewedYet": "Pas encore renouvelée",
+    "noExpiry": "Sans échéance",
     "states": {
       "active": "Active",
       "expired": "Échue"
@@ -875,7 +878,9 @@
     "errors": {
       "load": "Vos connexions n'ont pas pu être chargées.",
       "retry": "Réessayer",
-      "revoke": "La connexion n'a pas pu être révoquée. Réessayez plus tard."
+      "revoke": "La connexion n'a pas pu être révoquée. Réessayez plus tard.",
+      "sessionEnded": "Votre session a pris fin.",
+      "signInAgain": "Se reconnecter"
     },
     "empty": "Aucune connexion pour l'instant : aucun assistant n'est branché à votre compte."
   }

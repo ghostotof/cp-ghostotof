@@ -8,6 +8,7 @@ import type { McpConnectionsRepository } from '../../../src/domain/mcp/repositor
 import type { McpConnectionList, McpConnectionSummary } from '../../../src/domain/mcp/entities/McpConnection'
 import { McpConnectionNotFoundError } from '../../../src/domain/mcp/errors/McpConnectionNotFoundError'
 import { McpConnectionsRequestFailedError } from '../../../src/domain/mcp/errors/McpConnectionsRequestFailedError'
+import { SessionExpiredError } from '../../../src/domain/mcp/errors/SessionExpiredError'
 import type { Locale } from '../../../src/domain/portfolio/entities/Locale'
 import { expectNoAccessibilityViolation } from '../../support/axe'
 import { listOf } from '../../support/mcpConnectionList'
@@ -20,11 +21,12 @@ afterEach(() => {
 
 const StubPage = { template: '<div />' }
 
-/** Active, jamais utilisée sous ce nom : le seul bouton « Révoquer » de la liste. */
+/** Active et utilisée (rafraîchie) : un des deux boutons « Révoquer » de la liste. */
 const ACTIVE: McpConnectionSummary = {
   id: '0194f6a0-0000-7000-8000-000000000001',
   client: { id: 'claude-code', name: 'Claude Code' },
   grantedAt: '2026-10-28T09:00:00+01:00',
+  codeExchanged: true,
   lastUsedAt: '2026-10-28T10:30:00+01:00',
   expiresAt: '2026-11-27T09:00:00+01:00',
   state: 'active',
@@ -32,10 +34,20 @@ const ACTIVE: McpConnectionSummary = {
   revocationCause: null,
 }
 
+/** Code échangé, jetons reçus, mais pas encore rafraîchie : `last_used_at` n'est écrit qu'au rafraîchissement. */
 const NEVER_USED: McpConnectionSummary = {
   ...ACTIVE,
   id: '0194f6a0-0000-7000-8000-000000000002',
   client: { id: 'other-client', name: 'Autre Client' },
+  lastUsedAt: null,
+}
+
+/** L'accord n'a jamais abouti : le code n'a pas été échangé, le client n'a reçu aucun jeton. */
+const ABANDONED: McpConnectionSummary = {
+  ...ACTIVE,
+  id: '0194f6a0-0000-7000-8000-000000000006',
+  client: { id: 'abandoned-client', name: 'Client Abandonné' },
+  codeExchanged: false,
   lastUsedAt: null,
 }
 
@@ -53,6 +65,8 @@ const REVOKED_BY_PERSON: McpConnectionSummary = {
   ...ACTIVE,
   id: '0194f6a0-0000-7000-8000-000000000004',
   client: { id: 'revoked-client', name: 'Client Révoqué' },
+  // Une connexion révoquée n'a plus d'échéance : le serveur l'écrit `null`.
+  expiresAt: null,
   state: 'revoked',
   revokedAt: '2026-10-28T11:00:00+01:00',
   revocationCause: 'person',
@@ -95,6 +109,7 @@ async function mountPage(options: Options = {}): Promise<Harness> {
     routes: [
       { path: '/:locale(fr|en)/mcp-connections', name: 'mcp-connections', component: StubPage },
       { path: '/:locale(fr|en)/connect-your-assistant', name: 'connect-assistant', component: StubPage },
+      { path: '/:locale(fr|en)/login', name: 'login', component: StubPage },
     ],
   })
   await router.push(`/${locale}/mcp-connections`)
@@ -141,7 +156,9 @@ describe('McpConnectionsPage', () => {
     expect(active).toContain('27 nov. 2026')
     expect(active).toContain('Active')
 
-    expect(rowOf(wrapper, 'Autre Client').text()).toContain('Jamais utilisée')
+    // Échangée mais pas encore rafraîchie : « jamais utilisée » serait faux (#650, R5a).
+    expect(rowOf(wrapper, 'Autre Client').text()).toContain('Pas encore renouvelée')
+    expect(rowOf(wrapper, 'Autre Client').text()).not.toContain('Jamais')
     expect(rowOf(wrapper, 'Client Échu').text()).toContain('Échue')
   })
 
@@ -153,9 +170,48 @@ describe('McpConnectionsPage', () => {
     expect(active).toContain('Oct 28, 2026')
     expect(active).toContain('9:00 AM')
     expect(active).toContain('Active')
-    expect(rowOf(wrapper, 'Autre Client').text()).toContain('Never used')
+    expect(rowOf(wrapper, 'Autre Client').text()).toContain('Not renewed yet')
     expect(rowOf(wrapper, 'Client Échu').text()).toContain('Expired')
     expect(rowOf(wrapper, 'Client Révoqué').text()).toContain('Revoked by you')
+  })
+
+  it('distingue un accord abandonné (code jamais échangé) d\'une connexion échangée pas encore rafraîchie', async () => {
+    const list = vi.fn(async () => listOf([ABANDONED, NEVER_USED, ACTIVE]))
+    const { wrapper } = await mountPage({ list })
+
+    expect(rowOf(wrapper, 'Client Abandonné').text()).toContain('Jamais aboutie')
+    expect(rowOf(wrapper, 'Client Abandonné').text()).not.toContain('Pas encore renouvelée')
+    expect(rowOf(wrapper, 'Autre Client').text()).toContain('Pas encore renouvelée')
+    expect(rowOf(wrapper, 'Autre Client').text()).not.toContain('Jamais aboutie')
+    // Utilisée : la date, ni l'un ni l'autre.
+    expect(rowOf(wrapper, 'Claude Code').text()).not.toContain('Jamais aboutie')
+    expect(rowOf(wrapper, 'Claude Code').text()).not.toContain('Pas encore renouvelée')
+  })
+
+  it('distingue les deux cas en anglais', async () => {
+    const list = vi.fn(async () => listOf([ABANDONED, NEVER_USED]))
+    const { wrapper } = await mountPage({ locale: 'en', list })
+
+    expect(rowOf(wrapper, 'Client Abandonné').text()).toContain('Never completed')
+    expect(rowOf(wrapper, 'Autre Client').text()).toContain('Not renewed yet')
+  })
+
+  it("n'affiche aucune échéance pour une connexion révoquée, et dit pourquoi la case est vide", async () => {
+    const { wrapper } = await mountPage()
+
+    const revoked = rowOf(wrapper, 'Client Révoqué')
+    const expiryCell = revoked.findAll('td')[2]
+    expect(expiryCell?.find('time').exists()).toBe(false)
+    expect(expiryCell?.text()).toContain('Sans échéance')
+    // Les autres lignes gardent la leur.
+    expect(rowOf(wrapper, 'Claude Code').findAll('td')[2]?.find('time').exists()).toBe(true)
+    expect(rowOf(wrapper, 'Client Échu').findAll('td')[2]?.find('time').exists()).toBe(true)
+  })
+
+  it("dit « No expiry » en anglais pour une connexion révoquée", async () => {
+    const { wrapper } = await mountPage({ locale: 'en' })
+
+    expect(rowOf(wrapper, 'Client Révoqué').findAll('td')[2]?.text()).toContain('No expiry')
   })
 
   it('est un vrai tableau : légende, en-têtes de colonne portant scope', async () => {
@@ -396,7 +452,7 @@ describe('McpConnectionsPage', () => {
   })
 
   it('liste : aucune violation d\'accessibilité détectable', async () => {
-    const { wrapper } = await mountPage({ list: vi.fn(async () => listOf([ACTIVE, NEVER_USED, EXPIRED, REVOKED_BY_PERSON, REVOKED_UNKNOWN_CAUSE])) })
+    const { wrapper } = await mountPage({ list: vi.fn(async () => listOf([ACTIVE, NEVER_USED, ABANDONED, EXPIRED, REVOKED_BY_PERSON, REVOKED_UNKNOWN_CAUSE])) })
 
     await expectNoAccessibilityViolation(wrapper)
   })
@@ -412,5 +468,67 @@ describe('McpConnectionsPage', () => {
     const { wrapper } = await mountPage({ list })
 
     await expectNoAccessibilityViolation(wrapper)
+  })
+
+  describe('session finie (401/403 du serveur)', () => {
+    it('au chargement : dit que la session a pris fin et propose de se reconnecter, vers cette page', async () => {
+      const list = vi.fn().mockRejectedValue(new SessionExpiredError())
+      const { wrapper } = await mountPage({ list })
+
+      const alert = wrapper.get('[role="alert"]')
+      expect(alert.text()).toContain('Votre session a pris fin')
+      const link = alert.get('a')
+      expect(link.text()).toBe('Se reconnecter')
+      const href = link.attributes('href') ?? ''
+      expect(href.startsWith('/fr/login?')).toBe(true)
+      const query = new URLSearchParams(href.split('?')[1])
+      expect(query.get('redirect')).toBe('/fr/mcp-connections')
+      // La page de connexion dit pourquoi elle s'ouvre.
+      expect(query.get('expired')).toBe('1')
+      // Réessayer enverrait la même requête sans session : le bouton n'a pas de sens.
+      expect(alert.find('button').exists()).toBe(false)
+      expect(wrapper.text()).not.toContain("n'ont pas pu être chargées")
+    })
+
+    it('en anglais, le lien garde la langue de la page', async () => {
+      const list = vi.fn().mockRejectedValue(new SessionExpiredError())
+      const { wrapper } = await mountPage({ locale: 'en', list })
+
+      const alert = wrapper.get('[role="alert"]')
+      expect(alert.text()).toContain('Your session has ended')
+      expect(alert.get('a').text()).toBe('Sign in again')
+      expect(alert.get('a').attributes('href')).toMatch(/^\/en\/login\?/)
+    })
+
+    it("pendant une révocation : même message et même lien, et pas l'alerte « n'a pas pu être révoquée »", async () => {
+      const revoke = vi.fn().mockRejectedValue(new SessionExpiredError())
+      const { wrapper } = await mountPage({ revoke })
+
+      await rowOf(wrapper, 'Claude Code').get('button').trigger('click')
+      await flushPromises()
+
+      const alerts = wrapper.findAll('[role="alert"]')
+      expect(alerts).toHaveLength(1)
+      expect(alerts[0]?.text()).toContain('Votre session a pris fin')
+      expect(new URLSearchParams((alerts[0]?.get('a').attributes('href') ?? '').split('?')[1]).get('redirect')).toBe('/fr/mcp-connections')
+      expect(wrapper.text()).not.toContain("n'a pas pu être révoquée")
+    })
+
+    it("un autre échec de chargement garde le message générique et le bouton « Réessayer », sans lien de reconnexion", async () => {
+      const list = vi.fn().mockRejectedValue(new McpConnectionsRequestFailedError())
+      const { wrapper } = await mountPage({ list })
+
+      const alert = wrapper.get('[role="alert"]')
+      expect(alert.text()).toContain("n'ont pas pu être chargées")
+      expect(alert.find('a').exists()).toBe(false)
+      expect(alert.find('button').exists()).toBe(true)
+    })
+
+    it('session finie : aucune violation d\'accessibilité détectable', async () => {
+      const list = vi.fn().mockRejectedValue(new SessionExpiredError())
+      const { wrapper } = await mountPage({ list })
+
+      await expectNoAccessibilityViolation(wrapper)
+    })
   })
 })

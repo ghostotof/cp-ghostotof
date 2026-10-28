@@ -12,6 +12,11 @@ import IconChevronDown from '~icons/lucide/chevron-down'
  * 768 px, le menu du compte de `AppHeader` (une icône, mêmes entrées) reste
  * celui qui sert.
  *
+ * La liste est **masquée** (`v-show`), pas retirée du DOM (#650, R5a) : le
+ * bouton la désigne par `aria-controls`, et une référence vers un élément absent
+ * n'est pas valide. Masquée par `display: none`, elle n'est ni lue ni
+ * atteignable au clavier, comme si elle n'existait pas.
+ *
  * Motif WAI-ARIA « disclosure », pas « menu » : un bouton `aria-expanded` +
  * `aria-controls` qui montre ou cache une liste de liens ordinaires. Le rôle
  * `menu` impose la navigation aux flèches, la gestion du focus d'une
@@ -125,7 +130,7 @@ onBeforeUnmount(() => {
       />
     </button>
     <ul
-      v-if="isOpen"
+      v-show="isOpen"
       :id="MENU_ID"
       class="dropdown-menu show mt-1"
       data-bs-theme="dark"

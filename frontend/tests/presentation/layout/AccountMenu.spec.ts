@@ -65,14 +65,17 @@ function items(wrapper: Awaited<ReturnType<typeof mountMenu>>['wrapper']): strin
 }
 
 describe('AccountMenu (menu du compte, écran large)', () => {
-  it('est fermé par défaut : un bouton nommé, aria-expanded faux, aria-controls vers la liste, qui n\'existe pas encore', async () => {
+  it('est fermé par défaut : un bouton nommé, aria-expanded faux, aria-controls vers une liste présente dans le DOM mais masquée', async () => {
     const { wrapper, cleanup } = await mountMenu()
 
     const toggle = wrapper.get(TOGGLE)
     expect(toggle.text()).toBe('Mon compte')
     expect(toggle.attributes('aria-expanded')).toBe('false')
     expect(toggle.attributes('aria-controls')).toBe('account-menu-desktop')
-    expect(wrapper.find('#account-menu-desktop').exists()).toBe(false)
+    // La cible d'aria-controls existe toujours (#650, R5a) : une référence vers un
+    // élément absent du DOM n'est pas valide, `v-show` masque sans retirer.
+    expect(wrapper.find('#account-menu-desktop').exists()).toBe(true)
+    expect(wrapper.get('#account-menu-desktop').isVisible()).toBe(false)
     cleanup()
   })
 
@@ -93,11 +96,11 @@ describe('AccountMenu (menu du compte, écran large)', () => {
 
     await wrapper.get(TOGGLE).trigger('click')
     expect(wrapper.get(TOGGLE).attributes('aria-expanded')).toBe('true')
-    expect(wrapper.find('#account-menu-desktop').exists()).toBe(true)
+    expect(wrapper.get('#account-menu-desktop').isVisible()).toBe(true)
 
     await wrapper.get(TOGGLE).trigger('click')
     expect(wrapper.get(TOGGLE).attributes('aria-expanded')).toBe('false')
-    expect(wrapper.find('#account-menu-desktop').exists()).toBe(false)
+    expect(wrapper.get('#account-menu-desktop').isVisible()).toBe(false)
     cleanup()
   })
 
@@ -152,7 +155,7 @@ describe('AccountMenu (menu du compte, écran large)', () => {
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     await flushPromises()
 
-    expect(wrapper.find('#account-menu-desktop').exists()).toBe(false)
+    expect(wrapper.get('#account-menu-desktop').isVisible()).toBe(false)
     expect(wrapper.get(TOGGLE).attributes('aria-expanded')).toBe('false')
     expect(document.activeElement).toBe(wrapper.get(TOGGLE).element)
     cleanup()
@@ -165,7 +168,7 @@ describe('AccountMenu (menu du compte, écran large)', () => {
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     await flushPromises()
 
-    expect(wrapper.find('#account-menu-desktop').exists()).toBe(false)
+    expect(wrapper.get('#account-menu-desktop').isVisible()).toBe(false)
     expect(document.activeElement).toBe(outside)
     cleanup()
   })
@@ -178,7 +181,7 @@ describe('AccountMenu (menu du compte, écran large)', () => {
     outside.click()
     await flushPromises()
 
-    expect(wrapper.find('#account-menu-desktop').exists()).toBe(false)
+    expect(wrapper.get('#account-menu-desktop').isVisible()).toBe(false)
     expect(document.activeElement).toBe(outside)
     cleanup()
   })
@@ -190,7 +193,7 @@ describe('AccountMenu (menu du compte, écran large)', () => {
     ;(wrapper.get('#account-menu-desktop').element as HTMLElement).click()
     await flushPromises()
 
-    expect(wrapper.find('#account-menu-desktop').exists()).toBe(true)
+    expect(wrapper.get('#account-menu-desktop').isVisible()).toBe(true)
     cleanup()
   })
 
@@ -202,7 +205,7 @@ describe('AccountMenu (menu du compte, écran large)', () => {
     await flushPromises()
 
     expect(router.currentRoute.value.name).toBe('mcp-connections')
-    expect(wrapper.find('#account-menu-desktop').exists()).toBe(false)
+    expect(wrapper.get('#account-menu-desktop').isVisible()).toBe(false)
     cleanup()
   })
 
@@ -213,7 +216,7 @@ describe('AccountMenu (menu du compte, écran large)', () => {
     await router.push('/fr/assistant')
     await flushPromises()
 
-    expect(wrapper.find('#account-menu-desktop').exists()).toBe(false)
+    expect(wrapper.get('#account-menu-desktop').isVisible()).toBe(false)
     cleanup()
   })
 
@@ -225,7 +228,7 @@ describe('AccountMenu (menu du compte, écran large)', () => {
     await wrapper.get('#account-menu-desktop a[href="/fr/mcp-connections"]').trigger('click')
     await flushPromises()
 
-    expect(wrapper.find('#account-menu-desktop').exists()).toBe(false)
+    expect(wrapper.get('#account-menu-desktop').isVisible()).toBe(false)
     cleanup()
   })
 
@@ -236,12 +239,12 @@ describe('AccountMenu (menu du compte, écran large)', () => {
     const buttons = wrapper.get('#account-menu-desktop').findAll('button')
     await buttons.find((button) => 'Déconnexion' === button.text())?.trigger('click')
     expect(wrapper.emitted('logout')).toHaveLength(1)
-    expect(wrapper.find('#account-menu-desktop').exists()).toBe(false)
+    expect(wrapper.get('#account-menu-desktop').isVisible()).toBe(false)
 
     await wrapper.get(TOGGLE).trigger('click')
     await wrapper.get('#account-menu-desktop').findAll('button').find((button) => 'Télécharger mon CV' === button.text())?.trigger('click')
     expect(wrapper.emitted('downloadCv')).toHaveLength(1)
-    expect(wrapper.find('#account-menu-desktop').exists()).toBe(false)
+    expect(wrapper.get('#account-menu-desktop').isVisible()).toBe(false)
     cleanup()
   })
 

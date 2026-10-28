@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, useTemplateRef } from 'vue'
+import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useMcpConnections } from '../../application/mcp/useMcpConnections'
 import type { McpConnectionSummary } from '../../domain/mcp/entities/McpConnection'
 import type { Locale } from '../../domain/portfolio/entities/Locale'
 import { formatInstant } from '../format/instant'
+import { SESSION_ENDED_QUERY, SESSION_ENDED_VALUE } from '../router/sessionEnded'
 
 /**
  * « Mes connexions MCP » (#650, spec 0007 tâche 11) : les assistants que la
@@ -13,7 +15,8 @@ import { formatInstant } from '../format/instant'
  * `ROLE_SUPER`) ; le serveur reste l'autorité : cette page ne protège rien.
  *
  * Le serveur juge l'état (`active`, `expired`, `revoked`) et la cause : la page
- * ne recalcule aucune échéance. Une connexion échue mais que la purge n'a pas
+ * ne recalcule aucune échéance — et n'en décide pas l'absence : une connexion
+ * révoquée arrive sans échéance (`null`), c'est le serveur qui le dit. Une connexion échue mais que la purge n'a pas
  * encore marquée arrive `expired` : elle n'a pas de bouton, elle n'a plus rien
  * à couper.
  *
@@ -35,9 +38,23 @@ import { formatInstant } from '../format/instant'
  */
 
 const { t, locale: i18nLocale } = useI18n()
-const { status, connections, terminatedTruncated, revokingId, lastOutcome, load, revoke } = useMcpConnections()
+const { status, connections, terminatedTruncated, revokingId, lastOutcome, sessionExpired, load, revoke } = useMcpConnections()
+const route = useRoute()
 
 const currentLocale = computed(() => i18nLocale.value as Locale)
+
+/**
+ * Le lien de reconnexion quand le serveur a refusé la session : la connexion,
+ * avec un retour à cette page (`redirect`, jugé par LoginPage : chemin interne
+ * seulement) et l'annonce qu'elle s'ouvre parce que la session a pris fin.
+ * Un lien plutôt qu'une redirection automatique : la personne lit d'abord
+ * pourquoi, et rien ne la déplace pendant qu'elle lit.
+ */
+const signInAgainLocation = computed(() => ({
+  name: 'login',
+  params: { locale: currentLocale.value },
+  query: { redirect: route.fullPath, [SESSION_ENDED_QUERY]: SESSION_ENDED_VALUE },
+}))
 
 /**
  * Correspondances explicites plutôt qu'une clé construite à la volée : une
@@ -68,6 +85,17 @@ function stateLabel(connection: McpConnectionSummary): string {
 
 function stateBadgeClass(connection: McpConnectionSummary): string {
   return 'active' === connection.state ? 'text-bg-success' : 'text-bg-secondary'
+}
+
+/**
+ * Que dire d'une connexion qui n'a pas de dernier usage ? `last_used_at` n'est
+ * écrit qu'au rafraîchissement : « jamais utilisée » serait faux d'une connexion
+ * échangée et utilisée dans sa première heure. Le serveur dit si le code a été
+ * échangé — `false`, l'accord n'a jamais abouti ; `true`, le client a ses jetons
+ * et n'a simplement pas encore été renouvelé (#650, R5a).
+ */
+function noLastUseLabel(connection: McpConnectionSummary): string {
+  return connection.codeExchanged ? t('mcpConnections.notRenewedYet') : t('mcpConnections.neverCompleted')
 }
 
 function date(iso: string): string {
@@ -141,8 +169,24 @@ onMounted(() => {
       {{ statusMessage }}
     </p>
 
+    <!--
+      La session a pris fin : réessayer renverrait la même requête sans session.
+      Le message et le lien de reconnexion remplacent l'erreur générique et son
+      bouton, au chargement comme à la révocation.
+    -->
     <p
-      v-if="'error' === status"
+      v-if="sessionExpired"
+      role="alert"
+      class="text-danger mb-0 d-flex flex-wrap align-items-center gap-3"
+    >
+      {{ t('mcpConnections.errors.sessionEnded') }}
+      <RouterLink :to="signInAgainLocation">
+        {{ t('mcpConnections.errors.signInAgain') }}
+      </RouterLink>
+    </p>
+
+    <p
+      v-else-if="'error' === status"
       role="alert"
       class="text-danger mb-0 d-flex flex-wrap align-items-center gap-3"
     >
@@ -157,7 +201,7 @@ onMounted(() => {
     </p>
 
     <p
-      v-if="'failed' === lastOutcome"
+      v-if="'failed' === lastOutcome && !sessionExpired"
       role="alert"
       class="text-danger mb-0"
     >
@@ -223,10 +267,21 @@ onMounted(() => {
               <span
                 v-else
                 class="text-body-secondary"
-              >{{ t('mcpConnections.neverUsed') }}</span>
+              >{{ noLastUseLabel(connection) }}</span>
             </td>
             <td>
-              <time :datetime="connection.expiresAt">{{ date(connection.expiresAt) }}</time>
+              <time
+                v-if="null !== connection.expiresAt"
+                :datetime="connection.expiresAt"
+              >{{ date(connection.expiresAt) }}</time>
+              <!-- Révoquée : le serveur ne donne plus d'échéance ; la case vide est dite aux lecteurs d'écran. -->
+              <template v-else>
+                <span
+                  aria-hidden="true"
+                  class="text-body-secondary"
+                >—</span>
+                <span class="visually-hidden">{{ t('mcpConnections.noExpiry') }}</span>
+              </template>
             </td>
             <td>
               <span

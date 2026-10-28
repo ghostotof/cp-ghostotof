@@ -28,7 +28,9 @@ export const MCP_CONNECTION_NOT_FOUND = 'mcp-connection-not-found'
  * forme (version du backend désynchronisée, proxy qui répond du HTML) est un
  * échec, plutôt qu'une page qui afficherait `undefined` ou « Invalid Date ».
  * Seule la cause de révocation reste une chaîne libre (voir McpConnectionSummary).
- * `terminatedTruncated` (historique coupé par le serveur) est un booléen exigé.
+ * `terminatedTruncated` (historique coupé par le serveur) est un booléen exigé,
+ * comme `codeExchanged` ; `expiresAt` est `null` exactement pour une connexion
+ * révoquée (#650, R5a) — l'un sans l'autre est une réponse refusée.
  */
 export class HttpMcpConnectionsRepository implements McpConnectionsRepository {
   private readonly apiBaseUrl: string
@@ -130,7 +132,8 @@ export class HttpMcpConnectionsRepository implements McpConnectionsRepository {
       'string' !== typeof client?.id ||
       'string' !== typeof client.name ||
       'string' !== typeof raw.grantedAt ||
-      'string' !== typeof raw.expiresAt ||
+      'boolean' !== typeof raw.codeExchanged ||
+      !this.isStringOrNull(raw.expiresAt) ||
       !this.isStringOrNull(raw.lastUsedAt) ||
       !this.isStringOrNull(raw.revokedAt) ||
       !this.isStringOrNull(raw.revocationCause) ||
@@ -139,10 +142,17 @@ export class HttpMcpConnectionsRepository implements McpConnectionsRepository {
       throw new McpConnectionsRequestFailedError('An MCP connection has an unexpected shape')
     }
 
+    // L'échéance est absente exactement pour une connexion révoquée : l'une sans
+    // l'autre est un serveur et une page qui ne parlent plus la même langue.
+    if (('revoked' === raw.state) !== (null === raw.expiresAt)) {
+      throw new McpConnectionsRequestFailedError('An MCP connection has an expiry inconsistent with its state')
+    }
+
     return {
       id: raw.id,
       client: { id: client.id, name: client.name },
       grantedAt: raw.grantedAt,
+      codeExchanged: raw.codeExchanged,
       lastUsedAt: raw.lastUsedAt,
       expiresAt: raw.expiresAt,
       state: raw.state,

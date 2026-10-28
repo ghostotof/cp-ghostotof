@@ -19,8 +19,21 @@ export interface McpConnectionSummary {
   client: { id: string; name: string }
   /** Instants au format ATOM, tels que le serveur les écrit. */
   grantedAt: string
+  /**
+   * Le code de l'accord a-t-il été échangé ? `false` : un accord abandonné, qui
+   * n'a jamais abouti (aucun jeton émis) ; `true` : le client a reçu ses jetons,
+   * même si `lastUsedAt` reste nul — il n'est écrit qu'au rafraîchissement, une
+   * connexion échangée et utilisée dans sa première heure n'a donc jamais « jamais
+   * servi » (#650, R5a).
+   */
+  codeExchanged: boolean
   lastUsedAt: string | null
-  expiresAt: string
+  /**
+   * L'échéance jugée par le serveur ; `null` exactement pour une connexion
+   * **révoquée**, qui n'en a plus : le serveur le dit, la page n'a pas à décider
+   * de taire une date (#650, R5a).
+   */
+  expiresAt: string | null
   state: McpConnectionState
   revokedAt: string | null
   /**

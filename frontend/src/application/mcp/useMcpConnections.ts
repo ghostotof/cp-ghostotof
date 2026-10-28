@@ -31,6 +31,12 @@ export interface UseMcpConnectionsResult {
   /** L'identifiant en cours de révocation, `null` sinon : la page y désactive ses boutons. */
   revokingId: DeepReadonly<Ref<string | null>>
   lastOutcome: DeepReadonly<Ref<McpRevocationOutcome | null>>
+  /**
+   * Vrai quand le serveur a refusé la session (401/403) à la dernière lecture ou
+   * à la dernière révocation : la page propose alors de se reconnecter plutôt
+   * que de réessayer, ce qui renverrait la même requête sans session.
+   */
+  sessionExpired: DeepReadonly<Ref<boolean>>
   load: () => Promise<void>
   revoke: (id: string) => Promise<void>
 }
@@ -43,7 +49,8 @@ export interface UseMcpConnectionsResult {
  * corrigée localement : l'état et la cause d'une connexion sont jugés par lui
  * (échéance, cause), le frontend n'en refait aucun calcul. Une session
  * expirée (401/403) marque la session expirée, comme `useAssistant` : la page
- * ne sert que le palier de confiance, l'en-tête ne doit pas rester « connecté ».
+ * ne sert que le palier de confiance, l'en-tête ne doit pas rester « connecté » ;
+ * elle est aussi dite à la page (`sessionExpired`), qui propose de se reconnecter.
  */
 export function useMcpConnections(): UseMcpConnectionsResult {
   const repository = inject(MCP_CONNECTIONS_REPOSITORY)
@@ -59,17 +66,36 @@ export function useMcpConnections(): UseMcpConnectionsResult {
   const terminatedTruncated = ref(false)
   const revokingId = ref<string | null>(null)
   const lastOutcome = ref<McpRevocationOutcome | null>(null)
+  const sessionExpired = ref(false)
+  /**
+   * Le numéro de la dernière lecture lancée. Deux `load()` peuvent se croiser (le
+   * bouton « Réessayer » pendant une relecture après une révocation, deux
+   * révocations de suite) et le réseau ne rend pas les réponses dans l'ordre :
+   * seule la réponse de la **dernière** lecture lancée écrit l'état, une plus
+   * ancienne arrivée après elle est jetée — sa liste est périmée, et sa
+   * session « expirée » n'est plus ce que le serveur vient de répondre (#650, R5a).
+   */
+  let latestLoad = 0
 
   const load = async (): Promise<void> => {
+    const mine = ++latestLoad
     status.value = 'loading'
+    sessionExpired.value = false
     try {
       const list = await repository.list()
+      if (mine !== latestLoad) {
+        return
+      }
       connections.value = list.connections
       terminatedTruncated.value = list.terminatedTruncated
       status.value = 'ready'
     } catch (caught) {
+      if (mine !== latestLoad) {
+        return
+      }
       if (caught instanceof SessionExpiredError) {
         markSessionExpired()
+        sessionExpired.value = true
       }
       connections.value = []
       terminatedTruncated.value = false
@@ -86,6 +112,7 @@ export function useMcpConnections(): UseMcpConnectionsResult {
 
     revokingId.value = id
     lastOutcome.value = null
+    sessionExpired.value = false
 
     try {
       await repository.revoke(id)
@@ -96,6 +123,7 @@ export function useMcpConnections(): UseMcpConnectionsResult {
       } else {
         if (caught instanceof SessionExpiredError) {
           markSessionExpired()
+          sessionExpired.value = true
         }
         lastOutcome.value = 'failed'
         revokingId.value = null
@@ -117,6 +145,7 @@ export function useMcpConnections(): UseMcpConnectionsResult {
     terminatedTruncated: readonly(terminatedTruncated),
     revokingId: readonly(revokingId),
     lastOutcome: readonly(lastOutcome),
+    sessionExpired: readonly(sessionExpired),
     load,
     revoke,
   }

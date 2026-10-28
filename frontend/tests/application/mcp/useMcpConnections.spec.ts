@@ -17,8 +17,9 @@ function connection(id: string, state: McpConnectionSummary['state'] = 'active')
     id,
     client: { id: 'claude-code', name: 'Claude Code' },
     grantedAt: '2026-10-28T09:00:00+01:00',
+    codeExchanged: true,
     lastUsedAt: null,
-    expiresAt: '2026-11-27T09:00:00+01:00',
+    expiresAt: 'revoked' === state ? null : '2026-11-27T09:00:00+01:00',
     state,
     revokedAt: 'revoked' === state ? '2026-10-28T11:00:00+01:00' : null,
     revocationCause: 'revoked' === state ? 'person' : null,
@@ -72,6 +73,7 @@ describe('useMcpConnections', () => {
     expect(connections.revokingId.value).toBeNull()
     expect(connections.lastOutcome.value).toBeNull()
     expect(connections.terminatedTruncated.value).toBe(false)
+    expect(connections.sessionExpired.value).toBe(false)
   })
 
   it('load() charge la liste puis passe à ready', async () => {
@@ -130,6 +132,73 @@ describe('useMcpConnections', () => {
 
     expect(connections.status.value).toBe('error')
     expect(authState.tier).toBe('anonymous')
+  })
+
+  it('load() sur une session expirée le dit à la page (sessionExpired), qu\'un autre échec ne dit pas', async () => {
+    const list = vi.fn().mockRejectedValueOnce(new SessionExpiredError()).mockRejectedValueOnce(new McpConnectionsRequestFailedError()).mockResolvedValue(listOf([A]))
+    const connections = mountComposable({ list, revoke: vi.fn() })
+
+    await connections.load()
+    expect(connections.sessionExpired.value).toBe(true)
+
+    // La lecture suivante échoue pour une autre raison : l'indication ne survit pas à la lecture qui la corrige.
+    await connections.load()
+    expect(connections.status.value).toBe('error')
+    expect(connections.sessionExpired.value).toBe(false)
+
+    await connections.load()
+    expect(connections.status.value).toBe('ready')
+    expect(connections.sessionExpired.value).toBe(false)
+  })
+
+  it('une session expirée pendant la révocation est dite à la page aussi', async () => {
+    const connections = mountComposable({
+      list: vi.fn().mockResolvedValue(listOf([A])),
+      revoke: vi.fn().mockRejectedValue(new SessionExpiredError()),
+    })
+    await connections.load()
+
+    await connections.revoke('a')
+
+    expect(connections.sessionExpired.value).toBe(true)
+    expect(connections.lastOutcome.value).toBe('failed')
+  })
+
+  it("deux load() qui se croisent : la réponse la plus ancienne n'écrase pas la plus récente (#650, R5a)", async () => {
+    const resolvers: Array<(list: ReturnType<typeof listOf>) => void> = []
+    const list = vi.fn(() => new Promise<ReturnType<typeof listOf>>((resolve) => resolvers.push(resolve)))
+    const connections = mountComposable({ list, revoke: vi.fn() })
+
+    const older = connections.load()
+    const newer = connections.load()
+    // La plus récente répond d'abord, la plus ancienne ensuite — avec une liste périmée.
+    resolvers[1]?.(listOf([B], false))
+    await newer
+    resolvers[0]?.(listOf([A], true))
+    await older
+
+    expect(connections.connections.value).toEqual([B])
+    expect(connections.terminatedTruncated.value).toBe(false)
+    expect(connections.status.value).toBe('ready')
+  })
+
+  it("une erreur de la lecture la plus ancienne n'écrase pas la liste de la plus récente", async () => {
+    const settle: Array<{ resolve: (list: ReturnType<typeof listOf>) => void; reject: (error: Error) => void }> = []
+    const list = vi.fn(() => new Promise<ReturnType<typeof listOf>>((resolve, reject) => settle.push({ resolve, reject })))
+    const connections = mountComposable({ list, revoke: vi.fn() })
+
+    const older = connections.load()
+    const newer = connections.load()
+    settle[1]?.resolve(listOf([B]))
+    await newer
+    settle[0]?.reject(new SessionExpiredError())
+    await older
+
+    expect(connections.status.value).toBe('ready')
+    expect(connections.connections.value).toEqual([B])
+    expect(connections.sessionExpired.value).toBe(false)
+    // Une réponse périmée ne ferme pas la session de l'application non plus.
+    expect(authState.tier).toBe('base')
   })
 
   it('revoke() révoque puis recharge la liste depuis le serveur, outcome revoked', async () => {

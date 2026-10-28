@@ -158,6 +158,17 @@ async function openDesktopAccountMenu(wrapper: Awaited<ReturnType<typeof mountHe
   await wrapper.get(DESKTOP_TOGGLE).trigger('click')
 }
 
+/**
+ * Ce qui répond au sélecteur dans l'en-tête, hors du menu du compte desktop. Ce
+ * menu est **masqué** fermé (`v-show`), non retiré du DOM (#650, R5a) : « rien
+ * dans la barre » ne se lit donc plus « rien dans le DOM », mais « rien hors de
+ * lui ».
+ */
+function outsideDesktopMenu(wrapper: Awaited<ReturnType<typeof mountHeader>>['wrapper'], selector: string) {
+  const menu = wrapper.find('#account-menu-desktop').element
+  return wrapper.findAll(selector).filter((found) => !menu?.contains(found.element))
+}
+
 function desktopMenuItems(wrapper: Awaited<ReturnType<typeof mountHeader>>['wrapper']): string[] {
   return wrapper.get('#account-menu-desktop').findAll('a, button').map((item) => item.text())
 }
@@ -188,9 +199,10 @@ describe('AppHeader', () => {
     const { wrapper } = await mountHeader()
 
     expect(wrapper.find('a[href="/fr/login"]').exists()).toBe(false)
-    // Plus d'action à plat dans la barre : tout est derrière « Mon compte ».
-    expect(wrapper.text()).not.toContain('Télécharger mon CV')
-    expect(findButton(wrapper, 'Déconnexion')).toBeUndefined()
+    // Plus d'action à plat dans la barre : tout est derrière « Mon compte » (masqué fermé).
+    expect(wrapper.get('#account-menu-desktop').isVisible()).toBe(false)
+    expect(outsideDesktopMenu(wrapper, 'button').map((button) => button.text())).not.toContain('Télécharger mon CV')
+    expect(outsideDesktopMenu(wrapper, 'button').map((button) => button.text())).not.toContain('Déconnexion')
 
     await openDesktopAccountMenu(wrapper)
 
@@ -641,8 +653,9 @@ describe('AppHeader', () => {
       await primeAuthState({ username: 'jane', roles: ['ROLE_TRUSTED', 'ROLE_USER'] })
       const { wrapper } = await mountHeader()
 
-      // Plus de lien à plat dans la barre.
-      expect(wrapper.find(TARGET).exists()).toBe(false)
+      // Plus de lien à plat dans la barre ; celui du menu desktop est masqué tant qu'il est fermé.
+      expect(outsideDesktopMenu(wrapper, TARGET)).toHaveLength(0)
+      expect(wrapper.get('#account-menu-desktop').find(TARGET).isVisible()).toBe(false)
 
       await openDesktopAccountMenu(wrapper)
       expect(wrapper.get('#account-menu-desktop').find(TARGET).text()).toBe('Assistant')
@@ -655,7 +668,7 @@ describe('AppHeader', () => {
       await primeAuthState({ username: 'super', roles: ['ROLE_SUPER', 'ROLE_USER'] })
       const { wrapper } = await mountHeader()
 
-      expect(wrapper.findAll(TARGET)).toHaveLength(0)
+      expect(outsideDesktopMenu(wrapper, TARGET)).toHaveLength(0)
       await openDesktopAccountMenu(wrapper)
       expect(wrapper.findAll(TARGET)).toHaveLength(1)
       await openAccountMenu(wrapper)
@@ -708,7 +721,7 @@ describe('AppHeader', () => {
       await primeAuthState({ username: 'jane', roles: ['ROLE_TRUSTED', 'ROLE_USER'] })
       const { wrapper } = await mountHeader()
 
-      expect(findButton(wrapper, 'Déconnexion')).toBeUndefined()
+      expect(outsideDesktopMenu(wrapper, 'button').map((button) => button.text())).not.toContain('Déconnexion')
       await openAccountMenu(wrapper)
 
       expect(wrapper.get(TOGGLE).attributes('aria-expanded')).toBe('true')
@@ -719,7 +732,7 @@ describe('AppHeader', () => {
       await primeAuthState({ username: 'super', roles: ['ROLE_SUPER', 'ROLE_USER'] })
       const { wrapper } = await mountHeader()
 
-      expect(wrapper.find('a[href="/fr/admin"]').exists()).toBe(false)
+      expect(outsideDesktopMenu(wrapper, 'a[href="/fr/admin"]')).toHaveLength(0)
       await openAccountMenu(wrapper)
 
       expect(menuItems(wrapper)).toEqual(['Assistant', 'Administration', 'Mes connexions MCP', 'Déconnexion'])
@@ -816,8 +829,9 @@ describe('AppHeader', () => {
       expect(toggle.attributes('aria-expanded')).toBe('false')
       // La classe est posée sur la racine du composant, qui contient le bouton.
       expect(toggle.element.closest('.d-none.d-md-block')).not.toBeNull()
-      expect(wrapper.find('#account-menu-desktop').exists()).toBe(false)
-      expect(wrapper.find(LINK).exists()).toBe(false)
+      // La liste que le bouton désigne est dans le DOM (aria-controls valide), masquée.
+      expect(wrapper.get('#account-menu-desktop').isVisible()).toBe(false)
+      expect(outsideDesktopMenu(wrapper, LINK)).toHaveLength(0)
     })
 
     it('palier de confiance : le lien est dans le menu du compte à partir de 768 px et dans le menu mobile', async () => {
