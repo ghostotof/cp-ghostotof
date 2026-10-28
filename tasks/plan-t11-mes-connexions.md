@@ -602,3 +602,43 @@ Ajoutée par décision de l'auteur du 2026-10-28 (prémisse inexacte de la déci
    refuse la connexion à l'usage ; elle n'est simplement pas marquée révoquée).
 6. **DELETE d'une connexion échue non marquée** : révoquée `person`, auditée.
 7. **Noms des causes** : `person`, `password-changed`, `trusted-tier-withdrawn` confirmés.
+
+## Corrections de relecture (étape 07, 2026-10-28)
+
+Relectures au point fixe `19d8323e...HEAD` : `/code-review medium`, audit de sécurité, Standards, Spec. Toutes
+les corrections ci-dessous sont faites dans cette branche (décision de l'auteur du 2026-10-28).
+
+### Task R1 : le cookie d'avant un changement de mot de passe n'accorde plus (F2) ; re-hachage sous condition (F3) — **Sensible (sécurité, migration)**
+- [ ] `CpgUser::credentialsChangedAt` (`datetimetz_immutable`, nullable), migration + empreinte `verify.sql` ; écrit dans
+  la même fermeture que `setPassword()` par `CpgUserAdministrator::changePassword()` et `PasswordSetupService::activate()`
+  (quand un mot de passe est remplacé comme quand il est posé).
+- [ ] `ConsentService` refuse (le 401 « réauthentification » existant) un JWT dont l'instant d'authentification est
+  antérieur à `credentialsChangedAt` ; tests GET et POST du consentement.
+- [ ] F3 : `CpgUserRepository::upgradePassword()` n'écrase pas un mot de passe changé entre-temps (`UPDATE … WHERE
+  password = :ancien`, ou verrou du compte) ; test qui reproduit la course.
+
+### Task R2 : le consentement est lié au compte affiché (F5)
+- [ ] Le `GET` du consentement renvoie l'UUID du compte affiché ; le `POST` le renvoie et reçoit 409 s'il diffère du
+  compte du cookie ; frontend : message et rechargement de la page ; tests backend et Vitest.
+
+### Task R3 : liste bornée (F6)
+- [ ] `GET /api/me/mcp-connections` : toutes les connexions non révoquées, plus les 50 dernières terminées ; champ
+  `terminatedTruncated` ; une requête par moitié au plus, pas de N+1 ; frontend : mention de la troncature ; tests.
+
+### Task R4 : `code_exchanged_at` robuste (CR3) ; interblocage F1 écrit et épinglé — **Sensible (concurrence)**
+- [ ] CR3 : la colonne est écrite même si la relecture du code par `connectionIdOf()`/`findOneById()` échoue (instance
+  verrouillée par league), ou l'échec est journalisé `critical` ; test.
+- [ ] F1 : croisement « révocation de tout le compte × premier échange d'un code » écrit comme limite acceptée (phrase
+  « no cycle » corrigée dans les règles) et épinglé par un test en processus réels : les deux transactions restent
+  atomiques, l'une échoue proprement.
+
+### Task R5 : corrections mineures et documentation
+- [ ] Règles et docblocks : « three » → « five » révocations (`mcp-oauth-cycle-de-vie.md:92`, `:332`,
+  `mcp-oauth-purge.md:76`, `McpConnectionRepository.php:338`), `revokeActiveOfAccount()` hors transaction
+  (`mcp-oauth-cycle-de-vie.md:122`), fenêtre migration→rollout documentée (aucune exposition : `main`/`develop` sans
+  `Mcp/Connection`), limites F1/F2/F5 mises à jour, R1–R4 décrits.
+- [ ] Page : pas d'échéance pour une connexion révoquée ; « Jamais utilisée » distingue un accord abandonné
+  (`code_exchanged_at` nul) d'une connexion échangée pas encore rafraîchie ; `aria-controls` valide menu fermé
+  (`v-show`) ; `load()` protégé contre les réponses dans le désordre.
+- [ ] Backend : `deadline()` calculée une fois par ligne ; ligne d'audit de révocation factorisée ; tuple de
+  `setSuperAdmin()` remplacé par un type ; test « révoquée puis échue reste `revoked` ».

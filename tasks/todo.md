@@ -140,6 +140,11 @@ phase 1 parte en release seule ; puis au merge de clôture, qui archive la spec 
       Notes de la release : migrations `Version20261028120000` (le `CHECK`) et `Version20261028140000`
       (`code_exchanged_at`, rattrapage) avant le rollout ; paramètre `app.mcp.lifetime.connection_unexchanged`.
       Sept questions tranchées par l'auteur le 2026-10-28 (fin du plan) ; seul écart au défaut : vrai menu du compte desktop
+  - [ ] R1. Relecture F2/F3 : cookie antérieur au changement de mot de passe refusé au consentement ; re-hachage conditionnel — **sensible**
+  - [ ] R2. Relecture F5 : consentement lié au compte affiché (409)
+  - [ ] R3. Relecture F6 : liste bornée (non révoquées + 50 dernières terminées)
+  - [ ] R4. Relecture CR3/F1 : `code_exchanged_at` robuste ; interblocage écrit et épinglé — **sensible**
+  - [ ] R5. Relecture : corrections mineures et documentation
       **Notes de la release** (tâche 11, PR de la mère vers `develop`) :
       - deux migrations **avant le rollout**, dans l'ordre : `Version20261028120000` (le `CHECK` des causes de
         révocation, huit valeurs) puis `Version20261028140000` (colonne `code_exchanged_at` et rattrapage des
