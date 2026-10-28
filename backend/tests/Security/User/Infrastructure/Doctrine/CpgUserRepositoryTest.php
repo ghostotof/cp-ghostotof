@@ -14,6 +14,7 @@ use DateTimeImmutable;
 use Doctrine\ORM\EntityManagerInterface;
 use Monolog\LogRecord;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Symfony\Bridge\Doctrine\Types\UuidType;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Security\Core\Exception\UserNotFoundException;
 
@@ -399,6 +400,76 @@ final class CpgUserRepositoryTest extends KernelTestCase
 
         self::assertContains(CpgUser::ROLE_SUPER, $demotedMeanwhile->getRoles(), 'La carte d\'identité doit encore tenir le rôle, c\'est elle que le test accuse.');
         self::assertSame(0, $this->repository->countOtherSuperAdminsAbleToSignIn($target));
+    }
+
+    /**
+     * F3 de la relecture de #650 : `upgradePassword()` (le re-hachage à la
+     * connexion, `PasswordUpgraderInterface`) écrivait hors de tout verrou, le
+     * compte tel que la connexion l'avait lu. Une connexion par l'ancien mot de
+     * passe dont le hachage doit être renouvelé pouvait donc, après qu'un `PUT` du
+     * backoffice a validé un nouveau mot de passe, sauver `rehash(ancien)` et
+     * **rétablir l'ancien mot de passe**. L'écriture ne se fait plus que si le
+     * hachage en base est encore celui que la connexion a lu.
+     *
+     * La course : le compte est lu (ancien hachage), un changement de mot de
+     * passe est validé entre-temps, puis le re-hachage de l'ancien arrive.
+     */
+    public function testAStaleRehashNeverRestoresAReplacedPassword(): void
+    {
+        $user = $this->storedUser('rehash-race', 'old-hash', []);
+        // Le changement de mot de passe d'un autre processus, validé après la lecture du compte.
+        $this->em->getConnection()->executeStatement('UPDATE cpg_user SET password = :new WHERE id = :id', ['new' => 'new-hash', 'id' => $user->getId()], ['id' => UuidType::NAME]);
+
+        $this->upgrader()->upgradePassword($user, 'rehash-of-the-old-one');
+
+        self::assertSame('new-hash', $this->storedPasswordOf($user), 'Le re-hachage de l\'ancien mot de passe a rétabli celui-ci.');
+    }
+
+    /**
+     * Le cas nominal : le hachage en base est celui que la connexion a lu, le
+     * nouveau le remplace. L'instance en main le porte, ne date pas le changement
+     * (même secret : aucune session n'est périmée) et n'est pas « sale » — un
+     * `flush()` ultérieur ne réécrit pas ce hachage par-dessus un autre.
+     */
+    public function testARehashOfTheCurrentHashIsWrittenWithoutDatingAChange(): void
+    {
+        $user = $this->storedUser('rehash-nominal', 'old-hash', []);
+
+        $this->upgrader()->upgradePassword($user, 'rehashed');
+
+        self::assertSame('rehashed', $this->storedPasswordOf($user));
+        self::assertSame('rehashed', $user->getPassword());
+        self::assertNull($this->em->getConnection()->fetchOne('SELECT credentials_changed_at FROM cpg_user WHERE id = :id', ['id' => $user->getId()], ['id' => UuidType::NAME]));
+
+        // Un autre écrivain passe ensuite ; le flush de l'instance, qu'on croirait sale, n'y touche pas.
+        $this->em->getConnection()->executeStatement('UPDATE cpg_user SET password = :new WHERE id = :id', ['new' => 'changed-later', 'id' => $user->getId()], ['id' => UuidType::NAME]);
+        $this->em->flush();
+
+        self::assertSame('changed-later', $this->storedPasswordOf($user), 'L\'instance était restée sale et a réécrit son hachage.');
+    }
+
+    /** Le compte supprimé entre la connexion et le re-hachage : rien à écrire, rien ne lève. */
+    public function testARehashOfADeletedAccountWritesNothing(): void
+    {
+        $user = $this->storedUser('rehash-gone', 'old-hash', []);
+        $this->em->getConnection()->executeStatement('DELETE FROM cpg_user WHERE id = :id', ['id' => $user->getId()], ['id' => UuidType::NAME]);
+
+        $this->upgrader()->upgradePassword($user, 'rehashed');
+
+        self::assertSame(0, $this->em->getConnection()->fetchOne('SELECT count(*) FROM cpg_user'));
+    }
+
+    private function upgrader(): CpgUserRepository
+    {
+        $repository = $this->repository;
+        self::assertInstanceOf(CpgUserRepository::class, $repository);
+
+        return $repository;
+    }
+
+    private function storedPasswordOf(CpgUser $user): mixed
+    {
+        return $this->em->getConnection()->fetchOne('SELECT password FROM cpg_user WHERE id = :id', ['id' => $user->getId()], ['id' => UuidType::NAME]);
     }
 
     private function storedSuperAdmin(string $username, string $hashedPassword): CpgUser

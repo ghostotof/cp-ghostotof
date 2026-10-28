@@ -234,6 +234,29 @@ class CpgUserRepository extends ServiceEntityRepository implements CpgUserReposi
 
     /**
      * Ré-encode et persiste le mot de passe si l'algorithme de hash configuré a changé.
+     *
+     * **Comparer pour échanger** (F3 de la relecture de #650) : `UPDATE … SET
+     * password = :nouveau WHERE id = :id AND password = :ancien`, une seule
+     * instruction, qui n'écrit que si le hachage en base est encore celui que la
+     * connexion a lu (`$user`, relu à l'authentification). Le `save()` d'avant
+     * écrivait le compte tel qu'il avait été lu, hors de tout verrou : une
+     * connexion par l'ancien mot de passe, dont le hachage devait être
+     * renouvelé, pouvait après un changement de mot de passe validé entre-temps
+     * (le `PUT` du backoffice, un lien d'invitation) sauver `rehash(ancien)` et
+     * rétablir l'ancien mot de passe — celui que le changement voulait retirer.
+     *
+     * Rejeté : passer par `AccountLockInterface` (une transaction, un `FOR
+     * UPDATE`, une relecture pour une écriture rare, et une dépendance de
+     * l'Infrastructure vers l'Application). Le coût de l'instruction
+     * conditionnelle : un re-hachage perdu quand le mot de passe a changé, sans
+     * conséquence — la prochaine connexion rehache le nouveau. Aucune ligne
+     * touchée (hachage changé, compte supprimé) n'est pas une erreur.
+     *
+     * L'instance reçoit le nouveau hachage et la carte d'identité le prend pour
+     * état d'origine, comme `advanceInvitationGeneration()` : sans quoi un
+     * `flush()` ultérieur la croirait sale et réécrirait son hachage par-dessus
+     * un autre changement. Le re-hachage garde le même secret : il ne date
+     * aucun changement de mot de passe (`credentialsChangedAt`).
      */
     public function upgradePassword(PasswordAuthenticatedUserInterface $user, string $newHashedPassword): void
     {
@@ -241,7 +264,20 @@ class CpgUserRepository extends ServiceEntityRepository implements CpgUserReposi
             throw new UnsupportedUserException(\sprintf('Instances of "%s" are not supported.', $user::class));
         }
 
+        $written = $this->getEntityManager()->getConnection()->executeStatement(
+            'UPDATE cpg_user SET password = :new WHERE id = :id AND password = :old',
+            ['new' => $newHashedPassword, 'id' => $user->getId(), 'old' => $user->getPassword()],
+            ['id' => UuidType::NAME],
+        );
+
+        if (0 === $written) {
+            return;
+        }
+
         $user->setPassword($newHashedPassword);
-        $this->save($user);
+        $unitOfWork = $this->getEntityManager()->getUnitOfWork();
+        if ($unitOfWork->isInIdentityMap($user)) {
+            $unitOfWork->setOriginalEntityProperty(spl_object_id($user), 'password', $newHashedPassword);
+        }
     }
 }
