@@ -780,3 +780,32 @@ que le serveur a refusé la session. (11) `LoginPage` : bandeau `role="status"` 
 posé par `backofficeSessionExpiry.ts` et par le lien de reconnexion de « Mes connexions MCP »). Garde de `redirect`
 (`startsWith('/') && !startsWith('//')`, chaîne seulement) vérifiée : pas de redirection ouverte — `router.push` d'une chaîne
 fabrique l'URL à partir de l'origine (`createBaseLocation()`), donc `/\hôte` (que la garde laisse passer) reste sur l'origine.
+
+## Corrections de la seconde relecture (2026-10-28)
+
+Relectures au point fixe `c36ccd66...HEAD` (`/code-review medium`, audit de sécurité). Décisions de l'auteur du
+2026-10-28 ; CR5, CR7, CR9, S-1 et F-F partent dans une issue de suivi.
+
+### Task S1 : version des identifiants dans le JWT (F-A, F-B/CR6) — **Sensible (sécurité, migration)**
+- [ ] `cpg_user.credentials_version` incrémentée par `replacePassword()` (jamais par `upgradePassword()`), copiée dans
+  le JWT à sa création (écouteur `JWT_CREATED`, depuis le `CpgUser` dont le hachage a été vérifié), comparée par
+  égalité dans `SessionBeforePasswordChangeRefusalListener` et au consentement ; remplace la comparaison par date
+  (`iat` ≤ `credentials_changed_at`) ; test qui reproduit la course (login avec l'ancien hachage lu avant le COMMIT
+  du changement → session refusée).
+
+### Task S2 : un 401 du backoffice ne démonte plus la page (CR1)
+- [ ] Bandeau persistant « Votre session a pris fin » + lien de reconnexion (`expired=1`, `redirect`), sans navigation.
+
+### Task S3 : relance unique sur interblocage (CR4) — **Sensible (concurrence)**
+- [ ] Changement de mot de passe et rétrogradation relancés une fois sur `40P01` ; test de concurrence (la victime
+  réussit au second essai) ; limite F1 réécrite.
+
+### Task S4 : petits points
+- [ ] CR2/CR3 : terminées triées par instant de fin ; deux lectures dans un même instantané.
+- [ ] F-C : audit `session-refused-after-password-change` (sans jeton).
+- [ ] F-D : garde `_test` avant `TRUNCATE`/`DELETE` dans les tests ; CR8/F-I2 : docblocks périmés.
+- [ ] F-I1 : `redirect` de `LoginPage` durci.
+
+### Task S5 : documentation et découpage de `security-authentication.md` (> 48,9 Ko)
+- [ ] Règles, spec, registre à jour de S1–S4 ; `security-authentication.md` découpée par sous-domaine (procédure de
+  #605, index dans l'originale).
