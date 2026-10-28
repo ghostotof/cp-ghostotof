@@ -17,6 +17,7 @@ use App\Tests\Support\ApiPlatformDeprecations;
 use App\Tests\Support\HttpJson;
 use App\Tests\Support\TestCredentials;
 use Closure;
+use Doctrine\DBAL\Connection;
 use Doctrine\ORM\EntityManagerInterface;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
@@ -56,12 +57,18 @@ final class ApiPlatformRaisesNoDeprecationTest extends WebTestCase
 
     private const string SUPER_USERNAME = 'super';
 
+    /** Ce que le test en cours a écrit en base, et lui seul : l'identifiant de la contribution. */
+    private ?string $createdContributionId = null;
+
+    /** Le nom de la technologie que le test a enregistrée. */
+    private ?string $createdTechnologyName = null;
+
+    /** Le compte que le test a créé. */
+    private ?string $createdUsername = null;
+
     protected function tearDown(): void
     {
-        $connection = self::getContainer()->get(EntityManagerInterface::class)->getConnection();
-        foreach (['contribution', 'experience_technology', 'cpg_user'] as $table) {
-            $connection->executeStatement('DELETE FROM '.$table);
-        }
+        $this->removeWhatTheTestsCreated();
         parent::tearDown();
     }
 
@@ -148,6 +155,7 @@ final class ApiPlatformRaisesNoDeprecationTest extends WebTestCase
     {
         $client = self::createClient();
         $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
+        $this->createdUsername = self::SUPER_USERNAME;
         $csrfToken = $this->loginAsSuper($client);
         $contribution = $client->getContainer()->get(ContributionAdministratorInterface::class)->create(
             Locale::FR,
@@ -158,7 +166,8 @@ final class ApiPlatformRaisesNoDeprecationTest extends WebTestCase
             'Résumé.',
             'Corps.',
         );
-        $uri = \sprintf('/api/backoffice/contributions/%s', $contribution->getId()->toRfc4122());
+        $this->createdContributionId = $contribution->getId()->toRfc4122();
+        $uri = \sprintf('/api/backoffice/contributions/%s', $this->createdContributionId);
 
         $findings = ApiPlatformDeprecations::during(static function () use ($client, $uri, $csrfToken): void {
             $client->request('PUT', $uri, server: ['CONTENT_TYPE' => 'application/json', 'HTTP_X_XSRF_TOKEN' => $csrfToken], content: self::jsonBody([
@@ -187,7 +196,11 @@ final class ApiPlatformRaisesNoDeprecationTest extends WebTestCase
     {
         self::bootKernel();
         $registrar = self::getContainer()->get(ExperienceTechnologyRegistrarInterface::class);
-        $registrar->register(TechnologyName::fromString('Symfony'), ExperienceYears::fromFloat(8.5), 'symfony', 'PHP');
+        // Un nom que la base de test n'a pas déjà : les technologies que les
+        // migrations y ont semées ne sont pas à nous, ni à effacer.
+        $technologyName = 'Technologie '.bin2hex(random_bytes(4));
+        $registrar->register(TechnologyName::fromString($technologyName), ExperienceYears::fromFloat(8.5), 'symfony', 'PHP');
+        $this->createdTechnologyName = $technologyName;
         $reader = self::getContainer()->get(RoutePayloadReaderInterface::class);
         $payload = [];
 
@@ -195,8 +208,89 @@ final class ApiPlatformRaisesNoDeprecationTest extends WebTestCase
             $payload = $reader->read(ExperienceTechnologyResource::class);
         });
 
-        self::assertNotSame([], $payload, 'Le lecteur n\'a rien normalisé : la garde ne verrait rien.');
+        self::assertStringContainsString($technologyName, json_encode($payload, \JSON_THROW_ON_ERROR), 'Le lecteur n\'a pas normalisé la technologie du test : la garde ne verrait rien.');
         self::assertSame([], $findings, "API Platform déprécie ce que le lecteur MCP emprunte :\n - ".implode("\n - ", $findings));
+    }
+
+    /**
+     * Le nettoyage n'efface que ce que les tests ont créé. Les migrations
+     * sèment des lignes (`experience_technology`, par
+     * `Version20260906180000`) ; l'ancien `DELETE FROM <table>` les emportait
+     * avec celles du test. Trois lignes « laissées par une migration » — que
+     * ce test ne suit pas — doivent survivre, les trois qu'il suit disparaître.
+     */
+    public function testTheCleanupSparesTheRowsTheTestsDidNotCreate(): void
+    {
+        self::bootKernel();
+        $container = self::getContainer();
+        $suffix = bin2hex(random_bytes(4));
+        $connection = $container->get(EntityManagerInterface::class)->getConnection();
+        $technologies = $container->get(ExperienceTechnologyRegistrarInterface::class);
+        $contributions = $container->get(ContributionAdministratorInterface::class);
+        $users = $container->get(CpgUserRegistrarInterface::class);
+
+        // Ce qu'un test a écrit et suit.
+        $this->createdTechnologyName = 'Technologie suivie '.$suffix;
+        $technologies->register(TechnologyName::fromString($this->createdTechnologyName), ExperienceYears::fromFloat(1.0), null, null);
+        $this->createdContributionId = $contributions->create(Locale::FR, 'Suivie '.$suffix, 'p', 'r', 'https://example.com/suivie', 's', 'b')->getId()->toRfc4122();
+        $this->createdUsername = 'suivi'.$suffix;
+        $users->register($this->createdUsername, TestCredentials::superPassword());
+
+        // Ce qu'une migration aurait laissé : pas suivi, donc à garder.
+        $sparedTechnology = 'Technologie gardée '.$suffix;
+        $technologies->register(TechnologyName::fromString($sparedTechnology), ExperienceYears::fromFloat(1.0), null, null);
+        $sparedContribution = $contributions->create(Locale::FR, 'Gardée '.$suffix, 'p', 'r', 'https://example.com/gardee', 's', 'b')->getId()->toRfc4122();
+        $sparedUsername = 'garde'.$suffix;
+        $users->register($sparedUsername, TestCredentials::superPassword());
+        $trackedContribution = $this->createdContributionId;
+        $trackedTechnology = $this->createdTechnologyName;
+        $trackedUsername = $this->createdUsername;
+
+        try {
+            $this->removeWhatTheTestsCreated();
+
+            self::assertSame(0, $this->countRows($connection, 'experience_technology', 'name', $trackedTechnology));
+            self::assertSame(0, $this->countRows($connection, 'contribution', 'id', $trackedContribution));
+            self::assertSame(0, $this->countRows($connection, 'cpg_user', 'username', $trackedUsername));
+            self::assertSame(1, $this->countRows($connection, 'experience_technology', 'name', $sparedTechnology), 'Une technologie que le test n\'a pas créée a été effacée.');
+            self::assertSame(1, $this->countRows($connection, 'contribution', 'id', $sparedContribution), 'Une contribution que le test n\'a pas créée a été effacée.');
+            self::assertSame(1, $this->countRows($connection, 'cpg_user', 'username', $sparedUsername), 'Un compte que le test n\'a pas créé a été effacé.');
+        } finally {
+            $connection->executeStatement('DELETE FROM experience_technology WHERE name = ?', [$sparedTechnology]);
+            $connection->executeStatement('DELETE FROM contribution WHERE id = ?', [$sparedContribution]);
+            $connection->executeStatement('DELETE FROM cpg_user WHERE username = ?', [$sparedUsername]);
+        }
+    }
+
+    /**
+     * Efface, par leur clé, les lignes que ce test a créées — jamais une table
+     * entière : les migrations y ont semé des lignes qui ne sont pas à lui.
+     */
+    private function removeWhatTheTestsCreated(): void
+    {
+        if (null === $this->createdContributionId && null === $this->createdTechnologyName && null === $this->createdUsername) {
+            return;
+        }
+
+        $connection = self::getContainer()->get(EntityManagerInterface::class)->getConnection();
+        if (null !== $this->createdContributionId) {
+            $connection->executeStatement('DELETE FROM contribution WHERE id = ?', [$this->createdContributionId]);
+        }
+        if (null !== $this->createdTechnologyName) {
+            $connection->executeStatement('DELETE FROM experience_technology WHERE name = ?', [$this->createdTechnologyName]);
+        }
+        if (null !== $this->createdUsername) {
+            $connection->executeStatement('DELETE FROM cpg_user WHERE username = ?', [$this->createdUsername]);
+        }
+        $this->createdContributionId = $this->createdTechnologyName = $this->createdUsername = null;
+    }
+
+    private function countRows(Connection $connection, string $table, string $column, string $value): int
+    {
+        $count = $connection->fetchOne(\sprintf('SELECT COUNT(*) FROM %s WHERE %s = ?', $table, $column), [$value]);
+        self::assertIsInt($count);
+
+        return $count;
     }
 
     private function loginAsSuper(KernelBrowser $client): string

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Shared\Infrastructure\ApiPlatform;
 
 use App\Tests\Support\ApiPlatformDeprecations;
+use App\Tests\Support\RepositoryFiles;
 use Closure;
 use DomainException;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -39,12 +40,12 @@ final class ApiPlatformDeprecationCollectorTest extends TestCase
 
         yield 'message d\'API Platform, appelant dans le projet' => [
             'Since api-platform/core 4.4: Calling "denormalize()" is deprecated.',
-            [$trigger, '/var/www/vendor/api-platform/core/Foo.php', '/var/www/src/Contact/Foo.php'],
+            [$trigger, '/var/www/vendor/api-platform/core/Foo.php', RepositoryFiles::backend('src/Contact/Foo.php')],
             true,
         ];
         yield 'message d\'un composant d\'API Platform' => [
             'Since api-platform/serializer 4.4: x',
-            [$trigger, '/var/www/src/Contact/Foo.php'],
+            [$trigger, RepositoryFiles::backend('src/Contact/Foo.php')],
             true,
         ];
         yield 'autre paquet, appelé par API Platform avant tout fichier du projet' => [
@@ -54,7 +55,7 @@ final class ApiPlatformDeprecationCollectorTest extends TestCase
                 '/var/www/vendor/symfony/serializer/Normalizer.php',
                 '/var/www/vendor/api-platform/serializer/ItemNormalizer.php',
                 '/var/www/vendor/symfony/http-kernel/HttpKernel.php',
-                '/var/www/src/Contact/Foo.php',
+                RepositoryFiles::backend('src/Contact/Foo.php'),
             ],
             true,
         ];
@@ -68,14 +69,14 @@ final class ApiPlatformDeprecationCollectorTest extends TestCase
             [
                 $trigger,
                 '/var/www/vendor/symfony/serializer/Normalizer.php',
-                '/var/www/src/Contact/Foo.php',
+                RepositoryFiles::backend('src/Contact/Foo.php'),
                 '/var/www/vendor/api-platform/state/Processor.php',
             ],
             false,
         ];
         yield 'autre paquet, appelé depuis les tests avant API Platform' => [
             'Since symfony/serializer 8.1: x',
-            [$trigger, '/var/www/vendor/symfony/serializer/Normalizer.php', '/var/www/tests/Foo/FooTest.php', '/var/www/vendor/api-platform/state/Processor.php'],
+            [$trigger, '/var/www/vendor/symfony/serializer/Normalizer.php', RepositoryFiles::backend('tests/Foo/FooTest.php'), '/var/www/vendor/api-platform/state/Processor.php'],
             false,
         ];
         yield 'autre paquet, jamais appelé par API Platform' => [
@@ -88,6 +89,42 @@ final class ApiPlatformDeprecationCollectorTest extends TestCase
             [$trigger, '/var/www/vendor/symfony/serializer/src/Normalizer.php', '/var/www/vendor/api-platform/state/Foo.php'],
             true,
         ];
+        // C2 : la sous-requête de l'ErrorListener d'API Platform passe par le
+        // noyau de Symfony, qui appelle une API dépréciée de Symfony : API
+        // Platform n'appelle pas cette API, il n'a rien à migrer. Le premier
+        // appelant hors du paquet qui lève décide, et c'est ici le noyau.
+        yield 'API Platform appelle le noyau, qui appelle une API dépréciée de Symfony' => [
+            'Since symfony/bar 8.1: x',
+            [
+                $trigger,
+                '/var/www/vendor/symfony/bar/Legacy.php',
+                '/var/www/vendor/symfony/kernel/Handle.php',
+                '/var/www/vendor/api-platform/x/Caller.php',
+                RepositoryFiles::backend('src/Contact/Foo.php'),
+            ],
+            false,
+        ];
+        yield 'le paquet qui lève s\'appelle lui-même avant API Platform' => [
+            'Since symfony/serializer 8.1: x',
+            [
+                $trigger,
+                '/var/www/vendor/symfony/serializer/Legacy.php',
+                '/var/www/vendor/symfony/serializer/Normalizer.php',
+                '/var/www/vendor/api-platform/x/Caller.php',
+            ],
+            true,
+        ];
+        // C4 : un `/src/` ou un `/tests/` en sous-chaîne d'un chemin n'est pas le projet.
+        yield 'un clone sous un dossier src/ : le cache du conteneur n\'est pas le projet' => [
+            'Since symfony/serializer 8.1: x',
+            [
+                $trigger,
+                '/var/www/vendor/symfony/serializer/Normalizer.php',
+                '/home/x/src/clone/backend/var/cache/test/ContainerAbc/getFooService.php',
+                '/var/www/vendor/api-platform/state/Processor.php',
+            ],
+            true,
+        ];
         yield 'un dossier qui ressemble sans l\'être' => [
             'Since symfony/serializer 8.1: x',
             [$trigger, '/var/www/vendor/api-platform-bridge/Foo.php'],
@@ -95,7 +132,7 @@ final class ApiPlatformDeprecationCollectorTest extends TestCase
         ];
         yield 'le préfixe doit commencer le message' => [
             'Voir Since api-platform/core 4.4: x',
-            [$trigger, '/var/www/src/Contact/Foo.php'],
+            [$trigger, RepositoryFiles::backend('src/Contact/Foo.php')],
             false,
         ];
     }
@@ -173,6 +210,49 @@ final class ApiPlatformDeprecationCollectorTest extends TestCase
         });
 
         self::assertCount(2, $findings);
+    }
+
+    /**
+     * `trigger_deprecation()` appelle `@trigger_error()` : la dépréciation
+     * arrive donc toujours « supprimée » au gestionnaire, et PHPUnit la compte
+     * quand même, `ignoreSuppressionOfDeprecations` étant posé. Le collecteur
+     * fait de même ; s'il écartait ce qu'un `@` couvre, il ne verrait plus
+     * aucune dépréciation d'API Platform.
+     */
+    public function testItKeepsADeprecationRaisedUnderTheAtOperator(): void
+    {
+        $findings = ApiPlatformDeprecations::during(static function (): void {
+            // La forme brute, pour la preuve : le même `@` que dans deprecation-contracts.
+            @trigger_error('Since api-platform/core 4.4: sous arobase', \E_USER_DEPRECATED);
+        });
+
+        self::assertCount(1, $findings);
+        self::assertStringContainsString('sous arobase', $findings[0]);
+    }
+
+    /**
+     * C8 : la pile est lue par le nom des trames, pas par leur rang. Un
+     * gestionnaire posé par-dessus le nôtre (celui de Symfony, par exemple)
+     * qui nous rend l'erreur ajoute une trame avant `trigger_error()`.
+     */
+    public function testItNamesTheDeprecatedMethodEvenWhenAnotherHandlerStandsInBetween(): void
+    {
+        $findings = ApiPlatformDeprecations::during(static function (): void {
+            $collector = null;
+            $collector = set_error_handler(static function (int $level, string $message, string $file, int $line) use (&$collector): bool {
+                // Un gestionnaire intermédiaire, qui rend la main au collecteur.
+                return null !== $collector && false !== $collector($level, $message, $file, $line);
+            });
+
+            try {
+                self::deprecatedMethodOfTheTest();
+            } finally {
+                restore_error_handler();
+            }
+        });
+
+        self::assertCount(1, $findings);
+        self::assertStringContainsString('méthode dépréciée : '.self::class.'::deprecatedMethodOfTheTest()', $findings[0]);
     }
 
     public function testItHandsAnotherPackagesDeprecationBackToTheHandlerItReplaced(): void
@@ -254,6 +334,11 @@ final class ApiPlatformDeprecationCollectorTest extends TestCase
         }
 
         self::assertSame($mine, $current);
+    }
+
+    private static function deprecatedMethodOfTheTest(): void
+    {
+        trigger_deprecation('api-platform/core', '4.4', 'Calling "%s" is deprecated.', 'deprecatedMethodOfTheTest()');
     }
 
     protected function tearDown(): void

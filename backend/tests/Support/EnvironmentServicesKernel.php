@@ -6,6 +6,7 @@ namespace App\Tests\Support;
 
 use App\Kernel;
 use Symfony\Component\Config\Loader\LoaderInterface;
+use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\Compiler\PassConfig;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\Filesystem\Filesystem;
@@ -37,9 +38,11 @@ final class EnvironmentServicesKernel extends Kernel
     private readonly SecurityServicesSnapshotPass $snapshotPass;
 
     /**
-     * @param list<string> $extraConfigFiles
+     * @param list<string>                $extraConfigFiles
+     * @param list<CompilerPassInterface> $extraPasses      des passes de lecture, posées en tout début de compilation
+     *                                                      ({@see DeprecatedReferencesOfApiPlatform}) ; aucune par défaut
      */
-    public function __construct(string $environment, private readonly array $extraConfigFiles)
+    public function __construct(string $environment, private readonly array $extraConfigFiles, private readonly array $extraPasses = [])
     {
         $this->snapshotPass = new SecurityServicesSnapshotPass();
         parent::__construct($environment, false);
@@ -79,6 +82,10 @@ final class EnvironmentServicesKernel extends Kernel
     protected function build(ContainerBuilder $container): void
     {
         parent::build($container);
+        // Avant l'optimisation, qui remplace les références à un alias par sa cible.
+        foreach ($this->extraPasses as $pass) {
+            $container->addCompilerPass($pass, PassConfig::TYPE_BEFORE_OPTIMIZATION, \PHP_INT_MIN);
+        }
         // La plus basse des priorités : après toute autre passe de la phase,
         // RegisterListenersPass comprise. SecurityServicesSnapshotPass refuse
         // de prendre l'instantané si une autre la suit encore.

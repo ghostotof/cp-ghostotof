@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace App\Tests\Shared\Infrastructure\ApiPlatform;
 
+use ApiPlatform\Metadata\Operation\Factory\OperationMetadataFactoryInterface;
 use ApiPlatform\Metadata\Resource\Factory\ResourceMetadataCollectionFactoryInterface;
 use ApiPlatform\Metadata\Resource\Factory\ResourceNameCollectionFactoryInterface;
 use App\Tests\Support\ApiPlatformDeprecations;
+use App\Tests\Support\DeprecatedReferencesOfApiPlatform;
 use App\Tests\Support\EnvironmentServicesKernel;
 use Psr\Cache\CacheItemPoolInterface;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
@@ -36,10 +38,17 @@ use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
  * - **la compilation** : `EnvironmentServicesKernel` compile en mémoire le
  *   `ContainerBuilder` de `test` (extensions, passes de compilation), sans
  *   écrire le conteneur — de 0,3 à 0,7 s, quand écrire et recharger tout le
- *   cache l'alourdirait sans rien voir de plus ;
+ *   cache l'alourdirait sans rien voir de plus. Une passe de lecture
+ *   (`DeprecatedReferencesOfApiPlatform`) relève en plus les services
+ *   d'API Platform qui référencent un alias ou un service déprécié d'un autre
+ *   paquet : cette dépréciation-là est levée par une passe de Symfony, sans
+ *   trame d'API Platform ;
  * - **les métadonnées à froid** : les pools de métadonnées d'API Platform sont
  *   vidés, puis la collection de métadonnées de **toutes** les ressources est
- *   construite. Vider ces pools ne coûte rien aux tests suivants : la
+ *   construite, puis **chaque opération** est résolue par son nom
+ *   (`OperationMetadataFactoryInterface::create()`, le chemin que le lecteur
+ *   de routes du serveur MCP emprunte, et dont le pool est le quatrième de la
+ *   liste). Vider ces pools ne coûte rien aux tests suivants : la
  *   construction qui suit les remplit de nouveau à l'identique.
  *
  * Limites : la compilation est lue hors débogage, comme les noyaux de parité
@@ -54,6 +63,7 @@ final class ApiPlatformStartupRaisesNoDeprecationTest extends KernelTestCase
         'api_platform.cache.metadata.resource',
         'api_platform.cache.metadata.resource_collection',
         'api_platform.cache.metadata.property',
+        'api_platform.cache.metadata.operation',
     ];
 
     protected function setUp(): void
@@ -72,13 +82,18 @@ final class ApiPlatformStartupRaisesNoDeprecationTest extends KernelTestCase
 
     public function testCompilingTheContainerRaisesNoApiPlatformDeprecation(): void
     {
-        $findings = ApiPlatformDeprecations::during(static function (): void {
+        $references = new DeprecatedReferencesOfApiPlatform();
+
+        $findings = ApiPlatformDeprecations::during(static function () use ($references): void {
             // Le noyau est nommé d'après son usage premier (les services de
             // sécurité) ; ce qu'il fait ici est de compiler le conteneur de `test`.
-            new EnvironmentServicesKernel('test', [])->securityServices();
+            new EnvironmentServicesKernel('test', [], [$references])->securityServices();
         });
 
         self::assertSame([], $findings, "API Platform déprécie ce que la compilation du conteneur emprunte :\n - ".implode("\n - ", $findings));
+        // Ce que les passes de Symfony lèvent sans trame d'API Platform : un
+        // service d'API Platform qui référence un alias ou un service déprécié.
+        self::assertSame([], $references->found(), "Un service d'API Platform référence une API dépréciée :\n - ".implode("\n - ", $references->found()));
     }
 
     public function testBuildingEveryResourceMetadataFromColdRaisesNoApiPlatformDeprecation(): void
@@ -92,16 +107,24 @@ final class ApiPlatformStartupRaisesNoDeprecationTest extends KernelTestCase
         }
         $names = $container->get(ResourceNameCollectionFactoryInterface::class);
         $metadata = $container->get(ResourceMetadataCollectionFactoryInterface::class);
+        $operations = $container->get(OperationMetadataFactoryInterface::class);
         $built = 0;
+        $resolved = 0;
 
-        $findings = ApiPlatformDeprecations::during(static function () use ($names, $metadata, &$built): void {
+        $findings = ApiPlatformDeprecations::during(static function () use ($names, $metadata, $operations, &$built, &$resolved): void {
             foreach ($names->create() as $resourceClass) {
-                $metadata->create($resourceClass);
-                ++$built;
+                foreach ($metadata->create($resourceClass) as $resource) {
+                    ++$built;
+                    foreach ($resource->getOperations() ?? [] as $operationName => $operation) {
+                        $operations->create($operationName);
+                        ++$resolved;
+                    }
+                }
             }
         });
 
         self::assertGreaterThan(0, $built, 'Aucune ressource construite : la garde ne verrait rien.');
+        self::assertGreaterThan(0, $resolved, 'Aucune opération résolue : la garde ne verrait rien de leur factory.');
         self::assertSame([], $findings, "API Platform déprécie ce que la construction des métadonnées emprunte :\n - ".implode("\n - ", $findings));
     }
 }
