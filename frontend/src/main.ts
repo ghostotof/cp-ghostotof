@@ -65,6 +65,8 @@ import { MCP_CONNECTIONS_REPOSITORY } from './application/mcp/useMcpConnections'
 import { HttpMcpConnectionsRepository } from './infrastructure/mcp/HttpMcpConnectionsRepository'
 import { BASE_ACCESS_REPOSITORY } from './application/baseAccess/useBaseAccess'
 import { HttpBaseAccessRepository } from './infrastructure/baseAccess/HttpBaseAccessRepository'
+import { setBackofficeUnauthorizedHandler } from './infrastructure/admin/shared/BackofficeHttpClient'
+import { createBackofficeSessionExpiryHandler } from './presentation/router/backofficeSessionExpiry'
 import { getApiUrl } from './infrastructure/config/getApiUrl'
 
 const app = createApp(App)
@@ -106,6 +108,10 @@ app.provide(ACCOUNT_REPOSITORY, new HttpAccountRepository(apiUrl))
 
 app.use(i18n)
 app.use(router)
+
+// Un 401 du backoffice (JWT expiré, session antérieure à un changement de mot
+// de passe) ferme la session côté interface et mène à la connexion (#650 R1c).
+setBackofficeUnauthorizedHandler(createBackofficeSessionExpiryHandler(router))
 
 app.mount('#app')
 

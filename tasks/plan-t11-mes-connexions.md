@@ -642,6 +642,36 @@ authentifiée par le cookie.
   désactivé → test d'effacement ; dispatcher global → trois tests d'enregistrement.
 - À écrire par R5 (règles) : voir le rendu de la tâche.
 
+### Task R1c : un 401 du backoffice ramène à la connexion (suite de R1b) — frontend seul
+Ajoutée par décision de l'auteur du 2026-10-28 : après R1b, un administrateur qui change **son propre** mot de passe
+voyait « mot de passe changé », puis sa prochaine action échouait en « Une erreur est survenue » et l'en-tête restait
+« connecté » (le même défaut existait pour l'expiration ordinaire du JWT).
+- [x] `BackofficeHttpClient` (`get` et `mutate`) : tout 401 appelle une réaction enregistrée une fois par
+  `setBackofficeUnauthorizedHandler()` et rend la réponse telle quelle (les dépôts gardent leur mapping). Registre au
+  niveau du module, branché dans `main.ts` : la couche infrastructure n'importe ni la session ni le routeur (aucune
+  importation `application/` ou `presentation/` sous `infrastructure/`). **Le 403 est inchangé** (non autorisé, CSRF
+  refusé : aucun dépôt du backoffice ne le lit comme une session finie, il reste une erreur du dépôt).
+- [x] `presentation/router/backofficeSessionExpiry.ts` (`createBackofficeSessionExpiryHandler(router)`) : `markSessionExpired()`
+  puis `router.replace` vers `login` (langue de la page courante, `redirect` = `fullPath`) ; une seule navigation quand
+  plusieurs listes d'une page répondent 401 ensemble ; rien si l'on est déjà sur `login`.
+- [x] Tests : `BackofficeHttpClient.spec.ts` (401 en lecture et en écriture, 200/204/403/404/409/422/500 sans réaction, sans
+  réaction enregistrée), `HttpAdminUserRepository.spec.ts` (401 sur `changePassword` et `list`, 403 sans réaction),
+  `backofficeSessionExpiry.spec.ts` (session fermée + `login?redirect`, langue, une seule navigation, déjà sur `login`).
+  Rouge vu sur les assertions avant le code (8 échecs) ; mutations : `unauthorizedHandler?.()` retiré → 4 rouges ;
+  garde `isRedirecting` retirée → test de navigation unique rouge.
+- Pas de message dédié « votre mot de passe a changé » : le 401 de Lexik ne porte pas de `type` stable (corps
+  `{code, message}`), le reconnaître au texte serait fragile. Pas non plus de bandeau générique sur la page de
+  connexion (elle n'en a pas pour une session expirée) : la redirection seule. Question laissée à l'auteur.
+- À écrire par R5 dans `frontend-backoffice.md` (section « Route protection ») : un 401 d'une requête du
+  backoffice ferme la session côté interface et mène à `login?redirect=<page courante>` (le garde de route ne joue qu'à
+  la navigation, il ne voit pas une session qui meurt en cours de page) ; la réaction est centrale dans
+  `BackofficeHttpClient`, jamais reprise dans un dépôt ; elle est branchée dans `main.ts`
+  (`setBackofficeUnauthorizedHandler(createBackofficeSessionExpiryHandler(router))`), un nouveau client de requêtes
+  d'administration passe par `BackofficeHttpClient` ou reproduit ce branchement ; le 403 garde son sens (refus
+  d'autorisation ou de CSRF, lu par chaque dépôt) ; les dépôts `Mcp` (`HttpMcpConnectionsRepository`,
+  `HttpOAuthConsentRepository`) ont leur propre `fetch` et marquent la session expirée dans le composable, sans
+  redirection (la page affiche l'erreur) ; `BackofficeHttpClient.spec.ts`, `backofficeSessionExpiry.spec.ts` épinglent le tout.
+
 ### Task R2 : le consentement est lié au compte affiché (F5)
 - [ ] Le `GET` du consentement renvoie l'UUID du compte affiché ; le `POST` le renvoie et reçoit 409 s'il diffère du
   compte du cookie ; frontend : message et rechargement de la page ; tests backend et Vitest.
