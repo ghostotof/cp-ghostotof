@@ -837,8 +837,61 @@ démonté). **À écrire en S5** : `frontend-backoffice.md` (puce « A 401 mid-p
 région présente au premier rendu), `frontend.md` si elle cite R1c ; vérification en navigateur à ajouter à celles de la tâche 10.
 
 ### Task S3 : relance unique sur interblocage (CR4) — **Sensible (concurrence)**
-- [ ] Changement de mot de passe et rétrogradation relancés une fois sur `40P01` ; test de concurrence (la victime
+- [x] Changement de mot de passe et rétrogradation relancés une fois sur `40P01` ; test de concurrence (la victime
   réussit au second essai) ; limite F1 réécrite.
+
+**S3 (2026-10-28)** — décisions : (1) **Lieu de la relance** : un port `Security/User/Application/DeadlockRetryInterface::
+retryOnce(Closure(bool $isRetry): T)` et son adaptateur `Infrastructure/Doctrine/DoctrineDeadlockRetry`, **à la
+demande de chaque service** (`CpgUserAdministrator::changePassword()`, `CpgUserRoleAdministrator::setSuperAdmin()`,
+`PasswordSetupService::complete()`), et **pas** dans `PostgresLockedTransaction` ni dans les deux verrous : leur contrat
+ne change pas pour leurs autres appelants (le handler d'invitation envoie un lien, la purge compte ce qu'elle
+supprime : leur opération n'est pas rejouable). Une source, un nom ; l'opt-in dit « mon opération se rejoue ». Rejetés :
+la relance dans le squelette (cachée, appliquée à des écritures non idempotentes) ; une boucle de N essais (un cycle
+qui se reforme est un défaut à voir, pas un aléa). (2) **Seul `Doctrine\DBAL\Exception\DeadlockException`** (`40P01`)
+se relance ; toute autre exception, `DriverException` comprise, remonte au premier essai. Un second interblocage
+remonte (un 500, comme avant S3). (3) **EntityManager** : la transaction annulée avait écrit (`save()`), donc le
+squelette l'a **fermé** (#549) ; `ManagerRegistry::resetManager()` le remplace **en place** (objet paresseux
+`->lazy()` : les verrous et dépôts gardent leur référence) — appelé **toujours** avant le second essai, fermé ou non.
+Sans lui : `EntityManagerClosed` au second essai (mesuré). (4) **Entités tenues d'avant** : `changePassword()` relit le
+compte (`findOneById`) au second essai seulement (`$isRetry`) — le verrou de ligne exige une entité gérée ; `complete()`
+relit le jeton par son empreinte (donc le compte) et un lien consommé entre-temps y est refusé comme partout ;
+`setSuperAdmin()` ne relit rien : le verrou d'administration relit cible **et** acteur par identifiant (les instances
+passées ne servent qu'à les donner). Un compte supprimé entre les deux essais : 404 au second, sans audit. (5) **Le
+hachage n'est pas recalculé** (hors transaction). **L'audit reste après le COMMIT abouti, une seule fois** : il est
+écrit hors de la relance. (6) **`PasswordSetupService::activate()` est atteint par le même cycle** (`revokeAllOf` quand le
+lien *remplace* un mot de passe posé par le backoffice, #460) : relancé aussi ; l'effet d'un 500 y était bénin (le lien
+reste réessayable) mais l'invité n'avait aucun moyen de le savoir. (7) **Journal** : `warning`, `event` =
+`deadlock-retried`, le SQLSTATE seul (le message du pilote recopie l'instruction). (8) **Hors périmètre, inchangé** :
+l'échange de code victime (côté league) : aucun essai de plus ; le client OAuth reçoit un 500 du point de jeton (aucune
+couche OAuth ne rattrape un `DriverException`), son code n'est pas consommé (non révoqué, `code_exchanged_at` nul) et il
+le présente à nouveau.
+
+**État final exact du cas « révocation victime »** (`AccountWideRevocationDeadlockTest`, 12 exécutions de suite vertes) :
+l'échange gagne le cycle (il prend C1 dès l'annulation de la révocation, avant que le second essai ne démarre) ;
+C1 = `superseded` (déjà inactive : la relance ne la révoque pas), C2 = `password-changed` (la relance la coupe, ses
+jetons venant d'être émis), mot de passe et `credentials_changed_at` changés, `credentials_version` + 1 **une seule fois**,
+**une** ligne d'audit `mcp-connection-revoked` (C2 seule) et **une** ligne `password-changed`, un `deadlock-retried`
+journalisé. Le cas « échange victime » est inchangé (C1 et C2 `password-changed`, deux lignes d'audit, aucune relance).
+
+**Mutations mesurées** : relance retirée (`throw $deadlock;` dans le `catch`) → 13 rouges (les cas « interbloqué puis relancé »
+et « deux interblocages » du port, des trois services et de `DeadlockRetryIntegrationTest`, et `AccountWideRevocationDeadlockTest`
+« révocation victime ») ; `resetManager()` retiré → 6 rouges (`DoctrineDeadlockRetryTest` ×2, `DeadlockRetryIntegrationTest` ×3
+en `EntityManagerClosed`, `AccountWideRevocationDeadlockTest` « révocation victime » en `failed Doctrine\ORM\Exception\EntityManagerClosed`) ;
+relance sur toute `Throwable` → 9 rouges (« autre exception » du port et des trois services, et les refus ordinaires).
+`AccountWideRevocationDeadlockTest` : 12 exécutions de suite vertes.
+
+**Pour S5 — texte de la limite F1** (`mcp-oauth-revocation-personne.md`, `mcp-oauth-cycle-de-vie.md` « Accepted limit, added by
+#650 », `backend-outillage.md` « A deadlock that is accepted is pinned too ») : *an account-wide revocation (password change,
+loss of the trusted tier, a setup link replacing a password) crossing the first exchange of the code of a new grant forms a
+lock cycle (the exchange holds C2 and wants C1, the revocation holds C1 and wants C2: C1 < C2, UUID v7); PostgreSQL aborts one
+(`40P01`) and both stay atomic. **The revocation side is retried once** (`DeadlockRetryInterface`, S3/CR4: the whole locked
+transaction is replayed on a reset EntityManager, the account or token re-read, the hash not recomputed, the audit written once
+after the COMMIT that succeeded); it then ends after the exchange that won (C1 `superseded`, C2 `password-changed`, one
+credentials-version increment). A second deadlock surfaces (a 500, as before). **The exchange side is not retried** (league,
+out of scope): the OAuth client gets a 500 from the token endpoint, its code is left unexchanged and it presents it again. No
+`NOWAIT`, no pair lock before league. Pinned by `AccountWideRevocationDeadlockTest` (one case per victim), the retry by
+`DoctrineDeadlockRetryTest` and `DeadlockRetryIntegrationTest`.* À écrire aussi : `security-user.md` (le port, l'opt-in : un
+service dont l'opération se rejoue le demande ; un verrou de compte ne relance jamais de lui-même).
 
 ### Task S4 : petits points
 - [ ] CR2/CR3 : terminées triées par instant de fin ; deux lectures dans un même instantané.
