@@ -273,19 +273,23 @@ connexions MCP » ; « Phase 2, backend » et « Frontend » des Testing Decisio
 
 **Interfaces :** Consumes : `OwnMcpConnectionsInterface::revoke()` (Task 3) ; `SessionLockWait`, harnais de `RevocationEndpointConcurrencyTest`.
 
-- [ ] **Step 1 : tests.** `testARevocationCrossingARefreshRevokesTheConnection` : le test tient la connexion
+- [x] **Step 1 : tests.** `testARevocationCrossingARefreshRevokesTheConnection` : le test tient la connexion
   `FOR UPDATE` dans sa transaction et y écrit `last_used_at` (ce que fait un rafraîchissement) ; l'enfant lance
   la révocation, `SessionLockWait::untilBlocked()` ; le test valide ; l'enfant écrit `done` ; la connexion
   révoquée `person`, `last_used_at` celui du test, une ligne d'audit. `testARevocationCrossingThePurgeMarkingWritesNoSecondLine` :
   le test révoque la connexion `expired` sous son verrou (ce que fait le marquage), l'enfant bloque, le test
   valide ; l'enfant écrit `done` (204 : la connexion est à elle), la cause reste `expired`, aucune ligne
   `person`. Filet `statement_timeout = '3s'` comme les voisins.
-- [ ] **Step 2 : les lancer et mesurer.** Attendu vert sans changement de code (après l'attente, PostgreSQL
+- [x] **Step 2 : les lancer et mesurer.** Attendu vert sans changement de code (après l'attente, PostgreSQL
   réévalue `revoked_at IS NULL` sur la ligne validée). Mutations à mesurer et écrire : `SKIP LOCKED` dans la
   sous-requête de `revokeWhere()` → premier test rouge (connexion laissée active) ; les deux conditions
   `revoked_at IS NULL` retirées → second rouge (cause réécrite `person`, seconde ligne). Si une mutation laisse
   son test vert, le dire et chercher une disposition qui le rende discriminant.
-- [ ] **Step 3 : `make back-test`, `make back-quality`, commit** `test(mcp): la révocation par la personne croise un rafraîchissement et la purge (#650)`.
+  **Mesuré (2026-10-28)** : `SKIP LOCKED` rougit les **deux** tests (au `untilBlocked()` : le fils ne se bloque plus) ;
+  les deux `revoked_at IS NULL` retirés rougissent le second seul ; chacune des deux conditions retirée **seule**
+  laisse les deux verts (redondantes sur ce croisement), de même `FOR NO KEY UPDATE` retiré (rôle : l'ordre par
+  identifiant, épinglé ailleurs). Écrit dans `backend-outillage.md`.
+- [x] **Step 3 : `make back-test`, `make back-quality`, commit** `test(mcp): la révocation par la personne croise un rafraîchissement et la purge (#650)`.
 
 ### Task 5 : révoquer les connexions d'un compte au changement de mot de passe — **Sensible (sécurité, transaction)**
 

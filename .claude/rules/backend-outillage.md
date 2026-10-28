@@ -156,7 +156,8 @@ once, at the cost of dev CLI traces: not done, an open question of #420.
 A test that puts real processes in a race (`RateLimiterConcurrencyTest`, `ContributionOrderConcurrencyTest`,
 `SendAccountInvitationConcurrencyTest`, `PasswordSetupActivationConcurrencyTest`, `ReinviteConcurrencyTest`,
 `InviteUsernameConcurrencyTest`, `AccountAdministrationConcurrencyTest`, `TokenEndpointConcurrencyTest`,
-`RevocationEndpointConcurrencyTest`, `RevocationEndpointPurgeDeadlockTest`, `McpConnectionPurgeLockOrderTest`)
+`RevocationEndpointConcurrencyTest`, `RevocationEndpointPurgeDeadlockTest`, `McpConnectionPurgeLockOrderTest`,
+`OwnMcpConnectionRevocationConcurrencyTest`)
 goes through **one harness, written once**. `tests/Support/ChildPhpProcess::inTestEnvironment()` builds the
 child's `Process`: its command line (above) and a copy of the test's `$_SERVER`, where `phpunit.dist.xml`'s
 `<server force="true">` values live (a real `ANTHROPIC_API_KEY` exported in the shell must not reach the
@@ -243,7 +244,27 @@ measured. **Only the heap order is contradicted**: the rewrite is a HOT update (
 entry still points at the root of its HOT chain, so an index scan would read the ids' order — the test discriminates
 under today's plan, a sequential scan of a few rows, only, and a plan by index would leave it green without the
 `ORDER BY`. Mutation, the `ORDER BY c.id` out of `revokeWhere()`'s sub-query — measured, `55P03` on the `NOWAIT`, the
-other three tests of the class green (measured again under `FOR NO KEY UPDATE`, #726 T6). Every
+other three tests of the class green (measured again under `FOR NO KEY UPDATE`, #726 T6).
+
+**The person's revocation crossing the two other writers of a connection is pinned too** (#650, task 4:
+`OwnMcpConnectionRevocationConcurrencyTest`; child `Fixtures/revoke-own-mcp-connection.php`, which calls the real
+`OwnMcpConnectionsInterface::revoke()` and prints `done` or `not-found`, then `audit <n>` — the `mcp-connection-revoked`
+lines of the child's own `security_audit` handler —, or `failed <SQLSTATE>`; its two arguments are row UUIDs, no
+secret). Like the revocation endpoint's, the window is opened by a lock the test holds, in a session of its own
+(`OpensProbeConnection`): the connection `FOR UPDATE` plus the write of the other worker, then
+`SessionLockWait::untilBlocked()` (a child that finishes without waiting raced nothing), then the COMMIT. Two tests:
+a refresh (it writes `last_used_at`) — the connection ends revoked `person`, the refresh's `last_used_at` intact, one
+audit line —, and the purge's marking (it revokes `expired`) — the child answers `done` (the connection is the
+caller's), writes and audits nothing, the cause stays `expired` and so does the instant. **Measured**: `SKIP LOCKED`
+in the sub-query of `McpConnectionRepository::revokeWhere()` turns **both** red at the wait (the child no longer
+blocks: it skips the held row, revokes nothing and answers `done`, `audit 0`); removing **both** `revoked_at IS NULL`
+turns the second red (cause rewritten `person`, a second audit line) and leaves the first green. **Each of the two
+conditions alone is redundant** for this crossing (either one removed, both tests stay green: PostgreSQL re-checks
+the sub-query's quals on the locked row and the `UPDATE`'s on the target row), and so is the sub-query's `FOR NO KEY
+UPDATE` (removed, green: the `UPDATE` waits on the row by itself) — its job is the id order, pinned by
+`TokenEndpointConcurrencyTest::testASupersessionLocksTheOtherConnectionsInIdOrder`.
+
+Every
 test that waits on a held lock to prove the bound carries a `statement_timeout = '3s'` safety net, so
 that a mutation removing the bound (`boundTheWait()`) fails it in `57014` instead of hanging the suite — a
 child session that waits (a console session, so no FPM `lock_timeout`) sets it on itself before the barrier,
