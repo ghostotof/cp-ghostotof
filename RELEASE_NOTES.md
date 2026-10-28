@@ -1,56 +1,58 @@
-# v0.29.1 — Renouvellement TLS débloqué, ingress épinglé
+# v0.30.0 — Contrôle quotidien des certificats TLS, rétentions en temps écoulé
 
-Cette release corrige un incident découvert le 2026-10-26. Depuis le 2026-10-09, aucun des trois
-certificats TLS (préprod, prod, www) ne pouvait se renouveler, alors qu'ils expirent le 2026-11-08. Une
-NetworkPolicy coupait l'ingress des solveurs HTTP-01 de Let's Encrypt. La release épingle aussi les
-réglages de l'ingress-nginx dont dépend le refus des corps multipart, et solde les suivis de sécurité de la
-v0.29.0.
+Cette release ajoute le signal qui a manqué lors de l'incident du 2026-10-26 : un contrôle quotidien des
+trois certificats TLS servis (préprod, prod, www). Elle corrige aussi le calcul des durées de rétention des
+purges, qui comptaient les heures en heure murale, et intègre les mises à jour de dépendances en attente.
 
 ## Ce qui change
 
-- **Renouvellement des certificats TLS** : la NetworkPolicy `default-deny-ingress` (2026-09-02) empêchait
-  l'ingress de joindre le pod solveur que cert-manager crée le temps d'un challenge (port 8089). Le chemin
-  public `/.well-known/acme-challenge/…` répondait `504`, et le renouvellement prévu le 2026-10-09 est resté
-  bloqué 17 jours sans alerte. La nouvelle policy `allow-acme-solver-from-ingress-nginx` n'ouvre que ce
-  port, depuis le namespace `ingress-nginx`. Elle a déjà été appliquée à la main le 2026-10-26 pour ne pas
-  attendre la release : les trois certificats se sont renouvelés le jour même et sont valides jusqu'au
-  2027-01-24. Le signal d'expiration qui a manqué est suivi dans #719.
-- **Ingress-nginx épinglé** (#712) : `k8s/ingress-nginx-values.yaml` fixe `proxy-request-buffering: "on"`,
-  `proxy-body-size: "1m"` et `allowSnippetAnnotations: false`. Ce sont les valeurs déjà en vigueur, mais
-  elles n'étaient écrites nulle part. L'ingress lit tout le corps avant de joindre le pod, et refuse en
-  `413` un corps de plus d'1 Mo. Au-delà de cette taille, un multipart reçoit donc ce `413` HTML de
-  l'ingress, et non le `415` du sidecar.
-- **Corps multipart** (#702) : la limite est désormais écrite et gardée. Un multipart n'est compté par
-  aucune zone de limitation du sidecar, puisqu'il est refusé avant elles, et cela ne coûte rien : aucun
-  n'atteint PHP. Le comportement ne change pas.
-- **Cookie `BEARER`** (#703, #714) : `Secure` partout sauf en `dev`. Rien ne change en préprod ni en prod,
-  qui le posaient déjà. Les tests le lisent maintenant sur la vraie chaîne de pose, et seule la fabrique
-  peut créer un cookie.
-- **Interne** :
-  - parité des services de sécurité compilés entre environnements (#698) ;
-  - test de la purge des messages en échec rendu indépendant des changements d'heure (#709 : la commande
-    était juste, seul le test comptait mal) ;
-  - mise à jour de undici et Vitest, dépendances de dev du frontend (#707).
+- **Contrôle quotidien des certificats TLS** (#719) : le nouveau workflow `Certificats TLS`
+  (`.github/workflows/tls-expiry.yml`) vérifie chaque jour, pour chaque hôte des Ingress, l'échéance du
+  certificat servi, le nom couvert et la chaîne de confiance. Le seuil est relatif à la durée de vie du
+  certificat : le run échoue 5 jours après le moment où cert-manager aurait dû renouveler (25 jours avant
+  l'échéance pour un certificat de 90 jours, 16 pour les certificats de 64 jours que Let's Encrypt
+  délivrera à partir du 2027-02-10). Un run rouge signale donc un renouvellement en échec depuis au moins
+  5 jours, et le log nomme l'hôte. Le signal est l'e-mail d'échec de GitHub. La garde
+  `TlsExpiryWatchCoversEveryIngressHostTest` fait échouer la suite si un hôte d'Ingress n'est pas contrôlé.
+- **Audit des certificats** (#719) : `audit-prod.sh`, qui sert aussi à `audit-preprod`, passe par la même
+  bibliothèque (`tools/lib/tls-certificate.sh`). Il reste bloquant sous 14 jours de validité, et juge
+  désormais aussi le nom couvert et la chaîne de confiance.
+- **Rétentions des purges** (#710) : une rétention exprimée en heures, minutes ou secondes se compte
+  maintenant en temps écoulé. Les jours, mois et années restent comptés sur le calendrier. Auparavant,
+  « 12 hours » se comptait en heure murale et pouvait viser une heure de trop ou de moins autour d'un
+  changement d'heure. Les deux commandes de purge, `app:contact:purge-failed-messages` et
+  `app:user:purge-pending-invitations`, partagent désormais le même objet `RetentionPeriod`.
+- **Contrat de `--older-than` resserré** (#710) : les deux purges refusent maintenant une expression qui
+  désigne une date (`monday`, `first day of next month`, `yesterday`), qui mêle des termes de signes opposés,
+  dont un nombre a 14 chiffres ou plus, ou qui place le seuil avant l'an 1. Une fraction de seconde est
+  recopiée à la microseconde. Le message d'erreur de la purge des invitations dit désormais « illisible »,
+  comme celui de la purge des messages. Les CronJobs ne sont pas concernés : ils lancent les deux purges
+  sans `--older-than`, avec leurs rétentions par défaut (« 30 days »), acceptées à l'identique.
+- **Dépendances** :
+  - backend : Symfony 8.1.9 (`framework-bundle`, `messenger`, `amqp-messenger`, `doctrine-messenger`,
+    `http-client`, `clock`, `uid`, `yaml`, `browser-kit`), PHPUnit 13.4.3 ;
+  - frontend : Vue 3.5.44, vue-i18n 11.4.16, ESLint 10.13.0, typescript-eslint 8.72.0, jsdom 30.1.3,
+    jeux d'icônes Iconify ;
+  - CI : `github/codeql-action` 4.39.0.
 
 ## À savoir pour le déploiement
 
 - **Aucune migration**, aucun changement de clé ni de secret : pas de fenêtre de maintenance, pas besoin de
   rejouer la procédure des rôles.
-- **Rollout du backend** : le hash de `backend-nginx-conf` change. Seuls des commentaires ont bougé, mais
-  la ConfigMap est hachée. Le sidecar est remplacé sans coupure. PostgreSQL et RabbitMQ ne redémarrent
-  pas.
-- **NetworkPolicy** : l'objet existe déjà dans `preprod` et `prod` (appliqué à la main le 2026-10-26).
-  `apply -k` le réapplique à l'identique.
-- **Ingress-nginx** : hors pipeline. Le `helm upgrade` a déjà été appliqué le 2026-10-26 (révision 3), et
-  la release ne le rejoue pas.
-- **`audit-preprod` vérifie le certificat de préprod** (bloquant sous 14 jours de validité) : la release a
-  été coupée après le renouvellement du 2026-10-26.
+- **Aucun manifeste Kubernetes modifié** : seuls les images backend et frontend changent. PostgreSQL et
+  RabbitMQ ne redémarrent pas.
+- **Le workflow `Certificats TLS` ne s'active qu'une fois sur `main`** : un `schedule` GitHub ne tourne que
+  sur la branche par défaut. Garder les notifications Actions actives, et le réactiver si GitHub le
+  désactive (60 jours sans activité du dépôt, sans prévenir).
+- **`audit-preprod` est plus strict** : il échoue désormais aussi sur un nom non couvert ou une chaîne
+  incomplète du certificat de préprod.
+- **Postes de développement** : `docker compose up -d backend` pour recréer le conteneur avec le nouveau
+  montage en lecture seule de `.github/workflows`, sans quoi `TlsExpiryWatchCoversEveryIngressHostTest`
+  échoue en local.
 
 ## Vérifications
 
-- **Certificats** : constaté le 2026-10-26, les trois `Certificate` sont `Ready` et valides jusqu'au 2027-01-24,
-  sans challenge en attente. Après la release, `kubectl get challenges -A` doit toujours être vide.
-- **Ingress** : la vérification `jq -e` du prérequis n°2 de `k8s/README.md` affiche `true`.
-- **Préprod et prod** : un `POST` en `multipart/form-data` sur l'API répond toujours `415` problem+json, et
-  le formulaire de contact passe comme avant.
-- **Prod** : une connexion pose toujours le cookie `BEARER` avec `Secure`, `HttpOnly` et `SameSite=Lax`.
+- **Certificats** : après la fusion, lancer le workflow `Certificats TLS` à la main (onglet Actions,
+  *Run workflow*) : il doit être vert pour les trois hôtes, valides jusqu'au 2027-01-24.
+- **Préprod et prod** : `/` et `/api/watch` répondent `200`, le formulaire de contact passe comme avant.
+- **Purges** : les CronJobs de purge du lendemain se terminent en succès.
