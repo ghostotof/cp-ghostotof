@@ -8,6 +8,7 @@ use App\Security\Authentication\Infrastructure\Security\SessionBeforePasswordCha
 use App\Security\Authentication\Infrastructure\Security\SessionPredatesPasswordChangeException;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\ValueObject\BaseAccessUser;
+use App\Shared\Domain\Security\CredentialsVersionClaim;
 use DateTimeImmutable;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -18,20 +19,20 @@ use Symfony\Component\Security\Http\Authenticator\Passport\SelfValidatingPasspor
 use Symfony\Component\Security\Http\Event\CheckPassportEvent;
 
 /**
- * La règle du refus (#650, R1b) sur des passeports écrits à la main : ce que le
- * test HTTP ne peut pas produire — le fournisseur de jetons de Lexik pose
- * toujours un `iat` — et les frontières à la seconde, sans horloge. Le
- * parcours réel est dans `SessionBeforePasswordChangeTest`.
+ * La règle du refus (#650, R1b, puis S1 : la **version des identifiants** à
+ * la place de la date) sur des passeports écrits à la main : ce que le test HTTP
+ * ne peut pas produire — le fournisseur de jetons de Lexik, via notre écouteur,
+ * pose toujours la revendication —, sans horloge. Le parcours réel est dans
+ * `SessionBeforePasswordChangeTest`.
  */
 final class SessionBeforePasswordChangeRefusalListenerTest extends TestCase
 {
-    private const int CHANGED_AT = 1_793_000_000;
-
-    #[DataProvider('boundaries')]
-    public function testItRefusesASessionOpenedAtOrBeforeTheChangeOnly(int $issuedAt, bool $refused): void
+    /** Le compte est à la version 2 ; seule la version 2 est servie. */
+    #[DataProvider('claims')]
+    public function testItRefusesEveryVersionButTheCurrentOne(mixed $claim, bool $refused): void
     {
         $listener = new SessionBeforePasswordChangeRefusalListener();
-        $event = $this->eventFor($this->accountChangedAt(self::CHANGED_AT), ['iat' => $issuedAt]);
+        $event = $this->eventFor($this->accountAtVersion(2), [CredentialsVersionClaim::NAME => $claim, 'iat' => 1_793_000_000]);
 
         if ($refused) {
             $this->expectException(SessionPredatesPasswordChangeException::class);
@@ -41,43 +42,82 @@ final class SessionBeforePasswordChangeRefusalListenerTest extends TestCase
         $this->addToAssertionCount(1);
     }
 
-    /** @return iterable<string, array{int, bool}> */
-    public static function boundaries(): iterable
+    /** @return iterable<string, array{mixed, bool}> */
+    public static function claims(): iterable
     {
-        yield 'une heure avant' => [self::CHANGED_AT - 3600, true];
-        yield 'une seconde avant' => [self::CHANGED_AT - 1, true];
-        yield 'la même seconde' => [self::CHANGED_AT, true];
-        yield 'une seconde après' => [self::CHANGED_AT + 1, false];
+        yield 'la version courante' => [2, false];
+        yield 'une version avant' => [1, true];
+        yield 'la version zéro' => [0, true];
+        yield 'une version après (base restaurée)' => [3, true];
+        yield 'en chaîne' => ['2', true];
+        yield 'décimale' => [2.0, true];
+        yield 'booléenne' => [true, true];
     }
 
-    /** @param array<string, mixed>|null $payload */
-    #[DataProvider('unreadableInstants')]
-    public function testAnInstantItCannotEstablishIsTakenForEarlier(?array $payload): void
+    /**
+     * **Échoue fermé** : une revendication présente qui n'est pas un entier n'est
+     * pas « absente » (qui vaut 0) mais illisible — refusée, même pour un compte
+     * jamais changé. Notre écouteur ne l'écrit jamais ainsi ; seule la
+     * signature du site garde ce cas hors d'atteinte.
+     */
+    #[DataProvider('unreadableClaims')]
+    public function testAClaimThatIsNotAnIntegerIsRefusedEvenForAnAccountNeverChanged(mixed $claim): void
     {
         $listener = new SessionBeforePasswordChangeRefusalListener();
 
         $this->expectException(SessionPredatesPasswordChangeException::class);
-        $listener($this->eventFor($this->accountChangedAt(self::CHANGED_AT), $payload));
+        $listener($this->eventFor($this->accountAtVersion(0), [CredentialsVersionClaim::NAME => $claim]));
     }
 
-    /** @return iterable<string, array{array<string, mixed>|null}> */
-    public static function unreadableInstants(): iterable
+    /** @return iterable<string, array{mixed}> */
+    public static function unreadableClaims(): iterable
     {
-        yield 'aucun payload' => [null];
-        yield 'aucun iat' => [['username' => 'jane']];
-        yield 'iat en chaîne' => [['iat' => (string) (self::CHANGED_AT + 100)]];
-        yield 'iat décimal' => [['iat' => (float) (self::CHANGED_AT + 100)]];
+        yield 'chaîne' => ['0'];
+        yield 'décimale' => [0.0];
+        yield 'booléenne' => [false];
+        yield 'nulle' => [null];
+        yield 'tableau' => [[0]];
     }
 
-    /** Sans changement de mot de passe, rien à comparer : jamais refusé, même sans instant. */
-    public function testAnAccountThatNeverChangedItsPasswordIsNeverRefused(): void
+    /**
+     * Le `iat` ne compte plus pour cette décision : la date de la seconde
+     * relecture (F-A, F-B) refusait ou servait à tort selon l'horloge et la
+     * seconde de la connexion. Un `iat` absent ne change rien.
+     */
+    public function testTheIssuedAtPlaysNoPart(): void
     {
         $listener = new SessionBeforePasswordChangeRefusalListener();
 
-        $listener($this->eventFor(new CpgUser('jane', 'hashed-password'), null));
-        $listener($this->eventFor(new CpgUser('jane', 'hashed-password'), ['iat' => 1]));
+        $listener($this->eventFor($this->accountAtVersion(1), [CredentialsVersionClaim::NAME => 1]));
+        $listener($this->eventFor($this->accountAtVersion(1), [CredentialsVersionClaim::NAME => 1, 'iat' => 1]));
 
         $this->addToAssertionCount(1);
+    }
+
+    /**
+     * Un jeton émis avant le déploiement n'a pas de revendication : il vaut la
+     * version 0. Servi tant que le mot de passe du compte n'a pas changé (sinon
+     * chaque session ouverte au déploiement sauterait), refusé dès qu'il a changé.
+     *
+     * @param array<string, mixed>|null $payload
+     */
+    #[DataProvider('payloadsWithoutClaim')]
+    public function testATokenWithoutClaimIsVersionZero(?array $payload): void
+    {
+        $listener = new SessionBeforePasswordChangeRefusalListener();
+
+        $listener($this->eventFor($this->accountAtVersion(0), $payload));
+        $this->addToAssertionCount(1);
+
+        $this->expectException(SessionPredatesPasswordChangeException::class);
+        $listener($this->eventFor($this->accountAtVersion(1), $payload));
+    }
+
+    /** @return iterable<string, array{array<string, mixed>|null}> */
+    public static function payloadsWithoutClaim(): iterable
+    {
+        yield 'aucun payload' => [null];
+        yield 'payload sans revendication' => [['username' => 'jane', 'iat' => 1_793_000_000]];
     }
 
     /** L'accès de base n'a pas de compte : jamais refusé, quel que soit son payload. */
@@ -91,10 +131,12 @@ final class SessionBeforePasswordChangeRefusalListenerTest extends TestCase
         $this->addToAssertionCount(1);
     }
 
-    private function accountChangedAt(int $timestamp): CpgUser
+    private function accountAtVersion(int $version): CpgUser
     {
         $account = new CpgUser('jane', 'hashed-password');
-        $account->replacePassword('another-hash', new DateTimeImmutable('@'.$timestamp));
+        for ($i = 0; $i < $version; ++$i) {
+            $account->replacePassword('hash-'.$i, new DateTimeImmutable('@1793000000'));
+        }
 
         return $account;
     }

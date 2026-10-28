@@ -5,17 +5,23 @@ declare(strict_types=1);
 namespace App\Tests\Security\Authentication;
 
 use App\Security\Authentication\Infrastructure\Http\AuthCookieFactory;
+use App\Security\User\Application\CpgUserAdministratorInterface;
 use App\Security\User\Application\CpgUserRegistrarInterface;
 use App\Security\User\Domain\Entity\CpgUser;
+use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
+use App\Shared\Domain\Security\CredentialsVersionClaim;
 use App\Tests\Support\HttpJson;
 use App\Tests\Support\TestCredentials;
 use Doctrine\DBAL\Connection;
 use Doctrine\ORM\EntityManagerInterface;
 use Lexik\Bundle\JWTAuthenticationBundle\Encoder\JWTEncoderInterface;
+use Lexik\Bundle\JWTAuthenticationBundle\Services\JWTTokenManagerInterface;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\BrowserKit\Cookie;
 use Symfony\Component\HttpFoundation\Cookie as HttpFoundationCookie;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * Une session ouverte avant le dernier changement de mot de passe du compte est
@@ -23,13 +29,19 @@ use Symfony\Component\HttpFoundation\Cookie as HttpFoundationCookie;
  * consentement MCP (R1) : le JWT de session n'est pas révocable individuellement
  * (ADR 0003), mais il ne survit plus au mot de passe qu'il a prouvé.
  *
- * Deux familles de tests. Les jetons **forgés** (signés par la clé du site, `iat`
- * choisi à la seconde) pincent la frontière sans dépendre de l'horloge : le
- * changement est daté en SQL, le cookie d'avant, de la même seconde et d'après
- * s'essaient sur `GET /api/me` (le palier de confiance). Le parcours **réel**
- * ouvre la session, fait changer le mot de passe par un `ROLE_SUPER` et rejoue le
- * cookie. Aucun test ne se reconnecte « tout de suite après » un changement : la
- * même seconde est refusée (limite acceptée, `CpgUser::hasChangedCredentialsSince()`).
+ * Depuis S1 (seconde relecture, F-A et F-B), ce n'est plus une date comparée à
+ * l'instant de signature du jeton : le jeton **porte la version des
+ * identifiants** que le compte avait quand son mot de passe a été vérifié
+ * (revendication `cv`, posée à la création), et il est refusé dès qu'elle
+ * diffère de la version courante. Aucune horloge ne compte, donc aucune
+ * seconde « douteuse » : se reconnecter tout de suite après un changement est
+ * servi, et une connexion qui a lu l'ancien mot de passe avant le changement ne
+ * passe jamais, quel que soit l'instant où son jeton est signé.
+ *
+ * Deux familles de tests. Les jetons **forgés** (signés par la clé du site, `cv`
+ * et `iat` choisis) pincent la règle ; le parcours **réel** ouvre la session,
+ * fait changer le mot de passe par un `ROLE_SUPER` et rejoue le cookie. Le test
+ * de la course crée le jeton depuis l'instance lue **avant** le changement.
  */
 final class SessionBeforePasswordChangeTest extends WebTestCase
 {
@@ -53,62 +65,146 @@ final class SessionBeforePasswordChangeTest extends WebTestCase
         parent::tearDown();
     }
 
-    /** Un cookie d'avant le changement : refusé, 401, sans rien dire du compte. */
+    /** Un cookie d'avant le changement (version précédente) : refusé, 401, sans rien dire du compte. */
     public function testASessionOpenedBeforeThePasswordChangeIsRefused(): void
     {
-        $changedAt = time() - 100;
         $account = $this->registerTrusted();
-        $this->datePasswordChange($account, $changedAt);
-        $this->replaceTheBearerWith($account, issuedAt: $changedAt - 60);
+        $this->setCredentialsVersion($account, 3);
+        $this->replaceTheBearerWith($account, version: 2);
 
         $this->client->request('GET', self::ME);
 
         $this->assertRefusedAsAClosedSession();
     }
 
-    /**
-     * Le `iat` est à la seconde et la colonne à la seconde : la **même** seconde
-     * ne dit pas laquelle est venue la première, elle est refusée. Rouge si la
-     * comparaison devient stricte (`<`).
-     */
-    public function testASessionOpenedInTheSameSecondAsTheChangeIsRefused(): void
+    /** La version courante est celle de la personne qui détient le mot de passe : servie. */
+    public function testASessionCarryingTheCurrentVersionIsServed(): void
     {
-        $changedAt = time() - 100;
         $account = $this->registerTrusted();
-        $this->datePasswordChange($account, $changedAt);
-        $this->replaceTheBearerWith($account, issuedAt: $changedAt);
-
-        $this->client->request('GET', self::ME);
-
-        $this->assertRefusedAsAClosedSession();
-    }
-
-    /** Une session ouverte la seconde d'après est celle de la personne qui détient le mot de passe : servie. */
-    public function testASessionOpenedAfterThePasswordChangeIsServed(): void
-    {
-        $changedAt = time() - 100;
-        $account = $this->registerTrusted();
-        $this->datePasswordChange($account, $changedAt);
-        $this->replaceTheBearerWith($account, issuedAt: $changedAt + 1);
+        $this->setCredentialsVersion($account, 3);
+        $this->replaceTheBearerWith($account, version: 3);
 
         $this->client->request('GET', self::ME);
 
         self::assertResponseStatusCodeSame(200);
     }
 
+    /** Une version que le compte n'a pas (encore) : refusée aussi, c'est une égalité. */
+    public function testASessionCarryingAnotherVersionIsRefusedWhicheverSide(): void
+    {
+        $account = $this->registerTrusted();
+        $this->setCredentialsVersion($account, 3);
+        $this->replaceTheBearerWith($account, version: 4);
+
+        $this->client->request('GET', self::ME);
+
+        $this->assertRefusedAsAClosedSession();
+    }
+
     /**
-     * Un compte dont le mot de passe n'a jamais changé n'est jamais refusé, quel
-     * que soit l'âge du jeton : rien à comparer. (Le cas d'un instant inconnu
-     * sur ce compte, que le fournisseur de jetons de Lexik ne laisse pas
-     * produire — il pose toujours `iat` —, est celui du test unitaire de
-     * l'écouteur et de `CpgUserTest`.)
+     * L'instant de signature ne compte plus (F-A, F-B) : un `iat` ancien ou
+     * d'à l'instant ne change ni le refus ni le service. Le verdict est celui de
+     * la version. (Un `iat` dans le futur, l'horloge d'un pod en avance, est
+     * refusé par Lexik lui-même avant notre règle : hors du sujet.)
      */
-    public function testAnAccountWhosePasswordNeverChangedIsNeverRefused(): void
+    #[DataProvider('issuedAtInstants')]
+    public function testTheIssuedAtPlaysNoPartInTheVerdict(int $issuedAt): void
+    {
+        $account = $this->registerTrusted();
+        $this->setCredentialsVersion($account, 1);
+
+        $this->replaceTheBearerWith($account, version: 1, issuedAt: $issuedAt);
+        $this->client->request('GET', self::ME);
+        self::assertResponseStatusCodeSame(200);
+
+        $this->replaceTheBearerWith($account, version: 0, issuedAt: $issuedAt);
+        $this->client->request('GET', self::ME);
+        $this->assertRefusedAsAClosedSession();
+    }
+
+    /** @return iterable<string, array{int}> */
+    public static function issuedAtInstants(): iterable
+    {
+        yield 'depuis longtemps' => [1];
+        yield 'à l\'instant' => [time()];
+    }
+
+    /**
+     * Un compte jamais changé (version 0) sert un jeton sans revendication : celui
+     * d'une session ouverte avant le déploiement n'en a pas, et elle ne saute pas.
+     */
+    public function testATokenWithoutClaimIsServedWhileThePasswordNeverChanged(): void
     {
         $account = $this->registerTrusted();
 
-        $this->replaceTheBearerWith($account, issuedAt: 1);
+        $this->replaceTheBearerWith($account, version: null);
 
+        $this->client->request('GET', self::ME);
+
+        self::assertResponseStatusCodeSame(200);
+    }
+
+    /** …et refusé dès que le mot de passe a changé : l'absence de revendication vaut la version 0. */
+    public function testATokenWithoutClaimIsRefusedOnceThePasswordChanged(): void
+    {
+        $account = $this->registerTrusted();
+        $this->setCredentialsVersion($account, 1);
+
+        $this->replaceTheBearerWith($account, version: null);
+
+        $this->client->request('GET', self::ME);
+
+        $this->assertRefusedAsAClosedSession();
+    }
+
+    /**
+     * **La course de F-A.** Une connexion avec l'ancien mot de passe lit le
+     * compte (sans verrou), vérifie le hachage — de l'ordre de 270 ms —, et c'est
+     * après seulement que Lexik crée le jeton. Entre-temps le changement de mot de
+     * passe a commité. Avec la date, la connexion qui signait une seconde après
+     * le changement passait ; avec la version, le jeton porte celle de
+     * l'instance lue avant le changement, donc l'ancienne : refusé à la requête
+     * suivante, sans rien devoir à l'horloge.
+     */
+    public function testALoginThatReadTheOldHashBeforeTheChangeIsRefusedWhateverWhenItIsSigned(): void
+    {
+        $this->registerTrusted();
+        $accountId = $this->accountId();
+        // Les attributs du cookie, ceux de la vraie connexion, avant que l'ancien mot de passe ne meure.
+        $this->signInAs(self::USERNAME, TestCredentials::plainPassword());
+        $repository = self::getContainer()->get(CpgUserRepositoryInterface::class);
+        $entityManager = self::getContainer()->get(EntityManagerInterface::class);
+
+        // La connexion lit le compte et vérifie l'ancien hachage…
+        $readByTheLogin = $repository->findOneById($accountId) ?? self::fail('Compte introuvable.');
+        $entityManager->detach($readByTheLogin);
+        self::assertSame(0, $readByTheLogin->getCredentialsVersion());
+
+        // … le changement de mot de passe commite entre-temps (le service réel)…
+        self::getContainer()->get(CpgUserAdministratorInterface::class)->changePassword($accountId, TestCredentials::variant('new'));
+
+        // … puis Lexik crée le jeton, bien après : `iat` est postérieur au changement, de plus d'une seconde.
+        sleep(2);
+        $jwt = self::getContainer()->get(JWTTokenManagerInterface::class)->create($readByTheLogin);
+        $this->putTheBearer($jwt);
+
+        $this->client->request('GET', self::ME);
+
+        $this->assertRefusedAsAClosedSession();
+    }
+
+    /**
+     * Le pendant, sans course : la connexion qui lit le compte **après** le
+     * changement porte la version courante et est servie (la limite acceptée de
+     * R1b — la même seconde refusée — a disparu).
+     */
+    public function testALoginReadingTheAccountAfterTheChangeIsServed(): void
+    {
+        $this->registerTrusted();
+        $accountId = $this->accountId();
+        self::getContainer()->get(CpgUserAdministratorInterface::class)->changePassword($accountId, TestCredentials::variant('new'));
+
+        $this->signInAs(self::USERNAME, TestCredentials::variant('new'));
         $this->client->request('GET', self::ME);
 
         self::assertResponseStatusCodeSame(200);
@@ -172,10 +268,9 @@ final class SessionBeforePasswordChangeTest extends WebTestCase
      */
     public function testTheRefusalClearsTheDeadCookiesSoThePublicRoutesStayServed(): void
     {
-        $changedAt = time() - 100;
         $account = $this->registerTrusted();
-        $this->datePasswordChange($account, $changedAt);
-        $this->replaceTheBearerWith($account, issuedAt: $changedAt - 60);
+        $this->setCredentialsVersion($account, 1);
+        $this->replaceTheBearerWith($account, version: 0);
 
         $this->client->request('GET', self::ME);
 
@@ -201,7 +296,7 @@ final class SessionBeforePasswordChangeTest extends WebTestCase
 
     /**
      * L'accès de base n'a pas de compte (ADR 0003 D6) : aucun mot de passe à
-     * avoir changé, aucune date à comparer. Son jeton, qui porte lui aussi un
+     * avoir changé, aucune version à comparer. Son jeton, qui porte lui aussi un
      * `iat`, n'est jamais refusé ici — un 403 (palier insuffisant pour `/api/me`),
      * pas un 401 (session close).
      */
@@ -211,7 +306,7 @@ final class SessionBeforePasswordChangeTest extends WebTestCase
         $this->client->request('POST', '/api/account/base-access', server: ['HTTP_X_REQUESTED_WITH' => 'fetch']);
         self::assertResponseIsSuccessful();
         // Un compte réel dont le mot de passe a changé n'y change rien.
-        $this->datePasswordChange($this->registerTrusted(), time() - 100);
+        $this->setCredentialsVersion($this->registerTrusted(), 1);
 
         $this->client->request('GET', self::ME);
 
@@ -259,25 +354,42 @@ final class SessionBeforePasswordChangeTest extends WebTestCase
         return self::getContainer()->get(CpgUserRegistrarInterface::class);
     }
 
-    /** Date le changement de mot de passe en SQL, à la seconde (`TIMESTAMP(0)`) : le test choisit l'instant. */
-    private function datePasswordChange(CpgUser $account, int $timestamp): void
+    /** Pose la version des identifiants du compte en SQL : le test choisit celle que la base a. */
+    private function setCredentialsVersion(CpgUser $account, int $version): void
     {
         $this->connection()->executeStatement(
-            'UPDATE cpg_user SET credentials_changed_at = to_timestamp(:at) WHERE id = :id',
-            ['at' => $timestamp, 'id' => $account->getId()->toRfc4122()],
+            'UPDATE cpg_user SET credentials_version = :version WHERE id = :id',
+            ['version' => $version, 'id' => $account->getId()->toRfc4122()],
         );
+    }
+
+    private function accountId(): Uuid
+    {
+        $id = $this->connection()->fetchOne('SELECT id FROM cpg_user WHERE username = :u', ['u' => self::USERNAME]);
+        self::assertIsString($id);
+
+        return Uuid::fromString($id);
     }
 
     /**
      * Remplace le cookie de session par un jeton **signé par la clé du site**, dont
-     * seul l'`iat` est choisi (le fournisseur de Lexik en pose toujours un). Les
-     * attributs du cookie sont ceux que la vraie connexion vient de poser.
+     * seuls la version (`null` : pas de revendication, un jeton d'avant le
+     * déploiement) et l'`iat` sont choisis. Les attributs du cookie sont ceux que
+     * la vraie connexion vient de poser.
      */
-    private function replaceTheBearerWith(CpgUser $account, int $issuedAt): void
+    private function replaceTheBearerWith(CpgUser $account, ?int $version, ?int $issuedAt = null): void
     {
-        $payload = ['username' => $account->getUserIdentifier(), 'roles' => $account->getRoles(), 'exp' => time() + 3600, 'iat' => $issuedAt];
-        $jwt = self::getContainer()->get(JWTEncoderInterface::class)->encode($payload);
+        $payload = ['username' => $account->getUserIdentifier(), 'roles' => $account->getRoles(), 'exp' => time() + 7200, 'iat' => $issuedAt ?? time()];
+        if (null !== $version) {
+            $payload[CredentialsVersionClaim::NAME] = $version;
+        }
 
+        $this->putTheBearer(self::getContainer()->get(JWTEncoderInterface::class)->encode($payload));
+    }
+
+    /** Dépose ce JWT dans le cookie `BEARER`, avec les attributs de la vraie connexion. */
+    private function putTheBearer(string $jwt): void
+    {
         $jar = $this->client->getCookieJar();
         $issued = $jar->get('BEARER');
         if (null === $issued) {

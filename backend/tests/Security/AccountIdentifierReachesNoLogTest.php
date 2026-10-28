@@ -176,15 +176,6 @@ final class AccountIdentifierReachesNoLogTest extends WebTestCase
         self::assertResponseStatusCodeSame(404);
         $this->collect('rejeu du lien');
 
-        // L'activation date le premier mot de passe, et une session ouverte
-        // dans la même seconde est refusée (#650, R1b : `iat` et la colonne
-        // sont à la seconde). Le scénario se connecte aussitôt après : il
-        // recule la date, comme une personne qui met plus d'une seconde à
-        // revenir à la page de connexion.
-        self::getContainer()->get(EntityManagerInterface::class)->getConnection()->executeStatement(
-            "UPDATE cpg_user SET credentials_changed_at = credentials_changed_at - INTERVAL '1 minute' WHERE credentials_changed_at IS NOT NULL",
-        );
-
         return $body['id'];
     }
 

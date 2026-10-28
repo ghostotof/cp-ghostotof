@@ -305,17 +305,18 @@ final class AccountWideRevocationDeadlockTest extends WebTestCase
     }
 
     /**
-     * Le mot de passe stocké et sa date de changement : les deux écrits par la
-     * révocation, relus tels quels pour être comparés.
+     * Le mot de passe stocké, sa date de changement et la version des
+     * identifiants : les trois écrits par la révocation, relus tels quels pour
+     * être comparés.
      *
-     * @return array{password: mixed, changed: mixed}
+     * @return array{password: mixed, changed: mixed, version: mixed}
      */
     private function accountCredentials(HeldMcpConnection $held): array
     {
-        $row = $this->mcpRows()->fetchAssociative('SELECT password, credentials_changed_at FROM cpg_user WHERE id = ?', [$held->accountId]);
+        $row = $this->mcpRows()->fetchAssociative('SELECT password, credentials_changed_at, credentials_version FROM cpg_user WHERE id = ?', [$held->accountId]);
         self::assertIsArray($row);
 
-        return ['password' => $row['password'], 'changed' => $row['credentials_changed_at']];
+        return ['password' => $row['password'], 'changed' => $row['credentials_changed_at'], 'version' => $row['credentials_version']];
     }
 
     /** Le nombre de jetons d'une table (`mcp_access_token` ou `mcp_refresh_token`) pour une connexion. */

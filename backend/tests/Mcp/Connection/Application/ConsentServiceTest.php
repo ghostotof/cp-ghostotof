@@ -107,8 +107,17 @@ final class ConsentServiceTest extends TestCase
      */
     private ?DateTimeImmutable $authenticatedAt;
 
+    /**
+     * La version des identifiants que le jeton de la session porte : celle du
+     * compte à la connexion (0 pour un compte jamais changé) ; null, un jeton
+     * sans revendication (émis avant le déploiement de S1).
+     */
+    private ?int $claimedVersion = 0;
+
     /** Combien de fois le port a été interrogé : la lecture du jeton signé n'est pas gratuite. */
     private int $instantReads = 0;
+
+    private int $versionReads = 0;
 
     protected function setUp(): void
     {
@@ -430,6 +439,7 @@ final class ConsentServiceTest extends TestCase
 
         $this->validatorRefusal = null;
         $this->authenticatedAt = null;
+        $this->claimedVersion = 0;
         $this->account->replacePassword('another-hash', new DateTimeImmutable(self::GRANTED_AT)->modify('+1 day'));
         $this->expectException(ConsentAccountChangedException::class);
 
@@ -437,23 +447,15 @@ final class ConsentServiceTest extends TestCase
     }
 
     /**
-     * F2 de la relecture de #650 : un mot de passe changé **à l'instant ou après**
-     * l'authentification de la session périme celle-ci (`CpgUser::hasChangedCredentialsSince()`,
-     * l'égalité comprise : la seconde de l'`iat` et l'arrondi de la colonne ne
-     * séparent pas deux événements d'une même seconde). Le résumé, le refus et
-     * l'accord le refusent tous trois, d'un 401 `reauthentication-required` :
-     * rien n'est écrit, journalisé ni même résumé.
+     * F2 de la relecture de #650, S1 de la seconde : un mot de passe changé depuis
+     * que la session s'est authentifiée périme celle-ci, jugé sur la **version des
+     * identifiants** que son jeton porte (`CpgUser::claimsAStaleCredentialsVersion()`)
+     * et non plus sur une date. Le résumé, le refus et l'accord le refusent tous
+     * trois, d'un 401 `reauthentication-required` : rien n'est écrit, journalisé
+     * ni même résumé.
      *
      * @return iterable<string, array{string}>
      */
-    public static function changesNoOlderThanTheAuthentication(): iterable
-    {
-        yield 'à la même seconde' => ['PT0S'];
-        yield 'une seconde après' => ['PT1S'];
-        yield 'une heure après' => ['PT1H'];
-    }
-
-    /** @return iterable<string, array{string}> */
     public static function consentCalls(): iterable
     {
         yield 'résumé' => ['summary'];
@@ -462,22 +464,26 @@ final class ConsentServiceTest extends TestCase
     }
 
     /**
-     * @return iterable<string, array{string, string}>
+     * Les jetons que la version courante (1, après un changement) périme : celui
+     * d'avant le changement (0), celui d'avant le déploiement (sans revendication,
+     * qui vaut 0) et celui d'une version qui n'existe pas.
+     *
+     * @return iterable<string, array{string, int|null}>
      */
-    public static function everyCallAfterEveryChange(): iterable
+    public static function everyCallWithAStaleClaim(): iterable
     {
-        foreach (self::changesNoOlderThanTheAuthentication() as $changeLabel => [$delay]) {
-            foreach (self::consentCalls() as $callLabel => [$call]) {
-                yield $callLabel.', changement '.$changeLabel => [$call, $delay];
-            }
+        foreach (self::consentCalls() as $callLabel => [$call]) {
+            yield $callLabel.', version d\'avant' => [$call, 0];
+            yield $callLabel.', sans revendication' => [$call, null];
+            yield $callLabel.', version d\'après' => [$call, 2];
         }
     }
 
-    #[DataProvider('everyCallAfterEveryChange')]
-    public function testASessionAuthenticatedBeforeAPasswordChangeIsRefusedReauthentication(string $call, string $delay): void
+    #[DataProvider('everyCallWithAStaleClaim')]
+    public function testASessionAuthenticatedBeforeAPasswordChangeIsRefusedReauthentication(string $call, ?int $claimedVersion): void
     {
-        $this->authenticatedAt = new DateTimeImmutable(self::GRANTED_AT);
-        $this->account->replacePassword('another-hash', $this->authenticatedAt->add(new DateInterval($delay)));
+        $this->account->replacePassword('another-hash', new DateTimeImmutable(self::GRANTED_AT));
+        $this->claimedVersion = $claimedVersion;
 
         try {
             $this->consentCall($call);
@@ -493,15 +499,16 @@ final class ConsentServiceTest extends TestCase
     }
 
     /**
-     * L'autre côté de la borne : une authentification d'**une seconde après** le
-     * changement n'est pas périmée. Les trois appels passent, l'accord compris
-     * (sa propre limite d'âge de dix minutes est respectée ici).
+     * L'autre côté : un jeton qui porte la version **courante** — la connexion a
+     * vérifié le mot de passe d'après le changement — n'est pas périmé, même si
+     * le changement date d'une seconde. Les trois appels passent, l'accord
+     * compris (sa propre limite d'âge de dix minutes est respectée ici).
      */
     #[DataProvider('consentCalls')]
     public function testASessionAuthenticatedAfterAPasswordChangeIsServed(string $call): void
     {
-        $this->authenticatedAt = new DateTimeImmutable(self::GRANTED_AT);
-        $this->account->replacePassword('another-hash', $this->authenticatedAt->modify('-1 second'));
+        $this->account->replacePassword('another-hash', new DateTimeImmutable(self::GRANTED_AT));
+        $this->claimedVersion = 1;
 
         $this->consentCall($call);
 
@@ -509,26 +516,20 @@ final class ConsentServiceTest extends TestCase
     }
 
     /**
-     * Un instant d'authentification inconnu vaut « trop ancien » — pour le
-     * résumé et le refus aussi, mais **seulement une fois le mot de passe changé** :
-     * sans changement, ils n'exigent toujours aucune authentification récente.
+     * Une revendication absente vaut la version 0 : le jeton d'une session ouverte
+     * avant le déploiement est servi **tant que le mot de passe n'a pas changé**
+     * (sinon chaque session ouverte sauterait au déploiement), et refusé dès qu'il
+     * a changé (le test ci-dessus).
      */
-    public function testAnUnknownAuthenticationInstantIsRefusedOnlyOnceThePasswordChanged(): void
+    public function testAnAbsentClaimIsVersionZeroAndServedWhileThePasswordNeverChanged(): void
     {
-        $this->authenticatedAt = null;
+        $this->claimedVersion = null;
 
         $this->consentCall('summary');
         $this->consentCall('denial');
-        $this->account->replacePassword('another-hash', new DateTimeImmutable(self::GRANTED_AT)->modify('-1 day'));
+        $this->consentCall('approval');
 
-        foreach (['summary', 'denial'] as $call) {
-            try {
-                $this->consentCall($call);
-                self::fail(\sprintf('%s : un instant inconnu après un changement de mot de passe doit être refusé.', $call));
-            } catch (ReauthenticationRequiredException) {
-                $this->addToAssertionCount(1);
-            }
-        }
+        self::assertNotNull($this->added);
     }
 
     /**
@@ -537,8 +538,8 @@ final class ConsentServiceTest extends TestCase
      */
     public function testAnInvalidRequestIsRejectedBeforeThePasswordChangeIsJudged(): void
     {
-        $this->authenticatedAt = new DateTimeImmutable(self::GRANTED_AT);
-        $this->account->replacePassword('another-hash', $this->authenticatedAt);
+        $this->account->replacePassword('another-hash', new DateTimeImmutable(self::GRANTED_AT));
+        $this->claimedVersion = 0;
         $this->validatorRefusal = OAuthServerException::invalidRequest('redirect_uri');
 
         $this->expectException(AuthorizationRequestRejectedException::class);
@@ -557,6 +558,7 @@ final class ConsentServiceTest extends TestCase
         $this->consentCall('denial');
 
         self::assertSame(0, $this->instantReads);
+        self::assertSame(0, $this->versionReads);
     }
 
     /** Un des trois appels du consentement, sur le compte du test. */
@@ -668,6 +670,11 @@ final class ConsentServiceTest extends TestCase
             ++$this->instantReads;
 
             return $this->authenticatedAt;
+        });
+        $instant->method('credentialsVersion')->willReturnCallback(function (): ?int {
+            ++$this->versionReads;
+
+            return $this->claimedVersion;
         });
 
         return $instant;

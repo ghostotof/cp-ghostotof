@@ -134,14 +134,6 @@ final class AccountPasswordSetupResourceTest extends WebTestCase
         self::assertResponseStatusCodeSame(204);
         self::assertSame('', (string) $client->getResponse()->getContent());
 
-        // L'activation date le premier mot de passe, et une session ouverte
-        // dans la même seconde est refusée (#650, R1b) : le test se connecte
-        // aussitôt, il recule la date, comme une personne qui met plus d'une
-        // seconde à revenir à la page de connexion.
-        self::getContainer()->get(EntityManagerInterface::class)->getConnection()->executeStatement(
-            "UPDATE cpg_user SET credentials_changed_at = credentials_changed_at - INTERVAL '1 minute' WHERE credentials_changed_at IS NOT NULL",
-        );
-
         // Le compte est désormais utilisable avec l'identifiant dérivé.
         $client->request('POST', '/api/login_check', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_X_REQUESTED_WITH' => 'fetch'], content: self::jsonBody([
             'username' => self::DERIVED_USERNAME,

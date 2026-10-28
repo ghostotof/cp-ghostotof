@@ -440,6 +440,8 @@ final class AccountWideRevocationTest extends WebTestCase
 
         self::assertNotNull($this->credentialsChangedAtOf($held->accountId), 'Le PUT n\'a pas daté le changement de mot de passe.');
         self::assertNull($this->credentialsChangedAtOf($foreign->accountId), 'Le compte d\'un autre n\'est pas concerné.');
+        self::assertSame(1, $this->credentialsVersionOf($held->accountId), 'Le PUT n\'a pas avancé la version des identifiants (#650, S1).');
+        self::assertSame(0, $this->credentialsVersionOf($foreign->accountId), 'Le compte d\'un autre n\'est pas concerné.');
 
         $this->assertConsentRefusedAsAStaleSession($cookiesHeldBefore);
         self::assertSame($connectionsBefore, $this->countRows('SELECT COUNT(*) FROM mcp_connection'));
@@ -460,6 +462,7 @@ final class AccountWideRevocationTest extends WebTestCase
 
         self::assertSame(Response::HTTP_NO_CONTENT, $response->getStatusCode(), substr((string) $response->getContent(), 0, 500));
         self::assertNotNull($this->credentialsChangedAtOf($held->accountId), 'Le lien n\'a pas daté le remplacement du mot de passe.');
+        self::assertSame(1, $this->credentialsVersionOf($held->accountId), 'Le lien n\'a pas avancé la version des identifiants (#650, S1).');
 
         $this->assertConsentRefusedAsAStaleSession($cookiesHeldBefore);
     }
@@ -478,6 +481,7 @@ final class AccountWideRevocationTest extends WebTestCase
         $this->completeSetupLink($linkToken);
 
         self::assertNotNull($this->credentialsChangedAtOf($newcomer->getId()->toRfc4122()), 'Le lien n\'a pas daté le premier mot de passe.');
+        self::assertSame(1, $this->credentialsVersionOf($newcomer->getId()->toRfc4122()), 'Le lien n\'a pas avancé la version des identifiants du premier mot de passe.');
     }
 
     /**
@@ -534,6 +538,14 @@ final class AccountWideRevocationTest extends WebTestCase
         foreach ($cookies as $cookie) {
             $jar->set($cookie);
         }
+    }
+
+    private function credentialsVersionOf(string $accountId): int
+    {
+        $value = $this->mcpRows()->fetchOne('SELECT credentials_version FROM cpg_user WHERE id = :id', ['id' => $accountId]);
+        self::assertIsInt($value);
+
+        return $value;
     }
 
     private function credentialsChangedAtOf(string $accountId): ?string

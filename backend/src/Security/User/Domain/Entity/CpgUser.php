@@ -163,16 +163,37 @@ class CpgUser implements UserInterface, PasswordAuthenticatedUserInterface, Acco
      * dans la fermeture du verrou du compte, avec le mot de passe lui-même ; le
      * re-hachage à la connexion (même secret) ne l'écrit pas.
      *
-     * Toute l'API authentifiée par le cookie refuse une session émise avant cet
-     * instant (hasChangedCredentialsSince(), lu par
-     * SessionBeforePasswordChangeRefusalListener ; le consentement MCP le lit
-     * aussi) : le JWT n'est pas révocable (ADR 0003, amendé le 2026-10-28), et
-     * la coupure des connexions au changement de mot de passe ne couvrait pas
-     * ce qu'un cookie volé accordait ensuite.
+     * **Ce n'est plus lui qui juge une session** (S1 de la seconde relecture) :
+     * la date comparée à l'`iat` d'un JWT refusait à tort ou laissait passer
+     * selon l'horloge et la seconde de la connexion — c'est
+     * {@see self::$credentialsVersion} qui décide désormais. La colonne n'est plus
+     * lue par aucune règle ; elle date seulement le dernier changement.
      */
     #[ORM\Column(type: Types::DATETIMETZ_IMMUTABLE, nullable: true)]
     #[Ignore]
     private ?DateTimeImmutable $credentialsChangedAt = null;
+
+    /**
+     * La **version des identifiants** du compte (#650, S1 de la seconde
+     * relecture, F-A et F-B) : avancée d'un cran par chaque remplacement de mot
+     * de passe, jamais par un re-hachage (même secret). Le JWT de session en porte
+     * une copie, posée à sa création depuis le compte dont le hachage vient d'être
+     * vérifié (CredentialsVersionClaimListener) ; chaque requête de l'API la
+     * compare **par égalité** à celle-ci (claimsAStaleCredentialsVersion()). Une
+     * connexion qui a lu l'ancien hachage avant le changement porte l'ancienne
+     * version, quel que soit l'instant où son jeton est signé — ce que la
+     * comparaison de dates, à la seconde, ne garantissait pas.
+     *
+     * **L'incrément est en mémoire, sous le verrou du compte** : replacePassword()
+     * n'est appelée que sur l'instance relue `FOR UPDATE` par l'`AccountLockInterface`
+     * (ses deux appelants), si bien que lire-ajouter-écrire ne peut croiser aucun
+     * autre écrivain ; un `UPDATE … SET v = v + 1` n'ajouterait qu'une écriture
+     * hors de l'unité de travail, sans rien protéger de plus. Un écrivain hors
+     * verrou (du SQL à la main) n'est pas couvert, comme pour le hachage lui-même.
+     */
+    #[ORM\Column(type: Types::INTEGER, options: ['default' => 0])]
+    #[Ignore]
+    private int $credentialsVersion = 0;
 
     public function __construct(string $username, string $hashedPassword)
     {
@@ -352,16 +373,21 @@ class CpgUser implements UserInterface, PasswordAuthenticatedUserInterface, Acco
     }
 
     /**
-     * Remplace le mot de passe **et date le changement**, ensemble : les deux
-     * écrivains d'un changement de mot de passe (`CpgUserAdministrator::changePassword()`
-     * et `PasswordSetupService::activate()`) passent par ici, jamais par
+     * Remplace le mot de passe, **date le changement et avance la version des
+     * identifiants**, ensemble : les deux écrivains d'un changement de mot de
+     * passe (`CpgUserAdministrator::changePassword()` et
+     * `PasswordSetupService::activate()`) passent par ici, jamais par
      * setPassword() seul — le re-hachage à la connexion, lui, garde le même
-     * secret et n'a rien à dater.
+     * secret et n'a rien à dater ni à avancer.
+     *
+     * À appeler sur l'instance relue sous le verrou du compte : l'incrément en
+     * mémoire n'est sûr que là (voir {@see self::$credentialsVersion}).
      */
     public function replacePassword(string $hashedPassword, DateTimeImmutable $at): void
     {
         $this->password = $hashedPassword;
         $this->credentialsChangedAt = $at;
+        ++$this->credentialsVersion;
     }
 
     public function getCredentialsChangedAt(): ?DateTimeImmutable
@@ -369,28 +395,26 @@ class CpgUser implements UserInterface, PasswordAuthenticatedUserInterface, Acco
         return $this->credentialsChangedAt;
     }
 
-    /**
-     * Le mot de passe a-t-il changé **à l'instant ou après** que cette
-     * authentification a eu lieu ? Vrai : la session qu'elle a ouverte ne prouve
-     * plus rien de la personne qui détient aujourd'hui le mot de passe.
-     *
-     * **Antérieur ou égal, jamais seulement antérieur** : l'instant
-     * d'authentification est le `iat` d'un JWT, à la seconde, et la colonne est
-     * un `TIMESTAMP(0)`, que PostgreSQL arrondit — un changement à 10:00:00,3
-     * est écrit 10:00:00, une connexion de 10:00:00,1 porte `iat` 10:00:00. La
-     * même seconde ne permet pas de dire laquelle est venue la première ; la
-     * tenir pour postérieure laisserait passer un cookie volé, la tenir pour
-     * périmée ne coûte qu'une reconnexion dans la seconde du changement. Un
-     * instant d'authentification inconnu (`null`) est tenu pour antérieur, comme
-     * partout dans le consentement. Sans changement de mot de passe, jamais vrai.
-     */
-    public function hasChangedCredentialsSince(?DateTimeImmutable $authenticatedAt): bool
+    public function getCredentialsVersion(): int
     {
-        if (null === $this->credentialsChangedAt) {
-            return false;
-        }
+        return $this->credentialsVersion;
+    }
 
-        return null === $authenticatedAt || $authenticatedAt <= $this->credentialsChangedAt;
+    /**
+     * La version des identifiants qu'une session déclare (la revendication de son
+     * JWT) est-elle **périmée** ? Vrai dès qu'elle diffère de la version courante :
+     * un **égalité**, pas un ordre — plus ancienne (le mot de passe a changé depuis),
+     * mais aussi plus récente (une base restaurée), qui ne prouve plus rien.
+     *
+     * `null` — pas de revendication — vaut la version 0 : un JWT émis avant le
+     * déploiement de S1 n'en porte pas. Il reste servi tant que le mot de passe du
+     * compte n'a jamais changé (sinon chaque session ouverte au déploiement
+     * sauterait), et il est refusé dès qu'il a changé. Un jeton émis après porte
+     * toujours la revendication, même à 0.
+     */
+    public function claimsAStaleCredentialsVersion(?int $claimedVersion): bool
+    {
+        return ($claimedVersion ?? 0) !== $this->credentialsVersion;
     }
 
     public function eraseCredentials(): void

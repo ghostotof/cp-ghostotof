@@ -247,6 +247,8 @@ final class CpgUserAdministratorTest extends TestCase
         self::assertSame('new-hashed-password', $locked->getPassword());
         self::assertEquals($clock->now(), $locked->getCredentialsChangedAt(), 'Le changement de mot de passe n\'est pas daté.');
         self::assertNull($user->getCredentialsChangedAt(), 'L\'instant a été écrit sur le compte d\'avant le verrou.');
+        self::assertSame(1, $locked->getCredentialsVersion(), 'Le changement de mot de passe n\'a pas avancé la version des identifiants (#650, S1).');
+        self::assertSame(0, $user->getCredentialsVersion(), 'La version a été avancée sur le compte d\'avant le verrou.');
     }
 
     public function testChangePasswordThrowsWhenUserNotFound(): void

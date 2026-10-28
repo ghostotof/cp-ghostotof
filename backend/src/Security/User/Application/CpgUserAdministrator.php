@@ -97,12 +97,14 @@ final readonly class CpgUserAdministrator implements CpgUserAdministratorInterfa
         // classe de `Mcp` : `Security` ne dépend d'aucune classe de `Mcp`.
         $hashedPassword = $this->passwordHasher->hashPassword($user, $newPlainPassword);
         $revoked = $this->accountLock->whileLocked($user, function (CpgUser $locked) use ($hashedPassword): RevokedAccountMcpConnections {
-            // Le mot de passe **et sa date** (F2 de la relecture de #650) : le
-            // consentement MCP refuse un cookie de session authentifié avant cet
-            // instant (`CpgUser::hasChangedCredentialsSince()`), ce que la seule
+            // Le mot de passe, **sa date et la version des identifiants** (F2 de
+            // la relecture de #650, S1 de la seconde) : tout cookie de session qui
+            // porte l'ancienne version est refusé par l'API entière
+            // (`CpgUser::claimsAStaleCredentialsVersion()`), ce que la seule
             // coupure des connexions existantes ne couvrait pas. Écrit sur le
-            // compte relu sous le verrou, dans la même transaction que le mot
-            // de passe : jamais l'un sans l'autre.
+            // compte relu sous le verrou — l'incrément en mémoire n'est sûr que
+            // là —, dans la même transaction que le mot de passe : jamais l'un
+            // sans l'autre.
             $locked->replacePassword($hashedPassword, $this->clock->now());
             $this->cpgUserRepository->save($locked);
             // Compte encore en attente d'activation : le mot de passe posé ici

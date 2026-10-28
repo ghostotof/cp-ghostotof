@@ -8,6 +8,7 @@ use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Exception\InvalidUsernameException;
 use App\Tests\Support\TestCredentials;
 use DateTimeImmutable;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Uid\UuidV7;
 
@@ -277,18 +278,22 @@ final class CpgUserTest extends TestCase
         self::assertFalse($user->isAwaitingPasswordSetup());
     }
 
-    /** Un compte que personne n'a jamais changé de mot de passe n'a aucun instant : aucun cookie n'est jugé périmé. */
-    public function testANewAccountHasNoCredentialsChangeAndStalesNoSession(): void
+    /** Un compte que personne n'a jamais changé de mot de passe est à la version 0 : une session sans revendication n'est pas périmée. */
+    public function testANewAccountIsAtVersionZeroAndStalesNoSession(): void
     {
         $user = new CpgUser('jane', 'hashed-password');
 
         self::assertNull($user->getCredentialsChangedAt());
-        self::assertFalse($user->hasChangedCredentialsSince(new DateTimeImmutable('2026-10-28 10:00:00')));
-        self::assertFalse($user->hasChangedCredentialsSince(null), 'Sans changement de mot de passe, un instant d\'authentification inconnu ne périme rien.');
+        self::assertSame(0, $user->getCredentialsVersion());
+        self::assertFalse($user->claimsAStaleCredentialsVersion(0));
+        self::assertFalse(
+            $user->claimsAStaleCredentialsVersion(null),
+            'Un jeton émis avant le déploiement n\'a pas de revendication : tant que le mot de passe n\'a pas changé, il vaut la version 0.',
+        );
     }
 
-    /** `replacePassword()` change le mot de passe ET date le changement, ensemble (F2, #650). */
-    public function testReplacingThePasswordRecordsTheInstant(): void
+    /** `replacePassword()` change le mot de passe, DATE le changement et AVANCE la version, ensemble (#650, F-A). */
+    public function testReplacingThePasswordRecordsTheInstantAndAdvancesTheVersion(): void
     {
         $user = new CpgUser('jane', 'hashed-password');
         $at = new DateTimeImmutable('2026-10-28 10:00:00');
@@ -297,55 +302,62 @@ final class CpgUserTest extends TestCase
 
         self::assertSame('another-hash', $user->getPassword());
         self::assertEquals($at, $user->getCredentialsChangedAt());
+        self::assertSame(1, $user->getCredentialsVersion());
+    }
+
+    /** Chaque remplacement avance la version d'un cran : deux changements, deux versions distinctes. */
+    public function testEachReplacementAdvancesTheVersionByOne(): void
+    {
+        $user = new CpgUser('jane', 'hashed-password');
+
+        $user->replacePassword('second-hash', new DateTimeImmutable('2026-10-28 10:00:00'));
+        $user->replacePassword('third-hash', new DateTimeImmutable('2026-10-28 10:00:00'));
+
+        self::assertSame(2, $user->getCredentialsVersion());
     }
 
     /**
      * Le simple re-hachage (`PasswordUpgraderInterface`, même secret) passe par
-     * `setPassword()` et ne date rien : il ne doit pas périmer les sessions.
+     * `setPassword()` et ne date ni n'avance rien : il ne doit pas périmer les sessions.
      */
-    public function testSettingThePasswordAloneRecordsNoInstant(): void
+    public function testSettingThePasswordAloneChangesNeitherTheInstantNorTheVersion(): void
     {
         $user = new CpgUser('jane', 'hashed-password');
 
         $user->setPassword('rehashed-same-secret');
 
         self::assertNull($user->getCredentialsChangedAt());
+        self::assertSame(0, $user->getCredentialsVersion());
     }
 
     /**
-     * Le choix large : une authentification **antérieure ou égale** au
-     * changement est périmée. L'instant d'authentification (`iat` du JWT) est
-     * à la seconde et la colonne `TIMESTAMP(0)` arrondit : une connexion de la
-     * même seconde que le changement ne se distingue pas d'une connexion
-     * d'avant, et la prendre pour d'après laisserait passer un cookie volé.
-     * Le coût — une personne qui se reconnecte dans la seconde — est nul.
+     * La comparaison est une **égalité** : la version du jeton est celle que le
+     * compte avait quand son mot de passe a été vérifié ; toute autre est
+     * périmée — plus ancienne, mais aussi plus récente (une base restaurée).
      */
-    public function testAnAuthenticationAtOrBeforeTheChangeIsStale(): void
+    #[DataProvider('claimedVersions')]
+    public function testAClaimedVersionIsStaleUnlessItEqualsTheCurrentOne(int $current, ?int $claimed, bool $stale): void
     {
         $user = new CpgUser('jane', 'hashed-password');
-        $user->replacePassword('another-hash', new DateTimeImmutable('2026-10-28 10:00:00'));
+        for ($i = 0; $i < $current; ++$i) {
+            $user->replacePassword('hash-'.$i, new DateTimeImmutable('2026-10-28 10:00:00'));
+        }
 
-        self::assertTrue($user->hasChangedCredentialsSince(new DateTimeImmutable('2026-10-28 09:59:59')));
-        self::assertTrue($user->hasChangedCredentialsSince(new DateTimeImmutable('2026-10-28 10:00:00')), 'La même seconde est périmée.');
-        self::assertFalse($user->hasChangedCredentialsSince(new DateTimeImmutable('2026-10-28 10:00:01')));
+        self::assertSame($stale, $user->claimsAStaleCredentialsVersion($claimed));
     }
 
-    /** Un instant d'authentification qu'on ne peut établir est tenu pour antérieur, comme le fait déjà le consentement. */
-    public function testAnUnknownAuthenticationInstantIsStaleOnceCredentialsChanged(): void
+    /** @return iterable<string, array{int, int|null, bool}> */
+    public static function claimedVersions(): iterable
     {
-        $user = new CpgUser('jane', 'hashed-password');
-        $user->replacePassword('another-hash', new DateTimeImmutable('2026-10-28 10:00:00'));
-
-        self::assertTrue($user->hasChangedCredentialsSince(null));
-    }
-
-    /** Les instants se comparent comme des instants : un fuseau différent ne décale pas le verdict. */
-    public function testTheComparisonIgnoresTheZoneOfTheInstants(): void
-    {
-        $user = new CpgUser('jane', 'hashed-password');
-        $user->replacePassword('another-hash', new DateTimeImmutable('2026-10-28 10:00:00+02:00'));
-
-        self::assertTrue($user->hasChangedCredentialsSince(new DateTimeImmutable('2026-10-28 08:00:00+00:00')));
-        self::assertFalse($user->hasChangedCredentialsSince(new DateTimeImmutable('2026-10-28 08:00:01+00:00')));
+        yield 'version courante' => [3, 3, false];
+        yield 'une version avant' => [3, 2, true];
+        yield 'la toute première' => [3, 0, true];
+        yield 'une version après (base restaurée)' => [3, 4, true];
+        // Un jeton émis avant le déploiement n'a pas de revendication (null) : il vaut 0,
+        // jamais refusé tant que le mot de passe n'a pas changé, refusé dès qu'il a changé.
+        yield 'sans revendication, mot de passe jamais changé' => [0, null, false];
+        yield 'sans revendication, mot de passe changé' => [1, null, true];
+        yield 'revendication présente, mot de passe jamais changé' => [0, 0, false];
+        yield 'revendication d\'une version qui n\'existe pas encore' => [0, 1, true];
     }
 }

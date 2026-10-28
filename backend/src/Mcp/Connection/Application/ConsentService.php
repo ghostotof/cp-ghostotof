@@ -147,8 +147,10 @@ final readonly class ConsentService implements ConsentServiceInterface
      * de l'accord lui laissait ouvrir une connexion de trente jours que la
      * révocation du changement de mot de passe ne pouvait plus couper, puisque
      * née après. Le compte lu ici est celui que le firewall vient de recharger en
-     * base : son `credentialsChangedAt` est celui du moment, jamais celui d'un
-     * état gardé.
+     * base : sa version des identifiants est celle du moment, jamais celle d'un
+     * état gardé — comparée à celle que le jeton de la session porte
+     * (S1 de la seconde relecture : une égalité, plus une date, qu'une seconde
+     * douteuse ou une horloge de pod faussaient).
      *
      * **Au résumé et au refus aussi**, contrairement à l'âge de l'authentification
      * (qui ne bloque que l'accord) : la remédiation d'un mot de passe volé
@@ -168,14 +170,18 @@ final readonly class ConsentService implements ConsentServiceInterface
      */
     private function refuseASessionOlderThanThePasswordChange(CpgUser $account): void
     {
-        // Le cas de presque tous les comptes : rien à comparer, donc aucune
-        // lecture du jeton (le port revérifie sa signature) au résumé ni au
-        // refus, qui n'avaient jusqu'ici aucune raison de la payer.
-        if (null === $account->getCredentialsChangedAt()) {
+        // Le cas de presque tous les comptes : le mot de passe n'a jamais changé
+        // (version 0), rien à comparer — un jeton d'avant le déploiement, sans
+        // revendication, vaut 0 lui aussi —, donc aucune lecture du jeton (le
+        // port revérifie sa signature) au résumé ni au refus, qui n'avaient
+        // jusqu'ici aucune raison de la payer. Le firewall `api`, lui, compare
+        // aussi ce cas (revendication présente et différente de 0) : cette porte
+        // n'est que la défense en profondeur.
+        if (0 === $account->getCredentialsVersion()) {
             return;
         }
 
-        if ($account->hasChangedCredentialsSince($this->authenticationInstant->authenticatedAt())) {
+        if ($account->claimsAStaleCredentialsVersion($this->authenticationInstant->credentialsVersion())) {
             throw ReauthenticationRequiredException::afterAPasswordChange();
         }
     }

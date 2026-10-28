@@ -345,20 +345,20 @@ final class ConsentControllerTest extends WebTestCase
     }
 
     /**
-     * F2 de la relecture de #650, le côté qui passe : un mot de passe changé
-     * **avant** l'authentification de la session (changement il y a deux minutes,
-     * connexion il y a une) ne la périme pas — le résumé et l'accord sont servis.
-     * Le côté qui refuse, avec les deux écrivains réels du mot de passe, est dans
-     * `AccountWideRevocationTest`.
+     * F2 de la relecture de #650, le côté qui passe : une session dont le jeton
+     * porte la version **courante** des identifiants (le mot de passe a déjà
+     * changé, la connexion l'a vérifié après) n'est pas périmée — le résumé et
+     * l'accord sont servis. Le côté qui refuse, avec les deux écrivains réels du
+     * mot de passe, est dans `AccountWideRevocationTest`.
      */
     public function testASessionAuthenticatedAfterThePasswordChangeIsServed(): void
     {
         $account = $this->loginAs(self::TRUSTED_USERNAME, [CpgUser::ROLE_TRUSTED]);
-        $this->replaceTheBearerWithAnAuthenticationOf($account, secondsAgo: 60);
         self::getContainer()->get(EntityManagerInterface::class)->getConnection()->executeStatement(
-            "UPDATE cpg_user SET credentials_changed_at = now() - INTERVAL '2 minutes' WHERE id = :id",
+            'UPDATE cpg_user SET credentials_version = 1 WHERE id = :id',
             ['id' => $account],
         );
+        $this->replaceTheBearerWithAnAuthenticationOf($account, secondsAgo: 60);
 
         $this->client->request('GET', self::PATH.'?'.http_build_query($this->validParameters()));
         self::assertSame(Response::HTTP_OK, $this->client->getResponse()->getStatusCode(), substr((string) $this->client->getResponse()->getContent(), 0, 500));
@@ -705,8 +705,11 @@ final class ConsentControllerTest extends WebTestCase
      */
     private function replaceTheBearerWithAnAuthenticationOf(string $accountId, int $secondsAgo): void
     {
-        $account = self::getContainer()->get(EntityManagerInterface::class)->find(CpgUser::class, $accountId);
+        $entityManager = self::getContainer()->get(EntityManagerInterface::class);
+        $account = $entityManager->find(CpgUser::class, $accountId);
         self::assertInstanceOf(CpgUser::class, $account);
+        // Le compte comme la base l'a maintenant : la version des identifiants entre dans le jeton.
+        $entityManager->refresh($account);
         $jwt = self::getContainer()->get(JWTTokenManagerInterface::class)->createFromPayload($account, ['iat' => time() - $secondsAgo]);
 
         $jar = $this->client->getCookieJar();

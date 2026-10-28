@@ -5,15 +5,16 @@ declare(strict_types=1);
 namespace App\Security\Authentication\Infrastructure\Security;
 
 use App\Security\User\Domain\Entity\CpgUser;
-use DateTimeImmutable;
+use App\Shared\Domain\Security\CredentialsVersionClaim;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 use Symfony\Component\Security\Http\Authenticator\Passport\Passport;
 use Symfony\Component\Security\Http\Event\CheckPassportEvent;
 
 /**
  * Refuse, sur **toute** l'API authentifiée par le cookie `BEARER`, un JWT de
- * session émis avant le dernier changement de mot de passe du compte (#650, R1b
- * de la relecture, décision de l'auteur du 2026-10-28).
+ * session ouvert avant le dernier changement de mot de passe du compte (#650, R1b
+ * de la relecture, décision de l'auteur du 2026-10-28 ; S1 de la seconde
+ * relecture : jugé sur la **version des identifiants**, plus sur une date).
  *
  * Le JWT n'est pas révocable individuellement (ADR 0003, risque accepté : un
  * `jti` révoqué demanderait une lecture par requête). Il ne survit pourtant
@@ -22,14 +23,20 @@ use Symfony\Component\Security\Http\Event\CheckPassportEvent;
  * fermée au seul consentement ; cet écouteur la ferme partout, et le 401 de la
  * requête suivante renvoie la personne à la connexion.
  *
- * **Une seule source de vérité** : la règle (antérieur **ou égal**, `iat` à la
- * seconde contre une colonne `TIMESTAMP(0)` ; un instant inconnu tenu pour
- * antérieur ; jamais vrai sans changement de mot de passe) est
- * `CpgUser::hasChangedCredentialsSince()`, que le consentement MCP lit aussi.
+ * **Une seule source de vérité** : la règle est
+ * `CpgUser::claimsAStaleCredentialsVersion()`, que le consentement MCP lit aussi —
+ * l'**égalité** entre la version des identifiants que le JWT porte (revendication
+ * `cv`, posée à sa création depuis le compte dont le hachage venait d'être
+ * vérifié, CredentialsVersionClaimListener) et celle du compte rechargé à cette
+ * requête. Aucune horloge, donc aucune seconde douteuse : l'ancienne règle
+ * (`iat` ≤ date du changement) laissait passer une connexion qui avait lu
+ * l'ancien hachage avant le COMMIT du changement mais signait son jeton une
+ * seconde après (F-A), et refusait à tort une reconnexion légitime quand les
+ * horloges de deux pods divergeaient (F-B).
  *
  * **Pourquoi `CheckPassportEvent` sur le firewall `api`**, et pas
  * `JWTAuthenticatedEvent`, un `UserChecker` ou un authentificateur décoré :
- *  - le passeport porte déjà le payload décodé (`iat` compris) et le compte
+ *  - le passeport porte déjà le payload décodé (revendication `cv` comprise) et le compte
  *    rechargé en base à cette requête (UserCheckerListener, priorité 256, l'a
  *    chargé) — **aucune lecture de plus**, ni requête SQL ni seconde
  *    vérification de signature : un compte dont le mot de passe n'a jamais
@@ -59,16 +66,18 @@ use Symfony\Component\Security\Http\Event\CheckPassportEvent;
  * sans mot de passe à avoir changé. Le test porte sur la classe de l'utilisateur,
  * jamais sur la présence d'un claim.
  *
- * **Échoue fermé** : un passeport sans `iat` lisible (claim absent, ou qui n'est
- * pas un entier) est un instant inconnu, donc antérieur — pour un compte dont le
- * mot de passe a changé. Aucun authentificateur de l'API n'émet un tel jeton
- * aujourd'hui ; un second authentificateur ajouté un jour sur ce firewall devra
- * porter l'instant d'authentification dans l'attribut `payload`, ou ne pas
- * servir de compte dont le mot de passe a changé.
+ * **Une revendication absente vaut la version 0** : un JWT émis avant le
+ * déploiement n'en porte pas. Il reste servi tant que le mot de passe du compte
+ * n'a pas changé (sinon chaque session ouverte au déploiement sauterait) et est
+ * refusé dès qu'il a changé. **Échoue fermé** pour le reste : une revendication
+ * **présente** qui n'est pas un entier est illisible, donc refusée — même pour un
+ * compte jamais changé. Notre écouteur de création ne l'écrit jamais ainsi, la
+ * signature du site garde ce cas hors d'atteinte. Un second authentificateur
+ * ajouté un jour sur ce firewall devra porter la version dans l'attribut
+ * `payload`, ou ne pas servir de compte dont le mot de passe a changé.
  *
- * **Limite acceptée** (celle de R1) : la même seconde est refusée dans les deux
- * sens — une personne qui se reconnecte dans la seconde même du changement de
- * son mot de passe reçoit un 401 et recommence.
+ * **Le même jeton, une version plus récente que le compte** (une base restaurée)
+ * est refusé aussi : c'est une égalité, pas un ordre.
  */
 #[AsEventListener(event: CheckPassportEvent::class, priority: 128, dispatcher: 'security.event_dispatcher.api')]
 final readonly class SessionBeforePasswordChangeRefusalListener
@@ -82,20 +91,28 @@ final readonly class SessionBeforePasswordChangeRefusalListener
             return;
         }
 
-        if ($user->hasChangedCredentialsSince($this->authenticatedAt($passport))) {
+        $claim = $this->claimedVersion($passport);
+        // `false` : une revendication présente mais illisible, refusée d'emblée.
+        if (false === $claim || $user->claimsAStaleCredentialsVersion($claim)) {
             throw new SessionPredatesPasswordChangeException();
         }
     }
 
     /**
-     * Le `iat` du payload que l'authentificateur a décodé (signature et échéance
-     * déjà vérifiées par Lexik), ou `null` quand on ne peut pas l'établir.
+     * La version des identifiants que le payload décodé (signature et échéance
+     * déjà vérifiées par Lexik) déclare : l'entier, `null` quand la revendication
+     * est absente (un jeton d'avant le déploiement, qui vaut 0), `false` quand
+     * elle est présente sans être un entier.
      */
-    private function authenticatedAt(Passport $passport): ?DateTimeImmutable
+    private function claimedVersion(Passport $passport): int|false|null
     {
         $payload = $passport->getAttribute('payload');
-        $issuedAt = \is_array($payload) ? ($payload['iat'] ?? null) : null;
+        if (!\is_array($payload) || !\array_key_exists(CredentialsVersionClaim::NAME, $payload)) {
+            return null;
+        }
 
-        return \is_int($issuedAt) ? new DateTimeImmutable('@'.$issuedAt) : null;
+        $claim = $payload[CredentialsVersionClaim::NAME];
+
+        return \is_int($claim) ? $claim : false;
     }
 }
