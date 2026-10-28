@@ -250,7 +250,7 @@ final class OwnMcpConnectionsControllerTest extends WebTestCase
      * Borne de l'historique (#650, R3) : cinquante et une terminées, deux non
      * révoquées dont une **plus ancienne que toutes les terminées** — la liste
      * rend les deux non révoquées, les cinquante terminées les plus
-     * récemment octroyées (jamais la cinquante et unième), et le dit par
+     * récemment terminées (jamais la cinquante et unième ; CR2 : l'instant de fin décide de la coupe, ici aligné sur l'octroi), et le dit par
      * `terminatedTruncated`.
      */
     public function testTheListKeepsEveryNonRevokedConnectionAndTheLastFiftyTerminated(): void
@@ -273,7 +273,7 @@ final class OwnMcpConnectionsControllerTest extends WebTestCase
             array_map(static fn (array $entry): mixed => 'revoked' === $entry['state'] ? $entry['id'] : null, $entries),
             static fn (mixed $id): bool => null !== $id,
         ));
-        self::assertSame($expectedTerminated, $terminatedIds, 'Les cinquante terminées les plus récemment octroyées, pas une de plus.');
+        self::assertSame($expectedTerminated, $terminatedIds, 'Les cinquante dernièrement terminées, pas une de plus.');
         self::assertSame($ids[0], $recent->connectionId, 'L\'ordre est celui de l\'octroi décroissant, les deux moitiés mêlées.');
         self::assertSame($old->connectionId, $ids[\count($ids) - 1], 'L\'ancienne non révoquée vient après les terminées plus récentes qu\'elle.');
         // La coupe est faite par la base, pas en PHP après avoir tout hydraté : une ligne de plus que la limite est lue, pas toutes.
@@ -629,7 +629,7 @@ final class OwnMcpConnectionsControllerTest extends WebTestCase
     {
         $inserted = $this->mcpRows()->executeStatement(
             "INSERT INTO mcp_connection (id, scope, granted_at, last_used_at, revoked_at, account_id, mcp_client_id, revocation_cause, code_exchanged_at)
-             SELECT gen_random_uuid(), source.scope, now() - (n * INTERVAL '1 minute'), NULL, now(), source.account_id, source.mcp_client_id, 'person', now()
+             SELECT gen_random_uuid(), source.scope, now() - (n * INTERVAL '1 minute'), NULL, now() - (n * INTERVAL '1 second'), source.account_id, source.mcp_client_id, 'person', now()
              FROM mcp_connection source CROSS JOIN generate_series(1, :count) AS n WHERE source.id = :id",
             ['count' => $count, 'id' => $template->connectionId],
         );
@@ -638,11 +638,11 @@ final class OwnMcpConnectionsControllerTest extends WebTestCase
     }
 
     /**
-     * @return list<string> les révoquées de la base, la plus récemment octroyée d'abord
+     * @return list<string> les révoquées de la base, la dernièrement terminée d'abord (l'ordre de la coupe, CR2)
      */
     private function terminatedIdsNewestFirst(): array
     {
-        $ids = $this->mcpRows()->fetchFirstColumn('SELECT id FROM mcp_connection WHERE revoked_at IS NOT NULL ORDER BY granted_at DESC, id DESC');
+        $ids = $this->mcpRows()->fetchFirstColumn('SELECT id FROM mcp_connection WHERE revoked_at IS NOT NULL ORDER BY revoked_at DESC, id DESC');
 
         return array_map(static fn (mixed $id): string => \is_string($id) ? $id : '', $ids);
     }

@@ -7,6 +7,7 @@ namespace App\Tests\Mcp\Connection\Application;
 use App\Mcp\Connection\Application\FailSafeAudit;
 use App\Mcp\Connection\Application\OwnMcpConnections;
 use App\Mcp\Connection\Application\OwnMcpConnectionView;
+use App\Mcp\Connection\Application\ReadSnapshotInterface;
 use App\Mcp\Connection\Application\RevokedConnectionAudit;
 use App\Mcp\Connection\Domain\Entity\McpConnection;
 use App\Mcp\Connection\Domain\Exception\McpConnectionNotFoundException;
@@ -19,6 +20,7 @@ use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Shared\Domain\Security\AccountReference;
 use App\Tests\Mcp\Connection\RegisteredMcpClient;
+use Closure;
 use DateTimeImmutable;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
@@ -160,6 +162,41 @@ final class OwnMcpConnectionsTest extends TestCase
     }
 
     /**
+     * CR3 de la seconde relecture : les deux moitiés se lisent **dans le même
+     * instantané**. Deux requêtes en lecture validée, une révocation entre elles :
+     * la connexion disparaîtrait de la liste. Le journal dit l'ordre : l'instantané
+     * s'ouvre, les deux lectures ont lieu, il se referme — aucune hors de lui.
+     * (Que l'instantané soit un vrai `REPEATABLE READ` : DoctrineReadSnapshotTest.)
+     */
+    public function testBothHalvesAreReadInsideOneSnapshot(): void
+    {
+        $journal = [];
+        $connections = self::createStub(McpConnectionRepositoryInterface::class);
+        $connections->method('findTerminatedOfAccount')->willReturnCallback(static function () use (&$journal): array {
+            $journal[] = 'terminated';
+
+            return [];
+        });
+        $connections->method('findNotRevokedOfAccount')->willReturnCallback(static function () use (&$journal): array {
+            $journal[] = 'not-revoked';
+
+            return [];
+        });
+        $snapshot = self::createStub(ReadSnapshotInterface::class);
+        $snapshot->method('read')->willReturnCallback(static function (Closure $reads) use (&$journal): mixed {
+            $journal[] = 'snapshot-opened';
+            $result = $reads();
+            $journal[] = 'snapshot-closed';
+
+            return $result;
+        });
+
+        $this->service($connections, self::createStub(SecurityAuditLoggerInterface::class), $snapshot)->of($this->account());
+
+        self::assertSame(['snapshot-opened', 'terminated', 'not-revoked', 'snapshot-closed'], $journal);
+    }
+
+    /**
      * @return list<McpConnection> la plus récemment octroyée d'abord, une heure d'écart
      */
     private function connectionsGrantedEveryHour(int $count): array
@@ -186,14 +223,24 @@ final class OwnMcpConnectionsTest extends TestCase
         return $connection;
     }
 
-    private function service(McpConnectionRepositoryInterface $connections, SecurityAuditLoggerInterface $auditLogger): OwnMcpConnections
+    private function service(McpConnectionRepositoryInterface $connections, SecurityAuditLoggerInterface $auditLogger, ?ReadSnapshotInterface $snapshot = null): OwnMcpConnections
     {
         return new OwnMcpConnections(
             $connections,
             new MockClock(new DateTimeImmutable(self::NOW)),
             ConnectionLifetimes::fromConfiguration('PT10M', 'PT1H', 'P30D', 'P30D', 'P90D', 'PT1H'),
             new RevokedConnectionAudit($auditLogger, new FailSafeAudit(new NullLogger())),
+            $snapshot ?? $this->passThroughSnapshot(),
         );
+    }
+
+    /** Un instantané qui ne fait que passer la main : les tests qui ne parlent pas d'isolation n'en ont pas besoin. */
+    private function passThroughSnapshot(): ReadSnapshotInterface
+    {
+        $snapshot = self::createStub(ReadSnapshotInterface::class);
+        $snapshot->method('read')->willReturnCallback(static fn (Closure $reads): mixed => $reads());
+
+        return $snapshot;
     }
 
     private function account(): AccountReference

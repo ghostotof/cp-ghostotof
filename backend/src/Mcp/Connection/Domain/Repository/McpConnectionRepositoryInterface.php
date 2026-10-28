@@ -44,12 +44,17 @@ interface McpConnectionRepositoryInterface
     /**
      * La seconde moitié : les `$limit` connexions **terminées** du compte
      * (`revoked_at` posé, quelle qu'en soit la cause : la personne, le client,
-     * la purge, une remplaçante) octroyées le plus récemment, avec leur client,
+     * la purge, une remplaçante) **dernièrement terminées**, avec leur client,
      * **en une requête**. La purge les garde six mois et chaque approbation
      * abandonnée ou remplacée en laisse une : sans borne, la liste grossirait
-     * avec l'âge du compte. Même ordre que {@see findNotRevokedOfAccount()}, et
-     * l'identifiant décide *quelles* terminées une limite garde. Demander une
-     * ligne de plus que ce qu'on montre dit s'il y en a davantage.
+     * avec l'âge du compte. **Triées par instant de fin décroissant, pas par
+     * octroi** (#650, CR2 de la seconde relecture) : la connexion que la personne
+     * vient de couper doit être dans la liste, même octroyée il y a des mois —
+     * triée par octroi, cinquante terminées plus récentes la chassaient. Ici
+     * « terminée » est l'instant de `revoked_at` ; l'identifiant décroissant
+     * départage deux fins égales et décide *quelles* terminées une limite garde.
+     * Le service remet les deux moitiés dans l'ordre d'octroi pour l'affichage.
+     * Demander une ligne de plus que ce qu'on montre dit s'il y en a davantage.
      *
      * @param positive-int $limit
      *

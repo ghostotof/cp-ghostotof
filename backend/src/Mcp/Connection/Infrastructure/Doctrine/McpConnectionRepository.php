@@ -80,8 +80,10 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
     public function findNotRevokedOfAccount(Uuid $accountId): array
     {
         /** @var list<McpConnection> */
-        return $this->ofAccountNewestFirst($accountId)
+        return $this->ofAccount($accountId)
             ->andWhere('connection.revokedAt IS NULL')
+            ->orderBy('connection.grantedAt', 'DESC')
+            ->addOrderBy('connection.id', 'DESC')
             ->getQuery()
             ->getResult();
     }
@@ -89,8 +91,10 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
     public function findTerminatedOfAccount(Uuid $accountId, int $limit): array
     {
         /** @var list<McpConnection> */
-        return $this->ofAccountNewestFirst($accountId)
+        return $this->ofAccount($accountId)
             ->andWhere('connection.revokedAt IS NOT NULL')
+            ->orderBy('connection.revokedAt', 'DESC')
+            ->addOrderBy('connection.id', 'DESC')
             ->setMaxResults($limit)
             ->getQuery()
             ->getResult();
@@ -99,22 +103,21 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
     /**
      * Le socle des deux lectures de la liste : les connexions du compte, leur
      * client joint (`innerJoin` + `addSelect`) — la liste affiche son nom, et
-     * une jointure évite une requête par connexion —, la plus récemment
-     * octroyée d'abord, l'identifiant décroissant départageant deux octrois de
-     * la même seconde (un ordre qui ne dépend pas du plan de la requête, et qui
-     * décide *quelles* terminées une limite garde). Le compte n'est pas joint :
+     * une jointure évite une requête par connexion. Le compte n'est pas joint :
      * l'appelant le tient déjà, la colonne `account_id` suffit au filtre, et son
-     * identifiant est typé comme elle.
+     * identifiant est typé comme elle. **L'ordre est celui de chaque appelant**,
+     * car il décide *quelles* lignes une limite garde : l'octroi pour les non
+     * révoquées (toutes rendues, l'ordre n'est que de présentation), l'instant de
+     * fin pour les terminées ; dans les deux cas l'identifiant décroissant
+     * départage deux instants égaux, un ordre qui ne dépend pas du plan.
      */
-    private function ofAccountNewestFirst(Uuid $accountId): QueryBuilder
+    private function ofAccount(Uuid $accountId): QueryBuilder
     {
         return $this->createQueryBuilder('connection')
             ->addSelect('client')
             ->innerJoin('connection.client', 'client')
             ->where('IDENTITY(connection.account) = :account')
-            ->setParameter('account', $accountId, UuidType::NAME)
-            ->orderBy('connection.grantedAt', 'DESC')
-            ->addOrderBy('connection.id', 'DESC');
+            ->setParameter('account', $accountId, UuidType::NAME);
     }
 
     public function add(McpConnection $connection): void

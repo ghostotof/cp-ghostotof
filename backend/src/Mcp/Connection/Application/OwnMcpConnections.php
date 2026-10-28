@@ -17,8 +17,12 @@ use Symfony\Component\Uid\Uuid;
 /**
  * « Mes connexions MCP » (#650), la lecture : deux requêtes au plus (les
  * connexions non révoquées du compte, toutes ; les {@see self::TERMINATED_LIMIT}
- * dernières terminées), chacune avec son client joint, l'état et l'échéance
- * jugés à l'instant de l'horloge — Paris, comme partout dans la tranche.
+ * dernières *terminées* — au sens de leur instant de fin, pas de leur octroi),
+ * chacune avec son client joint, **lues dans un même instantané**
+ * ({@see ReadSnapshotInterface}), l'état et l'échéance jugés à l'instant de
+ * l'horloge — Paris, comme partout dans la tranche. L'ordre d'**affichage** reste
+ * celui de l'octroi : l'instant de fin décide *quelles* terminées on garde, pas
+ * l'ordre où on les montre.
  *
  * **La révocation par la personne** est une instruction, sans
  * `TransactionInterface` ({@see McpConnectionRepositoryInterface::revokeActiveOfAccount()}) :
@@ -53,6 +57,7 @@ final readonly class OwnMcpConnections implements OwnMcpConnectionsInterface
         private ClockInterface $clock,
         private ConnectionLifetimes $lifetimes,
         private RevokedConnectionAudit $revokedAudit,
+        private ReadSnapshotInterface $snapshot,
     ) {
     }
 
@@ -62,9 +67,15 @@ final readonly class OwnMcpConnections implements OwnMcpConnectionsInterface
         $accountId = Uuid::fromString($account->accountId());
 
         // Une lecture par moitié : une ligne terminée de plus que la limite
-        // suffit à dire qu'il y en a davantage, sans second COUNT.
-        $terminated = $this->connections->findTerminatedOfAccount($accountId, self::TERMINATED_LIMIT + 1);
-        $connections = [...$this->connections->findNotRevokedOfAccount($accountId), ...\array_slice($terminated, 0, self::TERMINATED_LIMIT)];
+        // suffit à dire qu'il y en a davantage, sans second COUNT. **Les deux
+        // dans le même instantané** (CR3) : une connexion révoquée entre les
+        // deux requêtes ne doit ni disparaître de la liste ni y figurer deux fois.
+        $halves = $this->snapshot->read(fn (): array => [
+            'terminated' => $this->connections->findTerminatedOfAccount($accountId, self::TERMINATED_LIMIT + 1),
+            'notRevoked' => $this->connections->findNotRevokedOfAccount($accountId),
+        ]);
+        $terminated = $halves['terminated'];
+        $connections = [...$halves['notRevoked'], ...\array_slice($terminated, 0, self::TERMINATED_LIMIT)];
         // Les deux moitiés se mêlent dans l'ordre du client : octroi décroissant, identifiant décroissant.
         usort($connections, $this->newestGrantFirst(...));
 
