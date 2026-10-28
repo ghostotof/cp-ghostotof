@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Mcp\Connection\Application;
 
 use App\Mcp\Connection\Domain\Exception\AuthorizationRequestRejectedException;
+use App\Mcp\Connection\Domain\Exception\ReauthenticationRequiredException;
 use App\Security\User\Domain\Entity\CpgUser;
 use Psr\Http\Message\ServerRequestInterface;
 
@@ -24,8 +25,9 @@ interface ConsentServiceInterface
      * La demande, revalidée telle que reçue, résumée pour la page.
      *
      * @throws AuthorizationRequestRejectedException quand elle n'est pas (ou plus) valable
+     * @throws ReauthenticationRequiredException      quand le mot de passe de `$account` a changé depuis l'authentification de la session
      */
-    public function summarize(ServerRequestInterface $request): AuthorizationRequestSummary;
+    public function summarize(ServerRequestInterface $request, CpgUser $account): AuthorizationRequestSummary;
 
     /**
      * La réponse de `$account` à la demande, revalidée : l'accord crée la
@@ -35,6 +37,7 @@ interface ConsentServiceInterface
      *                `error=access_denied` (refus), `state` et `iss` (RFC 9207)
      *
      * @throws AuthorizationRequestRejectedException quand elle n'est pas (ou plus) valable
+     * @throws ReauthenticationRequiredException      quand le mot de passe de `$account` a changé depuis l'authentification de la session, ou, pour l'accord seul, que celle-ci est trop ancienne
      */
     public function decide(ConsentDecision $decision, CpgUser $account): string;
 }

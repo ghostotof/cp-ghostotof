@@ -17,6 +17,7 @@ use DateInterval;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Clock\ClockInterface;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
+use Symfony\Component\BrowserKit\Cookie;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
@@ -417,6 +418,120 @@ final class AccountWideRevocationTest extends WebTestCase
         self::assertCount(1, self::securityAuditEvents('account-activated'));
         self::assertSame([], self::securityAuditEvents(self::REVOKED_EVENT));
         self::assertNull($this->causeOf($foreign));
+    }
+
+    /**
+     * F2 de la relecture de #650, premier écrivain : le `PUT` du backoffice date
+     * le changement de mot de passe du compte **et de lui seul**, et le cookie
+     * que la personne tenait avant (un cookie volé, dans l'attaque) n'obtient
+     * plus rien du consentement : ni le résumé, ni l'accord, ni le refus — 401
+     * `reauthentication-required`. Aucune connexion ni code n'est écrit, aucune
+     * ligne `mcp-connection-granted`.
+     */
+    public function testAPasswordChangeStalesTheCookieHeldBeforeAtTheConsent(): void
+    {
+        $held = $this->holdMcpConnection();
+        $cookiesHeldBefore = $this->cookiesOfASessionOpenedBefore();
+        $foreign = $this->holdConnectionOfAnotherAccount();
+        $this->signInAsAdmin();
+        $connectionsBefore = $this->countRows('SELECT COUNT(*) FROM mcp_connection');
+        $this->changePasswordOf($held->accountId);
+        self::assertSame(Response::HTTP_NO_CONTENT, $this->client->getResponse()->getStatusCode());
+
+        self::assertNotNull($this->credentialsChangedAtOf($held->accountId), 'Le PUT n\'a pas daté le changement de mot de passe.');
+        self::assertNull($this->credentialsChangedAtOf($foreign->accountId), 'Le compte d\'un autre n\'est pas concerné.');
+        $this->restoreCookies($cookiesHeldBefore);
+
+        $this->assertConsentRefusedAsAStaleSession();
+        self::assertSame($connectionsBefore, $this->countRows('SELECT COUNT(*) FROM mcp_connection'));
+        self::assertSame([], self::securityAuditEvents('mcp-connection-granted'));
+    }
+
+    /**
+     * F2, second écrivain : le lien d'invitation qui **remplace** un mot de
+     * passe date le changement, et le cookie d'avant ne consent plus.
+     */
+    public function testAnInvitationLinkReplacingAPasswordStalesTheCookieHeldBeforeAtTheConsent(): void
+    {
+        $held = $this->holdMcpConnection();
+        $cookiesHeldBefore = $this->cookiesOfASessionOpenedBefore();
+        $linkToken = $this->makePendingWithItsPassword($held->accountId);
+
+        $response = $this->completeSetupLink($linkToken);
+
+        self::assertSame(Response::HTTP_NO_CONTENT, $response->getStatusCode(), substr((string) $response->getContent(), 0, 500));
+        self::assertNotNull($this->credentialsChangedAtOf($held->accountId), 'Le lien n\'a pas daté le remplacement du mot de passe.');
+        $this->restoreCookies($cookiesHeldBefore);
+
+        $this->assertConsentRefusedAsAStaleSession();
+    }
+
+    /**
+     * F2, le lien qui **pose** un premier mot de passe date aussi le changement
+     * (aucune condition à oublier : un chemin, une écriture).
+     */
+    public function testAnInvitationLinkSettingAFirstPasswordDatesTheChangeToo(): void
+    {
+        $newcomer = new CpgUser('newcomer', '');
+        $newcomer->markInvited(self::getContainer()->get(ClockInterface::class)->now());
+        self::getContainer()->get(CpgUserRepositoryInterface::class)->add($newcomer);
+        $linkToken = $this->issueSetupLinkFor($newcomer);
+
+        $this->completeSetupLink($linkToken);
+
+        self::assertNotNull($this->credentialsChangedAtOf($newcomer->getId()->toRfc4122()), 'Le lien n\'a pas daté le premier mot de passe.');
+    }
+
+    /**
+     * Le résumé, l'accord et le refus d'une session d'avant le changement : le
+     * même 401 typé, sur le cookie qu'on vient de restaurer.
+     */
+    private function assertConsentRefusedAsAStaleSession(): void
+    {
+        $this->client->request('GET', self::CONSENT_PATH.'?'.http_build_query($this->validParameters()));
+        $summary = $this->client->getResponse();
+        self::assertSame(Response::HTTP_UNAUTHORIZED, $summary->getStatusCode(), substr((string) $summary->getContent(), 0, 300));
+        self::assertSame('/errors/reauthentication-required', $this->json($summary)['type'] ?? null);
+
+        foreach ([true, false] as $approved) {
+            $decision = $this->decide(approved: $approved);
+            self::assertSame(Response::HTTP_UNAUTHORIZED, $decision->getStatusCode(), substr((string) $decision->getContent(), 0, 300));
+            self::assertSame('/errors/reauthentication-required', $this->json($decision)['type'] ?? null);
+            self::assertArrayNotHasKey('redirectUri', $this->json($decision));
+        }
+    }
+
+    /**
+     * Les cookies de la personne, connectée **avant** le changement de mot de
+     * passe : l'échange du code les a vidés (le client MCP n'en garde aucun), il
+     * faut donc en ouvrir une session, que l'attaque (un cookie volé) a gardée.
+     *
+     * @return array<array-key, Cookie>
+     */
+    private function cookiesOfASessionOpenedBefore(): array
+    {
+        $this->signInAs(self::TRUSTED_USERNAME, TestCredentials::superPassword());
+
+        return $this->client->getCookieJar()->all();
+    }
+
+    /**
+     * @param array<array-key, Cookie> $cookies
+     */
+    private function restoreCookies(array $cookies): void
+    {
+        $jar = $this->client->getCookieJar();
+        $jar->clear();
+        foreach ($cookies as $cookie) {
+            $jar->set($cookie);
+        }
+    }
+
+    private function credentialsChangedAtOf(string $accountId): ?string
+    {
+        $value = $this->mcpRows()->fetchOne('SELECT credentials_changed_at FROM cpg_user WHERE id = :id', ['id' => $accountId]);
+
+        return \is_string($value) ? $value : null;
     }
 
     /**

@@ -84,17 +84,59 @@ final readonly class ConsentService implements ConsentServiceInterface
     ) {
     }
 
-    public function summarize(ServerRequestInterface $request): AuthorizationRequestSummary
+    public function summarize(ServerRequestInterface $request, CpgUser $account): AuthorizationRequestSummary
     {
-        return $this->validated($request);
+        $summary = $this->validated($request);
+        $this->refuseASessionOlderThanThePasswordChange($account);
+
+        return $summary;
     }
 
     public function decide(ConsentDecision $decision, CpgUser $account): string
     {
         $summary = $this->validated($this->requestOf($decision));
+        $this->refuseASessionOlderThanThePasswordChange($account);
         $location = $decision->approved ? $this->grant($summary, $account) : $this->completer->deny($summary);
 
         return IssParameter::append($location, $this->endpoints->issuer());
+    }
+
+    /**
+     * Une session authentifiée **avant** le dernier changement de mot de passe du
+     * compte n'obtient rien du consentement — ni résumé, ni refus, ni accord (#650,
+     * F2 de la relecture). Le cookie `BEARER` n'est pas révocable (ADR 0003) :
+     * un attaquant qui l'a volé avant que la personne ne change son mot de passe
+     * (la remédiation) garde sa session une heure, et la grâce de dix minutes
+     * de l'accord lui laissait ouvrir une connexion de trente jours que la
+     * révocation du changement de mot de passe ne pouvait plus couper, puisque
+     * née après. Le compte lu ici est celui que le firewall vient de recharger en
+     * base : son `credentialsChangedAt` est celui du moment, jamais celui d'un
+     * état gardé.
+     *
+     * **Au résumé et au refus aussi**, contrairement à l'âge de l'authentification
+     * (qui ne bloque que l'accord) : la remédiation d'un mot de passe volé
+     * ne laisse à une session d'avant aucun usage de ce consentement, et la
+     * personne que cela renvoie à la connexion y gagne une session saine.
+     * Jugé **après** la revalidation de la demande, comme l'âge : une demande
+     * devenue invalide reste son 400.
+     *
+     * L'étendre au jeton de l'API tout entière (l'authentificateur JWT de Lexik)
+     * est hors de cette tâche : voir ADR 0003 (JWT non révocable, risque accepté).
+     *
+     * @throws ReauthenticationRequiredException
+     */
+    private function refuseASessionOlderThanThePasswordChange(CpgUser $account): void
+    {
+        // Le cas de presque tous les comptes : rien à comparer, donc aucune
+        // lecture du jeton (le port revérifie sa signature) au résumé ni au
+        // refus, qui n'avaient jusqu'ici aucune raison de la payer.
+        if (null === $account->getCredentialsChangedAt()) {
+            return;
+        }
+
+        if ($account->hasChangedCredentialsSince($this->authenticationInstant->authenticatedAt())) {
+            throw ReauthenticationRequiredException::afterAPasswordChange();
+        }
     }
 
     /**

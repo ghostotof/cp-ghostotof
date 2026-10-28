@@ -244,6 +244,30 @@ final class ConsentControllerTest extends WebTestCase
     }
 
     /**
+     * F2 de la relecture de #650, le côté qui passe : un mot de passe changé
+     * **avant** l'authentification de la session (changement il y a deux minutes,
+     * connexion il y a une) ne la périme pas — le résumé et l'accord sont servis.
+     * Le côté qui refuse, avec les deux écrivains réels du mot de passe, est dans
+     * `AccountWideRevocationTest`.
+     */
+    public function testASessionAuthenticatedAfterThePasswordChangeIsServed(): void
+    {
+        $account = $this->loginAs(self::TRUSTED_USERNAME, [CpgUser::ROLE_TRUSTED]);
+        $this->replaceTheBearerWithAnAuthenticationOf($account, secondsAgo: 60);
+        self::getContainer()->get(EntityManagerInterface::class)->getConnection()->executeStatement(
+            "UPDATE cpg_user SET credentials_changed_at = now() - INTERVAL '2 minutes' WHERE id = :id",
+            ['id' => $account],
+        );
+
+        $this->client->request('GET', self::PATH.'?'.http_build_query($this->validParameters()));
+        self::assertSame(Response::HTTP_OK, $this->client->getResponse()->getStatusCode(), substr((string) $this->client->getResponse()->getContent(), 0, 500));
+
+        $response = $this->decide(approved: true);
+        self::assertSame(Response::HTTP_OK, $response->getStatusCode(), substr((string) $response->getContent(), 0, 500));
+        self::assertCount(1, $this->connectionRows());
+    }
+
+    /**
      * Un second accord du même compte au même client remplace le premier
      * **au premier échange de son code** (#726, D2) : l'approbation ne révoque
      * rien — sa requête n'audite que `mcp-connection-granted`, la première

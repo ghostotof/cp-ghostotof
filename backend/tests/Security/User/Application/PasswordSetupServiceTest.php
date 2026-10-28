@@ -21,6 +21,7 @@ use App\Tests\Support\TestCredentials;
 use Closure;
 use DateTimeImmutable;
 use DateTimeZone;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
 use Symfony\Component\Clock\MockClock;
@@ -502,6 +503,50 @@ final class PasswordSetupServiceTest extends TestCase
 
         $this->service($tokenRepository, clock: $clock, auditLogger: $auditLogger, mcpConnections: $mcpConnections)
             ->complete(self::CLEAR_TOKEN, TestCredentials::variant('setup'));
+    }
+
+    /**
+     * F2 de la relecture de #650 : le lien d'invitation date le changement de
+     * mot de passe — que le lien en *pose* un (compte sans mot de passe) ou en
+     * *remplace* un — pour que le consentement MCP refuse un cookie d'avant. Il
+     * l'écrit sur le compte **relu sous le verrou** (un double que le verrou
+     * rend à la place de celui du jeton), à l'instant de la réclamation.
+     *
+     * @return iterable<string, array{string}>
+     */
+    public static function passwordsSetByTheLink(): iterable
+    {
+        yield 'premier mot de passe' => [CpgUser::NO_PASSWORD];
+        yield 'mot de passe remplacé' => ['password-set-by-the-backoffice'];
+    }
+
+    #[DataProvider('passwordsSetByTheLink')]
+    public function testTheLinkRecordsTheInstantOfTheChangeOnTheAccountReadUnderTheLock(string $previousHash): void
+    {
+        $clock = new MockClock('2026-09-10 10:00:00');
+        $user = new CpgUser('jane', $previousHash);
+        $user->markInvited(new DateTimeImmutable('2026-09-08 08:00:00'));
+        $token = $this->tokenFor($user, $clock);
+        $locked = clone $user;
+
+        $tokenRepository = self::createStub(PasswordSetupTokenRepositoryInterface::class);
+        $tokenRepository->method('findOneByTokenHash')->willReturn($token);
+        $tokenRepository->method('claim')->willReturn(TokenClaim::Claimed);
+        $hasher = self::createStub(UserPasswordHasherInterface::class);
+        $hasher->method('hashPassword')->willReturn('hashed-new-password');
+        $accountLock = self::createStub(AccountLockInterface::class);
+        $accountLock->method('whileLocked')->willReturnCallback(
+            static fn (CpgUser $ignored, Closure $operation): mixed => $operation($locked),
+        );
+        $mcpConnections = self::createStub(AccountMcpConnectionsRevokerInterface::class);
+        $mcpConnections->method('revokeAllOf')->willReturn(new RevokedAccountMcpConnections(AccountAccessWithdrawal::PasswordChanged, []));
+
+        $this->service($tokenRepository, hasher: $hasher, clock: $clock, mcpConnections: $mcpConnections, accountLock: $accountLock)
+            ->complete(self::CLEAR_TOKEN, TestCredentials::variant('setup'));
+
+        self::assertSame('hashed-new-password', $locked->getPassword());
+        self::assertEquals($clock->now(), $locked->getCredentialsChangedAt(), 'Le lien n\'a pas daté le changement de mot de passe.');
+        self::assertNull($user->getCredentialsChangedAt(), 'L\'instant a été écrit sur le compte d\'avant le verrou.');
     }
 
     private function usableToken(MockClock $clock): PasswordSetupToken

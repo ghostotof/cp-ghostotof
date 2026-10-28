@@ -70,7 +70,7 @@ final readonly class ConsentController
     #[Route('/api/oauth/consent', name: 'oauth_consent_show', methods: ['GET'])]
     public function show(Request $request, #[CurrentUser] CpgUser $account): JsonResponse
     {
-        $summary = $this->consent->summarize($this->psrHttpFactory->createRequest($request));
+        $summary = $this->consent->summarize($this->psrHttpFactory->createRequest($request), $account);
 
         return $this->notStored(new JsonResponse([
             'client' => [

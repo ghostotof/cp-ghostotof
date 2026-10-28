@@ -106,6 +106,9 @@ final class ConsentServiceTest extends TestCase
      */
     private ?DateTimeImmutable $authenticatedAt;
 
+    /** Combien de fois le port a été interrogé : la lecture du jeton signé n'est pas gratuite. */
+    private int $instantReads = 0;
+
     protected function setUp(): void
     {
         $this->client = RegisteredMcpClient::of(self::CLIENT_ID, 'Client de test', ['http://localhost/callback']);
@@ -245,7 +248,7 @@ final class ConsentServiceTest extends TestCase
         $refusal = OAuthServerException::invalidRequest('redirect_uri');
         $this->validatorRefusal = $refusal;
         $calls = [
-            'résumé' => fn(): mixed => $this->service()->summarize((new Psr17Factory())->createServerRequest('GET', '/api/oauth/consent')),
+            'résumé' => fn(): mixed => $this->service()->summarize((new Psr17Factory())->createServerRequest('GET', '/api/oauth/consent'), $this->account),
             'accord' => fn(): mixed => $this->service()->decide($this->decision(true), $this->account),
             'refus' => fn(): mixed => $this->service()->decide($this->decision(false), $this->account),
         ];
@@ -372,6 +375,140 @@ final class ConsentServiceTest extends TestCase
         $this->service()->decide($this->decision(true), $this->account);
     }
 
+    /**
+     * F2 de la relecture de #650 : un mot de passe changé **à l'instant ou après**
+     * l'authentification de la session périme celle-ci (`CpgUser::hasChangedCredentialsSince()`,
+     * l'égalité comprise : la seconde de l'`iat` et l'arrondi de la colonne ne
+     * séparent pas deux événements d'une même seconde). Le résumé, le refus et
+     * l'accord le refusent tous trois, d'un 401 `reauthentication-required` :
+     * rien n'est écrit, journalisé ni même résumé.
+     *
+     * @return iterable<string, array{string}>
+     */
+    public static function changesNoOlderThanTheAuthentication(): iterable
+    {
+        yield 'à la même seconde' => ['PT0S'];
+        yield 'une seconde après' => ['PT1S'];
+        yield 'une heure après' => ['PT1H'];
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function consentCalls(): iterable
+    {
+        yield 'résumé' => ['summary'];
+        yield 'refus' => ['denial'];
+        yield 'accord' => ['approval'];
+    }
+
+    /**
+     * @return iterable<string, array{string, string}>
+     */
+    public static function everyCallAfterEveryChange(): iterable
+    {
+        foreach (self::changesNoOlderThanTheAuthentication() as $changeLabel => [$delay]) {
+            foreach (self::consentCalls() as $callLabel => [$call]) {
+                yield $callLabel.', changement '.$changeLabel => [$call, $delay];
+            }
+        }
+    }
+
+    #[DataProvider('everyCallAfterEveryChange')]
+    public function testASessionAuthenticatedBeforeAPasswordChangeIsRefusedReauthentication(string $call, string $delay): void
+    {
+        $this->authenticatedAt = new DateTimeImmutable(self::GRANTED_AT);
+        $this->account->replacePassword('another-hash', $this->authenticatedAt->add(new DateInterval($delay)));
+
+        try {
+            $this->consentCall($call);
+            self::fail('Une session d\'avant le changement de mot de passe ne doit rien obtenir.');
+        } catch (ReauthenticationRequiredException $refusal) {
+            self::assertSame(401, $refusal->getStatus());
+            self::assertSame('/errors/reauthentication-required', $refusal->getType());
+        }
+
+        self::assertSame([], $this->effects, 'Le refus a eu un effet.');
+        self::assertNull($this->added);
+        self::assertNull($this->audited);
+    }
+
+    /**
+     * L'autre côté de la borne : une authentification d'**une seconde après** le
+     * changement n'est pas périmée. Les trois appels passent, l'accord compris
+     * (sa propre limite d'âge de dix minutes est respectée ici).
+     */
+    #[DataProvider('consentCalls')]
+    public function testASessionAuthenticatedAfterAPasswordChangeIsServed(string $call): void
+    {
+        $this->authenticatedAt = new DateTimeImmutable(self::GRANTED_AT);
+        $this->account->replacePassword('another-hash', $this->authenticatedAt->modify('-1 second'));
+
+        $this->consentCall($call);
+
+        self::assertNotNull($this->validated, 'La demande n\'a pas été revalidée.');
+    }
+
+    /**
+     * Un instant d'authentification inconnu vaut « trop ancien » — pour le
+     * résumé et le refus aussi, mais **seulement une fois le mot de passe changé** :
+     * sans changement, ils n'exigent toujours aucune authentification récente.
+     */
+    public function testAnUnknownAuthenticationInstantIsRefusedOnlyOnceThePasswordChanged(): void
+    {
+        $this->authenticatedAt = null;
+
+        $this->consentCall('summary');
+        $this->consentCall('denial');
+        $this->account->replacePassword('another-hash', new DateTimeImmutable(self::GRANTED_AT)->modify('-1 day'));
+
+        foreach (['summary', 'denial'] as $call) {
+            try {
+                $this->consentCall($call);
+                self::fail(\sprintf('%s : un instant inconnu après un changement de mot de passe doit être refusé.', $call));
+            } catch (ReauthenticationRequiredException) {
+                $this->addToAssertionCount(1);
+            }
+        }
+    }
+
+    /**
+     * Comme pour l'âge de l'authentification, la demande est jugée d'abord : une
+     * demande devenue invalide reste son 400 typé, qu'une reconnexion ne répare pas.
+     */
+    public function testAnInvalidRequestIsRejectedBeforeThePasswordChangeIsJudged(): void
+    {
+        $this->authenticatedAt = new DateTimeImmutable(self::GRANTED_AT);
+        $this->account->replacePassword('another-hash', $this->authenticatedAt);
+        $this->validatorRefusal = OAuthServerException::invalidRequest('redirect_uri');
+
+        $this->expectException(AuthorizationRequestRejectedException::class);
+
+        $this->consentCall('summary');
+    }
+
+    /**
+     * Le port relit le JWT et en revérifie la signature : un compte dont le mot
+     * de passe n'a jamais changé (le cas de presque tous) ne le déclenche ni au
+     * résumé ni au refus, où personne d'autre ne lit l'instant.
+     */
+    public function testAnAccountWhosePasswordNeverChangedCostsNoTokenReadOnTheSummaryNorTheDenial(): void
+    {
+        $this->consentCall('summary');
+        $this->consentCall('denial');
+
+        self::assertSame(0, $this->instantReads);
+    }
+
+    /** Un des trois appels du consentement, sur le compte du test. */
+    private function consentCall(string $call): void
+    {
+        match ($call) {
+            'summary' => $this->service()->summarize((new Psr17Factory())->createServerRequest('GET', '/api/oauth/consent'), $this->account),
+            'denial' => $this->service()->decide($this->decision(false), $this->account),
+            'approval' => $this->service()->decide($this->decision(true), $this->account),
+            default => self::fail(\sprintf('Appel inconnu : %s.', $call)),
+        };
+    }
+
     private function service(): ConsentService
     {
         $validator = self::createStub(AuthorizationRequestValidatorInterface::class);
@@ -466,7 +603,11 @@ final class ConsentServiceTest extends TestCase
     private function authenticationInstant(): AuthenticationInstantInterface
     {
         $instant = self::createStub(AuthenticationInstantInterface::class);
-        $instant->method('authenticatedAt')->willReturn($this->authenticatedAt);
+        $instant->method('authenticatedAt')->willReturnCallback(function (): ?DateTimeImmutable {
+            ++$this->instantReads;
+
+            return $this->authenticatedAt;
+        });
 
         return $instant;
     }

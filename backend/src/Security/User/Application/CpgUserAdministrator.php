@@ -14,6 +14,7 @@ use App\Security\User\Domain\Repository\PasswordSetupTokenRepositoryInterface;
 use App\Shared\Application\Security\AccountAccessWithdrawal;
 use App\Shared\Application\Security\AccountMcpConnectionsRevokerInterface;
 use App\Shared\Application\Security\RevokedAccountMcpConnections;
+use Psr\Clock\ClockInterface;
 use SensitiveParameter;
 use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
 use Symfony\Component\Uid\Uuid;
@@ -28,6 +29,7 @@ final readonly class CpgUserAdministrator implements CpgUserAdministratorInterfa
         private AccountLockInterface $accountLock,
         private AccountAdministrationLockInterface $administrationLock,
         private AccountMcpConnectionsRevokerInterface $mcpConnections,
+        private ClockInterface $clock,
     ) {
     }
 
@@ -92,7 +94,13 @@ final readonly class CpgUserAdministrator implements CpgUserAdministratorInterfa
         // ne dépend d'aucune classe de `Mcp`.
         $hashedPassword = $this->passwordHasher->hashPassword($user, $newPlainPassword);
         $revoked = $this->accountLock->whileLocked($user, function (CpgUser $locked) use ($hashedPassword): RevokedAccountMcpConnections {
-            $locked->setPassword($hashedPassword);
+            // Le mot de passe **et sa date** (F2 de la relecture de #650) : le
+            // consentement MCP refuse un cookie de session authentifié avant cet
+            // instant (`CpgUser::hasChangedCredentialsSince()`), ce que la seule
+            // coupure des connexions existantes ne couvrait pas. Écrit sur le
+            // compte relu sous le verrou, dans la même transaction que le mot
+            // de passe : jamais l'un sans l'autre.
+            $locked->replacePassword($hashedPassword, $this->clock->now());
             $this->cpgUserRepository->save($locked);
             // Compte encore en attente d'activation : le mot de passe posé ici
             // fait foi, le lien d'invitation en circulation meurt (décision du

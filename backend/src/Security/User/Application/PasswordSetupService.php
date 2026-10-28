@@ -123,7 +123,12 @@ final readonly class PasswordSetupService implements PasswordSetupServiceInterfa
         // accorder une connexion : le mot de passe est *posé*, aucun appel.
         $replacesAPassword = $user->hasPassword();
 
-        $user->setPassword($hashedPassword);
+        // Le mot de passe **et sa date**, qu'il soit posé ou remplacé (F2 de la
+        // relecture de #650) : un cookie de session authentifié avant ce lien
+        // n'accordera plus de connexion MCP (`CpgUser::hasChangedCredentialsSince()`).
+        // Sans condition : un seul chemin, aucun cas à oublier — la date d'un
+        // premier mot de passe ne refuse aucune session qui existe déjà.
+        $user->replacePassword($hashedPassword, $now);
         $user->markActivated($now);
         $token->markUsed($now);
 

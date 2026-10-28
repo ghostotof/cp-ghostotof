@@ -24,7 +24,9 @@ use DateTimeImmutable;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
+use Psr\Clock\ClockInterface;
 use RuntimeException;
+use Symfony\Component\Clock\MockClock;
 use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
 use Symfony\Component\Uid\Uuid;
 
@@ -223,6 +225,30 @@ final class CpgUserAdministratorTest extends TestCase
         self::assertSame('new-hashed-password', $user->getPassword());
     }
 
+    /**
+     * F2 de la relecture de #650 : le changement de mot de passe est daté, sur le
+     * compte **relu sous le verrou** (le double que le verrou rend à la place de
+     * celui du dépôt), à l'instant de l'horloge — le consentement MCP refuse un
+     * cookie de session d'avant cet instant.
+     */
+    public function testChangePasswordRecordsTheInstantOfTheChangeOnTheAccountReadUnderTheLock(): void
+    {
+        $user = $this->user('jane');
+        $locked = clone $user;
+        $clock = new MockClock('2026-10-28 10:00:00');
+        $accountLock = self::createStub(AccountLockInterface::class);
+        $accountLock->method('whileLocked')->willReturnCallback(
+            static fn (CpgUser $ignored, Closure $operation): mixed => $operation($locked),
+        );
+
+        $this->administrator($this->repositoryFinding($user), $this->hasher(), self::createStub(SecurityAuditLoggerInterface::class), accountLock: $accountLock, clock: $clock)
+            ->changePassword($user->getId(), TestCredentials::variant('new'));
+
+        self::assertSame('new-hashed-password', $locked->getPassword());
+        self::assertEquals($clock->now(), $locked->getCredentialsChangedAt(), 'Le changement de mot de passe n\'est pas daté.');
+        self::assertNull($user->getCredentialsChangedAt(), 'L\'instant a été écrit sur le compte d\'avant le verrou.');
+    }
+
     public function testChangePasswordThrowsWhenUserNotFound(): void
     {
         $repository = self::createStub(CpgUserRepositoryInterface::class);
@@ -389,6 +415,7 @@ final class CpgUserAdministratorTest extends TestCase
         ?AccountAdministrationLockInterface $administrationLock = null,
         ?AccountMcpConnectionsRevokerInterface $mcpConnections = null,
         ?AccountLockInterface $accountLock = null,
+        ?ClockInterface $clock = null,
     ): CpgUserAdministrator {
         if (null === $accountLock) {
             $accountLock = self::createStub(AccountLockInterface::class);
@@ -407,7 +434,7 @@ final class CpgUserAdministratorTest extends TestCase
             );
         }
 
-        return new CpgUserAdministrator($repository, $hasher, $auditLogger, $tokenRepository ?? self::createStub(PasswordSetupTokenRepositoryInterface::class), $accountLock, $administrationLock, $mcpConnections);
+        return new CpgUserAdministrator($repository, $hasher, $auditLogger, $tokenRepository ?? self::createStub(PasswordSetupTokenRepositoryInterface::class), $accountLock, $administrationLock, $mcpConnections, $clock ?? new MockClock());
     }
 
     /**

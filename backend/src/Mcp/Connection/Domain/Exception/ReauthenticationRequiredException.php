@@ -21,6 +21,9 @@ use DomainException;
  * même demande — jamais confondu avec une session expirée (un autre 401, sans
  * ce `type`), qui n'invite pas à revenir accorder.
  *
+ * Deux causes, un seul `type` : l'authentification trop ancienne
+ * (toGrantAConnection()) et le mot de passe changé depuis (afterAPasswordChange()).
+ *
  * Message constant (le `detail` est rendu tel quel, ProblemDetailStaysStaticTest),
  * `log_level: info` : une issue ordinaire d'une page restée ouverte.
  */
@@ -31,6 +34,18 @@ final class ReauthenticationRequiredException extends DomainException implements
     public static function toGrantAConnection(): self
     {
         return new self('Accorder une connexion MCP demande de vous être authentifié récemment : reconnectez-vous, puis accordez de nouveau.');
+    }
+
+    /**
+     * Le mot de passe du compte a changé à l'instant ou après l'authentification
+     * de la session (#650, F2 de la relecture) : le cookie n'est plus celui de
+     * la personne qui détient aujourd'hui le mot de passe. **Même `type`**, la
+     * page n'en connaît qu'un (elle renvoie à la connexion, avec `reauth=1`) ;
+     * seule la phrase change, constante elle aussi.
+     */
+    public static function afterAPasswordChange(): self
+    {
+        return new self('Le mot de passe de votre compte a changé depuis votre connexion : reconnectez-vous, puis recommencez.');
     }
 
     protected function problemType(): string

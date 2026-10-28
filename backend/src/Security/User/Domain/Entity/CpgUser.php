@@ -155,6 +155,23 @@ class CpgUser implements UserInterface, PasswordAuthenticatedUserInterface, Acco
     #[Ignore]
     private ?DateTimeImmutable $activatedAt = null;
 
+    /**
+     * L'instant du dernier changement de mot de passe **du compte** (#650, F2 de
+     * la relecture) : le `PUT` du backoffice, ou le lien d'invitation qui pose le
+     * premier mot de passe ou en remplace un. Nul tant qu'aucun n'a eu lieu, et
+     * pour tout compte antérieur à la colonne. Écrit par replacePassword(),
+     * dans la fermeture du verrou du compte, avec le mot de passe lui-même ; le
+     * re-hachage à la connexion (même secret) ne l'écrit pas.
+     *
+     * Le consentement MCP refuse un cookie de session authentifié avant cet
+     * instant (hasChangedCredentialsSince()) : le JWT n'est pas révocable (ADR
+     * 0003), et la coupure des connexions au changement de mot de passe ne
+     * couvrait pas ce qu'un cookie volé accordait ensuite.
+     */
+    #[ORM\Column(type: Types::DATETIMETZ_IMMUTABLE, nullable: true)]
+    #[Ignore]
+    private ?DateTimeImmutable $credentialsChangedAt = null;
+
     public function __construct(string $username, string $hashedPassword)
     {
         if (1 !== preg_match(self::USERNAME_PATTERN, $username)) {
@@ -330,6 +347,48 @@ class CpgUser implements UserInterface, PasswordAuthenticatedUserInterface, Acco
     public function setPassword(string $hashedPassword): void
     {
         $this->password = $hashedPassword;
+    }
+
+    /**
+     * Remplace le mot de passe **et date le changement**, ensemble : les deux
+     * écrivains d'un changement de mot de passe (`CpgUserAdministrator::changePassword()`
+     * et `PasswordSetupService::activate()`) passent par ici, jamais par
+     * setPassword() seul — le re-hachage à la connexion, lui, garde le même
+     * secret et n'a rien à dater.
+     */
+    public function replacePassword(string $hashedPassword, DateTimeImmutable $at): void
+    {
+        $this->password = $hashedPassword;
+        $this->credentialsChangedAt = $at;
+    }
+
+    public function getCredentialsChangedAt(): ?DateTimeImmutable
+    {
+        return $this->credentialsChangedAt;
+    }
+
+    /**
+     * Le mot de passe a-t-il changé **à l'instant ou après** que cette
+     * authentification a eu lieu ? Vrai : la session qu'elle a ouverte ne prouve
+     * plus rien de la personne qui détient aujourd'hui le mot de passe.
+     *
+     * **Antérieur ou égal, jamais seulement antérieur** : l'instant
+     * d'authentification est le `iat` d'un JWT, à la seconde, et la colonne est
+     * un `TIMESTAMP(0)`, que PostgreSQL arrondit — un changement à 10:00:00,3
+     * est écrit 10:00:00, une connexion de 10:00:00,1 porte `iat` 10:00:00. La
+     * même seconde ne permet pas de dire laquelle est venue la première ; la
+     * tenir pour postérieure laisserait passer un cookie volé, la tenir pour
+     * périmée ne coûte qu'une reconnexion dans la seconde du changement. Un
+     * instant d'authentification inconnu (`null`) est tenu pour antérieur, comme
+     * partout dans le consentement. Sans changement de mot de passe, jamais vrai.
+     */
+    public function hasChangedCredentialsSince(?DateTimeImmutable $authenticatedAt): bool
+    {
+        if (null === $this->credentialsChangedAt) {
+            return false;
+        }
+
+        return null === $authenticatedAt || $authenticatedAt <= $this->credentialsChangedAt;
     }
 
     public function eraseCredentials(): void

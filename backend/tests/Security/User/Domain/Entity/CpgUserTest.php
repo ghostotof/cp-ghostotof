@@ -276,4 +276,76 @@ final class CpgUserTest extends TestCase
 
         self::assertFalse($user->isAwaitingPasswordSetup());
     }
+
+    /** Un compte que personne n'a jamais changé de mot de passe n'a aucun instant : aucun cookie n'est jugé périmé. */
+    public function testANewAccountHasNoCredentialsChangeAndStalesNoSession(): void
+    {
+        $user = new CpgUser('jane', 'hashed-password');
+
+        self::assertNull($user->getCredentialsChangedAt());
+        self::assertFalse($user->hasChangedCredentialsSince(new DateTimeImmutable('2026-10-28 10:00:00')));
+        self::assertFalse($user->hasChangedCredentialsSince(null), 'Sans changement de mot de passe, un instant d\'authentification inconnu ne périme rien.');
+    }
+
+    /** `replacePassword()` change le mot de passe ET date le changement, ensemble (F2, #650). */
+    public function testReplacingThePasswordRecordsTheInstant(): void
+    {
+        $user = new CpgUser('jane', 'hashed-password');
+        $at = new DateTimeImmutable('2026-10-28 10:00:00');
+
+        $user->replacePassword('another-hash', $at);
+
+        self::assertSame('another-hash', $user->getPassword());
+        self::assertEquals($at, $user->getCredentialsChangedAt());
+    }
+
+    /**
+     * Le simple re-hachage (`PasswordUpgraderInterface`, même secret) passe par
+     * `setPassword()` et ne date rien : il ne doit pas périmer les sessions.
+     */
+    public function testSettingThePasswordAloneRecordsNoInstant(): void
+    {
+        $user = new CpgUser('jane', 'hashed-password');
+
+        $user->setPassword('rehashed-same-secret');
+
+        self::assertNull($user->getCredentialsChangedAt());
+    }
+
+    /**
+     * Le choix large : une authentification **antérieure ou égale** au
+     * changement est périmée. L'instant d'authentification (`iat` du JWT) est
+     * à la seconde et la colonne `TIMESTAMP(0)` arrondit : une connexion de la
+     * même seconde que le changement ne se distingue pas d'une connexion
+     * d'avant, et la prendre pour d'après laisserait passer un cookie volé.
+     * Le coût — une personne qui se reconnecte dans la seconde — est nul.
+     */
+    public function testAnAuthenticationAtOrBeforeTheChangeIsStale(): void
+    {
+        $user = new CpgUser('jane', 'hashed-password');
+        $user->replacePassword('another-hash', new DateTimeImmutable('2026-10-28 10:00:00'));
+
+        self::assertTrue($user->hasChangedCredentialsSince(new DateTimeImmutable('2026-10-28 09:59:59')));
+        self::assertTrue($user->hasChangedCredentialsSince(new DateTimeImmutable('2026-10-28 10:00:00')), 'La même seconde est périmée.');
+        self::assertFalse($user->hasChangedCredentialsSince(new DateTimeImmutable('2026-10-28 10:00:01')));
+    }
+
+    /** Un instant d'authentification qu'on ne peut établir est tenu pour antérieur, comme le fait déjà le consentement. */
+    public function testAnUnknownAuthenticationInstantIsStaleOnceCredentialsChanged(): void
+    {
+        $user = new CpgUser('jane', 'hashed-password');
+        $user->replacePassword('another-hash', new DateTimeImmutable('2026-10-28 10:00:00'));
+
+        self::assertTrue($user->hasChangedCredentialsSince(null));
+    }
+
+    /** Les instants se comparent comme des instants : un fuseau différent ne décale pas le verdict. */
+    public function testTheComparisonIgnoresTheZoneOfTheInstants(): void
+    {
+        $user = new CpgUser('jane', 'hashed-password');
+        $user->replacePassword('another-hash', new DateTimeImmutable('2026-10-28 10:00:00+02:00'));
+
+        self::assertTrue($user->hasChangedCredentialsSince(new DateTimeImmutable('2026-10-28 08:00:00+00:00')));
+        self::assertFalse($user->hasChangedCredentialsSince(new DateTimeImmutable('2026-10-28 08:00:01+00:00')));
+    }
 }
