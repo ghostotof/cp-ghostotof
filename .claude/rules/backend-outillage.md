@@ -249,12 +249,39 @@ precisely what let the family drift apart. When you bump one, bump them all (`co
 (2026-09-16) the `backend-minor-patch` group rejected the two packages as « the latest version is a major » and
 never looked at the 4.x releases. **Remove that `ignore` when the 5.0 migration is done** (#735).
 **`ignoreIndirectDeprecations="true"` in `phpunit.dist.xml` stays** (it spares the noise of the rest of the vendor),
-and that is what hid this one, vendor calling vendor. `tests/Shared/Infrastructure/ApiPlatform/ApiPlatformRaisesNoDeprecationTest.php`
-is the targeted net: it runs five representative requests (valid write, 422, public reads, 404) under
-`tests/Support/ApiPlatformDeprecations`, an error handler that keeps only the `E_USER_DEPRECATED` whose message starts
-with `Since api-platform/` or whose origin is under `vendor/api-platform/`, hands every other error back to the
-handler it replaced and restores it, and fails citing the deprecation and where it was raised
-(`ApiPlatformDeprecationCollectorTest` pins the collector). It saw the `ItemNormalizer` one on the lock of
-`develop` (red), and not on 4.4.6. Not covered: an `E_DEPRECATED` of the PHP engine in API Platform's code, a route
-absent from the list (adding one costs a line). `ApiPlatformProblemDetailsTest` pins the `type`, `title` and status
+and that is what hid this one, vendor calling vendor. The targeted net is `tests/Support/ApiPlatformDeprecations`, an
+error handler put on for one action: it keeps an `E_USER_DEPRECATED` when its message starts with `Since api-platform/`,
+or when it is raised by an `api-platform/*` package, or when **the first caller outside the package that raises it** is
+a file of `vendor/api-platform/` (going up from the deprecated method, the frames of the raising package and of
+`deprecation-contracts` are skipped; the first file of another package decides, a file of the project's `src/` or
+`tests/` — anchored on the backend root — says « the project calls », not API Platform; compiled-container glue
+is skipped). So Symfony's deprecation that API Platform triggers by calling a deprecated Symfony API is seen, and the
+one raised during the sub-request of API Platform's `ErrorListener` (`kernel->handle()`) is not. Every other error goes
+back to the handler it replaced, which is restored, and the failure cites the message, the deprecated method, where it
+was raised and the API Platform call that led to it. What it watches: `ApiPlatformRaisesNoDeprecationTest` (five
+representative requests, an authenticated backoffice `PUT`, the MCP route reader, which calls provider and serializer
+without HTTP), and `ApiPlatformStartupRaisesNoDeprecationTest` (kernel boot, in-memory compilation of the `test`
+container through `EnvironmentServicesKernel`, cold metadata: the pools `api_platform.cache.metadata.*` cleared, then
+every resource's collection and every operation through `OperationMetadataFactoryInterface::create()`, since a warm
+cache hides what builds them). `DeprecatedReferencesOfApiPlatform`, a read-only compiler pass run before the
+optimization, reports an `api_platform.*` / `ApiPlatform\` service referencing a deprecated alias or service of
+another package: Symfony raises that from its own pass, with no API Platform frame. `ApiPlatformPackagesShareOneVersionTest`
+reads `composer.lock`: the family is what the `api-platform/*` packages that `composer.json` requires pull through
+the `require` graph (`ApiPlatformLockFamily`), not every package with the prefix (an `api-platform/*` tool outside the
+monorepo has its own versions, and nothing in the lock tells it apart by `source.url` or `homepage`); it fails citing
+`composer update <those packages>`. The collector, the lock family and the pass each have their own test
+(`ApiPlatformDeprecationCollectorTest`, `ApiPlatformPackagesShareOneVersionTest`, `DeprecatedReferencesOfApiPlatformTest`).
+**Two traps measured while building it.** `@` is deliberately not looked at: `trigger_deprecation()` calls
+`@trigger_error()`, so every such deprecation arrives « suppressed » (and PHPUnit lowers `error_reporting()` during a
+test anyway); `phpunit.dist.xml` has `ignoreSuppressionOfDeprecations`, which the collector reproduces, and honouring
+`@` makes it blind. And the handler that hands an error back to PHPUnit is bound to `PHPUnit\Runner\ErrorHandler`'s
+scope (`asPhpunitReadsIt()`), so that its frame is dropped from the stack PHPUnit classifies: otherwise a raw
+`trigger_error(E_USER_DEPRECATED)` from vendor code called by vendor code was classified « unknown » and counted
+(`ApiPlatformDeprecationHandoverTest`, which runs a child PHPUnit on `Fixtures/RawIndirectDeprecationProbe`); it relies on
+a `@internal` PHPUnit class and falls back to the plain closure if it is gone. It saw the `ItemNormalizer` deprecation on
+the lock of `develop` (red), and not on 4.4.6. **Not covered**: an `E_DEPRECATED` of the PHP engine in API Platform's code;
+a route absent from the list (adding one costs a line); a deprecation born at the first use of a service (a normalizer at
+its first normalization) outside those requests; API Platform calling an intermediate Symfony package that calls a
+deprecated API of a third one (the first outside caller decides); a reference to a deprecated alias added by
+autowiring during the optimization. `ApiPlatformProblemDetailsTest` pins the `type`, `title` and status
 of the problem+json errors (400, 404, 405, 409, 415, 422, 429) the same way, read identical on both locks.
