@@ -4,9 +4,21 @@ declare(strict_types=1);
 
 namespace App\Tests\Shared\Infrastructure\ApiPlatform;
 
+use App\Mcp\Application\RoutePayloadReaderInterface;
+use App\Portfolio\Contribution\Application\ContributionAdministratorInterface;
+use App\Portfolio\Experience\Application\ExperienceTechnologyRegistrarInterface;
+use App\Portfolio\Experience\Domain\ValueObject\ExperienceYears;
+use App\Portfolio\Experience\Domain\ValueObject\TechnologyName;
+use App\Portfolio\Experience\Presentation\ApiResource\ExperienceTechnologyResource;
+use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use App\Security\User\Application\CpgUserRegistrarInterface;
+use App\Security\User\Domain\Entity\CpgUser;
 use App\Tests\Support\ApiPlatformDeprecations;
 use App\Tests\Support\HttpJson;
+use App\Tests\Support\TestCredentials;
+use Doctrine\ORM\EntityManagerInterface;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 
 /**
@@ -33,6 +45,17 @@ use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 final class ApiPlatformRaisesNoDeprecationTest extends WebTestCase
 {
     use HttpJson;
+
+    private const string SUPER_USERNAME = 'super';
+
+    protected function tearDown(): void
+    {
+        $connection = self::getContainer()->get(EntityManagerInterface::class)->getConnection();
+        foreach (['contribution', 'experience_technology', 'cpg_user'] as $table) {
+            $connection->executeStatement('DELETE FROM '.$table);
+        }
+        parent::tearDown();
+    }
 
     /**
      * Une requête par étage de la chaîne d'API Platform. Le statut attendu est
@@ -95,5 +118,81 @@ final class ApiPlatformRaisesNoDeprecationTest extends WebTestCase
             $findings,
             "API Platform déprécie ce que cette requête emprunte :\n - ".implode("\n - ", $findings),
         );
+    }
+
+    /**
+     * Une écriture authentifiée du backoffice sur un objet qui existe : le
+     * `PUT` fait lire l'objet par le provider, puis le dénormalise **dans**
+     * celui-ci (`object_to_populate`, `updateObjectToPopulate`). C'est une
+     * autre route du dénormaliseur que le `POST` du formulaire de contact,
+     * qui construit un objet neuf, et le cas de tout le backoffice.
+     */
+    public function testAnAuthenticatedBackofficeWriteOnAnExistingObjectRaisesNoApiPlatformDeprecation(): void
+    {
+        $client = self::createClient();
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
+        $csrfToken = $this->loginAsSuper($client);
+        $contribution = $client->getContainer()->get(ContributionAdministratorInterface::class)->create(
+            Locale::FR,
+            'Retry de transport',
+            'symfony/ai',
+            'Issue #1688',
+            'https://github.com/symfony/ai/issues/1688',
+            'Résumé.',
+            'Corps.',
+        );
+        $uri = \sprintf('/api/backoffice/contributions/%s', $contribution->getId()->toRfc4122());
+
+        $findings = ApiPlatformDeprecations::during(static function () use ($client, $uri, $csrfToken): void {
+            $client->request('PUT', $uri, server: ['CONTENT_TYPE' => 'application/json', 'HTTP_X_XSRF_TOKEN' => $csrfToken], content: self::jsonBody([
+                'locale' => 'fr',
+                'title' => 'Titre mis à jour',
+                'project' => 'symfony/ai',
+                'reference' => 'Issue #1688',
+                'url' => 'https://github.com/symfony/ai/issues/1688',
+                'summary' => 'Résumé mis à jour.',
+                'body' => 'Corps mis à jour.',
+                'position' => 1,
+            ]));
+        });
+
+        self::assertSame(200, $client->getResponse()->getStatusCode(), 'La requête n\'a pas traversé ce que la garde veut voir.');
+        self::assertSame([], $findings, "API Platform déprécie ce que cette écriture emprunte :\n - ".implode("\n - ", $findings));
+    }
+
+    /**
+     * Le lecteur de routes du serveur MCP appelle le provider et le
+     * sérialiseur d'API Platform **sans requête HTTP** : aucune des requêtes
+     * ci-dessus ne l'emprunte, et un changement de ce sérialiseur (son
+     * contexte, un normaliseur) ne se verrait qu'ici.
+     */
+    public function testTheMcpRoutePayloadReaderRaisesNoApiPlatformDeprecation(): void
+    {
+        self::bootKernel();
+        $registrar = self::getContainer()->get(ExperienceTechnologyRegistrarInterface::class);
+        $registrar->register(TechnologyName::fromString('Symfony'), ExperienceYears::fromFloat(8.5), 'symfony', 'PHP');
+        $reader = self::getContainer()->get(RoutePayloadReaderInterface::class);
+        $payload = [];
+
+        $findings = ApiPlatformDeprecations::during(static function () use ($reader, &$payload): void {
+            $payload = $reader->read(ExperienceTechnologyResource::class);
+        });
+
+        self::assertNotSame([], $payload, 'Le lecteur n\'a rien normalisé : la garde ne verrait rien.');
+        self::assertSame([], $findings, "API Platform déprécie ce que le lecteur MCP emprunte :\n - ".implode("\n - ", $findings));
+    }
+
+    private function loginAsSuper(KernelBrowser $client): string
+    {
+        $client->request('POST', '/api/login_check', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_X_REQUESTED_WITH' => 'fetch'], content: self::jsonBody([
+            'username' => self::SUPER_USERNAME,
+            'password' => TestCredentials::superPassword(),
+        ]));
+        self::assertResponseIsSuccessful();
+
+        $csrfCookie = $client->getCookieJar()->get('XSRF-TOKEN');
+        self::assertNotNull($csrfCookie);
+
+        return $csrfCookie->getValue();
     }
 }

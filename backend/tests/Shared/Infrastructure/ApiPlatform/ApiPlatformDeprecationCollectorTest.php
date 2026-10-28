@@ -5,10 +5,13 @@ declare(strict_types=1);
 namespace App\Tests\Shared\Infrastructure\ApiPlatform;
 
 use App\Tests\Support\ApiPlatformDeprecations;
+use Closure;
 use DomainException;
 use PHPUnit\Framework\Attributes\DataProvider;
 
 use PHPUnit\Framework\TestCase;
+use ReflectionMethod;
+use Symfony\Component\Filesystem\Filesystem;
 
 /**
  * Le collecteur de dépréciations d'API Platform (issue #701), dont se sert
@@ -22,57 +25,131 @@ use PHPUnit\Framework\TestCase;
  */
 final class ApiPlatformDeprecationCollectorTest extends TestCase
 {
+    private ?string $fixtureDirectory = null;
+
     /**
-     * @return iterable<string, array{string, string, bool}>
+     * Une pile, de la plus proche (le gestionnaire d'erreurs, appelé depuis
+     * `trigger_error()` de `deprecation-contracts`) à la plus lointaine : le
+     * `file` d'une trame est l'endroit d'où elle a été appelée.
+     *
+     * @return iterable<string, array{string, list<string>, bool}>
      */
-    public static function messagesAndOrigins(): iterable
+    public static function messagesAndStacks(): iterable
     {
+        $trigger = '/var/www/vendor/symfony/deprecation-contracts/function.php';
+
         yield 'message d\'API Platform, appelant dans le projet' => [
             'Since api-platform/core 4.4: Calling "denormalize()" is deprecated.',
-            '/var/www/src/Contact/Foo.php',
+            [$trigger, '/var/www/vendor/api-platform/core/Foo.php', '/var/www/src/Contact/Foo.php'],
             true,
         ];
         yield 'message d\'un composant d\'API Platform' => [
             'Since api-platform/serializer 4.4: x',
-            '/var/www/src/Contact/Foo.php',
+            [$trigger, '/var/www/src/Contact/Foo.php'],
             true,
         ];
-        yield 'message d\'un autre paquet, origine dans api-platform' => [
+        yield 'autre paquet, appelé par API Platform avant tout fichier du projet' => [
             'Since symfony/serializer 8.1: x',
-            '/var/www/vendor/api-platform/serializer/ItemNormalizer.php',
+            [
+                $trigger,
+                '/var/www/vendor/symfony/serializer/Normalizer.php',
+                '/var/www/vendor/api-platform/serializer/ItemNormalizer.php',
+                '/var/www/vendor/symfony/http-kernel/HttpKernel.php',
+                '/var/www/src/Contact/Foo.php',
+            ],
             true,
         ];
-        yield 'message sans paquet, origine dans api-platform' => [
+        yield 'message sans paquet, appelé par API Platform' => [
             'Un message libre',
-            '/var/www/vendor/api-platform/state/Foo.php',
+            [$trigger, '/var/www/vendor/api-platform/state/Foo.php'],
             true,
         ];
-        yield 'autre paquet, origine dans le projet' => [
+        yield 'autre paquet, appelé par le projet lui-même' => [
             'Since symfony/serializer 8.1: x',
-            '/var/www/src/Contact/Foo.php',
+            [
+                $trigger,
+                '/var/www/vendor/symfony/serializer/Normalizer.php',
+                '/var/www/src/Contact/Foo.php',
+                '/var/www/vendor/api-platform/state/Processor.php',
+            ],
             false,
         ];
-        yield 'autre paquet, origine dans un autre vendor' => [
-            'Since doctrine/orm 3.6: x',
-            '/var/www/vendor/doctrine/orm/src/Foo.php',
+        yield 'autre paquet, appelé depuis les tests avant API Platform' => [
+            'Since symfony/serializer 8.1: x',
+            [$trigger, '/var/www/vendor/symfony/serializer/Normalizer.php', '/var/www/tests/Foo/FooTest.php', '/var/www/vendor/api-platform/state/Processor.php'],
             false,
+        ];
+        yield 'autre paquet, jamais appelé par API Platform' => [
+            'Since doctrine/orm 3.6: x',
+            [$trigger, '/var/www/vendor/doctrine/orm/src/Foo.php', '/var/www/vendor/symfony/http-kernel/HttpKernel.php'],
+            false,
+        ];
+        yield 'un `src/` de vendor n\'est pas le projet' => [
+            'Since symfony/serializer 8.1: x',
+            [$trigger, '/var/www/vendor/symfony/serializer/src/Normalizer.php', '/var/www/vendor/api-platform/state/Foo.php'],
+            true,
         ];
         yield 'un dossier qui ressemble sans l\'être' => [
             'Since symfony/serializer 8.1: x',
-            '/var/www/vendor/api-platform-bridge/Foo.php',
+            [$trigger, '/var/www/vendor/api-platform-bridge/Foo.php'],
             false,
         ];
         yield 'le préfixe doit commencer le message' => [
             'Voir Since api-platform/core 4.4: x',
-            '/var/www/src/Contact/Foo.php',
+            [$trigger, '/var/www/src/Contact/Foo.php'],
             false,
         ];
     }
 
-    #[DataProvider('messagesAndOrigins')]
-    public function testItJudgesAnApiPlatformDeprecationByItsMessageOrItsOrigin(string $message, string $origin, bool $expected): void
+    /**
+     * @param list<string> $files
+     */
+    #[DataProvider('messagesAndStacks')]
+    public function testItJudgesAnApiPlatformDeprecationByItsMessageOrItsStack(string $message, array $files, bool $expected): void
     {
-        self::assertSame($expected, ApiPlatformDeprecations::concerns($message, $origin));
+        $frames = array_map(static fn (string $file): array => ['file' => $file, 'line' => 1], $files);
+
+        self::assertSame($expected, ApiPlatformDeprecations::concerns($message, $frames));
+    }
+
+    /**
+     * Le cas que la garde existe pour voir : API Platform appelle une API
+     * dépréciée d'un autre paquet. Une vraie chaîne d'appels, dont les fichiers
+     * portent les chemins de vendor (ils sont écrits sous un dossier
+     * temporaire : un dossier `vendor/` ne se versionne pas ici).
+     */
+    public function testItReportsAnotherPackagesDeprecationRaisedOnBehalfOfApiPlatform(): void
+    {
+        $findings = ApiPlatformDeprecations::during($this->callThroughApiPlatform());
+
+        self::assertCount(1, $findings, 'Une dépréciation de Symfony appelée par API Platform doit être relevée.');
+        self::assertStringContainsString('Since symfony/foo 8.1: Calling "legacy()" is deprecated.', $findings[0]);
+        // Elle cite la méthode dépréciée et le fichier d'API Platform qui l'appelle.
+        self::assertStringContainsString('LegacyApi::legacy()', $findings[0]);
+        self::assertStringContainsString('/vendor/api-platform/core/Caller.php', $findings[0]);
+    }
+
+    /**
+     * La même API dépréciée, appelée par le projet : c'est l'affaire du projet,
+     * que PHPUnit compte ; le collecteur la laisse au gestionnaire en place.
+     */
+    public function testItLeavesTheSameDeprecationAloneWhenTheProjectCallsTheDeprecatedApi(): void
+    {
+        $received = [];
+        set_error_handler(static function (int $level, string $message) use (&$received): bool {
+            $received[] = $message;
+
+            return true;
+        });
+
+        try {
+            $findings = ApiPlatformDeprecations::during($this->callFromTheProject());
+        } finally {
+            restore_error_handler();
+        }
+
+        self::assertSame([], $findings);
+        self::assertSame(['Since symfony/foo 8.1: Calling "legacy()" is deprecated.'], $received);
     }
 
     public function testItReportsTheDeprecationAndWhereItWasRaised(): void
@@ -178,5 +255,96 @@ final class ApiPlatformDeprecationCollectorTest extends TestCase
         }
 
         self::assertSame($mine, $current);
+    }
+
+    protected function tearDown(): void
+    {
+        if (null !== $this->fixtureDirectory) {
+            (new Filesystem())->remove($this->fixtureDirectory);
+            $this->fixtureDirectory = null;
+        }
+        parent::tearDown();
+    }
+
+    /**
+     * L'action qui appelle l'API dépréciée depuis un fichier d'API Platform.
+     *
+     * @return Closure(): void
+     */
+    private function callThroughApiPlatform(): Closure
+    {
+        [$legacy, $caller] = $this->writeFixtureChain();
+
+        return static function () use ($caller): void {
+            new ReflectionMethod($caller, 'run')->invoke(null);
+        };
+    }
+
+    /**
+     * L'action qui appelle l'API dépréciée depuis ce fichier, du projet.
+     *
+     * @return Closure(): void
+     */
+    private function callFromTheProject(): Closure
+    {
+        [$legacy] = $this->writeFixtureChain();
+
+        return static function () use ($legacy): void {
+            new ReflectionMethod($legacy, 'legacy')->invoke(null);
+        };
+    }
+
+    /**
+     * Écrit, sous un dossier temporaire, une API « Symfony » dépréciée
+     * (`vendor/symfony/foo`) et un appelant « API Platform »
+     * (`vendor/api-platform/core`), et les charge sous un espace de noms
+     * unique. Le dossier est supprimé par `tearDown()`.
+     *
+     * @return array{class-string, class-string} la classe dépréciée, la classe d'API Platform
+     */
+    private function writeFixtureChain(): array
+    {
+        $namespace = 'ApiPlatformDeprecationFixture'.bin2hex(random_bytes(4));
+        $this->fixtureDirectory = sys_get_temp_dir().'/'.$namespace;
+        $filesystem = new Filesystem();
+
+        $legacyFile = $this->fixtureDirectory.'/vendor/symfony/foo/LegacyApi.php';
+        $callerFile = $this->fixtureDirectory.'/vendor/api-platform/core/Caller.php';
+        $filesystem->dumpFile($legacyFile, <<<PHP
+            <?php
+
+            declare(strict_types=1);
+
+            namespace {$namespace};
+
+            final class LegacyApi
+            {
+                public static function legacy(): void
+                {
+                    trigger_deprecation('symfony/foo', '8.1', 'Calling "%s" is deprecated.', 'legacy()');
+                }
+            }
+            PHP);
+        $filesystem->dumpFile($callerFile, <<<PHP
+            <?php
+
+            declare(strict_types=1);
+
+            namespace {$namespace};
+
+            final class Caller
+            {
+                public static function run(): void
+                {
+                    LegacyApi::legacy();
+                }
+            }
+            PHP);
+
+        require_once $legacyFile;
+        require_once $callerFile;
+
+        /** @var array{class-string, class-string} */
+        return [$namespace.'\\LegacyApi', $namespace.'\\Caller'];
     }
 }
