@@ -37,6 +37,14 @@ interface AccountMcpConnectionsRevokerInterface
      * d'abord, puis ses connexions, par identifiant — l'ordre de tout le
      * module, aucun chemin ne prend une connexion puis le compte.
      *
+     * **Un cycle reste possible, accepté** (#650, F1, décision de l'auteur du
+     * 2026-10-28) : le premier échange du code d'un nouvel accord du même client
+     * (il verrouille sa connexion C2, puis veut les autres du couple, C1) croisant
+     * cette révocation (qui prend C1, puis veut C2 : C1 < C2, UUID v7) — chacune
+     * attend ce que l'autre tient, PostgreSQL en annule une (`40P01`, un 500, rien
+     * ne réessaie) et les deux transactions restent atomiques. Ni `NOWAIT` ni
+     * verrou de la paire avant league. Épinglé par `AccountWideRevocationDeadlockTest`.
+     *
      * N'écrit aucune ligne d'audit. Une connexion déjà révoquée garde son
      * instant et sa cause, et n'est pas rendue.
      */

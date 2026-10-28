@@ -28,9 +28,11 @@ use Symfony\Component\Uid\Uuid;
  * {@see McpConnectionRevokerInterface::revoke()}, typé par la compromission
  * (#726, CR6) : la rouvrir à une cause générique ramènerait les gardes à
  * l'exécution que CR6 a retirées. **Ordre des verrous** : la connexion seule,
- * `FOR NO KEY UPDATE`, par identifiant ; le point de jeton, la purge et le
- * remplacement prennent tous la connexion d'abord, aucun ne la prend après
- * autre chose que ses pairs par identifiant : aucun cycle. Une connexion
+ * `FOR NO KEY UPDATE`, par identifiant ; cette instruction ne tient rien
+ * d'autre en attendant une ligne, donc aucun cycle ne peut la contenir (les
+ * cycles possibles de la tranche, tous entre transactions qui tiennent une
+ * connexion en en attendant une autre, sont ceux de
+ * {@see \App\Mcp\Connection\Application\TokenEndpoint}). Une connexion
  * **échue que la purge n'a pas encore marquée** n'est pas révoquée — la
  * personne la révoque `person`, pas `expired` : la cause dit qui a coupé.
  *

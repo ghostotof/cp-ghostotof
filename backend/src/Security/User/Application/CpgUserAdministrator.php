@@ -90,8 +90,11 @@ final readonly class CpgUserAdministrator implements CpgUserAdministratorInterfa
         // prend une connexion puis le compte (le point de jeton lit le compte
         // sans verrou, le consentement ne prend qu'un `FOR KEY SHARE` du
         // compte avant d'insérer, la suppression en cascade suit le même
-        // sens). Un port de `Shared` plutôt qu'une classe de `Mcp` : `Security`
-        // ne dépend d'aucune classe de `Mcp`.
+        // sens). **Un cycle avec le premier échange du code d'un nouvel accord
+        // reste pourtant possible** (#650, F1, accepté : PostgreSQL annule l'une
+        // des deux transactions, `40P01`, les deux restent atomiques —
+        // `AccountWideRevocationDeadlockTest`). Un port de `Shared` plutôt qu'une
+        // classe de `Mcp` : `Security` ne dépend d'aucune classe de `Mcp`.
         $hashedPassword = $this->passwordHasher->hashPassword($user, $newPlainPassword);
         $revoked = $this->accountLock->whileLocked($user, function (CpgUser $locked) use ($hashedPassword): RevokedAccountMcpConnections {
             // Le mot de passe **et sa date** (F2 de la relecture de #650) : le

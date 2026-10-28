@@ -713,9 +713,15 @@ voyait « mot de passe changé », puis sa prochaine action échouait en « Une 
   code_hash = …)`), le dernier geste de league : ni déchiffrement, ni relecture, ni instance. `CodeExchangeSupersession` ne
   l'écrit plus. Test : `CodeExchangedAtTest` (port de lecture du code remplacé par un port muet : jetons émis, colonne écrite ;
   rouge vu avant le code) ; mutation (appel retiré) → `CodeExchangedAtTest` et `AbandonedGrantsTest` rouges.
-- [ ] F1 : croisement « révocation de tout le compte × premier échange d'un code » écrit comme limite acceptée (phrase
+- [x] F1 : croisement « révocation de tout le compte × premier échange d'un code » écrit comme limite acceptée (phrase
   « no cycle » corrigée dans les règles) et épinglé par un test en processus réels : les deux transactions restent
-  atomiques, l'une échoue proprement.
+  atomiques, l'une échoue proprement. *Fait pour le test et les docblocks (les règles : R5).* Cycle **reproduit** :
+  `AccountWideRevocationDeadlockTest` (la session du test tient C1 ; la révocation, `CpgUserAdministrator::changePassword()`
+  réel, prend le compte et se bloque sur C1 ; l'échange du code de C2 prend C2 et se bloque sur C1 derrière elle ; C1 relâchée,
+  la révocation la prend et veut C2 : `40P01`). Victime désignée par `deadlock_timeout=100ms` de son fils, un test par victime,
+  les deux atomiques. Mutations : `SKIP LOCKED` (rouge à l'attente), `ORDER BY c.id DESC` (rouge : plus de cycle).
+  Docblocks corrigés : `revokeAllActiveOfAccount()` (interface, dépôt), `AccountMcpConnectionsRevokerInterface`,
+  `revokeOtherActiveOf()`, `TokenEndpoint::issue()` (« trois croisements »), `OwnMcpConnections`, `CpgUserAdministrator`.
 
 ### Task R5 : corrections mineures et documentation
 - [ ] Règles et docblocks : « three » → « five » révocations (`mcp-oauth-cycle-de-vie.md:92`, `:332`,

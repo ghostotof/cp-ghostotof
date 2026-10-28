@@ -226,7 +226,15 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
      * ({@see self::revokeWhere()}). Aucun chemin ne prend une connexion puis
      * le compte : le point de jeton lit le compte sans verrou, le
      * consentement prend un `FOR KEY SHARE` du compte avant d'insérer, la
-     * suppression en cascade suit le même sens.
+     * suppression en cascade suit le même sens. « Aucun chemin ne prend une
+     * connexion puis le compte » ne dit pas qu'aucun cycle n'existe :
+     * **Un cycle reste possible, accepté** (#650, F1, décision de l'auteur du
+     * 2026-10-28) : le premier échange du code d'un nouvel accord du même client
+     * (il verrouille sa connexion C2, puis veut les autres du couple, C1) croisant
+     * cette révocation (qui prend C1, puis veut C2 : C1 < C2, UUID v7) — chacune
+     * attend ce que l'autre tient, PostgreSQL en annule une (`40P01`, un 500, rien
+     * ne réessaie) et les deux transactions restent atomiques. Ni `NOWAIT` ni
+     * verrou de la paire avant league. Épinglé par `AccountWideRevocationDeadlockTest`.
      */
     public function revokeAllActiveOfAccount(Uuid $accountId, RevocationCause $cause, DateTimeImmutable $at): array
     {

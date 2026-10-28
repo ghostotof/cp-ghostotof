@@ -185,11 +185,17 @@ final readonly class TokenEndpoint implements TokenEndpointInterface
      * en attendant celle-ci, aucun cycle avec lui — un rafraîchissement d'une
      * connexion remplacée fait attendre l'échange jusqu'à son COMMIT, après
      * quoi PostgreSQL réévalue `revoked_at IS NULL` sur la ligne validée.
-     * **Deux croisements acceptés**, où l'ordre des ids ne ferme rien
+     * **Trois croisements acceptés**, où l'ordre des ids ne ferme rien
      * puisque l'échange tient sa propre connexion d'abord (PostgreSQL en
      * annule un, `40P01`) : deux échanges simultanés de deux codes du même
      * couple, qui tiennent chacun sa connexion et attendent celle de
-     * l'autre ; et une suppression de compte en cascade (`cpg_user` →
+     * l'autre ; la révocation de tout le compte (changement de mot de passe,
+     * perte du palier de confiance, #650), qui prend les connexions du compte
+     * par id — C1, l'ancienne connexion du couple, puis C2, celle du code
+     * échangé, que l'échange tient et dont il attend C1 : l'une des deux
+     * transactions est annulée (F1, `AccountWideRevocationDeadlockTest`, qui
+     * reproduit le cycle et épingle que les deux restent atomiques) ; et une
+     * suppression de compte en cascade (`cpg_user` →
      * `mcp_connection`, dans l'ordre où son plan les lit, du tas ou d'un
      * index), qui peut tenir une autre connexion du couple, que l'échange
      * attend, en voulant celle du code, que l'échange tient — l'échange
