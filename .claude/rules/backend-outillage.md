@@ -157,7 +157,7 @@ A test that puts real processes in a race (`RateLimiterConcurrencyTest`, `Contri
 `SendAccountInvitationConcurrencyTest`, `PasswordSetupActivationConcurrencyTest`, `ReinviteConcurrencyTest`,
 `InviteUsernameConcurrencyTest`, `AccountAdministrationConcurrencyTest`, `TokenEndpointConcurrencyTest`,
 `RevocationEndpointConcurrencyTest`, `RevocationEndpointPurgeDeadlockTest`, `McpConnectionPurgeLockOrderTest`,
-`OwnMcpConnectionRevocationConcurrencyTest`)
+`OwnMcpConnectionRevocationConcurrencyTest`, `AccountWideRevocationDeadlockTest`)
 goes through **one harness, written once**. `tests/Support/ChildPhpProcess::inTestEnvironment()` builds the
 child's `Process`: its command line (above) and a copy of the test's `$_SERVER`, where `phpunit.dist.xml`'s
 `<server force="true">` values live (a real `ANTHROPIC_API_KEY` exported in the shell must not reach the
@@ -240,7 +240,12 @@ connections of the pair `FOR UPDATE`, waits for the exchanging child (`present-a
 (`SessionLockWait::untilBlocked()`), then asks for the higher one `FOR UPDATE NOWAIT`. The heap order must
 contradict the ids, or the test proves nothing: the lower one's row is rewritten (a no-op `UPDATE`, its live version
 moves after the other in the heap), checked by `ctid` before anything — without that rewrite the unfixed `UPDATE` passes,
-measured. **Only the heap order is contradicted**: the rewrite is a HOT update (no indexed column changes), the index
+measured. **The heap is built by the test, never inherited** (#650, R4: it failed 4 runs in 14 of `tests/Mcp` when the
+earlier tests had fragmented `mcp_connection` and the rewritten version of the lower row landed before the higher):
+`TRUNCATE mcp_connection CASCADE` first (a new heap: slots 1, 2, 3, the rewritten version at 4), then `ANALYZE` (with
+empty statistics the planner chooses an index scan, which reads the ids' order), then a **second precondition** that
+says what the first one means: the search for the pair's others **without** an `ORDER BY` returns the higher before
+the lower. Mutation (`ORDER BY` out of `revokeWhere()`): red, `55P03`, this test alone. 20 runs of `tests/Mcp`: 20 green. **Only the heap order is contradicted**: the rewrite is a HOT update (no indexed column changes), the index
 entry still points at the root of its HOT chain, so an index scan would read the ids' order — the test discriminates
 under today's plan, a sequential scan of a few rows, only, and a plan by index would leave it green without the
 `ORDER BY`. Mutation, the `ORDER BY c.id` out of `revokeWhere()`'s sub-query — measured, `55P03` on the `NOWAIT`, the
@@ -263,6 +268,21 @@ conditions alone is redundant** for this crossing (either one removed, both test
 the sub-query's quals on the locked row and the `UPDATE`'s on the target row), and so is the sub-query's `FOR NO KEY
 UPDATE` (removed, green: the `UPDATE` waits on the row by itself) — its job is the id order, pinned by
 `TokenEndpointConcurrencyTest::testASupersessionLocksTheOtherConnectionsInIdOrder`.
+
+**A deadlock that is accepted is pinned too** (#650, R4, F1: `AccountWideRevocationDeadlockTest`; children
+`Fixtures/change-account-password.php`, which runs the real `CpgUserAdministrator::changePassword()`, and
+`present-at-token-endpoint.php`; neither prints a secret, the code passes on the child's stdin and the password is drawn
+in the child and never written). The test holds C1 `FOR UPDATE` in a session of its own; the revocation starts and blocks
+on C1 after taking the account; the exchange starts, takes C2 and blocks on C1 **behind** the revocation in the queue;
+C1 is released and the revocation, first in the queue, takes it and wants C2 — held by the exchange, which waits for C1:
+`40P01`. Each child starts once the other is **blocked on a lock** (`SessionLockWait::untilBlocked()`). **The victim is
+chosen, not left to the timers** (measured: 9 runs in 12 aborted the exchange, 3 the revocation): the child meant to lose
+starts with `deadlock_timeout = 100ms`, the other keeps the default second, so it is the first to look for the cycle. One
+test per victim, and each checks that **both transactions stay atomic** (an aborted revocation: password and date
+unchanged, nothing revoked or audited; an aborted exchange: no token, code still exchangeable, `code_exchanged_at` null).
+**Needs a role that may `SET deadlock_timeout`** (superuser, or the `SET` privilege on the parameter) — true of the dev
+database and of CI. Mutations: `SKIP LOCKED` in `revokeWhere()` (red at the wait, no cycle), `ORDER BY c.id DESC` (red:
+the cycle is gone). The limit itself: `.claude/rules/mcp-oauth-revocation-personne.md`, accepted limit 4.
 
 Every
 test that waits on a held lock to prove the bound carries a `statement_timeout = '3s'` safety net, so

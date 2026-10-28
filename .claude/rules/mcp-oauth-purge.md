@@ -73,7 +73,7 @@ paths:
   concurrency test proves the `FOR UPDATE` of (1) itself (the sequential suite stays green without it). **Accepted limit**: a cycle between `mcp_connection` rows
   alone — candidates (1, by id) or old revoked rows (4) against a cascade taking an account's connections in its
   plan's order; PostgreSQL aborts one, the Job retries (`backoffLimit: 2`). **Closed** (#726, final review): the marking
-  against a code exchange's supersession of two candidates of one pair — the three revocations lock their rows by id
+  against a code exchange's supersession of two candidates of one pair — the five revocations lock their rows by id
   too (`McpConnectionRepository::revokeWhere()`, `.claude/rules/mcp-oauth-cycle-de-vie.md`, « A new grant supersedes
   the previous one ») — **and the code's own connection, which the exchange locks first, is never a candidate**
   (#726, CR1): `ConnectionLifetimes::fromConfiguration()` refuses an idle or maximum duration up to `P1D` plus the

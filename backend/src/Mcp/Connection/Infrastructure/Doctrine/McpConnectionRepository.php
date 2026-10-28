@@ -387,7 +387,7 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
     /**
      * L'instruction des révocations, écrite une fois (lot C des
      * relectures de #649) : seul le choix des connexions change, `$where`,
-     * l'une des trois constantes `WHERE_*` de cette classe — jamais une chaîne
+     * l'une des cinq constantes `WHERE_*` de cette classe — jamais une chaîne
      * composée par un appelant.
      * Du SQL natif par la connexion DBAL de l'EntityManager, jamais l'unité de
      * travail ni le DQL (`.claude/rules/mcp-oauth-cycle-de-vie.md`) : la

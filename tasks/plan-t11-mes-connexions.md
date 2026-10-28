@@ -582,22 +582,32 @@ Ajoutée par décision de l'auteur du 2026-10-28 (prémisse inexacte de la déci
 
 ## Limites acceptées par ce plan (à écrire dans la règle nouvelle, Task 11)
 
-- **Le cookie de session survit au changement de mot de passe** (ADR 0003, JWT non révocable, une heure) : dans
-  les dix minutes de son `iat`, un cookie volé peut encore accorder une connexion **après** le changement. La
-  révocation de la Task 5 coupe tout ce qui existait, pas ce qui naît ensuite.
+*État après les relectures (R5b, 2026-10-28) : les deux premières limites du plan d'origine sont levées, deux
+autres s'y ajoutent ; la liste vivante est dans `.claude/rules/mcp-oauth-revocation-personne.md`, « Accepted limits ».*
+
+- ~~**Le cookie de session survit au changement de mot de passe**~~ **Levée** (R1 au consentement, R1b pour toute
+  l'API) : une session ouverte avant le dernier changement de mot de passe est refusée ; reste la même seconde,
+  refusée aussi (une reconnexion dans la seconde du changement recommence).
+- ~~**Le `POST` du consentement accorde au compte du cookie à l'envoi**~~ **Levée** (R2, 409 lié au compte affiché).
 - **Course consentement × perte du palier** : une approbation en vol, autorisée par `access_control` avant la
   rétrogradation, peut insérer une connexion juste après la révocation de la Task 6. Elle reste refusée à l'usage
   (l'authentificateur et le rafraîchissement rejugent le palier), mais revivrait si le palier était rendu dans
-  les 30 jours. Voir la question 5.
+  les 30 jours. Voir la question 5. **Reste.**
 - **Une connexion échue non marquée, révoquée par la personne, porte la cause `person`**, pas `expired`.
+- **Ajoutée par R4 (F1)** : la révocation de tout le compte croisant le premier échange d'un nouvel accord peut
+  s'interbloquer (`40P01`, l'une des deux transactions annulée, les deux restent atomiques) ; décision de l'auteur,
+  épinglée par `AccountWideRevocationDeadlockTest`.
+- **Ajoutée par R3** : les approbations en rafale ne sont pas plafonnées côté Symfony (la moitié « non révoquées »
+  de la liste est sans limite, bornée par nature ; seule la zone nginx les ralentit).
 
 ## Questions tranchées par l'auteur (2026-10-28)
 
 1. **Liste** : les connexions révoquées et expirées gardées 6 mois sont listées, avec leur état et leur cause.
 2. **Lien desktop** : **un vrai menu du compte desktop** (motif disclosure), pas un bouton compact — Task 10.
 3. **#730** : `connection_unexchanged` à `PT1H`, en temps écoulé seulement.
-4. **Lier la décision au compte affiché** : hors de #650. Le `POST /api/oauth/consent` accorde au compte du
-   cookie à l'envoi ; la limite est écrite dans la règle nouvelle (Task 11), un suivi peut être ouvert.
+4. ~~**Lier la décision au compte affiché** : hors de #650. Le `POST /api/oauth/consent` accorde au compte du
+   cookie à l'envoi ; la limite est écrite dans la règle nouvelle (Task 11), un suivi peut être ouvert.~~
+   **Reprise à la relecture : fait en R2** (409 lié au compte affiché, décision de l'auteur du 2026-10-28).
 5. **Course consentement × perte du palier** : limite acceptée, écrite dans la règle nouvelle (l'authentificateur
    refuse la connexion à l'usage ; elle n'est simplement pas marquée révoquée).
 6. **DELETE d'une connexion échue non marquée** : révoquée `person`, auditée.
@@ -733,10 +743,13 @@ voyait « mot de passe changé », puis sa prochaine action échouait en « Une 
   retiré de `revokeWhere()`) : rouge, `55P03`, ce test seul. 20 passages de `tests/Mcp` : 20 verts.
 
 ### Task R5 : corrections mineures et documentation
-- [ ] Règles et docblocks : « three » → « five » révocations (`mcp-oauth-cycle-de-vie.md:92`, `:332`,
+- [x] Règles et docblocks : « three » → « five » révocations (`mcp-oauth-cycle-de-vie.md:92`, `:332`,
   `mcp-oauth-purge.md:76`, `McpConnectionRepository.php:338`), `revokeActiveOfAccount()` hors transaction
   (`mcp-oauth-cycle-de-vie.md:122`), fenêtre migration→rollout documentée (aucune exposition : `main`/`develop` sans
-  `Mcp/Connection`), limites F1/F2/F5 mises à jour, R1–R4 décrits.
+  `Mcp/Connection`), limites F1/F2/F5 mises à jour, R1–R4 décrits. *Fait (R5b) : règles `security-user`,
+  `security-authentication`, `mcp-oauth`, `mcp-oauth-cycle-de-vie`, `mcp-oauth-purge`, `mcp-oauth-revocation-personne`,
+  `backend-outillage`, `frontend`, `frontend-backoffice`, `frontend-a11y` ; spec 0007 ; registre RGPD ; ADR 0003 relu
+  (déjà amendé, cohérent).*
 - [x] Page : pas d'échéance pour une connexion révoquée ; « Jamais utilisée » distingue un accord abandonné
   (`code_exchanged_at` nul) d'une connexion échangée pas encore rafraîchie ; `aria-controls` valide menu fermé
   (`v-show`) ; `load()` protégé contre les réponses dans le désordre. *Fait (R5a), plus le bandeau de session
@@ -745,7 +758,7 @@ voyait « mot de passe changé », puis sa prochaine action échouait en « Une 
   `setSuperAdmin()` remplacé par un type ; test « révoquée puis échue reste `revoked` ». *Fait (R5a), plus le
   journal `critical` du remplacement sauté et l'alignement `fn (`.*
 
-**R5a (partie code, 2026-10-28)** — la partie documentation (règles, spec, registre) reste à faire, R5b.
+**R5a (partie code, 2026-10-28)** — la partie documentation (règles, spec, registre) est faite par R5b (même jour).
 Décisions : (1) `OwnMcpConnections::viewOf()` calcule `deadline()` une fois et la passe à `stateOf()` (`$now >= $deadline`,
 la comparaison d'`isExpiredAt()`). (2) La ligne d'audit factorisée dans `Application/RevokedConnectionAudit` (`record($connexion,
 $cause)` : l'appel au journal sous `FailSafeAudit`, message constant `Revoked connection not audited.`), à côté de `FailSafeAudit`

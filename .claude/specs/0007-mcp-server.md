@@ -422,7 +422,8 @@ décision du 2026-10-19, voir « Langue invalide »).
   que ni le remplacement (au premier échange, #726) ni l'usage ne tiennent : elle restait active 30 jours et
   elles s'accumulaient. Une troisième échéance de `McpConnection::deadline()`, appliquée tant que la colonne
   `code_exchanged_at` est nulle ; cette colonne s'écrit au premier échange réussi du code, dans la transaction
-  de l'échange. `ConnectionLifetimes` refuse la durée si elle compte un jour, un mois ou une année (temps
+  de l'échange, par la révocation du code elle-même (le dernier geste de league, une instruction, sans relecture ;
+  relecture R4). `ConnectionLifetimes` refuse la durée si elle compte un jour, un mois ou une année (temps
   écoulé seulement), si elle ne dépasse pas la durée d'un code de deux minutes de jeu, ou si elle atteint
   l'inactivité. La purge ajoute une troisième borne de présélection (`maintenant − durée + une minute`) : la
   connexion d'un code encore échangeable n'est jamais candidate (CR1 de #726 préservé). La migration
@@ -497,22 +498,38 @@ décision du 2026-10-19, voir « Langue invalide »).
   après le COMMIT de l'opération qui l'a motivée, à la suite de `password-changed` / `role-changed`.
 - **« Mes connexions MCP »** : page frontend réservée au palier de confiance, liste et révocation ;
   API correspondante sous `ROLE_TRUSTED`, qui ne rend que les connexions du compte appelant.
-  *Précisé le 2026-10-28 (#650, tâche 11)* : `GET /api/me/mcp-connections` rend **toutes** les connexions du
-  compte — actives, expirées et révoquées conservées six mois — avec leur état (`active`, `expired`, `revoked`,
-  jugé par `McpConnection::isExpiredAt()`, l'échéance affichée étant celle que l'on juge), la date et la cause
-  d'une révocation. `DELETE /api/me/mcp-connections/{id}` : 204, effet à la requête suivante du client ; la
+  *Précisé le 2026-10-28 (#650, tâche 11)* : `GET /api/me/mcp-connections` rend **toutes les connexions non
+  révoquées** du compte (actives, et échues que la purge n'a pas encore marquées) **et les 50 dernières
+  terminées** (révoquées, expirées marquées, conservées six mois) — le champ `terminatedTruncated` dit si
+  l'historique est coupé (relecture R3 : la première livraison les rendait toutes) — avec leur état (`active`,
+  `expired`, `revoked`, jugé par `McpConnection::isExpiredAt()`, l'échéance affichée étant celle que l'on juge),
+  la date et la cause d'une révocation, `codeExchanged` (booléen : l'accord a-t-il abouti ? c'est ce qui distingue
+  une connexion « jamais aboutie » d'une connexion échangée « pas encore renouvelée ») et `expiresAt`, **nul
+  exactement pour une connexion révoquée** (elle n'a plus d'échéance). `DELETE /api/me/mcp-connections/{id}` : 204, effet à la requête suivante du client ; la
   connexion d'un autre compte et un UUID inconnu répondent le même 404 (pas d'oracle), la connexion déjà
   révoquée de la personne un 204 sans rien écrire (idempotent) ; une connexion échue que la purge n'a pas encore
   marquée est révoquée `person`. Sous `/api/me/`, donc derrière la règle `ROLE_TRUSTED` existante : aucune entrée
   de liste d'exposition. Page `/<locale>/mcp-connections` (tableau, confirmation, annonce du résultat) ; menu du
   compte du palier de confiance à partir de 768 px (motif disclosure), lien dans le menu à icône en dessous ; le
   palier de base garde ses actions à plat (décision de l'auteur du 2026-10-28). La page de consentement nomme le
-  compte qui accorde (lu sur le cookie de la requête) et propose de changer de compte. **Limites acceptées**
-  (décisions de l'auteur du 2026-10-28) : le cookie de session survit au changement de mot de passe (JWT non
-  révocable, ADR 0003) ; le `POST` du consentement accorde au compte du cookie à l'envoi, pas à celui que le
-  `GET` a affiché ; une approbation en vol croisant la perte du palier insère une connexion refusée à l'usage mais
-  non marquée révoquée ; `upgradePassword()` ne révoque rien ; les rôles modifiés à la main en SQL ne sont pas
-  couverts. Règle : `.claude/rules/mcp-oauth-revocation-personne.md`.
+  compte qui accorde (lu sur le cookie de la requête) et propose de changer de compte.
+  *Précisé après les relectures (#650, R1 à R5, décisions de l'auteur du 2026-10-28)* : **le consentement est lié
+  au compte affiché** — le `GET` rend `account{id, username}`, le `POST` renvoie `accountId` (exigé : 422 sinon) et
+  un cookie d'un autre compte reçoit un 409 `/errors/consent-account-changed`, pour l'accord comme pour le refus ;
+  la page propose de relire la demande. **Une session ouverte avant le dernier changement de mot de passe du
+  compte est refusée par toute l'API** (401, cookies effacés ; la personne est menée à la connexion, qui dit que sa
+  session a pris fin) : le changement de mot de passe, qui coupait les connexions existantes, coupe aussi ce
+  qu'un cookie volé pourrait accorder ensuite. Le mot de passe est daté (`credentials_changed_at`) par ses deux
+  écrivains ; le re-hachage à la connexion ne remplace plus un mot de passe changé entre-temps.
+  **Limites acceptées** (décisions de l'auteur du 2026-10-28) : une approbation en vol croisant la perte du palier
+  insère une connexion refusée à l'usage mais non marquée révoquée ; **la révocation de tout le compte croisant le
+  premier échange d'un nouvel accord peut s'interbloquer** (PostgreSQL annule l'une des deux transactions, qui
+  restent atomiques ; la personne recommence — à rouvrir par un ticket) ; des approbations en rafale ne sont pas
+  plafonnées côté Symfony (seule la zone nginx les ralentit) ; une personne qui se reconnecte dans la seconde même
+  du changement de son mot de passe reçoit un 401 et recommence ; `upgradePassword()` ne révoque rien ; les rôles
+  modifiés à la main en SQL ne sont pas couverts. **Levées par les relectures** : le cookie qui survivait au
+  changement de mot de passe, et le consentement qui accordait au compte du cookie à l'envoi. Règle :
+  `.claude/rules/mcp-oauth-revocation-personne.md`.
 - **Backoffice** : liste de toutes les connexions MCP, et gestion des clients pré-enregistrés, sous
   `ROLE_SUPER` (`/api/backoffice/…`, donc jamais publique par construction).
 - **Exposition** : les points OAuth publics (autorisation, jeton, révocation) entrent
@@ -613,7 +630,10 @@ décision du 2026-10-19, voir « Langue invalide »).
   - redirection de boucle locale : acceptée sur un autre port que celui enregistré, refusée sur un autre
     hôte ou un autre chemin ; `iss` dans la réponse d'autorisation ;
   - journal d'audit : octroi, révocation, lecture nominative, avec les champs attendus ;
-  - « Mes connexions MCP » ne rend que les connexions du compte appelant.
+  - « Mes connexions MCP » ne rend que les connexions du compte appelant, borne les terminées, ne donne pas
+    d'échéance à une révoquée ;
+  - le consentement refuse une décision prise sur la page d'un autre compte (409), et une session d'avant le
+    changement de mot de passe (401) ; l'interblocage accepté est reproduit en processus réels.
 - **Frontend** (Vitest, au niveau de la page, comme les pages existantes) : page « Brancher votre
   assistant » dans les deux langues, URL construite depuis l'origine, copie accessible ; en phase 2,
   page de consentement (vérifié / déclaré, refus), « Mes connexions MCP » (liste, révocation, état
@@ -756,10 +776,18 @@ sur les chemins MCP et OAuth qu'à la tâche 14.
 - **2026-10-28 — tâche 11 (#650) et #730, décisions de l'auteur** : périmètre étendu à #730 (piste 1,
   expiration d'une heure d'un accord jamais échangé) ; la liste montre aussi les connexions révoquées et
   expirées gardées six mois ; un vrai menu du compte desktop (disclosure), le palier de base gardant ses
-  actions à plat ; le consentement nomme le compte, sans lier la décision à ce compte ; noms des causes
+  actions à plat ; le consentement nomme le compte (la décision n'y fut liée qu'à la relecture, R2, même jour) ; noms des causes
   confirmés ; la révocation d'une connexion échue non marquée porte `person`. **Correction en cours de route** :
   le lien d'invitation peut *remplacer* un mot de passe (compte invité auquel un `ROLE_SUPER` en a posé un,
   #460) et révoque alors les connexions — la prémisse du plan d'origine était inexacte. Règle d'implémentation :
   `.claude/rules/mcp-oauth-revocation-personne.md`. Audit de sensibilité : aucun compte réel, secret ni domaine ;
   des comptes de test fictifs seulement. Reste de la tâche : le contrôle d'accessibilité au navigateur (session
   du palier de confiance) et la fermeture de #650 et #730 après la fusion.
+- **2026-10-28 — relectures de la tâche 11 (#650), décisions de l'auteur** : le cookie d'avant un changement de mot
+  de passe est refusé par toute l'API et non au seul consentement (R1, R1b) ; un 401 du backoffice ramène à la
+  connexion (R1c) ; le consentement est lié au compte affiché (R2, la limite acceptée du plan est levée) ; la
+  liste est bornée aux 50 dernières terminées (R3) ; l'interblocage « révocation de tout le compte × premier
+  échange » est une limite acceptée, écrite et épinglée (R4, F1) ; `code_exchanged_at` s'écrit à la révocation du
+  code (R4) ; aucune exposition entre la migration de `code_exchanged_at` et la fin du déploiement pour cette
+  livraison (ni `main` ni `develop` ne portent de code `Mcp/Connection`). Règle d'implémentation :
+  `.claude/rules/mcp-oauth-revocation-personne.md`.

@@ -6,6 +6,8 @@ paths:
   - "frontend/src/presentation/ui/admin/**"
   - "frontend/src/presentation/router/**"
   - "frontend/src/presentation/pages/SetPasswordPage.vue"
+  - "frontend/tests/infrastructure/admin/shared/BackofficeHttpClient.spec.ts"
+  - "frontend/tests/presentation/router/backofficeSessionExpiry.spec.ts"
 ---
 
 # Frontend — backoffice (`/admin`) and set-password
@@ -194,4 +196,23 @@ version" copies nothing and the assistant sends all five fields.
   wrongly redirect an actually-authenticated user to `/login` (regression-tested in
   `tests/presentation/router/adminGuard.spec.ts`). `hasRole(user, role)` (`domain/auth/services/hasRole.ts`) is a
   plain function (no Vue `inject()`) so it also works inside this router guard, outside component context.
+- **A 401 mid-page ends the session on the interface too** (#650, R1c): the route guard plays at navigation only, it
+  never sees a session that dies while a page is open (the JWT expiring, or a password change cutting every
+  session opened before it, `.claude/rules/security-authentication.md`). So `BackofficeHttpClient` (`get` and
+  `mutate`) calls, on any 401, a reaction registered once through `setBackofficeUnauthorizedHandler()` and returns the
+  response as it came — repositories keep their own mapping, **none repeats the reaction**. `main.ts` registers
+  `setBackofficeUnauthorizedHandler(createBackofficeSessionExpiryHandler(router))`
+  (`presentation/router/backofficeSessionExpiry.ts`): `markSessionExpired()` (the header turns anonymous), then one
+  `router.replace` to `login?redirect=<current fullPath>&expired=1` (the locale of the page; nothing when already on
+  `login`; one navigation when several lists of a page answer 401 together). `expired=1` (`presentation/router/
+  sessionEnded.ts`, the single value `1`, an announcement that opens nothing) makes `LoginPage` say why it opened.
+  The registry lives in the module, so `infrastructure/` imports neither the session nor the router. **A new
+  administration client goes through `BackofficeHttpClient`**, or reproduces that wiring. **The 403 keeps its meaning**
+  (not authorized, CSRF refused): no repository reads it as a finished session, it stays the repository's error. The
+  `Mcp` repositories (`HttpMcpConnectionsRepository`, `HttpOAuthConsentRepository`) have their own `fetch` and mark
+  the session expired in their composable without redirecting (the page shows the error,
+  `.claude/rules/frontend.md`). No dedicated « your password changed » message: Lexik's 401 body carries `{code,
+  message}` and no stable `type`, and reading the text would be fragile. `BackofficeHttpClient.spec.ts` (401 on read and
+  write, 200/204/403/404/409/422/500 with no reaction, no handler registered), `HttpAdminUserRepository.spec.ts`,
+  `backofficeSessionExpiry.spec.ts` (session closed, `login?redirect`, locale, one navigation, already on `login`).
 

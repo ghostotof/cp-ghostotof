@@ -54,6 +54,15 @@ fixed:
   turn one off and leave the suite green for the wrong reason. Contrast, focus visibility, tab order
   and the relevance of alt text still need a real browser and a human — automated tooling covers
   roughly a third of WCAG.
+- **A disclosure's `aria-controls` must name an element that exists** (#650, R5a): `AccountMenu.vue` hides its list
+  with `v-show`, not `v-if`, so the button's `aria-controls` is valid while the menu is closed; the hidden list is
+  `display: none`, neither read nor reachable by keyboard. Its tests therefore read « nothing outside the menu »
+  (`outsideDesktopMenu` in `AppHeader.spec.ts`), never « nothing in the DOM ».
+- **A `role="status"` present at first render may not be announced** (`LoginPage`'s « Votre session a pris fin »
+  notice, `expired=1`, #650): some screen readers announce a live region only when its content *changes*, and this
+  one is in the page from the start. It is still readable as ordinary text in the reading order, which is why it is
+  kept a status (nothing is broken, no `role="alert"`); announcement on arrival is part of the browser check still
+  to do, with the task 10 one (`.claude/rules/mcp-oauth-revocation-personne.md`).
 
 Tests live under `tests/`, mirroring the `src/` tree rather than being colocated (e.g.
 `src/presentation/layout/AppHeader.vue` is tested by `tests/presentation/layout/AppHeader.spec.ts`, the same

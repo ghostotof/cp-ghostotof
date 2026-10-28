@@ -146,25 +146,35 @@ phase 1 parte en release seule ; puis au merge de clôture, qui archive la spec 
   - [x] R2. Relecture F5 : consentement lié au compte affiché (409)
   - [x] R3. Relecture F6 : liste bornée (non révoquées + 50 dernières terminées)
   - [x] R4. Relecture CR3/F1 : `code_exchanged_at` robuste ; interblocage écrit et épinglé — **sensible**
-  - [ ] R5. Relecture : corrections mineures et documentation
-      R5a (partie code) faite le 2026-10-28 (plan, « Corrections de relecture ») ; R5b (règles, spec, registre) reste à faire.
+  - [x] R5. Relecture : corrections mineures et documentation
+      R5a (partie code) et R5b (règles, spec, registre RGPD, plan) faites le 2026-10-28 (plan, « Corrections de relecture »).
       **Notes de la release** (tâche 11, PR de la mère vers `develop`) :
-      - deux migrations **avant le rollout**, dans l'ordre : `Version20261028120000` (le `CHECK` des causes de
-        révocation, huit valeurs) puis `Version20261028140000` (colonne `code_exchanged_at` et rattrapage des
-        connexions déjà échangées) ; aucune variable d'environnement ;
+      - **trois** migrations **avant le rollout**, dans l'ordre : `Version20261028120000` (le `CHECK` des causes de
+        révocation, huit valeurs), `Version20261028140000` (colonne `code_exchanged_at` et rattrapage des
+        connexions déjà échangées) puis `Version20261028160000` (colonne `cpg_user.credentials_changed_at`, nulle,
+        sans rattrapage ; empreinte n° 38 de `verify.sql`) ; aucune variable d'environnement ;
+      - **backend avant frontend** : la décision de consentement porte `accountId` (le `GET` rend `account.id`) ; un
+        frontend nouveau devant un backend ancien ne sait pas lire le résumé, une page ancienne restée ouverte devant
+        le backend nouveau reçoit un 422 jusqu'à son rechargement ;
+      - **toutes les sessions ouvertes avant un changement de mot de passe sont coupées** (401, cookies effacés, retour
+        à la connexion avec « Votre session a pris fin ») : à l'usage, après la mise en production, pour un compte dont le
+        mot de passe change — aucun compte existant n'est touché au déploiement (colonne nulle) ;
       - un paramètre nouveau, `app.mcp.lifetime.connection_unexchanged` (`PT1H`, `config/services.yaml`, une
         valeur pour tous les environnements) : une approbation dont le code n'est jamais échangé expire au bout
         d'une heure ;
       - une page et un menu du compte desktop pour le palier de confiance (le palier de base garde ses actions
         à plat) : **le contrôle d'accessibilité au navigateur de la tâche 10 n'est pas fait** (tabulation,
-        focus visible, contraste, largeurs 768 et 1024 px, session du palier de confiance requise) — à faire
-        avant de fusionner et à noter dans la PR ;
+        focus visible, contraste, largeurs 768 et 1024 px, session du palier de confiance requise ; s'y ajoute
+        l'annonce du bandeau « Votre session a pris fin » de la page de connexion, `role="status"` présent au rendu
+        initial) — à faire avant de fusionner et à noter dans la PR ;
       - à la sortie de la phase 2, le préalable posé par #726 (B1) est levé : la personne révoque elle-même.
-      **À trancher en relecture** (point ouvert, non résolu) : `Version20261028140000` rattrape `code_exchanged_at`
-      avant le rollout ; une connexion **échangée par l'ancien code entre la migration et la fin du rollout** reste
-      à `NULL` et serait jugée expirée au bout d'une heure. La phase 2 n'étant pas sortie, aucune base de production
-      n'a de ligne (le docblock de la migration le dit) ; à confirmer pour la préprod, ou à fermer par une seconde
-      passe de rattrapage après le rollout.
+      **Tranché en relecture (R5b)** : `Version20261028140000` rattrape `code_exchanged_at` avant le rollout ; une
+      connexion échangée par l'ancien code entre la migration et la fin du rollout resterait à `NULL` et serait jugée
+      expirée au bout d'une heure — **mais aucune exposition pour cette livraison** : ni `main` ni `develop` ne portent
+      de code `backend/src/Mcp/Connection`, aucun ancien code ne peut donc échanger un code dans cette fenêtre. Pour
+      une colonne future de ce genre : expand/contract en deux versions, ou `UPDATE` idempotent relancé après le
+      rollout (un rattrapage au rafraîchissement ne marche pas : il arrive après l'échéance d'une heure). Écrit dans
+      `.claude/rules/mcp-oauth-revocation-personne.md`.
 - [ ] Tâche 12 — Enregistrement des clients par CIMD (#651) — bloquée par : #647 — reports de la
       tâche 8 : `client_id_metadata_document_supported: true` déjà annoncé ; domaine du client sur la page.
       Reports de la tâche 9 : borner la longueur du `client_id` CIMD écrit dans l'audit

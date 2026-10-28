@@ -130,7 +130,24 @@ paths:
     and `CpgUserRoleAdministrator::setSuperAdmin()` on the loss of the tier (`trusted-tier-withdrawn`, judged on the
     list it **writes**, never `getRoles()`). A refused revocation undoes the password, the activation or the role.
     `upgradePassword()` (same secret) and `CpgUserRegistrar` revoke nothing; the mechanics and the accepted limits:
-    `.claude/rules/mcp-oauth-revocation-personne.md`. **Both administer under one lock** (issues #551, #552): `Application/AccountAdministrationLockInterface::whileAdministering(target, actingUser, Closure(CpgUser): T)`,
+    `.claude/rules/mcp-oauth-revocation-personne.md`. **That revocation can still deadlock** with the first exchange of
+    a new grant's code (account then connections by id, against a connection then the pair's others; PostgreSQL
+    aborts one, both stay atomic, accepted, #650 F1): the « no cycle » below is about the advisory key and the account
+    row locks alone.
+    **`CpgUser::credentialsChangedAt`** (`datetimetz_immutable`, nullable, `#[Ignore]`d by the serializer; #650, R1) dates
+    the last password change: **two writers**, through `replacePassword($hash, $at)` — `CpgUserAdministrator::changePassword()`
+    and `PasswordSetupService::activate()` (a password *set* by a link is dated too, no condition: it refuses no
+    session that exists) —, the date written **with the password inside the lock's closure**, never one without the
+    other. `setPassword()` and `upgradePassword()` write no date. `hasChangedCredentialsSince(?DateTimeImmutable)` is
+    the one predicate (`<=`, an unknown instant counts as earlier, false without a change; the reasons in
+    `.claude/rules/security-authentication.md`), read by the whole `api` firewall and the consent.
+    **`upgradePassword()` is an `UPDATE … SET password = :new WHERE id = :id AND password = :old`** (F3): a rehash at
+    sign-in no longer restores a password changed in between by the backoffice or a link. The price: a rehash lost when
+    the password changed, harmless — the next sign-in rehashes the new one; zero rows is not an error; the instance
+    takes the new hash as its original state so a later `flush()` rewrites nothing (rejected: the account lock, a
+    transaction and a `FOR UPDATE` for a rare write, plus an Infrastructure → Application dependency).
+    `CpgUserRoleAdministrator::setSuperAdmin()` returns a **`RoleChangeOutcome`** (`unchanged()`, `changed(?RevokedAccountMcpConnections)`;
+    the closure's body is `writeRole()`), not a tuple read by position. **Both administer under one lock** (issues #551, #552): `Application/AccountAdministrationLockInterface::whileAdministering(target, actingUser, Closure(CpgUser): T)`,
     adapter `Infrastructure/Doctrine/PostgresAccountAdministrationLock` on the shared skeleton (see the
     account lock below), the fifth PostgreSQL lock. The anti-lockout guard « never the last `ROLE_SUPER` »
     used to count then act, with no lock nor transaction: two `ROLE_SUPER` deleting or demoting each other

@@ -89,7 +89,7 @@ paths:
   which `FOR UPDATE` blocked; it still conflicts with the purge's and `lockForUpdate()`'s `FOR UPDATE` and with another
   revocation's `FOR NO KEY UPDATE`, so the order and the exclusion between revocations are unchanged; a row revoked during the wait is neither
   returned nor rewritten, and stays locked until the end of the transaction; the one
-  shape of the three revocations (`:at` typed `Types::DATETIMETZ_IMMUTABLE`, `:id`
+  shape of the five revocations (`:at` typed `Types::DATETIMETZ_IMMUTABLE`, `:id`
   `UuidType::NAME`). Why: league detects a reused refresh token or a replayed code **inside** `TokenEndpoint`'s
   transaction, whose `wrapInTransaction()` rolls back **and closes the EntityManager** on the refusal — the
   revocation must be written after that, and a closed EntityManager keeps its connection
@@ -121,9 +121,11 @@ paths:
   after a rolled-back exchange (the token endpoint's reuse and replay, below). Inside a transaction: **the
   dedicated repository method** — `revokeActive()` (the revocation endpoint's, below), `revokeOtherActiveOf()` (`CodeExchangeSupersession`'s,
   in the token endpoint's transaction, at a code's first exchange), `revokeExpired()` (the purge's), and #650's
-  `revokeActiveOfAccount()` (the person's) and `revokeAllActiveOfAccount()` (`Security/User`'s, through a port of
-  `Shared`, transaction required) — in the transaction, which returns what it revoked
-  (`?RevokedConnection` or a `list<RevokedConnection>`), and the audit written by the caller **after the COMMIT** —
+  `revokeAllActiveOfAccount()` (`Security/User`'s, through a port of `Shared`, transaction required) — in the
+  transaction, which returns what it revoked
+  (`?RevokedConnection` or a `list<RevokedConnection>`), and the audit written by the caller **after the COMMIT**. The fifth,
+  #650's `revokeActiveOfAccount()` (the person's), is in neither group: **no transaction at all** — one statement in
+  autocommit, so its COMMIT is its return and the audit follows it (`.claude/rules/mcp-oauth-revocation-personne.md`) —
   the revoker there would audit before it, and a ROLLBACK would leave a line for a revocation that never happened.
   Either way, no line for a connection the statement did not revoke (unknown or already revoked). `expired` is audited through
   `SecurityAuditLoggerInterface::mcpConnectionExpired()` (actor `system`, the purge being a scheduled command),
@@ -320,17 +322,19 @@ paths:
   only part that needs league: `Application/ExchangedCodeConnectionInterface::connectionIdOf($request): ?Uuid`
   (`Infrastructure/League/LeagueExchangedCodeConnection`, the body's `code` read by `GrantPayloadReader::connectionIdOf()`,
   `null` without a string `code` or for an unreadable one); then `findOneById()` — the managed instance
-  `isAuthCodeRevoked()` locked `FOR UPDATE` — notes the exchange on it (`recordCodeExchangeAt($now)`, saved: #730's
-  column, written once, which ends the one-hour deadline of an abandoned grant) and
+  `isAuthCodeRevoked()` locked `FOR UPDATE` — and
   `McpConnectionRepositoryInterface::revokeOtherActiveOf($kept, RevocationCause::Superseded, $now)` at the clock's instant
-  (`CodeExchangeSupersessionTest`: another grant, an unreadable code, an unknown connection, the nominal case;
-  `LeagueExchangedCodeConnectionTest`: the port). **Rejected** (#726, CR5): hooking the supersession onto league's
+  (`CodeExchangeSupersessionTest`: another grant, an unreadable code or an unknown connection — each logs `critical`,
+  constant message, answer unchanged —, the nominal case; `LeagueExchangedCodeConnectionTest`: the port). **It does not
+  note the exchange** (#730 first did, #650 R4 moved it): `code_exchanged_at` is written by the code's own revocation,
+  `AuthCodeRepository::revokeAuthCode()` → `recordCodeExchangeOf()`, league's last gesture, before this runs
+  (`.claude/rules/mcp-oauth-revocation-personne.md`). **Rejected** (#726, CR5): hooking the supersession onto league's
   `AuthCodeRepository::revokeAuthCode()` with a collector of the superseded connections — a per-request state to
   empty on a shared service, and the audit after the COMMIT would stay at the token endpoint anyway — the second path
   above: **one native SQL statement** like `revokeActive()` (its sub-query choosing `c.account_id = :account AND
   c.mcp_client_id = :client AND c.id <> :kept AND c.revoked_at IS NULL`, locked `ORDER BY c.id`; statement and row mapping
-  written once for the three revocations, `McpConnectionRepository::revokeWhere()`, only the `WHERE` differing, one of
-  its three private `WHERE_*` constants — `@param self::WHERE_*`, no caller composes SQL, lot C), served by
+  written once for the five revocations, `McpConnectionRepository::revokeWhere()`, only the `WHERE` differing, one of
+  its five private `WHERE_*` constants — `@param self::WHERE_*`, no caller composes SQL, lot C), served by
   `idx_mcp_connection_active_pair`. Its `Application/Supersession` — the kept connection's UUID and the
   `list<RevokedConnection>` — leaves the transaction with league's response (`Application/TokenExchangeOutcome`, #726
   S7, formerly `IssuedTokens`); after the COMMIT, `TokenEndpoint` calls the same service's `auditSuperseded()` (#726, S4:
@@ -362,10 +366,14 @@ paths:
   first. **Lock order**: the code's connection (league, `FOR UPDATE`), its tokens, then the **other** connections of
   the pair **by id** (the sub-query; #726: in the plan's order, heap or index, two of them both purge candidates crossed the purge's
   marking, `FOR UPDATE … ORDER BY id`, in `40P01` — `TokenEndpointConcurrencyTest::testASupersessionLocksTheOtherConnectionsInIdOrder`,
-  the lower one's row rewritten so that the heap contradicts the ids, `ctid` checked — a HOT update, so only the heap
-  order is contradicted and an index scan would keep the ids' order: the test discriminates under today's sequential
-  scan only —: held by the test, the exchange
-  blocks on it, the higher one free `NOWAIT`; measured `55P03` without the `ORDER BY`); a refresh takes its connection then its tokens only — no cycle: a refresh holding a
+  the lower one's row rewritten so that the heap contradicts the ids — a HOT update, so only the heap order is
+  contradicted and an index scan would keep the ids' order: the test discriminates under a sequential scan only. **The
+  heap is built, not assumed** (#650, R4: the test had failed 4 times in 14 runs of `tests/Mcp` when earlier tests left
+  `mcp_connection` fragmented, the three rows on three pages and the rewritten version of the lower one before the
+  higher): `TRUNCATE mcp_connection CASCADE` first, then `ANALYZE` (empty statistics would otherwise give an index
+  plan, which reads the ids' order), and a second precondition that says what the first means — the search for the
+  pair's others **without** `ORDER BY` returns the higher before the lower. Held by the test, the exchange
+  blocks on it, the higher one free `NOWAIT`; measured `55P03` without the `ORDER BY`); a refresh takes its connection then its tokens only — no cycle with it: a refresh holding a
   superseded connection makes the exchange wait for its COMMIT (FPM's `lock_timeout`), then PostgreSQL re-evaluates
   `revoked_at IS NULL` on the committed row
   (`TokenEndpointConcurrencyTest::testAnExchangeCrossingARefreshOfTheSupersededConnectionRevokesIt`, real processes,
@@ -378,7 +386,15 @@ paths:
   `CpgUserAdministrator::delete()`, the only path that can reach an account holding a connection (the pending-invitation
   purge removes accounts awaiting password setup, without a password, which cannot sign in, and
   `CpgUserInviter::invite()`'s removal on a full queue only reaches the account it just created, without a password) — answers a 500, deletes and audits nothing, and is asked again by hand.
-  **Accepted limit, new** (#726): two simultaneous exchanges of
+  **Accepted limit, added by #650** (F1, the author's decision of 2026-10-28): **an account-wide revocation crossing the
+  first exchange of a new grant can deadlock.** The account holds C1 (older, active) and C2 (a new grant to the same
+  client, C1 < C2, UUID v7); the exchange of C2's code locks C2 then wants C1 (`revokeOtherActiveOf()`), while
+  `revokeAllActiveOfAccount()` (password change, loss of the trusted tier) holds the account and locks C1 then C2.
+  Crossing, each waits for the other: `40P01`, a 500, nothing retries; **both transactions stay atomic** (the aborted
+  revocation changes neither the password and its date nor the roles; the aborted exchange issues no token, leaves the
+  code exchangeable and `code_exchanged_at` null). Not fixed (no `NOWAIT`, no locking of the pair before league); the
+  caller asks again by hand. `AccountWideRevocationDeadlockTest`, one case per victim; the full statement in
+  `.claude/rules/mcp-oauth-revocation-personne.md`, accepted limit 4. **Accepted limit, new** (#726): two simultaneous exchanges of
   **two** codes of one pair (two grants of one account to one client, same millisecond) each hold
   their connection first and wait for the other's (the id order of the `UPDATE` cannot close it) — PostgreSQL aborts one (`40P01`, a 500), the other passes and revokes the
   first's connection, whose code is then dead. #649's double-click limit is gone, save a client exchanging no code (the

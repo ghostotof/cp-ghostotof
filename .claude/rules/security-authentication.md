@@ -78,7 +78,40 @@ paths:
     (`Mcp/Connection/Infrastructure/Security/JwtAuthenticationInstant`, `.claude/rules/mcp-oauth.md`). That
     holds because the site issues a JWT at login only — no refresh endpoint, no sliding renewal. **A JWT
     refresh added some day must carry the original authentication instant in a claim of its own** and that
-    reader must read it, or a stolen cookie renewed in a loop would pass for a fresh login.
+    reader must read it, or a stolen cookie renewed in a loop would pass for a fresh login (and, since #650 R1b, would
+    outlive a password change).
+  - **A session opened before the last password change is refused by the whole `api` firewall** (#650, R1b, the
+    author's decision of 2026-10-28; ADR 0003 amended): `Infrastructure/Security/SessionBeforePasswordChangeRefusalListener`,
+    a `CheckPassportEvent` listener **registered on `security.event_dispatcher.api` only**, priority **128** (below
+    `UserCheckerListener` at 256, which loads the account and refuses a disabled one first; above
+    `CheckCredentialsListener` at 0). It throws `SessionPredatesPasswordChangeException` when
+    `CpgUser::hasChangedCredentialsSince(iat of the payload)` — the one predicate, shared with the MCP consent. No
+    query, no second signature check (the passport carries the payload and the reloaded account). The exception is an `AuthenticationException`
+    (Lexik's common 401, `log_level: info` in `framework.yaml`). **Absent from `login`** (a password, no session),
+    **`mcp`** (opaque DB-checked token, already revoked by the change) and **`oauth`** (no JWT passport): registered
+    globally it would be copied onto each (`SessionBeforePasswordChangeRefusalListenerRegistrationTest`). **Rejected**
+    (reasons in the docblock): `JWTAuthenticatedEvent`, a `UserChecker` (never sees the payload), a decorated
+    `JWTAuthenticator`, a `jti` list (a read per request, ADR 0003). The base tier is out of it: its `BaseAccessUser` is rebuilt from the payload, no account, no
+    password (the test is on the user's class, never on a claim). It **fails closed**: a payload without an integer
+    `iat` is an unknown instant, so earlier.
+    - **`<=`, not `<`**: `iat` is to the second and `credentials_changed_at` a `TIMESTAMP(0)` that PostgreSQL rounds
+      (a change at 10:00:00.3 is stored 10:00:00; a sign-in at 10:00:00.1 carries `iat` 10:00:00), so the same second
+      cannot say which came first. Treating it as later lets a stolen cookie through; treating it as earlier costs one
+      sign-in. **Accepted**: a person signing in within the very second of her password change gets a 401 and signs in
+      again. **A test that signs in right after a change moves the date back in SQL**
+      (`AccountPasswordSetupResourceTest`), or it meets that second.
+    - **`StaleSessionCookiesClearingListener`** (`Infrastructure/Jwt`, Lexik's `JWT_INVALID`) makes that refusal — that
+      one only — **expire `BEARER` and `XSRF-TOKEN`** through `AuthCookieFactory::expired()`. The firewall authenticates
+      as soon as a cookie is present, **public routes included**: without it a refused cookie, alive up to an hour more,
+      would answer 401 to every `/api` request, the About page and the contact form too. The next request is
+      anonymous, and the frontend, which already reads that 401 as a finished session, sends the person to the sign-in
+      (`.claude/rules/frontend-backoffice.md`, « Route protection »).
+    - **A future JWT refresh must carry the original authentication instant** (see the `iat` bullet above) — now for
+      the whole API: a second authenticator on this firewall must put it in the passport's `payload` attribute.
+    - **The consent keeps its own check** as defence in depth, unreachable by HTTP since R1b, the author's decision
+      (`.claude/rules/mcp-oauth.md`, « Consent »).
+    `SessionBeforePasswordChangeTest` (HTTP: the real `PUT` then the cookie replayed, the boundary seconds, the base
+    tier, cookies cleared then a public route served), `…RefusalListenerTest`, `…RegistrationTest`.
   - **Tokens, JWTs and CSRF values are hidden from stack traces** (`#[SensitiveParameter]`, issue #414): the
     guard covers all of `src/`, so its rule lives in `.claude/rules/backend-conventions.md`.
   - `Infrastructure/Http/CsrfCookieRequestSubscriber.php` — double-submit-cookie CSRF check, a `kernel.request`
