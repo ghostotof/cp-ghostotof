@@ -7,6 +7,7 @@ namespace App\Mcp\Connection\Presentation\Dto;
 use App\Mcp\Connection\Application\AuthorizationRequestValidator;
 use App\Mcp\Connection\Application\ConsentDecision;
 use App\Mcp\Connection\Domain\Entity\McpClient;
+use Symfony\Component\Uid\Uuid;
 use Symfony\Component\Validator\Constraints as Assert;
 
 /**
@@ -17,7 +18,8 @@ use Symfony\Component\Validator\Constraints as Assert;
  * Les contraintes ne jugent pas la demande — c'est le rôle du validateur
  * d'autorisation, que le service appelle — : elles bornent la taille de ce
  * qui lui est transmis, et exigent `approved`, pour qu'une décision qui ne dit
- * ni oui ni non soit refusée (422) plutôt que lue comme l'un des deux.
+ * ni oui ni non soit refusée (422) plutôt que lue comme l'un des deux. Il
+ * exige de même le compte que la page a montré (`accountId`).
  */
 final class ConsentRequest
 {
@@ -56,13 +58,24 @@ final class ConsentRequest
         public ?string $resource = null,
         #[Assert\NotNull]
         public ?bool $approved = null,
+        // Le compte que la page a montré (`account.id` du résumé, #650, F5) :
+        // exigé, jamais toléré absent — une garde facultative se contourne en
+        // omettant le champ. Un UUID, sa forme seulement ; le service juge s'il
+        // est celui du cookie.
+        // NotBlank : Uuid et Length laissent passer la chaîne vide, que
+        // toDecision() ne saurait pas lire (une 500 au lieu d'un 422).
+        #[Assert\NotBlank]
+        #[Assert\Uuid]
+        public ?string $accountId = null,
     ) {
     }
 
     /**
      * La décision de l'application. Un accord explicite seulement : un
      * `approved` nul, qu'une validation aurait refusé, vaut refus — le côté
-     * sûr, qui ne crée rien.
+     * sûr, qui ne crée rien. De même un compte montré absent ou illisible, que
+     * la validation aurait refusé, devient `null` — que le service refuse
+     * comme un compte qui a changé : jamais un accord sans compte comparable.
      */
     public function toDecision(): ConsentDecision
     {
@@ -76,6 +89,7 @@ final class ConsentRequest
             codeChallengeMethod: $this->codeChallengeMethod,
             resource: $this->resource,
             approved: true === $this->approved,
+            shownAccountId: null !== $this->accountId && Uuid::isValid($this->accountId) ? Uuid::fromString($this->accountId) : null,
         );
     }
 }

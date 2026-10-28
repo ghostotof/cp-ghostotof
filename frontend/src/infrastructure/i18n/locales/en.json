@@ -826,6 +826,8 @@
       "relogin": "Sign in again",
       "reauthenticationRequired": "To authorize this connection, sign in again: you signed in to the site more than ten minutes ago. You will then come back to this same request.",
       "reauthenticate": "Sign in again to authorize",
+      "accountChanged": "The signed-in account has changed since this request was shown (for example in another tab): nothing was sent. Reload the request to see the current account, then decide.",
+      "reload": "Reload the request",
       "unsafeRedirect": "The return address received is not a web address on the announced host: the page did not follow it.",
       "malformedDecision": "The page could not send your decision. Start again from your assistant.",
       "unknown": "An unexpected error occurred. Try again."

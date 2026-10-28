@@ -12,6 +12,7 @@ import { InvalidConsentRequestError } from '../../../src/domain/mcp/errors/Inval
 import { SessionExpiredError } from '../../../src/domain/mcp/errors/SessionExpiredError'
 import { ConsentFailedError } from '../../../src/domain/mcp/errors/ConsentFailedError'
 import { MalformedConsentDecisionError } from '../../../src/domain/mcp/errors/MalformedConsentDecisionError'
+import { ConsentAccountChangedError } from '../../../src/domain/mcp/errors/ConsentAccountChangedError'
 import { ReauthenticationRequiredError } from '../../../src/domain/mcp/errors/ReauthenticationRequiredError'
 import { ACTIVATION_DELAY_MS } from '../../../src/presentation/ui/useDeliberateActivation'
 import { createAppI18n, i18n as appI18n } from '../../../src/presentation/i18n'
@@ -48,6 +49,9 @@ const PARAMS: ConsentParams = {
   resource: 'https://site.example.test/api/mcp',
 }
 
+/** L'UUID du compte que le résumé nomme, renvoyé avec la décision (#650, F5). */
+const ACCOUNT_ID = '01a181e2-9a50-7567-9420-a8142a191787'
+
 /** Nom choisi pour être reconnaissable dans le texte, et distinct de l'identifiant ; l'hôte, celui des URL rendues. */
 const SUMMARY: ConsentRequest = {
   client: { id: 'claude-code', name: 'Assistant Déclaré', registration: 'preregistered' },
@@ -55,7 +59,7 @@ const SUMMARY: ConsentRequest = {
   scope: 'nominative:read',
   resource: 'https://site.example.test/api/mcp',
   // Un compte fictif, distinct de tout identifiant du dépôt.
-  account: { username: 'trusted' },
+  account: { id: ACCOUNT_ID, username: 'trusted' },
 }
 
 const APPROVED_URL = 'http://127.0.0.1:33418/callback?code=abc&state=xyz&iss=https%3A%2F%2Fsite.example.test%2Fapi%2Foauth'
@@ -265,7 +269,7 @@ describe('OAuthConsentPage — résumé de la demande', () => {
   })
 
   it('rend l’identifiant du compte en texte, jamais en éléments', async () => {
-    const describeRequest = vi.fn(async () => ({ ...SUMMARY, account: { username: '<img src=x onerror=alert(1)>' } }))
+    const describeRequest = vi.fn(async () => ({ ...SUMMARY, account: { id: ACCOUNT_ID, username: '<img src=x onerror=alert(1)>' } }))
     const { wrapper } = await mountPage({ describeRequest })
 
     expect(wrapper.find('img').exists()).toBe(false)
@@ -295,7 +299,7 @@ describe('OAuthConsentPage — décision', () => {
     await flushPromises()
 
     expect(decide).toHaveBeenCalledOnce()
-    expect(decide).toHaveBeenCalledWith(PARAMS, true)
+    expect(decide).toHaveBeenCalledWith(PARAMS, true, ACCOUNT_ID)
     expect(navigate).toHaveBeenCalledOnce()
     expect(navigate).toHaveBeenCalledWith(APPROVED_URL)
   })
@@ -306,7 +310,7 @@ describe('OAuthConsentPage — décision', () => {
     await button(wrapper, 'deny').trigger('click')
     await flushPromises()
 
-    expect(decide).toHaveBeenCalledWith(PARAMS, false)
+    expect(decide).toHaveBeenCalledWith(PARAMS, false, ACCOUNT_ID)
     expect(navigate).toHaveBeenCalledWith(DENIED_URL)
   })
 
@@ -546,6 +550,79 @@ describe('OAuthConsentPage — authentification récente (#647, F1)', () => {
   })
 })
 
+describe('OAuthConsentPage — le compte connecté a changé (#650, F5)', () => {
+  const OTHER_SUMMARY: ConsentRequest = { ...SUMMARY, account: { id: '01a181e2-9b1e-7e55-8770-e3efdb34dfa2', username: 'autre' } }
+
+  /** La page est montrée sous `trusted`, puis un autre onglet reconnecte `autre` : le serveur répond 409 à la décision. */
+  async function mountAfterAccountSwitch(options: Options = {}): Promise<Harness> {
+    return mountPage({
+      ...options,
+      describeRequest: vi.fn().mockResolvedValueOnce(SUMMARY).mockResolvedValueOnce(OTHER_SUMMARY),
+      decide: vi.fn(async (_params: ConsentParams, approved: boolean, accountId: string) => {
+        if (ACCOUNT_ID === accountId) {
+          throw new ConsentAccountChangedError()
+        }
+        return approved ? APPROVED_URL : DENIED_URL
+      }),
+    })
+  }
+
+  it.each(['approve', 'deny'] as const)(
+    '« %s » sur un autre compte : alerte, bouton pour relire la demande, aucune navigation',
+    async (name) => {
+      const { wrapper, navigate } = await mountAfterAccountSwitch()
+
+      await button(wrapper, name).trigger('click')
+      await flushPromises()
+
+      expect(navigate).not.toHaveBeenCalled()
+      const alert = wrapper.find('[role="alert"]')
+      expect(alert.text()).toContain('compte connecté a changé')
+      expect(alert.find('[data-testid="consent-reload"]').text()).toBe('Relire la demande')
+      // Plus de boutons de décision tant que la demande n'est pas relue : ils porteraient l'ancien compte.
+      expect(wrapper.findAll('button').filter((b) => b.attributes('data-testid') !== 'consent-reload')).toHaveLength(0)
+      expect(wrapper.find('[data-testid="consent-account"]').exists()).toBe(false)
+    },
+  )
+
+  it('« Relire la demande » : le résumé est relu, le compte courant s\'affiche, la décision part pour lui', async () => {
+    const { wrapper, describeRequest, decide, navigate } = await mountAfterAccountSwitch()
+    await button(wrapper, 'approve').trigger('click')
+    await flushPromises()
+
+    await wrapper.find('[data-testid="consent-reload"]').trigger('click')
+    await flushPromises()
+    await passActivationDelay()
+
+    expect(describeRequest).toHaveBeenCalledTimes(2)
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="consent-account"]').text()).toBe('Vous accordez cet accès en tant que autre')
+    await button(wrapper, 'approve').trigger('click')
+    await flushPromises()
+    expect(decide).toHaveBeenLastCalledWith(PARAMS, true, OTHER_SUMMARY.account.id)
+    expect(navigate).toHaveBeenCalledWith(APPROVED_URL)
+  })
+
+  it('en anglais', async () => {
+    const { wrapper } = await mountAfterAccountSwitch({ locale: 'en' })
+
+    await button(wrapper, 'approve').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[role="alert"]').text()).toContain('signed-in account has changed')
+    expect(wrapper.find('[data-testid="consent-reload"]').text()).toBe('Reload the request')
+  })
+
+  it.each(SUPPORTED_LOCALES)('aucune violation détectable (%s)', async (locale) => {
+    const { wrapper } = await mountAfterAccountSwitch({ locale })
+    await button(wrapper, 'approve').trigger('click')
+    await flushPromises()
+    vi.useRealTimers()
+
+    await expectNoAccessibilityViolation(wrapper)
+  })
+})
+
 describe('OAuthConsentPage — clic délibéré (double-clickjacking)', () => {
   it('résumé reçu après le délai : les boutons apparaissent inactifs, le délai court à leur apparition', async () => {
     // Le résumé arrive 700 ms après le montage, fenêtre déjà active : un délai
@@ -658,7 +735,7 @@ describe('OAuthConsentPage — clic délibéré (double-clickjacking)', () => {
     await pointerClick(wrapper, 'approve')
     await flushPromises()
     expect(decide).toHaveBeenCalledOnce()
-    expect(decide).toHaveBeenCalledWith(PARAMS, true)
+    expect(decide).toHaveBeenCalledWith(PARAMS, true, ACCOUNT_ID)
   })
 
   it('au clavier (un clic sans appui de pointeur), une fois actifs : la décision part', async () => {
@@ -667,7 +744,7 @@ describe('OAuthConsentPage — clic délibéré (double-clickjacking)', () => {
     await keyboardClick(wrapper, 'deny')
     await flushPromises()
 
-    expect(decide).toHaveBeenCalledWith(PARAMS, false)
+    expect(decide).toHaveBeenCalledWith(PARAMS, false, ACCOUNT_ID)
   })
 })
 

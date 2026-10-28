@@ -105,6 +105,11 @@ framework:
         # issue ordinaire d'une page restée ouverte, pas une alerte.
         App\Mcp\Connection\Domain\Exception\ReauthenticationRequiredException:
             log_level: info
+        # Décision de consentement prise sur la page d'un autre compte que celui
+        # du cookie (#650, F5) : 409 typé, la page propose de relire la demande.
+        # Une page restée ouverte pendant un changement de compte, pas une alerte.
+        App\Mcp\Connection\Domain\Exception\ConsentAccountChangedException:
+            log_level: info
         # Révocation d'une connexion MCP qui n'est pas celle de l'appelant, ou
         # inconnue (#650) : un 404 unique, une erreur du client (une page
         # restée ouverte sur une connexion que la purge a supprimée).

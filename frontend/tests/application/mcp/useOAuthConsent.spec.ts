@@ -6,6 +6,7 @@ import type { OAuthConsentRepository } from '../../../src/domain/mcp/repositorie
 import type { ConsentParams, ConsentRequest } from '../../../src/domain/mcp/entities/ConsentRequest'
 import { ConsentFailedError } from '../../../src/domain/mcp/errors/ConsentFailedError'
 import { MalformedConsentDecisionError } from '../../../src/domain/mcp/errors/MalformedConsentDecisionError'
+import { ConsentAccountChangedError } from '../../../src/domain/mcp/errors/ConsentAccountChangedError'
 import { ReauthenticationRequiredError } from '../../../src/domain/mcp/errors/ReauthenticationRequiredError'
 
 enableAutoUnmount(afterEach)
@@ -21,19 +22,22 @@ const PARAMS: ConsentParams = {
   resource: 'https://site.example.test/api/mcp',
 }
 
+/** Le compte que le résumé nomme : la décision le renvoie (#650, F5). */
+const ACCOUNT_ID = '01a181e2-9a50-7567-9420-a8142a191787'
+
 const SUMMARY: ConsentRequest = {
   client: { id: 'claude-code', name: 'Claude Code', registration: 'preregistered' },
   redirectHost: '127.0.0.1',
   scope: 'nominative:read',
   resource: 'https://site.example.test/api/mcp',
-  account: { username: 'trusted' },
+  account: { id: ACCOUNT_ID, username: 'trusted' },
 }
 
 const APPROVED_URL = 'http://127.0.0.1:33418/callback?code=abc&state=xyz'
 
-function mountComposable(decide: OAuthConsentRepository['decide']) {
+function mountComposable(decide: OAuthConsentRepository['decide'], describeRequest: OAuthConsentRepository['describe'] = vi.fn(async () => SUMMARY)) {
   const navigate = vi.fn()
-  const repository: OAuthConsentRepository = { describe: vi.fn(async () => SUMMARY), decide }
+  const repository: OAuthConsentRepository = { describe: describeRequest, decide }
   let captured: ReturnType<typeof useOAuthConsent> | undefined
 
   const Probe = defineComponent({
@@ -91,7 +95,7 @@ describe('useOAuthConsent', () => {
     await Promise.all([consent.approve(), consent.deny()])
 
     expect(decide).toHaveBeenCalledOnce()
-    expect(decide).toHaveBeenCalledWith(PARAMS, true)
+    expect(decide).toHaveBeenCalledWith(PARAMS, true, ACCOUNT_ID)
   })
 
   it('aucune décision avant que la demande soit chargée', async () => {
@@ -135,6 +139,73 @@ describe('useOAuthConsent', () => {
     await consent.approve()
     expect(decide).toHaveBeenCalledOnce()
     expect(navigate).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['approve', true],
+    ['deny', false],
+  ] as const)('%s() : l\'UUID du compte nommé par le résumé part avec la décision', async (method, approved) => {
+    const decide = vi.fn(async () => APPROVED_URL)
+    const { consent } = mountComposable(decide)
+    await consent.load(PARAMS)
+
+    await consent[method]()
+
+    expect(decide).toHaveBeenCalledWith(PARAMS, approved, ACCOUNT_ID)
+  })
+
+  it('le compte connecté a changé (409) : état terminal, rien n\'est suivi, aucun nouvel essai', async () => {
+    const decide = vi.fn(async () => {
+      throw new ConsentAccountChangedError()
+    })
+    const { consent, navigate } = mountComposable(decide)
+    await consent.load(PARAMS)
+
+    await consent.approve()
+
+    expect(consent.state.value).toBe('error')
+    expect(consent.failure.value).toBe('account-changed')
+    await consent.approve()
+    expect(decide).toHaveBeenCalledOnce()
+    expect(navigate).not.toHaveBeenCalled()
+  })
+
+  it('reload() après un changement de compte : la demande est relue, le nouveau compte est celui qui décide', async () => {
+    const otherAccount = '01a181e2-9b1e-7e55-8770-e3efdb34dfa2'
+    const decide = vi.fn().mockRejectedValueOnce(new ConsentAccountChangedError()).mockResolvedValueOnce(APPROVED_URL)
+    const describeRequest = vi
+      .fn()
+      .mockResolvedValueOnce(SUMMARY)
+      .mockResolvedValueOnce({ ...SUMMARY, account: { id: otherAccount, username: 'other' } })
+    const { consent, navigate } = mountComposable(decide, describeRequest)
+    await consent.load(PARAMS)
+    await consent.approve()
+    expect(consent.failure.value).toBe('account-changed')
+
+    await consent.reload()
+
+    expect(describeRequest).toHaveBeenCalledTimes(2)
+    expect(describeRequest).toHaveBeenLastCalledWith(PARAMS)
+    expect(consent.state.value).toBe('ready')
+    expect(consent.failure.value).toBeNull()
+    expect(consent.request.value?.account.username).toBe('other')
+    await consent.approve()
+    expect(decide).toHaveBeenLastCalledWith(PARAMS, true, otherAccount)
+    expect(navigate).toHaveBeenCalledWith(APPROVED_URL)
+  })
+
+  it('reload() sans demande lisible : sans appel au serveur, la demande reste invalide', async () => {
+    const describeRequest = vi.fn(async () => SUMMARY)
+    const { consent } = mountComposable(
+      vi.fn(async () => APPROVED_URL),
+      describeRequest,
+    )
+    await consent.load(null)
+
+    await consent.reload()
+
+    expect(describeRequest).not.toHaveBeenCalled()
+    expect(consent.state.value).toBe('invalid')
   })
 
   it('échec générique à la décision : retour à ready, un nouvel essai part', async () => {

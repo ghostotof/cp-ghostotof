@@ -826,6 +826,8 @@
       "relogin": "Se reconnecter",
       "reauthenticationRequired": "Pour autoriser cette connexion, reconnectez-vous : votre connexion au site date de plus de dix minutes. Vous reviendrez ensuite à cette même demande.",
       "reauthenticate": "Me reconnecter pour autoriser",
+      "accountChanged": "Le compte connecté a changé depuis l'affichage de cette demande (par exemple dans un autre onglet) : rien n'a été transmis. Relisez la demande pour voir le compte actuel, puis décidez.",
+      "reload": "Relire la demande",
       "unsafeRedirect": "L'adresse de retour reçue n'est pas une adresse web de l'hôte annoncé : la page ne l'a pas suivie.",
       "malformedDecision": "La page n'a pas pu transmettre votre décision. Recommencez depuis votre assistant.",
       "unknown": "Une erreur inattendue est survenue. Réessayez."

@@ -54,6 +54,12 @@ export const NOMINATIVE_READ_SCOPE = 'nominative:read'
  * que l'afficher, pour que la personne voie, avant de décider, qui accorde.
  */
 export interface ConsentAccount {
+  /**
+   * L'UUID du compte, tel que le serveur le connaît. La décision le renvoie : le
+   * serveur n'accorde (ni ne refuse) qu'au compte que cette page a nommé, et
+   * répond 409 si le cookie est devenu celui d'un autre (F5). Jamais calculé ici.
+   */
+  id: string
   /** L'identifiant de connexion de la personne, tel que le serveur le connaît. */
   username: string
 }

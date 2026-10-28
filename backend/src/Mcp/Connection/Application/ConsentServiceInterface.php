@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Mcp\Connection\Application;
 
 use App\Mcp\Connection\Domain\Exception\AuthorizationRequestRejectedException;
+use App\Mcp\Connection\Domain\Exception\ConsentAccountChangedException;
 use App\Mcp\Connection\Domain\Exception\ReauthenticationRequiredException;
 use App\Security\User\Domain\Entity\CpgUser;
 use Psr\Http\Message\ServerRequestInterface;
@@ -37,6 +38,7 @@ interface ConsentServiceInterface
      *                `error=access_denied` (refus), `state` et `iss` (RFC 9207)
      *
      * @throws AuthorizationRequestRejectedException quand elle n'est pas (ou plus) valable
+     * @throws ConsentAccountChangedException         quand `$decision` a été prise sur la page d'un autre compte que `$account` (#650, F5)
      * @throws ReauthenticationRequiredException      quand le mot de passe de `$account` a changé depuis l'authentification de la session, ou, pour l'accord seul, que celle-ci est trop ancienne
      */
     public function decide(ConsentDecision $decision, CpgUser $account): string;

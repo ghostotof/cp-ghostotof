@@ -66,7 +66,7 @@ final class ConsentControllerTest extends WebTestCase
      */
     public function testATrustedAccountSeesTheSummaryOfTheRequest(): void
     {
-        $this->loginAs(self::TRUSTED_USERNAME, [CpgUser::ROLE_TRUSTED]);
+        $accountId = $this->loginAs(self::TRUSTED_USERNAME, [CpgUser::ROLE_TRUSTED]);
 
         $this->client->request('GET', self::PATH.'?'.http_build_query($this->validParameters()));
 
@@ -77,7 +77,7 @@ final class ConsentControllerTest extends WebTestCase
             'redirectHost' => 'localhost',
             'scope' => 'nominative:read',
             'resource' => $this->resource(),
-            'account' => ['username' => self::TRUSTED_USERNAME],
+            'account' => ['id' => $accountId, 'username' => self::TRUSTED_USERNAME],
         ], $this->json($response));
         $this->assertNotStored($response);
     }
@@ -91,13 +91,114 @@ final class ConsentControllerTest extends WebTestCase
     public function testTheSummaryNamesTheSignedInAccount(): void
     {
         $this->loginAs(self::TRUSTED_USERNAME, [CpgUser::ROLE_TRUSTED]);
-        $this->loginAs(self::OTHER_TRUSTED_USERNAME, [CpgUser::ROLE_TRUSTED]);
+        $otherId = $this->loginAs(self::OTHER_TRUSTED_USERNAME, [CpgUser::ROLE_TRUSTED]);
 
         $this->client->request('GET', self::PATH.'?'.http_build_query($this->validParameters()));
 
         $response = $this->client->getResponse();
         self::assertSame(Response::HTTP_OK, $response->getStatusCode(), substr((string) $response->getContent(), 0, 500));
-        self::assertSame(['username' => self::OTHER_TRUSTED_USERNAME], $this->json($response)['account'] ?? null);
+        self::assertSame(['id' => $otherId, 'username' => self::OTHER_TRUSTED_USERNAME], $this->json($response)['account'] ?? null);
+    }
+
+    /**
+     * F5 de la relecture de #650, le scénario : la page est ouverte sous le
+     * compte A (son résumé nomme A et porte son UUID), la personne se
+     * reconnecte en B dans un autre onglet — les cookies du navigateur sont
+     * ceux de B —, puis clique « Accorder » dans le premier onglet, qui renvoie
+     * l'UUID de A. Le serveur refuse : 409 typé, et rien n'est accordé à B
+     * (ni connexion, ni code, ni ligne d'audit d'accord).
+     */
+    public function testAnApprovalShownToAnotherAccountIsRefusedAndGrantsNothing(): void
+    {
+        $this->loginAs(self::TRUSTED_USERNAME, [CpgUser::ROLE_TRUSTED]);
+        $this->client->request('GET', self::PATH.'?'.http_build_query($this->validParameters()));
+        $shownAccountId = $this->json($this->client->getResponse())['account']['id'] ?? null;
+        self::assertIsString($shownAccountId);
+
+        $otherId = $this->loginAs(self::OTHER_TRUSTED_USERNAME, [CpgUser::ROLE_TRUSTED]);
+        self::assertNotSame($shownAccountId, $otherId);
+
+        $response = $this->decide(approved: true, shownAccount: $shownAccountId);
+
+        $this->assertAccountChanged($response);
+        self::assertSame(0, $this->countRows('SELECT COUNT(*) FROM mcp_connection'));
+        self::assertSame(0, $this->countRows('SELECT COUNT(*) FROM mcp_authorization_code'));
+        self::assertSame([], self::securityAuditEvents(self::GRANTED_EVENT));
+    }
+
+    /**
+     * Le refus est lié comme l'accord : une décision nomme le compte pour
+     * lequel elle a été prise, quelle qu'elle soit. Le coût est un clic
+     * (recharger la demande, refuser sous le compte courant) ; le gain, une
+     * règle unique et une réponse « refusé » qui n'est jamais celle de
+     * quelqu'un d'autre.
+     */
+    public function testADenialShownToAnotherAccountIsRefusedToo(): void
+    {
+        $shownAccountId = $this->loginAs(self::TRUSTED_USERNAME, [CpgUser::ROLE_TRUSTED]);
+        $this->loginAs(self::OTHER_TRUSTED_USERNAME, [CpgUser::ROLE_TRUSTED]);
+
+        $response = $this->decide(approved: false, shownAccount: $shownAccountId);
+
+        $this->assertAccountChanged($response);
+        self::assertSame(0, $this->countRows('SELECT COUNT(*) FROM mcp_connection'));
+    }
+
+    /**
+     * Le contrat a deux applications déployées séparément : une page restée
+     * ouverte pendant un déploiement (ancien frontend) poste sans l'UUID. Pas
+     * de tolérance — une garde facultative se contourne en omettant le champ, et
+     * aucune échéance ne la retirerait : 422 du Validator (comme un `approved`
+     * absent), rien de créé. La page lit le 422 comme un corps mal formé.
+     */
+    #[DataProvider('provideAMissingOrMalformedShownAccount')]
+    public function testADecisionWithoutAValidShownAccountIsUnprocessable(?string $shownAccount): void
+    {
+        $this->loginAs(self::TRUSTED_USERNAME, [CpgUser::ROLE_TRUSTED]);
+
+        $response = $this->decide(approved: true, shownAccount: $shownAccount);
+
+        self::assertSame(Response::HTTP_UNPROCESSABLE_ENTITY, $response->getStatusCode(), substr((string) $response->getContent(), 0, 500));
+        self::assertSame(0, $this->countRows('SELECT COUNT(*) FROM mcp_connection'));
+        self::assertSame([], self::securityAuditEvents(self::GRANTED_EVENT));
+    }
+
+    /** @return iterable<string, array{?string}> */
+    public static function provideAMissingOrMalformedShownAccount(): iterable
+    {
+        yield 'absent' => [null];
+        yield 'vide' => [''];
+        yield 'pas un UUID' => ['trusted'];
+    }
+
+    /**
+     * Le même compte, l'UUID écrit en majuscules : c'est le même UUID (RFC 9562
+     * §4), accordé — la comparaison n'est pas une comparaison de chaînes.
+     */
+    public function testTheShownAccountIsComparedAsAUuidNotAsAString(): void
+    {
+        $accountId = $this->loginAs(self::TRUSTED_USERNAME, [CpgUser::ROLE_TRUSTED]);
+
+        $response = $this->decide(approved: true, shownAccount: strtoupper($accountId));
+
+        self::assertSame(Response::HTTP_OK, $response->getStatusCode(), substr((string) $response->getContent(), 0, 500));
+        self::assertCount(1, $this->connectionRows());
+    }
+
+    /** Le 409 : problem+json typé, constant, sans redirection ni code. */
+    private function assertAccountChanged(Response $response): void
+    {
+        self::assertSame(Response::HTTP_CONFLICT, $response->getStatusCode(), substr((string) $response->getContent(), 0, 500));
+        self::assertSame('application/problem+json', $response->headers->get('Content-Type'));
+        self::assertFalse($response->headers->has('Location'));
+        $body = $this->json($response);
+        self::assertSame('/errors/consent-account-changed', $body['type'] ?? null);
+        self::assertArrayNotHasKey('redirectUri', $body);
+        // Le détail ne nomme aucun compte : il est rendu tel quel (ProblemDetailStaysStaticTest).
+        $detail = $body['detail'] ?? null;
+        self::assertIsString($detail);
+        self::assertStringNotContainsString(self::TRUSTED_USERNAME, $detail);
+        self::assertStringNotContainsString(self::OTHER_TRUSTED_USERNAME, $detail);
     }
 
     /**

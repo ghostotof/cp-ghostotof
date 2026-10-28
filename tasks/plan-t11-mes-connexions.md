@@ -673,8 +673,19 @@ voyait « mot de passe changé », puis sa prochaine action échouait en « Une 
   redirection (la page affiche l'erreur) ; `BackofficeHttpClient.spec.ts`, `backofficeSessionExpiry.spec.ts` épinglent le tout.
 
 ### Task R2 : le consentement est lié au compte affiché (F5)
-- [ ] Le `GET` du consentement renvoie l'UUID du compte affiché ; le `POST` le renvoie et reçoit 409 s'il diffère du
+- [x] Le `GET` du consentement renvoie l'UUID du compte affiché ; le `POST` le renvoie et reçoit 409 s'il diffère du
   compte du cookie ; frontend : message et rechargement de la page ; tests backend et Vitest.
+  *Fait.* `GET` : `account{id,username}` ; `POST` : `accountId` exigé (`Assert\NotBlank` + `Assert\Uuid` → 422), comparé par
+  `Uuid::equals()` dans `ConsentService::decide()` **après** la revalidation (un 400 reste un 400) et **avant** le
+  jugement du compte du cookie ; refus : `ConsentAccountChangedException`, 409 `/errors/consent-account-changed`, `detail`
+  constant, `log_level: info`. **Accord et refus liés** (règle unique, un clic de plus pour qui refuse). **Pas de
+  tolérance d'un `accountId` absent** : 422 (un ancien frontend resté ouvert pendant un déploiement relit la demande
+  depuis son assistant ; une garde facultative se contourne en omettant le champ). Frontend : `ConsentAccountChangedError`
+  (409 reconnu par son `type`, jamais le `detail`), `HttpOAuthConsentRepository.decide(params, approved, accountId)`,
+  `useOAuthConsent` (`failure: 'account-changed'`, `reload()`), alerte FR/EN et bouton « Relire la demande » dans
+  `OAuthConsentPage.vue`. Mutations : comparaison retirée → `testAnApprovalShownToAnotherAccountIsRefusedAndGrantsNothing`,
+  `testADenialShownToAnotherAccountIsRefusedToo` et 5 tests unitaires rouges ; `NotBlank` retiré → 4 rouges (422 absent / vide).
+- À écrire par R5 : voir le rendu de la tâche.
 
 ### Task R3 : liste bornée (F6)
 - [ ] `GET /api/me/mcp-connections` : toutes les connexions non révoquées, plus les 50 dernières terminées ; champ

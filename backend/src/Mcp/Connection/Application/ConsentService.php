@@ -6,6 +6,7 @@ namespace App\Mcp\Connection\Application;
 
 use App\Mcp\Connection\Domain\Entity\McpConnection;
 use App\Mcp\Connection\Domain\Exception\AuthorizationRequestRejectedException;
+use App\Mcp\Connection\Domain\Exception\ConsentAccountChangedException;
 use App\Mcp\Connection\Domain\Exception\ReauthenticationRequiredException;
 use App\Mcp\Connection\Domain\Repository\McpClientRepositoryInterface;
 use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
@@ -31,6 +32,10 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
  * devient AuthorizationRequestRejectedException (400), jamais une
  * redirection : au consentement, rien ne part vers une URI qui n'a pas été
  * revalidée.
+ *
+ * **La décision est liée au compte montré** (#650, F5) : le corps renvoie
+ * l'UUID que le résumé a donné à la page, et un cookie d'un autre compte est
+ * un 409 (ConsentAccountChangedException), avant tout effet.
  *
  * **L'accord exige une authentification récente** (MAX_AUTHENTICATION_AGE,
  * l'instant lu dans le jeton signé par AuthenticationInstantInterface) : au
@@ -95,10 +100,42 @@ final readonly class ConsentService implements ConsentServiceInterface
     public function decide(ConsentDecision $decision, CpgUser $account): string
     {
         $summary = $this->validated($this->requestOf($decision));
+        $this->refuseADecisionShownToAnotherAccount($decision, $account);
         $this->refuseASessionOlderThanThePasswordChange($account);
         $location = $decision->approved ? $this->grant($summary, $account) : $this->completer->deny($summary);
 
         return IssParameter::append($location, $this->endpoints->issuer());
+    }
+
+    /**
+     * La décision n'est prise que pour le compte que la page a montré (#650, F5
+     * de la relecture). Le résumé nomme le compte du cookie de SA requête ; si,
+     * entre le résumé et la décision, un autre onglet a reconnecté la personne
+     * sous un autre compte, le cookie de la décision est celui de ce dernier : le
+     * nom affiché mentirait, et l'accès irait à un compte que la personne n'a pas
+     * vu nommer. Le refus est un 409 typé (la page propose de relire la demande),
+     * rien n'est écrit ni journalisé.
+     *
+     * **L'accord et le refus sont liés**, par une règle unique : une décision
+     * nomme le compte pour lequel elle a été prise. Lier le refus ne protège rien
+     * (il ne crée rien) mais coûte un clic à peine, et évite une exception à
+     * expliquer. Jugé **après** la revalidation (une demande devenue invalide reste
+     * son 400, qu'une relecture ne répare pas) et **avant** tout jugement sur le
+     * compte du cookie : la décision ne le concerne pas.
+     *
+     * Un compte montré absent (`null`) ne correspond à aucun compte : refusé de
+     * même, en défense en profondeur de la validation du corps.
+     *
+     * Comparaison d'UUID (`Uuid::equals()`), pas de chaînes : l'écriture en
+     * majuscules d'un même UUID est le même compte (RFC 9562 §4).
+     *
+     * @throws ConsentAccountChangedException
+     */
+    private function refuseADecisionShownToAnotherAccount(ConsentDecision $decision, CpgUser $account): void
+    {
+        if (null === $decision->shownAccountId || !$account->getId()->equals($decision->shownAccountId)) {
+            throw ConsentAccountChangedException::sinceThePageWasShown();
+        }
     }
 
     /**

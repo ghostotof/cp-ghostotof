@@ -1,6 +1,7 @@
 import { inject, readonly, ref, shallowRef, type DeepReadonly, type InjectionKey, type Ref } from 'vue'
 import type { ConsentParams, ConsentRequest } from '../../domain/mcp/entities/ConsentRequest'
 import type { OAuthConsentRepository } from '../../domain/mcp/repositories/OAuthConsentRepository'
+import { ConsentAccountChangedError } from '../../domain/mcp/errors/ConsentAccountChangedError'
 import { InvalidConsentRequestError } from '../../domain/mcp/errors/InvalidConsentRequestError'
 import { MalformedConsentDecisionError } from '../../domain/mcp/errors/MalformedConsentDecisionError'
 import { ReauthenticationRequiredError } from '../../domain/mcp/errors/ReauthenticationRequiredError'
@@ -43,6 +44,10 @@ export type OAuthConsentState = 'loading' | 'ready' | 'submitting' | 'invalid' |
  *                          propose de se reconnecter puis ramène à la même
  *                          demande ; la session n'est pas marquée expirée,
  *                          elle vaut toujours pour le reste du site ;
+ * - `account-changed`   : 409 typé, le compte connecté n'est plus celui que la
+ *                          page a montré (reconnexion dans un autre onglet,
+ *                          #650 F5) — terminal ici, la demande n'est plus
+ *                          montrée ; `reload()` la relit, sous le compte courant ;
  * - `unsafe-redirect`    : l'URL de retour n'est ni `http:` ni `https:`, ou ne
  *                          mène pas à l'hôte annoncé : la page ne l'a pas suivie ;
  * - `malformed-decision` : 422, le serveur a refusé le corps de la décision —
@@ -50,7 +55,7 @@ export type OAuthConsentState = 'loading' | 'ready' | 'submitting' | 'invalid' |
  *                          le même corps) ;
  * - `unknown`            : réseau, 5xx, réponse inattendue.
  */
-export type OAuthConsentFailure = 'session-expired' | 'reauthentication-required' | 'unsafe-redirect' | 'malformed-decision' | 'unknown'
+export type OAuthConsentFailure = 'session-expired' | 'reauthentication-required' | 'account-changed' | 'unsafe-redirect' | 'malformed-decision' | 'unknown'
 
 export interface UseOAuthConsentResult {
   state: DeepReadonly<Ref<OAuthConsentState>>
@@ -58,6 +63,8 @@ export interface UseOAuthConsentResult {
   failure: DeepReadonly<Ref<OAuthConsentFailure | null>>
   /** Lit le résumé de la demande ; `null` pour une requête illisible (état `invalid`, sans appel). */
   load: (params: ConsentParams | null) => Promise<void>
+  /** Relit la demande reçue (même requête) : le résumé nomme alors le compte connecté d'aujourd'hui. */
+  reload: () => Promise<void>
   approve: () => Promise<void>
   deny: () => Promise<void>
 }
@@ -103,6 +110,11 @@ export function useOAuthConsent(): UseOAuthConsentResult {
       failure.value = 'reauthentication-required'
       return
     }
+    if (caught instanceof ConsentAccountChangedError) {
+      state.value = 'error'
+      failure.value = 'account-changed'
+      return
+    }
     if (caught instanceof MalformedConsentDecisionError) {
       state.value = 'error'
       failure.value = 'malformed-decision'
@@ -134,7 +146,8 @@ export function useOAuthConsent(): UseOAuthConsentResult {
   const decide = async (approved: boolean): Promise<void> => {
     // Un seul envoi : un double clic, ou un clic pendant le départ vers le
     // client, ne repart pas — sans quoi un second code serait émis.
-    if ('ready' !== state.value || null === params) {
+    const shown = request.value
+    if ('ready' !== state.value || null === params || null === shown) {
       return
     }
 
@@ -146,7 +159,8 @@ export function useOAuthConsent(): UseOAuthConsentResult {
 
     let url: string
     try {
-      url = await repository.decide(params, approved)
+      // Pour le compte que le résumé a nommé, pas pour celui du cookie à l'envoi (F5).
+      url = await repository.decide(params, approved, shown.account.id)
     } catch (caught) {
       fail(caught, 'ready')
       return
@@ -166,6 +180,7 @@ export function useOAuthConsent(): UseOAuthConsentResult {
     request: readonly(request),
     failure: readonly(failure),
     load,
+    reload: () => load(params),
     approve: () => decide(true),
     deny: () => decide(false),
   }
