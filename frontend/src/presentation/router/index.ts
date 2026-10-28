@@ -38,6 +38,7 @@ const AssistantPage = () => import('../pages/AssistantPage.vue')
 const StackPage = () => import('../pages/StackPage.vue')
 const ConnectAssistantPage = () => import('../pages/ConnectAssistantPage.vue')
 const OAuthConsentPage = () => import('../pages/OAuthConsentPage.vue')
+const McpConnectionsPage = () => import('../pages/McpConnectionsPage.vue')
 const ContactPage = () => import('../pages/ContactPage.vue')
 const LoginPage = () => import('../pages/LoginPage.vue')
 const SetPasswordPage = () => import('../pages/SetPasswordPage.vue')
@@ -164,6 +165,24 @@ export const router = createRouter({
             noindex: true,
             titleKey: 'seo.oauthConsent.title',
             descriptionKey: 'seo.oauthConsent.description',
+          },
+        },
+        {
+          // « Mes connexions MCP » (#650, spec 0007 tâche 11) : les connexions que
+          // la personne a accordées, et leur révocation. Palier de confiance,
+          // comme l'assistant et le consentement ; l'API est derrière
+          // `^/api/me` (`ROLE_TRUSTED`), cette garde n'est que de l'accueil.
+          // Anonyme : détour par login, qui ramène ici. noindex : une page de
+          // compte, rien à indexer.
+          path: 'mcp-connections',
+          name: 'mcp-connections',
+          component: McpConnectionsPage,
+          meta: {
+            requiresAuth: true,
+            roles: [ROLE_TRUSTED, ROLE_SUPER],
+            noindex: true,
+            titleKey: 'seo.mcpConnections.title',
+            descriptionKey: 'seo.mcpConnections.description',
           },
         },
         {

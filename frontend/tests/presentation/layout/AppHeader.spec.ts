@@ -111,6 +111,7 @@ async function mountHeader(
       { path: '/:locale(fr|en)/anonymous-cv', name: 'anonymous-cv', component: StubPage },
       { path: '/:locale(fr|en)/admin', name: 'admin-technologies', component: StubPage },
       { path: '/:locale(fr|en)/assistant', name: 'assistant', component: StubPage },
+      { path: '/:locale(fr|en)/mcp-connections', name: 'mcp-connections', component: StubPage },
     ],
   })
   await router.push(initialPath)
@@ -146,6 +147,21 @@ async function openAccountMenu(wrapper: Awaited<ReturnType<typeof mountHeader>>[
   await wrapper.get('button[aria-controls="account-menu"]').trigger('click')
 }
 
+/**
+ * Menu du compte à partir de 768 px (#650) : un vrai menu « disclosure », qui a
+ * remplacé les actions à plat du palier de confiance. Son identifiant n'est pas
+ * celui du menu mobile (`account-menu`) : les deux sont dans le DOM.
+ */
+const DESKTOP_TOGGLE = 'button[aria-controls="account-menu-desktop"]'
+
+async function openDesktopAccountMenu(wrapper: Awaited<ReturnType<typeof mountHeader>>['wrapper']): Promise<void> {
+  await wrapper.get(DESKTOP_TOGGLE).trigger('click')
+}
+
+function desktopMenuItems(wrapper: Awaited<ReturnType<typeof mountHeader>>['wrapper']): string[] {
+  return wrapper.get('#account-menu-desktop').findAll('a, button').map((item) => item.text())
+}
+
 /** Libellés des entrées du menu du compte, dans l'ordre (l'intitulé de palier n'en est pas une). */
 function menuItems(wrapper: Awaited<ReturnType<typeof mountHeader>>['wrapper']): string[] {
   return wrapper.get('#account-menu').findAll('.dropdown-item').map((item) => item.text())
@@ -167,14 +183,19 @@ describe('AppHeader', () => {
     expect(wrapper.text()).not.toContain('Déconnexion')
   })
 
-  it('palier de confiance : affiche le bouton CV et un bouton de déconnexion, plus de lien de connexion', async () => {
+  it('palier de confiance : le CV et la déconnexion sont dans le menu du compte, plus de lien de connexion', async () => {
     await primeAuthState({ username: 'jane', roles: ['ROLE_TRUSTED', 'ROLE_USER'] })
     const { wrapper } = await mountHeader()
 
     expect(wrapper.find('a[href="/fr/login"]').exists()).toBe(false)
-    expect(wrapper.text()).toContain('Télécharger mon CV')
+    // Plus d'action à plat dans la barre : tout est derrière « Mon compte ».
+    expect(wrapper.text()).not.toContain('Télécharger mon CV')
+    expect(findButton(wrapper, 'Déconnexion')).toBeUndefined()
 
-    const logoutButton = wrapper.findAll('button').find((button) => 'Déconnexion' === button.text())
+    await openDesktopAccountMenu(wrapper)
+
+    expect(wrapper.get('#account-menu-desktop').text()).toContain('Télécharger mon CV')
+    const logoutButton = wrapper.get('#account-menu-desktop').findAll('button').find((button) => 'Déconnexion' === button.text())
     expect(logoutButton).toBeDefined()
   })
 
@@ -184,7 +205,8 @@ describe('AppHeader', () => {
     const cvRepository = createStubCvRepository()
     const { wrapper } = await mountHeader('/fr', undefined, cvRepository)
 
-    const downloadButton = wrapper.findAll('button').find((button) => button.text().includes('Télécharger mon CV'))
+    await openDesktopAccountMenu(wrapper)
+    const downloadButton = wrapper.get('#account-menu-desktop').findAll('button').find((button) => button.text().includes('Télécharger mon CV'))
     await downloadButton?.trigger('click')
     await wrapper.vm.$nextTick()
 
@@ -200,7 +222,8 @@ describe('AppHeader', () => {
     const cvRepository = createStubCvRepository({ download: vi.fn(async () => Promise.reject(new Error('unavailable'))) })
     const { wrapper } = await mountHeader('/fr', undefined, cvRepository)
 
-    const downloadButton = wrapper.findAll('button').find((button) => button.text().includes('Télécharger mon CV'))
+    await openDesktopAccountMenu(wrapper)
+    const downloadButton = wrapper.get('#account-menu-desktop').findAll('button').find((button) => button.text().includes('Télécharger mon CV'))
     await downloadButton?.trigger('click')
     await wrapper.vm.$nextTick()
 
@@ -302,11 +325,12 @@ describe('AppHeader', () => {
   it("ROLE_SUPER : affiche un lien Administration, et pas de bouton CV — il vit dans le menu d'administration", async () => {
     await primeAuthState({ username: 'super', roles: ['ROLE_SUPER', 'ROLE_USER'] })
     const { wrapper } = await mountHeader()
+    await openDesktopAccountMenu(wrapper)
 
-    expect(wrapper.get('a[href="/fr/admin"]').text()).toBe('Administration')
+    expect(wrapper.get('#account-menu-desktop a[href="/fr/admin"]').text()).toBe('Administration')
     expect(wrapper.text()).not.toContain('Télécharger mon CV')
     expect(wrapper.find('button[aria-label="Télécharger mon CV"]').exists()).toBe(false)
-    expect(findButton(wrapper, 'Déconnexion')).toBeDefined()
+    expect(wrapper.get('#account-menu-desktop').findAll('button').map((button) => button.text())).toContain('Déconnexion')
   })
 
   it('palier de confiance sans ROLE_SUPER : pas de lien Administration', async () => {
@@ -565,6 +589,7 @@ describe('AppHeader', () => {
       await primeAuthState({ username: 'jane', roles: ['ROLE_TRUSTED', 'ROLE_USER'] })
       const { wrapper } = await mountHeader()
       expect(findButton(wrapper, 'Terminer cet accès')).toBeUndefined()
+      await openDesktopAccountMenu(wrapper)
       expect(findButton(wrapper, 'Déconnexion')).toBeDefined()
     })
 
@@ -582,7 +607,8 @@ describe('AppHeader', () => {
 
       expect(findButton(wrapper, 'Accès instantané')).toBeUndefined()
       expect(wrapper.text()).not.toContain('Accès de base')
-      expect(wrapper.get('a[href="/fr/admin"]').text()).toBe('Administration')
+      await openDesktopAccountMenu(wrapper)
+      expect(wrapper.get('#account-menu-desktop a[href="/fr/admin"]').text()).toBe('Administration')
     })
 
     it('anonyme comme au palier de base : aucune violation d\'accessibilité détectable (CTA icône seule nommé)', async () => {
@@ -611,16 +637,17 @@ describe('AppHeader', () => {
       expect(wrapper.find(TARGET).exists()).toBe(false)
     })
 
-    it('palier de confiance : un lien texte masqué sous 768 px, et une entrée du menu du compte', async () => {
+    it('palier de confiance : une entrée du menu du compte, à partir de 768 px comme en dessous', async () => {
       await primeAuthState({ username: 'jane', roles: ['ROLE_TRUSTED', 'ROLE_USER'] })
       const { wrapper } = await mountHeader()
 
-      const textLink = wrapper.get(TARGET)
-      expect(textLink.text()).toBe('Assistant')
-      expect(textLink.classes()).toEqual(expect.arrayContaining(['d-none', 'd-md-inline-flex']))
+      // Plus de lien à plat dans la barre.
+      expect(wrapper.find(TARGET).exists()).toBe(false)
+
+      await openDesktopAccountMenu(wrapper)
+      expect(wrapper.get('#account-menu-desktop').find(TARGET).text()).toBe('Assistant')
 
       await openAccountMenu(wrapper)
-
       expect(wrapper.get('#account-menu').find(TARGET).text()).toBe('Assistant')
     })
 
@@ -628,6 +655,8 @@ describe('AppHeader', () => {
       await primeAuthState({ username: 'super', roles: ['ROLE_SUPER', 'ROLE_USER'] })
       const { wrapper } = await mountHeader()
 
+      expect(wrapper.findAll(TARGET)).toHaveLength(0)
+      await openDesktopAccountMenu(wrapper)
       expect(wrapper.findAll(TARGET)).toHaveLength(1)
       await openAccountMenu(wrapper)
       expect(wrapper.findAll(TARGET)).toHaveLength(2)
@@ -636,6 +665,7 @@ describe('AppHeader', () => {
     it('la session expire : les liens disparaissent', async () => {
       await primeAuthState({ username: 'jane', roles: ['ROLE_TRUSTED', 'ROLE_USER'] })
       const { wrapper } = await mountHeader()
+      await openDesktopAccountMenu(wrapper)
       expect(wrapper.findAll(TARGET)).toHaveLength(1)
 
       markSessionExpired()
@@ -674,25 +704,25 @@ describe('AppHeader', () => {
       expect(wrapper.find('#account-menu').exists()).toBe(false)
     })
 
-    it('palier de confiance : Assistant, CV et Déconnexion ; les boutons texte sont masqués sous 768 px', async () => {
+    it('palier de confiance : Assistant, CV, Mes connexions MCP et Déconnexion ; la barre n\'a plus de bouton à plat', async () => {
       await primeAuthState({ username: 'jane', roles: ['ROLE_TRUSTED', 'ROLE_USER'] })
       const { wrapper } = await mountHeader()
 
-      expect(findButton(wrapper, 'Déconnexion')?.classes()).toEqual(expect.arrayContaining(['d-none', 'd-md-inline-flex']))
+      expect(findButton(wrapper, 'Déconnexion')).toBeUndefined()
       await openAccountMenu(wrapper)
 
       expect(wrapper.get(TOGGLE).attributes('aria-expanded')).toBe('true')
-      expect(menuItems(wrapper)).toEqual(['Assistant', 'Télécharger mon CV', 'Déconnexion'])
+      expect(menuItems(wrapper)).toEqual(['Assistant', 'Télécharger mon CV', 'Mes connexions MCP', 'Déconnexion'])
     })
 
-    it('super-admin : Assistant, Administration et Déconnexion, pas de CV', async () => {
+    it('super-admin : Assistant, Administration, Mes connexions MCP et Déconnexion, pas de CV', async () => {
       await primeAuthState({ username: 'super', roles: ['ROLE_SUPER', 'ROLE_USER'] })
       const { wrapper } = await mountHeader()
 
-      expect(wrapper.get('a[href="/fr/admin"]').classes()).toEqual(expect.arrayContaining(['d-none', 'd-md-inline-flex']))
+      expect(wrapper.find('a[href="/fr/admin"]').exists()).toBe(false)
       await openAccountMenu(wrapper)
 
-      expect(menuItems(wrapper)).toEqual(['Assistant', 'Administration', 'Déconnexion'])
+      expect(menuItems(wrapper)).toEqual(['Assistant', 'Administration', 'Mes connexions MCP', 'Déconnexion'])
     })
 
     it('palier de base : l\'intitulé du palier, « Terminer cet accès » et la connexion', async () => {
@@ -745,6 +775,112 @@ describe('AppHeader', () => {
       await flushPromises()
 
       expect(wrapper.find('#account-menu').exists()).toBe(false)
+    })
+  })
+
+  /**
+   * « Mes connexions MCP » (#650) et le menu du compte à partir de 768 px.
+   * Avant, la barre alignait Assistant, Administration (ou CV) et Déconnexion :
+   * ces actions sont maintenant derrière un seul bouton « Mon compte ». Largeur
+   * en moins, donc, à 768 px comme à 1024 px (le précédent du débordement est
+   * #265) ; le lien vers les connexions n'est proposé qu'au palier de confiance.
+   */
+  describe('menu du compte à partir de 768 px et « Mes connexions MCP » (#650)', () => {
+    const LINK = 'a[href="/fr/mcp-connections"]'
+
+    it('anonyme : ni menu du compte, ni lien', async () => {
+      await primeAuthState(null)
+      const { wrapper } = await mountHeader()
+
+      expect(wrapper.find(DESKTOP_TOGGLE).exists()).toBe(false)
+      expect(wrapper.find(LINK).exists()).toBe(false)
+    })
+
+    it('palier de base : ni menu du compte à partir de 768 px, ni lien, ni dans le menu mobile', async () => {
+      await primeBaseAccessState()
+      const { wrapper } = await mountHeader()
+
+      expect(wrapper.find(DESKTOP_TOGGLE).exists()).toBe(false)
+      // « Terminer cet accès » et « Connexion » restent à plat : il n'y a pas de compte à ranger.
+      expect(findButton(wrapper, 'Terminer cet accès')?.classes()).toEqual(expect.arrayContaining(['d-none', 'd-md-inline-flex']))
+      await openAccountMenu(wrapper)
+      expect(wrapper.find(LINK).exists()).toBe(false)
+    })
+
+    it('palier de confiance : le bouton est masqué sous 768 px (le menu mobile prend le relais) et fermé par défaut', async () => {
+      await primeAuthState({ username: 'jane', roles: ['ROLE_TRUSTED', 'ROLE_USER'] })
+      const { wrapper } = await mountHeader()
+
+      const toggle = wrapper.get(DESKTOP_TOGGLE)
+      expect(toggle.text()).toBe('Mon compte')
+      expect(toggle.attributes('aria-expanded')).toBe('false')
+      // La classe est posée sur la racine du composant, qui contient le bouton.
+      expect(toggle.element.closest('.d-none.d-md-block')).not.toBeNull()
+      expect(wrapper.find('#account-menu-desktop').exists()).toBe(false)
+      expect(wrapper.find(LINK).exists()).toBe(false)
+    })
+
+    it('palier de confiance : le lien est dans le menu du compte à partir de 768 px et dans le menu mobile', async () => {
+      await primeAuthState({ username: 'jane', roles: ['ROLE_TRUSTED', 'ROLE_USER'] })
+      const { wrapper } = await mountHeader()
+
+      await openDesktopAccountMenu(wrapper)
+      expect(wrapper.get('#account-menu-desktop').get(LINK).text()).toBe('Mes connexions MCP')
+      expect(desktopMenuItems(wrapper)).toEqual(['Assistant', 'Télécharger mon CV', 'Mes connexions MCP', 'Déconnexion'])
+
+      await openAccountMenu(wrapper)
+      expect(wrapper.get('#account-menu').get(LINK).text()).toBe('Mes connexions MCP')
+    })
+
+    it('ROLE_SUPER : le lien est présent aussi, aux deux endroits', async () => {
+      await primeAuthState({ username: 'super', roles: ['ROLE_SUPER', 'ROLE_USER'] })
+      const { wrapper } = await mountHeader()
+
+      await openDesktopAccountMenu(wrapper)
+      expect(desktopMenuItems(wrapper)).toEqual(['Assistant', 'Administration', 'Mes connexions MCP', 'Déconnexion'])
+      await openAccountMenu(wrapper)
+      expect(wrapper.get('#account-menu').find(LINK).exists()).toBe(true)
+    })
+
+    it('en anglais : « My MCP connections », vers /en/mcp-connections', async () => {
+      await primeAuthState({ username: 'jane', roles: ['ROLE_TRUSTED', 'ROLE_USER'] })
+      const { wrapper } = await mountHeader('/en', undefined, undefined, undefined, 'en')
+
+      await openDesktopAccountMenu(wrapper)
+
+      expect(wrapper.get('#account-menu-desktop a[href="/en/mcp-connections"]').text()).toBe('My MCP connections')
+      expect(wrapper.get(DESKTOP_TOGGLE).text()).toBe('My account')
+    })
+
+    it('« Déconnexion » du menu déconnecte et mène à l\'accueil', async () => {
+      await primeAuthState({ username: 'jane', roles: ['ROLE_TRUSTED', 'ROLE_USER'] })
+      const authRepository = createStubAuthRepository({ username: 'jane', roles: ['ROLE_TRUSTED', 'ROLE_USER'] })
+      const { wrapper, router } = await mountHeader('/fr/about', authRepository)
+
+      await openDesktopAccountMenu(wrapper)
+      await wrapper.get('#account-menu-desktop').findAll('button').find((button) => 'Déconnexion' === button.text())?.trigger('click')
+      await flushPromises()
+
+      expect(authRepository.logout).toHaveBeenCalledOnce()
+      expect(router.currentRoute.value.path).toBe('/fr')
+    })
+
+    it('menu ouvert : aucune violation d\'accessibilité détectable', async () => {
+      await primeAuthState({ username: 'jane', roles: ['ROLE_TRUSTED', 'ROLE_USER'] })
+      const { wrapper } = await mountHeader()
+
+      await openDesktopAccountMenu(wrapper)
+
+      await expectNoAccessibilityViolation(wrapper)
+    })
+
+    it('menu du compte mobile ouvert, avec le menu de l\'écran large dans le DOM : aucune violation', async () => {
+      await primeAuthState({ username: 'super', roles: ['ROLE_SUPER', 'ROLE_USER'] })
+      const { wrapper } = await mountHeader()
+
+      await openAccountMenu(wrapper)
+
+      await expectNoAccessibilityViolation(wrapper)
     })
   })
 })

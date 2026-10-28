@@ -11,7 +11,8 @@
     "anonymousCv": "CV without identity",
     "assistant": "Assistant",
     "career": "Career",
-    "lessonsLearned": "Lessons learned"
+    "lessonsLearned": "Lessons learned",
+    "mcpConnections": "My MCP connections"
   },
   "common": {
     "downloadCv": "Download my CV",
@@ -42,7 +43,8 @@
     "instantAccessError": "Access could not be granted. Please try again later.",
     "baseAccessBadge": "Base access",
     "endBaseAccess": "End this access",
-    "accountMenu": "Account menu"
+    "accountMenu": "Account menu",
+    "myAccount": "My account"
   },
   "admin": {
     "heading": "Administration",
@@ -644,6 +646,10 @@
     "adminWatch": {
       "title": "Administration — Watch",
       "description": "Manage the products whose lifecycle is tracked."
+    },
+    "mcpConnections": {
+      "title": "My MCP connections",
+      "description": "The assistants connected to your account: review them and revoke the ones you no longer want."
     }
   },
   "contributions": {
@@ -824,5 +830,50 @@
       "malformedDecision": "The page could not send your decision. Start again from your assistant.",
       "unknown": "An unexpected error occurred. Try again."
     }
+  },
+  "mcpConnections": {
+    "title": "My MCP connections",
+    "intro": "The assistants you have allowed to read your nominative corpus. Revoking a connection cuts it at the assistant's next request; to restore it, you will have to authorize it again.",
+    "loading": "Loading your connections…",
+    "revoking": "Revoking…",
+    "caption": "Your MCP connections, with their state",
+    "columns": {
+      "client": "Assistant",
+      "grantedAt": "Granted on",
+      "lastUsedAt": "Last used",
+      "expiresAt": "Expires",
+      "state": "State",
+      "actions": "Actions"
+    },
+    "neverUsed": "Never used",
+    "states": {
+      "active": "Active",
+      "expired": "Expired"
+    },
+    "revokedAt": "on {date}",
+    "causes": {
+      "person": "Revoked by you",
+      "client": "Revoked by the client",
+      "refreshTokenReuse": "Cut for security: refresh token reused",
+      "codeReplay": "Cut for security: authorization code replayed",
+      "superseded": "Replaced by a more recent connection",
+      "expired": "Expired",
+      "passwordChanged": "Cut when the password changed",
+      "trustedTierWithdrawn": "Cut: the trusted tier was withdrawn",
+      "unknown": "Revoked (unrecognized cause)"
+    },
+    "revoke": "Revoke",
+    "revokeAria": "Revoke the connection of {client}, granted on {date}",
+    "confirm": "Revoke the connection of \"{client}\"? It will stop working at the assistant's next request.",
+    "outcome": {
+      "revoked": "The connection has been revoked. It stops working at the assistant's next request.",
+      "alreadyGone": "This connection had already ended: nothing to revoke. The list has been refreshed."
+    },
+    "errors": {
+      "load": "Your connections could not be loaded.",
+      "retry": "Try again",
+      "revoke": "The connection could not be revoked. Try again later."
+    },
+    "empty": "No connection yet: no assistant is connected to your account."
   }
 }

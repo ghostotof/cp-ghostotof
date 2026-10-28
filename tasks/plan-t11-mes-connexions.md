@@ -506,7 +506,7 @@ Ajoutée par décision de l'auteur du 2026-10-28 (prémisse inexacte de la déci
   connue : `person`, `client`, `refresh-token-reuse`, `code-replay`, `superseded`, `expired`, `password-changed`,
   `trusted-tier-withdrawn`, plus `unknownCause`).
 
-- [ ] **Step 1 : tests rouges** (`McpConnectionsPage.spec.ts`, dépôt doublé par l'`InjectionKey`) : liste en FR et
+- [x] **Step 1 : tests rouges** (`McpConnectionsPage.spec.ts`, dépôt doublé par l'`InjectionKey`) : liste en FR et
   en EN (client, dates formatées, état) ; `affiche l'état vide avec un lien vers « Brancher votre assistant »` ;
   bouton « Révoquer » sur les seules connexions `active`, nom accessible portant le client et la date ;
   `confirm` accepté → `revoke(id)` puis message dans la région `role="status"` ; `confirm` refusé → aucun appel ;
@@ -519,7 +519,7 @@ Ajoutée par décision de l'auteur du 2026-10-28 (prémisse inexacte de la déci
   composant extrait, `AccountMenu.spec.ts`) couvre le bouton `aria-expanded` (faux puis vrai au clic), `aria-controls`
   vers la liste, Échap qui ferme et rend le focus au bouton, un clic hors du menu qui le ferme, la fermeture à la
   navigation, et `expectNoAccessibilityViolation()` menu ouvert.
-- [ ] **Step 2 : rouges.** **Step 3 : implémenter.** `<h1>`, un tableau (`<caption>`, `<th scope="col">`), une
+- [x] **Step 2 : rouges.** **Step 3 : implémenter.** `<h1>`, un tableau (`<caption>`, `<th scope="col">`), une
   `<h2>` par groupe si les connexions terminées sont séparées des actives (au choix motivé, sans saut de niveau),
   `window.confirm()` nommant le client ; texte via `t()` seulement (`no-raw-text`). Lien desktop : **un vrai menu
   du compte desktop** (décision de l'auteur du 2026-10-28), pas un bouton de plus dans les actions. Motif WAI-ARIA
@@ -529,9 +529,9 @@ Ajoutée par décision de l'auteur du 2026-10-28 (prémisse inexacte de la déci
   relever dans `AppHeader.vue` avant d'écrire), plus « Mes connexions MCP » ; extraire un composant
   `AccountMenu.vue` si `AppHeader.vue` grossit trop. Vérifier à 768 px et 1024 px que l'en-tête ne déborde pas (le
   débordement de #265 est le précédent) et que le menu ouvert reste dans la fenêtre.
-- [ ] **Step 4 : vert** : `make front-test`, `make front-lint`, `make front-build` ; contrôle manuel au navigateur
-  (tabulation, focus visible, contraste — ce que jsdom ne voit pas, `frontend-a11y.md`) noté dans la PR.
-- [ ] **Step 5 : commit** `feat(front): page « Mes connexions MCP » (#650)`.
+- [x] **Step 4 : vert** : `make front-test`, `make front-lint`, `make front-build` ; contrôle manuel au navigateur
+  (tabulation, focus visible, contraste — ce que jsdom ne voit pas, `frontend-a11y.md`) noté dans la PR. *(Commandes vertes ; contrôle au navigateur non fait : il exige une session du palier de confiance — largeurs 768/1024 px justifiées par le CSS, la barre y est plus étroite qu'avant.)*
+- [x] **Step 5 : commit** `feat(front): page « Mes connexions MCP » (#650)`.
 
 ### Task 11 : documentation, et clôture de #650 et #730
 

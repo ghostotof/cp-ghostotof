@@ -338,3 +338,68 @@ describe('router — garde /oauth/consent (ROLE_TRUSTED ou ROLE_SUPER, #647)', (
     expect(router.currentRoute.value.name).toBe('oauth-consent')
   })
 })
+
+describe('router — garde /mcp-connections (ROLE_TRUSTED ou ROLE_SUPER, #650)', () => {
+  beforeEach(async () => {
+    await router.push('/fr')
+    await router.isReady()
+  })
+
+  it('anonyme : redirige vers /login avec redirect=/fr/mcp-connections', async () => {
+    await primeAuthState(null)
+
+    await router.push('/fr/mcp-connections')
+
+    expect(router.currentRoute.value.name).toBe('login')
+    expect(router.currentRoute.value.query.redirect).toBe('/fr/mcp-connections')
+  })
+
+  it('palier de base sans compte : redirige vers /login', async () => {
+    const repository: AuthRepository = {
+      login: vi.fn(),
+      logout: vi.fn(),
+      me: vi.fn(async () => BASE_ACCESS_SESSION),
+    }
+    const Probe = defineComponent({
+      setup() {
+        return { auth: useAuth() }
+      },
+      template: '<div />',
+    })
+    const wrapper = mount(Probe, { global: { provide: { [AUTH_REPOSITORY as symbol]: repository } } })
+    await wrapper.vm.auth.checkAuth()
+    wrapper.unmount()
+
+    await router.push('/fr/mcp-connections')
+
+    expect(router.currentRoute.value.name).toBe('login')
+  })
+
+  it('compte ROLE_USER seul : redirige vers /forbidden', async () => {
+    await primeAuthState({ username: 'jane', roles: ['ROLE_USER'] })
+
+    await router.push('/fr/mcp-connections')
+
+    expect(router.currentRoute.value.name).toBe('forbidden')
+  })
+
+  it('ROLE_TRUSTED : accède à la page, non indexée', async () => {
+    await primeAuthState({ username: 'guest', roles: ['ROLE_USER', 'ROLE_TRUSTED'] })
+
+    await router.push('/fr/mcp-connections')
+
+    expect(router.currentRoute.value.name).toBe('mcp-connections')
+    expect(router.currentRoute.value.meta.noindex).toBe(true)
+    expect(router.currentRoute.value.meta.requiresAuth).toBe(true)
+    expect(router.currentRoute.value.meta.titleKey).toBe('seo.mcpConnections.title')
+    expect(router.currentRoute.value.meta.descriptionKey).toBe('seo.mcpConnections.description')
+  })
+
+  it('ROLE_SUPER sans ROLE_TRUSTED en clair : accède à la page (un rôle suffit)', async () => {
+    await primeAuthState({ username: 'super', roles: ['ROLE_SUPER'] })
+
+    await router.push('/en/mcp-connections')
+
+    expect(router.currentRoute.value.name).toBe('mcp-connections')
+  })
+})

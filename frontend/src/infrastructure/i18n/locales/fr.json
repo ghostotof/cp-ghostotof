@@ -11,7 +11,8 @@
     "anonymousCv": "CV sans identité",
     "assistant": "Assistant",
     "career": "Parcours",
-    "lessonsLearned": "Retours d'expérience"
+    "lessonsLearned": "Retours d'expérience",
+    "mcpConnections": "Mes connexions MCP"
   },
   "common": {
     "downloadCv": "Télécharger mon CV",
@@ -42,7 +43,8 @@
     "instantAccessError": "L'accès n'a pas pu être obtenu. Réessayez plus tard.",
     "baseAccessBadge": "Accès de base",
     "endBaseAccess": "Terminer cet accès",
-    "accountMenu": "Menu du compte"
+    "accountMenu": "Menu du compte",
+    "myAccount": "Mon compte"
   },
   "admin": {
     "heading": "Administration",
@@ -644,6 +646,10 @@
     "adminWatch": {
       "title": "Administration — Veille",
       "description": "Gestion des produits dont le cycle de vie est suivi."
+    },
+    "mcpConnections": {
+      "title": "Mes connexions MCP",
+      "description": "Les assistants branchés à votre compte : consultez-les et révoquez celles que vous ne voulez plus."
     }
   },
   "contributions": {
@@ -824,5 +830,50 @@
       "malformedDecision": "La page n'a pas pu transmettre votre décision. Recommencez depuis votre assistant.",
       "unknown": "Une erreur inattendue est survenue. Réessayez."
     }
+  },
+  "mcpConnections": {
+    "title": "Mes connexions MCP",
+    "intro": "Les assistants que vous avez autorisés à lire votre corpus nominatif. Révoquer une connexion la coupe dès la prochaine requête de l'assistant ; pour la rétablir, il faudra l'autoriser de nouveau.",
+    "loading": "Chargement de vos connexions…",
+    "revoking": "Révocation en cours…",
+    "caption": "Vos connexions MCP, avec leur état",
+    "columns": {
+      "client": "Assistant",
+      "grantedAt": "Accordée le",
+      "lastUsedAt": "Dernier usage",
+      "expiresAt": "Échéance",
+      "state": "État",
+      "actions": "Actions"
+    },
+    "neverUsed": "Jamais utilisée",
+    "states": {
+      "active": "Active",
+      "expired": "Échue"
+    },
+    "revokedAt": "le {date}",
+    "causes": {
+      "person": "Révoquée par vous",
+      "client": "Révoquée par le client",
+      "refreshTokenReuse": "Coupée par sécurité : jeton de rafraîchissement réutilisé",
+      "codeReplay": "Coupée par sécurité : code d'autorisation rejoué",
+      "superseded": "Remplacée par une connexion plus récente",
+      "expired": "Échue",
+      "passwordChanged": "Coupée au changement de mot de passe",
+      "trustedTierWithdrawn": "Coupée : le palier de confiance a été retiré",
+      "unknown": "Révoquée (cause non reconnue)"
+    },
+    "revoke": "Révoquer",
+    "revokeAria": "Révoquer la connexion de {client}, accordée le {date}",
+    "confirm": "Révoquer la connexion de « {client} » ? Elle cessera de fonctionner dès la prochaine requête de l'assistant.",
+    "outcome": {
+      "revoked": "La connexion a été révoquée. Elle cesse de fonctionner dès la prochaine requête de l'assistant.",
+      "alreadyGone": "Cette connexion était déjà terminée : rien à révoquer. La liste a été actualisée."
+    },
+    "errors": {
+      "load": "Vos connexions n'ont pas pu être chargées.",
+      "retry": "Réessayer",
+      "revoke": "La connexion n'a pas pu être révoquée. Réessayez plus tard."
+    },
+    "empty": "Aucune connexion pour l'instant : aucun assistant n'est branché à votre compte."
   }
 }
