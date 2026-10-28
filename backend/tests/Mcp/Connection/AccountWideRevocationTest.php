@@ -40,6 +40,14 @@ use Symfony\Component\HttpFoundation\Response;
  *   `PUT` ; le lien d'un compte sans mot de passe ne touche à rien, et un refus
  *   de la révocation annule l'activation entière (mot de passe, jeton, compte).
  *
+ * - **Le palier perdu** (tâche 6) : la rétrogradation d'un `ROLE_SUPER` sans
+ *   e-mail le ramène au palier de base (ADR 0003 D1) et coupe ses connexions,
+ *   cause `trusted-tier-withdrawn`, ligne d'audit après `role-changed`. Une
+ *   rétrogradation qui laisse `ROLE_TRUSTED` (compte avec e-mail), une promotion
+ *   ou une sortie idempotente ne coupent rien ; un refus de la révocation annule
+ *   le changement de rôle (atomicité). La suppression d'un compte coupe ses
+ *   connexions par la cascade de la clé étrangère (rien à écrire).
+ *
  * Les connexions sont accordées par le vrai parcours OAuth
  * ({@see HoldsAnMcpConnection}) ; les mots de passe viennent de
  * {@see TestCredentials}, jamais d'un littéral.
@@ -188,6 +196,126 @@ final class AccountWideRevocationTest extends WebTestCase
         self::assertSame(Response::HTTP_NO_CONTENT, $response->getStatusCode(), substr((string) $response->getContent(), 0, 500));
         self::assertSame('client', $this->causeOf($held));
         self::assertSame([], self::securityAuditEvents(self::REVOKED_EVENT));
+    }
+
+    /**
+     * Tâche 6. `trusted` (stocké `ROLE_SUPER`, sans e-mail) tient deux
+     * connexions ; la rétrogradation par un administrateur le ramène au palier
+     * de base : ses deux connexions meurent, cause `trusted-tier-withdrawn`,
+     * celle d'un autre compte reste. Sur la requête du PUT : `role-changed`
+     * d'abord, puis une ligne par connexion, l'acteur étant l'administrateur.
+     * Rétabli `ROLE_TRUSTED` en SQL, l'ancien jeton reste refusé : c'est la
+     * révocation qui le tient, pas l'absence passagère du rôle (le défaut
+     * que le commentaire de #649 relevait).
+     */
+    public function testADemotionOutOfTheTrustedTierRevokesEveryConnection(): void
+    {
+        $issued = $this->exchange($this->grantedCode());
+        $first = $this->heldMcpConnectionOf($issued);
+        $refreshToken = $this->json($issued)['refresh_token'] ?? null;
+        self::assertIsString($refreshToken);
+        $second = $this->holdAnotherMcpConnection();
+        $foreign = $this->holdConnectionOfAnotherAccount();
+        $this->rewriteHeldAccountRoles($first, [CpgUser::ROLE_SUPER]);
+        $sessionId = $this->initializeMcpSession($this->client, self::bearer($first->accessToken));
+        $this->callNominativeCorpus($sessionId, $first);
+        self::assertNotSame(Response::HTTP_UNAUTHORIZED, $this->client->getResponse()->getStatusCode(), 'Avant la rétrogradation, la connexion est acceptée.');
+        $adminId = $this->signInAsAdmin();
+
+        $response = $this->setSuperAdminOf($first->accountId, false);
+
+        self::assertSame(Response::HTTP_NO_CONTENT, $response->getStatusCode(), substr((string) $response->getContent(), 0, 500));
+        self::assertSame('trusted-tier-withdrawn', $this->causeOf($first));
+        self::assertSame('trusted-tier-withdrawn', $this->causeOf($second));
+        self::assertNull($this->causeOf($foreign), 'La connexion d\'un autre compte est intacte.');
+
+        $events = [];
+        foreach (self::securityAuditRecords() as $record) {
+            $event = $record->context['event'] ?? null;
+            if ('role-changed' === $event || self::REVOKED_EVENT === $event) {
+                $events[] = $event;
+            }
+        }
+        self::assertSame(['role-changed', self::REVOKED_EVENT, self::REVOKED_EVENT], $events, 'Une ligne par connexion, après celle du changement de rôle.');
+        $lines = self::securityAuditEvents(self::REVOKED_EVENT);
+        $connectionIds = array_map(static fn (array $line): mixed => $line['connectionId'] ?? null, $lines);
+        sort($connectionIds);
+        $expected = [$first->connectionId, $second->connectionId];
+        sort($expected);
+        self::assertSame($expected, $connectionIds);
+        foreach ($lines as $line) {
+            self::assertSame('trusted-tier-withdrawn', $line['cause'] ?? null);
+            self::assertSame($first->accountId, $line['userId'] ?? null);
+            self::assertSame($adminId, $line['actor'] ?? null);
+        }
+
+        // Le palier rendu en SQL ne ressuscite pas la connexion.
+        $this->rewriteHeldAccountRoles($first, [CpgUser::ROLE_TRUSTED]);
+        $this->client->getCookieJar()->clear();
+        $this->callNominativeCorpus($sessionId, $first);
+        $refused = $this->client->getResponse();
+        self::assertSame(Response::HTTP_UNAUTHORIZED, $refused->getStatusCode());
+        self::assertStringContainsString('error="invalid_token"', (string) $refused->headers->get('WWW-Authenticate'));
+        $this->assertOAuthError($this->refresh($refreshToken), Response::HTTP_BAD_REQUEST, 'invalid_grant');
+    }
+
+    /**
+     * Atomicité : un déclencheur refuse l'`UPDATE` de `mcp_connection`, la
+     * révocation échoue, donc le changement de rôle aussi — 500, le compte reste
+     * `ROLE_SUPER`, la connexion active, ni `role-changed` ni ligne MCP. Rouge
+     * si la révocation sort de la fermeture du verrou d'administration.
+     */
+    public function testARefusedRevocationLeavesTheRolesUnchanged(): void
+    {
+        $held = $this->holdMcpConnection();
+        $this->rewriteHeldAccountRoles($held, [CpgUser::ROLE_SUPER]);
+        $this->signInAsAdmin();
+        $this->refuseConnectionUpdates();
+
+        $response = $this->setSuperAdminOf($held->accountId, false);
+
+        self::assertSame(Response::HTTP_INTERNAL_SERVER_ERROR, $response->getStatusCode());
+        $this->allowConnectionUpdates();
+        self::assertSame([], self::securityAuditEvents('role-changed'), 'Un changement annulé n\'est pas journalisé.');
+        self::assertSame([], self::securityAuditEvents(self::REVOKED_EVENT));
+        self::assertNull($this->causeOf($held), 'La connexion reste active : rien n\'a été validé.');
+        self::assertSame([CpgUser::ROLE_SUPER], $this->storedRolesOf($held->accountId), 'Le compte reste ROLE_SUPER.');
+    }
+
+    /**
+     * Un compte **avec** e-mail garde `ROLE_TRUSTED` à la rétrogradation (octroi
+     * nominatif, ADR 0003 D1) : il ne perd pas le palier, ses connexions
+     * restent actives et rien n'est audité côté MCP. Rouge si l'on révoque dès
+     * qu'on rétrograde, sans regarder les rôles écrits.
+     */
+    public function testADemotionKeepingTheTrustedTierRevokesNothing(): void
+    {
+        $held = $this->holdMcpConnection();
+        $this->rewriteHeldAccountRoles($held, [CpgUser::ROLE_SUPER]);
+        $this->alterMcpRows('UPDATE cpg_user SET email = :email WHERE id = :id', ['email' => 'invited-trusted@example.test', 'id' => $held->accountId]);
+        $this->signInAsAdmin();
+
+        $response = $this->setSuperAdminOf($held->accountId, false);
+
+        self::assertSame(Response::HTTP_NO_CONTENT, $response->getStatusCode(), substr((string) $response->getContent(), 0, 500));
+        self::assertSame([CpgUser::ROLE_TRUSTED], $this->storedRolesOf($held->accountId), 'Le palier est gardé.');
+        self::assertCount(1, self::securityAuditEvents('role-changed'));
+        self::assertSame([], self::securityAuditEvents(self::REVOKED_EVENT));
+        self::assertNull($this->causeOf($held));
+    }
+
+    /** Une promotion n'ôte rien : `ROLE_SUPER` englobe `ROLE_TRUSTED` par la hiérarchie. */
+    public function testAPromotionRevokesNothing(): void
+    {
+        $held = $this->holdMcpConnection();
+        $this->signInAsAdmin();
+
+        $response = $this->setSuperAdminOf($held->accountId, true);
+
+        self::assertSame(Response::HTTP_NO_CONTENT, $response->getStatusCode(), substr((string) $response->getContent(), 0, 500));
+        self::assertCount(1, self::securityAuditEvents('role-changed'));
+        self::assertSame([], self::securityAuditEvents(self::REVOKED_EVENT));
+        self::assertNull($this->causeOf($held));
     }
 
     /**
@@ -347,6 +475,32 @@ final class AccountWideRevocationTest extends WebTestCase
         ], content: self::jsonBody(['password' => TestCredentials::variant('new')]));
 
         return $this->client->getResponse();
+    }
+
+    /** `PUT /api/backoffice/users/{id}/roles`, garde CSRF double-submit comprise. */
+    private function setSuperAdminOf(string $accountId, bool $grant): Response
+    {
+        $this->client->request('PUT', \sprintf('/api/backoffice/users/%s/roles', $accountId), server: [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_X_XSRF_TOKEN' => $this->xsrfToken(),
+        ], content: self::jsonBody(['superAdmin' => $grant]));
+
+        return $this->client->getResponse();
+    }
+
+    /**
+     * Les rôles **stockés** du compte, lus en base.
+     *
+     * @return list<string>
+     */
+    private function storedRolesOf(string $accountId): array
+    {
+        $roles = $this->mcpRows()->fetchOne('SELECT roles FROM cpg_user WHERE id = :id', ['id' => $accountId]);
+        self::assertIsString($roles);
+        $decoded = json_decode($roles, true, flags: \JSON_THROW_ON_ERROR);
+        self::assertIsArray($decoded);
+
+        return array_values(array_filter($decoded, is_string(...)));
     }
 
     /** Une connexion de `other-trusted`, accordée par le vrai parcours ; le client MCP n'en garde pas les cookies. */

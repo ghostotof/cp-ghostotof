@@ -10,6 +10,9 @@ use App\Security\User\Domain\Exception\CannotDemoteLastSuperAdminException;
 use App\Security\User\Domain\Exception\CannotModifyOwnRolesException;
 use App\Security\User\Domain\Exception\CpgUserNotFoundException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
+use App\Shared\Application\Security\AccountAccessWithdrawal;
+use App\Shared\Application\Security\AccountMcpConnectionsRevokerInterface;
+use App\Shared\Application\Security\RevokedAccountMcpConnections;
 use Symfony\Component\Uid\Uuid;
 
 final readonly class CpgUserRoleAdministrator implements CpgUserRoleAdministratorInterface
@@ -18,6 +21,7 @@ final readonly class CpgUserRoleAdministrator implements CpgUserRoleAdministrato
         private CpgUserRepositoryInterface $cpgUserRepository,
         private SecurityAuditLoggerInterface $auditLogger,
         private AccountAdministrationLockInterface $administrationLock,
+        private AccountMcpConnectionsRevokerInterface $mcpConnections,
     ) {
     }
 
@@ -39,13 +43,24 @@ final readonly class CpgUserRoleAdministrator implements CpgUserRoleAdministrato
         // un `role-changed` pour rien —, l'acteur relu, l'état « déjà
         // atteint » et la garde lus sur le compte relu, puis l'écriture,
         // validée au retour du verrou.
-        $changed = $this->administrationLock->whileAdministering($user, $actingUser, function (CpgUser $target) use ($grant): bool {
+        //
+        // La révocation des connexions MCP d'un compte qui perd `ROLE_TRUSTED`
+        // (#650) a lieu **dans** la fermeture : le rôle et la coupure valident
+        // ensemble ou pas du tout — la révocation qui échoue annule le rôle.
+        // Un événement après le COMMIT n'aurait pas cette atomicité (un échec
+        // laisserait un compte rétrogradé et ses connexions vivantes).
+        // **Ordre des verrous** : l'advisory lock d'administration, l'acteur,
+        // la cible `FOR UPDATE`, puis ses connexions par identifiant — le sens
+        // de tous les autres chemins (cf. CpgUserAdministrator::changePassword()).
+        // La fermeture rend `[changé, connexions révoquées]` : `null` quand rien
+        // n'a été révoqué (état déjà atteint, promotion, palier gardé).
+        [$changed, $revoked] = $this->administrationLock->whileAdministering($user, $actingUser, function (CpgUser $target) use ($grant): array {
             $isSuper = $target->isSuperAdmin();
 
             if ($grant === $isSuper) {
                 // Déjà dans l'état demandé : rien à faire (et la garde du dernier
                 // super-admin ne doit pas être consultée pour une cible non-super).
-                return false;
+                return [false, null];
             }
 
             // Garde anti-lockout (pendant de CpgUserAdministrator::delete) :
@@ -55,16 +70,34 @@ final readonly class CpgUserRoleAdministrator implements CpgUserRoleAdministrato
                 throw CannotDemoteLastSuperAdminException::lastOne();
             }
 
-            $target->setRoles($grant ? [CpgUser::ROLE_SUPER] : $this->rolesAfterDemotion($target));
+            $newRoles = $grant ? [CpgUser::ROLE_SUPER] : $this->rolesAfterDemotion($target);
+            $target->setRoles($newRoles);
             $this->cpgUserRepository->save($target);
 
-            return true;
+            // Le palier est perdu quand une **rétrogradation** écrit une liste
+            // sans `ROLE_TRUSTED` : la cible était `ROLE_SUPER` (l'exit
+            // idempotent est passé), donc de confiance par la hiérarchie, et
+            // ne l'est plus. On lit la liste **écrite** (`$newRoles`), jamais
+            // `getRoles()` qui y ajouterait `ROLE_USER` (règle de #560), ni
+            // l'état d'avant : un compte avec e-mail garde `ROLE_TRUSTED` et ses
+            // connexions. Une promotion n'ôte rien (`ROLE_SUPER` englobe
+            // `ROLE_TRUSTED`).
+            $losesTrustedTier = !$grant && !\in_array(CpgUser::ROLE_TRUSTED, $newRoles, true);
+
+            return [true, $losesTrustedTier
+                ? $this->mcpConnections->revokeAllOf($target, AccountAccessWithdrawal::TrustedTierWithdrawn)
+                : null];
         });
 
         // Journal de sécurité (D5), après le COMMIT : seulement sur un
         // changement effectif — l'état déjà atteint est sorti sans rien écrire.
+        // Puis une ligne par connexion coupée (#650), à la suite de `role-changed`.
         if ($changed) {
             $this->auditLogger->roleChanged($user, $grant);
+        }
+
+        if ($revoked instanceof RevokedAccountMcpConnections) {
+            $this->mcpConnections->auditRevoked($revoked);
         }
     }
 

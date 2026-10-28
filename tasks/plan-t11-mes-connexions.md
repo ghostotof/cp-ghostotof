@@ -369,7 +369,7 @@ Ajoutée par décision de l'auteur du 2026-10-28 (prémisse inexacte de la déci
 
 **Interfaces :** Consumes : le port de la Task 5, `RevocationCause::TrustedTierWithdrawn` (Task 1).
 
-- [ ] **Step 1 : tests rouges.** `testADemotionOutOfTheTrustedTierRevokesEveryConnection` (connexion tenue par
+- [x] **Step 1 : tests rouges.** `testADemotionOutOfTheTrustedTierRevokesEveryConnection` (connexion tenue par
   `trusted`, ses rôles stockés réécrits `['ROLE_SUPER']` par `rewriteHeldAccountRoles()`, sans e-mail ; `admin`
   `PUT …/roles` `{"superAdmin": false}` → 204 ; connexion révoquée `trusted-tier-withdrawn`, ligne après
   `role-changed` sur la même requête ; rétabli `ROLE_TRUSTED` en SQL, l'ancien jeton reste refusé — le défaut que
@@ -377,13 +377,13 @@ Ajoutée par décision de l'auteur du 2026-10-28 (prémisse inexacte de la déci
   posé en SQL : rôles `['ROLE_TRUSTED']`, connexion active, aucune ligne MCP). `testAPromotionRevokesNothing`.
   `CpgUserRoleAdministratorTest` : le port doublé n'est appelé qu'à la rétrogradation sans e-mail, jamais sur la
   sortie idempotente ni sur un refus (`CannotDemoteLastSuperAdminException`).
-- [ ] **Step 2 : rouges.** **Step 3 : implémenter** : la fermeture de `whileAdministering()` rend
+- [x] **Step 2 : rouges.** **Step 3 : implémenter** : la fermeture de `whileAdministering()` rend
   `?RevokedAccountMcpConnections` (`null` : rien à révoquer ou rien changé) en plus du changement — un petit objet
   de retour privé ou un tableau typé `array{bool, ?RevokedAccountMcpConnections}` au choix motivé ; après le
   verrou, `roleChanged()` puis `auditRevoked()`. Le palier perdu : `!$grant && !\in_array(CpgUser::ROLE_TRUSTED, $newRoles, true)`
   sur la liste **écrite** (jamais `getRoles()`, règle #560), commentaire qui le dit.
-- [ ] **Step 4 : vert** ; `AccountAdministrationConcurrencyTest`, `tests/Security/`, `tests/Mcp/`, `make back-test`, `make back-quality`.
-- [ ] **Step 5 : commit** `feat(security): perdre le palier de confiance révoque les connexions MCP du compte (#650)`.
+- [x] **Step 4 : vert** ; `AccountAdministrationConcurrencyTest`, `tests/Security/`, `tests/Mcp/`, `make back-test`, `make back-quality`.
+- [x] **Step 5 : commit** `feat(security): perdre le palier de confiance révoque les connexions MCP du compte (#650)`.
 
 ### Task 7 : #730 — une connexion jamais échangée expire tôt — **Sensible (migration, concurrence)**
 
