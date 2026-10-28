@@ -5,11 +5,17 @@ declare(strict_types=1);
 namespace App\Tests\Mcp\Connection;
 
 use App\Security\User\Domain\Entity\CpgUser;
+use App\Security\User\Domain\Entity\PasswordSetupToken;
+use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
+use App\Security\User\Domain\Repository\PasswordSetupTokenRepositoryInterface;
 use App\Tests\Mcp\Support\HeldMcpConnection;
 use App\Tests\Mcp\Support\HoldsAnMcpConnection;
 use App\Tests\Mcp\Support\SpeaksMcp;
 use App\Tests\Support\ReadsSecurityAuditLog;
 use App\Tests\Support\TestCredentials;
+use DateInterval;
+use Doctrine\ORM\EntityManagerInterface;
+use Psr\Clock\ClockInterface;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -28,6 +34,11 @@ use Symfony\Component\HttpFoundation\Response;
  *   encore la session, rien n'est audité. Rouge si l'appel sort de la
  *   transaction du verrou du compte (le mot de passe aurait déjà changé).
  * - Une requête n'écrit de ligne MCP que pour les connexions qu'elle a révoquées.
+ * - **Le second chemin d'écriture du mot de passe** (tâche 5b) : un lien
+ *   d'invitation qui **remplace** un mot de passe (compte encore « en attente »
+ *   auquel un `ROLE_SUPER` en a posé un, #460) coupe les connexions comme le
+ *   `PUT` ; le lien d'un compte sans mot de passe ne touche à rien, et un refus
+ *   de la révocation annule l'activation entière (mot de passe, jeton, compte).
  *
  * Les connexions sont accordées par le vrai parcours OAuth
  * ({@see HoldsAnMcpConnection}) ; les mots de passe viennent de
@@ -177,6 +188,148 @@ final class AccountWideRevocationTest extends WebTestCase
         self::assertSame(Response::HTTP_NO_CONTENT, $response->getStatusCode(), substr((string) $response->getContent(), 0, 500));
         self::assertSame('client', $this->causeOf($held));
         self::assertSame([], self::securityAuditEvents(self::REVOKED_EVENT));
+    }
+
+    /**
+     * Tâche 5b : un compte « en attente » à qui un `ROLE_SUPER` a posé un mot
+     * de passe (#460) se connecte déjà, peut tenir des connexions ; le lien
+     * d'invitation qu'il utilise ensuite **remplace** ce mot de passe. Les
+     * connexions du compte meurent avec l'ancien, cause `password-changed`,
+     * celle d'un autre compte reste ; sur la requête, `account-activated`
+     * d'abord, puis une ligne par connexion, l'acteur étant `anonymous` (le
+     * parcours est public).
+     */
+    public function testAnInvitationLinkThatReplacesAPasswordRevokesEveryConnectionOfTheAccount(): void
+    {
+        $issued = $this->exchange($this->grantedCode());
+        $first = $this->heldMcpConnectionOf($issued);
+        $refreshToken = $this->json($issued)['refresh_token'] ?? null;
+        self::assertIsString($refreshToken);
+        $second = $this->holdAnotherMcpConnection();
+        $foreign = $this->holdConnectionOfAnotherAccount();
+        $sessionId = $this->initializeMcpSession($this->client, self::bearer($first->accessToken));
+        $linkToken = $this->makePendingWithItsPassword($first->accountId);
+
+        $response = $this->completeSetupLink($linkToken);
+
+        self::assertSame(Response::HTTP_NO_CONTENT, $response->getStatusCode(), substr((string) $response->getContent(), 0, 500));
+        self::assertSame('password-changed', $this->causeOf($first));
+        self::assertSame('password-changed', $this->causeOf($second));
+        self::assertNull($this->causeOf($foreign), 'La connexion d\'un autre compte est intacte.');
+        $events = [];
+        foreach (self::securityAuditRecords() as $record) {
+            $event = $record->context['event'] ?? null;
+            if ('account-activated' === $event || self::REVOKED_EVENT === $event) {
+                $events[] = $event;
+            }
+        }
+        self::assertSame(['account-activated', self::REVOKED_EVENT, self::REVOKED_EVENT], $events, 'Une ligne par connexion, après celle de l\'activation.');
+        foreach (self::securityAuditEvents(self::REVOKED_EVENT) as $line) {
+            self::assertSame('password-changed', $line['cause'] ?? null);
+            self::assertSame($first->accountId, $line['userId'] ?? null);
+            self::assertSame('anonymous', $line['actor'] ?? null);
+        }
+        $this->callNominativeCorpus($sessionId, $first);
+        $refused = $this->client->getResponse();
+        self::assertSame(Response::HTTP_UNAUTHORIZED, $refused->getStatusCode());
+        self::assertStringContainsString('error="invalid_token"', (string) $refused->headers->get('WWW-Authenticate'));
+        $this->assertOAuthError($this->refresh($refreshToken), Response::HTTP_BAD_REQUEST, 'invalid_grant');
+    }
+
+    /**
+     * Tâche 5b, atomicité : un déclencheur refuse l'`UPDATE` de
+     * `mcp_connection`, la révocation échoue — donc l'activation entière : 500,
+     * l'ancien mot de passe ouvre encore la session, le compte reste en
+     * attente, le jeton n'est pas consommé (le lien reste réessayable), la
+     * connexion reste active, aucune ligne d'audit. Rouge si la révocation
+     * sort de la fermeture du verrou du compte.
+     */
+    public function testARefusedRevocationLeavesTheActivationUndone(): void
+    {
+        $held = $this->holdMcpConnection();
+        $linkToken = $this->makePendingWithItsPassword($held->accountId);
+        $this->refuseConnectionUpdates();
+
+        $response = $this->completeSetupLink($linkToken);
+
+        self::assertSame(Response::HTTP_INTERNAL_SERVER_ERROR, $response->getStatusCode());
+        $this->allowConnectionUpdates();
+        self::assertSame([], self::securityAuditEvents('account-activated'), 'Une activation annulée n\'est pas journalisée.');
+        self::assertSame([], self::securityAuditEvents(self::REVOKED_EVENT));
+        self::assertNull($this->causeOf($held), 'La connexion reste active : rien n\'a été validé.');
+        $account = $this->mcpRows()->fetchAssociative('SELECT activated_at FROM cpg_user WHERE id = :id', ['id' => $held->accountId]);
+        self::assertIsArray($account);
+        self::assertNull($account['activated_at'], 'Le compte reste en attente.');
+        $used = $this->mcpRows()->fetchOne('SELECT used_at FROM password_setup_token WHERE token_hash = :hash', ['hash' => hash('sha256', $linkToken)]);
+        self::assertNull($used, 'Le jeton n\'est pas consommé : le lien reste réessayable.');
+        $this->signInAs(self::TRUSTED_USERNAME, TestCredentials::superPassword());
+        $this->client->request('POST', '/api/login_check', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_X_REQUESTED_WITH' => 'fetch'], content: self::jsonBody([
+            'username' => self::TRUSTED_USERNAME,
+            'password' => TestCredentials::variant('chosen'),
+        ]));
+        self::assertSame(Response::HTTP_UNAUTHORIZED, $this->client->getResponse()->getStatusCode(), 'Le mot de passe du lien n\'a pas été posé.');
+    }
+
+    /**
+     * Tâche 5b : le compte dont le mot de passe est **posé** (jamais
+     * remplacé) par le lien ne touche à aucune connexion — il n'a pu en
+     * accorder aucune ; celles d'un autre compte restent actives.
+     */
+    public function testAnInvitationLinkOfAnAccountWithoutPasswordRevokesNothing(): void
+    {
+        $foreign = $this->holdMcpConnection();
+        $newcomer = new CpgUser('newcomer', '');
+        $newcomer->markInvited(self::getContainer()->get(ClockInterface::class)->now());
+        self::getContainer()->get(CpgUserRepositoryInterface::class)->add($newcomer);
+        $linkToken = $this->issueSetupLinkFor($newcomer);
+
+        $response = $this->completeSetupLink($linkToken);
+
+        self::assertSame(Response::HTTP_NO_CONTENT, $response->getStatusCode(), substr((string) $response->getContent(), 0, 500));
+        self::assertCount(1, self::securityAuditEvents('account-activated'));
+        self::assertSame([], self::securityAuditEvents(self::REVOKED_EVENT));
+        self::assertNull($this->causeOf($foreign));
+    }
+
+    /**
+     * Rend « en attente » le compte de la connexion tenue (invité, jamais
+     * activé) **en gardant son mot de passe** — l'état où un `ROLE_SUPER` a
+     * posé un mot de passe sur une invitation (#460) — et lui émet un lien.
+     */
+    private function makePendingWithItsPassword(string $accountId): string
+    {
+        $this->alterMcpRows('UPDATE cpg_user SET invited_at = now(), activated_at = NULL WHERE id = :id', ['id' => $accountId]);
+        $account = self::getContainer()->get(CpgUserRepositoryInterface::class)->findOneByUsername(self::TRUSTED_USERNAME);
+        self::assertNotNull($account);
+        self::assertTrue($account->isPendingActivation());
+        self::assertTrue($account->hasPassword());
+
+        return $this->issueSetupLinkFor($account);
+    }
+
+    /** Un lien utilisable pour le compte ; le jeton en clair est aléatoire, jamais un littéral. */
+    private function issueSetupLinkFor(CpgUser $account): string
+    {
+        $clearToken = bin2hex(random_bytes(32));
+        self::getContainer()->get(PasswordSetupTokenRepositoryInterface::class)->save(
+            new PasswordSetupToken($account, hash('sha256', $clearToken), self::getContainer()->get(ClockInterface::class)->now()->add(new DateInterval('PT48H'))),
+        );
+        self::getContainer()->get(EntityManagerInterface::class)->clear();
+
+        return $clearToken;
+    }
+
+    /** `POST /api/account/password-setup`, public : ni session ni CSRF, mais un quota par IP qu'on remet à zéro. */
+    private function completeSetupLink(string $clearToken): Response
+    {
+        self::getContainer()->get('cache.rate_limiter')->clear();
+        $this->client->getCookieJar()->clear();
+        $this->client->request('POST', '/api/account/password-setup', server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody([
+            'token' => $clearToken,
+            'password' => TestCredentials::variant('chosen'),
+        ]));
+
+        return $this->client->getResponse();
     }
 
     /** Crée l'administrateur et le connecte ; renvoie son UUID (l'acteur des lignes d'audit). */

@@ -54,9 +54,17 @@ connexions MCP » ; « Phase 2, backend » et « Frontend » des Testing Decisio
    rétrogradation dont la liste écrite (`rolesAfterDemotion()`) ne contient pas `ROLE_TRUSTED` (compte sans
    e-mail, ADR 0003 D1). C'est le seul chemin applicatif qui retire le palier aujourd'hui ; la suppression de
    compte coupe déjà les connexions par cascade (son audit est #652).
-6. **Mot de passe** : le seul chemin qui change le mot de passe d'un compte pouvant tenir une connexion est
-   `CpgUserAdministrator::changePassword()` (backoffice). L'activation (`PasswordSetupService::complete()`) ne
-   touche qu'un compte sans mot de passe, qui n'a jamais pu se connecter : rien à révoquer, rien n'est appelé.
+6. **Mot de passe** : deux chemins changent le mot de passe d'un compte pouvant tenir une connexion.
+   `CpgUserAdministrator::changePassword()` (backoffice), et — **correction de l'auteur, 2026-10-28** — l'activation
+   par lien d'invitation, `PasswordSetupService::complete()` : la prémisse d'origine (« elle ne touche qu'un compte
+   sans mot de passe ») était inexacte, `activate()` n'exigeant que `isPendingActivation()` (`invitedAt` posé,
+   `activatedAt` nul). Un compte invité à qui un `ROLE_SUPER` a posé un mot de passe (#460) reste « en attente »
+   mais se connecte déjà, peut avoir `ROLE_TRUSTED` et accorder des connexions ; une relance puis le nouveau lien
+   **remplace** son mot de passe. Règle : quand `hasPassword()` est vrai **avant** `setPassword()` dans
+   `activate()`, le lien remplace un mot de passe et révoque les connexions (tâche 5b, même port, même transaction,
+   cause `password-changed`) ; sans mot de passe préexistant le lien en *pose* un, aucun appel. Le troisième
+   écrivain, `CpgUserRepository::upgradePassword()` (re-hachage à la connexion, même mot de passe), ne change pas
+   le secret : hors périmètre ; `CpgUserRegistrar` (CLI) crée un compte, il n'en change aucun.
 7. **API** : `GET /api/me/mcp-connections` (200) et `DELETE /api/me/mcp-connections/{id}` (204), contrôleur
    léger → `Application/OwnMcpConnectionsInterface`. Sous `^/api/me(/|$)` (`ROLE_TRUSTED`, règle existante) :
    aucune règle `access_control` nouvelle, aucune entrée de `PUBLIC_PATHS`/`BASE_TIER_PATHS`, parité entre
@@ -338,6 +346,21 @@ connexions MCP » ; « Phase 2, backend » et « Frontend » des Testing Decisio
   inchangé), `make back-test`, `make back-quality`.
 - [x] **Step 5 : commit** `feat(security): un changement de mot de passe révoque les connexions MCP du compte (#650)`.
 
+### Task 5b : un lien d'invitation qui remplace un mot de passe révoque les connexions — **Sensible (sécurité, transaction)**
+
+Ajoutée par décision de l'auteur du 2026-10-28 (prémisse inexacte de la décision 6, corrigée ci-dessus).
+
+**Files :**
+- Modify : `backend/src/Security/User/Application/PasswordSetupService.php` (nouveau paramètre `AccountMcpConnectionsRevokerInterface`, `activate()` rend `?RevokedAccountMcpConnections`)
+- Test : `backend/tests/Mcp/Connection/AccountWideRevocationTest.php` (3 tests HTTP), `backend/tests/Security/User/Application/PasswordSetupServiceTest.php` (3 tests, doublure du port)
+
+**Constat :** `activate()` tourne déjà dans `AccountLockInterface::whileLocked()` (transaction `PostgresLockedTransaction`, compte `FOR UPDATE`, relu) : aucune transaction à introduire. Ordre des verrous : compte, jeton (`claim()`), puis connexions par identifiant — le sens de tous les autres chemins.
+
+- [x] **Step 1 : tests rouges.** HTTP : `testAnInvitationLinkThatReplacesAPasswordRevokesEveryConnectionOfTheAccount` (compte rendu « en attente » en gardant son mot de passe, deux connexions + une d'un autre compte ; `POST /api/account/password-setup` → 204 ; révoquées `password-changed`, l'autre intacte ; lignes `account-activated` puis une par connexion, acteur `anonymous` ; ancien jeton 401 `invalid_token`, rafraîchissement `invalid_grant`), `testARefusedRevocationLeavesTheActivationUndone` (déclencheur sur `mcp_connection` : 500, ancien mot de passe valable, `activated_at` nul, `used_at` du jeton nul — le lien reste réessayable —, connexion active, aucune ligne d'audit), `testAnInvitationLinkOfAnAccountWithoutPasswordRevokesNothing` (contrôle : verte dès le départ). Unitaire : ordre `claim` → `revokeAllOf` (dans la fermeture, mot de passe déjà écrit) → retour du verrou → `accountActivated` → `auditRevoked` ; `testALinkSettingAFirstPasswordNeverCallsThePort` (`never()` sur les deux méthodes du port) ; `testARefusedRevocationIsNeitherSwallowedNorAudited`. Rouges : 204 sans révocation, et `revokeAllOf`/`auditRevoked` jamais appelés.
+- [x] **Step 2 : implémenter.** `$replacesAPassword = $user->hasPassword()` lu **avant** `setPassword()`, sur le compte relu sous le verrou ; après `deleteUnusedForUser()`, `return $replacesAPassword ? revokeAllOf($user, PasswordChanged) : null` ; dans `complete()`, `accountActivated()` puis `auditRevoked()` (si non nul) après le retour du verrou.
+- [x] **Step 3 : mutations mesurées.** Révocation sortie de la fermeture (garde de transaction du dépôt retirée) → `testARefusedRevocationLeavesTheActivationUndone` et les deux tests unitaires d'ordre/refus rougissent (garde en place : 500 sur les trois HTTP) ; `hasPassword()` remplacé par `true` → les trois tests unitaires rougissent (le test HTTP du compte sans mot de passe ne le voit pas : ce compte n'a aucune connexion à révoquer, seul le `never()` du port le prouve) ; audit dans la fermeture → ordre HTTP et unitaire rouges ; audit absent → les deux rouges.
+- [x] **Step 4 : `make back-test`, `make back-quality`, commit** `fix(security): un lien d'invitation qui remplace un mot de passe révoque les connexions MCP (#650)`.
+
 ### Task 6 : révoquer les connexions d'un compte qui perd `ROLE_TRUSTED` — **Sensible (sécurité)**
 
 **Files :**
@@ -537,6 +560,12 @@ connexions MCP » ; « Phase 2, backend » et « Frontend » des Testing Decisio
   `CONTEXT.md` (« Connexion MCP » : « par cette personne, par un changement de mot de passe ou par la perte du
   palier de confiance » ; ajouter **Accord abandonné** si la relecture le juge utile : approbation dont le code
   n'est jamais échangé)
+- À écrire aussi (tâche 5b) : `.claude/rules/security-user.md` (`PasswordSetupService` : le lien qui *remplace* un
+  mot de passe — `hasPassword()` avant `setPassword()` — révoque les connexions MCP dans la transaction de
+  l'activation, `auditRevoked()` après `accountActivated()`), `.claude/rules/security-authentication.md`
+  (`mcp-connection-revoked`, cause `password-changed` : deux écrivains, le `PUT` du backoffice — acteur
+  l'administrateur — et l'activation par lien — acteur `anonymous`), la règle nouvelle et la spec 0007
+  (journal d'audit) ; la décision 6 du plan a été corrigée, ne pas reprendre l'ancienne prémisse
 - Modify : `tasks/todo.md` (T11 cochée, #730, notes de release)
 
 - [ ] **Step 1 : écrire** les fichiers ci-dessus ; nouvelle règle sur le modèle d'en-tête de `mcp-oauth-purge.md`.

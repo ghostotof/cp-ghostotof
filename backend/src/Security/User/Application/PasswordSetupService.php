@@ -12,6 +12,9 @@ use App\Security\User\Domain\Exception\UnusablePasswordSetupLinkException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use App\Security\User\Domain\Repository\PasswordSetupTokenRepositoryInterface;
 use App\Security\User\Domain\ValueObject\TokenClaim;
+use App\Shared\Application\Security\AccountAccessWithdrawal;
+use App\Shared\Application\Security\AccountMcpConnectionsRevokerInterface;
+use App\Shared\Application\Security\RevokedAccountMcpConnections;
 use Psr\Clock\ClockInterface;
 use SensitiveParameter;
 use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
@@ -25,6 +28,7 @@ final readonly class PasswordSetupService implements PasswordSetupServiceInterfa
         private ClockInterface $clock,
         private SecurityAuditLoggerInterface $auditLogger,
         private AccountLockInterface $accountLock,
+        private AccountMcpConnectionsRevokerInterface $mcpConnections,
     ) {
     }
 
@@ -47,9 +51,7 @@ final readonly class PasswordSetupService implements PasswordSetupServiceInterfa
         // passé entre la réclamation et l'activation voyait le compte encore
         // en attente et émettait un jeton, valable sur un compte actif.
         try {
-            $this->accountLock->whileLocked($user, function (CpgUser $locked) use ($token, $hashedPassword): void {
-                $this->activate($token, $locked, $hashedPassword);
-            });
+            $revoked = $this->accountLock->whileLocked($user, fn (CpgUser $locked): ?RevokedAccountMcpConnections => $this->activate($token, $locked, $hashedPassword));
         } catch (CpgUserNotFoundException) {
             // Supprimé entre-temps : la cascade a emporté le jeton, réponse
             // et journal d'un lien inconnu.
@@ -61,12 +63,22 @@ final readonly class PasswordSetupService implements PasswordSetupServiceInterfa
         // Journal de sécurité (D5) : le compte activé, jamais le jeton ni le
         // mot de passe. Parcours anonyme : l'auteur sera « anonymous ».
         $this->auditLogger->accountActivated($user);
+
+        // Puis, si le lien a remplacé un mot de passe, une ligne par connexion
+        // MCP coupée (#650) : après le COMMIT et après l'activation, comme le
+        // `PUT` du mot de passe écrit `password-changed` puis ses connexions.
+        if (null !== $revoked) {
+            $this->mcpConnections->auditRevoked($revoked);
+        }
     }
 
     /**
      * Sous le verrou du compte, compte relu.
+     *
+     * Rend ce que la révocation des connexions MCP a coupé, ou `null` quand le
+     * lien a *posé* le premier mot de passe du compte (#650, tâche 5b).
      */
-    private function activate(PasswordSetupToken $token, CpgUser $user, string $hashedPassword): void
+    private function activate(PasswordSetupToken $token, CpgUser $user, string $hashedPassword): ?RevokedAccountMcpConnections
     {
         // L'heure d'après le hachage, qui prend du temps : un lien expiré
         // entre-temps ne doit pas être consommé (issue #447).
@@ -102,6 +114,15 @@ final readonly class PasswordSetupService implements PasswordSetupServiceInterfa
             throw UnusablePasswordSetupLinkException::expiredOrAlreadyUsed();
         }
 
+        // Un mot de passe déjà là, posé par un `ROLE_SUPER` sur l'invitation
+        // (#460, le compte reste « en attente » mais se connecte), est
+        // **remplacé** par ce lien : les connexions MCP qu'il a pu accorder
+        // meurent avec lui (#650, tâche 5b — la décision 6 du plan croyait ce
+        // cas impossible). Lu avant `setPassword()`, sur le compte relu sous le
+        // verrou. Un compte sans mot de passe n'a jamais pu se connecter donc
+        // accorder une connexion : le mot de passe est *posé*, aucun appel.
+        $replacesAPassword = $user->hasPassword();
+
         $user->setPassword($hashedPassword);
         $user->markActivated($now);
         $token->markUsed($now);
@@ -110,6 +131,16 @@ final readonly class PasswordSetupService implements PasswordSetupServiceInterfa
         $this->passwordSetupTokenRepository->save($token);
         // Un compte activé ne garde aucun jeton utilisable (issue #458).
         $this->passwordSetupTokenRepository->deleteUnusedForUser($user);
+
+        // **Dans** la fermeture du verrou, comme `CpgUserAdministrator::changePassword()` :
+        // le nouveau mot de passe, la consommation du lien et la coupure des
+        // connexions valident ensemble ou pas du tout — une révocation refusée
+        // annule l'activation, le lien reste réessayable. Ordre des verrous :
+        // le compte (tenu), son jeton (réclamé plus haut), puis ses connexions
+        // par identifiant — le sens de tous les autres chemins.
+        return $replacesAPassword
+            ? $this->mcpConnections->revokeAllOf($user, AccountAccessWithdrawal::PasswordChanged)
+            : null;
     }
 
     private function usableTokenOrFail(#[SensitiveParameter] string $clearToken): PasswordSetupToken

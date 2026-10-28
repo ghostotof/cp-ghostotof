@@ -129,6 +129,7 @@ phase 1 parte en release seule ; puis au merge de clôture, qui archive la spec 
   - [x] 3. `DELETE /api/me/mcp-connections/{id}` : cause `person`, 404 indistinct, 204 idempotent, bout en bout — **sensible (sécurité)**
   - [x] 4. Révocation par la personne × rafraîchissement × marquage de la purge, en processus réels — **sensible (concurrence)**
   - [x] 5. Changement de mot de passe → toutes les connexions du compte, port de `Shared`, atomique — **sensible (sécurité, transaction)**
+  - [x] 5b. Lien d'invitation qui *remplace* un mot de passe → révocation des connexions, même port, même transaction (décision de l'auteur du 2026-10-28) — **sensible (sécurité, transaction)**
   - [ ] 6. Perte de `ROLE_TRUSTED` → toutes les connexions du compte — **sensible (sécurité)**
   - [ ] 7. #730 : `code_exchanged_at`, durée `connection_unexchanged` (`PT1H`), troisième borne de la purge — **sensible (migration, concurrence)**
   - [ ] 8. La page de consentement dit quel compte accorde
