@@ -8,6 +8,7 @@ use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use App\Security\User\Application\AccountAdministrationLockInterface;
 use App\Security\User\Application\AccountLockInterface;
 use App\Security\User\Application\CpgUserAdministrator;
+use App\Security\User\Application\DeadlockRetryInterface;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Exception\ActingAccountNoLongerSuperAdminException;
 use App\Security\User\Domain\Exception\CannotDeleteLastSuperAdminException;
@@ -15,16 +16,22 @@ use App\Security\User\Domain\Exception\CannotDeleteOwnAccountException;
 use App\Security\User\Domain\Exception\CpgUserNotFoundException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use App\Security\User\Domain\Repository\PasswordSetupTokenRepositoryInterface;
+use App\Security\User\Infrastructure\Doctrine\DoctrineDeadlockRetry;
 use App\Shared\Application\Security\AccountAccessWithdrawal;
 use App\Shared\Application\Security\AccountMcpConnectionsRevokerInterface;
 use App\Shared\Application\Security\RevokedAccountMcpConnections;
+use App\Tests\Support\DeadlockedStatement;
 use App\Tests\Support\TestCredentials;
 use Closure;
 use DateTimeImmutable;
+use Doctrine\DBAL\Exception\DeadlockException;
+use Doctrine\DBAL\Exception\DriverException;
+use Doctrine\Persistence\ManagerRegistry;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use Psr\Clock\ClockInterface;
+use Psr\Log\NullLogger;
 use RuntimeException;
 use Symfony\Component\Clock\MockClock;
 use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
@@ -388,6 +395,85 @@ final class CpgUserAdministratorTest extends TestCase
             ->changePassword(Uuid::v7(), TestCredentials::variant('new'));
     }
 
+    /**
+     * S3 (CR4) : l'interblocage F1 annule le changement de mot de passe, la
+     * remédiation d'un mot de passe compromis ne doit pas échouer en silence.
+     * Relancé **une fois**, sur le compte **relu** (l'EntityManager remis à neuf
+     * a oublié l'ancien) : le hachage, calculé hors verrou, n'est pas recalculé,
+     * et le journal ne s'écrit qu'une fois, au retour du second essai.
+     */
+    public function testADeadlockedPasswordChangeIsRetriedOnceOnTheAccountReadAgainAndAuditedOnce(): void
+    {
+        $stale = $this->user('jane');
+        $fresh = clone $stale;
+        $revoked = new RevokedAccountMcpConnections(AccountAccessWithdrawal::PasswordChanged, []);
+
+        $repository = $this->createMock(CpgUserRepositoryInterface::class);
+        $repository->expects(self::exactly(2))->method('findOneById')->with($stale->getId())->willReturnOnConsecutiveCalls($stale, $fresh);
+        $hasher = $this->createMock(UserPasswordHasherInterface::class);
+        $hasher->expects(self::once())->method('hashPassword')->willReturn('new-hashed-password');
+        $mcpConnections = $this->createMock(AccountMcpConnectionsRevokerInterface::class);
+        $mcpConnections->expects(self::exactly(2))->method('revokeAllOf')->willReturnOnConsecutiveCalls(
+            self::throwException(DeadlockedStatement::exception()),
+            $revoked,
+        );
+        $mcpConnections->expects(self::once())->method('auditRevoked')->with($revoked);
+        $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
+        $auditLogger->expects(self::once())->method('passwordChanged')->with($fresh);
+
+        $this->administrator($repository, $hasher, $auditLogger, mcpConnections: $mcpConnections)
+            ->changePassword($stale->getId(), TestCredentials::variant('new'));
+
+        self::assertSame('new-hashed-password', $fresh->getPassword());
+        self::assertSame(1, $fresh->getCredentialsVersion(), 'La version des identifiants doit avancer une fois sur le compte relu.');
+    }
+
+    /** Deux interblocages d'affilée : l'exception remonte comme avant S3, rien n'est audité. */
+    public function testAPasswordChangeDeadlockedTwiceFailsAndAuditsNothing(): void
+    {
+        $user = $this->user('jane');
+        $hasher = $this->createMock(UserPasswordHasherInterface::class);
+        $hasher->expects(self::once())->method('hashPassword')->willReturn('new-hashed-password');
+        $mcpConnections = $this->createMock(AccountMcpConnectionsRevokerInterface::class);
+        $mcpConnections->expects(self::exactly(2))->method('revokeAllOf')->willThrowException(DeadlockedStatement::exception());
+        $mcpConnections->expects(self::never())->method('auditRevoked');
+
+        $this->expectException(DeadlockException::class);
+
+        $this->administrator($this->repositoryFinding($user), $hasher, $this->auditLoggerExpectingNothing(), mcpConnections: $mcpConnections)
+            ->changePassword($user->getId(), TestCredentials::variant('new'));
+    }
+
+    /** Une autre exception de la fermeture n'est jamais relancée : un seul essai. */
+    public function testAPasswordChangeFailingOtherwiseIsNotRetried(): void
+    {
+        $user = $this->user('jane');
+        $repository = $this->createMock(CpgUserRepositoryInterface::class);
+        $repository->expects(self::once())->method('findOneById')->willReturn($user);
+        $mcpConnections = $this->createMock(AccountMcpConnectionsRevokerInterface::class);
+        $mcpConnections->expects(self::once())->method('revokeAllOf')->willThrowException(DeadlockedStatement::otherDriverException());
+
+        $this->expectException(DriverException::class);
+
+        $this->administrator($repository, $this->hasher(), $this->auditLoggerExpectingNothing(), mcpConnections: $mcpConnections)
+            ->changePassword($user->getId(), TestCredentials::variant('new'));
+    }
+
+    /** Le compte supprimé entre les deux essais : 404 au second, aucun audit. */
+    public function testAnAccountDeletedBetweenTheTwoAttemptsOfAPasswordChangeIsNotFound(): void
+    {
+        $user = $this->user('jane');
+        $repository = $this->createMock(CpgUserRepositoryInterface::class);
+        $repository->expects(self::exactly(2))->method('findOneById')->willReturnOnConsecutiveCalls($user, null);
+        $mcpConnections = $this->createMock(AccountMcpConnectionsRevokerInterface::class);
+        $mcpConnections->expects(self::once())->method('revokeAllOf')->willThrowException(DeadlockedStatement::exception());
+
+        $this->expectException(CpgUserNotFoundException::class);
+
+        $this->administrator($repository, $this->hasher(), $this->auditLoggerExpectingNothing(), mcpConnections: $mcpConnections)
+            ->changePassword($user->getId(), TestCredentials::variant('new'));
+    }
+
     private function repositoryFinding(CpgUser $user): CpgUserRepositoryInterface
     {
         $repository = self::createStub(CpgUserRepositoryInterface::class);
@@ -418,6 +504,7 @@ final class CpgUserAdministratorTest extends TestCase
         ?AccountMcpConnectionsRevokerInterface $mcpConnections = null,
         ?AccountLockInterface $accountLock = null,
         ?ClockInterface $clock = null,
+        ?DeadlockRetryInterface $deadlockRetry = null,
     ): CpgUserAdministrator {
         if (null === $accountLock) {
             $accountLock = self::createStub(AccountLockInterface::class);
@@ -436,7 +523,7 @@ final class CpgUserAdministratorTest extends TestCase
             );
         }
 
-        return new CpgUserAdministrator($repository, $hasher, $auditLogger, $tokenRepository ?? self::createStub(PasswordSetupTokenRepositoryInterface::class), $accountLock, $administrationLock, $mcpConnections, $clock ?? new MockClock());
+        return new CpgUserAdministrator($repository, $hasher, $auditLogger, $tokenRepository ?? self::createStub(PasswordSetupTokenRepositoryInterface::class), $accountLock, $administrationLock, $mcpConnections, $clock ?? new MockClock(), $deadlockRetry ?? new DoctrineDeadlockRetry(self::createStub(ManagerRegistry::class), new NullLogger()));
     }
 
     /**

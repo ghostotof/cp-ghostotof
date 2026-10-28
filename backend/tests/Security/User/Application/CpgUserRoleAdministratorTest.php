@@ -7,19 +7,26 @@ namespace App\Tests\Security\User\Application;
 use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use App\Security\User\Application\AccountAdministrationLockInterface;
 use App\Security\User\Application\CpgUserRoleAdministrator;
+use App\Security\User\Application\DeadlockRetryInterface;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Exception\ActingAccountNoLongerSuperAdminException;
 use App\Security\User\Domain\Exception\CannotDemoteLastSuperAdminException;
 use App\Security\User\Domain\Exception\CannotModifyOwnRolesException;
 use App\Security\User\Domain\Exception\CpgUserNotFoundException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
+use App\Security\User\Infrastructure\Doctrine\DoctrineDeadlockRetry;
 use App\Shared\Application\Security\AccountAccessWithdrawal;
 use App\Shared\Application\Security\AccountMcpConnectionsRevokerInterface;
 use App\Shared\Application\Security\RevokedAccountMcpConnections;
+use App\Tests\Support\DeadlockedStatement;
 use Closure;
+use Doctrine\DBAL\Exception\DeadlockException;
+use Doctrine\DBAL\Exception\DriverException;
+use Doctrine\Persistence\ManagerRegistry;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
 use RuntimeException;
 use Symfony\Component\Uid\Uuid;
 
@@ -407,6 +414,78 @@ final class CpgUserRoleAdministratorTest extends TestCase
     }
 
     /**
+     * S3 (CR4) : la rétrogradation d'un compte de confiance coupe ses connexions
+     * MCP et croise donc, comme le changement de mot de passe, le premier échange
+     * d'un code (F1). Interbloquée, elle est relancée **une fois** — tout le verrou
+     * d'administration, qui relit lui-même la cible et l'acteur sur l'EntityManager
+     * remis à neuf — et le journal ne s'écrit qu'une fois, après le seul COMMIT.
+     */
+    public function testADeadlockedDemotionIsRetriedOnceAndAuditedOnce(): void
+    {
+        $actingUser = $this->user('super');
+        $target = $this->superUser('other-super');
+        $reread = $this->superUser('other-super');
+        $revoked = new RevokedAccountMcpConnections(AccountAccessWithdrawal::TrustedTierWithdrawn, []);
+
+        $repository = $this->createMock(CpgUserRepositoryInterface::class);
+        $repository->expects(self::once())->method('findOneById')->willReturn($target);
+        $repository->method('countOtherSuperAdminsAbleToSignIn')->willReturn(1);
+        $lock = $this->createMock(AccountAdministrationLockInterface::class);
+        // Chaque essai reçoit une cible relue, comme le verrou réel la relit.
+        $lock->expects(self::exactly(2))->method('whileAdministering')->with($target, $actingUser)->willReturnCallback(
+            static fn (CpgUser $ignored, CpgUser $alsoIgnored, Closure $operation): mixed => $operation(clone $reread),
+        );
+        $revoker = $this->createMock(AccountMcpConnectionsRevokerInterface::class);
+        $revoker->expects(self::exactly(2))->method('revokeAllOf')->willReturnOnConsecutiveCalls(
+            self::throwException(DeadlockedStatement::exception()),
+            $revoked,
+        );
+        $revoker->expects(self::once())->method('auditRevoked')->with($revoked);
+        $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
+        $auditLogger->expects(self::once())->method('roleChanged')->with($target, false);
+
+        $this->administrator($repository, $auditLogger, $lock, $revoker)->setSuperAdmin($target->getId(), false, $actingUser);
+    }
+
+    /** Deux interblocages : l'exception remonte comme avant S3, rien n'est audité. */
+    public function testADemotionDeadlockedTwiceFailsAndAuditsNothing(): void
+    {
+        $actingUser = $this->user('super');
+        $target = $this->superUser('other-super');
+        $repository = self::createStub(CpgUserRepositoryInterface::class);
+        $repository->method('findOneById')->willReturn($target);
+        $repository->method('countOtherSuperAdminsAbleToSignIn')->willReturn(1);
+        // Une cible relue à chaque essai : la rétrogradation du premier, en mémoire, ne la précède pas.
+        $lock = self::createStub(AccountAdministrationLockInterface::class);
+        $lock->method('whileAdministering')->willReturnCallback(
+            fn (CpgUser $ignored, CpgUser $alsoIgnored, Closure $operation): mixed => $operation($this->superUser('other-super')),
+        );
+        $revoker = $this->createMock(AccountMcpConnectionsRevokerInterface::class);
+        $revoker->expects(self::exactly(2))->method('revokeAllOf')->willThrowException(DeadlockedStatement::exception());
+        $revoker->expects(self::never())->method('auditRevoked');
+
+        $this->expectException(DeadlockException::class);
+
+        $this->administrator($repository, $this->auditLoggerExpectingNothing(), $lock, $revoker)->setSuperAdmin($target->getId(), false, $actingUser);
+    }
+
+    /** Une autre erreur n'est jamais relancée : un seul essai. */
+    public function testADemotionFailingOtherwiseIsNotRetried(): void
+    {
+        $actingUser = $this->user('super');
+        $target = $this->superUser('other-super');
+        $repository = self::createStub(CpgUserRepositoryInterface::class);
+        $repository->method('findOneById')->willReturn($target);
+        $repository->method('countOtherSuperAdminsAbleToSignIn')->willReturn(1);
+        $revoker = $this->createMock(AccountMcpConnectionsRevokerInterface::class);
+        $revoker->expects(self::once())->method('revokeAllOf')->willThrowException(DeadlockedStatement::otherDriverException());
+
+        $this->expectException(DriverException::class);
+
+        $this->administrator($repository, $this->auditLoggerExpectingNothing(), revoker: $revoker)->setSuperAdmin($target->getId(), false, $actingUser);
+    }
+
+    /**
      * Le verrou d'administration exécute l'opération telle quelle, sur le
      * compte reçu ; le verrou réel est couvert par
      * PostgresAccountAdministrationLockTest et AccountAdministrationConcurrencyTest.
@@ -416,6 +495,7 @@ final class CpgUserRoleAdministratorTest extends TestCase
         SecurityAuditLoggerInterface $auditLogger,
         ?AccountAdministrationLockInterface $administrationLock = null,
         ?AccountMcpConnectionsRevokerInterface $revoker = null,
+        ?DeadlockRetryInterface $deadlockRetry = null,
     ): CpgUserRoleAdministrator {
         if (null === $administrationLock) {
             $administrationLock = self::createStub(AccountAdministrationLockInterface::class);
@@ -430,7 +510,7 @@ final class CpgUserRoleAdministratorTest extends TestCase
             $revoker->method('revokeAllOf')->willReturn(new RevokedAccountMcpConnections(AccountAccessWithdrawal::TrustedTierWithdrawn, []));
         }
 
-        return new CpgUserRoleAdministrator($repository, $auditLogger, $administrationLock, $revoker);
+        return new CpgUserRoleAdministrator($repository, $auditLogger, $administrationLock, $revoker, $deadlockRetry ?? new DoctrineDeadlockRetry(self::createStub(ManagerRegistry::class), new NullLogger()));
     }
 
     /**

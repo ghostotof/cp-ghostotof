@@ -194,7 +194,9 @@ final readonly class TokenEndpoint implements TokenEndpointInterface
      * par id — C1, l'ancienne connexion du couple, puis C2, celle du code
      * échangé, que l'échange tient et dont il attend C1 : l'une des deux
      * transactions est annulée (F1, `AccountWideRevocationDeadlockTest`, qui
-     * reproduit le cycle et épingle que les deux restent atomiques) ; et une
+     * reproduit le cycle et épingle que les deux restent atomiques ; la
+     * révocation annulée est relancée une fois depuis S3, l'échange annulé ne
+     * l'est pas : le client reçoit un 500, son code reste échangeable) ; et une
      * suppression de compte en cascade (`cpg_user` →
      * `mcp_connection`, dans l'ordre où son plan les lit, du tas ou d'un
      * index), qui peut tenir une autre connexion du couple, que l'échange

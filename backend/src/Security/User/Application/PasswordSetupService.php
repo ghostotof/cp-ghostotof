@@ -29,6 +29,7 @@ final readonly class PasswordSetupService implements PasswordSetupServiceInterfa
         private SecurityAuditLoggerInterface $auditLogger,
         private AccountLockInterface $accountLock,
         private AccountMcpConnectionsRevokerInterface $mcpConnections,
+        private DeadlockRetryInterface $deadlockRetry,
     ) {
     }
 
@@ -50,8 +51,26 @@ final readonly class PasswordSetupService implements PasswordSetupServiceInterfa
         // et dans le même ordre — compte puis jetons : sans lui, un handler
         // passé entre la réclamation et l'activation voyait le compte encore
         // en attente et émettait un jeton, valable sur un compte actif.
+        //
+        // **Relancé une fois sur un interblocage** (S3, CR4) : un lien qui
+        // *remplace* un mot de passe (#460) révoque les connexions MCP du compte
+        // (`activate()`), donc croise comme le changement de mot de passe le
+        // premier échange d'un code (F1, `AccountWideRevocationDeadlockTest`).
+        // Annulé, il laissait un 500 — le lien restait réessayable, mais l'invité
+        // n'avait aucun moyen de le savoir. Au second essai, le jeton est **relu**
+        // par son empreinte (l'EntityManager remis à neuf a oublié l'ancien, et le
+        // compte avec lui) : un lien consommé entre-temps y est refusé comme
+        // partout. Le hachage n'est pas recalculé, les journaux ci-dessous suivent
+        // le seul COMMIT qui a abouti.
         try {
-            $revoked = $this->accountLock->whileLocked($user, fn (CpgUser $locked): ?RevokedAccountMcpConnections => $this->activate($token, $locked, $hashedPassword));
+            $revoked = $this->deadlockRetry->retryOnce(function (bool $isRetry) use ($clearToken, &$token, &$user, $hashedPassword): ?RevokedAccountMcpConnections {
+                if ($isRetry) {
+                    $token = $this->usableTokenOrFail($clearToken);
+                    $user = $token->getUser();
+                }
+
+                return $this->accountLock->whileLocked($user, fn (CpgUser $locked): ?RevokedAccountMcpConnections => $this->activate($token, $locked, $hashedPassword));
+            });
         } catch (CpgUserNotFoundException) {
             // Supprimé entre-temps : la cascade a emporté le jeton, réponse
             // et journal d'un lien inconnu.

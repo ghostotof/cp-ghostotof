@@ -22,6 +22,7 @@ final readonly class CpgUserRoleAdministrator implements CpgUserRoleAdministrato
         private SecurityAuditLoggerInterface $auditLogger,
         private AccountAdministrationLockInterface $administrationLock,
         private AccountMcpConnectionsRevokerInterface $mcpConnections,
+        private DeadlockRetryInterface $deadlockRetry,
     ) {
     }
 
@@ -54,11 +55,20 @@ final readonly class CpgUserRoleAdministrator implements CpgUserRoleAdministrato
         // de tous les autres chemins (cf. CpgUserAdministrator::changePassword()).
         // La fermeture rend un RoleChangeOutcome : le changement effectif et,
         // le cas échéant, les connexions révoquées.
-        $outcome = $this->administrationLock->whileAdministering(
+        //
+        // **Relancée une fois sur un interblocage** (S3, CR4 ; le cycle F1 avec
+        // le premier échange d'un code, `AccountWideRevocationDeadlockTest`) :
+        // sans cela, la rétrogradation d'un compte compromis rendait un 500, le
+        // rôle inchangé et les connexions vivantes. Toute la transaction est
+        // rejouée, sans rien relire ici : le verrou d'administration relit la
+        // cible **et** l'acteur par leur identifiant sur l'EntityManager remis à
+        // neuf — les instances de ce service (`$user`, `$actingUser`) ne servent
+        // qu'à lui donner ces identifiants et au journal ci-dessous.
+        $outcome = $this->deadlockRetry->retryOnce(fn (): RoleChangeOutcome => $this->administrationLock->whileAdministering(
             $user,
             $actingUser,
             fn (CpgUser $target): RoleChangeOutcome => $this->writeRole($target, $grant),
-        );
+        ));
 
         // Journal de sécurité (D5), après le COMMIT : seulement sur un
         // changement effectif — l'état déjà atteint est sorti sans rien écrire.

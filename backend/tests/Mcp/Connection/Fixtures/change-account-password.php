@@ -32,10 +32,12 @@ declare(strict_types=1);
  *  3. change le mot de passe, comme le fait la route du backoffice ;
  *  4. écrit « done » et sort en 0 si le changement a abouti, puis
  *     « audit <n> » : le nombre de lignes `mcp-connection-revoked` que CET appel
- *     a écrites (le canal `security_audit` de ce processus) et
- *     « passwordaudit <n> » (`password-changed`) ; « failed <SQLSTATE> » et sort
- *     en 3 si la base l'a refusé (un interblocage, 40P01 ; la classe pour toute
- *     autre exception) — jamais le message du pilote ; sort en
+ *     a écrites (le canal `security_audit` de ce processus),
+ *     « passwordaudit <n> » (`password-changed`) et « retried <n> » (S3 : le
+ *     nombre d'interblocages que la relance unique a absorbés, lu sur la sonde de
+ *     tous les canaux) ; « failed <SQLSTATE> » et sort
+ *     en 3 si la base l'a refusé (un interblocage resté après la relance, 40P01 ;
+ *     la classe pour toute autre exception) — jamais le message du pilote ; sort en
  *     ChildPhpProcess::SETUP_FAILED s'il n'a pas pu se mettre en place.
  */
 
@@ -80,6 +82,19 @@ if (null === $auditHandler) {
     exit(ChildPhpProcess::SETUP_FAILED);
 }
 
+// La sonde de tous les canaux (niveau `debug`, la même instance pour chaque
+// logger) : ce que la relance a journalisé, hors du canal d'audit.
+$allChannelsHandler = null;
+foreach ($auditLogger->getHandlers() as $handler) {
+    if ($handler instanceof TestHandler && Level::Debug === $handler->getLevel()) {
+        $allChannelsHandler = $handler;
+    }
+}
+if (null === $allChannelsHandler) {
+    fwrite(\STDERR, "Aucune sonde de tous les canaux.\n");
+    exit(ChildPhpProcess::SETUP_FAILED);
+}
+
 $connection = $entityManager->getConnection();
 $connection->executeStatement("SET statement_timeout = '8s'");
 if (\is_string($deadlockTimeout)) {
@@ -114,8 +129,16 @@ foreach ($auditHandler->getRecords() as $record) {
     }
 }
 
+$retried = 0;
+foreach ($allChannelsHandler->getRecords() as $record) {
+    if ('deadlock-retried' === ($record->context['event'] ?? null)) {
+        ++$retried;
+    }
+}
+
 echo "done\n";
 echo 'audit '.$revoked."\n";
 echo 'passwordaudit '.$passwordChanged."\n";
+echo 'retried '.$retried."\n";
 
 exit(0);

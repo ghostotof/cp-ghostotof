@@ -37,13 +37,17 @@ interface AccountMcpConnectionsRevokerInterface
      * d'abord, puis ses connexions, par identifiant — l'ordre de tout le
      * module, aucun chemin ne prend une connexion puis le compte.
      *
-     * **Un cycle reste possible, accepté** (#650, F1, décision de l'auteur du
-     * 2026-10-28) : le premier échange du code d'un nouvel accord du même client
-     * (il verrouille sa connexion C2, puis veut les autres du couple, C1) croisant
-     * cette révocation (qui prend C1, puis veut C2 : C1 < C2, UUID v7) — chacune
-     * attend ce que l'autre tient, PostgreSQL en annule une (`40P01`, un 500, rien
-     * ne réessaie) et les deux transactions restent atomiques. Ni `NOWAIT` ni
-     * verrou de la paire avant league. Épinglé par `AccountWideRevocationDeadlockTest`.
+     * **Un cycle reste possible** (#650, F1) : le premier échange du code d'un nouvel accord
+     * du même client (il verrouille sa connexion C2, puis veut les autres du couple, C1)
+     * croisant cette révocation (qui prend C1, puis veut C2 : C1 < C2, UUID v7) — chacune
+     * attend ce que l'autre tient, PostgreSQL en annule une (`40P01`) et les deux
+     * transactions restent atomiques. **Côté révocation, l'appelant relance toute sa
+     * transaction verrouillée une fois** (S3, CR4, `DeadlockRetryInterface` : changement de
+     * mot de passe, rétrogradation, activation par lien ; l'audit suit le seul COMMIT
+     * abouti) ; un second interblocage remonte (un 500). **Côté échange** (league), aucune
+     * relance : le client reçoit un 500 du point de jeton, son code reste échangeable.
+     * Ni `NOWAIT` ni verrou de la paire avant league. Épinglé par
+     * `AccountWideRevocationDeadlockTest`, un cas par victime.
      *
      * N'écrit aucune ligne d'audit. Une connexion déjà révoquée garde son
      * instant et sa cause, et n'est pas rendue.

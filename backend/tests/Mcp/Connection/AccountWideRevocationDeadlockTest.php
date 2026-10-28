@@ -16,9 +16,11 @@ use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\Process\Process;
 
 /**
- * L'interblocage accepté de #650 (F1 de la relecture, R4), reproduit en
- * processus réels et épinglé : **la révocation de tout le compte croise le
- * premier échange du code d'un nouvel accord**.
+ * L'interblocage de #650 (F1 de la relecture, R4), reproduit en processus
+ * réels : **la révocation de tout le compte croise le premier échange du code
+ * d'un nouvel accord**. Accepté en R4 sans relance, il est depuis S3 (CR4)
+ * **absorbé côté révocation** : un changement de mot de passe interbloqué est
+ * relancé une fois.
  *
  * Le compte A tient C1 (ancienne connexion, active, échangée) et C2 (un nouvel
  * accord au même client, son code pas encore échangé). UUID v7 : C1 < C2.
@@ -34,12 +36,21 @@ use Symfony\Component\Process\Process;
  *
  * Si la révocation prend C1 pendant que l'échange tient C2, chacune attend ce
  * que l'autre tient : un cycle, que PostgreSQL rompt en annulant l'une
- * (`40P01`, sans nouvel essai : un 500 pour la requête annulée). **Ce n'est
- * pas corrigé, par décision de l'auteur** (pas de `NOWAIT`, pas de
- * verrouillage de la paire avant league) : c'est une limite écrite
- * (`.claude/rules/mcp-oauth-revocation-personne.md`), et ce test l'épingle — un
- * cycle reproduit, **exactement une** des deux transactions annulée, l'autre
- * aboutie, **les deux atomiques**.
+ * (`40P01`). **Deux issues, selon la victime** :
+ *
+ *  - la **révocation** est annulée : l'administrateur qui change un mot de
+ *    passe compromis recevait un 500, le mot de passe inchangé, les connexions
+ *    vivantes — la remédiation échouait en silence (CR4). `DeadlockRetry`
+ *    relance maintenant **toute** la transaction verrouillée, une fois, sur un
+ *    EntityManager remis à neuf : le second essai aboutit, après l'échange
+ *    (qui a pris C1 dès l'annulation) ;
+ *  - l'**échange** est annulé : côté league, hors périmètre, sans relance —
+ *    le client OAuth reçoit un 500 du point de jeton (`server_error`), son
+ *    code reste échangeable (non révoqué), il le présente à nouveau.
+ *
+ * Pas de `NOWAIT`, pas de verrouillage de la paire avant league : la limite est
+ * écrite (`.claude/rules/mcp-oauth-revocation-personne.md`) et ce test la
+ * garde.
  *
  * **L'entrelacement** (le tas n'y est pour rien : seule la file d'attente de
  * PostgreSQL ordonne les verrous). Le test tient C1 `FOR UPDATE` dans une
@@ -57,15 +68,21 @@ use Symfony\Component\Process\Process;
  * trouve le cycle. Le fils qui doit être la victime démarre avec
  * `deadlock_timeout = 100ms` (l'autre garde la seconde par défaut) — un
  * `SET` de session, permis au rôle de la suite — ; deux tests, un par victime.
- * Chacun vérifie la cohérence de ce qui reste :
+ * Que le cycle ait eu lieu se prouve ainsi : côté échange, par son `40P01` ;
+ * côté révocation, qui ne montre plus d'échec, par la ligne de journal de la
+ * relance (`retried 1`). État final de chacun :
  *
- *  - la **révocation** annulée : le mot de passe (et sa date) n'a pas changé,
- *    aucune connexion n'est révoquée `password-changed`, ni auditée ; l'échange
- *    a abouti (`issued 200`) et remplacé C1 (`superseded`) ;
+ *  - la **révocation** annulée puis relancée : le mot de passe a changé, sa
+ *    date aussi et la version des identifiants a avancé **une fois** (le
+ *    premier essai, annulé, n'a rien laissé) ; l'échange, qui a gagné le
+ *    cycle, a remplacé C1 (`superseded`, déjà inactive : la relance ne la
+ *    révoque pas) et émis ses jetons pour C2, que la relance a révoquée
+ *    `password-changed` ; **une** ligne d'audit de connexion (C2 seule) et
+ *    **une** ligne `password-changed` (l'audit suit le COMMIT réussi) ;
  *  - l'**échange** annulé : aucun jeton n'a été émis pour C2, son code est
  *    toujours échangeable (non révoqué, `code_exchanged_at` nul) ; la
- *    révocation a abouti — mot de passe changé, C1 et C2 révoquées
- *    `password-changed`, deux lignes d'audit.
+ *    révocation a abouti du premier coup — mot de passe changé, C1 et C2
+ *    révoquées `password-changed`, deux lignes d'audit, aucune relance.
  *
  * Aucun secret en argument ni en sortie : le corps de l'échange (le code) passe
  * par l'entrée standard du fils, le mot de passe est tiré au hasard dans le fils
@@ -76,9 +93,8 @@ use Symfony\Component\Process\Process;
  * révocation et le remplacement sautent la ligne tenue au lieu de l'attendre :
  * les deux tests rouges à l'attente (le fils « s'est arrêté sans attendre un
  * verrou »), aucun cycle ; `ORDER BY c.id DESC` — la révocation prend C2 avant
- * C1 et le cycle disparaît : les deux rouges sur « exactement une des deux
- * transactions annulée » (l'ordre croissant des identifiants est bien ce qui
- * forme ce cycle, et change ce que le test voit).
+ * C1 et le cycle disparaît : les deux rouges (plus de `40P01` côté échange, plus
+ * de relance côté révocation). Mutations de S3 : voir `DeadlockRetryTest`.
  */
 final class AccountWideRevocationDeadlockTest extends WebTestCase
 {
@@ -121,7 +137,7 @@ final class AccountWideRevocationDeadlockTest extends WebTestCase
     }
 
     #[DataProvider('victims')]
-    public function testAnAccountWideRevocationCrossingTheFirstExchangeOfANewGrantAbortsExactlyOneOfThem(bool $revocationIsTheVictim): void
+    public function testAnAccountWideRevocationCrossingTheFirstExchangeOfANewGrantIsRetriedWhenItIsTheVictim(bool $revocationIsTheVictim): void
     {
         // C1 échangée, puis un second accord du même compte au même client (C2,
         // son code pas encore échangé) : dans cet ordre, la session du client
@@ -145,15 +161,19 @@ final class AccountWideRevocationDeadlockTest extends WebTestCase
         $revocationFailed = 1 === preg_match('/^failed '.self::DEADLOCK.'$/m', $revocationOutput);
         $exchangeFailed = 1 === preg_match('/^failed '.self::DEADLOCK.'$/m', $exchangeOutput);
         $observed = \sprintf('révocation : %s | échange : %s', trim($revocationOutput), trim($exchangeOutput));
-        // Le cycle est reproduit : une transaction annulée, l'autre aboutie — celle qu'on a désignée.
-        self::assertNotSame($revocationFailed, $exchangeFailed, 'Exactement une des deux transactions aurait dû être annulée (40P01). '.$observed);
-        self::assertSame($revocationIsTheVictim, $revocationFailed, 'Ce n\'est pas la victime désignée qui a été annulée. '.$observed);
+        // Jamais d'échec de la révocation : relancée, elle aboutit ; l'échange,
+        // lui, est annulé ou non selon la victime désignée.
+        self::assertFalse($revocationFailed, 'La révocation interbloquée n\'a pas été absorbée par la relance. '.$observed);
+        self::assertSame(!$revocationIsTheVictim, $exchangeFailed, 'Ce n\'est pas la victime désignée qui a été annulée. '.$observed);
+        // Le cycle a eu lieu : la révocation l'a absorbé (une relance), ou
+        // l'échange en est mort (son 40P01 ci-dessus, et aucune relance).
+        self::assertSame(1, preg_match('/^retried '.($revocationIsTheVictim ? '1' : '0').'$/m', $revocationOutput), $observed);
 
         $causes = $this->mcpRows()->fetchAllKeyValue('SELECT id, revocation_cause FROM mcp_connection');
         $accountAfter = $this->accountCredentials($first);
 
         if ($revocationIsTheVictim) {
-            $this->assertTheRevocationWasRolledBackAndTheExchangeServed($exchange, $revocation, $exchangeOutput, $revocationOutput, $passwordBefore, $accountAfter, $causes, $first, $secondId);
+            $this->assertTheRevocationWasRetriedAndTheExchangeServed($exchange, $revocation, $exchangeOutput, $revocationOutput, $passwordBefore, $accountAfter, $causes, $first, $secondId);
 
             return;
         }
@@ -162,14 +182,16 @@ final class AccountWideRevocationDeadlockTest extends WebTestCase
     }
 
     /**
-     * La révocation est la victime : rien d'elle ne survit (atomique), et
-     * l'échange, qui attendait C1, l'a prise ensuite et a remplacé l'ancienne.
+     * La révocation est la victime, relancée une fois (S3) : rien du premier
+     * essai ne survit (atomique), l'échange, qui attendait C1, l'a prise
+     * ensuite et a remplacé l'ancienne, et le second essai a coupé ce qui
+     * restait actif — C2 — puis écrit l'audit, une seule fois.
      *
-     * @param array{password: mixed, changed: mixed}  $passwordBefore
-     * @param array{password: mixed, changed: mixed}  $accountAfter
-     * @param array<array-key, mixed>                 $causes
+     * @param array{password: mixed, changed: mixed, version: mixed} $passwordBefore
+     * @param array{password: mixed, changed: mixed, version: mixed} $accountAfter
+     * @param array<array-key, mixed>                                $causes
      */
-    private function assertTheRevocationWasRolledBackAndTheExchangeServed(
+    private function assertTheRevocationWasRetriedAndTheExchangeServed(
         Process $exchange,
         Process $revocation,
         string $exchangeOutput,
@@ -181,27 +203,36 @@ final class AccountWideRevocationDeadlockTest extends WebTestCase
         string $secondId,
     ): void {
         $observed = $revocationOutput.' | '.$exchangeOutput;
-        self::assertSame(3, $revocation->getExitCode(), $observed);
+        self::assertSame(0, $revocation->getExitCode(), 'La révocation aurait dû aboutir au second essai : '.$revocationOutput);
+        self::assertSame(1, preg_match('/^done$/m', $revocationOutput), $observed);
         self::assertSame(0, $exchange->getExitCode(), 'L\'échange aurait dû aboutir : '.$exchangeOutput);
         self::assertSame(1, preg_match('/^issued 200$/m', $exchangeOutput), $exchangeOutput);
 
-        self::assertSame($passwordBefore, $accountAfter, 'La révocation annulée a laissé son mot de passe : elle n\'est plus atomique. '.$observed);
-        self::assertNotContains('password-changed', $causes, 'Une connexion révoquée `password-changed` par une révocation annulée. '.$observed);
-        self::assertSame('superseded', $causes[$first->connectionId] ?? null, 'L\'échange aurait dû remplacer C1. '.$observed);
-        self::assertArrayHasKey($secondId, $causes);
-        self::assertNull($causes[$secondId], 'C2, la connexion du code échangé, doit rester active. '.$observed);
-        self::assertSame(1, $this->tokensOf($secondId, 'mcp_access_token'), 'Une paire de jetons pour C2. '.$observed);
-        self::assertSame(1, $this->tokensOf($secondId, 'mcp_refresh_token'), $observed);
-        self::assertStringNotContainsString('audit', $revocationOutput, 'Une ligne d\'audit pour une révocation annulée. '.$observed);
+        self::assertNotSame($passwordBefore['password'], $accountAfter['password'], 'Le mot de passe aurait dû changer au second essai. '.$observed);
+        self::assertNotSame($passwordBefore['changed'], $accountAfter['changed'], $observed);
+        // Une seule fois : le premier essai, annulé, n'a rien laissé, et le second
+        // ne rejoue pas le premier — sinon les sessions ouvertes seraient refusées deux fois
+        // (et un incrément perdu en cas de course).
+        self::assertSame(
+            \is_int($passwordBefore['version']) ? $passwordBefore['version'] + 1 : null,
+            $accountAfter['version'],
+            'La version des identifiants aurait dû avancer exactement une fois. '.$observed,
+        );
+        // L'état final exact : C1 remplacée par l'échange gagnant (la relance ne
+        // la touche pas : inactive), C2 coupée par le changement de mot de passe.
+        self::assertSame('superseded', $causes[$first->connectionId] ?? null, 'L\'échange gagnant aurait dû remplacer C1. '.$observed);
+        self::assertSame('password-changed', $causes[$secondId] ?? null, 'La relance aurait dû couper C2, dont l\'échange venait d\'aboutir. '.$observed);
+        self::assertSame(1, preg_match('/^audit 1$/m', $revocationOutput), 'Une ligne d\'audit, C2 seule : C1 était déjà remplacée. '.$observed);
+        self::assertSame(1, preg_match('/^passwordaudit 1$/m', $revocationOutput), 'Une seule ligne `password-changed`, au COMMIT du second essai. '.$observed);
     }
 
     /**
      * L'échange est la victime : aucun jeton, le code toujours échangeable, la
      * connexion non notée ; la révocation a coupé les deux connexions du compte.
      *
-     * @param array{password: mixed, changed: mixed}  $passwordBefore
-     * @param array{password: mixed, changed: mixed}  $accountAfter
-     * @param array<array-key, mixed>                 $causes
+     * @param array{password: mixed, changed: mixed, version: mixed} $passwordBefore
+     * @param array{password: mixed, changed: mixed, version: mixed} $accountAfter
+     * @param array<array-key, mixed>                                $causes
      */
     private function assertTheExchangeWasRolledBackAndTheRevocationServed(
         Process $exchange,
@@ -222,6 +253,7 @@ final class AccountWideRevocationDeadlockTest extends WebTestCase
         self::assertSame(1, preg_match('/^passwordaudit 1$/m', $revocationOutput), $observed);
 
         self::assertNotSame($passwordBefore['password'], $accountAfter['password'], 'Le mot de passe aurait dû changer. '.$observed);
+        self::assertSame(\is_int($passwordBefore['version']) ? $passwordBefore['version'] + 1 : null, $accountAfter['version'], 'La version des identifiants aurait dû avancer une fois. '.$observed);
         self::assertSame('password-changed', $causes[$first->connectionId] ?? null, 'C1 aurait dû être révoquée par le changement de mot de passe. '.$observed);
         self::assertSame('password-changed', $causes[$secondId] ?? null, 'C2 aussi : toutes les connexions actives du compte. '.$observed);
         self::assertSame(0, $this->tokensOf($secondId, 'mcp_access_token'), 'Un jeton émis par un échange annulé. '.$observed);

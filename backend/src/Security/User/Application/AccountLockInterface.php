@@ -22,6 +22,12 @@ use Closure;
  * relecture écrase sans prévenir toute modification faite en mémoire. Ordre imposé à toute
  * opération : le compte d'abord, ses jetons ensuite — l'ordre inverse
  * provoquerait un interblocage.
+ *
+ * **Aucune relance ici** : un interblocage (`40P01`) annule la transaction et
+ * remonte à l'appelant. Ceux dont l'opération se rejoue sans effet de bord
+ * (changement de mot de passe, activation par lien) la demandent à
+ * {@see DeadlockRetryInterface}, qui relit ce qu'ils tiennent ; les autres
+ * (le handler d'invitation envoie un lien) n'y sont pas soumis.
  */
 interface AccountLockInterface
 {
