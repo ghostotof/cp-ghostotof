@@ -737,8 +737,33 @@ voyait « mot de passe changé », puis sa prochaine action échouait en « Une 
   `mcp-oauth-purge.md:76`, `McpConnectionRepository.php:338`), `revokeActiveOfAccount()` hors transaction
   (`mcp-oauth-cycle-de-vie.md:122`), fenêtre migration→rollout documentée (aucune exposition : `main`/`develop` sans
   `Mcp/Connection`), limites F1/F2/F5 mises à jour, R1–R4 décrits.
-- [ ] Page : pas d'échéance pour une connexion révoquée ; « Jamais utilisée » distingue un accord abandonné
+- [x] Page : pas d'échéance pour une connexion révoquée ; « Jamais utilisée » distingue un accord abandonné
   (`code_exchanged_at` nul) d'une connexion échangée pas encore rafraîchie ; `aria-controls` valide menu fermé
-  (`v-show`) ; `load()` protégé contre les réponses dans le désordre.
-- [ ] Backend : `deadline()` calculée une fois par ligne ; ligne d'audit de révocation factorisée ; tuple de
-  `setSuperAdmin()` remplacé par un type ; test « révoquée puis échue reste `revoked` ».
+  (`v-show`) ; `load()` protégé contre les réponses dans le désordre. *Fait (R5a), plus le bandeau de session
+  finie de la décision de l'auteur.*
+- [x] Backend : `deadline()` calculée une fois par ligne ; ligne d'audit de révocation factorisée ; tuple de
+  `setSuperAdmin()` remplacé par un type ; test « révoquée puis échue reste `revoked` ». *Fait (R5a), plus le
+  journal `critical` du remplacement sauté et l'alignement `fn (`.*
+
+**R5a (partie code, 2026-10-28)** — la partie documentation (règles, spec, registre) reste à faire, R5b.
+Décisions : (1) `OwnMcpConnections::viewOf()` calcule `deadline()` une fois et la passe à `stateOf()` (`$now >= $deadline`,
+la comparaison d'`isExpiredAt()`). (2) La ligne d'audit factorisée dans `Application/RevokedConnectionAudit` (`record($connexion,
+$cause)` : l'appel au journal sous `FailSafeAudit`, message constant `Revoked connection not audited.`), à côté de `FailSafeAudit`
+et des deux appelants : même couche, aucune dépendance nouvelle (la deuxième porte vers `Security` est déjà prise par eux),
+une de moins par appelant ; ni `Shared` (vocabulaire de `Mcp`), ni `FailSafeAudit` (service générique sans dépendance sur
+`Security`). (3) `Security/User/Application/RoleChangeOutcome` (readonly, `unchanged()`, `changed(?RevokedAccountMcpConnections)`)
+remplace le tuple ; le corps de la fermeture est la méthode privée `writeRole()`. (4) `testARevokedThenExpiredConnectionStaysRevoked`
+(mutation : l'ordre de `stateOf()` inversé le fait rougir). (5) `CodeExchangeSupersession` journalise `critical`, message constant
+et sans contexte, un code qui ne désigne aucune connexion ou une connexion introuvable après un échange réussi (deux messages,
+deux tests). (6) `fn (` avec espace : forme majoritaire du dépôt (62 contre 7 en `src/`, 493 contre 40 en `tests/`), aucune
+règle de `make back-style-fix` (il n'applique que `ordered_imports` et `native_function_invocation`) ; les 47 occurrences de
+`fn(` sont alignées. (7) L'API rend `expiresAt: null` pour une connexion **révoquée** (la page n'a pas à décider de taire une
+date ; une expirée marquée garde la sienne) ; le dépôt frontend exige `expiresAt === null` exactement quand `state === 'revoked'`.
+(8) L'API expose `codeExchanged` (booléen, pas l'instant approché par le rattrapage de #730) ; « Jamais aboutie » / « Pas encore
+renouvelée » (EN : « Never completed » / « Not renewed yet »). (9) Le menu du compte desktop passe en `v-show` ; les tests d'`AppHeader`
+lisent « rien hors du menu » (`outsideDesktopMenu`) au lieu de « rien dans le DOM ». (10) `useMcpConnections.load()` : numéro de
+séquence, une réponse (ou une erreur) plus ancienne que la dernière lecture lancée est jetée ; `sessionExpired` dit à la page
+que le serveur a refusé la session. (11) `LoginPage` : bandeau `role="status"` pour `expired=1` (`presentation/router/sessionEnded.ts`,
+posé par `backofficeSessionExpiry.ts` et par le lien de reconnexion de « Mes connexions MCP »). Garde de `redirect`
+(`startsWith('/') && !startsWith('//')`, chaîne seulement) vérifiée : pas de redirection ouverte — `router.push` d'une chaîne
+fabrique l'URL à partir de l'origine (`createBaseLocation()`), donc `/\hôte` (que la garde laisse passer) reste sur l'origine.

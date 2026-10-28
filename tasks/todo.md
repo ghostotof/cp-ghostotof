@@ -147,6 +147,7 @@ phase 1 parte en release seule ; puis au merge de clôture, qui archive la spec 
   - [x] R3. Relecture F6 : liste bornée (non révoquées + 50 dernières terminées)
   - [x] R4. Relecture CR3/F1 : `code_exchanged_at` robuste ; interblocage écrit et épinglé — **sensible**
   - [ ] R5. Relecture : corrections mineures et documentation
+      R5a (partie code) faite le 2026-10-28 (plan, « Corrections de relecture ») ; R5b (règles, spec, registre) reste à faire.
       **Notes de la release** (tâche 11, PR de la mère vers `develop`) :
       - deux migrations **avant le rollout**, dans l'ordre : `Version20261028120000` (le `CHECK` des causes de
         révocation, huit valeurs) puis `Version20261028140000` (colonne `code_exchanged_at` et rattrapage des
