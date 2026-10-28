@@ -68,6 +68,12 @@ services:
       # resynchronisation ne suffisent, `docker compose up -d --force-recreate
       # backend` le recharge.
       - ./.dockerignore:/var/www/.dockerignore:ro
+      # Lecture seule, pour que PHPUnit compare les hôtes du contrôle quotidien
+      # des certificats aux Ingress (TlsExpiryWatchCoversEveryIngressHostTest,
+      # issue #719), comme en CI. Un répertoire, pas le fichier : un montage de
+      # répertoire suit les remplacements (éditeur, git). Un conteneur créé
+      # avant cette ligne ne l'a pas : `docker compose up -d backend`.
+      - ./.github/workflows:/var/www/.github/workflows:ro
       # Lecture seule, pour que PHPUnit compare au serveur MCP ce que le front
       # en publie (#673) : le catalogue recopié par la page « Brancher votre
       # assistant » (ConnectAssistantPageMirrorsCatalogueTest) et le chemin du
