@@ -208,7 +208,21 @@ final class TokenEndpointConcurrencyTest extends WebTestCase
      * discrimine donc que sous le plan actuel, un parcours séquentiel de
      * quelques lignes ; un plan par index le laisserait vert sans
      * `ORDER BY` (`.claude/rules/backend-outillage.md`, « Concurrency
-     * tests »). Le test tient Ca `FOR UPDATE` (le premier verrou de la
+     * tests »).
+     *
+     * **La disposition du tas est construite, jamais supposée** (#650, R4) :
+     * le test repart d'un `TRUNCATE` de `mcp_connection` (page 0, emplacements
+     * 1, 2, 3 ; la version réécrite de Ca à l'emplacement 4), puis `ANALYZE`
+     * pour que le plan soit le parcours séquentiel. Sans cela, il dépendait de
+     * ce que les autres tests de la suite avaient laissé : les trois lignes sur
+     * trois pages différentes (`(0,22)`, `(1,19)`, `(2,18)` mesuré), et la
+     * version réécrite de Ca, restée sur la page 0, **avant** Cb — la
+     * précondition échouait par intermittence (4 passages sur 14 de
+     * `tests/Mcp`). Il vérifie en plus ce que la précondition veut dire : la
+     * recherche des autres connexions du couple **sans** `ORDER BY` rend bien
+     * Cb avant Ca (un plan par index la ferait rendre l'ordre des
+     * identifiants, et le test ne discriminerait rien — c'est ce que
+     * `TRUNCATE` seul donnait, des statistiques vides). Le test tient Ca `FOR UPDATE` (le premier verrou de la
      * purge), l'enfant échange le code de C3 et doit bloquer sur Ca ; le
      * test demande alors Cb `FOR UPDATE NOWAIT` : dans l'ordre des
      * identifiants l'enfant n'a encore rien pris d'autre, elle est libre ; il
@@ -220,6 +234,16 @@ final class TokenEndpointConcurrencyTest extends WebTestCase
      */
     public function testASupersessionLocksTheOtherConnectionsInIdOrder(): void
     {
+        // Le tas de `mcp_connection` repart de zéro (#650, R4) : le test se
+        // fonde sur la disposition physique de la table, que les autres tests
+        // de la suite remplissent — leurs lignes supprimées laissent des
+        // emplacements libres que la version réécrite de Ca reprend, parfois
+        // **avant** celui de Cb, et l'ordre du tas ne contredisait plus celui
+        // des identifiants (échec intermittent de la suite complète, 2 passages
+        // sur 6, avant ce correctif). `TRUNCATE` donne un tas neuf : les trois
+        // lignes aux emplacements 1, 2 et 3 de la page 0, la version réécrite
+        // de Ca à l'emplacement 4. Aucune autre session n'écrit pendant le test.
+        $this->mcpRows()->executeStatement('TRUNCATE mcp_connection CASCADE');
         $this->grantedCode();
         $this->codeGrantedByTheSignedInAccount();
         $code = $this->codeGrantedByTheSignedInAccount();
@@ -231,6 +255,11 @@ final class TokenEndpointConcurrencyTest extends WebTestCase
         self::assertIsString($lower);
         self::assertIsString($higher);
 
+        // Les statistiques de la table neuve disent « aucune ligne » : le planificateur
+        // choisit alors un parcours par index, qui lirait l'ordre des identifiants quel
+        // que soit le tas. `ANALYZE` lui apprend qu'il s'agit de trois lignes sur une
+        // page — le parcours séquentiel du plan que le test discrimine.
+        $this->mcpRows()->executeStatement('ANALYZE mcp_connection');
         // Une nouvelle version de la ligne de Ca : elle prend place après Cb
         // dans le tas, l'ordre d'un parcours séquentiel. Mise à jour HOT :
         // l'index ne bouge pas, un parcours par index lirait encore Ca avant
@@ -240,6 +269,22 @@ final class TokenEndpointConcurrencyTest extends WebTestCase
             [$higher, $lower],
             $this->mcpRows()->fetchFirstColumn('SELECT id FROM mcp_connection WHERE id IN (?, ?) ORDER BY ctid', [$lower, $higher]),
             'L\'ordre du tas ne contredit pas celui des identifiants : le test ne discriminerait rien.',
+        );
+        // Et ce que la précondition veut dire : la recherche des autres
+        // connexions du couple, **sans** `ORDER BY` (l'`UPDATE` sans correctif),
+        // lit Cb avant Ca. Même prédicat que `revokeWhere()` (`WHERE_OTHERS_OF_PAIR`,
+        // `revoked_at IS NULL`), même base, mêmes statistiques : le plan que
+        // l'enfant obtiendrait sans l'`ORDER BY`. Un plan qui rendrait l'ordre
+        // des identifiants (un autre parcours) ferait échouer ici, pas passer
+        // le test pour rien.
+        self::assertSame(
+            [$higher, $lower],
+            $this->mcpRows()->fetchFirstColumn(
+                'SELECT c.id FROM mcp_connection c WHERE c.account_id = (SELECT account_id FROM mcp_connection WHERE id = :kept)'
+                .' AND c.mcp_client_id = (SELECT mcp_client_id FROM mcp_connection WHERE id = :kept) AND c.id <> :kept AND c.revoked_at IS NULL',
+                ['kept' => $kept],
+            ),
+            'La recherche sans ORDER BY ne lit pas Cb avant Ca : le test ne discriminerait rien (plan par index ?).',
         );
 
         [$holderSqlState, $concurrent] = $this->exchangeWhileHolding(

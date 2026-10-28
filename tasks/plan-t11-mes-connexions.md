@@ -723,6 +723,15 @@ voyait « mot de passe changé », puis sa prochaine action échouait en « Une 
   Docblocks corrigés : `revokeAllActiveOfAccount()` (interface, dépôt), `AccountMcpConnectionsRevokerInterface`,
   `revokeOtherActiveOf()`, `TokenEndpoint::issue()` (« trois croisements »), `OwnMcpConnections`, `CpgUserAdministrator`.
 
+- [x] Test instable `TokenEndpointConcurrencyTest::testASupersessionLocksTheOtherConnectionsInIdOrder` (ajouté par la
+  tâche, demande de l'auteur du 2026-10-28). Cause mesurée : la disposition physique de `mcp_connection` — les trois lignes
+  du test sur **trois pages** (`(0,22)`, `(1,19)`, `(2,18)`) quand les tests précédents ont laissé la table fragmentée, la
+  version réécrite de Ca restant sur la page 0, avant Cb (4 échecs sur 14 passages de `tests/Mcp`). *Fait.* `TRUNCATE
+  mcp_connection CASCADE` en tête du test (tas neuf : emplacements 1, 2, 3, la version réécrite à 4), `ANALYZE` (sinon les
+  statistiques vides donnent un plan par index, qui lit l'ordre des identifiants), et une seconde précondition qui dit ce que
+  la première veut dire : la recherche des autres connexions du couple sans `ORDER BY` rend Cb avant Ca. Mutation (`ORDER BY`
+  retiré de `revokeWhere()`) : rouge, `55P03`, ce test seul. 20 passages de `tests/Mcp` : 20 verts.
+
 ### Task R5 : corrections mineures et documentation
 - [ ] Règles et docblocks : « three » → « five » révocations (`mcp-oauth-cycle-de-vie.md:92`, `:332`,
   `mcp-oauth-purge.md:76`, `McpConnectionRepository.php:338`), `revokeActiveOfAccount()` hors transaction
