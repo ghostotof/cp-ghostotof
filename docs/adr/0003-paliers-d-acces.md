@@ -16,7 +16,8 @@
   voir D5. En production depuis `v0.9.0` (2026-09-13). Voir « Clôture » en fin de document pour ce
   qui a suivi la release et ce qui reste éditorial. **Amendée le 2026-09-21** (3e audit, constat
   A9) : le risque accepté « le logout ne révoque pas le jeton » est consigné en fin de
-  « Conséquences ». **D1 amendée le 2026-10-19** (ADR 0006, issue #379) : le serveur MCP sert le
+  « Conséquences » — **réduit le 2026-10-28** (#650) : un jeton antérieur au dernier changement de
+  mot de passe du compte est refusé par toute l'API. **D1 amendée le 2026-10-19** (ADR 0006, issue #379) : le serveur MCP sert le
   palier de base sans authentification, voir l'encadré sous D1.
 - Date : 2026-09-10
 - Portée : `config/packages/security.yaml`, `src/Security/User`, `src/Security/Authentication`,
@@ -256,6 +257,38 @@ comptes qui cesse d'être anecdotique. Les deux remèdes, avec leur prix :
   remplacement du Secret `jwt-keys` et redéploiement) — coupe-circuit global, immédiat, sans aucun
   état ajouté, mais il invalide **tous** les jetons en cours, y compris ceux du palier de base. À
   réserver à l'incident ; c'est la réponse à « un jeton a fuité et on ne sait pas lequel ».
+
+**Amendement du 2026-10-28 (#650, R1b de la relecture de « Mes connexions MCP ») — le risque est réduit :
+un jeton antérieur au dernier changement de mot de passe du compte est refusé.** Le JWT reste non
+révocable *individuellement* — `POST /api/logout` n'écrit toujours aucun état, un jeton copié avant la
+déconnexion reste valable jusqu'à son échéance, et la clé de signature reste le coupe-circuit global —,
+mais il ne survit plus au mot de passe qu'il a prouvé. C'est la remédiation d'un cookie volé : la personne
+(ou un `ROLE_SUPER`, `PUT /api/backoffice/users/{id}/password`, ou le lien d'invitation qui remplace ou pose
+un mot de passe) change le mot de passe, et **toute requête suivante portant un cookie émis à l'instant du
+changement ou avant reçoit un 401** — sur toute l'API authentifiée par le cookie, pas seulement au
+consentement MCP où la règle est née (R1). Le premier 401 efface les deux cookies d'authentification, comme
+la déconnexion : le firewall `api` authentifie dès qu'un `BEARER` est présent, route publique comprise, et un
+cookie mort resterait une heure dans le navigateur à faire échouer tout `/api`.
+
+Pourquoi cela ne rouvre pas le refus d'une liste de révocation (« un état serveur consulté à chaque
+requête »). Rien n'est ajouté à lire : le compte est déjà rechargé en base à chaque requête authentifiée
+(`cpg_users`), la colonne `cpg_user.credentials_changed_at` est sur cette ligne, et le `iat` est dans le
+payload que Lexik vient de décoder. La comparaison se fait sur le passeport, sans requête SQL ni seconde
+vérification de signature, et jamais pour un compte dont le mot de passe n'a pas changé. Elle se règle sur
+**un seul** prédicat, `CpgUser::hasChangedCredentialsSince()`, que le consentement MCP lit aussi. Écartés :
+un `jti` révoqué en base (la lecture par requête que l'ADR refuse), un authentificateur Lexik décoré
+(recopier une classe du vendor), `JWTAuthenticatedEvent` (émis après la création du jeton, pour l'enrichir)
+et un `UserChecker` (il ne reçoit jamais le payload, donc jamais l'instant d'authentification).
+
+Ce que cela ne ferme pas, et qui reste accepté : la **déconnexion** (elle ne change aucun mot de passe) ;
+un cookie volé d'un compte dont personne ne change le mot de passe ; la **même seconde**, refusée dans les
+deux sens (`iat` à la seconde contre une colonne `TIMESTAMP(0)` : on ne sait pas laquelle est venue la
+première, la tenir pour périmée ne coûte qu'une reconnexion) ; un instant d'authentification introuvable, tenu
+pour antérieur. Ne sont pas concernés l'accès de base (un `BaseAccessUser` reconstruit du payload, sans compte
+donc sans mot de passe) ni le jeton d'une connexion MCP (opaque, relu en base, déjà révoqué par le
+changement de mot de passe). Aucun JWT n'est rafraîchi par le site : un rafraîchissement ajouté un jour devra
+porter l'instant d'authentification d'origine dans une revendication à lui, ou cette comparaison ne protégera
+plus rien. Les conditions qui rouvrent la décision (ci-dessus) sont inchangées.
 
 ## Alternatives écartées
 

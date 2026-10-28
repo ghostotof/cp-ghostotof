@@ -77,6 +77,14 @@ framework:
         # celui d'une erreur du client, déjà tracée par `login-failed`.
         App\Security\Authentication\Infrastructure\Security\SubmittedPasswordTooLongException:
             log_level: info
+        # JWT de session émis avant le dernier changement de mot de passe du
+        # compte (#650, R1b) : même cas — levée par un écouteur de
+        # CheckPassportEvent, rattrapée par l'AuthenticatorManager du firewall
+        # `api`, rendue en 401 par Lexik sans atteindre logKernelException.
+        # L'entrée dit le niveau qu'elle aurait si elle s'échappait : une erreur
+        # du client, déjà tracée par « Authenticator failed. » (`security`).
+        App\Security\Authentication\Infrastructure\Security\SessionPredatesPasswordChangeException:
+            log_level: info
         # Jeton d'accès MCP refusé sur /api/mcp (#648) : même cas que
         # ci-dessus. Levée par McpBearerAuthenticator, rattrapée par
         # l'AuthenticatorManager du firewall `mcp`, rendue en 401

@@ -163,10 +163,12 @@ class CpgUser implements UserInterface, PasswordAuthenticatedUserInterface, Acco
      * dans la fermeture du verrou du compte, avec le mot de passe lui-même ; le
      * re-hachage à la connexion (même secret) ne l'écrit pas.
      *
-     * Le consentement MCP refuse un cookie de session authentifié avant cet
-     * instant (hasChangedCredentialsSince()) : le JWT n'est pas révocable (ADR
-     * 0003), et la coupure des connexions au changement de mot de passe ne
-     * couvrait pas ce qu'un cookie volé accordait ensuite.
+     * Toute l'API authentifiée par le cookie refuse une session émise avant cet
+     * instant (hasChangedCredentialsSince(), lu par
+     * SessionBeforePasswordChangeRefusalListener ; le consentement MCP le lit
+     * aussi) : le JWT n'est pas révocable (ADR 0003, amendé le 2026-10-28), et
+     * la coupure des connexions au changement de mot de passe ne couvrait pas
+     * ce qu'un cookie volé accordait ensuite.
      */
     #[ORM\Column(type: Types::DATETIMETZ_IMMUTABLE, nullable: true)]
     #[Ignore]

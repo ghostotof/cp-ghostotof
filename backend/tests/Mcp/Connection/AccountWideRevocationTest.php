@@ -440,9 +440,8 @@ final class AccountWideRevocationTest extends WebTestCase
 
         self::assertNotNull($this->credentialsChangedAtOf($held->accountId), 'Le PUT n\'a pas daté le changement de mot de passe.');
         self::assertNull($this->credentialsChangedAtOf($foreign->accountId), 'Le compte d\'un autre n\'est pas concerné.');
-        $this->restoreCookies($cookiesHeldBefore);
 
-        $this->assertConsentRefusedAsAStaleSession();
+        $this->assertConsentRefusedAsAStaleSession($cookiesHeldBefore);
         self::assertSame($connectionsBefore, $this->countRows('SELECT COUNT(*) FROM mcp_connection'));
         self::assertSame([], self::securityAuditEvents('mcp-connection-granted'));
     }
@@ -461,9 +460,8 @@ final class AccountWideRevocationTest extends WebTestCase
 
         self::assertSame(Response::HTTP_NO_CONTENT, $response->getStatusCode(), substr((string) $response->getContent(), 0, 500));
         self::assertNotNull($this->credentialsChangedAtOf($held->accountId), 'Le lien n\'a pas daté le remplacement du mot de passe.');
-        $this->restoreCookies($cookiesHeldBefore);
 
-        $this->assertConsentRefusedAsAStaleSession();
+        $this->assertConsentRefusedAsAStaleSession($cookiesHeldBefore);
     }
 
     /**
@@ -483,20 +481,31 @@ final class AccountWideRevocationTest extends WebTestCase
     }
 
     /**
-     * Le résumé, l'accord et le refus d'une session d'avant le changement : le
-     * même 401 typé, sur le cookie qu'on vient de restaurer.
+     * Le résumé, l'accord et le refus d'une session d'avant le changement : un
+     * 401 que le **firewall** rend, avant tout contrôleur (R1b : l'écouteur de
+     * `CheckPassportEvent` refuse la session pour toute l'API, le consentement
+     * compris), sur le cookie qu'on vient de restaurer. Le refus du consentement
+     * lui-même (`reauthentication-required`) n'est plus atteint par HTTP ; il
+     * reste pincé en unitaire par `ConsentServiceTest`.
+     *
+     * Chaque refus **efface** le cookie (le navigateur le perdrait) : le test le
+     * remet avant chaque requête, comme l'attaquant qui le garde.
+     *
+     * @param array<array-key, Cookie> $cookies la session d'avant le changement
      */
-    private function assertConsentRefusedAsAStaleSession(): void
+    private function assertConsentRefusedAsAStaleSession(array $cookies): void
     {
+        $this->restoreCookies($cookies);
         $this->client->request('GET', self::CONSENT_PATH.'?'.http_build_query($this->validParameters()));
         $summary = $this->client->getResponse();
         self::assertSame(Response::HTTP_UNAUTHORIZED, $summary->getStatusCode(), substr((string) $summary->getContent(), 0, 300));
-        self::assertSame('/errors/reauthentication-required', $this->json($summary)['type'] ?? null);
+        self::assertSame('Session closed by a password change.', $this->json($summary)['message'] ?? null);
 
         foreach ([true, false] as $approved) {
+            $this->restoreCookies($cookies);
             $decision = $this->decide(approved: $approved);
             self::assertSame(Response::HTTP_UNAUTHORIZED, $decision->getStatusCode(), substr((string) $decision->getContent(), 0, 300));
-            self::assertSame('/errors/reauthentication-required', $this->json($decision)['type'] ?? null);
+            self::assertSame('Session closed by a password change.', $this->json($decision)['message'] ?? null);
             self::assertArrayNotHasKey('redirectUri', $this->json($decision));
         }
     }

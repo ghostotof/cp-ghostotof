@@ -390,7 +390,8 @@ ADRs (status, dates and amendments live in each ADR):
   `CpgUser::getRoles()` (it grants `ROLE_USER` unconditionally, which is why a tier was added *above*) or
   `BaseAccessController`; and before adding a revocation list, lengthening `token_ttl` or gating anything
   more sensitive than the CV: **`POST /api/logout` does not revoke the JWT** (accepted risk, amended
-  2026-09-21).
+  2026-09-21; reduced on 2026-10-28, #650: a JWT issued at or before the account's last password
+  change is refused by the whole `api` firewall).
 - `docs/adr/0004-assistance-ia.md` — anything that calls a language model: one importing class behind an
   interface, bundle pinned exact, no call from a public render path, only publishable backoffice content
   leaves (the nominative CV only to the site's host or self-hosted), never a call on behalf of the base

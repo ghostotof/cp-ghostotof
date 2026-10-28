@@ -120,8 +120,12 @@ final readonly class ConsentService implements ConsentServiceInterface
      * Jugé **après** la revalidation de la demande, comme l'âge : une demande
      * devenue invalide reste son 400.
      *
-     * L'étendre au jeton de l'API tout entière (l'authentificateur JWT de Lexik)
-     * est hors de cette tâche : voir ADR 0003 (JWT non révocable, risque accepté).
+     * **Depuis R1b, le firewall `api` refuse déjà** toute session antérieure au
+     * changement de mot de passe, avant tout contrôleur
+     * (SessionBeforePasswordChangeRefusalListener, même prédicat) : par HTTP ce
+     * refus-ci n'est plus atteint. Il reste, comme la défense en profondeur d'une
+     * porte qui accorde une connexion de trente jours, pour tout appelant qui
+     * ne passerait pas par ce firewall ; il ne coûte rien à un compte sans changement.
      *
      * @throws ReauthenticationRequiredException
      */
