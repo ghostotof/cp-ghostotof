@@ -58,8 +58,17 @@ final readonly class ConsentController
     ) {
     }
 
+    /**
+     * Le résumé nomme aussi le compte qui accorde (#650) : l'identifiant de
+     * connexion du `CpgUser` dont le cookie arrive avec CETTE requête, jamais
+     * un état que la page aurait gardé — un autre onglet a pu changer de
+     * compte entre-temps. L'identifiant est celui de l'appelant lui-même (la
+     * route est `ROLE_TRUSTED`, nominatif par nature, ADR 0003) et n'entre dans
+     * aucun journal. Même lecture par `#[CurrentUser]` que `decide()` : un
+     * autre type d'utilisateur ferait échouer la résolution de l'argument.
+     */
     #[Route('/api/oauth/consent', name: 'oauth_consent_show', methods: ['GET'])]
-    public function show(Request $request): JsonResponse
+    public function show(Request $request, #[CurrentUser] CpgUser $account): JsonResponse
     {
         $summary = $this->consent->summarize($this->psrHttpFactory->createRequest($request));
 
@@ -72,6 +81,7 @@ final readonly class ConsentController
             'redirectHost' => $summary->redirectHost,
             'scope' => $summary->scope,
             'resource' => $summary->resource,
+            'account' => ['username' => $account->getUserIdentifier()],
         ]));
     }
 

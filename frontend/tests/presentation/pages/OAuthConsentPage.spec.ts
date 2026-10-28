@@ -54,6 +54,8 @@ const SUMMARY: ConsentRequest = {
   redirectHost: '127.0.0.1',
   scope: 'nominative:read',
   resource: 'https://site.example.test/api/mcp',
+  // Un compte fictif, distinct de tout identifiant du dépôt.
+  account: { username: 'trusted' },
 }
 
 const APPROVED_URL = 'http://127.0.0.1:33418/callback?code=abc&state=xyz&iss=https%3A%2F%2Fsite.example.test%2Fapi%2Foauth'
@@ -233,6 +235,48 @@ describe('OAuthConsentPage — résumé de la demande', () => {
 
     expect(wrapper.find('img').exists()).toBe(false)
     expect(wrapper.find('[data-testid="consent-client-name"]').text()).toContain('<img src=x onerror=alert(1)>')
+  })
+
+  it('dit quel compte accorde, en français, avec un lien « Changer de compte » vers la connexion', async () => {
+    const { wrapper, router } = await mountPage()
+
+    expect(wrapper.find('[data-testid="consent-account"]').text()).toBe('Vous accordez cet accès en tant que trusted')
+    const link = wrapper.find('[data-testid="consent-switch-account"]')
+    expect(link.text()).toBe('Changer de compte')
+    // Hors de la zone des boutons de décision : un clic sur ce lien n'est pas une décision.
+    expect(link.element.closest('[data-testid="consent-decision"]')).toBeNull()
+    const target = router.resolve(link.attributes('href') ?? '')
+    expect(target.name).toBe('login')
+    expect(target.params.locale).toBe('fr')
+    // Un retour à la même demande (toute la requête), et le drapeau qui ouvre la connexion à une personne déjà connectée.
+    expect(target.query.reauth).toBe('1')
+    const back = router.resolve(String(target.query.redirect))
+    expect(back.name).toBe('oauth-consent')
+    expect(back.query).toEqual(router.currentRoute.value.query)
+  })
+
+  it('en anglais : le compte et « Switch account »', async () => {
+    const { wrapper, router } = await mountPage({ locale: 'en' })
+
+    expect(wrapper.find('[data-testid="consent-account"]').text()).toBe('You are granting this access as trusted')
+    const link = wrapper.find('[data-testid="consent-switch-account"]')
+    expect(link.text()).toBe('Switch account')
+    expect(router.resolve(link.attributes('href') ?? '').params.locale).toBe('en')
+  })
+
+  it('rend l’identifiant du compte en texte, jamais en éléments', async () => {
+    const describeRequest = vi.fn(async () => ({ ...SUMMARY, account: { username: '<img src=x onerror=alert(1)>' } }))
+    const { wrapper } = await mountPage({ describeRequest })
+
+    expect(wrapper.find('img').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="consent-account"]').text()).toContain('<img src=x onerror=alert(1)>')
+  })
+
+  it('aucun compte affiché pendant le chargement du résumé', async () => {
+    const { wrapper } = await mountPage({ describeRequest: vi.fn(() => new Promise<ConsentRequest>(() => {})) })
+
+    expect(wrapper.find('[data-testid="consent-account"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="consent-switch-account"]').exists()).toBe(false)
   })
 
   it('aucun bouton pendant le chargement du résumé', async () => {

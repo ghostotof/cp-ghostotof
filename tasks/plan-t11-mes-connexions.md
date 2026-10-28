@@ -448,17 +448,17 @@ Ajoutée par décision de l'auteur du 2026-10-28 (prémisse inexacte de la déci
 - Produces : le résumé JSON gagne `"account": {"username": "<identifiant de connexion de l'appelant>"}` ;
   `ConsentRequest.account: { username: string }`.
 
-- [ ] **Step 1 : tests rouges.** `ConsentControllerTest::testTheSummaryNamesTheSignedInAccount` (compte `trusted` :
+- [x] **Step 1 : tests rouges.** `ConsentControllerTest::testTheSummaryNamesTheSignedInAccount` (compte `trusted` :
   `account.username` `trusted` ; après `signInAs()` d'`other-trusted` dans le même client, le sien) ; le 403 du
   palier de base et le 401 anonyme inchangés ; `SecurityAuditLoggerTest`/`AccountIdentifierReachesNoLogTest`
   restent verts (l'identifiant n'entre dans aucun journal). Vitest : le dépôt refuse un résumé sans `account`
   ou à `username` non chaîne (`invalid`) ; la page affiche « Vous accordez cet accès en tant que trusted » (FR/EN),
   et le lien « Changer de compte » vise `/<locale>/login?redirect=<fullPath>&reauth=1`.
-- [ ] **Step 2 : rouges.** **Step 3 : implémenter** : `show(Request $request, #[CurrentUser] CpgUser $account)` ;
+- [x] **Step 2 : rouges.** **Step 3 : implémenter** : `show(Request $request, #[CurrentUser] CpgUser $account)` ;
   `getUserIdentifier()` ; côté page, le compte placé au-dessus des boutons, dans le résumé (`<dl>`), le lien hors
   de la zone d'activation délibérée.
-- [ ] **Step 4 : vert** : `make back-test`, `make back-quality`, `make front-test`, `make front-lint`, `make front-build`.
-- [ ] **Step 5 : commit** `feat(mcp): la page de consentement dit quel compte accorde (#650)`.
+- [x] **Step 4 : vert** : `make back-test`, `make back-quality`, `make front-test`, `make front-lint`, `make front-build`.
+- [x] **Step 5 : commit** `feat(mcp): la page de consentement dit quel compte accorde (#650)`.
 
 ### Task 9 : frontend — le dépôt et le composable des connexions
 

@@ -791,6 +791,11 @@
     "intro": "Un client MCP demande à se connecter au serveur MCP de ce site en votre nom. Vérifiez la demande avant de décider.",
     "loading": "Chargement de la demande…",
     "submitting": "Transmission de votre décision…",
+    "account": {
+      "heading": "Le compte",
+      "grantingAs": "Vous accordez cet accès en tant que {username}",
+      "switch": "Changer de compte"
+    },
     "client": {
       "heading": "Le client",
       "nameLabel": "Nom du client",

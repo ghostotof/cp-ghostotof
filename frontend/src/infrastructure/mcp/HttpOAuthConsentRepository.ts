@@ -48,6 +48,8 @@ type UnprocessableMeaning = 'malformed-decision' | 'generic'
  * forme (version du backend désynchronisée, proxy qui répond du HTML) est un
  * échec, plutôt qu'une page qui afficherait `undefined` à la place du client.
  * Le scope est fixé à `nominative:read`, le seul que le texte de la page décrit.
+ * Le compte qui accorde (#650) est exigé aussi : le serveur le lit sur le cookie
+ * de la requête, la page ne le déduit de rien.
  */
 export class HttpOAuthConsentRepository implements OAuthConsentRepository {
   private readonly apiBaseUrl: string
@@ -154,6 +156,7 @@ export class HttpOAuthConsentRepository implements OAuthConsentRepository {
   private parseSummary(body: unknown): ConsentRequest {
     const summary = body as Partial<Record<keyof ConsentRequest, unknown>> | null
     const client = summary?.client as Partial<Record<string, unknown>> | null | undefined
+    const account = summary?.account as Partial<Record<string, unknown>> | null | undefined
 
     if (
       'string' !== typeof client?.id ||
@@ -161,7 +164,8 @@ export class HttpOAuthConsentRepository implements OAuthConsentRepository {
       'preregistered' !== client.registration ||
       'string' !== typeof summary?.redirectHost ||
       NOMINATIVE_READ_SCOPE !== summary.scope ||
-      'string' !== typeof summary.resource
+      'string' !== typeof summary.resource ||
+      'string' !== typeof account?.username
     ) {
       throw new ConsentFailedError('The consent summary has an unexpected shape')
     }
@@ -171,6 +175,7 @@ export class HttpOAuthConsentRepository implements OAuthConsentRepository {
       redirectHost: summary.redirectHost,
       scope: NOMINATIVE_READ_SCOPE,
       resource: summary.resource,
+      account: { username: account.username },
     }
   }
 }

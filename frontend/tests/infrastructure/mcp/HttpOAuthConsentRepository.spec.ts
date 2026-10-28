@@ -23,6 +23,7 @@ const SUMMARY = {
   redirectHost: '127.0.0.1',
   scope: 'nominative:read',
   resource: 'https://site.example.test/api/mcp',
+  account: { username: 'trusted' },
 }
 
 /** Le corps du 400 que le serveur rend quand il refuse la demande à la revalidation. */
@@ -131,6 +132,11 @@ describe('HttpOAuthConsentRepository', () => {
       ['hôte de retour absent', jsonResponse({ ...SUMMARY, redirectHost: undefined })],
       // Le texte de la page décrit ce seul scope : un autre ouvrirait autre chose que ce qu'elle annonce.
       ['autre scope', jsonResponse({ ...SUMMARY, scope: 'nominative:write' })],
+      // Le compte qui accorde (#650) : une page qui ne sait pas le nommer ne s'affiche pas à moitié.
+      ['compte absent', jsonResponse({ ...SUMMARY, account: undefined })],
+      ['compte nul', jsonResponse({ ...SUMMARY, account: null })],
+      ['identifiant du compte absent', jsonResponse({ ...SUMMARY, account: {} })],
+      ['identifiant du compte non textuel', jsonResponse({ ...SUMMARY, account: { username: 42 } })],
       ['scope élargi', jsonResponse({ ...SUMMARY, scope: 'nominative:read admin' })],
     ])('200 mal formé (%s) : échec générique, rien d’affiché à moitié', async (_label, response) => {
       fetchMock.mockResolvedValue(response)

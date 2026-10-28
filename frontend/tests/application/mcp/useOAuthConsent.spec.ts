@@ -26,6 +26,7 @@ const SUMMARY: ConsentRequest = {
   redirectHost: '127.0.0.1',
   scope: 'nominative:read',
   resource: 'https://site.example.test/api/mcp',
+  account: { username: 'trusted' },
 }
 
 const APPROVED_URL = 'http://127.0.0.1:33418/callback?code=abc&state=xyz'

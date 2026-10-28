@@ -46,6 +46,7 @@ final class ConsentControllerTest extends WebTestCase
 
     private const string PLAIN_USERNAME = 'plain';
     private const string SUPER_USERNAME = 'super';
+    private const string OTHER_TRUSTED_USERNAME = 'other-trusted';
 
     protected function setUp(): void
     {
@@ -60,7 +61,8 @@ final class ConsentControllerTest extends WebTestCase
 
     /**
      * Ce que la personne voit avant d'accepter : le nom **déclaré** du client,
-     * l'hôte où partira le code, le scope et la ressource.
+     * l'hôte où partira le code, le scope et la ressource — et le compte qui
+     * accorde (#650).
      */
     public function testATrustedAccountSeesTheSummaryOfTheRequest(): void
     {
@@ -75,8 +77,27 @@ final class ConsentControllerTest extends WebTestCase
             'redirectHost' => 'localhost',
             'scope' => 'nominative:read',
             'resource' => $this->resource(),
+            'account' => ['username' => self::TRUSTED_USERNAME],
         ], $this->json($response));
         $this->assertNotStored($response);
+    }
+
+    /**
+     * Le compte nommé est celui dont le cookie arrive avec la requête, lu
+     * côté serveur : après la connexion d'un autre compte dans le même
+     * client (un autre onglet), le résumé nomme ce dernier, jamais le premier
+     * que la page aurait pu garder en mémoire (#650).
+     */
+    public function testTheSummaryNamesTheSignedInAccount(): void
+    {
+        $this->loginAs(self::TRUSTED_USERNAME, [CpgUser::ROLE_TRUSTED]);
+        $this->loginAs(self::OTHER_TRUSTED_USERNAME, [CpgUser::ROLE_TRUSTED]);
+
+        $this->client->request('GET', self::PATH.'?'.http_build_query($this->validParameters()));
+
+        $response = $this->client->getResponse();
+        self::assertSame(Response::HTTP_OK, $response->getStatusCode(), substr((string) $response->getContent(), 0, 500));
+        self::assertSame(['username' => self::OTHER_TRUSTED_USERNAME], $this->json($response)['account'] ?? null);
     }
 
     /**
