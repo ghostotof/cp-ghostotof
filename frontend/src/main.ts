@@ -61,6 +61,8 @@ import { ASSISTANT_REPOSITORY } from './application/assistant/useAssistant'
 import { HttpAssistantRepository } from './infrastructure/assistant/HttpAssistantRepository'
 import { OAUTH_CONSENT_REPOSITORY } from './application/mcp/useOAuthConsent'
 import { HttpOAuthConsentRepository } from './infrastructure/mcp/HttpOAuthConsentRepository'
+import { MCP_CONNECTIONS_REPOSITORY } from './application/mcp/useMcpConnections'
+import { HttpMcpConnectionsRepository } from './infrastructure/mcp/HttpMcpConnectionsRepository'
 import { BASE_ACCESS_REPOSITORY } from './application/baseAccess/useBaseAccess'
 import { HttpBaseAccessRepository } from './infrastructure/baseAccess/HttpBaseAccessRepository'
 import { getApiUrl } from './infrastructure/config/getApiUrl'
@@ -83,6 +85,7 @@ app.provide(CASE_STUDY_REPOSITORY, new HttpCaseStudyRepository(apiUrl))
 app.provide(ANONYMOUS_CV_REPOSITORY, new HttpAnonymousCvRepository(apiUrl))
 app.provide(ASSISTANT_REPOSITORY, new HttpAssistantRepository(apiUrl))
 app.provide(OAUTH_CONSENT_REPOSITORY, new HttpOAuthConsentRepository(apiUrl))
+app.provide(MCP_CONNECTIONS_REPOSITORY, new HttpMcpConnectionsRepository(apiUrl))
 app.provide(BASE_ACCESS_REPOSITORY, new HttpBaseAccessRepository(apiUrl))
 app.provide(INCIDENT_REPOSITORY, new HttpIncidentRepository(apiUrl))
 app.provide(WATCH_REPOSITORY, new HttpWatchRepository(apiUrl))

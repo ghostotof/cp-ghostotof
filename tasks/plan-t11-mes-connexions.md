@@ -481,15 +481,15 @@ Ajoutée par décision de l'auteur du 2026-10-28 (prémisse inexacte de la déci
     revokingId: Ref<string|null>, lastOutcome: Ref<'revoked'|'already-gone'|'failed'|null>, load(): Promise<void>,
     revoke(id: string): Promise<void> }`.
 
-- [ ] **Step 1 : tests rouges.** Dépôt : `GET` avec `credentials: 'include'` ; `DELETE` avec `X-XSRF-TOKEN` de
+- [x] **Step 1 : tests rouges.** Dépôt : `GET` avec `credentials: 'include'` ; `DELETE` avec `X-XSRF-TOKEN` de
   `readCsrfToken()` ; 401/403 → `SessionExpiredError` ; 404 du DELETE → `McpConnectionNotFoundError` ; corps
   malformé (clé manquante, `state` inconnu) → `McpConnectionsRequestFailedError`. Composable : chargement puis
   `ready` ; une révocation rechargée depuis le serveur (`lastOutcome` `revoked`) ; un 404 → `already-gone` et
   rechargement ; une erreur → `failed`, liste inchangée ; une session expirée → `markSessionExpired()` (comme
   `useAssistant`) ; deux révocations simultanées impossibles (`revokingId`).
-- [ ] **Step 2 : rouges.** **Step 3 : implémenter** (sur le modèle de `HttpOAuthConsentRepository` et
+- [x] **Step 2 : rouges.** **Step 3 : implémenter** (sur le modèle de `HttpOAuthConsentRepository` et
   `useOAuthConsent`). **Step 4 : vert** : `make front-test`, `make front-lint`, `make front-build`.
-- [ ] **Step 5 : commit** `feat(front): dépôt et composable des connexions MCP (#650)`.
+- [x] **Step 5 : commit** `feat(front): dépôt et composable des connexions MCP (#650)`.
 
 ### Task 10 : frontend — la page « Mes connexions MCP », sa route et ses liens
 
