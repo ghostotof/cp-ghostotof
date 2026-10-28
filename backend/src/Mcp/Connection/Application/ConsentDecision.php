@@ -58,6 +58,6 @@ final readonly class ConsentDecision
             'code_challenge' => $this->codeChallenge,
             'code_challenge_method' => $this->codeChallengeMethod,
             'resource' => $this->resource,
-        ], static fn(?string $value): bool => null !== $value);
+        ], static fn (?string $value): bool => null !== $value);
     }
 }

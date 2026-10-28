@@ -502,7 +502,7 @@ final class McpConnectionRepositoryTest extends KernelTestCase
 
         $revoked = $this->connections()->revokeOtherActiveOf($kept, RevocationCause::Superseded, $at);
 
-        $revokedIds = array_map(static fn(RevokedConnection $connection): string => $connection->connectionId()->toRfc4122(), $revoked);
+        $revokedIds = array_map(static fn (RevokedConnection $connection): string => $connection->connectionId()->toRfc4122(), $revoked);
         sort($revokedIds);
         $expectedIds = [$previous->getId()->toRfc4122(), $older->getId()->toRfc4122()];
         sort($expectedIds);
@@ -746,7 +746,7 @@ final class McpConnectionRepositoryTest extends KernelTestCase
 
         self::assertSame(
             [$newest->getId()->toRfc4122(), $oldest->getId()->toRfc4122()],
-            array_map(static fn(McpConnection $connection): string => $connection->getId()->toRfc4122(), $found),
+            array_map(static fn (McpConnection $connection): string => $connection->getId()->toRfc4122(), $found),
         );
         foreach ($found as $connection) {
             self::assertFalse($this->em->getUnitOfWork()->isUninitializedObject($connection->client()), 'Le client est joint, pas chargé à la demande.');
@@ -782,7 +782,7 @@ final class McpConnectionRepositoryTest extends KernelTestCase
 
         self::assertSame(
             [$terminated[5]->getId()->toRfc4122(), $terminated[4]->getId()->toRfc4122(), $terminated[3]->getId()->toRfc4122()],
-            array_map(static fn(McpConnection $connection): string => $connection->getId()->toRfc4122(), $found),
+            array_map(static fn (McpConnection $connection): string => $connection->getId()->toRfc4122(), $found),
         );
         foreach ($found as $connection) {
             self::assertFalse($this->em->getUnitOfWork()->isUninitializedObject($connection->client()), 'Le client est joint, pas chargé à la demande.');
@@ -803,7 +803,7 @@ final class McpConnectionRepositoryTest extends KernelTestCase
         $this->connections()->add($second);
         $this->em->clear();
 
-        $ids = array_map(static fn(McpConnection $connection): string => $connection->getId()->toRfc4122(), $this->connections()->findNotRevokedOfAccount($account->getId()));
+        $ids = array_map(static fn (McpConnection $connection): string => $connection->getId()->toRfc4122(), $this->connections()->findNotRevokedOfAccount($account->getId()));
 
         $expected = [$first->getId()->toRfc4122(), $second->getId()->toRfc4122()];
         rsort($expected);
@@ -831,7 +831,7 @@ final class McpConnectionRepositoryTest extends KernelTestCase
         $found = $this->connections()->findTerminatedOfAccount($account->getId(), 1);
 
         $highest = max($first->getId()->toRfc4122(), $second->getId()->toRfc4122());
-        self::assertSame([$highest], array_map(static fn(McpConnection $connection): string => $connection->getId()->toRfc4122(), $found));
+        self::assertSame([$highest], array_map(static fn (McpConnection $connection): string => $connection->getId()->toRfc4122(), $found));
     }
 
     private function purge(): void

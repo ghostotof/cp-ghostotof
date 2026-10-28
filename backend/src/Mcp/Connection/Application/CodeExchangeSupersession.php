@@ -9,6 +9,7 @@ use App\Mcp\Connection\Domain\ValueObject\RevocationCause;
 use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use Psr\Clock\ClockInterface;
 use Psr\Http\Message\ServerRequestInterface;
+use Psr\Log\LoggerInterface;
 
 /**
  * Le remplacement au premier échange d'un code (#726, D2), décidé ici, en
@@ -47,6 +48,12 @@ use Psr\Http\Message\ServerRequestInterface;
  * le remplacement : la connexion qui sert, jetons émis, restait « jamais
  * échangée » et expirait en une heure, sans un mot.
  *
+ * **Un remplacement sauté est signalé** (#650, R5a) : après un échange réussi,
+ * un code qui ne désigne aucune connexion ou une connexion que la base ne
+ * connaît plus est tenu pour impossible ; si cela arrive, l'ancienne connexion
+ * du couple reste vivante sans que rien le dise. Une ligne `critical`, sans
+ * secret ni identifiant, et la réponse de l'échange inchangée.
+ *
  * Coût, à chaque échange réussi seulement : un déchiffrement de plus que
  * league (le port), une requête de lecture (servie par la carte d'identité
  * quand league a verrouillé la connexion) et l'`UPDATE` de
@@ -63,12 +70,21 @@ final readonly class CodeExchangeSupersession implements CodeExchangeSupersessio
     /** Le message d'une panne de l'audit d'un remplacement, constant (#726). */
     private const string SUPERSEDED_NOT_AUDITED = 'Superseded connection not audited.';
 
+    /**
+     * Les deux messages du remplacement sauté après un échange réussi (#650,
+     * R5a), constants : ni le code, ni l'identifiant de la connexion, ni rien
+     * de la requête.
+     */
+    private const string CODE_NAMES_NO_CONNECTION = 'Exchanged code names no connection; supersession skipped.';
+    private const string CONNECTION_NOT_FOUND = 'Exchanged code\'s connection not found; supersession skipped.';
+
     public function __construct(
         private ExchangedCodeConnectionInterface $exchangedCode,
         private McpConnectionRepositoryInterface $connections,
         private ClockInterface $clock,
         private SecurityAuditLoggerInterface $auditLogger,
         private FailSafeAudit $failSafeAudit,
+        private LoggerInterface $logger,
     ) {
     }
 
@@ -78,9 +94,23 @@ final readonly class CodeExchangeSupersession implements CodeExchangeSupersessio
             return null;
         }
 
+        // On n'arrive ici qu'après la réponse de league : le code était
+        // authentique, vivant et prouvé. Que le port n'en lise aucune connexion,
+        // ou que la base ne la connaisse plus, est tenu pour impossible — mais
+        // l'échange est fait, et le remplacement sauté en silence laisserait
+        // l'ancienne connexion du couple vivante : le cas sort en `critical`
+        // (message constant, aucun contexte), sans changer la réponse.
         $connectionId = $this->exchangedCode->connectionIdOf($request);
-        $kept = null !== $connectionId ? $this->connections->findOneById($connectionId) : null;
+        if (null === $connectionId) {
+            $this->logger->critical(self::CODE_NAMES_NO_CONNECTION);
+
+            return null;
+        }
+
+        $kept = $this->connections->findOneById($connectionId);
         if (null === $kept) {
+            $this->logger->critical(self::CONNECTION_NOT_FOUND);
+
             return null;
         }
 

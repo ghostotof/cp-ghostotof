@@ -209,7 +209,7 @@ trait DrivesTheOAuthFlow
      */
     private static function formBody(array $parameters): string
     {
-        return http_build_query(array_filter($parameters, static fn(?string $value): bool => null !== $value));
+        return http_build_query(array_filter($parameters, static fn (?string $value): bool => null !== $value));
     }
 
     /**
@@ -309,7 +309,7 @@ trait DrivesTheOAuthFlow
     private function postConsent(array $body, ?string $xsrfToken): void
     {
         $body = ['accountId' => $this->signedInAccountId(), ...$body];
-        $body = array_filter($body, static fn(mixed $value, string $name): bool => 'accountId' !== $name || null !== $value, \ARRAY_FILTER_USE_BOTH);
+        $body = array_filter($body, static fn (mixed $value, string $name): bool => 'accountId' !== $name || null !== $value, \ARRAY_FILTER_USE_BOTH);
 
         $server = ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'];
 
@@ -339,7 +339,7 @@ trait DrivesTheOAuthFlow
             ...$overrides,
         ];
 
-        return array_filter($parameters, static fn(?string $value): bool => null !== $value);
+        return array_filter($parameters, static fn (?string $value): bool => null !== $value);
     }
 
     /**

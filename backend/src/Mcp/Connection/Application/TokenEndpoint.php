@@ -130,7 +130,7 @@ final readonly class TokenEndpoint implements TokenEndpointInterface
             $this->refuseClientOutsideTheBody($request);
             $this->refuseForeignResource($request);
 
-            $outcome = $this->transaction->run(fn(): TokenExchangeOutcome => $this->issue($request, $response));
+            $outcome = $this->transaction->run(fn (): TokenExchangeOutcome => $this->issue($request, $response));
         } catch (CompromisedMcpConnectionException $compromise) {
             // La transaction est déjà annulée : la révocation s'écrit hors
             // d'elle, et survit au ROLLBACK de l'échange. Le refus levé ici

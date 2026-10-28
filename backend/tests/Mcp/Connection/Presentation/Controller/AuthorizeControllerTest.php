@@ -507,7 +507,7 @@ final class AuthorizeControllerTest extends WebTestCase
             ...$overrides,
         ];
 
-        return array_filter($parameters, static fn(?string $value): bool => null !== $value);
+        return array_filter($parameters, static fn (?string $value): bool => null !== $value);
     }
 
     /**

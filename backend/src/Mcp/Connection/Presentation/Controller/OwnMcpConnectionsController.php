@@ -24,6 +24,9 @@ use Symfony\Component\Uid\Uuid;
  *   révoquées du compte et les dernières terminées (révoquées, expirées
  *   marquées, gardées six mois), avec leur état et, si elles sont coupées,
  *   quand et pourquoi ; `terminatedTruncated` dit si l'historique est coupé.
+ *   `codeExchanged` distingue un accord abandonné (code jamais échangé) d'une
+ *   connexion échangée pas encore rafraîchie (`lastUsedAt` nul dans les deux) ;
+ *   `expiresAt` est `null` pour une connexion révoquée, qui n'en a plus.
  * - `DELETE /api/me/mcp-connections/{id}` : la personne révoque l'une des
  *   siennes — 204, effet à la requête suivante du client MCP. Celle d'un autre
  *   compte et un UUID inconnu répondent le même 404 ; une connexion à elle déjà
@@ -92,8 +95,9 @@ final readonly class OwnMcpConnectionsController
             'id' => $view->id->toRfc4122(),
             'client' => ['id' => $view->clientId, 'name' => $view->clientName],
             'grantedAt' => $this->atom($view->grantedAt),
+            'codeExchanged' => $view->codeExchanged,
             'lastUsedAt' => $this->atomOrNull($view->lastUsedAt),
-            'expiresAt' => $this->atom($view->expiresAt),
+            'expiresAt' => $this->atomOrNull($view->expiresAt),
             'state' => $view->state->value,
             'revokedAt' => $this->atomOrNull($view->revokedAt),
             'revocationCause' => $view->revocationCause?->value,

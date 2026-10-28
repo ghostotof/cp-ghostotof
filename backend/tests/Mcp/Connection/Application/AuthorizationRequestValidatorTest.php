@@ -219,7 +219,7 @@ final class AuthorizationRequestValidatorTest extends KernelTestCase
             'code_challenge_method' => 'S256',
             'resource' => $this->resource(),
             ...$overrides,
-        ], static fn(string|array|null $value): bool => null !== $value);
+        ], static fn (string|array|null $value): bool => null !== $value);
 
         return new ServerRequest('GET', 'http://localhost/api/oauth/authorize')->withQueryParams($parameters);
     }

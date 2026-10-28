@@ -750,7 +750,7 @@ final class ConsentControllerTest extends WebTestCase
      */
     private function activeConnectionIds(): array
     {
-        return array_column(array_filter($this->connectionRows(), static fn(array $row): bool => null === $row['revoked_at']), 'id');
+        return array_column(array_filter($this->connectionRows(), static fn (array $row): bool => null === $row['revoked_at']), 'id');
     }
 
     /**

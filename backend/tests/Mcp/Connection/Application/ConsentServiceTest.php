@@ -249,9 +249,9 @@ final class ConsentServiceTest extends TestCase
         $refusal = OAuthServerException::invalidRequest('redirect_uri');
         $this->validatorRefusal = $refusal;
         $calls = [
-            'résumé' => fn(): mixed => $this->service()->summarize((new Psr17Factory())->createServerRequest('GET', '/api/oauth/consent'), $this->account),
-            'accord' => fn(): mixed => $this->service()->decide($this->decision(true), $this->account),
-            'refus' => fn(): mixed => $this->service()->decide($this->decision(false), $this->account),
+            'résumé' => fn (): mixed => $this->service()->summarize((new Psr17Factory())->createServerRequest('GET', '/api/oauth/consent'), $this->account),
+            'accord' => fn (): mixed => $this->service()->decide($this->decision(true), $this->account),
+            'refus' => fn (): mixed => $this->service()->decide($this->decision(false), $this->account),
         ];
 
         foreach ($calls as $label => $call) {

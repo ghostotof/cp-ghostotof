@@ -269,8 +269,8 @@ final class CodeReplayTest extends WebTestCase
         self::assertSame($held->accountId, $line['userId'] ?? null);
         self::assertSame(self::CLIENT_ID, $line['clientId'] ?? null);
         self::assertSame(self::CLIENT_ID, $line['presentingClientId'] ?? null);
-        $journal = json_encode(array_map(static fn(LogRecord $record): array => $record->context, self::securityAuditRecords()), \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES);
-        foreach ([$code, self::CODE_VERIFIER, $refreshToken, ...array_filter($overrides, static fn(?string $value): bool => null !== $value)] as $secret) {
+        $journal = json_encode(array_map(static fn (LogRecord $record): array => $record->context, self::securityAuditRecords()), \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES);
+        foreach ([$code, self::CODE_VERIFIER, $refreshToken, ...array_filter($overrides, static fn (?string $value): bool => null !== $value)] as $secret) {
             // Ni l'aiguille ni la meule dans le message d'échec : un échec
             // publierait le secret dans le journal de la CI.
             self::assertFalse(str_contains($journal, $secret), 'Le journal de sécurité cite un code, un vérificateur ou un jeton.');

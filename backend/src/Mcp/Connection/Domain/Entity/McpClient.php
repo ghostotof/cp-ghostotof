@@ -91,7 +91,7 @@ class McpClient
      */
     public static function register(McpClientId $clientId, McpClientName $name, array $redirectUris, DateTimeImmutable $at): self
     {
-        $distinct = array_values(array_unique(array_map(static fn(RedirectUri $redirectUri): string => (string) $redirectUri, $redirectUris)));
+        $distinct = array_values(array_unique(array_map(static fn (RedirectUri $redirectUri): string => (string) $redirectUri, $redirectUris)));
 
         return new self((string) $clientId, (string) $name, $distinct, $at);
     }

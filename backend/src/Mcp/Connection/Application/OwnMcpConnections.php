@@ -9,7 +9,6 @@ use App\Mcp\Connection\Domain\Exception\McpConnectionNotFoundException;
 use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
 use App\Mcp\Connection\Domain\ValueObject\ConnectionLifetimes;
 use App\Mcp\Connection\Domain\ValueObject\RevocationCause;
-use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use App\Shared\Domain\Security\AccountReference;
 use DateTimeImmutable;
 use Psr\Clock\ClockInterface;
@@ -53,8 +52,7 @@ final readonly class OwnMcpConnections implements OwnMcpConnectionsInterface
         private McpConnectionRepositoryInterface $connections,
         private ClockInterface $clock,
         private ConnectionLifetimes $lifetimes,
-        private SecurityAuditLoggerInterface $auditLogger,
-        private FailSafeAudit $failSafeAudit,
+        private RevokedConnectionAudit $revokedAudit,
     ) {
     }
 
@@ -71,7 +69,7 @@ final readonly class OwnMcpConnections implements OwnMcpConnectionsInterface
         usort($connections, $this->newestGrantFirst(...));
 
         return new OwnMcpConnectionList(
-            array_map(fn(McpConnection $connection): OwnMcpConnectionView => $this->viewOf($connection, $now), $connections),
+            array_map(fn (McpConnection $connection): OwnMcpConnectionView => $this->viewOf($connection, $now), $connections),
             \count($terminated) > self::TERMINATED_LIMIT,
         );
     }
@@ -92,11 +90,8 @@ final readonly class OwnMcpConnections implements OwnMcpConnectionsInterface
         }
 
         // Après l'écriture, donc après son COMMIT ; une panne de l'audit ne
-        // change pas la réponse (#725, FailSafeAudit).
-        $this->failSafeAudit->attempt(
-            fn() => $this->auditLogger->mcpConnectionRevoked($revoked, $revoked->cause()->value),
-            'Revoked connection not audited.',
-        );
+        // change pas la réponse (#725, RevokedConnectionAudit).
+        $this->revokedAudit->record($revoked, $revoked->cause()->value);
     }
 
     /**
@@ -113,15 +108,25 @@ final readonly class OwnMcpConnections implements OwnMcpConnectionsInterface
     private function viewOf(McpConnection $connection, DateTimeImmutable $now): OwnMcpConnectionView
     {
         $zone = $now->getTimezone();
+        // **Une fois par ligne** (#650, R5a) : l'échéance affichée et celle
+        // qui juge l'état sont la même valeur, calculée ici et passée à
+        // stateOf() — plus de seconde évaluation de deadline() par isExpiredAt().
+        $deadline = $connection->deadline($zone, $this->lifetimes);
+        $state = $this->stateOf($connection, $now, $deadline);
 
         return new OwnMcpConnectionView(
             $connection->getId(),
             $connection->client()->getClientId(),
             $connection->client()->getName(),
             $connection->grantedAt()->setTimezone($zone),
+            null !== $connection->codeExchangedAt(),
             $connection->lastUsedAt()?->setTimezone($zone),
-            $connection->deadline($zone, $this->lifetimes),
-            $this->stateOf($connection, $now),
+            // Une connexion révoquée n'a plus d'échéance : celle qu'on calculerait
+            // serait une date qui n'arrivera à aucun effet, et l'API dit ce qui
+            // est vrai plutôt que de laisser la page décider de la taire (#650, R5a).
+            // Une `expired` la garde : c'est elle qui l'a fait expirer.
+            OwnMcpConnectionState::Revoked === $state ? null : $deadline,
+            $state,
             $connection->revokedAt()?->setTimezone($zone),
             $connection->revocationCause(),
         );
@@ -134,14 +139,15 @@ final readonly class OwnMcpConnections implements OwnMcpConnectionsInterface
      *   la personne, le client, le serveur ont coupé la connexion ;
      * - `expired` : la cause est `expired` (la purge a marqué l'échéance), **ou**
      *   l'échéance est passée sans que la purge ait encore tourné
-     *   ({@see McpConnection::isExpiredAt()}) — jamais `revoked_at` seul, qui ne
-     *   dit pas pourquoi (commentaire de #649) ;
+     *   (`$now >= $deadline`, la comparaison de {@see McpConnection::isExpiredAt()},
+     *   sur l'échéance déjà calculée pour la ligne) — jamais `revoked_at` seul,
+     *   qui ne dit pas pourquoi (commentaire de #649) ;
      * - `active` sinon.
      *
      * Une connexion révoquée puis échue reste `revoked` : sa cause est ce qui
      * l'a coupée, et l'échéance n'y change rien.
      */
-    private function stateOf(McpConnection $connection, DateTimeImmutable $now): OwnMcpConnectionState
+    private function stateOf(McpConnection $connection, DateTimeImmutable $now, DateTimeImmutable $deadline): OwnMcpConnectionState
     {
         $cause = $connection->revocationCause();
 
@@ -149,7 +155,7 @@ final readonly class OwnMcpConnections implements OwnMcpConnectionsInterface
             return OwnMcpConnectionState::Revoked;
         }
 
-        if (RevocationCause::Expired === $cause || $connection->isExpiredAt($now, $this->lifetimes)) {
+        if (RevocationCause::Expired === $cause || $now >= $deadline) {
             return OwnMcpConnectionState::Expired;
         }
 

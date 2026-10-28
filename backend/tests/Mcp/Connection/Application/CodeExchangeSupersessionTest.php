@@ -87,10 +87,17 @@ final class CodeExchangeSupersessionTest extends TestCase
             ->supersedeOthersOf(null === $body ? $request : $request->withParsedBody($body));
 
         self::assertNull($supersession);
+        self::assertSame([], $this->mainChannel->getRecords(), 'Ce n\'est pas un échange de code : rien à signaler.');
     }
 
-    /** Un code que le port ne sait pas lire (illisible, sans connexion) : rien n'est cherché ni révoqué. */
-    public function testACodeDesignatingNoConnectionSupersedesNothing(): void
+    /**
+     * Un code que le port ne sait pas lire (illisible, sans connexion) : rien
+     * n'est cherché ni révoqué. **Mais l'échange a réussi** — league n'a répondu
+     * qu'après avoir lu ce code : un tel cas est tenu pour impossible, et le
+     * remplacement sauté en silence laisserait l'ancienne connexion vivante
+     * (#650, R5a). Une ligne `critical`, sans code ni identifiant.
+     */
+    public function testACodeDesignatingNoConnectionSupersedesNothingButSaysSo(): void
     {
         $exchangedCode = self::createStub(ExchangedCodeConnectionInterface::class);
         $exchangedCode->method('connectionIdOf')->willReturn(null);
@@ -99,10 +106,16 @@ final class CodeExchangeSupersessionTest extends TestCase
         $connections->expects(self::never())->method('revokeOtherActiveOf');
 
         self::assertNull($this->supersession($exchangedCode, $connections)->supersedeOthersOf($this->codeExchange()));
+
+        $this->assertOneCriticalRecord('Exchanged code names no connection; supersession skipped.');
     }
 
-    /** Une connexion que la base ne connaît pas (purgée entre-temps) : rien n'est révoqué. */
-    public function testAnUnknownConnectionSupersedesNothing(): void
+    /**
+     * Une connexion que la base ne connaît pas (purgée entre-temps) : rien
+     * n'est révoqué, et le cas, tenu pour impossible après un échange réussi,
+     * est journalisé `critical` — l'identifiant de la connexion n'y figure pas.
+     */
+    public function testAnUnknownConnectionSupersedesNothingButSaysSo(): void
     {
         $connectionId = Uuid::v7();
         $exchangedCode = self::createStub(ExchangedCodeConnectionInterface::class);
@@ -115,6 +128,9 @@ final class CodeExchangeSupersessionTest extends TestCase
         $connections->expects(self::never())->method('revokeOtherActiveOf');
 
         self::assertNull($this->supersession($exchangedCode, $connections)->supersedeOthersOf($this->codeExchange()));
+
+        $this->assertOneCriticalRecord('Exchanged code\'s connection not found; supersession skipped.');
+        self::assertStringNotContainsString($connectionId->toRfc4122(), json_encode($this->mainChannel->getRecords()[0]->context, \JSON_THROW_ON_ERROR));
     }
 
     /**
@@ -281,7 +297,18 @@ final class CodeExchangeSupersessionTest extends TestCase
             new MockClock(new DateTimeImmutable(self::NOW)),
             $auditLogger ?? self::createStub(SecurityAuditLoggerInterface::class),
             new FailSafeAudit(new Logger('app', [$this->mainChannel])),
+            new Logger('app', [$this->mainChannel]),
         );
+    }
+
+    /** Une seule ligne, `critical`, le message constant et aucun contexte (ni code ni identifiant). */
+    private function assertOneCriticalRecord(string $message): void
+    {
+        $records = $this->mainChannel->getRecords();
+        self::assertCount(1, $records);
+        self::assertSame(Level::Critical, $records[0]->level);
+        self::assertSame($message, $records[0]->message);
+        self::assertSame([], $records[0]->context);
     }
 
     /** Un échange de code tel que FormEncodedRequest l'a analysé ; le code n'est lu que par le port. */

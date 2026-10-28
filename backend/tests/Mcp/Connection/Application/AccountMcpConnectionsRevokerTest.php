@@ -6,6 +6,7 @@ namespace App\Tests\Mcp\Connection\Application;
 
 use App\Mcp\Connection\Application\AccountMcpConnectionsRevoker;
 use App\Mcp\Connection\Application\FailSafeAudit;
+use App\Mcp\Connection\Application\RevokedConnectionAudit;
 use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
 use App\Mcp\Connection\Domain\ValueObject\ConnectionReference;
 use App\Mcp\Connection\Domain\ValueObject\RevocationCause;
@@ -174,8 +175,7 @@ final class AccountMcpConnectionsRevokerTest extends TestCase
         return new AccountMcpConnectionsRevoker(
             $connections,
             new MockClock(new DateTimeImmutable(self::NOW)),
-            $auditLogger,
-            new FailSafeAudit($logger ?? new Logger('app')),
+            new RevokedConnectionAudit($auditLogger, new FailSafeAudit($logger ?? new Logger('app'))),
         );
     }
 

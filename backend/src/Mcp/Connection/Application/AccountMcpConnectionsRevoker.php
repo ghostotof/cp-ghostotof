@@ -6,7 +6,6 @@ namespace App\Mcp\Connection\Application;
 
 use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
 use App\Mcp\Connection\Domain\ValueObject\RevocationCause;
-use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use App\Shared\Application\Security\AccountAccessWithdrawal;
 use App\Shared\Application\Security\AccountMcpConnectionsRevokerInterface;
 use App\Shared\Application\Security\RevokedAccountMcpConnections;
@@ -30,7 +29,7 @@ use Symfony\Component\Uid\Uuid;
  *
  * **Deux temps** : `revokeAllOf()` écrit dans la transaction de l'appelant et
  * n'audite rien ; `auditRevoked()` suit son COMMIT. Chaque ligne est tentée à
- * part par {@see FailSafeAudit} : une panne de l'audit ne change pas l'issue
+ * part par {@see RevokedConnectionAudit} : une panne de l'audit ne change pas l'issue
  * (le mot de passe est déjà changé, les connexions déjà coupées) et ne tait
  * pas les lignes suivantes (#725).
  */
@@ -39,8 +38,7 @@ final readonly class AccountMcpConnectionsRevoker implements AccountMcpConnectio
     public function __construct(
         private McpConnectionRepositoryInterface $connections,
         private ClockInterface $clock,
-        private SecurityAuditLoggerInterface $auditLogger,
-        private FailSafeAudit $failSafeAudit,
+        private RevokedConnectionAudit $revokedAudit,
     ) {
     }
 
@@ -63,10 +61,7 @@ final readonly class AccountMcpConnectionsRevoker implements AccountMcpConnectio
         foreach ($revoked->connections() as $connection) {
             // L'acteur est lu comme à l'ordinaire : l'administrateur qui a
             // changé le mot de passe ou retiré le rôle.
-            $this->failSafeAudit->attempt(
-                fn () => $this->auditLogger->mcpConnectionRevoked($connection, $cause),
-                'Revoked connection not audited.',
-            );
+            $this->revokedAudit->record($connection, $cause);
         }
     }
 

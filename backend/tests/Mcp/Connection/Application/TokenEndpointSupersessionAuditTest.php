@@ -112,7 +112,7 @@ final class TokenEndpointSupersessionAuditTest extends WebTestCase
 
         $failures = array_values(array_filter(
             self::allChannelsLogRecordsOf('app'),
-            static fn(LogRecord $record): bool => self::NOT_AUDITED === $record->message,
+            static fn (LogRecord $record): bool => self::NOT_AUDITED === $record->message,
         ));
         self::assertCount(1, $failures);
         self::assertSame(Level::Critical, $failures[0]->level);

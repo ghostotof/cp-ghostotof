@@ -59,7 +59,7 @@ final class OwnMcpConnectionsControllerTest extends WebTestCase
     private const string NOT_AUDITED = 'Revoked connection not audited.';
 
     /** Les clés exactes d'une entrée de la liste, dans l'ordre où l'API les écrit. */
-    private const array ENTRY_KEYS = ['id', 'client', 'grantedAt', 'lastUsedAt', 'expiresAt', 'state', 'revokedAt', 'revocationCause'];
+    private const array ENTRY_KEYS = ['id', 'client', 'grantedAt', 'codeExchanged', 'lastUsedAt', 'expiresAt', 'state', 'revokedAt', 'revocationCause'];
 
     protected function setUp(): void
     {
@@ -85,7 +85,7 @@ final class OwnMcpConnectionsControllerTest extends WebTestCase
 
         $entries = $this->listAsTrusted();
 
-        $ids = array_map(static fn(array $entry): mixed => $entry['id'], $entries);
+        $ids = array_map(static fn (array $entry): mixed => $entry['id'], $entries);
         sort($ids);
         $expected = [$first->connectionId, $second->connectionId];
         sort($expected);
@@ -114,6 +114,8 @@ final class OwnMcpConnectionsControllerTest extends WebTestCase
         self::assertSame($held->connectionId, $entry['id']);
         self::assertSame(['id' => self::CLIENT_ID, 'name' => self::CLIENT_NAME], $entry['client']);
         self::assertNull($entry['lastUsedAt'], 'L\'échange du code n\'écrit pas le dernier usage (au rafraîchissement seulement).');
+        // Mais le code est échangé : la page ne dit pas « jamais aboutie » d'une connexion qui sert (#650, R5a).
+        self::assertTrue($entry['codeExchanged']);
         self::assertSame('active', $entry['state']);
         self::assertNull($entry['revokedAt']);
         self::assertNull($entry['revocationCause']);
@@ -192,9 +194,33 @@ final class OwnMcpConnectionsControllerTest extends WebTestCase
         self::assertSame('revoked', $byId[$superseded->connectionId]['state']);
         self::assertSame('superseded', $byId[$superseded->connectionId]['revocationCause']);
         self::assertIsString($byId[$superseded->connectionId]['revokedAt']);
+        // Une révoquée n'a plus d'échéance : l'API le dit (`null`), la page n'a pas à le savoir (#650, R5a).
+        self::assertNull($byId[$superseded->connectionId]['expiresAt']);
         self::assertSame('expired', $byId[$expired->connectionId]['state']);
         self::assertSame('expired', $byId[$expired->connectionId]['revocationCause']);
         self::assertIsString($byId[$expired->connectionId]['revokedAt']);
+        // Une marquée `expired` garde l'échéance qui l'a fait expirer.
+        self::assertIsString($byId[$expired->connectionId]['expiresAt']);
+    }
+
+    /**
+     * Révoquée **puis** échue (#650, R5a) : octroyée il y a 91 jours, coupée
+     * par le client, elle dépasse aussi son échéance maximale — elle reste
+     * `revoked`, avec sa cause : ce qui l'a coupée, pas l'échéance qui l'aurait
+     * coupée de toute façon. Seule la cause `expired` dit `expired`
+     * (`testARevokedConnectionShowsItsCause`).
+     */
+    public function testARevokedThenExpiredConnectionStaysRevoked(): void
+    {
+        $held = $this->holdMcpConnection();
+        $this->alterHeldConnection($held, "granted_at = granted_at - INTERVAL '91 days', revoked_at = now() - INTERVAL '1 day', revocation_cause = 'client'");
+
+        $entry = $this->singleEntryAsTrusted();
+
+        self::assertSame('revoked', $entry['state']);
+        self::assertSame('client', $entry['revocationCause']);
+        self::assertIsString($entry['revokedAt']);
+        self::assertNull($entry['expiresAt'], 'Une révoquée n\'a pas d\'échéance, même dépassée.');
     }
 
     /**
@@ -214,6 +240,9 @@ final class OwnMcpConnectionsControllerTest extends WebTestCase
         foreach ($entries as $entry) {
             self::assertSame('active', $entry['state']);
             self::assertSame(['id' => self::CLIENT_ID, 'name' => self::CLIENT_NAME], $entry['client']);
+            // Un accord abandonné : le code n'est pas échangé, et la page le dit autrement qu'« échangé, pas encore renouvelé » (#650, R5a).
+            self::assertFalse($entry['codeExchanged']);
+            self::assertNull($entry['lastUsedAt']);
         }
     }
 
@@ -237,18 +266,18 @@ final class OwnMcpConnectionsControllerTest extends WebTestCase
         $entries = $this->entriesOf($response);
         self::assertTrue($this->json($response)['terminatedTruncated']);
         self::assertCount(2 + OwnMcpConnections::TERMINATED_LIMIT, $entries);
-        $ids = array_map(static fn(array $entry): mixed => $entry['id'], $entries);
+        $ids = array_map(static fn (array $entry): mixed => $entry['id'], $entries);
         self::assertContains($old->connectionId, $ids, 'Une non révoquée ancienne est toujours rendue.');
         self::assertContains($recent->connectionId, $ids);
         $terminatedIds = array_values(array_filter(
-            array_map(static fn(array $entry): mixed => 'revoked' === $entry['state'] ? $entry['id'] : null, $entries),
-            static fn(mixed $id): bool => null !== $id,
+            array_map(static fn (array $entry): mixed => 'revoked' === $entry['state'] ? $entry['id'] : null, $entries),
+            static fn (mixed $id): bool => null !== $id,
         ));
         self::assertSame($expectedTerminated, $terminatedIds, 'Les cinquante terminées les plus récemment octroyées, pas une de plus.');
         self::assertSame($ids[0], $recent->connectionId, 'L\'ordre est celui de l\'octroi décroissant, les deux moitiés mêlées.');
         self::assertSame($old->connectionId, $ids[\count($ids) - 1], 'L\'ancienne non révoquée vient après les terminées plus récentes qu\'elle.');
         // La coupe est faite par la base, pas en PHP après avoir tout hydraté : une ligne de plus que la limite est lue, pas toutes.
-        $limits = array_values(array_filter($this->executedSql(), static fn(string $sql): bool => str_contains($sql, 'mcp_connection') && str_contains($sql, 'LIMIT '.(OwnMcpConnections::TERMINATED_LIMIT + 1))));
+        $limits = array_values(array_filter($this->executedSql(), static fn (string $sql): bool => str_contains($sql, 'mcp_connection') && str_contains($sql, 'LIMIT '.(OwnMcpConnections::TERMINATED_LIMIT + 1))));
         self::assertCount(1, $limits, implode("\n", $this->executedSql()));
     }
 
@@ -299,7 +328,7 @@ final class OwnMcpConnectionsControllerTest extends WebTestCase
 
         self::assertResponseIsSuccessful();
         self::assertCount(3, $this->entriesOf($this->client->getResponse()));
-        $statements = array_values(array_filter($this->executedSql(), static fn(string $sql): bool => str_contains($sql, 'mcp_')));
+        $statements = array_values(array_filter($this->executedSql(), static fn (string $sql): bool => str_contains($sql, 'mcp_')));
         self::assertLessThanOrEqual(2, \count($statements), implode("\n", $statements));
         foreach ($statements as $statement) {
             self::assertStringContainsString('mcp_client', $statement, 'Le client est joint à la connexion.');
@@ -524,7 +553,7 @@ final class OwnMcpConnectionsControllerTest extends WebTestCase
         self::assertSame('person', $this->causeOf($held));
         $failures = array_values(array_filter(
             self::allChannelsLogRecordsOf('app'),
-            static fn(LogRecord $record): bool => self::NOT_AUDITED === $record->message,
+            static fn (LogRecord $record): bool => self::NOT_AUDITED === $record->message,
         ));
         self::assertCount(1, $failures);
         self::assertSame(Level::Critical, $failures[0]->level);
@@ -615,7 +644,7 @@ final class OwnMcpConnectionsControllerTest extends WebTestCase
     {
         $ids = $this->mcpRows()->fetchFirstColumn('SELECT id FROM mcp_connection WHERE revoked_at IS NOT NULL ORDER BY granted_at DESC, id DESC');
 
-        return array_map(static fn(mixed $id): string => \is_string($id) ? $id : '', $ids);
+        return array_map(static fn (mixed $id): string => \is_string($id) ? $id : '', $ids);
     }
 
     private function listResponseAsTrusted(): Response

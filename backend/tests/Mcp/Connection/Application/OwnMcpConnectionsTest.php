@@ -7,6 +7,7 @@ namespace App\Tests\Mcp\Connection\Application;
 use App\Mcp\Connection\Application\FailSafeAudit;
 use App\Mcp\Connection\Application\OwnMcpConnections;
 use App\Mcp\Connection\Application\OwnMcpConnectionView;
+use App\Mcp\Connection\Application\RevokedConnectionAudit;
 use App\Mcp\Connection\Domain\Entity\McpConnection;
 use App\Mcp\Connection\Domain\Exception\McpConnectionNotFoundException;
 use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
@@ -46,10 +47,10 @@ final class OwnMcpConnectionsTest extends TestCase
         $connections = $this->createMock(McpConnectionRepositoryInterface::class);
         $connections->expects(self::once())->method('revokeActiveOfAccount')
             ->with(
-                self::callback(static fn(Uuid $id): bool => $id->equals($connectionId)),
-                self::callback(static fn(Uuid $id): bool => self::ACCOUNT_ID === $id->toRfc4122()),
+                self::callback(static fn (Uuid $id): bool => $id->equals($connectionId)),
+                self::callback(static fn (Uuid $id): bool => self::ACCOUNT_ID === $id->toRfc4122()),
                 RevocationCause::Person,
-                self::callback(static fn(DateTimeImmutable $at): bool => new DateTimeImmutable(self::NOW)->getTimestamp() === $at->getTimestamp()),
+                self::callback(static fn (DateTimeImmutable $at): bool => new DateTimeImmutable(self::NOW)->getTimestamp() === $at->getTimestamp()),
             )
             ->willReturn($revoked);
         $connections->expects(self::never())->method('belongsToAccount');
@@ -113,7 +114,7 @@ final class OwnMcpConnectionsTest extends TestCase
         $connections = $this->createMock(McpConnectionRepositoryInterface::class);
         $connections->method('findNotRevokedOfAccount')->willReturn([]);
         $connections->expects(self::once())->method('findTerminatedOfAccount')
-            ->with(self::callback(static fn(Uuid $id): bool => self::ACCOUNT_ID === $id->toRfc4122()), OwnMcpConnections::TERMINATED_LIMIT + 1)
+            ->with(self::callback(static fn (Uuid $id): bool => self::ACCOUNT_ID === $id->toRfc4122()), OwnMcpConnections::TERMINATED_LIMIT + 1)
             ->willReturn($this->connectionsGrantedEveryHour(OwnMcpConnections::TERMINATED_LIMIT + 1));
 
         $list = $this->service($connections, self::createStub(SecurityAuditLoggerInterface::class))->of($account);
@@ -153,7 +154,7 @@ final class OwnMcpConnectionsTest extends TestCase
 
         self::assertSame(
             [$newActive->getId()->toRfc4122(), $terminated[0]->getId()->toRfc4122(), $terminated[1]->getId()->toRfc4122(), $oldActive->getId()->toRfc4122()],
-            array_map(static fn(OwnMcpConnectionView $view): string => $view->id->toRfc4122(), $list->connections),
+            array_map(static fn (OwnMcpConnectionView $view): string => $view->id->toRfc4122(), $list->connections),
         );
         self::assertFalse($list->terminatedTruncated);
     }
@@ -191,8 +192,7 @@ final class OwnMcpConnectionsTest extends TestCase
             $connections,
             new MockClock(new DateTimeImmutable(self::NOW)),
             ConnectionLifetimes::fromConfiguration('PT10M', 'PT1H', 'P30D', 'P30D', 'P90D', 'PT1H'),
-            $auditLogger,
-            new FailSafeAudit(new NullLogger()),
+            new RevokedConnectionAudit($auditLogger, new FailSafeAudit(new NullLogger())),
         );
     }
 

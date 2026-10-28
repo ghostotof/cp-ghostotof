@@ -52,53 +52,63 @@ final readonly class CpgUserRoleAdministrator implements CpgUserRoleAdministrato
         // **Ordre des verrous** : l'advisory lock d'administration, l'acteur,
         // la cible `FOR UPDATE`, puis ses connexions par identifiant — le sens
         // de tous les autres chemins (cf. CpgUserAdministrator::changePassword()).
-        // La fermeture rend `[changé, connexions révoquées]` : `null` quand rien
-        // n'a été révoqué (état déjà atteint, promotion, palier gardé).
-        [$changed, $revoked] = $this->administrationLock->whileAdministering($user, $actingUser, function (CpgUser $target) use ($grant): array {
-            $isSuper = $target->isSuperAdmin();
-
-            if ($grant === $isSuper) {
-                // Déjà dans l'état demandé : rien à faire (et la garde du dernier
-                // super-admin ne doit pas être consultée pour une cible non-super).
-                return [false, null];
-            }
-
-            // Garde anti-lockout (pendant de CpgUserAdministrator::delete) :
-            // jamais le dernier ROLE_SUPER capable de se connecter, la cible
-            // exclue du décompte puisque c'est elle qui perd le rôle.
-            if (!$grant && 0 === $this->cpgUserRepository->countOtherSuperAdminsAbleToSignIn($target)) {
-                throw CannotDemoteLastSuperAdminException::lastOne();
-            }
-
-            $newRoles = $grant ? [CpgUser::ROLE_SUPER] : $this->rolesAfterDemotion($target);
-            $target->setRoles($newRoles);
-            $this->cpgUserRepository->save($target);
-
-            // Le palier est perdu quand une **rétrogradation** écrit une liste
-            // sans `ROLE_TRUSTED` : la cible était `ROLE_SUPER` (l'exit
-            // idempotent est passé), donc de confiance par la hiérarchie, et
-            // ne l'est plus. On lit la liste **écrite** (`$newRoles`), jamais
-            // `getRoles()` qui y ajouterait `ROLE_USER` (règle de #560), ni
-            // l'état d'avant : un compte avec e-mail garde `ROLE_TRUSTED` et ses
-            // connexions. Une promotion n'ôte rien (`ROLE_SUPER` englobe
-            // `ROLE_TRUSTED`).
-            $losesTrustedTier = !$grant && !\in_array(CpgUser::ROLE_TRUSTED, $newRoles, true);
-
-            return [true, $losesTrustedTier
-                ? $this->mcpConnections->revokeAllOf($target, AccountAccessWithdrawal::TrustedTierWithdrawn)
-                : null];
-        });
+        // La fermeture rend un RoleChangeOutcome : le changement effectif et,
+        // le cas échéant, les connexions révoquées.
+        $outcome = $this->administrationLock->whileAdministering(
+            $user,
+            $actingUser,
+            fn (CpgUser $target): RoleChangeOutcome => $this->writeRole($target, $grant),
+        );
 
         // Journal de sécurité (D5), après le COMMIT : seulement sur un
         // changement effectif — l'état déjà atteint est sorti sans rien écrire.
         // Puis une ligne par connexion coupée (#650), à la suite de `role-changed`.
-        if ($changed) {
+        if ($outcome->changed) {
             $this->auditLogger->roleChanged($user, $grant);
         }
 
-        if ($revoked instanceof RevokedAccountMcpConnections) {
-            $this->mcpConnections->auditRevoked($revoked);
+        if ($outcome->revoked instanceof RevokedAccountMcpConnections) {
+            $this->mcpConnections->auditRevoked($outcome->revoked);
         }
+    }
+
+    /**
+     * Le corps de la fermeture, sur la cible relue et verrouillée : l'état
+     * « déjà atteint », la garde anti-lockout, l'écriture du rôle et, si le
+     * palier de confiance est perdu, la révocation des connexions du compte.
+     */
+    private function writeRole(CpgUser $target, bool $grant): RoleChangeOutcome
+    {
+        if ($grant === $target->isSuperAdmin()) {
+            // Déjà dans l'état demandé : rien à faire (et la garde du dernier
+            // super-admin ne doit pas être consultée pour une cible non-super).
+            return RoleChangeOutcome::unchanged();
+        }
+
+        // Garde anti-lockout (pendant de CpgUserAdministrator::delete) :
+        // jamais le dernier ROLE_SUPER capable de se connecter, la cible
+        // exclue du décompte puisque c'est elle qui perd le rôle.
+        if (!$grant && 0 === $this->cpgUserRepository->countOtherSuperAdminsAbleToSignIn($target)) {
+            throw CannotDemoteLastSuperAdminException::lastOne();
+        }
+
+        $newRoles = $grant ? [CpgUser::ROLE_SUPER] : $this->rolesAfterDemotion($target);
+        $target->setRoles($newRoles);
+        $this->cpgUserRepository->save($target);
+
+        // Le palier est perdu quand une **rétrogradation** écrit une liste
+        // sans `ROLE_TRUSTED` : la cible était `ROLE_SUPER` (l'exit
+        // idempotent est passé), donc de confiance par la hiérarchie, et
+        // ne l'est plus. On lit la liste **écrite** (`$newRoles`), jamais
+        // `getRoles()` qui y ajouterait `ROLE_USER` (règle de #560), ni
+        // l'état d'avant : un compte avec e-mail garde `ROLE_TRUSTED` et ses
+        // connexions. Une promotion n'ôte rien (`ROLE_SUPER` englobe
+        // `ROLE_TRUSTED`).
+        $losesTrustedTier = !$grant && !\in_array(CpgUser::ROLE_TRUSTED, $newRoles, true);
+
+        return RoleChangeOutcome::changed(
+            $losesTrustedTier ? $this->mcpConnections->revokeAllOf($target, AccountAccessWithdrawal::TrustedTierWithdrawn) : null,
+        );
     }
 
     /**
