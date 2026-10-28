@@ -93,16 +93,14 @@ final class ApiPlatformProblemDetailsTest extends WebTestCase
     public function testAnExceptionOfTheDomainKeepsItsSlugAsTypeAndTitleOnA409(): void
     {
         $client = $this->clientWithFreshQuotas();
-        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
+        $registrar = $client->getContainer()->get(CpgUserRegistrarInterface::class);
+        // Un autre compte, créé avant : la route vise le compte de l'appelant
+        // par son identifiant, jamais « le premier de la liste ».
+        $registrar->register('abel', TestCredentials::plainPassword());
+        $caller = $registrar->register(self::SUPER_USERNAME, TestCredentials::superPassword(), [CpgUser::ROLE_SUPER]);
         $csrfToken = $this->loginAsSuper($client);
 
-        $client->request('GET', '/api/backoffice/users', server: ['HTTP_X_XSRF_TOKEN' => $csrfToken]);
-        $users = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
-        self::assertIsArray($users);
-        self::assertIsArray($users[0] ?? null);
-        self::assertIsString($users[0]['id'] ?? null);
-
-        $client->request('PUT', \sprintf('/api/backoffice/users/%s/roles', $users[0]['id']), server: [
+        $client->request('PUT', \sprintf('/api/backoffice/users/%s/roles', $caller->getId()->toRfc4122()), server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_X_XSRF_TOKEN' => $csrfToken,
         ], content: self::jsonBody(['superAdmin' => false]));
