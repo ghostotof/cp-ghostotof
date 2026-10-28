@@ -154,7 +154,8 @@ paths:
   alive** (§2.1 only says MAY): a client handing back its access token alone can still refresh
   (`RevocationControllerTest::testRevokingAnAccessTokenRevokesItsRowOnly`). **Revoking a refresh
   token revokes its connection** too, cause `client` (#649): `.claude/rules/mcp-oauth-cycle-de-vie.md`, « Revoking a
-  refresh token at the revocation endpoint revokes its connection »; revoking a connection from the site is #650.
+  refresh token at the revocation endpoint revokes its connection »; revoking a connection from the site is #650, done
+  (`GET|DELETE /api/me/mcp-connections`, `.claude/rules/mcp-oauth-revocation-personne.md`).
   `token_type_hint` is ignored. **Accepted**: the response time differs with the token's fate (one query,
   one decryption), status and body do not. **The token endpoint is atomic** (`TokenEndpoint`): league runs
   inside `TransactionInterface` — it writes in several steps (the exchange: access token, refresh token, then
@@ -260,7 +261,7 @@ paths:
   endpoint's transaction, cause `superseded`, one `mcp-connection-revoked` line per superseded connection after its
   COMMIT, naming the connection that replaces it (`supersededBy`, #726 audit B3) (#649: `.claude/rules/mcp-oauth-cycle-de-vie.md`, « A new grant supersedes the previous one »); a denial creates, revokes and logs nothing and sends league's `access_denied`. The POST answers a 200 JSON `redirectUri`, not a 302
   (`fetch()` would follow it). `ConsentControllerTest` (base tier and non-trusted 403, anonymous 401 on the GET and
-  the CSRF guard's 403 on the POST, CSRF 403 at the trusted tier, 422 without `approved`). The account is read
+  the CSRF guard's 403 on the POST, CSRF 403 at the trusted tier, 422 without `approved` or `accountId`). The account is read
   by `#[CurrentUser] CpgUser`, checked rather than cast. **An approval requires a recent authentication**
   (F1 of #647's reviews, the author's decision): the person's `BEARER` lives an hour and is not revocable
   (ADR 0003), so a stolen cookie must not open a thirty-day connection. `ConsentService::MAX_AUTHENTICATION_AGE`
@@ -270,16 +271,27 @@ paths:
   re-read through Lexik's `parse()`, signature checked — never a value the client sends); past it, or with no
   instant readable, `ReauthenticationRequiredException`: 401 problem+json `/errors/reauthentication-required`,
   static `detail`, `log_level: info`, nothing written nor audited. Judged **after** the revalidation (an invalid
-  request stays its 400). The summary and the denial need no recent authentication: neither opens anything,
-  and a person saying no need not sign in again. **The site has no JWT refresh**: a token is only issued at
+  request stays its 400). The summary and the denial need no recent authentication (the **age**): neither opens
+  anything, and a person saying no need not sign in again. **A session opened before the account's last password change
+  is refused on all three** (#650, R1; since S1 judged on the **credentials version**, not a date: `CpgUser::claimsAStaleCredentialsVersion()`
+  fed by `AuthenticationInstantInterface::credentialsVersion()`, the `cv` claim of the session's JWT, re-read and
+  re-verified by Lexik like the `iat`; the same `ReauthenticationRequiredException` and `type`, a sentence of its own,
+  `afterAPasswordChange()`) — the remedy for a stolen password leaves a session from before no use of this door, and
+  the person sent back to sign in gains a clean one. **No token is read for an account at version 0** (the case of
+  nearly every account: the summary and the denial pay nothing); a token without claim is version 0, an unreadable
+  one is `null`, treated as 0. Since R1b the `api` firewall refuses such a session before any controller
+  (`.claude/rules/security-authentication-sessions.md`), so by HTTP this check is **not reached**; it stays as
+  defence in depth, the door granting thirty days (the author's decision).
+  **The site has no JWT refresh**: a token is only issued at
   login (and by the base access, which never reaches the consent), so `iat` is the instant the password was
-  typed; a refresh added some day must carry the original instant in a claim of its own, or this rule protects
-  nothing. Boundary pinned in `ConsentServiceTest` (exactly ten minutes granted, one second more refused,
+  typed; a refresh added some day must carry the original instant **and the original `cv`** in claims of their
+  own, or this rule protects nothing. Boundary pinned in `ConsentServiceTest` (exactly ten minutes granted, one second more refused,
   unknown instant refused), the HTTP path in `ConsentControllerTest` (a JWT signed by the site's key, `iat`
-  eleven minutes back: 401 typed, no connection, code nor audit line; five minutes back: granted). **Accepted
-  limits**: the POST revalidates the body without binding it
-  to the GET that was shown — same-origin script could grant for another registered redirect of the same
-  client (a signed GET→POST ticket would close it, not done); `ConsentService` itself checks no tier
+  eleven minutes back: 401 typed, no connection, code nor audit line; five minutes back: granted). **The decision is bound
+  to the account the summary named** (#650, F5; below). **Accepted limit**: the POST revalidates the request
+  parameters without binding them to the GET that was shown — same-origin script could grant for another registered
+  redirect of the same client (a signed GET→POST ticket would close it, not done); the **account**, on the other hand,
+  is bound; `ConsentService` itself checks no tier
   (`access_control` does, and #648's authenticator re-checks the tier on every request).
 - **Metadata outside `/api`**, at the canonical URLs (RFC 9728 §3.1, RFC 8414 §3.1), built from
   `Application/OAuthEndpoints` — the single source of every public URL: issuer `<base>/api/oauth`,
@@ -327,7 +339,11 @@ paths:
   pre-registered client's name is the one the site's administrator typed, and the consent page says so — never
   « declared by the client, not verified »; a CIMD client (#651) will declare its own, with its own wording.
 - **The consent page** (`/<locale>/oauth/consent`, `requiresAuth`, `ROLE_TRUSTED`/`ROLE_SUPER`, `noindex`;
-  an anonymous visitor goes through login, whose `redirect` keeps the query). `consentParamsFromQuery()`
+  an anonymous visitor goes through login, whose `redirect` keeps the query). **It names the account that grants**
+  (#650): `GET /api/oauth/consent` returns `account{id, username}`, read from `#[CurrentUser]` — the cookie of this very
+  request, never a state the page kept — shown in its own section with a « Changer de compte » link (login with
+  `redirect` and `reauth=1`). The `POST` is bound to it, with a `409 /errors/consent-account-changed` when it differs
+  (`.claude/rules/mcp-oauth-revocation-personne.md`, « The consent page names the account »). `consentParamsFromQuery()`
   refuses a repeated or valueless parameter (no call); the page sends back what it received, computes
   nothing. It follows the returned URL with **`window.location.replace`**, never `assign` (the page must
   not stay in history: « Back » would offer to grant the same request again), and only an `http:`/`https:`

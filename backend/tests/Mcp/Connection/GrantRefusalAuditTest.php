@@ -332,7 +332,7 @@ final class GrantRefusalAuditTest extends WebTestCase
         self::assertSame([], self::securityAuditEvents(self::EVENT));
         $failures = array_values(array_filter(
             self::allChannelsLogRecords(),
-            static fn(LogRecord $record): bool => 'Grant refusal not audited.' === $record->message,
+            static fn (LogRecord $record): bool => 'Grant refusal not audited.' === $record->message,
         ));
         self::assertCount(1, $failures);
         self::assertSame(Level::Critical, $failures[0]->level);
@@ -377,7 +377,7 @@ final class GrantRefusalAuditTest extends WebTestCase
         self::assertSame([], self::securityAuditEvents(self::EVENT));
         $failures = array_values(array_filter(
             self::allChannelsLogRecords(),
-            static fn(LogRecord $record): bool => 'Grant refusal not audited.' === $record->message,
+            static fn (LogRecord $record): bool => 'Grant refusal not audited.' === $record->message,
         ));
         self::assertCount(1, $failures);
         self::assertSame(Level::Critical, $failures[0]->level);
@@ -429,7 +429,7 @@ final class GrantRefusalAuditTest extends WebTestCase
      */
     private function assertNoSecretIsLogged(array $secrets): void
     {
-        $journal = json_encode(array_map(static fn(LogRecord $record): array => $record->context, self::securityAuditRecords()), \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES);
+        $journal = json_encode(array_map(static fn (LogRecord $record): array => $record->context, self::securityAuditRecords()), \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES);
 
         foreach ($secrets as $secret) {
             self::assertStringNotContainsString($secret, $journal);

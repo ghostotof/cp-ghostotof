@@ -7,6 +7,7 @@ namespace App\Tests\Mcp\Connection\Application;
 use App\Mcp\Connection\Application\AuthorizationRequestValidatorInterface;
 use App\Mcp\Connection\Domain\Repository\McpClientRepositoryInterface;
 use App\Tests\Mcp\Connection\RegisteredMcpClient;
+use App\Tests\Support\TestDatabase;
 use Doctrine\ORM\EntityManagerInterface;
 use League\OAuth2\Server\Exception\OAuthServerException;
 use Nyholm\Psr7\ServerRequest;
@@ -219,7 +220,7 @@ final class AuthorizationRequestValidatorTest extends KernelTestCase
             'code_challenge_method' => 'S256',
             'resource' => $this->resource(),
             ...$overrides,
-        ], static fn(string|array|null $value): bool => null !== $value);
+        ], static fn (string|array|null $value): bool => null !== $value);
 
         return new ServerRequest('GET', 'http://localhost/api/oauth/authorize')->withQueryParams($parameters);
     }
@@ -235,6 +236,7 @@ final class AuthorizationRequestValidatorTest extends KernelTestCase
     private function purge(): void
     {
         $em = self::getContainer()->get(EntityManagerInterface::class);
+        TestDatabase::assertSafeToWipe($em->getConnection());
         foreach (['mcp_refresh_token', 'mcp_access_token', 'mcp_authorization_code', 'mcp_connection', 'mcp_client'] as $table) {
             $em->getConnection()->executeStatement('DELETE FROM '.$table);
         }

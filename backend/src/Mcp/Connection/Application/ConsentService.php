@@ -6,6 +6,7 @@ namespace App\Mcp\Connection\Application;
 
 use App\Mcp\Connection\Domain\Entity\McpConnection;
 use App\Mcp\Connection\Domain\Exception\AuthorizationRequestRejectedException;
+use App\Mcp\Connection\Domain\Exception\ConsentAccountChangedException;
 use App\Mcp\Connection\Domain\Exception\ReauthenticationRequiredException;
 use App\Mcp\Connection\Domain\Repository\McpClientRepositoryInterface;
 use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
@@ -31,6 +32,10 @@ use Symfony\Component\DependencyInjection\Attribute\Autowire;
  * devient AuthorizationRequestRejectedException (400), jamais une
  * redirection : au consentement, rien ne part vers une URI qui n'a pas été
  * revalidée.
+ *
+ * **La décision est liée au compte montré** (#650, F5) : le corps renvoie
+ * l'UUID que le résumé a donné à la page, et un cookie d'un autre compte est
+ * un 409 (ConsentAccountChangedException), avant tout effet.
  *
  * **L'accord exige une authentification récente** (MAX_AUTHENTICATION_AGE,
  * l'instant lu dans le jeton signé par AuthenticationInstantInterface) : au
@@ -84,17 +89,101 @@ final readonly class ConsentService implements ConsentServiceInterface
     ) {
     }
 
-    public function summarize(ServerRequestInterface $request): AuthorizationRequestSummary
+    public function summarize(ServerRequestInterface $request, CpgUser $account): AuthorizationRequestSummary
     {
-        return $this->validated($request);
+        $summary = $this->validated($request);
+        $this->refuseASessionOlderThanThePasswordChange($account);
+
+        return $summary;
     }
 
     public function decide(ConsentDecision $decision, CpgUser $account): string
     {
         $summary = $this->validated($this->requestOf($decision));
+        $this->refuseADecisionShownToAnotherAccount($decision, $account);
+        $this->refuseASessionOlderThanThePasswordChange($account);
         $location = $decision->approved ? $this->grant($summary, $account) : $this->completer->deny($summary);
 
         return IssParameter::append($location, $this->endpoints->issuer());
+    }
+
+    /**
+     * La décision n'est prise que pour le compte que la page a montré (#650, F5
+     * de la relecture). Le résumé nomme le compte du cookie de SA requête ; si,
+     * entre le résumé et la décision, un autre onglet a reconnecté la personne
+     * sous un autre compte, le cookie de la décision est celui de ce dernier : le
+     * nom affiché mentirait, et l'accès irait à un compte que la personne n'a pas
+     * vu nommer. Le refus est un 409 typé (la page propose de relire la demande),
+     * rien n'est écrit ni journalisé.
+     *
+     * **L'accord et le refus sont liés**, par une règle unique : une décision
+     * nomme le compte pour lequel elle a été prise. Lier le refus ne protège rien
+     * (il ne crée rien) mais coûte un clic à peine, et évite une exception à
+     * expliquer. Jugé **après** la revalidation (une demande devenue invalide reste
+     * son 400, qu'une relecture ne répare pas) et **avant** tout jugement sur le
+     * compte du cookie : la décision ne le concerne pas.
+     *
+     * Un compte montré absent (`null`) ne correspond à aucun compte : refusé de
+     * même, en défense en profondeur de la validation du corps.
+     *
+     * Comparaison d'UUID (`Uuid::equals()`), pas de chaînes : l'écriture en
+     * majuscules d'un même UUID est le même compte (RFC 9562 §4).
+     *
+     * @throws ConsentAccountChangedException
+     */
+    private function refuseADecisionShownToAnotherAccount(ConsentDecision $decision, CpgUser $account): void
+    {
+        if (null === $decision->shownAccountId || !$account->getId()->equals($decision->shownAccountId)) {
+            throw ConsentAccountChangedException::sinceThePageWasShown();
+        }
+    }
+
+    /**
+     * Une session authentifiée **avant** le dernier changement de mot de passe du
+     * compte n'obtient rien du consentement — ni résumé, ni refus, ni accord (#650,
+     * F2 de la relecture). Le cookie `BEARER` n'est pas révocable (ADR 0003) :
+     * un attaquant qui l'a volé avant que la personne ne change son mot de passe
+     * (la remédiation) garde sa session une heure, et la grâce de dix minutes
+     * de l'accord lui laissait ouvrir une connexion de trente jours que la
+     * révocation du changement de mot de passe ne pouvait plus couper, puisque
+     * née après. Le compte lu ici est celui que le firewall vient de recharger en
+     * base : sa version des identifiants est celle du moment, jamais celle d'un
+     * état gardé — comparée à celle que le jeton de la session porte
+     * (S1 de la seconde relecture : une égalité, plus une date, qu'une seconde
+     * douteuse ou une horloge de pod faussaient).
+     *
+     * **Au résumé et au refus aussi**, contrairement à l'âge de l'authentification
+     * (qui ne bloque que l'accord) : la remédiation d'un mot de passe volé
+     * ne laisse à une session d'avant aucun usage de ce consentement, et la
+     * personne que cela renvoie à la connexion y gagne une session saine.
+     * Jugé **après** la revalidation de la demande, comme l'âge : une demande
+     * devenue invalide reste son 400.
+     *
+     * **Depuis R1b, le firewall `api` refuse déjà** toute session antérieure au
+     * changement de mot de passe, avant tout contrôleur
+     * (SessionBeforePasswordChangeRefusalListener, même prédicat) : par HTTP ce
+     * refus-ci n'est plus atteint. Il reste, comme la défense en profondeur d'une
+     * porte qui accorde une connexion de trente jours, pour tout appelant qui
+     * ne passerait pas par ce firewall ; il ne coûte rien à un compte sans changement.
+     *
+     * @throws ReauthenticationRequiredException
+     */
+    private function refuseASessionOlderThanThePasswordChange(CpgUser $account): void
+    {
+        // Le cas de presque tous les comptes : le mot de passe n'a jamais changé
+        // (version 0), rien à comparer — un jeton d'avant le déploiement, sans
+        // revendication, vaut 0 lui aussi —, donc aucune lecture du jeton (le
+        // port revérifie sa signature) au résumé ni au refus, qui n'avaient
+        // jusqu'ici aucune raison de la payer. Le firewall `api`, lui, compare
+        // aussi ce cas (revendication présente et différente de 0) : cette porte
+        // n'est que la défense en profondeur.
+        if (0 === $account->getCredentialsVersion()) {
+            return;
+        }
+
+        if ($account->claimsAStaleCredentialsVersion($this->authenticationInstant->credentialsVersion())) {
+            throw ReauthenticationRequiredException::afterAPasswordChange();
+        }
     }
 
     /**

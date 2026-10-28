@@ -1,6 +1,7 @@
 import { NOMINATIVE_READ_SCOPE, type ConsentParams, type ConsentRequest } from '../../domain/mcp/entities/ConsentRequest'
 import type { OAuthConsentRepository } from '../../domain/mcp/repositories/OAuthConsentRepository'
 import { consentQuery } from '../../domain/mcp/services/consentParams'
+import { ConsentAccountChangedError } from '../../domain/mcp/errors/ConsentAccountChangedError'
 import { ConsentFailedError } from '../../domain/mcp/errors/ConsentFailedError'
 import { InvalidConsentRequestError } from '../../domain/mcp/errors/InvalidConsentRequestError'
 import { MalformedConsentDecisionError } from '../../domain/mcp/errors/MalformedConsentDecisionError'
@@ -30,6 +31,14 @@ export const AUTHORIZATION_REQUEST_REJECTED = 'authorization-request-rejected'
  */
 export const REAUTHENTICATION_REQUIRED = 'reauthentication-required'
 
+/**
+ * Le slug du 409 que le serveur rend quand la décision a été prise sur la page
+ * d'un autre compte que celui du cookie (`ConsentAccountChangedException`,
+ * #650, F5). Reconnu par le `type` ET le statut, jamais par le `detail`
+ * localisé : tout autre 409 reste un échec générique.
+ */
+export const CONSENT_ACCOUNT_CHANGED = 'consent-account-changed'
+
 /** Ce que veut dire un 422 : sur la décision, un corps que la page a mal formé. */
 type UnprocessableMeaning = 'malformed-decision' | 'generic'
 
@@ -48,6 +57,9 @@ type UnprocessableMeaning = 'malformed-decision' | 'generic'
  * forme (version du backend désynchronisée, proxy qui répond du HTML) est un
  * échec, plutôt qu'une page qui afficherait `undefined` à la place du client.
  * Le scope est fixé à `nominative:read`, le seul que le texte de la page décrit.
+ * Le compte qui accorde (#650) est exigé aussi, UUID compris : le serveur le lit
+ * sur le cookie de la requête, la page ne le déduit de rien, et la décision le
+ * lui renvoie (F5).
  */
 export class HttpOAuthConsentRepository implements OAuthConsentRepository {
   private readonly apiBaseUrl: string
@@ -68,7 +80,7 @@ export class HttpOAuthConsentRepository implements OAuthConsentRepository {
     return this.parseSummary(await this.readJson(response))
   }
 
-  async decide(params: ConsentParams, approved: boolean): Promise<string> {
+  async decide(params: ConsentParams, approved: boolean, accountId: string): Promise<string> {
     const csrfToken = readCsrfToken()
     const response = await this.send(
       `${this.apiBaseUrl}${PATH}`,
@@ -80,8 +92,10 @@ export class HttpOAuthConsentRepository implements OAuthConsentRepository {
           Accept: 'application/json',
           ...(csrfToken ? { 'X-XSRF-TOKEN': csrfToken } : {}),
         },
-        // Les paramètres reçus, tels quels (un absent part en `null`), plus la décision.
-        body: JSON.stringify({ ...params, approved }),
+        // Les paramètres reçus, tels quels (un absent part en `null`), la décision,
+        // et l'UUID du compte que le résumé a nommé (F5) : le serveur refuse en 409
+        // si le cookie est devenu celui d'un autre.
+        body: JSON.stringify({ ...params, approved, accountId }),
       },
       'malformed-decision',
     )
@@ -127,6 +141,12 @@ export class HttpOAuthConsentRepository implements OAuthConsentRepository {
         return (await this.hasType(response, REAUTHENTICATION_REQUIRED))
           ? new ReauthenticationRequiredError()
           : new SessionExpiredError()
+      case 409:
+        // Le compte connecté n'est plus celui que la page a montré ; tout autre
+        // 409 est un échec générique.
+        return (await this.hasType(response, CONSENT_ACCOUNT_CHANGED))
+          ? new ConsentAccountChangedError()
+          : new ConsentFailedError('The consent request failed with an unrecognised 409')
       case 403:
         // 403 couvre aussi le refus CSRF : dans les deux cas, se reconnecter
         // repose un cookie de session et un jeton CSRF neufs.
@@ -154,6 +174,7 @@ export class HttpOAuthConsentRepository implements OAuthConsentRepository {
   private parseSummary(body: unknown): ConsentRequest {
     const summary = body as Partial<Record<keyof ConsentRequest, unknown>> | null
     const client = summary?.client as Partial<Record<string, unknown>> | null | undefined
+    const account = summary?.account as Partial<Record<string, unknown>> | null | undefined
 
     if (
       'string' !== typeof client?.id ||
@@ -161,7 +182,9 @@ export class HttpOAuthConsentRepository implements OAuthConsentRepository {
       'preregistered' !== client.registration ||
       'string' !== typeof summary?.redirectHost ||
       NOMINATIVE_READ_SCOPE !== summary.scope ||
-      'string' !== typeof summary.resource
+      'string' !== typeof summary.resource ||
+      'string' !== typeof account?.id ||
+      'string' !== typeof account.username
     ) {
       throw new ConsentFailedError('The consent summary has an unexpected shape')
     }
@@ -171,6 +194,7 @@ export class HttpOAuthConsentRepository implements OAuthConsentRepository {
       redirectHost: summary.redirectHost,
       scope: NOMINATIVE_READ_SCOPE,
       resource: summary.resource,
+      account: { id: account.id, username: account.username },
     }
   }
 }

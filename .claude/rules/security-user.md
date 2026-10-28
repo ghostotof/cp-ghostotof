@@ -34,7 +34,7 @@ paths:
     **The login reads `MAX_PASSWORD_LENGTH` as a bound, not as a validation** (issue #588, decided on
     2026-10-13): `OverlongPasswordRefusalListener` compares the submitted password's `strlen()` with it, the
     one `strlen()` the rule above allows, because no account can answer yes past it (see
-    `.claude/rules/security-authentication.md`). Never `PlainPasswordLength` there: its minimum would refuse
+    `.claude/rules/security-authentication-connexion.md`). Never `PlainPasswordLength` there: its minimum would refuse
     an account whose password was set when the CLI counted the minimum in bytes (#386).
     On both DTOs it sits inside one `Assert\Sequentially([NotBlank, PlainPasswordLength, NotCompromisedPassword])`
     — each constraint only if the previous one passed — so a password already refused never reaches
@@ -121,7 +121,49 @@ paths:
     2026-10-11, issue #460; a new invitation remains possible) · `CpgUserRoleAdministrator`
     (`setSuperAdmin`, idempotent, anti-lockout guards; on demotion `ROLE_TRUSTED` is kept **only if the account
     has an `email`** — nominative grant, ADR 0003 D1, issue #78 pt 3 — a CLI account falls back to the base
-    tier). **Both administer under one lock** (issues #551, #552): `Application/AccountAdministrationLockInterface::whileAdministering(target, actingUser, Closure(CpgUser): T)`,
+    tier; **a demotion that writes a list without `ROLE_TRUSTED` revokes the account's MCP connections** in the
+    lock's closure, #650). **Three writers cut an account's MCP connections inside their own lock transaction**
+    (#650, through the `Shared` port `AccountMcpConnectionsRevokerInterface`, `Security` naming no class of `Mcp`;
+    audited after the COMMIT, `mcp-connection-revoked`): `CpgUserAdministrator::changePassword()` (cause
+    `password-changed`), `PasswordSetupService::activate()` **when the link replaces a password** — `hasPassword()`
+    read before `setPassword()`, on the account re-read under the lock; a first password is *set*, nothing to revoke —
+    and `CpgUserRoleAdministrator::setSuperAdmin()` on the loss of the tier (`trusted-tier-withdrawn`, judged on the
+    list it **writes**, never `getRoles()`). A refused revocation undoes the password, the activation or the role.
+    `upgradePassword()` (same secret) and `CpgUserRegistrar` revoke nothing; the mechanics and the accepted limits:
+    `.claude/rules/mcp-oauth-revocation-personne.md`. **That revocation can still deadlock** with the first exchange of
+    a new grant's code (account then connections by id, against a connection then the pair's others; PostgreSQL
+    aborts one, both stay atomic, #650 F1): the « no cycle » below is about the advisory key and the account
+    row locks alone. **The revocation side is retried once** (S3 of the second review, CR4):
+    `Application/DeadlockRetryInterface::retryOnce(Closure(bool $isRetry): T)`, implemented by
+    `Infrastructure/Doctrine/DoctrineDeadlockRetry`, **opt-in and never inside the account locks**: a service whose
+    operation can be replayed asks for it and replays its **whole** locked transaction — `changePassword()`,
+    `setSuperAdmin()`, `PasswordSetupService::complete()` (so `activate()`). The locks do not retry on their own, their
+    other callers are not replayable (the invitation handler sends a link, the purge counts what it deletes). Only
+    `DeadlockException` (`40P01`) is retried, once; `ManagerRegistry::resetManager()` runs before the second attempt,
+    always (#549 closed the EntityManager). The second attempt re-reads the account (`changePassword()`, by id) or the
+    token (`complete()`, by hash); `setSuperAdmin()` re-reads nothing (the administration lock re-reads target and
+    actor by id); the hash is not recomputed and the audit is written once, after the COMMIT that succeeded. The full
+    text, the exchange side that is not retried and the tests: `.claude/rules/mcp-oauth-revocation-personne.md`.
+    **`CpgUser::credentialsVersion`** (`cpg_user.credentials_version INT NOT NULL DEFAULT 0`, `#[Ignore]`d by the
+    serializer; `Version20261028180000`, fingerprint n° 39 of `verify.sql`; #650, R1 then S1) counts the password
+    changes: **two writers**, through `replacePassword($hash)` — `CpgUserAdministrator::changePassword()` and
+    `PasswordSetupService::activate()` (a password *set* by a link advances it too, no condition: no session can
+    exist for an account without a password) —, the version advanced **in memory with the password inside the
+    lock's closure**, on the instance re-read `FOR UPDATE`, never one without the other (an `UPDATE … SET v = v + 1`
+    would protect nothing more). **`upgradePassword()` and `setPassword()` advance nothing** (a rehash keeps the
+    secret; `CpgUserRegistrar` sets a first password at creation). The JWT carries a copy (`cv`) and the one predicate is
+    `claimsAStaleCredentialsVersion(?int)` (equality, an absent claim is 0), read by the whole `api` firewall and the
+    consent (`.claude/rules/security-authentication-sessions.md`). The first form dated the change
+    (`credentials_changed_at`, `Version20261028160000`); it was never delivered on its own: `Version20261028200000`
+    drops it in the same deployment, `hasChangedCredentialsSince()` and the instant argument of `replacePassword()`
+    are gone.
+    **`upgradePassword()` is an `UPDATE … SET password = :new WHERE id = :id AND password = :old`** (F3): a rehash at
+    sign-in no longer restores a password changed in between by the backoffice or a link. The price: a rehash lost when
+    the password changed, harmless — the next sign-in rehashes the new one; zero rows is not an error; the instance
+    takes the new hash as its original state so a later `flush()` rewrites nothing (rejected: the account lock, a
+    transaction and a `FOR UPDATE` for a rare write, plus an Infrastructure → Application dependency).
+    `CpgUserRoleAdministrator::setSuperAdmin()` returns a **`RoleChangeOutcome`** (`unchanged()`, `changed(?RevokedAccountMcpConnections)`;
+    the closure's body is `writeRole()`), not a tuple read by position. **Both administer under one lock** (issues #551, #552): `Application/AccountAdministrationLockInterface::whileAdministering(target, actingUser, Closure(CpgUser): T)`,
     adapter `Infrastructure/Doctrine/PostgresAccountAdministrationLock` on the shared skeleton (see the
     account lock below), the fifth PostgreSQL lock. The anti-lockout guard « never the last `ROLE_SUPER` »
     used to count then act, with no lock nor transaction: two `ROLE_SUPER` deleting or demoting each other

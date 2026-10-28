@@ -7,6 +7,7 @@ namespace App\Mcp\Connection\Infrastructure\Doctrine;
 use App\Mcp\Connection\Domain\Entity\McpConnection;
 use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
 use App\Mcp\Connection\Domain\ValueObject\ConnectionReference;
+use App\Mcp\Connection\Domain\ValueObject\PreselectionBounds;
 use App\Mcp\Connection\Domain\ValueObject\RevocationCause;
 use App\Mcp\Connection\Domain\ValueObject\RevokedConnection;
 use App\Shared\Infrastructure\Doctrine\RereadUnderLock;
@@ -25,14 +26,20 @@ use Symfony\Component\Uid\Uuid;
 class McpConnectionRepository extends ServiceEntityRepository implements McpConnectionRepositoryInterface
 {
     /**
-     * Les trois choix de connexions de {@see self::revokeWhere()}, alias `c`,
+     * Les cinq choix de connexions de {@see self::revokeWhere()}, alias `c`,
      * écrits ici seuls : aucun appelant ne compose de SQL. Une ligne au plus,
      * l'identifiant étant la clé primaire ({@see self::revokeActive()}).
      */
     private const string WHERE_ONE = 'c.id = :id';
 
+    /** Cette connexion, si elle est à ce compte ({@see self::revokeActiveOfAccount()}) : une ligne au plus. */
+    private const string WHERE_ONE_OF_ACCOUNT = 'c.id = :id AND c.account_id = :account';
+
     /** Les autres connexions actives du couple compte/client ({@see self::revokeOtherActiveOf()}). */
     private const string WHERE_OTHERS_OF_PAIR = 'c.account_id = :account AND c.mcp_client_id = :client AND c.id <> :kept';
+
+    /** Toutes les connexions de ce compte ({@see self::revokeAllActiveOfAccount()}). */
+    private const string WHERE_ALL_OF_ACCOUNT = 'c.account_id = :account';
 
     /** Une liste d'identifiants ({@see self::revokeExpired()}). */
     private const string WHERE_AMONG = 'c.id IN (:ids)';
@@ -60,6 +67,57 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
             ->setParameter('id', $id, UuidType::NAME)
             ->getQuery()
             ->getOneOrNullResult();
+    }
+
+    /**
+     * Le service répond à la liste de la personne avec deux lectures
+     * ({@see findTerminatedOfAccount()} est l'autre) : l'une n'a pas de limite
+     * *par nature* — une connexion non révoquée est bornée par ce qui la
+     * remplace ou l'éteint (un accord abandonné échoit en une heure, un
+     * premier échange remplace les autres de sa paire, la purge marque les
+     * échues chaque nuit) —, l'autre en a une, passée par l'appelant.
+     */
+    public function findNotRevokedOfAccount(Uuid $accountId): array
+    {
+        /** @var list<McpConnection> */
+        return $this->ofAccount($accountId)
+            ->andWhere('connection.revokedAt IS NULL')
+            ->orderBy('connection.grantedAt', 'DESC')
+            ->addOrderBy('connection.id', 'DESC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    public function findTerminatedOfAccount(Uuid $accountId, int $limit): array
+    {
+        /** @var list<McpConnection> */
+        return $this->ofAccount($accountId)
+            ->andWhere('connection.revokedAt IS NOT NULL')
+            ->orderBy('connection.revokedAt', 'DESC')
+            ->addOrderBy('connection.id', 'DESC')
+            ->setMaxResults($limit)
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
+     * Le socle des deux lectures de la liste : les connexions du compte, leur
+     * client joint (`innerJoin` + `addSelect`) — la liste affiche son nom, et
+     * une jointure évite une requête par connexion. Le compte n'est pas joint :
+     * l'appelant le tient déjà, la colonne `account_id` suffit au filtre, et son
+     * identifiant est typé comme elle. **L'ordre est celui de chaque appelant**,
+     * car il décide *quelles* lignes une limite garde : l'octroi pour les non
+     * révoquées (toutes rendues, l'ordre n'est que de présentation), l'instant de
+     * fin pour les terminées ; dans les deux cas l'identifiant décroissant
+     * départage deux instants égaux, un ordre qui ne dépend pas du plan.
+     */
+    private function ofAccount(Uuid $accountId): QueryBuilder
+    {
+        return $this->createQueryBuilder('connection')
+            ->addSelect('client')
+            ->innerJoin('connection.client', 'client')
+            ->where('IDENTITY(connection.account) = :account')
+            ->setParameter('account', $accountId, UuidType::NAME);
     }
 
     public function add(McpConnection $connection): void
@@ -125,6 +183,82 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
     }
 
     /**
+     * La même instruction que {@see self::revokeActive()}, avec le compte en
+     * plus dans le choix (`c.id = :id AND c.account_id = :account`) : la
+     * révocation par la personne (#650). Une instruction et rien d'autre — ni
+     * `lockForUpdate()` préalable (deux allers-retours pour le même verrou),
+     * ni transaction explicite, que l'instruction, atomique, rend inutile.
+     * Le verrou est celui de {@see self::revokeWhere()} : la connexion seule,
+     * `FOR NO KEY UPDATE`, par identifiant ; une autre écriture sur la même
+     * ligne (un rafraîchissement, le marquage de la purge) se termine d'abord,
+     * puis `revoked_at IS NULL` est réévalué sur la ligne validée.
+     */
+    public function revokeActiveOfAccount(Uuid $connectionId, Uuid $accountId, RevocationCause $cause, DateTimeImmutable $at): ?RevokedConnection
+    {
+        // Une ligne au plus : l'identifiant est la clé primaire.
+        return $this->revokeWhere(
+            self::WHERE_ONE_OF_ACCOUNT,
+            ['id' => $connectionId, 'account' => $accountId],
+            ['id' => UuidType::NAME, 'account' => UuidType::NAME],
+            $cause,
+            $at,
+        )[0] ?? null;
+    }
+
+    public function belongsToAccount(Uuid $connectionId, Uuid $accountId): bool
+    {
+        return false !== $this->getEntityManager()->getConnection()->fetchOne(
+            'SELECT 1 FROM mcp_connection WHERE id = :id AND account_id = :account',
+            ['id' => $connectionId, 'account' => $accountId],
+            ['id' => UuidType::NAME, 'account' => UuidType::NAME],
+        );
+    }
+
+    /**
+     * La même instruction que {@see self::revokeActive()}, sur toutes les
+     * connexions du compte (`c.account_id = :account`) : le mot de passe a
+     * changé, ou le palier de confiance est retiré (#650). Servie par
+     * l'index partiel des couples actifs (`account_id` en tête).
+     *
+     * **Refusée hors transaction** : l'instruction seule est validée tout de
+     * suite, alors que sa raison d'être est de valider *avec* l'écriture de
+     * l'appelant (le mot de passe, le rôle) ; la garde lit la connexion DBAL
+     * de l'EntityManager, celle de l'appelant, avant d'écrire quoi que ce
+     * soit. **Ordre des verrous** : l'appelant tient la ligne du compte
+     * (`FOR UPDATE`) ; les connexions suivent, par identifiant
+     * ({@see self::revokeWhere()}). Aucun chemin ne prend une connexion puis
+     * le compte : le point de jeton lit le compte sans verrou, le
+     * consentement prend un `FOR KEY SHARE` du compte avant d'insérer, la
+     * suppression en cascade suit le même sens. « Aucun chemin ne prend une
+     * connexion puis le compte » ne dit pas qu'aucun cycle n'existe :
+     * **Un cycle reste possible** (#650, F1) : le premier échange du code d'un nouvel accord
+     * du même client (il verrouille sa connexion C2, puis veut les autres du couple, C1)
+     * croisant cette révocation (qui prend C1, puis veut C2 : C1 < C2, UUID v7) — chacune
+     * attend ce que l'autre tient, PostgreSQL en annule une (`40P01`) et les deux
+     * transactions restent atomiques. **Côté révocation, l'appelant relance toute sa
+     * transaction verrouillée une fois** (S3, CR4, `DeadlockRetryInterface` : changement de
+     * mot de passe, rétrogradation, activation par lien ; l'audit suit le seul COMMIT
+     * abouti) ; un second interblocage remonte (un 500). **Côté échange** (league), aucune
+     * relance : le client reçoit un 500 du point de jeton, son code reste échangeable.
+     * Ni `NOWAIT` ni verrou de la paire avant league. Épinglé par
+     * `AccountWideRevocationDeadlockTest`, un cas par victime.
+     */
+    public function revokeAllActiveOfAccount(Uuid $accountId, RevocationCause $cause, DateTimeImmutable $at): array
+    {
+        if (!$this->getEntityManager()->getConnection()->isTransactionActive()) {
+            throw RevocationOutsideTransactionException::forAccount($accountId->toRfc4122());
+        }
+
+        return $this->revokeWhere(
+            self::WHERE_ALL_OF_ACCOUNT,
+            ['account' => $accountId],
+            ['account' => UuidType::NAME],
+            $cause,
+            $at,
+        );
+    }
+
+    /**
      * La même instruction que {@see self::revokeActive()}, sur un couple au
      * lieu d'un identifiant : `RETURNING` rend chaque connexion remplacée, de
      * quoi l'auditer sans seconde requête. La recherche du couple actif est
@@ -151,6 +285,23 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
     }
 
     /**
+     * Une instruction, par la connexion DBAL de l'EntityManager : la connexion
+     * est trouvée par la ligne du code (`connection_id`, la clé étrangère), et
+     * `code_exchanged_at IS NULL` fait du premier échange le seul noté. L'instant
+     * est typé comme sa colonne, avec fuseau (#434).
+     */
+    public function recordCodeExchangeOf(string $codeHash, DateTimeImmutable $at): void
+    {
+        $this->getEntityManager()->getConnection()->executeStatement(
+            'UPDATE mcp_connection SET code_exchanged_at = :at'
+            .' WHERE code_exchanged_at IS NULL'
+            .' AND id IN (SELECT connection_id FROM mcp_authorization_code WHERE code_hash = :codeHash)',
+            ['at' => $at, 'codeHash' => $codeHash],
+            ['at' => Types::DATETIMETZ_IMMUTABLE],
+        );
+    }
+
+    /**
      * La relecture par critère du projet ({@see RereadUnderLock::rowsMatching()},
      * `.claude/rules/backend-architecture.md`) : une requête DQL `FOR UPDATE`
      * avec `HINT_REFRESH`, jamais une copie — une instance déjà gérée est relue
@@ -161,17 +312,24 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
      * avec fuseau (#434). Doctrine refuse le verrou hors transaction
      * (`TransactionRequiredException`).
      */
-    public function findActiveCandidatesForExpiry(DateTimeImmutable $idleBefore, DateTimeImmutable $maximumBefore): array
+    public function findActiveCandidatesForExpiry(PreselectionBounds $bounds): array
     {
         return $this->rereadUnderLock->rowsMatching(
             $this->getEntityManager(),
             McpConnection::class,
-            static function (QueryBuilder $query, string $connection) use ($idleBefore, $maximumBefore): void {
+            static function (QueryBuilder $query, string $connection) use ($bounds): void {
+                // Trois branches, une par échéance de McpConnection::deadline() :
+                // l'inactivité, la durée maximale et — le code jamais échangé —
+                // l'échéance des non échangées (#730), qui ne vaut que pour une
+                // colonne nulle.
                 $query->andWhere($connection.'.revokedAt IS NULL')
-                    ->andWhere('(COALESCE('.$connection.'.lastUsedAt, '.$connection.'.grantedAt) <= :idleBefore OR '.$connection.'.grantedAt <= :maximumBefore)')
+                    ->andWhere('(COALESCE('.$connection.'.lastUsedAt, '.$connection.'.grantedAt) <= :idleBefore'
+                        .' OR '.$connection.'.grantedAt <= :maximumBefore'
+                        .' OR ('.$connection.'.codeExchangedAt IS NULL AND '.$connection.'.grantedAt <= :unexchangedBefore))')
                     ->orderBy($connection.'.id')
-                    ->setParameter('idleBefore', $idleBefore, Types::DATETIMETZ_IMMUTABLE)
-                    ->setParameter('maximumBefore', $maximumBefore, Types::DATETIMETZ_IMMUTABLE);
+                    ->setParameter('idleBefore', $bounds->idleBefore(), Types::DATETIMETZ_IMMUTABLE)
+                    ->setParameter('maximumBefore', $bounds->maximumBefore(), Types::DATETIMETZ_IMMUTABLE)
+                    ->setParameter('unexchangedBefore', $bounds->unexchangedBefore(), Types::DATETIMETZ_IMMUTABLE);
             },
             forUpdate: true,
         );
@@ -234,9 +392,9 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
     }
 
     /**
-     * L'instruction des trois révocations, écrite une fois (lot C des
+     * L'instruction des révocations, écrite une fois (lot C des
      * relectures de #649) : seul le choix des connexions change, `$where`,
-     * l'une des trois constantes `WHERE_*` de cette classe — jamais une chaîne
+     * l'une des cinq constantes `WHERE_*` de cette classe — jamais une chaîne
      * composée par un appelant.
      * Du SQL natif par la connexion DBAL de l'EntityManager, jamais l'unité de
      * travail ni le DQL (`.claude/rules/mcp-oauth-cycle-de-vie.md`) : la
@@ -265,7 +423,7 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
      * remplacement de deux autres connexions d'un couple, toutes deux
      * candidates, pouvait croiser le marquage de la purge en `40P01`
      * (`TokenEndpointConcurrencyTest::testASupersessionLocksTheOtherConnectionsInIdOrder`).
-     * Une seule forme pour les trois révocations : pour une ligne
+     * Une seule forme pour les cinq révocations : pour une ligne
      * (`revokeActive()`) l'ordre ne change rien, pour la purge
      * (`revokeExpired()`) ses lignes sont déjà verrouillées, par identifiant,
      * dans la même transaction. Le `revoked_at IS NULL` de la sous-requête est
@@ -301,7 +459,7 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
     /**
      * Ce qu'une ligne rendue par `RETURNING revoked.id, revoked.account_id,
      * cl.client_id` ({@see self::revokeWhere()}) a révoqué : écrit une fois
-     * pour les trois révocations.
+     * pour les cinq révocations.
      *
      * @param array<string, mixed> $row
      */

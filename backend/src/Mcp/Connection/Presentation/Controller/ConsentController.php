@@ -58,10 +58,22 @@ final readonly class ConsentController
     ) {
     }
 
+    /**
+     * Le résumé nomme aussi le compte qui accorde (#650) : l'identifiant de
+     * connexion du `CpgUser` dont le cookie arrive avec CETTE requête, jamais
+     * un état que la page aurait gardé — un autre onglet a pu changer de
+     * compte entre-temps. L'identifiant est celui de l'appelant lui-même (la
+     * route est `ROLE_TRUSTED`, nominatif par nature, ADR 0003) et n'entre dans
+     * aucun journal. **Son UUID** (`account.id`) est ce que la décision renvoie : le
+     * `POST` n'accorde qu'au compte que ce résumé a nommé (#650, F5), l'UUID
+     * plutôt que l'identifiant de connexion parce qu'il ne se réutilise pas et
+     * n'apprend rien de plus à la page, qui l'a déjà. Même lecture par `#[CurrentUser]` que `decide()` : un
+     * autre type d'utilisateur ferait échouer la résolution de l'argument.
+     */
     #[Route('/api/oauth/consent', name: 'oauth_consent_show', methods: ['GET'])]
-    public function show(Request $request): JsonResponse
+    public function show(Request $request, #[CurrentUser] CpgUser $account): JsonResponse
     {
-        $summary = $this->consent->summarize($this->psrHttpFactory->createRequest($request));
+        $summary = $this->consent->summarize($this->psrHttpFactory->createRequest($request), $account);
 
         return $this->notStored(new JsonResponse([
             'client' => [
@@ -72,6 +84,7 @@ final readonly class ConsentController
             'redirectHost' => $summary->redirectHost,
             'scope' => $summary->scope,
             'resource' => $summary->resource,
+            'account' => ['id' => $account->getId()->toRfc4122(), 'username' => $account->getUserIdentifier()],
         ]));
     }
 

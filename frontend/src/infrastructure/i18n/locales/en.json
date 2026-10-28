@@ -11,7 +11,8 @@
     "anonymousCv": "CV without identity",
     "assistant": "Assistant",
     "career": "Career",
-    "lessonsLearned": "Lessons learned"
+    "lessonsLearned": "Lessons learned",
+    "mcpConnections": "My MCP connections"
   },
   "common": {
     "downloadCv": "Download my CV",
@@ -42,11 +43,17 @@
     "instantAccessError": "Access could not be granted. Please try again later.",
     "baseAccessBadge": "Base access",
     "endBaseAccess": "End this access",
-    "accountMenu": "Account menu"
+    "accountMenu": "Account menu",
+    "myAccount": "My account"
   },
   "admin": {
     "heading": "Administration",
     "navigation": "Administration navigation",
+    "sessionEnded": {
+      "message": "Your session has ended: what you typed is still here, but saving is refused until you sign in again.",
+      "signInAgain": "Sign in again",
+      "newTab": "(opens in a new tab)"
+    },
     "contentNavigation": "Content navigation",
     "comingSoon": "This section will be available soon.",
     "localeLabel": "Language",
@@ -472,7 +479,8 @@
     "rateLimited": "Too many login attempts. Please try again in a few minutes.",
     "rateLimitedIn": "Too many login attempts. Please try again in {minutes} minute. | Too many login attempts. Please try again in {minutes} minutes.",
     "genericError": "Something went wrong, please try again.",
-    "reauthNotice": "Confirm your identity: authorizing an MCP connection requires having signed in less than ten minutes ago. You will then come back to the request."
+    "reauthNotice": "Confirm your identity: authorizing an MCP connection requires having signed in less than ten minutes ago. You will then come back to the request.",
+    "sessionEnded": "Your session has ended, please sign in again."
   },
   "contact": {
     "eyebrow": "Contact",
@@ -644,6 +652,10 @@
     "adminWatch": {
       "title": "Administration — Watch",
       "description": "Manage the products whose lifecycle is tracked."
+    },
+    "mcpConnections": {
+      "title": "My MCP connections",
+      "description": "The assistants connected to your account: review them and revoke the ones you no longer want."
     }
   },
   "contributions": {
@@ -791,6 +803,11 @@
     "intro": "An MCP client is asking to connect to this site’s MCP server on your behalf. Check the request before deciding.",
     "loading": "Loading the request…",
     "submitting": "Sending your decision…",
+    "account": {
+      "heading": "The account",
+      "grantingAs": "You are granting this access as {username}",
+      "switch": "Switch account"
+    },
     "client": {
       "heading": "The client",
       "nameLabel": "Client name",
@@ -815,9 +832,61 @@
       "relogin": "Sign in again",
       "reauthenticationRequired": "To authorize this connection, sign in again: you signed in to the site more than ten minutes ago. You will then come back to this same request.",
       "reauthenticate": "Sign in again to authorize",
+      "accountChanged": "The signed-in account has changed since this request was shown (for example in another tab): nothing was sent. Reload the request to see the current account, then decide.",
+      "reload": "Reload the request",
       "unsafeRedirect": "The return address received is not a web address on the announced host: the page did not follow it.",
       "malformedDecision": "The page could not send your decision. Start again from your assistant.",
       "unknown": "An unexpected error occurred. Try again."
     }
+  },
+  "mcpConnections": {
+    "title": "My MCP connections",
+    "intro": "The assistants you have allowed to read your nominative corpus. Revoking a connection cuts it at the assistant's next request; to restore it, you will have to authorize it again.",
+    "loading": "Loading your connections…",
+    "revoking": "Revoking…",
+    "caption": "Your MCP connections, with their state",
+    "columns": {
+      "client": "Assistant",
+      "grantedAt": "Granted on",
+      "lastUsedAt": "Last used",
+      "expiresAt": "Expires",
+      "state": "State",
+      "actions": "Actions"
+    },
+    "terminatedTruncated": "History is limited: only the most recent ended connections are shown.",
+    "neverCompleted": "Never completed",
+    "notRenewedYet": "Not renewed yet",
+    "noExpiry": "No expiry",
+    "states": {
+      "active": "Active",
+      "expired": "Expired"
+    },
+    "revokedAt": "on {date}",
+    "causes": {
+      "person": "Revoked by you",
+      "client": "Revoked by the client",
+      "refreshTokenReuse": "Cut for security: refresh token reused",
+      "codeReplay": "Cut for security: authorization code replayed",
+      "superseded": "Replaced by a more recent connection",
+      "expired": "Expired",
+      "passwordChanged": "Cut when the password changed",
+      "trustedTierWithdrawn": "Cut: the trusted tier was withdrawn",
+      "unknown": "Revoked (unrecognized cause)"
+    },
+    "revoke": "Revoke",
+    "revokeAria": "Revoke the connection of {client}, granted on {date}",
+    "confirm": "Revoke the connection of \"{client}\"? It will stop working at the assistant's next request.",
+    "outcome": {
+      "revoked": "The connection has been revoked. It stops working at the assistant's next request.",
+      "alreadyGone": "This connection had already ended: nothing to revoke. The list has been refreshed."
+    },
+    "errors": {
+      "load": "Your connections could not be loaded.",
+      "retry": "Try again",
+      "revoke": "The connection could not be revoked. Try again later.",
+      "sessionEnded": "Your session has ended.",
+      "signInAgain": "Sign in again"
+    },
+    "empty": "No connection yet: no assistant is connected to your account."
   }
 }

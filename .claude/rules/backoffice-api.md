@@ -46,7 +46,7 @@ paths:
   real chain set `Secure` — a redefinition of `lexik_jwt_authentication.cookie_provider.BEARER` turns it red
   (measured), and by construction so do a decorator in `services.yaml`, a `kernel.response` listener rewriting
   the cookie, a bundle's `prepend()` or a compiler pass, when they act in `test` too; `ApiRouteExposureTest`
-  checks every cookie of its responses against the factory as well (`.claude/rules/security-authentication.md`).
+  checks every cookie of its responses against the factory as well (`.claude/rules/security-authentication-sessions.md`).
   What acts in `prod` alone through the container is `SecurityServicesEnvironmentParityTest`'s (#698, below).
   **Accepted limits** (#714): code that decides on the environment or on `%kernel.debug%` at run time, and code
   conditioned on the request being `https` (functional clients stay in http), still send it in clear with the
@@ -337,7 +337,7 @@ paths:
   per-context copy. It must also be traced: `ThrottledRequestAuditCoverageTest` (issue #361) wants every
   `RetryAfterAware` either sorted by `ThrottledRequestAuditListener` or justified, as a per-account quota
   (`PER_ACCOUNT`) or as one traced before it is thrown (`TRACED_UPSTREAM`, the login refusal, issue #399)
-  (see `.claude/rules/security-authentication.md`). `RateLimiterLockFailureListener` stays apart on purpose (fixed delay, priority 16).
+  (see `.claude/rules/security-authentication-audit.md`). `RateLimiterLockFailureListener` stays apart on purpose (fixed delay, priority 16).
   **And every quota 429 carries `type: /errors/rate-limited`** (issue #369), the `type` of the nginx zones
   (`@rate_limited`): one cause, one value for a client to recognise. A quota exception therefore declares
   `implements ProblemExceptionInterface, RetryAfterAware` and `use IsRateLimitedProblem`

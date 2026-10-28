@@ -31,13 +31,19 @@ paths:
   `set -e`, `PGOPTIONS=-c lock_timeout=5s`; `McpConnectionsPurgedDailyTest` pins the line and that no other manifest
   runs it). **Two transactions** (#726): the marking, (1)–(3), COMMIT, then its audits; the deletions, (4)–(5), in the
   token endpoint's order — connection rows first, tokens after (the reverse deadlocked in `40P01`, task 6). The
-  candidates' lock lasts only their judgement. (1) `findActiveCandidatesForExpiry($idleBefore, $maximumBefore)`, a
+  candidates' lock lasts only their judgement. (1) `findActiveCandidatesForExpiry(PreselectionBounds $bounds)`, a
   **wide** SQL pre-selection (`revoked_at IS NULL AND (COALESCE(last_used_at, granted_at) <= :idleBefore OR granted_at
-  <= :maximumBefore)`, both bounds `now − duration + P1D`, `new DateInterval`, computed once in
+  <= :maximumBefore OR (code_exchanged_at IS NULL AND granted_at <= :unexchangedBefore))`, the first two bounds
+  `now − duration + P1D`, `new DateInterval`, computed once in
   `ConnectionLifetimes::preselectionBoundsAt($now)` — where the durations, the deadlines and the margin
   `MINIMUM_CONNECTION_LIFETIME` live (#726) —, a named `Domain/ValueObject/PreselectionBounds` (`idleBefore()`,
-  `maximumBefore()`, never a positional pair two instants could swap unseen; `ConnectionLifetimesTest`, across the
-  autumn change too), typed `DATETIMETZ_IMMUTABLE`), **locked
+  `maximumBefore()`, `unexchangedBefore()`, never positional instants that could swap unseen; `ConnectionLifetimesTest`, across the
+  autumn change too), typed `DATETIMETZ_IMMUTABLE`). **The third bound (#730)** is `now − connection_unexchanged +
+  SECOND_TRUNCATION_AND_SKEW_MARGIN` (a minute), elapsed time with no clock-change hour: a candidate by it is at
+  least `duration − 1 min` old, beyond the longest code still exchangeable, so **CR1 below holds** — the connection
+  an exchange locks first is never a candidate. The minute only widens the pre-selection (zero would be the deadline
+  itself, the purge staying correct: `isExpiredAt()` decides). Details: `.claude/rules/mcp-oauth-revocation-personne.md`,
+  « The abandoned grant ». The candidates are **locked
   `FOR UPDATE`** on the connection rows only (no join), `HINT_REFRESH`, by id, through `RereadUnderLock::rowsMatching()`
   (`.claude/rules/backend-architecture.md`; nothing detached): a refresh in flight commits first and its new
   `last_used_at` is judged, instead of a stale row revoked a few milliseconds after a legitimate use; (2) each candidate judged by `isExpiredAt(now, lifetimes)`, **the only definition**;
@@ -67,7 +73,7 @@ paths:
   concurrency test proves the `FOR UPDATE` of (1) itself (the sequential suite stays green without it). **Accepted limit**: a cycle between `mcp_connection` rows
   alone — candidates (1, by id) or old revoked rows (4) against a cascade taking an account's connections in its
   plan's order; PostgreSQL aborts one, the Job retries (`backoffLimit: 2`). **Closed** (#726, final review): the marking
-  against a code exchange's supersession of two candidates of one pair — the three revocations lock their rows by id
+  against a code exchange's supersession of two candidates of one pair — the five revocations lock their rows by id
   too (`McpConnectionRepository::revokeWhere()`, `.claude/rules/mcp-oauth-cycle-de-vie.md`, « A new grant supersedes
   the previous one ») — **and the code's own connection, which the exchange locks first, is never a candidate**
   (#726, CR1): `ConnectionLifetimes::fromConfiguration()` refuses an idle or maximum duration up to `P1D` plus the

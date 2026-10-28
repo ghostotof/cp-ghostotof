@@ -231,7 +231,7 @@ final class McpConnectionPurgeLockOrderTest extends WebTestCase
         $entityManager->beginTransaction();
 
         try {
-            $candidates = self::getContainer()->get(McpConnectionRepositoryInterface::class)->findActiveCandidatesForExpiry($bounds->idleBefore(), $bounds->maximumBefore());
+            $candidates = self::getContainer()->get(McpConnectionRepositoryInterface::class)->findActiveCandidatesForExpiry($bounds);
         } finally {
             $entityManager->rollback();
         }

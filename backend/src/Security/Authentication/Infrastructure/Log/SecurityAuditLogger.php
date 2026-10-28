@@ -252,6 +252,15 @@ final readonly class SecurityAuditLogger implements SecurityAuditLoggerInterface
         ]);
     }
 
+    public function sessionRefusedAfterCredentialsChange(CpgUser $account, ?int $presentedVersion): void
+    {
+        $this->record('session-refused-after-credentials-change', 'Session refused: credentials changed since it was opened.', [
+            ...$this->account($account),
+            'presentedVersion' => $presentedVersion,
+            'currentVersion' => $account->getCredentialsVersion(),
+        ]);
+    }
+
     /**
      * Un compte se désigne par son UUID seul (issue #363) : ni son adresse
      * e-mail, ni son identifiant de connexion, qui pour un invité en est
@@ -333,7 +342,7 @@ final readonly class SecurityAuditLogger implements SecurityAuditLoggerInterface
     }
 
     /**
-     * @param array<string, bool|string|null> $subject ce que l'événement vise, clés choisies par l'appelant
+     * @param array<string, bool|int|string|null> $subject ce que l'événement vise, clés choisies par l'appelant
      * @param string|null                     $actor   acteur imposé par l'appelant (`system` pour une
      *                                                 commande planifiée, `console` pour une commande
      *                                                 lancée à la main) ; sinon lu dans le jeton de sécurité de

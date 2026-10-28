@@ -21,6 +21,17 @@ import { REAUTH_QUERY, REAUTH_VALUE } from '../router/reauthentication'
  * qu'il partira vers le fournisseur d'IA du client. Aucun texte ne nomme
  * l'auteur du site.
  *
+ * Le compte qui accorde (#650) est celui que le serveur a lu sur le cookie de
+ * CETTE requête, jamais un état gardé par la page. Un lien « Changer de
+ * compte » mène à la connexion (`reauth=1`, comme après un refus pour
+ * authentification trop ancienne), qui ramène à cette même demande ; il est
+ * hors de la zone des boutons : ce n'est pas une décision.
+ *
+ * Si le compte connecté change entre l'affichage et la décision (une
+ * reconnexion dans un autre onglet), le serveur répond 409 sans rien faire : la
+ * page le dit (`role="alert"`) et propose de relire la demande, qui nommera le
+ * compte courant. Elle n'accorde jamais à un compte que la page n'a pas nommé.
+ *
  * Les deux boutons ne s'activent qu'une fois la page visible et active depuis
  * un court délai (useDeliberateActivation, double-clickjacking). Accorder
  * exige une connexion au site de moins de dix minutes : au-delà, le serveur
@@ -30,7 +41,7 @@ import { REAUTH_QUERY, REAUTH_VALUE } from '../router/reauthentication'
 
 const { t, locale: i18nLocale } = useI18n()
 const route = useRoute()
-const { state, request, failure, load, approve, deny } = useOAuthConsent()
+const { state, request, failure, load, reload, approve, deny } = useOAuthConsent()
 
 const currentLocale = computed<Locale>(() => {
   const routeLocale = route.params.locale
@@ -68,6 +79,8 @@ const errorMessage = computed<string | null>(() => {
       return t('oauthConsent.errors.sessionExpired')
     case 'reauthentication-required':
       return t('oauthConsent.errors.reauthenticationRequired')
+    case 'account-changed':
+      return t('oauthConsent.errors.accountChanged')
     case 'unsafe-redirect':
       return t('oauthConsent.errors.unsafeRedirect')
     case 'malformed-decision':
@@ -97,6 +110,24 @@ const reloginTarget = computed(() => ({
 const reloginLabel = computed(() =>
   'reauthentication-required' === failure.value ? t('oauthConsent.errors.reauthenticate') : t('oauthConsent.errors.relogin'),
 )
+
+/**
+ * « Changer de compte » : la connexion rouverte pour une personne déjà
+ * connectée (`reauth=1`), avec toute la requête en retour (`fullPath`).
+ */
+const switchAccountTarget = computed(() => ({
+  name: 'login',
+  params: { locale: currentLocale.value },
+  query: { redirect: route.fullPath, [REAUTH_QUERY]: REAUTH_VALUE },
+}))
+
+/**
+ * Le compte connecté a changé depuis l'affichage (un autre onglet s'est
+ * reconnecté, #650 F5) : le serveur n'a rien fait. Relire la demande suffit —
+ * la session vaut toujours, aucune reconnexion — et le résumé nomme alors le
+ * compte d'aujourd'hui.
+ */
+const offersReload = computed(() => 'account-changed' === failure.value)
 
 const offersRelogin = computed(() => 'session-expired' === failure.value || 'reauthentication-required' === failure.value)
 
@@ -137,9 +168,44 @@ onMounted(() => {
       >
         {{ reloginLabel }}
       </RouterLink>
+      <!-- Comme le lien de reconnexion : dans l'alerte, avec le message qu'il prolonge. -->
+      <button
+        v-if="offersReload"
+        type="button"
+        class="btn btn-link p-0 align-baseline"
+        data-testid="consent-reload"
+        @click="reload"
+      >
+        {{ t('oauthConsent.errors.reload') }}
+      </button>
     </p>
 
     <template v-if="showRequest && null !== request">
+      <section
+        class="surface-panel p-3 p-sm-4"
+        aria-labelledby="consent-account-heading"
+      >
+        <h2
+          id="consent-account-heading"
+          class="h5 mb-3"
+        >
+          {{ t('oauthConsent.account.heading') }}
+        </h2>
+        <!-- Texte interpolé, jamais v-html : l'identifiant vient d'une saisie. -->
+        <p
+          class="mb-2"
+          data-testid="consent-account"
+        >
+          {{ t('oauthConsent.account.grantingAs', { username: request.account.username }) }}
+        </p>
+        <RouterLink
+          :to="switchAccountTarget"
+          data-testid="consent-switch-account"
+        >
+          {{ t('oauthConsent.account.switch') }}
+        </RouterLink>
+      </section>
+
       <section
         class="surface-panel p-3 p-sm-4"
         aria-labelledby="consent-client-heading"
@@ -183,7 +249,10 @@ onMounted(() => {
         </ul>
       </section>
 
-      <div class="d-flex flex-wrap gap-2">
+      <div
+        class="d-flex flex-wrap gap-2"
+        data-testid="consent-decision"
+      >
         <button
           type="button"
           class="btn btn-gradient"

@@ -211,5 +211,12 @@ _À éviter_ : application, connecteur (le connecteur est le nom que lui donne u
 
 **Connexion MCP** :
 Autorisation qu'une personne du palier de confiance accorde à un client MCP de lire le corpus nominatif en
-son nom. Elle se révoque, par cette personne ou par la perte du palier de confiance, avec effet immédiat.
+son nom. Elle se révoque, par cette personne, par un changement de mot de passe du compte ou par la perte du
+palier de confiance, avec effet immédiat ; la cause de la révocation reste lisible par la personne.
 _À éviter_ : session MCP, jeton (le jeton est le support technique d'une connexion)
+
+**Accord abandonné** :
+Approbation d'une personne dont le client MCP ne mène jamais le parcours à son terme : la connexion existe,
+mais son client n'a jamais rien obtenu. Cette connexion expire au bout d'une heure, sans attendre le délai
+d'inactivité d'une connexion qui sert.
+_À éviter_ : connexion fantôme, connexion orpheline

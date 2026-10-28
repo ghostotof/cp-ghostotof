@@ -15,6 +15,7 @@ use App\Mcp\Connection\Application\TransactionInterface;
 use App\Mcp\Connection\Domain\Entity\McpClient;
 use App\Mcp\Connection\Domain\Entity\McpConnection;
 use App\Mcp\Connection\Domain\Exception\AuthorizationRequestRejectedException;
+use App\Mcp\Connection\Domain\Exception\ConsentAccountChangedException;
 use App\Mcp\Connection\Domain\Exception\ReauthenticationRequiredException;
 use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
 use App\Mcp\Connection\Domain\ValueObject\ConnectionReference;
@@ -105,6 +106,18 @@ final class ConsentServiceTest extends TestCase
      * peut être établi.
      */
     private ?DateTimeImmutable $authenticatedAt;
+
+    /**
+     * La version des identifiants que le jeton de la session porte : celle du
+     * compte à la connexion (0 pour un compte jamais changé) ; null, un jeton
+     * sans revendication (émis avant le déploiement de S1).
+     */
+    private ?int $claimedVersion = 0;
+
+    /** Combien de fois le port a été interrogé : la lecture du jeton signé n'est pas gratuite. */
+    private int $instantReads = 0;
+
+    private int $versionReads = 0;
 
     protected function setUp(): void
     {
@@ -245,9 +258,9 @@ final class ConsentServiceTest extends TestCase
         $refusal = OAuthServerException::invalidRequest('redirect_uri');
         $this->validatorRefusal = $refusal;
         $calls = [
-            'résumé' => fn(): mixed => $this->service()->summarize((new Psr17Factory())->createServerRequest('GET', '/api/oauth/consent')),
-            'accord' => fn(): mixed => $this->service()->decide($this->decision(true), $this->account),
-            'refus' => fn(): mixed => $this->service()->decide($this->decision(false), $this->account),
+            'résumé' => fn (): mixed => $this->service()->summarize((new Psr17Factory())->createServerRequest('GET', '/api/oauth/consent'), $this->account),
+            'accord' => fn (): mixed => $this->service()->decide($this->decision(true), $this->account),
+            'refus' => fn (): mixed => $this->service()->decide($this->decision(false), $this->account),
         ];
 
         foreach ($calls as $label => $call) {
@@ -280,6 +293,7 @@ final class ConsentServiceTest extends TestCase
             codeChallengeMethod: 'S256',
             resource: self::API_BASE.'/api/mcp',
             approved: false,
+            shownAccountId: $this->account->getId(),
         ), $this->account);
 
         $expected = [
@@ -370,6 +384,192 @@ final class ConsentServiceTest extends TestCase
         $this->expectException(AuthorizationRequestRejectedException::class);
 
         $this->service()->decide($this->decision(true), $this->account);
+    }
+
+    /**
+     * F5 de la relecture de #650 : la décision n'est prise que pour le compte
+     * que la page a montré. Accord comme refus, avec un autre UUID ou aucun :
+     * un 409 typé, la demande a été revalidée (le refus ne la contourne pas) et
+     * rien n'a eu d'effet — ni connexion, ni code, ni audit.
+     */
+    #[DataProvider('decisionsShownToAnotherAccount')]
+    public function testADecisionShownToAnotherAccountIsRefusedWithoutEffect(bool $approved, bool $shownToNobody): void
+    {
+        $decision = $shownToNobody ? $this->decisionShownToNobody($approved) : $this->decision($approved, Uuid::v7());
+
+        try {
+            $this->service()->decide($decision, $this->account);
+            self::fail('Une décision prise sur la page d\'un autre compte ne doit rien obtenir.');
+        } catch (ConsentAccountChangedException $refusal) {
+            self::assertSame(409, $refusal->getStatus());
+            self::assertSame('/errors/consent-account-changed', $refusal->getType());
+            self::assertStringNotContainsString($this->account->getId()->toRfc4122(), (string) $refusal->getDetail());
+        }
+
+        self::assertNotNull($this->validated, 'La demande n\'a pas été revalidée.');
+        self::assertSame([], $this->effects, 'Le refus a eu un effet.');
+        self::assertNull($this->added);
+        self::assertNull($this->audited);
+    }
+
+    /** @return iterable<string, array{bool, bool}> */
+    public static function decisionsShownToAnotherAccount(): iterable
+    {
+        yield 'accord, un autre compte' => [true, false];
+        yield 'refus, un autre compte' => [false, false];
+        yield 'accord, aucun compte' => [true, true];
+        yield 'refus, aucun compte' => [false, true];
+    }
+
+    /**
+     * Le compte montré est jugé **après** la revalidation de la demande (une
+     * demande devenue invalide reste son 400, qu'un rechargement ne répare pas) et
+     * **avant** le jugement du compte du cookie (mot de passe changé, âge de
+     * l'authentification) : la décision ne le concerne pas.
+     */
+    public function testTheShownAccountIsJudgedAfterTheRequestAndBeforeTheCookieAccount(): void
+    {
+        $this->validatorRefusal = OAuthServerException::invalidRequest('redirect_uri');
+        try {
+            $this->service()->decide($this->decision(true, Uuid::v7()), $this->account);
+            self::fail('Une demande invalide doit rester son 400.');
+        } catch (AuthorizationRequestRejectedException) {
+            $this->addToAssertionCount(1);
+        }
+
+        $this->validatorRefusal = null;
+        $this->authenticatedAt = null;
+        $this->claimedVersion = 0;
+        $this->account->replacePassword('another-hash');
+        $this->expectException(ConsentAccountChangedException::class);
+
+        $this->service()->decide($this->decision(true, Uuid::v7()), $this->account);
+    }
+
+    /**
+     * F2 de la relecture de #650, S1 de la seconde : un mot de passe changé depuis
+     * que la session s'est authentifiée périme celle-ci, jugé sur la **version des
+     * identifiants** que son jeton porte (`CpgUser::claimsAStaleCredentialsVersion()`)
+     * et non plus sur une date. Le résumé, le refus et l'accord le refusent tous
+     * trois, d'un 401 `reauthentication-required` : rien n'est écrit, journalisé
+     * ni même résumé.
+     *
+     * @return iterable<string, array{string}>
+     */
+    public static function consentCalls(): iterable
+    {
+        yield 'résumé' => ['summary'];
+        yield 'refus' => ['denial'];
+        yield 'accord' => ['approval'];
+    }
+
+    /**
+     * Les jetons que la version courante (1, après un changement) périme : celui
+     * d'avant le changement (0), celui d'avant le déploiement (sans revendication,
+     * qui vaut 0) et celui d'une version qui n'existe pas.
+     *
+     * @return iterable<string, array{string, int|null}>
+     */
+    public static function everyCallWithAStaleClaim(): iterable
+    {
+        foreach (self::consentCalls() as $callLabel => [$call]) {
+            yield $callLabel.', version d\'avant' => [$call, 0];
+            yield $callLabel.', sans revendication' => [$call, null];
+            yield $callLabel.', version d\'après' => [$call, 2];
+        }
+    }
+
+    #[DataProvider('everyCallWithAStaleClaim')]
+    public function testASessionAuthenticatedBeforeAPasswordChangeIsRefusedReauthentication(string $call, ?int $claimedVersion): void
+    {
+        $this->account->replacePassword('another-hash');
+        $this->claimedVersion = $claimedVersion;
+
+        try {
+            $this->consentCall($call);
+            self::fail('Une session d\'avant le changement de mot de passe ne doit rien obtenir.');
+        } catch (ReauthenticationRequiredException $refusal) {
+            self::assertSame(401, $refusal->getStatus());
+            self::assertSame('/errors/reauthentication-required', $refusal->getType());
+        }
+
+        self::assertSame([], $this->effects, 'Le refus a eu un effet.');
+        self::assertNull($this->added);
+        self::assertNull($this->audited);
+    }
+
+    /**
+     * L'autre côté : un jeton qui porte la version **courante** — la connexion a
+     * vérifié le mot de passe d'après le changement — n'est pas périmé, même si
+     * le changement date d'une seconde. Les trois appels passent, l'accord
+     * compris (sa propre limite d'âge de dix minutes est respectée ici).
+     */
+    #[DataProvider('consentCalls')]
+    public function testASessionAuthenticatedAfterAPasswordChangeIsServed(string $call): void
+    {
+        $this->account->replacePassword('another-hash');
+        $this->claimedVersion = 1;
+
+        $this->consentCall($call);
+
+        self::assertNotNull($this->validated, 'La demande n\'a pas été revalidée.');
+    }
+
+    /**
+     * Une revendication absente vaut la version 0 : le jeton d'une session ouverte
+     * avant le déploiement est servi **tant que le mot de passe n'a pas changé**
+     * (sinon chaque session ouverte sauterait au déploiement), et refusé dès qu'il
+     * a changé (le test ci-dessus).
+     */
+    public function testAnAbsentClaimIsVersionZeroAndServedWhileThePasswordNeverChanged(): void
+    {
+        $this->claimedVersion = null;
+
+        $this->consentCall('summary');
+        $this->consentCall('denial');
+        $this->consentCall('approval');
+
+        self::assertNotNull($this->added);
+    }
+
+    /**
+     * Comme pour l'âge de l'authentification, la demande est jugée d'abord : une
+     * demande devenue invalide reste son 400 typé, qu'une reconnexion ne répare pas.
+     */
+    public function testAnInvalidRequestIsRejectedBeforeThePasswordChangeIsJudged(): void
+    {
+        $this->account->replacePassword('another-hash');
+        $this->claimedVersion = 0;
+        $this->validatorRefusal = OAuthServerException::invalidRequest('redirect_uri');
+
+        $this->expectException(AuthorizationRequestRejectedException::class);
+
+        $this->consentCall('summary');
+    }
+
+    /**
+     * Le port relit le JWT et en revérifie la signature : un compte dont le mot
+     * de passe n'a jamais changé (le cas de presque tous) ne le déclenche ni au
+     * résumé ni au refus, où personne d'autre ne lit l'instant.
+     */
+    public function testAnAccountWhosePasswordNeverChangedCostsNoTokenReadOnTheSummaryNorTheDenial(): void
+    {
+        $this->consentCall('summary');
+        $this->consentCall('denial');
+
+        self::assertSame(0, $this->instantReads);
+        self::assertSame(0, $this->versionReads);
+    }
+
+    /** Un des trois appels du consentement, sur le compte du test. */
+    private function consentCall(string $call): void
+    {
+        match ($call) {
+            'summary' => $this->service()->summarize((new Psr17Factory())->createServerRequest('GET', '/api/oauth/consent'), $this->account),
+            'denial' => $this->service()->decide($this->decision(false), $this->account),
+            'approval' => $this->service()->decide($this->decision(true), $this->account),
+            default => self::fail(\sprintf('Appel inconnu : %s.', $call)),
+        };
     }
 
     private function service(): ConsentService
@@ -466,7 +666,16 @@ final class ConsentServiceTest extends TestCase
     private function authenticationInstant(): AuthenticationInstantInterface
     {
         $instant = self::createStub(AuthenticationInstantInterface::class);
-        $instant->method('authenticatedAt')->willReturn($this->authenticatedAt);
+        $instant->method('authenticatedAt')->willReturnCallback(function (): ?DateTimeImmutable {
+            ++$this->instantReads;
+
+            return $this->authenticatedAt;
+        });
+        $instant->method('credentialsVersion')->willReturnCallback(function (): ?int {
+            ++$this->versionReads;
+
+            return $this->claimedVersion;
+        });
 
         return $instant;
     }
@@ -484,7 +693,10 @@ final class ConsentServiceTest extends TestCase
         );
     }
 
-    private function decision(bool $approved): ConsentDecision
+    /**
+     * @param Uuid|null $shownAccountId le compte que la page a montré ; par défaut celui du service (aucun changement de compte)
+     */
+    private function decision(bool $approved, ?Uuid $shownAccountId = null): ConsentDecision
     {
         return new ConsentDecision(
             responseType: 'code',
@@ -496,6 +708,26 @@ final class ConsentServiceTest extends TestCase
             codeChallengeMethod: 'S256',
             resource: self::API_BASE.'/api/mcp',
             approved: $approved,
+            shownAccountId: $shownAccountId ?? $this->account->getId(),
+        );
+    }
+
+    /** Une décision sans aucun compte montré (le corps ne l'aurait pas passé la validation). */
+    private function decisionShownToNobody(bool $approved): ConsentDecision
+    {
+        $decision = $this->decision($approved);
+
+        return new ConsentDecision(
+            $decision->responseType,
+            $decision->clientId,
+            $decision->redirectUri,
+            $decision->scope,
+            $decision->state,
+            $decision->codeChallenge,
+            $decision->codeChallengeMethod,
+            $decision->resource,
+            $approved,
+            null,
         );
     }
 }

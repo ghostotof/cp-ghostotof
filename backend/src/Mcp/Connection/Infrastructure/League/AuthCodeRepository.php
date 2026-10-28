@@ -7,6 +7,7 @@ namespace App\Mcp\Connection\Infrastructure\League;
 use App\Mcp\Connection\Domain\Entity\McpAuthorizationCode;
 use App\Mcp\Connection\Domain\Exception\AuthorizationCodeReplayedException;
 use App\Mcp\Connection\Domain\Repository\McpAuthorizationCodeRepositoryInterface;
+use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use League\OAuth2\Server\Entities\AuthCodeEntityInterface;
 use League\OAuth2\Server\Exception\UniqueTokenIdentifierConstraintViolationException;
@@ -33,6 +34,7 @@ final readonly class AuthCodeRepository implements AuthCodeRepositoryInterface
         private McpAuthorizationCodeRepositoryInterface $codes,
         private TokenUnderConnectionLock $underConnectionLock,
         private ConnectionOfToken $connectionOfToken,
+        private McpConnectionRepositoryInterface $connections,
         private ClockInterface $clock,
     ) {
     }
@@ -66,9 +68,25 @@ final readonly class AuthCodeRepository implements AuthCodeRepositoryInterface
         }
     }
 
+    /**
+     * League révoque le code **en dernier**, une fois les deux jetons émis : un
+     * code révoqué est un code échangé, et c'est ici — le seul endroit où l'on
+     * sait l'échange réussi sans rien relire — que la connexion le note
+     * (`code_exchanged_at`, #730, #650 R4) : une instruction, la connexion
+     * trouvée par la ligne du code, **avant** que le point de jeton remplace les
+     * autres connexions du couple. Écrit ici, la colonne ne dépend plus du
+     * déchiffrement du code ni d'une relecture de la connexion
+     * ({@see \App\Mcp\Connection\Application\CodeExchangeSupersession}, qui
+     * en dépendait) : si ceux-là échouaient, la connexion qui sert restait
+     * « jamais échangée » et expirait en une heure, sans un mot.
+     */
     public function revokeAuthCode(#[SensitiveParameter] string $codeId): void
     {
-        $this->codes->revokeByHash(TokenIdentifierHash::of($codeId), $this->clock->now());
+        $hash = TokenIdentifierHash::of($codeId);
+        $now = $this->clock->now();
+
+        $this->codes->revokeByHash($hash, $now);
+        $this->connections->recordCodeExchangeOf($hash, $now);
     }
 
     /**

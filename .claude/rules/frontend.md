@@ -63,6 +63,52 @@ incremental parser `serverEvents.ts`) → `application/assistant/useAssistant.ts
 in code points, never `.length`; a 401/403 calls `markSessionExpired()`) →
 `presentation/pages/AssistantPage.vue`.
 
+The MCP connection slice follows it too (#650): `domain/mcp` → `infrastructure/mcp/HttpMcpConnectionsRepository.ts`
+→ `application/mcp/useMcpConnections.ts` → `presentation/pages/McpConnectionsPage.vue` (route `mcp-connections`,
+`ROLE_TRUSTED`/`ROLE_SUPER`, `noindex`; the list re-read from the server after a revocation, no state recomputed).
+On desktop the trusted tier's header actions sit in `presentation/layout/AccountMenu.vue`, a WAI-ARIA **disclosure**
+(not `role="menu"`); **the base tier keeps its actions flat on desktop** (the author's decision of 2026-10-28).
+Details: `.claude/rules/mcp-oauth-revocation-personne.md`.
+
+Three things the MCP slice shares with the rest of the frontend:
+
+- **A refused session reaches the person in words** (#650, R5a). `useMcpConnections` exposes `sessionExpired` (the
+  server answered 401/403 on the last read or revocation, besides `markSessionExpired()`); the page then shows « Votre
+  session a pris fin » and a **sign-in-again link** (`login?redirect=<this page>&expired=1`) in place of the generic
+  error and its retry, which would send the same request without a session. `LoginPage` reads `expired=1`
+  (`presentation/router/sessionEnded.ts`, the single value `1`) and shows a `role="status"` notice « Votre session a
+  pris fin, reconnectez-vous. » — the same flag the backoffice banner's link sets (`SessionEndedBanner`, which
+  replaced R1c's redirect: a 401 mid-page no longer navigates, `.claude/rules/frontend-backoffice.md`). The flag
+  opens nothing and grants nothing.
+- **`redirect` is judged in one place, `presentation/router/internalRedirect.ts`** (`internalRedirectTarget()`, #650,
+  F-I1 of the second review; `LoginPage` is its only reader). A target is an internal path when it starts with a
+  **single** `/` and holds **no `\` and no control character** (C0, DEL; tab and line feeds included): a browser reads
+  `\` as `/` in an `http(s)` URL and silently drops tabs and line feeds, so `/\host` and `/<TAB>/host` mean `//host`
+  to it. The rule is a property of the string received, the same one handed to the router, so no reader can understand
+  it differently. **Rejected: resolving the target with the URL parser and comparing its origin** — it judges the
+  *normalised* form (`/a\b` comes out `/a/b`), not the string the router receives, depends on a parser that differs
+  between browser and jsdom, and — measured — refuses nothing more once the syntactic rule holds. The target is
+  returned as received (never normalised: the query and fragment of a consent request stay intact). **`%5C` is not
+  refused**: a browser does not decode it in a path, it stays on the origin. `internalRedirect.spec.ts`,
+  `LoginPage.spec.ts`.
+- **`load()` keeps the last read launched** : a sequence number, and a response (or an error) older than the latest
+  `load()` is dropped — « Réessayer » during a re-read after a revocation, or two revocations in a row, cross on the
+  network.
+- **The list's contract** (`McpConnectionList{connections, terminatedTruncated}`, strict parsing of the boolean):
+  `codeExchanged` says whether the code was exchanged — the labels « Jamais aboutie » (`false`: an abandoned approval)
+  and « Pas encore renouvelée » (`true`: tokens issued, `lastUsedAt` is written at the refresh only); `expiresAt` is
+  `null` **exactly** when `state === 'revoked'` (the repository refuses any other pairing) and the cell reads
+  « Sans échéance » to a screen reader; a note under the table says the history was cut, with no number
+  (`data-testid="terminated-truncated"`, an ordinary paragraph). Shared test fixture:
+  `frontend/tests/support/mcpConnectionList.ts`.
+
+`HttpMcpConnectionsRepository` and `HttpOAuthConsentRepository` have their **own `fetch`**, not
+`BackofficeHttpClient`: the 401 reaction is the composable's, with no redirect. **The two apps agree on a contract**:
+the consent decision carries `accountId` (the `account.id` the summary showed). A frontend and a backend that differ
+there fail: a new frontend before its backend cannot parse a summary without `account.id`, an old frontend page left
+open after the new backend sends no `accountId` and gets a 422 (the page is terminal, a reload fixes it). **The
+backend is deployed first**: its summary only adds a field, which an old frontend ignores.
+
 #### i18n (French/English)
 
 Every route is prefixed by locale (`/fr`, `/en/about`…), the single source of truth for the active language —

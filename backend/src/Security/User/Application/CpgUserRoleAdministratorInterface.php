@@ -22,7 +22,10 @@ interface CpgUserRoleAdministratorInterface
      * ROLE_SUPER. Idempotent : si le compte est déjà dans l'état demandé,
      * ne fait rien. Au retrait, ROLE_TRUSTED n'est conservé que si le compte
      * a un e-mail (octroi nominatif, ADR 0003 D1) ; un compte CLI retombe au
-     * palier de base.
+     * palier de base, et **perd alors ses connexions MCP** (#650, cause
+     * `trusted-tier-withdrawn`) : révoquées dans la transaction du verrou,
+     * auditées après son COMMIT, à la suite de `role-changed`. Un compte qui
+     * garde `ROLE_TRUSTED`, une promotion et l'état déjà atteint ne coupent rien.
      *
      * @throws CannotModifyOwnRolesException si $id est le compte de $actingUser
      * @throws CpgUserNotFoundException si l'id est inconnu

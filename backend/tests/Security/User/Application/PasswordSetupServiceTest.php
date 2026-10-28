@@ -6,6 +6,7 @@ namespace App\Tests\Security\User\Application;
 
 use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use App\Security\User\Application\AccountLockInterface;
+use App\Security\User\Application\DeadlockRetryInterface;
 use App\Security\User\Application\PasswordSetupService;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Entity\PasswordSetupToken;
@@ -14,11 +15,21 @@ use App\Security\User\Domain\Exception\UnusablePasswordSetupLinkException;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use App\Security\User\Domain\Repository\PasswordSetupTokenRepositoryInterface;
 use App\Security\User\Domain\ValueObject\TokenClaim;
+use App\Security\User\Infrastructure\Doctrine\DoctrineDeadlockRetry;
+use App\Shared\Application\Security\AccountAccessWithdrawal;
+use App\Shared\Application\Security\AccountMcpConnectionsRevokerInterface;
+use App\Shared\Application\Security\RevokedAccountMcpConnections;
+use App\Tests\Support\DeadlockedStatement;
 use App\Tests\Support\TestCredentials;
 use Closure;
 use DateTimeImmutable;
 use DateTimeZone;
+use Doctrine\DBAL\Exception\DeadlockException;
+use Doctrine\Persistence\ManagerRegistry;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
+use RuntimeException;
 use Symfony\Component\Clock\MockClock;
 use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
 
@@ -351,7 +362,7 @@ final class PasswordSetupServiceTest extends TestCase
         $auditLogger->expects(self::once())->method('passwordSetupTokenRejected');
         $accountLock = self::createStub(AccountLockInterface::class);
         $accountLock->method('whileLocked')->willThrowException(CpgUserNotFoundException::forId($user->getId()));
-        $service = new PasswordSetupService($tokenRepository, self::createStub(CpgUserRepositoryInterface::class), self::createStub(UserPasswordHasherInterface::class), $clock, $auditLogger, $accountLock);
+        $service = new PasswordSetupService($tokenRepository, self::createStub(CpgUserRepositoryInterface::class), self::createStub(UserPasswordHasherInterface::class), $clock, $auditLogger, $accountLock, self::createStub(AccountMcpConnectionsRevokerInterface::class), $this->deadlockRetry());
 
         $this->expectException(UnusablePasswordSetupLinkException::class);
 
@@ -401,6 +412,149 @@ final class PasswordSetupServiceTest extends TestCase
             ->complete(self::CLEAR_TOKEN, TestCredentials::variant('setup'));
     }
 
+    /**
+     * Tâche 5b de #650 : un lien qui **remplace** un mot de passe (compte en
+     * attente auquel le backoffice en a posé un, #460) coupe les connexions MCP
+     * du compte. Dans l'ordre : sous le verrou, après la réclamation du jeton
+     * et l'écriture du mot de passe, `revokeAllOf()` (cause `password-changed`,
+     * sur le compte relu) ; le verrou rendu, l'activation est journalisée, puis
+     * les lignes de révocation.
+     */
+    public function testALinkReplacingAPasswordRevokesTheMcpConnectionsInsideTheLockThenAuditsAfterIt(): void
+    {
+        $clock = new MockClock('2026-09-10 10:00:00');
+        $user = new CpgUser('jane', 'password-set-by-the-backoffice');
+        $user->markInvited(new DateTimeImmutable('2026-09-08 08:00:00'));
+        $token = $this->tokenFor($user, $clock);
+        $steps = [];
+        $revoked = new RevokedAccountMcpConnections(AccountAccessWithdrawal::PasswordChanged, []);
+
+        $tokenRepository = self::createStub(PasswordSetupTokenRepositoryInterface::class);
+        $tokenRepository->method('findOneByTokenHash')->willReturn($token);
+        $tokenRepository->method('claim')->willReturnCallback(static function () use (&$steps): TokenClaim {
+            $steps[] = 'claim';
+
+            return TokenClaim::Claimed;
+        });
+
+        $mcpConnections = $this->createMock(AccountMcpConnectionsRevokerInterface::class);
+        $mcpConnections->expects(self::once())->method('revokeAllOf')->with($user, AccountAccessWithdrawal::PasswordChanged)
+            ->willReturnCallback(static function () use (&$steps, $user, $revoked): RevokedAccountMcpConnections {
+                // Le nouveau mot de passe est déjà écrit sur l'instance, la révocation est dans la fermeture du verrou.
+                self::assertSame('hashed-new-password', $user->getPassword());
+                $steps[] = 'revoke';
+
+                return $revoked;
+            });
+        $mcpConnections->expects(self::once())->method('auditRevoked')->with($revoked)
+            ->willReturnCallback(static function () use (&$steps): void {
+                $steps[] = 'audit-revoked';
+            });
+
+        $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
+        $auditLogger->expects(self::once())->method('accountActivated')->with($user)
+            ->willReturnCallback(static function () use (&$steps): void {
+                $steps[] = 'activated';
+            });
+
+        $hasher = self::createStub(UserPasswordHasherInterface::class);
+        $hasher->method('hashPassword')->willReturn('hashed-new-password');
+
+        $this->service($tokenRepository, hasher: $hasher, clock: $clock, auditLogger: $auditLogger, mcpConnections: $mcpConnections, accountLock: $this->lockMarkingItsReturn($steps))
+            ->complete(self::CLEAR_TOKEN, TestCredentials::variant('setup'));
+
+        self::assertSame(['claim', 'revoke', 'lock-returned', 'activated', 'audit-revoked'], $steps);
+    }
+
+    /**
+     * Tâche 5b : le mot de passe **posé** sur un compte qui n'en avait pas (le
+     * cas ordinaire d'une invitation) ne révoque rien et n'appelle pas le port :
+     * ce compte n'a jamais pu se connecter, donc n'a pu accorder aucune connexion.
+     */
+    public function testALinkSettingAFirstPasswordNeverCallsThePort(): void
+    {
+        $clock = new MockClock('2026-09-10 10:00:00');
+        $user = new CpgUser('jane', CpgUser::NO_PASSWORD);
+        $user->markInvited(new DateTimeImmutable('2026-09-08 08:00:00'));
+        $tokenRepository = self::createStub(PasswordSetupTokenRepositoryInterface::class);
+        $tokenRepository->method('findOneByTokenHash')->willReturn($this->tokenFor($user, $clock));
+        $tokenRepository->method('claim')->willReturn(TokenClaim::Claimed);
+
+        // untouchedMcpConnections() : jamais revokeAllOf(), jamais auditRevoked().
+        $this->service($tokenRepository, clock: $clock)->complete(self::CLEAR_TOKEN, TestCredentials::variant('setup'));
+
+        self::assertFalse($user->isPendingActivation());
+    }
+
+    /**
+     * Tâche 5b : une révocation refusée remonte telle quelle (rien n'est journalisé,
+     * le verrou réel annule l'activation entière — pinned en HTTP par
+     * `AccountWideRevocationTest`).
+     */
+    public function testARefusedRevocationIsNeitherSwallowedNorAudited(): void
+    {
+        $clock = new MockClock('2026-09-10 10:00:00');
+        $user = new CpgUser('jane', 'password-set-by-the-backoffice');
+        $user->markInvited(new DateTimeImmutable('2026-09-08 08:00:00'));
+        $tokenRepository = self::createStub(PasswordSetupTokenRepositoryInterface::class);
+        $tokenRepository->method('findOneByTokenHash')->willReturn($this->tokenFor($user, $clock));
+        $tokenRepository->method('claim')->willReturn(TokenClaim::Claimed);
+        $mcpConnections = $this->createMock(AccountMcpConnectionsRevokerInterface::class);
+        $mcpConnections->method('revokeAllOf')->willThrowException(new RuntimeException('révocation refusée'));
+        $mcpConnections->expects(self::never())->method('auditRevoked');
+        $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
+        $auditLogger->expects(self::never())->method('accountActivated');
+
+        $this->expectException(RuntimeException::class);
+
+        $this->service($tokenRepository, clock: $clock, auditLogger: $auditLogger, mcpConnections: $mcpConnections)
+            ->complete(self::CLEAR_TOKEN, TestCredentials::variant('setup'));
+    }
+
+    /**
+     * F2 de la relecture de #650 : le lien d'invitation date le changement de
+     * mot de passe — que le lien en *pose* un (compte sans mot de passe) ou en
+     * *remplace* un — pour que le consentement MCP refuse un cookie d'avant. Il
+     * l'écrit sur le compte **relu sous le verrou** (un double que le verrou
+     * rend à la place de celui du jeton), à l'instant de la réclamation.
+     *
+     * @return iterable<string, array{string}>
+     */
+    public static function passwordsSetByTheLink(): iterable
+    {
+        yield 'premier mot de passe' => [CpgUser::NO_PASSWORD];
+        yield 'mot de passe remplacé' => ['password-set-by-the-backoffice'];
+    }
+
+    #[DataProvider('passwordsSetByTheLink')]
+    public function testTheLinkRecordsTheInstantOfTheChangeOnTheAccountReadUnderTheLock(string $previousHash): void
+    {
+        $clock = new MockClock('2026-09-10 10:00:00');
+        $user = new CpgUser('jane', $previousHash);
+        $user->markInvited(new DateTimeImmutable('2026-09-08 08:00:00'));
+        $token = $this->tokenFor($user, $clock);
+        $locked = clone $user;
+
+        $tokenRepository = self::createStub(PasswordSetupTokenRepositoryInterface::class);
+        $tokenRepository->method('findOneByTokenHash')->willReturn($token);
+        $tokenRepository->method('claim')->willReturn(TokenClaim::Claimed);
+        $hasher = self::createStub(UserPasswordHasherInterface::class);
+        $hasher->method('hashPassword')->willReturn('hashed-new-password');
+        $accountLock = self::createStub(AccountLockInterface::class);
+        $accountLock->method('whileLocked')->willReturnCallback(
+            static fn (CpgUser $ignored, Closure $operation): mixed => $operation($locked),
+        );
+        $mcpConnections = self::createStub(AccountMcpConnectionsRevokerInterface::class);
+        $mcpConnections->method('revokeAllOf')->willReturn(new RevokedAccountMcpConnections(AccountAccessWithdrawal::PasswordChanged, []));
+
+        $this->service($tokenRepository, hasher: $hasher, clock: $clock, mcpConnections: $mcpConnections, accountLock: $accountLock)
+            ->complete(self::CLEAR_TOKEN, TestCredentials::variant('setup'));
+
+        self::assertSame('hashed-new-password', $locked->getPassword());
+        self::assertSame(1, $locked->getCredentialsVersion(), 'Le lien n\'a pas avancé la version des identifiants (#650, S1).');
+        self::assertSame(0, $user->getCredentialsVersion(), 'La version a été avancée sur le compte d\'avant le verrou.');
+    }
+
     private function usableToken(MockClock $clock): PasswordSetupToken
     {
         // Un jeton n'existe que pour un compte sur invitation, encore en attente.
@@ -421,6 +575,9 @@ final class PasswordSetupServiceTest extends TestCase
         ?UserPasswordHasherInterface $hasher = null,
         ?MockClock $clock = null,
         ?SecurityAuditLoggerInterface $auditLogger = null,
+        ?AccountMcpConnectionsRevokerInterface $mcpConnections = null,
+        ?AccountLockInterface $accountLock = null,
+        ?DeadlockRetryInterface $deadlockRetry = null,
     ): PasswordSetupService {
         return new PasswordSetupService(
             $tokenRepository,
@@ -428,8 +585,124 @@ final class PasswordSetupServiceTest extends TestCase
             $hasher ?? self::createStub(UserPasswordHasherInterface::class),
             $clock ?? new MockClock(),
             $auditLogger ?? self::createStub(SecurityAuditLoggerInterface::class),
-            $this->passthroughAccountLock(),
+            $accountLock ?? $this->passthroughAccountLock(),
+            $mcpConnections ?? $this->untouchedMcpConnections(),
+            $deadlockRetry ?? $this->deadlockRetry(),
         );
+    }
+
+    /**
+     * S3 (CR4) : un lien qui remplace un mot de passe révoque les connexions MCP
+     * (#650, 5b) et croise donc, comme le changement de mot de passe, le premier
+     * échange d'un code (F1). Interbloqué, il est relancé **une fois**, le jeton
+     * **relu** (l'EntityManager remis à neuf a oublié l'ancien, et son compte) ;
+     * le hachage n'est pas recalculé et le journal s'écrit une fois.
+     */
+    public function testADeadlockedLinkReplacingAPasswordIsRetriedOnceOnTheTokenReadAgain(): void
+    {
+        $clock = new MockClock('2026-09-10 10:00:00');
+        $staleUser = new CpgUser('jane', 'password-set-by-the-backoffice');
+        $staleUser->markInvited(new DateTimeImmutable('2026-09-08 08:00:00'));
+        $freshUser = clone $staleUser;
+        $freshToken = $this->tokenFor($freshUser, $clock);
+        $revoked = new RevokedAccountMcpConnections(AccountAccessWithdrawal::PasswordChanged, []);
+
+        $tokenRepository = $this->createMock(PasswordSetupTokenRepositoryInterface::class);
+        $tokenRepository->expects(self::exactly(2))->method('findOneByTokenHash')->with(hash('sha256', self::CLEAR_TOKEN))
+            ->willReturnOnConsecutiveCalls($this->tokenFor($staleUser, $clock), $freshToken);
+        $tokenRepository->method('claim')->willReturn(TokenClaim::Claimed);
+        $mcpConnections = $this->createMock(AccountMcpConnectionsRevokerInterface::class);
+        $mcpConnections->expects(self::exactly(2))->method('revokeAllOf')->willReturnOnConsecutiveCalls(
+            self::throwException(DeadlockedStatement::exception()),
+            $revoked,
+        );
+        $mcpConnections->expects(self::once())->method('auditRevoked')->with($revoked);
+        $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
+        $auditLogger->expects(self::once())->method('accountActivated')->with($freshUser);
+        $hasher = $this->createMock(UserPasswordHasherInterface::class);
+        $hasher->expects(self::once())->method('hashPassword')->willReturn('hashed-new-password');
+
+        $this->service($tokenRepository, hasher: $hasher, clock: $clock, auditLogger: $auditLogger, mcpConnections: $mcpConnections)
+            ->complete(self::CLEAR_TOKEN, TestCredentials::variant('setup'));
+
+        self::assertSame('hashed-new-password', $freshUser->getPassword());
+    }
+
+    /** Deux interblocages : l'exception remonte, aucun journal. */
+    public function testALinkDeadlockedTwiceFailsAndAuditsNothing(): void
+    {
+        $clock = new MockClock('2026-09-10 10:00:00');
+        $tokenRepository = self::createStub(PasswordSetupTokenRepositoryInterface::class);
+        // Un jeton relu à chaque essai, sur un compte encore en attente : le premier essai, annulé, n'a rien laissé.
+        $tokenRepository->method('findOneByTokenHash')->willReturnCallback(function () use ($clock): PasswordSetupToken {
+            $user = new CpgUser('jane', 'password-set-by-the-backoffice');
+            $user->markInvited(new DateTimeImmutable('2026-09-08 08:00:00'));
+
+            return $this->tokenFor($user, $clock);
+        });
+        $tokenRepository->method('claim')->willReturn(TokenClaim::Claimed);
+        $mcpConnections = $this->createMock(AccountMcpConnectionsRevokerInterface::class);
+        $mcpConnections->expects(self::exactly(2))->method('revokeAllOf')->willThrowException(DeadlockedStatement::exception());
+        $mcpConnections->expects(self::never())->method('auditRevoked');
+        $auditLogger = $this->createMock(SecurityAuditLoggerInterface::class);
+        $auditLogger->expects(self::never())->method('accountActivated');
+
+        $this->expectException(DeadlockException::class);
+
+        $this->service($tokenRepository, clock: $clock, auditLogger: $auditLogger, mcpConnections: $mcpConnections)
+            ->complete(self::CLEAR_TOKEN, TestCredentials::variant('setup'));
+    }
+
+    /** Une autre erreur n'est jamais relancée : le jeton n'est lu qu'une fois. */
+    public function testALinkFailingOtherwiseIsNotRetried(): void
+    {
+        $clock = new MockClock('2026-09-10 10:00:00');
+        $user = new CpgUser('jane', 'password-set-by-the-backoffice');
+        $user->markInvited(new DateTimeImmutable('2026-09-08 08:00:00'));
+        $tokenRepository = $this->createMock(PasswordSetupTokenRepositoryInterface::class);
+        $tokenRepository->expects(self::once())->method('findOneByTokenHash')->willReturn($this->tokenFor($user, $clock));
+        $tokenRepository->method('claim')->willReturn(TokenClaim::Claimed);
+        $mcpConnections = $this->createMock(AccountMcpConnectionsRevokerInterface::class);
+        $mcpConnections->expects(self::once())->method('revokeAllOf')->willThrowException(new RuntimeException('révocation refusée'));
+
+        $this->expectException(RuntimeException::class);
+
+        $this->service($tokenRepository, clock: $clock, mcpConnections: $mcpConnections)
+            ->complete(self::CLEAR_TOKEN, TestCredentials::variant('setup'));
+    }
+
+    /**
+     * Le port des connexions MCP d'un test qui n'en attend aucun appel : un
+     * compte sans mot de passe n'a rien à se faire révoquer (tâche 5b de #650).
+     */
+    private function untouchedMcpConnections(): AccountMcpConnectionsRevokerInterface
+    {
+        $mcpConnections = $this->createMock(AccountMcpConnectionsRevokerInterface::class);
+        $mcpConnections->expects(self::never())->method('revokeAllOf');
+        $mcpConnections->expects(self::never())->method('auditRevoked');
+
+        return $mcpConnections;
+    }
+
+    /**
+     * Comme {@see self::passthroughAccountLock()}, et note `lock-returned` dans
+     * `$steps` quand l'opération a rendu la main : ce qui suit est « après le COMMIT ».
+     *
+     * @param list<string> $steps
+     */
+    private function lockMarkingItsReturn(array &$steps): AccountLockInterface
+    {
+        $accountLock = self::createStub(AccountLockInterface::class);
+        $accountLock->method('whileLocked')->willReturnCallback(
+            static function (CpgUser $user, Closure $operation) use (&$steps): mixed {
+                $result = $operation($user);
+                $steps[] = 'lock-returned';
+
+                return $result;
+            },
+        );
+
+        return $accountLock;
     }
 
     /**
@@ -444,5 +717,11 @@ final class PasswordSetupServiceTest extends TestCase
         );
 
         return $accountLock;
+    }
+
+    /** La relance réelle, sur un registre qui ne remet rien à neuf : les doubles n'ont pas d'EntityManager. */
+    private function deadlockRetry(): DeadlockRetryInterface
+    {
+        return new DoctrineDeadlockRetry(self::createStub(ManagerRegistry::class), new NullLogger());
     }
 }

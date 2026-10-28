@@ -16,8 +16,10 @@ use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
 use App\Mcp\Connection\Domain\Repository\McpRefreshTokenRepositoryInterface;
 use App\Mcp\Connection\Domain\ValueObject\RevocationCause;
 use App\Mcp\Connection\Domain\ValueObject\RevokedConnection;
+use App\Mcp\Connection\Infrastructure\Doctrine\RevocationOutsideTransactionException;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Tests\Mcp\Connection\RegisteredMcpClient;
+use App\Tests\Support\TestDatabase;
 use DateTimeImmutable;
 use Doctrine\DBAL\Exception\DriverException;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
@@ -243,6 +245,30 @@ final class McpConnectionRepositoryTest extends KernelTestCase
     }
 
     /**
+     * Le premier échange d'un code est noté sur sa connexion, une fois (#650, R4) :
+     * une seconde note ne déplace pas la première, la connexion d'un autre code
+     * n'est pas touchée, un code inconnu n'écrit rien.
+     */
+    public function testRecordCodeExchangeOfNotesTheConnectionOfTheCodeOnce(): void
+    {
+        $connection = $this->grantConnection();
+        $other = McpConnection::grant($connection->account(), $connection->client(), self::SCOPE, new DateTimeImmutable());
+        $this->connections()->add($other);
+        $codeHash = hash('sha256', 'clear-code');
+        $this->authorizationCodes()->add(new McpAuthorizationCode($connection, $codeHash, new DateTimeImmutable('+10 minutes')));
+        $this->authorizationCodes()->add(new McpAuthorizationCode($other, hash('sha256', 'other-code'), new DateTimeImmutable('+10 minutes')));
+        $first = new DateTimeImmutable('2026-10-23T10:00:00+02:00');
+
+        $this->connections()->recordCodeExchangeOf($codeHash, $first);
+        $this->connections()->recordCodeExchangeOf($codeHash, new DateTimeImmutable('2026-10-23T11:00:00+02:00'));
+        $this->connections()->recordCodeExchangeOf(hash('sha256', 'unknown-code'), $first);
+        $this->em->clear();
+
+        self::assertSame($first->getTimestamp(), $this->connections()->findOneById($connection->getId())?->codeExchangedAt()?->getTimestamp());
+        self::assertNull($this->connections()->findOneById($other->getId())?->codeExchangedAt(), 'Le code d\'une autre connexion a noté la sienne.');
+    }
+
+    /**
      * La révocation d'une connexion (#649) : une instruction, qui rend de quoi
      * l'auditer — la connexion, le compte par son UUID, le client par son
      * identifiant public, la cause — et écrit l'instant et la cause en base.
@@ -318,6 +344,138 @@ final class McpConnectionRepositoryTest extends KernelTestCase
     }
 
     /**
+     * La révocation par la personne (#650) : une instruction qui désigne la
+     * connexion **et** son compte. Le compte d'un autre ne touche pas la
+     * ligne (`null`, base intacte) — le filtre par compte est ce qui fait
+     * qu'on ne révoque que les siennes ; le bon compte la révoque, avec
+     * l'instant et la cause donnés.
+     */
+    public function testRevokeActiveOfAccountTouchesOnlyThatAccountsRow(): void
+    {
+        $owner = $this->persistAccount('jane');
+        $stranger = $this->persistAccount('john');
+        $connection = McpConnection::grant($owner, $this->registerClient('https://client.example.test/metadata.json'), self::SCOPE, new DateTimeImmutable());
+        $this->connections()->add($connection);
+        $at = new DateTimeImmutable('2026-10-28T10:00:00+01:00');
+
+        $byStranger = $this->connections()->revokeActiveOfAccount($connection->getId(), $stranger->getId(), RevocationCause::Person, $at);
+
+        self::assertNull($byStranger);
+        self::assertSame(['revoked_at' => null, 'revocation_cause' => null], $this->revocationRow($connection));
+
+        $byOwner = $this->connections()->revokeActiveOfAccount($connection->getId(), $owner->getId(), RevocationCause::Person, $at);
+
+        self::assertInstanceOf(RevokedConnection::class, $byOwner);
+        self::assertSame($owner->getId()->toRfc4122(), $byOwner->accountId());
+        self::assertSame('https://client.example.test/metadata.json', $byOwner->clientId());
+        self::assertSame(RevocationCause::Person, $byOwner->cause());
+        self::assertSame(['revoked_at' => $at->getTimestamp(), 'revocation_cause' => 'person'], $this->revocationRow($connection));
+    }
+
+    /** Déjà révoquée : la première révocation est gardée, rien n'est rendu à auditer. */
+    public function testRevokeActiveOfAccountKeepsTheFirstRevocation(): void
+    {
+        $connection = $this->grantConnection();
+        $accountId = $connection->account()->getId();
+        $first = new DateTimeImmutable('2026-10-23T10:00:00+02:00');
+        $this->connections()->revokeActive($connection->getId(), RevocationCause::Client, $first);
+
+        $second = $this->connections()->revokeActiveOfAccount($connection->getId(), $accountId, RevocationCause::Person, new DateTimeImmutable('2026-10-23T11:00:00+02:00'));
+
+        self::assertNull($second);
+        self::assertSame(['revoked_at' => $first->getTimestamp(), 'revocation_cause' => 'client'], $this->revocationRow($connection));
+    }
+
+    /** `belongsToAccount()` répond pour une connexion révoquée comme pour une active, et pour le seul compte propriétaire. */
+    public function testBelongsToAccountTellsOwnershipWhateverTheState(): void
+    {
+        $connection = $this->grantConnection();
+        $owner = $connection->account()->getId();
+        $this->connections()->revokeActive($connection->getId(), RevocationCause::Client, new DateTimeImmutable());
+
+        self::assertTrue($this->connections()->belongsToAccount($connection->getId(), $owner));
+        self::assertFalse($this->connections()->belongsToAccount($connection->getId(), Uuid::v7()));
+        self::assertFalse($this->connections()->belongsToAccount(Uuid::v7(), $owner));
+    }
+
+    /**
+     * Toutes les connexions actives d'un compte (#650, mot de passe changé,
+     * palier retiré), dans la transaction de l'appelant : celles du compte
+     * seulement, jamais celle d'un autre ; une déjà révoquée garde son instant
+     * et sa cause, et n'est pas rendue (donc jamais auditée une seconde fois).
+     */
+    public function testRevokeAllActiveOfAccountLeavesRevokedAndForeignRowsAlone(): void
+    {
+        $owner = $this->persistAccount('jane');
+        $stranger = $this->persistAccount('john');
+        $first = McpConnection::grant($owner, $this->registerClient('https://client.example.test/one.json'), self::SCOPE, new DateTimeImmutable());
+        $second = McpConnection::grant($owner, $this->registerClient('https://client.example.test/two.json'), self::SCOPE, new DateTimeImmutable());
+        $alreadyRevoked = McpConnection::grant($owner, $this->registerClient('https://client.example.test/three.json'), self::SCOPE, new DateTimeImmutable());
+        $foreign = McpConnection::grant($stranger, $this->registerClient('https://client.example.test/four.json'), self::SCOPE, new DateTimeImmutable());
+        foreach ([$first, $second, $alreadyRevoked, $foreign] as $connection) {
+            $this->connections()->add($connection);
+        }
+        $earlier = new DateTimeImmutable('2026-10-23T10:00:00+02:00');
+        $this->connections()->revokeActive($alreadyRevoked->getId(), RevocationCause::Client, $earlier);
+        $at = new DateTimeImmutable('2026-10-28T10:00:00+01:00');
+
+        $database = $this->em->getConnection();
+        $database->beginTransaction();
+        try {
+            $revoked = $this->connections()->revokeAllActiveOfAccount($owner->getId(), RevocationCause::PasswordChanged, $at);
+        } finally {
+            $database->commit();
+        }
+
+        $ids = array_map(static fn (RevokedConnection $connection): string => $connection->connectionId()->toRfc4122(), $revoked);
+        $expected = [$first->getId()->toRfc4122(), $second->getId()->toRfc4122()];
+        sort($ids);
+        sort($expected);
+        self::assertSame($expected, $ids, 'Seules les deux actives du compte sont rendues.');
+        foreach ($revoked as $connection) {
+            self::assertSame(RevocationCause::PasswordChanged, $connection->cause());
+            self::assertSame($owner->getId()->toRfc4122(), $connection->accountId());
+        }
+        self::assertSame(['revoked_at' => $at->getTimestamp(), 'revocation_cause' => 'password-changed'], $this->revocationRow($first));
+        self::assertSame(['revoked_at' => $at->getTimestamp(), 'revocation_cause' => 'password-changed'], $this->revocationRow($second));
+        self::assertSame(['revoked_at' => $earlier->getTimestamp(), 'revocation_cause' => 'client'], $this->revocationRow($alreadyRevoked));
+        self::assertSame(['revoked_at' => null, 'revocation_cause' => null], $this->revocationRow($foreign));
+    }
+
+    /** Un compte sans connexion active : rien à révoquer, une liste vide. */
+    public function testRevokeAllActiveOfAccountWithoutConnectionsRevokesNothing(): void
+    {
+        $owner = $this->persistAccount('jane');
+
+        $database = $this->em->getConnection();
+        $database->beginTransaction();
+        try {
+            $revoked = $this->connections()->revokeAllActiveOfAccount($owner->getId(), RevocationCause::TrustedTierWithdrawn, new DateTimeImmutable());
+        } finally {
+            $database->commit();
+        }
+
+        self::assertSame([], $revoked);
+    }
+
+    /**
+     * Hors transaction, l'instruction seule serait validée avant le reste de
+     * l'opération de l'appelant (le mot de passe, le rôle) : la garde refuse,
+     * sous une exception nommée, et rien n'est écrit.
+     */
+    public function testRevokeAllActiveOfAccountRefusesOutsideATransaction(): void
+    {
+        $connection = $this->grantConnection();
+
+        try {
+            $this->connections()->revokeAllActiveOfAccount($connection->account()->getId(), RevocationCause::PasswordChanged, new DateTimeImmutable());
+            self::fail('La révocation de tout un compte hors transaction aurait dû être refusée.');
+        } catch (RevocationOutsideTransactionException) {
+            self::assertSame(['revoked_at' => null, 'revocation_cause' => null], $this->revocationRow($connection));
+        }
+    }
+
+    /**
      * Un nouvel accord remplace l'accord actif du même couple compte/client
      * (#649, décision 2) : `revokeOtherActiveOf()` révoque, en une
      * instruction, toute autre connexion active de ce couple — et rien
@@ -345,7 +503,7 @@ final class McpConnectionRepositoryTest extends KernelTestCase
 
         $revoked = $this->connections()->revokeOtherActiveOf($kept, RevocationCause::Superseded, $at);
 
-        $revokedIds = array_map(static fn(RevokedConnection $connection): string => $connection->connectionId()->toRfc4122(), $revoked);
+        $revokedIds = array_map(static fn (RevokedConnection $connection): string => $connection->connectionId()->toRfc4122(), $revoked);
         sort($revokedIds);
         $expectedIds = [$previous->getId()->toRfc4122(), $older->getId()->toRfc4122()];
         sort($expectedIds);
@@ -564,9 +722,155 @@ final class McpConnectionRepositoryTest extends KernelTestCase
         self::assertSame(1, $this->rowCount('cpg_user'));
     }
 
+    /**
+     * « Mes connexions MCP » (#650, R3), la moitié non révoquée : **toutes** les
+     * connexions du compte dont `revoked_at` est nul — aussi anciennes
+     * soient-elles —, jamais une révoquée ni celle d'un autre compte, la plus
+     * récemment octroyée d'abord. Le client arrive avec elles, par jointure.
+     */
+    public function testFindNotRevokedOfAccountListsEveryNonRevokedConnectionNewestFirstWithItsClient(): void
+    {
+        $account = $this->persistAccount('jane');
+        $client = $this->registerClient('https://client.example.test/metadata.json');
+        $otherClient = $this->registerClient('https://other-client.example.test/metadata.json');
+        $oldest = McpConnection::grant($account, $client, self::SCOPE, new DateTimeImmutable('2024-01-01T10:00:00+01:00'));
+        $revoked = McpConnection::grant($account, $otherClient, self::SCOPE, new DateTimeImmutable('2026-10-10T10:00:00+02:00'));
+        $newest = McpConnection::grant($account, $client, self::SCOPE, new DateTimeImmutable('2026-10-20T10:00:00+02:00'));
+        $ofAnotherAccount = McpConnection::grant($this->persistAccount('john'), $client, self::SCOPE, new DateTimeImmutable('2026-10-15T10:00:00+02:00'));
+        foreach ([$oldest, $revoked, $newest, $ofAnotherAccount] as $connection) {
+            $this->connections()->add($connection);
+        }
+        $this->connections()->revokeActive($revoked->getId(), RevocationCause::Client, new DateTimeImmutable('2026-10-11T10:00:00+02:00'));
+        $this->em->clear();
+
+        $found = $this->connections()->findNotRevokedOfAccount($account->getId());
+
+        self::assertSame(
+            [$newest->getId()->toRfc4122(), $oldest->getId()->toRfc4122()],
+            array_map(static fn (McpConnection $connection): string => $connection->getId()->toRfc4122(), $found),
+        );
+        foreach ($found as $connection) {
+            self::assertFalse($this->em->getUnitOfWork()->isUninitializedObject($connection->client()), 'Le client est joint, pas chargé à la demande.');
+        }
+        self::assertSame([], $this->connections()->findNotRevokedOfAccount(Uuid::v7()));
+    }
+
+    /**
+     * La moitié terminée (`revoked_at` posé, quelle qu'en soit la cause) :
+     * les `$limit` dernièrement terminées, la plus récente d'abord, jamais
+     * une non révoquée ni celle d'un autre compte ; plus courte que la limite,
+     * elle rend tout ce qu'il y a.
+     */
+    public function testFindTerminatedOfAccountReturnsTheMostRecentlyTerminatedOnesUpToTheLimit(): void
+    {
+        $account = $this->persistAccount('jane');
+        $client = $this->registerClient('https://client.example.test/metadata.json');
+        $terminated = [];
+        foreach (range(1, 5) as $day) {
+            $terminated[$day] = McpConnection::grant($account, $client, self::SCOPE, new DateTimeImmutable(\sprintf('2026-10-%02dT10:00:00+02:00', $day)));
+        }
+        $active = McpConnection::grant($account, $client, self::SCOPE, new DateTimeImmutable('2026-10-20T10:00:00+02:00'));
+        $foreign = McpConnection::grant($this->persistAccount('john'), $client, self::SCOPE, new DateTimeImmutable('2026-10-21T10:00:00+02:00'));
+        foreach ([...$terminated, $active, $foreign] as $connection) {
+            $this->connections()->add($connection);
+        }
+        foreach ([...$terminated, $foreign] as $day => $connection) {
+            $this->connections()->revokeActive($connection->getId(), RevocationCause::Expired, new DateTimeImmutable(\sprintf('2026-10-25T10:%02d:00+02:00', $day)));
+        }
+        $this->em->clear();
+
+        $found = $this->connections()->findTerminatedOfAccount($account->getId(), 3);
+
+        self::assertSame(
+            [$terminated[5]->getId()->toRfc4122(), $terminated[4]->getId()->toRfc4122(), $terminated[3]->getId()->toRfc4122()],
+            array_map(static fn (McpConnection $connection): string => $connection->getId()->toRfc4122(), $found),
+        );
+        foreach ($found as $connection) {
+            self::assertFalse($this->em->getUnitOfWork()->isUninitializedObject($connection->client()), 'Le client est joint, pas chargé à la demande.');
+        }
+        self::assertCount(5, $this->connections()->findTerminatedOfAccount($account->getId(), 10));
+        self::assertSame([], $this->connections()->findTerminatedOfAccount(Uuid::v7(), 10));
+    }
+
+    /**
+     * CR2 de la seconde relecture : la limite garde les terminées **dernièrement
+     * terminées**, pas les dernièrement octroyées. Une connexion octroyée il y a
+     * cinq mois que la personne vient de révoquer est la première qu'elle
+     * cherche des yeux ; triée par octroi, cinquante terminées plus récentes la
+     * chassaient de la liste.
+     */
+    public function testFindTerminatedOfAccountKeepsTheLatestTerminatedNotTheLatestGranted(): void
+    {
+        $account = $this->persistAccount('jane');
+        $client = $this->registerClient('https://client.example.test/metadata.json');
+        $old = McpConnection::grant($account, $client, self::SCOPE, new DateTimeImmutable('2026-05-01T10:00:00+02:00'));
+        $this->connections()->add($old);
+        $others = [];
+        foreach (range(1, 50) as $minute) {
+            $other = McpConnection::grant($account, $client, self::SCOPE, new DateTimeImmutable(\sprintf('2026-10-20T10:%02d:00+02:00', $minute)));
+            $this->connections()->add($other);
+            $this->connections()->revokeActive($other->getId(), RevocationCause::Expired, new DateTimeImmutable('2026-10-21T10:00:00+02:00'));
+            $others[] = $other;
+        }
+        // La plus ancienne octroyée est la dernière terminée : on la révoque maintenant.
+        $this->connections()->revokeActive($old->getId(), RevocationCause::Person, new DateTimeImmutable('2026-10-28T10:00:00+01:00'));
+        $this->em->clear();
+
+        $found = $this->connections()->findTerminatedOfAccount($account->getId(), 50);
+
+        $ids = array_map(static fn (McpConnection $connection): string => $connection->getId()->toRfc4122(), $found);
+        self::assertCount(50, $ids);
+        self::assertSame($old->getId()->toRfc4122(), $ids[0], 'La dernière terminée ouvre la liste, quelle que soit sa date d\'octroi.');
+        self::assertNotContains($others[0]->getId()->toRfc4122(), $ids, 'C\'est la plus ancienne des terminées antérieures qui sort.');
+    }
+
+    /** Deux octrois de la même seconde se rangent par identifiant décroissant : l'ordre ne dépend pas du plan de la requête. */
+    public function testFindNotRevokedOfAccountBreaksTiesByDescendingId(): void
+    {
+        $account = $this->persistAccount('jane');
+        $client = $this->registerClient('https://client.example.test/metadata.json');
+        $grantedAt = new DateTimeImmutable('2026-10-20T10:00:00+02:00');
+        $first = McpConnection::grant($account, $client, self::SCOPE, $grantedAt);
+        $second = McpConnection::grant($account, $client, self::SCOPE, $grantedAt);
+        $this->connections()->add($first);
+        $this->connections()->add($second);
+        $this->em->clear();
+
+        $ids = array_map(static fn (McpConnection $connection): string => $connection->getId()->toRfc4122(), $this->connections()->findNotRevokedOfAccount($account->getId()));
+
+        $expected = [$first->getId()->toRfc4122(), $second->getId()->toRfc4122()];
+        rsort($expected);
+        self::assertSame($expected, $ids);
+    }
+
+    /**
+     * Même départage pour la moitié terminée, **avant** la coupe : deux
+     * révoquées de la même seconde, la limite de un garde celle d'identifiant
+     * le plus grand, toujours la même.
+     */
+    public function testFindTerminatedOfAccountBreaksTiesByDescendingIdBeforeTheLimit(): void
+    {
+        $account = $this->persistAccount('jane');
+        $client = $this->registerClient('https://client.example.test/metadata.json');
+        $grantedAt = new DateTimeImmutable('2026-10-20T10:00:00+02:00');
+        $first = McpConnection::grant($account, $client, self::SCOPE, $grantedAt);
+        $second = McpConnection::grant($account, $client, self::SCOPE, $grantedAt);
+        foreach ([$first, $second] as $connection) {
+            $this->connections()->add($connection);
+            $this->connections()->revokeActive($connection->getId(), RevocationCause::Person, new DateTimeImmutable('2026-10-25T10:00:00+02:00'));
+        }
+        $this->em->clear();
+
+        $found = $this->connections()->findTerminatedOfAccount($account->getId(), 1);
+
+        $highest = max($first->getId()->toRfc4122(), $second->getId()->toRfc4122());
+        self::assertSame([$highest], array_map(static fn (McpConnection $connection): string => $connection->getId()->toRfc4122(), $found));
+    }
+
     private function purge(): void
     {
         $connection = $this->em->getConnection();
+        TestDatabase::assertSafeToWipe($connection);
         foreach (self::TABLES as $table) {
             $connection->executeStatement('DELETE FROM '.$table);
         }

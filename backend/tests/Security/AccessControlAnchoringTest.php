@@ -319,7 +319,7 @@ final class AccessControlAnchoringTest extends KernelTestCase
 
     private function isBounded(string $regexp): bool
     {
-        return array_any(self::ACCEPTED_PATTERN_ENDINGS, fn(string $ending): bool => str_ends_with($regexp, $ending));
+        return array_any(self::ACCEPTED_PATTERN_ENDINGS, fn (string $ending): bool => str_ends_with($regexp, $ending));
     }
 
     /**

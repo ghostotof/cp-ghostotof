@@ -8,6 +8,8 @@ import { LoginRateLimitedError } from '../../domain/auth/errors/LoginRateLimited
 import { retryAfterMinutes } from '../ui/retryAfterMinutes'
 import { isSupportedLocale, type Locale } from '../../domain/portfolio/entities/Locale'
 import { isReauthentication } from '../router/reauthentication'
+import { isSessionEnded } from '../router/sessionEnded'
+import { internalRedirectTarget } from '../router/internalRedirect'
 
 const { t, locale } = useI18n()
 const route = useRoute()
@@ -20,6 +22,13 @@ const { login, user } = useAuth()
  * la session a expiré entre-temps se connecte, tout simplement.
  */
 const isReauthenticatingASession = computed(() => null !== user.value && isReauthentication(route))
+
+/**
+ * La page s'ouvre parce que la session a pris fin (#650, R5a) : une page de la
+ * personne ou du backoffice s'est vu refuser sa session et l'a menée ici avec
+ * `expired=1`. La personne n'est plus connectée (le drapeau n'ouvre rien).
+ */
+const hasSessionEnded = computed(() => isSessionEnded(route))
 
 const username = ref('')
 const password = ref('')
@@ -35,15 +44,12 @@ function currentLocale(): Locale {
  * Posé par le garde d'authentification (presentation/router/index.ts) quand
  * une route protégée (ex. /admin) redirige ici faute de session : ramène
  * l'utilisateur là où il voulait aller plutôt qu'à l'accueil. Restreint aux
- * chemins relatifs internes (un seul "/" en tête) pour ne jamais rediriger
- * vers une origine externe (open redirect) à partir d'un query param.
+ * chemins internes (`internalRedirectTarget`, qui dit pourquoi et comment) pour
+ * ne jamais rediriger vers une origine externe (open redirect) à partir d'un
+ * paramètre d'URL.
  */
 function redirectTarget(): string {
-  const redirect = route.query.redirect
-  if ('string' === typeof redirect && redirect.startsWith('/') && !redirect.startsWith('//')) {
-    return redirect
-  }
-  return `/${currentLocale()}`
+  return internalRedirectTarget(route.query.redirect) ?? `/${currentLocale()}`
 }
 
 /** Un message par cause : ce que la personne doit faire n'est pas le même (corriger, attendre, réessayer). */
@@ -93,6 +99,19 @@ async function handleSubmit(): Promise<void> {
         data-testid="login-reauth-notice"
       >
         {{ t('auth.reauthNotice') }}
+      </p>
+
+      <!--
+        La session a pris fin : la page dit pourquoi elle s'ouvre. Une région d'état
+        (role="status"), pas une alerte : rien n'est cassé, la personne se reconnecte.
+      -->
+      <p
+        v-if="hasSessionEnded"
+        role="status"
+        class="text-body-secondary small"
+        data-testid="login-session-ended-notice"
+      >
+        {{ t('auth.sessionEnded') }}
       </p>
 
       <form

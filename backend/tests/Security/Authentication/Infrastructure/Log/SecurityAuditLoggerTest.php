@@ -763,6 +763,42 @@ final class SecurityAuditLoggerTest extends TestCase
     }
 
     /**
+     * F-C : le compte par son UUID, la version présentée et la courante, l'auteur
+     * `anonymous` (le refus précède l'authentification) — ni jeton ni identifiant de
+     * connexion. Une revendication illisible : `presentedVersion` est `null`.
+     */
+    public function testSessionRefusedAfterCredentialsChangeNamesTheAccountAndBothVersions(): void
+    {
+        $this->pushRequest('/api/me', 'GET');
+        $jane = new CpgUser('jane', 'hashed-password');
+        $jane->replacePassword('another-hash');
+
+        $this->auditLogger->sessionRefusedAfterCredentialsChange($jane, 0);
+
+        self::assertSame([
+            'event' => 'session-refused-after-credentials-change',
+            'userId' => $jane->accountId(),
+            'presentedVersion' => 0,
+            'currentVersion' => 1,
+            'actor' => 'anonymous',
+            'ip' => self::IP,
+            'path' => '/api/me',
+        ], $this->singleRecord()->context);
+    }
+
+    public function testSessionRefusedWithAnUnreadableClaimHasNoPresentedVersion(): void
+    {
+        $this->pushRequest('/api/me', 'GET');
+
+        $this->auditLogger->sessionRefusedAfterCredentialsChange(new CpgUser('jane', 'hashed-password'), null);
+
+        $context = $this->singleRecord()->context;
+        self::assertArrayHasKey('presentedVersion', $context);
+        self::assertNull($context['presentedVersion']);
+        self::assertSame(0, $context['currentVersion']);
+    }
+
+    /**
      * Hors requête HTTP (commande, handler Messenger) : ni IP ni chemin, mais
      * l'événement sort quand même — l'absence de requête n'est pas une raison
      * de perdre la trace.
@@ -870,9 +906,10 @@ final class SecurityAuditLoggerTest extends TestCase
         $this->auditLogger->mcpConnectionSuperseded(new AuditedMcpConnection($invited, Uuid::v7(), 'https://client.example.test/metadata.json'), Uuid::v7());
         $this->auditLogger->mcpAccessTokenRefused(new AuditedMcpConnection($invited, Uuid::v7(), 'https://client.example.test/metadata.json'), 'token-expired');
         $this->auditLogger->mcpGrantRefused(new AuditedMcpConnection($invited, Uuid::v7(), 'https://client.example.test/metadata.json'), 'refresh_token', 'token-refused', 'https://client.example.test/metadata.json');
+        $this->auditLogger->sessionRefusedAfterCredentialsChange($invited, 0);
 
         $records = $this->handler->getRecords();
-        self::assertCount(29, $records);
+        self::assertCount(30, $records);
 
         foreach ($records as $record) {
             $serialized = json_encode([$record->message, $record->context, $record->extra], \JSON_THROW_ON_ERROR);

@@ -9,6 +9,7 @@ use App\Mcp\Connection\Domain\ValueObject\RevocationCause;
 use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use Psr\Clock\ClockInterface;
 use Psr\Http\Message\ServerRequestInterface;
+use Psr\Log\LoggerInterface;
 
 /**
  * Le remplacement au premier échange d'un code (#726, D2), décidé ici, en
@@ -31,11 +32,30 @@ use Psr\Http\Message\ServerRequestInterface;
  * un échange validé : le code était authentique, vivant, lié à son client et
  * prouvé par son vérificateur PKCE.
  *
- * **Écartée** (#726, CR5) : l'accroche à `AuthCodeRepository::revokeAuthCode()`,
- * que league appelle en dernier, avec un collecteur des connexions
- * remplacées — un état par requête à vider (un service partagé qu'une
- * requête suivante du même processus relirait), et l'audit après le COMMIT
- * resterait de toute façon au point de jeton.
+ * **Écartée** (#726, CR5), et le reste : accrocher *le remplacement* à
+ * `AuthCodeRepository::revokeAuthCode()`, que league appelle en dernier, avec
+ * un collecteur des connexions remplacées — un état par requête à vider (un
+ * service partagé qu'une requête suivante du même processus relirait), et
+ * l'audit après le COMMIT resterait de toute façon au point de jeton.
+ * `revokeAuthCode()` n'est accroché, depuis #650 (R4), que pour **une**
+ * écriture sans état : celle de `code_exchanged_at` (ci-dessous), une
+ * instruction SQL qui ne collecte rien et n'a rien à rendre.
+ *
+ * **Elle ne note plus le premier échange** (#730, déplacé par #650, R4) :
+ * `code_exchanged_at` est écrit par la révocation du code
+ * (`AuthCodeRepository::revokeAuthCode()` puis
+ * `McpConnectionRepositoryInterface::recordCodeExchangeOf()`), le dernier
+ * geste de league, en une instruction. Écrit ici, il dépendait du
+ * déchiffrement du code et d'une relecture de la connexion, et le retour
+ * anticipé ci-dessous (code illisible, connexion introuvable) le sautait avec
+ * le remplacement : la connexion qui sert, jetons émis, restait « jamais
+ * échangée » et expirait en une heure, sans un mot.
+ *
+ * **Un remplacement sauté est signalé** (#650, R5a) : après un échange réussi,
+ * un code qui ne désigne aucune connexion ou une connexion que la base ne
+ * connaît plus est tenu pour impossible ; si cela arrive, l'ancienne connexion
+ * du couple reste vivante sans que rien le dise. Une ligne `critical`, sans
+ * secret ni identifiant, et la réponse de l'échange inchangée.
  *
  * Coût, à chaque échange réussi seulement : un déchiffrement de plus que
  * league (le port), une requête de lecture (servie par la carte d'identité
@@ -53,12 +73,21 @@ final readonly class CodeExchangeSupersession implements CodeExchangeSupersessio
     /** Le message d'une panne de l'audit d'un remplacement, constant (#726). */
     private const string SUPERSEDED_NOT_AUDITED = 'Superseded connection not audited.';
 
+    /**
+     * Les deux messages du remplacement sauté après un échange réussi (#650,
+     * R5a), constants : ni le code, ni l'identifiant de la connexion, ni rien
+     * de la requête.
+     */
+    private const string CODE_NAMES_NO_CONNECTION = 'Exchanged code names no connection; supersession skipped.';
+    private const string CONNECTION_NOT_FOUND = 'Exchanged code\'s connection not found; supersession skipped.';
+
     public function __construct(
         private ExchangedCodeConnectionInterface $exchangedCode,
         private McpConnectionRepositoryInterface $connections,
         private ClockInterface $clock,
         private SecurityAuditLoggerInterface $auditLogger,
         private FailSafeAudit $failSafeAudit,
+        private LoggerInterface $logger,
     ) {
     }
 
@@ -68,17 +97,33 @@ final readonly class CodeExchangeSupersession implements CodeExchangeSupersessio
             return null;
         }
 
+        // On n'arrive ici qu'après la réponse de league : le code était
+        // authentique, vivant et prouvé. Que le port n'en lise aucune connexion,
+        // ou que la base ne la connaisse plus, est tenu pour impossible — mais
+        // l'échange est fait, et le remplacement sauté en silence laisserait
+        // l'ancienne connexion du couple vivante : le cas sort en `critical`
+        // (message constant, aucun contexte), sans changer la réponse.
         $connectionId = $this->exchangedCode->connectionIdOf($request);
-        $kept = null !== $connectionId ? $this->connections->findOneById($connectionId) : null;
-        if (null === $kept) {
+        if (null === $connectionId) {
+            $this->logger->critical(self::CODE_NAMES_NO_CONNECTION);
+
             return null;
         }
+
+        $kept = $this->connections->findOneById($connectionId);
+        if (null === $kept) {
+            $this->logger->critical(self::CONNECTION_NOT_FOUND);
+
+            return null;
+        }
+
+        $now = $this->clock->now();
 
         // L'identifiant de l'instance gérée, celle que league a verrouillée :
         // la connexion qui remplace, nommée par chaque ligne d'audit (B3).
         return new Supersession(
             $kept->getId(),
-            $this->connections->revokeOtherActiveOf($kept, RevocationCause::Superseded, $this->clock->now()),
+            $this->connections->revokeOtherActiveOf($kept, RevocationCause::Superseded, $now),
         );
     }
 

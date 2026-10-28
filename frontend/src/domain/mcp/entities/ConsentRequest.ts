@@ -47,6 +47,23 @@ export interface ConsentClient {
  */
 export const NOMINATIVE_READ_SCOPE = 'nominative:read'
 
+/**
+ * Le compte au nom duquel la connexion serait accordée (#650) : celui dont le
+ * cookie arrive avec la requête du résumé, lu côté serveur. Jamais un état du
+ * frontend — un autre onglet a pu changer de compte depuis — : la page ne fait
+ * que l'afficher, pour que la personne voie, avant de décider, qui accorde.
+ */
+export interface ConsentAccount {
+  /**
+   * L'UUID du compte, tel que le serveur le connaît. La décision le renvoie : le
+   * serveur n'accorde (ni ne refuse) qu'au compte que cette page a nommé, et
+   * répond 409 si le cookie est devenu celui d'un autre (F5). Jamais calculé ici.
+   */
+  id: string
+  /** L'identifiant de connexion de la personne, tel que le serveur le connaît. */
+  username: string
+}
+
 /** Le résumé de la demande, revalidée par le serveur, que la personne lit avant de décider. */
 export interface ConsentRequest {
   client: ConsentClient
@@ -58,4 +75,5 @@ export interface ConsentRequest {
   redirectHost: string
   scope: typeof NOMINATIVE_READ_SCOPE
   resource: string
+  account: ConsentAccount
 }

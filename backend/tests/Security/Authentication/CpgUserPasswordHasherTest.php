@@ -30,7 +30,7 @@ use Symfony\Component\PasswordHasher\PasswordHasherInterface;
  * longueur que la leur) avant de rien calculer.
  *
  * Ce qui reste, accepté et documenté (`FailedLoginTimingEqualizer`,
- * `.claude/rules/security-authentication.md`) : cette dérivation unique se
+ * `.claude/rules/security-authentication-connexion.md`) : cette dérivation unique se
  * fait au coût **stocké**, pas au coût configuré — un compte au hachage
  * ancien reste distinguable jusqu'à sa prochaine connexion réussie, qui le
  * rehache (`StalePasswordHashRehashTest`). D'où le second test : algorithme

@@ -41,7 +41,7 @@ final class LeagueAuthorizationCompleterTest extends TestCase
     public function testAnApprovalHandsTheConnectionToLeagueAndReturnsItsRedirect(): void
     {
         $connection = $this->connection();
-        $completer = $this->completer(static fn(Psr17Factory $factory): ResponseInterface => $factory->createResponse(302)->withHeader('Location', self::REDIRECT.'?code=c&state=s'));
+        $completer = $this->completer(static fn (Psr17Factory $factory): ResponseInterface => $factory->createResponse(302)->withHeader('Location', self::REDIRECT.'?code=c&state=s'));
 
         self::assertSame(self::REDIRECT.'?code=c&state=s', $completer->approve($this->summary(), $connection));
         self::assertTrue($this->authorization->isAuthorizationApproved());
@@ -50,7 +50,7 @@ final class LeagueAuthorizationCompleterTest extends TestCase
 
     public function testAnApprovalWithoutRedirectIsAServerFault(): void
     {
-        $completer = $this->completer(static fn(Psr17Factory $factory): ResponseInterface => $factory->createResponse(200));
+        $completer = $this->completer(static fn (Psr17Factory $factory): ResponseInterface => $factory->createResponse(200));
 
         $this->expectException(UnexpectedAuthorizationResponseException::class);
 
@@ -60,7 +60,7 @@ final class LeagueAuthorizationCompleterTest extends TestCase
     /** Le refus : l'`access_denied` de league, sa redirection rendue telle quelle. */
     public function testADenialReturnsTheRedirectOfLeaguesAccessDenied(): void
     {
-        $completer = $this->completer(static fn(): never => throw OAuthServerException::accessDenied('The user denied the request', self::REDIRECT.'?state=s'));
+        $completer = $this->completer(static fn (): never => throw OAuthServerException::accessDenied('The user denied the request', self::REDIRECT.'?state=s'));
 
         $location = $completer->deny($this->summary());
 
@@ -115,7 +115,7 @@ final class LeagueAuthorizationCompleterTest extends TestCase
     {
         $factory = new Psr17Factory();
         $server = self::createStub(AuthorizationServer::class);
-        $server->method('completeAuthorizationRequest')->willReturnCallback(static fn(): ResponseInterface => $outcome($factory));
+        $server->method('completeAuthorizationRequest')->willReturnCallback(static fn (): ResponseInterface => $outcome($factory));
 
         return new LeagueAuthorizationCompleter($server, $factory);
     }

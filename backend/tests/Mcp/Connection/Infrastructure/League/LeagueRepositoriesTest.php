@@ -32,6 +32,7 @@ use App\Mcp\Connection\Infrastructure\League\UnknownMcpConnectionException;
 use App\Mcp\Connection\Infrastructure\Security\TrustedTier;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Tests\Mcp\Connection\RegisteredMcpClient;
+use App\Tests\Support\TestDatabase;
 use DateInterval;
 use DateTimeImmutable;
 use Doctrine\ORM\EntityManagerInterface;
@@ -174,6 +175,10 @@ final class LeagueRepositoriesTest extends KernelTestCase
     public function testARefreshTokenExpiryIsJudgedOnTheApplicationClock(): void
     {
         $connection = $this->grantConnection();
+        // Un jeton de rafraîchissement n'existe qu'après l'échange du code : sans
+        // lui, la connexion jamais échangée serait échue une heure après son octroi (#730).
+        $connection->recordCodeExchangeAt(new DateTimeImmutable());
+        $this->connections()->save($connection);
         $refreshIdentifier = $this->identifier();
         $expiresAt = new DateTimeImmutable('+1 day');
         $this->persistRefreshToken($this->persistAccessToken($connection, $this->identifier()), $refreshIdentifier, $expiresAt);
@@ -547,6 +552,7 @@ final class LeagueRepositoriesTest extends KernelTestCase
     private function purge(): void
     {
         $connection = $this->em->getConnection();
+        TestDatabase::assertSafeToWipe($connection);
         foreach (self::TABLES as $table) {
             $connection->executeStatement('DELETE FROM '.$table);
         }
@@ -606,6 +612,7 @@ final class LeagueRepositoriesTest extends KernelTestCase
             self::getContainer()->get(McpAuthorizationCodeRepositoryInterface::class),
             new TokenUnderConnectionLock($this->connections()),
             new ConnectionOfToken($this->connections()),
+            $this->connections(),
             $this->clock,
         );
     }

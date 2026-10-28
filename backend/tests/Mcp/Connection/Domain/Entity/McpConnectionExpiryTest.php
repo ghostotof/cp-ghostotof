@@ -32,7 +32,7 @@ final class McpConnectionExpiryTest extends TestCase
     protected function setUp(): void
     {
         $this->paris = new DateTimeZone('Europe/Paris');
-        $this->lifetimes = ConnectionLifetimes::fromConfiguration('PT10M', 'PT1H', 'P30D', 'P30D', 'P90D');
+        $this->lifetimes = ConnectionLifetimes::fromConfiguration('PT10M', 'PT1H', 'P30D', 'P30D', 'P90D', 'PT1H');
     }
 
     /**
@@ -55,7 +55,7 @@ final class McpConnectionExpiryTest extends TestCase
      */
     public function testAConnectionExpiresAtItsMaximumWhateverItsUse(): void
     {
-        $lifetimes = ConnectionLifetimes::fromConfiguration('PT10M', 'PT1H', 'P30D', 'P90D', 'P90D');
+        $lifetimes = ConnectionLifetimes::fromConfiguration('PT10M', 'PT1H', 'P30D', 'P90D', 'P90D', 'PT1H');
         $connection = $this->connectionGrantedAt($this->paris('2026-07-28 10:00:00'));
         self::assertTrue($connection->recordUseAt($this->paris('2026-10-26 09:00:00')));
 
@@ -166,13 +166,149 @@ final class McpConnectionExpiryTest extends TestCase
         self::assertSame($oneHourLater->getTimestamp(), $this->lastUseOf($connection));
     }
 
+    /**
+     * L'échéance que « Mes connexions MCP » affiche (#650) est la plus proche
+     * des deux : octroyée le 28 juillet, utilisée le 20 octobre, la durée
+     * maximale (26 octobre, 90 jours après l'octroi) l'emporte sur
+     * l'inactivité (19 novembre) ; jamais utilisée et octroyée le 26 septembre,
+     * l'inactivité (26 octobre) l'emporte sur la durée maximale (25 décembre).
+     * Rendue dans le fuseau demandé.
+     */
+    public function testTheDeadlineIsTheEarliestOfIdleAndMaximum(): void
+    {
+        $recentlyUsed = $this->connectionGrantedAt($this->paris('2026-07-28 10:00:00'));
+        self::assertTrue($recentlyUsed->recordUseAt($this->paris('2026-10-20 10:00:00')));
+        $neverUsed = $this->connectionGrantedAt($this->paris('2026-09-26 10:00:00'));
+
+        $maximum = $recentlyUsed->deadline($this->paris, $this->lifetimes);
+        $idle = $neverUsed->deadline($this->paris, $this->lifetimes);
+
+        self::assertSame('2026-10-26 10:00:00 Europe/Paris', $maximum->format('Y-m-d H:i:s e'));
+        self::assertSame('2026-10-26 10:00:00 Europe/Paris', $idle->format('Y-m-d H:i:s e'));
+        // Un octroi lu en base (décalage fixe +02:00), utilisé il y a peu : la
+        // durée maximale, comptée en jours du calendrier de la zone demandée.
+        $hydrated = $this->connectionGrantedAt(new DateTimeImmutable('2026-07-27 10:00:00+02:00'));
+        self::assertTrue($hydrated->recordUseAt($this->paris('2026-10-20 10:00:00')));
+        self::assertSame('2026-10-25 08:00:00 UTC', $hydrated->deadline(new DateTimeZone('UTC'), $this->lifetimes)->format('Y-m-d H:i:s e'));
+        self::assertSame('2026-10-25 10:00:00 Europe/Paris', $hydrated->deadline($this->paris, $this->lifetimes)->format('Y-m-d H:i:s e'));
+    }
+
+    /**
+     * Les deux définitions ne se séparent jamais : à la seconde de
+     * {@see McpConnection::deadline()} la connexion est expirée, la seconde
+     * d'avant elle ne l'est pas — dans les fenêtres des deux changements
+     * d'heure, heure répétée de l'automne et heure sautée du printemps.
+     */
+    #[DataProvider('clockChangeWindows')]
+    public function testIsExpiredAtAgreesWithTheDeadlineSecondBySecond(string $grantedAt, string $from, string $to): void
+    {
+        unset($from, $to);
+        $connection = $this->connectionGrantedAt($this->paris($grantedAt));
+        $deadline = $connection->deadline($this->paris, $this->lifetimes);
+        $oneSecond = new DateInterval('PT1S');
+
+        self::assertTrue($connection->isExpiredAt($deadline, $this->lifetimes), 'À la seconde de l\'échéance.');
+        self::assertFalse($connection->isExpiredAt($deadline->sub($oneSecond), $this->lifetimes), 'La seconde d\'avant.');
+        self::assertTrue($connection->isExpiredAt($deadline->add($oneSecond), $this->lifetimes), 'La seconde d\'après.');
+    }
+
+    /**
+     * Une connexion dont le code n'a jamais été échangé (#730) expire
+     * `connection_unexchanged` (une heure) après son octroi — avant l'inactivité
+     * (30 jours) et la durée maximale (90) : c'est la plus proche des trois.
+     * À la seconde de l'échéance elle est morte, la seconde d'avant vivante ; et
+     * la plus proche des échéances est rendue pour l'affichage.
+     */
+    public function testANeverExchangedConnectionExpiresAtItsUnexchangedDeadline(): void
+    {
+        $grantedAt = $this->paris('2026-09-26 10:00:00');
+        $connection = $this->connectionNeverExchangedGrantedAt($grantedAt);
+
+        $deadline = $connection->deadline($this->paris, $this->lifetimes);
+
+        self::assertSame('2026-09-26 11:00:00 Europe/Paris', $deadline->format('Y-m-d H:i:s e'));
+        self::assertFalse($connection->isExpiredAt($this->paris('2026-09-26 10:59:59'), $this->lifetimes));
+        self::assertTrue($connection->isExpiredAt($this->paris('2026-09-26 11:00:00'), $this->lifetimes));
+    }
+
+    /**
+     * Le premier échange du code écrit `code_exchanged_at` (une seule fois :
+     * un second appel ne le déplace pas) et supprime l'échéance : la même
+     * connexion, une heure et une seconde après son octroi, n'est pas
+     * expirée, et son échéance affichée est celle de l'inactivité.
+     */
+    public function testAnExchangedConnectionDoesNotKnowTheUnexchangedDeadline(): void
+    {
+        $connection = $this->connectionNeverExchangedGrantedAt($this->paris('2026-09-26 10:00:00'));
+        self::assertNull($connection->codeExchangedAt());
+
+        $connection->recordCodeExchangeAt($this->paris('2026-09-26 10:03:00'));
+        $connection->recordCodeExchangeAt($this->paris('2026-09-26 10:30:00'));
+
+        self::assertSame($this->paris('2026-09-26 10:03:00')->getTimestamp(), $connection->codeExchangedAt()?->getTimestamp(), 'Le second appel a déplacé l\'instant du premier échange.');
+        self::assertFalse($connection->isExpiredAt($this->paris('2026-09-26 11:00:01'), $this->lifetimes));
+        self::assertSame('2026-10-26 10:00:00 Europe/Paris', $connection->deadline($this->paris, $this->lifetimes)->format('Y-m-d H:i:s e'));
+    }
+
+    /**
+     * Les deux définitions ne se séparent jamais pour les non échangées non
+     * plus, et l'expiration est monotone, à la seconde, autour du passage à
+     * l'heure d'hiver (l'heure de 02:00 à 03:00 se répète) et d'été : une heure
+     * de temps écoulé, jamais une heure de pendule.
+     */
+    #[DataProvider('unexchangedGrantsAroundTheClockChanges')]
+    public function testTheUnexchangedDeadlineIsMonotoneSecondBySecond(string $grantedAt): void
+    {
+        $granted = new DateTimeImmutable($grantedAt)->setTimezone($this->paris);
+        $connection = $this->connectionNeverExchangedGrantedAt($granted);
+        $deadline = $connection->deadline($this->paris, $this->lifetimes);
+        $oneSecond = new DateInterval('PT1S');
+
+        self::assertSame(3600, $deadline->getTimestamp() - $granted->getTimestamp(), 'Une heure écoulée exactement.');
+        self::assertTrue($connection->isExpiredAt($deadline, $this->lifetimes), 'À la seconde de l\'échéance.');
+        self::assertFalse($connection->isExpiredAt($deadline->sub($oneSecond), $this->lifetimes), 'La seconde d\'avant.');
+
+        $expired = false;
+        for ($now = $granted; $now <= $deadline->add(new DateInterval('PT10M')); $now = $now->add(new DateInterval('PT30S'))) {
+            $isExpired = $connection->isExpiredAt($now, $this->lifetimes);
+            self::assertFalse($expired && !$isExpired, 'Morte, puis vivante de nouveau à '.$now->format(DATE_ATOM));
+            $expired = $isExpired;
+        }
+    }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function unexchangedGrantsAroundTheClockChanges(): iterable
+    {
+        yield 'avant l\'heure répétée de l\'automne' => ['2026-10-24T23:50:00Z'];
+        yield 'dans l\'heure répétée de l\'automne' => ['2026-10-25T00:30:00Z'];
+        yield 'à cheval sur le retour à l\'heure d\'hiver' => ['2026-10-25T00:45:00Z'];
+        yield 'avant le saut du printemps' => ['2026-03-29T00:30:00Z'];
+        yield 'à cheval sur le saut du printemps' => ['2026-03-29T00:45:00Z'];
+    }
+
     /** L'instant du dernier usage noté (époque Unix), ou `null`. */
     private function lastUseOf(McpConnection $connection): ?int
     {
         return $connection->lastUsedAt()?->getTimestamp();
     }
 
+    /**
+     * Une connexion dont le code a été échangé (à l'octroi, à la seconde près) :
+     * seules l'inactivité et la durée maximale la jugent. Celle dont le code
+     * ne l'a jamais été est {@see self::connectionNeverExchangedGrantedAt()}.
+     */
     private function connectionGrantedAt(DateTimeImmutable $grantedAt): McpConnection
+    {
+        $connection = $this->connectionNeverExchangedGrantedAt($grantedAt);
+        $connection->recordCodeExchangeAt($grantedAt);
+
+        return $connection;
+    }
+
+    /** Une approbation dont le code n'a jamais été échangé (#730) : la troisième échéance la juge aussi. */
+    private function connectionNeverExchangedGrantedAt(DateTimeImmutable $grantedAt): McpConnection
     {
         return McpConnection::grant(
             new CpgUser('jane', 'hashed-password'),

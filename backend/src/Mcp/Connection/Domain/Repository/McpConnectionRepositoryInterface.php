@@ -6,6 +6,7 @@ namespace App\Mcp\Connection\Domain\Repository;
 
 use App\Mcp\Connection\Domain\Entity\McpConnection;
 use App\Mcp\Connection\Domain\ValueObject\ConnectionReference;
+use App\Mcp\Connection\Domain\ValueObject\PreselectionBounds;
 use App\Mcp\Connection\Domain\ValueObject\RevocationCause;
 use App\Mcp\Connection\Domain\ValueObject\RevokedConnection;
 use DateTimeImmutable;
@@ -21,6 +22,45 @@ interface McpConnectionRepositoryInterface
     public function findOneById(Uuid $id): ?McpConnection;
 
     public function add(McpConnection $connection): void;
+
+    /**
+     * « Mes connexions MCP » (#650, R3), la première moitié de la liste : **toutes**
+     * les connexions du compte que personne n'a révoquées (`revoked_at` nul),
+     * avec leur client, **en une requête**, sans limite — aussi anciennes
+     * soient-elles, et les échues que la purge n'a pas encore marquées
+     * comprises : leur état se juge par `McpConnection::isExpiredAt()`, jamais
+     * ici. Elles sont bornées par nature : un accord abandonné échoit en une
+     * heure et la purge le marque la nuit même, le premier échange d'un code
+     * révoque les autres connexions de sa paire (compte, client), et les
+     * clients sont une liste fermée que l'administrateur enregistre en ligne
+     * de commande. La plus récemment octroyée d'abord, l'identifiant
+     * décroissant départageant deux octrois de la même seconde. Aucun verrou :
+     * une lecture, que ni un rafraîchissement ni la purge n'attendent.
+     *
+     * @return list<McpConnection>
+     */
+    public function findNotRevokedOfAccount(Uuid $accountId): array;
+
+    /**
+     * La seconde moitié : les `$limit` connexions **terminées** du compte
+     * (`revoked_at` posé, quelle qu'en soit la cause : la personne, le client,
+     * la purge, une remplaçante) **dernièrement terminées**, avec leur client,
+     * **en une requête**. La purge les garde six mois et chaque approbation
+     * abandonnée ou remplacée en laisse une : sans borne, la liste grossirait
+     * avec l'âge du compte. **Triées par instant de fin décroissant, pas par
+     * octroi** (#650, CR2 de la seconde relecture) : la connexion que la personne
+     * vient de couper doit être dans la liste, même octroyée il y a des mois —
+     * triée par octroi, cinquante terminées plus récentes la chassaient. Ici
+     * « terminée » est l'instant de `revoked_at` ; l'identifiant décroissant
+     * départage deux fins égales et décide *quelles* terminées une limite garde.
+     * Le service remet les deux moitiés dans l'ordre d'octroi pour l'affichage.
+     * Demander une ligne de plus que ce qu'on montre dit s'il y en a davantage.
+     *
+     * @param positive-int $limit
+     *
+     * @return list<McpConnection>
+     */
+    public function findTerminatedOfAccount(Uuid $accountId, int $limit): array;
 
     /**
      * Ce par quoi la connexion se désigne — son compte, son client public —,
@@ -69,6 +109,59 @@ interface McpConnectionRepositoryInterface
     public function revokeActive(Uuid $connectionId, RevocationCause $cause, DateTimeImmutable $at): ?RevokedConnection;
 
     /**
+     * Révoque la connexion **si elle est à ce compte** et ne l'est pas encore
+     * (#650, la révocation par la personne) : la même instruction que
+     * {@see self::revokeActive()}, dont le choix est « cette connexion, de ce
+     * compte » — le filtre par compte est ce qui garantit qu'on ne révoque que
+     * les siennes, la base le décide en une instruction, sans lecture
+     * préalable. Une seule écriture : l'instruction est la transaction
+     * (autocommit), l'audit revenant à l'appelant après son retour, donc après
+     * son COMMIT. La connexion d'un autre compte, inconnue ou déjà révoquée
+     * (qui garde sa première révocation) rend `null`.
+     *
+     * @return RevokedConnection|null ce qui a été révoqué ; `null` si la ligne n'est pas à ce compte, inconnue ou déjà révoquée
+     */
+    public function revokeActiveOfAccount(Uuid $connectionId, Uuid $accountId, RevocationCause $cause, DateTimeImmutable $at): ?RevokedConnection;
+
+    /**
+     * La connexion est-elle à ce compte, révoquée ou non (#650) ? Une requête,
+     * sans verrou : elle départage, quand {@see self::revokeActiveOfAccount()}
+     * a rendu `null`, une connexion déjà révoquée mais à soi (204) d'une
+     * connexion étrangère ou inconnue (404).
+     */
+    public function belongsToAccount(Uuid $connectionId, Uuid $accountId): bool;
+
+    /**
+     * Révoque toutes les connexions actives d'un compte (#650 : son mot de
+     * passe a changé, ou il a perdu le palier de confiance) : la même
+     * instruction que {@see self::revokeActive()}, sur le compte au lieu d'un
+     * identifiant — une connexion déjà révoquée garde sa première révocation
+     * et n'est pas rendue, celle d'un autre compte n'est pas touchée.
+     *
+     * **Dans la transaction de l'appelant, exigée** : l'instruction seule est
+     * atomique, mais elle doit valider avec l'écriture qui la motive (le mot
+     * de passe, le rôle). Hors transaction, `RevocationOutsideTransactionException`,
+     * avant d'écrire. L'audit revient à l'appelant, après le COMMIT. Les
+     * lignes sont verrouillées par identifiant, après celle du compte que
+     * l'appelant tient déjà (`FOR UPDATE` du verrou du compte).
+     *
+     * **Un cycle reste possible** (#650, F1) : le premier échange du code d'un nouvel accord
+     * du même client (il verrouille sa connexion C2, puis veut les autres du couple, C1)
+     * croisant cette révocation (qui prend C1, puis veut C2 : C1 < C2, UUID v7) — chacune
+     * attend ce que l'autre tient, PostgreSQL en annule une (`40P01`) et les deux
+     * transactions restent atomiques. **Côté révocation, l'appelant relance toute sa
+     * transaction verrouillée une fois** (S3, CR4, `DeadlockRetryInterface` : changement de
+     * mot de passe, rétrogradation, activation par lien ; l'audit suit le seul COMMIT
+     * abouti) ; un second interblocage remonte (un 500). **Côté échange** (league), aucune
+     * relance : le client reçoit un 500 du point de jeton, son code reste échangeable.
+     * Ni `NOWAIT` ni verrou de la paire avant league. Épinglé par
+     * `AccountWideRevocationDeadlockTest`, un cas par victime.
+     *
+     * @return list<RevokedConnection> ce qui a été révoqué, une entrée par connexion
+     */
+    public function revokeAllActiveOfAccount(Uuid $accountId, RevocationCause $cause, DateTimeImmutable $at): array;
+
+    /**
      * Révoque toute **autre** connexion active du même couple compte/client
      * que `$kept` (#649, décision 2 : un nouvel accord remplace l'ancien) —
      * même compte, même client, autre identifiant, pas encore révoquée ; une
@@ -77,7 +170,10 @@ interface McpConnectionRepositoryInterface
      * actifs ; appelée **dans** la transaction du premier échange du code de
      * `$kept`, au point de jeton (#726, jamais à l'approbation), l'audit
      * revenant à l'appelant après le COMMIT. `$kept` doit déjà être écrite
-     * (son compte et son client sont lus sur l'instance). Les lignes des codes et jetons des
+     * (son compte et son client sont lus sur l'instance). Elle prend les
+     * autres connexions du couple **après** celle de `$kept` (league l'a
+     * verrouillée), ce qui croise la révocation de tout le compte : limite
+     * acceptée (#650, F1), voir {@see self::revokeAllActiveOfAccount()}. Les lignes des codes et jetons des
      * connexions révoquées ne sont pas touchées — tout lecteur juge la
      * connexion.
      *
@@ -86,10 +182,33 @@ interface McpConnectionRepositoryInterface
     public function revokeOtherActiveOf(McpConnection $kept, RevocationCause $cause, DateTimeImmutable $at): array;
 
     /**
+     * Note le premier échange du code d'empreinte `$codeHash` sur la connexion
+     * qu'il désigne (#730, #650 R4) : `code_exchanged_at` reçoit `$at`, **une
+     * fois** (`code_exchanged_at IS NULL`, comme `McpConnection::recordCodeExchangeAt()`
+     * qu'elle double en base). Une instruction SQL, la connexion trouvée par la
+     * ligne du code (`connection_id`) : ni déchiffrement du code, ni relecture
+     * de la connexion — rien qui puisse échouer après que league a émis les
+     * jetons. Appelée **dans** la transaction de l'échange, par la révocation
+     * du code (`AuthCodeRepository::revokeAuthCode()`, le dernier geste de
+     * league, une fois les jetons émis) ; la ligne de la connexion est déjà
+     * verrouillée par cette transaction (`lockForUpdate()`), l'instruction ne
+     * prend aucun autre verrou. Ne touche pas l'instance gérée : rien ne la
+     * relit ensuite dans la requête. Un code inconnu, ou déjà noté, n'écrit rien.
+     */
+    public function recordCodeExchangeOf(string $codeHash, DateTimeImmutable $at): void;
+
+    /**
      * Les connexions actives **peut-être** expirées, verrouillées (`FOR
      * UPDATE`) jusqu'à la fin de la transaction en cours, que la méthode exige
      * (#649, la purge) : non révoquées, et dont le dernier usage (ou l'octroi)
-     * n'est pas postérieur à `$idleBefore`, ou l'octroi à `$maximumBefore`.
+     * n'est pas postérieur à `$bounds->idleBefore()`, ou l'octroi à
+     * `$bounds->maximumBefore()`, ou — son code n'ayant jamais été échangé
+     * (#730) — l'octroi à `$bounds->unexchangedBefore()`.
+     *
+     * Les trois bornes sont un objet valeur ({@see PreselectionBounds}, #726)
+     * plutôt que trois instants positionnels : de même type, corrélés par
+     * l'instant dont elles dérivent, qu'une permutation échangerait sans que
+     * rien ne la voie.
      *
      * Une présélection **large**, jamais le jugement : l'appelant passe des
      * bornes reculées d'une marge, puis juge chaque connexion par
@@ -102,7 +221,7 @@ interface McpConnectionRepositoryInterface
      *
      * @return list<McpConnection>
      */
-    public function findActiveCandidatesForExpiry(DateTimeImmutable $idleBefore, DateTimeImmutable $maximumBefore): array;
+    public function findActiveCandidatesForExpiry(PreselectionBounds $bounds): array;
 
     /**
      * Révoque, cause `expired`, celles de ces connexions qui ne le sont pas

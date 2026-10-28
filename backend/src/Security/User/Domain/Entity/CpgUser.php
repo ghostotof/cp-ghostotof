@@ -155,6 +155,28 @@ class CpgUser implements UserInterface, PasswordAuthenticatedUserInterface, Acco
     #[Ignore]
     private ?DateTimeImmutable $activatedAt = null;
 
+    /**
+     * La **version des identifiants** du compte (#650, S1 de la seconde
+     * relecture, F-A et F-B) : avancée d'un cran par chaque remplacement de mot
+     * de passe, jamais par un re-hachage (même secret). Le JWT de session en porte
+     * une copie, posée à sa création depuis le compte dont le hachage vient d'être
+     * vérifié (CredentialsVersionClaimListener) ; chaque requête de l'API la
+     * compare **par égalité** à celle-ci (claimsAStaleCredentialsVersion()). Une
+     * connexion qui a lu l'ancien hachage avant le changement porte l'ancienne
+     * version, quel que soit l'instant où son jeton est signé — ce que la
+     * comparaison de dates, à la seconde, ne garantissait pas.
+     *
+     * **L'incrément est en mémoire, sous le verrou du compte** : replacePassword()
+     * n'est appelée que sur l'instance relue `FOR UPDATE` par l'`AccountLockInterface`
+     * (ses deux appelants), si bien que lire-ajouter-écrire ne peut croiser aucun
+     * autre écrivain ; un `UPDATE … SET v = v + 1` n'ajouterait qu'une écriture
+     * hors de l'unité de travail, sans rien protéger de plus. Un écrivain hors
+     * verrou (du SQL à la main) n'est pas couvert, comme pour le hachage lui-même.
+     */
+    #[ORM\Column(type: Types::INTEGER, options: ['default' => 0])]
+    #[Ignore]
+    private int $credentialsVersion = 0;
+
     public function __construct(string $username, string $hashedPassword)
     {
         if (1 !== preg_match(self::USERNAME_PATTERN, $username)) {
@@ -330,6 +352,46 @@ class CpgUser implements UserInterface, PasswordAuthenticatedUserInterface, Acco
     public function setPassword(string $hashedPassword): void
     {
         $this->password = $hashedPassword;
+    }
+
+    /**
+     * Remplace le mot de passe **et avance la version des identifiants**,
+     * ensemble : les deux écrivains d'un changement de mot de passe
+     * (`CpgUserAdministrator::changePassword()` et `PasswordSetupService::activate()`)
+     * passent par ici, jamais par setPassword() seul — le re-hachage à la
+     * connexion, lui, garde le même secret et n'a rien à avancer. Aucune date
+     * n'est écrite : la colonne `credentials_changed_at` que la version a
+     * remplacée est retirée (Version20261028200000).
+     *
+     * À appeler sur l'instance relue sous le verrou du compte : l'incrément en
+     * mémoire n'est sûr que là (voir {@see self::$credentialsVersion}).
+     */
+    public function replacePassword(string $hashedPassword): void
+    {
+        $this->password = $hashedPassword;
+        ++$this->credentialsVersion;
+    }
+
+    public function getCredentialsVersion(): int
+    {
+        return $this->credentialsVersion;
+    }
+
+    /**
+     * La version des identifiants qu'une session déclare (la revendication de son
+     * JWT) est-elle **périmée** ? Vrai dès qu'elle diffère de la version courante :
+     * un **égalité**, pas un ordre — plus ancienne (le mot de passe a changé depuis),
+     * mais aussi plus récente (une base restaurée), qui ne prouve plus rien.
+     *
+     * `null` — pas de revendication — vaut la version 0 : un JWT émis avant le
+     * déploiement de S1 n'en porte pas. Il reste servi tant que le mot de passe du
+     * compte n'a jamais changé (sinon chaque session ouverte au déploiement
+     * sauterait), et il est refusé dès qu'il a changé. Un jeton émis après porte
+     * toujours la revendication, même à 0.
+     */
+    public function claimsAStaleCredentialsVersion(?int $claimedVersion): bool
+    {
+        return ($claimedVersion ?? 0) !== $this->credentialsVersion;
     }
 
     public function eraseCredentials(): void

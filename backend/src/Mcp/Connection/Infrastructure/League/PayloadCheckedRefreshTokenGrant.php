@@ -89,6 +89,6 @@ final class PayloadCheckedRefreshTokenGrant extends RefreshTokenGrant
             return false;
         }
 
-        return array_all($value, static fn(mixed $item): bool => \is_string($item));
+        return array_all($value, static fn (mixed $item): bool => \is_string($item));
     }
 }

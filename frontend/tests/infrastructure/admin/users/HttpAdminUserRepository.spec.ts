@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { setBackofficeUnauthorizedHandler } from '../../../../src/infrastructure/admin/shared/BackofficeHttpClient'
 import { HttpAdminUserRepository } from '../../../../src/infrastructure/admin/users/HttpAdminUserRepository'
 import { AdminUserError } from '../../../../src/domain/admin/users/errors/AdminUserError'
 
@@ -22,6 +23,37 @@ describe('HttpAdminUserRepository', () => {
   afterEach(() => {
     document.cookie = 'XSRF-TOKEN=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/'
     vi.unstubAllGlobals()
+    setBackofficeUnauthorizedHandler(null)
+  })
+
+  it('un 401 sur le changement de mot de passe (session antérieure, #650 R1c) appelle la réaction du backoffice', async () => {
+    const onUnauthorized = vi.fn()
+    setBackofficeUnauthorizedHandler(onUnauthorized)
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(401, { code: 401, message: 'Session closed by a password change.' })))
+
+    await expect(new HttpAdminUserRepository(API_BASE_URL).changePassword(USER_ID, 'new-password')).rejects.toBeInstanceOf(AdminUserError)
+
+    expect(onUnauthorized).toHaveBeenCalledTimes(1)
+  })
+
+  it('un 401 sur la lecture de la liste appelle la réaction du backoffice', async () => {
+    const onUnauthorized = vi.fn()
+    setBackofficeUnauthorizedHandler(onUnauthorized)
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(401, { code: 401, message: 'Expired JWT Token' })))
+
+    await expect(new HttpAdminUserRepository(API_BASE_URL).list()).rejects.toBeInstanceOf(AdminUserError)
+
+    expect(onUnauthorized).toHaveBeenCalledTimes(1)
+  })
+
+  it('un 403 reste une erreur du dépôt : la réaction du backoffice n\'est pas appelée', async () => {
+    const onUnauthorized = vi.fn()
+    setBackofficeUnauthorizedHandler(onUnauthorized)
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(403, { detail: 'Forbidden' })))
+
+    await expect(new HttpAdminUserRepository(API_BASE_URL).list()).rejects.toBeInstanceOf(AdminUserError)
+
+    expect(onUnauthorized).not.toHaveBeenCalled()
   })
 
   it('list() appelle GET avec credentials include, sans header CSRF, et mappe email + status', async () => {

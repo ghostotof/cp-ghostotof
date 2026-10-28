@@ -6,6 +6,10 @@ paths:
   - "frontend/src/presentation/ui/admin/**"
   - "frontend/src/presentation/router/**"
   - "frontend/src/presentation/pages/SetPasswordPage.vue"
+  - "frontend/tests/infrastructure/admin/shared/BackofficeHttpClient.spec.ts"
+  - "frontend/tests/presentation/router/backofficeSessionExpiry.spec.ts"
+  - "frontend/tests/presentation/ui/admin/SessionEndedBanner.spec.ts"
+  - "frontend/tests/presentation/layout/AdminLayout.sessionEnded.spec.ts"
 ---
 
 # Frontend — backoffice (`/admin`) and set-password
@@ -186,12 +190,46 @@ version" copies nothing and the assistant sends all five fields.
 - **Route protection**: `RouteMeta` carries `requiresAuth?: boolean` and `roles?: readonly string[]`; every
   `/admin/*` route sets `{ requiresAuth: true, roles: [ROLE_SUPER] }`. A `router.beforeEach` guard in
   `presentation/router/index.ts` checks this: unauthenticated → redirect to `login` with
-  `query: { redirect: to.fullPath }` (consumed by `LoginPage.vue`'s `redirectTarget()`, which only honors paths
-  starting with a single `/` — open-redirect protection); authenticated but missing the role → redirect to
+  `query: { redirect: to.fullPath }` (consumed by `LoginPage.vue`'s `redirectTarget()`, which only honors an internal
+  path, `internalRedirectTarget()` — open-redirect protection, `.claude/rules/frontend.md`); authenticated but missing the role → redirect to
   `presentation/pages/ForbiddenPage.vue`.
   **Must call `await waitForAuthCheck()`** (`application/auth/useAuth.ts`) before making that decision — on a
   page reload/direct navigation, the guard can otherwise run before `main.ts`'s `checkAuth()` has resolved and
   wrongly redirect an actually-authenticated user to `/login` (regression-tested in
   `tests/presentation/router/adminGuard.spec.ts`). `hasRole(user, role)` (`domain/auth/services/hasRole.ts`) is a
   plain function (no Vue `inject()`) so it also works inside this router guard, outside component context.
+- **A 401 mid-page ends the session on the interface, and moves nobody** (#650, R1c, then S2 of the second review): the
+  route guard plays at navigation only, it never sees a session that dies while a page is open (the JWT expiring, or
+  a password change cutting every session opened before it, `.claude/rules/security-authentication-sessions.md`).
+  So `BackofficeHttpClient` (`get` and `mutate`) calls, on any 401, a reaction registered once through
+  `setBackofficeUnauthorizedHandler()` and returns the response as it came — repositories keep their own mapping,
+  **none repeats the reaction**. `main.ts` registers `onBackofficeUnauthorized`
+  (`presentation/router/backofficeSessionExpiry.ts`), which is `markSessionExpired()` and nothing else: **no
+  `router.replace`** (R1c's navigation unmounted the page at the very click of « Enregistrer », and a case study written
+  for more than an hour — the JWT's lifetime — was lost with it). It is idempotent, a state and not an event: several
+  lists of a page answering 401 together need no de-duplication. The state is `sessionEnded` in `useAuth`'s shared
+  state (`hasSessionEnded`), **raised** by `markSessionExpired()` (the header also turns anonymous) and **lowered when a
+  session of an account is applied** (login, a `/api/me` re-read that finds one); a re-read still anonymous or base
+  does not lower it. `presentation/ui/admin/SessionEndedBanner.vue`, rendered **once** by `AdminLayout` above the
+  `RouterView`, shows « Votre session a pris fin » while it holds: a `role="alert"` **inserted by `v-if`** (announced;
+  see `.claude/rules/frontend-a11y.md`), **never taking the focus** (the person may be mid-sentence), and a
+  « Se reconnecter » link to `login?redirect=<current fullPath>&expired=1` with `target="_blank" rel="noopener"` and the
+  opening said in the link text (a visually hidden « (s'ouvre dans un nouvel onglet) », WCAG 3.2.5): in the same tab
+  the typed text would be lost; the session cookie is shared across tabs and `redirect` brings the new tab back to the
+  page. **On the window's `focus`, while the session is ended, the banner re-reads `/api/me`** (`checkAuth()`): an
+  account found clears the banner and « Enregistrer » works again (the CSRF token is read from the cookie at each call);
+  a network failure leaves the banner. **The route guard still redirects to `login` at the next navigation** — the
+  input is saved or abandoned by then. `expired=1` (`presentation/router/sessionEnded.ts`, the single value `1`, an
+  announcement that opens nothing) makes `LoginPage` say why it opened. The registry lives in the module, so
+  `infrastructure/` imports neither the session nor the router. **A new administration client goes through
+  `BackofficeHttpClient`**, or reproduces that wiring. **The 403 keeps its meaning** (not authorized, CSRF refused): no
+  repository reads it as a finished session, it stays the repository's error. The `Mcp` repositories
+  (`HttpMcpConnectionsRepository`, `HttpOAuthConsentRepository`) have their own `fetch` and mark the session expired in
+  their composable without redirecting (the page shows the error, `.claude/rules/frontend.md`). No dedicated « your
+  password changed » message: Lexik's 401 body carries `{code, message}` and no stable `type`, and reading the text
+  would be fragile. `BackofficeHttpClient.spec.ts` (401 on read and write, 200/204/403/404/409/422/500 with no reaction,
+  no handler registered), `HttpAdminUserRepository.spec.ts`, `backofficeSessionExpiry.spec.ts` (the session is closed,
+  no navigation, idempotent), `SessionEndedBanner.spec.ts` (alert inserted, no focus taken, the link, the re-read on
+  `focus`), `AdminLayout.sessionEnded.spec.ts` (the page stays mounted with its typed input; red when `router.replace`
+  is reintroduced), `useAuth.spec.ts`.
 

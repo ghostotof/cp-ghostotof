@@ -6,6 +6,7 @@ namespace App\Tests\Mcp\Connection\Presentation\Controller;
 
 use App\Mcp\Connection\Domain\Repository\McpClientRepositoryInterface;
 use App\Tests\Mcp\Connection\RegisteredMcpClient;
+use App\Tests\Support\TestDatabase;
 use Doctrine\ORM\EntityManagerInterface;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
@@ -507,7 +508,7 @@ final class AuthorizeControllerTest extends WebTestCase
             ...$overrides,
         ];
 
-        return array_filter($parameters, static fn(?string $value): bool => null !== $value);
+        return array_filter($parameters, static fn (?string $value): bool => null !== $value);
     }
 
     /**
@@ -610,6 +611,7 @@ final class AuthorizeControllerTest extends WebTestCase
     {
         $em = self::getContainer()->get(EntityManagerInterface::class);
         $connection = $em->getConnection();
+        TestDatabase::assertSafeToWipe($connection);
         foreach (self::TABLES as $table) {
             $connection->executeStatement('DELETE FROM '.$table);
         }

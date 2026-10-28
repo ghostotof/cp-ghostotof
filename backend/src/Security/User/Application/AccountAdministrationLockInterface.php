@@ -42,6 +42,11 @@ use Closure;
  * `critical`). Pris **après** aucun autre verrou de compte : l'opération ne
  * prend que lui, et les détenteurs du verrou de ligne d'un compte
  * (`AccountLockInterface`) n'attendent jamais celui-ci — aucun cycle possible.
+ *
+ * Aucune relance ici non plus : la rétrogradation, qui révoque les connexions
+ * MCP du compte, la demande à {@see DeadlockRetryInterface}. Rejouée, la
+ * transaction relit la cible et l'acteur par leur identifiant (les instances
+ * passées ne servent qu'à les donner).
  */
 interface AccountAdministrationLockInterface
 {

@@ -10,6 +10,7 @@ use App\Security\User\Application\CpgUserRegistrarInterface;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Tests\Support\HttpJson;
 use App\Tests\Support\TestCredentials;
+use App\Tests\Support\TestDatabase;
 use Defuse\Crypto\Crypto;
 use Defuse\Crypto\Key;
 use Doctrine\ORM\EntityManagerInterface;
@@ -58,6 +59,9 @@ trait DrivesTheOAuthFlow
 
     private const string TRUSTED_USERNAME = 'trusted';
 
+    /** Valeur-témoin de `decide()` : « le compte actuellement connecté », ce que la page enverrait sans changement de compte. */
+    private const string SIGNED_IN_ACCOUNT = '@signed-in';
+
     /** Le nom OAuth d'un paramètre de la demande, et son nom dans le corps JSON du consentement. */
     private const array CONSENT_BODY_NAMES = [
         'response_type' => 'responseType',
@@ -71,6 +75,9 @@ trait DrivesTheOAuthFlow
     ];
 
     private KernelBrowser $client;
+
+    /** L'identifiant de connexion du dernier compte connecté par ce client (cookies BEARER et XSRF-TOKEN). */
+    private ?string $signedInUsername = null;
 
     private function setUpOAuthFlow(): void
     {
@@ -203,7 +210,7 @@ trait DrivesTheOAuthFlow
      */
     private static function formBody(array $parameters): string
     {
-        return http_build_query(array_filter($parameters, static fn(?string $value): bool => null !== $value));
+        return http_build_query(array_filter($parameters, static fn (?string $value): bool => null !== $value));
     }
 
     /**
@@ -243,9 +250,17 @@ trait DrivesTheOAuthFlow
     /**
      * @param array<string, string|null> $overrides paramètres de la demande, sous leur nom OAuth
      */
-    private function decide(bool $approved, array $overrides = []): Response
+    private function decide(bool $approved, array $overrides = [], ?string $shownAccount = self::SIGNED_IN_ACCOUNT): Response
     {
-        $this->postConsent(['approved' => $approved, ...$this->decisionBody($overrides)], $this->xsrfToken());
+        $body = ['approved' => $approved, ...$this->decisionBody($overrides)];
+
+        // L'UUID du compte que la page a montré : par défaut le compte connecté
+        // (postConsent() le joint), sinon celui que le test dit avoir été montré.
+        if (self::SIGNED_IN_ACCOUNT !== $shownAccount) {
+            $body['accountId'] = $shownAccount;
+        }
+
+        $this->postConsent($body, $this->xsrfToken());
 
         return $this->client->getResponse();
     }
@@ -285,10 +300,18 @@ trait DrivesTheOAuthFlow
     }
 
     /**
+     * Poste une décision. Comme la page, elle y joint l'UUID du compte que le
+     * résumé lui a montré — ici le compte actuellement connecté, celui d'un
+     * résumé lu avec les mêmes cookies (#650, F5) ; un test qui veut un autre
+     * compte le fournit dans `$body['accountId']` (ou le retire en le mettant à `null`).
+     *
      * @param array<string, mixed> $body
      */
     private function postConsent(array $body, ?string $xsrfToken): void
     {
+        $body = ['accountId' => $this->signedInAccountId(), ...$body];
+        $body = array_filter($body, static fn (mixed $value, string $name): bool => 'accountId' !== $name || null !== $value, \ARRAY_FILTER_USE_BOTH);
+
         $server = ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'];
 
         if (null !== $xsrfToken) {
@@ -317,7 +340,7 @@ trait DrivesTheOAuthFlow
             ...$overrides,
         ];
 
-        return array_filter($parameters, static fn(?string $value): bool => null !== $value);
+        return array_filter($parameters, static fn (?string $value): bool => null !== $value);
     }
 
     /**
@@ -337,11 +360,27 @@ trait DrivesTheOAuthFlow
     /** Connecte un compte existant : les cookies BEARER et XSRF-TOKEN posés sur le client. */
     private function signInAs(string $username, #[SensitiveParameter] string $password): void
     {
+        $this->signedInUsername = $username;
         $this->client->request('POST', '/api/login_check', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_X_REQUESTED_WITH' => 'fetch'], content: self::jsonBody([
             'username' => $username,
             'password' => $password,
         ]));
         self::assertResponseIsSuccessful();
+    }
+
+    /** L'UUID du dernier compte connecté, tel que la base le porte ; `null` si personne ne l'a été. */
+    private function signedInAccountId(): ?string
+    {
+        if (null === $this->signedInUsername) {
+            return null;
+        }
+
+        $id = self::getContainer()->get(EntityManagerInterface::class)->getConnection()->fetchOne(
+            'SELECT id FROM cpg_user WHERE username = :username',
+            ['username' => $this->signedInUsername],
+        );
+
+        return \is_string($id) ? $id : null;
     }
 
     private function xsrfToken(): string
@@ -441,6 +480,7 @@ trait DrivesTheOAuthFlow
     {
         $em = self::getContainer()->get(EntityManagerInterface::class);
         $connection = $em->getConnection();
+        TestDatabase::assertSafeToWipe($connection);
         foreach (self::OAUTH_TABLES as $table) {
             $connection->executeStatement('DELETE FROM '.$table);
         }

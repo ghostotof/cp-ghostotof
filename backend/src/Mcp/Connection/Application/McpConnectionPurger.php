@@ -164,9 +164,10 @@ final readonly class McpConnectionPurger implements McpConnectionPurgerInterface
     private function revokeExpired(DateTimeImmutable $now): array
     {
         // Les bornes à leur source, où vivent les durées et la marge (#726) :
-        // une présélection large, `maintenant − durée + un jour`.
-        $bounds = $this->lifetimes->preselectionBoundsAt($now);
-        $candidates = $this->connections->findActiveCandidatesForExpiry($bounds->idleBefore(), $bounds->maximumBefore());
+        // une présélection large, `maintenant − durée + marge` — un jour pour
+        // l'inactivité et la durée maximale, une minute pour les connexions
+        // jamais échangées (#730) —, passées d'un bloc au dépôt.
+        $candidates = $this->connections->findActiveCandidatesForExpiry($this->lifetimes->preselectionBoundsAt($now));
 
         $expired = array_values(array_filter(
             $candidates,

@@ -13,8 +13,10 @@ namespace App\Mcp\Connection\Domain\ValueObject;
  *
  * La valeur est un mot stable (kebab), sans rien d'un jeton : elle entre telle
  * quelle dans la ligne d'audit `mcp-connection-revoked` (champ `cause`) et en
- * base, où elle tient en `VARCHAR(32)`. La révocation par la personne, depuis
- * « Mes connexions MCP », sera la cause `person` de #650.
+ * base, où elle tient en `VARCHAR(32)`. Les trois dernières causes sont celles
+ * de #650 (`person`, `password-changed`, `trusted-tier-withdrawn`) : la base ne
+ * les admet que depuis `Version20261028120000`, qui passe avant le code qui les
+ * écrit (expand/contract, #175).
  */
 enum RevocationCause: string
 {
@@ -35,4 +37,13 @@ enum RevocationCause: string
 
     /** La purge quotidienne a constaté l'échéance de la connexion (McpConnection::isExpiredAt()). */
     case Expired = 'expired';
+
+    /** La personne a révoqué la connexion depuis « Mes connexions MCP » (#650). */
+    case Person = 'person';
+
+    /** Le mot de passe du compte a changé : toutes ses connexions sont coupées (#650). */
+    case PasswordChanged = 'password-changed';
+
+    /** Le compte a perdu le palier de confiance : toutes ses connexions sont coupées (#650). */
+    case TrustedTierWithdrawn = 'trusted-tier-withdrawn';
 }

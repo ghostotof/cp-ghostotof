@@ -6,6 +6,7 @@ namespace App\Tests\Mcp\Connection\Presentation\Command;
 
 use App\Mcp\Connection\Domain\Entity\McpClient;
 use App\Mcp\Connection\Domain\Repository\McpClientRepositoryInterface;
+use App\Tests\Support\TestDatabase;
 use Doctrine\ORM\EntityManagerInterface;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
@@ -214,6 +215,7 @@ final class RegisterMcpClientCommandTest extends KernelTestCase
     private function purge(): void
     {
         $connection = $this->entityManager()->getConnection();
+        TestDatabase::assertSafeToWipe($connection);
         foreach (self::TABLES as $table) {
             $connection->executeStatement('DELETE FROM '.$table);
         }

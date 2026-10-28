@@ -11,6 +11,7 @@ use App\Security\User\Domain\Entity\CpgUser;
 use App\Shared\Domain\Security\McpConnectionReference;
 use DateInterval;
 use DateTimeImmutable;
+use DateTimeZone;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Bridge\Doctrine\Types\UuidType;
@@ -102,6 +103,20 @@ class McpConnection implements McpConnectionReference
 
     #[ORM\Column(type: Types::DATETIMETZ_IMMUTABLE, nullable: true)]
     private ?DateTimeImmutable $lastUsedAt = null;
+
+    /**
+     * L'instant où le code de l'octroi a été échangé pour la première fois
+     * (#730), `null` tant qu'il ne l'a pas été : la connexion d'une approbation
+     * abandonnée, dont le code n'est jamais échangé, expire tôt
+     * ({@see self::deadline()}). **Écrit en SQL** au premier échange, par la
+     * révocation du code (`AuthCodeRepository::revokeAuthCode()` puis
+     * {@see \App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface::recordCodeExchangeOf()},
+     * #650, R4), jamais ensuite ; {@see self::recordCodeExchangeAt()} n'en est
+     * que le jumeau en mémoire, pour dresser l'état d'une connexion déjà échangée
+     * dans les tests.
+     */
+    #[ORM\Column(type: Types::DATETIMETZ_IMMUTABLE, nullable: true)]
+    private ?DateTimeImmutable $codeExchangedAt = null;
 
     #[ORM\Column(type: Types::DATETIMETZ_IMMUTABLE, nullable: true)]
     private ?DateTimeImmutable $revokedAt = null;
@@ -209,6 +224,28 @@ class McpConnection implements McpConnectionReference
         return true;
     }
 
+    /** L'instant du premier échange du code de l'octroi, ou `null` s'il n'a jamais eu lieu (#730). */
+    public function codeExchangedAt(): ?DateTimeImmutable
+    {
+        return $this->codeExchangedAt;
+    }
+
+    /**
+     * Note le premier échange du code de l'octroi à l'instant `$at` (#730) :
+     * la connexion cesse d'être soumise à l'échéance des connexions jamais
+     * échangées. **Écrit une fois** : un appel suivant ne déplace pas l'instant
+     * (un code ne s'échange qu'une fois ; un rejeu est une compromission,
+     * jugée ailleurs). **En production, la colonne s'écrit en SQL** à la
+     * révocation du code ({@see \App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface::recordCodeExchangeOf()},
+     * #650 R4), sans instance : cette méthode est son jumeau en mémoire, qui
+     * dresse l'état d'une connexion déjà échangée (les tests de l'échéance,
+     * de la purge, de la liste) avec la même règle, « une fois ».
+     */
+    public function recordCodeExchangeAt(DateTimeImmutable $at): void
+    {
+        $this->codeExchangedAt ??= $at;
+    }
+
     public function revokedAt(): ?DateTimeImmutable
     {
         return $this->revokedAt;
@@ -226,42 +263,57 @@ class McpConnection implements McpConnectionReference
     }
 
     /**
-     * La connexion a-t-elle expiré à l'instant `$now` ? **La seule définition
-     * de l'échéance** (#649) : deux échéances de ConnectionLifetimes, la
-     * première atteinte l'emporte, et chacune est exclusive (atteinte à la
-     * seconde près, la connexion est morte) :
+     * L'instant où la connexion expire : **la plus proche de ses échéances**,
+     * dans le fuseau `$zone` (#650). **La seule définition de l'échéance**
+     * (#649) — celle que {@see self::isExpiredAt()} juge et que « Mes
+     * connexions MCP » affiche, jamais deux calculs qui pourraient se séparer :
      *
      * - l'inactivité : {@see ConnectionLifetimes::idleDeadline()} de
      *   `lastUsedAt ?? grantedAt` ;
      * - la durée maximale : {@see ConnectionLifetimes::maximumDeadline()} de
-     *   `grantedAt`.
+     *   `grantedAt` ;
+     * - **tant que son code n'a pas été échangé** (#730) :
+     *   {@see ConnectionLifetimes::unexchangedDeadline()} de `grantedAt`, une
+     *   heure — l'approbation abandonnée n'est ni remplacée ni révoquée par
+     *   personne, aucun usage ne la tient.
      *
      * Des échéances, jamais des seuils (`$now` moins la durée) : une échéance
      * ne dépend que de la connexion, l'expiration est donc monotone — morte à
      * un instant, morte à tout instant suivant. Un seuil reculait d'une heure
      * pendant l'heure répétée du passage à l'heure d'hiver, et la connexion
-     * revivait (relecture de la tâche 1). La purge (#649) présélectionnera ses
-     * candidates en SQL puis jugera chacune ici : une seule définition.
+     * revivait (relecture de la tâche 1). La purge (#649) présélectionne ses
+     * candidates en SQL puis juge chacune par {@see self::isExpiredAt()}.
      *
-     * Les jours se comptent sur le calendrier du fuseau de `$now` (721 heures
-     * pour 30 jours à Paris à travers le passage à l'heure d'hiver), jamais par
+     * Les jours se comptent sur le calendrier de `$zone` (721 heures pour 30
+     * jours à Paris à travers le passage à l'heure d'hiver), jamais par
      * `modify()` (#445) : les instants y sont ramenés avant l'ajout, car
-     * Doctrine hydrate une colonne `datetimetz_immutable` avec un décalage fixe
-     * (`+02:00`), sur lequel 30 jours dureraient 720 heures — une connexion lue
-     * en base n'expirerait pas à la même seconde qu'une connexion en mémoire.
+     * Doctrine hydrate une colonne `datetimetz_immutable` avec un décalage
+     * fixe (`+02:00`), sur lequel 30 jours dureraient 720 heures — une connexion
+     * lue en base n'expirerait pas à la même seconde qu'une connexion en mémoire.
      * L'horloge rend toujours le même fuseau : l'échéance reste fixe.
      *
      * `lastUsedAt` n'est écrit qu'au rafraîchissement, par
-     * {@see self::recordUseAt()} — jamais à chaque appel (ADR 0006 D6). La
-     * révocation n'est pas une expiration : {@see self::isRevoked()} se lit à
-     * part.
+     * {@see self::recordUseAt()} — jamais à chaque appel (ADR 0006 D6).
+     */
+    public function deadline(DateTimeZone $zone, ConnectionLifetimes $lifetimes): DateTimeImmutable
+    {
+        $lastActivity = ($this->lastUsedAt ?? $this->grantedAt)->setTimezone($zone);
+        $grantedAt = $this->grantedAt->setTimezone($zone);
+        $deadline = min($lifetimes->idleDeadline($lastActivity), $lifetimes->maximumDeadline($grantedAt));
+
+        return null === $this->codeExchangedAt
+            ? min($deadline, $lifetimes->unexchangedDeadline($grantedAt))
+            : $deadline;
+    }
+
+    /**
+     * La connexion a-t-elle expiré à l'instant `$now` ? Exclusif : atteinte à
+     * la seconde de {@see self::deadline()}, la connexion est morte. Les
+     * échéances se comptent dans le fuseau de `$now`. La révocation n'est pas
+     * une expiration : {@see self::isRevoked()} se lit à part.
      */
     public function isExpiredAt(DateTimeImmutable $now, ConnectionLifetimes $lifetimes): bool
     {
-        $zone = $now->getTimezone();
-        $lastActivity = ($this->lastUsedAt ?? $this->grantedAt)->setTimezone($zone);
-
-        return $now >= $lifetimes->idleDeadline($lastActivity)
-            || $now >= $lifetimes->maximumDeadline($this->grantedAt->setTimezone($zone));
+        return $now >= $this->deadline($now->getTimezone(), $lifetimes);
     }
 }

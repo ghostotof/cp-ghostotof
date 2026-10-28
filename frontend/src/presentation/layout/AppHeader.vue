@@ -11,8 +11,7 @@ import { useAuth } from '../../application/auth/useAuth'
 import { useBaseAccess } from '../../application/baseAccess/useBaseAccess'
 import { useCvDownload } from '../../application/cv/useCvDownload'
 import LocaleSwitcher from '../ui/LocaleSwitcher.vue'
-import IconMessageCircle from '~icons/lucide/message-circle'
-import IconDownload from '~icons/lucide/download'
+import AccountMenu from './AccountMenu.vue'
 import IconCircleUser from '~icons/lucide/circle-user'
 import IconZap from '~icons/lucide/zap'
 import IconMenu from '~icons/lucide/menu'
@@ -90,7 +89,8 @@ function groupMenuId(group: NavigationGroup): string {
 }
 
 /**
- * Menu du compte, sous 768 px : les actions d'un palier connecté s'y
+ * Menu du compte, sous 768 px (à partir de 768 px, c'est `AccountMenu` pour le
+ * palier de confiance) : les actions d'un palier connecté s'y
  * replient (avec le lien Assistant, #265, l'en-tête d'un super-admin
  * débordait de 74 px à 360 px). Il partage la mécanique des groupes de
  * navigation — clic extérieur, Échap, un seul menu ouvert à la fois — sous
@@ -309,9 +309,10 @@ function navLinkClass(link: NavigationLink) {
           <!-- Trois paliers (ADR 0003 D1) : anonyme → CTA + connexion ;
                palier de base → badge + fin d'accès + connexion (un compte de
                confiance peut toujours se connecter par-dessus) ; palier de
-               confiance → CV + déconnexion, ou administration + déconnexion
-               pour ROLE_SUPER : son CV se télécharge depuis le menu
-               d'administration (AdminLayout). C'était le seul palier dont la
+               confiance → un seul bouton « Mon compte » (AccountMenu : CV ou
+               administration pour ROLE_SUPER, assistant, connexions MCP,
+               déconnexion). Pour ROLE_SUPER le CV se télécharge depuis le menu
+               d'administration (AdminLayout) : c'était le seul palier dont la
                barre débordait entre 1200 et 1399 px (mesure de l'issue #88),
                et le propriétaire du site n'a pas besoin de son propre CV à
                chaque page. -->
@@ -375,47 +376,19 @@ function navLinkClass(link: NavigationLink) {
             </RouterLink>
           </template>
           <template v-else>
-            <!-- Assistant (#265) : proposé à tout le palier de confiance, donc
-                 aussi à ROLE_SUPER, contrairement au CV. -->
-            <RouterLink
-              :to="`${homeLink}/assistant`"
-              class="btn btn-outline-light btn-sm d-none d-md-inline-flex align-items-center gap-2"
-            >
-              {{ t('nav.assistant') }}
-              <IconMessageCircle
-                width="16"
-                height="16"
-                aria-hidden="true"
-              />
-            </RouterLink>
-            <RouterLink
-              v-if="isSuperAdmin"
-              :to="`${homeLink}/admin`"
-              class="btn btn-outline-light btn-sm d-none d-md-inline-flex align-items-center gap-2"
-            >
-              {{ t('common.administration') }}
-            </RouterLink>
-            <button
-              v-else
-              type="button"
-              class="btn btn-outline-light btn-sm d-none d-md-inline-flex align-items-center gap-2"
-              :disabled="isDownloading"
-              @click="downloadCv"
-            >
-              {{ t('common.downloadCv') }}
-              <IconDownload
-                width="16"
-                height="16"
-                aria-hidden="true"
-              />
-            </button>
-            <button
-              type="button"
-              class="btn btn-outline-light btn-sm d-none d-md-inline-flex align-items-center"
-              @click="handleLogout"
-            >
-              {{ t('common.logout') }}
-            </button>
+            <!-- Palier de confiance : Assistant, Administration (ou CV),
+                 Mes connexions MCP (#650) et Déconnexion sont regroupés dans un
+                 menu du compte, et non plus alignés à plat — un lien de plus
+                 aurait de nouveau alourdi une barre déjà serrée (#265, #88).
+                 Sous 768 px, c'est le menu à icône ci-dessous qui sert. -->
+            <AccountMenu
+              class="d-none d-md-block"
+              :home-link="homeLink"
+              :is-super-admin="isSuperAdmin"
+              :is-downloading-cv="isDownloading"
+              @download-cv="downloadCv"
+              @logout="handleLogout"
+            />
           </template>
 
           <!-- Sous 768 px, là où la navigation passe déjà dans le menu
@@ -498,6 +471,15 @@ function navLinkClass(link: NavigationLink) {
                   >
                     {{ t('common.downloadCv') }}
                   </button>
+                </li>
+                <li>
+                  <RouterLink
+                    :to="`${homeLink}/mcp-connections`"
+                    class="dropdown-item"
+                    @click="closeGroups"
+                  >
+                    {{ t('nav.mcpConnections') }}
+                  </RouterLink>
                 </li>
                 <li>
                   <button

@@ -26,20 +26,24 @@ This file only carries what applies everywhere, plus what runs from the shell (g
 | `backend-integrite.md` | authenticated envelopes and cache values, derived keys, `KeyedMac` | touching Messenger serialization, a cache pool, an HMAC, `APP_SECRET` |
 | `backend-conventions.md` | exceptions, `#[SensitiveParameter]`, regexes, imports, `sprintf` | writing any backend class |
 | `security-user.md` | `Security/User` | touching accounts, invitations, password setup |
-| `security-authentication.md` | `Security/Authentication` | touching login, JWT, cookies, CSRF, a `kernel.request` guard, the audit log |
+| `security-authentication.md` | `Security/Authentication`: CSRF guards, base access, `CanonicalPath`, firewall anchoring — and the index of the three below | touching CSRF, a `kernel.request` guard, a firewall or `access_control` pattern, `/api/account/base-access` |
+| `security-authentication-sessions.md` | `BEARER` / `XSRF-TOKEN` cookies, JWT claims (`iat`, `cv`), the refusal of a session opened before the last password change | touching a cookie, a JWT claim, `lexik_jwt_authentication.yaml`, `SessionBeforePasswordChangeRefusalListener` |
+| `security-authentication-connexion.md` | login failure timing, overlong password, `password_hashers` | touching the `login` firewall's failures, `security.yaml`'s `password_hashers` |
+| `security-authentication-audit.md` | `SecurityAuditLogger`: events, contexts, what a record never carries, redactions | touching an audit event, a log context, a Monolog handler, an exception message |
 | `portfolio-contenus.md` | `Portfolio/*` content contexts — and the index of the three below | touching a content context |
 | `portfolio-ordre.md` | ordering and translation groups: model, trigger, scope lock | touching `position`, `translation_group`, the order scope lock |
 | `portfolio-ordre-migrations.md` | migrations on the eight ordered tables, the trigger's blind spots | writing a migration that touches an ordered table |
 | `portfolio-ordre-ecritures.md` | application refusals, writes under the scope lock, detached instances | touching an ordered content's `Administrator` or a write path |
 | `portfolio-watch.md` | `Portfolio/Watch` | touching the tech watch, `/stack`, an outbound call |
 | `ai.md` | `Ai/` (translation, career assistant) | touching anything that calls a language model |
-| `mcp.md` | `Mcp/`, the MCP server on `/api/mcp` — and the index of the six below | touching a tool, `mcp.yaml`, the `mcp` firewall |
+| `mcp.md` | `Mcp/`, the MCP server on `/api/mcp` — and the index of the seven below | touching a tool, `mcp.yaml`, the `mcp` firewall |
 | `mcp-prompt-d8.md` | the prompt `present_for_role`, the D8 guard (the author never named) | touching the prompt, a published description, `AuthorNeverNamedTest` |
 | `mcp-journaux.md` | the SDK's `mcp` channel, the call log `mcp_usage` | touching `Mcp/Infrastructure/Log`, `monolog.yaml`'s MCP handlers |
 | `mcp-oauth.md` | `Mcp/Connection`, the OAuth 2.1 authorization server of phase 2, the consent page | touching an OAuth endpoint, a token, the consent, `ingress-oauth-metadata.yaml` |
 | `mcp-oauth-cycle-de-vie.md` | lifetime of an MCP connection and its tokens (#649): durations in configuration, monotone expiry deadlines, revocation and its cause, rotation and replay under lock, a superseding grant | touching a token or connection lifetime, `ConnectionLifetimes`, the expiry, a revocation, the refresh or code repository |
 | `mcp-oauth-audits.md` | the refusal audits (#649, #725, #726): a known access token refused at `/api/mcp`, every refusal of an authentic grant at the token endpoint | touching `McpBearerAuthenticator`'s audit, `GrantRefusalAuditInterface`, `LeagueGrantRefusals`, a `GrantRefusal` or `BearerRefusal` cause |
 | `mcp-oauth-purge.md` | the daily purge `app:mcp:purge` (#649, #726): expiry marked, then old revoked connections, then dead tokens, deleted, in two transactions | touching `McpConnectionPurger`, `app:mcp:purge`, its lock order, `messenger-purge-cronjob.yaml` |
+| `mcp-oauth-revocation-personne.md` | the person's revocation and « Mes connexions MCP » (#650), the account-wide revocations at a password change or the loss of the trusted tier, the abandoned grant's one-hour expiry (#730), the consent bound to the account it names (409), the accepted limits and the one accepted deadlock | touching `/api/me/mcp-connections`, `OwnMcpConnections`, `AccountMcpConnectionsRevokerInterface`, `changePassword()`, `setSuperAdmin()`, an invitation link that replaces a password, `code_exchanged_at`, `AccountMenu.vue`, `McpConnectionsPage.vue` |
 | `backoffice-api.md` | backoffice API, API Platform pattern, API errors | adding an endpoint, an API Platform resource, an exception mapping |
 | `seeding.md` | `app:*:seed`, reference-data migrations | touching a seed command or the meaning of seeded data |
 | `frontend.md` | frontend layers, API-backed content, i18n, SEO, lint | any frontend change |
@@ -389,7 +393,8 @@ ADRs (status, dates and amendments live in each ADR):
   `CpgUser::getRoles()` (it grants `ROLE_USER` unconditionally, which is why a tier was added *above*) or
   `BaseAccessController`; and before adding a revocation list, lengthening `token_ttl` or gating anything
   more sensitive than the CV: **`POST /api/logout` does not revoke the JWT** (accepted risk, amended
-  2026-09-21).
+  2026-09-21; reduced on 2026-10-28, #650: a JWT opened before the account's last password
+  change — its credentials version is no longer the account's — is refused by the whole `api` firewall).
 - `docs/adr/0004-assistance-ia.md` — anything that calls a language model: one importing class behind an
   interface, bundle pinned exact, no call from a public render path, only publishable backoffice content
   leaves (the nominative CV only to the site's host or self-hosted), never a call on behalf of the base

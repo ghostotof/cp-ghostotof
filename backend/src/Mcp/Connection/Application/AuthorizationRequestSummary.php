@@ -56,6 +56,6 @@ final readonly class AuthorizationRequestSummary
             'code_challenge' => $this->authorizationRequest->getCodeChallenge(),
             'code_challenge_method' => $this->authorizationRequest->getCodeChallengeMethod(),
             'resource' => $this->resource,
-        ], static fn(?string $value): bool => null !== $value);
+        ], static fn (?string $value): bool => null !== $value);
     }
 }

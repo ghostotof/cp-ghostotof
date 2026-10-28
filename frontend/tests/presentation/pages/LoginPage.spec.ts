@@ -103,6 +103,54 @@ describe('LoginPage', () => {
     expect(wrapper.get('[role="alert"]').text()).toBe(message)
   })
 
+  describe('session finie (`expired`, posé par la redirection d\'une page à laquelle l\'API a refusé la session, #650 R5a)', () => {
+    it.each([
+      ['fr', 'Votre session a pris fin, reconnectez-vous.'],
+      ['en', 'Your session has ended, please sign in again.'],
+    ])('annonce que la session a pris fin, dans une région role="status" (%s)', async (locale, notice) => {
+      const { wrapper } = await mountLoginPage(createStubRepository(), locale, { expired: '1', redirect: '/fr/admin/users' })
+
+      const banner = wrapper.get('[data-testid="login-session-ended-notice"]')
+      expect(banner.text()).toBe(notice)
+      expect(banner.attributes('role')).toBe('status')
+    })
+
+    it.each([[{}], [{ redirect: '/fr/admin/users' }], [{ expired: '0' }], [{ expired: 'true' }], [{ expired: '' }]])(
+      'sans le drapeau (ou avec une autre valeur que 1), aucune annonce : %j',
+      async (query) => {
+        const { wrapper } = await mountLoginPage(createStubRepository(), 'fr', query)
+
+        expect(wrapper.find('[data-testid="login-session-ended-notice"]').exists()).toBe(false)
+        expect(wrapper.text()).not.toContain('a pris fin')
+      },
+    )
+
+    it('après la connexion, retour à la page d\'où l\'on venait', async () => {
+      const { wrapper, router } = await mountLoginPage(createStubRepository(), 'fr', { expired: '1', redirect: '/fr/oauth/consent?client_id=claude-code' })
+
+      await wrapper.get('#login-username').setValue('jane')
+      await wrapper.get('#login-password').setValue('password123')
+      await wrapper.get('form').trigger('submit')
+      await flushPromises()
+
+      expect(router.currentRoute.value.fullPath).toBe('/fr/oauth/consent?client_id=claude-code')
+    })
+
+    it.each(['//evil.example/fr/admin', 'https://evil.example/', 'javascript:alert(1)'])(
+      'le drapeau n’affaiblit pas la garde de redirection ouverte : %s',
+      async (redirect) => {
+        const { wrapper, router } = await mountLoginPage(createStubRepository(), 'fr', { expired: '1', redirect })
+
+        await wrapper.get('#login-username').setValue('jane')
+        await wrapper.get('#login-password').setValue('password123')
+        await wrapper.get('form').trigger('submit')
+        await flushPromises()
+
+        expect(router.currentRoute.value.path).toBe('/fr')
+      },
+    )
+  })
+
   describe('reconnexion demandée par le consentement MCP (`reauth`, #647)', () => {
     const CONSENT = '/fr/oauth/consent?client_id=claude-code&state=a%26b'
 
@@ -172,6 +220,46 @@ describe('LoginPage', () => {
       await flushPromises()
 
       expect(router.currentRoute.value.path).toBe('/fr')
+    })
+  })
+
+  describe('garde de la cible de retour (`redirect`) : un chemin interne, rien d\'autre (#650, F-I1)', () => {
+    async function signInAndReadPath(redirect: string): Promise<{ fullPath: string; path: string }> {
+      const { wrapper, router } = await mountLoginPage(createStubRepository(), 'fr', { redirect })
+
+      await wrapper.get('#login-username').setValue('jane')
+      await wrapper.get('#login-password').setValue('password123')
+      await wrapper.get('form').trigger('submit')
+      await flushPromises()
+
+      return { fullPath: router.currentRoute.value.fullPath, path: router.currentRoute.value.path }
+    }
+
+    it.each([
+      ['une barre oblique inverse que le navigateur lit comme //', '/\\evil.example/fr'],
+      ['deux barres obliques inverses', '\\\\evil.example'],
+      ['une tabulation que le navigateur retire (/\t/ devient //)', '/\t/evil.example'],
+      ['un saut de ligne que le navigateur retire', '/\n/evil.example'],
+      ['un retour chariot que le navigateur retire', '/\r/evil.example'],
+      ['un caractère nul', '/fr/\u0000'],
+      ['une origine absolue', 'https://evil.example/'],
+      ['un schéma javascript', 'javascript:alert(1)'],
+      ['un chemin sans barre oblique initiale', 'evil.example/fr'],
+      ['deux barres obliques', '//evil.example/fr'],
+    ])('retombe sur l\'accueil de la langue : %s', async (_label, redirect) => {
+      const { path } = await signInAndReadPath(redirect)
+
+      expect(path).toBe('/fr')
+    })
+
+    it.each([
+      '/fr/oauth/consent?client_id=claude-code&state=a%26b#decision',
+      '/fr/admin/users',
+      '/fr/oauth/consent',
+    ])('suit un chemin interne légitime, requête et ancre comprises : %s', async (redirect) => {
+      const { fullPath } = await signInAndReadPath(redirect)
+
+      expect(fullPath).toBe(redirect)
     })
   })
 

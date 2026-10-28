@@ -46,6 +46,7 @@ final class ConsentControllerTest extends WebTestCase
 
     private const string PLAIN_USERNAME = 'plain';
     private const string SUPER_USERNAME = 'super';
+    private const string OTHER_TRUSTED_USERNAME = 'other-trusted';
 
     protected function setUp(): void
     {
@@ -60,11 +61,12 @@ final class ConsentControllerTest extends WebTestCase
 
     /**
      * Ce que la personne voit avant d'accepter : le nom **déclaré** du client,
-     * l'hôte où partira le code, le scope et la ressource.
+     * l'hôte où partira le code, le scope et la ressource — et le compte qui
+     * accorde (#650).
      */
     public function testATrustedAccountSeesTheSummaryOfTheRequest(): void
     {
-        $this->loginAs(self::TRUSTED_USERNAME, [CpgUser::ROLE_TRUSTED]);
+        $accountId = $this->loginAs(self::TRUSTED_USERNAME, [CpgUser::ROLE_TRUSTED]);
 
         $this->client->request('GET', self::PATH.'?'.http_build_query($this->validParameters()));
 
@@ -75,8 +77,128 @@ final class ConsentControllerTest extends WebTestCase
             'redirectHost' => 'localhost',
             'scope' => 'nominative:read',
             'resource' => $this->resource(),
+            'account' => ['id' => $accountId, 'username' => self::TRUSTED_USERNAME],
         ], $this->json($response));
         $this->assertNotStored($response);
+    }
+
+    /**
+     * Le compte nommé est celui dont le cookie arrive avec la requête, lu
+     * côté serveur : après la connexion d'un autre compte dans le même
+     * client (un autre onglet), le résumé nomme ce dernier, jamais le premier
+     * que la page aurait pu garder en mémoire (#650).
+     */
+    public function testTheSummaryNamesTheSignedInAccount(): void
+    {
+        $this->loginAs(self::TRUSTED_USERNAME, [CpgUser::ROLE_TRUSTED]);
+        $otherId = $this->loginAs(self::OTHER_TRUSTED_USERNAME, [CpgUser::ROLE_TRUSTED]);
+
+        $this->client->request('GET', self::PATH.'?'.http_build_query($this->validParameters()));
+
+        $response = $this->client->getResponse();
+        self::assertSame(Response::HTTP_OK, $response->getStatusCode(), substr((string) $response->getContent(), 0, 500));
+        self::assertSame(['id' => $otherId, 'username' => self::OTHER_TRUSTED_USERNAME], $this->json($response)['account'] ?? null);
+    }
+
+    /**
+     * F5 de la relecture de #650, le scénario : la page est ouverte sous le
+     * compte A (son résumé nomme A et porte son UUID), la personne se
+     * reconnecte en B dans un autre onglet — les cookies du navigateur sont
+     * ceux de B —, puis clique « Accorder » dans le premier onglet, qui renvoie
+     * l'UUID de A. Le serveur refuse : 409 typé, et rien n'est accordé à B
+     * (ni connexion, ni code, ni ligne d'audit d'accord).
+     */
+    public function testAnApprovalShownToAnotherAccountIsRefusedAndGrantsNothing(): void
+    {
+        $this->loginAs(self::TRUSTED_USERNAME, [CpgUser::ROLE_TRUSTED]);
+        $this->client->request('GET', self::PATH.'?'.http_build_query($this->validParameters()));
+        $shownAccountId = $this->json($this->client->getResponse())['account']['id'] ?? null;
+        self::assertIsString($shownAccountId);
+
+        $otherId = $this->loginAs(self::OTHER_TRUSTED_USERNAME, [CpgUser::ROLE_TRUSTED]);
+        self::assertNotSame($shownAccountId, $otherId);
+
+        $response = $this->decide(approved: true, shownAccount: $shownAccountId);
+
+        $this->assertAccountChanged($response);
+        self::assertSame(0, $this->countRows('SELECT COUNT(*) FROM mcp_connection'));
+        self::assertSame(0, $this->countRows('SELECT COUNT(*) FROM mcp_authorization_code'));
+        self::assertSame([], self::securityAuditEvents(self::GRANTED_EVENT));
+    }
+
+    /**
+     * Le refus est lié comme l'accord : une décision nomme le compte pour
+     * lequel elle a été prise, quelle qu'elle soit. Le coût est un clic
+     * (recharger la demande, refuser sous le compte courant) ; le gain, une
+     * règle unique et une réponse « refusé » qui n'est jamais celle de
+     * quelqu'un d'autre.
+     */
+    public function testADenialShownToAnotherAccountIsRefusedToo(): void
+    {
+        $shownAccountId = $this->loginAs(self::TRUSTED_USERNAME, [CpgUser::ROLE_TRUSTED]);
+        $this->loginAs(self::OTHER_TRUSTED_USERNAME, [CpgUser::ROLE_TRUSTED]);
+
+        $response = $this->decide(approved: false, shownAccount: $shownAccountId);
+
+        $this->assertAccountChanged($response);
+        self::assertSame(0, $this->countRows('SELECT COUNT(*) FROM mcp_connection'));
+    }
+
+    /**
+     * Le contrat a deux applications déployées séparément : une page restée
+     * ouverte pendant un déploiement (ancien frontend) poste sans l'UUID. Pas
+     * de tolérance — une garde facultative se contourne en omettant le champ, et
+     * aucune échéance ne la retirerait : 422 du Validator (comme un `approved`
+     * absent), rien de créé. La page lit le 422 comme un corps mal formé.
+     */
+    #[DataProvider('provideAMissingOrMalformedShownAccount')]
+    public function testADecisionWithoutAValidShownAccountIsUnprocessable(?string $shownAccount): void
+    {
+        $this->loginAs(self::TRUSTED_USERNAME, [CpgUser::ROLE_TRUSTED]);
+
+        $response = $this->decide(approved: true, shownAccount: $shownAccount);
+
+        self::assertSame(Response::HTTP_UNPROCESSABLE_ENTITY, $response->getStatusCode(), substr((string) $response->getContent(), 0, 500));
+        self::assertSame(0, $this->countRows('SELECT COUNT(*) FROM mcp_connection'));
+        self::assertSame([], self::securityAuditEvents(self::GRANTED_EVENT));
+    }
+
+    /** @return iterable<string, array{?string}> */
+    public static function provideAMissingOrMalformedShownAccount(): iterable
+    {
+        yield 'absent' => [null];
+        yield 'vide' => [''];
+        yield 'pas un UUID' => ['trusted'];
+    }
+
+    /**
+     * Le même compte, l'UUID écrit en majuscules : c'est le même UUID (RFC 9562
+     * §4), accordé — la comparaison n'est pas une comparaison de chaînes.
+     */
+    public function testTheShownAccountIsComparedAsAUuidNotAsAString(): void
+    {
+        $accountId = $this->loginAs(self::TRUSTED_USERNAME, [CpgUser::ROLE_TRUSTED]);
+
+        $response = $this->decide(approved: true, shownAccount: strtoupper($accountId));
+
+        self::assertSame(Response::HTTP_OK, $response->getStatusCode(), substr((string) $response->getContent(), 0, 500));
+        self::assertCount(1, $this->connectionRows());
+    }
+
+    /** Le 409 : problem+json typé, constant, sans redirection ni code. */
+    private function assertAccountChanged(Response $response): void
+    {
+        self::assertSame(Response::HTTP_CONFLICT, $response->getStatusCode(), substr((string) $response->getContent(), 0, 500));
+        self::assertSame('application/problem+json', $response->headers->get('Content-Type'));
+        self::assertFalse($response->headers->has('Location'));
+        $body = $this->json($response);
+        self::assertSame('/errors/consent-account-changed', $body['type'] ?? null);
+        self::assertArrayNotHasKey('redirectUri', $body);
+        // Le détail ne nomme aucun compte : il est rendu tel quel (ProblemDetailStaysStaticTest).
+        $detail = $body['detail'] ?? null;
+        self::assertIsString($detail);
+        self::assertStringNotContainsString(self::TRUSTED_USERNAME, $detail);
+        self::assertStringNotContainsString(self::OTHER_TRUSTED_USERNAME, $detail);
     }
 
     /**
@@ -218,6 +340,30 @@ final class ConsentControllerTest extends WebTestCase
 
         $response = $this->decide(approved: true);
 
+        self::assertSame(Response::HTTP_OK, $response->getStatusCode(), substr((string) $response->getContent(), 0, 500));
+        self::assertCount(1, $this->connectionRows());
+    }
+
+    /**
+     * F2 de la relecture de #650, le côté qui passe : une session dont le jeton
+     * porte la version **courante** des identifiants (le mot de passe a déjà
+     * changé, la connexion l'a vérifié après) n'est pas périmée — le résumé et
+     * l'accord sont servis. Le côté qui refuse, avec les deux écrivains réels du
+     * mot de passe, est dans `AccountWideRevocationTest`.
+     */
+    public function testASessionAuthenticatedAfterThePasswordChangeIsServed(): void
+    {
+        $account = $this->loginAs(self::TRUSTED_USERNAME, [CpgUser::ROLE_TRUSTED]);
+        self::getContainer()->get(EntityManagerInterface::class)->getConnection()->executeStatement(
+            'UPDATE cpg_user SET credentials_version = 1 WHERE id = :id',
+            ['id' => $account],
+        );
+        $this->replaceTheBearerWithAnAuthenticationOf($account, secondsAgo: 60);
+
+        $this->client->request('GET', self::PATH.'?'.http_build_query($this->validParameters()));
+        self::assertSame(Response::HTTP_OK, $this->client->getResponse()->getStatusCode(), substr((string) $this->client->getResponse()->getContent(), 0, 500));
+
+        $response = $this->decide(approved: true);
         self::assertSame(Response::HTTP_OK, $response->getStatusCode(), substr((string) $response->getContent(), 0, 500));
         self::assertCount(1, $this->connectionRows());
     }
@@ -559,8 +705,11 @@ final class ConsentControllerTest extends WebTestCase
      */
     private function replaceTheBearerWithAnAuthenticationOf(string $accountId, int $secondsAgo): void
     {
-        $account = self::getContainer()->get(EntityManagerInterface::class)->find(CpgUser::class, $accountId);
+        $entityManager = self::getContainer()->get(EntityManagerInterface::class);
+        $account = $entityManager->find(CpgUser::class, $accountId);
         self::assertInstanceOf(CpgUser::class, $account);
+        // Le compte comme la base l'a maintenant : la version des identifiants entre dans le jeton.
+        $entityManager->refresh($account);
         $jwt = self::getContainer()->get(JWTTokenManagerInterface::class)->createFromPayload($account, ['iat' => time() - $secondsAgo]);
 
         $jar = $this->client->getCookieJar();
@@ -604,7 +753,7 @@ final class ConsentControllerTest extends WebTestCase
      */
     private function activeConnectionIds(): array
     {
-        return array_column(array_filter($this->connectionRows(), static fn(array $row): bool => null === $row['revoked_at']), 'id');
+        return array_column(array_filter($this->connectionRows(), static fn (array $row): bool => null === $row['revoked_at']), 'id');
     }
 
     /**

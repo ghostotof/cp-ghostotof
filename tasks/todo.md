@@ -120,7 +120,74 @@ phase 1 parte en release seule ; puis au merge de clôture, qui archive la spec 
       connexions accumulées visibles et révocables ; révoquer la connexion, jamais les jetons un à un.
       Reports de la tâche 9 : une connexion MCP survit au changement de mot de passe et de rôles du
       compte (révoquer les connexions du compte, ou comparer `grantedAt` à une date de changement des
-      identifiants)
+      identifiants). **Préalable à l'ouverture publique de la phase 2** (#726, B1).
+      Périmètre tranché par l'auteur le 2026-10-28, plan `tasks/plan-t11-mes-connexions.md`, branche
+      `feature/spec-0007-t11-mes-connexions` ; traite aussi #730 (piste 1, expiration précoce d'un accord
+      jamais échangé). Onze tâches, **sensibles** marquées :
+  - [x] 1. Élargir le `CHECK` des causes (`person`, `password-changed`, `trusted-tier-withdrawn`) — **sensible (migration)**
+  - [x] 2. `GET /api/me/mcp-connections` : ses connexions, état jugé par `isExpiredAt()` via `McpConnection::deadline()`
+  - [x] 3. `DELETE /api/me/mcp-connections/{id}` : cause `person`, 404 indistinct, 204 idempotent, bout en bout — **sensible (sécurité)**
+  - [x] 4. Révocation par la personne × rafraîchissement × marquage de la purge, en processus réels — **sensible (concurrence)**
+  - [x] 5. Changement de mot de passe → toutes les connexions du compte, port de `Shared`, atomique — **sensible (sécurité, transaction)**
+  - [x] 5b. Lien d'invitation qui *remplace* un mot de passe → révocation des connexions, même port, même transaction (décision de l'auteur du 2026-10-28) — **sensible (sécurité, transaction)**
+  - [x] 6. Perte de `ROLE_TRUSTED` → toutes les connexions du compte — **sensible (sécurité)**
+  - [x] 7. #730 : `code_exchanged_at`, durée `connection_unexchanged` (`PT1H`), troisième borne de la purge — **sensible (migration, concurrence)**
+  - [x] 8. La page de consentement dit quel compte accorde
+  - [x] 9. Frontend : dépôt et composable des connexions
+  - [x] 10. Frontend : page « Mes connexions MCP », route, menu du compte desktop (disclosure) et lien mobile, a11y
+  - [x] 11. Documentation (nouvelle règle `mcp-oauth-revocation-personne.md`, spec, registre, `CONTEXT.md`)
+  - [ ] Fermer #650 et #730 à la main après la fusion (`Closes #n` ne ferme rien vers une base qui n'est pas `main`)
+      Notes de la release : migrations `Version20261028120000` (le `CHECK`) et `Version20261028140000`
+      (`code_exchanged_at`, rattrapage) avant le rollout ; paramètre `app.mcp.lifetime.connection_unexchanged`.
+      Sept questions tranchées par l'auteur le 2026-10-28 (fin du plan) ; seul écart au défaut : vrai menu du compte desktop
+  - [x] R1. Relecture F2/F3 (0958fd02, a2787cc4) : cookie antérieur au changement de mot de passe refusé au consentement ; re-hachage conditionnel — **sensible**
+  - [x] R1b. Relecture F2 étendu : une session antérieure au changement de mot de passe est refusée par toute l'API (décision de l'auteur du 2026-10-28), ADR 0003 amendé — **sensible**
+  - [x] R1c. Relecture R1b côté interface : un 401 du backoffice ferme la session et ramène à la connexion (décision de l'auteur du 2026-10-28), frontend seul
+  - [x] R2. Relecture F5 : consentement lié au compte affiché (409)
+  - [x] R3. Relecture F6 : liste bornée (non révoquées + 50 dernières terminées)
+  - [x] R4. Relecture CR3/F1 : `code_exchanged_at` robuste ; interblocage écrit et épinglé — **sensible**
+  - [x] R5. Relecture : corrections mineures et documentation
+  - [x] S1. Seconde relecture F-A : version des identifiants dans le JWT — **sensible**
+  - [x] S2. Seconde relecture CR1 : un 401 du backoffice ne démonte plus la page
+  - [x] S3. Seconde relecture CR4 : relance unique sur interblocage — **sensible**
+  - [x] S4. Seconde relecture : liste (tri, instantané), audit du refus, garde `_test`, `redirect` durci, retrait de `credentials_changed_at`
+  - [x] S5. Seconde relecture : documentation, découpage de `security-authentication.md` (en sessions, connexion et audit)
+      R5a (partie code) et R5b (règles, spec, registre RGPD, plan) faites le 2026-10-28 (plan, « Corrections de relecture »).
+      **Notes de la release** (tâche 11, PR de la mère vers `develop`) :
+      - **cinq** migrations **avant le rollout**, dans l'ordre : `Version20261028120000` (le `CHECK` des causes de
+        révocation, huit valeurs), `Version20261028140000` (colonne `code_exchanged_at` et rattrapage des
+        connexions déjà échangées), `Version20261028160000` (colonne `cpg_user.credentials_changed_at`, nulle,
+        sans rattrapage ; empreinte n° 38 de `verify.sql`), `Version20261028180000` (colonne
+        `cpg_user.credentials_version`, `INT NOT NULL DEFAULT 0`, S1 ; empreinte n° 39) puis `Version20261028200000`
+        (retire `credentials_changed_at`, S4 ; **empreinte n° 40, la dernière**) ; la colonne `credentials_changed_at`
+        est donc **ajoutée puis retirée dans le même déploiement** (jamais lue par un code livré) ; aucune variable
+        d'environnement ;
+      - **backend avant frontend** : la décision de consentement porte `accountId` (le `GET` rend `account.id`) ; un
+        frontend nouveau devant un backend ancien ne sait pas lire le résumé, une page ancienne restée ouverte devant
+        le backend nouveau reçoit un 422 jusqu'à son rechargement ;
+      - **toutes les sessions ouvertes avant un changement de mot de passe sont coupées** (401, cookies effacés ; dans
+        le backoffice un bandeau « Votre session a pris fin » sans quitter la page, ailleurs retour à la connexion) :
+        jugé sur la version des identifiants du compte (`credentials_version`, revendication `cv` du JWT) ; à l'usage,
+        après la mise en production, pour un compte dont le mot de passe change — aucun compte existant n'est touché au
+        déploiement (version 0 ; un jeton émis avant le déploiement, sans revendication, vaut 0 et reste servi) ;
+      - un paramètre nouveau, `app.mcp.lifetime.connection_unexchanged` (`PT1H`, `config/services.yaml`, une
+        valeur pour tous les environnements) : une approbation dont le code n'est jamais échangé expire au bout
+        d'une heure ;
+      - une page et un menu du compte desktop pour le palier de confiance (le palier de base garde ses actions
+        à plat) : **le contrôle d'accessibilité au navigateur de la tâche 10 n'est pas fait** (tabulation,
+        focus visible, contraste, largeurs 768 et 1024 px, session du palier de confiance requise ; s'y ajoute
+        l'annonce du bandeau « Votre session a pris fin » de la page de connexion, `role="status"` présent au rendu
+        initial, **et le bandeau du backoffice** — `role="alert"` inséré, pas de focus pris, lien « Se reconnecter »
+        ouvert dans un autre onglet, relecture de la session au retour sur l'onglet) — à faire avant de fusionner et à
+        noter dans la PR ;
+      - à la sortie de la phase 2, le préalable posé par #726 (B1) est levé : la personne révoque elle-même.
+      **Tranché en relecture (R5b)** : `Version20261028140000` rattrape `code_exchanged_at` avant le rollout ; une
+      connexion échangée par l'ancien code entre la migration et la fin du rollout resterait à `NULL` et serait jugée
+      expirée au bout d'une heure — **mais aucune exposition pour cette livraison** : ni `main` ni `develop` ne portent
+      de code `backend/src/Mcp/Connection`, aucun ancien code ne peut donc échanger un code dans cette fenêtre. Pour
+      une colonne future de ce genre : expand/contract en deux versions, ou `UPDATE` idempotent relancé après le
+      rollout (un rattrapage au rafraîchissement ne marche pas : il arrive après l'échéance d'une heure). Écrit dans
+      `.claude/rules/mcp-oauth-revocation-personne.md`.
 - [ ] Tâche 12 — Enregistrement des clients par CIMD (#651) — bloquée par : #647 — reports de la
       tâche 8 : `client_id_metadata_document_supported: true` déjà annoncé ; domaine du client sur la page.
       Reports de la tâche 9 : borner la longueur du `client_id` CIMD écrit dans l'audit
