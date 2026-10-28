@@ -147,7 +147,7 @@ phase 1 parte en release seule ; puis au merge de clôture, qui archive la spec 
   - [x] R3. Relecture F6 : liste bornée (non révoquées + 50 dernières terminées)
   - [x] R4. Relecture CR3/F1 : `code_exchanged_at` robuste ; interblocage écrit et épinglé — **sensible**
   - [x] R5. Relecture : corrections mineures et documentation
-  - [ ] S1. Seconde relecture F-A : version des identifiants dans le JWT — **sensible**
+  - [x] S1. Seconde relecture F-A : version des identifiants dans le JWT — **sensible**
   - [ ] S2. Seconde relecture CR1 : un 401 du backoffice ne démonte plus la page
   - [ ] S3. Seconde relecture CR4 : relance unique sur interblocage — **sensible**
   - [ ] S4. Seconde relecture : liste (tri, instantané), audit du refus, garde `_test`, `redirect` durci
@@ -156,8 +156,9 @@ phase 1 parte en release seule ; puis au merge de clôture, qui archive la spec 
       **Notes de la release** (tâche 11, PR de la mère vers `develop`) :
       - **trois** migrations **avant le rollout**, dans l'ordre : `Version20261028120000` (le `CHECK` des causes de
         révocation, huit valeurs), `Version20261028140000` (colonne `code_exchanged_at` et rattrapage des
-        connexions déjà échangées) puis `Version20261028160000` (colonne `cpg_user.credentials_changed_at`, nulle,
-        sans rattrapage ; empreinte n° 38 de `verify.sql`) ; aucune variable d'environnement ;
+        connexions déjà échangées), `Version20261028160000` (colonne `cpg_user.credentials_changed_at`, nulle,
+        sans rattrapage ; empreinte n° 38 de `verify.sql`) puis `Version20261028180000` (colonne
+        `cpg_user.credentials_version`, `INT NOT NULL DEFAULT 0`, S1 ; empreinte n° 39) ; aucune variable d'environnement ;
       - **backend avant frontend** : la décision de consentement porte `accountId` (le `GET` rend `account.id`) ; un
         frontend nouveau devant un backend ancien ne sait pas lire le résumé, une page ancienne restée ouverte devant
         le backend nouveau reçoit un 422 jusqu'à son rechargement ;

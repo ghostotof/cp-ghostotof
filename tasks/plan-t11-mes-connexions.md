@@ -787,11 +787,35 @@ Relectures au point fixe `c36ccd66...HEAD` (`/code-review medium`, audit de séc
 2026-10-28 ; CR5, CR7, CR9, S-1 et F-F partent dans une issue de suivi.
 
 ### Task S1 : version des identifiants dans le JWT (F-A, F-B/CR6) — **Sensible (sécurité, migration)**
-- [ ] `cpg_user.credentials_version` incrémentée par `replacePassword()` (jamais par `upgradePassword()`), copiée dans
+- [x] `cpg_user.credentials_version` incrémentée par `replacePassword()` (jamais par `upgradePassword()`), copiée dans
   le JWT à sa création (écouteur `JWT_CREATED`, depuis le `CpgUser` dont le hachage a été vérifié), comparée par
   égalité dans `SessionBeforePasswordChangeRefusalListener` et au consentement ; remplace la comparaison par date
   (`iat` ≤ `credentials_changed_at`) ; test qui reproduit la course (login avec l'ancien hachage lu avant le COMMIT
   du changement → session refusée).
+
+**S1 (2026-10-28)** — décisions : (1) **stockage** `credentials_version INT NOT NULL DEFAULT 0` (`Version20261028180000`,
+empreinte n° 39 de `verify.sql`, `doctrine:migrations:diff` : « No changes detected »). Un entier : il s'incrémente
+sans aléa ni lecture et se compare par égalité ; un UUID ou un hachage n'apporterait rien (on ne compare qu'à la
+valeur courante). Défaut constant : aucune réécriture de table. (2) **Incrément en mémoire dans
+`CpgUser::replacePassword()`**, sur l'instance relue `FOR UPDATE` par le verrou du compte (les deux écrivains) :
+lire-ajouter-écrire ne peut croiser aucun écrivain ; un `UPDATE … SET v = v + 1` n'aurait protégé de rien de plus.
+`upgradePassword()` et `setPassword()` n'avancent rien (test sur la base). (3) **Revendication `cv`**, constante
+`Shared/Domain/Security/CredentialsVersionClaim::NAME` (le firewall et le consentement la citent sans qu'un
+contexte importe l'autre), posée par `Security/Authentication/Infrastructure/Jwt/CredentialsVersionClaimListener`
+(`JWT_CREATED`) depuis le `CpgUser` de l'événement — l'instance dont le hachage vient d'être vérifié, jamais relue.
+L'accès de base (`createFromPayload()` d'un `BaseAccessUser`) passe par le même événement et n'est pas touché ; aucun
+autre code n'émet de JWT. (4) **Comparaison** `CpgUser::claimsAStaleCredentialsVersion(?int)` = `($claim ?? 0) !==
+version` : égalité (une version plus récente est refusée aussi). **Revendication absente = 0** : servie tant que le
+mot de passe n'a pas changé (une session ouverte au déploiement ne saute pas), refusée dès qu'il a changé. Une
+revendication présente qui n'est pas un entier est refusée par l'écouteur du firewall (échoue fermé). Le consentement
+ne lit pas le jeton pour un compte à la version 0 (comme avant pour `credentials_changed_at` nul). (5)
+`hasChangedCredentialsSince()` retirée avec ses usages ; les reculs de date des tests (`AccountIdentifierReachesNoLogTest`,
+`AccountPasswordSetupResourceTest`) retirés. (6) **`credentials_changed_at` gardée et toujours écrite** par
+`replacePassword()` mais plus lue par aucune règle : à retirer par une migration à discuter (sortie du contrat
+expand/contract, `Version20261028160000` non livrée). (7) Test de la course : `SessionBeforePasswordChangeTest::
+testALoginThatReadTheOldHashBeforeTheChangeIsRefusedWhateverWhenItIsSigned` (instance lue avant le changement du
+service réel, jeton créé deux secondes après : rouge avec l'ancienne règle). Mutations rouges : incrément retiré,
+comparaison retirée (écouteur, consentement), revendication non posée, re-hachage qui avance la version.
 
 ### Task S2 : un 401 du backoffice ne démonte plus la page (CR1)
 - [ ] Bandeau persistant « Votre session a pris fin » + lien de reconnexion (`expired=1`, `redirect`), sans navigation.
