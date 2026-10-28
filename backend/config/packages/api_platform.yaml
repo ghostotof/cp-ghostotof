@@ -242,7 +242,9 @@ api_platform:
         # Issue #373 : aucune ressource ne se met à jour par IRI. Sans ce
         # réglage, un `id` dans le corps d'un PUT (« standard » en API
         # Platform 4 : aucun objet à peupler) partait en résolution d'IRI
-        # (ItemNormalizerTrait::updateObjectToPopulate) et sortait en
+        # (ItemNormalizerTrait::updateObjectToPopulate, que l'ItemDenormalizer
+        # câblé par le bundle depuis la 4.4 appelle — ItemNormalizer::denormalize()
+        # est déprécié, ApiPlatformRaisesNoDeprecationTest y veille) et sortait en
         # ItemNotFoundException pour un `id` inconnu, 400 sous l'entrée large
         # d'API Platform mais journalisée `critical`. Avec lui, le Serializer
         # refuse la clé (« Update is not allowed for this operation »), d'où

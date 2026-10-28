@@ -174,6 +174,12 @@ final readonly class ApiPlatformRoutePayloadReader implements RoutePayloadReader
      * une lecture ; celles qui dépendent de la requête HTTP elle-même
      * (`request_uri`, `uri`) n'influent pas sur un payload JSON sans IRI.
      *
+     * `SKIP_NULL_TO_ONE_RELATIONS` est posée comme le fait le constructeur de
+     * contexte (SerializerContextBuilder, ligne 63 en 4.4.6), pour que les
+     * deux restent identiques. Aucune classe du vendor ne la lit en 4.4.6, pas
+     * plus qu'en 4.3.19 : elle ne change pas la sortie aujourd'hui. La poser
+     * garde l'outil aligné sur la route le jour où un normaliseur s'en servira.
+     *
      * @param class-string          $resourceClass
      * @param array<string, string> $uriVariables
      *
