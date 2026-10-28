@@ -270,6 +270,23 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
     }
 
     /**
+     * Une instruction, par la connexion DBAL de l'EntityManager : la connexion
+     * est trouvée par la ligne du code (`connection_id`, la clé étrangère), et
+     * `code_exchanged_at IS NULL` fait du premier échange le seul noté. L'instant
+     * est typé comme sa colonne, avec fuseau (#434).
+     */
+    public function recordCodeExchangeOf(string $codeHash, DateTimeImmutable $at): void
+    {
+        $this->getEntityManager()->getConnection()->executeStatement(
+            'UPDATE mcp_connection SET code_exchanged_at = :at'
+            .' WHERE code_exchanged_at IS NULL'
+            .' AND id IN (SELECT connection_id FROM mcp_authorization_code WHERE code_hash = :codeHash)',
+            ['at' => $at, 'codeHash' => $codeHash],
+            ['at' => Types::DATETIMETZ_IMMUTABLE],
+        );
+    }
+
+    /**
      * La relecture par critère du projet ({@see RereadUnderLock::rowsMatching()},
      * `.claude/rules/backend-architecture.md`) : une requête DQL `FOR UPDATE`
      * avec `HINT_REFRESH`, jamais une copie — une instance déjà gérée est relue

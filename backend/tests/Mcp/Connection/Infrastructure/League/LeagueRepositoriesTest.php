@@ -610,6 +610,7 @@ final class LeagueRepositoriesTest extends KernelTestCase
             self::getContainer()->get(McpAuthorizationCodeRepositoryInterface::class),
             new TokenUnderConnectionLock($this->connections()),
             new ConnectionOfToken($this->connections()),
+            $this->connections(),
             $this->clock,
         );
     }

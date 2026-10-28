@@ -162,6 +162,22 @@ interface McpConnectionRepositoryInterface
     public function revokeOtherActiveOf(McpConnection $kept, RevocationCause $cause, DateTimeImmutable $at): array;
 
     /**
+     * Note le premier échange du code d'empreinte `$codeHash` sur la connexion
+     * qu'il désigne (#730, #650 R4) : `code_exchanged_at` reçoit `$at`, **une
+     * fois** (`code_exchanged_at IS NULL`, comme `McpConnection::recordCodeExchangeAt()`
+     * qu'elle double en base). Une instruction SQL, la connexion trouvée par la
+     * ligne du code (`connection_id`) : ni déchiffrement du code, ni relecture
+     * de la connexion — rien qui puisse échouer après que league a émis les
+     * jetons. Appelée **dans** la transaction de l'échange, par la révocation
+     * du code (`AuthCodeRepository::revokeAuthCode()`, le dernier geste de
+     * league, une fois les jetons émis) ; la ligne de la connexion est déjà
+     * verrouillée par cette transaction (`lockForUpdate()`), l'instruction ne
+     * prend aucun autre verrou. Ne touche pas l'instance gérée : rien ne la
+     * relit ensuite dans la requête. Un code inconnu, ou déjà noté, n'écrit rien.
+     */
+    public function recordCodeExchangeOf(string $codeHash, DateTimeImmutable $at): void;
+
+    /**
      * Les connexions actives **peut-être** expirées, verrouillées (`FOR
      * UPDATE`) jusqu'à la fin de la transaction en cours, que la méthode exige
      * (#649, la purge) : non révoquées, et dont le dernier usage (ou l'octroi)

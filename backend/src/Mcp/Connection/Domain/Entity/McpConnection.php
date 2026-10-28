@@ -231,9 +231,11 @@ class McpConnection implements McpConnectionReference
      * la connexion cesse d'être soumise à l'échéance des connexions jamais
      * échangées. **Écrit une fois** : un appel suivant ne déplace pas l'instant
      * (un code ne s'échange qu'une fois ; un rejeu est une compromission,
-     * jugée ailleurs). Appelé par le remplacement au premier échange
-     * ({@see \App\Mcp\Connection\Application\CodeExchangeSupersession}), sur
-     * l'instance que league a verrouillée, dans la transaction de l'échange.
+     * jugée ailleurs). **En production, la colonne s'écrit en SQL** à la
+     * révocation du code ({@see \App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface::recordCodeExchangeOf()},
+     * #650 R4), sans instance : cette méthode est son jumeau en mémoire, qui
+     * dresse l'état d'une connexion déjà échangée (les tests de l'échéance,
+     * de la purge, de la liste) avec la même règle, « une fois ».
      */
     public function recordCodeExchangeAt(DateTimeImmutable $at): void
     {

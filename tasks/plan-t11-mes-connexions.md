@@ -706,8 +706,13 @@ voyait « mot de passe changé », puis sa prochaine action échouait en « Une 
   `OwnMcpConnectionsTest`, `OwnMcpConnectionsControllerTest`) ; docblock de `OwnMcpConnectionsController` déjà à jour.
 
 ### Task R4 : `code_exchanged_at` robuste (CR3) ; interblocage F1 écrit et épinglé — **Sensible (concurrence)**
-- [ ] CR3 : la colonne est écrite même si la relecture du code par `connectionIdOf()`/`findOneById()` échoue (instance
-  verrouillée par league), ou l'échec est journalisé `critical` ; test.
+- [x] CR3 : la colonne est écrite même si la relecture du code par `connectionIdOf()`/`findOneById()` échoue (instance
+  verrouillée par league), ou l'échec est journalisé `critical` ; test. *Fait.* Écrite par la **révocation du code**
+  (`AuthCodeRepository::revokeAuthCode()` → `McpConnectionRepositoryInterface::recordCodeExchangeOf($codeHash, $at)`, une
+  instruction `UPDATE … WHERE code_exchanged_at IS NULL AND id IN (SELECT connection_id FROM mcp_authorization_code WHERE
+  code_hash = …)`), le dernier geste de league : ni déchiffrement, ni relecture, ni instance. `CodeExchangeSupersession` ne
+  l'écrit plus. Test : `CodeExchangedAtTest` (port de lecture du code remplacé par un port muet : jetons émis, colonne écrite ;
+  rouge vu avant le code) ; mutation (appel retiré) → `CodeExchangedAtTest` et `AbandonedGrantsTest` rouges.
 - [ ] F1 : croisement « révocation de tout le compte × premier échange d'un code » écrit comme limite acceptée (phrase
   « no cycle » corrigée dans les règles) et épinglé par un test en processus réels : les deux transactions restent
   atomiques, l'une échoue proprement.

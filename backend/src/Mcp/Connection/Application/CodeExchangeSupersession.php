@@ -37,17 +37,20 @@ use Psr\Http\Message\ServerRequestInterface;
  * requête suivante du même processus relirait), et l'audit après le COMMIT
  * resterait de toute façon au point de jeton.
  *
- * **Elle note aussi le premier échange** (#730) : `code_exchanged_at` est
- * écrit sur la connexion gardée, au même déclencheur (« premier échange
- * réussi »), dans la même transaction. Une connexion dont le code n'est jamais
- * échangé garde la colonne nulle et expire tôt ({@see \App\Mcp\Connection\Domain\Entity\McpConnection::deadline()}) ;
- * c'est ici, et nulle part ailleurs, qu'elle cesse de l'être. Un
- * rafraîchissement ne passe pas par là, un code ne s'échange qu'une fois.
+ * **Elle ne note plus le premier échange** (#730, déplacé par #650, R4) :
+ * `code_exchanged_at` est écrit par la révocation du code
+ * (`AuthCodeRepository::revokeAuthCode()` puis
+ * `McpConnectionRepositoryInterface::recordCodeExchangeOf()`), le dernier
+ * geste de league, en une instruction. Écrit ici, il dépendait du
+ * déchiffrement du code et d'une relecture de la connexion, et le retour
+ * anticipé ci-dessous (code illisible, connexion introuvable) le sautait avec
+ * le remplacement : la connexion qui sert, jetons émis, restait « jamais
+ * échangée » et expirait en une heure, sans un mot.
  *
  * Coût, à chaque échange réussi seulement : un déchiffrement de plus que
  * league (le port), une requête de lecture (servie par la carte d'identité
- * quand league a verrouillé la connexion), l'`UPDATE` de la colonne et celui
- * de revokeOtherActiveOf(), servi par l'index partiel des couples actifs.
+ * quand league a verrouillé la connexion) et l'`UPDATE` de
+ * revokeOtherActiveOf(), servi par l'index partiel des couples actifs.
  *
  * **Son audit, après le COMMIT, est ici aussi** (#726, S4) : le point de jeton
  * l'appelle une fois la transaction validée, et n'écrit plus lui-même au
@@ -81,15 +84,7 @@ final readonly class CodeExchangeSupersession implements CodeExchangeSupersessio
             return null;
         }
 
-        // Le premier échange du code est noté sur la connexion gardée (#730) :
-        // l'instance que league a verrouillée, dans la transaction de
-        // l'échange, **avant** la révocation des autres — l'ordre des verrous ne
-        // change pas (la connexion du code, déjà tenue, puis les autres par id).
-        // `UPDATE` d'une seule colonne par l'unité de travail, sur une ligne que
-        // la transaction tient `FOR UPDATE`.
         $now = $this->clock->now();
-        $kept->recordCodeExchangeAt($now);
-        $this->connections->save($kept);
 
         // L'identifiant de l'instance gérée, celle que league a verrouillée :
         // la connexion qui remplace, nommée par chaque ligne d'audit (B3).

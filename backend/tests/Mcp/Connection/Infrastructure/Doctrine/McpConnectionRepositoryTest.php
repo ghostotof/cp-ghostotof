@@ -244,6 +244,30 @@ final class McpConnectionRepositoryTest extends KernelTestCase
     }
 
     /**
+     * Le premier échange d'un code est noté sur sa connexion, une fois (#650, R4) :
+     * une seconde note ne déplace pas la première, la connexion d'un autre code
+     * n'est pas touchée, un code inconnu n'écrit rien.
+     */
+    public function testRecordCodeExchangeOfNotesTheConnectionOfTheCodeOnce(): void
+    {
+        $connection = $this->grantConnection();
+        $other = McpConnection::grant($connection->account(), $connection->client(), self::SCOPE, new DateTimeImmutable());
+        $this->connections()->add($other);
+        $codeHash = hash('sha256', 'clear-code');
+        $this->authorizationCodes()->add(new McpAuthorizationCode($connection, $codeHash, new DateTimeImmutable('+10 minutes')));
+        $this->authorizationCodes()->add(new McpAuthorizationCode($other, hash('sha256', 'other-code'), new DateTimeImmutable('+10 minutes')));
+        $first = new DateTimeImmutable('2026-10-23T10:00:00+02:00');
+
+        $this->connections()->recordCodeExchangeOf($codeHash, $first);
+        $this->connections()->recordCodeExchangeOf($codeHash, new DateTimeImmutable('2026-10-23T11:00:00+02:00'));
+        $this->connections()->recordCodeExchangeOf(hash('sha256', 'unknown-code'), $first);
+        $this->em->clear();
+
+        self::assertSame($first->getTimestamp(), $this->connections()->findOneById($connection->getId())?->codeExchangedAt()?->getTimestamp());
+        self::assertNull($this->connections()->findOneById($other->getId())?->codeExchangedAt(), 'Le code d\'une autre connexion a noté la sienne.');
+    }
+
+    /**
      * La révocation d'une connexion (#649) : une instruction, qui rend de quoi
      * l'auditer — la connexion, le compte par son UUID, le client par son
      * identifiant public, la cause — et écrit l'instant et la cause en base.
