@@ -141,6 +141,7 @@ phase 1 parte en release seule ; puis au merge de clôture, qui archive la spec 
       (`code_exchanged_at`, rattrapage) avant le rollout ; paramètre `app.mcp.lifetime.connection_unexchanged`.
       Sept questions tranchées par l'auteur le 2026-10-28 (fin du plan) ; seul écart au défaut : vrai menu du compte desktop
   - [x] R1. Relecture F2/F3 (0958fd02, a2787cc4) : cookie antérieur au changement de mot de passe refusé au consentement ; re-hachage conditionnel — **sensible**
+  - [x] R1b. Relecture F2 étendu : une session antérieure au changement de mot de passe est refusée par toute l'API (décision de l'auteur du 2026-10-28), ADR 0003 amendé — **sensible**
   - [ ] R2. Relecture F5 : consentement lié au compte affiché (409)
   - [ ] R3. Relecture F6 : liste bornée (non révoquées + 50 dernières terminées)
   - [ ] R4. Relecture CR3/F1 : `code_exchanged_at` robuste ; interblocage écrit et épinglé — **sensible**

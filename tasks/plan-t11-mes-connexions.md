@@ -617,6 +617,31 @@ les corrections ci-dessous sont faites dans cette branche (décision de l'auteur
 - [x] F3 : `CpgUserRepository::upgradePassword()` n'écrase pas un mot de passe changé entre-temps (`UPDATE … WHERE
   password = :ancien`, ou verrou du compte) ; test qui reproduit la course. *Fait : `UPDATE … WHERE password = :ancien`, a2787cc4.*
 
+### Task R1b : une session antérieure au changement de mot de passe est refusée par toute l'API (F2 étendu) — **Sensible (authentification)**
+Ajoutée par décision de l'auteur du 2026-10-28 : le contrôle de R1, né au consentement, vaut pour toute l'API
+authentifiée par le cookie.
+- [x] `Security/Authentication/Infrastructure/Security/SessionBeforePasswordChangeRefusalListener` : écouteur de
+  `CheckPassportEvent` **sur le seul dispatcher du firewall `api`**, priorité 128 (après `UserCheckerListener`, qui
+  charge le compte), qui lève `SessionPredatesPasswordChangeException` (401 commun de Lexik, `log_level: info`) quand
+  `CpgUser::hasChangedCredentialsSince(iat du payload)` — **le prédicat de R1**, une seule source de vérité. Aucune
+  requête ni vérification de signature de plus (compte et payload déjà là). Écarté, avec raisons dans le docblock :
+  `JWTAuthenticatedEvent`, `UserChecker` (jamais le payload), `JWTAuthenticator` décoré, liste de `jti`.
+- [x] `Jwt/StaleSessionCookiesClearingListener` (`JWT_INVALID`) : ce refus **efface `BEARER` et `XSRF-TOKEN`**
+  (`AuthCookieFactory::expired()`), faute de quoi le cookie mort ferait répondre 401 à tout `/api`, **routes publiques
+  comprises** (le firewall authentifie dès qu'un cookie est présent), pendant l'heure qui lui reste.
+- [x] Tests : `SessionBeforePasswordChangeTest` (HTTP : avant / même seconde / après, jamais changé, parcours réel
+  `PUT` d'un `ROLE_SUPER` puis rejeu du cookie, l'administrateur qui change son propre mot de passe, l'accès de base
+  non concerné, cookies effacés puis route publique servie), `…RefusalListenerTest` (frontières à la seconde, instant
+  illisible = antérieur, `BaseAccessUser` ignoré), `…RegistrationTest` (inscrit sur `api`, pas sur `login`, `mcp`,
+  `oauth`). Les deux tests HTTP de R1 au consentement attendent désormais le 401 du firewall.
+- [x] ADR 0003 amendé (2026-10-28), `.claude/CLAUDE.md` (mention de l'ADR).
+- Mutations mesurées, chacune rouge : écouteur désactivé (attribut retiré, conteneur reconstruit) → 4 tests HTTP +
+  enregistrement ; `<=` → `<` → même seconde (HTTP, unitaire, `CpgUserTest`) ; garde `null === credentialsChangedAt`
+  de l'entité retirée → test unitaire de l'écouteur et `CpgUserTest` (pas le HTTP : le fournisseur de jetons de Lexik
+  pose toujours `iat`) ; garde `instanceof CpgUser` retirée → test unitaire de l'accès de base ; effacement des cookies
+  désactivé → test d'effacement ; dispatcher global → trois tests d'enregistrement.
+- À écrire par R5 (règles) : voir le rendu de la tâche.
+
 ### Task R2 : le consentement est lié au compte affiché (F5)
 - [ ] Le `GET` du consentement renvoie l'UUID du compte affiché ; le `POST` le renvoie et reçoit 409 s'il diffère du
   compte du cookie ; frontend : message et rechargement de la page ; tests backend et Vitest.
