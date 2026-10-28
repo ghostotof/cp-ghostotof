@@ -40,12 +40,13 @@ use Symfony\Component\Process\Process;
  *
  *  - la **révocation** est annulée : l'administrateur qui change un mot de
  *    passe compromis recevait un 500, le mot de passe inchangé, les connexions
- *    vivantes — la remédiation échouait en silence (CR4). `DeadlockRetry`
+ *    vivantes — la remédiation échouait en silence (CR4). `DoctrineDeadlockRetry`
  *    relance maintenant **toute** la transaction verrouillée, une fois, sur un
  *    EntityManager remis à neuf : le second essai aboutit, après l'échange
  *    (qui a pris C1 dès l'annulation) ;
  *  - l'**échange** est annulé : côté league, hors périmètre, sans relance —
- *    le client OAuth reçoit un 500 du point de jeton (`server_error`), son
+ *    le client OAuth reçoit un 500 du point de jeton, hors format OAuth (aucune couche
+ *    OAuth n'attrape un `DriverException`, le noyau le rend), son
  *    code reste échangeable (non révoqué), il le présente à nouveau.
  *
  * Pas de `NOWAIT`, pas de verrouillage de la paire avant league : la limite est
@@ -72,8 +73,8 @@ use Symfony\Component\Process\Process;
  * côté révocation, qui ne montre plus d'échec, par la ligne de journal de la
  * relance (`retried 1`). État final de chacun :
  *
- *  - la **révocation** annulée puis relancée : le mot de passe a changé, sa
- *    date aussi et la version des identifiants a avancé **une fois** (le
+ *  - la **révocation** annulée puis relancée : le mot de passe a changé et la
+ *    version des identifiants a avancé **une fois** (le
  *    premier essai, annulé, n'a rien laissé) ; l'échange, qui a gagné le
  *    cycle, a remplacé C1 (`superseded`, déjà inactive : la relance ne la
  *    révoque pas) et émis ses jetons pour C2, que la relance a révoquée
@@ -94,7 +95,7 @@ use Symfony\Component\Process\Process;
  * les deux tests rouges à l'attente (le fils « s'est arrêté sans attendre un
  * verrou »), aucun cycle ; `ORDER BY c.id DESC` — la révocation prend C2 avant
  * C1 et le cycle disparaît : les deux rouges (plus de `40P01` côté échange, plus
- * de relance côté révocation). Mutations de S3 : voir `DeadlockRetryTest`.
+ * de relance côté révocation). Mutations de S3 : voir `DoctrineDeadlockRetryTest`.
  */
 final class AccountWideRevocationDeadlockTest extends WebTestCase
 {
@@ -336,9 +337,8 @@ final class AccountWideRevocationDeadlockTest extends WebTestCase
     }
 
     /**
-     * Le mot de passe stocké, sa date de changement et la version des
-     * identifiants : les trois écrits par la révocation, relus tels quels pour
-     * être comparés.
+     * Le mot de passe stocké et la version des identifiants : les deux écrits
+     * par la révocation, relus tels quels pour être comparés.
      *
      * @return array{password: mixed, version: mixed}
      */

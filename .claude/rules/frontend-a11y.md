@@ -58,6 +58,13 @@ fixed:
   with `v-show`, not `v-if`, so the button's `aria-controls` is valid while the menu is closed; the hidden list is
   `display: none`, neither read nor reachable by keyboard. Its tests therefore read « nothing outside the menu »
   (`outsideDesktopMenu` in `AppHeader.spec.ts`), never « nothing in the DOM ».
+- **A live region is announced when it is *inserted*, or when its content changes** (#650, S2): the backoffice's
+  `SessionEndedBanner` is a `role="alert"` **inserted by `v-if`** at the moment a 401 ends the session, so it is
+  announced and interrupts, which is what follows a failed « Enregistrer ». **It never takes the focus** (no
+  `focus()`): the person may be in the middle of a sentence, and the link sits in the reading order, reachable by
+  keyboard. Its link opens a new tab, said in the link text (a visually hidden « (s'ouvre dans un nouvel onglet) »,
+  WCAG 3.2.5). It differs from `LoginPage`'s notice (next bullet) by when it appears: the banner is inserted after
+  the first render (announced), the notice is present from it (may not be).
 - **A `role="status"` present at first render may not be announced** (`LoginPage`'s « Votre session a pris fin »
   notice, `expired=1`, #650): some screen readers announce a live region only when its content *changes*, and this
   one is in the page from the start. It is still readable as ordinary text in the reading order, which is why it is

@@ -242,7 +242,7 @@ contradict the ids, or the test proves nothing: the lower one's row is rewritten
 moves after the other in the heap), checked by `ctid` before anything — without that rewrite the unfixed `UPDATE` passes,
 measured. **The heap is built by the test, never inherited** (#650, R4: it failed 4 runs in 14 of `tests/Mcp` when the
 earlier tests had fragmented `mcp_connection` and the rewritten version of the lower row landed before the higher):
-`TRUNCATE mcp_connection CASCADE` first (a new heap: slots 1, 2, 3, the rewritten version at 4), then `ANALYZE` (with
+`TestDatabase::assertSafeToWipe()` then `TRUNCATE mcp_connection CASCADE` first (a new heap: slots 1, 2, 3, the rewritten version at 4; the guard — see « A test that empties a table… » below — because `CASCADE` empties everything that references the table, on a connection opened outside the kernel), then `ANALYZE` (with
 empty statistics the planner chooses an index scan, which reads the ids' order), then a **second precondition** that
 says what the first one means: the search for the pair's others **without** an `ORDER BY` returns the higher before
 the lower. Mutation (`ORDER BY` out of `revokeWhere()`): red, `55P03`, this test alone. 20 runs of `tests/Mcp`: 20 green. **Only the heap order is contradicted**: the rewrite is a HOT update (no indexed column changes), the index
@@ -269,20 +269,44 @@ the sub-query's quals on the locked row and the `UPDATE`'s on the target row), a
 UPDATE` (removed, green: the `UPDATE` waits on the row by itself) — its job is the id order, pinned by
 `TokenEndpointConcurrencyTest::testASupersessionLocksTheOtherConnectionsInIdOrder`.
 
-**A deadlock that is accepted is pinned too** (#650, R4, F1: `AccountWideRevocationDeadlockTest`; children
-`Fixtures/change-account-password.php`, which runs the real `CpgUserAdministrator::changePassword()`, and
-`present-at-token-endpoint.php`; neither prints a secret, the code passes on the child's stdin and the password is drawn
-in the child and never written). The test holds C1 `FOR UPDATE` in a session of its own; the revocation starts and blocks
-on C1 after taking the account; the exchange starts, takes C2 and blocks on C1 **behind** the revocation in the queue;
-C1 is released and the revocation, first in the queue, takes it and wants C2 — held by the exchange, which waits for C1:
-`40P01`. Each child starts once the other is **blocked on a lock** (`SessionLockWait::untilBlocked()`). **The victim is
-chosen, not left to the timers** (measured: 9 runs in 12 aborted the exchange, 3 the revocation): the child meant to lose
-starts with `deadlock_timeout = 100ms`, the other keeps the default second, so it is the first to look for the cycle. One
-test per victim, and each checks that **both transactions stay atomic** (an aborted revocation: password and date
-unchanged, nothing revoked or audited; an aborted exchange: no token, code still exchangeable, `code_exchanged_at` null).
-**Needs a role that may `SET deadlock_timeout`** (superuser, or the `SET` privilege on the parameter) — true of the dev
-database and of CI. Mutations: `SKIP LOCKED` in `revokeWhere()` (red at the wait, no cycle), `ORDER BY c.id DESC` (red:
-the cycle is gone). The limit itself: `.claude/rules/mcp-oauth-revocation-personne.md`, accepted limit 4.
+**A deadlock that is accepted is pinned too, and so is the retry that absorbs half of it** (#650, R4, F1; S3 of the
+second review: `AccountWideRevocationDeadlockTest`; children `Fixtures/change-account-password.php`, which runs the real
+`CpgUserAdministrator::changePassword()`, and `present-at-token-endpoint.php`; neither prints a secret, the code passes on
+the child's stdin and the password is drawn in the child and never written). The test holds C1 `FOR UPDATE` in a session
+of its own; the revocation starts and blocks on C1 after taking the account; the exchange starts, takes C2 and blocks on
+C1 **behind** the revocation in the queue; C1 is released and the revocation, first in the queue, takes it and wants C2 —
+held by the exchange, which waits for C1: `40P01`. Each child starts once the other is **blocked on a lock**
+(`SessionLockWait::untilBlocked()`). **The victim is chosen, not left to the timers** (measured: 9 runs in 12 aborted the
+exchange, 3 the revocation): the child meant to lose starts with `deadlock_timeout = 100ms`, the other keeps the default
+second, so it is the first to look for the cycle. One test per victim. **Since S3 the revocation victim is retried once**
+(`DeadlockRetryInterface`, `.claude/rules/security-user.md`): the revocation child no longer fails, it prints
+`retried <n>` (the deadlocks the single retry absorbed, read on a probe of every channel), and the test proves the cycle
+happened by that line; the exchange victim keeps its `failed 40P01` (league, out of scope, not retried). The final state
+of each is asserted — revocation victim: the exchange won the cycle (C1 `superseded`, already inactive, C2
+`password-changed`), the password and `credentials_version` changed, the version advanced **once**, **one** audit line of
+connection (C2's) and **one** `password-changed`; exchange victim: no token for C2, its code still exchangeable
+(`code_exchanged_at` null), the revocation succeeded first time (C1 and C2 `password-changed`, two audit lines, no retry).
+Twelve runs in a row green. **Needs a role that may `SET deadlock_timeout`** (superuser, or the `SET` privilege on the
+parameter) — true of the dev database and of CI. Mutations: `SKIP LOCKED` in `revokeWhere()` (red at the wait, no cycle),
+`ORDER BY c.id DESC` (red: the cycle is gone). The limit itself: `.claude/rules/mcp-oauth-revocation-personne.md`, accepted
+limit 4.
+
+**A test that empties a table checks the database first** (#650, F-D of the second review): `tests/Support/TestDatabase::
+assertSafeToWipe(Connection)` reads `current_database()` **on the server** (not an environment variable the connection
+might not have followed) and requires it to end exactly in `_test` plus ParaTest's `TEST_TOKEN` when there is one (something
+must precede the suffix: `_test` alone is no derived name), else the test fails naming the database, **having emptied
+nothing**. **Mandatory before any `TRUNCATE`, or `DELETE FROM <table>` without `WHERE`, on a connection opened outside the
+kernel** (`OpensProbeConnection`, `DriverManager`): such a connection copies parameters by hand, and a wrong copy, another
+test's database or a forgotten `APP_ENV` would point it at data that is not disposable. It is applied to `SessionBeforePasswordChangeTest` and
+to the cleanups of `tests/Mcp` (sixteen files, `TokenEndpointConcurrencyTest` — its `TRUNCATE … CASCADE` — and the
+`DrivesTheOAuthFlow` trait among them: the repository and snapshot tests, the controllers, the commands, the league
+adapters, `McpEndpointTest`…) — also where the connection is the kernel's; `TestDatabaseGuardTest` pins the
+recogniser (with and without a token, a development name refused) and that the kernel's connection is on the test database.
+**Decision of the author: not generalised** to the ~110 other files of `tests/` that run a `DELETE FROM` without `WHERE`: they
+all go through the **kernel's connection**, whose database name `doctrine.yaml` already suffixes (`dbname_suffix: '_test'`).
+Extend it the day a test opens a connection otherwise. **A migration test whose column a later migration dropped recreates
+the earlier state inside its own rolled-back transaction** (`Version20261028160000Test` adds `credentials_changed_at` back, as
+`Version20261028200000::down()` does, then replays its own `down()`/`up()`): the migrated test schema no longer has the column.
 
 Every
 test that waits on a held lock to prove the bound carries a `statement_timeout = '3s'` safety net, so

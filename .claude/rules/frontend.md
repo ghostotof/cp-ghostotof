@@ -77,8 +77,20 @@ Three things the MCP slice shares with the rest of the frontend:
   session a pris fin » and a **sign-in-again link** (`login?redirect=<this page>&expired=1`) in place of the generic
   error and its retry, which would send the same request without a session. `LoginPage` reads `expired=1`
   (`presentation/router/sessionEnded.ts`, the single value `1`) and shows a `role="status"` notice « Votre session a
-  pris fin, reconnectez-vous. » — the same flag the backoffice's 401 reaction sets
-  (`.claude/rules/frontend-backoffice.md`, « Route protection »). The flag opens nothing and grants nothing.
+  pris fin, reconnectez-vous. » — the same flag the backoffice banner's link sets (`SessionEndedBanner`, which
+  replaced R1c's redirect: a 401 mid-page no longer navigates, `.claude/rules/frontend-backoffice.md`). The flag
+  opens nothing and grants nothing.
+- **`redirect` is judged in one place, `presentation/router/internalRedirect.ts`** (`internalRedirectTarget()`, #650,
+  F-I1 of the second review; `LoginPage` is its only reader). A target is an internal path when it starts with a
+  **single** `/` and holds **no `\` and no control character** (C0, DEL; tab and line feeds included): a browser reads
+  `\` as `/` in an `http(s)` URL and silently drops tabs and line feeds, so `/\host` and `/<TAB>/host` mean `//host`
+  to it. The rule is a property of the string received, the same one handed to the router, so no reader can understand
+  it differently. **Rejected: resolving the target with the URL parser and comparing its origin** — it judges the
+  *normalised* form (`/a\b` comes out `/a/b`), not the string the router receives, depends on a parser that differs
+  between browser and jsdom, and — measured — refuses nothing more once the syntactic rule holds. The target is
+  returned as received (never normalised: the query and fragment of a consent request stay intact). **`%5C` is not
+  refused**: a browser does not decode it in a path, it stays on the origin. `internalRedirect.spec.ts`,
+  `LoginPage.spec.ts`.
 - **`load()` keeps the last read launched** : a sequence number, and a response (or an error) older than the latest
   `load()` is dropped — « Réessayer » during a re-read after a revocation, or two revocations in a row, cross on the
   network.

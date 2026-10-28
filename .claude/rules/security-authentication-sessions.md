@@ -81,40 +81,61 @@ paths:
   conditioned on the request being `https` (`isSecure()`, the scheme), since functional clients stay in http.
 - **A JWT's `iat` is the instant the password was typed, and something relies on it** (#647): granting an
   MCP connection requires an authentication under ten minutes old, read from the `iat` of the session's JWT
-  (`Mcp/Connection/Infrastructure/Security/JwtAuthenticationInstant`, `.claude/rules/mcp-oauth.md`). That
-  holds because the site issues a JWT at login only — no refresh endpoint, no sliding renewal. **A JWT
-  refresh added some day must carry the original authentication instant in a claim of its own** and that
-  reader must read it, or a stolen cookie renewed in a loop would pass for a fresh login (and, since #650 R1b, would
-  outlive a password change).
+  (`Mcp/Connection/Infrastructure/Security/JwtAuthenticationInstant::authenticatedAt()`,
+  `.claude/rules/mcp-oauth.md`). That holds because the site issues a JWT at login only — no refresh endpoint, no
+  sliding renewal. **A JWT refresh added some day must carry the original authentication instant in a claim of its
+  own, and the original `cv` claim** (below), and the readers must read them: a stolen cookie renewed in a loop
+  would otherwise pass for a fresh login, and outlive a password change. The `cv` of the refreshed token is the one
+  **of the token being refreshed**, never a re-read of the account's current version, which would absolve a stolen
+  token.
 - **A session opened before the last password change is refused by the whole `api` firewall** (#650, R1b, the
-  author's decision of 2026-10-28; ADR 0003 amended): `Infrastructure/Security/SessionBeforePasswordChangeRefusalListener`,
-  a `CheckPassportEvent` listener **registered on `security.event_dispatcher.api` only**, priority **128** (below
-  `UserCheckerListener` at 256, which loads the account and refuses a disabled one first; above
-  `CheckCredentialsListener` at 0). It throws `SessionPredatesPasswordChangeException` when
-  `CpgUser::hasChangedCredentialsSince(iat of the payload)` — the one predicate, shared with the MCP consent. No
-  query, no second signature check (the passport carries the payload and the reloaded account). The exception is an `AuthenticationException`
-  (Lexik's common 401, `log_level: info` in `framework.yaml`). **Absent from `login`** (a password, no session),
-  **`mcp`** (opaque DB-checked token, already revoked by the change) and **`oauth`** (no JWT passport): registered
-  globally it would be copied onto each (`SessionBeforePasswordChangeRefusalListenerRegistrationTest`). **Rejected**
-  (reasons in the docblock): `JWTAuthenticatedEvent`, a `UserChecker` (never sees the payload), a decorated
-  `JWTAuthenticator`, a `jti` list (a read per request, ADR 0003). The base tier is out of it: its `BaseAccessUser` is rebuilt from the payload, no account, no
-  password (the test is on the user's class, never on a claim). It **fails closed**: a payload without an integer
-  `iat` is an unknown instant, so earlier.
-  - **`<=`, not `<`**: `iat` is to the second and `credentials_changed_at` a `TIMESTAMP(0)` that PostgreSQL rounds
-    (a change at 10:00:00.3 is stored 10:00:00; a sign-in at 10:00:00.1 carries `iat` 10:00:00), so the same second
-    cannot say which came first. Treating it as later lets a stolen cookie through; treating it as earlier costs one
-    sign-in. **Accepted**: a person signing in within the very second of her password change gets a 401 and signs in
-    again. **A test that signs in right after a change moves the date back in SQL**
-    (`AccountPasswordSetupResourceTest`), or it meets that second.
+  author's decision of 2026-10-28; ADR 0003 amended), **judged on the credentials version the JWT carries, not on a
+  date** (S1 of the second review, decision of 2026-10-28). Three pieces, one source of truth each:
+  - **`cpg_user.credentials_version`** (`INT NOT NULL DEFAULT 0`, `Version20261028180000`, fingerprint n° 39 of
+    `verify.sql`) is advanced by `CpgUser::replacePassword($hash)` under the account lock, never by
+    `upgradePassword()` (`.claude/rules/security-user.md`).
+  - **The `cv` claim** (`Shared/Domain/Security/CredentialsVersionClaim::NAME`, in `Shared` so the firewall and the
+    consent cite one spelling without one context importing the other) is set by
+    `Infrastructure/Jwt/CredentialsVersionClaimListener` (Lexik's `JWT_CREATED`) from the `CpgUser` of the event —
+    the instance whose hash was just verified, **never re-read**: the bcrypt takes ~270 ms and may precede the COMMIT
+    of a password change while the token creation follows it, so a re-read would stick the new version on a token
+    proved by the old password. Always set, even at 0. The base access passes through the same event and is
+    untouched: no account, no version. No other code issues a JWT.
+  - **The predicate** is `CpgUser::claimsAStaleCredentialsVersion(?int)`: **equality** (`($claim ?? 0) !== version`),
+    so a claim *newer* than the account (a restored database) is refused too. **An absent claim is version 0**: a
+    token issued before the deployment is served while the password never changed (an open session does not drop
+    at the deployment) and refused once it has. A present claim that is not an integer is refused (fails closed).
+  - **`Infrastructure/Security/SessionBeforePasswordChangeRefusalListener`** applies it: a `CheckPassportEvent`
+    listener **registered on `security.event_dispatcher.api` only**, priority **128** (below `UserCheckerListener` at
+    256, which loads the account and refuses a disabled one first; above `CheckCredentialsListener` at 0). It throws
+    `SessionPredatesPasswordChangeException`, an `AuthenticationException` (Lexik's common 401, `log_level: info` in
+    `framework.yaml`). No query, no second signature check (the passport carries the payload and the reloaded
+    account). **Absent from `login`** (a password, no session), **`mcp`** (opaque DB-checked token, already revoked by
+    the change) and **`oauth`** (no JWT passport): registered globally it would be copied onto each
+    (`SessionBeforePasswordChangeRefusalListenerRegistrationTest`). **Rejected** (reasons in the docblock):
+    `JWTAuthenticatedEvent`, a `UserChecker` (never sees the payload), a decorated `JWTAuthenticator`, a `jti` list
+    (a read per request, ADR 0003), the comparison of `iat` with a date. The base tier is out of it: its
+    `BaseAccessUser` is rebuilt from the payload (the test is on the user's class, never on a claim). **A second
+    authenticator** added to this firewall must put the version in the passport's `payload` attribute, or not serve
+    an account whose password changed.
+  - **The `iat` no longer enters this verdict.** The previous form compared it with `credentials_changed_at`: a
+    login that read the old hash before the change's COMMIT but signed a second later passed (F-A), two pods' clocks
+    refused a legitimate sign-in (F-B), and « the same second » was refused in both directions (`<=`). All gone: a
+    person signing in right after a change is served, and tests no longer move a date back in SQL. A future `iat`
+    (a pod's clock ahead) is refused by Lexik itself before this rule.
   - **`StaleSessionCookiesClearingListener`** (`Infrastructure/Jwt`, Lexik's `JWT_INVALID`) makes that refusal — that
     one only — **expire `BEARER` and `XSRF-TOKEN`** through `AuthCookieFactory::expired()`. The firewall authenticates
     as soon as a cookie is present, **public routes included**: without it a refused cookie, alive up to an hour more,
     would answer 401 to every `/api` request, the About page and the contact form too. The next request is
-    anonymous, and the frontend, which already reads that 401 as a finished session, sends the person to the sign-in
-    (`.claude/rules/frontend-backoffice.md`, « Route protection »).
-  - **A future JWT refresh must carry the original authentication instant** (see the `iat` bullet above) — now for
-    the whole API: a second authenticator on this firewall must put it in the passport's `payload` attribute.
-  - **The consent keeps its own check** as defence in depth, unreachable by HTTP since R1b, the author's decision
+    anonymous; the frontend reads that 401 as a finished session (a banner mid-page in the backoffice, the sign-in
+    at the next navigation — `.claude/rules/frontend-backoffice.md`, « Route protection »).
+  - **Every refusal is audited** (`session-refused-after-credentials-change`,
+    `.claude/rules/security-authentication-audit.md`), before the exception is thrown.
+  - **The consent keeps its own check** as defence in depth, unreachable by HTTP since R1b, the author's decision:
+    it compares the same version through `AuthenticationInstantInterface::credentialsVersion()` (the `cv` of the
+    session's token, re-read and re-verified by Lexik) and reads no token at all for an account at version 0
     (`.claude/rules/mcp-oauth.md`, « Consent »).
-  `SessionBeforePasswordChangeTest` (HTTP: the real `PUT` then the cookie replayed, the boundary seconds, the base
-  tier, cookies cleared then a public route served), `…RefusalListenerTest`, `…RegistrationTest`.
+  `SessionBeforePasswordChangeTest` (HTTP: the real `PUT` then the cookie replayed, a version older or newer, the
+  `iat` playing no part, a token without claim before and after a change, **the race** — an instance read before
+  the change, a token created after it: refused, red under the old rule —, the base tier, cookies cleared then a
+  public route served), `…RefusalListenerTest`, `…RegistrationTest`, `CredentialsVersionClaimListenerTest`.

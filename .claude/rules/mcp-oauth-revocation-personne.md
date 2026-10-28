@@ -15,12 +15,24 @@ paths:
   - "backend/src/Security/User/Application/CpgUserRoleAdministrator.php"
   - "backend/src/Security/User/Application/PasswordSetupService.php"
   - "backend/src/Security/User/Application/RoleChangeOutcome.php"
+  - "backend/src/Security/User/Application/DeadlockRetryInterface.php"
+  - "backend/src/Security/User/Infrastructure/Doctrine/DoctrineDeadlockRetry.php"
+  - "backend/src/Mcp/Connection/Application/ReadSnapshotInterface.php"
+  - "backend/src/Mcp/Connection/Infrastructure/Doctrine/DoctrineReadSnapshot.php"
+  - "backend/src/Mcp/Connection/Infrastructure/Doctrine/ReadSnapshotInsideTransactionException.php"
   - "backend/migrations/Version20261028120000.php"
   - "backend/migrations/Version20261028140000.php"
   - "backend/migrations/Version20261028160000.php"
+  - "backend/migrations/Version20261028180000.php"
+  - "backend/migrations/Version20261028200000.php"
   - "backend/tests/Migrations/Version20261028120000Test.php"
   - "backend/tests/Migrations/Version20261028140000Test.php"
   - "backend/tests/Migrations/Version20261028160000Test.php"
+  - "backend/tests/Migrations/Version20261028180000Test.php"
+  - "backend/tests/Migrations/Version20261028200000Test.php"
+  - "backend/tests/Mcp/Connection/Infrastructure/Doctrine/DoctrineReadSnapshotTest.php"
+  - "backend/tests/Security/User/Application/DeadlockRetryIntegrationTest.php"
+  - "backend/tests/Security/User/Infrastructure/Doctrine/DoctrineDeadlockRetryTest.php"
   - "backend/tests/Mcp/Connection/AccountWideRevocationTest.php"
   - "backend/tests/Mcp/Connection/AbandonedGrantsTest.php"
   - "backend/tests/Mcp/Connection/AccountWideRevocationDeadlockTest.php"
@@ -91,13 +103,30 @@ theirs). The expiry (actor `system`), the supersession (`supersededBy`) and a co
   hand-written JSON response like `ConsentController` (no API Platform), `Cache-Control: no-store` — the list says
   which clients read the nominative CV on the person's behalf. The account is `#[CurrentUser]`, never an id the
   client sends. The `DELETE` is a cookie request: the CSRF double-submit applies, no exclusion.
-- **`GET`: two reads at most, no lock, no N+1** (`OwnMcpConnections::of()`, R3): `findNotRevokedOfAccount()` — **every**
-  connection of the account not revoked (active, and expired not yet marked) — and `findTerminatedOfAccount($id, $limit)`
-  (`revoked_at IS NOT NULL`: the revoked and the expired the purge marked, kept six months), both from
-  `ofAccountNewestFirst()` (client joined, `granted_at DESC, id DESC`). **The terminated are bounded to
+- **`GET`: two reads in one snapshot, no lock, no N+1** (`OwnMcpConnections::of()`, R3, CR2, CR3):
+  `findNotRevokedOfAccount()` — **every** connection of the account not revoked (active, and expired not yet marked) —
+  and `findTerminatedOfAccount($id, $limit)` (`revoked_at IS NOT NULL`: the revoked and the expired the purge marked,
+  kept six months), both on the client-joined base `ofAccount()`, **which sorts nothing**: each half writes its own
+  order, because the order decides *which* rows a limit keeps. **The terminated are chosen by `revoked_at DESC, id
+  DESC`** (the most recently ended — a `LIMIT` over the grant date kept the wrong fifty for a person who revokes an
+  old connection), the non-revoked by `granted_at DESC, id DESC` (all returned, the order is presentation). **The
+  display is per grant**: the service merges the two halves in PHP and sorts them `granted_at DESC, id DESC`, the
+  order the page always showed — the end instant decides what is kept, not how it is shown. **Both reads run inside
+  `ReadSnapshotInterface::read()`** (`Mcp/Connection/Application`, implemented by
+  `Infrastructure/Doctrine/DoctrineReadSnapshot`): a `REPEATABLE READ READ ONLY` transaction, `SET TRANSACTION`
+  before the first query (DBAL 4 opens its transaction without options). Without it, in `READ COMMITTED`, a
+  revocation committed between the two statements made a connection vanish from the list (seen by the first half as
+  active and not by the second as terminated, or the reverse — measured, red). Read only, so no row lock (a refresh or
+  the purge never waits for a list) and no serialization failure (`40001` is born of an update of a row modified since
+  the snapshot, and this makes none). **It refuses a transaction already open**
+  (`ReadSnapshotInsideTransactionException`, a `LogicException` with no HTTP mapping): nested, DBAL would open a
+  savepoint and the isolation level could no longer be chosen. Rejected: `TransactionInterface` (it writes, flushes
+  the unit of work and closes the EntityManager on failure); one query (a `LIMIT` in a DQL sub-query is impossible,
+  native SQL plus a mapping is more code than the port). `DoctrineReadSnapshotTest`, `OwnMcpConnectionsTest`.
+  **The terminated are bounded to
   `OwnMcpConnections::TERMINATED_LIMIT = 50`** — the one place the number is written, the page cites none. `of()` asks
   for **limit + 1**: the extra row says « there are more » without a `COUNT`; the answer is `OwnMcpConnectionList{connections,
-  terminatedTruncated}`, the two halves merged in PHP in the repositories' order. **The non-revoked are unbounded
+  terminatedTruncated}`. **The non-revoked are unbounded
   because they are bounded by nature**: an abandoned approval expires in an hour and the purge marks it each night, a
   first exchange supersedes the pair's others, clients are a closed list registered by CLI. No index migration:
   `account_id` suffices (EXPLAIN: 0.24 ms and 1.0 ms for the two halves, 3 005 rows of the account among 63 000 — 3 000
@@ -177,12 +206,23 @@ the account-wide revocation can cross the first exchange of a new grant's code �
   (creates an account, changes none).
 
 **What the revocation does not cover, and R1 closes**: it cuts what exists, not what a **stolen session cookie** grants
-afterwards. So the same two password writers also date the change: `CpgUser::replacePassword($hash, $at)` writes the
-password **and** `credentials_changed_at` (`Version20261028160000`, nullable, **no backfill** — writing `now()` would
-have voided every open session without any password having changed; `Version20261028160000Test`, fingerprint n° 38 of
-`verify.sql`) in the lock's closure. The consent refuses a session opened before it (`.claude/rules/mcp-oauth.md`) and,
-since R1b, the whole `api` firewall does (`.claude/rules/security-authentication-sessions.md`): the account-wide revocation and
-the cookie's refusal together close the window. `AccountWideRevocationTest`, `CpgUserTest`, `CpgUserRepositoryTest`.
+afterwards. So the same two password writers also advance the **credentials version**:
+`CpgUser::replacePassword($hash)` writes the password **and** `credentials_version` (`Version20261028180000`,
+`INT NOT NULL DEFAULT 0`, fingerprint n° 39 of `verify.sql`) in the lock's closure, and the JWT carries a copy
+(`cv`). The consent refuses a session whose copy differs (`.claude/rules/mcp-oauth.md`) and, since R1b, the whole `api`
+firewall does (`.claude/rules/security-authentication-sessions.md`): the account-wide revocation and the cookie's
+refusal together close the window. **R1 first dated the change** (`credentials_changed_at`, `Version20261028160000`,
+nullable, no backfill: writing `now()` would have voided every open session without any password having changed;
+fingerprint n° 38) and compared it with the JWT's `iat`; S1 replaced the date by the version (a login that read the old
+hash before the change's COMMIT but signed later passed, two pods' clocks refused a legitimate sign-in), and S4 removed
+the then-unread column (`Version20261028200000`, `DROP COLUMN`, fingerprint n° 40; `down()` recreates it nullable and
+empty). **Added then dropped in the same deployment**: the column was never delivered (neither `main` nor `develop`
+holds `Version20261028160000`; the production code names it nowhere), so the expand/contract rule « never drop a column
+in the version that stops reading it » (#175) protects nothing here; for a delivered column it would take two versions.
+`Version20261028160000` is untouched (already run on dev and test databases) and **its test rebuilds the state before
+the drop inside its rolled-back transaction** — it recreates the column as `Version20261028200000::down()` does, then
+replays its own `down()`/`up()`: a migration test whose column a later migration removed starts from that state.
+`AccountWideRevocationTest`, `CpgUserTest`, `CpgUserRepositoryTest`, `Version20261028180000Test`, `Version20261028200000Test`.
 
 ## The abandoned grant (#730): a connection whose code is never exchanged expires after an hour
 
@@ -222,8 +262,10 @@ connection nobody replaced nor used, alive for the idle delay (30 days), and the
   exchangeable is never pre-selected.
 - **The migration backfills**: a connection with a `last_used_at`, an access token or a refresh token is taken as
   exchanged (`code_exchanged_at = granted_at`, an approximation read as null-or-not only). Without it every existing
-  row would read as unexchanged and expire an hour after its grant. All three migrations of #650 and #730 run
-  **before** the rollout, in order: `Version20261028120000`, `Version20261028140000`, `Version20261028160000`.
+  row would read as unexchanged and expire an hour after its grant. All **five** migrations of #650 and #730 run
+  **before** the rollout, in order: `Version20261028120000`, `Version20261028140000`, `Version20261028160000`,
+  `Version20261028180000`, `Version20261028200000` (fingerprint n° 40 the last). `credentials_changed_at` is added by the
+  third and dropped by the fifth, in the same deployment.
   **The migration-to-rollout window exposes nothing for this delivery** (settled in review, the migration is not
   editable): a connection exchanged by the *old* code between the migration and the end of the rollout would stay null
   and expire in an hour — but neither `main` nor `develop` holds any `backend/src/Mcp/Connection` code, so no old code
@@ -292,24 +334,49 @@ which reads the request again under the current account. `OAuthConsentPage.spec.
 The first delivery listed three; review R1, R1b and R2 **lifted two of them** and R3 and R4 added two.
 
 1. ~~**The session cookie survives a password change.**~~ **Lifted** (R1 for the consent, R1b for the whole API): a session
-   opened before the last password change is refused (`.claude/rules/security-authentication-sessions.md`). What stays, written
-   there: the same second as the change is refused too, and the JWT is otherwise not revocable (ADR 0003).
+   opened before the last password change is refused (`.claude/rules/security-authentication-sessions.md`). What stays,
+   written there: the JWT is otherwise not revocable (ADR 0003). The « same second » limit of the first form is gone
+   with the date (S1).
 2. ~~**The `POST /api/oauth/consent` grants to the account of the cookie at sending.**~~ **Lifted** (R2): the decision
    is bound to the account the summary named, a 409 otherwise.
 3. **An approval in flight crossing the loss of the tier** can insert a connection right after the revocation. The
    authenticator and the refresh judge the tier again and refuse it at use; it is simply not marked revoked, and
    would live again if the tier came back within its lifetime.
-4. **An account-wide revocation crossing the first exchange of a new grant can deadlock, accepted** (#650, F1, the author's
-   decision of 2026-10-28; revisit through a new issue). An account holds C1 (an older active connection) and C2 (a new
-   grant to the same client; UUID v7, so C1 < C2). The first exchange of C2's code locks C2 (league, `FOR UPDATE`) and
-   then wants C1 (`revokeOtherActiveOf()`); `revokeAllActiveOfAccount()` (password change, loss of the trusted tier)
-   holds the account and locks the connections by id: C1, then C2. If they cross, each waits for what the other holds,
-   PostgreSQL aborts one (`40P01`, a 500, nothing retries) and the other proceeds. **Both transactions stay atomic**: an
-   aborted revocation leaves the password (and its date) or the roles unchanged, revokes and audits nothing; an aborted
-   exchange issues no token, leaves the code exchangeable and `code_exchanged_at` null. Not fixed (no `NOWAIT`, no
-   locking of the pair before league). The caller asks again by hand. Pinned in real processes by
-   `AccountWideRevocationDeadlockTest`, one case per victim (`deadlock_timeout=100ms` on the child meant to lose;
-   mutations: `SKIP LOCKED` goes red at the wait, `ORDER BY c.id DESC` goes red because the cycle disappears).
+4. **An account-wide revocation crossing the first exchange of a new grant can deadlock; the revocation side is
+   retried once, the exchange side is not** (#650, F1, the author's decisions of 2026-10-28; S3 of the second review,
+   CR4; revisit through a new issue). An account holds C1 (an older active connection) and C2 (a new grant to the same
+   client; UUID v7, so C1 < C2). The first exchange of C2's code locks C2 (league, `FOR UPDATE`) and then wants C1
+   (`revokeOtherActiveOf()`); `revokeAllActiveOfAccount()` (password change, loss of the trusted tier, a setup link
+   replacing a password) holds the account and locks the connections by id: C1, then C2. If they cross, each waits for
+   what the other holds, PostgreSQL aborts one (`40P01`) and the other proceeds. **Both transactions stay atomic.**
+   **The revocation side is retried once** (`DeadlockRetryInterface`, S3/CR4: the whole locked transaction is replayed on
+   a reset EntityManager, the account or token re-read, the hash not recomputed, the audit written once after the COMMIT
+   that succeeded); it then ends after the exchange that won (C1 `superseded`, C2 `password-changed`, one
+   credentials-version increment, one `mcp-connection-revoked` line — C2's — and one `password-changed`, one
+   `deadlock-retried` log line). A second deadlock surfaces (a 500, as before). Without the retry the administrator
+   remedying a compromised password got a 500, the password unchanged and the connections alive: the remedy failed
+   silently. **The exchange side is not retried** (league, out of scope): the OAuth client gets a 500 from the token
+   endpoint, outside the OAuth format (no OAuth layer catches a `DriverException`), its code is left unexchanged
+   (not revoked, `code_exchanged_at` null) and it presents it again; the revocation then ends with C1 and C2 both
+   `password-changed`, two audit lines, no retry. No `NOWAIT`, no pair lock before league. **Where the retry lives**: a
+   port `Security/User/Application/DeadlockRetryInterface::retryOnce(Closure(bool $isRetry): T)` and its adapter
+   `Infrastructure/Doctrine/DoctrineDeadlockRetry`, asked for by each service
+   (`CpgUserAdministrator::changePassword()`, `CpgUserRoleAdministrator::setSuperAdmin()`,
+   `PasswordSetupService::complete()`), **never inside the account locks** nor `PostgresLockedTransaction`: their other
+   callers are not replayable (the invitation handler sends a link, the purge counts what it deletes). Only
+   `DeadlockException` is retried (any other exception, `DriverException` included, surfaces on the first attempt);
+   `ManagerRegistry::resetManager()` runs before the second attempt, **always** (the cancelled transaction had written,
+   so the skeleton closed the EntityManager, #549; the manager is a lazy object replaced in place); no loop (a cycle
+   that forms three times in a row is a defect to see, not a chance to absorb) and no wait (PostgreSQL has already broken
+   the cycle). The second attempt re-reads what the first held: `changePassword()` the account (`findOneById`, 404 if it
+   vanished, no audit), `complete()` the token by its hash (a link consumed meanwhile is refused as everywhere),
+   `setSuperAdmin()` nothing (the administration lock re-reads target and actor by id). The retry logs a `warning`,
+   `event` `deadlock-retried`, the SQLSTATE only (the driver's message copies the statement). Pinned in real
+   processes by `AccountWideRevocationDeadlockTest`, one case per victim (`deadlock_timeout=100ms` on the child meant to
+   lose; the child prints `retried <n>`, the retries it absorbed; mutations: `SKIP LOCKED` goes red at the wait,
+   `ORDER BY c.id DESC` goes red because the cycle disappears), the retry itself by `DoctrineDeadlockRetryTest` (port
+   alone) and `DeadlockRetryIntegrationTest` (the three services on the real database); mutations measured: the retry
+   removed turns 13 tests red, `resetManager()` removed 6 (`EntityManagerClosed`), a retry on any `Throwable` 9.
 5. **Approvals in a burst are not capped on the Symfony side.** The non-revoked half of the list is unbounded because
    bounded by nature (above); a burst of approvals not yet exchanged would lengthen it until the nightly purge marks
    them. Only nginx's rate limit (per IP and per pod, shared with authorize, token and revoke) slows it.
@@ -325,10 +392,10 @@ The first delivery listed three; review R1, R1b and R2 **lifted two of them** an
 `OwnMcpConnectionsControllerTest` (list, shape, `terminatedTruncated`, two reads, no token in the body, base tier 403,
 anonymous 401, 204 idempotent, indistinguishable 404, CSRF, audit once, audit failure leaves the 204),
 `OwnMcpConnectionsTest`, `RevokedConnectionAuditTest`, `AccountMcpConnectionsRevokerTest`, `AccountWideRevocationTest`
-(the three writers, atomicity, no line for nothing to revoke), `AccountWideRevocationDeadlockTest` (limit 4),
+(the three writers, atomicity, no line for nothing to revoke), `AccountWideRevocationDeadlockTest` (limit 4, one case per victim),
 `OwnMcpConnectionRevocationConcurrencyTest`, `AbandonedGrantsTest`, `CodeExchangedAtTest`, `ConsentServiceTest`,
 `ConsentControllerTest`, `ConsentRequestTest`, `McpConnectionRepositoryTest`, `ConnectionLifetimesTest`,
-`McpConnectionExpiryTest`, `Version20261028120000Test`, `Version20261028140000Test`, `Version20261028160000Test`;
+`McpConnectionExpiryTest`, `DoctrineReadSnapshotTest`, `DoctrineDeadlockRetryTest`, `DeadlockRetryIntegrationTest`, `Version20261028120000Test`, `Version20261028140000Test`, `Version20261028160000Test`, `Version20261028180000Test`, `Version20261028200000Test`;
 frontend `McpConnectionsPage.spec.ts`, `useMcpConnections.spec.ts`, `HttpMcpConnectionsRepository.spec.ts`,
 `AccountMenu.spec.ts`, `AppHeader.spec.ts`, `instant.spec.ts`, `adminGuard.spec.ts`, `OAuthConsentPage.spec.ts`,
 `useOAuthConsent.spec.ts`, `HttpOAuthConsentRepository.spec.ts`, `LoginPage.spec.ts`. Fixture

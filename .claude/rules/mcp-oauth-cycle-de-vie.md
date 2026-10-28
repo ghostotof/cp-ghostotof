@@ -386,15 +386,18 @@ paths:
   `CpgUserAdministrator::delete()`, the only path that can reach an account holding a connection (the pending-invitation
   purge removes accounts awaiting password setup, without a password, which cannot sign in, and
   `CpgUserInviter::invite()`'s removal on a full queue only reaches the account it just created, without a password) — answers a 500, deletes and audits nothing, and is asked again by hand.
-  **Accepted limit, added by #650** (F1, the author's decision of 2026-10-28): **an account-wide revocation crossing the
-  first exchange of a new grant can deadlock.** The account holds C1 (older, active) and C2 (a new grant to the same
-  client, C1 < C2, UUID v7); the exchange of C2's code locks C2 then wants C1 (`revokeOtherActiveOf()`), while
-  `revokeAllActiveOfAccount()` (password change, loss of the trusted tier) holds the account and locks C1 then C2.
-  Crossing, each waits for the other: `40P01`, a 500, nothing retries; **both transactions stay atomic** (the aborted
-  revocation changes neither the password and its date nor the roles; the aborted exchange issues no token, leaves the
-  code exchangeable and `code_exchanged_at` null). Not fixed (no `NOWAIT`, no locking of the pair before league); the
-  caller asks again by hand. `AccountWideRevocationDeadlockTest`, one case per victim; the full statement in
-  `.claude/rules/mcp-oauth-revocation-personne.md`, accepted limit 4. **Accepted limit, new** (#726): two simultaneous exchanges of
+  **Accepted limit, added by #650** (F1, the author's decision of 2026-10-28; the revocation side retried since S3): **an
+  account-wide revocation (password change, loss of the trusted tier, a setup link replacing a password) crossing the
+  first exchange of the code of a new grant forms a lock cycle** (the exchange holds C2 and wants C1, the revocation holds
+  C1 and wants C2: C1 < C2, UUID v7); PostgreSQL aborts one (`40P01`) and both stay atomic. **The revocation side is
+  retried once** (`DeadlockRetryInterface`, S3/CR4: the whole locked transaction is replayed on a reset EntityManager, the
+  account or token re-read, the hash not recomputed, the audit written once after the COMMIT that succeeded); it then ends
+  after the exchange that won (C1 `superseded`, C2 `password-changed`, one credentials-version increment). A second
+  deadlock surfaces (a 500, as before). **The exchange side is not retried** (league, out of scope): the OAuth client gets
+  a 500 from the token endpoint, its code is left unexchanged and it presents it again. No `NOWAIT`, no pair lock before
+  league. Pinned by `AccountWideRevocationDeadlockTest` (one case per victim), the retry by `DoctrineDeadlockRetryTest` and
+  `DeadlockRetryIntegrationTest`; the full statement in `.claude/rules/mcp-oauth-revocation-personne.md`, accepted limit 4.
+  **Accepted limit, new** (#726): two simultaneous exchanges of
   **two** codes of one pair (two grants of one account to one client, same millisecond) each hold
   their connection first and wait for the other's (the id order of the `UPDATE` cannot close it) — PostgreSQL aborts one (`40P01`, a 500), the other passes and revokes the
   first's connection, whose code is then dead. #649's double-click limit is gone, save a client exchanging no code (the

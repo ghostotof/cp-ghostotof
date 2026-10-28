@@ -935,5 +935,16 @@ non refusée (3) ; contrôles non refusés (6) ; `up()` de la migration sans eff
 cinq migrations dont `Version20261028200000`, empreinte n° 40, plus de colonne `credentials_changed_at` dans le déploiement final).
 
 ### Task S5 : documentation et découpage de `security-authentication.md` (> 48,9 Ko)
-- [ ] Règles, spec, registre à jour de S1–S4 ; `security-authentication.md` découpée par sous-domaine (procédure de
+- [x] Règles, spec, registre à jour de S1–S4 ; `security-authentication.md` découpée par sous-domaine (procédure de
   #605, index dans l'originale).
+
+**S5 (2026-10-28)** — `security-authentication.md` (48,9 Ko) découpée par sous-domaine, texte déplacé à l'identique
+(vérifié ligne à ligne) : `security-authentication-sessions.md` (cookies, JWT, version des identifiants), `…-connexion.md`
+(durcissement d'un échec de connexion), `…-audit.md` (`SecurityAuditLogger`) ; l'originale garde CSRF, accès de base,
+`CanonicalPath`, ancrage des pare-feu, « pas de session » et l'index. Documentation de S1 à S4 écrite d'après le code
+(`mcp-oauth-revocation-personne.md`, `security-user.md`, `mcp-oauth.md`, `mcp-oauth-cycle-de-vie.md`,
+`backend-outillage.md`, `frontend.md`, `frontend-backoffice.md`, `frontend-a11y.md`, spec 0007, ADR 0003, registre RGPD,
+notes de release de `tasks/todo.md`). Écarts consigne/code : l'échange victime rend un 500 du noyau hors format OAuth (le
+docblock de `AccountWideRevocationDeadlockTest` disait `server_error`, corrigé) ; la garde `TestDatabase::assertSafeToWipe()`
+est aussi posée sur des tests de `tests/Mcp` qui passent par la connexion du noyau.
+

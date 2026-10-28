@@ -500,7 +500,8 @@ décision du 2026-10-19, voir « Langue invalide »).
   API correspondante sous `ROLE_TRUSTED`, qui ne rend que les connexions du compte appelant.
   *Précisé le 2026-10-28 (#650, tâche 11)* : `GET /api/me/mcp-connections` rend **toutes les connexions non
   révoquées** du compte (actives, et échues que la purge n'a pas encore marquées) **et les 50 dernières
-  terminées** (révoquées, expirées marquées, conservées six mois) — le champ `terminatedTruncated` dit si
+  terminées** (révoquées, expirées marquées, conservées six mois ; choisies par instant de fin, les plus récemment
+  terminées, puis montrées par date d'octroi, et lues dans un même instantané de la base avec les non révoquées) — le champ `terminatedTruncated` dit si
   l'historique est coupé (relecture R3 : la première livraison les rendait toutes) — avec leur état (`active`,
   `expired`, `revoked`, jugé par `McpConnection::isExpiredAt()`, l'échéance affichée étant celle que l'on juge),
   la date et la cause d'une révocation, `codeExchanged` (booléen : l'accord a-t-il abouti ? c'est ce qui distingue
@@ -519,14 +520,22 @@ décision du 2026-10-19, voir « Langue invalide »).
   la page propose de relire la demande. **Une session ouverte avant le dernier changement de mot de passe du
   compte est refusée par toute l'API** (401, cookies effacés ; la personne est menée à la connexion, qui dit que sa
   session a pris fin) : le changement de mot de passe, qui coupait les connexions existantes, coupe aussi ce
-  qu'un cookie volé pourrait accorder ensuite. Le mot de passe est daté (`credentials_changed_at`) par ses deux
-  écrivains ; le re-hachage à la connexion ne remplace plus un mot de passe changé entre-temps.
+  qu'un cookie volé pourrait accorder ensuite. Le refus se juge sur une **version des identifiants** et non sur
+  une date : le compte porte `credentials_version`, avancée par ses deux écrivains du mot de passe, le JWT en
+  copie la valeur à sa création (revendication `cv`, depuis le compte dont le hachage vient d'être vérifié), et une
+  session dont la copie diffère de la version du compte est refusée — une connexion qui avait lu l'ancien hachage
+  avant le changement ne passe plus, et se reconnecter aussitôt après un changement est servi. Chaque refus est
+  inscrit au journal d'audit (`session-refused-after-credentials-change`). Un 401 d'une page du backoffice **ne
+  déplace plus la personne** : un bandeau annonce la fin de session et offre un lien de reconnexion dans un autre
+  onglet, la saisie en cours survit. Le re-hachage à la connexion ne remplace plus un mot de passe changé
+  entre-temps.
   **Limites acceptées** (décisions de l'auteur du 2026-10-28) : une approbation en vol croisant la perte du palier
   insère une connexion refusée à l'usage mais non marquée révoquée ; **la révocation de tout le compte croisant le
   premier échange d'un nouvel accord peut s'interbloquer** (PostgreSQL annule l'une des deux transactions, qui
-  restent atomiques ; la personne recommence — à rouvrir par un ticket) ; des approbations en rafale ne sont pas
-  plafonnées côté Symfony (seule la zone nginx les ralentit) ; une personne qui se reconnecte dans la seconde même
-  du changement de son mot de passe reçoit un 401 et recommence ; `upgradePassword()` ne révoque rien ; les rôles
+  restent atomiques ; **côté révocation, la transaction est relancée une fois** — le changement de mot de passe ou la
+  rétrogradation aboutit —, côté échange elle ne l'est pas : le client reçoit un 500 et présente son code à nouveau ;
+  à rouvrir par un ticket) ; des approbations en rafale ne sont pas
+  plafonnées côté Symfony (seule la zone nginx les ralentit) ; `upgradePassword()` ne révoque rien ; les rôles
   modifiés à la main en SQL ne sont pas couverts. **Levées par les relectures** : le cookie qui survivait au
   changement de mot de passe, et le consentement qui accordait au compte du cookie à l'envoi. Règle :
   `.claude/rules/mcp-oauth-revocation-personne.md`.
@@ -633,7 +642,7 @@ décision du 2026-10-19, voir « Langue invalide »).
   - « Mes connexions MCP » ne rend que les connexions du compte appelant, borne les terminées, ne donne pas
     d'échéance à une révoquée ;
   - le consentement refuse une décision prise sur la page d'un autre compte (409), et une session d'avant le
-    changement de mot de passe (401) ; l'interblocage accepté est reproduit en processus réels.
+    changement de mot de passe (401) ; l'interblocage accepté est reproduit en processus réels, sa relance côté révocation vérifiée.
 - **Frontend** (Vitest, au niveau de la page, comme les pages existantes) : page « Brancher votre
   assistant » dans les deux langues, URL construite depuis l'origine, copie accessible ; en phase 2,
   page de consentement (vérifié / déclaré, refus), « Mes connexions MCP » (liste, révocation, état
@@ -785,9 +794,23 @@ sur les chemins MCP et OAuth qu'à la tâche 14.
   du palier de confiance) et la fermeture de #650 et #730 après la fusion.
 - **2026-10-28 — relectures de la tâche 11 (#650), décisions de l'auteur** : le cookie d'avant un changement de mot
   de passe est refusé par toute l'API et non au seul consentement (R1, R1b) ; un 401 du backoffice ramène à la
-  connexion (R1c) ; le consentement est lié au compte affiché (R2, la limite acceptée du plan est levée) ; la
+  connexion (R1c, **remplacé par la seconde relecture**, ci-dessous) ; le consentement est lié au compte affiché (R2, la limite acceptée du plan est levée) ; la
   liste est bornée aux 50 dernières terminées (R3) ; l'interblocage « révocation de tout le compte × premier
   échange » est une limite acceptée, écrite et épinglée (R4, F1) ; `code_exchanged_at` s'écrit à la révocation du
   code (R4) ; aucune exposition entre la migration de `code_exchanged_at` et la fin du déploiement pour cette
   livraison (ni `main` ni `develop` ne portent de code `Mcp/Connection`). Règle d'implémentation :
   `.claude/rules/mcp-oauth-revocation-personne.md`.
+- **2026-10-28 — seconde relecture de la tâche 11 (#650), décisions de l'auteur** : (S1) le refus d'une session
+  d'avant un changement de mot de passe se juge sur une **version des identifiants** (`cpg_user.credentials_version`,
+  revendication `cv` du JWT, comparaison par égalité) et non sur une date : la colonne `credentials_changed_at`, ajoutée
+  puis retirée dans la même livraison (`Version20261028160000`, `Version20261028200000`), n'est jamais livrée, et la
+  limite de « la même seconde » disparaît ; (S2) un 401 du backoffice **ne démonte plus la page** : bandeau « Votre
+  session a pris fin », lien de reconnexion dans un autre onglet, relecture de la session au retour sur l'onglet, le
+  garde de route menant toujours à la connexion à la navigation ; (S3) la révocation de tout le compte interbloquée est
+  **relancée une fois** (port `DeadlockRetryInterface`, à la demande de chaque service, jamais dans les verrous), l'échange
+  victime ne l'est pas ; (S4) les connexions terminées se choisissent par **instant de fin**, les deux lectures de la liste
+  partagent un instantané `REPEATABLE READ`, le refus d'une session périmée est audité, la cible de retour de la connexion
+  refuse `\` et les caractères de contrôle, et les tests qui vident une table vérifient d'abord qu'ils sont sur la base
+  de test. Règles d'implémentation : `.claude/rules/mcp-oauth-revocation-personne.md`,
+  `.claude/rules/security-authentication-sessions.md`, `.claude/rules/frontend-backoffice.md`. **Migrations de la
+  livraison** : cinq, avant le rollout, dans l'ordre (`Version20261028120000` à `…200000`, empreinte n° 40 la dernière).

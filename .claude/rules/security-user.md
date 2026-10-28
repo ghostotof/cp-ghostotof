@@ -132,15 +132,31 @@ paths:
     `upgradePassword()` (same secret) and `CpgUserRegistrar` revoke nothing; the mechanics and the accepted limits:
     `.claude/rules/mcp-oauth-revocation-personne.md`. **That revocation can still deadlock** with the first exchange of
     a new grant's code (account then connections by id, against a connection then the pair's others; PostgreSQL
-    aborts one, both stay atomic, accepted, #650 F1): the « no cycle » below is about the advisory key and the account
-    row locks alone.
-    **`CpgUser::credentialsChangedAt`** (`datetimetz_immutable`, nullable, `#[Ignore]`d by the serializer; #650, R1) dates
-    the last password change: **two writers**, through `replacePassword($hash, $at)` — `CpgUserAdministrator::changePassword()`
-    and `PasswordSetupService::activate()` (a password *set* by a link is dated too, no condition: it refuses no
-    session that exists) —, the date written **with the password inside the lock's closure**, never one without the
-    other. `setPassword()` and `upgradePassword()` write no date. `hasChangedCredentialsSince(?DateTimeImmutable)` is
-    the one predicate (`<=`, an unknown instant counts as earlier, false without a change; the reasons in
-    `.claude/rules/security-authentication-sessions.md`), read by the whole `api` firewall and the consent.
+    aborts one, both stay atomic, #650 F1): the « no cycle » below is about the advisory key and the account
+    row locks alone. **The revocation side is retried once** (S3 of the second review, CR4):
+    `Application/DeadlockRetryInterface::retryOnce(Closure(bool $isRetry): T)`, implemented by
+    `Infrastructure/Doctrine/DoctrineDeadlockRetry`, **opt-in and never inside the account locks**: a service whose
+    operation can be replayed asks for it and replays its **whole** locked transaction — `changePassword()`,
+    `setSuperAdmin()`, `PasswordSetupService::complete()` (so `activate()`). The locks do not retry on their own, their
+    other callers are not replayable (the invitation handler sends a link, the purge counts what it deletes). Only
+    `DeadlockException` (`40P01`) is retried, once; `ManagerRegistry::resetManager()` runs before the second attempt,
+    always (#549 closed the EntityManager). The second attempt re-reads the account (`changePassword()`, by id) or the
+    token (`complete()`, by hash); `setSuperAdmin()` re-reads nothing (the administration lock re-reads target and
+    actor by id); the hash is not recomputed and the audit is written once, after the COMMIT that succeeded. The full
+    text, the exchange side that is not retried and the tests: `.claude/rules/mcp-oauth-revocation-personne.md`.
+    **`CpgUser::credentialsVersion`** (`cpg_user.credentials_version INT NOT NULL DEFAULT 0`, `#[Ignore]`d by the
+    serializer; `Version20261028180000`, fingerprint n° 39 of `verify.sql`; #650, R1 then S1) counts the password
+    changes: **two writers**, through `replacePassword($hash)` — `CpgUserAdministrator::changePassword()` and
+    `PasswordSetupService::activate()` (a password *set* by a link advances it too, no condition: no session can
+    exist for an account without a password) —, the version advanced **in memory with the password inside the
+    lock's closure**, on the instance re-read `FOR UPDATE`, never one without the other (an `UPDATE … SET v = v + 1`
+    would protect nothing more). **`upgradePassword()` and `setPassword()` advance nothing** (a rehash keeps the
+    secret; `CpgUserRegistrar` sets a first password at creation). The JWT carries a copy (`cv`) and the one predicate is
+    `claimsAStaleCredentialsVersion(?int)` (equality, an absent claim is 0), read by the whole `api` firewall and the
+    consent (`.claude/rules/security-authentication-sessions.md`). The first form dated the change
+    (`credentials_changed_at`, `Version20261028160000`); it was never delivered on its own: `Version20261028200000`
+    drops it in the same deployment, `hasChangedCredentialsSince()` and the instant argument of `replacePassword()`
+    are gone.
     **`upgradePassword()` is an `UPDATE … SET password = :new WHERE id = :id AND password = :old`** (F3): a rehash at
     sign-in no longer restores a password changed in between by the backoffice or a link. The price: a rehash lost when
     the password changed, harmless — the next sign-in rehashes the new one; zero rows is not an error; the instance

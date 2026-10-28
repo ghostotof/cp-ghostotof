@@ -273,7 +273,7 @@ cookie mort resterait une heure dans le navigateur à faire échouer tout `/api`
 
 **Le mécanisme : une version des identifiants, pas une date** (S1 de la seconde relecture, décision de
 l'auteur du 2026-10-28). La première forme (R1/R1b) comparait l'`iat` du JWT à
-`cpg_user.credentials_changed_at`. Elle avait deux défauts : une connexion qui a lu l'**ancien** hachage
+`cpg_user.credentials_changed_at` (colonne ajoutée puis retirée, `Version20261028200000`, dans le même déploiement : elle n'a jamais été livrée). Elle avait deux défauts : une connexion qui a lu l'**ancien** hachage
 (sans verrou, `UserCheckerListener`), vérifié le bcrypt (~270 ms) puis signé son JWT une seconde après la date
 du changement — lue avant son COMMIT, tronquée à la seconde — passait, et obtenait même une connexion MCP de
 trente jours ; et un décalage d'horloge entre pods refusait à tort une reconnexion légitime. Désormais :

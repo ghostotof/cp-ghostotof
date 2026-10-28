@@ -151,20 +151,25 @@ phase 1 parte en release seule ; puis au merge de clôture, qui archive la spec 
   - [x] S2. Seconde relecture CR1 : un 401 du backoffice ne démonte plus la page
   - [x] S3. Seconde relecture CR4 : relance unique sur interblocage — **sensible**
   - [x] S4. Seconde relecture : liste (tri, instantané), audit du refus, garde `_test`, `redirect` durci, retrait de `credentials_changed_at`
-  - [ ] S5. Seconde relecture : documentation, découpage de `security-authentication.md`
+  - [x] S5. Seconde relecture : documentation, découpage de `security-authentication.md` (en sessions, connexion et audit)
       R5a (partie code) et R5b (règles, spec, registre RGPD, plan) faites le 2026-10-28 (plan, « Corrections de relecture »).
       **Notes de la release** (tâche 11, PR de la mère vers `develop`) :
-      - **trois** migrations **avant le rollout**, dans l'ordre : `Version20261028120000` (le `CHECK` des causes de
+      - **cinq** migrations **avant le rollout**, dans l'ordre : `Version20261028120000` (le `CHECK` des causes de
         révocation, huit valeurs), `Version20261028140000` (colonne `code_exchanged_at` et rattrapage des
         connexions déjà échangées), `Version20261028160000` (colonne `cpg_user.credentials_changed_at`, nulle,
-        sans rattrapage ; empreinte n° 38 de `verify.sql`) puis `Version20261028180000` (colonne
-        `cpg_user.credentials_version`, `INT NOT NULL DEFAULT 0`, S1 ; empreinte n° 39) ; aucune variable d'environnement ;
+        sans rattrapage ; empreinte n° 38 de `verify.sql`), `Version20261028180000` (colonne
+        `cpg_user.credentials_version`, `INT NOT NULL DEFAULT 0`, S1 ; empreinte n° 39) puis `Version20261028200000`
+        (retire `credentials_changed_at`, S4 ; **empreinte n° 40, la dernière**) ; la colonne `credentials_changed_at`
+        est donc **ajoutée puis retirée dans le même déploiement** (jamais lue par un code livré) ; aucune variable
+        d'environnement ;
       - **backend avant frontend** : la décision de consentement porte `accountId` (le `GET` rend `account.id`) ; un
         frontend nouveau devant un backend ancien ne sait pas lire le résumé, une page ancienne restée ouverte devant
         le backend nouveau reçoit un 422 jusqu'à son rechargement ;
-      - **toutes les sessions ouvertes avant un changement de mot de passe sont coupées** (401, cookies effacés, retour
-        à la connexion avec « Votre session a pris fin ») : à l'usage, après la mise en production, pour un compte dont le
-        mot de passe change — aucun compte existant n'est touché au déploiement (colonne nulle) ;
+      - **toutes les sessions ouvertes avant un changement de mot de passe sont coupées** (401, cookies effacés ; dans
+        le backoffice un bandeau « Votre session a pris fin » sans quitter la page, ailleurs retour à la connexion) :
+        jugé sur la version des identifiants du compte (`credentials_version`, revendication `cv` du JWT) ; à l'usage,
+        après la mise en production, pour un compte dont le mot de passe change — aucun compte existant n'est touché au
+        déploiement (version 0 ; un jeton émis avant le déploiement, sans revendication, vaut 0 et reste servi) ;
       - un paramètre nouveau, `app.mcp.lifetime.connection_unexchanged` (`PT1H`, `config/services.yaml`, une
         valeur pour tous les environnements) : une approbation dont le code n'est jamais échangé expire au bout
         d'une heure ;
@@ -172,7 +177,9 @@ phase 1 parte en release seule ; puis au merge de clôture, qui archive la spec 
         à plat) : **le contrôle d'accessibilité au navigateur de la tâche 10 n'est pas fait** (tabulation,
         focus visible, contraste, largeurs 768 et 1024 px, session du palier de confiance requise ; s'y ajoute
         l'annonce du bandeau « Votre session a pris fin » de la page de connexion, `role="status"` présent au rendu
-        initial) — à faire avant de fusionner et à noter dans la PR ;
+        initial, **et le bandeau du backoffice** — `role="alert"` inséré, pas de focus pris, lien « Se reconnecter »
+        ouvert dans un autre onglet, relecture de la session au retour sur l'onglet) — à faire avant de fusionner et à
+        noter dans la PR ;
       - à la sortie de la phase 2, le préalable posé par #726 (B1) est levé : la personne révoque elle-même.
       **Tranché en relecture (R5b)** : `Version20261028140000` rattrape `code_exchanged_at` avant le rollout ; une
       connexion échangée par l'ancien code entre la migration et la fin du rollout resterait à `NULL` et serait jugée

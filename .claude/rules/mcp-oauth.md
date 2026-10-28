@@ -273,15 +273,19 @@ paths:
   static `detail`, `log_level: info`, nothing written nor audited. Judged **after** the revalidation (an invalid
   request stays its 400). The summary and the denial need no recent authentication (the **age**): neither opens
   anything, and a person saying no need not sign in again. **A session opened before the account's last password change
-  is refused on all three** (#650, R1: `CpgUser::hasChangedCredentialsSince()`, the same `ReauthenticationRequiredException`
-  and `type`, a sentence of its own, `afterAPasswordChange()`) — the remedy for a stolen password leaves a session
-  from before no use of this door, and the person sent back to sign in gains a clean one. Since R1b the `api`
-  firewall refuses such a session before any controller (`.claude/rules/security-authentication-sessions.md`), so by HTTP this
-  check is **not reached**; it stays as defence in depth, the door granting thirty days (the author's decision).
+  is refused on all three** (#650, R1; since S1 judged on the **credentials version**, not a date: `CpgUser::claimsAStaleCredentialsVersion()`
+  fed by `AuthenticationInstantInterface::credentialsVersion()`, the `cv` claim of the session's JWT, re-read and
+  re-verified by Lexik like the `iat`; the same `ReauthenticationRequiredException` and `type`, a sentence of its own,
+  `afterAPasswordChange()`) — the remedy for a stolen password leaves a session from before no use of this door, and
+  the person sent back to sign in gains a clean one. **No token is read for an account at version 0** (the case of
+  nearly every account: the summary and the denial pay nothing); a token without claim is version 0, an unreadable
+  one is `null`, treated as 0. Since R1b the `api` firewall refuses such a session before any controller
+  (`.claude/rules/security-authentication-sessions.md`), so by HTTP this check is **not reached**; it stays as
+  defence in depth, the door granting thirty days (the author's decision).
   **The site has no JWT refresh**: a token is only issued at
   login (and by the base access, which never reaches the consent), so `iat` is the instant the password was
-  typed; a refresh added some day must carry the original instant in a claim of its own, or this rule protects
-  nothing. Boundary pinned in `ConsentServiceTest` (exactly ten minutes granted, one second more refused,
+  typed; a refresh added some day must carry the original instant **and the original `cv`** in claims of their
+  own, or this rule protects nothing. Boundary pinned in `ConsentServiceTest` (exactly ten minutes granted, one second more refused,
   unknown instant refused), the HTTP path in `ConsentControllerTest` (a JWT signed by the site's key, `iat`
   eleven minutes back: 401 typed, no connection, code nor audit line; five minutes back: granted). **The decision is bound
   to the account the summary named** (#650, F5; below). **Accepted limit**: the POST revalidates the request

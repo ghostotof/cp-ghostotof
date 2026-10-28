@@ -61,7 +61,19 @@ paths:
   `userId`, `connectionId`, `clientId`, `cause` = the `GrantRefusal` value, `grantType`, `presentingClientId` (the
   registered client that presented it, named in the body — the token endpoint refuses any other), actor `anonymous`;
   never for a 5xx, and an audit failure leaves league's refusal unchanged (`critical` on the main channel); bounded by
-  the nginx `oauth` zone, `.claude/rules/mcp-oauth-audits.md`; never the grant, the PKCE verifier nor a hash).
+  the nginx `oauth` zone, `.claude/rules/mcp-oauth-audits.md`; never the grant, the PKCE verifier nor a hash),
+  `session-refused-after-credentials-change` (#650, S4/F-C, `SessionBeforePasswordChangeRefusalListener` **before it
+  throws**, `.claude/rules/security-authentication-sessions.md`: a session whose credentials version is no longer the
+  account's — the password was replaced since it was opened, or the session comes from a version the account does not
+  have, a restored database; « credentials » rather than « password » because the predicate is an equality of versions:
+  `userId`, `presentedVersion` — `0` when the claim is absent, `null` when it is present but unreadable —,
+  `currentVersion`, actor `anonymous` (the refusal precedes the authentication); never the token, its payload nor the
+  login identifier. **No de-duplication, on purpose**: the browser clears the cookies after the first 401
+  (`StaleSessionCookiesClearingListener`), so only a loop replaying a kept token writes several lines — and it already
+  writes as many `Authenticator failed.` on the `security` channel; de-duplicating through `cache.app` (in the database,
+  ADR 0005-compliant) would cost an SQL read and write per refused request, on the very path a replay would hammer, to
+  remove one line among several already written; the rate is bounded upstream by the nginx zones, and that replay is
+  what the person reading the log wants to see).
   Every record carries `event` (the stable kebab-case key to filter on), `actor`, `ip`, `path` (canonical), plus the subject.
   **An account is designated by its `userId` (RFC 4122) only, as subject and as `actor`, never by its
   login identifier** (issue #363): an invited account's username is derived from the local part of its
@@ -161,8 +173,8 @@ paths:
   failed on a `RfcComplianceException` quoting it, logged on every retry. Don't override `mode:` on an
   `Assert\Email` whose value ends up in an e-mail.
   `SecurityAuditLoggerTest::testNoContextValueEverCarriesAPasswordATokenOrAnEmail` pins that with
-  sentinel values run through every method (login identifiers of the actor and the subject included);
-  extend it when adding one. **`tests/Security/AccountIdentifierReachesNoLogTest.php` is the guard on
+  sentinel values run through every method (login identifiers of the actor and the subject included; it counts the
+  records, 30 since S4, so a new method fails it until it is extended); extend it when adding one. **`tests/Security/AccountIdentifierReachesNoLogTest.php` is the guard on
   every channel** (issue #363): an account invited from `prenom.sentinelle@…` goes through invitation,
   activation, replay, failed and successful login, authenticated requests, a backoffice 403, both
   per-account AI quotas, logout, the three reachable backoffice 409s, role and password changes,
