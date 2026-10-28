@@ -25,11 +25,14 @@ use Symfony\Component\Uid\Uuid;
 class McpConnectionRepository extends ServiceEntityRepository implements McpConnectionRepositoryInterface
 {
     /**
-     * Les trois choix de connexions de {@see self::revokeWhere()}, alias `c`,
+     * Les quatre choix de connexions de {@see self::revokeWhere()}, alias `c`,
      * écrits ici seuls : aucun appelant ne compose de SQL. Une ligne au plus,
      * l'identifiant étant la clé primaire ({@see self::revokeActive()}).
      */
     private const string WHERE_ONE = 'c.id = :id';
+
+    /** Cette connexion, si elle est à ce compte ({@see self::revokeActiveOfAccount()}) : une ligne au plus. */
+    private const string WHERE_ONE_OF_ACCOUNT = 'c.id = :id AND c.account_id = :account';
 
     /** Les autres connexions actives du couple compte/client ({@see self::revokeOtherActiveOf()}). */
     private const string WHERE_OTHERS_OF_PAIR = 'c.account_id = :account AND c.mcp_client_id = :client AND c.id <> :kept';
@@ -146,6 +149,38 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
     }
 
     /**
+     * La même instruction que {@see self::revokeActive()}, avec le compte en
+     * plus dans le choix (`c.id = :id AND c.account_id = :account`) : la
+     * révocation par la personne (#650). Une instruction et rien d'autre — ni
+     * `lockForUpdate()` préalable (deux allers-retours pour le même verrou),
+     * ni transaction explicite, que l'instruction, atomique, rend inutile.
+     * Le verrou est celui de {@see self::revokeWhere()} : la connexion seule,
+     * `FOR NO KEY UPDATE`, par identifiant ; une autre écriture sur la même
+     * ligne (un rafraîchissement, le marquage de la purge) se termine d'abord,
+     * puis `revoked_at IS NULL` est réévalué sur la ligne validée.
+     */
+    public function revokeActiveOfAccount(Uuid $connectionId, Uuid $accountId, RevocationCause $cause, DateTimeImmutable $at): ?RevokedConnection
+    {
+        // Une ligne au plus : l'identifiant est la clé primaire.
+        return $this->revokeWhere(
+            self::WHERE_ONE_OF_ACCOUNT,
+            ['id' => $connectionId, 'account' => $accountId],
+            ['id' => UuidType::NAME, 'account' => UuidType::NAME],
+            $cause,
+            $at,
+        )[0] ?? null;
+    }
+
+    public function belongsToAccount(Uuid $connectionId, Uuid $accountId): bool
+    {
+        return false !== $this->getEntityManager()->getConnection()->fetchOne(
+            'SELECT 1 FROM mcp_connection WHERE id = :id AND account_id = :account',
+            ['id' => $connectionId, 'account' => $accountId],
+            ['id' => UuidType::NAME, 'account' => UuidType::NAME],
+        );
+    }
+
+    /**
      * La même instruction que {@see self::revokeActive()}, sur un couple au
      * lieu d'un identifiant : `RETURNING` rend chaque connexion remplacée, de
      * quoi l'auditer sans seconde requête. La recherche du couple actif est
@@ -255,7 +290,7 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
     }
 
     /**
-     * L'instruction des trois révocations, écrite une fois (lot C des
+     * L'instruction des révocations, écrite une fois (lot C des
      * relectures de #649) : seul le choix des connexions change, `$where`,
      * l'une des trois constantes `WHERE_*` de cette classe — jamais une chaîne
      * composée par un appelant.
@@ -286,7 +321,7 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
      * remplacement de deux autres connexions d'un couple, toutes deux
      * candidates, pouvait croiser le marquage de la purge en `40P01`
      * (`TokenEndpointConcurrencyTest::testASupersessionLocksTheOtherConnectionsInIdOrder`).
-     * Une seule forme pour les trois révocations : pour une ligne
+     * Une seule forme pour les quatre révocations : pour une ligne
      * (`revokeActive()`) l'ordre ne change rien, pour la purge
      * (`revokeExpired()`) ses lignes sont déjà verrouillées, par identifiant,
      * dans la même transaction. Le `revoked_at IS NULL` de la sous-requête est
@@ -322,7 +357,7 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
     /**
      * Ce qu'une ligne rendue par `RETURNING revoked.id, revoked.account_id,
      * cl.client_id` ({@see self::revokeWhere()}) a révoqué : écrit une fois
-     * pour les trois révocations.
+     * pour les quatre révocations.
      *
      * @param array<string, mixed> $row
      */

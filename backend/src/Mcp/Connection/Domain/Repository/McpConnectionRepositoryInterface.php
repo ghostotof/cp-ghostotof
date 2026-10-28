@@ -82,6 +82,29 @@ interface McpConnectionRepositoryInterface
     public function revokeActive(Uuid $connectionId, RevocationCause $cause, DateTimeImmutable $at): ?RevokedConnection;
 
     /**
+     * Révoque la connexion **si elle est à ce compte** et ne l'est pas encore
+     * (#650, la révocation par la personne) : la même instruction que
+     * {@see self::revokeActive()}, dont le choix est « cette connexion, de ce
+     * compte » — le filtre par compte est ce qui garantit qu'on ne révoque que
+     * les siennes, la base le décide en une instruction, sans lecture
+     * préalable. Une seule écriture : l'instruction est la transaction
+     * (autocommit), l'audit revenant à l'appelant après son retour, donc après
+     * son COMMIT. La connexion d'un autre compte, inconnue ou déjà révoquée
+     * (qui garde sa première révocation) rend `null`.
+     *
+     * @return RevokedConnection|null ce qui a été révoqué ; `null` si la ligne n'est pas à ce compte, inconnue ou déjà révoquée
+     */
+    public function revokeActiveOfAccount(Uuid $connectionId, Uuid $accountId, RevocationCause $cause, DateTimeImmutable $at): ?RevokedConnection;
+
+    /**
+     * La connexion est-elle à ce compte, révoquée ou non (#650) ? Une requête,
+     * sans verrou : elle départage, quand {@see self::revokeActiveOfAccount()}
+     * a rendu `null`, une connexion déjà révoquée mais à soi (204) d'une
+     * connexion étrangère ou inconnue (404).
+     */
+    public function belongsToAccount(Uuid $connectionId, Uuid $accountId): bool;
+
+    /**
      * Révoque toute **autre** connexion active du même couple compte/client
      * que `$kept` (#649, décision 2 : un nouvel accord remplace l'ancien) —
      * même compte, même client, autre identifiant, pas encore révoquée ; une

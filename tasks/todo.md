@@ -126,7 +126,7 @@ phase 1 parte en release seule ; puis au merge de clôture, qui archive la spec 
       jamais échangé). Onze tâches, **sensibles** marquées :
   - [x] 1. Élargir le `CHECK` des causes (`person`, `password-changed`, `trusted-tier-withdrawn`) — **sensible (migration)**
   - [x] 2. `GET /api/me/mcp-connections` : ses connexions, état jugé par `isExpiredAt()` via `McpConnection::deadline()`
-  - [ ] 3. `DELETE /api/me/mcp-connections/{id}` : cause `person`, 404 indistinct, 204 idempotent, bout en bout — **sensible (sécurité)**
+  - [x] 3. `DELETE /api/me/mcp-connections/{id}` : cause `person`, 404 indistinct, 204 idempotent, bout en bout — **sensible (sécurité)**
   - [ ] 4. Révocation par la personne × rafraîchissement × marquage de la purge, en processus réels — **sensible (concurrence)**
   - [ ] 5. Changement de mot de passe → toutes les connexions du compte, port de `Shared`, atomique — **sensible (sécurité, transaction)**
   - [ ] 6. Perte de `ROLE_TRUSTED` → toutes les connexions du compte — **sensible (sécurité)**

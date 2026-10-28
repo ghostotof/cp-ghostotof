@@ -10,8 +10,11 @@ use App\Security\User\Domain\Entity\CpgUser;
 use DateTimeImmutable;
 use DateTimeInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
+use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
+use Symfony\Component\Routing\Requirement\Requirement;
 use Symfony\Component\Security\Http\Attribute\CurrentUser;
+use Symfony\Component\Uid\Uuid;
 
 /**
  * « Mes connexions MCP » (#650, spec 0007 tâche 11) : les connexions que la
@@ -20,6 +23,11 @@ use Symfony\Component\Security\Http\Attribute\CurrentUser;
  * - `GET /api/me/mcp-connections` : la liste, toutes les connexions du compte
  *   — actives, expirées, révoquées gardées six mois — avec leur état et, si
  *   elles sont coupées, quand et pourquoi.
+ * - `DELETE /api/me/mcp-connections/{id}` : la personne révoque l'une des
+ *   siennes — 204, effet à la requête suivante du client MCP. Celle d'un autre
+ *   compte et un UUID inconnu répondent le même 404 ; une connexion à elle déjà
+ *   révoquée, 204 sans rien écrire (DELETE idempotent). Une requête à cookie :
+ *   la garde CSRF double-submit s'applique, sans exclusion.
  *
  * Réservé au palier de confiance par l'`access_control` `^/api/me(/|$)`
  * existant (`ROLE_TRUSTED`, `ROLE_SUPER` par la hiérarchie) : aucune règle
@@ -50,6 +58,22 @@ final readonly class OwnMcpConnectionsController
         $response = new JsonResponse([
             'connections' => array_map($this->entryOf(...), $this->ownConnections->of($account)),
         ]);
+        $response->headers->set('Cache-Control', 'no-store');
+
+        return $response;
+    }
+
+    /**
+     * `Requirement::UUID` : un identifiant en majuscules ou mal formé est le
+     * 404 du routeur, il n'atteint pas le service. Le compte est celui du
+     * cookie, jamais un identifiant que le client enverrait.
+     */
+    #[Route('/api/me/mcp-connections/{id}', name: 'me_mcp_connections_revoke', requirements: ['id' => Requirement::UUID], methods: ['DELETE'])]
+    public function revoke(#[CurrentUser] CpgUser $account, string $id): Response
+    {
+        $this->ownConnections->revoke($account, Uuid::fromString($id));
+
+        $response = new Response(status: Response::HTTP_NO_CONTENT);
         $response->headers->set('Cache-Control', 'no-store');
 
         return $response;

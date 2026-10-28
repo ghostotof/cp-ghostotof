@@ -318,6 +318,61 @@ final class McpConnectionRepositoryTest extends KernelTestCase
     }
 
     /**
+     * La révocation par la personne (#650) : une instruction qui désigne la
+     * connexion **et** son compte. Le compte d'un autre ne touche pas la
+     * ligne (`null`, base intacte) — le filtre par compte est ce qui fait
+     * qu'on ne révoque que les siennes ; le bon compte la révoque, avec
+     * l'instant et la cause donnés.
+     */
+    public function testRevokeActiveOfAccountTouchesOnlyThatAccountsRow(): void
+    {
+        $owner = $this->persistAccount('jane');
+        $stranger = $this->persistAccount('john');
+        $connection = McpConnection::grant($owner, $this->registerClient('https://client.example.test/metadata.json'), self::SCOPE, new DateTimeImmutable());
+        $this->connections()->add($connection);
+        $at = new DateTimeImmutable('2026-10-28T10:00:00+01:00');
+
+        $byStranger = $this->connections()->revokeActiveOfAccount($connection->getId(), $stranger->getId(), RevocationCause::Person, $at);
+
+        self::assertNull($byStranger);
+        self::assertSame(['revoked_at' => null, 'revocation_cause' => null], $this->revocationRow($connection));
+
+        $byOwner = $this->connections()->revokeActiveOfAccount($connection->getId(), $owner->getId(), RevocationCause::Person, $at);
+
+        self::assertInstanceOf(RevokedConnection::class, $byOwner);
+        self::assertSame($owner->getId()->toRfc4122(), $byOwner->accountId());
+        self::assertSame('https://client.example.test/metadata.json', $byOwner->clientId());
+        self::assertSame(RevocationCause::Person, $byOwner->cause());
+        self::assertSame(['revoked_at' => $at->getTimestamp(), 'revocation_cause' => 'person'], $this->revocationRow($connection));
+    }
+
+    /** Déjà révoquée : la première révocation est gardée, rien n'est rendu à auditer. */
+    public function testRevokeActiveOfAccountKeepsTheFirstRevocation(): void
+    {
+        $connection = $this->grantConnection();
+        $accountId = $connection->account()->getId();
+        $first = new DateTimeImmutable('2026-10-23T10:00:00+02:00');
+        $this->connections()->revokeActive($connection->getId(), RevocationCause::Client, $first);
+
+        $second = $this->connections()->revokeActiveOfAccount($connection->getId(), $accountId, RevocationCause::Person, new DateTimeImmutable('2026-10-23T11:00:00+02:00'));
+
+        self::assertNull($second);
+        self::assertSame(['revoked_at' => $first->getTimestamp(), 'revocation_cause' => 'client'], $this->revocationRow($connection));
+    }
+
+    /** `belongsToAccount()` répond pour une connexion révoquée comme pour une active, et pour le seul compte propriétaire. */
+    public function testBelongsToAccountTellsOwnershipWhateverTheState(): void
+    {
+        $connection = $this->grantConnection();
+        $owner = $connection->account()->getId();
+        $this->connections()->revokeActive($connection->getId(), RevocationCause::Client, new DateTimeImmutable());
+
+        self::assertTrue($this->connections()->belongsToAccount($connection->getId(), $owner));
+        self::assertFalse($this->connections()->belongsToAccount($connection->getId(), Uuid::v7()));
+        self::assertFalse($this->connections()->belongsToAccount(Uuid::v7(), $owner));
+    }
+
+    /**
      * Un nouvel accord remplace l'accord actif du même couple compte/client
      * (#649, décision 2) : `revokeOtherActiveOf()` révoque, en une
      * instruction, toute autre connexion active de ce couple — et rien

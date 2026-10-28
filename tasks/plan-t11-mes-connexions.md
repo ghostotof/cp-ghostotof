@@ -234,7 +234,7 @@ connexions MCP » ; « Phase 2, backend » et « Frontend » des Testing Decisio
   - Route `me_mcp_connections_revoke`, `DELETE /api/me/mcp-connections/{id}`, `requirements: ['id' => Requirement::UUID]`
     → 204 `no-store` ; garde CSRF double-submit appliquée (aucune exclusion).
 
-- [ ] **Step 1 : tests rouges** (`OwnMcpConnectionsControllerTest`) :
+- [x] **Step 1 : tests rouges** (`OwnMcpConnectionsControllerTest`) :
   `testRevokingOwnConnectionCutsTheNextNominativeCall` (**bout en bout**, critère de #650 : `holdMcpConnection()`,
   la personne se reconnecte — `signInAs(TRUSTED_USERNAME, TestCredentials::superPassword())` —, DELETE → 204 ;
   cookies vidés ; `tools/call` de `get_nominative_corpus` avec `bearer()` → 401 `invalid_token`, comme
@@ -253,16 +253,16 @@ connexions MCP » ; « Phase 2, backend » et « Frontend » des Testing Decisio
   `McpConnectionRepositoryTest::testRevokeActiveOfAccountTouchesOnlyThatAccountsRow` (autre compte → `null`,
   ligne intacte) ; `OwnMcpConnectionsTest` (dépôt et journaliseur doublés : `null` + `belongsToAccount` vrai →
   aucun audit ; `null` + faux → exception ; révoquée → un audit, `person`).
-- [ ] **Step 2 : les lancer** : rouges (405 ou 404 de route).
-- [ ] **Step 3 : implémenter.** `revoke()` : `revokeActiveOfAccount(…, RevocationCause::Person, $clock->now())` ;
+- [x] **Step 2 : les lancer** : rouges (405 ou 404 de route).
+- [x] **Step 3 : implémenter.** `revoke()` : `revokeActiveOfAccount(…, RevocationCause::Person, $clock->now())` ;
   `null` → `belongsToAccount()` ? retour : exception ; sinon `FailSafeAudit::attempt(fn () =>
   $audit->mcpConnectionRevoked($revoked, $revoked->cause()->value), 'Revoked connection not audited.')`. Docblock
   de la classe : pourquoi une instruction sans `TransactionInterface` (décision 1), l'ordre des verrous (la
   connexion seule, `FOR NO KEY UPDATE`, par id : aucun cycle avec le point de jeton, la purge, le remplacement,
   qui prennent tous la connexion d'abord), la cause `person` sur une connexion échue non marquée (décision du
   Review Focus 1).
-- [ ] **Step 4 : vert** ; `tests/Mcp/`, `tests/Security/` (exposition, `ExceptionLogLevelCoverageTest`), `make back-test`, `make back-quality`.
-- [ ] **Step 5 : commit** `feat(mcp): la personne révoque une de ses connexions MCP (#650)`.
+- [x] **Step 4 : vert** ; `tests/Mcp/`, `tests/Security/` (exposition, `ExceptionLogLevelCoverageTest`), `make back-test`, `make back-quality`.
+- [x] **Step 5 : commit** `feat(mcp): la personne révoque une de ses connexions MCP (#650)`.
 
 ### Task 4 : la révocation par la personne sous concurrence — **Sensible (concurrence)**
 
