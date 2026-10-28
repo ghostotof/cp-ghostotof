@@ -30,6 +30,7 @@ final class ConnectionLifetimesTest extends TestCase
         'refreshLifetime' => 'P30D',
         'idleLifetime' => 'P30D',
         'maximumLifetime' => 'P90D',
+        'unexchangedLifetime' => 'PT1H',
     ];
 
     public function testTheConfiguredValuesAreRead(): void
@@ -41,12 +42,16 @@ final class ConnectionLifetimesTest extends TestCase
         self::assertSame('30 0 0', $lifetimes->refreshToken()->format('%d %h %i'));
         self::assertSame('30 0 0', $lifetimes->idle()->format('%d %h %i'));
         self::assertSame('90 0 0', $lifetimes->maximum()->format('%d %h %i'));
+        self::assertSame('0 1 0', $lifetimes->unexchanged()->format('%d %h %i'));
 
         // `DateInterval` est mutable : chaque lecture rend une copie, qu'un
         // appelant peut modifier sans toucher la suivante.
         $copy = $lifetimes->idle();
         $copy->d = 1;
         self::assertSame('30 0 0', $lifetimes->idle()->format('%d %h %i'));
+        $copy = $lifetimes->unexchanged();
+        $copy->h = 5;
+        self::assertSame('0 1 0', $lifetimes->unexchanged()->format('%d %h %i'));
     }
 
     /**
@@ -167,10 +172,10 @@ final class ConnectionLifetimesTest extends TestCase
         yield 'durée maximale au plancher' => [['idleLifetime' => 'P1DT1H11M1S', 'maximumLifetime' => 'P1DT1H11M'], 'maximumLifetime', 'freshConnection'];
         yield 'durée maximale d\'une seconde au-delà du plancher' => [['idleLifetime' => 'P1DT1H11M1S', 'maximumLifetime' => 'P1DT1H11M1S'], null, null];
         yield 'inactivité d\'un jour sous une durée maximale admise' => [['idleLifetime' => 'P1D', 'maximumLifetime' => 'P1DT1H11M1S'], 'idleLifetime', 'freshConnection'];
-        yield 'code d\'une heure, inactivité d\'un jour, une heure et onze minutes' => [['codeLifetime' => 'PT1H', 'idleLifetime' => 'P1DT1H11M1S'], 'idleLifetime', 'freshConnection'];
-        yield 'code d\'une heure, inactivité au plancher' => [['codeLifetime' => 'PT1H', 'idleLifetime' => 'P1DT2H1M'], 'idleLifetime', 'freshConnection'];
-        yield 'code d\'une heure, inactivité d\'une seconde au-delà du plancher' => [['codeLifetime' => 'PT1H', 'idleLifetime' => 'P1DT2H1M1S'], null, null];
-        yield 'code d\'une heure, durée maximale au plancher' => [['codeLifetime' => 'PT1H', 'idleLifetime' => 'P1DT2H1M1S', 'maximumLifetime' => 'P1DT2H1M'], 'maximumLifetime', 'freshConnection'];
+        yield 'code d\'une heure, inactivité d\'un jour, une heure et onze minutes' => [['codeLifetime' => 'PT1H', 'unexchangedLifetime' => 'PT2H', 'idleLifetime' => 'P1DT1H11M1S'], 'idleLifetime', 'freshConnection'];
+        yield 'code d\'une heure, inactivité au plancher' => [['codeLifetime' => 'PT1H', 'unexchangedLifetime' => 'PT2H', 'idleLifetime' => 'P1DT2H1M'], 'idleLifetime', 'freshConnection'];
+        yield 'code d\'une heure, inactivité d\'une seconde au-delà du plancher' => [['codeLifetime' => 'PT1H', 'unexchangedLifetime' => 'PT2H', 'idleLifetime' => 'P1DT2H1M1S'], null, null];
+        yield 'code d\'une heure, durée maximale au plancher' => [['codeLifetime' => 'PT1H', 'unexchangedLifetime' => 'PT2H', 'idleLifetime' => 'P1DT2H1M1S', 'maximumLifetime' => 'P1DT2H1M'], 'maximumLifetime', 'freshConnection'];
     }
 
     /**
@@ -344,6 +349,188 @@ final class ConnectionLifetimesTest extends TestCase
     }
 
     /**
+     * La durée d'une connexion jamais échangée (#730) n'est que du temps
+     * écoulé : heures, minutes, secondes. Un jour, un mois ou une année se
+     * comptent sur le calendrier (721 heures à travers le passage à l'heure
+     * d'hiver), et la borne de présélection de la purge, `now − durée +
+     * marge`, n'est exacte à la seconde que si la durée ne dépend pas du
+     * calendrier. `PT1H` est la valeur configurée ; `PT36H` (des heures, pas
+     * un jour et demi) est admise.
+     *
+     * @return iterable<string, array{string, bool}>
+     */
+    public static function unexchangedDurationsByKind(): iterable
+    {
+        yield 'une heure' => ['PT1H', true];
+        yield 'trente-six heures' => ['PT36H', true];
+        yield 'quatre-vingt-dix minutes' => ['PT90M', true];
+        yield 'un jour' => ['P1D', false];
+        yield 'un jour et une heure' => ['P1DT1H', false];
+        yield 'une semaine' => ['P1W', false];
+        yield 'un mois' => ['P1M', false];
+        yield 'une année' => ['P1Y', false];
+    }
+
+    #[DataProvider('unexchangedDurationsByKind')]
+    public function testTheUnexchangedLifetimeIsElapsedTimeOnly(string $value, bool $accepted): void
+    {
+        if ($accepted) {
+            self::assertSame($this->seconds(new DateInterval($value)), $this->seconds($this->lifetimes(['unexchangedLifetime' => $value])->unexchanged()));
+
+            return;
+        }
+
+        $this->expectException(InvalidConnectionLifetimeException::class);
+        $this->expectExceptionMessage(InvalidConnectionLifetimeException::notElapsedTime('unexchangedLifetime')->getMessage());
+
+        $this->lifetimes(['unexchangedLifetime' => $value]);
+    }
+
+    /**
+     * Le plancher de la durée des connexions jamais échangées (#730, CR1 de
+     * #726 préservé) : la durée dépasse celle d'un code **plus deux fois la
+     * minute de jeu**, exclu. La présélection recule d'une minute (candidate ⇒
+     * âge ≥ durée − 1 min) et un code encore échangeable a au plus sa durée plus
+     * cette minute (troncature, écart octroi-code, horloges) : pour que la
+     * première borne reste au-delà de la seconde, la durée doit dépasser le code
+     * de deux minutes. Avec un code de `PT10M`, `PT12M` est refusée et `PT12M1S`
+     * admise ; la borne suit la durée configurée du code.
+     *
+     * @return iterable<string, array{array<string, string>, bool}>
+     */
+    public static function unexchangedDurationsAroundTheCodeWindow(): iterable
+    {
+        yield 'code de dix minutes, durée de dix minutes' => [['unexchangedLifetime' => 'PT10M'], false];
+        yield 'code de dix minutes, durée de douze minutes (plancher)' => [['unexchangedLifetime' => 'PT12M'], false];
+        yield 'code de dix minutes, douze minutes et une seconde' => [['unexchangedLifetime' => 'PT12M1S'], true];
+        yield 'code d\'une heure, durée de une heure deux minutes (plancher)' => [['codeLifetime' => 'PT1H', 'unexchangedLifetime' => 'PT1H2M'], false];
+        yield 'code d\'une heure, une heure deux minutes et une seconde' => [['codeLifetime' => 'PT1H', 'unexchangedLifetime' => 'PT1H2M1S'], true];
+    }
+
+    /**
+     * @param array<string, string> $overrides
+     */
+    #[DataProvider('unexchangedDurationsAroundTheCodeWindow')]
+    public function testTheUnexchangedLifetimeMustBeatTheCodeWindowByTwoMinutes(array $overrides, bool $accepted): void
+    {
+        if ($accepted) {
+            self::assertSame($this->seconds(new DateInterval($overrides['unexchangedLifetime'])), $this->seconds($this->lifetimes($overrides)->unexchanged()));
+
+            return;
+        }
+
+        $this->expectException(InvalidConnectionLifetimeException::class);
+        $this->expectExceptionMessage(InvalidConnectionLifetimeException::notBeyondCodeWindow('unexchangedLifetime')->getMessage());
+
+        $this->lifetimes($overrides);
+    }
+
+    /**
+     * Une connexion jamais échangée ne vit pas aussi longtemps qu'une
+     * connexion inactive : l'égalité à l'inactivité est refusée, une seconde de
+     * moins admise.
+     */
+    public function testTheUnexchangedLifetimeMustStayBelowTheIdleLifetime(): void
+    {
+        self::assertSame(
+            $this->seconds(new DateInterval('PT719H59M59S')),
+            $this->seconds($this->lifetimes(['unexchangedLifetime' => 'PT719H59M59S'])->unexchanged()),
+        );
+
+        $this->expectException(InvalidConnectionLifetimeException::class);
+        $this->expectExceptionMessage(InvalidConnectionLifetimeException::notBelowIdle('unexchangedLifetime')->getMessage());
+
+        $this->lifetimes(['idleLifetime' => 'PT720H', 'unexchangedLifetime' => 'PT720H']);
+    }
+
+    /** Un refus de la durée des connexions jamais échangées nomme le paramètre, jamais la valeur. */
+    public function testTheUnexchangedRefusalsNameTheParameterNeverTheValue(): void
+    {
+        foreach ([
+            InvalidConnectionLifetimeException::notElapsedTime('unexchangedLifetime'),
+            InvalidConnectionLifetimeException::notBeyondCodeWindow('unexchangedLifetime'),
+            InvalidConnectionLifetimeException::notBelowIdle('unexchangedLifetime'),
+        ] as $refusal) {
+            self::assertStringContainsString('unexchangedLifetime', $refusal->getMessage());
+        }
+    }
+
+    /**
+     * L'échéance d'une connexion octroyée à `$grantedAt` dont le code n'a
+     * jamais été échangé (#730) : l'octroi plus la durée, en temps écoulé, à
+     * la seconde — y compris pendant l'heure répétée du passage à l'heure
+     * d'hiver, où une heure de pendule vaut zéro ou deux heures écoulées.
+     */
+    public function testTheUnexchangedDeadlineIsElapsedTimeAfterTheGrant(): void
+    {
+        $paris = new DateTimeZone('Europe/Paris');
+        $lifetimes = $this->lifetimes();
+
+        $beforeTheChange = new DateTimeImmutable('2026-10-25 02:30:00+02:00')->setTimezone($paris);
+        $afterTheChange = new DateTimeImmutable('2026-10-25 02:30:00+01:00')->setTimezone($paris);
+
+        self::assertSame(3600, $lifetimes->unexchangedDeadline($beforeTheChange)->getTimestamp() - $beforeTheChange->getTimestamp());
+        self::assertSame('2026-10-25T02:30:00+01:00', $lifetimes->unexchangedDeadline($beforeTheChange)->format(DATE_ATOM), 'Une heure écoulée après 02:30 CEST : 02:30 CET, l\'heure répétée.');
+        self::assertSame(3600, $lifetimes->unexchangedDeadline($afterTheChange)->getTimestamp() - $afterTheChange->getTimestamp());
+    }
+
+    /**
+     * La troisième borne de la présélection (#730) : `maintenant − durée
+     * + une minute`, en temps écoulé. **La marge est ce que la valeur épingle**
+     * (mesurée : à zéro, la purge reste correcte — la borne est alors
+     * exactement l'échéance —, c'est ce test et le suivant qui le voient).
+     * Pas de jour de calendrier ici : la même valeur, un jour de 23 ou
+     * de 25 heures ne la déplace pas.
+     */
+    public function testTheUnexchangedPreselectionBoundIsNowMinusTheLifetimePlusOneMinute(): void
+    {
+        $lifetimes = $this->lifetimes();
+
+        $utc = $lifetimes->preselectionBoundsAt(new DateTimeImmutable('2026-06-15T10:00:00+00:00'));
+        self::assertSame('2026-06-15T09:01:00+00:00', $utc->unexchangedBefore()->format(DATE_ATOM));
+
+        $paris = new DateTimeZone('Europe/Paris');
+        foreach (['2026-10-25 02:30:00+02:00', '2026-10-25 02:30:00+01:00', '2026-03-29 03:30:00+02:00'] as $instant) {
+            $now = new DateTimeImmutable($instant)->setTimezone($paris);
+            self::assertSame(
+                $now->getTimestamp() - 3600 + 60,
+                $lifetimes->preselectionBoundsAt($now)->unexchangedBefore()->getTimestamp(),
+                'La borne des non échangées n\'est pas du temps écoulé : '.$instant,
+            );
+        }
+    }
+
+    /**
+     * Le plancher ferme le croisement aussi pour la durée des connexions
+     * jamais échangées (#730, CR1 de #726) : à la plus courte durée admise
+     * (`PT12M1S` avec un code de `PT10M`), aucune connexion dont le code est
+     * encore échangeable — au plus `now − code`, une minute de jeu en plus —
+     * n'est présélectionnée par la troisième borne, à aucune seconde autour
+     * des deux changements d'heure de 2026. Témoin : au plancher refusé
+     * (`PT12M`), elle l'est — le balayage voit quelque chose.
+     */
+    public function testAFreshConnectionIsNeverPreselectedAsUnexchanged(): void
+    {
+        $code = new DateInterval(self::CONFIGURED['codeLifetime']);
+        $shortest = $this->lifetimes(['unexchangedLifetime' => 'PT12M1S']);
+
+        self::assertNull(
+            $this->firstFreshConnectionPreselected(
+                static fn (DateTimeImmutable $now): DateTimeImmutable => $shortest->preselectionBoundsAt($now)->unexchangedBefore(),
+                $code,
+            ),
+            'Une connexion dont le code est encore échangeable est candidate de la purge par la troisième borne.',
+        );
+
+        $margin = new DateInterval(ConnectionLifetimes::SECOND_TRUNCATION_AND_SKEW_MARGIN);
+        $written = static fn (DateInterval $duration): Closure => static fn (DateTimeImmutable $now): DateTimeImmutable => $now->sub($duration)->add($margin);
+        self::assertNotNull(
+            $this->firstFreshConnectionPreselected($written(new DateInterval('PT12M')), $code),
+            'Le témoin au plancher refusé n\'est pas atteint : le balayage ne voit rien.',
+        );
+    }
+
+    /**
      * Revue n° 4 : 30 jours de calendrier à Paris, comptés à travers le
      * passage à l'heure d'hiver (2026-10-25), durent 721 heures. L'échéance
      * tombe à la même heure murale, ni une heure avant ni une heure après —
@@ -394,6 +581,7 @@ final class ConnectionLifetimesTest extends TestCase
             $values['refreshLifetime'],
             $values['idleLifetime'],
             $values['maximumLifetime'],
+            $values['unexchangedLifetime'],
         );
     }
 }

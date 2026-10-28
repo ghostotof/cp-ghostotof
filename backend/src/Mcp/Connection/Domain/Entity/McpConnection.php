@@ -104,6 +104,16 @@ class McpConnection implements McpConnectionReference
     #[ORM\Column(type: Types::DATETIMETZ_IMMUTABLE, nullable: true)]
     private ?DateTimeImmutable $lastUsedAt = null;
 
+    /**
+     * L'instant où le code de l'octroi a été échangé pour la première fois
+     * (#730), `null` tant qu'il ne l'a pas été : la connexion d'une approbation
+     * abandonnée, dont le code n'est jamais échangé, expire tôt
+     * ({@see self::deadline()}). Écrit au premier échange par
+     * {@see self::recordCodeExchangeAt()}, jamais ensuite.
+     */
+    #[ORM\Column(type: Types::DATETIMETZ_IMMUTABLE, nullable: true)]
+    private ?DateTimeImmutable $codeExchangedAt = null;
+
     #[ORM\Column(type: Types::DATETIMETZ_IMMUTABLE, nullable: true)]
     private ?DateTimeImmutable $revokedAt = null;
 
@@ -210,6 +220,26 @@ class McpConnection implements McpConnectionReference
         return true;
     }
 
+    /** L'instant du premier échange du code de l'octroi, ou `null` s'il n'a jamais eu lieu (#730). */
+    public function codeExchangedAt(): ?DateTimeImmutable
+    {
+        return $this->codeExchangedAt;
+    }
+
+    /**
+     * Note le premier échange du code de l'octroi à l'instant `$at` (#730) :
+     * la connexion cesse d'être soumise à l'échéance des connexions jamais
+     * échangées. **Écrit une fois** : un appel suivant ne déplace pas l'instant
+     * (un code ne s'échange qu'une fois ; un rejeu est une compromission,
+     * jugée ailleurs). Appelé par le remplacement au premier échange
+     * ({@see \App\Mcp\Connection\Application\CodeExchangeSupersession}), sur
+     * l'instance que league a verrouillée, dans la transaction de l'échange.
+     */
+    public function recordCodeExchangeAt(DateTimeImmutable $at): void
+    {
+        $this->codeExchangedAt ??= $at;
+    }
+
     public function revokedAt(): ?DateTimeImmutable
     {
         return $this->revokedAt;
@@ -235,7 +265,11 @@ class McpConnection implements McpConnectionReference
      * - l'inactivité : {@see ConnectionLifetimes::idleDeadline()} de
      *   `lastUsedAt ?? grantedAt` ;
      * - la durée maximale : {@see ConnectionLifetimes::maximumDeadline()} de
-     *   `grantedAt`.
+     *   `grantedAt` ;
+     * - **tant que son code n'a pas été échangé** (#730) :
+     *   {@see ConnectionLifetimes::unexchangedDeadline()} de `grantedAt`, une
+     *   heure — l'approbation abandonnée n'est ni remplacée ni révoquée par
+     *   personne, aucun usage ne la tient.
      *
      * Des échéances, jamais des seuils (`$now` moins la durée) : une échéance
      * ne dépend que de la connexion, l'expiration est donc monotone — morte à
@@ -258,11 +292,12 @@ class McpConnection implements McpConnectionReference
     public function deadline(DateTimeZone $zone, ConnectionLifetimes $lifetimes): DateTimeImmutable
     {
         $lastActivity = ($this->lastUsedAt ?? $this->grantedAt)->setTimezone($zone);
+        $grantedAt = $this->grantedAt->setTimezone($zone);
+        $deadline = min($lifetimes->idleDeadline($lastActivity), $lifetimes->maximumDeadline($grantedAt));
 
-        return min(
-            $lifetimes->idleDeadline($lastActivity),
-            $lifetimes->maximumDeadline($this->grantedAt->setTimezone($zone)),
-        );
+        return null === $this->codeExchangedAt
+            ? min($deadline, $lifetimes->unexchangedDeadline($grantedAt))
+            : $deadline;
     }
 
     /**

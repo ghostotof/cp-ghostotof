@@ -405,14 +405,14 @@ Ajoutée par décision de l'auteur du 2026-10-28 (prémisse inexacte de la déci
   - `findActiveCandidatesForExpiry(PreselectionBounds $bounds): list<McpConnection>` (ajoute `OR (c.code_exchanged_at IS NULL AND c.granted_at <= :unexchangedBefore)`).
   - Paramètre `app.mcp.lifetime.connection_unexchanged: 'PT1H'`.
 
-- [ ] **Step 1 : la reproduction de #730, rouge.** `AbandonedGrantsTest::testAbandonedApprovalsAccumulateThenExpire` :
+- [x] **Step 1 : la reproduction de #730, rouge.** `AbandonedGrantsTest::testAbandonedApprovalsAccumulateThenExpire` :
   trois approbations du compte `trusted` au même client, aucun code échangé → trois connexions actives (la
   reproduction) ; `granted_at` reculé en SQL de `connection_unexchanged` plus une seconde → `GET /api/me/mcp-connections`
   les dit `expired` ; `app:mcp:purge` les marque `expired`, trois lignes `mcp-connection-revoked` acteur `system`.
   `testAnExchangedConnectionOutlivesTheUnexchangedLifetime` (une connexion échangée, `granted_at` reculé pareil :
   `active`, rafraîchissement 200, non marquée). `testACodeStillExchangeableIsNeverPreselected` : une connexion
   octroyée il y a la durée d'un code plus une minute n'est pas présélectionnée.
-- [ ] **Step 2 : tests rouges unitaires.** `ConnectionLifetimesTest` : `PT1H` accepté ; `P1D`, `P1DT1H` refusés
+- [x] **Step 2 : tests rouges unitaires.** `ConnectionLifetimesTest` : `PT1H` accepté ; `P1D`, `P1DT1H` refusés
   `notElapsedTime` ; `PT12M` refusé et `PT12M1S` accepté avec un code `PT10M` (`notBeyondCodeWindow`) ;
   `connection_idle` égal refusé `notBelowIdle` ; `testAFreshConnectionIsNeverPreselectedAsUnexchanged` (balayage
   seconde à seconde autour des deux changements d'heure, sur le modèle de
@@ -421,7 +421,7 @@ Ajoutée par décision de l'auteur du 2026-10-28 (prémisse inexacte de la déci
   `recordCodeExchangeAt()` appelé sur l'instance gardée, à l'instant de l'horloge. `McpConnectionPurgerTest::testThePurgeAndIsExpiredAtAgreeAtTheBoundary`
   étendu à la troisième borne. `Version20261028140000Test` : la colonne ajoutée, le rattrapage (une connexion avec
   jeton ou `last_used_at` reçoit `granted_at`, une sans aucun reste `NULL`), `down()` retire la colonne.
-- [ ] **Step 3 : implémenter.** Migration : `ALTER TABLE mcp_connection ADD code_exchanged_at TIMESTAMP(0) WITH
+- [x] **Step 3 : implémenter.** Migration : `ALTER TABLE mcp_connection ADD code_exchanged_at TIMESTAMP(0) WITH
   TIME ZONE DEFAULT NULL`, puis `UPDATE … SET code_exchanged_at = granted_at WHERE last_used_at IS NOT NULL OR
   EXISTS (mcp_access_token) OR EXISTS (mcp_refresh_token)` (l'instant est approché : seul « nul ou non » est lu,
   docblock le dit ; la phase 2 n'étant jamais sortie, aucune base de production n'a de ligne). Domaine et
@@ -430,12 +430,12 @@ Ajoutée par décision de l'auteur du 2026-10-28 (prémisse inexacte de la déci
   (même transaction, instance déjà verrouillée par league ; l'ordre des verrous inchangé). Docblocks :
   `ConnectionLifetimes` (pourquoi le temps écoulé seul et la marge d'une minute suffisent ; pourquoi CR1 tient :
   candidate ⇒ code mort ⇒ jamais verrouillée la première par un échange, toutes les autres prises par id).
-- [ ] **Step 4 : empreinte** de la migration dans `verify.sql` (Task 1, Step 3) ; `doctrine:migrations:diff` vide.
-- [ ] **Step 5 : vert** ; `tests/Mcp/` entier (dont les tests de concurrence et d'ordre de verrous), `tests/Migrations/`,
+- [x] **Step 4 : empreinte** de la migration dans `verify.sql` (Task 1, Step 3) ; `doctrine:migrations:diff` vide.
+- [x] **Step 5 : vert** ; `tests/Mcp/` entier (dont les tests de concurrence et d'ordre de verrous), `tests/Migrations/`,
   `make back-test`, `make back-quality`. Mutation à mesurer et écrire dans le commit : la borne sans la marge
   d'une minute → `testThePurgeAndIsExpiredAtAgreeAtTheBoundary` rouge ; `recordCodeExchangeAt()` retiré →
   `testAnExchangedConnectionOutlivesTheUnexchangedLifetime` rouge.
-- [ ] **Step 6 : commit** `fix(mcp): une connexion dont le code n'est jamais échangé expire au bout d'une heure (#730)`.
+- [x] **Step 6 : commit** `fix(mcp): une connexion dont le code n'est jamais échangé expire au bout d'une heure (#730)`.
 
 ### Task 8 : la page de consentement dit quel compte accorde
 

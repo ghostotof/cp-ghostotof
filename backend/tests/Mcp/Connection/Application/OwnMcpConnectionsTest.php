@@ -102,7 +102,7 @@ final class OwnMcpConnectionsTest extends TestCase
         return new OwnMcpConnections(
             $connections,
             new MockClock(new DateTimeImmutable(self::NOW)),
-            ConnectionLifetimes::fromConfiguration('PT10M', 'PT1H', 'P30D', 'P30D', 'P90D'),
+            ConnectionLifetimes::fromConfiguration('PT10M', 'PT1H', 'P30D', 'P30D', 'P90D', 'PT1H'),
             $auditLogger,
             new FailSafeAudit(new NullLogger()),
         );

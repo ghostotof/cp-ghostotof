@@ -12,7 +12,8 @@ use DateTimeImmutable;
 /**
  * Les durées d'une connexion MCP et de ses jetons (#649) : code
  * d'autorisation, jeton d'accès, jeton de rafraîchissement, délai
- * d'inactivité et durée maximale de la connexion.
+ * d'inactivité et durée maximale de la connexion, plus (#730) la durée d'une
+ * connexion dont le code n'a jamais été échangé.
  *
  * Lues en configuration (paramètres `app.mcp.lifetime.*` de
  * `config/services.yaml`), **une seule valeur pour tous les environnements**,
@@ -28,7 +29,12 @@ use DateTimeImmutable;
  * **L'échéance d'une connexion se définit par deux échéances fixes**,
  * {@see self::idleDeadline()} et {@see self::maximumDeadline()} : le dernier
  * usage (ou l'octroi) plus le délai d'inactivité, l'octroi plus la durée
- * maximale ({@see \App\Mcp\Connection\Domain\Entity\McpConnection::isExpiredAt()}).
+ * maximale ({@see \App\Mcp\Connection\Domain\Entity\McpConnection::isExpiredAt()}),
+ * **et d'une troisième tant que le code n'a pas été échangé** (#730),
+ * {@see self::unexchangedDeadline()} : l'octroi plus une heure. Sans elle,
+ * chaque approbation abandonnée — le remplacement n'a lieu qu'au premier
+ * échange d'un code (#726, D2) — restait active trente jours, et elles
+ * s'accumulaient.
  * Une échéance ne dépend que de la connexion, jamais de l'instant jugé : une
  * fois atteinte, la connexion reste morte. Des seuils (l'instant jugé moins la
  * durée) ne le garantissaient pas : pendant l'heure répétée du passage à
@@ -117,6 +123,7 @@ final readonly class ConnectionLifetimes
         private DateInterval $refreshToken,
         private DateInterval $idle,
         private DateInterval $maximum,
+        private DateInterval $unexchanged,
     ) {
     }
 
@@ -130,17 +137,22 @@ final readonly class ConnectionLifetimes
      * minute (#726 : la connexion d'un code encore échangeable n'est alors
      * jamais candidate de la purge, voir {@see self::MINIMUM_CONNECTION_LIFETIME},
      * {@see self::CLOCK_CHANGE_MARGIN} et
-     * {@see self::SECOND_TRUNCATION_AND_SKEW_MARGIN}), enfin les deux ordres.
+     * {@see self::SECOND_TRUNCATION_AND_SKEW_MARGIN}), puis la durée des
+     * connexions jamais échangées (#730) — du temps écoulé seulement, au-delà
+     * de la durée d'un code plus deux minutes de jeu, sous le délai
+     * d'inactivité —, enfin les deux ordres.
      *
      * @throws InvalidConnectionLifetimeException si une durée est illisible ou
      *         nulle, si l'inactivité ou la durée maximale est sous un jour
      *         (la marge de présélection de la purge) ou ne dépasse pas un jour
      *         plus la durée d'un code plus une heure et une minute, si
      *         l'inactivité dépasse la durée
-     *         maximale, ou si le jeton d'accès survit à son jeton de
-     *         rafraîchissement
+     *         maximale, si le jeton d'accès survit à son jeton de
+     *         rafraîchissement, ou si la durée des connexions jamais échangées
+     *         compte un jour, un mois ou une année, ne dépasse pas la durée
+     *         d'un code de deux minutes de jeu, ou atteint l'inactivité
      */
-    public static function fromConfiguration(string $codeLifetime, string $accessLifetime, string $refreshLifetime, string $idleLifetime, string $maximumLifetime): self
+    public static function fromConfiguration(string $codeLifetime, string $accessLifetime, string $refreshLifetime, string $idleLifetime, string $maximumLifetime, string $unexchangedLifetime): self
     {
         $durations = [
             'codeLifetime' => self::read('codeLifetime', $codeLifetime),
@@ -148,6 +160,7 @@ final readonly class ConnectionLifetimes
             'refreshLifetime' => self::read('refreshLifetime', $refreshLifetime),
             'idleLifetime' => self::read('idleLifetime', $idleLifetime),
             'maximumLifetime' => self::read('maximumLifetime', $maximumLifetime),
+            'unexchangedLifetime' => self::read('unexchangedLifetime', $unexchangedLifetime),
         ];
 
         $reference = new DateTimeImmutable(self::REFERENCE_INSTANT);
@@ -180,6 +193,30 @@ final readonly class ConnectionLifetimes
             }
         }
 
+        // La durée des connexions jamais échangées (#730), après les deux
+        // planchers (elle lit la durée du code, qui doit avoir passé la
+        // positivité) : du temps écoulé seulement — la borne de présélection de
+        // la purge n'est exacte à la seconde que sans unité de calendrier —,
+        // puis au-delà de la fenêtre d'un code (la borne recule d'une minute, un
+        // code encore échangeable a au plus sa durée plus une minute : deux
+        // minutes de jeu, exclues), puis sous l'inactivité.
+        $unexchanged = $durations['unexchangedLifetime'];
+        if (0 !== $unexchanged->y || 0 !== $unexchanged->m || 0 !== $unexchanged->d) {
+            throw InvalidConnectionLifetimeException::notElapsedTime('unexchangedLifetime');
+        }
+
+        $codeWindowEnd = $reference
+            ->add($durations['codeLifetime'])
+            ->add(new DateInterval(self::SECOND_TRUNCATION_AND_SKEW_MARGIN))
+            ->add(new DateInterval(self::SECOND_TRUNCATION_AND_SKEW_MARGIN));
+        if ($reference->add($unexchanged) <= $codeWindowEnd) {
+            throw InvalidConnectionLifetimeException::notBeyondCodeWindow('unexchangedLifetime');
+        }
+
+        if ($reference->add($unexchanged) >= $reference->add($durations['idleLifetime'])) {
+            throw InvalidConnectionLifetimeException::notBelowIdle('unexchangedLifetime');
+        }
+
         if ($reference->add($durations['idleLifetime']) > $reference->add($durations['maximumLifetime'])) {
             throw InvalidConnectionLifetimeException::idleExceedsMaximum();
         }
@@ -194,6 +231,7 @@ final readonly class ConnectionLifetimes
             $durations['refreshLifetime'],
             $durations['idleLifetime'],
             $durations['maximumLifetime'],
+            $unexchanged,
         );
     }
 
@@ -228,6 +266,16 @@ final readonly class ConnectionLifetimes
     }
 
     /**
+     * Durée d'une connexion dont le code n'a jamais été échangé (#730) : passé
+     * ce délai après l'octroi, elle expire. Du temps écoulé, jamais un jour
+     * de calendrier.
+     */
+    public function unexchanged(): DateInterval
+    {
+        return clone $this->unexchanged;
+    }
+
+    /**
      * L'instant où une connexion inactive depuis `$lastActivity` (son dernier
      * usage, ou son octroi) expire : atteint, elle est morte.
      *
@@ -252,9 +300,22 @@ final readonly class ConnectionLifetimes
     }
 
     /**
-     * Les deux bornes de la présélection SQL de la purge à `$now` (#726) :
-     * `$now − durée + MINIMUM_CONNECTION_LIFETIME`, pour l'inactivité puis
-     * pour la durée maximale. **Calculées ici seulement**, où vivent les
+     * L'instant où une connexion octroyée à `$grantedAt`, dont le code n'a
+     * jamais été échangé, expire (#730) : atteint, elle est morte. Du temps
+     * écoulé — l'intervalle n'a ni jour, ni mois, ni année, la configuration
+     * le refuse —, donc une heure de pendule répétée ou sautée par un
+     * changement d'heure ne le déplace pas.
+     */
+    public function unexchangedDeadline(DateTimeImmutable $grantedAt): DateTimeImmutable
+    {
+        return $grantedAt->add($this->unexchanged);
+    }
+
+    /**
+     * Les trois bornes de la présélection SQL de la purge à `$now` (#726,
+     * #730) : `$now − durée + MINIMUM_CONNECTION_LIFETIME`, pour l'inactivité
+     * puis pour la durée maximale, et `$now − durée des non échangées +
+     * SECOND_TRUNCATION_AND_SKEW_MARGIN` pour les connexions jamais échangées. **Calculées ici seulement**, où vivent les
      * durées et la marge : la purge les passe à
      * `findActiveCandidatesForExpiry()`, et `McpConnectionPurgeLockOrderTest`
      * les lit ici pour affirmer, avant sa course, qu'une connexion est bien
@@ -272,6 +333,20 @@ final readonly class ConnectionLifetimes
      * (`new DateInterval`, jamais `modify()`, #445), les jours sur le
      * calendrier du fuseau de `$now` — à Paris, une borne recule de 30 jours
      * de calendrier, 721 heures à travers le passage à l'heure d'hiver.
+     *
+     * **La troisième borne (#730)** : du temps écoulé seulement, donc la
+     * marge n'est pas là pour un changement d'heure. Candidate par elle, une
+     * connexion a au moins `durée − 1 min` : plus que le code le plus long
+     * encore échangeable (sa durée plus la minute de jeu, que le plancher de
+     * {@see self::fromConfiguration()} garantit). **CR1 de #726 tient** : la
+     * connexion d'un code encore échangeable, que l'échange verrouille la
+     * première (league, `FOR UPDATE`) puis ses sœurs par id, n'est jamais
+     * candidate — la purge ne la veut pas, les deux côtés suivent l'ordre des
+     * ids pour le reste ; une candidate a un code mort, qu'aucun échange ne
+     * tiendra la première. À zéro, la borne serait l'échéance elle-même et la
+     * purge resterait correcte : la minute n'est pas une condition du
+     * jugement (`isExpiredAt()` décide), elle élargit la présélection comme
+     * les deux autres, et `ConnectionLifetimesTest` épingle sa valeur.
      */
     public function preselectionBoundsAt(DateTimeImmutable $now): PreselectionBounds
     {
@@ -280,6 +355,7 @@ final readonly class ConnectionLifetimes
         return new PreselectionBounds(
             $now->sub($this->idle)->add($margin),
             $now->sub($this->maximum)->add($margin),
+            $now->sub($this->unexchanged)->add(new DateInterval(self::SECOND_TRUNCATION_AND_SKEW_MARGIN)),
         );
     }
 

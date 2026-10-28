@@ -174,6 +174,10 @@ final class LeagueRepositoriesTest extends KernelTestCase
     public function testARefreshTokenExpiryIsJudgedOnTheApplicationClock(): void
     {
         $connection = $this->grantConnection();
+        // Un jeton de rafraîchissement n'existe qu'après l'échange du code : sans
+        // lui, la connexion jamais échangée serait échue une heure après son octroi (#730).
+        $connection->recordCodeExchangeAt(new DateTimeImmutable());
+        $this->connections()->save($connection);
         $refreshIdentifier = $this->identifier();
         $expiresAt = new DateTimeImmutable('+1 day');
         $this->persistRefreshToken($this->persistAccessToken($connection, $this->identifier()), $refreshIdentifier, $expiresAt);

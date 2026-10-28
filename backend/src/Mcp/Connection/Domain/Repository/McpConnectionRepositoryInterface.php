@@ -6,6 +6,7 @@ namespace App\Mcp\Connection\Domain\Repository;
 
 use App\Mcp\Connection\Domain\Entity\McpConnection;
 use App\Mcp\Connection\Domain\ValueObject\ConnectionReference;
+use App\Mcp\Connection\Domain\ValueObject\PreselectionBounds;
 use App\Mcp\Connection\Domain\ValueObject\RevocationCause;
 use App\Mcp\Connection\Domain\ValueObject\RevokedConnection;
 use DateTimeImmutable;
@@ -143,7 +144,14 @@ interface McpConnectionRepositoryInterface
      * Les connexions actives **peut-être** expirées, verrouillées (`FOR
      * UPDATE`) jusqu'à la fin de la transaction en cours, que la méthode exige
      * (#649, la purge) : non révoquées, et dont le dernier usage (ou l'octroi)
-     * n'est pas postérieur à `$idleBefore`, ou l'octroi à `$maximumBefore`.
+     * n'est pas postérieur à `$bounds->idleBefore()`, ou l'octroi à
+     * `$bounds->maximumBefore()`, ou — son code n'ayant jamais été échangé
+     * (#730) — l'octroi à `$bounds->unexchangedBefore()`.
+     *
+     * Les trois bornes sont un objet valeur ({@see PreselectionBounds}, #726)
+     * plutôt que trois instants positionnels : de même type, corrélés par
+     * l'instant dont elles dérivent, qu'une permutation échangerait sans que
+     * rien ne la voie.
      *
      * Une présélection **large**, jamais le jugement : l'appelant passe des
      * bornes reculées d'une marge, puis juge chaque connexion par
@@ -156,7 +164,7 @@ interface McpConnectionRepositoryInterface
      *
      * @return list<McpConnection>
      */
-    public function findActiveCandidatesForExpiry(DateTimeImmutable $idleBefore, DateTimeImmutable $maximumBefore): array;
+    public function findActiveCandidatesForExpiry(PreselectionBounds $bounds): array;
 
     /**
      * Révoque, cause `expired`, celles de ces connexions qui ne le sont pas

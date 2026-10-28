@@ -37,7 +37,7 @@ final class McpAccessTokenRefusalTest extends TestCase
     protected function setUp(): void
     {
         $this->now = new DateTimeImmutable('2026-10-24T12:00:00+02:00');
-        $this->lifetimes = ConnectionLifetimes::fromConfiguration('PT10M', 'PT1H', 'P30D', 'P30D', 'P90D');
+        $this->lifetimes = ConnectionLifetimes::fromConfiguration('PT10M', 'PT1H', 'P30D', 'P30D', 'P90D', 'PT1H');
     }
 
     public function testAFreshTokenOfALiveConnectionIsAccepted(): void
@@ -155,6 +155,8 @@ final class McpAccessTokenRefusalTest extends TestCase
             $scope,
             $this->now->sub(new DateInterval('P1D')),
         );
+        // Un jeton d'accès n'existe qu'après l'échange du code (#730).
+        $connection->recordCodeExchangeAt($this->now->sub(new DateInterval('P1D')));
 
         self::assertSame($expected, $this->token($connection)->refusalAt($this->now, self::AUDIENCE, $this->lifetimes));
     }
@@ -202,14 +204,18 @@ final class McpAccessTokenRefusalTest extends TestCase
         return $this->connectionGrantedAt($this->now->sub(new DateInterval('P1D')));
     }
 
+    /** Une connexion dont le code a été échangé à l'octroi : un jeton d'accès n'existe pas avant (#730). */
     private function connectionGrantedAt(DateTimeImmutable $grantedAt): McpConnection
     {
-        return McpConnection::grant(
+        $connection = McpConnection::grant(
             new CpgUser('jane', 'hashed-password'),
             RegisteredMcpClient::of('https://client.example.test/metadata.json', 'Client de test', []),
             McpConnection::SCOPE_NOMINATIVE_READ,
             $grantedAt,
         );
+        $connection->recordCodeExchangeAt($grantedAt);
+
+        return $connection;
     }
 
     /**

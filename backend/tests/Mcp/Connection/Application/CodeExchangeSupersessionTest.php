@@ -154,6 +154,58 @@ final class CodeExchangeSupersessionTest extends TestCase
         self::assertSame($revoked, $supersession->revoked);
     }
 
+    /**
+     * Le premier échange du code est noté sur la connexion (#730) : `code_exchanged_at`
+     * reçoit l'instant de l'horloge, sur l'instance gardée — celle que league a
+     * verrouillée —, et la connexion est sauvée **avant** que les autres du couple
+     * soient révoquées (même transaction, l'ordre des verrous inchangé : la
+     * connexion du code, déjà tenue, puis les autres par id). Un échange qui
+     * ne remplace personne l'écrit aussi : c'est l'échange qui compte, pas ce
+     * qu'il remplace.
+     */
+    public function testTheFirstExchangeIsRecordedOnTheKeptConnectionBeforeTheOthersAreRevoked(): void
+    {
+        $kept = $this->connection();
+        self::assertNull($kept->codeExchangedAt());
+        $exchangedCode = self::createStub(ExchangedCodeConnectionInterface::class);
+        $exchangedCode->method('connectionIdOf')->willReturn($kept->getId());
+        $calls = [];
+        $connections = self::createStub(McpConnectionRepositoryInterface::class);
+        $connections->method('findOneById')->willReturn($kept);
+        $connections->method('save')->willReturnCallback(static function (McpConnection $saved) use (&$calls, $kept): void {
+            $calls[] = ['save', $saved === $kept, $saved->codeExchangedAt()?->getTimestamp()];
+        });
+        $connections->method('revokeOtherActiveOf')->willReturnCallback(static function () use (&$calls): array {
+            $calls[] = ['revokeOtherActiveOf', true, null];
+
+            return [];
+        });
+
+        $this->supersession($exchangedCode, $connections)->supersedeOthersOf($this->codeExchange());
+
+        $now = new DateTimeImmutable(self::NOW)->getTimestamp();
+        self::assertSame(
+            [['save', true, $now], ['revokeOtherActiveOf', true, null]],
+            $calls,
+            'La connexion gardée doit être sauvée avec l\'instant de l\'échange avant la révocation des autres.',
+        );
+    }
+
+    /** Rien n'est noté quand rien n'est un échange de code, ni quand la connexion est inconnue. */
+    public function testNothingIsRecordedWhenNothingWasExchanged(): void
+    {
+        $connections = $this->createMock(McpConnectionRepositoryInterface::class);
+        $connections->expects(self::never())->method('save');
+        $connections->method('findOneById')->willReturn(null);
+        $exchangedCode = self::createStub(ExchangedCodeConnectionInterface::class);
+        $exchangedCode->method('connectionIdOf')->willReturn(Uuid::v7());
+
+        $supersession = $this->supersession($exchangedCode, $connections);
+
+        self::assertNull($supersession->supersedeOthersOf($this->codeExchange()));
+        self::assertNull($supersession->supersedeOthersOf(new ServerRequest('POST', '/api/oauth/token')->withParsedBody(['grant_type' => 'refresh_token'])));
+    }
+
     /** Un couple sans autre connexion active : un remplacement vide, pas `null`. */
     public function testAPairWithoutAnotherActiveConnectionGivesAnEmptySupersession(): void
     {

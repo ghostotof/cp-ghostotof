@@ -48,12 +48,17 @@ parameters:
     #  - jeton d'accès (`expires_in`) ;
     #  - jeton de rafraîchissement, tourné à chaque usage ;
     #  - inactivité : sans usage aussi longtemps, la connexion expire ;
-    #  - durée maximale après l'octroi, quel que soit l'usage.
+    #  - durée maximale après l'octroi, quel que soit l'usage ;
+    #  - connexion jamais échangée (#730) : un accord dont le code n'a jamais
+    #    été échangé expire aussi tôt après son octroi. Temps écoulé seulement
+    #    (heures, minutes, secondes : aucun jour, mois ni année), plus longue
+    #    que la durée d'un code de deux minutes, plus courte que l'inactivité.
     app.mcp.lifetime.authorization_code: 'PT10M'
     app.mcp.lifetime.access_token: 'PT1H'
     app.mcp.lifetime.refresh_token: 'P30D'
     app.mcp.lifetime.connection_idle: 'P30D'
     app.mcp.lifetime.connection_maximum: 'P90D'
+    app.mcp.lifetime.connection_unexchanged: 'PT1H'
     # Rétention des connexions MCP révoquées ou expirées (#649) : la purge
     # quotidienne (`app:mcp:purge`, défaut de `--older-than`) supprime celles
     # révoquées avant ce délai. Une expression relative PHP, lue par
@@ -156,6 +161,7 @@ services:
             $refreshLifetime: '%app.mcp.lifetime.refresh_token%'
             $idleLifetime: '%app.mcp.lifetime.connection_idle%'
             $maximumLifetime: '%app.mcp.lifetime.connection_maximum%'
+            $unexchangedLifetime: '%app.mcp.lifetime.connection_unexchanged%'
 
 when@test:
     services:

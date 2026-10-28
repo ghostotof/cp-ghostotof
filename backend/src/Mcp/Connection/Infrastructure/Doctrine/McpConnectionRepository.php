@@ -7,6 +7,7 @@ namespace App\Mcp\Connection\Infrastructure\Doctrine;
 use App\Mcp\Connection\Domain\Entity\McpConnection;
 use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
 use App\Mcp\Connection\Domain\ValueObject\ConnectionReference;
+use App\Mcp\Connection\Domain\ValueObject\PreselectionBounds;
 use App\Mcp\Connection\Domain\ValueObject\RevocationCause;
 use App\Mcp\Connection\Domain\ValueObject\RevokedConnection;
 use App\Shared\Infrastructure\Doctrine\RereadUnderLock;
@@ -252,17 +253,24 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
      * avec fuseau (#434). Doctrine refuse le verrou hors transaction
      * (`TransactionRequiredException`).
      */
-    public function findActiveCandidatesForExpiry(DateTimeImmutable $idleBefore, DateTimeImmutable $maximumBefore): array
+    public function findActiveCandidatesForExpiry(PreselectionBounds $bounds): array
     {
         return $this->rereadUnderLock->rowsMatching(
             $this->getEntityManager(),
             McpConnection::class,
-            static function (QueryBuilder $query, string $connection) use ($idleBefore, $maximumBefore): void {
+            static function (QueryBuilder $query, string $connection) use ($bounds): void {
+                // Trois branches, une par échéance de McpConnection::deadline() :
+                // l'inactivité, la durée maximale et — le code jamais échangé —
+                // l'échéance des non échangées (#730), qui ne vaut que pour une
+                // colonne nulle.
                 $query->andWhere($connection.'.revokedAt IS NULL')
-                    ->andWhere('(COALESCE('.$connection.'.lastUsedAt, '.$connection.'.grantedAt) <= :idleBefore OR '.$connection.'.grantedAt <= :maximumBefore)')
+                    ->andWhere('(COALESCE('.$connection.'.lastUsedAt, '.$connection.'.grantedAt) <= :idleBefore'
+                        .' OR '.$connection.'.grantedAt <= :maximumBefore'
+                        .' OR ('.$connection.'.codeExchangedAt IS NULL AND '.$connection.'.grantedAt <= :unexchangedBefore))')
                     ->orderBy($connection.'.id')
-                    ->setParameter('idleBefore', $idleBefore, Types::DATETIMETZ_IMMUTABLE)
-                    ->setParameter('maximumBefore', $maximumBefore, Types::DATETIMETZ_IMMUTABLE);
+                    ->setParameter('idleBefore', $bounds->idleBefore(), Types::DATETIMETZ_IMMUTABLE)
+                    ->setParameter('maximumBefore', $bounds->maximumBefore(), Types::DATETIMETZ_IMMUTABLE)
+                    ->setParameter('unexchangedBefore', $bounds->unexchangedBefore(), Types::DATETIMETZ_IMMUTABLE);
             },
             forUpdate: true,
         );

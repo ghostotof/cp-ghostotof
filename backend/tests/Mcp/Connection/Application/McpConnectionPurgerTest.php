@@ -53,7 +53,8 @@ use Symfony\Component\Uid\Uuid;
  * - inactivité (`P30D`) : dernier usage au 11 octobre, 10:00 CEST ;
  * - durée maximale (`P90D`) : octroi au 12 août, 10:00 CEST ;
  * - rétention des connexions révoquées (6 mois) : révocation au 10 mai,
- *   10:00 CEST.
+ *   10:00 CEST ;
+ * - jamais échangée (`PT1H`, #730) : octroi à 09:00 CET.
  */
 final class McpConnectionPurgerTest extends KernelTestCase
 {
@@ -68,6 +69,8 @@ final class McpConnectionPurgerTest extends KernelTestCase
     private const string IDLE_DEADLINE_LAST_USE = '2026-10-11T10:00:00+02:00';
     private const string MAXIMUM_DEADLINE_GRANT = '2026-08-12T10:00:00+02:00';
     private const string RETENTION_THRESHOLD = '2026-05-10T10:00:00+02:00';
+    // Jamais échangée (#730, `connection_unexchanged` = PT1H) : octroi une heure avant NOW (09:00 CET).
+    private const string UNEXCHANGED_DEADLINE_GRANT = '2026-11-10T09:00:00+01:00';
 
     private const string RETENTION = '6 months';
     private const string CLIENT_ID = 'https://client.example.test/metadata.json';
@@ -147,18 +150,27 @@ final class McpConnectionPurgerTest extends KernelTestCase
      * absolu, puis une seconde après. Pour chacune, marquée par la purge ⇔
      * `isExpiredAt()` relu en base. Les deux premières bornes passent le
      * changement d'heure : une purge qui jugerait en SQL par `now - 720
-     * heures` marquerait aussi la seconde connexion.
+     * heures` marquerait aussi la seconde connexion. La troisième borne (#730) :
+     * une connexion dont le code n'a jamais été échangé, octroyée une heure
+     * avant l'instant jugé, est marquée ; une seconde plus tard non ; la même
+     * dont le code a été échangé, non plus.
      */
     public function testThePurgeAndIsExpiredAtAgreeAtTheBoundary(): void
     {
         $recentUse = new DateTimeImmutable('2026-11-09T10:00:00+01:00');
         $idleAtDeadline = new DateTimeImmutable(self::IDLE_DEADLINE_LAST_USE);
         $grantAtDeadline = new DateTimeImmutable(self::MAXIMUM_DEADLINE_GRANT);
+        $unexchangedGrant = new DateTimeImmutable(self::UNEXCHANGED_DEADLINE_GRANT);
         $cases = [
             'dernier usage au seuil d\'inactivité' => [$this->connection(new DateTimeImmutable('2026-10-01T10:00:00+02:00'), $idleAtDeadline), true],
             'dernier usage une seconde après' => [$this->connection(new DateTimeImmutable('2026-10-01T10:00:00+02:00'), $idleAtDeadline->add(new DateInterval('PT1S'))), false],
             'octroi au seuil absolu' => [$this->connection($grantAtDeadline, $recentUse), true],
             'octroi une seconde après' => [$this->connection($grantAtDeadline->add(new DateInterval('PT1S')), $recentUse), false],
+            // La troisième échéance (#730) : le code n'a jamais été échangé, l'octroi date d'une heure.
+            'jamais échangée, octroi au seuil des non échangées' => [$this->connection($unexchangedGrant, null, exchanged: false), true],
+            'jamais échangée, octroi une seconde après' => [$this->connection($unexchangedGrant->add(new DateInterval('PT1S')), null, exchanged: false), false],
+            // Le même octroi, le code échangé : la troisième échéance ne le concerne plus.
+            'échangée, octroi au seuil des non échangées' => [$this->connection($unexchangedGrant, null), false],
         ];
 
         $result = $this->purger()->purge($this->retention());
@@ -413,10 +425,20 @@ final class McpConnectionPurgerTest extends KernelTestCase
         );
     }
 
-    /** Une connexion du compte et du client du test, accordée et utilisée aux instants donnés. */
-    private function connection(DateTimeImmutable $grantedAt, ?DateTimeImmutable $lastUsedAt): McpConnection
+    /**
+     * Une connexion du compte et du client du test, accordée et utilisée aux
+     * instants donnés. **Son code a été échangé à l'octroi** (#730), sauf
+     * `$exchanged = false` : les connexions de ces tests portent des jetons, qui
+     * n'existent qu'après l'échange, et seules l'inactivité et la durée maximale
+     * les jugent — la troisième échéance est celle des connexions jamais
+     * échangées.
+     */
+    private function connection(DateTimeImmutable $grantedAt, ?DateTimeImmutable $lastUsedAt, bool $exchanged = true): McpConnection
     {
         $connection = McpConnection::grant($this->account, $this->client, self::SCOPE, $grantedAt);
+        if ($exchanged) {
+            $connection->recordCodeExchangeAt($grantedAt);
+        }
         if (null !== $lastUsedAt) {
             $connection->recordUseAt($lastUsedAt);
         }
