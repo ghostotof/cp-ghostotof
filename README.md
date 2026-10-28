@@ -39,7 +39,7 @@ de la préprod à la prod.
 
 | Couche | Choix | Garde-fous |
 |---|---|---|
-| Backend | Symfony 8.1, API Platform 4.3, Doctrine 3 / PostgreSQL, Messenger / RabbitMQ, JWT en cookie httpOnly + double-submit CSRF | PHPStan `max` + `strict-rules` sans baseline, Rector, Psalm (flux de données), Symfony Language Tools, PHPUnit |
+| Backend | Symfony 8.1, API Platform 4.4, Doctrine 3 / PostgreSQL, Messenger / RabbitMQ, JWT en cookie httpOnly + double-submit CSRF | PHPStan `max` + `strict-rules` sans baseline, Rector, Psalm (flux de données), Symfony Language Tools, PHPUnit |
 | Frontend | Vue 3, TypeScript, Vite, Vue Router, vue-i18n, Bootstrap 5, architecture en couches (`domain` → `infrastructure` → `application` → `presentation`) | Vitest + axe-core, ESLint avec règles d'accessibilité et d'i18n, `vue-tsc` |
 | Livraison | Images multi-stage (`preprod` construite `FROM production`), Kubernetes (Kapsule), kustomize, External Secrets, migrations en Job **avant** le rollout | Pipeline GitHub Actions en trois phases : qualité sur chaque push ; images immuables `<version>-<sha>` + préprod + smoke test + audit sur chaque push d'une branche `release/*` ; prod, tag et release GitHub au merge de cette branche dans `main` (seul stop humain, rulesets GitHub) ; CodeQL ; Dependabot ; actions figées sur un SHA |
 

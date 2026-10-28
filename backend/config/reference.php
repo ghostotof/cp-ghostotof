@@ -713,10 +713,10 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *     inflector?: scalar|Param|null, // Specify an inflector to use. // Default: "api_platform.metadata.inflector"
  *     validator?: array{
  *         serialize_payload_fields?: mixed, // Set to null to serialize all payload fields when a validation error is thrown, or set the fields you want to include explicitly. // Default: []
- *         query_parameter_validation?: bool|Param, // Deprecated: Will be removed in API Platform 5.0. // Default: true
+ *         query_parameter_validation?: bool|Param, // Deprecated: The "query_parameter_validation" configuration is deprecated and will be removed in API Platform 5.0. // Default: true
  *     },
  *     jsonapi?: array{
- *         use_iri_as_id?: bool|Param, // Set to false to use entity identifiers instead of IRIs as the "id" field in JSON:API responses. // Default: true
+ *         use_iri_as_id?: bool|Param|null, // Set to false to use entity identifiers instead of IRIs as the "id" field in JSON:API responses. Defaults to true; this default will change to false in API Platform 5.0. // Default: null
  *         allow_client_generated_id?: bool|Param, // Allow client-generated IDs on JSON:API POST per https://jsonapi.org/format/#crud-creating-client-ids. Off by default to prevent id spoofing on public endpoints. // Default: false
  *     },
  *     eager_loading?: bool|array{
@@ -733,9 +733,10 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *     enable_scalar?: bool|Param, // Enable Scalar API Reference // Default: true
  *     enable_entrypoint?: bool|Param, // Enable the entrypoint // Default: true
  *     enable_docs?: bool|Param, // Enable the docs // Default: true
+ *     enable_head_request_optimization?: bool|Param, // Skip response body construction on HEAD requests so collections are not iterated. Disable to process HEAD identically to GET. // Default: true
  *     enable_profiler?: bool|Param, // Enable the data collector and the WebProfilerBundle integration. // Default: true
  *     enable_phpdoc_parser?: bool|Param, // Enable resource metadata collector using PHPStan PhpDocParser. // Default: true
- *     enable_link_security?: bool|Param, // Deprecated: This option is always enabled and will be removed in API Platform 5.0. // Enable security for Links (sub resources). // Default: true
+ *     enable_link_security?: bool|Param, // Deprecated: The "enable_link_security" configuration is deprecated, this option is always enabled and will be removed in API Platform 5.0. // Enable security for Links (sub resources). // Default: true
  *     collection?: array{
  *         exists_parameter_name?: scalar|Param|null, // The name of the query parameter to filter on nullable field values. // Default: "exists"
  *         order?: scalar|Param|null, // The default order of results. // Default: "ASC"
@@ -798,6 +799,7 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *     },
  *     swagger?: array{
  *         persist_authorization?: bool|Param, // Persist the SwaggerUI Authorization in the localStorage. // Default: false
+ *         with_credentials?: bool|Param, // Send credentials (cookies, authorization headers) on Swagger UI cross-origin requests (e.g. when running behind Cloudflare Access). // Default: false
  *         versions?: list<scalar|Param|null>,
  *         api_keys?: array<string, array{ // Default: []
  *             name?: scalar|Param|null, // The name of the header or query parameter containing the api key.

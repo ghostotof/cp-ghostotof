@@ -4,20 +4,20 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "462b2274c3487c8b4d7641ba102ba351",
+    "content-hash": "f83854ae3fe13b84dba20efcc8087f98",
     "packages": [
         {
             "name": "api-platform/doctrine-common",
-            "version": "v4.4.0",
+            "version": "v4.4.6",
             "source": {
                 "type": "git",
                 "url": "https://github.com/api-platform/doctrine-common.git",
-                "reference": "40a877ab28b7034f12498ceb09e08401ba533b23"
+                "reference": "c0215e4458c26fdc23f56de0b960b3d292cd8207"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/api-platform/doctrine-common/zipball/40a877ab28b7034f12498ceb09e08401ba533b23",
-                "reference": "40a877ab28b7034f12498ceb09e08401ba533b23",
+                "url": "https://api.github.com/repos/api-platform/doctrine-common/zipball/c0215e4458c26fdc23f56de0b960b3d292cd8207",
+                "reference": "c0215e4458c26fdc23f56de0b960b3d292cd8207",
                 "shasum": ""
             },
             "require": {
@@ -92,48 +92,48 @@
                 "rest"
             ],
             "support": {
-                "source": "https://github.com/api-platform/doctrine-common/tree/v4.4.0"
+                "source": "https://github.com/api-platform/doctrine-common/tree/v4.4.6"
             },
-            "time": "2026-09-16T09:03:39+00:00"
+            "time": "2026-10-13T13:41:08+00:00"
         },
         {
             "name": "api-platform/doctrine-orm",
-            "version": "v4.3.19",
+            "version": "v4.4.6",
             "source": {
                 "type": "git",
                 "url": "https://github.com/api-platform/doctrine-orm.git",
-                "reference": "997fa78bf13ddc5cb3951eea61bd23f425e91486"
+                "reference": "b0ac449f42959de87484301508cee666c888cb17"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/api-platform/doctrine-orm/zipball/997fa78bf13ddc5cb3951eea61bd23f425e91486",
-                "reference": "997fa78bf13ddc5cb3951eea61bd23f425e91486",
+                "url": "https://api.github.com/repos/api-platform/doctrine-orm/zipball/b0ac449f42959de87484301508cee666c888cb17",
+                "reference": "b0ac449f42959de87484301508cee666c888cb17",
                 "shasum": ""
             },
             "require": {
-                "api-platform/doctrine-common": "^4.2.23",
-                "api-platform/metadata": "^4.2",
-                "api-platform/serializer": "^4.2.16",
-                "api-platform/state": "^4.2.4",
+                "api-platform/doctrine-common": "^4.4.5",
+                "api-platform/metadata": "^4.4",
+                "api-platform/serializer": "^4.4",
+                "api-platform/state": "^4.4",
                 "composer/semver": "^3.4",
-                "doctrine/orm": "^2.17 || ^3.0.1",
+                "doctrine/orm": "^2.17 || ^3.3",
                 "php": ">=8.2"
             },
             "require-dev": {
-                "doctrine/doctrine-bundle": "^2.11 || ^3.1",
+                "doctrine/doctrine-bundle": "^2.11.1 || ^3.1",
                 "phpspec/prophecy-phpunit": "^2.2",
                 "phpunit/phpunit": "^11.5 || ^12.2",
                 "ramsey/uuid": "^4.7",
                 "ramsey/uuid-doctrine": "^2.0",
-                "symfony/cache": "^6.4 || ^7.0 || ^8.0",
-                "symfony/framework-bundle": "^6.4 || ^7.0 || ^8.0",
-                "symfony/property-access": "^6.4 || ^7.0 || ^8.0",
-                "symfony/property-info": "^6.4 || ^7.1 || ^8.0",
-                "symfony/serializer": "^6.4 || ^7.0 || ^8.0",
-                "symfony/type-info": "^7.3 || ^8.0",
-                "symfony/uid": "^6.4 || ^7.0 || ^8.0",
-                "symfony/validator": "^6.4.11 || ^7.0 || ^8.0",
-                "symfony/yaml": "^6.4 || ^7.0 || ^8.0"
+                "symfony/cache": "^7.4 || ^8.0",
+                "symfony/framework-bundle": "^7.4 || ^8.0",
+                "symfony/property-access": "^7.4 || ^8.0",
+                "symfony/property-info": "^7.4 || ^8.0",
+                "symfony/serializer": "^7.4 || ^8.0",
+                "symfony/type-info": "^7.4 || ^8.0",
+                "symfony/uid": "^7.4 || ^8.0",
+                "symfony/validator": "^7.4 || ^8.0",
+                "symfony/yaml": "^7.4 || ^8.0"
             },
             "type": "library",
             "extra": {
@@ -142,7 +142,7 @@
                     "name": "api-platform/api-platform"
                 },
                 "symfony": {
-                    "require": "^6.4 || ^7.0 || ^8.0"
+                    "require": "^7.4 || ^8.0"
                 },
                 "branch-alias": {
                     "dev-3.4": "3.4.x-dev",
@@ -181,13 +181,13 @@
                 "rest"
             ],
             "support": {
-                "source": "https://github.com/api-platform/doctrine-orm/tree/v4.3.19"
+                "source": "https://github.com/api-platform/doctrine-orm/tree/v4.4.6"
             },
-            "time": "2026-09-09T07:14:18+00:00"
+            "time": "2026-10-13T13:41:08+00:00"
         },
         {
             "name": "api-platform/documentation",
-            "version": "v4.4.0",
+            "version": "v4.4.6",
             "source": {
                 "type": "git",
                 "url": "https://github.com/api-platform/documentation.git",
@@ -244,13 +244,13 @@
             ],
             "description": "API Platform documentation controller.",
             "support": {
-                "source": "https://github.com/api-platform/documentation/tree/v4.4.0"
+                "source": "https://github.com/api-platform/documentation/tree/v4.4.6"
             },
             "time": "2026-09-16T09:03:39+00:00"
         },
         {
             "name": "api-platform/http-cache",
-            "version": "v4.4.0",
+            "version": "v4.4.6",
             "source": {
                 "type": "git",
                 "url": "https://github.com/api-platform/http-cache.git",
@@ -324,22 +324,22 @@
                 "rest"
             ],
             "support": {
-                "source": "https://github.com/api-platform/http-cache/tree/v4.4.0"
+                "source": "https://github.com/api-platform/http-cache/tree/v4.4.6"
             },
             "time": "2026-09-16T09:03:39+00:00"
         },
         {
             "name": "api-platform/hydra",
-            "version": "v4.4.0",
+            "version": "v4.4.6",
             "source": {
                 "type": "git",
                 "url": "https://github.com/api-platform/hydra.git",
-                "reference": "2a3ca5b9318fd4be7ee037e4f041c144c4775c8c"
+                "reference": "c7b693671838825594fa43e86d1f73e796fb2634"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/api-platform/hydra/zipball/2a3ca5b9318fd4be7ee037e4f041c144c4775c8c",
-                "reference": "2a3ca5b9318fd4be7ee037e4f041c144c4775c8c",
+                "url": "https://api.github.com/repos/api-platform/hydra/zipball/c7b693671838825594fa43e86d1f73e796fb2634",
+                "reference": "c7b693671838825594fa43e86d1f73e796fb2634",
                 "shasum": ""
             },
             "require": {
@@ -411,22 +411,22 @@
                 "rest"
             ],
             "support": {
-                "source": "https://github.com/api-platform/hydra/tree/v4.4.0"
+                "source": "https://github.com/api-platform/hydra/tree/v4.4.6"
             },
-            "time": "2026-09-16T09:03:39+00:00"
+            "time": "2026-10-16T08:27:05+00:00"
         },
         {
             "name": "api-platform/json-schema",
-            "version": "v4.4.0",
+            "version": "v4.4.6",
             "source": {
                 "type": "git",
                 "url": "https://github.com/api-platform/json-schema.git",
-                "reference": "cf03c76134212e7c9f4a9ef0b0c7009a9722ad21"
+                "reference": "abc1fb6f13f76a89a4686e28ffd0123c9397e34f"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/api-platform/json-schema/zipball/cf03c76134212e7c9f4a9ef0b0c7009a9722ad21",
-                "reference": "cf03c76134212e7c9f4a9ef0b0c7009a9722ad21",
+                "url": "https://api.github.com/repos/api-platform/json-schema/zipball/abc1fb6f13f76a89a4686e28ffd0123c9397e34f",
+                "reference": "abc1fb6f13f76a89a4686e28ffd0123c9397e34f",
                 "shasum": ""
             },
             "require": {
@@ -492,13 +492,13 @@
                 "swagger"
             ],
             "support": {
-                "source": "https://github.com/api-platform/json-schema/tree/v4.4.0"
+                "source": "https://github.com/api-platform/json-schema/tree/v4.4.6"
             },
-            "time": "2026-09-16T09:03:39+00:00"
+            "time": "2026-10-12T14:38:14+00:00"
         },
         {
             "name": "api-platform/jsonld",
-            "version": "v4.4.0",
+            "version": "v4.4.6",
             "source": {
                 "type": "git",
                 "url": "https://github.com/api-platform/jsonld.git",
@@ -572,22 +572,22 @@
                 "rest"
             ],
             "support": {
-                "source": "https://github.com/api-platform/jsonld/tree/v4.4.0"
+                "source": "https://github.com/api-platform/jsonld/tree/v4.4.6"
             },
             "time": "2026-09-16T09:03:39+00:00"
         },
         {
             "name": "api-platform/metadata",
-            "version": "v4.4.0",
+            "version": "v4.4.6",
             "source": {
                 "type": "git",
                 "url": "https://github.com/api-platform/metadata.git",
-                "reference": "17399e0cb2cedf61a52b210e85c219d6a66333e2"
+                "reference": "95e567a2793ee93935e11a1b42a8bb5873992470"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/api-platform/metadata/zipball/17399e0cb2cedf61a52b210e85c219d6a66333e2",
-                "reference": "17399e0cb2cedf61a52b210e85c219d6a66333e2",
+                "url": "https://api.github.com/repos/api-platform/metadata/zipball/95e567a2793ee93935e11a1b42a8bb5873992470",
+                "reference": "95e567a2793ee93935e11a1b42a8bb5873992470",
                 "shasum": ""
             },
             "require": {
@@ -670,22 +670,22 @@
                 "swagger"
             ],
             "support": {
-                "source": "https://github.com/api-platform/metadata/tree/v4.4.0"
+                "source": "https://github.com/api-platform/metadata/tree/v4.4.6"
             },
-            "time": "2026-09-16T09:03:39+00:00"
+            "time": "2026-09-29T20:09:09+00:00"
         },
         {
             "name": "api-platform/openapi",
-            "version": "v4.4.0",
+            "version": "v4.4.6",
             "source": {
                 "type": "git",
                 "url": "https://github.com/api-platform/openapi.git",
-                "reference": "e6d1d28b6fbde9e7c3228a396258646099b74680"
+                "reference": "702be8d1c0db85fec07916ef0b7ed86391c8b374"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/api-platform/openapi/zipball/e6d1d28b6fbde9e7c3228a396258646099b74680",
-                "reference": "e6d1d28b6fbde9e7c3228a396258646099b74680",
+                "url": "https://api.github.com/repos/api-platform/openapi/zipball/702be8d1c0db85fec07916ef0b7ed86391c8b374",
+                "reference": "702be8d1c0db85fec07916ef0b7ed86391c8b374",
                 "shasum": ""
             },
             "require": {
@@ -761,22 +761,22 @@
                 "swagger"
             ],
             "support": {
-                "source": "https://github.com/api-platform/openapi/tree/v4.4.0"
+                "source": "https://github.com/api-platform/openapi/tree/v4.4.6"
             },
-            "time": "2026-09-16T09:03:39+00:00"
+            "time": "2026-10-19T07:40:02+00:00"
         },
         {
             "name": "api-platform/serializer",
-            "version": "v4.4.0",
+            "version": "v4.4.6",
             "source": {
                 "type": "git",
                 "url": "https://github.com/api-platform/serializer.git",
-                "reference": "879d80e29cb3d434776d5f1d5fcfa697b3e11d2b"
+                "reference": "22d9be4dc3a89b737838d1287e49a924eeb1e5eb"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/api-platform/serializer/zipball/879d80e29cb3d434776d5f1d5fcfa697b3e11d2b",
-                "reference": "879d80e29cb3d434776d5f1d5fcfa697b3e11d2b",
+                "url": "https://api.github.com/repos/api-platform/serializer/zipball/22d9be4dc3a89b737838d1287e49a924eeb1e5eb",
+                "reference": "22d9be4dc3a89b737838d1287e49a924eeb1e5eb",
                 "shasum": ""
             },
             "require": {
@@ -855,22 +855,22 @@
                 "serializer"
             ],
             "support": {
-                "source": "https://github.com/api-platform/serializer/tree/v4.4.0"
+                "source": "https://github.com/api-platform/serializer/tree/v4.4.6"
             },
-            "time": "2026-09-16T09:03:39+00:00"
+            "time": "2026-10-13T13:25:55+00:00"
         },
         {
             "name": "api-platform/state",
-            "version": "v4.4.0",
+            "version": "v4.4.6",
             "source": {
                 "type": "git",
                 "url": "https://github.com/api-platform/state.git",
-                "reference": "032ab8142af906cc7a4bc445df246070c885892a"
+                "reference": "98ac5e0667b2d6b27c4a22ae19edde6e084614b9"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/api-platform/state/zipball/032ab8142af906cc7a4bc445df246070c885892a",
-                "reference": "032ab8142af906cc7a4bc445df246070c885892a",
+                "url": "https://api.github.com/repos/api-platform/state/zipball/98ac5e0667b2d6b27c4a22ae19edde6e084614b9",
+                "reference": "98ac5e0667b2d6b27c4a22ae19edde6e084614b9",
                 "shasum": ""
             },
             "require": {
@@ -955,61 +955,65 @@
                 "swagger"
             ],
             "support": {
-                "source": "https://github.com/api-platform/state/tree/v4.4.0"
+                "source": "https://github.com/api-platform/state/tree/v4.4.6"
             },
-            "time": "2026-09-16T09:03:39+00:00"
+            "time": "2026-10-13T13:41:08+00:00"
         },
         {
             "name": "api-platform/symfony",
-            "version": "v4.3.19",
+            "version": "v4.4.6",
             "source": {
                 "type": "git",
                 "url": "https://github.com/api-platform/symfony.git",
-                "reference": "788a478f071019e96830baa697c0bcde5eed74bd"
+                "reference": "ac1de0de0861b2346b3706f4fcbe6cf5ae58af57"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/api-platform/symfony/zipball/788a478f071019e96830baa697c0bcde5eed74bd",
-                "reference": "788a478f071019e96830baa697c0bcde5eed74bd",
+                "url": "https://api.github.com/repos/api-platform/symfony/zipball/ac1de0de0861b2346b3706f4fcbe6cf5ae58af57",
+                "reference": "ac1de0de0861b2346b3706f4fcbe6cf5ae58af57",
                 "shasum": ""
             },
             "require": {
-                "api-platform/documentation": "^4.3",
-                "api-platform/http-cache": "^4.3",
-                "api-platform/hydra": "^4.3",
-                "api-platform/json-schema": "^4.3",
-                "api-platform/jsonld": "^4.3",
-                "api-platform/metadata": "^4.3",
-                "api-platform/openapi": "^4.3",
-                "api-platform/serializer": "^4.3.12",
-                "api-platform/state": "^4.3",
-                "api-platform/validator": "^4.3.1",
+                "api-platform/documentation": "^4.4",
+                "api-platform/http-cache": "^4.4",
+                "api-platform/hydra": "^4.4",
+                "api-platform/json-schema": "^4.4",
+                "api-platform/jsonld": "^4.4",
+                "api-platform/metadata": "^4.4",
+                "api-platform/openapi": "^4.4",
+                "api-platform/serializer": "^4.4",
+                "api-platform/state": "^4.4",
+                "api-platform/validator": "^4.4",
                 "php": ">=8.2",
-                "symfony/asset": "^6.4 || ^7.0 || ^8.0",
-                "symfony/finder": "^6.4 || ^7.0 || ^8.0",
-                "symfony/http-kernel": "^6.4.13 || ^7.0 || ^8.0",
-                "symfony/property-access": "^6.4 || ^7.0 || ^8.0",
-                "symfony/property-info": "^6.4 || ^7.0 || ^8.0",
-                "symfony/security-core": "^6.4 || ^7.0 || ^8.0",
-                "symfony/serializer": "^6.4 || ^7.0 || ^8.0",
+                "symfony/asset": "^7.4 || ^8.0",
+                "symfony/finder": "^7.4 || ^8.0",
+                "symfony/http-kernel": "^7.4 || ^8.0",
+                "symfony/property-access": "^7.4 || ^8.0",
+                "symfony/property-info": "^7.4 || ^8.0",
+                "symfony/security-core": "^7.4 || ^8.0",
+                "symfony/serializer": "^7.4 || ^8.0",
                 "willdurand/negotiation": "^3.1"
             },
+            "conflict": {
+                "symfony/framework-bundle": "<7.4"
+            },
             "require-dev": {
-                "api-platform/doctrine-common": "^4.3",
-                "api-platform/doctrine-odm": "^4.3",
-                "api-platform/doctrine-orm": "^4.3",
-                "api-platform/elasticsearch": "^4.3",
-                "api-platform/graphql": "^4.3",
-                "api-platform/hal": "^4.3",
+                "api-platform/doctrine-common": "^4.4",
+                "api-platform/doctrine-odm": "^4.4",
+                "api-platform/doctrine-orm": "^4.4",
+                "api-platform/elasticsearch": "^4.4",
+                "api-platform/graphql": "^4.4",
+                "api-platform/hal": "^4.4",
+                "api-platform/json-api": "^4.4",
                 "phpspec/prophecy-phpunit": "^2.2",
                 "phpunit/phpunit": "^11.5 || ^12.2",
-                "symfony/expression-language": "^6.4 || ^7.0 || ^8.0",
-                "symfony/intl": "^6.4 || ^7.0 || ^8.0",
+                "symfony/expression-language": "^7.4 || ^8.0",
+                "symfony/intl": "^7.4 || ^8.0",
                 "symfony/mercure-bundle": "^0.4.3|^0.5",
-                "symfony/object-mapper": "^7.0 || ^8.0",
-                "symfony/routing": "^6.4 || ^7.0 || ^8.0",
-                "symfony/type-info": "^7.3 || ^8.0",
-                "symfony/validator": "^6.4.11 || ^7.0 || ^8.0",
+                "symfony/object-mapper": "^7.4 || ^8.0",
+                "symfony/routing": "^7.4 || ^8.0",
+                "symfony/type-info": "^7.4 || ^8.0",
+                "symfony/validator": "^7.4 || ^8.0",
                 "webonyx/graphql-php": "^15.0"
             },
             "suggest": {
@@ -1040,7 +1044,7 @@
                     "name": "api-platform/api-platform"
                 },
                 "symfony": {
-                    "require": "^6.4 || ^7.0 || ^8.0"
+                    "require": "^7.4 || ^8.0"
                 },
                 "branch-alias": {
                     "dev-main": "4.4.x-dev"
@@ -1084,22 +1088,22 @@
                 "symfony"
             ],
             "support": {
-                "source": "https://github.com/api-platform/symfony/tree/v4.3.19"
+                "source": "https://github.com/api-platform/symfony/tree/v4.4.6"
             },
-            "time": "2026-09-12T11:22:16+00:00"
+            "time": "2026-10-19T09:54:03+00:00"
         },
         {
             "name": "api-platform/validator",
-            "version": "v4.4.0",
+            "version": "v4.4.6",
             "source": {
                 "type": "git",
                 "url": "https://github.com/api-platform/validator.git",
-                "reference": "274219c8eaec42d337e9b6212cee541d0fd268cf"
+                "reference": "e36e6e91d75250febc77881f16605e938451dd08"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/api-platform/validator/zipball/274219c8eaec42d337e9b6212cee541d0fd268cf",
-                "reference": "274219c8eaec42d337e9b6212cee541d0fd268cf",
+                "url": "https://api.github.com/repos/api-platform/validator/zipball/e36e6e91d75250febc77881f16605e938451dd08",
+                "reference": "e36e6e91d75250febc77881f16605e938451dd08",
                 "shasum": ""
             },
             "require": {
@@ -1161,9 +1165,9 @@
                 "validator"
             ],
             "support": {
-                "source": "https://github.com/api-platform/validator/tree/v4.4.0"
+                "source": "https://github.com/api-platform/validator/tree/v4.4.6"
             },
-            "time": "2026-09-16T09:03:39+00:00"
+            "time": "2026-09-21T12:55:20+00:00"
         },
         {
             "name": "composer/semver",
