@@ -115,7 +115,7 @@ final class AccountIdentifierReachesNoLogTest extends WebTestCase
         $inviteeId = $this->inviteeActivatedThroughTheBackoffice($client);
         $inviteeJwt = $this->inviteeSession($client, $inviteeId);
         $this->mcpConnectionSession($client);
-        $this->adminSession($client, $admin, $inviteeId);
+        $this->adminSession($client, $admin, $inviteeId, $inviteeJwt);
         $this->deletedAccountJwtIsRefused($client, $inviteeJwt);
         $this->pendingInvitationsPurged();
 
@@ -130,6 +130,7 @@ final class AccountIdentifierReachesNoLogTest extends WebTestCase
             'security_audit/Logged out.',
             'security_audit/Super-admin role changed.',
             'security_audit/Password changed by an administrator.',
+            'security_audit/Session refused: credentials changed since it was opened.',
             'security_audit/User deleted.',
             'security/Authenticator successful!',
             'security/Authenticator failed.',
@@ -281,7 +282,7 @@ final class AccountIdentifierReachesNoLogTest extends WebTestCase
      * actif, suppression de soi, ses propres rôles), le quota du traducteur,
      * puis promotion, rétrogradation, mot de passe et suppression de l'invité.
      */
-    private function adminSession(KernelBrowser $client, CpgUser $admin, string $inviteeId): void
+    private function adminSession(KernelBrowser $client, CpgUser $admin, string $inviteeId, string $inviteeJwt): void
     {
         $client->getCookieJar()->clear();
         $csrf = $this->login($client, self::ADMIN_USERNAME, TestCredentials::superPassword());
@@ -315,6 +316,31 @@ final class AccountIdentifierReachesNoLogTest extends WebTestCase
             $client->request($method, $path, server: $this->writeHeaders($csrf), content: null === $payload ? null : self::jsonBody($payload));
             self::assertResponseStatusCodeSame($status, $method.' '.$path);
             $this->collect($method.' '.$path);
+
+            if ('PUT' === $method && str_ends_with($path, '/password')) {
+                $this->closedSessionIsReplayed($client, $inviteeJwt);
+            }
+        }
+    }
+
+    /**
+     * Le JWT que l'invité détenait avant que l'admin change son mot de passe
+     * (F-C de la seconde relecture) : refusé, et la ligne d'audit du refus
+     * désigne le compte par son UUID, jamais par son identifiant. Les cookies de
+     * l'admin sont remis ensuite : il poursuit.
+     */
+    private function closedSessionIsReplayed(KernelBrowser $client, string $jwt): void
+    {
+        $adminCookies = $client->getCookieJar()->all();
+        $client->getCookieJar()->clear();
+        $client->getCookieJar()->set(new Cookie('BEARER', $jwt));
+        $client->request('GET', '/api/me');
+        self::assertResponseStatusCodeSame(401);
+        $this->collect('session de l\'invité rejouée après le changement de son mot de passe');
+
+        $client->getCookieJar()->clear();
+        foreach ($adminCookies as $cookie) {
+            $client->getCookieJar()->set($cookie);
         }
     }
 

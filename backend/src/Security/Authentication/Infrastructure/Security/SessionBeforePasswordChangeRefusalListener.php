@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Security\Authentication\Infrastructure\Security;
 
+use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Shared\Domain\Security\CredentialsVersionClaim;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
@@ -78,10 +79,28 @@ use Symfony\Component\Security\Http\Event\CheckPassportEvent;
  *
  * **Le même jeton, une version plus récente que le compte** (une base restaurée)
  * est refusé aussi : c'est une égalité, pas un ordre.
+ *
+ * **Chaque refus est audité** (F-C, `session-refused-after-credentials-change`,
+ * {@see SecurityAuditLoggerInterface::sessionRefusedAfterCredentialsChange()}) :
+ * le compte, les deux versions, l'IP et le chemin, jamais le jeton ni le nom
+ * d'utilisateur. **Pas de dédoublonnage** : après le premier 401 le navigateur
+ * efface les cookies (StaleSessionCookiesClearingListener), seul un rejeu en
+ * boucle d'un jeton gardé écrit plusieurs lignes — et il écrit déjà autant de
+ * `Authenticator failed.` sur le canal `security`. Un dédoublonnage par le
+ * `cache.app` (en base, donc conforme à l'ADR 0005) coûterait une lecture et
+ * une écriture SQL par requête refusée pour retirer une ligne parmi plusieurs
+ * déjà écrites, sur le chemin même qu'un attaquant martèlerait ; la cadence est
+ * bornée en amont par les zones nginx, et c'est ce rejeu, justement, que la
+ * personne qui lit le journal cherche à voir.
  */
 #[AsEventListener(event: CheckPassportEvent::class, priority: 128, dispatcher: 'security.event_dispatcher.api')]
 final readonly class SessionBeforePasswordChangeRefusalListener
 {
+    public function __construct(
+        private SecurityAuditLoggerInterface $auditLogger,
+    ) {
+    }
+
     public function __invoke(CheckPassportEvent $event): void
     {
         $passport = $event->getPassport();
@@ -94,6 +113,12 @@ final readonly class SessionBeforePasswordChangeRefusalListener
         $claim = $this->claimedVersion($passport);
         // `false` : une revendication présente mais illisible, refusée d'emblée.
         if (false === $claim || $user->claimsAStaleCredentialsVersion($claim)) {
+            // Avant de lever (F-C) : sans cette ligne, seul `Authenticator failed.`
+            // du canal `security` en gardait la trace, sans compte. La version
+            // présentée (0 quand la revendication manque, `null` quand elle est
+            // illisible) et la courante, jamais le jeton.
+            $this->auditLogger->sessionRefusedAfterCredentialsChange($user, false === $claim ? null : ($claim ?? 0));
+
             throw new SessionPredatesPasswordChangeException();
         }
     }

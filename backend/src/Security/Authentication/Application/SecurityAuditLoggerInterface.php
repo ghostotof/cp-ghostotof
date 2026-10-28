@@ -48,6 +48,11 @@ use Symfony\Component\Uid\Uuid;
  *    nomme : `supersededBy`) et
  *    {@see \App\Mcp\Connection\Application\McpConnectionPurger}
  *    (expiration, acteur `system`), ces trois-là après le COMMIT ;
+ *  - une session refusée parce que les identifiants du compte ont changé depuis
+ *    son ouverture (#650, F-C de la seconde relecture),
+ *    `session-refused-after-credentials-change` :
+ *    {@see \App\Security\Authentication\Infrastructure\Security\SessionBeforePasswordChangeRefusalListener},
+ *    avant de lever le refus ;
  *  - un jeton d'accès MCP connu refusé (#649), `mcp-access-token-refused` :
  *    {@see \App\Mcp\Connection\Infrastructure\Security\McpBearerAuthenticator},
  *    avant de lever le refus, jamais pour un jeton mal formé ou inconnu.
@@ -278,4 +283,27 @@ interface SecurityAuditLoggerInterface
      * vérificateur PKCE ni une empreinte.
      */
     public function mcpGrantRefused(McpConnectionReference $connection, string $grantType, string $cause, string $presentingClientId): void;
+
+    /**
+     * Session (JWT du cookie `BEARER`) refusée parce que la **version des
+     * identifiants** qu'elle porte n'est plus celle du compte (#650, F-C de la
+     * seconde relecture) : le mot de passe a été remplacé depuis son ouverture,
+     * ou la session vient d'une version que le compte n'a pas (une base
+     * restaurée). Désigne le compte (`userId`, l'UUID : le compte est celui que
+     * le jeton signé désigne, rechargé en base), la version présentée
+     * (`presentedVersion` ; `null` si la revendication est présente mais
+     * illisible, une absente valant 0) et la courante (`currentVersion`). Avant
+     * cette ligne, seul le canal `security` écrivait `Authenticator failed.`,
+     * sans compte : rien ne disait qui rejouait une session close.
+     *
+     * « credentials » plutôt que « password » : le prédicat compare des versions
+     * (une égalité), pas un événement ; le remplacement de mot de passe en est
+     * aujourd'hui le seul écrivain, mais une session d'une version *plus
+     * récente* que le compte n'a suivi aucun changement de mot de passe. L'auteur
+     * est `anonymous` (le refus précède l'authentification). Jamais le jeton, son
+     * payload ni l'identifiant de connexion du compte.
+     *
+     * @param int|null $presentedVersion la version de la revendication du jeton ; `null` si illisible
+     */
+    public function sessionRefusedAfterCredentialsChange(CpgUser $account, ?int $presentedVersion): void;
 }

@@ -11,11 +11,13 @@ use App\Security\User\Domain\Entity\CpgUser;
 use App\Security\User\Domain\Repository\CpgUserRepositoryInterface;
 use App\Shared\Domain\Security\CredentialsVersionClaim;
 use App\Tests\Support\HttpJson;
+use App\Tests\Support\ReadsSecurityAuditLog;
 use App\Tests\Support\TestCredentials;
 use Doctrine\DBAL\Connection;
 use Doctrine\ORM\EntityManagerInterface;
 use Lexik\Bundle\JWTAuthenticationBundle\Encoder\JWTEncoderInterface;
 use Lexik\Bundle\JWTAuthenticationBundle\Services\JWTTokenManagerInterface;
+use Monolog\LogRecord;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
@@ -46,6 +48,7 @@ use Symfony\Component\Uid\Uuid;
 final class SessionBeforePasswordChangeTest extends WebTestCase
 {
     use HttpJson;
+    use ReadsSecurityAuditLog;
 
     private const string USERNAME = 'jane';
     private const string ADMIN_USERNAME = 'root';
@@ -75,6 +78,52 @@ final class SessionBeforePasswordChangeTest extends WebTestCase
         $this->client->request('GET', self::ME);
 
         $this->assertRefusedAsAClosedSession();
+    }
+
+    /**
+     * F-C de la seconde relecture : le refus laisse une ligne au journal d'audit
+     * de sécurité, avec le compte (son UUID), l'IP, le chemin et les deux
+     * versions — jamais le jeton ni le nom d'utilisateur. Avant, seul le canal
+     * `security` écrivait `Authenticator failed.`, sans compte : rien ne disait
+     * *qui* rejouait une session close.
+     */
+    public function testTheRefusalIsAuditedWithTheAccountAndBothVersionsButNeitherTheTokenNorTheUsername(): void
+    {
+        $account = $this->registerTrusted();
+        $this->setCredentialsVersion($account, 3);
+        $this->replaceTheBearerWith($account, version: 2);
+        $jwt = $this->client->getCookieJar()->get('BEARER')?->getValue() ?? self::fail('Aucun cookie BEARER.');
+
+        $this->client->request('GET', self::ME, server: ['REMOTE_ADDR' => '203.0.113.9']);
+
+        $this->assertRefusedAsAClosedSession();
+        $lines = self::securityAuditEvents('session-refused-after-credentials-change');
+        self::assertCount(1, $lines);
+        self::assertSame([
+            'event' => 'session-refused-after-credentials-change',
+            'userId' => $account->getId()->toRfc4122(),
+            'presentedVersion' => 2,
+            'currentVersion' => 3,
+            'actor' => 'anonymous',
+            'ip' => '203.0.113.9',
+            'path' => self::ME,
+        ], $lines[0]);
+        $everything = json_encode(array_map(static fn (LogRecord $record): array => [$record->message, $record->context], self::securityAuditRecords()), \JSON_THROW_ON_ERROR);
+        self::assertStringNotContainsString($jwt, $everything, 'Le jeton ne sort jamais.');
+        self::assertStringNotContainsString(self::USERNAME, $everything, 'Le nom d\'utilisateur ne sort jamais.');
+    }
+
+    /** Une session servie n'écrit pas cette ligne : seul un refus le fait. */
+    public function testAServedSessionIsNotAudited(): void
+    {
+        $account = $this->registerTrusted();
+        $this->setCredentialsVersion($account, 3);
+        $this->replaceTheBearerWith($account, version: 3);
+
+        $this->client->request('GET', self::ME);
+
+        self::assertResponseStatusCodeSame(200);
+        self::assertSame([], self::securityAuditEvents('session-refused-after-credentials-change'));
     }
 
     /** La version courante est celle de la personne qui détient le mot de passe : servie. */
