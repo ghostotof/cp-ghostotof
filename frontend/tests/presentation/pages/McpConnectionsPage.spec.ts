@@ -5,11 +5,12 @@ import McpConnectionsPage from '../../../src/presentation/pages/McpConnectionsPa
 import { MCP_CONNECTIONS_REPOSITORY } from '../../../src/application/mcp/useMcpConnections'
 import { createAppI18n } from '../../../src/presentation/i18n'
 import type { McpConnectionsRepository } from '../../../src/domain/mcp/repositories/McpConnectionsRepository'
-import type { McpConnectionSummary } from '../../../src/domain/mcp/entities/McpConnection'
+import type { McpConnectionList, McpConnectionSummary } from '../../../src/domain/mcp/entities/McpConnection'
 import { McpConnectionNotFoundError } from '../../../src/domain/mcp/errors/McpConnectionNotFoundError'
 import { McpConnectionsRequestFailedError } from '../../../src/domain/mcp/errors/McpConnectionsRequestFailedError'
 import type { Locale } from '../../../src/domain/portfolio/entities/Locale'
 import { expectNoAccessibilityViolation } from '../../support/axe'
+import { listOf } from '../../support/mcpConnectionList'
 
 enableAutoUnmount(afterEach)
 
@@ -81,7 +82,7 @@ interface Options {
 
 async function mountPage(options: Options = {}): Promise<Harness> {
   const locale = options.locale ?? 'fr'
-  const list = options.list ?? vi.fn(async () => [ACTIVE, NEVER_USED, EXPIRED, REVOKED_BY_PERSON])
+  const list = options.list ?? vi.fn(async () => listOf([ACTIVE, NEVER_USED, EXPIRED, REVOKED_BY_PERSON]))
   const revoke = options.revoke ?? vi.fn(async () => undefined)
   const repository = { list, revoke } as unknown as McpConnectionsRepository
 
@@ -186,7 +187,7 @@ describe('McpConnectionsPage', () => {
     ['password-changed', 'mot de passe'],
     ['trusted-tier-withdrawn', 'palier de confiance'],
   ])('a un libellé pour la cause connue « %s »', async (cause, expected) => {
-    const list = vi.fn(async () => [{ ...REVOKED_BY_PERSON, revocationCause: cause }])
+    const list = vi.fn(async () => listOf([{ ...REVOKED_BY_PERSON, revocationCause: cause }]))
     const { wrapper } = await mountPage({ list })
 
     expect(wrapper.get('tbody tr').text()).toContain(expected)
@@ -194,7 +195,7 @@ describe('McpConnectionsPage', () => {
   })
 
   it('affiche un libellé générique pour une cause inconnue', async () => {
-    const list = vi.fn(async () => [REVOKED_UNKNOWN_CAUSE, ACTIVE])
+    const list = vi.fn(async () => listOf([REVOKED_UNKNOWN_CAUSE, ACTIVE]))
     const { wrapper } = await mountPage({ list })
 
     const row = rowOf(wrapper, 'Client Futur')
@@ -206,8 +207,45 @@ describe('McpConnectionsPage', () => {
     expect(rowOf(wrapper, 'Claude Code').exists()).toBe(true)
   })
 
+  it("dit, quand le serveur a coupé l'historique, que seules les dernières connexions terminées sont affichées", async () => {
+    const list = vi.fn(async () => listOf([ACTIVE, REVOKED_BY_PERSON], true))
+    const { wrapper } = await mountPage({ list })
+
+    const note = wrapper.get('[data-testid="terminated-truncated"]')
+    expect(note.text()).toBe("L'historique est limité : seules les dernières connexions terminées sont affichées.")
+    expect(rows(wrapper)).toHaveLength(2)
+  })
+
+  it("dit la même chose en anglais", async () => {
+    const list = vi.fn(async () => listOf([ACTIVE, REVOKED_BY_PERSON], true))
+    const { wrapper } = await mountPage({ locale: 'en', list })
+
+    expect(wrapper.get('[data-testid="terminated-truncated"]').text()).toBe('History is limited: only the most recent ended connections are shown.')
+  })
+
+  it("n'affiche aucune mention quand l'historique n'est pas coupé", async () => {
+    const { wrapper } = await mountPage()
+
+    expect(wrapper.find('[data-testid="terminated-truncated"]').exists()).toBe(false)
+  })
+
+  it("la mention n'est pas la région d'état : le seul role=\"status\" de la page reste vide", async () => {
+    const list = vi.fn(async () => listOf([ACTIVE, REVOKED_BY_PERSON], true))
+    const { wrapper } = await mountPage({ list })
+
+    expect(wrapper.findAll('[role="status"]')).toHaveLength(1)
+    expect(wrapper.get('[role="status"]').text()).toBe('')
+  })
+
+  it("avec la mention d'un historique coupé : aucune violation d'accessibilité détectable", async () => {
+    const list = vi.fn(async () => listOf([ACTIVE, REVOKED_BY_PERSON], true))
+    const { wrapper } = await mountPage({ list })
+
+    await expectNoAccessibilityViolation(wrapper)
+  })
+
   it('affiche l\'état vide avec un lien vers « Brancher votre assistant »', async () => {
-    const list = vi.fn(async () => [])
+    const list = vi.fn(async () => listOf([]))
     const { wrapper } = await mountPage({ list })
 
     expect(wrapper.find('table').exists()).toBe(false)
@@ -249,7 +287,7 @@ describe('McpConnectionsPage', () => {
 
   it('après une révocation, le focus passe sur le titre : le bouton cliqué a disparu', async () => {
     const { wrapper } = await mountPage({
-      list: vi.fn().mockResolvedValueOnce([ACTIVE]).mockResolvedValue([{ ...ACTIVE, state: 'revoked', revokedAt: '2026-10-28T11:00:00+01:00', revocationCause: 'person' }]),
+      list: vi.fn().mockResolvedValueOnce(listOf([ACTIVE])).mockResolvedValue(listOf([{ ...ACTIVE, state: 'revoked', revokedAt: '2026-10-28T11:00:00+01:00', revocationCause: 'person' }])),
     })
     const button = wrapper.get('tbody button')
     ;(button.element as HTMLElement).focus()
@@ -325,7 +363,7 @@ describe('McpConnectionsPage', () => {
   })
 
   it('erreur de chargement : une alerte et un bouton pour réessayer', async () => {
-    const list = vi.fn().mockRejectedValueOnce(new McpConnectionsRequestFailedError()).mockResolvedValue([ACTIVE])
+    const list = vi.fn().mockRejectedValueOnce(new McpConnectionsRequestFailedError()).mockResolvedValue(listOf([ACTIVE]))
     const { wrapper } = await mountPage({ list })
 
     expect(wrapper.get('[role="alert"]').text()).toContain('n\'ont pas pu être chargées')
@@ -341,7 +379,7 @@ describe('McpConnectionsPage', () => {
   })
 
   it('pendant le chargement : aria-busy, un message d\'état, ni tableau ni état vide', async () => {
-    const list = vi.fn(() => new Promise<McpConnectionSummary[]>(() => undefined))
+    const list = vi.fn(() => new Promise<McpConnectionList>(() => undefined))
     const { wrapper } = await mountPage({ list })
 
     expect(wrapper.find('[aria-busy="true"]').exists()).toBe(true)
@@ -358,13 +396,13 @@ describe('McpConnectionsPage', () => {
   })
 
   it('liste : aucune violation d\'accessibilité détectable', async () => {
-    const { wrapper } = await mountPage({ list: vi.fn(async () => [ACTIVE, NEVER_USED, EXPIRED, REVOKED_BY_PERSON, REVOKED_UNKNOWN_CAUSE]) })
+    const { wrapper } = await mountPage({ list: vi.fn(async () => listOf([ACTIVE, NEVER_USED, EXPIRED, REVOKED_BY_PERSON, REVOKED_UNKNOWN_CAUSE])) })
 
     await expectNoAccessibilityViolation(wrapper)
   })
 
   it('état vide : aucune violation d\'accessibilité détectable', async () => {
-    const { wrapper } = await mountPage({ list: vi.fn(async () => []) })
+    const { wrapper } = await mountPage({ list: vi.fn(async () => listOf([])) })
 
     await expectNoAccessibilityViolation(wrapper)
   })

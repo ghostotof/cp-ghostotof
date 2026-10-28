@@ -24,17 +24,38 @@ interface McpConnectionRepositoryInterface
     public function add(McpConnection $connection): void;
 
     /**
-     * Toutes les connexions d'un compte (#650, « Mes connexions MCP »), avec
-     * leur client, **en une requête** : actives, expirées, et révoquées — la
-     * purge ne supprime ces dernières que six mois après leur révocation, la
-     * personne les voit tant qu'elles existent. La plus récemment octroyée
-     * d'abord, l'identifiant décroissant départageant deux octrois de la même
-     * seconde (un ordre qui ne dépend pas du plan de la requête). Aucun verrou :
+     * « Mes connexions MCP » (#650, R3), la première moitié de la liste : **toutes**
+     * les connexions du compte que personne n'a révoquées (`revoked_at` nul),
+     * avec leur client, **en une requête**, sans limite — aussi anciennes
+     * soient-elles, et les échues que la purge n'a pas encore marquées
+     * comprises : leur état se juge par `McpConnection::isExpiredAt()`, jamais
+     * ici. Elles sont bornées par nature : un accord abandonné échoit en une
+     * heure et la purge le marque la nuit même, le premier échange d'un code
+     * révoque les autres connexions de sa paire (compte, client), et les
+     * clients sont une liste fermée que l'administrateur enregistre en ligne
+     * de commande. La plus récemment octroyée d'abord, l'identifiant
+     * décroissant départageant deux octrois de la même seconde. Aucun verrou :
      * une lecture, que ni un rafraîchissement ni la purge n'attendent.
      *
      * @return list<McpConnection>
      */
-    public function findAllOfAccount(Uuid $accountId): array;
+    public function findNotRevokedOfAccount(Uuid $accountId): array;
+
+    /**
+     * La seconde moitié : les `$limit` connexions **terminées** du compte
+     * (`revoked_at` posé, quelle qu'en soit la cause : la personne, le client,
+     * la purge, une remplaçante) octroyées le plus récemment, avec leur client,
+     * **en une requête**. La purge les garde six mois et chaque approbation
+     * abandonnée ou remplacée en laisse une : sans borne, la liste grossirait
+     * avec l'âge du compte. Même ordre que {@see findNotRevokedOfAccount()}, et
+     * l'identifiant décide *quelles* terminées une limite garde. Demander une
+     * ligne de plus que ce qu'on montre dit s'il y en a davantage.
+     *
+     * @param positive-int $limit
+     *
+     * @return list<McpConnection>
+     */
+    public function findTerminatedOfAccount(Uuid $accountId, int $limit): array;
 
     /**
      * Ce par quoi la connexion se désigne — son compte, son client public —,

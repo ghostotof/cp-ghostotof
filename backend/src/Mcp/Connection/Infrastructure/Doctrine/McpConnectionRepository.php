@@ -70,24 +70,51 @@ class McpConnectionRepository extends ServiceEntityRepository implements McpConn
     }
 
     /**
-     * Le client est joint (`innerJoin` + `addSelect`) : la liste affiche son
-     * nom, et une jointure évite une requête par connexion. Le compte n'est
-     * pas joint — l'appelant le tient déjà, et la colonne `account_id` suffit
-     * au filtre ; seul son identifiant est lu. L'identifiant du compte est
-     * typé comme sa colonne.
+     * Le service répond à la liste de la personne avec deux lectures
+     * ({@see findTerminatedOfAccount()} est l'autre) : l'une n'a pas de limite
+     * *par nature* — une connexion non révoquée est bornée par ce qui la
+     * remplace ou l'éteint (un accord abandonné échoit en une heure, un
+     * premier échange remplace les autres de sa paire, la purge marque les
+     * échues chaque nuit) —, l'autre en a une, passée par l'appelant.
      */
-    public function findAllOfAccount(Uuid $accountId): array
+    public function findNotRevokedOfAccount(Uuid $accountId): array
     {
         /** @var list<McpConnection> */
+        return $this->ofAccountNewestFirst($accountId)
+            ->andWhere('connection.revokedAt IS NULL')
+            ->getQuery()
+            ->getResult();
+    }
+
+    public function findTerminatedOfAccount(Uuid $accountId, int $limit): array
+    {
+        /** @var list<McpConnection> */
+        return $this->ofAccountNewestFirst($accountId)
+            ->andWhere('connection.revokedAt IS NOT NULL')
+            ->setMaxResults($limit)
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
+     * Le socle des deux lectures de la liste : les connexions du compte, leur
+     * client joint (`innerJoin` + `addSelect`) — la liste affiche son nom, et
+     * une jointure évite une requête par connexion —, la plus récemment
+     * octroyée d'abord, l'identifiant décroissant départageant deux octrois de
+     * la même seconde (un ordre qui ne dépend pas du plan de la requête, et qui
+     * décide *quelles* terminées une limite garde). Le compte n'est pas joint :
+     * l'appelant le tient déjà, la colonne `account_id` suffit au filtre, et son
+     * identifiant est typé comme elle.
+     */
+    private function ofAccountNewestFirst(Uuid $accountId): QueryBuilder
+    {
         return $this->createQueryBuilder('connection')
             ->addSelect('client')
             ->innerJoin('connection.client', 'client')
             ->where('IDENTITY(connection.account) = :account')
             ->setParameter('account', $accountId, UuidType::NAME)
             ->orderBy('connection.grantedAt', 'DESC')
-            ->addOrderBy('connection.id', 'DESC')
-            ->getQuery()
-            ->getResult();
+            ->addOrderBy('connection.id', 'DESC');
     }
 
     public function add(McpConnection $connection): void

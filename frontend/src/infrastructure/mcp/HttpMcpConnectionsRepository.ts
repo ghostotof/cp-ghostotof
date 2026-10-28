@@ -1,4 +1,4 @@
-import { MCP_CONNECTION_STATES, type McpConnectionState, type McpConnectionSummary } from '../../domain/mcp/entities/McpConnection'
+import { MCP_CONNECTION_STATES, type McpConnectionList, type McpConnectionState, type McpConnectionSummary } from '../../domain/mcp/entities/McpConnection'
 import type { McpConnectionsRepository } from '../../domain/mcp/repositories/McpConnectionsRepository'
 import { McpConnectionNotFoundError } from '../../domain/mcp/errors/McpConnectionNotFoundError'
 import { McpConnectionsRequestFailedError } from '../../domain/mcp/errors/McpConnectionsRequestFailedError'
@@ -28,6 +28,7 @@ export const MCP_CONNECTION_NOT_FOUND = 'mcp-connection-not-found'
  * forme (version du backend désynchronisée, proxy qui répond du HTML) est un
  * échec, plutôt qu'une page qui afficherait `undefined` ou « Invalid Date ».
  * Seule la cause de révocation reste une chaîne libre (voir McpConnectionSummary).
+ * `terminatedTruncated` (historique coupé par le serveur) est un booléen exigé.
  */
 export class HttpMcpConnectionsRepository implements McpConnectionsRepository {
   private readonly apiBaseUrl: string
@@ -36,7 +37,7 @@ export class HttpMcpConnectionsRepository implements McpConnectionsRepository {
     this.apiBaseUrl = apiBaseUrl
   }
 
-  async list(): Promise<McpConnectionSummary[]> {
+  async list(): Promise<McpConnectionList> {
     const response = await this.send(`${this.apiBaseUrl}${PATH}`, {
       method: 'GET',
       credentials: 'include',
@@ -105,13 +106,19 @@ export class HttpMcpConnectionsRepository implements McpConnectionsRepository {
     return null !== body && 'object' === typeof body && hasProblemType(body, slug)
   }
 
-  private parseList(body: unknown): McpConnectionSummary[] {
-    const connections = (body as { connections?: unknown } | null)?.connections
-    if (!Array.isArray(connections)) {
+  private parseList(body: unknown): McpConnectionList {
+    const raw = body as { connections?: unknown; terminatedTruncated?: unknown } | null
+    // `terminatedTruncated` est lu strictement, comme le reste : un booléen,
+    // jamais « truthy ». Absent (un backend plus ancien), la page ne saurait
+    // pas dire si l'historique est coupé : mieux vaut un échec qu'un silence.
+    if (!Array.isArray(raw?.connections) || 'boolean' !== typeof raw.terminatedTruncated) {
       throw new McpConnectionsRequestFailedError('The MCP connections response has an unexpected shape')
     }
 
-    return connections.map((entry) => this.parseEntry(entry))
+    return {
+      connections: raw.connections.map((entry) => this.parseEntry(entry)),
+      terminatedTruncated: raw.terminatedTruncated,
+    }
   }
 
   private parseEntry(entry: unknown): McpConnectionSummary {

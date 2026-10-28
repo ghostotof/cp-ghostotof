@@ -16,9 +16,10 @@ use Psr\Clock\ClockInterface;
 use Symfony\Component\Uid\Uuid;
 
 /**
- * « Mes connexions MCP » (#650), la lecture : une requête (les connexions du
- * compte avec leur client), l'état et l'échéance jugés à l'instant de
- * l'horloge — Paris, comme partout dans la tranche.
+ * « Mes connexions MCP » (#650), la lecture : deux requêtes au plus (les
+ * connexions non révoquées du compte, toutes ; les {@see self::TERMINATED_LIMIT}
+ * dernières terminées), chacune avec son client joint, l'état et l'échéance
+ * jugés à l'instant de l'horloge — Paris, comme partout dans la tranche.
  *
  * **La révocation par la personne** est une instruction, sans
  * `TransactionInterface` ({@see McpConnectionRepositoryInterface::revokeActiveOfAccount()}) :
@@ -39,6 +40,13 @@ use Symfony\Component\Uid\Uuid;
  */
 final readonly class OwnMcpConnections implements OwnMcpConnectionsInterface
 {
+    /**
+     * Combien de connexions terminées la liste montre, au plus : **le seul
+     * endroit** où ce nombre est écrit (la page n'en cite aucun, elle lit
+     * `terminatedTruncated`).
+     */
+    public const int TERMINATED_LIMIT = 50;
+
     public function __construct(
         private McpConnectionRepositoryInterface $connections,
         private ClockInterface $clock,
@@ -48,13 +56,21 @@ final readonly class OwnMcpConnections implements OwnMcpConnectionsInterface
     ) {
     }
 
-    public function of(AccountReference $account): array
+    public function of(AccountReference $account): OwnMcpConnectionList
     {
         $now = $this->clock->now();
+        $accountId = Uuid::fromString($account->accountId());
 
-        return array_map(
-            fn(McpConnection $connection): OwnMcpConnectionView => $this->viewOf($connection, $now),
-            $this->connections->findAllOfAccount(Uuid::fromString($account->accountId())),
+        // Une lecture par moitié : une ligne terminée de plus que la limite
+        // suffit à dire qu'il y en a davantage, sans second COUNT.
+        $terminated = $this->connections->findTerminatedOfAccount($accountId, self::TERMINATED_LIMIT + 1);
+        $connections = [...$this->connections->findNotRevokedOfAccount($accountId), ...\array_slice($terminated, 0, self::TERMINATED_LIMIT)];
+        // Les deux moitiés se mêlent dans l'ordre du client : octroi décroissant, identifiant décroissant.
+        usort($connections, $this->newestGrantFirst(...));
+
+        return new OwnMcpConnectionList(
+            array_map(fn(McpConnection $connection): OwnMcpConnectionView => $this->viewOf($connection, $now), $connections),
+            \count($terminated) > self::TERMINATED_LIMIT,
         );
     }
 
@@ -79,6 +95,17 @@ final readonly class OwnMcpConnections implements OwnMcpConnectionsInterface
             fn() => $this->auditLogger->mcpConnectionRevoked($revoked, $revoked->cause()->value),
             'Revoked connection not audited.',
         );
+    }
+
+    /**
+     * L'ordre des deux dépôts, rejoué sur les deux moitiés mêlées : octroi
+     * décroissant, l'identifiant décroissant départageant deux octrois égaux.
+     */
+    private function newestGrantFirst(McpConnection $a, McpConnection $b): int
+    {
+        $byGrant = $b->grantedAt() <=> $a->grantedAt();
+
+        return 0 !== $byGrant ? $byGrant : strcmp($b->getId()->toRfc4122(), $a->getId()->toRfc4122());
     }
 
     private function viewOf(McpConnection $connection, DateTimeImmutable $now): OwnMcpConnectionView

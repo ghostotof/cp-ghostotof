@@ -22,6 +22,12 @@ import { formatInstant } from '../format/instant'
  * rallongeraient la navigation au clavier d'une liste qui tient en quelques
  * lignes. Le titre de page est donc le seul titre ; pas de saut de niveau.
  *
+ * L'historique des connexions terminées est borné par le serveur ; quand il
+ * l'a coupé (`terminatedTruncated`), une mention le dit sous la table — sans
+ * nombre : la borne est au serveur, la page n'en recopie aucune. La mention
+ * est un paragraphe ordinaire, pas la région `role="status"` : elle ne change
+ * pas sous les yeux de la personne, il n'y a rien à annoncer.
+ *
  * Révoquer demande une confirmation (`window.confirm`, convention du
  * backoffice) qui nomme l'assistant : l'action coupe un accès que la personne
  * devra autoriser de nouveau. L'issue est annoncée dans la seule région
@@ -29,7 +35,7 @@ import { formatInstant } from '../format/instant'
  */
 
 const { t, locale: i18nLocale } = useI18n()
-const { status, connections, revokingId, lastOutcome, load, revoke } = useMcpConnections()
+const { status, connections, terminatedTruncated, revokingId, lastOutcome, load, revoke } = useMcpConnections()
 
 const currentLocale = computed(() => i18nLocale.value as Locale)
 
@@ -248,5 +254,13 @@ onMounted(() => {
         </tbody>
       </table>
     </div>
+
+    <p
+      v-if="terminatedTruncated"
+      class="text-body-secondary small mb-0"
+      data-testid="terminated-truncated"
+    >
+      {{ t('mcpConnections.terminatedTruncated') }}
+    </p>
   </section>
 </template>

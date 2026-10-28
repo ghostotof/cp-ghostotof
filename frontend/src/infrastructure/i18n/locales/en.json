@@ -847,6 +847,7 @@
       "state": "State",
       "actions": "Actions"
     },
+    "terminatedTruncated": "History is limited: only the most recent ended connections are shown.",
     "neverUsed": "Never used",
     "states": {
       "active": "Active",

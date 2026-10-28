@@ -51,7 +51,7 @@ describe('HttpMcpConnectionsRepository', () => {
 
   describe('list()', () => {
     it('GET /api/me/mcp-connections avec le cookie de session', async () => {
-      fetchMock.mockResolvedValue(jsonResponse({ connections: [] }))
+      fetchMock.mockResolvedValue(jsonResponse({ connections: [], terminatedTruncated: false }))
 
       await repository.list()
 
@@ -63,21 +63,27 @@ describe('HttpMcpConnectionsRepository', () => {
     })
 
     it("rend les connexions dans l'ordre du serveur, avec leurs champs", async () => {
-      fetchMock.mockResolvedValue(jsonResponse({ connections: [ACTIVE, REVOKED] }))
+      fetchMock.mockResolvedValue(jsonResponse({ terminatedTruncated: false, connections: [ACTIVE, REVOKED] }))
 
-      await expect(repository.list()).resolves.toEqual([ACTIVE, REVOKED])
+      await expect(repository.list()).resolves.toEqual({ connections: [ACTIVE, REVOKED], terminatedTruncated: false })
     })
 
     it("rend une liste vide quand la personne n'a aucune connexion", async () => {
-      fetchMock.mockResolvedValue(jsonResponse({ connections: [] }))
+      fetchMock.mockResolvedValue(jsonResponse({ connections: [], terminatedTruncated: false }))
 
-      await expect(repository.list()).resolves.toEqual([])
+      await expect(repository.list()).resolves.toEqual({ connections: [], terminatedTruncated: false })
+    })
+
+    it("rend la troncature de l'historique que le serveur annonce", async () => {
+      fetchMock.mockResolvedValue(jsonResponse({ connections: [ACTIVE], terminatedTruncated: true }))
+
+      await expect(repository.list()).resolves.toEqual({ connections: [ACTIVE], terminatedTruncated: true })
     })
 
     it('garde telle quelle une cause de révocation inconnue du frontend', async () => {
-      fetchMock.mockResolvedValue(jsonResponse({ connections: [{ ...REVOKED, revocationCause: 'a-future-cause' }] }))
+      fetchMock.mockResolvedValue(jsonResponse({ terminatedTruncated: false, connections: [{ ...REVOKED, revocationCause: 'a-future-cause' }] }))
 
-      const [connection] = await repository.list()
+      const { connections: [connection] } = await repository.list()
 
       expect(connection?.revocationCause).toBe('a-future-cause')
     })
@@ -107,18 +113,22 @@ describe('HttpMcpConnectionsRepository', () => {
     })
 
     it.each([
-      ['un corps sans la clé connections', {}],
-      ['connections qui n\'est pas un tableau', { connections: 'x' }],
-      ['une entrée sans id', { connections: [{ ...ACTIVE, id: undefined }] }],
-      ['une entrée sans client', { connections: [{ ...ACTIVE, client: undefined }] }],
-      ['un client sans nom', { connections: [{ ...ACTIVE, client: { id: 'x' } }] }],
-      ['un grantedAt absent', { connections: [{ ...ACTIVE, grantedAt: undefined }] }],
-      ['un expiresAt qui n\'est pas une chaîne', { connections: [{ ...ACTIVE, expiresAt: 12 }] }],
-      ['un lastUsedAt ni chaîne ni null', { connections: [{ ...ACTIVE, lastUsedAt: 12 }] }],
-      ['un revokedAt ni chaîne ni null', { connections: [{ ...ACTIVE, revokedAt: false }] }],
-      ['une cause ni chaîne ni null', { connections: [{ ...ACTIVE, revocationCause: 3 }] }],
-      ['un état inconnu', { connections: [{ ...ACTIVE, state: 'paused' }] }],
-      ['un état absent', { connections: [{ ...ACTIVE, state: undefined }] }],
+      ['un corps sans la clé connections', { terminatedTruncated: false }],
+      ['connections qui n\'est pas un tableau', { terminatedTruncated: false, connections: 'x' }],
+      ['une entrée sans id', { terminatedTruncated: false, connections: [{ ...ACTIVE, id: undefined }] }],
+      ['une entrée sans client', { terminatedTruncated: false, connections: [{ ...ACTIVE, client: undefined }] }],
+      ['un client sans nom', { terminatedTruncated: false, connections: [{ ...ACTIVE, client: { id: 'x' } }] }],
+      ['un grantedAt absent', { terminatedTruncated: false, connections: [{ ...ACTIVE, grantedAt: undefined }] }],
+      ['un expiresAt qui n\'est pas une chaîne', { terminatedTruncated: false, connections: [{ ...ACTIVE, expiresAt: 12 }] }],
+      ['un lastUsedAt ni chaîne ni null', { terminatedTruncated: false, connections: [{ ...ACTIVE, lastUsedAt: 12 }] }],
+      ['un revokedAt ni chaîne ni null', { terminatedTruncated: false, connections: [{ ...ACTIVE, revokedAt: false }] }],
+      ['une cause ni chaîne ni null', { terminatedTruncated: false, connections: [{ ...ACTIVE, revocationCause: 3 }] }],
+      ['un état inconnu', { terminatedTruncated: false, connections: [{ ...ACTIVE, state: 'paused' }] }],
+      ['un état absent', { terminatedTruncated: false, connections: [{ ...ACTIVE, state: undefined }] }],
+      ['un terminatedTruncated absent', { connections: [ACTIVE] }],
+      ['un terminatedTruncated qui n\'est pas un booléen (chaîne)', { connections: [ACTIVE], terminatedTruncated: 'true' }],
+      ['un terminatedTruncated qui n\'est pas un booléen (nombre)', { connections: [ACTIVE], terminatedTruncated: 1 }],
+      ['un terminatedTruncated nul', { connections: [ACTIVE], terminatedTruncated: null }],
     ])('%s est un échec de la requête', async (_label, body) => {
       fetchMock.mockResolvedValue(jsonResponse(body))
 

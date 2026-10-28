@@ -20,9 +20,10 @@ use Symfony\Component\Uid\Uuid;
  * « Mes connexions MCP » (#650, spec 0007 tâche 11) : les connexions que la
  * personne du palier de confiance a accordées, lues sous `/api/me/`.
  *
- * - `GET /api/me/mcp-connections` : la liste, toutes les connexions du compte
- *   — actives, expirées, révoquées gardées six mois — avec leur état et, si
- *   elles sont coupées, quand et pourquoi.
+ * - `GET /api/me/mcp-connections` : la liste, toutes les connexions non
+ *   révoquées du compte et les dernières terminées (révoquées, expirées
+ *   marquées, gardées six mois), avec leur état et, si elles sont coupées,
+ *   quand et pourquoi ; `terminatedTruncated` dit si l'historique est coupé.
  * - `DELETE /api/me/mcp-connections/{id}` : la personne révoque l'une des
  *   siennes — 204, effet à la requête suivante du client MCP. Celle d'un autre
  *   compte et un UUID inconnu répondent le même 404 ; une connexion à elle déjà
@@ -55,8 +56,11 @@ final readonly class OwnMcpConnectionsController
     #[Route('/api/me/mcp-connections', name: 'me_mcp_connections_list', methods: ['GET'])]
     public function list(#[CurrentUser] CpgUser $account): JsonResponse
     {
+        $list = $this->ownConnections->of($account);
         $response = new JsonResponse([
-            'connections' => array_map($this->entryOf(...), $this->ownConnections->of($account)),
+            'connections' => array_map($this->entryOf(...), $list->connections),
+            // L'historique des terminées est borné : vrai quand il en existe de plus anciennes que la liste.
+            'terminatedTruncated' => $list->terminatedTruncated,
         ]);
         $response->headers->set('Cache-Control', 'no-store');
 

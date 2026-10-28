@@ -16,13 +16,15 @@ use Symfony\Component\Uid\Uuid;
 interface OwnMcpConnectionsInterface
 {
     /**
-     * Toutes les connexions du compte — actives, expirées, révoquées que la
-     * purge n'a pas encore supprimées —, la plus récemment octroyée d'abord,
-     * avec leur état à l'instant de l'horloge. Une requête.
-     *
-     * @return list<OwnMcpConnectionView>
+     * Les connexions du compte avec leur état à l'instant de l'horloge, la plus
+     * récemment octroyée d'abord : **toutes les non révoquées** (actives, et
+     * échues que la purge n'a pas encore marquées) et **les
+     * {@see OwnMcpConnections::TERMINATED_LIMIT} dernières terminées**
+     * (révoquées, expirées marquées) que la purge n'a pas encore supprimées.
+     * `terminatedTruncated` dit s'il en existe davantage. Deux requêtes au plus,
+     * quel que soit le nombre de connexions.
      */
-    public function of(AccountReference $account): array;
+    public function of(AccountReference $account): OwnMcpConnectionList;
 
     /**
      * La personne révoque l'une de ses connexions (#650), cause `person` : le

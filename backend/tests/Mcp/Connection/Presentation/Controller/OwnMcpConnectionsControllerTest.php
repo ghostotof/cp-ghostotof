@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Mcp\Connection\Presentation\Controller;
 
+use App\Mcp\Connection\Application\OwnMcpConnections;
 use App\Security\Authentication\Application\SecurityAuditLoggerInterface;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Tests\Mcp\Support\HeldMcpConnection;
@@ -103,7 +104,8 @@ final class OwnMcpConnectionsControllerTest extends WebTestCase
         $this->assertNotStored($response);
         self::assertStringStartsWith('application/json', (string) $response->headers->get('Content-Type'));
         $body = $this->json($response);
-        self::assertSame(['connections'], array_keys($body));
+        self::assertSame(['connections', 'terminatedTruncated'], array_keys($body));
+        self::assertFalse($body['terminatedTruncated']);
         self::assertIsList($body['connections']);
         self::assertCount(1, $body['connections']);
         $entry = $body['connections'][0];
@@ -215,6 +217,53 @@ final class OwnMcpConnectionsControllerTest extends WebTestCase
         }
     }
 
+    /**
+     * Borne de l'historique (#650, R3) : cinquante et une terminées, deux non
+     * révoquées dont une **plus ancienne que toutes les terminées** — la liste
+     * rend les deux non révoquées, les cinquante terminées les plus
+     * récemment octroyées (jamais la cinquante et unième), et le dit par
+     * `terminatedTruncated`.
+     */
+    public function testTheListKeepsEveryNonRevokedConnectionAndTheLastFiftyTerminated(): void
+    {
+        $old = $this->holdMcpConnection();
+        $this->alterHeldConnection($old, "granted_at = now() - INTERVAL '80 days', last_used_at = now() - INTERVAL '1 day'");
+        $recent = $this->holdAnotherMcpConnection();
+        $this->insertTerminatedConnectionsLike($recent, OwnMcpConnections::TERMINATED_LIMIT + 1);
+        $expectedTerminated = \array_slice($this->terminatedIdsNewestFirst(), 0, OwnMcpConnections::TERMINATED_LIMIT);
+
+        $response = $this->listResponseAsTrusted();
+
+        $entries = $this->entriesOf($response);
+        self::assertTrue($this->json($response)['terminatedTruncated']);
+        self::assertCount(2 + OwnMcpConnections::TERMINATED_LIMIT, $entries);
+        $ids = array_map(static fn(array $entry): mixed => $entry['id'], $entries);
+        self::assertContains($old->connectionId, $ids, 'Une non révoquée ancienne est toujours rendue.');
+        self::assertContains($recent->connectionId, $ids);
+        $terminatedIds = array_values(array_filter(
+            array_map(static fn(array $entry): mixed => 'revoked' === $entry['state'] ? $entry['id'] : null, $entries),
+            static fn(mixed $id): bool => null !== $id,
+        ));
+        self::assertSame($expectedTerminated, $terminatedIds, 'Les cinquante terminées les plus récemment octroyées, pas une de plus.');
+        self::assertSame($ids[0], $recent->connectionId, 'L\'ordre est celui de l\'octroi décroissant, les deux moitiés mêlées.');
+        self::assertSame($old->connectionId, $ids[\count($ids) - 1], 'L\'ancienne non révoquée vient après les terminées plus récentes qu\'elle.');
+        // La coupe est faite par la base, pas en PHP après avoir tout hydraté : une ligne de plus que la limite est lue, pas toutes.
+        $limits = array_values(array_filter($this->executedSql(), static fn(string $sql): bool => str_contains($sql, 'mcp_connection') && str_contains($sql, 'LIMIT '.(OwnMcpConnections::TERMINATED_LIMIT + 1))));
+        self::assertCount(1, $limits, implode("\n", $this->executedSql()));
+    }
+
+    /** Exactement cinquante terminées : rien n'est coupé, `terminatedTruncated` est faux. */
+    public function testExactlyFiftyTerminatedConnectionsAreNotATruncation(): void
+    {
+        $recent = $this->holdMcpConnection();
+        $this->insertTerminatedConnectionsLike($recent, OwnMcpConnections::TERMINATED_LIMIT);
+
+        $response = $this->listResponseAsTrusted();
+
+        self::assertFalse($this->json($response)['terminatedTruncated']);
+        self::assertCount(1 + OwnMcpConnections::TERMINATED_LIMIT, $this->entriesOf($response));
+    }
+
     /** Le palier de base (ADR 0003 D6) n'est pas le palier de confiance. */
     public function testTheBaseTierIsForbidden(): void
     {
@@ -234,11 +283,12 @@ final class OwnMcpConnectionsControllerTest extends WebTestCase
     }
 
     /**
-     * Trois connexions, une requête de plus que l'authentification : la liste
-     * lit les connexions et leur client en une instruction (jointure), jamais
-     * une requête par connexion.
+     * Le coût de la liste (#650, R3) : une requête par moitié — les non
+     * révoquées, les terminées bornées —, au plus deux, quel que soit le nombre
+     * de connexions ; le client est joint à chacune, jamais lu à la demande
+     * (une requête par connexion).
      */
-    public function testTheListCostsOneQuery(): void
+    public function testTheListCostsAtMostTwoQueries(): void
     {
         $this->holdMcpConnection();
         $this->holdAnotherMcpConnection();
@@ -250,8 +300,10 @@ final class OwnMcpConnectionsControllerTest extends WebTestCase
         self::assertResponseIsSuccessful();
         self::assertCount(3, $this->entriesOf($this->client->getResponse()));
         $statements = array_values(array_filter($this->executedSql(), static fn(string $sql): bool => str_contains($sql, 'mcp_')));
-        self::assertCount(1, $statements, implode("\n", $statements));
-        self::assertStringContainsString('mcp_client', $statements[0], 'Le client est joint à la connexion.');
+        self::assertLessThanOrEqual(2, \count($statements), implode("\n", $statements));
+        foreach ($statements as $statement) {
+            self::assertStringContainsString('mcp_client', $statement, 'Le client est joint à la connexion.');
+        }
     }
 
     /** Ni le jeton d'accès ni son empreinte, ni le jeton de rafraîchissement : le corps ne les porte pas. */
@@ -537,6 +589,33 @@ final class OwnMcpConnectionsControllerTest extends WebTestCase
         $this->loginAs(self::OTHER_TRUSTED_USERNAME, [CpgUser::ROLE_TRUSTED]);
 
         return $this->heldMcpConnectionOf($this->exchange($this->codeGrantedByTheSignedInAccount()));
+    }
+
+    /**
+     * Ajoute `$count` connexions révoquées (cause `person`), au même compte et
+     * au même client que `$template`, octroyées chacune une minute avant la
+     * précédente à partir de maintenant : la n-ième est la n-ième plus récente.
+     */
+    private function insertTerminatedConnectionsLike(HeldMcpConnection $template, int $count): void
+    {
+        $inserted = $this->mcpRows()->executeStatement(
+            "INSERT INTO mcp_connection (id, scope, granted_at, last_used_at, revoked_at, account_id, mcp_client_id, revocation_cause, code_exchanged_at)
+             SELECT gen_random_uuid(), source.scope, now() - (n * INTERVAL '1 minute'), NULL, now(), source.account_id, source.mcp_client_id, 'person', now()
+             FROM mcp_connection source CROSS JOIN generate_series(1, :count) AS n WHERE source.id = :id",
+            ['count' => $count, 'id' => $template->connectionId],
+        );
+        self::assertSame($count, $inserted);
+        self::getContainer()->get(EntityManagerInterface::class)->clear();
+    }
+
+    /**
+     * @return list<string> les révoquées de la base, la plus récemment octroyée d'abord
+     */
+    private function terminatedIdsNewestFirst(): array
+    {
+        $ids = $this->mcpRows()->fetchFirstColumn('SELECT id FROM mcp_connection WHERE revoked_at IS NOT NULL ORDER BY granted_at DESC, id DESC');
+
+        return array_map(static fn(mixed $id): string => \is_string($id) ? $id : '', $ids);
     }
 
     private function listResponseAsTrusted(): Response

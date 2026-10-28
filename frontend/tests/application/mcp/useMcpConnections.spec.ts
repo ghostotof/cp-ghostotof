@@ -8,6 +8,7 @@ import type { McpConnectionSummary } from '../../../src/domain/mcp/entities/McpC
 import { McpConnectionNotFoundError } from '../../../src/domain/mcp/errors/McpConnectionNotFoundError'
 import { McpConnectionsRequestFailedError } from '../../../src/domain/mcp/errors/McpConnectionsRequestFailedError'
 import { SessionExpiredError } from '../../../src/domain/mcp/errors/SessionExpiredError'
+import { listOf } from '../../support/mcpConnectionList'
 
 enableAutoUnmount(afterEach)
 
@@ -64,16 +65,17 @@ describe('useMcpConnections', () => {
   })
 
   it('est en chargement avant tout appel', () => {
-    const connections = mountComposable({ list: vi.fn(async () => []), revoke: vi.fn() })
+    const connections = mountComposable({ list: vi.fn(async () => listOf([])), revoke: vi.fn() })
 
     expect(connections.status.value).toBe('loading')
     expect(connections.connections.value).toEqual([])
     expect(connections.revokingId.value).toBeNull()
     expect(connections.lastOutcome.value).toBeNull()
+    expect(connections.terminatedTruncated.value).toBe(false)
   })
 
   it('load() charge la liste puis passe à ready', async () => {
-    const connections = mountComposable({ list: vi.fn(async () => [A, B]), revoke: vi.fn() })
+    const connections = mountComposable({ list: vi.fn(async () => listOf([A, B])), revoke: vi.fn() })
 
     await connections.load()
 
@@ -81,14 +83,44 @@ describe('useMcpConnections', () => {
     expect(connections.connections.value).toEqual([A, B])
   })
 
+  it("load() garde l'indication de troncature du serveur, sans la recalculer", async () => {
+    const connections = mountComposable({ list: vi.fn(async () => listOf([A, B], true)), revoke: vi.fn() })
+
+    await connections.load()
+
+    expect(connections.terminatedTruncated.value).toBe(true)
+    expect(connections.connections.value).toEqual([A, B])
+  })
+
+  it("la troncature suit la dernière lecture : relue après une révocation, elle peut tomber", async () => {
+    const list = vi.fn().mockResolvedValueOnce(listOf([A, B], true)).mockResolvedValueOnce(listOf([A], false))
+    const connections = mountComposable({ list, revoke: vi.fn(async () => undefined) })
+    await connections.load()
+
+    await connections.revoke('b')
+
+    expect(connections.terminatedTruncated.value).toBe(false)
+  })
+
   it("load() en échec passe à error et vide la liste", async () => {
-    const list = vi.fn().mockResolvedValue([A]).mockRejectedValueOnce(new McpConnectionsRequestFailedError())
+    const list = vi.fn().mockResolvedValue(listOf([A])).mockRejectedValueOnce(new McpConnectionsRequestFailedError())
     const connections = mountComposable({ list, revoke: vi.fn() })
 
     await connections.load()
 
     expect(connections.status.value).toBe('error')
     expect(connections.connections.value).toEqual([])
+  })
+
+  it("load() en échec n'affiche pas la mention d'une liste qu'il n'a plus", async () => {
+    const list = vi.fn().mockResolvedValueOnce(listOf([A], true)).mockRejectedValueOnce(new McpConnectionsRequestFailedError())
+    const connections = mountComposable({ list, revoke: vi.fn() })
+    await connections.load()
+
+    await connections.load()
+
+    expect(connections.status.value).toBe('error')
+    expect(connections.terminatedTruncated.value).toBe(false)
   })
 
   it('load() sur une session expirée marque la session expirée', async () => {
@@ -102,7 +134,7 @@ describe('useMcpConnections', () => {
 
   it('revoke() révoque puis recharge la liste depuis le serveur, outcome revoked', async () => {
     const revoke = vi.fn(async () => undefined)
-    const list = vi.fn().mockResolvedValueOnce([A, B]).mockResolvedValueOnce([A, connection('b', 'revoked')])
+    const list = vi.fn().mockResolvedValueOnce(listOf([A, B])).mockResolvedValueOnce(listOf([A, connection('b', 'revoked')]))
     const connections = mountComposable({ list, revoke })
     await connections.load()
 
@@ -118,7 +150,7 @@ describe('useMcpConnections', () => {
 
   it('un 404 donne already-gone et recharge la liste', async () => {
     const revoke = vi.fn().mockRejectedValue(new McpConnectionNotFoundError())
-    const list = vi.fn().mockResolvedValueOnce([A, B]).mockResolvedValueOnce([A])
+    const list = vi.fn().mockResolvedValueOnce(listOf([A, B])).mockResolvedValueOnce(listOf([A]))
     const connections = mountComposable({ list, revoke })
     await connections.load()
 
@@ -132,7 +164,7 @@ describe('useMcpConnections', () => {
 
   it('une erreur donne failed et laisse la liste inchangée, sans recharger', async () => {
     const revoke = vi.fn().mockRejectedValue(new McpConnectionsRequestFailedError())
-    const list = vi.fn().mockResolvedValue([A, B])
+    const list = vi.fn().mockResolvedValue(listOf([A, B]))
     const connections = mountComposable({ list, revoke })
     await connections.load()
 
@@ -147,7 +179,7 @@ describe('useMcpConnections', () => {
 
   it('une session expirée pendant la révocation marque la session expirée, outcome failed', async () => {
     const connections = mountComposable({
-      list: vi.fn().mockResolvedValue([A]),
+      list: vi.fn().mockResolvedValue(listOf([A])),
       revoke: vi.fn().mockRejectedValue(new SessionExpiredError()),
     })
     await connections.load()
@@ -161,7 +193,7 @@ describe('useMcpConnections', () => {
 
   it('une erreur inattendue du dépôt donne failed aussi', async () => {
     const connections = mountComposable({
-      list: vi.fn().mockResolvedValue([A]),
+      list: vi.fn().mockResolvedValue(listOf([A])),
       revoke: vi.fn().mockRejectedValue(new Error('boom')),
     })
     await connections.load()
@@ -172,7 +204,7 @@ describe('useMcpConnections', () => {
   })
 
   it('le rechargement qui suit une révocation en échec garde la révocation acquise (outcome revoked)', async () => {
-    const list = vi.fn().mockResolvedValueOnce([A]).mockRejectedValueOnce(new McpConnectionsRequestFailedError())
+    const list = vi.fn().mockResolvedValueOnce(listOf([A])).mockRejectedValueOnce(new McpConnectionsRequestFailedError())
     const connections = mountComposable({ list, revoke: vi.fn(async () => undefined) })
     await connections.load()
 
@@ -186,7 +218,7 @@ describe('useMcpConnections', () => {
   it('deux revoke() de suite, sans attendre : une seule requête, revokingId posé', async () => {
     let release: () => void = () => undefined
     const revoke = vi.fn(() => new Promise<void>((resolve) => { release = resolve }))
-    const connections = mountComposable({ list: vi.fn().mockResolvedValue([A, B]), revoke })
+    const connections = mountComposable({ list: vi.fn().mockResolvedValue(listOf([A, B])), revoke })
     await connections.load()
 
     const first = connections.revoke('a')
@@ -203,7 +235,7 @@ describe('useMcpConnections', () => {
 
   it("remet lastOutcome à null au début d'une nouvelle révocation", async () => {
     const revoke = vi.fn().mockRejectedValueOnce(new McpConnectionsRequestFailedError()).mockImplementationOnce(() => new Promise(() => undefined))
-    const connections = mountComposable({ list: vi.fn().mockResolvedValue([A]), revoke })
+    const connections = mountComposable({ list: vi.fn().mockResolvedValue(listOf([A])), revoke })
     await connections.load()
     await connections.revoke('a')
     expect(connections.lastOutcome.value).toBe('failed')

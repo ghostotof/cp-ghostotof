@@ -1,4 +1,4 @@
-import type { McpConnectionSummary } from '../entities/McpConnection'
+import type { McpConnectionList } from '../entities/McpConnection'
 
 /**
  * Abstraction (DIP) de « Mes connexions MCP » (#650, spec 0007 tâche 11).
@@ -9,12 +9,15 @@ import type { McpConnectionSummary } from '../entities/McpConnection'
 export interface McpConnectionsRepository {
   /**
    * Les connexions du compte, dans l'ordre du serveur (octroi décroissant) :
-   * actives, expirées, et révoquées gardées six mois.
+   * toutes celles qui ne sont pas révoquées (actives, ou échues que la purge
+   * n'a pas encore marquées) et les dernières terminées (révoquées, expirées
+   * marquées), le serveur bornant ces dernières. `terminatedTruncated` dit
+   * qu'il en existe de plus anciennes, que la liste ne porte pas.
    *
    * @throws SessionExpiredError session absente, expirée ou sans le palier de confiance (401/403)
    * @throws McpConnectionsRequestFailedError tout autre échec, dont une réponse mal formée
    */
-  list(): Promise<McpConnectionSummary[]>
+  list(): Promise<McpConnectionList>
 
   /**
    * Révoque l'une de ses connexions. Idempotent côté serveur : une connexion

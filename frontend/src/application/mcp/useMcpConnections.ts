@@ -26,6 +26,8 @@ export type McpRevocationOutcome = 'revoked' | 'already-gone' | 'failed'
 export interface UseMcpConnectionsResult {
   status: DeepReadonly<Ref<McpConnectionsStatus>>
   connections: DeepReadonly<Ref<McpConnectionSummary[]>>
+  /** Vrai quand le serveur a coupé l'historique des connexions terminées : la page le dit. */
+  terminatedTruncated: DeepReadonly<Ref<boolean>>
   /** L'identifiant en cours de révocation, `null` sinon : la page y désactive ses boutons. */
   revokingId: DeepReadonly<Ref<string | null>>
   lastOutcome: DeepReadonly<Ref<McpRevocationOutcome | null>>
@@ -54,19 +56,23 @@ export function useMcpConnections(): UseMcpConnectionsResult {
 
   const status = ref<McpConnectionsStatus>('loading')
   const connections = shallowRef<McpConnectionSummary[]>([])
+  const terminatedTruncated = ref(false)
   const revokingId = ref<string | null>(null)
   const lastOutcome = ref<McpRevocationOutcome | null>(null)
 
   const load = async (): Promise<void> => {
     status.value = 'loading'
     try {
-      connections.value = await repository.list()
+      const list = await repository.list()
+      connections.value = list.connections
+      terminatedTruncated.value = list.terminatedTruncated
       status.value = 'ready'
     } catch (caught) {
       if (caught instanceof SessionExpiredError) {
         markSessionExpired()
       }
       connections.value = []
+      terminatedTruncated.value = false
       status.value = 'error'
     }
   }
@@ -108,6 +114,7 @@ export function useMcpConnections(): UseMcpConnectionsResult {
   return {
     status: readonly(status),
     connections: readonly(connections),
+    terminatedTruncated: readonly(terminatedTruncated),
     revokingId: readonly(revokingId),
     lastOutcome: readonly(lastOutcome),
     load,

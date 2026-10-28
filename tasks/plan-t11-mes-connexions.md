@@ -688,8 +688,22 @@ voyait « mot de passe changé », puis sa prochaine action échouait en « Une 
 - À écrire par R5 : voir le rendu de la tâche.
 
 ### Task R3 : liste bornée (F6)
-- [ ] `GET /api/me/mcp-connections` : toutes les connexions non révoquées, plus les 50 dernières terminées ; champ
+- [x] `GET /api/me/mcp-connections` : toutes les connexions non révoquées, plus les 50 dernières terminées ; champ
   `terminatedTruncated` ; une requête par moitié au plus, pas de N+1 ; frontend : mention de la troncature ; tests.
+  *Fait.* Dépôt : `findAllOfAccount()` est remplacée par `findNotRevokedOfAccount()` (sans limite) et
+  `findTerminatedOfAccount($id, $limit)` (`revoked_at IS NOT NULL`, `LIMIT`), socle commun `ofAccountNewestFirst()`
+  (client joint, `granted_at DESC, id DESC`). `OwnMcpConnections::of()` demande **limite + 1** terminées (la ligne en
+  trop dit « il y en a davantage », sans `COUNT`), mêle les deux moitiés dans l'ordre du client et rend un
+  `OwnMcpConnectionList{connections, terminatedTruncated}`. La borne vit à un seul endroit :
+  `OwnMcpConnections::TERMINATED_LIMIT = 50` (la page n'en recopie aucune : mention sans nombre, texte via `t()`).
+  Index : `account_id` suffit, aucune migration (EXPLAIN : 0,24 ms et 1,0 ms pour 3 005 lignes du compte parmi 63 000).
+  Frontend : `McpConnectionList`, parsing strict du booléen, mention `data-testid="terminated-truncated"` (pas un
+  `role="status"`).
+- À écrire par R5 : `mcp-oauth-revocation-personne.md` (« `GET`: one query », paths:) : deux lectures au plus, non
+  révoquées toutes (bornées par nature : accord abandonné échu en 1 h, premier échange révoque les autres de la paire,
+  clients enregistrés en CLI, purge nocturne) + 50 terminées, `terminatedTruncated`, ordre mêlé rejoué en PHP, ligne
+  de plus pour détecter la troncature, absence de migration (EXPLAIN) ; liste des tests (`McpConnectionRepositoryTest`,
+  `OwnMcpConnectionsTest`, `OwnMcpConnectionsControllerTest`) ; docblock de `OwnMcpConnectionsController` déjà à jour.
 
 ### Task R4 : `code_exchanged_at` robuste (CR3) ; interblocage F1 écrit et épinglé — **Sensible (concurrence)**
 - [ ] CR3 : la colonne est écrite même si la relecture du code par `connectionIdOf()`/`findOneById()` échoue (instance

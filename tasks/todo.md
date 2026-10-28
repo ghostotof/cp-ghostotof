@@ -144,7 +144,7 @@ phase 1 parte en release seule ; puis au merge de clôture, qui archive la spec 
   - [x] R1b. Relecture F2 étendu : une session antérieure au changement de mot de passe est refusée par toute l'API (décision de l'auteur du 2026-10-28), ADR 0003 amendé — **sensible**
   - [x] R1c. Relecture R1b côté interface : un 401 du backoffice ferme la session et ramène à la connexion (décision de l'auteur du 2026-10-28), frontend seul
   - [x] R2. Relecture F5 : consentement lié au compte affiché (409)
-  - [ ] R3. Relecture F6 : liste bornée (non révoquées + 50 dernières terminées)
+  - [x] R3. Relecture F6 : liste bornée (non révoquées + 50 dernières terminées)
   - [ ] R4. Relecture CR3/F1 : `code_exchanged_at` robuste ; interblocage écrit et épinglé — **sensible**
   - [ ] R5. Relecture : corrections mineures et documentation
       **Notes de la release** (tâche 11, PR de la mère vers `develop`) :

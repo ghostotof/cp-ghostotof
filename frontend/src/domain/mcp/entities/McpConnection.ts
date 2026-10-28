@@ -32,3 +32,15 @@ export interface McpConnectionSummary {
    */
   revocationCause: string | null
 }
+
+/**
+ * Ce que la liste « Mes connexions MCP » rend : les connexions — toutes celles
+ * qui ne sont pas révoquées, plus les dernières terminées —, et si l'historique
+ * des terminées est coupé (`terminatedTruncated` : il en existe de plus
+ * anciennes que la page ne montre pas). Le serveur fixe la borne, le frontend
+ * n'en connaît pas le nombre.
+ */
+export interface McpConnectionList {
+  connections: McpConnectionSummary[]
+  terminatedTruncated: boolean
+}
