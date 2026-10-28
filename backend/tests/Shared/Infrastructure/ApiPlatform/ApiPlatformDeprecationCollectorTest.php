@@ -8,14 +8,13 @@ use App\Tests\Support\ApiPlatformDeprecations;
 use Closure;
 use DomainException;
 use PHPUnit\Framework\Attributes\DataProvider;
-
 use PHPUnit\Framework\TestCase;
 use ReflectionMethod;
 use Symfony\Component\Filesystem\Filesystem;
 
 /**
  * Le collecteur de dépréciations d'API Platform (issue #701), dont se sert
- * ApiPlatformRaisesNoDeprecationTest : ce qu'il retient, ce qu'il laisse
+ * {@see \App\Tests\Shared\Infrastructure\ApiPlatform\ApiPlatformRaisesNoDeprecationTest} : ce qu'il retient, ce qu'il laisse
  * passer, et qu'il rend l'état qu'il a trouvé.
  *
  * Il ne vaut que s'il ne ment dans aucun sens : une dépréciation d'API
@@ -344,7 +343,11 @@ final class ApiPlatformDeprecationCollectorTest extends TestCase
         require_once $legacyFile;
         require_once $callerFile;
 
-        /** @var array{class-string, class-string} */
-        return [$namespace.'\\LegacyApi', $namespace.'\\Caller'];
+        /** @var class-string $legacy */
+        $legacy = $namespace.'\\LegacyApi';
+        /** @var class-string $caller */
+        $caller = $namespace.'\\Caller';
+
+        return [$legacy, $caller];
     }
 }

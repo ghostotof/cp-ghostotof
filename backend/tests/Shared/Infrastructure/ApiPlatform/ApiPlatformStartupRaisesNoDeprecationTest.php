@@ -16,7 +16,8 @@ use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
  * construction des métadonnées des ressources ne déclenchent de dépréciation
  * d'API Platform (issue #701).
  *
- * `ApiPlatformRaisesNoDeprecationTest` n'observe que `$client->request()`. Or
+ * {@see \App\Tests\Shared\Infrastructure\ApiPlatform\ApiPlatformRaisesNoDeprecationTest}
+ * n'observe que `$client->request()`. Or
  * plusieurs dépréciations d'API Platform 4.4 naissent ailleurs : à la
  * compilation (`AttributeFilterPass` pour un `#[ApiFilter]`,
  * `ItemNormalizerDecorationBcPass` pour un normaliseur décoré,
@@ -44,7 +45,7 @@ use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
  * Limites : la compilation est lue hors débogage, comme les noyaux de parité
  * (`ProcessEnvironment`) ; une dépréciation qui ne naît qu'au premier usage
  * d'un service (un normaliseur à la première normalisation) n'est vue que par
- * les requêtes de `ApiPlatformRaisesNoDeprecationTest`.
+ * les requêtes de ce test-là.
  */
 final class ApiPlatformStartupRaisesNoDeprecationTest extends KernelTestCase
 {

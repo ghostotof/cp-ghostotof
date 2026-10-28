@@ -21,7 +21,7 @@ This file only carries what applies everywhere, plus what runs from the shell (g
 
 | Rule (`.claude/rules/`) | Area | Read it before… |
 |---|---|---|
-| `backend-outillage.md` | backend quality tooling, Monolog | touching PHPStan/Rector/Psalm/`lsp:check`, a CI quality job, logging |
+| `backend-outillage.md` | backend quality tooling, Monolog, API Platform's version and its deprecation guard | touching PHPStan/Rector/Psalm/`lsp:check`, a CI quality job, logging, the `api-platform/*` version, `.github/dependabot.yml` |
 | `backend-architecture.md` | backend DDD layout, UUID v7 keys, timestamps — and the index of the two below | adding an entity, a bounded context, a migration |
 | `backend-integrite.md` | authenticated envelopes and cache values, derived keys, `KeyedMac` | touching Messenger serialization, a cache pool, an HMAC, `APP_SECRET` |
 | `backend-conventions.md` | exceptions, `#[SensitiveParameter]`, regexes, imports, `sprintf` | writing any backend class |

@@ -19,7 +19,8 @@ use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
  * Le frontend, les smoke tests et l'audit lisent ces trois champs — le `type`
  * surtout, dont le client déduit le message à afficher. Une montée d'API
  * Platform les change sans que rien d'autre ne rougisse : leur forme vient de
- * son `ErrorListener` et de son normaliseur d'erreur, pas du projet. Les
+ * son {@see \ApiPlatform\Symfony\EventListener\ErrorListener} et de son
+ * normaliseur d'erreur, pas du projet. Les
  * autres tests épinglent le `type` d'une erreur du domaine (`/errors/<slug>`) ;
  * aucun ne le faisait pour les erreurs que le projet ne nomme pas — celles qu'API
  * Platform rend d'après le seul statut (`/errors/400`, `/errors/404`,
@@ -30,8 +31,9 @@ use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
  * note dans les notes de release : c'est un contrat que des clients lisent.
  *
  * Le 405 du routeur n'est pas rendu par API Platform — la route existe, la
- * méthode non, l'erreur naît avant lui —, mais par le `ProblemNormalizer` de
- * Symfony (`ApiJsonErrorFormatListener`) : d'où son `type` et son type MIME,
+ * méthode non, l'erreur naît avant lui —, mais par le
+ * {@see \Symfony\Component\Serializer\Normalizer\ProblemNormalizer} de Symfony
+ * ({@see \App\Shared\Infrastructure\Http\ApiJsonErrorFormatListener}) : d'où son `type` et son type MIME,
  * épinglés tels quels.
  */
 final class ApiPlatformProblemDetailsTest extends WebTestCase
@@ -43,6 +45,13 @@ final class ApiPlatformProblemDetailsTest extends WebTestCase
     private const string PROBLEM_JSON = 'application/problem+json';
 
     private const string GENERIC_TITLE = 'An error occurred';
+
+    /** Un corps de contact valide ; chaque cas qui en a besoin le surcharge d'un champ. */
+    private const array VALID_CONTACT = [
+        'name' => 'Jane Doe',
+        'email' => 'jane@example.com',
+        'message' => 'Bonjour, je souhaite vous contacter pour un projet.',
+    ];
 
     protected function setUp(): void
     {
@@ -56,7 +65,7 @@ final class ApiPlatformProblemDetailsTest extends WebTestCase
     }
 
     /**
-     * Un corps qui n'est pas du JSON : MalformedRequestBodyException, sans
+     * Un corps qui n'est pas du JSON : {@see \App\Shared\Infrastructure\ApiPlatform\MalformedRequestBodyException}, sans
      * `type` propre, donc celui qu'API Platform tire du statut.
      */
     public function testAnUnreadableBodyIsA400(): void
@@ -88,7 +97,7 @@ final class ApiPlatformProblemDetailsTest extends WebTestCase
 
     /**
      * Le `type` et le `title` d'une erreur du domaine viennent de son
-     * `ProblemExceptionInterface` : le slug, deux fois.
+     * {@see \ApiPlatform\Metadata\Exception\ProblemExceptionInterface} : le slug, deux fois.
      */
     public function testAnExceptionOfTheDomainKeepsItsSlugAsTypeAndTitleOnA409(): void
     {
@@ -126,11 +135,7 @@ final class ApiPlatformProblemDetailsTest extends WebTestCase
     {
         $client = $this->clientWithFreshQuotas();
 
-        $client->request('POST', '/api/contact', server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody([
-            'name' => 'Jane Doe',
-            'email' => 'not-an-email',
-            'message' => 'Bonjour, je souhaite vous contacter pour un projet.',
-        ]));
+        $client->request('POST', '/api/contact', server: ['CONTENT_TYPE' => 'application/json'], content: self::jsonBody([...self::VALID_CONTACT, 'email' => 'not-an-email']));
 
         // L'UUID est celui de la contrainte `Email` de Symfony (INVALID_EMAIL_ERROR).
         $problem = $this->assertProblem($client, 422, '/validation_errors/bd79c0ab-ddba-46cc-a703-a7a4b08de310', self::GENERIC_TITLE);
@@ -145,11 +150,7 @@ final class ApiPlatformProblemDetailsTest extends WebTestCase
     public function testARateLimitedRequestIsA429(): void
     {
         $client = $this->clientWithFreshQuotas();
-        $payload = self::jsonBody([
-            'name' => 'Jane Doe',
-            'email' => 'jane@example.com',
-            'message' => 'Bonjour, je souhaite vous contacter pour un projet.',
-        ]);
+        $payload = self::jsonBody(self::VALID_CONTACT);
 
         // Cinq par heure et par IP (limiteur `contact_form`).
         for ($i = 0; $i < 6; ++$i) {

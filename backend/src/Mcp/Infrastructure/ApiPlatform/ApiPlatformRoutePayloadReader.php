@@ -21,7 +21,8 @@ use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 /**
  * Rend le payload d'une route API Platform en reproduisant ce que la requête
  * HTTP ferait : le provider de l'opération, puis la normalisation `json` avec
- * le contexte que `SerializerContextBuilder` construit pour une requête.
+ * le contexte que {@see \ApiPlatform\Serializer\SerializerContextBuilder}
+ * construit pour une requête.
  *
  * Ce contexte n'est pas un détail : il porte `skip_null_values`, qui fait
  * omettre un champ `null` par la route (une carte sans icône n'a pas
@@ -170,15 +171,16 @@ final readonly class ApiPlatformRoutePayloadReader implements RoutePayloadReader
     }
 
     /**
-     * Les clés que `SerializerContextBuilder::createFromRequest()` pose pour
-     * une lecture ; celles qui dépendent de la requête HTTP elle-même
-     * (`request_uri`, `uri`) n'influent pas sur un payload JSON sans IRI.
+     * Les clés que {@see \ApiPlatform\Serializer\SerializerContextBuilder::createFromRequest()}
+     * pose pour une lecture ; celles qui dépendent de la requête HTTP
+     * elle-même (`request_uri`, `uri`) n'influent pas sur un payload JSON sans
+     * IRI.
      *
      * `SKIP_NULL_TO_ONE_RELATIONS` est posée comme le fait le constructeur de
-     * contexte (SerializerContextBuilder, ligne 63 en 4.4.6), pour que les
-     * deux restent identiques. Aucune classe du vendor ne la lit en 4.4.6, pas
-     * plus qu'en 4.3.19 : elle ne change pas la sortie aujourd'hui. La poser
-     * garde l'outil aligné sur la route le jour où un normaliseur s'en servira.
+     * contexte (la méthode ci-dessus), pour que les deux restent identiques.
+     * Aucune classe du vendor ne la lit en 4.4.6, pas plus qu'en 4.3.19 : elle
+     * ne change pas la sortie aujourd'hui. La poser garde l'outil aligné sur la
+     * route le jour où un normaliseur s'en servira.
      *
      * @param class-string          $resourceClass
      * @param array<string, string> $uriVariables

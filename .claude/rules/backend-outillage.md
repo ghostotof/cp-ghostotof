@@ -2,6 +2,7 @@
 paths:
   - "backend/**"
   - ".github/workflows/**"
+  - ".github/dependabot.yml"
   - "docker/php/**"
 ---
 
@@ -246,7 +247,7 @@ caret is deliberate and is **not** the exact pin of the 0.x packages (`mcp/*`, `
 precisely what let the family drift apart. When you bump one, bump them all (`composer update 'api-platform/*'`).
 `.github/dependabot.yml` carries an `ignore` of the **major** of `api-platform/*`: without it, since 5.0 came out
 (2026-09-16) the `backend-minor-patch` group rejected the two packages as « the latest version is a major » and
-never looked at the 4.x releases. **Remove that `ignore` when the 5.0 migration is done** (T3 of #701).
+never looked at the 4.x releases. **Remove that `ignore` when the 5.0 migration is done** (#735).
 **`ignoreIndirectDeprecations="true"` in `phpunit.dist.xml` stays** (it spares the noise of the rest of the vendor),
 and that is what hid this one, vendor calling vendor. `tests/Shared/Infrastructure/ApiPlatform/ApiPlatformRaisesNoDeprecationTest.php`
 is the targeted net: it runs five representative requests (valid write, 422, public reads, 404) under

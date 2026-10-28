@@ -6,7 +6,6 @@ namespace App\Tests\Support;
 
 use Closure;
 
-
 /**
  * Relève, le temps d'une action, les dépréciations que déclenche API Platform
  * (issue #701) — celles que PHPUnit ne montre pas.

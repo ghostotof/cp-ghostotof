@@ -16,6 +16,7 @@ use App\Security\User\Domain\Entity\CpgUser;
 use App\Tests\Support\ApiPlatformDeprecations;
 use App\Tests\Support\HttpJson;
 use App\Tests\Support\TestCredentials;
+use Closure;
 use Doctrine\ORM\EntityManagerInterface;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
@@ -46,6 +47,13 @@ final class ApiPlatformRaisesNoDeprecationTest extends WebTestCase
 {
     use HttpJson;
 
+    /** Un corps de contact valide ; le cas refusé le surcharge d'un champ. */
+    private const array VALID_CONTACT = [
+        'name' => 'Jane Doe',
+        'email' => 'jane@example.com',
+        'message' => 'Bonjour, je souhaite vous contacter pour un projet.',
+    ];
+
     private const string SUPER_USERNAME = 'super';
 
     protected function tearDown(): void
@@ -62,52 +70,55 @@ final class ApiPlatformRaisesNoDeprecationTest extends WebTestCase
      * vérifié : une requête qui sortirait plus tôt (un quota, un 500) ne
      * traverserait pas ce que la garde veut voir.
      *
-     * @return iterable<string, array{string, string, array<string, mixed>|null, int}>
+     * Le corps est un tableau, `null` (pas de corps), ou une fonction qui le
+     * produit au moment du test : un jeton inconnu doit être tiré à chaque
+     * passage, jamais figé dans le jeu de données.
+     *
+     * @return iterable<string, array{string, string, array<string, mixed>|Closure(): array<string, mixed>|null, int}>
      */
     public static function representativeRequests(): iterable
     {
         // Le cas qui a motivé la garde : corps JSON dénormalisé, validé, puis
         // posté sur le bus.
-        yield 'écriture valide (POST /api/contact, 202)' => ['POST', '/api/contact', [
-            'name' => 'Jane Doe',
-            'email' => 'jane@example.com',
-            'message' => 'Bonjour, je souhaite vous contacter pour un projet.',
-        ], 202];
+        yield 'écriture valide (POST /api/contact, 202)' => ['POST', '/api/contact', self::VALID_CONTACT, 202];
 
         // Même route, refusée par la validation : la violation est
-        // normalisée par API Platform (ConstraintViolationListNormalizer).
-        yield 'écriture refusée (POST /api/contact, 422)' => ['POST', '/api/contact', [
-            'name' => 'Jane Doe',
-            'email' => 'not-an-email',
-            'message' => 'Bonjour, je souhaite vous contacter pour un projet.',
-        ], 422];
+        // normalisée par API Platform
+        // (ApiPlatform\Serializer\ConstraintViolationListNormalizer).
+        yield 'écriture refusée (POST /api/contact, 422)' => ['POST', '/api/contact', [...self::VALID_CONTACT, 'email' => 'not-an-email'], 422];
 
         yield 'lecture publique, collection (GET /api/experience/technologies, 200)' => ['GET', '/api/experience/technologies', null, 200];
         yield 'lecture publique, ressource (GET /api/watch, 200)' => ['GET', '/api/watch', null, 200];
 
         // Le 404 d'un fournisseur d'API Platform (un jeton d'invitation
-        // inconnu), rendu par son ErrorListener.
-        yield 'erreur 404 (POST /api/account/password-setup/validate)' => ['POST', '/api/account/password-setup/validate', ['token' => '%unknown-token%'], 404];
+        // inconnu), rendu par son ApiPlatform\Symfony\EventListener\ErrorListener.
+        yield 'erreur 404 (POST /api/account/password-setup/validate)' => [
+            'POST',
+            '/api/account/password-setup/validate',
+            static fn (): array => ['token' => bin2hex(random_bytes(32))],
+            404,
+        ];
     }
 
     /**
-     * @param array<string, mixed>|null $body
+     * @param array<string, mixed>|Closure(): array<string, mixed>|null $body
      */
     #[DataProvider('representativeRequests')]
-    public function testTheRequestRaisesNoApiPlatformDeprecation(string $method, string $uri, ?array $body, int $expectedStatus): void
+    public function testTheRequestRaisesNoApiPlatformDeprecation(string $method, string $uri, array|Closure|null $body, int $expectedStatus): void
     {
         $client = self::createClient();
         // Les quotas (contact, jeton d'invitation) survivent à un redémarrage
         // du noyau : sans cela, l'ordre des tests déciderait du statut.
         self::getContainer()->get('cache.rate_limiter')->clear();
-        $content = null === $body ? null : self::jsonBody(array_map(
-            static fn (mixed $value): mixed => '%unknown-token%' === $value ? bin2hex(random_bytes(32)) : $value,
-            $body,
-        ));
+        $content = null === $body ? null : self::jsonBody($body instanceof Closure ? $body() : $body);
 
-        // Le gestionnaire n'est posé qu'après le démarrage du noyau, qui
-        // installe le sien (FrameworkBundle), et pour une seule requête : un
-        // second `request()` redémarrerait le noyau et l'écraserait.
+        // Le gestionnaire entoure la seule requête observée. Il ne craint pas un
+        // redémarrage du noyau, que le navigateur fait avant chaque requête sauf
+        // la première : `FrameworkBundle::boot()` ne remplace pas un gestionnaire
+        // d'erreurs qu'il n'a pas posé (avec symfony/runtime, il se borne à lire
+        // `get_error_handler()` ; sans lui, `ErrorHandler::register(null, false)`
+        // retire le sien aussitôt). Vérifié : le même gestionnaire est en place
+        // après trois requêtes.
         $findings = ApiPlatformDeprecations::during(static function () use ($client, $method, $uri, $content): void {
             $client->request($method, $uri, server: null === $content ? [] : ['CONTENT_TYPE' => 'application/json'], content: $content);
         });
@@ -122,10 +133,16 @@ final class ApiPlatformRaisesNoDeprecationTest extends WebTestCase
 
     /**
      * Une écriture authentifiée du backoffice sur un objet qui existe : le
-     * `PUT` fait lire l'objet par le provider, puis le dénormalise **dans**
-     * celui-ci (`object_to_populate`, `updateObjectToPopulate`). C'est une
-     * autre route du dénormaliseur que le `POST` du formulaire de contact,
-     * qui construit un objet neuf, et le cas de tout le backoffice.
+     * `PUT` passe par le provider de lecture, la dénormalisation du corps
+     * (`ItemDenormalizer`), le processeur, puis la normalisation de la
+     * réponse. C'est le cas de tout le backoffice, que le `POST` du formulaire
+     * de contact (objet neuf, sans connexion) ne couvre pas.
+     *
+     * Limite mesurée : en 4.4.6 un `PUT` « standard » ne peuple aucun objet
+     * (`object_to_populate` absent), et `ItemNormalizerTrait::updateObjectToPopulate()`
+     * n'est atteint que si le corps porte un `id` — que `api_allow_update: false`
+     * refuse, `MalformedRequestBodyTest` y veille. Cette branche n'est donc pas
+     * gardée ici.
      */
     public function testAnAuthenticatedBackofficeWriteOnAnExistingObjectRaisesNoApiPlatformDeprecation(): void
     {
