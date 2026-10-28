@@ -13,6 +13,7 @@ use App\Shared\Domain\Security\CredentialsVersionClaim;
 use App\Tests\Support\HttpJson;
 use App\Tests\Support\ReadsSecurityAuditLog;
 use App\Tests\Support\TestCredentials;
+use App\Tests\Support\TestDatabase;
 use Doctrine\DBAL\Connection;
 use Doctrine\ORM\EntityManagerInterface;
 use Lexik\Bundle\JWTAuthenticationBundle\Encoder\JWTEncoderInterface;
@@ -64,6 +65,7 @@ final class SessionBeforePasswordChangeTest extends WebTestCase
 
     protected function tearDown(): void
     {
+        TestDatabase::assertSafeToWipe($this->connection());
         $this->connection()->executeStatement('DELETE FROM cpg_user');
         parent::tearDown();
     }

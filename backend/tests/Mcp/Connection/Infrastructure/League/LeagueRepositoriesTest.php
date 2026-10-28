@@ -32,6 +32,7 @@ use App\Mcp\Connection\Infrastructure\League\UnknownMcpConnectionException;
 use App\Mcp\Connection\Infrastructure\Security\TrustedTier;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Tests\Mcp\Connection\RegisteredMcpClient;
+use App\Tests\Support\TestDatabase;
 use DateInterval;
 use DateTimeImmutable;
 use Doctrine\ORM\EntityManagerInterface;
@@ -551,6 +552,7 @@ final class LeagueRepositoriesTest extends KernelTestCase
     private function purge(): void
     {
         $connection = $this->em->getConnection();
+        TestDatabase::assertSafeToWipe($connection);
         foreach (self::TABLES as $table) {
             $connection->executeStatement('DELETE FROM '.$table);
         }

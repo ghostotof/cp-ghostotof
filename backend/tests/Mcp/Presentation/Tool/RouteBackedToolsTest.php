@@ -13,6 +13,7 @@ use App\Portfolio\Watch\Domain\Repository\WatchSnapshotRepositoryInterface;
 use App\Portfolio\Watch\Domain\ValueObject\SnapshotSourceStatus;
 use App\Portfolio\Watch\Domain\ValueObject\WatchSnapshotType;
 use App\Tests\Mcp\Support\SpeaksMcp;
+use App\Tests\Support\TestDatabase;
 use DateTimeImmutable;
 use DateTimeZone;
 use Doctrine\ORM\EntityManagerInterface;
@@ -84,6 +85,7 @@ final class RouteBackedToolsTest extends WebTestCase
     protected function tearDown(): void
     {
         $connection = self::getContainer()->get(EntityManagerInterface::class)->getConnection();
+        TestDatabase::assertSafeToWipe($connection);
         foreach (self::SEEDED_TABLES as $table) {
             $connection->executeStatement('DELETE FROM '.$table);
         }

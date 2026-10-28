@@ -11,6 +11,7 @@ use App\Portfolio\About\Domain\Repository\AboutSettingsRepositoryInterface;
 use App\Portfolio\About\Domain\ValueObject\AboutMeCardCategory;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use App\Tests\Mcp\Support\SpeaksMcp;
+use App\Tests\Support\TestDatabase;
 use Doctrine\ORM\EntityManagerInterface;
 use Mcp\Capability\Discovery\SchemaValidator;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -34,6 +35,7 @@ final class GetAboutToolTest extends WebTestCase
     protected function tearDown(): void
     {
         $connection = self::getContainer()->get(EntityManagerInterface::class)->getConnection();
+        TestDatabase::assertSafeToWipe($connection);
         $connection->executeStatement('DELETE FROM about_site_card');
         $connection->executeStatement('DELETE FROM about_me_card');
         $connection->executeStatement('DELETE FROM about_settings');

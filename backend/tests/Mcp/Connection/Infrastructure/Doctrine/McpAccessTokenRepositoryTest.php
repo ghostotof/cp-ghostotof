@@ -12,6 +12,7 @@ use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Tests\Mcp\Connection\RegisteredMcpClient;
 use App\Tests\Support\ReadsAllChannelsLog;
+use App\Tests\Support\TestDatabase;
 use DateTimeImmutable;
 use Doctrine\ORM\EntityManagerInterface;
 use Monolog\LogRecord;
@@ -115,6 +116,7 @@ final class McpAccessTokenRepositoryTest extends KernelTestCase
     private function purge(): void
     {
         $connection = $this->em->getConnection();
+        TestDatabase::assertSafeToWipe($connection);
         foreach (self::TABLES as $table) {
             $connection->executeStatement('DELETE FROM '.$table);
         }

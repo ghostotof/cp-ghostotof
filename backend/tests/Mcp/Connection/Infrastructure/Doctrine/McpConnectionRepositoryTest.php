@@ -19,6 +19,7 @@ use App\Mcp\Connection\Domain\ValueObject\RevokedConnection;
 use App\Mcp\Connection\Infrastructure\Doctrine\RevocationOutsideTransactionException;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Tests\Mcp\Connection\RegisteredMcpClient;
+use App\Tests\Support\TestDatabase;
 use DateTimeImmutable;
 use Doctrine\DBAL\Exception\DriverException;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
@@ -869,6 +870,7 @@ final class McpConnectionRepositoryTest extends KernelTestCase
     private function purge(): void
     {
         $connection = $this->em->getConnection();
+        TestDatabase::assertSafeToWipe($connection);
         foreach (self::TABLES as $table) {
             $connection->executeStatement('DELETE FROM '.$table);
         }

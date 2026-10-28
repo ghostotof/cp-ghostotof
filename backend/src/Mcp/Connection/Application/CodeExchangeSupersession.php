@@ -32,11 +32,14 @@ use Psr\Log\LoggerInterface;
  * un échange validé : le code était authentique, vivant, lié à son client et
  * prouvé par son vérificateur PKCE.
  *
- * **Écartée** (#726, CR5) : l'accroche à `AuthCodeRepository::revokeAuthCode()`,
- * que league appelle en dernier, avec un collecteur des connexions
- * remplacées — un état par requête à vider (un service partagé qu'une
- * requête suivante du même processus relirait), et l'audit après le COMMIT
- * resterait de toute façon au point de jeton.
+ * **Écartée** (#726, CR5), et le reste : accrocher *le remplacement* à
+ * `AuthCodeRepository::revokeAuthCode()`, que league appelle en dernier, avec
+ * un collecteur des connexions remplacées — un état par requête à vider (un
+ * service partagé qu'une requête suivante du même processus relirait), et
+ * l'audit après le COMMIT resterait de toute façon au point de jeton.
+ * `revokeAuthCode()` n'est accroché, depuis #650 (R4), que pour **une**
+ * écriture sans état : celle de `code_exchanged_at` (ci-dessous), une
+ * instruction SQL qui ne collecte rien et n'a rien à rendre.
  *
  * **Elle ne note plus le premier échange** (#730, déplacé par #650, R4) :
  * `code_exchanged_at` est écrit par la révocation du code

@@ -27,6 +27,7 @@ use App\Shared\Domain\ValueObject\RetentionPeriod;
 use App\Tests\Mcp\Connection\RegisteredMcpClient;
 use App\Tests\Support\ReadsAllChannelsLog;
 use App\Tests\Support\ReadsSecurityAuditLog;
+use App\Tests\Support\TestDatabase;
 use DateInterval;
 use DateTimeImmutable;
 use DateTimeZone;
@@ -523,6 +524,7 @@ final class McpConnectionPurgerTest extends KernelTestCase
     private function purgeTables(): void
     {
         $connection = $this->em->getConnection();
+        TestDatabase::assertSafeToWipe($connection);
         foreach (self::TABLES as $table) {
             $connection->executeStatement('DELETE FROM '.$table);
         }

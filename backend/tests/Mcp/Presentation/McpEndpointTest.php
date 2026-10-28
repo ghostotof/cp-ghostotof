@@ -11,6 +11,7 @@ use App\Tests\Mcp\Support\SpeaksMcp;
 use App\Tests\Support\PhpSources;
 use App\Tests\Support\RepositoryFiles;
 use App\Tests\Support\TestCredentials;
+use App\Tests\Support\TestDatabase;
 use Doctrine\ORM\EntityManagerInterface;
 use Mcp\Schema\Enum\ProtocolVersion;
 use Mcp\Server\Session\Psr16SessionStore;
@@ -49,6 +50,7 @@ final class McpEndpointTest extends WebTestCase
     protected function tearDown(): void
     {
         $connection = self::getContainer()->get(EntityManagerInterface::class)->getConnection();
+        TestDatabase::assertSafeToWipe($connection);
         $connection->executeStatement('DELETE FROM cpg_user');
         self::forgetMcpSessions($connection);
         parent::tearDown();

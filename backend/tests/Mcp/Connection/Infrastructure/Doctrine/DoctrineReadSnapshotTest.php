@@ -11,6 +11,7 @@ use App\Mcp\Connection\Infrastructure\Doctrine\DoctrineReadSnapshot;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Tests\Mcp\Connection\RegisteredMcpClient;
 use App\Tests\Support\OpensProbeConnection;
+use App\Tests\Support\TestDatabase;
 use DateTimeImmutable;
 use Doctrine\DBAL\Exception as DbalException;
 use Doctrine\ORM\EntityManagerInterface;
@@ -189,6 +190,7 @@ final class DoctrineReadSnapshotTest extends KernelTestCase
     private function purge(): void
     {
         $database = $this->em->getConnection();
+        TestDatabase::assertSafeToWipe($database);
         foreach (['mcp_refresh_token', 'mcp_access_token', 'mcp_authorization_code', 'mcp_connection', 'mcp_client'] as $table) {
             $database->executeStatement('DELETE FROM '.$table);
         }

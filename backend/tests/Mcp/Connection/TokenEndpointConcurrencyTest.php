@@ -11,6 +11,7 @@ use App\Tests\Support\FlushInterleaving;
 use App\Tests\Support\OpensProbeConnection;
 use App\Tests\Support\ProcessBarrier;
 use App\Tests\Support\SessionLockWait;
+use App\Tests\Support\TestDatabase;
 use Doctrine\DBAL\Exception\DriverException;
 use Doctrine\ORM\EntityManagerInterface;
 use Nyholm\Psr7\Response;
@@ -243,6 +244,8 @@ final class TokenEndpointConcurrencyTest extends WebTestCase
         // sur 6, avant ce correctif). `TRUNCATE` donne un tas neuf : les trois
         // lignes aux emplacements 1, 2 et 3 de la page 0, la version réécrite
         // de Ca à l'emplacement 4. Aucune autre session n'écrit pendant le test.
+        // Jamais sur une autre base que la base de test (F-D, seconde relecture) : `TRUNCATE ... CASCADE` vide aussi tout ce qui référence la table.
+        TestDatabase::assertSafeToWipe($this->mcpRows());
         $this->mcpRows()->executeStatement('TRUNCATE mcp_connection CASCADE');
         $this->grantedCode();
         $this->codeGrantedByTheSignedInAccount();

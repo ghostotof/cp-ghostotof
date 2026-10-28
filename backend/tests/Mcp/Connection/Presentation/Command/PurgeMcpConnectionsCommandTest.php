@@ -13,6 +13,7 @@ use App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface;
 use App\Mcp\Connection\Domain\Repository\McpRefreshTokenRepositoryInterface;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Tests\Mcp\Connection\RegisteredMcpClient;
+use App\Tests\Support\TestDatabase;
 use DateTimeImmutable;
 use DateTimeZone;
 use Doctrine\ORM\EntityManagerInterface;
@@ -157,6 +158,7 @@ final class PurgeMcpConnectionsCommandTest extends KernelTestCase
     private function purgeTables(): void
     {
         $connection = $this->em->getConnection();
+        TestDatabase::assertSafeToWipe($connection);
         foreach (self::TABLES as $table) {
             $connection->executeStatement('DELETE FROM '.$table);
         }

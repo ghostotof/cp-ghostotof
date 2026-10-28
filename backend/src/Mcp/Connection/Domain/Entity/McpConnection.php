@@ -108,8 +108,12 @@ class McpConnection implements McpConnectionReference
      * L'instant où le code de l'octroi a été échangé pour la première fois
      * (#730), `null` tant qu'il ne l'a pas été : la connexion d'une approbation
      * abandonnée, dont le code n'est jamais échangé, expire tôt
-     * ({@see self::deadline()}). Écrit au premier échange par
-     * {@see self::recordCodeExchangeAt()}, jamais ensuite.
+     * ({@see self::deadline()}). **Écrit en SQL** au premier échange, par la
+     * révocation du code (`AuthCodeRepository::revokeAuthCode()` puis
+     * {@see \App\Mcp\Connection\Domain\Repository\McpConnectionRepositoryInterface::recordCodeExchangeOf()},
+     * #650, R4), jamais ensuite ; {@see self::recordCodeExchangeAt()} n'en est
+     * que le jumeau en mémoire, pour dresser l'état d'une connexion déjà échangée
+     * dans les tests.
      */
     #[ORM\Column(type: Types::DATETIMETZ_IMMUTABLE, nullable: true)]
     private ?DateTimeImmutable $codeExchangedAt = null;

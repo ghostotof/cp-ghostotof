@@ -10,6 +10,7 @@ use App\Security\User\Application\CpgUserRegistrarInterface;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Tests\Support\HttpJson;
 use App\Tests\Support\TestCredentials;
+use App\Tests\Support\TestDatabase;
 use Defuse\Crypto\Crypto;
 use Defuse\Crypto\Key;
 use Doctrine\ORM\EntityManagerInterface;
@@ -479,6 +480,7 @@ trait DrivesTheOAuthFlow
     {
         $em = self::getContainer()->get(EntityManagerInterface::class);
         $connection = $em->getConnection();
+        TestDatabase::assertSafeToWipe($connection);
         foreach (self::OAUTH_TABLES as $table) {
             $connection->executeStatement('DELETE FROM '.$table);
         }
