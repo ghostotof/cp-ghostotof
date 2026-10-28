@@ -9,6 +9,7 @@ import { retryAfterMinutes } from '../ui/retryAfterMinutes'
 import { isSupportedLocale, type Locale } from '../../domain/portfolio/entities/Locale'
 import { isReauthentication } from '../router/reauthentication'
 import { isSessionEnded } from '../router/sessionEnded'
+import { internalRedirectTarget } from '../router/internalRedirect'
 
 const { t, locale } = useI18n()
 const route = useRoute()
@@ -43,15 +44,12 @@ function currentLocale(): Locale {
  * Posé par le garde d'authentification (presentation/router/index.ts) quand
  * une route protégée (ex. /admin) redirige ici faute de session : ramène
  * l'utilisateur là où il voulait aller plutôt qu'à l'accueil. Restreint aux
- * chemins relatifs internes (un seul "/" en tête) pour ne jamais rediriger
- * vers une origine externe (open redirect) à partir d'un query param.
+ * chemins internes (`internalRedirectTarget`, qui dit pourquoi et comment) pour
+ * ne jamais rediriger vers une origine externe (open redirect) à partir d'un
+ * paramètre d'URL.
  */
 function redirectTarget(): string {
-  const redirect = route.query.redirect
-  if ('string' === typeof redirect && redirect.startsWith('/') && !redirect.startsWith('//')) {
-    return redirect
-  }
-  return `/${currentLocale()}`
+  return internalRedirectTarget(route.query.redirect) ?? `/${currentLocale()}`
 }
 
 /** Un message par cause : ce que la personne doit faire n'est pas le même (corriger, attendre, réessayer). */

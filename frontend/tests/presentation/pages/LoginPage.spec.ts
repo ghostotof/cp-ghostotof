@@ -223,6 +223,46 @@ describe('LoginPage', () => {
     })
   })
 
+  describe('garde de la cible de retour (`redirect`) : un chemin interne, rien d\'autre (#650, F-I1)', () => {
+    async function signInAndReadPath(redirect: string): Promise<{ fullPath: string; path: string }> {
+      const { wrapper, router } = await mountLoginPage(createStubRepository(), 'fr', { redirect })
+
+      await wrapper.get('#login-username').setValue('jane')
+      await wrapper.get('#login-password').setValue('password123')
+      await wrapper.get('form').trigger('submit')
+      await flushPromises()
+
+      return { fullPath: router.currentRoute.value.fullPath, path: router.currentRoute.value.path }
+    }
+
+    it.each([
+      ['une barre oblique inverse que le navigateur lit comme //', '/\\evil.example/fr'],
+      ['deux barres obliques inverses', '\\\\evil.example'],
+      ['une tabulation que le navigateur retire (/\t/ devient //)', '/\t/evil.example'],
+      ['un saut de ligne que le navigateur retire', '/\n/evil.example'],
+      ['un retour chariot que le navigateur retire', '/\r/evil.example'],
+      ['un caractère nul', '/fr/\u0000'],
+      ['une origine absolue', 'https://evil.example/'],
+      ['un schéma javascript', 'javascript:alert(1)'],
+      ['un chemin sans barre oblique initiale', 'evil.example/fr'],
+      ['deux barres obliques', '//evil.example/fr'],
+    ])('retombe sur l\'accueil de la langue : %s', async (_label, redirect) => {
+      const { path } = await signInAndReadPath(redirect)
+
+      expect(path).toBe('/fr')
+    })
+
+    it.each([
+      '/fr/oauth/consent?client_id=claude-code&state=a%26b#decision',
+      '/fr/admin/users',
+      '/fr/oauth/consent',
+    ])('suit un chemin interne légitime, requête et ancre comprises : %s', async (redirect) => {
+      const { fullPath } = await signInAndReadPath(redirect)
+
+      expect(fullPath).toBe(redirect)
+    })
+  })
+
   it('affiche un message générique pour les autres erreurs', async () => {
     const repository = createStubRepository({ login: vi.fn(async () => Promise.reject(new Error('network down'))) })
     const { wrapper } = await mountLoginPage(repository)
