@@ -233,3 +233,27 @@ autoloader (`tests/bootstrap.php`, `tests/object-manager.php`, the child script 
 `RepositoryFiles` itself, each pair still required to be written; a new path in an exempt file is refused.
 Not seen: a nested call on the result (`\dirname(\dirname(__DIR__))`, `realpath()`), a path carried by a
 variable, one composed by `sprintf()` or `implode()`, a constant other than `DIRECTORY_SEPARATOR`, `__FILE__`.
+
+## API Platform: one version for the whole family, and deprecations seen (issue #701)
+
+Every `api-platform/*` package of the lock is at **the same version** (13 of them, 4.4.6 on 2026-10-28), and
+`composer.json` requires the two it names, `api-platform/symfony` and `api-platform/doctrine-orm`, as **`^4.4.6`**,
+a caret. Before #701 the bundle was pinned `4.3.19` exactly while the components (`serializer`, `state`,
+`metadata`…) had climbed to `4.4.0` through their own loose constraints: the bundle wired `ItemNormalizer` to
+denormalize and the serializer deprecated it, so every `POST /api/contact` wrote a deprecation in production. The
+caret is deliberate and is **not** the exact pin of the 0.x packages (`mcp/*`, `symfony/ai-*`, ADR 0004 D1, see
+`.claude/rules/mcp.md`): API Platform follows semver, a minor does not break, and an exact pin on the bundle alone is
+precisely what let the family drift apart. When you bump one, bump them all (`composer update 'api-platform/*'`).
+`.github/dependabot.yml` carries an `ignore` of the **major** of `api-platform/*`: without it, since 5.0 came out
+(2026-09-16) the `backend-minor-patch` group rejected the two packages as « the latest version is a major » and
+never looked at the 4.x releases. **Remove that `ignore` when the 5.0 migration is done** (T3 of #701).
+**`ignoreIndirectDeprecations="true"` in `phpunit.dist.xml` stays** (it spares the noise of the rest of the vendor),
+and that is what hid this one, vendor calling vendor. `tests/Shared/Infrastructure/ApiPlatform/ApiPlatformRaisesNoDeprecationTest.php`
+is the targeted net: it runs five representative requests (valid write, 422, public reads, 404) under
+`tests/Support/ApiPlatformDeprecations`, an error handler that keeps only the `E_USER_DEPRECATED` whose message starts
+with `Since api-platform/` or whose origin is under `vendor/api-platform/`, hands every other error back to the
+handler it replaced and restores it, and fails citing the deprecation and where it was raised
+(`ApiPlatformDeprecationCollectorTest` pins the collector). It saw the `ItemNormalizer` one on the lock of
+`develop` (red), and not on 4.4.6. Not covered: an `E_DEPRECATED` of the PHP engine in API Platform's code, a route
+absent from the list (adding one costs a line). `ApiPlatformProblemDetailsTest` pins the `type`, `title` and status
+of the problem+json errors (400, 404, 405, 409, 415, 422, 429) the same way, read identical on both locks.
