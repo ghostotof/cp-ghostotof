@@ -225,6 +225,8 @@ describe('mutation refusée : session finie', () => {
   it.each(MUTATING_CASES)('$name : toute autre mutation refusée pose l\'erreur « unknown » du contexte', async (testCase) => {
     const handle = mountComposable(testCase, failingRepository(testCase, new Error('boom'), false))
     await flushPromises()
+    // Les réglages ne montrent l'erreur d'un enregistrement que sous la clé courante (R20) : la page a lu avant d'enregistrer.
+    if ('get' === testCase.read) await reload(testCase, handle)
 
     const succeeded = await handle.mutate?.()
     await flushPromises()

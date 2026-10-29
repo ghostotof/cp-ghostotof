@@ -1,4 +1,4 @@
-import { inject, ref, type InjectionKey, type Ref } from 'vue'
+import { computed, inject, ref, type ComputedRef, type InjectionKey, type Ref } from 'vue'
 import type { AdminAboutSettings } from '../../../domain/admin/about/entities/AdminAboutSettings'
 import type {
   AdminAboutSettingsInput,
@@ -13,7 +13,8 @@ export const ADMIN_ABOUT_SETTINGS_REPOSITORY: InjectionKey<AdminAboutSettingsRep
 
 export interface UseAdminAboutSettingsResult extends AdminLoadState {
   settings: Ref<AdminAboutSettings | null>
-  errorMessage: Ref<AdminAboutError | null>
+  /** L'erreur du dernier enregistrement, **si c'est celle de la langue montrée** ; `null` sinon (#748, R20). */
+  errorMessage: ComputedRef<AdminAboutError | null>
   load: (locale: Locale) => Promise<void>
   save: (locale: Locale, input: AdminAboutSettingsInput) => Promise<boolean>
 }
@@ -34,9 +35,11 @@ export function useAdminAboutSettings(): UseAdminAboutSettingsResult {
   }
 
   const settings = ref<AdminAboutSettings | null>(null)
-  const errorMessage = ref<AdminAboutError | null>(null)
+  // L'échec du dernier enregistrement et la langue dans laquelle il est parti : une erreur FR arrivée quand la
+  // page est en EN ne se lit pas sous l'en-tête anglais (F10-2).
+  const lastFailure = ref<{ locale: Locale; error: AdminAboutError } | null>(null)
 
-  const { isLoading, hasError, isLoaded, load: loadKey } = useAdminLoad<AdminAboutSettings, Locale>({
+  const { isLoading, hasError, isLoaded, load, write, isCurrentKey } = useAdminLoad<AdminAboutSettings, Locale>({
     read: (locale) => repository.get(locale),
     apply: (value) => {
       settings.value = value
@@ -48,32 +51,26 @@ export function useAdminAboutSettings(): UseAdminAboutSettingsResult {
     },
   })
 
-  // La locale demandée en dernier : celle que la page montre, ou est en train de lire. Une réponse
-  // d'enregistrement n'a le droit de poser des réglages que si c'est la sienne (#748, R11).
-  let requestedLocale: Locale | null = null
-
-  const load = (locale: Locale): Promise<void> => {
-    requestedLocale = locale
-
-    return loadKey(locale)
-  }
+  // La clé courante est celle de `useAdminLoad` (R20), sans copie ici : l'erreur revient avec sa langue, jusqu'au
+  // prochain enregistrement.
+  const errorMessage = computed(() => (null !== lastFailure.value && isCurrentKey(lastFailure.value.locale) ? lastFailure.value.error : null))
 
   const save = async (locale: Locale, input: AdminAboutSettingsInput): Promise<boolean> => {
-    errorMessage.value = null
+    lastFailure.value = null
 
     try {
       const saved = await repository.update(locale, input)
       // Un enregistrement parti dans une langue que la personne a quittée depuis a bien abouti côté serveur
       // (on rend vrai), mais sa réponse ne remplace pas les réglages d'une autre langue : le formulaire de
-      // la langue affichée, enregistré ensuite, écraserait celle-ci par la première. Même famille que CR2,
-      // côté écriture : `useAdminLoad` garde les lectures, cette comparaison garde les réponses d'écriture.
-      if (null === requestedLocale || requestedLocale === locale) {
-        settings.value = saved
-      }
+      // la langue affichée, enregistré ensuite, écraserait celle-ci par la première (R11). `write` ne pose que sous
+      // la clé courante et périme les lectures en vol de cette clé : un `GET` parti avant le COMMIT rendrait
+      // l'ancienne valeur et la reposerait par-dessus la neuve (F10-1).
+      write(locale, saved)
 
       return true
     } catch (error) {
-      errorMessage.value = visibleMutationError(error, AdminAboutError, () => new AdminAboutError('unknown', 'Unknown error'))
+      const visible = visibleMutationError(error, AdminAboutError, () => new AdminAboutError('unknown', 'Unknown error'))
+      lastFailure.value = null === visible ? null : { locale, error: visible }
 
       return false
     }

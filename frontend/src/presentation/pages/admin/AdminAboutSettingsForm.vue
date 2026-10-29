@@ -123,8 +123,12 @@ async function handleTranslate(targetLocale: Locale): Promise<void> {
 
 async function handleSubmit(): Promise<void> {
   isSubmitting.value = true
-  proposalSourceLocale.value = null
-  await save(props.locale, { ...form })
+  const saved = await save(props.locale, { ...form })
+  // La mention dit que le formulaire porte une proposition : un enregistrement refusé (hors ligne, session finie)
+  // la laisse sur le formulaire, elle doit rester dite (F11). Seul un enregistrement réussi la retire.
+  if (saved) {
+    proposalSourceLocale.value = null
+  }
   isSubmitting.value = false
 }
 </script>

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { defineComponent, h, ref, watch } from 'vue'
+import { computed, defineComponent, h, ref, watch } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { useAdminLoad } from '../../../../src/application/admin/shared/useAdminLoad'
 import { SessionEndedError } from '../../../../src/domain/auth/errors/SessionEndedError'
@@ -289,6 +289,104 @@ describe('useAdminLoad', () => {
       expect(value.value).toBeNull()
       expect(state.isLoaded.value).toBe(false)
       expect(state.hasError.value).toBe(false)
+    })
+  })
+
+  describe('la clé courante a une source, et une écriture périme les lectures de sa clé (#748, R20)', () => {
+    it('isCurrentKey suit le dernier load, avant même que sa lecture réponde', async () => {
+      const slow = deferred<string>()
+      const state = mountLoad<string, string>({
+        read: (key) => ('en' === key ? slow.promise : Promise.resolve(`valeur ${key}`)),
+        apply: () => undefined,
+      })
+      expect(state.isCurrentKey('fr')).toBe(false)
+
+      await state.load('fr')
+      expect(state.isCurrentKey('fr')).toBe(true)
+      expect(state.isCurrentKey('en')).toBe(false)
+
+      const pending = state.load('en')
+      expect(state.isCurrentKey('en')).toBe(true)
+      expect(state.isCurrentKey('fr')).toBe(false)
+      slow.resolve('valeur en')
+      await pending
+    })
+
+    it('isCurrentKey est réactive : un computed la relit à chaque nouveau load', async () => {
+      const state = mountLoad<string, string>({ read: async (key) => key, apply: () => undefined })
+      const isFrench = computed(() => state.isCurrentKey('fr'))
+
+      await state.load('fr')
+      expect(isFrench.value).toBe(true)
+      await state.load('en')
+      expect(isFrench.value).toBe(false)
+    })
+
+    it('write sur la clé courante pose la valeur et périme la lecture en vol', async () => {
+      const staleRead = deferred<string>()
+      const value = ref<string | null>(null)
+      const pending = [Promise.resolve('première'), staleRead.promise]
+      const state = mountLoad<string, string>({
+        read: () => pending.shift() as Promise<string>,
+        apply: (read) => {
+          value.value = read
+        },
+      })
+      await state.load('fr')
+      const reading = state.load('fr')
+
+      // L'écriture arrive pendant la relecture : sa valeur est plus récente que ce que la lecture en vol rendra.
+      expect(state.write('fr', 'écrite')).toBe(true)
+      expect(value.value).toBe('écrite')
+      expect(state.isLoaded.value).toBe(true)
+      expect(state.isLoading.value).toBe(false)
+
+      staleRead.resolve('ancienne')
+      await reading
+
+      expect(value.value).toBe('écrite')
+      expect(state.isLoading.value).toBe(false)
+    })
+
+    it("write sur la clé courante pose aussi la valeur d'une clé dont la lecture n'a pas répondu", async () => {
+      const never = deferred<string>()
+      const value = ref<string | null>(null)
+      const state = mountLoad<string, string>({
+        read: () => never.promise,
+        apply: (read) => {
+          value.value = read
+        },
+      })
+      void state.load('fr')
+      expect(state.isLoaded.value).toBe(false)
+
+      expect(state.write('fr', 'écrite')).toBe(true)
+
+      expect(value.value).toBe('écrite')
+      expect(state.isLoaded.value).toBe(true)
+      never.resolve('ancienne')
+      await flushPromises()
+      expect(value.value).toBe('écrite')
+    })
+
+    it('write sur une autre clé ne pose rien', async () => {
+      const apply = vi.fn()
+      const state = mountLoad<string, string>({ read: async (key) => key, apply })
+      await state.load('en')
+      apply.mockClear()
+
+      expect(state.write('fr', 'écrite')).toBe(false)
+
+      expect(apply).not.toHaveBeenCalled()
+      expect(state.isLoaded.value).toBe(true)
+    })
+
+    it("write avant tout load ne pose rien : aucune clé n'est demandée", () => {
+      const apply = vi.fn()
+      const state = mountLoad<string, string>({ read: async (key) => key, apply })
+
+      expect(state.write('fr', 'écrite')).toBe(false)
+      expect(apply).not.toHaveBeenCalled()
     })
   })
 

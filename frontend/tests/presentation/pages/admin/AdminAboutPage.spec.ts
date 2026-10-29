@@ -1247,6 +1247,41 @@ describe('AdminAboutPage', () => {
 
       expect(settingsRepository.update).toHaveBeenCalledWith('en', TRANSLATED_SETTINGS)
     })
+
+    it('un enregistrement refusé garde la mention de la proposition de traduction (#748, R20, F11)', async () => {
+      const settingsRepository = createSettingsRepository({
+        update: vi.fn(async () => Promise.reject(new AdminAboutError('validation', 'Invalide'))),
+      })
+      const translation = createTranslationRepository(TRANSLATED_SETTINGS)
+      const { wrapper } = await mountPage(settingsRepository, undefined, undefined, translation)
+
+      await translateButton(wrapper, SETTINGS_FORM).trigger('click')
+      await flushPromises()
+      expect(panelOf(wrapper, SETTINGS_PANEL).get('[role="status"]').text()).toContain('Proposition générée par IA')
+
+      await formOf(wrapper, SETTINGS_FORM).trigger('submit.prevent')
+      await flushPromises()
+
+      // Refusé : le formulaire porte toujours la proposition, la mention qui le dit reste. Réussi, elle part.
+      expect(settingsRepository.update).toHaveBeenCalledOnce()
+      expect(panelOf(wrapper, SETTINGS_PANEL).findAll('[role="alert"]').length).toBeGreaterThan(0)
+      expect(panelOf(wrapper, SETTINGS_PANEL).get('[role="status"]').text()).toContain('Proposition générée par IA')
+    })
+
+    it("un enregistrement réussi retire la mention de la proposition de traduction", async () => {
+      const settingsRepository = createSettingsRepository({ update: vi.fn(async () => SETTINGS_EN) })
+      const translation = createTranslationRepository(TRANSLATED_SETTINGS)
+      const { wrapper } = await mountPage(settingsRepository, undefined, undefined, translation)
+
+      await translateButton(wrapper, SETTINGS_FORM).trigger('click')
+      await flushPromises()
+      expect(panelOf(wrapper, SETTINGS_PANEL).find('[role="status"]').exists()).toBe(true)
+
+      await formOf(wrapper, SETTINGS_FORM).trigger('submit.prevent')
+      await flushPromises()
+
+      expect(panelOf(wrapper, SETTINGS_PANEL).find('[role="status"]').exists()).toBe(false)
+    })
   })
 
   describe('garde de sortie et accessibilité', () => {

@@ -77,6 +77,8 @@ describe('useAdminAboutSettings', () => {
     const updated = { ...SETTINGS, siteEyebrow: 'Nouveau titre' }
     const repository = createStubRepository({ update: vi.fn(async () => updated) })
     const composable = mountWithComposable(repository)
+    // Une écriture ne pose sa réponse que sous la clé demandée (R20) : la page a toujours lu avant d'enregistrer.
+    await composable.load('fr')
 
     await composable.save('fr', {
       siteEyebrow: 'Nouveau titre',
@@ -100,6 +102,7 @@ describe('useAdminAboutSettings', () => {
   it('save() propage errorMessage sans planter en cas d\'échec', async () => {
     const repository = createStubRepository({ update: vi.fn(async () => Promise.reject(new AdminAboutError('validation', 'Invalide'))) })
     const composable = mountWithComposable(repository)
+    await composable.load('fr')
 
     await composable.save('fr', {
       siteEyebrow: '',
@@ -163,6 +166,83 @@ describe('useAdminAboutSettings', () => {
       answerRead(SETTINGS_EN)
       await reading
       expect(composable.settings.value).toEqual(SETTINGS_EN)
+    })
+  })
+
+  describe('la clé courante vient de useAdminLoad (#748, R20)', () => {
+    const INPUT = {
+      siteEyebrow: 'Nouveau titre',
+      meEyebrow: SETTINGS.meEyebrow,
+      technicalSubtitle: SETTINGS.technicalSubtitle,
+      personalSubtitle: SETTINGS.personalSubtitle,
+      hobbiesSubtitle: SETTINGS.hobbiesSubtitle,
+    }
+    const SAVED_FR: AdminAboutSettings = { ...SETTINGS, siteEyebrow: 'Nouveau titre' }
+
+    it("FR enregistré lentement, EN, puis FR : la lecture FR servie avant la réponse du PUT ne repose pas l'ancien FR", async () => {
+      let answerSave!: (settings: AdminAboutSettings) => void
+      let answerRead!: (settings: AdminAboutSettings) => void
+      let frenchReads = 0
+      const repository = createStubRepository({
+        get: vi.fn((locale: string) => {
+          if ('en' === locale) return Promise.resolve({ ...SETTINGS, locale: 'en' as const })
+          frenchReads += 1
+
+          // La première lecture FR est celle du chargement ; la seconde, celle du retour en FR, reste en vol.
+          return 1 === frenchReads ? Promise.resolve(SETTINGS) : new Promise<AdminAboutSettings>((resolve) => (answerRead = resolve))
+        }),
+        update: vi.fn(() => new Promise<AdminAboutSettings>((resolve) => (answerSave = resolve))),
+      })
+      const composable = mountWithComposable(repository)
+      await composable.load('fr')
+
+      const saving = composable.save('fr', INPUT)
+      await composable.load('en')
+      const reading = composable.load('fr')
+
+      // Le PUT répond d'abord avec les valeurs neuves ; le GET parti avant son COMMIT répond ensuite avec les anciennes.
+      answerSave(SAVED_FR)
+      expect(await saving).toBe(true)
+      answerRead(SETTINGS)
+      await reading
+
+      expect(composable.settings.value).toEqual(SAVED_FR)
+      expect(composable.isLoaded.value).toBe(true)
+      expect(composable.isLoading.value).toBe(false)
+    })
+
+    it("un échec FR arrivé après le passage en EN n'est pas montré sous l'EN, il l'est au retour en FR", async () => {
+      let failSave!: (reason: unknown) => void
+      const repository = createStubRepository({
+        update: vi.fn(() => new Promise<AdminAboutSettings>((_, reject) => (failSave = reject))),
+      })
+      const composable = mountWithComposable(repository)
+      await composable.load('fr')
+
+      const saving = composable.save('fr', INPUT)
+      await composable.load('en')
+      failSave(new AdminAboutError('validation', 'Invalide'))
+
+      expect(await saving).toBe(false)
+      expect(composable.errorMessage.value).toBeNull()
+
+      await composable.load('fr')
+      expect(composable.errorMessage.value?.reason).toBe('validation')
+    })
+
+    it("l'erreur d'un enregistrement est effacée au prochain enregistrement", async () => {
+      const update = vi
+        .fn<AdminAboutSettingsRepository['update']>()
+        .mockRejectedValueOnce(new AdminAboutError('validation', 'Invalide'))
+        .mockResolvedValue(SAVED_FR)
+      const composable = mountWithComposable(createStubRepository({ update }))
+      await composable.load('fr')
+
+      await composable.save('fr', INPUT)
+      expect(composable.errorMessage.value?.reason).toBe('validation')
+
+      expect(await composable.save('fr', INPUT)).toBe(true)
+      expect(composable.errorMessage.value).toBeNull()
     })
   })
 })

@@ -1,4 +1,4 @@
-import { ref, type Ref } from 'vue'
+import { ref, shallowRef, type Ref } from 'vue'
 import { AccessForbiddenError } from '../../../domain/auth/errors/AccessForbiddenError'
 import { SessionEndedError } from '../../../domain/auth/errors/SessionEndedError'
 import { onSessionRestored } from '../../auth/useAuth'
@@ -50,9 +50,16 @@ export interface AdminLoadOptions<T, K> {
  * mécanisme qui relirait la session (la revérification au `focus`) n'a qu'à la rétablir, il ne relit jamais les
  * listes lui-même, et il ne peut pas doubler cette relecture.
  *
+ * **La clé courante a une source, ici** (R20) : la dernière clé passée à `load()`, que la page montre ou est en train
+ * de lire. `isCurrentKey(clé)` la dit (réactive) ; `write(clé, valeur)` pose la réponse d'une **écriture** si c'est
+ * la clé courante, et périme alors toute lecture en vol : un `GET` servi avant le COMMIT d'un `PUT` rendrait les
+ * anciennes valeurs, et les poserait par-dessus les nouvelles. Un composable à clé n'en garde pas de copie à lui.
+ *
  * `K` est la clé de la lecture : `void` pour une liste, la locale pour le singleton des réglages « À propos ».
  */
-export function useAdminLoad<T, K = void>(options: AdminLoadOptions<T, K>): AdminLoadState & { load: (key: K) => Promise<void> } {
+export function useAdminLoad<T, K = void>(
+  options: AdminLoadOptions<T, K>,
+): AdminLoadState & { load: (key: K) => Promise<void>; write: (key: K, value: T) => boolean; isCurrentKey: (key: K) => boolean } {
   const isLoading = ref(true)
   const hasError = ref(false)
   const isLoaded = ref(false)
@@ -61,9 +68,12 @@ export function useAdminLoad<T, K = void>(options: AdminLoadOptions<T, K>): Admi
   let held: { key: K } | null = null
   // La lecture qu'une session finie a interrompue, à relire au retour ; `null` dès qu'une lecture a abouti.
   let interrupted: { key: K } | null = null
+  // La dernière clé demandée (dans une boîte, comme `held`). Réactive : `isCurrentKey` se lit dans un `computed`.
+  const requested = shallowRef<{ key: K } | null>(null)
 
   const load = async (key: K): Promise<void> => {
     const token = requestGuard.begin()
+    requested.value = { key }
     isLoading.value = true
     hasError.value = false
     // Une lecture plus récente remplace l'interrompue : c'est elle, pas l'ancienne, qui sera relue au retour.
@@ -96,6 +106,23 @@ export function useAdminLoad<T, K = void>(options: AdminLoadOptions<T, K>): Admi
     }
   }
 
+  const isCurrentKey = (key: K): boolean => null !== requested.value && Object.is(requested.value.key, key)
+
+  const write = (key: K, value: T): boolean => {
+    if (!isCurrentKey(key)) return false
+
+    // Périme la lecture en vol de cette clé (son `finally` ne baissera plus `isLoading`, d'où la ligne qui suit).
+    requestGuard.begin()
+    options.apply(value)
+    held = { key }
+    interrupted = null
+    hasError.value = false
+    isLoading.value = false
+    isLoaded.value = true
+
+    return true
+  }
+
   onSessionRestored(() => {
     if (null === interrupted) return
     const { key } = interrupted
@@ -103,5 +130,5 @@ export function useAdminLoad<T, K = void>(options: AdminLoadOptions<T, K>): Admi
     void load(key)
   })
 
-  return { isLoading, hasError, isLoaded, load }
+  return { isLoading, hasError, isLoaded, load, write, isCurrentKey }
 }
