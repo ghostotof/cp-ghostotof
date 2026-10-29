@@ -25,12 +25,20 @@ import IconChevronDown from '~icons/lucide/chevron-down'
  * n'importe quelle suite de liens, sans `aria-haspopup`.
  *
  * Fermeture : un second clic sur le bouton, Échap (le focus revient alors au
- * bouton, pour que la tabulation reprenne là où la personne était), un clic en
- * dehors (le focus reste où elle l'a mis), une navigation quelle qu'en soit
- * l'origine, et le choix d'une entrée — y compris le lien vers la page où l'on
- * est déjà, qui ne navigue pas. Pas de fermeture à la sortie du focus : Safari
- * ne donne pas le focus à un bouton cliqué, un `focusout` fermerait la liste
- * avant que le clic n'arrive.
+ * bouton **s'il était dans le menu**, pour que la tabulation reprenne là où la
+ * personne était ; s'il était ailleurs, un autre menu de l'en-tête par exemple,
+ * le menu se ferme sans lui voler le focus, #748), un clic en dehors (le focus
+ * reste où elle l'a mis), une navigation quelle qu'en soit l'origine, le choix
+ * d'une entrée — y compris le lien vers la page où l'on est déjà, qui ne navigue
+ * pas — et la sortie du focus **quand la cible reçoit le focus et se trouve hors
+ * du menu** (Tab ou Maj+Tab au-delà de la liste, #748).
+ *
+ * Limite acceptée de cette dernière : on ne ferme **que si `relatedTarget` est
+ * non nul**. Safari ne donne pas le focus à un bouton cliqué, `relatedTarget` y
+ * est nul, et fermer à tout `focusout` ferait disparaître la liste avant que le
+ * clic n'arrive. Sous Safari, le focus qui part sans cible (clic sur une zone
+ * sans élément focalisable) laisse donc le menu ouvert ; le clic en dehors, lui,
+ * le ferme déjà.
  *
  * Le composant ne connaît ni l'authentification ni le téléchargement du CV : il
  * affiche des entrées et émet `logout` / `downloadCv`, que `AppHeader` branche.
@@ -71,8 +79,26 @@ function onDocumentClick(event: MouseEvent): void {
 
 function onDocumentKeydown(event: KeyboardEvent): void {
   if ('Escape' === event.key && isOpen.value) {
+    // Lu avant la fermeture : le focus n'est rendu au bouton que s'il était dans le
+    // menu. Un autre menu de l'en-tête peut le détenir pendant que celui-ci est
+    // resté ouvert, et le lui prendre serait voler le focus (#748, constat 12).
+    const focusWasInside = container.value?.contains(document.activeElement) ?? false
     close()
-    toggle.value?.focus()
+    if (focusWasInside) {
+      toggle.value?.focus()
+    }
+  }
+}
+
+/**
+ * Ferme le menu quand le focus part vers un élément hors du composant (#748,
+ * constat 13). `relatedTarget` nul (Safari, clic sans cible focalisable) ne ferme
+ * pas : voir le docblock du composant.
+ */
+function onFocusOut(event: FocusEvent): void {
+  const next = event.relatedTarget
+  if (isOpen.value && next instanceof Node && !container.value?.contains(next)) {
+    close()
   }
 }
 
@@ -108,6 +134,7 @@ onBeforeUnmount(() => {
   <div
     ref="container"
     class="account-menu-root"
+    @focusout="onFocusOut"
   >
     <button
       ref="toggle"
@@ -139,6 +166,7 @@ onBeforeUnmount(() => {
         <RouterLink
           :to="`${props.homeLink}/assistant`"
           class="dropdown-item"
+          exact-active-class="active"
           @click="close"
         >
           {{ t('nav.assistant') }}
@@ -148,6 +176,7 @@ onBeforeUnmount(() => {
         <RouterLink
           :to="`${props.homeLink}/admin`"
           class="dropdown-item"
+          exact-active-class="active"
           @click="close"
         >
           {{ t('common.administration') }}
@@ -167,6 +196,7 @@ onBeforeUnmount(() => {
         <RouterLink
           :to="`${props.homeLink}/mcp-connections`"
           class="dropdown-item"
+          exact-active-class="active"
           @click="close"
         >
           {{ t('nav.mcpConnections') }}

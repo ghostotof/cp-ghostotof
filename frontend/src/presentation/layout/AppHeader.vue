@@ -437,6 +437,7 @@ function navLinkClass(link: NavigationLink) {
                   <RouterLink
                     :to="`${homeLink}/login`"
                     class="dropdown-item"
+                    exact-active-class="active"
                     @click="closeGroups"
                   >
                     {{ t('common.login') }}
@@ -448,6 +449,7 @@ function navLinkClass(link: NavigationLink) {
                   <RouterLink
                     :to="`${homeLink}/assistant`"
                     class="dropdown-item"
+                    exact-active-class="active"
                     @click="closeGroups"
                   >
                     {{ t('nav.assistant') }}
@@ -457,6 +459,7 @@ function navLinkClass(link: NavigationLink) {
                   <RouterLink
                     :to="`${homeLink}/admin`"
                     class="dropdown-item"
+                    exact-active-class="active"
                     @click="closeGroups"
                   >
                     {{ t('common.administration') }}
@@ -476,6 +479,7 @@ function navLinkClass(link: NavigationLink) {
                   <RouterLink
                     :to="`${homeLink}/mcp-connections`"
                     class="dropdown-item"
+                    exact-active-class="active"
                     @click="closeGroups"
                   >
                     {{ t('nav.mcpConnections') }}

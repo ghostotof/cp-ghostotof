@@ -879,6 +879,20 @@ describe('AppHeader', () => {
       expect(router.currentRoute.value.path).toBe('/fr')
     })
 
+    it('menu du compte mobile : l\'entrée de la page courante est distinguée visuellement (#748)', async () => {
+      await primeAuthState({ username: 'jane', roles: ['ROLE_TRUSTED', 'ROLE_USER'] })
+      const { wrapper } = await mountHeader('/fr/mcp-connections')
+
+      await openAccountMenu(wrapper)
+
+      const current = wrapper.get(`#account-menu ${LINK}`)
+      expect(current.classes()).toContain('active')
+      expect(current.attributes('aria-current')).toBe('page')
+      const other = wrapper.get('#account-menu a[href="/fr/assistant"]')
+      expect(other.classes()).not.toContain('active')
+      expect(other.attributes('aria-current')).toBeUndefined()
+    })
+
     it('menu ouvert : aucune violation d\'accessibilité détectable', async () => {
       await primeAuthState({ username: 'jane', roles: ['ROLE_TRUSTED', 'ROLE_USER'] })
       const { wrapper } = await mountHeader()

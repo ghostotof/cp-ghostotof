@@ -161,6 +161,87 @@ describe('AccountMenu (menu du compte, écran large)', () => {
     cleanup()
   })
 
+  it('Échap ailleurs ferme sans prendre le focus', async () => {
+    // Constat 12 de #748 : le menu est resté ouvert et le focus est ailleurs (un autre
+    // menu de l'en-tête, par exemple) ; Échap le referme mais ne vole pas le focus.
+    const { wrapper, outside, cleanup } = await mountMenu()
+    await wrapper.get(TOGGLE).trigger('click')
+    outside.focus()
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await flushPromises()
+
+    expect(wrapper.get('#account-menu-desktop').isVisible()).toBe(false)
+    expect(document.activeElement).toBe(outside)
+    cleanup()
+  })
+
+  it('Échap sur le bouton lui-même referme le menu et garde le focus sur le bouton', async () => {
+    const { wrapper, cleanup } = await mountMenu()
+    await wrapper.get(TOGGLE).trigger('click')
+    ;(wrapper.get(TOGGLE).element as HTMLElement).focus()
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await flushPromises()
+
+    expect(wrapper.get('#account-menu-desktop').isVisible()).toBe(false)
+    expect(document.activeElement).toBe(wrapper.get(TOGGLE).element)
+    cleanup()
+  })
+
+  it('le focus qui part hors du menu le referme, sans le déplacer', async () => {
+    // Constat 13 de #748 : Tab ou Maj+Tab au-delà de la liste laissait le menu ouvert.
+    const { wrapper, outside, cleanup } = await mountMenu()
+    await wrapper.get(TOGGLE).trigger('click')
+    const link = wrapper.get('#account-menu-desktop a').element as HTMLElement
+    link.focus()
+
+    outside.focus()
+    link.dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: outside }))
+    await flushPromises()
+
+    expect(wrapper.get('#account-menu-desktop').isVisible()).toBe(false)
+    expect(wrapper.get(TOGGLE).attributes('aria-expanded')).toBe('false')
+    expect(document.activeElement).toBe(outside)
+    cleanup()
+  })
+
+  it('un focusout sans relatedTarget (Safari) laisse le menu ouvert', async () => {
+    // Safari ne donne pas le focus à un bouton cliqué : relatedTarget est nul et un
+    // focusout fermerait la liste avant que le clic n'arrive (limite acceptée).
+    const { wrapper, cleanup } = await mountMenu()
+    await wrapper.get(TOGGLE).trigger('click')
+    const link = wrapper.get('#account-menu-desktop a').element as HTMLElement
+    link.focus()
+
+    link.dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: null }))
+    await flushPromises()
+
+    expect(wrapper.get('#account-menu-desktop').isVisible()).toBe(true)
+    cleanup()
+  })
+
+  it('le focus qui passe d\'une entrée à l\'autre, ou au bouton, laisse le menu ouvert', async () => {
+    const { wrapper, cleanup } = await mountMenu()
+    await wrapper.get(TOGGLE).trigger('click')
+    const links = wrapper.get('#account-menu-desktop').findAll('a')
+    const first = links[0].element as HTMLElement
+    const second = links[1].element as HTMLElement
+    first.focus()
+
+    second.focus()
+    first.dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: second }))
+    await flushPromises()
+    expect(wrapper.get('#account-menu-desktop').isVisible()).toBe(true)
+
+    const toggle = wrapper.get(TOGGLE).element as HTMLElement
+    toggle.focus()
+    second.dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: toggle }))
+    await flushPromises()
+    expect(wrapper.get('#account-menu-desktop').isVisible()).toBe(true)
+    cleanup()
+  })
+
   it('Échap menu fermé ne prend pas le focus', async () => {
     const { wrapper, outside, cleanup } = await mountMenu()
     outside.focus()
@@ -255,6 +336,22 @@ describe('AccountMenu (menu du compte, écran large)', () => {
 
     expect(wrapper.get('#account-menu-desktop a[href="/fr/mcp-connections"]').attributes('aria-current')).toBe('page')
     expect(wrapper.get('#account-menu-desktop a[href="/fr/assistant"]').attributes('aria-current')).toBeUndefined()
+    cleanup()
+  })
+
+  it('l\'entrée de la page courante est distinguée visuellement', async () => {
+    // Constat 20 de #748 : aria-current seul ne se voit pas ; la classe `active` est
+    // celle que les autres menus de l'en-tête et AdminLayout emploient déjà.
+    const { wrapper, router, cleanup } = await mountMenu()
+    await router.push('/fr/mcp-connections')
+    await wrapper.get(TOGGLE).trigger('click')
+
+    const current = wrapper.get('#account-menu-desktop a[href="/fr/mcp-connections"]')
+    expect(current.classes()).toContain('active')
+    expect(current.attributes('aria-current')).toBe('page')
+    const other = wrapper.get('#account-menu-desktop a[href="/fr/assistant"]')
+    expect(other.classes()).not.toContain('active')
+    expect(other.attributes('aria-current')).toBeUndefined()
     cleanup()
   })
 
