@@ -62,11 +62,11 @@ incremental parser `serverEvents.ts`) → `application/assistant/useAssistant.ts
 `idle|streaming|error`; the sliding window `buildConversationWindow` copies the backend's D6 bounds and counts
 in code points, never `.length`; a session ended — a 401, or a 403 sent without a CSRF token, judged by
 `sessionAwareFetch`, `.claude/rules/frontend-session.md` — is `unauthenticated` and calls `markSessionExpired()`; a 403
-that carried its token is a real refusal, `forbidden`: the session stays, the header keeps its tier, and the page says
-the server refuses the assistant to this account, with no sign-in link, which would not even open for a person still
-signed in — #748, #732 point 4; accepted limit: the header of an account stripped of `ROLE_TRUSTED` stays at the
-trusted tier until the next full load, re-reading `/api/me` on `forbidden` was rejected as it would couple the
-assistant's composable to the authentication repository for a rare case) →
+that carried its token is a real refusal, `forbidden`: the session stays (never `markSessionExpired()`), the composable
+re-reads `/api/me` once (`useAuth().checkAuth()`, not awaited, a rejection swallowed) so the header returns to the tier
+the server now recognises, and the page says the refusal in a neutral message (`common.accessRefused`) with a « Changer
+de compte » link (`login?redirect=<this page>&reauth=1`, the same tab, the lost conversation accepted) — #748, #732
+point 4, R7; `.claude/rules/frontend-session.md`, « A real refusal ») →
 `presentation/pages/AssistantPage.vue`.
 
 The MCP connection slice follows it too (#650): `domain/mcp` → `infrastructure/mcp/HttpMcpConnectionsRepository.ts`
@@ -78,16 +78,16 @@ Details: `.claude/rules/mcp-oauth-revocation-personne.md`.
 
 Three things the MCP slice shares with the rest of the frontend:
 
-- **A refused session reaches the person in words** (#650, R5a). `useMcpConnections` exposes `sessionExpired` (the
-  repository raised `SessionEndedError` — a 401, or a 403 to a revocation sent without a CSRF token, judged by
-  `infrastructure/http/sessionAwareFetch.ts`, rule in `.claude/rules/frontend-session.md` — on the last read or
-  revocation, besides `markSessionExpired()`); the page then shows « Votre
-  session a pris fin », a **sign-in-again link** (`login?redirect=<this page>&expired=1`) in place of the generic
-  error and its retry, which would send the same request without a session, and **disables every « Révoquer »**
-  (#748, #732-4). Any other 403 (a read's, or a revocation that carried its token) is the generic failure with
-  « Réessayer »; accepted limit: an account that lost `ROLE_TRUSTED` while the page was open meets it on its next
-  `GET`, and « Réessayer » cannot help — rare, and presenting it as an ended session would send the person to sign
-  in for nothing, the defect #732-4 named. `LoginPage` reads `expired=1`
+- **A refused session reaches the person in words** (#650, R5a; #748, R7). `useMcpConnections` exposes
+  `refusal: 'session-ended' | 'forbidden' | null` (reset to `null` at the start of each `load()` and `revoke()`).
+  `session-ended`: the repository raised `SessionEndedError` — a 401, or a 403 to a revocation sent without a CSRF
+  token, judged by `infrastructure/http/sessionAwareFetch.ts`, rule in `.claude/rules/frontend-session.md` — besides
+  `markSessionExpired()`; the page then shows « Votre session a pris fin », a **sign-in-again link**
+  (`login?redirect=<this page>&expired=1`, `SignInAgainLink`, a new tab) in place of the generic error and its retry,
+  which would send the same request without a session. `forbidden`: any other 403 (a read's, or a revocation that
+  carried its token) is `AccessForbiddenError`; the session is not marked expired, `/api/me` is re-read once, and the
+  page shows the neutral `common.accessRefused` with « Changer de compte » (`login?redirect=<this page>&reauth=1`, the
+  same tab), again with no « Réessayer ». **Either refusal disables every « Révoquer »** (#748, #732-4). `LoginPage` reads `expired=1`
   (`presentation/router/sessionEnded.ts`, the single value `1`) and shows a `role="status"` notice « Votre session a
   pris fin, reconnectez-vous. » — the same flag the backoffice banner's link sets (`SessionEndedBanner`, which
   replaced R1c's redirect: a 401 mid-page no longer navigates, `.claude/rules/frontend-session.md`). The flag

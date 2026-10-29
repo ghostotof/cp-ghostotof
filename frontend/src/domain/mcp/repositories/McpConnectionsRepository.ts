@@ -14,7 +14,8 @@ export interface McpConnectionsRepository {
    * marquées), le serveur bornant ces dernières. `terminatedTruncated` dit
    * qu'il en existe de plus anciennes, que la liste ne porte pas.
    *
-   * @throws SessionEndedError session absente ou expirée (401, voir `infrastructure/http/sessionAwareFetch.ts`) ; tout autre 403 est l'échec générique
+   * @throws SessionEndedError session absente ou expirée (401, voir `infrastructure/http/sessionAwareFetch.ts`)
+   * @throws AccessForbiddenError tout autre 403 : un refus réel (compte sans l'accès de confiance, ou qui l'a perdu)
    * @throws McpConnectionsRequestFailedError tout autre échec, dont une réponse mal formée
    */
   list(): Promise<McpConnectionList>
@@ -24,7 +25,8 @@ export interface McpConnectionsRepository {
    * déjà révoquée répond comme une révocation réussie.
    *
    * @throws McpConnectionNotFoundError connexion inconnue de ce compte (404 `mcp-connection-not-found`)
-   * @throws SessionEndedError session absente ou expirée (401, ou 403 parti sans jeton CSRF, voir `infrastructure/http/sessionAwareFetch.ts`) ; tout autre 403 est l'échec générique
+   * @throws SessionEndedError session absente ou expirée (401, ou 403 parti sans jeton CSRF, voir `infrastructure/http/sessionAwareFetch.ts`)
+   * @throws AccessForbiddenError tout autre 403 : un refus réel
    * @throws McpConnectionsRequestFailedError tout autre échec
    */
   revoke(id: string): Promise<void>

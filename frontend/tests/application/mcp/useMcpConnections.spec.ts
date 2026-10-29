@@ -1,8 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { enableAutoUnmount, mount } from '@vue/test-utils'
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { defineComponent, h } from 'vue'
 import { MCP_CONNECTIONS_REPOSITORY, useMcpConnections } from '../../../src/application/mcp/useMcpConnections'
-import { authState, markBaseAccessGranted, markSessionExpired } from '../../../src/application/auth/useAuth'
+import { AUTH_REPOSITORY, authState, markBaseAccessGranted, markSessionExpired, useAuth } from '../../../src/application/auth/useAuth'
+import type { AuthRepository } from '../../../src/domain/auth/repositories/AuthRepository'
+import { BASE_ACCESS_SESSION } from '../../../src/domain/auth/entities/AuthSession'
+import { AccessForbiddenError } from '../../../src/domain/auth/errors/AccessForbiddenError'
+import { sessionFor } from '../../support/authSession'
 import type { McpConnectionsRepository } from '../../../src/domain/mcp/repositories/McpConnectionsRepository'
 import type { McpConnectionSummary } from '../../../src/domain/mcp/entities/McpConnection'
 import { McpConnectionNotFoundError } from '../../../src/domain/mcp/errors/McpConnectionNotFoundError'
@@ -29,7 +33,40 @@ function connection(id: string, state: McpConnectionSummary['state'] = 'active')
 const A = connection('a')
 const B = connection('b')
 
+/**
+ * `/api/me`, que le composable relit sur un refus réel (#748, R7). Remis à neuf par chaque montage : il répond
+ * le palier de base, celui d'un compte qui n'a plus l'accès de confiance.
+ */
+let me = vi.fn(async () => BASE_ACCESS_SESSION)
+
+/** Un compte de confiance connu de l'application : l'annonce de session finie des tests précédents est refermée. */
+async function signInTrusted(): Promise<void> {
+  const probe = mount(
+    defineComponent({
+      setup() {
+        return { auth: useAuth() }
+      },
+      template: '<div />',
+    }),
+    {
+      global: {
+        provide: {
+          [AUTH_REPOSITORY as symbol]: {
+            login: vi.fn(),
+            logout: vi.fn(),
+            me: vi.fn(async () => sessionFor({ username: 'jane', roles: ['ROLE_USER', 'ROLE_TRUSTED'] })),
+          },
+        },
+      },
+    },
+  )
+  await probe.vm.auth.checkAuth()
+  probe.unmount()
+}
+
 function mountComposable(repository: McpConnectionsRepository) {
+  me = vi.fn(async () => BASE_ACCESS_SESSION)
+  const authRepository: AuthRepository = { login: vi.fn(), logout: vi.fn(), me }
   let captured: ReturnType<typeof useMcpConnections> | undefined
   const Probe = defineComponent({
     setup() {
@@ -37,7 +74,7 @@ function mountComposable(repository: McpConnectionsRepository) {
       return () => h('div')
     },
   })
-  mount(Probe, { global: { provide: { [MCP_CONNECTIONS_REPOSITORY as symbol]: repository } } })
+  mount(Probe, { global: { provide: { [MCP_CONNECTIONS_REPOSITORY as symbol]: repository, [AUTH_REPOSITORY as symbol]: authRepository } } })
 
   if (!captured) {
     throw new Error('useMcpConnections() did not run during mount')
@@ -73,7 +110,7 @@ describe('useMcpConnections', () => {
     expect(connections.revokingId.value).toBeNull()
     expect(connections.lastOutcome.value).toBeNull()
     expect(connections.terminatedTruncated.value).toBe(false)
-    expect(connections.sessionExpired.value).toBe(false)
+    expect(connections.refusal.value).toBeNull()
   })
 
   it('load() charge la liste puis passe à ready', async () => {
@@ -134,21 +171,21 @@ describe('useMcpConnections', () => {
     expect(authState.tier).toBe('anonymous')
   })
 
-  it('load() sur une session expirée le dit à la page (sessionExpired), qu\'un autre échec ne dit pas', async () => {
+  it('load() sur une session expirée le dit à la page (refusal session-ended), qu\'un autre échec ne dit pas', async () => {
     const list = vi.fn().mockRejectedValueOnce(new SessionEndedError()).mockRejectedValueOnce(new McpConnectionsRequestFailedError()).mockResolvedValue(listOf([A]))
     const connections = mountComposable({ list, revoke: vi.fn() })
 
     await connections.load()
-    expect(connections.sessionExpired.value).toBe(true)
+    expect(connections.refusal.value).toBe('session-ended')
 
     // La lecture suivante échoue pour une autre raison : l'indication ne survit pas à la lecture qui la corrige.
     await connections.load()
     expect(connections.status.value).toBe('error')
-    expect(connections.sessionExpired.value).toBe(false)
+    expect(connections.refusal.value).toBeNull()
 
     await connections.load()
     expect(connections.status.value).toBe('ready')
-    expect(connections.sessionExpired.value).toBe(false)
+    expect(connections.refusal.value).toBeNull()
   })
 
   it('une session expirée pendant la révocation est dite à la page aussi', async () => {
@@ -160,7 +197,7 @@ describe('useMcpConnections', () => {
 
     await connections.revoke('a')
 
-    expect(connections.sessionExpired.value).toBe(true)
+    expect(connections.refusal.value).toBe('session-ended')
     expect(connections.lastOutcome.value).toBe('failed')
   })
 
@@ -196,9 +233,90 @@ describe('useMcpConnections', () => {
 
     expect(connections.status.value).toBe('ready')
     expect(connections.connections.value).toEqual([B])
-    expect(connections.sessionExpired.value).toBe(false)
+    expect(connections.refusal.value).toBeNull()
     // Une réponse périmée ne ferme pas la session de l'application non plus.
     expect(authState.tier).toBe('base')
+  })
+
+  it("lecture refusée : refusal 'forbidden', /api/me relu une fois, la session n'est pas marquée finie", async () => {
+    await signInTrusted()
+    const connections = mountComposable({ list: vi.fn().mockRejectedValue(new AccessForbiddenError()), revoke: vi.fn() })
+
+    await connections.load()
+    await flushPromises()
+
+    expect(connections.refusal.value).toBe('forbidden')
+    expect(connections.status.value).toBe('error')
+    expect(me).toHaveBeenCalledTimes(1)
+    expect(authState.sessionEnded).toBe(false)
+  })
+
+  it("révocation refusée avec jeton : refusal 'forbidden', la liste reste, /api/me relu", async () => {
+    await signInTrusted()
+    const list = vi.fn().mockResolvedValue(listOf([A, B]))
+    const connections = mountComposable({ list, revoke: vi.fn().mockRejectedValue(new AccessForbiddenError()) })
+    await connections.load()
+
+    await connections.revoke('a')
+    await flushPromises()
+
+    expect(connections.refusal.value).toBe('forbidden')
+    expect(connections.lastOutcome.value).toBe('failed')
+    expect(connections.connections.value).toEqual([A, B])
+    expect(list).toHaveBeenCalledTimes(1)
+    expect(connections.revokingId.value).toBeNull()
+    expect(me).toHaveBeenCalledTimes(1)
+    expect(authState.sessionEnded).toBe(false)
+  })
+
+  it("session finie : refusal 'session-ended', /api/me n'est pas relu par le composable", async () => {
+    const connections = mountComposable({ list: vi.fn().mockRejectedValue(new SessionEndedError()), revoke: vi.fn() })
+
+    await connections.load()
+    await flushPromises()
+
+    expect(connections.refusal.value).toBe('session-ended')
+    expect(me).not.toHaveBeenCalled()
+  })
+
+  it('un refus remis à null au début de chaque load() et de chaque revoke()', async () => {
+    const list = vi.fn().mockRejectedValueOnce(new AccessForbiddenError()).mockResolvedValue(listOf([A]))
+    const connections = mountComposable({ list, revoke: vi.fn().mockRejectedValue(new AccessForbiddenError()) })
+    await connections.load()
+    expect(connections.refusal.value).toBe('forbidden')
+
+    await connections.load()
+    expect(connections.refusal.value).toBeNull()
+
+    await connections.revoke('a')
+    expect(connections.refusal.value).toBe('forbidden')
+    const pending = connections.revoke('a')
+    expect(connections.refusal.value).toBeNull()
+    await pending
+  })
+
+  it("le refus remet l'en-tête au vrai palier : /api/me, simulé au palier de base, ôte le palier de confiance d'un compte rétrogradé", async () => {
+    // Un compte de confiance, tel que l'en-tête l'affichait avant le refus.
+    await signInTrusted()
+    expect(authState.tier).toBe('trusted')
+    const connections = mountComposable({ list: vi.fn().mockRejectedValue(new AccessForbiddenError()), revoke: vi.fn() })
+
+    await connections.load()
+    await flushPromises()
+
+    expect(authState.tier).toBe('base')
+    expect(authState.user).toBeNull()
+  })
+
+  it("/api/me qui échoue à son tour ne boucle pas et ne casse pas le refus", async () => {
+    const connections = mountComposable({ list: vi.fn().mockRejectedValue(new AccessForbiddenError()), revoke: vi.fn() })
+    me.mockRejectedValue(new Error('network'))
+
+    await connections.load()
+    await flushPromises()
+
+    expect(connections.refusal.value).toBe('forbidden')
+    expect(me).toHaveBeenCalledTimes(1)
   })
 
   it('revoke() révoque puis recharge la liste depuis le serveur, outcome revoked', async () => {

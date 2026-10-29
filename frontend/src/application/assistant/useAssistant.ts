@@ -18,7 +18,7 @@ import {
   buildConversationWindow,
   codePointLength,
 } from '../../domain/assistant/services/conversationWindow'
-import { markSessionExpired } from '../auth/useAuth'
+import { markSessionExpired, useAuth } from '../auth/useAuth'
 
 export const ASSISTANT_REPOSITORY: InjectionKey<AssistantRepository> = Symbol('AssistantRepository')
 
@@ -51,6 +51,9 @@ export function useAssistant(): UseAssistantResult {
       "AssistantRepository n'a pas été fourni. Vérifiez que app.provide(ASSISTANT_REPOSITORY, ...) est bien appelé dans main.ts.",
     )
   }
+
+  // Après le contrôle ci-dessus : l'absence d'un dépôt se dit par son propre nom.
+  const { checkAuth } = useAuth()
 
   const messages = ref<AssistantMessage[]>([])
   const state = ref<AssistantState>('idle')
@@ -126,9 +129,12 @@ export function useAssistant(): UseAssistantResult {
       }
       // Seule une session finie (`unauthenticated`, voir `infrastructure/http/sessionAwareFetch.ts`)
       // anonymise l'en-tête ; un refus réel (`forbidden`) laisse la session, qui vaut pour le reste du
-      // site (#748, #732 point 4).
+      // site (#748, #732 point 4), mais relit `/api/me` (une fois, sans l'attendre, un rejet avalé) : un
+      // compte rétrogradé y est au palier de base, et l'en-tête ne doit pas rester à celui de confiance (R7).
       if ('unauthenticated' === failure.reason) {
         markSessionExpired()
+      } else if ('forbidden' === failure.reason) {
+        void checkAuth().catch(() => undefined)
       }
       error.value = failure
       state.value = 'error'

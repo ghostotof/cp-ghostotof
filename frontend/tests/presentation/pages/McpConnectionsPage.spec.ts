@@ -12,6 +12,10 @@ import type { McpConnectionList, McpConnectionSummary } from '../../../src/domai
 import { McpConnectionNotFoundError } from '../../../src/domain/mcp/errors/McpConnectionNotFoundError'
 import { McpConnectionsRequestFailedError } from '../../../src/domain/mcp/errors/McpConnectionsRequestFailedError'
 import { SessionEndedError } from '../../../src/domain/auth/errors/SessionEndedError'
+import { AccessForbiddenError } from '../../../src/domain/auth/errors/AccessForbiddenError'
+import { AUTH_REPOSITORY } from '../../../src/application/auth/useAuth'
+import type { AuthRepository } from '../../../src/domain/auth/repositories/AuthRepository'
+import { BASE_ACCESS_SESSION } from '../../../src/domain/auth/entities/AuthSession'
 import type { Locale } from '../../../src/domain/portfolio/entities/Locale'
 import { expectNoAccessibilityViolation } from '../../support/axe'
 import { listOf } from '../../support/mcpConnectionList'
@@ -108,6 +112,7 @@ interface Harness {
   list: ReturnType<typeof vi.fn>
   revoke: ReturnType<typeof vi.fn>
   confirm: ReturnType<typeof vi.spyOn>
+  me: ReturnType<typeof vi.fn>
 }
 
 interface Options {
@@ -117,11 +122,20 @@ interface Options {
   confirmAnswer?: boolean
 }
 
+/** Le texte du refus réel, tel que dit à la personne (#748, R7). */
+const REFUSAL_FR =
+  "Le serveur refuse cette demande à votre session : votre compte n'a peut-être pas, ou plus, l'accès de confiance, ou la session doit être rouverte. Changez de compte, ou reconnectez-vous au même, pour continuer."
+const REFUSAL_EN =
+  'The server refuses this request to your session: your account may not have, or may no longer have, trusted access, or the session needs to be reopened. Switch account, or sign in again to the same one, to continue.'
+
 async function mountPage(options: Options = {}): Promise<Harness> {
   const locale = options.locale ?? 'fr'
   const list = options.list ?? vi.fn(async () => listOf([ACTIVE, NEVER_USED, EXPIRED, REVOKED_BY_PERSON]))
   const revoke = options.revoke ?? vi.fn(async () => undefined)
   const repository = { list, revoke } as unknown as McpConnectionsRepository
+  // Un refus réel relit /api/me (`checkAuth`) : un faux dépôt d'auth, qui répond le palier de base.
+  const me = vi.fn(async () => BASE_ACCESS_SESSION)
+  const authRepository: AuthRepository = { login: vi.fn(), logout: vi.fn(), me }
 
   const confirm = vi.spyOn(window, 'confirm').mockReturnValue(options.confirmAnswer ?? true)
 
@@ -141,11 +155,14 @@ async function mountPage(options: Options = {}): Promise<Harness> {
   const wrapper = mount(McpConnectionsPage, {
     // Rattaché au document : le focus n'existe pas dans un arbre détaché.
     attachTo: document.body,
-    global: { plugins: [router, i18n], provide: { [MCP_CONNECTIONS_REPOSITORY as symbol]: repository } },
+    global: {
+      plugins: [router, i18n],
+      provide: { [MCP_CONNECTIONS_REPOSITORY as symbol]: repository, [AUTH_REPOSITORY as symbol]: authRepository },
+    },
   })
   await flushPromises()
 
-  return { wrapper, list, revoke, confirm }
+  return { wrapper, list, revoke, confirm, me }
 }
 
 function rows(wrapper: VueWrapper) {
@@ -853,6 +870,81 @@ describe('McpConnectionsPage', () => {
 
     it('session finie : aucune violation d\'accessibilité détectable', async () => {
       const list = vi.fn().mockRejectedValue(new SessionEndedError())
+      const { wrapper } = await mountPage({ list })
+
+      await auditAccessibility(wrapper)
+    })
+  })
+
+  describe('refus réel (403 qui ne finit pas la session, #748, R7)', () => {
+    it.each<[Locale, string]>([
+      ['fr', REFUSAL_FR],
+      ['en', REFUSAL_EN],
+    ])(
+      '%s : message neutre, « Changer de compte » vers login?reauth=1&redirect=<ce chemin>, aucun « Réessayer »',
+      async (locale, message) => {
+        const list = vi.fn().mockRejectedValue(new AccessForbiddenError())
+        const { wrapper } = await mountPage({ locale, list })
+
+        const alert = wrapper.get('[role="alert"]')
+        expect(normalized(alert.text())).toContain(message)
+        // Ni l'échec générique, ni sa nouvelle tentative : la même requête prendrait le même refus.
+        expect(wrapper.text()).not.toContain("n'ont pas pu être chargées")
+        expect(wrapper.text()).not.toContain('could not be loaded')
+        expect(alert.find('button').exists()).toBe(false)
+        const link = alert.get('a')
+        expect(link.text()).toBe('fr' === locale ? 'Changer de compte' : 'Switch account')
+        // Même onglet : la conversation, la saisie d'une autre page ne sont pas ici en jeu, le flux est un changement de compte.
+        expect(link.attributes('target')).toBeUndefined()
+        const href = link.attributes('href') ?? ''
+        expect(href.startsWith(`/${locale}/login?`)).toBe(true)
+        const query = new URLSearchParams(href.split('?')[1])
+        expect(query.get('reauth')).toBe('1')
+        expect(query.get('redirect')).toBe(`/${locale}/mcp-connections`)
+      },
+    )
+
+    it("le refus relit /api/me une fois, sans marquer la session finie", async () => {
+      const list = vi.fn().mockRejectedValue(new AccessForbiddenError())
+      const { wrapper, me } = await mountPage({ list })
+
+      expect(wrapper.find('[role="alert"]').exists()).toBe(true)
+      expect(me).toHaveBeenCalledTimes(1)
+    })
+
+    it('refus à la révocation : la liste reste, tous les « Révoquer » sont désactivés, le focus passe au titre', async () => {
+      const revoke = vi.fn(async () => {
+        ;(document.activeElement as HTMLElement | null)?.blur()
+        throw new AccessForbiddenError()
+      })
+      const { wrapper } = await mountPage({ revoke })
+      const button = rowOf(wrapper, 'Claude Code').get('button')
+      ;(button.element as HTMLElement).focus()
+
+      await button.trigger('click')
+      await flushPromises()
+
+      const alerts = wrapper.findAll('[role="alert"]')
+      expect(alerts).toHaveLength(1)
+      expect(normalized(alerts[0]?.text() ?? '')).toContain(REFUSAL_FR)
+      expect(wrapper.text()).not.toContain("n'a pas pu être révoquée")
+      expect(rows(wrapper)).toHaveLength(4)
+      for (const revokeButton of wrapper.findAll('tbody button')) {
+        expect(revokeButton.attributes('disabled')).toBeDefined()
+      }
+      expect(document.activeElement).toBe(wrapper.get('h1').element)
+    })
+
+    it('un refus ne se confond pas avec une session finie : pas de lien en nouvel onglet', async () => {
+      const list = vi.fn().mockRejectedValue(new AccessForbiddenError())
+      const { wrapper } = await mountPage({ list })
+
+      expect(wrapper.text()).not.toContain('Votre session a pris fin')
+      expect(wrapper.find('a[target="_blank"]').exists()).toBe(false)
+    })
+
+    it('refus : aucune violation d\'accessibilité détectable', async () => {
+      const list = vi.fn().mockRejectedValue(new AccessForbiddenError())
       const { wrapper } = await mountPage({ list })
 
       await auditAccessibility(wrapper)

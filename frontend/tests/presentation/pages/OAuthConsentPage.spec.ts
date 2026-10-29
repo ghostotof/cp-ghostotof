@@ -72,6 +72,8 @@ interface Harness {
   describeRequest: ReturnType<typeof vi.fn>
   decide: ReturnType<typeof vi.fn>
   navigate: ReturnType<typeof vi.fn>
+  /** `/api/me`, relu sur un refus réel (#748, R7). */
+  me: ReturnType<typeof vi.fn>
 }
 
 interface Options {
@@ -93,6 +95,9 @@ async function mountPage(options: Options = {}): Promise<Harness> {
   const decide = options.decide ?? vi.fn(async (_params: ConsentParams, approved: boolean) => (approved ? APPROVED_URL : DENIED_URL))
   const navigate = vi.fn()
   const repository = { describe: describeRequest, decide } as unknown as OAuthConsentRepository
+  // Un refus réel relit /api/me (`checkAuth`) : le compte y est toujours de confiance, la session ne bouge pas.
+  const me = vi.fn(async () => sessionFor({ username: 'guest', roles: ['ROLE_USER', 'ROLE_TRUSTED'] }))
+  const authRepository: AuthRepository = { login: vi.fn(), logout: vi.fn(), me }
 
   const i18n = createAppI18n()
   i18n.global.locale.value = locale
@@ -116,6 +121,7 @@ async function mountPage(options: Options = {}): Promise<Harness> {
       plugins: [router, i18n],
       provide: {
         [OAUTH_CONSENT_REPOSITORY as symbol]: repository,
+        [AUTH_REPOSITORY as symbol]: authRepository,
         [CLIENT_REDIRECT as symbol]: navigate,
       },
     },
@@ -126,7 +132,7 @@ async function mountPage(options: Options = {}): Promise<Harness> {
     await passActivationDelay()
   }
 
-  return { wrapper, router, describeRequest, decide, navigate }
+  return { wrapper, router, describeRequest, decide, navigate, me }
 }
 
 async function passActivationDelay(): Promise<void> {
@@ -162,6 +168,12 @@ async function keyboardClick(wrapper: VueWrapper, name: 'approve' | 'deny'): Pro
 function button(wrapper: VueWrapper, name: 'approve' | 'deny') {
   return wrapper.find(`[data-testid="consent-${name}"]`)
 }
+
+/** Le message d'un refus réel, partagé avec « Mes connexions MCP » et l'assistant (`common.accessRefused`, #748, R7). */
+const REFUSAL_FR =
+  "Le serveur refuse cette demande à votre session : votre compte n'a peut-être pas, ou plus, l'accès de confiance, ou la session doit être rouverte. Changez de compte, ou reconnectez-vous au même, pour continuer."
+const REFUSAL_EN =
+  'The server refuses this request to your session: your account may not have, or may no longer have, trusted access, or the session needs to be reopened. Switch account, or sign in again to the same one, to continue.'
 
 /** Une session de confiance, pour constater que la page la marque expirée. */
 async function primeTrustedSession(): Promise<void> {
@@ -499,9 +511,9 @@ describe('OAuthConsentPage — session', () => {
     expect(wrapper.find('[role="alert"]').exists()).toBe(true)
   })
 
-  it('refus du serveur : le message dit que ce compte ne peut pas autoriser, et propose de changer de compte', async () => {
+  it('refus du serveur : message neutre, /api/me relu, et « Changer de compte » vers la connexion', async () => {
     await primeTrustedSession()
-    const { wrapper, router, navigate } = await mountPage({
+    const { wrapper, router, navigate, me } = await mountPage({
       describeRequest: vi.fn(async () => {
         throw new AccessForbiddenError()
       }),
@@ -510,8 +522,8 @@ describe('OAuthConsentPage — session', () => {
     // La session vaut toujours pour le reste du site : elle n'est pas marquée expirée.
     expect(authState.user).not.toBeNull()
     const alert = wrapper.find('[role="alert"]')
-    expect(alert.text()).toContain("Ce compte ne peut pas autoriser cette connexion")
-    expect(alert.text()).not.toContain('session')
+    expect(alert.text()).toContain(REFUSAL_FR)
+    expect(me).toHaveBeenCalledOnce()
     const link = alert.find('a')
     expect(link.text()).toBe('Changer de compte')
     const target = router.resolve(link.attributes('href') ?? '')
@@ -535,7 +547,7 @@ describe('OAuthConsentPage — session', () => {
     await button(wrapper, 'approve').trigger('click')
     await flushPromises()
 
-    expect(wrapper.find('[role="alert"]').text()).toContain('Ce compte ne peut pas autoriser cette connexion')
+    expect(wrapper.find('[role="alert"]').text()).toContain(REFUSAL_FR)
     expect(wrapper.find('[role="alert"] a').text()).toBe('Changer de compte')
     expect(wrapper.findAll('button')).toHaveLength(0)
     expect(wrapper.find('[data-testid="consent-account"]').exists()).toBe(false)
@@ -550,7 +562,7 @@ describe('OAuthConsentPage — session', () => {
       }),
     })
 
-    expect(wrapper.find('[role="alert"]').text()).toContain('This account cannot authorise this connection')
+    expect(wrapper.find('[role="alert"]').text()).toContain(REFUSAL_EN)
     expect(wrapper.find('[role="alert"] a').text()).toBe('Switch account')
   })
 

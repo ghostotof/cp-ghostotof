@@ -3,6 +3,7 @@ import { HttpMcpConnectionsRepository } from '../../../src/infrastructure/mcp/Ht
 import { McpConnectionNotFoundError } from '../../../src/domain/mcp/errors/McpConnectionNotFoundError'
 import { McpConnectionsRequestFailedError } from '../../../src/domain/mcp/errors/McpConnectionsRequestFailedError'
 import { SessionEndedError } from '../../../src/domain/auth/errors/SessionEndedError'
+import { AccessForbiddenError } from '../../../src/domain/auth/errors/AccessForbiddenError'
 
 const ID = '0199d6a0-7b1c-7c3e-9a4d-1f2e3d4c5b6a'
 
@@ -102,17 +103,17 @@ describe('HttpMcpConnectionsRepository', () => {
       await expect(repository.list()).rejects.toBeInstanceOf(SessionEndedError)
     })
 
-    it('un 403 est un échec de la requête, pas une session finie : une lecture n\'est jamais refusée pour le CSRF (#748, #732)', async () => {
+    it('list : un 403 est AccessForbiddenError, pas une session finie : une lecture n\'est jamais refusée pour le CSRF (#748, #732)', async () => {
       fetchMock.mockResolvedValue(jsonResponse({ type: '/errors/anything' }, 403))
 
-      await expect(repository.list()).rejects.toBeInstanceOf(McpConnectionsRequestFailedError)
+      await expect(repository.list()).rejects.toBeInstanceOf(AccessForbiddenError)
     })
 
-    it('un 403 reste un échec de la requête même sans cookie XSRF-TOKEN : seule une écriture est jugée sur le jeton', async () => {
+    it('list : un 403 reste AccessForbiddenError même sans cookie XSRF-TOKEN : seule une écriture est jugée sur le jeton', async () => {
       clearCsrfCookie()
       fetchMock.mockResolvedValue(jsonResponse({ type: '/errors/anything' }, 403))
 
-      await expect(repository.list()).rejects.toBeInstanceOf(McpConnectionsRequestFailedError)
+      await expect(repository.list()).rejects.toBeInstanceOf(AccessForbiddenError)
     })
 
     it.each([500, 429, 404])('un %i est un échec de la requête', async (status) => {
@@ -199,11 +200,11 @@ describe('HttpMcpConnectionsRepository', () => {
       await expect(repository.revoke(ID)).rejects.toBeInstanceOf(SessionEndedError)
     })
 
-    it('un 403 avec jeton CSRF est un échec, pas une session finie : un refus réel (#748, #732)', async () => {
+    it('revoke : un 403 avec jeton est AccessForbiddenError, pas une session finie : un refus réel (#748, #732)', async () => {
       // Le jeton est posé par le beforeEach : l'écriture est partie avec son en-tête.
       fetchMock.mockResolvedValue(jsonResponse({}, 403))
 
-      await expect(repository.revoke(ID)).rejects.toBeInstanceOf(McpConnectionsRequestFailedError)
+      await expect(repository.revoke(ID)).rejects.toBeInstanceOf(AccessForbiddenError)
     })
 
     it('un 403 parti sans jeton CSRF est une session finie', async () => {

@@ -2,6 +2,7 @@ import { MCP_CONNECTION_STATES, type McpConnectionList, type McpConnectionState,
 import type { McpConnectionsRepository } from '../../domain/mcp/repositories/McpConnectionsRepository'
 import { McpConnectionNotFoundError } from '../../domain/mcp/errors/McpConnectionNotFoundError'
 import { McpConnectionsRequestFailedError } from '../../domain/mcp/errors/McpConnectionsRequestFailedError'
+import { AccessForbiddenError } from '../../domain/auth/errors/AccessForbiddenError'
 import { SessionEndedError } from '../../domain/auth/errors/SessionEndedError'
 import { sessionAwareFetch, type SessionAwareResponse } from '../http/sessionAwareFetch'
 import type { ApiProblemBody } from '../admin/shared/BackofficeHttpClient'
@@ -23,7 +24,9 @@ export const MCP_CONNECTION_NOT_FOUND = 'mcp-connection-not-found'
  * /api/me/mcp-connections[/{id}]` (#650). L'envoi (cookies, CSRF du `DELETE`) et le
  * verdict « session finie » sont ceux de `infrastructure/http/sessionAwareFetch.ts`,
  * qui porte la règle : un 401, ou un 403 à la révocation partie sans jeton, est une
- * `SessionEndedError` ; tout autre 403 est l'échec générique (#748, #732 point 4).
+ * `SessionEndedError` ; tout autre 403 (la lecture, ou la révocation qui portait son jeton) est un refus réel,
+ * `AccessForbiddenError` : la page le dit et propose de changer de compte, au lieu de proposer de réessayer
+ * (#748, #732 point 4, R7).
  *
  * Le corps de la liste est vérifié champ par champ : une réponse d'une autre
  * forme (version du backend désynchronisée, proxy qui répond du HTML) est un
@@ -74,14 +77,16 @@ export class HttpMcpConnectionsRepository implements McpConnectionsRepository {
   }
 
   private async httpError(judged: SessionAwareResponse): Promise<Error> {
-    // Le verdict de session passe avant le statut ; un autre 403 est un refus réel, lu comme
-    // l'échec générique : le lire comme une session finie ferait se reconnecter pour rien.
+    // Le verdict de session passe avant le statut ; un autre 403 est un refus réel : le lire comme une session
+    // finie ferait se reconnecter pour rien, et comme un échec générique proposerait un « Réessayer » sans fin.
     if (judged.endedTheSession) {
       return new SessionEndedError()
     }
 
     const response = judged.response
     switch (response.status) {
+      case 403:
+        return new AccessForbiddenError()
       case 404:
         return (await this.hasType(response, MCP_CONNECTION_NOT_FOUND))
           ? new McpConnectionNotFoundError()

@@ -172,14 +172,16 @@ describe('LoginPage', () => {
       await primeSession(null)
     })
 
+    // L'annonce est neutre (#748, R7) : `reauth=1` s'ouvre aussi depuis « Changer de compte » (un refus, une
+    // page MCP ou l'assistant), plus seulement pour l'authentification de plus de dix minutes du consentement.
     it.each([
-      ['fr', 'Confirmez votre identité'],
-      ['en', 'Confirm your identity'],
-    ])('annonce pourquoi la page de connexion s’ouvre alors que la personne est connectée (%s)', async (locale, notice) => {
+      ['fr', 'Confirmez votre identité ou connectez-vous avec un autre compte : vous reviendrez ensuite à la page que vous quittiez.'],
+      ['en', 'Confirm your identity or sign in with another account: you will then return to the page you left.'],
+    ])('annonce pourquoi la page de connexion s’ouvre alors que la personne est connectée, sans parler de dix minutes (%s)', async (locale, notice) => {
       await primeSession({ username: 'jane', roles: ['ROLE_USER', 'ROLE_TRUSTED'] })
       const { wrapper } = await mountLoginPage(createStubRepository(), locale, { reauth: '1', redirect: CONSENT })
 
-      expect(wrapper.get('[data-testid="login-reauth-notice"]').text()).toContain(notice)
+      expect(wrapper.get('[data-testid="login-reauth-notice"]').text()).toBe(notice)
     })
 
     it.each(['fr', 'en'])(

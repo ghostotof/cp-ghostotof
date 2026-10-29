@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { enableAutoUnmount, mount } from '@vue/test-utils'
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { defineComponent, h } from 'vue'
 import { CLIENT_REDIRECT, OAUTH_CONSENT_REPOSITORY, useOAuthConsent } from '../../../src/application/mcp/useOAuthConsent'
 import type { OAuthConsentRepository } from '../../../src/domain/mcp/repositories/OAuthConsentRepository'
@@ -7,7 +7,9 @@ import type { ConsentParams, ConsentRequest } from '../../../src/domain/mcp/enti
 import { ConsentFailedError } from '../../../src/domain/mcp/errors/ConsentFailedError'
 import { MalformedConsentDecisionError } from '../../../src/domain/mcp/errors/MalformedConsentDecisionError'
 import { AccessForbiddenError } from '../../../src/domain/auth/errors/AccessForbiddenError'
-import { authState } from '../../../src/application/auth/useAuth'
+import { AUTH_REPOSITORY, authState } from '../../../src/application/auth/useAuth'
+import type { AuthRepository } from '../../../src/domain/auth/repositories/AuthRepository'
+import { BASE_ACCESS_SESSION } from '../../../src/domain/auth/entities/AuthSession'
 import { ConsentAccountChangedError } from '../../../src/domain/mcp/errors/ConsentAccountChangedError'
 import { ReauthenticationRequiredError } from '../../../src/domain/mcp/errors/ReauthenticationRequiredError'
 
@@ -37,9 +39,14 @@ const SUMMARY: ConsentRequest = {
 
 const APPROVED_URL = 'http://127.0.0.1:33418/callback?code=abc&state=xyz'
 
+/** `/api/me`, relu sur un refus réel (#748, R7) : il répond le palier de base. */
+let me = vi.fn(async () => BASE_ACCESS_SESSION)
+
 function mountComposable(decide: OAuthConsentRepository['decide'], describeRequest: OAuthConsentRepository['describe'] = vi.fn(async () => SUMMARY)) {
   const navigate = vi.fn()
   const repository: OAuthConsentRepository = { describe: describeRequest, decide }
+  me = vi.fn(async () => BASE_ACCESS_SESSION)
+  const authRepository: AuthRepository = { login: vi.fn(), logout: vi.fn(), me }
   let captured: ReturnType<typeof useOAuthConsent> | undefined
 
   const Probe = defineComponent({
@@ -52,6 +59,7 @@ function mountComposable(decide: OAuthConsentRepository['decide'], describeReque
     global: {
       provide: {
         [OAUTH_CONSENT_REPOSITORY as symbol]: repository,
+        [AUTH_REPOSITORY as symbol]: authRepository,
         [CLIENT_REDIRECT as symbol]: navigate,
       },
     },
@@ -141,6 +149,35 @@ describe('useOAuthConsent', () => {
     await consent.approve()
     expect(decide).toHaveBeenCalledOnce()
     expect(navigate).not.toHaveBeenCalled()
+  })
+
+  it("forbidden au résumé : /api/me relu une fois, la session n'est pas marquée finie", async () => {
+    const describeRequest = vi.fn(async () => {
+      throw new AccessForbiddenError()
+    })
+    const { consent } = mountComposable(vi.fn(async () => APPROVED_URL), describeRequest)
+
+    await consent.load(PARAMS)
+    await flushPromises()
+
+    expect(me).toHaveBeenCalledTimes(1)
+    expect(authState.sessionEnded).toBe(false)
+  })
+
+  it("forbidden à la décision : /api/me relu une fois, et un /api/me en panne n'y change rien", async () => {
+    const decide = vi.fn(async () => {
+      throw new AccessForbiddenError()
+    })
+    const { consent } = mountComposable(decide)
+    me.mockRejectedValue(new Error('network'))
+    await consent.load(PARAMS)
+
+    await consent.approve()
+    await flushPromises()
+
+    // Le rejet de /api/me est avalé : l'échec terminal est posé, sans seconde relecture.
+    expect(consent.failure.value).toBe('forbidden')
+    expect(me).toHaveBeenCalledTimes(1)
   })
 
   it("forbidden au résumé : terminal, la demande n'est plus montrée, la session n'est pas marquée expirée", async () => {

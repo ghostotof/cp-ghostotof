@@ -1,11 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { defineComponent, h } from 'vue'
 import { ASSISTANT_REPOSITORY, useAssistant } from '../../../src/application/assistant/useAssistant'
 import { AUTH_REPOSITORY, useAuth } from '../../../src/application/auth/useAuth'
 import { AssistantError } from '../../../src/domain/assistant/errors/AssistantError'
 import type { AssistantRepository } from '../../../src/domain/assistant/repositories/AssistantRepository'
 import type { AuthRepository } from '../../../src/domain/auth/repositories/AuthRepository'
+import { BASE_ACCESS_SESSION } from '../../../src/domain/auth/entities/AuthSession'
 import { sessionFor } from '../../support/authSession'
 
 type AnswerFn = AssistantRepository['answer']
@@ -194,20 +195,82 @@ describe('useAssistant', () => {
     expect(auth.hasSessionEnded.value).toBe(true)
   })
 
-  it("forbidden : la session n'est pas marquée expirée", async () => {
-    const { assistant, auth } = setup(async () => {
-      throw new AssistantError('forbidden')
-    })
+  it("forbidden : /api/me relu une fois, la session n'est pas marquée finie", async () => {
+    const me = vi.fn(async () => sessionFor({ username: 'jane', roles: ['ROLE_USER', 'ROLE_TRUSTED'] }))
+    const { assistant, auth } = setup(
+      async () => {
+        throw new AssistantError('forbidden')
+      },
+      { login: vi.fn(async () => ({ username: 'jane', roles: ['ROLE_USER', 'ROLE_TRUSTED'] })), logout: vi.fn(), me },
+    )
     await auth.login('jane', 'password')
     expect(auth.hasSessionEnded.value).toBe(false)
 
     assistant.draft.value = 'q'
     await assistant.send('fr')
+    await flushPromises()
 
     expect(assistant.error.value?.reason).toBe('forbidden')
+    expect(me).toHaveBeenCalledTimes(1)
+    // Le compte est toujours de confiance pour /api/me (une signature CSRF périmée, par exemple) : rien ne bouge.
     expect(auth.tier.value).toBe('trusted')
     expect(auth.user.value).not.toBeNull()
     expect(auth.hasSessionEnded.value).toBe(false)
+  })
+
+  it("forbidden d'un compte rétrogradé : /api/me, simulé au palier de base, remet l'en-tête à ce palier", async () => {
+    const me = vi.fn(async () => BASE_ACCESS_SESSION)
+    const { assistant, auth } = setup(
+      async () => {
+        throw new AssistantError('forbidden')
+      },
+      { login: vi.fn(async () => ({ username: 'jane', roles: ['ROLE_USER', 'ROLE_TRUSTED'] })), logout: vi.fn(), me },
+    )
+    await auth.login('jane', 'password')
+    expect(auth.tier.value).toBe('trusted')
+
+    assistant.draft.value = 'q'
+    await assistant.send('fr')
+    await flushPromises()
+
+    expect(auth.tier.value).toBe('base')
+    expect(auth.hasSessionEnded.value).toBe(false)
+  })
+
+  it("forbidden : un /api/me en panne est avalé, l'erreur reste posée, aucune boucle", async () => {
+    const me = vi.fn(async () => {
+      throw new Error('network')
+    })
+    const { assistant } = setup(
+      async () => {
+        throw new AssistantError('forbidden')
+      },
+      { login: vi.fn(), logout: vi.fn(), me },
+    )
+
+    assistant.draft.value = 'q'
+    await assistant.send('fr')
+    await flushPromises()
+
+    expect(assistant.state.value).toBe('error')
+    expect(assistant.error.value?.reason).toBe('forbidden')
+    expect(me).toHaveBeenCalledTimes(1)
+  })
+
+  it("unauthenticated : /api/me n'est pas relu, la session est déjà dite finie", async () => {
+    const me = vi.fn(async () => sessionFor(null))
+    const { assistant } = setup(
+      async () => {
+        throw new AssistantError('unauthenticated')
+      },
+      { login: vi.fn(), logout: vi.fn(), me },
+    )
+
+    assistant.draft.value = 'q'
+    await assistant.send('fr')
+    await flushPromises()
+
+    expect(me).not.toHaveBeenCalled()
   })
 
   it("une autre erreur ne touche pas à la session", async () => {

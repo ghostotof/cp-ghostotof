@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAssistant } from '../../application/assistant/useAssistant'
 import { useCvDownload } from '../../application/cv/useCvDownload'
@@ -9,16 +10,22 @@ import BaseTextarea from '../ui/BaseTextarea.vue'
 import SignInAgainLink from '../ui/SignInAgainLink.vue'
 import RichText from '../ui/RichText.vue'
 import { retryAfterMinutes } from '../ui/retryAfterMinutes'
+import { switchAccountLocation } from '../router/reauthentication'
 
 const { t, locale } = useI18n()
+const route = useRoute()
 const { messages, state, error, draft, draftLength, canSend, send, reset } = useAssistant()
 const { downloadCv, isDownloading, hasError: hasCvDownloadError } = useCvDownload()
 
 const currentLocale = computed(() => locale.value as Locale)
 const isStreaming = computed(() => 'streaming' === state.value)
-// Le lien ne s'ouvre que pour une session finie : la route `login` accueille un anonyme, mais renvoie
-// à l'accueil une personne encore connectée (un `forbidden` en est une).
+// Deux liens (#748, R7). Session finie : « Se reconnecter », la route `login` accueillant un anonyme, dans un
+// nouvel onglet (la question tapée est gardée). Refus réel (`forbidden`) : la personne est toujours connectée,
+// la route `login` la renverrait à l'accueil sans `reauth=1` ; « Changer de compte » l'ouvre dans le même
+// onglet, la conversation perdue est acceptée.
 const needsLogin = computed(() => 'unauthenticated' === error.value?.reason)
+const needsSwitchAccount = computed(() => 'forbidden' === error.value?.reason)
+const switchAccountTarget = computed(() => switchAccountLocation(route, currentLocale.value))
 
 /** Un message par raison ; le 429 se lit avec ou sans délai (nginx n'en fournit pas). */
 const errorMessage = computed<string>(() => {
@@ -39,7 +46,7 @@ const errorMessage = computed<string>(() => {
     case 'unauthenticated':
       return t('assistant.errors.unauthenticated')
     case 'forbidden':
-      return t('assistant.errors.forbidden')
+      return t('common.accessRefused')
     case 'unavailable':
       return t('assistant.errors.unavailable')
     case 'network':
@@ -160,6 +167,12 @@ function handleKeydown(event: KeyboardEvent): void {
       <SignInAgainLink v-if="needsLogin">
         {{ t('assistant.errors.relogin') }}
       </SignInAgainLink>
+      <RouterLink
+        v-if="needsSwitchAccount"
+        :to="switchAccountTarget"
+      >
+        {{ t('common.switchAccount') }}
+      </RouterLink>
     </p>
 
     <form

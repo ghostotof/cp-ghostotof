@@ -15,6 +15,7 @@ paths:
   - "frontend/src/presentation/ui/SignInAgainLink.vue"
   - "frontend/tests/presentation/router/signInLocations.spec.ts"
   - "frontend/tests/presentation/ui/SignInAgainLink.spec.ts"
+  - "frontend/tests/presentation/router/protectedRoutesCarryNoSecret.spec.ts"
   - "frontend/src/presentation/router/backofficeSessionExpiry.ts"
   - "frontend/tests/infrastructure/http/**"
   - "frontend/tests/application/admin/shared/useAdminLoad.spec.ts"
@@ -116,12 +117,13 @@ does `BackofficeHttpClient`.
   in), and no page composes a key `admin.<context>.errors.session-ended`: the reason does not exist.
 - **Connections MCP** — `HttpMcpConnectionsRepository` calls the function; a 401, or a 403 to the `DELETE` sent
   without a token, is a `SessionEndedError`, which `useMcpConnections` turns into `markSessionExpired()` and
-  `sessionExpired`; any other 403 is the generic failure for now.
+  `refusal: 'session-ended'`; any other 403 is an `AccessForbiddenError` (`refusal: 'forbidden'`, see « A real
+  refusal »).
 - **Consent** — `HttpOAuthConsentRepository`: the typed 401 `reauthentication-required` first, then the verdict
   (`SessionEndedError`), then the `switch` (`403` → `AccessForbiddenError`, terminal `forbidden`, the session not
   marked expired).
 - **Assistant** — `HttpAssistantRepository`: the verdict gives the reason `unauthenticated` (and
-  `markSessionExpired()`), any other 403 the reason `forbidden`.
+  `markSessionExpired()`), any other 403 the reason `forbidden` (see « A real refusal »).
 
 ## The interface
 
@@ -183,6 +185,41 @@ does `BackofficeHttpClient`.
   navigation** — the input is saved or abandoned by then. No dedicated « your password changed » message: Lexik's 401 body
   carries `{code, message}` and no stable `type`, and reading the text would be fragile.
 
+## A real refusal (#748, R7)
+
+A 403 that is not an ended session — a read (the CSRF subscriber never refuses a read), or a write that carried its
+token — is `AccessForbiddenError` (the assistant: the reason `forbidden`). It comes from `access_control` refusing an
+account without `ROLE_TRUSTED` (one that lost it while the page was open), or from a stale `XSRF-TOKEN` signature (an
+`APP_SECRET` rotation). The same three pages (« Mes connexions MCP », the assistant, the consent) react the same way:
+
+- **The session is never marked expired.** It holds for the rest of the site (the public pages, the base tier).
+- **`/api/me` is re-read once, on the refusal** (`useAuth().checkAuth()`, in `useMcpConnections`, `useAssistant` and
+  `useOAuthConsent`; not awaited, since the page's state does not depend on it; a rejection is swallowed). The backend
+  fact behind it, checked: the `cpg_users` provider (the entity) reloads the `CpgUser` from the database on every
+  request, `JWTAuthenticator::createToken()` (Lexik) builds the token with `$passport->getUser()->getRoles()`, and
+  `access_control` requires `ROLE_TRUSTED` on `^/api/me` — so an account that lost the trusted tier takes a 403 there,
+  which `HttpAuthRepository.me()` reads as the base tier, and the header returns to it; an account still trusted (a
+  stale CSRF signature) answers 200 and **nothing moves**. `/api/me` never rejects on a 401/403 (it returns a tier),
+  so a refusal on it cannot re-trigger the re-read: there is no loop.
+- **The message is neutral** (`common.accessRefused`): « the account may not have, or may no longer have, trusted
+  access, **or the session needs to be reopened** » — a stale CSRF signature is a 403 too, and must not accuse an account
+  that is still trusted (S8).
+- **« Changer de compte »** (`common.switchAccount`, `switchAccountLocation`: `login?redirect=<this page>&reauth=1`) is the
+  only link that opens the login to a signed-in person, and the new cookies it sets also mend a stale signature. **The
+  same tab** on the three pages: the consent is a step of an OAuth flow (see above), and on the assistant the lost
+  conversation is accepted (the author's decision of 2026-10-29); « Mes connexions MCP » keeps no input to protect.
+  This differs from the ended-session link (`SignInAgainLink`, a new tab, on the assistant and the MCP page).
+- **No « Réessayer »** on the MCP page (the same request takes the same verdict) and **every « Révoquer » disabled**; the
+  focus goes to the `<h1>` on any refusal of a revocation. `useMcpConnections.refusal` (`'session-ended' | 'forbidden'
+  | null`, reset at the start of each `load()` and `revoke()`) replaced `sessionExpired`.
+- The login page opened by `reauth=1` announces a **neutral** `auth.reauthNotice` (the ten-minute rule is said by the
+  consent's own alert, before its link).
+
+**Limits removed by R7**: the header of an account stripped of `ROLE_TRUSTED` no longer stays at the trusted tier until
+the next full load, and a `GET` in 403 on the MCP page no longer shows the generic failure with a « Réessayer » that
+cannot help. **Still accepted**: the header can flicker while `/api/me` is read (`isChecking` hides the right-hand
+group), and a refusal leaves the page it came from; the revalidation on return is R8's.
+
 ## Tests
 
 `sessionAwareFetch.spec.ts` (the rule's table; a read leaves with the cookies and no CSRF header, a write carries the
@@ -203,7 +240,7 @@ mount and its message on return and emptied on the next route), `usePublishedHei
 a second reading, removed with the target), `AdminLayout.sessionEnded.spec.ts` (the page stays mounted with its typed
 input; red when `router.replace` is reintroduced; the banner is the only alert on a 401 and on a 403 without a token, a 403
 with one shows the page's), `AdminCaseStudiesPage.spec.ts` and `OrderToolbar.spec.ts` (an ended session adds no alert of the
-page's, and the input stays), `useAuth.spec.ts`.
+page's, and the input stays), `useAuth.spec.ts`, `signInLocations.spec.ts` (the two builders, and the guard that no other file names `expired`/`reauth`), `SignInAgainLink.spec.ts` (new tab, hidden text, icon, one root), `protectedRoutesCarryNoSecret.spec.ts` (every `requiresAuth` route is reviewed: its `fullPath` leaves in the `redirect` of a new tab), and, for the real refusal (R7): `HttpMcpConnectionsRepository.spec.ts` (a 403 on the read, or on the `DELETE` with a token, is `AccessForbiddenError`; without a token, `SessionEndedError`), `useMcpConnections.spec.ts` (`refusal`, `/api/me` read once, a demoted account's header back at the base tier, a failing `/api/me` swallowed), `useAssistant.spec.ts` and `useOAuthConsent.spec.ts` (`/api/me` read once on `forbidden`, not on an ended session), `McpConnectionsPage.spec.ts` / `AssistantPage.spec.ts` / `OAuthConsentPage.spec.ts` (the exact neutral text in both languages, « Changer de compte » with `reauth=1`, no « Réessayer », « Révoquer » disabled) and `LoginPage.spec.ts` (the neutral announcement).
 
 Three guards of the first version are gone, because what they guarded no longer exists: `sessionEnded.spec.ts` (domain,
 `isSessionEndedError`), `visibleErrorReason.spec.ts` and `errorReasonsHideSessionEnded.spec.ts` (a source guard: every file

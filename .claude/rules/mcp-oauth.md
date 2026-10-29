@@ -358,15 +358,19 @@ paths:
   request open in the first and the person could decide it twice; the header's link serves the other pages, and
   `.claude/rules/frontend-session.md` says why it is a new tab there. **Any other 403** — the `GET` (never subject to the CSRF guard: it is `access_control` refusing an account
   without `ROLE_TRUSTED`, one that lost it while the page was open) or a `POST` that carried its token — is
-  `AccessForbiddenError`, the **terminal** failure `forbidden` (#748, #732 point 4): the request is no longer shown, the
-  session is **not** marked expired (it holds for the rest of the site), and the page says this account cannot authorise
-  the connection and offers « Changer de compte » (`login?redirect=<fullPath>&reauth=1`) — the only link that opens the
-  login to a signed-in person, whose `beforeEnter` otherwise sends them home; a plain « Se reconnecter » link would
-  not open. It also mends the rare stale `XSRF-TOKEN` signature (an `APP_SECRET` rotation): the sign-in sets new
-  cookies. **Rejected**: returning to `ready` to retry (the same decision, the same refusal). **Accepted**: the login page
-  opened by `reauth=1` then shows `auth.reauthNotice` (« authorizing an MCP connection needs a sign-in within ten
-  minutes ») — already what « Changer de compte » shows, right in substance (the person comes back to the request),
-  imprecise about the reason. 422 is terminal (`malformed-decision`), a 400 whose `type` is the
+  `AccessForbiddenError`, the **terminal** failure `forbidden` (#748, #732 point 4, R7): the request is no longer
+  shown, the session is **not** marked expired (it holds for the rest of the site), `/api/me` is re-read once
+  (`checkAuth()`, so the header returns to the tier the server now recognises), and the page says the **neutral**
+  `common.accessRefused` — the account may not have, or may no longer have, trusted access, **or the session needs to be
+  reopened** (a stale `XSRF-TOKEN` signature is also a 403 with the token sent, S8: the message must not accuse the
+  account) — and offers « Changer de compte » (`common.switchAccount`, `login?redirect=<fullPath>&reauth=1`) — the only
+  link that opens the login to a signed-in person, whose `beforeEnter` otherwise sends them home; a plain « Se
+  reconnecter » link would not open. It also mends the rare stale `XSRF-TOKEN` signature (an `APP_SECRET` rotation): the
+  sign-in sets new cookies. **Rejected**: returning to `ready` to retry (the same decision, the same refusal). The
+  login page opened by `reauth=1` shows the **neutral** `auth.reauthNotice` (« Confirm your identity or sign in with
+  another account: you will then return to the page you left. ») — it used to talk about the ten-minute rule of this
+  page alone, wrong for « Changer de compte » from a refusal, « Mes connexions MCP » or the assistant; the reason of the
+  ten minutes is still said by this page's own alert (`reauthenticationRequired`), before the link. 422 is terminal (`malformed-decision`), a 400 whose `type` is the
   rejection is `invalid`. **A 401 whose `type` is `reauthentication-required`** (only on the approval) is
   its own failure, terminal, the session **not** marked expired: the page says why and links to the login
   with `redirect` (the full path) and **`reauth=1`** (`presentation/router/reauthentication.ts`, one value only),

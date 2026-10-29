@@ -309,8 +309,10 @@ which reads the request again under the current account. `OAuthConsentPage.spec.
   HttpMcpConnectionsRepository` → `application/mcp/useMcpConnections` (status `loading|ready|error`, revocation
   outcome `revoked|already-gone|failed`; the list is **re-read from the server** after a revocation, the frontend
   recomputes no state nor deadline; a `SessionEndedError` (a 401, or a 403 to a `DELETE` sent without a CSRF token, judged by `sessionAwareFetch`,
-  `.claude/rules/frontend-session.md`), marks the session expired like `useAssistant` and `sessionExpired` tells
-  the page, which disables every « Révoquer »; any other 403 is the generic failure (#748, #732-4); `load()` keeps only the last read launched) → `presentation/pages/McpConnectionsPage.vue`, provided in
+  `.claude/rules/frontend-session.md`), marks the session expired like `useAssistant` and `refusal` (`'session-ended'`) tells
+  the page; any other 403 is an `AccessForbiddenError`: `refusal` is `'forbidden'`, the session is not marked expired,
+  `/api/me` is re-read once, and the page offers « Changer de compte » (#748, #732-4, R7); either refusal disables
+  every « Révoquer » and replaces « Réessayer »; `refusal` is reset at the start of each `load()` and `revoke()`; `load()` keeps only the last read launched) → `presentation/pages/McpConnectionsPage.vue`, provided in
   `main.ts`. Dates: `presentation/format/instant.ts`, `Europe/Paris`. What the slice shares with the rest of the
   frontend (the sign-in-again link, `expired=1`, the list contract, the two apps' `accountId` contract, the
   labels « Jamais aboutie » / « Pas encore renouvelée » / « Sans échéance »): `.claude/rules/frontend.md`.
@@ -321,7 +323,7 @@ which reads the request again under the current account. `OAuthConsentPage.spec.
   announces the outcome, a failure is a `role="alert"`. **Focus (#748)**: on `revoked` / `already-gone` the focus goes to
   the `<h1>` (the clicked button is gone) and the outcome is written to the status region 250 ms later
   (`.claude/rules/frontend-a11y.md`); on a plain failure it goes back to the « Révoquer » that was clicked; on a
-  finished session it goes to the `<h1>`. « Réessayer » hands the focus back too: the `<h1>` on success, the new
+  refused request (session ended or real refusal) it goes to the `<h1>`. « Réessayer » hands the focus back too: the `<h1>` on success, the new
   « Réessayer » on a new failure. `aria-busy` is on the table's container, never on the `<section>`. A cause missing from `CAUSE_LABEL_KEYS` (a newer
   backend) reads as the generic label: causes are mapped explicitly, never built by string concatenation.
 - **Desktop account menu**: `presentation/layout/AccountMenu.vue`, a WAI-ARIA **disclosure** (button with

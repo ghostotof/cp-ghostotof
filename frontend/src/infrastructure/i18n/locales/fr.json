@@ -44,7 +44,9 @@
     "baseAccessBadge": "Accès de base",
     "endBaseAccess": "Terminer cet accès",
     "accountMenu": "Menu du compte",
-    "myAccount": "Mon compte"
+    "myAccount": "Mon compte",
+    "accessRefused": "Le serveur refuse cette demande à votre session : votre compte n'a peut-être pas, ou plus, l'accès de confiance, ou la session doit être rouverte. Changez de compte, ou reconnectez-vous au même, pour continuer.",
+    "switchAccount": "Changer de compte"
   },
   "admin": {
     "heading": "Administration",
@@ -480,7 +482,7 @@
     "rateLimited": "Trop de tentatives de connexion. Réessayez dans quelques minutes.",
     "rateLimitedIn": "Trop de tentatives de connexion. Réessayez dans {minutes} minute. | Trop de tentatives de connexion. Réessayez dans {minutes} minutes.",
     "genericError": "Une erreur est survenue, veuillez réessayer.",
-    "reauthNotice": "Confirmez votre identité : autoriser une connexion MCP demande de vous être connecté il y a moins de dix minutes. Vous reviendrez ensuite à la demande.",
+    "reauthNotice": "Confirmez votre identité ou connectez-vous avec un autre compte : vous reviendrez ensuite à la page que vous quittiez.",
     "sessionEnded": "Votre session a pris fin, reconnectez-vous."
   },
   "contact": {
@@ -788,7 +790,6 @@
     "reset": "Nouvelle conversation",
     "errors": {
       "unauthenticated": "Votre session a expiré.",
-      "forbidden": "Le serveur refuse l'assistant à ce compte : son accès de confiance a peut-être été retiré.",
       "relogin": "Se reconnecter",
       "validation": "La conversation n'a pas pu être envoyée. Réessayez.",
       "tooLarge": "La conversation est trop longue : commencez-en une nouvelle.",
@@ -806,8 +807,7 @@
     "submitting": "Transmission de votre décision…",
     "account": {
       "heading": "Le compte",
-      "grantingAs": "Vous accordez cet accès en tant que {username}",
-      "switch": "Changer de compte"
+      "grantingAs": "Vous accordez cet accès en tant que {username}"
     },
     "client": {
       "heading": "Le client",
@@ -830,7 +830,6 @@
     "errors": {
       "invalid": "Cette demande de connexion est invalide ou a expiré. Recommencez depuis votre assistant.",
       "sessionExpired": "Votre session a expiré.",
-      "forbidden": "Ce compte ne peut pas autoriser cette connexion : il n'a pas, ou plus, l'accès de confiance. Changez de compte pour décider.",
       "relogin": "Se reconnecter",
       "reauthenticationRequired": "Pour autoriser cette connexion, reconnectez-vous : votre connexion au site date de plus de dix minutes. Vous reviendrez ensuite à cette même demande.",
       "reauthenticate": "Me reconnecter pour autoriser",

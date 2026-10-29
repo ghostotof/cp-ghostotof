@@ -8,7 +8,7 @@ import { MalformedConsentDecisionError } from '../../domain/mcp/errors/Malformed
 import { ReauthenticationRequiredError } from '../../domain/mcp/errors/ReauthenticationRequiredError'
 import { SessionEndedError } from '../../domain/auth/errors/SessionEndedError'
 import { isNavigableRedirect } from '../../domain/mcp/services/consentParams'
-import { markSessionExpired } from '../auth/useAuth'
+import { markSessionExpired, useAuth } from '../auth/useAuth'
 
 export const OAUTH_CONSENT_REPOSITORY: InjectionKey<OAuthConsentRepository> = Symbol('OAuthConsentRepository')
 
@@ -42,10 +42,10 @@ export type OAuthConsentState = 'loading' | 'ready' | 'submitting' | 'invalid' |
  * - `session-ended`      : la session a pris fin (`SessionEndedError`, voir
  *                          `infrastructure/http/sessionAwareFetch.ts`), elle est marquée expirée ;
  * - `forbidden`          : `AccessForbiddenError`, tout autre 403 (le résumé, ou la décision partie avec son
- *                          jeton) — ce compte n'a pas, ou plus, l'accès de confiance.
- *                          Terminal ici, la demande n'est plus montrée ; la session
- *                          n'est pas marquée expirée, elle vaut pour le reste du site,
- *                          et la page propose de changer de compte (#748, #732) ;
+ *                          jeton) — ce compte n'a pas, ou plus, l'accès de confiance, ou sa signature CSRF est
+ *                          périmée. Terminal ici, la demande n'est plus montrée ; la session n'est pas marquée
+ *                          expirée, elle vaut pour le reste du site, `/api/me` est relu pour l'en-tête, et la
+ *                          page propose de changer de compte (#748, #732, R7) ;
  * - `reauthentication-required` : 401 typé à l'accord, l'authentification
  *                          date de plus de dix minutes — terminal ici, la page
  *                          propose de se reconnecter puis ramène à la même
@@ -92,6 +92,8 @@ export function useOAuthConsent(): UseOAuthConsentResult {
     )
   }
 
+  // Après le contrôle ci-dessus : l'absence d'un dépôt se dit par son propre nom.
+  const { checkAuth } = useAuth()
   const redirect = inject(CLIENT_REDIRECT, (url: string) => window.location.replace(url))
 
   const state = ref<OAuthConsentState>('loading')
@@ -115,6 +117,9 @@ export function useOAuthConsent(): UseOAuthConsentResult {
     if (caught instanceof AccessForbiddenError) {
       // Le résumé d'une demande qu'on ne peut pas décider n'a plus à rester affiché.
       request.value = null
+      // Le refus peut venir d'un compte rétrogradé : `/api/me` remet l'en-tête au palier que le serveur
+      // reconnaît (une fois, sans l'attendre, un rejet avalé). La session n'est jamais marquée expirée (R7).
+      void checkAuth().catch(() => undefined)
       state.value = 'error'
       failure.value = 'forbidden'
       return

@@ -44,7 +44,9 @@
     "baseAccessBadge": "Base access",
     "endBaseAccess": "End this access",
     "accountMenu": "Account menu",
-    "myAccount": "My account"
+    "myAccount": "My account",
+    "accessRefused": "The server refuses this request to your session: your account may not have, or may no longer have, trusted access, or the session needs to be reopened. Switch account, or sign in again to the same one, to continue.",
+    "switchAccount": "Switch account"
   },
   "admin": {
     "heading": "Administration",
@@ -480,7 +482,7 @@
     "rateLimited": "Too many login attempts. Please try again in a few minutes.",
     "rateLimitedIn": "Too many login attempts. Please try again in {minutes} minute. | Too many login attempts. Please try again in {minutes} minutes.",
     "genericError": "Something went wrong, please try again.",
-    "reauthNotice": "Confirm your identity: authorizing an MCP connection requires having signed in less than ten minutes ago. You will then come back to the request.",
+    "reauthNotice": "Confirm your identity or sign in with another account: you will then return to the page you left.",
     "sessionEnded": "Your session has ended, please sign in again."
   },
   "contact": {
@@ -788,7 +790,6 @@
     "reset": "New conversation",
     "errors": {
       "unauthenticated": "Your session has expired.",
-      "forbidden": "The server refuses the assistant to this account: its trusted access may have been withdrawn.",
       "relogin": "Sign in again",
       "validation": "The conversation could not be sent. Try again.",
       "tooLarge": "The conversation is too long: start a new one.",
@@ -806,8 +807,7 @@
     "submitting": "Sending your decision…",
     "account": {
       "heading": "The account",
-      "grantingAs": "You are granting this access as {username}",
-      "switch": "Switch account"
+      "grantingAs": "You are granting this access as {username}"
     },
     "client": {
       "heading": "The client",
@@ -830,7 +830,6 @@
     "errors": {
       "invalid": "This connection request is invalid or has expired. Start again from your assistant.",
       "sessionExpired": "Your session has expired.",
-      "forbidden": "This account cannot authorise this connection: it does not, or no longer, have trusted access. Switch account to decide.",
       "relogin": "Sign in again",
       "reauthenticationRequired": "To authorize this connection, sign in again: you signed in to the site more than ten minutes ago. You will then come back to this same request.",
       "reauthenticate": "Sign in again to authorize",

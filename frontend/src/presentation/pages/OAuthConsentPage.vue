@@ -74,7 +74,7 @@ const errorMessage = computed<string | null>(() => {
     case 'session-ended':
       return t('oauthConsent.errors.sessionExpired')
     case 'forbidden':
-      return t('oauthConsent.errors.forbidden')
+      return t('common.accessRefused')
     case 'reauthentication-required':
       return t('oauthConsent.errors.reauthenticationRequired')
     case 'account-changed':
@@ -178,7 +178,7 @@ onMounted(() => {
         v-if="offersSwitchAccount"
         :to="switchAccountTarget"
       >
-        {{ t('oauthConsent.account.switch') }}
+        {{ t('common.switchAccount') }}
       </RouterLink>
       <!-- Comme le lien de reconnexion : dans l'alerte, avec le message qu'il prolonge. -->
       <button
@@ -214,7 +214,7 @@ onMounted(() => {
           :to="switchAccountTarget"
           data-testid="consent-switch-account"
         >
-          {{ t('oauthConsent.account.switch') }}
+          {{ t('common.switchAccount') }}
         </RouterLink>
       </section>
 

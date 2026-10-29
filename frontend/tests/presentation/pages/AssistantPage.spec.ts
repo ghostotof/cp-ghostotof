@@ -6,6 +6,9 @@ import { ASSISTANT_REPOSITORY } from '../../../src/application/assistant/useAssi
 import { CV_REPOSITORY } from '../../../src/application/cv/useCvDownload'
 import type { AssistantRepository } from '../../../src/domain/assistant/repositories/AssistantRepository'
 import { AssistantError, type AssistantErrorReason } from '../../../src/domain/assistant/errors/AssistantError'
+import { AUTH_REPOSITORY } from '../../../src/application/auth/useAuth'
+import type { AuthRepository } from '../../../src/domain/auth/repositories/AuthRepository'
+import { BASE_ACCESS_SESSION } from '../../../src/domain/auth/entities/AuthSession'
 import { createAppI18n } from '../../../src/presentation/i18n'
 import { expectNoAccessibilityViolation } from '../../support/axe'
 
@@ -30,11 +33,16 @@ function createControlledRepository(): { repository: AssistantRepository; calls:
   return { repository: { answer } as unknown as AssistantRepository, calls, answer }
 }
 
+/** `/api/me`, que la page relit sur un refus réel (#748, R7) : il répond le palier de base. */
+let me = vi.fn(async () => BASE_ACCESS_SESSION)
+
 function mountPage(
   repository: AssistantRepository,
   downloadCv = vi.fn(async () => ({ blob: new Blob(), filename: 'cv.pdf' })),
   locale: 'fr' | 'en' = 'fr',
 ): VueWrapper {
+  me = vi.fn(async () => BASE_ACCESS_SESSION)
+  const authRepository: AuthRepository = { login: vi.fn(), logout: vi.fn(), me }
   const i18n = createAppI18n()
   i18n.global.locale.value = locale
   const router = createRouter({
@@ -51,6 +59,7 @@ function mountPage(
       plugins: [router, i18n],
       provide: {
         [ASSISTANT_REPOSITORY as symbol]: repository,
+        [AUTH_REPOSITORY as symbol]: authRepository,
         [CV_REPOSITORY as symbol]: { download: downloadCv },
       },
     },
@@ -310,13 +319,24 @@ describe('AssistantPage', () => {
     expect(link.text()).toBe(linkText)
   })
 
-  // Refus réel (403 avec jeton) : la session vaut, un lien de reconnexion ne s'ouvrirait même pas.
-  it.each<['fr' | 'en', string]>([
-    ['fr', "Le serveur refuse l'assistant à ce compte : son accès de confiance a peut-être été retiré."],
-    ['en', 'The server refuses the assistant to this account: its trusted access may have been withdrawn.'],
-  ])('refus (%s) : le message dit le refus, sans lien de reconnexion', async (locale, message) => {
+  // Refus réel (403 avec jeton) : la session vaut pour le reste du site ; le message est neutre (un compte rétrogradé,
+  // ou une signature CSRF périmée) et « Changer de compte » ouvre la connexion dans le même onglet (#748, R7) : la
+  // conversation perdue est acceptée.
+  it.each<['fr' | 'en', string, string]>([
+    [
+      'fr',
+      "Le serveur refuse cette demande à votre session : votre compte n'a peut-être pas, ou plus, l'accès de confiance, ou la session doit être rouverte. Changez de compte, ou reconnectez-vous au même, pour continuer.",
+      'Changer de compte',
+    ],
+    [
+      'en',
+      'The server refuses this request to your session: your account may not have, or may no longer have, trusted access, or the session needs to be reopened. Switch account, or sign in again to the same one, to continue.',
+      'Switch account',
+    ],
+  ])('refus (%s) : message neutre et « Changer de compte » (reauth=1, retour à l\'assistant)', async (locale, message, linkText) => {
     const { repository, calls } = createControlledRepository()
     const wrapper = mountPage(repository, undefined, locale)
+    await wrapper.vm.$router.push(`/${locale}/assistant`)
 
     await type(wrapper, 'Question')
     await submitWithButton(wrapper)
@@ -324,9 +344,11 @@ describe('AssistantPage', () => {
     await flushPromises()
 
     const alert = wrapper.find('[role="alert"]')
-    expect(alert.text()).toBe(message)
-    expect(alert.find('a').exists()).toBe(false)
-    expect(wrapper.findAll('a').some((a) => (a.attributes('href') ?? '').includes('login'))).toBe(false)
+    expect(alert.text().replace(/\s+/g, ' ')).toBe(`${message} ${linkText}`)
+    const link = alert.get('a')
+    expect(link.text()).toBe(linkText)
+    expect(link.attributes('target')).toBeUndefined()
+    expect(link.attributes('href')).toBe(`/${locale}/login?redirect=/${locale}/assistant&reauth=1`)
   })
 
   it.each<AssistantErrorReason>(['unauthenticated', 'forbidden'])(

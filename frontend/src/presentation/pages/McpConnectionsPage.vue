@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, useTemplateRef } from 'vue'
+import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useMcpConnections, type McpRevocationOutcome } from '../../application/mcp/useMcpConnections'
 import type { McpConnectionSummary } from '../../domain/mcp/entities/McpConnection'
 import type { Locale } from '../../domain/portfolio/entities/Locale'
 import { formatInstant } from '../format/instant'
+import { switchAccountLocation } from '../router/reauthentication'
 import SignInAgainLink from '../ui/SignInAgainLink.vue'
 import { useFocusThenAnnounce } from '../ui/useFocusThenAnnounce'
 
@@ -39,20 +41,24 @@ import { useFocusThenAnnounce } from '../ui/useFocusThenAnnounce'
  * Focus et annonces (#748) : quand un geste déplace le focus ET annonce une
  * issue, le focus part d'abord et l'annonce est écrite ensuite — le patron et ses
  * raisons sont dans `useFocusThenAnnounce`. Le focus ne part au titre que si le
- * bouton cliqué a disparu (révoquée, déjà terminée) ou si la session est finie ;
+ * bouton cliqué a disparu (révoquée, déjà terminée) ou si le serveur a refusé (session finie, refus réel) ;
  * sur un échec il revient au bouton, qui existe encore et que la personne peut
  * réessayer. Une lecture relancée (« Réessayer ») efface l'issue déjà annoncée :
  * elle ne dit rien d'une révocation.
  */
 
 const { t, locale: i18nLocale } = useI18n()
-const { status, connections, terminatedTruncated, revokingId, lastOutcome, sessionExpired, load, revoke } = useMcpConnections()
+const { status, connections, terminatedTruncated, revokingId, lastOutcome, refusal, load, revoke } = useMcpConnections()
+const route = useRoute()
 
 const currentLocale = computed(() => i18nLocale.value as Locale)
 
-// Le lien de reconnexion quand le serveur a refusé la session est `SignInAgainLink` : un nouvel onglet qui
-// ramène à cette page. Un lien plutôt qu'une redirection automatique : la personne lit d'abord pourquoi, et
-// rien ne la déplace pendant qu'elle lit.
+// Deux refus, deux liens (#748, R7). Une session finie : `SignInAgainLink`, un nouvel onglet qui ramène à cette
+// page. Un refus réel (le compte n'a pas, ou plus, l'accès de confiance ; une signature CSRF périmée) :
+// « Changer de compte », dans le même onglet, la connexion s'ouvrant à une personne connectée (`reauth=1`) — la
+// page ne porte aucune saisie à garder. Un lien plutôt qu'une redirection automatique : la personne lit d'abord
+// pourquoi, et rien ne la déplace pendant qu'elle lit.
+const switchAccountTarget = computed(() => switchAccountLocation(route, currentLocale.value))
 
 /**
  * Correspondances explicites plutôt qu'une clé construite à la volée : une
@@ -159,8 +165,8 @@ async function onRevoke(connection: McpConnectionSummary, event: MouseEvent): Pr
     // focus retomberait sur <body>. On le pose sur le titre, d'où la lecture reprend,
     // puis l'issue est annoncée une fois le focus posé.
     focusThenAnnounce(heading.value, outcome)
-  } else if (sessionExpired.value) {
-    // La session est finie : l'alerte et son lien de reconnexion sont lus depuis le titre.
+  } else if (null !== refusal.value) {
+    // Un refus (session finie ou refus réel) : l'alerte et son lien sont lus depuis le titre.
     heading.value?.focus()
   } else {
     // Échec : le bouton existe encore, la personne peut réessayer là où elle était.
@@ -183,7 +189,7 @@ async function onRetry(): Promise<void> {
   }
   await nextTick()
 
-  if ('error' === status.value && !sessionExpired.value) {
+  if ('error' === status.value && null === refusal.value) {
     retryButton.value?.focus()
   } else {
     heading.value?.focus()
@@ -218,17 +224,27 @@ onMounted(() => {
     </p>
 
     <!--
-      La session a pris fin : réessayer renverrait la même requête sans session.
-      Le message et le lien de reconnexion remplacent l'erreur générique et son
-      bouton, au chargement comme à la révocation.
+      Le serveur a refusé la session ou la demande : réessayer renverrait la même requête avec le même verdict.
+      Le message et son lien remplacent l'erreur générique et son bouton, au chargement comme à la révocation.
     -->
     <p
-      v-if="sessionExpired"
+      v-if="'session-ended' === refusal"
       role="alert"
       class="text-danger-emphasis mb-0 d-flex flex-wrap align-items-center gap-3"
     >
       {{ t('mcpConnections.errors.sessionEnded') }}
       <SignInAgainLink>{{ t('mcpConnections.errors.signInAgain') }}</SignInAgainLink>
+    </p>
+
+    <p
+      v-else-if="'forbidden' === refusal"
+      role="alert"
+      class="text-danger-emphasis mb-0 d-flex flex-wrap align-items-center gap-3"
+    >
+      {{ t('common.accessRefused') }}
+      <RouterLink :to="switchAccountTarget">
+        {{ t('common.switchAccount') }}
+      </RouterLink>
     </p>
 
     <p
@@ -248,7 +264,7 @@ onMounted(() => {
     </p>
 
     <p
-      v-if="'failed' === lastOutcome && !sessionExpired"
+      v-if="'failed' === lastOutcome && null === refusal"
       role="alert"
       class="text-danger-emphasis mb-0"
     >
@@ -355,7 +371,7 @@ onMounted(() => {
                 v-if="'active' === connection.state"
                 type="button"
                 class="btn btn-outline-danger btn-sm"
-                :disabled="sessionExpired || null !== revokingId"
+                :disabled="null !== refusal || null !== revokingId"
                 :aria-label="t('mcpConnections.revokeAria', { client: connection.client.name, date: date(connection.grantedAt) })"
                 @click="onRevoke(connection, $event)"
               >
