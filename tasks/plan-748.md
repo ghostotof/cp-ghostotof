@@ -719,6 +719,15 @@ Aucun constat n'est écarté. Un seul l'est en partie (CR7, première moitié, d
     seule source, mais trois fichiers de configuration touchés et les gardes de parité de Lexik à revoir pour un gain
     qu'un test fonctionnel donne déjà : il compare les deux `Expires` réels du login).
 
+### Décisions de l'auteur sur le plan des corrections (2026-10-29)
+
+1. C2 : si le premier repli ne suffit pas, le sélecteur de langue passe dans le menu mobile sous 360 px (tâche 11).
+2. Consentement : les liens de reconnexion du corps de page restent dans le même onglet (flux OAuth), « Connexion » de
+   l'en-tête en nouvel onglet ; la différence est écrite dans `mcp-oauth.md` (R6/R7).
+3. Assistant : « Changer de compte » dans le même onglet, la conversation perdue est acceptée (R7).
+4. Libellés : `common.opensInNewTab` FR devient « (s'ouvre dans un nouvel onglet) » (R6) et l'annonce `reauth=1`
+   devient neutre (R7).
+
 ### Review Focus (corrections)
 
 1. **Passer de FR à EN dans les réglages « À propos » pendant une session finie, puis se reconnecter et enregistrer** :
@@ -1055,7 +1064,7 @@ Ce que les corrections R1 à R10 ont changé, à mesurer aussi :
 - [ ] **Refus réel** (R7) : compte de confiance rétrogradé (par un autre compte `ROLE_SUPER`) pendant que « Mes connexions MCP », l'assistant ou le consentement est ouvert, puis geste → message neutre, « Changer de compte » ouvre la connexion (annonce neutre), en-tête au palier de base après la relecture de `/api/me`, aucun « Réessayer » sur la page MCP ; « Révoquer » désactivé.
 - [ ] **Liens** (R6) : les liens de reconnexion du bandeau, de l'en-tête, de la page MCP et de l'assistant s'ouvrent dans un nouvel onglet et ramènent à la page (`expired=1`) ; ceux du consentement restent dans l'onglet.
 - [ ] **« Réessayer »** (R5) : après une révocation annoncée puis une relecture en échec, « Réessayer » ne laisse pas « révoquée » dans la région d'état.
-- [ ] **En-tête à 320 px, avec la marque tronquée (C2)** : mesurer, aux trois paliers, FR et EN, la largeur du groupe de droite (`div.flex-shrink-0` de l'en-tête) et `document.documentElement.scrollWidth` (doit valoir 320). Si la ligne déborde encore (le ticket mesurait le groupe **seul** à 331 px au palier de confiance et 389 px en anonyme et en EN pour 301 utiles, ce que la troncature de la marque ne peut pas absorber), appliquer le repli suivant dans un commit `fix(frontend): l'en-tête tient à 320 px, actions resserrées (#748)` puis refaire la mesure : sous 360 px (`@media (max-width: 359.98px)`, `<style scoped>` d'`AppHeader`), « Connexion » (lien ordinaire et `SignInAgainLink`) devient une icône `~icons/lucide/log-in` avec `aria-label` = `common.login` (comme « Accès instantané » sous 576 px) et le groupe passe de `gap-2` à `gap-1` ; test `AppHeader.spec.ts` « sous 360 px, « Connexion » garde son nom accessible » (le `aria-label`, l'icône `aria-hidden`), et garde de source sur la règle `@media` dans le bloc scopé. **Si cela ne suffit pas** (mesure à l'appui), ne pas aller plus loin sans l'auteur : la marche suivante retire un élément de la ligne (le sélecteur de langue passé dans le menu mobile sous 360 px, ou deux rangées, que la décision 1 avait écartées pour 2.4.11) ; consigner les mesures dans la PR.
+- [ ] **En-tête à 320 px, avec la marque tronquée (C2)** : mesurer, aux trois paliers, FR et EN, la largeur du groupe de droite (`div.flex-shrink-0` de l'en-tête) et `document.documentElement.scrollWidth` (doit valoir 320). Si la ligne déborde encore (le ticket mesurait le groupe **seul** à 331 px au palier de confiance et 389 px en anonyme et en EN pour 301 utiles, ce que la troncature de la marque ne peut pas absorber), appliquer le repli suivant dans un commit `fix(frontend): l'en-tête tient à 320 px, actions resserrées (#748)` puis refaire la mesure : sous 360 px (`@media (max-width: 359.98px)`, `<style scoped>` d'`AppHeader`), « Connexion » (lien ordinaire et `SignInAgainLink`) devient une icône `~icons/lucide/log-in` avec `aria-label` = `common.login` (comme « Accès instantané » sous 576 px) et le groupe passe de `gap-2` à `gap-1` ; test `AppHeader.spec.ts` « sous 360 px, « Connexion » garde son nom accessible » (le `aria-label`, l'icône `aria-hidden`), et garde de source sur la règle `@media` dans le bloc scopé. **Si cela ne suffit pas** (mesure à l'appui), marche suivante **décidée par l'auteur le 2026-10-29** : sous 360 px, le sélecteur de langue quitte la ligne et passe dans le menu mobile (deux rangées restent écartées pour 2.4.11) ; test de non-régression (le sélecteur reste atteignable et nommé dans le menu mobile sous 360 px) ; consigner les mesures dans la PR.
 - [ ] Tout écart → retour à la tâche concernée (nouveau commit), puis ce contrôle refait.
 
 ### Task 12 : Clôture — **fil principal**
