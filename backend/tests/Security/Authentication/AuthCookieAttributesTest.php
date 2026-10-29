@@ -100,4 +100,57 @@ final class AuthCookieAttributesTest extends WebTestCase
         self::assertTrue($baseAccess[AuthCookieFactory::BEARER]->isSecure(), 'Le JWT doit être posé `Secure` hors de `dev`.');
         self::assertTrue($baseAccess[AuthCookieFactory::XSRF_TOKEN]->isSecure(), 'Le jeton CSRF doit être posé `Secure` hors de `dev`.');
     }
+
+    /**
+     * #748 (CR3) : un `XSRF-TOKEN` de session, jeté à la fermeture du navigateur
+     * pendant que le `BEARER`, persistant, survit, faisait de chaque écriture
+     * un 403 sans jeton — lu « session finie » en boucle par le frontend. Les
+     * deux cookies du login meurent donc ensemble, à l'échéance du JWT.
+     *
+     * Les cookies sont lus sur la réponse, jamais dans le jar (`Secure` perdu
+     * en http, cf. {@see ReadsResponseCookies}).
+     */
+    public function testTheLoginXsrfTokenExpiresWithItsBearer(): void
+    {
+        $client = self::createClient();
+        self::getContainer()->get('cache.rate_limiter')->clear();
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::USERNAME, TestCredentials::plainPassword(), [CpgUser::ROLE_TRUSTED]);
+
+        $client->request('POST', '/api/login_check', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_X_REQUESTED_WITH' => 'fetch'], content: self::jsonBody([
+            'username' => self::USERNAME,
+            'password' => TestCredentials::plainPassword(),
+        ]));
+        self::assertResponseIsSuccessful();
+
+        $this->assertXsrfTokenDiesWithBearer($this->cookiesByName($client), 'login');
+    }
+
+    /**
+     * Témoin : l'accès de base faisait déjà mourir les deux cookies ensemble.
+     * Vert d'emblée, il garde la comparaison honnête (même assertion que le login).
+     */
+    public function testTheBaseAccessXsrfTokenExpiresWithItsBearer(): void
+    {
+        $client = self::createClient();
+        self::getContainer()->get('cache.rate_limiter')->clear();
+
+        $client->request('POST', '/api/account/base-access', server: ['HTTP_X_REQUESTED_WITH' => 'fetch']);
+        self::assertResponseIsSuccessful();
+
+        $this->assertXsrfTokenDiesWithBearer($this->cookiesByName($client), 'accès de base');
+    }
+
+    /**
+     * @param array<string, Cookie> $cookies
+     */
+    private function assertXsrfTokenDiesWithBearer(array $cookies, string $site): void
+    {
+        self::assertArrayHasKey(AuthCookieFactory::BEARER, $cookies, \sprintf('BEARER absent de la réponse (%s).', $site));
+        self::assertArrayHasKey(AuthCookieFactory::XSRF_TOKEN, $cookies, \sprintf('XSRF-TOKEN absent de la réponse (%s).', $site));
+        $bearer = $cookies[AuthCookieFactory::BEARER];
+        $xsrf = $cookies[AuthCookieFactory::XSRF_TOKEN];
+
+        self::assertGreaterThan(0, $xsrf->getExpiresTime(), \sprintf('%s : XSRF-TOKEN est un cookie de session, jeté à la fermeture du navigateur alors que BEARER survit.', $site));
+        self::assertEqualsWithDelta($bearer->getExpiresTime(), $xsrf->getExpiresTime(), 1.0, \sprintf('%s : XSRF-TOKEN et BEARER n\'expirent pas au même instant.', $site));
+    }
 }

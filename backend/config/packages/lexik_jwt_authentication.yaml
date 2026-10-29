@@ -19,6 +19,8 @@ lexik_jwt_authentication:
 
     set_cookies:
         BEARER:
+            # Doit rester égale à token_ttl : LoginSuccessSubscriber donne cette même durée au
+            # XSRF-TOKEN, et AuthCookieAttributesTest compare les deux échéances réelles du login.
             lifetime: 3600
             samesite: lax
             path: /

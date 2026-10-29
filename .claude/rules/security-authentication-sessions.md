@@ -25,13 +25,22 @@ paths:
 - `Infrastructure/Jwt/LoginSuccessSubscriber.php` (attaches the `XSRF-TOKEN` cookie, shapes the
   `login_check` response body — includes `roles` alongside `username`, needed by the frontend to gate `/admin`
   without waiting for a full `checkAuth()` round-trip) and `CookieLogoutListener.php` (expires both cookies on
-  `/api/logout`).
+  `/api/logout`). **At login, `XSRF-TOKEN` receives the JWT's expiry** (`time() + token_ttl`, read by
+  `#[Autowire(param: 'lexik_jwt_authentication.token_ttl')]`, #748 CR3), as at the base access: **no site issues a
+  session cookie any more**, `BEARER` and `XSRF-TOKEN` always die together. Why: a session `XSRF-TOKEN` is dropped when
+  the browser closes while `BEARER`, persistent, survives; every write then left without a token, took a 403 that the
+  frontend reads « session ended », and the loop started again after each reconnection check. `set_cookies.BEARER.lifetime`
+  (`lexik_jwt_authentication.yaml`) must stay equal to `token_ttl`; `AuthCookieAttributesTest`
+  (`testTheLoginXsrfTokenExpiresWithItsBearer`, witness `testTheBaseAccessXsrfTokenExpiresWithItsBearer`) compares the
+  two real `Expires` of each response. A session opened before this deployment keeps its `XSRF-TOKEN` as a session
+  cookie, for one hour at most (the JWT's life).
 - **`Infrastructure/Http/AuthCookieFactory.php` is the only place that builds a `BEARER` or `XSRF-TOKEN`
   cookie** (issue #87): names (`AuthCookieFactory::BEARER` / `::XSRF_TOKEN`, also what
   `CsrfCookieRequestSubscriber` reads), `Path=/`, no `Domain`, `SameSite=Lax`, `HttpOnly` on `BEARER`
   only, `Secure` everywhere but `dev` (issue #714 — `test` included, see below; `dev` is served in http,
   where Chrome and Firefox accept a `Secure` cookie on `localhost`, a secure context, but not every browser,
-  and none on another address). `bearer()` / `xsrf()` take an optional expiry (session cookie without),
+  and none on another address). `bearer()` / `xsrf()` take an optional expiry (a session cookie without; no site
+  omits it for `XSRF-TOKEN` since #748),
   `expired()` mirrors the issued attributes with a past date — a cleared cookie whose attributes differ
   from the set one is *not* removed by the browser, which is the drift the factory exists to prevent. The
   three sites (`LoginSuccessSubscriber`, `BaseAccessController`, `CookieLogoutListener`) go through it;
