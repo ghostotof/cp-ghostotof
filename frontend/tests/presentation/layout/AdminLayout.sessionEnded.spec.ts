@@ -129,3 +129,82 @@ describe('AdminLayout — fin de session pendant une saisie (#650, S2)', () => {
     wrapper.unmount()
   })
 })
+
+async function fillAndSubmit(wrapper: VueWrapper): Promise<void> {
+  await wrapper.get('#admin-case-study-title').setValue('Un moteur de tarification asynchrone')
+  await wrapper.get('#admin-case-study-problem').setValue('Des calculs bloquants.')
+  await wrapper.get('#admin-case-study-solution').setValue('Messenger.')
+  await wrapper.get('#admin-case-study-tradeoffs').setValue('Cohérence différée.')
+  await wrapper.get('#admin-case-study-measured-result').setValue('Temps divisé par dix.')
+  await wrapper.get('form').trigger('submit')
+  await flushPromises()
+}
+
+/**
+ * #748, constats 7 et 15 : une fin de session n'est annoncée qu'une fois (le bandeau, jamais doublé
+ * d'une alerte de la page), et un 403 à une écriture partie sans jeton CSRF — la personne s'est
+ * déconnectée dans un autre onglet — en est une.
+ */
+describe('AdminLayout — une seule annonce de fin de session (#748)', () => {
+  beforeEach(async () => {
+    await signIn()
+    setBackofficeUnauthorizedHandler(onBackofficeUnauthorized)
+  })
+
+  afterEach(() => {
+    setBackofficeUnauthorizedHandler(null)
+    vi.unstubAllGlobals()
+    document.cookie = 'XSRF-TOKEN=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/'
+    document.body.innerHTML = ''
+  })
+
+  function stubWrites(status: number): void {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init?: RequestInit) =>
+        'GET' === (init?.method ?? 'GET') ? jsonResponse(200, []) : jsonResponse(status, { code: status, message: 'x' }),
+      ),
+    )
+  }
+
+  it("un 401 à l'enregistrement : le bandeau est la seule alerte", async () => {
+    stubWrites(401)
+    const { wrapper } = await mountAdminCaseStudies()
+
+    await fillAndSubmit(wrapper)
+
+    const alerts = wrapper.findAll('[role="alert"]')
+    expect(alerts).toHaveLength(1)
+    expect(alerts[0]?.text()).toContain('Votre session a pris fin')
+    expect(wrapper.text()).not.toContain('Une erreur est survenue')
+    wrapper.unmount()
+  })
+
+  it('déconnecté dans un autre onglet (403, plus de XSRF-TOKEN) : le bandeau, seul, et la saisie reste', async () => {
+    stubWrites(403)
+    const { wrapper, router } = await mountAdminCaseStudies()
+
+    await fillAndSubmit(wrapper)
+
+    const alerts = wrapper.findAll('[role="alert"]')
+    expect(alerts).toHaveLength(1)
+    expect(alerts[0]?.text()).toContain('Votre session a pris fin')
+    expect((wrapper.get('#admin-case-study-title').element as HTMLInputElement).value).toBe('Un moteur de tarification asynchrone')
+    expect(router.currentRoute.value.fullPath).toBe('/fr/admin/case-studies')
+    wrapper.unmount()
+  })
+
+  it("un 403 avec jeton : pas de bandeau, l'erreur de la page", async () => {
+    document.cookie = 'XSRF-TOKEN=jeton; path=/'
+    stubWrites(403)
+    const { wrapper } = await mountAdminCaseStudies()
+
+    await fillAndSubmit(wrapper)
+
+    const alerts = wrapper.findAll('[role="alert"]')
+    expect(alerts.some((alert) => alert.text().includes('Votre session a pris fin'))).toBe(false)
+    expect(alerts.some((alert) => alert.text().includes('Une erreur est survenue'))).toBe(true)
+    expect(authState.user).not.toBeNull()
+    wrapper.unmount()
+  })
+})

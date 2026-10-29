@@ -10,6 +10,7 @@ paths:
   - "frontend/tests/presentation/router/backofficeSessionExpiry.spec.ts"
   - "frontend/tests/presentation/ui/admin/SessionEndedBanner.spec.ts"
   - "frontend/tests/presentation/layout/AdminLayout.sessionEnded.spec.ts"
+  - "frontend/tests/infrastructure/admin/sessionEndedMapping.spec.ts"
 ---
 
 # Frontend — backoffice (`/admin`) and set-password
@@ -198,12 +199,31 @@ version" copies nothing and the assistant sends all five fields.
   wrongly redirect an actually-authenticated user to `/login` (regression-tested in
   `tests/presentation/router/adminGuard.spec.ts`). `hasRole(user, role)` (`domain/auth/services/hasRole.ts`) is a
   plain function (no Vue `inject()`) so it also works inside this router guard, outside component context.
-- **A 401 mid-page ends the session on the interface, and moves nobody** (#650, R1c, then S2 of the second review): the
+- **A 401, or a 403 to a write sent without a CSRF token, mid-page ends the session on the interface, and moves
+  nobody** (#650, R1c, then S2 of the second review; the 403 since #748): the
   route guard plays at navigation only, it never sees a session that dies while a page is open (the JWT expiring, or
   a password change cutting every session opened before it, `.claude/rules/security-authentication-sessions.md`).
-  So `BackofficeHttpClient` (`get` and `mutate`) calls, on any 401, a reaction registered once through
+  So `BackofficeHttpClient` (`get` and `mutate`) calls, on any such response, a reaction registered once through
   `setBackofficeUnauthorizedHandler()` and returns the response as it came — repositories keep their own mapping,
-  **none repeats the reaction**. `main.ts` registers `onBackofficeUnauthorized`
+  **none repeats the reaction**. **The rule is one function, `infrastructure/http/sessionEnded.ts`
+  (`endsTheSession(status, sentWithoutCsrfToken)`), and its facts are checked in the backend**: the CSRF subscriber
+  (priority 20) runs *before* the firewall and controls writes only (`POST`/`PUT`/`PATCH`/`DELETE`), so a read is never
+  refused for CSRF and a write with no `X-XSRF-TOKEN` header gets a 403 before any authentication; `XSRF-TOKEN` is a
+  *session* cookie set at login (`BEARER` lives 3 600 s, so at the JWT's expiry the write still carries its token
+  and takes the firewall's 401), and both cookies are expired by `/api/logout` and by the refusal of a session opened
+  before a password change — after which a read takes a 401 but a write leaves without a token and takes the CSRF's
+  **403** (the person logged out in another tab). The client decides **at send time** (`!readCsrfToken()`; an empty
+  `XSRF-TOKEN=` counts as absent, since no header is sent then) and keeps the verdict per response
+  (`client.endedTheSession(response)`, a module-level `WeakSet`), rather than re-reading the cookie at reception (another
+  tab may have set it back) or the 403's `detail` (localisable, not a contract). Each repository tests
+  `endedTheSession()` **first** in its error translator and answers the reason `session-ended`
+  (`domain/admin/shared/errors/sessionEnded.ts`; `AdminOrderError` for the order), which composables and pages keep
+  quiet (`isSessionEndedError()`, `visibleErrorReason()`): the banner is the only announcement. **A 403 to a read, or
+  to a write that carried its token, keeps its meaning** (not authorized, CSRF signature refused) and stays the
+  repository's error. **Accepted limits**: an `XSRF-TOKEN` present but whose signature no longer verifies (an
+  `APP_SECRET` rotation) stays a refusal, although signing in again would repair it; a browser that drops the
+  *session* cookie `XSRF-TOKEN` while keeping `BEARER` (closed without session restore) reads a finished session —
+  signing in again is indeed the remedy. `main.ts` registers `onBackofficeUnauthorized`
   (`presentation/router/backofficeSessionExpiry.ts`), which is `markSessionExpired()` and nothing else: **no
   `router.replace`** (R1c's navigation unmounted the page at the very click of « Enregistrer », and a case study written
   for more than an hour — the JWT's lifetime — was lost with it). It is idempotent, a state and not an event: several
@@ -222,14 +242,16 @@ version" copies nothing and the assistant sends all five fields.
   input is saved or abandoned by then. `expired=1` (`presentation/router/sessionEnded.ts`, the single value `1`, an
   announcement that opens nothing) makes `LoginPage` say why it opened. The registry lives in the module, so
   `infrastructure/` imports neither the session nor the router. **A new administration client goes through
-  `BackofficeHttpClient`**, or reproduces that wiring. **The 403 keeps its meaning** (not authorized, CSRF refused): no
-  repository reads it as a finished session, it stays the repository's error. The `Mcp` repositories
+  `BackofficeHttpClient`**, or reproduces that wiring. The `Mcp` repositories
   (`HttpMcpConnectionsRepository`, `HttpOAuthConsentRepository`) have their own `fetch` and mark the session expired in
   their composable without redirecting (the page shows the error, `.claude/rules/frontend.md`). No dedicated « your
   password changed » message: Lexik's 401 body carries `{code, message}` and no stable `type`, and reading the text
-  would be fragile. `BackofficeHttpClient.spec.ts` (401 on read and write, 200/204/403/404/409/422/500 with no reaction,
-  no handler registered), `HttpAdminUserRepository.spec.ts`, `backofficeSessionExpiry.spec.ts` (the session is closed,
+  would be fragile. `infrastructure/http/sessionEnded.spec.ts` (the rule), `BackofficeHttpClient.spec.ts` (401 on read and write, a 403 to a
+  write without a token or with an empty cookie, 200/204/403/404/409/422/500 with no reaction when the token was
+  sent, a 403 to a read never, no handler registered), `sessionEndedMapping.spec.ts` (the 14 repositories: a 401 read, a 403
+  write without a token and a 401 reorder are `session-ended`, a 403 write with one keeps its mapping; a glob fails when
+  a new repository is missing from its table), `HttpAdminUserRepository.spec.ts`, `backofficeSessionExpiry.spec.ts` (the session is closed,
   no navigation, idempotent), `SessionEndedBanner.spec.ts` (alert inserted, no focus taken, the link, the re-read on
   `focus`), `AdminLayout.sessionEnded.spec.ts` (the page stays mounted with its typed input; red when `router.replace`
-  is reintroduced), `useAuth.spec.ts`.
+  is reintroduced; the banner is the only alert on a 401 and on a 403 without a token, a 403 with one shows the page's), `useAuth.spec.ts`.
 

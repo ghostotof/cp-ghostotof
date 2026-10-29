@@ -6,6 +6,7 @@ import type {
 import { AdminQualityError, type AdminQualityErrorReason } from '../../../domain/admin/quality/errors/AdminQualityError'
 import { AdminOrderError } from '../../../domain/admin/shared/errors/AdminOrderError'
 import type { Locale } from '../../../domain/portfolio/entities/Locale'
+import { SESSION_ENDED } from '../../../domain/admin/shared/errors/sessionEnded'
 import { BackofficeHttpClient, violationsMessage } from '../shared/BackofficeHttpClient'
 import { STALE_ORDER_PROBLEM_TYPES, hasProblemType } from '../shared/orderProblems'
 
@@ -92,6 +93,10 @@ export class HttpAdminQualityPrincipleRepository implements AdminQualityPrincipl
   }
 
   private async toError(response: Response): Promise<AdminQualityError> {
+    if (this.client.endedTheSession(response)) {
+      return new AdminQualityError(SESSION_ENDED, 'Session ended')
+    }
+
     const body = await this.client.parseProblem(response)
 
     if (404 === response.status) {
@@ -118,6 +123,10 @@ export class HttpAdminQualityPrincipleRepository implements AdminQualityPrincipl
    * `stale-order` de recharger la liste, ce qu'aucun autre motif ne déclenche.
    */
   private async toOrderError(response: Response): Promise<AdminOrderError> {
+    if (this.client.endedTheSession(response)) {
+      return new AdminOrderError(SESSION_ENDED, 'Session ended')
+    }
+
     const body = await this.client.parseProblem(response)
 
     const isStale =
