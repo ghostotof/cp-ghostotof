@@ -39,6 +39,11 @@ export function useAdminAboutSettings(): UseAdminAboutSettingsResult {
   // Une erreur FR arrivée quand la page est en EN ne se lit pas sous l'en-tête anglais (F10-2), et un enregistrement
   // d'une langue n'efface ni ne remplace l'erreur de l'autre.
   const failures = ref<Partial<Record<Locale, AdminAboutError>>>({})
+  // Le numéro du dernier enregistrement parti de chaque langue (R43, CR4-6) : deux enregistrements d'une même langue
+  // peuvent se chevaucher (double clic, réseau lent), et le plus ancien répond parfois en dernier. Seul le dernier
+  // de sa langue pose son verdict (l'erreur) et sa valeur ; l'ancien rend son vrai sort (`true`/`false`) sans rien poser.
+  // Un numéro par langue : un enregistrement EN ne rend pas périmé un enregistrement FR encore en vol.
+  const lastSaveOf: Partial<Record<Locale, number>> = {}
 
   const { isLoading, hasError, isLoaded, load, write, isCurrentKey } = useAdminLoad<AdminAboutSettings, Locale>({
     read: (locale) => repository.get(locale),
@@ -63,6 +68,8 @@ export function useAdminAboutSettings(): UseAdminAboutSettingsResult {
   const save = async (locale: Locale, input: AdminAboutSettingsInput): Promise<boolean> => {
     // N'efface que l'erreur de la langue enregistrée : celle d'une autre langue attend son propre enregistrement.
     delete failures.value[locale]
+    const mine = (lastSaveOf[locale] ?? 0) + 1
+    lastSaveOf[locale] = mine
 
     try {
       const saved = await repository.update(locale, input)
@@ -71,12 +78,12 @@ export function useAdminAboutSettings(): UseAdminAboutSettingsResult {
       // la langue affichée, enregistré ensuite, écraserait celle-ci par la première (R11). `write` ne pose que sous
       // la clé courante et périme les lectures en vol de cette clé : un `GET` parti avant le COMMIT rendrait
       // l'ancienne valeur et la reposerait par-dessus la neuve (F10-1).
-      write(locale, saved)
+      if (lastSaveOf[locale] === mine) write(locale, saved)
 
       return true
     } catch (error) {
       const visible = visibleMutationError(error, AdminAboutError, () => new AdminAboutError('unknown', 'Unknown error'))
-      if (null !== visible) failures.value[locale] = visible
+      if (null !== visible && lastSaveOf[locale] === mine) failures.value[locale] = visible
 
       return false
     }

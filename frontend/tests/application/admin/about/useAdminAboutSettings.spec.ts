@@ -312,4 +312,93 @@ describe('useAdminAboutSettings', () => {
       expect(composable.errorMessage.value?.reason).toBe('unknown')
     })
   })
+
+  describe('seul le dernier enregistrement d\'une langue pose son verdict et sa valeur (#748, R43)', () => {
+    const INPUT = {
+      siteEyebrow: 'Nouveau titre',
+      meEyebrow: SETTINGS.meEyebrow,
+      technicalSubtitle: SETTINGS.technicalSubtitle,
+      personalSubtitle: SETTINGS.personalSubtitle,
+      hobbiesSubtitle: SETTINGS.hobbiesSubtitle,
+    }
+    const FIRST: AdminAboutSettings = { ...SETTINGS, siteEyebrow: 'Premier' }
+    const SECOND: AdminAboutSettings = { ...SETTINGS, siteEyebrow: 'Second' }
+
+    /** Un `update` dont chaque appel reste en vol : `answer(n, …)` / `fail(n, …)` le règle, dans l'ordre voulu. */
+    function pendingUpdates() {
+      const settlers: Array<{ resolve: (settings: AdminAboutSettings) => void; reject: (reason: unknown) => void }> = []
+      const update = vi.fn<AdminAboutSettingsRepository['update']>(
+        () => new Promise<AdminAboutSettings>((resolve, reject) => settlers.push({ resolve, reject })),
+      )
+
+      return {
+        update,
+        answer: (index: number, settings: AdminAboutSettings) => settlers[index]?.resolve(settings),
+        fail: (index: number, reason: unknown) => settlers[index]?.reject(reason),
+      }
+    }
+
+    it('deux enregistrements FR : le plus ancien échoue après le succès du plus récent — aucune erreur FR', async () => {
+      const pending = pendingUpdates()
+      const composable = mountWithComposable(createStubRepository({ update: pending.update }))
+      await composable.load('fr')
+
+      const older = composable.save('fr', INPUT)
+      const newer = composable.save('fr', INPUT)
+      pending.answer(1, SECOND)
+      expect(await newer).toBe(true)
+      pending.fail(0, new AdminAboutError('validation', 'Invalide'))
+
+      // Le vrai sort de l'ancien enregistrement est rendu, mais il ne dit rien de la langue : le dernier a abouti.
+      expect(await older).toBe(false)
+      expect(composable.errorMessage.value).toBeNull()
+      expect(composable.settings.value).toEqual(SECOND)
+    })
+
+    it('deux enregistrements FR : la réponse du plus ancien, arrivée après le plus récent, ne remplace pas ses valeurs', async () => {
+      const pending = pendingUpdates()
+      const composable = mountWithComposable(createStubRepository({ update: pending.update }))
+      await composable.load('fr')
+
+      const older = composable.save('fr', INPUT)
+      const newer = composable.save('fr', INPUT)
+      pending.answer(1, SECOND)
+      await newer
+      pending.answer(0, FIRST)
+
+      expect(await older).toBe(true)
+      expect(composable.settings.value).toEqual(SECOND)
+    })
+
+    it("le plus récent échoue après le succès de l'ancien : l'erreur FR", async () => {
+      const pending = pendingUpdates()
+      const composable = mountWithComposable(createStubRepository({ update: pending.update }))
+      await composable.load('fr')
+
+      const older = composable.save('fr', INPUT)
+      const newer = composable.save('fr', INPUT)
+      pending.answer(0, FIRST)
+      expect(await older).toBe(true)
+      pending.fail(1, new AdminAboutError('validation', 'Invalide'))
+
+      expect(await newer).toBe(false)
+      expect(composable.errorMessage.value?.reason).toBe('validation')
+    })
+
+    it("le numéro est propre à chaque langue : un enregistrement EN plus récent ne périme pas le FR", async () => {
+      const pending = pendingUpdates()
+      const composable = mountWithComposable(createStubRepository({ update: pending.update }))
+      await composable.load('fr')
+
+      const french = composable.save('fr', INPUT)
+      const english = composable.save('en', INPUT)
+      pending.answer(1, { ...SETTINGS, locale: 'en' })
+      await english
+      pending.fail(0, new AdminAboutError('validation', 'Invalide'))
+      await french
+
+      // Le FR est le dernier de sa langue : son échec est posé, et revient avec le FR.
+      expect(composable.errorMessage.value?.reason).toBe('validation')
+    })
+  })
 })

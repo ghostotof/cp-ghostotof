@@ -248,6 +248,9 @@ version" copies nothing and the assistant sends all five fields.
   `errorMessage` is the failure of the current locale's last save (R31, Sp3-4: **one error per locale**, `failures`), and
   comes back on returning to that locale, until **that locale's** next save: a save of one locale neither clears nor
   replaces the other's error (a failed FR save, then a successful or failed EN one, leaves the FR error for the way back).
+  **Only the last save of a locale sets its verdict and its value** (R43, CR4-6: `lastSaveOf`, one number per locale): an older
+  save of the same locale answering after a newer one returns its own `true`/`false` and sets neither the error nor the values.
+  Reloading a locale never clears its error: the form copies the settings read, so that error is the only trace of the refused save.
   **A proposal notice survives a refusal** (F11): `proposalSourceLocale` is cleared
   only when `save()` resolves `true`, the form still carrying the proposal otherwise. The About settings are the only
   keyed composable, so the only one with these races.
