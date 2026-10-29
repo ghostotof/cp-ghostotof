@@ -25,9 +25,11 @@ import IconChevronDown from '~icons/lucide/chevron-down'
  * n'importe quelle suite de liens, sans `aria-haspopup`.
  *
  * Fermeture : un second clic sur le bouton, Échap (le focus revient alors au
- * bouton **s'il était dans le menu**, pour que la tabulation reprenne là où la
- * personne était ; s'il était ailleurs, un autre menu de l'en-tête par exemple,
- * le menu se ferme sans lui voler le focus, #748), un clic en dehors (le focus
+ * bouton **s'il était dans le menu, ou si personne ne le détenait** — `body`, ce
+ * qu'est l'élément actif sous Safari après une ouverture à la souris, #748 —, pour
+ * que la tabulation reprenne là où la personne était ; s'il était ailleurs, un
+ * autre menu de l'en-tête par exemple, le menu se ferme sans lui voler le focus,
+ * #748), un clic en dehors (le focus
  * reste où elle l'a mis), une navigation quelle qu'en soit l'origine, le choix
  * d'une entrée — y compris le lien vers la page où l'on est déjà, qui ne navigue
  * pas — et la sortie du focus **quand la cible reçoit le focus et se trouve hors
@@ -80,9 +82,14 @@ function onDocumentClick(event: MouseEvent): void {
 function onDocumentKeydown(event: KeyboardEvent): void {
   if ('Escape' === event.key && isOpen.value) {
     // Lu avant la fermeture : le focus n'est rendu au bouton que s'il était dans le
-    // menu. Un autre menu de l'en-tête peut le détenir pendant que celui-ci est
-    // resté ouvert, et le lui prendre serait voler le focus (#748, constat 12).
-    const focusWasInside = container.value?.contains(document.activeElement) ?? false
+    // menu, ou si personne ne le détenait. Un autre menu de l'en-tête peut le détenir
+    // pendant que celui-ci est resté ouvert, et le lui prendre serait voler le focus
+    // (#748, constat 12). `body` (ou `null`) n'est le focus de personne : c'est l'état
+    // de Safari après une ouverture à la souris, qui ne focalise pas un bouton cliqué
+    // (#748, CR8).
+    const active = document.activeElement
+    const focusWasFree = null === active || document.body === active
+    const focusWasInside = focusWasFree || (container.value?.contains(active) ?? false)
     close()
     if (focusWasInside) {
       toggle.value?.focus()

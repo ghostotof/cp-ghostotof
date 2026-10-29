@@ -189,6 +189,23 @@ describe('AccountMenu (menu du compte, écran large)', () => {
     cleanup()
   })
 
+  it('Échap, le focus sur body (Safari après un clic) : le focus revient au bouton', async () => {
+    // CR8 de #748 : Safari ne donne pas le focus à un bouton cliqué, l'élément actif est
+    // donc `body` après une ouverture à la souris. Personne d'autre ne détient le focus :
+    // Échap le rend au bouton, pour que la tabulation reprenne là.
+    const { wrapper, cleanup } = await mountMenu()
+    await wrapper.get(TOGGLE).trigger('click')
+    ;(document.activeElement as HTMLElement).blur()
+    expect(document.activeElement).toBe(document.body)
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await flushPromises()
+
+    expect(wrapper.get('#account-menu-desktop').isVisible()).toBe(false)
+    expect(document.activeElement).toBe(wrapper.get(TOGGLE).element)
+    cleanup()
+  })
+
   it('le focus qui part hors du menu le referme, sans le déplacer', async () => {
     // Constat 13 de #748 : Tab ou Maj+Tab au-delà de la liste laissait le menu ouvert.
     const { wrapper, outside, cleanup } = await mountMenu()

@@ -331,8 +331,10 @@ which reads the request again under the current account. `OAuthConsentPage.spec.
   Escape, a click outside, a navigation, the choice of an entry and (#748) **when the focus leaves for an element
   outside the menu** (`focusout` with a non-null `relatedTarget` outside the container; a null `relatedTarget` — Safari
   gives no focus to a clicked button — leaves it open, an accepted limit: closing on any `focusout` would hide the list
-  before the click arrives). Escape returns the focus to the button **only if it was inside the menu**; with the focus
-  elsewhere (another header menu) the menu closes without stealing it. The current entry carries `active`
+  before the click arrives). Escape returns the focus to the button **only if it was inside the menu, or held by nobody**
+  (`document.activeElement` is `body` or `null`: Safari gives no focus to a clicked button, so after an opening with the
+  mouse the active element is `body`, #748, R10); with the focus elsewhere (another header menu) the menu closes
+  without stealing it. The current entry carries `active`
   (`exact-active-class`, as on the mobile menu's four links) beside the `aria-current="page"` that `RouterLink` sets.
   Its list is hidden
   by `v-show`, so `aria-controls` names an element that exists while closed (`.claude/rules/frontend-a11y.md`). It groups the actions
