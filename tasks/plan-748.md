@@ -1501,6 +1501,13 @@ et la note de release.
 
 ## Corrections de la troisième relecture (2026-10-29)
 
+### Réponses de l'auteur aux questions de ce plan (2026-10-29)
+
+Les quatre recommandations sont retenues : (1) même compte avec un rôle perdu → la navigation est rejouée ; (2) la
+réaction du backoffice va dans `domain/admin/shared/` ; (3) rejeu unique d'« Accès instantané » dans #748, le pare-feu
+sans authentificateur va dans le ticket `__Host-` ; (4) `clock_skew: 5`.
+
+
 R12 à R22 et R21b sont faites (455c43ba → b4fda293). Quatre relectures du diff be0b8d8d...b4fda293
 (`/code-review medium` CR3-*, audit de sécurité A3-*, axe Standards St3-*, axe Spec Sp3-*) : aucun critique ni haut.
 Constats complets : rapport de la troisième relecture (fil principal). **Tous sont traités dans cette branche** par les
