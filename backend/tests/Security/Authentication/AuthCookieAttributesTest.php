@@ -102,15 +102,16 @@ final class AuthCookieAttributesTest extends WebTestCase
     }
 
     /**
-     * #748 (CR3) : un `XSRF-TOKEN` de session, jeté à la fermeture du navigateur
-     * pendant que le `BEARER`, persistant, survit, faisait de chaque écriture
-     * un 403 sans jeton — lu « session finie » en boucle par le frontend. Les
-     * deux cookies du login meurent donc ensemble, à l'échéance du JWT.
+     * #748 (F1, décision de l'auteur du 2026-10-29, qui remplace celle de CR3) :
+     * `BEARER` et `XSRF-TOKEN` sont des cookies de **session** au login — aucun
+     * `Expires` ni `Max-Age` : fermer le navigateur (sans restauration de
+     * session) finit la session, en lecture comme en écriture. Le JWT garde son
+     * `exp` (`token_ttl`) : c'est lui, non le cookie, qui borne la session.
      *
      * Les cookies sont lus sur la réponse, jamais dans le jar (`Secure` perdu
      * en http, cf. {@see ReadsResponseCookies}).
      */
-    public function testTheLoginXsrfTokenExpiresWithItsBearer(): void
+    public function testTheLoginCookiesAreSessionCookies(): void
     {
         $client = self::createClient();
         self::getContainer()->get('cache.rate_limiter')->clear();
@@ -122,14 +123,11 @@ final class AuthCookieAttributesTest extends WebTestCase
         ]));
         self::assertResponseIsSuccessful();
 
-        $this->assertXsrfTokenDiesWithBearer($this->cookiesByName($client), 'login');
+        $this->assertBothAreSessionCookies($this->cookiesByName($client), 'login');
     }
 
-    /**
-     * Témoin : l'accès de base faisait déjà mourir les deux cookies ensemble.
-     * Vert d'emblée, il garde la comparaison honnête (même assertion que le login).
-     */
-    public function testTheBaseAccessXsrfTokenExpiresWithItsBearer(): void
+    /** Même exigence à l'accès de base : les quinze minutes sont dans le JWT, pas dans le cookie. */
+    public function testTheBaseAccessCookiesAreSessionCookies(): void
     {
         $client = self::createClient();
         self::getContainer()->get('cache.rate_limiter')->clear();
@@ -137,20 +135,18 @@ final class AuthCookieAttributesTest extends WebTestCase
         $client->request('POST', '/api/account/base-access', server: ['HTTP_X_REQUESTED_WITH' => 'fetch']);
         self::assertResponseIsSuccessful();
 
-        $this->assertXsrfTokenDiesWithBearer($this->cookiesByName($client), 'accès de base');
+        $this->assertBothAreSessionCookies($this->cookiesByName($client), 'accès de base');
     }
 
     /**
      * @param array<string, Cookie> $cookies
      */
-    private function assertXsrfTokenDiesWithBearer(array $cookies, string $site): void
+    private function assertBothAreSessionCookies(array $cookies, string $site): void
     {
-        self::assertArrayHasKey(AuthCookieFactory::BEARER, $cookies, \sprintf('BEARER absent de la réponse (%s).', $site));
-        self::assertArrayHasKey(AuthCookieFactory::XSRF_TOKEN, $cookies, \sprintf('XSRF-TOKEN absent de la réponse (%s).', $site));
-        $bearer = $cookies[AuthCookieFactory::BEARER];
-        $xsrf = $cookies[AuthCookieFactory::XSRF_TOKEN];
-
-        self::assertGreaterThan(0, $xsrf->getExpiresTime(), \sprintf('%s : XSRF-TOKEN est un cookie de session, jeté à la fermeture du navigateur alors que BEARER survit.', $site));
-        self::assertEqualsWithDelta($bearer->getExpiresTime(), $xsrf->getExpiresTime(), 1.0, \sprintf('%s : XSRF-TOKEN et BEARER n\'expirent pas au même instant.', $site));
+        foreach ([AuthCookieFactory::BEARER, AuthCookieFactory::XSRF_TOKEN] as $name) {
+            self::assertArrayHasKey($name, $cookies, \sprintf('%s absent de la réponse (%s).', $name, $site));
+            self::assertSame(0, $cookies[$name]->getExpiresTime(), \sprintf('%s : %s doit être un cookie de session (aucune échéance), il a une échéance persistante.', $site, $name));
+            self::assertFalse($cookies[$name]->isCleared(), \sprintf('%s : %s ne doit pas être expiré.', $site, $name));
+        }
     }
 }

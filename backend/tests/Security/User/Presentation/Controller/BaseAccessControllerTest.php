@@ -71,7 +71,12 @@ final class BaseAccessControllerTest extends WebTestCase
         $remaining = $expiresAt->getTimestamp() - time();
         self::assertGreaterThan(14 * 60, $remaining);
         self::assertLessThanOrEqual(15 * 60, $remaining);
-        self::assertSame($expiresAt->getTimestamp(), (int) $bearerCookie->getExpiresTime(), 'Le corps et le cookie doivent annoncer la même échéance.');
+        // #748 (F1) : le cookie est de session (aucune échéance), c'est le JWT qui porte
+        // les quinze minutes ; le corps doit annoncer l'`exp` du jeton, lu par l'encodeur.
+        self::assertNull($bearerCookie->getExpiresTime(), 'Le cookie BEARER de l\'accès de base est un cookie de session.');
+        self::assertNull($csrfCookie->getExpiresTime(), 'Le cookie XSRF-TOKEN de l\'accès de base est un cookie de session.');
+        $claims = self::getContainer()->get(JWTEncoderInterface::class)->decode($bearerCookie->getValue());
+        self::assertSame($expiresAt->getTimestamp(), $claims['exp'] ?? null, 'Le corps doit annoncer l\'échéance (`exp`) du JWT.');
 
         // Le cookie authentifie bien la requête suivante (403, pas 401) : la
         // mécanique de ré-authentification via BaseAccessUserProvider fonctionne.

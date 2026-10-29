@@ -19,9 +19,12 @@ lexik_jwt_authentication:
 
     set_cookies:
         BEARER:
-            # Doit rester égale à token_ttl : LoginSuccessSubscriber donne cette même durée au
-            # XSRF-TOKEN, et AuthCookieAttributesTest compare les deux échéances réelles du login.
-            lifetime: 3600
+            # 0 = cookie de session, sans Expires ni Max-Age (#748, F1) : fermer le navigateur
+            # (sans restauration de session) finit la session, en lecture comme en écriture. Le JWT
+            # garde son `exp` (token_ttl) ; le XSRF-TOKEN est lui aussi un cookie de session
+            # (AuthCookieFactory), et StaleSessionCookiesClearingListener efface les deux au premier
+            # 401 d'un cookie refusé. AuthCookieAttributesTest pin le résultat sur la vraie réponse.
+            lifetime: 0
             samesite: lax
             path: /
             httpOnly: true

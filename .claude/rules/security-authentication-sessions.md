@@ -25,22 +25,25 @@ paths:
 - `Infrastructure/Jwt/LoginSuccessSubscriber.php` (attaches the `XSRF-TOKEN` cookie, shapes the
   `login_check` response body — includes `roles` alongside `username`, needed by the frontend to gate `/admin`
   without waiting for a full `checkAuth()` round-trip) and `CookieLogoutListener.php` (expires both cookies on
-  `/api/logout`). **At login, `XSRF-TOKEN` receives the JWT's expiry** (`time() + token_ttl`, read by
-  `#[Autowire(param: 'lexik_jwt_authentication.token_ttl')]`, #748 CR3), as at the base access: **no site issues a
-  session cookie any more**, `BEARER` and `XSRF-TOKEN` always die together. Why: a session `XSRF-TOKEN` is dropped when
-  the browser closes while `BEARER`, persistent, survives; every write then left without a token, took a 403 that the
-  frontend reads « session ended », and the loop started again after each reconnection check. `set_cookies.BEARER.lifetime`
-  (`lexik_jwt_authentication.yaml`) must stay equal to `token_ttl`; `AuthCookieAttributesTest`
-  (`testTheLoginXsrfTokenExpiresWithItsBearer`, witness `testTheBaseAccessXsrfTokenExpiresWithItsBearer`) compares the
-  two real `Expires` of each response. A session opened before this deployment keeps its `XSRF-TOKEN` as a session
-  cookie, for one hour at most (the JWT's life).
+  `/api/logout`). **`BEARER` and `XSRF-TOKEN` are session cookies, at login as at the base access** (#748, F1, the
+  author's decision of 2026-10-29, replacing R1's persistent `XSRF-TOKEN`): `set_cookies.BEARER.lifetime: 0` (Lexik
+  gives no `Expires`: `JWTCookieProvider` answers `0` for a zero lifetime) and `xsrf($token)` without expiry, in
+  `LoginSuccessSubscriber` (which no longer reads `token_ttl`) and `BaseAccessController`. Why: closing the browser
+  without session restore then ends the session, read and write, and the cookies always die together (a session
+  `XSRF-TOKEN` thrown away while a persistent `BEARER` survived made every write a 403 read « session ended », in a
+  loop — #748 CR3). The JWT keeps `exp` = `token_ttl` (3600) or 900 s at the base access: **the token, not the cookie,
+  bounds the session**, so a copied JWT stays valid until its `exp` (ADR 0003, unchanged). A browser that restores its
+  session restores the cookies too, accepted. A session opened before the deployment keeps its persistent cookies, one
+  hour at most. `AuthCookieAttributesTest` (`testTheLoginCookiesAreSessionCookies`,
+  `testTheBaseAccessCookiesAreSessionCookies`: `getExpiresTime()` is `0` on the response) and
+  `BaseAccessControllerTest` (the body's `expiresAt` equals the JWT's `exp`) pin it.
 - **`Infrastructure/Http/AuthCookieFactory.php` is the only place that builds a `BEARER` or `XSRF-TOKEN`
   cookie** (issue #87): names (`AuthCookieFactory::BEARER` / `::XSRF_TOKEN`, also what
   `CsrfCookieRequestSubscriber` reads), `Path=/`, no `Domain`, `SameSite=Lax`, `HttpOnly` on `BEARER`
   only, `Secure` everywhere but `dev` (issue #714 — `test` included, see below; `dev` is served in http,
   where Chrome and Firefox accept a `Secure` cookie on `localhost`, a secure context, but not every browser,
   and none on another address). `bearer()` / `xsrf()` take an optional expiry (a session cookie without; no site
-  omits it for `XSRF-TOKEN` since #748),
+  passes one since #748, F1),
   `expired()` mirrors the issued attributes with a past date — a cleared cookie whose attributes differ
   from the set one is *not* removed by the browser, which is the drift the factory exists to prevent. The
   three sites (`LoginSuccessSubscriber`, `BaseAccessController`, `CookieLogoutListener`) go through it;
@@ -132,12 +135,19 @@ paths:
     refused a legitimate sign-in (F-B), and « the same second » was refused in both directions (`<=`). All gone: a
     person signing in right after a change is served, and tests no longer move a date back in SQL. A future `iat`
     (a pod's clock ahead) is refused by Lexik itself before this rule.
-  - **`StaleSessionCookiesClearingListener`** (`Infrastructure/Jwt`, Lexik's `JWT_INVALID`) makes that refusal — that
-    one only — **expire `BEARER` and `XSRF-TOKEN`** through `AuthCookieFactory::expired()`. The firewall authenticates
-    as soon as a cookie is present, **public routes included**: without it a refused cookie, alive up to an hour more,
-    would answer 401 to every `/api` request, the About page and the contact form too. The next request is
-    anonymous; the frontend reads that 401 as a finished session (a banner mid-page in the backoffice, the sign-in
-    at the next navigation — `.claude/rules/frontend-backoffice.md`, « Route protection »).
+  - **`StaleSessionCookiesClearingListener`** (`Infrastructure/Jwt`, Lexik's `JWT_INVALID` **and** `JWT_EXPIRED`, #748
+    F1) makes **every** refusal of the `BEARER` cookie — expired, invalid (signature, payload, account gone), opened
+    before a password change (#650) — **expire `BEARER` and `XSRF-TOKEN`** through `AuthCookieFactory::expired()`. The
+    firewall authenticates as soon as a cookie is present, **public routes included** (`JWTAuthenticator` answers 401):
+    with session cookies a refused one would stay until the browser closes and answer 401 to every `/api` request, the
+    About page and the contact form too. The next request is anonymous. `JWT_NOT_FOUND` (no cookie) clears nothing.
+    **Accepted limit**: that first 401 exists. The base access avoids it by a client-side sign-out at `expiresAt` (R21b);
+    a login's expiry is not exposed to the frontend, so the first request after its `exp` takes the 401 (a read: 401; a
+    write: 401, then the CSRF's 403 without token). The frontend reads those as a finished session
+    (`.claude/rules/frontend-session.md`; the backoffice banner, the sign-in at the next navigation —
+    `.claude/rules/frontend-backoffice.md`, « Route protection »). Pinned by `RefusedSessionCookiesAreClearedTest`
+    (expired and invalid cookies cleared with the factory's attributes, the public route served afterwards, a served
+    session clearing nothing) and, for the password change, `SessionBeforePasswordChangeTest`.
   - **Every refusal is audited** (`session-refused-after-credentials-change`,
     `.claude/rules/security-authentication-audit.md`), before the exception is thrown.
   - **The consent keeps its own check** as defence in depth, unreachable by HTTP since R1b, the author's decision:

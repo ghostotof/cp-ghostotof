@@ -61,11 +61,12 @@ facts are checked in the backend:
 
 - the CSRF subscriber (priority 20) runs *before* the firewall and controls writes only (`POST`/`PUT`/`PATCH`/`DELETE`):
   a read is never refused for CSRF, and a write with no `X-XSRF-TOKEN` header gets a 403 before any authentication;
-- since R1 (#748) the login gives `XSRF-TOKEN` the expiry of the JWT (`token_ttl`), as the base access always did:
-  **at the JWT's expiry both cookies fall together**, so a read takes a 401 and a write leaves without a token and takes
-  the CSRF's **403**. Before R1 `XSRF-TOKEN` was a session cookie, which a browser closed without session restore threw
-  away while the persistent `BEARER` stayed: every write read as an ended session in a loop. A session opened before the
-  deployment of R1 keeps a session-cookie `XSRF-TOKEN` for at most one hour (the JWT's lifetime);
+- since R21 (#748, F1, the author's decision of 2026-10-29) **`BEARER` and `XSRF-TOKEN` are session cookies** (no
+  `Expires`/`Max-Age`), at the login (`set_cookies.BEARER.lifetime: 0`) as at the base access: a browser closed without
+  session restore ends the session, read and write; the JWT keeps its `exp`. At that `exp` **the first request takes a
+  401 that clears both cookies** (`StaleSessionCookiesClearingListener`, for any refused cookie): a read takes the 401,
+  a write the 401 then, the cookies gone, the CSRF's **403** without token; the next request is anonymous. A session
+  opened before the deployment keeps its persistent cookies, one hour at most;
 - `/api/logout` and the refusal of a session opened before a password change expire both cookies too: a read takes a
   401, a write leaves without a token and takes the 403 (the person logged out in another tab).
 
@@ -244,8 +245,8 @@ does `BackofficeHttpClient`.
     on the tab. `waitForAuthCheck()` is unaffected: it resolves on the first check, as before.
   - **A session is restored only if an account comes back *and* a write token exists**: `AuthRepository.hasWriteToken()`
     (a domain port; `HttpAuthRepository` answers from `readCsrfToken()`, an empty `XSRF-TOKEN=` counting as absent,
-    since the application does not read a cookie). A `/api/me` that finds the account while `XSRF-TOKEN` is gone (the
-    persistent `BEARER` survived a browser restart that dropped the session cookie, or a session opened before R1) would
+    since the application does not read a cookie). A `/api/me` that finds the account while `XSRF-TOKEN` is gone (a
+    browser that restores only one of the two cookies, or a session opened before R21) would
     be a session whose first write takes the CSRF 403, read as an ended session again: restoring it would announce
     « Session rétablie » and the loop would start over. The state is then left as it is. Only the account case restores:
     a re-read that finds the base tier or an anonymous one changes nothing (the header stays anonymous until a sign-in).

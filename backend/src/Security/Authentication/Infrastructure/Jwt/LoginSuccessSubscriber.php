@@ -9,7 +9,6 @@ use App\Security\Authentication\Infrastructure\Http\CsrfCookieTokenSigner;
 use App\Security\User\Domain\Entity\CpgUser;
 use Lexik\Bundle\JWTAuthenticationBundle\Event\AuthenticationSuccessEvent;
 use Lexik\Bundle\JWTAuthenticationBundle\Events;
-use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 
 /**
@@ -21,8 +20,8 @@ use Symfony\Component\EventDispatcher\EventSubscriberInterface;
  *   frontend le relit et le renvoie dans le header X-XSRF-TOKEN sur les
  *   requêtes qui changent l'état (double-submit cookie, cf.
  *   Authentication\Infrastructure\Http\CsrfCookieRequestSubscriber). Ses
- *   attributs viennent d'AuthCookieFactory (issue #87), jamais d'ici, et son
- *   échéance est celle du JWT (#748) ;
+ *   attributs viennent d'AuthCookieFactory (issue #87), jamais d'ici ; comme le
+ *   BEARER, c'est un cookie de session, sans échéance (#748, F1) ;
  * - remplace le corps JSON (vide une fois le token retiré) par les infos de
  *   l'utilisateur connecté, pour que le frontend n'ait pas à refaire un appel
  *   /api/me immédiatement après un login réussi.
@@ -32,10 +31,6 @@ final readonly class LoginSuccessSubscriber implements EventSubscriberInterface
     public function __construct(
         private CsrfCookieTokenSigner $csrfCookieTokenSigner,
         private AuthCookieFactory $authCookieFactory,
-        // Durée du JWT : le XSRF-TOKEN meurt avec le BEARER que Lexik pose pour la même durée
-        // (set_cookies.BEARER.lifetime, qui doit rester égale à ce paramètre).
-        #[Autowire(param: 'lexik_jwt_authentication.token_ttl')]
-        private int $sessionLifetimeSeconds,
     ) {
     }
 
@@ -58,15 +53,12 @@ final readonly class LoginSuccessSubscriber implements EventSubscriberInterface
             ],
         ]);
 
-        // Le XSRF-TOKEN expire avec le BEARER, comme à l'accès de base. Sans échéance, c'était
-        // un cookie de session : un navigateur fermé puis rouvert sans restauration le jetait
-        // alors que le BEARER, persistant, survivait ; chaque écriture partait sans jeton, prenait
-        // un 403 que le frontend lit « session finie », et la boucle recommençait (#748, CR3).
+        // Cookie de session, comme le BEARER (set_cookies.BEARER.lifetime: 0, #748 F1) : les deux
+        // meurent ensemble à la fermeture du navigateur — un XSRF-TOKEN jeté pendant que le BEARER
+        // survivait faisait de chaque écriture un 403 sans jeton, lu « session finie » en boucle —
+        // et, à l'expiration du JWT, StaleSessionCookiesClearingListener les efface tous deux.
         $event->getResponse()->headers->setCookie(
-            $this->authCookieFactory->xsrf(
-                $this->csrfCookieTokenSigner->issue(),
-                time() + $this->sessionLifetimeSeconds,
-            ),
+            $this->authCookieFactory->xsrf($this->csrfCookieTokenSigner->issue()),
         );
     }
 }

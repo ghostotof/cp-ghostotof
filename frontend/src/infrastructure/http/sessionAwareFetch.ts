@@ -12,11 +12,13 @@ import { hasCsrfToken, readCsrfToken } from '../auth/csrfCookie'
  *   authentification ;
  * - `XSRF-TOKEN` n'est pas `HttpOnly` (seul `BEARER` l'est, `AuthCookieFactory`) : le client le lit
  *   (`infrastructure/auth/csrfCookie.ts`) et n'envoie l'en-tête que s'il en trouve un ;
- * - depuis R1 (#748), le login donne à `XSRF-TOKEN` l'échéance du JWT (`token_ttl`), comme l'accès de
- *   base : à l'expiration du JWT les deux cookies tombent ensemble, donc une lecture prend un 401 et une
- *   écriture part sans jeton et prend le 403 du CSRF ;
- * - `/api/logout` (`CookieLogoutListener`) et le refus d'une session antérieure au changement de mot de
- *   passe (`StaleSessionCookiesClearingListener`) expirent eux aussi les deux cookies : même verdict.
+ * - depuis R21 (#748, F1), `BEARER` et `XSRF-TOKEN` sont deux cookies de session (ni `Expires` ni
+ *   `Max-Age`), au login comme à l'accès de base : le navigateur fermé, sans restauration de session,
+ *   finit la session. Le JWT garde son `exp` ; à son expiration la première requête prend un 401 qui
+ *   efface les deux cookies (`StaleSessionCookiesClearingListener`) — une lecture : 401 ; une écriture :
+ *   401, puis, cookies effacés, le 403 sans jeton du CSRF. Une session ouverte avant le déploiement garde
+ *   ses cookies persistants, une heure au plus ;
+ * - `/api/logout` (`CookieLogoutListener`) expire lui aussi les deux cookies : même verdict ;
  *
  * Un 403 à une écriture qui portait son jeton, ou à une lecture, est un refus réel (autorisation,
  * signature CSRF invalide) et garde son sens. Le signal est « le client n'avait pas de jeton à envoyer »,

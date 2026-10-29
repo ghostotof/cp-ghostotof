@@ -18,6 +18,11 @@ use Symfony\Component\HttpFoundation\Cookie;
  * ne correspondent pas à la pose n'est pas supprimé par le navigateur : ces
  * attributs ne se recalculent donc plus ailleurs qu'ici.
  *
+ * - Aucune échéance : plus aucun site n'en pose (#748, F1). `BEARER` et
+ *   `XSRF-TOKEN` sont des cookies de session — le login par
+ *   `set_cookies.BEARER.lifetime: 0` —, et seul `expired()` date un cookie. Le
+ *   paramètre `$expiresAt` de `bearer()` et `xsrf()` reste pour un appelant
+ *   futur qui aurait une raison de borner un cookie.
  * - `Path=/`, aucun `Domain` : le cookie vaut pour tout le site, et pour lui
  *   seul (un `Domain` explicite l'enverrait aux sous-domaines).
  * - `SameSite=Lax` : non envoyé sur une sous-requête cross-site (le double-submit
