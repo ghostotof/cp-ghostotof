@@ -19,6 +19,7 @@ import type { AuthenticatedUser } from '../../../src/domain/auth/entities/Authen
 import type { CvRepository } from '../../../src/domain/cv/repositories/CvRepository'
 import type { SiteIdentity } from '../../../src/domain/portfolio/entities/SiteIdentity'
 import type { NavigationEntry } from '../../../src/domain/portfolio/entities/NavigationEntry'
+import { router as appRouter } from '../../../src/presentation/router'
 
 const siteIdentity: SiteIdentity = { brandName: 'CP-Ghostotof' }
 
@@ -44,10 +45,20 @@ const navigationLinks: readonly NavigationEntry[] = [
 
 const StubPage = { template: '<div />' }
 
+/**
+ * La `meta` d'une route du routeur de l'application, lue telle quelle : le test de l'en-tête pose ainsi sur ses
+ * routes factices ce que la production dit (`requiresAuth`), et non ce qu'il croit. Une route qui perdrait
+ * `requiresAuth` fait rougir le test qui la nomme.
+ */
+function appMeta(name: string): Record<string, unknown> {
+  return { ...appRouter.resolve({ name, params: { locale: 'fr' } }).meta }
+}
+
 function createStubAuthRepository(user: AuthenticatedUser | null): AuthRepository {
   return {
     login: vi.fn(async () => user ?? { username: 'jane', roles: ['ROLE_USER'] }),
     logout: vi.fn(async () => undefined),
+    hasWriteToken: () => true,
     me: vi.fn(async () => sessionFor(user)),
   }
 }
@@ -114,8 +125,9 @@ async function mountHeader(
       { path: '/:locale(fr|en)/anonymous-cv', name: 'anonymous-cv', component: StubPage },
       { path: '/:locale(fr|en)/admin', name: 'admin-technologies', component: StubPage },
       { path: '/:locale(fr|en)/admin/case-studies', name: 'admin-case-studies', component: StubPage, meta: { requiresAuth: true } },
-      { path: '/:locale(fr|en)/assistant', name: 'assistant', component: StubPage },
-      { path: '/:locale(fr|en)/mcp-connections', name: 'mcp-connections', component: StubPage },
+      { path: '/:locale(fr|en)/assistant', name: 'assistant', component: StubPage, meta: appMeta('assistant') },
+      { path: '/:locale(fr|en)/mcp-connections', name: 'mcp-connections', component: StubPage, meta: appMeta('mcp-connections') },
+      { path: '/:locale(fr|en)/oauth/consent', name: 'oauth-consent', component: StubPage, meta: appMeta('oauth-consent') },
     ],
   })
   await router.push(initialPath)
@@ -667,6 +679,53 @@ describe('AppHeader', () => {
       expect(link.attributes('rel')).toBe('noopener')
       expect(link.text()).toContain("(s'ouvre dans un nouvel onglet)")
       expect(link.find('svg[aria-hidden="true"]').exists()).toBe(true)
+    })
+
+    // CR7 (#748, R8) : « Connexion » en nouvel onglet vaut sur toute route `requiresAuth`, pas seulement le backoffice.
+    // La `meta` vient du routeur de l'application : une route qui perd `requiresAuth` fait rougir son cas.
+    it.each([
+      ['assistant', '/fr/assistant'],
+      ['mcp-connections', '/fr/mcp-connections'],
+      ['oauth-consent', '/fr/oauth/consent'],
+    ])('%s : session finie, « Connexion » ouvre un nouvel onglet qui ramène ici', async (_name, path) => {
+      const { wrapper } = await mountEnded(path)
+
+      const link = wrapper.get('a[href*="/login"]')
+      expect(link.attributes('href')).toBe(`/fr/login?redirect=${path}&expired=1`)
+      expect(link.attributes('target')).toBe('_blank')
+      expect(link.attributes('rel')).toBe('noopener')
+      expect(link.text()).toContain("(s'ouvre dans un nouvel onglet)")
+      expect(findButton(wrapper, 'Accès instantané')).toBeUndefined()
+    })
+
+    it("la relecture de la session au retour ne retire pas le groupe de droite de l'en-tête (pas de clignotement)", async () => {
+      await primeAuthState({ username: 'jane', roles: ['ROLE_TRUSTED', 'ROLE_USER'] })
+      let settle: (value: ReturnType<typeof sessionFor>) => void = () => undefined
+      const pending = new Promise<ReturnType<typeof sessionFor>>((resolve) => {
+        settle = resolve
+      })
+      const repository: AuthRepository = { ...createStubAuthRepository(null), me: vi.fn(() => pending) }
+      const { wrapper } = await mountHeader(PROTECTED, repository)
+      markSessionExpired()
+      await flushPromises()
+      expect(wrapper.find('a[href*="/login"]').exists()).toBe(true)
+
+      let recheck: Promise<void> = Promise.resolve()
+      const Probe = defineComponent({
+        setup() {
+          recheck = useAuth().recheckEndedSession()
+          return () => null
+        },
+      })
+      mount(Probe, { global: { provide: { [AUTH_REPOSITORY as symbol]: repository } } })
+      await flushPromises()
+
+      // La relecture est en vol : le groupe de droite est toujours là.
+      expect(repository.me).toHaveBeenCalledTimes(1)
+      expect(wrapper.find('a[href*="/login"]').exists()).toBe(true)
+
+      settle(sessionFor(null))
+      await recheck
     })
 
     it("pas d'« Accès instantané » : il remplacerait le cookie et mènerait ailleurs que la saisie", async () => {

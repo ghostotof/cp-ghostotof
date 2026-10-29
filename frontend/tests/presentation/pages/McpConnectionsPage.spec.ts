@@ -135,7 +135,7 @@ async function mountPage(options: Options = {}): Promise<Harness> {
   const repository = { list, revoke } as unknown as McpConnectionsRepository
   // Un refus réel relit /api/me (`checkAuth`) : un faux dépôt d'auth, qui répond le palier de base.
   const me = vi.fn(async () => BASE_ACCESS_SESSION)
-  const authRepository: AuthRepository = { login: vi.fn(), logout: vi.fn(), me }
+  const authRepository: AuthRepository = { login: vi.fn(), logout: vi.fn(), hasWriteToken: () => true, me }
 
   const confirm = vi.spyOn(window, 'confirm').mockReturnValue(options.confirmAnswer ?? true)
 

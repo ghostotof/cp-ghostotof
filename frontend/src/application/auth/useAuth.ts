@@ -32,6 +32,17 @@ const state = reactive<{ tier: AccessTier; user: AuthenticatedUser | null; isChe
 })
 
 /**
+ * Vrai dès que la première vérification (celle de `main.ts`) a fini, réussie ou non. Avant elle, `isChecking`
+ * cache le groupe de droite de l'en-tête et fait attendre le garde de route (`waitForAuthCheck`) : c'est son
+ * seul rôle. Après elle, une relecture de `/api/me` (le retour sur l'onglet, un refus réel) est **silencieuse** :
+ * y toucher ferait disparaître puis réapparaître l'en-tête à chaque retour (#748, R8).
+ */
+let hasCheckedOnce = false
+
+/** La relecture de session finie en vol, partagée par tous les appelants de `useAuth()` : au plus une à la fois. */
+let endedSessionRecheck: Promise<void> | null = null
+
+/**
  * Échéance du jeton D6, mémorisée pour survivre à un rechargement de page :
  * après un F5, checkAuth() ne voit qu'un 403 sur /api/me (palier de base),
  * sans savoir jusqu'à quand. Convenance locale, jamais une source de vérité :
@@ -188,6 +199,15 @@ export interface UseAuthResult {
   isSuperAdmin: ComputedRef<boolean>
   login: (username: string, password: string) => Promise<void>
   logout: () => Promise<void>
+  /**
+   * Relit `/api/me` quand la session est finie, en silence (`isChecking` n'est pas touché). Sans effet hors
+   * session finie. Une seule relecture en vol : un second appel rend la même promesse. Un compte retrouvé
+   * **et** un jeton d'écriture (`AuthRepository.hasWriteToken()`) rétablissent la session ; sinon l'état ne
+   * change pas — un compte sans `XSRF-TOKEN` prendrait un 403 à la première écriture, la session n'est pas
+   * rétablie. Un rejet de `/api/me` (réseau) est avalé : la session reste finie, la personne recommencera au
+   * prochain retour. Branchée une fois sur le `focus` de la fenêtre par `useSessionRecheckOnFocus` (AppLayout).
+   */
+  recheckEndedSession: () => Promise<void>
   checkAuth: () => Promise<void>
 }
 
@@ -218,7 +238,10 @@ export function useAuth(): UseAuthResult {
   }
 
   const checkAuth = async (): Promise<void> => {
-    state.isChecking = true
+    // Silencieuse après la première vérification : voir `hasCheckedOnce`.
+    if (!hasCheckedOnce) {
+      state.isChecking = true
+    }
     try {
       // Lue avant applySession(), qui efface la mémoire : si le serveur
       // confirme le palier de base et qu'une échéance future est connue, la
@@ -230,8 +253,34 @@ export function useAuth(): UseAuthResult {
         scheduleBaseAccessExpiry(rememberedExpiry)
       }
     } finally {
+      hasCheckedOnce = true
       state.isChecking = false
     }
+  }
+
+  const recheckEndedSession = (): Promise<void> => {
+    if (!state.sessionEnded) {
+      return Promise.resolve()
+    }
+    if (null !== endedSessionRecheck) {
+      return endedSessionRecheck
+    }
+
+    endedSessionRecheck = (async () => {
+      try {
+        const session = await repository.me()
+        // Le compte seul ne suffit pas : sans jeton d'écriture la première écriture serait refusée (403 sans CSRF).
+        if (null !== session.user && repository.hasWriteToken()) {
+          applySession(session)
+        }
+      } catch {
+        // Le réseau ne répond pas : la session reste finie, rien n'est annoncé.
+      } finally {
+        endedSessionRecheck = null
+      }
+    })()
+
+    return endedSessionRecheck
   }
 
   return {
@@ -244,6 +293,7 @@ export function useAuth(): UseAuthResult {
     isSuperAdmin: computed(() => hasRole(state.user, ROLE_SUPER)),
     login,
     logout,
+    recheckEndedSession,
     checkAuth,
   }
 }

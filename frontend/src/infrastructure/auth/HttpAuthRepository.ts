@@ -92,4 +92,11 @@ export class HttpAuthRepository implements AuthRepository {
 
     return sessionForUser({ username: body.user.username, roles: body.user.roles })
   }
+
+  /** Un cookie `XSRF-TOKEN` vide (`XSRF-TOKEN=`) compte pour absent : le client n'en enverrait aucun en-tête. */
+  hasWriteToken(): boolean {
+    const token = readCsrfToken()
+
+    return null !== token && '' !== token
+  }
 }

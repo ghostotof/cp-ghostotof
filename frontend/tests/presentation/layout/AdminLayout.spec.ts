@@ -45,6 +45,7 @@ function createStubCvRepository(overrides: Partial<CvRepository> = {}): CvReposi
 const authRepository: AuthRepository = {
   login: async () => ({ username: 'super', roles: ['ROLE_SUPER', 'ROLE_USER'] }),
   logout: async () => undefined,
+  hasWriteToken: () => true,
   me: async () => sessionFor(null),
 }
 

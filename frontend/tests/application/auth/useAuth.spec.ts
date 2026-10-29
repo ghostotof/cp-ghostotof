@@ -4,13 +4,14 @@ import { defineComponent, h } from 'vue'
 import { AUTH_REPOSITORY, authState, markBaseAccessExpired, markBaseAccessGranted, markSessionExpired, useAuth } from '../../../src/application/auth/useAuth'
 import type { AuthRepository } from '../../../src/domain/auth/repositories/AuthRepository'
 import type { AuthenticatedUser } from '../../../src/domain/auth/entities/AuthenticatedUser'
-import { BASE_ACCESS_SESSION } from '../../../src/domain/auth/entities/AuthSession'
+import { BASE_ACCESS_SESSION, type AuthSession } from '../../../src/domain/auth/entities/AuthSession'
 import { sessionFor } from '../../support/authSession'
 
 function createStubRepository(overrides: Partial<AuthRepository> = {}): AuthRepository {
   return {
     login: vi.fn(async () => ({ username: 'jane', roles: ['ROLE_USER'] }) satisfies AuthenticatedUser),
     logout: vi.fn(async () => undefined),
+    hasWriteToken: () => true,
     me: vi.fn(async () => sessionFor(null)),
     ...overrides,
   }
@@ -170,6 +171,122 @@ describe('useAuth', () => {
       await auth.checkAuth()
 
       expect(auth.hasSessionEnded.value).toBe(false)
+    })
+  })
+
+  describe("relecture silencieuse de la session (#748, R8)", () => {
+    /** Un `me()` dont la réponse est tenue : le test regarde l'état pendant que la relecture est en vol. */
+    function deferredMe(): { me: () => Promise<AuthSession>; settle: (session: AuthSession) => void } {
+      let settle: (session: AuthSession) => void = () => undefined
+      const pending = new Promise<AuthSession>((resolve) => {
+        settle = resolve
+      })
+
+      return { me: () => pending, settle }
+    }
+
+    it("checkAuth() après la première vérification ne remet pas isChecking à vrai : l'en-tête ne clignote pas", async () => {
+      // La première vérification est faite par le beforeEach : isChecking est retombé.
+      expect(authState.isChecking).toBe(false)
+      const { me, settle } = deferredMe()
+      const auth = mountWithComposable(createStubRepository({ me: vi.fn(me) }))
+
+      const pending = auth.checkAuth()
+
+      expect(authState.isChecking).toBe(false)
+      settle(sessionFor(null))
+      await pending
+      expect(authState.isChecking).toBe(false)
+    })
+
+    it("un compte retrouvé avec son jeton d'écriture rétablit la session", async () => {
+      const repository = createStubRepository({ me: vi.fn(async () => sessionFor({ username: 'jane', roles: ['ROLE_TRUSTED', 'ROLE_USER'] })) })
+      const auth = mountWithComposable(repository)
+      markSessionExpired()
+
+      await auth.recheckEndedSession()
+
+      expect(auth.hasSessionEnded.value).toBe(false)
+      expect(auth.user.value?.username).toBe('jane')
+      expect(auth.tier.value).toBe('trusted')
+    })
+
+    it('un compte retrouvé sans XSRF-TOKEN : la session reste finie, rien ne dit « rétablie »', async () => {
+      const repository = createStubRepository({
+        me: vi.fn(async () => sessionFor({ username: 'jane', roles: ['ROLE_TRUSTED', 'ROLE_USER'] })),
+        hasWriteToken: () => false,
+      })
+      const auth = mountWithComposable(repository)
+      markSessionExpired()
+
+      await auth.recheckEndedSession()
+
+      expect(repository.me).toHaveBeenCalledTimes(1)
+      expect(auth.hasSessionEnded.value).toBe(true)
+      expect(auth.user.value).toBeNull()
+      expect(auth.tier.value).toBe('anonymous')
+    })
+
+    it("hors session finie, aucune relecture", async () => {
+      const repository = createStubRepository()
+      const auth = mountWithComposable(repository)
+      await auth.login('jane', 'password')
+
+      await auth.recheckEndedSession()
+
+      expect(repository.me).not.toHaveBeenCalled()
+    })
+
+    it('deux appels rapprochés : une seule relecture en vol', async () => {
+      const { me, settle } = deferredMe()
+      const repository = createStubRepository({ me: vi.fn(me) })
+      const auth = mountWithComposable(repository)
+      markSessionExpired()
+
+      const first = auth.recheckEndedSession()
+      const second = auth.recheckEndedSession()
+      settle(sessionFor({ username: 'jane', roles: ['ROLE_TRUSTED', 'ROLE_USER'] }))
+      await Promise.all([first, second])
+
+      expect(repository.me).toHaveBeenCalledTimes(1)
+      expect(auth.hasSessionEnded.value).toBe(false)
+    })
+
+    it("une relecture terminée libère la suivante : un nouveau retour relit", async () => {
+      const repository = createStubRepository()
+      const auth = mountWithComposable(repository)
+      markSessionExpired()
+
+      await auth.recheckEndedSession()
+      await auth.recheckEndedSession()
+
+      expect(repository.me).toHaveBeenCalledTimes(2)
+    })
+
+    it('une panne réseau laisse la session finie, sans rejet', async () => {
+      const repository = createStubRepository({
+        me: vi.fn(async () => {
+          throw new Error('réseau')
+        }),
+      })
+      const auth = mountWithComposable(repository)
+      markSessionExpired()
+
+      await expect(auth.recheckEndedSession()).resolves.toBeUndefined()
+
+      expect(auth.hasSessionEnded.value).toBe(true)
+    })
+
+    it("la relecture ne touche pas à isChecking : le groupe de droite de l'en-tête reste rendu", async () => {
+      const { me, settle } = deferredMe()
+      const auth = mountWithComposable(createStubRepository({ me: vi.fn(me) }))
+      markSessionExpired()
+
+      const pending = auth.recheckEndedSession()
+
+      expect(authState.isChecking).toBe(false)
+      settle(sessionFor(null))
+      await pending
     })
   })
 

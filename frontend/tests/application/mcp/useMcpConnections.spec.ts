@@ -54,6 +54,7 @@ async function signInTrusted(): Promise<void> {
           [AUTH_REPOSITORY as symbol]: {
             login: vi.fn(),
             logout: vi.fn(),
+            hasWriteToken: () => true,
             me: vi.fn(async () => sessionFor({ username: 'jane', roles: ['ROLE_USER', 'ROLE_TRUSTED'] })),
           },
         },
@@ -66,7 +67,7 @@ async function signInTrusted(): Promise<void> {
 
 function mountComposable(repository: McpConnectionsRepository) {
   me = vi.fn(async () => BASE_ACCESS_SESSION)
-  const authRepository: AuthRepository = { login: vi.fn(), logout: vi.fn(), me }
+  const authRepository: AuthRepository = { login: vi.fn(), logout: vi.fn(), hasWriteToken: () => true, me }
   let captured: ReturnType<typeof useMcpConnections> | undefined
   const Probe = defineComponent({
     setup() {
@@ -186,6 +187,39 @@ describe('useMcpConnections', () => {
     await connections.load()
     expect(connections.status.value).toBe('ready')
     expect(connections.refusal.value).toBeNull()
+  })
+
+  // R8 (#748) : le retour de la session est le signal qui relance la lecture que la session finie avait interrompue.
+  it('au retour de la session, la liste se relit et le refus tombe', async () => {
+    const list = vi.fn().mockRejectedValueOnce(new SessionEndedError()).mockResolvedValueOnce(listOf([A]))
+    const connections = mountComposable({ list, revoke: vi.fn() })
+    await connections.load()
+    expect(connections.refusal.value).toBe('session-ended')
+    expect(list).toHaveBeenCalledTimes(1)
+
+    await signInTrusted()
+    await flushPromises()
+
+    expect(list).toHaveBeenCalledTimes(2)
+    expect(connections.status.value).toBe('ready')
+    expect(connections.connections.value).toEqual([A])
+    expect(connections.refusal.value).toBeNull()
+  })
+
+  it("au retour de la session, un refus réel n'est pas relu : la même requête aurait le même verdict", async () => {
+    await signInTrusted()
+    const list = vi.fn().mockRejectedValue(new AccessForbiddenError())
+    const connections = mountComposable({ list, revoke: vi.fn() })
+    await connections.load()
+    await flushPromises()
+    markSessionExpired()
+    await flushPromises()
+
+    await signInTrusted()
+    await flushPromises()
+
+    expect(list).toHaveBeenCalledTimes(1)
+    expect(connections.refusal.value).toBe('forbidden')
   })
 
   it('une session expirée pendant la révocation est dite à la page aussi', async () => {

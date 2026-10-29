@@ -20,4 +20,13 @@ export interface AuthRepository {
    * pas confondre avec « anonyme ».
    */
   me(): Promise<AuthSession>
+
+  /**
+   * Vrai quand le navigateur détient le jeton d'écriture (le cookie `XSRF-TOKEN`, non vide) : sans lui, la
+   * première écriture part sans en-tête CSRF et prend un 403, lu « session finie ». Une session que `me()` dit
+   * revenue mais qui n'a pas ce jeton (le `BEARER`, persistant, a survécu à un navigateur fermé qui a jeté le
+   * cookie de session) n'est donc pas une session rétablie (#748, R8). L'application ne lit pas un cookie :
+   * elle le demande à ce port.
+   */
+  hasWriteToken(): boolean
 }

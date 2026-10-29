@@ -14,6 +14,7 @@ async function signIn(user: AuthenticatedUser): Promise<void> {
   const repository: AuthRepository = {
     login: async () => user,
     logout: async () => undefined,
+    hasWriteToken: () => true,
     me: async () => sessionFor(user),
   }
   const Probe = defineComponent({

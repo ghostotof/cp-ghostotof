@@ -97,7 +97,7 @@ async function mountPage(options: Options = {}): Promise<Harness> {
   const repository = { describe: describeRequest, decide } as unknown as OAuthConsentRepository
   // Un refus réel relit /api/me (`checkAuth`) : le compte y est toujours de confiance, la session ne bouge pas.
   const me = vi.fn(async () => sessionFor({ username: 'guest', roles: ['ROLE_USER', 'ROLE_TRUSTED'] }))
-  const authRepository: AuthRepository = { login: vi.fn(), logout: vi.fn(), me }
+  const authRepository: AuthRepository = { login: vi.fn(), logout: vi.fn(), hasWriteToken: () => true, me }
 
   const i18n = createAppI18n()
   i18n.global.locale.value = locale
@@ -180,6 +180,7 @@ async function primeTrustedSession(): Promise<void> {
   const repository: AuthRepository = {
     login: vi.fn(),
     logout: vi.fn(),
+    hasWriteToken: () => true,
     me: vi.fn(async () => sessionFor({ username: 'guest', roles: ['ROLE_USER', 'ROLE_TRUSTED'] })),
   }
   const Probe = defineComponent({

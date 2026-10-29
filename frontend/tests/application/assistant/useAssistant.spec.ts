@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { defineComponent, h } from 'vue'
 import { ASSISTANT_REPOSITORY, useAssistant } from '../../../src/application/assistant/useAssistant'
-import { AUTH_REPOSITORY, useAuth } from '../../../src/application/auth/useAuth'
+import { AUTH_REPOSITORY, markSessionExpired, useAuth } from '../../../src/application/auth/useAuth'
 import { AssistantError } from '../../../src/domain/assistant/errors/AssistantError'
 import type { AssistantRepository } from '../../../src/domain/assistant/repositories/AssistantRepository'
 import type { AuthRepository } from '../../../src/domain/auth/repositories/AuthRepository'
@@ -41,6 +41,7 @@ function setup(answer: AnswerFn, authRepo?: AuthRepository) {
   const authRepository: AuthRepository = authRepo ?? {
     login: vi.fn(async () => ({ username: 'jane', roles: ['ROLE_USER', 'ROLE_TRUSTED'] })),
     logout: vi.fn(async () => undefined),
+    hasWriteToken: () => true,
     me: vi.fn(async () => sessionFor(null)),
   }
   const wrapper = mount(Probe, {
@@ -201,7 +202,7 @@ describe('useAssistant', () => {
       async () => {
         throw new AssistantError('forbidden')
       },
-      { login: vi.fn(async () => ({ username: 'jane', roles: ['ROLE_USER', 'ROLE_TRUSTED'] })), logout: vi.fn(), me },
+      { login: vi.fn(async () => ({ username: 'jane', roles: ['ROLE_USER', 'ROLE_TRUSTED'] })), logout: vi.fn(), hasWriteToken: () => true, me },
     )
     await auth.login('jane', 'password')
     expect(auth.hasSessionEnded.value).toBe(false)
@@ -224,7 +225,7 @@ describe('useAssistant', () => {
       async () => {
         throw new AssistantError('forbidden')
       },
-      { login: vi.fn(async () => ({ username: 'jane', roles: ['ROLE_USER', 'ROLE_TRUSTED'] })), logout: vi.fn(), me },
+      { login: vi.fn(async () => ({ username: 'jane', roles: ['ROLE_USER', 'ROLE_TRUSTED'] })), logout: vi.fn(), hasWriteToken: () => true, me },
     )
     await auth.login('jane', 'password')
     expect(auth.tier.value).toBe('trusted')
@@ -245,7 +246,7 @@ describe('useAssistant', () => {
       async () => {
         throw new AssistantError('forbidden')
       },
-      { login: vi.fn(), logout: vi.fn(), me },
+      { login: vi.fn(), logout: vi.fn(), hasWriteToken: () => true, me },
     )
 
     assistant.draft.value = 'q'
@@ -263,7 +264,7 @@ describe('useAssistant', () => {
       async () => {
         throw new AssistantError('unauthenticated')
       },
-      { login: vi.fn(), logout: vi.fn(), me },
+      { login: vi.fn(), logout: vi.fn(), hasWriteToken: () => true, me },
     )
 
     assistant.draft.value = 'q'
@@ -271,6 +272,42 @@ describe('useAssistant', () => {
     await flushPromises()
 
     expect(me).not.toHaveBeenCalled()
+  })
+
+  // R8 (#748) : l'erreur de session n'a plus lieu d'être quand la session revient ; la saisie, elle, reste.
+  it("au retour de la session, l'erreur de session s'efface et le brouillon reste", async () => {
+    const { assistant, auth } = setup(async () => {
+      throw new AssistantError('unauthenticated')
+    })
+    await auth.login('jane', 'password')
+    assistant.draft.value = 'ma question'
+    await assistant.send('fr')
+    expect(assistant.state.value).toBe('error')
+    expect(assistant.error.value?.reason).toBe('unauthenticated')
+    expect(auth.hasSessionEnded.value).toBe(true)
+
+    await auth.login('jane', 'password')
+    await flushPromises()
+
+    expect(auth.hasSessionEnded.value).toBe(false)
+    expect(assistant.error.value).toBeNull()
+    expect(assistant.state.value).toBe('idle')
+    expect(assistant.draft.value).toBe('ma question')
+  })
+
+  it("au retour de la session, une autre erreur n'est pas effacée", async () => {
+    const { assistant, auth } = setup(async () => {
+      throw new AssistantError('unavailable')
+    })
+    assistant.draft.value = 'q'
+    await assistant.send('fr')
+    markSessionExpired()
+
+    await auth.login('jane', 'password')
+    await flushPromises()
+
+    expect(assistant.error.value?.reason).toBe('unavailable')
+    expect(assistant.state.value).toBe('error')
   })
 
   it("une autre erreur ne touche pas à la session", async () => {

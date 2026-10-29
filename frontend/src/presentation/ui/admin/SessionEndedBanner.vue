@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
+import { ref, useTemplateRef, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAuth } from '../../../application/auth/useAuth'
@@ -22,10 +22,9 @@ import SignInAgainLink from '../SignInAgainLink.vue'
  *   dans l'ordre de lecture, atteignable au clavier.
  * - Le lien est `SignInAgainLink` : un **autre onglet** (dans le même, la page serait quittée
  *   et la saisie perdue), `redirect` y ramène, l'ouverture est dite au texte et à l'œil.
- * - Au retour sur cet onglet (`focus`), tant que la session est finie, la session
- *   est relue : un compte retrouvé efface le bandeau, et « Enregistrer » refonctionne
- *   (le jeton CSRF est relu du cookie à chaque appel). Sinon le bandeau resterait
- *   affiché après la reconnexion.
+ * - **Il n'écoute pas le `focus`** (#748, R8) : la revérification au retour sur l'onglet est celle
+ *   d'`AppLayout` (`useSessionRecheckOnFocus`), la même pour toutes les pages protégées ; un compte retrouvé
+ *   avec son jeton d'écriture fait retomber `hasSessionEnded`, ce qui efface le bandeau et annonce le retour.
  * - **Collant sous l'en-tête** (#748, constat 7) : sur une page longue, le bandeau défilait hors de
  *   l'écran et la personne ne savait plus pourquoi « Enregistrer » ne répondait pas. Sa hauteur est
  *   publiée (`--admin-notice-height`) pour que `scroll-padding-top` (style.css) garde le champ focalisé
@@ -37,7 +36,7 @@ import SignInAgainLink from '../SignInAgainLink.vue'
  */
 const { t } = useI18n()
 const route = useRoute()
-const { hasSessionEnded, checkAuth } = useAuth()
+const { hasSessionEnded } = useAuth()
 
 // Hauteur du bandeau, publiée tant qu'il est affiché (retirée au `v-if` faux).
 const banner = useTemplateRef<HTMLElement>('banner')
@@ -58,26 +57,6 @@ watch(
     hasRestored.value = false
   },
 )
-
-async function recheckSession(): Promise<void> {
-  if (!hasSessionEnded.value) {
-    return
-  }
-
-  try {
-    await checkAuth()
-  } catch {
-    // Le réseau ne répond pas : le bandeau reste, la personne peut recommencer au prochain retour.
-  }
-}
-
-onMounted(() => {
-  window.addEventListener('focus', recheckSession)
-})
-
-onBeforeUnmount(() => {
-  window.removeEventListener('focus', recheckSession)
-})
 </script>
 
 <template>

@@ -42,7 +42,7 @@ function mountPage(
   locale: 'fr' | 'en' = 'fr',
 ): VueWrapper {
   me = vi.fn(async () => BASE_ACCESS_SESSION)
-  const authRepository: AuthRepository = { login: vi.fn(), logout: vi.fn(), me }
+  const authRepository: AuthRepository = { login: vi.fn(), logout: vi.fn(), hasWriteToken: () => true, me }
   const i18n = createAppI18n()
   i18n.global.locale.value = locale
   const router = createRouter({

@@ -22,6 +22,7 @@ const SUPER = { username: 'super', roles: ['ROLE_SUPER', 'ROLE_USER'] }
 const authRepository: AuthRepository = {
   login: async () => SUPER,
   logout: async () => undefined,
+  hasWriteToken: () => true,
   me: async () => sessionFor(null),
 }
 

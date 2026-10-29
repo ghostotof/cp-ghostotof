@@ -55,6 +55,7 @@ function createStubAuthRepository(user: AuthenticatedUser | null): AuthRepositor
   return {
     login: vi.fn(async () => user ?? { username: 'super', roles: ['ROLE_SUPER', 'ROLE_USER'] }),
     logout: vi.fn(async () => undefined),
+    hasWriteToken: () => true,
     me: vi.fn(async () => sessionFor(user)),
   }
 }

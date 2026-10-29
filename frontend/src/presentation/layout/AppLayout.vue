@@ -4,6 +4,7 @@ import { usePortfolioContent } from '../../application/portfolio/usePortfolioCon
 import AppHeader from './AppHeader.vue'
 import AppFooter from './AppFooter.vue'
 import CookieNotice from './CookieNotice.vue'
+import { useSessionRecheckOnFocus } from './useSessionRecheckOnFocus'
 
 /**
  * Chrome commun à toutes les pages (en-tête + navigation + pied de page). Rendu
@@ -12,6 +13,9 @@ import CookieNotice from './CookieNotice.vue'
  */
 const { siteIdentity, navigationLinks } = usePortfolioContent()
 const { t } = useI18n()
+
+// Au retour sur l'onglet, une session finie est relue — pour toutes les pages protégées (#748, R8).
+useSessionRecheckOnFocus()
 </script>
 
 <template>

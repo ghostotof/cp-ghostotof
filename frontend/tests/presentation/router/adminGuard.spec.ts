@@ -20,6 +20,7 @@ function createStubRepository(user: AuthenticatedUser | null): AuthRepository {
   return {
     login: vi.fn(async () => user ?? { username: 'jane', roles: ['ROLE_USER'] }),
     logout: vi.fn(async () => undefined),
+    hasWriteToken: () => true,
     me: vi.fn(async () => sessionFor(user)),
   }
 }
@@ -116,6 +117,7 @@ describe('router — garde /admin (ROLE_SUPER)', () => {
     const repository: AuthRepository = {
       login: vi.fn(),
       logout: vi.fn(),
+      hasWriteToken: () => true,
       me: vi.fn(() => new Promise<AuthSession>((resolve) => (resolveMe = resolve))),
     }
     const Probe = defineComponent({
@@ -157,6 +159,7 @@ describe('router — garde /assistant (ROLE_TRUSTED ou ROLE_SUPER)', () => {
     const repository: AuthRepository = {
       login: vi.fn(),
       logout: vi.fn(),
+      hasWriteToken: () => true,
       me: vi.fn(async () => BASE_ACCESS_SESSION),
     }
     const Probe = defineComponent({
@@ -205,6 +208,7 @@ describe('router — garde /assistant (ROLE_TRUSTED ou ROLE_SUPER)', () => {
     const repository: AuthRepository = {
       login: vi.fn(),
       logout: vi.fn(),
+      hasWriteToken: () => true,
       me: vi.fn(() => new Promise<AuthSession>((resolve) => (resolveMe = resolve))),
     }
     const Probe = defineComponent({
@@ -303,6 +307,7 @@ describe('router — garde /oauth/consent (ROLE_TRUSTED ou ROLE_SUPER, #647)', (
     const repository: AuthRepository = {
       login: vi.fn(),
       logout: vi.fn(),
+      hasWriteToken: () => true,
       me: vi.fn(async () => BASE_ACCESS_SESSION),
     }
     const Probe = defineComponent({
@@ -358,6 +363,7 @@ describe('router — garde /mcp-connections (ROLE_TRUSTED ou ROLE_SUPER, #650)',
     const repository: AuthRepository = {
       login: vi.fn(),
       logout: vi.fn(),
+      hasWriteToken: () => true,
       me: vi.fn(async () => BASE_ACCESS_SESSION),
     }
     const Probe = defineComponent({

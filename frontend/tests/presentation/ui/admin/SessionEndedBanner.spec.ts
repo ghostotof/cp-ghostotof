@@ -16,6 +16,7 @@ function createRepository(me: () => Promise<AuthSession>): AuthRepository {
   return {
     login: vi.fn(async () => ({ username: 'super', roles: ['ROLE_SUPER', 'ROLE_USER'] })),
     logout: vi.fn(async () => undefined),
+    hasWriteToken: () => true,
     me: vi.fn(me),
   }
 }
@@ -26,6 +27,18 @@ async function resetToSignedIn(repository: AuthRepository): Promise<void> {
   const probe = mount(Probe, { global: { provide: { [AUTH_REPOSITORY as symbol]: repository } } })
   await probe.vm.auth.login('super', 'x')
   probe.unmount()
+}
+
+/**
+ * Le retour de la session, tel que `AppLayout` le provoque au `focus` de la fenêtre (#748, R8) : le bandeau n'a plus
+ * d'écouteur, il ne fait que suivre l'état. Ces tests déclenchent donc le retour par la relecture partagée.
+ */
+async function recheck(repository: AuthRepository): Promise<void> {
+  const Probe = defineComponent({ setup: () => ({ auth: useAuth() }), template: '<div />' })
+  const probe = mount(Probe, { global: { provide: { [AUTH_REPOSITORY as symbol]: repository } } })
+  await probe.vm.auth.recheckEndedSession()
+  probe.unmount()
+  await flushPromises()
 }
 
 async function mountBanner(path: string, repository: AuthRepository, locale: 'fr' | 'en' = 'fr'): Promise<VueWrapper> {
@@ -112,7 +125,7 @@ describe('SessionEndedBanner (#650, S2)', () => {
     wrapper.unmount()
   })
 
-  it("au retour sur l'onglet, relit la session : un compte retrouvé efface le bandeau", async () => {
+  it("quand la relecture au retour retrouve un compte, le bandeau s'efface", async () => {
     let signedIn = false
     const repository = createRepository(async () =>
       sessionFor(signedIn ? { username: 'super', roles: ['ROLE_SUPER', 'ROLE_USER'] } : null),
@@ -122,41 +135,29 @@ describe('SessionEndedBanner (#650, S2)', () => {
     markSessionExpired()
     await flushPromises()
 
-    // Pas encore reconnecté : le retour sur l'onglet relit, et le bandeau reste.
-    window.dispatchEvent(new Event('focus'))
-    await flushPromises()
+    // Pas encore reconnecté : la relecture au retour sur l'onglet laisse le bandeau.
+    await recheck(repository)
     expect(wrapper.find('[role="alert"]').exists()).toBe(true)
 
     signedIn = true
-    window.dispatchEvent(new Event('focus'))
-    await flushPromises()
+    await recheck(repository)
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
     wrapper.unmount()
   })
 
-  it("ne relit pas la session au retour sur l'onglet tant que la session n'a pas pris fin", async () => {
-    const repository = createRepository(async () => sessionFor(null))
-    await resetToSignedIn(repository)
-    const wrapper = await mountBanner('/fr/admin/case-studies', repository)
-
-    window.dispatchEvent(new Event('focus'))
-    await flushPromises()
-
-    expect(repository.me).not.toHaveBeenCalled()
-    wrapper.unmount()
-  })
-
-  it("retire son écouteur au démontage", async () => {
+  it("n'écoute plus le focus lui-même : la revérification est celle d'AppLayout, une seule", async () => {
     const repository = createRepository(async () => sessionFor(null))
     await resetToSignedIn(repository)
     const wrapper = await mountBanner('/fr/admin/case-studies', repository)
     markSessionExpired()
-    wrapper.unmount()
+    await flushPromises()
 
     window.dispatchEvent(new Event('focus'))
     await flushPromises()
 
     expect(repository.me).not.toHaveBeenCalled()
+    expect(wrapper.find('[role="alert"]').exists()).toBe(true)
+    wrapper.unmount()
   })
 
   it("le bandeau est collant sous l'en-tête : l'alerte porte la classe qui le pose", async () => {
@@ -190,8 +191,7 @@ describe('SessionEndedBanner (#650, S2)', () => {
     await flushPromises()
     const statusBefore = wrapper.get('[role="status"]').element
 
-    window.dispatchEvent(new Event('focus'))
-    await flushPromises()
+    await recheck(repository)
 
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
     const status = wrapper.get('[role="status"]')
@@ -209,8 +209,7 @@ describe('SessionEndedBanner (#650, S2)', () => {
     markSessionExpired()
     await flushPromises()
 
-    window.dispatchEvent(new Event('focus'))
-    await flushPromises()
+    await recheck(repository)
 
     expect(wrapper.get('[role="status"]').text()).toBe('Session restored, you can save again.')
     wrapper.unmount()
@@ -222,8 +221,7 @@ describe('SessionEndedBanner (#650, S2)', () => {
     const wrapper = await mountBanner('/fr/admin/case-studies', repository)
     markSessionExpired()
     await flushPromises()
-    window.dispatchEvent(new Event('focus'))
-    await flushPromises()
+    await recheck(repository)
     expect(wrapper.get('[role="status"]').text()).not.toBe('')
 
     await wrapper.vm.$router.push('/fr/admin/technologies')
@@ -262,8 +260,7 @@ describe('SessionEndedBanner (#650, S2)', () => {
     const wrapper = await mountBanner('/fr/admin/case-studies', repository)
     markSessionExpired()
     await flushPromises()
-    window.dispatchEvent(new Event('focus'))
-    await flushPromises()
+    await recheck(repository)
 
     await expectNoAccessibilityViolation(wrapper)
     wrapper.unmount()

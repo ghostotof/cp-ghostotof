@@ -15,6 +15,7 @@ export async function signInAgain(): Promise<void> {
   const repository: AuthRepository = {
     login: vi.fn(async () => ({ username: 'super', roles: ['ROLE_SUPER', 'ROLE_USER'] })),
     logout: vi.fn(async () => undefined),
+    hasWriteToken: () => true,
     me: vi.fn(async () => {
       throw new Error('inutilisé')
     }),

@@ -119,3 +119,34 @@ describe('HttpAuthRepository.login()', () => {
     await expect(new HttpAuthRepository('https://api.example.test').login(username, 'wrong')).rejects.toMatchObject({ retryAfterSeconds: null })
   })
 })
+
+/**
+ * `hasWriteToken()` (#748, R8) : la session finie ne se rétablit que si le jeton d'écriture est là. Un compte
+ * retrouvé par `/api/me` (le `BEARER`, httpOnly, vaut encore) sans `XSRF-TOKEN` prendrait un 403 à la première
+ * écriture, lu « session finie » : l'annonce « rétablie » mentirait, et la boucle recommencerait.
+ */
+describe('HttpAuthRepository.hasWriteToken()', () => {
+  const clearCsrfCookie = (): void => {
+    document.cookie = 'XSRF-TOKEN=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/'
+  }
+
+  afterEach(clearCsrfCookie)
+
+  it('vrai quand un cookie XSRF-TOKEN non vide est lisible', () => {
+    document.cookie = 'XSRF-TOKEN=jeton-de-test; path=/'
+
+    expect(new HttpAuthRepository('https://api.example.test').hasWriteToken()).toBe(true)
+  })
+
+  it('faux sans cookie XSRF-TOKEN', () => {
+    clearCsrfCookie()
+
+    expect(new HttpAuthRepository('https://api.example.test').hasWriteToken()).toBe(false)
+  })
+
+  it('faux avec un cookie XSRF-TOKEN vide : le client n\'enverrait aucun en-tête', () => {
+    document.cookie = 'XSRF-TOKEN=; path=/'
+
+    expect(new HttpAuthRepository('https://api.example.test').hasWriteToken()).toBe(false)
+  })
+})

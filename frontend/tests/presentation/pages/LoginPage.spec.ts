@@ -17,6 +17,7 @@ function createStubRepository(overrides: Partial<AuthRepository> = {}): AuthRepo
   return {
     login: vi.fn(async () => ({ username: 'jane', roles: ['ROLE_USER'] })),
     logout: vi.fn(async () => undefined),
+    hasWriteToken: () => true,
     me: vi.fn(async () => sessionFor(null)),
     ...overrides,
   }

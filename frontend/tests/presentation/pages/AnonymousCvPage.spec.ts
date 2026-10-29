@@ -70,6 +70,7 @@ async function primeAnonymous(): Promise<void> {
         [AUTH_REPOSITORY as symbol]: {
           login: vi.fn(async () => ({ username: 'jane', roles: ['ROLE_USER'] })),
           logout: vi.fn(async () => undefined),
+          hasWriteToken: () => true,
           me: vi.fn(async () => sessionFor(null)),
         },
       },

@@ -1,10 +1,10 @@
-import { inject, readonly, ref, shallowRef, type DeepReadonly, type InjectionKey, type Ref } from 'vue'
+import { inject, readonly, ref, shallowRef, watch, type DeepReadonly, type InjectionKey, type Ref } from 'vue'
 import type { McpConnectionSummary } from '../../domain/mcp/entities/McpConnection'
 import type { McpConnectionsRepository } from '../../domain/mcp/repositories/McpConnectionsRepository'
 import { McpConnectionNotFoundError } from '../../domain/mcp/errors/McpConnectionNotFoundError'
 import { AccessForbiddenError } from '../../domain/auth/errors/AccessForbiddenError'
 import { SessionEndedError } from '../../domain/auth/errors/SessionEndedError'
-import { markSessionExpired, useAuth } from '../auth/useAuth'
+import { authState, markSessionExpired, useAuth } from '../auth/useAuth'
 
 export const MCP_CONNECTIONS_REPOSITORY: InjectionKey<McpConnectionsRepository> = Symbol('McpConnectionsRepository')
 
@@ -164,6 +164,18 @@ export function useMcpConnections(): UseMcpConnectionsResult {
       revokingId.value = null
     }
   }
+
+  // Au retour de la session (`sessionEnded` vrai → faux : un compte est revenu, et avec son jeton d'écriture), la
+  // liste que la session finie avait refusée se relit (#748, R8). Un refus réel ne se relit pas : la même
+  // requête aurait le même verdict. Rétablir la session est l'affaire de `useSessionRecheckOnFocus`, pas d'ici.
+  watch(
+    () => authState.sessionEnded,
+    (isEnded, wasEnded) => {
+      if (!isEnded && wasEnded && 'session-ended' === refusal.value) {
+        void load()
+      }
+    },
+  )
 
   return {
     status: readonly(status),
