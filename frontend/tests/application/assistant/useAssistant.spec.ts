@@ -177,17 +177,37 @@ describe('useAssistant', () => {
     expect(assistant.error.value?.reason).toBe('unknown')
   })
 
-  it.each(['unauthenticated', 'forbidden'] as const)('%s : la session nominative est révoquée', async (reason) => {
+  // `login` referme l'annonce de session finie (état d'auth partagé, singleton de module) : chaque
+  // test des deux suivants repart d'une session ouverte, sans ordre entre eux.
+  it('unauthenticated : la session est marquée expirée', async () => {
     const { assistant, auth } = setup(async () => {
-      throw new AssistantError(reason)
+      throw new AssistantError('unauthenticated')
     })
     await auth.login('jane', 'password')
     expect(auth.tier.value).toBe('trusted')
+    expect(auth.hasSessionEnded.value).toBe(false)
 
     assistant.draft.value = 'q'
     await assistant.send('fr')
 
     expect(auth.tier.value).toBe('anonymous')
+    expect(auth.hasSessionEnded.value).toBe(true)
+  })
+
+  it("forbidden : la session n'est pas marquée expirée", async () => {
+    const { assistant, auth } = setup(async () => {
+      throw new AssistantError('forbidden')
+    })
+    await auth.login('jane', 'password')
+    expect(auth.hasSessionEnded.value).toBe(false)
+
+    assistant.draft.value = 'q'
+    await assistant.send('fr')
+
+    expect(assistant.error.value?.reason).toBe('forbidden')
+    expect(auth.tier.value).toBe('trusted')
+    expect(auth.user.value).not.toBeNull()
+    expect(auth.hasSessionEnded.value).toBe(false)
   })
 
   it("une autre erreur ne touche pas à la session", async () => {

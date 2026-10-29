@@ -4,6 +4,7 @@ import type { AssistantRepository } from '../../domain/assistant/repositories/As
 import { AssistantError, type AssistantErrorReason } from '../../domain/assistant/errors/AssistantError'
 import { readCsrfToken } from '../auth/csrfCookie'
 import { retryAfterSeconds } from '../http/retryAfterSeconds'
+import { endsTheSession } from '../http/sessionEnded'
 import { ServerEventParser, type ServerEvent } from './serverEvents'
 
 const PATH = '/api/assistant/answers'
@@ -55,7 +56,9 @@ export class HttpAssistantRepository implements AssistantRepository {
     }
 
     if (!response.ok) {
-      throw this.httpError(response)
+      // Une écriture partie sans jeton CSRF (cookie absent ou vide) : le client n'a pas posé
+      // l'en-tête, et un 403 est alors le refus CSRF d'une session finie (`endsTheSession`).
+      throw this.httpError(response, !csrfToken)
     }
     if (response.body === null) {
       throw new AssistantError('network')
@@ -133,16 +136,19 @@ export class HttpAssistantRepository implements AssistantRepository {
     return isAbortError(error) ? error : new AssistantError('network')
   }
 
-  private httpError(response: Response): AssistantError {
-    const reason = this.reasonFor(response.status)
+  private httpError(response: Response, sentWithoutCsrfToken: boolean): AssistantError {
+    const reason = this.reasonFor(response.status, sentWithoutCsrfToken)
 
     return new AssistantError(reason, reason === 'rate-limited' ? retryAfterSeconds(response) : null)
   }
 
-  private reasonFor(status: number): AssistantErrorReason {
+  private reasonFor(status: number, sentWithoutCsrfToken: boolean): AssistantErrorReason {
+    // La règle commune passe avant le statut : un 401, ou un 403 parti sans jeton, est une
+    // session finie ; tout autre 403 (le jeton était là) est un refus réel (#748, #732 point 4).
+    if (endsTheSession(status, sentWithoutCsrfToken)) {
+      return 'unauthenticated'
+    }
     switch (status) {
-      case 401:
-        return 'unauthenticated'
       case 403:
         return 'forbidden'
       case 413:

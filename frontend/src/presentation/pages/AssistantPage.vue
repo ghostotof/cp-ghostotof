@@ -15,7 +15,9 @@ const { downloadCv, isDownloading, hasError: hasCvDownloadError } = useCvDownloa
 
 const currentLocale = computed(() => locale.value as Locale)
 const isStreaming = computed(() => 'streaming' === state.value)
-const needsLogin = computed(() => 'unauthenticated' === error.value?.reason || 'forbidden' === error.value?.reason)
+// Le lien ne s'ouvre que pour une session finie : la route `login` accueille un anonyme, mais renvoie
+// à l'accueil une personne encore connectée (un `forbidden` en est une).
+const needsLogin = computed(() => 'unauthenticated' === error.value?.reason)
 
 /** Un message par raison ; le 429 se lit avec ou sans délai (nginx n'en fournit pas). */
 const errorMessage = computed<string>(() => {

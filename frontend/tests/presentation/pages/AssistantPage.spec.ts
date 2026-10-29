@@ -30,7 +30,13 @@ function createControlledRepository(): { repository: AssistantRepository; calls:
   return { repository: { answer } as unknown as AssistantRepository, calls, answer }
 }
 
-function mountPage(repository: AssistantRepository, downloadCv = vi.fn(async () => ({ blob: new Blob(), filename: 'cv.pdf' }))): VueWrapper {
+function mountPage(
+  repository: AssistantRepository,
+  downloadCv = vi.fn(async () => ({ blob: new Blob(), filename: 'cv.pdf' })),
+  locale: 'fr' | 'en' = 'fr',
+): VueWrapper {
+  const i18n = createAppI18n()
+  i18n.global.locale.value = locale
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
@@ -41,7 +47,7 @@ function mountPage(repository: AssistantRepository, downloadCv = vi.fn(async () 
 
   return mount(AssistantPage, {
     global: {
-      plugins: [router, createAppI18n()],
+      plugins: [router, i18n],
       provide: {
         [ASSISTANT_REPOSITORY as symbol]: repository,
         [CV_REPOSITORY as symbol]: { download: downloadCv },
@@ -198,18 +204,6 @@ describe('AssistantPage', () => {
     expect(wrapper.findAll('[role="status"]')).toHaveLength(1)
   })
 
-  it('403 : le message parle d\'une session à rafraîchir', async () => {
-    const { repository, calls } = createControlledRepository()
-    const wrapper = mountPage(repository)
-
-    await type(wrapper, 'Question')
-    await submitWithButton(wrapper)
-    calls[0].reject(new AssistantError('forbidden'))
-    await flushPromises()
-
-    expect(wrapper.find('[role="alert"]').text()).toContain('Votre session ne permet plus d\'utiliser l\'assistant. Reconnectez-vous.')
-  })
-
   it('Entrée pendant une composition IME n\'envoie pas', async () => {
     const { repository, answer } = createControlledRepository()
     const wrapper = mountPage(repository)
@@ -290,8 +284,47 @@ describe('AssistantPage', () => {
     expect(wrapper.findAll('[role="status"]')).toHaveLength(1)
   })
 
+  // Session finie (401, ou 403 sans jeton CSRF) : le lien s'ouvre, la route `login` accueille un anonyme.
+  it.each<['fr' | 'en', string, string]>([
+    ['fr', 'Votre session a expiré.', 'Se reconnecter'],
+    ['en', 'Your session has expired.', 'Sign in again'],
+  ])('session finie (%s) : message et lien « Se reconnecter » avec redirect', async (locale, message, linkText) => {
+    const { repository, calls } = createControlledRepository()
+    const wrapper = mountPage(repository, undefined, locale)
+
+    await type(wrapper, 'Question')
+    await submitWithButton(wrapper)
+    calls[0].reject(new AssistantError('unauthenticated'))
+    await flushPromises()
+
+    const alert = wrapper.find('[role="alert"]')
+    expect(alert.text()).toContain(message)
+    const link = alert.find('a')
+    expect(link.attributes('href')).toBe(`/${locale}/login?redirect=/${locale}/assistant`)
+    expect(link.text()).toBe(linkText)
+  })
+
+  // Refus réel (403 avec jeton) : la session vaut, un lien de reconnexion ne s'ouvrirait même pas.
+  it.each<['fr' | 'en', string]>([
+    ['fr', "Le serveur refuse l'assistant à ce compte : son accès de confiance a peut-être été retiré."],
+    ['en', 'The server refuses the assistant to this account: its trusted access may have been withdrawn.'],
+  ])('refus (%s) : le message dit le refus, sans lien de reconnexion', async (locale, message) => {
+    const { repository, calls } = createControlledRepository()
+    const wrapper = mountPage(repository, undefined, locale)
+
+    await type(wrapper, 'Question')
+    await submitWithButton(wrapper)
+    calls[0].reject(new AssistantError('forbidden'))
+    await flushPromises()
+
+    const alert = wrapper.find('[role="alert"]')
+    expect(alert.text()).toBe(message)
+    expect(alert.find('a').exists()).toBe(false)
+    expect(wrapper.findAll('a').some((a) => (a.attributes('href') ?? '').includes('login'))).toBe(false)
+  })
+
   it.each<AssistantErrorReason>(['unauthenticated', 'forbidden'])(
-    'erreur « %s » : message et lien de reconnexion avec redirect',
+    'erreur « %s » : aucune violation d\'accessibilité détectable',
     async (reason) => {
       const { repository, calls } = createControlledRepository()
       const wrapper = mountPage(repository)
@@ -301,8 +334,7 @@ describe('AssistantPage', () => {
       calls[0].reject(new AssistantError(reason))
       await flushPromises()
 
-      const link = wrapper.find('[role="alert"] a')
-      expect(link.attributes('href')).toBe('/fr/login?redirect=/fr/assistant')
+      await expectNoAccessibilityViolation(wrapper)
     },
   )
 

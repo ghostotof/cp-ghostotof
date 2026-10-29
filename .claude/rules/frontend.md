@@ -60,7 +60,13 @@ The assistant follows the same layered shape without being backoffice content: i
 `infrastructure/assistant/HttpAssistantRepository.ts` (reads the SSE stream with `fetch` + `ReadableStream`,
 incremental parser `serverEvents.ts`) → `application/assistant/useAssistant.ts` (state machine
 `idle|streaming|error`; the sliding window `buildConversationWindow` copies the backend's D6 bounds and counts
-in code points, never `.length`; a 401/403 calls `markSessionExpired()`) →
+in code points, never `.length`; a 401, or a 403 sent without a CSRF token — `endsTheSession`, facts in
+`.claude/rules/frontend-backoffice.md` —, is `unauthenticated` and calls `markSessionExpired()`; a 403 that carried
+its token is a real refusal, `forbidden`: the session stays, the header keeps its tier, and the page says the
+server refuses the assistant to this account, with no sign-in link, which would not even open for a person still
+signed in — #748, #732 point 4; accepted limit: the header of an account stripped of `ROLE_TRUSTED` stays at the
+trusted tier until the next full load, re-reading `/api/me` on `forbidden` was rejected as it would couple the
+assistant's composable to the authentication repository for a rare case) →
 `presentation/pages/AssistantPage.vue`.
 
 The MCP connection slice follows it too (#650): `domain/mcp` → `infrastructure/mcp/HttpMcpConnectionsRepository.ts`
