@@ -21,6 +21,14 @@
   --bs-link-hover-color: #c4b5fd;
 }
 
+/* L'en-tête (sticky-top) et, dans le backoffice, le bandeau de session finie sont collants : sans cette
+   marge, la touche Tab ou une ancre amène l'élément focalisé SOUS eux (WCAG 2.4.11). Les deux hauteurs sont
+   mesurées et publiées en direct par usePublishedHeight (elles changent avec le menu mobile et les alertes) ;
+   absentes, elles valent 0. */
+html {
+  scroll-padding-top: calc(var(--app-header-height, 0px) + var(--admin-notice-height, 0px));
+}
+
 body {
   min-height: 100vh;
 }

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, useTemplateRef } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import type { SiteIdentity } from '../../domain/portfolio/entities/SiteIdentity'
@@ -12,6 +12,7 @@ import { useBaseAccess } from '../../application/baseAccess/useBaseAccess'
 import { useCvDownload } from '../../application/cv/useCvDownload'
 import LocaleSwitcher from '../ui/LocaleSwitcher.vue'
 import AccountMenu from './AccountMenu.vue'
+import { usePublishedHeight } from './usePublishedHeight'
 import IconCircleUser from '~icons/lucide/circle-user'
 import IconZap from '~icons/lucide/zap'
 import IconMenu from '~icons/lucide/menu'
@@ -24,6 +25,11 @@ defineProps<{
 }>()
 
 const isMobileMenuOpen = ref(false)
+
+// L'en-tête est collant : sa hauteur (menu mobile ouvert, alerte) est publiée pour que le bandeau de session
+// finie du backoffice se colle juste dessous et que le défilement réserve sa place (#748, constat 7).
+const header = useTemplateRef<HTMLElement>('header')
+usePublishedHeight(header, '--app-header-height')
 
 /**
  * Sous-menu desktop d'un groupe (issue #70) : même mécanique que le menu
@@ -199,6 +205,7 @@ function navLinkClass(link: NavigationLink) {
 
 <template>
   <header
+    ref="header"
     class="sticky-top border-bottom"
     style="background: rgba(11, 10, 20, 0.85); backdrop-filter: blur(8px)"
   >

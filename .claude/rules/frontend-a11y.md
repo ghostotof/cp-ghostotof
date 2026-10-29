@@ -79,7 +79,12 @@ fixed:
   announced and interrupts, which is what follows a failed « Enregistrer ». **It never takes the focus** (no
   `focus()`): the person may be in the middle of a sentence, and the link sits in the reading order, reachable by
   keyboard. Its link opens a new tab, said in the link text (a visually hidden « (s'ouvre dans un nouvel onglet) »,
-  WCAG 3.2.5). It differs from `LoginPage`'s notice (next bullet) by when it appears: the banner is inserted after
+  WCAG 3.2.5) and shown by an `external-link` icon, `aria-hidden` (#748: the text is hidden, sighted people had
+  nothing). **A region that announces a return exists before its message** (#748): the banner's own
+  `role="status"` is in the DOM from the mount, empty and `visually-hidden`, and only its content changes when the
+  session comes back (« Session rétablie »), because a live region inserted already full may not be announced. The
+  banner is sticky under the header, `scroll-padding-top` keeping the focus out from under both (WCAG 2.4.11,
+  `.claude/rules/frontend-backoffice.md`). It differs from `LoginPage`'s notice (next bullet) by when it appears: the banner is inserted after
   the first render (announced), the notice is present from it (may not be).
 - **A `role="status"` present at first render may not be announced** (`LoginPage`'s « Votre session a pris fin »
   notice, `expired=1`, #650): some screen readers announce a live region only when its content *changes*, and this

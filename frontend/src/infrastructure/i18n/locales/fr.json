@@ -52,7 +52,8 @@
     "sessionEnded": {
       "message": "Votre session a pris fin : ce que vous avez saisi est toujours là, mais l'enregistrement est refusé tant que vous n'êtes pas reconnecté.",
       "signInAgain": "Se reconnecter",
-      "newTab": "(s'ouvre dans un nouvel onglet)"
+      "newTab": "(s'ouvre dans un nouvel onglet)",
+      "restored": "Session rétablie, vous pouvez enregistrer."
     },
     "contentNavigation": "Navigation du contenu",
     "comingSoon": "Cette section sera bientôt disponible.",

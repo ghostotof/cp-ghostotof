@@ -33,6 +33,7 @@ async function mountBanner(path: string, repository: AuthRepository, locale: 'fr
     history: createMemoryHistory(),
     routes: [
       { path: '/:locale(fr|en)/admin/case-studies', name: 'admin-case-studies', component: StubPage },
+      { path: '/:locale(fr|en)/admin/technologies', name: 'admin-technologies', component: StubPage },
       { path: '/:locale(fr|en)/login', name: 'login', component: StubPage },
     ],
   })
@@ -156,6 +157,116 @@ describe('SessionEndedBanner (#650, S2)', () => {
     await flushPromises()
 
     expect(repository.me).not.toHaveBeenCalled()
+  })
+
+  it("le bandeau est collant sous l'en-tête : l'alerte porte la classe qui le pose", async () => {
+    const repository = createRepository(async () => sessionFor(null))
+    await resetToSignedIn(repository)
+    const wrapper = await mountBanner('/fr/admin/case-studies', repository)
+
+    markSessionExpired()
+    await flushPromises()
+
+    expect(wrapper.get('[role="alert"]').classes()).toContain('session-ended-banner')
+    wrapper.unmount()
+  })
+
+  it('une région role="status" existe dès le montage, vide', async () => {
+    const repository = createRepository(async () => sessionFor(null))
+    await resetToSignedIn(repository)
+    const wrapper = await mountBanner('/fr/admin/case-studies', repository)
+
+    const status = wrapper.get('[role="status"]')
+    expect(status.text()).toBe('')
+    expect(status.classes()).toContain('visually-hidden')
+    wrapper.unmount()
+  })
+
+  it("au retour de la session, la région annonce « Session rétablie » et l'alerte disparaît", async () => {
+    const repository = createRepository(async () => sessionFor({ username: 'super', roles: ['ROLE_SUPER', 'ROLE_USER'] }))
+    await resetToSignedIn(repository)
+    const wrapper = await mountBanner('/fr/admin/case-studies', repository)
+    markSessionExpired()
+    await flushPromises()
+    const statusBefore = wrapper.get('[role="status"]').element
+
+    window.dispatchEvent(new Event('focus'))
+    await flushPromises()
+
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    const status = wrapper.get('[role="status"]')
+    // La région est la même que celle du montage : insérée avec son texte, elle risquerait de ne pas être annoncée.
+    expect(status.element).toBe(statusBefore)
+    expect(status.text()).toBe('Session rétablie, vous pouvez enregistrer.')
+    expect(status.classes()).not.toContain('visually-hidden')
+    wrapper.unmount()
+  })
+
+  it('le message de retour est dit dans la langue de la page', async () => {
+    const repository = createRepository(async () => sessionFor({ username: 'super', roles: ['ROLE_SUPER', 'ROLE_USER'] }))
+    await resetToSignedIn(repository)
+    const wrapper = await mountBanner('/en/admin/case-studies', repository, 'en')
+    markSessionExpired()
+    await flushPromises()
+
+    window.dispatchEvent(new Event('focus'))
+    await flushPromises()
+
+    expect(wrapper.get('[role="status"]').text()).toBe('Session restored, you can save again.')
+    wrapper.unmount()
+  })
+
+  it('le message de retour se vide à la navigation suivante', async () => {
+    const repository = createRepository(async () => sessionFor({ username: 'super', roles: ['ROLE_SUPER', 'ROLE_USER'] }))
+    await resetToSignedIn(repository)
+    const wrapper = await mountBanner('/fr/admin/case-studies', repository)
+    markSessionExpired()
+    await flushPromises()
+    window.dispatchEvent(new Event('focus'))
+    await flushPromises()
+    expect(wrapper.get('[role="status"]').text()).not.toBe('')
+
+    await wrapper.vm.$router.push('/fr/admin/technologies')
+    await flushPromises()
+
+    expect(wrapper.get('[role="status"]').text()).toBe('')
+    wrapper.unmount()
+  })
+
+  it("n'annonce pas de retour tant que la session n'a pas pris fin", async () => {
+    const repository = createRepository(async () => sessionFor(null))
+    await resetToSignedIn(repository)
+    const wrapper = await mountBanner('/fr/admin/case-studies', repository)
+
+    expect(wrapper.get('[role="status"]').text()).toBe('')
+    wrapper.unmount()
+  })
+
+  it("le lien dit le nouvel onglet aussi aux yeux : une icône cachée aux lecteurs d'écran", async () => {
+    const repository = createRepository(async () => sessionFor(null))
+    await resetToSignedIn(repository)
+    const wrapper = await mountBanner('/fr/admin/case-studies', repository)
+
+    markSessionExpired()
+    await flushPromises()
+
+    const link = wrapper.get('[role="alert"] a')
+    expect(link.find('svg[aria-hidden="true"]').exists()).toBe(true)
+    expect(link.text()).toContain("Se reconnecter (s'ouvre dans un nouvel onglet)")
+    wrapper.unmount()
+  })
+
+  it("n'a aucune violation d'accessibilité une fois la session rétablie", async () => {
+    const repository = createRepository(async () => sessionFor({ username: 'super', roles: ['ROLE_SUPER', 'ROLE_USER'] }))
+    await resetToSignedIn(repository)
+    const wrapper = await mountBanner('/fr/admin/case-studies', repository)
+    markSessionExpired()
+    await flushPromises()
+    window.dispatchEvent(new Event('focus'))
+    await flushPromises()
+
+    await expectNoAccessibilityViolation(wrapper)
+    wrapper.unmount()
   })
 
   it("n'a aucune violation d'accessibilité une fois affiché", async () => {

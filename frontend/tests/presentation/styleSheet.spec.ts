@@ -37,4 +37,13 @@ describe('style.css', () => {
     expect(block).not.toBeNull()
     expect(block).toContain('var(--bs-secondary-color)')
   })
+
+  it("le défilement réserve la place de l'en-tête et du bandeau collants", () => {
+    const block = blockOf('html')
+
+    expect(block).not.toBeNull()
+    expect(block).toContain('scroll-padding-top')
+    expect(block).toContain('--app-header-height')
+    expect(block).toContain('--admin-notice-height')
+  })
 })

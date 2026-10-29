@@ -9,6 +9,7 @@ paths:
   - "frontend/tests/infrastructure/admin/shared/BackofficeHttpClient.spec.ts"
   - "frontend/tests/presentation/router/backofficeSessionExpiry.spec.ts"
   - "frontend/tests/presentation/ui/admin/SessionEndedBanner.spec.ts"
+  - "frontend/tests/presentation/layout/usePublishedHeight.spec.ts"
   - "frontend/tests/presentation/layout/AdminLayout.sessionEnded.spec.ts"
   - "frontend/tests/infrastructure/admin/sessionEndedMapping.spec.ts"
 ---
@@ -232,9 +233,23 @@ version" copies nothing and the assistant sends all five fields.
   session of an account is applied** (login, a `/api/me` re-read that finds one); a re-read still anonymous or base
   does not lower it. `presentation/ui/admin/SessionEndedBanner.vue`, rendered **once** by `AdminLayout` above the
   `RouterView`, shows « Votre session a pris fin » while it holds: a `role="alert"` **inserted by `v-if`** (announced;
-  see `.claude/rules/frontend-a11y.md`), **never taking the focus** (the person may be mid-sentence), and a
+  see `.claude/rules/frontend-a11y.md`), **never taking the focus** (the person may be mid-sentence), **sticky under the
+  header** (#748: on a long page it scrolled away and the person no longer knew why « Enregistrer » did nothing) —
+  `position: sticky; top: var(--app-header-height)`, opaque background, `z-index` 1010 under the header's 1020 so its
+  menus pass over it. The header's height is not a constant (open mobile menu, header alerts), so
+  `presentation/layout/usePublishedHeight.ts` measures it live (`ResizeObserver`, `borderBoxSize` rounded up) and
+  publishes it on `<html>` as `--app-header-height` (`AppHeader`), the banner's own as `--admin-notice-height`; both
+  properties are removed when their element goes (`v-if`) and on unmount, and nothing happens without
+  `ResizeObserver` (jsdom). `style.css`'s `html { scroll-padding-top }` adds the two, so a focused field never lands
+  under the header or the banner (WCAG 2.4.11; it also fixes the sticky header hiding focus site-wide). Rejected:
+  teleporting the banner into the header (it would enter the `banner` landmark, outside `AdminLayout`, and `Teleport`
+  needs a mounted target) and a hard-coded header height. **The return of the session is announced**: a
+  `role="status"` region **present from the banner's mount** (a region inserted with its text may not be announced)
+  receives « Session rétablie, vous pouvez enregistrer. » when `hasSessionEnded` goes from true to false, is
+  `visually-hidden` while empty and is emptied at the next route change. The banner carries a
   « Se reconnecter » link to `login?redirect=<current fullPath>&expired=1` with `target="_blank" rel="noopener"` and the
-  opening said in the link text (a visually hidden « (s'ouvre dans un nouvel onglet) », WCAG 3.2.5): in the same tab
+  opening said in the link text (a visually hidden « (s'ouvre dans un nouvel onglet) », WCAG 3.2.5) and by an
+  `external-link` icon (`aria-hidden`) for sighted people: in the same tab
   the typed text would be lost; the session cookie is shared across tabs and `redirect` brings the new tab back to the
   page. **On the window's `focus`, while the session is ended, the banner re-reads `/api/me`** (`checkAuth()`): an
   account found clears the banner and « Enregistrer » works again (the CSRF token is read from the cookie at each call);
@@ -251,7 +266,8 @@ version" copies nothing and the assistant sends all five fields.
   sent, a 403 to a read never, no handler registered), `sessionEndedMapping.spec.ts` (the 14 repositories: a 401 read, a 403
   write without a token and a 401 reorder are `session-ended`, a 403 write with one keeps its mapping; a glob fails when
   a new repository is missing from its table), `HttpAdminUserRepository.spec.ts`, `backofficeSessionExpiry.spec.ts` (the session is closed,
-  no navigation, idempotent), `SessionEndedBanner.spec.ts` (alert inserted, no focus taken, the link, the re-read on
-  `focus`), `AdminLayout.sessionEnded.spec.ts` (the page stays mounted with its typed input; red when `router.replace`
+  no navigation, idempotent), `SessionEndedBanner.spec.ts` (alert inserted, no focus taken, the link and its icon, the re-read on
+  `focus`, the sticky class, the status region present from mount and its message on return and emptied on the next
+  route), `usePublishedHeight.spec.ts` (the height posted, updated on a second reading, removed with the target), `AdminLayout.sessionEnded.spec.ts` (the page stays mounted with its typed input; red when `router.replace`
   is reintroduced; the banner is the only alert on a 401 and on a 403 without a token, a 403 with one shows the page's), `useAuth.spec.ts`.
 
