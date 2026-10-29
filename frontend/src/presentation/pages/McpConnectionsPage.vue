@@ -115,6 +115,13 @@ function date(iso: string): string {
   return formatInstant(iso, currentLocale.value)
 }
 
+/**
+ * L'id de la mention d'historique coupé, que le tableau référence par `aria-describedby`
+ * (#748, constat 19) : seulement quand la mention est rendue, une référence vers un id
+ * absent est une faute.
+ */
+const TRUNCATED_NOTE_ID = 'mcp-connections-truncated'
+
 const isLoading = computed(() => 'loading' === status.value)
 /** La liste reste affichée pendant qu'elle est relue après une révocation : elle ne clignote pas. */
 const showTable = computed(() => 'error' !== status.value && connections.value.length > 0)
@@ -293,13 +300,21 @@ onMounted(() => {
       </RouterLink>
     </p>
 
-    <!-- Le tableau est occupé pendant la relecture, jamais un ancêtre de la région d'état (#748). -->
+    <!--
+      Le tableau est occupé pendant la relecture, jamais un ancêtre de la région d'état (#748).
+      `position-relative` : les textes `visually-hidden` (position absolue) de l'en-tête « Actions »
+      et de « Sans échéance » trouvent leur ancêtre positionné dans ce conteneur défilant, au lieu de
+      se placer hors de lui et d'élargir la page à 320 px (#748, constat 5).
+    -->
     <div
       v-if="showTable"
-      class="table-responsive"
+      class="table-responsive position-relative"
       :aria-busy="isLoading"
     >
-      <table class="table table-dark table-hover align-middle mb-0">
+      <table
+        class="table table-dark table-hover align-middle mb-0"
+        :aria-describedby="terminatedTruncated ? TRUNCATED_NOTE_ID : undefined"
+      >
         <caption class="visually-hidden">
           {{ t('mcpConnections.caption') }}
         </caption>
@@ -389,6 +404,7 @@ onMounted(() => {
 
     <p
       v-if="terminatedTruncated"
+      :id="TRUNCATED_NOTE_ID"
       class="text-body-secondary small mb-0"
       data-testid="terminated-truncated"
     >
@@ -396,3 +412,14 @@ onMounted(() => {
     </p>
   </section>
 </template>
+
+<style scoped>
+/*
+ * Un conteneur sans hauteur imposée n'a jamais à défiler à la verticale. Bootstrap pose
+ * `overflow-x: auto` ; l'autre axe passe alors de `visible` à `auto` (règle CSS) et une barre
+ * parasite d'un pixel peut apparaître dès que le contenu déborde d'un sous-pixel (#748, constat 18).
+ */
+.table-responsive {
+  overflow-y: hidden;
+}
+</style>

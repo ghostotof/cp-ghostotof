@@ -1,3 +1,6 @@
+/// <reference types="node" />
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
@@ -311,6 +314,40 @@ describe('McpConnectionsPage', () => {
 
     expect(wrapper.findAll('[role="status"]')).toHaveLength(1)
     expect(wrapper.get('[role="status"]').text()).toBe('')
+  })
+
+  describe('le tableau (#748)', () => {
+    it("le conteneur défilant du tableau est positionné : rien de masqué n'en sort à 320 px", async () => {
+      const { wrapper } = await mountPage()
+
+      // `visually-hidden` est en `position: absolute` : sans ancêtre positionné dans le conteneur
+      // défilant, l'en-tête « Actions » et « Sans échéance » se placent hors de lui et élargissent la page.
+      expect(wrapper.get('.table-responsive').classes()).toContain('position-relative')
+    })
+
+    it('historique coupé : le tableau est décrit par la mention', async () => {
+      const list = vi.fn(async () => listOf([ACTIVE, REVOKED_BY_PERSON], true))
+      const { wrapper } = await mountPage({ list })
+
+      const noteId = wrapper.get('[data-testid="terminated-truncated"]').attributes('id')
+      expect(noteId).toBeTruthy()
+      expect(wrapper.get('table').attributes('aria-describedby')).toBe(noteId)
+    })
+
+    it("historique entier : le tableau n'a pas d'aria-describedby", async () => {
+      const { wrapper } = await mountPage()
+
+      // Une référence vers un id absent est une faute : la mention n'est pas rendue ici.
+      expect(wrapper.get('table').attributes('aria-describedby')).toBeUndefined()
+    })
+
+    it('le conteneur ne défile jamais à la verticale : overflow-y hidden en CSS scopé', () => {
+      // jsdom ne calcule aucune mise en page : la garde lit le source du composant (la mesure réelle est faite au navigateur).
+      const source = readFileSync(resolve(import.meta.dirname, '../../../src/presentation/pages/McpConnectionsPage.vue'), 'utf8')
+      const style = /<style scoped>([\s\S]*?)<\/style>/.exec(source)?.[1] ?? ''
+
+      expect(style).toMatch(/\.table-responsive\s*\{[^}]*overflow-y:\s*hidden/)
+    })
   })
 
   it("avec la mention d'un historique coupé : aucune violation d'accessibilité détectable", async () => {
