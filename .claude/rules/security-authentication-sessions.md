@@ -18,6 +18,8 @@ paths:
   - "backend/tests/Security/Authentication/Infrastructure/Security/SessionBeforePasswordChange*Test.php"
   - "backend/tests/Support/CookieConstructions.php"
   - "backend/tests/Support/ReadsResponseCookies.php"
+  - "tools/smoke-dead-session-cookie.sh"
+  - "tools/tests/smoke-dead-session-cookie.test.sh"
 ---
 
 # Backend — `Security/Authentication`: cookies and sessions
@@ -156,8 +158,10 @@ paths:
     403 without token), read as an ended session (`.claude/rules/frontend-session.md`; the backoffice banner, the sign-in
     at the next navigation — `.claude/rules/frontend-backoffice.md`, « Route protection »). Pinned by
     `RefusedSessionCookiesAreClearedTest` (cleared on `/api/me` with the factory's attributes, the public route served
-    afterwards, a served session clearing nothing), `PublicRouteIgnoresRefusedSession{,Registration}Test` and, for the
-    password change, `SessionBeforePasswordChangeTest`.
+    afterwards, a served session clearing nothing), `PublicRouteIgnoresRefusedSession{,Registration}Test`, for the
+    password change `SessionBeforePasswordChangeTest` and, on the real stack, `tools/smoke-dead-session-cookie.sh`
+    (`smoke-test-preprod`, behind the Basic Auth the test container lacks: a random `BEARER` on a public read gets 200
+    and no `Set-Cookie`, on `/api/me` a 401 that expires it; offline test `tools/tests/smoke-dead-session-cookie.test.sh`).
   - **`lexik_jwt_authentication.clock_skew: 5`** (#748, A3-9, the author's decision of 2026-10-29): a pod's clock a
     second ahead made an `iat` in the future a 401 which, since F1, clears the session. Read in Lexik 3.2
     (`LoadedJWS`, `LcobucciJWSProvider::verify()`): it loosens `iat` **and `exp`** (an expired token is served up to
