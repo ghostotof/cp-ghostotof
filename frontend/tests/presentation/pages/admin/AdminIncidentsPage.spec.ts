@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { enableAutoUnmount, flushPromises, mount, type DOMWrapper, type VueWrapper } from '@vue/test-utils'
+import { flushPromises, mount, type DOMWrapper, type VueWrapper } from '@vue/test-utils'
 import { createMemoryHistory, createRouter, type Router } from 'vue-router'
 import { defineComponent, h } from 'vue'
 import { RouterView } from 'vue-router'
@@ -160,11 +160,6 @@ async function dragRow(wrapper: VueWrapper, from: number, to: number): Promise<v
 }
 
 describe('AdminIncidentsPage', () => {
-  // Chaque page démontée après son test : sans cela, une page laissée montée
-  // avec un ordre modifié garde son écouteur `beforeunload` et fait mentir le
-  // test suivant sur cet événement global.
-  enableAutoUnmount(afterEach)
-
   afterEach(() => {
     vi.restoreAllMocks()
   })

@@ -1,11 +1,9 @@
-import { afterEach, describe, expect, it } from 'vitest'
-import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
+import { describe, expect, it } from 'vitest'
+import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import AccountMenu from '../../../src/presentation/layout/AccountMenu.vue'
 import { createAppI18n } from '../../../src/presentation/i18n'
 import { expectNoAccessibilityViolation } from '../../support/axe'
-
-enableAutoUnmount(afterEach)
 
 const StubPage = { template: '<div />' }
 

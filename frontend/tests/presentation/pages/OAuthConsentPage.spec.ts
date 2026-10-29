@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, nextTick } from 'vue'
-import { enableAutoUnmount, flushPromises, mount, type VueWrapper } from '@vue/test-utils'
+import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createMemoryHistory, createRouter, type RouteLocationNormalized, type Router } from 'vue-router'
 import OAuthConsentPage from '../../../src/presentation/pages/OAuthConsentPage.vue'
 import { CLIENT_REDIRECT, OAUTH_CONSENT_REPOSITORY } from '../../../src/application/mcp/useOAuthConsent'
@@ -22,8 +22,6 @@ import { applySeoMeta } from '../../../src/presentation/router/seo'
 import { SUPPORTED_LOCALES, type Locale } from '../../../src/domain/portfolio/entities/Locale'
 import { sessionFor } from '../../support/authSession'
 import { expectNoAccessibilityViolation } from '../../support/axe'
-
-enableAutoUnmount(afterEach)
 
 afterEach(() => {
   vi.useRealTimers()

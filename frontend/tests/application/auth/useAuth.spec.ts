@@ -55,8 +55,10 @@ function mountWithComposable(repository: AuthRepository, register?: (auth: Retur
 
 describe('useAuth', () => {
   beforeEach(async () => {
-    // L'état est un singleton au niveau du module (partagé entre AppHeader et
-    // LoginPage) : on le remet à "non connecté" avant chaque test pour les isoler.
+    // L'état est un singleton au niveau du module (partagé entre AppHeader et LoginPage) ; `tests/support/setup.ts`
+    // le remet à celui du chargement avant chaque test (#748, R25). Cette première vérification n'est donc plus une
+    // remise à zéro : elle pose l'état que la plupart des tests supposent, `isChecking` retombé et la première
+    // vérification faite (les suivantes sont silencieuses).
     await mountWithComposable(createStubRepository()).checkAuth()
   })
 

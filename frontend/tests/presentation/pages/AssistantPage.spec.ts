@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { enableAutoUnmount, flushPromises, mount, type VueWrapper } from '@vue/test-utils'
+import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { defineComponent } from 'vue'
 import AssistantPage from '../../../src/presentation/pages/AssistantPage.vue'
@@ -18,9 +18,6 @@ import { BASE_ACCESS_REPOSITORY } from '../../../src/application/baseAccess/useB
 import { sessionFor } from '../../support/authSession'
 import { signInAgain } from '../../support/signInAgain'
 import { expectNoAccessibilityViolation } from '../../support/axe'
-
-// Aucun flux ne doit survivre à un test : chaque wrapper est démonté à la fin.
-enableAutoUnmount(afterEach)
 
 /** Un appel au repository dont le test pilote les fragments et l'issue. */
 interface PendingCall {

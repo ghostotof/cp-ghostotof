@@ -13,6 +13,7 @@ paths:
   - "frontend/src/application/assistant/**"
   - "frontend/tests/application/auth/**"
   - "frontend/tests/support/signInAgain.ts"
+  - "frontend/tests/support/setup.ts"
   - "frontend/src/presentation/layout/usePublishedHeight.ts"
   - "frontend/src/infrastructure/mcp/**"
   - "frontend/src/infrastructure/assistant/**"
@@ -163,9 +164,18 @@ does `BackofficeHttpClient`.
   verdict is judged by **session generation** (next section), not « idempotent »: several lists of a page answering 401
   together leave under the same generation, the first end counts and the others announce nothing more. The registry lives
   in the module, so `infrastructure/` imports neither the session nor the router.
-- **The state** is `sessionEnded` in `useAuth`'s shared state (`hasSessionEnded`), **raised** by `markSessionExpired()`
+- **The state** is `sessionEnded` in the session's shared state (`hasSessionEnded`), **raised** by `markSessionExpired()`
   (the header also turns anonymous) and **lowered by one descent only** (next section): an account came back, with a write
   token. `applySession()` no longer lowers anything.
+- **Where it lives** (#748, R25: `useAuth.ts` was split, its public API unchanged, everything still re-exported from it).
+  Under `application/auth/`: `sessionState.ts` (the reactive state, `authState`, `applySession`, the base-access marks),
+  `baseAccessExpiry.ts` (its timer, which takes its callback as a parameter and imports nothing: no cycle),
+  `sessionGeneration.ts`, `sessionEvents.ts` (the two signals), `sessionLifecycle.ts` (`markSessionExpired`,
+  `restoreSession`, and `canRestore`, the descent's condition written once: ended, an account, a write token), and
+  `useAuth.ts` (the composable and the two shared re-reads). **Tests start from the module state of loading**:
+  `resetAuthStateForTests()` (each module owns a `reset…ForTests`, tests only, never called by `src/`; a new module state
+  is added to it) is called before each test by `tests/support/setup.ts`, the `setupFiles` of `vite.config.ts`, which also
+  calls `enableAutoUnmount` once.
 - **The banner**, `presentation/ui/admin/SessionEndedBanner.vue`, rendered **once** by `AdminLayout` above the
   `RouterView`, shows « Votre session a pris fin » while it holds: a `role="alert"` **inserted by `v-if`** (announced;
   see `.claude/rules/frontend-a11y.md`), **never taking the focus** (the person may be mid-sentence), **sticky under the
@@ -306,7 +316,7 @@ does `BackofficeHttpClient`.
 ## The session generation (#748, R14)
 
 A verdict that comes back from the network describes the session **as it was at send time**, and the session may have
-changed since: another tab signed in again, or the end was already announced by a sibling request. `useAuth` holds a
+changed since: another tab signed in again, or the end was already announced by a sibling request. `sessionGeneration.ts` holds a
 module counter, **the generation** (`sessionStamp()`), advanced at each accepted **end** and at each **return**. A
 caller reads it **before sending** and hands it back with the verdict:
 
@@ -319,7 +329,7 @@ caller reads it **before sending** and hands it back with the verdict:
   which translates it, and no `SessionEndedError` is raised). A request sent before a return can no longer end the
   session it did not belong to (Review Focus 1). Both directions share the one number: an end from before the return,
   and a return from before an end.
-- **The single descent** of `sessionEnded` (`restoreSession`, internal to `useAuth`) asks for **an account, a write
+- **The single descent** of `sessionEnded` (`restoreSession`, `sessionLifecycle.ts`) asks for **an account, a write
   token (`hasWriteToken()`) and the current generation** — a sign-in (`login`) is the person's own gesture and skips the
   generation check, nothing sent before it can contradict it. `login()`, `checkAuth()` and `recheckEndedSession()` all go
   through it; it advances the generation and then calls the `onSessionRestored` subscribers (or `onAccountSwitched`'s for another account; `login()` calls neither, R18). A `/api/me` sent before a new

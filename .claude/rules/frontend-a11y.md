@@ -123,7 +123,9 @@ Components are mounted with `@vue/test-utils` and a stub/real repository injecte
 as `main.ts`. Any component using `usePortfolioContent()`, `useI18n()`, or `useRoute()`/`RouterLink` needs the
 corresponding plugin(s) in `global.plugins` when mounted in a test (`createAppI18n()` from `presentation/i18n`,
 and a locally-built `createRouter(...)` — never the app's own `router`/`i18n` singletons, to keep tests
-isolated from each other).
+isolated from each other). `enableAutoUnmount(afterEach)` is called **once**, by `tests/support/setup.ts` (the
+`setupFiles` of `vite.config.ts`, #748 R25): a spec never calls it again (VTU throws on a second call), and every
+mounted component is unmounted at the end of its test.
 
 To add a test for a new file: create it at the mirrored path under `tests/`, not next to the source file.
 

@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
-import { enableAutoUnmount, flushPromises, mount, type VueWrapper } from '@vue/test-utils'
+import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import McpConnectionsPage from '../../../src/presentation/pages/McpConnectionsPage.vue'
 import { MCP_CONNECTIONS_REPOSITORY } from '../../../src/application/mcp/useMcpConnections'
@@ -20,8 +20,6 @@ import type { Locale } from '../../../src/domain/portfolio/entities/Locale'
 import { expectNoAccessibilityViolation } from '../../support/axe'
 import { listOf } from '../../support/mcpConnectionList'
 import { signInAgain } from '../../support/signInAgain'
-
-enableAutoUnmount(afterEach)
 
 // Seuls `setTimeout`/`clearTimeout` sont simulés : `flushPromises` s'appuie sur `setImmediate`,
 // qui doit rester réel. Le délai d'annonce (focus d'abord, annonce ensuite) est ainsi piloté

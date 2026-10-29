@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { enableAutoUnmount, mount, flushPromises } from '@vue/test-utils'
+import { mount, flushPromises } from '@vue/test-utils'
 import { createRouter, createWebHistory, type Router } from 'vue-router'
 import SetPasswordPage from '../../../src/presentation/pages/SetPasswordPage.vue'
 import { ACCOUNT_REPOSITORY } from '../../../src/application/account/useAccountPasswordSetup'
@@ -67,8 +67,6 @@ async function mountPage(repository: AccountRepository = createStubRepository(),
 function headLinkHrefs(): string[] {
   return Array.from(document.head.querySelectorAll('link')).map((link) => link.getAttribute('href') ?? '')
 }
-
-enableAutoUnmount(afterEach)
 
 afterEach(() => {
   window.history.replaceState(null, '', '/')

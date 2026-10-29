@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter, type Router } from 'vue-router'
 import { defineComponent, h } from 'vue'
 import AppLayout from '../../../src/presentation/layout/AppLayout.vue'
@@ -22,9 +22,6 @@ import type { QualityContentRepository } from '../../../src/domain/quality/repos
 import { createAppI18n } from '../../../src/presentation/i18n'
 import { BASE_ACCESS_REPOSITORY } from '../../../src/application/baseAccess/useBaseAccess'
 import { sessionFor } from '../../support/authSession'
-
-// Un `AppLayout` laissé monté garderait son écouteur de `focus` : il relirait la session à la place du test suivant.
-enableAutoUnmount(afterEach)
 
 const STUB_ABOUT_CONTENT = {
   site: { eyebrow: 'À propos de ce site (stub)', cards: [] },

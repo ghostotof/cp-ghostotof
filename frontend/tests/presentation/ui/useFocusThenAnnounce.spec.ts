@@ -1,9 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { enableAutoUnmount, mount } from '@vue/test-utils'
+import { mount } from '@vue/test-utils'
 import { defineComponent, h } from 'vue'
 import { ANNOUNCE_AFTER_FOCUS_MS, useFocusThenAnnounce } from '../../../src/presentation/ui/useFocusThenAnnounce'
-
-enableAutoUnmount(afterEach)
 
 // Faux minuteurs, rétablis après chaque test : le délai est piloté par le test.
 beforeEach(() => {

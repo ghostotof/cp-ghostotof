@@ -1,46 +1,36 @@
-import { computed, inject, onScopeDispose, reactive, readonly, watch, type ComputedRef, type InjectionKey } from 'vue'
+import { computed, inject, type ComputedRef, type InjectionKey } from 'vue'
 import type { AuthRepository } from '../../domain/auth/repositories/AuthRepository'
 import type { AuthenticatedUser } from '../../domain/auth/entities/AuthenticatedUser'
-import { ANONYMOUS_SESSION, BASE_ACCESS_SESSION, type AccessTier, type AuthSession } from '../../domain/auth/entities/AuthSession'
+import { ANONYMOUS_SESSION, type AccessTier, type AuthSession } from '../../domain/auth/entities/AuthSession'
 import { ROLE_SUPER } from '../../domain/auth/entities/Role'
 import { hasRole } from '../../domain/auth/services/hasRole'
 import { sessionForUser } from '../../domain/auth/services/sessionForUser'
+import { markBaseAccessExpired, markBaseAccessGranted, applySession, authState, isFirstCheckDone, markFirstCheckDone, state, waitForAuthCheck } from './sessionState'
+import { recallBaseAccessExpiry, scheduleBaseAccessExpiry } from './baseAccessExpiry'
+import { isCurrentGeneration, sessionStamp } from './sessionGeneration'
+import { onAccountSwitched, onSessionRestored } from './sessionEvents'
+import { canRestore, isReturnOfAccount, markSessionExpired, restoreSession } from './sessionLifecycle'
 
-export { ROLE_SUPER }
+/**
+ * `useAuth.ts` est la façade de la session (#748, R25) : le composable, les deux relectures de `/api/me` mutualisées,
+ * et les **réexports** de tout ce que les autres fichiers importent d'ici — aucun site d'import n'a changé au
+ * découpage. Où vit le reste : `sessionState.ts` (l'état et le palier), `baseAccessExpiry.ts` (la minuterie de
+ * l'accès de base), `sessionGeneration.ts` (la génération), `sessionEvents.ts` (les deux signaux),
+ * `sessionLifecycle.ts` (la fin et le retour).
+ */
+export {
+  ROLE_SUPER,
+  authState,
+  waitForAuthCheck,
+  markBaseAccessGranted,
+  markBaseAccessExpired,
+  sessionStamp,
+  markSessionExpired,
+  onSessionRestored,
+  onAccountSwitched,
+}
 
 export const AUTH_REPOSITORY: InjectionKey<AuthRepository> = Symbol('AuthRepository')
-
-/**
- * Contrairement à usePortfolioContent (purement dérivé, sans état propre),
- * la session courante doit être partagée entre des composants sans lien
- * parent/enfant direct (AppHeader, LoginPage, CaseStudiesPage) et survivre à
- * une navigation : c'est donc un état singleton au niveau du module, créé une
- * seule fois, plutôt que recréé à chaque appel de useAuth().
- *
- * `tier`/`user` sont à plat (plutôt qu'un objet `session` imbriqué) pour que
- * les consommateurs existants — le garde de routeur lit `authState.user` —
- * n'aient pas à changer.
- */
-const state = reactive<{ tier: AccessTier; user: AuthenticatedUser | null; isChecking: boolean; sessionEnded: boolean; sessionEndedCount: number }>({
-  tier: ANONYMOUS_SESSION.tier,
-  user: ANONYMOUS_SESSION.user,
-  isChecking: true,
-  // Le serveur a refusé la session pendant qu'une page était ouverte (voir
-  // markSessionExpired). Distinct de « anonyme » : c'est ce qui permet au
-  // backoffice d'annoncer la fin de session sans quitter la page (#650, S2).
-  sessionEnded: false,
-  // Nombre de refus qui ont fini la session depuis le chargement : `sessionEnded` est un état, idempotent, il
-  // ne dit pas qu'un refus de plus vient d'arriver ; ce compteur le dit (le bandeau se réannonce, #748 S7).
-  sessionEndedCount: 0,
-})
-
-/**
- * Vrai dès que la première vérification (celle de `main.ts`) a fini, réussie ou non. Avant elle, `isChecking`
- * cache le groupe de droite de l'en-tête et fait attendre le garde de route (`waitForAuthCheck`) : c'est son
- * seul rôle. Après elle, une relecture de `/api/me` (le retour sur l'onglet, un refus réel) est **silencieuse** :
- * y toucher ferait disparaître puis réapparaître l'en-tête à chaque retour (#748, R8).
- */
-let hasCheckedOnce = false
 
 /** La relecture de session finie en vol, partagée par tous les appelants de `useAuth()` : au plus une à la fois. */
 let endedSessionRecheck: Promise<void> | null = null
@@ -51,270 +41,10 @@ let endedSessionRecheck: Promise<void> | null = null
  */
 let refusalReread: Promise<RefusalReread> | null = null
 
-/**
- * La génération de la session (#748, R14) : un compteur de module, avancé à chaque **fin** acceptée
- * (`markSessionExpired`) et à chaque **retour** (la descente de `sessionEnded`). Un appelant la lit à l'envoi
- * (`sessionStamp()`) et la rend avec le verdict (`markSessionExpired(sentAt)`, la relecture de `/api/me`) : ce qui
- * est parti sous une génération révolue est un verdict d'une session qui n'est plus la courante, et ne la change pas,
- * ni pour la finir ni pour la rétablir. Un seul nombre règle les deux sens, et les lectures parallèles du chargement
- * d'une page (parties sous la même génération) n'annoncent la fin qu'une fois.
- */
-let generation = 0
-
-/**
- * Les abonnés au retour de la session (`useAuth().onSessionRestored`), de tous les scopes vivants. Un `Set` de
- * module comme l'état : le retour est un événement de la session, pas d'un composant. Chaque abonné se retire à
- * la fin de son scope, donc une page démontée n'est plus appelée (#748, R13).
- */
-const sessionRestoredCallbacks = new Set<() => void>()
-
-/**
- * Les abonnés au **changement de compte** (`useAuth().onAccountSwitched`, #748, R18) : un autre compte que celui dont
- * la session a fini est revenu. Même mécanique que `sessionRestoredCallbacks`, mais un événement distinct : la page
- * ouverte n'est pas celle de ce compte, elle n'est pas « rétablie » — `AppLayout` rejoue la navigation.
- */
-const accountSwitchedCallbacks = new Set<() => void>()
-
-/**
- * Le compte dont la session a fini (#748, R18) : l'identifiant du compte affiché à la **première** fin acceptée
- * (`markSessionExpired` repasse l'en-tête à anonyme, il faut le lire avant), `null` quand aucun compte n'était
- * affiché (palier de base, anonyme). Ce qui revient est « le même » si l'identifiant est celui-ci, ou s'il n'y en a
- * aucun de retenu ; sinon la page ouverte est celle d'un autre compte. Oublié au retour.
- */
-let endedAccount: string | null = null
-
-/**
- * Échéance du jeton D6, mémorisée pour survivre à un rechargement de page :
- * après un F5, checkAuth() ne voit qu'un 403 sur /api/me (palier de base),
- * sans savoir jusqu'à quand. Convenance locale, jamais une source de vérité :
- * un localStorage indisponible ou vide rend simplement le badge un peu
- * moins précis (comportement d'avant).
- */
-const BASE_ACCESS_EXPIRY_STORAGE_KEY = 'baseAccessExpiresAt'
-
-/** Plafond de setTimeout (2^31 − 1 ms) : au-delà, le navigateur déclenche immédiatement. */
-const MAX_TIMEOUT_MS = 2_147_483_647
-
-let baseAccessExpiryTimer: ReturnType<typeof setTimeout> | null = null
-
-/**
- * Pose le palier et le compte. **Ne touche jamais à `sessionEnded`** : la fin est l'affaire de
- * `markSessionExpired`, le retour de `restoreSession`, qui seuls jugent la génération et le jeton d'écriture.
- */
-function applySession(session: AuthSession): void {
-  state.tier = session.tier
-  state.user = session.user
-  // Tout changement de session rend la minuterie précédente caduque : un
-  // login remplace le cookie D6 par celui du compte, un logout l'efface.
-  clearBaseAccessExpiry()
-}
-
-/**
- * **La** descente de `sessionEnded` : un compte est revenu avec son jeton d'écriture (l'appelant l'a vérifié, et la
- * génération, sauf pour une connexion). Applique la session, avance la génération, puis — une fois, de façon
- * synchrone, l'état posé : les abonnés lisent la session revenue — appelle :
- * - `onSessionRestored` si c'est **le même compte** que celui dont la session a fini (ou si aucun n'était affiché) :
- *   la page ouverte est la sienne, elle reprend en place ;
- * - `onAccountSwitched` si c'est un autre : la session est appliquée, mais la page ouverte n'est pas la sienne (#748,
- *   R18) ; seul `AppLayout` y réagit, en rejouant la navigation.
- * Une **connexion** (`announce` faux) ne rappelle personne : la page de connexion navigue elle-même.
- */
-function restoreSession(session: AuthSession, announce: boolean): void {
-  const endedFor = endedAccount
-  endedAccount = null
-  applySession(session)
-  state.sessionEnded = false
-  generation += 1
-  if (!announce) {
-    return
-  }
-
-  const isSameAccount = null === endedFor || endedFor === session.user?.username
-  notify(isSameAccount ? sessionRestoredCallbacks : accountSwitchedCallbacks)
-}
-
-/**
- * Appelle chaque abonné. La copie du `Set` protège l'itération d'un abonné qui se retirerait en route. Un abonné qui
- * lève n'arrête ni les suivants ni l'issue de la connexion ou de la relecture qui a rétabli la session : l'erreur
- * est rapportée.
- */
-function notify(callbacks: ReadonlySet<() => void>): void {
-  for (const callback of [...callbacks]) {
-    try {
-      callback()
-    } catch (caught) {
-      console.error('Un abonné au retour de la session a levé une erreur.', caught)
-    }
-  }
-}
-
-function clearBaseAccessExpiry(): void {
-  if (null !== baseAccessExpiryTimer) {
-    clearTimeout(baseAccessExpiryTimer)
-    baseAccessExpiryTimer = null
-  }
-  try {
-    localStorage.removeItem(BASE_ACCESS_EXPIRY_STORAGE_KEY)
-  } catch {
-    // Stockage indisponible (navigation privée, données bloquées) : sans conséquence.
-  }
-}
-
-/**
- * Arme l'échéance de l'accès de base : à `expiresAt`, l'en-tête repasse à anonyme — **un effet d'affichage, sans aucun
- * appel réseau** (#748, R23). Elle lit l'horloge du poste : un poste en avance ou en
- * retard, ou un onglet endormi dont la minuterie tarde, décale l'affichage, jamais l'accès (le serveur reste le seul
- * juge). Le JWT meurt à l'échéance ; le cookie, de session, reste jusqu'à la fermeture du navigateur ou au premier 401
- * d'une route authentifiée, qui l'efface.
- */
-function scheduleBaseAccessExpiry(expiresAt: Date): void {
-  clearBaseAccessExpiry()
-  try {
-    localStorage.setItem(BASE_ACCESS_EXPIRY_STORAGE_KEY, expiresAt.toISOString())
-  } catch {
-    // Idem : le badge survivra moins bien à un rechargement, rien de plus.
-  }
-  const delay = Math.min(Math.max(expiresAt.getTime() - Date.now(), 0), MAX_TIMEOUT_MS)
-  baseAccessExpiryTimer = setTimeout(() => {
-    baseAccessExpiryTimer = null
-    markBaseAccessExpired()
-  }, delay)
-}
-
-function recallBaseAccessExpiry(): Date | null {
-  try {
-    const stored = localStorage.getItem(BASE_ACCESS_EXPIRY_STORAGE_KEY)
-    if (null === stored) {
-      return null
-    }
-    const expiresAt = new Date(stored)
-
-    return Number.isNaN(expiresAt.getTime()) ? null : expiresAt
-  } catch {
-    return null
-  }
-}
-
-/**
- * Lecture seule de l'état d'auth, exposée à part de useAuth() : un garde de
- * navigation (presentation/router/index.ts) ou un `watch` de page s'exécute
- * hors contexte de composant, où inject() n'est pas utilisable.
- */
-export const authState = readonly(state)
-
-/**
- * Au premier chargement (rechargement de page, navigation directe vers une
- * URL protégée), le garde de route (presentation/router/index.ts) peut
- * s'exécuter AVANT que le checkAuth() lancé par main.ts n'ait résolu :
- * authState.isChecking vaut alors encore `true`. Sans attendre sa résolution,
- * un utilisateur pourtant valablement connecté (cookie httpOnly toujours
- * valide) se ferait rediriger à tort vers /login.
- */
-export async function waitForAuthCheck(): Promise<void> {
-  if (!state.isChecking) {
-    return
-  }
-  await new Promise<void>((resolve) => {
-    const stopWatching = watch(
-      () => state.isChecking,
-      (isChecking) => {
-        if (!isChecking) {
-          stopWatching()
-          resolve()
-        }
-      },
-    )
-  })
-}
-
-/**
- * À appeler une fois POST /api/account/base-access a réussi (ADR 0003 D6) :
- * le cookie BEARER vient d'être posé par le navigateur, invisible en JS, et
- * relire /api/me pour le constater coûterait un aller-retour pour apprendre
- * ce qu'on sait déjà. Exposée hors composant (comme authState) parce que
- * l'appelant, useBaseAccess, ne doit pas dépendre de AUTH_REPOSITORY.
- */
-export function markBaseAccessGranted(expiresAt: Date | null = null): void {
-  applySession(BASE_ACCESS_SESSION)
-  if (null !== expiresAt) {
-    scheduleBaseAccessExpiry(expiresAt)
-  }
-}
-
-/**
- * Le jeton D6 n'existe plus : son échéance est passée, ou le backend vient
- * de répondre 401 à un contenu du palier de base (useCaseStudies,
- * useAnonymousCv). Sans ce signal, l'en-tête afficherait « Accès de base »
- * alors que la page en dessous demande déjà de l'obtenir. Ne touche qu'au
- * palier de base sans compte : un compte identifié a sa propre session, et
- * ce n'est pas à un timer local de la révoquer.
- */
-export function markBaseAccessExpired(): void {
-  if ('base' === state.tier && null === state.user) {
-    applySession(ANONYMOUS_SESSION)
-  }
-}
-
-/**
- * La génération courante de la session : à lire **à l'envoi** d'une requête, pour la rendre avec son verdict
- * (`markSessionExpired(sentAt)`). Voir `generation`.
- */
-export function sessionStamp(): number {
-  return generation
-}
-
-/**
- * Un appel du palier de confiance (l'assistant, ROLE_TRUSTED) ou du backoffice a reçu un verdict « session finie »
- * (un 401, ou un 403 à une écriture sans jeton CSRF) : le jeton ne vaut plus ce palier (expiré, révoqué, ou compte
- * rétrogradé). Contrairement à markBaseAccessExpired, repasse à anonyme sans condition : la page qui l'appelle ne
- * sert que ce palier, et garder un en-tête « connecté » au-dessus d'une page qui vient de refuser l'accès serait mentir.
- *
- * `sentAt` est la génération lue à l'envoi (`sessionStamp()`), et le rendu dit si la session **est finie** :
- * - sans `sentAt`, ou sous la génération courante : la fin est acceptée (l'en-tête devient anonyme, `sessionEnded`
- *   monte, `sessionEndedCount` augmente — un refus pendant une session déjà finie réannonce), la génération avance ;
- *   rend `true` ;
- * - sous une génération révolue : rien ne change. Rend `true` si la session est finie (le verdict tient, il a déjà
- *   été annoncé : les lectures parallèles du chargement d'une page ne le réannoncent pas), `false` si elle a été
- *   rétablie depuis l'envoi — la réponse est celle d'une session qui n'est plus la courante, l'appelant la traite
- *   comme un échec ordinaire.
- */
-export function markSessionExpired(sentAt?: number): boolean {
-  if (undefined !== sentAt && sentAt !== generation) {
-    return state.sessionEnded
-  }
-
-  // Le compte dont la session finit est celui de la **première** fin : les suivantes trouvent l'en-tête déjà anonyme.
-  if (!state.sessionEnded) {
-    endedAccount = state.user?.username ?? null
-  }
-  applySession(ANONYMOUS_SESSION)
-  state.sessionEnded = true
-  state.sessionEndedCount += 1
-  generation += 1
-
-  return true
-}
-
-/**
- * Abonne `callback` au **retour** de la session : voir `UseAuthResult.onSessionRestored`, dont c'est la même
- * fonction. Exportée à part, comme `authState` et `markSessionExpired`, pour les composables qui n'ont pas
- * besoin du dépôt d'authentification (`useAdminLoad` : treize composables d'administration, dont aucun ne
- * fournit `AUTH_REPOSITORY` dans ses tests) — `useAuth()` le leur demanderait pour rien.
- */
-export function onSessionRestored(callback: () => void): void {
-  // Une fonction propre à cet abonnement : le même `callback` pris par deux scopes ne se retire pas de l'un pour l'autre.
-  const subscription = (): void => callback()
-  sessionRestoredCallbacks.add(subscription)
-  onScopeDispose(() => sessionRestoredCallbacks.delete(subscription))
-}
-
-/**
- * Abonne `callback` au **changement de compte** : voir `UseAuthResult.onAccountSwitched`, dont c'est la même fonction.
- */
-export function onAccountSwitched(callback: () => void): void {
-  const subscription = (): void => callback()
-  accountSwitchedCallbacks.add(subscription)
-  onScopeDispose(() => accountSwitchedCallbacks.delete(subscription))
+/** Réservée aux tests (`resetAuthStateForTests`), jamais appelée par `src/` : plus aucune relecture en vol. */
+export function resetSessionRereadsForTests(): void {
+  endedSessionRecheck = null
+  refusalReread = null
 }
 
 /**
@@ -407,7 +137,7 @@ export function useAuth(): UseAuthResult {
     // Une connexion est le geste de la personne : elle vaut quelle que soit la génération (rien n'est parti avant
     // elle qui la contredise), mais comme toute descente elle veut un compte et un jeton d'écriture. Elle ne rappelle
     // aucun abonné (#748, R18) : la page de connexion navigue elle-même, rien n'est « rétabli » ni rejoué ici.
-    if (state.sessionEnded && null !== session.user && repository.hasWriteToken()) {
+    if (canRestore(session, () => repository.hasWriteToken())) {
       restoreSession(session, false)
     } else {
       applySession(session)
@@ -434,10 +164,13 @@ export function useAuth(): UseAuthResult {
    * et l'en-tête ne bouge pas (F5, C). Un compte pendant une session finie la rétablit, par la descente unique.
    */
   const applyReadSession = (session: AuthSession, sentAt: number): boolean => {
-    if (sentAt !== generation || (state.sessionEnded && null !== session.user && !repository.hasWriteToken())) {
+    if (!isCurrentGeneration(sentAt)) {
       return false
     }
-    if (state.sessionEnded && null !== session.user) {
+    if (isReturnOfAccount(session)) {
+      if (!canRestore(session, () => repository.hasWriteToken())) {
+        return false
+      }
       restoreSession(session, true)
     } else {
       applySession(session)
@@ -448,7 +181,7 @@ export function useAuth(): UseAuthResult {
 
   const checkAuth = async (): Promise<void> => {
     // Silencieuse après la première vérification : voir `hasCheckedOnce`.
-    if (!hasCheckedOnce) {
+    if (!isFirstCheckDone()) {
       state.isChecking = true
     }
     try {
@@ -463,11 +196,10 @@ export function useAuth(): UseAuthResult {
         return
       }
       if ('base' === session.tier && null === session.user && null !== rememberedExpiry && rememberedExpiry.getTime() > Date.now()) {
-        scheduleBaseAccessExpiry(rememberedExpiry)
+        scheduleBaseAccessExpiry(rememberedExpiry, markBaseAccessExpired)
       }
     } finally {
-      hasCheckedOnce = true
-      state.isChecking = false
+      markFirstCheckDone()
     }
   }
 
@@ -485,7 +217,7 @@ export function useAuth(): UseAuthResult {
         const session = await repository.me()
         // Le compte seul ne suffit pas : sans jeton d'écriture la première écriture serait refusée (403 sans CSRF).
         // Et une réponse partie avant un nouveau refus est d'avant lui : elle ne rétablit pas ce qui vient de finir.
-        if (sentAt === generation && state.sessionEnded && null !== session.user && repository.hasWriteToken()) {
+        if (isCurrentGeneration(sentAt) && canRestore(session, () => repository.hasWriteToken())) {
           restoreSession(session, true)
         }
       } catch {
@@ -511,7 +243,7 @@ export function useAuth(): UseAuthResult {
           // `/api/me` ne rejette pas sur un 401 : il rend l'anonyme. Le jeton ne vaut plus rien, la session est finie.
           // Déjà finie sous la génération du départ, elle est dite : on ne la réannonce pas (la relecture n'est pas
           // un geste de la personne). Partie sous une génération révolue, `markSessionExpired` ne change rien.
-          if (state.sessionEnded && sentAt === generation) {
+          if (state.sessionEnded && isCurrentGeneration(sentAt)) {
             return 'session-ended'
           }
 

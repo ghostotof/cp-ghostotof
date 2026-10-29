@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
+import { describe, expect, it, vi } from 'vitest'
+import { flushPromises, mount } from '@vue/test-utils'
 import { defineComponent, h } from 'vue'
 import { CLIENT_REDIRECT, OAUTH_CONSENT_REPOSITORY, useOAuthConsent } from '../../../src/application/mcp/useOAuthConsent'
 import type { OAuthConsentRepository } from '../../../src/domain/mcp/repositories/OAuthConsentRepository'
@@ -15,8 +15,6 @@ import type { AuthRepository } from '../../../src/domain/auth/repositories/AuthR
 import { BASE_ACCESS_SESSION } from '../../../src/domain/auth/entities/AuthSession'
 import { ConsentAccountChangedError } from '../../../src/domain/mcp/errors/ConsentAccountChangedError'
 import { ReauthenticationRequiredError } from '../../../src/domain/mcp/errors/ReauthenticationRequiredError'
-
-enableAutoUnmount(afterEach)
 
 const PARAMS: ConsentParams = {
   responseType: 'code',

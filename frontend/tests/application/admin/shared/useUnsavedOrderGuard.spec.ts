@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { defineComponent, h, ref } from 'vue'
 import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
 import { useUnsavedOrderGuard } from '../../../../src/application/admin/shared/useUnsavedOrderGuard'
@@ -40,8 +40,6 @@ async function mountGuarded() {
  * n'ont plus qu'à la brancher sur leur `isDirty`.
  */
 describe('useUnsavedOrderGuard', () => {
-  enableAutoUnmount(afterEach)
-
   afterEach(() => {
     isDirty.value = false
     vi.restoreAllMocks()

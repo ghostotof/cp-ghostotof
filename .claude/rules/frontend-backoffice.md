@@ -105,7 +105,7 @@ status announcement) that a fork would silently lose:
   visible hint referenced by `aria-describedby` — never a `title`, Bootstrap's `.btn:disabled` has
   `pointer-events: none` — and leaving the route asks `window.confirm`, closing the tab goes through
   `beforeunload` — both in `application/admin/shared/useUnsavedOrderGuard(isDirty)` (#170 F5), tested once
-  in its own spec with `enableAutoUnmount` (a page left mounted keeps its listener); a page calls it,
+  in its own spec (unmounted by the global `enableAutoUnmount` of `tests/support/setup.ts`; a page left mounted keeps its listener); a page calls it,
   never re-implements it. `startEdit` sends back the group it read whenever the entry has a
   sibling, otherwise `''` → `null`, which `ContentPlacement::detach` treats as a no-op on a lone
   entry. The `Position` number field is gone from every form; `BaseNumberInput` survives only for

@@ -1,5 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { flushPromises, mount } from '@vue/test-utils'
 import { defineComponent, h } from 'vue'
 import { MCP_CONNECTIONS_REPOSITORY, useMcpConnections } from '../../../src/application/mcp/useMcpConnections'
 import { AUTH_REPOSITORY, authState, markBaseAccessGranted, markSessionExpired, useAuth } from '../../../src/application/auth/useAuth'
@@ -13,8 +13,6 @@ import { McpConnectionNotFoundError } from '../../../src/domain/mcp/errors/McpCo
 import { McpConnectionsRequestFailedError } from '../../../src/domain/mcp/errors/McpConnectionsRequestFailedError'
 import { SessionEndedError } from '../../../src/domain/auth/errors/SessionEndedError'
 import { listOf } from '../../support/mcpConnectionList'
-
-enableAutoUnmount(afterEach)
 
 function connection(id: string, state: McpConnectionSummary['state'] = 'active'): McpConnectionSummary {
   return {
