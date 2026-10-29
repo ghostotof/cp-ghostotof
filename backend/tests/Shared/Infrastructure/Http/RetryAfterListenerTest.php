@@ -8,6 +8,7 @@ use App\Shared\Domain\Exception\RetryAfterAware;
 use App\Shared\Infrastructure\Http\RetryAfterListener;
 use DateTimeImmutable;
 use DomainException;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Clock\MockClock;
 use Symfony\Component\HttpFoundation\Request;
@@ -39,6 +40,60 @@ final class RetryAfterListenerTest extends TestCase
         $response = $this->respondTo($this->quotaExceeded('+42 seconds'));
 
         self::assertSame('42', $response->headers->get('Retry-After'));
+    }
+
+    /**
+     * Issue #743 : l'échéance d'un blocage garde ses microsecondes, l'en-tête est
+     * un nombre entier de secondes. Soustraire deux horodatages **tronqués**
+     * annonçait jusqu'à une seconde trop tôt dès qu'une seconde civile s'écoulait
+     * entre la fixation de l'échéance et la réponse : échéance à X+900,990,
+     * réponse à X+1,001, soit 899 annoncées pour 899,989 s restantes, et le
+     * client revenait alors que le limiteur bloquait encore. L'écart est arrondi
+     * par excès : jamais trop tôt.
+     */
+    public function testTheDelayIsNeverShorterThanTheRealRemainingBlockWhenASecondElapses(): void
+    {
+        $clock = new MockClock('2026-10-10 12:00:00.990');
+        $listener = new RetryAfterListener($clock);
+        $request = Request::create('/api/login_check', 'POST');
+        $response = new Response('', 429);
+
+        // L'échéance est posée à 12:15:00.990 : 900 s exactement après l'instant courant.
+        $listener->onKernelException($this->exceptionEvent($request, $this->quotaExceededAt($clock->now()->modify('+900 seconds'))));
+        // Onze millisecondes plus tard, la seconde civile a changé : 12:00:01.001.
+        $clock->sleep(0.011);
+        $listener->onKernelResponse($this->responseEvent($request, $response));
+
+        // Il reste 899,989 s : l'en-tête est 900, pas 899.
+        self::assertSame('900', $response->headers->get('Retry-After'));
+    }
+
+    /**
+     * Un reste de quelques microsecondes vaut déjà une seconde entière : 0 dirait
+     * au client de revenir tout de suite, alors que le blocage court encore. Et
+     * 900,000 s exactes restent 900, pas 901 : le calcul se fait en microsecondes
+     * entières, pas en flottants.
+     *
+     * @return iterable<string, array{0: int, 1: int, 2: string}>
+     */
+    public static function provideRemainingBlocksAndTheirCeiling(): iterable
+    {
+        yield 'un reste d\'une microseconde' => [0, 1, '1'];
+        yield 'une demi-seconde' => [0, 500_000, '1'];
+        yield 'une seconde et un millième' => [1, 1_000, '2'];
+        yield 'exactement 900 s, pas 901' => [900, 0, '900'];
+        yield '900 s et une microseconde' => [900, 1, '901'];
+        yield '899 s et 999999 microsecondes' => [899, 999_999, '900'];
+    }
+
+    #[DataProvider('provideRemainingBlocksAndTheirCeiling')]
+    public function testTheFractionalRemainderIsRoundedUpNeverDown(int $seconds, int $microseconds, string $expected): void
+    {
+        $deadline = $this->clock->now()->modify(\sprintf('+%d seconds +%d microseconds', $seconds, $microseconds));
+
+        $response = $this->respondTo($this->quotaExceededAt($deadline));
+
+        self::assertSame($expected, $response->headers->get('Retry-After'));
     }
 
     /**
@@ -98,15 +153,20 @@ final class RetryAfterListenerTest extends TestCase
         $request = Request::create('/api/contact', 'POST');
         $response = new Response('', $status);
 
-        $listener->onKernelException(new ExceptionEvent(
+        $listener->onKernelException($this->exceptionEvent($request, $exception));
+        $listener->onKernelResponse($this->responseEvent($request, $response));
+
+        return $response;
+    }
+
+    private function exceptionEvent(Request $request, Throwable $exception): ExceptionEvent
+    {
+        return new ExceptionEvent(
             self::createStub(HttpKernelInterface::class),
             $request,
             HttpKernelInterface::MAIN_REQUEST,
             $exception,
-        ));
-        $listener->onKernelResponse($this->responseEvent($request, $response));
-
-        return $response;
+        );
     }
 
     private function responseEvent(Request $request, Response $response): ResponseEvent
@@ -123,8 +183,11 @@ final class RetryAfterListenerTest extends TestCase
     {
         // Dérivée de l'horloge elle-même : MockClock est en UTC, un
         // `new DateTimeImmutable()` suivrait le fuseau par défaut de PHP.
-        $deadline = $this->clock->now()->modify($offset);
+        return $this->quotaExceededAt($this->clock->now()->modify($offset));
+    }
 
+    private function quotaExceededAt(DateTimeImmutable $deadline): Throwable
+    {
         return new class($deadline) extends DomainException implements RetryAfterAware {
             public function __construct(public readonly DateTimeImmutable $retryAfter)
             {

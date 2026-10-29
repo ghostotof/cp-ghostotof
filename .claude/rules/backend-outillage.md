@@ -300,3 +300,36 @@ service (a normalizer at its first normalization, a deprecated service an API Pl
 those requests; a reference to a deprecated alias added by autowiring during the optimization.
 `ApiPlatformProblemDetailsTest` pins the `type`, `title` and status
 of the problem+json errors (400, 404, 405, 409, 415, 422, 429) the same way, read identical on both locks.
+
+## Freezing the clock for a `Retry-After` (issue #743)
+
+The project's listeners (`RetryAfterListener`, `LoginThrottlingRefusalListener`) read `Psr\Clock\ClockInterface`, which
+`mockTime()` freezes. Symfony's limiter (`microtime(true)` in `Symfony\Component\RateLimiter\Policy`) and
+`LoginThrottlingListener` (`time()`) read the **real** time and accept no clock: a test freezing only the first left the
+`Retry-After` at the mercy of the current fraction of second (a whole minute for a login, whose delay is counted in
+minutes). A test that asserts a `Retry-After` therefore uses `tests/Support/FreezesTheWholeClock`
+(`freezeTheWholeClock()`): `mockTime()` and `ClockMock::withClockMock()` (`symfony/phpunit-bridge`, dev) on the **same**
+instant, `.999` on purpose (the window opens and the refusal falls a thousandth before the next second), released by an
+`#[After]`. Freeze **after** the login of a functional test: the JWT must stay valid at the real time its check reads.
+
+`ClockMock::register()` is called by `tests/bootstrap.php`, not by the bridge's `SymfonyExtension`
+(`clock-mock-namespaces`): PHP caches the function resolved at each call site, so a registration after a first
+`microtime()` of the namespace has no effect, and the extension also enables `DebugClassLoader` and removes the
+deprecations' deduplication for the whole suite. **Only the namespaces whose calls compute a deadline**
+(`RateLimiter\Policy`, `Security\Http\EventListener`): `ClockMock` also replaces `sleep()`, `usleep()` and `hrtime()`, and
+the locks, the caches and `FailedLoginTimingEqualizer` wait and measure for real. `WholeClockFreezeTest` pins both lists
+(a mocked namespace that must be, an unmocked one that must stay so) and the effect on the real components. A new
+component whose deadline a test asserts and that reads the time in another namespace adds its line there, with its test.
+`symfony.lock` carries an entry for `symfony/phpunit-bridge` (recipe 7.3) on purpose, and `phpunit.dist.xml` does **not** carry its
+`SymfonyExtension`: without the entry, any `composer update` or `composer require` replays the recipe, which adds the extension with
+`clock-mock-namespaces=App` and `dns-mock-namespaces=App`. ClockMock would then mock `App\*` and falsify `FailedLoginTimingEqualizer`'s
+duration (measured: the update rewrites `phpunit.dist.xml` without the entry, and leaves it alone with it). If a bridge update ever
+brings a newer recipe, refuse its `phpunit.dist.xml` hunk.
+
+Under the frozen `.999` instant a `Retry-After` is an **exact** value, asserted as such: a one-hour `sliding_window` closes
+3600 s later (12:00:00.999 -> 13:00:00.999), symfony/rate-limiter >= 8.1.10 rounds the deadline up to 13:00:01, and
+`RetryAfterListener` rounds the remaining 3600.001 s **up** to whole seconds (in integer microseconds, issue #743: truncating
+two timestamps announced up to a second too early, 899 for 899.989 s left), so `AnswerControllerTest` reads `3601`
+(`WholeClockFreezeTest` derives the same deadline). A login refusal reads `900`: its deadline is `now + 15 min` exactly.
+That second above the real delay is the rounding of an integer-second header; announcing less would make the client retry too
+early. Never relax it to `<= 3601`.

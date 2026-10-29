@@ -39,6 +39,16 @@ use Symfony\Component\HttpKernel\KernelEvents;
  * que l'échéance reste notée sur la requête. Un `Retry-After` n'y aurait pas
  * de sens, et pourrait écraser celui, fixe, d'un 503 de verrou.
  *
+ * **Arrondi par excès** (issue #743). L'échéance garde ses microsecondes
+ * (l'écouteur de login la pose à `now + 15 minutes`), l'en-tête est un nombre
+ * entier de secondes. Soustraire deux horodatages tronqués annonçait jusqu'à
+ * une seconde de moins que le reste réel dès qu'une seconde civile s'écoulait
+ * entre la fixation de l'échéance et la réponse (899 pour 899,989 s restantes)
+ * et le client revenait alors que le blocage courait encore. L'écart est donc
+ * calculé en microsecondes entières puis arrondi à la seconde supérieure : la
+ * valeur annoncée est au plus une seconde au-dessus du reste réel, jamais
+ * au-dessous.
+ *
  * Horloge injectée plutôt que `time()` : la valeur exacte se teste avec une
  * horloge figée.
  */
@@ -46,6 +56,8 @@ final readonly class RetryAfterListener
 {
     /** Préfixe `_app_` : aucun attribut d'un bundle tiers ne peut le porter. */
     private const string REQUEST_ATTRIBUTE = '_app_retry_after';
+
+    private const int MICROSECONDS_PER_SECOND = 1_000_000;
 
     public function __construct(private ClockInterface $clock)
     {
@@ -72,8 +84,21 @@ final readonly class RetryAfterListener
         }
 
         // Jamais négatif : l'échéance peut être dépassée le temps que la
-        // réponse soit construite.
-        $seconds = max(0, $retryAfter->getTimestamp() - $this->clock->now()->getTimestamp());
+        // réponse soit construite. Arrondi par excès (issue #743), jamais par
+        // défaut : annoncer moins que le reste réel renvoie le client avant la
+        // fin du blocage.
+        $remaining = $this->microseconds($retryAfter) - $this->microseconds($this->clock->now());
+        $seconds = max(0, intdiv($remaining + self::MICROSECONDS_PER_SECOND - 1, self::MICROSECONDS_PER_SECOND));
         $response->headers->set('Retry-After', (string) $seconds);
+    }
+
+    /**
+     * L'instant en microsecondes entières depuis l'époque : un `ceil()` sur des
+     * flottants lirait 900,000 s comme 900,0000001 et annoncerait 901. Un
+     * entier 64 bits tient ces valeurs jusqu'à l'an 292 000.
+     */
+    private function microseconds(DateTimeImmutable $instant): int
+    {
+        return $instant->getTimestamp() * self::MICROSECONDS_PER_SECOND + (int) $instant->format('u');
     }
 }
