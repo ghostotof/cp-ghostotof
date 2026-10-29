@@ -349,11 +349,11 @@ paths:
   not stay in history: « Back » would offer to grant the same request again), and only an `http:`/`https:`
   URL whose **`hostname`** (not `host`: the backend's `redirectHost` has no port, a loopback redirect has an
   ephemeral one) is the host shown — defence in depth, the server already validated it. **A 401, or a 403 to
-  the `POST` sent without a CSRF token, is an ended session** (`endsTheSession`, `infrastructure/http/sessionEnded.ts`;
-  the facts are in `.claude/rules/frontend-backoffice.md`): `SessionExpiredError`, `markSessionExpired()`, a « Sign in
-  again » link. **Any other 403** — the `GET` (never subject to the CSRF guard: it is `access_control` refusing an account
+  the `POST` sent without a CSRF token, is an ended session** (`SessionEndedError`, judged by `sessionAwareFetch`;
+  the rule and its facts are in `.claude/rules/frontend-session.md`): `markSessionExpired()`, failure `session-ended`,
+  a « Sign in again » link. **Any other 403** — the `GET` (never subject to the CSRF guard: it is `access_control` refusing an account
   without `ROLE_TRUSTED`, one that lost it while the page was open) or a `POST` that carried its token — is
-  `ConsentForbiddenError`, the **terminal** failure `forbidden` (#748, #732 point 4): the request is no longer shown, the
+  `AccessForbiddenError`, the **terminal** failure `forbidden` (#748, #732 point 4): the request is no longer shown, the
   session is **not** marked expired (it holds for the rest of the site), and the page says this account cannot authorise
   the connection and offers « Changer de compte » (`login?redirect=<fullPath>&reauth=1`) — the only link that opens the
   login to a signed-in person, whose `beforeEnter` otherwise sends them home; a plain « Se reconnecter » link would

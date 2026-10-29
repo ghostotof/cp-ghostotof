@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { HttpOAuthConsentRepository } from '../../../src/infrastructure/mcp/HttpOAuthConsentRepository'
 import type { ConsentParams } from '../../../src/domain/mcp/entities/ConsentRequest'
 import { InvalidConsentRequestError } from '../../../src/domain/mcp/errors/InvalidConsentRequestError'
-import { SessionExpiredError } from '../../../src/domain/mcp/errors/SessionExpiredError'
-import { ConsentForbiddenError } from '../../../src/domain/mcp/errors/ConsentForbiddenError'
+import { SessionEndedError } from '../../../src/domain/auth/errors/SessionEndedError'
+import { AccessForbiddenError } from '../../../src/domain/auth/errors/AccessForbiddenError'
 import { ConsentFailedError } from '../../../src/domain/mcp/errors/ConsentFailedError'
 import { MalformedConsentDecisionError } from '../../../src/domain/mcp/errors/MalformedConsentDecisionError'
 import { ConsentAccountChangedError } from '../../../src/domain/mcp/errors/ConsentAccountChangedError'
@@ -118,7 +118,7 @@ describe('HttpOAuthConsentRepository', () => {
     it('401 : session absente ou expirée', async () => {
       fetchMock.mockResolvedValue(jsonResponse({}, 401))
 
-      await expect(repository.describe(PARAMS)).rejects.toBeInstanceOf(SessionExpiredError)
+      await expect(repository.describe(PARAMS)).rejects.toBeInstanceOf(SessionEndedError)
     })
 
     // Une lecture n'est jamais refusée pour le CSRF : son 403 est le refus d'`access_control`
@@ -132,7 +132,7 @@ describe('HttpOAuthConsentRepository', () => {
       }
       fetchMock.mockResolvedValue(jsonResponse({}, 403))
 
-      await expect(repository.describe(PARAMS)).rejects.toBeInstanceOf(ConsentForbiddenError)
+      await expect(repository.describe(PARAMS)).rejects.toBeInstanceOf(AccessForbiddenError)
     })
 
     it.each([404, 422, 429, 500, 503])('%i : échec générique', async (status) => {
@@ -242,27 +242,27 @@ describe('HttpOAuthConsentRepository', () => {
     it('401 : session expirée', async () => {
       fetchMock.mockResolvedValue(jsonResponse({}, 401))
 
-      await expect(repository.decide(PARAMS, true, ACCOUNT_ID)).rejects.toBeInstanceOf(SessionExpiredError)
+      await expect(repository.decide(PARAMS, true, ACCOUNT_ID)).rejects.toBeInstanceOf(SessionEndedError)
     })
 
     it('403 avec jeton CSRF : un refus (autorisation, signature périmée), pas une session finie', async () => {
       fetchMock.mockResolvedValue(jsonResponse({}, 403))
 
-      await expect(repository.decide(PARAMS, true, ACCOUNT_ID)).rejects.toBeInstanceOf(ConsentForbiddenError)
+      await expect(repository.decide(PARAMS, true, ACCOUNT_ID)).rejects.toBeInstanceOf(AccessForbiddenError)
     })
 
     it('403 parti sans jeton CSRF (cookie absent) : une session finie', async () => {
       document.cookie = 'XSRF-TOKEN=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/'
       fetchMock.mockResolvedValue(jsonResponse({}, 403))
 
-      await expect(repository.decide(PARAMS, false, ACCOUNT_ID)).rejects.toBeInstanceOf(SessionExpiredError)
+      await expect(repository.decide(PARAMS, false, ACCOUNT_ID)).rejects.toBeInstanceOf(SessionEndedError)
     })
 
     it('403 parti sans jeton CSRF (cookie présent mais vide) : une session finie', async () => {
       document.cookie = 'XSRF-TOKEN=; path=/'
       fetchMock.mockResolvedValue(jsonResponse({}, 403))
 
-      await expect(repository.decide(PARAMS, true, ACCOUNT_ID)).rejects.toBeInstanceOf(SessionExpiredError)
+      await expect(repository.decide(PARAMS, true, ACCOUNT_ID)).rejects.toBeInstanceOf(SessionEndedError)
       const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
       expect(init.headers).not.toHaveProperty('X-XSRF-TOKEN')
     })
@@ -276,7 +276,7 @@ describe('HttpOAuthConsentRepository', () => {
     it('403 portant ce type : lu comme un 403 (seul le 401 dit l\'authentification trop ancienne)', async () => {
       fetchMock.mockResolvedValue(jsonResponse(REAUTHENTICATION_REQUIRED, 403, 'application/problem+json'))
 
-      await expect(repository.decide(PARAMS, true, ACCOUNT_ID)).rejects.toBeInstanceOf(ConsentForbiddenError)
+      await expect(repository.decide(PARAMS, true, ACCOUNT_ID)).rejects.toBeInstanceOf(AccessForbiddenError)
     })
 
     it('409 de type consent-account-changed : le compte connecté n\'est plus celui que la page a montré', async () => {
@@ -307,7 +307,7 @@ describe('HttpOAuthConsentRepository', () => {
     it('401 au corps illisible : session expirée', async () => {
       fetchMock.mockResolvedValue(new Response('<html>', { status: 401, headers: { 'Content-Type': 'text/html' } }))
 
-      await expect(repository.decide(PARAMS, true, ACCOUNT_ID)).rejects.toBeInstanceOf(SessionExpiredError)
+      await expect(repository.decide(PARAMS, true, ACCOUNT_ID)).rejects.toBeInstanceOf(SessionEndedError)
     })
 
     it.each([429, 500])('%i : échec générique', async (status) => {

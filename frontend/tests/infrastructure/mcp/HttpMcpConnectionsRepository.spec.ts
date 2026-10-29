@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { HttpMcpConnectionsRepository } from '../../../src/infrastructure/mcp/HttpMcpConnectionsRepository'
 import { McpConnectionNotFoundError } from '../../../src/domain/mcp/errors/McpConnectionNotFoundError'
 import { McpConnectionsRequestFailedError } from '../../../src/domain/mcp/errors/McpConnectionsRequestFailedError'
-import { SessionExpiredError } from '../../../src/domain/mcp/errors/SessionExpiredError'
+import { SessionEndedError } from '../../../src/domain/auth/errors/SessionEndedError'
 
 const ID = '0199d6a0-7b1c-7c3e-9a4d-1f2e3d4c5b6a'
 
@@ -99,7 +99,7 @@ describe('HttpMcpConnectionsRepository', () => {
     it('un 401 est une session expirée', async () => {
       fetchMock.mockResolvedValue(jsonResponse({ type: '/errors/anything' }, 401))
 
-      await expect(repository.list()).rejects.toBeInstanceOf(SessionExpiredError)
+      await expect(repository.list()).rejects.toBeInstanceOf(SessionEndedError)
     })
 
     it('un 403 est un échec de la requête, pas une session finie : une lecture n\'est jamais refusée pour le CSRF (#748, #732)', async () => {
@@ -189,14 +189,14 @@ describe('HttpMcpConnectionsRepository', () => {
     it('un 401 est une session expirée', async () => {
       fetchMock.mockResolvedValue(jsonResponse({}, 401))
 
-      await expect(repository.revoke(ID)).rejects.toBeInstanceOf(SessionExpiredError)
+      await expect(repository.revoke(ID)).rejects.toBeInstanceOf(SessionEndedError)
     })
 
     it('un 401 sans cookie XSRF-TOKEN reste une session expirée', async () => {
       clearCsrfCookie()
       fetchMock.mockResolvedValue(jsonResponse({}, 401))
 
-      await expect(repository.revoke(ID)).rejects.toBeInstanceOf(SessionExpiredError)
+      await expect(repository.revoke(ID)).rejects.toBeInstanceOf(SessionEndedError)
     })
 
     it('un 403 avec jeton CSRF est un échec, pas une session finie : un refus réel (#748, #732)', async () => {
@@ -210,7 +210,7 @@ describe('HttpMcpConnectionsRepository', () => {
       clearCsrfCookie()
       fetchMock.mockResolvedValue(jsonResponse({}, 403))
 
-      await expect(repository.revoke(ID)).rejects.toBeInstanceOf(SessionExpiredError)
+      await expect(repository.revoke(ID)).rejects.toBeInstanceOf(SessionEndedError)
       const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
       expect(init.headers as Record<string, string>).not.toHaveProperty('X-XSRF-TOKEN')
     })
@@ -219,7 +219,7 @@ describe('HttpMcpConnectionsRepository', () => {
       document.cookie = 'XSRF-TOKEN=; path=/'
       fetchMock.mockResolvedValue(jsonResponse({}, 403))
 
-      await expect(repository.revoke(ID)).rejects.toBeInstanceOf(SessionExpiredError)
+      await expect(repository.revoke(ID)).rejects.toBeInstanceOf(SessionEndedError)
     })
 
     it('un 404 mcp-connection-not-found est « déjà terminée »', async () => {

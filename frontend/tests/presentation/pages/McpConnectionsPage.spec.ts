@@ -11,7 +11,7 @@ import type { McpConnectionsRepository } from '../../../src/domain/mcp/repositor
 import type { McpConnectionList, McpConnectionSummary } from '../../../src/domain/mcp/entities/McpConnection'
 import { McpConnectionNotFoundError } from '../../../src/domain/mcp/errors/McpConnectionNotFoundError'
 import { McpConnectionsRequestFailedError } from '../../../src/domain/mcp/errors/McpConnectionsRequestFailedError'
-import { SessionExpiredError } from '../../../src/domain/mcp/errors/SessionExpiredError'
+import { SessionEndedError } from '../../../src/domain/auth/errors/SessionEndedError'
 import type { Locale } from '../../../src/domain/portfolio/entities/Locale'
 import { expectNoAccessibilityViolation } from '../../support/axe'
 import { listOf } from '../../support/mcpConnectionList'
@@ -616,7 +616,7 @@ describe('McpConnectionsPage', () => {
     it('session finie à la révocation : le focus passe au titre, où l\'alerte et son lien sont lus', async () => {
       const revoke = vi.fn(async () => {
         ;(document.activeElement as HTMLElement | null)?.blur()
-        throw new SessionExpiredError()
+        throw new SessionEndedError()
       })
       const { wrapper } = await mountPage({ revoke })
       const button = rowOf(wrapper, 'Claude Code').get('button')
@@ -736,7 +736,7 @@ describe('McpConnectionsPage', () => {
 
   describe('session finie (401/403 du serveur)', () => {
     it('au chargement : dit que la session a pris fin et propose de se reconnecter, vers cette page', async () => {
-      const list = vi.fn().mockRejectedValue(new SessionExpiredError())
+      const list = vi.fn().mockRejectedValue(new SessionEndedError())
       const { wrapper } = await mountPage({ list })
 
       const alert = wrapper.get('[role="alert"]')
@@ -755,7 +755,7 @@ describe('McpConnectionsPage', () => {
     })
 
     it('en anglais, le lien garde la langue de la page', async () => {
-      const list = vi.fn().mockRejectedValue(new SessionExpiredError())
+      const list = vi.fn().mockRejectedValue(new SessionEndedError())
       const { wrapper } = await mountPage({ locale: 'en', list })
 
       const alert = wrapper.get('[role="alert"]')
@@ -765,7 +765,7 @@ describe('McpConnectionsPage', () => {
     })
 
     it("pendant une révocation : même message et même lien, et pas l'alerte « n'a pas pu être révoquée »", async () => {
-      const revoke = vi.fn().mockRejectedValue(new SessionExpiredError())
+      const revoke = vi.fn().mockRejectedValue(new SessionEndedError())
       const { wrapper } = await mountPage({ revoke })
 
       await rowOf(wrapper, 'Claude Code').get('button').trigger('click')
@@ -779,7 +779,7 @@ describe('McpConnectionsPage', () => {
     })
 
     it('session finie à la révocation : tous les boutons « Révoquer » sont désactivés', async () => {
-      const revoke = vi.fn().mockRejectedValue(new SessionExpiredError())
+      const revoke = vi.fn().mockRejectedValue(new SessionEndedError())
       const { wrapper } = await mountPage({ revoke })
 
       await rowOf(wrapper, 'Claude Code').get('button').trigger('click')
@@ -804,7 +804,7 @@ describe('McpConnectionsPage', () => {
     })
 
     it('session finie : aucune violation d\'accessibilité détectable', async () => {
-      const list = vi.fn().mockRejectedValue(new SessionExpiredError())
+      const list = vi.fn().mockRejectedValue(new SessionEndedError())
       const { wrapper } = await mountPage({ list })
 
       await auditAccessibility(wrapper)

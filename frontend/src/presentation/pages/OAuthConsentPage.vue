@@ -75,7 +75,7 @@ const errorMessage = computed<string | null>(() => {
     return t('oauthConsent.errors.invalid')
   }
   switch (failure.value) {
-    case 'session-expired':
+    case 'session-ended':
       return t('oauthConsent.errors.sessionExpired')
     case 'forbidden':
       return t('oauthConsent.errors.forbidden')
@@ -139,7 +139,7 @@ const offersReload = computed(() => 'account-changed' === failure.value)
  */
 const offersSwitchAccount = computed(() => 'forbidden' === failure.value)
 
-const offersRelogin = computed(() => 'session-expired' === failure.value || 'reauthentication-required' === failure.value)
+const offersRelogin = computed(() => 'session-ended' === failure.value || 'reauthentication-required' === failure.value)
 
 onMounted(() => {
   // La requête telle que reçue ; une requête illisible donne `null`, que la

@@ -9,10 +9,10 @@ import type { AuthRepository } from '../../../src/domain/auth/repositories/AuthR
 import type { OAuthConsentRepository } from '../../../src/domain/mcp/repositories/OAuthConsentRepository'
 import type { ConsentParams, ConsentRequest } from '../../../src/domain/mcp/entities/ConsentRequest'
 import { InvalidConsentRequestError } from '../../../src/domain/mcp/errors/InvalidConsentRequestError'
-import { SessionExpiredError } from '../../../src/domain/mcp/errors/SessionExpiredError'
+import { SessionEndedError } from '../../../src/domain/auth/errors/SessionEndedError'
 import { ConsentFailedError } from '../../../src/domain/mcp/errors/ConsentFailedError'
 import { MalformedConsentDecisionError } from '../../../src/domain/mcp/errors/MalformedConsentDecisionError'
-import { ConsentForbiddenError } from '../../../src/domain/mcp/errors/ConsentForbiddenError'
+import { AccessForbiddenError } from '../../../src/domain/auth/errors/AccessForbiddenError'
 import { ConsentAccountChangedError } from '../../../src/domain/mcp/errors/ConsentAccountChangedError'
 import { ReauthenticationRequiredError } from '../../../src/domain/mcp/errors/ReauthenticationRequiredError'
 import { ACTIVATION_DELAY_MS } from '../../../src/presentation/ui/useDeliberateActivation'
@@ -451,7 +451,7 @@ describe('OAuthConsentPage — session', () => {
 
     const { wrapper, router } = await mountPage({
       describeRequest: vi.fn(async () => {
-        throw new SessionExpiredError()
+        throw new SessionEndedError()
       }),
     })
 
@@ -471,7 +471,7 @@ describe('OAuthConsentPage — session', () => {
     const { wrapper } = await mountPage({
       locale: 'en',
       describeRequest: vi.fn(async () => {
-        throw new SessionExpiredError()
+        throw new SessionEndedError()
       }),
     })
 
@@ -482,7 +482,7 @@ describe('OAuthConsentPage — session', () => {
     await primeTrustedSession()
     const { wrapper, navigate } = await mountPage({
       decide: vi.fn(async () => {
-        throw new SessionExpiredError()
+        throw new SessionEndedError()
       }),
     })
 
@@ -498,7 +498,7 @@ describe('OAuthConsentPage — session', () => {
     await primeTrustedSession()
     const { wrapper, router, navigate } = await mountPage({
       describeRequest: vi.fn(async () => {
-        throw new ConsentForbiddenError()
+        throw new AccessForbiddenError()
       }),
     })
 
@@ -523,7 +523,7 @@ describe('OAuthConsentPage — session', () => {
   it('refus du serveur à la décision : même message et même lien, la demande n\'est plus montrée', async () => {
     const { wrapper, navigate } = await mountPage({
       decide: vi.fn(async () => {
-        throw new ConsentForbiddenError()
+        throw new AccessForbiddenError()
       }),
     })
 
@@ -541,7 +541,7 @@ describe('OAuthConsentPage — session', () => {
     const { wrapper } = await mountPage({
       locale: 'en',
       describeRequest: vi.fn(async () => {
-        throw new ConsentForbiddenError()
+        throw new AccessForbiddenError()
       }),
     })
 
@@ -552,7 +552,7 @@ describe('OAuthConsentPage — session', () => {
   it("session expirée : le message ne parle plus d'un compte qui ne pourrait pas autoriser", async () => {
     const { wrapper } = await mountPage({
       describeRequest: vi.fn(async () => {
-        throw new SessionExpiredError()
+        throw new SessionEndedError()
       }),
     })
 
@@ -828,7 +828,7 @@ describe('OAuthConsentPage — accessibilité', () => {
     const { wrapper } = await mountPage({
       locale,
       describeRequest: vi.fn(async () => {
-        throw new ConsentForbiddenError()
+        throw new AccessForbiddenError()
       }),
     })
     // axe programme ses propres minuteries : elles doivent tourner.

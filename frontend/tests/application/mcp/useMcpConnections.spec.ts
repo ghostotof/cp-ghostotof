@@ -7,7 +7,7 @@ import type { McpConnectionsRepository } from '../../../src/domain/mcp/repositor
 import type { McpConnectionSummary } from '../../../src/domain/mcp/entities/McpConnection'
 import { McpConnectionNotFoundError } from '../../../src/domain/mcp/errors/McpConnectionNotFoundError'
 import { McpConnectionsRequestFailedError } from '../../../src/domain/mcp/errors/McpConnectionsRequestFailedError'
-import { SessionExpiredError } from '../../../src/domain/mcp/errors/SessionExpiredError'
+import { SessionEndedError } from '../../../src/domain/auth/errors/SessionEndedError'
 import { listOf } from '../../support/mcpConnectionList'
 
 enableAutoUnmount(afterEach)
@@ -126,7 +126,7 @@ describe('useMcpConnections', () => {
   })
 
   it('load() sur une session expirée marque la session expirée', async () => {
-    const connections = mountComposable({ list: vi.fn().mockRejectedValue(new SessionExpiredError()), revoke: vi.fn() })
+    const connections = mountComposable({ list: vi.fn().mockRejectedValue(new SessionEndedError()), revoke: vi.fn() })
 
     await connections.load()
 
@@ -135,7 +135,7 @@ describe('useMcpConnections', () => {
   })
 
   it('load() sur une session expirée le dit à la page (sessionExpired), qu\'un autre échec ne dit pas', async () => {
-    const list = vi.fn().mockRejectedValueOnce(new SessionExpiredError()).mockRejectedValueOnce(new McpConnectionsRequestFailedError()).mockResolvedValue(listOf([A]))
+    const list = vi.fn().mockRejectedValueOnce(new SessionEndedError()).mockRejectedValueOnce(new McpConnectionsRequestFailedError()).mockResolvedValue(listOf([A]))
     const connections = mountComposable({ list, revoke: vi.fn() })
 
     await connections.load()
@@ -154,7 +154,7 @@ describe('useMcpConnections', () => {
   it('une session expirée pendant la révocation est dite à la page aussi', async () => {
     const connections = mountComposable({
       list: vi.fn().mockResolvedValue(listOf([A])),
-      revoke: vi.fn().mockRejectedValue(new SessionExpiredError()),
+      revoke: vi.fn().mockRejectedValue(new SessionEndedError()),
     })
     await connections.load()
 
@@ -191,7 +191,7 @@ describe('useMcpConnections', () => {
     const newer = connections.load()
     settle[1]?.resolve(listOf([B]))
     await newer
-    settle[0]?.reject(new SessionExpiredError())
+    settle[0]?.reject(new SessionEndedError())
     await older
 
     expect(connections.status.value).toBe('ready')
@@ -249,7 +249,7 @@ describe('useMcpConnections', () => {
   it('une session expirée pendant la révocation marque la session expirée, outcome failed', async () => {
     const connections = mountComposable({
       list: vi.fn().mockResolvedValue(listOf([A])),
-      revoke: vi.fn().mockRejectedValue(new SessionExpiredError()),
+      revoke: vi.fn().mockRejectedValue(new SessionEndedError()),
     })
     await connections.load()
 

@@ -201,79 +201,10 @@ version" copies nothing and the assistant sends all five fields.
   `tests/presentation/router/adminGuard.spec.ts`). `hasRole(user, role)` (`domain/auth/services/hasRole.ts`) is a
   plain function (no Vue `inject()`) so it also works inside this router guard, outside component context.
 - **A 401, or a 403 to a write sent without a CSRF token, mid-page ends the session on the interface, and moves
-  nobody** (#650, R1c, then S2 of the second review; the 403 since #748): the
-  route guard plays at navigation only, it never sees a session that dies while a page is open (the JWT expiring, or
-  a password change cutting every session opened before it, `.claude/rules/security-authentication-sessions.md`).
-  So `BackofficeHttpClient` (`get` and `mutate`) calls, on any such response, a reaction registered once through
-  `setBackofficeUnauthorizedHandler()` and returns the response as it came — repositories keep their own mapping,
-  **none repeats the reaction**. **The rule is one function, `infrastructure/http/sessionEnded.ts`
-  (`endsTheSession(status, sentWithoutCsrfToken)`), and its facts are checked in the backend**: the CSRF subscriber
-  (priority 20) runs *before* the firewall and controls writes only (`POST`/`PUT`/`PATCH`/`DELETE`), so a read is never
-  refused for CSRF and a write with no `X-XSRF-TOKEN` header gets a 403 before any authentication; `XSRF-TOKEN` is a
-  *session* cookie set at login (`BEARER` lives 3 600 s, so at the JWT's expiry the write still carries its token
-  and takes the firewall's 401), and both cookies are expired by `/api/logout` and by the refusal of a session opened
-  before a password change — after which a read takes a 401 but a write leaves without a token and takes the CSRF's
-  **403** (the person logged out in another tab). The client decides **at send time** (`!readCsrfToken()`; an empty
-  `XSRF-TOKEN=` counts as absent, since no header is sent then) and keeps the verdict per response
-  (`client.endedTheSession(response)`, a module-level `WeakSet`), rather than re-reading the cookie at reception (another
-  tab may have set it back) or the 403's `detail` (localisable, not a contract). Each repository tests
-  `endedTheSession()` **first** in its error translator and answers the reason `session-ended`
-  (`domain/admin/shared/errors/sessionEnded.ts`; `AdminOrderError` for the order), which composables and pages keep
-  quiet (`isSessionEndedError()`, `visibleErrorReason()`): the banner is the only announcement. **A 403 to a read, or
-  to a write that carried its token, keeps its meaning** (not authorized, CSRF signature refused) and stays the
-  repository's error. **Accepted limits**: an `XSRF-TOKEN` present but whose signature no longer verifies (an
-  `APP_SECRET` rotation) stays a refusal, although signing in again would repair it; a browser that drops the
-  *session* cookie `XSRF-TOKEN` while keeping `BEARER` (closed without session restore) reads a finished session —
-  signing in again is indeed the remedy. `main.ts` registers `onBackofficeUnauthorized`
-  (`presentation/router/backofficeSessionExpiry.ts`), which is `markSessionExpired()` and nothing else: **no
-  `router.replace`** (R1c's navigation unmounted the page at the very click of « Enregistrer », and a case study written
-  for more than an hour — the JWT's lifetime — was lost with it). It is idempotent, a state and not an event: several
-  lists of a page answering 401 together need no de-duplication. The state is `sessionEnded` in `useAuth`'s shared
-  state (`hasSessionEnded`), **raised** by `markSessionExpired()` (the header also turns anonymous) and **lowered when a
-  session of an account is applied** (login, a `/api/me` re-read that finds one); a re-read still anonymous or base
-  does not lower it. `presentation/ui/admin/SessionEndedBanner.vue`, rendered **once** by `AdminLayout` above the
-  `RouterView`, shows « Votre session a pris fin » while it holds: a `role="alert"` **inserted by `v-if`** (announced;
-  see `.claude/rules/frontend-a11y.md`), **never taking the focus** (the person may be mid-sentence), **sticky under the
-  header** (#748: on a long page it scrolled away and the person no longer knew why « Enregistrer » did nothing) —
-  `position: sticky; top: var(--app-header-height)`, opaque background, `z-index` 1010 under the header's 1020 so its
-  menus pass over it. The header's height is not a constant (open mobile menu, header alerts), so
-  `presentation/layout/usePublishedHeight.ts` measures it live (`ResizeObserver`, `borderBoxSize` rounded up) and
-  publishes it on `<html>` as `--app-header-height` (`AppHeader`), the banner's own as `--admin-notice-height`; both
-  properties are removed when their element goes (`v-if`) and on unmount, and nothing happens without
-  `ResizeObserver` (jsdom). `style.css`'s `html { scroll-padding-top }` adds the two, so a focused field never lands
-  under the header or the banner (WCAG 2.4.11; it also fixes the sticky header hiding focus site-wide). Rejected:
-  teleporting the banner into the header (it would enter the `banner` landmark, outside `AdminLayout`, and `Teleport`
-  needs a mounted target) and a hard-coded header height. **The return of the session is announced**: a
-  `role="status"` region **present from the banner's mount** (a region inserted with its text may not be announced)
-  receives « Session rétablie, vous pouvez enregistrer. » when `hasSessionEnded` goes from true to false, is
-  `visually-hidden` while empty and is emptied at the next route change. The banner carries a
-  « Se reconnecter » link to `login?redirect=<current fullPath>&expired=1` with `target="_blank" rel="noopener"` and the
-  opening said in the link text (a visually hidden « (s'ouvre dans un nouvel onglet) », WCAG 3.2.5) and by an
-  `external-link` icon (`aria-hidden`) for sighted people: in the same tab
-  the typed text would be lost; the session cookie is shared across tabs and `redirect` brings the new tab back to the
-  page. **The header follows the banner on a protected page** (#748): while the session is ended *and* the route has
-`meta.requiresAuth` (backoffice, MCP, assistant — the pages that ended it), `AppHeader`'s « Connexion » is that same
-link (new tab, `redirect` to the current `fullPath`, `expired=1`, hidden text and `external-link` icon), and « Accès
-instantané » is **not offered**: it would replace the cookie and lead to the case studies, the page and its typed
-input with it. Rejected: hiding « Connexion » (a button that vanishes shifts the bar and removes a known path). On a
-public route nothing changes (`sessionEnded` survives there until a sign-in, and a new tab would make no sense);
-`AppHeader.spec.ts` pins the four cases. **On the window's `focus`, while the session is ended, the banner re-reads `/api/me`** (`checkAuth()`): an
-  account found clears the banner and « Enregistrer » works again (the CSRF token is read from the cookie at each call);
-  a network failure leaves the banner. **The route guard still redirects to `login` at the next navigation** — the
-  input is saved or abandoned by then. `expired=1` (`presentation/router/sessionEnded.ts`, the single value `1`, an
-  announcement that opens nothing) makes `LoginPage` say why it opened. The registry lives in the module, so
-  `infrastructure/` imports neither the session nor the router. **A new administration client goes through
-  `BackofficeHttpClient`**, or reproduces that wiring. The `Mcp` repositories
-  (`HttpMcpConnectionsRepository`, `HttpOAuthConsentRepository`) have their own `fetch` and mark the session expired in
-  their composable without redirecting (the page shows the error, `.claude/rules/frontend.md`). No dedicated « your
-  password changed » message: Lexik's 401 body carries `{code, message}` and no stable `type`, and reading the text
-  would be fragile. `infrastructure/http/sessionEnded.spec.ts` (the rule), `BackofficeHttpClient.spec.ts` (401 on read and write, a 403 to a
-  write without a token or with an empty cookie, 200/204/403/404/409/422/500 with no reaction when the token was
-  sent, a 403 to a read never, no handler registered), `sessionEndedMapping.spec.ts` (the 14 repositories: a 401 read, a 403
-  write without a token and a 401 reorder are `session-ended`, a 403 write with one keeps its mapping; a glob fails when
-  a new repository is missing from its table), `HttpAdminUserRepository.spec.ts`, `backofficeSessionExpiry.spec.ts` (the session is closed,
-  no navigation, idempotent), `SessionEndedBanner.spec.ts` (alert inserted, no focus taken, the link and its icon, the re-read on
-  `focus`, the sticky class, the status region present from mount and its message on return and emptied on the next
-  route), `usePublishedHeight.spec.ts` (the height posted, updated on a second reading, removed with the target), `AdminLayout.sessionEnded.spec.ts` (the page stays mounted with its typed input; red when `router.replace`
-  is reintroduced; the banner is the only alert on a 401 and on a 403 without a token, a 403 with one shows the page's), `useAuth.spec.ts`.
-
+  nobody** (#650, R1c, #748). `BackofficeHttpClient` (`get` and `mutate`) sends through
+  `infrastructure/http/sessionAwareFetch.ts`, calls the reaction registered by `main.ts`
+  (`setBackofficeUnauthorizedHandler()`, `markSessionExpired()` and no navigation) on such a response, and each repository
+  tests `client.endedTheSession()` first in its error translator (reason `session-ended`, which composables and pages
+  keep quiet: the banner is the only announcement). **A new administration client goes through `BackofficeHttpClient`.**
+  The rule, its backend facts, the shared errors, the banner, the header's link and the re-check on return:
+  `.claude/rules/frontend-session.md`.

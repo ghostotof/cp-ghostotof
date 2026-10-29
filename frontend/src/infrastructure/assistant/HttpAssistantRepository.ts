@@ -2,9 +2,8 @@ import type { Locale } from '../../domain/portfolio/entities/Locale'
 import type { ConversationTurn } from '../../domain/assistant/entities/AssistantMessage'
 import type { AssistantRepository } from '../../domain/assistant/repositories/AssistantRepository'
 import { AssistantError, type AssistantErrorReason } from '../../domain/assistant/errors/AssistantError'
-import { readCsrfToken } from '../auth/csrfCookie'
 import { retryAfterSeconds } from '../http/retryAfterSeconds'
-import { endsTheSession } from '../http/sessionEnded'
+import { sessionAwareFetch, type SessionAwareResponse } from '../http/sessionAwareFetch'
 import { ServerEventParser, type ServerEvent } from './serverEvents'
 
 const PATH = '/api/assistant/answers'
@@ -17,7 +16,8 @@ function isAbortError(error: unknown): boolean {
 /**
  * Implémentation HTTP d'AssistantRepository : POST /api/assistant/answers, réponse
  * en `text/event-stream` lue avec `fetch` (EventSource ne sait ni POSTer ni envoyer
- * le header CSRF). Cookie httpOnly BEARER + double-submit CSRF, comme le backoffice.
+ * le header CSRF). L'envoi (cookies, CSRF) et le verdict « session finie » sont ceux de
+ * `infrastructure/http/sessionAwareFetch.ts`, qui porte la règle.
  *
  * Le flux est `delta` {text}* puis exactement un `done` ou `error`. Un flux qui se
  * ferme sans l'un des deux (coupure réseau, #318) est une erreur `network` : sans
@@ -36,18 +36,11 @@ export class HttpAssistantRepository implements AssistantRepository {
     onDelta: (text: string) => void,
     signal?: AbortSignal,
   ): Promise<void> {
-    const csrfToken = readCsrfToken()
-
-    let response: Response
+    let judged: SessionAwareResponse
     try {
-      response = await fetch(`${this.apiBaseUrl}${PATH}`, {
+      judged = await sessionAwareFetch(`${this.apiBaseUrl}${PATH}`, {
         method: 'POST',
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'text/event-stream',
-          ...(csrfToken ? { 'X-XSRF-TOKEN': csrfToken } : {}),
-        },
+        headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
         body: JSON.stringify({ locale, messages }),
         signal,
       })
@@ -55,10 +48,9 @@ export class HttpAssistantRepository implements AssistantRepository {
       throw this.transportError(error)
     }
 
+    const response = judged.response
     if (!response.ok) {
-      // Une écriture partie sans jeton CSRF (cookie absent ou vide) : le client n'a pas posé
-      // l'en-tête, et un 403 est alors le refus CSRF d'une session finie (`endsTheSession`).
-      throw this.httpError(response, !csrfToken)
+      throw this.httpError(judged)
     }
     if (response.body === null) {
       throw new AssistantError('network')
@@ -136,19 +128,19 @@ export class HttpAssistantRepository implements AssistantRepository {
     return isAbortError(error) ? error : new AssistantError('network')
   }
 
-  private httpError(response: Response, sentWithoutCsrfToken: boolean): AssistantError {
-    const reason = this.reasonFor(response.status, sentWithoutCsrfToken)
+  private httpError(judged: SessionAwareResponse): AssistantError {
+    const reason = this.reasonFor(judged)
 
-    return new AssistantError(reason, reason === 'rate-limited' ? retryAfterSeconds(response) : null)
+    return new AssistantError(reason, reason === 'rate-limited' ? retryAfterSeconds(judged.response) : null)
   }
 
-  private reasonFor(status: number, sentWithoutCsrfToken: boolean): AssistantErrorReason {
-    // La règle commune passe avant le statut : un 401, ou un 403 parti sans jeton, est une
-    // session finie ; tout autre 403 (le jeton était là) est un refus réel (#748, #732 point 4).
-    if (endsTheSession(status, sentWithoutCsrfToken)) {
+  private reasonFor(judged: SessionAwareResponse): AssistantErrorReason {
+    // Le verdict de la règle commune passe avant le statut ; tout autre 403 (le jeton était là)
+    // est un refus réel (#748, #732 point 4).
+    if (judged.endedTheSession) {
       return 'unauthenticated'
     }
-    switch (status) {
+    switch (judged.response.status) {
       case 403:
         return 'forbidden'
       case 413:

@@ -8,7 +8,7 @@
  * est gardée telle quelle.
  *
  * Produite par le dépôt sur un 401, ou un 403 à une écriture partie sans jeton CSRF
- * (`infrastructure/http/sessionEnded.ts`) ; **jamais affichée** : le bandeau de session finie
+ * (`infrastructure/http/sessionAwareFetch.ts`) ; **jamais affichée** : le bandeau de session finie
  * (`SessionEndedBanner`) est alors la seule annonce, et les composables comme les pages la taisent
  * (`isSessionEndedError()` ici, `visibleErrorReason()` côté présentation).
  */

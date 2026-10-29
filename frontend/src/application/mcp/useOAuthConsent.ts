@@ -2,11 +2,11 @@ import { inject, readonly, ref, shallowRef, type DeepReadonly, type InjectionKey
 import type { ConsentParams, ConsentRequest } from '../../domain/mcp/entities/ConsentRequest'
 import type { OAuthConsentRepository } from '../../domain/mcp/repositories/OAuthConsentRepository'
 import { ConsentAccountChangedError } from '../../domain/mcp/errors/ConsentAccountChangedError'
-import { ConsentForbiddenError } from '../../domain/mcp/errors/ConsentForbiddenError'
+import { AccessForbiddenError } from '../../domain/auth/errors/AccessForbiddenError'
 import { InvalidConsentRequestError } from '../../domain/mcp/errors/InvalidConsentRequestError'
 import { MalformedConsentDecisionError } from '../../domain/mcp/errors/MalformedConsentDecisionError'
 import { ReauthenticationRequiredError } from '../../domain/mcp/errors/ReauthenticationRequiredError'
-import { SessionExpiredError } from '../../domain/mcp/errors/SessionExpiredError'
+import { SessionEndedError } from '../../domain/auth/errors/SessionEndedError'
 import { isNavigableRedirect } from '../../domain/mcp/services/consentParams'
 import { markSessionExpired } from '../auth/useAuth'
 
@@ -39,9 +39,9 @@ export const CLIENT_REDIRECT: InjectionKey<(url: string) => void> = Symbol('Clie
 export type OAuthConsentState = 'loading' | 'ready' | 'submitting' | 'invalid' | 'error'
 
 /**
- * - `session-expired`    : un 401, ou un 403 à la décision partie sans jeton CSRF
- *                          (`endsTheSession`), la session est marquée expirée ;
- * - `forbidden`          : tout autre 403 (le résumé, ou la décision partie avec son
+ * - `session-ended`      : la session a pris fin (`SessionEndedError`, voir
+ *                          `infrastructure/http/sessionAwareFetch.ts`), elle est marquée expirée ;
+ * - `forbidden`          : `AccessForbiddenError`, tout autre 403 (le résumé, ou la décision partie avec son
  *                          jeton) — ce compte n'a pas, ou plus, l'accès de confiance.
  *                          Terminal ici, la demande n'est plus montrée ; la session
  *                          n'est pas marquée expirée, elle vaut pour le reste du site,
@@ -62,7 +62,7 @@ export type OAuthConsentState = 'loading' | 'ready' | 'submitting' | 'invalid' |
  *                          le même corps) ;
  * - `unknown`            : réseau, 5xx, réponse inattendue.
  */
-export type OAuthConsentFailure = 'session-expired' | 'forbidden' | 'reauthentication-required' | 'account-changed' | 'unsafe-redirect' | 'malformed-decision' | 'unknown'
+export type OAuthConsentFailure = 'session-ended' | 'forbidden' | 'reauthentication-required' | 'account-changed' | 'unsafe-redirect' | 'malformed-decision' | 'unknown'
 
 export interface UseOAuthConsentResult {
   state: DeepReadonly<Ref<OAuthConsentState>>
@@ -106,13 +106,13 @@ export function useOAuthConsent(): UseOAuthConsentResult {
       failure.value = null
       return
     }
-    if (caught instanceof SessionExpiredError) {
+    if (caught instanceof SessionEndedError) {
       markSessionExpired()
       state.value = 'error'
-      failure.value = 'session-expired'
+      failure.value = 'session-ended'
       return
     }
-    if (caught instanceof ConsentForbiddenError) {
+    if (caught instanceof AccessForbiddenError) {
       // Le résumé d'une demande qu'on ne peut pas décider n'a plus à rester affiché.
       request.value = null
       state.value = 'error'

@@ -124,8 +124,9 @@ export function useAssistant(): UseAssistantResult {
           draft.value = question
         }
       }
-      // Seule une session finie anonymise l'en-tête ; un refus réel (`forbidden`) laisse la
-      // session, qui vaut pour le reste du site (#748, #732 point 4).
+      // Seule une session finie (`unauthenticated`, voir `infrastructure/http/sessionAwareFetch.ts`)
+      // anonymise l'en-tête ; un refus réel (`forbidden`) laisse la session, qui vaut pour le reste du
+      // site (#748, #732 point 4).
       if ('unauthenticated' === failure.reason) {
         markSessionExpired()
       }

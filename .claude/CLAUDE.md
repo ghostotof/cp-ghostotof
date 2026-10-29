@@ -49,6 +49,7 @@ This file only carries what applies everywhere, plus what runs from the shell (g
 | `frontend.md` | frontend layers, API-backed content, i18n, SEO, lint | any frontend change |
 | `frontend-backoffice.md` | `/admin`, set-password, route guard | touching an admin page or the router |
 | `frontend-a11y.md` | accessibility | adding or changing UI |
+| `frontend-session.md` | an ended session and a refusal on the frontend: `sessionAwareFetch`, `SessionEndedError` / `AccessForbiddenError`, the banner, the header's link, the re-check on return | touching a call that sends the session cookie, a 401/403 mapping, the banner, a sign-in-again link |
 | `images-docker.md` | Dockerfiles, frontend image, share cards | touching `docker/`, the image build, `.dockerignore` |
 | `deploiement.md` | Kubernetes manifests, ConfigMaps, pod security, stateful PVCs — and the index of the four below | touching `k8s/`, `docker/`, a workflow |
 | `deploiement-pipeline.md` | deploy Jobs, `kubectl exec` boundary, migration before rollout, deploy waits | touching a Job, `pipeline.yml`'s deploy jobs, `run-job.sh`, `wait-rollout.sh`, a migration |

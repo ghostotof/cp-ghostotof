@@ -2,7 +2,7 @@ import { inject, readonly, ref, shallowRef, type DeepReadonly, type InjectionKey
 import type { McpConnectionSummary } from '../../domain/mcp/entities/McpConnection'
 import type { McpConnectionsRepository } from '../../domain/mcp/repositories/McpConnectionsRepository'
 import { McpConnectionNotFoundError } from '../../domain/mcp/errors/McpConnectionNotFoundError'
-import { SessionExpiredError } from '../../domain/mcp/errors/SessionExpiredError'
+import { SessionEndedError } from '../../domain/auth/errors/SessionEndedError'
 import { markSessionExpired } from '../auth/useAuth'
 
 export const MCP_CONNECTIONS_REPOSITORY: InjectionKey<McpConnectionsRepository> = Symbol('McpConnectionsRepository')
@@ -32,8 +32,8 @@ export interface UseMcpConnectionsResult {
   revokingId: DeepReadonly<Ref<string | null>>
   lastOutcome: DeepReadonly<Ref<McpRevocationOutcome | null>>
   /**
-   * Vrai quand le serveur a refusé la session (un 401, ou le 403 d'une révocation
-   * partie sans jeton CSRF, `endsTheSession`) à la dernière lecture ou à la dernière
+   * Vrai quand la session a pris fin (`SessionEndedError`, voir
+   * `infrastructure/http/sessionAwareFetch.ts`) à la dernière lecture ou à la dernière
    * révocation : la page propose alors de se reconnecter plutôt
    * que de réessayer, ce qui renverrait la même requête sans session.
    */
@@ -49,7 +49,7 @@ export interface UseMcpConnectionsResult {
  * Après une révocation, la liste est relue depuis le serveur plutôt que
  * corrigée localement : l'état et la cause d'une connexion sont jugés par lui
  * (échéance, cause), le frontend n'en refait aucun calcul. Une session
- * expirée (`SessionExpiredError` du dépôt : 401, ou 403 sans jeton CSRF) marque la session expirée, comme `useAssistant` : la page
+ * finie (`SessionEndedError` du dépôt, voir `infrastructure/http/sessionAwareFetch.ts`) marque la session expirée, comme `useAssistant` : la page
  * ne sert que le palier de confiance, l'en-tête ne doit pas rester « connecté » ;
  * elle est aussi dite à la page (`sessionExpired`), qui propose de se reconnecter.
  */
@@ -94,7 +94,7 @@ export function useMcpConnections(): UseMcpConnectionsResult {
       if (mine !== latestLoad) {
         return
       }
-      if (caught instanceof SessionExpiredError) {
+      if (caught instanceof SessionEndedError) {
         markSessionExpired()
         sessionExpired.value = true
       }
@@ -122,7 +122,7 @@ export function useMcpConnections(): UseMcpConnectionsResult {
       if (caught instanceof McpConnectionNotFoundError) {
         lastOutcome.value = 'already-gone'
       } else {
-        if (caught instanceof SessionExpiredError) {
+        if (caught instanceof SessionEndedError) {
           markSessionExpired()
           sessionExpired.value = true
         }

@@ -6,7 +6,7 @@ import type { OAuthConsentRepository } from '../../../src/domain/mcp/repositorie
 import type { ConsentParams, ConsentRequest } from '../../../src/domain/mcp/entities/ConsentRequest'
 import { ConsentFailedError } from '../../../src/domain/mcp/errors/ConsentFailedError'
 import { MalformedConsentDecisionError } from '../../../src/domain/mcp/errors/MalformedConsentDecisionError'
-import { ConsentForbiddenError } from '../../../src/domain/mcp/errors/ConsentForbiddenError'
+import { AccessForbiddenError } from '../../../src/domain/auth/errors/AccessForbiddenError'
 import { authState } from '../../../src/application/auth/useAuth'
 import { ConsentAccountChangedError } from '../../../src/domain/mcp/errors/ConsentAccountChangedError'
 import { ReauthenticationRequiredError } from '../../../src/domain/mcp/errors/ReauthenticationRequiredError'
@@ -145,7 +145,7 @@ describe('useOAuthConsent', () => {
 
   it("forbidden au résumé : terminal, la demande n'est plus montrée, la session n'est pas marquée expirée", async () => {
     const describeRequest = vi.fn(async () => {
-      throw new ConsentForbiddenError()
+      throw new AccessForbiddenError()
     })
     const { consent } = mountComposable(vi.fn(async () => APPROVED_URL), describeRequest)
 
@@ -159,7 +159,7 @@ describe('useOAuthConsent', () => {
 
   it("forbidden à la décision : terminal, la demande n'est plus montrée, pas de retour à ready, la session n'est pas marquée expirée", async () => {
     const decide = vi.fn(async () => {
-      throw new ConsentForbiddenError()
+      throw new AccessForbiddenError()
     })
     const { consent, navigate } = mountComposable(decide)
     await consent.load(PARAMS)
