@@ -2,6 +2,7 @@
 paths:
   - "backend/**"
   - ".github/workflows/**"
+  - ".github/dependabot.yml"
   - "docker/php/**"
 ---
 
@@ -350,3 +351,102 @@ autoloader (`tests/bootstrap.php`, `tests/object-manager.php`, the child script 
 `RepositoryFiles` itself, each pair still required to be written; a new path in an exempt file is refused.
 Not seen: a nested call on the result (`\dirname(\dirname(__DIR__))`, `realpath()`), a path carried by a
 variable, one composed by `sprintf()` or `implode()`, a constant other than `DIRECTORY_SEPARATOR`, `__FILE__`.
+
+## API Platform: one version for the whole family, and deprecations seen (issue #701)
+
+Every `api-platform/*` package of the lock is at **the same version** (13 of them, 4.4.6 on 2026-10-28), and
+`composer.json` requires the two it names, `api-platform/symfony` and `api-platform/doctrine-orm`, as **`^4.4.6`**,
+a caret. Before #701 the bundle was pinned `4.3.19` exactly while the components (`serializer`, `state`,
+`metadata`…) had climbed to `4.4.0` through their own loose constraints: the bundle wired `ItemNormalizer` to
+denormalize and the serializer deprecated it, so every `POST /api/contact` wrote a deprecation in production. The
+caret is deliberate and is **not** the exact pin of the 0.x packages (`mcp/*`, `symfony/ai-*`, ADR 0004 D1, see
+`.claude/rules/mcp.md`): API Platform follows semver, a minor does not break, and an exact pin on the bundle alone is
+precisely what let the family drift apart. When you bump one, bump them all (`composer update 'api-platform/*'`).
+`.github/dependabot.yml` carries an `ignore` of the **major** of `api-platform/*`: without it, since 5.0 came out
+(2026-09-16) the `backend-minor-patch` group rejected the two packages as « the latest version is a major » and
+never looked at the 4.x releases. **Remove that `ignore` when the 5.0 migration is done** (#735).
+**`ignoreIndirectDeprecations="true"` in `phpunit.dist.xml` stays** (it spares the noise of the rest of the vendor),
+and that is what hid this one, vendor calling vendor. The targeted net is `tests/Support/ApiPlatformDeprecations`, an
+error handler put on for one action: it keeps an `E_USER_DEPRECATED` when its message starts with `Since api-platform/`,
+or when **the stack crosses a file of `vendor/api-platform/` before the first file of the project** (going up from the
+deprecated call; `trigger_error()` and `deprecation-contracts` are only the relay; the project is `src/` and `tests/`
+anchored on the backend root, whatever the path above it; any other file, compiled-container glue included, decides
+nothing and the climb goes on). Nothing between API Platform and the call is assumed: a lazy `var-exporter` proxy, a
+decorator, Composer's autoloader (a deprecation raised when a class file loads) do not hide it. **The loud false
+positive is accepted, on purpose**: the sub-request of API Platform's `ErrorListener` (`kernel->handle()`) goes through
+Symfony's kernel, and an internal Symfony deprecation raised there is charged to API Platform, which has nothing to
+migrate. For a guard a false positive is loud and costs one line, a false negative is silent and costs a release: the
+finer criterion tried before (« the first caller outside the package that raises it decides ») went blind on exactly
+those layers, and on a clone placed under a `vendor/` directory, and was dropped. A call made by the project itself,
+with no API Platform file above it before the project's, stays with the handler in place (PHPUnit counts it). Every
+other error goes back to that handler, which is restored, and the failure cites the message, the deprecated method,
+where it was raised and the API Platform call that led to it. What it watches: `ApiPlatformRaisesNoDeprecationTest`
+(five representative requests, an authenticated backoffice `PUT`, the MCP route reader, which calls provider and
+serializer without HTTP), and `ApiPlatformStartupRaisesNoDeprecationTest` (kernel boot, in-memory compilation of the
+`test` container through `EnvironmentServicesKernel`, cold metadata: the pools `api_platform.cache.metadata.*`
+cleared, then every resource's collection and every operation through `OperationMetadataFactoryInterface::create()`,
+**all of which must resolve** — a `null` built nothing and counted as one would blind the guard; the factory has no
+index, so the calls are quadratic, measured at 0.1 s for 112 operations). `DeprecatedReferencesOfApiPlatform`, a
+read-only compiler pass run at the end of `TYPE_BEFORE_OPTIMIZATION`, reports an API Platform service (`api_platform.*`,
+hidden `.api_platform.*` included, an `ApiPlatform\` class, or a `ChildDefinition` whose parent chain says so)
+referencing a **deprecated alias**: Symfony raises that from its own pass, with no API Platform frame, and exactly as
+`ResolveReferencesToAliasesPass` does — nothing when the referrer is itself deprecated, each link of an alias chain
+judged by its own referrer — and `found()` starts over at each compilation. It does **not** report a deprecated
+*service*: Symfony raises that one when the service is instantiated (`ContainerBuilder::createService()`, the factory
+`PhpDumper` writes), never at compilation, and the requests above see it with its stack.
+`ApiPlatformPackagesShareOneVersionTest` reads `composer.lock`: the family is what the roots pull through the
+`require` graph (`ApiPlatformLockFamily`), the roots being the `api-platform/*` packages `composer.json` requires in
+`require` and `require-dev` — read from the file, never listed in the test, so a component added tomorrow is judged
+the day it is added —, not every package with the prefix (an `api-platform/*` tool outside the monorepo has its own
+versions, and nothing in the lock tells it apart by `source.url` or `homepage`); it fails citing
+`composer update <those packages>`. The collector, the lock family and the pass each have their own test
+(`ApiPlatformDeprecationCollectorTest`, `ApiPlatformPackagesShareOneVersionTest`, `DeprecatedReferencesOfApiPlatformTest`).
+**Two traps measured while building it.** `@` is deliberately not looked at: `trigger_deprecation()` calls
+`@trigger_error()`, so every such deprecation arrives « suppressed » (and PHPUnit lowers `error_reporting()` during a
+test anyway); `phpunit.dist.xml` has `ignoreSuppressionOfDeprecations`, which the collector reproduces, and honouring
+`@` makes it blind. And the handler that hands an error back to PHPUnit is bound to `PHPUnit\Runner\ErrorHandler`'s
+scope (`asPhpunitReadsIt()`), so that its frame is dropped from the stack PHPUnit classifies: otherwise a raw
+`trigger_error(E_USER_DEPRECATED)` from vendor code called by vendor code was classified « unknown » and counted
+(`ApiPlatformDeprecationHandoverTest`, which runs a child PHPUnit on `Fixtures/RawIndirectDeprecationProbe`). **That
+binding relies on a `@internal` PHPUnit class, and its fallback is silent**: if `PHPUnit\Runner\ErrorHandler` is renamed
+or not loaded, `during()` falls back on the plain closure without a word. The noise is the handover test's, which
+asserts the class is there before its child PHPUnit would count the deprecation. It saw the `ItemNormalizer`
+deprecation on the lock of `develop` (red), and not on 4.4.6. **Not covered**: an `E_DEPRECATED` of the PHP engine in
+API Platform's code; a route absent from the list (adding one costs a line); a deprecation born at the first use of a
+service (a normalizer at its first normalization, a deprecated service an API Platform service references) outside
+those requests; a reference to a deprecated alias added by autowiring during the optimization.
+`ApiPlatformProblemDetailsTest` pins the `type`, `title` and status
+of the problem+json errors (400, 404, 405, 409, 415, 422, 429) the same way, read identical on both locks.
+
+## Freezing the clock for a `Retry-After` (issue #743)
+
+The project's listeners (`RetryAfterListener`, `LoginThrottlingRefusalListener`) read `Psr\Clock\ClockInterface`, which
+`mockTime()` freezes. Symfony's limiter (`microtime(true)` in `Symfony\Component\RateLimiter\Policy`) and
+`LoginThrottlingListener` (`time()`) read the **real** time and accept no clock: a test freezing only the first left the
+`Retry-After` at the mercy of the current fraction of second (a whole minute for a login, whose delay is counted in
+minutes). A test that asserts a `Retry-After` therefore uses `tests/Support/FreezesTheWholeClock`
+(`freezeTheWholeClock()`): `mockTime()` and `ClockMock::withClockMock()` (`symfony/phpunit-bridge`, dev) on the **same**
+instant, `.999` on purpose (the window opens and the refusal falls a thousandth before the next second), released by an
+`#[After]`. Freeze **after** the login of a functional test: the JWT must stay valid at the real time its check reads.
+
+`ClockMock::register()` is called by `tests/bootstrap.php`, not by the bridge's `SymfonyExtension`
+(`clock-mock-namespaces`): PHP caches the function resolved at each call site, so a registration after a first
+`microtime()` of the namespace has no effect, and the extension also enables `DebugClassLoader` and removes the
+deprecations' deduplication for the whole suite. **Only the namespaces whose calls compute a deadline**
+(`RateLimiter\Policy`, `Security\Http\EventListener`): `ClockMock` also replaces `sleep()`, `usleep()` and `hrtime()`, and
+the locks, the caches and `FailedLoginTimingEqualizer` wait and measure for real. `WholeClockFreezeTest` pins both lists
+(a mocked namespace that must be, an unmocked one that must stay so) and the effect on the real components. A new
+component whose deadline a test asserts and that reads the time in another namespace adds its line there, with its test.
+`symfony.lock` carries an entry for `symfony/phpunit-bridge` (recipe 7.3) on purpose, and `phpunit.dist.xml` does **not** carry its
+`SymfonyExtension`: without the entry, any `composer update` or `composer require` replays the recipe, which adds the extension with
+`clock-mock-namespaces=App` and `dns-mock-namespaces=App`. ClockMock would then mock `App\*` and falsify `FailedLoginTimingEqualizer`'s
+duration (measured: the update rewrites `phpunit.dist.xml` without the entry, and leaves it alone with it). If a bridge update ever
+brings a newer recipe, refuse its `phpunit.dist.xml` hunk.
+
+Under the frozen `.999` instant a `Retry-After` is an **exact** value, asserted as such: a one-hour `sliding_window` closes
+3600 s later (12:00:00.999 -> 13:00:00.999), symfony/rate-limiter >= 8.1.10 rounds the deadline up to 13:00:01, and
+`RetryAfterListener` rounds the remaining 3600.001 s **up** to whole seconds (in integer microseconds, issue #743: truncating
+two timestamps announced up to a second too early, 899 for 899.989 s left), so `AnswerControllerTest` reads `3601`
+(`WholeClockFreezeTest` derives the same deadline). A login refusal reads `900`: its deadline is `now + 15 min` exactly.
+That second above the real delay is the rounding of an integer-second header; announcing less would make the client retry too
+early. Never relax it to `<= 3601`.

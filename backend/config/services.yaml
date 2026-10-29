@@ -64,6 +64,11 @@ parameters:
     # révoquées avant ce délai. Une expression relative PHP, lue par
     # RetentionPeriod comme toute durée de purge, d'au moins un jour.
     app.mcp.revoked_connection_retention: '6 months'
+    # Fenêtre de `login_throttling` en minutes, plafond du Retry-After d'un refus de
+    # connexion (issue #743). Copie littérale de l'`interval` de security.yaml, qui ne
+    # peut pas lire un paramètre : LoginThrottlingIntervalAlignmentTest les tient alignées.
+    # Le pourquoi : docblock de LoginThrottlingRefusalListener.
+    app.login_throttling_interval_minutes: 15
 
 services:
     # default configuration for services in *this* file

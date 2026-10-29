@@ -8,8 +8,8 @@
         "ext-ctype": "*",
         "ext-iconv": "*",
         "ext-intl": "*",
-        "api-platform/doctrine-orm": "^4.3",
-        "api-platform/symfony": "4.3.19",
+        "api-platform/doctrine-orm": "^4.4.6",
+        "api-platform/symfony": "^4.4.6",
         "defuse/php-encryption": "2.4.0",
         "doctrine/doctrine-bundle": "^3.3",
         "doctrine/doctrine-migrations-bundle": "^4.0",
@@ -122,12 +122,13 @@
         "phpstan/phpstan-phpunit": "*",
         "phpstan/phpstan-strict-rules": "*",
         "phpstan/phpstan-symfony": "*",
-        "phpunit/phpunit": "^13.3",
+        "phpunit/phpunit": "^13.4.5",
         "psalm/phar": "^6.16",
-        "rector/rector": "^2.6",
+        "rector/rector": "^2.8.3",
         "roave/security-advisories": "dev-latest",
         "symfony/browser-kit": "8.1.*",
         "symfony/css-selector": "8.1.*",
-        "symfony/maker-bundle": "^1.67"
+        "symfony/maker-bundle": "^1.67",
+        "symfony/phpunit-bridge": "8.1.*"
     }
 }
