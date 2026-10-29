@@ -1202,6 +1202,13 @@ dans le futur ticket `__Host-` (tâche 12).
 
 ---
 
+### Décisions de l'auteur sur ce plan (2026-10-29)
+
+1. Premier 401 après l'expiration du JWT : **accès de base → déconnexion anticipée côté client** (tâche R21b) ; login →
+   limite acceptée, écrite dans la règle et la note de release.
+2. F4 : « Changer de compte » du backoffice dans le **même onglet** (comme R7).
+3. Amendement d'ADR 0003 **dans R21** (Step 3b), pas à la clôture.
+
 ### Task R12 : Le cookie CSRF lu une fois et sans exception ; deux types partagés (J, F13, `SessionAwareInit`, `ApiProblemBody`)
 
 **Files :**
@@ -1448,8 +1455,35 @@ dans le futur ticket `__Host-` (tâche 12).
   Run : `docker compose exec -u dev backend php bin/phpunit tests/Security/Authentication tests/Security/User/Presentation/Controller/BaseAccessControllerTest.php`. Expected : échéances non nulles ; 401 sans `Set-Cookie`.
 - [ ] **Step 2 : implémenter** — `set_cookies.BEARER.lifetime: 0` avec son commentaire (cookie de session : fermer le navigateur sans restauration finit la session, lecture et écriture ; le JWT garde `token_ttl`) ; le reste selon les interfaces. Docblock du listener : avec des cookies de session, un cookie refusé (expiré, invalide, antérieur au changement de mot de passe) resterait jusqu'à la fermeture du navigateur et ferait de tout `/api`, public compris, un 401 ; effacé, la requête suivante est anonyme. Docblock d'`AuthCookieFactory` : plus aucun site ne pose d'échéance.
 - [ ] **Step 3 : règles et faits** — `security-authentication-sessions.md` : la puce `LoginSuccessSubscriber` réécrite (cookies de session, pourquoi, décision du 2026-10-29), `lifetime: 0`, les tests ; la puce `AuthCookieFactory` ; la puce `StaleSessionCookiesClearingListener` (tout refus, pourquoi). `sessionAwareFetch.ts` et `frontend-session.md`, les faits : les deux cookies vivent la session du navigateur ; à l'expiration du JWT, la première requête prend un 401 qui les efface (une lecture : 401 ; une écriture : 401 puis, cookies effacés, le 403 sans jeton) ; une session ouverte avant le déploiement garde des cookies persistants, une heure au plus. Constat H : sans objet (plus de durée répétée).
+- [ ] **Step 3b : amendement d'ADR 0003 (décision de l'auteur du 2026-10-29 : dans R21, pas à la clôture)** — `docs/adr/0003-paliers-d-acces.md`, avec le contenu décrit à la tâche 12 (ligne de statut, faits, amendement « 2026-10-29 (#748, F1) »), relu contre `security-authentication-sessions.md` ; ajouter que la première requête qui suit l'expiration d'un JWT de **login** prend un 401 unique qui efface les cookies (limite acceptée), et que l'accès de base l'évite par une déconnexion anticipée côté client (tâche R21b).
 - [ ] **Step 4 : verts** — même commande PASS ; `make back-test`, `make back-quality` (`-u dev`), `make front-lint`, `make front-build`, `tools/check-claude-rules.sh`.
-- [ ] **Step 5 : commit** — `fix(security): BEARER et XSRF-TOKEN cookies de session, tout cookie refusé effacé (#748)`.
+- [ ] **Step 5 : commit** — `fix(security): BEARER et XSRF-TOKEN cookies de session, tout cookie refusé effacé (#748)` (ADR compris).
+
+---
+
+### Task R21b : l'accès de base se déconnecte à son échéance, avant le 401 (décision de l'auteur du 2026-10-29 ; frontend)
+
+Contexte : après R21, la première requête `/api` qui suit l'expiration du JWT prend un 401 qui efface les cookies ; une
+page publique peut afficher une erreur une fois. **Décision de l'auteur : pour l'accès de base (15 min), le frontend
+appelle `POST /api/logout` à l'échéance qu'il connaît déjà** (`expiresAt` du corps de `POST /api/account/base-access`,
+déjà lu par le frontend : voir `.claude/rules/frontend.md`, son expiration côté client). Pour le login (1 h), dont
+l'échéance n'est pas exposée au frontend, le 401 unique est une **limite acceptée**, écrite dans `frontend-session.md`
+et la note de release.
+
+**Files :** le module qui gère aujourd'hui l'expiration de l'accès de base côté client (à trouver : `frontend.md`,
+« its expiry on the frontend ») ; `useAuth.ts` si la déconnexion passe par lui ; leurs specs ; `frontend-session.md`.
+
+- [ ] **Step 1 : test rouge** — faux minuteurs : un accès de base obtenu avec `expiresAt` = maintenant + 15 min ; à
+  l'échéance (et pas avant), `POST /api/logout` part une fois, l'état passe en anonyme **sans** `markSessionExpired()`
+  (ce n'est pas une session finie à annoncer) ; un onglet revenu après l'échéance (minuterie gelée en arrière-plan)
+  déconnecte au retour (`visibilitychange`/`focus`) ; une nouvelle obtention ou un login entre-temps annule la
+  minuterie ; un échec réseau du logout laisse l'état anonyme côté client (le 401 suivant effacera les cookies).
+- [ ] **Step 2 : implémenter** au plus près de l'expiration existante de l'accès de base (ne pas dupliquer sa
+  minuterie : la brancher). `POST /api/logout` est une écriture : il part avec son jeton CSRF par `sessionAwareFetch`.
+- [ ] **Step 3 : règle** — `frontend-session.md` : l'accès de base se déconnecte à son échéance ; le login garde le 401
+  unique, limite acceptée, et pourquoi (échéance non exposée).
+- [ ] **Step 4 : verts** — `make front-test`, `make front-lint`, `make front-build`, `tools/check-claude-rules.sh`.
+- [ ] **Step 5 : commit** — `fix(frontend): l'accès de base se déconnecte à son échéance, avant le 401 (#748)`.
 
 ---
 
@@ -1505,7 +1539,7 @@ Ce que les corrections R12 à R22 ont changé, à mesurer aussi :
 
 - [ ] `make front-test`, `make front-lint`, `make front-build`, **`make back-test` et `make back-quality`** (R1, R21) verts sur la tête ; `tools/check-claude-rules.sh` vert (les `paths:` ajoutés correspondent à des fichiers suivis, aucune règle au-delà de 50 000 octets, la nouvelle `frontend-session.md` comprise, et sa ligne dans l'index de `.claude/CLAUDE.md`).
 - [ ] Corps de la PR : la note de release de F1 (R21, remplace celle de R1) — `BEARER` et `XSRF-TOKEN` sont désormais des **cookies de session**, au login comme à l'accès de base (le JWT garde son heure, l'accès de base ses quinze minutes) : fermer le navigateur sans restauration de session finit la session ; à l'expiration du JWT, la première requête prend un 401 qui efface les deux cookies, la suivante est anonyme ; **une session ouverte avant le déploiement garde ses cookies persistants, au plus une heure** (rien à faire) ; le frontend juge désormais la session par génération (une réponse partie sous une autre session ne la finit ni ne la rétablit) et un autre compte au retour rejoue la navigation.
-- [ ] **Amendement d'ADR 0003** (décision 1 du 2026-10-29), écrit par le fil principal dans le commit de clôture : ligne de statut (« Amendée le 2026-10-29 ») ; dans « Risque accepté — le logout ne révoque pas le jeton », le paragraphe des faits (`set_cookies.BEARER.lifetime` vaut `0` : cookie de session ; `token_ttl` 3600 et les 900 s de l'accès de base inchangés) ; un amendement « 2026-10-29 (#748, F1) » : `BEARER` et `XSRF-TOKEN` sont des cookies de session ; le risque « navigateur fermé » (un cookie qui survit à la fermeture, en lecture comme en écriture) **disparaît, sauf navigateur qui restaure la session** ; tout cookie refusé (expiré, invalide, antérieur au changement de mot de passe) est effacé par son premier 401 ; ce que cela ne change pas (un jeton copié reste valable jusqu'à son `exp`) ; les conditions qui rouvrent la décision, inchangées. `docs/adr/0003-paliers-d-acces.md` seul, relu contre `security-authentication-sessions.md` (R21).
+- [ ] **Amendement d'ADR 0003** — **déplacé dans R21 (Step 3b) par décision de l'auteur du 2026-10-29** ; à la clôture, seulement vérifier qu'il est fait et cohérent. Contenu attendu (décision 1 du 2026-10-29) : ligne de statut (« Amendée le 2026-10-29 ») ; dans « Risque accepté — le logout ne révoque pas le jeton », le paragraphe des faits (`set_cookies.BEARER.lifetime` vaut `0` : cookie de session ; `token_ttl` 3600 et les 900 s de l'accès de base inchangés) ; un amendement « 2026-10-29 (#748, F1) » : `BEARER` et `XSRF-TOKEN` sont des cookies de session ; le risque « navigateur fermé » (un cookie qui survit à la fermeture, en lecture comme en écriture) **disparaît, sauf navigateur qui restaure la session** ; tout cookie refusé (expiré, invalide, antérieur au changement de mot de passe) est effacé par son premier 401 ; ce que cela ne change pas (un jeton copié reste valable jusqu'à son `exp`) ; les conditions qui rouvrent la décision, inchangées. `docs/adr/0003-paliers-d-acces.md` seul, relu contre `security-authentication-sessions.md` (R21).
 - [ ] **Ticket à proposer à l'auteur** (texte dans le rapport de clôture, pas de création sans son accord) : le préfixe `__Host-` des deux cookies (S2 de la première relecture : préprod d'abord, il renomme ce que Lexik, `CsrfCookieRequestSubscriber` et le frontend lisent par nom) **et F12** (le jeton CSRF n'est lié ni à la session ni au temps : le lier au JWT — par exemple un HMAC dérivé de son `iat` et du compte — ou lui donner une échéance signée), avec la note que R21 réduit déjà la durée de vie des deux cookies à la session du navigateur.
 - [ ] #732 : le point 4 est **entièrement traité par #748** (règle `endsTheSession` dans le backoffice, « Mes connexions MCP », le consentement OAuth et l'assistant, portée par `sessionAwareFetch` ; un refus réel relit `/api/me` et propose « Changer de compte » ; tâches 3, 4, 4b, 4c, R2, R7) — le marquer comme tel dans le corps (barré, renvoi à #748 et à son commit de fusion), rien n'y reste. Par `gh api -X PATCH repos/{owner}/{repo}/issues/732` (pas `gh issue edit`, cassé en gh 2.46 sur ce dépôt).
 - [ ] `tasks/todo.md` : cocher « Tâche 11 » (critère de #748) dans le commit de clôture.
