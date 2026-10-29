@@ -86,7 +86,10 @@ fixed:
   session comes back (« Session rétablie »), because a live region inserted already full may not be announced. The
   banner is sticky under the header, `scroll-padding-top` keeping the focus out from under both (WCAG 2.4.11,
   `.claude/rules/frontend-backoffice.md`). It differs from `LoginPage`'s notice (next bullet) by when it appears: the banner is inserted after
-  the first render (announced), the notice is present from it (may not be).
+  the first render (announced), the notice is present from it (may not be). **An alert already shown is announced again
+  only if it is re-inserted** (#748, R9, S7): a second refusal while the banner is displayed changes nothing in an
+  idempotent state, so the alert carries a `:key` (`useAuth().sessionEndedCount`, +1 per `markSessionExpired()`) that makes
+  Vue replace the element.
 - **A `role="status"` present at first render may not be announced** (`LoginPage`'s « Votre session a pris fin »
   notice, `expired=1`, #650): some screen readers announce a live region only when its content *changes*, and this
   one is in the page from the start. It is still readable as ordinary text in the reading order, which is why it is

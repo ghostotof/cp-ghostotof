@@ -152,6 +152,18 @@ describe('useAuth', () => {
       expect(auth.hasSessionEnded.value).toBe(false)
     })
 
+    it('chaque fin de session augmente sessionEndedCount, même quand la session est déjà finie', () => {
+      const auth = mountWithComposable(createStubRepository())
+      const before = auth.sessionEndedCount.value
+
+      markSessionExpired()
+      expect(auth.sessionEndedCount.value).toBe(before + 1)
+
+      // Un second refus pendant que la session est déjà finie compte aussi : c'est ce qui réannonce le bandeau (S7).
+      markSessionExpired()
+      expect(auth.sessionEndedCount.value).toBe(before + 2)
+    })
+
     it("une relecture qui répond encore « anonyme » ne lève pas l'annonce (la session n'est pas revenue)", async () => {
       const auth = mountWithComposable(createStubRepository())
       await auth.login('jane', 'password')

@@ -57,7 +57,14 @@ async function mountBanner(path: string, repository: AuthRepository, locale: 'fr
   const i18n = createAppI18n()
   i18n.global.locale.value = locale
 
-  return mount(SessionEndedBanner, {
+  // Le bandeau a deux racines (l'alerte et la région `status`, #748 R9) : un hôte les réunit, comme la `<section>`
+  // d'`AdminLayout` en production, pour que le wrapper les voie toutes les deux.
+  const Host = defineComponent({
+    components: { SessionEndedBanner },
+    template: '<div><SessionEndedBanner /></div>',
+  })
+
+  return mount(Host, {
     attachTo: document.body,
     global: { plugins: [i18n, router], provide: { [AUTH_REPOSITORY as symbol]: repository } },
   })
@@ -229,6 +236,110 @@ describe('SessionEndedBanner (#650, S2)', () => {
 
     expect(wrapper.get('[role="status"]').text()).toBe('')
     wrapper.unmount()
+  })
+
+  it('une session qui reprend fin efface « Session rétablie »', async () => {
+    const repository = createRepository(async () => sessionFor({ username: 'super', roles: ['ROLE_SUPER', 'ROLE_USER'] }))
+    await resetToSignedIn(repository)
+    const wrapper = await mountBanner('/fr/admin/case-studies', repository)
+    markSessionExpired()
+    await flushPromises()
+    await recheck(repository)
+    expect(wrapper.get('[role="status"]').text()).toBe('Session rétablie, vous pouvez enregistrer.')
+
+    // CR6 : le message disait « vous pouvez enregistrer » alors que le bandeau est de nouveau affiché.
+    markSessionExpired()
+    await flushPromises()
+
+    expect(wrapper.find('[role="alert"]').exists()).toBe(true)
+    const status = wrapper.get('[role="status"]')
+    expect(status.text()).toBe('')
+    expect(status.classes()).toContain('visually-hidden')
+    wrapper.unmount()
+  })
+
+  it('un nouveau refus pendant que le bandeau est affiché le réinsère, donc le réannonce', async () => {
+    const repository = createRepository(async () => sessionFor(null))
+    await resetToSignedIn(repository)
+    const wrapper = await mountBanner('/fr/admin/case-studies', repository)
+    markSessionExpired()
+    await flushPromises()
+    const before = wrapper.get('[role="alert"]').element
+
+    // S7 : `markSessionExpired()` est idempotent pour l'état, mais une alerte déjà là n'est pas annoncée de nouveau.
+    markSessionExpired()
+    await flushPromises()
+
+    const after = wrapper.get('[role="alert"]').element
+    expect(after).not.toBe(before)
+    expect(wrapper.findAll('[role="alert"]')).toHaveLength(1)
+    expect(after.textContent).toContain('Votre session a pris fin')
+    wrapper.unmount()
+  })
+
+  it('plusieurs refus dans le même tick : une seule réinsertion', async () => {
+    const repository = createRepository(async () => sessionFor(null))
+    await resetToSignedIn(repository)
+    const wrapper = await mountBanner('/fr/admin/case-studies', repository)
+    markSessionExpired()
+    await flushPromises()
+    const before = wrapper.get('[role="alert"]').element
+    const inserted: Node[] = []
+    const observer = new MutationObserver((records) => {
+      for (const record of records) {
+        record.addedNodes.forEach((node) => inserted.push(node))
+      }
+    })
+    observer.observe(wrapper.element, { childList: true, subtree: true })
+
+    markSessionExpired()
+    markSessionExpired()
+    markSessionExpired()
+    await flushPromises()
+    observer.disconnect()
+
+    const after = wrapper.get('[role="alert"]').element
+    expect(after).not.toBe(before)
+    // Trois refus, un rendu : une seule alerte insérée.
+    expect(inserted.filter((node) => node instanceof HTMLElement && 'alert' === node.getAttribute('role'))).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  it("la hauteur publiée suit l'alerte réinsérée", async () => {
+    const observed: Element[] = []
+    const disconnected = vi.fn()
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe(element: Element): void {
+          observed.push(element)
+        }
+        disconnect(): void {
+          disconnected()
+        }
+      },
+    )
+    let wrapper: VueWrapper | null = null
+    try {
+      const repository = createRepository(async () => sessionFor(null))
+      await resetToSignedIn(repository)
+      wrapper = await mountBanner('/fr/admin/case-studies', repository)
+      markSessionExpired()
+      await flushPromises()
+      expect(observed).toHaveLength(1)
+
+      markSessionExpired()
+      await flushPromises()
+
+      // L'observateur lâche l'élément retiré et mesure le nouveau : la hauteur ne reste pas celle d'un nœud disparu.
+      expect(observed[observed.length - 1]).toBe(wrapper.get('[role="alert"]').element)
+      expect(observed.length).toBeGreaterThan(1)
+      expect(disconnected).toHaveBeenCalled()
+    } finally {
+      // Démonté avant de rendre le vrai `ResizeObserver` : un wrapper resté monté referait tourner la composable.
+      wrapper?.unmount()
+      vi.unstubAllGlobals()
+    }
   })
 
   it("n'annonce pas de retour tant que la session n'a pas pris fin", async () => {

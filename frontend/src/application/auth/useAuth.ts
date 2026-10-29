@@ -21,7 +21,7 @@ export const AUTH_REPOSITORY: InjectionKey<AuthRepository> = Symbol('AuthReposit
  * les consommateurs existants — le garde de routeur lit `authState.user` —
  * n'aient pas à changer.
  */
-const state = reactive<{ tier: AccessTier; user: AuthenticatedUser | null; isChecking: boolean; sessionEnded: boolean }>({
+const state = reactive<{ tier: AccessTier; user: AuthenticatedUser | null; isChecking: boolean; sessionEnded: boolean; sessionEndedCount: number }>({
   tier: ANONYMOUS_SESSION.tier,
   user: ANONYMOUS_SESSION.user,
   isChecking: true,
@@ -29,6 +29,9 @@ const state = reactive<{ tier: AccessTier; user: AuthenticatedUser | null; isChe
   // markSessionExpired). Distinct de « anonyme » : c'est ce qui permet au
   // backoffice d'annoncer la fin de session sans quitter la page (#650, S2).
   sessionEnded: false,
+  // Nombre de refus qui ont fini la session depuis le chargement : `sessionEnded` est un état, idempotent, il
+  // ne dit pas qu'un refus de plus vient d'arriver ; ce compteur le dit (le bandeau se réannonce, #748 S7).
+  sessionEndedCount: 0,
 })
 
 /**
@@ -180,6 +183,7 @@ export function markBaseAccessExpired(): void {
 export function markSessionExpired(): void {
   applySession(ANONYMOUS_SESSION)
   state.sessionEnded = true
+  state.sessionEndedCount += 1
 }
 
 export interface UseAuthResult {
@@ -194,6 +198,12 @@ export interface UseAuthResult {
    * jusqu'au retour d'un compte : le bandeau du backoffice s'appuie dessus.
    */
   hasSessionEnded: ComputedRef<boolean>
+  /**
+   * Augmenté de un par chaque `markSessionExpired()`, y compris quand la session est déjà finie : un état
+   * idempotent ne change pas au second refus, ce compteur si. Le bandeau en fait la `key` de son alerte, qu'il
+   * réinsère donc à chaque refus — c'est l'insertion que les lecteurs d'écran annoncent (#748, S7).
+   */
+  sessionEndedCount: ComputedRef<number>
   /** ROLE_TRUSTED (ou ROLE_SUPER) : le seul palier qui ouvre le CV et /api/me. */
   isTrusted: ComputedRef<boolean>
   isSuperAdmin: ComputedRef<boolean>
@@ -289,6 +299,7 @@ export function useAuth(): UseAuthResult {
     isAuthenticated: computed(() => 'anonymous' !== state.tier),
     isChecking: computed(() => state.isChecking),
     hasSessionEnded: computed(() => state.sessionEnded),
+    sessionEndedCount: computed(() => state.sessionEndedCount),
     isTrusted: computed(() => 'trusted' === state.tier),
     isSuperAdmin: computed(() => hasRole(state.user, ROLE_SUPER)),
     login,

@@ -29,6 +29,13 @@ import SignInAgainLink from '../SignInAgainLink.vue'
  *   l'écran et la personne ne savait plus pourquoi « Enregistrer » ne répondait pas. Sa hauteur est
  *   publiée (`--admin-notice-height`) pour que `scroll-padding-top` (style.css) garde le champ focalisé
  *   hors de dessous ; il se colle sous l'en-tête, dont la hauteur change (`--app-header-height`).
+ * - **Deux racines** (#748, R9) : l'alerte et la région `status` sont les enfants directs de la `<section>`
+ *   d'`AdminLayout`, qui contient la page. C'est le bloc contenant de `position: sticky` : l'alerte colle sur toute
+ *   la hauteur de la page. Vides, les deux n'entrent pas dans le flux (rien de rendu, ou `visually-hidden`), donc
+ *   aucun `gap` de plus.
+ * - **Chaque refus réannonce** (S7) : l'alerte est insérée avec `:key="sessionEndedCount"`, que
+ *   `markSessionExpired()` augmente à chaque refus ; **« Session rétablie » s'efface** si la session finit de
+ *   nouveau (CR6).
  * - **Le retour est annoncé** (#748, constat 14) : quand le bandeau disparaît, rien ne dit que « Enregistrer »
  *   refonctionne. Une région `role="status"` **présente dès le montage** (une région insérée avec son texte
  *   peut ne pas être annoncée) reçoit alors « Session rétablie » ; vide, elle est masquée visuellement, et
@@ -36,7 +43,7 @@ import SignInAgainLink from '../SignInAgainLink.vue'
  */
 const { t } = useI18n()
 const route = useRoute()
-const { hasSessionEnded } = useAuth()
+const { hasSessionEnded, sessionEndedCount } = useAuth()
 
 // Hauteur du bandeau, publiée tant qu'il est affiché (retirée au `v-if` faux).
 const banner = useTemplateRef<HTMLElement>('banner')
@@ -46,7 +53,10 @@ usePublishedHeight(banner, '--admin-notice-height')
 const hasRestored = ref(false)
 
 watch(hasSessionEnded, (isEnded, wasEnded) => {
-  if (wasEnded && !isEnded) {
+  if (isEnded) {
+    // La session finit de nouveau : « vous pouvez enregistrer » serait faux sous un bandeau qui dit le contraire (CR6).
+    hasRestored.value = false
+  } else if (wasEnded) {
     hasRestored.value = true
   }
 })
@@ -60,27 +70,38 @@ watch(
 </script>
 
 <template>
-  <div>
-    <p
-      v-if="hasSessionEnded"
-      ref="banner"
-      role="alert"
-      class="session-ended-banner text-danger-emphasis mb-0 d-flex flex-wrap align-items-center gap-3"
-      data-testid="admin-session-ended"
-    >
-      {{ t('admin.sessionEnded.message') }}
-      <SignInAgainLink>{{ t('admin.sessionEnded.signInAgain') }}</SignInAgainLink>
-    </p>
+  <!--
+    Deux racines, pas un `<div>` qui les enveloppe (#748, CR1/D1). Un élément `position: sticky` ne colle que dans
+    son parent : enveloppée, l'alerte avait pour parent un `<div>` haut exactement d'elle-même, sans course, et elle
+    défilait avec lui. Ici le parent est la `<section>` d'AdminLayout, qui contient toute la page. Et ce `<div>`,
+    toujours rendu, était un élément de plus dans le `flex-column gap-4` de la section : un `gap` d'espace vide.
+    Aucun attribut ne tombe sur ce composant (AdminLayout ne lui en passe pas), donc pas d'héritage ambigu.
+    `display: contents` écarté : une règle CSS de plus, et des pertes de sémantique connues dans Safari.
+  -->
+  <!--
+    `:key` = nombre de refus : un refus de plus pendant que le bandeau est affiché le réinsère, donc le réannonce
+    (S7) ; plusieurs refus du même tick ne font qu'un rendu, donc qu'une insertion.
+  -->
+  <p
+    v-if="hasSessionEnded"
+    ref="banner"
+    :key="sessionEndedCount"
+    role="alert"
+    class="session-ended-banner text-danger-emphasis mb-0 d-flex flex-wrap align-items-center gap-3"
+    data-testid="admin-session-ended"
+  >
+    {{ t('admin.sessionEnded.message') }}
+    <SignInAgainLink>{{ t('admin.sessionEnded.signInAgain') }}</SignInAgainLink>
+  </p>
 
-    <!-- Présente dès le montage, vide : c'est le changement de son contenu qui est annoncé. -->
-    <div
-      role="status"
-      class="small text-success-emphasis"
-      :class="{ 'visually-hidden': !hasRestored }"
-      data-testid="admin-session-restored"
-    >
-      {{ hasRestored ? t('admin.sessionEnded.restored') : '' }}
-    </div>
+  <!-- Présente dès le montage, vide : c'est le changement de son contenu qui est annoncé. `visually-hidden` la sort du flux. -->
+  <div
+    role="status"
+    class="small text-success-emphasis"
+    :class="{ 'visually-hidden': !hasRestored }"
+    data-testid="admin-session-restored"
+  >
+    {{ hasRestored ? t('admin.sessionEnded.restored') : '' }}
   </div>
 </template>
 
