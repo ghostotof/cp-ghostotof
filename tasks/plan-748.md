@@ -594,6 +594,445 @@ empire 2.4.11 avec le bandeau collant).
 
 ---
 
+## Corrections de relecture (2026-10-29)
+
+Les tâches 1 à 10 sont faites (0838f0ed → 0040068c). Deux relectures du 2026-10-29 ont retenu les constats ci-dessous ;
+**tous sont corrigés dans cette branche**, par les tâches R1 à R10, avant les tâches 11 et 12. Décisions de l'auteur
+prises sur ces relectures : CR3 par les deux corrections (backend et frontend) ; CR5 par la resynchronisation de la
+session et le lien « Changer de compte » partout ; CR7 par une revérification au retour sur toutes les pages
+protégées ; le refactoring (CR9, Std1 à Std9) entier ici. Hors périmètre, traités par le fil principal : le préfixe
+`__Host-` des cookies (S2), les constats portant sur la fusion 0e581b42 (`Retry-After` du backend…).
+
+### Vérification de chaque constat dans le code (HEAD 0040068c)
+
+Aucun constat n'est écarté. Un seul l'est en partie (CR7, première moitié, déjà en place).
+
+- **CR1/C1 et D1, confirmés.** `SessionEndedBanner.vue` a pour racine un `<div>` qui ne contient que l'alerte collante
+  et la région `status` (`visually-hidden`, donc `position: absolute`, hors du flux). Le bloc contenant du `sticky` est
+  ce `<div>`, haut exactement de l'alerte : elle n'a aucune course et défile avec lui. Ce même `<div>`, toujours rendu,
+  est un élément du flux de la `<section class="d-flex flex-column gap-4">` d'`AdminLayout` : un `gap-4` de plus, même
+  vide.
+- **CR2, confirmé.** `useAdminAboutSettings.load(locale)` ne vide pas `settings` quand la locale change ; un rejet
+  `session-ended` ne lève plus `hasError` (tâche 2), donc `AdminAboutSettingsForm` (`v-else` du formulaire) montre les
+  champs FR sous l'en-tête EN, et `save(props.locale)` enverrait le FR sur l'EN. **Seul composable à clé** : les douze
+  autres `load()` ne prennent aucun paramètre (`grep "const load = async"` dans `src/application/admin`), aucun ne charge
+  par identifiant.
+- **CR4/D2, confirmé.** Une première lecture en `session-ended` laisse la liste à `[]` avec `hasError` faux : les douze
+  états vides (`admin.*.empty`, `admin.watch.vulnerabilities.empty`) s'affichent comme si le contenu n'existait pas.
+- **CR3/S1, confirmé.** Deux sites seulement posent `XSRF-TOKEN` : `LoginSuccessSubscriber.php:57-59` (sans échéance,
+  cookie de session) et `BaseAccessController.php:69` (échéance du jeton, déjà). Aucun autre : la définition du mot de
+  passe ne connecte pas, il n'existe aucun rafraîchissement de JWT (`security-authentication-sessions.md`, « a JWT's
+  `iat` »), `CookieLogoutListener` et `StaleSessionCookiesClearingListener` ne font qu'expirer. `BEARER` reçoit
+  `time() + 3600` de Lexik (`JWTCookieProvider::createCookie`, `set_cookies.BEARER.lifetime: 3600`), le JWT `token_ttl:
+  3600` (paramètre `lexik_jwt_authentication.token_ttl`). Un navigateur fermé puis rouvert sans restauration jette le
+  cookie de session et garde `BEARER` : chaque écriture part sans jeton, prend un 403, lu « session finie » ;
+  `recheckSession` retrouve le compte au `focus` et annonce « Session rétablie » ; la boucle recommence.
+- **CR5/S3/S4, confirmé, et `/api/me` relit bien les rôles en base.** Le fournisseur `cpg_users` (entité) recharge le
+  `CpgUser` ; `JWTAuthenticator::createToken()` (Lexik) bâtit le jeton avec `$passport->getUser()->getRoles()` ;
+  `access_control` exige `ROLE_TRUSTED` sur `^/api/me`. Un compte qui a perdu l'accès de confiance prend donc un 403
+  sur `/api/me` (palier de base pour `HttpAuthRepository.me()`), un `XSRF-TOKEN` à la signature périmée un 200 (en-tête
+  inchangé). Aujourd'hui : la page MCP lit un 403 comme l'échec générique avec « Réessayer » sans fin, l'assistant et le
+  consentement laissent l'en-tête au palier de confiance.
+- **CR6, confirmé.** `hasRestored` n'est remis à faux que par `watch(() => route.fullPath)`.
+- **CR7, en partie déjà en place.** « Connexion » en nouvel onglet sur toute route `requiresAuth` : déjà vrai
+  (`sessionEndedHere` lit `route.meta.requiresAuth`) ; seul un test par route manque (R8). La revérification au `focus`
+  n'existe que dans le bandeau, donc dans le backoffice : à corriger (R8).
+- **CR8, confirmé.** `AccountMenu.vue:85` : `container.contains(document.activeElement)` est faux quand
+  `activeElement` est `body`.
+- **CR10, confirmé.** `onRetry()` n'appelle pas `cancelAnnouncement()` : `announcedOutcome` garde « révoquée ».
+- **S7, confirmé.** `markSessionExpired()` est idempotent : un second refus ne change rien au DOM du bandeau.
+- **C2, confirmé pour le commentaire ; débordement probable.** Le ticket (constat 6) mesure le **groupe de droite
+  seul** : 331 px au palier de confiance, 389 px en anonyme et en EN, pour 301 px utiles ; le commentaire
+  d'`AppHeader.vue:243` inverse les deux. Le groupe étant `flex-shrink-0`, tronquer la marque ne peut pas absorber
+  30 à 88 px qui ne sont pas les siens : si ces mesures tiennent encore, la ligne déborde (confiance moyenne, la mesure
+  date d'avant les tâches 7 et 9 qui ont changé ce groupe). Mesure et repli : tâche 11.
+- **CR9, Std1 à Std9, confirmés.** 25 traducteurs d'erreur testent `endedTheSession()` dans les 15 dépôts ; 13
+  `load()` répètent `requestGuard.isCurrent(token) && !isSessionEndedError(error)` ; 23 appels de
+  `visibleErrorReason(` dans les pages ; le lien de reconnexion est calculé dans `AppHeader.vue:174`,
+  `SessionEndedBanner.vue:45`, `McpConnectionsPage.vue:66`, la locale par la route (en-tête) ou par i18n (les deux
+  autres) ; le booléen `sentWithoutCsrfToken` traverse `send` → `httpError` dans les trois dépôts `fetch` ; le
+  consentement juge le 403 dans son `case 403` (`endsTheSession(403, …)`), les autres avant le `switch` ;
+  `common.opensInNewTab` dit « (nouvelle fenêtre) » en FR et « (opens in a new tab) » en EN.
+
+### Choix de conception tranchés
+
+1. **La session finie est une erreur typée levée par le transport, plus une raison par contexte** (CR9, Std1, Std2).
+   `SessionEndedError` (`domain/auth/errors/`) remplace la raison `session-ended` des onze unions, le `WeakSet` de
+   module et `SessionExpiredError` (MCP). `BackofficeHttpClient` la lève lui-même après la réaction ; aucun dépôt
+   d'administration ne la traduit plus ; deux fonctions d'`application/admin/shared/` la taisent, une pour les
+   chargements (`useAdminLoad`), une pour les mutations (`visibleMutationError`) ; les pages ne voient plus jamais cette
+   raison et `visibleErrorReason` disparaît. *Avantages* : une règle écrite à un endroit par couche (transport, puis
+   application), plus de clé de traduction impossible à garder, 25 + 23 sites supprimés. *Inconvénients* : 14 `catch`
+   de mutation changent de forme, et une erreur de session sort de la hiérarchie de chaque contexte (voulu : ce n'est
+   pas une erreur du contexte). *Écarté* : garder la raison et factoriser le filtre dans un `errorText(prefix,
+   reason)` — la clé `session-ended` resterait dans onze unions et chaque nouveau dépôt devrait la produire. Pas de
+   patron GoF : le signal est une exception typée, filtrée par deux fonctions partagées.
+2. **Un seul envoi « qui juge la session »** (Std5, Std6, Std4) : `infrastructure/http/sessionAwareFetch.ts`
+   pose les cookies, l'en-tête CSRF d'une écriture et rend `{ response, endedTheSession }`. Le booléen ne traverse
+   plus rien ; chaque dépôt teste `endedTheSession` à une place fixe (après le seul cas typé qui le précède, le 401
+   `reauthentication-required` du consentement). Le module remplace `infrastructure/http/sessionEnded.ts` (un seul
+   `sessionEnded.ts` restera, celui du routeur). `frontend.md` interdit `BackofficeHttpClient` aux dépôts MCP, du
+   consentement et de l'assistant : ils appellent le helper, pas ce client, qui l'appelle aussi. *Écarté* : une classe
+   cliente commune aux quatre (la réaction globale du backoffice, `setBackofficeSessionEndedHandler`, n'est pas celle
+   des trois autres, qui marquent la session dans leur composable).
+3. **Pas d'`errorText(prefix, reason)`** (Std2, troisième volet) : la raison filtrée n'existant plus, chaque page
+   revient à `t(\`admin.<contexte>.errors.${reason}\`)`, sa forme d'avant #748. La répétition est antérieure à #748 et
+   ne porte aucune règle ; un helper serait une abstraction sans variation (YAGNI).
+4. **Un lien de reconnexion, un composant** (Std3, Std7) : `signInAgainLocation()` (`presentation/router/
+   sessionEnded.ts`), `switchAccountLocation()` (`presentation/router/reauthentication.ts`) et la langue par
+   `routeLocale()` (route d'abord, repli i18n) ; `presentation/ui/SignInAgainLink.vue` porte le balisage du nouvel
+   onglet (texte caché `common.opensInNewTab`, icône). Nouvel onglet dans le bandeau, l'en-tête, la page MCP et
+   l'assistant (une saisie ou une page à garder ; la revérification au retour rétablit l'onglet d'origine). **Le
+   consentement garde ses liens dans le même onglet**, par les mêmes constructeurs : c'est une étape d'un flux OAuth
+   qui finit par `location.replace` vers le client, un second onglet laisserait la demande ouverte dans le premier.
+   `common.opensInNewTab` FR devient « (s'ouvre dans un nouvel onglet) » (comme l'EN ; `target="_blank"` ouvre un
+   onglet dans les navigateurs actuels) et `admin.sessionEnded.newTab` disparaît.
+5. **Un refus réel** (CR5, S8) : `AccessForbiddenError` (`domain/auth/errors/`, remplace `ConsentForbiddenError`) pour
+   la page MCP et le consentement, la raison `forbidden` pour l'assistant ; les trois composables relisent `/api/me`
+   (`checkAuth()`, vérifié : rôles relus en base) et ne marquent jamais la session expirée ; un message neutre partagé
+   (`common.accessRefused`, juste aussi pour une signature CSRF périmée) et « Changer de compte »
+   (`switchAccountLocation`, même onglet, la connexion s'ouvrant à une personne connectée). L'annonce de la page de
+   connexion ouverte par `reauth=1` (`auth.reauthNotice`) devient neutre : elle parlait d'une connexion MCP ; la raison
+   des dix minutes reste dite par l'alerte du consentement, avant le lien.
+6. **Une revérification partagée** (CR7, CR3b) : `useAuth().recheckEndedSession()`, branchée une fois sur le `focus`
+   de la fenêtre par `presentation/layout/useSessionRecheckOnFocus.ts` dans `AppLayout` ; le bandeau perd son écouteur.
+   Une session n'est rétablie que si le compte revient **et** qu'un jeton d'écriture existe
+   (`AuthRepository.hasWriteToken()`, port de domaine que `HttpAuthRepository` lit dans le cookie : l'application ne lit
+   pas un cookie). Chaque composable qui a vu la session finir relit au retour (`watch` de `authState.sessionEnded`).
+7. **Le bandeau a deux racines** (CR1, D1) : l'alerte (`v-if`) et la région `status`, enfants directs de la `<section>`
+   d'`AdminLayout`, qui contient la page : le collage a toute la hauteur de la page, et rien n'entre dans le flux tant
+   que les deux sont vides. *Écarté* : `display: contents` sur le `<div>` (même effet, mais une règle CSS de plus à
+   connaître, et des pertes de sémantique connues de `display: contents` dans Safari) ; déplacer la région dans
+   `AdminLayout` (le comportement du bandeau coupé en deux fichiers).
+8. **« Focus puis annonce » dans un composable** (Std8) : `presentation/ui/useFocusThenAnnounce.ts` tient la minuterie,
+   l'annulation, le démontage ; la page perd quatre déclarations et le patron d'accessibilité de `frontend-a11y.md`
+   pointe une implémentation unique. Elle simplifie réellement : `onRevoke` et `onRetry` n'ont plus à connaître la
+   minuterie, et `onRetry` l'annule (CR10).
+9. **Une règle de référence** (Std9) : `.claude/rules/frontend-session.md` (nouvelle) tient la règle, ses faits
+   backend, les erreurs typées, le bandeau, l'en-tête, le lien, la revérification et les limites acceptées ; le
+   docblock de `sessionAwareFetch.ts` en est le pendant dans le code. Les quatre règles et les docblocks qui la
+   réexpliquaient y renvoient en une phrase. Elle allège `frontend-backoffice.md` (27 349 o) et `mcp-oauth.md`
+   (39 764 o, la plus proche du plafond de 50 000).
+10. **`XSRF-TOKEN` vit comme `BEARER`** (CR3a) : `LoginSuccessSubscriber` lui donne `time() + token_ttl`, lu par
+    `#[Autowire(param: 'lexik_jwt_authentication.token_ttl')]`, comme `BaseAccessController` le fait avec son propre
+    TTL. *Écarté* : un paramètre `app.session_lifetime` référencé par `token_ttl` et `set_cookies.BEARER.lifetime` (une
+    seule source, mais trois fichiers de configuration touchés et les gardes de parité de Lexik à revoir pour un gain
+    qu'un test fonctionnel donne déjà : il compare les deux `Expires` réels du login).
+
+### Review Focus (corrections)
+
+1. **Passer de FR à EN dans les réglages « À propos » pendant une session finie, puis se reconnecter et enregistrer** :
+   le FR n'est jamais montré sous l'EN, rien n'est enregistrable avant la lecture de l'EN, qui arrive au retour. Tests :
+   R4, `AdminAboutPage.spec.ts`.
+2. **Une proposition de traduction en attente pendant que la lecture de la locale cible tombe en session finie** :
+   elle ne se pose pas sur un formulaire non chargé, elle se pose au retour. Test : R4.
+3. **Une session qui revient avec `BEARER` mais sans `XSRF-TOKEN`** (session ouverte avant le déploiement de R1) :
+   la session reste finie, aucune annonce « rétablie ». Test : R8, `useAuth.spec.ts`.
+4. **Un 403 à une écriture qui portait un `XSRF-TOKEN` à la signature périmée** (compte toujours de confiance) :
+   `/api/me` répond 200, l'en-tête garde son palier, le message ne dit pas que le compte a perdu son accès. Tests : R7
+   (texte neutre exact, `checkAuth` appelé sans changement de palier).
+5. **Deux retours sur l'onglet rapprochés pendant une session finie** : une seule relecture de `/api/me` en vol, et
+   avec le bandeau affiché, une seule par retour (pas de doublon bandeau + mécanisme partagé). Tests : R8.
+
+### Contraintes propres aux tâches R
+
+- Les **Global Constraints** ci-dessus valent pour chaque tâche R. En plus : **R1 est backend** — lire avec `Read` un
+  fichier de `backend/src/Security/Authentication/Infrastructure/Jwt/` avant d'écrire ; test ciblé
+  `docker compose exec -u dev backend php bin/phpunit <chemin>`, puis `make back-test` et `make back-quality`, verts ;
+  jamais de secret littéral dans un test (`TestCredentials`, `TestKeys::material()`).
+- Exécution : un agent par tâche (sonnet, effort high), successifs, dans l'ordre R1 → R10 ;
+  `superpowers:test-driven-development` ; un commit par tâche, fichiers nommés ; `git rm` pour une suppression.
+- **Refactoring pur** (R2, R3, R5) : le filet est la suite existante, verte **avant** la première modification et
+  **après** la dernière ; les seuls tests modifiés sont ceux que la tâche nomme (renommage, contrat qui change exprès),
+  et les nouveaux modules ont leur test écrit d'abord et vu rouge (module introuvable).
+- Une règle `.claude/rules` touchée reste sous 50 000 octets ; chaque `paths:` ajouté désigne un fichier suivi **dans le
+  commit de la tâche** (`tools/check-claude-rules.sh` vert avant le commit) : une tâche n'ajoute à `paths:` que les
+  fichiers qui existent à sa fin.
+- Vitest 5 vide les imports CSS (même `?raw`) : un CSS se lit par `node:fs` ; un `.vue` ou `.ts` brut par
+  `import.meta.glob(…, { query: '?raw', import: 'default', eager: true })`, comme `colorClasses.spec.ts`.
+  `ResizeObserver` est absent de jsdom.
+
+### Fichiers (tâches R)
+
+| Fichier | Responsabilité | Tâches |
+|---|---|---|
+| `backend/src/Security/Authentication/Infrastructure/Jwt/LoginSuccessSubscriber.php` | échéance de `XSRF-TOKEN` | R1 |
+| `frontend/src/infrastructure/http/sessionAwareFetch.ts` (nouveau, remplace `sessionEnded.ts`) | envoi avec cookies et jeton CSRF, verdict « session finie » | R2 |
+| `frontend/src/domain/auth/errors/{SessionEndedError,AccessForbiddenError}.ts` (nouveaux) | les deux erreurs partagées | R2 |
+| `.claude/rules/frontend-session.md` (nouvelle), `.claude/CLAUDE.md` (index) | la règle de référence | R2, puis R3 à R9 |
+| `frontend/src/infrastructure/admin/shared/BackofficeHttpClient.ts`, 15 `Http*Repository.ts` du backoffice | le client lève, les dépôts ne traduisent plus | R2, R3 |
+| `frontend/src/application/admin/shared/{useAdminLoad,visibleMutationError}.ts` (nouveaux) | taire la session finie, à un endroit | R3, R4 |
+| 13 composables d'administration, `useOrderDraft`, `useAdminTranslation`, 12 pages et sections, `OrderToolbar.vue` | branchés sur les deux fonctions ; état « non chargé » | R3, R4 |
+| `frontend/src/presentation/ui/useFocusThenAnnounce.ts` (nouveau) | focus, puis annonce différée | R5 |
+| `frontend/src/presentation/router/{routeLocale,sessionEnded,reauthentication}.ts`, `frontend/src/presentation/ui/SignInAgainLink.vue` (nouveau) | le lien de reconnexion et celui du changement de compte | R6 |
+| `frontend/src/{infrastructure,application}/mcp/*`, `frontend/src/application/assistant/useAssistant.ts`, pages MCP, assistant, consentement | refus réel, retour de la session | R2, R6, R7, R8 |
+| `frontend/src/application/auth/useAuth.ts`, `frontend/src/domain/auth/repositories/AuthRepository.ts`, `frontend/src/infrastructure/auth/HttpAuthRepository.ts`, `frontend/src/presentation/layout/{AppLayout.vue,useSessionRecheckOnFocus.ts}` | revérification partagée, compteur de fins | R8, R9 |
+| `frontend/src/presentation/ui/admin/SessionEndedBanner.vue` | deux racines, retour effacé, réannonce | R6, R8, R9 |
+| `frontend/src/presentation/layout/AccountMenu.vue` | Échap depuis `body` | R10 |
+
+---
+
+### Task R1 : `XSRF-TOKEN` meurt avec `BEARER` au login (CR3a)
+
+**Files :**
+- Modify : `backend/src/Security/Authentication/Infrastructure/Jwt/LoginSuccessSubscriber.php`, `backend/config/packages/lexik_jwt_authentication.yaml` (commentaire sur `set_cookies.BEARER.lifetime` seulement)
+- Test : `backend/tests/Security/Authentication/AuthCookieAttributesTest.php`
+- Modify : `.claude/rules/security-authentication-sessions.md` (puce `LoginSuccessSubscriber`, puce `AuthCookieFactory` : « `bearer()` / `xsrf()` take an optional expiry (session cookie without) »)
+
+**Interfaces :**
+- Produces : `LoginSuccessSubscriber::__construct(CsrfCookieTokenSigner $csrfCookieTokenSigner, AuthCookieFactory $authCookieFactory, #[Autowire(param: 'lexik_jwt_authentication.token_ttl')] int $sessionLifetimeSeconds)`.
+
+- [ ] **Step 1 : tests, rouges** — dans `AuthCookieAttributesTest` (même façon de se connecter que le test existant, `TestCredentials`, en-tête `HTTP_X_REQUESTED_WITH`) :
+  - `testTheLoginXsrfTokenExpiresWithItsBearer` — cookies lus sur `getResponse()->headers->getCookies()` (jamais dans le jar) : `assertGreaterThan(0, $xsrf->getExpiresTime())` et `assertEqualsWithDelta($bearer->getExpiresTime(), $xsrf->getExpiresTime(), 1.0)` ;
+  - `testTheBaseAccessXsrfTokenExpiresWithItsBearer` — même assertion sur `POST /api/account/base-access` (témoin, vert d'emblée).
+- [ ] **Step 2 : rouges** — `docker compose exec -u dev backend php bin/phpunit tests/Security/Authentication/AuthCookieAttributesTest.php`. Expected : le premier FAIL, `0` reçu pour l'échéance de `XSRF-TOKEN` ; le témoin PASS.
+- [ ] **Step 3 : implémenter** — `xsrf($token, time() + $this->sessionLifetimeSeconds)` ; le commentaire « Cookie de session (pas d'échéance) … » remplacé par le pourquoi : un cookie de session jeté à la fermeture du navigateur pendant que `BEARER`, persistant, survit, faisait de chaque écriture un 403 sans jeton, lu « session finie » en boucle par le frontend (#748, CR3) ; l'accès de base faisait déjà mourir les deux ensemble. Import `Autowire` trié (`make back-style-fix` au besoin). YAML : une ligne au-dessus de `lifetime: 3600` — cette durée doit rester celle de `token_ttl`, que suit `XSRF-TOKEN` ; `AuthCookieAttributesTest` compare les deux échéances réelles.
+- [ ] **Step 4 : règle** — `security-authentication-sessions.md` : au login, `XSRF-TOKEN` reçoit l'échéance du JWT (`token_ttl`), comme à l'accès de base ; plus aucun site n'émet de cookie de session ; pourquoi (la boucle ci-dessus) ; le test qui l'épingle. Session ouverte avant le déploiement : son `XSRF-TOKEN` reste un cookie de session, au plus une heure (la durée du JWT).
+- [ ] **Step 5 : verts** — même commande PASS, puis `make back-test` et `make back-quality` verts.
+- [ ] **Step 6 : commit** — `git add` des trois fichiers et de la règle ; `fix(backend): le XSRF-TOKEN du login expire avec le BEARER (#748)`.
+
+---
+
+### Task R2 : Un seul envoi qui juge la session, deux erreurs partagées, une règle de référence (Std4, Std5, Std6, Std9, S5 ; refactoring pur)
+
+**Files :**
+- Create : `frontend/src/infrastructure/http/sessionAwareFetch.ts`, `frontend/tests/infrastructure/http/sessionAwareFetch.spec.ts`, `frontend/src/domain/auth/errors/SessionEndedError.ts`, `frontend/src/domain/auth/errors/AccessForbiddenError.ts`, `.claude/rules/frontend-session.md`
+- Delete (`git rm`) : `frontend/src/infrastructure/http/sessionEnded.ts`, `frontend/tests/infrastructure/http/sessionEnded.spec.ts`, `frontend/src/domain/mcp/errors/SessionExpiredError.ts`, `frontend/src/domain/mcp/errors/ConsentForbiddenError.ts`
+- Modify : `BackofficeHttpClient.ts` (interne seulement), `infrastructure/mcp/HttpMcpConnectionsRepository.ts`, `infrastructure/mcp/HttpOAuthConsentRepository.ts`, `infrastructure/assistant/HttpAssistantRepository.ts`, `domain/mcp/repositories/{McpConnectionsRepository,OAuthConsentRepository}.ts` (docblocks), `application/mcp/{useMcpConnections,useOAuthConsent}.ts`, `presentation/pages/OAuthConsentPage.vue` (littéral d'échec), `application/assistant/useAssistant.ts` et `presentation/ui/admin/SessionEndedBanner.vue` (docblocks) ; leurs specs, pour les renommages seulement
+- Modify : `.claude/CLAUDE.md` (une ligne de l'index), `.claude/rules/frontend-backoffice.md`, `frontend.md`, `mcp-oauth.md`, `mcp-oauth-revocation-personne.md` (renvois)
+
+**Interfaces :**
+- Produces (`src/infrastructure/http/sessionAwareFetch.ts`) :
+  - `endsTheSession(status: number, sentWithoutCsrfToken: boolean): boolean` — inchangée, déplacée ;
+  - `interface SessionAwareResponse { readonly response: Response; readonly endedTheSession: boolean }` ;
+  - `sessionAwareFetch(url: string, init: Omit<RequestInit, 'credentials' | 'headers'> & { method: string; headers?: Readonly<Record<string, string>> }): Promise<SessionAwareResponse>` — `credentials: 'include'` ; pour une méthode autre que `GET`/`HEAD`, lit `readCsrfToken()` et ajoute `X-XSRF-TOKEN` s'il est non vide ; `endedTheSession = endsTheSession(status, écriture && !jeton)` ; un rejet de `fetch` (réseau, `AbortError`) remonte tel quel.
+- Produces : `class SessionEndedError extends Error` (sans paramètre, `name = 'SessionEndedError'`), `class AccessForbiddenError extends Error` (idem) — `src/domain/auth/errors/`.
+- `OAuthConsentFailure` : `'session-expired'` devient `'session-ended'` (seul littéral renommé).
+
+- [ ] **Step 1 : filet** — `make front-test` vert sur la tête, noté.
+- [ ] **Step 2 : test du nouveau module, rouge** — `sessionAwareFetch.spec.ts` (cookie posé ou effacé par test comme dans `BackofficeHttpClient.spec.ts`, `fetch` remplacé par `vi.fn`) :
+  - le tableau `it.each` d'`endsTheSession`, repris tel quel de `sessionEnded.spec.ts` ;
+  - `it("une lecture part avec les cookies et sans en-tête CSRF ; son 403 ne finit pas la session")` — `credentials === 'include'`, aucun `X-XSRF-TOKEN` même cookie posé, `endedTheSession === false` ;
+  - `it("une écriture porte l'en-tête lu dans le cookie ; son 403 reste un refus")` ;
+  - `it.each([['sans cookie', null], ['cookie vide', '']])("écriture %s : aucun en-tête, et son 403 finit la session")` ;
+  - `it('un 401 finit la session, en lecture comme en écriture')` ;
+  - `it('les en-têtes donnés sont gardés')` (`Content-Type`, `Accept` présents à côté du jeton) ;
+  - `it("une panne réseau ou un abandon remonte tel quel")` — le même objet rejeté (`TypeError`, `DOMException` `AbortError`).
+  Run : `docker compose exec frontend npm test -- tests/infrastructure/http/sessionAwareFetch.spec.ts`. Expected : FAIL, module introuvable.
+- [ ] **Step 3 : implémenter le module et les deux erreurs** — le docblock de `sessionAwareFetch.ts` devient **l'explication de référence** : la règle, les faits backend **à jour de R1** (à l'expiration du JWT les deux cookies tombent ensemble : une lecture prend 401, une écriture part sans jeton et prend le 403 du CSRF ; déconnexion et refus d'une session antérieure expirent les deux ; CSRF avant le pare-feu, écritures seules), le verdict pris à l'envoi, et **S5** : entre la lecture du cookie et l'envoi, un autre onglet peut poser ou retirer `XSRF-TOKEN` ; le verdict reste juste pour la requête partie (elle a, ou non, porté un jeton) ; au pire un onglet qui vient de se reconnecter lit son 403 en vol comme une fin de session, et la revérification au retour la rétablit — limite acceptée. Il remplace le docblock de `sessionEnded.ts`.
+- [ ] **Step 4 : brancher les quatre clients** — chaque dépôt juge en **un seul endroit** (`httpError(judged: SessionAwareResponse)` ou équivalent), dans cet ordre : consentement seul, 401 typé `reauthentication-required` ; puis `judged.endedTheSession` → `SessionEndedError` (l'assistant : raison `unauthenticated`) ; puis le `switch` sur le statut (le consentement : `403` → `AccessForbiddenError`). Plus aucun paramètre `sentWithoutCsrfToken`, plus de `false` littéral. La page MCP garde, dans cette tâche, son 403 en échec générique (R7 le change). `BackofficeHttpClient` : `get`/`mutate` passent par `sessionAwareFetch`, le reste de son contrat (`WeakSet`, `endedTheSession()`) ne change qu'en R3. Renommages : `SessionExpiredError` → `SessionEndedError`, `ConsentForbiddenError` → `AccessForbiddenError`, `'session-expired'` → `'session-ended'` (composable, page, specs).
+- [ ] **Step 5 : règle de référence et renvois (Std9)** — `frontend-session.md` (frontmatter `paths:` : `frontend/src/infrastructure/http/**`, `frontend/src/application/auth/**`, `frontend/src/domain/auth/errors/**`, `frontend/src/infrastructure/admin/shared/BackofficeHttpClient.ts`, `frontend/src/infrastructure/mcp/**`, `frontend/src/infrastructure/assistant/**`, `frontend/src/presentation/ui/admin/SessionEndedBanner.vue`, `frontend/src/presentation/router/sessionEnded.ts`, `frontend/src/presentation/router/reauthentication.ts`, `frontend/src/presentation/router/backofficeSessionExpiry.ts`, `frontend/tests/infrastructure/http/**`, `frontend/tests/presentation/ui/admin/SessionEndedBanner.spec.ts`, `frontend/tests/presentation/layout/usePublishedHeight.spec.ts`, `frontend/tests/presentation/layout/AdminLayout.sessionEnded.spec.ts`) reçoit **déplacée telle quelle** la puce « A 401, or a 403 to a write sent without a CSRF token, mid-page… » de `frontend-backoffice.md`, mise à jour pour `sessionAwareFetch`, les deux erreurs, les faits de R1 et S5 ; puis une section par client (backoffice, MCP, consentement, assistant), une phrase chacun. `frontend-backoffice.md` garde, à la place, deux phrases et le renvoi ; `frontend.md` (paragraphe de l'assistant, puce « A refused session reaches the person in words »), `mcp-oauth.md` (puce « The consent page », la phrase « A 401, or a 403 to the `POST` … ») et `mcp-oauth-revocation-personne.md` (« Slice ») disent leur cas en une phrase et renvoient à `frontend-session.md`. Docblocks : `BackofficeHttpClient`, les trois dépôts, `useMcpConnections`, `useOAuthConsent`, `useAssistant`, `SessionEndedBanner` — une ligne et `voir infrastructure/http/sessionAwareFetch.ts` (`grep -rn "sans jeton CSRF\|endsTheSession" frontend/src` pour n'en oublier aucun). `.claude/CLAUDE.md`, tableau d'index, après `frontend-a11y.md` : `` | `frontend-session.md` | an ended session and a refusal on the frontend: `sessionAwareFetch`, `SessionEndedError` / `AccessForbiddenError`, the banner, the header's link, the re-check on return | touching a call that sends the session cookie, a 401/403 mapping, the banner, a sign-in-again link | ``.
+- [ ] **Step 6 : verts** — le spec ciblé PASS ; `make front-test` (même nombre de tests que le filet, plus les nouveaux, moins `sessionEnded.spec.ts` repris), `make front-lint`, `make front-build`, `tools/check-claude-rules.sh` verts.
+- [ ] **Step 7 : commit** — fichiers nommés, suppressions par `git rm` ; `refactor(frontend): une seule règle de session finie pour tous les clients HTTP (#748)`.
+
+---
+
+### Task R3 : Le client du backoffice lève la session finie, deux fonctions la taisent (CR9, Std1, Std2, Std4)
+
+**Files :**
+- Create : `frontend/src/application/admin/shared/useAdminLoad.ts`, `frontend/src/application/admin/shared/visibleMutationError.ts`, `frontend/tests/application/admin/shared/useAdminLoad.spec.ts`, `frontend/tests/application/admin/shared/visibleMutationError.spec.ts`
+- Delete (`git rm`) : `frontend/src/domain/admin/shared/errors/sessionEnded.ts`, `frontend/src/presentation/ui/admin/visibleErrorReason.ts`, `frontend/tests/domain/admin/shared/errors/sessionEnded.spec.ts`, `frontend/tests/presentation/ui/admin/visibleErrorReason.spec.ts`, `frontend/tests/presentation/pages/admin/errorReasonsHideSessionEnded.spec.ts`
+- Modify : `BackofficeHttpClient.ts`, les 15 `src/infrastructure/admin/**/Http*Repository.ts`, les 11 unions `Admin*ErrorReason` et `AdminOrderErrorReason`, les 13 composables d'administration, `useOrderDraft.ts`, `useAdminTranslation.ts`, les 12 pages et sections et `OrderToolbar.vue` (tous les appels `visibleErrorReason(`), `src/main.ts`, `src/presentation/router/backofficeSessionExpiry.ts`
+- Test : `BackofficeHttpClient.spec.ts`, `tests/infrastructure/admin/sessionEndedMapping.spec.ts`, `tests/application/admin/sessionEndedLoad.spec.ts`, `AdminCaseStudiesPage.spec.ts`, `tests/presentation/router/backofficeSessionExpiry.spec.ts`, `AdminLayout.sessionEnded.spec.ts`, `OrderToolbar.spec.ts`
+- Modify : `.claude/rules/frontend-backoffice.md`, `.claude/rules/frontend-session.md`
+
+**Interfaces :**
+- Consumes : `sessionAwareFetch`, `SessionEndedError` (R2).
+- Produces :
+  - `BackofficeHttpClient#get(path: string): Promise<Response>` et `#mutate(method: string, path: string, body?: unknown): Promise<Response>` **rejettent `SessionEndedError`** après avoir appelé la réaction quand `endedTheSession` ; `endedTheSession()` et le `WeakSet` disparaissent ;
+  - renommages (Std4) : `BackofficeSessionEndedHandler`, `setBackofficeSessionEndedHandler(handler: BackofficeSessionEndedHandler | null): void`, `onBackofficeSessionEnded(): void` (fichier `backofficeSessionExpiry.ts` gardé) ;
+  - `interface AdminLoadState { isLoading: Ref<boolean>; hasError: Ref<boolean> }` et `useAdminLoad<T, K = void>(options: { read: (key: K) => Promise<T>; apply: (value: T) => void }): AdminLoadState & { load: (key: K) => Promise<void> }` — `isLoading` part à `true` ; garde des réponses périmées (`createStaleRequestGuard`) ; `SessionEndedError` ne lève pas `hasError` et ne touche pas la valeur posée ; tout autre rejet lève `hasError` ;
+  - `visibleMutationError<E extends Error>(error: unknown, ownError: abstract new (...args: never[]) => E, fallback: () => E): E | null` — `null` pour `SessionEndedError`, l'erreur elle-même si elle est `ownError`, `fallback()` sinon ;
+  - chaque `UseAdmin…Result` **étend `AdminLoadState`** (R4 y ajoute un champ sans retoucher les composables).
+
+- [ ] **Step 1 : filet** — `make front-test` vert, noté.
+- [ ] **Step 2 : tests, rouges**
+  - `useAdminLoad.spec.ts` (hôte monté, comme `sessionEndedLoad.spec.ts`) : `it('pose la valeur lue et baisse isLoading')` ; `it('un échec lève hasError')` ; `it('une session finie ne lève pas hasError et garde la valeur déjà posée')` ; `it('une réponse plus ancienne que le dernier load est jetée')` ; `it('load(clé) passe la clé au lecteur')`.
+  - `visibleMutationError.spec.ts` : `AdminCaseStudyError('validation', 'x')` → le même objet ; `new SessionEndedError()` → `null` ; `new Error('x')` → le résultat de `fallback`.
+  - `BackofficeHttpClient.spec.ts` (changement exprès du contrat) : `it.each` 401 en lecture, 401 en écriture, 403 en écriture sans cookie, cookie vide → `rejects.toBeInstanceOf(SessionEndedError)` et réaction appelée **une** fois ; 403 en lecture, 403 en écriture avec jeton, 200/204/404/409/422/500 → réponse rendue, réaction non appelée ; les tests d'`endedTheSession` supprimés.
+  - `sessionEndedMapping.spec.ts`, simplifié : la table des 15 dépôts reste ; un seul cas `it('%s : la session finie traverse le dépôt telle quelle')` (401 sur la lecture, ou l'écriture pour la traduction ; et `reorder` pour les ordonnés) → `rejects.toBeInstanceOf(SessionEndedError)` ; le test de complétude par glob reste. Les cas « 403 avec jeton garde son mapping » partent (le client les couvre).
+  - `sessionEndedLoad.spec.ts` : les rejets deviennent `new SessionEndedError()` ; nouveau `it.each` sur les mutations (`{ name, mutate: (composable) => Promise<void>, error: (composable) => unknown }`, la première mutation des douze composables à `errorMessage`, `translate` d'`useAdminTranslation`, `save` d'`useOrderDraft` après un `move`) : `it('%s : une mutation refusée pour session finie ne pose aucune erreur')` → `null` ; témoin `unknown` → non nul.
+  - `AdminCaseStudiesPage.spec.ts` : le cas « session finie à l'enregistrement » rejette `new SessionEndedError()` ; toujours aucune alerte de page.
+  Run : `docker compose exec frontend npm test -- tests/application/admin tests/infrastructure/admin tests/presentation/pages/admin/AdminCaseStudiesPage.spec.ts`. Expected : modules introuvables, le client résout au lieu de rejeter, les mutations posent `unknown`.
+- [ ] **Step 3 : implémenter** — le client (la réaction, puis `throw new SessionEndedError()`) ; les 25 branches `endedTheSession` et les imports `SESSION_ENDED` retirés des dépôts ; `| SessionEndedReason` retiré des unions et de leurs docblocks ; chaque `load()` devient `useAdminLoad({ read: () => repository.list(), apply: (value) => { liste.value = value } })` (`useAdminAboutSettings` : `read: (locale) => repository.get(locale)`) ; chaque `catch` de mutation : `errorMessage.value = visibleMutationError(error, AdminXError, () => new AdminXError('unknown', 'Unknown error'))` ; `useOrderDraft` et `useAdminTranslation` posent `?.reason ?? null` ; les pages et `OrderToolbar` lisent la raison directement (`visibleErrorReason(x)` → `x`, `shownReason` → `props.errorReason`, `cancelDisabled` compris). `useAdminVulnerabilities` gagne la garde des réponses périmées par le helper (sans effet visible).
+- [ ] **Step 4 : règles** — `frontend-backoffice.md` : le client lève `SessionEndedError` ; aucun dépôt ne la traduit ; composables par `useAdminLoad` et `visibleMutationError`, jamais un `catch` qui la convertirait en `unknown` ; un nouveau composable d'administration passe par eux ; la liste des tests à jour (les trois gardes supprimées, pourquoi : la raison n'existe plus). `frontend-session.md` : la section du backoffice et les noms nouveaux. `paths:` de `frontend-backoffice.md` : `frontend/tests/application/admin/sessionEndedLoad.spec.ts` ajouté.
+- [ ] **Step 5 : verts** — specs ciblés PASS ; `make front-test`, `make front-lint`, `make front-build`, `tools/check-claude-rules.sh`.
+- [ ] **Step 6 : commit** — `refactor(frontend): la session finie levée par le client du backoffice, tue à un seul endroit (#748)`.
+
+---
+
+### Task R4 : Une liste non chargée n'est pas vide, une clé nouvelle vide l'ancienne, tout se relit au retour (CR2, CR4/D2)
+
+**Files :**
+- Modify : `frontend/src/application/admin/shared/useAdminLoad.ts`, `frontend/src/application/admin/about/useAdminAboutSettings.ts` (passe `clear`), `frontend/src/presentation/pages/admin/AdminAboutSettingsForm.vue`, les 12 pages et sections à état vide (`AdminCaseStudiesPage`, `AdminAnonymousCvPage`, `AdminContributionsPage`, `AdminIncidentsPage`, `AdminQualityPage` ×2, `AdminTechnologiesPage`, `AdminUsersPage`, `AdminWatchPage` ×2, `AdminAboutSiteCardsSection`, `AdminAboutMeCardsSection`), `frontend/src/infrastructure/i18n/locales/{fr,en}.json` (`admin.notLoaded`)
+- Create : `frontend/tests/presentation/pages/admin/emptyStateNeedsLoaded.spec.ts`
+- Test : `useAdminLoad.spec.ts`, `sessionEndedLoad.spec.ts`, `AdminAboutPage.spec.ts`, `AdminCaseStudiesPage.spec.ts`, `AdminWatchPage.spec.ts`
+- Modify : `.claude/rules/frontend-backoffice.md`
+
+**Interfaces :**
+- Produces :
+  - `AdminLoadState.isLoaded: Ref<boolean>` — vrai quand la valeur de la clé courante a été posée ; faux avant la première lecture, après une première lecture en session finie, et dès qu'une clé nouvelle commence à se lire ; posé **après** `apply()` (les observateurs synchrones de la valeur ont déjà copié) ;
+  - `options.clear?: () => void` — appelé quand `load(clé)` commence avec une clé différente (`Object.is`) de celle de la valeur détenue ;
+  - après une lecture finie sur `SessionEndedError`, la première descente de `authState.sessionEnded` (vrai → faux) relance `load(même clé)` **une** fois (CR4, la relecture au retour).
+
+- [ ] **Step 1 : tests, rouges**
+  - `useAdminLoad.spec.ts` : `it("isLoaded : faux avant la première lecture, vrai après, faux encore après une première lecture en session finie")` ; `it("une clé nouvelle vide la valeur de l'ancienne avant de lire")` (`clear` appelé une fois, `isLoaded` faux pendant la lecture) ; `it("la même clé ne vide rien")` ; `it("au retour de la session, la lecture interrompue est relancée une fois, avec sa clé")` (`markSessionExpired()`, puis un compte appliqué par le `login` d'un composant sonde, comme `SessionEndedBanner.spec.ts`) ; `it("au retour, rien n'est relu si la dernière lecture a abouti")`.
+  - `sessionEndedLoad.spec.ts` : `it('%s : une première lecture en session finie laisse isLoaded faux')`.
+  - `AdminAboutPage.spec.ts` : `it("session finie au passage en EN : ni les champs FR ni « Enregistrer », la mention « non chargé »")` (FR lu, `get('en')` rejette `SessionEndedError` → aucun champ ne porte la valeur FR, texte `admin.notLoaded`, aucun bouton d'envoi des réglages) ; `it('au retour de la session, les réglages EN se lisent et remplissent le formulaire')` (Review Focus 1) ; `it("une proposition en attente ne se pose pas sur un formulaire non chargé, elle se pose au retour")` (Review Focus 2).
+  - `AdminCaseStudiesPage.spec.ts` : `it("première lecture en session finie : ni « aucune étude de cas » ni tableau, la mention « non chargé »")` ; `it('au retour de la session, la liste se lit et s\'affiche')`. `AdminWatchPage.spec.ts` : le même premier cas pour les vulnérabilités (`admin.watch.vulnerabilities.empty` absent).
+  - `emptyStateNeedsLoaded.spec.ts` : glob brut de `src/presentation/pages/admin/*.vue` ; tout fichier qui contient `.empty')` contient `isLoaded` au moins autant de fois ; message d'échec : la liste des fichiers.
+  Run : `docker compose exec frontend npm test -- tests/application/admin tests/presentation/pages/admin`. Expected : `isLoaded` indéfini, la valeur FR affichée, l'état vide affiché, 11 fichiers listés.
+- [ ] **Step 2 : implémenter** — le helper (clé détenue, clé en attente après une session finie, `watch(() => authState.sessionEnded, …)` dans le composable appelant, arrêté à son démontage) ; `useAdminAboutSettings` passe `clear: () => { settings.value = null }` ; dans chaque page, avant l'état vide : `v-else-if="!isLoaded"` → `<p class="text-body-secondary mb-0">{{ t('admin.notLoaded') }}</p>` (pas de région vivante : le bandeau annonce) et l'état vide conditionné à `isLoaded` ; `AdminAboutSettingsForm` : le formulaire n'est rendu que si `isLoaded`, et la proposition en attente se pose par `watch(isLoaded, …, { flush: 'sync' })` au lieu d'après `await load()`. i18n : FR « Contenu non chargé : votre session a pris fin. Il se chargera dès que vous serez reconnecté. », EN « Content not loaded: your session has ended. It will load as soon as you are signed in again. ».
+- [ ] **Step 3 : règle** — `frontend-backoffice.md` : « non chargé » distinct de « vide », la relecture au retour, la clé qui vide l'ancienne valeur (CR2, et pourquoi : un formulaire d'une locale sous l'en-tête d'une autre, enregistré par-dessus) ; la garde `emptyStateNeedsLoaded.spec.ts`.
+- [ ] **Step 4 : verts** — specs ciblés PASS ; `make front-test`, `make front-lint`, `make front-build`.
+- [ ] **Step 5 : commit** — `fix(frontend): une liste non chargée n'est plus dite vide, et se lit au retour de la session (#748)`.
+
+---
+
+### Task R5 : « Focus puis annonce » dans un composable ; « Réessayer » efface l'issue annoncée (Std8, CR10)
+
+**Files :**
+- Create : `frontend/src/presentation/ui/useFocusThenAnnounce.ts`, `frontend/tests/presentation/ui/useFocusThenAnnounce.spec.ts`
+- Modify : `frontend/src/presentation/pages/McpConnectionsPage.vue`
+- Test : `frontend/tests/presentation/pages/McpConnectionsPage.spec.ts`
+- Modify : `.claude/rules/frontend-a11y.md` (puce « A gesture that moves the focus and announces an outcome »)
+
+**Interfaces :**
+- Produces : `ANNOUNCE_AFTER_FOCUS_MS = 250` ; `useFocusThenAnnounce<T>(delayMs: number = ANNOUNCE_AFTER_FOCUS_MS): { announced: Readonly<Ref<T | null>>; focusThenAnnounce: (target: HTMLElement | null | undefined, value: T) => void; cancel: () => void; isUnmounted: () => boolean }` — `focusThenAnnounce` annule l'annonce en cours, focalise la cible tout de suite, écrit `value` après le délai ; `cancel` annule la minuterie et vide `announced` ; au démontage : `cancel()` et `isUnmounted()` vrai.
+
+- [ ] **Step 1 : filet** — `docker compose exec frontend npm test -- tests/presentation/pages/McpConnectionsPage.spec.ts` vert, noté.
+- [ ] **Step 2 : tests, rouges** — `useFocusThenAnnounce.spec.ts` (minuteries simulées) : `it('focalise la cible tout de suite et annonce après le délai')` ; `it("cancel vide l'annonce et annule la minuterie")` (`vi.getTimerCount() === 0`) ; `it("le démontage annule, et isUnmounted devient vrai")` ; `it('un second appel remplace le premier')`. Page : `it("« Réessayer » efface l'issue d'une révocation déjà annoncée")` — révocation réussie, relecture qui suit en échec ; minuteries avancées : la région dit « révoquée » ; clic sur « Réessayer » → la région ne contient plus « révoquée », pendant et après la relecture (CR10). Expected : module introuvable ; « révoquée » encore lue.
+- [ ] **Step 3 : implémenter** — le composable ; la page perd `announcedOutcome`, `announceTimer`, `unmounted`, `cancelAnnouncement` et son `onBeforeUnmount` ; `statusMessage` lit `announced` ; `onRevoke` appelle `cancel()` puis `focusThenAnnounce(heading.value, outcome)` ; `onRetry` commence par `cancel()` ; les deux sortent si `isUnmounted()` après leurs `await`.
+- [ ] **Step 4 : règle** — `frontend-a11y.md` : le patron a une implémentation, `useFocusThenAnnounce` ; une page qui en a besoin l'appelle ; un geste qui relance une lecture vide l'annonce précédente.
+- [ ] **Step 5 : verts** — specs ciblés PASS (le filet sans changement) ; `make front-test`, `make front-lint`, `make front-build`.
+- [ ] **Step 6 : commit** — `refactor(frontend): « focus puis annonce » dans un composable, « Réessayer » efface l'issue annoncée (#748)`.
+
+---
+
+### Task R6 : Un seul lien de reconnexion ; aucune route protégée ne porte de secret (Std3, Std7, C2 commentaire, S6)
+
+**Files :**
+- Create : `frontend/src/presentation/router/routeLocale.ts`, `frontend/src/presentation/ui/SignInAgainLink.vue`, `frontend/tests/presentation/router/signInLocations.spec.ts`, `frontend/tests/presentation/ui/SignInAgainLink.spec.ts`, `frontend/tests/presentation/router/protectedRoutesCarryNoSecret.spec.ts`
+- Modify : `frontend/src/presentation/router/sessionEnded.ts`, `frontend/src/presentation/router/reauthentication.ts`, `SessionEndedBanner.vue`, `AppHeader.vue` (le lien, `homeLink` par `routeLocale`, le commentaire de la marque), `McpConnectionsPage.vue`, `AssistantPage.vue`, `OAuthConsentPage.vue`, `frontend/src/infrastructure/i18n/locales/{fr,en}.json`
+- Test : `SessionEndedBanner.spec.ts`, `AppHeader.spec.ts`, `McpConnectionsPage.spec.ts`, `AssistantPage.spec.ts`, `OAuthConsentPage.spec.ts`, `AppFooter.spec.ts:110`, `BaseButton.spec.ts:122`
+- Modify : `.claude/rules/frontend-session.md`, `.claude/rules/frontend-backoffice.md` (« Route protection »), `.claude/rules/frontend-a11y.md` (puce du bandeau)
+
+**Interfaces :**
+- Produces :
+  - `routeLocale(route: { params: Readonly<Record<string, unknown>> }, fallback: Locale): Locale` — le paramètre `locale` de la route s'il est une locale prise en charge, sinon `fallback` ;
+  - `signInAgainLocation(route: Pick<RouteLocationNormalizedLoaded, 'fullPath' | 'params'>, fallback: Locale): RouteLocationRaw` = `{ name: 'login', params: { locale }, query: { redirect: route.fullPath, [SESSION_ENDED_QUERY]: SESSION_ENDED_VALUE } }` ;
+  - `switchAccountLocation(route, fallback): RouteLocationRaw` = même forme, `[REAUTH_QUERY]: REAUTH_VALUE` au lieu d'`expired` ;
+  - `SignInAgainLink.vue` : aucune prop, l'emplacement par défaut est le libellé visible ; une seule racine `RouterLink` (les classes passées s'y posent), `target="_blank"`, `rel="noopener"`, `<span class="visually-hidden">{{ t('common.opensInNewTab') }}</span>`, `IconExternalLink` 14 px `aria-hidden="true"`.
+
+- [ ] **Step 1 : tests, rouges**
+  - `signInLocations.spec.ts` : `it('signInAgainLocation : la langue de la route, le chemin complet en retour, expired=1')` (`/en/admin/x?a=1#f` → `{ name: 'login', params: { locale: 'en' }, query: { redirect: '/en/admin/x?a=1#f', expired: '1' } }`) ; `it('sans langue dans la route, la langue de repli')` ; `it('switchAccountLocation : reauth=1')` ; `it("aucun autre fichier ne compose ces liens")` — glob brut de `src/**/*.{vue,ts}` : `SESSION_ENDED_QUERY` et `REAUTH_QUERY` n'apparaissent hors de leur module que dans `LoginPage.vue` (lecture) et dans les deux constructeurs.
+  - `SignInAgainLink.spec.ts` : `href` `/fr/login?redirect=…&expired=1`, `target`, `rel`, texte « Se reconnecter (s'ouvre dans un nouvel onglet) » en FR et « … (opens in a new tab) » en EN, `svg[aria-hidden="true"]`, une classe passée posée sur le lien ; axe vert.
+  - `McpConnectionsPage.spec.ts` : `it("session finie : le lien de reconnexion s'ouvre dans un nouvel onglet et ramène ici")`. `AssistantPage.spec.ts` : `it("session finie : « Se reconnecter » ouvre un nouvel onglet, expired=1, retour à l'assistant")` (le lien d'avant, même onglet sans `expired`, change exprès). `OAuthConsentPage.spec.ts` : le lien de session finie porte `expired=1`, sans `target` (même onglet, exprès).
+  - `AppFooter.spec.ts` et `BaseButton.spec.ts` : « (s'ouvre dans un nouvel onglet) » au lieu de « (nouvelle fenêtre) ».
+  - `protectedRoutesCarryNoSecret.spec.ts` (S6 ; lit `router.getRoutes()` du routeur de l'application, en lecture seule) : `REVIEWED_PROTECTED_ROUTES: Record<string, string>`, nom de route → pourquoi sa requête et son fragment ne portent aucun secret ; `it('chaque route protégée est revue')` → les noms des routes `meta.requiresAuth` égalent les clés (une route ajoutée sans revue fait échouer, et le message dit pourquoi : son `fullPath` part dans `redirect`, donc dans l'URL d'un nouvel onglet que le serveur du frontend journalise) ; `it("set-password, qui porte un secret dans son fragment, n'est pas protégée")`. Pour `oauth-consent` : `client_id`, `redirect_uri`, `state`, `code_challenge` ne sont pas des secrets (le défi PKCE est un condensat, `state` la valeur anti-CSRF du client) et la navigation qui a ouvert la page les a déjà envoyés au serveur du frontend.
+  Expected : modules introuvables ; liens d'avant ; « (nouvelle fenêtre) ».
+- [ ] **Step 2 : implémenter** — les modules ; le bandeau, l'en-tête, la page MCP et l'assistant rendent `<SignInAgainLink>` (classes du bouton gardées dans l'en-tête) ; le consentement construit ses deux liens par `signInAgainLocation`/`switchAccountLocation` dans `RouterLink` sans `target` ; i18n : `common.opensInNewTab` FR « (s'ouvre dans un nouvel onglet) », `admin.sessionEnded.newTab` retiré des deux fichiers ; `AppHeader` : commentaire de la marque corrigé (C2) — « À 320 px, le groupe de droite demandait 331 px au palier de confiance et 389 px en anonyme et en EN, pour 301 utiles (mesures de #748) : la marque se tronque la première ; si le groupe seul dépasse encore, voir la tâche 11 ».
+- [ ] **Step 3 : règles** — `frontend-session.md` : le lien, ses constructeurs, le composant, les sites en nouvel onglet et l'exception du consentement (raison du choix 4) ; `frontend-backoffice.md`, « Route protection » : l'invariant « aucune route `requiresAuth` ne porte de secret dans sa requête ou son fragment » (S6), pourquoi, la garde ; `frontend-a11y.md` : la puce du bandeau renvoie à `SignInAgainLink`. `paths:` de `frontend-session.md` : les fichiers créés.
+- [ ] **Step 4 : verts** — specs ciblés PASS ; `make front-test`, `make front-lint`, `make front-build`, `tools/check-claude-rules.sh`.
+- [ ] **Step 5 : commit** — `refactor(frontend): un seul lien de reconnexion, et aucune route protégée ne porte de secret (#748)`.
+
+---
+
+### Task R7 : Un refus réel relit la session et propose de changer de compte (CR5, S3, S4, S8)
+
+**Files :**
+- Modify : `frontend/src/infrastructure/mcp/HttpMcpConnectionsRepository.ts` (403 → `AccessForbiddenError`), `frontend/src/application/mcp/useMcpConnections.ts`, `McpConnectionsPage.vue`, `frontend/src/application/assistant/useAssistant.ts`, `AssistantPage.vue`, `frontend/src/application/mcp/useOAuthConsent.ts`, `OAuthConsentPage.vue`, `frontend/src/infrastructure/i18n/locales/{fr,en}.json`
+- Test : `HttpMcpConnectionsRepository.spec.ts`, `useMcpConnections.spec.ts`, `McpConnectionsPage.spec.ts`, `useAssistant.spec.ts`, `AssistantPage.spec.ts`, `useOAuthConsent.spec.ts`, `OAuthConsentPage.spec.ts`, `LoginPage.spec.ts`
+- Modify : `.claude/rules/frontend.md`, `mcp-oauth.md`, `mcp-oauth-revocation-personne.md`, `frontend-session.md`
+
+**Interfaces :**
+- Consumes : `AccessForbiddenError` (R2), `switchAccountLocation` (R6).
+- Produces : `type McpRefusal = 'session-ended' | 'forbidden'` ; `UseMcpConnectionsResult.refusal: DeepReadonly<Ref<McpRefusal | null>>` **remplace `sessionExpired`**, remis à `null` au début de chaque `load()` et `revoke()`. Les trois composables appellent `useAuth().checkAuth()` une fois sur un refus (`AccessForbiddenError`, ou la raison `forbidden` de l'assistant), sans l'attendre pour poser leur état, un rejet étant avalé ; jamais `markSessionExpired()` sur un refus.
+
+- [ ] **Step 1 : tests, rouges** (les tests qui fournissent `useAuth` reçoivent `AUTH_REPOSITORY` avec un `me` espionné)
+  - Dépôt MCP (changement exprès) : `it('list : un 403 est AccessForbiddenError')`, `it('revoke : un 403 avec jeton est AccessForbiddenError')` ; le 403 sans jeton reste `SessionEndedError`.
+  - `useMcpConnections.spec.ts` : `it("lecture refusée : refusal 'forbidden', /api/me relu une fois, la session n'est pas marquée finie")` ; `it("révocation refusée avec jeton : refusal 'forbidden', la liste reste")` ; `it("session finie : refusal 'session-ended'")`.
+  - `McpConnectionsPage.spec.ts` : `it("refus : message neutre, « Changer de compte » vers login?reauth=1&redirect=<ce chemin>, aucun « Réessayer », tous les « Révoquer » désactivés")` en FR et EN, axe vert ; `it('refus à la révocation : le focus passe au titre')`.
+  - `useAssistant.spec.ts` : `it("forbidden : /api/me relu une fois, la session n'est pas marquée finie")`. `AssistantPage.spec.ts` : `it("refus : message neutre et « Changer de compte » (reauth=1, retour à l'assistant)")`.
+  - `useOAuthConsent.spec.ts` : `it("forbidden : /api/me relu une fois")`. `OAuthConsentPage.spec.ts` : le message de `forbidden` est `common.accessRefused`.
+  - Texte exact (Review Focus 4, S8) dans les tests de page : FR « Le serveur refuse cette demande à votre session : votre compte n'a peut-être pas, ou plus, l'accès de confiance, ou la session doit être rouverte. Changez de compte, ou reconnectez-vous au même, pour continuer. », EN « The server refuses this request to your session: your account may not have, or may no longer have, trusted access, or the session needs to be reopened. Switch account, or sign in again to the same one, to continue. ».
+  - `LoginPage.spec.ts` : l'annonce `reauth=1` est FR « Confirmez votre identité ou connectez-vous avec un autre compte : vous reviendrez ensuite à la page que vous quittiez. », EN « Confirm your identity or sign in with another account: you will then return to the page you left. ».
+  Run : `docker compose exec frontend npm test -- tests/infrastructure/mcp tests/application/mcp tests/application/assistant tests/presentation/pages`. Expected : `McpConnectionsRequestFailedError` reçu, `refusal` indéfini, `me` jamais appelé, anciens textes.
+- [ ] **Step 2 : implémenter** — la page MCP : `refusal === 'session-ended'` → alerte et `SignInAgainLink` ; `'forbidden'` → alerte `common.accessRefused` et `RouterLink :to="switchAccountLocation(…)"` libellé `common.switchAccount` ; sinon l'échec générique et « Réessayer » ; « Révoquer » désactivé si `null !== refusal` ; focus au titre sur tout refus. Assistant : `forbidden` → `checkAuth()`, la page montre le même message et le même lien. Consentement : `AccessForbiddenError` → `checkAuth()` en plus de l'échec terminal `forbidden`. i18n : `common.accessRefused` (texte ci-dessus), `common.switchAccount` (le libellé de `oauthConsent.account.switch` déplacé, la clé ancienne retirée et ses lecteurs mis à jour), `assistant.errors.forbidden` et `oauthConsent.errors.forbidden` retirés, `auth.reauthNotice` remplacé (textes ci-dessus).
+- [ ] **Step 3 : règles** — `frontend.md` : les deux limites acceptées retirées (l'en-tête d'un compte rétrogradé ; le `GET` en 403 de la page MCP) et remplacées par la resynchronisation et le lien ; `mcp-oauth.md`, puce « The consent page » : le message neutre (S8), `/api/me` relu, la phrase « Accepted: the login page opened by `reauth=1` then shows `auth.reauthNotice` (« authorizing an MCP connection… ») » remplacée par l'annonce neutre et pourquoi ; `mcp-oauth-revocation-personne.md` (« Slice », « The page ») : `refusal` ; `frontend-session.md` : une section « Un refus réel », le fait vérifié (rôles relus en base : fournisseur `cpg_users`, `JWTAuthenticator::createToken`, `access_control ^/api/me`).
+- [ ] **Step 4 : verts** — specs ciblés PASS ; `make front-test`, `make front-lint`, `make front-build`, `tools/check-claude-rules.sh` (taille de `mcp-oauth.md`).
+- [ ] **Step 5 : commit** — `fix(frontend): un refus réel relit la session et propose de changer de compte (#748, #732)`.
+
+---
+
+### Task R8 : La session finie se revérifie au retour, sur toutes les pages protégées, et seulement avec un jeton d'écriture (CR7, CR3b)
+
+**Files :**
+- Create : `frontend/src/presentation/layout/useSessionRecheckOnFocus.ts`, `frontend/tests/presentation/layout/useSessionRecheckOnFocus.spec.ts`
+- Modify : `frontend/src/domain/auth/repositories/AuthRepository.ts`, `frontend/src/infrastructure/auth/HttpAuthRepository.ts`, `frontend/src/application/auth/useAuth.ts`, `frontend/src/presentation/layout/AppLayout.vue`, `SessionEndedBanner.vue` (écouteur retiré), `useMcpConnections.ts`, `useOAuthConsent.ts`, `useAssistant.ts`
+- Test : `useAuth.spec.ts`, `HttpAuthRepository.spec.ts`, `AppLayout.spec.ts`, `AppHeader.spec.ts`, `SessionEndedBanner.spec.ts`, `useMcpConnections.spec.ts`, `useOAuthConsent.spec.ts`, `useAssistant.spec.ts`, et chaque faux `AuthRepository` des specs (14 fichiers, `grep -rln "me: vi.fn" frontend/tests`)
+- Modify : `.claude/rules/frontend-session.md`
+
+**Interfaces :**
+- Produces :
+  - `AuthRepository.hasWriteToken(): boolean` — vrai quand un cookie `XSRF-TOKEN` non vide est lisible (`HttpAuthRepository`, par `readCsrfToken()`) ;
+  - `UseAuthResult.recheckEndedSession(): Promise<void>` — sans effet hors session finie ; une seule relecture en vol (un second appel pendant la première rend la même promesse) ; `me()` ; un compte retrouvé **et** `hasWriteToken()` → la session est appliquée (`sessionEnded` baisse) ; sinon l'état ne change pas ; un rejet de `me()` est avalé ;
+  - `useSessionRecheckOnFocus(): void` — écoute `focus` sur `window` du montage au démontage et appelle `recheckEndedSession()` ; appelé une fois, dans `AppLayout.vue` ;
+  - réactions au retour (`authState.sessionEnded` vrai → faux) : `useMcpConnections` relit si `refusal === 'session-ended'` ; `useOAuthConsent` appelle `reload()` si `failure === 'session-ended'` ; `useAssistant` remet `error` à `null` et `state` à `'idle'` si la raison était `unauthenticated` (le brouillon reste).
+
+- [ ] **Step 1 : tests, rouges**
+  - `useAuth.spec.ts` : `it("un compte retrouvé avec son jeton d'écriture rétablit la session")` ; `it("un compte retrouvé sans XSRF-TOKEN : la session reste finie")` (Review Focus 3, régression de CR3b — vu rouge contre le code actuel, qui la rétablit) ; `it("hors session finie, aucune relecture")` ; `it('deux appels rapprochés : une seule relecture en vol')` (Review Focus 5) ; `it('une panne réseau laisse la session finie, sans rejet')`.
+  - `HttpAuthRepository.spec.ts` : `hasWriteToken` vrai avec `XSRF-TOKEN=x`, faux sans cookie et avec `XSRF-TOKEN=`.
+  - `useSessionRecheckOnFocus.spec.ts` : `focus` → `recheckEndedSession` appelée ; plus rien après le démontage.
+  - `AppLayout.spec.ts` : `it("un retour sur l'onglet, bandeau affiché : une seule relecture de /api/me")` (route d'administration, `AdminLayout` et le bandeau montés sous `AppLayout`, `markSessionExpired()`, un `focus` → `me` appelé une fois) ; `it("la revérification vaut hors du backoffice")` (route `mcp-connections`).
+  - `AppHeader.spec.ts` (CR7, première moitié, déjà en place, à épingler) : `it.each(['mcp-connections', 'assistant', 'oauth-consent'])("%s : session finie, « Connexion » ouvre un nouvel onglet qui ramène ici")`.
+  - Réactions : `useMcpConnections.spec.ts` `it('au retour de la session, la liste se relit')` ; `useOAuthConsent.spec.ts` `it('au retour de la session, la demande se relit')` ; `useAssistant.spec.ts` `it("au retour de la session, l'erreur de session s'efface et le brouillon reste")`.
+  - `SessionEndedBanner.spec.ts` : les tests de relecture au `focus` partent vers `useAuth.spec.ts` ; ceux de « Session rétablie » déclenchent le retour par `recheckEndedSession()` ; `it("le bandeau n'écoute plus le focus lui-même")` (bandeau seul, `focus` → `me` non appelé).
+  Expected : `hasWriteToken`/`recheckEndedSession` absents, session rétablie sans jeton, deux relectures avec le bandeau, aucune relecture hors backoffice.
+- [ ] **Step 2 : implémenter** — chaque faux `AuthRepository` reçoit `hasWriteToken: () => true` (le comportement d'avant pour ces specs) ; le reste selon les interfaces ; `checkAuth()` (chargement initial) ne change pas.
+- [ ] **Step 3 : règle** — `frontend-session.md` : la revérification partagée et son unique point d'installation, la condition du jeton d'écriture (pourquoi : un compte retrouvé sans jeton prend un 403 à la première écriture), les réactions au retour par page, l'en-tête en nouvel onglet sur toute route `requiresAuth` (épinglé par route). `paths:` : les fichiers créés.
+- [ ] **Step 4 : verts** — specs ciblés PASS ; `make front-test`, `make front-lint`, `make front-build`, `tools/check-claude-rules.sh`.
+- [ ] **Step 5 : commit** — `fix(frontend): la session finie se revérifie au retour sur toutes les pages protégées (#748)`.
+
+---
+
+### Task R9 : Le bandeau colle vraiment, n'ajoute aucun espace, s'efface et se réannonce comme il faut (CR1/C1, D1, CR6, S7)
+
+**Files :**
+- Modify : `frontend/src/presentation/ui/admin/SessionEndedBanner.vue`, `frontend/src/application/auth/useAuth.ts` (`sessionEndedCount`)
+- Test : `AdminLayout.sessionEnded.spec.ts`, `SessionEndedBanner.spec.ts`, `useAuth.spec.ts`
+- Modify : `.claude/rules/frontend-session.md`, `.claude/rules/frontend-a11y.md` (puce « A live region is announced when it is *inserted* »)
+
+**Interfaces :**
+- Produces : `UseAuthResult.sessionEndedCount: ComputedRef<number>` — augmenté de un par chaque `markSessionExpired()`.
+
+- [ ] **Step 1 : tests, rouges**
+  - `AdminLayout.sessionEnded.spec.ts` (jsdom ne calcule pas le collage : le test prouve la structure qui le permet) : `it("le bandeau est un enfant direct de la section qui contient la page : il colle sur toute sa hauteur")` — `[data-testid="admin-session-ended"]`, `parentElement` = la `<section>` d'`AdminLayout`, qui contient aussi l'élément de la page de la route ; `it("session active : le bandeau n'ajoute à la section aucun élément dans le flux")` (D1) — parmi les enfants directs de la section, le seul venu du bandeau est `[data-testid="admin-session-restored"]`, de classe `visually-hidden`.
+  - `SessionEndedBanner.spec.ts` (monté dans un composant hôte : deux racines) : `it("une session qui reprend fin efface « Session rétablie »")` (CR6 : fin, retour, message ; `markSessionExpired()` → région vide) ; `it("un nouveau refus pendant que le bandeau est affiché le réinsère, donc le réannonce")` (S7 : l'élément `[role="alert"]` d'après n'est pas celui d'avant) ; `it('plusieurs refus dans le même tick : une seule réinsertion')`.
+  - `useAuth.spec.ts` : `it('chaque fin de session augmente sessionEndedCount')`.
+  Expected : parent = le `<div>` racine, un `<div>` de plus dans la section, message gardé, même élément d'alerte.
+- [ ] **Step 2 : implémenter** — gabarit à deux racines : l'alerte (`v-if`, `ref="banner"`, `:key="sessionEndedCount"`) et la région `status` ; `watch(hasSessionEnded, (isEnded, wasEnded) => { if (isEnded) hasRestored.value = false; else if (wasEnded) hasRestored.value = true })` ; vérifier que `usePublishedHeight` suit l'élément réinséré (sa `ref` change, l'observateur suit la cible). Docblock : pourquoi deux racines (le bloc contenant du `sticky`), choix 7.
+- [ ] **Step 3 : règles** — `frontend-session.md` : deux racines et pourquoi, la réinsertion à chaque refus (S7), le message de retour effacé par une nouvelle fin ; `frontend-a11y.md` : réinsérer une alerte (changement de `key`) pour la réannoncer.
+- [ ] **Step 4 : verts** — specs ciblés PASS ; `make front-test`, `make front-lint`, `make front-build`.
+- [ ] **Step 5 : commit** — `fix(frontend): le bandeau de session finie colle vraiment, sans espace vide, et se réannonce (#748)`.
+
+---
+
+### Task R10 : Échap rend le focus au bouton du menu depuis `body` (CR8)
+
+**Files :**
+- Modify : `frontend/src/presentation/layout/AccountMenu.vue:80-91`
+- Test : `frontend/tests/presentation/layout/AccountMenu.spec.ts`
+- Modify : `.claude/rules/mcp-oauth-revocation-personne.md` (« Desktop account menu »)
+
+- [ ] **Step 1 : test, rouge** — `it("Échap, le focus sur body (Safari après un clic) : le focus revient au bouton")` — menu ouvert au clic, `(document.activeElement as HTMLElement).blur()` (l'élément actif devient `body`), Échap → `document.activeElement` est le bouton. Le test « Échap ailleurs ferme sans prendre le focus » (Review Focus 5 du plan d'origine) reste vert. Expected : FAIL, `body`.
+- [ ] **Step 2 : implémenter** — `const active = document.activeElement` ; le focus est rendu si `active` est dans le conteneur, ou `null`, ou `document.body` (personne d'autre ne le détient).
+- [ ] **Step 3 : règle** — « Escape returns the focus to the button only if it was inside the menu » devient « … inside the menu, or held by nobody (`body`, Safari after a click) ».
+- [ ] **Step 4 : verts** — spec PASS ; `make front-test`, `make front-lint`, `make front-build`.
+- [ ] **Step 5 : commit** — `fix(frontend): Échap rend le focus au bouton du menu du compte quand personne ne le tient (#748)`.
+
+---
+
 ### Task 11 : Contrôle au navigateur — **fil principal, pas un agent de tâche**
 
 Pile de dev locale, FR et EN, axe-core injecté dans la page, noté dans la PR (référentiel WCAG 2.2 AA) :
@@ -604,12 +1043,25 @@ Pile de dev locale, FR et EN, axe-core injecté dans la page, noté dans la PR (
 - [ ] Bandeau collant après « Enregistrer » en bas d'un long formulaire ; menu mobile ouvert : le bandeau reste sous l'en-tête ; un champ focalisé au clavier n'est pas masqué (2.4.11) ; zoom 200 %.
 - [ ] Page MCP : plus de barre verticale en desktop ; contour de focus du dernier « Révoquer » entier ; « Réessayer » rend le focus ; révocation : focus au titre puis annonce (inspecteur d'accessibilité, sans lecteur d'écran réel — le noter non vérifié).
 - [ ] Consentement OAuth et assistant : déconnexion dans un autre onglet puis décision / question → session finie (lien de reconnexion qui s'ouvre) ; le refus `forbidden` (compte de confiance rétrogradé pendant que la page est ouverte) → message de refus, en-tête inchangé, « Changer de compte » ouvre la connexion (consentement).
-- [ ] Menu du compte : Échap depuis la page ne déplace pas le focus ; Tab après la dernière entrée le ferme (Chrome, Firefox) ; entrée courante visible.
+- [ ] Menu du compte : Échap depuis la page ne déplace pas le focus ; Tab après la dernière entrée le ferme (Chrome, Firefox) ; entrée courante visible ; ouvert à la souris puis Échap : le focus revient au bouton (R10 ; Safari s'il est disponible, sinon le noter non vérifié).
+
+Ce que les corrections R1 à R10 ont changé, à mesurer aussi :
+
+- [ ] **Bandeau collant, mesuré** (R9) : page d'administration longue, bandeau affiché, défilement jusqu'en bas : `getBoundingClientRect().top` du bandeau égale la hauteur publiée `--app-header-height` (± 1 px) ; aucun espace vide supplémentaire entre la navigation d'administration et la page, session active (comparer à une capture de `develop`).
+- [ ] **Réannonce** (R9) : bandeau affiché, « Enregistrer » une seconde fois → l'alerte est réinsérée (inspecteur : nœud remplacé) ; « Session rétablie » s'efface si la session reprend fin.
+- [ ] **Non chargé, puis relu** (R4) : session finie avant d'ouvrir une page d'administration (déconnexion dans un autre onglet, puis navigation par l'application) → mention « Contenu non chargé », aucun « aucune … » ; reconnexion dans l'autre onglet, retour → la liste se lit. Réglages « À propos » : FR lu, session finie, passage en EN → ni champs FR ni « Enregistrer » ; retour → l'EN s'affiche ; « Enregistrer » ne touche que l'EN.
+- [ ] **Cookies** (R1) : après connexion, `XSRF-TOKEN` et `BEARER` ont la même échéance dans les outils du navigateur ; navigateur fermé puis rouvert sans restauration : une écriture du backoffice aboutit (plus de boucle « session finie » / « Session rétablie »).
+- [ ] **Revérification partout** (R8) : sur « Mes connexions MCP », l'assistant et le consentement, déconnexion dans un autre onglet puis geste → session finie ; reconnexion dans l'autre onglet, retour → l'en-tête retrouve le compte, la page se relit (MCP, consentement) ou efface son erreur (assistant, brouillon gardé) ; une seule requête `/api/me` par retour (onglet Réseau), bandeau affiché ou non. Session ouverte avant R1, `XSRF-TOKEN` supprimé à la main (outils du navigateur) : le retour ne rétablit pas la session.
+- [ ] **Refus réel** (R7) : compte de confiance rétrogradé (par un autre compte `ROLE_SUPER`) pendant que « Mes connexions MCP », l'assistant ou le consentement est ouvert, puis geste → message neutre, « Changer de compte » ouvre la connexion (annonce neutre), en-tête au palier de base après la relecture de `/api/me`, aucun « Réessayer » sur la page MCP ; « Révoquer » désactivé.
+- [ ] **Liens** (R6) : les liens de reconnexion du bandeau, de l'en-tête, de la page MCP et de l'assistant s'ouvrent dans un nouvel onglet et ramènent à la page (`expired=1`) ; ceux du consentement restent dans l'onglet.
+- [ ] **« Réessayer »** (R5) : après une révocation annoncée puis une relecture en échec, « Réessayer » ne laisse pas « révoquée » dans la région d'état.
+- [ ] **En-tête à 320 px, avec la marque tronquée (C2)** : mesurer, aux trois paliers, FR et EN, la largeur du groupe de droite (`div.flex-shrink-0` de l'en-tête) et `document.documentElement.scrollWidth` (doit valoir 320). Si la ligne déborde encore (le ticket mesurait le groupe **seul** à 331 px au palier de confiance et 389 px en anonyme et en EN pour 301 utiles, ce que la troncature de la marque ne peut pas absorber), appliquer le repli suivant dans un commit `fix(frontend): l'en-tête tient à 320 px, actions resserrées (#748)` puis refaire la mesure : sous 360 px (`@media (max-width: 359.98px)`, `<style scoped>` d'`AppHeader`), « Connexion » (lien ordinaire et `SignInAgainLink`) devient une icône `~icons/lucide/log-in` avec `aria-label` = `common.login` (comme « Accès instantané » sous 576 px) et le groupe passe de `gap-2` à `gap-1` ; test `AppHeader.spec.ts` « sous 360 px, « Connexion » garde son nom accessible » (le `aria-label`, l'icône `aria-hidden`), et garde de source sur la règle `@media` dans le bloc scopé. **Si cela ne suffit pas** (mesure à l'appui), ne pas aller plus loin sans l'auteur : la marche suivante retire un élément de la ligne (le sélecteur de langue passé dans le menu mobile sous 360 px, ou deux rangées, que la décision 1 avait écartées pour 2.4.11) ; consigner les mesures dans la PR.
 - [ ] Tout écart → retour à la tâche concernée (nouveau commit), puis ce contrôle refait.
 
 ### Task 12 : Clôture — **fil principal**
 
-- [ ] `make front-test`, `make front-lint`, `make front-build` verts sur la tête ; `tools/check-claude-rules.sh` vert (les `paths:` ajoutés correspondent à des fichiers suivis, aucune règle au-delà de 50 000 octets).
-- [ ] #732 : le point 4 est **entièrement traité par #748** (règle `endsTheSession` dans le backoffice, « Mes connexions MCP », le consentement OAuth et l'assistant ; tâches 3, 4, 4b, 4c) — le marquer comme tel dans le corps (barré, renvoi à #748 et à son commit de fusion), rien n'y reste. Par `gh api -X PATCH repos/{owner}/{repo}/issues/732` (pas `gh issue edit`, cassé en gh 2.46 sur ce dépôt).
+- [ ] `make front-test`, `make front-lint`, `make front-build`, **`make back-test` et `make back-quality`** (R1) verts sur la tête ; `tools/check-claude-rules.sh` vert (les `paths:` ajoutés correspondent à des fichiers suivis, aucune règle au-delà de 50 000 octets, la nouvelle `frontend-session.md` comprise, et sa ligne dans l'index de `.claude/CLAUDE.md`).
+- [ ] Corps de la PR : la note de release de R1 — `XSRF-TOKEN` expire désormais avec `BEARER` au login ; une session ouverte avant le déploiement garde un `XSRF-TOKEN` de session (au plus une heure), et un navigateur rouvert entre-temps demande de se reconnecter, une fois.
+- [ ] #732 : le point 4 est **entièrement traité par #748** (règle `endsTheSession` dans le backoffice, « Mes connexions MCP », le consentement OAuth et l'assistant, portée par `sessionAwareFetch` ; un refus réel relit `/api/me` et propose « Changer de compte » ; tâches 3, 4, 4b, 4c, R2, R7) — le marquer comme tel dans le corps (barré, renvoi à #748 et à son commit de fusion), rien n'y reste. Par `gh api -X PATCH repos/{owner}/{repo}/issues/732` (pas `gh issue edit`, cassé en gh 2.46 sur ce dépôt).
 - [ ] `tasks/todo.md` : cocher « Tâche 11 » (critère de #748) dans le commit de clôture.
 - [ ] Après la fusion dans `feature/379-mcp-paliers` : fermer #748 à la main (`Closes #748` ne ferme rien vers une base qui n'est pas `main`).
