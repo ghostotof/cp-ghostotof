@@ -237,6 +237,11 @@ version" copies nothing and the assistant sends all five fields.
   — the French texts over the English record, silently (CR2). `AdminAboutSettingsForm` renders the form only if `isLoaded`,
   and a pending translation proposal is set by a synchronous watcher of `isLoaded` (not after `await load()`: the read
   that ended the session never resolves a value), so it lands on the form it targets, at the return if need be.
+  **The key guards the writes too** (#748, R11): `useAdminAboutSettings` remembers the locale requested last, and the
+  response of a `save(locale, …)` replaces `settings` only if it is that locale. A save sent in French and answered after
+  the page went to English has succeeded server-side (`save()` still returns `true`), but must not put the French values
+  under the English header: the next « Enregistrer » would overwrite the English record. The About settings are the only
+  keyed composable, so the only one with that race.
   **The return is the one signal that exists**: `authState.sessionEnded` going from true to false (`useAuth`: a
   session of an account is applied). `useAdminLoad` watches it; if its last read ended on `SessionEndedError`, it re-runs
   `load(same key)` **once**. A newer `load()` replaces the interrupted one; a read that succeeded leaves nothing to

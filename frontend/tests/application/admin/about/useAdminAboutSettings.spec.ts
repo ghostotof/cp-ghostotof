@@ -111,4 +111,58 @@ describe('useAdminAboutSettings', () => {
 
     expect(composable.errorMessage.value?.reason).toBe('validation')
   })
+  describe('une réponse d\'enregistrement ne remplace que les réglages de la langue demandée en dernier (#748, R11)', () => {
+    const INPUT = {
+      siteEyebrow: 'Nouveau titre',
+      meEyebrow: SETTINGS.meEyebrow,
+      technicalSubtitle: SETTINGS.technicalSubtitle,
+      personalSubtitle: SETTINGS.personalSubtitle,
+      hobbiesSubtitle: SETTINGS.hobbiesSubtitle,
+    }
+    const SETTINGS_EN: AdminAboutSettings = { ...SETTINGS, locale: 'en', siteEyebrow: 'About this site' }
+
+    it("la réponse d'un enregistrement FR arrivée après la lecture EN laisse les réglages EN, et rend vrai", async () => {
+      let answerSave!: (settings: AdminAboutSettings) => void
+      const repository = createStubRepository({
+        get: vi.fn(async (locale: string) => ('en' === locale ? SETTINGS_EN : SETTINGS)),
+        update: vi.fn(() => new Promise<AdminAboutSettings>((resolve) => (answerSave = resolve))),
+      })
+      const composable = mountWithComposable(repository)
+      await composable.load('fr')
+
+      const saving = composable.save('fr', INPUT)
+      await composable.load('en')
+      answerSave({ ...SETTINGS, siteEyebrow: 'Nouveau titre' })
+
+      // Vrai : le serveur a enregistré le français. Les réglages affichés restent ceux de l'anglais.
+      expect(await saving).toBe(true)
+      expect(composable.settings.value).toEqual(SETTINGS_EN)
+    })
+
+    it("la réponse d'un enregistrement FR arrivée pendant la lecture EN ne remplit pas les réglages vidés", async () => {
+      let answerSave!: (settings: AdminAboutSettings) => void
+      let answerRead!: (settings: AdminAboutSettings) => void
+      const repository = createStubRepository({
+        get: vi.fn((locale: string) =>
+          'en' === locale ? new Promise<AdminAboutSettings>((resolve) => (answerRead = resolve)) : Promise.resolve(SETTINGS),
+        ),
+        update: vi.fn(() => new Promise<AdminAboutSettings>((resolve) => (answerSave = resolve))),
+      })
+      const composable = mountWithComposable(repository)
+      await composable.load('fr')
+
+      const saving = composable.save('fr', INPUT)
+      const reading = composable.load('en')
+      answerSave({ ...SETTINGS, siteEyebrow: 'Nouveau titre' })
+      await saving
+
+      // Ni le français sous l'en-tête anglais, ni « chargé » : la lecture EN n'a pas répondu.
+      expect(composable.settings.value).toBeNull()
+      expect(composable.isLoaded.value).toBe(false)
+
+      answerRead(SETTINGS_EN)
+      await reading
+      expect(composable.settings.value).toEqual(SETTINGS_EN)
+    })
+  })
 })

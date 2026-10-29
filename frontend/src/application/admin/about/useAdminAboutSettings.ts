@@ -36,7 +36,7 @@ export function useAdminAboutSettings(): UseAdminAboutSettingsResult {
   const settings = ref<AdminAboutSettings | null>(null)
   const errorMessage = ref<AdminAboutError | null>(null)
 
-  const { isLoading, hasError, isLoaded, load } = useAdminLoad<AdminAboutSettings, Locale>({
+  const { isLoading, hasError, isLoaded, load: loadKey } = useAdminLoad<AdminAboutSettings, Locale>({
     read: (locale) => repository.get(locale),
     apply: (value) => {
       settings.value = value
@@ -48,11 +48,28 @@ export function useAdminAboutSettings(): UseAdminAboutSettingsResult {
     },
   })
 
+  // La locale demandée en dernier : celle que la page montre, ou est en train de lire. Une réponse
+  // d'enregistrement n'a le droit de poser des réglages que si c'est la sienne (#748, R11).
+  let requestedLocale: Locale | null = null
+
+  const load = (locale: Locale): Promise<void> => {
+    requestedLocale = locale
+
+    return loadKey(locale)
+  }
+
   const save = async (locale: Locale, input: AdminAboutSettingsInput): Promise<boolean> => {
     errorMessage.value = null
 
     try {
-      settings.value = await repository.update(locale, input)
+      const saved = await repository.update(locale, input)
+      // Un enregistrement parti dans une langue que la personne a quittée depuis a bien abouti côté serveur
+      // (on rend vrai), mais sa réponse ne remplace pas les réglages d'une autre langue : le formulaire de
+      // la langue affichée, enregistré ensuite, écraserait celle-ci par la première. Même famille que CR2,
+      // côté écriture : `useAdminLoad` garde les lectures, cette comparaison garde les réponses d'écriture.
+      if (null === requestedLocale || requestedLocale === locale) {
+        settings.value = saved
+      }
 
       return true
     } catch (error) {

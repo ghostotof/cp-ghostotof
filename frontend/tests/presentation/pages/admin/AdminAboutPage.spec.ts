@@ -1080,6 +1080,39 @@ describe('AdminAboutPage', () => {
       })
     })
 
+    it("la réponse d'un enregistrement parti dans la langue quittée ne remplace pas les réglages de la langue affichée (#748, R11)", async () => {
+      // Le scénario complet, à promesses maîtrisées : un enregistrement FR est en vol, la personne passe en EN,
+      // la lecture EN aboutit, puis seulement la réponse FR arrive.
+      let answerFrenchSave!: (settings: AdminAboutSettings) => void
+      const frenchSave = new Promise<AdminAboutSettings>((resolve) => {
+        answerFrenchSave = resolve
+      })
+      const settingsRepository = createSettingsRepository({
+        get: vi.fn(async (locale: string) => ('en' === locale ? SETTINGS_EN : SETTINGS)),
+        update: vi.fn().mockReturnValueOnce(frenchSave).mockResolvedValue(SETTINGS_EN),
+      })
+      const { wrapper } = await mountPage(settingsRepository)
+
+      await wrapper.get('#admin-about-site-eyebrow').setValue('Nouveau titre')
+      await formOf(wrapper, SETTINGS_FORM).trigger('submit.prevent')
+      await wrapper.get('#admin-about-locale').setValue('en')
+      await flushPromises()
+      expect(valueOf(wrapper, '#admin-about-site-eyebrow')).toBe(TRANSLATED_SETTINGS.siteEyebrow)
+
+      answerFrenchSave({ ...SETTINGS, siteEyebrow: 'Nouveau titre' })
+      await flushPromises()
+
+      // Le formulaire reste celui de l'anglais : la réponse française n'a rien à y poser.
+      expect(valueOf(wrapper, '#admin-about-site-eyebrow')).toBe(TRANSLATED_SETTINGS.siteEyebrow)
+      expect(valueOf(wrapper, '#admin-about-me-eyebrow')).toBe(TRANSLATED_SETTINGS.meEyebrow)
+
+      // Et un « Enregistrer » ensuite n'écrit que l'anglais, jamais le français sous l'en-tête anglais.
+      await formOf(wrapper, SETTINGS_FORM).trigger('submit.prevent')
+      await flushPromises()
+      expect(settingsRepository.update).toHaveBeenCalledTimes(2)
+      expect(settingsRepository.update).toHaveBeenLastCalledWith('en', TRANSLATED_SETTINGS)
+    })
+
     describe('session finie pendant la lecture des réglages de la locale cible (#748, R4, CR2)', () => {
       // Une page laissée montée relirait sa lecture interrompue au retour suivant, et rouvrirait la session finie
       // pour le test d'après : on la démonte avant de rendre la session.
