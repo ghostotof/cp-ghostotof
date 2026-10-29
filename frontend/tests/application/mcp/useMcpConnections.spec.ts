@@ -353,6 +353,64 @@ describe('useMcpConnections', () => {
     expect(me).toHaveBeenCalledTimes(1)
   })
 
+  it("lecture et révocation refusées ensemble : un seul /api/me", async () => {
+    await signInTrusted()
+    const connections = mountComposable({
+      list: vi.fn().mockRejectedValue(new AccessForbiddenError()),
+      revoke: vi.fn().mockRejectedValue(new AccessForbiddenError()),
+    })
+    let settle: () => void = () => undefined
+    me.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          settle = () => resolve(BASE_ACCESS_SESSION)
+        }),
+    )
+
+    const reading = connections.load()
+    const revoking = connections.revoke('a')
+    await flushPromises()
+    settle()
+    await Promise.all([reading, revoking])
+    await flushPromises()
+
+    expect(me).toHaveBeenCalledTimes(1)
+  })
+
+  it("refus réel puis /api/me en 401 : refusal 'session-ended', session finie", async () => {
+    await signInTrusted()
+    const connections = mountComposable({ list: vi.fn().mockRejectedValue(new AccessForbiddenError()), revoke: vi.fn() })
+    me.mockResolvedValue(sessionFor(null))
+
+    await connections.load()
+    await flushPromises()
+
+    expect(authState.sessionEnded).toBe(true)
+    expect(connections.refusal.value).toBe('session-ended')
+  })
+
+  it("refus réel puis /api/me en 401 : une relecture lancée entre-temps n'est pas écrasée par le verdict", async () => {
+    await signInTrusted()
+    const list = vi.fn().mockRejectedValueOnce(new AccessForbiddenError()).mockResolvedValue(listOf([A]))
+    const connections = mountComposable({ list, revoke: vi.fn() })
+    let settle: () => void = () => undefined
+    me.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          settle = () => resolve(sessionFor(null))
+        }),
+    )
+
+    await connections.load()
+    // La personne relit avant que /api/me réponde : le refus affiché n'est plus ce forbidden-là.
+    await connections.load()
+    settle()
+    await flushPromises()
+
+    expect(connections.refusal.value).toBeNull()
+    expect(connections.status.value).toBe('ready')
+  })
+
   it('revoke() révoque puis recharge la liste depuis le serveur, outcome revoked', async () => {
     const revoke = vi.fn(async () => undefined)
     const list = vi.fn().mockResolvedValueOnce(listOf([A, B])).mockResolvedValueOnce(listOf([A, connection('b', 'revoked')]))

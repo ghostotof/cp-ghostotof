@@ -46,6 +46,12 @@ let hasCheckedOnce = false
 let endedSessionRecheck: Promise<void> | null = null
 
 /**
+ * La relecture du palier après un refus réel en vol (#748, R15), partagée elle aussi : une lecture et une révocation
+ * refusées ensemble, ou deux pages, n'envoient qu'un `/api/me`.
+ */
+let refusalReread: Promise<RefusalReread> | null = null
+
+/**
  * La génération de la session (#748, R14) : un compteur de module, avancé à chaque **fin** acceptée
  * (`markSessionExpired`) et à chaque **retour** (la descente de `sessionEnded`). Un appelant la lit à l'envoi
  * (`sessionStamp()`) et la rend avec le verdict (`markSessionExpired(sentAt)`, la relecture de `/api/me`) : ce qui
@@ -257,6 +263,14 @@ export function onSessionRestored(callback: () => void): void {
   onScopeDispose(() => sessionRestoredCallbacks.delete(subscription))
 }
 
+/**
+ * Ce que dit la relecture du palier après un refus réel (`rereadAfterRefusal`) :
+ * - `session-held`  : la session tient (le palier a été relu, ou la relecture a échoué, ou sa réponse est d'une
+ *                     session révolue) : le refus reste un refus réel ;
+ * - `session-ended` : `/api/me` répond « anonyme » (401) : la session est finie, la page doit le dire.
+ */
+export type RefusalReread = 'session-held' | 'session-ended'
+
 export interface UseAuthResult {
   user: ComputedRef<AuthenticatedUser | null>
   /** Palier courant (ADR 0003 D1) — la source de vérité pour l'en-tête. */
@@ -292,6 +306,18 @@ export interface UseAuthResult {
    * prochain retour. Branchée une fois sur le `focus` de la fenêtre par `useSessionRecheckOnFocus` (AppLayout).
    */
   recheckEndedSession: () => Promise<void>
+  /**
+   * Relit `/api/me` après un **refus réel** (un 403 qui ne finit pas la session), en silence (`isChecking` n'est pas
+   * touché), **une seule fois** : une relecture en vol est partagée par tous les appelants (une lecture et une
+   * révocation refusées ensemble n'envoient qu'un `/api/me`). La génération de la session est lue à l'envoi : une
+   * réponse d'une session révolue ne change rien.
+   * - le compte, ou le palier de base : la session appliquée (l'en-tête reprend le palier que le serveur reconnaît),
+   *   `'session-held'` ;
+   * - « anonyme » (401) : la session est **finie** (`markSessionExpired` à la génération du départ, sans réannoncer
+   *   une fin déjà dite), `'session-ended'` — l'appelant passe son refus de `forbidden` à « session finie » ;
+   * - un rejet (réseau) est avalé : `'session-held'`, le refus reste ce qu'il était.
+   */
+  rereadAfterRefusal: () => Promise<RefusalReread>
   /**
    * Abonne `callback` au **retour** de la session : il est appelé une fois, de façon synchrone, à chaque descente
    * de `sessionEnded` (vrai → faux) — un compte est revenu, par une connexion ou par la relecture au retour sur
@@ -337,6 +363,25 @@ export function useAuth(): UseAuthResult {
     }
   }
 
+  /**
+   * Applique une session lue sur `/api/me` (`checkAuth`, `rereadAfterRefusal`). Rend `false`, sans rien changer, quand
+   * la réponse est révolue (une fin ou un retour est arrivé depuis l'envoi), ou quand c'est un compte sans jeton
+   * d'écriture pendant une session finie : elle n'est pas rétablie (sa première écriture prendrait le 403 du CSRF)
+   * et l'en-tête ne bouge pas (F5, C). Un compte pendant une session finie la rétablit, par la descente unique.
+   */
+  const applyReadSession = (session: AuthSession, sentAt: number): boolean => {
+    if (sentAt !== generation || (state.sessionEnded && null !== session.user && !repository.hasWriteToken())) {
+      return false
+    }
+    if (state.sessionEnded && null !== session.user) {
+      restoreSession(session)
+    } else {
+      applySession(session)
+    }
+
+    return true
+  }
+
   const checkAuth = async (): Promise<void> => {
     // Silencieuse après la première vérification : voir `hasCheckedOnce`.
     if (!hasCheckedOnce) {
@@ -350,15 +395,8 @@ export function useAuth(): UseAuthResult {
       // La génération est lue à l'envoi : une réponse arrivée après une fin ou un retour est d'une session révolue.
       const sentAt = sessionStamp()
       const session = await repository.me()
-      if (sentAt !== generation || (state.sessionEnded && null !== session.user && !repository.hasWriteToken())) {
-        // Révolue, ou un compte sans jeton d'écriture pendant une session finie : la session n'est pas rétablie
-        // (sa première écriture prendrait le 403 du CSRF) et l'en-tête ne bouge pas (F5, C).
+      if (!applyReadSession(session, sentAt)) {
         return
-      }
-      if (state.sessionEnded && null !== session.user) {
-        restoreSession(session)
-      } else {
-        applySession(session)
       }
       if ('base' === session.tier && null === session.user && null !== rememberedExpiry && rememberedExpiry.getTime() > Date.now()) {
         scheduleBaseAccessExpiry(rememberedExpiry)
@@ -396,6 +434,46 @@ export function useAuth(): UseAuthResult {
     return endedSessionRecheck
   }
 
+  const rereadAfterRefusal = (): Promise<RefusalReread> => {
+    if (null !== refusalReread) {
+      return refusalReread
+    }
+
+    const pending = (async (): Promise<RefusalReread> => {
+      try {
+        const sentAt = sessionStamp()
+        const session = await repository.me()
+        if ('anonymous' === session.tier) {
+          // `/api/me` ne rejette pas sur un 401 : il rend l'anonyme. Le jeton ne vaut plus rien, la session est finie.
+          // Déjà finie sous la génération du départ, elle est dite : on ne la réannonce pas (la relecture n'est pas
+          // un geste de la personne). Partie sous une génération révolue, `markSessionExpired` ne change rien.
+          if (state.sessionEnded && sentAt === generation) {
+            return 'session-ended'
+          }
+
+          return markSessionExpired(sentAt) ? 'session-ended' : 'session-held'
+        }
+        applyReadSession(session, sentAt)
+
+        return 'session-held'
+      } catch {
+        // Le réseau ne répond pas : le refus reste ce qu'il était, la page n'en dit pas plus.
+        return 'session-held'
+      }
+    })()
+    refusalReread = pending
+    // Libérée hors de l'IIFE : un `me()` qui lèverait de façon synchrone terminerait l'IIFE avant que `pending` soit
+    // posée, et un `finally` interne laisserait alors la promesse en vol pour toujours. Enregistrée avant les `await`
+    // des appelants, elle libère la place avant qu'aucun d'eux ne reprenne.
+    void pending.finally(() => {
+      if (refusalReread === pending) {
+        refusalReread = null
+      }
+    })
+
+    return pending
+  }
+
   return {
     user: computed(() => state.user),
     tier: computed(() => state.tier),
@@ -408,6 +486,7 @@ export function useAuth(): UseAuthResult {
     login,
     logout,
     recheckEndedSession,
+    rereadAfterRefusal,
     onSessionRestored,
     checkAuth,
   }

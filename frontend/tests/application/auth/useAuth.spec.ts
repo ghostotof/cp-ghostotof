@@ -544,6 +544,112 @@ describe('useAuth', () => {
     })
   })
 
+  describe("relire le palier après un refus (#748, R15)", () => {
+    /** Un `me()` dont la réponse est tenue : le test fait arriver un verdict pendant qu'il est en vol. */
+    function deferredMe(): { me: () => Promise<AuthSession>; settle: (session: AuthSession) => void } {
+      let settle: (session: AuthSession) => void = () => undefined
+      const pending = new Promise<AuthSession>((resolve) => {
+        settle = resolve
+      })
+
+      return { me: () => pending, settle }
+    }
+
+    afterEach(async () => {
+      // Une session laissée finie par un test ne doit pas fuir dans le suivant : une connexion la rétablit.
+      await mountWithComposable(createStubRepository()).login('jane', 'password')
+    })
+
+    it("deux refus rapprochés : un seul /api/me", async () => {
+      const { me, settle } = deferredMe()
+      const repository = createStubRepository({ me: vi.fn(me) })
+      const first = mountWithComposable(repository)
+      const second = mountWithComposable(repository)
+      vi.mocked(repository.me).mockClear()
+
+      const one = first.rereadAfterRefusal()
+      const other = second.rereadAfterRefusal()
+      settle(BASE_ACCESS_SESSION)
+
+      await expect(Promise.all([one, other])).resolves.toEqual(['session-held', 'session-held'])
+      expect(repository.me).toHaveBeenCalledTimes(1)
+    })
+
+    it("/api/me en 401 : la session est marquée finie, 'session-ended'", async () => {
+      const auth = mountWithComposable(createStubRepository({ me: vi.fn(async () => sessionFor(null)) }))
+      await auth.login('jane', 'password')
+      expect(auth.hasSessionEnded.value).toBe(false)
+      const count = auth.sessionEndedCount.value
+
+      await expect(auth.rereadAfterRefusal()).resolves.toBe('session-ended')
+
+      expect(auth.hasSessionEnded.value).toBe(true)
+      expect(auth.sessionEndedCount.value).toBe(count + 1)
+      expect(auth.tier.value).toBe('anonymous')
+    })
+
+    it("/api/me en 401 pendant une session déjà finie : 'session-ended', sans réannoncer", async () => {
+      const auth = mountWithComposable(createStubRepository({ me: vi.fn(async () => sessionFor(null)) }))
+      markSessionExpired()
+      const count = auth.sessionEndedCount.value
+
+      await expect(auth.rereadAfterRefusal()).resolves.toBe('session-ended')
+
+      expect(auth.sessionEndedCount.value).toBe(count)
+    })
+
+    it("/api/me en 403 : palier de base, 'session-held', la session n'est pas finie", async () => {
+      const auth = mountWithComposable(createStubRepository({ me: vi.fn(async () => BASE_ACCESS_SESSION) }))
+      await auth.login('jane', 'password')
+
+      await expect(auth.rereadAfterRefusal()).resolves.toBe('session-held')
+
+      expect(auth.hasSessionEnded.value).toBe(false)
+      expect(auth.tier.value).toBe('base')
+    })
+
+    it("/api/me en 401 parti avant un retour : la session rétablie tient, 'session-held'", async () => {
+      const { me, settle } = deferredMe()
+      const auth = mountWithComposable(createStubRepository({ me: vi.fn(me) }))
+      await auth.login('jane', 'password')
+
+      const pending = auth.rereadAfterRefusal()
+      // Une fin puis un retour (autre onglet) pendant que /api/me est en vol : sa réponse est d'une session révolue.
+      markSessionExpired()
+      await auth.login('jane', 'password')
+      settle(sessionFor(null))
+
+      await expect(pending).resolves.toBe('session-held')
+      expect(auth.hasSessionEnded.value).toBe(false)
+      expect(auth.user.value?.username).toBe('jane')
+    })
+
+    it("panne de /api/me : avalée, 'session-held'", async () => {
+      const auth = mountWithComposable(
+        createStubRepository({
+          me: vi.fn(async () => {
+            throw new Error('réseau')
+          }),
+        }),
+      )
+
+      await expect(auth.rereadAfterRefusal()).resolves.toBe('session-held')
+      expect(auth.hasSessionEnded.value).toBe(false)
+    })
+
+    it("isChecking n'est pas touché", async () => {
+      const { me, settle } = deferredMe()
+      const auth = mountWithComposable(createStubRepository({ me: vi.fn(me) }))
+
+      const pending = auth.rereadAfterRefusal()
+      expect(authState.isChecking).toBe(false)
+      settle(BASE_ACCESS_SESSION)
+      await pending
+
+      expect(authState.isChecking).toBe(false)
+    })
+  })
+
   describe('palier d\'accès (ADR 0003 D1 — trois cas)', () => {
     it('anonyme par défaut : tier=anonymous, ni authentifié ni de confiance', async () => {
       const auth = mountWithComposable(createStubRepository())

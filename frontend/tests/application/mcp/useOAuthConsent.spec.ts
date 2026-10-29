@@ -9,6 +9,7 @@ import { MalformedConsentDecisionError } from '../../../src/domain/mcp/errors/Ma
 import { AccessForbiddenError } from '../../../src/domain/auth/errors/AccessForbiddenError'
 import { SessionEndedError } from '../../../src/domain/auth/errors/SessionEndedError'
 import { signInAgain } from '../../support/signInAgain'
+import { sessionFor } from '../../support/authSession'
 import { AUTH_REPOSITORY, authState, markSessionExpired } from '../../../src/application/auth/useAuth'
 import type { AuthRepository } from '../../../src/domain/auth/repositories/AuthRepository'
 import { BASE_ACCESS_SESSION } from '../../../src/domain/auth/entities/AuthSession'
@@ -194,6 +195,27 @@ describe('useOAuthConsent', () => {
 
     expect(me).toHaveBeenCalledTimes(1)
     expect(authState.sessionEnded).toBe(false)
+  })
+
+  it("refus réel puis /api/me en 401 : la page dit la session finie (R15)", async () => {
+    const describeRequest = vi.fn(async () => {
+      throw new AccessForbiddenError()
+    })
+    const { consent } = mountComposable(vi.fn(async () => APPROVED_URL), describeRequest)
+    me.mockResolvedValue(sessionFor(null))
+
+    await consent.load(PARAMS)
+    await flushPromises()
+
+    expect(authState.sessionEnded).toBe(true)
+    expect(consent.state.value).toBe('error')
+    expect(consent.failure.value).toBe('session-ended')
+    expect(me).toHaveBeenCalledTimes(1)
+
+    // Rétablit la session partagée pour les tests suivants. Le retour relit la demande (toujours refusée) : `/api/me`
+    // répond désormais le palier de base, sans quoi cette relecture finirait la session une seconde fois.
+    me.mockResolvedValue(BASE_ACCESS_SESSION)
+    await signInAgain()
   })
 
   it("forbidden à la décision : /api/me relu une fois, et un /api/me en panne n'y change rien", async () => {

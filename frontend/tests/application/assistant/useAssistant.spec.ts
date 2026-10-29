@@ -258,6 +258,26 @@ describe('useAssistant', () => {
     expect(me).toHaveBeenCalledTimes(1)
   })
 
+  it("refus réel puis /api/me en 401 : la page dit la session finie (R15)", async () => {
+    const me = vi.fn(async () => sessionFor(null))
+    const { assistant, auth } = setup(
+      async () => {
+        throw new AssistantError('forbidden')
+      },
+      { login: vi.fn(async () => ({ username: 'jane', roles: ['ROLE_USER', 'ROLE_TRUSTED'] })), logout: vi.fn(), hasWriteToken: () => true, me },
+    )
+    await auth.login('jane', 'password')
+
+    assistant.draft.value = 'q'
+    await assistant.send('fr')
+    await flushPromises()
+
+    expect(auth.hasSessionEnded.value).toBe(true)
+    expect(assistant.state.value).toBe('error')
+    expect(assistant.error.value?.reason).toBe('unauthenticated')
+    expect(me).toHaveBeenCalledTimes(1)
+  })
+
   it("unauthenticated : /api/me n'est pas relu, la session est déjà dite finie", async () => {
     const me = vi.fn(async () => sessionFor(null))
     const { assistant } = setup(

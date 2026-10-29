@@ -64,10 +64,11 @@ export interface UseMcpConnectionsResult {
  * elle est aussi dite à la page (`refusal`), qui propose de se reconnecter.
  *
  * Un refus réel (`AccessForbiddenError`) ne marque **jamais** la session expirée : elle vaut pour le reste du
- * site. Il relit `/api/me` (`checkAuth`, une fois, sans l'attendre, un rejet avalé) pour remettre l'en-tête au
- * palier que le serveur reconnaît (les rôles sont relus en base à chaque requête) ; un compte encore de
- * confiance (signature CSRF périmée) n'y change rien. `/api/me` ne rejette pas sur un 401/403 (il rend un
- * palier) : rien ne reboucle sur lui.
+ * site. Il relit `/api/me` (`rereadAfterRefusal`, une seule relecture en vol, sans l'attendre) pour remettre
+ * l'en-tête au palier que le serveur reconnaît (les rôles sont relus en base à chaque requête) ; un compte encore de
+ * confiance (signature CSRF périmée) n'y change rien. Si `/api/me` répond « anonyme » (401), la session est finie :
+ * le refus devient `session-ended`. `/api/me` ne rejette pas sur un 401/403 (il rend un palier) : rien ne reboucle
+ * sur lui.
  */
 export function useMcpConnections(): UseMcpConnectionsResult {
   const repository = inject(MCP_CONNECTIONS_REPOSITORY)
@@ -79,7 +80,7 @@ export function useMcpConnections(): UseMcpConnectionsResult {
   }
 
   // Après le contrôle ci-dessus : l'absence d'un dépôt se dit par son propre nom.
-  const { checkAuth, onSessionRestored } = useAuth()
+  const { rereadAfterRefusal, onSessionRestored } = useAuth()
 
   const status = ref<McpConnectionsStatus>('loading')
   const connections = shallowRef<McpConnectionSummary[]>([])
@@ -110,8 +111,14 @@ export function useMcpConnections(): UseMcpConnectionsResult {
       }
     } else if (caught instanceof AccessForbiddenError) {
       refusal.value = 'forbidden'
-      // Sans l'attendre : l'état de la page ne dépend pas de la réponse ; un rejet (panne) est avalé.
-      void checkAuth().catch(() => undefined)
+      // Le refus s'affiche tout de suite ; la relecture du palier (une seule en vol, un rejet avalé) ne le change que
+      // si `/api/me` répond « anonyme » : la session est alors finie, et la page le dit à la place (#748, R15, F).
+      // Le refus n'est changé que s'il est encore celui-là : une relecture lancée entre-temps l'a déjà remis à `null`.
+      void rereadAfterRefusal().then((reread) => {
+        if ('session-ended' === reread && 'forbidden' === refusal.value) {
+          refusal.value = 'session-ended'
+        }
+      })
     }
   }
 

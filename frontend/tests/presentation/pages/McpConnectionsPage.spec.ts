@@ -1,7 +1,7 @@
 /// <reference types="node" />
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import McpConnectionsPage from '../../../src/presentation/pages/McpConnectionsPage.vue'
@@ -15,7 +15,7 @@ import { SessionEndedError } from '../../../src/domain/auth/errors/SessionEndedE
 import { AccessForbiddenError } from '../../../src/domain/auth/errors/AccessForbiddenError'
 import { AUTH_REPOSITORY } from '../../../src/application/auth/useAuth'
 import type { AuthRepository } from '../../../src/domain/auth/repositories/AuthRepository'
-import { BASE_ACCESS_SESSION } from '../../../src/domain/auth/entities/AuthSession'
+import { ANONYMOUS_SESSION, BASE_ACCESS_SESSION, type AuthSession } from '../../../src/domain/auth/entities/AuthSession'
 import type { Locale } from '../../../src/domain/portfolio/entities/Locale'
 import { expectNoAccessibilityViolation } from '../../support/axe'
 import { listOf } from '../../support/mcpConnectionList'
@@ -121,6 +121,8 @@ interface Options {
   list?: ReturnType<typeof vi.fn>
   revoke?: ReturnType<typeof vi.fn>
   confirmAnswer?: boolean
+  /** `/api/me`, relu sur un refus réel : le palier de base par défaut. */
+  me?: Mock<() => Promise<AuthSession>>
 }
 
 /** Le texte du refus réel, tel que dit à la personne (#748, R7). */
@@ -135,7 +137,7 @@ async function mountPage(options: Options = {}): Promise<Harness> {
   const revoke = options.revoke ?? vi.fn(async () => undefined)
   const repository = { list, revoke } as unknown as McpConnectionsRepository
   // Un refus réel relit /api/me (`checkAuth`) : un faux dépôt d'auth, qui répond le palier de base.
-  const me = vi.fn(async () => BASE_ACCESS_SESSION)
+  const me = options.me ?? vi.fn<() => Promise<AuthSession>>(async () => BASE_ACCESS_SESSION)
   const authRepository: AuthRepository = { login: vi.fn(), logout: vi.fn(), hasWriteToken: () => true, me }
 
   const confirm = vi.spyOn(window, 'confirm').mockReturnValue(options.confirmAnswer ?? true)
@@ -951,6 +953,25 @@ describe('McpConnectionsPage', () => {
         expect(revokeButton.attributes('disabled')).toBeDefined()
       }
       expect(document.activeElement).toBe(wrapper.get('h1').element)
+    })
+
+    it("refus réel puis /api/me en 401 : la page dit la session finie, avec le lien de reconnexion et non « Changer de compte » (R15)", async () => {
+      const list = vi.fn().mockRejectedValue(new AccessForbiddenError())
+      const me = vi.fn<() => Promise<AuthSession>>(async () => ANONYMOUS_SESSION)
+      const { wrapper } = await mountPage({ list, me })
+
+      const alert = wrapper.get('[role="alert"]')
+      expect(alert.text()).toContain('Votre session a pris fin')
+      const link = alert.get('a')
+      expect(link.text()).toContain('Se reconnecter')
+      expect(link.attributes('target')).toBe('_blank')
+      expect(new URLSearchParams((link.attributes('href') ?? '').split('?')[1]).get('reauth')).toBeNull()
+      expect(wrapper.text()).not.toContain('Changer de compte')
+
+      // Rétablit la session partagée pour les tests suivants. Le retour relit la liste (toujours refusée) : `/api/me`
+      // répond désormais le palier de base, sans quoi cette relecture finirait la session une seconde fois.
+      me.mockResolvedValue(BASE_ACCESS_SESSION)
+      await signInAgain()
     })
 
     it('un refus ne se confond pas avec une session finie : pas de lien en nouvel onglet', async () => {

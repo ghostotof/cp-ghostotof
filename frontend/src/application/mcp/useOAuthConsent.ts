@@ -93,7 +93,7 @@ export function useOAuthConsent(): UseOAuthConsentResult {
   }
 
   // Après le contrôle ci-dessus : l'absence d'un dépôt se dit par son propre nom.
-  const { checkAuth, onSessionRestored } = useAuth()
+  const { rereadAfterRefusal, onSessionRestored } = useAuth()
   const redirect = inject(CLIENT_REDIRECT, (url: string) => window.location.replace(url))
 
   const state = ref<OAuthConsentState>('loading')
@@ -122,8 +122,14 @@ export function useOAuthConsent(): UseOAuthConsentResult {
       // Le résumé d'une demande qu'on ne peut pas décider n'a plus à rester affiché.
       request.value = null
       // Le refus peut venir d'un compte rétrogradé : `/api/me` remet l'en-tête au palier que le serveur
-      // reconnaît (une fois, sans l'attendre, un rejet avalé). La session n'est jamais marquée expirée (R7).
-      void checkAuth().catch(() => undefined)
+      // reconnaît (une seule relecture en vol, sans l'attendre). Le refus lui-même ne marque pas la session
+      // expirée (R7) ; mais si `/api/me` répond « anonyme », la session est finie (marquée par la relecture) et la
+      // page le dit à la place — tant que l'échec affiché est encore ce `forbidden` (#748, R15, F).
+      void rereadAfterRefusal().then((reread) => {
+        if ('session-ended' === reread && 'forbidden' === failure.value) {
+          failure.value = 'session-ended'
+        }
+      })
       state.value = 'error'
       failure.value = 'forbidden'
       return

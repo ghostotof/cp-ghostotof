@@ -293,14 +293,25 @@ account without `ROLE_TRUSTED` (one that lost it while the page was open), or fr
 `APP_SECRET` rotation). The same three pages (« Mes connexions MCP », the assistant, the consent) react the same way:
 
 - **The session is never marked expired.** It holds for the rest of the site (the public pages, the base tier).
-- **`/api/me` is re-read once, on the refusal** (`useAuth().checkAuth()`, in `useMcpConnections`, `useAssistant` and
-  `useOAuthConsent`; not awaited, since the page's state does not depend on it; a rejection is swallowed). The backend
-  fact behind it, checked: the `cpg_users` provider (the entity) reloads the `CpgUser` from the database on every
-  request, `JWTAuthenticator::createToken()` (Lexik) builds the token with `$passport->getUser()->getRoles()`, and
-  `access_control` requires `ROLE_TRUSTED` on `^/api/me` — so an account that lost the trusted tier takes a 403 there,
-  which `HttpAuthRepository.me()` reads as the base tier, and the header returns to it; an account still trusted (a
-  stale CSRF signature) answers 200 and **nothing moves**. `/api/me` never rejects on a 401/403 (it returns a tier),
-  so a refusal on it cannot re-trigger the re-read: there is no loop.
+- **`/api/me` is re-read once, on the refusal** (`useAuth().rereadAfterRefusal()`, #748 R15, in `useMcpConnections`,
+  `useAssistant` and `useOAuthConsent`; not awaited, since the page shows the refusal at once). **One re-read in
+  flight**, held by the module like `recheckEndedSession()`'s: a read and a revocation refused together, or two pages,
+  send one `/api/me`; it is silent (`isChecking` untouched), reads the generation at send time, and swallows a
+  rejection (`'session-held'`). The backend fact behind it, checked: the `cpg_users` provider (the entity) reloads the
+  `CpgUser` from the database on every request, `JWTAuthenticator::createToken()` (Lexik) builds the token with
+  `$passport->getUser()->getRoles()`, and `access_control` requires `ROLE_TRUSTED` on `^/api/me` — so an account that
+  lost the trusted tier takes a 403 there, which `HttpAuthRepository.me()` reads as the base tier, and the header
+  returns to it; an account still trusted (a stale CSRF signature) answers 200 and **nothing moves**. `/api/me` never
+  rejects on a 401/403 (it returns a tier), so a refusal on it cannot re-trigger the re-read: there is no loop.
+  **F — the token may be gone, not only the role**: when `/api/me` answers the anonymous tier (a 401), the session **is
+  ended**, and the refusal the page shows was its first symptom. `rereadAfterRefusal()` marks it
+  (`markSessionExpired(sentAt)`, the generation of the departure; a session already ended under that generation is not
+  announced a second time, since a re-read is no gesture of the person) and returns `'session-ended'`; the page then
+  turns its `forbidden` into the ended-session state — MCP `refusal = 'session-ended'`, consent
+  `failure = 'session-ended'`, assistant `AssistantError('unauthenticated')` — **only if the refusal shown is still that
+  `forbidden`** (a `load()` started meanwhile has reset it). The page then offers the sign-in-again link, not « Changer
+  de compte ». A response from a stale generation (a return arrived meanwhile) answers `'session-held'` and changes
+  nothing.
 - **The message is neutral** (`common.accessRefused`): « the account may not have, or may no longer have, trusted
   access, **or the session needs to be reopened** » — a stale CSRF signature is a 403 too, and must not accuse an account
   that is still trusted (S8).
@@ -318,7 +329,8 @@ account without `ROLE_TRUSTED` (one that lost it while the page was open), or fr
 **Limits removed by R7 and R8**: the header of an account stripped of `ROLE_TRUSTED` no longer stays at the trusted tier
 until the next full load; a `GET` in 403 on the MCP page no longer shows the generic failure with a « Réessayer » that
 cannot help; and the header no longer flickers while `/api/me` is read after a refusal (R8: every `checkAuth()` after the
-first is silent, see « The re-check on return »). **Still accepted**: a refusal leaves the page it came from.
+first is silent, see « The re-check on return »); and, since R15, a header left anonymous without `sessionEnded` — a refusal
+whose `/api/me` answers 401 now ends the session on the interface. **Still accepted**: a refusal leaves the page it came from.
 
 ## Tests
 
@@ -340,7 +352,7 @@ mount and its message on return and emptied on the next route or by a new end, a
 a second reading, removed with the target), `AdminLayout.sessionEnded.spec.ts` (the banner a direct child of the section holding the page, and adding no element to its flow; the page stays mounted with its typed
 input; red when `router.replace` is reintroduced; the banner is the only alert on a 401 and on a 403 without a token, a 403
 with one shows the page's), `AdminCaseStudiesPage.spec.ts` and `OrderToolbar.spec.ts` (an ended session adds no alert of the
-page's, and the input stays), `useAuth.spec.ts` (including `sessionEndedCount` and `onSessionRestored`: once, synchronously, never at the end, dropped with its scope, a subscriber that throws; and the generation in both directions, R14), `signInLocations.spec.ts` (the two builders, and the guard that no other file names `expired`/`reauth`), `SignInAgainLink.spec.ts` (new tab, hidden text, icon, one root), `protectedRoutesCarryNoSecret.spec.ts` (every `requiresAuth` route is reviewed: its `fullPath` leaves in the `redirect` of a new tab), and, for the real refusal (R7): `HttpMcpConnectionsRepository.spec.ts` (a 403 on the read, or on the `DELETE` with a token, is `AccessForbiddenError`; without a token, `SessionEndedError`), `useMcpConnections.spec.ts` (`refusal`, `/api/me` read once, a demoted account's header back at the base tier, a failing `/api/me` swallowed), `useAssistant.spec.ts` and `useOAuthConsent.spec.ts` (`/api/me` read once on `forbidden`, not on an ended session), `McpConnectionsPage.spec.ts` / `AssistantPage.spec.ts` / `OAuthConsentPage.spec.ts` (the exact neutral text in both languages, « Changer de compte » with `reauth=1`, no « Réessayer », « Révoquer » disabled) and `LoginPage.spec.ts` (the neutral announcement); for the re-check on return (R8): `useAuth.spec.ts` (the account found with its write token restores; **without `XSRF-TOKEN` the session stays ended**; nothing outside an ended session; one read in flight for two quick calls; a network failure swallowed; `isChecking` untouched by the re-check and by any `checkAuth()` after the first), `HttpAuthRepository.spec.ts` (`hasWriteToken`: present, absent, empty), `useSessionRecheckOnFocus.spec.ts` (`focus` re-reads, not after unmount), `AppLayout.spec.ts` (one `/api/me` per return with the banner shown, the re-check outside the backoffice, the session staying ended while no account is back), `SessionEndedBanner.spec.ts` (the banner does not listen to `focus`; the return is driven by `recheckEndedSession()`), `AppHeader.spec.ts` (the new-tab « Connexion » on the assistant, the MCP page and the consent), and the reactions `useMcpConnections.spec.ts`, `useOAuthConsent.spec.ts`, `useAssistant.spec.ts`.
+page's, and the input stays), `useAuth.spec.ts` (including `sessionEndedCount` and `onSessionRestored`: once, synchronously, never at the end, dropped with its scope, a subscriber that throws; and the generation in both directions, R14), `signInLocations.spec.ts` (the two builders, and the guard that no other file names `expired`/`reauth`), `SignInAgainLink.spec.ts` (new tab, hidden text, icon, one root), `protectedRoutesCarryNoSecret.spec.ts` (every `requiresAuth` route is reviewed: its `fullPath` leaves in the `redirect` of a new tab), and, for the real refusal (R7): `HttpMcpConnectionsRepository.spec.ts` (a 403 on the read, or on the `DELETE` with a token, is `AccessForbiddenError`; without a token, `SessionEndedError`), `useMcpConnections.spec.ts` (`refusal`, `/api/me` read once, a demoted account's header back at the base tier, a failing `/api/me` swallowed; R15: one `/api/me` for a read and a revocation refused together, a 401 turning `forbidden` into `session-ended`), `useAuth.spec.ts` (`rereadAfterRefusal`: one read in flight, 401 ends the session, 403 holds it, a stale or failing read holds it, `isChecking` untouched), `useAssistant.spec.ts` and `useOAuthConsent.spec.ts` (`/api/me` read once on `forbidden`, not on an ended session; a 401 on that read says the session ended), `McpConnectionsPage.spec.ts` / `AssistantPage.spec.ts` / `OAuthConsentPage.spec.ts` (the exact neutral text in both languages, « Changer de compte » with `reauth=1`, no « Réessayer », « Révoquer » disabled) and `LoginPage.spec.ts` (the neutral announcement); for the re-check on return (R8): `useAuth.spec.ts` (the account found with its write token restores; **without `XSRF-TOKEN` the session stays ended**; nothing outside an ended session; one read in flight for two quick calls; a network failure swallowed; `isChecking` untouched by the re-check and by any `checkAuth()` after the first), `HttpAuthRepository.spec.ts` (`hasWriteToken`: present, absent, empty), `useSessionRecheckOnFocus.spec.ts` (`focus` re-reads, not after unmount), `AppLayout.spec.ts` (one `/api/me` per return with the banner shown, the re-check outside the backoffice, the session staying ended while no account is back), `SessionEndedBanner.spec.ts` (the banner does not listen to `focus`; the return is driven by `recheckEndedSession()`), `AppHeader.spec.ts` (the new-tab « Connexion » on the assistant, the MCP page and the consent), and the reactions `useMcpConnections.spec.ts`, `useOAuthConsent.spec.ts`, `useAssistant.spec.ts`.
 
 Three guards of the first version are gone, because what they guarded no longer exists: `sessionEnded.spec.ts` (domain,
 `isSessionEndedError`), `visibleErrorReason.spec.ts` and `errorReasonsHideSessionEnded.spec.ts` (a source guard: every file
