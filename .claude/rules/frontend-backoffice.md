@@ -251,7 +251,13 @@ version" copies nothing and the assistant sends all five fields.
   opening said in the link text (a visually hidden « (s'ouvre dans un nouvel onglet) », WCAG 3.2.5) and by an
   `external-link` icon (`aria-hidden`) for sighted people: in the same tab
   the typed text would be lost; the session cookie is shared across tabs and `redirect` brings the new tab back to the
-  page. **On the window's `focus`, while the session is ended, the banner re-reads `/api/me`** (`checkAuth()`): an
+  page. **The header follows the banner on a protected page** (#748): while the session is ended *and* the route has
+`meta.requiresAuth` (backoffice, MCP, assistant — the pages that ended it), `AppHeader`'s « Connexion » is that same
+link (new tab, `redirect` to the current `fullPath`, `expired=1`, hidden text and `external-link` icon), and « Accès
+instantané » is **not offered**: it would replace the cookie and lead to the case studies, the page and its typed
+input with it. Rejected: hiding « Connexion » (a button that vanishes shifts the bar and removes a known path). On a
+public route nothing changes (`sessionEnded` survives there until a sign-in, and a new tab would make no sense);
+`AppHeader.spec.ts` pins the four cases. **On the window's `focus`, while the session is ended, the banner re-reads `/api/me`** (`checkAuth()`): an
   account found clears the banner and « Enregistrer » works again (the CSRF token is read from the cookie at each call);
   a network failure leaves the banner. **The route guard still redirects to `login` at the next navigation** — the
   input is saved or abandoned by then. `expired=1` (`presentation/router/sessionEnded.ts`, the single value `1`, an

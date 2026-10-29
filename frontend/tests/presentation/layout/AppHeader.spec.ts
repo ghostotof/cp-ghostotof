@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { defineComponent } from 'vue'
@@ -110,6 +110,7 @@ async function mountHeader(
       { path: '/:locale(fr|en)/experience', name: 'experience', component: StubPage },
       { path: '/:locale(fr|en)/anonymous-cv', name: 'anonymous-cv', component: StubPage },
       { path: '/:locale(fr|en)/admin', name: 'admin-technologies', component: StubPage },
+      { path: '/:locale(fr|en)/admin/case-studies', name: 'admin-case-studies', component: StubPage, meta: { requiresAuth: true } },
       { path: '/:locale(fr|en)/assistant', name: 'assistant', component: StubPage },
       { path: '/:locale(fr|en)/mcp-connections', name: 'mcp-connections', component: StubPage },
     ],
@@ -629,6 +630,77 @@ describe('AppHeader', () => {
 
       await primeBaseAccessState()
       await expectNoAccessibilityViolation((await mountHeader()).wrapper)
+    })
+  })
+
+  /**
+   * Session finie (#748, constat 16). Pendant qu'une page protégée est ouverte avec une saisie, « Connexion » dans
+   * l'en-tête naviguait dans l'onglet courant (la saisie perdue) et « Accès instantané » remplaçait le cookie puis
+   * menait aux études de cas : l'en-tête devient le même lien que le bandeau, dans un nouvel onglet.
+   */
+  describe('session finie sur une page protégée (#748)', () => {
+    const PROTECTED = '/fr/admin/case-studies'
+
+    // `sessionEnded` est un état partagé du module : un compte appliqué l'abaisse, pour ne pas fuir d'un test à l'autre.
+    afterEach(async () => {
+      await primeAuthState({ username: 'jane', roles: ['ROLE_TRUSTED', 'ROLE_USER'] })
+    })
+
+    async function mountEnded(path: string, locale: 'fr' | 'en' = 'fr') {
+      await primeAuthState({ username: 'jane', roles: ['ROLE_TRUSTED', 'ROLE_USER'] })
+      const mounted = await mountHeader(path, undefined, undefined, undefined, locale)
+      markSessionExpired()
+      await flushPromises()
+
+      return mounted
+    }
+
+    it("« Connexion » ouvre un nouvel onglet qui ramène ici", async () => {
+      const { wrapper } = await mountEnded(PROTECTED)
+
+      const link = wrapper.get('a[href*="/login"]')
+      expect(link.attributes('href')).toBe('/fr/login?redirect=/fr/admin/case-studies&expired=1')
+      expect(link.attributes('target')).toBe('_blank')
+      expect(link.attributes('rel')).toBe('noopener')
+      expect(link.text()).toContain("(s'ouvre dans un nouvel onglet)")
+      expect(link.find('svg[aria-hidden="true"]').exists()).toBe(true)
+    })
+
+    it("pas d'« Accès instantané » : il remplacerait le cookie et mènerait ailleurs que la saisie", async () => {
+      const { wrapper } = await mountEnded(PROTECTED)
+
+      expect(findButton(wrapper, 'Accès instantané')).toBeUndefined()
+      expect(wrapper.find('button[aria-label="Accès instantané"]').exists()).toBe(false)
+    })
+
+    it('en anglais : le lien dit « opens in a new tab » et porte la locale', async () => {
+      const { wrapper } = await mountEnded('/en/admin/case-studies', 'en')
+
+      const link = wrapper.get('a[href*="/login"]')
+      expect(link.attributes('href')).toBe('/en/login?redirect=/en/admin/case-studies&expired=1')
+      expect(link.text()).toContain('(opens in a new tab)')
+    })
+
+    it('session finie sur une page publique : la connexion habituelle, et le CTA reste', async () => {
+      const { wrapper } = await mountEnded('/fr/about')
+
+      const link = wrapper.get('a[href="/fr/login"]')
+      expect(link.attributes('target')).toBeUndefined()
+      expect(findButton(wrapper, 'Accès instantané')).toBeDefined()
+    })
+
+    it('session active sur une page protégée : rien ne change', async () => {
+      await primeAuthState(null)
+      const { wrapper } = await mountHeader(PROTECTED)
+
+      expect(wrapper.get('a[href="/fr/login"]').attributes('target')).toBeUndefined()
+      expect(findButton(wrapper, 'Accès instantané')).toBeDefined()
+    })
+
+    it("aucune violation d'accessibilité détectable", async () => {
+      const { wrapper } = await mountEnded(PROTECTED)
+
+      await expectNoAccessibilityViolation(wrapper)
     })
   })
 

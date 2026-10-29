@@ -13,11 +13,13 @@ import { useCvDownload } from '../../application/cv/useCvDownload'
 import LocaleSwitcher from '../ui/LocaleSwitcher.vue'
 import AccountMenu from './AccountMenu.vue'
 import { usePublishedHeight } from './usePublishedHeight'
+import { SESSION_ENDED_QUERY, SESSION_ENDED_VALUE } from '../router/sessionEnded'
 import IconCircleUser from '~icons/lucide/circle-user'
 import IconZap from '~icons/lucide/zap'
 import IconMenu from '~icons/lucide/menu'
 import IconX from '~icons/lucide/x'
 import IconChevronDown from '~icons/lucide/chevron-down'
+import IconExternalLink from '~icons/lucide/external-link'
 
 defineProps<{
   siteIdentity: SiteIdentity
@@ -120,7 +122,7 @@ function handleAccountMenuCvDownload(): void {
 const route = useRoute()
 const router = useRouter()
 const { t, locale } = useI18n()
-const { tier, isChecking, isSuperAdmin, logout } = useAuth()
+const { tier, isChecking, isSuperAdmin, logout, hasSessionEnded } = useAuth()
 const { isDownloading, hasError: hasCvDownloadError, downloadCv } = useCvDownload()
 const { isGranting, errorReason: baseAccessErrorReason, grant: grantBaseAccess } = useBaseAccess()
 
@@ -158,6 +160,22 @@ async function handleInstantAccess(): Promise<void> {
     await router.push(`${homeLink.value}/case-studies`)
   }
 }
+
+/**
+ * Session finie sur une page qui l'exige (backoffice, MCP, assistant : celles qui ont fait finir la session) —
+ * #748, constat 16. L'en-tête est alors anonyme alors que la page garde sa saisie : « Connexion » dans l'onglet
+ * courant la quitterait, et « Accès instantané » remplacerait le cookie puis mènerait aux études de cas. On
+ * propose donc le lien du bandeau (`SessionEndedBanner`) : un nouvel onglet qui ramène ici, et pas le CTA. Sur une
+ * route publique, rien ne change : `sessionEnded` y survit jusqu'à une connexion, et un nouvel onglet y serait
+ * incompréhensible.
+ */
+const sessionEndedHere = computed(() => hasSessionEnded.value && true === route.meta.requiresAuth)
+
+const signInAgainLocation = computed(() => ({
+  name: 'login',
+  params: { locale: homeLink.value.slice(1) },
+  query: { redirect: route.fullPath, [SESSION_ENDED_QUERY]: SESSION_ENDED_VALUE },
+}))
 
 const baseAccessErrorMessage = computed(() => {
   if (null === baseAccessErrorReason.value) {
@@ -324,33 +342,52 @@ function navLinkClass(link: NavigationLink) {
                et le propriétaire du site n'a pas besoin de son propre CV à
                chaque page. -->
           <template v-if="'anonymous' === tier">
-            <button
-              type="button"
-              class="btn btn-gradient btn-sm d-none d-sm-inline-flex align-items-center gap-2"
-              :disabled="isGranting"
-              @click="handleInstantAccess"
-            >
-              {{ isGranting ? t('common.instantAccessGranting') : t('common.instantAccess') }}
-              <IconZap
-                width="16"
-                height="16"
-                aria-hidden="true"
-              />
-            </button>
-            <button
-              type="button"
-              class="btn btn-gradient btn-sm d-sm-none d-inline-flex align-items-center"
-              :disabled="isGranting"
-              :aria-label="isGranting ? t('common.instantAccessGranting') : t('common.instantAccess')"
-              @click="handleInstantAccess"
-            >
-              <IconZap
-                width="16"
-                height="16"
-                aria-hidden="true"
-              />
-            </button>
+            <template v-if="!sessionEndedHere">
+              <button
+                type="button"
+                class="btn btn-gradient btn-sm d-none d-sm-inline-flex align-items-center gap-2"
+                :disabled="isGranting"
+                @click="handleInstantAccess"
+              >
+                {{ isGranting ? t('common.instantAccessGranting') : t('common.instantAccess') }}
+                <IconZap
+                  width="16"
+                  height="16"
+                  aria-hidden="true"
+                />
+              </button>
+              <button
+                type="button"
+                class="btn btn-gradient btn-sm d-sm-none d-inline-flex align-items-center"
+                :disabled="isGranting"
+                :aria-label="isGranting ? t('common.instantAccessGranting') : t('common.instantAccess')"
+                @click="handleInstantAccess"
+              >
+                <IconZap
+                  width="16"
+                  height="16"
+                  aria-hidden="true"
+                />
+              </button>
+            </template>
+            <!-- Session finie sur une page protégée : le lien du bandeau, dans un nouvel onglet (#748). -->
             <RouterLink
+              v-if="sessionEndedHere"
+              :to="signInAgainLocation"
+              target="_blank"
+              rel="noopener"
+              class="btn btn-outline-light btn-sm d-inline-flex align-items-center gap-2"
+            >
+              {{ t('common.login') }}
+              <span class="visually-hidden">{{ t('admin.sessionEnded.newTab') }}</span>
+              <IconExternalLink
+                width="14"
+                height="14"
+                aria-hidden="true"
+              />
+            </RouterLink>
+            <RouterLink
+              v-else
               :to="`${homeLink}/login`"
               class="btn btn-outline-light btn-sm d-inline-flex align-items-center gap-2"
             >
