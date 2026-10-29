@@ -276,26 +276,34 @@ describe('SessionEndedBanner (#650, S2)', () => {
     wrapper.unmount()
   })
 
-  it('un nouveau refus pendant que le bandeau est affiché le réinsère, donc le réannonce', async () => {
+  it("un nouveau refus réannonce sans retirer le lien qui a le focus", async () => {
     const repository = createRepository(async () => sessionFor(null))
     await resetToSignedIn(repository)
     const wrapper = await mountBanner('/fr/admin/case-studies', repository)
     markSessionExpired()
     await flushPromises()
-    const before = wrapper.get('[role="alert"]').element
+    const alert = wrapper.get('[role="alert"]').element
+    const link = wrapper.get('[role="alert"] a').element as HTMLElement
+    const message = wrapper.find('[data-testid="admin-session-ended-message"]').exists()
+      ? wrapper.get('[data-testid="admin-session-ended-message"]').element
+      : null
+    link.focus()
+    expect(document.activeElement).toBe(link)
 
-    // S7 : `markSessionExpired()` est idempotent pour l'état, mais une alerte déjà là n'est pas annoncée de nouveau.
+    // E (#748, R19) : la réannonce remplace le message, jamais l'élément qui porte le lien focalisé, sinon le
+    // focus tombe sur `body` au milieu d'une navigation au clavier.
     markSessionExpired()
     await flushPromises()
 
-    const after = wrapper.get('[role="alert"]').element
-    expect(after).not.toBe(before)
-    expect(wrapper.findAll('[role="alert"]')).toHaveLength(1)
-    expect(after.textContent).toContain('Votre session a pris fin')
+    expect(document.activeElement).toBe(link)
+    expect(wrapper.get('[role="alert"]').element).toBe(alert)
+    expect(wrapper.get('[role="alert"] a').element).toBe(link)
+    expect(wrapper.get('[data-testid="admin-session-ended-message"]').element).not.toBe(message)
+    expect(wrapper.get('[data-testid="admin-session-ended-message"]').text()).toContain('Votre session a pris fin')
     wrapper.unmount()
   })
 
-  it('plusieurs refus dans le même tick : une seule réinsertion', async () => {
+  it('plusieurs refus dans le même tick : un seul remplacement du message', async () => {
     const repository = createRepository(async () => sessionFor(null))
     await resetToSignedIn(repository)
     const wrapper = await mountBanner('/fr/admin/case-studies', repository)
@@ -316,14 +324,16 @@ describe('SessionEndedBanner (#650, S2)', () => {
     await flushPromises()
     observer.disconnect()
 
-    const after = wrapper.get('[role="alert"]').element
-    expect(after).not.toBe(before)
-    // Trois refus, un rendu : une seule alerte insérée.
-    expect(inserted.filter((node) => node instanceof HTMLElement && 'alert' === node.getAttribute('role'))).toHaveLength(1)
+    // Trois refus, un rendu : l'alerte reste, un seul message est inséré (R19, E).
+    expect(wrapper.get('[role="alert"]').element).toBe(before)
+    expect(
+      inserted.filter((node) => node instanceof HTMLElement && 'admin-session-ended-message' === node.dataset.testid),
+    ).toHaveLength(1)
+    expect(inserted.filter((node) => node instanceof HTMLElement && 'alert' === node.getAttribute('role'))).toHaveLength(0)
     wrapper.unmount()
   })
 
-  it("la hauteur publiée suit l'alerte réinsérée", async () => {
+  it("la hauteur publiée reste celle de l'alerte, qui n'est plus réinsérée par un refus de plus", async () => {
     const observed: Element[] = []
     const disconnected = vi.fn()
     vi.stubGlobal(
@@ -349,10 +359,10 @@ describe('SessionEndedBanner (#650, S2)', () => {
       markSessionExpired()
       await flushPromises()
 
-      // L'observateur lâche l'élément retiré et mesure le nouveau : la hauteur ne reste pas celle d'un nœud disparu.
-      expect(observed[observed.length - 1]).toBe(wrapper.get('[role="alert"]').element)
-      expect(observed.length).toBeGreaterThan(1)
-      expect(disconnected).toHaveBeenCalled()
+      // R19 (E) : l'alerte n'est plus remplacée, l'observateur garde le même élément (le message seul change).
+      expect(observed).toHaveLength(1)
+      expect(observed[0]).toBe(wrapper.get('[role="alert"]').element)
+      expect(disconnected).not.toHaveBeenCalled()
     } finally {
       // Démonté avant de rendre le vrai `ResizeObserver` : un wrapper resté monté referait tourner la composable.
       wrapper?.unmount()

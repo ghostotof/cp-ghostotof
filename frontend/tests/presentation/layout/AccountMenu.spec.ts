@@ -176,6 +176,24 @@ describe('AccountMenu (menu du compte, écran large)', () => {
     cleanup()
   })
 
+  it("Échap après que le focus parti ailleurs a été retiré : il n'est pas volé", async () => {
+    // G (#748, R19) : le menu est ouvert à la souris, la personne place le focus au clavier sur un autre élément de
+    // l'en-tête (un menu « Contenu »), qui disparaît ensuite : le focus tombe sur `body`. Ce `body` n'est pas celui
+    // de Safari à l'ouverture (personne n'a rien focalisé) : un focus est parti ailleurs depuis l'ouverture.
+    const { wrapper, outside, cleanup } = await mountMenu()
+    await wrapper.get(TOGGLE).trigger('click')
+    outside.focus()
+    outside.remove()
+    expect(document.activeElement).toBe(document.body)
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await flushPromises()
+
+    expect(wrapper.get('#account-menu-desktop').isVisible()).toBe(false)
+    expect(document.activeElement).not.toBe(wrapper.get(TOGGLE).element)
+    cleanup()
+  })
+
   it('Échap sur le bouton lui-même referme le menu et garde le focus sur le bouton', async () => {
     const { wrapper, cleanup } = await mountMenu()
     await wrapper.get(TOGGLE).trigger('click')

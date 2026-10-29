@@ -177,13 +177,13 @@ does `BackofficeHttpClient`.
   (one more CSS rule to know, and known losses of semantics in Safari) and moving the region into `AdminLayout` (the
   banner's behaviour split across two files). A component with two roots takes no fallthrough attribute: `AdminLayout`
   passes none.
-- **Only a new refusal re-announces** (S7, reviewed by R14): `useAuth().sessionEndedCount` goes up by one on each
-  **accepted** `markSessionExpired()` and the alert carries it as its `:key` — a refusal sent under the *current*
-  generation, that is a gesture made while the session is already ended (« Enregistrer » pressed under the banner).
-  The parallel reads of a page's load (`AdminWatchPage`, `AdminQualityPage`, `AdminAboutPage` send two to four) leave
-  under one generation: the first counts, the others do not announce again. `usePublishedHeight` follows the
-  re-inserted element (its `ref` changes, the observer lets the old one go and measures the new one). That the
-  re-insertion destroys the focused sign-in link is E, handled by R19.
+- **Only a new refusal re-announces** (S7, reviewed by R14, E by R19): `useAuth().sessionEndedCount` goes up by one on
+  each **accepted** `markSessionExpired()` and the banner's **message `<span>`** carries it as its `:key` — a refusal
+  sent under the *current* generation, a gesture made while the session is already ended (« Enregistrer » pressed under
+  the banner). The parallel reads of a page's load (`AdminWatchPage`, `AdminQualityPage`, `AdminAboutPage` send two to
+  four) leave under one generation: the first counts, the others do not announce again. **The alert itself is never
+  re-inserted** (its `ref` and the observer of `usePublishedHeight` stay on one element): it holds the sign-in link, and
+  replacing it dropped a keyboard user's focus on `body`.
 - **The return of the session is announced**: a `role="status"` region **present from the banner's mount** (a region
   inserted with its text may not be announced) receives « Session rétablie, vous pouvez enregistrer. » when
   `hasSessionEnded` goes from true to false (which `useAuth` does only when the re-check found an account *and* a write
@@ -396,7 +396,7 @@ other failure sets `unknown`; `useAdminTranslation` and `useOrderDraft` too), `H
 `HttpMcpConnectionsRepository.spec.ts`, `HttpOAuthConsentRepository.spec.ts`, `HttpAssistantRepository.spec.ts`,
 `backofficeSessionExpiry.spec.ts` (the session is closed, no navigation, parallel verdicts of one generation announce once, a verdict sent before the return refinishes nothing), `SessionEndedBanner.spec.ts` (alert
 inserted, no focus taken, the link and its icon, the re-read on `focus`, the sticky class, the status region present from
-mount and its message on return and emptied on the next route or by a new end, a refusal re-inserting the alert once per tick, the height following it), `usePublishedHeight.spec.ts` (the height posted, updated on
+mount and its message on return and emptied on the next route or by a new end, a refusal replacing the message, once per tick, and never the alert nor the focused link; the height measured on one element), `usePublishedHeight.spec.ts` (the height posted, updated on
 a second reading, removed with the target), `AdminLayout.sessionEnded.spec.ts` (the banner a direct child of the section holding the page, and adding no element to its flow; the page stays mounted with its typed
 input; red when `router.replace` is reintroduced; the banner is the only alert on a 401 and on a 403 without a token, a 403
 with a token shows the single « accès refusé » alert (`AccessRefusedNotice.spec.ts` too), with « Changer de compte » in the same tab, the input kept, `/api/me` read once, the alert cleared on navigation and masked when the re-read finds the session ended), `AdminCaseStudiesPage.spec.ts` and `OrderToolbar.spec.ts` (an ended session adds no alert of the

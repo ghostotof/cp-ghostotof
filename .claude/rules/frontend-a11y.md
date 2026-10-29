@@ -75,7 +75,7 @@ fixed:
   `display: none`, neither read nor reachable by keyboard. Its tests therefore read « nothing outside the menu »
   (`outsideDesktopMenu` in `AppHeader.spec.ts`), never « nothing in the DOM ».
 - **A live region is announced when it is *inserted*, or when its content changes** (#650, S2): the backoffice's
-  `SessionEndedBanner` is a `role="alert"` **inserted by `v-if`** at the moment a 401 ends the session, so it is
+  `SessionEndedBanner` is a `role="alert"` **inserted by `v-if`** at the moment a 401, or a 403 to a write sent without a CSRF token, ends the session, so it is
   announced and interrupts, which is what follows a failed « Enregistrer ». **It never takes the focus** (no
   `focus()`): the person may be in the middle of a sentence, and the link sits in the reading order, reachable by
   keyboard. Its link is `presentation/ui/SignInAgainLink.vue` (#748, R6): it opens a new tab, said in the link text (a
@@ -87,9 +87,10 @@ fixed:
   banner is sticky under the header, `scroll-padding-top` keeping the focus out from under both (WCAG 2.4.11,
   `.claude/rules/frontend-backoffice.md`). It differs from `LoginPage`'s notice (next bullet) by when it appears: the banner is inserted after
   the first render (announced), the notice is present from it (may not be). **An alert already shown is announced again
-  only if it is re-inserted** (#748, R9, S7): a second refusal while the banner is displayed changes nothing in an
-  idempotent state, so the alert carries a `:key` (`useAuth().sessionEndedCount`, +1 per accepted refusal, see `.claude/rules/frontend-session.md`, « The session generation ») that makes
-  Vue replace the element.
+  only if its content is replaced** (#748, R9, S7, R19, E): a second refusal while the banner is displayed changes nothing in an
+  idempotent state, so the message `<span>` carries a `:key` (`useAuth().sessionEndedCount`, +1 per accepted refusal, see `.claude/rules/frontend-session.md`, « The session generation ») that makes
+  Vue replace it. **Never the element that carries a link**: the alert stays, so the « Se reconnecter » link a keyboard
+  user has focused is not destroyed (the focus would fall on `body`).
 - **A `role="status"` present at first render may not be announced** (`LoginPage`'s « Votre session a pris fin »
   notice, `expired=1`, #650): some screen readers announce a live region only when its content *changes*, and this
   one is in the page from the start. It is still readable as ordinary text in the reading order, which is why it is

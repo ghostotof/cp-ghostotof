@@ -29,7 +29,11 @@ import IconChevronDown from '~icons/lucide/chevron-down'
  * qu'est l'élément actif sous Safari après une ouverture à la souris, #748 —, pour
  * que la tabulation reprenne là où la personne était ; s'il était ailleurs, un
  * autre menu de l'en-tête par exemple, le menu se ferme sans lui voler le focus,
- * #748), un clic en dehors (le focus
+ * #748. **« Personne » ne vaut que si aucun focus n'est parti ailleurs depuis
+ * l'ouverture** (G, R19) : un élément focalisé ailleurs puis retiré du DOM — un
+ * menu « Contenu » refermé — laisse aussi `body`, et le bouton ne doit pas le
+ * prendre ; le menu retient donc par `focusin` si le focus est allé hors de lui),
+ * un clic en dehors (le focus
  * reste où elle l'a mis), une navigation quelle qu'en soit l'origine, le choix
  * d'une entrée — y compris le lien vers la page où l'on est déjà, qui ne navigue
  * pas — et la sortie du focus **quand la cible reçoit le focus et se trouve hors
@@ -79,16 +83,28 @@ function onDocumentClick(event: MouseEvent): void {
   }
 }
 
+/**
+ * Vrai si un élément hors du menu a reçu le focus depuis son ouverture (G, R19). Sans cela, `body` comme élément
+ * actif est ambigu : « personne n'a rien focalisé » (Safari après un clic à la souris, le focus doit revenir au
+ * bouton) ou « l'élément focalisé ailleurs vient d'être retiré » (le focus ne doit pas lui être volé).
+ */
+let focusWentElsewhere = false
+
+function onDocumentFocusin(event: FocusEvent): void {
+  if (isOpen.value && !(container.value?.contains(event.target as Node) ?? false)) {
+    focusWentElsewhere = true
+  }
+}
+
 function onDocumentKeydown(event: KeyboardEvent): void {
   if ('Escape' === event.key && isOpen.value) {
-    // Lu avant la fermeture : le focus n'est rendu au bouton que s'il était dans le
-    // menu, ou si personne ne le détenait. Un autre menu de l'en-tête peut le détenir
-    // pendant que celui-ci est resté ouvert, et le lui prendre serait voler le focus
-    // (#748, constat 12). `body` (ou `null`) n'est le focus de personne : c'est l'état
-    // de Safari après une ouverture à la souris, qui ne focalise pas un bouton cliqué
-    // (#748, CR8).
+    // Lu avant la fermeture : le focus n'est rendu au bouton que s'il était dans le menu, ou si personne ne le
+    // détenait. Un autre menu de l'en-tête peut le détenir pendant que celui-ci est resté ouvert, et le lui prendre
+    // serait voler le focus (#748, constat 12). `body` (ou `null`) n'est le focus de personne : c'est l'état de
+    // Safari après une ouverture à la souris, qui ne focalise pas un bouton cliqué (#748, CR8) — sauf si un focus
+    // est parti ailleurs depuis l'ouverture, puis a disparu avec son élément (G, R19).
     const active = document.activeElement
-    const focusWasFree = null === active || document.body === active
+    const focusWasFree = (null === active || document.body === active) && !focusWentElsewhere
     const focusWasInside = focusWasFree || (container.value?.contains(active) ?? false)
     close()
     if (focusWasInside) {
@@ -126,6 +142,21 @@ watch(
   () => close(),
 )
 
+// L'écouteur n'existe que pendant l'ouverture (retiré à la fermeture et au démontage) ; le repère repart à faux à
+// chaque ouverture et à chaque fermeture : un focus parti ailleurs avant l'ouverture n'est pas celui de celle-ci.
+watch(
+  isOpen,
+  (open) => {
+    focusWentElsewhere = false
+    if (open) {
+      document.addEventListener('focusin', onDocumentFocusin)
+    } else {
+      document.removeEventListener('focusin', onDocumentFocusin)
+    }
+  },
+  { flush: 'sync' },
+)
+
 onMounted(() => {
   document.addEventListener('click', onDocumentClick)
   document.addEventListener('keydown', onDocumentKeydown)
@@ -134,6 +165,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   document.removeEventListener('click', onDocumentClick)
   document.removeEventListener('keydown', onDocumentKeydown)
+  document.removeEventListener('focusin', onDocumentFocusin)
 })
 </script>
 

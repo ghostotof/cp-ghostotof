@@ -33,10 +33,12 @@ import SignInAgainLink from '../SignInAgainLink.vue'
  *   d'`AdminLayout`, qui contient la page. C'est le bloc contenant de `position: sticky` : l'alerte colle sur toute
  *   la hauteur de la page. Vides, les deux n'entrent pas dans le flux (rien de rendu, ou `visually-hidden`), donc
  *   aucun `gap` de plus.
- * - **Un nouveau refus réannonce** (S7) : l'alerte est insérée avec `:key="sessionEndedCount"`, que
- *   `markSessionExpired()` augmente à chaque refus accepté — un refus parti sous la génération courante, pas
- *   une lecture parallèle du chargement ni une réponse d'une session révolue (#748, R14) ; **« Session rétablie » s'efface** si la session finit de
- *   nouveau (CR6).
+ * - **Un nouveau refus réannonce** (S7, E) : l'alerte reste le **même élément** ; seul le `<span>` du message porte
+ *   `:key="sessionEndedCount"`, que `markSessionExpired()` augmente à chaque refus accepté — un refus parti sous la
+ *   génération courante, pas une lecture parallèle du chargement ni une réponse d'une session révolue (#748, R14).
+ *   Le message remplacé est relu en entier (une `role="alert"` est `aria-atomic`), et le lien « Se reconnecter »,
+ *   que la personne a peut-être au clavier, n'est jamais détruit : réinsérer l'alerte jetait le focus sur `body`
+ *   (#748, R19). **« Session rétablie » s'efface** si la session finit de nouveau (CR6).
  * - **Le retour est annoncé** (#748, constat 14) : quand le bandeau disparaît, rien ne dit que « Enregistrer »
  *   refonctionne. Une région `role="status"` **présente dès le montage** (une région insérée avec son texte
  *   peut ne pas être annoncée) reçoit alors « Session rétablie » ; vide, elle est masquée visuellement, et
@@ -83,18 +85,21 @@ watch(
     `display: contents` écarté : une règle CSS de plus, et des pertes de sémantique connues dans Safari.
   -->
   <!--
-    `:key` = nombre de refus : un refus de plus pendant que le bandeau est affiché le réinsère, donc le réannonce
-    (S7) ; plusieurs refus du même tick ne font qu'un rendu, donc qu'une insertion.
+    L'alerte est insérée une fois (annoncée). `:key` = nombre de refus, sur le seul `<span>` du message : un refus de
+    plus le remplace, donc le réannonce (S7), sans détruire le lien qui peut avoir le focus (E, R19) ; plusieurs
+    refus du même tick ne font qu'un rendu, donc qu'un remplacement.
   -->
   <p
     v-if="hasSessionEnded"
     ref="banner"
-    :key="sessionEndedCount"
     role="alert"
     class="session-ended-banner text-danger-emphasis mb-0 d-flex flex-wrap align-items-center gap-3"
     data-testid="admin-session-ended"
   >
-    {{ t('admin.sessionEnded.message') }}
+    <span
+      :key="sessionEndedCount"
+      data-testid="admin-session-ended-message"
+    >{{ t('admin.sessionEnded.message') }}</span>
     <SignInAgainLink>{{ t('admin.sessionEnded.signInAgain') }}</SignInAgainLink>
   </p>
 
