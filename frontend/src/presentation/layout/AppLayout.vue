@@ -30,6 +30,15 @@ const router = useRouter()
 const pageKey = ref(0)
 
 /**
+ * Vrai de l'instant où un autre compte est revenu jusqu'à la fin du rejeu de la navigation (#748, R27, A3-13). Dans
+ * l'intervalle la session du nouveau compte est déjà appliquée (l'en-tête change) mais la garde n'a pas encore rejugé la
+ * route : sans ce masque, l'ancienne page — avec les données du premier compte — resterait affichée sous l'en-tête du
+ * second. Posé **de façon synchrone** par l'abonné, avant tout `await`, pour qu'aucun rendu n'intervienne entre les deux.
+ * Le cas « même compte » ne passe jamais par ici : aucun rejeu, aucun clignotement.
+ */
+const isReplaying = ref(false)
+
+/**
  * Un autre compte que celui dont la session a fini est revenu (`useAuth().onAccountSwitched`) : la session est déjà
  * appliquée, mais la page ouverte n'est pas la sienne. La navigation est **rejouée** vers la route courante — `force`,
  * sans quoi le routeur ignore une navigation vers l'adresse où l'on est, et la garde ne jugerait jamais ce compte
@@ -38,6 +47,7 @@ const pageKey = ref(0)
  * que la garde va refuser.
  */
 onAccountSwitched(() => {
+  isReplaying.value = true
   void replayNavigation()
 })
 
@@ -49,7 +59,10 @@ async function replayNavigation(): Promise<void> {
     // Une garde ou un composant routé qui lève : la page est remontée quand même, elle ne reste pas celle du premier compte.
     console.error('Le rejeu de la navigation après un changement de compte a échoué.', caught)
   } finally {
+    // Dans cet ordre : la clé avance avant que la page revienne, qui est alors une instance neuve (ou celle que la
+    // garde a choisie), jamais l'ancienne. Aussi en cas d'échec : la page ne reste pas masquée pour toujours.
     pageKey.value += 1
+    isReplaying.value = false
   }
 }
 </script>
@@ -74,6 +87,7 @@ async function replayNavigation(): Promise<void> {
       <RouterView v-slot="{ Component }">
         <component
           :is="Component"
+          v-if="!isReplaying"
           :key="pageKey"
         />
       </RouterView>

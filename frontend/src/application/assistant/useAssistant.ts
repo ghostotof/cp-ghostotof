@@ -53,7 +53,7 @@ export function useAssistant(): UseAssistantResult {
   }
 
   // Après le contrôle ci-dessus : l'absence d'un dépôt se dit par son propre nom.
-  const { rereadAfterRefusal, onSessionRestored } = useAuth()
+  const { followRefusal, onSessionRestored } = useAuth()
 
   const messages = ref<AssistantMessage[]>([])
   const state = ref<AssistantState>('idle')
@@ -131,7 +131,7 @@ export function useAssistant(): UseAssistantResult {
       }
       // Seule une session finie (`unauthenticated`, voir `infrastructure/http/sessionAwareFetch.ts`)
       // anonymise l'en-tête ; un refus réel (`forbidden`) laisse la session, qui vaut pour le reste du
-      // site (#748, #732 point 4), mais relit `/api/me` (`rereadAfterRefusal`, une seule en vol) : un
+      // site (#748, #732 point 4), mais relit `/api/me` (`followRefusal`, une seule relecture en vol) : un
       // compte rétrogradé y est au palier de base, et l'en-tête ne doit pas rester à celui de confiance (R7).
       if ('unauthenticated' === failure.reason) {
         if (!markSessionExpired(sentAt)) {
@@ -141,11 +141,12 @@ export function useAssistant(): UseAssistantResult {
       } else if ('forbidden' === failure.reason) {
         // La relecture ne change l'affichage que si `/api/me` répond « anonyme » : la session est alors finie, et
         // l'erreur affichée passe de `forbidden` à `unauthenticated` (#748, R15, F) — si c'est encore elle.
-        void rereadAfterRefusal().then((reread) => {
-          if ('session-ended' === reread && 'forbidden' === error.value?.reason) {
+        followRefusal(
+          () => 'forbidden' === error.value?.reason,
+          () => {
             error.value = new AssistantError('unauthenticated')
-          }
-        })
+          },
+        )
       }
       error.value = failure
       state.value = 'error'

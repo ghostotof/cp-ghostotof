@@ -294,6 +294,60 @@ describe('AppLayout — un autre compte au retour', () => {
     expect(wrapper.find('[data-testid="counted-page"]').exists()).toBe(true)
   })
 
+  it("pendant le rejeu, l'ancienne page n'est plus rendue ; la garde libérée, la page est remontée (A3-13)", async () => {
+    const { wrapper, router, mounts } = await mountProtected(OTHER_SUPER)
+    // Ajoutée après la garde de la page : elle ne retient que le rejeu, la garde du routeur n'ayant pas encore rejugé.
+    let release: () => void = () => undefined
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    router.beforeEach(() => held)
+    expect(wrapper.find('[data-testid="counted-page"]').exists()).toBe(true)
+
+    await returnToTab()
+
+    // Le nouveau compte est déjà appliqué (l'en-tête a changé) mais la garde n'a rien rendu : la page du premier
+    // compte ne reste pas affichée sous l'en-tête du second.
+    expect(authState.user?.username).toBe(OTHER_SUPER.username)
+    expect(wrapper.find('[data-testid="counted-page"]').exists()).toBe(false)
+
+    release()
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="counted-page"]').exists()).toBe(true)
+    expect(mounts.count).toBe(2)
+    expect(router.currentRoute.value.fullPath).toBe('/fr/admin/case-studies?tri=nom#fin')
+  })
+
+  it('un rejeu qui échoue rend quand même la page', async () => {
+    const { wrapper, router, mounts } = await mountProtected(OTHER_SUPER)
+    const failure = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    router.beforeEach(() => {
+      throw new Error('garde en échec')
+    })
+
+    await returnToTab()
+
+    expect(failure).toHaveBeenCalled()
+    failure.mockRestore()
+    expect(wrapper.find('[data-testid="counted-page"]').exists()).toBe(true)
+    expect(mounts.count).toBe(2)
+  })
+
+  it('le même compte : la page n\'est jamais masquée (aucun rejeu, aucun clignotement)', async () => {
+    const { wrapper, router, mounts } = await mountProtected(FIRST)
+    let judgedDuringReturn = 0
+    router.beforeEach(() => {
+      judgedDuringReturn += 1
+    })
+
+    await returnToTab()
+
+    expect(judgedDuringReturn).toBe(0)
+    expect(wrapper.find('[data-testid="counted-page"]').exists()).toBe(true)
+    expect(mounts.count).toBe(1)
+  })
+
   it('un refus réel dont la relecture trouve un autre compte rejoue la navigation (R26, CR3-6)', async () => {
     const { wrapper, router, mounts, judged, repository } = await mountProtected(OTHER_SUPER)
     expect(mounts.count).toBe(1)

@@ -103,6 +103,14 @@ export interface UseAuthResult {
    */
   rereadAfterRefusal: () => Promise<RefusalReread>
   /**
+   * **La** suite d'un refus réel, écrite une fois (#748, R27, St3-7) : relit le palier (`rereadAfterRefusal`), sans que
+   * l'appelant l'attende — la page montre déjà le refus —, puis, si la relecture dit `'session-ended'` **et** que
+   * `isStillRefused()` vaut toujours vrai à l'arrivée de la réponse, appelle `showSessionEnded()`. Le refus affiché est
+   * jugé à l'arrivée, pas au départ : une relecture de la page lancée entre-temps l'a peut-être déjà remis à zéro, et
+   * l'écraser par « session finie » dirait un état qui n'est plus le sien. Session tenue, relecture en échec : rien.
+   */
+  followRefusal: (isStillRefused: () => boolean, showSessionEnded: () => void) => void
+  /**
    * Abonne `callback` au **retour** de la session : il est appelé une fois, de façon synchrone, à chaque descente
    * de `sessionEnded` (vrai → faux) où **le même compte** revient (même identifiant, aucun rôle perdu, #748, R26) — par
    * la relecture au retour sur l'onglet. Ni pour un autre compte (`onAccountSwitched`), ni pour une connexion dans l'onglet (la page
@@ -283,6 +291,14 @@ export function useAuth(): UseAuthResult {
     return pending
   }
 
+  const followRefusal = (isStillRefused: () => boolean, showSessionEnded: () => void): void => {
+    void rereadAfterRefusal().then((reread) => {
+      if ('session-ended' === reread && isStillRefused()) {
+        showSessionEnded()
+      }
+    })
+  }
+
   return {
     user: computed(() => state.user),
     tier: computed(() => state.tier),
@@ -296,6 +312,7 @@ export function useAuth(): UseAuthResult {
     logout,
     recheckEndedSession,
     rereadAfterRefusal,
+    followRefusal,
     onSessionRestored,
     onAccountSwitched,
     checkAuth,

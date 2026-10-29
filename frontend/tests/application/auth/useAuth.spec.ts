@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { defineComponent, h } from 'vue'
 import { AUTH_REPOSITORY, authState, markBaseAccessExpired, markBaseAccessGranted, markSessionExpired, sessionStamp, useAuth } from '../../../src/application/auth/useAuth'
 import type { AuthRepository } from '../../../src/domain/auth/repositories/AuthRepository'
@@ -780,6 +780,61 @@ describe('useAuth', () => {
 
       await expect(auth.rereadAfterRefusal()).resolves.toBe('session-held')
       expect(auth.hasSessionEnded.value).toBe(false)
+    })
+
+    describe('followRefusal : la suite d\'un refus réel, écrite une fois (R27, St3-7)', () => {
+      it('session finie et refus toujours affiché : showSessionEnded est appelé', async () => {
+        const auth = mountWithComposable(createStubRepository({ me: vi.fn(async () => sessionFor(null)) }))
+        await auth.login('jane', 'password')
+        const showSessionEnded = vi.fn()
+
+        auth.followRefusal(() => true, showSessionEnded)
+        await flushPromises()
+
+        expect(showSessionEnded).toHaveBeenCalledTimes(1)
+        expect(auth.hasSessionEnded.value).toBe(true)
+      })
+
+      it('session finie mais refus remplacé entre-temps : rien n\'est dit', async () => {
+        const auth = mountWithComposable(createStubRepository({ me: vi.fn(async () => sessionFor(null)) }))
+        await auth.login('jane', 'password')
+        const showSessionEnded = vi.fn()
+
+        // Le refus affiché est jugé à l'arrivée de la relecture, pas au départ : une page rechargée l'a remplacé.
+        auth.followRefusal(() => false, showSessionEnded)
+        await flushPromises()
+
+        expect(showSessionEnded).not.toHaveBeenCalled()
+        // La relecture a bien eu lieu : la session, elle, est finie.
+        expect(auth.hasSessionEnded.value).toBe(true)
+      })
+
+      it('session tenue (palier de base) : rien n\'est dit', async () => {
+        const auth = mountWithComposable(createStubRepository({ me: vi.fn(async () => BASE_ACCESS_SESSION) }))
+        await auth.login('jane', 'password')
+        const showSessionEnded = vi.fn()
+
+        auth.followRefusal(() => true, showSessionEnded)
+        await flushPromises()
+
+        expect(showSessionEnded).not.toHaveBeenCalled()
+        expect(auth.hasSessionEnded.value).toBe(false)
+      })
+
+      it('le refus est jugé à l\'arrivée de la relecture, pas au départ', async () => {
+        const { me, settle } = deferredMe()
+        const auth = mountWithComposable(createStubRepository({ me: vi.fn(me) }))
+        await auth.login('jane', 'password')
+        let refusalShown = true
+        const showSessionEnded = vi.fn()
+
+        auth.followRefusal(() => refusalShown, showSessionEnded)
+        refusalShown = false
+        settle(sessionFor(null))
+        await flushPromises()
+
+        expect(showSessionEnded).not.toHaveBeenCalled()
+      })
     })
 
     it("isChecking n'est pas touché", async () => {
