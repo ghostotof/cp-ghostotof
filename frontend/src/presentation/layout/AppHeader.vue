@@ -521,7 +521,7 @@ function navLinkClass(link: NavigationLink) {
 
     <p
       v-if="hasCvDownloadError"
-      class="container-xl text-danger small mb-2"
+      class="container-xl text-danger-emphasis small mb-2"
       role="alert"
     >
       {{ t('common.downloadCvError') }}
@@ -529,7 +529,7 @@ function navLinkClass(link: NavigationLink) {
 
     <p
       v-if="baseAccessErrorMessage"
-      class="container-xl text-danger small mb-2"
+      class="container-xl text-danger-emphasis small mb-2"
       role="alert"
     >
       {{ baseAccessErrorMessage }}

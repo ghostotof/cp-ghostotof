@@ -177,7 +177,7 @@ onMounted(() => {
     <p
       v-if="sessionExpired"
       role="alert"
-      class="text-danger mb-0 d-flex flex-wrap align-items-center gap-3"
+      class="text-danger-emphasis mb-0 d-flex flex-wrap align-items-center gap-3"
     >
       {{ t('mcpConnections.errors.sessionEnded') }}
       <RouterLink :to="signInAgainLocation">
@@ -188,7 +188,7 @@ onMounted(() => {
     <p
       v-else-if="'error' === status"
       role="alert"
-      class="text-danger mb-0 d-flex flex-wrap align-items-center gap-3"
+      class="text-danger-emphasis mb-0 d-flex flex-wrap align-items-center gap-3"
     >
       {{ t('mcpConnections.errors.load') }}
       <button
@@ -203,7 +203,7 @@ onMounted(() => {
     <p
       v-if="'failed' === lastOutcome && !sessionExpired"
       role="alert"
-      class="text-danger mb-0"
+      class="text-danger-emphasis mb-0"
     >
       {{ t('mcpConnections.errors.revoke') }}
     </p>

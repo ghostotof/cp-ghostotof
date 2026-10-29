@@ -150,7 +150,7 @@ onBeforeUnmount(() => {
 
     <p
       v-if="hasCvDownloadError"
-      class="text-danger small mb-0"
+      class="text-danger-emphasis small mb-0"
       role="alert"
     >
       {{ t('common.downloadCvError') }}

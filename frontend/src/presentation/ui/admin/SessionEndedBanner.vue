@@ -62,7 +62,7 @@ onBeforeUnmount(() => {
   <p
     v-if="hasSessionEnded"
     role="alert"
-    class="text-danger mb-0 d-flex flex-wrap align-items-center gap-3"
+    class="text-danger-emphasis mb-0 d-flex flex-wrap align-items-center gap-3"
     data-testid="admin-session-ended"
   >
     {{ t('admin.sessionEnded.message') }}

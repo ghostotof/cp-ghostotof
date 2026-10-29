@@ -385,7 +385,7 @@ useUnsavedOrderGuard(isOrderDirty)
 
         <p
           v-if="translationErrorText"
-          class="text-danger small"
+          class="text-danger-emphasis small"
           role="alert"
         >
           {{ translationErrorText }}
@@ -393,7 +393,7 @@ useUnsavedOrderGuard(isOrderDirty)
 
         <p
           v-if="errorText"
-          class="text-danger small"
+          class="text-danger-emphasis small"
           role="alert"
         >
           {{ errorText }}
@@ -433,7 +433,7 @@ useUnsavedOrderGuard(isOrderDirty)
       </p>
       <p
         v-else-if="hasError"
-        class="text-danger mb-0"
+        class="text-danger-emphasis mb-0"
         role="alert"
       >
         {{ t('admin.incidents.loadError') }}

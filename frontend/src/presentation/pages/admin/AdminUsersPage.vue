@@ -230,7 +230,7 @@ async function handleDelete(user: AdminUser): Promise<void> {
 
       <p
         v-if="errorText"
-        class="text-danger"
+        class="text-danger-emphasis"
         role="alert"
       >
         {{ errorText }}
@@ -244,7 +244,7 @@ async function handleDelete(user: AdminUser): Promise<void> {
       </p>
       <p
         v-else-if="hasError"
-        class="text-danger mb-0"
+        class="text-danger-emphasis mb-0"
         role="alert"
       >
         {{ t('admin.users.loadError') }}
@@ -367,7 +367,7 @@ async function handleDelete(user: AdminUser): Promise<void> {
                       <li>
                         <button
                           type="button"
-                          class="dropdown-item text-danger"
+                          class="dropdown-item text-danger-emphasis"
                           :disabled="isCurrentUser(user)"
                           :title="isCurrentUser(user) ? t('admin.users.cannotDeleteSelf') : undefined"
                           @click="handleDelete(user)"

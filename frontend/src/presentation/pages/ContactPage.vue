@@ -136,7 +136,7 @@ const globalErrorText = computed<string | null>(() => {
           >
             {{ t('contact.form.hints.name') }}
           </p>
-          <!-- text-danger-emphasis, pas text-danger : même raison que .text-eyebrow (style.css), le contraste AA. -->
+          <!-- text-danger-emphasis, pas text-danger-emphasis : même raison que .text-eyebrow (style.css), le contraste AA. -->
           <p
             v-if="isFlagged('name')"
             id="contact-name-error"
@@ -165,7 +165,7 @@ const globalErrorText = computed<string | null>(() => {
             required
           >
           <!-- Pas d'aide de saisie ici : « une adresse e-mail valide » n'ajoute rien au libellé du champ. -->
-          <!-- text-danger-emphasis, pas text-danger : même raison que .text-eyebrow (style.css), le contraste AA. -->
+          <!-- text-danger-emphasis, pas text-danger-emphasis : même raison que .text-eyebrow (style.css), le contraste AA. -->
           <p
             v-if="isFlagged('email')"
             id="contact-email-error"
@@ -199,7 +199,7 @@ const globalErrorText = computed<string | null>(() => {
           >
             {{ t('contact.form.hints.message') }}
           </p>
-          <!-- text-danger-emphasis, pas text-danger : même raison que .text-eyebrow (style.css), le contraste AA. -->
+          <!-- text-danger-emphasis, pas text-danger-emphasis : même raison que .text-eyebrow (style.css), le contraste AA. -->
           <p
             v-if="isFlagged('message')"
             id="contact-message-error"
@@ -249,7 +249,7 @@ const globalErrorText = computed<string | null>(() => {
           Pas de déplacement du focus après un refus : `role="alert"` fait
           annoncer le message par le lecteur d'écran sans voler le focus au
           visiteur, qui peut être en train de relire un champ. text-danger-emphasis,
-          pas text-danger : même raison que .text-eyebrow (style.css), le contraste AA.
+          pas text-danger-emphasis : même raison que .text-eyebrow (style.css), le contraste AA.
         -->
         <p
           v-if="globalErrorText"

@@ -440,7 +440,7 @@ function categoryLabel(category: AdminAboutMeCardCategory): string {
 
       <p
         v-if="translationErrorText"
-        class="text-danger small"
+        class="text-danger-emphasis small"
         role="alert"
       >
         {{ translationErrorText }}
@@ -448,7 +448,7 @@ function categoryLabel(category: AdminAboutMeCardCategory): string {
 
       <p
         v-if="errorText"
-        class="text-danger small"
+        class="text-danger-emphasis small"
         role="alert"
       >
         {{ errorText }}
@@ -488,7 +488,7 @@ function categoryLabel(category: AdminAboutMeCardCategory): string {
     </p>
     <p
       v-else-if="hasError"
-      class="text-danger mb-0"
+      class="text-danger-emphasis mb-0"
       role="alert"
     >
       {{ t('admin.about.loadError') }}

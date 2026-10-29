@@ -149,7 +149,7 @@ async function handleSubmit(): Promise<void> {
 
       <p
         v-else-if="'incomplete' === state"
-        class="text-danger mb-0"
+        class="text-danger-emphasis mb-0"
         role="alert"
       >
         {{ t('account.setPassword.incomplete') }}
@@ -163,7 +163,7 @@ async function handleSubmit(): Promise<void> {
       -->
       <div v-else-if="'unusable' === state">
         <p
-          class="text-danger"
+          class="text-danger-emphasis"
           role="alert"
         >
           {{ t('account.setPassword.unusable') }}
@@ -178,7 +178,7 @@ async function handleSubmit(): Promise<void> {
 
       <div v-else-if="'error' === state">
         <p
-          class="text-danger"
+          class="text-danger-emphasis"
           role="alert"
         >
           {{ apiErrorText ?? t('account.setPassword.errors.unknown') }}
@@ -242,7 +242,7 @@ async function handleSubmit(): Promise<void> {
           <p
             v-if="localFormError"
             :id="ERROR_ID"
-            class="text-danger small"
+            class="text-danger-emphasis small"
             role="alert"
           >
             {{ localFormError }}
@@ -250,7 +250,7 @@ async function handleSubmit(): Promise<void> {
           <p
             v-else-if="apiErrorText"
             :id="ERROR_ID"
-            class="text-danger small"
+            class="text-danger-emphasis small"
             role="alert"
           >
             {{ apiErrorText }}

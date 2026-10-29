@@ -243,7 +243,7 @@ useUnsavedOrderGuard(isOrderDirty)
 
         <p
           v-if="errorText"
-          class="text-danger small"
+          class="text-danger-emphasis small"
           role="alert"
         >
           {{ errorText }}
@@ -283,7 +283,7 @@ useUnsavedOrderGuard(isOrderDirty)
       </p>
       <p
         v-else-if="hasError"
-        class="text-danger mb-0"
+        class="text-danger-emphasis mb-0"
         role="alert"
       >
         {{ t('admin.watch.loadError') }}
@@ -423,7 +423,7 @@ useUnsavedOrderGuard(isOrderDirty)
       </p>
       <p
         v-else-if="hasVulnerabilityError"
-        class="text-danger mb-0"
+        class="text-danger-emphasis mb-0"
         role="alert"
       >
         {{ t('admin.watch.vulnerabilities.loadError') }}

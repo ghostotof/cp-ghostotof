@@ -69,7 +69,7 @@ const announcement = computed(() =>
     <p
       v-if="errorReason"
       role="alert"
-      class="text-danger mb-0"
+      class="text-danger-emphasis mb-0"
     >
       {{ t(`admin.order.errors.${errorReason}`) }}
     </p>

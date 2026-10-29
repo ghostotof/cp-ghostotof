@@ -154,7 +154,7 @@ async function handleSubmit(): Promise<void> {
 
         <p
           v-if="errorMessage"
-          class="text-danger small"
+          class="text-danger-emphasis small"
           role="alert"
         >
           {{ errorMessage }}

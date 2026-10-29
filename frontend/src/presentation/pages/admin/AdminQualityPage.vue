@@ -565,7 +565,7 @@ useUnsavedOrderGuard(isAnyOrderDirty)
 
         <p
           v-if="principleTranslationErrorText"
-          class="text-danger small"
+          class="text-danger-emphasis small"
           role="alert"
         >
           {{ principleTranslationErrorText }}
@@ -573,7 +573,7 @@ useUnsavedOrderGuard(isAnyOrderDirty)
 
         <p
           v-if="principleErrorText"
-          class="text-danger small"
+          class="text-danger-emphasis small"
           role="alert"
         >
           {{ principleErrorText }}
@@ -613,7 +613,7 @@ useUnsavedOrderGuard(isAnyOrderDirty)
       </p>
       <p
         v-else-if="hasPrinciplesError"
-        class="text-danger mb-0"
+        class="text-danger-emphasis mb-0"
         role="alert"
       >
         {{ t('admin.quality.loadError') }}
@@ -810,7 +810,7 @@ useUnsavedOrderGuard(isAnyOrderDirty)
 
         <p
           v-if="traitTranslationErrorText"
-          class="text-danger small"
+          class="text-danger-emphasis small"
           role="alert"
         >
           {{ traitTranslationErrorText }}
@@ -818,7 +818,7 @@ useUnsavedOrderGuard(isAnyOrderDirty)
 
         <p
           v-if="traitErrorText"
-          class="text-danger small"
+          class="text-danger-emphasis small"
           role="alert"
         >
           {{ traitErrorText }}
@@ -858,7 +858,7 @@ useUnsavedOrderGuard(isAnyOrderDirty)
       </p>
       <p
         v-else-if="hasTraitsError"
-        class="text-danger mb-0"
+        class="text-danger-emphasis mb-0"
         role="alert"
       >
         {{ t('admin.quality.loadError') }}

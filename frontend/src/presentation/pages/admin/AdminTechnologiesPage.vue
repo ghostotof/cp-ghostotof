@@ -124,7 +124,7 @@ async function handleDelete(technology: AdminExperienceTechnology): Promise<void
 
         <p
           v-if="errorText"
-          class="text-danger small"
+          class="text-danger-emphasis small"
           role="alert"
         >
           {{ errorText }}
@@ -163,7 +163,7 @@ async function handleDelete(technology: AdminExperienceTechnology): Promise<void
       </p>
       <p
         v-else-if="hasError"
-        class="text-danger mb-0"
+        class="text-danger-emphasis mb-0"
         role="alert"
       >
         {{ t('admin.technologies.loadError') }}

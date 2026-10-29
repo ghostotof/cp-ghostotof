@@ -30,7 +30,7 @@ function switchTo(target: Locale): void {
       :key="localeOption"
       type="button"
       class="btn btn-sm px-2"
-      :class="localeOption === currentLocale ? 'btn-outline-light' : 'btn-link text-secondary text-decoration-none'"
+      :class="localeOption === currentLocale ? 'btn-outline-light' : 'btn-link text-body-secondary text-decoration-none'"
       :aria-current="localeOption === currentLocale ? 'true' : undefined"
       :aria-label="LOCALE_NATIVE_NAMES[localeOption]"
       :lang="localeOption"

@@ -47,7 +47,7 @@ const currentLocale = computed<Locale>(() => {
             v-if="appVersion.releaseUrl"
             :href="appVersion.releaseUrl"
             :title="versionTitle"
-            class="link-secondary link-underline-opacity-0 link-underline-opacity-100-hover d-inline-flex align-items-center gap-1 font-monospace"
+            class="link-muted link-underline-opacity-0 link-underline-opacity-100-hover d-inline-flex align-items-center gap-1 font-monospace"
             data-testid="app-version"
             rel="noopener"
             target="_blank"
@@ -83,7 +83,7 @@ const currentLocale = computed<Locale>(() => {
           <li>
             <RouterLink
               :to="`/${currentLocale}/connect-your-assistant`"
-              class="link-secondary link-underline-opacity-0 link-underline-opacity-100-hover"
+              class="link-muted link-underline-opacity-0 link-underline-opacity-100-hover"
             >
               {{ t('common.connectAssistantLink') }}
             </RouterLink>
@@ -91,7 +91,7 @@ const currentLocale = computed<Locale>(() => {
           <li>
             <RouterLink
               :to="`/${currentLocale}/legal-notice`"
-              class="link-secondary link-underline-opacity-0 link-underline-opacity-100-hover"
+              class="link-muted link-underline-opacity-0 link-underline-opacity-100-hover"
             >
               {{ t('common.legalNoticeLink') }}
             </RouterLink>
@@ -99,7 +99,7 @@ const currentLocale = computed<Locale>(() => {
           <li>
             <RouterLink
               :to="`/${currentLocale}/privacy-policy`"
-              class="link-secondary link-underline-opacity-0 link-underline-opacity-100-hover"
+              class="link-muted link-underline-opacity-0 link-underline-opacity-100-hover"
             >
               {{ t('common.privacyPolicyLink') }}
             </RouterLink>

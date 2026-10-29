@@ -151,7 +151,7 @@ function isImminent(isoDate: string | null): boolean {
 
     <p
       v-else-if="hasError"
-      class="text-danger mb-0"
+      class="text-danger-emphasis mb-0"
       role="alert"
     >
       {{ t('stack.error') }}

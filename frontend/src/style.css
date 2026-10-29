@@ -32,6 +32,43 @@ body {
   color: var(--bs-link-color);
 }
 
+/* Bouton « danger » en contour (Révoquer, Supprimer) : le rouge plein de Bootstrap
+   (#dc3545) ne fait que ~4,3:1 sur le fond du bouton, sous le seuil AA de 4,5:1 pour
+   du texte. Texte et bordure passent au rouge « emphasis » du thème sombre (~6,1:1) ;
+   survol et état actif gardent le rouge plein de Bootstrap, texte blanc dessus (4,53:1).
+   On surcharge les variables du bouton plutôt que --bs-danger-rgb, qui colore aussi
+   text-bg-danger (texte blanc sur fond rouge) et le ferait tomber sous 4,5:1. */
+.btn-outline-danger {
+  --bs-btn-color: var(--bs-danger-text-emphasis);
+  --bs-btn-border-color: var(--bs-danger-text-emphasis);
+  --bs-btn-disabled-color: var(--bs-danger-text-emphasis);
+  --bs-btn-disabled-border-color: var(--bs-danger-text-emphasis);
+}
+
+/* Lien discret du pied de page. `link-secondary` de Bootstrap prend --bs-secondary-rgb
+   (#6c757d, 4,19:1 sur le fond : sous le seuil AA) ; --bs-secondary-rgb n'est pas
+   redéfini, il est aussi le fond de text-bg-secondary (texte blanc, ~2,6:1). Cette classe
+   prend --bs-secondary-color (#94a3b8, ~7,7:1), garde le soulignement piloté par les
+   utilitaires link-underline-opacity-* et passe à la couleur d'emphase au survol/focus. */
+.link-muted {
+  color: var(--bs-secondary-color) !important;
+  text-decoration-color: color-mix(
+    in srgb,
+    var(--bs-secondary-color) calc(var(--bs-link-underline-opacity, 1) * 100%),
+    transparent
+  ) !important;
+}
+
+.link-muted:hover,
+.link-muted:focus-visible {
+  color: var(--bs-emphasis-color) !important;
+  text-decoration-color: color-mix(
+    in srgb,
+    var(--bs-emphasis-color) calc(var(--bs-link-underline-opacity, 1) * 100%),
+    transparent
+  ) !important;
+}
+
 /* Lien d'évitement ("skip link") : invisible tant qu'il n'a pas le focus
    clavier (géré par .visually-hidden-focusable de Bootstrap), positionné et
    contrasté une fois focusé pour rester lisible par-dessus l'en-tête. */

@@ -141,7 +141,7 @@ function handleKeydown(event: KeyboardEvent): void {
     <!-- Second role="alert", distinct de celui de l'assistant : un échec de téléchargement n'est pas une erreur de conversation. -->
     <p
       v-if="hasCvDownloadError"
-      class="text-danger small mb-0"
+      class="text-danger-emphasis small mb-0"
       role="alert"
     >
       {{ t('common.downloadCvError') }}
@@ -150,7 +150,7 @@ function handleKeydown(event: KeyboardEvent): void {
     <p
       v-if="null !== error"
       role="alert"
-      class="text-danger mb-0"
+      class="text-danger-emphasis mb-0"
     >
       {{ errorMessage }}
       <RouterLink
@@ -177,7 +177,7 @@ function handleKeydown(event: KeyboardEvent): void {
       <p
         id="assistant-counter"
         class="small mb-3"
-        :class="draftLength > MAX_QUESTION_LENGTH ? 'text-danger' : 'text-body-secondary'"
+        :class="draftLength > MAX_QUESTION_LENGTH ? 'text-danger-emphasis' : 'text-body-secondary'"
       >
         {{ t('assistant.counter', { count: draftLength, max: MAX_QUESTION_LENGTH }) }}
       </p>

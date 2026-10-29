@@ -159,7 +159,7 @@ onMounted(() => {
     <p
       v-if="null !== errorMessage"
       role="alert"
-      class="text-danger mb-0"
+      class="text-danger-emphasis mb-0"
     >
       {{ errorMessage }}
       <RouterLink

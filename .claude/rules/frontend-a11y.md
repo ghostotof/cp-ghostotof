@@ -25,7 +25,23 @@ fixed:
 - **Text contrast**: use the `.text-eyebrow` class (`style.css`, `color: var(--bs-link-color)`) for actual text,
   never Bootstrap's `text-primary` — `--bs-primary` (`#7c3aed`) is only ~3.45:1 against the dark background,
   below the 4.5:1 AA threshold for text. `text-primary` stays fine for icons/decorative dots (non-text UI only
-  needs 3:1, and they're `aria-hidden`).
+  needs 3:1, and they're `aria-hidden`). The same goes for the two other Bootstrap colours that miss AA on the
+  dark background (#748):
+  - **Red text is `text-danger-emphasis` (`#ea868f`, ~7.8:1), never `text-danger`** (`#dc3545`, 4.34:1).
+    `btn-outline-danger` stays, but `style.css` overrides its four colour variables (text, border, and their
+    disabled twins) to `var(--bs-danger-text-emphasis)` (~6.1:1); hover keeps Bootstrap's solid red, white on
+    `#dc3545` (4.53:1). Not a solid `btn-danger` (4.53:1 only, and a red block per row).
+  - **Grey text is `text-body-secondary` (`#94a3b8`, ~7.7:1) or, for a footer link, `.link-muted`
+    (`style.css`; same colour, underline driven by the `link-underline-opacity-*` utilities), never
+    `text-secondary`/`link-secondary`** (`#6c757d`, 4.19:1).
+  - **`--bs-danger-rgb` and `--bs-secondary-rgb` are deliberately not redefined**: they also colour
+    `text-bg-danger` / `text-bg-secondary` (white text on a red or grey fill), which would drop under 4.5:1
+    (`text-bg-secondary` is already ~2.6:1 and is not a text colour in this project). Nor is `.text-danger`
+    redefined: a utility class that no longer does what its name says.
+  - jsdom computes no contrast, so these are pinned by source guards: `tests/presentation/colorClasses.spec.ts`
+    (no `text-danger`, `text-secondary` or `link-secondary` in any `src/**/*.{vue,ts}`) and
+    `tests/presentation/styleSheet.spec.ts` (the `style.css` blocks; it reads the file with `node:fs`, because
+    Vitest blanks any CSS import, `?raw` included). The measure in a real browser stays to do.
 - **Nav landmarks**: `AppHeader.vue` has two `<nav>` elements (desktop + mobile disclosure) — both need a
   distinct `aria-label` (`common.mainNavigation` / `common.mobileNavigation`) so they aren't ambiguous to
   assistive tech, and the active link gets `aria-current="page"` (not just a CSS class).

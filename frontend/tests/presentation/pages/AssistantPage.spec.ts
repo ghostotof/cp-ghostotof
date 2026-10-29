@@ -227,12 +227,12 @@ describe('AssistantPage', () => {
     await type(wrapper, '😀'.repeat(3))
     const counter = wrapper.find('#assistant-counter')
     expect(counter.text()).toContain('3 / 1000')
-    expect(counter.classes()).not.toContain('text-danger')
+    expect(counter.classes()).not.toContain('text-danger-emphasis')
     expect(wrapper.find('textarea').attributes('aria-describedby')).toBe('assistant-counter')
     expect(wrapper.find('textarea').attributes('maxlength')).toBeUndefined()
 
     await type(wrapper, 'a'.repeat(1001))
-    expect(counter.classes()).toContain('text-danger')
+    expect(counter.classes()).toContain('text-danger-emphasis')
     expect(sendButton(wrapper).attributes('disabled')).toBeDefined()
   })
 
