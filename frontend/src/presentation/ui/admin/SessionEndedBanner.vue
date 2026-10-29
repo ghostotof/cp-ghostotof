@@ -1,12 +1,10 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
+import { onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAuth } from '../../../application/auth/useAuth'
-import type { Locale } from '../../../domain/portfolio/entities/Locale'
-import { SESSION_ENDED_QUERY, SESSION_ENDED_VALUE } from '../../router/sessionEnded'
 import { usePublishedHeight } from '../../layout/usePublishedHeight'
-import IconExternalLink from '~icons/lucide/external-link'
+import SignInAgainLink from '../SignInAgainLink.vue'
 
 /**
  * Le bandeau « Votre session a pris fin » du backoffice (#650, S2), rendu une
@@ -22,10 +20,8 @@ import IconExternalLink from '~icons/lucide/external-link'
  *   annoncent ; contrairement à la région de LoginPage, présente dès le premier rendu.
  * - Aucun `focus()` : la personne est peut-être au milieu d'une phrase. Le lien est
  *   dans l'ordre de lecture, atteignable au clavier.
- * - Le lien s'ouvre dans un **autre onglet** : dans le même, la page serait quittée
- *   et la saisie perdue. Le cookie de session est partagé par les onglets, et
- *   `redirect` ramène l'autre onglet à cette page. L'ouverture est dite dans le
- *   texte du lien (WCAG 3.2.5), `noopener` coupe l'accès à `window.opener`.
+ * - Le lien est `SignInAgainLink` : un **autre onglet** (dans le même, la page serait quittée
+ *   et la saisie perdue), `redirect` y ramène, l'ouverture est dite au texte et à l'œil.
  * - Au retour sur cet onglet (`focus`), tant que la session est finie, la session
  *   est relue : un compte retrouvé efface le bandeau, et « Enregistrer » refonctionne
  *   (le jeton CSRF est relu du cookie à chaque appel). Sinon le bandeau resterait
@@ -39,15 +35,9 @@ import IconExternalLink from '~icons/lucide/external-link'
  *   peut ne pas être annoncée) reçoit alors « Session rétablie » ; vide, elle est masquée visuellement, et
  *   elle se vide à la navigation suivante.
  */
-const { t, locale } = useI18n()
+const { t } = useI18n()
 const route = useRoute()
 const { hasSessionEnded, checkAuth } = useAuth()
-
-const signInAgainLocation = computed(() => ({
-  name: 'login',
-  params: { locale: locale.value as Locale },
-  query: { redirect: route.fullPath, [SESSION_ENDED_QUERY]: SESSION_ENDED_VALUE },
-}))
 
 // Hauteur du bandeau, publiée tant qu'il est affiché (retirée au `v-if` faux).
 const banner = useTemplateRef<HTMLElement>('banner')
@@ -100,19 +90,7 @@ onBeforeUnmount(() => {
       data-testid="admin-session-ended"
     >
       {{ t('admin.sessionEnded.message') }}
-      <RouterLink
-        :to="signInAgainLocation"
-        target="_blank"
-        rel="noopener"
-      >
-        {{ t('admin.sessionEnded.signInAgain') }}
-        <span class="visually-hidden">{{ t('admin.sessionEnded.newTab') }}</span>
-        <IconExternalLink
-          width="14"
-          height="14"
-          aria-hidden="true"
-        />
-      </RouterLink>
+      <SignInAgainLink>{{ t('admin.sessionEnded.signInAgain') }}</SignInAgainLink>
     </p>
 
     <!-- Présente dès le montage, vide : c'est le changement de son contenu qui est annoncé. -->

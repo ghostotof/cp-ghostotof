@@ -4,9 +4,10 @@ import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useOAuthConsent } from '../../application/mcp/useOAuthConsent'
 import { consentParamsFromQuery } from '../../domain/mcp/services/consentParams'
-import { isSupportedLocale, type Locale } from '../../domain/portfolio/entities/Locale'
+import type { Locale } from '../../domain/portfolio/entities/Locale'
 import { useDeliberateActivation } from '../ui/useDeliberateActivation'
-import { REAUTH_QUERY, REAUTH_VALUE } from '../router/reauthentication'
+import { switchAccountLocation } from '../router/reauthentication'
+import { signInAgainLocation } from '../router/sessionEnded'
 
 /**
  * Consentement à une connexion MCP (#647, spec 0007 phase 2) : le point
@@ -42,11 +43,6 @@ import { REAUTH_QUERY, REAUTH_VALUE } from '../router/reauthentication'
 const { t, locale: i18nLocale } = useI18n()
 const route = useRoute()
 const { state, request, failure, load, reload, approve, deny } = useOAuthConsent()
-
-const currentLocale = computed<Locale>(() => {
-  const routeLocale = route.params.locale
-  return typeof routeLocale === 'string' && isSupportedLocale(routeLocale) ? routeLocale : (i18nLocale.value as Locale)
-})
 
 const isSubmitting = computed(() => 'submitting' === state.value)
 /** La demande et les boutons ne se montrent que tant qu'une décision est possible. */
@@ -96,18 +92,22 @@ const errorMessage = computed<string | null>(() => {
 
 /**
  * Se reconnecter ramène à cette même demande : `fullPath` garde toute la
- * requête. Après un refus pour authentification trop ancienne, la personne
- * est toujours connectée : `reauth=1` demande à la route de connexion de
- * s'ouvrir quand même (elle renvoie sinon une personne connectée à l'accueil).
+ * requête. Session finie : `expired=1`, la connexion dit pourquoi elle s'ouvre.
+ * Après un refus pour authentification trop ancienne, la personne est toujours
+ * connectée : `reauth=1` demande à la route de connexion de s'ouvrir quand même
+ * (elle renvoie sinon une personne connectée à l'accueil).
+ *
+ * **Dans le même onglet, exprès** (#748, R6) — contrairement au bandeau, à
+ * l'en-tête, à « Mes connexions MCP » et à l'assistant (`SignInAgainLink`, un
+ * nouvel onglet) : cette page est une étape d'un flux OAuth qui finit par
+ * `location.replace` vers le client ; un second onglet laisserait la demande
+ * ouverte dans le premier. Les mêmes constructeurs, donc, sans `target`.
  */
-const reloginTarget = computed(() => ({
-  name: 'login',
-  params: { locale: currentLocale.value },
-  query:
-    'reauthentication-required' === failure.value
-      ? { redirect: route.fullPath, [REAUTH_QUERY]: REAUTH_VALUE }
-      : { redirect: route.fullPath },
-}))
+const reloginTarget = computed(() =>
+  'reauthentication-required' === failure.value
+    ? switchAccountLocation(route, i18nLocale.value as Locale)
+    : signInAgainLocation(route, i18nLocale.value as Locale),
+)
 
 const reloginLabel = computed(() =>
   'reauthentication-required' === failure.value ? t('oauthConsent.errors.reauthenticate') : t('oauthConsent.errors.relogin'),
@@ -117,11 +117,7 @@ const reloginLabel = computed(() =>
  * « Changer de compte » : la connexion rouverte pour une personne déjà
  * connectée (`reauth=1`), avec toute la requête en retour (`fullPath`).
  */
-const switchAccountTarget = computed(() => ({
-  name: 'login',
-  params: { locale: currentLocale.value },
-  query: { redirect: route.fullPath, [REAUTH_QUERY]: REAUTH_VALUE },
-}))
+const switchAccountTarget = computed(() => switchAccountLocation(route, i18nLocale.value as Locale))
 
 /**
  * Le compte connecté a changé depuis l'affichage (un autre onglet s'est

@@ -42,6 +42,7 @@ function mountPage(
     routes: [
       { path: '/', component: { template: '<div />' } },
       { path: '/:locale/login', name: 'login', component: { template: '<div />' } },
+      { path: '/:locale/assistant', component: { template: '<div />' } },
     ],
   })
 
@@ -285,12 +286,15 @@ describe('AssistantPage', () => {
   })
 
   // Session finie (401, ou 403 sans jeton CSRF) : le lien s'ouvre, la route `login` accueille un anonyme.
+  // Un nouvel onglet (#748, R6) : dans le même, la question tapée serait perdue ; `redirect` ramène l'autre onglet ici.
   it.each<['fr' | 'en', string, string]>([
-    ['fr', 'Votre session a expiré.', 'Se reconnecter'],
-    ['en', 'Your session has expired.', 'Sign in again'],
-  ])('session finie (%s) : message et lien « Se reconnecter » avec redirect', async (locale, message, linkText) => {
+    ['fr', 'Votre session a expiré.', "Se reconnecter (s'ouvre dans un nouvel onglet)"],
+    ['en', 'Your session has expired.', 'Sign in again (opens in a new tab)'],
+  ])("session finie (%s) : « Se reconnecter » ouvre un nouvel onglet, expired=1, retour à l'assistant", async (locale, message, linkText) => {
     const { repository, calls } = createControlledRepository()
     const wrapper = mountPage(repository, undefined, locale)
+    // La page est montée sur sa route : `redirect` est le chemin courant.
+    await wrapper.vm.$router.push(`/${locale}/assistant`)
 
     await type(wrapper, 'Question')
     await submitWithButton(wrapper)
@@ -300,7 +304,9 @@ describe('AssistantPage', () => {
     const alert = wrapper.find('[role="alert"]')
     expect(alert.text()).toContain(message)
     const link = alert.find('a')
-    expect(link.attributes('href')).toBe(`/${locale}/login?redirect=/${locale}/assistant`)
+    expect(link.attributes('href')).toBe(`/${locale}/login?redirect=/${locale}/assistant&expired=1`)
+    expect(link.attributes('target')).toBe('_blank')
+    expect(link.attributes('rel')).toBe('noopener')
     expect(link.text()).toBe(linkText)
   })
 

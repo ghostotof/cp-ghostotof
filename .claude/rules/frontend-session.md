@@ -11,6 +11,10 @@ paths:
   - "frontend/src/presentation/ui/admin/SessionEndedBanner.vue"
   - "frontend/src/presentation/router/sessionEnded.ts"
   - "frontend/src/presentation/router/reauthentication.ts"
+  - "frontend/src/presentation/router/routeLocale.ts"
+  - "frontend/src/presentation/ui/SignInAgainLink.vue"
+  - "frontend/tests/presentation/router/signInLocations.spec.ts"
+  - "frontend/tests/presentation/ui/SignInAgainLink.spec.ts"
   - "frontend/src/presentation/router/backofficeSessionExpiry.ts"
   - "frontend/tests/infrastructure/http/**"
   - "frontend/tests/application/admin/shared/useAdminLoad.spec.ts"
@@ -145,15 +149,30 @@ does `BackofficeHttpClient`.
 - **The return of the session is announced**: a `role="status"` region **present from the banner's mount** (a region
   inserted with its text may not be announced) receives « Session rétablie, vous pouvez enregistrer. » when
   `hasSessionEnded` goes from true to false, is `visually-hidden` while empty and is emptied at the next route change.
-- **The sign-in-again link.** The banner carries a « Se reconnecter » link to `login?redirect=<current fullPath>&expired=1`
-  with `target="_blank" rel="noopener"` and the opening said in the link text (a visually hidden « (s'ouvre dans un nouvel
-  onglet) », WCAG 3.2.5) and by an `external-link` icon (`aria-hidden`) for sighted people: in the same tab the typed text
-  would be lost; the session cookie is shared across tabs and `redirect` brings the new tab back to the page.
-  `expired=1` (`presentation/router/sessionEnded.ts`, the single value `1`, an announcement that opens nothing) makes
-  `LoginPage` say why it opened.
+- **The sign-in-again link: one builder, one component** (#748, R6). It used to be computed in `AppHeader`,
+  `SessionEndedBanner` and `McpConnectionsPage`, the language read from the route in one and from i18n in the others.
+  - `routeLocale(route, fallback)` (`presentation/router/routeLocale.ts`): the route's `locale` param when it is a
+    supported locale, else the fallback (the i18n language; the 404 page has no `:locale`). `AppHeader`'s `homeLink` uses it too.
+  - `signInAgainLocation(route, fallback)` (`presentation/router/sessionEnded.ts`) is the **only** builder of the link:
+    `login` in the route's language, `redirect` = the route's `fullPath` (the page the person comes back to), `expired=1`
+    (the single value `1`, an announcement that opens nothing: it makes `LoginPage` say why it opened).
+    `switchAccountLocation(route, fallback)` (`presentation/router/reauthentication.ts`) is its twin with `reauth=1`
+    (« Changer de compte », the consent's re-authentication). `signInLocations.spec.ts` fails when another file names the
+    two query parameters.
+  - **`presentation/ui/SignInAgainLink.vue`** renders it: no prop, the default slot is the visible label, one root
+    `RouterLink` (the classes passed land on it: the header's button), `target="_blank" rel="noopener"`, the opening said
+    in the text (a visually hidden `common.opensInNewTab`, « (s'ouvre dans un nouvel onglet) », WCAG 3.2.5) and by an
+    `external-link` icon (`aria-hidden`) for sighted people. **A new tab** in the banner, the header, « Mes connexions MCP »
+    and the assistant: in the same tab the page would be left and what was typed lost; the session cookie is shared across
+    tabs, `redirect` brings the new tab back to the page, and the re-check on return restores the original one.
+  - **The consent page is the exception, on purpose**: its body links (« Se reconnecter », « Changer de compte ») are built by
+    the same two functions but stay in the **same tab** — a step of an OAuth flow ending in `location.replace` towards the
+    client; a second tab would leave the request open in the first. Its header's « Connexion » is the new-tab link like
+    everywhere (`.claude/rules/mcp-oauth.md`, « The consent page »).
+  - The assistant's link used to stay in the same tab and omit `expired=1`: it changed with R6 (the typed question is worth keeping).
 - **The header follows the banner on a protected page** (#748): while the session is ended *and* the route has
   `meta.requiresAuth` (backoffice, MCP, assistant — the pages that ended it), `AppHeader`'s « Connexion » is that same link
-  (new tab, `redirect` to the current `fullPath`, `expired=1`, hidden text and `external-link` icon), and « Accès
+  (`SignInAgainLink` with the button's classes: new tab, `redirect` to the current `fullPath`, `expired=1`, hidden text and `external-link` icon), and « Accès
   instantané » is **not offered**: it would replace the cookie and lead to the case studies, the page and its typed input
   with it. Rejected: hiding « Connexion » (a button that vanishes shifts the bar and removes a known path). On a public
   route nothing changes (`sessionEnded` survives there until a sign-in, and a new tab would make no sense);

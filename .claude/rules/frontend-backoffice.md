@@ -202,6 +202,18 @@ version" copies nothing and the assistant sends all five fields.
   wrongly redirect an actually-authenticated user to `/login` (regression-tested in
   `tests/presentation/router/adminGuard.spec.ts`). `hasRole(user, role)` (`domain/auth/services/hasRole.ts`) is a
   plain function (no Vue `inject()`) so it also works inside this router guard, outside component context.
+- **No `requiresAuth` route carries a secret in its query or its fragment** (#748, R6, S6). When a session ends on a
+  protected page, the sign-in-again link (`SignInAgainLink`, `.claude/rules/frontend-session.md`) opens a new tab whose URL
+  holds `redirect=<the page's fullPath>`: that path, query and fragment included, reaches the frontend's web server (nginx
+  logs the request line) and the browser history. A protected route whose query or fragment held a secret (an invitation
+  token, a code, a key) would send it there. The guard is `tests/presentation/router/protectedRoutesCarryNoSecret.spec.ts`:
+  `REVIEWED_PROTECTED_ROUTES` names every `requiresAuth` route (the router's, read-only, merged `meta` of the parent
+  included, so the `admin-*` children) with the reason its query and fragment carry no secret; a route added without that
+  review turns the suite red, and the message says why. `oauth-consent` is the one whose query matters (`client_id`,
+  `redirect_uri`, `state`, `code_challenge`): none is a secret (the PKCE challenge is a digest, `state` the client's own
+  anti-CSRF value) and the navigation that opened the page already sent them to the web server. `set-password`, whose
+  fragment holds the invitation token, is **not** protected (see above), and the same spec pins that: giving it
+  `requiresAuth` would put its token in a logged URL.
 - **A 401, or a 403 to a write sent without a CSRF token, mid-page ends the session on the interface, and moves
   nobody** (#650, R1c, #748). `BackofficeHttpClient` (`get` and `mutate`) sends through
   `infrastructure/http/sessionAwareFetch.ts`, calls the reaction registered by `main.ts`

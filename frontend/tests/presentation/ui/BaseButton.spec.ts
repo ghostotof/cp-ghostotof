@@ -7,7 +7,7 @@ import { createAppI18n } from '../../../src/presentation/i18n'
 type BaseButtonProps = InstanceType<typeof BaseButton>['$props']
 
 /**
- * BaseButton consomme useI18n() pour la mention « nouvelle fenêtre », et rend
+ * BaseButton consomme useI18n() pour la mention « s'ouvre dans un nouvel onglet », et rend
  * un RouterLink pour les cibles internes : chaque montage a donc besoin d'une
  * instance i18n et d'un routeur. On en construit de nouveaux à chaque test
  * plutôt que de réutiliser les singletons de l'application, pour que les tests
@@ -119,7 +119,7 @@ describe('BaseButton', () => {
       const wrapper = mountButton({ href: 'https://example.com', isExternal: true })
 
       const hint = wrapper.get('.visually-hidden')
-      expect(hint.text()).toBe('(nouvelle fenêtre)')
+      expect(hint.text()).toBe("(s'ouvre dans un nouvel onglet)")
     })
   })
 })

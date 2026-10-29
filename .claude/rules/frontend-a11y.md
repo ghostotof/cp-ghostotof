@@ -78,9 +78,10 @@ fixed:
   `SessionEndedBanner` is a `role="alert"` **inserted by `v-if`** at the moment a 401 ends the session, so it is
   announced and interrupts, which is what follows a failed « Enregistrer ». **It never takes the focus** (no
   `focus()`): the person may be in the middle of a sentence, and the link sits in the reading order, reachable by
-  keyboard. Its link opens a new tab, said in the link text (a visually hidden « (s'ouvre dans un nouvel onglet) »,
-  WCAG 3.2.5) and shown by an `external-link` icon, `aria-hidden` (#748: the text is hidden, sighted people had
-  nothing). **A region that announces a return exists before its message** (#748): the banner's own
+  keyboard. Its link is `presentation/ui/SignInAgainLink.vue` (#748, R6): it opens a new tab, said in the link text (a
+  visually hidden `common.opensInNewTab`, « (s'ouvre dans un nouvel onglet) », WCAG 3.2.5) and shown by an
+  `external-link` icon, `aria-hidden` (#748: the text is hidden, sighted people had nothing); the same component serves
+  the header, « Mes connexions MCP » and the assistant, and `.claude/rules/frontend-session.md` gives the rest. **A region that announces a return exists before its message** (#748): the banner's own
   `role="status"` is in the DOM from the mount, empty and `visually-hidden`, and only its content changes when the
   session comes back (« Session rétablie »), because a live region inserted already full may not be announced. The
   banner is sticky under the header, `scroll-padding-top` keeping the focus out from under both (WCAG 2.4.11,

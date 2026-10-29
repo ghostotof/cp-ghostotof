@@ -6,20 +6,20 @@ import type { SiteIdentity } from '../../domain/portfolio/entities/SiteIdentity'
 import type { NavigationLink } from '../../domain/portfolio/entities/NavigationLink'
 import type { NavigationGroup } from '../../domain/portfolio/entities/NavigationGroup'
 import { isNavigationGroup, type NavigationEntry } from '../../domain/portfolio/entities/NavigationEntry'
-import { isSupportedLocale, type Locale } from '../../domain/portfolio/entities/Locale'
+import type { Locale } from '../../domain/portfolio/entities/Locale'
 import { useAuth } from '../../application/auth/useAuth'
 import { useBaseAccess } from '../../application/baseAccess/useBaseAccess'
 import { useCvDownload } from '../../application/cv/useCvDownload'
 import LocaleSwitcher from '../ui/LocaleSwitcher.vue'
 import AccountMenu from './AccountMenu.vue'
 import { usePublishedHeight } from './usePublishedHeight'
-import { SESSION_ENDED_QUERY, SESSION_ENDED_VALUE } from '../router/sessionEnded'
+import { routeLocale } from '../router/routeLocale'
+import SignInAgainLink from '../ui/SignInAgainLink.vue'
 import IconCircleUser from '~icons/lucide/circle-user'
 import IconZap from '~icons/lucide/zap'
 import IconMenu from '~icons/lucide/menu'
 import IconX from '~icons/lucide/x'
 import IconChevronDown from '~icons/lucide/chevron-down'
-import IconExternalLink from '~icons/lucide/external-link'
 
 defineProps<{
   siteIdentity: SiteIdentity
@@ -171,12 +171,6 @@ async function handleInstantAccess(): Promise<void> {
  */
 const sessionEndedHere = computed(() => hasSessionEnded.value && true === route.meta.requiresAuth)
 
-const signInAgainLocation = computed(() => ({
-  name: 'login',
-  params: { locale: homeLink.value.slice(1) },
-  query: { redirect: route.fullPath, [SESSION_ENDED_QUERY]: SESSION_ENDED_VALUE },
-}))
-
 const baseAccessErrorMessage = computed(() => {
   if (null === baseAccessErrorReason.value) {
     return null
@@ -191,11 +185,7 @@ const baseAccessErrorMessage = computed(() => {
  * i18n courante quand la route active n'en a pas (ex. page 404, route catch-all
  * `/:pathMatch(.*)*` sans segment `:locale`).
  */
-const homeLink = computed(() => {
-  const routeLocale = route.params.locale
-  const currentLocale = typeof routeLocale === 'string' && isSupportedLocale(routeLocale) ? routeLocale : (locale.value as Locale)
-  return `/${currentLocale}`
-})
+const homeLink = computed(() => `/${routeLocale(route, locale.value as Locale)}`)
 
 /**
  * Un seul lien doit apparaître actif à la fois. Priorité à la correspondance
@@ -240,9 +230,10 @@ function navLinkClass(link: NavigationLink) {
         >
           &lt;/&gt;
         </span>
-        <!-- À 320 px la rangée demandait 331 px (389 au palier de confiance) pour 301 utiles (mesures de #748) : la
-             marque se tronque avec une ellipse, jamais les actions. Le nom accessible du lien reste le libellé
-             entier (la troncature est visuelle). -->
+        <!-- À 320 px, le groupe de droite demandait 331 px au palier de confiance et 389 px en anonyme et en EN, pour
+             301 px utiles (mesures de #748) : la marque se tronque la première, avec une ellipse, jamais les
+             actions ; si le groupe seul dépasse encore, voir la tâche 11 du plan de #748. Le nom accessible du lien
+             reste le libellé entier (la troncature est visuelle). -->
         <span class="text-truncate">{{ siteIdentity.brandName }}</span>
       </RouterLink>
 
@@ -374,21 +365,12 @@ function navLinkClass(link: NavigationLink) {
               </button>
             </template>
             <!-- Session finie sur une page protégée : le lien du bandeau, dans un nouvel onglet (#748). -->
-            <RouterLink
+            <SignInAgainLink
               v-if="sessionEndedHere"
-              :to="signInAgainLocation"
-              target="_blank"
-              rel="noopener"
               class="btn btn-outline-light btn-sm d-inline-flex align-items-center gap-2"
             >
               {{ t('common.login') }}
-              <span class="visually-hidden">{{ t('admin.sessionEnded.newTab') }}</span>
-              <IconExternalLink
-                width="14"
-                height="14"
-                aria-hidden="true"
-              />
-            </RouterLink>
+            </SignInAgainLink>
             <RouterLink
               v-else
               :to="`${homeLink}/login`"

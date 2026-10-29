@@ -777,7 +777,7 @@ describe('McpConnectionsPage', () => {
       const alert = wrapper.get('[role="alert"]')
       expect(alert.text()).toContain('Votre session a pris fin')
       const link = alert.get('a')
-      expect(link.text()).toBe('Se reconnecter')
+      expect(link.text()).toContain('Se reconnecter')
       const href = link.attributes('href') ?? ''
       expect(href.startsWith('/fr/login?')).toBe(true)
       const query = new URLSearchParams(href.split('?')[1])
@@ -789,13 +789,26 @@ describe('McpConnectionsPage', () => {
       expect(wrapper.text()).not.toContain("n'ont pas pu être chargées")
     })
 
+    it("session finie : le lien de reconnexion s'ouvre dans un nouvel onglet et ramène ici", async () => {
+      const list = vi.fn().mockRejectedValue(new SessionEndedError())
+      const { wrapper } = await mountPage({ list })
+
+      // Dans le même onglet, la personne quitterait la page : un nouvel onglet, dit au texte (WCAG 3.2.5) et à l'œil (#748, R6).
+      const link = wrapper.get('[role="alert"] a')
+      expect(link.attributes('target')).toBe('_blank')
+      expect(link.attributes('rel')).toBe('noopener')
+      expect(link.text()).toBe("Se reconnecter (s'ouvre dans un nouvel onglet)")
+      expect(link.find('svg[aria-hidden="true"]').exists()).toBe(true)
+      expect(new URLSearchParams((link.attributes('href') ?? '').split('?')[1]).get('redirect')).toBe('/fr/mcp-connections')
+    })
+
     it('en anglais, le lien garde la langue de la page', async () => {
       const list = vi.fn().mockRejectedValue(new SessionEndedError())
       const { wrapper } = await mountPage({ locale: 'en', list })
 
       const alert = wrapper.get('[role="alert"]')
       expect(alert.text()).toContain('Your session has ended')
-      expect(alert.get('a').text()).toBe('Sign in again')
+      expect(alert.get('a').text()).toBe('Sign in again (opens in a new tab)')
       expect(alert.get('a').attributes('href')).toMatch(/^\/en\/login\?/)
     })
 

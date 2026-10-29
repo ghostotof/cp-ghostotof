@@ -464,6 +464,11 @@ describe('OAuthConsentPage — session', () => {
     const redirect = router.resolve(String(target.query.redirect))
     expect(redirect.name).toBe('oauth-consent')
     expect(redirect.query).toEqual(router.currentRoute.value.query)
+    // La page de connexion dit pourquoi elle s'ouvre (#748, R6) ; le même onglet, exprès : le consentement est une
+    // étape d'un flux OAuth qui finit par `location.replace` vers le client, un second onglet laisserait la demande
+    // ouverte dans le premier.
+    expect(target.query.expired).toBe('1')
+    expect(alert.find('a').attributes('target')).toBeUndefined()
     expect(button(wrapper, 'approve').exists()).toBe(false)
   })
 

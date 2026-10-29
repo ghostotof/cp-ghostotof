@@ -6,6 +6,7 @@ import { useCvDownload } from '../../application/cv/useCvDownload'
 import { MAX_QUESTION_LENGTH } from '../../domain/assistant/services/conversationWindow'
 import type { Locale } from '../../domain/portfolio/entities/Locale'
 import BaseTextarea from '../ui/BaseTextarea.vue'
+import SignInAgainLink from '../ui/SignInAgainLink.vue'
 import RichText from '../ui/RichText.vue'
 import { retryAfterMinutes } from '../ui/retryAfterMinutes'
 
@@ -155,12 +156,10 @@ function handleKeydown(event: KeyboardEvent): void {
       class="text-danger-emphasis mb-0"
     >
       {{ errorMessage }}
-      <RouterLink
-        v-if="needsLogin"
-        :to="{ name: 'login', params: { locale: currentLocale }, query: { redirect: `/${currentLocale}/assistant` } }"
-      >
+      <!-- Un nouvel onglet : dans le même, la question tapée serait perdue (#748, R6). -->
+      <SignInAgainLink v-if="needsLogin">
         {{ t('assistant.errors.relogin') }}
-      </RouterLink>
+      </SignInAgainLink>
     </p>
 
     <form

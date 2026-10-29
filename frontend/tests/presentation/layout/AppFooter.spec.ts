@@ -107,7 +107,7 @@ describe('AppFooter', () => {
       expect(link.attributes('title')).toContain('2c86b65')
       // Lien externe : même annonce que BaseButton pour les lecteurs d'écran.
       expect(link.attributes('target')).toBe('_blank')
-      expect(link.find('.visually-hidden').text()).toBe('(nouvelle fenêtre)')
+      expect(link.find('.visually-hidden').text()).toBe("(s'ouvre dans un nouvel onglet)")
     })
 
     it("affiche un build local (tag = SHA) en texte, sans lien : il n'a pas de release", async () => {

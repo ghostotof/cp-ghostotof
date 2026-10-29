@@ -351,7 +351,12 @@ paths:
   ephemeral one) is the host shown — defence in depth, the server already validated it. **A 401, or a 403 to
   the `POST` sent without a CSRF token, is an ended session** (`SessionEndedError`, judged by `sessionAwareFetch`;
   the rule and its facts are in `.claude/rules/frontend-session.md`): `markSessionExpired()`, failure `session-ended`,
-  a « Sign in again » link. **Any other 403** — the `GET` (never subject to the CSRF guard: it is `access_control` refusing an account
+  a « Sign in again » link (`login?redirect=<fullPath>&expired=1`, `signInAgainLocation`). **The links in the page body stay in
+  the same tab, on purpose** (#748, R6) — this one and « Changer de compte » (`switchAccountLocation`, no `target`) —
+  while the header's « Connexion » opens a new tab (`SignInAgainLink`, as on every `requiresAuth` page): the page is a
+  step of an OAuth flow that ends in `window.location.replace` towards the client, so a second tab would leave the
+  request open in the first and the person could decide it twice; the header's link serves the other pages, and
+  `.claude/rules/frontend-session.md` says why it is a new tab there. **Any other 403** — the `GET` (never subject to the CSRF guard: it is `access_control` refusing an account
   without `ROLE_TRUSTED`, one that lost it while the page was open) or a `POST` that carried its token — is
   `AccessForbiddenError`, the **terminal** failure `forbidden` (#748, #732 point 4): the request is no longer shown, the
   session is **not** marked expired (it holds for the rest of the site), and the page says this account cannot authorise

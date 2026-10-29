@@ -1,12 +1,11 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, useTemplateRef } from 'vue'
-import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useMcpConnections, type McpRevocationOutcome } from '../../application/mcp/useMcpConnections'
 import type { McpConnectionSummary } from '../../domain/mcp/entities/McpConnection'
 import type { Locale } from '../../domain/portfolio/entities/Locale'
 import { formatInstant } from '../format/instant'
-import { SESSION_ENDED_QUERY, SESSION_ENDED_VALUE } from '../router/sessionEnded'
+import SignInAgainLink from '../ui/SignInAgainLink.vue'
 import { useFocusThenAnnounce } from '../ui/useFocusThenAnnounce'
 
 /**
@@ -48,22 +47,12 @@ import { useFocusThenAnnounce } from '../ui/useFocusThenAnnounce'
 
 const { t, locale: i18nLocale } = useI18n()
 const { status, connections, terminatedTruncated, revokingId, lastOutcome, sessionExpired, load, revoke } = useMcpConnections()
-const route = useRoute()
 
 const currentLocale = computed(() => i18nLocale.value as Locale)
 
-/**
- * Le lien de reconnexion quand le serveur a refusé la session : la connexion,
- * avec un retour à cette page (`redirect`, jugé par LoginPage : chemin interne
- * seulement) et l'annonce qu'elle s'ouvre parce que la session a pris fin.
- * Un lien plutôt qu'une redirection automatique : la personne lit d'abord
- * pourquoi, et rien ne la déplace pendant qu'elle lit.
- */
-const signInAgainLocation = computed(() => ({
-  name: 'login',
-  params: { locale: currentLocale.value },
-  query: { redirect: route.fullPath, [SESSION_ENDED_QUERY]: SESSION_ENDED_VALUE },
-}))
+// Le lien de reconnexion quand le serveur a refusé la session est `SignInAgainLink` : un nouvel onglet qui
+// ramène à cette page. Un lien plutôt qu'une redirection automatique : la personne lit d'abord pourquoi, et
+// rien ne la déplace pendant qu'elle lit.
 
 /**
  * Correspondances explicites plutôt qu'une clé construite à la volée : une
@@ -239,9 +228,7 @@ onMounted(() => {
       class="text-danger-emphasis mb-0 d-flex flex-wrap align-items-center gap-3"
     >
       {{ t('mcpConnections.errors.sessionEnded') }}
-      <RouterLink :to="signInAgainLocation">
-        {{ t('mcpConnections.errors.signInAgain') }}
-      </RouterLink>
+      <SignInAgainLink>{{ t('mcpConnections.errors.signInAgain') }}</SignInAgainLink>
     </p>
 
     <p
