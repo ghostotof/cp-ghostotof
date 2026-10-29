@@ -39,7 +39,20 @@ trait FreezesTheWholeClock
     protected const string FROZEN_INSTANT = '2026-10-10 12:00:00.999';
 
     /**
-     * Fige `ClockInterface` et `ClockMock` sur le même instant.
+     * UTC, pile sur une seconde : l'autre branche de l'arrondi du limiteur. Une
+     * fenêtre de 15 minutes ouverte à cet instant se lit 900 s, sans excès ni
+     * plafond ; à {@see self::FROZEN_INSTANT} elle se lit 901 s.
+     */
+    protected const string FROZEN_INSTANT_ON_THE_SECOND = '2026-10-10 12:00:00.000';
+
+    /**
+     * Fige `ClockInterface` et `ClockMock` sur le même instant, par défaut le
+     * pire cas {@see self::FROZEN_INSTANT}. Un test dont le résultat dépend de
+     * la fraction de seconde l'exécute sur les deux.
+     *
+     * Vider le pool `cache.rate_limiter` **avant** de figer : un état écrit à
+     * l'heure réelle puis relu sous l'heure figée (2026-10-10, dans le passé)
+     * ne s'éteint jamais, le temps écoulé y est négatif.
      */
     protected static function freezeTheWholeClock(string $instant = self::FROZEN_INSTANT): DateTimeImmutable
     {

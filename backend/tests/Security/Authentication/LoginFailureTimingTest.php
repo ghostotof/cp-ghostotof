@@ -14,6 +14,7 @@ use App\Tests\Support\FreezesTheWholeClock;
 use App\Tests\Support\HttpJson;
 use App\Tests\Support\TestCredentials;
 use Doctrine\ORM\EntityManagerInterface;
+use PHPUnit\Framework\Attributes\DataProvider;
 use ReflectionProperty;
 use SensitiveParameter;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
@@ -152,18 +153,31 @@ final class LoginFailureTimingTest extends WebTestCase
      * chargement du compte et le `detail` est littéral ; ce test fige ce qui
      * n'était garanti que par là.
      *
-     * L'horloge est figée tout entière (issue #743) : l'échéance de l'écouteur et
-     * le `Retry-After` de RetryAfterListener lisent `ClockInterface`, les minutes
+     * L'horloge est figée tout entière (issue #743), car trois lectures du temps
+     * se croisent : l'échéance de LoginThrottlingRefusalListener et le
+     * `Retry-After` de RetryAfterListener lisent `ClockInterface`, les minutes
      * viennent de `time()` (LoginThrottlingListener) et l'échéance du limiteur de
-     * `microtime()`. Une seule des deux figée, la seconde franchie entre elles
-     * faisait diverger le délai sans rien révéler : 15 minutes pour un compte,
-     * 16 pour un autre. Sur un même instant, c'est 15 pour chaque compte, à
-     * `.999` aussi. 3 × 6 échecs restent sous le plafond de 25 par IP.
+     * `microtime()`. Les deux dernières lisent l'heure réelle : sans figer
+     * toutes les horloges, la seconde franchie entre elles faisait diverger le
+     * délai sans rien révéler (15 minutes pour un compte, 16 pour un autre).
+     * Sur un même instant, c'est 15 pour chaque compte. Le fournisseur prend
+     * les deux branches de l'arrondi : `.999` (Symfony lit 901 s, 16 minutes,
+     * plafonnées à 15) et pile sur la seconde (900 s, 15 sans plafond).
+     * 3 × 6 échecs restent sous le plafond de 25 par IP.
+     *
+     * @return iterable<string, array{0: string}>
      */
-    public function testTheThreeThrottledCasesAnswerTheExactSameRefusal(): void
+    public static function provideTheTwoFrozenInstants(): iterable
+    {
+        yield 'fenêtre ouverte à .999, branche plafonnée (16 -> 15)' => [self::FROZEN_INSTANT];
+        yield 'fenêtre ouverte pile sur la seconde, sans plafond (15)' => [self::FROZEN_INSTANT_ON_THE_SECOND];
+    }
+
+    #[DataProvider('provideTheTwoFrozenInstants')]
+    public function testTheThreeThrottledCasesAnswerTheExactSameRefusal(string $frozenInstant): void
     {
         $client = $this->client();
-        self::freezeTheWholeClock();
+        self::freezeTheWholeClock($frozenInstant);
         $suffix = bin2hex(random_bytes(6));
 
         $active = 'active-'.$suffix;

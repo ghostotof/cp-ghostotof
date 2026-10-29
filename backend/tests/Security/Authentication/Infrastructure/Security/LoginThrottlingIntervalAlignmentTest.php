@@ -22,8 +22,9 @@ use Symfony\Component\RateLimiter\RateLimiterFactory;
  * sans l'autre le met au rouge.
  *
  * Un plafond trop bas raccourcirait le `Retry-After` annoncé en dessous du
- * vrai blocage (le client réessaie trop tôt) ; un plafond trop haut
- * rouvrirait l'excès de #743.
+ * vrai blocage (le client réessaie trop tôt), un plafond trop haut rouvrirait
+ * l'excès de #743 (le calcul 901 s, 16 minutes, 960 est dans le docblock de
+ * LoginThrottlingRefusalListener).
  *
  * Le firewall `login` déclare deux limiteurs (`_login_global_login` par IP,
  * `_login_local_login` par couple IP et identifiant), tous deux sur le même

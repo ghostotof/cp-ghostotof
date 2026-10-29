@@ -46,10 +46,13 @@ final class WholeClockFreezeTest extends TestCase
 {
     use FreezesTheWholeClock;
 
-    /** Le quota horaire de l'assistant (rate_limiter.yaml, `career_assistant`). */
+    /** Le quota de la fabrique construite ici, qui n'est pas celle de rate_limiter.yaml : seul son principe compte. */
     private const int QUOTA = 30;
 
     private const int HOUR_IN_SECONDS = 3600;
+
+    /** Le délai que porte le refus de login simulé : la fenêtre de `login_throttling`. */
+    private const int LOGIN_WINDOW_MINUTES = 15;
 
     public function testBothClocksReadTheSameInstant(): void
     {
@@ -103,7 +106,7 @@ final class WholeClockFreezeTest extends TestCase
     public function testTheMinutesOfALoginRefusalAreCountedOnTheFrozenClock(): void
     {
         $at = self::freezeTheWholeClock();
-        $deadline = $at->setTimestamp($at->getTimestamp() + 15 * 60);
+        $deadline = $at->setTimestamp($at->getTimestamp() + self::LOGIN_WINDOW_MINUTES * 60);
 
         $listener = new LoginThrottlingListener(
             $this->requestStackWithARequest(),
@@ -130,7 +133,7 @@ final class WholeClockFreezeTest extends TestCase
             ));
             self::fail('Le refus de débit n\'a pas été levé.');
         } catch (TooManyLoginAttemptsAuthenticationException $refusal) {
-            self::assertSame(15, $refusal->getMessageData()['%minutes%']);
+            self::assertSame(self::LOGIN_WINDOW_MINUTES, $refusal->getMessageData()['%minutes%']);
         }
     }
 
@@ -157,7 +160,7 @@ final class WholeClockFreezeTest extends TestCase
             'App\Shared\Infrastructure\Http',
             'App\Tests\Security\Authentication',
         ] as $untouched) {
-            foreach (['microtime', 'time', 'usleep', 'sleep', 'hrtime'] as $function) {
+            foreach (['microtime', 'time', 'usleep', 'sleep', 'hrtime', 'date', 'gmdate'] as $function) {
                 self::assertFalse(\function_exists($untouched.'\\'.$function), \sprintf('%s\%s est mocké : une durée réellement mesurée ou attendue y serait faussée.', $untouched, $function));
             }
         }

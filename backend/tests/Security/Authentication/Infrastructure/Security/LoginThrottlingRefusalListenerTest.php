@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Security\Authentication\Infrastructure\Security;
 
 use App\Security\Authentication\Domain\Exception\LoginRateLimitExceededException;
+use App\Security\Authentication\Infrastructure\Security\InvalidLoginThrottlingWindowException;
 use App\Security\Authentication\Infrastructure\Security\LoginThrottlingRefusalListener;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -45,11 +46,9 @@ final class LoginThrottlingRefusalListenerTest extends TestCase
     }
 
     /**
-     * Issue #743 : depuis symfony/rate-limiter 8.1.10 l'échéance est arrondie à
-     * la seconde supérieure. Quand la fenêtre s'ouvre dans la même seconde que
-     * la tentative refusée, `LoginThrottlingListener` (qui tronque `time()`)
-     * lit 901 s, donc 16 minutes. Une `fixed_window` consultée sans `reserve()`
-     * ne bloque jamais plus longtemps que son intervalle : l'écouteur plafonne.
+     * Issue #743 : l'échéance est plafonnée à la fenêtre du limiteur, dont
+     * Symfony lit parfois 901 s, donc 16 minutes (le calcul est dans le
+     * docblock de LoginThrottlingRefusalListener).
      *
      * @return iterable<string, array{0: int, 1: string}>
      */
@@ -70,6 +69,39 @@ final class LoginThrottlingRefusalListenerTest extends TestCase
             self::fail('Le refus de login_throttling aurait dû lever LoginRateLimitExceededException.');
         } catch (LoginRateLimitExceededException $exception) {
             self::assertSame($expectedDeadline, $exception->retryAfter->format('Y-m-d H:i:s'));
+        }
+    }
+
+    /**
+     * Un plafond nul ou négatif annoncerait un `Retry-After` absurde à chaque
+     * refus : le paramètre mal posé échoue à la construction, nommé, plutôt que
+     * sous les coups d'un attaquant.
+     *
+     * @return iterable<string, array{0: int}>
+     */
+    public static function provideWindowsThatAreNotADuration(): iterable
+    {
+        yield 'zéro' => [0];
+        yield 'moins une minute' => [-1];
+        yield 'très négative' => [-15];
+    }
+
+    #[DataProvider('provideWindowsThatAreNotADuration')]
+    public function testAWindowShorterThanOneMinuteIsRefusedAtConstruction(int $windowMinutes): void
+    {
+        $this->expectException(InvalidLoginThrottlingWindowException::class);
+        $this->expectExceptionMessage(\sprintf('%d reçue', $windowMinutes));
+
+        new LoginThrottlingRefusalListener(new MockClock(self::NOW), $windowMinutes);
+    }
+
+    public function testAOneMinuteWindowIsTheSmallestAccepted(): void
+    {
+        try {
+            $this->listener(1)($this->failure(new TooManyLoginAttemptsAuthenticationException(5)));
+            self::fail('Le refus de login_throttling aurait dû lever LoginRateLimitExceededException.');
+        } catch (LoginRateLimitExceededException $exception) {
+            self::assertSame('2026-10-10 12:01:00', $exception->retryAfter->format('Y-m-d H:i:s'));
         }
     }
 
@@ -133,9 +165,9 @@ final class LoginThrottlingRefusalListenerTest extends TestCase
         $this->listener()($this->failure(new TooManyLoginAttemptsAuthenticationException(15), 'api'));
     }
 
-    private function listener(): LoginThrottlingRefusalListener
+    private function listener(int $windowMinutes = self::WINDOW_MINUTES): LoginThrottlingRefusalListener
     {
-        return new LoginThrottlingRefusalListener(new MockClock(self::NOW), self::WINDOW_MINUTES);
+        return new LoginThrottlingRefusalListener(new MockClock(self::NOW), $windowMinutes);
     }
 
     private function failure(AuthenticationException $exception, string $firewall = 'login'): LoginFailureEvent

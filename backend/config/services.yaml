@@ -30,11 +30,10 @@ parameters:
     # La valeur courante vient de LOG_LEVEL (backend/.env, `debug` dans l'image
     # préprod) ; ce paramètre ne sert que si la variable disparaît.
     app.log_level: 'warning'
-    # Fenetre du limiteur `login_throttling` (security.yaml, `interval: '15 minutes'`),
-    # plafond du Retry-After du refus (LoginThrottlingRefusalListener, issue #743).
-    # security.yaml ne peut pas lire ce parametre (SecurityConfigEnvironmentParityTest
-    # refuse toute reference dans la section `security`) : c'est une copie, et
-    # LoginThrottlingIntervalAlignmentTest la tient alignee. Litteral, comme le reste.
+    # Fenêtre de `login_throttling` en minutes, plafond du Retry-After d'un refus de
+    # connexion (issue #743). Copie littérale de l'`interval` de security.yaml, qui ne
+    # peut pas lire un paramètre : LoginThrottlingIntervalAlignmentTest les tient alignées.
+    # Le pourquoi : docblock de LoginThrottlingRefusalListener.
     app.login_throttling_interval_minutes: 15
 
 services:
