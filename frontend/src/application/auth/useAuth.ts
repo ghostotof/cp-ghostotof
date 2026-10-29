@@ -98,6 +98,21 @@ const MAX_TIMEOUT_MS = 2_147_483_647
 let baseAccessExpiryTimer: ReturnType<typeof setTimeout> | null = null
 
 /**
+ * L'échéance de la minuterie armée (`null` : aucune). Gardée en plus de la minuterie parce qu'un onglet en arrière-plan
+ * ou une machine en veille retarde `setTimeout` : au retour (`focus`, `visibilitychange`), c'est l'horloge, pas la
+ * minuterie, qui dit si l'échéance est passée (#748, R21b).
+ */
+let baseAccessExpiresAt: Date | null = null
+
+/**
+ * Le dépôt d'authentification, retenu au dernier `useAuth()` : la minuterie de l'accès de base vit au niveau du
+ * module, hors de tout composant, où `inject()` n'est pas utilisable, et elle doit pourtant appeler `logout()` à
+ * l'échéance (#748, R21b). `main.ts` appelle `useAuth()` au démarrage, donc avant la première obtention. Sans dépôt
+ * connu (un test qui n'en fournit pas), l'échéance retombe à anonyme sans appel réseau, comme avant.
+ */
+let knownRepository: AuthRepository | null = null
+
+/**
  * Pose le palier et le compte. **Ne touche jamais à `sessionEnded`** : la fin est l'affaire de
  * `markSessionExpired`, le retour de `restoreSession`, qui seuls jugent la génération et le jeton d'écriture.
  */
@@ -153,6 +168,11 @@ function clearBaseAccessExpiry(): void {
     clearTimeout(baseAccessExpiryTimer)
     baseAccessExpiryTimer = null
   }
+  if (null !== baseAccessExpiresAt) {
+    baseAccessExpiresAt = null
+    window.removeEventListener('focus', expireBaseAccessIfDue)
+    document.removeEventListener('visibilitychange', expireBaseAccessIfDue)
+  }
   try {
     localStorage.removeItem(BASE_ACCESS_EXPIRY_STORAGE_KEY)
   } catch {
@@ -168,10 +188,36 @@ function scheduleBaseAccessExpiry(expiresAt: Date): void {
     // Idem : le badge survivra moins bien à un rechargement, rien de plus.
   }
   const delay = Math.min(Math.max(expiresAt.getTime() - Date.now(), 0), MAX_TIMEOUT_MS)
-  baseAccessExpiryTimer = setTimeout(() => {
-    baseAccessExpiryTimer = null
-    markBaseAccessExpired()
-  }, delay)
+  baseAccessExpiresAt = expiresAt
+  // La minuterie est l'unique échéance ; le retour sur l'onglet n'est qu'un second déclencheur de la même sortie.
+  baseAccessExpiryTimer = setTimeout(endBaseAccessAtExpiry, delay)
+  window.addEventListener('focus', expireBaseAccessIfDue)
+  document.addEventListener('visibilitychange', expireBaseAccessIfDue)
+}
+
+/** Le retour sur l'onglet (ou sa réapparition) : l'échéance est-elle passée pendant que la minuterie dormait ? */
+function expireBaseAccessIfDue(): void {
+  if (null !== baseAccessExpiresAt && baseAccessExpiresAt.getTime() <= Date.now()) {
+    endBaseAccessAtExpiry()
+  }
+}
+
+/**
+ * L'accès de base est arrivé à son échéance (#748, R21b, décision de l'auteur du 2026-10-29) : le frontend la connaît
+ * (`expiresAt`), pas le login, et en sortant **avant** que le jeton ne soit refusé il évite le 401 qui effacerait les
+ * cookies au milieu d'une page publique (R21). L'état repasse à anonyme d'abord (rien n'attend le réseau, et un échec
+ * du logout le laisse tel), puis `POST /api/logout` expire les deux cookies — avec son jeton CSRF, par le dépôt.
+ * Ce n'est **pas** une session finie à annoncer : ni `markSessionExpired`, ni bandeau, ni génération. Le `.catch` est
+ * la limite acceptée : un logout qui n'arrive pas laisse les cookies, que le 401 suivant effacera. Sans effet si le
+ * palier n'est plus celui de l'accès de base sans compte (un compte n'est jamais déconnecté par ce chemin).
+ */
+function endBaseAccessAtExpiry(): void {
+  const isBaseAccess = 'base' === state.tier && null === state.user
+  markBaseAccessExpired()
+  clearBaseAccessExpiry()
+  if (isBaseAccess) {
+    void knownRepository?.logout().catch(() => undefined)
+  }
 }
 
 function recallBaseAccessExpiry(): Date | null {
@@ -394,6 +440,7 @@ export function useAuth(): UseAuthResult {
       "AuthRepository n'a pas été fourni. Vérifiez que app.provide(AUTH_REPOSITORY, ...) est bien appelé dans main.ts.",
     )
   }
+  knownRepository = repository
 
   const login = async (username: string, password: string): Promise<void> => {
     const session = sessionForUser(await repository.login(username, password))

@@ -97,6 +97,16 @@ does `BackofficeHttpClient`.
   signing in again would repair it.
 - A browser that drops the cookies of an earlier session reads a finished session: signing in again is indeed the
   remedy.
+- **A login's first request after its `exp` takes the 401** (#748, R21b, the author's decision of 2026-10-29): the
+  login's expiry is not exposed to the frontend (the `/api/login_check` body carries none), so nothing can sign out
+  before it, and the session reads as ended (banner, sign-in again). **The base access does not take it**: its
+  `expiresAt` is known, and the existing timer of `useAuth` (`scheduleBaseAccessExpiry`) goes anonymous and sends
+  `POST /api/logout` (a write: `HttpAuthRepository.logout()` goes through `sessionAwareFetch`, CSRF token included) at
+  the deadline, or on `focus`/`visibilitychange` when the clock says it has passed (a hidden tab's timer sleeps). It is
+  **not an ended session**: no `markSessionExpired()`, no banner, no generation. A failed logout leaves the state
+  anonymous (the cookies stay; the next 401 clears them); a login or a new grant in between cancels the timer. The
+  repository is the last one `useAuth()` saw (`main.ts` calls it at start-up), the timer living outside any component;
+  none known, no request. Pinned by `useAuth.spec.ts` and `HttpAuthRepository.spec.ts`.
 
 ## The two shared errors
 

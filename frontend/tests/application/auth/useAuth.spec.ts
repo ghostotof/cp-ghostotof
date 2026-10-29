@@ -943,6 +943,144 @@ describe('useAuth', () => {
       expect(localStorage.getItem('baseAccessExpiresAt')).toBeNull()
     })
 
+    describe("déconnexion à l'échéance, avant le 401 (R21b)", () => {
+      /** Un accès de base obtenu pour 15 minutes, observé par un dépôt dont on compte les `logout`. */
+      async function grantBaseAccess(repository: AuthRepository) {
+        const auth = mountWithComposable(repository)
+        await auth.checkAuth()
+        markBaseAccessGranted(new Date(Date.now() + FIFTEEN_MINUTES))
+
+        return auth
+      }
+
+      it("à l'échéance et pas avant, POST /api/logout part une fois et l'état est anonyme, sans fin de session annoncée", async () => {
+        const repository = createStubRepository()
+        const auth = await grantBaseAccess(repository)
+        const endedBefore = authState.sessionEndedCount
+        const stampBefore = sessionStamp()
+
+        vi.advanceTimersByTime(FIFTEEN_MINUTES - 1)
+        expect(repository.logout).not.toHaveBeenCalled()
+        expect(auth.tier.value).toBe('base')
+
+        vi.advanceTimersByTime(1)
+        expect(repository.logout).toHaveBeenCalledTimes(1)
+        expect(auth.tier.value).toBe('anonymous')
+        // Ce n'est pas une session finie à annoncer : ni bandeau, ni génération.
+        expect(auth.hasSessionEnded.value).toBe(false)
+        expect(authState.sessionEndedCount).toBe(endedBefore)
+        expect(sessionStamp()).toBe(stampBefore)
+
+        vi.advanceTimersByTime(FIFTEEN_MINUTES)
+        expect(repository.logout).toHaveBeenCalledTimes(1)
+      })
+
+      it("un onglet revenu après l'échéance (minuterie gelée) se déconnecte au retour, une seule fois", async () => {
+        const repository = createStubRepository()
+        const auth = await grantBaseAccess(repository)
+
+        // L'onglet était en arrière-plan : l'horloge a avancé, la minuterie n'a pas tiré.
+        vi.setSystemTime(Date.now() + FIFTEEN_MINUTES + 1)
+        expect(auth.tier.value).toBe('base')
+        expect(repository.logout).not.toHaveBeenCalled()
+
+        window.dispatchEvent(new Event('focus'))
+        expect(repository.logout).toHaveBeenCalledTimes(1)
+        expect(auth.tier.value).toBe('anonymous')
+
+        document.dispatchEvent(new Event('visibilitychange'))
+        window.dispatchEvent(new Event('focus'))
+        vi.advanceTimersByTime(FIFTEEN_MINUTES)
+        expect(repository.logout).toHaveBeenCalledTimes(1)
+      })
+
+      it("un retour avant l'échéance ne déconnecte pas", async () => {
+        const repository = createStubRepository()
+        const auth = await grantBaseAccess(repository)
+
+        vi.setSystemTime(Date.now() + FIFTEEN_MINUTES - 1000)
+        window.dispatchEvent(new Event('focus'))
+        document.dispatchEvent(new Event('visibilitychange'))
+
+        expect(repository.logout).not.toHaveBeenCalled()
+        expect(auth.tier.value).toBe('base')
+      })
+
+      it("le retour par visibilitychange déconnecte aussi", async () => {
+        const repository = createStubRepository()
+        const auth = await grantBaseAccess(repository)
+
+        vi.setSystemTime(Date.now() + FIFTEEN_MINUTES + 1)
+        document.dispatchEvent(new Event('visibilitychange'))
+
+        expect(repository.logout).toHaveBeenCalledTimes(1)
+        expect(auth.tier.value).toBe('anonymous')
+      })
+
+      it("une nouvelle obtention entre-temps annule la minuterie précédente", async () => {
+        const repository = createStubRepository()
+        const auth = await grantBaseAccess(repository)
+
+        vi.advanceTimersByTime(FIFTEEN_MINUTES / 3)
+        markBaseAccessGranted(new Date(Date.now() + FIFTEEN_MINUTES))
+
+        vi.advanceTimersByTime((FIFTEEN_MINUTES * 2) / 3)
+        expect(repository.logout).not.toHaveBeenCalled()
+        expect(auth.tier.value).toBe('base')
+
+        vi.advanceTimersByTime(FIFTEEN_MINUTES / 3)
+        expect(repository.logout).toHaveBeenCalledTimes(1)
+      })
+
+      it("un login entre-temps annule la minuterie et le retour : le compte n'est pas déconnecté", async () => {
+        const repository = createStubRepository({
+          login: vi.fn(async () => ({ username: 'jane', roles: ['ROLE_TRUSTED', 'ROLE_USER'] })),
+        })
+        const auth = await grantBaseAccess(repository)
+
+        await auth.login('jane', 'password')
+        vi.setSystemTime(Date.now() + FIFTEEN_MINUTES + 1)
+        window.dispatchEvent(new Event('focus'))
+        vi.advanceTimersByTime(FIFTEEN_MINUTES)
+
+        expect(repository.logout).not.toHaveBeenCalled()
+        expect(auth.tier.value).toBe('trusted')
+      })
+
+      it("un logout manuel avant l'échéance annule la minuterie : pas de second logout", async () => {
+        const repository = createStubRepository()
+        const auth = await grantBaseAccess(repository)
+
+        await auth.logout()
+        vi.advanceTimersByTime(FIFTEEN_MINUTES)
+
+        expect(repository.logout).toHaveBeenCalledTimes(1)
+      })
+
+      it("un échec réseau du logout laisse l'état anonyme", async () => {
+        const repository = createStubRepository({ logout: vi.fn(async () => Promise.reject(new TypeError('Failed to fetch'))) })
+        const auth = await grantBaseAccess(repository)
+
+        await vi.advanceTimersByTimeAsync(FIFTEEN_MINUTES)
+
+        expect(repository.logout).toHaveBeenCalledTimes(1)
+        expect(auth.tier.value).toBe('anonymous')
+        expect(auth.hasSessionEnded.value).toBe(false)
+      })
+
+      it("l'échéance reprise après un rechargement déconnecte aussi", async () => {
+        const repository = createStubRepository({ me: vi.fn(async () => BASE_ACCESS_SESSION) })
+        const auth = mountWithComposable(repository)
+        localStorage.setItem('baseAccessExpiresAt', new Date(Date.now() + FIFTEEN_MINUTES).toISOString())
+        await auth.checkAuth()
+
+        vi.advanceTimersByTime(FIFTEEN_MINUTES)
+
+        expect(repository.logout).toHaveBeenCalledTimes(1)
+        expect(auth.tier.value).toBe('anonymous')
+      })
+    })
+
     it('markBaseAccessExpired() ramène le palier de base (sans compte) à anonyme, et ne touche pas à un compte identifié', async () => {
       const auth = mountWithComposable(createStubRepository())
       await auth.checkAuth()

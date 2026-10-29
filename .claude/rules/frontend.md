@@ -193,7 +193,9 @@ The header's « Accès instantané » calls `POST /api/account/base-access`; « 
 calls `POST /api/logout`. The tier comes from the status of `GET /api/me` (401 / 403 / 200). The httpOnly
 cookie cannot be read, so the response's `expiresAt` is the only way to know when it dies: `useAuth` arms a
 timer on it, remembered in `localStorage` to survive a reload — a past value is ignored, the server is the
-truth —, and any 401 on base-tier content calls `markBaseAccessExpired()`, so the header never shows
+truth —, and at that deadline (or on `focus`/`visibilitychange` once it has passed) signs the base access out with
+`POST /api/logout`, before any request takes the 401 that would clear the cookies (#748, R21b;
+`.claude/rules/frontend-session.md`, « Accepted limits »), and any 401 on base-tier content calls `markBaseAccessExpired()`, so the header never shows
 « Accès de base » above a page asking for it.
 
 ### Toolchain history (Node, jsdom, Vitest)

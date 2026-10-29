@@ -4,7 +4,8 @@ import { InvalidCredentialsError } from '../../domain/auth/errors/InvalidCredent
 import { LoginRateLimitedError } from '../../domain/auth/errors/LoginRateLimitedError'
 import { ANONYMOUS_SESSION, BASE_ACCESS_SESSION, type AuthSession } from '../../domain/auth/entities/AuthSession'
 import { sessionForUser } from '../../domain/auth/services/sessionForUser'
-import { hasCsrfToken, readCsrfToken } from './csrfCookie'
+import { hasCsrfToken } from './csrfCookie'
+import { sessionAwareFetch } from '../http/sessionAwareFetch'
 import { LOGIN_CSRF_HEADER } from '../http/loginCsrfHeader'
 import { retryAfterSeconds } from '../http/retryAfterSeconds'
 
@@ -52,13 +53,10 @@ export class HttpAuthRepository implements AuthRepository {
   }
 
   async logout(): Promise<void> {
-    const csrfToken = readCsrfToken()
-
-    const response = await fetch(`${this.apiBaseUrl}/api/logout`, {
-      method: 'POST',
-      credentials: 'include',
-      headers: csrfToken ? { 'X-XSRF-TOKEN': csrfToken } : {},
-    })
+    // Une écriture : elle part avec son jeton CSRF, posé par l'envoi partagé (#748, R21b : le logout est aussi celui
+    // de l'échéance de l'accès de base). Le verdict « session finie » n'a pas de sens ici — un 401 est un jeton déjà
+    // mort, que le logout voulait justement effacer —, seul `ok` compte.
+    const { response } = await sessionAwareFetch(`${this.apiBaseUrl}/api/logout`, { method: 'POST' })
 
     if (!response.ok) {
       throw new Error(`Logout failed with status ${response.status}`)

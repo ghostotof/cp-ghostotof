@@ -150,3 +150,37 @@ describe('HttpAuthRepository.hasWriteToken()', () => {
     expect(new HttpAuthRepository('https://api.example.test').hasWriteToken()).toBe(false)
   })
 })
+
+/**
+ * `logout()` est une écriture (#748, R21b : c'est aussi la sortie de l'échéance de l'accès de base) : elle part avec
+ * ses cookies et le jeton CSRF lu dans `XSRF-TOKEN`, par l'envoi partagé.
+ */
+describe('HttpAuthRepository.logout()', () => {
+  const clearCsrfCookie = (): void => {
+    document.cookie = 'XSRF-TOKEN=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/'
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    clearCsrfCookie()
+  })
+
+  it('POST /api/logout avec les cookies et le jeton CSRF', async () => {
+    document.cookie = 'XSRF-TOKEN=jeton-de-test; path=/'
+    const fetchMock = stubFetch(204)
+
+    await new HttpAuthRepository('https://api.example.test').logout()
+
+    expect(fetchMock).toHaveBeenCalledWith('https://api.example.test/api/logout', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'X-XSRF-TOKEN': 'jeton-de-test' },
+    })
+  })
+
+  it('un refus (même un 401 : le jeton est déjà mort) rejette, sans verdict de session', async () => {
+    stubFetch(401)
+
+    await expect(new HttpAuthRepository('https://api.example.test').logout()).rejects.toThrow('Logout failed with status 401')
+  })
+})
