@@ -2,7 +2,7 @@ import type { AuthenticatedUser } from '../../domain/auth/entities/Authenticated
 import { ANONYMOUS_SESSION, type AuthSession } from '../../domain/auth/entities/AuthSession'
 import { advanceGeneration, isCurrentGeneration } from './sessionGeneration'
 import { notifyAccountSwitched, notifySessionRestored } from './sessionEvents'
-import { applySession, getLastAccount, state, type LastAccount } from './sessionState'
+import { applySession, authState, getLastAccount, lowerSessionEnded, raiseSessionEnded, type LastAccount } from './sessionState'
 
 /**
  * La fin et le retour de la session (#748, R25 : sortis de `useAuth.ts`). `markSessionExpired` est la seule à lever
@@ -17,7 +17,7 @@ import { applySession, getLastAccount, state, type LastAccount } from './session
  * nouveaux droits. Aucun compte retenu (la session a fini au palier de base, ou la personne s'était déconnectée) :
  * on ne sait pas à qui est la page, ce n'est pas « le même ».
  */
-export function isSameAccount(previous: LastAccount | null, user: AuthenticatedUser): boolean {
+function isSameAccount(previous: LastAccount | null, user: AuthenticatedUser): boolean {
   return null !== previous && previous.username === user.username && previous.roles.every((role) => user.roles.includes(role))
 }
 
@@ -26,7 +26,7 @@ export function isSameAccount(previous: LastAccount | null, user: AuthenticatedU
  * jeton d'écriture (`canRestore`).
  */
 export function isReturnOfAccount(session: AuthSession): boolean {
-  return state.sessionEnded && null !== session.user
+  return authState.sessionEnded && null !== session.user
 }
 
 /**
@@ -54,7 +54,7 @@ export function restoreSession(session: AuthSession, announce: boolean): void {
   // Lu avant `applySession`, qui le remplace par le compte qui revient.
   const previous = getLastAccount()
   applySession(session)
-  state.sessionEnded = false
+  lowerSessionEnded()
   advanceGeneration()
   if (!announce) {
     return
@@ -99,13 +99,12 @@ export function applyLiveSession(session: AuthSession): void {
  */
 export function markSessionExpired(sentAt?: number): boolean {
   if (undefined !== sentAt && !isCurrentGeneration(sentAt)) {
-    return state.sessionEnded
+    return authState.sessionEnded
   }
 
   // Le dernier compte affiché survit : `applySession` ne l'oublie pas en passant à anonyme (voir `LastAccount`).
   applySession(ANONYMOUS_SESSION)
-  state.sessionEnded = true
-  state.sessionEndedCount += 1
+  raiseSessionEnded()
   advanceGeneration()
 
   return true

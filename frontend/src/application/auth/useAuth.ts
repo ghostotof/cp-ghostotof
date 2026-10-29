@@ -5,7 +5,7 @@ import { ANONYMOUS_SESSION, type AccessTier, type AuthSession } from '../../doma
 import { ROLE_SUPER } from '../../domain/auth/entities/Role'
 import { hasRole } from '../../domain/auth/services/hasRole'
 import { sessionForUser } from '../../domain/auth/services/sessionForUser'
-import { markBaseAccessExpired, markBaseAccessGranted, applySession, authState, forgetLastAccount, isFirstCheckDone, markFirstCheckDone, state, waitForAuthCheck } from './sessionState'
+import { markBaseAccessExpired, markBaseAccessGranted, applySession, authState, beginCheck, forgetLastAccount, markFirstCheckDone, waitForAuthCheck } from './sessionState'
 import { recallBaseAccessExpiry, scheduleBaseAccessExpiry } from './baseAccessExpiry'
 import { advanceGeneration, isCurrentGeneration, sessionStamp } from './sessionGeneration'
 import { onAccountSwitched, onSessionRestored } from './sessionEvents'
@@ -189,7 +189,7 @@ export function useAuth(): UseAuthResult {
     if (!isCurrentGeneration(sentAt)) {
       return false
     }
-    if (state.sessionEnded) {
+    if (authState.sessionEnded) {
       if (!canRestore(session, () => repository.hasWriteToken())) {
         return false
       }
@@ -203,9 +203,7 @@ export function useAuth(): UseAuthResult {
 
   const checkAuth = async (): Promise<void> => {
     // Silencieuse après la première vérification : voir `hasCheckedOnce`.
-    if (!isFirstCheckDone()) {
-      state.isChecking = true
-    }
+    beginCheck()
     try {
       // Lue avant applySession(), qui efface la mémoire : si le serveur
       // confirme le palier de base et qu'une échéance future est connue, la
@@ -226,7 +224,7 @@ export function useAuth(): UseAuthResult {
   }
 
   const recheckEndedSession = (): Promise<void> => {
-    if (!state.sessionEnded) {
+    if (!authState.sessionEnded) {
       return Promise.resolve()
     }
 
@@ -254,7 +252,7 @@ export function useAuth(): UseAuthResult {
           // `/api/me` ne rejette pas sur un 401 : il rend l'anonyme. Le jeton ne vaut plus rien, la session est finie.
           // Déjà finie sous la génération du départ, elle est dite : on ne la réannonce pas (la relecture n'est pas
           // un geste de la personne). Partie sous une génération révolue, `markSessionExpired` ne change rien.
-          if (state.sessionEnded && isCurrentGeneration(sentAt)) {
+          if (authState.sessionEnded && isCurrentGeneration(sentAt)) {
             return 'session-ended'
           }
 
@@ -278,14 +276,14 @@ export function useAuth(): UseAuthResult {
   }
 
   return {
-    user: computed(() => state.user),
-    tier: computed(() => state.tier),
-    isAuthenticated: computed(() => 'anonymous' !== state.tier),
-    isChecking: computed(() => state.isChecking),
-    hasSessionEnded: computed(() => state.sessionEnded),
-    sessionEndedCount: computed(() => state.sessionEndedCount),
-    isTrusted: computed(() => 'trusted' === state.tier),
-    isSuperAdmin: computed(() => hasRole(state.user, ROLE_SUPER)),
+    user: computed(() => authState.user),
+    tier: computed(() => authState.tier),
+    isAuthenticated: computed(() => 'anonymous' !== authState.tier),
+    isChecking: computed(() => authState.isChecking),
+    hasSessionEnded: computed(() => authState.sessionEnded),
+    sessionEndedCount: computed(() => authState.sessionEndedCount),
+    isTrusted: computed(() => 'trusted' === authState.tier),
+    isSuperAdmin: computed(() => hasRole(authState.user, ROLE_SUPER)),
     login,
     logout,
     recheckEndedSession,

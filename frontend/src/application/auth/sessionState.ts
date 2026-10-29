@@ -15,10 +15,11 @@ import { advanceGeneration } from './sessionGeneration'
  * les consommateurs existants — le garde de routeur lit `authState.user` —
  * n'aient pas à changer.
  *
- * Exporté pour les seuls modules d'`application/auth/` (`sessionLifecycle`, `useAuth`) : ce sont les seuls qui
- * l'écrivent. Tout le reste lit `authState`.
+ * **Non exporté** (#748, R42, St4-5) : ce module est le seul à l'écrire. Les autres modules d'`application/auth/` passent
+ * par des fonctions nommées (`applySession`, `beginCheck`, `markFirstCheckDone`, `raiseSessionEnded`,
+ * `lowerSessionEnded`) ; tout le reste lit `authState`.
  */
-export const state = reactive<{ tier: AccessTier; user: AuthenticatedUser | null; isChecking: boolean; sessionEnded: boolean; sessionEndedCount: number }>({
+const state = reactive<{ tier: AccessTier; user: AuthenticatedUser | null; isChecking: boolean; sessionEnded: boolean; sessionEndedCount: number }>({
   tier: ANONYMOUS_SESSION.tier,
   user: ANONYMOUS_SESSION.user,
   isChecking: true,
@@ -46,9 +47,14 @@ export const authState = readonly(state)
  */
 let hasCheckedOnce = false
 
-/** Vrai quand la première vérification a fini : voir `hasCheckedOnce`. */
-export function isFirstCheckDone(): boolean {
-  return hasCheckedOnce
+/**
+ * Une vérification de la session commence : `isChecking` monte **seulement avant la première** (voir `hasCheckedOnce`) ;
+ * les suivantes sont silencieuses.
+ */
+export function beginCheck(): void {
+  if (!hasCheckedOnce) {
+    state.isChecking = true
+  }
 }
 
 /** La première vérification a fini (réussie ou non) : `isChecking` retombe et les suivantes sont silencieuses. */
@@ -83,6 +89,23 @@ export function getLastAccount(): LastAccount | null {
 /** La personne a quitté son compte (déconnexion, accès de base obtenu) : plus aucun compte n'est retenu. */
 export function forgetLastAccount(): void {
   lastAccount = null
+}
+
+/**
+ * La session est finie : `sessionEnded` monte et le compteur de fins augmente (le bandeau se réannonce, même quand la
+ * session l'était déjà). Seule `markSessionExpired` (`sessionLifecycle.ts`) l'appelle, qui juge la génération.
+ */
+export function raiseSessionEnded(): void {
+  state.sessionEnded = true
+  state.sessionEndedCount += 1
+}
+
+/**
+ * `sessionEnded` retombe. Deux appelants seulement : `restoreSession` (`sessionLifecycle.ts`, un compte est revenu) et
+ * `markBaseAccessGranted` (l'accès de base obtenu clôt la fin).
+ */
+export function lowerSessionEnded(): void {
+  state.sessionEnded = false
 }
 
 /**
@@ -142,7 +165,7 @@ export function markBaseAccessGranted(expiresAt: Date | null = null): void {
   // Une session décidée dans l'onglet clôt la fin, comme `login()` (R41, CR4-3) : l'accès de base est un jeton neuf,
   // il n'y a plus de session finie à annoncer. Sans signal : la page de l'accès instantané ne rejoue rien, et la
   // génération vient d'avancer.
-  state.sessionEnded = false
+  lowerSessionEnded()
   if (null !== expiresAt) {
     scheduleBaseAccessExpiry(expiresAt, markBaseAccessExpired)
   }
