@@ -32,14 +32,14 @@ function subscribe(callbacks: Set<() => void>, callback: () => void): void {
 /**
  * Appelle chaque abonné. La copie du `Set` protège l'itération d'un abonné qui se retirerait en route. Un abonné qui
  * lève n'arrête ni les suivants ni l'issue de la connexion ou de la relecture qui a rétabli la session : l'erreur
- * est rapportée.
+ * est rapportée, avec le nom du signal (`label` : « au retour de la session », « au changement de compte »).
  */
-function notify(callbacks: ReadonlySet<() => void>): void {
+function notify(callbacks: ReadonlySet<() => void>, label: string): void {
   for (const callback of [...callbacks]) {
     try {
       callback()
     } catch (caught) {
-      console.error('Un abonné au retour de la session a levé une erreur.', caught)
+      console.error(`Un abonné ${label} a levé une erreur.`, caught)
     }
   }
 }
@@ -63,12 +63,12 @@ export function onAccountSwitched(callback: () => void): void {
 
 /** Appelle les abonnés au retour (le même compte est revenu). */
 export function notifySessionRestored(): void {
-  notify(sessionRestoredCallbacks)
+  notify(sessionRestoredCallbacks, 'au retour de la session')
 }
 
 /** Appelle les abonnés au changement de compte (un autre compte est revenu). */
 export function notifyAccountSwitched(): void {
-  notify(accountSwitchedCallbacks)
+  notify(accountSwitchedCallbacks, 'au changement de compte')
 }
 
 /** Réservée aux tests (`resetAuthStateForTests`), jamais appelée par `src/` : plus aucun abonné. */

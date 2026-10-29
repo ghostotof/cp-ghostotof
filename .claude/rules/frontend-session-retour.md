@@ -100,6 +100,10 @@ paths:
   **The route guard still redirects to `login` at the next navigation** — the input is saved or abandoned by then. No
   dedicated « your password changed » message: Lexik's 401 body carries `{code, message}` and no stable `type`, and
   reading the text would be fragile.
+- **Accepted limit** (#748, C7, the author's decision of 2026-10-29): an account switch in **another tab**, with **no**
+  ended session in this one, is seen by nothing — the re-check on return only runs in an ended session. The header and the
+  page stay the first account's until a refusal (the re-read, R26), a protected navigation or a reload, and writes leave
+  with the second account's cookie. It predates #748 and assumes access to the same browser.
 
 ## The session generation (#748, R14)
 
@@ -120,9 +124,10 @@ caller reads it **before sending** and hands it back with the verdict:
   which translates it, and no `SessionEndedError` is raised). A request sent before a return can no longer end the
   session it did not belong to (Review Focus 1). Both directions share the one number: an end from before the return,
   and a return from before an end.
-- **The descent by an account's return** (`restoreSession`, `sessionLifecycle.ts`) asks for **an account, a write
-  token (`hasWriteToken()`) and the current generation** (`canRestore`) — a sign-in (`login`) is the person's own gesture and
-  skips both. `login()`, `checkAuth()` and `recheckEndedSession()` all go through it; **in an ended session a read that
+- **The descent by an account's return** (`restoreSession`, `sessionLifecycle.ts`) is asked, by `canRestore`, for **an
+  account and a write token (`hasWriteToken()`)**; the caller judges the **current generation** itself
+  (`isCurrentGeneration(sentAt)`), `login()` excepted — a sign-in is the person's own gesture and skips both. `login()`,
+  `checkAuth()`, `recheckEndedSession()` and `rereadAfterRefusal()` (through `applyReadSession`) all go through it; **in an ended session a read that
   finds the base tier or the anonymous one sets nothing** (Sp3-3); it advances the generation and then calls the `onSessionRestored` subscribers (or `onAccountSwitched`'s for another account; `login()` calls neither, R18). A `/api/me` sent before a new
   refusal, or before a return, answers for a session that is gone: its result is dropped (it neither restores nor
   puts the header back to an account). `checkAuth()` no longer lowers `sessionEnded` for an account without a write token

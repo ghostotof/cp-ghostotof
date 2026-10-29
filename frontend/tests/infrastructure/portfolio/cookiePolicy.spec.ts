@@ -12,13 +12,13 @@ import { SUPPORTED_LOCALES, type Locale } from '../../../src/domain/portfolio/en
 const EXPECTED: Record<Locale, { readonly bearer: string; readonly xsrf: string; readonly stale: readonly string[] }> = {
   fr: {
     bearer:
-      'BEARER — jeton d’authentification (JWT), httpOnly, non lisible en JavaScript. Cookie de session : supprimé à la fermeture du navigateur (sauf si celui-ci restaure la session), à la déconnexion, ou dès qu’il est présenté après l’expiration du jeton qu’il porte (1 heure pour un compte, 15 minutes pour l’accès instantané).',
+      'BEARER — jeton d’authentification (JWT), httpOnly, non lisible en JavaScript. Cookie de session : supprimé à la fermeture du navigateur (sauf si celui-ci restaure la session), à la déconnexion, ou dès qu’une page qui demande une connexion refuse le jeton qu’il porte (expiré — 1 heure pour un compte, 15 minutes pour l’accès instantané — ou invalidé).',
     xsrf: 'XSRF-TOKEN — jeton de protection contre les attaques CSRF, lisible en JavaScript, posé en même temps que le précédent ; cookie de session lui aussi, supprimé en même temps que lui.',
     stale: ['expire avec lui', 'expire à la déconnexion ou à l’expiration du jeton'],
   },
   en: {
     bearer:
-      'BEARER — authentication token (JWT), httpOnly, not readable from JavaScript. Session cookie: deleted when the browser is closed (unless it restores the session), on logout, or as soon as it is presented after the token it carries has expired (1 hour for an account, 15 minutes for instant access).',
+      'BEARER — authentication token (JWT), httpOnly, not readable from JavaScript. Session cookie: deleted when the browser is closed (unless it restores the session), on logout, or as soon as a page that requires signing in refuses the token it carries (expired — 1 hour for an account, 15 minutes for instant access — or invalidated).',
     xsrf: 'XSRF-TOKEN — CSRF protection token, readable from JavaScript, set together with the previous one; also a session cookie, deleted together with it.',
     stale: ['expires with it', 'expires on logout or token expiry'],
   },
@@ -46,6 +46,18 @@ describe('politique de cookies publiée', () => {
     for (const stale of EXPECTED[locale].stale) {
       expect(text).not.toContain(stale)
     }
+  })
+
+  it.each(SUPPORTED_LOCALES)("%s : dit l'effacement au refus par une page qui demande une connexion, expiré ou invalidé", (locale) => {
+    const bearer = cookiesList(locale)[0] ?? ''
+    const expected = {
+      fr: { refuses: 'refuse le jeton', invalidated: 'invalidé', stale: 'présenté après l’expiration' },
+      en: { refuses: 'refuses the token', invalidated: 'invalidated', stale: 'presented after' },
+    }[locale]
+
+    expect(bearer).toContain(expected.refuses)
+    expect(bearer).toContain(expected.invalidated)
+    expect(bearer).not.toContain(expected.stale)
   })
 
   it.each(SUPPORTED_LOCALES)('%s : aucune autre section ne promet une durée de vie de ces cookies', (locale) => {

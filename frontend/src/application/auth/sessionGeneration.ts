@@ -1,6 +1,8 @@
 /**
- * La génération de la session (#748, R14) : un compteur de module, avancé à chaque **fin** acceptée
- * (`markSessionExpired`) et à chaque **retour** (la descente de `sessionEnded`). Un appelant la lit à l'envoi
+ * La génération de la session (#748, R14, R26) : un compteur de module, avancé à chaque **fin** acceptée
+ * (`markSessionExpired`), à chaque **retour** (la descente de `sessionEnded`) et par **toute session que l'onglet
+ * décide lui-même** (`login`, `logout`, `markBaseAccessGranted`, `markBaseAccessExpired` quand il change le palier).
+ * Une session *lue* sur `/api/me` n'avance rien : elle est la réponse. Un appelant la lit à l'envoi
  * (`sessionStamp()`) et la rend avec le verdict (`markSessionExpired(sentAt)`, la relecture de `/api/me`) : ce qui
  * est parti sous une génération révolue est un verdict d'une session qui n'est plus la courante, et ne la change pas,
  * ni pour la finir ni pour la rétablir. Un seul nombre règle les deux sens, et les lectures parallèles du chargement
@@ -18,7 +20,10 @@ export function sessionStamp(): number {
   return generation
 }
 
-/** Une fin acceptée ou un retour vient d'avoir lieu : tout ce qui est parti avant devient périmé. */
+/**
+ * Une fin acceptée, un retour ou une session décidée dans l'onglet (connexion, déconnexion, accès de base obtenu ou
+ * échu) vient d'avoir lieu : tout ce qui est parti avant devient périmé.
+ */
 export function advanceGeneration(): void {
   generation += 1
 }

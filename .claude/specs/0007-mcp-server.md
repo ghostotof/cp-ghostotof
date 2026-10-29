@@ -519,7 +519,8 @@ décision du 2026-10-19, voir « Langue invalide »).
   un cookie d'un autre compte reçoit un 409 `/errors/consent-account-changed`, pour l'accord comme pour le refus ;
   la page propose de relire la demande. **Une session ouverte avant le dernier changement de mot de passe du
   compte est refusée par toute l'API** (401, cookies effacés ; la personne est menée à la connexion, qui dit que sa
-  session a pris fin) : le changement de mot de passe, qui coupait les connexions existantes, coupe aussi ce
+  session a pris fin ; précisé le 2026-10-29, #748 R35 : une route publique sert la requête comme anonyme, sans 401 ni
+  effacement) : le changement de mot de passe, qui coupait les connexions existantes, coupe aussi ce
   qu'un cookie volé pourrait accorder ensuite. Le refus se juge sur une **version des identifiants** et non sur
   une date : le compte porte `credentials_version`, avancée par ses deux écrivains du mot de passe, le JWT en
   copie la valeur à sa création (revendication `cv`, depuis le compte dont le hachage vient d'être vérifié), et une

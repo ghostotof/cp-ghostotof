@@ -142,7 +142,7 @@ const fr: PortfolioLocaleContent = {
           "Ce site ne pose aucun cookie lors d'une simple visite. Deux cookies strictement nécessaires sont posés uniquement lorsque vous vous connectez ou demandez l'accès instantané ; ils sont exemptés de consentement par les recommandations de la CNIL, raison pour laquelle aucun bandeau de consentement ne vous est présenté :",
         ],
         list: [
-          'BEARER — jeton d’authentification (JWT), httpOnly, non lisible en JavaScript. Cookie de session : supprimé à la fermeture du navigateur (sauf si celui-ci restaure la session), à la déconnexion, ou dès qu’il est présenté après l’expiration du jeton qu’il porte (1 heure pour un compte, 15 minutes pour l’accès instantané).',
+          'BEARER — jeton d’authentification (JWT), httpOnly, non lisible en JavaScript. Cookie de session : supprimé à la fermeture du navigateur (sauf si celui-ci restaure la session), à la déconnexion, ou dès qu’une page qui demande une connexion refuse le jeton qu’il porte (expiré — 1 heure pour un compte, 15 minutes pour l’accès instantané — ou invalidé).',
           'XSRF-TOKEN — jeton de protection contre les attaques CSRF, lisible en JavaScript, posé en même temps que le précédent ; cookie de session lui aussi, supprimé en même temps que lui.',
         ],
       },

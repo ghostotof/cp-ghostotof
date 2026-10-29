@@ -142,7 +142,7 @@ const en: PortfolioLocaleContent = {
           'This site sets no cookie on a plain visit. Two strictly necessary cookies are set only when you log in or request instant access; they are exempt from consent under CNIL (French data protection authority) guidance, which is why no consent banner is shown:',
         ],
         list: [
-          'BEARER — authentication token (JWT), httpOnly, not readable from JavaScript. Session cookie: deleted when the browser is closed (unless it restores the session), on logout, or as soon as it is presented after the token it carries has expired (1 hour for an account, 15 minutes for instant access).',
+          'BEARER — authentication token (JWT), httpOnly, not readable from JavaScript. Session cookie: deleted when the browser is closed (unless it restores the session), on logout, or as soon as a page that requires signing in refuses the token it carries (expired — 1 hour for an account, 15 minutes for instant access — or invalidated).',
           'XSRF-TOKEN — CSRF protection token, readable from JavaScript, set together with the previous one; also a session cookie, deleted together with it.',
         ],
       },
