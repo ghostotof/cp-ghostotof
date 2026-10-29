@@ -317,8 +317,12 @@ which reads the request again under the current account. `OAuthConsentPage.spec.
 - **The page** `/<locale>/mcp-connections`: `requiresAuth`, `roles: [ROLE_TRUSTED, ROLE_SUPER]`, `noindex` (the guard is
   a courtesy, `/api/me` is the authority). One table (`<caption>`, `th scope`), the page title its only heading;
   « Révoquer » only on `active` rows, its accessible name carrying the client and the grant date; `window.confirm()`
-  naming the client (the backoffice convention); the only `role="status"` of the page announces the outcome, a failure
-  is a `role="alert"`; after a revocation focus lands on the `<h1>`. A cause missing from `CAUSE_LABEL_KEYS` (a newer
+  naming the client **and the grant date** (the backoffice convention; #748); the only `role="status"` of the page
+  announces the outcome, a failure is a `role="alert"`. **Focus (#748)**: on `revoked` / `already-gone` the focus goes to
+  the `<h1>` (the clicked button is gone) and the outcome is written to the status region 250 ms later
+  (`.claude/rules/frontend-a11y.md`); on a plain failure it goes back to the « Révoquer » that was clicked; on a
+  finished session it goes to the `<h1>`. « Réessayer » hands the focus back too: the `<h1>` on success, the new
+  « Réessayer » on a new failure. `aria-busy` is on the table's container, never on the `<section>`. A cause missing from `CAUSE_LABEL_KEYS` (a newer
   backend) reads as the generic label: causes are mapped explicitly, never built by string concatenation.
 - **Desktop account menu**: `presentation/layout/AccountMenu.vue`, a WAI-ARIA **disclosure** (button with
   `aria-expanded` and `aria-controls`, a list of ordinary links), not a `role="menu"`. It closes on a second click,

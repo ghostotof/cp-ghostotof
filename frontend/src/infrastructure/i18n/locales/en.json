@@ -876,7 +876,7 @@
     },
     "revoke": "Revoke",
     "revokeAria": "Revoke the connection of {client}, granted on {date}",
-    "confirm": "Revoke the connection of \"{client}\"? It will stop working at the assistant's next request.",
+    "confirm": "Revoke the connection of \"{client}\", granted on {date}? It will stop working at the assistant's next request.",
     "outcome": {
       "revoked": "The connection has been revoked. It stops working at the assistant's next request.",
       "alreadyGone": "This connection had already ended: nothing to revoke. The list has been refreshed."

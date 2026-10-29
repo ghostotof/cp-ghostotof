@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, useTemplateRef } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, useTemplateRef } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { useMcpConnections } from '../../application/mcp/useMcpConnections'
+import { useMcpConnections, type McpRevocationOutcome } from '../../application/mcp/useMcpConnections'
 import type { McpConnectionSummary } from '../../domain/mcp/entities/McpConnection'
 import type { Locale } from '../../domain/portfolio/entities/Locale'
 import { formatInstant } from '../format/instant'
@@ -35,7 +35,20 @@ import { SESSION_ENDED_QUERY, SESSION_ENDED_VALUE } from '../router/sessionEnded
  * backoffice) qui nomme l'assistant : l'action coupe un accès que la personne
  * devra autoriser de nouveau. L'issue est annoncée dans la seule région
  * `role="status"` de la page, un échec dans une alerte.
+ *
+ * Focus et annonces (#748) : quand un geste déplace le focus ET annonce une
+ * issue, le focus part d'abord et l'annonce est écrite ensuite
+ * (`ANNOUNCE_AFTER_FOCUS_MS`) — une annonce écrite au moment du déplacement peut
+ * être coupée par la lecture de l'élément qui prend le focus. Écarté :
+ * `aria-describedby` du titre vers le message, dont la lecture au focus dépend
+ * des réglages du lecteur d'écran et qui resterait collé au titre à chaque
+ * focus suivant. Le focus ne part au titre que si le bouton cliqué a disparu
+ * (révoquée, déjà terminée) ou si la session est finie ; sur un échec il revient
+ * au bouton, qui existe encore et que la personne peut réessayer.
  */
+
+/** Délai entre le déplacement du focus sur le titre et l'écriture de l'issue dans la région d'état. */
+const ANNOUNCE_AFTER_FOCUS_MS = 250
 
 const { t, locale: i18nLocale } = useI18n()
 const { status, connections, terminatedTruncated, revokingId, lastOutcome, sessionExpired, load, revoke } = useMcpConnections()
@@ -107,6 +120,20 @@ const isLoading = computed(() => 'loading' === status.value)
 const showTable = computed(() => 'error' !== status.value && connections.value.length > 0)
 const showEmpty = computed(() => 'ready' === status.value && 0 === connections.value.length)
 
+/** L'issue que la région d'état dit : copie différée de `lastOutcome`, vide tant que le focus n'a pas bougé. */
+const announcedOutcome = ref<McpRevocationOutcome | null>(null)
+let announceTimer: ReturnType<typeof setTimeout> | null = null
+/** Posé au démontage : une révocation qui aboutit après n'écrit plus rien et ne programme rien. */
+let unmounted = false
+
+function cancelAnnouncement(): void {
+  if (null !== announceTimer) {
+    clearTimeout(announceTimer)
+    announceTimer = null
+  }
+  announcedOutcome.value = null
+}
+
 /** Le seul `role="status"` de la page : vide hors chargement, révocation et issue à annoncer. */
 const statusMessage = computed<string>(() => {
   if (null !== revokingId.value) {
@@ -115,7 +142,8 @@ const statusMessage = computed<string>(() => {
   if (isLoading.value && 0 === connections.value.length) {
     return t('mcpConnections.loading')
   }
-  switch (lastOutcome.value) {
+  // L'issue annoncée, pas `lastOutcome` : elle n'est écrite qu'après le déplacement du focus.
+  switch (announcedOutcome.value) {
     case 'revoked':
       return t('mcpConnections.outcome.revoked')
     case 'already-gone':
@@ -126,18 +154,67 @@ const statusMessage = computed<string>(() => {
 })
 
 const heading = useTemplateRef<HTMLHeadingElement>('heading')
+const retryButton = useTemplateRef<HTMLButtonElement>('retryButton')
 
-async function onRevoke(connection: McpConnectionSummary): Promise<void> {
-  if (!window.confirm(t('mcpConnections.confirm', { client: connection.client.name }))) {
+async function onRevoke(connection: McpConnectionSummary, event: MouseEvent): Promise<void> {
+  if (!window.confirm(t('mcpConnections.confirm', { client: connection.client.name, date: date(connection.grantedAt) }))) {
     return
   }
 
+  // Le navigateur retire le focus d'un bouton qui devient `disabled` pendant l'appel :
+  // on garde l'élément pour le lui rendre si la révocation échoue.
+  const clicked = event.currentTarget instanceof HTMLElement ? event.currentTarget : null
+  cancelAnnouncement()
+
   await revoke(connection.id)
-  // Le bouton cliqué vient de disparaître (la connexion n'est plus active) : le
-  // focus retomberait sur <body>. On le pose sur le titre, d'où la lecture reprend.
+  if (unmounted) {
+    return
+  }
   await nextTick()
-  heading.value?.focus()
+
+  const outcome = lastOutcome.value
+  if ('revoked' === outcome || 'already-gone' === outcome) {
+    // Le bouton cliqué vient de disparaître (la connexion n'est plus active) : le
+    // focus retomberait sur <body>. On le pose sur le titre, d'où la lecture reprend,
+    // puis l'issue est annoncée une fois le focus posé.
+    heading.value?.focus()
+    announceTimer = setTimeout(() => {
+      announceTimer = null
+      announcedOutcome.value = outcome
+    }, ANNOUNCE_AFTER_FOCUS_MS)
+  } else if (sessionExpired.value) {
+    // La session est finie : l'alerte et son lien de reconnexion sont lus depuis le titre.
+    heading.value?.focus()
+  } else {
+    // Échec : le bouton existe encore, la personne peut réessayer là où elle était.
+    clicked?.focus()
+  }
 }
+
+/**
+ * « Réessayer » : le bouton disparaît pendant la relecture (l'alerte est remplacée
+ * par l'état de chargement) et le focus tomberait sur <body>. Au succès il passe
+ * au titre ; au nouvel échec, au nouveau bouton — un second échec ne change pas le
+ * texte de l'alerte, qu'aucune annonce ne signalerait. Session finie : le titre.
+ */
+async function onRetry(): Promise<void> {
+  await load()
+  if (unmounted) {
+    return
+  }
+  await nextTick()
+
+  if ('error' === status.value && !sessionExpired.value) {
+    retryButton.value?.focus()
+  } else {
+    heading.value?.focus()
+  }
+}
+
+onBeforeUnmount(() => {
+  unmounted = true
+  cancelAnnouncement()
+})
 
 onMounted(() => {
   void load()
@@ -145,10 +222,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <section
-    class="container-xl py-5 d-flex flex-column gap-4"
-    :aria-busy="isLoading"
-  >
+  <section class="container-xl py-5 d-flex flex-column gap-4">
     <div class="surface-panel p-3 p-sm-4">
       <h1
         ref="heading"
@@ -192,9 +266,10 @@ onMounted(() => {
     >
       {{ t('mcpConnections.errors.load') }}
       <button
+        ref="retryButton"
         type="button"
         class="btn btn-outline-light btn-sm"
-        @click="load"
+        @click="onRetry"
       >
         {{ t('mcpConnections.errors.retry') }}
       </button>
@@ -218,9 +293,11 @@ onMounted(() => {
       </RouterLink>
     </p>
 
+    <!-- Le tableau est occupé pendant la relecture, jamais un ancêtre de la région d'état (#748). -->
     <div
       v-if="showTable"
       class="table-responsive"
+      :aria-busy="isLoading"
     >
       <table class="table table-dark table-hover align-middle mb-0">
         <caption class="visually-hidden">
@@ -300,7 +377,7 @@ onMounted(() => {
                 class="btn btn-outline-danger btn-sm"
                 :disabled="sessionExpired || null !== revokingId"
                 :aria-label="t('mcpConnections.revokeAria', { client: connection.client.name, date: date(connection.grantedAt) })"
-                @click="onRevoke(connection)"
+                @click="onRevoke(connection, $event)"
               >
                 {{ t('mcpConnections.revoke') }}
               </button>

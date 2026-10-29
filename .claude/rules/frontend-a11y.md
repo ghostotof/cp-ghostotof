@@ -86,6 +86,17 @@ fixed:
   one is in the page from the start. It is still readable as ordinary text in the reading order, which is why it is
   kept a status (nothing is broken, no `role="alert"`); announcement on arrival is part of the browser check still
   to do, with the task 10 one (`.claude/rules/mcp-oauth-revocation-personne.md`).
+- **A gesture that moves the focus and announces an outcome: focus first, announce after a short delay** (#748,
+  `McpConnectionsPage.vue`, `ANNOUNCE_AFTER_FOCUS_MS` = 250 ms): the `role="status"` region is written only once the
+  focus has moved, because an announcement written at the moment of the move can be cut off by the reading of the
+  element that takes the focus. Not `aria-describedby` from the title to the message: whether a description is read
+  at focus depends on the screen reader's settings (VoiceOver reads it after a delay, NVDA only if « announce
+  descriptions » is on), and it would stay stuck to the title at every later focus. **Never `aria-busy` on an
+  ancestor of a live region** (it silences it): the busy marker goes on what is loading (the table's container). The
+  pending timer is cancelled by the next gesture and on unmount (nothing is written to a component that is gone).
+  A button that disappears under the focus (the « Réessayer » replaced by the loading state) hands the focus back
+  explicitly: to the title on success, to the new button on a new failure. Not checked with a real screen reader
+  (NVDA, VoiceOver): the delay is a reasoned value, to listen to in the browser check.
 
 Tests live under `tests/`, mirroring the `src/` tree rather than being colocated (e.g.
 `src/presentation/layout/AppHeader.vue` is tested by `tests/presentation/layout/AppHeader.spec.ts`, the same

@@ -876,7 +876,7 @@
     },
     "revoke": "Révoquer",
     "revokeAria": "Révoquer la connexion de {client}, accordée le {date}",
-    "confirm": "Révoquer la connexion de « {client} » ? Elle cessera de fonctionner dès la prochaine requête de l'assistant.",
+    "confirm": "Révoquer la connexion de « {client} », accordée le {date} ? Elle cessera de fonctionner dès la prochaine requête de l'assistant.",
     "outcome": {
       "revoked": "La connexion a été révoquée. Elle cesse de fonctionner dès la prochaine requête de l'assistant.",
       "alreadyGone": "Cette connexion était déjà terminée : rien à révoquer. La liste a été actualisée."

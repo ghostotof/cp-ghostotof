@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import McpConnectionsPage from '../../../src/presentation/pages/McpConnectionsPage.vue'
@@ -15,9 +15,29 @@ import { listOf } from '../../support/mcpConnectionList'
 
 enableAutoUnmount(afterEach)
 
+// Seuls `setTimeout`/`clearTimeout` sont simulés : `flushPromises` s'appuie sur `setImmediate`,
+// qui doit rester réel. Le délai d'annonce (focus d'abord, annonce ensuite) est ainsi piloté
+// par le test, et rétabli pour les suivants.
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+})
+
 afterEach(() => {
+  vi.useRealTimers()
   vi.restoreAllMocks()
 })
+
+/** axe-core s'appuie sur de vraies minuteries : il ne tourne pas sous les faux minuteurs. */
+async function auditAccessibility(wrapper: VueWrapper): Promise<void> {
+  vi.useRealTimers()
+  await expectNoAccessibilityViolation(wrapper)
+}
+
+/** Laisse passer le délai entre le déplacement du focus et l'écriture de l'annonce. */
+async function letTheAnnouncementThrough(): Promise<void> {
+  await vi.runAllTimersAsync()
+  await flushPromises()
+}
 
 const StubPage = { template: '<div />' }
 
@@ -297,7 +317,7 @@ describe('McpConnectionsPage', () => {
     const list = vi.fn(async () => listOf([ACTIVE, REVOKED_BY_PERSON], true))
     const { wrapper } = await mountPage({ list })
 
-    await expectNoAccessibilityViolation(wrapper)
+    await auditAccessibility(wrapper)
   })
 
   it('affiche l\'état vide avec un lien vers « Brancher votre assistant »', async () => {
@@ -330,6 +350,7 @@ describe('McpConnectionsPage', () => {
 
     await rowOf(wrapper, 'Claude Code').get('button').trigger('click')
     await flushPromises()
+    await letTheAnnouncementThrough()
 
     // La confirmation nomme le client.
     expect(confirm).toHaveBeenCalledOnce()
@@ -375,6 +396,7 @@ describe('McpConnectionsPage', () => {
 
     await rowOf(wrapper, 'Claude Code').get('button').trigger('click')
     await flushPromises()
+    await letTheAnnouncementThrough()
 
     expect(wrapper.get('[role="status"]').text()).toContain('déjà terminée')
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
@@ -434,11 +456,12 @@ describe('McpConnectionsPage', () => {
     expect(rows(wrapper)).toHaveLength(1)
   })
 
-  it('pendant le chargement : aria-busy, un message d\'état, ni tableau ni état vide', async () => {
+  it('pendant le premier chargement : un message d\'état, ni tableau ni état vide, et aucun aria-busy sur la section', async () => {
     const list = vi.fn(() => new Promise<McpConnectionList>(() => undefined))
     const { wrapper } = await mountPage({ list })
 
-    expect(wrapper.find('[aria-busy="true"]').exists()).toBe(true)
+    // `aria-busy` sur un ancêtre de la région `status` la ferait taire (#748, constat 11).
+    expect(wrapper.find('[aria-busy="true"]').exists()).toBe(false)
     expect(wrapper.get('[role="status"]').text()).toContain('Chargement')
     expect(wrapper.find('table').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('Aucune connexion')
@@ -454,20 +477,224 @@ describe('McpConnectionsPage', () => {
   it('liste : aucune violation d\'accessibilité détectable', async () => {
     const { wrapper } = await mountPage({ list: vi.fn(async () => listOf([ACTIVE, NEVER_USED, ABANDONED, EXPIRED, REVOKED_BY_PERSON, REVOKED_UNKNOWN_CAUSE])) })
 
-    await expectNoAccessibilityViolation(wrapper)
+    await auditAccessibility(wrapper)
   })
 
   it('état vide : aucune violation d\'accessibilité détectable', async () => {
     const { wrapper } = await mountPage({ list: vi.fn(async () => listOf([])) })
 
-    await expectNoAccessibilityViolation(wrapper)
+    await auditAccessibility(wrapper)
   })
 
   it('erreur de chargement : aucune violation d\'accessibilité détectable', async () => {
     const list = vi.fn().mockRejectedValue(new McpConnectionsRequestFailedError())
     const { wrapper } = await mountPage({ list })
 
-    await expectNoAccessibilityViolation(wrapper)
+    await auditAccessibility(wrapper)
+  })
+
+  describe('focus et annonces (#748)', () => {
+    /** La liste telle que le serveur la rend une fois « Claude Code » révoquée. */
+    const AFTER_REVOCATION = listOf([{ ...ACTIVE, state: 'revoked', expiresAt: null, revokedAt: '2026-10-28T11:00:00+01:00', revocationCause: 'person' }, NEVER_USED])
+
+    it("après une révocation, le titre a le focus avant que l'issue soit annoncée", async () => {
+      const list = vi.fn().mockResolvedValueOnce(listOf([ACTIVE, NEVER_USED])).mockResolvedValue(AFTER_REVOCATION)
+      const { wrapper } = await mountPage({ list })
+
+      await rowOf(wrapper, 'Claude Code').get('button').trigger('click')
+      await flushPromises()
+
+      // Le focus d'abord : une annonce écrite en même temps pourrait être coupée par la lecture du titre.
+      expect(document.activeElement).toBe(wrapper.get('h1').element)
+      expect(wrapper.get('[role="status"]').text()).toBe('')
+
+      await letTheAnnouncementThrough()
+
+      expect(wrapper.get('[role="status"]').text()).toContain('révoquée')
+    })
+
+    it("le démontage annule l'annonce en attente", async () => {
+      const list = vi.fn().mockResolvedValueOnce(listOf([ACTIVE, NEVER_USED])).mockResolvedValue(AFTER_REVOCATION)
+      const { wrapper } = await mountPage({ list })
+
+      await rowOf(wrapper, 'Claude Code').get('button').trigger('click')
+      await flushPromises()
+      expect(vi.getTimerCount()).toBe(1)
+
+      wrapper.unmount()
+
+      expect(vi.getTimerCount()).toBe(0)
+      await expect(letTheAnnouncementThrough()).resolves.toBeUndefined()
+    })
+
+    it("une révocation qui aboutit après le démontage ne programme aucune annonce", async () => {
+      let finish: () => void = () => undefined
+      const revoke = vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            finish = resolve
+          }),
+      )
+      const { wrapper } = await mountPage({ revoke })
+
+      await rowOf(wrapper, 'Claude Code').get('button').trigger('click')
+      await flushPromises()
+      wrapper.unmount()
+      finish()
+      await flushPromises()
+
+      expect(vi.getTimerCount()).toBe(0)
+    })
+
+    it("une seconde révocation annule l'annonce de la première", async () => {
+      const list = vi.fn().mockResolvedValueOnce(listOf([ACTIVE, NEVER_USED])).mockResolvedValue(AFTER_REVOCATION)
+      const { wrapper } = await mountPage({ list })
+
+      await rowOf(wrapper, 'Claude Code').get('button').trigger('click')
+      await flushPromises()
+      await rowOf(wrapper, 'Autre Client').get('button').trigger('click')
+      await flushPromises()
+
+      // Une seule annonce en attente, jamais deux écritures qui se doublent.
+      expect(vi.getTimerCount()).toBe(1)
+    })
+
+    it('échec de la révocation : le focus reste sur le bouton « Révoquer »', async () => {
+      // Un navigateur retire le focus d'un bouton qui devient `disabled` : on le rejoue.
+      const revoke = vi.fn(async () => {
+        ;(document.activeElement as HTMLElement | null)?.blur()
+        throw new McpConnectionsRequestFailedError()
+      })
+      const { wrapper } = await mountPage({ revoke })
+      const button = rowOf(wrapper, 'Claude Code').get('button')
+      ;(button.element as HTMLElement).focus()
+
+      await button.trigger('click')
+      await flushPromises()
+
+      expect(wrapper.get('[role="alert"]').text()).toContain("n'a pas pu être révoquée")
+      expect(document.activeElement).toBe(button.element)
+    })
+
+    it('session finie à la révocation : le focus passe au titre, où l\'alerte et son lien sont lus', async () => {
+      const revoke = vi.fn(async () => {
+        ;(document.activeElement as HTMLElement | null)?.blur()
+        throw new SessionExpiredError()
+      })
+      const { wrapper } = await mountPage({ revoke })
+      const button = rowOf(wrapper, 'Claude Code').get('button')
+      ;(button.element as HTMLElement).focus()
+
+      await button.trigger('click')
+      await flushPromises()
+
+      expect(document.activeElement).toBe(wrapper.get('h1').element)
+    })
+
+    it('« Réessayer » réussi : le focus passe au titre', async () => {
+      let succeed: (list: McpConnectionList) => void = () => undefined
+      const list = vi
+        .fn()
+        .mockRejectedValueOnce(new McpConnectionsRequestFailedError())
+        .mockImplementationOnce(
+          () =>
+            new Promise<McpConnectionList>((resolve) => {
+              succeed = resolve
+            }),
+        )
+      const { wrapper } = await mountPage({ list })
+      const retry = wrapper.get('[role="alert"] button')
+      ;(retry.element as HTMLElement).focus()
+
+      await retry.trigger('click')
+      await flushPromises()
+      // Le bouton a disparu pendant la relecture : le focus est tombé sur <body>.
+      expect(wrapper.find('[role="alert"] button').exists()).toBe(false)
+
+      succeed(listOf([ACTIVE]))
+      await flushPromises()
+
+      expect(rows(wrapper)).toHaveLength(1)
+      expect(document.activeElement).toBe(wrapper.get('h1').element)
+    })
+
+    it('« Réessayer » en échec : le focus passe au nouveau « Réessayer »', async () => {
+      let fail: (error: Error) => void = () => undefined
+      const list = vi
+        .fn()
+        .mockRejectedValueOnce(new McpConnectionsRequestFailedError())
+        .mockImplementationOnce(
+          () =>
+            new Promise<McpConnectionList>((_resolve, reject) => {
+              fail = reject
+            }),
+        )
+      const { wrapper } = await mountPage({ list })
+      const retry = wrapper.get('[role="alert"] button')
+      ;(retry.element as HTMLElement).focus()
+
+      await retry.trigger('click')
+      await flushPromises()
+      expect(wrapper.find('[role="alert"] button').exists()).toBe(false)
+
+      fail(new McpConnectionsRequestFailedError())
+      await flushPromises()
+
+      const renewed = wrapper.get('[role="alert"] button')
+      expect(renewed.element).not.toBe(retry.element)
+      expect(document.activeElement).toBe(renewed.element)
+    })
+
+    it("la confirmation nomme le client et la date de l'accord, en français", async () => {
+      const { wrapper, confirm } = await mountPage()
+
+      await rowOf(wrapper, 'Claude Code').get('button').trigger('click')
+      await flushPromises()
+
+      const question = normalized(String(confirm.mock.calls[0]?.[0]))
+      expect(question).toContain('Claude Code')
+      expect(question).toContain('accordée le')
+      expect(question).toContain('28 oct. 2026')
+    })
+
+    it("la confirmation nomme le client et la date de l'accord, en anglais", async () => {
+      const { wrapper, confirm } = await mountPage({ locale: 'en' })
+
+      await rowOf(wrapper, 'Claude Code').get('button').trigger('click')
+      await flushPromises()
+
+      const question = normalized(String(confirm.mock.calls[0]?.[0]))
+      expect(question).toContain('Claude Code')
+      expect(question).toContain('granted on')
+      expect(question).toContain('Oct 28, 2026')
+    })
+
+    it("pendant la relecture qui suit une révocation, c'est le tableau qui est occupé, pas la région d'état", async () => {
+      let finish: (list: McpConnectionList) => void = () => undefined
+      const list = vi
+        .fn()
+        .mockResolvedValueOnce(listOf([ACTIVE, NEVER_USED]))
+        .mockImplementationOnce(
+          () =>
+            new Promise<McpConnectionList>((resolve) => {
+              finish = resolve
+            }),
+        )
+      const { wrapper } = await mountPage({ list })
+
+      await rowOf(wrapper, 'Claude Code').get('button').trigger('click')
+      await flushPromises()
+
+      expect(wrapper.get('.table-responsive').attributes('aria-busy')).toBe('true')
+      const status = wrapper.get('[role="status"]').element
+      for (let node: Element | null = status; null !== node; node = node.parentElement) {
+        expect(node.getAttribute('aria-busy')).not.toBe('true')
+      }
+
+      finish(AFTER_REVOCATION)
+      await flushPromises()
+      expect(wrapper.get('.table-responsive').attributes('aria-busy')).toBe('false')
+    })
   })
 
   describe('session finie (401/403 du serveur)', () => {
@@ -543,7 +770,7 @@ describe('McpConnectionsPage', () => {
       const list = vi.fn().mockRejectedValue(new SessionExpiredError())
       const { wrapper } = await mountPage({ list })
 
-      await expectNoAccessibilityViolation(wrapper)
+      await auditAccessibility(wrapper)
     })
   })
 })
