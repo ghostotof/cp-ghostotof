@@ -25,8 +25,7 @@ const emit = defineEmits<{ switchLocale: [locale: Locale] }>()
 
 const { t } = useI18n()
 
-const { settings, isLoading, hasError, errorMessage, load, save } = useAdminAboutSettings()
-
+const { settings, isLoading, hasError, isLoaded, errorMessage, load, save } = useAdminAboutSettings()
 
 const form = reactive({ siteEyebrow: '', meEyebrow: '', technicalSubtitle: '', personalSubtitle: '', hobbiesSubtitle: '' })
 const isSubmitting = ref(false)
@@ -43,6 +42,11 @@ const errorText = computed(() => {
  * proposition serait écrasée si elle était appliquée avant. Elle est donc mise en
  * attente et posée sur le formulaire une fois la locale cible chargée ;
  * Enregistrer met alors à jour les réglages de cette locale.
+ *
+ * « Une fois chargée » est `isLoaded` (R4, #748), pas le retour de `load()` : une
+ * lecture en session finie ne lève ni erreur ni valeur, et ne finit qu'au retour
+ * de la session, lancée alors par le composable lui-même. La proposition attend
+ * donc ce retour, jamais posée sur un formulaire non chargé.
  */
 const { isTranslating, errorReason: translationErrorReason, translate } = useAdminTranslation()
 const PROSE_FIELDS = ['siteEyebrow', 'meEyebrow', 'technicalSubtitle', 'personalSubtitle', 'hobbiesSubtitle'] as const
@@ -56,9 +60,9 @@ const translationErrorText = computed(() => {
 })
 
 // `flush: 'sync'` : le formulaire est rempli au moment même où les réglages
-// arrivent, et non au prochain tick — ainsi, au retour de load(), la copie a
-// déjà eu lieu et la proposition en attente peut se poser par-dessus sans être
-// écrasé ensuite.
+// arrivent, et non au prochain tick — ainsi, quand `isLoaded` se lève (après la
+// pose des réglages), la copie a déjà eu lieu et la proposition en attente peut
+// se poser par-dessus sans être écrasée ensuite.
 watch(
   settings,
   (value) => {
@@ -73,13 +77,27 @@ watch(
   { immediate: true, flush: 'sync' },
 )
 
+// Changer de locale vide les réglages de l'ancienne (`clear` du composable) avant de lire : le formulaire
+// n'est rendu que si `isLoaded`, jamais avec les champs d'une autre langue sous l'en-tête de celle-ci.
 watch(
   () => props.locale,
-  async (locale) => {
-    await load(locale)
-    applyPendingProposal(locale)
+  (locale) => {
+    void load(locale)
   },
   { immediate: true },
+)
+
+// Les réglages de `props.locale` viennent d'être posés et recopiés dans le formulaire : la proposition en
+// attente, si c'est leur locale qu'elle visait, se pose par-dessus (spec 0002). Aussi au retour d'une session
+// finie : la lecture interrompue est relancée par le composable, `isLoaded` se lève alors.
+watch(
+  isLoaded,
+  (loaded) => {
+    if (loaded) {
+      applyPendingProposal(props.locale)
+    }
+  },
+  { flush: 'sync' },
 )
 
 /** Pose la proposition en attente si la locale qui vient d'être chargée est sa cible. */
@@ -129,6 +147,12 @@ async function handleSubmit(): Promise<void> {
       role="alert"
     >
       {{ t('admin.about.loadError') }}
+    </p>
+    <p
+      v-else-if="!isLoaded"
+      class="text-body-secondary mb-0"
+    >
+      {{ t('admin.notLoaded') }}
     </p>
     <form
       v-else

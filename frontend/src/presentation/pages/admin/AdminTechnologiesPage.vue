@@ -7,7 +7,7 @@ import BaseNumberInput from '../../ui/BaseNumberInput.vue'
 import type { AdminExperienceTechnology } from '../../../domain/admin/technologies/entities/AdminExperienceTechnology'
 
 const { t } = useI18n()
-const { technologies, isLoading, hasError, errorMessage, create, update, remove } = useAdminExperienceTechnologies()
+const { technologies, isLoading, hasError, isLoaded, errorMessage, create, update, remove } = useAdminExperienceTechnologies()
 
 const editingId = ref<string | null>(null)
 const form = reactive({ name: '', years: 0, iconKey: '', relatedTechnologyName: '', isSecondary: false })
@@ -167,6 +167,12 @@ async function handleDelete(technology: AdminExperienceTechnology): Promise<void
         role="alert"
       >
         {{ t('admin.technologies.loadError') }}
+      </p>
+      <p
+        v-else-if="!isLoaded"
+        class="text-body-secondary mb-0"
+      >
+        {{ t('admin.notLoaded') }}
       </p>
       <p
         v-else-if="0 === technologies.length"

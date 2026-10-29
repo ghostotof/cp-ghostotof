@@ -42,7 +42,7 @@ export function useAdminAboutSiteCards(): UseAdminAboutSiteCardsResult {
   const cards = ref<readonly AdminAboutSiteCard[]>([])
   const errorMessage = ref<AdminAboutError | null>(null)
 
-  const { isLoading, hasError, load } = useAdminLoad({
+  const { isLoading, hasError, isLoaded, load } = useAdminLoad({
     read: () => repository.list(),
     apply: (value) => {
       cards.value = value
@@ -81,5 +81,5 @@ export function useAdminAboutSiteCards(): UseAdminAboutSiteCardsResult {
 
   void load()
 
-  return { cards, isLoading, hasError, errorMessage, load, create, update, remove, reorder }
+  return { cards, isLoading, hasError, isLoaded, errorMessage, load, create, update, remove, reorder }
 }

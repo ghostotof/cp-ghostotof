@@ -45,7 +45,7 @@ export function useAdminCaseStudies(): UseAdminCaseStudiesResult {
   const caseStudies = ref<readonly AdminCaseStudy[]>([])
   const errorMessage = ref<AdminCaseStudyError | null>(null)
 
-  const { isLoading, hasError, load } = useAdminLoad({
+  const { isLoading, hasError, isLoaded, load } = useAdminLoad({
     read: () => repository.list(),
     apply: (value) => {
       caseStudies.value = value
@@ -85,5 +85,5 @@ export function useAdminCaseStudies(): UseAdminCaseStudiesResult {
 
   void load()
 
-  return { caseStudies, isLoading, hasError, errorMessage, load, create, update, remove, reorder }
+  return { caseStudies, isLoading, hasError, isLoaded, errorMessage, load, create, update, remove, reorder }
 }

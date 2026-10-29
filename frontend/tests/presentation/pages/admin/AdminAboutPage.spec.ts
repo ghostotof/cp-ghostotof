@@ -8,6 +8,9 @@ import { ADMIN_ABOUT_SITE_CARD_REPOSITORY } from '../../../../src/application/ad
 import { ADMIN_ABOUT_ME_CARD_REPOSITORY } from '../../../../src/application/admin/about/useAdminAboutMeCards'
 import { ADMIN_TRANSLATION_REPOSITORY } from '../../../../src/application/admin/translation/useAdminTranslation'
 import { createAppI18n } from '../../../../src/presentation/i18n'
+import { markSessionExpired } from '../../../../src/application/auth/useAuth'
+import { SessionEndedError } from '../../../../src/domain/auth/errors/SessionEndedError'
+import { signInAgain } from '../../../support/signInAgain'
 import type { AdminAboutSettingsRepository } from '../../../../src/domain/admin/about/repositories/AdminAboutSettingsRepository'
 import type { AdminAboutSiteCardRepository } from '../../../../src/domain/admin/about/repositories/AdminAboutSiteCardRepository'
 import type { AdminAboutMeCardRepository } from '../../../../src/domain/admin/about/repositories/AdminAboutMeCardRepository'
@@ -165,6 +168,27 @@ function createTranslationRepository(
   return {
     translate: vi.fn(async () => ({ sourceLocale: 'fr' as const, targetLocale: 'en' as const, fields })),
     ...overrides,
+  }
+}
+
+const SETTINGS_EN: AdminAboutSettings = { locale: 'en', ...TRANSLATED_SETTINGS }
+
+/**
+ * Des réglages **propres à chaque locale** (le stub ordinaire rend les valeurs françaises pour toutes, ce qui
+ * cacherait un français montré sous l'anglais), dont la lecture anglaise tombe en session finie tant que
+ * `session.ended` est vrai — la réaction du client du backoffice marque la session avant de lever l'erreur.
+ */
+function createLocaleAwareSettingsRepository(session: { ended: boolean }): AdminAboutSettingsRepository {
+  return {
+    get: vi.fn(async (locale: string) => {
+      if ('en' === locale && session.ended) {
+        markSessionExpired()
+        throw new SessionEndedError()
+      }
+
+      return 'en' === locale ? SETTINGS_EN : SETTINGS
+    }),
+    update: vi.fn(async () => SETTINGS),
   }
 }
 
@@ -1053,6 +1077,110 @@ describe('AdminAboutPage', () => {
         technicalSubtitle: 'Techniquement',
         personalSubtitle: 'Humainement',
         hobbiesSubtitle: 'En dehors du travail',
+      })
+    })
+
+    describe('session finie pendant la lecture des réglages de la locale cible (#748, R4, CR2)', () => {
+      // Une page laissée montée relirait sa lecture interrompue au retour suivant, et rouvrirait la session finie
+      // pour le test d'après : on la démonte avant de rendre la session.
+      let mountedPage: VueWrapper | undefined
+      afterEach(async () => {
+        mountedPage?.unmount()
+        mountedPage = undefined
+        await signInAgain()
+      })
+
+      /** Les champs et boutons du panneau des réglages, d'un coup d'œil. */
+      function settingsPanelState(wrapper: VueWrapper): { values: string[]; saveButton: boolean; translateButton: boolean; text: string } {
+        const panel = panelOf(wrapper, SETTINGS_PANEL)
+
+        return {
+          values: panel.findAll('input').map((input) => (input.element as HTMLInputElement).value),
+          saveButton: panel.findAll('button').some((button) => 'Enregistrer' === button.text()),
+          translateButton: panel.findAll('button').some((button) => button.text().includes('Proposer la version')),
+          text: panel.text(),
+        }
+      }
+
+      it("session finie au passage en EN : ni les champs FR ni « Enregistrer », la mention « non chargé »", async () => {
+        const session = { ended: false }
+        const settingsRepository = createLocaleAwareSettingsRepository(session)
+        const { wrapper } = await mountPage(settingsRepository)
+        mountedPage = wrapper
+        expect(settingsPanelState(wrapper).values).toContain(SETTINGS.siteEyebrow)
+
+        session.ended = true
+        await wrapper.get('#admin-about-locale').setValue('en')
+        await flushPromises()
+
+        const state = settingsPanelState(wrapper)
+        // Jamais le français sous l'en-tête anglais : un « Enregistrer » ici écraserait les réglages EN.
+        expect(state.values).toEqual([])
+        expect(wrapper.find('#admin-about-site-eyebrow').exists()).toBe(false)
+        expect(state.saveButton).toBe(false)
+        expect(state.translateButton).toBe(false)
+        expect(state.text).toContain('Contenu non chargé')
+        expect(settingsRepository.update).not.toHaveBeenCalled()
+      })
+
+      it('au retour de la session, les réglages EN se lisent et remplissent le formulaire', async () => {
+        const session = { ended: false }
+        const settingsRepository = createLocaleAwareSettingsRepository(session)
+        const { wrapper } = await mountPage(settingsRepository)
+        mountedPage = wrapper
+        session.ended = true
+        await wrapper.get('#admin-about-locale').setValue('en')
+        await flushPromises()
+        expect(settingsPanelState(wrapper).saveButton).toBe(false)
+
+        session.ended = false
+        await signInAgain()
+
+        expect(settingsRepository.get).toHaveBeenLastCalledWith('en')
+        expect(valueOf(wrapper, '#admin-about-site-eyebrow')).toBe(TRANSLATED_SETTINGS.siteEyebrow)
+        expect(settingsPanelState(wrapper).text).not.toContain('Contenu non chargé')
+
+        // « Enregistrer » ne touche que l'EN, avec ses propres valeurs.
+        await formOf(wrapper, SETTINGS_FORM).trigger('submit.prevent')
+        await flushPromises()
+        expect(settingsRepository.update).toHaveBeenCalledOnce()
+        expect(settingsRepository.update).toHaveBeenCalledWith('en', TRANSLATED_SETTINGS)
+      })
+
+      it('une proposition en attente ne se pose pas sur un formulaire non chargé, elle se pose au retour', async () => {
+        const session = { ended: false }
+        const settingsRepository = createLocaleAwareSettingsRepository(session)
+        const translation = createTranslationRepository({
+          siteEyebrow: 'Proposed site',
+          meEyebrow: 'Proposed me',
+          technicalSubtitle: 'Proposed technical',
+          personalSubtitle: 'Proposed personal',
+          hobbiesSubtitle: 'Proposed hobbies',
+        })
+        const { wrapper } = await mountPage(settingsRepository, undefined, undefined, translation)
+        mountedPage = wrapper
+        session.ended = true
+
+        await translateButton(wrapper, SETTINGS_FORM).trigger('click')
+        await flushPromises()
+
+        // La page est passée en EN, la lecture EN est en session finie : aucun formulaire, donc aucune proposition posée.
+        expect(valueOf(wrapper, '#admin-about-locale')).toBe('en')
+        let state = settingsPanelState(wrapper)
+        expect(state.values).toEqual([])
+        expect(state.text).toContain('Contenu non chargé')
+        expect(panelOf(wrapper, SETTINGS_PANEL).find('[role="status"]').exists()).toBe(false)
+
+        session.ended = false
+        await signInAgain()
+
+        // Au retour : la lecture EN aboutit, et la proposition se pose par-dessus, comme au premier passage.
+        expect(valueOf(wrapper, '#admin-about-site-eyebrow')).toBe('Proposed site')
+        expect(valueOf(wrapper, '#admin-about-hobbies-subtitle')).toBe('Proposed hobbies')
+        expect(panelOf(wrapper, SETTINGS_PANEL).get('[role="status"]').text()).toContain('Proposition générée par IA')
+        state = settingsPanelState(wrapper)
+        expect(state.saveButton).toBe(true)
+        expect(settingsRepository.update).not.toHaveBeenCalled()
       })
     })
 

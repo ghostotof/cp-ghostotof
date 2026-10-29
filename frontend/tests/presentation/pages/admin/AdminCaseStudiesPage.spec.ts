@@ -12,6 +12,8 @@ import type { AdminCaseStudy } from '../../../../src/domain/admin/caseStudies/en
 import type { AdminTranslationRepository } from '../../../../src/domain/admin/translation/repositories/AdminTranslationRepository'
 import { AdminTranslationError } from '../../../../src/domain/admin/translation/errors/AdminTranslationError'
 import { SessionEndedError } from '../../../../src/domain/auth/errors/SessionEndedError'
+import { markSessionExpired } from '../../../../src/application/auth/useAuth'
+import { signInAgain } from '../../../support/signInAgain'
 import { AdminOrderError } from '../../../../src/domain/admin/shared/errors/AdminOrderError'
 import { expectNoAccessibilityViolation } from '../../../support/axe'
 
@@ -287,6 +289,63 @@ describe('AdminCaseStudiesPage', () => {
     for (const field of ['title', 'problem', 'solution', 'tradeoffs', 'measured-result']) {
       expect(valueOf(wrapper, `#admin-case-study-${field}`)).toBe('')
     }
+  })
+
+  describe('liste non chargée (#748, R4)', () => {
+    // Une page laissée montée relirait sa lecture interrompue au retour suivant : démontée avant de rendre la session.
+    let mountedPage: VueWrapper | undefined
+    afterEach(async () => {
+      mountedPage?.unmount()
+      mountedPage = undefined
+      await signInAgain()
+    })
+
+    /** Le dépôt de la page, dont la lecture tombe en session finie (la réaction du client marque la session) tant que `ended`. */
+    function repositoryEndingSession(session: { ended: boolean }): AdminCaseStudyRepository {
+      return createStubRepository({
+        list: vi.fn(async () => {
+          if (session.ended) {
+            markSessionExpired()
+            throw new SessionEndedError()
+          }
+
+          return ALL_SECTIONS
+        }),
+      })
+    }
+
+    it('première lecture en session finie : ni « aucune étude de cas » ni tableau, la mention « non chargé »', async () => {
+      const { wrapper } = await mountPage(repositoryEndingSession({ ended: true }))
+      mountedPage = wrapper
+
+      expect(wrapper.text()).toContain('Contenu non chargé')
+      expect(wrapper.text()).not.toContain('Aucune étude de cas')
+      expect(wrapper.find('table').exists()).toBe(false)
+      // Le bandeau de session finie est la seule alerte : la mention n'en est pas une.
+      expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    })
+
+    it("au retour de la session, la liste se lit et s'affiche", async () => {
+      const session = { ended: true }
+      const caseStudies = repositoryEndingSession(session)
+      const { wrapper } = await mountPage(caseStudies)
+      mountedPage = wrapper
+      expect(rows(wrapper)).toHaveLength(0)
+
+      session.ended = false
+      await signInAgain()
+
+      expect(caseStudies.list).toHaveBeenCalledTimes(2)
+      expect(wrapper.text()).not.toContain('Contenu non chargé')
+      expect(rows(wrapper)).toHaveLength(3)
+    })
+
+    it('une liste réellement vide dit toujours « aucune étude de cas »', async () => {
+      const { wrapper } = await mountPage(createStubRepository({ list: vi.fn(async () => []) }))
+
+      expect(wrapper.text()).toContain('Aucune étude de cas')
+      expect(wrapper.text()).not.toContain('Contenu non chargé')
+    })
   })
 
   it("une erreur « session finie » à l'enregistrement n'affiche aucune alerte de la page", async () => {

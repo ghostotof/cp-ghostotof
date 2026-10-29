@@ -74,6 +74,7 @@ const {
   principles,
   isLoading: isLoadingPrinciples,
   hasError: hasPrinciplesError,
+  isLoaded: isPrinciplesLoaded,
   errorMessage: principleErrorMessage,
   load: loadPrinciples,
   create: createPrinciple,
@@ -86,6 +87,7 @@ const {
   traits,
   isLoading: isLoadingTraits,
   hasError: hasTraitsError,
+  isLoaded: isTraitsLoaded,
   errorMessage: traitErrorMessage,
   load: loadTraits,
   create: createTrait,
@@ -619,6 +621,12 @@ useUnsavedOrderGuard(isAnyOrderDirty)
         {{ t('admin.quality.loadError') }}
       </p>
       <p
+        v-else-if="!isPrinciplesLoaded"
+        class="text-body-secondary mb-0"
+      >
+        {{ t('admin.notLoaded') }}
+      </p>
+      <p
         v-else-if="0 === orderedPrincipleRows.length"
         class="text-body-secondary mb-0"
       >
@@ -862,6 +870,12 @@ useUnsavedOrderGuard(isAnyOrderDirty)
         role="alert"
       >
         {{ t('admin.quality.loadError') }}
+      </p>
+      <p
+        v-else-if="!isTraitsLoaded"
+        class="text-body-secondary mb-0"
+      >
+        {{ t('admin.notLoaded') }}
       </p>
       <p
         v-else-if="0 === orderedTraitRows.length"

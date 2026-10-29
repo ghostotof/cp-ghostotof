@@ -42,7 +42,7 @@ export function useAdminQualityTraits(): UseAdminQualityTraitsResult {
   const traits = ref<readonly AdminQualityTrait[]>([])
   const errorMessage = ref<AdminQualityError | null>(null)
 
-  const { isLoading, hasError, load } = useAdminLoad({
+  const { isLoading, hasError, isLoaded, load } = useAdminLoad({
     read: () => repository.list(),
     apply: (value) => {
       traits.value = value
@@ -81,5 +81,5 @@ export function useAdminQualityTraits(): UseAdminQualityTraitsResult {
 
   void load()
 
-  return { traits, isLoading, hasError, errorMessage, load, create, update, remove, reorder }
+  return { traits, isLoading, hasError, isLoaded, errorMessage, load, create, update, remove, reorder }
 }

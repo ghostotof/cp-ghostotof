@@ -13,6 +13,7 @@ paths:
   - "frontend/tests/presentation/layout/AdminLayout.sessionEnded.spec.ts"
   - "frontend/tests/infrastructure/admin/sessionEndedMapping.spec.ts"
   - "frontend/tests/application/admin/sessionEndedLoad.spec.ts"
+  - "frontend/tests/presentation/pages/admin/emptyStateNeedsLoaded.spec.ts"
 ---
 
 # Frontend — backoffice (`/admin`) and set-password
@@ -210,3 +211,23 @@ version" copies nothing and the assistant sends all five fields.
   `BackofficeHttpClient`, a new composable through those two functions, and its mutations resolve to `true` only on
   success** (a page resets its form on that, never on `errorMessage`). The rule, its backend facts, the shared errors, the
   banner, the header's link and the re-check on return: `.claude/rules/frontend-session.md`.
+- **Not loaded is not empty, a new key empties the old value, and what an ended session interrupted is read again on
+  return** (#748, R4). `useAdminLoad` exposes `isLoaded` (the value of the current key was read and set: false before the
+  first read, after a first read that ended on `SessionEndedError`, and as soon as a new key starts reading); an
+  administration page says « aucune … » **only when `isLoaded`**, and shows `admin.notLoaded` (« Contenu non chargé… »,
+  not a live region: the banner announces) otherwise. Without it a first read in an ended session left the list at `[]`
+  with no error, and twelve empty states claimed the content did not exist. `emptyStateNeedsLoaded.spec.ts` is the source
+  guard: every file of `presentation/pages/admin` that composes a `…empty` state reads `isLoaded` at least as many times in
+  its template. A new list page adds the `isLoaded` guard before its empty state.
+  **The About settings are the one composable with a key** (the locale), hence `clear`: a `load(key)` with a key other
+  than the held value's empties it (`settings = null`) *before* reading. Otherwise the form of one locale stayed under
+  the header of another when the read of the new one ended in an ended session, and « Enregistrer » sent `save(props.locale)`
+  — the French texts over the English record, silently (CR2). `AdminAboutSettingsForm` renders the form only if `isLoaded`,
+  and a pending translation proposal is set by a synchronous watcher of `isLoaded` (not after `await load()`: the read
+  that ended the session never resolves a value), so it lands on the form it targets, at the return if need be.
+  **The return is the one signal that exists**: `authState.sessionEnded` going from true to false (`useAuth`: a
+  session of an account is applied). `useAdminLoad` watches it; if its last read ended on `SessionEndedError`, it re-runs
+  `load(same key)` **once**. A newer `load()` replaces the interrupted one; a read that succeeded leaves nothing to
+  replay. A mechanism that re-reads the session (the shared re-check on focus) only has to bring that state down: it never
+  re-reads lists itself, so nothing is doubled.
+

@@ -94,9 +94,12 @@ does `BackofficeHttpClient`.
   crosses them as it came and leaves the hierarchy of every context (it is not an `AdminXError`). **Two shared functions
   of `application/admin/shared/` keep it quiet, one per direction, and a new administration composable goes through
   them**:
-  - `useAdminLoad({ read, apply })` for a read: a `SessionEndedError` raises no `hasError` and leaves the value already
+  - `useAdminLoad({ read, apply, clear? })` for a read: a `SessionEndedError` raises no `hasError` and leaves the value already
     read; any other rejection raises it; a response older than the last `load()` is dropped (stale guard); `K` is the
-    read's key (the locale, for the About settings);
+    read's key (the locale, for the About settings; a new key runs `clear` first). `isLoaded` says the value of the
+    current key was read: **a first read ended by the session leaves it false, and a page never says « aucune … » then**.
+    On return (`authState.sessionEnded` true to false) the read it interrupted runs again, once, with its key (#748, R4,
+    `.claude/rules/frontend-backoffice.md`);
   - `visibleMutationError(error, OwnError, fallback)` for a `catch` of a mutation: `null` for a `SessionEndedError` (the
     banner is the only announcement, the page adds no alert), the error itself when it is the context's, `fallback()`
     otherwise. Never a `catch` that turns what is not its own error into `unknown`: it would show « Une erreur est
@@ -168,7 +171,7 @@ header read in the cookie, a write without a cookie or with an empty one ends th
 the given headers kept, a network failure or an abort rejecting as it came), `BackofficeHttpClient.spec.ts` (a 401 on read
 and write, a 403 to a write without a token or with an empty cookie, each **rejects `SessionEndedError`** and calls the
 reaction once, also with no reaction registered; 200/204/403/404/409/422/500 give the response back with no reaction when
-the token was sent, a 403 to a read never; a network failure rises as it came), `useAdminLoad.spec.ts` and
+the token was sent, a 403 to a read never; a network failure rises as it came), `useAdminLoad.spec.ts` (`isLoaded`, the key that empties, the read run again on return, `tests/support/signInAgain.ts` being the return) and
 `visibleMutationError.spec.ts` (the two functions), `sessionEndedMapping.spec.ts` (the table of the 15 repositories: a 401
 on every call each exposes, read, write, order, rejects `SessionEndedError` unchanged; a glob fails when a new repository
 is missing from the table), `sessionEndedLoad.spec.ts` (the thirteen composables: an ended session on a load raises no

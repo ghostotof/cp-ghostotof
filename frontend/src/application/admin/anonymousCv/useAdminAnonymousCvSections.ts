@@ -45,7 +45,7 @@ export function useAdminAnonymousCvSections(): UseAdminAnonymousCvSectionsResult
   const sections = ref<readonly AdminAnonymousCvSection[]>([])
   const errorMessage = ref<AdminAnonymousCvSectionError | null>(null)
 
-  const { isLoading, hasError, load } = useAdminLoad({
+  const { isLoading, hasError, isLoaded, load } = useAdminLoad({
     read: () => repository.list(),
     apply: (value) => {
       sections.value = value
@@ -85,5 +85,5 @@ export function useAdminAnonymousCvSections(): UseAdminAnonymousCvSectionsResult
 
   void load()
 
-  return { sections, isLoading, hasError, errorMessage, load, create, update, remove, reorder }
+  return { sections, isLoading, hasError, isLoaded, errorMessage, load, create, update, remove, reorder }
 }

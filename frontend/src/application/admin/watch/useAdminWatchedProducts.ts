@@ -42,7 +42,7 @@ export function useAdminWatchedProducts(): UseAdminWatchedProductsResult {
   const products = ref<readonly AdminWatchedProduct[]>([])
   const errorMessage = ref<AdminWatchedProductError | null>(null)
 
-  const { isLoading, hasError, load } = useAdminLoad({
+  const { isLoading, hasError, isLoaded, load } = useAdminLoad({
     read: () => repository.list(),
     apply: (value) => {
       products.value = value
@@ -81,5 +81,5 @@ export function useAdminWatchedProducts(): UseAdminWatchedProductsResult {
 
   void load()
 
-  return { products, isLoading, hasError, errorMessage, load, create, update, remove, reorder }
+  return { products, isLoading, hasError, isLoaded, errorMessage, load, create, update, remove, reorder }
 }

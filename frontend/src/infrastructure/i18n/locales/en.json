@@ -49,6 +49,7 @@
   "admin": {
     "heading": "Administration",
     "navigation": "Administration navigation",
+    "notLoaded": "Content not loaded: your session has ended. It will load as soon as you are signed in again.",
     "sessionEnded": {
       "message": "Your session has ended: what you typed is still here, but saving is refused until you sign in again.",
       "signInAgain": "Sign in again",

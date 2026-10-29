@@ -29,7 +29,7 @@ import { LOCALE_NATIVE_NAMES, SUPPORTED_LOCALES, type Locale } from '../../../do
 import type { AdminContribution } from '../../../domain/admin/contributions/entities/AdminContribution'
 
 const { t } = useI18n()
-const { contributions, isLoading, hasError, errorMessage, load, create, update, remove, reorder } =
+const { contributions, isLoading, hasError, isLoaded, errorMessage, load, create, update, remove, reorder } =
   useAdminContributions()
 const { isTranslating, errorReason: translationErrorReason, translate } = useAdminTranslation()
 
@@ -426,6 +426,12 @@ useUnsavedOrderGuard(isOrderDirty)
         role="alert"
       >
         {{ t('admin.contributions.loadError') }}
+      </p>
+      <p
+        v-else-if="!isLoaded"
+        class="text-body-secondary mb-0"
+      >
+        {{ t('admin.notLoaded') }}
       </p>
       <p
         v-else-if="0 === orderedRows.length"

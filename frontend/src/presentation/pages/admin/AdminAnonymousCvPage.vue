@@ -30,7 +30,7 @@ import { LOCALE_NATIVE_NAMES, SUPPORTED_LOCALES, type Locale } from '../../../do
 import type { AdminAnonymousCvSection } from '../../../domain/admin/anonymousCv/entities/AdminAnonymousCvSection'
 
 const { t } = useI18n()
-const { sections, isLoading, hasError, errorMessage, load, create, update, remove, reorder } =
+const { sections, isLoading, hasError, isLoaded, errorMessage, load, create, update, remove, reorder } =
   useAdminAnonymousCvSections()
 const { isTranslating, errorReason: translationErrorReason, translate } = useAdminTranslation()
 
@@ -412,6 +412,12 @@ useUnsavedOrderGuard(isOrderDirty)
         role="alert"
       >
         {{ t('admin.anonymousCv.loadError') }}
+      </p>
+      <p
+        v-else-if="!isLoaded"
+        class="text-body-secondary mb-0"
+      >
+        {{ t('admin.notLoaded') }}
       </p>
       <p
         v-else-if="0 === orderedRows.length"

@@ -14,12 +14,13 @@ import OrderToolbar from '../../ui/admin/OrderToolbar.vue'
 import type { AdminWatchedProduct } from '../../../domain/admin/watch/entities/AdminWatchedProduct'
 
 const { t } = useI18n()
-const { products, isLoading, hasError, errorMessage, load, create, update, remove, reorder } =
+const { products, isLoading, hasError, isLoaded, errorMessage, load, create, update, remove, reorder } =
   useAdminWatchedProducts()
 const {
   vulnerabilities,
   isLoading: isLoadingVulnerabilities,
   hasError: hasVulnerabilityError,
+  isLoaded: isVulnerabilitiesLoaded,
 } = useAdminVulnerabilities()
 
 /** L'adresse de la fiche publiée par la base, pour vérifier à la source. */
@@ -289,6 +290,12 @@ useUnsavedOrderGuard(isOrderDirty)
         {{ t('admin.watch.loadError') }}
       </p>
       <p
+        v-else-if="!isLoaded"
+        class="text-body-secondary mb-0"
+      >
+        {{ t('admin.notLoaded') }}
+      </p>
+      <p
         v-else-if="0 === orderedProducts.length"
         class="text-body-secondary mb-0"
       >
@@ -427,6 +434,12 @@ useUnsavedOrderGuard(isOrderDirty)
         role="alert"
       >
         {{ t('admin.watch.vulnerabilities.loadError') }}
+      </p>
+      <p
+        v-else-if="!isVulnerabilitiesLoaded"
+        class="text-body-secondary mb-0"
+      >
+        {{ t('admin.notLoaded') }}
       </p>
       <p
         v-else-if="0 === vulnerabilities.length"

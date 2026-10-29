@@ -41,7 +41,7 @@ export function useAdminAboutMeCards(): UseAdminAboutMeCardsResult {
   const cards = ref<readonly AdminAboutMeCard[]>([])
   const errorMessage = ref<AdminAboutError | null>(null)
 
-  const { isLoading, hasError, load } = useAdminLoad({
+  const { isLoading, hasError, isLoaded, load } = useAdminLoad({
     read: () => repository.list(),
     apply: (value) => {
       cards.value = value
@@ -79,5 +79,5 @@ export function useAdminAboutMeCards(): UseAdminAboutMeCardsResult {
 
   void load()
 
-  return { cards, isLoading, hasError, errorMessage, load, create, update, remove, reorder }
+  return { cards, isLoading, hasError, isLoaded, errorMessage, load, create, update, remove, reorder }
 }

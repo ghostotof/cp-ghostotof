@@ -30,7 +30,7 @@ import { LOCALE_NATIVE_NAMES, SUPPORTED_LOCALES, type Locale } from '../../../do
 import type { AdminIncident } from '../../../domain/admin/incidents/entities/AdminIncident'
 
 const { t } = useI18n()
-const { incidents, isLoading, hasError, errorMessage, load, create, update, remove, reorder } = useAdminIncidents()
+const { incidents, isLoading, hasError, isLoaded, errorMessage, load, create, update, remove, reorder } = useAdminIncidents()
 const { isTranslating, errorReason: translationErrorReason, translate } = useAdminTranslation()
 
 const editingId = ref<string | null>(null)
@@ -439,6 +439,12 @@ useUnsavedOrderGuard(isOrderDirty)
         role="alert"
       >
         {{ t('admin.incidents.loadError') }}
+      </p>
+      <p
+        v-else-if="!isLoaded"
+        class="text-body-secondary mb-0"
+      >
+        {{ t('admin.notLoaded') }}
       </p>
       <p
         v-else-if="0 === orderedRows.length"

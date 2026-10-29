@@ -1,8 +1,10 @@
-import { describe, expect, it } from 'vitest'
-import { defineComponent, h, ref } from 'vue'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { defineComponent, h, ref, watch } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { useAdminLoad } from '../../../../src/application/admin/shared/useAdminLoad'
 import { SessionEndedError } from '../../../../src/domain/auth/errors/SessionEndedError'
+import { markSessionExpired } from '../../../../src/application/auth/useAuth'
+import { signInAgain } from '../../../support/signInAgain'
 
 /**
  * `useAdminLoad` est l'unique endroit où un chargement d'administration taît la session finie
@@ -37,6 +39,10 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void; reje
 }
 
 describe('useAdminLoad', () => {
+  afterEach(async () => {
+    await signInAgain()
+  })
+
   it('pose la valeur lue et baisse isLoading', async () => {
     const value = ref<readonly string[]>([])
     const state = mountLoad<readonly string[]>({
@@ -147,5 +153,222 @@ describe('useAdminLoad', () => {
     await state.load('en')
 
     expect(keys).toEqual(['fr', 'en'])
+  })
+  describe('« non chargé » n\'est pas « vide » (#748, R4)', () => {
+    it('isLoaded : faux avant la première lecture, vrai après, faux encore après une première lecture en session finie', async () => {
+      const loaded = mountLoad<string>({ read: async () => 'lue', apply: () => undefined })
+      expect(loaded.isLoaded.value).toBe(false)
+      await loaded.load()
+      expect(loaded.isLoaded.value).toBe(true)
+
+      const ended = mountLoad<string>({
+        read: async () => {
+          throw new SessionEndedError()
+        },
+        apply: () => undefined,
+      })
+      await ended.load()
+
+      expect(ended.isLoading.value).toBe(false)
+      expect(ended.hasError.value).toBe(false)
+      expect(ended.isLoaded.value).toBe(false)
+    })
+
+    it("isLoaded : un échec de la première lecture ne la dit pas chargée", async () => {
+      const state = mountLoad<string>({
+        read: async () => {
+          throw new Error('boom')
+        },
+        apply: () => undefined,
+      })
+
+      await state.load()
+
+      expect(state.isLoaded.value).toBe(false)
+    })
+
+    it("isLoaded n'est vrai qu'après apply : un observateur synchrone de la valeur a déjà copié", async () => {
+      const seenWhenLoaded: Array<string | null> = []
+      const value = ref<string | null>(null)
+      const state = mountLoad<string>({
+        read: async () => 'lue',
+        apply: (read) => {
+          value.value = read
+        },
+      })
+      // Comme le formulaire des réglages : un observateur synchrone d'`isLoaded` lit la valeur déjà posée.
+      watch(state.isLoaded, (loaded) => {
+        if (loaded) seenWhenLoaded.push(value.value)
+      }, { flush: 'sync' })
+
+      await state.load()
+
+      expect(seenWhenLoaded).toEqual(['lue'])
+    })
+
+    it("une clé nouvelle vide la valeur de l'ancienne avant de lire", async () => {
+      const second = deferred<string>()
+      const value = ref<string | null>(null)
+      const clear = vi.fn(() => {
+        value.value = null
+      })
+      const state = mountLoad<string, string>({
+        read: (key) => ('fr' === key ? Promise.resolve('valeur fr') : second.promise),
+        apply: (read) => {
+          value.value = read
+        },
+        clear,
+      })
+      await state.load('fr')
+      expect(value.value).toBe('valeur fr')
+      expect(clear).not.toHaveBeenCalled()
+
+      const pending = state.load('en')
+
+      // Avant même que la lecture de la clé nouvelle ne réponde : rien de l'ancienne n'est montrable.
+      expect(clear).toHaveBeenCalledTimes(1)
+      expect(value.value).toBeNull()
+      expect(state.isLoaded.value).toBe(false)
+      second.resolve('valeur en')
+      await pending
+      expect(value.value).toBe('valeur en')
+      expect(state.isLoaded.value).toBe(true)
+    })
+
+    it('la même clé ne vide rien', async () => {
+      const clear = vi.fn()
+      const state = mountLoad<string, string>({ read: async (key) => key, apply: () => undefined, clear })
+      await state.load('fr')
+
+      await state.load('fr')
+
+      expect(clear).not.toHaveBeenCalled()
+      expect(state.isLoaded.value).toBe(true)
+    })
+
+    it('une clé nouvelle dont la lecture finit en session finie laisse isLoaded faux', async () => {
+      const value = ref<string | null>(null)
+      const state = mountLoad<string, string>({
+        read: async (key) => {
+          if ('en' === key) throw new SessionEndedError()
+          return 'valeur fr'
+        },
+        apply: (read) => {
+          value.value = read
+        },
+        clear: () => {
+          value.value = null
+        },
+      })
+      await state.load('fr')
+
+      await state.load('en')
+
+      expect(value.value).toBeNull()
+      expect(state.isLoaded.value).toBe(false)
+      expect(state.hasError.value).toBe(false)
+    })
+  })
+
+  describe('au retour de la session, la lecture interrompue est relue (#748, R4)', () => {
+    it('la lecture interrompue est relancée une fois, avec sa clé', async () => {
+      const keys: string[] = []
+      let ended = true
+      const value = ref<string | null>(null)
+      const state = mountLoad<string, string>({
+        read: async (key) => {
+          keys.push(key)
+          if (ended) throw new SessionEndedError()
+          return `valeur ${key}`
+        },
+        apply: (read) => {
+          value.value = read
+        },
+      })
+      markSessionExpired()
+      await state.load('en')
+      expect(keys).toEqual(['en'])
+      expect(state.isLoaded.value).toBe(false)
+
+      ended = false
+      await signInAgain()
+
+      expect(keys).toEqual(['en', 'en'])
+      expect(value.value).toBe('valeur en')
+      expect(state.isLoaded.value).toBe(true)
+
+      // Une seule fois : la session qui finit puis revient encore ne relit rien, la lecture a abouti.
+      markSessionExpired()
+      await signInAgain()
+      expect(keys).toEqual(['en', 'en'])
+    })
+
+    it("au retour, rien n'est relu si la dernière lecture a abouti", async () => {
+      const read = vi.fn(async () => 'lue')
+      const state = mountLoad<string>({ read, apply: () => undefined })
+      await state.load()
+      read.mockClear()
+
+      markSessionExpired()
+      await signInAgain()
+
+      expect(read).not.toHaveBeenCalled()
+    })
+
+    it("au retour, la lecture interrompue d'une clé que la personne a quittée n'est plus relancée", async () => {
+      const keys: string[] = []
+      const state = mountLoad<string, string>({
+        read: async (key) => {
+          keys.push(key)
+          if ('en' === key) throw new SessionEndedError()
+          return `valeur ${key}`
+        },
+        apply: () => undefined,
+      })
+      markSessionExpired()
+      await state.load('en')
+      await state.load('fr')
+      keys.length = 0
+
+      await signInAgain()
+
+      expect(keys).toEqual([])
+    })
+
+    it("une lecture en cours d'une autre clé n'est pas supplantée par l'interrompue au retour", async () => {
+      const keys: string[] = []
+      const slow = deferred<string>()
+      const state = mountLoad<string, string>({
+        read: (key) => {
+          keys.push(key)
+          if ('en' === key) return Promise.reject(new SessionEndedError())
+          return slow.promise
+        },
+        apply: () => undefined,
+      })
+      markSessionExpired()
+      await state.load('en')
+      void state.load('fr')
+      keys.length = 0
+
+      await signInAgain()
+
+      expect(keys).toEqual([])
+      slow.resolve('valeur fr')
+    })
+
+    it("sans « session finie » marquée, un compte appliqué ne relance rien (seule la descente de l'état relit)", async () => {
+      const read = vi.fn(async () => {
+        throw new SessionEndedError()
+      })
+      const state = mountLoad<string>({ read, apply: () => undefined })
+      // Le dépôt rejette `SessionEndedError` sans que la réaction du client n'ait marqué la session : aucune descente à attendre.
+      await state.load()
+      read.mockClear()
+
+      await signInAgain()
+
+      expect(read).not.toHaveBeenCalled()
+    })
   })
 })

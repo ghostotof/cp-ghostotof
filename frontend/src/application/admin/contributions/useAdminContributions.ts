@@ -43,7 +43,7 @@ export function useAdminContributions(): UseAdminContributionsResult {
   const contributions = ref<readonly AdminContribution[]>([])
   const errorMessage = ref<AdminContributionError | null>(null)
 
-  const { isLoading, hasError, load } = useAdminLoad({
+  const { isLoading, hasError, isLoaded, load } = useAdminLoad({
     read: () => repository.list(),
     apply: (value) => {
       contributions.value = value
@@ -82,5 +82,5 @@ export function useAdminContributions(): UseAdminContributionsResult {
 
   void load()
 
-  return { contributions, isLoading, hasError, errorMessage, load, create, update, remove, reorder }
+  return { contributions, isLoading, hasError, isLoaded, errorMessage, load, create, update, remove, reorder }
 }

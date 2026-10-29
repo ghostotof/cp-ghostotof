@@ -57,7 +57,7 @@ const emit = defineEmits<{ orderDirtyChange: [isDirty: boolean] }>()
 
 const { t } = useI18n()
 
-const { cards, isLoading, hasError, errorMessage, load, create, update, remove, reorder } = useAdminAboutSiteCards()
+const { cards, isLoading, hasError, isLoaded, errorMessage, load, create, update, remove, reorder } = useAdminAboutSiteCards()
 
 const localeOptions = SUPPORTED_LOCALES.map((locale) => ({ value: locale, label: LOCALE_NATIVE_NAMES[locale] }))
 
@@ -392,6 +392,12 @@ async function handleDelete(card: AdminAboutSiteCard): Promise<void> {
       role="alert"
     >
       {{ t('admin.about.loadError') }}
+    </p>
+    <p
+      v-else-if="!isLoaded"
+      class="text-body-secondary mb-0"
+    >
+      {{ t('admin.notLoaded') }}
     </p>
     <p
       v-else-if="0 === orderedRows.length"

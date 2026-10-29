@@ -41,7 +41,7 @@ export function useAdminExperienceTechnologies(): UseAdminExperienceTechnologies
   const technologies = ref<readonly AdminExperienceTechnology[]>([])
   const errorMessage = ref<AdminExperienceTechnologyError | null>(null)
 
-  const { isLoading, hasError, load } = useAdminLoad({
+  const { isLoading, hasError, isLoaded, load } = useAdminLoad({
     read: () => repository.list(),
     apply: (value) => {
       technologies.value = value
@@ -71,5 +71,5 @@ export function useAdminExperienceTechnologies(): UseAdminExperienceTechnologies
 
   void load()
 
-  return { technologies, isLoading, hasError, errorMessage, load, create, update, remove }
+  return { technologies, isLoading, hasError, isLoaded, errorMessage, load, create, update, remove }
 }

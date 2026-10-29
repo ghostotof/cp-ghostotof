@@ -29,7 +29,7 @@ import { LOCALE_NATIVE_NAMES, SUPPORTED_LOCALES, type Locale } from '../../../do
 import type { AdminCaseStudy } from '../../../domain/admin/caseStudies/entities/AdminCaseStudy'
 
 const { t } = useI18n()
-const { caseStudies, isLoading, hasError, errorMessage, load, create, update, remove, reorder } =
+const { caseStudies, isLoading, hasError, isLoaded, errorMessage, load, create, update, remove, reorder } =
   useAdminCaseStudies()
 const { isTranslating, errorReason: translationErrorReason, translate } = useAdminTranslation()
 
@@ -421,6 +421,12 @@ useUnsavedOrderGuard(isOrderDirty)
         role="alert"
       >
         {{ t('admin.caseStudies.loadError') }}
+      </p>
+      <p
+        v-else-if="!isLoaded"
+        class="text-body-secondary mb-0"
+      >
+        {{ t('admin.notLoaded') }}
       </p>
       <p
         v-else-if="0 === orderedRows.length"

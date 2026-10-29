@@ -38,7 +38,7 @@ export function useAdminUsers(): UseAdminUsersResult {
   const users = ref<readonly AdminUser[]>([])
   const errorMessage = ref<AdminUserError | null>(null)
 
-  const { isLoading, hasError, load } = useAdminLoad({
+  const { isLoading, hasError, isLoaded, load } = useAdminLoad({
     read: () => repository.list(),
     apply: (value) => {
       users.value = value
@@ -90,5 +90,5 @@ export function useAdminUsers(): UseAdminUsersResult {
 
   void load()
 
-  return { users, isLoading, hasError, errorMessage, load, invite, setSuperAdmin, resendInvitation, remove, changePassword }
+  return { users, isLoading, hasError, isLoaded, errorMessage, load, invite, setSuperAdmin, resendInvitation, remove, changePassword }
 }

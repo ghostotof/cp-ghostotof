@@ -28,7 +28,7 @@ export function useAdminVulnerabilities(): UseAdminVulnerabilitiesResult {
   }
 
   const vulnerabilities = ref<readonly AdminVulnerability[]>([])
-  const { isLoading, hasError, load } = useAdminLoad({
+  const { isLoading, hasError, isLoaded, load } = useAdminLoad({
     read: () => repository.list(),
     apply: (value) => {
       vulnerabilities.value = value
@@ -37,5 +37,5 @@ export function useAdminVulnerabilities(): UseAdminVulnerabilitiesResult {
 
   void load()
 
-  return { vulnerabilities, isLoading, hasError }
+  return { vulnerabilities, isLoading, hasError, isLoaded }
 }

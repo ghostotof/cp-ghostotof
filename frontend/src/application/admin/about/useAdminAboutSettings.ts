@@ -36,10 +36,15 @@ export function useAdminAboutSettings(): UseAdminAboutSettingsResult {
   const settings = ref<AdminAboutSettings | null>(null)
   const errorMessage = ref<AdminAboutError | null>(null)
 
-  const { isLoading, hasError, load } = useAdminLoad<AdminAboutSettings, Locale>({
+  const { isLoading, hasError, isLoaded, load } = useAdminLoad<AdminAboutSettings, Locale>({
     read: (locale) => repository.get(locale),
     apply: (value) => {
       settings.value = value
+    },
+    // Le seul composable à clé : une locale nouvelle vide les réglages de l'ancienne avant de lire, pour que
+    // le formulaire d'une langue ne reste jamais sous l'en-tête d'une autre (CR2, #748 R4).
+    clear: () => {
+      settings.value = null
     },
   })
 
@@ -57,5 +62,5 @@ export function useAdminAboutSettings(): UseAdminAboutSettingsResult {
     }
   }
 
-  return { settings, isLoading, hasError, errorMessage, load, save }
+  return { settings, isLoading, hasError, isLoaded, errorMessage, load, save }
 }

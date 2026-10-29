@@ -41,7 +41,7 @@ export function useAdminIncidents(): UseAdminIncidentsResult {
   const incidents = ref<readonly AdminIncident[]>([])
   const errorMessage = ref<AdminIncidentError | null>(null)
 
-  const { isLoading, hasError, load } = useAdminLoad({
+  const { isLoading, hasError, isLoaded, load } = useAdminLoad({
     read: () => repository.list(),
     apply: (value) => {
       incidents.value = value
@@ -80,5 +80,5 @@ export function useAdminIncidents(): UseAdminIncidentsResult {
 
   void load()
 
-  return { incidents, isLoading, hasError, errorMessage, load, create, update, remove, reorder }
+  return { incidents, isLoading, hasError, isLoaded, errorMessage, load, create, update, remove, reorder }
 }

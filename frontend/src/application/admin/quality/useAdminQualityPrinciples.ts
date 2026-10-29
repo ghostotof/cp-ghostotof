@@ -42,7 +42,7 @@ export function useAdminQualityPrinciples(): UseAdminQualityPrinciplesResult {
   const principles = ref<readonly AdminQualityPrinciple[]>([])
   const errorMessage = ref<AdminQualityError | null>(null)
 
-  const { isLoading, hasError, load } = useAdminLoad({
+  const { isLoading, hasError, isLoaded, load } = useAdminLoad({
     read: () => repository.list(),
     apply: (value) => {
       principles.value = value
@@ -81,5 +81,5 @@ export function useAdminQualityPrinciples(): UseAdminQualityPrinciplesResult {
 
   void load()
 
-  return { principles, isLoading, hasError, errorMessage, load, create, update, remove, reorder }
+  return { principles, isLoading, hasError, isLoaded, errorMessage, load, create, update, remove, reorder }
 }

@@ -73,7 +73,7 @@ const emit = defineEmits<{ orderDirtyChange: [isDirty: boolean] }>()
 
 const { t } = useI18n()
 
-const { cards, isLoading, hasError, errorMessage, load, create, update, remove, reorder } = useAdminAboutMeCards()
+const { cards, isLoading, hasError, isLoaded, errorMessage, load, create, update, remove, reorder } = useAdminAboutMeCards()
 
 const localeOptions = SUPPORTED_LOCALES.map((locale) => ({ value: locale, label: LOCALE_NATIVE_NAMES[locale] }))
 const categoryOptions = computed(() =>
@@ -494,6 +494,12 @@ function categoryLabel(category: AdminAboutMeCardCategory): string {
       role="alert"
     >
       {{ t('admin.about.loadError') }}
+    </p>
+    <p
+      v-else-if="!isLoaded"
+      class="text-body-secondary mb-0"
+    >
+      {{ t('admin.notLoaded') }}
     </p>
     <template v-else>
       <!-- Un tableau, un brouillon et un enregistrement par catégorie (D8). -->

@@ -12,6 +12,9 @@ import { AdminOrderError } from '../../../../src/domain/admin/shared/errors/Admi
 import { ADMIN_VULNERABILITY_REPOSITORY } from '../../../../src/application/admin/watch/useAdminVulnerabilities'
 import type { AdminVulnerabilityRepository } from '../../../../src/domain/admin/watch/repositories/AdminVulnerabilityRepository'
 import type { AdminVulnerability } from '../../../../src/domain/admin/watch/entities/AdminVulnerability'
+import { SessionEndedError } from '../../../../src/domain/auth/errors/SessionEndedError'
+import { markSessionExpired } from '../../../../src/application/auth/useAuth'
+import { signInAgain } from '../../../support/signInAgain'
 import { expectNoAccessibilityViolation } from '../../../support/axe'
 
 const VULNERABILITY: AdminVulnerability = {
@@ -444,6 +447,53 @@ describe('AdminWatchPage', () => {
       const { wrapper } = await mountPage()
 
       expect(wrapper.text()).toContain('Aucune vulnérabilité connue')
+    })
+
+    describe('non chargées (#748, R4)', () => {
+      let mountedPage: VueWrapper | undefined
+      afterEach(async () => {
+        mountedPage?.unmount()
+        mountedPage = undefined
+        await signInAgain()
+      })
+
+      it("première lecture en session finie : pas de « Aucune vulnérabilité connue », la mention « non chargé »", async () => {
+        const vulnerabilities: AdminVulnerabilityRepository = {
+          list: vi.fn(async () => {
+            markSessionExpired()
+            throw new SessionEndedError()
+          }),
+        }
+        const { wrapper } = await mountPage(createStubRepository(), vulnerabilities)
+        mountedPage = wrapper
+
+        // Ce que le volet dirait sinon est une affirmation (« aucune vulnérabilité ») que personne n'a vérifiée.
+        expect(wrapper.text()).not.toContain('Aucune vulnérabilité connue')
+        expect(wrapper.text()).toContain('Contenu non chargé')
+        expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+      })
+
+      it('au retour de la session, le volet se lit', async () => {
+        let ended = true
+        const vulnerabilities: AdminVulnerabilityRepository = {
+          list: vi.fn(async () => {
+            if (ended) {
+              markSessionExpired()
+              throw new SessionEndedError()
+            }
+
+            return [VULNERABILITY]
+          }),
+        }
+        const { wrapper } = await mountPage(createStubRepository(), vulnerabilities)
+        mountedPage = wrapper
+
+        ended = false
+        await signInAgain()
+
+        expect(wrapper.text()).toContain(VULNERABILITY.id)
+        expect(wrapper.text()).not.toContain('Contenu non chargé')
+      })
     })
 
     it('signale un échec de chargement des vulnérabilités', async () => {
