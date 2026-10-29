@@ -210,7 +210,12 @@ export const router = createRouter({
           name: 'login',
           component: LoginPage,
           meta: { titleKey: 'seo.login.title', descriptionKey: 'seo.login.description' },
-          beforeEnter: (to) => {
+          beforeEnter: async (to) => {
+            // Comme le garde des routes protégées : attendre la première vérification (`main.ts` monte
+            // l'application puis lance `checkAuth()`). Dans un onglet neuf `authState.user` est nul tant que
+            // `/api/me` est en vol : sans l'attente, la page annoncerait « votre session a pris fin » à une personne
+            // dont le compte arrive, et laisserait ouvrir `/login` sans drapeau à une personne connectée (#748, R40).
+            await waitForAuthCheck()
             // Déjà connecté : la page de login n'a rien à offrir de plus — sauf
             // quand un drapeau l'ouvre exprès. `reauth=1` : le consentement MCP
             // demande une authentification récente (#647), ou « Changer de compte »

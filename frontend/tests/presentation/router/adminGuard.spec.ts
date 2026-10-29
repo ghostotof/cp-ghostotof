@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { defineComponent } from 'vue'
 import { router } from '../../../src/presentation/router'
 import { AUTH_REPOSITORY, useAuth } from '../../../src/application/auth/useAuth'
@@ -8,6 +8,7 @@ import type { AuthenticatedUser } from '../../../src/domain/auth/entities/Authen
 import type { AuthSession } from '../../../src/domain/auth/entities/AuthSession'
 import { sessionFor } from '../../support/authSession'
 import { BASE_ACCESS_SESSION } from '../../../src/domain/auth/entities/AuthSession'
+import { createAppI18n } from '../../../src/presentation/i18n'
 
 /**
  * Exerce le routeur singleton (presentation/router/index.ts) plutôt qu'une
@@ -426,5 +427,109 @@ describe('router — garde /mcp-connections (ROLE_TRUSTED ou ROLE_SUPER, #650)',
     await router.push('/en/mcp-connections')
 
     expect(router.currentRoute.value.name).toBe('mcp-connections')
+  })
+})
+
+describe('router — la page de connexion attend la première vérification (#748, R40, Sp4-1/C2)', () => {
+  /**
+   * Un onglet neuf : `main.ts` monte l'application puis lance `checkAuth()` ; la route `login` est ouverte pendant que
+   * `/api/me` est en vol (`isChecking` vrai, remis à cet état par `tests/support/setup.ts`), `authState.user` est encore nul.
+   */
+  function deferredRepository(): { repository: AuthRepository; answer: (session: AuthSession) => void } {
+    let answer: (session: AuthSession) => void = () => {}
+    const repository: AuthRepository = {
+      login: vi.fn(),
+      logout: vi.fn(),
+      hasWriteToken: () => true,
+      me: vi.fn(() => new Promise<AuthSession>((resolve) => (answer = resolve))),
+    }
+    return { repository, answer: (session) => answer(session) }
+  }
+
+  function mountProbe(repository: AuthRepository) {
+    return mount(
+      defineComponent({
+        setup() {
+          return { auth: useAuth() }
+        },
+        template: '<div />',
+      }),
+      { global: { provide: { [AUTH_REPOSITORY as symbol]: repository } } },
+    )
+  }
+
+  /** L'application telle que `App.vue` la rend : le routeur de production et sa page, sur une page neutre au départ. */
+  async function mountApplication(repository: AuthRepository) {
+    // La page de connexion est chargée à la demande : la charger d'avance, pour que « elle n'apparaît pas » soit
+    // une attente du garde et non celle d'un `import()` en cours.
+    await import('../../../src/presentation/pages/LoginPage.vue')
+    await router.push('/fr/forbidden')
+    await router.isReady()
+    return mount(defineComponent({ template: '<RouterView />' }), {
+      global: { plugins: [router, createAppI18n()], provide: { [AUTH_REPOSITORY as symbol]: repository } },
+    })
+  }
+
+  it("onglet neuf, expired=1, /api/me résolu après le montage avec un compte : « session finie » n'apparaît jamais", async () => {
+    const { repository, answer } = deferredRepository()
+    const wrapper = await mountApplication(repository)
+    const probe = mountProbe(repository)
+
+    const pushed = router.push('/fr/login?expired=1')
+    await flushPromises()
+
+    // Pendant la vérification : la route n'est pas ouverte, ni l'une ni l'autre des annonces n'est rendue.
+    expect(router.currentRoute.value.name).toBe('forbidden')
+    expect(wrapper.find('[data-testid="login-session-ended-notice"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="login-reauth-notice"]').exists()).toBe(false)
+
+    const checked = probe.vm.auth.checkAuth()
+    answer(sessionFor({ username: 'guest', roles: ['ROLE_USER', 'ROLE_TRUSTED'] }))
+    await checked
+    await pushed
+    await flushPromises()
+
+    expect(router.currentRoute.value.name).toBe('login')
+    expect(wrapper.find('[data-testid="login-reauth-notice"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="login-session-ended-notice"]').exists()).toBe(false)
+  })
+
+  it('… avec l’anonyme : « session finie » après la vérification', async () => {
+    const { repository, answer } = deferredRepository()
+    const wrapper = await mountApplication(repository)
+    const probe = mountProbe(repository)
+
+    const pushed = router.push('/fr/login?expired=1')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="login-session-ended-notice"]').exists()).toBe(false)
+
+    const checked = probe.vm.auth.checkAuth()
+    answer(sessionFor(null))
+    await checked
+    await pushed
+    await flushPromises()
+
+    expect(router.currentRoute.value.name).toBe('login')
+    expect(wrapper.find('[data-testid="login-session-ended-notice"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="login-reauth-notice"]').exists()).toBe(false)
+  })
+
+  it('une personne connectée qui ouvre /login sans drapeau dans un onglet neuf va à l’accueil', async () => {
+    const { repository, answer } = deferredRepository()
+    await router.push('/fr/forbidden')
+    await router.isReady()
+    const probe = mountProbe(repository)
+
+    const pushed = router.push('/fr/login')
+    await flushPromises()
+    expect(router.currentRoute.value.name).toBe('forbidden')
+
+    const checked = probe.vm.auth.checkAuth()
+    answer(sessionFor({ username: 'guest', roles: ['ROLE_USER', 'ROLE_TRUSTED'] }))
+    await checked
+    await pushed
+    await flushPromises()
+
+    expect(router.currentRoute.value.path).toBe('/fr')
   })
 })

@@ -3,7 +3,8 @@ import { mount } from '@vue/test-utils'
 import { defineComponent } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import LoginPage from '../../../src/presentation/pages/LoginPage.vue'
-import { AUTH_REPOSITORY, useAuth } from '../../../src/application/auth/useAuth'
+import { AUTH_REPOSITORY, authState, useAuth } from '../../../src/application/auth/useAuth'
+import { BASE_ACCESS_SESSION } from '../../../src/domain/auth/entities/AuthSession'
 import { InvalidCredentialsError } from '../../../src/domain/auth/errors/InvalidCredentialsError'
 import { LoginRateLimitedError } from '../../../src/domain/auth/errors/LoginRateLimitedError'
 import type { AuthRepository } from '../../../src/domain/auth/repositories/AuthRepository'
@@ -158,6 +159,34 @@ describe('LoginPage', () => {
         expect(wrapper.find('[data-testid="login-session-ended-notice"]').exists()).toBe(false)
         expect(wrapper.text()).not.toContain('a pris fin')
         expect(wrapper.text()).not.toContain('has ended')
+      })
+
+      // Palier de base : l'accès de base tient (le cookie vit), la session n'est pas finie ; et il n'y a aucun compte
+      // à confirmer. Cas réel : session finie dans l'onglet A, « Accès instantané » dans B, lien du bandeau de A ouvert
+      // ensuite (#748, R40, CR4-7). La page est la connexion ordinaire.
+      it.each([['fr'], ['en']])("palier de base, expired=1 : aucune annonce, ni « session finie » ni « confirmez » (%s)", async (locale) => {
+        const repository = createStubRepository({ me: vi.fn(async () => BASE_ACCESS_SESSION) })
+        const probe = mount(
+          defineComponent({
+            setup() {
+              return { auth: useAuth() }
+            },
+            template: '<div />',
+          }),
+          { global: { provide: { [AUTH_REPOSITORY as symbol]: repository } } },
+        )
+        await probe.vm.auth.checkAuth()
+        probe.unmount()
+        expect(authState.tier).toBe('base')
+
+        const { wrapper } = await mountLoginPage(createStubRepository(), locale, { expired: '1', redirect: '/fr/admin/users' })
+
+        expect(wrapper.find('[data-testid="login-session-ended-notice"]').exists()).toBe(false)
+        expect(wrapper.find('[data-testid="login-reauth-notice"]').exists()).toBe(false)
+        expect(wrapper.text()).not.toContain('a pris fin')
+        expect(wrapper.text()).not.toContain('has ended')
+        expect(wrapper.text()).not.toContain('Confirmez votre identité')
+        expect(wrapper.text()).not.toContain('Confirm your identity')
       })
 
       it('anonyme, expired=1 : « votre session a pris fin », sans l\'annonce neutre', async () => {

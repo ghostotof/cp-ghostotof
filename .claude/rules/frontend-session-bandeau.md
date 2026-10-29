@@ -75,13 +75,15 @@ paths:
     re-authentication) delegate to it. The flags' constants live in `loginLocation.ts`, which imports neither module (St3-9: no cycle,
     `signInLocations.spec.ts` checks it); the spec also fails when a file other than those three names the parameters.
   - **Both flags open the login to a signed-in person, and nothing more** (R16, B/F2): the `login` route's `beforeEnter`
-    sends an account home unless `reauth=1` **or** `expired=1`. Why `expired=1`: a `BEARER` still alive with no
+    first awaits `waitForAuthCheck()`, like the guard of protected routes (R40: in a fresh tab `user` is null while `/api/me`
+    is in flight), then sends an account home unless `reauth=1` **or** `expired=1`. Why `expired=1`: a `BEARER` still alive with no
     `XSRF-TOKEN` leaves `authState.user` set while every write is refused, and the banner's link would otherwise land on
     the home page — a dead end for up to an hour. The flag grants no right; `redirect` stays judged by
-    `internalRedirectTarget()` in `LoginPage`. **What the page says depends on whether an account is displayed**
-    (`null !== user`, R30, A3-10): none → « votre session a pris fin » (`login-session-ended-notice`); an account → the
-    neutral `auth.reauthNotice` (`login-reauth-notice`), as for `reauth=1`. Not `authState.sessionEnded`: the link opens
-    a new tab, whose application is fresh (`sessionEnded` false) while the account may still be shown.
+    `internalRedirectTarget()` in `LoginPage`. **What the page says depends on the tier and on whether an account is
+    displayed** (R30, A3-10, R40): anonymous → « votre session a pris fin » (`login-session-ended-notice`); an account →
+    the neutral `auth.reauthNotice` (`login-reauth-notice`), as for `reauth=1`; **base tier → nothing** (the access holds,
+    no account to confirm: the ordinary login). Not `authState.sessionEnded`: the link opens a new tab, whose application
+    is fresh (`sessionEnded` false) while the account may still be shown.
   - **`presentation/ui/SignInAgainLink.vue`** renders it: no prop, the default slot is the visible label, one root
     `RouterLink` (the classes passed land on it: the header's button), `target="_blank" rel="noopener"` (but see
     `meta.signInInSameTab` below), the opening said
@@ -118,5 +120,5 @@ a second reading, removed with the target), `AdminLayout.sessionEnded.spec.ts` (
 input; red when `router.replace` is reintroduced; the banner is the only alert on a 401 and on a 403 without a token, a 403
 with a token shows the single « accès refusé » alert (`AccessRefusedNotice.spec.ts` too), with « Changer de compte » in the same tab, the input kept, `/api/me` read once, the alert cleared on navigation and masked when the re-read finds the session ended), `AdminCaseStudiesPage.spec.ts` and `OrderToolbar.spec.ts` (an ended session adds no alert of the
 page's, and the input stays).
-- `signInLocations.spec.ts` (`loginLocation`, the two wrappers, no `redirect` off a protected route, and the guard that no other file names `expired`/`reauth`), `SignInAgainLink.spec.ts` (new tab, hidden text, icon, one root; no `redirect` on a public route; the same tab on `signInInSameTab`), `adminGuard.spec.ts` (an account opens the login with `expired=1` as with `reauth=1`, with no flag it goes home), `protectedRoutesCarryNoSecret.spec.ts` (every `requiresAuth` route is reviewed: its `fullPath` leaves in the `redirect` of a new tab).
+- `signInLocations.spec.ts` (`loginLocation`, the two wrappers, no `redirect` off a protected route, and the guard that no other file names `expired`/`reauth`), `SignInAgainLink.spec.ts` (new tab, hidden text, icon, one root; no `redirect` on a public route; the same tab on `signInInSameTab`), `adminGuard.spec.ts` (an account opens the login with `expired=1` as with `reauth=1`, with no flag it goes home; the route waits for the first check), `protectedRoutesCarryNoSecret.spec.ts` (every `requiresAuth` route is reviewed: its `fullPath` leaves in the `redirect` of a new tab).
 - `AppHeader.spec.ts` (the new-tab « Connexion » on the assistant, the MCP page and the consent).
