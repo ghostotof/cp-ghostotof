@@ -6,18 +6,16 @@ import type {
 } from '../../../domain/admin/about/repositories/AdminAboutSettingsRepository'
 import { AdminAboutError } from '../../../domain/admin/about/errors/AdminAboutError'
 import type { Locale } from '../../../domain/portfolio/entities/Locale'
-import { createStaleRequestGuard } from '../../shared/staleRequestGuard'
-import { isSessionEndedError } from '../../../domain/admin/shared/errors/sessionEnded'
+import { useAdminLoad, type AdminLoadState } from '../shared/useAdminLoad'
+import { visibleMutationError } from '../shared/visibleMutationError'
 
 export const ADMIN_ABOUT_SETTINGS_REPOSITORY: InjectionKey<AdminAboutSettingsRepository> = Symbol('AdminAboutSettingsRepository')
 
-export interface UseAdminAboutSettingsResult {
+export interface UseAdminAboutSettingsResult extends AdminLoadState {
   settings: Ref<AdminAboutSettings | null>
-  isLoading: Ref<boolean>
-  hasError: Ref<boolean>
   errorMessage: Ref<AdminAboutError | null>
   load: (locale: Locale) => Promise<void>
-  save: (locale: Locale, input: AdminAboutSettingsInput) => Promise<void>
+  save: (locale: Locale, input: AdminAboutSettingsInput) => Promise<boolean>
 }
 
 /**
@@ -36,36 +34,26 @@ export function useAdminAboutSettings(): UseAdminAboutSettingsResult {
   }
 
   const settings = ref<AdminAboutSettings | null>(null)
-  const isLoading = ref(true)
-  const hasError = ref(false)
   const errorMessage = ref<AdminAboutError | null>(null)
-  const requestGuard = createStaleRequestGuard()
 
-  const load = async (locale: Locale): Promise<void> => {
-    const token = requestGuard.begin()
-    isLoading.value = true
-    hasError.value = false
+  const { isLoading, hasError, load } = useAdminLoad<AdminAboutSettings, Locale>({
+    read: (locale) => repository.get(locale),
+    apply: (value) => {
+      settings.value = value
+    },
+  })
 
-    try {
-      const result = await repository.get(locale)
-      if (!requestGuard.isCurrent(token)) return
-      settings.value = result
-    } catch (error) {
-      // Une session finie n'est pas un échec de chargement : le bandeau de session finie l'annonce seul
-      // (#748), et la liste déjà lue reste affichée.
-      if (requestGuard.isCurrent(token) && !isSessionEndedError(error)) hasError.value = true
-    } finally {
-      if (requestGuard.isCurrent(token)) isLoading.value = false
-    }
-  }
-
-  const save = async (locale: Locale, input: AdminAboutSettingsInput): Promise<void> => {
+  const save = async (locale: Locale, input: AdminAboutSettingsInput): Promise<boolean> => {
     errorMessage.value = null
 
     try {
       settings.value = await repository.update(locale, input)
+
+      return true
     } catch (error) {
-      errorMessage.value = error instanceof AdminAboutError ? error : new AdminAboutError('unknown', 'Unknown error')
+      errorMessage.value = visibleMutationError(error, AdminAboutError, () => new AdminAboutError('unknown', 'Unknown error'))
+
+      return false
     }
   }
 

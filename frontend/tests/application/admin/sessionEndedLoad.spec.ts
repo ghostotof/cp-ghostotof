@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { defineComponent, h, type InjectionKey, type Ref } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
+import { ADMIN_TRANSLATION_REPOSITORY, useAdminTranslation } from '../../../src/application/admin/translation/useAdminTranslation'
+import { useOrderDraft } from '../../../src/application/admin/shared/useOrderDraft'
+import { SessionEndedError } from '../../../src/domain/auth/errors/SessionEndedError'
 import { ADMIN_ABOUT_ME_CARD_REPOSITORY, useAdminAboutMeCards } from '../../../src/application/admin/about/useAdminAboutMeCards'
 import { ADMIN_ABOUT_SETTINGS_REPOSITORY, useAdminAboutSettings } from '../../../src/application/admin/about/useAdminAboutSettings'
 import { ADMIN_ABOUT_SITE_CARD_REPOSITORY, useAdminAboutSiteCards } from '../../../src/application/admin/about/useAdminAboutSiteCards'
@@ -23,37 +26,32 @@ import {
 import { ADMIN_USER_REPOSITORY, useAdminUsers } from '../../../src/application/admin/users/useAdminUsers'
 import { ADMIN_VULNERABILITY_REPOSITORY, useAdminVulnerabilities } from '../../../src/application/admin/watch/useAdminVulnerabilities'
 import { ADMIN_WATCHED_PRODUCT_REPOSITORY, useAdminWatchedProducts } from '../../../src/application/admin/watch/useAdminWatchedProducts'
-import { AdminAboutError } from '../../../src/domain/admin/about/errors/AdminAboutError'
-import { AdminAnonymousCvSectionError } from '../../../src/domain/admin/anonymousCv/errors/AdminAnonymousCvSectionError'
-import { AdminCaseStudyError } from '../../../src/domain/admin/caseStudies/errors/AdminCaseStudyError'
-import { AdminContributionError } from '../../../src/domain/admin/contributions/errors/AdminContributionError'
-import { AdminIncidentError } from '../../../src/domain/admin/incidents/errors/AdminIncidentError'
-import { AdminQualityError } from '../../../src/domain/admin/quality/errors/AdminQualityError'
-import { AdminExperienceTechnologyError } from '../../../src/domain/admin/technologies/errors/AdminExperienceTechnologyError'
-import { AdminUserError } from '../../../src/domain/admin/users/errors/AdminUserError'
-import { AdminWatchedProductError } from '../../../src/domain/admin/watch/errors/AdminWatchedProductError'
 
 /**
  * #748, constat 7 : un chargement refusé parce que la session est finie ne doit pas lever `hasError`
- * (l'alerte de chargement doublerait le bandeau de session finie), ni vider une liste déjà lue.
+ * (l'alerte de chargement doublerait le bandeau de session finie), ni vider une liste déjà lue ; et,
+ * R3, une mutation refusée pour la même raison ne pose aucune erreur (la page n'ajoute pas son
+ * alerte au bandeau). Le client lève `SessionEndedError` : c'est elle que les dépôts simulés rejettent.
  *
- * Le dépôt est un Proxy dont toute méthode rejette l'erreur donnée : seul `list()`/`get()` est exercé
- * ici, et il l'est de la même façon pour les treize composables.
+ * Le dépôt est un Proxy dont toute méthode rejette l'erreur donnée : seule la lecture est exercée
+ * pour les chargements, et la première mutation pour les mutations, de la même façon pour les treize
+ * composables.
  */
-type Reason = 'session-ended' | 'unknown'
 
 /** Ce qu'un composable de liste d'administration expose de commun, et la valeur lue qu'il porte. */
 interface Handle {
   hasError: Ref<boolean>
   load: (...args: never[]) => Promise<void>
   value: () => unknown
+  /** La première mutation du composable, ou `null` pour une lecture seule. */
+  mutate: (() => Promise<unknown>) | null
+  /** L'erreur de mutation que la page afficherait. */
+  shown: () => unknown
 }
 
 interface Case {
   name: string
   key: InjectionKey<never>
-  /** Fabrique l'erreur de la classe du dépôt avec la raison donnée. */
-  error: (reason: Reason) => Error
   /** Nom de la méthode de lecture du dépôt. */
   read: 'list' | 'get'
   compose: () => Handle
@@ -63,82 +61,64 @@ interface Case {
   args: unknown[]
 }
 
-// La raison « session-ended » est ajoutée aux unions de raisons par cette même tâche : le transtypage
-// vers `never` tient ce test indépendant de l'état des unions, il ne vérifie que le comportement.
-const asReason = <T>(reason: Reason): T => reason as never
-
 const ONE = { id: 'x' }
 
 const CASES: Case[] = [
   {
     name: 'useAdminAboutMeCards', key: ADMIN_ABOUT_ME_CARD_REPOSITORY as never, read: 'list', loaded: [ONE], args: [],
-    error: (reason) => new AdminAboutError(asReason(reason), 'x'),
-    compose: () => { const c = useAdminAboutMeCards(); return { hasError: c.hasError, load: c.load, value: () => c.cards.value } },
+    compose: () => { const c = useAdminAboutMeCards(); return { hasError: c.hasError, load: c.load, value: () => c.cards.value, mutate: () => c.remove('x'), shown: () => c.errorMessage.value } },
   },
   {
     name: 'useAdminAboutSettings', key: ADMIN_ABOUT_SETTINGS_REPOSITORY as never, read: 'get', loaded: ONE, args: ['fr'],
-    error: (reason) => new AdminAboutError(asReason(reason), 'x'),
-    compose: () => { const c = useAdminAboutSettings(); return { hasError: c.hasError, load: c.load, value: () => c.settings.value } },
+    compose: () => { const c = useAdminAboutSettings(); return { hasError: c.hasError, load: c.load, value: () => c.settings.value, mutate: () => c.save('fr', {} as never), shown: () => c.errorMessage.value } },
   },
   {
     name: 'useAdminAboutSiteCards', key: ADMIN_ABOUT_SITE_CARD_REPOSITORY as never, read: 'list', loaded: [ONE], args: [],
-    error: (reason) => new AdminAboutError(asReason(reason), 'x'),
-    compose: () => { const c = useAdminAboutSiteCards(); return { hasError: c.hasError, load: c.load, value: () => c.cards.value } },
+    compose: () => { const c = useAdminAboutSiteCards(); return { hasError: c.hasError, load: c.load, value: () => c.cards.value, mutate: () => c.remove('x'), shown: () => c.errorMessage.value } },
   },
   {
     name: 'useAdminAnonymousCvSections', key: ADMIN_ANONYMOUS_CV_SECTION_REPOSITORY as never, read: 'list', loaded: [ONE], args: [],
-    error: (reason) => new AdminAnonymousCvSectionError(asReason(reason), 'x'),
-    compose: () => { const c = useAdminAnonymousCvSections(); return { hasError: c.hasError, load: c.load, value: () => c.sections.value } },
+    compose: () => { const c = useAdminAnonymousCvSections(); return { hasError: c.hasError, load: c.load, value: () => c.sections.value, mutate: () => c.remove('x'), shown: () => c.errorMessage.value } },
   },
   {
     name: 'useAdminCaseStudies', key: ADMIN_CASE_STUDY_REPOSITORY as never, read: 'list', loaded: [ONE], args: [],
-    error: (reason) => new AdminCaseStudyError(asReason(reason), 'x'),
-    compose: () => { const c = useAdminCaseStudies(); return { hasError: c.hasError, load: c.load, value: () => c.caseStudies.value } },
+    compose: () => { const c = useAdminCaseStudies(); return { hasError: c.hasError, load: c.load, value: () => c.caseStudies.value, mutate: () => c.remove('x'), shown: () => c.errorMessage.value } },
   },
   {
     name: 'useAdminContributions', key: ADMIN_CONTRIBUTION_REPOSITORY as never, read: 'list', loaded: [ONE], args: [],
-    error: (reason) => new AdminContributionError(asReason(reason), 'x'),
-    compose: () => { const c = useAdminContributions(); return { hasError: c.hasError, load: c.load, value: () => c.contributions.value } },
+    compose: () => { const c = useAdminContributions(); return { hasError: c.hasError, load: c.load, value: () => c.contributions.value, mutate: () => c.remove('x'), shown: () => c.errorMessage.value } },
   },
   {
     name: 'useAdminIncidents', key: ADMIN_INCIDENT_REPOSITORY as never, read: 'list', loaded: [ONE], args: [],
-    error: (reason) => new AdminIncidentError(asReason(reason), 'x'),
-    compose: () => { const c = useAdminIncidents(); return { hasError: c.hasError, load: c.load, value: () => c.incidents.value } },
+    compose: () => { const c = useAdminIncidents(); return { hasError: c.hasError, load: c.load, value: () => c.incidents.value, mutate: () => c.remove('x'), shown: () => c.errorMessage.value } },
   },
   {
     name: 'useAdminQualityPrinciples', key: ADMIN_QUALITY_PRINCIPLE_REPOSITORY as never, read: 'list', loaded: [ONE], args: [],
-    error: (reason) => new AdminQualityError(asReason(reason), 'x'),
-    compose: () => { const c = useAdminQualityPrinciples(); return { hasError: c.hasError, load: c.load, value: () => c.principles.value } },
+    compose: () => { const c = useAdminQualityPrinciples(); return { hasError: c.hasError, load: c.load, value: () => c.principles.value, mutate: () => c.remove('x'), shown: () => c.errorMessage.value } },
   },
   {
     name: 'useAdminQualityTraits', key: ADMIN_QUALITY_TRAIT_REPOSITORY as never, read: 'list', loaded: [ONE], args: [],
-    error: (reason) => new AdminQualityError(asReason(reason), 'x'),
-    compose: () => { const c = useAdminQualityTraits(); return { hasError: c.hasError, load: c.load, value: () => c.traits.value } },
+    compose: () => { const c = useAdminQualityTraits(); return { hasError: c.hasError, load: c.load, value: () => c.traits.value, mutate: () => c.remove('x'), shown: () => c.errorMessage.value } },
   },
   {
     name: 'useAdminExperienceTechnologies', key: ADMIN_EXPERIENCE_TECHNOLOGY_REPOSITORY as never, read: 'list', loaded: [ONE], args: [],
-    error: (reason) => new AdminExperienceTechnologyError(asReason(reason), 'x'),
-    compose: () => { const c = useAdminExperienceTechnologies(); return { hasError: c.hasError, load: c.load, value: () => c.technologies.value } },
+    compose: () => { const c = useAdminExperienceTechnologies(); return { hasError: c.hasError, load: c.load, value: () => c.technologies.value, mutate: () => c.remove('x'), shown: () => c.errorMessage.value } },
   },
   {
     name: 'useAdminUsers', key: ADMIN_USER_REPOSITORY as never, read: 'list', loaded: [ONE], args: [],
-    error: (reason) => new AdminUserError(asReason(reason), 'x'),
-    compose: () => { const c = useAdminUsers(); return { hasError: c.hasError, load: c.load, value: () => c.users.value } },
+    compose: () => { const c = useAdminUsers(); return { hasError: c.hasError, load: c.load, value: () => c.users.value, mutate: () => c.remove('x'), shown: () => c.errorMessage.value } },
   },
   {
     name: 'useAdminVulnerabilities', key: ADMIN_VULNERABILITY_REPOSITORY as never, read: 'list', loaded: [ONE], args: [],
-    // Lecture seule : ce dépôt n'a pas de classe d'erreur propre, la raison portée par l'objet suffit.
-    error: (reason) => Object.assign(new Error('x'), { reason }),
     compose: () => {
       const c = useAdminVulnerabilities()
       // Pas de `load` exposé : le chargement part au montage, un second ne se déclenche pas à la demande.
-      return { hasError: c.hasError, load: async () => undefined, value: () => c.vulnerabilities.value }
+      return { hasError: c.hasError, load: async () => undefined, value: () => c.vulnerabilities.value, mutate: null, shown: () => null }
     },
   },
   {
     name: 'useAdminWatchedProducts', key: ADMIN_WATCHED_PRODUCT_REPOSITORY as never, read: 'list', loaded: [ONE], args: [],
-    error: (reason) => new AdminWatchedProductError(asReason(reason), 'x'),
-    compose: () => { const c = useAdminWatchedProducts(); return { hasError: c.hasError, load: c.load, value: () => c.products.value } },
+    compose: () => { const c = useAdminWatchedProducts(); return { hasError: c.hasError, load: c.load, value: () => c.products.value, mutate: () => c.remove('x'), shown: () => c.errorMessage.value } },
   },
 ]
 
@@ -177,7 +157,7 @@ async function reload(testCase: Case, handle: Handle): Promise<void> {
 
 describe('chargement refusé : session finie', () => {
   it.each(CASES)('$name : un chargement refusé pour session finie ne lève pas hasError', async (testCase) => {
-    const handle = mountComposable(testCase, failingRepository(testCase, testCase.error('session-ended'), false))
+    const handle = mountComposable(testCase, failingRepository(testCase, new SessionEndedError(), false))
     await flushPromises()
     await reload(testCase, handle)
 
@@ -185,7 +165,7 @@ describe('chargement refusé : session finie', () => {
   })
 
   it.each(CASES)('$name : tout autre échec lève hasError', async (testCase) => {
-    const handle = mountComposable(testCase, failingRepository(testCase, testCase.error('unknown'), false))
+    const handle = mountComposable(testCase, failingRepository(testCase, new Error('boom'), false))
     await flushPromises()
     await reload(testCase, handle)
 
@@ -195,7 +175,7 @@ describe('chargement refusé : session finie', () => {
   it.each(CASES)('$name : garde la liste déjà lue', async (testCase) => {
     // Premier chargement réussi, second refusé pour session finie (Review Focus 4). Les réglages ne se
     // chargent pas d'eux-mêmes : la page pilote `load(locale)`, on le fait ici.
-    const handle = mountComposable(testCase, failingRepository(testCase, testCase.error('session-ended'), true))
+    const handle = mountComposable(testCase, failingRepository(testCase, new SessionEndedError(), true))
     await flushPromises()
     if ('get' === testCase.read) await reload(testCase, handle)
     expect(handle.value()).toEqual(testCase.loaded)
@@ -204,5 +184,97 @@ describe('chargement refusé : session finie', () => {
 
     expect(handle.value()).toEqual(testCase.loaded)
     expect(handle.hasError.value).toBe(false)
+  })
+})
+
+/** Tous les composables ont une mutation, sauf la lecture seule des vulnérabilités. */
+const MUTATING_CASES = CASES.filter((testCase) => 'useAdminVulnerabilities' !== testCase.name)
+
+describe('mutation refusée : session finie', () => {
+  it.each(MUTATING_CASES)('$name : une mutation refusée pour session finie ne pose aucune erreur', async (testCase) => {
+    const handle = mountComposable(testCase, failingRepository(testCase, new SessionEndedError(), false))
+    await flushPromises()
+
+    const succeeded = await handle.mutate?.()
+    await flushPromises()
+
+    expect(handle.shown()).toBeNull()
+    // Pas d'erreur à afficher ne veut pas dire « réussi » : la page garde alors sa saisie (régression vue
+    // en R3, où `!errorMessage` valait succès et vidait le formulaire sous le bandeau).
+    expect(succeeded).toBe(false)
+  })
+
+  it.each(MUTATING_CASES)('$name : toute autre mutation refusée pose l\'erreur « unknown » du contexte', async (testCase) => {
+    const handle = mountComposable(testCase, failingRepository(testCase, new Error('boom'), false))
+    await flushPromises()
+
+    const succeeded = await handle.mutate?.()
+    await flushPromises()
+
+    expect(handle.shown()).toMatchObject({ reason: 'unknown' })
+    expect(succeeded).toBe(false)
+  })
+
+  it("useAdminTranslation : une traduction refusée pour session finie ne pose aucune raison", async () => {
+    let captured: ReturnType<typeof useAdminTranslation> | undefined
+    mount(
+      defineComponent({
+        setup() {
+          captured = useAdminTranslation()
+          return () => h('div')
+        },
+      }),
+      { global: { provide: { [ADMIN_TRANSLATION_REPOSITORY as symbol]: { translate: async () => Promise.reject(new SessionEndedError()) } } } },
+    )
+
+    const proposal = await captured?.translate('fr', 'en', {})
+
+    expect(proposal).toBeNull()
+    expect(captured?.errorReason.value).toBeNull()
+  })
+
+  it("useAdminTranslation : tout autre échec pose la raison « unknown »", async () => {
+    let captured: ReturnType<typeof useAdminTranslation> | undefined
+    mount(
+      defineComponent({
+        setup() {
+          captured = useAdminTranslation()
+          return () => h('div')
+        },
+      }),
+      { global: { provide: { [ADMIN_TRANSLATION_REPOSITORY as symbol]: { translate: async () => Promise.reject(new Error('boom')) } } } },
+    )
+
+    await captured?.translate('fr', 'en', {})
+
+    expect(captured?.errorReason.value).toBe('unknown')
+  })
+
+  it("useOrderDraft : un enregistrement refusé pour session finie ne pose aucune raison, et garde le brouillon", async () => {
+    const draft = useOrderDraft({
+      serverKeys: () => ['a', 'b'],
+      reorder: async () => Promise.reject(new SessionEndedError()),
+      reload: async () => undefined,
+    })
+    draft.move(0, 1)
+
+    await draft.save()
+
+    expect(draft.errorReason.value).toBeNull()
+    expect(draft.draft.value).toEqual(['b', 'a'])
+    expect(draft.isDirty.value).toBe(true)
+  })
+
+  it("useOrderDraft : tout autre échec pose la raison « unknown »", async () => {
+    const draft = useOrderDraft({
+      serverKeys: () => ['a', 'b'],
+      reorder: async () => Promise.reject(new Error('boom')),
+      reload: async () => undefined,
+    })
+    draft.move(0, 1)
+
+    await draft.save()
+
+    expect(draft.errorReason.value).toBe('unknown')
   })
 })

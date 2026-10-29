@@ -2,7 +2,7 @@ import { markSessionExpired } from '../../application/auth/useAuth'
 
 /**
  * La réaction du backoffice à un 401, branchée dans `main.ts` sur
- * `setBackofficeUnauthorizedHandler` : la session est finie (JWT expiré, ou
+ * `setBackofficeSessionEndedHandler` : la session est finie (JWT expiré, ou
  * ouverte avant un changement de mot de passe, #650 R1b). L'en-tête repasse à
  * « anonyme » et l'état « session finie » est levé — le bandeau d'`AdminLayout`
  * (`SessionEndedBanner`) l'annonce et offre le lien de reconnexion.
@@ -18,6 +18,6 @@ import { markSessionExpired } from '../../application/auth/useAuth'
  * appelle cette réaction : elle est idempotente (un état, pas un événement), il
  * n'y a rien à dédoublonner.
  */
-export function onBackofficeUnauthorized(): void {
+export function onBackofficeSessionEnded(): void {
   markSessionExpired()
 }

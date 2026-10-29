@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { defineComponent } from 'vue'
 import { router } from '../../../src/presentation/router'
-import { onBackofficeUnauthorized } from '../../../src/presentation/router/backofficeSessionExpiry'
+import { onBackofficeSessionEnded } from '../../../src/presentation/router/backofficeSessionExpiry'
 import { AUTH_REPOSITORY, authState, useAuth } from '../../../src/application/auth/useAuth'
 import type { AuthRepository } from '../../../src/domain/auth/repositories/AuthRepository'
 import type { AuthenticatedUser } from '../../../src/domain/auth/entities/AuthenticatedUser'
@@ -42,7 +42,7 @@ describe('backofficeSessionExpiry', () => {
     const replace = vi.spyOn(router, 'replace')
     const push = vi.spyOn(router, 'push')
 
-    onBackofficeUnauthorized()
+    onBackofficeSessionEnded()
     await new Promise((resolve) => setTimeout(resolve, 0))
 
     expect(authState.user).toBeNull()
@@ -56,7 +56,7 @@ describe('backofficeSessionExpiry', () => {
   })
 
   it('plusieurs 401 simultanés (listes chargées en parallèle) laissent un seul état de fin de session', async () => {
-    const handler = onBackofficeUnauthorized
+    const handler = onBackofficeSessionEnded
 
     handler()
     handler()

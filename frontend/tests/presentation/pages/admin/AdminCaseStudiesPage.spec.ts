@@ -11,7 +11,7 @@ import type { AdminCaseStudyRepository } from '../../../../src/domain/admin/case
 import type { AdminCaseStudy } from '../../../../src/domain/admin/caseStudies/entities/AdminCaseStudy'
 import type { AdminTranslationRepository } from '../../../../src/domain/admin/translation/repositories/AdminTranslationRepository'
 import { AdminTranslationError } from '../../../../src/domain/admin/translation/errors/AdminTranslationError'
-import { AdminCaseStudyError } from '../../../../src/domain/admin/caseStudies/errors/AdminCaseStudyError'
+import { SessionEndedError } from '../../../../src/domain/auth/errors/SessionEndedError'
 import { AdminOrderError } from '../../../../src/domain/admin/shared/errors/AdminOrderError'
 import { expectNoAccessibilityViolation } from '../../../support/axe'
 
@@ -293,7 +293,7 @@ describe('AdminCaseStudiesPage', () => {
     // Le bandeau de session finie (AdminLayout) est alors la seule annonce : la page ne double ni
     // d'une alerte, ni d'une clé de traduction brute (#748, constat 7).
     const caseStudies = createStubRepository({
-      create: vi.fn(async () => Promise.reject(new AdminCaseStudyError('session-ended', 'x'))),
+      create: vi.fn(async () => Promise.reject(new SessionEndedError())),
     })
     const { wrapper } = await mountPage(caseStudies)
 

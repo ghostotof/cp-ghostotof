@@ -9,8 +9,8 @@ import { ADMIN_TRANSLATION_REPOSITORY } from '../../../src/application/admin/tra
 import { CV_REPOSITORY } from '../../../src/application/cv/useCvDownload'
 import { AUTH_REPOSITORY, authState, useAuth } from '../../../src/application/auth/useAuth'
 import { HttpAdminCaseStudyRepository } from '../../../src/infrastructure/admin/caseStudies/HttpAdminCaseStudyRepository'
-import { setBackofficeUnauthorizedHandler } from '../../../src/infrastructure/admin/shared/BackofficeHttpClient'
-import { onBackofficeUnauthorized } from '../../../src/presentation/router/backofficeSessionExpiry'
+import { setBackofficeSessionEndedHandler } from '../../../src/infrastructure/admin/shared/BackofficeHttpClient'
+import { onBackofficeSessionEnded } from '../../../src/presentation/router/backofficeSessionExpiry'
 import type { AuthRepository } from '../../../src/domain/auth/repositories/AuthRepository'
 import type { AdminTranslationRepository } from '../../../src/domain/admin/translation/repositories/AdminTranslationRepository'
 import type { CvRepository } from '../../../src/domain/cv/repositories/CvRepository'
@@ -88,7 +88,7 @@ async function mountAdminCaseStudies(): Promise<{ wrapper: VueWrapper; router: R
 describe('AdminLayout — fin de session pendant une saisie (#650, S2)', () => {
   beforeEach(async () => {
     await signIn()
-    setBackofficeUnauthorizedHandler(onBackofficeUnauthorized)
+    setBackofficeSessionEndedHandler(onBackofficeSessionEnded)
     vi.stubGlobal(
       'fetch',
       vi.fn(async (_url: string, init?: RequestInit) =>
@@ -98,7 +98,7 @@ describe('AdminLayout — fin de session pendant une saisie (#650, S2)', () => {
   })
 
   afterEach(() => {
-    setBackofficeUnauthorizedHandler(null)
+    setBackofficeSessionEndedHandler(null)
     vi.unstubAllGlobals()
     document.body.innerHTML = ''
   })
@@ -148,11 +148,11 @@ async function fillAndSubmit(wrapper: VueWrapper): Promise<void> {
 describe('AdminLayout — une seule annonce de fin de session (#748)', () => {
   beforeEach(async () => {
     await signIn()
-    setBackofficeUnauthorizedHandler(onBackofficeUnauthorized)
+    setBackofficeSessionEndedHandler(onBackofficeSessionEnded)
   })
 
   afterEach(() => {
-    setBackofficeUnauthorizedHandler(null)
+    setBackofficeSessionEndedHandler(null)
     vi.unstubAllGlobals()
     document.cookie = 'XSRF-TOKEN=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/'
     document.body.innerHTML = ''

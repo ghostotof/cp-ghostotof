@@ -4,6 +4,8 @@ paths:
   - "frontend/src/application/auth/**"
   - "frontend/src/domain/auth/errors/**"
   - "frontend/src/infrastructure/admin/shared/BackofficeHttpClient.ts"
+  - "frontend/src/application/admin/shared/useAdminLoad.ts"
+  - "frontend/src/application/admin/shared/visibleMutationError.ts"
   - "frontend/src/infrastructure/mcp/**"
   - "frontend/src/infrastructure/assistant/**"
   - "frontend/src/presentation/ui/admin/SessionEndedBanner.vue"
@@ -11,6 +13,11 @@ paths:
   - "frontend/src/presentation/router/reauthentication.ts"
   - "frontend/src/presentation/router/backofficeSessionExpiry.ts"
   - "frontend/tests/infrastructure/http/**"
+  - "frontend/tests/application/admin/shared/useAdminLoad.spec.ts"
+  - "frontend/tests/application/admin/shared/visibleMutationError.spec.ts"
+  - "frontend/tests/application/admin/sessionEndedLoad.spec.ts"
+  - "frontend/tests/infrastructure/admin/sessionEndedMapping.spec.ts"
+  - "frontend/tests/infrastructure/admin/shared/BackofficeHttpClient.spec.ts"
   - "frontend/tests/presentation/ui/admin/SessionEndedBanner.spec.ts"
   - "frontend/tests/presentation/layout/usePublishedHeight.spec.ts"
   - "frontend/tests/presentation/layout/AdminLayout.sessionEnded.spec.ts"
@@ -21,7 +28,7 @@ paths:
 > The one rule of #748 (R2). It was a bullet of `frontend-backoffice.md` and was repeated, in part, by
 > `frontend.md`, `mcp-oauth.md` and `mcp-oauth-revocation-personne.md`: those now say their own case in a sentence
 > and point here. The code-side counterpart is the docblock of `infrastructure/http/sessionAwareFetch.ts`. The
-> index of every rule is at the top of `.claude/CLAUDE.md`. Later tasks of #748 (R3 to R9) add their sections here.
+> index of every rule is at the top of `.claude/CLAUDE.md`. Later tasks of #748 (R4 to R9) add their sections here.
 
 ## The rule, in one function
 
@@ -54,7 +61,7 @@ case that precedes it (the consent's 401 `reauthentication-required`), before th
 refused).
 
 `sessionAwareFetch` is a shared **function**, not a client: `frontend.md` keeps `BackofficeHttpClient` for the
-backoffice only (its global reaction, `setBackofficeUnauthorizedHandler`, is not the one of the three other clients,
+backoffice only (its global reaction, `setBackofficeSessionEndedHandler`, is not the one of the three other clients,
 which mark the session in their composable); the MCP, consent and assistant repositories call the function, and so
 does `BackofficeHttpClient`.
 
@@ -81,12 +88,25 @@ does `BackofficeHttpClient`.
 ## One section per client
 
 - **Backoffice** — `BackofficeHttpClient` (`get` and `mutate`) goes through `sessionAwareFetch` and, on an ended
-  session, calls the reaction registered once through `setBackofficeUnauthorizedHandler()` and returns the response as it
-  came; the 15 repositories keep their own status mapping, **none repeats the reaction**, and each tests
-  `client.endedTheSession(response)` **first** in its error translator, answering the reason `session-ended`
-  (`domain/admin/shared/errors/sessionEnded.ts`; `AdminOrderError` for the order), which composables and pages keep quiet
-  (`isSessionEndedError()`, `visibleErrorReason()`): the banner is the only announcement. (R3 turns this into an
-  error raised by the client.) A new administration client goes through `BackofficeHttpClient`.
+  session, calls the reaction registered once through `setBackofficeSessionEndedHandler()` and **raises
+  `SessionEndedError`** (#748, R3): it no longer hands the response back, and the old per-context reason
+  `session-ended`, the module `WeakSet` and `endedTheSession()` are gone. The 15 repositories **do not translate it**: it
+  crosses them as it came and leaves the hierarchy of every context (it is not an `AdminXError`). **Two shared functions
+  of `application/admin/shared/` keep it quiet, one per direction, and a new administration composable goes through
+  them**:
+  - `useAdminLoad({ read, apply })` for a read: a `SessionEndedError` raises no `hasError` and leaves the value already
+    read; any other rejection raises it; a response older than the last `load()` is dropped (stale guard); `K` is the
+    read's key (the locale, for the About settings);
+  - `visibleMutationError(error, OwnError, fallback)` for a `catch` of a mutation: `null` for a `SessionEndedError` (the
+    banner is the only announcement, the page adds no alert), the error itself when it is the context's, `fallback()`
+    otherwise. Never a `catch` that turns what is not its own error into `unknown`: it would show « Une erreur est
+    survenue » under the banner.
+  **A mutation resolves to `true` only when it succeeded** (`create`/`update`/`remove`/`save`, `setSuperAdmin`,
+  `resendInvitation`, `changePassword`): « no error to show » is no longer « succeeded », since an ended session shows
+  none, and a page that reset its form on `!errorMessage` lost what the person had typed (the case #650 S2 protects).
+  A page resets its form, announces a success or clears a field on that value, never on `errorMessage`. `useOrderDraft`
+  and `useAdminTranslation` set no reason for an ended session either (the draft stays, to be replayed after signing
+  in), and no page composes a key `admin.<context>.errors.session-ended`: the reason does not exist.
 - **Connections MCP** — `HttpMcpConnectionsRepository` calls the function; a 401, or a 403 to the `DELETE` sent
   without a token, is a `SessionEndedError`, which `useMcpConnections` turns into `markSessionExpired()` and
   `sessionExpired`; any other 403 is the generic failure for now.
@@ -98,7 +118,7 @@ does `BackofficeHttpClient`.
 
 ## The interface
 
-- **`main.ts`** registers `onBackofficeUnauthorized` (`presentation/router/backofficeSessionExpiry.ts`), which is
+- **`main.ts`** registers `onBackofficeSessionEnded` (`presentation/router/backofficeSessionExpiry.ts`), which is
   `markSessionExpired()` and nothing else: **no `router.replace`** (R1c's navigation unmounted the page at the very click
   of « Enregistrer », and a case study written for more than an hour — the JWT's lifetime — was lost with it). It is
   idempotent, a state and not an event: several lists of a page answering 401 together need no de-duplication. The
@@ -145,15 +165,27 @@ does `BackofficeHttpClient`.
 
 `sessionAwareFetch.spec.ts` (the rule's table; a read leaves with the cookies and no CSRF header, a write carries the
 header read in the cookie, a write without a cookie or with an empty one ends the session on a 403, a 401 on any method,
-the given headers kept, a network failure or an abort rejecting as it came), `BackofficeHttpClient.spec.ts` (401 on read
-and write, a 403 to a write without a token or with an empty cookie, 200/204/403/404/409/422/500 with no reaction when the
-token was sent, a 403 to a read never, no handler registered), `sessionEndedMapping.spec.ts` (the repositories: a 401
-read, a 403 write without a token and a 401 reorder are `session-ended`, a 403 write with one keeps its mapping; a glob
-fails when a new repository is missing from its table), `HttpAdminUserRepository.spec.ts`,
+the given headers kept, a network failure or an abort rejecting as it came), `BackofficeHttpClient.spec.ts` (a 401 on read
+and write, a 403 to a write without a token or with an empty cookie, each **rejects `SessionEndedError`** and calls the
+reaction once, also with no reaction registered; 200/204/403/404/409/422/500 give the response back with no reaction when
+the token was sent, a 403 to a read never; a network failure rises as it came), `useAdminLoad.spec.ts` and
+`visibleMutationError.spec.ts` (the two functions), `sessionEndedMapping.spec.ts` (the table of the 15 repositories: a 401
+on every call each exposes, read, write, order, rejects `SessionEndedError` unchanged; a glob fails when a new repository
+is missing from the table), `sessionEndedLoad.spec.ts` (the thirteen composables: an ended session on a load raises no
+`hasError` and keeps the list, any other failure raises it; on a mutation it sets **no error and does not succeed**, any
+other failure sets `unknown`; `useAdminTranslation` and `useOrderDraft` too), `HttpAdminUserRepository.spec.ts`,
 `HttpMcpConnectionsRepository.spec.ts`, `HttpOAuthConsentRepository.spec.ts`, `HttpAssistantRepository.spec.ts`,
 `backofficeSessionExpiry.spec.ts` (the session is closed, no navigation, idempotent), `SessionEndedBanner.spec.ts` (alert
 inserted, no focus taken, the link and its icon, the re-read on `focus`, the sticky class, the status region present from
 mount and its message on return and emptied on the next route), `usePublishedHeight.spec.ts` (the height posted, updated on
 a second reading, removed with the target), `AdminLayout.sessionEnded.spec.ts` (the page stays mounted with its typed
 input; red when `router.replace` is reintroduced; the banner is the only alert on a 401 and on a 403 without a token, a 403
-with one shows the page's), `useAuth.spec.ts`.
+with one shows the page's), `AdminCaseStudiesPage.spec.ts` and `OrderToolbar.spec.ts` (an ended session adds no alert of the
+page's, and the input stays), `useAuth.spec.ts`.
+
+Three guards of the first version are gone, because what they guarded no longer exists: `sessionEnded.spec.ts` (domain,
+`isSessionEndedError`), `visibleErrorReason.spec.ts` and `errorReasonsHideSessionEnded.spec.ts` (a source guard: every file
+composing `errors.${reason}` went through `visibleErrorReason`). With no `session-ended` reason there is nothing to hide,
+and the behaviour they kept is held by the two functions' specs, the thirteen composables' and the page and layout ones
+above. The one thing a source guard caught and these do not: a **new** composable that forgets the two functions (the rule
+above and the review carry it).

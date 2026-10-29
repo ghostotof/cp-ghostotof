@@ -13,15 +13,16 @@ import { HttpAdminTranslationRepository } from '../../../src/infrastructure/admi
 import { HttpAdminUserRepository } from '../../../src/infrastructure/admin/users/HttpAdminUserRepository'
 import { HttpAdminVulnerabilityRepository } from '../../../src/infrastructure/admin/watch/HttpAdminVulnerabilityRepository'
 import { HttpAdminWatchedProductRepository } from '../../../src/infrastructure/admin/watch/HttpAdminWatchedProductRepository'
-import { AdminOrderError } from '../../../src/domain/admin/shared/errors/AdminOrderError'
-import { SESSION_ENDED } from '../../../src/domain/admin/shared/errors/sessionEnded'
+import { SessionEndedError } from '../../../src/domain/auth/errors/SessionEndedError'
 
 const API_BASE_URL = 'https://api.example.test'
 
 /**
  * Un dépôt du backoffice, avec une lecture, une écriture et, s'il est ordonné, un ordre : de quoi
- * vérifier que chacun traduit « session finie » en la raison commune (#748, constats 7 et 15). Les
- * entrées sont des coquilles : la réponse est simulée, le corps envoyé n'est pas ce qu'on regarde.
+ * vérifier que la session finie, levée par `BackofficeHttpClient` (#748, R3), le traverse telle
+ * quelle, sans qu'aucun dépôt ne la traduise en erreur de son contexte. Le verdict lui-même (401,
+ * 403 sans jeton) est celui du client, éprouvé dans `BackofficeHttpClient.spec.ts`. Les entrées sont
+ * des coquilles : la réponse est simulée, le corps envoyé n'est pas ce qu'on regarde.
  */
 interface RepositoryCase {
   readonly name: string
@@ -169,11 +170,7 @@ function clearCsrfCookie(): void {
   document.cookie = 'XSRF-TOKEN=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/'
 }
 
-const withRead = cases.filter((repository) => undefined !== repository.read)
-const withWrite = cases.filter((repository) => undefined !== repository.write)
-const withReorder = cases.filter((repository) => undefined !== repository.reorder)
-
-describe('dépôts du backoffice — une session finie est la raison session-ended', () => {
+describe('dépôts du backoffice — la session finie traverse le dépôt telle quelle', () => {
   beforeEach(() => {
     clearCsrfCookie()
   })
@@ -183,46 +180,19 @@ describe('dépôts du backoffice — une session finie est la raison session-end
     clearCsrfCookie()
   })
 
-  it.each(withRead.map((repository) => [repository.name, repository] as const))(
-    '%s : un 401 en lecture est la raison session-ended',
+  it.each(cases.map((repository) => [repository.name, repository] as const))(
+    '%s : la session finie traverse le dépôt telle quelle',
     async (_name, repository) => {
       stubStatus(401)
+      // Chaque appel que le dépôt expose : la lecture, l'écriture et, s'il est ordonné, l'ordre.
+      const calls = [repository.read, repository.write, repository.reorder].filter(
+        (call): call is () => Promise<unknown> => undefined !== call,
+      )
+      expect(calls.length).toBeGreaterThan(0)
 
-      await expect(repository.read?.()).rejects.toMatchObject({ reason: SESSION_ENDED })
-    },
-  )
-
-  it.each(withWrite.map((repository) => [repository.name, repository] as const))(
-    '%s : un 403 à une écriture sans jeton est la raison session-ended',
-    async (_name, repository) => {
-      stubStatus(403)
-
-      await expect(repository.write?.()).rejects.toMatchObject({ reason: SESSION_ENDED })
-    },
-  )
-
-  it.each(withWrite.map((repository) => [repository.name, repository] as const))(
-    '%s : un 403 à une écriture avec jeton garde son mapping',
-    async (_name, repository) => {
-      document.cookie = 'XSRF-TOKEN=jeton; path=/'
-      stubStatus(403)
-
-      const error: unknown = await repository.write?.().catch((caught: unknown) => caught)
-
-      expect(error).toBeInstanceOf(Error)
-      expect((error as { reason?: unknown }).reason).not.toBe(SESSION_ENDED)
-    },
-  )
-
-  it.each(withReorder.map((repository) => [repository.name, repository] as const))(
-    '%s : reorder en 401 est AdminOrderError session-ended',
-    async (_name, repository) => {
-      stubStatus(401)
-
-      const error: unknown = await repository.reorder?.().catch((caught: unknown) => caught)
-
-      expect(error).toBeInstanceOf(AdminOrderError)
-      expect((error as AdminOrderError).reason).toBe(SESSION_ENDED)
+      for (const call of calls) {
+        await expect(call()).rejects.toBeInstanceOf(SessionEndedError)
+      }
     },
   )
 

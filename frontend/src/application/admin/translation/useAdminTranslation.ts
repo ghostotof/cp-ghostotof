@@ -6,6 +6,7 @@ import {
   AdminTranslationError,
   type AdminTranslationErrorReason,
 } from '../../../domain/admin/translation/errors/AdminTranslationError'
+import { visibleMutationError } from '../shared/visibleMutationError'
 
 export const ADMIN_TRANSLATION_REPOSITORY: InjectionKey<AdminTranslationRepository> = Symbol('AdminTranslationRepository')
 
@@ -46,7 +47,9 @@ export function useAdminTranslation(): UseAdminTranslationResult {
     try {
       return await repository.translate(sourceLocale, targetLocale, fields)
     } catch (error) {
-      errorReason.value = error instanceof AdminTranslationError ? error.reason : 'unknown'
+      // Une session finie ne pose aucune raison : le bandeau de session finie l'annonce seul (#748).
+      errorReason.value =
+        visibleMutationError(error, AdminTranslationError, () => new AdminTranslationError('unknown', 'Unknown error'))?.reason ?? null
       return null
     } finally {
       isTranslating.value = false

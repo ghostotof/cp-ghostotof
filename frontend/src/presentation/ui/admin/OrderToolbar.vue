@@ -3,7 +3,6 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { AdminOrderErrorReason } from '../../../domain/admin/shared/errors/AdminOrderError'
 import type { OrderMove } from '../../../application/admin/shared/useOrderHandleFocus'
-import { visibleErrorReason } from './visibleErrorReason'
 
 /**
  * Barre d'action du brouillon d'ordre (spec 0004, D6) : statut, Annuler,
@@ -41,11 +40,9 @@ const saveDisabled = computed(() => !props.isDirty || props.isSaving)
 // 422 obsolète, `useOrderDraft` a resynchronisé le brouillon — plus
 // « modifié » — mais l'alerte, elle, ne s'efface que par `reset()`.
 //
-// L'erreur qui compte ici est celle qu'on **affiche** : une session finie (#748) est annoncée par le
-// bandeau de la page, pas par cette barre, et ne doit donc ni apparaître ici ni garder « Annuler » actif.
-const shownReason = computed(() => visibleErrorReason(props.errorReason))
-
-const cancelDisabled = computed(() => (!props.isDirty && null === shownReason.value) || props.isSaving)
+// Une session finie (#748) n'arrive jamais ici : `useOrderDraft` ne pose aucune raison pour elle, le bandeau de
+// la page l'annonce seul, et le brouillon reste actif pour être rejoué après la reconnexion.
+const cancelDisabled = computed(() => (!props.isDirty && null === props.errorReason) || props.isSaving)
 
 const announcement = computed(() =>
   props.lastMove ? t('admin.order.moved', { position: props.lastMove.position, count: props.lastMove.count }) : '',
@@ -73,11 +70,11 @@ const announcement = computed(() =>
       {{ t('admin.order.save') }}
     </button>
     <p
-      v-if="shownReason"
+      v-if="errorReason"
       role="alert"
       class="text-danger-emphasis mb-0"
     >
-      {{ t(`admin.order.errors.${shownReason}`) }}
+      {{ t(`admin.order.errors.${errorReason}`) }}
     </p>
     <span
       role="status"

@@ -1,3 +1,4 @@
+import { SessionEndedError } from '../../../domain/auth/errors/SessionEndedError'
 import { sessionAwareFetch, type SessionAwareResponse } from '../../http/sessionAwareFetch'
 
 /** Forme RFC7807-ish renvoyée par API Platform sur les réponses d'erreur (cf. api_platform.yaml `error_formats`). */
@@ -9,32 +10,25 @@ export interface ApiProblemBody {
 }
 
 /** Réaction à une session finie du backoffice (voir `infrastructure/http/sessionAwareFetch.ts`), posée une fois à la racine de composition. */
-export type BackofficeUnauthorizedHandler = () => void
+export type BackofficeSessionEndedHandler = () => void
 
-let unauthorizedHandler: BackofficeUnauthorizedHandler | null = null
-
-/**
- * Les réponses que le client a jugées fin de session à l'envoi. Un `WeakSet` de module plutôt qu'une
- * propriété : `Response` est un objet du navigateur qu'on ne marque pas, et chaque dépôt a son propre
- * client, alors que la réponse passe de l'un au traducteur d'erreur de l'autre.
- */
-const sessionEndedResponses = new WeakSet<Response>()
+let sessionEndedHandler: BackofficeSessionEndedHandler | null = null
 
 /**
  * Enregistre (ou, avec `null`, retire) la réaction à une session finie du backoffice.
  * La couche infrastructure ne connaît ni la session ni le routeur : la racine
  * de composition (`main.ts`) lui fournit la réaction.
  */
-export function setBackofficeUnauthorizedHandler(handler: BackofficeUnauthorizedHandler | null): void {
-  unauthorizedHandler = handler
+export function setBackofficeSessionEndedHandler(handler: BackofficeSessionEndedHandler | null): void {
+  sessionEndedHandler = handler
 }
 
 /**
  * Plomberie HTTP commune aux repositories admin (backoffice `/api/backoffice/*`) :
  * l'envoi (cookies, header CSRF, verdict « session finie ») est celui de
  * `infrastructure/http/sessionAwareFetch.ts`, qui porte la règle ; ce client y ajoute la
- * réaction globale du backoffice et le parsing RFC7807-ish des réponses d'erreur. Chaque
- * repository garde son propre mapping statut -> AdminXxxError (les codes 404/409/422 n'ont
+ * réaction globale du backoffice, la levée de `SessionEndedError` et le parsing RFC7807-ish
+ * des réponses d'erreur. Chaque repository garde son propre mapping statut -> AdminXxxError (les codes 404/409/422 n'ont
  * pas la même signification selon la ressource).
  */
 export class BackofficeHttpClient {
@@ -59,22 +53,17 @@ export class BackofficeHttpClient {
   }
 
   /**
-   * Vrai pour une réponse que ce client a jugée fin de session à l'envoi : les dépôts le testent
-   * en premier dans leur traducteur d'erreur et rendent la raison `session-ended`.
-   */
-  endedTheSession(response: Response): boolean {
-    return sessionEndedResponses.has(response)
-  }
-
-  /**
    * Une session finie (règle : `infrastructure/http/sessionAwareFetch.ts`) appelle la réaction commune,
-   * ici, plutôt que reprise dans chacun des dépôts. La réponse est rendue telle quelle dans tous les
-   * cas, et retenue ici pour que `endedTheSession()` la reconnaisse ; un autre refus reste au dépôt.
+   * ici, une fois, puis **lève** `SessionEndedError` : aucun dépôt ne la traduit, elle traverse jusqu'aux
+   * composables, que `useAdminLoad` et `visibleMutationError` (`application/admin/shared/`) taisent, le
+   * bandeau de session finie étant alors la seule annonce. Un autre refus est rendu tel quel : le
+   * dépôt lui donne le sens qu'il a pour sa ressource.
    */
   private react(judged: SessionAwareResponse): Response {
     if (judged.endedTheSession) {
-      sessionEndedResponses.add(judged.response)
-      unauthorizedHandler?.()
+      sessionEndedHandler?.()
+
+      throw new SessionEndedError()
     }
 
     return judged.response

@@ -5,20 +5,18 @@ import type {
   AdminContributionRepository,
 } from '../../../domain/admin/contributions/repositories/AdminContributionRepository'
 import { AdminContributionError } from '../../../domain/admin/contributions/errors/AdminContributionError'
-import { createStaleRequestGuard } from '../../shared/staleRequestGuard'
-import { isSessionEndedError } from '../../../domain/admin/shared/errors/sessionEnded'
+import { useAdminLoad, type AdminLoadState } from '../shared/useAdminLoad'
+import { visibleMutationError } from '../shared/visibleMutationError'
 
 export const ADMIN_CONTRIBUTION_REPOSITORY: InjectionKey<AdminContributionRepository> = Symbol('AdminContributionRepository')
 
-export interface UseAdminContributionsResult {
+export interface UseAdminContributionsResult extends AdminLoadState {
   contributions: Ref<readonly AdminContribution[]>
-  isLoading: Ref<boolean>
-  hasError: Ref<boolean>
   errorMessage: Ref<AdminContributionError | null>
   load: () => Promise<void>
-  create: (input: AdminContributionInput) => Promise<void>
-  update: (id: string, input: AdminContributionInput) => Promise<void>
-  remove: (id: string) => Promise<void>
+  create: (input: AdminContributionInput) => Promise<boolean>
+  update: (id: string, input: AdminContributionInput) => Promise<boolean>
+  remove: (id: string) => Promise<boolean>
   reorder: (keys: readonly string[]) => Promise<void>
 }
 
@@ -43,45 +41,35 @@ export function useAdminContributions(): UseAdminContributionsResult {
   }
 
   const contributions = ref<readonly AdminContribution[]>([])
-  const isLoading = ref(true)
-  const hasError = ref(false)
   const errorMessage = ref<AdminContributionError | null>(null)
-  const requestGuard = createStaleRequestGuard()
 
-  const load = async (): Promise<void> => {
-    const token = requestGuard.begin()
-    isLoading.value = true
-    hasError.value = false
+  const { isLoading, hasError, load } = useAdminLoad({
+    read: () => repository.list(),
+    apply: (value) => {
+      contributions.value = value
+    },
+  })
 
-    try {
-      const result = await repository.list()
-      if (!requestGuard.isCurrent(token)) return
-      contributions.value = result
-    } catch (error) {
-      // Une session finie n'est pas un échec de chargement : le bandeau de session finie l'annonce seul
-      // (#748), et la liste déjà lue reste affichée.
-      if (requestGuard.isCurrent(token) && !isSessionEndedError(error)) hasError.value = true
-    } finally {
-      if (requestGuard.isCurrent(token)) isLoading.value = false
-    }
-  }
-
-  const runMutation = async (mutation: () => Promise<unknown>): Promise<void> => {
+  const runMutation = async (mutation: () => Promise<unknown>): Promise<boolean> => {
     errorMessage.value = null
 
     try {
       await mutation()
       await load()
+
+      return true
     } catch (error) {
-      errorMessage.value = error instanceof AdminContributionError ? error : new AdminContributionError('unknown', 'Unknown error')
+      errorMessage.value = visibleMutationError(error, AdminContributionError, () => new AdminContributionError('unknown', 'Unknown error'))
+
+      return false
     }
   }
 
-  const create = (input: AdminContributionInput): Promise<void> => runMutation(() => repository.create(input))
+  const create = (input: AdminContributionInput): Promise<boolean> => runMutation(() => repository.create(input))
 
-  const update = (id: string, input: AdminContributionInput): Promise<void> => runMutation(() => repository.update(id, input))
+  const update = (id: string, input: AdminContributionInput): Promise<boolean> => runMutation(() => repository.update(id, input))
 
-  const remove = (id: string): Promise<void> => runMutation(() => repository.remove(id))
+  const remove = (id: string): Promise<boolean> => runMutation(() => repository.remove(id))
 
   /**
    * Volontairement hors de `runMutation` : ni rechargement ni absorption de

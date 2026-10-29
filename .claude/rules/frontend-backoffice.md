@@ -12,6 +12,7 @@ paths:
   - "frontend/tests/presentation/layout/usePublishedHeight.spec.ts"
   - "frontend/tests/presentation/layout/AdminLayout.sessionEnded.spec.ts"
   - "frontend/tests/infrastructure/admin/sessionEndedMapping.spec.ts"
+  - "frontend/tests/application/admin/sessionEndedLoad.spec.ts"
 ---
 
 # Frontend — backoffice (`/admin`) and set-password
@@ -203,8 +204,9 @@ version" copies nothing and the assistant sends all five fields.
 - **A 401, or a 403 to a write sent without a CSRF token, mid-page ends the session on the interface, and moves
   nobody** (#650, R1c, #748). `BackofficeHttpClient` (`get` and `mutate`) sends through
   `infrastructure/http/sessionAwareFetch.ts`, calls the reaction registered by `main.ts`
-  (`setBackofficeUnauthorizedHandler()`, `markSessionExpired()` and no navigation) on such a response, and each repository
-  tests `client.endedTheSession()` first in its error translator (reason `session-ended`, which composables and pages
-  keep quiet: the banner is the only announcement). **A new administration client goes through `BackofficeHttpClient`.**
-  The rule, its backend facts, the shared errors, the banner, the header's link and the re-check on return:
-  `.claude/rules/frontend-session.md`.
+  (`setBackofficeSessionEndedHandler()`, `markSessionExpired()` and no navigation) and **raises `SessionEndedError`**: no
+  repository translates it, and the composables keep it quiet through `useAdminLoad` (reads) and `visibleMutationError`
+  (mutations), the banner being the only announcement. **A new administration client goes through
+  `BackofficeHttpClient`, a new composable through those two functions, and its mutations resolve to `true` only on
+  success** (a page resets its form on that, never on `errorMessage`). The rule, its backend facts, the shared errors, the
+  banner, the header's link and the re-check on return: `.claude/rules/frontend-session.md`.

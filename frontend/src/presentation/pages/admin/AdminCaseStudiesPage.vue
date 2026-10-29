@@ -27,7 +27,6 @@ import OrderHandle from '../../ui/admin/OrderHandle.vue'
 import OrderToolbar from '../../ui/admin/OrderToolbar.vue'
 import { LOCALE_NATIVE_NAMES, SUPPORTED_LOCALES, type Locale } from '../../../domain/portfolio/entities/Locale'
 import type { AdminCaseStudy } from '../../../domain/admin/caseStudies/entities/AdminCaseStudy'
-import { visibleErrorReason } from '../../ui/admin/visibleErrorReason'
 
 const { t } = useI18n()
 const { caseStudies, isLoading, hasError, errorMessage, load, create, update, remove, reorder } =
@@ -99,13 +98,13 @@ const isEditing = computed(() => null !== editingId.value)
 const hasProseToTranslate = computed(() => PROSE_FIELDS.some((field) => '' !== form[field].trim()))
 
 const translationErrorText = computed(() => {
-  const reason = visibleErrorReason(translationErrorReason.value)
+  const reason = translationErrorReason.value
 
   return reason ? t(`admin.translation.errors.${reason}`) : null
 })
 
 const errorText = computed(() => {
-  const reason = visibleErrorReason(errorMessage.value?.reason)
+  const reason = errorMessage.value?.reason
 
   return reason ? t(`admin.caseStudies.errors.${reason}`) : null
 })
@@ -230,15 +229,11 @@ async function handleSubmit(): Promise<void> {
     measuredResult: form.measuredResult,
   }
 
-  if (null !== editingId.value) {
-    await update(editingId.value, input)
-  } else {
-    await create(input)
-  }
+  const succeeded = null !== editingId.value ? await update(editingId.value, input) : await create(input)
 
   isSubmitting.value = false
 
-  if (!errorMessage.value) {
+  if (succeeded) {
     resetForm()
   }
 }

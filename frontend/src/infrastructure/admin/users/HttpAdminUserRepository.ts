@@ -2,7 +2,6 @@ import type { AdminUser } from '../../../domain/admin/users/entities/AdminUser'
 import type { AdminUserRepository } from '../../../domain/admin/users/repositories/AdminUserRepository'
 import type { Locale } from '../../../domain/portfolio/entities/Locale'
 import { AdminUserError, type AdminUserErrorReason } from '../../../domain/admin/users/errors/AdminUserError'
-import { SESSION_ENDED } from '../../../domain/admin/shared/errors/sessionEnded'
 import { BackofficeHttpClient, violationsMessage, type ApiProblemBody } from '../shared/BackofficeHttpClient'
 
 interface BackofficeUserApiResponse {
@@ -88,10 +87,6 @@ export class HttpAdminUserRepository implements AdminUserRepository {
   }
 
   private async toError(response: Response, operation: AdminUserOperation): Promise<AdminUserError> {
-    if (this.client.endedTheSession(response)) {
-      return new AdminUserError(SESSION_ENDED, 'Session ended')
-    }
-
     const body = await this.client.parseProblem(response)
     const detail = body.detail ?? ''
 

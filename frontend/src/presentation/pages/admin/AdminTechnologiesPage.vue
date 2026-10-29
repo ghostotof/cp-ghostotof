@@ -5,7 +5,6 @@ import { useAdminExperienceTechnologies } from '../../../application/admin/techn
 import BaseTextInput from '../../ui/BaseTextInput.vue'
 import BaseNumberInput from '../../ui/BaseNumberInput.vue'
 import type { AdminExperienceTechnology } from '../../../domain/admin/technologies/entities/AdminExperienceTechnology'
-import { visibleErrorReason } from '../../ui/admin/visibleErrorReason'
 
 const { t } = useI18n()
 const { technologies, isLoading, hasError, errorMessage, create, update, remove } = useAdminExperienceTechnologies()
@@ -17,7 +16,7 @@ const isSubmitting = ref(false)
 const isEditing = computed(() => null !== editingId.value)
 
 const errorText = computed(() => {
-  const reason = visibleErrorReason(errorMessage.value?.reason)
+  const reason = errorMessage.value?.reason
 
   return reason ? t(`admin.technologies.errors.${reason}`) : null
 })
@@ -51,15 +50,11 @@ async function handleSubmit(): Promise<void> {
     isSecondary: form.isSecondary,
   }
 
-  if (null !== editingId.value) {
-    await update(editingId.value, input)
-  } else {
-    await create(input)
-  }
+  const succeeded = null !== editingId.value ? await update(editingId.value, input) : await create(input)
 
   isSubmitting.value = false
 
-  if (!errorMessage.value) {
+  if (succeeded) {
     resetForm()
   }
 }

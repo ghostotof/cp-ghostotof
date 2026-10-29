@@ -5,20 +5,18 @@ import type {
   AdminQualityPrincipleRepository,
 } from '../../../domain/admin/quality/repositories/AdminQualityPrincipleRepository'
 import { AdminQualityError } from '../../../domain/admin/quality/errors/AdminQualityError'
-import { createStaleRequestGuard } from '../../shared/staleRequestGuard'
-import { isSessionEndedError } from '../../../domain/admin/shared/errors/sessionEnded'
+import { useAdminLoad, type AdminLoadState } from '../shared/useAdminLoad'
+import { visibleMutationError } from '../shared/visibleMutationError'
 
 export const ADMIN_QUALITY_PRINCIPLE_REPOSITORY: InjectionKey<AdminQualityPrincipleRepository> = Symbol('AdminQualityPrincipleRepository')
 
-export interface UseAdminQualityPrinciplesResult {
+export interface UseAdminQualityPrinciplesResult extends AdminLoadState {
   principles: Ref<readonly AdminQualityPrinciple[]>
-  isLoading: Ref<boolean>
-  hasError: Ref<boolean>
   errorMessage: Ref<AdminQualityError | null>
   load: () => Promise<void>
-  create: (input: AdminQualityPrincipleInput) => Promise<void>
-  update: (id: string, input: AdminQualityPrincipleInput) => Promise<void>
-  remove: (id: string) => Promise<void>
+  create: (input: AdminQualityPrincipleInput) => Promise<boolean>
+  update: (id: string, input: AdminQualityPrincipleInput) => Promise<boolean>
+  remove: (id: string) => Promise<boolean>
   reorder: (keys: readonly string[]) => Promise<void>
 }
 
@@ -42,45 +40,35 @@ export function useAdminQualityPrinciples(): UseAdminQualityPrinciplesResult {
   }
 
   const principles = ref<readonly AdminQualityPrinciple[]>([])
-  const isLoading = ref(true)
-  const hasError = ref(false)
   const errorMessage = ref<AdminQualityError | null>(null)
-  const requestGuard = createStaleRequestGuard()
 
-  const load = async (): Promise<void> => {
-    const token = requestGuard.begin()
-    isLoading.value = true
-    hasError.value = false
+  const { isLoading, hasError, load } = useAdminLoad({
+    read: () => repository.list(),
+    apply: (value) => {
+      principles.value = value
+    },
+  })
 
-    try {
-      const result = await repository.list()
-      if (!requestGuard.isCurrent(token)) return
-      principles.value = result
-    } catch (error) {
-      // Une session finie n'est pas un échec de chargement : le bandeau de session finie l'annonce seul
-      // (#748), et la liste déjà lue reste affichée.
-      if (requestGuard.isCurrent(token) && !isSessionEndedError(error)) hasError.value = true
-    } finally {
-      if (requestGuard.isCurrent(token)) isLoading.value = false
-    }
-  }
-
-  const runMutation = async (mutation: () => Promise<unknown>): Promise<void> => {
+  const runMutation = async (mutation: () => Promise<unknown>): Promise<boolean> => {
     errorMessage.value = null
 
     try {
       await mutation()
       await load()
+
+      return true
     } catch (error) {
-      errorMessage.value = error instanceof AdminQualityError ? error : new AdminQualityError('unknown', 'Unknown error')
+      errorMessage.value = visibleMutationError(error, AdminQualityError, () => new AdminQualityError('unknown', 'Unknown error'))
+
+      return false
     }
   }
 
-  const create = (input: AdminQualityPrincipleInput): Promise<void> => runMutation(() => repository.create(input))
+  const create = (input: AdminQualityPrincipleInput): Promise<boolean> => runMutation(() => repository.create(input))
 
-  const update = (id: string, input: AdminQualityPrincipleInput): Promise<void> => runMutation(() => repository.update(id, input))
+  const update = (id: string, input: AdminQualityPrincipleInput): Promise<boolean> => runMutation(() => repository.update(id, input))
 
-  const remove = (id: string): Promise<void> => runMutation(() => repository.remove(id))
+  const remove = (id: string): Promise<boolean> => runMutation(() => repository.remove(id))
 
   /**
    * Volontairement hors de `runMutation` : ni rechargement ni absorption de

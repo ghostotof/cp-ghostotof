@@ -5,7 +5,6 @@ import type {
 } from '../../../domain/admin/about/repositories/AdminAboutSettingsRepository'
 import { AdminAboutError, type AdminAboutErrorReason } from '../../../domain/admin/about/errors/AdminAboutError'
 import type { Locale } from '../../../domain/portfolio/entities/Locale'
-import { SESSION_ENDED } from '../../../domain/admin/shared/errors/sessionEnded'
 import { BackofficeHttpClient, violationsMessage } from '../shared/BackofficeHttpClient'
 
 interface BackofficeAboutSettingsApiResponse {
@@ -63,10 +62,6 @@ export class HttpAdminAboutSettingsRepository implements AdminAboutSettingsRepos
   }
 
   private async toError(response: Response): Promise<AdminAboutError> {
-    if (this.client.endedTheSession(response)) {
-      return new AdminAboutError(SESSION_ENDED, 'Session ended')
-    }
-
     const body = await this.client.parseProblem(response)
 
     if (404 === response.status) {

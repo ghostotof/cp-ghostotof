@@ -5,20 +5,18 @@ import type {
   AdminAboutSiteCardRepository,
 } from '../../../domain/admin/about/repositories/AdminAboutSiteCardRepository'
 import { AdminAboutError } from '../../../domain/admin/about/errors/AdminAboutError'
-import { createStaleRequestGuard } from '../../shared/staleRequestGuard'
-import { isSessionEndedError } from '../../../domain/admin/shared/errors/sessionEnded'
+import { useAdminLoad, type AdminLoadState } from '../shared/useAdminLoad'
+import { visibleMutationError } from '../shared/visibleMutationError'
 
 export const ADMIN_ABOUT_SITE_CARD_REPOSITORY: InjectionKey<AdminAboutSiteCardRepository> = Symbol('AdminAboutSiteCardRepository')
 
-export interface UseAdminAboutSiteCardsResult {
+export interface UseAdminAboutSiteCardsResult extends AdminLoadState {
   cards: Ref<readonly AdminAboutSiteCard[]>
-  isLoading: Ref<boolean>
-  hasError: Ref<boolean>
   errorMessage: Ref<AdminAboutError | null>
   load: () => Promise<void>
-  create: (input: AdminAboutSiteCardInput) => Promise<void>
-  update: (id: string, input: AdminAboutSiteCardInput) => Promise<void>
-  remove: (id: string) => Promise<void>
+  create: (input: AdminAboutSiteCardInput) => Promise<boolean>
+  update: (id: string, input: AdminAboutSiteCardInput) => Promise<boolean>
+  remove: (id: string) => Promise<boolean>
   reorder: (keys: readonly string[]) => Promise<void>
 }
 
@@ -42,45 +40,35 @@ export function useAdminAboutSiteCards(): UseAdminAboutSiteCardsResult {
   }
 
   const cards = ref<readonly AdminAboutSiteCard[]>([])
-  const isLoading = ref(true)
-  const hasError = ref(false)
   const errorMessage = ref<AdminAboutError | null>(null)
-  const requestGuard = createStaleRequestGuard()
 
-  const load = async (): Promise<void> => {
-    const token = requestGuard.begin()
-    isLoading.value = true
-    hasError.value = false
+  const { isLoading, hasError, load } = useAdminLoad({
+    read: () => repository.list(),
+    apply: (value) => {
+      cards.value = value
+    },
+  })
 
-    try {
-      const result = await repository.list()
-      if (!requestGuard.isCurrent(token)) return
-      cards.value = result
-    } catch (error) {
-      // Une session finie n'est pas un échec de chargement : le bandeau de session finie l'annonce seul
-      // (#748), et la liste déjà lue reste affichée.
-      if (requestGuard.isCurrent(token) && !isSessionEndedError(error)) hasError.value = true
-    } finally {
-      if (requestGuard.isCurrent(token)) isLoading.value = false
-    }
-  }
-
-  const runMutation = async (mutation: () => Promise<unknown>): Promise<void> => {
+  const runMutation = async (mutation: () => Promise<unknown>): Promise<boolean> => {
     errorMessage.value = null
 
     try {
       await mutation()
       await load()
+
+      return true
     } catch (error) {
-      errorMessage.value = error instanceof AdminAboutError ? error : new AdminAboutError('unknown', 'Unknown error')
+      errorMessage.value = visibleMutationError(error, AdminAboutError, () => new AdminAboutError('unknown', 'Unknown error'))
+
+      return false
     }
   }
 
-  const create = (input: AdminAboutSiteCardInput): Promise<void> => runMutation(() => repository.create(input))
+  const create = (input: AdminAboutSiteCardInput): Promise<boolean> => runMutation(() => repository.create(input))
 
-  const update = (id: string, input: AdminAboutSiteCardInput): Promise<void> => runMutation(() => repository.update(id, input))
+  const update = (id: string, input: AdminAboutSiteCardInput): Promise<boolean> => runMutation(() => repository.update(id, input))
 
-  const remove = (id: string): Promise<void> => runMutation(() => repository.remove(id))
+  const remove = (id: string): Promise<boolean> => runMutation(() => repository.remove(id))
 
   /**
    * Volontairement hors de `runMutation` : ni rechargement ni absorption de

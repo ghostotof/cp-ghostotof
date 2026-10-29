@@ -1,5 +1,3 @@
-import type { SessionEndedReason } from '../../shared/errors/sessionEnded'
-
 /**
  * `reason` catégorise l'échec pour que la présentation choisisse le bon
  * message traduit (cf. i18n `admin.quality.errors.*`) sans avoir à connaître
@@ -13,9 +11,6 @@ import type { SessionEndedReason } from '../../shared/errors/sessionEnded'
  * (422, le groupe n'appartient pas au périmètre). Les confondre avec un 422 de
  * validation laisserait l'admin devant « le formulaire contient des erreurs »
  * alors qu'aucun champ ne l'est.
- *
- * `session-ended` (#748) : produite par le dépôt sur un 401, ou un 403 à une écriture partie sans
- * jeton CSRF ; jamais affichée, le bandeau de session finie est alors la seule annonce.
  */
 export type AdminQualityErrorReason =
   | 'not-found'
@@ -23,7 +18,6 @@ export type AdminQualityErrorReason =
   | 'translation-already-exists'
   | 'unknown-translation-group'
   | 'unknown'
-  | SessionEndedReason
 
 /**
  * Levée par AdminQualityPrincipleRepository/AdminQualityTraitRepository en

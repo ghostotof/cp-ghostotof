@@ -1,6 +1,7 @@
 import { computed, ref, watch, type ComputedRef, type Ref } from 'vue'
 import { moveKey } from '../../../domain/admin/shared/ordering/moveKey'
 import { AdminOrderError, type AdminOrderErrorReason } from '../../../domain/admin/shared/errors/AdminOrderError'
+import { visibleMutationError } from './visibleMutationError'
 
 export interface UseOrderDraftOptions {
   /** La liste ordonnée des clés telle que le serveur la connaît (un id, ou un `translationGroup`). */
@@ -87,7 +88,10 @@ export function useOrderDraft(options: UseOrderDraftOptions): UseOrderDraftResul
       await options.reload()
       dirty.value = false
     } catch (error) {
-      const reason: AdminOrderErrorReason = error instanceof AdminOrderError ? error.reason : 'unknown'
+      // Une session finie ne pose aucune raison (`null`) : le bandeau de session finie l'annonce seul (#748),
+      // le brouillon reste tel quel pour être rejoué après la reconnexion.
+      const reason: AdminOrderErrorReason | null =
+        visibleMutationError(error, AdminOrderError, () => new AdminOrderError('unknown', 'Unknown error'))?.reason ?? null
       errorReason.value = reason
 
       if ('stale-order' === reason) {

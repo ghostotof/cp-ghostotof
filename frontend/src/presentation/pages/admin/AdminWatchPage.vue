@@ -12,7 +12,6 @@ import BaseSelect from '../../ui/BaseSelect.vue'
 import OrderHandle from '../../ui/admin/OrderHandle.vue'
 import OrderToolbar from '../../ui/admin/OrderToolbar.vue'
 import type { AdminWatchedProduct } from '../../../domain/admin/watch/entities/AdminWatchedProduct'
-import { visibleErrorReason } from '../../ui/admin/visibleErrorReason'
 
 const { t } = useI18n()
 const { products, isLoading, hasError, errorMessage, load, create, update, remove, reorder } =
@@ -66,7 +65,7 @@ const isEditing = computed(() => null !== editingId.value)
 const isManualVersion = computed(() => 'manual' === form.versionSource)
 
 const errorText = computed(() => {
-  const reason = visibleErrorReason(errorMessage.value?.reason)
+  const reason = errorMessage.value?.reason
 
   return reason ? t(`admin.watch.errors.${reason}`) : null
 })
@@ -157,15 +156,11 @@ async function handleSubmit(): Promise<void> {
     version: isManualVersion.value && '' !== form.version.trim() ? form.version : null,
   }
 
-  if (null !== editingId.value) {
-    await update(editingId.value, input)
-  } else {
-    await create(input)
-  }
+  const succeeded = null !== editingId.value ? await update(editingId.value, input) : await create(input)
 
   isSubmitting.value = false
 
-  if (null === errorMessage.value) {
+  if (succeeded) {
     resetForm()
   }
 }

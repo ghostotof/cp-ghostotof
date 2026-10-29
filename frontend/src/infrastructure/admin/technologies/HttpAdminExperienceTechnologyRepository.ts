@@ -7,7 +7,6 @@ import {
   AdminExperienceTechnologyError,
   type AdminExperienceTechnologyErrorReason,
 } from '../../../domain/admin/technologies/errors/AdminExperienceTechnologyError'
-import { SESSION_ENDED } from '../../../domain/admin/shared/errors/sessionEnded'
 import { BackofficeHttpClient, violationsMessage } from '../shared/BackofficeHttpClient'
 
 interface BackofficeExperienceTechnologyApiResponse {
@@ -101,10 +100,6 @@ export class HttpAdminExperienceTechnologyRepository implements AdminExperienceT
   }
 
   private async toError(response: Response): Promise<AdminExperienceTechnologyError> {
-    if (this.client.endedTheSession(response)) {
-      return new AdminExperienceTechnologyError(SESSION_ENDED, 'Session ended')
-    }
-
     const body = await this.client.parseProblem(response)
 
     if (409 === response.status) {

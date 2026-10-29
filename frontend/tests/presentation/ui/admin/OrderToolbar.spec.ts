@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { useOrderDraft } from '../../../../src/application/admin/shared/useOrderDraft'
+import { SessionEndedError } from '../../../../src/domain/auth/errors/SessionEndedError'
 import OrderToolbar from '../../../../src/presentation/ui/admin/OrderToolbar.vue'
 import { createAppI18n } from '../../../../src/presentation/i18n'
 import { expectNoAccessibilityViolation } from '../../../support/axe'
@@ -65,12 +67,26 @@ describe('OrderToolbar', () => {
     expect(wrapper.find('[role="alert"]').exists()).toBe(true)
   })
 
-  it("n'affiche rien pour une session finie : le bandeau l'annonce seul, et Annuler n'a rien à effacer", () => {
-    const wrapper = mountToolbar({ isDirty: false, isSaving: false, errorReason: 'session-ended' })
+  it("un enregistrement refusé pour session finie n'affiche aucune alerte : le bandeau l'annonce seul (#748)", async () => {
+    // Le brouillon réel : `useOrderDraft` ne pose aucune raison pour une session finie (R3), la barre n'a
+    // donc plus à la taire elle-même ; le geste de l'administrateur reste, il peut le rejouer après reconnexion.
+    const draft = useOrderDraft({
+      serverKeys: () => ['a', 'b'],
+      reorder: async () => Promise.reject(new SessionEndedError()),
+      reload: async () => undefined,
+    })
+    draft.move(0, 1)
+    await draft.save()
+
+    const wrapper = mountToolbar({
+      isDirty: draft.isDirty.value,
+      isSaving: draft.isSaving.value,
+      errorReason: draft.errorReason.value,
+    })
 
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('admin.order.errors')
-    expect(wrapper.findAll('button')[0].attributes('disabled')).toBeDefined()
+    expect(wrapper.findAll('button').every((button) => button.attributes('disabled') === undefined)).toBe(true)
   })
 
   it("n'affiche aucune alerte en l'absence d'erreur", () => {

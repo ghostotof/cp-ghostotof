@@ -29,7 +29,6 @@ import OrderToolbar from '../../ui/admin/OrderToolbar.vue'
 import { LOCALE_NATIVE_NAMES, SUPPORTED_LOCALES, type Locale } from '../../../domain/portfolio/entities/Locale'
 import type { AdminQualityPrinciple } from '../../../domain/admin/quality/entities/AdminQualityPrinciple'
 import type { AdminQualityTrait } from '../../../domain/admin/quality/entities/AdminQualityTrait'
-import { visibleErrorReason } from '../../ui/admin/visibleErrorReason'
 
 /**
  * Deux contenus ordonnés indépendamment sur une même page — les principes et
@@ -177,22 +176,22 @@ const hasPrincipleProse = computed(() => PRINCIPLE_PROSE_FIELDS.some((field) => 
 const hasTraitProse = computed(() => '' !== traitForm.label.trim())
 
 const principleErrorText = computed(() => {
-  const reason = visibleErrorReason(principleErrorMessage.value?.reason)
+  const reason = principleErrorMessage.value?.reason
 
   return reason ? t(`admin.quality.errors.${reason}`) : null
 })
 const traitErrorText = computed(() => {
-  const reason = visibleErrorReason(traitErrorMessage.value?.reason)
+  const reason = traitErrorMessage.value?.reason
 
   return reason ? t(`admin.quality.errors.${reason}`) : null
 })
 const principleTranslationErrorText = computed(() => {
-  const reason = visibleErrorReason(principleTranslationErrorReason.value)
+  const reason = principleTranslationErrorReason.value
 
   return reason ? t(`admin.translation.errors.${reason}`) : null
 })
 const traitTranslationErrorText = computed(() => {
-  const reason = visibleErrorReason(traitTranslationErrorReason.value)
+  const reason = traitTranslationErrorReason.value
 
   return reason ? t(`admin.translation.errors.${reason}`) : null
 })
@@ -390,15 +389,11 @@ async function handleSubmitPrinciple(): Promise<void> {
     iconKey: principleForm.iconKey,
   }
 
-  if (null !== editingPrincipleId.value) {
-    await updatePrinciple(editingPrincipleId.value, input)
-  } else {
-    await createPrinciple(input)
-  }
+  const succeeded = null !== editingPrincipleId.value ? await updatePrinciple(editingPrincipleId.value, input) : await createPrinciple(input)
 
   isSubmittingPrinciple.value = false
 
-  if (!principleErrorMessage.value) {
+  if (succeeded) {
     resetPrincipleForm()
   }
 }
@@ -412,15 +407,11 @@ async function handleSubmitTrait(): Promise<void> {
     label: traitForm.label,
   }
 
-  if (null !== editingTraitId.value) {
-    await updateTrait(editingTraitId.value, input)
-  } else {
-    await createTrait(input)
-  }
+  const succeeded = null !== editingTraitId.value ? await updateTrait(editingTraitId.value, input) : await createTrait(input)
 
   isSubmittingTrait.value = false
 
-  if (!traitErrorMessage.value) {
+  if (succeeded) {
     resetTraitForm()
   }
 }

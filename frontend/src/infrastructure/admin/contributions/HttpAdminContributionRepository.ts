@@ -8,7 +8,6 @@ import {
   type AdminContributionErrorReason,
 } from '../../../domain/admin/contributions/errors/AdminContributionError'
 import { AdminOrderError } from '../../../domain/admin/shared/errors/AdminOrderError'
-import { SESSION_ENDED } from '../../../domain/admin/shared/errors/sessionEnded'
 import { BackofficeHttpClient, violationsMessage } from '../shared/BackofficeHttpClient'
 import { STALE_ORDER_PROBLEM_TYPES, hasProblemType } from '../shared/orderProblems'
 
@@ -101,10 +100,6 @@ export class HttpAdminContributionRepository implements AdminContributionReposit
   }
 
   private async toError(response: Response): Promise<AdminContributionError> {
-    if (this.client.endedTheSession(response)) {
-      return new AdminContributionError(SESSION_ENDED, 'Session ended')
-    }
-
     const body = await this.client.parseProblem(response)
 
     if (404 === response.status) {
@@ -134,10 +129,6 @@ export class HttpAdminContributionRepository implements AdminContributionReposit
    * `stale-order` de recharger la liste, ce qu'aucun autre motif ne déclenche.
    */
   private async toOrderError(response: Response): Promise<AdminOrderError> {
-    if (this.client.endedTheSession(response)) {
-      return new AdminOrderError(SESSION_ENDED, 'Session ended')
-    }
-
     const body = await this.client.parseProblem(response)
 
     const isStale =

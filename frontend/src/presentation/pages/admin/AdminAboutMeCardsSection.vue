@@ -30,7 +30,6 @@ import {
   type AdminAboutMeCard,
   type AdminAboutMeCardCategory,
 } from '../../../domain/admin/about/entities/AdminAboutMeCard'
-import { visibleErrorReason } from '../../ui/admin/visibleErrorReason'
 
 /**
  * Cartes « À propos de moi » : **un tableau par catégorie**, chacun avec son
@@ -137,12 +136,12 @@ const proposalSourceLocale = ref<Locale | null>(null)
 
 const hasProseToTranslate = computed(() => PROSE_FIELDS.some((field) => '' !== form[field].trim()))
 const errorText = computed(() => {
-  const reason = visibleErrorReason(errorMessage.value?.reason)
+  const reason = errorMessage.value?.reason
 
   return reason ? t(`admin.about.errors.${reason}`) : null
 })
 const translationErrorText = computed(() => {
-  const reason = visibleErrorReason(translationErrorReason.value)
+  const reason = translationErrorReason.value
 
   return reason ? t(`admin.translation.errors.${reason}`) : null
 })
@@ -303,15 +302,11 @@ async function handleSubmit(): Promise<void> {
     iconKey: '' === form.iconKey ? null : form.iconKey,
   }
 
-  if (null !== editingId.value) {
-    await update(editingId.value, input)
-  } else {
-    await create(input)
-  }
+  const succeeded = null !== editingId.value ? await update(editingId.value, input) : await create(input)
 
   isSubmitting.value = false
 
-  if (!errorMessage.value) {
+  if (succeeded) {
     resetForm()
   }
 }

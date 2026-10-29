@@ -28,7 +28,6 @@ import OrderHandle from '../../ui/admin/OrderHandle.vue'
 import OrderToolbar from '../../ui/admin/OrderToolbar.vue'
 import { LOCALE_NATIVE_NAMES, SUPPORTED_LOCALES, type Locale } from '../../../domain/portfolio/entities/Locale'
 import type { AdminAnonymousCvSection } from '../../../domain/admin/anonymousCv/entities/AdminAnonymousCvSection'
-import { visibleErrorReason } from '../../ui/admin/visibleErrorReason'
 
 const { t } = useI18n()
 const { sections, isLoading, hasError, errorMessage, load, create, update, remove, reorder } =
@@ -99,13 +98,13 @@ const isEditing = computed(() => null !== editingId.value)
 const hasProseToTranslate = computed(() => PROSE_FIELDS.some((field) => '' !== form[field].trim()))
 
 const translationErrorText = computed(() => {
-  const reason = visibleErrorReason(translationErrorReason.value)
+  const reason = translationErrorReason.value
 
   return reason ? t(`admin.translation.errors.${reason}`) : null
 })
 
 const errorText = computed(() => {
-  const reason = visibleErrorReason(errorMessage.value?.reason)
+  const reason = errorMessage.value?.reason
 
   return reason ? t(`admin.anonymousCv.errors.${reason}`) : null
 })
@@ -229,15 +228,11 @@ async function handleSubmit(): Promise<void> {
     achievements: form.achievements,
   }
 
-  if (null !== editingId.value) {
-    await update(editingId.value, input)
-  } else {
-    await create(input)
-  }
+  const succeeded = null !== editingId.value ? await update(editingId.value, input) : await create(input)
 
   isSubmitting.value = false
 
-  if (!errorMessage.value) {
+  if (succeeded) {
     resetForm()
   }
 }

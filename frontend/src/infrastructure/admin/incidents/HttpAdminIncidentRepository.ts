@@ -8,7 +8,6 @@ import {
   type AdminIncidentErrorReason,
 } from '../../../domain/admin/incidents/errors/AdminIncidentError'
 import { AdminOrderError } from '../../../domain/admin/shared/errors/AdminOrderError'
-import { SESSION_ENDED } from '../../../domain/admin/shared/errors/sessionEnded'
 import { BackofficeHttpClient, violationsMessage } from '../shared/BackofficeHttpClient'
 import { STALE_ORDER_PROBLEM_TYPES, hasProblemType } from '../shared/orderProblems'
 
@@ -103,10 +102,6 @@ export class HttpAdminIncidentRepository implements AdminIncidentRepository {
   }
 
   private async toError(response: Response): Promise<AdminIncidentError> {
-    if (this.client.endedTheSession(response)) {
-      return new AdminIncidentError(SESSION_ENDED, 'Session ended')
-    }
-
     const body = await this.client.parseProblem(response)
 
     if (404 === response.status) {
@@ -133,10 +128,6 @@ export class HttpAdminIncidentRepository implements AdminIncidentRepository {
    * `stale-order` de recharger la liste, ce qu'aucun autre motif ne déclenche.
    */
   private async toOrderError(response: Response): Promise<AdminOrderError> {
-    if (this.client.endedTheSession(response)) {
-      return new AdminOrderError(SESSION_ENDED, 'Session ended')
-    }
-
     const body = await this.client.parseProblem(response)
 
     const isStale =

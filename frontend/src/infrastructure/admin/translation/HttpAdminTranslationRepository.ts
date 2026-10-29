@@ -5,7 +5,6 @@ import {
   AdminTranslationError,
   type AdminTranslationErrorReason,
 } from '../../../domain/admin/translation/errors/AdminTranslationError'
-import { SESSION_ENDED } from '../../../domain/admin/shared/errors/sessionEnded'
 import { BackofficeHttpClient, violationsMessage } from '../shared/BackofficeHttpClient'
 
 interface BackofficeTranslationApiResponse {
@@ -43,10 +42,6 @@ export class HttpAdminTranslationRepository implements AdminTranslationRepositor
   }
 
   private async toError(response: Response): Promise<AdminTranslationError> {
-    if (this.client.endedTheSession(response)) {
-      return new AdminTranslationError(SESSION_ENDED, 'Session ended')
-    }
-
     const body = await this.client.parseProblem(response)
     const reason = this.reasonFor(response.status)
 

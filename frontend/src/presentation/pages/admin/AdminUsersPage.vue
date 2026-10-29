@@ -8,7 +8,6 @@ import BaseTextInput from '../../ui/BaseTextInput.vue'
 import BaseSelect from '../../ui/BaseSelect.vue'
 import type { AdminUser } from '../../../domain/admin/users/entities/AdminUser'
 import { MAX_PASSWORD_BYTES, MIN_PASSWORD_LENGTH } from '../../../domain/account/services/passwordLength'
-import { visibleErrorReason } from '../../ui/admin/visibleErrorReason'
 
 const { t } = useI18n()
 const { users, isLoading, hasError, errorMessage, invite, setSuperAdmin, resendInvitation, remove, changePassword } = useAdminUsers()
@@ -99,7 +98,7 @@ onBeforeUnmount(() => {
  * messages ignorent ces paramètres.
  */
 const errorText = computed(() => {
-  const reason = visibleErrorReason(errorMessage.value?.reason)
+  const reason = errorMessage.value?.reason
 
   return reason ? t(`admin.users.errors.${reason}`, { min: MIN_PASSWORD_LENGTH, max: MAX_PASSWORD_BYTES }) : null
 })
@@ -122,9 +121,7 @@ async function handleToggleSuperAdmin(user: AdminUser): Promise<void> {
 async function handleResend(user: AdminUser): Promise<void> {
   closeMenu()
   clearFeedback()
-  await resendInvitation(user.id, selectedLocale())
-
-  if (!errorMessage.value) {
+  if (await resendInvitation(user.id, selectedLocale())) {
     resendSuccessForUserId.value = user.id
   }
 }
@@ -156,11 +153,11 @@ async function handleSubmitPassword(): Promise<void> {
   isSubmittingPassword.value = true
   passwordChanged.value = false
 
-  await changePassword(changingPasswordForUserId.value, newPassword.value)
+  const changed = await changePassword(changingPasswordForUserId.value, newPassword.value)
 
   isSubmittingPassword.value = false
 
-  if (!errorMessage.value) {
+  if (changed) {
     passwordChanged.value = true
     newPassword.value = ''
   }
