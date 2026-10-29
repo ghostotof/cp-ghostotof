@@ -119,9 +119,18 @@ describe('qui compose ces liens', () => {
       .sort()
   }
 
+  it("loginLocation n'importe ni sessionEnded ni reauthentication (St3-9)", () => {
+    // Les constantes des deux drapeaux sont déclarées dans `loginLocation.ts`, que les deux autres modules importent :
+    // un seul sens, aucun cycle.
+    const source = sources['../../../src/presentation/router/loginLocation.ts']
+    expect(source).toBeDefined()
+    expect(source).not.toMatch(/from\s+'\.\/(?:sessionEnded|reauthentication)'/)
+  })
+
   it("aucun autre fichier ne compose ces liens : la requête n'est nommée que dans son module", () => {
     // LoginPage et le routeur lisent par `isSessionEnded` / `isReauthentication`, jamais par le nom du paramètre.
-    // `loginLocation.ts` est le constructeur commun (R16) : il pose le drapeau, le module d'origine le définit.
+    // `loginLocation.ts` est le constructeur commun (R16) : il déclare les constantes et pose le drapeau ; les deux
+    // autres modules les lisent pour `isSessionEnded` / `isReauthentication`.
     expect(filesMatching(/\bSESSION_ENDED_(?:QUERY|VALUE)\b/)).toEqual([
       'presentation/router/loginLocation.ts',
       'presentation/router/sessionEnded.ts',

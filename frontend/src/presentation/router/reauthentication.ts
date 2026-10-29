@@ -1,6 +1,6 @@
 import type { LocationQuery, RouteLocationNormalizedLoaded, RouteLocationRaw } from 'vue-router'
 import type { Locale } from '../../domain/portfolio/entities/Locale'
-import { loginLocation } from './loginLocation'
+import { loginLocation, REAUTH_QUERY, REAUTH_VALUE } from './loginLocation'
 
 /**
  * Le drapeau qui demande à la page de connexion de s'ouvrir pour une personne
@@ -14,11 +14,8 @@ import { loginLocation } from './loginLocation'
  * Il n'ouvre que la page : la cible du retour (`redirect`) reste jugée par
  * LoginPage, un chemin interne seulement — la garde contre la redirection
  * ouverte ne dépend pas de lui. Une seule valeur, `1` : tout autre ne compte
- * pas.
+ * pas. Les constantes du drapeau sont déclarées dans `loginLocation.ts` (St3-9, aucun cycle d'import).
  */
-export const REAUTH_QUERY = 'reauth'
-export const REAUTH_VALUE = '1'
-
 export function isReauthentication(location: { query: LocationQuery }): boolean {
   return REAUTH_VALUE === location.query[REAUTH_QUERY]
 }

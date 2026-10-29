@@ -23,6 +23,20 @@ function createStubRepository(overrides: Partial<AuthRepository> = {}): AuthRepo
   }
 }
 
+/** La session que le reste de l'application voit (authState, partagé d'un test à l'autre). */
+async function primeSession(user: AuthenticatedUser | null): Promise<void> {
+  const repository = createStubRepository({ me: vi.fn(async () => sessionFor(user)) })
+  const Probe = defineComponent({
+    setup() {
+      return { auth: useAuth() }
+    },
+    template: '<div />',
+  })
+  const probe = mount(Probe, { global: { provide: { [AUTH_REPOSITORY as symbol]: repository } } })
+  await probe.vm.auth.checkAuth()
+  probe.unmount()
+}
+
 async function mountLoginPage(repository: AuthRepository, locale = 'fr', query: Record<string, string> = {}) {
   const router = createRouter({
     history: createMemoryHistory(),
@@ -126,6 +140,35 @@ describe('LoginPage', () => {
       },
     )
 
+    describe('connectée (A3-10, R30)', () => {
+      afterEach(async () => {
+        await primeSession(null)
+      })
+
+      // Le lien `expired=1` s'ouvre dans un nouvel onglet, où `authState.sessionEnded` est faux : le critère est
+      // « un compte est affiché », comme pour `reauth=1`, et la page dit alors la même chose neutre.
+      it.each([
+        ['fr', 'Confirmez votre identité ou connectez-vous avec un autre compte : vous reviendrez ensuite à la page que vous quittiez.'],
+        ['en', 'Confirm your identity or sign in with another account: you will then return to the page you left.'],
+      ])("connectée, expired=1 : l'annonce neutre, pas « session finie » (%s)", async (locale, notice) => {
+        await primeSession({ username: 'jane', roles: ['ROLE_USER', 'ROLE_TRUSTED'] })
+        const { wrapper } = await mountLoginPage(createStubRepository(), locale, { expired: '1', redirect: '/fr/admin/users' })
+
+        expect(wrapper.get('[data-testid="login-reauth-notice"]').text()).toBe(notice)
+        expect(wrapper.find('[data-testid="login-session-ended-notice"]').exists()).toBe(false)
+        expect(wrapper.text()).not.toContain('a pris fin')
+        expect(wrapper.text()).not.toContain('has ended')
+      })
+
+      it('anonyme, expired=1 : « votre session a pris fin », sans l\'annonce neutre', async () => {
+        await primeSession(null)
+        const { wrapper } = await mountLoginPage(createStubRepository(), 'fr', { expired: '1', redirect: '/fr/admin/users' })
+
+        expect(wrapper.get('[data-testid="login-session-ended-notice"]').text()).toBe('Votre session a pris fin, reconnectez-vous.')
+        expect(wrapper.find('[data-testid="login-reauth-notice"]').exists()).toBe(false)
+      })
+    })
+
     it('après la connexion, retour à la page d\'où l\'on venait', async () => {
       const { wrapper, router } = await mountLoginPage(createStubRepository(), 'fr', { expired: '1', redirect: '/fr/oauth/consent?client_id=claude-code' })
 
@@ -154,20 +197,6 @@ describe('LoginPage', () => {
 
   describe('reconnexion demandée par le consentement MCP (`reauth`, #647)', () => {
     const CONSENT = '/fr/oauth/consent?client_id=claude-code&state=a%26b'
-
-    /** La session que le reste de l'application voit (authState, partagé d'un test à l'autre). */
-    async function primeSession(user: AuthenticatedUser | null): Promise<void> {
-      const repository = createStubRepository({ me: vi.fn(async () => sessionFor(user)) })
-      const Probe = defineComponent({
-        setup() {
-          return { auth: useAuth() }
-        },
-        template: '<div />',
-      })
-      const probe = mount(Probe, { global: { provide: { [AUTH_REPOSITORY as symbol]: repository } } })
-      await probe.vm.auth.checkAuth()
-      probe.unmount()
-    }
 
     afterEach(async () => {
       await primeSession(null)

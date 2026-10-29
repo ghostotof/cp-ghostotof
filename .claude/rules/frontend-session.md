@@ -226,13 +226,16 @@ does `BackofficeHttpClient`.
     or 404 page does not put its path in a URL the web server logs — its link has no `redirect`, and the login brings the
     person home. `signInAgainLocation` (`router/sessionEnded.ts`, `expired=1`: it makes `LoginPage` say why it opened)
     and `switchAccountLocation` (`router/reauthentication.ts`, `reauth=1`: « Changer de compte », the consent's
-    re-authentication) delegate to it. `signInLocations.spec.ts` fails when a file other than those three names the two
-    query parameters.
+    re-authentication) delegate to it. The flags' constants live in `loginLocation.ts`, which imports neither module (St3-9: no cycle,
+    `signInLocations.spec.ts` checks it); the spec also fails when a file other than those three names the parameters.
   - **Both flags open the login to a signed-in person, and nothing more** (R16, B/F2): the `login` route's `beforeEnter`
     sends an account home unless `reauth=1` **or** `expired=1`. Why `expired=1`: a `BEARER` still alive with no
     `XSRF-TOKEN` leaves `authState.user` set while every write is refused, and the banner's link would otherwise land on
     the home page — a dead end for up to an hour. The flag grants no right; `redirect` stays judged by
-    `internalRedirectTarget()` in `LoginPage`.
+    `internalRedirectTarget()` in `LoginPage`. **What the page says depends on whether an account is displayed**
+    (`null !== user`, R30, A3-10): none → « votre session a pris fin » (`login-session-ended-notice`); an account → the
+    neutral `auth.reauthNotice` (`login-reauth-notice`), as for `reauth=1`. Not `authState.sessionEnded`: the link opens
+    a new tab, whose application is fresh (`sessionEnded` false) while the account may still be shown.
   - **`presentation/ui/SignInAgainLink.vue`** renders it: no prop, the default slot is the visible label, one root
     `RouterLink` (the classes passed land on it: the header's button), `target="_blank" rel="noopener"` (but see
     `meta.signInInSameTab` below), the opening said

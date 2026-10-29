@@ -1,8 +1,17 @@
 import type { RouteLocationNormalizedLoaded, RouteLocationRaw } from 'vue-router'
 import type { Locale } from '../../domain/portfolio/entities/Locale'
-import { REAUTH_QUERY, REAUTH_VALUE } from './reauthentication'
 import { routeLocale } from './routeLocale'
-import { SESSION_ENDED_QUERY, SESSION_ENDED_VALUE } from './sessionEnded'
+
+/**
+ * Les deux drapeaux de la requête de la connexion, déclarés une fois. `expired=1` : la session a pris fin (lu par
+ * `isSessionEnded`, `sessionEnded.ts`) ; `reauth=1` : la personne rouvre la connexion exprès (lu par
+ * `isReauthentication`, `reauthentication.ts`). Une seule valeur, `1` : tout autre ne compte pas. Rien d'autre ne les
+ * nomme (`signInLocations.spec.ts`).
+ */
+export const SESSION_ENDED_QUERY = 'expired'
+export const SESSION_ENDED_VALUE = '1'
+export const REAUTH_QUERY = 'reauth'
+export const REAUTH_VALUE = '1'
 
 /**
  * Pourquoi la connexion s'ouvre (#748, R16, I) :
@@ -22,9 +31,8 @@ export type LoginFlag = 'session-ended' | 'reauthentication'
  * complet peut partir dans une URL que le serveur web journalise. Une autre route (publique, 404) n'a pas été revue :
  * le lien n'a pas de retour, et la connexion ramène à l'accueil.
  *
- * Le drapeau est lu à l'appel, dans le `switch`, et non dans une table du module : `sessionEnded.ts` et
- * `reauthentication.ts` appellent ce module, qui importe leurs constantes — un cycle d'import sans effet tant que
- * rien n'est évalué au chargement.
+ * Les deux drapeaux sont déclarés ici (St3-9) : `sessionEnded.ts` et `reauthentication.ts` appellent ce module et
+ * importent leurs constantes de lui, jamais l'inverse — aucun cycle d'import.
  */
 export function loginLocation(
   route: Pick<RouteLocationNormalizedLoaded, 'fullPath' | 'params' | 'meta'>,
