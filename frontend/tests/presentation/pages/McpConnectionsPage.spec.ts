@@ -514,6 +514,21 @@ describe('McpConnectionsPage', () => {
       expect(wrapper.text()).not.toContain("n'a pas pu être révoquée")
     })
 
+    it('session finie à la révocation : tous les boutons « Révoquer » sont désactivés', async () => {
+      const revoke = vi.fn().mockRejectedValue(new SessionExpiredError())
+      const { wrapper } = await mountPage({ revoke })
+
+      await rowOf(wrapper, 'Claude Code').get('button').trigger('click')
+      await flushPromises()
+
+      const buttons = wrapper.findAll('tbody button')
+      expect(buttons).toHaveLength(2)
+      // Se reconnecter est le seul remède : une nouvelle tentative partirait sans session.
+      for (const button of buttons) {
+        expect(button.attributes('disabled')).toBeDefined()
+      }
+    })
+
     it("un autre échec de chargement garde le message générique et le bouton « Réessayer », sans lien de reconnexion", async () => {
       const list = vi.fn().mockRejectedValue(new McpConnectionsRequestFailedError())
       const { wrapper } = await mountPage({ list })

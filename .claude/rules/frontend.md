@@ -73,9 +73,15 @@ Details: `.claude/rules/mcp-oauth-revocation-personne.md`.
 Three things the MCP slice shares with the rest of the frontend:
 
 - **A refused session reaches the person in words** (#650, R5a). `useMcpConnections` exposes `sessionExpired` (the
-  server answered 401/403 on the last read or revocation, besides `markSessionExpired()`); the page then shows « Votre
-  session a pris fin » and a **sign-in-again link** (`login?redirect=<this page>&expired=1`) in place of the generic
-  error and its retry, which would send the same request without a session. `LoginPage` reads `expired=1`
+  server answered **a 401, or a 403 to a revocation sent without a CSRF token** — `endsTheSession`,
+  `infrastructure/http/sessionEnded.ts`, facts in `.claude/rules/frontend-backoffice.md` — on the last read or
+  revocation, besides `markSessionExpired()`); the page then shows « Votre
+  session a pris fin », a **sign-in-again link** (`login?redirect=<this page>&expired=1`) in place of the generic
+  error and its retry, which would send the same request without a session, and **disables every « Révoquer »**
+  (#748, #732-4). Any other 403 (a read's, or a revocation that carried its token) is the generic failure with
+  « Réessayer »; accepted limit: an account that lost `ROLE_TRUSTED` while the page was open meets it on its next
+  `GET`, and « Réessayer » cannot help — rare, and presenting it as an ended session would send the person to sign
+  in for nothing, the defect #732-4 named. `LoginPage` reads `expired=1`
   (`presentation/router/sessionEnded.ts`, the single value `1`) and shows a `role="status"` notice « Votre session a
   pris fin, reconnectez-vous. » — the same flag the backoffice banner's link sets (`SessionEndedBanner`, which
   replaced R1c's redirect: a 401 mid-page no longer navigates, `.claude/rules/frontend-backoffice.md`). The flag

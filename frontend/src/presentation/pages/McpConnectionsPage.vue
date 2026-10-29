@@ -298,7 +298,7 @@ onMounted(() => {
                 v-if="'active' === connection.state"
                 type="button"
                 class="btn btn-outline-danger btn-sm"
-                :disabled="null !== revokingId"
+                :disabled="sessionExpired || null !== revokingId"
                 :aria-label="t('mcpConnections.revokeAria', { client: connection.client.name, date: date(connection.grantedAt) })"
                 @click="onRevoke(connection)"
               >

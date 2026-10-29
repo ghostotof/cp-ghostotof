@@ -4,6 +4,7 @@ import { McpConnectionNotFoundError } from '../../domain/mcp/errors/McpConnectio
 import { McpConnectionsRequestFailedError } from '../../domain/mcp/errors/McpConnectionsRequestFailedError'
 import { SessionExpiredError } from '../../domain/mcp/errors/SessionExpiredError'
 import { readCsrfToken } from '../auth/csrfCookie'
+import { endsTheSession } from '../http/sessionEnded'
 import type { ApiProblemBody } from '../admin/shared/BackofficeHttpClient'
 import { hasProblemType } from '../admin/shared/orderProblems'
 
@@ -40,11 +41,16 @@ export class HttpMcpConnectionsRepository implements McpConnectionsRepository {
   }
 
   async list(): Promise<McpConnectionList> {
-    const response = await this.send(`${this.apiBaseUrl}${PATH}`, {
-      method: 'GET',
-      credentials: 'include',
-      headers: { Accept: 'application/json' },
-    })
+    // Une lecture n'est jamais refusée pour le CSRF : `false`, son 403 est un refus réel.
+    const response = await this.send(
+      `${this.apiBaseUrl}${PATH}`,
+      {
+        method: 'GET',
+        credentials: 'include',
+        headers: { Accept: 'application/json' },
+      },
+      false,
+    )
 
     let body: unknown
     try {
@@ -58,18 +64,28 @@ export class HttpMcpConnectionsRepository implements McpConnectionsRepository {
 
   async revoke(id: string): Promise<void> {
     const csrfToken = readCsrfToken()
-    await this.send(`${this.apiBaseUrl}${PATH}/${encodeURIComponent(id)}`, {
-      method: 'DELETE',
-      credentials: 'include',
-      headers: {
-        Accept: 'application/json',
-        ...(csrfToken ? { 'X-XSRF-TOKEN': csrfToken } : {}),
+    await this.send(
+      `${this.apiBaseUrl}${PATH}/${encodeURIComponent(id)}`,
+      {
+        method: 'DELETE',
+        credentials: 'include',
+        headers: {
+          Accept: 'application/json',
+          ...(csrfToken ? { 'X-XSRF-TOKEN': csrfToken } : {}),
+        },
       },
-    })
+      // Pas de jeton à envoyer (cookie absent ou vide) : le client n'a pas posé l'en-tête,
+      // et un 403 du serveur est alors le refus CSRF d'une session finie.
+      !csrfToken,
+    )
   }
 
-  /** Appel réseau ; un statut d'erreur devient l'exception du domaine qui lui correspond. */
-  private async send(url: string, init: RequestInit): Promise<Response> {
+  /**
+   * Appel réseau ; un statut d'erreur devient l'exception du domaine qui lui correspond.
+   * `sentWithoutCsrfToken` : vrai pour une écriture partie sans en-tête `X-XSRF-TOKEN`,
+   * connu à l'envoi (voir `endsTheSession`).
+   */
+  private async send(url: string, init: RequestInit, sentWithoutCsrfToken: boolean): Promise<Response> {
     let response: Response
     try {
       response = await fetch(url, init)
@@ -78,20 +94,23 @@ export class HttpMcpConnectionsRepository implements McpConnectionsRepository {
     }
 
     if (!response.ok) {
-      throw await this.httpError(response)
+      throw await this.httpError(response, sentWithoutCsrfToken)
     }
 
     return response
   }
 
-  private async httpError(response: Response): Promise<Error> {
+  private async httpError(response: Response, sentWithoutCsrfToken: boolean): Promise<Error> {
     const status = response.status
+    // Un 401, ou un 403 à une révocation partie sans jeton CSRF (cookies expirés par
+    // la déconnexion) : se reconnecter repose des cookies neufs. Tout autre 403 est un
+    // refus réel (compte qui a perdu `ROLE_TRUSTED`, signature CSRF périmée) : le lire
+    // comme une session finie ferait se reconnecter pour rien (#748, #732 point 4).
+    if (endsTheSession(status, sentWithoutCsrfToken)) {
+      return new SessionExpiredError()
+    }
+
     switch (status) {
-      case 401:
-      case 403:
-        // 403 couvre aussi le refus CSRF : dans les deux cas, se reconnecter
-        // repose un cookie de session et un jeton CSRF neufs.
-        return new SessionExpiredError()
       case 404:
         return (await this.hasType(response, MCP_CONNECTION_NOT_FOUND))
           ? new McpConnectionNotFoundError()

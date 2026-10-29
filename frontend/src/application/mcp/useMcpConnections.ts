@@ -10,7 +10,7 @@ export const MCP_CONNECTIONS_REPOSITORY: InjectionKey<McpConnectionsRepository> 
 /**
  * - `loading` : lecture de la liste (au montage de la page, et tant qu'elle n'a pas abouti) ;
  * - `ready`   : liste affichée, éventuellement vide ;
- * - `error`   : la liste n'a pu être lue (réseau, 5xx, réponse mal formée, session expirée).
+ * - `error`   : la liste n'a pu être lue (réseau, 5xx, 403, réponse mal formée, session expirée).
  */
 export type McpConnectionsStatus = 'loading' | 'ready' | 'error'
 
@@ -32,8 +32,9 @@ export interface UseMcpConnectionsResult {
   revokingId: DeepReadonly<Ref<string | null>>
   lastOutcome: DeepReadonly<Ref<McpRevocationOutcome | null>>
   /**
-   * Vrai quand le serveur a refusé la session (401/403) à la dernière lecture ou
-   * à la dernière révocation : la page propose alors de se reconnecter plutôt
+   * Vrai quand le serveur a refusé la session (un 401, ou le 403 d'une révocation
+   * partie sans jeton CSRF, `endsTheSession`) à la dernière lecture ou à la dernière
+   * révocation : la page propose alors de se reconnecter plutôt
    * que de réessayer, ce qui renverrait la même requête sans session.
    */
   sessionExpired: DeepReadonly<Ref<boolean>>
@@ -48,7 +49,7 @@ export interface UseMcpConnectionsResult {
  * Après une révocation, la liste est relue depuis le serveur plutôt que
  * corrigée localement : l'état et la cause d'une connexion sont jugés par lui
  * (échéance, cause), le frontend n'en refait aucun calcul. Une session
- * expirée (401/403) marque la session expirée, comme `useAssistant` : la page
+ * expirée (`SessionExpiredError` du dépôt : 401, ou 403 sans jeton CSRF) marque la session expirée, comme `useAssistant` : la page
  * ne sert que le palier de confiance, l'en-tête ne doit pas rester « connecté » ;
  * elle est aussi dite à la page (`sessionExpired`), qui propose de se reconnecter.
  */

@@ -308,8 +308,9 @@ which reads the request again under the current account. `OAuthConsentPage.spec.
 - **Slice**: `domain/mcp` (`McpConnection` entity, `McpConnectionsRepository`, two errors) → `infrastructure/mcp/
   HttpMcpConnectionsRepository` → `application/mcp/useMcpConnections` (status `loading|ready|error`, revocation
   outcome `revoked|already-gone|failed`; the list is **re-read from the server** after a revocation, the frontend
-  recomputes no state nor deadline; a 401/403 marks the session expired like `useAssistant`, and `sessionExpired` tells
-  the page; `load()` keeps only the last read launched) → `presentation/pages/McpConnectionsPage.vue`, provided in
+  recomputes no state nor deadline; a 401, or a 403 to a `DELETE` sent without a CSRF token (`endsTheSession`, facts in
+  `.claude/rules/frontend-backoffice.md`), marks the session expired like `useAssistant` and `sessionExpired` tells
+  the page, which disables every « Révoquer »; any other 403 is the generic failure (#748, #732-4); `load()` keeps only the last read launched) → `presentation/pages/McpConnectionsPage.vue`, provided in
   `main.ts`. Dates: `presentation/format/instant.ts`, `Europe/Paris`. What the slice shares with the rest of the
   frontend (the sign-in-again link, `expired=1`, the list contract, the two apps' `accountId` contract, the
   labels « Jamais aboutie » / « Pas encore renouvelée » / « Sans échéance »): `.claude/rules/frontend.md`.
