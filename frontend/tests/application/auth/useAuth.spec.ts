@@ -281,6 +281,32 @@ describe('useAuth', () => {
       expect(auth.user.value?.username).toBe('jane')
     })
 
+    it("session finie, puis accès de base obtenu : la session n'est plus finie, aucun signal (#748, R41, CR4-3)", () => {
+      const { auth, restored, switched } = subscribed(createStubRepository())
+      markSessionExpired()
+      expect(auth.hasSessionEnded.value).toBe(true)
+
+      markBaseAccessGranted()
+
+      expect(auth.hasSessionEnded.value).toBe(false)
+      expect(auth.tier.value).toBe('base')
+      expect(restored).not.toHaveBeenCalled()
+      expect(switched).not.toHaveBeenCalled()
+    })
+
+    it("session finie, accès de base obtenu, puis une connexion du même compte : aucun rejeu (#748, R41)", async () => {
+      const { auth, restored, switched } = subscribed(createStubRepository({ login: vi.fn(async () => JANE) }))
+      markSessionExpired()
+      markBaseAccessGranted()
+
+      await auth.login('jane', 'password')
+
+      expect(auth.hasSessionEnded.value).toBe(false)
+      expect(auth.user.value?.username).toBe('jane')
+      expect(restored).not.toHaveBeenCalled()
+      expect(switched).not.toHaveBeenCalled()
+    })
+
     it("un autre compte revient : la session est appliquée, onAccountSwitched seul", async () => {
       const { auth, restored, switched } = subscribed(createStubRepository({ me: vi.fn(async () => sessionFor(OTHER)) }))
       await auth.login('jane', 'password')
@@ -673,6 +699,22 @@ describe('useAuth', () => {
 
       await expect(auth.recheckEndedSession()).resolves.toBeUndefined()
 
+      expect(auth.hasSessionEnded.value).toBe(true)
+    })
+
+    it('session finie, me() lève de façon synchrone : la relecture suivante rappelle me() (#748, R41, St4-4)', async () => {
+      const repository = createStubRepository({
+        me: vi.fn((): Promise<AuthSession> => {
+          throw new Error('réseau')
+        }),
+      })
+      const auth = mountWithComposable(repository)
+      markSessionExpired()
+
+      await auth.recheckEndedSession()
+      await auth.recheckEndedSession()
+
+      expect(repository.me).toHaveBeenCalledTimes(2)
       expect(auth.hasSessionEnded.value).toBe(true)
     })
 

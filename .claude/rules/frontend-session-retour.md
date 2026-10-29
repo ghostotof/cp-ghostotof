@@ -17,14 +17,16 @@ paths:
 ## The state, the re-check on return and the replay
 
 - **The state** is `sessionEnded` in the session's shared state (`hasSessionEnded`), **raised** by `markSessionExpired()`
-  (the header also turns anonymous) and **lowered by one descent only** (next section): an account came back, with a write
-  token. `applySession()` no longer lowers anything.
+  (the header also turns anonymous) and **lowered by two descents** (next section): an account came back, with a write
+  token (`restoreSession`), or the tab obtained the base access (`markBaseAccessGranted()`, R41, CR4-3: a session the tab
+  decides closes the end, like `login()`, **with no signal** and no announcement, the generation having advanced).
+  `applySession()` lowers nothing.
 - **Where it lives** (#748, R25: `useAuth.ts` was split, its public API unchanged, everything still re-exported from it).
   Under `application/auth/`: `sessionState.ts` (the reactive state, `authState`, `applySession`, the base-access marks),
   `baseAccessExpiry.ts` (its timer, which takes its callback as a parameter and imports nothing: no cycle),
-  `sessionGeneration.ts`, `sessionEvents.ts` (the two signals), `sessionLifecycle.ts` (`markSessionExpired`,
+  `sessionGeneration.ts`, `singleFlight.ts` (the one-re-read-in-flight slot), `sessionEvents.ts` (the two signals), `sessionLifecycle.ts` (`markSessionExpired`,
   `restoreSession`, and `canRestore`, the descent's condition written once: ended, an account, a write token), and
-  `useAuth.ts` (the composable and the two shared re-reads). **Tests start from the module state of loading**:
+  `useAuth.ts` (the composable and the two shared re-reads, each a `createSingleFlight`). **Tests start from the module state of loading**:
   `resetAuthStateForTests()` (each module owns a `reset…ForTests`, tests only, never called by `src/`; a new module state
   is added to it) is called before each test by `tests/support/setup.ts`, the `setupFiles` of `vite.config.ts`, which also
   resets the backoffice's refusal and its registered reaction (R38) and calls `enableAutoUnmount` once.
@@ -34,8 +36,10 @@ paths:
   noticed a session found again in another tab: « Mes connexions MCP », the assistant and the consent never did. The
   banner **no longer listens to `focus`** (a test pins it), so a return costs **one** `/api/me`, banner shown or not.
   - `recheckEndedSession()` does nothing outside an ended session; **one re-read in flight at a time** (a second call
-    while the first runs returns the same promise, the module holds it, so two quick returns, or two `useAuth()`
-    callers, send one request); a rejection of `/api/me` (network) is swallowed and the session stays ended, with no
+    while the first runs returns the same promise, so two quick returns, or two `useAuth()` callers, send one request;
+    the slot is `createSingleFlight` in `singleFlight.ts` (R41, St4-4), written once for this re-read and for
+    `rereadAfterRefusal`, and released by a `.finally` set **after** the promise is held, so a `me()` that throws
+    synchronously never leaves a settled promise behind); a rejection of `/api/me` (network) is swallowed and the session stays ended, with no
     announcement.
   - **It is silent: `isChecking` is never touched.** `isChecking` is raised only by the *first* `checkAuth()` (`main.ts`,
     the one `waitForAuthCheck` makes the route guard wait for); a module flag, `hasCheckedOnce`, keeps every later
@@ -116,7 +120,7 @@ caller reads it **before sending** and hands it back with the verdict:
   which translates it, and no `SessionEndedError` is raised). A request sent before a return can no longer end the
   session it did not belong to (Review Focus 1). Both directions share the one number: an end from before the return,
   and a return from before an end.
-- **The single descent** of `sessionEnded` (`restoreSession`, `sessionLifecycle.ts`) asks for **an account, a write
+- **The descent by an account's return** (`restoreSession`, `sessionLifecycle.ts`) asks for **an account, a write
   token (`hasWriteToken()`) and the current generation** (`canRestore`) — a sign-in (`login`) is the person's own gesture and
   skips both. `login()`, `checkAuth()` and `recheckEndedSession()` all go through it; **in an ended session a read that
   finds the base tier or the anonymous one sets nothing** (Sp3-3); it advances the generation and then calls the `onSessionRestored` subscribers (or `onAccountSwitched`'s for another account; `login()` calls neither, R18). A `/api/me` sent before a new
@@ -131,7 +135,7 @@ caller reads it **before sending** and hands it back with the verdict:
 
 ## Tests
 
-- `useAuth.spec.ts` (including `sessionEndedCount`, `onSessionRestored` and `onAccountSwitched`: once, synchronously, never at the end, dropped with its scope, a subscriber that throws, the same account or another (R18); the generation in both directions, R14; the base access going anonymous at its deadline with no network call, R23), `resetAuthStateForTests.spec.ts` (every module's state back to its loading value, R25).
+- `singleFlight.spec.ts` (shared in flight, freed after a resolution, a rejection, a synchronous throw, R41); `useAuth.spec.ts` (including `sessionEndedCount`, `onSessionRestored` and `onAccountSwitched`: once, synchronously, never at the end, dropped with its scope, a subscriber that throws, the same account or another (R18); the generation in both directions, R14; the base access going anonymous at its deadline with no network call, R23), `resetAuthStateForTests.spec.ts` (every module's state back to its loading value, R25).
 - For the re-check on return (R8): `useAuth.spec.ts` (the account found with its write token restores; **without `XSRF-TOKEN` the session stays ended**; nothing outside an ended session; one read in flight for two quick calls; a network failure swallowed; `isChecking` untouched by the re-check and by any `checkAuth()` after the first).
 - `HttpAuthRepository.spec.ts` (`hasWriteToken`: present, absent, empty; `logout()` sends the CSRF token).
 - `useSessionRecheckOnFocus.spec.ts` (`focus` re-reads, not after unmount), `AppLayout.spec.ts` (one `/api/me` per return with the banner shown, the re-check outside the backoffice, the session staying ended while no account is back; another account replays the navigation, then remounts the page, R18; the page hidden meanwhile, even when the replay fails, R27, and until the last of two overlapping replays, R39).

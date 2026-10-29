@@ -10,6 +10,7 @@ import { recallBaseAccessExpiry, scheduleBaseAccessExpiry } from './baseAccessEx
 import { advanceGeneration, isCurrentGeneration, sessionStamp } from './sessionGeneration'
 import { onAccountSwitched, onSessionRestored } from './sessionEvents'
 import { applyLiveSession, canRestore, isReturnOfAccount, markSessionExpired, restoreSession } from './sessionLifecycle'
+import { createSingleFlight } from './singleFlight'
 
 /**
  * `useAuth.ts` est la façade de la session (#748, R25) : le composable, les deux relectures de `/api/me` mutualisées,
@@ -33,18 +34,18 @@ export {
 export const AUTH_REPOSITORY: InjectionKey<AuthRepository> = Symbol('AuthRepository')
 
 /** La relecture de session finie en vol, partagée par tous les appelants de `useAuth()` : au plus une à la fois. */
-let endedSessionRecheck: Promise<void> | null = null
+const endedSessionRecheck = createSingleFlight<void>()
 
 /**
  * La relecture du palier après un refus réel en vol (#748, R15), partagée elle aussi : une lecture et une révocation
  * refusées ensemble, ou deux pages, n'envoient qu'un `/api/me`.
  */
-let refusalReread: Promise<RefusalReread> | null = null
+const refusalReread = createSingleFlight<RefusalReread>()
 
 /** Réservée aux tests (`resetAuthStateForTests`), jamais appelée par `src/` : plus aucune relecture en vol. */
 export function resetSessionRereadsForTests(): void {
-  endedSessionRecheck = null
-  refusalReread = null
+  endedSessionRecheck.clear()
+  refusalReread.clear()
 }
 
 /**
@@ -228,11 +229,8 @@ export function useAuth(): UseAuthResult {
     if (!state.sessionEnded) {
       return Promise.resolve()
     }
-    if (null !== endedSessionRecheck) {
-      return endedSessionRecheck
-    }
 
-    endedSessionRecheck = (async () => {
+    return endedSessionRecheck.run(async () => {
       try {
         const sentAt = sessionStamp()
         const session = await repository.me()
@@ -243,20 +241,12 @@ export function useAuth(): UseAuthResult {
         }
       } catch {
         // Le réseau ne répond pas : la session reste finie, rien n'est annoncé.
-      } finally {
-        endedSessionRecheck = null
       }
-    })()
-
-    return endedSessionRecheck
+    })
   }
 
-  const rereadAfterRefusal = (): Promise<RefusalReread> => {
-    if (null !== refusalReread) {
-      return refusalReread
-    }
-
-    const pending = (async (): Promise<RefusalReread> => {
+  const rereadAfterRefusal = (): Promise<RefusalReread> =>
+    refusalReread.run(async (): Promise<RefusalReread> => {
       try {
         const sentAt = sessionStamp()
         const session = await repository.me()
@@ -277,19 +267,7 @@ export function useAuth(): UseAuthResult {
         // Le réseau ne répond pas : le refus reste ce qu'il était, la page n'en dit pas plus.
         return 'session-held'
       }
-    })()
-    refusalReread = pending
-    // Libérée hors de l'IIFE : un `me()` qui lèverait de façon synchrone terminerait l'IIFE avant que `pending` soit
-    // posée, et un `finally` interne laisserait alors la promesse en vol pour toujours. Enregistrée avant les `await`
-    // des appelants, elle libère la place avant qu'aucun d'eux ne reprenne.
-    void pending.finally(() => {
-      if (refusalReread === pending) {
-        refusalReread = null
-      }
     })
-
-    return pending
-  }
 
   const followRefusal = (isStillRefused: () => boolean, showSessionEnded: () => void): void => {
     void rereadAfterRefusal().then((reread) => {

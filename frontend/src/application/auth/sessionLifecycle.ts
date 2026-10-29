@@ -5,8 +5,9 @@ import { notifyAccountSwitched, notifySessionRestored } from './sessionEvents'
 import { applySession, getLastAccount, state, type LastAccount } from './sessionState'
 
 /**
- * La fin et le retour de la session (#748, R25 : sortis de `useAuth.ts`). Ils sont les seuls à lever et à baisser
- * `sessionEnded` : `markSessionExpired` la lève, `restoreSession` la baisse.
+ * La fin et le retour de la session (#748, R25 : sortis de `useAuth.ts`). `markSessionExpired` est la seule à lever
+ * `sessionEnded` ; deux descentes la baissent : `restoreSession` (un compte est revenu, avec signal) et
+ * `markBaseAccessGranted` (`sessionState.ts`, R41 : l'accès de base obtenu clôt la fin, sans signal).
  */
 
 /**

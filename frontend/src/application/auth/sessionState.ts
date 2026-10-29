@@ -131,7 +131,7 @@ export async function waitForAuthCheck(): Promise<void> {
  * À appeler une fois POST /api/account/base-access a réussi (ADR 0003 D6) :
  * le cookie BEARER vient d'être posé par le navigateur, invisible en JS, et
  * relire /api/me pour le constater coûterait un aller-retour pour apprendre
- * ce qu'on sait déjà. Exposée hors composant (comme authState) parce que
+ * ce qu'on sait déjà. Elle baisse aussi `sessionEnded`. Exposée hors composant (comme authState) parce que
  * l'appelant, useBaseAccess, ne doit pas dépendre de AUTH_REPOSITORY.
  */
 export function markBaseAccessGranted(expiresAt: Date | null = null): void {
@@ -139,6 +139,10 @@ export function markBaseAccessGranted(expiresAt: Date | null = null): void {
   advanceGeneration()
   applySession(BASE_ACCESS_SESSION)
   forgetLastAccount()
+  // Une session décidée dans l'onglet clôt la fin, comme `login()` (R41, CR4-3) : l'accès de base est un jeton neuf,
+  // il n'y a plus de session finie à annoncer. Sans signal : la page de l'accès instantané ne rejoue rien, et la
+  // génération vient d'avancer.
+  state.sessionEnded = false
   if (null !== expiresAt) {
     scheduleBaseAccessExpiry(expiresAt, markBaseAccessExpired)
   }
