@@ -45,6 +45,13 @@ fixed:
 - **Nav landmarks**: `AppHeader.vue` has two `<nav>` elements (desktop + mobile disclosure) — both need a
   distinct `aria-label` (`common.mainNavigation` / `common.mobileNavigation`) so they aren't ambiguous to
   assistive tech, and the active link gets `aria-current="page"` (not just a CSS class).
+- **The header at 320 px** (WCAG 1.4.10, #748): `AppHeader.vue` gives way on the **brand**, never on the actions. The
+  brand link has `min-width: 0` and its label `text-truncate` (an ellipsis; the link's accessible name stays the whole
+  label), the logo glyph and the right-hand group (`div.flex-shrink-0`: language switch, « Connexion » or the account
+  menu, « Accès instantané ») never shrink. The ticket measured that group alone at 331 px at the trusted tier, 389 px
+  anonymous and in English, for 301 px of usable width: truncating the brand does not absorb that, so **the group's
+  width at each tier, in French and English, is measured in a real browser at 320 px** (`scrollWidth` of the document
+  must equal 320) — jsdom does no layout; `AppHeader.spec.ts` (« en-tête à 320 px ») pins only the classes.
 - **Static a11y linting is wired in** (`eslint-plugin-vuejs-accessibility`, `flat/recommended`, in
   `npm run lint` — blocking in CI). One rule is loosened: `label-has-for` defaults to requiring a label
   both wrapped around its field *and* carrying a `for`, stricter than WCAG, which accepts either; the

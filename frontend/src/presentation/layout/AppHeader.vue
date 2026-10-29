@@ -233,7 +233,8 @@ function navLinkClass(link: NavigationLink) {
         </span>
         <!-- À 320 px, le groupe de droite demandait 331 px au palier de confiance et 389 px en anonyme et en EN, pour
              301 px utiles (mesures de #748) : la marque se tronque la première, avec une ellipse, jamais les
-             actions ; si le groupe seul dépasse encore, c'est à mesurer dans un vrai navigateur à 320 px. Le nom accessible du lien
+             actions ; si le groupe seul dépasse encore, sa largeur se mesure dans un vrai navigateur à 320 px (jsdom ne
+             fait aucune mise en page) : `.claude/rules/frontend-a11y.md`, « The header at 320 px ». Le nom accessible du lien
              reste le libellé entier (la troncature est visuelle). -->
         <span class="text-truncate">{{ siteIdentity.brandName }}</span>
       </RouterLink>
