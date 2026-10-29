@@ -4,13 +4,17 @@ declare(strict_types=1);
 
 namespace App\Tests\Security;
 
+use App\Security\Authentication\Infrastructure\Http\AuthCookieFactory;
 use App\Security\User\Application\CpgUserRegistrarInterface;
 use App\Tests\Support\HttpJson;
 use App\Tests\Support\ReadsResponseCookies;
 use App\Tests\Support\TestCredentials;
 use Doctrine\ORM\EntityManagerInterface;
+use Lexik\Bundle\JWTAuthenticationBundle\Encoder\JWTEncoderInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
+use Symfony\Component\BrowserKit\Cookie;
+use Symfony\Component\HttpFoundation\Cookie as HttpFoundationCookie;
 use Symfony\Component\Routing\RouterInterface;
 
 /**
@@ -24,7 +28,7 @@ use Symfony\Component\Routing\RouterInterface;
  * servie sans authentification, il faut l'inscrire **explicitement** dans
  * PUBLIC_PATHS avec sa justification — un choix conscient, jamais un oubli.
  *
- * Sept invariants :
+ * Huit invariants :
  *  1. toute route hors PUBLIC_PATHS refuse un appelant anonyme (401 ou 403) ;
  *  2. aucune route /api/backoffice ne peut être inscrite dans PUBLIC_PATHS ;
  *  3. tout le backoffice refuse un compte authentifié mais sans ROLE_SUPER
@@ -39,7 +43,12 @@ use Symfony\Component\Routing\RouterInterface;
  *     après chaque requête de ce test, et sur chaque route publique. Le
  *     pendant à l'exécution d'AuthCookiesComeFromTheFactoryTest, qui ne lit
  *     que `src/` : il voit aussi le vendor, la configuration et les appels
- *     dynamiques, sur les seules réponses produites ici.
+ *     dynamiques, sur les seules réponses produites ici ;
+ *  8. un cookie `BEARER` refusé (invalide, expiré) ne donne jamais **plus ni autre
+ *     chose** que l'anonyme : sur chaque route et chaque méthode, la réponse a le
+ *     statut de celle d'un appelant sans cookie (#748, R35 — une route publique
+ *     ne répond plus 401 à un cookie mort ; une route protégée garde son refus),
+ *     et une route publique ne pose aucun cookie que l'anonyme ne pose pas.
  */
 final class ApiRouteExposureTest extends WebTestCase
 {
@@ -208,6 +217,82 @@ final class ApiRouteExposureTest extends WebTestCase
                 $this->assertOnlyFactoryCookies($client, $method.' '.$path);
             }
         }
+    }
+
+    /**
+     * Invariant n°8 (#748, R35) : un cookie `BEARER` **refusé** ne change pas la réponse
+     * de l'anonyme. Sur chaque chemin de `/api` et chaque méthode, trois appels sur un
+     * pot de cookies vidé et des quotas remis à zéro : sans cookie, avec une valeur
+     * invalide, avec un JWT expiré signé par l'encodeur du conteneur. Les statuts des
+     * deux derniers **égalent** celui du premier — une route publique n'a plus le 401
+     * de Lexik pour un cookie mort, une route protégée garde son refus, jamais plus
+     * que l'anonyme n'obtiendrait —, et pour une route de PUBLIC_PATHS la réponse
+     * n'ajoute aucun cookie à ceux de l'anonyme (le cookie refusé y est laissé, la
+     * première route protégée l'efface). Mêmes corps et en-têtes que l'invariant n°7.
+     */
+    public function testARefusedSessionCookieNeverChangesTheAnonymousAnswer(): void
+    {
+        $client = self::createClient();
+        $expired = self::getContainer()->get(JWTEncoderInterface::class)->encode([
+            'username' => 'expired-'.bin2hex(random_bytes(4)),
+            'roles' => ['ROLE_USER'],
+            'iat' => time() - 7200,
+            'exp' => time() - 3600,
+        ]);
+        $cookies = ['anonyme' => null, 'invalide' => bin2hex(random_bytes(16)), 'expiré' => $expired];
+
+        $checked = 0;
+        foreach ($this->allApiRoutePaths() as $path) {
+            foreach ($this->requestableMethods($this->routeMethods($path)) as $method) {
+                $answers = [];
+                foreach ($cookies as $label => $bearer) {
+                    $answers[$label] = $this->answerWithBearer($client, $method, $path, $bearer);
+                }
+
+                $statuses = \sprintf('%s %s : statuts anonyme/invalide/expiré = %d/%d/%d.', $method, $path, $answers['anonyme']['status'], $answers['invalide']['status'], $answers['expiré']['status']);
+                self::assertSame($answers['anonyme']['status'], $answers['invalide']['status'], $statuses);
+                self::assertSame($answers['anonyme']['status'], $answers['expiré']['status'], $statuses);
+
+                if (isset(self::PUBLIC_PATHS[$path])) {
+                    foreach (['invalide', 'expiré'] as $label) {
+                        self::assertSame(
+                            $answers['anonyme']['cookies'],
+                            $answers[$label]['cookies'],
+                            \sprintf('%s %s pose avec un cookie %s d\'autres cookies que pour l\'anonyme.', $method, $path, $label),
+                        );
+                    }
+                }
+                ++$checked;
+            }
+        }
+
+        self::assertGreaterThan(0, $checked, 'Aucune route sondée : le test ne vérifie plus rien.');
+    }
+
+    /**
+     * Un appel isolé : pot de cookies vidé, quotas remis à zéro, `BEARER` éventuel posé
+     * comme un navigateur le garderait. Rend le statut et les noms des cookies posés.
+     *
+     * @return array{status: int, cookies: list<string>}
+     */
+    private function answerWithBearer(KernelBrowser $client, string $method, string $path, ?string $bearer): array
+    {
+        $client->getCookieJar()->clear();
+        self::getContainer()->get('cache.rate_limiter')->clear();
+        if (null !== $bearer) {
+            $client->getCookieJar()->set(new Cookie(AuthCookieFactory::BEARER, $bearer, null, '/', 'localhost', false, true, false, 'lax'));
+        }
+
+        $client->request($method, $this->concreteUrl($path), server: [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_ACCEPT' => 'application/json',
+            'HTTP_X_REQUESTED_WITH' => 'fetch',
+        ], content: self::jsonBody([]));
+
+        $names = array_map(static fn (HttpFoundationCookie $cookie): string => $cookie->getName(), $client->getResponse()->headers->getCookies());
+        sort($names);
+
+        return ['status' => $client->getResponse()->getStatusCode(), 'cookies' => $names];
     }
 
     /**

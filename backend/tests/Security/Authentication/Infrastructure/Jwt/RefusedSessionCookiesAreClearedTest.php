@@ -15,15 +15,16 @@ use Symfony\Component\BrowserKit\Cookie;
  * #748 (F1, décision de l'auteur du 2026-10-29) : `BEARER` et `XSRF-TOKEN` sont
  * des cookies de session, que rien n'expire plus avec le JWT. Un cookie refusé
  * par le firewall `api` — JWT expiré, JWT invalide, session antérieure au
- * changement de mot de passe — resterait donc jusqu'à la fermeture du navigateur,
- * et, le firewall authentifiant dès qu'un cookie est présent, **route publique
- * comprise**, ferait répondre 401 à tout `/api`, « À propos » et le contact
- * compris. Son premier 401 efface donc les deux cookies : la requête suivante est
- * anonyme, et servie.
+ * changement de mot de passe — resterait donc jusqu'à la fermeture du navigateur.
+ * Une route qui exige un rôle le refuse (401) et **efface** les deux cookies : la
+ * requête suivante est anonyme. Une route publique, elle, ne refuse plus rien
+ * (R35, {@see \App\Tests\Security\Authentication\Infrastructure\Security\PublicRouteIgnoresRefusedSessionTest}) :
+ * elle sert l'anonyme et laisse le cookie, que la première route protégée — le SPA
+ * lit `/api/me` à chaque chargement — efface.
  *
  * Le refus d'une session antérieure au changement de mot de passe est le témoin
  * déjà vert : {@see \App\Tests\Security\Authentication\SessionBeforePasswordChangeTest}
- * (`testTheRefusalClearsTheDeadCookiesSoThePublicRoutesStayServed`).
+ * (`testAClosedSessionIsServedAsAnonymousOnAPublicRouteAndClearedByTheFirstProtectedOne`).
  *
  * Les jetons expirés sont signés par l'encodeur du conteneur (la clé du site),
  * jamais par une clé écrite ici ; la valeur « invalide » est tirée au hasard.
@@ -32,10 +33,13 @@ final class RefusedSessionCookiesAreClearedTest extends WebTestCase
 {
     use ReadsResponseCookies;
 
+    /** Une route qui exige un rôle (`ROLE_TRUSTED`) : l'anonyme y prend le 401, et un cookie refusé aussi. */
+    private const string PROTECTED_ROUTE = '/api/me';
+
     /**
-     * Une route publique (ApiRouteExposureTest::PUBLIC_PATHS) : sans cookie, personne n'y est refusé.
-     * Elle répond 200 sur une table vide (ContributionResourceTest) : un 404, un 403 ou tout autre
-     * code que le 200 ne passe pas pour « servie » (St3-3 de la troisième relecture).
+     * Une route publique (ApiRouteExposureTest::PUBLIC_PATHS), servie une fois le cookie effacé. Elle
+     * répond 200 sur une table vide (ContributionResourceTest) : un 404, un 403 ou tout autre
+     * code que le 200 ne passe pas pour « servie » (St3-12 de la troisième relecture).
      */
     private const string PUBLIC_ROUTE = '/api/contributions/fr';
 
@@ -57,7 +61,7 @@ final class RefusedSessionCookiesAreClearedTest extends WebTestCase
             'exp' => time() - 3600,
         ]));
 
-        $this->client->request('GET', self::PUBLIC_ROUTE);
+        $this->client->request('GET', self::PROTECTED_ROUTE);
 
         $this->assertRefusedAndBothCookiesCleared();
         $this->assertThePublicRouteIsServedAfterwards();
@@ -67,7 +71,7 @@ final class RefusedSessionCookiesAreClearedTest extends WebTestCase
     {
         $this->putTheCookie(bin2hex(random_bytes(16)));
 
-        $this->client->request('GET', self::PUBLIC_ROUTE);
+        $this->client->request('GET', self::PROTECTED_ROUTE);
 
         $this->assertRefusedAndBothCookiesCleared();
         $this->assertThePublicRouteIsServedAfterwards();

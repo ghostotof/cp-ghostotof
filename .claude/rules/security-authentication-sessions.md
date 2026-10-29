@@ -3,6 +3,7 @@ paths:
   - "backend/src/Security/Authentication/Infrastructure/Http/AuthCookieFactory.php"
   - "backend/src/Security/Authentication/Infrastructure/Http/UnknownAuthCookieException.php"
   - "backend/src/Security/Authentication/Infrastructure/Jwt/**"
+  - "backend/src/Security/Authentication/Infrastructure/Security/PublicRouteIgnoresRefusedSessionListener.php"
   - "backend/src/Security/Authentication/Infrastructure/Security/SessionBeforePasswordChangeRefusalListener.php"
   - "backend/src/Security/Authentication/Infrastructure/Security/SessionPredatesPasswordChangeException.php"
   - "backend/src/Shared/Domain/Security/CredentialsVersionClaim.php"
@@ -13,6 +14,7 @@ paths:
   - "backend/tests/Security/Authentication/SessionBeforePasswordChangeTest.php"
   - "backend/tests/Security/Authentication/Infrastructure/Http/AuthCookieFactoryTest.php"
   - "backend/tests/Security/Authentication/Infrastructure/Jwt/**"
+  - "backend/tests/Security/Authentication/Infrastructure/Security/PublicRouteIgnoresRefusedSession*Test.php"
   - "backend/tests/Security/Authentication/Infrastructure/Security/SessionBeforePasswordChange*Test.php"
   - "backend/tests/Support/CookieConstructions.php"
   - "backend/tests/Support/ReadsResponseCookies.php"
@@ -100,7 +102,7 @@ paths:
   would otherwise pass for a fresh login, and outlive a password change. The `cv` of the refreshed token is the one
   **of the token being refreshed**, never a re-read of the account's current version, which would absolve a stolen
   token.
-- **A session opened before the last password change is refused by the whole `api` firewall** (#650, R1b, the
+- **A session opened before the last password change is refused by every route of the `api` firewall that requires a role; a public route serves the request as anonymous, the refusal still audited** (#650, R1b, the
   author's decision of 2026-10-28; ADR 0003 amended), **judged on the credentials version the JWT carries, not on a
   date** (S1 of the second review, decision of 2026-10-28). Three pieces, one source of truth each:
   - **`cpg_user.credentials_version`** (`INT NOT NULL DEFAULT 0`, `Version20261028180000`, fingerprint n° 39 of
@@ -137,18 +139,25 @@ paths:
     (a pod's clock ahead by more than `clock_skew`, below) is refused by Lexik itself before this rule.
   - **`StaleSessionCookiesClearingListener`** (`Infrastructure/Jwt`, Lexik's `JWT_INVALID` **and** `JWT_EXPIRED`, #748
     F1) makes **every** refusal of the `BEARER` cookie — expired, invalid (signature, payload, account gone), opened
-    before a password change (#650) — **expire `BEARER` and `XSRF-TOKEN`** through `AuthCookieFactory::expired()`. The
-    firewall authenticates as soon as a cookie is present, **public routes included** (`JWTAuthenticator` answers 401):
-    with session cookies a refused one would stay until the browser closes and answer 401 to every `/api` request, the
-    About page and the contact form too. The next request is anonymous. `JWT_NOT_FOUND` (no cookie) clears nothing.
-    **Accepted limit**: that first 401 exists. The SPA's public reads, contact and password setup send no cookie
-    (`credentials: 'omit'`, #748 R23), so it only reaches an authenticated route, read as an ended session; a login's
-    expiry is not exposed to the frontend, so the first authenticated request after its `exp` takes the 401 (a read:
-    401; a write: 401, then the CSRF's 403 without token). The frontend reads those as a finished session
-    (`.claude/rules/frontend-session.md`; the backoffice banner, the sign-in at the next navigation —
-    `.claude/rules/frontend-backoffice.md`, « Route protection »). Pinned by `RefusedSessionCookiesAreClearedTest`
-    (expired and invalid cookies cleared with the factory's attributes, the public route served afterwards, a served
-    session clearing nothing) and, for the password change, `SessionBeforePasswordChangeTest`.
+    before a password change (#650) — **expire `BEARER` and `XSRF-TOKEN`** through `AuthCookieFactory::expired()`: with
+    session cookies a refused one would stay until the browser closes. The next request is anonymous.
+    `JWT_NOT_FOUND` (no cookie) clears nothing. **A route with no `access_control` rule serves the request as
+    anonymous and touches nothing** (`Infrastructure/Security/PublicRouteIgnoresRefusedSessionListener`, #748 R35, the
+    author's decision of 2026-10-29, replacing R23's `credentials: 'omit'` and R24's replay): a `LoginFailureEvent`
+    listener on `security.event_dispatcher.api` only, last priority (-1024), that sets the response to `null` when the
+    `AccessMap` asks for nothing — `requiresAccess()` is `AccessListener::supports()`'s predicate, compared with it on
+    every route by a test, no second list of public routes (Lexik still builds and discards its 401). A protected
+    route keeps its 401 and the clearing; the first one reached clears the dead cookie, and the SPA reads one at each
+    load (`GET /api/me`). **Invariant n° 8 of `ApiRouteExposureTest`**: on every route and method, a refused `BEARER`
+    (invalid, expired) gets the anonymous status, and a `PUBLIC_PATHS` route sets no cookie the anonymous call does not.
+    Rejected: `lazy: true` (the JWT authenticator's `supports()` stays `true`), a `JWTAuthenticator` subclass, a
+    firewall without authenticator for public routes. **Accepted limit**: a login's expiry is not exposed to the
+    frontend, so the first authenticated request after its `exp` takes the 401 (a read: 401; a write: 401, then the CSRF's
+    403 without token), read as an ended session (`.claude/rules/frontend-session.md`; the backoffice banner, the sign-in
+    at the next navigation — `.claude/rules/frontend-backoffice.md`, « Route protection »). Pinned by
+    `RefusedSessionCookiesAreClearedTest` (cleared on `/api/me` with the factory's attributes, the public route served
+    afterwards, a served session clearing nothing), `PublicRouteIgnoresRefusedSession{,Registration}Test` and, for the
+    password change, `SessionBeforePasswordChangeTest`.
   - **`lexik_jwt_authentication.clock_skew: 5`** (#748, A3-9, the author's decision of 2026-10-29): a pod's clock a
     second ahead made an `iat` in the future a 401 which, since F1, clears the session. Read in Lexik 3.2
     (`LoadedJWS`, `LcobucciJWSProvider::verify()`): it loosens `iat` **and `exp`** (an expired token is served up to
@@ -167,5 +176,5 @@ paths:
     (`.claude/rules/mcp-oauth.md`, « Consent »).
   `SessionBeforePasswordChangeTest` (HTTP: the real `PUT` then the cookie replayed, a version older or newer, the
   `iat` playing no part, a token without claim before and after a change, **the race** — an instance read before
-  the change, a token created after it: refused, red under the old rule —, the base tier, cookies cleared then a
-  public route served), `…RefusalListenerTest`, `…RegistrationTest`, `CredentialsVersionClaimListenerTest`.
+  the change, a token created after it: refused, red under the old rule —, the base tier, a closed session served as anonymous on a public route and cleared by
+  the first protected one), `…RefusalListenerTest`, `…RegistrationTest`, `CredentialsVersionClaimListenerTest`.

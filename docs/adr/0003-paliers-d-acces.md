@@ -17,8 +17,9 @@
   qui a suivi la release et ce qui reste éditorial. **Amendée le 2026-09-21** (3e audit, constat
   A9) : le risque accepté « le logout ne révoque pas le jeton » est consigné en fin de
   « Conséquences » — **réduit le 2026-10-28** (#650) : un jeton antérieur au dernier changement de
-  mot de passe du compte est refusé par toute l'API ; **amendée le 2026-10-29** (#748, F1) : `BEARER` et
-`XSRF-TOKEN` sont des cookies de session, et tout cookie refusé est effacé par son premier 401. **D1 amendée le 2026-10-19** (ADR 0006, issue #379) : le serveur MCP sert le
+  mot de passe du compte est refusé par toute route de l'API qui exige un rôle ; **amendée le 2026-10-29**
+(#748, F1, puis R35) : `BEARER` et `XSRF-TOKEN` sont des cookies de session, tout cookie refusé est effacé par le premier
+401 d'une route protégée, et une route publique sert l'anonyme sans y toucher. **D1 amendée le 2026-10-19** (ADR 0006, issue #379) : le serveur MCP sert le
   palier de base sans authentification, voir l'encadré sous D1.
 - Date : 2026-09-10
 - Portée : `config/packages/security.yaml`, `src/Security/User`, `src/Security/Authentication`,
@@ -269,10 +270,10 @@ mais il ne survit plus au mot de passe qu'il a prouvé. C'est la remédiation d'
 (ou un `ROLE_SUPER`, `PUT /api/backoffice/users/{id}/password`, ou le lien d'invitation qui remplace ou pose
 un mot de passe) change le mot de passe, et **toute requête suivante portant un cookie ouvert avant le
 changement reçoit un 401** — sur toute l'API authentifiée par le cookie, pas seulement au
-consentement MCP où la règle est née (R1). Le premier 401 efface les deux cookies d'authentification, comme
-la déconnexion : le firewall `api` authentifie dès qu'un `BEARER` est présent, route publique comprise, et un
-cookie mort resterait dans le navigateur à faire échouer tout `/api` (l'amendement du 2026-10-29 étend cet
-effacement à tout cookie refusé).
+consentement MCP où la règle est née (R1) ; une route publique sert la session close comme l'anonyme et l'audite
+(amendement du 2026-10-29, R35). Le premier 401 efface les deux cookies d'authentification, comme la déconnexion :
+un cookie mort resterait dans le navigateur (l'amendement du 2026-10-29 étend cet effacement à tout cookie refusé par
+une route protégée).
 
 **Le mécanisme : une version des identifiants, pas une date** (S1 de la seconde relecture, décision de
 l'auteur du 2026-10-28). La première forme (R1/R1b) comparait l'`iat` du JWT à
@@ -328,22 +329,28 @@ toute façon pas au-delà de son `exp`. Un `XSRF-TOKEN` de session et un `BEARER
 boucle « session finie » que produisait un `XSRF-TOKEN` jeté pendant que le `BEARER` survivait (#748, CR3) n'a plus
 lieu d'être.
 
-La contrepartie est écrite dans le code : le cookie n'expire plus avec le JWT, et le firewall `api` authentifie dès
-qu'un `BEARER` est présent, route publique comprise. Un cookie refusé — JWT expiré, JWT invalide, session antérieure
-au changement de mot de passe (amendement précédent) — resterait jusqu'à la fermeture du navigateur et ferait
-répondre 401 à tout `/api`, « À propos » et le contact compris. **Son premier 401 efface donc les deux cookies**
-(`StaleSessionCookiesClearingListener`, `JWT_EXPIRED` et `JWT_INVALID`, par les attributs exacts de la pose) : la
-requête suivante est anonyme et servie. **Limite acceptée** : ce premier 401 existe. L'échéance d'un JWT de
-**login** n'est pas exposée au frontend, donc la première requête qui suit son expiration le prend (une lecture : 401 ;
-une écriture : 401, puis, cookies effacés, le 403 sans jeton du CSRF) et le frontend le lit comme une session
-finie ; **le SPA ne l'envoie plus à une page publique** : ses lectures publiques, le contact et le choix du mot de
-passe partent sans cookie (`credentials: 'omit'`, #748, R23 — décision de l'auteur du 2026-10-29, qui remplace une
-déconnexion de l'accès de base à son échéance), donc le premier 401 ne tombe plus que sur une route authentifiée, lue
-comme une session finie. L'accès de base expire côté frontend sur l'horloge du poste, un effet d'affichage sans appel
-réseau. **Deuxième limite acceptée (CR3-2)** : l'effacement vise un nom de cookie, pas la valeur envoyée ; le serveur ne
-sait pas qu'un cookie plus neuf a été posé après l'envoi de la requête, et un `Set-Cookie` n'est jamais conditionnel : la
-réponse 401 tardive d'une requête authentifiée encore en vol avec un cookie mort efface alors les cookies neufs (fenêtre
-d'un aller-retour ; la suite se répare d'elle-même par la reconnexion). **Tolérance d'horloge** : `clock_skew` vaut 5
+La contrepartie est écrite dans le code : le cookie n'expire plus avec le JWT, et Lexik authentifie dès qu'un `BEARER`
+est présent, quelle que soit la route (`JWTAuthenticator::supports()`). Un cookie refusé — JWT expiré, JWT invalide,
+session antérieure au changement de mot de passe (amendement précédent) — resterait jusqu'à la fermeture du navigateur.
+**Sur une route qui exige un rôle, son premier 401 efface donc les deux cookies** (`StaleSessionCookiesClearingListener`,
+`JWT_EXPIRED` et `JWT_INVALID`, par les attributs exacts de la pose) : la requête suivante est anonyme et servie.
+**Sur une route publique, rien de tel : elle sert l'anonyme et ne touche pas au cookie** (décision de l'auteur du
+2026-10-29, R35, qui remplace `credentials: 'omit'` (R23) et le rejeu d'« Accès instantané » (R24)) :
+`PublicRouteIgnoresRefusedSessionListener`, un écouteur de `LoginFailureEvent` sur le seul dispatcher du firewall `api`,
+remplace la réponse 401 de Lexik par `null` quand l'`AccessMap` — la source de vérité que lit l'`AccessListener`, sans
+seconde liste de ce qui est public — ne demande rien pour la requête. Une route protégée garde son 401 et l'effacement ;
+l'invariant n° 8 de `ApiRouteExposureTest` pince, sur chaque route et chaque méthode, qu'un `BEARER` refusé ne donne
+jamais un autre statut que l'anonyme. Une session antérieure au changement de mot de passe présentée à une route
+publique est servie comme l'anonyme — rien de plus ne lui est donné — et reste auditée à chaque requête. **Limite
+acceptée** : l'échéance d'un JWT de **login** n'est pas exposée au frontend, donc la première requête authentifiée qui suit
+son expiration prend le 401 (une lecture : 401 ; une écriture : 401, puis, cookies effacés, le 403 sans jeton du CSRF) et
+le frontend le lit comme une session finie ; le SPA lit `GET /api/me` à chaque chargement, ce qui fait tomber un cookie mort
+dès le premier. L'accès de base expire côté frontend sur l'horloge du poste, un effet d'affichage sans appel réseau.
+**Deuxième limite acceptée (CR3-2)** : l'effacement vise un nom de cookie, pas la valeur envoyée ; le serveur ne sait pas
+qu'un cookie plus neuf a été posé après l'envoi de la requête, et un `Set-Cookie` n'est jamais conditionnel : la réponse 401
+tardive d'une requête authentifiée encore en vol avec un cookie mort efface alors les cookies neufs (fenêtre d'un
+aller-retour ; la suite se répare d'elle-même par la reconnexion) — plus étroite depuis R35, puisqu'une lecture publique
+n'efface plus rien. **Tolérance d'horloge** : `clock_skew` vaut 5
 secondes (`iat` et `exp`), pour qu'un écart d'horloge entre deux pods ne devienne pas un 401 qui efface la session. Ce
 que cela ne change pas : un jeton copié reste valable jusqu'à son `exp`
 (`POST /api/logout` n'écrit toujours aucun état), la clé de signature reste le coupe-circuit global, et les

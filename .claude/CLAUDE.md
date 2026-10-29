@@ -398,8 +398,8 @@ ADRs (status, dates and amendments live in each ADR):
   `BaseAccessController`; and before adding a revocation list, lengthening `token_ttl` or gating anything
   more sensitive than the CV: **`POST /api/logout` does not revoke the JWT** (accepted risk, amended
   2026-09-21; reduced on 2026-10-28, #650: a JWT opened before the account's last password
-  change — its credentials version is no longer the account's — is refused by the whole `api` firewall; amended
-  2026-10-29, #748: `BEARER` and `XSRF-TOKEN` are session cookies, and any refused cookie is cleared by its first 401).
+  change — its credentials version is no longer the account's — is refused by every route of the `api` firewall that requires a role; amended
+  2026-10-29, #748: `BEARER` and `XSRF-TOKEN` are session cookies, and any refused cookie is cleared by the first 401 of a protected route — a public route serves the request as anonymous).
 - `docs/adr/0004-assistance-ia.md` — anything that calls a language model: one importing class behind an
   interface, bundle pinned exact, no call from a public render path, only publishable backoffice content
   leaves (the nominative CV only to the site's host or self-hosted), never a call on behalf of the base

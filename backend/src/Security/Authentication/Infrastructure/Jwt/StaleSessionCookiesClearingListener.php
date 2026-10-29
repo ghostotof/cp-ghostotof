@@ -15,23 +15,23 @@ use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
  * comme la déconnexion (#650 R1b pour le mot de passe changé, #748 F1 pour tout
  * le reste).
  *
- * Le firewall `api` authentifie dès qu'un cookie `BEARER` est présent, **sur
- * une route publique comme sur les autres** : un JWT refusé y est un 401 pour
- * tout `/api`, le contenu public (À propos, la page de contact, le lien de
- * choix du mot de passe) compris. Tant que le cookie expirait avec le JWT, à la
- * même seconde, seul un cookie refusé pour un mot de passe changé posait le
- * problème. Depuis que `BEARER` et `XSRF-TOKEN` sont des cookies de session
- * (`set_cookies.BEARER.lifetime: 0`), **tout** cookie refusé — JWT expiré, JWT
- * invalide (signature, charge utile, compte disparu), session antérieure au
- * changement de mot de passe — resterait jusqu'à la fermeture du navigateur et
- * ferait de tout `/api` un 401. Effacé par son premier 401, la requête suivante
- * est anonyme, et servie.
+ * Le firewall `api` authentifie dès qu'un cookie `BEARER` est présent. Tant que le
+ * cookie expirait avec le JWT, à la même seconde, seul un cookie refusé pour un mot
+ * de passe changé posait problème. Depuis que `BEARER` et `XSRF-TOKEN` sont des
+ * cookies de session (`set_cookies.BEARER.lifetime: 0`), **tout** cookie refusé —
+ * JWT expiré, JWT invalide (signature, charge utile, compte disparu), session
+ * antérieure au changement de mot de passe — resterait jusqu'à la fermeture du
+ * navigateur. Une route qui exige un rôle le refuse (401) et l'efface : la requête
+ * suivante est anonyme, et servie.
  *
- * Le prix, accepté : ce premier 401 existe. Le frontend n'envoie plus aucun
- * cookie à une route publique (`credentials: 'omit'`, #748 R23) : le 401 ne
- * tombe donc que sur une route authentifiée, où le frontend le lit comme une
- * session finie. Pour un login, dont l'échéance ne lui est pas exposée, la
- * première requête authentifiée qui suit l'expiration du JWT le prend.
+ * **Une route publique n'efface rien** (#748, R35) : sans règle d'`access_control`,
+ * elle sert l'anonyme et laisse le cookie, la réponse de Lexik — avec cet
+ * effacement — étant écartée par
+ * {@see \App\Security\Authentication\Infrastructure\Security\PublicRouteIgnoresRefusedSessionListener}.
+ * Le refus et l'effacement ne restent donc que sur une route protégée, et le SPA
+ * en lit une à chaque chargement (`GET /api/me`) : le cookie mort tombe au premier.
+ * Pour un login, dont l'échéance ne lui est pas exposée, la première requête
+ * authentifiée qui suit l'expiration du JWT prend le 401, lu comme une session finie.
  *
  * **Limite acceptée (#748, CR3-2, 3e relecture)** : l'effacement vise un *nom*,
  * pas un cookie. Le serveur ne connaît que le cookie que la requête portait ;
