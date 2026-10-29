@@ -8,9 +8,9 @@ import { QualityContentUnavailableError } from '../../domain/quality/errors/Qual
  * /api/quality/{locale}, cf. App\Portfolio\Quality, aucune restriction dans
  * access_control côté backend).
  *
- * `credentials: 'omit'` (#748, R23), écrit : aucune identité n'est lue, et en production (une seule origine) le défaut
- * `same-origin` enverrait un `BEARER` mort, dont le 401 tomberait sur une page publique (en dev, deux origines : il
- * n'en enverrait pas, ce qui cachait le défaut). `credentialsAreExplicit.spec.ts` le garde.
+ * Aucun `credentials` : le défaut `same-origin` envoie les cookies sur une seule origine (préprod, prod), et le serveur
+ * sert une route publique comme à l'anonyme quel que soit le cookie (#748, R35). Jamais `'omit'` : il retire aussi la
+ * Basic Auth de la préprod (C1, `noOmittedCredentials.spec.ts`).
  */
 export class HttpQualityContentRepository implements QualityContentRepository {
   private readonly apiBaseUrl: string
@@ -20,7 +20,7 @@ export class HttpQualityContentRepository implements QualityContentRepository {
   }
 
   async get(locale: Locale): Promise<QualityContent> {
-    const response = await fetch(`${this.apiBaseUrl}/api/quality/${locale}`, { method: 'GET', credentials: 'omit' })
+    const response = await fetch(`${this.apiBaseUrl}/api/quality/${locale}`, { method: 'GET' })
 
     if (!response.ok) {
       throw new QualityContentUnavailableError()

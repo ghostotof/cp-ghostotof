@@ -9,13 +9,13 @@ describe('HttpWatchRepository', () => {
     vi.unstubAllGlobals()
   })
 
-  it('get() appelle GET /api/watch sans cookie (endpoint public, #748 R23)', async () => {
+  it('get() appelle GET /api/watch sans credentials (endpoint public, le défaut same-origin, #748 R37)', async () => {
     const fetchMock = vi.fn(async () => ({ ok: true, json: async () => ({}) }) as unknown as Response)
     vi.stubGlobal('fetch', fetchMock)
 
     await new HttpWatchRepository(API_BASE_URL).get()
 
-    expect(fetchMock).toHaveBeenCalledWith(`${API_BASE_URL}/api/watch`, { method: 'GET', credentials: 'omit' })
+    expect(fetchMock).toHaveBeenCalledWith(`${API_BASE_URL}/api/watch`, { method: 'GET' })
   })
 
   it("get() lève WatchUnavailableError sur une réponse non-OK", async () => {

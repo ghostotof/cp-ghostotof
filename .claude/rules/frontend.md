@@ -53,11 +53,10 @@ error state (`role="alert"`), and the content. `main.ts` provides both repositor
 `application/watch/useWatch.ts` → `presentation/pages/StackPage.vue` follows the identical shape, with one
 difference that comes from the backend: **its endpoint has no `{locale}` segment** (`GET /api/watch`) — a
 version number is a fact, not a translation, so only the surrounding UI strings are localized.
-**These public repositories (and the contact and password-setup ones) send `credentials: 'omit'`** (#748, R23): the
-default `same-origin` sends the cookies in preprod and prod (one origin) and not in dev (two), so a dead `BEARER`
-would reach a public page there and take the 401 — a defect invisible in dev. `credentialsAreExplicit.spec.ts` fails
-on any `fetch(` of `infrastructure/` without its `credentials` written (`'include'` only for the five session
-repositories it lists). Don't add new content here unless it's genuinely backend-managed (i.e. editable
+**These public repositories (and the contact and password-setup ones) write no `credentials`** (#748, R37): the default
+`same-origin` sends the cookies in preprod and prod (one origin) and not in dev (two), and the server serves a public
+route as anonymous whatever the cookie (R35). **`'omit'` is forbidden** (`noOmittedCredentials.spec.ts`): it also drops
+the Basic Auth of preprod, so each call takes the ingress's 401 — invisible in dev and CI. Don't add new content here unless it's genuinely backend-managed (i.e. editable
 from the backoffice) — purely static content still belongs in `infrastructure/portfolio/content/{fr,en}.ts`.
 
 The assistant follows the same layered shape without being backoffice content: its slice (spec 0005,
@@ -201,11 +200,9 @@ timer on it, remembered in `localStorage` to survive a reload — a past value i
 truth —, and at that deadline the header goes back to anonymous with **no network call** (#748, R23;
 `.claude/rules/frontend-session.md`, « Accepted limits »), as at the first 401 on base-tier content
 (`markBaseAccessExpired()`), so the header never shows « Accès de base » above a page asking for it.
-**« Accès instantané » replays once on a 401** (`HttpBaseAccessRepository.grant()`, #748, R24): the `api` firewall reads
-the `BEARER` sent on this route, so a dead one takes Lexik's 401, which clears both cookies; the second try leaves
-without a cookie and succeeds. Only a 401 is replayed (never a 429, a 403 or a network failure), once — a second 401 is
-`unknown`, never a loop. The price, accepted: the rate limiter (priority 15) runs before the firewall (8), so the two
-tries spend two of the 20 hourly tokens of the IP.
+**« Accès instantané » makes one call** (`HttpBaseAccessRepository.grant()`, #748, R37): a refused `BEARER` is ignored by
+the server on this public route (R35), so there is no replay and one limiter token is spent; 429 is `rate-limited`, any
+other failure `unknown`.
 
 ### Toolchain history (Node, jsdom, Vitest)
 

@@ -33,7 +33,7 @@ describe('HttpContributionRepository', () => {
 
     await new HttpContributionRepository(API_BASE_URL).list('fr')
 
-    expect(fetchMock).toHaveBeenCalledWith(`${API_BASE_URL}/api/contributions/fr`, { method: 'GET', credentials: 'omit' })
+    expect(fetchMock).toHaveBeenCalledWith(`${API_BASE_URL}/api/contributions/fr`, { method: 'GET' })
   })
 
   it('list() suit la locale demandée', async () => {
@@ -42,7 +42,7 @@ describe('HttpContributionRepository', () => {
 
     await new HttpContributionRepository(API_BASE_URL).list('en')
 
-    expect(fetchMock).toHaveBeenCalledWith(`${API_BASE_URL}/api/contributions/en`, { method: 'GET', credentials: 'omit' })
+    expect(fetchMock).toHaveBeenCalledWith(`${API_BASE_URL}/api/contributions/en`, { method: 'GET' })
   })
 
   it('list() renvoie les contributions telles que servies par l\'API', async () => {

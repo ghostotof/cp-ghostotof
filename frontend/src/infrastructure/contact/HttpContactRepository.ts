@@ -24,8 +24,9 @@ const RATE_LIMITED_STATUS = 429
  * Implémentation HTTP de ContactRepository. Contrairement à HttpAuthRepository,
  * l'endpoint (POST /api/contact) est public et n'implique aucune session : pas
  * de header CSRF (cf. App\Contact\Presentation\ApiResource\ContactMessageResource et son exclusion dans
- * CsrfCookieRequestSubscriber côté backend) et `credentials: 'omit'` (#748, R23) : en production (une seule origine)
- * le défaut `same-origin` enverrait un `BEARER` mort, dont le 401 tomberait sur la page de contact.
+ * CsrfCookieRequestSubscriber côté backend). Aucun `credentials` : le défaut `same-origin` envoie les cookies sur une
+ * seule origine (préprod, prod), et le serveur sert une route publique comme à l'anonyme quel que soit le cookie
+ * (#748, R35). Jamais `'omit'` : il retire aussi la Basic Auth de la préprod (C1, `noOmittedCredentials.spec.ts`).
  *
  * Le mapping statut -> erreur est ici, et pas dans la page : la présentation
  * n'a pas à connaître le transport. Elle reçoit trois cas distincts parce que
@@ -48,7 +49,6 @@ export class HttpContactRepository implements ContactRepository {
         message: input.message,
         website: input.honeypot,
       }),
-      credentials: 'omit',
     })
 
     if (response.ok) {

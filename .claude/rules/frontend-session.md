@@ -33,7 +33,7 @@ paths:
 | `frontend-session-retour.md` | the shared session state and where it lives (`application/auth/`, the reset for tests), the re-check on return, `onSessionRestored` / `onAccountSwitched`, the replay and the hidden page, the session generation | touching `useAuth` or one of the `application/auth/` modules, `useSessionRecheckOnFocus`, `AppLayout`'s replay, `tests/support/setup.ts` |
 | `frontend-session-refus.md` | the backoffice's reaction (`BackofficeSessionReaction`, `main.ts`), a real refusal: `AccessForbiddenError`, the re-read of `/api/me`, `AccessRefusedNotice`, « Changer de compte », the MCP page's refusal | touching a 403 that is not an ended session, `followRefusal`, `backofficeSessionExpiry.ts`, `backofficeAccessRefusal.ts`, `common.accessRefused` |
 
-What stays here: the rule (`sessionAwareFetch`, « with a token »), its accepted limits, the two shared errors, one section per client, the explicit `credentials`.
+What stays here: the rule (`sessionAwareFetch`, « with a token »), its accepted limits, the two shared errors, one section per client.
 
 ## The rule, in one function
 
@@ -82,11 +82,11 @@ does `BackofficeHttpClient`.
   signing in again would repair it.
 - A browser that drops the cookies of an earlier session reads a finished session: signing in again is indeed the
   remedy.
-- **After the `exp` of a JWT (login or base access) the first 401 only reaches an authenticated route** (#748, R23, the
-  author's decision of 2026-10-29): the public reads, the contact form and the password setup send no cookie
-  (`credentials: 'omit'`, guarded by `credentialsAreExplicit.spec.ts`), so a dead `BEARER` never reaches a public page.
+- **After the `exp` of a JWT (login or base access) the first 401 only reaches a route that requires a role** (#748, the
+  author's decision of 2026-10-29): the server serves a public route as anonymous whatever the cookie (R35), and the SPA
+  reads `/api/me` at every load, which clears a dead cookie.
   The login's expiry is not exposed to the frontend, so its first authenticated request takes the 401 and the session
-  reads as ended (banner, sign-in again); « Accès instantané » takes it too and replays (R24). The base access expires
+  reads as ended (banner, sign-in again); « Accès instantané » ignores the dead cookie (one call, R37). The base access expires
   on the client on the **clock of the workstation**, a display effect only: the header goes anonymous at `expiresAt`
   with no network call (no `POST /api/logout`, no `focus` listener); the cookie, a session one, stays until the browser
   closes or the first 401 clears it.
@@ -154,7 +154,7 @@ is missing from the table), `sessionEndedLoad.spec.ts` (the thirteen composables
 `hasError` and keeps the list, any other failure raises it; on a mutation it sets **no error and does not succeed**, any
 other failure sets `unknown`; `useAdminTranslation` and `useOrderDraft` too), `HttpAdminUserRepository.spec.ts`,
 `HttpMcpConnectionsRepository.spec.ts`, `HttpOAuthConsentRepository.spec.ts`, `HttpAssistantRepository.spec.ts`.
-- `credentialsAreExplicit.spec.ts` (every `fetch(` of `infrastructure/` writes its `credentials`, R23).
+- `noOmittedCredentials.spec.ts` (no file of `src/` writes `credentials: 'omit'`, which drops preprod's Basic Auth, R37).
 - The backend facts it relies on are pinned by `AuthCookieAttributesTest` (session cookies), `BaseAccessControllerTest` and `RefusedSessionCookiesAreClearedTest` (a refused cookie cleared by its first 401), `JwtClockSkewTest` (`clock_skew` 5 s, R29), `cookiePolicy.spec.ts` (the published cookie policy says session cookies, R32), `.claude/rules/security-authentication-sessions.md`.
 
 Three guards of the first version are gone, because what they guarded no longer exists: `sessionEnded.spec.ts` (domain,

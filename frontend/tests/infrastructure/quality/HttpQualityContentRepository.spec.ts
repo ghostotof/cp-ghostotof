@@ -20,7 +20,7 @@ describe('HttpQualityContentRepository', () => {
 
     await new HttpQualityContentRepository('https://api.example.test').get('fr')
 
-    expect(fetchMock).toHaveBeenCalledWith('https://api.example.test/api/quality/fr', { method: 'GET', credentials: 'omit' })
+    expect(fetchMock).toHaveBeenCalledWith('https://api.example.test/api/quality/fr', { method: 'GET' })
   })
 
   it('get() renvoie les principes et traits tels que fournis par le backend', async () => {

@@ -22,7 +22,7 @@ describe('HttpContactRepository', () => {
     vi.unstubAllGlobals()
   })
 
-  it('submit() envoie une requête POST publique, sans cookie ni header CSRF', async () => {
+  it('submit() envoie une requête POST publique, sans credentials ni header CSRF', async () => {
     const fetchMock = stubFetch({ ok: true, status: 202 } as Response)
 
     await new HttpContactRepository('https://api.example.test').submit({
@@ -36,7 +36,6 @@ describe('HttpContactRepository', () => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: 'Jane Doe', email: 'jane@example.com', message: 'Bonjour !', website: '' }),
-      credentials: 'omit',
     })
   })
 

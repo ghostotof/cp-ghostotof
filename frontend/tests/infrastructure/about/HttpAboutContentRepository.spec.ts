@@ -36,7 +36,7 @@ describe('HttpAboutContentRepository', () => {
 
     await new HttpAboutContentRepository('https://api.example.test').get('fr')
 
-    expect(fetchMock).toHaveBeenCalledWith('https://api.example.test/api/about/fr', { method: 'GET', credentials: 'omit' })
+    expect(fetchMock).toHaveBeenCalledWith('https://api.example.test/api/about/fr', { method: 'GET' })
   })
 
   it('get() convertit la réponse JSON en AboutContent, en convertissant iconKey null en undefined', async () => {

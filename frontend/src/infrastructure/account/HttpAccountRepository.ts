@@ -4,8 +4,10 @@ import { PasswordSetupLinkError } from '../../domain/account/errors/PasswordSetu
 /**
  * Implémentation HTTP de AccountRepository. Comme HttpContactRepository, les
  * deux endpoints sont publics : aucune session, pas de header CSRF (chemins exclus
- * du double-submit côté backend, cf. CsrfCookieRequestSubscriber) et `credentials: 'omit'` (#748, R23) : la page
- * `SetPasswordPage` est publique, et un `BEARER` mort envoyé par le défaut `same-origin` y prendrait un 401.
+ * du double-submit côté backend, cf. CsrfCookieRequestSubscriber). Aucun `credentials` : le défaut `same-origin` envoie
+ * les cookies sur une seule origine (préprod, prod), et le serveur sert une route publique comme à l'anonyme quel que
+ * soit le cookie (#748, R35). Jamais `'omit'` : il retire aussi la Basic Auth de la préprod (C1,
+ * `noOmittedCredentials.spec.ts`).
  *
  * Le jeton voyage TOUJOURS dans le corps JSON, jamais dans l'URL (audit A7,
  * décision D6) : un chemin finit dans les access logs du sidecar nginx et de
@@ -44,8 +46,6 @@ export class HttpAccountRepository implements AccountRepository {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
-      // Route publique, qui ne lit aucune identité ni ne pose de cookie (204) : rien à perdre à ne rien envoyer.
-      credentials: 'omit',
     })
   }
 

@@ -20,7 +20,7 @@ describe('HttpExperienceTechnologyRepository', () => {
 
     await new HttpExperienceTechnologyRepository('https://api.example.test').list('fr')
 
-    expect(fetchMock).toHaveBeenCalledWith('https://api.example.test/api/experience/technologies', { method: 'GET', credentials: 'omit' })
+    expect(fetchMock).toHaveBeenCalledWith('https://api.example.test/api/experience/technologies', { method: 'GET' })
   })
 
   it('list() convertit la réponse JSON en entités et calcule la durée localisée', async () => {
