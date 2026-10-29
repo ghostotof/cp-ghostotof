@@ -245,8 +245,10 @@ version" copies nothing and the assistant sends all five fields.
   the new ones (FR saved slowly, EN, back to FR: F10-1). A save sent in French and answered after the page went to
   English has succeeded server-side (`save()` returns `true`), but must not put the French values under the English
   header: the next « Enregistrer » would overwrite the English record. **The error stays with its language** (F10-2):
-  `errorMessage` is the last save's failure only while its locale is the current key, and comes back on returning to
-  it, until that save is replayed. **A proposal notice survives a refusal** (F11): `proposalSourceLocale` is cleared
+  `errorMessage` is the failure of the current locale's last save (R31, Sp3-4: **one error per locale**, `failures`), and
+  comes back on returning to that locale, until **that locale's** next save: a save of one locale neither clears nor
+  replaces the other's error (a failed FR save, then a successful or failed EN one, leaves the FR error for the way back).
+  **A proposal notice survives a refusal** (F11): `proposalSourceLocale` is cleared
   only when `save()` resolves `true`, the form still carrying the proposal otherwise. The About settings are the only
   keyed composable, so the only one with these races.
   **The return is the one signal that exists** (R13): `useAuth().onSessionRestored(callback)`, called once at each

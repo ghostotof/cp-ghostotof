@@ -5,7 +5,7 @@ import type {
   AdminAboutSettingsRepository,
 } from '../../../domain/admin/about/repositories/AdminAboutSettingsRepository'
 import { AdminAboutError } from '../../../domain/admin/about/errors/AdminAboutError'
-import type { Locale } from '../../../domain/portfolio/entities/Locale'
+import { SUPPORTED_LOCALES, type Locale } from '../../../domain/portfolio/entities/Locale'
 import { useAdminLoad, type AdminLoadState } from '../shared/useAdminLoad'
 import { visibleMutationError } from '../shared/visibleMutationError'
 
@@ -35,9 +35,10 @@ export function useAdminAboutSettings(): UseAdminAboutSettingsResult {
   }
 
   const settings = ref<AdminAboutSettings | null>(null)
-  // L'échec du dernier enregistrement et la langue dans laquelle il est parti : une erreur FR arrivée quand la
-  // page est en EN ne se lit pas sous l'en-tête anglais (F10-2).
-  const lastFailure = ref<{ locale: Locale; error: AdminAboutError } | null>(null)
+  // Une erreur par langue (R31, Sp3-4) : l'échec d'un enregistrement reste sous la langue dans laquelle il est parti.
+  // Une erreur FR arrivée quand la page est en EN ne se lit pas sous l'en-tête anglais (F10-2), et un enregistrement
+  // d'une langue n'efface ni ne remplace l'erreur de l'autre.
+  const failures = ref<Partial<Record<Locale, AdminAboutError>>>({})
 
   const { isLoading, hasError, isLoaded, load, write, isCurrentKey } = useAdminLoad<AdminAboutSettings, Locale>({
     read: (locale) => repository.get(locale),
@@ -51,12 +52,17 @@ export function useAdminAboutSettings(): UseAdminAboutSettingsResult {
     },
   })
 
-  // La clé courante est celle de `useAdminLoad` (R20), sans copie ici : l'erreur revient avec sa langue, jusqu'au
-  // prochain enregistrement.
-  const errorMessage = computed(() => (null !== lastFailure.value && isCurrentKey(lastFailure.value.locale) ? lastFailure.value.error : null))
+  // La clé courante est celle de `useAdminLoad` (R20), sans copie ici : l'erreur de la langue montrée revient avec
+  // elle, jusqu'au prochain enregistrement de cette langue.
+  const errorMessage = computed(() => {
+    const current = SUPPORTED_LOCALES.find((locale) => isCurrentKey(locale))
+
+    return undefined === current ? null : (failures.value[current] ?? null)
+  })
 
   const save = async (locale: Locale, input: AdminAboutSettingsInput): Promise<boolean> => {
-    lastFailure.value = null
+    // N'efface que l'erreur de la langue enregistrée : celle d'une autre langue attend son propre enregistrement.
+    delete failures.value[locale]
 
     try {
       const saved = await repository.update(locale, input)
@@ -70,7 +76,7 @@ export function useAdminAboutSettings(): UseAdminAboutSettingsResult {
       return true
     } catch (error) {
       const visible = visibleMutationError(error, AdminAboutError, () => new AdminAboutError('unknown', 'Unknown error'))
-      lastFailure.value = null === visible ? null : { locale, error: visible }
+      if (null !== visible) failures.value[locale] = visible
 
       return false
     }

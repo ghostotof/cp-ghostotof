@@ -245,4 +245,71 @@ describe('useAdminAboutSettings', () => {
       expect(composable.errorMessage.value).toBeNull()
     })
   })
+
+  describe('une erreur par langue, jusqu\'au prochain enregistrement de cette langue (#748, R31)', () => {
+    const INPUT = {
+      siteEyebrow: 'Nouveau titre',
+      meEyebrow: SETTINGS.meEyebrow,
+      technicalSubtitle: SETTINGS.technicalSubtitle,
+      personalSubtitle: SETTINGS.personalSubtitle,
+      hobbiesSubtitle: SETTINGS.hobbiesSubtitle,
+    }
+
+    it("un échec FR, puis un enregistrement EN réussi : l'erreur FR est encore là au retour en FR", async () => {
+      const update = vi
+        .fn<AdminAboutSettingsRepository['update']>()
+        .mockRejectedValueOnce(new AdminAboutError('validation', 'Invalide'))
+        .mockResolvedValueOnce({ ...SETTINGS, locale: 'en' })
+      const composable = mountWithComposable(createStubRepository({ update }))
+      await composable.load('fr')
+      await composable.save('fr', INPUT)
+      expect(composable.errorMessage.value?.reason).toBe('validation')
+
+      await composable.load('en')
+      expect(await composable.save('en', INPUT)).toBe(true)
+      expect(composable.errorMessage.value).toBeNull()
+
+      // L'enregistrement EN n'a rien réglé du FR : son erreur revient avec sa langue.
+      await composable.load('fr')
+      expect(composable.errorMessage.value?.reason).toBe('validation')
+    })
+
+    it('un échec FR puis un échec EN : chacun reste sous sa langue', async () => {
+      const update = vi
+        .fn<AdminAboutSettingsRepository['update']>()
+        .mockRejectedValueOnce(new AdminAboutError('validation', 'Invalide'))
+        .mockRejectedValueOnce(new AdminAboutError('unknown', 'Inconnue'))
+      const composable = mountWithComposable(createStubRepository({ update }))
+      await composable.load('fr')
+      await composable.save('fr', INPUT)
+
+      await composable.load('en')
+      await composable.save('en', INPUT)
+      expect(composable.errorMessage.value?.reason).toBe('unknown')
+
+      await composable.load('fr')
+      expect(composable.errorMessage.value?.reason).toBe('validation')
+    })
+
+    it("un enregistrement FR réussi efface l'erreur FR seulement", async () => {
+      const update = vi
+        .fn<AdminAboutSettingsRepository['update']>()
+        .mockRejectedValueOnce(new AdminAboutError('validation', 'Invalide'))
+        .mockRejectedValueOnce(new AdminAboutError('unknown', 'Inconnue'))
+        .mockResolvedValueOnce(SETTINGS)
+      const composable = mountWithComposable(createStubRepository({ update }))
+      await composable.load('fr')
+      await composable.save('fr', INPUT)
+      await composable.load('en')
+      await composable.save('en', INPUT)
+
+      await composable.load('fr')
+      expect(await composable.save('fr', INPUT)).toBe(true)
+      expect(composable.errorMessage.value).toBeNull()
+
+      // L'erreur EN, elle, attend toujours le prochain enregistrement EN.
+      await composable.load('en')
+      expect(composable.errorMessage.value?.reason).toBe('unknown')
+    })
+  })
 })
