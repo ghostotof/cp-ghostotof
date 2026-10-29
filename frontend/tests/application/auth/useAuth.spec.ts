@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { defineComponent, h } from 'vue'
-import { AUTH_REPOSITORY, authState, markBaseAccessExpired, markBaseAccessGranted, markSessionExpired, useAuth } from '../../../src/application/auth/useAuth'
+import { AUTH_REPOSITORY, authState, markBaseAccessExpired, markBaseAccessGranted, markSessionExpired, sessionStamp, useAuth } from '../../../src/application/auth/useAuth'
 import type { AuthRepository } from '../../../src/domain/auth/repositories/AuthRepository'
 import type { AuthenticatedUser } from '../../../src/domain/auth/entities/AuthenticatedUser'
 import { BASE_ACCESS_SESSION, type AuthSession } from '../../../src/domain/auth/entities/AuthSession'
@@ -243,6 +243,188 @@ describe('useAuth', () => {
       await auth.recheckEndedSession()
 
       expect(restored).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  describe('un rappel de retour qui lève (#748, R14)', () => {
+    afterEach(() => {
+      vi.restoreAllMocks()
+    })
+
+    it("n'empêche ni les rappels suivants ni l'issue de login(), et l'erreur est rapportée", async () => {
+      const error = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+      const broken = new Error('rappel défaillant')
+      const after = vi.fn()
+      const auth = mountWithComposable(createStubRepository(), (probe) => {
+        probe.onSessionRestored(() => {
+          throw broken
+        })
+        probe.onSessionRestored(after)
+      })
+      markSessionExpired()
+
+      await expect(auth.login('jane', 'password')).resolves.toBeUndefined()
+      // Démonté avant les assertions : l'abonné défaillant ne doit pas survivre au test.
+      auth.unmount()
+
+      expect(after).toHaveBeenCalledTimes(1)
+      expect(auth.hasSessionEnded.value).toBe(false)
+      expect(error).toHaveBeenCalledWith(expect.anything(), broken)
+    })
+
+    it("n'empêche pas non plus checkAuth() ni recheckEndedSession() de se terminer", async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined)
+      const after = vi.fn()
+      const repository = createStubRepository({ me: vi.fn(async () => sessionFor({ username: 'jane', roles: ['ROLE_USER'] })) })
+      const auth = mountWithComposable(repository, (probe) => {
+        probe.onSessionRestored(() => {
+          throw new Error('rappel défaillant')
+        })
+        probe.onSessionRestored(after)
+      })
+
+      markSessionExpired()
+      await expect(auth.checkAuth()).resolves.toBeUndefined()
+      markSessionExpired()
+      await expect(auth.recheckEndedSession()).resolves.toBeUndefined()
+      auth.unmount()
+
+      expect(after).toHaveBeenCalledTimes(2)
+    })
+  })
+
+  describe('une génération de session (#748, R14)', () => {
+    /** Un `me()` dont la réponse est tenue : le test fait arriver un verdict pendant qu'il est en vol. */
+    function deferredMe(): { me: () => Promise<AuthSession>; settle: (session: AuthSession) => void } {
+      let settle: (session: AuthSession) => void = () => undefined
+      const pending = new Promise<AuthSession>((resolve) => {
+        settle = resolve
+      })
+
+      return { me: () => pending, settle }
+    }
+
+    const JANE = sessionFor({ username: 'jane', roles: ['ROLE_TRUSTED', 'ROLE_USER'] })
+
+    it("un refus parti avant le retour ne refinit pas la session (Review Focus 1)", async () => {
+      const auth = mountWithComposable(createStubRepository())
+      markSessionExpired()
+      const sent = sessionStamp()
+      await auth.login('jane', 'password')
+      expect(auth.hasSessionEnded.value).toBe(false)
+      const count = auth.sessionEndedCount.value
+
+      // La réponse de l'écriture partie pendant la session finie arrive après le retour.
+      expect(markSessionExpired(sent)).toBe(false)
+
+      expect(auth.hasSessionEnded.value).toBe(false)
+      expect(auth.user.value?.username).toBe('jane')
+      expect(auth.sessionEndedCount.value).toBe(count)
+    })
+
+    it("session finie : un refus parti avant la fin ne réannonce pas, le verdict tient", () => {
+      const auth = mountWithComposable(createStubRepository())
+      const sent = sessionStamp()
+      markSessionExpired()
+      const count = auth.sessionEndedCount.value
+
+      expect(markSessionExpired(sent)).toBe(true)
+
+      expect(auth.hasSessionEnded.value).toBe(true)
+      expect(auth.sessionEndedCount.value).toBe(count)
+    })
+
+    it('session finie : un refus parti après la fin réannonce', () => {
+      const auth = mountWithComposable(createStubRepository())
+      markSessionExpired()
+      const count = auth.sessionEndedCount.value
+
+      expect(markSessionExpired(sessionStamp())).toBe(true)
+
+      expect(auth.sessionEndedCount.value).toBe(count + 1)
+    })
+
+    it("des refus partis sous la même génération (lectures parallèles) n'annoncent qu'une fois (Sp-c1)", () => {
+      const auth = mountWithComposable(createStubRepository())
+      const count = auth.sessionEndedCount.value
+      const sent = sessionStamp()
+
+      // Trois lectures du chargement d'une page : mêmes départs, arrivées à des instants distincts.
+      expect(markSessionExpired(sent)).toBe(true)
+      expect(markSessionExpired(sent)).toBe(true)
+      expect(markSessionExpired(sent)).toBe(true)
+
+      expect(auth.sessionEndedCount.value).toBe(count + 1)
+    })
+
+    it("un /api/me parti avant un nouveau refus ne rétablit pas la session", async () => {
+      const restored = vi.fn()
+      const { me, settle } = deferredMe()
+      const auth = mountWithComposable(createStubRepository({ me: vi.fn(me) }), (probe) => probe.onSessionRestored(restored))
+      markSessionExpired()
+
+      const pending = auth.recheckEndedSession()
+      markSessionExpired(sessionStamp())
+      settle(JANE)
+      await pending
+
+      expect(auth.hasSessionEnded.value).toBe(true)
+      expect(auth.user.value).toBeNull()
+      expect(restored).not.toHaveBeenCalled()
+    })
+
+    it("un /api/me de checkAuth() parti avant un refus ne rétablit ni ne reconnecte l'en-tête", async () => {
+      const restored = vi.fn()
+      const { me, settle } = deferredMe()
+      const auth = mountWithComposable(createStubRepository({ me: vi.fn(me) }), (probe) => probe.onSessionRestored(restored))
+      markSessionExpired()
+
+      const pending = auth.checkAuth()
+      markSessionExpired(sessionStamp())
+      settle(JANE)
+      await pending
+
+      expect(auth.hasSessionEnded.value).toBe(true)
+      expect(auth.user.value).toBeNull()
+      expect(restored).not.toHaveBeenCalled()
+    })
+
+    it("un /api/me parti avant le retour ne défait pas la session rétablie", async () => {
+      const { me, settle } = deferredMe()
+      const auth = mountWithComposable(createStubRepository({ me: vi.fn(me) }))
+      await auth.login('jane', 'password')
+      markSessionExpired()
+
+      const pending = auth.checkAuth()
+      await auth.login('jane', 'password')
+      settle(sessionFor(null))
+      await pending
+
+      // La réponse anonyme était d'avant la reconnexion : elle ne repasse pas l'en-tête à anonyme.
+      expect(auth.user.value?.username).toBe('jane')
+      expect(auth.hasSessionEnded.value).toBe(false)
+    })
+
+    it("checkAuth() ne rétablit pas une session finie quand le compte n'a pas de jeton d'écriture (F5)", async () => {
+      const restored = vi.fn()
+      const repository = createStubRepository({ me: vi.fn(async () => JANE), hasWriteToken: () => false })
+      const auth = mountWithComposable(repository, (probe) => probe.onSessionRestored(restored))
+      markSessionExpired()
+
+      await auth.checkAuth()
+
+      expect(auth.hasSessionEnded.value).toBe(true)
+      expect(restored).not.toHaveBeenCalled()
+    })
+
+    it('le retour avance la génération : un refus parti avant lui est jeté', async () => {
+      const auth = mountWithComposable(createStubRepository())
+      markSessionExpired()
+      const before = sessionStamp()
+
+      await auth.login('jane', 'password')
+
+      expect(sessionStamp()).toBeGreaterThan(before)
     })
   })
 

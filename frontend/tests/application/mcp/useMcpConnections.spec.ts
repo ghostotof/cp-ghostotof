@@ -465,4 +465,40 @@ describe('useMcpConnections', () => {
 
     expect(connections.lastOutcome.value).toBeNull()
   })
+
+  // R14 (#748) : une réponse partie sous une session révolue ne refinit pas la session rétablie.
+  it('load() dont le refus de session est parti avant le retour : échec ordinaire, la session reste rétablie', async () => {
+    let reject!: (error: Error) => void
+    const list = vi.fn(() => new Promise<ReturnType<typeof listOf>>((_resolve, rejectList) => (reject = rejectList)))
+    const connections = mountComposable({ list, revoke: vi.fn() })
+
+    const pending = connections.load()
+    markSessionExpired()
+    await signInTrusted()
+    expect(authState.sessionEnded).toBe(false)
+    reject(new SessionEndedError())
+    await pending
+
+    expect(authState.sessionEnded).toBe(false)
+    expect(authState.user).not.toBeNull()
+    expect(connections.status.value).toBe('error')
+    expect(connections.refusal.value).toBeNull()
+  })
+
+  it('revoke() dont le refus de session est parti avant le retour : échec ordinaire, la session reste rétablie', async () => {
+    let reject!: (error: Error) => void
+    const revoke = vi.fn(() => new Promise<void>((_resolve, rejectRevoke) => (reject = rejectRevoke)))
+    const connections = mountComposable({ list: vi.fn().mockResolvedValue(listOf([A])), revoke })
+    await connections.load()
+
+    const pending = connections.revoke('a')
+    markSessionExpired()
+    await signInTrusted()
+    reject(new SessionEndedError())
+    await pending
+
+    expect(authState.sessionEnded).toBe(false)
+    expect(connections.lastOutcome.value).toBe('failed')
+    expect(connections.refusal.value).toBeNull()
+  })
 })

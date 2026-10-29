@@ -46,6 +46,16 @@ let hasCheckedOnce = false
 let endedSessionRecheck: Promise<void> | null = null
 
 /**
+ * La génération de la session (#748, R14) : un compteur de module, avancé à chaque **fin** acceptée
+ * (`markSessionExpired`) et à chaque **retour** (la descente de `sessionEnded`). Un appelant la lit à l'envoi
+ * (`sessionStamp()`) et la rend avec le verdict (`markSessionExpired(sentAt)`, la relecture de `/api/me`) : ce qui
+ * est parti sous une génération révolue est un verdict d'une session qui n'est plus la courante, et ne la change pas,
+ * ni pour la finir ni pour la rétablir. Un seul nombre règle les deux sens, et les lectures parallèles du chargement
+ * d'une page (parties sous la même génération) n'annoncent la fin qu'une fois.
+ */
+let generation = 0
+
+/**
  * Les abonnés au retour de la session (`useAuth().onSessionRestored`), de tous les scopes vivants. Un `Set` de
  * module comme l'état : le retour est un événement de la session, pas d'un composant. Chaque abonné se retire à
  * la fin de son scope, donc une page démontée n'est plus appelée (#748, R13).
@@ -66,24 +76,34 @@ const MAX_TIMEOUT_MS = 2_147_483_647
 
 let baseAccessExpiryTimer: ReturnType<typeof setTimeout> | null = null
 
+/**
+ * Pose le palier et le compte. **Ne touche jamais à `sessionEnded`** : la fin est l'affaire de
+ * `markSessionExpired`, le retour de `restoreSession`, qui seuls jugent la génération et le jeton d'écriture.
+ */
 function applySession(session: AuthSession): void {
-  const wasEnded = state.sessionEnded
   state.tier = session.tier
   state.user = session.user
-  // Un compte qui revient (connexion, relecture de /api/me) referme l'annonce ;
-  // une session encore anonyme ou de base ne la referme pas : rien n'est revenu
-  // qui rouvre le backoffice.
-  if (null !== session.user) {
-    state.sessionEnded = false
-  }
   // Tout changement de session rend la minuterie précédente caduque : un
   // login remplace le cookie D6 par celui du compte, un logout l'efface.
   clearBaseAccessExpiry()
-  // Le retour : la descente de `sessionEnded`, une fois, après que l'état est posé. Les abonnés lisent donc
-  // la session revenue ; la copie du `Set` protège l'itération d'un abonné qui se retirerait en route.
-  if (wasEnded && !state.sessionEnded) {
-    for (const callback of [...sessionRestoredCallbacks]) {
+}
+
+/**
+ * **La** descente de `sessionEnded` : un compte est revenu avec son jeton d'écriture (l'appelant l'a vérifié, et la
+ * génération, sauf pour une connexion). Applique la session, avance la génération, puis appelle les abonnés — une
+ * fois, de façon synchrone, l'état posé : ils lisent la session revenue.
+ */
+function restoreSession(session: AuthSession): void {
+  applySession(session)
+  state.sessionEnded = false
+  generation += 1
+  // La copie du `Set` protège l'itération d'un abonné qui se retirerait en route. Un abonné qui lève n'arrête ni
+  // les suivants ni l'issue de la connexion ou de la relecture qui a rétabli la session : l'erreur est rapportée.
+  for (const callback of [...sessionRestoredCallbacks]) {
+    try {
       callback()
+    } catch (caught) {
+      console.error('Un abonné au retour de la session a levé une erreur.', caught)
     }
   }
 }
@@ -189,16 +209,39 @@ export function markBaseAccessExpired(): void {
 }
 
 /**
- * Un appel du palier de confiance (l'assistant, ROLE_TRUSTED) a reçu 401 ou 403 :
- * le jeton ne vaut plus ce palier (expiré, révoqué, ou compte rétrogradé).
- * Contrairement à markBaseAccessExpired, repasse à anonyme sans condition : la
- * page qui l'appelle ne sert que ce palier, et garder un en-tête « connecté »
- * au-dessus d'une page qui vient de refuser l'accès serait mentir.
+ * La génération courante de la session : à lire **à l'envoi** d'une requête, pour la rendre avec son verdict
+ * (`markSessionExpired(sentAt)`). Voir `generation`.
  */
-export function markSessionExpired(): void {
+export function sessionStamp(): number {
+  return generation
+}
+
+/**
+ * Un appel du palier de confiance (l'assistant, ROLE_TRUSTED) ou du backoffice a reçu un verdict « session finie »
+ * (un 401, ou un 403 à une écriture sans jeton CSRF) : le jeton ne vaut plus ce palier (expiré, révoqué, ou compte
+ * rétrogradé). Contrairement à markBaseAccessExpired, repasse à anonyme sans condition : la page qui l'appelle ne
+ * sert que ce palier, et garder un en-tête « connecté » au-dessus d'une page qui vient de refuser l'accès serait mentir.
+ *
+ * `sentAt` est la génération lue à l'envoi (`sessionStamp()`), et le rendu dit si la session **est finie** :
+ * - sans `sentAt`, ou sous la génération courante : la fin est acceptée (l'en-tête devient anonyme, `sessionEnded`
+ *   monte, `sessionEndedCount` augmente — un refus pendant une session déjà finie réannonce), la génération avance ;
+ *   rend `true` ;
+ * - sous une génération révolue : rien ne change. Rend `true` si la session est finie (le verdict tient, il a déjà
+ *   été annoncé : les lectures parallèles du chargement d'une page ne le réannoncent pas), `false` si elle a été
+ *   rétablie depuis l'envoi — la réponse est celle d'une session qui n'est plus la courante, l'appelant la traite
+ *   comme un échec ordinaire.
+ */
+export function markSessionExpired(sentAt?: number): boolean {
+  if (undefined !== sentAt && sentAt !== generation) {
+    return state.sessionEnded
+  }
+
   applySession(ANONYMOUS_SESSION)
   state.sessionEnded = true
   state.sessionEndedCount += 1
+  generation += 1
+
+  return true
 }
 
 /**
@@ -227,9 +270,11 @@ export interface UseAuthResult {
    */
   hasSessionEnded: ComputedRef<boolean>
   /**
-   * Augmenté de un par chaque `markSessionExpired()`, y compris quand la session est déjà finie : un état
-   * idempotent ne change pas au second refus, ce compteur si. Le bandeau en fait la `key` de son alerte, qu'il
-   * réinsère donc à chaque refus — c'est l'insertion que les lecteurs d'écran annoncent (#748, S7).
+   * Augmenté de un par chaque fin **acceptée** (`markSessionExpired`, voir la génération), y compris quand la session
+   * est déjà finie : un état ne change pas au second refus, ce compteur si. Une réponse partie sous une génération
+   * révolue (une lecture parallèle déjà annoncée, une session rétablie depuis) ne l'augmente pas. Le bandeau en fait
+   * la `key` de son alerte, qu'il réinsère donc à chaque refus accepté — c'est l'insertion que les lecteurs d'écran
+   * annoncent (#748, S7, R14).
    */
   sessionEndedCount: ComputedRef<number>
   /** ROLE_TRUSTED (ou ROLE_SUPER) : le seul palier qui ouvre le CV et /api/me. */
@@ -240,7 +285,8 @@ export interface UseAuthResult {
   /**
    * Relit `/api/me` quand la session est finie, en silence (`isChecking` n'est pas touché). Sans effet hors
    * session finie. Une seule relecture en vol : un second appel rend la même promesse. Un compte retrouvé
-   * **et** un jeton d'écriture (`AuthRepository.hasWriteToken()`) rétablissent la session ; sinon l'état ne
+   * **et** un jeton d'écriture (`AuthRepository.hasWriteToken()`) rétablissent la session — sauf si la réponse est
+   * d'une génération révolue (un refus est arrivé depuis l'envoi) ; sinon l'état ne
    * change pas — un compte sans `XSRF-TOKEN` prendrait un 403 à la première écriture, la session n'est pas
    * rétablie. Un rejet de `/api/me` (réseau) est avalé : la session reste finie, la personne recommencera au
    * prochain retour. Branchée une fois sur le `focus` de la fenêtre par `useSessionRecheckOnFocus` (AppLayout).
@@ -268,7 +314,14 @@ export function useAuth(): UseAuthResult {
   }
 
   const login = async (username: string, password: string): Promise<void> => {
-    applySession(sessionForUser(await repository.login(username, password)))
+    const session = sessionForUser(await repository.login(username, password))
+    // Une connexion est le geste de la personne : elle vaut quelle que soit la génération (rien n'est parti avant
+    // elle qui la contredise), mais comme toute descente elle veut un compte et un jeton d'écriture.
+    if (state.sessionEnded && null !== session.user && repository.hasWriteToken()) {
+      restoreSession(session)
+    } else {
+      applySession(session)
+    }
   }
 
   const logout = async (): Promise<void> => {
@@ -294,8 +347,19 @@ export function useAuth(): UseAuthResult {
       // confirme le palier de base et qu'une échéance future est connue, la
       // minuterie reprend là où le rechargement l'avait interrompue.
       const rememberedExpiry = recallBaseAccessExpiry()
+      // La génération est lue à l'envoi : une réponse arrivée après une fin ou un retour est d'une session révolue.
+      const sentAt = sessionStamp()
       const session = await repository.me()
-      applySession(session)
+      if (sentAt !== generation || (state.sessionEnded && null !== session.user && !repository.hasWriteToken())) {
+        // Révolue, ou un compte sans jeton d'écriture pendant une session finie : la session n'est pas rétablie
+        // (sa première écriture prendrait le 403 du CSRF) et l'en-tête ne bouge pas (F5, C).
+        return
+      }
+      if (state.sessionEnded && null !== session.user) {
+        restoreSession(session)
+      } else {
+        applySession(session)
+      }
       if ('base' === session.tier && null === session.user && null !== rememberedExpiry && rememberedExpiry.getTime() > Date.now()) {
         scheduleBaseAccessExpiry(rememberedExpiry)
       }
@@ -315,10 +379,12 @@ export function useAuth(): UseAuthResult {
 
     endedSessionRecheck = (async () => {
       try {
+        const sentAt = sessionStamp()
         const session = await repository.me()
         // Le compte seul ne suffit pas : sans jeton d'écriture la première écriture serait refusée (403 sans CSRF).
-        if (null !== session.user && repository.hasWriteToken()) {
-          applySession(session)
+        // Et une réponse partie avant un nouveau refus est d'avant lui : elle ne rétablit pas ce qui vient de finir.
+        if (sentAt === generation && state.sessionEnded && null !== session.user && repository.hasWriteToken()) {
+          restoreSession(session)
         }
       } catch {
         // Le réseau ne répond pas : la session reste finie, rien n'est annoncé.

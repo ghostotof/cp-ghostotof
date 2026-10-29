@@ -18,7 +18,7 @@ import {
   buildConversationWindow,
   codePointLength,
 } from '../../domain/assistant/services/conversationWindow'
-import { markSessionExpired, useAuth } from '../auth/useAuth'
+import { markSessionExpired, sessionStamp, useAuth } from '../auth/useAuth'
 
 export const ASSISTANT_REPOSITORY: InjectionKey<AssistantRepository> = Symbol('AssistantRepository')
 
@@ -91,6 +91,8 @@ export function useAssistant(): UseAssistantResult {
     error.value = null
     state.value = 'streaming'
 
+    // La génération de session à l'envoi (#748, R14) : un « session finie » parti avant un retour est un échec ordinaire.
+    const sentAt = sessionStamp()
     const current = new AbortController()
     controller = current
     const isCurrent = (): boolean => controller === current && !current.signal.aborted
@@ -115,7 +117,7 @@ export function useAssistant(): UseAssistantResult {
       if (!isCurrent()) {
         return
       }
-      const failure = caught instanceof AssistantError ? caught : new AssistantError('unknown')
+      let failure = caught instanceof AssistantError ? caught : new AssistantError('unknown')
       const answer = messages.value[answerIndex]
       if ('' !== answer.content.trim()) {
         answer.status = 'incomplete'
@@ -132,7 +134,10 @@ export function useAssistant(): UseAssistantResult {
       // site (#748, #732 point 4), mais relit `/api/me` (une fois, sans l'attendre, un rejet avalé) : un
       // compte rétrogradé y est au palier de base, et l'en-tête ne doit pas rester à celui de confiance (R7).
       if ('unauthenticated' === failure.reason) {
-        markSessionExpired()
+        if (!markSessionExpired(sentAt)) {
+          // La session a été rétablie depuis l'envoi : ce verdict est celui d'une session révolue.
+          failure = new AssistantError('unknown')
+        }
       } else if ('forbidden' === failure.reason) {
         void checkAuth().catch(() => undefined)
       }

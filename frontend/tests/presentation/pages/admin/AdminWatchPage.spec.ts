@@ -13,7 +13,11 @@ import { ADMIN_VULNERABILITY_REPOSITORY } from '../../../../src/application/admi
 import type { AdminVulnerabilityRepository } from '../../../../src/domain/admin/watch/repositories/AdminVulnerabilityRepository'
 import type { AdminVulnerability } from '../../../../src/domain/admin/watch/entities/AdminVulnerability'
 import { SessionEndedError } from '../../../../src/domain/auth/errors/SessionEndedError'
-import { markSessionExpired } from '../../../../src/application/auth/useAuth'
+import { authState, markSessionExpired } from '../../../../src/application/auth/useAuth'
+import { HttpAdminWatchedProductRepository } from '../../../../src/infrastructure/admin/watch/HttpAdminWatchedProductRepository'
+import { HttpAdminVulnerabilityRepository } from '../../../../src/infrastructure/admin/watch/HttpAdminVulnerabilityRepository'
+import { setBackofficeSessionEndedHandler } from '../../../../src/infrastructure/admin/shared/BackofficeHttpClient'
+import { backofficeSessionEndedHandler } from '../../../../src/presentation/router/backofficeSessionExpiry'
 import { signInAgain } from '../../../support/signInAgain'
 import { expectNoAccessibilityViolation } from '../../../support/axe'
 
@@ -447,6 +451,49 @@ describe('AdminWatchPage', () => {
       const { wrapper } = await mountPage()
 
       expect(wrapper.text()).toContain('Aucune vulnérabilité connue')
+    })
+
+    describe('plusieurs lectures en 401 au chargement (#748, R14, Sp-c1)', () => {
+      let mountedPage: VueWrapper | undefined
+      afterEach(async () => {
+        mountedPage?.unmount()
+        mountedPage = undefined
+        setBackofficeSessionEndedHandler(null)
+        vi.unstubAllGlobals()
+        await signInAgain()
+      })
+
+      it("deux lectures en 401 arrivées dans deux ticks : le bandeau n'est annoncé qu'une fois", async () => {
+        // La vraie chaîne : dépôts HTTP, client du backoffice et réaction branchée comme `main.ts` le fait.
+        setBackofficeSessionEndedHandler(backofficeSessionEndedHandler)
+        const answers: ((response: Response) => void)[] = []
+        vi.stubGlobal(
+          'fetch',
+          vi.fn(
+            () =>
+              new Promise<Response>((resolve) => {
+                answers.push(resolve)
+              }),
+          ),
+        )
+        const before = authState.sessionEndedCount
+        const { wrapper } = await mountPage(
+          new HttpAdminWatchedProductRepository('https://api.example.test'),
+          new HttpAdminVulnerabilityRepository('https://api.example.test'),
+        )
+        mountedPage = wrapper
+        expect(answers).toHaveLength(2)
+
+        // Deux lectures parties sous la même génération ; leurs 401 arrivent dans des ticks distincts.
+        answers[0](new Response('{}', { status: 401 }))
+        await flushPromises()
+        expect(authState.sessionEndedCount).toBe(before + 1)
+        answers[1](new Response('{}', { status: 401 }))
+        await flushPromises()
+
+        expect(authState.sessionEnded).toBe(true)
+        expect(authState.sessionEndedCount).toBe(before + 1)
+      })
     })
 
     describe('non chargées (#748, R4)', () => {

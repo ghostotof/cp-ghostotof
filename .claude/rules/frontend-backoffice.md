@@ -218,7 +218,7 @@ version" copies nothing and the assistant sends all five fields.
 - **A 401, or a 403 to a write sent without a CSRF token, mid-page ends the session on the interface, and moves
   nobody** (#650, R1c, #748). `BackofficeHttpClient` (`get` and `mutate`) sends through
   `infrastructure/http/sessionAwareFetch.ts`, calls the reaction registered by `main.ts`
-  (`setBackofficeSessionEndedHandler()`, `markSessionExpired()` and no navigation) and **raises `SessionEndedError`**: no
+  (`setBackofficeSessionEndedHandler()`: `markSessionExpired(sentAt)`, judged by session generation, and no navigation) and **raises `SessionEndedError`** (or, for a response sent before the session was restored, hands it back as an ordinary failure, #748 R14): no
   repository translates it, and the composables keep it quiet through `useAdminLoad` (reads) and `visibleMutationError`
   (mutations), the banner being the only announcement. **A new administration client goes through
   `BackofficeHttpClient`, a new composable through those two functions, and its mutations resolve to `true` only on

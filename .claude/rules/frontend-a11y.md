@@ -88,7 +88,7 @@ fixed:
   `.claude/rules/frontend-backoffice.md`). It differs from `LoginPage`'s notice (next bullet) by when it appears: the banner is inserted after
   the first render (announced), the notice is present from it (may not be). **An alert already shown is announced again
   only if it is re-inserted** (#748, R9, S7): a second refusal while the banner is displayed changes nothing in an
-  idempotent state, so the alert carries a `:key` (`useAuth().sessionEndedCount`, +1 per `markSessionExpired()`) that makes
+  idempotent state, so the alert carries a `:key` (`useAuth().sessionEndedCount`, +1 per accepted refusal, see `.claude/rules/frontend-session.md`, « The session generation ») that makes
   Vue replace the element.
 - **A `role="status"` present at first render may not be announced** (`LoginPage`'s « Votre session a pris fin »
   notice, `expired=1`, #650): some screen readers announce a live region only when its content *changes*, and this

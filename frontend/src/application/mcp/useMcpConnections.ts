@@ -4,7 +4,7 @@ import type { McpConnectionsRepository } from '../../domain/mcp/repositories/Mcp
 import { McpConnectionNotFoundError } from '../../domain/mcp/errors/McpConnectionNotFoundError'
 import { AccessForbiddenError } from '../../domain/auth/errors/AccessForbiddenError'
 import { SessionEndedError } from '../../domain/auth/errors/SessionEndedError'
-import { markSessionExpired, useAuth } from '../auth/useAuth'
+import { markSessionExpired, sessionStamp, useAuth } from '../auth/useAuth'
 
 export const MCP_CONNECTIONS_REPOSITORY: InjectionKey<McpConnectionsRepository> = Symbol('McpConnectionsRepository')
 
@@ -97,11 +97,17 @@ export function useMcpConnections(): UseMcpConnectionsResult {
    */
   let latestLoad = 0
 
-  /** Range un refus du serveur dans `refusal` ; un refus réel relit en plus la session. Toute autre erreur : rien. */
-  const refuse = (caught: unknown): void => {
+  /**
+   * Range un refus du serveur dans `refusal` ; un refus réel relit en plus la session. Toute autre erreur : rien.
+   * `sentAt` est la génération de session lue **avant l'envoi** (#748, R14) : un verdict « session finie » d'une
+   * requête partie avant que la session soit rétablie n'est pas celui de la session courante — `markSessionExpired`
+   * le dit en rendant `false`, la session n'est pas refinie et l'échec est ordinaire (aucun `refusal`).
+   */
+  const refuse = (caught: unknown, sentAt: number): void => {
     if (caught instanceof SessionEndedError) {
-      markSessionExpired()
-      refusal.value = 'session-ended'
+      if (markSessionExpired(sentAt)) {
+        refusal.value = 'session-ended'
+      }
     } else if (caught instanceof AccessForbiddenError) {
       refusal.value = 'forbidden'
       // Sans l'attendre : l'état de la page ne dépend pas de la réponse ; un rejet (panne) est avalé.
@@ -113,6 +119,7 @@ export function useMcpConnections(): UseMcpConnectionsResult {
     const mine = ++latestLoad
     status.value = 'loading'
     refusal.value = null
+    const sentAt = sessionStamp()
     try {
       const list = await repository.list()
       if (mine !== latestLoad) {
@@ -125,7 +132,7 @@ export function useMcpConnections(): UseMcpConnectionsResult {
       if (mine !== latestLoad) {
         return
       }
-      refuse(caught)
+      refuse(caught, sentAt)
       connections.value = []
       terminatedTruncated.value = false
       status.value = 'error'
@@ -142,6 +149,7 @@ export function useMcpConnections(): UseMcpConnectionsResult {
     revokingId.value = id
     lastOutcome.value = null
     refusal.value = null
+    const sentAt = sessionStamp()
 
     try {
       await repository.revoke(id)
@@ -150,7 +158,7 @@ export function useMcpConnections(): UseMcpConnectionsResult {
       if (caught instanceof McpConnectionNotFoundError) {
         lastOutcome.value = 'already-gone'
       } else {
-        refuse(caught)
+        refuse(caught, sentAt)
         lastOutcome.value = 'failed'
         revokingId.value = null
         // La liste affichée n'a pas bougé : rien à relire.

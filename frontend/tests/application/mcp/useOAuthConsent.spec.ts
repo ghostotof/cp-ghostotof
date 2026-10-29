@@ -347,4 +347,22 @@ describe('useOAuthConsent', () => {
 
     expect(navigate).toHaveBeenCalledWith(APPROVED_URL)
   })
+
+  // R14 (#748) : une réponse partie sous une session révolue ne refinit pas la session rétablie.
+  it('refus de session parti avant le retour : échec ordinaire, la session reste rétablie', async () => {
+    let reject!: (error: Error) => void
+    const describeRequest = vi.fn(() => new Promise<ConsentRequest>((_resolve, rejectDescribe) => (reject = rejectDescribe)))
+    const { consent } = mountComposable(vi.fn(async () => APPROVED_URL), describeRequest)
+
+    const pending = consent.load(PARAMS)
+    markSessionExpired()
+    await signInAgain()
+    expect(authState.sessionEnded).toBe(false)
+    reject(new SessionEndedError())
+    await pending
+
+    expect(authState.sessionEnded).toBe(false)
+    expect(consent.failure.value).toBe('unknown')
+    expect(consent.state.value).toBe('error')
+  })
 })

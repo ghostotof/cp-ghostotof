@@ -378,4 +378,26 @@ describe('useAssistant', () => {
     gate.resolve()
     await first
   })
+
+  // R14 (#748) : une réponse partie sous une session révolue ne refinit pas la session rétablie.
+  it('refus de session parti avant le retour : échec ordinaire, la session reste rétablie', async () => {
+    const gate = deferred()
+    const { assistant, auth } = setup(async () => {
+      await gate.promise
+      throw new AssistantError('unauthenticated')
+    })
+    assistant.draft.value = 'ma question'
+    const sending = assistant.send('fr')
+
+    markSessionExpired()
+    await auth.login('jane', 'password')
+    expect(auth.hasSessionEnded.value).toBe(false)
+    gate.resolve()
+    await sending
+
+    expect(auth.hasSessionEnded.value).toBe(false)
+    expect(auth.user.value?.username).toBe('jane')
+    expect(assistant.state.value).toBe('error')
+    expect(assistant.error.value?.reason).toBe('unknown')
+  })
 })

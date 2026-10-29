@@ -9,7 +9,7 @@ import SignInAgainLink from '../SignInAgainLink.vue'
 /**
  * Le bandeau « Votre session a pris fin » du backoffice (#650, S2), rendu une
  * seule fois par `AdminLayout` : un 401 d'une page d'administration ferme la
- * session (`onBackofficeSessionEnded`) mais **ne déplace pas la personne** — la
+ * session (`backofficeSessionEndedHandler`) mais **ne déplace pas la personne** — la
  * page reste montée, avec l'étude de cas ou la carte à moitié rédigée. Ce qui finit une session :
  * voir `infrastructure/http/sessionAwareFetch.ts` ; la règle de référence est
  * `.claude/rules/frontend-session.md`.
@@ -33,8 +33,9 @@ import SignInAgainLink from '../SignInAgainLink.vue'
  *   d'`AdminLayout`, qui contient la page. C'est le bloc contenant de `position: sticky` : l'alerte colle sur toute
  *   la hauteur de la page. Vides, les deux n'entrent pas dans le flux (rien de rendu, ou `visually-hidden`), donc
  *   aucun `gap` de plus.
- * - **Chaque refus réannonce** (S7) : l'alerte est insérée avec `:key="sessionEndedCount"`, que
- *   `markSessionExpired()` augmente à chaque refus ; **« Session rétablie » s'efface** si la session finit de
+ * - **Un nouveau refus réannonce** (S7) : l'alerte est insérée avec `:key="sessionEndedCount"`, que
+ *   `markSessionExpired()` augmente à chaque refus accepté — un refus parti sous la génération courante, pas
+ *   une lecture parallèle du chargement ni une réponse d'une session révolue (#748, R14) ; **« Session rétablie » s'efface** si la session finit de
  *   nouveau (CR6).
  * - **Le retour est annoncé** (#748, constat 14) : quand le bandeau disparaît, rien ne dit que « Enregistrer »
  *   refonctionne. Une région `role="status"` **présente dès le montage** (une région insérée avec son texte

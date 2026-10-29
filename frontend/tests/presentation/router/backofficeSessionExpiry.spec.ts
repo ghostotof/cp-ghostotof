@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { defineComponent } from 'vue'
 import { router } from '../../../src/presentation/router'
-import { onBackofficeSessionEnded } from '../../../src/presentation/router/backofficeSessionExpiry'
+import { backofficeSessionEndedHandler } from '../../../src/presentation/router/backofficeSessionExpiry'
 import { AUTH_REPOSITORY, authState, useAuth } from '../../../src/application/auth/useAuth'
 import type { AuthRepository } from '../../../src/domain/auth/repositories/AuthRepository'
 import type { AuthenticatedUser } from '../../../src/domain/auth/entities/AuthenticatedUser'
@@ -43,7 +43,7 @@ describe('backofficeSessionExpiry', () => {
     const replace = vi.spyOn(router, 'replace')
     const push = vi.spyOn(router, 'push')
 
-    onBackofficeSessionEnded()
+    backofficeSessionEndedHandler.ended(backofficeSessionEndedHandler.stampAtSend())
     await new Promise((resolve) => setTimeout(resolve, 0))
 
     expect(authState.user).toBeNull()
@@ -56,14 +56,31 @@ describe('backofficeSessionExpiry', () => {
     push.mockRestore()
   })
 
-  it('plusieurs 401 simultanés (listes chargées en parallèle) laissent un seul état de fin de session', async () => {
-    const handler = onBackofficeSessionEnded
+  it("plusieurs 401 partis sous la même génération (listes chargées en parallèle) n'annoncent qu'une fois", () => {
+    const { stampAtSend, ended } = backofficeSessionEndedHandler
+    const sent = stampAtSend()
+    const before = authCount()
 
-    handler()
-    handler()
-    handler()
+    expect(ended(sent)).toBe(true)
+    expect(ended(sent)).toBe(true)
+    expect(ended(sent)).toBe(true)
 
     expect(authState.sessionEnded).toBe(true)
+    expect(authCount()).toBe(before + 1)
     expect(router.currentRoute.value.fullPath).toBe('/fr/admin/users')
   })
+
+  it('un 401 parti avant le retour de la session ne la refinit pas : ended rend faux', async () => {
+    const sent = backofficeSessionEndedHandler.stampAtSend()
+    backofficeSessionEndedHandler.ended(sent)
+    await signIn(SUPER)
+    expect(authState.sessionEnded).toBe(false)
+
+    expect(backofficeSessionEndedHandler.ended(sent)).toBe(false)
+    expect(authState.sessionEnded).toBe(false)
+  })
 })
+
+function authCount(): number {
+  return authState.sessionEndedCount
+}

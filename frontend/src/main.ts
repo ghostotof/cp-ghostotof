@@ -66,7 +66,7 @@ import { HttpMcpConnectionsRepository } from './infrastructure/mcp/HttpMcpConnec
 import { BASE_ACCESS_REPOSITORY } from './application/baseAccess/useBaseAccess'
 import { HttpBaseAccessRepository } from './infrastructure/baseAccess/HttpBaseAccessRepository'
 import { setBackofficeSessionEndedHandler } from './infrastructure/admin/shared/BackofficeHttpClient'
-import { onBackofficeSessionEnded } from './presentation/router/backofficeSessionExpiry'
+import { backofficeSessionEndedHandler } from './presentation/router/backofficeSessionExpiry'
 import { getApiUrl } from './infrastructure/config/getApiUrl'
 
 const app = createApp(App)
@@ -109,10 +109,13 @@ app.provide(ACCOUNT_REPOSITORY, new HttpAccountRepository(apiUrl))
 app.use(i18n)
 app.use(router)
 
-// Un 401 du backoffice (JWT expiré, session antérieure à un changement de mot
-// de passe) ferme la session côté interface et l'annonce par un bandeau, sans
-// quitter la page (#650 R1c, S2) : le texte en cours de saisie n'est pas perdu.
-setBackofficeSessionEndedHandler(onBackofficeSessionEnded)
+// Une session finie au backoffice (un 401 : JWT expiré, session antérieure à un
+// changement de mot de passe ; ou un 403 à une écriture partie sans jeton CSRF)
+// ferme la session côté interface et l'annonce par un bandeau, sans quitter la
+// page (#650 R1c, S2) : le texte en cours de saisie n'est pas perdu. Le verdict
+// est jugé par génération de session (#748, R14) : une réponse d'une session
+// révolue ne la finit pas.
+setBackofficeSessionEndedHandler(backofficeSessionEndedHandler)
 
 app.mount('#app')
 

@@ -2,8 +2,22 @@ import { SessionEndedError } from '../../../domain/auth/errors/SessionEndedError
 import type { ApiProblemBody } from '../../http/problemJson'
 import { sessionAwareFetch, type SessionAwareResponse } from '../../http/sessionAwareFetch'
 
-/** Réaction à une session finie du backoffice (voir `infrastructure/http/sessionAwareFetch.ts`), posée une fois à la racine de composition. */
-export type BackofficeSessionEndedHandler = () => void
+/**
+ * Réaction à une session finie du backoffice (voir `infrastructure/http/sessionAwareFetch.ts`), posée une fois à la
+ * racine de composition. Elle juge **par génération de session** (#748, R14) : la couche infrastructure ne connaît
+ * pas la session, elle ne fait que porter le nombre de l'envoi à la réception.
+ */
+export interface BackofficeSessionEndedHandler {
+  /** La génération courante de la session, lue **avant** chaque envoi. */
+  stampAtSend(): number
+  /**
+   * Le verdict « session finie » d'une requête partie sous la génération `sentAt`. Vrai : la session est finie
+   * (elle vient de finir, ou l'était déjà), le client lève `SessionEndedError`. Faux : la session a été rétablie
+   * depuis l'envoi, la réponse est celle d'une session révolue — le client la rend au dépôt, qui la traduit en
+   * échec ordinaire.
+   */
+  ended(sentAt: number): boolean
+}
 
 let sessionEndedHandler: BackofficeSessionEndedHandler | null = null
 
@@ -32,29 +46,41 @@ export class BackofficeHttpClient {
   }
 
   async get(path: string): Promise<Response> {
-    return this.react(await sessionAwareFetch(`${this.apiBaseUrl}${path}`, { method: 'GET' }))
+    // La génération est lue avant l'envoi, jamais à la réception (voir `react`).
+    const sentAt = sessionEndedHandler?.stampAtSend()
+
+    return this.react(await sessionAwareFetch(`${this.apiBaseUrl}${path}`, { method: 'GET' }), sentAt)
   }
 
   async mutate(method: string, path: string, body?: unknown): Promise<Response> {
+    const sentAt = sessionEndedHandler?.stampAtSend()
+
     return this.react(
       await sessionAwareFetch(`${this.apiBaseUrl}${path}`, {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: body ? JSON.stringify(body) : undefined,
       }),
+      sentAt,
     )
   }
 
   /**
    * Une session finie (règle : `infrastructure/http/sessionAwareFetch.ts`) appelle la réaction commune,
-   * ici, une fois, puis **lève** `SessionEndedError` : aucun dépôt ne la traduit, elle traverse jusqu'aux
-   * composables, que `useAdminLoad` et `visibleMutationError` (`application/admin/shared/`) taisent, le
-   * bandeau de session finie étant alors la seule annonce. Un autre refus est rendu tel quel : le
+   * ici, une fois, avec la génération lue à l'envoi ; si elle confirme que la session est finie, **lève**
+   * `SessionEndedError` : aucun dépôt ne la traduit, elle traverse jusqu'aux composables, que `useAdminLoad` et
+   * `visibleMutationError` (`application/admin/shared/`) taisent, le bandeau de session finie étant alors la seule
+   * annonce. Si la réaction dit au contraire que la session a été rétablie depuis l'envoi (`ended` faux), la
+   * réponse est d'une session révolue : elle est rendue au dépôt comme un refus ordinaire, et ne refinit rien.
+   * Sans réaction enregistrée, `SessionEndedError` comme toujours. Un autre refus est rendu tel quel : le
    * dépôt lui donne le sens qu'il a pour sa ressource.
    */
-  private react(judged: SessionAwareResponse): Response {
+  private react(judged: SessionAwareResponse, sentAt: number | undefined): Response {
     if (judged.endedTheSession) {
-      sessionEndedHandler?.()
+      const handler = sessionEndedHandler
+      if (null !== handler && undefined !== sentAt && !handler.ended(sentAt)) {
+        return judged.response
+      }
 
       throw new SessionEndedError()
     }

@@ -8,7 +8,7 @@ import { MalformedConsentDecisionError } from '../../domain/mcp/errors/Malformed
 import { ReauthenticationRequiredError } from '../../domain/mcp/errors/ReauthenticationRequiredError'
 import { SessionEndedError } from '../../domain/auth/errors/SessionEndedError'
 import { isNavigableRedirect } from '../../domain/mcp/services/consentParams'
-import { markSessionExpired, useAuth } from '../auth/useAuth'
+import { markSessionExpired, sessionStamp, useAuth } from '../auth/useAuth'
 
 export const OAUTH_CONSENT_REPOSITORY: InjectionKey<OAuthConsentRepository> = Symbol('OAuthConsentRepository')
 
@@ -101,15 +101,19 @@ export function useOAuthConsent(): UseOAuthConsentResult {
   const failure = ref<OAuthConsentFailure | null>(null)
   let params: ConsentParams | null = null
 
-  /** Range un échec dans l'état qui lui revient ; `onUnknown` dit où mène un échec générique. */
-  const fail = (caught: unknown, onUnknown: 'ready' | 'error'): void => {
+  /**
+   * Range un échec dans l'état qui lui revient ; `onUnknown` dit où mène un échec générique. `sentAt` est la
+   * génération de session lue **avant l'envoi** (#748, R14) : un verdict « session finie » d'une requête partie
+   * avant que la session soit rétablie est un échec ordinaire (`markSessionExpired` rend `false`), pas une
+   * nouvelle fin de session.
+   */
+  const fail = (caught: unknown, onUnknown: 'ready' | 'error', sentAt: number): void => {
     if (caught instanceof InvalidConsentRequestError) {
       state.value = 'invalid'
       failure.value = null
       return
     }
-    if (caught instanceof SessionEndedError) {
-      markSessionExpired()
+    if (caught instanceof SessionEndedError && markSessionExpired(sentAt)) {
       state.value = 'error'
       failure.value = 'session-ended'
       return
@@ -154,11 +158,12 @@ export function useOAuthConsent(): UseOAuthConsentResult {
     }
 
     state.value = 'loading'
+    const sentAt = sessionStamp()
     try {
       request.value = await repository.describe(received)
       state.value = 'ready'
     } catch (caught) {
-      fail(caught, 'error')
+      fail(caught, 'error', sentAt)
     }
   }
 
@@ -176,12 +181,13 @@ export function useOAuthConsent(): UseOAuthConsentResult {
     // L'hôte annoncé à la personne, lu avant l'appel : c'est sur lui qu'elle a consenti.
     const announcedHost = request.value?.redirectHost ?? ''
 
+    const sentAt = sessionStamp()
     let url: string
     try {
       // Pour le compte que le résumé a nommé, pas pour celui du cookie à l'envoi (F5).
       url = await repository.decide(params, approved, shown.account.id)
     } catch (caught) {
-      fail(caught, 'ready')
+      fail(caught, 'ready', sentAt)
       return
     }
 
