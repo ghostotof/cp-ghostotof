@@ -596,6 +596,41 @@ describe('McpConnectionsPage', () => {
       expect(vi.getTimerCount()).toBe(1)
     })
 
+    it("« Réessayer » efface l'issue d'une révocation déjà annoncée", async () => {
+      // La révocation aboutit, la relecture qui la suit échoue : l'issue « révoquée » est annoncée,
+      // puis la personne relance la lecture.
+      let succeed: (list: McpConnectionList) => void = () => undefined
+      const list = vi
+        .fn()
+        .mockResolvedValueOnce(listOf([ACTIVE, NEVER_USED]))
+        .mockRejectedValueOnce(new McpConnectionsRequestFailedError())
+        .mockImplementationOnce(
+          () =>
+            new Promise<McpConnectionList>((resolve) => {
+              succeed = resolve
+            }),
+        )
+      const { wrapper } = await mountPage({ list })
+
+      await rowOf(wrapper, 'Claude Code').get('button').trigger('click')
+      await flushPromises()
+      await letTheAnnouncementThrough()
+      expect(wrapper.get('[role="status"]').text()).toContain('révoquée')
+
+      await wrapper.get('[role="alert"] button').trigger('click')
+      await flushPromises()
+
+      // Pendant la relecture : la région ne dit plus « révoquée » (elle dit le chargement).
+      expect(wrapper.get('[role="status"]').text()).not.toContain('révoquée')
+
+      succeed(listOf([ACTIVE]))
+      await flushPromises()
+      await letTheAnnouncementThrough()
+
+      // Après : l'issue d'avant n'est pas revenue, une nouvelle lecture n'est pas une révocation.
+      expect(wrapper.get('[role="status"]').text()).toBe('')
+    })
+
     it('échec de la révocation : le focus reste sur le bouton « Révoquer »', async () => {
       // Un navigateur retire le focus d'un bouton qui devient `disabled` : on le rejoue.
       const revoke = vi.fn(async () => {

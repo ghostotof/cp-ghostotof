@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, useTemplateRef } from 'vue'
+import { computed, nextTick, onMounted, useTemplateRef } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useMcpConnections, type McpRevocationOutcome } from '../../application/mcp/useMcpConnections'
@@ -7,6 +7,7 @@ import type { McpConnectionSummary } from '../../domain/mcp/entities/McpConnecti
 import type { Locale } from '../../domain/portfolio/entities/Locale'
 import { formatInstant } from '../format/instant'
 import { SESSION_ENDED_QUERY, SESSION_ENDED_VALUE } from '../router/sessionEnded'
+import { useFocusThenAnnounce } from '../ui/useFocusThenAnnounce'
 
 /**
  * « Mes connexions MCP » (#650, spec 0007 tâche 11) : les assistants que la
@@ -37,18 +38,13 @@ import { SESSION_ENDED_QUERY, SESSION_ENDED_VALUE } from '../router/sessionEnded
  * `role="status"` de la page, un échec dans une alerte.
  *
  * Focus et annonces (#748) : quand un geste déplace le focus ET annonce une
- * issue, le focus part d'abord et l'annonce est écrite ensuite
- * (`ANNOUNCE_AFTER_FOCUS_MS`) — une annonce écrite au moment du déplacement peut
- * être coupée par la lecture de l'élément qui prend le focus. Écarté :
- * `aria-describedby` du titre vers le message, dont la lecture au focus dépend
- * des réglages du lecteur d'écran et qui resterait collé au titre à chaque
- * focus suivant. Le focus ne part au titre que si le bouton cliqué a disparu
- * (révoquée, déjà terminée) ou si la session est finie ; sur un échec il revient
- * au bouton, qui existe encore et que la personne peut réessayer.
+ * issue, le focus part d'abord et l'annonce est écrite ensuite — le patron et ses
+ * raisons sont dans `useFocusThenAnnounce`. Le focus ne part au titre que si le
+ * bouton cliqué a disparu (révoquée, déjà terminée) ou si la session est finie ;
+ * sur un échec il revient au bouton, qui existe encore et que la personne peut
+ * réessayer. Une lecture relancée (« Réessayer ») efface l'issue déjà annoncée :
+ * elle ne dit rien d'une révocation.
  */
-
-/** Délai entre le déplacement du focus sur le titre et l'écriture de l'issue dans la région d'état. */
-const ANNOUNCE_AFTER_FOCUS_MS = 250
 
 const { t, locale: i18nLocale } = useI18n()
 const { status, connections, terminatedTruncated, revokingId, lastOutcome, sessionExpired, load, revoke } = useMcpConnections()
@@ -128,18 +124,7 @@ const showTable = computed(() => 'error' !== status.value && connections.value.l
 const showEmpty = computed(() => 'ready' === status.value && 0 === connections.value.length)
 
 /** L'issue que la région d'état dit : copie différée de `lastOutcome`, vide tant que le focus n'a pas bougé. */
-const announcedOutcome = ref<McpRevocationOutcome | null>(null)
-let announceTimer: ReturnType<typeof setTimeout> | null = null
-/** Posé au démontage : une révocation qui aboutit après n'écrit plus rien et ne programme rien. */
-let unmounted = false
-
-function cancelAnnouncement(): void {
-  if (null !== announceTimer) {
-    clearTimeout(announceTimer)
-    announceTimer = null
-  }
-  announcedOutcome.value = null
-}
+const { announced: announcedOutcome, focusThenAnnounce, cancel: cancelAnnouncement, isUnmounted } = useFocusThenAnnounce<McpRevocationOutcome>()
 
 /** Le seul `role="status"` de la page : vide hors chargement, révocation et issue à annoncer. */
 const statusMessage = computed<string>(() => {
@@ -174,7 +159,7 @@ async function onRevoke(connection: McpConnectionSummary, event: MouseEvent): Pr
   cancelAnnouncement()
 
   await revoke(connection.id)
-  if (unmounted) {
+  if (isUnmounted()) {
     return
   }
   await nextTick()
@@ -184,11 +169,7 @@ async function onRevoke(connection: McpConnectionSummary, event: MouseEvent): Pr
     // Le bouton cliqué vient de disparaître (la connexion n'est plus active) : le
     // focus retomberait sur <body>. On le pose sur le titre, d'où la lecture reprend,
     // puis l'issue est annoncée une fois le focus posé.
-    heading.value?.focus()
-    announceTimer = setTimeout(() => {
-      announceTimer = null
-      announcedOutcome.value = outcome
-    }, ANNOUNCE_AFTER_FOCUS_MS)
+    focusThenAnnounce(heading.value, outcome)
   } else if (sessionExpired.value) {
     // La session est finie : l'alerte et son lien de reconnexion sont lus depuis le titre.
     heading.value?.focus()
@@ -205,8 +186,10 @@ async function onRevoke(connection: McpConnectionSummary, event: MouseEvent): Pr
  * texte de l'alerte, qu'aucune annonce ne signalerait. Session finie : le titre.
  */
 async function onRetry(): Promise<void> {
+  // Une lecture relancée ne dit rien d'une révocation : l'issue déjà annoncée s'efface (CR10).
+  cancelAnnouncement()
   await load()
-  if (unmounted) {
+  if (isUnmounted()) {
     return
   }
   await nextTick()
@@ -217,11 +200,6 @@ async function onRetry(): Promise<void> {
     heading.value?.focus()
   }
 }
-
-onBeforeUnmount(() => {
-  unmounted = true
-  cancelAnnouncement()
-})
 
 onMounted(() => {
   void load()
