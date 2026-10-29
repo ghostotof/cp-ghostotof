@@ -21,28 +21,14 @@ Bootstrap 5.3.8 (CSS seul, thème sombre `data-bs-theme="dark"`), vue-i18n, `unp
 une raison). Règles : `.claude/rules/frontend.md`, `frontend-a11y.md`, `frontend-backoffice.md`,
 `mcp-oauth-revocation-personne.md`, `security-authentication.md`, `security-authentication-sessions.md`.
 
-## Questions ouvertes (à trancher par l'auteur avant la tâche 10)
+## Décisions de l'auteur (2026-10-29), sur les questions du premier plan
 
-1. **Constat 6, l'en-tête à 320 px** (impact visuel). Le bouton « Accès instantané » est **déjà** une icône seule sous
-   576 px (`d-sm-none`) : la piste du ticket « icône seule sous 360 px » ne gagne rien. Ce qui déborde : la marque
-   (`text-nowrap`), le sélecteur FR/EN, l'icône d'accès, « Connexion » (ou « Mon compte »), le bouton du menu ; 30 px
-   de trop au palier de confiance, 88 px en anonyme EN. Trois options :
-   - **(a) recommandée** — la marque se tronque (`text-truncate` sur son libellé, `min-width: 0` sur le lien, les
-     actions `flex-shrink: 0`) : rien ne change au-dessus de ~400 px, et sous 320 px la marque montre ce qui tient,
-     jusqu'au seul logo. Le nom accessible du lien reste entier (la troncature n'est que visuelle). Inconvénient :
-     une marque coupée par des points de suspension.
-   - (b) le libellé de la marque masqué visuellement sous 360 px (`@media`, le logo reste le lien d'accueil, nom
-     accessible inchangé) : net, mais tout ou rien, et une borne de plus à entretenir.
-   - (c) `flex-wrap` sur la ligne de l'en-tête : rien n'est caché, mais l'en-tête collant gagne une ligne (~50 px) à
-     320 px, ce qui empire le masquage du focus (2.4.11) et le reflow au zoom — le défaut que le bandeau collant
-     (tâche 8) aggrave déjà.
-   La tâche 10 implémente (a) ; si l'auteur choisit (b) ou (c), son étape 3 donne la variante.
-2. **Étendre la règle du 403 au consentement OAuth et à l'assistant ?** `HttpOAuthConsentRepository` (même mapping
-   403 → `SessionExpiredError`, même commentaire) et `useAssistant` (401/403 → `markSessionExpired()`) ont le défaut
-   du point 4 de #732. L'arbitrage a nommé `BackofficeHttpClient` et `HttpMcpConnectionsRepository` seulement.
-   **Recommandation : les laisser hors de #748** et les inscrire dans #732 (point 4 reformulé, tâche 12) — le
-   consentement a son propre parcours de reconnexion (`reauth=1`), à relire avec la règle `mcp-oauth.md`. Le plan
-   suit cette recommandation ; s'il faut les inclure, une tâche 4b reprendrait la tâche 4 sur ces deux fichiers.
+1. **Constat 6, l'en-tête à 320 px : option (a)**, la marque tronquée (`text-truncate` sur son libellé, `min-width: 0`
+   sur le lien, les actions `flex-shrink: 0`). Tâche 10.
+2. **Le 403 est corrigé partout dans #748**, contre la recommandation du premier plan : la règle `endsTheSession`
+   s'étend à la page de consentement OAuth (`HttpOAuthConsentRepository`, tâche 4b) et à l'assistant
+   (`HttpAssistantRepository`/`useAssistant`, tâche 4c). Le point 4 de #732 est entièrement traité ici.
+3. **Constat 2 : `text-danger-emphasis` sur les 67 occurrences**, validé. Tâche 1.
 
 ## Ce qui a été vérifié dans le code (base du constat 15)
 
@@ -116,6 +102,8 @@ une raison). Règles : `.claude/rules/frontend.md`, `frontend-a11y.md`, `fronten
 | `src/infrastructure/admin/shared/BackofficeHttpClient.ts` | réaction au 403 sans jeton, `endedTheSession()` | 3 |
 | `src/infrastructure/admin/**/Http*Repository.ts` (15 dépôts) | raison `session-ended` | 3 |
 | `src/infrastructure/mcp/HttpMcpConnectionsRepository.ts` | même règle, `SessionExpiredError` | 4 |
+| `src/infrastructure/mcp/HttpOAuthConsentRepository.ts`, `src/domain/mcp/errors/ConsentForbiddenError.ts` (nouveau), `src/application/mcp/useOAuthConsent.ts`, `src/presentation/pages/OAuthConsentPage.vue` | même règle ; un refus réel est l'échec `forbidden` | 4b |
+| `src/infrastructure/assistant/HttpAssistantRepository.ts`, `src/application/assistant/useAssistant.ts`, `src/presentation/pages/AssistantPage.vue` | même règle ; `forbidden` ne finit plus la session | 4c |
 | `src/presentation/pages/McpConnectionsPage.vue` | boutons, focus, annonces, tableau | 4, 5, 6 |
 | `src/presentation/layout/AccountMenu.vue` | Échap, sortie du focus, entrée courante | 7 |
 | `src/presentation/layout/usePublishedHeight.ts` (nouveau) | publier une hauteur en propriété CSS | 8 |
@@ -301,6 +289,106 @@ localisable, pas un contrat. Une lecture n'est jamais concernée : le CSRF ne la
 
 ---
 
+### Task 4b : Page de consentement OAuth — 403 et session finie (point 4 de #732, constat 15)
+
+**Files :**
+- Create : `frontend/src/domain/mcp/errors/ConsentForbiddenError.ts`
+- Modify : `frontend/src/infrastructure/mcp/HttpOAuthConsentRepository.ts:68-160` (`describe`, `decide`, `send`, `httpError`), `frontend/src/application/mcp/useOAuthConsent.ts` (`OAuthConsentFailure`, `fail()`), `frontend/src/presentation/pages/OAuthConsentPage.vue:72-132` (`errorMessage`, lien), `frontend/src/infrastructure/i18n/locales/{fr,en}.json` (`oauthConsent.errors`)
+- Test : `frontend/tests/infrastructure/mcp/HttpOAuthConsentRepository.spec.ts`, `frontend/tests/application/mcp/useOAuthConsent.spec.ts`, `frontend/tests/presentation/pages/OAuthConsentPage.spec.ts`
+- Modify : `.claude/rules/mcp-oauth.md` (puce « The consent page », phrase « 401 **and 403** (a CSRF refusal included) read as an expired session … accepted »)
+
+**Interfaces :**
+- Consumes : `endsTheSession(status, sentWithoutCsrfToken)` (tâche 3).
+- Produces : `class ConsentForbiddenError extends Error` (sans paramètre, comme `ConsentAccountChangedError`) ; `OAuthConsentFailure` gagne `'forbidden'`.
+
+**Ce que le code fait aujourd'hui (vérifié) :** les deux appels, `GET` (résumé) et `POST` (décision), lisent tout 403
+comme `SessionExpiredError` → `markSessionExpired()` (l'en-tête passe anonyme) et l'échec `session-expired`, avec un
+lien « Se reconnecter » vers `login?redirect=<fullPath>` **sans** `reauth=1`. Côté serveur
+(`ConsentControllerTest`, règle `mcp-oauth.md`) : le `GET` n'est jamais soumis au CSRF, son 403 est le refus
+d'`access_control` (compte sans `ROLE_TRUSTED`, palier de base) ; le `POST` prend le 403 CSRF avant le pare-feu, ou le
+refus d'`access_control`. Pour une personne encore connectée, la route `login` la renvoie à l'accueil sauf avec
+`reauth=1` (`router/index.ts`, `beforeEnter` : `authState.user && !isReauthentication(to)`) : le lien « Se
+reconnecter » actuel ne s'ouvre donc **pas** si la session vaut encore, ce que le 403 laisse supposer.
+
+**Choix :** la règle commune — un 401, ou un 403 au `POST` parti sans jeton, reste `SessionExpiredError` (le
+`REAUTHENTICATION_REQUIRED` typé garde sa priorité sur le 401) ; tout autre 403 (le `GET`, ou le `POST` qui portait
+son jeton) est `ConsentForbiddenError`, lu comme l'échec **terminal** `forbidden` (la demande n'est plus montrée),
+**sans** marquer la session expirée (elle vaut pour le reste du site). La page dit que ce compte ne peut pas
+autoriser cette connexion et propose « Changer de compte » — le lien qui existe déjà (`switchAccountTarget` :
+`login?redirect=<fullPath>&reauth=1`), seul chemin qui ouvre la connexion à une personne connectée. Il répare aussi le
+cas rare d'un `XSRF-TOKEN` à la signature périmée (rotation d'`APP_SECRET`) : la connexion repose des cookies neufs.
+**Écarté : ramener `forbidden` à `ready` pour réessayer** — renvoyer la même décision au même refus. **Écarté : un
+lien « Se reconnecter » sans `reauth=1`** — la route le renvoie à l'accueil, la personne étant connectée. Le texte de
+`sessionExpired` perd sa seconde moitié (« ou ne permet pas d'autoriser cette connexion »), qui est désormais
+`forbidden`.
+
+- [ ] **Step 1 : tests, rouges**
+- Dépôt (cookie `XSRF-TOKEN` posé ou effacé par test, comme à la tâche 3 ; les tests existants du 403 changent exprès) :
+  - `it('describe : un 403 est un refus, pas une session finie')` → `ConsentForbiddenError` ;
+  - `it('decide : un 403 avec jeton CSRF est un refus')` → `ConsentForbiddenError` ;
+  - `it('decide : un 403 parti sans jeton CSRF est une session finie')` → `SessionExpiredError` ;
+  - les 401 (non typé → `SessionExpiredError`, typé `reauthentication-required` → `ReauthenticationRequiredError`) restent verts.
+- Composable : `it("forbidden : terminal, la demande n'est plus montrée, la session n'est pas marquée expirée")` — `describe` rejette `ConsentForbiddenError` → `state === 'error'`, `failure === 'forbidden'`, `request === null`, `authState` inchangé ; même chose pour `decide` (pas de retour à `ready`).
+- Page :
+  - `it('refus du serveur : le message dit que ce compte ne peut pas autoriser, et propose de changer de compte')` — une alerte au texte `oauthConsent.errors.forbidden` (FR et EN), un lien dont `href` porte `redirect=<le chemin complet de la demande>` et `reauth=1`, aucun bouton Autoriser/Refuser ;
+  - `it('refus du serveur : aucune violation d\'accessibilité détectable')` (minuteries réelles rendues avant axe, comme le spec le fait déjà).
+
+- [ ] **Step 2 : rouges** — `docker compose exec frontend npm test -- tests/infrastructure/mcp/HttpOAuthConsentRepository.spec.ts tests/application/mcp/useOAuthConsent.spec.ts tests/presentation/pages/OAuthConsentPage.spec.ts`. Expected : `SessionExpiredError` reçu au lieu de `ConsentForbiddenError`, `failure` vaut `session-expired`, clé i18n absente.
+
+- [ ] **Step 3 : implémenter** — `send(url, init, unprocessable, sentWithoutCsrfToken)` ; `describe` passe `false`, `decide` `!csrfToken` ; dans `httpError`, le `case 401` garde la lecture du type puis `SessionExpiredError`, le `case 403` rend `endsTheSession(403, sentWithoutCsrfToken) ? new SessionExpiredError() : new ConsentForbiddenError()` (commentaire « 403 couvre aussi le refus CSRF » remplacé par la règle). `fail()` : `ConsentForbiddenError` → `state = 'error'`, `failure = 'forbidden'`. Page : `case 'forbidden'` dans `errorMessage` ; le lien « Changer de compte » (`switchAccountTarget`, son libellé existant) rendu dans l'alerte quand `'forbidden' === failure`. i18n : `oauthConsent.errors.forbidden` FR « Ce compte ne peut pas autoriser cette connexion : il n'a pas, ou plus, l'accès de confiance. Changez de compte pour décider. », EN « This account cannot authorise this connection: it does not, or no longer, have trusted access. Switch account to decide. » ; `sessionExpired` FR « Votre session a expiré. », EN « Your session has expired. ».
+
+- [ ] **Step 4 : règle** — `mcp-oauth.md`, puce « The consent page » : remplacer « 401 **and 403** (a CSRF refusal included) read as an expired session … accepted, a re-login gives fresh cookies » par la règle (`endsTheSession`, renvoi à `frontend-backoffice.md` pour les faits), l'échec terminal `forbidden`, la session non marquée, le lien `reauth=1` et pourquoi (la route `login` renvoie une personne connectée à l'accueil sans lui). Limite acceptée, écrite : après un `forbidden`, la page de connexion ouverte par `reauth=1` affiche l'annonce `auth.reauthNotice` (« autoriser une connexion MCP demande de vous être connecté il y a moins de dix minutes ») — déjà le cas de « Changer de compte », exacte sur le fond (la personne revient à la demande), imprécise sur la raison.
+
+- [ ] **Step 5 : verts** — même commande, puis les trois `make front-*`.
+
+- [ ] **Step 6 : commit** — `fix(frontend): le consentement OAuth distingue un refus d'une session finie (#748, #732)`.
+
+---
+
+### Task 4c : Assistant — 403 et session finie (point 4 de #732, constat 15)
+
+**Files :**
+- Modify : `frontend/src/infrastructure/assistant/HttpAssistantRepository.ts:31-160` (`answer`, `httpError`, `reasonFor`), `frontend/src/domain/assistant/errors/AssistantError.ts` (docblock des raisons), `frontend/src/application/assistant/useAssistant.ts:127-129`, `frontend/src/presentation/pages/AssistantPage.vue:18` (`needsLogin`), `frontend/src/infrastructure/i18n/locales/{fr,en}.json` (`assistant.errors.forbidden`)
+- Test : `frontend/tests/infrastructure/assistant/HttpAssistantRepository.spec.ts`, `frontend/tests/application/assistant/useAssistant.spec.ts`, `frontend/tests/presentation/pages/AssistantPage.spec.ts`
+- Modify : `.claude/rules/frontend.md` (paragraphe de l'assistant : « a 401/403 calls `markSessionExpired()` »)
+
+**Interfaces :**
+- Consumes : `endsTheSession(status, sentWithoutCsrfToken)` (tâche 3).
+- `AssistantErrorReason` inchangé : `unauthenticated` devient « session finie » (401, ou 403 sans jeton), `forbidden` « refus réel » (403 avec jeton).
+
+**Ce que le code fait aujourd'hui (vérifié) :** un seul appel, `POST /api/assistant/answers` (soumis au CSRF ; la
+règle `ai.md` le dit : un `POST` anonyme y prend 403, pas 401). Le dépôt lit 401 → `unauthenticated`, 403 →
+`forbidden` ; `useAssistant` appelle `markSessionExpired()` sur les deux ; la page affiche pour les deux un lien
+« Se reconnecter » vers `login?redirect=/<locale>/assistant`, sans `reauth=1`. Conséquence : une déconnexion dans un
+autre onglet (403 CSRF sans cookie) se lit déjà comme une session finie, mais au prix d'un message (`forbidden`,
+« Votre session ne permet plus d'utiliser l'assistant ») qui suppose un compte rétrogradé ; et un vrai refus (compte
+qui a perdu `ROLE_TRUSTED`, ou `XSRF-TOKEN` à la signature périmée) passe l'en-tête anonyme alors que la session vaut.
+
+**Choix :** le dépôt applique la règle commune — `endsTheSession(status, !csrfToken)` → `unauthenticated` ; un 403
+qui portait son jeton → `forbidden`. `useAssistant` ne marque la session expirée que sur `unauthenticated` ; la page
+ne propose « Se reconnecter » que pour lui (il s'ouvre : la session est finie, la route `login` accueille un
+anonyme). `forbidden` dit le refus sans lien. **Écarté : relire `/api/me` (`checkAuth`) sur `forbidden`** pour
+réaligner l'en-tête d'un compte rétrogradé — couple le composable de l'assistant au dépôt d'authentification pour un
+cas rare que le prochain chargement complet corrige. **Écarté : un lien `reauth=1`** — l'annonce de la page de
+connexion parle d'autoriser une connexion MCP, hors de propos ici.
+
+- [ ] **Step 1 : tests, rouges** (les tests existants changent exprès : la table `[403, 'forbidden']` du dépôt, l'`it.each(['unauthenticated', 'forbidden'])` de `useAssistant.spec.ts:180`, ceux d'`AssistantPage.spec.ts:201` et `:293`)
+- Dépôt : `it('un 403 parti sans jeton CSRF est une session finie (unauthenticated)')` (aucun cookie) ; `it('un 403 avec jeton CSRF est un refus (forbidden)')` (cookie posé) ; 401 reste `unauthenticated`.
+- Composable : `it('unauthenticated : la session est marquée expirée')` ; `it("forbidden : la session n'est pas marquée expirée")` — `authState.user` inchangé.
+- Page : `it('session finie : message et lien « Se reconnecter »')` ; `it("refus : le message dit le refus, sans lien de reconnexion")` — texte `assistant.errors.forbidden`, aucun lien vers `login`, en FR et en EN ; axe vert dans les deux cas.
+
+- [ ] **Step 2 : rouges** — `docker compose exec frontend npm test -- tests/infrastructure/assistant tests/application/assistant tests/presentation/pages/AssistantPage.spec.ts`.
+
+- [ ] **Step 3 : implémenter** — `answer()` garde `csrfToken` et le passe à `httpError(response, !csrfToken)` ; `reasonFor(status, sentWithoutCsrfToken)` commence par `endsTheSession(...)` → `unauthenticated`, puis `403` → `forbidden` ; docblock d'`AssistantError` mis à jour ; `useAssistant` : `if ('unauthenticated' === failure.reason) markSessionExpired()` ; `needsLogin` sur `unauthenticated` seul. i18n `assistant.errors.forbidden` FR « Le serveur refuse l'assistant à ce compte : son accès de confiance a peut-être été retiré. », EN « The server refuses the assistant to this account: its trusted access may have been withdrawn. ».
+
+- [ ] **Step 4 : règle** — `frontend.md`, paragraphe de l'assistant : « a 401, or a 403 sent without a CSRF token, calls `markSessionExpired()` ; a 403 that carried its token is a refusal (`forbidden`), the session stays » ; limite acceptée : l'en-tête d'un compte rétrogradé reste au palier de confiance jusqu'au prochain chargement (rejet de la relecture de `/api/me`, une ligne). `ai.md` ne décrit pas le frontend : rien à y écrire.
+
+- [ ] **Step 5 : verts** — même commande, puis les trois `make front-*`.
+
+- [ ] **Step 6 : commit** — `fix(frontend): l'assistant distingue un refus d'une session finie (#748, #732)`.
+
+---
+
 ### Task 5 : « Mes connexions MCP » — focus et annonces (constats 3, 4, 8, 9, 11)
 
 **Files :**
@@ -481,19 +569,24 @@ une connexion, et un nouvel onglet y serait incompréhensible).
 
 ---
 
-### Task 10 : L'en-tête à 320 px (constat 6) — après la réponse à la question ouverte 1
+### Task 10 : L'en-tête à 320 px (constat 6)
 
 **Files :**
 - Modify : `frontend/src/presentation/layout/AppHeader.vue` (lien de marque, groupe de droite, `<style scoped>`)
 - Test : `frontend/tests/presentation/layout/AppHeader.spec.ts`
 
-- [ ] **Step 1 : tests, rouges** (option (a))
+**Choix (décision de l'auteur) :** la marque se tronque. Le bouton « Accès instantané » est déjà une icône seule sous
+576 px, la piste du ticket « icône seule sous 360 px » ne gagne rien. Écartées : le libellé de marque masqué sous
+360 px (tout ou rien, une borne de plus) ; `flex-wrap` de la ligne (l'en-tête collant gagne ~50 px à 320 px, ce qui
+empire 2.4.11 avec le bandeau collant).
+
+- [ ] **Step 1 : tests, rouges**
 - `it('la marque cède la place aux actions : son libellé se tronque, les actions ne rétrécissent pas')` — le libellé de marque est un `<span class="text-truncate">`, le lien porte la classe `brand-link` (`min-width: 0`), le groupe de droite `flex-shrink-0`.
 - `it('le nom accessible du lien d\'accueil reste la marque entière')` — `text()` du lien = `brandName`.
 
 - [ ] **Step 2 : rouges** — `docker compose exec frontend npm test -- tests/presentation/layout/AppHeader.spec.ts`.
 
-- [ ] **Step 3 : implémenter (a)** — `brand-link` (`min-width: 0`, scopé), libellé en `<span class="text-truncate">`, `flex-shrink-0` sur le groupe de droite ; commentaire : mesures du ticket (331 et 389 px pour 301). Variante (b) si choisie : `<span class="brand-label">` masqué visuellement par `@media (max-width: 359.98px)` en CSS scopé (les règles de `.visually-hidden`), test « sous 360 px, le libellé porte la classe qui le masque ». Variante (c) : `flex-wrap row-gap-2` sur la ligne, test de classe ; noter dans le commentaire la hauteur gagnée par l'en-tête collant.
+- [ ] **Step 3 : implémenter** — `brand-link` (`min-width: 0`, scopé), libellé en `<span class="text-truncate">`, `flex-shrink-0` sur le groupe de droite ; commentaire : mesures du ticket (331 et 389 px pour 301), le nom accessible entier.
 
 - [ ] **Step 4 : verts** — puis les trois `make front-*`.
 
@@ -510,12 +603,13 @@ Pile de dev locale, FR et EN, axe-core injecté dans la page, noté dans la PR (
 - [ ] 320 px : page MCP sans défilement horizontal (palier de confiance) ; en-tête aux trois paliers, FR et EN, bouton du menu entier.
 - [ ] Bandeau collant après « Enregistrer » en bas d'un long formulaire ; menu mobile ouvert : le bandeau reste sous l'en-tête ; un champ focalisé au clavier n'est pas masqué (2.4.11) ; zoom 200 %.
 - [ ] Page MCP : plus de barre verticale en desktop ; contour de focus du dernier « Révoquer » entier ; « Réessayer » rend le focus ; révocation : focus au titre puis annonce (inspecteur d'accessibilité, sans lecteur d'écran réel — le noter non vérifié).
+- [ ] Consentement OAuth et assistant : déconnexion dans un autre onglet puis décision / question → session finie (lien de reconnexion qui s'ouvre) ; le refus `forbidden` (compte de confiance rétrogradé pendant que la page est ouverte) → message de refus, en-tête inchangé, « Changer de compte » ouvre la connexion (consentement).
 - [ ] Menu du compte : Échap depuis la page ne déplace pas le focus ; Tab après la dernière entrée le ferme (Chrome, Firefox) ; entrée courante visible.
 - [ ] Tout écart → retour à la tâche concernée (nouveau commit), puis ce contrôle refait.
 
 ### Task 12 : Clôture — **fil principal**
 
 - [ ] `make front-test`, `make front-lint`, `make front-build` verts sur la tête ; `tools/check-claude-rules.sh` vert (les `paths:` ajoutés correspondent à des fichiers suivis, aucune règle au-delà de 50 000 octets).
-- [ ] #732 : réécrire le point 4 — traité par #748 pour `BackofficeHttpClient` et « Mes connexions MCP » (règle `endsTheSession`) ; restent, selon la réponse à la question ouverte 2, `HttpOAuthConsentRepository` (403 → `SessionExpiredError`) et `useAssistant` (401/403 → `markSessionExpired()`). Par `gh api -X PATCH repos/{owner}/{repo}/issues/732` (pas `gh issue edit`, cassé en gh 2.46 sur ce dépôt).
+- [ ] #732 : le point 4 est **entièrement traité par #748** (règle `endsTheSession` dans le backoffice, « Mes connexions MCP », le consentement OAuth et l'assistant ; tâches 3, 4, 4b, 4c) — le marquer comme tel dans le corps (barré, renvoi à #748 et à son commit de fusion), rien n'y reste. Par `gh api -X PATCH repos/{owner}/{repo}/issues/732` (pas `gh issue edit`, cassé en gh 2.46 sur ce dépôt).
 - [ ] `tasks/todo.md` : cocher « Tâche 11 » (critère de #748) dans le commit de clôture.
 - [ ] Après la fusion dans `feature/379-mcp-paliers` : fermer #748 à la main (`Closes #748` ne ferme rien vers une base qui n'est pas `main`).
