@@ -1,4 +1,4 @@
-import { computed, inject, reactive, readonly, watch, type ComputedRef, type InjectionKey } from 'vue'
+import { computed, inject, onScopeDispose, reactive, readonly, watch, type ComputedRef, type InjectionKey } from 'vue'
 import type { AuthRepository } from '../../domain/auth/repositories/AuthRepository'
 import type { AuthenticatedUser } from '../../domain/auth/entities/AuthenticatedUser'
 import { ANONYMOUS_SESSION, BASE_ACCESS_SESSION, type AccessTier, type AuthSession } from '../../domain/auth/entities/AuthSession'
@@ -46,6 +46,13 @@ let hasCheckedOnce = false
 let endedSessionRecheck: Promise<void> | null = null
 
 /**
+ * Les abonnés au retour de la session (`useAuth().onSessionRestored`), de tous les scopes vivants. Un `Set` de
+ * module comme l'état : le retour est un événement de la session, pas d'un composant. Chaque abonné se retire à
+ * la fin de son scope, donc une page démontée n'est plus appelée (#748, R13).
+ */
+const sessionRestoredCallbacks = new Set<() => void>()
+
+/**
  * Échéance du jeton D6, mémorisée pour survivre à un rechargement de page :
  * après un F5, checkAuth() ne voit qu'un 403 sur /api/me (palier de base),
  * sans savoir jusqu'à quand. Convenance locale, jamais une source de vérité :
@@ -60,6 +67,7 @@ const MAX_TIMEOUT_MS = 2_147_483_647
 let baseAccessExpiryTimer: ReturnType<typeof setTimeout> | null = null
 
 function applySession(session: AuthSession): void {
+  const wasEnded = state.sessionEnded
   state.tier = session.tier
   state.user = session.user
   // Un compte qui revient (connexion, relecture de /api/me) referme l'annonce ;
@@ -71,6 +79,13 @@ function applySession(session: AuthSession): void {
   // Tout changement de session rend la minuterie précédente caduque : un
   // login remplace le cookie D6 par celui du compte, un logout l'efface.
   clearBaseAccessExpiry()
+  // Le retour : la descente de `sessionEnded`, une fois, après que l'état est posé. Les abonnés lisent donc
+  // la session revenue ; la copie du `Set` protège l'itération d'un abonné qui se retirerait en route.
+  if (wasEnded && !state.sessionEnded) {
+    for (const callback of [...sessionRestoredCallbacks]) {
+      callback()
+    }
+  }
 }
 
 function clearBaseAccessExpiry(): void {
@@ -186,6 +201,19 @@ export function markSessionExpired(): void {
   state.sessionEndedCount += 1
 }
 
+/**
+ * Abonne `callback` au **retour** de la session : voir `UseAuthResult.onSessionRestored`, dont c'est la même
+ * fonction. Exportée à part, comme `authState` et `markSessionExpired`, pour les composables qui n'ont pas
+ * besoin du dépôt d'authentification (`useAdminLoad` : treize composables d'administration, dont aucun ne
+ * fournit `AUTH_REPOSITORY` dans ses tests) — `useAuth()` le leur demanderait pour rien.
+ */
+export function onSessionRestored(callback: () => void): void {
+  // Une fonction propre à cet abonnement : le même `callback` pris par deux scopes ne se retire pas de l'un pour l'autre.
+  const subscription = (): void => callback()
+  sessionRestoredCallbacks.add(subscription)
+  onScopeDispose(() => sessionRestoredCallbacks.delete(subscription))
+}
+
 export interface UseAuthResult {
   user: ComputedRef<AuthenticatedUser | null>
   /** Palier courant (ADR 0003 D1) — la source de vérité pour l'en-tête. */
@@ -218,6 +246,15 @@ export interface UseAuthResult {
    * prochain retour. Branchée une fois sur le `focus` de la fenêtre par `useSessionRecheckOnFocus` (AppLayout).
    */
   recheckEndedSession: () => Promise<void>
+  /**
+   * Abonne `callback` au **retour** de la session : il est appelé une fois, de façon synchrone, à chaque descente
+   * de `sessionEnded` (vrai → faux) — un compte est revenu, par une connexion ou par la relecture au retour sur
+   * l'onglet. Jamais à la fin de la session, ni quand rien n'était fini. À appeler dans un scope (le `setup` d'un
+   * composant, un `effectScope`) : l'abonnement est retiré à `onScopeDispose`. C'est **le** signal de retour :
+   * une page qui dépend du retour (relire ce qu'une session finie a interrompu) s'y abonne, elle ne surveille
+   * plus `authState.sessionEnded` elle-même.
+   */
+  onSessionRestored: (callback: () => void) => void
   checkAuth: () => Promise<void>
 }
 
@@ -305,6 +342,7 @@ export function useAuth(): UseAuthResult {
     login,
     logout,
     recheckEndedSession,
+    onSessionRestored,
     checkAuth,
   }
 }

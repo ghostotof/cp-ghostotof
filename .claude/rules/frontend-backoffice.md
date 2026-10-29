@@ -243,9 +243,10 @@ version" copies nothing and the assistant sends all five fields.
   the page went to English has succeeded server-side (`save()` still returns `true`), but must not put the French values
   under the English header: the next « Enregistrer » would overwrite the English record. The About settings are the only
   keyed composable, so the only one with that race.
-  **The return is the one signal that exists**: `authState.sessionEnded` going from true to false (`useAuth`: a
-  session of an account is applied). `useAdminLoad` watches it; if its last read ended on `SessionEndedError`, it re-runs
-  `load(same key)` **once**. A newer `load()` replaces the interrupted one; a read that succeeded leaves nothing to
-  replay. A mechanism that re-reads the session (the shared re-check on focus) only has to bring that state down: it never
-  re-reads lists itself, so nothing is doubled.
+  **The return is the one signal that exists** (R13): `useAuth().onSessionRestored(callback)`, called once at each
+  descent of `authState.sessionEnded` (a session of an account is applied). `useAdminLoad` subscribes to it; if its
+  last read ended on `SessionEndedError`, it re-runs `load(same key)` **once**. A newer `load()` replaces the
+  interrupted one; a read that succeeded leaves nothing to replay. A mechanism that re-reads the session (the shared
+  re-check on focus) only has to restore it: it never re-reads lists itself, so nothing is doubled. A page does not
+  `watch` `authState.sessionEnded` for this.
 

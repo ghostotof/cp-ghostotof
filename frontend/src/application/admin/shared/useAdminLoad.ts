@@ -1,6 +1,6 @@
-import { onScopeDispose, ref, watch, type Ref } from 'vue'
+import { ref, type Ref } from 'vue'
 import { SessionEndedError } from '../../../domain/auth/errors/SessionEndedError'
-import { authState } from '../../auth/useAuth'
+import { onSessionRestored } from '../../auth/useAuth'
 import { createStaleRequestGuard } from '../../shared/staleRequestGuard'
 
 /** Ce que tout composable d'administration expose d'un chargement, pour que la page le lise partout de la même façon. */
@@ -42,10 +42,10 @@ export interface AdminLoadOptions<T, K> {
  * montrait sinon le formulaire d'une locale sous l'en-tête d'une autre, et l'enregistrait par-dessus.
  *
  * **Au retour de la session, la lecture interrompue est relue, une fois, avec sa clé** : tant que la dernière
- * lecture a fini en session finie, la première descente de `authState.sessionEnded` (vrai → faux, le signal que
- * pose `useAuth` quand un compte revient) relance `load(clé)`. C'est le seul signal de retour qui existe : un
- * mécanisme qui relirait la session (la revérification au `focus`) n'a qu'à faire redescendre cet état, il ne
- * relit jamais les listes lui-même, et il ne peut pas doubler cette relecture.
+ * lecture a fini en session finie, le premier retour de la session (`onSessionRestored` de `useAuth`, le signal
+ * qu'émet `useAuth` quand un compte revient) relance `load(clé)`. C'est le seul signal de retour qui existe : un
+ * mécanisme qui relirait la session (la revérification au `focus`) n'a qu'à la rétablir, il ne relit jamais les
+ * listes lui-même, et il ne peut pas doubler cette relecture.
  *
  * `K` est la clé de la lecture : `void` pour une liste, la locale pour le singleton des réglages « À propos ».
  */
@@ -93,16 +93,12 @@ export function useAdminLoad<T, K = void>(options: AdminLoadOptions<T, K>): Admi
     }
   }
 
-  const stopWatchingReturn = watch(
-    () => authState.sessionEnded,
-    (isEnded, wasEnded) => {
-      if (isEnded || !wasEnded || null === interrupted) return
-      const { key } = interrupted
-      interrupted = null
-      void load(key)
-    },
-  )
-  onScopeDispose(stopWatchingReturn)
+  onSessionRestored(() => {
+    if (null === interrupted) return
+    const { key } = interrupted
+    interrupted = null
+    void load(key)
+  })
 
   return { isLoading, hasError, isLoaded, load }
 }

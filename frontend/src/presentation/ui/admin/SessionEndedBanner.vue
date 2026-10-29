@@ -43,7 +43,7 @@ import SignInAgainLink from '../SignInAgainLink.vue'
  */
 const { t } = useI18n()
 const route = useRoute()
-const { hasSessionEnded, sessionEndedCount } = useAuth()
+const { hasSessionEnded, sessionEndedCount, onSessionRestored } = useAuth()
 
 // Hauteur du bandeau, publiée tant qu'il est affiché (retirée au `v-if` faux).
 const banner = useTemplateRef<HTMLElement>('banner')
@@ -52,13 +52,16 @@ usePublishedHeight(banner, '--admin-notice-height')
 /** Vrai entre le retour de la session et la navigation suivante : la région `status` porte alors son message. */
 const hasRestored = ref(false)
 
-watch(hasSessionEnded, (isEnded, wasEnded) => {
+// La montée est un état à surveiller : « vous pouvez enregistrer » serait faux sous un bandeau qui dit le
+// contraire (CR6). Le retour, lui, a son signal (`onSessionRestored`, #748 R13), plus un `watch` de plus.
+watch(hasSessionEnded, (isEnded) => {
   if (isEnded) {
-    // La session finit de nouveau : « vous pouvez enregistrer » serait faux sous un bandeau qui dit le contraire (CR6).
     hasRestored.value = false
-  } else if (wasEnded) {
-    hasRestored.value = true
   }
+})
+
+onSessionRestored(() => {
+  hasRestored.value = true
 })
 
 watch(

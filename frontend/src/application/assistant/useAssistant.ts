@@ -5,7 +5,6 @@ import {
   readonly,
   ref,
   shallowRef,
-  watch,
   type ComputedRef,
   type InjectionKey,
   type Ref,
@@ -19,7 +18,7 @@ import {
   buildConversationWindow,
   codePointLength,
 } from '../../domain/assistant/services/conversationWindow'
-import { authState, markSessionExpired, useAuth } from '../auth/useAuth'
+import { markSessionExpired, useAuth } from '../auth/useAuth'
 
 export const ASSISTANT_REPOSITORY: InjectionKey<AssistantRepository> = Symbol('AssistantRepository')
 
@@ -54,7 +53,7 @@ export function useAssistant(): UseAssistantResult {
   }
 
   // Après le contrôle ci-dessus : l'absence d'un dépôt se dit par son propre nom.
-  const { checkAuth } = useAuth()
+  const { checkAuth, onSessionRestored } = useAuth()
 
   const messages = ref<AssistantMessage[]>([])
   const state = ref<AssistantState>('idle')
@@ -150,19 +149,16 @@ export function useAssistant(): UseAssistantResult {
     state.value = 'idle'
   }
 
-  // Au retour de la session (`sessionEnded` vrai → faux), l'erreur « session finie » n'a plus lieu d'être : elle
+  // Au retour de la session (`onSessionRestored`), l'erreur « session finie » n'a plus lieu d'être : elle
   // s'efface et l'assistant redevient disponible (#748, R8). Le brouillon reste — la question que la personne
   // avait tapée est revenue dans le champ à l'échec. Rien n'est renvoyé de soi-même, et les autres erreurs
   // (réseau, quota…) ne sont pas de la session : elles restent.
-  watch(
-    () => authState.sessionEnded,
-    (isEnded, wasEnded) => {
-      if (!isEnded && wasEnded && 'error' === state.value && 'unauthenticated' === error.value?.reason) {
-        error.value = null
-        state.value = 'idle'
-      }
-    },
-  )
+  onSessionRestored(() => {
+    if ('error' === state.value && 'unauthenticated' === error.value?.reason) {
+      error.value = null
+      state.value = 'idle'
+    }
+  })
 
   onScopeDispose(abortCurrent)
 

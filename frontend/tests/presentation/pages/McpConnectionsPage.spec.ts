@@ -19,6 +19,7 @@ import { BASE_ACCESS_SESSION } from '../../../src/domain/auth/entities/AuthSessi
 import type { Locale } from '../../../src/domain/portfolio/entities/Locale'
 import { expectNoAccessibilityViolation } from '../../support/axe'
 import { listOf } from '../../support/mcpConnectionList'
+import { signInAgain } from '../../support/signInAgain'
 
 enableAutoUnmount(afterEach)
 
@@ -841,6 +842,23 @@ describe('McpConnectionsPage', () => {
       expect(alerts[0]?.text()).toContain('Votre session a pris fin')
       expect(new URLSearchParams((alerts[0]?.get('a').attributes('href') ?? '').split('?')[1]).get('redirect')).toBe('/fr/mcp-connections')
       expect(wrapper.text()).not.toContain("n'a pas pu être révoquée")
+    })
+
+    it("révocation refusée pour session finie, puis retour : aucune alerte « révocation échouée » que personne n'a déclenchée", async () => {
+      const revoke = vi.fn().mockRejectedValue(new SessionEndedError())
+      const { wrapper } = await mountPage({ revoke })
+      await rowOf(wrapper, 'Claude Code').get('button').trigger('click')
+      await flushPromises()
+      expect(wrapper.text()).toContain('Votre session a pris fin')
+
+      // Le compte revient (autre onglet) : la liste est relue, et l'issue de la révocation refusée s'efface avec le refus.
+      await signInAgain()
+      await flushPromises()
+
+      expect(wrapper.text()).not.toContain('Votre session a pris fin')
+      expect(wrapper.text()).not.toContain("n'a pas pu être révoquée")
+      expect(wrapper.findAll('[role="alert"]')).toHaveLength(0)
+      expect(rows(wrapper)).toHaveLength(4)
     })
 
     it('session finie à la révocation : tous les boutons « Révoquer » sont désactivés', async () => {

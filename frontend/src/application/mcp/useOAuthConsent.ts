@@ -1,4 +1,4 @@
-import { inject, readonly, ref, shallowRef, watch, type DeepReadonly, type InjectionKey, type Ref } from 'vue'
+import { inject, readonly, ref, shallowRef, type DeepReadonly, type InjectionKey, type Ref } from 'vue'
 import type { ConsentParams, ConsentRequest } from '../../domain/mcp/entities/ConsentRequest'
 import type { OAuthConsentRepository } from '../../domain/mcp/repositories/OAuthConsentRepository'
 import { ConsentAccountChangedError } from '../../domain/mcp/errors/ConsentAccountChangedError'
@@ -8,7 +8,7 @@ import { MalformedConsentDecisionError } from '../../domain/mcp/errors/Malformed
 import { ReauthenticationRequiredError } from '../../domain/mcp/errors/ReauthenticationRequiredError'
 import { SessionEndedError } from '../../domain/auth/errors/SessionEndedError'
 import { isNavigableRedirect } from '../../domain/mcp/services/consentParams'
-import { authState, markSessionExpired, useAuth } from '../auth/useAuth'
+import { markSessionExpired, useAuth } from '../auth/useAuth'
 
 export const OAUTH_CONSENT_REPOSITORY: InjectionKey<OAuthConsentRepository> = Symbol('OAuthConsentRepository')
 
@@ -93,7 +93,7 @@ export function useOAuthConsent(): UseOAuthConsentResult {
   }
 
   // Après le contrôle ci-dessus : l'absence d'un dépôt se dit par son propre nom.
-  const { checkAuth } = useAuth()
+  const { checkAuth, onSessionRestored } = useAuth()
   const redirect = inject(CLIENT_REDIRECT, (url: string) => window.location.replace(url))
 
   const state = ref<OAuthConsentState>('loading')
@@ -194,17 +194,15 @@ export function useOAuthConsent(): UseOAuthConsentResult {
     redirect(url)
   }
 
-  // Au retour de la session (`sessionEnded` vrai → faux), la demande que la session finie avait refusée se relit,
+  // Au retour de la session (`onSessionRestored`), la demande que la session finie avait refusée se relit,
   // sous le compte revenu (#748, R8) — `reload()` : la même requête. Les autres échecs terminaux ne se relisent
-  // pas. Rétablir la session est l'affaire de `useSessionRecheckOnFocus`, pas d'ici.
-  watch(
-    () => authState.sessionEnded,
-    (isEnded, wasEnded) => {
-      if (!isEnded && wasEnded && 'session-ended' === failure.value) {
-        void load(params)
-      }
-    },
-  )
+  // pas. Rétablir la session est l'affaire de `useAuth().recheckEndedSession()`, branchée par
+  // `useSessionRecheckOnFocus` (AppLayout), pas d'ici.
+  onSessionRestored(() => {
+    if ('session-ended' === failure.value) {
+      void load(params)
+    }
+  })
 
   return {
     state: readonly(state),

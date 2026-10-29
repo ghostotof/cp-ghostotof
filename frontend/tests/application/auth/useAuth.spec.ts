@@ -21,12 +21,14 @@ function createStubRepository(overrides: Partial<AuthRepository> = {}): AuthRepo
  * Un seul site d'appel à defineComponent (vue/one-component-per-file), réutilisé
  * par mountWithComposable() et par le test "repository manquant" ci-dessous.
  */
-function createProbe() {
+function createProbe(register?: (auth: ReturnType<typeof useAuth>) => void) {
   let captured: ReturnType<typeof useAuth> | undefined
 
   const Probe = defineComponent({
     setup() {
       captured = useAuth()
+      // Un abonnement pris dans le `setup`, donc dans le scope du composant : il tombe avec lui (`onScopeDispose`).
+      register?.(captured)
       return () => h('div')
     },
   })
@@ -34,10 +36,10 @@ function createProbe() {
   return { Probe, getCaptured: () => captured }
 }
 
-function mountWithComposable(repository: AuthRepository) {
-  const { Probe, getCaptured } = createProbe()
+function mountWithComposable(repository: AuthRepository, register?: (auth: ReturnType<typeof useAuth>) => void) {
+  const { Probe, getCaptured } = createProbe(register)
 
-  mount(Probe, {
+  const wrapper = mount(Probe, {
     global: {
       provide: { [AUTH_REPOSITORY as symbol]: repository },
     },
@@ -48,7 +50,7 @@ function mountWithComposable(repository: AuthRepository) {
     throw new Error('useAuth() did not run during mount')
   }
 
-  return captured
+  return Object.assign(captured, { unmount: () => wrapper.unmount() })
 }
 
 describe('useAuth', () => {
@@ -183,6 +185,64 @@ describe('useAuth', () => {
       await auth.checkAuth()
 
       expect(auth.hasSessionEnded.value).toBe(false)
+    })
+  })
+
+  describe('onSessionRestored (#748, R13)', () => {
+    it("appelé une fois au retour, de façon synchrone, jamais à la fin de la session", async () => {
+      const restored = vi.fn()
+      const auth = mountWithComposable(createStubRepository(), (probe) => probe.onSessionRestored(restored))
+      await auth.login('jane', 'password')
+
+      markSessionExpired()
+      expect(restored).not.toHaveBeenCalled()
+
+      // Une seconde fin ne l'appelle pas non plus : seule la descente de `sessionEnded` est le retour.
+      markSessionExpired()
+      expect(restored).not.toHaveBeenCalled()
+
+      await auth.login('jane', 'password')
+      expect(restored).toHaveBeenCalledTimes(1)
+
+      // Plus de session finie : une connexion de plus n'est pas un retour.
+      await auth.login('jane', 'password')
+      expect(restored).toHaveBeenCalledTimes(1)
+    })
+
+    it("plus appelé après la fin du scope qui l'a pris", async () => {
+      const restored = vi.fn()
+      const auth = mountWithComposable(createStubRepository(), (probe) => probe.onSessionRestored(restored))
+      await auth.login('jane', 'password')
+      auth.unmount()
+
+      markSessionExpired()
+      await mountWithComposable(createStubRepository()).login('jane', 'password')
+
+      expect(restored).not.toHaveBeenCalled()
+    })
+
+    it('tous les abonnés sont appelés, chacun une fois', async () => {
+      const first = vi.fn()
+      const second = vi.fn()
+      mountWithComposable(createStubRepository(), (probe) => probe.onSessionRestored(first))
+      const auth = mountWithComposable(createStubRepository(), (probe) => probe.onSessionRestored(second))
+      markSessionExpired()
+
+      await auth.login('jane', 'password')
+
+      expect(first).toHaveBeenCalledTimes(1)
+      expect(second).toHaveBeenCalledTimes(1)
+    })
+
+    it("la relecture d'un compte retrouvé (autre onglet) est aussi un retour", async () => {
+      const restored = vi.fn()
+      const repository = createStubRepository({ me: vi.fn(async () => sessionFor({ username: 'jane', roles: ['ROLE_USER'] })) })
+      const auth = mountWithComposable(repository, (probe) => probe.onSessionRestored(restored))
+      markSessionExpired()
+
+      await auth.recheckEndedSession()
+
+      expect(restored).toHaveBeenCalledTimes(1)
     })
   })
 

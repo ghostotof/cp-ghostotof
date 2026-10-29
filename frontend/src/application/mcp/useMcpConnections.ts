@@ -1,10 +1,10 @@
-import { inject, readonly, ref, shallowRef, watch, type DeepReadonly, type InjectionKey, type Ref } from 'vue'
+import { inject, readonly, ref, shallowRef, type DeepReadonly, type InjectionKey, type Ref } from 'vue'
 import type { McpConnectionSummary } from '../../domain/mcp/entities/McpConnection'
 import type { McpConnectionsRepository } from '../../domain/mcp/repositories/McpConnectionsRepository'
 import { McpConnectionNotFoundError } from '../../domain/mcp/errors/McpConnectionNotFoundError'
 import { AccessForbiddenError } from '../../domain/auth/errors/AccessForbiddenError'
 import { SessionEndedError } from '../../domain/auth/errors/SessionEndedError'
-import { authState, markSessionExpired, useAuth } from '../auth/useAuth'
+import { markSessionExpired, useAuth } from '../auth/useAuth'
 
 export const MCP_CONNECTIONS_REPOSITORY: InjectionKey<McpConnectionsRepository> = Symbol('McpConnectionsRepository')
 
@@ -79,7 +79,7 @@ export function useMcpConnections(): UseMcpConnectionsResult {
   }
 
   // Après le contrôle ci-dessus : l'absence d'un dépôt se dit par son propre nom.
-  const { checkAuth } = useAuth()
+  const { checkAuth, onSessionRestored } = useAuth()
 
   const status = ref<McpConnectionsStatus>('loading')
   const connections = shallowRef<McpConnectionSummary[]>([])
@@ -165,17 +165,18 @@ export function useMcpConnections(): UseMcpConnectionsResult {
     }
   }
 
-  // Au retour de la session (`sessionEnded` vrai → faux : un compte est revenu, et avec son jeton d'écriture), la
-  // liste que la session finie avait refusée se relit (#748, R8). Un refus réel ne se relit pas : la même
-  // requête aurait le même verdict. Rétablir la session est l'affaire de `useSessionRecheckOnFocus`, pas d'ici.
-  watch(
-    () => authState.sessionEnded,
-    (isEnded, wasEnded) => {
-      if (!isEnded && wasEnded && 'session-ended' === refusal.value) {
-        void load()
-      }
-    },
-  )
+  // Au retour de la session (`onSessionRestored` : un compte est revenu, et avec son jeton d'écriture), la liste que
+  // la session finie avait refusée se relit (#748, R8). Un refus réel ne se relit pas : la même requête aurait le
+  // même verdict. L'issue d'une révocation que ce refus a empêchée s'efface avec lui (R13, A) : sans cela, `load()`
+  // remet `refusal` à `null` et la page affiche « la révocation a échoué », qu'aucun geste n'a déclenchée.
+  // Rétablir la session est l'affaire de `useAuth().recheckEndedSession()`, branchée par
+  // `useSessionRecheckOnFocus` (AppLayout), pas d'ici.
+  onSessionRestored(() => {
+    if ('session-ended' === refusal.value) {
+      lastOutcome.value = null
+      void load()
+    }
+  })
 
   return {
     status: readonly(status),
