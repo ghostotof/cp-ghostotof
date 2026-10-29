@@ -6,6 +6,14 @@ paths:
   - "frontend/src/infrastructure/admin/shared/BackofficeHttpClient.ts"
   - "frontend/src/application/admin/shared/useAdminLoad.ts"
   - "frontend/src/application/admin/shared/visibleMutationError.ts"
+  - "frontend/src/infrastructure/auth/**"
+  - "frontend/tests/infrastructure/auth/**"
+  - "frontend/src/domain/auth/repositories/**"
+  - "frontend/src/application/mcp/**"
+  - "frontend/src/application/assistant/**"
+  - "frontend/tests/application/auth/**"
+  - "frontend/tests/support/signInAgain.ts"
+  - "frontend/src/presentation/layout/usePublishedHeight.ts"
   - "frontend/src/infrastructure/mcp/**"
   - "frontend/src/infrastructure/assistant/**"
   - "frontend/src/presentation/ui/admin/SessionEndedBanner.vue"
@@ -58,7 +66,10 @@ facts are checked in the backend:
 
 **`sessionAwareFetch(url, init)` is the only send that judges the session.** It adds `credentials: 'include'`, reads
 `XSRF-TOKEN` for any method other than `GET`/`HEAD` and sets `X-XSRF-TOKEN` when it is non-empty (an empty `XSRF-TOKEN=`
-counts as absent), and returns `{ response, endedTheSession }`. The verdict is taken **at send time**, on what left
+counts as absent), and returns `{ response, endedTheSession }`. **"With a token" is `hasCsrfToken()`
+(`infrastructure/auth/csrfCookie.ts`), the only definition** — an empty or undecodable value (`XSRF-TOKEN=%E0`:
+`readCsrfToken()` catches the `URIError` and answers `null`) is absent, for the header sent and for
+`hasWriteToken()` alike. Its second parameter is typed `SessionAwareInit`, which the MCP and consent clients reuse. The verdict is taken **at send time**, on what left
 (`isWrite && !token`), never by re-reading the cookie at reception (another tab may have set it back) nor by the 403's
 `detail` (localisable, not a contract). A network failure or an `AbortError` rejects as it came: the client translates
 it. The boolean no longer travels from function to function (`sentWithoutCsrfToken` is gone from every repository).

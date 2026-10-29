@@ -96,6 +96,19 @@ describe('sessionAwareFetch', () => {
     expect(judged.endedTheSession).toBe(true)
   })
 
+  it("écriture avec XSRF-TOKEN=%E0 : part sans en-tête, et son 403 finit la session", async () => {
+    // Un cookie indécodable est « absent » (F13) : avant, `decodeURIComponent` levait avant tout envoi.
+    setCsrfCookie('%E0')
+    const fetchMock = vi.fn(async () => response(403))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const judged = await sessionAwareFetch(URL, { method: 'POST' })
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(sentInit(fetchMock).headers?.['X-XSRF-TOKEN']).toBeUndefined()
+    expect(judged.endedTheSession).toBe(true)
+  })
+
   it('un 401 finit la session, en lecture comme en écriture', async () => {
     setCsrfCookie('abc')
     vi.stubGlobal('fetch', vi.fn(async () => response(401)))

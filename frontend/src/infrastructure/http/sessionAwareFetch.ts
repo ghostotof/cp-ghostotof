@@ -1,4 +1,4 @@
-import { readCsrfToken } from '../auth/csrfCookie'
+import { hasCsrfToken, readCsrfToken } from '../auth/csrfCookie'
 
 /**
  * La règle unique qui décide, côté frontend, qu'une réponse signifie « la session est finie » (#748,
@@ -39,6 +39,16 @@ export interface SessionAwareResponse {
   readonly endedTheSession: boolean
 }
 
+/**
+ * Ce que `sessionAwareFetch` accepte : un `RequestInit` sans `credentials` ni `headers` libres (l'envoi
+ * pose les cookies et l'en-tête CSRF), avec une méthode obligatoire et des en-têtes en simple dictionnaire.
+ * Le type de tous les clients qui lui passent un `init` (backoffice, connexions MCP, consentement).
+ */
+export type SessionAwareInit = Omit<RequestInit, 'credentials' | 'headers'> & {
+  method: string
+  headers?: Readonly<Record<string, string>>
+}
+
 /** Les méthodes que le CSRF ne contrôle pas. */
 const SAFE_METHODS: readonly string[] = ['GET', 'HEAD']
 
@@ -53,12 +63,11 @@ const SAFE_METHODS: readonly string[] = ['GET', 'HEAD']
  *
  * Un rejet de `fetch` (réseau, `AbortError`) remonte tel quel : c'est au client de le traduire.
  */
-export async function sessionAwareFetch(
-  url: string,
-  init: Omit<RequestInit, 'credentials' | 'headers'> & { method: string; headers?: Readonly<Record<string, string>> },
-): Promise<SessionAwareResponse> {
+export async function sessionAwareFetch(url: string, init: SessionAwareInit): Promise<SessionAwareResponse> {
   const isWrite = !SAFE_METHODS.includes(init.method.toUpperCase())
-  const csrfToken = isWrite ? readCsrfToken() : null
+  // Un seul critère pour « avec jeton » (`hasCsrfToken`, J) : le verdict et l'en-tête ne peuvent pas diverger.
+  const withToken = isWrite && hasCsrfToken()
+  const csrfToken = withToken ? readCsrfToken() : null
 
   const headers = { ...init.headers, ...(csrfToken ? { 'X-XSRF-TOKEN': csrfToken } : {}) }
 
@@ -69,5 +78,5 @@ export async function sessionAwareFetch(
     ...(Object.keys(headers).length > 0 ? { headers } : {}),
   })
 
-  return { response, endedTheSession: endsTheSession(response.status, isWrite && !csrfToken) }
+  return { response, endedTheSession: endsTheSession(response.status, isWrite && !withToken) }
 }

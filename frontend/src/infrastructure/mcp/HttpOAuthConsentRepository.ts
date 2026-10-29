@@ -8,9 +8,8 @@ import { ConsentFailedError } from '../../domain/mcp/errors/ConsentFailedError'
 import { InvalidConsentRequestError } from '../../domain/mcp/errors/InvalidConsentRequestError'
 import { MalformedConsentDecisionError } from '../../domain/mcp/errors/MalformedConsentDecisionError'
 import { ReauthenticationRequiredError } from '../../domain/mcp/errors/ReauthenticationRequiredError'
-import { sessionAwareFetch, type SessionAwareResponse } from '../http/sessionAwareFetch'
-import type { ApiProblemBody } from '../admin/shared/BackofficeHttpClient'
-import { hasProblemType } from '../admin/shared/orderProblems'
+import { hasProblemType, type ApiProblemBody } from '../http/problemJson'
+import { sessionAwareFetch, type SessionAwareInit, type SessionAwareResponse } from '../http/sessionAwareFetch'
 
 const PATH = '/api/oauth/consent'
 
@@ -106,7 +105,7 @@ export class HttpOAuthConsentRepository implements OAuthConsentRepository {
   }
 
   /** Appel réseau ; un statut d'erreur devient l'exception du domaine qui lui correspond. */
-  private async send(url: string, init: Parameters<typeof sessionAwareFetch>[1], unprocessable: UnprocessableMeaning): Promise<Response> {
+  private async send(url: string, init: SessionAwareInit, unprocessable: UnprocessableMeaning): Promise<Response> {
     let judged: SessionAwareResponse
     try {
       judged = await sessionAwareFetch(url, init)

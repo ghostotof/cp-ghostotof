@@ -4,9 +4,8 @@ import { McpConnectionNotFoundError } from '../../domain/mcp/errors/McpConnectio
 import { McpConnectionsRequestFailedError } from '../../domain/mcp/errors/McpConnectionsRequestFailedError'
 import { AccessForbiddenError } from '../../domain/auth/errors/AccessForbiddenError'
 import { SessionEndedError } from '../../domain/auth/errors/SessionEndedError'
-import { sessionAwareFetch, type SessionAwareResponse } from '../http/sessionAwareFetch'
-import type { ApiProblemBody } from '../admin/shared/BackofficeHttpClient'
-import { hasProblemType } from '../admin/shared/orderProblems'
+import { hasProblemType, type ApiProblemBody } from '../http/problemJson'
+import { sessionAwareFetch, type SessionAwareInit, type SessionAwareResponse } from '../http/sessionAwareFetch'
 
 const PATH = '/api/me/mcp-connections'
 
@@ -61,7 +60,7 @@ export class HttpMcpConnectionsRepository implements McpConnectionsRepository {
   }
 
   /** Appel réseau ; un statut d'erreur devient l'exception du domaine qui lui correspond. */
-  private async send(url: string, init: Parameters<typeof sessionAwareFetch>[1]): Promise<Response> {
+  private async send(url: string, init: SessionAwareInit): Promise<Response> {
     let judged: SessionAwareResponse
     try {
       judged = await sessionAwareFetch(url, init)

@@ -74,7 +74,8 @@ status announcement) that a fork would silently lose:
   `.claude/rules/portfolio-ordre-ecritures.md`): `unknown-order-entry` (a key the server no longer
   knows, an entry deleted since the load) and `incomplete-order` (a key missing, an entry created
   since), listed once in `STALE_ORDER_PROBLEM_TYPES` and matched on the problem+json `type` by
-  `hasProblemType`, never on the localized `detail`. Every ordered repository reads a 422 carrying
+  `hasProblemType` (which lives in `infrastructure/http/problemJson.ts` with `ApiProblemBody`, shared with the MCP
+  repositories), never on the localized `detail`. Every ordered repository reads a 422 carrying
   either as `AdminOrderError('stale-order')`, anything else as `unknown`. A slug renamed on the backend
   is renamed here in the same change: otherwise a concurrent edit reads as a failed save that the
   admin retries in vain instead of a reload.

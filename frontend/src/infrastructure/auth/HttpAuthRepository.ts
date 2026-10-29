@@ -4,7 +4,7 @@ import { InvalidCredentialsError } from '../../domain/auth/errors/InvalidCredent
 import { LoginRateLimitedError } from '../../domain/auth/errors/LoginRateLimitedError'
 import { ANONYMOUS_SESSION, BASE_ACCESS_SESSION, type AuthSession } from '../../domain/auth/entities/AuthSession'
 import { sessionForUser } from '../../domain/auth/services/sessionForUser'
-import { readCsrfToken } from './csrfCookie'
+import { hasCsrfToken, readCsrfToken } from './csrfCookie'
 import { LOGIN_CSRF_HEADER } from '../http/loginCsrfHeader'
 import { retryAfterSeconds } from '../http/retryAfterSeconds'
 
@@ -93,10 +93,8 @@ export class HttpAuthRepository implements AuthRepository {
     return sessionForUser({ username: body.user.username, roles: body.user.roles })
   }
 
-  /** Un cookie `XSRF-TOKEN` vide (`XSRF-TOKEN=`) compte pour absent : le client n'en enverrait aucun en-tête. */
+  /** Un cookie `XSRF-TOKEN` vide ou indécodable compte pour absent : le client n'en enverrait aucun en-tête (`hasCsrfToken`). */
   hasWriteToken(): boolean {
-    const token = readCsrfToken()
-
-    return null !== token && '' !== token
+    return hasCsrfToken()
   }
 }

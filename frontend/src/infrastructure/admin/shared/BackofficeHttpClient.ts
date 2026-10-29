@@ -1,13 +1,6 @@
 import { SessionEndedError } from '../../../domain/auth/errors/SessionEndedError'
+import type { ApiProblemBody } from '../../http/problemJson'
 import { sessionAwareFetch, type SessionAwareResponse } from '../../http/sessionAwareFetch'
-
-/** Forme RFC7807-ish renvoyée par API Platform sur les réponses d'erreur (cf. api_platform.yaml `error_formats`). */
-export interface ApiProblemBody {
-  /** Slug stable `/errors/<slug>` posé par les exceptions métier implémentant ProblemExceptionInterface — à privilégier sur `detail` (localisé, instable) pour discriminer un conflit. */
-  type?: string
-  detail?: string
-  violations?: { propertyPath: string; message: string }[]
-}
 
 /** Réaction à une session finie du backoffice (voir `infrastructure/http/sessionAwareFetch.ts`), posée une fois à la racine de composition. */
 export type BackofficeSessionEndedHandler = () => void
