@@ -250,7 +250,7 @@ version" copies nothing and the assistant sends all five fields.
   only when `save()` resolves `true`, the form still carrying the proposal otherwise. The About settings are the only
   keyed composable, so the only one with these races.
   **The return is the one signal that exists** (R13): `useAuth().onSessionRestored(callback)`, called once at each
-  descent of `authState.sessionEnded` (a session of an account is applied). `useAdminLoad` subscribes to it; if its
+  descent of `authState.sessionEnded` by the same account (another one replays the navigation instead, R18). `useAdminLoad` subscribes to it; if its
   last read ended on `SessionEndedError`, it re-runs `load(same key)` **once**. A newer `load()` replaces the
   interrupted one; a read that succeeded leaves nothing to replay. A mechanism that re-reads the session (the shared
   re-check on focus) only has to restore it: it never re-reads lists itself, so nothing is doubled. A page does not

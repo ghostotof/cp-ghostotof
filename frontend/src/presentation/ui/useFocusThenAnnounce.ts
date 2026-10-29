@@ -25,8 +25,9 @@ export interface FocusThenAnnounce<T> {
  * Écarté : `aria-describedby` de la cible vers le message, dont la lecture au focus dépend des
  * réglages du lecteur d'écran et qui resterait collé à la cible à chaque focus suivant.
  *
- * Le composable tient la minuterie, son annulation et le démontage : la page ne connaît que
- * `announced` (à lire dans sa région `role="status"`), `focusThenAnnounce` et `cancel`.
+ * Le composable tient la minuterie, son annulation et le démontage : la page connaît `announced` (à lire dans
+ * sa région `role="status"`), `focusThenAnnounce` et `cancel` — et `isUnmounted`, dont elle a besoin quand une
+ * opération asynchrone de son cru (une relecture) aboutit après le démontage et ne doit plus rien écrire ni focaliser.
  */
 export function useFocusThenAnnounce<T>(delayMs: number = ANNOUNCE_AFTER_FOCUS_MS): FocusThenAnnounce<T> {
   const announced = shallowRef<T | null>(null)

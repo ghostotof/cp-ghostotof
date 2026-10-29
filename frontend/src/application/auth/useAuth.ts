@@ -380,8 +380,8 @@ export interface UseAuthResult {
    * Augmenté de un par chaque fin **acceptée** (`markSessionExpired`, voir la génération), y compris quand la session
    * est déjà finie : un état ne change pas au second refus, ce compteur si. Une réponse partie sous une génération
    * révolue (une lecture parallèle déjà annoncée, une session rétablie depuis) ne l'augmente pas. Le bandeau en fait
-   * la `key` de son alerte, qu'il réinsère donc à chaque refus accepté — c'est l'insertion que les lecteurs d'écran
-   * annoncent (#748, S7, R14).
+   * la `key` du `<span>` de son message, que Vue remplace donc à chaque refus accepté — c'est ce remplacement que les
+   * lecteurs d'écran relisent, l'alerte (et le lien qu'elle porte) restant le même élément (#748, S7, R14, R19).
    */
   sessionEndedCount: ComputedRef<number>
   /** ROLE_TRUSTED (ou ROLE_SUPER) : le seul palier qui ouvre le CV et /api/me. */

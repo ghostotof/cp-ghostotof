@@ -360,7 +360,7 @@ paths:
   without `ROLE_TRUSTED`, one that lost it while the page was open) or a `POST` that carried its token — is
   `AccessForbiddenError`, the **terminal** failure `forbidden` (#748, #732 point 4, R7): the request is no longer
   shown, the session is **not** marked expired (it holds for the rest of the site), `/api/me` is re-read once
-  (`checkAuth()`, so the header returns to the tier the server now recognises), and the page says the **neutral**
+  (`rereadAfterRefusal()`, so the header returns to the tier the server now recognises), and the page says the **neutral**
   `common.accessRefused` — the account may not have, or may no longer have, trusted access, **or the session needs to be
   reopened** (a stale `XSRF-TOKEN` signature is also a 403 with the token sent, S8: the message must not accuse the
   account) — and offers « Changer de compte » (`common.switchAccount`, `login?redirect=<fullPath>&reauth=1`) — the only

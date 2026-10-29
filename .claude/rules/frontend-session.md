@@ -30,6 +30,9 @@ paths:
   - "frontend/src/presentation/router/backofficeSessionExpiry.ts"
   - "frontend/src/presentation/layout/useSessionRecheckOnFocus.ts"
   - "frontend/src/presentation/layout/AppLayout.vue"
+  - "frontend/src/presentation/layout/AdminLayout.vue"
+  - "frontend/src/presentation/layout/AppHeader.vue"
+  - "frontend/tests/presentation/layout/AppLayout.spec.ts"
   - "frontend/tests/presentation/layout/useSessionRecheckOnFocus.spec.ts"
   - "frontend/tests/infrastructure/http/**"
   - "frontend/tests/application/admin/shared/useAdminLoad.spec.ts"
@@ -48,7 +51,7 @@ paths:
 > The one rule of #748 (R2). It was a bullet of `frontend-backoffice.md` and was repeated, in part, by
 > `frontend.md`, `mcp-oauth.md` and `mcp-oauth-revocation-personne.md`: those now say their own case in a sentence
 > and point here. The code-side counterpart is the docblock of `infrastructure/http/sessionAwareFetch.ts`. The
-> index of every rule is at the top of `.claude/CLAUDE.md`. Later tasks of #748 (R4 to R9) add their sections here.
+> index of every rule is at the top of `.claude/CLAUDE.md`.
 
 ## The rule, in one function
 
@@ -157,7 +160,7 @@ does `BackofficeHttpClient`.
 ## The interface
 
 - **`main.ts`** registers `backofficeSessionEndedHandler` (`presentation/router/backofficeSessionExpiry.ts`), an object
-  `{ stampAtSend, ended }` over `markSessionExpired`: **no `router.replace`** (R1c's navigation unmounted the page at the very
+  `{ stampAtSend, ended, refused }` (`refused`: see « A real refusal ») over `markSessionExpired`: **no `router.replace`** (R1c's navigation unmounted the page at the very
   click of « Enregistrer », and a case study written for more than an hour — the JWT's lifetime — was lost with it). The
   verdict is judged by **session generation** (next section), not « idempotent »: several lists of a page answering 401
   together leave under the same generation, the first end counts and the others announce nothing more. The registry lives
@@ -254,8 +257,7 @@ does `BackofficeHttpClient`.
     each return, it would hide the header's right-hand group (`v-if="!isChecking"`) and make it flicker at every return
     on the tab. `waitForAuthCheck()` is unaffected: it resolves on the first check, as before.
   - **A session is restored only if an account comes back *and* a write token exists**: `AuthRepository.hasWriteToken()`
-    (a domain port; `HttpAuthRepository` answers from `readCsrfToken()`, an empty `XSRF-TOKEN=` counting as absent,
-    since the application does not read a cookie). A `/api/me` that finds the account while `XSRF-TOKEN` is gone (a
+    (a domain port; `HttpAuthRepository` answers from `hasCsrfToken()`, since the application does not read a cookie). A `/api/me` that finds the account while `XSRF-TOKEN` is gone (a
     browser that restores only one of the two cookies, or a session opened before R21) would
     be a session whose first write takes the CSRF 403, read as an ended session again: restoring it would announce
     « Session rétablie » and the loop would start over. The state is then left as it is. Only the account case restores:
@@ -263,7 +265,7 @@ does `BackofficeHttpClient`.
   - **Nobody but `useAuth` restores, and nobody else re-reads a list** (#748, R13): the restoration brings
     `authState.sessionEnded` down (true to false) and `useAuth` **emits one signal for it**,
     `onSessionRestored(callback)` (also exported as a function, for the composables that need no
-    `AUTH_REPOSITORY`): `callback` is called once, synchronously, at each such descent — never at the end of a session —,
+    `AUTH_REPOSITORY`): `callback` is called once, synchronously, at each such descent by the same account (next bullet) — never at the end of a session —,
     and the subscription is dropped at `onScopeDispose` (a page unmounted is no longer called). **A page that depends
     on the return subscribes to it; no page `watch`es `authState.sessionEnded` any more** (five did: it was the same
     condition written five times). Each reacts for what concerns it. The administration composables through
@@ -396,7 +398,7 @@ whose `/api/me` answers 401 now ends the session on the interface. **Still accep
 
 `sessionAwareFetch.spec.ts` (the rule's table; a read leaves with the cookies and no CSRF header, a write carries the
 header read in the cookie, a write without a cookie or with an empty one ends the session on a 403, a 401 on any method,
-the given headers kept, a network failure or an abort rejecting as it came), `BackofficeHttpClient.spec.ts` (a 401 on read
+the given headers kept, a network failure or an abort rejecting as it came), `csrfCookie.spec.ts` (an empty or undecodable `XSRF-TOKEN=%E0` is absent, no exception, R12) and `problemJson.spec.ts` (`hasProblemType`: the slug, the whole segment only, any other or no type), `BackofficeHttpClient.spec.ts` (a 401 on read
 and write, a 403 to a write without a token or with an empty cookie, each **rejects `SessionEndedError`** and calls the
 reaction once, also with no reaction registered; 200/204/404/409/422/500 give the response back with no reaction; a 403 to a read, or to a write with its token, calls `refused` once and **rejects `AccessForbiddenError`**, also with no reaction (R17); a network failure rises as it came), `useAdminLoad.spec.ts` (`isLoaded`, the key that empties, the read run again on return, `tests/support/signInAgain.ts` being the return) and
 `visibleMutationError.spec.ts` (the two functions), `sessionEndedMapping.spec.ts` (the table of the 15 repositories: a 401
@@ -405,13 +407,13 @@ is missing from the table), `sessionEndedLoad.spec.ts` (the thirteen composables
 `hasError` and keeps the list, any other failure raises it; on a mutation it sets **no error and does not succeed**, any
 other failure sets `unknown`; `useAdminTranslation` and `useOrderDraft` too), `HttpAdminUserRepository.spec.ts`,
 `HttpMcpConnectionsRepository.spec.ts`, `HttpOAuthConsentRepository.spec.ts`, `HttpAssistantRepository.spec.ts`,
-`backofficeSessionExpiry.spec.ts` (the session is closed, no navigation, parallel verdicts of one generation announce once, a verdict sent before the return refinishes nothing), `SessionEndedBanner.spec.ts` (alert
-inserted, no focus taken, the link and its icon, the re-read on `focus`, the sticky class, the status region present from
+`backofficeSessionExpiry.spec.ts` (the session is closed, no navigation, parallel verdicts of one generation announce once, a verdict sent before the return refinishes nothing; `refused` counts the refusal and re-reads the tier once), `SessionEndedBanner.spec.ts` (alert
+inserted, no focus taken, the link and its icon, no listener on `focus`, the sticky class, the status region present from
 mount and its message on return and emptied on the next route or by a new end, a refusal replacing the message, once per tick, and never the alert nor the focused link; the height measured on one element), `usePublishedHeight.spec.ts` (the height posted, updated on
 a second reading, removed with the target), `AdminLayout.sessionEnded.spec.ts` (the banner a direct child of the section holding the page, and adding no element to its flow; the page stays mounted with its typed
 input; red when `router.replace` is reintroduced; the banner is the only alert on a 401 and on a 403 without a token, a 403
 with a token shows the single « accès refusé » alert (`AccessRefusedNotice.spec.ts` too), with « Changer de compte » in the same tab, the input kept, `/api/me` read once, the alert cleared on navigation and masked when the re-read finds the session ended), `AdminCaseStudiesPage.spec.ts` and `OrderToolbar.spec.ts` (an ended session adds no alert of the
-page's, and the input stays), `useAuth.spec.ts` (including `sessionEndedCount` and `onSessionRestored`: once, synchronously, never at the end, dropped with its scope, a subscriber that throws; and the generation in both directions, R14), `signInLocations.spec.ts` (`loginLocation`, the two wrappers, no `redirect` off a protected route, and the guard that no other file names `expired`/`reauth`), `SignInAgainLink.spec.ts` (new tab, hidden text, icon, one root; no `redirect` on a public route; the same tab on `signInInSameTab`), `adminGuard.spec.ts` (an account opens the login with `expired=1` as with `reauth=1`, with no flag it goes home), `protectedRoutesCarryNoSecret.spec.ts` (every `requiresAuth` route is reviewed: its `fullPath` leaves in the `redirect` of a new tab), and, for the real refusal (R7): `HttpMcpConnectionsRepository.spec.ts` (a 403 on the read, or on the `DELETE` with a token, is `AccessForbiddenError`; without a token, `SessionEndedError`), `useMcpConnections.spec.ts` (`refusal`, `/api/me` read once, a demoted account's header back at the base tier, a failing `/api/me` swallowed; R15: one `/api/me` for a read and a revocation refused together, a 401 turning `forbidden` into `session-ended`), `useAuth.spec.ts` (`rereadAfterRefusal`: one read in flight, 401 ends the session, 403 holds it, a stale or failing read holds it, `isChecking` untouched), `useAssistant.spec.ts` and `useOAuthConsent.spec.ts` (`/api/me` read once on `forbidden`, not on an ended session; a 401 on that read says the session ended), `McpConnectionsPage.spec.ts` / `AssistantPage.spec.ts` / `OAuthConsentPage.spec.ts` (the exact neutral text in both languages, « Changer de compte » with `reauth=1`, no « Réessayer », « Révoquer » disabled) and `LoginPage.spec.ts` (the neutral announcement); for the re-check on return (R8): `useAuth.spec.ts` (the account found with its write token restores; **without `XSRF-TOKEN` the session stays ended**; nothing outside an ended session; one read in flight for two quick calls; a network failure swallowed; `isChecking` untouched by the re-check and by any `checkAuth()` after the first), `HttpAuthRepository.spec.ts` (`hasWriteToken`: present, absent, empty), `useSessionRecheckOnFocus.spec.ts` (`focus` re-reads, not after unmount), `AppLayout.spec.ts` (one `/api/me` per return with the banner shown, the re-check outside the backoffice, the session staying ended while no account is back), `SessionEndedBanner.spec.ts` (the banner does not listen to `focus`; the return is driven by `recheckEndedSession()`), `AppHeader.spec.ts` (the new-tab « Connexion » on the assistant, the MCP page and the consent), and the reactions `useMcpConnections.spec.ts`, `useOAuthConsent.spec.ts`, `useAssistant.spec.ts`.
+page's, and the input stays), `useAuth.spec.ts` (including `sessionEndedCount`, `onSessionRestored` and `onAccountSwitched`: once, synchronously, never at the end, dropped with its scope, a subscriber that throws, the same account or another (R18); the generation in both directions, R14; the base access signing out at its deadline, R21b), `signInLocations.spec.ts` (`loginLocation`, the two wrappers, no `redirect` off a protected route, and the guard that no other file names `expired`/`reauth`), `SignInAgainLink.spec.ts` (new tab, hidden text, icon, one root; no `redirect` on a public route; the same tab on `signInInSameTab`), `adminGuard.spec.ts` (an account opens the login with `expired=1` as with `reauth=1`, with no flag it goes home), `protectedRoutesCarryNoSecret.spec.ts` (every `requiresAuth` route is reviewed: its `fullPath` leaves in the `redirect` of a new tab), and, for the real refusal (R7): `HttpMcpConnectionsRepository.spec.ts` (a 403 on the read, or on the `DELETE` with a token, is `AccessForbiddenError`; without a token, `SessionEndedError`), `useMcpConnections.spec.ts` (`refusal`, `/api/me` read once, a demoted account's header back at the base tier, a failing `/api/me` swallowed; R15: one `/api/me` for a read and a revocation refused together, a 401 turning `forbidden` into `session-ended`), `useAuth.spec.ts` (`rereadAfterRefusal`: one read in flight, 401 ends the session, 403 holds it, a stale or failing read holds it, `isChecking` untouched), `useAssistant.spec.ts` and `useOAuthConsent.spec.ts` (`/api/me` read once on `forbidden`, not on an ended session; a 401 on that read says the session ended), `McpConnectionsPage.spec.ts` / `AssistantPage.spec.ts` / `OAuthConsentPage.spec.ts` (the exact neutral text in both languages, « Changer de compte » with `reauth=1`, no « Réessayer », « Révoquer » disabled) and `LoginPage.spec.ts` (the neutral announcement); for the re-check on return (R8): `useAuth.spec.ts` (the account found with its write token restores; **without `XSRF-TOKEN` the session stays ended**; nothing outside an ended session; one read in flight for two quick calls; a network failure swallowed; `isChecking` untouched by the re-check and by any `checkAuth()` after the first), `HttpAuthRepository.spec.ts` (`hasWriteToken`: present, absent, empty; `logout()` sends the CSRF token, R21b), `useSessionRecheckOnFocus.spec.ts` (`focus` re-reads, not after unmount), `AppLayout.spec.ts` (one `/api/me` per return with the banner shown, the re-check outside the backoffice, the session staying ended while no account is back; another account replays the navigation, then remounts the page, R18), `SessionEndedBanner.spec.ts` (the banner does not listen to `focus`; the return is driven by `recheckEndedSession()`), `AppHeader.spec.ts` (the new-tab « Connexion » on the assistant, the MCP page and the consent), and the reactions `useMcpConnections.spec.ts`, `useOAuthConsent.spec.ts`, `useAssistant.spec.ts`. The backend facts it relies on are pinned by `AuthCookieAttributesTest` (session cookies), `BaseAccessControllerTest` and `RefusedSessionCookiesAreClearedTest` (a refused cookie cleared by its first 401), `.claude/rules/security-authentication-sessions.md`.
 
 Three guards of the first version are gone, because what they guarded no longer exists: `sessionEnded.spec.ts` (domain,
 `isSessionEndedError`), `visibleErrorReason.spec.ts` and `errorReasonsHideSessionEnded.spec.ts` (a source guard: every file

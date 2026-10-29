@@ -49,7 +49,7 @@ This file only carries what applies everywhere, plus what runs from the shell (g
 | `frontend.md` | frontend layers, API-backed content, i18n, SEO, lint | any frontend change |
 | `frontend-backoffice.md` | `/admin`, set-password, route guard | touching an admin page or the router |
 | `frontend-a11y.md` | accessibility | adding or changing UI |
-| `frontend-session.md` | an ended session and a refusal on the frontend: `sessionAwareFetch`, `SessionEndedError` / `AccessForbiddenError`, the banner, the header's link, the re-check on return | touching a call that sends the session cookie, a 401/403 mapping, the banner, a sign-in-again link |
+| `frontend-session.md` | an ended session and a refusal on the frontend: `sessionAwareFetch`, `SessionEndedError` / `AccessForbiddenError`, the banner, the header's link, the re-check on return, the session generation, a real refusal | touching a call that sends the session cookie, a 401/403 mapping, the banner, a sign-in-again link |
 | `images-docker.md` | Dockerfiles, frontend image, share cards | touching `docker/`, the image build, `.dockerignore` |
 | `deploiement.md` | Kubernetes manifests, ConfigMaps, pod security, stateful PVCs — and the index of the four below | touching `k8s/`, `docker/`, a workflow |
 | `deploiement-pipeline.md` | deploy Jobs, `kubectl exec` boundary, migration before rollout, deploy waits | touching a Job, `pipeline.yml`'s deploy jobs, `run-job.sh`, `wait-rollout.sh`, a migration |
@@ -395,7 +395,8 @@ ADRs (status, dates and amendments live in each ADR):
   `BaseAccessController`; and before adding a revocation list, lengthening `token_ttl` or gating anything
   more sensitive than the CV: **`POST /api/logout` does not revoke the JWT** (accepted risk, amended
   2026-09-21; reduced on 2026-10-28, #650: a JWT opened before the account's last password
-  change — its credentials version is no longer the account's — is refused by the whole `api` firewall).
+  change — its credentials version is no longer the account's — is refused by the whole `api` firewall; amended
+  2026-10-29, #748: `BEARER` and `XSRF-TOKEN` are session cookies, and any refused cookie is cleared by its first 401).
 - `docs/adr/0004-assistance-ia.md` — anything that calls a language model: one importing class behind an
   interface, bundle pinned exact, no call from a public render path, only publishable backoffice content
   leaves (the nominative CV only to the site's host or self-hosted), never a call on behalf of the base
