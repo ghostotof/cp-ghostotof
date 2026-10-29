@@ -318,8 +318,8 @@ conditions qui rouvrent la décision (ci-dessus) sont inchangées.
 
 **Amendement du 2026-10-29 (#748, F1, décision de l'auteur) — `BEARER` et `XSRF-TOKEN` sont des cookies de
 session, et tout cookie refusé est effacé par son premier 401.** Les faits : `set_cookies.BEARER.lifetime` vaut
-désormais `0` (Lexik n'écrit alors ni `Expires` ni `Max-Age`) et `AuthCookieFactory::xsrf()` n'est plus appelé avec
-une échéance, au login comme à l'accès de base ; le JWT garde son `exp` — `token_ttl` (3600) ou les 900 secondes de
+désormais `0` (Lexik n'écrit alors ni `Expires` ni `Max-Age`) et `AuthCookieFactory::bearer()` et `xsrf()` n'acceptent
+plus d'échéance, au login comme à l'accès de base ; le JWT garde son `exp` — `token_ttl` (3600) ou les 900 secondes de
 l'accès de base, inchangés. Ce que cela change : le risque « navigateur fermé » — un cookie qui survit à la
 fermeture du navigateur, donc une session lisible **et inscriptible** par la personne suivante sur la machine —
 **disparaît, sauf navigateur qui restaure la session** (Chrome « Continuer là où vous en étiez », Firefox
@@ -340,7 +340,12 @@ finie ; **le SPA ne l'envoie plus à une page publique** : ses lectures publique
 passe partent sans cookie (`credentials: 'omit'`, #748, R23 — décision de l'auteur du 2026-10-29, qui remplace une
 déconnexion de l'accès de base à son échéance), donc le premier 401 ne tombe plus que sur une route authentifiée, lue
 comme une session finie. L'accès de base expire côté frontend sur l'horloge du poste, un effet d'affichage sans appel
-réseau. Ce que cela ne change pas : un jeton copié reste valable jusqu'à son `exp`
+réseau. **Deuxième limite acceptée (CR3-2)** : l'effacement vise un nom de cookie, pas la valeur envoyée ; le serveur ne
+sait pas qu'un cookie plus neuf a été posé après l'envoi de la requête, et un `Set-Cookie` n'est jamais conditionnel : la
+réponse 401 tardive d'une requête authentifiée encore en vol avec un cookie mort efface alors les cookies neufs (fenêtre
+d'un aller-retour ; la suite se répare d'elle-même par la reconnexion). **Tolérance d'horloge** : `clock_skew` vaut 5
+secondes (`iat` et `exp`), pour qu'un écart d'horloge entre deux pods ne devienne pas un 401 qui efface la session. Ce
+que cela ne change pas : un jeton copié reste valable jusqu'à son `exp`
 (`POST /api/logout` n'écrit toujours aucun état), la clé de signature reste le coupe-circuit global, et les
 conditions qui rouvrent la décision (ci-dessus) sont inchangées. Une session ouverte avant le déploiement garde ses
 cookies persistants, une heure au plus.

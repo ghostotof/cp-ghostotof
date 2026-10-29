@@ -44,11 +44,14 @@ final readonly class CsrfCookieRequestSubscriber
     /**
      * - /api/login_check : n'a pas encore de cookie XSRF-TOKEN (posé au login,
      *   donc après cette requête).
-     * - /api/contact : endpoint public, jamais atteint avec une session ou un
-     *   cookie BEARER à protéger (un visiteur anonyme n'a pas d'"état ambiant"
-     *   qu'un attaquant pourrait faire agir à son insu) — la protection
-     *   double-submit-cookie n'a pas de sens ici. Le spam reste un risque
-     *   distinct, traité par le honeypot de ContactMessageResource.
+     * - /api/contact : endpoint public. Le SPA l'appelle sans cookie
+     *   (`credentials: 'omit'`, #748) ; un autre client peut en envoyer un, sans
+     *   effet ici : la route ne lit aucune identité, donc aucun "état ambiant"
+     *   qu'un attaquant pourrait faire agir à son insu — la protection
+     *   double-submit-cookie n'a pas de sens ici. Un `BEARER` refusé y prend
+     *   tout de même le 401 du firewall `api`, qui authentifie dès qu'un cookie
+     *   est présent. Le spam reste un risque distinct, traité par le honeypot de
+     *   ContactMessageResource.
      * - /api/account/base-access (ADR 0003 D6) : même raisonnement — l'appelant
      *   est anonyme par définition (c'est le but de l'endpoint) et n'a donc
      *   aucun cookie XSRF-TOKEN préexistant à double-soumettre.

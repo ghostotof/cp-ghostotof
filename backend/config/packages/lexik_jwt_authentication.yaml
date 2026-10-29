@@ -4,6 +4,18 @@ lexik_jwt_authentication:
     pass_phrase: '%env(JWT_PASSPHRASE)%'
     token_ttl: 3600
 
+    # Tolérance d'horloge, en secondes (#748, A3-9, décision de l'auteur du 2026-10-29) : deux pods
+    # dont les horloges divergent de quelques secondes ne doivent pas refuser un jeton légitime — un
+    # `iat` en avance d'une seconde est un 401, et depuis F1 ce 401 efface les deux cookies, donc la
+    # session. Défaut du bundle : 0. Elle relâche **aussi `exp`** (Lexik 3.2, LoadedJWS et
+    # LcobucciJWSProvider::verify()) : un jeton expiré est servi jusqu'à cinq secondes de plus, c'est
+    # la raison de ne pas aller au-delà. `nbf`, que le site ne pose pas, suivrait la même règle. Le
+    # consentement MCP lit `iat` pour ses dix minutes de fraîcheur (JwtAuthenticationInstant) : un
+    # `iat` jusqu'à cinq secondes dans le futur y donne un âge négatif, donc « récent » — sans
+    # conséquence. `cv` (CredentialsVersionClaim) ne lit aucune date.
+    # JwtClockSkewTest épingle la valeur et les deux bornes.
+    clock_skew: 5
+
     # Le token ne voyage jamais dans le header Authorization : uniquement dans le
     # cookie httpOnly "BEARER" (inaccessible en JS, protégé du vol par XSS).
     token_extractors:

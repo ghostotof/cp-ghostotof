@@ -65,8 +65,10 @@ final readonly class BaseAccessController
 
         // Cookies de session, sans échéance (#748, F1) : le navigateur fermé finit l'accès, et
         // l'`exp` du JWT le borne à quinze minutes. Passé l'`exp`, le premier 401 efface les deux
-        // cookies (StaleSessionCookiesClearingListener) ; le frontend doit déconnecter avant,
-        // à `expiresAt` (#748, R21b), pour que ce 401 ne tombe pas sur une page publique.
+        // cookies (StaleSessionCookiesClearingListener) ; le frontend n'envoie aucun cookie aux
+        // routes publiques (#748, R23), donc ce 401 ne tombe que sur une route authentifiée, et
+        // « Accès instantané » rejoue une fois sur ce 401 (R24) : la route est sous le firewall
+        // `api`, où un `BEARER` mort est refusé avant que le contrôleur n'émette le nouveau.
         $response->headers->setCookie($this->authCookieFactory->bearer($jwt));
         $response->headers->setCookie($this->authCookieFactory->xsrf($this->csrfCookieTokenSigner->issue()));
 

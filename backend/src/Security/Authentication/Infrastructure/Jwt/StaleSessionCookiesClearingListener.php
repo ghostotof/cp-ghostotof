@@ -27,9 +27,25 @@ use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
  * ferait de tout `/api` un 401. Effacé par son premier 401, la requête suivante
  * est anonyme, et servie.
  *
- * Le prix, accepté : ce premier 401 existe. Le frontend déconnecte l'accès de
- * base à son échéance (R21b) ; pour un login, dont l'échéance ne lui est pas
- * exposée, la première requête qui suit l'expiration du JWT le prend.
+ * Le prix, accepté : ce premier 401 existe. Le frontend n'envoie plus aucun
+ * cookie à une route publique (`credentials: 'omit'`, #748 R23) : le 401 ne
+ * tombe donc que sur une route authentifiée, où le frontend le lit comme une
+ * session finie. Pour un login, dont l'échéance ne lui est pas exposée, la
+ * première requête authentifiée qui suit l'expiration du JWT le prend.
+ *
+ * **Limite acceptée (#748, CR3-2, 3e relecture)** : l'effacement vise un *nom*,
+ * pas un cookie. Le serveur ne connaît que le cookie que la requête portait ;
+ * il ne peut pas savoir qu'un cookie plus neuf a été posé par une autre réponse
+ * (celle d'une connexion dans un autre onglet, par exemple) après l'envoi de
+ * celle-ci, et un `Set-Cookie` n'est jamais conditionnel à ce que le navigateur
+ * détient à l'arrivée. Une réponse 401 tardive, partie avec un cookie mort,
+ * efface donc les cookies neufs. La fenêtre est de l'ordre d'un aller-retour et
+ * ne concerne qu'une requête authentifiée encore en vol ; la suite se répare
+ * d'elle-même — une lecture prend un 401, une écriture un 403 sans jeton CSRF,
+ * tous deux lus comme « session finie » (bandeau, reconnexion). Écarté : n'effacer
+ * que si le JWT a expiré « depuis peu » — la course porte sur l'ordre d'arrivée
+ * des réponses, non sur l'âge du jeton, et cela rouvrirait le 401 permanent
+ * d'un vieux cookie. ADR 0003, amendement du 2026-10-29.
  *
  * Les cookies viennent d'AuthCookieFactory (issue #87, #714) : un cookie
  * « supprimé » aux attributs différents de la pose n'est pas supprimé.

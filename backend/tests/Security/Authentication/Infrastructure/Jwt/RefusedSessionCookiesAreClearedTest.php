@@ -32,8 +32,12 @@ final class RefusedSessionCookiesAreClearedTest extends WebTestCase
 {
     use ReadsResponseCookies;
 
-    /** Une route publique (ApiRouteExposureTest::PUBLIC_PATHS) : sans cookie, personne n'y est refusé. */
-    private const string PUBLIC_ROUTE = '/api/about/fr';
+    /**
+     * Une route publique (ApiRouteExposureTest::PUBLIC_PATHS) : sans cookie, personne n'y est refusé.
+     * Elle répond 200 sur une table vide (ContributionResourceTest) : un 404, un 403 ou tout autre
+     * code que le 200 ne passe pas pour « servie » (St3-3 de la troisième relecture).
+     */
+    private const string PUBLIC_ROUTE = '/api/contributions/fr';
 
     private KernelBrowser $client;
 
@@ -103,12 +107,9 @@ final class RefusedSessionCookiesAreClearedTest extends WebTestCase
     {
         $this->client->request('GET', self::PUBLIC_ROUTE);
 
-        // La base de test n'a pas de réglage « À propos » : le contrôleur répond 404 (sa propre
-        // absence), ce qui prouve qu'il a été atteint — la requête est anonyme, le firewall ne
-        // refuse plus rien. Seul le 401 du cookie mort serait un échec ici.
-        $status = $this->client->getResponse()->getStatusCode();
-        self::assertNotSame(401, $status, 'Le cookie effacé ne doit plus faire refuser la route publique.');
-        self::assertLessThan(500, $status);
+        // Seul le 200 prouve que la route a été atteinte et servie : un 401 est le cookie mort, et
+        // tout autre code (un 403, un 404) laisserait passer un refus qui n'est pas celui-là.
+        self::assertResponseStatusCodeSame(200, 'Le cookie effacé ne doit plus faire refuser la route publique.');
     }
 
     /** Pose ce JWT en `BEARER` dans le navigateur de test, comme un cookie de session le garderait. */

@@ -42,8 +42,8 @@ paths:
   `CsrfCookieRequestSubscriber` reads), `Path=/`, no `Domain`, `SameSite=Lax`, `HttpOnly` on `BEARER`
   only, `Secure` everywhere but `dev` (issue #714 — `test` included, see below; `dev` is served in http,
   where Chrome and Firefox accept a `Secure` cookie on `localhost`, a secure context, but not every browser,
-  and none on another address). `bearer()` / `xsrf()` take an optional expiry (a session cookie without; no site
-  passes one since #748, F1),
+  and none on another address). `bearer()` / `xsrf()` take **one parameter, no expiry** (#748, St3-3: a session cookie only, so
+  none persistent can be asked for; `AuthCookieFactoryTest::testNeitherCookieTakesAnExpiry`),
   `expired()` mirrors the issued attributes with a past date — a cleared cookie whose attributes differ
   from the set one is *not* removed by the browser, which is the drift the factory exists to prevent. The
   three sites (`LoginSuccessSubscriber`, `BaseAccessController`, `CookieLogoutListener`) go through it;
@@ -134,7 +134,7 @@ paths:
     login that read the old hash before the change's COMMIT but signed a second later passed (F-A), two pods' clocks
     refused a legitimate sign-in (F-B), and « the same second » was refused in both directions (`<=`). All gone: a
     person signing in right after a change is served, and tests no longer move a date back in SQL. A future `iat`
-    (a pod's clock ahead) is refused by Lexik itself before this rule.
+    (a pod's clock ahead by more than `clock_skew`, below) is refused by Lexik itself before this rule.
   - **`StaleSessionCookiesClearingListener`** (`Infrastructure/Jwt`, Lexik's `JWT_INVALID` **and** `JWT_EXPIRED`, #748
     F1) makes **every** refusal of the `BEARER` cookie — expired, invalid (signature, payload, account gone), opened
     before a password change (#650) — **expire `BEARER` and `XSRF-TOKEN`** through `AuthCookieFactory::expired()`. The
@@ -149,6 +149,16 @@ paths:
     `.claude/rules/frontend-backoffice.md`, « Route protection »). Pinned by `RefusedSessionCookiesAreClearedTest`
     (expired and invalid cookies cleared with the factory's attributes, the public route served afterwards, a served
     session clearing nothing) and, for the password change, `SessionBeforePasswordChangeTest`.
+  - **`lexik_jwt_authentication.clock_skew: 5`** (#748, A3-9, the author's decision of 2026-10-29): a pod's clock a
+    second ahead made an `iat` in the future a 401 which, since F1, clears the session. Read in Lexik 3.2
+    (`LoadedJWS`, `LcobucciJWSProvider::verify()`): it loosens `iat` **and `exp`** (an expired token is served up to
+    5 s more — hence no more than 5), and `nbf` (not set here); `cv` reads no date; the MCP consent reads `iat`, a
+    future one up to 5 s giving a negative age, « recent », harmless. `JwtClockSkewTest` pins the value and both bounds.
+  - **Accepted limit (CR3-2)**: the clearing targets a cookie *name*, not the value sent. A late 401 of an
+    authenticated request still in flight with a dead cookie clears the fresh cookies another tab just received (a
+    `Set-Cookie` is never conditional); window of one round trip, repaired by the sign-in that follows (read: 401,
+    write: 403 without CSRF token, both « session ended »). Conditioning on the JWT's age was rejected: the race is on
+    the order of arrival. ADR 0003, 2026-10-29 amendment.
   - **Every refusal is audited** (`session-refused-after-credentials-change`,
     `.claude/rules/security-authentication-audit.md`), before the exception is thrown.
   - **The consent keeps its own check** as defence in depth, unreachable by HTTP since R1b, the author's decision:
