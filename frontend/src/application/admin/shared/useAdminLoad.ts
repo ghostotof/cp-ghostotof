@@ -1,4 +1,5 @@
 import { ref, type Ref } from 'vue'
+import { AccessForbiddenError } from '../../../domain/auth/errors/AccessForbiddenError'
 import { SessionEndedError } from '../../../domain/auth/errors/SessionEndedError'
 import { onSessionRestored } from '../../auth/useAuth'
 import { createStaleRequestGuard } from '../../shared/staleRequestGuard'
@@ -35,7 +36,9 @@ export interface AdminLoadOptions<T, K> {
  * — **sauf `SessionEndedError`**, levée par `BackofficeHttpClient` : une session finie n'est pas un échec de
  * chargement, le bandeau de session finie (`SessionEndedBanner`) l'annonce seul, et la valeur déjà lue reste
  * affichée. Un composable qui chargerait sans passer ici devrait réécrire ce filtre, et l'oublier doublerait
- * le bandeau d'une alerte de page.
+ * le bandeau d'une alerte de page. **Ni `AccessForbiddenError`** (#748, R17) : un refus réel du backoffice est
+ * annoncé par l'alerte « accès refusé » d'`AdminLayout`, la page ne lève pas `hasError` ; et comme le refus ne tient
+ * pas à la session, rien n'est relu à son retour (`interrupted` reste vide).
  *
  * **Non chargé n'est pas vide** (R4) : `isLoaded` ne devient vrai qu'une fois la valeur posée, et une clé nouvelle
  * (`K`) vide d'abord celle de l'ancienne (`clear`). Le seul composable à clé, les réglages « À propos »,
@@ -84,7 +87,7 @@ export function useAdminLoad<T, K = void>(options: AdminLoadOptions<T, K>): Admi
       if (requestGuard.isCurrent(token)) {
         if (error instanceof SessionEndedError) {
           interrupted = { key }
-        } else {
+        } else if (!(error instanceof AccessForbiddenError)) {
           hasError.value = true
         }
       }

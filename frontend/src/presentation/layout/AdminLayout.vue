@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useCvDownload } from '../../application/cv/useCvDownload'
+import AccessRefusedNotice from '../ui/admin/AccessRefusedNotice.vue'
 import SessionEndedBanner from '../ui/admin/SessionEndedBanner.vue'
 import IconDownload from '~icons/lucide/download'
 
@@ -158,6 +159,9 @@ onBeforeUnmount(() => {
 
     <!-- Un 401 d'une page ne la déplace pas : la fin de session s'annonce ici, une fois (#650, S2). -->
     <SessionEndedBanner />
+
+    <!-- Un vrai 403 (compte rétrogradé, signature CSRF périmée) : une seule alerte pour toutes les pages (#748, R17, F4). -->
+    <AccessRefusedNotice />
 
     <RouterView />
   </section>

@@ -222,13 +222,13 @@ version" copies nothing and the assistant sends all five fields.
   repository translates it, and the composables keep it quiet through `useAdminLoad` (reads) and `visibleMutationError`
   (mutations), the banner being the only announcement. **A new administration client goes through
   `BackofficeHttpClient`, a new composable through those two functions, and its mutations resolve to `true` only on
-  success** (a page resets its form on that, never on `errorMessage`). The rule, its backend facts, the shared errors, the
+  success** (a page resets its form on that, never on `errorMessage`). **Any other 403** (a read, or a write that carried its token) raises `AccessForbiddenError` after the reaction's `refused()` (#748, R17): kept quiet the same way, and `AccessRefusedNotice` in `AdminLayout` says it once (`common.accessRefused`, « Changer de compte » in the same tab). The rule, its backend facts, the shared errors, the
   banner, the header's link and the re-check on return: `.claude/rules/frontend-session.md`.
 - **Not loaded is not empty, a new key empties the old value, and what an ended session interrupted is read again on
   return** (#748, R4). `useAdminLoad` exposes `isLoaded` (the value of the current key was read and set: false before the
   first read, after a first read that ended on `SessionEndedError`, and as soon as a new key starts reading); an
   administration page says « aucune … » **only when `isLoaded`**, and shows `admin.notLoaded` (« Contenu non chargé… »,
-  not a live region: the banner announces) otherwise. Without it a first read in an ended session left the list at `[]`
+  not a live region: the banner or the « accès refusé » alert announces; the text is neutral) otherwise. Without it a first read in an ended session left the list at `[]`
   with no error, and twelve empty states claimed the content did not exist. `emptyStateNeedsLoaded.spec.ts` is the source
   guard: every file of `presentation/pages/admin` that composes a `…empty` state reads `isLoaded` at least as many times in
   its template. A new list page adds the `isLoaded` guard before its empty state.

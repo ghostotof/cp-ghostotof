@@ -318,7 +318,7 @@ describe('AdminCaseStudiesPage', () => {
       const { wrapper } = await mountPage(repositoryEndingSession({ ended: true }))
       mountedPage = wrapper
 
-      expect(wrapper.text()).toContain('Contenu non chargé')
+      expect(wrapper.text()).toContain('Contenu non chargé : voyez le message en haut de la page.')
       expect(wrapper.text()).not.toContain('Aucune étude de cas')
       expect(wrapper.find('table').exists()).toBe(false)
       // Le bandeau de session finie est la seule alerte : la mention n'en est pas une.

@@ -17,7 +17,7 @@ import { authState, markSessionExpired } from '../../../../src/application/auth/
 import { HttpAdminWatchedProductRepository } from '../../../../src/infrastructure/admin/watch/HttpAdminWatchedProductRepository'
 import { HttpAdminVulnerabilityRepository } from '../../../../src/infrastructure/admin/watch/HttpAdminVulnerabilityRepository'
 import { setBackofficeSessionEndedHandler } from '../../../../src/infrastructure/admin/shared/BackofficeHttpClient'
-import { backofficeSessionEndedHandler } from '../../../../src/presentation/router/backofficeSessionExpiry'
+import { createBackofficeSessionEndedHandler } from '../../../../src/presentation/router/backofficeSessionExpiry'
 import { signInAgain } from '../../../support/signInAgain'
 import { expectNoAccessibilityViolation } from '../../../support/axe'
 
@@ -465,7 +465,8 @@ describe('AdminWatchPage', () => {
 
       it("deux lectures en 401 arrivées dans deux ticks : le bandeau n'est annoncé qu'une fois", async () => {
         // La vraie chaîne : dépôts HTTP, client du backoffice et réaction branchée comme `main.ts` le fait.
-        setBackofficeSessionEndedHandler(backofficeSessionEndedHandler)
+        // Aucun refus réel dans ce cas : la relecture du palier (R17) est un double, la page ne fournit pas `AUTH_REPOSITORY`.
+        setBackofficeSessionEndedHandler(createBackofficeSessionEndedHandler({ rereadAfterRefusal: async () => 'session-held' }))
         const answers: ((response: Response) => void)[] = []
         vi.stubGlobal(
           'fetch',
@@ -516,7 +517,7 @@ describe('AdminWatchPage', () => {
 
         // Ce que le volet dirait sinon est une affirmation (« aucune vulnérabilité ») que personne n'a vérifiée.
         expect(wrapper.text()).not.toContain('Aucune vulnérabilité connue')
-        expect(wrapper.text()).toContain('Contenu non chargé')
+        expect(wrapper.text()).toContain('Contenu non chargé : voyez le message en haut de la page.')
         expect(wrapper.find('[role="alert"]').exists()).toBe(false)
       })
 

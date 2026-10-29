@@ -1,3 +1,4 @@
+import { AccessForbiddenError } from '../../../domain/auth/errors/AccessForbiddenError'
 import { SessionEndedError } from '../../../domain/auth/errors/SessionEndedError'
 import type { ApiProblemBody } from '../../http/problemJson'
 import { sessionAwareFetch, type SessionAwareResponse } from '../../http/sessionAwareFetch'
@@ -17,6 +18,12 @@ export interface BackofficeSessionEndedHandler {
    * échec ordinaire.
    */
   ended(sentAt: number): boolean
+  /**
+   * Un refus réel (#748, R17) : un 403 qui n'est pas une fin de session — une lecture, ou une écriture partie avec
+   * son jeton. Appelé une fois par refus, juste avant que le client lève `AccessForbiddenError` : la réaction compte
+   * le refus (l'alerte d'`AdminLayout` le dit) et relit le palier.
+   */
+  refused(): void
 }
 
 let sessionEndedHandler: BackofficeSessionEndedHandler | null = null
@@ -72,8 +79,11 @@ export class BackofficeHttpClient {
    * `visibleMutationError` (`application/admin/shared/`) taisent, le bandeau de session finie étant alors la seule
    * annonce. Si la réaction dit au contraire que la session a été rétablie depuis l'envoi (`ended` faux), la
    * réponse est d'une session révolue : elle est rendue au dépôt comme un refus ordinaire, et ne refinit rien.
-   * Sans réaction enregistrée, `SessionEndedError` comme toujours. Un autre refus est rendu tel quel : le
-   * dépôt lui donne le sens qu'il a pour sa ressource.
+   * Sans réaction enregistrée, `SessionEndedError` comme toujours. Un autre statut est rendu tel quel : le
+   * dépôt lui donne le sens qu'il a pour sa ressource — **sauf un 403** (#748, R17) : une lecture, ou une écriture
+   * qui portait son jeton, refusée, est un refus réel. Le client appelle `refused` (une fois) puis **lève**
+   * `AccessForbiddenError`, que les composables taisent comme `SessionEndedError` : aucun dépôt n'a à le traduire, et
+   * l'alerte d'`AdminLayout` est la seule annonce. Sans réaction enregistrée, il lève aussi.
    */
   private react(judged: SessionAwareResponse, sentAt: number | undefined): Response {
     if (judged.endedTheSession) {
@@ -83,6 +93,12 @@ export class BackofficeHttpClient {
       }
 
       throw new SessionEndedError()
+    }
+
+    if (403 === judged.response.status) {
+      sessionEndedHandler?.refused()
+
+      throw new AccessForbiddenError()
     }
 
     return judged.response

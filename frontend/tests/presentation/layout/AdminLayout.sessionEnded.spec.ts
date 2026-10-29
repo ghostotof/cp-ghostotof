@@ -10,12 +10,16 @@ import { CV_REPOSITORY } from '../../../src/application/cv/useCvDownload'
 import { AUTH_REPOSITORY, authState, markSessionExpired, useAuth } from '../../../src/application/auth/useAuth'
 import { HttpAdminCaseStudyRepository } from '../../../src/infrastructure/admin/caseStudies/HttpAdminCaseStudyRepository'
 import { setBackofficeSessionEndedHandler } from '../../../src/infrastructure/admin/shared/BackofficeHttpClient'
-import { backofficeSessionEndedHandler } from '../../../src/presentation/router/backofficeSessionExpiry'
+import {
+  createBackofficeSessionEndedHandler,
+} from '../../../src/presentation/router/backofficeSessionExpiry'
+import { clearBackofficeAccessRefusal } from '../../../src/application/admin/shared/backofficeAccessRefusal'
+import { expectNoAccessibilityViolation } from '../../support/axe'
 import type { AuthRepository } from '../../../src/domain/auth/repositories/AuthRepository'
 import type { AdminTranslationRepository } from '../../../src/domain/admin/translation/repositories/AdminTranslationRepository'
 import type { CvRepository } from '../../../src/domain/cv/repositories/CvRepository'
 import { sessionFor } from '../../support/authSession'
-import { defineComponent } from 'vue'
+import { defineComponent, h } from 'vue'
 
 const SUPER = { username: 'super', roles: ['ROLE_SUPER', 'ROLE_USER'] }
 
@@ -24,6 +28,19 @@ const authRepository: AuthRepository = {
   logout: async () => undefined,
   hasWriteToken: () => true,
   me: async () => sessionFor(null),
+}
+
+/**
+ * La réaction de production, construite comme `main.ts` le fait (#748, R17) : sur le `useAuth()` d'un composant
+ * monté avec `repository`, dont `me` est ce que la relecture du palier lira.
+ */
+function createProductionHandler(repository: AuthRepository): ReturnType<typeof createBackofficeSessionEndedHandler> {
+  const Probe = defineComponent({ setup: () => ({ handler: createBackofficeSessionEndedHandler(useAuth()) }), template: '<div />' })
+  const probe = mount(Probe, { global: { provide: { [AUTH_REPOSITORY as symbol]: repository } } })
+  const { handler } = probe.vm
+  probe.unmount()
+
+  return handler
 }
 
 const translationRepository: AdminTranslationRepository = { translate: vi.fn() }
@@ -45,7 +62,10 @@ async function signIn(): Promise<void> {
  * vrai dépôt HTTP (donc `BackofficeHttpClient`) sur un `fetch` simulé, et la
  * vraie réaction à un 401.
  */
-async function mountAdminCaseStudies(): Promise<{ wrapper: VueWrapper; router: Router }> {
+async function mountAdminCaseStudies(
+  auth: AuthRepository = authRepository,
+  locale: 'fr' | 'en' = 'fr',
+): Promise<{ wrapper: VueWrapper; router: Router }> {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
@@ -54,26 +74,32 @@ async function mountAdminCaseStudies(): Promise<{ wrapper: VueWrapper; router: R
         component: AdminLayout,
         // Comme la vraie route : le lien de reconnexion ne ramène qu'à une route `requiresAuth` (#748, R16, F8).
         meta: { requiresAuth: true },
-        children: [{ path: 'case-studies', name: 'admin-case-studies', component: AdminCaseStudiesPage }],
+        children: [
+          { path: 'case-studies', name: 'admin-case-studies', component: AdminCaseStudiesPage },
+          { path: 'elsewhere', name: 'admin-elsewhere', component: defineComponent({ setup: () => () => h('p', 'ailleurs') }) },
+        ],
       },
       { path: '/:locale(fr|en)/admin/users', name: 'admin-users', component: AdminCaseStudiesPage },
       { path: '/:locale(fr|en)/login', name: 'login', component: AdminCaseStudiesPage },
     ],
   })
-  await router.push('/fr/admin/case-studies')
+  await router.push(`/${locale}/admin/case-studies`)
   await router.isReady()
 
+  const i18n = createAppI18n()
+  // La langue de l'interface suit celle de la route (le routeur de production la pose).
+  i18n.global.locale.value = locale
   const wrapper = mount(
     defineComponent({ template: '<RouterView />' }),
     {
       attachTo: document.body,
       global: {
-        plugins: [createAppI18n(), router],
+        plugins: [i18n, router],
         provide: {
           [ADMIN_CASE_STUDY_REPOSITORY as symbol]: new HttpAdminCaseStudyRepository('https://api.example.test'),
           [ADMIN_TRANSLATION_REPOSITORY as symbol]: translationRepository,
           [CV_REPOSITORY as symbol]: cvRepository,
-          [AUTH_REPOSITORY as symbol]: authRepository,
+          [AUTH_REPOSITORY as symbol]: auth,
         },
       },
     },
@@ -91,7 +117,7 @@ async function mountAdminCaseStudies(): Promise<{ wrapper: VueWrapper; router: R
 describe('AdminLayout — fin de session pendant une saisie (#650, S2)', () => {
   beforeEach(async () => {
     await signIn()
-    setBackofficeSessionEndedHandler(backofficeSessionEndedHandler)
+    setBackofficeSessionEndedHandler(createProductionHandler(authRepository))
     vi.stubGlobal(
       'fetch',
       vi.fn(async (_url: string, init?: RequestInit) =>
@@ -151,11 +177,12 @@ async function fillAndSubmit(wrapper: VueWrapper): Promise<void> {
 describe('AdminLayout — une seule annonce de fin de session (#748)', () => {
   beforeEach(async () => {
     await signIn()
-    setBackofficeSessionEndedHandler(backofficeSessionEndedHandler)
+    setBackofficeSessionEndedHandler(createProductionHandler(authRepository))
   })
 
   afterEach(() => {
     setBackofficeSessionEndedHandler(null)
+    clearBackofficeAccessRefusal()
     vi.unstubAllGlobals()
     document.cookie = 'XSRF-TOKEN=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/'
     document.body.innerHTML = ''
@@ -230,17 +257,142 @@ describe('AdminLayout — une seule annonce de fin de session (#748)', () => {
     wrapper.unmount()
   })
 
-  it("un 403 avec jeton : pas de bandeau, l'erreur de la page", async () => {
+  it("un 403 avec jeton : pas de bandeau de session finie, l'alerte « accès refusé » (#748, R17)", async () => {
     document.cookie = 'XSRF-TOKEN=jeton; path=/'
     stubWrites(403)
-    const { wrapper } = await mountAdminCaseStudies()
+    // Le palier relu après le refus reste celui d'un compte : la session tient.
+    const signedIn: AuthRepository = { ...authRepository, me: async () => sessionFor(SUPER) }
+    setBackofficeSessionEndedHandler(createProductionHandler(signedIn))
+    const { wrapper } = await mountAdminCaseStudies(signedIn)
 
     await fillAndSubmit(wrapper)
 
     const alerts = wrapper.findAll('[role="alert"]')
     expect(alerts.some((alert) => alert.text().includes('Votre session a pris fin'))).toBe(false)
-    expect(alerts.some((alert) => alert.text().includes('Une erreur est survenue'))).toBe(true)
-    expect(authState.user).not.toBeNull()
+    expect(alerts.some((alert) => alert.text().includes('Une erreur est survenue'))).toBe(false)
+    expect(alerts).toHaveLength(1)
+    expect(alerts[0]?.text()).toContain("Le serveur refuse cette demande à votre session")
+    wrapper.unmount()
+  })
+})
+
+/**
+ * Un refus réel du backoffice (#748, R17, F4) : un 403 qui n'est pas une fin de session. Le compte garde son jeton
+ * (`XSRF-TOKEN`), mais n'a plus, ou pas, `ROLE_SUPER`. Une seule alerte, celle d'`AdminLayout`, avec « Changer de
+ * compte » dans le même onglet ; la saisie reste ; le palier est relu une fois.
+ */
+describe('AdminLayout — refus réel du backoffice (#748, R17)', () => {
+  const me = vi.fn(async () => sessionFor(SUPER))
+  const repository: AuthRepository = { ...authRepository, me }
+
+  function stubFetch(readStatus: number, writeStatus: number): void {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init?: RequestInit) =>
+        'GET' === (init?.method ?? 'GET')
+          ? jsonResponse(readStatus, 200 === readStatus ? [] : { code: readStatus, message: 'x' })
+          : jsonResponse(writeStatus, { code: writeStatus, message: 'x' }),
+      ),
+    )
+  }
+
+  beforeEach(async () => {
+    me.mockClear()
+    await signIn()
+    document.cookie = 'XSRF-TOKEN=jeton; path=/'
+    setBackofficeSessionEndedHandler(createProductionHandler(repository))
+  })
+
+  afterEach(() => {
+    setBackofficeSessionEndedHandler(null)
+    clearBackofficeAccessRefusal()
+    vi.unstubAllGlobals()
+    document.cookie = 'XSRF-TOKEN=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/'
+    document.body.innerHTML = ''
+  })
+
+  it("aucun refus : aucune alerte « accès refusé »", async () => {
+    stubFetch(200, 200)
+    const { wrapper } = await mountAdminCaseStudies(repository)
+
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it.each([
+    ['fr', "Le serveur refuse cette demande à votre session : votre compte n'a peut-être pas, ou plus, l'accès de confiance, ou la session doit être rouverte. Changez de compte, ou reconnectez-vous au même, pour continuer.", 'Changer de compte'],
+    ['en', 'The server refuses this request to your session: your account may not have, or may no longer have, trusted access, or the session needs to be reopened. Switch account, or sign in again to the same one, to continue.', 'Switch account'],
+  ] as const)(
+    "refus réel à l'enregistrement (%s) : une alerte, « Changer de compte » vers la connexion dans le même onglet, la saisie reste, le palier est relu une fois",
+    async (locale, message, linkLabel) => {
+      stubFetch(200, 403)
+      const { wrapper, router } = await mountAdminCaseStudies(repository, locale)
+
+      await fillAndSubmit(wrapper)
+
+      const alerts = wrapper.findAll('[role="alert"]')
+      expect(alerts).toHaveLength(1)
+      expect(alerts[0]?.text()).toContain(message)
+      const link = alerts[0]?.get('a')
+      expect(link?.text()).toBe(linkLabel)
+      expect(link?.attributes('href')).toBe(`/${locale}/login?redirect=/${locale}/admin/case-studies&reauth=1`)
+      expect(link?.attributes('target')).toBeUndefined()
+      // La saisie reste : la mutation rend `false`, la page n'est pas démontée.
+      expect((wrapper.get('#admin-case-study-title').element as HTMLInputElement).value).toBe('Un moteur de tarification asynchrone')
+      expect(router.currentRoute.value.fullPath).toBe(`/${locale}/admin/case-studies`)
+      expect(me).toHaveBeenCalledTimes(1)
+      expect(authState.user).not.toBeNull()
+      await expectNoAccessibilityViolation(wrapper)
+      wrapper.unmount()
+    },
+  )
+
+  it("refus réel d'une lecture au chargement : l'alerte, une seule, et pas l'échec de chargement de la page", async () => {
+    stubFetch(403, 200)
+    const { wrapper } = await mountAdminCaseStudies(repository)
+
+    const alerts = wrapper.findAll('[role="alert"]')
+    expect(alerts).toHaveLength(1)
+    expect(alerts[0]?.text()).toContain('Le serveur refuse cette demande')
+    expect(me).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+  })
+
+  it('un second refus remplace le message sans dupliquer l\'alerte', async () => {
+    stubFetch(403, 403)
+    const { wrapper } = await mountAdminCaseStudies(repository)
+
+    await fillAndSubmit(wrapper)
+
+    expect(wrapper.findAll('[role="alert"]')).toHaveLength(1)
+    expect((wrapper.get('#admin-case-study-title').element as HTMLInputElement).value).toBe('Un moteur de tarification asynchrone')
+    wrapper.unmount()
+  })
+
+  it("l'alerte s'efface à la navigation", async () => {
+    stubFetch(200, 403)
+    const { wrapper, router } = await mountAdminCaseStudies(repository)
+    await fillAndSubmit(wrapper)
+    expect(wrapper.findAll('[role="alert"]')).toHaveLength(1)
+
+    await router.push('/fr/admin/elsewhere')
+    await flushPromises()
+
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it("la relecture trouve la session finie : seul le bandeau de session finie reste", async () => {
+    stubFetch(200, 403)
+    me.mockImplementationOnce(async () => sessionFor(null))
+    const { wrapper } = await mountAdminCaseStudies(repository)
+
+    await fillAndSubmit(wrapper)
+
+    const alerts = wrapper.findAll('[role="alert"]')
+    expect(alerts).toHaveLength(1)
+    expect(alerts[0]?.text()).toContain('Votre session a pris fin')
+    expect(authState.sessionEnded).toBe(true)
     wrapper.unmount()
   })
 })

@@ -3,6 +3,7 @@ import { defineComponent, h, ref, watch } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { useAdminLoad } from '../../../../src/application/admin/shared/useAdminLoad'
 import { SessionEndedError } from '../../../../src/domain/auth/errors/SessionEndedError'
+import { AccessForbiddenError } from '../../../../src/domain/auth/errors/AccessForbiddenError'
 import { markSessionExpired } from '../../../../src/application/auth/useAuth'
 import { signInAgain } from '../../../support/signInAgain'
 
@@ -96,6 +97,27 @@ describe('useAdminLoad', () => {
     expect(state.hasError.value).toBe(false)
     expect(state.isLoading.value).toBe(false)
     expect(value.value).toBe('lue')
+  })
+
+  it("un refus réel ne lève pas hasError et n'est pas relu au retour d'une session (#748, R17)", async () => {
+    // Le refus d'un compte qui n'a pas, ou plus, l'accès : l'alerte d'AdminLayout le dit, la page ne dit rien de plus,
+    // et relire ne le lèverait pas — se reconnecter au même compte non plus.
+    const read = vi.fn(async (): Promise<string> => {
+      throw new AccessForbiddenError()
+    })
+    const state = mountLoad<string>({ read, apply: () => undefined })
+
+    await state.load()
+
+    expect(state.hasError.value).toBe(false)
+    expect(state.isLoading.value).toBe(false)
+    expect(state.isLoaded.value).toBe(false)
+
+    read.mockClear()
+    markSessionExpired()
+    await signInAgain()
+
+    expect(read).not.toHaveBeenCalled()
   })
 
   it('une réponse plus ancienne que le dernier load est jetée', async () => {

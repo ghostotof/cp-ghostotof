@@ -66,7 +66,7 @@ import { HttpMcpConnectionsRepository } from './infrastructure/mcp/HttpMcpConnec
 import { BASE_ACCESS_REPOSITORY } from './application/baseAccess/useBaseAccess'
 import { HttpBaseAccessRepository } from './infrastructure/baseAccess/HttpBaseAccessRepository'
 import { setBackofficeSessionEndedHandler } from './infrastructure/admin/shared/BackofficeHttpClient'
-import { backofficeSessionEndedHandler } from './presentation/router/backofficeSessionExpiry'
+import { createBackofficeSessionEndedHandler } from './presentation/router/backofficeSessionExpiry'
 import { getApiUrl } from './infrastructure/config/getApiUrl'
 
 const app = createApp(App)
@@ -114,8 +114,9 @@ app.use(router)
 // ferme la session côté interface et l'annonce par un bandeau, sans quitter la
 // page (#650 R1c, S2) : le texte en cours de saisie n'est pas perdu. Le verdict
 // est jugé par génération de session (#748, R14) : une réponse d'une session
-// révolue ne la finit pas.
-setBackofficeSessionEndedHandler(backofficeSessionEndedHandler)
+// révolue ne la finit pas. Un 403 qui n'est pas une fin de session (un refus réel, #748 R17) relit le palier une
+// fois : la réaction est construite ici, avec le `useAuth()` de l'application, qui seul a le dépôt d'authentification.
+setBackofficeSessionEndedHandler(app.runWithContext(() => createBackofficeSessionEndedHandler(useAuth())))
 
 app.mount('#app')
 

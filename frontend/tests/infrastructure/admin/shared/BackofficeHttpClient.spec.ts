@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { BackofficeHttpClient, setBackofficeSessionEndedHandler, type BackofficeSessionEndedHandler } from '../../../../src/infrastructure/admin/shared/BackofficeHttpClient'
 import { SessionEndedError } from '../../../../src/domain/auth/errors/SessionEndedError'
+import { AccessForbiddenError } from '../../../../src/domain/auth/errors/AccessForbiddenError'
 
 const API_BASE_URL = 'https://api.example.test'
 
@@ -11,9 +12,16 @@ function response(status: number): Response {
   return new Response(body, { status, headers: { 'Content-Type': 'application/json' } })
 }
 
-/** Une réaction du backoffice : `ended` est l'espion, `stamp` la génération lue à l'envoi. */
-function reaction(ended: BackofficeSessionEndedHandler['ended'] = () => true, stamp = 0): BackofficeSessionEndedHandler {
-  return { stampAtSend: () => stamp, ended }
+/**
+ * Une réaction du backoffice : `ended` est l'espion du verdict « session finie », `stamp` la génération lue à
+ * l'envoi, `refused` l'espion du refus réel (#748, R17).
+ */
+function reaction(
+  ended: BackofficeSessionEndedHandler['ended'] = () => true,
+  stamp = 0,
+  refused: BackofficeSessionEndedHandler['refused'] = () => undefined,
+): BackofficeSessionEndedHandler {
+  return { stampAtSend: () => stamp, ended, refused }
 }
 
 function setCsrfCookie(value: string): void {
@@ -29,8 +37,8 @@ function clearCsrfCookie(): void {
  * changement de mot de passe, #650 R1b), comme un 403 à une écriture partie sans
  * jeton CSRF (#748, constat 15) : le client appelle la réaction puis **lève**
  * `SessionEndedError` (#748, R3), que les dépôts laissent traverser. Un 403 à une lecture
- * ou à une écriture qui portait son jeton est un refus réel, rendu tel quel au dépôt, qui
- * lui donne son sens.
+ * ou à une écriture qui portait son jeton est un refus réel (#748, R17) : le client appelle `refused` puis
+ * **lève** `AccessForbiddenError`, que les composables taisent comme la session finie.
  */
 describe('BackofficeHttpClient — fin de session', () => {
   afterEach(() => {
@@ -70,11 +78,11 @@ describe('BackofficeHttpClient — fin de session', () => {
     expect(init[1].headers).not.toHaveProperty('X-XSRF-TOKEN')
   })
 
-  it.each([200, 204, 403, 404, 409, 422, 500])("un %i n'appelle pas la réaction et rend la réponse", async (status) => {
+  it.each([200, 204, 404, 409, 422, 500])("un %i n'appelle aucune réaction et rend la réponse", async (status) => {
     const onSessionEnded = vi.fn(() => true)
-    setBackofficeSessionEndedHandler(reaction(onSessionEnded))
+    const onRefused = vi.fn()
+    setBackofficeSessionEndedHandler(reaction(onSessionEnded, 0, onRefused))
     vi.stubGlobal('fetch', vi.fn(async () => response(status)))
-    // Le jeton est posé : une écriture qui le porte et se fait refuser en 403 est un refus réel.
     setCsrfCookie('jeton')
     const client = new BackofficeHttpClient(API_BASE_URL)
 
@@ -82,20 +90,45 @@ describe('BackofficeHttpClient — fin de session', () => {
     const write = await client.mutate('DELETE', '/api/backoffice/users/1')
 
     expect(onSessionEnded).not.toHaveBeenCalled()
+    expect(onRefused).not.toHaveBeenCalled()
     expect(read.status).toBe(status)
     expect(write.status).toBe(status)
   })
 
-  it("une lecture en 403 n'est jamais une fin de session", async () => {
-    const onSessionEnded = vi.fn(() => true)
-    setBackofficeSessionEndedHandler(reaction(onSessionEnded))
-    vi.stubGlobal('fetch', vi.fn(async () => response(403)))
+  describe('refus réel (#748, R17)', () => {
+    // Une lecture (GET), ou une écriture (PUT) partie avec son jeton.
+    it.each(['GET', 'PUT'] as const)("403 sur %s : refused appelé une fois, AccessForbiddenError, jamais la session finie", async (method) => {
+      const onSessionEnded = vi.fn(() => true)
+      const onRefused = vi.fn()
+      setBackofficeSessionEndedHandler(reaction(onSessionEnded, 0, onRefused))
+      vi.stubGlobal('fetch', vi.fn(async () => response(403)))
+      // Le CSRF ne contrôle pas les lectures ; l'écriture, elle, porte son jeton : ce 403 est une autorisation refusée.
+      setCsrfCookie('jeton')
+      const client = new BackofficeHttpClient(API_BASE_URL)
 
-    // Aucun cookie, mais le CSRF ne contrôle pas les lectures : ce 403 est une autorisation refusée.
-    const result = await new BackofficeHttpClient(API_BASE_URL).get('/api/backoffice/users')
+      const call = 'GET' === method ? client.get('/api/backoffice/users') : client.mutate(method, '/api/backoffice/users/1', { a: 1 })
 
-    expect(onSessionEnded).not.toHaveBeenCalled()
-    expect(result.status).toBe(403)
+      await expect(call).rejects.toBeInstanceOf(AccessForbiddenError)
+      expect(onRefused).toHaveBeenCalledTimes(1)
+      expect(onSessionEnded).not.toHaveBeenCalled()
+    })
+
+    it('403 sans réaction enregistrée : AccessForbiddenError quand même', async () => {
+      vi.stubGlobal('fetch', vi.fn(async () => response(403)))
+
+      await expect(new BackofficeHttpClient(API_BASE_URL).get('/api/backoffice/users')).rejects.toBeInstanceOf(AccessForbiddenError)
+    })
+
+    it("un 403 d'écriture sans jeton reste une session finie, jamais un refus réel", async () => {
+      const onRefused = vi.fn()
+      setBackofficeSessionEndedHandler(reaction(() => true, 0, onRefused))
+      vi.stubGlobal('fetch', vi.fn(async () => response(403)))
+
+      await expect(new BackofficeHttpClient(API_BASE_URL).mutate('PUT', '/api/backoffice/users/1', { a: 1 })).rejects.toBeInstanceOf(
+        SessionEndedError,
+      )
+      expect(onRefused).not.toHaveBeenCalled()
+    })
   })
 
   it("un 401 sans réaction enregistrée lève quand même SessionEndedError", async () => {
@@ -154,6 +187,7 @@ describe('BackofficeHttpClient — fin de session', () => {
 
           return true
         },
+        refused: () => undefined,
       })
       vi.stubGlobal(
         'fetch',

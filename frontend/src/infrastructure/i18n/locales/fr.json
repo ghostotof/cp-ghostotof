@@ -51,7 +51,7 @@
   "admin": {
     "heading": "Administration",
     "navigation": "Navigation d'administration",
-    "notLoaded": "Contenu non chargé : votre session a pris fin. Il se chargera dès que vous serez reconnecté.",
+    "notLoaded": "Contenu non chargé : voyez le message en haut de la page.",
     "sessionEnded": {
       "message": "Votre session a pris fin : ce que vous avez saisi est toujours là, mais l'enregistrement est refusé tant que vous n'êtes pas reconnecté.",
       "signInAgain": "Se reconnecter",
