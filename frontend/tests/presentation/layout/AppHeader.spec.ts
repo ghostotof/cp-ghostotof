@@ -1,3 +1,6 @@
+/// <reference types="node" />
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
@@ -701,6 +704,55 @@ describe('AppHeader', () => {
       const { wrapper } = await mountEnded(PROTECTED)
 
       await expectNoAccessibilityViolation(wrapper)
+    })
+  })
+
+  /**
+   * L'en-tête à 320 px (#748, constat 6). Mesures du ticket : la rangée demandait 331 px (389 pour un palier de
+   * confiance) dans 301 px utiles. Décision de l'auteur : la marque cède, ses actions non. jsdom ne calcule pas la
+   * mise en page : on épingle les classes et le CSS scopé (lu par `node:fs`, Vitest vide les imports CSS), la mesure
+   * réelle à 320 px étant faite au navigateur.
+   */
+  describe('en-tête à 320 px (#748)', () => {
+    const source = readFileSync(resolve(import.meta.dirname, '../../../src/presentation/layout/AppHeader.vue'), 'utf8')
+
+    // `sessionEnded` est un état partagé du module : un compte appliqué l'abaisse, pour ne pas fuir d'un test à l'autre.
+    afterEach(async () => {
+      await primeAuthState({ username: 'jane', roles: ['ROLE_TRUSTED', 'ROLE_USER'] })
+    })
+
+    it('la marque cède la place aux actions : son libellé se tronque, les actions ne rétrécissent pas', async () => {
+      await primeAuthState(null)
+      const { wrapper } = await mountHeader()
+
+      const brand = wrapper.get('a.brand-link')
+      const label = brand.get('span.text-truncate')
+      expect(label.text()).toBe('CP-Ghostotof')
+      expect(wrapper.get('header .container-xl > div.flex-shrink-0').find('button, a').exists()).toBe(true)
+      // `min-width: 0` sur le lien : sans lui, un élément flex ne descend pas sous la largeur de son contenu.
+      expect(/\.brand-link\s*\{[^}]*min-width:\s*0[;\s}]/.test(source)).toBe(true)
+    })
+
+    it("le nom accessible du lien d'accueil reste la marque entière", async () => {
+      await primeAuthState(null)
+      const { wrapper } = await mountHeader()
+
+      const brand = wrapper.get('a.brand-link')
+      // Le glyphe du logo est décoratif ; le nom vient du libellé entier, que la troncature ne fait que couper
+      // à l'écran. Ni aria-label ni title ne le remplacent.
+      expect(brand.get('[aria-hidden="true"]').text()).toBe('</>')
+      expect(brand.get('span.text-truncate').text()).toBe('CP-Ghostotof')
+      expect(brand.attributes('aria-label')).toBeUndefined()
+    })
+
+    it('session finie sur une page protégée : la marque se tronque aussi, le lien « Connexion » ne rétrécit pas', async () => {
+      await primeAuthState({ username: 'jane', roles: ['ROLE_TRUSTED', 'ROLE_USER'] })
+      const { wrapper } = await mountHeader('/fr/admin/case-studies')
+      markSessionExpired()
+      await flushPromises()
+
+      expect(wrapper.get('a.brand-link span.text-truncate').text()).toBe('CP-Ghostotof')
+      expect(wrapper.get('header .container-xl > div.flex-shrink-0').find('a[target="_blank"]').exists()).toBe(true)
     })
   })
 

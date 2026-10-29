@@ -230,17 +230,20 @@ function navLinkClass(link: NavigationLink) {
     <div class="container-xl d-flex align-items-center justify-content-between gap-3 py-3">
       <RouterLink
         :to="homeLink"
-        class="d-flex align-items-center gap-2 text-white text-decoration-none fw-semibold text-nowrap"
+        class="brand-link d-flex align-items-center gap-2 text-white text-decoration-none fw-semibold text-nowrap"
       >
-        <!-- Glyphe décoratif du logo, pas du texte à traduire -->
+        <!-- Glyphe décoratif du logo, pas du texte à traduire. flex-shrink-0 : c'est le libellé qui cède (320 px). -->
         <span
-          class="d-inline-flex align-items-center justify-content-center rounded-circle text-white small"
+          class="d-inline-flex align-items-center justify-content-center flex-shrink-0 rounded-circle text-white small"
           style="width: 2rem; height: 2rem; background: linear-gradient(135deg, #7c3aed, #4338ca)"
           aria-hidden="true"
         >
           &lt;/&gt;
         </span>
-        {{ siteIdentity.brandName }}
+        <!-- À 320 px la rangée demandait 331 px (389 au palier de confiance) pour 301 utiles (mesures de #748) : la
+             marque se tronque avec une ellipse, jamais les actions. Le nom accessible du lien reste le libellé
+             entier (la troncature est visuelle). -->
+        <span class="text-truncate">{{ siteIdentity.brandName }}</span>
       </RouterLink>
 
       <!-- flex-wrap + text-nowrap : si la barre déborde malgré le
@@ -327,7 +330,7 @@ function navLinkClass(link: NavigationLink) {
         </template>
       </nav>
 
-      <div class="d-flex align-items-center gap-2">
+      <div class="d-flex align-items-center gap-2 flex-shrink-0">
         <LocaleSwitcher />
 
         <template v-if="!isChecking">
@@ -657,6 +660,12 @@ function navLinkClass(link: NavigationLink) {
 </template>
 
 <style scoped>
+/* Un élément flex ne descend pas sous la largeur de son contenu (`min-width: auto`) : sans cette ligne, le lien de
+   marque garderait sa largeur entière et le `text-truncate` de son libellé ne couperait jamais (#748, constat 6). */
+.brand-link {
+  min-width: 0;
+}
+
 .nav-group {
   position: relative;
 }
