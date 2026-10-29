@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use Rector\CodeQuality\Rector\Attribute\SortAttributeNamedArgsRector;
 use Rector\CodeQuality\Rector\FuncCall\SortCallLikeNamedArgsRector;
-use Rector\CodeQuality\Rector\Identical\FlipTypeControlToUseExclusiveTypeRector;
 use Rector\CodeQuality\Rector\If_\ExplicitNullableObjectInstanceRector;
 use Rector\Config\RectorConfig;
 use Rector\Php80\Rector\Class_\ClassPropertyAssignToConstructorPromotionRector;
@@ -36,7 +35,6 @@ return RectorConfig::configure()
         SortAttributeNamedArgsRector::class,          // reordonne les args nommes d'attributs
         SortCallLikeNamedArgsRector::class,           // idem sur les appels
         NewMethodCallWithoutParenthesesRector::class, // `new Foo()->bar()` moins lisible que `(new Foo())->bar()`
-        FlipTypeControlToUseExclusiveTypeRector::class, // `$x instanceof Foo` la ou `null !== $x` est plus clair
         ClassPropertyAssignToConstructorPromotionRector::class, // les entites Doctrine gardent leurs proprietes explicites
 
         // Celle-ci n'est pas cosmetique : elle met Rector et PHPStan en
@@ -58,7 +56,10 @@ return RectorConfig::configure()
         // serveur MCP dans InboundMessageRefusalListener (gardes #675 et #686)
         // dans un diff de 85 fichiers qu'une relecture rapide laisse passer. Ne la
         // retirer d'ici qu'apres avoir relu, un par un, les refus qu'elle ferait
-        // disparaitre.
+        // disparaitre. Elle remplace FlipTypeControlToUseExclusiveTypeRector, que
+        // Rector 2.8 deprecie en ce sens (docblock de la classe : « Use
+        // ExplicitNullableObjectInstanceRector instead ») et n'enregistre plus :
+        // l'ancien skip, devenu mort, a ete retire.
         ExplicitNullableObjectInstanceRector::class,
     ])
     ->withCache(__DIR__.'/var/cache/rector')
