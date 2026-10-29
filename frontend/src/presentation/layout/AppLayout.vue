@@ -35,8 +35,16 @@ const pageKey = ref(0)
  * route : sans ce masque, l'ancienne page — avec les données du premier compte — resterait affichée sous l'en-tête du
  * second. Posé **de façon synchrone** par l'abonné, avant tout `await`, pour qu'aucun rendu n'intervienne entre les deux.
  * Le cas « même compte » ne passe jamais par ici : aucun rejeu, aucun clignotement.
+ *
+ * Deux rejeux peuvent se chevaucher (deux changements de compte rapprochés) : le routeur annule le premier dès que le
+ * second démarre, et la promesse du premier se règle alors que le second court encore. Un booléen seul serait donc
+ * rabattu trop tôt, page du premier compte visible. Chaque rejeu prend un **jeton** (`replayId`) : seul le dernier
+ * lève le masque (#748, CR4-2).
  */
 const isReplaying = ref(false)
+
+/** Le numéro du dernier rejeu lancé : un rejeu ne démasque la page que s'il est encore celui-là. */
+let replayId = 0
 
 /**
  * Un autre compte que celui dont la session a fini est revenu (`useAuth().onAccountSwitched`) : la session est déjà
@@ -47,11 +55,12 @@ const isReplaying = ref(false)
  * que la garde va refuser.
  */
 onAccountSwitched(() => {
+  const mine = ++replayId
   isReplaying.value = true
-  void replayNavigation()
+  void replayNavigation(mine)
 })
 
-async function replayNavigation(): Promise<void> {
+async function replayNavigation(mine: number): Promise<void> {
   const { path, query, hash } = router.currentRoute.value
   try {
     await router.replace({ path, query, hash, force: true })
@@ -62,7 +71,9 @@ async function replayNavigation(): Promise<void> {
     // Dans cet ordre : la clé avance avant que la page revienne, qui est alors une instance neuve (ou celle que la
     // garde a choisie), jamais l'ancienne. Aussi en cas d'échec : la page ne reste pas masquée pour toujours.
     pageKey.value += 1
-    isReplaying.value = false
+    if (mine === replayId) {
+      isReplaying.value = false
+    }
   }
 }
 </script>

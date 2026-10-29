@@ -22,6 +22,7 @@ import type { QualityContentRepository } from '../../../src/domain/quality/repos
 import { createAppI18n } from '../../../src/presentation/i18n'
 import { BASE_ACCESS_REPOSITORY } from '../../../src/application/baseAccess/useBaseAccess'
 import { sessionFor } from '../../support/authSession'
+import { notifyAccountSwitched } from '../../../src/application/auth/sessionEvents'
 
 const STUB_ABOUT_CONTENT = {
   site: { eyebrow: 'À propos de ce site (stub)', cards: [] },
@@ -317,6 +318,29 @@ describe('AppLayout — un autre compte au retour', () => {
     expect(wrapper.find('[data-testid="counted-page"]').exists()).toBe(true)
     expect(mounts.count).toBe(2)
     expect(router.currentRoute.value.fullPath).toBe('/fr/admin/case-studies?tri=nom#fin')
+  })
+
+  it("deux rejeux qui se chevauchent : la page reste masquée jusqu'au dernier (CR4-2)", async () => {
+    const { wrapper, router, mounts } = await mountProtected(OTHER_SUPER)
+    // Une garde retenue : le second rejeu l'atteint ; le premier, annulé par le second avant d'y arriver, règle sa
+    // promesse tout de suite — c'est elle qui, avec un booléen partagé, démasquait la page pendant que le second court.
+    let release: () => void = () => undefined
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    router.beforeEach(() => held)
+
+    notifyAccountSwitched()
+    notifyAccountSwitched()
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="counted-page"]').exists()).toBe(false)
+
+    release()
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="counted-page"]').exists()).toBe(true)
+    expect(mounts.count).toBe(2)
   })
 
   it('un rejeu qui échoue rend quand même la page', async () => {

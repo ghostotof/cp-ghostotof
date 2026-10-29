@@ -81,7 +81,9 @@ paths:
     instance (the assistant would keep the first account's conversation, a form its input). Replay first, remount
     after: the other order would mount a protected page, for an instant, for an account the guard is about to refuse.
     **The routed page is hidden during the replay** (R27, A3-13: `isReplaying`, set synchronously in the subscriber,
-    lowered in the `finally` after the key advances, so also when the replay fails): the new account's session is already
+    lowered in the `finally` after the key advances, so also when the replay fails, **but only by the last replay**:
+    each takes a token, `const mine = ++replayId`, because the router cancels the first of two overlapping replays and
+    settles its promise early, CR4-2): the new account's session is already
     applied, so the header is its, and the old page would stay under it with the first account's data until the guard
     resolved. The same-account return never replays: no hiding, no flicker.
     Rejected: `window.location.reload()` (loses the whole application's state and redoes the first `checkAuth`). **A
@@ -132,5 +134,5 @@ caller reads it **before sending** and hands it back with the verdict:
 - `useAuth.spec.ts` (including `sessionEndedCount`, `onSessionRestored` and `onAccountSwitched`: once, synchronously, never at the end, dropped with its scope, a subscriber that throws, the same account or another (R18); the generation in both directions, R14; the base access going anonymous at its deadline with no network call, R23), `resetAuthStateForTests.spec.ts` (every module's state back to its loading value, R25).
 - For the re-check on return (R8): `useAuth.spec.ts` (the account found with its write token restores; **without `XSRF-TOKEN` the session stays ended**; nothing outside an ended session; one read in flight for two quick calls; a network failure swallowed; `isChecking` untouched by the re-check and by any `checkAuth()` after the first).
 - `HttpAuthRepository.spec.ts` (`hasWriteToken`: present, absent, empty; `logout()` sends the CSRF token).
-- `useSessionRecheckOnFocus.spec.ts` (`focus` re-reads, not after unmount), `AppLayout.spec.ts` (one `/api/me` per return with the banner shown, the re-check outside the backoffice, the session staying ended while no account is back; another account replays the navigation, then remounts the page, R18; the page hidden meanwhile, even when the replay fails, R27).
+- `useSessionRecheckOnFocus.spec.ts` (`focus` re-reads, not after unmount), `AppLayout.spec.ts` (one `/api/me` per return with the banner shown, the re-check outside the backoffice, the session staying ended while no account is back; another account replays the navigation, then remounts the page, R18; the page hidden meanwhile, even when the replay fails, R27, and until the last of two overlapping replays, R39).
 - `SessionEndedBanner.spec.ts` (the banner does not listen to `focus`; the return is driven by `recheckEndedSession()`).
