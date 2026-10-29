@@ -30,9 +30,11 @@ import { switchAccountLocation } from '../../router/reauthentication'
  *   connectée (`reauth=1`) et `redirect` ramène à cette page. La saisie en cours est perdue en le suivant : la
  *   personne lit d'abord pourquoi, et rien ne la déplace pendant qu'elle lit. Le message est neutre
  *   (`common.accessRefused`) : le compte n'a peut-être pas, ou plus, l'accès, ou la session doit être rouverte.
- * - **Effacée à chaque changement de `route.fullPath`**, et au démontage du layout : un refus d'une page ne suit pas
- *   la personne sur la suivante. L'effacement avance aussi le périmètre de refus (`refusalScope`) : le 403 d'une
- *   requête partie avant la navigation, arrivé après, est périmé et ne s'affiche pas (R28, CR3-8).
+ * - **Effacée à chaque changement de chemin ou de requête** (`route.path` et `route.query`), et au démontage du
+ *   layout : un refus d'une page ne suit pas la personne sur la suivante. **Pas le fragment** (R38) : le lien
+ *   d'évitement (`href="#main-content"`) ne change que lui, et effaçait l'alerte que la personne était en train de
+ *   lire. L'effacement avance aussi le périmètre de refus (`refusalScope`) : le 403 d'une lecture partie avant la
+ *   navigation, arrivé après, est périmé et ne s'affiche pas (R28, CR3-8) ; celui d'une écriture s'affiche (R38).
  * - Collée sous l'en-tête comme le bandeau de session finie (page longue, « Enregistrer » en bas) ; les deux ne
  *   s'affichent jamais ensemble, elles publient donc la même hauteur (`--admin-notice-height`).
  */
@@ -45,8 +47,9 @@ const isShown = computed(() => backofficeAccessRefused.value > 0 && !authState.s
 const notice = useTemplateRef<HTMLElement>('notice')
 usePublishedHeight(notice, '--admin-notice-height')
 
+// Le chemin et la requête, jamais le fragment (le lien d'évitement ne change que lui, R38).
 watch(
-  () => route.fullPath,
+  () => route.path + JSON.stringify(route.query),
   () => clearBackofficeAccessRefusal(),
 )
 

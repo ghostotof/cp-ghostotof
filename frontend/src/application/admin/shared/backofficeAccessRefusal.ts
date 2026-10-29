@@ -19,7 +19,8 @@ const refusals = ref(0)
 /**
  * Le périmètre des refus (#748, R28, CR3-8) : un nombre qui avance à chaque effacement, donc à chaque navigation.
  * Une requête le lit à l'envoi (`refusalScope`) et le rend au refus (`markBackofficeAccessRefused`) : un 403 arrivé
- * sous un autre périmètre est celui d'une page quittée, il ne compte pas sur la suivante. Pas un simple « booléen de
+ * sous un autre périmètre est celui d'une page quittée, il ne compte pas sur la suivante — sauf une écriture, qui ne
+ * relève aucun périmètre (`null`, R38). Pas un simple « booléen de
  * navigation » : deux visites successives de la même route sont deux périmètres. Pas de `ref` : rien ne l'affiche.
  */
 let scope = 0
@@ -35,10 +36,10 @@ export function refusalScope(): number {
 /**
  * Un refus réel de plus : l'alerte s'insère si elle n'y est pas, sinon son message est remplacé. `sentIn` est le
  * périmètre relevé à l'envoi : s'il n'est plus le courant, la requête est partie d'une page quittée, rien n'est
- * compté et `false` est rendu (l'appelant ne relit pas non plus le palier).
+ * compté et `false` est rendu (l'appelant ne relit pas non plus le palier). `null` (une écriture) compte toujours.
  */
-export function markBackofficeAccessRefused(sentIn: number): boolean {
-  if (sentIn !== scope) {
+export function markBackofficeAccessRefused(sentIn: number | null): boolean {
+  if (null !== sentIn && sentIn !== scope) {
     return false
   }
 
@@ -54,4 +55,10 @@ export function markBackofficeAccessRefused(sentIn: number): boolean {
 export function clearBackofficeAccessRefusal(): void {
   refusals.value = 0
   scope += 1
+}
+
+/** Remet le compteur et le périmètre à ceux du chargement. Réservée aux tests (`tests/support/setup.ts`), jamais appelée par `src/`. */
+export function resetBackofficeAccessRefusalForTests(): void {
+  refusals.value = 0
+  scope = 0
 }

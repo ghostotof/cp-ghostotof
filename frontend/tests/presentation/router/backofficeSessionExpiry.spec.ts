@@ -71,7 +71,7 @@ describe('backofficeSessionExpiry', () => {
     const replace = vi.spyOn(router, 'replace')
     const push = vi.spyOn(router, 'push')
 
-    reaction.ended(reaction.stampAtSend())
+    reaction.ended(reaction.stampAtSend('read'))
     await new Promise((resolve) => setTimeout(resolve, 0))
 
     expect(authState.user).toBeNull()
@@ -86,7 +86,7 @@ describe('backofficeSessionExpiry', () => {
 
   it("plusieurs 401 partis sous la même génération (listes chargées en parallèle) n'annoncent qu'une fois", () => {
     const { stampAtSend, ended } = reaction
-    const sent = stampAtSend()
+    const sent = stampAtSend('read')
     const before = authCount()
 
     expect(ended(sent)).toBe(true)
@@ -99,7 +99,7 @@ describe('backofficeSessionExpiry', () => {
   })
 
   it('un 401 parti avant le retour de la session ne la refinit pas : ended rend faux', async () => {
-    const sent = reaction.stampAtSend()
+    const sent = reaction.stampAtSend('read')
     reaction.ended(sent)
     await signIn(SUPER)
     expect(authState.sessionEnded).toBe(false)
@@ -121,8 +121,8 @@ describe('backofficeSessionExpiry — refus réel (#748, R17)', () => {
     expect(backofficeAccessRefused.value).toBe(0)
 
     // Deux refus du même chargement (une lecture, une écriture) : deux alertes comptées, une seule relecture.
-    handler.refused(handler.stampAtSend())
-    handler.refused(handler.stampAtSend())
+    handler.refused(handler.stampAtSend('read'))
+    handler.refused(handler.stampAtSend('write'))
     await flushPromises()
 
     expect(backofficeAccessRefused.value).toBe(2)
@@ -136,13 +136,29 @@ describe('backofficeSessionExpiry — refus réel (#748, R17)', () => {
     const { handler, unmount } = buildReaction()
 
     // La page X envoie sa lecture, la personne navigue (la navigation efface les refus), puis le 403 de X arrive.
-    const sentFromPreviousPage = handler.stampAtSend()
+    const sentFromPreviousPage = handler.stampAtSend('read')
     clearBackofficeAccessRefusal()
     handler.refused(sentFromPreviousPage)
     await flushPromises()
 
     expect(backofficeAccessRefused.value).toBe(0)
     expect(me).not.toHaveBeenCalled()
+    unmount()
+  })
+
+  it("un refus d'écriture parti avant une navigation est compté et relu : la personne a fait le geste (R38)", async () => {
+    me.mockClear()
+    await signIn(SUPER)
+    const { handler, unmount } = buildReaction()
+
+    // « Enregistrer » part, la personne navigue (la navigation efface les refus), puis le 403 de l'écriture arrive.
+    const sentFromPreviousPage = handler.stampAtSend('write')
+    clearBackofficeAccessRefusal()
+    handler.refused(sentFromPreviousPage)
+    await flushPromises()
+
+    expect(backofficeAccessRefused.value).toBe(1)
+    expect(me).toHaveBeenCalledTimes(1)
     unmount()
   })
 
@@ -153,7 +169,7 @@ describe('backofficeSessionExpiry — refus réel (#748, R17)', () => {
 
     clearBackofficeAccessRefusal()
     // La page Y envoie sa requête sous le périmètre courant : son refus est un vrai refus.
-    handler.refused(handler.stampAtSend())
+    handler.refused(handler.stampAtSend('read'))
     await flushPromises()
 
     expect(backofficeAccessRefused.value).toBe(1)
@@ -166,7 +182,7 @@ describe('backofficeSessionExpiry — refus réel (#748, R17)', () => {
     await router.push('/fr/admin/users')
     const { handler, unmount } = buildReaction()
 
-    handler.refused(handler.stampAtSend())
+    handler.refused(handler.stampAtSend('read'))
     await flushPromises()
 
     expect(authState.sessionEnded).toBe(false)

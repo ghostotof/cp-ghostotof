@@ -1,6 +1,6 @@
 import { markSessionExpired, sessionStamp, type UseAuthResult } from '../../application/auth/useAuth'
 import { markBackofficeAccessRefused, refusalScope } from '../../application/admin/shared/backofficeAccessRefusal'
-import type { BackofficeSendStamp, BackofficeSessionReaction } from '../../domain/admin/shared/BackofficeSessionReaction'
+import type { BackofficeSendKind, BackofficeSendStamp, BackofficeSessionReaction } from '../../domain/admin/shared/BackofficeSessionReaction'
 
 /**
  * La réaction du backoffice à une session finie (un 401, ou un 403 à une écriture sans jeton CSRF), branchée
@@ -25,9 +25,10 @@ import type { BackofficeSendStamp, BackofficeSessionReaction } from '../../domai
  * le compte (`markBackofficeAccessRefused`, que l'alerte d'`AdminLayout` affiche) et **relit le palier**
  * (`rereadAfterRefusal`, une relecture en vol partagée : une lecture et une écriture refusées ensemble n'envoient
  * qu'un `/api/me`) — l'en-tête reprend le palier que le serveur reconnaît, ou la session est dite finie si `/api/me`
- * répond « anonyme ». **Un refus parti avant une navigation ne compte pas** (R28, CR3-8) : le timbre de l'envoi porte
- * le périmètre de refus, que chaque navigation avance ; le 403 d'une page quittée n'affiche aucune alerte sur la
- * suivante et ne relit rien. La relecture est branchée ici, côté composition, et non dans chaque composable : ils
+ * répond « anonyme ». **Une lecture refusée après une navigation ne compte pas** (R28, CR3-8) : le timbre de l'envoi
+ * porte le périmètre de refus, que chaque navigation avance ; le 403 d'une page quittée n'affiche aucune alerte sur la
+ * suivante et ne relit rien. **Une écriture refusée compte toujours** (R38) : le timbre porte un périmètre nul, la
+ * personne a fait le geste et doit apprendre son échec, au besoin sur la page où elle est allée. La relecture est branchée ici, côté composition, et non dans chaque composable : ils
  * n'appellent pas `useAuth()` (treize composables d'administration, dont aucun test ne fournit `AUTH_REPOSITORY`).
  *
  * Construite par `main.ts` avec le `useAuth()` de l'application (`app.runWithContext`) : `rereadAfterRefusal` a besoin
@@ -35,10 +36,14 @@ import type { BackofficeSendStamp, BackofficeSessionReaction } from '../../domai
  */
 export function createBackofficeSessionReaction(auth: Pick<UseAuthResult, 'rereadAfterRefusal'>): BackofficeSessionReaction {
   return {
-    stampAtSend: (): BackofficeSendStamp => ({ session: sessionStamp(), refusalScope: refusalScope() }),
+    // Une écriture ne relève aucun périmètre : son refus n'est jamais périmé (R38).
+    stampAtSend: (kind: BackofficeSendKind): BackofficeSendStamp => ({
+      session: sessionStamp(),
+      refusalScope: 'write' === kind ? null : refusalScope(),
+    }),
     ended: (sentAt: BackofficeSendStamp): boolean => markSessionExpired(sentAt.session),
     refused: (sentAt: BackofficeSendStamp): void => {
-      // Un refus parti avant une navigation (CR3-8) : ni compté ni relu, la page qui l'a émis n'existe plus.
+      // Une lecture partie avant une navigation (CR3-8) : ni comptée ni relue, la page qui l'a émise n'existe plus.
       if (!markBackofficeAccessRefused(sentAt.refusalScope)) {
         return
       }

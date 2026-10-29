@@ -18,12 +18,12 @@ paths:
 ## The backoffice reaction
 
 - **`main.ts`** registers `createBackofficeSessionReaction(useAuth())` (`presentation/router/backofficeSessionExpiry.ts`), a
-  `BackofficeSessionReaction` `{ stampAtSend, ended, refused }` (`refused`: see « A real refusal ») over `markSessionExpired`: **no `router.replace`** (R1c's navigation unmounted the page at the very
+  `BackofficeSessionReaction` `{ stampAtSend(kind), ended, refused }` (`refused`: see « A real refusal ») over `markSessionExpired`: **no `router.replace`** (R1c's navigation unmounted the page at the very
   click of « Enregistrer », and a case study written for more than an hour — the JWT's lifetime — was lost with it). The
   verdict is judged by **session generation** (`frontend-session-retour.md`, « The session generation »), not « idempotent »: several lists of a page answering 401
   together leave under the same generation, the first end counts and the others announce nothing more. The registry lives
   in the module, so `infrastructure/` imports neither the session nor the router. The type (`BackofficeSessionReaction`
-  and the send stamp `{ session, refusalScope }`) lives in `domain/admin/shared/`, which all three layers may import:
+  and the send stamp `{ session, refusalScope }`, `refusalScope` null for a write: R38) lives in `domain/admin/shared/`, which all three layers may import:
   no `infrastructure/` file imports `application/` (R28).
 
 ## A real refusal (#748, R7)
@@ -60,15 +60,16 @@ account without `ROLE_TRUSTED` (one that lost it while the page was open), or fr
   `AccessForbiddenError`**; `createBackofficeSessionReaction(useAuth())` (built by `main.ts` with
   `app.runWithContext`, the one place that has the `AuthRepository`: the thirteen composables never call `useAuth()`)
   counts the refusal (`backofficeAccessRefused`) and calls `rereadAfterRefusal()`, so a read and a write refused
-  together send one `/api/me`. **A refusal sent before a navigation does not count** (R28, CR3-8): the send stamp
-  carries the refusal scope (`refusalScope()`), every clearing advances it, and `markBackofficeAccessRefused(sentIn)`
-  answers `false`, counting and re-reading nothing, for a 403 that left under another scope. `useAdminLoad` (no `hasError`, nothing re-read on return) and `visibleMutationError`
+  together send one `/api/me`. **A read refused after a navigation does not count; a write always does** (R28, CR3-8, R38): the
+  send stamp carries the refusal scope (`refusalScope()`, `null` for a write: `get` stamps `'read'`, `mutate` `'write'`),
+  every clearing advances it, and `markBackofficeAccessRefused(sentIn)` answers `false`, counting and re-reading nothing,
+  for a read that left under another scope — the person made the gesture of a write and must learn it failed. `useAdminLoad` (no `hasError`, nothing re-read on return) and `visibleMutationError`
   (`null`, the mutation resolves `false`, the input stays) keep it quiet like `SessionEndedError`; **one alert**,
   `AccessRefusedNotice` in `AdminLayout` next to the banner, says `common.accessRefused` with « Changer de compte » in
   **the same tab** (the author's decision of 2026-10-29: as R7, accepting that following it loses what is typed). It is
   shown while the count is above 0 **and** the session has not ended (a re-read that finds the session ended leaves the
   banner alone), a further refusal replaces the message (the `key` is on the `<span>`, the link is never destroyed), and
-  it is cleared on every `route.fullPath` change, on an ended session and on unmount. `admin.notLoaded` is neutral
+  it is cleared on every change of path or query (not of the fragment: the skip link), on an ended session and on unmount. `admin.notLoaded` is neutral
   (« see the message at the top of the page »): a page whose read was refused is not « session ended ».
 - **The message is neutral** (`common.accessRefused`): « the account may not have, or may no longer have, trusted
   access, **or the session needs to be reopened** » — a stale CSRF signature is a 403 too, and must not accuse an account
@@ -92,6 +93,6 @@ whose `/api/me` answers 401 now ends the session on the interface. **Still accep
 
 ## Tests
 
-- `backofficeSessionExpiry.spec.ts` (the session is closed, no navigation, parallel verdicts of one generation announce once, a verdict sent before the return refinishes nothing; `refused` counts the refusal and re-reads the tier once; a refusal sent before a navigation counts and re-reads nothing, R28), `backofficeAccessRefusal.spec.ts` (the scope).
+- `backofficeSessionExpiry.spec.ts` (the session is closed, no navigation, parallel verdicts of one generation announce once, a verdict sent before the return refinishes nothing; `refused` counts the refusal and re-reads the tier once; a read sent before a navigation counts and re-reads nothing, R28; a write does, R38), `backofficeAccessRefusal.spec.ts` (the scope, a write's `null`, two successive tests starting from zero), `AccessRefusedNotice.spec.ts` (a fragment change keeps the alert, a query change clears it), `AdminLayout.sessionEnded.spec.ts` (a refused save back after a navigation is shown on the next page).
 - For the real refusal (R7): `HttpMcpConnectionsRepository.spec.ts` (a 403 on the read, or on the `DELETE` with a token, is `AccessForbiddenError`; without a token, `SessionEndedError`), `useMcpConnections.spec.ts` (`refusal`, `/api/me` read once, a demoted account's header back at the base tier, a failing `/api/me` swallowed; R15: one `/api/me` for a read and a revocation refused together, a 401 turning `forbidden` into `session-ended`), `useAuth.spec.ts` (`rereadAfterRefusal`: one read in flight, 401 ends the session, 403 holds it, a stale or failing read holds it, `isChecking` untouched; `followRefusal`: ended and still shown, replaced meanwhile, held, R27), `useAssistant.spec.ts` and `useOAuthConsent.spec.ts` (`/api/me` read once on `forbidden`, not on an ended session; a 401 on that read says the session ended), `McpConnectionsPage.spec.ts` / `AssistantPage.spec.ts` / `OAuthConsentPage.spec.ts` (the exact neutral text in both languages, « Changer de compte » with `reauth=1`, no « Réessayer », « Révoquer » disabled) and `LoginPage.spec.ts` (the neutral announcement).
 - The reactions `useMcpConnections.spec.ts`, `useOAuthConsent.spec.ts`, `useAssistant.spec.ts`.

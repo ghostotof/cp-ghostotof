@@ -222,7 +222,7 @@ version" copies nothing and the assistant sends all five fields.
   repository translates it, and the composables keep it quiet through `useAdminLoad` (reads) and `visibleMutationError`
   (mutations), the banner being the only announcement. **A new administration client goes through
   `BackofficeHttpClient`, a new composable through those two functions, and its mutations resolve to `true` only on
-  success** (a page resets its form on that, never on `errorMessage`). **Any other 403** (a read, or a write that carried its token) raises `AccessForbiddenError` after the reaction's `refused()` (#748, R17; not counted when sent before a navigation, R28): kept quiet the same way, and `AccessRefusedNotice` in `AdminLayout` says it once (`common.accessRefused`, « Changer de compte » in the same tab). The rule, its backend facts, the shared errors, the
+  success** (a page resets its form on that, never on `errorMessage`). **Any other 403** (a read, or a write that carried its token) raises `AccessForbiddenError` after the reaction's `refused()` (#748, R17; a read sent before a navigation is not counted, R28; a write always is, R38): kept quiet the same way, and `AccessRefusedNotice` in `AdminLayout` says it once (`common.accessRefused`, « Changer de compte » in the same tab). The rule, its backend facts, the shared errors, the
   banner, the header's link and the re-check on return: `.claude/rules/frontend-session.md`.
 - **Not loaded is not empty, a new key empties the old value, and what an ended session interrupted is read again on
   return** (#748, R4). `useAdminLoad` exposes `isLoaded` (the value of the current key was read and set: false before the

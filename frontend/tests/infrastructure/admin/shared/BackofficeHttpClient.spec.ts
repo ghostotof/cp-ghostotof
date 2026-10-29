@@ -180,6 +180,30 @@ describe('BackofficeHttpClient — fin de session', () => {
     expect(onSessionEnded).not.toHaveBeenCalled()
   })
 
+  describe('nature de la requête (#748, R38)', () => {
+    it.each([
+      ['get', 'read'],
+      ['mutate', 'write'],
+    ] as const)("%s timbre l'envoi comme une %s", async (call, kind) => {
+      const kinds: string[] = []
+      setBackofficeSessionReaction({
+        stampAtSend: (sentKind) => {
+          kinds.push(String(sentKind))
+
+          return stampOf(0)
+        },
+        ended: () => true,
+        refused: () => undefined,
+      })
+      vi.stubGlobal('fetch', vi.fn(async () => response(200)))
+      const client = new BackofficeHttpClient(API_BASE_URL)
+
+      await ('get' === call ? client.get('/api/backoffice/users') : client.mutate('PUT', '/api/backoffice/users/1', { a: 1 }))
+
+      expect(kinds).toEqual([kind])
+    })
+  })
+
   describe('génération de session (#748, R14)', () => {
     it.each([
       ['une lecture', 'GET'],
@@ -235,5 +259,28 @@ describe('BackofficeHttpClient — fin de session', () => {
 
       expect(calls).toEqual(['stamp', 'fetch', 'ended:7'])
     })
+  })
+
+})
+
+/**
+ * Deux tests successifs, sans nettoyage propre : `tests/support/setup.ts` remet la réaction du backoffice à `null`
+ * avant chaque test (#748, R38). Le premier en enregistre une qui juge toute session rétablie.
+ */
+describe('BackofficeHttpClient — la réaction ne survit pas au test (#748, R38)', () => {
+  it('(1/2) une réaction enregistrée et jamais retirée', () => {
+    setBackofficeSessionReaction(reaction(() => false))
+
+    expect(true).toBe(true)
+  })
+
+  it("(2/2) sans réaction enregistrée, un 401 lève SessionEndedError : celle du test précédent n'est plus là", async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => response(401)))
+
+    try {
+      await expect(new BackofficeHttpClient(API_BASE_URL).get('/api/backoffice/users')).rejects.toBeInstanceOf(SessionEndedError)
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 })

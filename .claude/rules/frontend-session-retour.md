@@ -27,7 +27,7 @@ paths:
   `useAuth.ts` (the composable and the two shared re-reads). **Tests start from the module state of loading**:
   `resetAuthStateForTests()` (each module owns a `reset…ForTests`, tests only, never called by `src/`; a new module state
   is added to it) is called before each test by `tests/support/setup.ts`, the `setupFiles` of `vite.config.ts`, which also
-  calls `enableAutoUnmount` once.
+  resets the backoffice's refusal and its registered reaction (R38) and calls `enableAutoUnmount` once.
 - **The re-check on return** (#748, R8, CR7). **One mechanism, installed once**: `presentation/layout/useSessionRecheckOnFocus.ts`
   is called by `AppLayout` and listens to the window's `focus` from mount to unmount; it calls
   `useAuth().recheckEndedSession()` and nothing else. The banner used to carry its own listener, so only the backoffice

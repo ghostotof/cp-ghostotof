@@ -382,6 +382,37 @@ describe('AdminLayout — refus réel du backoffice (#748, R17)', () => {
     wrapper.unmount()
   })
 
+  it("le 403 d'un enregistrement revenu après une navigation s'affiche sur la page suivante (R38)", async () => {
+    let release: (status: number) => void = () => undefined
+    const pendingWrite = new Promise<Response>((resolve) => {
+      release = (status) => resolve(jsonResponse(status, { code: status, message: 'x' }))
+    })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init?: RequestInit) => ('GET' === (init?.method ?? 'GET') ? jsonResponse(200, []) : pendingWrite)),
+    )
+    const { wrapper, router } = await mountAdminCaseStudies(repository)
+
+    // « Enregistrer » part, la personne navigue ailleurs avant la réponse, puis le serveur refuse l'écriture.
+    await wrapper.get('#admin-case-study-title').setValue('Un moteur de tarification asynchrone')
+    await wrapper.get('#admin-case-study-problem').setValue('Des calculs bloquants.')
+    await wrapper.get('#admin-case-study-solution').setValue('Messenger.')
+    await wrapper.get('#admin-case-study-tradeoffs').setValue('Cohérence différée.')
+    await wrapper.get('#admin-case-study-measured-result').setValue('Temps divisé par dix.')
+    await wrapper.get('form').trigger('submit')
+    await router.push('/fr/admin/elsewhere')
+    await flushPromises()
+    release(403)
+    await flushPromises()
+
+    // La personne a fait le geste : elle apprend que l'enregistrement a échoué, sur la page où elle est allée.
+    expect(wrapper.text()).toContain('ailleurs')
+    expect(wrapper.findAll('[role="alert"]')).toHaveLength(1)
+    expect(wrapper.get('[role="alert"]').text()).toContain('Le serveur refuse cette demande')
+    expect(me).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+  })
+
   describe('un refus parti avant une navigation (CR3-8)', () => {
     /** Une lecture lente : la réponse n'arrive que lorsque le test la libère. */
     function stubSlowRead(): { release: (status: number) => void } {

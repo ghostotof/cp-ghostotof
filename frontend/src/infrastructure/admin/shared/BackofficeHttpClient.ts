@@ -32,13 +32,13 @@ export class BackofficeHttpClient {
 
   async get(path: string): Promise<Response> {
     // Le timbre est lu avant l'envoi, jamais à la réception (voir `react`).
-    const sentAt = sessionReaction?.stampAtSend()
+    const sentAt = sessionReaction?.stampAtSend('read')
 
     return this.react(await sessionAwareFetch(`${this.apiBaseUrl}${path}`, { method: 'GET' }), sentAt)
   }
 
   async mutate(method: string, path: string, body?: unknown): Promise<Response> {
-    const sentAt = sessionReaction?.stampAtSend()
+    const sentAt = sessionReaction?.stampAtSend('write')
 
     return this.react(
       await sessionAwareFetch(`${this.apiBaseUrl}${path}`, {
@@ -74,7 +74,7 @@ export class BackofficeHttpClient {
     }
 
     if (403 === judged.response.status) {
-      // Le timbre de l'envoi : un refus parti avant une navigation est jugé périmé par la réaction (CR3-8).
+      // Le timbre de l'envoi : une lecture partie avant une navigation est jugée périmée par la réaction (CR3-8), pas une écriture (R38).
       if (undefined !== sentAt) {
         sessionReaction?.refused(sentAt)
       }

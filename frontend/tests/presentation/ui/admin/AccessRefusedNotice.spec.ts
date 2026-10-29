@@ -113,6 +113,33 @@ describe('AccessRefusedNotice (#748, R17)', () => {
     wrapper.unmount()
   })
 
+  it("un changement du seul fragment garde l'alerte et le périmètre (le lien d'évitement, R38)", async () => {
+    const { wrapper, router } = await mountNotice()
+    refuse()
+    await flushPromises()
+    const scope = refusalScope()
+
+    await router.push({ hash: '#main-content' })
+    await flushPromises()
+
+    expect(router.currentRoute.value.fullPath).toBe('/fr/admin/case-studies#main-content')
+    expect(wrapper.find('[role="alert"]').exists()).toBe(true)
+    expect(refusalScope()).toBe(scope)
+    wrapper.unmount()
+  })
+
+  it("un changement de requête efface l'alerte", async () => {
+    const { wrapper, router } = await mountNotice()
+    refuse()
+    await flushPromises()
+
+    await router.push({ query: { page: '2' } })
+    await flushPromises()
+
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it("une session finie masque l'alerte et l'efface : elle ne revient pas avec la session", async () => {
     const { wrapper } = await mountNotice()
     refuse()
