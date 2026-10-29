@@ -286,12 +286,15 @@ does `BackofficeHttpClient`.
     the failure), nothing is re-sent, and other errors (network, quota) are not the session's: they stay. The banner
     clears itself and announces the return (« Session rétablie »).
   - **Only the same account is restored in place; another one replays the navigation** (#748, R18, the author's
-    decision of 2026-10-29). `useAuth` keeps **the account whose session ended** — the `username` shown at the *first*
-    accepted end (read before `markSessionExpired` turns the header anonymous; a later refusal finds it anonymous and
-    does not overwrite it; `null` when no account was shown, base tier or anonymous), forgotten at the return. At the
-    descent: the **same** `username`, or none kept, calls `onSessionRestored` (« Session rétablie », the interrupted
-    reads run again, the typed input stays); **another** account has its session applied and calls **only**
-    `onAccountSwitched(callback)` (same mechanics: a scope, dropped at `onScopeDispose`). Nobody announces « Session
+    decision of 2026-10-29; « the same account » = `LastAccount`, R26). `sessionState.ts` keeps **the last account
+    displayed** (`username` and roles), set by every applied session that carries an account, **kept** when the header
+    turns anonymous or falls to the base tier (the open page is still its), forgotten by `logout()` and by
+    `markBaseAccessGranted()`. At the descent (return after an ended session): the same `username` **and no role lost**
+    (`isSameAccount`; a role *gained* changes nothing) calls `onSessionRestored` (« Session rétablie », the interrupted
+    reads run again, the typed input stays); **another** account, the same one with a role lost, or **none kept**
+    has its session applied and calls **only** `onAccountSwitched(callback)` (same mechanics: a scope, dropped at
+    `onScopeDispose`). **Outside an ended session** (`checkAuth()`, `rereadAfterRefusal()`, `applyLiveSession`) only a
+    **different `username`** from the last account does the same; a role lost there stays handled in place (R7/R17). Nobody announces « Session
     rétablie » for it, and no list is re-read: the open page is no longer that account's. `AppLayout` is the one
     subscriber: it replays the navigation to the current route with `router.replace({ path, query, hash, force: true })`
     — `force` because the router ignores a navigation to the address it is on, so the guard would never judge the new
@@ -300,7 +303,9 @@ does `BackofficeHttpClient`.
     instance (the assistant would keep the first account's conversation, a form its input). Replay first, remount
     after: the other order would mount a protected page, for an instant, for an account the guard is about to refuse.
     Rejected: `window.location.reload()` (loses the whole application's state and redoes the first `checkAuth`). **A
-    `login()` is silent**: it lowers `sessionEnded` and advances the generation but calls neither signal — the login
+    `login()` is silent**: in an ended session it **always** restores (account, no write-token condition: the backend sets
+    `XSRF-TOKEN` at sign-in, and if it is missing the first write takes the 403 and ends the session again), lowers
+    `sessionEnded` and advances the generation but calls neither signal — the login
     page navigates itself — so tests that need a return go through `recheckEndedSession()` (`tests/support/signInAgain.ts`
     does, in an ended session). Pinned by `useAuth.spec.ts`, `AppLayout.spec.ts` (the guard re-judges, the page is
     remounted, the role-less account is redirected), `SessionEndedBanner.spec.ts` and `AssistantPage.spec.ts`.
@@ -317,7 +322,10 @@ does `BackofficeHttpClient`.
 
 A verdict that comes back from the network describes the session **as it was at send time**, and the session may have
 changed since: another tab signed in again, or the end was already announced by a sibling request. `sessionGeneration.ts` holds a
-module counter, **the generation** (`sessionStamp()`), advanced at each accepted **end** and at each **return**. A
+module counter, **the generation** (`sessionStamp()`), advanced at each accepted **end**, at each **return** and by
+**every session the tab itself decides** (R26, CR3-4): `login()`, `logout()` (before the send and when the anonymous is
+applied), `markBaseAccessGranted()`, and `markBaseAccessExpired()` when it changes the tier — so a `/api/me` sent
+before one never overwrites it. A *read* session (`applyReadSession`) advances nothing: it is the response. A
 caller reads it **before sending** and hands it back with the verdict:
 
 - `markSessionExpired(sentAt?)` returns whether the session **is ended**. Without `sentAt`, or under the current
@@ -330,9 +338,9 @@ caller reads it **before sending** and hands it back with the verdict:
   session it did not belong to (Review Focus 1). Both directions share the one number: an end from before the return,
   and a return from before an end.
 - **The single descent** of `sessionEnded` (`restoreSession`, `sessionLifecycle.ts`) asks for **an account, a write
-  token (`hasWriteToken()`) and the current generation** — a sign-in (`login`) is the person's own gesture and skips the
-  generation check, nothing sent before it can contradict it. `login()`, `checkAuth()` and `recheckEndedSession()` all go
-  through it; it advances the generation and then calls the `onSessionRestored` subscribers (or `onAccountSwitched`'s for another account; `login()` calls neither, R18). A `/api/me` sent before a new
+  token (`hasWriteToken()`) and the current generation** (`canRestore`) — a sign-in (`login`) is the person's own gesture and
+  skips both. `login()`, `checkAuth()` and `recheckEndedSession()` all go through it; **in an ended session a read that
+  finds the base tier or the anonymous one sets nothing** (Sp3-3); it advances the generation and then calls the `onSessionRestored` subscribers (or `onAccountSwitched`'s for another account; `login()` calls neither, R18). A `/api/me` sent before a new
   refusal, or before a return, answers for a session that is gone: its result is dropped (it neither restores nor
   puts the header back to an account). `checkAuth()` no longer lowers `sessionEnded` for an account without a write token
   (F5: it did, while `recheckEndedSession()` required one).

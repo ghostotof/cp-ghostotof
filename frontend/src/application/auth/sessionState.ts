@@ -2,6 +2,7 @@ import { reactive, readonly, watch } from 'vue'
 import type { AuthenticatedUser } from '../../domain/auth/entities/AuthenticatedUser'
 import { ANONYMOUS_SESSION, BASE_ACCESS_SESSION, type AccessTier, type AuthSession } from '../../domain/auth/entities/AuthSession'
 import { clearBaseAccessExpiry, resetBaseAccessExpiryForTests, scheduleBaseAccessExpiry } from './baseAccessExpiry'
+import { advanceGeneration } from './sessionGeneration'
 
 /**
  * Contrairement à usePortfolioContent (purement dérivé, sans état propre),
@@ -57,13 +58,45 @@ export function markFirstCheckDone(): void {
 }
 
 /**
+ * Le **dernier compte affiché** (#748, R26) : l'identifiant et les rôles de la dernière session appliquée **avec** un
+ * compte. C'est la définition de « le même compte » : la page ouverte est celle de ce compte, tant qu'on ne l'a pas
+ * quittée par un geste de la personne. Défini ici, et non dans `sessionLifecycle.ts` qui l'importe, parce que
+ * `applySession` le pose.
+ */
+export interface LastAccount {
+  readonly username: string
+  readonly roles: readonly string[]
+}
+
+/**
+ * Posé par `applySession` quand la session porte un compte ; **gardé** quand l'en-tête devient anonyme (fin de
+ * session) ou passe au palier de base (relecture après un refus) — la page ouverte est toujours la sienne — ;
+ * oublié par `forgetLastAccount` (`logout()`, accès de base obtenu : la personne a quitté ce compte).
+ */
+let lastAccount: LastAccount | null = null
+
+/** Le dernier compte affiché, ou `null` s'il n'y en a pas (jamais, ou oublié). Voir `lastAccount`. */
+export function getLastAccount(): LastAccount | null {
+  return lastAccount
+}
+
+/** La personne a quitté son compte (déconnexion, accès de base obtenu) : plus aucun compte n'est retenu. */
+export function forgetLastAccount(): void {
+  lastAccount = null
+}
+
+/**
  * Pose le palier et le compte. **Ne touche jamais à `sessionEnded`** : la fin est l'affaire de
  * `markSessionExpired`, le retour de `restoreSession` (`sessionLifecycle.ts`), qui seuls jugent la génération et le
- * jeton d'écriture.
+ * jeton d'écriture. **N'avance pas non plus la génération** : une session *lue* est la réponse d'un envoi, pas une
+ * décision de l'onglet (celles-ci l'avancent : voir `sessionGeneration.ts`).
  */
 export function applySession(session: AuthSession): void {
   state.tier = session.tier
   state.user = session.user
+  if (null !== session.user) {
+    lastAccount = { username: session.user.username, roles: [...session.user.roles] }
+  }
   // Tout changement de session rend la minuterie précédente caduque : un
   // login remplace le cookie D6 par celui du compte, un logout l'efface.
   clearBaseAccessExpiry()
@@ -102,7 +135,10 @@ export async function waitForAuthCheck(): Promise<void> {
  * l'appelant, useBaseAccess, ne doit pas dépendre de AUTH_REPOSITORY.
  */
 export function markBaseAccessGranted(expiresAt: Date | null = null): void {
+  // Une session décidée dans l'onglet : tout `/api/me` parti avant (anonyme, peut-être) est périmé (R26, CR3-4).
+  advanceGeneration()
   applySession(BASE_ACCESS_SESSION)
+  forgetLastAccount()
   if (null !== expiresAt) {
     scheduleBaseAccessExpiry(expiresAt, markBaseAccessExpired)
   }
@@ -118,6 +154,8 @@ export function markBaseAccessGranted(expiresAt: Date | null = null): void {
  */
 export function markBaseAccessExpired(): void {
   if ('base' === state.tier && null === state.user) {
+    // Le palier change dans l'onglet : un `/api/me` parti avant, qui rendrait encore « base », est périmé (R26, CR3-4).
+    advanceGeneration()
     applySession(ANONYMOUS_SESSION)
   }
 }
@@ -130,5 +168,6 @@ export function resetSessionStateForTests(): void {
   state.sessionEnded = false
   state.sessionEndedCount = 0
   hasCheckedOnce = false
+  lastAccount = null
   resetBaseAccessExpiryForTests()
 }

@@ -154,6 +154,7 @@ describe('useOAuthConsent', () => {
 
   // R8 (#748) : le retour de la session relit la demande, sous le compte revenu.
   it('au retour de la session, la demande se relit', async () => {
+    await signInAgain() // Le compte affiché quand la session finit : sans lui, son retour n'est pas « le même compte » (R26, CR3-5).
     const describeRequest = vi.fn().mockRejectedValueOnce(new SessionEndedError()).mockResolvedValueOnce(SUMMARY)
     const { consent } = mountComposable(vi.fn(async () => APPROVED_URL), describeRequest)
     await consent.load(PARAMS)

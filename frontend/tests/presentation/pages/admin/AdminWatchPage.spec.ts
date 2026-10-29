@@ -522,6 +522,7 @@ describe('AdminWatchPage', () => {
       })
 
       it('au retour de la session, le volet se lit', async () => {
+        await signInAgain() // Le compte affiché quand la session finit : sans lui, son retour n'est pas « le même compte » (R26, CR3-5).
         let ended = true
         const vulnerabilities: AdminVulnerabilityRepository = {
           list: vi.fn(async () => {

@@ -189,6 +189,7 @@ describe('useMcpConnections', () => {
 
   // R8 (#748) : le retour de la session est le signal qui relance la lecture que la session finie avait interrompue.
   it('au retour de la session, la liste se relit et le refus tombe', async () => {
+    await signInTrusted() // Le compte affiché quand la session finit : sans lui, son retour n'est pas « le même compte » (R26, CR3-5).
     const list = vi.fn().mockRejectedValueOnce(new SessionEndedError()).mockResolvedValueOnce(listOf([A]))
     const connections = mountComposable({ list, revoke: vi.fn() })
     await connections.load()

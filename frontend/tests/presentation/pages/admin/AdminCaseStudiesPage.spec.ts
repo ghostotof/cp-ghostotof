@@ -326,6 +326,7 @@ describe('AdminCaseStudiesPage', () => {
     })
 
     it("au retour de la session, la liste se lit et s'affiche", async () => {
+      await signInAgain() // Le compte affiché quand la session finit : sans lui, son retour n'est pas « le même compte » (R26, CR3-5).
       const session = { ended: true }
       const caseStudies = repositoryEndingSession(session)
       const { wrapper } = await mountPage(caseStudies)

@@ -230,6 +230,8 @@ describe('useAuth', () => {
       const second = vi.fn()
       mountWithComposable(createStubRepository(), (probe) => probe.onSessionRestored(first))
       const auth = mountWithComposable(createStubRepository(JANE_ME()), (probe) => probe.onSessionRestored(second))
+      // Le compte affiché quand la session finit : sans lui, rien n'est « rétabli » (R26, CR3-5).
+      await auth.login('jane', 'password')
       markSessionExpired()
 
       await auth.recheckEndedSession()
@@ -242,6 +244,8 @@ describe('useAuth', () => {
       const restored = vi.fn()
       const repository = createStubRepository({ me: vi.fn(async () => sessionFor({ username: 'jane', roles: ['ROLE_USER'] })) })
       const auth = mountWithComposable(repository, (probe) => probe.onSessionRestored(restored))
+      // « jane » est le compte affiché quand la session finit (un autre onglet la reconnecte ensuite : R26, CR3-5).
+      await auth.login('jane', 'password')
       markSessionExpired()
 
       await auth.recheckEndedSession()
@@ -318,15 +322,15 @@ describe('useAuth', () => {
       expect(restored).not.toHaveBeenCalled()
     })
 
-    it("sans compte affiché à la fin (palier de base, anonyme), n'importe quel compte rétablit en place", async () => {
+    it("aucun compte retenu (fin au palier de base dès le départ) : onAccountSwitched, rien n'est « rétabli » (R26, CR3-5)", async () => {
       const { auth, restored, switched } = subscribed(createStubRepository({ me: vi.fn(async () => sessionFor(OTHER)) }))
       markBaseAccessGranted()
       markSessionExpired()
 
       await auth.recheckEndedSession()
 
-      expect(restored).toHaveBeenCalledTimes(1)
-      expect(switched).not.toHaveBeenCalled()
+      expect(switched).toHaveBeenCalledTimes(1)
+      expect(restored).not.toHaveBeenCalled()
     })
 
     it("le compte retenu est celui de la première fin : un refus de plus ne l'écrase pas", async () => {
@@ -400,6 +404,7 @@ describe('useAuth', () => {
         })
         probe.onSessionRestored(after)
       })
+      await auth.login('jane', 'password')
       markSessionExpired()
 
       await expect(auth.recheckEndedSession()).resolves.toBeUndefined()
@@ -422,6 +427,7 @@ describe('useAuth', () => {
         probe.onSessionRestored(after)
       })
 
+      await auth.login('jane', 'password')
       markSessionExpired()
       await expect(auth.checkAuth()).resolves.toBeUndefined()
       markSessionExpired()
@@ -977,6 +983,310 @@ describe('useAuth', () => {
       markBaseAccessExpired()
       expect(auth.tier.value).toBe('base')
       expect(auth.user.value?.username).toBe('jane')
+    })
+  })
+
+  /**
+   * La machine d'état de la session (#748, R26) : toute session décidée dans l'onglet périme les relectures parties
+   * avant elle (CR3-4), « le même compte » est le dernier compte affiché — identité et droits (CR3-5, CR3-6) —, une
+   * connexion en session finie rétablit toujours (CR3-9), et une relecture en session finie ne pose qu'un compte qui
+   * peut rétablir (Sp3-3).
+   */
+  describe("la machine d'état de la session (#748, R26)", () => {
+    const JANE = { username: 'jane', roles: ['ROLE_TRUSTED', 'ROLE_USER'] }
+    const OTHER = { username: 'autre', roles: ['ROLE_TRUSTED', 'ROLE_USER'] }
+
+    /** Un `me()` dont la réponse est tenue : le test fait arriver une décision de l'onglet pendant qu'il est en vol. */
+    function deferredMe(): { me: () => Promise<AuthSession>; settle: (session: AuthSession) => void } {
+      let settle: (session: AuthSession) => void = () => undefined
+      const pending = new Promise<AuthSession>((resolve) => {
+        settle = resolve
+      })
+
+      return { me: () => pending, settle }
+    }
+
+    function subscribed(repository: AuthRepository) {
+      const restored = vi.fn()
+      const switched = vi.fn()
+      const auth = mountWithComposable(repository, (probe) => {
+        probe.onSessionRestored(restored)
+        probe.onAccountSwitched(switched)
+      })
+
+      return { auth, restored, switched }
+    }
+
+    describe("une session décidée dans l'onglet périme le /api/me parti avant elle (CR3-4)", () => {
+      it("logout pendant qu'un /api/me est en vol : l'en-tête reste anonyme", async () => {
+        const { me, settle } = deferredMe()
+        const auth = mountWithComposable(createStubRepository({ me: vi.fn(me), login: vi.fn(async () => JANE) }))
+        await auth.login('jane', 'password')
+
+        const pending = auth.checkAuth()
+        await auth.logout()
+        settle(sessionFor(JANE))
+        await pending
+
+        expect(auth.user.value).toBeNull()
+        expect(auth.tier.value).toBe('anonymous')
+      })
+
+      it("logout refusé par le serveur pendant qu'un /api/me est en vol : l'en-tête reste anonyme", async () => {
+        const { me, settle } = deferredMe()
+        const auth = mountWithComposable(
+          createStubRepository({ me: vi.fn(me), login: vi.fn(async () => JANE), logout: vi.fn(async () => Promise.reject(new Error('403'))) }),
+        )
+        await auth.login('jane', 'password')
+
+        const pending = auth.checkAuth()
+        await expect(auth.logout()).rejects.toThrow('403')
+        settle(sessionFor(JANE))
+        await pending
+
+        expect(auth.user.value).toBeNull()
+      })
+
+      it("une déconnexion dont l'envoi est en cours périme déjà un /api/me parti avant elle", async () => {
+        const { me, settle } = deferredMe()
+        let finishLogout: () => void = () => undefined
+        const logout = vi.fn(() => new Promise<void>((resolve) => (finishLogout = resolve)))
+        const auth = mountWithComposable(createStubRepository({ me: vi.fn(me), login: vi.fn(async () => JANE), logout }))
+        await auth.login('jane', 'password')
+
+        const pendingMe = auth.checkAuth()
+        const pendingLogout = auth.logout()
+        settle(sessionFor(OTHER))
+        await pendingMe
+        // La déconnexion n'a pas fini, mais ce que `me` a répondu est d'avant elle : l'autre compte n'est pas posé.
+        expect(auth.user.value?.username).toBe('jane')
+        finishLogout()
+        await pendingLogout
+
+        expect(auth.user.value).toBeNull()
+      })
+
+      it("login pendant qu'un /api/me est en vol : la réponse ne remplace pas le compte connecté", async () => {
+        const { me, settle } = deferredMe()
+        const auth = mountWithComposable(createStubRepository({ me: vi.fn(me), login: vi.fn(async () => JANE) }))
+
+        const pending = auth.checkAuth()
+        await auth.login('jane', 'password')
+        settle(sessionFor(null))
+        await pending
+
+        expect(auth.user.value?.username).toBe('jane')
+        expect(auth.tier.value).toBe('trusted')
+      })
+
+      it("accès de base obtenu pendant qu'un /api/me est en vol : la réponse anonyme ne l'efface pas", async () => {
+        const { me, settle } = deferredMe()
+        const auth = mountWithComposable(createStubRepository({ me: vi.fn(me) }))
+
+        const pending = auth.checkAuth()
+        markBaseAccessGranted()
+        settle(sessionFor(null))
+        await pending
+
+        expect(auth.tier.value).toBe('base')
+      })
+
+      it("échéance de l'accès de base pendant qu'un /api/me est en vol : le palier de base ne revient pas", async () => {
+        const { me, settle } = deferredMe()
+        const auth = mountWithComposable(createStubRepository({ me: vi.fn(me) }))
+        markBaseAccessGranted()
+
+        const pending = auth.checkAuth()
+        markBaseAccessExpired()
+        settle(BASE_ACCESS_SESSION)
+        await pending
+
+        expect(auth.tier.value).toBe('anonymous')
+      })
+
+      it("une échéance qui ne change rien (un compte est affiché) n'avance pas la génération", async () => {
+        const auth = mountWithComposable(createStubRepository({ login: vi.fn(async () => JANE) }))
+        await auth.login('jane', 'password')
+        const stamp = sessionStamp()
+
+        markBaseAccessExpired()
+
+        expect(sessionStamp()).toBe(stamp)
+      })
+    })
+
+    describe('« le même compte » est le dernier compte affiché : identité et droits (CR3-5)', () => {
+      it('fin de session après une relecture au palier de base, puis un autre compte revient : onAccountSwitched, pas onSessionRestored', async () => {
+        const me = vi.fn<() => Promise<AuthSession>>()
+        const { auth, restored, switched } = subscribed(createStubRepository({ me, login: vi.fn(async () => JANE) }))
+        await auth.login('jane', 'password')
+        // Le serveur ne reconnaît plus que le palier de base : l'en-tête n'affiche plus de compte, la page ouverte est
+        // pourtant toujours celle de « jane ».
+        me.mockResolvedValueOnce(BASE_ACCESS_SESSION)
+        await auth.rereadAfterRefusal()
+        expect(auth.user.value).toBeNull()
+        markSessionExpired()
+
+        me.mockResolvedValueOnce(sessionFor(OTHER))
+        await auth.recheckEndedSession()
+
+        expect(switched).toHaveBeenCalledTimes(1)
+        expect(restored).not.toHaveBeenCalled()
+      })
+
+      it('le même compte revient avec un rôle de moins : onAccountSwitched', async () => {
+        const me = vi.fn(async () => sessionFor({ username: 'jane', roles: ['ROLE_USER'] }))
+        const { auth, restored, switched } = subscribed(createStubRepository({ me, login: vi.fn(async () => JANE) }))
+        await auth.login('jane', 'password')
+        markSessionExpired()
+
+        await auth.recheckEndedSession()
+
+        expect(switched).toHaveBeenCalledTimes(1)
+        expect(restored).not.toHaveBeenCalled()
+      })
+
+      it('le même compte revient avec un rôle de plus : onSessionRestored', async () => {
+        const me = vi.fn(async () => sessionFor({ username: 'jane', roles: ['ROLE_SUPER', 'ROLE_TRUSTED', 'ROLE_USER'] }))
+        const { auth, restored, switched } = subscribed(createStubRepository({ me, login: vi.fn(async () => JANE) }))
+        await auth.login('jane', 'password')
+        markSessionExpired()
+
+        await auth.recheckEndedSession()
+
+        expect(restored).toHaveBeenCalledTimes(1)
+        expect(switched).not.toHaveBeenCalled()
+      })
+
+      it("après logout(), plus aucun compte n'est retenu : le compte qui revient n'est pas « le même »", async () => {
+        const me = vi.fn(async () => sessionFor(JANE))
+        const { auth, restored, switched } = subscribed(createStubRepository({ me, login: vi.fn(async () => JANE) }))
+        await auth.login('jane', 'password')
+        await auth.logout()
+        markSessionExpired()
+
+        await auth.recheckEndedSession()
+
+        expect(switched).toHaveBeenCalledTimes(1)
+        expect(restored).not.toHaveBeenCalled()
+      })
+
+      it("après l'obtention d'un accès de base, plus aucun compte n'est retenu", async () => {
+        const me = vi.fn(async () => sessionFor(JANE))
+        const { auth, restored, switched } = subscribed(createStubRepository({ me, login: vi.fn(async () => JANE) }))
+        await auth.login('jane', 'password')
+        markBaseAccessGranted()
+        markSessionExpired()
+
+        await auth.recheckEndedSession()
+
+        expect(switched).toHaveBeenCalledTimes(1)
+        expect(restored).not.toHaveBeenCalled()
+      })
+    })
+
+    describe('une relecture après un refus, hors session finie, qui trouve un autre compte (CR3-6)', () => {
+      it('la session appliquée et onAccountSwitched', async () => {
+        const me = vi.fn(async () => sessionFor(OTHER))
+        const { auth, restored, switched } = subscribed(createStubRepository({ me, login: vi.fn(async () => JANE) }))
+        await auth.login('jane', 'password')
+
+        await expect(auth.rereadAfterRefusal()).resolves.toBe('session-held')
+
+        expect(auth.user.value?.username).toBe('autre')
+        expect(switched).toHaveBeenCalledTimes(1)
+        expect(restored).not.toHaveBeenCalled()
+      })
+
+      it("l'état est posé quand le rappel s'exécute", async () => {
+        let seen: string | null | undefined
+        const me = vi.fn(async () => sessionFor(OTHER))
+        const auth = mountWithComposable(createStubRepository({ me, login: vi.fn(async () => JANE) }), (probe) => {
+          probe.onAccountSwitched(() => {
+            seen = authState.user?.username ?? null
+          })
+        })
+        await auth.login('jane', 'password')
+
+        await auth.rereadAfterRefusal()
+
+        expect(seen).toBe('autre')
+      })
+
+      it('le même compte, rôles réduits : appliqué, aucun signal (R7/R17 le traitent en place)', async () => {
+        const me = vi.fn(async () => sessionFor({ username: 'jane', roles: ['ROLE_USER'] }))
+        const { auth, restored, switched } = subscribed(createStubRepository({ me, login: vi.fn(async () => JANE) }))
+        await auth.login('jane', 'password')
+
+        await auth.rereadAfterRefusal()
+
+        expect(auth.tier.value).toBe('base')
+        expect(auth.user.value?.username).toBe('jane')
+        expect(switched).not.toHaveBeenCalled()
+        expect(restored).not.toHaveBeenCalled()
+      })
+
+      it('le palier de base sans compte : appliqué, aucun signal', async () => {
+        const me = vi.fn(async () => BASE_ACCESS_SESSION)
+        const { auth, restored, switched } = subscribed(createStubRepository({ me, login: vi.fn(async () => JANE) }))
+        await auth.login('jane', 'password')
+
+        await auth.rereadAfterRefusal()
+
+        expect(auth.tier.value).toBe('base')
+        expect(switched).not.toHaveBeenCalled()
+        expect(restored).not.toHaveBeenCalled()
+      })
+
+      it("aucun compte n'a jamais été affiché : le premier compte lu ne « change » rien", async () => {
+        const me = vi.fn(async () => sessionFor(JANE))
+        const { auth, restored, switched } = subscribed(createStubRepository({ me }))
+
+        await auth.checkAuth()
+
+        expect(auth.user.value?.username).toBe('jane')
+        expect(switched).not.toHaveBeenCalled()
+        expect(restored).not.toHaveBeenCalled()
+      })
+    })
+
+    describe('une connexion en session finie rétablit toujours (CR3-9)', () => {
+      it("sans XSRF-TOKEN lisible : la session n'est plus finie, aucun signal", async () => {
+        const repository = createStubRepository({ hasWriteToken: () => false, login: vi.fn(async () => JANE) })
+        const { auth, restored, switched } = subscribed(repository)
+        markSessionExpired()
+        expect(auth.hasSessionEnded.value).toBe(true)
+
+        await auth.login('jane', 'password')
+
+        expect(auth.hasSessionEnded.value).toBe(false)
+        expect(auth.user.value?.username).toBe('jane')
+        expect(restored).not.toHaveBeenCalled()
+        expect(switched).not.toHaveBeenCalled()
+      })
+    })
+
+    describe("une relecture en session finie ne pose qu'un compte qui peut rétablir (Sp3-3)", () => {
+      it('le palier de base trouvé : rien ne change (ni palier ni sessionEnded)', async () => {
+        const auth = mountWithComposable(createStubRepository({ me: vi.fn(async () => BASE_ACCESS_SESSION) }))
+        markSessionExpired()
+
+        await auth.checkAuth()
+
+        expect(auth.tier.value).toBe('anonymous')
+        expect(auth.hasSessionEnded.value).toBe(true)
+      })
+
+      it('« anonyme » trouvé : rien ne change non plus', async () => {
+        const auth = mountWithComposable(createStubRepository({ me: vi.fn(async () => sessionFor(null)) }))
+        markSessionExpired()
+        const count = auth.sessionEndedCount.value
+
+        await auth.checkAuth()
+
+        expect(auth.hasSessionEnded.value).toBe(true)
+        expect(auth.sessionEndedCount.value).toBe(count)
+      })
     })
   })
 

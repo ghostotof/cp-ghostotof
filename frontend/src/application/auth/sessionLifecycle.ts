@@ -1,7 +1,8 @@
+import type { AuthenticatedUser } from '../../domain/auth/entities/AuthenticatedUser'
 import { ANONYMOUS_SESSION, type AuthSession } from '../../domain/auth/entities/AuthSession'
 import { advanceGeneration, isCurrentGeneration } from './sessionGeneration'
 import { notifyAccountSwitched, notifySessionRestored } from './sessionEvents'
-import { applySession, state } from './sessionState'
+import { applySession, getLastAccount, state, type LastAccount } from './sessionState'
 
 /**
  * La fin et le retour de la session (#748, R25 : sortis de `useAuth.ts`). Ils sont les seuls à lever et à baisser
@@ -9,12 +10,15 @@ import { applySession, state } from './sessionState'
  */
 
 /**
- * Le compte dont la session a fini (#748, R18) : l'identifiant du compte affiché à la **première** fin acceptée
- * (`markSessionExpired` repasse l'en-tête à anonyme, il faut le lire avant), `null` quand aucun compte n'était
- * affiché (palier de base, anonyme). Ce qui revient est « le même » si l'identifiant est celui-ci, ou s'il n'y en a
- * aucun de retenu ; sinon la page ouverte est celle d'un autre compte. Oublié au retour.
+ * « Le même compte » à la descente de `sessionEnded` (#748, R26, CR3-5) : un compte était retenu (`LastAccount`), c'est
+ * le même identifiant, **et** aucun des rôles qu'il avait n'a été perdu. Un rôle **gagné** ne change rien (le démonter
+ * pour cela perdrait la saisie pour rien) ; un rôle **perdu** rejoue la navigation : la garde rejuge la route avec ses
+ * nouveaux droits. Aucun compte retenu (la session a fini au palier de base, ou la personne s'était déconnectée) :
+ * on ne sait pas à qui est la page, ce n'est pas « le même ».
  */
-let endedAccount: string | null = null
+export function isSameAccount(previous: LastAccount | null, user: AuthenticatedUser): boolean {
+  return null !== previous && previous.username === user.username && previous.roles.every((role) => user.roles.includes(role))
+}
 
 /**
  * Un compte est-il revenu pendant une session finie ? C'est la moitié de la condition de descente : l'autre est le
@@ -35,18 +39,19 @@ export function canRestore(session: AuthSession, hasWriteToken: () => boolean): 
 }
 
 /**
- * **La** descente de `sessionEnded` : un compte est revenu avec son jeton d'écriture (l'appelant l'a vérifié par
- * `canRestore`, et la génération, sauf pour une connexion). Applique la session, avance la génération, puis — une
- * fois, de façon synchrone, l'état posé : les abonnés lisent la session revenue — appelle :
- * - `onSessionRestored` si c'est **le même compte** que celui dont la session a fini (ou si aucun n'était affiché) :
- *   la page ouverte est la sienne, elle reprend en place ;
- * - `onAccountSwitched` si c'est un autre : la session est appliquée, mais la page ouverte n'est pas la sienne (#748,
- *   R18) ; seul `AppLayout` y réagit, en rejouant la navigation.
+ * **La** descente de `sessionEnded` : un compte est revenu (l'appelant a vérifié par `canRestore` le jeton d'écriture
+ * et la génération, sauf pour une connexion, geste de la personne). Applique la session, avance la génération, puis —
+ * une fois, de façon synchrone, l'état posé : les abonnés lisent la session revenue — appelle :
+ * - `onSessionRestored` si c'est **le même compte** que le dernier affiché (`isSameAccount`) : la page ouverte est la
+ *   sienne, elle reprend en place ;
+ * - `onAccountSwitched` sinon — un autre compte, le même avec un rôle perdu, ou aucun compte retenu : la session est
+ *   appliquée, mais la page ouverte n'est pas (ou plus) la sienne (#748, R18, R26) ; seul `AppLayout` y réagit, en
+ *   rejouant la navigation.
  * Une **connexion** (`announce` faux) ne rappelle personne : la page de connexion navigue elle-même.
  */
 export function restoreSession(session: AuthSession, announce: boolean): void {
-  const endedFor = endedAccount
-  endedAccount = null
+  // Lu avant `applySession`, qui le remplace par le compte qui revient.
+  const previous = getLastAccount()
   applySession(session)
   state.sessionEnded = false
   advanceGeneration()
@@ -54,10 +59,24 @@ export function restoreSession(session: AuthSession, announce: boolean): void {
     return
   }
 
-  const isSameAccount = null === endedFor || endedFor === session.user?.username
-  if (isSameAccount) {
+  if (null !== session.user && isSameAccount(previous, session.user)) {
     notifySessionRestored()
   } else {
+    notifyAccountSwitched()
+  }
+}
+
+/**
+ * Applique une session **lue** hors session finie (`checkAuth`, `rereadAfterRefusal`, #748, R26, CR3-6). Si un autre
+ * compte que le dernier affiché est lu (autre identifiant), la page ouverte n'est pas la sienne : la session est
+ * appliquée, puis `onAccountSwitched` rejoue la navigation, comme au retour d'une session finie. Le même identifiant
+ * (rôles changés ou non) et un palier sans compte sont appliqués sans signal : un rôle perdu y est traité en place
+ * (alerte, saisie gardée, R7/R17). Aucun compte retenu (premier chargement) : rien à comparer, aucun signal.
+ */
+export function applyLiveSession(session: AuthSession): void {
+  const previous = getLastAccount()
+  applySession(session)
+  if (null !== previous && null !== session.user && previous.username !== session.user.username) {
     notifyAccountSwitched()
   }
 }
@@ -82,19 +101,11 @@ export function markSessionExpired(sentAt?: number): boolean {
     return state.sessionEnded
   }
 
-  // Le compte dont la session finit est celui de la **première** fin : les suivantes trouvent l'en-tête déjà anonyme.
-  if (!state.sessionEnded) {
-    endedAccount = state.user?.username ?? null
-  }
+  // Le dernier compte affiché survit : `applySession` ne l'oublie pas en passant à anonyme (voir `LastAccount`).
   applySession(ANONYMOUS_SESSION)
   state.sessionEnded = true
   state.sessionEndedCount += 1
   advanceGeneration()
 
   return true
-}
-
-/** Réservée aux tests (`resetAuthStateForTests`), jamais appelée par `src/` : aucun compte retenu. */
-export function resetSessionLifecycleForTests(): void {
-  endedAccount = null
 }

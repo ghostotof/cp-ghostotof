@@ -294,6 +294,25 @@ describe('AppLayout — un autre compte au retour', () => {
     expect(wrapper.find('[data-testid="counted-page"]').exists()).toBe(true)
   })
 
+  it('un refus réel dont la relecture trouve un autre compte rejoue la navigation (R26, CR3-6)', async () => {
+    const { wrapper, router, mounts, judged, repository } = await mountProtected(OTHER_SUPER)
+    expect(mounts.count).toBe(1)
+    const Probe = defineComponent({ setup: () => ({ auth: useAuth() }), template: '<div />' })
+    const probe = mount(Probe, { global: { provide: { [AUTH_REPOSITORY as symbol]: repository } } })
+
+    // Un 403 réel vient d'être reçu (aucune session finie) : la relecture trouve un autre compte que celui de la page.
+    await probe.vm.auth.rereadAfterRefusal()
+    await flushPromises()
+    probe.unmount()
+
+    expect(repository.me).toHaveBeenCalledTimes(1)
+    expect(judged).toHaveBeenCalledTimes(1)
+    expect(judged).toHaveBeenCalledWith('/fr/admin/case-studies?tri=nom#fin')
+    expect(router.currentRoute.value.fullPath).toBe('/fr/admin/case-studies?tri=nom#fin')
+    expect(mounts.count).toBe(2)
+    expect(wrapper.find('[data-testid="counted-page"]').exists()).toBe(true)
+  })
+
   it("le nouveau compte n'a pas le rôle : la garde redirige, la page protégée n'est pas remontée pour lui", async () => {
     const { wrapper, router, mounts } = await mountProtected(OTHER_PLAIN)
 

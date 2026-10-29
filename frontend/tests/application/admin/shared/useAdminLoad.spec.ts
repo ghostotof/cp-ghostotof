@@ -392,6 +392,7 @@ describe('useAdminLoad', () => {
 
   describe('au retour de la session, la lecture interrompue est relue (#748, R4)', () => {
     it('la lecture interrompue est relancée une fois, avec sa clé', async () => {
+      await signInAgain() // Le compte affiché quand la session finit : sans lui, son retour n'est pas « le même compte » (R26, CR3-5).
       const keys: string[] = []
       let ended = true
       const value = ref<string | null>(null)

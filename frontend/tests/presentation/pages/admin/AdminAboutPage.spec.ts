@@ -1157,6 +1157,7 @@ describe('AdminAboutPage', () => {
       })
 
       it('au retour de la session, les réglages EN se lisent et remplissent le formulaire', async () => {
+        await signInAgain() // Le compte affiché quand la session finit : sans lui, son retour n'est pas « le même compte » (R26, CR3-5).
         const session = { ended: false }
         const settingsRepository = createLocaleAwareSettingsRepository(session)
         const { wrapper } = await mountPage(settingsRepository)
@@ -1181,6 +1182,7 @@ describe('AdminAboutPage', () => {
       })
 
       it('une proposition en attente ne se pose pas sur un formulaire non chargé, elle se pose au retour', async () => {
+        await signInAgain() // Le compte affiché quand la session finit : sans lui, son retour n'est pas « le même compte » (R26, CR3-5).
         const session = { ended: false }
         const settingsRepository = createLocaleAwareSettingsRepository(session)
         const translation = createTranslationRepository({

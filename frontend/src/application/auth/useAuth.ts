@@ -5,11 +5,11 @@ import { ANONYMOUS_SESSION, type AccessTier, type AuthSession } from '../../doma
 import { ROLE_SUPER } from '../../domain/auth/entities/Role'
 import { hasRole } from '../../domain/auth/services/hasRole'
 import { sessionForUser } from '../../domain/auth/services/sessionForUser'
-import { markBaseAccessExpired, markBaseAccessGranted, applySession, authState, isFirstCheckDone, markFirstCheckDone, state, waitForAuthCheck } from './sessionState'
+import { markBaseAccessExpired, markBaseAccessGranted, applySession, authState, forgetLastAccount, isFirstCheckDone, markFirstCheckDone, state, waitForAuthCheck } from './sessionState'
 import { recallBaseAccessExpiry, scheduleBaseAccessExpiry } from './baseAccessExpiry'
-import { isCurrentGeneration, sessionStamp } from './sessionGeneration'
+import { advanceGeneration, isCurrentGeneration, sessionStamp } from './sessionGeneration'
 import { onAccountSwitched, onSessionRestored } from './sessionEvents'
-import { canRestore, isReturnOfAccount, markSessionExpired, restoreSession } from './sessionLifecycle'
+import { applyLiveSession, canRestore, isReturnOfAccount, markSessionExpired, restoreSession } from './sessionLifecycle'
 
 /**
  * `useAuth.ts` est la façade de la session (#748, R25) : le composable, les deux relectures de `/api/me` mutualisées,
@@ -104,8 +104,8 @@ export interface UseAuthResult {
   rereadAfterRefusal: () => Promise<RefusalReread>
   /**
    * Abonne `callback` au **retour** de la session : il est appelé une fois, de façon synchrone, à chaque descente
-   * de `sessionEnded` (vrai → faux) où **le même compte** revient (ou aucun n'était affiché) — par la relecture au
-   * retour sur l'onglet. Ni pour un autre compte (`onAccountSwitched`), ni pour une connexion dans l'onglet (la page
+   * de `sessionEnded` (vrai → faux) où **le même compte** revient (même identifiant, aucun rôle perdu, #748, R26) — par
+   * la relecture au retour sur l'onglet. Ni pour un autre compte (`onAccountSwitched`), ni pour une connexion dans l'onglet (la page
    * de connexion navigue elle-même, #748, R18). Jamais à la fin de la session, ni quand rien n'était fini. À appeler dans un scope (le `setup` d'un
    * composant, un `effectScope`) : l'abonnement est retiré à `onScopeDispose`. C'est **le** signal de retour :
    * une page qui dépend du retour (relire ce qu'une session finie a interrompu) s'y abonne, elle ne surveille
@@ -113,9 +113,10 @@ export interface UseAuthResult {
    */
   onSessionRestored: (callback: () => void) => void
   /**
-   * Abonne `callback` au **changement de compte** (#748, R18) : la session a fini, et c'est **un autre compte** que
-   * celui qui était affiché qui est revenu (par la relecture au retour sur l'onglet, ou `checkAuth()`). La session
-   * est déjà appliquée quand `callback` est appelé ; `onSessionRestored` n'est pas appelé (la page ouverte n'est pas
+   * Abonne `callback` au **changement de compte** (#748, R18, R26) : la session a fini et c'est **un autre compte**, ou
+   * le même avec un rôle perdu, ou un compte quand aucun n'était retenu, qui est revenu (par la relecture au retour sur
+   * l'onglet, ou `checkAuth()`) ; ou, hors session finie, une relecture (`checkAuth()`, `rereadAfterRefusal()`) trouve
+   * **un autre identifiant** que celui du dernier compte affiché. La session est déjà appliquée quand `callback` est appelé ; `onSessionRestored` n'est pas appelé (la page ouverte n'est pas
    * « rétablie » : ce n'est plus la page de ce compte). Jamais pour une connexion dans l'onglet. Même mécanique que
    * `onSessionRestored` : un scope, retiré à `onScopeDispose`. Seul `AppLayout` s'y abonne.
    */
@@ -135,16 +136,22 @@ export function useAuth(): UseAuthResult {
   const login = async (username: string, password: string): Promise<void> => {
     const session = sessionForUser(await repository.login(username, password))
     // Une connexion est le geste de la personne : elle vaut quelle que soit la génération (rien n'est parti avant
-    // elle qui la contredise), mais comme toute descente elle veut un compte et un jeton d'écriture. Elle ne rappelle
-    // aucun abonné (#748, R18) : la page de connexion navigue elle-même, rien n'est « rétabli » ni rejoué ici.
-    if (canRestore(session, () => repository.hasWriteToken())) {
+    // elle qui la contredise) et **avance toujours la génération** — un `/api/me` parti avant elle est périmé (R26,
+    // CR3-4). En session finie elle rétablit **toujours** : le backend pose `XSRF-TOKEN` à la connexion, et s'il manque
+    // la première écriture prendra le 403 et refinira la session — état cohérent (R26, CR3-9). Elle ne rappelle aucun
+    // abonné (#748, R18) : la page de connexion navigue elle-même, rien n'est « rétabli » ni rejoué ici.
+    if (isReturnOfAccount(session)) {
       restoreSession(session, false)
     } else {
+      advanceGeneration()
       applySession(session)
     }
   }
 
   const logout = async (): Promise<void> => {
+    // Décidée dans l'onglet, la déconnexion périme dès l'envoi tout `/api/me` parti avant elle : sa réponse ne
+    // « reconnecte » pas l'en-tête pendant que le serveur répond (R26, CR3-4).
+    advanceGeneration()
     try {
       await repository.logout()
     } finally {
@@ -154,26 +161,32 @@ export function useAuth(): UseAuthResult {
       // L'erreur remonte, pour que l'appelant y mène plutôt qu'à l'accueil ;
       // un rechargement relit le palier réel sur /api/me.
       applySession(ANONYMOUS_SESSION)
+      // La personne a quitté ce compte : plus aucun n'est « le dernier affiché ». Et un `/api/me` parti pendant
+      // l'envoi est lui aussi périmé.
+      forgetLastAccount()
+      advanceGeneration()
     }
   }
 
   /**
    * Applique une session lue sur `/api/me` (`checkAuth`, `rereadAfterRefusal`). Rend `false`, sans rien changer, quand
-   * la réponse est révolue (une fin ou un retour est arrivé depuis l'envoi), ou quand c'est un compte sans jeton
-   * d'écriture pendant une session finie : elle n'est pas rétablie (sa première écriture prendrait le 403 du CSRF)
-   * et l'en-tête ne bouge pas (F5, C). Un compte pendant une session finie la rétablit, par la descente unique.
+   * la réponse est révolue (une session décidée dans l'onglet, une fin ou un retour est arrivé depuis l'envoi). En
+   * session finie (Sp3-3), seul un compte qui `canRestore` (un jeton d'écriture : sans lui sa première écriture
+   * prendrait le 403 du CSRF) change quelque chose, par la descente unique ; le palier de base, l'anonyme et un compte
+   * sans jeton ne posent rien — l'en-tête ne bouge pas (F5, C). Hors session finie, `applyLiveSession` applique et
+   * signale un autre compte (CR3-6).
    */
   const applyReadSession = (session: AuthSession, sentAt: number): boolean => {
     if (!isCurrentGeneration(sentAt)) {
       return false
     }
-    if (isReturnOfAccount(session)) {
+    if (state.sessionEnded) {
       if (!canRestore(session, () => repository.hasWriteToken())) {
         return false
       }
       restoreSession(session, true)
     } else {
-      applySession(session)
+      applyLiveSession(session)
     }
 
     return true
