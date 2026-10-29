@@ -320,6 +320,11 @@ deprecations' deduplication for the whole suite. **Only the namespaces whose cal
 the locks, the caches and `FailedLoginTimingEqualizer` wait and measure for real. `WholeClockFreezeTest` pins both lists
 (a mocked namespace that must be, an unmocked one that must stay so) and the effect on the real components. A new
 component whose deadline a test asserts and that reads the time in another namespace adds its line there, with its test.
+`symfony.lock` carries an entry for `symfony/phpunit-bridge` (recipe 7.3) on purpose, and `phpunit.dist.xml` does **not** carry its
+`SymfonyExtension`: without the entry, any `composer update` or `composer require` replays the recipe, which adds the extension with
+`clock-mock-namespaces=App` and `dns-mock-namespaces=App`. ClockMock would then mock `App\*` and falsify `FailedLoginTimingEqualizer`'s
+duration (measured: the update rewrites `phpunit.dist.xml` without the entry, and leaves it alone with it). If a bridge update ever
+brings a newer recipe, refuse its `phpunit.dist.xml` hunk.
 
 Under the frozen `.999` instant a `Retry-After` is an **exact** value, asserted as such: a one-hour `sliding_window` closes
 3600 s later (12:00:00.999 -> 13:00:00.999), symfony/rate-limiter >= 8.1.10 rounds the deadline up to 13:00:01, and
