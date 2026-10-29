@@ -77,6 +77,8 @@ const errorMessage = computed<string | null>(() => {
   switch (failure.value) {
     case 'session-expired':
       return t('oauthConsent.errors.sessionExpired')
+    case 'forbidden':
+      return t('oauthConsent.errors.forbidden')
     case 'reauthentication-required':
       return t('oauthConsent.errors.reauthenticationRequired')
     case 'account-changed':
@@ -129,6 +131,14 @@ const switchAccountTarget = computed(() => ({
  */
 const offersReload = computed(() => 'account-changed' === failure.value)
 
+/**
+ * Un refus du serveur (403 qui n'est pas une session finie) : la personne est connectée,
+ * mais ce compte ne peut pas décider. Le lien « Changer de compte » (`reauth=1`) est le
+ * seul chemin qui lui ouvre la connexion — la route renvoie sinon une personne connectée
+ * à l'accueil — et repose des cookies neufs, ce qui répare aussi une signature CSRF périmée.
+ */
+const offersSwitchAccount = computed(() => 'forbidden' === failure.value)
+
 const offersRelogin = computed(() => 'session-expired' === failure.value || 'reauthentication-required' === failure.value)
 
 onMounted(() => {
@@ -167,6 +177,12 @@ onMounted(() => {
         :to="reloginTarget"
       >
         {{ reloginLabel }}
+      </RouterLink>
+      <RouterLink
+        v-if="offersSwitchAccount"
+        :to="switchAccountTarget"
+      >
+        {{ t('oauthConsent.account.switch') }}
       </RouterLink>
       <!-- Comme le lien de reconnexion : dans l'alerte, avec le message qu'il prolonge. -->
       <button

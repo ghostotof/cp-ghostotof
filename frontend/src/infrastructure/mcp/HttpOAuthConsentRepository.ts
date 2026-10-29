@@ -3,11 +3,13 @@ import type { OAuthConsentRepository } from '../../domain/mcp/repositories/OAuth
 import { consentQuery } from '../../domain/mcp/services/consentParams'
 import { ConsentAccountChangedError } from '../../domain/mcp/errors/ConsentAccountChangedError'
 import { ConsentFailedError } from '../../domain/mcp/errors/ConsentFailedError'
+import { ConsentForbiddenError } from '../../domain/mcp/errors/ConsentForbiddenError'
 import { InvalidConsentRequestError } from '../../domain/mcp/errors/InvalidConsentRequestError'
 import { MalformedConsentDecisionError } from '../../domain/mcp/errors/MalformedConsentDecisionError'
 import { ReauthenticationRequiredError } from '../../domain/mcp/errors/ReauthenticationRequiredError'
 import { SessionExpiredError } from '../../domain/mcp/errors/SessionExpiredError'
 import { readCsrfToken } from '../auth/csrfCookie'
+import { endsTheSession } from '../http/sessionEnded'
 import type { ApiProblemBody } from '../admin/shared/BackofficeHttpClient'
 import { hasProblemType } from '../admin/shared/orderProblems'
 
@@ -48,6 +50,14 @@ type UnprocessableMeaning = 'malformed-decision' | 'generic'
  * 'include'`) sur les deux, double-submit CSRF (`X-XSRF-TOKEN`) sur le `POST`,
  * comme toute mutation de l'API.
  *
+ * Un 401, ou un 403 au `POST` parti sans jeton CSRF (cookies expirés par la
+ * déconnexion), est une session finie (`SessionExpiredError`, règle
+ * `endsTheSession`) : se reconnecter repose des cookies neufs. Tout autre 403 — le
+ * `GET`, que le CSRF ne contrôle jamais, ou le `POST` qui portait son jeton — est un
+ * refus réel (compte sans l'accès de confiance, signature CSRF périmée) :
+ * `ConsentForbiddenError`, que la page ne présente pas comme une session finie
+ * (#748, #732 point 4).
+ *
  * Le `POST` répond un 200 JSON portant l'URL de retour, jamais un 302 : `fetch`
  * suivrait la redirection au lieu de la rendre, vers le client, hors de
  * l'origine du site. La page la suit elle-même, après en avoir vérifié le
@@ -75,6 +85,8 @@ export class HttpOAuthConsentRepository implements OAuthConsentRepository {
       { method: 'GET', credentials: 'include', headers: { Accept: 'application/json' } },
       // Un GET n'a pas de corps : un 422 n'y a pas de sens propre.
       'generic',
+      // Une lecture n'est jamais refusée pour le CSRF : son 403 est un refus réel.
+      false,
     )
 
     return this.parseSummary(await this.readJson(response))
@@ -98,6 +110,9 @@ export class HttpOAuthConsentRepository implements OAuthConsentRepository {
         body: JSON.stringify({ ...params, approved, accountId }),
       },
       'malformed-decision',
+      // Pas de jeton à envoyer (cookie absent ou vide) : le client n'a pas posé l'en-tête,
+      // et un 403 du serveur est alors le refus CSRF d'une session finie.
+      !csrfToken,
     )
 
     const redirectUri = (await this.readJson(response) as { redirectUri?: unknown } | null)?.redirectUri
@@ -108,8 +123,17 @@ export class HttpOAuthConsentRepository implements OAuthConsentRepository {
     return redirectUri
   }
 
-  /** Appel réseau ; un statut d'erreur devient l'exception du domaine qui lui correspond. */
-  private async send(url: string, init: RequestInit, unprocessable: UnprocessableMeaning): Promise<Response> {
+  /**
+   * Appel réseau ; un statut d'erreur devient l'exception du domaine qui lui correspond.
+   * `sentWithoutCsrfToken` : vrai pour une écriture partie sans en-tête `X-XSRF-TOKEN`,
+   * connu à l'envoi (voir `endsTheSession`).
+   */
+  private async send(
+    url: string,
+    init: RequestInit,
+    unprocessable: UnprocessableMeaning,
+    sentWithoutCsrfToken: boolean,
+  ): Promise<Response> {
     let response: Response
     try {
       response = await fetch(url, init)
@@ -118,13 +142,13 @@ export class HttpOAuthConsentRepository implements OAuthConsentRepository {
     }
 
     if (!response.ok) {
-      throw await this.httpError(response, unprocessable)
+      throw await this.httpError(response, unprocessable, sentWithoutCsrfToken)
     }
 
     return response
   }
 
-  private async httpError(response: Response, unprocessable: UnprocessableMeaning): Promise<Error> {
+  private async httpError(response: Response, unprocessable: UnprocessableMeaning, sentWithoutCsrfToken: boolean): Promise<Error> {
     const status = response.status
     switch (status) {
       case 400:
@@ -148,9 +172,10 @@ export class HttpOAuthConsentRepository implements OAuthConsentRepository {
           ? new ConsentAccountChangedError()
           : new ConsentFailedError('The consent request failed with an unrecognised 409')
       case 403:
-        // 403 couvre aussi le refus CSRF : dans les deux cas, se reconnecter
-        // repose un cookie de session et un jeton CSRF neufs.
-        return new SessionExpiredError()
+        // Un 403 à une décision partie sans jeton CSRF est une session finie (se
+        // reconnecter repose des cookies neufs) ; tout autre est un refus réel, que se
+        // reconnecter au même compte ne lèverait pas (#748, #732 point 4).
+        return endsTheSession(403, sentWithoutCsrfToken) ? new SessionExpiredError() : new ConsentForbiddenError()
       default:
         return new ConsentFailedError(`The consent request failed with status ${status}`)
     }

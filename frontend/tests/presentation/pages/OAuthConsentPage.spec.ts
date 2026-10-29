@@ -12,6 +12,7 @@ import { InvalidConsentRequestError } from '../../../src/domain/mcp/errors/Inval
 import { SessionExpiredError } from '../../../src/domain/mcp/errors/SessionExpiredError'
 import { ConsentFailedError } from '../../../src/domain/mcp/errors/ConsentFailedError'
 import { MalformedConsentDecisionError } from '../../../src/domain/mcp/errors/MalformedConsentDecisionError'
+import { ConsentForbiddenError } from '../../../src/domain/mcp/errors/ConsentForbiddenError'
 import { ConsentAccountChangedError } from '../../../src/domain/mcp/errors/ConsentAccountChangedError'
 import { ReauthenticationRequiredError } from '../../../src/domain/mcp/errors/ReauthenticationRequiredError'
 import { ACTIVATION_DELAY_MS } from '../../../src/presentation/ui/useDeliberateActivation'
@@ -493,6 +494,72 @@ describe('OAuthConsentPage — session', () => {
     expect(wrapper.find('[role="alert"]').exists()).toBe(true)
   })
 
+  it('refus du serveur : le message dit que ce compte ne peut pas autoriser, et propose de changer de compte', async () => {
+    await primeTrustedSession()
+    const { wrapper, router, navigate } = await mountPage({
+      describeRequest: vi.fn(async () => {
+        throw new ConsentForbiddenError()
+      }),
+    })
+
+    // La session vaut toujours pour le reste du site : elle n'est pas marquée expirée.
+    expect(authState.user).not.toBeNull()
+    const alert = wrapper.find('[role="alert"]')
+    expect(alert.text()).toContain("Ce compte ne peut pas autoriser cette connexion")
+    expect(alert.text()).not.toContain('session')
+    const link = alert.find('a')
+    expect(link.text()).toBe('Changer de compte')
+    const target = router.resolve(link.attributes('href') ?? '')
+    expect(target.name).toBe('login')
+    // Le drapeau que la route de connexion honore pour une personne déjà connectée.
+    expect(target.query.reauth).toBe('1')
+    const back = router.resolve(String(target.query.redirect))
+    expect(back.name).toBe('oauth-consent')
+    expect(back.query).toEqual(router.currentRoute.value.query)
+    expect(wrapper.findAll('button')).toHaveLength(0)
+    expect(navigate).not.toHaveBeenCalled()
+  })
+
+  it('refus du serveur à la décision : même message et même lien, la demande n\'est plus montrée', async () => {
+    const { wrapper, navigate } = await mountPage({
+      decide: vi.fn(async () => {
+        throw new ConsentForbiddenError()
+      }),
+    })
+
+    await button(wrapper, 'approve').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[role="alert"]').text()).toContain('Ce compte ne peut pas autoriser cette connexion')
+    expect(wrapper.find('[role="alert"] a').text()).toBe('Changer de compte')
+    expect(wrapper.findAll('button')).toHaveLength(0)
+    expect(wrapper.find('[data-testid="consent-account"]').exists()).toBe(false)
+    expect(navigate).not.toHaveBeenCalled()
+  })
+
+  it('refus du serveur en anglais', async () => {
+    const { wrapper } = await mountPage({
+      locale: 'en',
+      describeRequest: vi.fn(async () => {
+        throw new ConsentForbiddenError()
+      }),
+    })
+
+    expect(wrapper.find('[role="alert"]').text()).toContain('This account cannot authorise this connection')
+    expect(wrapper.find('[role="alert"] a').text()).toBe('Switch account')
+  })
+
+  it("session expirée : le message ne parle plus d'un compte qui ne pourrait pas autoriser", async () => {
+    const { wrapper } = await mountPage({
+      describeRequest: vi.fn(async () => {
+        throw new SessionExpiredError()
+      }),
+    })
+
+    expect(wrapper.find('[role="alert"]').text()).toContain('Votre session a expiré.')
+    expect(wrapper.find('[role="alert"]').text()).not.toContain('ne permet pas')
+  })
+
   it('échec générique au résumé : message, aucun bouton', async () => {
     const { wrapper } = await mountPage({
       describeRequest: vi.fn(async () => {
@@ -751,6 +818,19 @@ describe('OAuthConsentPage — clic délibéré (double-clickjacking)', () => {
 describe('OAuthConsentPage — accessibilité', () => {
   it.each(SUPPORTED_LOCALES)('aucune violation détectable, demande affichée (%s)', async (locale) => {
     const { wrapper } = await mountPage({ locale })
+    // axe programme ses propres minuteries : elles doivent tourner.
+    vi.useRealTimers()
+
+    await expectNoAccessibilityViolation(wrapper)
+  })
+
+  it.each(SUPPORTED_LOCALES)("aucune violation détectable, refus du serveur (%s)", async (locale) => {
+    const { wrapper } = await mountPage({
+      locale,
+      describeRequest: vi.fn(async () => {
+        throw new ConsentForbiddenError()
+      }),
+    })
     // axe programme ses propres minuteries : elles doivent tourner.
     vi.useRealTimers()
 

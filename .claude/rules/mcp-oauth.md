@@ -348,9 +348,20 @@ paths:
   nothing. It follows the returned URL with **`window.location.replace`**, never `assign` (the page must
   not stay in history: « Back » would offer to grant the same request again), and only an `http:`/`https:`
   URL whose **`hostname`** (not `host`: the backend's `redirectHost` has no port, a loopback redirect has an
-  ephemeral one) is the host shown — defence in depth, the server already validated it. 401 **and 403**
-  (a CSRF refusal included) read as an expired session (`markSessionExpired`, like `useAssistant`):
-  accepted, a re-login gives fresh cookies. 422 is terminal (`malformed-decision`), a 400 whose `type` is the
+  ephemeral one) is the host shown — defence in depth, the server already validated it. **A 401, or a 403 to
+  the `POST` sent without a CSRF token, is an ended session** (`endsTheSession`, `infrastructure/http/sessionEnded.ts`;
+  the facts are in `.claude/rules/frontend-backoffice.md`): `SessionExpiredError`, `markSessionExpired()`, a « Sign in
+  again » link. **Any other 403** — the `GET` (never subject to the CSRF guard: it is `access_control` refusing an account
+  without `ROLE_TRUSTED`, one that lost it while the page was open) or a `POST` that carried its token — is
+  `ConsentForbiddenError`, the **terminal** failure `forbidden` (#748, #732 point 4): the request is no longer shown, the
+  session is **not** marked expired (it holds for the rest of the site), and the page says this account cannot authorise
+  the connection and offers « Changer de compte » (`login?redirect=<fullPath>&reauth=1`) — the only link that opens the
+  login to a signed-in person, whose `beforeEnter` otherwise sends them home; a plain « Se reconnecter » link would
+  not open. It also mends the rare stale `XSRF-TOKEN` signature (an `APP_SECRET` rotation): the sign-in sets new
+  cookies. **Rejected**: returning to `ready` to retry (the same decision, the same refusal). **Accepted**: the login page
+  opened by `reauth=1` then shows `auth.reauthNotice` (« authorizing an MCP connection needs a sign-in within ten
+  minutes ») — already what « Changer de compte » shows, right in substance (the person comes back to the request),
+  imprecise about the reason. 422 is terminal (`malformed-decision`), a 400 whose `type` is the
   rejection is `invalid`. **A 401 whose `type` is `reauthentication-required`** (only on the approval) is
   its own failure, terminal, the session **not** marked expired: the page says why and links to the login
   with `redirect` (the full path) and **`reauth=1`** (`presentation/router/reauthentication.ts`, one value only),

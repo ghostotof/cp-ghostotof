@@ -828,7 +828,8 @@
     "deny": "Refuser",
     "errors": {
       "invalid": "Cette demande de connexion est invalide ou a expiré. Recommencez depuis votre assistant.",
-      "sessionExpired": "Votre session a expiré ou ne permet pas d'autoriser cette connexion.",
+      "sessionExpired": "Votre session a expiré.",
+      "forbidden": "Ce compte ne peut pas autoriser cette connexion : il n'a pas, ou plus, l'accès de confiance. Changez de compte pour décider.",
       "relogin": "Se reconnecter",
       "reauthenticationRequired": "Pour autoriser cette connexion, reconnectez-vous : votre connexion au site date de plus de dix minutes. Vous reviendrez ensuite à cette même demande.",
       "reauthenticate": "Me reconnecter pour autoriser",
