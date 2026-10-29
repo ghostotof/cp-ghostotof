@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Rector\CodeQuality\Rector\Attribute\SortAttributeNamedArgsRector;
 use Rector\CodeQuality\Rector\FuncCall\SortCallLikeNamedArgsRector;
 use Rector\CodeQuality\Rector\Identical\FlipTypeControlToUseExclusiveTypeRector;
+use Rector\CodeQuality\Rector\If_\ExplicitNullableObjectInstanceRector;
 use Rector\Config\RectorConfig;
 use Rector\Php80\Rector\Class_\ClassPropertyAssignToConstructorPromotionRector;
 use Rector\CodingStyle\Rector\ArrowFunction\ArrowFunctionDelegatingCallToFirstClassCallableRector;
@@ -46,6 +47,19 @@ return RectorConfig::configure()
         // puisqu'il attend `callable(string,string): int`. La closure explicite
         // est la seule forme que les deux outils acceptent.
         ArrowFunctionDelegatingCallToFirstClassCallableRector::class,
+
+        // Celle-ci non plus n'est pas cosmetique, et elle est dangereuse : issue
+        // #743. Ajoutee au jeu codeQuality par Rector 2.8, elle reecrit
+        // `null === $x` en `!$x instanceof Foo` dans 85 fichiers, ce qui rend
+        // statiquement toujours vraies (ou inatteignables) des gardes que le
+        // typage ne garantit pas a l'execution. Enchainee avec
+        // RemoveAlwaysTrueIfConditionRector, RemoveUnreachableStatementRector et
+        // RemoveUnusedVariableAssignRector, elle a supprime le refus 400 du
+        // serveur MCP dans InboundMessageRefusalListener (gardes #675 et #686)
+        // dans un diff de 85 fichiers qu'une relecture rapide laisse passer. Ne la
+        // retirer d'ici qu'apres avoir relu, un par un, les refus qu'elle ferait
+        // disparaitre.
+        ExplicitNullableObjectInstanceRector::class,
     ])
     ->withCache(__DIR__.'/var/cache/rector')
     // Toute classe est importee par `use`, natives comprises (`use Throwable;`,
