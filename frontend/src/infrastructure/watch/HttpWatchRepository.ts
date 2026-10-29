@@ -4,7 +4,11 @@ import { WatchUnavailableError } from '../../domain/watch/errors/WatchUnavailabl
 
 /**
  * Implémentation HTTP de WatchRepository. Endpoint public (GET /api/watch, cf.
- * App\Portfolio\Watch) : pas de `credentials: 'include'` nécessaire.
+ * App\Portfolio\Watch).
+ *
+ * `credentials: 'omit'` (#748, R23), écrit : aucune identité n'est lue, et en production (une seule origine) le défaut
+ * `same-origin` enverrait un `BEARER` mort, dont le 401 tomberait sur une page publique (en dev, deux origines : il
+ * n'en enverrait pas, ce qui cachait le défaut). `credentialsAreExplicit.spec.ts` le garde.
  *
  * Côté backend, cette route ne déclenche aucun appel sortant — elle sert un
  * instantané déjà calculé. La page ne dépend donc jamais de la disponibilité
@@ -18,7 +22,7 @@ export class HttpWatchRepository implements WatchRepository {
   }
 
   async get(): Promise<WatchContent> {
-    const response = await fetch(`${this.apiBaseUrl}/api/watch`, { method: 'GET' })
+    const response = await fetch(`${this.apiBaseUrl}/api/watch`, { method: 'GET', credentials: 'omit' })
 
     if (!response.ok) {
       throw new WatchUnavailableError()

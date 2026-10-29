@@ -40,6 +40,7 @@ describe('HttpAccountRepository', () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token: TOKEN }),
+        credentials: 'omit',
       })
     })
 
@@ -94,6 +95,7 @@ describe('HttpAccountRepository', () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token: TOKEN, password: 'NewSecurePass1' }),
+        credentials: 'omit',
       })
     })
 

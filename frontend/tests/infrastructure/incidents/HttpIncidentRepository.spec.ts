@@ -27,7 +27,7 @@ describe('HttpIncidentRepository', () => {
 
     await new HttpIncidentRepository(API_BASE_URL).list('fr')
 
-    expect(fetchMock).toHaveBeenCalledWith(`${API_BASE_URL}/api/incidents/fr`, { method: 'GET' })
+    expect(fetchMock).toHaveBeenCalledWith(`${API_BASE_URL}/api/incidents/fr`, { method: 'GET', credentials: 'omit' })
   })
 
   it('list() suit la locale demandée', async () => {
@@ -36,7 +36,7 @@ describe('HttpIncidentRepository', () => {
 
     await new HttpIncidentRepository(API_BASE_URL).list('en')
 
-    expect(fetchMock).toHaveBeenCalledWith(`${API_BASE_URL}/api/incidents/en`, { method: 'GET' })
+    expect(fetchMock).toHaveBeenCalledWith(`${API_BASE_URL}/api/incidents/en`, { method: 'GET', credentials: 'omit' })
   })
 
   it('list() renvoie les incidents tels que servis par l\'API', async () => {

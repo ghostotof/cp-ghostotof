@@ -6,8 +6,11 @@ import { ContributionsUnavailableError } from '../../domain/contributions/errors
 /**
  * Implémentation HTTP de ContributionRepository. Endpoint public (GET
  * /api/contributions/{locale}, cf. App\Portfolio\Contribution, aucune
- * restriction dans access_control côté backend) : pas de
- * `credentials: 'include'` nécessaire.
+ * restriction dans access_control côté backend).
+ *
+ * `credentials: 'omit'` (#748, R23), écrit : aucune identité n'est lue, et en production (une seule origine) le défaut
+ * `same-origin` enverrait un `BEARER` mort, dont le 401 tomberait sur une page publique (en dev, deux origines : il
+ * n'en enverrait pas, ce qui cachait le défaut). `credentialsAreExplicit.spec.ts` le garde.
  */
 export class HttpContributionRepository implements ContributionRepository {
   private readonly apiBaseUrl: string
@@ -17,7 +20,7 @@ export class HttpContributionRepository implements ContributionRepository {
   }
 
   async list(locale: Locale): Promise<readonly Contribution[]> {
-    const response = await fetch(`${this.apiBaseUrl}/api/contributions/${locale}`, { method: 'GET' })
+    const response = await fetch(`${this.apiBaseUrl}/api/contributions/${locale}`, { method: 'GET', credentials: 'omit' })
 
     if (!response.ok) {
       throw new ContributionsUnavailableError()

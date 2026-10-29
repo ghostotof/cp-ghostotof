@@ -52,7 +52,12 @@ error state (`role="alert"`), and the content. `main.ts` provides both repositor
 `PortfolioContentRepository` one. `domain/watch` → `infrastructure/watch/HttpWatchRepository.ts` →
 `application/watch/useWatch.ts` → `presentation/pages/StackPage.vue` follows the identical shape, with one
 difference that comes from the backend: **its endpoint has no `{locale}` segment** (`GET /api/watch`) — a
-version number is a fact, not a translation, so only the surrounding UI strings are localized. Don't add new content here unless it's genuinely backend-managed (i.e. editable
+version number is a fact, not a translation, so only the surrounding UI strings are localized.
+**These public repositories (and the contact and password-setup ones) send `credentials: 'omit'`** (#748, R23): the
+default `same-origin` sends the cookies in preprod and prod (one origin) and not in dev (two), so a dead `BEARER`
+would reach a public page there and take the 401 — a defect invisible in dev. `credentialsAreExplicit.spec.ts` fails
+on any `fetch(` of `infrastructure/` without its `credentials` written (`'include'` only for the five session
+repositories it lists). Don't add new content here unless it's genuinely backend-managed (i.e. editable
 from the backoffice) — purely static content still belongs in `infrastructure/portfolio/content/{fr,en}.ts`.
 
 The assistant follows the same layered shape without being backoffice content: its slice (spec 0005,
@@ -193,10 +198,9 @@ The header's « Accès instantané » calls `POST /api/account/base-access`; « 
 calls `POST /api/logout`. The tier comes from the status of `GET /api/me` (401 / 403 / 200). The httpOnly
 cookie cannot be read, so the response's `expiresAt` is the only way to know when it dies: `useAuth` arms a
 timer on it, remembered in `localStorage` to survive a reload — a past value is ignored, the server is the
-truth —, and at that deadline (or on `focus`/`visibilitychange` once it has passed) signs the base access out with
-`POST /api/logout`, before any request takes the 401 that would clear the cookies (#748, R21b;
-`.claude/rules/frontend-session.md`, « Accepted limits »), and any 401 on base-tier content calls `markBaseAccessExpired()`, so the header never shows
-« Accès de base » above a page asking for it.
+truth —, and at that deadline the header goes back to anonymous with **no network call** (#748, R23;
+`.claude/rules/frontend-session.md`, « Accepted limits »), as at the first 401 on base-tier content
+(`markBaseAccessExpired()`), so the header never shows « Accès de base » above a page asking for it.
 
 ### Toolchain history (Node, jsdom, Vitest)
 

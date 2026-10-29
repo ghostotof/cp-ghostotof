@@ -16,7 +16,11 @@ interface ExperienceTechnologyApiResponse {
  * Implémentation HTTP de ExperienceTechnologyRepository. Contrairement à
  * HttpCvRepository, l'endpoint (GET /api/experience/technologies) est public
  * (cf. App\Portfolio\Experience, aucune restriction dans access_control côté
- * backend) : pas de `credentials: 'include'` nécessaire.
+ * backend).
+ *
+ * `credentials: 'omit'` (#748, R23), écrit : aucune identité n'est lue, et en production (une seule origine) le défaut
+ * `same-origin` enverrait un `BEARER` mort, dont le 401 tomberait sur une page publique (en dev, deux origines : il
+ * n'en enverrait pas, ce qui cachait le défaut). `credentialsAreExplicit.spec.ts` le garde.
  */
 export class HttpExperienceTechnologyRepository implements ExperienceTechnologyRepository {
   private readonly apiBaseUrl: string
@@ -26,7 +30,7 @@ export class HttpExperienceTechnologyRepository implements ExperienceTechnologyR
   }
 
   async list(locale: Locale): Promise<readonly ExperienceTechnology[]> {
-    const response = await fetch(`${this.apiBaseUrl}/api/experience/technologies`, { method: 'GET' })
+    const response = await fetch(`${this.apiBaseUrl}/api/experience/technologies`, { method: 'GET', credentials: 'omit' })
 
     if (!response.ok) {
       throw new ExperienceTechnologiesUnavailableError()

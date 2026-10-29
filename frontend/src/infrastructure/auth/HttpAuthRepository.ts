@@ -53,9 +53,9 @@ export class HttpAuthRepository implements AuthRepository {
   }
 
   async logout(): Promise<void> {
-    // Une écriture : elle part avec son jeton CSRF, posé par l'envoi partagé (#748, R21b : le logout est aussi celui
-    // de l'échéance de l'accès de base). Le verdict « session finie » n'a pas de sens ici — un 401 est un jeton déjà
-    // mort, que le logout voulait justement effacer —, seul `ok` compte.
+    // Une écriture : elle part avec son jeton CSRF, posé par l'envoi partagé (une seule définition de « avec jeton »,
+    // R12). Le verdict « session finie » n'a pas de sens ici — un 401 est un jeton déjà mort, que le logout voulait
+    // justement effacer —, seul `ok` compte.
     const { response } = await sessionAwareFetch(`${this.apiBaseUrl}/api/logout`, { method: 'POST' })
 
     if (!response.ok) {

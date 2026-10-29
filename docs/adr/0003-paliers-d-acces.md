@@ -336,8 +336,11 @@ répondre 401 à tout `/api`, « À propos » et le contact compris. **Son premi
 requête suivante est anonyme et servie. **Limite acceptée** : ce premier 401 existe. L'échéance d'un JWT de
 **login** n'est pas exposée au frontend, donc la première requête qui suit son expiration le prend (une lecture : 401 ;
 une écriture : 401, puis, cookies effacés, le 403 sans jeton du CSRF) et le frontend le lit comme une session
-finie ; **l'accès de base l'évite**, son `expiresAt` étant connu : le frontend se déconnecte lui-même à
-l'échéance (tâche R21b de #748). Ce que cela ne change pas : un jeton copié reste valable jusqu'à son `exp`
+finie ; **le SPA ne l'envoie plus à une page publique** : ses lectures publiques, le contact et le choix du mot de
+passe partent sans cookie (`credentials: 'omit'`, #748, R23 — décision de l'auteur du 2026-10-29, qui remplace une
+déconnexion de l'accès de base à son échéance), donc le premier 401 ne tombe plus que sur une route authentifiée, lue
+comme une session finie. L'accès de base expire côté frontend sur l'horloge du poste, un effet d'affichage sans appel
+réseau. Ce que cela ne change pas : un jeton copié reste valable jusqu'à son `exp`
 (`POST /api/logout` n'écrit toujours aucun état), la clé de signature reste le coupe-circuit global, et les
 conditions qui rouvrent la décision (ci-dessus) sont inchangées. Une session ouverte avant le déploiement garde ses
 cookies persistants, une heure au plus.

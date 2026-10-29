@@ -36,6 +36,7 @@ describe('HttpContactRepository', () => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: 'Jane Doe', email: 'jane@example.com', message: 'Bonjour !', website: '' }),
+      credentials: 'omit',
     })
   })
 

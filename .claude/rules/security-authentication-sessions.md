@@ -141,9 +141,10 @@ paths:
     firewall authenticates as soon as a cookie is present, **public routes included** (`JWTAuthenticator` answers 401):
     with session cookies a refused one would stay until the browser closes and answer 401 to every `/api` request, the
     About page and the contact form too. The next request is anonymous. `JWT_NOT_FOUND` (no cookie) clears nothing.
-    **Accepted limit**: that first 401 exists. The base access avoids it by a client-side sign-out at `expiresAt` (R21b);
-    a login's expiry is not exposed to the frontend, so the first request after its `exp` takes the 401 (a read: 401; a
-    write: 401, then the CSRF's 403 without token). The frontend reads those as a finished session
+    **Accepted limit**: that first 401 exists. The SPA's public reads, contact and password setup send no cookie
+    (`credentials: 'omit'`, #748 R23), so it only reaches an authenticated route, read as an ended session; a login's
+    expiry is not exposed to the frontend, so the first authenticated request after its `exp` takes the 401 (a read:
+    401; a write: 401, then the CSRF's 403 without token). The frontend reads those as a finished session
     (`.claude/rules/frontend-session.md`; the backoffice banner, the sign-in at the next navigation —
     `.claude/rules/frontend-backoffice.md`, « Route protection »). Pinned by `RefusedSessionCookiesAreClearedTest`
     (expired and invalid cookies cleared with the factory's attributes, the public route served afterwards, a served

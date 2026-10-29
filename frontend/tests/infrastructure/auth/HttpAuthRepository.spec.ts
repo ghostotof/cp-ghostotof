@@ -152,8 +152,7 @@ describe('HttpAuthRepository.hasWriteToken()', () => {
 })
 
 /**
- * `logout()` est une écriture (#748, R21b : c'est aussi la sortie de l'échéance de l'accès de base) : elle part avec
- * ses cookies et le jeton CSRF lu dans `XSRF-TOKEN`, par l'envoi partagé.
+ * `logout()` est une écriture : elle part avec ses cookies et le jeton CSRF lu dans `XSRF-TOKEN`, par l'envoi partagé.
  */
 describe('HttpAuthRepository.logout()', () => {
   const clearCsrfCookie = (): void => {
