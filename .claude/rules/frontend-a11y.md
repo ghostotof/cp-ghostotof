@@ -95,7 +95,7 @@ fixed:
   `.claude/rules/frontend-backoffice.md`). It differs from `LoginPage`'s notice (next bullet) by when it appears: the banner is inserted after
   the first render (announced), the notice is present from it (may not be). **An alert already shown is announced again
   only if its content is replaced** (#748, R9, S7, R19, E): a second refusal while the banner is displayed changes nothing in an
-  idempotent state, so the message `<span>` carries a `:key` (`useAuth().sessionEndedCount`, +1 per accepted refusal, see `.claude/rules/frontend-session.md`, « The session generation ») that makes
+  idempotent state, so the message `<span>` carries a `:key` (`useAuth().sessionEndedCount`, +1 per accepted refusal, see `.claude/rules/frontend-session-retour.md`, « The session generation ») that makes
   Vue replace it. **Never the element that carries a link**: the alert stays, so the « Se reconnecter » link a keyboard
   user has focused is not destroyed (the focus would fall on `body`).
 - **A `role="status"` present at first render may not be announced** (`LoginPage`'s « Votre session a pris fin »

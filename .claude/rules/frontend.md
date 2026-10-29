@@ -71,7 +71,7 @@ that carried its token is a real refusal, `forbidden`: the session stays (never 
 re-reads `/api/me` once (`useAuth().rereadAfterRefusal()`, not awaited, one in flight, a rejection swallowed) so the header returns to the tier
 the server now recognises, and the page says the refusal in a neutral message (`common.accessRefused`) with a « Changer
 de compte » link (`login?redirect=<this page>&reauth=1`, the same tab, the lost conversation accepted) — #748, #732
-point 4, R7; `.claude/rules/frontend-session.md`, « A real refusal ») →
+point 4, R7; `.claude/rules/frontend-session-refus.md`, « A real refusal ») →
 `presentation/pages/AssistantPage.vue`.
 
 The MCP connection slice follows it too (#650): `domain/mcp` → `infrastructure/mcp/HttpMcpConnectionsRepository.ts`
