@@ -124,6 +124,7 @@
         "roave/security-advisories": "dev-latest",
         "symfony/browser-kit": "8.1.*",
         "symfony/css-selector": "8.1.*",
-        "symfony/maker-bundle": "^1.67"
+        "symfony/maker-bundle": "^1.67",
+        "symfony/phpunit-bridge": "8.1.*"
     }
 }

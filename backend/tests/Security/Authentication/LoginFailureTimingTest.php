@@ -10,6 +10,7 @@ use App\Security\Authentication\Infrastructure\Security\SubmittedPasswordTooLong
 use App\Security\User\Application\CpgUserAdministratorInterface;
 use App\Security\User\Application\CpgUserInviterInterface;
 use App\Security\User\Application\CpgUserRegistrarInterface;
+use App\Tests\Support\FreezesTheWholeClock;
 use App\Tests\Support\HttpJson;
 use App\Tests\Support\TestCredentials;
 use Doctrine\ORM\EntityManagerInterface;
@@ -17,7 +18,6 @@ use ReflectionProperty;
 use SensitiveParameter;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
-use Symfony\Component\Clock\Test\ClockSensitiveTrait;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\PasswordHasher\Hasher\PasswordHasherAwareInterface;
 use Symfony\Component\PasswordHasher\Hasher\PasswordHasherFactoryInterface;
@@ -42,7 +42,7 @@ use Symfony\Component\Security\Http\Event\LoginFailureEvent;
  */
 final class LoginFailureTimingTest extends WebTestCase
 {
-    use ClockSensitiveTrait;
+    use FreezesTheWholeClock;
     use HttpJson;
 
     /** Ce qui varie légitimement d'une réponse à l'autre, à retirer avant comparaison. */
@@ -152,16 +152,18 @@ final class LoginFailureTimingTest extends WebTestCase
      * chargement du compte et le `detail` est littéral ; ce test fige ce qui
      * n'était garanti que par là.
      *
-     * L'horloge est figée : l'échéance de l'écouteur et le `Retry-After` de
-     * RetryAfterListener la lisent tous deux, une seconde franchie entre les
-     * deux ferait diverger les en-têtes sans rien révéler. Les minutes viennent
-     * de `time()` (LoginThrottlingListener), 15 pour chaque compte dans la
-     * minute que dure le test. 3 × 6 échecs restent sous le plafond de 25 par IP.
+     * L'horloge est figée tout entière (issue #743) : l'échéance de l'écouteur et
+     * le `Retry-After` de RetryAfterListener lisent `ClockInterface`, les minutes
+     * viennent de `time()` (LoginThrottlingListener) et l'échéance du limiteur de
+     * `microtime()`. Une seule des deux figée, la seconde franchie entre elles
+     * faisait diverger le délai sans rien révéler : 15 minutes pour un compte,
+     * 16 pour un autre. Sur un même instant, c'est 15 pour chaque compte, à
+     * `.999` aussi. 3 × 6 échecs restent sous le plafond de 25 par IP.
      */
     public function testTheThreeThrottledCasesAnswerTheExactSameRefusal(): void
     {
         $client = $this->client();
-        self::mockTime('2026-10-10 12:00:00');
+        self::freezeTheWholeClock();
         $suffix = bin2hex(random_bytes(6));
 
         $active = 'active-'.$suffix;

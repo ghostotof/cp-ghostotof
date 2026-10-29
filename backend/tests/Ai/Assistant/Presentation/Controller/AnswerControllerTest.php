@@ -10,6 +10,7 @@ use App\Ai\Assistant\Infrastructure\Pdf\PopplerPdfTextExtractor;
 use App\Security\User\Application\CpgUserRegistrarInterface;
 use App\Security\User\Domain\Entity\CpgUser;
 use App\Tests\Ai\Assistant\Support\StubProvider;
+use App\Tests\Support\FreezesTheWholeClock;
 use App\Tests\Support\HttpJson;
 use App\Tests\Support\ReadsAiUsageLog;
 use App\Tests\Support\ReadsAllChannelsLog;
@@ -33,6 +34,7 @@ use Symfony\Component\HttpClient\Response\MockResponse;
  */
 final class AnswerControllerTest extends WebTestCase
 {
+    use FreezesTheWholeClock;
     use HttpJson;
     use ReadsAiUsageLog;
     use ReadsAllChannelsLog;
@@ -440,10 +442,18 @@ final class AnswerControllerTest extends WebTestCase
         self::assertSame([], $this->scalewayRequests);
     }
 
+    /**
+     * L'horloge est figée tout entière (issue #743), après la connexion — le
+     * JWT émis doit rester valide à l'heure réelle que lit son contrôle : le
+     * limiteur lit `microtime()`, `RetryAfterListener` `ClockInterface`, et
+     * l'écart entre les deux faisait varier l'en-tête d'une seconde (3601 pour
+     * un quota d'une heure) selon la fraction de seconde de l'exécution.
+     */
     public function testTheCallBeyondTheHourlyQuotaIsA429WithRetryAfterAndNeverReachesTheProvider(): void
     {
         [$client, $csrfToken] = $this->trustedClient();
         $this->stubProviders($client, new MockResponse($this->scalewayStream('ok'), $this->sseHeaders()));
+        self::freezeTheWholeClock();
 
         for ($call = 1; $call <= self::QUOTA; ++$call) {
             $this->post($client, $csrfToken, $this->payload());

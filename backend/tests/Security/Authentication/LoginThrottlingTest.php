@@ -6,6 +6,7 @@ namespace App\Tests\Security\Authentication;
 
 use App\Security\Authentication\Domain\Exception\LoginRateLimitExceededException;
 use App\Security\User\Application\CpgUserRegistrarInterface;
+use App\Tests\Support\FreezesTheWholeClock;
 use App\Tests\Support\HttpJson;
 use App\Tests\Support\ReadsAllChannelsLog;
 use App\Tests\Support\TestCredentials;
@@ -30,6 +31,7 @@ use Symfony\Component\HttpFoundation\Response;
  */
 final class LoginThrottlingTest extends WebTestCase
 {
+    use FreezesTheWholeClock;
     use HttpJson;
     use ReadsAllChannelsLog;
 
@@ -73,9 +75,18 @@ final class LoginThrottlingTest extends WebTestCase
         parent::tearDown();
     }
 
+    /**
+     * L'horloge est figée tout entière (issue #743) : le limiteur et
+     * `LoginThrottlingListener` lisent l'heure réelle, `LoginThrottlingRefusalListener`
+     * et `RetryAfterListener` celle de `ClockInterface`. Sans cela, le
+     * `Retry-After` suivait la fraction de seconde où le test s'exécute — à
+     * `.999`, un calcul qui arrondit par excès ajoute une minute entière, et
+     * 960 dépasse la fenêtre. L'instant figé est ce pire cas.
+     */
     public function testAttemptsBeyondLimitAreBlockedEvenWithValidCredentials(): void
     {
         $client = $this->clientWithAccount();
+        self::freezeTheWholeClock();
         $this->exhaustTheAllowedFailures($client);
 
         // 6e tentative : le throttling prend le relais, sans vérification du mot de passe.
