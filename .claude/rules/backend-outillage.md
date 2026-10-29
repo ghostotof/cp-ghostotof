@@ -322,7 +322,9 @@ the locks, the caches and `FailedLoginTimingEqualizer` wait and measure for real
 component whose deadline a test asserts and that reads the time in another namespace adds its line there, with its test.
 
 Under the frozen `.999` instant a `Retry-After` is an **exact** value, asserted as such: a one-hour `sliding_window` closes
-3600 s later (13:00:00.999), symfony/rate-limiter >= 8.1.10 rounds the deadline up to 13:00:01, and
-`RetryAfterListener` subtracts whole-second timestamps, so `AnswerControllerTest` reads `3601` (and
-`WholeClockFreezeTest` the same deadline). That second above the real 3600.000 s is the rounding of an integer-second header;
-announcing less would make the client retry too early. Never relax it to `<= 3601`.
+3600 s later (12:00:00.999 -> 13:00:00.999), symfony/rate-limiter >= 8.1.10 rounds the deadline up to 13:00:01, and
+`RetryAfterListener` rounds the remaining 3600.001 s **up** to whole seconds (in integer microseconds, issue #743: truncating
+two timestamps announced up to a second too early, 899 for 899.989 s left), so `AnswerControllerTest` reads `3601`
+(`WholeClockFreezeTest` derives the same deadline). A login refusal reads `900`: its deadline is `now + 15 min` exactly.
+That second above the real delay is the rounding of an integer-second header; announcing less would make the client retry too
+early. Never relax it to `<= 3601`.

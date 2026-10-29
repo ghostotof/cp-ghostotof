@@ -469,13 +469,8 @@ final class AnswerControllerTest extends WebTestCase
         $retryAfter = $response->headers->get('Retry-After');
         self::assertNotNull($retryAfter);
         self::assertMatchesRegularExpression('/^\d+$/', $retryAfter);
-        // Valeur exacte sous l'horloge figée à 12:00:00.999 (FROZEN_INSTANT) : la
-        // fenêtre glissante se ferme 3600 s plus tard, à 13:00:00.999, et
-        // symfony/rate-limiter >= 8.1.10 arrondit l'échéance à la seconde
-        // supérieure (13:00:01, issue #743). RetryAfterListener soustrait des
-        // horodatages entiers : 13:00:01 - 12:00:00 = 3601. La seconde en plus du
-        // vrai délai (3600,000 s) est l'arrondi d'un en-tête en secondes
-        // entières : annoncer 3600 ferait réessayer un millième trop tôt.
+        // Valeur exacte sous l'horloge figée (3601, dérivée dans
+        // WholeClockFreezeTest::testTheDeadlineOfAHourlyQuotaRefusalIsReadOnTheFrozenClock).
         self::assertSame(3601, (int) $retryAfter);
         self::assertCount(self::QUOTA, $this->scalewayRequests);
         // Le refus est tracé sur le canal qui sort des pods de production.
