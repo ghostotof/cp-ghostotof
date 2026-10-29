@@ -50,7 +50,8 @@ function mountPage(
     routes: [
       { path: '/', component: { template: '<div />' } },
       { path: '/:locale/login', name: 'login', component: { template: '<div />' } },
-      { path: '/:locale/assistant', component: { template: '<div />' } },
+      // `requiresAuth`, comme la vraie route : sans lui le lien de connexion n'a pas de `redirect` (#748, R16, F8).
+      { path: '/:locale/assistant', component: { template: '<div />' }, meta: { requiresAuth: true } },
     ],
   })
 

@@ -104,7 +104,14 @@ async function mountPage(options: Options = {}): Promise<Harness> {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
-      { path: '/:locale(fr|en)/oauth/consent', name: 'oauth-consent', component: StubPage },
+      // La `meta` du routeur de l'application : `SignInAgainLink` y lit `signInInSameTab`, `loginLocation` `requiresAuth`.
+      // Une route qui perd l'une ou l'autre fait rougir ce fichier.
+      {
+        path: '/:locale(fr|en)/oauth/consent',
+        name: 'oauth-consent',
+        component: StubPage,
+        meta: { ...appRouter.resolve({ name: 'oauth-consent', params: { locale: 'fr' } }).meta },
+      },
       { path: '/:locale(fr|en)/login', name: 'login', component: StubPage },
     ],
   })

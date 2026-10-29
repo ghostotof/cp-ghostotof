@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { RouteLocationNormalizedLoaded } from 'vue-router'
 import { routeLocale } from '../../../src/presentation/router/routeLocale'
 import { signInAgainLocation } from '../../../src/presentation/router/sessionEnded'
+import { loginLocation } from '../../../src/presentation/router/loginLocation'
 import { switchAccountLocation } from '../../../src/presentation/router/reauthentication'
 
 /**
@@ -9,10 +10,18 @@ import { switchAccountLocation } from '../../../src/presentation/router/reauthen
  * page « Mes connexions MCP » composaient chacun leur lien, la langue lue tantôt dans la route, tantôt dans i18n.
  */
 
-/** Le sous-ensemble de la route courante que lisent les constructeurs. */
-function routeAt(fullPath: string, locale?: unknown): Pick<RouteLocationNormalizedLoaded, 'fullPath' | 'params'> {
+/** Le sous-ensemble de la route courante que lisent les constructeurs ; protégée (`requiresAuth`) par défaut. */
+function routeAt(
+  fullPath: string,
+  locale?: unknown,
+  requiresAuth = true,
+): Pick<RouteLocationNormalizedLoaded, 'fullPath' | 'params' | 'meta'> {
   // Le cast : un paramètre de route n'est jamais `42` ni `null` pour le routeur, mais la fonction doit s'en défendre.
-  return { fullPath, params: (undefined === locale ? {} : { locale }) as RouteLocationNormalizedLoaded['params'] }
+  return {
+    fullPath,
+    params: (undefined === locale ? {} : { locale }) as RouteLocationNormalizedLoaded['params'],
+    meta: requiresAuth ? { requiresAuth: true } : {},
+  }
 }
 
 describe('routeLocale', () => {
@@ -26,6 +35,31 @@ describe('routeLocale', () => {
 
   it.each(['de', '', 42, ['fr', 'en'], null])('rend la langue de repli quand le paramètre vaut %j', (value) => {
     expect(routeLocale(routeAt('/x', value), 'fr')).toBe('fr')
+  })
+})
+
+describe('loginLocation', () => {
+  it('les deux drapeaux : expired=1 pour une session finie, reauth=1 pour une réauthentification', () => {
+    const route = routeAt('/en/admin/x?a=1#f', 'en')
+
+    expect(loginLocation(route, 'fr', 'session-ended')).toEqual({
+      name: 'login',
+      params: { locale: 'en' },
+      query: { redirect: '/en/admin/x?a=1#f', expired: '1' },
+    })
+    expect(loginLocation(route, 'fr', 'reauthentication')).toEqual({
+      name: 'login',
+      params: { locale: 'en' },
+      query: { redirect: '/en/admin/x?a=1#f', reauth: '1' },
+    })
+  })
+
+  it("hors route protégée : pas de redirect, le chemin d'une page non revue ne part pas dans l'URL (F8)", () => {
+    expect(loginLocation(routeAt('/fr/contact?x=1', 'fr', false), 'en', 'session-ended')).toEqual({
+      name: 'login',
+      params: { locale: 'fr' },
+      query: { expired: '1' },
+    })
   })
 })
 
@@ -43,6 +77,19 @@ describe('signInAgainLocation', () => {
       name: 'login',
       params: { locale: 'en' },
       query: { redirect: '/oups', expired: '1' },
+    })
+  })
+})
+
+describe('hors route protégée (F8)', () => {
+  it.each([
+    ['signInAgainLocation', signInAgainLocation, { expired: '1' }],
+    ['switchAccountLocation', switchAccountLocation, { reauth: '1' }],
+  ])("%s : pas de redirect, le drapeau seul", (_name, build, query) => {
+    expect(build(routeAt('/fr/contact?x=1', 'fr', false), 'en')).toEqual({
+      name: 'login',
+      params: { locale: 'fr' },
+      query,
     })
   })
 })
@@ -74,7 +121,14 @@ describe('qui compose ces liens', () => {
 
   it("aucun autre fichier ne compose ces liens : la requête n'est nommée que dans son module", () => {
     // LoginPage et le routeur lisent par `isSessionEnded` / `isReauthentication`, jamais par le nom du paramètre.
-    expect(filesMatching(/\bSESSION_ENDED_(?:QUERY|VALUE)\b/)).toEqual(['presentation/router/sessionEnded.ts'])
-    expect(filesMatching(/\bREAUTH_(?:QUERY|VALUE)\b/)).toEqual(['presentation/router/reauthentication.ts'])
+    // `loginLocation.ts` est le constructeur commun (R16) : il pose le drapeau, le module d'origine le définit.
+    expect(filesMatching(/\bSESSION_ENDED_(?:QUERY|VALUE)\b/)).toEqual([
+      'presentation/router/loginLocation.ts',
+      'presentation/router/sessionEnded.ts',
+    ])
+    expect(filesMatching(/\bREAUTH_(?:QUERY|VALUE)\b/)).toEqual([
+      'presentation/router/loginLocation.ts',
+      'presentation/router/reauthentication.ts',
+    ])
   })
 })

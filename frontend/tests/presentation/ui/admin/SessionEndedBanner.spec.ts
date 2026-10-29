@@ -45,8 +45,9 @@ async function mountBanner(path: string, repository: AuthRepository, locale: 'fr
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
-      { path: '/:locale(fr|en)/admin/case-studies', name: 'admin-case-studies', component: StubPage },
-      { path: '/:locale(fr|en)/admin/technologies', name: 'admin-technologies', component: StubPage },
+      // `requiresAuth`, comme les vraies routes : sans lui le lien de connexion n'a pas de `redirect` (#748, R16, F8).
+      { path: '/:locale(fr|en)/admin/case-studies', name: 'admin-case-studies', component: StubPage, meta: { requiresAuth: true } },
+      { path: '/:locale(fr|en)/admin/technologies', name: 'admin-technologies', component: StubPage, meta: { requiresAuth: true } },
       { path: '/:locale(fr|en)/login', name: 'login', component: StubPage },
     ],
   })

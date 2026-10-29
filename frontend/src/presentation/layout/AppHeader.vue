@@ -165,8 +165,9 @@ async function handleInstantAccess(): Promise<void> {
  * Session finie sur une page qui l'exige (backoffice, MCP, assistant : celles qui ont fait finir la session) —
  * #748, constat 16. L'en-tête est alors anonyme alors que la page garde sa saisie : « Connexion » dans l'onglet
  * courant la quitterait, et « Accès instantané » remplacerait le cookie puis mènerait aux études de cas. On
- * propose donc le lien du bandeau (`SessionEndedBanner`) : un nouvel onglet qui ramène ici, et pas le CTA. Sur une
- * route publique, rien ne change : `sessionEnded` y survit jusqu'à une connexion, et un nouvel onglet y serait
+ * propose donc le lien du bandeau (`SessionEndedBanner`) : un nouvel onglet qui ramène ici, et pas le CTA — sauf
+ * sur une route `meta.signInInSameTab` (le consentement OAuth, étape d'un flux qui finit par un redirect vers le
+ * client), où `SignInAgainLink` reste dans l'onglet (R16, F7). Sur une route publique, rien ne change : `sessionEnded` y survit jusqu'à une connexion, et un nouvel onglet y serait
  * incompréhensible.
  */
 const sessionEndedHere = computed(() => hasSessionEnded.value && true === route.meta.requiresAuth)
@@ -232,7 +233,7 @@ function navLinkClass(link: NavigationLink) {
         </span>
         <!-- À 320 px, le groupe de droite demandait 331 px au palier de confiance et 389 px en anonyme et en EN, pour
              301 px utiles (mesures de #748) : la marque se tronque la première, avec une ellipse, jamais les
-             actions ; si le groupe seul dépasse encore, voir la tâche 11 du plan de #748. Le nom accessible du lien
+             actions ; si le groupe seul dépasse encore, c'est à mesurer dans un vrai navigateur à 320 px. Le nom accessible du lien
              reste le libellé entier (la troncature est visuelle). -->
         <span class="text-truncate">{{ siteIdentity.brandName }}</span>
       </RouterLink>
@@ -364,7 +365,7 @@ function navLinkClass(link: NavigationLink) {
                 />
               </button>
             </template>
-            <!-- Session finie sur une page protégée : le lien du bandeau, dans un nouvel onglet (#748). -->
+            <!-- Session finie sur une page protégée : le lien du bandeau, dans un nouvel onglet (#748), le même onglet sur le consentement. -->
             <SignInAgainLink
               v-if="sessionEndedHere"
               class="btn btn-outline-light btn-sm d-inline-flex align-items-center gap-2"

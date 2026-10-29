@@ -7,7 +7,7 @@ import { consentParamsFromQuery } from '../../domain/mcp/services/consentParams'
 import type { Locale } from '../../domain/portfolio/entities/Locale'
 import { useDeliberateActivation } from '../ui/useDeliberateActivation'
 import { switchAccountLocation } from '../router/reauthentication'
-import { signInAgainLocation } from '../router/sessionEnded'
+import SignInAgainLink from '../ui/SignInAgainLink.vue'
 
 /**
  * Consentement à une connexion MCP (#647, spec 0007 phase 2) : le point
@@ -72,7 +72,7 @@ const errorMessage = computed<string | null>(() => {
   }
   switch (failure.value) {
     case 'session-ended':
-      return t('oauthConsent.errors.sessionExpired')
+      return t('oauthConsent.errors.sessionEnded')
     case 'forbidden':
       return t('common.accessRefused')
     case 'reauthentication-required':
@@ -91,27 +91,17 @@ const errorMessage = computed<string | null>(() => {
 })
 
 /**
- * Se reconnecter ramène à cette même demande : `fullPath` garde toute la
- * requête. Session finie : `expired=1`, la connexion dit pourquoi elle s'ouvre.
- * Après un refus pour authentification trop ancienne, la personne est toujours
- * connectée : `reauth=1` demande à la route de connexion de s'ouvrir quand même
- * (elle renvoie sinon une personne connectée à l'accueil).
+ * Après un refus pour authentification trop ancienne, la personne est toujours connectée : « Me reconnecter pour
+ * autoriser » mène à la connexion avec `reauth=1`, qui demande à la route de connexion de s'ouvrir quand même (elle
+ * renvoie sinon une personne connectée à l'accueil), et ramène à cette même demande (`fullPath` garde toute la
+ * requête).
  *
- * **Dans le même onglet, exprès** (#748, R6) — contrairement au bandeau, à
- * l'en-tête, à « Mes connexions MCP » et à l'assistant (`SignInAgainLink`, un
- * nouvel onglet) : cette page est une étape d'un flux OAuth qui finit par
- * `location.replace` vers le client ; un second onglet laisserait la demande
- * ouverte dans le premier. Les mêmes constructeurs, donc, sans `target`.
+ * La session finie, elle, a son lien commun, `SignInAgainLink` (`expired=1`, la connexion dit pourquoi elle
+ * s'ouvre). **Dans le même onglet, exprès** (#748, R6, R16) : la route porte `meta.signInInSameTab`, car cette page
+ * est une étape d'un flux OAuth qui finit par `location.replace` vers le client ; un second onglet laisserait la
+ * demande ouverte dans le premier. « Connexion » de l'en-tête suit la même règle.
  */
-const reloginTarget = computed(() =>
-  'reauthentication-required' === failure.value
-    ? switchAccountLocation(route, i18nLocale.value as Locale)
-    : signInAgainLocation(route, i18nLocale.value as Locale),
-)
-
-const reloginLabel = computed(() =>
-  'reauthentication-required' === failure.value ? t('oauthConsent.errors.reauthenticate') : t('oauthConsent.errors.relogin'),
-)
+const reauthenticateTarget = computed(() => switchAccountLocation(route, i18nLocale.value as Locale))
 
 /**
  * « Changer de compte » : la connexion rouverte pour une personne déjà
@@ -135,7 +125,9 @@ const offersReload = computed(() => 'account-changed' === failure.value)
  */
 const offersSwitchAccount = computed(() => 'forbidden' === failure.value)
 
-const offersRelogin = computed(() => 'session-ended' === failure.value || 'reauthentication-required' === failure.value)
+const offersSignInAgain = computed(() => 'session-ended' === failure.value)
+
+const offersReauthenticate = computed(() => 'reauthentication-required' === failure.value)
 
 onMounted(() => {
   // La requête telle que reçue ; une requête illisible donne `null`, que la
@@ -168,11 +160,14 @@ onMounted(() => {
       class="text-danger-emphasis mb-0"
     >
       {{ errorMessage }}
+      <SignInAgainLink v-if="offersSignInAgain">
+        {{ t('oauthConsent.errors.relogin') }}
+      </SignInAgainLink>
       <RouterLink
-        v-if="offersRelogin"
-        :to="reloginTarget"
+        v-if="offersReauthenticate"
+        :to="reauthenticateTarget"
       >
-        {{ reloginLabel }}
+        {{ t('oauthConsent.errors.reauthenticate') }}
       </RouterLink>
       <RouterLink
         v-if="offersSwitchAccount"

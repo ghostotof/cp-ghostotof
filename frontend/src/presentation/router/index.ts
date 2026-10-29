@@ -4,6 +4,7 @@ import { i18n } from '../i18n'
 import { applySeoMeta } from './seo'
 import { LOCALE_STORAGE_KEY, resolvePreferredLocale } from './preferredLocale'
 import { isReauthentication } from './reauthentication'
+import { isSessionEnded } from './sessionEnded'
 import { authState, waitForAuthCheck } from '../../application/auth/useAuth'
 import { hasRole } from '../../domain/auth/services/hasRole'
 import { ROLE_SUPER, ROLE_TRUSTED } from '../../domain/auth/entities/Role'
@@ -20,6 +21,12 @@ declare module 'vue-router' {
     roles?: readonly string[]
     /** Exclut la page de l'indexation (`<meta name="robots" content="noindex, nofollow">`). */
     noindex?: boolean
+    /**
+     * Le lien de reconnexion d'une session finie (`SignInAgainLink`, y compris « Connexion » de l'en-tête) reste
+     * dans l'onglet, sans `target` : la page est une étape d'un flux qui se termine par un redirect vers un tiers
+     * (le consentement OAuth), et un second onglet laisserait la demande ouverte dans le premier (#748, R16).
+     */
+    signInInSameTab?: boolean
   }
 }
 
@@ -163,6 +170,7 @@ export const router = createRouter({
             requiresAuth: true,
             roles: [ROLE_TRUSTED, ROLE_SUPER],
             noindex: true,
+            signInInSameTab: true,
             titleKey: 'seo.oauthConsent.title',
             descriptionKey: 'seo.oauthConsent.description',
           },
@@ -204,12 +212,14 @@ export const router = createRouter({
           meta: { titleKey: 'seo.login.title', descriptionKey: 'seo.login.description' },
           beforeEnter: (to) => {
             // Déjà connecté : la page de login n'a rien à offrir de plus — sauf
-            // quand le consentement MCP demande une authentification récente
-            // (`reauth=1`, #647) : la personne, connectée depuis plus de dix
-            // minutes, doit pouvoir se reconnecter pour accorder. Le drapeau
-            // n'ouvre que cette page ; la cible du retour reste jugée par
+            // quand un drapeau l'ouvre exprès. `reauth=1` : le consentement MCP
+            // demande une authentification récente (#647), ou « Changer de compte »
+            // après un refus réel. `expired=1` : la session a pris fin alors que
+            // `authState.user` est encore posé (un `BEARER` vivant sans `XSRF-TOKEN`,
+            // une impasse jusqu'à une heure sans cela, #748 R16). Les drapeaux
+            // n'ouvrent que cette page ; la cible du retour reste jugée par
             // LoginPage (un chemin interne, un seul `/` en tête).
-            if (authState.user && !isReauthentication(to)) {
+            if (authState.user && !isReauthentication(to) && !isSessionEnded(to)) {
               return `/${to.params.locale}`
             }
           },

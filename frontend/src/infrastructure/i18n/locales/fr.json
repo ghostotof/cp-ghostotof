@@ -829,7 +829,7 @@
     "deny": "Refuser",
     "errors": {
       "invalid": "Cette demande de connexion est invalide ou a expiré. Recommencez depuis votre assistant.",
-      "sessionExpired": "Votre session a expiré.",
+      "sessionEnded": "Votre session a expiré.",
       "relogin": "Se reconnecter",
       "reauthenticationRequired": "Pour autoriser cette connexion, reconnectez-vous : votre connexion au site date de plus de dix minutes. Vous reviendrez ensuite à cette même demande.",
       "reauthenticate": "Me reconnecter pour autoriser",

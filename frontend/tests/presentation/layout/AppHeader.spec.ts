@@ -686,7 +686,6 @@ describe('AppHeader', () => {
     it.each([
       ['assistant', '/fr/assistant'],
       ['mcp-connections', '/fr/mcp-connections'],
-      ['oauth-consent', '/fr/oauth/consent'],
     ])('%s : session finie, « Connexion » ouvre un nouvel onglet qui ramène ici', async (_name, path) => {
       const { wrapper } = await mountEnded(path)
 
@@ -695,6 +694,21 @@ describe('AppHeader', () => {
       expect(link.attributes('target')).toBe('_blank')
       expect(link.attributes('rel')).toBe('noopener')
       expect(link.text()).toContain("(s'ouvre dans un nouvel onglet)")
+      expect(findButton(wrapper, 'Accès instantané')).toBeUndefined()
+    })
+
+    // F7 (#748, R16) : le consentement est une étape d'un flux OAuth qui finit par `location.replace` vers le client ;
+    // « Connexion » de l'en-tête y reste dans l'onglet, comme les liens du corps de la page. La route le dit par
+    // `meta.signInInSameTab`, prise du routeur de l'application.
+    it("oauth-consent : session finie, « Connexion » reste dans l'onglet, sans texte caché ni icône, et ramène ici", async () => {
+      const { wrapper } = await mountEnded('/fr/oauth/consent')
+
+      const link = wrapper.get('a[href*="/login"]')
+      expect(link.attributes('href')).toBe('/fr/login?redirect=/fr/oauth/consent&expired=1')
+      expect(link.attributes('target')).toBeUndefined()
+      expect(link.attributes('rel')).toBeUndefined()
+      expect(link.text()).toBe('Connexion')
+      expect(link.find('svg').exists()).toBe(false)
       expect(findButton(wrapper, 'Accès instantané')).toBeUndefined()
     })
 

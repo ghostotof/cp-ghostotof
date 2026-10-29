@@ -256,6 +256,25 @@ describe('router — page de connexion d’une personne déjà connectée', () =
     expect(router.currentRoute.value.query.redirect).toBe(CONSENT)
   })
 
+  it("connectée, `expired=1` : la page de connexion s'ouvre (B/F2), la requête intacte", async () => {
+    // Un `BEARER` vivant sans `XSRF-TOKEN` : le bandeau dit « session finie », son lien (`expired=1`) ne doit pas
+    // renvoyer à l'accueil une personne dont `authState.user` est encore posé. Le drapeau n'ouvre que la page.
+    await primeAuthState({ username: 'guest', roles: ['ROLE_USER', 'ROLE_TRUSTED'] })
+
+    await router.push({ name: 'login', params: { locale: 'fr' }, query: { expired: '1', redirect: CONSENT } })
+
+    expect(router.currentRoute.value.name).toBe('login')
+    expect(router.currentRoute.value.query.redirect).toBe(CONSENT)
+  })
+
+  it.each(['true', '0', ''])('une autre valeur que `expired=1` (`expired=%s`) ne compte pas', async (value) => {
+    await primeAuthState({ username: 'guest', roles: ['ROLE_USER', 'ROLE_TRUSTED'] })
+
+    await router.push({ name: 'login', params: { locale: 'fr' }, query: { expired: value } })
+
+    expect(router.currentRoute.value.path).toBe('/fr')
+  })
+
   it.each(['true', '0', ''])('une autre valeur que `1` (`reauth=%s`) ne compte pas', async (value) => {
     await primeAuthState({ username: 'guest', roles: ['ROLE_USER', 'ROLE_TRUSTED'] })
 

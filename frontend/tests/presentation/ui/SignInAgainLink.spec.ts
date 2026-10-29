@@ -16,7 +16,14 @@ async function mountLink(path: string, locale: 'fr' | 'en', attrs: Record<string
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
-      { path: '/:locale/mcp-connections', component: { template: '<div />' } },
+      // Une route protégée : seul son chemin part dans `redirect` (F8) ; le consentement est dans le même onglet.
+      { path: '/:locale/mcp-connections', component: { template: '<div />' }, meta: { requiresAuth: true } },
+      { path: '/:locale/contact', component: { template: '<div />' } },
+      {
+        path: '/:locale/oauth/consent',
+        component: { template: '<div />' },
+        meta: { requiresAuth: true, signInInSameTab: true },
+      },
       { path: '/:locale/login', name: 'login', component: { template: '<div />' } },
     ],
   })
@@ -64,6 +71,24 @@ describe('SignInAgainLink', () => {
 
     expect(wrapper.element.tagName).toBe('A')
     expect(wrapper.get('a').classes()).toEqual(expect.arrayContaining(['btn', 'btn-outline-light', 'btn-sm']))
+  })
+
+  it("sur une route publique : pas de redirect, le chemin de la page ne part pas dans l'URL (F8)", async () => {
+    const wrapper = await mountLink('/fr/contact?x=1', 'fr')
+
+    expect(wrapper.get('a').attributes('href')).toBe('/fr/login?expired=1')
+  })
+
+  it('route signInInSameTab : même onglet, ni texte caché ni icône, le retour ici et expired=1', async () => {
+    const wrapper = await mountLink('/fr/oauth/consent', 'fr')
+
+    const link = wrapper.get('a')
+    expect(link.attributes('href')).toBe('/fr/login?redirect=/fr/oauth/consent&expired=1')
+    expect(link.attributes('target')).toBeUndefined()
+    expect(link.attributes('rel')).toBeUndefined()
+    expect(link.text()).toBe('Se reconnecter')
+    expect(link.find('.visually-hidden').exists()).toBe(false)
+    expect(link.find('svg').exists()).toBe(false)
   })
 
   it("n'a aucune violation d'accessibilité détectable", async () => {

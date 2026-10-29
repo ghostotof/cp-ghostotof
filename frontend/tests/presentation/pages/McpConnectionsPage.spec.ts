@@ -147,7 +147,8 @@ async function mountPage(options: Options = {}): Promise<Harness> {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
-      { path: '/:locale(fr|en)/mcp-connections', name: 'mcp-connections', component: StubPage },
+      // `requiresAuth`, comme la vraie route : sans lui le lien de connexion n'a pas de `redirect` (#748, R16, F8).
+      { path: '/:locale(fr|en)/mcp-connections', name: 'mcp-connections', component: StubPage, meta: { requiresAuth: true } },
       { path: '/:locale(fr|en)/connect-your-assistant', name: 'connect-assistant', component: StubPage },
       { path: '/:locale(fr|en)/login', name: 'login', component: StubPage },
     ],

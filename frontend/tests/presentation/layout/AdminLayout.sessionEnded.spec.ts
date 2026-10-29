@@ -52,6 +52,8 @@ async function mountAdminCaseStudies(): Promise<{ wrapper: VueWrapper; router: R
       {
         path: '/:locale(fr|en)/admin',
         component: AdminLayout,
+        // Comme la vraie route : le lien de reconnexion ne ramène qu'à une route `requiresAuth` (#748, R16, F8).
+        meta: { requiresAuth: true },
         children: [{ path: 'case-studies', name: 'admin-case-studies', component: AdminCaseStudiesPage }],
       },
       { path: '/:locale(fr|en)/admin/users', name: 'admin-users', component: AdminCaseStudiesPage },

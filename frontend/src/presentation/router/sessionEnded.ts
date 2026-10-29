@@ -1,18 +1,20 @@
 import type { LocationQuery, RouteLocationNormalizedLoaded, RouteLocationRaw } from 'vue-router'
 import type { Locale } from '../../domain/portfolio/entities/Locale'
-import { routeLocale } from './routeLocale'
+import { loginLocation } from './loginLocation'
 
 /**
  * Le drapeau qui dit à la page de connexion qu'elle s'ouvre parce que la
  * session de la personne a pris fin (#650, R5a) : le serveur a refusé sa
- * session (un 401 du backoffice, que `SessionEndedBanner` annonce, ou celui
- * d'une page de la personne comme « Mes connexions MCP »). Écrit une fois, posé
- * par `signInAgainLocation` (le seul constructeur de ces liens), lu par LoginPage, qui annonce pourquoi elle s'ouvre —
+ * session — un 401, ou un 403 à une écriture partie sans jeton CSRF —, de toute page
+ * protégée (le backoffice, que `SessionEndedBanner` annonce, « Mes connexions MCP »,
+ * l'assistant, le consentement). Écrit une fois, posé par `loginLocation` (le seul
+ * constructeur de ces liens, via `signInAgainLocation`), lu par LoginPage, qui annonce pourquoi elle s'ouvre —
  * sans lui, la personne arrive sur un formulaire de connexion sans savoir
  * qu'elle y a été menée.
  *
- * Il n'ouvre rien et ne donne aucun droit : il n'est qu'une annonce. La cible du
- * retour (`redirect`) reste jugée par LoginPage, un chemin interne seulement.
+ * Il n'ouvre que la page, à une personne anonyme comme à une personne encore connectée (B/F2 : un `BEARER` vivant
+ * sans `XSRF-TOKEN` laisse `authState.user` posé, et la route de connexion renverrait sinon à l'accueil) ; il ne
+ * donne aucun droit. La cible du retour (`redirect`) reste jugée par LoginPage, un chemin interne seulement.
  * Une seule valeur, `1` : tout autre ne compte pas (même règle que `reauth`).
  */
 export const SESSION_ENDED_QUERY = 'expired'
@@ -23,22 +25,16 @@ export function isSessionEnded(location: { query: LocationQuery }): boolean {
 }
 
 /**
- * Le lien de reconnexion d'une session finie (#748, R6, Std3) : la connexion, dans la langue de la route
- * (`fallback`, la langue i18n, quand elle n'en a pas), avec le retour à la page courante (`redirect`, le
- * chemin complet — requête et fragment compris — jugé par LoginPage : un chemin interne seulement) et
- * l'annonce qu'elle s'ouvre parce que la session a pris fin.
+ * Le lien de reconnexion d'une session finie (#748, R6, Std3) : `loginLocation` avec le drapeau `expired=1`.
  *
- * Le seul constructeur : le bandeau, l'en-tête, « Mes connexions MCP », l'assistant et le consentement
- * l'appellent, aucun ne compose ce lien à la main. Le lien s'ouvre dans un nouvel onglet (`SignInAgainLink`)
- * sauf sur le consentement (une étape d'un flux OAuth, `.claude/rules/frontend-session.md`).
+ * Le bandeau, l'en-tête, « Mes connexions MCP », l'assistant et le consentement l'appellent (par
+ * `SignInAgainLink`, sauf le corps du consentement qui en rend lui aussi un), aucun ne compose ce lien à la main.
+ * Le lien s'ouvre dans un nouvel onglet sauf sur une route `meta.signInInSameTab` (le consentement, une étape d'un
+ * flux OAuth, `.claude/rules/frontend-session.md`).
  */
 export function signInAgainLocation(
-  route: Pick<RouteLocationNormalizedLoaded, 'fullPath' | 'params'>,
+  route: Pick<RouteLocationNormalizedLoaded, 'fullPath' | 'params' | 'meta'>,
   fallback: Locale,
 ): RouteLocationRaw {
-  return {
-    name: 'login',
-    params: { locale: routeLocale(route, fallback) },
-    query: { redirect: route.fullPath, [SESSION_ENDED_QUERY]: SESSION_ENDED_VALUE },
-  }
+  return loginLocation(route, fallback, 'session-ended')
 }

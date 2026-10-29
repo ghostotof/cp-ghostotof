@@ -17,8 +17,11 @@ import IconExternalLink from '~icons/lucide/external-link'
  * L'ouverture est dite au texte (WCAG 3.2.5, un texte caché `common.opensInNewTab`) et à l'œil (l'icône, cachée
  * aux lecteurs d'écran). `noopener` coupe l'accès à `window.opener`.
  *
- * Le consentement OAuth n'utilise pas ce composant : il garde ses liens dans le même onglet, étape d'un flux qui
- * finit par `location.replace` vers le client (`.claude/rules/frontend-session.md`).
+ * **Le consentement OAuth l'utilise aussi, dans le même onglet** (R16, F7) : sa route porte `meta.signInInSameTab`,
+ * lue ici sur la route courante. Le lien n'a alors ni `target`, ni `rel`, ni texte caché, ni icône — il n'ouvre
+ * rien de nouveau. Raison : la page est une étape d'un flux qui finit par `location.replace` vers le client ; un
+ * second onglet laisserait la demande ouverte dans le premier (`.claude/rules/frontend-session.md`). Le lien du
+ * corps de la page et « Connexion » de l'en-tête sont ce même composant, donc la même règle.
  *
  * Le blanc entre le libellé et le texte caché est écrit (`{{ ' ' }}`) : Vue retire le blanc entre deux éléments, et un
  * lecteur d'écran lirait « Se reconnecter(s'ouvre… ». Un seul blanc avant l'icône, le texte caché étant hors flux.
@@ -30,19 +33,24 @@ const { t, locale } = useI18n()
 const route = useRoute()
 
 const to = computed(() => signInAgainLocation(route, locale.value as Locale))
+/** La route courante garde l'onglet (le consentement) : le lien n'ouvre rien de nouveau. */
+const inSameTab = computed(() => true === route.meta.signInInSameTab)
 </script>
 
 <template>
   <RouterLink
     :to="to"
-    target="_blank"
-    rel="noopener"
+    :target="inSameTab ? undefined : '_blank'"
+    :rel="inSameTab ? undefined : 'noopener'"
   >
-    <slot />{{ ' ' }}<span class="visually-hidden">{{ t('common.opensInNewTab') }}</span>
-    <IconExternalLink
-      width="14"
-      height="14"
-      aria-hidden="true"
-    />
+    <slot />
+    <template v-if="!inSameTab">
+      {{ ' ' }}<span class="visually-hidden">{{ t('common.opensInNewTab') }}</span>
+      <IconExternalLink
+        width="14"
+        height="14"
+        aria-hidden="true"
+      />
+    </template>
   </RouterLink>
 </template>
