@@ -6,6 +6,7 @@ import type {
 } from '../../../domain/admin/contributions/repositories/AdminContributionRepository'
 import { AdminContributionError } from '../../../domain/admin/contributions/errors/AdminContributionError'
 import { createStaleRequestGuard } from '../../shared/staleRequestGuard'
+import { isSessionEndedError } from '../../../domain/admin/shared/errors/sessionEnded'
 
 export const ADMIN_CONTRIBUTION_REPOSITORY: InjectionKey<AdminContributionRepository> = Symbol('AdminContributionRepository')
 
@@ -56,8 +57,10 @@ export function useAdminContributions(): UseAdminContributionsResult {
       const result = await repository.list()
       if (!requestGuard.isCurrent(token)) return
       contributions.value = result
-    } catch {
-      if (requestGuard.isCurrent(token)) hasError.value = true
+    } catch (error) {
+      // Une session finie n'est pas un échec de chargement : le bandeau de session finie l'annonce seul
+      // (#748), et la liste déjà lue reste affichée.
+      if (requestGuard.isCurrent(token) && !isSessionEndedError(error)) hasError.value = true
     } finally {
       if (requestGuard.isCurrent(token)) isLoading.value = false
     }

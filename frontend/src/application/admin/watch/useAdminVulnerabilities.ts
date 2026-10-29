@@ -1,6 +1,7 @@
 import { inject, ref, type InjectionKey, type Ref } from 'vue'
 import type { AdminVulnerability } from '../../../domain/admin/watch/entities/AdminVulnerability'
 import type { AdminVulnerabilityRepository } from '../../../domain/admin/watch/repositories/AdminVulnerabilityRepository'
+import { isSessionEndedError } from '../../../domain/admin/shared/errors/sessionEnded'
 
 export const ADMIN_VULNERABILITY_REPOSITORY: InjectionKey<AdminVulnerabilityRepository> =
   Symbol('AdminVulnerabilityRepository')
@@ -38,8 +39,10 @@ export function useAdminVulnerabilities(): UseAdminVulnerabilitiesResult {
 
     try {
       vulnerabilities.value = await repository.list()
-    } catch {
-      hasError.value = true
+    } catch (error) {
+      // Une session finie n'est pas un échec de chargement : le bandeau de session finie l'annonce seul
+      // (#748), et la liste déjà lue reste affichée.
+      if (!isSessionEndedError(error)) hasError.value = true
     } finally {
       isLoading.value = false
     }

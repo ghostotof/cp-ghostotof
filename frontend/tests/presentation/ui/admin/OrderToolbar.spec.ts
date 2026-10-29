@@ -65,6 +65,14 @@ describe('OrderToolbar', () => {
     expect(wrapper.find('[role="alert"]').exists()).toBe(true)
   })
 
+  it("n'affiche rien pour une session finie : le bandeau l'annonce seul, et Annuler n'a rien à effacer", () => {
+    const wrapper = mountToolbar({ isDirty: false, isSaving: false, errorReason: 'session-ended' })
+
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('admin.order.errors')
+    expect(wrapper.findAll('button')[0].attributes('disabled')).toBeDefined()
+  })
+
   it("n'affiche aucune alerte en l'absence d'erreur", () => {
     const wrapper = mountToolbar({ isDirty: false, isSaving: false, errorReason: null })
 

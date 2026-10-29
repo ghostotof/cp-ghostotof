@@ -29,6 +29,7 @@ import OrderToolbar from '../../ui/admin/OrderToolbar.vue'
 import { LOCALE_NATIVE_NAMES, SUPPORTED_LOCALES, type Locale } from '../../../domain/portfolio/entities/Locale'
 import type { AdminQualityPrinciple } from '../../../domain/admin/quality/entities/AdminQualityPrinciple'
 import type { AdminQualityTrait } from '../../../domain/admin/quality/entities/AdminQualityTrait'
+import { visibleErrorReason } from '../../ui/admin/visibleErrorReason'
 
 /**
  * Deux contenus ordonnés indépendamment sur une même page — les principes et
@@ -175,18 +176,26 @@ const isEditingTrait = computed(() => null !== editingTraitId.value)
 const hasPrincipleProse = computed(() => PRINCIPLE_PROSE_FIELDS.some((field) => '' !== principleForm[field].trim()))
 const hasTraitProse = computed(() => '' !== traitForm.label.trim())
 
-const principleErrorText = computed(() =>
-  principleErrorMessage.value ? t(`admin.quality.errors.${principleErrorMessage.value.reason}`) : null,
-)
-const traitErrorText = computed(() =>
-  traitErrorMessage.value ? t(`admin.quality.errors.${traitErrorMessage.value.reason}`) : null,
-)
-const principleTranslationErrorText = computed(() =>
-  principleTranslationErrorReason.value ? t(`admin.translation.errors.${principleTranslationErrorReason.value}`) : null,
-)
-const traitTranslationErrorText = computed(() =>
-  traitTranslationErrorReason.value ? t(`admin.translation.errors.${traitTranslationErrorReason.value}`) : null,
-)
+const principleErrorText = computed(() => {
+  const reason = visibleErrorReason(principleErrorMessage.value?.reason)
+
+  return reason ? t(`admin.quality.errors.${reason}`) : null
+})
+const traitErrorText = computed(() => {
+  const reason = visibleErrorReason(traitErrorMessage.value?.reason)
+
+  return reason ? t(`admin.quality.errors.${reason}`) : null
+})
+const principleTranslationErrorText = computed(() => {
+  const reason = visibleErrorReason(principleTranslationErrorReason.value)
+
+  return reason ? t(`admin.translation.errors.${reason}`) : null
+})
+const traitTranslationErrorText = computed(() => {
+  const reason = visibleErrorReason(traitTranslationErrorReason.value)
+
+  return reason ? t(`admin.translation.errors.${reason}`) : null
+})
 
 /** Une ligne de tableau par groupe de traduction (D8), toutes langues confondues. */
 const principleRows = computed(() => groupByTranslationGroup(principles.value, SUPPORTED_LOCALES))

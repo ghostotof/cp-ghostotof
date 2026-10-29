@@ -28,6 +28,7 @@ import OrderHandle from '../../ui/admin/OrderHandle.vue'
 import OrderToolbar from '../../ui/admin/OrderToolbar.vue'
 import { LOCALE_NATIVE_NAMES, SUPPORTED_LOCALES, type Locale } from '../../../domain/portfolio/entities/Locale'
 import type { AdminIncident } from '../../../domain/admin/incidents/entities/AdminIncident'
+import { visibleErrorReason } from '../../ui/admin/visibleErrorReason'
 
 const { t } = useI18n()
 const { incidents, isLoading, hasError, errorMessage, load, create, update, remove, reorder } = useAdminIncidents()
@@ -98,11 +99,17 @@ const isEditing = computed(() => null !== editingId.value)
 
 const hasProseToTranslate = computed(() => PROSE_FIELDS.some((field) => '' !== form[field].trim()))
 
-const translationErrorText = computed(() =>
-  translationErrorReason.value ? t(`admin.translation.errors.${translationErrorReason.value}`) : null,
-)
+const translationErrorText = computed(() => {
+  const reason = visibleErrorReason(translationErrorReason.value)
 
-const errorText = computed(() => (errorMessage.value ? t(`admin.incidents.errors.${errorMessage.value.reason}`) : null))
+  return reason ? t(`admin.translation.errors.${reason}`) : null
+})
+
+const errorText = computed(() => {
+  const reason = visibleErrorReason(errorMessage.value?.reason)
+
+  return reason ? t(`admin.incidents.errors.${reason}`) : null
+})
 
 const localeOptions = computed(() => SUPPORTED_LOCALES.map((locale) => ({ value: locale, label: locale.toUpperCase() })))
 

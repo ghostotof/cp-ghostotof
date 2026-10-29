@@ -8,6 +8,7 @@ import BaseTextInput from '../../ui/BaseTextInput.vue'
 import TranslateEntryButton from '../../ui/admin/TranslateEntryButton.vue'
 import type { Locale } from '../../../domain/portfolio/entities/Locale'
 import type { TranslationProposal } from '../../../domain/admin/translation/entities/TranslationProposal'
+import { visibleErrorReason } from '../../ui/admin/visibleErrorReason'
 
 /**
  * Les réglages sont le **seul** formulaire de la page à garder la langue de
@@ -30,7 +31,11 @@ const { settings, isLoading, hasError, errorMessage, load, save } = useAdminAbou
 
 const form = reactive({ siteEyebrow: '', meEyebrow: '', technicalSubtitle: '', personalSubtitle: '', hobbiesSubtitle: '' })
 const isSubmitting = ref(false)
-const errorText = computed(() => (errorMessage.value ? t(`admin.about.errors.${errorMessage.value.reason}`) : null))
+const errorText = computed(() => {
+  const reason = visibleErrorReason(errorMessage.value?.reason)
+
+  return reason ? t(`admin.about.errors.${reason}`) : null
+})
 
 /**
  * Assistant de traduction (spec 0002). Les réglages sont un singleton par
@@ -45,9 +50,11 @@ const PROSE_FIELDS = ['siteEyebrow', 'meEyebrow', 'technicalSubtitle', 'personal
 const pendingProposal = ref<TranslationProposal | null>(null)
 const proposalSourceLocale = ref<Locale | null>(null)
 const hasProseToTranslate = computed(() => PROSE_FIELDS.some((field) => '' !== form[field].trim()))
-const translationErrorText = computed(() =>
-  translationErrorReason.value ? t(`admin.translation.errors.${translationErrorReason.value}`) : null,
-)
+const translationErrorText = computed(() => {
+  const reason = visibleErrorReason(translationErrorReason.value)
+
+  return reason ? t(`admin.translation.errors.${reason}`) : null
+})
 
 // `flush: 'sync'` : le formulaire est rempli au moment même où les réglages
 // arrivent, et non au prochain tick — ainsi, au retour de load(), la copie a

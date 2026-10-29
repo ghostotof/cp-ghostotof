@@ -6,6 +6,7 @@ import type {
 } from '../../../domain/admin/about/repositories/AdminAboutMeCardRepository'
 import { AdminAboutError } from '../../../domain/admin/about/errors/AdminAboutError'
 import { createStaleRequestGuard } from '../../shared/staleRequestGuard'
+import { isSessionEndedError } from '../../../domain/admin/shared/errors/sessionEnded'
 
 export const ADMIN_ABOUT_ME_CARD_REPOSITORY: InjectionKey<AdminAboutMeCardRepository> = Symbol('AdminAboutMeCardRepository')
 
@@ -54,8 +55,10 @@ export function useAdminAboutMeCards(): UseAdminAboutMeCardsResult {
       const result = await repository.list()
       if (!requestGuard.isCurrent(token)) return
       cards.value = result
-    } catch {
-      if (requestGuard.isCurrent(token)) hasError.value = true
+    } catch (error) {
+      // Une session finie n'est pas un échec de chargement : le bandeau de session finie l'annonce seul
+      // (#748), et la liste déjà lue reste affichée.
+      if (requestGuard.isCurrent(token) && !isSessionEndedError(error)) hasError.value = true
     } finally {
       if (requestGuard.isCurrent(token)) isLoading.value = false
     }

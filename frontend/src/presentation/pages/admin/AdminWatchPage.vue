@@ -12,6 +12,7 @@ import BaseSelect from '../../ui/BaseSelect.vue'
 import OrderHandle from '../../ui/admin/OrderHandle.vue'
 import OrderToolbar from '../../ui/admin/OrderToolbar.vue'
 import type { AdminWatchedProduct } from '../../../domain/admin/watch/entities/AdminWatchedProduct'
+import { visibleErrorReason } from '../../ui/admin/visibleErrorReason'
 
 const { t } = useI18n()
 const { products, isLoading, hasError, errorMessage, load, create, update, remove, reorder } =
@@ -64,7 +65,11 @@ const isEditing = computed(() => null !== editingId.value)
  */
 const isManualVersion = computed(() => 'manual' === form.versionSource)
 
-const errorText = computed(() => (errorMessage.value ? t(`admin.watch.errors.${errorMessage.value.reason}`) : null))
+const errorText = computed(() => {
+  const reason = visibleErrorReason(errorMessage.value?.reason)
+
+  return reason ? t(`admin.watch.errors.${reason}`) : null
+})
 
 const versionSourceOptions = computed(() =>
   VERSION_SOURCES.map((source) => ({ value: source, label: t(`admin.watch.sources.${source}`) })),

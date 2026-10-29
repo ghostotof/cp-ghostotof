@@ -4,6 +4,7 @@ import type { AdminUserRepository } from '../../../domain/admin/users/repositori
 import type { Locale } from '../../../domain/portfolio/entities/Locale'
 import { AdminUserError } from '../../../domain/admin/users/errors/AdminUserError'
 import { createStaleRequestGuard } from '../../shared/staleRequestGuard'
+import { isSessionEndedError } from '../../../domain/admin/shared/errors/sessionEnded'
 
 export const ADMIN_USER_REPOSITORY: InjectionKey<AdminUserRepository> = Symbol('AdminUserRepository')
 
@@ -51,8 +52,10 @@ export function useAdminUsers(): UseAdminUsersResult {
       const result = await repository.list()
       if (!requestGuard.isCurrent(token)) return
       users.value = result
-    } catch {
-      if (requestGuard.isCurrent(token)) hasError.value = true
+    } catch (error) {
+      // Une session finie n'est pas un échec de chargement : le bandeau de session finie l'annonce seul
+      // (#748), et la liste déjà lue reste affichée.
+      if (requestGuard.isCurrent(token) && !isSessionEndedError(error)) hasError.value = true
     } finally {
       if (requestGuard.isCurrent(token)) isLoading.value = false
     }

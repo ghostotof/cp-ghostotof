@@ -8,6 +8,7 @@ import BaseTextInput from '../../ui/BaseTextInput.vue'
 import BaseSelect from '../../ui/BaseSelect.vue'
 import type { AdminUser } from '../../../domain/admin/users/entities/AdminUser'
 import { MAX_PASSWORD_BYTES, MIN_PASSWORD_LENGTH } from '../../../domain/account/services/passwordLength'
+import { visibleErrorReason } from '../../ui/admin/visibleErrorReason'
 
 const { t } = useI18n()
 const { users, isLoading, hasError, errorMessage, invite, setSuperAdmin, resendInvitation, remove, changePassword } = useAdminUsers()
@@ -97,11 +98,11 @@ onBeforeUnmount(() => {
  * domaine plutôt qu'écrites en dur dans la traduction (#410). Les autres
  * messages ignorent ces paramètres.
  */
-const errorText = computed(() =>
-  errorMessage.value
-    ? t(`admin.users.errors.${errorMessage.value.reason}`, { min: MIN_PASSWORD_LENGTH, max: MAX_PASSWORD_BYTES })
-    : null,
-)
+const errorText = computed(() => {
+  const reason = visibleErrorReason(errorMessage.value?.reason)
+
+  return reason ? t(`admin.users.errors.${reason}`, { min: MIN_PASSWORD_LENGTH, max: MAX_PASSWORD_BYTES }) : null
+})
 
 function isCurrentUser(user: AdminUser): boolean {
   return user.username === currentUser.value?.username

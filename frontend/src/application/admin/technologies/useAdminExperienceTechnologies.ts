@@ -6,6 +6,7 @@ import type {
 } from '../../../domain/admin/technologies/repositories/AdminExperienceTechnologyRepository'
 import { AdminExperienceTechnologyError } from '../../../domain/admin/technologies/errors/AdminExperienceTechnologyError'
 import { createStaleRequestGuard } from '../../shared/staleRequestGuard'
+import { isSessionEndedError } from '../../../domain/admin/shared/errors/sessionEnded'
 
 export const ADMIN_EXPERIENCE_TECHNOLOGY_REPOSITORY: InjectionKey<AdminExperienceTechnologyRepository> = Symbol(
   'AdminExperienceTechnologyRepository',
@@ -54,8 +55,10 @@ export function useAdminExperienceTechnologies(): UseAdminExperienceTechnologies
       const result = await repository.list()
       if (!requestGuard.isCurrent(token)) return
       technologies.value = result
-    } catch {
-      if (requestGuard.isCurrent(token)) hasError.value = true
+    } catch (error) {
+      // Une session finie n'est pas un échec de chargement : le bandeau de session finie l'annonce seul
+      // (#748), et la liste déjà lue reste affichée.
+      if (requestGuard.isCurrent(token) && !isSessionEndedError(error)) hasError.value = true
     } finally {
       if (requestGuard.isCurrent(token)) isLoading.value = false
     }

@@ -30,6 +30,7 @@ import {
   type AdminAboutMeCard,
   type AdminAboutMeCardCategory,
 } from '../../../domain/admin/about/entities/AdminAboutMeCard'
+import { visibleErrorReason } from '../../ui/admin/visibleErrorReason'
 
 /**
  * Cartes « À propos de moi » : **un tableau par catégorie**, chacun avec son
@@ -135,10 +136,16 @@ const sourceGroup = ref<string | null>(null)
 const proposalSourceLocale = ref<Locale | null>(null)
 
 const hasProseToTranslate = computed(() => PROSE_FIELDS.some((field) => '' !== form[field].trim()))
-const errorText = computed(() => (errorMessage.value ? t(`admin.about.errors.${errorMessage.value.reason}`) : null))
-const translationErrorText = computed(() =>
-  translationErrorReason.value ? t(`admin.translation.errors.${translationErrorReason.value}`) : null,
-)
+const errorText = computed(() => {
+  const reason = visibleErrorReason(errorMessage.value?.reason)
+
+  return reason ? t(`admin.about.errors.${reason}`) : null
+})
+const translationErrorText = computed(() => {
+  const reason = visibleErrorReason(translationErrorReason.value)
+
+  return reason ? t(`admin.translation.errors.${reason}`) : null
+})
 
 /**
  * Tout ce qu'il faut pour ordonner une catégorie : ses lignes groupées, son

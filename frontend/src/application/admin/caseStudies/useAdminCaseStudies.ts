@@ -6,6 +6,7 @@ import type {
 } from '../../../domain/admin/caseStudies/repositories/AdminCaseStudyRepository'
 import { AdminCaseStudyError } from '../../../domain/admin/caseStudies/errors/AdminCaseStudyError'
 import { createStaleRequestGuard } from '../../shared/staleRequestGuard'
+import { isSessionEndedError } from '../../../domain/admin/shared/errors/sessionEnded'
 
 export const ADMIN_CASE_STUDY_REPOSITORY: InjectionKey<AdminCaseStudyRepository> = Symbol(
   'AdminCaseStudyRepository',
@@ -58,8 +59,10 @@ export function useAdminCaseStudies(): UseAdminCaseStudiesResult {
       const result = await repository.list()
       if (!requestGuard.isCurrent(token)) return
       caseStudies.value = result
-    } catch {
-      if (requestGuard.isCurrent(token)) hasError.value = true
+    } catch (error) {
+      // Une session finie n'est pas un échec de chargement : le bandeau de session finie l'annonce seul
+      // (#748), et la liste déjà lue reste affichée.
+      if (requestGuard.isCurrent(token) && !isSessionEndedError(error)) hasError.value = true
     } finally {
       if (requestGuard.isCurrent(token)) isLoading.value = false
     }

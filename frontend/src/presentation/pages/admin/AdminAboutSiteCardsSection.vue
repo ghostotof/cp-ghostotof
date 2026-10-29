@@ -26,6 +26,7 @@ import OrderHandle from '../../ui/admin/OrderHandle.vue'
 import OrderToolbar from '../../ui/admin/OrderToolbar.vue'
 import { LOCALE_NATIVE_NAMES, SUPPORTED_LOCALES, type Locale } from '../../../domain/portfolio/entities/Locale'
 import type { AdminAboutSiteCard } from '../../../domain/admin/about/entities/AdminAboutSiteCard'
+import { visibleErrorReason } from '../../ui/admin/visibleErrorReason'
 
 /**
  * Cartes « À propos de ce site » : un tableau groupé, un brouillon d'ordre, un
@@ -109,10 +110,16 @@ const sourceGroup = ref<string | null>(null)
 const proposalSourceLocale = ref<Locale | null>(null)
 
 const hasProseToTranslate = computed(() => PROSE_FIELDS.some((field) => '' !== form[field].trim()))
-const errorText = computed(() => (errorMessage.value ? t(`admin.about.errors.${errorMessage.value.reason}`) : null))
-const translationErrorText = computed(() =>
-  translationErrorReason.value ? t(`admin.translation.errors.${translationErrorReason.value}`) : null,
-)
+const errorText = computed(() => {
+  const reason = visibleErrorReason(errorMessage.value?.reason)
+
+  return reason ? t(`admin.about.errors.${reason}`) : null
+})
+const translationErrorText = computed(() => {
+  const reason = visibleErrorReason(translationErrorReason.value)
+
+  return reason ? t(`admin.translation.errors.${reason}`) : null
+})
 
 /** Une ligne de tableau par groupe de traduction (D8), toutes langues confondues. */
 const rows = computed(() => groupByTranslationGroup(cards.value, SUPPORTED_LOCALES))

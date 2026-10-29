@@ -11,6 +11,7 @@ import type { AdminCaseStudyRepository } from '../../../../src/domain/admin/case
 import type { AdminCaseStudy } from '../../../../src/domain/admin/caseStudies/entities/AdminCaseStudy'
 import type { AdminTranslationRepository } from '../../../../src/domain/admin/translation/repositories/AdminTranslationRepository'
 import { AdminTranslationError } from '../../../../src/domain/admin/translation/errors/AdminTranslationError'
+import { AdminCaseStudyError } from '../../../../src/domain/admin/caseStudies/errors/AdminCaseStudyError'
 import { AdminOrderError } from '../../../../src/domain/admin/shared/errors/AdminOrderError'
 import { expectNoAccessibilityViolation } from '../../../support/axe'
 
@@ -286,6 +287,29 @@ describe('AdminCaseStudiesPage', () => {
     for (const field of ['title', 'problem', 'solution', 'tradeoffs', 'measured-result']) {
       expect(valueOf(wrapper, `#admin-case-study-${field}`)).toBe('')
     }
+  })
+
+  it("une erreur « session finie » à l'enregistrement n'affiche aucune alerte de la page", async () => {
+    // Le bandeau de session finie (AdminLayout) est alors la seule annonce : la page ne double ni
+    // d'une alerte, ni d'une clé de traduction brute (#748, constat 7).
+    const caseStudies = createStubRepository({
+      create: vi.fn(async () => Promise.reject(new AdminCaseStudyError('session-ended', 'x'))),
+    })
+    const { wrapper } = await mountPage(caseStudies)
+
+    await wrapper.get('#admin-case-study-title').setValue(TRANSLATED.title)
+    await wrapper.get('#admin-case-study-problem').setValue(TRANSLATED.problem)
+    await wrapper.get('#admin-case-study-solution').setValue(TRANSLATED.solution)
+    await wrapper.get('#admin-case-study-tradeoffs').setValue(TRANSLATED.tradeoffs)
+    await wrapper.get('#admin-case-study-measured-result').setValue(TRANSLATED.measuredResult)
+    await wrapper.get('form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(caseStudies.create).toHaveBeenCalledOnce()
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('admin.caseStudies.errors.session-ended')
+    // La saisie reste : l'échec a bien été vu comme tel, le formulaire n'est pas remis à zéro.
+    expect(valueOf(wrapper, '#admin-case-study-title')).toBe(TRANSLATED.title)
   })
 
   it("renvoie toujours le groupe lu lors d'une modification, pour ne pas détacher la traduction", async () => {

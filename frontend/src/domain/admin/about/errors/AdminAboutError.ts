@@ -1,3 +1,5 @@
+import type { SessionEndedReason } from '../../shared/errors/sessionEnded'
+
 /**
  * `reason` catégorise l'échec pour que la présentation choisisse le bon
  * message traduit (cf. i18n `admin.about.errors.*`) sans avoir à connaître le
@@ -12,6 +14,9 @@
  * une autre catégorie que la sienne, ce que le serveur refuse. L'échec de
  * l'endpoint d'ordre, lui, n'est jamais une `AdminAboutError` : il lève une
  * `AdminOrderError`, seul type que `useOrderDraft` sait interpréter.
+ *
+ * `session-ended` (#748) : produite par le dépôt sur un 401, ou un 403 à une écriture partie sans
+ * jeton CSRF ; jamais affichée, le bandeau de session finie est alors la seule annonce.
  */
 export type AdminAboutErrorReason =
   | 'not-found'
@@ -20,6 +25,7 @@ export type AdminAboutErrorReason =
   | 'translation-already-exists'
   | 'unknown-translation-group'
   | 'category-immutable'
+  | SessionEndedReason
 
 /**
  * Levée par les repositories admin About en cas d'échec d'une opération CRUD

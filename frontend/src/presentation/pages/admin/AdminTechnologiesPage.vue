@@ -5,6 +5,7 @@ import { useAdminExperienceTechnologies } from '../../../application/admin/techn
 import BaseTextInput from '../../ui/BaseTextInput.vue'
 import BaseNumberInput from '../../ui/BaseNumberInput.vue'
 import type { AdminExperienceTechnology } from '../../../domain/admin/technologies/entities/AdminExperienceTechnology'
+import { visibleErrorReason } from '../../ui/admin/visibleErrorReason'
 
 const { t } = useI18n()
 const { technologies, isLoading, hasError, errorMessage, create, update, remove } = useAdminExperienceTechnologies()
@@ -15,7 +16,11 @@ const isSubmitting = ref(false)
 
 const isEditing = computed(() => null !== editingId.value)
 
-const errorText = computed(() => (errorMessage.value ? t(`admin.technologies.errors.${errorMessage.value.reason}`) : null))
+const errorText = computed(() => {
+  const reason = visibleErrorReason(errorMessage.value?.reason)
+
+  return reason ? t(`admin.technologies.errors.${reason}`) : null
+})
 
 function resetForm(): void {
   editingId.value = null

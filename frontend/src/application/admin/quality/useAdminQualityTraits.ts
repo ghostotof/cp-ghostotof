@@ -6,6 +6,7 @@ import type {
 } from '../../../domain/admin/quality/repositories/AdminQualityTraitRepository'
 import { AdminQualityError } from '../../../domain/admin/quality/errors/AdminQualityError'
 import { createStaleRequestGuard } from '../../shared/staleRequestGuard'
+import { isSessionEndedError } from '../../../domain/admin/shared/errors/sessionEnded'
 
 export const ADMIN_QUALITY_TRAIT_REPOSITORY: InjectionKey<AdminQualityTraitRepository> = Symbol('AdminQualityTraitRepository')
 
@@ -55,8 +56,10 @@ export function useAdminQualityTraits(): UseAdminQualityTraitsResult {
       const result = await repository.list()
       if (!requestGuard.isCurrent(token)) return
       traits.value = result
-    } catch {
-      if (requestGuard.isCurrent(token)) hasError.value = true
+    } catch (error) {
+      // Une session finie n'est pas un échec de chargement : le bandeau de session finie l'annonce seul
+      // (#748), et la liste déjà lue reste affichée.
+      if (requestGuard.isCurrent(token) && !isSessionEndedError(error)) hasError.value = true
     } finally {
       if (requestGuard.isCurrent(token)) isLoading.value = false
     }

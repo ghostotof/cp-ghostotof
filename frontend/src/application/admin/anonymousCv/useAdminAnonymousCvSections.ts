@@ -6,6 +6,7 @@ import type {
 } from '../../../domain/admin/anonymousCv/repositories/AdminAnonymousCvSectionRepository'
 import { AdminAnonymousCvSectionError } from '../../../domain/admin/anonymousCv/errors/AdminAnonymousCvSectionError'
 import { createStaleRequestGuard } from '../../shared/staleRequestGuard'
+import { isSessionEndedError } from '../../../domain/admin/shared/errors/sessionEnded'
 
 export const ADMIN_ANONYMOUS_CV_SECTION_REPOSITORY: InjectionKey<AdminAnonymousCvSectionRepository> = Symbol(
   'AdminAnonymousCvSectionRepository',
@@ -58,8 +59,10 @@ export function useAdminAnonymousCvSections(): UseAdminAnonymousCvSectionsResult
       const result = await repository.list()
       if (!requestGuard.isCurrent(token)) return
       sections.value = result
-    } catch {
-      if (requestGuard.isCurrent(token)) hasError.value = true
+    } catch (error) {
+      // Une session finie n'est pas un échec de chargement : le bandeau de session finie l'annonce seul
+      // (#748), et la liste déjà lue reste affichée.
+      if (requestGuard.isCurrent(token) && !isSessionEndedError(error)) hasError.value = true
     } finally {
       if (requestGuard.isCurrent(token)) isLoading.value = false
     }
