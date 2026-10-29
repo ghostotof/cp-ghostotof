@@ -201,6 +201,11 @@ timer on it, remembered in `localStorage` to survive a reload — a past value i
 truth —, and at that deadline the header goes back to anonymous with **no network call** (#748, R23;
 `.claude/rules/frontend-session.md`, « Accepted limits »), as at the first 401 on base-tier content
 (`markBaseAccessExpired()`), so the header never shows « Accès de base » above a page asking for it.
+**« Accès instantané » replays once on a 401** (`HttpBaseAccessRepository.grant()`, #748, R24): the `api` firewall reads
+the `BEARER` sent on this route, so a dead one takes Lexik's 401, which clears both cookies; the second try leaves
+without a cookie and succeeds. Only a 401 is replayed (never a 429, a 403 or a network failure), once — a second 401 is
+`unknown`, never a loop. The price, accepted: the rate limiter (priority 15) runs before the firewall (8), so the two
+tries spend two of the 20 hourly tokens of the IP.
 
 ### Toolchain history (Node, jsdom, Vitest)
 

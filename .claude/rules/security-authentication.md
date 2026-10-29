@@ -62,7 +62,8 @@ What stays here: the CSRF guards (double-submit, login-CSRF), the base access, `
     `POST /api/logout`, which expires the cookie whoever holds it. The tier is read from the HTTP status of
     `GET /api/me` — 401 anonymous, 403 base, 200 trusted —, no dedicated endpoint. The response body carries
     `expiresAt`, the only way the frontend can know when the httpOnly cookie dies (see
-    `.claude/rules/frontend.md`, « Base access »).
+    `.claude/rules/frontend.md`, « Base access »). A dead `BEARER` sent here takes the `api` firewall's 401 after the
+    limiter has consumed a token (priority 15 before 8); the SPA replays once (#748, R24), so two tokens of the 20 per hour.
   - **Any listener that decides on the request path must use `App\Shared\Infrastructure\Http\CanonicalPath::of()`,
     never `getPathInfo()` directly** (issue #77). `getPathInfo()` is *not* decoded, while the router, the
     firewalls and `access_control` all decide on `rawurldecode()`: `POST /%61pi/logout` reached the
