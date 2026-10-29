@@ -136,7 +136,7 @@ phase 1 parte en release seule ; puis au merge de clôture, qui archive la spec 
   - [x] 9. Frontend : dépôt et composable des connexions
   - [x] 10. Frontend : page « Mes connexions MCP », route, menu du compte desktop (disclosure) et lien mobile, a11y
   - [x] 11. Documentation (nouvelle règle `mcp-oauth-revocation-personne.md`, spec, registre, `CONTEXT.md`)
-  - [ ] Fermer #650 et #730 à la main après la fusion (`Closes #n` ne ferme rien vers une base qui n'est pas `main`)
+  - [x] Fermer #650 et #730 à la main après la fusion (`Closes #n` ne ferme rien vers une base qui n'est pas `main`)
       Notes de la release : migrations `Version20261028120000` (le `CHECK`) et `Version20261028140000`
       (`code_exchanged_at`, rattrapage) avant le rollout ; paramètre `app.mcp.lifetime.connection_unexchanged`.
       Sept questions tranchées par l'auteur le 2026-10-28 (fin du plan) ; seul écart au défaut : vrai menu du compte desktop
