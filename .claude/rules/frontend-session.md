@@ -20,6 +20,8 @@ paths:
   - "frontend/src/presentation/ui/admin/SessionEndedBanner.vue"
   - "frontend/src/presentation/ui/admin/AccessRefusedNotice.vue"
   - "frontend/src/application/admin/shared/backofficeAccessRefusal.ts"
+  - "frontend/src/domain/admin/shared/BackofficeSessionReaction.ts"
+  - "frontend/tests/application/admin/shared/backofficeAccessRefusal.spec.ts"
   - "frontend/src/presentation/router/sessionEnded.ts"
   - "frontend/src/presentation/router/loginLocation.ts"
   - "frontend/src/presentation/router/reauthentication.ts"
@@ -75,11 +77,11 @@ facts are checked in the backend:
   401, a write leaves without a token and takes the 403 (the person logged out in another tab).
 
 **`sessionAwareFetch(url, init)` is the only send that judges the session.** It adds `credentials: 'include'`, reads
-`XSRF-TOKEN` for any method other than `GET`/`HEAD` and sets `X-XSRF-TOKEN` when it is non-empty (an empty `XSRF-TOKEN=`
-counts as absent), and returns `{ response, endedTheSession }`. **"With a token" is `hasCsrfToken()`
-(`infrastructure/auth/csrfCookie.ts`), the only definition** — an empty or undecodable value (`XSRF-TOKEN=%E0`:
-`readCsrfToken()` catches the `URIError` and answers `null`) is absent, for the header sent and for
-`hasWriteToken()` alike. Its second parameter is typed `SessionAwareInit`, which the MCP and consent clients reuse. The verdict is taken **at send time**, on what left
+`XSRF-TOKEN` **once** for any method other than `GET`/`HEAD` (`readWriteToken()`, R28, CR3-10), sets `X-XSRF-TOKEN` from that
+value and takes the verdict from the same value, and returns `{ response, endedTheSession }`. **"With a token" is
+`readWriteToken() !== null` (`infrastructure/auth/csrfCookie.ts`), the only definition**, which `hasCsrfToken()` (for
+`hasWriteToken()`) applies too — an empty or undecodable value (`XSRF-TOKEN=%E0`: the `URIError` is caught, `null`) is
+absent. Two reads could be split by another tab, the header gone while the verdict said « with a token ». Its second parameter is typed `SessionAwareInit`, which the MCP and consent clients reuse. The verdict is taken **at send time**, on what left
 (`isWrite && !token`), never by re-reading the cookie at reception (another tab may have set it back) nor by the 403's
 `detail` (localisable, not a contract). A network failure or an `AbortError` rejects as it came: the client translates
 it. The boolean no longer travels from function to function (`sentWithoutCsrfToken` is gone from every repository).
@@ -89,7 +91,7 @@ case that precedes it (the consent's 401 `reauthentication-required`), before th
 refused).
 
 `sessionAwareFetch` is a shared **function**, not a client: `frontend.md` keeps `BackofficeHttpClient` for the
-backoffice only (its global reaction, `setBackofficeSessionEndedHandler`, is not the one of the three other clients,
+backoffice only (its global reaction, `setBackofficeSessionReaction`, is not the one of the three other clients,
 which mark the session in their composable); the MCP, consent and assistant repositories call the function, and so
 does `BackofficeHttpClient`.
 
@@ -124,7 +126,7 @@ does `BackofficeHttpClient`.
 ## One section per client
 
 - **Backoffice** — `BackofficeHttpClient` (`get` and `mutate`) goes through `sessionAwareFetch` and, on an ended
-  session, calls the reaction registered once through `setBackofficeSessionEndedHandler()` and **raises
+  session, calls the reaction registered once through `setBackofficeSessionReaction()` and **raises
   `SessionEndedError`** (#748, R3): it no longer hands the response back, and the old per-context reason
   `session-ended`, the module `WeakSet` and `endedTheSession()` are gone. The 15 repositories **do not translate it**: it
   crosses them as it came and leaves the hierarchy of every context (it is not an `AdminXError`). **Two shared functions
@@ -158,12 +160,14 @@ does `BackofficeHttpClient`.
 
 ## The interface
 
-- **`main.ts`** registers `backofficeSessionEndedHandler` (`presentation/router/backofficeSessionExpiry.ts`), an object
-  `{ stampAtSend, ended, refused }` (`refused`: see « A real refusal ») over `markSessionExpired`: **no `router.replace`** (R1c's navigation unmounted the page at the very
+- **`main.ts`** registers `createBackofficeSessionReaction(useAuth())` (`presentation/router/backofficeSessionExpiry.ts`), a
+  `BackofficeSessionReaction` `{ stampAtSend, ended, refused }` (`refused`: see « A real refusal ») over `markSessionExpired`: **no `router.replace`** (R1c's navigation unmounted the page at the very
   click of « Enregistrer », and a case study written for more than an hour — the JWT's lifetime — was lost with it). The
   verdict is judged by **session generation** (next section), not « idempotent »: several lists of a page answering 401
   together leave under the same generation, the first end counts and the others announce nothing more. The registry lives
-  in the module, so `infrastructure/` imports neither the session nor the router.
+  in the module, so `infrastructure/` imports neither the session nor the router. The type (`BackofficeSessionReaction`
+  and the send stamp `{ session, refusalScope }`) lives in `domain/admin/shared/`, which all three layers may import:
+  no `infrastructure/` file imports `application/` (R28).
 - **The state** is `sessionEnded` in the session's shared state (`hasSessionEnded`), **raised** by `markSessionExpired()`
   (the header also turns anonymous) and **lowered by one descent only** (next section): an account came back, with a write
   token. `applySession()` no longer lowers anything.
@@ -385,10 +389,12 @@ account without `ROLE_TRUSTED` (one that lost it while the page was open), or fr
   nothing.
 - **The backoffice does the same, once for all its pages** (#748, R17, F4). `BackofficeHttpClient` calls the reaction's
   `refused()` on a 403 that is not an ended session (a read, or a write that carried its token) and **raises
-  `AccessForbiddenError`**; `createBackofficeSessionEndedHandler(useAuth())` (built by `main.ts` with
+  `AccessForbiddenError`**; `createBackofficeSessionReaction(useAuth())` (built by `main.ts` with
   `app.runWithContext`, the one place that has the `AuthRepository`: the thirteen composables never call `useAuth()`)
   counts the refusal (`backofficeAccessRefused`) and calls `rereadAfterRefusal()`, so a read and a write refused
-  together send one `/api/me`. `useAdminLoad` (no `hasError`, nothing re-read on return) and `visibleMutationError`
+  together send one `/api/me`. **A refusal sent before a navigation does not count** (R28, CR3-8): the send stamp
+  carries the refusal scope (`refusalScope()`), every clearing advances it, and `markBackofficeAccessRefused(sentIn)`
+  answers `false`, counting and re-reading nothing, for a 403 that left under another scope. `useAdminLoad` (no `hasError`, nothing re-read on return) and `visibleMutationError`
   (`null`, the mutation resolves `false`, the input stays) keep it quiet like `SessionEndedError`; **one alert**,
   `AccessRefusedNotice` in `AdminLayout` next to the banner, says `common.accessRefused` with « Changer de compte » in
   **the same tab** (the author's decision of 2026-10-29: as R7, accepting that following it loses what is typed). It is
@@ -420,16 +426,16 @@ whose `/api/me` answers 401 now ends the session on the interface. **Still accep
 
 `sessionAwareFetch.spec.ts` (the rule's table; a read leaves with the cookies and no CSRF header, a write carries the
 header read in the cookie, a write without a cookie or with an empty one ends the session on a 403, a 401 on any method,
-the given headers kept, a network failure or an abort rejecting as it came), `csrfCookie.spec.ts` (an empty or undecodable `XSRF-TOKEN=%E0` is absent, no exception, R12) and `problemJson.spec.ts` (`hasProblemType`: the slug, the whole segment only, any other or no type), `BackofficeHttpClient.spec.ts` (a 401 on read
+the given headers kept, the cookie read once even if it vanishes meanwhile (R28), a network failure or an abort rejecting as it came), `csrfCookie.spec.ts` (`readWriteToken`: an empty or undecodable `XSRF-TOKEN=%E0` is absent, no exception, R12) and `problemJson.spec.ts` (`hasProblemType`: the slug, the whole segment only, any other or no type), `BackofficeHttpClient.spec.ts` (a 401 on read
 and write, a 403 to a write without a token or with an empty cookie, each **rejects `SessionEndedError`** and calls the
-reaction once, also with no reaction registered; 200/204/404/409/422/500 give the response back with no reaction; a 403 to a read, or to a write with its token, calls `refused` once and **rejects `AccessForbiddenError`**, also with no reaction (R17); a network failure rises as it came), `useAdminLoad.spec.ts` (`isLoaded`, the key that empties, the read run again on return, `tests/support/signInAgain.ts` being the return) and
+reaction once, also with no reaction registered; 200/204/404/409/422/500 give the response back with no reaction; a 403 to a read, or to a write with its token, calls `refused` once with the send stamp and **rejects `AccessForbiddenError`**, also with no reaction (R17); a network failure rises as it came), `useAdminLoad.spec.ts` (`isLoaded`, the key that empties, the read run again on return, `tests/support/signInAgain.ts` being the return) and
 `visibleMutationError.spec.ts` (the two functions), `sessionEndedMapping.spec.ts` (the table of the 15 repositories: a 401
 on every call each exposes, read, write, order, rejects `SessionEndedError` unchanged; a glob fails when a new repository
 is missing from the table), `sessionEndedLoad.spec.ts` (the thirteen composables: an ended session on a load raises no
 `hasError` and keeps the list, any other failure raises it; on a mutation it sets **no error and does not succeed**, any
 other failure sets `unknown`; `useAdminTranslation` and `useOrderDraft` too), `HttpAdminUserRepository.spec.ts`,
 `HttpMcpConnectionsRepository.spec.ts`, `HttpOAuthConsentRepository.spec.ts`, `HttpAssistantRepository.spec.ts`,
-`backofficeSessionExpiry.spec.ts` (the session is closed, no navigation, parallel verdicts of one generation announce once, a verdict sent before the return refinishes nothing; `refused` counts the refusal and re-reads the tier once), `SessionEndedBanner.spec.ts` (alert
+`backofficeSessionExpiry.spec.ts` (the session is closed, no navigation, parallel verdicts of one generation announce once, a verdict sent before the return refinishes nothing; `refused` counts the refusal and re-reads the tier once; a refusal sent before a navigation counts and re-reads nothing, R28), `backofficeAccessRefusal.spec.ts` (the scope), `SessionEndedBanner.spec.ts` (alert
 inserted, no focus taken, the link and its icon, no listener on `focus`, the sticky class, the status region present from
 mount and its message on return and emptied on the next route or by a new end, a refusal replacing the message, once per tick, and never the alert nor the focused link; the height measured on one element), `usePublishedHeight.spec.ts` (the height posted, updated on
 a second reading, removed with the target), `AdminLayout.sessionEnded.spec.ts` (the banner a direct child of the section holding the page, and adding no element to its flow; the page stays mounted with its typed

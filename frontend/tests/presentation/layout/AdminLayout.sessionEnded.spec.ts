@@ -9,9 +9,9 @@ import { ADMIN_TRANSLATION_REPOSITORY } from '../../../src/application/admin/tra
 import { CV_REPOSITORY } from '../../../src/application/cv/useCvDownload'
 import { AUTH_REPOSITORY, authState, markSessionExpired, useAuth } from '../../../src/application/auth/useAuth'
 import { HttpAdminCaseStudyRepository } from '../../../src/infrastructure/admin/caseStudies/HttpAdminCaseStudyRepository'
-import { setBackofficeSessionEndedHandler } from '../../../src/infrastructure/admin/shared/BackofficeHttpClient'
+import { setBackofficeSessionReaction } from '../../../src/infrastructure/admin/shared/BackofficeHttpClient'
 import {
-  createBackofficeSessionEndedHandler,
+  createBackofficeSessionReaction,
 } from '../../../src/presentation/router/backofficeSessionExpiry'
 import { clearBackofficeAccessRefusal } from '../../../src/application/admin/shared/backofficeAccessRefusal'
 import { expectNoAccessibilityViolation } from '../../support/axe'
@@ -34,8 +34,8 @@ const authRepository: AuthRepository = {
  * La réaction de production, construite comme `main.ts` le fait (#748, R17) : sur le `useAuth()` d'un composant
  * monté avec `repository`, dont `me` est ce que la relecture du palier lira.
  */
-function createProductionHandler(repository: AuthRepository): ReturnType<typeof createBackofficeSessionEndedHandler> {
-  const Probe = defineComponent({ setup: () => ({ handler: createBackofficeSessionEndedHandler(useAuth()) }), template: '<div />' })
+function createProductionReaction(repository: AuthRepository): ReturnType<typeof createBackofficeSessionReaction> {
+  const Probe = defineComponent({ setup: () => ({ handler: createBackofficeSessionReaction(useAuth()) }), template: '<div />' })
   const probe = mount(Probe, { global: { provide: { [AUTH_REPOSITORY as symbol]: repository } } })
   const { handler } = probe.vm
   probe.unmount()
@@ -117,7 +117,7 @@ async function mountAdminCaseStudies(
 describe('AdminLayout — fin de session pendant une saisie (#650, S2)', () => {
   beforeEach(async () => {
     await signIn()
-    setBackofficeSessionEndedHandler(createProductionHandler(authRepository))
+    setBackofficeSessionReaction(createProductionReaction(authRepository))
     vi.stubGlobal(
       'fetch',
       vi.fn(async (_url: string, init?: RequestInit) =>
@@ -127,7 +127,7 @@ describe('AdminLayout — fin de session pendant une saisie (#650, S2)', () => {
   })
 
   afterEach(() => {
-    setBackofficeSessionEndedHandler(null)
+    setBackofficeSessionReaction(null)
     vi.unstubAllGlobals()
     document.body.innerHTML = ''
   })
@@ -177,11 +177,11 @@ async function fillAndSubmit(wrapper: VueWrapper): Promise<void> {
 describe('AdminLayout — une seule annonce de fin de session (#748)', () => {
   beforeEach(async () => {
     await signIn()
-    setBackofficeSessionEndedHandler(createProductionHandler(authRepository))
+    setBackofficeSessionReaction(createProductionReaction(authRepository))
   })
 
   afterEach(() => {
-    setBackofficeSessionEndedHandler(null)
+    setBackofficeSessionReaction(null)
     clearBackofficeAccessRefusal()
     vi.unstubAllGlobals()
     document.cookie = 'XSRF-TOKEN=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/'
@@ -262,7 +262,7 @@ describe('AdminLayout — une seule annonce de fin de session (#748)', () => {
     stubWrites(403)
     // Le palier relu après le refus reste celui d'un compte : la session tient.
     const signedIn: AuthRepository = { ...authRepository, me: async () => sessionFor(SUPER) }
-    setBackofficeSessionEndedHandler(createProductionHandler(signedIn))
+    setBackofficeSessionReaction(createProductionReaction(signedIn))
     const { wrapper } = await mountAdminCaseStudies(signedIn)
 
     await fillAndSubmit(wrapper)
@@ -300,11 +300,11 @@ describe('AdminLayout — refus réel du backoffice (#748, R17)', () => {
     me.mockClear()
     await signIn()
     document.cookie = 'XSRF-TOKEN=jeton; path=/'
-    setBackofficeSessionEndedHandler(createProductionHandler(repository))
+    setBackofficeSessionReaction(createProductionReaction(repository))
   })
 
   afterEach(() => {
-    setBackofficeSessionEndedHandler(null)
+    setBackofficeSessionReaction(null)
     clearBackofficeAccessRefusal()
     vi.unstubAllGlobals()
     document.cookie = 'XSRF-TOKEN=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/'
@@ -380,6 +380,54 @@ describe('AdminLayout — refus réel du backoffice (#748, R17)', () => {
 
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
     wrapper.unmount()
+  })
+
+  describe('un refus parti avant une navigation (CR3-8)', () => {
+    /** Une lecture lente : la réponse n'arrive que lorsque le test la libère. */
+    function stubSlowRead(): { release: (status: number) => void } {
+      let release: (status: number) => void = () => undefined
+      const pending = new Promise<Response>((resolve) => {
+        release = (status) => resolve(jsonResponse(status, { code: status, message: 'x' }))
+      })
+      vi.stubGlobal('fetch', vi.fn(async () => pending))
+
+      return { release }
+    }
+
+    it("le 403 d'une page quittée, arrivé sur la suivante : aucune alerte, aucune relecture", async () => {
+      const slow = stubSlowRead()
+      const { wrapper, router } = await mountAdminCaseStudies(repository)
+
+      // La personne quitte la page X avant que sa lecture ne réponde.
+      await router.push('/fr/admin/elsewhere')
+      await flushPromises()
+      slow.release(403)
+      await flushPromises()
+
+      expect(wrapper.text()).toContain('ailleurs')
+      expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+      expect(me).not.toHaveBeenCalled()
+      wrapper.unmount()
+    })
+
+    it("un refus de la page suivante s'affiche toujours", async () => {
+      const slow = stubSlowRead()
+      const { wrapper, router } = await mountAdminCaseStudies(repository)
+      await router.push('/fr/admin/elsewhere')
+      await flushPromises()
+      slow.release(403)
+      await flushPromises()
+
+      // La personne revient sur une page d'administration : sa lecture, partie après la navigation, est refusée.
+      vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(403, { code: 403, message: 'x' })))
+      await router.push('/fr/admin/case-studies')
+      await flushPromises()
+
+      expect(wrapper.findAll('[role="alert"]')).toHaveLength(1)
+      expect(wrapper.get('[role="alert"]').text()).toContain('Le serveur refuse cette demande')
+      expect(me).toHaveBeenCalledTimes(1)
+      wrapper.unmount()
+    })
   })
 
   it("la relecture trouve la session finie : seul le bandeau de session finie reste", async () => {

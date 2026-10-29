@@ -15,7 +15,7 @@ import { switchAccountLocation } from '../../router/reauthentication'
  * L'alerte « accès refusé » du backoffice (#748, R17, F4), rendue **une seule fois** par `AdminLayout`, juste après
  * `SessionEndedBanner` : un 403 qui n'est pas une fin de session (une lecture, ou une écriture partie avec son
  * jeton) est un refus réel. `BackofficeHttpClient` lève `AccessForbiddenError`, que `useAdminLoad` et
- * `visibleMutationError` taisent ; la réaction commune (`createBackofficeSessionEndedHandler`) compte le refus et relit
+ * `visibleMutationError` taisent ; la réaction commune (`createBackofficeSessionReaction`) compte le refus et relit
  * le palier. Cette alerte est donc la seule annonce, pour les douze pages, sans un message de plus dans chacune.
  *
  * - `role="alert"`, inséré par `v-if` (refus > 0 **et** session non finie) : l'insertion est ce que les lecteurs
@@ -31,7 +31,8 @@ import { switchAccountLocation } from '../../router/reauthentication'
  *   personne lit d'abord pourquoi, et rien ne la déplace pendant qu'elle lit. Le message est neutre
  *   (`common.accessRefused`) : le compte n'a peut-être pas, ou plus, l'accès, ou la session doit être rouverte.
  * - **Effacée à chaque changement de `route.fullPath`**, et au démontage du layout : un refus d'une page ne suit pas
- *   la personne sur la suivante.
+ *   la personne sur la suivante. L'effacement avance aussi le périmètre de refus (`refusalScope`) : le 403 d'une
+ *   requête partie avant la navigation, arrivé après, est périmé et ne s'affiche pas (R28, CR3-8).
  * - Collée sous l'en-tête comme le bandeau de session finie (page longue, « Enregistrer » en bas) ; les deux ne
  *   s'affichent jamais ensemble, elles publient donc la même hauteur (`--admin-notice-height`).
  */

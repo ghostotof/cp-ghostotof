@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { setBackofficeSessionEndedHandler } from '../../../../src/infrastructure/admin/shared/BackofficeHttpClient'
+import { setBackofficeSessionReaction } from '../../../../src/infrastructure/admin/shared/BackofficeHttpClient'
 import { HttpAdminUserRepository } from '../../../../src/infrastructure/admin/users/HttpAdminUserRepository'
 import { AdminUserError } from '../../../../src/domain/admin/users/errors/AdminUserError'
 import { SessionEndedError } from '../../../../src/domain/auth/errors/SessionEndedError'
@@ -25,12 +25,12 @@ describe('HttpAdminUserRepository', () => {
   afterEach(() => {
     document.cookie = 'XSRF-TOKEN=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/'
     vi.unstubAllGlobals()
-    setBackofficeSessionEndedHandler(null)
+    setBackofficeSessionReaction(null)
   })
 
   it('un 401 sur le changement de mot de passe (session antérieure, #650 R1c) appelle la réaction du backoffice', async () => {
     const onSessionEnded = vi.fn(() => true)
-    setBackofficeSessionEndedHandler({ stampAtSend: () => 0, ended: onSessionEnded, refused: () => undefined })
+    setBackofficeSessionReaction({ stampAtSend: () => ({ session: 0, refusalScope: 0 }), ended: onSessionEnded, refused: () => undefined })
     vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(401, { code: 401, message: 'Session closed by a password change.' })))
 
     await expect(new HttpAdminUserRepository(API_BASE_URL).changePassword(USER_ID, 'new-password')).rejects.toBeInstanceOf(SessionEndedError)
@@ -40,7 +40,7 @@ describe('HttpAdminUserRepository', () => {
 
   it('un 401 sur la lecture de la liste appelle la réaction du backoffice', async () => {
     const onSessionEnded = vi.fn(() => true)
-    setBackofficeSessionEndedHandler({ stampAtSend: () => 0, ended: onSessionEnded, refused: () => undefined })
+    setBackofficeSessionReaction({ stampAtSend: () => ({ session: 0, refusalScope: 0 }), ended: onSessionEnded, refused: () => undefined })
     vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(401, { code: 401, message: 'Expired JWT Token' })))
 
     await expect(new HttpAdminUserRepository(API_BASE_URL).list()).rejects.toBeInstanceOf(SessionEndedError)
@@ -51,7 +51,7 @@ describe('HttpAdminUserRepository', () => {
   it('un 403 est un refus réel levé par le client, jamais traduit par le dépôt : ni session finie, ni AdminUserError (#748, R17)', async () => {
     const onSessionEnded = vi.fn(() => true)
     const onRefused = vi.fn()
-    setBackofficeSessionEndedHandler({ stampAtSend: () => 0, ended: onSessionEnded, refused: onRefused })
+    setBackofficeSessionReaction({ stampAtSend: () => ({ session: 0, refusalScope: 0 }), ended: onSessionEnded, refused: onRefused })
     vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(403, { detail: 'Forbidden' })))
 
     const refused = new HttpAdminUserRepository(API_BASE_URL).list()

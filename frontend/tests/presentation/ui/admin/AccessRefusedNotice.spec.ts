@@ -8,6 +8,7 @@ import { AUTH_REPOSITORY, markSessionExpired } from '../../../../src/application
 import {
   clearBackofficeAccessRefusal,
   markBackofficeAccessRefused,
+  refusalScope,
 } from '../../../../src/application/admin/shared/backofficeAccessRefusal'
 import type { AuthRepository } from '../../../../src/domain/auth/repositories/AuthRepository'
 import { sessionFor } from '../../../support/authSession'
@@ -48,6 +49,11 @@ async function mountNotice(): Promise<{ wrapper: VueWrapper; router: Router }> {
  * L'alerte « accès refusé » du backoffice (#748, R17, F4), rendue une fois par `AdminLayout` : un refus réel
  * (un 403 qui n'est pas une fin de session) la lève, la navigation et la fin de session l'effacent.
  */
+/** Un refus réel d'une requête partie sous le périmètre courant (jamais d'une page quittée, voir R28). */
+function refuse(): void {
+  markBackofficeAccessRefused(refusalScope())
+}
+
 describe('AccessRefusedNotice (#748, R17)', () => {
   afterEach(async () => {
     clearBackofficeAccessRefusal()
@@ -66,7 +72,7 @@ describe('AccessRefusedNotice (#748, R17)', () => {
   it("un refus insère une alerte neutre et le lien « Changer de compte », dans le même onglet", async () => {
     const { wrapper } = await mountNotice()
 
-    markBackofficeAccessRefused()
+    refuse()
     await flushPromises()
 
     const alert = wrapper.get('[role="alert"]')
@@ -81,12 +87,12 @@ describe('AccessRefusedNotice (#748, R17)', () => {
 
   it("un second refus remplace le message : l'alerte et son lien restent le même élément", async () => {
     const { wrapper } = await mountNotice()
-    markBackofficeAccessRefused()
+    refuse()
     await flushPromises()
     const alert = wrapper.get('[role="alert"]').element
     const link = wrapper.get('a').element
 
-    markBackofficeAccessRefused()
+    refuse()
     await flushPromises()
 
     expect(wrapper.findAll('[role="alert"]')).toHaveLength(1)
@@ -97,7 +103,7 @@ describe('AccessRefusedNotice (#748, R17)', () => {
 
   it("la navigation efface l'alerte", async () => {
     const { wrapper, router } = await mountNotice()
-    markBackofficeAccessRefused()
+    refuse()
     await flushPromises()
 
     await router.push('/fr/admin/technologies')
@@ -109,7 +115,7 @@ describe('AccessRefusedNotice (#748, R17)', () => {
 
   it("une session finie masque l'alerte et l'efface : elle ne revient pas avec la session", async () => {
     const { wrapper } = await mountNotice()
-    markBackofficeAccessRefused()
+    refuse()
     await flushPromises()
 
     markSessionExpired()
@@ -123,7 +129,7 @@ describe('AccessRefusedNotice (#748, R17)', () => {
 
   it("le démontage efface le refus : une autre visite du backoffice repart sans alerte", async () => {
     const first = await mountNotice()
-    markBackofficeAccessRefused()
+    refuse()
     await flushPromises()
     first.wrapper.unmount()
 

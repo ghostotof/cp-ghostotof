@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { defineComponent } from 'vue'
 import { router } from '../../../src/presentation/router'
-import { createBackofficeSessionEndedHandler } from '../../../src/presentation/router/backofficeSessionExpiry'
-import type { BackofficeSessionEndedHandler } from '../../../src/infrastructure/admin/shared/BackofficeHttpClient'
+import { createBackofficeSessionReaction } from '../../../src/presentation/router/backofficeSessionExpiry'
+import type { BackofficeSessionReaction } from '../../../src/domain/admin/shared/BackofficeSessionReaction'
 import {
   backofficeAccessRefused,
   clearBackofficeAccessRefusal,
@@ -37,8 +37,8 @@ async function signIn(user: AuthenticatedUser): Promise<void> {
 }
 
 /** La réaction de production, construite comme `main.ts` le fait : sur le `useAuth()` d'un composant. */
-function buildHandler(): { handler: BackofficeSessionEndedHandler; unmount: () => void } {
-  const Probe = defineComponent({ setup: () => ({ handler: createBackofficeSessionEndedHandler(useAuth()) }), template: '<div />' })
+function buildReaction(): { handler: BackofficeSessionReaction; unmount: () => void } {
+  const Probe = defineComponent({ setup: () => ({ handler: createBackofficeSessionReaction(useAuth()) }), template: '<div />' })
   const wrapper = mount(Probe, { global: { provide: { [AUTH_REPOSITORY as symbol]: repository } } })
 
   return { handler: wrapper.vm.handler, unmount: () => wrapper.unmount() }
@@ -51,13 +51,13 @@ function buildHandler(): { handler: BackofficeSessionEndedHandler; unmount: () =
  * fin de session et offre le lien de reconnexion.
  */
 describe('backofficeSessionExpiry', () => {
-  let backofficeSessionEndedHandler: BackofficeSessionEndedHandler
+  let reaction: BackofficeSessionReaction
   let unmount: () => void
 
   beforeEach(async () => {
     me.mockClear()
     await signIn(SUPER)
-    ;({ handler: backofficeSessionEndedHandler, unmount } = buildHandler())
+    ;({ handler: reaction, unmount } = buildReaction())
     await router.push('/fr/admin/users')
     await router.isReady()
   })
@@ -71,7 +71,7 @@ describe('backofficeSessionExpiry', () => {
     const replace = vi.spyOn(router, 'replace')
     const push = vi.spyOn(router, 'push')
 
-    backofficeSessionEndedHandler.ended(backofficeSessionEndedHandler.stampAtSend())
+    reaction.ended(reaction.stampAtSend())
     await new Promise((resolve) => setTimeout(resolve, 0))
 
     expect(authState.user).toBeNull()
@@ -85,7 +85,7 @@ describe('backofficeSessionExpiry', () => {
   })
 
   it("plusieurs 401 partis sous la même génération (listes chargées en parallèle) n'annoncent qu'une fois", () => {
-    const { stampAtSend, ended } = backofficeSessionEndedHandler
+    const { stampAtSend, ended } = reaction
     const sent = stampAtSend()
     const before = authCount()
 
@@ -99,12 +99,12 @@ describe('backofficeSessionExpiry', () => {
   })
 
   it('un 401 parti avant le retour de la session ne la refinit pas : ended rend faux', async () => {
-    const sent = backofficeSessionEndedHandler.stampAtSend()
-    backofficeSessionEndedHandler.ended(sent)
+    const sent = reaction.stampAtSend()
+    reaction.ended(sent)
     await signIn(SUPER)
     expect(authState.sessionEnded).toBe(false)
 
-    expect(backofficeSessionEndedHandler.ended(sent)).toBe(false)
+    expect(reaction.ended(sent)).toBe(false)
     expect(authState.sessionEnded).toBe(false)
   })
 })
@@ -117,12 +117,12 @@ describe('backofficeSessionExpiry — refus réel (#748, R17)', () => {
   it("refused : l'alerte est levée et le palier relu une fois pour deux refus", async () => {
     me.mockClear()
     await signIn(SUPER)
-    const { handler, unmount } = buildHandler()
+    const { handler, unmount } = buildReaction()
     expect(backofficeAccessRefused.value).toBe(0)
 
     // Deux refus du même chargement (une lecture, une écriture) : deux alertes comptées, une seule relecture.
-    handler.refused()
-    handler.refused()
+    handler.refused(handler.stampAtSend())
+    handler.refused(handler.stampAtSend())
     await flushPromises()
 
     expect(backofficeAccessRefused.value).toBe(2)
@@ -130,12 +130,43 @@ describe('backofficeSessionExpiry — refus réel (#748, R17)', () => {
     unmount()
   })
 
+  it("un refus parti avant une navigation n'est ni compté ni relu (CR3-8)", async () => {
+    me.mockClear()
+    await signIn(SUPER)
+    const { handler, unmount } = buildReaction()
+
+    // La page X envoie sa lecture, la personne navigue (la navigation efface les refus), puis le 403 de X arrive.
+    const sentFromPreviousPage = handler.stampAtSend()
+    clearBackofficeAccessRefusal()
+    handler.refused(sentFromPreviousPage)
+    await flushPromises()
+
+    expect(backofficeAccessRefused.value).toBe(0)
+    expect(me).not.toHaveBeenCalled()
+    unmount()
+  })
+
+  it('un refus du périmètre courant compte et relit, même après une navigation', async () => {
+    me.mockClear()
+    await signIn(SUPER)
+    const { handler, unmount } = buildReaction()
+
+    clearBackofficeAccessRefusal()
+    // La page Y envoie sa requête sous le périmètre courant : son refus est un vrai refus.
+    handler.refused(handler.stampAtSend())
+    await flushPromises()
+
+    expect(backofficeAccessRefused.value).toBe(1)
+    expect(me).toHaveBeenCalledTimes(1)
+    unmount()
+  })
+
   it('refused ne finit pas la session et ne quitte pas la page', async () => {
     await signIn(SUPER)
     await router.push('/fr/admin/users')
-    const { handler, unmount } = buildHandler()
+    const { handler, unmount } = buildReaction()
 
-    handler.refused()
+    handler.refused(handler.stampAtSend())
     await flushPromises()
 
     expect(authState.sessionEnded).toBe(false)

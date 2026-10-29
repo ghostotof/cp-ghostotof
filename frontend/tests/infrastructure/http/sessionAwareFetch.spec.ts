@@ -109,6 +109,31 @@ describe('sessionAwareFetch', () => {
     expect(judged.endedTheSession).toBe(true)
   })
 
+  it("le cookie n'est lu qu'une fois : il disparaît entre deux lectures, l'en-tête part et le verdict suit ce qui est parti", async () => {
+    // Un autre onglet retire `XSRF-TOKEN` juste après la première lecture (CR3-10). Avec deux lectures, le verdict
+    // disait « avec jeton » et l'en-tête, relu, ne partait pas : le 403 du CSRF aurait été lu comme un refus réel.
+    const read = vi.spyOn(document, 'cookie', 'get').mockReturnValueOnce('XSRF-TOKEN=abc').mockReturnValue('')
+    const fetchMock = vi.fn(async () => response(403))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const judged = await sessionAwareFetch(URL, { method: 'POST' })
+
+    expect(read).toHaveBeenCalledTimes(1)
+    expect(sentInit(fetchMock).headers?.['X-XSRF-TOKEN']).toBe('abc')
+    expect(judged.endedTheSession).toBe(false)
+    read.mockRestore()
+  })
+
+  it("une lecture ne lit pas le cookie du tout", async () => {
+    const read = vi.spyOn(document, 'cookie', 'get').mockReturnValue('XSRF-TOKEN=abc')
+    vi.stubGlobal('fetch', vi.fn(async () => response(200)))
+
+    await sessionAwareFetch(URL, { method: 'GET' })
+
+    expect(read).not.toHaveBeenCalled()
+    read.mockRestore()
+  })
+
   it('un 401 finit la session, en lecture comme en écriture', async () => {
     setCsrfCookie('abc')
     vi.stubGlobal('fetch', vi.fn(async () => response(401)))

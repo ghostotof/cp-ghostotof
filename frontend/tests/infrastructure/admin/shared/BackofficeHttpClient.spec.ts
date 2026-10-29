@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { BackofficeHttpClient, setBackofficeSessionEndedHandler, type BackofficeSessionEndedHandler } from '../../../../src/infrastructure/admin/shared/BackofficeHttpClient'
+import { BackofficeHttpClient, setBackofficeSessionReaction } from '../../../../src/infrastructure/admin/shared/BackofficeHttpClient'
+import type { BackofficeSendStamp, BackofficeSessionReaction } from '../../../../src/domain/admin/shared/BackofficeSessionReaction'
 import { SessionEndedError } from '../../../../src/domain/auth/errors/SessionEndedError'
 import { AccessForbiddenError } from '../../../../src/domain/auth/errors/AccessForbiddenError'
 
@@ -13,15 +14,20 @@ function response(status: number): Response {
 }
 
 /**
- * Une réaction du backoffice : `ended` est l'espion du verdict « session finie », `stamp` la génération lue à
+ * Une réaction du backoffice : `ended` est l'espion du verdict « session finie », `stamp` la timbre lu à
  * l'envoi, `refused` l'espion du refus réel (#748, R17).
  */
 function reaction(
-  ended: BackofficeSessionEndedHandler['ended'] = () => true,
+  ended: BackofficeSessionReaction['ended'] = () => true,
   stamp = 0,
-  refused: BackofficeSessionEndedHandler['refused'] = () => undefined,
-): BackofficeSessionEndedHandler {
-  return { stampAtSend: () => stamp, ended, refused }
+  refused: BackofficeSessionReaction['refused'] = () => undefined,
+): BackofficeSessionReaction {
+  return { stampAtSend: () => stampOf(stamp), ended, refused }
+}
+
+/** Un timbre d'envoi : la génération de session `session`, le périmètre de refus étant sans objet ici. */
+function stampOf(session: number, refusalScope = 0): BackofficeSendStamp {
+  return { session, refusalScope }
 }
 
 function setCsrfCookie(value: string): void {
@@ -42,7 +48,7 @@ function clearCsrfCookie(): void {
  */
 describe('BackofficeHttpClient — fin de session', () => {
   afterEach(() => {
-    setBackofficeSessionEndedHandler(null)
+    setBackofficeSessionReaction(null)
     vi.unstubAllGlobals()
     clearCsrfCookie()
   })
@@ -54,7 +60,7 @@ describe('BackofficeHttpClient — fin de session', () => {
     ['une écriture en 403 partie avec un cookie XSRF-TOKEN vide', 'DELETE', 403, ''],
   ] as const)('%s lève SessionEndedError et appelle la réaction une fois', async (_label, method, status, cookie) => {
     const onSessionEnded = vi.fn(() => true)
-    setBackofficeSessionEndedHandler(reaction(onSessionEnded))
+    setBackofficeSessionReaction(reaction(onSessionEnded))
     const fetchMock = vi.fn(async () => response(status))
     vi.stubGlobal('fetch', fetchMock)
     if (null !== cookie) setCsrfCookie(cookie)
@@ -67,7 +73,7 @@ describe('BackofficeHttpClient — fin de session', () => {
   })
 
   it("cookie XSRF-TOKEN vide : l'écriture part sans en-tête", async () => {
-    setBackofficeSessionEndedHandler(reaction())
+    setBackofficeSessionReaction(reaction())
     const fetchMock = vi.fn(async () => response(403))
     vi.stubGlobal('fetch', fetchMock)
     setCsrfCookie('')
@@ -81,7 +87,7 @@ describe('BackofficeHttpClient — fin de session', () => {
   it.each([200, 204, 404, 409, 422, 500])("un %i n'appelle aucune réaction et rend la réponse", async (status) => {
     const onSessionEnded = vi.fn(() => true)
     const onRefused = vi.fn()
-    setBackofficeSessionEndedHandler(reaction(onSessionEnded, 0, onRefused))
+    setBackofficeSessionReaction(reaction(onSessionEnded, 0, onRefused))
     vi.stubGlobal('fetch', vi.fn(async () => response(status)))
     setCsrfCookie('jeton')
     const client = new BackofficeHttpClient(API_BASE_URL)
@@ -100,7 +106,7 @@ describe('BackofficeHttpClient — fin de session', () => {
     it.each(['GET', 'PUT'] as const)("403 sur %s : refused appelé une fois, AccessForbiddenError, jamais la session finie", async (method) => {
       const onSessionEnded = vi.fn(() => true)
       const onRefused = vi.fn()
-      setBackofficeSessionEndedHandler(reaction(onSessionEnded, 0, onRefused))
+      setBackofficeSessionReaction(reaction(onSessionEnded, 0, onRefused))
       vi.stubGlobal('fetch', vi.fn(async () => response(403)))
       // Le CSRF ne contrôle pas les lectures ; l'écriture, elle, porte son jeton : ce 403 est une autorisation refusée.
       setCsrfCookie('jeton')
@@ -119,9 +125,36 @@ describe('BackofficeHttpClient — fin de session', () => {
       await expect(new BackofficeHttpClient(API_BASE_URL).get('/api/backoffice/users')).rejects.toBeInstanceOf(AccessForbiddenError)
     })
 
+    it("refused reçoit le timbre lu à l'envoi, jamais un état lu à la réception", async () => {
+      const calls: string[] = []
+      setBackofficeSessionReaction({
+        stampAtSend: () => {
+          calls.push('stamp')
+
+          return stampOf(7, 4)
+        },
+        ended: () => true,
+        refused: (sentAt) => {
+          calls.push(`refused:${sentAt.session}/${sentAt.refusalScope}`)
+        },
+      })
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => {
+          calls.push('fetch')
+
+          return response(403)
+        }),
+      )
+
+      await new BackofficeHttpClient(API_BASE_URL).get('/api/backoffice/users').catch(() => undefined)
+
+      expect(calls).toEqual(['stamp', 'fetch', 'refused:7/4'])
+    })
+
     it("un 403 d'écriture sans jeton reste une session finie, jamais un refus réel", async () => {
       const onRefused = vi.fn()
-      setBackofficeSessionEndedHandler(reaction(() => true, 0, onRefused))
+      setBackofficeSessionReaction(reaction(() => true, 0, onRefused))
       vi.stubGlobal('fetch', vi.fn(async () => response(403)))
 
       await expect(new BackofficeHttpClient(API_BASE_URL).mutate('PUT', '/api/backoffice/users/1', { a: 1 })).rejects.toBeInstanceOf(
@@ -139,7 +172,7 @@ describe('BackofficeHttpClient — fin de session', () => {
 
   it('une panne réseau remonte telle quelle, sans réaction', async () => {
     const onSessionEnded = vi.fn(() => true)
-    setBackofficeSessionEndedHandler(reaction(onSessionEnded))
+    setBackofficeSessionReaction(reaction(onSessionEnded))
     const failure = new TypeError('Failed to fetch')
     vi.stubGlobal('fetch', vi.fn(async () => Promise.reject(failure)))
 
@@ -156,19 +189,19 @@ describe('BackofficeHttpClient — fin de session', () => {
       async (_label, method) => {
         // Le verdict est jugé périmé par la réaction (`ended` faux) : la session a été rétablie depuis l'envoi.
         const ended = vi.fn(() => false)
-        setBackofficeSessionEndedHandler(reaction(ended, 3))
+        setBackofficeSessionReaction(reaction(ended, 3))
         vi.stubGlobal('fetch', vi.fn(async () => response(401)))
         const client = new BackofficeHttpClient(API_BASE_URL)
 
         const result = 'GET' === method ? await client.get('/api/backoffice/users') : await client.mutate(method, '/api/backoffice/users/1', {})
 
         expect(result.status).toBe(401)
-        expect(ended).toHaveBeenCalledWith(3)
+        expect(ended).toHaveBeenCalledWith(stampOf(3))
       },
     )
 
     it('ended vrai : SessionEndedError', async () => {
-      setBackofficeSessionEndedHandler(reaction(() => true))
+      setBackofficeSessionReaction(reaction(() => true))
       vi.stubGlobal('fetch', vi.fn(async () => response(401)))
 
       await expect(new BackofficeHttpClient(API_BASE_URL).get('/api/backoffice/users')).rejects.toBeInstanceOf(SessionEndedError)
@@ -176,14 +209,14 @@ describe('BackofficeHttpClient — fin de session', () => {
 
     it("stampAtSend est lu avant l'envoi, et sa valeur rendue à ended", async () => {
       const calls: string[] = []
-      setBackofficeSessionEndedHandler({
+      setBackofficeSessionReaction({
         stampAtSend: () => {
           calls.push('stamp')
 
-          return 7
+          return stampOf(7)
         },
         ended: (sentAt) => {
-          calls.push(`ended:${sentAt}`)
+          calls.push(`ended:${sentAt.session}`)
 
           return true
         },

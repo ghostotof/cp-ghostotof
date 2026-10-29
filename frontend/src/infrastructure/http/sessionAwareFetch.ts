@@ -1,4 +1,4 @@
-import { hasCsrfToken, readCsrfToken } from '../auth/csrfCookie'
+import { readWriteToken } from '../auth/csrfCookie'
 
 /**
  * La règle unique qui décide, côté frontend, qu'une réponse signifie « la session est finie » (#748,
@@ -67,9 +67,10 @@ const SAFE_METHODS: readonly string[] = ['GET', 'HEAD']
  */
 export async function sessionAwareFetch(url: string, init: SessionAwareInit): Promise<SessionAwareResponse> {
   const isWrite = !SAFE_METHODS.includes(init.method.toUpperCase())
-  // Un seul critère pour « avec jeton » (`hasCsrfToken`, J) : le verdict et l'en-tête ne peuvent pas diverger.
-  const withToken = isWrite && hasCsrfToken()
-  const csrfToken = withToken ? readCsrfToken() : null
+  // Le cookie est lu **une seule fois** (R28, CR3-10) : le verdict « avec jeton » et l'en-tête sont dérivés de la
+  // même valeur, donc ne peuvent pas diverger même si un autre onglet retire `XSRF-TOKEN` entre deux lectures.
+  // « Avec jeton » reste la définition de `csrfCookie.ts` (valeur décodée et non vide), que `readWriteToken` applique.
+  const csrfToken = isWrite ? readWriteToken() : null
 
   const headers = { ...init.headers, ...(csrfToken ? { 'X-XSRF-TOKEN': csrfToken } : {}) }
 
@@ -80,5 +81,5 @@ export async function sessionAwareFetch(url: string, init: SessionAwareInit): Pr
     ...(Object.keys(headers).length > 0 ? { headers } : {}),
   })
 
-  return { response, endedTheSession: endsTheSession(response.status, isWrite && !withToken) }
+  return { response, endedTheSession: endsTheSession(response.status, isWrite && null === csrfToken) }
 }

@@ -1,10 +1,10 @@
 import { markSessionExpired, sessionStamp, type UseAuthResult } from '../../application/auth/useAuth'
-import { markBackofficeAccessRefused } from '../../application/admin/shared/backofficeAccessRefusal'
-import type { BackofficeSessionEndedHandler } from '../../infrastructure/admin/shared/BackofficeHttpClient'
+import { markBackofficeAccessRefused, refusalScope } from '../../application/admin/shared/backofficeAccessRefusal'
+import type { BackofficeSendStamp, BackofficeSessionReaction } from '../../domain/admin/shared/BackofficeSessionReaction'
 
 /**
  * La réaction du backoffice à une session finie (un 401, ou un 403 à une écriture sans jeton CSRF), branchée
- * dans `main.ts` sur `setBackofficeSessionEndedHandler` : la session est finie (JWT expiré, ou ouverte avant un
+ * dans `main.ts` sur `setBackofficeSessionReaction` : la session est finie (JWT expiré, ou ouverte avant un
  * changement de mot de passe, #650 R1b). L'en-tête repasse à « anonyme » et l'état « session finie » est levé —
  * le bandeau d'`AdminLayout` (`SessionEndedBanner`) l'annonce et offre le lien de reconnexion.
  *
@@ -16,7 +16,7 @@ import type { BackofficeSessionEndedHandler } from '../../infrastructure/admin/s
  * ou abandonnée.
  *
  * **Le verdict est jugé par génération de session** (#748, R14), pas « idempotent » : le client lit
- * `stampAtSend` avant l'envoi et rend la valeur à `ended` avec le verdict (`markSessionExpired(sentAt)`).
+ * `stampAtSend` avant l'envoi et rend le timbre à `ended` avec le verdict (`markSessionExpired(sentAt.session)`).
  * Une page du backoffice charge plusieurs listes en parallèle, parties sous la même génération : la première fin
  * compte, les suivantes rendent `true` sans rien réannoncer. Une réponse partie avant le retour de la session rend
  * `false` : elle ne la refinit pas, le client la rend au dépôt comme un échec ordinaire.
@@ -25,18 +25,24 @@ import type { BackofficeSessionEndedHandler } from '../../infrastructure/admin/s
  * le compte (`markBackofficeAccessRefused`, que l'alerte d'`AdminLayout` affiche) et **relit le palier**
  * (`rereadAfterRefusal`, une relecture en vol partagée : une lecture et une écriture refusées ensemble n'envoient
  * qu'un `/api/me`) — l'en-tête reprend le palier que le serveur reconnaît, ou la session est dite finie si `/api/me`
- * répond « anonyme ». La relecture est branchée ici, côté composition, et non dans chaque composable : ils
+ * répond « anonyme ». **Un refus parti avant une navigation ne compte pas** (R28, CR3-8) : le timbre de l'envoi porte
+ * le périmètre de refus, que chaque navigation avance ; le 403 d'une page quittée n'affiche aucune alerte sur la
+ * suivante et ne relit rien. La relecture est branchée ici, côté composition, et non dans chaque composable : ils
  * n'appellent pas `useAuth()` (treize composables d'administration, dont aucun test ne fournit `AUTH_REPOSITORY`).
  *
  * Construite par `main.ts` avec le `useAuth()` de l'application (`app.runWithContext`) : `rereadAfterRefusal` a besoin
  * du dépôt d'authentification, que `inject` ne donne qu'avec un contexte.
  */
-export function createBackofficeSessionEndedHandler(auth: Pick<UseAuthResult, 'rereadAfterRefusal'>): BackofficeSessionEndedHandler {
+export function createBackofficeSessionReaction(auth: Pick<UseAuthResult, 'rereadAfterRefusal'>): BackofficeSessionReaction {
   return {
-    stampAtSend: sessionStamp,
-    ended: (sentAt: number): boolean => markSessionExpired(sentAt),
-    refused: (): void => {
-      markBackofficeAccessRefused()
+    stampAtSend: (): BackofficeSendStamp => ({ session: sessionStamp(), refusalScope: refusalScope() }),
+    ended: (sentAt: BackofficeSendStamp): boolean => markSessionExpired(sentAt.session),
+    refused: (sentAt: BackofficeSendStamp): void => {
+      // Un refus parti avant une navigation (CR3-8) : ni compté ni relu, la page qui l'a émis n'existe plus.
+      if (!markBackofficeAccessRefused(sentAt.refusalScope)) {
+        return
+      }
+
       // Jamais rejetée (un rejet de `/api/me` est avalé) ; son rendu est sans objet ici : une session finie
       // est annoncée par le bandeau, qui masque l'alerte.
       void auth.rereadAfterRefusal()

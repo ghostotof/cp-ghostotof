@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it } from 'vitest'
-import { hasCsrfToken, readCsrfToken } from '../../../src/infrastructure/auth/csrfCookie'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { hasCsrfToken, readWriteToken } from '../../../src/infrastructure/auth/csrfCookie'
 
 function setCsrfCookie(rawValue: string): void {
   document.cookie = `XSRF-TOKEN=${rawValue}; path=/`
@@ -15,24 +15,33 @@ function clearCsrfCookie(): void {
  * échouait avant tout envoi).
  */
 describe('csrfCookie', () => {
-  afterEach(clearCsrfCookie)
+  afterEach(() => {
+    vi.restoreAllMocks()
+    clearCsrfCookie()
+  })
 
-  describe('readCsrfToken()', () => {
+  describe('readWriteToken()', () => {
     it('lit la valeur décodée', () => {
       setCsrfCookie('a%2Fb%3D')
 
-      expect(readCsrfToken()).toBe('a/b=')
+      expect(readWriteToken()).toBe('a/b=')
     })
 
     it('rend null sans cookie', () => {
-      expect(readCsrfToken()).toBeNull()
+      expect(readWriteToken()).toBeNull()
+    })
+
+    it('un cookie vide vaut absent : ni "" ni jeton', () => {
+      setCsrfCookie('')
+
+      expect(readWriteToken()).toBeNull()
     })
 
     it('XSRF-TOKEN=%E0 : aucune exception, absent', () => {
       setCsrfCookie('%E0')
 
-      expect(() => readCsrfToken()).not.toThrow()
-      expect(readCsrfToken()).toBeNull()
+      expect(() => readWriteToken()).not.toThrow()
+      expect(readWriteToken()).toBeNull()
     })
   })
 
@@ -53,6 +62,13 @@ describe('csrfCookie', () => {
       setCsrfCookie('jeton-de-test')
 
       expect(hasCsrfToken()).toBe(true)
+    })
+
+    it('est exactement « readWriteToken() n\'est pas nul » : une seule définition, une seule lecture du cookie', () => {
+      const read = vi.spyOn(document, 'cookie', 'get').mockReturnValue('XSRF-TOKEN=jeton')
+
+      expect(hasCsrfToken()).toBe(true)
+      expect(read).toHaveBeenCalledTimes(1)
     })
   })
 })

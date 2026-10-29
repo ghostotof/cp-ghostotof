@@ -9,7 +9,7 @@ import SignInAgainLink from '../SignInAgainLink.vue'
 /**
  * Le bandeau « Votre session a pris fin » du backoffice (#650, S2), rendu une
  * seule fois par `AdminLayout` : un 401 d'une page d'administration ferme la
- * session (`backofficeSessionEndedHandler`) mais **ne déplace pas la personne** — la
+ * session (`createBackofficeSessionReaction`) mais **ne déplace pas la personne** — la
  * page reste montée, avec l'étude de cas ou la carte à moitié rédigée. Ce qui finit une session :
  * voir `infrastructure/http/sessionAwareFetch.ts` ; la règle de référence est
  * `.claude/rules/frontend-session.md`.

@@ -16,8 +16,8 @@ import { SessionEndedError } from '../../../../src/domain/auth/errors/SessionEnd
 import { authState, markSessionExpired } from '../../../../src/application/auth/useAuth'
 import { HttpAdminWatchedProductRepository } from '../../../../src/infrastructure/admin/watch/HttpAdminWatchedProductRepository'
 import { HttpAdminVulnerabilityRepository } from '../../../../src/infrastructure/admin/watch/HttpAdminVulnerabilityRepository'
-import { setBackofficeSessionEndedHandler } from '../../../../src/infrastructure/admin/shared/BackofficeHttpClient'
-import { createBackofficeSessionEndedHandler } from '../../../../src/presentation/router/backofficeSessionExpiry'
+import { setBackofficeSessionReaction } from '../../../../src/infrastructure/admin/shared/BackofficeHttpClient'
+import { createBackofficeSessionReaction } from '../../../../src/presentation/router/backofficeSessionExpiry'
 import { signInAgain } from '../../../support/signInAgain'
 import { expectNoAccessibilityViolation } from '../../../support/axe'
 
@@ -458,7 +458,7 @@ describe('AdminWatchPage', () => {
       afterEach(async () => {
         mountedPage?.unmount()
         mountedPage = undefined
-        setBackofficeSessionEndedHandler(null)
+        setBackofficeSessionReaction(null)
         vi.unstubAllGlobals()
         await signInAgain()
       })
@@ -466,7 +466,7 @@ describe('AdminWatchPage', () => {
       it("deux lectures en 401 arrivées dans deux ticks : le bandeau n'est annoncé qu'une fois", async () => {
         // La vraie chaîne : dépôts HTTP, client du backoffice et réaction branchée comme `main.ts` le fait.
         // Aucun refus réel dans ce cas : la relecture du palier (R17) est un double, la page ne fournit pas `AUTH_REPOSITORY`.
-        setBackofficeSessionEndedHandler(createBackofficeSessionEndedHandler({ rereadAfterRefusal: async () => 'session-held' }))
+        setBackofficeSessionReaction(createBackofficeSessionReaction({ rereadAfterRefusal: async () => 'session-held' }))
         const answers: ((response: Response) => void)[] = []
         vi.stubGlobal(
           'fetch',

@@ -1,40 +1,18 @@
+import type { BackofficeSendStamp, BackofficeSessionReaction } from '../../../domain/admin/shared/BackofficeSessionReaction'
 import { AccessForbiddenError } from '../../../domain/auth/errors/AccessForbiddenError'
 import { SessionEndedError } from '../../../domain/auth/errors/SessionEndedError'
 import type { ApiProblemBody } from '../../http/problemJson'
 import { sessionAwareFetch, type SessionAwareResponse } from '../../http/sessionAwareFetch'
 
-/**
- * Réaction à une session finie du backoffice (voir `infrastructure/http/sessionAwareFetch.ts`), posée une fois à la
- * racine de composition. Elle juge **par génération de session** (#748, R14) : la couche infrastructure ne connaît
- * pas la session, elle ne fait que porter le nombre de l'envoi à la réception.
- */
-export interface BackofficeSessionEndedHandler {
-  /** La génération courante de la session, lue **avant** chaque envoi. */
-  stampAtSend(): number
-  /**
-   * Le verdict « session finie » d'une requête partie sous la génération `sentAt`. Vrai : la session est finie
-   * (elle vient de finir, ou l'était déjà), le client lève `SessionEndedError`. Faux : la session a été rétablie
-   * depuis l'envoi, la réponse est celle d'une session révolue — le client la rend au dépôt, qui la traduit en
-   * échec ordinaire.
-   */
-  ended(sentAt: number): boolean
-  /**
-   * Un refus réel (#748, R17) : un 403 qui n'est pas une fin de session — une lecture, ou une écriture partie avec
-   * son jeton. Appelé une fois par refus, juste avant que le client lève `AccessForbiddenError` : la réaction compte
-   * le refus (l'alerte d'`AdminLayout` le dit) et relit le palier.
-   */
-  refused(): void
-}
-
-let sessionEndedHandler: BackofficeSessionEndedHandler | null = null
+let sessionReaction: BackofficeSessionReaction | null = null
 
 /**
- * Enregistre (ou, avec `null`, retire) la réaction à une session finie du backoffice.
- * La couche infrastructure ne connaît ni la session ni le routeur : la racine
- * de composition (`main.ts`) lui fournit la réaction.
+ * Enregistre (ou, avec `null`, retire) la réaction du backoffice à ses réponses (`domain/admin/shared/`).
+ * La couche infrastructure ne connaît ni la session ni le routeur : la racine de composition (`main.ts`) lui
+ * fournit la réaction.
  */
-export function setBackofficeSessionEndedHandler(handler: BackofficeSessionEndedHandler | null): void {
-  sessionEndedHandler = handler
+export function setBackofficeSessionReaction(reaction: BackofficeSessionReaction | null): void {
+  sessionReaction = reaction
 }
 
 /**
@@ -53,14 +31,14 @@ export class BackofficeHttpClient {
   }
 
   async get(path: string): Promise<Response> {
-    // La génération est lue avant l'envoi, jamais à la réception (voir `react`).
-    const sentAt = sessionEndedHandler?.stampAtSend()
+    // Le timbre est lu avant l'envoi, jamais à la réception (voir `react`).
+    const sentAt = sessionReaction?.stampAtSend()
 
     return this.react(await sessionAwareFetch(`${this.apiBaseUrl}${path}`, { method: 'GET' }), sentAt)
   }
 
   async mutate(method: string, path: string, body?: unknown): Promise<Response> {
-    const sentAt = sessionEndedHandler?.stampAtSend()
+    const sentAt = sessionReaction?.stampAtSend()
 
     return this.react(
       await sessionAwareFetch(`${this.apiBaseUrl}${path}`, {
@@ -74,7 +52,7 @@ export class BackofficeHttpClient {
 
   /**
    * Une session finie (règle : `infrastructure/http/sessionAwareFetch.ts`) appelle la réaction commune,
-   * ici, une fois, avec la génération lue à l'envoi ; si elle confirme que la session est finie, **lève**
+   * ici, une fois, avec le timbre lu à l'envoi ; si elle confirme que la session est finie, **lève**
    * `SessionEndedError` : aucun dépôt ne la traduit, elle traverse jusqu'aux composables, que `useAdminLoad` et
    * `visibleMutationError` (`application/admin/shared/`) taisent, le bandeau de session finie étant alors la seule
    * annonce. Si la réaction dit au contraire que la session a été rétablie depuis l'envoi (`ended` faux), la
@@ -85,10 +63,10 @@ export class BackofficeHttpClient {
    * `AccessForbiddenError`, que les composables taisent comme `SessionEndedError` : aucun dépôt n'a à le traduire, et
    * l'alerte d'`AdminLayout` est la seule annonce. Sans réaction enregistrée, il lève aussi.
    */
-  private react(judged: SessionAwareResponse, sentAt: number | undefined): Response {
+  private react(judged: SessionAwareResponse, sentAt: BackofficeSendStamp | undefined): Response {
     if (judged.endedTheSession) {
-      const handler = sessionEndedHandler
-      if (null !== handler && undefined !== sentAt && !handler.ended(sentAt)) {
+      const reaction = sessionReaction
+      if (null !== reaction && undefined !== sentAt && !reaction.ended(sentAt)) {
         return judged.response
       }
 
@@ -96,7 +74,10 @@ export class BackofficeHttpClient {
     }
 
     if (403 === judged.response.status) {
-      sessionEndedHandler?.refused()
+      // Le timbre de l'envoi : un refus parti avant une navigation est jugé périmé par la réaction (CR3-8).
+      if (undefined !== sentAt) {
+        sessionReaction?.refused(sentAt)
+      }
 
       throw new AccessForbiddenError()
     }
