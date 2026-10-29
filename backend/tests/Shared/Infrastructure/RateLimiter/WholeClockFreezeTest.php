@@ -63,10 +63,10 @@ final class WholeClockFreezeTest extends TestCase
     }
 
     /**
-     * Le refus d'un quota horaire pose son échéance dans l'heure qui suit
-     * l'instant figé — et nulle part ailleurs : sur l'heure réelle, elle
-     * tomberait des semaines plus loin (ou plus tôt), selon le jour où la
-     * suite s'exécute.
+     * Le refus d'un quota horaire pose son échéance à la fin de la fenêtre,
+     * une heure après l'instant figé (arrondie à la seconde supérieure) — et
+     * nulle part ailleurs : sur l'heure réelle, elle tomberait des semaines
+     * plus loin (ou plus tôt), selon le jour où la suite s'exécute.
      */
     public function testTheDeadlineOfAHourlyQuotaRefusalIsReadOnTheFrozenClock(): void
     {
@@ -84,7 +84,12 @@ final class WholeClockFreezeTest extends TestCase
         self::assertFalse($refusal->isAccepted());
         $deadline = $refusal->getRetryAfter()->getTimestamp();
         self::assertGreaterThan($at->getTimestamp(), $deadline, 'L\'échéance n\'est pas postérieure à l\'instant figé.');
-        self::assertLessThanOrEqual($at->getTimestamp() + self::HOUR_IN_SECONDS, $deadline, 'L\'échéance dépasse l\'heure du quota.');
+        // Valeur exacte : la fenêtre glissante se ferme 3600 s après l'instant figé
+        // (12:00:00.999 -> 13:00:00.999) et symfony/rate-limiter >= 8.1.10 arrondit
+        // l'échéance à la seconde supérieure, 13:00:01, soit 3601 s après
+        // l'horodatage entier de l'instant figé. Sur l'heure réelle, l'échéance
+        // tomberait ailleurs et l'égalité serait rompue.
+        self::assertSame($at->getTimestamp() + self::HOUR_IN_SECONDS + 1, $deadline, 'L\'échéance n\'est pas celle de la fin de fenêtre, arrondie à la seconde supérieure.');
     }
 
     /**

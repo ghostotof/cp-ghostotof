@@ -6,6 +6,7 @@ namespace App\Security\Authentication\Infrastructure\Security;
 
 use App\Security\Authentication\Domain\Exception\LoginRateLimitExceededException;
 use Psr\Clock\ClockInterface;
+use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 use Symfony\Component\Security\Core\Exception\TooManyLoginAttemptsAuthenticationException;
 use Symfony\Component\Security\Http\Event\LoginFailureEvent;
@@ -39,10 +40,29 @@ use Symfony\Component\Security\Http\Event\LoginFailureEvent;
  * Le firewall `api` ne connaît pas `login_throttling`.
  *
  * L'échéance vient du limiteur, par les minutes que Symfony en a tirées
- * (`ceil((échéance − maintenant) / 60)`, `LoginThrottlingListener`) : un
- * majorant d'au plus 59 s, sans relire le stockage du limiteur — le chemin
- * qu'un attaquant martèle reste aussi bon marché qu'avant. Faute de valeur
- * exploitable (absente ou nulle), une minute.
+ * (`ceil((échéance − maintenant) / 60)`, `LoginThrottlingListener`), sans
+ * relire le stockage du limiteur — le chemin qu'un attaquant martèle reste
+ * aussi bon marché qu'avant. Faute de valeur exploitable (absente ou nulle),
+ * une minute.
+ *
+ * **Plafonnée à la fenêtre du limiteur** (issue #743). Une `fixed_window`
+ * consultée sans `reserve()` — ce que fait `DefaultLoginRateLimiter` — ne
+ * bloque jamais plus longtemps que son intervalle. Mais depuis
+ * symfony/rate-limiter 8.1.10 l'échéance est arrondie à la seconde supérieure,
+ * et `LoginThrottlingListener` tronque `time()` : quand la fenêtre s'ouvre dans
+ * la même seconde que la tentative refusée, il lit 901 s et annonce 16 minutes
+ * pour un blocage de moins de 15. Sans plafond le `Retry-After` serait de 960
+ * et les refus ne seraient plus identiques (contrat de #399). Le plafond est
+ * l'intervalle de `login_throttling` (paramètre
+ * `app.login_throttling_interval_minutes`, aligné sur security.yaml par
+ * LoginThrottlingIntervalAlignmentTest).
+ *
+ * **Limite acceptée** : le plafond ne ramène pas le délai au vrai à la minute
+ * près. Les minutes sont un `ceil` du reste, aucune relecture du stockage ne
+ * le précise : à toute autre frontière de minute, le `Retry-After` annoncé peut
+ * encore excéder le reste réel de moins de 61 s (une minute entière d'arrondi,
+ * plus la seconde de l'arrondi amont). Le client réessaie un peu tard, jamais
+ * trop tôt — l'erreur qui compterait.
  */
 #[AsEventListener(event: LoginFailureEvent::class, priority: -200)]
 final readonly class LoginThrottlingRefusalListener
@@ -53,8 +73,12 @@ final readonly class LoginThrottlingRefusalListener
     /** Le délai retenu quand l'exception ne porte pas d'échéance exploitable. */
     private const int FALLBACK_MINUTES = 1;
 
-    public function __construct(private ClockInterface $clock)
-    {
+    public function __construct(
+        private ClockInterface $clock,
+        /** La fenêtre de `login_throttling`, en minutes : l'échéance annoncée ne la dépasse jamais. */
+        #[Autowire(param: 'app.login_throttling_interval_minutes')]
+        private int $maxMinutes,
+    ) {
     }
 
     public function __invoke(LoginFailureEvent $event): void
@@ -76,6 +100,6 @@ final readonly class LoginThrottlingRefusalListener
     {
         $minutes = $exception->getMessageData()['%minutes%'] ?? null;
 
-        return \is_int($minutes) && $minutes > 0 ? $minutes : self::FALLBACK_MINUTES;
+        return \is_int($minutes) && $minutes > 0 ? min($minutes, $this->maxMinutes) : self::FALLBACK_MINUTES;
     }
 }

@@ -358,8 +358,21 @@ paths:
   and `FailedLoginTimingEqualizer`) throws `LoginRateLimitExceededException` on a
   `TooManyLoginAttemptsAuthenticationException`, and the shared path above renders it — never build that
   429 in a failure handler. Its deadline is the exception's `%minutes%` (Symfony's ceiling of the limiter's
-  deadline, an upper bound off by at most 59 s, falling back to one minute): no second read of the
-  limiter's storage on the path an attacker hammers. Every other login failure keeps Lexik's 401, byte for
+  deadline, falling back to one minute), **capped at the limiter's window** (issue #743): no second read of the
+  limiter's storage on the path an attacker hammers. The cap is the injected parameter
+  `app.login_throttling_interval_minutes` (`services.yaml`, 15): a `fixed_window` consulted without `reserve()`
+  — `DefaultLoginRateLimiter`'s `peek` — never blocks longer than its interval, yet since symfony/rate-limiter 8.1.10 the
+  deadline is rounded up to the next second and `LoginThrottlingListener` truncates `time()`, so a window opening in
+  the same second as the refused attempt reads 901 s, `%minutes%` = 16, `Retry-After: 960` for a block under 900 s,
+  and the three refusals (`LoginFailureTimingTest`) would no longer be identical. `security.yaml` cannot read the
+  parameter (`SecurityConfigEnvironmentParityTest` refuses any reference in `security`), so it is a copy:
+  `LoginThrottlingIntervalAlignmentTest` compares it with the compiled interval of both `login` limiters
+  (`_login_global_login`, `_login_local_login`) and requires `fixed_window` — **change the interval in both places**.
+  **Accepted limit**: the cap removes the case that broke the contract, not the rounding. `%minutes%` stays a whole-minute
+  ceiling, so at any other minute boundary the announced `Retry-After` can still exceed the real remaining block by
+  less than 61 s (a minute of ceiling plus the second of the upstream rounding): the client retries a little late,
+  never early, which is the error that would matter. #399's contract is « never more than a minute above the real
+  delay, and identical refusals », not an exact delay. Every other login failure keeps Lexik's 401, byte for
   byte (audit A10). Three consumers read that 429: `LoginThrottlingTest`, the login page
   (`LoginRateLimitedError`) and the preprod smoke test (`tools/smoke-login-throttling.sh`), which tells it
   from the nginx `login` zone's 429 by its `Retry-After` and its literal `detail` — nginx sends the same

@@ -320,3 +320,9 @@ deprecations' deduplication for the whole suite. **Only the namespaces whose cal
 the locks, the caches and `FailedLoginTimingEqualizer` wait and measure for real. `WholeClockFreezeTest` pins both lists
 (a mocked namespace that must be, an unmocked one that must stay so) and the effect on the real components. A new
 component whose deadline a test asserts and that reads the time in another namespace adds its line there, with its test.
+
+Under the frozen `.999` instant a `Retry-After` is an **exact** value, asserted as such: a one-hour `sliding_window` closes
+3600 s later (13:00:00.999), symfony/rate-limiter >= 8.1.10 rounds the deadline up to 13:00:01, and
+`RetryAfterListener` subtracts whole-second timestamps, so `AnswerControllerTest` reads `3601` (and
+`WholeClockFreezeTest` the same deadline). That second above the real 3600.000 s is the rounding of an integer-second header;
+announcing less would make the client retry too early. Never relax it to `<= 3601`.
