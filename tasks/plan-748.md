@@ -1499,6 +1499,491 @@ et la note de release.
 
 ---
 
+## Corrections de la troisième relecture (2026-10-29)
+
+R12 à R22 et R21b sont faites (455c43ba → b4fda293). Quatre relectures du diff be0b8d8d...b4fda293
+(`/code-review medium` CR3-*, audit de sécurité A3-*, axe Standards St3-*, axe Spec Sp3-*) : aucun critique ni haut.
+Constats complets : rapport de la troisième relecture (fil principal). **Tous sont traités dans cette branche** par les
+tâches R23 à R34, avant les tâches 11 et 12, sauf A3-3, rattaché au futur ticket `__Host-` avec F12 et S2 (tâche 12).
+
+**Décisions de l'auteur (2026-10-29)**, non rediscutées ici :
+1. **R21b est remplacée** : la déconnexion de l'accès de base à son échéance est retirée (minuterie qui appelle
+   `POST /api/logout`, `knownRepository`, écouteurs `focus`/`visibilitychange`) ; l'expiration côté client redevient ce
+   qu'elle était avant R21b (l'en-tête repasse à anonyme, sans appel réseau). À la place : **`credentials: 'omit'` sur
+   chaque dépôt public qui n'a besoin d'aucun cookie**, et **un rejeu unique d'« Accès instantané » sur 401**.
+2. **Tout est corrigé ici** : moyens, faibles, documentation, découpage de `useAuth.ts` et isolement de son état de
+   module dans les tests. F12, S2 et A3-3 partent dans le ticket `__Host-`.
+
+### Vérification de chaque constat dans le code (HEAD b4fda293)
+
+- **CR3-1 = A3-1 = Sp3-1, A3-2, A3-6, St3-13, St3-6 : sans objet après la décision 1.** Tous visent le code de R21b
+  (`endBaseAccessAtExpiry`, `expireBaseAccessIfDue`, `baseAccessExpiresAt`, `knownRepository`, `useAuth.ts:98-221`,
+  `:443`), que R23 retire. Ce qui reste d'A3-2 : l'expiration côté client lit l'horloge du poste ; elle ne fait plus que
+  repasser l'en-tête à anonyme (effet d'affichage, aucun appel réseau) — limite écrite par R23.
+- **CR3-2, confirmé.** `StaleSessionCookiesClearingListener.php:56-57` pose deux `Set-Cookie` expirés **par nom** sur
+  tout 401 de `JWT_INVALID`/`JWT_EXPIRED`. Le serveur ne connaît que le cookie que la requête portait ; un `Set-Cookie`
+  ne peut pas être conditionnel à ce que le navigateur détient au moment où la réponse arrive. Choix : voir « Choix de
+  conception », n° 5.
+- **CR3-3 = A3-4, confirmé.** `HttpAboutContentRepository.ts:49`, `HttpQualityContentRepository.ts:19`,
+  `HttpIncidentRepository.ts:19`, `HttpContributionRepository.ts:20`, `HttpWatchRepository.ts:21`,
+  `HttpExperienceTechnologyRepository.ts:29`, `HttpContactRepository.ts:41`, `HttpAccountRepository.ts:43` appellent
+  `fetch` sans `credentials` : la valeur par défaut, `same-origin`, envoie les cookies en préprod et en prod (une seule
+  origine), pas en dev (Vite 5173, nginx 8080 : deux origines) — d'où un défaut invisible en dev. Leurs docblocks disent
+  « pas de `credentials: 'include'` nécessaire », vrai en dev seulement. `SetPasswordPage` : route publique, le garde
+  n'attend pas `checkAuth()` ; après R23 `validate` et la complétion partent sans cookie, et le 401 du premier
+  `/api/me` (cookie mort) n'a aucun effet sur la page (vérifié : `useAccountPasswordSetup` ne lit pas la session ; la
+  complétion répond 204 sans cookie, `.claude/rules/security-user.md`, donc `omit` ne perd rien).
+- **CR3-4 = A3-8, confirmé.** `useAuth.ts:445-468` : `login()` hors session finie et `logout()` passent par
+  `applySession` sans avancer `generation` ; `markBaseAccessExpired()` (`:291`) et `markBaseAccessGranted()` (`:276`)
+  non plus. Un `/api/me` parti avant (premier `checkAuth`, `rereadAfterRefusal`) passe `applyReadSession` (`:477`,
+  `sentAt === generation`) et réapplique l'ancien compte (ou l'anonyme par-dessus un accès de base tout juste obtenu).
+- **CR3-5 = A3-7 = Sp3-2, confirmé.** `useAuth.ts:147` : `null === endedFor` vaut « le même compte ». `endedAccount` est
+  lu à la **première** fin (`:326-328`) : après `rereadAfterRefusal` qui a appliqué le palier de base (`user` nul), il
+  vaut `null`, et tout compte qui revient est rétabli en place. Les rôles ne sont pas comparés.
+- **CR3-6, confirmé.** `rereadAfterRefusal` (`:560`) → `applyReadSession` → `applySession` d'un autre compte, sans la
+  détection de R18 : en-tête de B au-dessus de la page de A.
+- **CR3-8, confirmé.** `BackofficeHttpClient.ts:98` appelle `refused()` à la réception ; `AccessRefusedNotice.vue:49`
+  efface le compteur au changement de `route.fullPath` : un 403 de la page quittée, arrivé après, le remonte sur la
+  suivante.
+- **CR3-9, confirmé.** `useAuth.ts:450` : en session finie sans `XSRF-TOKEN` lisible, la connexion passe par
+  `applySession` ; `sessionEnded` reste vrai, `endedAccount` garde l'ancien compte.
+- **CR3-10 = Sp3-9, confirmé.** `sessionAwareFetch.ts:71-72` lit le cookie deux fois (`hasCsrfToken()` puis
+  `readCsrfToken()`) ; s'il disparaît entre les deux, le verdict dit « avec jeton » et aucun en-tête ne part : le 403 du
+  CSRF serait lu comme un refus réel. Le commentaire « ne peuvent pas diverger » est faux.
+- **A3-5, confirmé**, et vérifié côté serveur : `/api/account/base-access` est sous le pare-feu `api` (`jwt`) ; un
+  `BEARER` mort y prend le 401 de Lexik (qui efface les deux cookies). `BaseAccessRateLimitRequestListener` (priorité
+  15) passe **avant** le pare-feu (8) : la tentative refusée consomme un jeton du quota (20 par heure et par IP), le
+  rejeu un second. Accepté et écrit (R24).
+- **A3-9, confirmé.** Lexik 3.2.0, `LoadedJWS::checkIssuedAt()` : `iat - clock_skew > time()` → `INVALID` ;
+  `clock_skew` vaut 0 par défaut (`Configuration.php:50`). Un `iat` en avance d'une seconde (deux pods aux horloges
+  divergentes) est un 401 qui, depuis R21, efface la session. Effets vérifiés : `clock_skew` relâche aussi `exp`
+  (`checkExpiration()` : un jeton expiré servi `clock_skew` secondes de plus) ; `JwtAuthenticationInstant` lit `iat`
+  pour les dix minutes du consentement : un `iat` jusqu'à 5 s dans le futur donne un âge négatif, donc « récent » —
+  sans conséquence (5 s) ; `CredentialsVersionClaim` ne lit aucune date.
+- **A3-10, confirmé.** `LoginPage.vue:31` : `hasSessionEnded = isSessionEnded(route)` sans regarder la session ; une
+  personne connectée qui ouvre `login?expired=1` (B/F2) lit « votre session a pris fin ». **Précision** : le lien
+  `expired=1` s'ouvre dans un **nouvel onglet**, où `authState.sessionEnded` vaut toujours faux (application neuve) ; le
+  critère juste est donc « un compte est affiché » (`user` non nul), pas `sessionEnded` seul.
+- **A3-11, confirmé.** `CsrfCookieRequestSubscriber.php:47-48` : « jamais atteint avec une session ou un cookie
+  BEARER » est faux en prod avant R23 ; vrai pour le SPA après (le navigateur d'un autre client peut toujours l'envoyer).
+- **A3-13, confirmé.** `AppLayout.vue:43-55` : `restoreSession()` a appliqué le nouveau compte (l'en-tête change) avant
+  que `router.replace` ne se résolve ; l'ancienne page reste rendue jusque-là.
+- **Sp3-3, confirmé.** `useAuth.ts:480-484` : en session finie, une relecture qui trouve le palier de base passe par la
+  branche `else` et pose « base » avec `sessionEnded` vrai ; `frontend-session.md:263-264` dit « changes nothing ».
+- **Sp3-4, confirmé.** `useAdminAboutSettings.ts:61` : `lastFailure.value = null` à chaque `save()`, toutes langues ; un
+  échec EN remplace l'erreur FR.
+- **Sp3-5, confirmé.** `frontend-session.md:138` (« On return (`authState.sessionEnded` true to false) ») ; `:162` et
+  `SessionEndedBanner.vue:12` nomment `backofficeSessionEndedHandler`, remplacé par
+  `createBackofficeSessionEndedHandler` (R17).
+- **Sp3-6, confirmé.** `AppHeader.vue:233-236` renvoie à « un vrai navigateur à 320 px » ; aucune règle ne parle des
+  320 px (`grep 320 .claude/rules` : rien).
+- **St3-1, confirmé (violation dure).** `content/fr.ts:145-146`, `content/en.ts:145-146` : `BEARER` « expire […] à
+  l'expiration du jeton (1 h / 15 min) », `XSRF-TOKEN` « expire avec lui » — faux depuis F1 (cookies de session).
+  Aucune autre mention publique fausse : `content/*.ts:114` parle du **jeton** (15 min, vrai), `cookieNotice.message`
+  (`locales/*.json`) ne dit aucune durée.
+- **St3-2, confirmé.** `useAuth.spec.ts:865-869` (« Le cookie D6 […] s'éteint seul après 15 min » : faux, c'est le JWT)
+  et le titre `:883` « sans aucun appel réseau », que R21b contredisait (le test ne vérifie que `me`).
+- **St3-3, confirmé.** `AuthCookieFactory.php:21-25,70,78` : `?int $expiresAt` « pour un appelant futur » ; aucun
+  appelant ne le passe (`grep -rn "->bearer(\|->xsrf(" src`), seul `AuthCookieFactoryTest.php:86` l'exerce.
+- **St3-4, confirmé.** `backofficeSessionExpiry.ts:3` (présentation) importe un type de `infrastructure/`. **Lieu
+  retenu : `domain/`, pas `application/`** comme le suggérait le constat : aucun fichier d'`infrastructure/` n'importe
+  `application/` aujourd'hui (vérifié), alors qu'infrastructure, application et présentation importent toutes `domain/`
+  (les interfaces de dépôts y vivent). Voir « Choix », n° 7.
+- **St3-5, confirmé.** `useAuth.ts` : 598 lignes, cinq responsabilités.
+- **St3-7, confirmé.** Condition de descente écrite trois fois (`:450`, `:477-480`, `:528`) ;
+  `onSessionRestored`/`onAccountSwitched` identiques à leur `Set` près (`:343-357`) ; la séquence « refus réel → relecture
+  → `forbidden` devient `session-ended` si c'est encore lui » recopiée dans `useMcpConnections.ts:113-121`,
+  `useOAuthConsent.ts:122-133`, `useAssistant.ts:141-149`.
+- **St3-8, confirmé.** `BackofficeSessionEndedHandler` porte `stampAtSend` et `refused`.
+- **St3-9, confirmé.** `loginLocation.ts:3,5` importe `reauthentication.ts` et `sessionEnded.ts`, qui l'importent.
+- **St3-10, confirmé.** Aucun `setupFiles` (`vite.config.ts`) ; l'état de module de `useAuth` (`generation`,
+  `endedAccount`, `refusalReread`, `endedSessionRecheck`, `hasCheckedOnce`, les deux `Set`) n'est remis à zéro nulle
+  part ; `useAuth.spec.ts:57-61` ne remet que le palier ; `enableAutoUnmount` est appelé dans dix specs seulement.
+- **St3-11, confirmé.** `frontend-session.md` : 44 564 octets, paragraphe « Tests » d'un seul bloc.
+- **St3-12, confirmé.** `RefusedSessionCookiesAreClearedTest.php:110-111` : tout code sauf 401 sous 500 passe (un 403
+  compris). `/api/contributions/fr` répond 200 sur une table vide (`ContributionResourceTest.php:86-88`).
+- **Aucun constat écarté** : chacun est confirmé, ou sans objet après la décision 1 (ci-dessus).
+
+### Choix de conception tranchés
+
+1. **`credentials` toujours explicite** (CR3-3) : `'omit'` sur les huit dépôts publics (`about`, `quality`,
+   `incidents`, `contributions`, `watch`, `experience`, `contact`, `account`), `'include'` sur ceux qui portent une
+   session (`auth`, `baseAccess`, `caseStudies`, `anonymousCv`, `cv`), `sessionAwareFetch` ailleurs. Une garde de
+   source refuse un `fetch(` d'`infrastructure/` sans `credentials` écrit (le défaut `same-origin` envoie les cookies en
+   prod et pas en dev : c'est ce qui a caché le défaut). *Avantages* : un cookie mort n'atteint plus aucune page
+   publique ; aucun cookie de session ne part vers une route qui n'en lit pas. *Inconvénient* : un dépôt public qui
+   deviendrait authentifié doit changer sa valeur (la garde le rappelle). *Écarté* : `omit` décidé par une liste de
+   chemins dans `sessionAwareFetch` (un second endroit qui sait ce qui est public).
+2. **Le rejeu d'« Accès instantané » vit dans le dépôt** (`HttpBaseAccessRepository.grant()`, A3-5) : un 401 au premier
+   essai = un cookie mort que ce 401 vient d'effacer ; un second essai, un seul. C'est un fait de transport, pas de
+   session. Le quota paie deux jetons dans ce cas (vérifié, accepté). *Écarté* : un pare-feu sans authentificateur pour
+   `/api/account/base-access` (comme `oauth`), qui supprimerait le 401 et le rejeu — il touche `security.yaml` et quatre
+   gardes (`AccessControlAnchoringTest`, `ApiRouteExposureTest`, `RouterScopeTest`, les parités) contre la décision
+   prise ; proposé dans le ticket `__Host-` (tâche 12).
+3. **`useAuth.ts` découpé par responsabilité, API publique inchangée** (St3-5, St3-7) : cinq modules sous
+   `application/auth/` (état et palier ; minuterie de l'accès de base ; génération ; signaux ; fin et retour), le
+   composable et les deux relectures mutualisées restant dans `useAuth.ts`, qui **réexporte** tout ce qu'il exporte
+   aujourd'hui (aucun site d'import ne change). La minuterie reçoit son rappel en paramètre : aucun cycle d'import.
+   *Écarté* : un objet `SessionMachine` (une classe pour un état de module : même couplage, plus de cérémonie).
+4. **Remise à zéro de test exportée, appelée par un `setupFiles` global** (St3-10) :
+   `resetAuthStateForTests()` remet chaque module à son état de chargement ; `tests/support/setup.ts` l'appelle en
+   `beforeEach` et pose `enableAutoUnmount(afterEach)` une fois pour toute la suite. *Écarté* : `vi.resetModules()` et
+   des imports dynamiques (chaque spec à réécrire, et les modules qui importent `useAuth` garderaient l'ancienne
+   instance).
+5. **CR3-2 : réduire côté client, accepter et écrire le reste** — options (a) + (c) du constat. Le serveur ne peut pas
+   savoir qu'un cookie plus neuf a été posé après l'envoi : un `Set-Cookie` n'est jamais conditionnel, et la requête
+   n'apporte que le cookie mort. L'option (b) (n'effacer que si le JWT a expiré « depuis peu ») ne ferme pas la course,
+   qui porte sur l'**ordre d'arrivée** des réponses, pas sur l'âge du jeton, et rouvrirait le 401 permanent d'un vieux
+   cookie. Ce qui reste après R23 : seule une requête **authentifiée** encore en vol avec un cookie mort au moment où un
+   autre onglet (ou celui-ci) reçoit des cookies neufs peut les effacer — une fenêtre de l'ordre d'un aller-retour, et
+   la suite se répare d'elle-même (une lecture : 401, une écriture : 403 sans jeton, donc « session finie », bandeau,
+   reconnexion). Écrit dans `security-authentication-sessions.md`, l'ADR 0003 et le docblock du listener (R29).
+6. **« Le même compte » est une identité et des droits, retenue tant qu'elle s'affiche** (CR3-5, CR3-6, CR3-9) : un
+   `lastAccount` (`username` et rôles), posé par chaque session appliquée **avec** un compte, gardé quand l'en-tête
+   devient anonyme ou passe au palier de base (la page ouverte est toujours la sienne), oublié à `logout()` et à
+   `markBaseAccessGranted()`. **À la descente** (retour après une session finie) : même `username` **et aucun rôle
+   perdu** → rétabli en place ; sinon, ou aucun compte retenu (inconnu) → rejeu de la navigation (la garde rejuge la
+   route). **À une relecture hors session finie** (`rereadAfterRefusal`, `checkAuth`) : seul un **autre `username`**
+   rejoue ; un rôle perdu y reste traité en place par R7/R17 (alerte, saisie gardée — décision de l'auteur). *Écarté* :
+   l'égalité stricte des rôles (un rôle **gagné** démontait la page pour rien).
+7. **L'abstraction de la réaction du backoffice va dans `domain/admin/shared/`** (St3-4, St3-8) :
+   `BackofficeSessionReaction` (nom qui dit ce que fait le type) et `BackofficeSendStamp`. Raison du lieu : voir St3-4
+   ci-dessus. Le compteur de refus et la fabrique restent où ils sont.
+8. **Un refus périmé ne compte pas** (CR3-8) : le timbre de l'envoi porte aussi un « périmètre de refus » que
+   `clearBackofficeAccessRefusal()` avance ; un refus arrivé sous un autre périmètre n'incrémente rien et ne relit pas
+   le palier. Même mécanique que la génération de session, pour la navigation. *Écarté* : estampiller par
+   `route.fullPath` (l'infrastructure ne connaît pas la route, et deux visites du même chemin se confondraient).
+9. **`clock_skew: 5`** (A3-9) : tolère cinq secondes d'écart entre pods sur `iat` (et `exp`) ; pas plus — c'est aussi
+   le prolongement d'un jeton expiré.
+10. **`$expiresAt` retiré de `bearer()`/`xsrf()`** (St3-3) : une capacité sans appelant, qui inviterait un cookie
+    persistant contre F1 ; un test de réflexion épingle l'unique paramètre.
+
+### Review Focus (troisième relecture)
+
+1. **Une page publique avec un `BEARER` mort, en même origine** : aucune requête publique ne porte de cookie, aucune ne
+   prend de 401. Test : R23, la garde `credentialsAreExplicit.spec.ts` et chaque spec de dépôt (`credentials: 'omit'`).
+2. **« Accès instantané » avec un cookie mort** : un 401 puis un second essai qui aboutit ; un second 401 est une erreur,
+   jamais une boucle. Test : R24.
+3. **Une déconnexion pendant qu'un `/api/me` est en vol** : l'en-tête reste anonyme. Test : R26.
+4. **Un autre compte revient après une fin de session survenue au palier de base** (aucun compte affiché) : la
+   navigation est rejouée, rien n'est « rétabli ». Test : R26.
+5. **Le 403 d'une page d'administration quittée arrive sur la suivante** : aucune alerte « accès refusé », aucune
+   relecture. Test : R28.
+
+### Contraintes propres aux tâches R23 à R34
+
+- Les **Global Constraints**, les « Contraintes propres aux tâches R » et celles de R12 à R22 valent toutes. Exécution :
+  un agent par tâche (sonnet, effort high), successifs dans l'ordre R23 → R34, `superpowers:test-driven-development`,
+  un commit par tâche, fichiers nommés (`git add <fichiers>`, `git rm` pour une suppression), message en français
+  terminé par les lignes d'attribution que donne le fil principal.
+- Frontend : test ciblé `docker compose exec frontend npm test -- <chemins>`, puis `make front-test`, `make front-lint`,
+  `make front-build`. Vitest 5 vide les imports CSS (lire par `node:fs`) ; axe-core se bloque sous faux minuteurs
+  (`vi.useRealTimers()` avant `expectNoAccessibilityViolation`).
+- Backend (R29) : lire avec `Read` un fichier de `backend/src/Security/Authentication/Infrastructure/` avant d'écrire ;
+  test ciblé `docker compose exec -u dev backend php bin/phpunit <chemin>`, puis `make back-test` et
+  `make back-quality` (toujours `-u dev`) ; un JWT de test se signe par l'encodeur du conteneur
+  (`JWTEncoderInterface`), jamais de secret littéral (`TestCredentials`, `TestKeys::material()`). Après un changement de
+  `config/packages/*.yaml` : `rm -rf var/cache/test` avant de croire un test.
+- **Refactoring pur** (R25, la partie « séquence » de R27) : `make front-test` vert avant la première modification
+  (nombre de tests noté) et après la dernière ; seuls changent les tests que la tâche nomme.
+- **Taille de `frontend-session.md` jusqu'à R34** : `tools/check-claude-rules.sh` après chaque modification d'une règle.
+  Une tâche **remplace** des phrases plutôt que d'en ajouter ; si `wc -c .claude/rules/frontend-session.md` passerait
+  49 500 octets, le texte nouveau va dans `tasks/regle-session-en-attente.md` (une section par tâche, la phrase exacte et
+  l'endroit visé), que R34 intègre. `mcp-oauth.md` (~41 Ko), `mcp-oauth-revocation-personne.md` (~40 Ko),
+  `security-authentication-sessions.md` : une phrase remplacée, jamais un paragraphe ajouté sans mesurer.
+- Ne jamais lire `.env.local`, `.env.test.local`, `config/jwt/*` ni un fichier de secrets ; ne jamais nommer un compte
+  réel. Pas de push, pas de PR.
+
+### Fichiers (tâches R23 à R34)
+
+| Fichier | Responsabilité | Tâches |
+|---|---|---|
+| `frontend/src/application/auth/useAuth.ts` | retrait de R21b ; puis le composable, les deux relectures, les réexports | R23, R25, R26, R27 |
+| `frontend/src/application/auth/{sessionState,baseAccessExpiry,sessionGeneration,sessionEvents,sessionLifecycle,resetAuthStateForTests}.ts` (nouveaux) | le découpage | R25, R26 |
+| `frontend/src/infrastructure/{about,quality,incidents,contributions,watch,experience,contact,account}/Http*Repository.ts` | `credentials: 'omit'` | R23 |
+| `frontend/tests/infrastructure/http/credentialsAreExplicit.spec.ts` (nouveau) | garde de source | R23 |
+| `frontend/src/infrastructure/baseAccess/HttpBaseAccessRepository.ts` | rejeu unique sur 401 | R24 |
+| `frontend/src/infrastructure/auth/HttpAuthRepository.ts` | commentaire de `logout()` | R23 |
+| `frontend/vite.config.ts`, `frontend/tests/support/setup.ts` (nouveau) | `setupFiles`, remise à zéro, `enableAutoUnmount` | R25 |
+| `frontend/src/presentation/layout/AppLayout.vue` | page masquée pendant le rejeu | R27 |
+| `frontend/src/application/{mcp/useMcpConnections,mcp/useOAuthConsent,assistant/useAssistant}.ts` | séquence du refus réel factorisée | R27 |
+| `frontend/src/domain/admin/shared/BackofficeSessionReaction.ts` (nouveau), `frontend/src/infrastructure/admin/shared/BackofficeHttpClient.ts`, `frontend/src/presentation/router/backofficeSessionExpiry.ts`, `frontend/src/application/admin/shared/backofficeAccessRefusal.ts`, `frontend/src/main.ts` | réaction renommée, refus périmé | R28 |
+| `frontend/src/infrastructure/{http/sessionAwareFetch,auth/csrfCookie}.ts` | une seule lecture du cookie | R28 |
+| `frontend/src/presentation/pages/LoginPage.vue`, `frontend/src/presentation/router/{loginLocation,sessionEnded,reauthentication}.ts` | A3-10, cycle d'import | R30 |
+| `frontend/src/application/admin/about/useAdminAboutSettings.ts` | une erreur par langue | R31 |
+| `frontend/src/infrastructure/portfolio/content/{fr,en}.ts` | politique de cookies | R32 |
+| `backend/config/packages/lexik_jwt_authentication.yaml`, `backend/src/Security/Authentication/Infrastructure/{Http/AuthCookieFactory,Http/CsrfCookieRequestSubscriber,Jwt/StaleSessionCookiesClearingListener}.php`, `backend/src/Security/User/Presentation/Controller/BaseAccessController.php` | `clock_skew`, `$expiresAt`, docblocks, CR3-2 | R29 |
+| `.claude/rules/frontend-session*.md`, `.claude/CLAUDE.md` | découpage par sous-domaine | R34 |
+
+---
+
+### Task R23 : R21b retirée ; les dépôts publics partent sans cookie (décision 1, CR3-3/A3-4, CR3-1/A3-1/Sp3-1, A3-2, A3-6, St3-13, St3-6, St3-2)
+
+**Files :**
+- Modify : `frontend/src/application/auth/useAuth.ts`, `frontend/src/infrastructure/auth/HttpAuthRepository.ts` (commentaire), les huit dépôts publics du tableau ci-dessus
+- Create : `frontend/tests/infrastructure/http/credentialsAreExplicit.spec.ts`
+- Test : `frontend/tests/application/auth/useAuth.spec.ts`, les huit specs `frontend/tests/infrastructure/{about,quality,incidents,contributions,watch,experience,contact,account}/Http*Repository.spec.ts`
+- Modify : `.claude/rules/frontend-session.md` (« Accepted limits »), `.claude/rules/frontend.md` (« Base access », et la phrase des dépôts publics de « API-backed content »), `.claude/rules/security-authentication-sessions.md` (puce `StaleSessionCookiesClearingListener`, « Accepted limit »), `docs/adr/0003-paliers-d-acces.md` (amendement du 2026-10-29)
+
+**Interfaces :**
+- Retirés de `useAuth.ts` : `baseAccessExpiresAt`, `knownRepository`, `expireBaseAccessIfDue`, `endBaseAccessAtExpiry` et les écouteurs `focus`/`visibilitychange`. `scheduleBaseAccessExpiry(expiresAt)` arme de nouveau `setTimeout(() => { baseAccessExpiryTimer = null; markBaseAccessExpired() }, delay)`, comme avant 607a693d.
+- `HttpAuthRepository.logout()` **reste** sur `sessionAwareFetch` (une seule définition de « avec jeton », R12/J) ; seul son commentaire perd la mention de R21b.
+- Chaque dépôt public : `fetch(url, { method, …, credentials: 'omit' })`.
+- `credentialsAreExplicit.spec.ts` : lit `src/infrastructure/**/*.ts` (`import.meta.glob(…, { query: '?raw', import: 'default', eager: true })`, comme `colorClasses.spec.ts`) ; chaque fichier qui appelle `fetch(` doit être `sessionAwareFetch.ts`, ou écrire `credentials: 'omit'`, ou être dans `SESSION_REPOSITORIES` (`HttpAuthRepository`, `HttpBaseAccessRepository`, `HttpCaseStudyRepository`, `HttpAnonymousCvRepository`, `HttpCvRepository`, chacun avec sa raison) et écrire `credentials: 'include'` ; une entrée de `SESSION_REPOSITORIES` qui n'écrit plus `fetch(` fait échouer la garde.
+
+- [ ] **Step 1 : filet** — `make front-test` vert, nombre noté.
+- [ ] **Step 2 : tests, rouges**
+  - `credentialsAreExplicit.spec.ts` : `it("tout fetch d'infrastructure écrit ses credentials")` (rouge : huit fichiers nommés) ; `it("chaque dépôt de session est encore un appelant de fetch")`.
+  - Chacune des huit specs de dépôt : l'assertion `toHaveBeenCalledWith(url, {…})` existante prend `credentials: 'omit'` (changement exprès) ; `HttpAccountRepository.spec.ts` le vérifie pour `validate` **et** la complétion.
+  - `useAuth.spec.ts` : le `describe("déconnexion à l'échéance, avant le 401 (R21b)")` est supprimé (neuf tests) ; « à l'échéance annoncée, le palier de base retombe à anonyme sans aucun appel réseau » ajoute `expect(repository.logout).not.toHaveBeenCalled()` (rouge tant que R21b est là) ; nouveau `it("le retour sur l'onglet après l'échéance ne fait aucun appel réseau")` (faux minuteurs, `window.dispatchEvent(new Event('focus'))` après l'échéance → ni `logout` ni `me`) ; le commentaire `:865-869` dit le vrai (le JWT meurt à 15 min ; le cookie, de session, reste jusqu'à la fermeture ou au premier 401 qui l'efface).
+  Run : `docker compose exec frontend npm test -- tests/application/auth/useAuth.spec.ts tests/infrastructure`. Expected : la garde nomme les huit dépôts ; `logout` appelé à l'échéance ; `credentials` absent.
+- [ ] **Step 3 : implémenter** — selon les interfaces ; les docblocks des huit dépôts disent pourquoi `omit` (une seule origine en prod : le défaut `same-origin` enverrait un `BEARER` mort, et son 401 tomberait sur une page publique ; aucun de ces endpoints ne lit une identité) au lieu de « pas de `credentials: 'include'` nécessaire ». `HttpAccountRepository` : la complétion ne pose aucun cookie (204), `omit` ne perd rien.
+- [ ] **Step 4 : règles et ADR** — `frontend-session.md`, « Accepted limits » : la puce R21b est **remplacée** par : après l'`exp` d'un JWT (login ou accès de base), les lectures publiques, le contact et le choix du mot de passe partent sans cookie (`credentials: 'omit'`, garde `credentialsAreExplicit.spec.ts`) et ne prennent aucun 401 ; le premier 401 ne reste que sur les routes authentifiées, où il est lu comme une session finie, et sur « Accès instantané », qui rejoue (R24) ; l'accès de base expire côté client sur l'horloge du poste, effet d'affichage seulement (A3-2). `frontend.md`, « Base access » : l'en-tête repasse à anonyme à `expiresAt` (ou au premier 401 d'un contenu du palier), sans appel réseau ; « API-backed content » : ces dépôts envoient `credentials: 'omit'`. `security-authentication-sessions.md` : la phrase « The base access avoids it by a client-side sign-out at `expiresAt` (R21b) » devient « the SPA's public reads, contact and password setup send no cookie (`credentials: 'omit'`, #748 R23), so it only reaches an authenticated route, read as an ended session ». ADR 0003, amendement du 2026-10-29 : la phrase « l'accès de base l'évite […] (tâche R21b de #748) » remplacée de même (décision de l'auteur du 2026-10-29, R23, qui remplace R21b).
+- [ ] **Step 5 : verts** — specs ciblés PASS ; `make front-test` (filet − 9 + nouveaux), `make front-lint`, `make front-build`, `tools/check-claude-rules.sh`.
+- [ ] **Step 6 : commit** — `fix(frontend): les dépôts publics partent sans cookie ; l'accès de base n'appelle plus le logout à son échéance (#748)`.
+
+---
+
+### Task R24 : « Accès instantané » rejoue une fois sur 401 (A3-5)
+
+**Files :**
+- Modify : `frontend/src/infrastructure/baseAccess/HttpBaseAccessRepository.ts`
+- Test : `frontend/tests/infrastructure/baseAccess/HttpBaseAccessRepository.spec.ts`
+- Modify : `.claude/rules/frontend.md` (« Base access »), `.claude/rules/security-authentication.md` (puce « Base access », une phrase)
+
+**Interfaces :**
+- `grant()` : un premier 401 → un second `fetch` identique (`credentials: 'include'`, `LOGIN_CSRF_HEADER`) ; la réponse du second est jugée comme aujourd'hui (429 → `rate-limited`, autre échec → `unknown`, 401 compris). Jamais de troisième.
+
+- [ ] **Step 1 : tests, rouges** — `it("un 401 (cookie mort, effacé par ce 401) : un second essai, qui aboutit")` (deux appels, `expiresAt` du second) ; `it("deux 401 : BaseAccessError('unknown'), deux appels seulement")` ; `it("un 429 au premier essai : aucun rejeu")` ; `it("un échec réseau au premier essai : aucun rejeu, le rejet remonte")`. Expected : un seul appel, `unknown`.
+- [ ] **Step 2 : implémenter** — une boucle bornée à deux essais ou un appel répété ; docblock : pourquoi (le pare-feu `api` lit le `BEARER` sur cette route ; son 401 efface les deux cookies, `StaleSessionCookiesClearingListener` ; le second essai part sans cookie), et le prix (le limiteur, priorité 15, passe avant le pare-feu : deux jetons du quota).
+- [ ] **Step 3 : règles** — `frontend.md`, « Base access » : le rejeu unique et son prix. `security-authentication.md`, puce « Base access » : une phrase — un `BEARER` refusé y prend le 401 du pare-feu après que le limiteur a consommé un jeton ; le SPA rejoue une fois (#748, R24).
+- [ ] **Step 4 : verts** — spec ciblé PASS ; `make front-test`, `make front-lint`, `make front-build`, `tools/check-claude-rules.sh`.
+- [ ] **Step 5 : commit** — `fix(frontend): « Accès instantané » rejoue une fois après le 401 d'un cookie mort (#748)`.
+
+---
+
+### Task R25 : `useAuth.ts` découpé ; l'état de module remis à zéro avant chaque test (St3-5, St3-10, St3-7 pour la descente et les signaux ; refactoring pur)
+
+**Files :**
+- Create : `frontend/src/application/auth/{sessionState,baseAccessExpiry,sessionGeneration,sessionEvents,sessionLifecycle,resetAuthStateForTests}.ts`, `frontend/tests/support/setup.ts`
+- Modify : `frontend/src/application/auth/useAuth.ts`, `frontend/vite.config.ts` (`test.setupFiles: ['tests/support/setup.ts']`), les dix specs qui appellent `enableAutoUnmount` (retirer l'appel local : VTU refuse un second `enableAutoUnmount`)
+- Test : la suite existante (filet) ; `frontend/tests/application/auth/resetAuthStateForTests.spec.ts` (nouveau)
+- Modify : `.claude/rules/frontend-session.md` (les `paths:` et « The interface » : où vit quoi), `.claude/rules/frontend-a11y.md` (dernier paragraphe : `enableAutoUnmount` global)
+
+**Interfaces** (tout sous `application/auth/`, chaque fichier avec son docblock en français) :
+- `sessionState.ts` : `state` (réactif, écrit par les modules d'`auth/` seulement), `authState = readonly(state)`, `applySession(session: AuthSession): void` (ne touche pas `sessionEnded`, efface la minuterie), `waitForAuthCheck(): Promise<void>`, `markBaseAccessGranted(expiresAt?: Date | null): void`, `markBaseAccessExpired(): void`, `isFirstCheckDone(): boolean`, `markFirstCheckDone(): void`.
+- `baseAccessExpiry.ts` : `scheduleBaseAccessExpiry(expiresAt: Date, onExpiry: () => void): void`, `clearBaseAccessExpiry(): void`, `recallBaseAccessExpiry(): Date | null` — n'importe rien d'`auth/` (le rappel est passé par `sessionState`).
+- `sessionGeneration.ts` : `sessionStamp(): number`, `advanceGeneration(): void`, `isCurrentGeneration(sentAt: number): boolean`.
+- `sessionEvents.ts` : `onSessionRestored(callback): void`, `onAccountSwitched(callback): void` (une fonction `subscribe(set, callback)` commune, St3-7), `notifySessionRestored(): void`, `notifyAccountSwitched(): void` (l'isolement des abonnés qui lèvent, inchangé).
+- `sessionLifecycle.ts` : `markSessionExpired(sentAt?: number): boolean`, `restoreSession(session: AuthSession, announce: boolean): void`, `canRestore(session: AuthSession, hasWriteToken: () => boolean): boolean` (la condition de descente écrite **une fois** : session finie, un compte, un jeton d'écriture — St3-7), l'`endedAccount` actuel (R26 le remplace).
+- `useAuth.ts` : `AUTH_REPOSITORY`, `RefusalReread`, `UseAuthResult`, `useAuth()` (login, logout, `applyReadSession`, `checkAuth`, `recheckEndedSession`, `rereadAfterRefusal`, `endedSessionRecheck`, `refusalReread`) et **les réexports** de `authState`, `waitForAuthCheck`, `markBaseAccessGranted`, `markBaseAccessExpired`, `sessionStamp`, `markSessionExpired`, `onSessionRestored`, `onAccountSwitched`, `ROLE_SUPER` : aucun import d'un autre fichier ne change.
+- `resetAuthStateForTests(): void` : remet l'état à celui du chargement (anonyme, `isChecking` vrai, `sessionEnded` faux, compteur 0), `hasCheckedOnce`, la génération, `endedAccount`, les deux promesses en vol, vide les deux `Set`, efface la minuterie et la clé `localStorage`. Chaque module exporte sa propre remise à zéro (`reset…ForTests`), celle-ci les appelle toutes ; docblock : réservée aux tests, jamais appelée par `src/`.
+- `tests/support/setup.ts` : `beforeEach(resetAuthStateForTests)`, `enableAutoUnmount(afterEach)`.
+
+- [ ] **Step 1 : filet** — `make front-test` vert, nombre noté.
+- [ ] **Step 2 : test, rouge** — `resetAuthStateForTests.spec.ts` : `it("remet chaque état de module à celui du chargement")` (une session finie, une génération avancée, un abonné, une minuterie armée, une relecture en vol → après la remise à zéro : `authState` initial, `sessionStamp()` 0, l'abonné plus appelé, la minuterie n'agit plus, `rereadAfterRefusal()` relance un `me`). Expected : module introuvable.
+- [ ] **Step 3 : découper** — déplacer le code tel quel (comportement inchangé), docblocks déplacés avec lui ; `useAuth.ts` ne garde que ce que dit l'interface. Le `beforeEach` de `useAuth.spec.ts` (« on le remet à "non connecté" ») devient inutile pour la remise à zéro : le garder s'il sert à poser `isChecking` faux, et le dire.
+- [ ] **Step 4 : brancher la remise à zéro** — `setupFiles` ; retirer les dix `enableAutoUnmount` locaux (VTU lève « enableAutoUnmount cannot be called more than once » ; un `wrapper.unmount()` manuel suivi du démontage automatique ne donne qu'un avertissement de Vue, sans échec). Une spec qui devient rouge **dépendait de l'état laissé par un test précédent** : poser cet état explicitement dans le test (jamais retirer la remise à zéro) et le noter dans le message de commit.
+- [ ] **Step 5 : règles** — `frontend-session.md` : `paths:` gagne `frontend/tests/support/setup.ts` ; « The interface » : où vit chaque responsabilité (une phrase par module) et la remise à zéro de test. `frontend-a11y.md` : « `enableAutoUnmount` est posé une fois, par `tests/support/setup.ts` ».
+- [ ] **Step 6 : verts** — `make front-test` (le filet + 1, aucun test retiré), `make front-lint`, `make front-build`, `tools/check-claude-rules.sh` ; `wc -l src/application/auth/*.ts` noté dans le message.
+- [ ] **Step 7 : commit** — `refactor(frontend): useAuth découpé par responsabilité, son état remis à zéro avant chaque test (#748)`.
+
+---
+
+### Task R26 : La machine d'état de la session (CR3-4/A3-8, CR3-5/A3-7/Sp3-2, CR3-6, CR3-9, Sp3-3)
+
+**Files :**
+- Modify : `frontend/src/application/auth/{sessionState,sessionLifecycle,useAuth}.ts`
+- Test : `frontend/tests/application/auth/useAuth.spec.ts`, `frontend/tests/presentation/layout/AppLayout.spec.ts`
+- Modify : `.claude/rules/frontend-session.md` (« The session generation », « Only the same account… », « A real refusal »)
+
+**Interfaces :**
+- **Toute session décidée dans l'onglet avance la génération** (CR3-4) : `login()` (les deux branches), `logout()` (avant l'envoi **et** à l'application de l'anonyme), `markBaseAccessGranted()`, `markBaseAccessExpired()` quand il change le palier. Une session **lue** (`applyReadSession`) n'avance rien : elle est la réponse.
+- `interface LastAccount { readonly username: string; readonly roles: readonly string[] }` (dans `sessionLifecycle.ts`) ; `lastAccount: LastAccount | null` remplace `endedAccount` (choix 6) : posé par `applySession` quand `session.user` n'est pas nul, gardé quand l'en-tête devient anonyme ou passe au palier de base, remis à `null` par `logout()` et `markBaseAccessGranted()`.
+- `isSameAccount(previous: LastAccount | null, user: AuthenticatedUser): boolean` (dans `sessionLifecycle.ts`) : `previous` non nul, même `username`, et chaque rôle de `previous` présent dans `user.roles`. À la descente annoncée : vrai → `notifySessionRestored()` ; faux → `notifyAccountSwitched()` (aucun compte retenu compris, CR3-5).
+- `applyReadSession` hors session finie (CR3-6) : `lastAccount` non nul et un compte lu d'un autre `username` → la session appliquée, puis `notifyAccountSwitched()`. Un compte au même `username` (rôles changés ou non) ou un palier sans compte : appliqué, aucun signal (R7/R17 restent en place).
+- `applyReadSession` en session finie (Sp3-3) : seul un compte qui `canRestore` change quelque chose ; le palier de base ou l'anonyme rendent `false`, rien n'est posé.
+- `login()` en session finie (CR3-9) : `restoreSession(session, false)` **sans** condition de jeton d'écriture — une connexion réussie est toujours un retour (le backend pose `XSRF-TOKEN` à la connexion ; s'il manque, la première écriture prendra le 403 et refinira la session, état cohérent).
+
+- [ ] **Step 1 : tests, rouges** (`useAuth.spec.ts`, sauf mention)
+  - CR3-4 : `it("logout pendant qu'un /api/me est en vol : l'en-tête reste anonyme")` (`me` différé, `checkAuth()`, `logout()`, puis `me` rend le compte → anonyme) ; `it("login pendant qu'un /api/me est en vol : la réponse ne remplace pas le compte connecté")` ; `it("accès de base obtenu pendant qu'un /api/me est en vol : la réponse anonyme ne l'efface pas")` ; `it("échéance de l'accès de base pendant qu'un /api/me est en vol : le palier de base ne revient pas")`.
+  - CR3-5 (Review Focus 4) : `it("fin de session après une relecture au palier de base, puis un autre compte revient : onAccountSwitched, pas onSessionRestored")` ; `it("le même compte revient avec un rôle de moins : onAccountSwitched")` ; `it("le même compte revient avec un rôle de plus : onSessionRestored")` ; `it("aucun compte retenu (fin au palier de base dès le départ) : onAccountSwitched")`.
+  - CR3-6 : `it("relecture après refus qui trouve un autre compte : la session appliquée et onAccountSwitched")` ; `it("relecture après refus qui trouve le même compte, rôles réduits : aucun signal")`. `AppLayout.spec.ts` : `it("un refus réel dont la relecture trouve un autre compte rejoue la navigation")`.
+  - CR3-9 : `it("connexion en session finie sans XSRF-TOKEN lisible : la session n'est plus finie, aucun signal")`.
+  - Sp3-3 : `it("session finie, une relecture trouve le palier de base : rien ne change (ni palier ni sessionEnded)")`.
+  Expected : compte réappliqué après logout ; `onSessionRestored` appelé pour B ; `sessionEnded` resté vrai ; palier « base » posé.
+- [ ] **Step 2 : implémenter** — selon les interfaces ; les tests de R14 et R18 restent verts (un test qui comptait sur « aucun compte retenu = le même » change exprès : le dire).
+- [ ] **Step 3 : règle** — `frontend-session.md` : toute session décidée dans l'onglet avance la génération (pourquoi : CR3-4) ; « le même compte » = `lastAccount` (choix 6 : identité et aucun rôle perdu à la descente ; seul l'identifiant à une relecture hors session finie) ; `login` rétablit toujours ; une relecture en session finie ne pose qu'un compte qui peut rétablir. Remplacer, ne pas ajouter (contrainte de taille).
+- [ ] **Step 4 : verts** — specs ciblés PASS ; `make front-test`, `make front-lint`, `make front-build`, `tools/check-claude-rules.sh`.
+- [ ] **Step 5 : commit** — `fix(frontend): toute session décidée dans l'onglet périme les relectures ; un compte inconnu ou réduit rejoue la navigation (#748)`.
+
+---
+
+### Task R27 : La page masquée pendant le rejeu ; la suite d'un refus réel écrite une fois (A3-13, St3-7 pour les composables)
+
+**Files :**
+- Modify : `frontend/src/presentation/layout/AppLayout.vue`, `frontend/src/application/auth/useAuth.ts`, `frontend/src/application/mcp/{useMcpConnections,useOAuthConsent}.ts`, `frontend/src/application/assistant/useAssistant.ts`
+- Test : `frontend/tests/presentation/layout/AppLayout.spec.ts`, `frontend/tests/application/auth/useAuth.spec.ts` ; filet : `useMcpConnections.spec.ts`, `useOAuthConsent.spec.ts`, `useAssistant.spec.ts`
+- Modify : `.claude/rules/frontend-session.md` (« Only the same account… », « A real refusal »)
+
+**Interfaces :**
+- `AppLayout` : `isReplaying = ref(false)`, mis à `true` **de façon synchrone** dans le rappel d'`onAccountSwitched`, remis à `false` dans le `finally` de `replayNavigation`, après l'avance de `pageKey` ; le composant routé est rendu `v-if="!isReplaying"`.
+- `UseAuthResult.followRefusal(isStillRefused: () => boolean, showSessionEnded: () => void): void` — `void rereadAfterRefusal().then(…)` : sur `'session-ended'`, `showSessionEnded()` si `isStillRefused()`. Les trois composables l'appellent à la place de leur copie (`refusal`/`failure`/`error` passés par les deux fonctions).
+
+- [ ] **Step 1 : filet** — `make front-test` vert, noté.
+- [ ] **Step 2 : tests, rouges**
+  - `AppLayout.spec.ts` (A3-13) : `it("pendant le rejeu, l'ancienne page n'est plus rendue")` — une garde dont la promesse est retenue ; après `notifyAccountSwitched` (par `recheckEndedSession` d'un autre compte) et `nextTick`, la sonde de page est absente ; la garde libérée, la page est remontée (2 montages) ; `it("un rejeu qui échoue rend quand même la page")`.
+  - `useAuth.spec.ts` : `it("followRefusal : session finie et refus toujours affiché → showSessionEnded")`, `it("… refus remplacé entre-temps → rien")`, `it("… session tenue → rien")`.
+  Expected : la sonde présente pendant le rejeu ; `followRefusal` absent.
+- [ ] **Step 3 : implémenter** — selon les interfaces. Les specs des trois composables restent vertes **sans changement** (refactoring de la séquence).
+- [ ] **Step 4 : règle** — `frontend-session.md` : la page masquée pendant le rejeu (pourquoi : l'en-tête du nouveau compte au-dessus de la page de l'ancien) ; « A real refusal » : `followRefusal`, la suite écrite une fois.
+- [ ] **Step 5 : verts** — `make front-test` (filet + nouveaux), `make front-lint`, `make front-build`, `tools/check-claude-rules.sh`.
+- [ ] **Step 6 : commit** — `fix(frontend): la page d'un autre compte n'est plus rendue pendant le rejeu ; la suite d'un refus réel écrite une fois (#748)`.
+
+---
+
+### Task R28 : Le backoffice — un refus périmé ne compte pas, la réaction nommée et rangée ; le cookie CSRF lu une fois (CR3-8, St3-8, St3-4, CR3-10/Sp3-9)
+
+**Files :**
+- Create : `frontend/src/domain/admin/shared/BackofficeSessionReaction.ts`
+- Modify : `frontend/src/infrastructure/admin/shared/BackofficeHttpClient.ts`, `frontend/src/presentation/router/backofficeSessionExpiry.ts`, `frontend/src/application/admin/shared/backofficeAccessRefusal.ts`, `frontend/src/main.ts`, `frontend/src/infrastructure/http/sessionAwareFetch.ts`, `frontend/src/infrastructure/auth/csrfCookie.ts`
+- Test : `BackofficeHttpClient.spec.ts`, `backofficeSessionExpiry.spec.ts`, `AdminLayout.sessionEnded.spec.ts`, `AdminWatchPage.spec.ts`, `HttpAdminUserRepository.spec.ts` (renommage), `sessionAwareFetch.spec.ts`, `csrfCookie.spec.ts`
+- Modify : `.claude/rules/frontend-session.md` (« The interface », « A real refusal », « The rule, in one function »), `.claude/rules/frontend-backoffice.md` (puce « A 401, or a 403… »)
+
+**Interfaces :**
+- `domain/admin/shared/BackofficeSessionReaction.ts` : `interface BackofficeSendStamp { readonly session: number; readonly refusalScope: number }` ; `interface BackofficeSessionReaction { stampAtSend(): BackofficeSendStamp; ended(sentAt: BackofficeSendStamp): boolean; refused(sentAt: BackofficeSendStamp): void }`.
+- `BackofficeHttpClient` : `setBackofficeSessionReaction(reaction: BackofficeSessionReaction | null): void` remplace `setBackofficeSessionEndedHandler` ; le type n'est plus déclaré ni réexporté ici.
+- `backofficeAccessRefusal.ts` : `refusalScope(): number` ; `clearBackofficeAccessRefusal()` avance le périmètre ; `markBackofficeAccessRefused(sentIn: number): boolean` — `false` sans rien changer si `sentIn` n'est plus le périmètre courant.
+- `backofficeSessionExpiry.ts` : `createBackofficeSessionReaction(auth: Pick<UseAuthResult, 'rereadAfterRefusal'>): BackofficeSessionReaction` remplace `createBackofficeSessionEndedHandler` ; `stampAtSend` = `{ session: sessionStamp(), refusalScope: refusalScope() }`, `ended(s)` = `markSessionExpired(s.session)`, `refused(s)` : si `markBackofficeAccessRefused(s.refusalScope)`, `void auth.rereadAfterRefusal()`.
+- `csrfCookie.ts` : `readWriteToken(): string | null` — la valeur lue, décodée et non vide, sinon `null` ; `hasCsrfToken()` = `null !== readWriteToken()` (une définition). `sessionAwareFetch` : `const csrfToken = isWrite ? readWriteToken() : null`, verdict sur `isWrite && null === csrfToken` — **une lecture**.
+
+- [ ] **Step 1 : tests, rouges**
+  - `backofficeSessionExpiry.spec.ts` (Review Focus 5) : `it("un refus parti avant une navigation n'est ni compté ni relu")` (`stampAtSend()`, `clearBackofficeAccessRefusal()`, `refused(stamp)` → compteur 0, `rereadAfterRefusal` jamais appelé) ; `it("un refus du périmètre courant compte et relit")`.
+  - `AdminLayout.sessionEnded.spec.ts` : `it("le 403 d'une page quittée, arrivé sur la suivante : aucune alerte")` (requête différée, navigation, puis 403).
+  - `BackofficeHttpClient.spec.ts` : `refused` reçoit le timbre lu à l'envoi (ordre des appels) ; les specs qui enregistrent une réaction passent par `setBackofficeSessionReaction` (renommage exprès).
+  - `sessionAwareFetch.spec.ts` (CR3-10) : `it("le cookie n'est lu qu'une fois : il disparaît entre deux lectures, l'en-tête part et le verdict suit ce qui est parti")` (`vi.spyOn(document, 'cookie', 'get')` : la valeur, puis `''`) ; `csrfCookie.spec.ts` : `readWriteToken` (absent, vide, indécodable → `null` ; une valeur → elle).
+  Expected : compteur à 1 ; alerte affichée ; deux lectures du cookie.
+- [ ] **Step 2 : implémenter** — selon les interfaces ; `main.ts` enregistre `createBackofficeSessionReaction(useAuth())` ; le commentaire de `sessionAwareFetch` (« ne peuvent pas diverger ») dit la vraie raison : une seule lecture.
+- [ ] **Step 3 : règles** — `frontend-session.md` et `frontend-backoffice.md` : les nouveaux noms, le lieu du type (domaine, choix 7), le périmètre de refus (choix 8), « une lecture du cookie » ; remplacer, ne pas ajouter.
+- [ ] **Step 4 : verts** — `grep -rn "SessionEndedHandler" frontend/src frontend/tests .claude/rules` ne rend rien d'autre que ce que R33 corrige (le noter) ; specs ciblés PASS ; `make front-test`, `make front-lint`, `make front-build`, `tools/check-claude-rules.sh`.
+- [ ] **Step 5 : commit** — `fix(frontend): un refus du backoffice parti avant une navigation ne s'affiche plus ; la réaction nommée, rangée dans le domaine ; le cookie CSRF lu une fois (#748)`.
+
+---
+
+### Task R29 : Backend — `$expiresAt` retiré, `clock_skew`, un test plus strict, la limite du 401 tardif écrite (St3-3/CR3-10, A3-9, St3-12, CR3-2, A3-11)
+
+**Files :**
+- Modify : `backend/src/Security/Authentication/Infrastructure/Http/AuthCookieFactory.php`, `backend/config/packages/lexik_jwt_authentication.yaml`, `backend/src/Security/Authentication/Infrastructure/Jwt/StaleSessionCookiesClearingListener.php` (docblock), `backend/src/Security/Authentication/Infrastructure/Http/CsrfCookieRequestSubscriber.php` (docblock d'`EXCLUDED_PATHS`), `backend/src/Security/User/Presentation/Controller/BaseAccessController.php` (commentaire)
+- Create : `backend/tests/Security/Authentication/Infrastructure/Jwt/JwtClockSkewTest.php`
+- Test : `backend/tests/Security/Authentication/Infrastructure/Http/AuthCookieFactoryTest.php`, `backend/tests/Security/Authentication/Infrastructure/Jwt/RefusedSessionCookiesAreClearedTest.php`
+- Modify : `.claude/rules/security-authentication-sessions.md` (puces `AuthCookieFactory` et `StaleSessionCookiesClearingListener`, une sur `clock_skew`), `docs/adr/0003-paliers-d-acces.md` (amendement du 2026-10-29 : une phrase sur CR3-2)
+
+**Interfaces :**
+- `AuthCookieFactory::bearer(#[SensitiveParameter] string $jwt): Cookie`, `xsrf(#[SensitiveParameter] string $token): Cookie` ; `create()` privée garde `?int $expiresAt` pour `expired()`.
+- `lexik_jwt_authentication.clock_skew: 5`, avec son commentaire (deux pods, horloges divergentes ; effet sur `iat` **et** `exp` ; le consentement lit `iat`, un âge négatif de 5 s au plus).
+
+- [ ] **Step 1 : tests, rouges**
+  - `AuthCookieFactoryTest` : le test de `:86` (échéance passée) est supprimé ; `testNeitherCookieTakesAnExpiry` — `(new ReflectionMethod(AuthCookieFactory::class, 'bearer'))->getNumberOfParameters()` vaut 1, de même pour `xsrf` (F1 : aucun cookie persistant ne peut être demandé).
+  - `JwtClockSkewTest` (fonctionnel, `GET /api/me` avec un `BEARER` signé par l'encodeur du conteneur, la charge d'un accès de base — lire `BaseAccessControllerTest` pour sa forme) : `testAnIssuedAtThreeSecondsAheadIsServed` (403 : authentifié au palier de base, pas 401) ; `testAnIssuedAtThirtySecondsAheadIsRefused` (401) ; `testATokenExpiredThreeSecondsAgoIsServed` ; `testATokenExpiredThirtySecondsAgoIsRefused` ; `testTheConfiguredSkewIsFiveSeconds` (paramètre `lexik_jwt_authentication.clock_skew`).
+  - `RefusedSessionCookiesAreClearedTest` (St3-12) : `PUBLIC_ROUTE` devient `/api/contributions/fr` ; `assertThePublicRouteIsServedAfterwards` exige `assertResponseStatusCodeSame(200)`.
+  - Avant d'implémenter : `grep -rn "'exp' => time()\|'iat' => time()" backend/tests` — un jeton de test « tout juste expiré » (moins de 5 s) deviendrait servi : l'écarter de plus de 5 s dans le même commit.
+  Run : `docker compose exec -u dev backend php bin/phpunit tests/Security/Authentication`. Expected : 2 paramètres ; 401 sur `iat` + 3 s.
+- [ ] **Step 2 : implémenter** — selon les interfaces ; `rm -rf var/cache/test` après la configuration. Docblocks : `AuthCookieFactory` (plus de « pour un appelant futur » : aucune échéance ne peut être demandée) ; `StaleSessionCookiesClearingListener` (retirer R21b : le SPA n'envoie plus de cookie à une route publique, R23 ; **la limite CR3-2** : l'effacement vise un nom, le serveur ne sait pas qu'un cookie plus neuf a pu être posé après l'envoi — une réponse tardive l'efface ; la fenêtre, la réparation, pourquoi pas autrement, choix 5) ; `CsrfCookieRequestSubscriber` (A3-11 : le SPA appelle `/api/contact` sans cookie, `credentials: 'omit'`, #748 ; un autre client peut en envoyer un — sans effet, la route ne lit aucune identité, mais un cookie refusé y prend le 401 du pare-feu) ; `BaseAccessController` (retirer R21b : le SPA rejoue une fois sur 401, R24).
+- [ ] **Step 3 : règle et ADR** — `security-authentication-sessions.md` : `bearer()`/`xsrf()` sans échéance possible ; `clock_skew` (pourquoi, ce qu'il relâche) ; « Accepted limit » de CR3-2 (une phrase). ADR 0003, amendement du 2026-10-29 : la même limite, une phrase.
+- [ ] **Step 4 : verts** — commande ciblée PASS ; `make back-test`, `make back-quality` (`-u dev`), `tools/check-claude-rules.sh`.
+- [ ] **Step 5 : commit** — `fix(security): les cookies d'authentification sans échéance possible, cinq secondes de tolérance d'horloge, la limite du 401 tardif écrite (#748)`.
+
+---
+
+### Task R30 : La connexion `expired=1` d'une personne connectée ; plus de cycle d'import (A3-10, St3-9)
+
+**Files :**
+- Modify : `frontend/src/presentation/pages/LoginPage.vue`, `frontend/src/presentation/router/{loginLocation,sessionEnded,reauthentication}.ts`
+- Test : `frontend/tests/presentation/pages/LoginPage.spec.ts`, `frontend/tests/presentation/router/signInLocations.spec.ts`
+- Modify : `.claude/rules/frontend-session.md` (« Both flags open the login… »)
+
+**Interfaces :**
+- `LoginPage` : l'annonce « votre session a pris fin » (`login-session-ended-notice`) ne s'affiche que si `expired=1` **et** aucun compte n'est affiché (`null === user.value`) ; avec `expired=1` et un compte affiché, l'annonce neutre `auth.reauthNotice` (`login-reauth-notice`), comme `reauth=1` — aucune chaîne nouvelle.
+- `SESSION_ENDED_QUERY`, `SESSION_ENDED_VALUE`, `REAUTH_QUERY`, `REAUTH_VALUE` déclarées dans `loginLocation.ts` ; `sessionEnded.ts` et `reauthentication.ts` les importent de là (et les réexportent si un appelant les lit) ; `loginLocation.ts` n'importe plus ni l'un ni l'autre ; son paragraphe sur le cycle disparaît.
+
+- [ ] **Step 1 : tests, rouges** — `LoginPage.spec.ts` : `it("connectée, expired=1 : l'annonce neutre, pas « session finie »")` (FR et EN, texte exact) ; `it("anonyme, expired=1 : « votre session a pris fin »")` (inchangé, vert) ; `signInLocations.spec.ts` : `it("loginLocation n'importe ni sessionEnded ni reauthentication")` (lecture de la source par `import.meta.glob` `?raw`) ; la garde « aucun autre fichier ne nomme expired/reauth » reste verte. Expected : « session finie » affichée ; import présent.
+- [ ] **Step 2 : implémenter** — selon les interfaces.
+- [ ] **Step 3 : règle** — `frontend-session.md`, « Both flags open the login… » : ce que dit la page selon qu'un compte est affiché (et pourquoi pas `sessionEnded` : le lien ouvre un nouvel onglet, dont l'état est neuf).
+- [ ] **Step 4 : verts** — specs ciblés PASS ; `make front-test`, `make front-lint`, `make front-build`, `tools/check-claude-rules.sh`.
+- [ ] **Step 5 : commit** — `fix(frontend): expired=1 ne dit plus « session finie » à une personne connectée ; les drapeaux de connexion sans cycle d'import (#748)`.
+
+---
+
+### Task R31 : Réglages « À propos » : une erreur par langue (Sp3-4)
+
+**Files :**
+- Modify : `frontend/src/application/admin/about/useAdminAboutSettings.ts`
+- Test : `frontend/tests/application/admin/about/useAdminAboutSettings.spec.ts`
+- Modify : `.claude/rules/frontend-backoffice.md` (« The error stays with its language »)
+
+**Interfaces :**
+- `failures = ref<Partial<Record<Locale, AdminAboutError>>>({})` remplace `lastFailure` ; `save(locale)` n'efface que `failures[locale]` et, en échec visible, pose `failures[locale]` ; `errorMessage` = l'échec de la locale courante (`SUPPORTED_LOCALES.find(isCurrentKey)`), `null` sinon.
+
+- [ ] **Step 1 : tests, rouges** — `it("un échec FR, puis un enregistrement EN réussi : l'erreur FR revient en FR")` ; `it("un échec FR puis un échec EN : chacun sous sa langue")`. Le test F10-2 de R20 reste vert. Expected : `errorMessage` nul au retour en FR ; erreur EN sous le FR.
+- [ ] **Step 2 : implémenter** — selon l'interface.
+- [ ] **Step 3 : règle** — `frontend-backoffice.md` : « jusqu'au prochain enregistrement **de cette langue** », une erreur par langue.
+- [ ] **Step 4 : verts** — spec ciblé PASS ; `make front-test`, `make front-lint`, `make front-build`, `tools/check-claude-rules.sh`.
+- [ ] **Step 5 : commit** — `fix(frontend): les réglages « À propos » gardent une erreur par langue (#748)`.
+
+---
+
+### Task R32 : La politique de cookies publiée dit des cookies de session (St3-1)
+
+**Files :**
+- Modify : `frontend/src/infrastructure/portfolio/content/{fr,en}.ts` (section « Cookies »)
+- Create : `frontend/tests/infrastructure/portfolio/cookiePolicy.spec.ts`
+
+**Texte exact** (FR puis EN, la liste de la section « Cookies ») :
+- FR `BEARER` : « BEARER — jeton d’authentification (JWT), httpOnly, non lisible en JavaScript. Cookie de session : supprimé à la fermeture du navigateur (sauf si celui-ci restaure la session), à la déconnexion, ou dès qu’il est présenté après l’expiration du jeton qu’il porte (1 heure pour un compte, 15 minutes pour l’accès instantané). »
+- FR `XSRF-TOKEN` : « XSRF-TOKEN — jeton de protection contre les attaques CSRF, lisible en JavaScript, posé en même temps que le précédent ; cookie de session lui aussi, supprimé en même temps que lui. »
+- EN `BEARER` : « BEARER — authentication token (JWT), httpOnly, not readable from JavaScript. Session cookie: deleted when the browser is closed (unless it restores the session), on logout, or as soon as it is presented after the token it carries has expired (1 hour for an account, 15 minutes for instant access). »
+- EN `XSRF-TOKEN` : « XSRF-TOKEN — CSRF protection token, readable from JavaScript, set together with the previous one; also a session cookie, deleted together with it. »
+
+- [ ] **Step 1 : test, rouge** — `cookiePolicy.spec.ts` : pour chaque locale, la section « Cookies » nomme `BEARER` et `XSRF-TOKEN`, dit « de session » / « session cookie » pour les deux, et ne contient plus « expire avec lui » / « expires with it » ni « expire à la déconnexion ou à l’expiration du jeton » / « expires on logout or token expiry ». Expected : rouge sur les quatre lignes actuelles.
+- [ ] **Step 2 : implémenter** — le texte exact ci-dessus (apostrophes typographiques comme le fichier).
+- [ ] **Step 3 : vérifier** qu'aucune autre mention publique ne contredit (`grep -rn "XSRF\|BEARER\|cookie" frontend/src/infrastructure/i18n/locales frontend/src/infrastructure/portfolio/content`) : la ligne 114 (le **jeton** de 15 minutes) et `cookieNotice.message` restent justes.
+- [ ] **Step 4 : verts** — spec PASS ; `make front-test`, `make front-lint`, `make front-build`.
+- [ ] **Step 5 : commit** — `fix(frontend): la politique de cookies dit des cookies de session (#748)`.
+
+---
+
+### Task R33 : Le reste de la documentation (Sp3-5, Sp3-6, balayage)
+
+**Files :**
+- Modify : `.claude/rules/frontend-session.md`, `.claude/rules/frontend-a11y.md`, `frontend/src/presentation/ui/admin/SessionEndedBanner.vue` (docblock), `frontend/src/presentation/layout/AppHeader.vue` (commentaire), et ce que le balayage trouve
+
+- [ ] **Step 1 : relire** — `grep -rn "R21b\|knownRepository\|endBaseAccessAtExpiry\|endedAccount\|SessionEndedHandler\|true to false\|à mesurer dans un vrai navigateur" frontend/src .claude/rules docs/adr backend/src` : chaque occurrence restante est corrigée ici (aucune ne reste, hors historique daté d'un amendement).
+- [ ] **Step 2 : corriger** — `frontend-session.md:138` : « On return (`onSessionRestored`, the same account) » ; `:162` et `SessionEndedBanner.vue:12` : `createBackofficeSessionReaction` (R28). `frontend-a11y.md`, puce sur l'en-tête : à 320 px la marque se tronque (`text-truncate`), les actions ne cèdent jamais (`flex-shrink-0`), la largeur du groupe de droite se mesure au navigateur (tâche 11) ; `AppHeader.vue:233-236` renvoie à cette puce. La liste « Tests » de `frontend-session.md` gagne les specs de R23 à R31 (`credentialsAreExplicit.spec.ts`, `resetAuthStateForTests.spec.ts`, `cookiePolicy.spec.ts`, `JwtClockSkewTest`…) — dans `tasks/regle-session-en-attente.md` si la taille l'impose.
+- [ ] **Step 3 : verts** — `tools/check-claude-rules.sh` ; `make front-lint`, `make front-build`.
+- [ ] **Step 4 : commit** — `docs: la règle de session à jour de la troisième relecture de #748`.
+
+---
+
+### Task R34 : `frontend-session.md` découpée par sous-domaine (St3-11) — en dernier
+
+**Files :**
+- Create : `.claude/rules/frontend-session-bandeau.md`, `.claude/rules/frontend-session-retour.md`, `.claude/rules/frontend-session-refus.md`
+- Modify : `.claude/rules/frontend-session.md`, `.claude/CLAUDE.md` (table des règles) ; supprimer `tasks/regle-session-en-attente.md` s'il existe (`git rm`), son contenu intégré
+
+**Découpage** (procédure de `.claude/CLAUDE.md`, « Where the rest lives » : la règle d'origine garde un index ; chaque partie a ses `paths:`, chacun correspondant à un fichier suivi) :
+- `frontend-session.md` — la règle (`sessionAwareFetch`, « avec jeton »), les deux erreurs, une section par client, les limites acceptées, `credentials` explicite (R23) ; **une table d'index** (comme `security-authentication.md`) : chaque section partie, son fichier ; ses `paths:` : l'infrastructure HTTP, les dépôts, `csrfCookie`.
+- `frontend-session-bandeau.md` — « The interface » : le bandeau, sa réannonce, le retour annoncé, le lien de reconnexion (`loginLocation`, `SignInAgainLink`, les drapeaux, `LoginPage`), l'en-tête ; `paths:` : `SessionEndedBanner.vue`, `AccessRefusedNotice.vue`, `SignInAgainLink.vue`, `router/{loginLocation,sessionEnded,reauthentication,routeLocale}.ts`, `AppHeader.vue`, `usePublishedHeight.ts`, `AdminLayout.vue` et leurs specs.
+- `frontend-session-retour.md` — la revérification au retour, la génération, le compte retenu, le rejeu et le masquage, le découpage de `application/auth/` et la remise à zéro de test ; `paths:` : `application/auth/**`, `useSessionRecheckOnFocus.ts`, `AppLayout.vue`, `tests/support/{setup,signInAgain}.ts`, `tests/application/auth/**`.
+- `frontend-session-refus.md` — « A real refusal », le backoffice compris (`BackofficeSessionReaction`, le périmètre de refus) ; `paths:` : `application/{mcp,assistant}/**`, `backofficeAccessRefusal.ts`, `backofficeSessionExpiry.ts`, `BackofficeHttpClient.ts`, `domain/admin/shared/BackofficeSessionReaction.ts`.
+- Les « Tests » sont répartis : chaque partie liste les specs de ce qu'elle porte.
+
+- [ ] **Step 1 : déplacer** le texte **tel quel** (aucune phrase réécrite, sauf l'intégration de `tasks/regle-session-en-attente.md`) ; chaque fichier commence par l'en-tête des parties découpées (« Split from `.claude/rules/frontend-session.md` (#748, St3-11; procedure of #605), which keeps the index of the parts. »).
+- [ ] **Step 2 : index** — la table de `frontend-session.md` ; trois lignes nouvelles dans la table de `.claude/CLAUDE.md` (fichier, domaine, « Read it before… ») et la ligne de `frontend-session.md` réduite à ce qu'elle garde. Les renvois « `.claude/rules/frontend-session.md`, « <section> » » des autres règles restent valides par l'index (ne pas les réécrire).
+- [ ] **Step 3 : verts** — `tools/check-claude-rules.sh` (aucun `paths:` vide ni sans fichier suivi, chaque fichier sous 50 000 octets) ; `wc -c .claude/rules/frontend-session*.md` noté ; somme des quatre ≥ taille d'avant (rien perdu) ; `make front-lint`.
+- [ ] **Step 4 : commit** — `docs: la règle de session découpée par sous-domaine (#748)`.
+
+---
+
 ### Task 11 : Contrôle au navigateur — **fil principal, pas un agent de tâche**
 
 Pile de dev locale, FR et EN, axe-core injecté dans la page, noté dans la PR (référentiel WCAG 2.2 AA) :
@@ -1524,7 +2009,7 @@ Ce que les corrections R1 à R10 ont changé, à mesurer aussi :
 - [ ] **En-tête à 320 px, avec la marque tronquée (C2)** : mesurer, aux trois paliers, FR et EN, la largeur du groupe de droite (`div.flex-shrink-0` de l'en-tête) et `document.documentElement.scrollWidth` (doit valoir 320). Si la ligne déborde encore (le ticket mesurait le groupe **seul** à 331 px au palier de confiance et 389 px en anonyme et en EN pour 301 utiles, ce que la troncature de la marque ne peut pas absorber), appliquer le repli suivant dans un commit `fix(frontend): l'en-tête tient à 320 px, actions resserrées (#748)` puis refaire la mesure : sous 360 px (`@media (max-width: 359.98px)`, `<style scoped>` d'`AppHeader`), « Connexion » (lien ordinaire et `SignInAgainLink`) devient une icône `~icons/lucide/log-in` avec `aria-label` = `common.login` (comme « Accès instantané » sous 576 px) et le groupe passe de `gap-2` à `gap-1` ; test `AppHeader.spec.ts` « sous 360 px, « Connexion » garde son nom accessible » (le `aria-label`, l'icône `aria-hidden`), et garde de source sur la règle `@media` dans le bloc scopé. **Si cela ne suffit pas** (mesure à l'appui), marche suivante **décidée par l'auteur le 2026-10-29** : sous 360 px, le sélecteur de langue quitte la ligne et passe dans le menu mobile (deux rangées restent écartées pour 2.4.11) ; test de non-régression (le sélecteur reste atteignable et nommé dans le menu mobile sous 360 px) ; consigner les mesures dans la PR.
 Ce que les corrections R12 à R22 ont changé, à mesurer aussi :
 
-- [ ] **Cookies de session** (R21, décision 1) : après une connexion **et** après « Accès instantané », dans les outils du navigateur (Application → Cookies), `BEARER` et `XSRF-TOKEN` ont « Session » pour échéance (aucun `Expires`/`Max-Age` dans le `Set-Cookie` de l'onglet Réseau) ; navigateur fermé puis rouvert **sans** restauration de session : visiteur anonyme, aucune boucle « session finie » / « Session rétablie » ; avec la restauration de session du navigateur (Chrome « Continuer là où vous en étiez », Firefox « Restaurer la session ») : noter si les cookies reviennent (c'est la limite écrite dans l'ADR). JWT expiré (accès de base : attendre 15 min) : la première requête `/api` prend un 401 dont le `Set-Cookie` expire les deux cookies, la suivante est anonyme et servie ; noter ce que la page affiche sur ce premier 401 (voir la question ouverte de R21).
+- [ ] **Cookies de session** (R21, décision 1) : après une connexion **et** après « Accès instantané », dans les outils du navigateur (Application → Cookies), `BEARER` et `XSRF-TOKEN` ont « Session » pour échéance (aucun `Expires`/`Max-Age` dans le `Set-Cookie` de l'onglet Réseau) ; navigateur fermé puis rouvert **sans** restauration de session : visiteur anonyme, aucune boucle « session finie » / « Session rétablie » ; avec la restauration de session du navigateur (Chrome « Continuer là où vous en étiez », Firefox « Restaurer la session ») : noter si les cookies reviennent (c'est la limite écrite dans l'ADR). JWT expiré : **remplacé par le contrôle « Cookie mort, en même origine » ci-dessous** (R23 : une page publique ne reçoit plus ce 401).
 - [ ] **Rejeu sur changement de compte** (R18, décision 3) : onglet A sur une page d'administration avec une saisie, session finie (déconnexion dans l'onglet B) ; dans B, connexion avec **un autre** compte. Retour sur A : aucune « Session rétablie », la route est rejugée (compte sans `ROLE_SUPER` → page « interdit » ; compte `ROLE_SUPER` → la page est remontée, champs vides) ; une seule requête `/api/me`. Même scénario avec **le même** compte : « Session rétablie », saisie intacte, « Enregistrer » aboutit. Assistant avec une conversation : un autre compte au retour → conversation vide.
 - [ ] **Refus réel du backoffice** (R17) : un compte `ROLE_SUPER` rétrogradé par un autre pendant qu'il édite, puis « Enregistrer » → une alerte « accès refusé » sous le bandeau d'administration, « Changer de compte » ouvre la connexion (`reauth=1`, même onglet), l'en-tête retombe au palier relu ; la mention « Contenu non chargé » neutre si une liste n'a pas pu se lire.
 - [ ] **`expired=1` ouvre la connexion** (R16, B/F2) : connecté, `XSRF-TOKEN` supprimé à la main, « Enregistrer » → bandeau ; son lien ouvre la page de connexion (pas l'accueil).
@@ -1533,14 +2018,68 @@ Ce que les corrections R12 à R22 ont changé, à mesurer aussi :
 - [ ] **`XSRF-TOKEN` indécodable** (R12, F13) : `document.cookie = 'XSRF-TOKEN=%E0; path=/'` dans la console, puis « Enregistrer » → aucune exception dans la console, bandeau de session finie.
 - [ ] **Réglages « À propos »** (R20) : enregistrement FR ralenti (outils réseau, « Slow 3G »), passage en EN puis retour en FR avant la réponse → les valeurs enregistrées restent ; un enregistrement FR refusé (hors ligne) puis passage en EN → aucune erreur sous l'EN, elle revient en FR.
 
+Ce que les corrections R23 à R34 ont changé, à mesurer aussi.
+
+**Une pile en même origine, comme en prod** (préalable des deux premiers points). La pile de dev sert le frontend
+(Vite, 5173) et l'API (nginx, 8080) sur **deux origines** : le défaut `same-origin` de `fetch` n'y envoyait déjà aucun
+cookie aux dépôts publics, et CR3-3 ne s'y voit pas. Deux façons de reproduire la prod :
+(a) **la préprod** (même hôte, `/api` routé par l'ingress), quand la branche de release la déploie ;
+(b) **en local**, sans rien commiter : dans `frontend/vite.config.ts`, `server: { proxy: { '/api': 'http://web' } }`
+(le service `web` du réseau `app`), et `VITE_API_URL=http://localhost:5173` pour le conteneur `frontend`
+(`docker-compose.override.yml` ou variable d'environnement), puis `docker compose restart frontend` ; tout passe alors
+par `http://localhost:5173`. Vérifier d'abord, connecté, que `GET /api/me` part vers `localhost:5173` et **porte**
+`Cookie: BEARER=…` (sinon la pile ne reproduit pas la prod) ; retirer les deux changements locaux à la fin (`git diff`
+vide sur ces fichiers).
+
+- [ ] **Cookie mort, en même origine** (R23, CR3-3) : connecté (puis, à part, avec « Accès instantané »), remplacer la
+  valeur de `BEARER` par `x` (Application → Cookies ; même effet qu'un JWT expiré : `JWT_INVALID`, effacé par son
+  premier 401). Visiter « À propos », la page d'accueil (qualité, contributions, incidents, technologies), `/stack`,
+  envoyer le formulaire de contact, ouvrir un lien `set-password#…` : dans l'onglet Réseau, **aucune** de ces requêtes ne
+  porte d'en-tête `Cookie`, aucune ne répond 401, les pages s'affichent. Puis une page authentifiée (backoffice, MCP,
+  assistant, études de cas) : un 401, lu comme une session finie (bandeau, lien de reconnexion) ou, au palier de base,
+  « accès de base expiré » ; le `Set-Cookie` du 401 expire les deux cookies.
+- [ ] **Deux onglets, en même origine** (R23, R26) : onglet A sur « À propos », onglet B connecté ; `BEARER` rendu mort
+  dans B ; A se recharge et navigue sur les pages publiques sans 401 ni changement d'en-tête ; B se reconnecte, A revient
+  au premier plan : une seule requête `/api/me` si une session finie était affichée, aucune sinon.
+- [ ] **« Accès instantané » avec un cookie mort** (R24) : `BEARER` = `x`, en-tête anonyme (rechargement), « Accès
+  instantané » → onglet Réseau : un `POST /api/account/base-access` en 401 puis un second en 200, l'en-tête au palier de
+  base, les deux cookies neufs ; sans cookie mort, un seul `POST`.
+- [ ] **Échéance de l'accès de base** (R23) : « Accès instantané », attendre 15 minutes sur une page publique (ou avancer
+  l'horloge du poste, en le notant) : l'en-tête repasse à anonyme **sans aucune requête** (ni `POST /api/logout` ni
+  `/api/me`) ; les pages publiques restent servies sans 401 ; une page du palier de base prend le 401 et propose
+  l'accès ; un onglet resté en arrière-plan pendant l'échéance revient sans requête.
+- [ ] **Changement de compte révélé par un refus** (R26, CR3-6) : onglet A sur une page d'administration avec un compte
+  `ROLE_SUPER` et une saisie ; onglet B : déconnexion, puis connexion avec **un compte de confiance sans `ROLE_SUPER`**.
+  Retour sur A (aucune session finie dans A : pas de relecture au focus), « Enregistrer » → la requête porte le cookie de
+  B, 403 avec jeton (refus réel) → `/api/me` rend B → l'en-tête passe à B **et** la navigation est rejouée : page
+  « interdit », plus rien du compte de A à l'écran. Le cas CR3-5 (une fin de session survenue au palier de base, puis un
+  autre compte) demande une rétrogradation pendant la page puis une fin de session : le noter couvert par
+  `useAuth.spec.ts` (R26) s'il n'est pas reproduit.
+- [ ] **Rejeu sans l'ancienne page** (R27, A3-13) : scénario R18 ci-dessus (un autre compte au retour) : pas d'image de
+  l'ancienne page sous l'en-tête du nouveau compte (enregistrement de l'écran au ralenti si besoin ; sinon le noter
+  couvert par `AppLayout.spec.ts`).
+- [ ] **Refus du backoffice périmé** (R28, CR3-8) : un compte `ROLE_SUPER` rétrogradé ; sur une page d'administration
+  dont la lecture est ralentie (« Slow 3G »), naviguer vers une autre page avant la réponse 403 → aucune alerte « accès
+  refusé » sur la seconde ; un refus sur la page courante l'affiche.
+- [ ] **`expired=1` à une personne connectée** (R30, A3-10) : connecté, ouvrir `/<locale>/login?expired=1` → l'annonce
+  neutre (« Confirmez votre identité… »), pas « votre session a pris fin » ; anonyme, la même URL dit « votre session a
+  pris fin ». FR et EN.
+- [ ] **Une erreur par langue** (R31) : hors ligne, enregistrer les réglages FR (échec), passer en EN, enregistrer (échec),
+  revenir en FR → l'erreur FR ; en EN → l'erreur EN ; en ligne, enregistrer l'EN → l'erreur FR reste en FR.
+- [ ] **Politique de cookies** (R32) : la section « Cookies » des mentions, FR et EN, dit « cookie de session » pour
+  `BEARER` et `XSRF-TOKEN`, et la fermeture du navigateur.
+- [ ] Non contrôlables au navigateur, à noter comme tels : la génération sur `logout`/`login` pendant un `/api/me` en vol
+  (R26, CR3-4), `clock_skew` (R29, `JwtClockSkewTest`), le 401 tardif qui efface des cookies neufs (CR3-2, limite écrite).
+
 - [ ] Tout écart → retour à la tâche concernée (nouveau commit), puis ce contrôle refait.
 
 ### Task 12 : Clôture — **fil principal**
 
-- [ ] `make front-test`, `make front-lint`, `make front-build`, **`make back-test` et `make back-quality`** (R1, R21) verts sur la tête ; `tools/check-claude-rules.sh` vert (les `paths:` ajoutés correspondent à des fichiers suivis, aucune règle au-delà de 50 000 octets, la nouvelle `frontend-session.md` comprise, et sa ligne dans l'index de `.claude/CLAUDE.md`).
+- [ ] `make front-test`, `make front-lint`, `make front-build`, **`make back-test` et `make back-quality`** (R1, R21) verts sur la tête ; `tools/check-claude-rules.sh` vert (les `paths:` ajoutés correspondent à des fichiers suivis, aucune règle au-delà de 50 000 octets, `frontend-session.md` et ses trois parties de R34 comprises, chacune avec sa ligne dans l'index de `.claude/CLAUDE.md`) ; `tasks/regle-session-en-attente.md` n'existe plus (intégré par R34).
+- [ ] Corps de la PR, compléments de la troisième relecture (R23 à R32) : **les lectures publiques, le formulaire de contact et le choix du mot de passe partent sans cookie** (`credentials: 'omit'`) : un cookie mort (JWT expiré, invalide, antérieur à un changement de mot de passe) n'atteint plus une page publique ; son premier 401 ne tombe plus que sur une page authentifiée, lue comme une session finie. **R21b est retirée** (décision de l'auteur du 2026-10-29) : l'accès de base n'appelle plus `POST /api/logout` à son échéance, l'en-tête repasse simplement à anonyme. **« Accès instantané » rejoue une fois** après le 401 d'un cookie mort (deux jetons du quota de 20 par heure dans ce cas). **`clock_skew: 5`** : cinq secondes d'écart d'horloge entre pods tolérées (sur `iat` comme sur `exp`). Limite écrite : la réponse tardive (401) d'une requête authentifiée partie avec un cookie mort peut effacer des cookies posés entre-temps par une connexion dans un autre onglet ; la requête suivante le dit (session finie), une reconnexion répare. La politique de cookies publiée dit désormais « cookies de session ». Aucune action au déploiement.
 - [ ] Corps de la PR : la note de release de F1 (R21, remplace celle de R1) — `BEARER` et `XSRF-TOKEN` sont désormais des **cookies de session**, au login comme à l'accès de base (le JWT garde son heure, l'accès de base ses quinze minutes) : fermer le navigateur sans restauration de session finit la session ; à l'expiration du JWT, la première requête prend un 401 qui efface les deux cookies, la suivante est anonyme ; **une session ouverte avant le déploiement garde ses cookies persistants, au plus une heure** (rien à faire) ; le frontend juge désormais la session par génération (une réponse partie sous une autre session ne la finit ni ne la rétablit) et un autre compte au retour rejoue la navigation.
 - [ ] **Amendement d'ADR 0003** — **déplacé dans R21 (Step 3b) par décision de l'auteur du 2026-10-29** ; à la clôture, seulement vérifier qu'il est fait et cohérent. Contenu attendu (décision 1 du 2026-10-29) : ligne de statut (« Amendée le 2026-10-29 ») ; dans « Risque accepté — le logout ne révoque pas le jeton », le paragraphe des faits (`set_cookies.BEARER.lifetime` vaut `0` : cookie de session ; `token_ttl` 3600 et les 900 s de l'accès de base inchangés) ; un amendement « 2026-10-29 (#748, F1) » : `BEARER` et `XSRF-TOKEN` sont des cookies de session ; le risque « navigateur fermé » (un cookie qui survit à la fermeture, en lecture comme en écriture) **disparaît, sauf navigateur qui restaure la session** ; tout cookie refusé (expiré, invalide, antérieur au changement de mot de passe) est effacé par son premier 401 ; ce que cela ne change pas (un jeton copié reste valable jusqu'à son `exp`) ; les conditions qui rouvrent la décision, inchangées. `docs/adr/0003-paliers-d-acces.md` seul, relu contre `security-authentication-sessions.md` (R21).
-- [ ] **Ticket à proposer à l'auteur** (texte dans le rapport de clôture, pas de création sans son accord) : le préfixe `__Host-` des deux cookies (S2 de la première relecture : préprod d'abord, il renomme ce que Lexik, `CsrfCookieRequestSubscriber` et le frontend lisent par nom) **et F12** (le jeton CSRF n'est lié ni à la session ni au temps : le lier au JWT — par exemple un HMAC dérivé de son `iat` et du compte — ou lui donner une échéance signée), avec la note que R21 réduit déjà la durée de vie des deux cookies à la session du navigateur.
+- [ ] **Ticket à proposer à l'auteur** (texte dans le rapport de clôture, pas de création sans son accord) : le préfixe `__Host-` des deux cookies (S2 de la première relecture : préprod d'abord, il renomme ce que Lexik, `CsrfCookieRequestSubscriber` et le frontend lisent par nom) **et F12** (le jeton CSRF n'est lié ni à la session ni au temps : le lier au JWT — par exemple un HMAC dérivé de son `iat` et du compte — ou lui donner une échéance signée), avec la note que R21 réduit déjà la durée de vie des deux cookies à la session du navigateur, **et A3-3** de la troisième relecture (depuis R21, tout cookie `BEARER` refusé efface les deux cookies : un sous-domaine qui pose un faux `BEARER` sur `Path=/api` — plus spécifique que le `Path=/` du vrai, donc envoyé en premier — fait répondre 401 et efface la session valide ; `__Host-` interdit qu'un sous-domaine pose ce nom). À y joindre, pour décision : un pare-feu sans authentificateur pour `/api/account/base-access` (comme `oauth`), qui rendrait le rejeu de R24 inutile (choix 2 de la troisième relecture).
 - [ ] #732 : le point 4 est **entièrement traité par #748** (règle `endsTheSession` dans le backoffice, « Mes connexions MCP », le consentement OAuth et l'assistant, portée par `sessionAwareFetch` ; un refus réel relit `/api/me` et propose « Changer de compte » ; tâches 3, 4, 4b, 4c, R2, R7) — le marquer comme tel dans le corps (barré, renvoi à #748 et à son commit de fusion), rien n'y reste. Par `gh api -X PATCH repos/{owner}/{repo}/issues/732` (pas `gh issue edit`, cassé en gh 2.46 sur ce dépôt).
 - [ ] `tasks/todo.md` : cocher « Tâche 11 » (critère de #748) dans le commit de clôture.
 - [ ] Après la fusion dans `feature/379-mcp-paliers` : fermer #748 à la main (`Closes #748` ne ferme rien vers une base qui n'est pas `main`).
