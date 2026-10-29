@@ -1,15 +1,22 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
+import { defineComponent } from 'vue'
 import AssistantPage from '../../../src/presentation/pages/AssistantPage.vue'
 import { ASSISTANT_REPOSITORY } from '../../../src/application/assistant/useAssistant'
 import { CV_REPOSITORY } from '../../../src/application/cv/useCvDownload'
 import type { AssistantRepository } from '../../../src/domain/assistant/repositories/AssistantRepository'
 import { AssistantError, type AssistantErrorReason } from '../../../src/domain/assistant/errors/AssistantError'
-import { AUTH_REPOSITORY } from '../../../src/application/auth/useAuth'
+import { AUTH_REPOSITORY, markSessionExpired, useAuth } from '../../../src/application/auth/useAuth'
 import type { AuthRepository } from '../../../src/domain/auth/repositories/AuthRepository'
 import { BASE_ACCESS_SESSION } from '../../../src/domain/auth/entities/AuthSession'
 import { createAppI18n } from '../../../src/presentation/i18n'
+import AppLayout from '../../../src/presentation/layout/AppLayout.vue'
+import { PORTFOLIO_CONTENT_REPOSITORY } from '../../../src/application/portfolio/usePortfolioContent'
+import { StaticPortfolioContentRepository } from '../../../src/infrastructure/portfolio/StaticPortfolioContentRepository'
+import { BASE_ACCESS_REPOSITORY } from '../../../src/application/baseAccess/useBaseAccess'
+import { sessionFor } from '../../support/authSession'
+import { signInAgain } from '../../support/signInAgain'
 import { expectNoAccessibilityViolation } from '../../support/axe'
 
 // Aucun flux ne doit survivre à un test : chaque wrapper est démonté à la fin.
@@ -419,5 +426,91 @@ describe('AssistantPage', () => {
     await flushPromises()
 
     await expectNoAccessibilityViolation(wrapper)
+  })
+})
+
+/**
+ * Un autre compte revient pendant que l'assistant montre une conversation (#748, R18, Review Focus 3) : la page est
+ * remontée par `AppLayout`, rien du premier compte n'est affiché. Le même chemin garderait sinon la même instance.
+ */
+describe('AssistantPage — le compte change au retour', () => {
+  const FIRST = { username: 'premier', roles: ['ROLE_TRUSTED', 'ROLE_USER'] }
+  const OTHER = { username: 'autre', roles: ['ROLE_TRUSTED', 'ROLE_USER'] }
+
+  afterEach(async () => {
+    await signInAgain()
+  })
+
+  async function mountInLayout(returning: typeof FIRST, repository: AssistantRepository) {
+    // Le compte affiché quand la session finit : c'est lui que le retour compare.
+    const signedIn: AuthRepository = { login: vi.fn(async () => FIRST), logout: vi.fn(), hasWriteToken: () => true, me: vi.fn(async () => sessionFor(returning)) }
+    const Probe = defineComponent({ setup: () => ({ auth: useAuth() }), template: '<div />' })
+    const probe = mount(Probe, { global: { provide: { [AUTH_REPOSITORY as symbol]: signedIn } } })
+    await probe.vm.auth.login(FIRST.username, 'x')
+    probe.unmount()
+
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/:locale/login', name: 'login', component: { template: '<div />' } },
+        { path: '/:locale/assistant', name: 'assistant', component: AssistantPage, meta: { requiresAuth: true } },
+      ],
+    })
+    await router.push('/fr/assistant')
+    await router.isReady()
+
+    const wrapper = mount(AppLayout, {
+      global: {
+        plugins: [router, createAppI18n()],
+        provide: {
+          [PORTFOLIO_CONTENT_REPOSITORY as symbol]: new StaticPortfolioContentRepository(),
+          [AUTH_REPOSITORY as symbol]: signedIn,
+          [ASSISTANT_REPOSITORY as symbol]: repository,
+          [CV_REPOSITORY as symbol]: { download: vi.fn() },
+          [BASE_ACCESS_REPOSITORY as symbol]: { grant: async () => undefined },
+        },
+      },
+    })
+    await flushPromises()
+
+    return { wrapper, signedIn }
+  }
+
+  async function converse(wrapper: VueWrapper, calls: PendingCall[]): Promise<void> {
+    await wrapper.find('textarea').setValue('Quelle expérience ?')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+    calls[0].onDelta('Douze ans.')
+    calls[0].resolve()
+    await flushPromises()
+  }
+
+  async function returnToTab(): Promise<void> {
+    markSessionExpired()
+    await flushPromises()
+    window.dispatchEvent(new Event('focus'))
+    await flushPromises()
+  }
+
+  it("un autre compte revient : la conversation du premier n'est plus affichée", async () => {
+    const { repository, calls } = createControlledRepository()
+    const { wrapper } = await mountInLayout(OTHER, repository)
+    await converse(wrapper, calls)
+    expect(wrapper.find('[role="log"]').text()).toContain('Douze ans.')
+
+    await returnToTab()
+
+    expect(wrapper.find('[role="log"]').text()).not.toContain('Douze ans.')
+    expect(wrapper.find('[role="log"]').text()).not.toContain('Quelle expérience ?')
+  })
+
+  it('le même compte revient : la conversation reste affichée', async () => {
+    const { repository, calls } = createControlledRepository()
+    const { wrapper } = await mountInLayout(FIRST, repository)
+    await converse(wrapper, calls)
+
+    await returnToTab()
+
+    expect(wrapper.find('[role="log"]').text()).toContain('Douze ans.')
   })
 })

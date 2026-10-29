@@ -1,13 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
-import { createMemoryHistory, createRouter } from 'vue-router'
+import { createMemoryHistory, createRouter, type Router } from 'vue-router'
 import { defineComponent, h } from 'vue'
 import AppLayout from '../../../src/presentation/layout/AppLayout.vue'
 import LandingPage from '../../../src/presentation/pages/LandingPage.vue'
 import AboutPage from '../../../src/presentation/pages/AboutPage.vue'
 import { PORTFOLIO_CONTENT_REPOSITORY } from '../../../src/application/portfolio/usePortfolioContent'
 import { StaticPortfolioContentRepository } from '../../../src/infrastructure/portfolio/StaticPortfolioContentRepository'
-import { AUTH_REPOSITORY, authState, markSessionExpired } from '../../../src/application/auth/useAuth'
+import { AUTH_REPOSITORY, authState, markSessionExpired, useAuth } from '../../../src/application/auth/useAuth'
+import { hasRole } from '../../../src/domain/auth/services/hasRole'
+import { ROLE_SUPER } from '../../../src/domain/auth/entities/Role'
 import SessionEndedBanner from '../../../src/presentation/ui/admin/SessionEndedBanner.vue'
 import { signInAgain } from '../../support/signInAgain'
 import type { AuthRepository } from '../../../src/domain/auth/repositories/AuthRepository'
@@ -78,6 +80,10 @@ async function mountLayout(initialPath = '/fr', authRepository: AuthRepository =
   await router.push(initialPath)
   await router.isReady()
 
+  return mountLayoutOn(router, authRepository)
+}
+
+function mountLayoutOn(router: Router, authRepository: AuthRepository) {
   return mount(AppLayout, {
     global: {
       plugins: [router, createAppI18n()],
@@ -191,5 +197,113 @@ describe('AppLayout — revérification de la session finie au retour', () => {
 
     expect(repository.me).toHaveBeenCalledTimes(1)
     expect(authState.sessionEnded).toBe(true)
+  })
+})
+
+/**
+ * Un autre compte revient pendant qu'une page protégée est ouverte (#748, R18, F3/D) : la session est appliquée, mais
+ * la page n'est plus celle de ce compte. `AppLayout` rejoue la navigation (la garde juge le nouveau compte) puis
+ * remonte la page (une `key` sur le composant routé : même chemin, sinon même instance, avec les données du premier).
+ */
+describe('AppLayout — un autre compte au retour', () => {
+  const FIRST = { username: 'premier', roles: ['ROLE_SUPER', 'ROLE_USER'] }
+  const OTHER_SUPER = { username: 'autre-super', roles: ['ROLE_SUPER', 'ROLE_USER'] }
+  const OTHER_PLAIN = { username: 'autre-simple', roles: ['ROLE_TRUSTED', 'ROLE_USER'] }
+
+  /** Le compte affiché quand la session finit : c'est lui que le retour compare. */
+  async function signInAs(user: typeof FIRST): Promise<void> {
+    const repository: AuthRepository = { ...createStubAuthRepository(), login: async () => user }
+    const Probe = defineComponent({ setup: () => ({ auth: useAuth() }), template: '<div />' })
+    const probe = mount(Probe, { global: { provide: { [AUTH_REPOSITORY as symbol]: repository } } })
+    await probe.vm.auth.login(user.username, 'x')
+    probe.unmount()
+  }
+
+  /** Une page protégée dont chaque montage est compté, derrière une garde qui reprend celle de `router/index.ts`. */
+  async function mountProtected(returning: typeof FIRST) {
+    const mounts = { count: 0 }
+    const Counted = defineComponent({
+      setup() {
+        mounts.count += 1
+        return () => h('div', { 'data-testid': 'counted-page' })
+      },
+    })
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/:locale(fr|en)/admin/case-studies', name: 'admin-case-studies', component: Counted, meta: { requiresAuth: true, roles: [ROLE_SUPER] } },
+        { path: '/:locale(fr|en)/forbidden', name: 'forbidden', component: PlainStub },
+        { path: '/:locale(fr|en)/login', name: 'login', component: PlainStub },
+      ],
+    })
+    const judged = vi.fn()
+    router.beforeEach((to) => {
+      judged(to.fullPath)
+      if (!to.meta.requiresAuth) {
+        return
+      }
+      if (!authState.user) {
+        return { name: 'login', params: { locale: 'fr' } }
+      }
+      if (to.meta.roles && !to.meta.roles.some((role) => hasRole(authState.user, role))) {
+        return { name: 'forbidden', params: { locale: 'fr' } }
+      }
+    })
+    await signInAs(FIRST)
+    await router.push('/fr/admin/case-studies?tri=nom#fin')
+    await router.isReady()
+    const repository: AuthRepository = { ...createStubAuthRepository(), me: vi.fn(async () => sessionFor(returning)) }
+    const wrapper = mountLayoutOn(router, repository)
+    await flushPromises()
+    judged.mockClear()
+
+    return { wrapper, router, repository, mounts, judged }
+  }
+
+  async function returnToTab(): Promise<void> {
+    markSessionExpired()
+    await flushPromises()
+    window.dispatchEvent(new Event('focus'))
+    await flushPromises()
+  }
+
+  afterEach(async () => {
+    await signInAgain()
+  })
+
+  it('le même compte : rétabli en place, la navigation n\'est pas rejouée et la page garde son instance', async () => {
+    const { mounts, judged, repository } = await mountProtected(FIRST)
+    expect(mounts.count).toBe(1)
+
+    await returnToTab()
+
+    expect(repository.me).toHaveBeenCalledTimes(1)
+    expect(judged).not.toHaveBeenCalled()
+    expect(mounts.count).toBe(1)
+  })
+
+  it('un autre compte : la garde rejuge la route (même adresse) et la page est remontée', async () => {
+    const { wrapper, router, mounts, judged, repository } = await mountProtected(OTHER_SUPER)
+    expect(mounts.count).toBe(1)
+
+    await returnToTab()
+
+    expect(repository.me).toHaveBeenCalledTimes(1)
+    // La navigation rejouée garde le chemin, la requête et l'ancre : la personne reste où elle était.
+    expect(judged).toHaveBeenCalledTimes(1)
+    expect(judged).toHaveBeenCalledWith('/fr/admin/case-studies?tri=nom#fin')
+    expect(router.currentRoute.value.fullPath).toBe('/fr/admin/case-studies?tri=nom#fin')
+    expect(mounts.count).toBe(2)
+    expect(wrapper.find('[data-testid="counted-page"]').exists()).toBe(true)
+  })
+
+  it("le nouveau compte n'a pas le rôle : la garde redirige, la page protégée n'est pas remontée pour lui", async () => {
+    const { wrapper, router, mounts } = await mountProtected(OTHER_PLAIN)
+
+    await returnToTab()
+
+    expect(router.currentRoute.value.name).toBe('forbidden')
+    expect(mounts.count).toBe(1)
+    expect(wrapper.find('[data-testid="counted-page"]').exists()).toBe(false)
   })
 })

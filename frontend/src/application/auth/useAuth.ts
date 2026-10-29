@@ -69,6 +69,21 @@ let generation = 0
 const sessionRestoredCallbacks = new Set<() => void>()
 
 /**
+ * Les abonnés au **changement de compte** (`useAuth().onAccountSwitched`, #748, R18) : un autre compte que celui dont
+ * la session a fini est revenu. Même mécanique que `sessionRestoredCallbacks`, mais un événement distinct : la page
+ * ouverte n'est pas celle de ce compte, elle n'est pas « rétablie » — `AppLayout` rejoue la navigation.
+ */
+const accountSwitchedCallbacks = new Set<() => void>()
+
+/**
+ * Le compte dont la session a fini (#748, R18) : l'identifiant du compte affiché à la **première** fin acceptée
+ * (`markSessionExpired` repasse l'en-tête à anonyme, il faut le lire avant), `null` quand aucun compte n'était
+ * affiché (palier de base, anonyme). Ce qui revient est « le même » si l'identifiant est celui-ci, ou s'il n'y en a
+ * aucun de retenu ; sinon la page ouverte est celle d'un autre compte. Oublié au retour.
+ */
+let endedAccount: string | null = null
+
+/**
  * Échéance du jeton D6, mémorisée pour survivre à un rechargement de page :
  * après un F5, checkAuth() ne voit qu'un 403 sur /api/me (palier de base),
  * sans savoir jusqu'à quand. Convenance locale, jamais une source de vérité :
@@ -96,16 +111,35 @@ function applySession(session: AuthSession): void {
 
 /**
  * **La** descente de `sessionEnded` : un compte est revenu avec son jeton d'écriture (l'appelant l'a vérifié, et la
- * génération, sauf pour une connexion). Applique la session, avance la génération, puis appelle les abonnés — une
- * fois, de façon synchrone, l'état posé : ils lisent la session revenue.
+ * génération, sauf pour une connexion). Applique la session, avance la génération, puis — une fois, de façon
+ * synchrone, l'état posé : les abonnés lisent la session revenue — appelle :
+ * - `onSessionRestored` si c'est **le même compte** que celui dont la session a fini (ou si aucun n'était affiché) :
+ *   la page ouverte est la sienne, elle reprend en place ;
+ * - `onAccountSwitched` si c'est un autre : la session est appliquée, mais la page ouverte n'est pas la sienne (#748,
+ *   R18) ; seul `AppLayout` y réagit, en rejouant la navigation.
+ * Une **connexion** (`announce` faux) ne rappelle personne : la page de connexion navigue elle-même.
  */
-function restoreSession(session: AuthSession): void {
+function restoreSession(session: AuthSession, announce: boolean): void {
+  const endedFor = endedAccount
+  endedAccount = null
   applySession(session)
   state.sessionEnded = false
   generation += 1
-  // La copie du `Set` protège l'itération d'un abonné qui se retirerait en route. Un abonné qui lève n'arrête ni
-  // les suivants ni l'issue de la connexion ou de la relecture qui a rétabli la session : l'erreur est rapportée.
-  for (const callback of [...sessionRestoredCallbacks]) {
+  if (!announce) {
+    return
+  }
+
+  const isSameAccount = null === endedFor || endedFor === session.user?.username
+  notify(isSameAccount ? sessionRestoredCallbacks : accountSwitchedCallbacks)
+}
+
+/**
+ * Appelle chaque abonné. La copie du `Set` protège l'itération d'un abonné qui se retirerait en route. Un abonné qui
+ * lève n'arrête ni les suivants ni l'issue de la connexion ou de la relecture qui a rétabli la session : l'erreur
+ * est rapportée.
+ */
+function notify(callbacks: ReadonlySet<() => void>): void {
+  for (const callback of [...callbacks]) {
     try {
       callback()
     } catch (caught) {
@@ -242,6 +276,10 @@ export function markSessionExpired(sentAt?: number): boolean {
     return state.sessionEnded
   }
 
+  // Le compte dont la session finit est celui de la **première** fin : les suivantes trouvent l'en-tête déjà anonyme.
+  if (!state.sessionEnded) {
+    endedAccount = state.user?.username ?? null
+  }
   applySession(ANONYMOUS_SESSION)
   state.sessionEnded = true
   state.sessionEndedCount += 1
@@ -261,6 +299,15 @@ export function onSessionRestored(callback: () => void): void {
   const subscription = (): void => callback()
   sessionRestoredCallbacks.add(subscription)
   onScopeDispose(() => sessionRestoredCallbacks.delete(subscription))
+}
+
+/**
+ * Abonne `callback` au **changement de compte** : voir `UseAuthResult.onAccountSwitched`, dont c'est la même fonction.
+ */
+export function onAccountSwitched(callback: () => void): void {
+  const subscription = (): void => callback()
+  accountSwitchedCallbacks.add(subscription)
+  onScopeDispose(() => accountSwitchedCallbacks.delete(subscription))
 }
 
 /**
@@ -320,13 +367,22 @@ export interface UseAuthResult {
   rereadAfterRefusal: () => Promise<RefusalReread>
   /**
    * Abonne `callback` au **retour** de la session : il est appelé une fois, de façon synchrone, à chaque descente
-   * de `sessionEnded` (vrai → faux) — un compte est revenu, par une connexion ou par la relecture au retour sur
-   * l'onglet. Jamais à la fin de la session, ni quand rien n'était fini. À appeler dans un scope (le `setup` d'un
+   * de `sessionEnded` (vrai → faux) où **le même compte** revient (ou aucun n'était affiché) — par la relecture au
+   * retour sur l'onglet. Ni pour un autre compte (`onAccountSwitched`), ni pour une connexion dans l'onglet (la page
+   * de connexion navigue elle-même, #748, R18). Jamais à la fin de la session, ni quand rien n'était fini. À appeler dans un scope (le `setup` d'un
    * composant, un `effectScope`) : l'abonnement est retiré à `onScopeDispose`. C'est **le** signal de retour :
    * une page qui dépend du retour (relire ce qu'une session finie a interrompu) s'y abonne, elle ne surveille
    * plus `authState.sessionEnded` elle-même.
    */
   onSessionRestored: (callback: () => void) => void
+  /**
+   * Abonne `callback` au **changement de compte** (#748, R18) : la session a fini, et c'est **un autre compte** que
+   * celui qui était affiché qui est revenu (par la relecture au retour sur l'onglet, ou `checkAuth()`). La session
+   * est déjà appliquée quand `callback` est appelé ; `onSessionRestored` n'est pas appelé (la page ouverte n'est pas
+   * « rétablie » : ce n'est plus la page de ce compte). Jamais pour une connexion dans l'onglet. Même mécanique que
+   * `onSessionRestored` : un scope, retiré à `onScopeDispose`. Seul `AppLayout` s'y abonne.
+   */
+  onAccountSwitched: (callback: () => void) => void
   checkAuth: () => Promise<void>
 }
 
@@ -342,9 +398,10 @@ export function useAuth(): UseAuthResult {
   const login = async (username: string, password: string): Promise<void> => {
     const session = sessionForUser(await repository.login(username, password))
     // Une connexion est le geste de la personne : elle vaut quelle que soit la génération (rien n'est parti avant
-    // elle qui la contredise), mais comme toute descente elle veut un compte et un jeton d'écriture.
+    // elle qui la contredise), mais comme toute descente elle veut un compte et un jeton d'écriture. Elle ne rappelle
+    // aucun abonné (#748, R18) : la page de connexion navigue elle-même, rien n'est « rétabli » ni rejoué ici.
     if (state.sessionEnded && null !== session.user && repository.hasWriteToken()) {
-      restoreSession(session)
+      restoreSession(session, false)
     } else {
       applySession(session)
     }
@@ -374,7 +431,7 @@ export function useAuth(): UseAuthResult {
       return false
     }
     if (state.sessionEnded && null !== session.user) {
-      restoreSession(session)
+      restoreSession(session, true)
     } else {
       applySession(session)
     }
@@ -422,7 +479,7 @@ export function useAuth(): UseAuthResult {
         // Le compte seul ne suffit pas : sans jeton d'écriture la première écriture serait refusée (403 sans CSRF).
         // Et une réponse partie avant un nouveau refus est d'avant lui : elle ne rétablit pas ce qui vient de finir.
         if (sentAt === generation && state.sessionEnded && null !== session.user && repository.hasWriteToken()) {
-          restoreSession(session)
+          restoreSession(session, true)
         }
       } catch {
         // Le réseau ne répond pas : la session reste finie, rien n'est annoncé.
@@ -488,6 +545,7 @@ export function useAuth(): UseAuthResult {
     recheckEndedSession,
     rereadAfterRefusal,
     onSessionRestored,
+    onAccountSwitched,
     checkAuth,
   }
 }

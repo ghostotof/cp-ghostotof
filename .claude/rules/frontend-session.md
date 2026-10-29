@@ -29,6 +29,7 @@ paths:
   - "frontend/tests/presentation/router/protectedRoutesCarryNoSecret.spec.ts"
   - "frontend/src/presentation/router/backofficeSessionExpiry.ts"
   - "frontend/src/presentation/layout/useSessionRecheckOnFocus.ts"
+  - "frontend/src/presentation/layout/AppLayout.vue"
   - "frontend/tests/presentation/layout/useSessionRecheckOnFocus.spec.ts"
   - "frontend/tests/infrastructure/http/**"
   - "frontend/tests/application/admin/shared/useAdminLoad.spec.ts"
@@ -263,6 +264,25 @@ does `BackofficeHttpClient`.
     `unauthenticated` error and goes back to `idle` — the draft stays (the question typed came back into the field at
     the failure), nothing is re-sent, and other errors (network, quota) are not the session's: they stay. The banner
     clears itself and announces the return (« Session rétablie »).
+  - **Only the same account is restored in place; another one replays the navigation** (#748, R18, the author's
+    decision of 2026-10-29). `useAuth` keeps **the account whose session ended** — the `username` shown at the *first*
+    accepted end (read before `markSessionExpired` turns the header anonymous; a later refusal finds it anonymous and
+    does not overwrite it; `null` when no account was shown, base tier or anonymous), forgotten at the return. At the
+    descent: the **same** `username`, or none kept, calls `onSessionRestored` (« Session rétablie », the interrupted
+    reads run again, the typed input stays); **another** account has its session applied and calls **only**
+    `onAccountSwitched(callback)` (same mechanics: a scope, dropped at `onScopeDispose`). Nobody announces « Session
+    rétablie » for it, and no list is re-read: the open page is no longer that account's. `AppLayout` is the one
+    subscriber: it replays the navigation to the current route with `router.replace({ path, query, hash, force: true })`
+    — `force` because the router ignores a navigation to the address it is on, so the guard would never judge the new
+    account (an account without `ROLE_SUPER` on `/admin` is sent to « forbidden », never shown the page with the first
+    account's data) — **then** advances a `key` on the `RouterView` component, because the same path keeps the same
+    instance (the assistant would keep the first account's conversation, a form its input). Replay first, remount
+    after: the other order would mount a protected page, for an instant, for an account the guard is about to refuse.
+    Rejected: `window.location.reload()` (loses the whole application's state and redoes the first `checkAuth`). **A
+    `login()` is silent**: it lowers `sessionEnded` and advances the generation but calls neither signal — the login
+    page navigates itself — so tests that need a return go through `recheckEndedSession()` (`tests/support/signInAgain.ts`
+    does, in an ended session). Pinned by `useAuth.spec.ts`, `AppLayout.spec.ts` (the guard re-judges, the page is
+    remounted, the role-less account is redirected), `SessionEndedBanner.spec.ts` and `AssistantPage.spec.ts`.
   - **The header's « Connexion » in a new tab holds on every `requiresAuth` route**, not only the backoffice
     (`sessionEndedHere` reads `route.meta.requiresAuth`), **except where `meta.signInInSameTab` says otherwise** (the
     consent, R16): `AppHeader.spec.ts` pins the assistant and « Mes connexions MCP » (new tab) and the consent (same tab,
@@ -291,7 +311,7 @@ caller reads it **before sending** and hands it back with the verdict:
 - **The single descent** of `sessionEnded` (`restoreSession`, internal to `useAuth`) asks for **an account, a write
   token (`hasWriteToken()`) and the current generation** — a sign-in (`login`) is the person's own gesture and skips the
   generation check, nothing sent before it can contradict it. `login()`, `checkAuth()` and `recheckEndedSession()` all go
-  through it; it advances the generation and then calls the `onSessionRestored` subscribers. A `/api/me` sent before a new
+  through it; it advances the generation and then calls the `onSessionRestored` subscribers (or `onAccountSwitched`'s for another account; `login()` calls neither, R18). A `/api/me` sent before a new
   refusal, or before a return, answers for a session that is gone: its result is dropped (it neither restores nor
   puts the header back to an account). `checkAuth()` no longer lowers `sessionEnded` for an account without a write token
   (F5: it did, while `recheckEndedSession()` required one).

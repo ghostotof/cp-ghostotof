@@ -189,9 +189,11 @@ describe('useAuth', () => {
   })
 
   describe('onSessionRestored (#748, R13)', () => {
+    const JANE_ME = (): Partial<AuthRepository> => ({ me: vi.fn(async () => sessionFor({ username: 'jane', roles: ['ROLE_USER'] })) })
+
     it("appelé une fois au retour, de façon synchrone, jamais à la fin de la session", async () => {
       const restored = vi.fn()
-      const auth = mountWithComposable(createStubRepository(), (probe) => probe.onSessionRestored(restored))
+      const auth = mountWithComposable(createStubRepository(JANE_ME()), (probe) => probe.onSessionRestored(restored))
       await auth.login('jane', 'password')
 
       markSessionExpired()
@@ -201,22 +203,22 @@ describe('useAuth', () => {
       markSessionExpired()
       expect(restored).not.toHaveBeenCalled()
 
-      await auth.login('jane', 'password')
+      await auth.recheckEndedSession()
       expect(restored).toHaveBeenCalledTimes(1)
 
-      // Plus de session finie : une connexion de plus n'est pas un retour.
-      await auth.login('jane', 'password')
+      // Plus de session finie : une relecture de plus n'est pas un retour.
+      await auth.recheckEndedSession()
       expect(restored).toHaveBeenCalledTimes(1)
     })
 
     it("plus appelé après la fin du scope qui l'a pris", async () => {
       const restored = vi.fn()
-      const auth = mountWithComposable(createStubRepository(), (probe) => probe.onSessionRestored(restored))
+      const auth = mountWithComposable(createStubRepository(JANE_ME()), (probe) => probe.onSessionRestored(restored))
       await auth.login('jane', 'password')
       auth.unmount()
 
       markSessionExpired()
-      await mountWithComposable(createStubRepository()).login('jane', 'password')
+      await mountWithComposable(createStubRepository(JANE_ME())).recheckEndedSession()
 
       expect(restored).not.toHaveBeenCalled()
     })
@@ -225,10 +227,10 @@ describe('useAuth', () => {
       const first = vi.fn()
       const second = vi.fn()
       mountWithComposable(createStubRepository(), (probe) => probe.onSessionRestored(first))
-      const auth = mountWithComposable(createStubRepository(), (probe) => probe.onSessionRestored(second))
+      const auth = mountWithComposable(createStubRepository(JANE_ME()), (probe) => probe.onSessionRestored(second))
       markSessionExpired()
 
-      await auth.login('jane', 'password')
+      await auth.recheckEndedSession()
 
       expect(first).toHaveBeenCalledTimes(1)
       expect(second).toHaveBeenCalledTimes(1)
@@ -246,16 +248,151 @@ describe('useAuth', () => {
     })
   })
 
+  describe('le même compte est rétabli en place, un autre rejoue la navigation (#748, R18)', () => {
+    const JANE = { username: 'jane', roles: ['ROLE_USER'] }
+    const OTHER = { username: 'autre', roles: ['ROLE_USER'] }
+
+    function subscribed(repository: AuthRepository) {
+      const restored = vi.fn()
+      const switched = vi.fn()
+      const auth = mountWithComposable(repository, (probe) => {
+        probe.onSessionRestored(restored)
+        probe.onAccountSwitched(switched)
+      })
+
+      return { auth, restored, switched }
+    }
+
+    it("le même compte revient : rétabli en place", async () => {
+      const { auth, restored, switched } = subscribed(createStubRepository({ me: vi.fn(async () => sessionFor(JANE)) }))
+      await auth.login('jane', 'password')
+      markSessionExpired()
+
+      await auth.recheckEndedSession()
+
+      expect(restored).toHaveBeenCalledTimes(1)
+      expect(switched).not.toHaveBeenCalled()
+      expect(auth.user.value?.username).toBe('jane')
+    })
+
+    it("un autre compte revient : la session est appliquée, onAccountSwitched seul", async () => {
+      const { auth, restored, switched } = subscribed(createStubRepository({ me: vi.fn(async () => sessionFor(OTHER)) }))
+      await auth.login('jane', 'password')
+      markSessionExpired()
+
+      await auth.recheckEndedSession()
+
+      expect(switched).toHaveBeenCalledTimes(1)
+      expect(restored).not.toHaveBeenCalled()
+      // La session est appliquée avant le rappel : la garde de route juge le nouveau compte.
+      expect(auth.hasSessionEnded.value).toBe(false)
+      expect(auth.user.value?.username).toBe('autre')
+    })
+
+    it("onAccountSwitched : l'état est posé quand le rappel s'exécute", async () => {
+      let seen: string | null | undefined
+      const repository = createStubRepository({ me: vi.fn(async () => sessionFor(OTHER)) })
+      const auth = mountWithComposable(repository, (probe) => {
+        probe.onAccountSwitched(() => {
+          seen = authState.user?.username ?? null
+        })
+      })
+      await auth.login('jane', 'password')
+      markSessionExpired()
+
+      await auth.recheckEndedSession()
+
+      expect(seen).toBe('autre')
+    })
+
+    it('checkAuth() retrouvant un autre compte est aussi un changement de compte', async () => {
+      const { auth, restored, switched } = subscribed(createStubRepository({ me: vi.fn(async () => sessionFor(OTHER)) }))
+      await auth.login('jane', 'password')
+      markSessionExpired()
+
+      await auth.checkAuth()
+
+      expect(switched).toHaveBeenCalledTimes(1)
+      expect(restored).not.toHaveBeenCalled()
+    })
+
+    it("sans compte affiché à la fin (palier de base, anonyme), n'importe quel compte rétablit en place", async () => {
+      const { auth, restored, switched } = subscribed(createStubRepository({ me: vi.fn(async () => sessionFor(OTHER)) }))
+      markBaseAccessGranted()
+      markSessionExpired()
+
+      await auth.recheckEndedSession()
+
+      expect(restored).toHaveBeenCalledTimes(1)
+      expect(switched).not.toHaveBeenCalled()
+    })
+
+    it("le compte retenu est celui de la première fin : un refus de plus ne l'écrase pas", async () => {
+      const { auth, restored, switched } = subscribed(createStubRepository({ me: vi.fn(async () => sessionFor(JANE)) }))
+      await auth.login('jane', 'password')
+      markSessionExpired()
+      // L'en-tête est anonyme depuis la première fin : le second refus ne doit pas retenir « aucun compte ».
+      markSessionExpired()
+
+      await auth.recheckEndedSession()
+
+      expect(restored).toHaveBeenCalledTimes(1)
+      expect(switched).not.toHaveBeenCalled()
+    })
+
+    it("le compte retenu est oublié au retour : une seconde fin retient le compte alors affiché", async () => {
+      const me = vi.fn(async () => sessionFor(OTHER))
+      const { auth, restored, switched } = subscribed(createStubRepository({ me }))
+      await auth.login('jane', 'password')
+      markSessionExpired()
+      await auth.recheckEndedSession()
+      expect(switched).toHaveBeenCalledTimes(1)
+
+      // « autre » est maintenant le compte affiché : s'il revient, c'est le même.
+      markSessionExpired()
+      await auth.recheckEndedSession()
+
+      expect(restored).toHaveBeenCalledTimes(1)
+      expect(switched).toHaveBeenCalledTimes(1)
+    })
+
+    it("une connexion dans l'onglet n'appelle aucun des deux", async () => {
+      const { auth, restored, switched } = subscribed(createStubRepository())
+      await auth.login('jane', 'password')
+      markSessionExpired()
+
+      await auth.login('autre', 'password')
+
+      expect(auth.hasSessionEnded.value).toBe(false)
+      expect(restored).not.toHaveBeenCalled()
+      expect(switched).not.toHaveBeenCalled()
+    })
+
+    it('plus appelé après la fin du scope qui l\'a pris', async () => {
+      const switched = vi.fn()
+      const repository = createStubRepository({ me: vi.fn(async () => sessionFor(OTHER)) })
+      const auth = mountWithComposable(repository, (probe) => probe.onAccountSwitched(switched))
+      await auth.login('jane', 'password')
+      auth.unmount()
+      markSessionExpired()
+
+      await mountWithComposable(repository).recheckEndedSession()
+
+      expect(switched).not.toHaveBeenCalled()
+    })
+  })
+
   describe('un rappel de retour qui lève (#748, R14)', () => {
     afterEach(() => {
       vi.restoreAllMocks()
     })
 
-    it("n'empêche ni les rappels suivants ni l'issue de login(), et l'erreur est rapportée", async () => {
+    it("n'empêche ni les rappels suivants ni l'issue de la relecture, et l'erreur est rapportée", async () => {
       const error = vi.spyOn(console, 'error').mockImplementation(() => undefined)
       const broken = new Error('rappel défaillant')
       const after = vi.fn()
-      const auth = mountWithComposable(createStubRepository(), (probe) => {
+      const repository = createStubRepository({ me: vi.fn(async () => sessionFor({ username: 'jane', roles: ['ROLE_USER'] })) })
+      const auth = mountWithComposable(repository, (probe) => {
         probe.onSessionRestored(() => {
           throw broken
         })
@@ -263,7 +400,7 @@ describe('useAuth', () => {
       })
       markSessionExpired()
 
-      await expect(auth.login('jane', 'password')).resolves.toBeUndefined()
+      await expect(auth.recheckEndedSession()).resolves.toBeUndefined()
       // Démonté avant les assertions : l'abonné défaillant ne doit pas survivre au test.
       auth.unmount()
 

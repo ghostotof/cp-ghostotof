@@ -210,6 +210,23 @@ describe('SessionEndedBanner (#650, S2)', () => {
     wrapper.unmount()
   })
 
+  it("un autre compte revient : « Session rétablie » n'est pas annoncée (la page n'est plus la sienne, R18)", async () => {
+    // `resetToSignedIn` connecte `super` : c'est le compte dont la session finit. Revient un autre.
+    const repository = createRepository(async () => sessionFor({ username: 'autre', roles: ['ROLE_SUPER', 'ROLE_USER'] }))
+    await resetToSignedIn(repository)
+    const wrapper = await mountBanner('/fr/admin/case-studies', repository)
+    markSessionExpired()
+    await flushPromises()
+
+    await recheck(repository)
+
+    // `AppLayout` rejoue la navigation et remonte la page ; ici, le bandeau ne promet rien : « vous pouvez enregistrer »
+    // serait dit à propos d'une saisie qui n'est plus celle de ce compte.
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(wrapper.get('[role="status"]').text()).toBe('')
+    wrapper.unmount()
+  })
+
   it('le message de retour est dit dans la langue de la page', async () => {
     const repository = createRepository(async () => sessionFor({ username: 'super', roles: ['ROLE_SUPER', 'ROLE_USER'] }))
     await resetToSignedIn(repository)

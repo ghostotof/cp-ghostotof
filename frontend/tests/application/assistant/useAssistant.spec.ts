@@ -296,9 +296,17 @@ describe('useAssistant', () => {
 
   // R8 (#748) : l'erreur de session n'a plus lieu d'être quand la session revient ; la saisie, elle, reste.
   it("au retour de la session, l'erreur de session s'efface et le brouillon reste", async () => {
-    const { assistant, auth } = setup(async () => {
-      throw new AssistantError('unauthenticated')
-    })
+    const { assistant, auth } = setup(
+      async () => {
+        throw new AssistantError('unauthenticated')
+      },
+      {
+      login: vi.fn(async () => ({ username: 'jane', roles: ['ROLE_USER', 'ROLE_TRUSTED'] })),
+      logout: vi.fn(),
+      hasWriteToken: () => true,
+      me: vi.fn(async () => sessionFor({ username: 'jane', roles: ['ROLE_USER', 'ROLE_TRUSTED'] })),
+    },
+    )
     await auth.login('jane', 'password')
     assistant.draft.value = 'ma question'
     await assistant.send('fr')
@@ -306,7 +314,8 @@ describe('useAssistant', () => {
     expect(assistant.error.value?.reason).toBe('unauthenticated')
     expect(auth.hasSessionEnded.value).toBe(true)
 
-    await auth.login('jane', 'password')
+    // Le retour passe par la relecture partagée (le `focus` de la fenêtre) : une connexion ne rappelle plus (R18).
+    await auth.recheckEndedSession()
     await flushPromises()
 
     expect(auth.hasSessionEnded.value).toBe(false)
@@ -316,14 +325,22 @@ describe('useAssistant', () => {
   })
 
   it("au retour de la session, une autre erreur n'est pas effacée", async () => {
-    const { assistant, auth } = setup(async () => {
-      throw new AssistantError('unavailable')
-    })
+    const { assistant, auth } = setup(
+      async () => {
+        throw new AssistantError('unavailable')
+      },
+      {
+      login: vi.fn(async () => ({ username: 'jane', roles: ['ROLE_USER', 'ROLE_TRUSTED'] })),
+      logout: vi.fn(),
+      hasWriteToken: () => true,
+      me: vi.fn(async () => sessionFor({ username: 'jane', roles: ['ROLE_USER', 'ROLE_TRUSTED'] })),
+    },
+    )
     assistant.draft.value = 'q'
     await assistant.send('fr')
     markSessionExpired()
 
-    await auth.login('jane', 'password')
+    await auth.recheckEndedSession()
     await flushPromises()
 
     expect(assistant.error.value?.reason).toBe('unavailable')
