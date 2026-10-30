@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   backofficeAccessRefused,
   clearBackofficeAccessRefusal,
-  earlierWriteRefused,
+  earlierSaveRefused,
   markBackofficeAccessRefused,
   refusalScope,
   settleBackofficeAccessRefusalsOnMount,
@@ -56,7 +56,7 @@ describe('backofficeAccessRefusal', () => {
     settleBackofficeAccessRefusalsOnMount(ACCOUNT_A)
 
     expect(backofficeAccessRefused.value).toBe(1)
-    expect(earlierWriteRefused.value).toBe(true)
+    expect(earlierSaveRefused.value).toBe(true)
     expect(refusalScope()).toBe(sentFromThisPage)
     expect(markBackofficeAccessRefused({ kind: 'read', scope: sentFromThisPage }, ACCOUNT_A)).toBe(true)
   })
@@ -68,7 +68,7 @@ describe('backofficeAccessRefusal', () => {
     settleBackofficeAccessRefusalsOnMount(ACCOUNT_A)
 
     expect(backofficeAccessRefused.value).toBe(0)
-    expect(earlierWriteRefused.value).toBe(false)
+    expect(earlierSaveRefused.value).toBe(false)
     expect(refusalScope()).toBe(sentFromThisPage)
   })
 
@@ -77,7 +77,7 @@ describe('backofficeAccessRefusal', () => {
 
     settleBackofficeAccessRefusalsOnMount(ACCOUNT_A)
 
-    expect(earlierWriteRefused.value).toBe(true)
+    expect(earlierSaveRefused.value).toBe(true)
     expect(backofficeAccessRefused.value).toBe(1)
   })
 
@@ -87,57 +87,57 @@ describe('backofficeAccessRefusal', () => {
 
     settleBackofficeAccessRefusalsOnMount(ACCOUNT_B)
 
-    expect(earlierWriteRefused.value).toBe(false)
+    expect(earlierSaveRefused.value).toBe(false)
     expect(backofficeAccessRefused.value).toBe(0)
     expect(refusalScope()).toBe(sentFromThisPage)
     // L'écriture comptée est oubliée aussi : un montage suivant, même sous le compte A, n'a plus rien à dire.
     settleBackofficeAccessRefusalsOnMount(ACCOUNT_A)
-    expect(earlierWriteRefused.value).toBe(false)
+    expect(earlierSaveRefused.value).toBe(false)
   })
 
   it("au montage, une écriture comptée sous aucun compte n'est dite qu'à « aucun compte » (null contre null, R76)", () => {
     markBackofficeAccessRefused({ kind: 'write' }, null)
 
     settleBackofficeAccessRefusalsOnMount(ACCOUNT_A)
-    expect(earlierWriteRefused.value).toBe(false)
+    expect(earlierSaveRefused.value).toBe(false)
 
     markBackofficeAccessRefused({ kind: 'write' }, null)
     settleBackofficeAccessRefusalsOnMount(null)
-    expect(earlierWriteRefused.value).toBe(true)
+    expect(earlierSaveRefused.value).toBe(true)
   })
 
   it("après le montage, une lecture refusée garde l'avis et fait avancer le compteur", () => {
     markBackofficeAccessRefused({ kind: 'write' }, ACCOUNT_A)
     settleBackofficeAccessRefusalsOnMount(ACCOUNT_A)
-    expect(earlierWriteRefused.value).toBe(true)
+    expect(earlierSaveRefused.value).toBe(true)
     expect(backofficeAccessRefused.value).toBe(1)
 
     markBackofficeAccessRefused(readSentNow(), ACCOUNT_A)
 
-    expect(earlierWriteRefused.value).toBe(true)
+    expect(earlierSaveRefused.value).toBe(true)
     expect(backofficeAccessRefused.value).toBe(2)
   })
 
   it("après le montage, une écriture refusée ramène le texte courant", () => {
     markBackofficeAccessRefused({ kind: 'write' }, ACCOUNT_A)
     settleBackofficeAccessRefusalsOnMount(ACCOUNT_A)
-    expect(earlierWriteRefused.value).toBe(true)
+    expect(earlierSaveRefused.value).toBe(true)
 
     markBackofficeAccessRefused({ kind: 'write' }, ACCOUNT_A)
 
-    expect(earlierWriteRefused.value).toBe(false)
+    expect(earlierSaveRefused.value).toBe(false)
     expect(backofficeAccessRefused.value).toBe(2)
   })
 
   it("un effacement remet l'avis à faux et oublie l'écriture comptée (R64)", () => {
     markBackofficeAccessRefused({ kind: 'write' }, ACCOUNT_A)
     settleBackofficeAccessRefusalsOnMount(ACCOUNT_A)
-    expect(earlierWriteRefused.value).toBe(true)
+    expect(earlierSaveRefused.value).toBe(true)
 
     // Un effacement oublie aussi l'écriture comptée : le montage suivant n'a rien à dire.
     clearBackofficeAccessRefusal()
     settleBackofficeAccessRefusalsOnMount(ACCOUNT_A)
-    expect(earlierWriteRefused.value).toBe(false)
+    expect(earlierSaveRefused.value).toBe(false)
     expect(backofficeAccessRefused.value).toBe(0)
   })
 
@@ -157,7 +157,7 @@ describe('backofficeAccessRefusal', () => {
     settleBackofficeAccessRefusalsOnMount(ACCOUNT_A)
 
     expect(backofficeAccessRefused.value).toBe(2)
-    expect(earlierWriteRefused.value).toBe(true)
+    expect(earlierSaveRefused.value).toBe(true)
     expect(refusalScope()).toBeGreaterThan(0)
   })
 
@@ -166,7 +166,7 @@ describe('backofficeAccessRefusal', () => {
     settleBackofficeAccessRefusalsOnMount(ACCOUNT_A)
 
     expect(backofficeAccessRefused.value).toBe(0)
-    expect(earlierWriteRefused.value).toBe(false)
+    expect(earlierSaveRefused.value).toBe(false)
     expect(refusalScope()).toBe(0)
   })
 })

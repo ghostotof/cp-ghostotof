@@ -6,7 +6,7 @@ import { authState, lastAccountName } from '../../../application/auth/useAuth'
 import {
   backofficeAccessRefused,
   clearBackofficeAccessRefusal,
-  earlierWriteRefused,
+  earlierSaveRefused,
   settleBackofficeAccessRefusalsOnMount,
 } from '../../../application/admin/shared/backofficeAccessRefusal'
 import type { Locale } from '../../../domain/portfolio/entities/Locale'
@@ -42,7 +42,7 @@ import { switchAccountLocation } from '../../router/reauthentication'
  *   décision 1 de la sixième relecture, amendant Q1 de la cinquième ; `settleBackofficeAccessRefusalsOnMount`) : une
  *   lecture comptée alors qu'aucune alerte n'était montée est oubliée (le palier a été relu), un enregistrement refusé
  *   pendant que la personne avait quitté le backoffice est **dit au retour**, avec son propre texte
- *   (`common.earlierSaveRefused`, `earlierWriteRefused`) — **au compte qui l'a envoyé seulement** (R76, décision 2 de la
+ *   (`common.earlierSaveRefused`, `earlierSaveRefused`) — **au compte qui l'a envoyé seulement** (R76, décision 2 de la
  *   septième relecture : `lastAccountName()` est passé au montage, un autre compte remet tout à zéro). Le chargement de
  *   la page d'arrivée est parti avant le montage : son refus doit compter, et **s'il est refusé, l'avis reste** (CR7-4 :
  *   une lecture refusée avance le compteur, l'alerte se réannonce, le texte est gardé). Un refus d'**écriture** sur la
@@ -61,7 +61,7 @@ const switchAccountTarget = computed(() => switchAccountLocation(route, locale.v
 // pendant l'absence l'attend déjà (R64).
 const isMounted = ref(false)
 const isShown = computed(() => isMounted.value && backofficeAccessRefused.value > 0 && !authState.sessionEnded)
-const message = computed(() => (earlierWriteRefused.value ? t('common.earlierSaveRefused') : t('common.accessRefused')))
+const message = computed(() => (earlierSaveRefused.value ? t('common.earlierSaveRefused') : t('common.accessRefused')))
 
 const notice = useTemplateRef<HTMLElement>('notice')
 usePublishedHeight(notice, '--admin-notice-height')
