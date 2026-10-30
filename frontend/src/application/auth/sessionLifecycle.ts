@@ -30,7 +30,7 @@ export function isReturnOfAccount(session: AuthSession): boolean {
 }
 
 /**
- * **La** condition de descente de `sessionEnded`, écrite une fois (#748, R25) : la session est finie, un compte est
+ * La condition de la descente par le retour d'un compte, écrite une fois (#748, R25) : la session est finie, un compte est
  * revenu **et** un jeton d'écriture existe (`hasWriteToken`, `AuthRepository.hasWriteToken()`) — sans lui la première
  * écriture prendrait le 403 du CSRF, lu comme une session finie : « rétablir » relancerait la boucle. La génération
  * est jugée par l'appelant (`isCurrentGeneration`), sauf pour une connexion, geste de la personne.
@@ -40,8 +40,9 @@ export function canRestore(session: AuthSession, hasWriteToken: () => boolean): 
 }
 
 /**
- * **La** descente de `sessionEnded` : un compte est revenu (l'appelant a vérifié par `canRestore` le jeton d'écriture
- * et la génération, sauf pour une connexion, geste de la personne). Applique la session, avance la génération, puis —
+ * La descente de `sessionEnded` **par le retour d'un compte** (l'autre, sans signal, est `markBaseAccessGranted`,
+ * `sessionState.ts`, R41) : un compte est revenu (l'appelant a vérifié par `canRestore` le jeton d'écriture et la
+ * génération, sauf pour une connexion, geste de la personne). Applique la session, avance la génération, puis —
  * une fois, de façon synchrone, l'état posé : les abonnés lisent la session revenue — appelle :
  * - `onSessionRestored` si c'est **le même compte** que le dernier affiché (`isSameAccount`) : la page ouverte est la
  *   sienne, elle reprend en place ;

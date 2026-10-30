@@ -110,8 +110,9 @@ export function lowerSessionEnded(): void {
 
 /**
  * Pose le palier et le compte. **Ne touche jamais à `sessionEnded`** : la fin est l'affaire de
- * `markSessionExpired`, le retour de `restoreSession` (`sessionLifecycle.ts`), qui seuls jugent la génération et le
- * jeton d'écriture. **N'avance pas non plus la génération** : une session *lue* est la réponse d'un envoi, pas une
+ * `markSessionExpired`, ses deux descentes celles de `restoreSession` (`sessionLifecycle.ts`) et de
+ * `markBaseAccessGranted` ; seules les deux premières jugent la génération et le jeton d'écriture. **N'avance pas non
+ * plus la génération** : une session *lue* est la réponse d'un envoi, pas une
  * décision de l'onglet (celles-ci l'avancent : voir `sessionGeneration.ts`).
  */
 export function applySession(session: AuthSession): void {
