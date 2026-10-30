@@ -21,10 +21,9 @@
 # ---------------------------------------------------------------------------
 set -uo pipefail   # pas de -e : un hôte en échec n'empêche pas de contrôler les suivants
 
-# Sans -e, un `source` en échec ne s'arrête pas : chaque appel finirait en
-# « command not found », FAILURES resterait à 0 et le run serait vert sans
-# avoir rien contrôlé. Le stderr du `source` reste visible : une erreur de syntaxe
-# de la bibliothèque s'y lit, au lieu de se cacher sous « introuvable » (#748, C6-7).
+# Sortie 2 si la bibliothèque manque ou ne se lit pas (sans -e, un source en échec continuerait) ; stderr de bash visible.
+# Sans cette sortie, chaque appel finirait en « command not found », FAILURES
+# resterait à 0 et le run serait vert sans avoir rien contrôlé.
 # shellcheck source=tools/lib/tls-certificate.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/tls-certificate.sh" || {
   echo "bibliothèque introuvable ou invalide : tools/lib/tls-certificate.sh" >&2

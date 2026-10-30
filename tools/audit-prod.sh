@@ -45,14 +45,13 @@ CURL_OPTS_ANONYMOUS=("${CURL_OPTS[@]}")
 # bibliothèque absente) : le fichier, son échappement et ce refus sont dans
 # tools/lib/smoke-http.sh, partagés avec les scripts de fumée. La bibliothèque
 # n'est sourcée que dans ce bloc, seul endroit qui s'en sert : sans
-# AUDIT_BASIC_AUTH (la vraie prod), l'audit n'en dépend pas. Sans -e, un `source`
-# en échec ne s'arrête pas : d'où le `|| exit 2`. Son stderr reste visible : une
-# erreur de syntaxe de la bibliothèque s'y lit, au lieu d'être cachée sous
-# « introuvable » (#748, C6-7). Le `trap` précède la création du dossier : un
+# AUDIT_BASIC_AUTH (la vraie prod), l'audit n'en dépend pas. Le `trap` précède la
+# création du dossier : un
 # arrêt entre `mktemp -d` et l'affectation que lit le `trap` peut laisser un dossier
 # privé **vide**, jamais la valeur, qui n'est écrite qu'une fois le chemin connu du
 # `trap` (#748, C7-8).
 if [ -n "${AUDIT_BASIC_AUTH:-}" ]; then
+  # Sortie 2 si la bibliothèque manque ou ne se lit pas (sans -e, un source en échec continuerait) ; stderr de bash visible.
   # shellcheck source=tools/lib/smoke-http.sh
   source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/smoke-http.sh" || {
     echo "bibliothèque introuvable ou invalide : tools/lib/smoke-http.sh" >&2
@@ -112,14 +111,16 @@ done
 #    voir, et c'est exactement ce que cette section corrige.
 # ---------------------------------------------------------------------------
 
+# Sortie 2 si la bibliothèque manque ou ne se lit pas (sans -e, un source en échec continuerait) ; stderr de bash visible.
 # shellcheck source=tools/lib/security-headers.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/security-headers.sh" || {
   echo "bibliothèque introuvable ou invalide : tools/lib/security-headers.sh" >&2
   exit 2
 }
-# Section 5 ci-dessous. Sans -e, un `source` en échec ne s'arrête pas : la
-# fonction manquerait, FAILURES ne compterait rien, et l'audit lancé hors du
-# dépôt (sans tools/lib/) passerait au vert sans avoir rien vérifié.
+# Sortie 2 si la bibliothèque manque ou ne se lit pas (sans -e, un source en échec continuerait) ; stderr de bash visible.
+# Section 5 ci-dessous : sans la sortie, la fonction manquerait, FAILURES ne
+# compterait rien, et l'audit lancé hors du dépôt (sans tools/lib/) passerait au
+# vert sans avoir rien vérifié.
 # shellcheck source=tools/lib/tls-certificate.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/tls-certificate.sh" || {
   echo "bibliothèque introuvable ou invalide : tools/lib/tls-certificate.sh" >&2

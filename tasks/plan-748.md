@@ -4949,6 +4949,7 @@ Tâche **ajoutée pendant la série**, après R79 (qui verrouille la langue sans
 - [ ] **Step 4 : verts** — les cinq tests hors ligne à 0 (mêmes sorties que le filet, plus le nouveau) ; shellcheck
   (image épinglée) sur les fichiers touchés ; `tools/check-claude-rules.sh; echo "exit=$?"`.
 - [ ] **Step 5 : commit** — `refactor(tools): les en-têtes multiples lus par la bibliothèque, l'amorçage des bibliothèques commenté d'une ligne, des valeurs et des noms de test sans piège (#748)`.
+- [x] **Décision 6 (R75), fait en R83** : `smoke_write_auth_config` appelle `smoke_cleanup` en tête (avant la validation du nom et avant son dossier) ; un second appel remplace le premier ; test deux appels successifs et dossier hérité jamais supprimé.
 
 ---
 

@@ -3,7 +3,7 @@
 # smoke-http.test.sh
 # ---------------------------------------------------------------------------
 # Test hors ligne de tools/lib/smoke-http.sh (smoke_write_auth_config, smoke_cleanup,
-# smoke_add_basic_auth, smoke_header, smoke_excerpt, smoke_fetch) : un faux `curl` rejoue une réponse canned et note
+# smoke_add_basic_auth, smoke_header, smoke_headers, smoke_excerpt, smoke_fetch) : un faux `curl` rejoue une réponse canned et note
 # ses arguments, aucun appel réseau, aucune écriture dans le dépôt courant.
 # Les scripts qui sourcent la bibliothèque ont chacun leur test (le contrat de
 # leurs sorties) ; celui-ci épingle ce que la bibliothèque promet seule.
@@ -87,6 +87,43 @@ fi
 # Sans rien à retirer, un second appel retourne encore 0.
 rc=0; smoke_cleanup || rc=$?
 if [ "$rc" -eq 0 ]; then pass "smoke_cleanup sans dossier → 0"; else fail "smoke_cleanup à vide" "rc=$rc"; fi
+
+# --- Décision 6 de #748 : un second smoke_write_auth_config remplace le premier.
+# smoke_cleanup est appelé en tête : le dossier du premier appel est retiré avant
+# que le second naisse, donc un seul dossier existe (celui du second) et aucun
+# fichier d'identifiant ne reste derrière.
+# Lue par smoke_write_auth_config, par indirection (${!nom}).
+# shellcheck disable=SC2034
+UNE_AUTH='first-user:first-pass'
+smoke_write_auth_config UNE_AUTH
+first_dir="$SMOKE_AUTH_DIR"
+# shellcheck disable=SC2034
+UNE_AUTH='second-user:second-pass'
+smoke_write_auth_config UNE_AUTH
+second_dir="$SMOKE_AUTH_DIR"
+if [ -n "$first_dir" ] && [ -n "$second_dir" ] && [ "$first_dir" != "$second_dir" ] \
+   && [ ! -e "$first_dir" ] && [ -d "$second_dir" ] && [ "$(ls -A "$TMP/tmpdir" | wc -l)" -eq 1 ] \
+   && [ "$SMOKE_AUTH_CONFIG" = "$second_dir/curl-auth.conf" ] \
+   && [ "$(cat "$SMOKE_AUTH_CONFIG")" = 'user = "second-user:second-pass"' ]; then
+  pass "un second smoke_write_auth_config remplace le premier : un seul dossier, celui du second"
+else
+  fail "second appel de smoke_write_auth_config" "premier : $first_dir ($([ -e "$first_dir" ] && echo survit || echo retiré)) ; second : $second_dir ; TMPDIR : $(ls -A "$TMP/tmpdir" | tr '\n' ' ')"
+fi
+smoke_cleanup
+unset UNE_AUTH
+# Un dossier hérité de l'environnement (jamais créé par la bibliothèque) n'est
+# supprimé ni par le second appel ni par smoke_cleanup : la source vide
+# SMOKE_AUTH_DIR, donc l'appel de tête ne vise rien d'hérité.
+mkdir "$TMP/herite2"
+rc=0
+SMOKE_AUTH_DIR="$TMP/herite2" UNE_AUTH='u:p' bash -c '
+  source "$1"
+  smoke_write_auth_config UNE_AUTH && smoke_write_auth_config UNE_AUTH && smoke_cleanup' _ "$LIB" || rc=$?
+if [ "$rc" -eq 0 ] && [ -d "$TMP/herite2" ] && [ -z "$(ls -A "$TMP/tmpdir")" ]; then
+  pass "un dossier hérité de l'environnement survit à deux smoke_write_auth_config et à smoke_cleanup"
+else
+  fail "dossier hérité et second appel" "rc=$rc ; dossier hérité : $([ -d "$TMP/herite2" ] && echo présent || echo disparu) ; TMPDIR : $(ls -A "$TMP/tmpdir" | tr '\n' ' ')"
+fi
 
 # --- Un retour à la ligne ou un CR ouvrirait une seconde directive : retour 2,
 # message sur stderr, rien sur stdout, aucun fichier, la valeur jamais citée.
@@ -258,6 +295,19 @@ if [ "$(smoke_header "$TMP/headers" Retry-After)" = "30" ] \
   pass "smoke_header : nom sans casse, CR retiré, dernière occurrence, absent → vide"
 else
   fail "smoke_header" "retry-after : $(smoke_header "$TMP/headers" Retry-After | cat -A) ; content-type : $(smoke_header "$TMP/headers" content-type | cat -A)"
+fi
+
+# --- smoke_headers <fichier> <nom> (St7-3) : toutes les valeurs, une par ligne,
+# dans l'ordre, nom sans casse, CR retiré ; smoke_header en est la dernière ligne.
+printf 'HTTP/2 401\r\nset-cookie: BEARER=a; Max-Age=0\r\nContent-Type: text/plain\r\nSet-Cookie: XSRF-TOKEN=b; Max-Age=0\r\n\r\n' > "$TMP/cookies"
+rc=0
+cookies="$(smoke_headers "$TMP/cookies" Set-Cookie)" || rc=$?
+if [ "$rc" -eq 0 ] && [ "$cookies" = $'BEARER=a; Max-Age=0\nXSRF-TOKEN=b; Max-Age=0' ] \
+   && [ "$(smoke_header "$TMP/cookies" SET-COOKIE)" = 'XSRF-TOKEN=b; Max-Age=0' ] \
+   && [ -z "$(smoke_headers "$TMP/cookies" X-Absent)" ]; then
+  pass "smoke_headers : les deux Set-Cookie, sans casse, CR retiré, absent → vide ; smoke_header = la dernière"
+else
+  fail "smoke_headers" "rc=$rc ; obtenu : $(printf '%s' "$cookies" | cat -A)"
 fi
 
 # --- smoke_excerpt : caractères de contrôle en espaces, 160 caractères.

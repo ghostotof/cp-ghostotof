@@ -35,9 +35,9 @@ FAKE
   chmod +x "$TMP/bin/$fake"
 done
 
-# tree <nom> <invalide|réelle> : une copie de tools/ où smoke-http.sh est soit la
+# copy_tools <nom> <invalide|réelle> : une copie de tools/ où smoke-http.sh est soit la
 # vraie bibliothèque, soit un fichier à erreur de syntaxe.
-tree() {
+copy_tools() {
   local dir="$TMP/$1"
   mkdir -p "$dir/tools/lib"
   cp "$TOOLS/audit-prod.sh" "$dir/tools/"
@@ -66,7 +66,7 @@ run() {
 # --- C6-7 : sans AUDIT_BASIC_AUTH, la bibliothèque de la Basic Auth n'est pas
 # sourcée du tout : une smoke-http.sh invalide ne change rien à l'audit (il court
 # jusqu'au bout, sortie 1 par ses propres échecs, jamais 2 ni l'erreur de bash).
-tree sansauth invalide
+copy_tools sansauth invalide
 run sansauth
 if [ "$rc" -eq 1 ] && ! grep -q 'syntax error' "$TMP/sansauth.err" && ! grep -q 'bibliothèque' "$TMP/sansauth.err" \
    && [ -s "$TMP/sansauth.calls" ]; then
@@ -78,7 +78,7 @@ fi
 # --- C6-7 : avec AUDIT_BASIC_AUTH, la même bibliothèque invalide arrête le script
 # avant toute requête, en le disant (« introuvable ou invalide ») et avec l'erreur
 # de bash.
-tree avecauth invalide
+copy_tools avecauth invalide
 AUDIT_BASIC_AUTH='u:p' run avecauth
 if [ "$rc" -eq 2 ] && grep -q 'introuvable ou invalide : tools/lib/smoke-http.sh' "$TMP/avecauth.err" \
    && grep -q 'syntax error' "$TMP/avecauth.err" && [ ! -s "$TMP/avecauth.calls" ]; then
@@ -90,7 +90,7 @@ fi
 # --- C6-7 : les deux autres bibliothèques disent aussi « invalide », l'erreur
 # de bash visible.
 for lib in security-headers tls-certificate; do
-  tree "lib-$lib" reelle
+  copy_tools "lib-$lib" reelle
   printf 'if then\n' > "$TMP/lib-$lib/tools/lib/$lib.sh"
   run "lib-$lib"
   if [ "$rc" -eq 2 ] && grep -q "introuvable ou invalide : tools/lib/$lib.sh" "$TMP/lib-$lib.err" \
@@ -103,7 +103,7 @@ done
 
 # --- Un retour à la ligne dans AUDIT_BASIC_AUTH : sortie 2 avant toute requête,
 # valeur jamais citée.
-tree newline reelle
+copy_tools newline reelle
 AUDIT_BASIC_AUTH=$'u:p\nurl = "x"' run newline
 if [ "$rc" -eq 2 ] && grep -q 'AUDIT_BASIC_AUTH contient un retour à la ligne' "$TMP/newline.err" \
    && [ ! -s "$TMP/newline.calls" ] && ! grep -qF 'url = ' "$TMP/newline.out" "$TMP/newline.err"; then
@@ -114,9 +114,9 @@ fi
 
 # --- C6-8 : le fichier -K ne survit pas au script, et la Basic Auth n'apparaît
 # jamais dans les arguments d'un appel.
-tree nominal reelle
-AUDIT_BASIC_AUTH='audit-user:audit-pass' run nominal
-if grep -q 'curl .*-K ' "$TMP/nominal.calls" && ! grep -qF 'audit-user' "$TMP/nominal.calls" && ! grep -qF 'audit-pass' "$TMP/nominal.calls"; then
+copy_tools nominal reelle
+AUDIT_BASIC_AUTH='u:p' run nominal
+if grep -q 'curl .*-K ' "$TMP/nominal.calls" && ! grep -qF 'u:p' "$TMP/nominal.calls"; then
   pass "Basic Auth : curl reçoit -K <fichier>, jamais la valeur"
 else
   fail "Basic Auth en argument" "$(cat "$TMP/nominal.calls")"

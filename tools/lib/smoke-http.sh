@@ -7,12 +7,12 @@
 # Sourcée par :
 #   - tools/smoke-dead-session-cookie.sh, tools/smoke-login-throttling.sh,
 #     tools/smoke-mcp.sh (smoke_add_basic_auth, smoke_cleanup, smoke_header,
-#     smoke_excerpt, smoke_fetch) ;
+#     smoke_headers, smoke_excerpt, smoke_fetch) ;
 #   - tools/audit-prod.sh (smoke_write_auth_config et smoke_cleanup, et
 #     seulement avec AUDIT_BASIC_AUTH) ;
 #   - tools/tests/smoke-http.test.sh (hors ligne, faux curl).
 #
-# Cinq fonctions publiques (plus smoke_cleanup, qui défait la première) :
+# Six fonctions publiques (plus smoke_cleanup, qui défait la première) :
 #   smoke_write_auth_config <nom>          le fichier de configuration `-K` de la
 #                                          Basic Auth d'une variable, dans un
 #                                          dossier privé (SMOKE_AUTH_CONFIG) ;
@@ -20,7 +20,9 @@
 #                                          `trap` de chaque appelant ;
 #   smoke_add_basic_auth <nom>             la Basic Auth d'une variable ajoutée
 #                                          à SMOKE_CURL_OPTS ;
-#   smoke_header <fichier> <nom>           la valeur d'un en-tête de réponse ;
+#   smoke_header <fichier> <nom>           la valeur d'un en-tête de réponse (la
+#                                          dernière s'il y en a plusieurs) ;
+#   smoke_headers <fichier> <nom>          toutes ses valeurs, une par ligne ;
 #   smoke_excerpt <texte>                  un extrait sans caractère de contrôle ;
 #   smoke_fetch <libellé> <url> [args…]    un appel curl qui rend statut et corps
 #                                          et dit un échec réseau.
@@ -45,6 +47,7 @@ SMOKE_AUTH_CONFIG=""
 # Retire le dossier que smoke_write_auth_config a créé (jamais un autre : la
 # variable est vide à la source) et remet les deux variables à vide. Retour 0 :
 # c'est la dernière commande d'un `trap`, elle ne change pas le code de sortie.
+# smoke_write_auth_config l'appelle aussi en tête (voir plus bas).
 smoke_cleanup() {
   if [ -n "$SMOKE_AUTH_DIR" ]; then
     rm -rf -- "$SMOKE_AUTH_DIR"
@@ -77,6 +80,12 @@ smoke_cleanup() {
 # nom invalide, un dossier ou un fichier qui ne s'écrit pas (le dossier est alors
 # retiré).
 #
+# Elle appelle smoke_cleanup **en tête**, avant tout, y compris la validation du nom
+# (décision 6 de #748) : un second appel remplace le premier, il ne laisse ni dossier
+# ni fichier d'identifiant derrière lui, et il n'existe jamais qu'un dossier. Ce que
+# l'appel de tête retire est ce que la bibliothèque a créé elle-même : les variables
+# sont vides à la source, un dossier hérité de l'environnement n'est jamais visé.
+#
 # Les scripts de fumée passent par smoke_add_basic_auth ; audit-prod.sh, qui garde
 # son propre `CURL_OPTS`, l'appelle directement, après avoir posé son
 # `trap 'smoke_cleanup' EXIT`, et pour une valeur non vide seulement. Un arrêt entre
@@ -85,6 +94,7 @@ smoke_cleanup() {
 # du `trap` (C7-8).
 smoke_write_auth_config() {
   local name="${1:-}" value saved_umask traced=0 rc=0
+  smoke_cleanup
   if ! [[ "$name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
     echo "smoke_write_auth_config : nom de variable invalide" >&2
     return 2
@@ -148,15 +158,24 @@ smoke_add_basic_auth() {
   SMOKE_CURL_OPTS+=(-K "$SMOKE_AUTH_CONFIG")
 }
 
+# smoke_headers <fichier d'en-têtes> <nom>
+#
+# Toutes les valeurs de l'en-tête dans la réponse que curl a écrite dans le fichier
+# (`-D`), une par ligne, dans l'ordre : nom insensible à la casse (HTTP/2 l'écrit en
+# minuscules), CR retiré, rien si absent. C'est la lecture des en-têtes multiples
+# (`Set-Cookie`) ; smoke_header en prend la dernière.
+smoke_headers() {
+  tr -d '\r' < "$1" | awk -v name="$2" '
+    tolower(substr($0, 1, length(name) + 1)) == tolower(name) ":" { sub(/^[^:]*:[[:space:]]*/, ""); print }'
+}
+
 # smoke_header <fichier d'en-têtes> <nom>
 #
 # La valeur d'un en-tête de la réponse que curl a écrite dans le fichier (`-D`) :
-# nom insensible à la casse (HTTP/2 l'écrit en minuscules), CR retiré, dernière
-# occurrence (la dernière réponse d'une redirection), vide si absent.
+# la dernière occurrence de smoke_headers (la dernière réponse d'une redirection),
+# vide si absent.
 smoke_header() {
-  tr -d '\r' < "$1" | awk -v name="$2" '
-    tolower(substr($0, 1, length(name) + 1)) == tolower(name) ":" { sub(/^[^:]*:[[:space:]]*/, ""); value = $0 }
-    END { print value }'
+  smoke_headers "$1" "$2" | tail -n 1
 }
 
 # smoke_excerpt <texte>

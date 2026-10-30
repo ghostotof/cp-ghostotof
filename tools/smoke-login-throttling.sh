@@ -44,8 +44,7 @@ if [ -z "$base" ]; then
 fi
 base="${base%/}"
 
-# Le stderr du `source` reste visible : une erreur de syntaxe de la bibliothèque
-# s'y lit, au lieu de se cacher sous « introuvable » (#748, C6-7).
+# Sortie 2 si la bibliothèque manque ou ne se lit pas (sans -e, un source en échec continuerait) ; stderr de bash visible.
 # shellcheck source=tools/lib/smoke-http.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/smoke-http.sh" || {
   echo "bibliothèque introuvable ou invalide : tools/lib/smoke-http.sh" >&2

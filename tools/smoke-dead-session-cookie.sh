@@ -55,8 +55,7 @@ if [ -z "$base" ]; then
 fi
 base="${base%/}"
 
-# Le stderr du `source` reste visible : une erreur de syntaxe de la bibliothèque
-# s'y lit, au lieu de se cacher sous « introuvable » (#748, C6-7).
+# Sortie 2 si la bibliothèque manque ou ne se lit pas (sans -e, un source en échec continuerait) ; stderr de bash visible.
 # shellcheck source=tools/lib/smoke-http.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/smoke-http.sh" || {
   echo "bibliothèque introuvable ou invalide : tools/lib/smoke-http.sh" >&2
@@ -80,11 +79,10 @@ trap 'rm -f "$headers_file"; smoke_cleanup' EXIT
 SMOKE_CURL_OPTS=(-sS --connect-timeout 5 --max-time 15 -D "$headers_file")
 smoke_add_basic_auth AUDIT_BASIC_AUTH || exit 2
 
-# Les valeurs de tous les en-têtes Set-Cookie de la dernière réponse : nom
-# insensible à la casse (HTTP/2 l'écrit en minuscules), CR retiré.
+# Les valeurs de tous les en-têtes Set-Cookie de la dernière réponse (la lecture
+# des en-têtes multiples est celle de la bibliothèque).
 set_cookies() {
-  tr -d '\r' < "$headers_file" | awk '
-    tolower(substr($0, 1, 11)) == "set-cookie:" { sub(/^[^:]*:[[:space:]]*/, ""); print }'
+  smoke_headers "$headers_file" Set-Cookie
 }
 
 # Les Set-Cookie du cookie nommé $1 (nom insensible à la casse).
