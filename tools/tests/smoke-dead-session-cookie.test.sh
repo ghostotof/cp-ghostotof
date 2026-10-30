@@ -25,7 +25,13 @@ fail()  { printf '  FAIL %s\n       %s\n' "$1" "$2"; failures=$((failures + 1));
 # `~`, champ vide = aucun en-tête), imprime le corps comme le vrai avec
 # `-w '\n%{http_code}'`, écrit les en-têtes dans le fichier de `-D` et ajoute
 # ses arguments à $FAKE_ARGS. Le corps passe par `printf '%b'` : `\r` ou
-# `\033` y deviennent les vrais caractères de contrôle.
+# `\033` y deviennent les vrais caractères de contrôle. Une ligne
+# `curl-exit:<n>|…` fait écrire `curl: (<n>) faux échec` sur stderr et sortir
+# en `<n>`, comme un vrai curl qui n'a pas de réponse (7 : connexion refusée,
+# 6 : DNS, 28 : délai). Quand `-K <fichier>` est passé, le faux copie le
+# fichier dans $FAKE_KCONFIG et son mode (`stat -c %a`) dans $FAKE_KMODE : le
+# contenu exact de la configuration est ce qui sépare une Basic Auth d'une
+# directive injectée.
 cat > "$TMP/curl" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -33,12 +39,23 @@ printf '%s\n' "$*" >> "$FAKE_ARGS"
 headers_file=""
 while [ "$#" -gt 0 ]; do
   if [ "$1" = "-D" ]; then headers_file="$2"; shift; fi
+  if [ "$1" = "-K" ]; then
+    cp "$2" "$FAKE_KCONFIG"
+    stat -c %a "$2" > "$FAKE_KMODE"
+    shift
+  fi
   shift
 done
 n=$(wc -l < "$FAKE_CALLS" 2>/dev/null || echo 0)
 n=$((n + 1))
 echo "$n" >> "$FAKE_CALLS"
 line="$(sed -n "${n}p" "$FAKE_RESPONSES")"
+if [[ "$line" == curl-exit:* ]]; then
+  exit_code="${line#curl-exit:}"
+  exit_code="${exit_code%%|*}"
+  echo "curl: ($exit_code) faux échec" >&2
+  exit "$exit_code"
+fi
 code="${line%%|*}"
 rest="${line#*|}"
 extra_headers="${rest%%|*}"
@@ -66,6 +83,7 @@ run() {
   : > "$TMP/$name.args"; : > "$TMP/$name.calls"
   set +e
   FAKE_RESPONSES="$TMP/$name.responses" FAKE_ARGS="$TMP/$name.args" FAKE_CALLS="$TMP/$name.calls" \
+    FAKE_KCONFIG="$TMP/$name.kconfig" FAKE_KMODE="$TMP/$name.kmode" \
     SMOKE_CURL="$TMP/curl" "$SCRIPT" https://example.invalid >"$TMP/out" 2>"$TMP/err"
   rc=$?
   set -e
@@ -109,9 +127,9 @@ if [ -n "$other" ] && [ "$other" != "$cookie2" ]; then pass "le cookie est tiré
 
 # --- Variantes de casse et de forme de l'effacement : en-tête en casse
 # HTTP/1, `Max-Age=0` seul, `expires` passé seul → succès.
-run case1 "$witness_ok" "$public_ok" '401|Set-Cookie: bearer=deleted; Max-Age=0; path=/|{}'
+run case1 "$witness_ok" "$public_ok" '401|Set-Cookie: bearer=deleted; Max-Age=0; path=/~Set-Cookie: xsrf-token=deleted; Max-Age=0; path=/|{}'
 if [ "$rc" -eq 0 ]; then pass "Set-Cookie / bearer / Max-Age=0 en casse libre → succès"; else fail "casse" "rc=$rc ; err : $(cat "$TMP/err")"; fi
-run case2 "$witness_ok" "$public_ok" '401|set-cookie: BEARER=deleted; expires=Thu, 01 Jan 1970 00:00:01 GMT; path=/|{}'
+run case2 "$witness_ok" "$public_ok" '401|set-cookie: BEARER=deleted; expires=Thu, 01 Jan 1970 00:00:01 GMT; path=/~set-cookie: XSRF-TOKEN=deleted; expires=Thu, 01 Jan 1970 00:00:01 GMT; path=/|{}'
 if [ "$rc" -eq 0 ]; then pass "expires passé sans Max-Age → succès"; else fail "expires" "rc=$rc ; err : $(cat "$TMP/err")"; fi
 
 # --- C1 côté serveur : la lecture publique refuse le cookie mort → échec.
@@ -196,6 +214,78 @@ else
 fi
 run noauth "$witness_ok" "$public_ok" "$me_cleared"
 if ! grep -q -- ' -K ' "$TMP/noauth.args"; then pass "sans AUDIT_BASIC_AUTH → pas de -K"; else fail "sans auth" "args : $(cat "$TMP/noauth.args")"; fi
+
+# --- CR5-10 : un curl en échec (réseau, DNS, délai) sort du contrat 0/1/2 si
+# le script laisse `set -e` rendre le code de curl. Le script doit sortir 1 et
+# dire que RIEN n'a été vérifié, à chaque étape.
+run net1 'curl-exit:7|'
+if [ "$rc" -eq 1 ] && grep -q 'curl a échoué (code 7' "$TMP/err" && grep -q 'rien de vérifié' "$TMP/err"; then
+  pass "curl en échec (7) à l'étape 1 → sortie 1, « curl a échoué (code 7) … rien de vérifié »"
+else
+  fail "curl en échec à l'étape 1" "rc=$rc ; err : $(cat "$TMP/err")"
+fi
+run net2 "$witness_ok" 'curl-exit:28|'
+if [ "$rc" -eq 1 ] && grep -q 'curl a échoué (code 28' "$TMP/err" && grep -q 'rien de vérifié' "$TMP/err" && [ "$(wc -l < "$TMP/net2.calls")" -eq 2 ]; then
+  pass "curl en échec (28) à l'étape 2 → sortie 1, arrêt immédiat"
+else
+  fail "curl en échec à l'étape 2" "rc=$rc ; err : $(cat "$TMP/err")"
+fi
+run net3 "$witness_ok" "$public_ok" 'curl-exit:6|'
+if [ "$rc" -eq 1 ] && grep -q 'curl a échoué (code 6' "$TMP/err" && grep -q '/api/me' "$TMP/err"; then
+  pass "curl en échec (6) à l'étape 3 → sortie 1, la requête est nommée"
+else
+  fail "curl en échec à l'étape 3" "rc=$rc ; err : $(cat "$TMP/err")"
+fi
+
+# --- C5-6 : XSRF-TOKEN est vérifié comme BEARER. Étape 2 : une route publique
+# n'en pose aucun.
+run publicxsrf "$witness_ok" '200|set-cookie: XSRF-TOKEN=abc; path=/; secure; samesite=lax|{}'
+if [ "$rc" -eq 1 ] && grep -q 'Set-Cookie XSRF-TOKEN' "$TMP/err" && grep -q 'lecture publique' "$TMP/err"; then
+  pass "lecture publique 200 mais Set-Cookie XSRF-TOKEN → échec"
+else
+  fail "XSRF-TOKEN sur lecture publique" "rc=$rc ; err : $(cat "$TMP/err")"
+fi
+# Étape 3 : /api/me expire les DEUX cookies ; un seul BEARER expiré ne suffit pas.
+run mexsrf "$witness_ok" "$public_ok" '401|set-cookie: BEARER=deleted; expires=Thu, 01 Jan 1970 00:00:01 GMT; Max-Age=0; path=/|{}'
+if [ "$rc" -eq 1 ] && grep -q "n'efface pas" "$TMP/err" && grep -q 'aucun Set-Cookie XSRF-TOKEN expiré' "$TMP/err"; then
+  pass "/api/me n'expire que BEARER → échec, le message nomme XSRF-TOKEN"
+else
+  fail "/api/me sans XSRF-TOKEN expiré" "rc=$rc ; err : $(cat "$TMP/err")"
+fi
+run mebearer "$witness_ok" "$public_ok" '401|set-cookie: XSRF-TOKEN=deleted; Max-Age=0; path=/|{}'
+if [ "$rc" -eq 1 ] && grep -q "n'efface pas" "$TMP/err" && grep -q 'aucun Set-Cookie BEARER expiré' "$TMP/err"; then
+  pass "/api/me n'expire que XSRF-TOKEN → échec, le message nomme BEARER"
+else
+  fail "/api/me sans BEARER expiré" "rc=$rc ; err : $(cat "$TMP/err")"
+fi
+
+# --- C5-8 : le CONTENU du fichier -K, pas seulement sa présence. Les guillemets
+# et antislashs sont échappés au format de curl, le fichier est en 600.
+AUDIT_BASIC_AUTH='u:p"a\b' run kfile "$witness_ok" "$public_ok" "$me_cleared"
+if [ "$rc" -eq 0 ] && [ "$(cat "$TMP/kfile.kconfig")" = 'user = "u:p\"a\\b"' ]; then
+  pass "le fichier -K vaut exactement user = \"u:p\\\"a\\\\b\""
+else
+  fail "contenu du fichier -K" "rc=$rc ; contenu : $(cat -A "$TMP/kfile.kconfig" 2>&1)"
+fi
+if [ "$(cat "$TMP/kfile.kmode" 2>/dev/null)" = "600" ]; then
+  pass "le fichier -K est en 600 quand curl le lit"
+else
+  fail "mode du fichier -K" "mode : $(cat "$TMP/kfile.kmode" 2>&1)"
+fi
+
+# --- C5-7 : un retour à la ligne dans la Basic Auth ouvrirait une seconde
+# directive dans le fichier -K (`url = …`) : refus, sortie 2 (erreur
+# d'environnement), aucun appel, la valeur n'est jamais citée.
+for newline_value in $'u:p\nurl = "x"' $'u:p\rurl = "x"'; do
+  AUDIT_BASIC_AUTH="$newline_value" run newline "$witness_ok" "$public_ok" "$me_cleared"
+  if [ "$rc" -eq 2 ] && grep -q 'AUDIT_BASIC_AUTH contient un retour à la ligne' "$TMP/err" \
+     && [ ! -s "$TMP/newline.calls" ] && [ ! -e "$TMP/newline.kconfig" ] \
+     && ! grep -qF 'url = ' "$TMP/out" "$TMP/err"; then
+    pass "AUDIT_BASIC_AUTH avec un retour à la ligne → sortie 2, aucun appel, valeur jamais citée"
+  else
+    fail "retour à la ligne dans AUDIT_BASIC_AUTH" "rc=$rc ; err : $(cat -A "$TMP/err") ; appels : $(cat "$TMP/newline.calls")"
+  fi
+done
 
 # --- Sans URL : usage, code 2.
 set +e; "$SCRIPT" >/dev/null 2>"$TMP/err"; rc=$?; set -e

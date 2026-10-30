@@ -40,6 +40,14 @@ CURL_OPTS_ANONYMOUS=("${CURL_OPTS[@]}")
 # (`-K`), créé en 600 par mktemp et supprimé à la sortie ; seul son chemin
 # apparaît dans les arguments. Les guillemets et antislashs sont échappés au
 # format attendu par curl, donc n'importe quel mot de passe convient.
+# Un retour à la ligne (ou un CR) dans la valeur ouvrirait une seconde directive
+# dans ce fichier (`url = …`, `output = …`) : `printf 'user = "%s"'` n'échappe que
+# `"` et `\`. Refusé avant tout fichier et toute requête, sans citer la valeur ;
+# sortie 2, celle d'un défaut d'environnement (comme une bibliothèque absente).
+if [[ "${AUDIT_BASIC_AUTH:-}" == *$'\n'* || "${AUDIT_BASIC_AUTH:-}" == *$'\r'* ]]; then
+  echo "AUDIT_BASIC_AUTH contient un retour à la ligne : refusé, il ouvrirait une directive dans le fichier de configuration curl" >&2
+  exit 2
+fi
 if [ -n "${AUDIT_BASIC_AUTH:-}" ]; then
   CURL_AUTH_CONFIG="$(mktemp)"
   trap 'rm -f "$CURL_AUTH_CONFIG"' EXIT

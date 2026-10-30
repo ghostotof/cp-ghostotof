@@ -15,17 +15,20 @@
 # (ingress, nginx, image de production) — le seul endroit où la préprod
 # diffère : son Ingress porte la Basic Auth.
 #
-# Trois requêtes :
+# Trois requêtes (un `curl` qui n'obtient aucune réponse — réseau, DNS, délai —
+# sort 1 en le disant : rien n'a été vérifié) :
 #   1. GET /api/contributions/fr SANS cookie → 200 (témoin : la route répond,
 #      la Basic Auth passe). Un 401 ici est celui de l'ingress, pas de
 #      l'application : le dire, sans aller plus loin.
 #   2. le même GET avec `BEARER=<valeur aléatoire>` → 200 et AUCUN
-#      `Set-Cookie` de `BEARER` (une route publique n'efface pas : la course
-#      d'un 401 tardif qui efface des cookies neufs reste aux requêtes
-#      authentifiées).
-#   3. GET /api/me avec le même cookie → 401 et un `Set-Cookie: BEARER=`
-#      expiré (`Max-Age=0` ou `expires` passé) : la route protégée refuse et
-#      efface le cookie mort, comme le SPA le provoque à chaque chargement.
+#      `Set-Cookie` de `BEARER` ni de `XSRF-TOKEN` (une route publique
+#      n'efface pas : la course d'un 401 tardif qui efface des cookies neufs
+#      reste aux requêtes authentifiées).
+#   3. GET /api/me avec le même cookie → 401 et un `Set-Cookie` expiré
+#      (`Max-Age=0` ou `expires` passé) pour CHACUN de `BEARER` et
+#      `XSRF-TOKEN` : la route protégée refuse et efface les deux cookies de
+#      session (StaleSessionCookiesClearingListener), comme le SPA le provoque
+#      à chaque chargement.
 #
 # Le cookie est une valeur aléatoire (`openssl rand -hex 16`) : ce n'est PAS un
 # secret — il n'ouvre aucune session, le serveur le refuse —, il passe donc en
@@ -39,7 +42,9 @@
 #                            de configuration curl en 600 (comme
 #                            smoke-login-throttling.sh).
 #          SMOKE_CURL        binaire curl de substitution (tests hors ligne).
-# Sortie : 0 conforme, 1 écart, 2 usage faux.
+#                            Un retour à la ligne y est refusé (sortie 2).
+# Sortie : 0 conforme, 1 écart (ou curl sans réponse), 2 usage ou environnement
+#          faux.
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
@@ -49,6 +54,16 @@ if [ -z "$base" ]; then
   exit 2
 fi
 base="${base%/}"
+
+# Un retour à la ligne (ou un CR) dans la Basic Auth ouvrirait une seconde
+# directive dans le fichier de configuration curl (`url = …`, `output = …`) :
+# `printf 'user = "%s"'` n'échappe que `"` et `\`. Refusé avant tout fichier et
+# tout appel ; la valeur n'est jamais citée (c'est un secret). Sortie 2, comme
+# tout défaut d'environnement.
+if [[ "${AUDIT_BASIC_AUTH:-}" == *$'\n'* || "${AUDIT_BASIC_AUTH:-}" == *$'\r'* ]]; then
+  echo "AUDIT_BASIC_AUTH contient un retour à la ligne : refusé, il ouvrirait une directive dans le fichier de configuration curl" >&2
+  exit 2
+fi
 
 curl_bin="${SMOKE_CURL:-curl}"
 public_path="/api/contributions/fr"
@@ -85,10 +100,13 @@ set_cookies() {
     tolower(substr($0, 1, 11)) == "set-cookie:" { sub(/^[^:]*:[[:space:]]*/, ""); print }'
 }
 
-# Les Set-Cookie qui portent `BEARER` (nom insensible à la casse).
-bearer_set_cookies() {
-  set_cookies | awk 'tolower(substr($0, 1, 7)) == "bearer=" { print }'
+# Les Set-Cookie du cookie nommé $1 (nom insensible à la casse).
+set_cookies_named() {
+  set_cookies | awk -v name="$1" 'tolower(substr($0, 1, length(name) + 1)) == tolower(name) "=" { print }'
 }
+
+# Les deux cookies de session que le serveur peut poser ou effacer.
+session_cookies=(BEARER XSRF-TOKEN)
 
 # Une requête : $status et $body en sortie. Les arguments en plus (le cookie)
 # viennent avant l'URL.
@@ -97,8 +115,15 @@ body=""
 fetch() {
   local path="$1"; shift
   local response
-  # Dernière ligne = code HTTP, le reste = corps.
-  response="$("$curl_bin" "${curl_opts[@]}" "$@" -w '\n%{http_code}' "$base$path")"
+  local rc
+  # Dernière ligne = code HTTP, le reste = corps. Sous `set -e`, un curl en
+  # échec dans l'affectation ferait sortir le script avec le code de curl (6, 7,
+  # 28…), hors du contrat 0/1/2 : on le dit, et rien n'a été vérifié.
+  response="$("$curl_bin" "${curl_opts[@]}" "$@" -w '\n%{http_code}' "$base$path")" || {
+    rc=$?
+    echo "GET $path : curl a échoué (code $rc : réseau, DNS ou délai) — rien de vérifié" >&2
+    exit 1
+  }
   status="${response##*$'\n'}"
   body="${response%$'\n'*}"
 }
@@ -137,12 +162,14 @@ if [ "$status" != "200" ]; then
   echo "lecture publique refusée pour un cookie mort : GET $public_path avec un BEARER aléatoire a répondu $status, 200 attendu — le pare-feu refuse encore une session morte sur une route publique, #748 C1 (corps : $(excerpt "$body"))" >&2
   exit 1
 fi
-leftover="$(bearer_set_cookies)"
-if [ -n "$leftover" ]; then
-  echo "lecture publique servie mais elle pose un Set-Cookie BEARER (« $(excerpt "$leftover") ») : une route publique ne doit rien effacer, la course d'un 401 tardif s'étendrait à chaque lecture" >&2
-  exit 1
-fi
-echo "lecture publique : GET $public_path avec un BEARER mort → 200, aucun Set-Cookie BEARER"
+for name in "${session_cookies[@]}"; do
+  leftover="$(set_cookies_named "$name")"
+  if [ -n "$leftover" ]; then
+    echo "lecture publique servie mais elle pose un Set-Cookie $name (« $(excerpt "$leftover") ») : une route publique ne doit rien effacer, la course d'un 401 tardif s'étendrait à chaque lecture" >&2
+    exit 1
+  fi
+done
+echo "lecture publique : GET $public_path avec un BEARER mort → 200, aucun Set-Cookie BEARER ni XSRF-TOKEN"
 
 # --- 3. La route protégée avec le même cookie : refusée, cookie effacé.
 fetch "$protected_path" -b "$dead_cookie"
@@ -150,14 +177,19 @@ if [ "$status" != "401" ]; then
   echo "GET $protected_path avec un BEARER mort : $status reçu, 401 attendu (corps : $(excerpt "$body"))" >&2
   exit 1
 fi
-cleared=0
-while IFS= read -r cookie; do
-  if expires_it "$cookie"; then cleared=1; fi
-done < <(bearer_set_cookies)
-if [ "$cleared" -ne 1 ]; then
-  echo "GET $protected_path en 401 mais n'efface pas le cookie mort : aucun Set-Cookie BEARER expiré (Max-Age=0 ou expires passé), le cookie resterait jusqu'à la fermeture du navigateur (Set-Cookie vus : « $(excerpt "$(set_cookies)") »)" >&2
-  exit 1
-fi
-echo "route protégée : GET $protected_path avec un BEARER mort → 401 et Set-Cookie BEARER expiré"
+# Les DEUX cookies de session doivent être expirés : un seul laisserait l'autre
+# jusqu'à la fermeture du navigateur (un XSRF-TOKEN de session sans BEARER, ou
+# l'inverse, est la boucle « session finie » de #748 CR3).
+for name in "${session_cookies[@]}"; do
+  cleared=0
+  while IFS= read -r cookie; do
+    if expires_it "$cookie"; then cleared=1; fi
+  done < <(set_cookies_named "$name")
+  if [ "$cleared" -ne 1 ]; then
+    echo "GET $protected_path en 401 mais n'efface pas le cookie mort : aucun Set-Cookie $name expiré (Max-Age=0 ou expires passé), il resterait jusqu'à la fermeture du navigateur (Set-Cookie vus : « $(excerpt "$(set_cookies)") »)" >&2
+    exit 1
+  fi
+done
+echo "route protégée : GET $protected_path avec un BEARER mort → 401 et Set-Cookie BEARER et XSRF-TOKEN expirés"
 
 echo "OK : un cookie de session mort est ignoré par les lectures publiques et effacé par la première route protégée."

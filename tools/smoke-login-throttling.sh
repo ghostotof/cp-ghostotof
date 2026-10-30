@@ -44,6 +44,16 @@ if [ -z "$base" ]; then
 fi
 base="${base%/}"
 
+# Un retour à la ligne (ou un CR) dans la Basic Auth ouvrirait une seconde
+# directive dans le fichier de configuration curl (`url = …`, `output = …`) :
+# `printf 'user = "%s"'` n'échappe que `"` et `\`. Refusé avant tout fichier et
+# tout appel ; la valeur n'est jamais citée (c'est un secret). Sortie 2, comme
+# tout défaut d'environnement.
+if [[ "${AUDIT_BASIC_AUTH:-}" == *$'\n'* || "${AUDIT_BASIC_AUTH:-}" == *$'\r'* ]]; then
+  echo "AUDIT_BASIC_AUTH contient un retour à la ligne : refusé, il ouvrirait une directive dans le fichier de configuration curl" >&2
+  exit 2
+fi
+
 curl_bin="${SMOKE_CURL:-curl}"
 attempts=6
 username="smoke-throttling-probe-$(date +%s)-$$"

@@ -190,6 +190,16 @@ else
   fail "requête" "args : $(head -1 "$TMP/nominal.args")"
 fi
 
+# --- Un retour à la ligne dans la Basic Auth ouvrirait une seconde directive
+# dans le fichier -K : refus, sortie 2, aucun appel, valeur jamais citée.
+AUDIT_BASIC_AUTH=$'u:p\nurl = "x"' run newline "$toomany"
+if [ "$rc" -eq 2 ] && grep -q 'AUDIT_BASIC_AUTH contient un retour à la ligne' "$TMP/err" \
+   && [ ! -s "$TMP/newline.calls" ] && ! grep -qF 'url = ' "$TMP/out" "$TMP/err"; then
+  pass "AUDIT_BASIC_AUTH avec un retour à la ligne → sortie 2, aucun appel, valeur jamais citée"
+else
+  fail "retour à la ligne dans AUDIT_BASIC_AUTH" "rc=$rc ; err : $(cat -A "$TMP/err") ; appels : $(cat "$TMP/newline.calls")"
+fi
+
 # --- Sans URL : usage, code 2.
 set +e; "$SCRIPT" >/dev/null 2>"$TMP/err"; rc=$?; set -e
 if [ "$rc" -eq 2 ] && grep -q '^usage' "$TMP/err"; then pass "sans argument → usage, code 2"; else fail "usage" "rc=$rc"; fi
