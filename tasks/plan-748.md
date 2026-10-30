@@ -3492,6 +3492,9 @@ texte ; (B) la regex seule : laisse `export const x = writer`.
   la page de l'enregistrement (impossible : le refus ne porte pas sa route, et l'y mettre ferait entrer une notion de
   navigation dans le timbre d'une écriture).
 
+**Réponse de l'auteur (2026-10-30)** : Q1 selon la recommandation, le texte complet (FR et EN ci-dessus, la version EN du
+plan fait foi).
+
 ### Review Focus (sixième relecture)
 
 1. **Une écriture refusée pendant que la personne était sur une page publique, puis un retour au backoffice** : l'alerte
