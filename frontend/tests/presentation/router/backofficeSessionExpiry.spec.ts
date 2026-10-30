@@ -10,7 +10,8 @@ import {
   earlierSaveRefused,
   settleBackofficeAccessRefusalsOnMount,
 } from '../../../src/application/admin/shared/backofficeAccessRefusal'
-import { AUTH_REPOSITORY, authState, isCurrentGeneration, markBaseAccessGranted, markSessionExpired, useAuth } from '../../../src/application/auth/useAuth'
+import { AUTH_REPOSITORY, authState, markBaseAccessGranted, markSessionExpired, useAuth } from '../../../src/application/auth/useAuth'
+import { isCurrentGeneration } from '../../../src/application/auth/sessionGeneration'
 import type { AuthRepository } from '../../../src/domain/auth/repositories/AuthRepository'
 import type { AuthenticatedUser } from '../../../src/domain/auth/entities/AuthenticatedUser'
 import { sessionFor } from '../../support/authSession'

@@ -5,7 +5,7 @@ import { ANONYMOUS_SESSION, type AccessTier, type AuthSession } from '../../doma
 import { ROLE_SUPER } from '../../domain/auth/entities/Role'
 import { hasRole } from '../../domain/auth/services/hasRole'
 import { sessionForUser } from '../../domain/auth/services/sessionForUser'
-import { markBaseAccessExpired, markBaseAccessGranted, applySession, authState, beginCheck, forgetLastAccount, getLastAccount, markFirstCheckDone, waitForAuthCheck } from './sessionState'
+import { markBaseAccessExpired, markBaseAccessGranted, applySession, authState, forgetLastAccount, getLastAccount, markFirstCheckDone, waitForAuthCheck } from './sessionState'
 import { recallBaseAccessExpiry, scheduleBaseAccessExpiry } from './baseAccessExpiry'
 import { advanceGeneration, isCurrentGeneration, sessionStamp } from './sessionGeneration'
 import { onAccountSwitched, onSessionRestored } from './sessionEvents'
@@ -26,7 +26,6 @@ export {
   markBaseAccessGranted,
   markBaseAccessExpired,
   sessionStamp,
-  isCurrentGeneration,
   markSessionExpired,
   onSessionRestored,
   onAccountSwitched,
@@ -141,8 +140,8 @@ export interface UseAuthResult {
   /**
    * Abonne `callback` au **changement de compte** (#748, R18, R26) : la session a fini et c'est **un autre compte**, ou
    * le même avec un rôle perdu, ou un compte quand aucun n'était retenu, qui est revenu (par la relecture au retour sur
-   * l'onglet, ou `checkAuth()`) ; ou, hors session finie, une relecture (`checkAuth()`, `rereadAfterRefusal()`) trouve
-   * **un autre identifiant** que celui du dernier compte affiché. La session est déjà appliquée quand `callback` est appelé ; `onSessionRestored` n'est pas appelé (la page ouverte n'est pas
+   * l'onglet, ou `checkAuth()`) ; ou, hors session finie, la relecture qui suit un refus réel
+   * (`rereadAfterRefusal()`) trouve **un autre identifiant** que celui du dernier compte affiché. La session est déjà appliquée quand `callback` est appelé ; `onSessionRestored` n'est pas appelé (la page ouverte n'est pas
    * « rétablie » : ce n'est plus la page de ce compte). Jamais pour une connexion dans l'onglet. Même mécanique que
    * `onSessionRestored` : un scope, retiré à `onScopeDispose`. Seul `AppLayout` s'y abonne.
    */
@@ -229,8 +228,7 @@ export function useAuth(): UseAuthResult {
    * console et par `unhandledrejection`, au lieu d'être pris pour un réseau muet.
    */
   const checkAuth = async (): Promise<void> => {
-    // Silencieuse après la première vérification : voir `hasCheckedOnce`.
-    beginCheck()
+    // `isChecking` est né vrai : seul le `finally` ci-dessous l'abaisse, et aucune relecture ne le touche.
     try {
       // Lue avant applySession(), qui efface la mémoire : si le serveur
       // confirme le palier de base et qu'une échéance future est connue, la

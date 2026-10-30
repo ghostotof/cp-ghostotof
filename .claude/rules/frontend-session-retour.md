@@ -24,7 +24,7 @@ paths:
   decides closes the end, like `login()`, **with no signal** and no announcement, the generation having advanced).
   `applySession()` lowers nothing.
 - **Where it lives** (#748, R25: `useAuth.ts` was split, its public API unchanged, everything still re-exported from it).
-  Under `application/auth/`: `sessionState.ts` (the reactive state, **not exported** (R42): only named functions write it, `beginCheck`, `applySession`, `raiseSessionEnded`, `lowerSessionEnded`, the base-access marks, and everything else reads the read-only `authState`; each write is imported by its own modules only (`sessionLifecycle.ts` for `raiseSessionEnded` and `lowerSessionEnded`, `useAuth.ts` for the check and forget marks, both for `applySession`) and no other module of `src/` exports one, under any name — checked by identity on the loaded modules: `sessionStateEncapsulation.spec.ts`, R52, R69),
+  Under `application/auth/`: `sessionState.ts` (the reactive state, **not exported** (R42): only named functions write it, `markFirstCheckDone`, `applySession`, `raiseSessionEnded`, `lowerSessionEnded`, the base-access marks, and everything else reads the read-only `authState`; each write is imported by its own modules only (`sessionLifecycle.ts` for `raiseSessionEnded` and `lowerSessionEnded`, `useAuth.ts` for the check and forget marks, both for `applySession`) and no other module of `src/` exports one, under any name — checked by identity on the loaded modules: `sessionStateEncapsulation.spec.ts`, R52, R69),
   `baseAccessExpiry.ts` (its timer, which takes its callback as a parameter and imports nothing: no cycle),
   `sessionGeneration.ts`, `sessionEvents.ts` (the two signals), `sessionLifecycle.ts` (`markSessionExpired`,
   `restoreSession`, and `canRestore`, the descent's condition written once: ended, an account, a write token), and
@@ -43,9 +43,9 @@ paths:
     `rereadAfterRefusal`, and released by a `.finally` set **after** the promise is held, so a `me()` that throws
     synchronously never leaves a settled promise behind); a rejection of `/api/me` (network, or `me()` giving up after `ME_TIMEOUT_MS`, 15 s, R49) is swallowed and the session stays ended, with no
     announcement. The bound holds for the first check too: `checkAuth()` swallows a rejection of `/api/me` only, like an anonymous answer, so `waitForAuthCheck()` resolves, the guard and the `login` route open, and `main.ts`, which does not await it, gets no unhandled rejection for it. An error raised after the response (`applyReadSession`, `scheduleBaseAccessExpiry`: a programming error) surfaces — `main.ts` does not catch it, on purpose, so it shows as an unhandled rejection — and the first check still ends (R65).
-  - **It is silent: `isChecking` is never touched.** `isChecking` is raised only by the *first* `checkAuth()` (`main.ts`,
-    the one `waitForAuthCheck` makes the route guard wait for); a module flag, `hasCheckedOnce`, keeps every later
-    `checkAuth()` — this re-check's neighbours, the re-read after a real refusal (see « A real refusal » in `frontend-session-refus.md`) — from raising it. Raised on
+  - **It is silent: `isChecking` is never touched.** `isChecking` is born `true` and lowered once, when the load's
+    `checkAuth()` ends (`markFirstCheckDone()`, the one `waitForAuthCheck` makes the route guard wait for); no re-read raises
+    it (this one, the re-read after a real refusal: see « A real refusal » in `frontend-session-refus.md`). Raised on
     each return, it would hide the header's right-hand group (`v-if="!isChecking"`) and make it flicker at every return
     on the tab. `waitForAuthCheck()` is unaffected: it resolves on the first check, as before.
   - **A session is restored only if an account comes back *and* a write token exists**: `AuthRepository.hasWriteToken()`

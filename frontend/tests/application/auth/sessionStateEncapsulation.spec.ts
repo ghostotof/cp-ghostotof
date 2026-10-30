@@ -40,15 +40,14 @@ const sources = Object.fromEntries(Object.entries(raw).map(([path, source]) => [
  * - `raiseSessionEnded`, `lowerSessionEnded` : `sessionLifecycle.ts` seul — `markSessionExpired` lève la fin après avoir
  *   jugé la génération, `restoreSession` la baisse après `canRestore`. (La troisième descente, `markBaseAccessGranted`,
  *   vit dans `sessionState.ts` même : elle n'importe rien.)
- * - `beginCheck`, `markFirstCheckDone`, `forgetLastAccount` : `useAuth.ts` seul — `checkAuth` pose le drapeau de la
- *   première vérification, `logout` oublie le compte.
+ * - `markFirstCheckDone`, `forgetLastAccount` : `useAuth.ts` seul — `checkAuth` abaisse `isChecking` à la fin de la
+ *   première vérification (R85 : il naît vrai, plus aucune écriture ne le lève), `logout` oublie le compte.
  * - `applySession` : `sessionLifecycle.ts` (`restoreSession`, `applyLiveSession`, `markSessionExpired`) et `useAuth.ts`
  *   (`login`, `logout`, `applyReadSession`).
  */
 const WRITERS: Record<string, readonly string[]> = {
   raiseSessionEnded: ['application/auth/sessionLifecycle.ts'],
   lowerSessionEnded: ['application/auth/sessionLifecycle.ts'],
-  beginCheck: ['application/auth/useAuth.ts'],
   markFirstCheckDone: ['application/auth/useAuth.ts'],
   forgetLastAccount: ['application/auth/useAuth.ts'],
   applySession: ['application/auth/sessionLifecycle.ts', 'application/auth/useAuth.ts'],
@@ -166,7 +165,6 @@ describe("L'état de session n'est pas exporté en écriture", () => {
       [
         'applySession',
         'authState',
-        'beginCheck',
         'forgetLastAccount',
         'getLastAccount',
         'lowerSessionEnded',

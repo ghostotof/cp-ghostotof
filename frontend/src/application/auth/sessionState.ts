@@ -16,7 +16,7 @@ import { advanceGeneration } from './sessionGeneration'
  * n'aient pas à changer.
  *
  * **Non exporté** (#748, R42, St4-5) : ce module est le seul à l'écrire. Les autres modules d'`application/auth/` passent
- * par des fonctions nommées (`applySession`, `beginCheck`, `markFirstCheckDone`, `raiseSessionEnded`,
+ * par des fonctions nommées (`applySession`, `markFirstCheckDone`, `raiseSessionEnded`,
  * `lowerSessionEnded`) ; tout le reste lit `authState`.
  */
 const state = reactive<{ tier: AccessTier; user: AuthenticatedUser | null; isChecking: boolean; sessionEnded: boolean; sessionEndedCount: number }>({
@@ -40,26 +40,12 @@ const state = reactive<{ tier: AccessTier; user: AuthenticatedUser | null; isChe
 export const authState = readonly(state)
 
 /**
- * Vrai dès que la première vérification (celle de `main.ts`) a fini, réussie ou non. Avant elle, `isChecking`
- * cache le groupe de droite de l'en-tête et fait attendre le garde de route (`waitForAuthCheck`) : c'est son
- * seul rôle. Après elle, une relecture de `/api/me` (le retour sur l'onglet, un refus réel) est **silencieuse** :
- * y toucher ferait disparaître puis réapparaître l'en-tête à chaque retour (#748, R8).
+ * La première vérification (celle de `main.ts`) a fini, réussie ou non : `isChecking` retombe. Il **naît vrai** et ne
+ * remonte jamais : tant qu'il l'est, il cache le groupe de droite de l'en-tête et fait attendre le garde de route
+ * (`waitForAuthCheck`), c'est son seul rôle. Aucune relecture de `/api/me` (le retour sur l'onglet, un refus réel) ne le
+ * touche : le lever à chaque retour ferait disparaître puis réapparaître l'en-tête (#748, R8).
  */
-let hasCheckedOnce = false
-
-/**
- * Une vérification de la session commence : `isChecking` monte **seulement avant la première** (voir `hasCheckedOnce`) ;
- * les suivantes sont silencieuses.
- */
-export function beginCheck(): void {
-  if (!hasCheckedOnce) {
-    state.isChecking = true
-  }
-}
-
-/** La première vérification a fini (réussie ou non) : `isChecking` retombe et les suivantes sont silencieuses. */
 export function markFirstCheckDone(): void {
-  hasCheckedOnce = true
   state.isChecking = false
 }
 
@@ -195,7 +181,6 @@ export function resetSessionStateForTests(): void {
   state.isChecking = true
   state.sessionEnded = false
   state.sessionEndedCount = 0
-  hasCheckedOnce = false
   lastAccount = null
   resetBaseAccessExpiryForTests()
 }

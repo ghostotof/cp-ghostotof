@@ -107,8 +107,8 @@ account without `ROLE_TRUSTED` (one that lost it while the page was open), or fr
 
 **Limits removed by R7 and R8**: the header of an account stripped of `ROLE_TRUSTED` no longer stays at the trusted tier
 until the next full load; a `GET` in 403 on the MCP page no longer shows the generic failure with a « Réessayer » that
-cannot help; and the header no longer flickers while `/api/me` is read after a refusal (R8: every `checkAuth()` after the
-first is silent, see « The re-check on return » in `frontend-session-retour.md`); and, since R15, a header left anonymous without `sessionEnded` — a refusal
+cannot help; and the header no longer flickers while `/api/me` is read after a refusal (R8: the re-reads never touch
+`isChecking`, see « The re-check on return » in `frontend-session-retour.md`); and, since R15, a header left anonymous without `sessionEnded` — a refusal
 whose `/api/me` answers 401 now ends the session on the interface. **Still accepted**: a refusal leaves the page it came from.
 
 ## Tests
