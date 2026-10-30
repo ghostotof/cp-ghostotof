@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { HttpAuthRepository } from '../../../src/infrastructure/auth/HttpAuthRepository'
+import { HttpAuthRepository, ME_TIMEOUT_MS } from '../../../src/infrastructure/auth/HttpAuthRepository'
 import { InvalidCredentialsError } from '../../../src/domain/auth/errors/InvalidCredentialsError'
 import { LoginRateLimitedError } from '../../../src/domain/auth/errors/LoginRateLimitedError'
 
@@ -51,6 +51,73 @@ describe('HttpAuthRepository.me()', () => {
     stubFetch(503)
 
     await expect(new HttpAuthRepository('https://api.example.test').me()).rejects.toThrow(/503/)
+  })
+})
+
+/**
+ * Un `/api/me` qui ne répond pas (#748, R49, CR5-7) : la route `login`, le garde des routes protégées et les deux
+ * relectures l'attendent ; sans borne, ils attendaient sans fin. `me()` abandonne donc après `ME_TIMEOUT_MS`.
+ */
+describe('HttpAuthRepository.me() — la borne de temps', () => {
+  afterEach(() => {
+    // Les faux minuteurs ne survivent jamais à leur test : le suivant (axe-core compris) tourne sous les vrais.
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+  })
+
+  /** Un `fetch` qui ne résout jamais et rejette `AbortError` quand son signal est abandonné, comme le vrai. */
+  function stubHangingFetch(): ReturnType<typeof vi.fn> {
+    const fetchMock = vi.fn(
+      (_url: string, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(new DOMException('The operation was aborted.', 'AbortError')))
+        }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    return fetchMock
+  }
+
+  it('envoie les cookies et un signal d\'abandon', async () => {
+    const fetchMock = stubFetch(401)
+
+    await new HttpAuthRepository('https://api.example.test').me()
+
+    expect(fetchMock).toHaveBeenCalledWith('https://api.example.test/api/me', {
+      method: 'GET',
+      credentials: 'include',
+      signal: expect.any(AbortSignal),
+    })
+  })
+
+  it('me() abandonne après ME_TIMEOUT_MS : rejet AbortError', async () => {
+    vi.useFakeTimers()
+    stubHangingFetch()
+    const pending = new HttpAuthRepository('https://api.example.test').me()
+    const outcome = expect(pending).rejects.toMatchObject({ name: 'AbortError' })
+
+    // Un instant avant le délai : toujours en attente, rien n'est abandonné.
+    await vi.advanceTimersByTimeAsync(ME_TIMEOUT_MS - 1)
+    await vi.advanceTimersByTimeAsync(1)
+
+    await outcome
+  })
+
+  it('une réponse avant le délai lève la minuterie', async () => {
+    vi.useFakeTimers()
+    stubFetch(401)
+
+    await new HttpAuthRepository('https://api.example.test').me()
+
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('un échec avant le délai lève aussi la minuterie', async () => {
+    vi.useFakeTimers()
+    stubFetch(503)
+
+    await expect(new HttpAuthRepository('https://api.example.test').me()).rejects.toThrow(/503/)
+
+    expect(vi.getTimerCount()).toBe(0)
   })
 })
 

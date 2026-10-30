@@ -14,7 +14,7 @@ import { internalRedirectTarget } from '../router/internalRedirect'
 const { t, locale } = useI18n()
 const route = useRoute()
 const router = useRouter()
-const { login, user, tier } = useAuth()
+const { login, user, isAuthenticated } = useAuth()
 
 /**
  * Un compte est affiché : la page ne s'ouvre pas pour se connecter mais pour confirmer son identité ou changer de
@@ -41,7 +41,7 @@ const isReauthenticatingASession = computed(
  * palier de base (« Accès instantané » obtenu dans un autre onglet depuis), l'accès tient et il n'y a aucun compte à
  * confirmer — ni l'une ni l'autre annonce, la page est la connexion ordinaire (#748, R40, CR4-7).
  */
-const hasSessionEnded = computed(() => 'anonymous' === tier.value && isSessionEnded(route))
+const hasSessionEnded = computed(() => !isAuthenticated.value && isSessionEnded(route))
 
 const username = ref('')
 const password = ref('')

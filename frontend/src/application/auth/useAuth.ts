@@ -202,6 +202,14 @@ export function useAuth(): UseAuthResult {
     return true
   }
 
+  /**
+   * La vérification de la session au chargement (`main.ts`) et à chaque relecture hors session finie. **Elle ne rejette
+   * jamais** (#748, R49, étape 3b) : un rejet de `/api/me` — le réseau, ou l'abandon après `ME_TIMEOUT_MS` — ne dit
+   * rien du palier ; la première vérification finit donc comme pour un anonyme (`isChecking` retombe, l'état n'est
+   * pas touché, `waitForAuthCheck()` se résout, la route `login` et le garde s'ouvrent). `main.ts` lance `checkAuth()`
+   * sans l'attendre ni l'attraper : sans ce `catch`, le rejet y serait un rejet non géré (le `finally` relâche
+   * `isChecking`, mais n'absorbe rien).
+   */
   const checkAuth = async (): Promise<void> => {
     // Silencieuse après la première vérification : voir `hasCheckedOnce`.
     beginCheck()
@@ -219,6 +227,9 @@ export function useAuth(): UseAuthResult {
       if ('base' === session.tier && null === session.user && null !== rememberedExpiry && rememberedExpiry.getTime() > Date.now()) {
         scheduleBaseAccessExpiry(rememberedExpiry, markBaseAccessExpired)
       }
+    } catch {
+      // Le réseau ne répond pas, ou `me()` a abandonné : le palier reste ce qu'il était (anonyme au chargement),
+      // la personne le saura à sa prochaine requête.
     } finally {
       markFirstCheckDone()
     }

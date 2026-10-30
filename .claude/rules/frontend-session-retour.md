@@ -39,8 +39,8 @@ paths:
     while the first runs returns the same promise, so two quick returns, or two `useAuth()` callers, send one request;
     the slot is `createSingleFlight` in `singleFlight.ts` (R41, St4-4), written once for this re-read and for
     `rereadAfterRefusal`, and released by a `.finally` set **after** the promise is held, so a `me()` that throws
-    synchronously never leaves a settled promise behind); a rejection of `/api/me` (network) is swallowed and the session stays ended, with no
-    announcement.
+    synchronously never leaves a settled promise behind); a rejection of `/api/me` (network, or `me()` giving up after `ME_TIMEOUT_MS`, 15 s, R49) is swallowed and the session stays ended, with no
+    announcement. The bound holds for the first check too: `checkAuth()` swallows the rejection like an anonymous answer, so `waitForAuthCheck()` resolves, the guard and the `login` route open, and `main.ts`, which does not await it, gets no unhandled rejection.
   - **It is silent: `isChecking` is never touched.** `isChecking` is raised only by the *first* `checkAuth()` (`main.ts`,
     the one `waitForAuthCheck` makes the route guard wait for); a module flag, `hasCheckedOnce`, keeps every later
     `checkAuth()` — this re-check's neighbours, the re-read after a real refusal (see « A real refusal » in `frontend-session-refus.md`) — from raising it. Raised on

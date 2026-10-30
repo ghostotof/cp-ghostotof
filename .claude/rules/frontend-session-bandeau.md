@@ -75,7 +75,7 @@ paths:
     re-authentication) delegate to it. The flags' constants live in `loginLocation.ts`, which imports neither module (St3-9: no cycle,
     `signInLocations.spec.ts` checks it); the spec also fails when a file other than those three names the parameters.
   - **Both flags open the login to a signed-in person, and nothing more** (R16, B/F2): the `login` route's `beforeEnter`
-    first awaits `waitForAuthCheck()`, like the guard of protected routes (R40: in a fresh tab `user` is null while `/api/me`
+    first awaits `waitForAuthCheck()` (bounded: `me()` gives up after 15 s, R49), like the guard of protected routes (R40: in a fresh tab `user` is null while `/api/me`
     is in flight), then sends an account home unless `reauth=1` **or** `expired=1`. Why `expired=1`: a `BEARER` still alive with no
     `XSRF-TOKEN` leaves `authState.user` set while every write is refused, and the banner's link would otherwise land on
     the home page — a dead end for up to an hour. The flag grants no right; `redirect` stays judged by

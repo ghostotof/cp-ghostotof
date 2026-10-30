@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { defineComponent } from 'vue'
 import { router } from '../../../src/presentation/router'
@@ -9,6 +9,7 @@ import type { AuthSession } from '../../../src/domain/auth/entities/AuthSession'
 import { sessionFor } from '../../support/authSession'
 import { BASE_ACCESS_SESSION } from '../../../src/domain/auth/entities/AuthSession'
 import { createAppI18n } from '../../../src/presentation/i18n'
+import { HttpAuthRepository, ME_TIMEOUT_MS } from '../../../src/infrastructure/auth/HttpAuthRepository'
 
 /**
  * Exerce le routeur singleton (presentation/router/index.ts) plutôt qu'une
@@ -512,6 +513,51 @@ describe('router — la page de connexion attend la première vérification (#74
     expect(router.currentRoute.value.name).toBe('login')
     expect(wrapper.find('[data-testid="login-session-ended-notice"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="login-reauth-notice"]').exists()).toBe(false)
+  })
+
+  describe('un /api/me qui ne répond pas (#748, R49, CR5-7)', () => {
+    afterEach(() => {
+      // Les faux minuteurs ne survivent pas à leur test.
+      vi.useRealTimers()
+      vi.unstubAllGlobals()
+    })
+
+    it("onglet neuf, /api/me qui ne répond pas : la connexion s'ouvre après le délai, sans annonce avant", async () => {
+      // Le vrai dépôt HTTP : la borne est la sienne. Un `fetch` qui ne répond jamais et obéit à son signal.
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(
+          (_url: string, init?: RequestInit) =>
+            new Promise<Response>((_resolve, reject) => {
+              init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
+            }),
+        ),
+      )
+      const repository = new HttpAuthRepository('https://api.example.test')
+      const wrapper = await mountApplication(repository)
+      const probe = mountProbe(repository)
+      // Seules les minuteries de la borne sont fausses : le routeur et `flushPromises` restent sur les vraies.
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+
+      const checked = probe.vm.auth.checkAuth()
+      const pushed = router.push('/fr/login?expired=1')
+      await flushPromises()
+
+      // Avant le délai : la route n'est pas ouverte, aucune annonce n'est rendue.
+      await vi.advanceTimersByTimeAsync(ME_TIMEOUT_MS - 1)
+      await flushPromises()
+      expect(router.currentRoute.value.name).toBe('forbidden')
+      expect(wrapper.find('[data-testid="login-session-ended-notice"]').exists()).toBe(false)
+
+      await vi.advanceTimersByTimeAsync(1)
+      await checked
+      await pushed
+      await flushPromises()
+
+      // Après le délai : la première vérification a fini (anonyme), la page s'ouvre et dit pourquoi.
+      expect(router.currentRoute.value.name).toBe('login')
+      expect(wrapper.find('[data-testid="login-session-ended-notice"]').exists()).toBe(true)
+    })
   })
 
   it('une personne connectée qui ouvre /login sans drapeau dans un onglet neuf va à l’accueil', async () => {

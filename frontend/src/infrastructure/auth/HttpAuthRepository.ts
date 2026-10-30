@@ -9,6 +9,13 @@ import { sessionAwareFetch } from '../http/sessionAwareFetch'
 import { LOGIN_CSRF_HEADER } from '../http/loginCsrfHeader'
 import { retryAfterSeconds } from '../http/retryAfterSeconds'
 
+/**
+ * Le délai au bout duquel `me()` abandonne (#748, R49, CR5-7). 15 s plutôt que 10 : au-delà, une personne connectée sur
+ * un réseau très lent passe pour anonyme et une route protégée la mène à la connexion ; le délai doit donc dépasser
+ * tout `/api/me` qui finirait par répondre.
+ */
+export const ME_TIMEOUT_MS = 15_000
+
 interface UserResponseBody {
   user: { username: string; roles: string[] }
 }
@@ -69,26 +76,42 @@ export class HttpAuthRepository implements AuthRepository {
    * valide mais insuffisant — exactement le jeton D6 du palier de base, sans
    * compte derrière (BaseAccessControllerTest le pinne côté backend) —,
    * 200 = compte de confiance. Un 403 n'est donc pas une erreur ici.
+   *
+   * **La requête est bornée** (#748, R49, CR5-7) : la route `login`, le garde des routes protégées et les deux
+   * relectures (`recheckEndedSession`, `rereadAfterRefusal`) attendent tous ce `/api/me` ; sans borne, un serveur qui
+   * ne répond pas les tenait sans fin — et tenait pour toujours l'emplacement `singleFlight` de chaque relecture. Au
+   * bout de `ME_TIMEOUT_MS` la requête est abandonnée et `me()` rejette (`AbortError`), comme sur un échec réseau :
+   * l'appelant sait déjà s'en remettre. Un `AbortController` et un `setTimeout` plutôt que `AbortSignal.timeout()`,
+   * dont la minuterie interne échappe aux faux minuteurs de Vitest. La minuterie est levée dans le `finally`, que la
+   * réponse vienne, échoue ou que le corps tarde à se lire.
    */
   async me(): Promise<AuthSession> {
-    const response = await fetch(`${this.apiBaseUrl}/api/me`, {
-      method: 'GET',
-      credentials: 'include',
-    })
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), ME_TIMEOUT_MS)
 
-    if (401 === response.status) {
-      return ANONYMOUS_SESSION
-    }
-    if (403 === response.status) {
-      return BASE_ACCESS_SESSION
-    }
-    if (!response.ok) {
-      throw new Error(`Fetching current user failed with status ${response.status}`)
-    }
+    try {
+      const response = await fetch(`${this.apiBaseUrl}/api/me`, {
+        method: 'GET',
+        credentials: 'include',
+        signal: controller.signal,
+      })
 
-    const body = (await response.json()) as UserResponseBody
+      if (401 === response.status) {
+        return ANONYMOUS_SESSION
+      }
+      if (403 === response.status) {
+        return BASE_ACCESS_SESSION
+      }
+      if (!response.ok) {
+        throw new Error(`Fetching current user failed with status ${response.status}`)
+      }
 
-    return sessionForUser({ username: body.user.username, roles: body.user.roles })
+      const body = (await response.json()) as UserResponseBody
+
+      return sessionForUser({ username: body.user.username, roles: body.user.roles })
+    } finally {
+      clearTimeout(timer)
+    }
   }
 
   /** Un cookie `XSRF-TOKEN` vide ou indécodable compte pour absent : le client n'en enverrait aucun en-tête (`hasCsrfToken`). */

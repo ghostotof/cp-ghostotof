@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { defineComponent, h } from 'vue'
-import { AUTH_REPOSITORY, authState, markBaseAccessExpired, markBaseAccessGranted, markSessionExpired, sessionStamp, useAuth } from '../../../src/application/auth/useAuth'
+import { AUTH_REPOSITORY, authState, markBaseAccessExpired, markBaseAccessGranted, markSessionExpired, sessionStamp, useAuth, waitForAuthCheck } from '../../../src/application/auth/useAuth'
 import type { AuthRepository } from '../../../src/domain/auth/repositories/AuthRepository'
 import type { AuthenticatedUser } from '../../../src/domain/auth/entities/AuthenticatedUser'
 import { BASE_ACCESS_SESSION, type AuthSession } from '../../../src/domain/auth/entities/AuthSession'
 import { sessionFor } from '../../support/authSession'
+import { resetAuthStateForTests } from '../../../src/application/auth/resetAuthStateForTests'
 
 function createStubRepository(overrides: Partial<AuthRepository> = {}): AuthRepository {
   return {
@@ -622,6 +623,43 @@ describe('useAuth', () => {
       settle(sessionFor(null))
       await pending
       expect(authState.isChecking).toBe(false)
+    })
+
+    it('checkAuth : un me() rejeté termine la vérification en anonyme, sans rejet non géré', async () => {
+      // Un onglet neuf : le `beforeEach` a fait la première vérification, on repart de l'état du chargement.
+      resetAuthStateForTests()
+      expect(authState.isChecking).toBe(true)
+      const unhandled = vi.fn()
+      process.on('unhandledRejection', unhandled)
+      const auth = mountWithComposable(createStubRepository({ me: vi.fn(async () => Promise.reject(new TypeError('Failed to fetch'))) }))
+
+      try {
+        await expect(auth.checkAuth()).resolves.toBeUndefined()
+        await expect(waitForAuthCheck()).resolves.toBeUndefined()
+        // Laisser passer les tâches : un rejet non géré est signalé après la microtâche qui l'a laissé orphelin.
+        await new Promise((resolve) => setTimeout(resolve, 0))
+      } finally {
+        process.off('unhandledRejection', unhandled)
+      }
+
+      expect(auth.isChecking.value).toBe(false)
+      expect(auth.tier.value).toBe('anonymous')
+      expect(auth.user.value).toBeNull()
+      expect(unhandled).not.toHaveBeenCalled()
+    })
+
+    it('un me() abandonné libère la relecture : la suivante rappelle me()', async () => {
+      const abort = new DOMException('The operation was aborted.', 'AbortError')
+      const me = vi.fn().mockRejectedValueOnce(abort).mockResolvedValueOnce(sessionFor({ username: 'jane', roles: ['ROLE_TRUSTED', 'ROLE_USER'] }))
+      const auth = mountWithComposable(createStubRepository({ me }))
+      markSessionExpired()
+
+      await auth.recheckEndedSession()
+      expect(auth.hasSessionEnded.value).toBe(true)
+      await auth.recheckEndedSession()
+
+      expect(me).toHaveBeenCalledTimes(2)
+      expect(auth.hasSessionEnded.value).toBe(false)
     })
 
     it("un compte retrouvé avec son jeton d'écriture rétablit la session", async () => {
