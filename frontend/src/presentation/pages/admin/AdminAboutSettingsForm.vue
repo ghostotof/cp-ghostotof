@@ -25,10 +25,9 @@ const emit = defineEmits<{ switchLocale: [locale: Locale] }>()
 
 const { t } = useI18n()
 
-const { settings, isLoading, hasError, isLoaded, errorMessage, load, save } = useAdminAboutSettings()
+const { settings, isLoading, hasError, isLoaded, errorMessage, load, save, isSaving } = useAdminAboutSettings()
 
 const form = reactive({ siteEyebrow: '', meEyebrow: '', technicalSubtitle: '', personalSubtitle: '', hobbiesSubtitle: '' })
-const isSubmitting = ref(false)
 const errorText = computed(() => {
   const reason = errorMessage.value?.reason
 
@@ -52,6 +51,9 @@ const { isTranslating, errorReason: translationErrorReason, translate } = useAdm
 const PROSE_FIELDS = ['siteEyebrow', 'meEyebrow', 'technicalSubtitle', 'personalSubtitle', 'hobbiesSubtitle'] as const
 const pendingProposal = ref<TranslationProposal | null>(null)
 const proposalSourceLocale = ref<Locale | null>(null)
+// La langue du formulaire qui porte la proposition (sa cible, celle que la page a prise pour la recevoir) : l'avis se
+// rapporte à elle, et seul l'enregistrement réussi de cette langue le retire (R50, étape 2b).
+const proposalTargetLocale = ref<Locale | null>(null)
 const hasProseToTranslate = computed(() => PROSE_FIELDS.some((field) => '' !== form[field].trim()))
 const translationErrorText = computed(() => {
   const reason = translationErrorReason.value
@@ -108,6 +110,7 @@ function applyPendingProposal(loadedLocale: Locale): void {
 
   applyTranslationProposal(form, PROSE_FIELDS, pendingProposal.value)
   proposalSourceLocale.value = pendingProposal.value.sourceLocale
+  proposalTargetLocale.value = pendingProposal.value.targetLocale
   pendingProposal.value = null
 }
 
@@ -122,14 +125,16 @@ async function handleTranslate(targetLocale: Locale): Promise<void> {
 }
 
 async function handleSubmit(): Promise<void> {
-  isSubmitting.value = true
-  const saved = await save(props.locale, { ...form })
-  // La mention dit que le formulaire porte une proposition : un enregistrement refusé (hors ligne, session finie)
-  // la laisse sur le formulaire, elle doit rester dite (F11). Seul un enregistrement réussi la retire.
-  if (saved) {
+  // La langue enregistrée est celle du départ : `props.locale` peut changer pendant l'attente.
+  const locale = props.locale
+  const saved = await save(locale, { ...form })
+  // La mention dit que le formulaire d'une langue porte une proposition : un enregistrement refusé (hors ligne,
+  // session finie) la laisse sur le formulaire, elle doit rester dite (F11) ; l'enregistrement d'une autre langue
+  // n'enregistre pas cette proposition. Seul un enregistrement réussi de sa langue la retire.
+  if (saved && locale === proposalTargetLocale.value) {
     proposalSourceLocale.value = null
+    proposalTargetLocale.value = null
   }
-  isSubmitting.value = false
 }
 </script>
 
@@ -198,7 +203,7 @@ async function handleSubmit(): Promise<void> {
         <TranslateEntryButton
           :form-locale="locale"
           :is-translating="isTranslating"
-          :disabled="!hasProseToTranslate || isSubmitting || isLocked"
+          :disabled="!hasProseToTranslate || isSaving || isLocked"
           :aria-describedby="lockedHintId"
           @translate="handleTranslate"
         />
@@ -231,7 +236,7 @@ async function handleSubmit(): Promise<void> {
       <button
         type="submit"
         class="btn btn-gradient"
-        :disabled="isSubmitting || isLocked"
+        :disabled="isSaving || isLocked"
         :aria-describedby="lockedHintId"
       >
         {{ t('admin.about.save') }}

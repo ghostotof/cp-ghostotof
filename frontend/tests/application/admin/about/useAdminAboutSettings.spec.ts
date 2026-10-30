@@ -313,7 +313,7 @@ describe('useAdminAboutSettings', () => {
     })
   })
 
-  describe('seul le dernier enregistrement d\'une langue pose son verdict et sa valeur (#748, R43)', () => {
+  describe('un seul enregistrement en vol par langue (#748, R50, décision 3)', () => {
     const INPUT = {
       siteEyebrow: 'Nouveau titre',
       meEyebrow: SETTINGS.meEyebrow,
@@ -321,8 +321,6 @@ describe('useAdminAboutSettings', () => {
       personalSubtitle: SETTINGS.personalSubtitle,
       hobbiesSubtitle: SETTINGS.hobbiesSubtitle,
     }
-    const FIRST: AdminAboutSettings = { ...SETTINGS, siteEyebrow: 'Premier' }
-    const SECOND: AdminAboutSettings = { ...SETTINGS, siteEyebrow: 'Second' }
 
     /** Un `update` dont chaque appel reste en vol : `answer(n, …)` / `fail(n, …)` le règle, dans l'ordre voulu. */
     function pendingUpdates() {
@@ -338,67 +336,86 @@ describe('useAdminAboutSettings', () => {
       }
     }
 
-    it('deux enregistrements FR : le plus ancien échoue après le succès du plus récent — aucune erreur FR', async () => {
+    it("un second enregistrement FR pendant le premier : aucune requête, rend false, l'erreur FR intacte", async () => {
       const pending = pendingUpdates()
       const composable = mountWithComposable(createStubRepository({ update: pending.update }))
       await composable.load('fr')
 
-      const older = composable.save('fr', INPUT)
-      const newer = composable.save('fr', INPUT)
-      pending.answer(1, SECOND)
-      expect(await newer).toBe(true)
+      // Une erreur FR laissée par un enregistrement antérieur : le refus du second ne l'efface pas (aucune requête).
+      const failed = composable.save('fr', INPUT)
       pending.fail(0, new AdminAboutError('validation', 'Invalide'))
-
-      // Le vrai sort de l'ancien enregistrement est rendu, mais il ne dit rien de la langue : le dernier a abouti.
-      expect(await older).toBe(false)
-      expect(composable.errorMessage.value).toBeNull()
-      expect(composable.settings.value).toEqual(SECOND)
-    })
-
-    it('deux enregistrements FR : la réponse du plus ancien, arrivée après le plus récent, ne remplace pas ses valeurs', async () => {
-      const pending = pendingUpdates()
-      const composable = mountWithComposable(createStubRepository({ update: pending.update }))
-      await composable.load('fr')
-
-      const older = composable.save('fr', INPUT)
-      const newer = composable.save('fr', INPUT)
-      pending.answer(1, SECOND)
-      await newer
-      pending.answer(0, FIRST)
-
-      expect(await older).toBe(true)
-      expect(composable.settings.value).toEqual(SECOND)
-    })
-
-    it("le plus récent échoue après le succès de l'ancien : l'erreur FR", async () => {
-      const pending = pendingUpdates()
-      const composable = mountWithComposable(createStubRepository({ update: pending.update }))
-      await composable.load('fr')
-
-      const older = composable.save('fr', INPUT)
-      const newer = composable.save('fr', INPUT)
-      pending.answer(0, FIRST)
-      expect(await older).toBe(true)
-      pending.fail(1, new AdminAboutError('validation', 'Invalide'))
-
-      expect(await newer).toBe(false)
+      await failed
       expect(composable.errorMessage.value?.reason).toBe('validation')
+
+      const first = composable.save('fr', INPUT)
+      expect(composable.errorMessage.value).toBeNull()
+      const second = await composable.save('fr', INPUT)
+
+      expect(second).toBe(false)
+      expect(pending.update).toHaveBeenCalledTimes(2)
+      expect(composable.errorMessage.value).toBeNull()
+
+      pending.answer(1, SETTINGS)
+      expect(await first).toBe(true)
     })
 
-    it("le numéro est propre à chaque langue : un enregistrement EN plus récent ne périme pas le FR", async () => {
+    it('un enregistrement EN part pendant un FR en vol', async () => {
       const pending = pendingUpdates()
       const composable = mountWithComposable(createStubRepository({ update: pending.update }))
       await composable.load('fr')
 
       const french = composable.save('fr', INPUT)
       const english = composable.save('en', INPUT)
-      pending.answer(1, { ...SETTINGS, locale: 'en' })
-      await english
-      pending.fail(0, new AdminAboutError('validation', 'Invalide'))
-      await french
 
-      // Le FR est le dernier de sa langue : son échec est posé, et revient avec le FR.
-      expect(composable.errorMessage.value?.reason).toBe('validation')
+      expect(pending.update).toHaveBeenCalledTimes(2)
+      expect(pending.update).toHaveBeenNthCalledWith(1, 'fr', INPUT)
+      expect(pending.update).toHaveBeenNthCalledWith(2, 'en', INPUT)
+
+      pending.answer(0, SETTINGS)
+      pending.answer(1, { ...SETTINGS, locale: 'en' })
+      expect(await french).toBe(true)
+      expect(await english).toBe(true)
+    })
+
+    it('isSaving suit la langue montrée : vrai en FR pendant le FR, faux en EN', async () => {
+      const pending = pendingUpdates()
+      const composable = mountWithComposable(
+        createStubRepository({ update: pending.update, get: vi.fn(async (locale) => ({ ...SETTINGS, locale })) }),
+      )
+      await composable.load('fr')
+      expect(composable.isSaving.value).toBe(false)
+
+      const french = composable.save('fr', INPUT)
+      expect(composable.isSaving.value).toBe(true)
+
+      await composable.load('en')
+      expect(composable.isSaving.value).toBe(false)
+
+      await composable.load('fr')
+      expect(composable.isSaving.value).toBe(true)
+
+      pending.answer(0, SETTINGS)
+      await french
+      expect(composable.isSaving.value).toBe(false)
+    })
+
+    it.each([
+      ['réussie', 'answer'],
+      ['en échec', 'fail'],
+    ] as const)('après la réponse du FR, %s, un nouvel enregistrement FR part', async (_label, outcome) => {
+      const pending = pendingUpdates()
+      const composable = mountWithComposable(createStubRepository({ update: pending.update }))
+      await composable.load('fr')
+
+      const first = composable.save('fr', INPUT)
+      if ('answer' === outcome) pending.answer(0, SETTINGS)
+      else pending.fail(0, new AdminAboutError('validation', 'Invalide'))
+      await first
+
+      const second = composable.save('fr', INPUT)
+      expect(pending.update).toHaveBeenCalledTimes(2)
+      pending.answer(1, SETTINGS)
+      expect(await second).toBe(true)
     })
   })
 })

@@ -248,11 +248,14 @@ version" copies nothing and the assistant sends all five fields.
   `errorMessage` is the failure of the current locale's last save (R31, Sp3-4: **one error per locale**, `failures`), and
   comes back on returning to that locale, until **that locale's** next save: a save of one locale neither clears nor
   replaces the other's error (a failed FR save, then a successful or failed EN one, leaves the FR error for the way back).
-  **Only the last save of a locale sets its verdict and its value** (R43, CR4-6: `lastSaveOf`, one number per locale): an older
-  save of the same locale answering after a newer one returns its own `true`/`false` and sets neither the error nor the values.
+  **One save per locale in flight** (R50, the author's decision of 2026-10-30, CR5-3/CR5-4): `save(locale)` refuses a
+  second save of a locale while its first is in flight (no request, `false`), and the form disables « Enregistrer » for
+  that locale only (`isSaving`): an English save is not held by a French one. With one response per locale in flight,
+  R43's `lastSaveOf` had nothing left to arbitrate and is gone.
   Reloading a locale never clears its error: the form copies the settings read, so that error is the only trace of the refused save.
-  **A proposal notice survives a refusal** (F11): `proposalSourceLocale` is cleared
-  only when `save()` resolves `true`, the form still carrying the proposal otherwise. The About settings are the only
+  **A proposal notice survives a refusal, and the save of another locale** (F11, R50): it belongs to the locale the
+  proposal landed on (`proposalTargetLocale`), and only a `true` save of **that** locale clears it, the form still
+  carrying the proposal otherwise. The About settings are the only
   keyed composable, so the only one with these races.
   **The return is the one signal that exists** (R13): `useAuth().onSessionRestored(callback)`, called once at each
   descent of `authState.sessionEnded` by the same account (another one replays the navigation instead, R18). `useAdminLoad` subscribes to it; if its

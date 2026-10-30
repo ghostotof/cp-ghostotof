@@ -1284,6 +1284,86 @@ describe('AdminAboutPage', () => {
 
       expect(panelOf(wrapper, SETTINGS_PANEL).find('[role="status"]').exists()).toBe(false)
     })
+
+    // L'avis dit que le formulaire d'une langue porte une proposition : il se rapporte à la langue **cible** de la
+    // proposition (celle que la page a prise pour la recevoir), pas à la langue source nommée dans son texte.
+    it("une proposition en EN, enregistrement réussi du FR : l'avis EN reste (#748, R50, étape 2b)", async () => {
+      const settingsRepository = createSettingsRepository({
+        get: vi.fn(async (locale: string) => ('en' === locale ? SETTINGS_EN : SETTINGS)),
+        update: vi.fn(async () => SETTINGS),
+      })
+      const translation = createTranslationRepository(TRANSLATED_SETTINGS)
+      const { wrapper } = await mountPage(settingsRepository, undefined, undefined, translation)
+
+      await translateButton(wrapper, SETTINGS_FORM).trigger('click')
+      await flushPromises()
+      expect(valueOf(wrapper, '#admin-about-locale')).toBe('en')
+      expect(panelOf(wrapper, SETTINGS_PANEL).find('[role="status"]').exists()).toBe(true)
+
+      // La personne enregistre le français, un autre formulaire : la proposition EN n'a pas été enregistrée.
+      await wrapper.get('#admin-about-locale').setValue('fr')
+      await flushPromises()
+      await formOf(wrapper, SETTINGS_FORM).trigger('submit.prevent')
+      await flushPromises()
+
+      expect(settingsRepository.update).toHaveBeenCalledWith('fr', expect.anything())
+      expect(panelOf(wrapper, SETTINGS_PANEL).find('[role="status"]').exists()).toBe(true)
+    })
+
+    it("enregistrement réussi de l'EN : l'avis disparaît (#748, R50, étape 2b)", async () => {
+      const settingsRepository = createSettingsRepository({ update: vi.fn(async () => SETTINGS_EN) })
+      const translation = createTranslationRepository(TRANSLATED_SETTINGS)
+      const { wrapper } = await mountPage(settingsRepository, undefined, undefined, translation)
+
+      await translateButton(wrapper, SETTINGS_FORM).trigger('click')
+      await flushPromises()
+      expect(valueOf(wrapper, '#admin-about-locale')).toBe('en')
+      expect(panelOf(wrapper, SETTINGS_PANEL).find('[role="status"]').exists()).toBe(true)
+
+      await formOf(wrapper, SETTINGS_FORM).trigger('submit.prevent')
+      await flushPromises()
+
+      expect(settingsRepository.update).toHaveBeenCalledWith('en', TRANSLATED_SETTINGS)
+      expect(panelOf(wrapper, SETTINGS_PANEL).find('[role="status"]').exists()).toBe(false)
+    })
+
+    it("FR en vol, passage en EN : « Enregistrer » actif ; retour en FR : désactivé jusqu'à la réponse (#748, R50)", async () => {
+      let answerFrenchSave!: (settings: AdminAboutSettings) => void
+      const frenchSave = new Promise<AdminAboutSettings>((resolve) => {
+        answerFrenchSave = resolve
+      })
+      const settingsRepository = createSettingsRepository({
+        get: vi.fn(async (locale: string) => ('en' === locale ? SETTINGS_EN : SETTINGS)),
+        update: vi.fn().mockReturnValueOnce(frenchSave).mockResolvedValue(SETTINGS_EN),
+      })
+      const { wrapper } = await mountPage(settingsRepository)
+      const saveButton = () => buttonLabelled(panelOf(wrapper, SETTINGS_PANEL), 'Enregistrer')
+
+      await formOf(wrapper, SETTINGS_FORM).trigger('submit.prevent')
+      await flushPromises()
+      expect(saveButton().attributes('disabled')).toBeDefined()
+
+      await wrapper.get('#admin-about-locale').setValue('en')
+      await flushPromises()
+      expect(saveButton().attributes('disabled')).toBeUndefined()
+
+      await formOf(wrapper, SETTINGS_FORM).trigger('submit.prevent')
+      await flushPromises()
+      expect(settingsRepository.update).toHaveBeenCalledTimes(2)
+      expect(settingsRepository.update).toHaveBeenLastCalledWith('en', TRANSLATED_SETTINGS)
+
+      await wrapper.get('#admin-about-locale').setValue('fr')
+      await flushPromises()
+      expect(saveButton().attributes('disabled')).toBeDefined()
+      // Une soumission au clavier ne passe pas par le bouton : le composable refuse lui-même un second FR.
+      await formOf(wrapper, SETTINGS_FORM).trigger('submit.prevent')
+      await flushPromises()
+      expect(settingsRepository.update).toHaveBeenCalledTimes(2)
+
+      answerFrenchSave(SETTINGS)
+      await flushPromises()
+      expect(saveButton().attributes('disabled')).toBeUndefined()
+    })
   })
 
   describe('garde de sortie et accessibilité', () => {

@@ -16,7 +16,10 @@ export interface UseAdminAboutSettingsResult extends AdminLoadState {
   /** L'erreur du dernier enregistrement, **si c'est celle de la langue montrée** ; `null` sinon (#748, R20). */
   errorMessage: ComputedRef<AdminAboutError | null>
   load: (locale: Locale) => Promise<void>
+  /** Rend `false`, sans requête ni erreur posée, si un enregistrement de cette langue est déjà en vol (R50). */
   save: (locale: Locale, input: AdminAboutSettingsInput) => Promise<boolean>
+  /** Un enregistrement de la **langue montrée** est en vol : désactive ses boutons, pas ceux d'une autre langue (R50). */
+  isSaving: ComputedRef<boolean>
 }
 
 /**
@@ -39,11 +42,10 @@ export function useAdminAboutSettings(): UseAdminAboutSettingsResult {
   // Une erreur FR arrivée quand la page est en EN ne se lit pas sous l'en-tête anglais (F10-2), et un enregistrement
   // d'une langue n'efface ni ne remplace l'erreur de l'autre.
   const failures = ref<Partial<Record<Locale, AdminAboutError>>>({})
-  // Le numéro du dernier enregistrement parti de chaque langue (R43, CR4-6) : deux enregistrements d'une même langue
-  // peuvent se chevaucher (double clic, réseau lent), et le plus ancien répond parfois en dernier. Seul le dernier
-  // de sa langue pose son verdict (l'erreur) et sa valeur ; l'ancien rend son vrai sort (`true`/`false`) sans rien poser.
-  // Un numéro par langue : un enregistrement EN ne rend pas périmé un enregistrement FR encore en vol.
-  const lastSaveOf: Partial<Record<Locale, number>> = {}
+  // Les langues dont un enregistrement est en vol (R50, décision 3 : CR5-3/CR5-4). Un seul par langue : `save()`
+  // refuse le second, donc la réponse qui arrive est toujours la seule de sa langue et pose son verdict et sa valeur
+  // sans arbitrage (R43 numérotait les chevauchements ; il n'y en a plus). Une langue ne retient pas l'autre.
+  const saving = ref<Partial<Record<Locale, true>>>({})
 
   const { isLoading, hasError, isLoaded, load, write, isCurrentKey } = useAdminLoad<AdminAboutSettings, Locale>({
     read: (locale) => repository.get(locale),
@@ -65,11 +67,16 @@ export function useAdminAboutSettings(): UseAdminAboutSettingsResult {
     return undefined === current ? null : (failures.value[current] ?? null)
   })
 
+  const isSaving = computed(() => SUPPORTED_LOCALES.some((locale) => isCurrentKey(locale) && true === saving.value[locale]))
+
   const save = async (locale: Locale, input: AdminAboutSettingsInput): Promise<boolean> => {
+    // Le refus vient d'ici et pas seulement du bouton désactivé : une soumission implicite au clavier ou un futur
+    // second appelant ne passent pas par lui. Rien n'est effacé : l'enregistrement en vol posera le verdict.
+    if (saving.value[locale]) return false
+
+    saving.value[locale] = true
     // N'efface que l'erreur de la langue enregistrée : celle d'une autre langue attend son propre enregistrement.
     delete failures.value[locale]
-    const mine = (lastSaveOf[locale] ?? 0) + 1
-    lastSaveOf[locale] = mine
 
     try {
       const saved = await repository.update(locale, input)
@@ -78,16 +85,18 @@ export function useAdminAboutSettings(): UseAdminAboutSettingsResult {
       // la langue affichée, enregistré ensuite, écraserait celle-ci par la première (R11). `write` ne pose que sous
       // la clé courante et périme les lectures en vol de cette clé : un `GET` parti avant le COMMIT rendrait
       // l'ancienne valeur et la reposerait par-dessus la neuve (F10-1).
-      if (lastSaveOf[locale] === mine) write(locale, saved)
+      write(locale, saved)
 
       return true
     } catch (error) {
       const visible = visibleMutationError(error, AdminAboutError, () => new AdminAboutError('unknown', 'Unknown error'))
-      if (null !== visible && lastSaveOf[locale] === mine) failures.value[locale] = visible
+      if (null !== visible) failures.value[locale] = visible
 
       return false
+    } finally {
+      delete saving.value[locale]
     }
   }
 
-  return { settings, isLoading, hasError, isLoaded, errorMessage, load, save }
+  return { settings, isLoading, hasError, isLoaded, errorMessage, load, save, isSaving }
 }
