@@ -13,6 +13,7 @@ import type { AdminTranslationRepository } from '../../../../src/domain/admin/tr
 import { AdminTranslationError } from '../../../../src/domain/admin/translation/errors/AdminTranslationError'
 import { AdminOrderError } from '../../../../src/domain/admin/shared/errors/AdminOrderError'
 import { expectNoAccessibilityViolation } from '../../../support/axe'
+import { describedTexts, LOCALE_LOCKED_EDITING_TEXT, LOCALE_LOCKED_PROPOSAL_TEXT } from '../../../support/localeLockHint'
 
 const GROUP_ONE = '019968b0-0000-7000-8000-000000000001'
 const GROUP_TWO = '019968b0-0000-7000-8000-000000000002'
@@ -431,6 +432,35 @@ describe('AdminIncidentsPage', () => {
     expect(valueOf(wrapper, '#admin-incident-title')).toBe('')
     expect(wrapper.get('h2').text()).toBe('Ajouter un incident')
     expect(formCancelButton(wrapper)).toBeUndefined()
+  })
+
+  // D-a de l'auteur (#748, 2026-10-30) : un sélecteur désactivé dit pourquoi, par un texte rendu
+  // seulement pendant le verrou et désigné par `aria-describedby` (jamais une référence pendante).
+  it("le verrou de la langue est expliqué en édition, et pas dans un formulaire libre", async () => {
+    const { wrapper } = await mountPage(createIncidentRepository())
+
+    expect(describedTexts(wrapper, '#admin-incident-locale')).toEqual([])
+    expect(wrapper.find('#admin-incident-locale-locked-help').exists()).toBe(false)
+
+    await buttonLabelled(actionsForLine(wrapper, 'Image obsolète servie'), 'Modifier').trigger('click')
+
+    expect(describedTexts(wrapper, '#admin-incident-locale')).toEqual([LOCALE_LOCKED_EDITING_TEXT])
+  })
+
+  it("après une proposition, le verrou de la langue est expliqué et « Annuler » retire l'explication", async () => {
+    const { wrapper } = await mountPage(createIncidentRepository())
+
+    await buttonLabelled(actionsForLine(wrapper, 'Image obsolète servie'), 'Modifier').trigger('click')
+    await translateButton(wrapper).trigger('click')
+    await flushPromises()
+
+    expect(describedTexts(wrapper, '#admin-incident-locale')).toEqual([LOCALE_LOCKED_PROPOSAL_TEXT])
+
+    await formCancelButton(wrapper)?.trigger('click')
+    await flushPromises()
+
+    expect(describedTexts(wrapper, '#admin-incident-locale')).toEqual([])
+    expect(wrapper.find('#admin-incident-locale-locked-help').exists()).toBe(false)
   })
 
   it('enregistre la proposition comme une nouvelle entrée EN rattachée au même groupe', async () => {

@@ -61,6 +61,8 @@
     "contentNavigation": "Navigation du contenu",
     "comingSoon": "Cette section sera bientôt disponible.",
     "localeLabel": "Langue",
+    "localeLockedEditing": "La langue d'une entrée existante ne peut pas être modifiée.",
+    "localeLockedProposal": "La langue est celle de la proposition de traduction ; « Annuler » permet d'en changer.",
     "nav": {
       "content": "Contenu",
       "technologies": "Technologies",
@@ -179,6 +181,7 @@
         "editAction": "Modifier",
         "categoryLabel": "Catégorie",
         "categoryLockedHelp": "La catégorie d'une carte ne se modifie pas : pour la ranger ailleurs, créez-la dans la bonne catégorie (ses versions dans les autres langues aussi), puis supprimez celle-ci.",
+        "categoryProposalLockedHelp": "La catégorie est celle de la proposition de traduction ; « Annuler » permet d'en changer.",
         "categoryTechnical": "Techniquement",
         "categoryPersonal": "Humainement",
         "categoryHobby": "En dehors du travail",

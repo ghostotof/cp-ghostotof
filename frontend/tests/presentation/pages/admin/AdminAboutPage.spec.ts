@@ -25,6 +25,13 @@ import { AdminOrderError } from '../../../../src/domain/admin/shared/errors/Admi
 import type { AdminTranslationRepository } from '../../../../src/domain/admin/translation/repositories/AdminTranslationRepository'
 import { AdminTranslationError } from '../../../../src/domain/admin/translation/errors/AdminTranslationError'
 import { expectNoAccessibilityViolation } from '../../../support/axe'
+import {
+  CATEGORY_LOCKED_PROPOSAL_TEXT,
+  describedTexts,
+  LOCALE_HELP_TEXT,
+  LOCALE_LOCKED_EDITING_TEXT,
+  LOCALE_LOCKED_PROPOSAL_TEXT,
+} from '../../../support/localeLockHint'
 
 const SETTINGS: AdminAboutSettings = {
   locale: 'fr',
@@ -1014,9 +1021,8 @@ describe('AdminAboutPage', () => {
       })
     })
 
-    // Sp7-1 (#748, R79) : voir les tests des principes et traits qualité. Dans les cartes « moi », seul
-    // le sélecteur de langue est verrouillé par la proposition ; la catégorie (verrouillée en édition
-    // seulement, #578) reste libre en création, où une proposition la garde déjà telle que lue.
+    // Sp7-1 (#748, R79) : voir les tests des principes et traits qualité. Dans les cartes « moi », la
+    // proposition verrouille aussi la catégorie (D-b de l'auteur, plus bas) ; « Annuler » libère les deux.
     it("carte « site » : après une proposition, la langue est verrouillée et « Annuler » la retire", async () => {
       const { wrapper } = await mountPage()
 
@@ -1051,7 +1057,7 @@ describe('AdminAboutPage', () => {
       expect(wrapper.findAll('h2')[ME_FORM].text()).toBe('Ajouter une carte')
       expect(wrapper.get('#admin-about-me-card-locale').attributes('disabled')).toBeDefined()
       expect(valueOf(wrapper, '#admin-about-me-card-category')).toBe('technical')
-      expect(wrapper.get('#admin-about-me-card-category').attributes('disabled')).toBeUndefined()
+      expect(wrapper.get('#admin-about-me-card-category').attributes('disabled')).toBeDefined()
       expect(formCancelButton(wrapper, ME_FORM)).toBeDefined()
 
       await formCancelButton(wrapper, ME_FORM)?.trigger('click')
@@ -1064,6 +1070,95 @@ describe('AdminAboutPage', () => {
       expect(valueOf(wrapper, '#admin-about-me-card-title')).toBe('')
       expect(wrapper.findAll('h2')[ME_FORM].text()).toBe('Ajouter une carte')
       expect(formCancelButton(wrapper, ME_FORM)).toBeUndefined()
+    })
+
+    // D-a de l'auteur (#748, 2026-10-30) : le verrou de la langue est expliqué, en plus de l'aide
+    // permanente (#582) ; le texte du verrou n'est rendu que pendant lui.
+    it("carte « site » : le verrou de la langue est expliqué en édition, et pas dans un formulaire libre", async () => {
+      const { wrapper } = await mountPage()
+
+      expect(describedTexts(wrapper, '#admin-about-site-card-locale')).toEqual([LOCALE_HELP_TEXT])
+      expect(wrapper.find('#admin-about-site-card-locale-locked-help').exists()).toBe(false)
+
+      await buttonLabelled(actionsForLine(wrapper, SITE, 'Stack technique'), 'Modifier').trigger('click')
+
+      expect(describedTexts(wrapper, '#admin-about-site-card-locale')).toEqual([LOCALE_HELP_TEXT, LOCALE_LOCKED_EDITING_TEXT])
+    })
+
+    it("carte « site » : après une proposition, le verrou de la langue est expliqué et « Annuler » retire l'explication", async () => {
+      const { wrapper } = await mountPage()
+
+      await buttonLabelled(actionsForLine(wrapper, SITE, 'Stack technique'), 'Modifier').trigger('click')
+      await translateButton(wrapper, SITE_FORM).trigger('click')
+      await flushPromises()
+
+      expect(describedTexts(wrapper, '#admin-about-site-card-locale')).toEqual([LOCALE_HELP_TEXT, LOCALE_LOCKED_PROPOSAL_TEXT])
+
+      await formCancelButton(wrapper, SITE_FORM)?.trigger('click')
+      await flushPromises()
+
+      expect(describedTexts(wrapper, '#admin-about-site-card-locale')).toEqual([LOCALE_HELP_TEXT])
+      expect(wrapper.find('#admin-about-site-card-locale-locked-help').exists()).toBe(false)
+    })
+
+    it("carte « moi » : le verrou de la langue est expliqué en édition, et pas dans un formulaire libre", async () => {
+      const { wrapper } = await mountPage(createSettingsRepository(), createSiteCardRepository(), undefined, createTranslationRepository({ title: 'Veille continue', description: 'Description veille' }))
+
+      expect(describedTexts(wrapper, '#admin-about-me-card-locale')).toEqual([LOCALE_HELP_TEXT])
+      expect(wrapper.find('#admin-about-me-card-locale-locked-help').exists()).toBe(false)
+
+      await buttonLabelled(actionsForLine(wrapper, ME_TABLE.technical, ME_FIXTURES.technical.titles[2]), 'Modifier').trigger('click')
+
+      expect(describedTexts(wrapper, '#admin-about-me-card-locale')).toEqual([LOCALE_HELP_TEXT, LOCALE_LOCKED_EDITING_TEXT])
+    })
+
+    it("carte « moi » : après une proposition, le verrou de la langue est expliqué et « Annuler » retire l'explication", async () => {
+      const { wrapper } = await mountPage(createSettingsRepository(), createSiteCardRepository(), undefined, createTranslationRepository({ title: 'Veille continue', description: 'Description veille' }))
+
+      await buttonLabelled(actionsForLine(wrapper, ME_TABLE.technical, ME_FIXTURES.technical.titles[2]), 'Modifier').trigger('click')
+      await translateButton(wrapper, ME_FORM).trigger('click')
+      await flushPromises()
+
+      expect(describedTexts(wrapper, '#admin-about-me-card-locale')).toEqual([LOCALE_HELP_TEXT, LOCALE_LOCKED_PROPOSAL_TEXT])
+
+      await formCancelButton(wrapper, ME_FORM)?.trigger('click')
+      await flushPromises()
+
+      expect(describedTexts(wrapper, '#admin-about-me-card-locale')).toEqual([LOCALE_HELP_TEXT])
+      expect(wrapper.find('#admin-about-me-card-locale-locked-help').exists()).toBe(false)
+    })
+
+    // D-b de l'auteur (#748, 2026-10-30) : une version dans l'autre langue ne change pas de catégorie
+    // (#501, #561, comme en édition #578) ; la changer vidait « Version de » (le watcher `flush: 'sync'`)
+    // et l'enregistrement créait une carte détachée de sa source avec la prose générée.
+    it("carte « moi » : après une proposition, la catégorie est verrouillée et expliquée, « Annuler » la libère", async () => {
+      const translation = createTranslationRepository({ title: 'Veille continue', description: 'Description veille' })
+      const { wrapper } = await mountPage(createSettingsRepository(), createSiteCardRepository(), undefined, translation)
+
+      await buttonLabelled(actionsForLine(wrapper, ME_TABLE.technical, ME_FIXTURES.technical.titles[2]), 'Modifier').trigger('click')
+      await translateButton(wrapper, ME_FORM).trigger('click')
+      await flushPromises()
+
+      expect(wrapper.get('#admin-about-me-card-category').attributes('disabled')).toBeDefined()
+      expect(valueOf(wrapper, '#admin-about-me-card-category')).toBe('technical')
+      expect(describedTexts(wrapper, '#admin-about-me-card-category')).toEqual([CATEGORY_LOCKED_PROPOSAL_TEXT])
+
+      await formCancelButton(wrapper, ME_FORM)?.trigger('click')
+      await flushPromises()
+
+      expect(wrapper.get('#admin-about-me-card-category').attributes('disabled')).toBeUndefined()
+      expect(describedTexts(wrapper, '#admin-about-me-card-category')).toEqual([])
+      expect(wrapper.find('#admin-about-me-card-category-help').exists()).toBe(false)
+    })
+
+    it("carte « moi » : « Créer la version FR » laisse la catégorie libre, sans explication de verrou", async () => {
+      const { wrapper } = await mountPage()
+
+      await buttonLabelled(rowsOf(wrapper, ME_TABLE.technical)[1], 'Créer la version FR').trigger('click')
+
+      expect(wrapper.get('#admin-about-me-card-category').attributes('disabled')).toBeUndefined()
+      expect(describedTexts(wrapper, '#admin-about-me-card-category')).toEqual([])
+      expect(describedTexts(wrapper, '#admin-about-me-card-locale')).toEqual([LOCALE_HELP_TEXT])
     })
 
     it('affiche le message du quota en cas de 429 et laisse le formulaire intact', async () => {

@@ -22,6 +22,7 @@ import BaseTextInput from '../../ui/BaseTextInput.vue'
 import BaseTextarea from '../../ui/BaseTextarea.vue'
 import BaseSelect from '../../ui/BaseSelect.vue'
 import TranslateEntryButton from '../../ui/admin/TranslateEntryButton.vue'
+import LocaleLockedHint from '../../ui/admin/LocaleLockedHint.vue'
 import OrderHandle from '../../ui/admin/OrderHandle.vue'
 import OrderToolbar from '../../ui/admin/OrderToolbar.vue'
 import { LOCALE_NATIVE_NAMES, SUPPORTED_LOCALES, type Locale } from '../../../domain/portfolio/entities/Locale'
@@ -94,6 +95,7 @@ const form = reactive<SiteCardForm>({
 const editingId = ref<string | null>(null)
 const isSubmitting = ref(false)
 const isEditing = computed(() => null !== editingId.value)
+const isLocaleLocked = computed(() => isEditing.value || null !== proposalSourceLocale.value)
 
 /**
  * Groupe de l'entrée dont le formulaire est issu (édition, ou « Créer la
@@ -281,12 +283,12 @@ async function handleDelete(card: AdminAboutSiteCard): Promise<void> {
            porte une proposition de traduction : celle-ci est la version de la carte de l'entrée source
            dans l'autre langue, dans son groupe gardé ; en changer la langue créerait une
            seconde version de la langue source dans ce groupe (#748, Sp7-1). « Annuler »
-           retire la proposition et rend le sélecteur. -->
+           retire la proposition et rend le sélecteur ; `LocaleLockedHint` dit le verrou (D-a). -->
       <BaseSelect
         id="admin-about-site-card-locale"
         v-model="form.locale"
-        :disabled="isEditing || null !== proposalSourceLocale"
-        aria-describedby="admin-about-site-card-locale-help"
+        :disabled="isLocaleLocked"
+        :aria-describedby="isLocaleLocked ? 'admin-about-site-card-locale-help admin-about-site-card-locale-locked-help' : 'admin-about-site-card-locale-help'"
         :label="t('admin.localeLabel')"
         :options="localeOptions"
       />
@@ -296,6 +298,11 @@ async function handleDelete(card: AdminAboutSiteCard): Promise<void> {
       >
         {{ t('admin.about.localeHelp') }}
       </p>
+      <LocaleLockedHint
+        id="admin-about-site-card-locale-locked-help"
+        :is-editing="isEditing"
+        :has-proposal="null !== proposalSourceLocale"
+      />
       <BaseSelect
         id="admin-about-site-card-translation-group"
         v-model="form.translationGroup"
@@ -369,7 +376,7 @@ async function handleDelete(card: AdminAboutSiteCard): Promise<void> {
           {{ t('admin.about.save') }}
         </button>
         <button
-          v-if="isEditing || null !== proposalSourceLocale"
+          v-if="isLocaleLocked"
           type="button"
           class="btn btn-outline-light"
           @click="resetForm"

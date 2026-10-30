@@ -117,10 +117,12 @@ status announcement) that a fork would silently lose:
   (issue #578). The category used to stay active: changing it emptied « Version de » (the
   `flush: 'sync'` watcher, meant for creation), the `PUT` left with `translationGroup: null`, and the
   server, which ignored the category, detached the card from its translation and sent it to the end of
-  its category, under a 200. It is now `:disabled="isEditing"`, with a visible hint
+  its category, under a 200. It is now disabled in editing (and, since R79b, while the form holds a translation
+  proposal), with a visible hint
   (`admin.about.meCard.categoryLockedHelp`: create the card in the right category, then delete this one)
-  referenced by `aria-describedby` **only while editing** — the hint is not rendered otherwise, and an
-  IDREF to a missing element is an a11y fault. The server refuses another category with a 409 of type
+  referenced by `aria-describedby` **only while the lock holds** (editing, or a translation proposal, R79b: the same
+  id, the text `categoryProposalLockedHelp`) — the hint is not rendered otherwise, and an IDREF to a missing element
+  is an a11y fault. The server refuses another category with a 409 of type
   `me-card-category-immutable` (`.claude/rules/portfolio-ordre-ecritures.md`), which
   `HttpAdminAboutMeCardRepository` reads as the reason `category-immutable` — keyed on the `type`, the
   other 409 of the cards staying `translation-already-exists`; only a SPA cached from before #578 can
@@ -131,6 +133,11 @@ status announcement) that a fork would silently lose:
   static `aria-describedby="<select id>-help"` on the selector and that `id` on the text — About's
   settings, site and me cards, Quality's principles and traits; `AdminAboutPage.spec.ts` and
   `AdminQualityPage.spec.ts` pin it.
+- **A locale selector disabled for a lock says why** (#748, R79b, D-a): `presentation/ui/admin/LocaleLockedHint.vue`
+  (`admin.localeLockedEditing`, `admin.localeLockedProposal`) is rendered **only during the lock** and referenced by
+  `aria-describedby` only then, after the permanent help when the selector has one (two ids); eight forms, one text
+  each. `tests/support/localeLockHint.ts` (`describedTexts()`) reads the texts an `aria-describedby` designates and
+  fails on a dangling IDREF.
 - **A me-card group spread across two categories is not signalled by the backoffice, by decision**
   (issue #573). Such a group (FR in one category, EN in another) predates #501's guard; the backend
   refuses, before any write, every write that would add a member to it or reorder one of its categories
@@ -180,7 +187,9 @@ entry's `translationGroup` is kept too** (spec 0004 D9, `sourceGroup` — distin
 value, so a lone source still attaches its proposal) so saving the proposed version links it with no
 extra gesture, and a `role="status"` banner names the proposal's source locale; while the form
 holds the proposal its locale selector is locked, as in editing, and « Annuler » drops it (R78, R79, Sp7-1: the
-kept group would make a second version of the source locale). The old "page-locale"
+kept group would make a second version of the source locale); so is the me-card **category** selector (R79b, D-b: a
+version in the other language does not change category, #501/#561; « Créer la version XX » keeps the category free,
+by decision). The old "page-locale"
 semantics is gone with the page-level selector (one locale per form, see above). About *settings* is
 the one singleton per locale, so its proposal is **deferred**: parked in `pendingProposal`, applied on the
 return of `load()` for the target locale (hence the `flush: 'sync'` watcher, or the copy from the server

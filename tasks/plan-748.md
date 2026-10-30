@@ -4174,6 +4174,9 @@ leur endroit (Sp7-2, Sp7-3, Sp7-4, et le point R64 de la tâche 11), dans le com
    quatrième série, R50, Q2 et Q3 de la cinquième, décisions 1 à 4 et Q1 de la sixième) restent telles quelles.
 5. **Q1 et Q2 de la septième relecture : recommandations validées** (2026-10-30, avant R73). Q1 : la limite écrite,
    la tolérance de CR6-6 gardée. Q2 : option A de Sp7-1, le sélecteur de langue verrouillé et « Annuler » affiché.
+6. **Décisions prises pendant la série** (2026-10-30, par l'auteur). R75 : `smoke_write_auth_config` appelle
+   `smoke_cleanup` en tête (fait en R83). R79b : D-a (le verrou du sélecteur de langue est expliqué sur les huit
+   formulaires par entrée) et D-b (la catégorie des cartes « moi » est verrouillée par une proposition).
 
 ### Vérification de chaque constat dans le code (HEAD 30afa8e7)
 
@@ -4785,6 +4788,38 @@ fonction privée qui remet les trois variables : retire la répétition, garde t
 - [ ] **Step 3 : verts** — specs ciblés PASS ; `make front-test; echo "exit=$?"`, `make front-lint; echo "exit=$?"`,
   `make front-build; echo "exit=$?"`.
 - [ ] **Step 4 : commit** — `fix(frontend): le même verrou de langue après une proposition, principes et traits qualité, cartes « À propos » (#748)`.
+
+---
+
+### Task R79b : Formulaires par entrée — le verrou de la langue est expliqué, la catégorie des cartes « moi » est verrouillée par une proposition (D-a et D-b, décidées par l'auteur pendant la série, 2026-10-30)
+
+Tâche **ajoutée pendant la série**, après R79 (qui verrouille la langue sans l'expliquer et laisse la catégorie libre).
+
+- **D-a** : sur les huit formulaires de R78 et R79, **en édition comme après une proposition**, le sélecteur de langue
+  désactivé reçoit un `aria-describedby` vers un texte rendu **seulement pendant le verrou** (convention de
+  `lockedHintId`, `AdminCaseStudiesPage.vue` : jamais un `title`, jamais une référence vers un élément absent). Deux
+  textes partagés, FR et EN : `admin.localeLockedEditing` (« La langue d'une entrée existante ne peut pas être
+  modifiée. ») et `admin.localeLockedProposal` (« La langue est celle de la proposition de traduction ; « Annuler »
+  permet d'en changer. »). Composant `presentation/ui/admin/LocaleLockedHint.vue` (`id`, `isEditing`, `hasProposal`).
+- **Aides permanentes existantes** (`admin.quality.localeHelp`, `admin.about.localeHelp`, restées vraies) : **le texte
+  du verrou s'y ajoute**, un `aria-describedby` à deux ids (`<aide> <verrou>`) pendant le verrou, un seul (l'aide)
+  hors verrou ; le texte du verrou est rendu après l'aide. Sans aide permanente (études de cas, incidents,
+  contributions, CV sans identité) : un seul id pendant le verrou, aucun attribut hors verrou.
+- **D-b** : dans `AdminAboutMeCardsSection.vue`, le sélecteur de **catégorie** est aussi désactivé tant que le formulaire
+  porte une proposition (`isEditing || null !== proposalSourceLocale`), avec `admin.about.meCard.categoryProposalLockedHelp`
+  (même id d'aide que l'édition, texte selon le cas). Raison : une version dans l'autre langue ne change pas de
+  catégorie (#501, #561, comme en édition #578) ; la changer déclenchait le watcher `form.category` (`flush: 'sync'`),
+  qui vidait « Version de », et l'enregistrement créait une carte détachée de sa source avec la prose générée.
+  « Créer la version XX » (`startCreateVersion`) reste tel quel (catégorie libre) : limite écrite en une phrase.
+
+**Files :**
+- Create : `frontend/src/presentation/ui/admin/LocaleLockedHint.vue`, `frontend/tests/support/localeLockHint.ts`
+- Modify : `frontend/src/presentation/pages/admin/{AdminCaseStudiesPage,AdminIncidentsPage,AdminContributionsPage,AdminAnonymousCvPage,AdminQualityPage,AdminAboutMeCardsSection,AdminAboutSiteCardsSection}.vue`, `frontend/src/infrastructure/i18n/locales/{fr,en}.json`
+- Test : `frontend/tests/presentation/pages/admin/{AdminCaseStudiesPage,AdminIncidentsPage,AdminContributionsPage,AdminAnonymousCvPage,AdminQualityPage,AdminAboutPage}.spec.ts` (par formulaire : verrou expliqué en édition et pas dans un formulaire libre ; après une proposition, expliqué, et « Annuler » retire l'explication ; carte « moi » : catégorie désactivée après une proposition, libre après « Annuler » et dans « Créer la version XX » ; l'assertion de R79 « la catégorie reste active après une proposition » change exprès)
+- Modify (règle) : `.claude/rules/frontend-backoffice.md`
+
+- [ ] Tests rouges vus (18, pour la bonne raison : texte du verrou absent, catégorie active), implémentation, verts ; mutation du test « Créer la version » (catégorie verrouillée par `sourceGroup`) vue rouge puis restaurée (`cmp`).
+- [ ] Commit — `fix(frontend): le verrou de la langue est expliqué sur les huit formulaires par entrée, la catégorie des cartes « moi » est verrouillée par une proposition (#748)`.
 
 ---
 

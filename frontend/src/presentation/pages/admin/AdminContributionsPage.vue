@@ -23,6 +23,7 @@ import BaseTextInput from '../../ui/BaseTextInput.vue'
 import BaseTextarea from '../../ui/BaseTextarea.vue'
 import BaseSelect from '../../ui/BaseSelect.vue'
 import TranslateEntryButton from '../../ui/admin/TranslateEntryButton.vue'
+import LocaleLockedHint from '../../ui/admin/LocaleLockedHint.vue'
 import OrderHandle from '../../ui/admin/OrderHandle.vue'
 import OrderToolbar from '../../ui/admin/OrderToolbar.vue'
 import { LOCALE_NATIVE_NAMES, SUPPORTED_LOCALES, type Locale } from '../../../domain/portfolio/entities/Locale'
@@ -94,6 +95,7 @@ const proposalSourceLocale = ref<Locale | null>(null)
 const PROSE_FIELDS = ['title', 'summary', 'body'] as const
 
 const isEditing = computed(() => null !== editingId.value)
+const isLocaleLocked = computed(() => isEditing.value || null !== proposalSourceLocale.value)
 
 const hasProseToTranslate = computed(() => PROSE_FIELDS.some((field) => '' !== form[field].trim()))
 
@@ -294,13 +296,19 @@ useUnsavedOrderGuard(isOrderDirty)
              porte une proposition de traduction : celle-ci est la version de l'entrée source
              dans l'autre langue, dans son groupe gardé ; en changer la langue créerait une
              seconde version de la langue source dans ce groupe (#748, Sp7-1). « Annuler »
-             retire la proposition et rend le sélecteur. -->
+             retire la proposition et rend le sélecteur ; `LocaleLockedHint` dit le verrou (D-a). -->
         <BaseSelect
           id="admin-contribution-locale"
           v-model="form.locale"
-          :disabled="isEditing || null !== proposalSourceLocale"
+          :disabled="isLocaleLocked"
+          :aria-describedby="isLocaleLocked ? 'admin-contribution-locale-locked-help' : undefined"
           :label="t('admin.contributions.localeLabel')"
           :options="localeOptions"
+        />
+        <LocaleLockedHint
+          id="admin-contribution-locale-locked-help"
+          :is-editing="isEditing"
+          :has-proposal="null !== proposalSourceLocale"
         />
         <BaseSelect
           id="admin-contribution-translation-group"
@@ -403,7 +411,7 @@ useUnsavedOrderGuard(isOrderDirty)
             {{ t('admin.contributions.save') }}
           </button>
           <button
-            v-if="isEditing || null !== proposalSourceLocale"
+            v-if="isLocaleLocked"
             type="button"
             class="btn btn-outline-light"
             @click="resetForm"

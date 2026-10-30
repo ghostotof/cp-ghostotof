@@ -22,6 +22,7 @@ import BaseTextInput from '../../ui/BaseTextInput.vue'
 import BaseTextarea from '../../ui/BaseTextarea.vue'
 import BaseSelect from '../../ui/BaseSelect.vue'
 import TranslateEntryButton from '../../ui/admin/TranslateEntryButton.vue'
+import LocaleLockedHint from '../../ui/admin/LocaleLockedHint.vue'
 import OrderHandle from '../../ui/admin/OrderHandle.vue'
 import OrderToolbar from '../../ui/admin/OrderToolbar.vue'
 import { LOCALE_NATIVE_NAMES, SUPPORTED_LOCALES, type Locale } from '../../../domain/portfolio/entities/Locale'
@@ -120,6 +121,7 @@ const CATEGORY_HELP_ID = 'admin-about-me-card-category-help'
 const editingId = ref<string | null>(null)
 const isSubmitting = ref(false)
 const isEditing = computed(() => null !== editingId.value)
+const isLocaleLocked = computed(() => isEditing.value || null !== proposalSourceLocale.value)
 
 /**
  * Groupe de l'entrée dont le formulaire est issu (édition, ou « Créer la
@@ -222,7 +224,9 @@ const translationOptions = computed(() => [
 // catégorie change, donc avant que `startCreateVersion`/`resetForm` n'écrivent
 // le groupe juste après — un watcher différé l'aurait effacé au tick suivant.
 // Sans cette remise à zéro, le sélecteur afficherait une valeur absente de ses
-// options et l'enregistrement partirait vers un 422.
+// options et l'enregistrement partirait vers un 422. Tant que le formulaire
+// porte une proposition de traduction, le sélecteur est désactivé aussi (#748,
+// D-b) : le watcher ne s'y déclenche que par `resetForm` (« Annuler »).
 watch(
   () => form.category,
   () => {
@@ -362,12 +366,12 @@ function categoryLabel(category: AdminAboutMeCardCategory): string {
            porte une proposition de traduction : celle-ci est la version de la carte de l'entrée source
            dans l'autre langue, dans son groupe gardé ; en changer la langue créerait une
            seconde version de la langue source dans ce groupe (#748, Sp7-1). « Annuler »
-           retire la proposition et rend le sélecteur. -->
+           retire la proposition et rend le sélecteur ; `LocaleLockedHint` dit le verrou (D-a). -->
       <BaseSelect
         id="admin-about-me-card-locale"
         v-model="form.locale"
-        :disabled="isEditing || null !== proposalSourceLocale"
-        aria-describedby="admin-about-me-card-locale-help"
+        :disabled="isLocaleLocked"
+        :aria-describedby="isLocaleLocked ? 'admin-about-me-card-locale-help admin-about-me-card-locale-locked-help' : 'admin-about-me-card-locale-help'"
         :label="t('admin.localeLabel')"
         :options="localeOptions"
       />
@@ -377,26 +381,36 @@ function categoryLabel(category: AdminAboutMeCardCategory): string {
       >
         {{ t('admin.about.localeHelp') }}
       </p>
+      <LocaleLockedHint
+        id="admin-about-me-card-locale-locked-help"
+        :is-editing="isEditing"
+        :has-proposal="null !== proposalSourceLocale"
+      />
       <!--
         Désactivée en édition, comme la langue (issue #578) : une carte ne
         change pas de catégorie, et le serveur refuse le `PUT` qui en porte une
-        autre (409). L'aide n'existe qu'en édition, d'où un `aria-describedby`
-        conditionnel — jamais une référence vers un élément absent.
+        autre (409). Désactivée aussi tant que le formulaire porte une proposition
+        de traduction (#748, D-b de l'auteur) : une version dans l'autre langue ne
+        change pas de catégorie (#501, #561) — la changer vidait « Version de »
+        (le watcher ci-dessus) et l'enregistrement créait une carte détachée de sa
+        source avec la prose générée. « Créer la version XX » reste libre. L'aide
+        n'existe que pendant le verrou, d'où un `aria-describedby` conditionnel —
+        jamais une référence vers un élément absent.
       -->
       <BaseSelect
         id="admin-about-me-card-category"
         v-model="form.category"
-        :disabled="isEditing"
-        :aria-describedby="isEditing ? CATEGORY_HELP_ID : undefined"
+        :disabled="isLocaleLocked"
+        :aria-describedby="isLocaleLocked ? CATEGORY_HELP_ID : undefined"
         :label="t('admin.about.meCard.categoryLabel')"
         :options="categoryOptions"
       />
       <p
-        v-if="isEditing"
+        v-if="isLocaleLocked"
         :id="CATEGORY_HELP_ID"
         class="form-text mb-3"
       >
-        {{ t('admin.about.meCard.categoryLockedHelp') }}
+        {{ isEditing ? t('admin.about.meCard.categoryLockedHelp') : t('admin.about.meCard.categoryProposalLockedHelp') }}
       </p>
       <BaseSelect
         id="admin-about-me-card-translation-group"
@@ -471,7 +485,7 @@ function categoryLabel(category: AdminAboutMeCardCategory): string {
           {{ t('admin.about.save') }}
         </button>
         <button
-          v-if="isEditing || null !== proposalSourceLocale"
+          v-if="isLocaleLocked"
           type="button"
           class="btn btn-outline-light"
           @click="resetForm"

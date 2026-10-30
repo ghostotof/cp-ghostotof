@@ -24,6 +24,7 @@ import BaseTextInput from '../../ui/BaseTextInput.vue'
 import BaseTextarea from '../../ui/BaseTextarea.vue'
 import BaseSelect from '../../ui/BaseSelect.vue'
 import TranslateEntryButton from '../../ui/admin/TranslateEntryButton.vue'
+import LocaleLockedHint from '../../ui/admin/LocaleLockedHint.vue'
 import OrderHandle from '../../ui/admin/OrderHandle.vue'
 import OrderToolbar from '../../ui/admin/OrderToolbar.vue'
 import { LOCALE_NATIVE_NAMES, SUPPORTED_LOCALES, type Locale } from '../../../domain/portfolio/entities/Locale'
@@ -172,7 +173,9 @@ const principleProposalSourceLocale = ref<Locale | null>(null)
 const traitProposalSourceLocale = ref<Locale | null>(null)
 
 const isEditingPrinciple = computed(() => null !== editingPrincipleId.value)
+const isPrincipleLocaleLocked = computed(() => isEditingPrinciple.value || null !== principleProposalSourceLocale.value)
 const isEditingTrait = computed(() => null !== editingTraitId.value)
+const isTraitLocaleLocked = computed(() => isEditingTrait.value || null !== traitProposalSourceLocale.value)
 
 const hasPrincipleProse = computed(() => PRINCIPLE_PROSE_FIELDS.some((field) => '' !== principleForm[field].trim()))
 const hasTraitProse = computed(() => '' !== traitForm.label.trim())
@@ -507,12 +510,12 @@ useUnsavedOrderGuard(isAnyOrderDirty)
              porte une proposition de traduction : celle-ci est la version du principe de l'entrée source
              dans l'autre langue, dans son groupe gardé ; en changer la langue créerait une
              seconde version de la langue source dans ce groupe (#748, Sp7-1). « Annuler »
-             retire la proposition et rend le sélecteur. -->
+             retire la proposition et rend le sélecteur ; `LocaleLockedHint` dit le verrou (D-a). -->
         <BaseSelect
           id="admin-quality-principle-locale"
           v-model="principleForm.locale"
-          :disabled="isEditingPrinciple || null !== principleProposalSourceLocale"
-          aria-describedby="admin-quality-principle-locale-help"
+          :disabled="isPrincipleLocaleLocked"
+          :aria-describedby="isPrincipleLocaleLocked ? 'admin-quality-principle-locale-help admin-quality-principle-locale-locked-help' : 'admin-quality-principle-locale-help'"
           :label="t('admin.localeLabel')"
           :options="localeOptions"
         />
@@ -522,6 +525,11 @@ useUnsavedOrderGuard(isAnyOrderDirty)
         >
           {{ t('admin.quality.localeHelp') }}
         </p>
+        <LocaleLockedHint
+          id="admin-quality-principle-locale-locked-help"
+          :is-editing="isEditingPrinciple"
+          :has-proposal="null !== principleProposalSourceLocale"
+        />
         <BaseSelect
           id="admin-quality-principle-translation-group"
           v-model="principleForm.translationGroup"
@@ -596,7 +604,7 @@ useUnsavedOrderGuard(isAnyOrderDirty)
             {{ t('admin.quality.save') }}
           </button>
           <button
-            v-if="isEditingPrinciple || null !== principleProposalSourceLocale"
+            v-if="isPrincipleLocaleLocked"
             type="button"
             class="btn btn-outline-light"
             @click="resetPrincipleForm"
@@ -780,12 +788,12 @@ useUnsavedOrderGuard(isAnyOrderDirty)
              porte une proposition de traduction : celle-ci est la version du trait de l'entrée source
              dans l'autre langue, dans son groupe gardé ; en changer la langue créerait une
              seconde version de la langue source dans ce groupe (#748, Sp7-1). « Annuler »
-             retire la proposition et rend le sélecteur. -->
+             retire la proposition et rend le sélecteur ; `LocaleLockedHint` dit le verrou (D-a). -->
         <BaseSelect
           id="admin-quality-trait-locale"
           v-model="traitForm.locale"
-          :disabled="isEditingTrait || null !== traitProposalSourceLocale"
-          aria-describedby="admin-quality-trait-locale-help"
+          :disabled="isTraitLocaleLocked"
+          :aria-describedby="isTraitLocaleLocked ? 'admin-quality-trait-locale-help admin-quality-trait-locale-locked-help' : 'admin-quality-trait-locale-help'"
           :label="t('admin.localeLabel')"
           :options="localeOptions"
         />
@@ -795,6 +803,11 @@ useUnsavedOrderGuard(isAnyOrderDirty)
         >
           {{ t('admin.quality.localeHelp') }}
         </p>
+        <LocaleLockedHint
+          id="admin-quality-trait-locale-locked-help"
+          :is-editing="isEditingTrait"
+          :has-proposal="null !== traitProposalSourceLocale"
+        />
         <BaseSelect
           id="admin-quality-trait-translation-group"
           v-model="traitForm.translationGroup"
@@ -852,7 +865,7 @@ useUnsavedOrderGuard(isAnyOrderDirty)
             {{ t('admin.quality.save') }}
           </button>
           <button
-            v-if="isEditingTrait || null !== traitProposalSourceLocale"
+            v-if="isTraitLocaleLocked"
             type="button"
             class="btn btn-outline-light"
             @click="resetTraitForm"
