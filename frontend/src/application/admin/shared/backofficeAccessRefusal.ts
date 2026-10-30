@@ -20,9 +20,11 @@ import type { RefusalScope } from '../../../domain/admin/shared/BackofficeSessio
  * plus sur le backoffice — **mais seulement au compte qui l'a envoyée** : le refus retient ce compte, et un autre compte
  * au montage (A refusé, déconnecté, B connecté dans l'onglet) remet tout à zéro, l'avis de A n'étant pas celui de B.
  * **Après le montage**, un refus **d'écriture** ramène le texte courant (c'est un nouvel enregistrement refusé, le dire
- * « précédent » serait faux), un refus **de lecture** garde l'avis (CR7-4, option C : le chargement de la page d'arrivée,
- * parti avant le montage, peut être refusé à son tour ; son texte dit déjà ce qu'une lecture refusée dirait) et le
- * compteur avance, donc l'alerte se réannonce.
+ * « précédent » serait faux). **Seule la première lecture refusée** garde l'avis (CR7-4, option C, bornée en R95,
+ * décision 4 de la huitième relecture : le chargement de la page d'arrivée, parti avant le montage, peut être refusé à son
+ * tour ; son texte dit déjà ce qu'une lecture refusée dirait) ; **tout refus suivant, lecture ou écriture, ramène le
+ * texte courant** (une relecture refusée plus tard, rôle perdu, n'est pas le chargement). Le compteur avance à chaque
+ * refus compté, donc l'alerte se réannonce.
  *
  * Exposé à part de `useAuth` : la relecture du palier (`rereadAfterRefusal`) qui suit chaque refus est l'affaire
  * de `useAuth`, ce module ne tient que « combien de refus depuis le dernier effacement ».
@@ -34,21 +36,28 @@ import type { RefusalScope } from '../../../domain/admin/shared/BackofficeSessio
  * affectation de `state.value` ; aucun champ ne peut rester d'une transition à l'autre sans qu'elle le dise.
  *
  * - `count` : le nombre de refus réels depuis le dernier effacement (0 = aucun).
- * - `earlierSave` : le compteur dit un enregistrement refusé pendant l'absence de l'alerte, non un refus de la page
- *   (R64) ; gardé par une lecture refusée ensuite (R76).
- * - `countedWriteBy` : une écriture a été comptée depuis le dernier effacement (R64), ou `null` ; ce que
- *   `settleBackofficeAccessRefusalsOnMount` lit au montage pour distinguer une écriture d'une lecture. `account` est le
- *   compte qui l'a envoyée (R76, décision 2 de la septième relecture), `null` quand elle est partie sous aucun compte ;
- *   la dernière écriture comptée l'emporte. Le montage ne dit l'avis qu'à ce compte.
+ * - `earlierSave` : où en est l'avis « enregistrement précédent » (R64, R76, bornée en R95) — `'none'` : le compteur dit
+ *   le refus de la page ; `'atMount'` : le montage a réglé une écriture refusée pendant l'absence, l'avis est dit ;
+ *   `'keptByARead'` : la première lecture refusée après le montage (le chargement de la page d'arrivée) l'a gardé, le
+ *   suivant le rend à `'none'`. Une écriture comptée le remet à `'none'`.
+ * - `countedWrite` : une union discriminée (St8-10) — `{ kind: 'none' }` : aucune écriture comptée depuis le dernier
+ *   effacement ; `{ kind: 'write', account }` : une l'a été (R64), `account` étant le compte qui l'a envoyée (R76,
+ *   décision 2 de la septième relecture), `null` quand elle est partie sous aucun compte — ce que « aucune écriture »
+ *   ne dit pas. La dernière écriture comptée l'emporte. `settleBackofficeAccessRefusalsOnMount` la lit au montage pour
+ *   distinguer une écriture d'une lecture ; le montage ne dit l'avis qu'à ce compte.
  */
+type EarlierSave = 'none' | 'atMount' | 'keptByARead'
+
+type CountedWrite = { readonly kind: 'none' } | { readonly kind: 'write'; readonly account: string | null }
+
 interface RefusalState {
   readonly count: number
-  readonly earlierSave: boolean
-  readonly countedWriteBy: { readonly account: string | null } | null
+  readonly earlierSave: EarlierSave
+  readonly countedWrite: CountedWrite
 }
 
 /** L'état sans refus : celui du chargement, de chaque effacement et de la remise des tests. Figé, jamais modifié en place. */
-const NO_REFUSAL: RefusalState = Object.freeze({ count: 0, earlierSave: false, countedWriteBy: null })
+const NO_REFUSAL: RefusalState = Object.freeze<RefusalState>({ count: 0, earlierSave: 'none', countedWrite: { kind: 'none' } })
 
 /**
  * `shallowRef` : l'objet est remplacé en bloc, jamais modifié champ à champ, donc sans proxy profond (un objet figé n'en
@@ -73,7 +82,7 @@ let scope = 0
 export const backofficeAccessRefused = computed(() => state.value.count)
 
 /** Vrai quand le compteur dit un enregistrement refusé pendant l'absence de l'alerte (R64) : l'alerte lui donne son propre texte. */
-export const earlierSaveRefused = computed(() => state.value.earlierSave)
+export const earlierSaveRefused = computed(() => 'none' !== state.value.earlierSave)
 
 /** Le périmètre courant, à relever à l'envoi d'une requête. */
 export function refusalScope(): number {
@@ -86,8 +95,9 @@ export function refusalScope(): number {
  * n'est compté et `false` est rendu (l'appelant ne relit pas non plus le palier). Une écriture compte toujours. `account`
  * est le compte relevé à l'envoi (`null` : aucun) ; seule une écriture le retient, pour que le montage suivant ne dise
  * l'avis qu'à lui (R76). **Une écriture comptée remet le texte courant** (`earlierSaveRefused` faux : le message redevient
- * celui du refus de la page, c'est un nouvel enregistrement refusé) ; **une lecture comptée le laisse** (CR7-4, option C :
- * le compteur avance, l'alerte se réannonce, l'avis « enregistrement précédent » reste).
+ * celui du refus de la page, c'est un nouvel enregistrement refusé) ; **la première lecture comptée après le montage
+ * garde l'avis** (CR7-4, option C : le compteur avance, l'alerte se réannonce, l'avis « enregistrement précédent »
+ * reste), **la suivante le rend** (R95, décision 4 : `'atMount'` → `'keptByARead'` → `'none'`).
  */
 export function markBackofficeAccessRefused(sentIn: RefusalScope, account: string | null): boolean {
   if ('read' === sentIn.kind && sentIn.scope !== scope) {
@@ -95,11 +105,12 @@ export function markBackofficeAccessRefused(sentIn: RefusalScope, account: strin
   }
 
   const count = state.value.count + 1
-  // Une écriture remet le texte courant et retient son compte ; une lecture ne change que le compteur.
+  // Une écriture remet le texte courant et retient son compte ; une lecture avance l'avis d'un cran (le chargement de la
+  // page d'arrivée le garde, toute lecture suivante le rend) et laisse l'écriture comptée.
   state.value =
     'write' === sentIn.kind
-      ? { count, earlierSave: false, countedWriteBy: { account } }
-      : { ...state.value, count }
+      ? { count, earlierSave: 'none', countedWrite: { kind: 'write', account } }
+      : { ...state.value, count, earlierSave: 'atMount' === state.value.earlierSave ? 'keptByARead' : 'none' }
 
   return true
 }
@@ -117,16 +128,16 @@ export function clearBackofficeAccessRefusal(): void {
 /**
  * Règle au montage de l'alerte ce qui a été compté **sans alerte** (#748, R64, décision 1 de la sixième relecture,
  * amendant Q1 de la cinquième ; remplace `discardBackofficeAccessRefusals`, R48, CR5-1) : une écriture refusée après que
- * la personne a quitté le backoffice est dite au retour, avec son propre texte (`earlierSaveRefused` vrai, le compteur
+ * la personne a quitté le backoffice est dite au retour, avec son propre texte (`earlierSave` à `'atMount'`, le compteur
  * garde sa valeur) — **si c'est le compte courant qui l'a envoyée** (R76, décision 2 de la septième relecture) ; sinon
  * (une lecture seule, ou l'écriture d'un autre compte : A refusé, B connecté depuis) le compteur, l'avis et l'écriture
  * comptée repartent à zéro. `currentAccount` est passé par l'appelant (`lastAccountName()`), non importé de `useAuth` :
  * le module reste exposé à part. **Le périmètre n'avance pas** : le chargement de la page d'arrivée est parti avant ce
- * montage, son refus doit compter.
+ * montage, son refus doit compter, et **lui seul** garde l'avis (R95).
  */
 export function settleBackofficeAccessRefusalsOnMount(currentAccount: string | null): void {
-  const countedWriteBy = state.value.countedWriteBy
-  state.value = null !== countedWriteBy && countedWriteBy.account === currentAccount ? { ...state.value, earlierSave: true } : NO_REFUSAL
+  const countedWrite = state.value.countedWrite
+  state.value = 'write' === countedWrite.kind && countedWrite.account === currentAccount ? { ...state.value, earlierSave: 'atMount' } : NO_REFUSAL
 }
 
 /** Remet le compteur, le texte de l'écriture précédente et le périmètre à ceux du chargement. Réservée aux tests (`tests/support/setup.ts`), jamais appelée par `src/`. */

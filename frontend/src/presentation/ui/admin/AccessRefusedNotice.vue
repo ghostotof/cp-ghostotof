@@ -45,8 +45,9 @@ import { switchAccountLocation } from '../../router/reauthentication'
  *   (`common.earlierSaveRefused`, `earlierSaveRefused`) — **au compte qui l'a envoyé seulement** (R76, décision 2 de la
  *   septième relecture : `lastAccountName()` est passé au montage, un autre compte remet tout à zéro). Le chargement de
  *   la page d'arrivée est parti avant le montage : son refus doit compter, et **s'il est refusé, l'avis reste** (CR7-4 :
- *   une lecture refusée avance le compteur, l'alerte se réannonce, le texte est gardé). Un refus d'**écriture** sur la
- *   page remet `common.accessRefused` : c'est un nouvel enregistrement refusé.
+ *   la **première** lecture refusée après le montage avance le compteur, réannonce l'alerte et garde le texte). Tout
+ *   refus suivant, **lecture** (une relecture refusée plus tard, rôle perdu) **ou écriture**, remet `common.accessRefused`
+ *   (R95, décision 4 de la huitième relecture) : ce n'est plus le chargement, ou c'est un nouvel enregistrement refusé.
  * - **Insérée après le montage** (`isMounted`) : une région `role="alert"` présente dès le premier rendu peut ne pas
  *   être annoncée (`.claude/rules/frontend-a11y.md`) ; celle d'un enregistrement refusé pendant l'absence est donc
  *   insérée un tick plus tard, comme celle d'un refus survenu sur la page.

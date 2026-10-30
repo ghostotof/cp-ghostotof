@@ -118,6 +118,37 @@ describe('backofficeAccessRefusal', () => {
     expect(backofficeAccessRefused.value).toBe(2)
   })
 
+  it("après le montage, la première lecture refusée garde l'avis, la seconde ramène le texte courant (R95, décision 4)", () => {
+    markBackofficeAccessRefused({ kind: 'write' }, ACCOUNT_A)
+    settleBackofficeAccessRefusalsOnMount(ACCOUNT_A)
+
+    // La première : le chargement de la page d'arrivée, parti avant le montage.
+    markBackofficeAccessRefused(readSentNow(), ACCOUNT_A)
+    expect(earlierSaveRefused.value).toBe(true)
+
+    // La seconde : une relecture ultérieure (rôle perdu), ce n'est plus le chargement ; le compteur avance quand même.
+    markBackofficeAccessRefused(readSentNow(), ACCOUNT_A)
+    expect(earlierSaveRefused.value).toBe(false)
+    expect(backofficeAccessRefused.value).toBe(3)
+
+    // Et l'avis ne revient pas avec une troisième lecture.
+    markBackofficeAccessRefused(readSentNow(), ACCOUNT_A)
+    expect(earlierSaveRefused.value).toBe(false)
+  })
+
+  it("une écriture comptée sous aucun compte se distingue de l'absence d'écriture (St8-10)", () => {
+    // Aucune écriture comptée, aucun compte au montage : rien à dire, même si « aucun » égale « aucun ».
+    markBackofficeAccessRefused(readSentNow(), null)
+    settleBackofficeAccessRefusalsOnMount(null)
+    expect(earlierSaveRefused.value).toBe(false)
+    expect(backofficeAccessRefused.value).toBe(0)
+
+    // Une écriture comptée sous aucun compte, aucun compte au montage : l'avis est dit.
+    markBackofficeAccessRefused({ kind: 'write' }, null)
+    settleBackofficeAccessRefusalsOnMount(null)
+    expect(earlierSaveRefused.value).toBe(true)
+  })
+
   it("après le montage, une écriture refusée ramène le texte courant", () => {
     markBackofficeAccessRefused({ kind: 'write' }, ACCOUNT_A)
     settleBackofficeAccessRefusalsOnMount(ACCOUNT_A)

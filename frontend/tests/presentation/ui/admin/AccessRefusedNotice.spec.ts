@@ -330,6 +330,32 @@ describe('AccessRefusedNotice (#748, R17)', () => {
       second.wrapper.unmount()
     })
 
+    it("l'avis de l'enregistrement précédent tient la lecture de chargement, pas la suivante (R95, décision 4)", async () => {
+      await signInAs('compte-a')
+      const first = await mountNotice()
+      first.wrapper.unmount()
+      writeRefusedWhileAway()
+      const second = await mountNotice()
+      await flushPromises()
+      expect(second.wrapper.get('span').text()).toBe(earlierSaveFr)
+
+      // La lecture de chargement, refusée : l'avis reste, le `<span>` est remplacé (réannoncé).
+      const afterMount = second.wrapper.get('span').element
+      refuse()
+      await flushPromises()
+      expect(second.wrapper.get('span').text()).toBe(earlierSaveFr)
+      expect(second.wrapper.get('span').element).not.toBe(afterMount)
+
+      // Une relecture refusée plus tard : le texte courant, et l'alerte se réannonce encore.
+      const afterLoad = second.wrapper.get('span').element
+      refuse()
+      await flushPromises()
+      expect(second.wrapper.get('span').text()).toContain('Le serveur refuse cette demande à votre session')
+      expect(second.wrapper.get('span').text()).not.toBe(earlierSaveFr)
+      expect(second.wrapper.get('span').element).not.toBe(afterLoad)
+      second.wrapper.unmount()
+    })
+
     it("une écriture refusée sous A, B connecté dans l'onglet : aucune alerte au montage (R76, décision 2)", async () => {
       await signInAs('compte-a')
       const first = await mountNotice()
