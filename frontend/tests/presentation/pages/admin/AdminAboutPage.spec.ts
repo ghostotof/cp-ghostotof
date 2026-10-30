@@ -1286,8 +1286,9 @@ describe('AdminAboutPage', () => {
     })
 
     // L'avis dit que le formulaire d'une langue porte une proposition : il se rapporte à la langue **cible** de la
-    // proposition (celle que la page a prise pour la recevoir), pas à la langue source nommée dans son texte.
-    it("une proposition en EN, enregistrement réussi du FR : l'avis EN reste (#748, R50, étape 2b)", async () => {
+    // proposition (celle que la page a prise pour la recevoir), pas à la langue source nommée dans son texte, et il ne
+    // s'affiche que sous elle (R66, décision 4 de la sixième série : il ne reste plus sous l'autre langue, R50 le disait).
+    it("une proposition en EN, enregistrement réussi du FR : le FR n'affiche aucun avis (#748, R50, R66)", async () => {
       const settingsRepository = createSettingsRepository({
         get: vi.fn(async (locale: string) => ('en' === locale ? SETTINGS_EN : SETTINGS)),
         update: vi.fn(async () => SETTINGS),
@@ -1300,14 +1301,75 @@ describe('AdminAboutPage', () => {
       expect(valueOf(wrapper, '#admin-about-locale')).toBe('en')
       expect(panelOf(wrapper, SETTINGS_PANEL).find('[role="status"]').exists()).toBe(true)
 
-      // La personne enregistre le français, un autre formulaire : la proposition EN n'a pas été enregistrée.
+      // La personne enregistre le français, un autre formulaire : la proposition EN n'a pas été enregistrée, mais
+      // l'avis n'est pas celui du français.
       await wrapper.get('#admin-about-locale').setValue('fr')
       await flushPromises()
       await formOf(wrapper, SETTINGS_FORM).trigger('submit.prevent')
       await flushPromises()
 
       expect(settingsRepository.update).toHaveBeenCalledWith('fr', expect.anything())
+      expect(panelOf(wrapper, SETTINGS_PANEL).find('[role="status"]').exists()).toBe(false)
+    })
+
+    it('une proposition en EN, passage en FR : aucun avis sous le FR (#748, R66, décision 4)', async () => {
+      const settingsRepository = createSettingsRepository({
+        get: vi.fn(async (locale: string) => ('en' === locale ? SETTINGS_EN : SETTINGS)),
+      })
+      const translation = createTranslationRepository(TRANSLATED_SETTINGS)
+      const { wrapper } = await mountPage(settingsRepository, undefined, undefined, translation)
+
+      await translateButton(wrapper, SETTINGS_FORM).trigger('click')
+      await flushPromises()
       expect(panelOf(wrapper, SETTINGS_PANEL).find('[role="status"]').exists()).toBe(true)
+
+      await wrapper.get('#admin-about-locale').setValue('fr')
+      await flushPromises()
+
+      expect(valueOf(wrapper, '#admin-about-locale')).toBe('fr')
+      expect(panelOf(wrapper, SETTINGS_PANEL).find('[role="status"]').exists()).toBe(false)
+    })
+
+    it("une proposition en EN, passage en FR puis retour en EN : les réglages EN relus, l'avis a disparu (#748, R66, décision 4)", async () => {
+      // Le serveur rend à l'EN des valeurs qui diffèrent de la proposition : la lecture du retour les pose, et la
+      // proposition, non enregistrée, est perdue avec son avis.
+      const settingsRepository = createSettingsRepository({
+        get: vi.fn(async (locale: string) => ('en' === locale ? { ...SETTINGS_EN, siteEyebrow: 'Server EN' } : SETTINGS)),
+      })
+      const translation = createTranslationRepository(TRANSLATED_SETTINGS)
+      const { wrapper } = await mountPage(settingsRepository, undefined, undefined, translation)
+
+      await translateButton(wrapper, SETTINGS_FORM).trigger('click')
+      await flushPromises()
+      expect(valueOf(wrapper, '#admin-about-site-eyebrow')).toBe(TRANSLATED_SETTINGS.siteEyebrow)
+      expect(panelOf(wrapper, SETTINGS_PANEL).find('[role="status"]').exists()).toBe(true)
+
+      await wrapper.get('#admin-about-locale').setValue('fr')
+      await flushPromises()
+      await wrapper.get('#admin-about-locale').setValue('en')
+      await flushPromises()
+
+      expect(valueOf(wrapper, '#admin-about-site-eyebrow')).toBe('Server EN')
+      expect(panelOf(wrapper, SETTINGS_PANEL).find('[role="status"]').exists()).toBe(false)
+    })
+
+    it("une proposition en EN, enregistrement EN refusé : l'avis reste, rien n'est relu (#748, R66, F11)", async () => {
+      const settingsRepository = createSettingsRepository({
+        get: vi.fn(async (locale: string) => ('en' === locale ? SETTINGS_EN : SETTINGS)),
+        update: vi.fn(async () => Promise.reject(new AdminAboutError('validation', 'Invalide'))),
+      })
+      const translation = createTranslationRepository(TRANSLATED_SETTINGS)
+      const { wrapper } = await mountPage(settingsRepository, undefined, undefined, translation)
+
+      await translateButton(wrapper, SETTINGS_FORM).trigger('click')
+      await flushPromises()
+      expect(valueOf(wrapper, '#admin-about-locale')).toBe('en')
+
+      await formOf(wrapper, SETTINGS_FORM).trigger('submit.prevent')
+      await flushPromises()
+
+      expect(settingsRepository.update).toHaveBeenCalledWith('en', TRANSLATED_SETTINGS)
+      expect(panelOf(wrapper, SETTINGS_PANEL).get('[role="status"]').text()).toContain('Proposition générée par IA')
     })
 
     it("enregistrement réussi de l'EN : l'avis disparaît (#748, R50, étape 2b)", async () => {

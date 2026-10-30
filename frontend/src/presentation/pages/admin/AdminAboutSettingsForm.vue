@@ -46,14 +46,18 @@ const errorText = computed(() => {
  * lecture en session finie ne lève ni erreur ni valeur, et ne finit qu'au retour
  * de la session, lancée alors par le composable lui-même. La proposition attend
  * donc ce retour, jamais posée sur un formulaire non chargé.
+ *
+ * L'avis « proposition générée par IA » est celui de la langue cible (`proposal.target`) : absent sous l'autre langue,
+ * il part dès que le formulaire de sa langue est relu du serveur (R66, décision 4).
  */
 const { isTranslating, errorReason: translationErrorReason, translate } = useAdminTranslation()
 const PROSE_FIELDS = ['siteEyebrow', 'meEyebrow', 'technicalSubtitle', 'personalSubtitle', 'hobbiesSubtitle'] as const
 const pendingProposal = ref<TranslationProposal | null>(null)
-const proposalSourceLocale = ref<Locale | null>(null)
-// La langue du formulaire qui porte la proposition (sa cible, celle que la page a prise pour la recevoir) : l'avis se
-// rapporte à elle, et seul l'enregistrement réussi de cette langue le retire (R50, étape 2b).
-const proposalTargetLocale = ref<Locale | null>(null)
+// La proposition posée sur un formulaire (R66, St6-10) : `source` est la langue traduite, que dit l'avis, `target` la
+// langue du formulaire qui la porte, celle que la page a prise pour la recevoir. L'avis n'est que celui de `target` : il
+// ne s'affiche que sous elle, et il part quand le formulaire de cette langue est relu du serveur (le `watch` de
+// `settings`, ci-dessous), la proposition non enregistrée étant alors perdue (décision 4 de la sixième série).
+const proposal = ref<{ readonly source: Locale; readonly target: Locale } | null>(null)
 const hasProseToTranslate = computed(() => PROSE_FIELDS.some((field) => '' !== form[field].trim()))
 const translationErrorText = computed(() => {
   const reason = translationErrorReason.value
@@ -65,6 +69,11 @@ const translationErrorText = computed(() => {
 // arrivent, et non au prochain tick — ainsi, quand `isLoaded` se lève (après la
 // pose des réglages), la copie a déjà eu lieu et la proposition en attente peut
 // se poser par-dessus sans être écrasée ensuite.
+//
+// Ces réglages sont ceux du serveur : toute relecture de la langue cible d'une proposition — la réponse de son
+// enregistrement réussi, un rechargement, un retour sur elle — remplace le formulaire et fait perdre la proposition,
+// donc son avis (R66, décision 4). Un enregistrement refusé ne relit rien et le garde (F11). La proposition en
+// attente se pose après, au `watch` d'`isLoaded` : la copie qui la précède ne la retire pas.
 watch(
   settings,
   (value) => {
@@ -74,6 +83,10 @@ watch(
       form.technicalSubtitle = value.technicalSubtitle
       form.personalSubtitle = value.personalSubtitle
       form.hobbiesSubtitle = value.hobbiesSubtitle
+
+      if (proposal.value?.target === props.locale) {
+        proposal.value = null
+      }
     }
   },
   { immediate: true, flush: 'sync' },
@@ -109,32 +122,27 @@ function applyPendingProposal(loadedLocale: Locale): void {
   }
 
   applyTranslationProposal(form, PROSE_FIELDS, pendingProposal.value)
-  proposalSourceLocale.value = pendingProposal.value.sourceLocale
-  proposalTargetLocale.value = pendingProposal.value.targetLocale
+  proposal.value = { source: pendingProposal.value.sourceLocale, target: pendingProposal.value.targetLocale }
   pendingProposal.value = null
 }
 
 async function handleTranslate(targetLocale: Locale): Promise<void> {
-  const proposal = await translate(props.locale, targetLocale, collectProseFields(form, PROSE_FIELDS))
-  if (!proposal) {
+  const translated = await translate(props.locale, targetLocale, collectProseFields(form, PROSE_FIELDS))
+  if (!translated) {
     return
   }
 
-  pendingProposal.value = proposal
+  pendingProposal.value = translated
   emit('switchLocale', targetLocale)
 }
 
 async function handleSubmit(): Promise<void> {
   // La langue enregistrée est celle du départ : `props.locale` peut changer pendant l'attente.
   const locale = props.locale
-  const saved = await save(locale, { ...form })
-  // La mention dit que le formulaire d'une langue porte une proposition : un enregistrement refusé (hors ligne,
-  // session finie) la laisse sur le formulaire, elle doit rester dite (F11) ; l'enregistrement d'une autre langue
-  // n'enregistre pas cette proposition. Seul un enregistrement réussi de sa langue la retire.
-  if (saved && locale === proposalTargetLocale.value) {
-    proposalSourceLocale.value = null
-    proposalTargetLocale.value = null
-  }
+  // L'avis de la proposition n'est pas retiré ici : la réponse d'un enregistrement réussi de sa langue est écrite
+  // dans `settings` et repasse par le `watch` ci-dessus, qui le retire ; un enregistrement refusé (hors ligne, session
+  // finie) ne relit rien, le formulaire porte toujours la proposition et l'avis reste dit (F11).
+  await save(locale, { ...form })
 }
 </script>
 
@@ -210,11 +218,11 @@ async function handleSubmit(): Promise<void> {
       </div>
 
       <p
-        v-if="proposalSourceLocale"
+        v-if="proposal && proposal.target === locale"
         class="alert alert-info small"
         role="status"
       >
-        {{ t('admin.translation.proposalNotice', { locale: proposalSourceLocale.toUpperCase() }) }}
+        {{ t('admin.translation.proposalNotice', { locale: proposal.source.toUpperCase() }) }}
       </p>
 
       <p

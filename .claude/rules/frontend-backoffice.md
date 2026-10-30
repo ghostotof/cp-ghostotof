@@ -253,9 +253,10 @@ version" copies nothing and the assistant sends all five fields.
   that locale only (`isSaving`): an English save is not held by a French one. With one response per locale in flight,
   R43's `lastSaveOf` had nothing left to arbitrate and is gone.
   Reloading a locale never clears its error: the form copies the settings read, so that error is the only trace of the refused save.
-  **A proposal notice survives a refusal, and the save of another locale** (F11, R50): it belongs to the locale the
-  proposal landed on (`proposalTargetLocale`), and only a `true` save of **that** locale clears it, the form still
-  carrying the proposal otherwise. The About settings are the only
+  **A proposal notice is its target locale's** (F11, R50, R66, decision 4 of the sixth review): `proposal`
+  (`{ source, target }`) shows under the form of `target` only, survives a refused save, and goes whenever that
+  locale's form is re-read from the server — the response of its successful save, a reload, a return to it —, which
+  loses the proposal. The About settings are the only
   keyed composable, so the only one with these races.
   **The return is the one signal that exists** (R13): `useAuth().onSessionRestored(callback)`, called once at each
   descent of `authState.sessionEnded` by the same account (another one replays the navigation instead, R18). `useAdminLoad` subscribes to it; if its
