@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { withoutComments } from '../../support/sourceText'
 
 /**
  * Garde d'encapsulation (#748, R42, St4-5, St4-6, R52, St5-3) : l'état réactif de la session n'est écrit que par
@@ -49,11 +50,11 @@ const ALL = '*'
  * Les noms qu'une source importe (ou réexporte) de `…/sessionState`, commentaires retirés. Un nom importé sous un autre
  * (`a as b`) est relevé sous son nom d'origine ; `type` est ignoré.
  */
-export function namesImportedFromSessionState(source: string): string[] {
-  const withoutComments = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(?<!:)\/\/.*$/gm, '')
+function namesImportedFromSessionState(source: string): string[] {
+  const code = withoutComments(source)
   const names: string[] = []
 
-  for (const match of withoutComments.matchAll(/\b(?:import|export)\s+(?:type\s+)?([^;'"]*?)\s*\bfrom\s*['"][^'"]*\/sessionState(?:\.ts)?['"]/g)) {
+  for (const match of code.matchAll(/\b(?:import|export)\s+(?:type\s+)?([^;'"]*?)\s*\bfrom\s*['"][^'"]*\/sessionState(?:\.ts)?['"]/g)) {
     const clause = match[1] ?? ''
     if (clause.includes('*')) {
       names.push(ALL)
@@ -70,7 +71,7 @@ export function namesImportedFromSessionState(source: string): string[] {
       }
     }
   }
-  if (/\bimport\s*\(\s*['"][^'"]*\/sessionState(?:\.ts)?['"]\s*\)/.test(withoutComments)) {
+  if (/\bimport\s*\(\s*['"][^'"]*\/sessionState(?:\.ts)?['"]\s*\)/.test(code)) {
     names.push(ALL)
   }
 
@@ -83,11 +84,11 @@ export function namesImportedFromSessionState(source: string): string[] {
  * `export { nom }` dont `nom` est importé sans autre usage (il ne peut pas savoir si c'est un type), de sorte que le
  * module chargé n'expose rien et que le test passerait avec une vraie réexportation.
  */
-export function namesInExportBlocks(source: string): string[] {
-  const withoutComments = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(?<!:)\/\/.*$/gm, '')
+function namesInExportBlocks(source: string): string[] {
+  const code = withoutComments(source)
   const names: string[] = []
 
-  for (const match of withoutComments.matchAll(/\bexport\s+(?:type\s+)?\{([^}]*)\}/g)) {
+  for (const match of code.matchAll(/\bexport\s+(?:type\s+)?\{([^}]*)\}/g)) {
     for (const part of (match[1] ?? '').split(',')) {
       names.push(
         ...part

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { HttpAuthRepository, ME_TIMEOUT_MS } from '../../../src/infrastructure/auth/HttpAuthRepository'
 import { InvalidCredentialsError } from '../../../src/domain/auth/errors/InvalidCredentialsError'
 import { LoginRateLimitedError } from '../../../src/domain/auth/errors/LoginRateLimitedError'
+import { fetchSettledOnlyByAbort } from '../../support/abortableFetch'
 
 function stubFetch(status: number, body: unknown = undefined, headers: Record<string, string> = {}): ReturnType<typeof vi.fn> {
   const fetchMock = vi.fn(async () => ({
@@ -65,18 +66,6 @@ describe('HttpAuthRepository.me() — la borne de temps', () => {
     vi.unstubAllGlobals()
   })
 
-  /** Un `fetch` qui ne résout jamais et rejette `AbortError` quand son signal est abandonné, comme le vrai. */
-  function stubHangingFetch(): ReturnType<typeof vi.fn> {
-    const fetchMock = vi.fn(
-      (_url: string, init?: RequestInit) =>
-        new Promise<Response>((_resolve, reject) => {
-          init?.signal?.addEventListener('abort', () => reject(new DOMException('The operation was aborted.', 'AbortError')))
-        }),
-    )
-    vi.stubGlobal('fetch', fetchMock)
-    return fetchMock
-  }
-
   it('envoie les cookies et un signal d\'abandon', async () => {
     const fetchMock = stubFetch(401)
 
@@ -91,7 +80,7 @@ describe('HttpAuthRepository.me() — la borne de temps', () => {
 
   it('me() abandonne après ME_TIMEOUT_MS : rejet AbortError', async () => {
     vi.useFakeTimers()
-    stubHangingFetch()
+    vi.stubGlobal('fetch', fetchSettledOnlyByAbort())
     const pending = new HttpAuthRepository('https://api.example.test').me()
     const outcome = expect(pending).rejects.toMatchObject({ name: 'AbortError' })
 

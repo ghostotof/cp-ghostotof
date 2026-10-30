@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { stringLiterals } from '../../support/sourceText'
 
 /**
  * Garde de source (#748, R37, R51) : aucun fichier de `src/` n'écrit une chaîne `'omit'` hors d'un commentaire.
@@ -25,13 +26,12 @@ const sources = import.meta.glob(['../../../src/**/*.ts', '../../../src/**/*.vue
 }) as Record<string, string>
 
 /**
- * Vrai si la source écrit une chaîne `'omit'` (simples, doubles ou gabarit) hors d'un commentaire. Les commentaires de
- * bloc sont retirés d'abord, puis ceux de ligne : un `//` précédé de `:` (le `https://` d'une URL) n'en ouvre pas un.
+ * Vrai si la source écrit une chaîne `'omit'` (simples, doubles ou gabarit) hors d'un commentaire. Lue par
+ * `tests/support/sourceText.ts`, qui connaît les chaînes : un `'/*'`, un `'//'` ou une URL entre guillemets n'ouvre pas
+ * de commentaire (Sp6-11, R68). Locale à ce spec, non exportée : une garde n'est pas une API.
  */
-export function offendsWithOmit(source: string): boolean {
-  const withoutComments = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(?<!:)\/\/.*$/gm, '')
-
-  return /(['"`])omit\1/.test(withoutComments)
+function offendsWithOmit(source: string): boolean {
+  return stringLiterals(source).includes('omit')
 }
 
 describe("aucun credentials: 'omit' dans src/", () => {
@@ -46,6 +46,15 @@ describe("aucun credentials: 'omit' dans src/", () => {
     expect(offendsWithOmit("// Jamais 'omit'")).toBe(false)
     expect(offendsWithOmit("/* 'omit' */")).toBe(false)
     expect(offendsWithOmit("fetch('https://x/omit')")).toBe(false)
+  })
+
+  it("le détecteur ne laisse pas un '/*' ou un '//' dans une chaîne masquer la suite (Sp6-11)", () => {
+    // Une chaîne `'/*'` n'ouvre pas de commentaire : le `'omit'` qui suit est bien écrit.
+    expect(offendsWithOmit("const a = '/*'\nconst mode = 'omit' // */")).toBe(true)
+    // Une URL n'est pas un commentaire, mais ce qu'elle contient n'est pas un `'omit'` non plus.
+    expect(offendsWithOmit("const u = 'http://x/omit'")).toBe(false)
+    // Un `'//'` dans une chaîne ne coupe pas la ligne : l'`'omit'` qui suit sur la même ligne reste vu.
+    expect(offendsWithOmit("const a = ['//', 'omit']")).toBe(true)
   })
 
   it("aucun fichier n'écrit la chaîne 'omit' hors d'un commentaire (elle retire aussi la Basic Auth de la préprod, C1)", () => {

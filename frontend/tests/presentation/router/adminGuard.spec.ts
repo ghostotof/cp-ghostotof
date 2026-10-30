@@ -7,6 +7,7 @@ import type { AuthRepository } from '../../../src/domain/auth/repositories/AuthR
 import type { AuthenticatedUser } from '../../../src/domain/auth/entities/AuthenticatedUser'
 import type { AuthSession } from '../../../src/domain/auth/entities/AuthSession'
 import { sessionFor } from '../../support/authSession'
+import { fetchSettledOnlyByAbort } from '../../support/abortableFetch'
 import { BASE_ACCESS_SESSION } from '../../../src/domain/auth/entities/AuthSession'
 import { createAppI18n } from '../../../src/presentation/i18n'
 import { HttpAuthRepository, ME_TIMEOUT_MS } from '../../../src/infrastructure/auth/HttpAuthRepository'
@@ -524,15 +525,7 @@ describe('router — la page de connexion attend la première vérification (#74
 
     it("onglet neuf, /api/me qui ne répond pas : la connexion s'ouvre après le délai, sans annonce avant", async () => {
       // Le vrai dépôt HTTP : la borne est la sienne. Un `fetch` qui ne répond jamais et obéit à son signal.
-      vi.stubGlobal(
-        'fetch',
-        vi.fn(
-          (_url: string, init?: RequestInit) =>
-            new Promise<Response>((_resolve, reject) => {
-              init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
-            }),
-        ),
-      )
+      vi.stubGlobal('fetch', fetchSettledOnlyByAbort())
       const repository = new HttpAuthRepository('https://api.example.test')
       const wrapper = await mountApplication(repository)
       const probe = mountProbe(repository)
