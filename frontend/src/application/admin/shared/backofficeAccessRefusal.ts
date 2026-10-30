@@ -1,4 +1,5 @@
 import { readonly, ref } from 'vue'
+import type { RefusalScope } from '../../../domain/admin/shared/BackofficeSessionReaction'
 
 /**
  * Le refus réel du backoffice (#748, R17, F4) : un 403 qui n'est pas une fin de session — une lecture, ou une écriture
@@ -12,16 +13,19 @@ import { readonly, ref } from 'vue'
  * de tout composant, et l'alerte dans un autre.
  *
  * Exposé à part de `useAuth` : la relecture du palier (`rereadAfterRefusal`) qui suit chaque refus est l'affaire
- * de `useAuth`, ce module ne tient que « combien de refus depuis la dernière navigation ».
+ * de `useAuth`, ce module ne tient que « combien de refus depuis le dernier effacement ».
  */
 const refusals = ref(0)
 
 /**
- * Le périmètre des refus (#748, R28, CR3-8) : un nombre qui avance à chaque effacement, donc à chaque navigation.
- * Une requête le lit à l'envoi (`refusalScope`) et le rend au refus (`markBackofficeAccessRefused`) : un 403 arrivé
- * sous un autre périmètre est celui d'une page quittée, il ne compte pas sur la suivante — sauf une écriture, qui ne
- * relève aucun périmètre (`null`, R38). Pas un simple « booléen de
- * navigation » : deux visites successives de la même route sont deux périmètres. Pas de `ref` : rien ne l'affiche.
+ * Le périmètre des refus (#748, R28, CR3-8) : un nombre qui avance à chaque effacement (`clearBackofficeAccessRefusal`) —
+ * un changement de chemin ou de requête (pas le seul fragment, R38), une fin de session, le montage et le démontage de
+ * l'alerte (R48) —, et qu'aucune lecture n'avance. Une requête le lit à l'envoi (`{ kind: 'read', scope }`, voir
+ * `RefusalScope`) et le rend au refus (`markBackofficeAccessRefused`) : un 403 arrivé sous un autre périmètre est celui
+ * d'une page quittée, il ne compte pas sur la suivante — sauf une écriture, qui ne relève aucun périmètre
+ * (`{ kind: 'write' }`, R38). Pas un simple « booléen de navigation » : A, B puis A font trois périmètres ; une
+ * navigation vers l'adresse courante n'en est pas une (vue-router n'exécute pas celle qui ne change rien, et l'alerte
+ * ne tient pas compte de l'ordre des paramètres de requête). Pas de `ref` : rien ne l'affiche.
  */
 let scope = 0
 
@@ -34,12 +38,12 @@ export function refusalScope(): number {
 }
 
 /**
- * Un refus réel de plus : l'alerte s'insère si elle n'y est pas, sinon son message est remplacé. `sentIn` est le
- * périmètre relevé à l'envoi : s'il n'est plus le courant, la requête est partie d'une page quittée, rien n'est
- * compté et `false` est rendu (l'appelant ne relit pas non plus le palier). `null` (une écriture) compte toujours.
+ * Un refus réel de plus : l'alerte s'insère si elle n'y est pas, sinon son message est remplacé. `sentIn` est ce que la
+ * requête a relevé à l'envoi : une lecture dont le périmètre n'est plus le courant est partie d'une page quittée, rien
+ * n'est compté et `false` est rendu (l'appelant ne relit pas non plus le palier). Une écriture compte toujours.
  */
-export function markBackofficeAccessRefused(sentIn: number | null): boolean {
-  if (null !== sentIn && sentIn !== scope) {
+export function markBackofficeAccessRefused(sentIn: RefusalScope): boolean {
+  if ('read' === sentIn.kind && sentIn.scope !== scope) {
     return false
   }
 
@@ -49,8 +53,8 @@ export function markBackofficeAccessRefused(sentIn: number | null): boolean {
 }
 
 /**
- * Efface les refus et avance le périmètre : à chaque navigation, à une fin de session (le bandeau parle seul) et au
- * démontage du layout. Les refus des requêtes déjà parties deviennent périmés.
+ * Efface les refus et avance le périmètre : à chaque changement de chemin ou de requête, à une fin de session (le
+ * bandeau parle seul) et au démontage du layout (R48). Les refus des lectures déjà parties deviennent périmés.
  */
 export function clearBackofficeAccessRefusal(): void {
   refusals.value = 0

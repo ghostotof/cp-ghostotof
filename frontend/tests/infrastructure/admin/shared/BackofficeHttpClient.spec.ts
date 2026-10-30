@@ -27,7 +27,7 @@ function reaction(
 
 /** Un timbre d'envoi : la génération de session `session`, le périmètre de refus étant sans objet ici. */
 function stampOf(session: number, refusalScope = 0): BackofficeSendStamp {
-  return { session, refusalScope }
+  return { session, refusal: { kind: 'read', scope: refusalScope } }
 }
 
 function setCsrfCookie(value: string): void {
@@ -135,7 +135,7 @@ describe('BackofficeHttpClient — fin de session', () => {
         },
         ended: () => true,
         refused: (sentAt) => {
-          calls.push(`refused:${sentAt.session}/${sentAt.refusalScope}`)
+          calls.push(`refused:${sentAt.session}/${'read' === sentAt.refusal.kind ? sentAt.refusal.scope : 'write'}`)
         },
       })
       vi.stubGlobal(

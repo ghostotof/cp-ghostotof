@@ -31,13 +31,13 @@ import { switchAccountLocation } from '../../router/reauthentication'
  *   connectée (`reauth=1`) et `redirect` ramène à cette page. La saisie en cours est perdue en le suivant : la
  *   personne lit d'abord pourquoi, et rien ne la déplace pendant qu'elle lit. Le message est neutre
  *   (`common.accessRefused`) : le compte n'a peut-être pas, ou plus, l'accès, ou la session doit être rouverte.
- * - **Effacée à chaque changement de chemin ou de requête** (`route.path` et `route.query`), au montage et au démontage
+ * - **Effacée à chaque changement de chemin ou de requête** (`route.path` et `route.query`, paramètres triés), au montage et au démontage
  *   du layout (le montage ne fait que remettre le compteur à zéro, sans avancer le périmètre : le chargement de la page
  *   d'arrivée est déjà parti) : un refus d'une page ne suit pas la personne sur la suivante, et un refus d'écriture revenu pendant
  *   qu'aucune alerte n'était montée (la personne avait quitté le backoffice) ne s'affiche pas plus tard sur une page
  *   sans rapport (CR5-1) ; la relecture du palier a eu lieu. **Pas le fragment** (R38) : le lien
  *   d'évitement (`href="#main-content"`) ne change que lui, et effaçait l'alerte que la personne était en train de
- *   lire. L'effacement avance aussi le périmètre de refus (`refusalScope`) : le 403 d'une lecture partie avant la
+ *   lire. L'effacement avance aussi le périmètre de refus (`refusalScope()`) : le 403 d'une lecture partie avant la
  *   navigation, arrivé après, est périmé et ne s'affiche pas (R28, CR3-8) ; celui d'une écriture s'affiche (R38).
  * - Collée sous l'en-tête comme le bandeau de session finie (page longue, « Enregistrer » en bas) ; les deux ne
  *   s'affichent jamais ensemble, elles publient donc la même hauteur (`--admin-notice-height`).
@@ -51,9 +51,11 @@ const isShown = computed(() => backofficeAccessRefused.value > 0 && !authState.s
 const notice = useTemplateRef<HTMLElement>('notice')
 usePublishedHeight(notice, '--admin-notice-height')
 
-// Le chemin et la requête, jamais le fragment (le lien d'évitement ne change que lui, R38).
+// Le chemin et la requête, jamais le fragment (le lien d'évitement ne change que lui, R38). Les paramètres sont triés :
+// vue-router exécute une navigation qui ne fait que les permuter (`?a=1&b=2` → `?b=2&a=1`, mesuré en R54, CR5-8), mais
+// la page est la même, et l'alerte d'un refus ne doit pas disparaître pour un ordre.
 watch(
-  () => route.path + JSON.stringify(route.query),
+  () => route.path + JSON.stringify(Object.entries(route.query).sort(([a], [b]) => a.localeCompare(b))),
   () => clearBackofficeAccessRefusal(),
 )
 

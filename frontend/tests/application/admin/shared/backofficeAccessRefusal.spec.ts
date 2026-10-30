@@ -6,17 +6,23 @@ import {
   markBackofficeAccessRefused,
   refusalScope,
 } from '../../../../src/application/admin/shared/backofficeAccessRefusal'
+import type { RefusalScope } from '../../../../src/domain/admin/shared/BackofficeSessionReaction'
+
+/** Ce qu'une lecture envoyée maintenant relève à l'envoi (R54). */
+function readSentNow(): RefusalScope {
+  return { kind: 'read', scope: refusalScope() }
+}
 
 /**
  * Le compteur des refus réels et son périmètre (#748, R28, CR3-8) : une navigation (un effacement) avance le
- * périmètre, et un refus relevé sous un périmètre révolu ne compte pas. Une écriture (`null`) n'est jamais périmée
+ * périmètre, et un refus relevé sous un périmètre révolu ne compte pas. Une écriture (`{ kind: 'write' }`) n'est jamais périmée
  * (R38). Aucun `afterEach` ici : `tests/support/setup.ts` remet l'état à zéro avant chaque test, et les deux
  * derniers tests le prouvent.
  */
 describe('backofficeAccessRefusal', () => {
   it('un refus du périmètre courant compte et le dit', () => {
-    expect(markBackofficeAccessRefused(refusalScope())).toBe(true)
-    expect(markBackofficeAccessRefused(refusalScope())).toBe(true)
+    expect(markBackofficeAccessRefused(readSentNow())).toBe(true)
+    expect(markBackofficeAccessRefused(readSentNow())).toBe(true)
 
     expect(backofficeAccessRefused.value).toBe(2)
   })
@@ -26,12 +32,12 @@ describe('backofficeAccessRefusal', () => {
     clearBackofficeAccessRefusal()
 
     expect(refusalScope()).not.toBe(sentBefore)
-    expect(markBackofficeAccessRefused(sentBefore)).toBe(false)
+    expect(markBackofficeAccessRefused({ kind: 'read', scope: sentBefore })).toBe(false)
     expect(backofficeAccessRefused.value).toBe(0)
   })
 
   it('un effacement remet le compteur à zéro', () => {
-    markBackofficeAccessRefused(refusalScope())
+    markBackofficeAccessRefused(readSentNow())
 
     clearBackofficeAccessRefusal()
 
@@ -40,27 +46,27 @@ describe('backofficeAccessRefusal', () => {
 
   it("écarter les refus remet le compteur à zéro sans avancer le périmètre : une lecture déjà partie compte encore (R48)", () => {
     const sentFromThisPage = refusalScope()
-    markBackofficeAccessRefused(null)
+    markBackofficeAccessRefused({ kind: 'write' })
 
     discardBackofficeAccessRefusals()
 
     expect(backofficeAccessRefused.value).toBe(0)
     expect(refusalScope()).toBe(sentFromThisPage)
-    expect(markBackofficeAccessRefused(sentFromThisPage)).toBe(true)
+    expect(markBackofficeAccessRefused({ kind: 'read', scope: sentFromThisPage })).toBe(true)
   })
 
-  it("un refus d'écriture (périmètre nul) compte toujours, même après une navigation", () => {
+  it("un refus d'écriture (`{ kind: 'write' }`) compte toujours, même après une navigation", () => {
     clearBackofficeAccessRefusal()
 
-    expect(markBackofficeAccessRefused(null)).toBe(true)
+    expect(markBackofficeAccessRefused({ kind: 'write' })).toBe(true)
     expect(backofficeAccessRefused.value).toBe(1)
   })
 
   // Deux tests successifs : le premier laisse un refus compté et un périmètre avancé, le second les doit à zéro.
   it('remise à zéro (1/2) : un refus compté et un périmètre avancé', () => {
-    markBackofficeAccessRefused(refusalScope())
+    markBackofficeAccessRefused(readSentNow())
     clearBackofficeAccessRefusal()
-    markBackofficeAccessRefused(refusalScope())
+    markBackofficeAccessRefused(readSentNow())
 
     expect(backofficeAccessRefused.value).toBe(1)
     expect(refusalScope()).toBeGreaterThan(0)

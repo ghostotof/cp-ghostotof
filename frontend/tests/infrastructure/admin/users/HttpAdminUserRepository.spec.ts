@@ -30,7 +30,7 @@ describe('HttpAdminUserRepository', () => {
 
   it('un 401 sur le changement de mot de passe (session antérieure, #650 R1c) appelle la réaction du backoffice', async () => {
     const onSessionEnded = vi.fn(() => true)
-    setBackofficeSessionReaction({ stampAtSend: () => ({ session: 0, refusalScope: 0 }), ended: onSessionEnded, refused: () => undefined })
+    setBackofficeSessionReaction({ stampAtSend: () => ({ session: 0, refusal: { kind: 'read', scope: 0 } }), ended: onSessionEnded, refused: () => undefined })
     vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(401, { code: 401, message: 'Session closed by a password change.' })))
 
     await expect(new HttpAdminUserRepository(API_BASE_URL).changePassword(USER_ID, 'new-password')).rejects.toBeInstanceOf(SessionEndedError)
@@ -40,7 +40,7 @@ describe('HttpAdminUserRepository', () => {
 
   it('un 401 sur la lecture de la liste appelle la réaction du backoffice', async () => {
     const onSessionEnded = vi.fn(() => true)
-    setBackofficeSessionReaction({ stampAtSend: () => ({ session: 0, refusalScope: 0 }), ended: onSessionEnded, refused: () => undefined })
+    setBackofficeSessionReaction({ stampAtSend: () => ({ session: 0, refusal: { kind: 'read', scope: 0 } }), ended: onSessionEnded, refused: () => undefined })
     vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(401, { code: 401, message: 'Expired JWT Token' })))
 
     await expect(new HttpAdminUserRepository(API_BASE_URL).list()).rejects.toBeInstanceOf(SessionEndedError)
@@ -51,7 +51,7 @@ describe('HttpAdminUserRepository', () => {
   it('un 403 est un refus réel levé par le client, jamais traduit par le dépôt : ni session finie, ni AdminUserError (#748, R17)', async () => {
     const onSessionEnded = vi.fn(() => true)
     const onRefused = vi.fn()
-    setBackofficeSessionReaction({ stampAtSend: () => ({ session: 0, refusalScope: 0 }), ended: onSessionEnded, refused: onRefused })
+    setBackofficeSessionReaction({ stampAtSend: () => ({ session: 0, refusal: { kind: 'read', scope: 0 } }), ended: onSessionEnded, refused: onRefused })
     vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(403, { detail: 'Forbidden' })))
 
     const refused = new HttpAdminUserRepository(API_BASE_URL).list()

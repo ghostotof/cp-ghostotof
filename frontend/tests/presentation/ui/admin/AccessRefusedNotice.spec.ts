@@ -51,7 +51,7 @@ async function mountNotice(): Promise<{ wrapper: VueWrapper; router: Router }> {
  */
 /** Un refus réel d'une requête partie sous le périmètre courant (jamais d'une page quittée, voir R28). */
 function refuse(): void {
-  markBackofficeAccessRefused(refusalScope())
+  markBackofficeAccessRefused({ kind: 'read', scope: refusalScope() })
 }
 
 describe('AccessRefusedNotice (#748, R17)', () => {
@@ -140,6 +140,23 @@ describe('AccessRefusedNotice (#748, R17)', () => {
     wrapper.unmount()
   })
 
+  it("une requête aux paramètres permutés garde l'alerte : le routeur n'y voit pas de navigation (R54, CR5-8)", async () => {
+    const { wrapper, router } = await mountNotice()
+    await router.push('/fr/admin/case-studies?a=1&b=2')
+    await flushPromises()
+    refuse()
+    await flushPromises()
+    const scope = refusalScope()
+
+    // vue-router compare les paramètres clé par clé : cette « navigation » est un doublon, il ne l'exécute pas.
+    await router.push({ query: { b: '2', a: '1' } })
+    await flushPromises()
+
+    expect(wrapper.find('[role="alert"]').exists()).toBe(true)
+    expect(refusalScope()).toBe(scope)
+    wrapper.unmount()
+  })
+
   it("une session finie masque l'alerte et l'efface : elle ne revient pas avec la session", async () => {
     const { wrapper } = await mountNotice()
     refuse()
@@ -172,7 +189,7 @@ describe('AccessRefusedNotice (#748, R17)', () => {
 
     // La personne a quitté le backoffice ; son enregistrement, parti avant, est refusé maintenant : aucune alerte n'est
     // montée pour l'afficher, mais le compteur monte.
-    markBackofficeAccessRefused(null)
+    markBackofficeAccessRefused({ kind: 'write' })
 
     const second = await mountNotice()
     await flushPromises()

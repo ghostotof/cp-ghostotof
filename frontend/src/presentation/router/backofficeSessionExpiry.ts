@@ -26,8 +26,8 @@ import type { BackofficeSendKind, BackofficeSendStamp, BackofficeSessionReaction
  * (`rereadAfterRefusal`, une relecture en vol partagée : une lecture et une écriture refusées ensemble n'envoient
  * qu'un `/api/me`) — l'en-tête reprend le palier que le serveur reconnaît, ou la session est dite finie si `/api/me`
  * répond « anonyme ». **Une lecture refusée après une navigation ne compte pas** (R28, CR3-8) : le timbre de l'envoi
- * porte le périmètre de refus, que chaque navigation avance ; le 403 d'une page quittée n'affiche aucune alerte sur la
- * suivante et ne relit rien. **Une écriture refusée compte toujours** (R38) : le timbre porte un périmètre nul, la
+ * porte le périmètre de refus, que chaque effacement de l'alerte avance (chemin ou requête changés, fin de session, montage, démontage) ; le 403 d'une page quittée n'affiche aucune alerte sur la
+ * suivante et ne relit rien. **Une écriture refusée compte toujours** (R38) : le timbre porte `{ kind: 'write' }`, la
  * personne a fait le geste et doit apprendre son échec, au besoin sur la page où elle est allée — **sauf si la session a changé depuis l'envoi** (R48, CR5-2) : un refus
  * parti sous une autre génération (retour d'une session finie, autre compte lu) n'est ni compté ni relu, lecture ou
  * écriture. La relecture est branchée ici, côté composition, et non dans chaque composable : ils
@@ -41,7 +41,7 @@ export function createBackofficeSessionReaction(auth: Pick<UseAuthResult, 'rerea
     // Une écriture ne relève aucun périmètre : son refus n'est jamais périmé (R38).
     stampAtSend: (kind: BackofficeSendKind): BackofficeSendStamp => ({
       session: sessionStamp(),
-      refusalScope: 'write' === kind ? null : refusalScope(),
+      refusal: 'write' === kind ? { kind: 'write' } : { kind: 'read', scope: refusalScope() },
     }),
     ended: (sentAt: BackofficeSendStamp): boolean => markSessionExpired(sentAt.session),
     refused: (sentAt: BackofficeSendStamp): void => {
@@ -53,7 +53,7 @@ export function createBackofficeSessionReaction(auth: Pick<UseAuthResult, 'rerea
       }
 
       // Une lecture partie avant une navigation (CR3-8) : ni comptée ni relue, la page qui l'a émise n'existe plus.
-      if (!markBackofficeAccessRefused(sentAt.refusalScope)) {
+      if (!markBackofficeAccessRefused(sentAt.refusal)) {
         return
       }
 
