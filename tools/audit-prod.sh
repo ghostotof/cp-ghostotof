@@ -37,10 +37,10 @@ CURL_OPTS_ANONYMOUS=("${CURL_OPTS[@]}")
 # Jamais via `-u` : les arguments d'un processus sont lisibles dans `ps` par
 # tout utilisateur de la machine pendant la requête (revue de sécurité du
 # 2026-09-13, #78 pt 6). Le couple passe par un fichier de configuration curl
-# (`-K`), créé en 600 par mktemp et supprimé à la sortie ; seul son chemin
-# apparaît dans les arguments. Les guillemets et antislashs sont échappés au
-# format attendu par curl, donc n'importe quel mot de passe convient.
-# Un retour à la ligne (ou un CR) dans la valeur est refusé avant tout fichier et
+# (`-K`), créé en 600 dans un dossier privé que `smoke_cleanup` retire à la sortie ;
+# seul son chemin apparaît dans les arguments. Les guillemets et antislashs sont
+# échappés au format attendu par curl, donc n'importe quel mot de passe convient.
+# Un retour à la ligne (ou un CR) dans la valeur est refusé avant tout dossier et
 # toute requête (sortie 2, celle d'un défaut d'environnement, comme une
 # bibliothèque absente) : le fichier, son échappement et ce refus sont dans
 # tools/lib/smoke-http.sh, partagés avec les scripts de fumée. La bibliothèque
@@ -48,17 +48,19 @@ CURL_OPTS_ANONYMOUS=("${CURL_OPTS[@]}")
 # AUDIT_BASIC_AUTH (la vraie prod), l'audit n'en dépend pas. Sans -e, un `source`
 # en échec ne s'arrête pas : d'où le `|| exit 2`. Son stderr reste visible : une
 # erreur de syntaxe de la bibliothèque s'y lit, au lieu d'être cachée sous
-# « introuvable » (#748, C6-7). Le `trap` précède la création du fichier : un
-# arrêt entre les deux n'en laisse aucun derrière.
+# « introuvable » (#748, C6-7). Le `trap` précède la création du dossier : un
+# arrêt entre `mktemp -d` et l'affectation que lit le `trap` peut laisser un dossier
+# privé **vide**, jamais la valeur, qui n'est écrite qu'une fois le chemin connu du
+# `trap` (#748, C7-8).
 if [ -n "${AUDIT_BASIC_AUTH:-}" ]; then
   # shellcheck source=tools/lib/smoke-http.sh
   source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/smoke-http.sh" || {
     echo "bibliothèque introuvable ou invalide : tools/lib/smoke-http.sh" >&2
     exit 2
   }
-  trap 'rm -f "${CURL_AUTH_CONFIG:-}"' EXIT
-  CURL_AUTH_CONFIG="$(smoke_auth_config_file AUDIT_BASIC_AUTH "$AUDIT_BASIC_AUTH")" || exit 2
-  CURL_OPTS+=(-K "$CURL_AUTH_CONFIG")
+  trap 'smoke_cleanup' EXIT
+  smoke_write_auth_config AUDIT_BASIC_AUTH || exit 2
+  CURL_OPTS+=(-K "$SMOKE_AUTH_CONFIG")
 fi
 DIG_TIMEOUT=(+time=3 +tries=1)
 

@@ -185,8 +185,8 @@ paths:
     the three witnesses above and, on the real stack, `tools/smoke-dead-session-cookie.sh`
     (`smoke-test-preprod`, behind the Basic Auth the test container lacks): a random `BEARER` on a public read gets 200
     and no `Set-Cookie` for `BEARER` nor `XSRF-TOKEN`; on `/api/me` a 401 that expires both. A `curl` that gets no
-    answer exits 1 with a message, a Basic Auth holding a line break is refused (exit 2), and that plumbing is shared
-    in `tools/lib/smoke-http.sh`; offline tests `tools/tests/smoke-dead-session-cookie.test.sh` and
+    answer exits 1 with a message, a Basic Auth holding a line break is refused (exit 2), and that plumbing — a private directory removed by `smoke_cleanup`, never a path inherited from the environment —
+    is shared in `tools/lib/smoke-http.sh`; offline tests `tools/tests/smoke-dead-session-cookie.test.sh` and
     `tools/tests/smoke-http.test.sh`.
     **Accepted limit (C5-1, the author's decision of 2026-10-30)**: a closed session (the password changed since) kept by a
     legitimate tab writes one `session-refused-after-credentials-change` line per public request until that tab's next

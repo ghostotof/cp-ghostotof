@@ -115,7 +115,7 @@ paths:
   connectors call from their providers' egress addresses, which their users share — fine at this site's
   audience, revisit if phase 2's real clients get throttled. `tools/smoke-mcp.sh`, run by `smoke-test-preprod`
   (its own `timeout-minutes: 3`; like `smoke-login-throttling.sh` and `smoke-dead-session-cookie.sh` it adds the Basic Auth
-  (`smoke_add_basic_auth`), reads headers (`smoke_header`) and calls `curl` (`smoke_fetch`, binary `SMOKE_CURL`) through `tools/lib/smoke-http.sh` — `audit-prod.sh` shares the file only (`smoke_auth_config_file`, which names the variable it refuses), and sources the library only when `AUDIT_BASIC_AUTH` is set —: a line break in
+  (`smoke_add_basic_auth`), reads headers (`smoke_header`) and calls `curl` (`smoke_fetch`, binary `SMOKE_CURL`) through `tools/lib/smoke-http.sh` — `audit-prod.sh` shares the file only (`smoke_write_auth_config`, which validates the variable's name, reads it itself and writes in a private directory under `set +x`; `smoke_cleanup` in every `trap`), and sources the library only when `AUDIT_BASIC_AUTH` is set —: a line break in
   `AUDIT_BASIC_AUTH` exits 2, a library that is missing or does not parse exits 2 saying « introuvable ou invalide » with bash's own error left on stderr (#748, C6-7; offline test `tools/tests/audit-prod.test.sh`, fake `dig`/`curl`/`openssl`), a `curl` without an answer exits 1 saying nothing was verified), proves it on the real pod: an `initialize` on the public host (a 403 there
   means `allowed_hosts`, derived from `APP_FRONTEND_BASE_URL`, misses it), the session closed by `DELETE` (its
   status checked: a session left open stays an hour), a 16 KiB + 1 body refused in 413 with `Content-Length` then in

@@ -2,7 +2,7 @@
 #
 # smoke-http.test.sh
 # ---------------------------------------------------------------------------
-# Test hors ligne de tools/lib/smoke-http.sh (smoke_auth_config_file,
+# Test hors ligne de tools/lib/smoke-http.sh (smoke_write_auth_config, smoke_cleanup,
 # smoke_add_basic_auth, smoke_header, smoke_excerpt, smoke_fetch) : un faux `curl` rejoue une réponse canned et note
 # ses arguments, aucun appel réseau, aucune écriture dans le dépôt courant.
 # Les scripts qui sourcent la bibliothèque ont chacun leur test (le contrat de
@@ -35,53 +35,129 @@ else
   fail "source" "errexit : $(set +o | grep errexit) ; fichiers : $(ls -A "$TMP/tmpdir")"
 fi
 
-# --- smoke_auth_config_file : le fichier -K, échappé au format de curl, en 600.
-config="$(smoke_auth_config_file AUDIT_BASIC_AUTH 'u:p"a\b')"
-if [ "$(cat "$config")" = 'user = "u:p\"a\\b"' ] && [ "$(stat -c %a "$config")" = "600" ]; then
-  pass "smoke_auth_config_file : user = \"u:p\\\"a\\\\b\", mode 600, chemin imprimé"
+# --- À la source, SMOKE_AUTH_DIR et SMOKE_AUTH_CONFIG sont vides : une valeur
+# héritée de l'environnement n'est jamais crue (C7-6), sinon `smoke_cleanup` ou
+# le `trap` d'un script supprimerait un fichier qui n'est pas le sien.
+inherited="$(SMOKE_AUTH_DIR=/herite/dossier SMOKE_AUTH_CONFIG=/herite/fichier \
+  bash -c 'source "$1"; printf "[%s][%s]" "${SMOKE_AUTH_DIR-absente}" "${SMOKE_AUTH_CONFIG-absente}"' _ "$LIB")"
+if [ "$inherited" = "[][]" ]; then
+  pass "sourcer vide SMOKE_AUTH_DIR et SMOKE_AUTH_CONFIG hérités de l'environnement"
 else
-  fail "smoke_auth_config_file" "chemin : $config ; contenu : $(cat -A "$config" 2>&1) ; mode : $(stat -c %a "$config" 2>&1)"
+  fail "variables héritées" "obtenu : $inherited"
 fi
-rm -f "$config"
+# Et `smoke_cleanup` n'y touche pas : un dossier témoin hérité survit.
+mkdir "$TMP/herite"
+rc=0
+SMOKE_AUTH_DIR="$TMP/herite" bash -c 'source "$1"; smoke_cleanup' _ "$LIB" || rc=$?
+if [ "$rc" -eq 0 ] && [ -d "$TMP/herite" ]; then
+  pass "smoke_cleanup ne supprime pas un dossier hérité de l'environnement"
+else
+  fail "dossier hérité supprimé" "rc=$rc ; dossier : $([ -d "$TMP/herite" ] && echo présent || echo disparu)"
+fi
+
+# --- smoke_write_auth_config : le fichier -K, échappé au format de curl, en 600,
+# dans un dossier privé en 700 sous TMPDIR, écrit dans le shell courant (la
+# valeur ne passe en argument d'aucune commande) ; rien sur stdout.
+# Lue par smoke_write_auth_config, par indirection (${!nom}).
+# shellcheck disable=SC2034
+AUDIT_BASIC_AUTH='u:p"a\b'
+rc=0
+smoke_write_auth_config AUDIT_BASIC_AUTH > "$TMP/stdout" 2> "$TMP/stderr" || rc=$?
+config="$SMOKE_AUTH_CONFIG"
+if [ "$rc" -eq 0 ] && [ "$(cat "$config")" = 'user = "u:p\"a\\b"' ] && [ "$(stat -c %a "$config")" = "600" ] \
+   && [ ! -s "$TMP/stdout" ] && [ ! -s "$TMP/stderr" ]; then
+  pass "smoke_write_auth_config : user = \"u:p\\\"a\\\\b\", mode 600, rien imprimé"
+else
+  fail "smoke_write_auth_config" "rc=$rc ; config : $config ; contenu : $(cat -A "$config" 2>&1) ; mode : $(stat -c %a "$config" 2>&1) ; stdout : $(cat -A "$TMP/stdout")"
+fi
+if [ -n "$SMOKE_AUTH_DIR" ] && [ "$(dirname "$config")" = "$SMOKE_AUTH_DIR" ] && [ "$(dirname "$SMOKE_AUTH_DIR")" = "$TMPDIR" ] \
+   && [ "$(stat -c %a "$SMOKE_AUTH_DIR")" = "700" ]; then
+  pass "le fichier -K vit dans un dossier privé (700) sous TMPDIR"
+else
+  fail "dossier privé" "dossier : ${SMOKE_AUTH_DIR:-vide} ; config : $config ; mode : $(stat -c %a "${SMOKE_AUTH_DIR:-/nonexistent}" 2>&1)"
+fi
+dir="$SMOKE_AUTH_DIR"
+rc=0
+smoke_cleanup || rc=$?
+if [ "$rc" -eq 0 ] && [ ! -e "$dir" ] && [ -z "$SMOKE_AUTH_DIR" ] && [ -z "$SMOKE_AUTH_CONFIG" ] && [ -z "$(ls -A "$TMP/tmpdir")" ]; then
+  pass "smoke_cleanup retire le dossier, vide les deux variables, retourne 0"
+else
+  fail "smoke_cleanup" "rc=$rc ; dossier : $dir ; variables : [$SMOKE_AUTH_DIR][$SMOKE_AUTH_CONFIG] ; TMPDIR : $(ls -A "$TMP/tmpdir")"
+fi
+# Sans rien à retirer, un second appel retourne encore 0.
+rc=0; smoke_cleanup || rc=$?
+if [ "$rc" -eq 0 ]; then pass "smoke_cleanup sans dossier → 0"; else fail "smoke_cleanup à vide" "rc=$rc"; fi
 
 # --- Un retour à la ligne ou un CR ouvrirait une seconde directive : retour 2,
 # message sur stderr, rien sur stdout, aucun fichier, la valeur jamais citée.
 for newline_value in $'u:p\nurl = "x"' $'u:p\rurl = "x"'; do
-  set +e
-  smoke_auth_config_file AUDIT_BASIC_AUTH "$newline_value" > "$TMP/stdout" 2> "$TMP/stderr"
-  rc=$?
-  set -e
+  # Lue par smoke_write_auth_config, par indirection (${!nom}).
+  # shellcheck disable=SC2034
+  AUDIT_BASIC_AUTH="$newline_value"
+  rc=0
+  smoke_write_auth_config AUDIT_BASIC_AUTH > "$TMP/stdout" 2> "$TMP/stderr" || rc=$?
   if [ "$rc" -eq 2 ] && grep -q 'AUDIT_BASIC_AUTH contient un retour à la ligne' "$TMP/stderr" \
-     && [ ! -s "$TMP/stdout" ] && [ -z "$(ls -A "$TMP/tmpdir")" ] \
+     && [ ! -s "$TMP/stdout" ] && [ -z "$(ls -A "$TMP/tmpdir")" ] && [ -z "$SMOKE_AUTH_CONFIG" ] \
      && ! grep -qF -e 'u:p' -e 'url = ' "$TMP/stdout" "$TMP/stderr"; then
-    pass "smoke_auth_config_file : retour à la ligne ou CR → retour 2, aucun fichier, valeur jamais citée"
+    pass "smoke_write_auth_config : retour à la ligne ou CR → retour 2, aucun fichier, valeur jamais citée"
   else
-    fail "smoke_auth_config_file : retour à la ligne" "rc=$rc ; stderr : $(cat -A "$TMP/stderr") ; fichiers : $(ls -A "$TMP/tmpdir")"
+    fail "smoke_write_auth_config : retour à la ligne" "rc=$rc ; stderr : $(cat -A "$TMP/stderr") ; fichiers : $(ls -A "$TMP/tmpdir")"
   fi
 done
 
 # --- C6-9 : le refus nomme la variable reçue, pas une variable écrite en dur.
-set +e
-smoke_auth_config_file AUTRE_VAR $'a\nb' > "$TMP/stdout" 2> "$TMP/stderr"
-rc=$?
-set -e
+# shellcheck disable=SC2034
+AUTRE_VAR=$'a\nb'
+rc=0
+smoke_write_auth_config AUTRE_VAR > "$TMP/stdout" 2> "$TMP/stderr" || rc=$?
 if [ "$rc" -eq 2 ] && grep -q '^AUTRE_VAR contient un retour à la ligne' "$TMP/stderr" \
    && ! grep -q 'AUDIT_BASIC_AUTH' "$TMP/stderr" && [ -z "$(ls -A "$TMP/tmpdir")" ]; then
-  pass "smoke_auth_config_file : le refus nomme la variable reçue (AUTRE_VAR), aucun fichier"
+  pass "smoke_write_auth_config : le refus nomme la variable reçue (AUTRE_VAR), aucun fichier"
 else
-  fail "smoke_auth_config_file : nom de la variable" "rc=$rc ; stderr : $(cat -A "$TMP/stderr")"
+  fail "smoke_write_auth_config : nom de la variable" "rc=$rc ; stderr : $(cat -A "$TMP/stderr")"
 fi
+unset AUDIT_BASIC_AUTH AUTRE_VAR
+
+# --- C7-7 : le nom est un identifiant, jamais une expression. `${!nom}` évalue
+# un indice : un nom `x[$(commande)]` exécuterait la commande. Retour 2, aucune
+# commande exécutée, aucun fichier ; de même par smoke_add_basic_auth.
+hostile='x[$(touch "$TMP/pwned")]'
+for bad_name in "$hostile" '1abc' 'a-b' ''; do
+  for fn in smoke_write_auth_config smoke_add_basic_auth; do
+    SMOKE_CURL_OPTS=(-sS)
+    rc=0
+    "$fn" "$bad_name" > "$TMP/stdout" 2> "$TMP/stderr" || rc=$?
+    if [ "$rc" -eq 2 ] && [ ! -e "$TMP/pwned" ] && [ -z "$(ls -A "$TMP/tmpdir")" ] && [ "${#SMOKE_CURL_OPTS[@]}" -eq 1 ] \
+       && grep -q "^$fn : nom de variable invalide" "$TMP/stderr"; then
+      pass "$fn : nom invalide (${bad_name:-vide}) → retour 2, aucune commande exécutée"
+    else
+      fail "$fn : nom invalide" "nom : ${bad_name:-vide} ; rc=$rc ; pwned : $([ -e "$TMP/pwned" ] && echo créé || echo non) ; stderr : $(cat -A "$TMP/stderr")"
+    fi
+    rm -f "$TMP/pwned"
+  done
+done
+
+# --- St7-1 : aucune fonction ne fait sortir l'appelant. Sans argument, le retour
+# est 2 et la ligne suivante de l'appelant s'exécute (`${1:?}` faisait sortir
+# tout shell non interactif).
+for fn in smoke_write_auth_config smoke_add_basic_auth; do
+  after="$( set +e; "$fn" 2>/dev/null; echo "suite rc=$?" )"
+  if [ "$after" = "suite rc=2" ]; then
+    pass "$fn sans argument → retour 2, l'appelant continue"
+  else
+    fail "$fn sans argument" "obtenu : « $after »"
+  fi
+done
 
 # --- smoke_add_basic_auth <nom de variable> : variable vide ou absente, rien ;
 # posée, `-K <fichier>` dans SMOKE_CURL_OPTS et SMOKE_AUTH_CONFIG pour le trap.
 # Appelée dans le shell courant (pas de sous-shell : elle pose des variables).
 # `set -u` est actif : une variable absente ne doit pas faire échouer `${!nom}`.
-unset SMOKE_AUTH_CONFIG
 SMOKE_CURL_OPTS=(-sS)
 unset UNE_AUTH
 rc=0
 smoke_add_basic_auth UNE_AUTH || rc=$?
-if [ "$rc" -eq 0 ] && [ "${#SMOKE_CURL_OPTS[@]}" -eq 1 ] && [ -z "${SMOKE_AUTH_CONFIG:-}" ] \
+if [ "$rc" -eq 0 ] && [ "${#SMOKE_CURL_OPTS[@]}" -eq 1 ] && [ -z "$SMOKE_AUTH_CONFIG" ] \
    && [ -z "$(ls -A "$TMP/tmpdir")" ]; then
   pass "smoke_add_basic_auth : variable absente → rien ajouté, aucun fichier"
 else
@@ -90,7 +166,7 @@ fi
 UNE_AUTH=""
 rc=0
 smoke_add_basic_auth UNE_AUTH || rc=$?
-if [ "$rc" -eq 0 ] && [ "${#SMOKE_CURL_OPTS[@]}" -eq 1 ] && [ -z "${SMOKE_AUTH_CONFIG:-}" ] \
+if [ "$rc" -eq 0 ] && [ "${#SMOKE_CURL_OPTS[@]}" -eq 1 ] && [ -z "$SMOKE_AUTH_CONFIG" ] \
    && [ -z "$(ls -A "$TMP/tmpdir")" ]; then
   pass "smoke_add_basic_auth : variable vide → rien ajouté, aucun fichier"
 else
@@ -101,29 +177,77 @@ rc=0
 smoke_add_basic_auth UNE_AUTH || rc=$?
 if [ "$rc" -eq 0 ] && [ "${#SMOKE_CURL_OPTS[@]}" -eq 3 ] && [ "${SMOKE_CURL_OPTS[1]}" = "-K" ] \
    && [ "${SMOKE_CURL_OPTS[2]}" = "$SMOKE_AUTH_CONFIG" ] && [ "$(cat "$SMOKE_AUTH_CONFIG")" = 'user = "u:p"' ] \
-   && [ "$(stat -c %a "$SMOKE_AUTH_CONFIG")" = "600" ]; then
-  pass "smoke_add_basic_auth : variable posée → -K <fichier> en 600 et SMOKE_AUTH_CONFIG"
+   && [ "$(stat -c %a "$SMOKE_AUTH_CONFIG")" = "600" ] && [ "$(stat -c %a "$SMOKE_AUTH_DIR")" = "700" ]; then
+  pass "smoke_add_basic_auth : variable posée → -K <fichier> en 600 dans un dossier 700, SMOKE_AUTH_CONFIG"
 else
   fail "smoke_add_basic_auth (posée)" "rc=$rc ; options : ${SMOKE_CURL_OPTS[*]} ; config : ${SMOKE_AUTH_CONFIG:-}"
 fi
-rm -f "$SMOKE_AUTH_CONFIG"
+smoke_cleanup
 # Un retour à la ligne : retour 2, le message nomme la variable, aucune option
 # ajoutée, SMOKE_AUTH_CONFIG vide (le trap de l'appelant n'a rien à supprimer).
 SMOKE_CURL_OPTS=(-sS)
 # Lue par smoke_add_basic_auth, par indirection (${!nom}).
 # shellcheck disable=SC2034
 UNE_AUTH=$'u:p\nurl = "x"'
-set +e
-smoke_add_basic_auth UNE_AUTH > "$TMP/stdout" 2> "$TMP/stderr"
-rc=$?
-set -e
+rc=0
+smoke_add_basic_auth UNE_AUTH > "$TMP/stdout" 2> "$TMP/stderr" || rc=$?
 if [ "$rc" -eq 2 ] && grep -q '^UNE_AUTH contient un retour à la ligne' "$TMP/stderr" \
-   && [ "${#SMOKE_CURL_OPTS[@]}" -eq 1 ] && [ -z "${SMOKE_AUTH_CONFIG:-}" ] && [ -z "$(ls -A "$TMP/tmpdir")" ]; then
+   && [ "${#SMOKE_CURL_OPTS[@]}" -eq 1 ] && [ -z "$SMOKE_AUTH_CONFIG" ] && [ -z "$(ls -A "$TMP/tmpdir")" ]; then
   pass "smoke_add_basic_auth : retour à la ligne → retour 2, la variable est nommée, rien ajouté"
 else
   fail "smoke_add_basic_auth (retour à la ligne)" "rc=$rc ; stderr : $(cat -A "$TMP/stderr") ; options : ${SMOKE_CURL_OPTS[*]}"
 fi
-unset UNE_AUTH SMOKE_AUTH_CONFIG
+
+# --- Un dossier qui ne se crée pas (TMPDIR absent) : retour 2, rien sur stdout,
+# aucune variable posée.
+rc=0
+SMOKE_CURL_OPTS=(-sS)
+UNE_AUTH='u:p'
+TMPDIR="$TMP/absent" smoke_add_basic_auth UNE_AUTH > "$TMP/stdout" 2> /dev/null || rc=$?
+if [ "$rc" -eq 2 ] && [ ! -s "$TMP/stdout" ] && [ "${#SMOKE_CURL_OPTS[@]}" -eq 1 ] && [ -z "$SMOKE_AUTH_CONFIG" ] && [ -z "$SMOKE_AUTH_DIR" ]; then
+  pass "smoke_add_basic_auth : dossier impossible à créer → retour 2, rien ajouté"
+else
+  fail "smoke_add_basic_auth (TMPDIR absent)" "rc=$rc ; options : ${SMOKE_CURL_OPTS[*]} ; dossier : [$SMOKE_AUTH_DIR]"
+fi
+
+# --- C7-9 : sous `set -x`, la valeur n'apparaît pas dans la trace (ni en
+# argument d'une fonction, ni dans une commande), et l'état de xtrace est rétabli.
+# La trace est lue dans un sous-shell : le dossier y est retiré avant la sortie.
+# Lue par smoke_add_basic_auth, par indirection (${!nom}).
+# shellcheck disable=SC2034
+UNE_AUTH='traced-user:traced-pass-value'
+SMOKE_CURL_OPTS=(-sS)
+(
+  set -x
+  smoke_add_basic_auth UNE_AUTH
+  case "$-" in *x*) echo rétabli > "$TMP/xtrace-state" ;; esac
+  cat "$SMOKE_AUTH_CONFIG" > "$TMP/xtrace-content"
+  smoke_cleanup
+  set +x
+) > /dev/null 2> "$TMP/trace"
+if ! grep -qF -e 'traced-pass-value' -e 'traced-user' "$TMP/trace" && [ -s "$TMP/trace" ] \
+   && [ "$(cat "$TMP/xtrace-content" 2>/dev/null)" = 'user = "traced-user:traced-pass-value"' ]; then
+  pass "sous set -x, la valeur n'apparaît pas dans la trace, le fichier est écrit"
+else
+  fail "valeur tracée" "trace : $(grep -F -e 'traced-' "$TMP/trace" | head -3) ; contenu : $(cat "$TMP/xtrace-content" 2>&1)"
+fi
+if [ "$(cat "$TMP/xtrace-state" 2>/dev/null)" = "rétabli" ]; then
+  pass "sous set -x, xtrace est rétabli après l'appel"
+else
+  fail "xtrace rétabli" "état : $(cat "$TMP/xtrace-state" 2>&1)"
+fi
+# Sans set -x au départ, la fonction n'en allume pas.
+(
+  smoke_add_basic_auth UNE_AUTH
+  case "$-" in *x*) echo allumé > "$TMP/xtrace-on" ;; esac
+  smoke_cleanup
+)
+if [ ! -e "$TMP/xtrace-on" ]; then
+  pass "sans set -x au départ, la fonction n'allume pas xtrace"
+else
+  fail "xtrace allumé" "la fonction a activé xtrace"
+fi
+unset UNE_AUTH
 
 # --- smoke_header <fichier> <nom> : nom insensible à la casse, CR retiré,
 # dernière occurrence ; un en-tête absent donne une valeur vide.

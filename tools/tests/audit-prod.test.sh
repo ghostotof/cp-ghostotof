@@ -115,8 +115,8 @@ fi
 # --- C6-8 : le fichier -K ne survit pas au script, et la Basic Auth n'apparaît
 # jamais dans les arguments d'un appel.
 tree nominal reelle
-AUDIT_BASIC_AUTH='secret-user:secret-pass' run nominal
-if grep -q 'curl .*-K ' "$TMP/nominal.calls" && ! grep -qF 'secret-' "$TMP/nominal.calls"; then
+AUDIT_BASIC_AUTH='audit-user:audit-pass' run nominal
+if grep -q 'curl .*-K ' "$TMP/nominal.calls" && ! grep -qF 'audit-user' "$TMP/nominal.calls" && ! grep -qF 'audit-pass' "$TMP/nominal.calls"; then
   pass "Basic Auth : curl reçoit -K <fichier>, jamais la valeur"
 else
   fail "Basic Auth en argument" "$(cat "$TMP/nominal.calls")"
@@ -127,12 +127,22 @@ else
   fail "fichier -K laissé" "$(ls -A "$TMP/nominal.tmpdir")"
 fi
 
+# --- C7-8 : le fichier -K naît dans un dossier privé propre à la bibliothèque, sous
+# TMPDIR (pas directement dedans), et ce dossier disparaît à la sortie : aucun
+# répertoire de la bibliothèque n'est laissé dans TMPDIR.
+k_path="$(grep -o -- '-K [^ ]*' "$TMP/nominal.calls" | head -1 | cut -d' ' -f2)"
+if [ -n "$k_path" ] && [ "$(dirname "$(dirname "$k_path")")" = "$TMP/nominal.tmpdir" ] && [ -z "$(ls -A "$TMP/nominal.tmpdir")" ]; then
+  pass "le fichier -K vivait dans un dossier privé sous TMPDIR, et aucun répertoire n'y reste après la sortie"
+else
+  fail "dossier privé de la Basic Auth" "chemin -K : ${k_path:-absent} ; TMPDIR : $(ls -A "$TMP/nominal.tmpdir")"
+fi
+
 # --- C6-8 : le `trap` est posé AVANT la création du fichier : un arrêt entre les
 # deux (signal, `exit` d'une expansion) laisserait sinon le fichier de la Basic
 # Auth derrière. Lu sur le source : aucune exécution ne tombe dans cette fenêtre
 # d'un instant, mais l'ordre des deux lignes est exactement ce qui la ferme.
 trap_line="$(grep -n "^  trap '.*' EXIT" "$TOOLS/audit-prod.sh" | head -1 | cut -d: -f1)"
-file_line="$(grep -n 'smoke_auth_config_file AUDIT_BASIC_AUTH ' "$TOOLS/audit-prod.sh" | head -1 | cut -d: -f1)"
+file_line="$(grep -n 'smoke_write_auth_config AUDIT_BASIC_AUTH' "$TOOLS/audit-prod.sh" | head -1 | cut -d: -f1)"
 if [ -n "$trap_line" ] && [ -n "$file_line" ] && [ "$trap_line" -lt "$file_line" ]; then
   pass "le trap (ligne $trap_line) précède la création du fichier -K (ligne $file_line)"
 else

@@ -72,10 +72,11 @@ dead_cookie="BEARER=$(openssl rand -hex 16)"
 
 # Les en-têtes de chaque réponse, pour y lire les Set-Cookie.
 headers_file="$(mktemp)"
-trap 'rm -f "$headers_file" ${SMOKE_AUTH_CONFIG:+"$SMOKE_AUTH_CONFIG"}' EXIT
+trap 'rm -f "$headers_file"; smoke_cleanup' EXIT
 
-# La Basic Auth passe par un fichier de configuration curl en 600, jamais par un
-# argument ; un retour à la ligne y est refusé (sortie 2). Voir la bibliothèque.
+# La Basic Auth passe par un fichier de configuration curl en 600, dans un dossier
+# privé que `smoke_cleanup` retire, jamais par un argument ; un retour à la ligne y
+# est refusé (sortie 2). Voir la bibliothèque.
 SMOKE_CURL_OPTS=(-sS --connect-timeout 5 --max-time 15 -D "$headers_file")
 smoke_add_basic_auth AUDIT_BASIC_AUTH || exit 2
 

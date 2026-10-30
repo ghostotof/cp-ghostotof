@@ -215,6 +215,29 @@ fi
 run noauth "$witness_ok" "$public_ok" "$me_cleared"
 if ! grep -q -- ' -K ' "$TMP/noauth.args"; then pass "sans AUDIT_BASIC_AUTH → pas de -K"; else fail "sans auth" "args : $(cat "$TMP/noauth.args")"; fi
 
+# --- C7-6 : un SMOKE_AUTH_CONFIG hérité de l'environnement, sans AUDIT_BASIC_AUTH,
+# n'est jamais le fichier du script : le `trap` ne le supprime pas. Un fichier
+# témoin et un dossier témoin hérités survivent à la sortie, de même avec
+# AUDIT_BASIC_AUTH (le script écrit alors le sien, ailleurs).
+printf 'témoin\n' > "$TMP/herite-config"
+mkdir "$TMP/herite-dir"
+printf 'témoin\n' > "$TMP/herite-dir/curl-auth.conf"
+SMOKE_AUTH_CONFIG="$TMP/herite-config" SMOKE_AUTH_DIR="$TMP/herite-dir" run inherited "$witness_ok" "$public_ok" "$me_cleared"
+if [ "$rc" -eq 0 ] && [ -f "$TMP/herite-config" ] && [ -f "$TMP/herite-dir/curl-auth.conf" ] && ! grep -q -- ' -K ' "$TMP/inherited.args"; then
+  pass "SMOKE_AUTH_CONFIG et SMOKE_AUTH_DIR hérités, sans AUDIT_BASIC_AUTH : les témoins existent après la sortie, pas de -K"
+else
+  fail "variables héritées" "rc=$rc ; config : $([ -f "$TMP/herite-config" ] && echo présent || echo supprimé) ; dossier : $([ -f "$TMP/herite-dir/curl-auth.conf" ] && echo présent || echo supprimé)"
+fi
+printf 'témoin\n' > "$TMP/herite-config"
+printf 'témoin\n' > "$TMP/herite-dir/curl-auth.conf"
+AUDIT_BASIC_AUTH='u:p' SMOKE_AUTH_CONFIG="$TMP/herite-config" SMOKE_AUTH_DIR="$TMP/herite-dir" run inheritedauth "$witness_ok" "$public_ok" "$me_cleared"
+if [ "$rc" -eq 0 ] && [ -f "$TMP/herite-config" ] && [ -f "$TMP/herite-dir/curl-auth.conf" ] \
+   && [ "$(cat "$TMP/inheritedauth.kconfig")" = 'user = "u:p"' ]; then
+  pass "avec AUDIT_BASIC_AUTH, les témoins hérités survivent aussi : le script écrit le sien"
+else
+  fail "variables héritées avec Basic Auth" "rc=$rc ; config : $([ -f "$TMP/herite-config" ] && echo présent || echo supprimé)"
+fi
+
 # --- CR5-10 : un curl en échec (réseau, DNS, délai) sort du contrat 0/1/2 si
 # le script laisse `set -e` rendre le code de curl. Le script doit sortir 1 et
 # dire que RIEN n'a été vérifié, à chaque étape.
