@@ -176,8 +176,7 @@ paths:
     `is_granted(` string, each exemption (the MCP reader, the two CSRF guards) carrying its reason and the exact number of sites
     it covers; `ApiPlatformOperationsCarryNoSecurityTest`, which reads the **compiled** API Platform metadata — every resource, operation, parameter, link
     and property (R74) —: `security`, `securityPostDenormalize` and `securityPostValidation` of the resources and operations, a
-    parameter's or a link's `security`, a property's `security` and `securityPostDenormalize` (39 classes, 112 operations,
-    52 links, 189 properties, no parameter on 2026-10-30), so it also sees a `security:` declared in YAML or XML or merged by `api_platform.defaults`. **Seen by none
+    parameter's or a link's `security`, a property's `security` and `securityPostDenormalize`, so it also sees a `security:` declared in YAML or XML or merged by `api_platform.defaults`. **Seen by none
     (accepted, Q1 of the seventh review)**: an authorization other than an API Platform expression on a `PUBLIC_PATHS` route;
     the written justification of the `PUBLIC_PATHS` entry is what a review reads.
     Rejected: `lazy: true` (the JWT authenticator's `supports()` stays `true`), a `JWTAuthenticator` subclass, a

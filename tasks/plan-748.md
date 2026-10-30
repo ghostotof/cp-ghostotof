@@ -5092,6 +5092,8 @@ vérifie qu'il ne reste rien.
 | St7-15 | R73 |
 | Sp7-2, Sp7-3, Sp7-4 | notes d'archive, commit de ce plan |
 | Sp7-8 | R80 (la limite disparaît) |
+| Sp7-1 suite, décisions D-a, D-b de l'auteur (pendant la série) | R79b |
+| Décision 6 (`smoke_write_auth_config` appelle `smoke_cleanup` en tête) | R75 → R83 |
 
 ### Constats écartés, avec leur raison
 
