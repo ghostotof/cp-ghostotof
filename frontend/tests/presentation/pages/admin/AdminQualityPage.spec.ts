@@ -16,12 +16,7 @@ import { AdminOrderError } from '../../../../src/domain/admin/shared/errors/Admi
 import type { AdminTranslationRepository } from '../../../../src/domain/admin/translation/repositories/AdminTranslationRepository'
 import { AdminTranslationError } from '../../../../src/domain/admin/translation/errors/AdminTranslationError'
 import { expectNoAccessibilityViolation } from '../../../support/axe'
-import {
-  describedTexts,
-  LOCALE_HELP_TEXT,
-  LOCALE_LOCKED_EDITING_TEXT,
-  LOCALE_LOCKED_PROPOSAL_TEXT,
-} from '../../../support/localeLockHint'
+import { describeEntryFormLock, LOCALE_HELP_TEXT } from '../../../support/entryFormLock'
 
 const P_GROUP_ONE = '019968b0-0000-7000-8000-0000000000e1'
 const P_GROUP_TWO = '019968b0-0000-7000-8000-0000000000e2'
@@ -197,13 +192,6 @@ const LOCALE_SELECT = ['#admin-quality-principle-locale', '#admin-quality-trait-
 
 function formOf(wrapper: VueWrapper, which: number): DOMWrapper<Element> {
   return wrapper.findAll('form')[which]
-}
-
-/** Le « Annuler » du formulaire d'un contenu : la barre d'ordre du tableau porte le sien, qu'on ne vise pas ici. */
-function formCancelButton(wrapper: VueWrapper, which: number): DOMWrapper<Element> | undefined {
-  return formOf(wrapper, which)
-    .findAll('button')
-    .find((candidate) => candidate.text() === 'Annuler')
 }
 
 function translateButton(wrapper: VueWrapper, which: number): DOMWrapper<Element> {
@@ -681,112 +669,49 @@ describe('AdminQualityPage', () => {
       })
     })
 
-    // Sp7-1 (#748, R79) : la proposition est la version de l'entrée source dans l'autre langue, dans
-    // son groupe gardé. En changer la langue ferait une seconde version de la langue source dans ce
-    // groupe : le sélecteur reste verrouillé, comme en édition, et « Annuler » retire la proposition.
-    it("principe : après une proposition, la langue est verrouillée et « Annuler » la retire", async () => {
-      const { wrapper } = await mountPage()
-
-      await buttonLabelled(actionsForLine(wrapper, PRINCIPLES, "Tests d'abord"), 'Modifier').trigger('click')
-      await translateButton(wrapper, PRINCIPLES).trigger('click')
-      await flushPromises()
-
-      expect(wrapper.findAll('h2')[PRINCIPLES].text()).toBe('Ajouter un principe')
-      expect(wrapper.get(LOCALE_SELECT[PRINCIPLES]).attributes('disabled')).toBeDefined()
-      expect(formCancelButton(wrapper, PRINCIPLES)).toBeDefined()
-
-      await formCancelButton(wrapper, PRINCIPLES)?.trigger('click')
-      await flushPromises()
-
-      expect(formOf(wrapper, PRINCIPLES).find('[role="status"]').exists()).toBe(false)
-      expect(wrapper.get(LOCALE_SELECT[PRINCIPLES]).attributes('disabled')).toBeUndefined()
-      expect(valueOf(wrapper, LOCALE_SELECT[PRINCIPLES])).toBe('fr')
-      expect(valueOf(wrapper, '#admin-quality-principle-translation-group')).toBe('')
-      expect(valueOf(wrapper, '#admin-quality-principle-title')).toBe('')
-      expect(wrapper.findAll('h2')[PRINCIPLES].text()).toBe('Ajouter un principe')
-      expect(formCancelButton(wrapper, PRINCIPLES)).toBeUndefined()
+    // Les quatre cas du verrou de la langue, avec l'aide permanente (#582) : écrits une fois pour les huit
+    // formulaires dans `tests/support/entryFormLock.ts` (#748, R91). Sp7-1 : la proposition est la version
+    // de l'entrée source dans l'autre langue, dans son groupe gardé ; « Annuler » la retire.
+    describeEntryFormLock({
+      name: 'principe',
+      mount: async () => (await mountPage()).wrapper,
+      form: PRINCIPLES,
+      ids: {
+        locale: 'admin-quality-principle-locale',
+        group: 'admin-quality-principle-translation-group',
+        title: 'admin-quality-principle-title',
+        hint: 'admin-quality-principle-locale-locked-help',
+      },
+      heading: 'Ajouter un principe',
+      permanentHelp: LOCALE_HELP_TEXT,
+      startEdit: async (wrapper) => {
+        await buttonLabelled(actionsForLine(wrapper, PRINCIPLES, "Tests d'abord"), 'Modifier').trigger('click')
+      },
+      propose: async (wrapper) => {
+        await translateButton(wrapper, PRINCIPLES).trigger('click')
+        await flushPromises()
+      },
     })
 
-    it("trait : après une proposition, la langue est verrouillée et « Annuler » la retire", async () => {
-      const translation = createTranslationRepository(TRANSLATED_TRAIT)
-      const { wrapper } = await mountPage(createPrincipleRepository(), createTraitRepository(), translation)
-
-      await buttonLabelled(actionsForLine(wrapper, TRAITS, 'Documenté'), 'Modifier').trigger('click')
-      await translateButton(wrapper, TRAITS).trigger('click')
-      await flushPromises()
-
-      expect(wrapper.findAll('h2')[TRAITS].text()).toBe('Ajouter un trait')
-      expect(wrapper.get(LOCALE_SELECT[TRAITS]).attributes('disabled')).toBeDefined()
-      expect(formCancelButton(wrapper, TRAITS)).toBeDefined()
-
-      await formCancelButton(wrapper, TRAITS)?.trigger('click')
-      await flushPromises()
-
-      expect(formOf(wrapper, TRAITS).find('[role="status"]').exists()).toBe(false)
-      expect(wrapper.get(LOCALE_SELECT[TRAITS]).attributes('disabled')).toBeUndefined()
-      expect(valueOf(wrapper, LOCALE_SELECT[TRAITS])).toBe('fr')
-      expect(valueOf(wrapper, '#admin-quality-trait-translation-group')).toBe('')
-      expect(valueOf(wrapper, '#admin-quality-trait-label')).toBe('')
-      expect(wrapper.findAll('h2')[TRAITS].text()).toBe('Ajouter un trait')
-      expect(formCancelButton(wrapper, TRAITS)).toBeUndefined()
-    })
-
-    // D-a de l'auteur (#748, 2026-10-30) : le verrou de la langue est expliqué, en plus de l'aide
-    // permanente (#582) ; le texte du verrou n'est rendu que pendant lui.
-    it("principe : le verrou de la langue est expliqué en édition, et pas dans un formulaire libre", async () => {
-      const { wrapper } = await mountPage()
-
-      expect(describedTexts(wrapper, LOCALE_SELECT[PRINCIPLES])).toEqual([LOCALE_HELP_TEXT])
-      expect(wrapper.find('#admin-quality-principle-locale-locked-help').exists()).toBe(false)
-
-      await buttonLabelled(actionsForLine(wrapper, PRINCIPLES, "Tests d'abord"), 'Modifier').trigger('click')
-
-      expect(describedTexts(wrapper, LOCALE_SELECT[PRINCIPLES])).toEqual([LOCALE_HELP_TEXT, LOCALE_LOCKED_EDITING_TEXT])
-    })
-
-    it("principe : après une proposition, le verrou de la langue est expliqué et « Annuler » retire l'explication", async () => {
-      const { wrapper } = await mountPage()
-
-      await buttonLabelled(actionsForLine(wrapper, PRINCIPLES, "Tests d'abord"), 'Modifier').trigger('click')
-      await translateButton(wrapper, PRINCIPLES).trigger('click')
-      await flushPromises()
-
-      expect(describedTexts(wrapper, LOCALE_SELECT[PRINCIPLES])).toEqual([LOCALE_HELP_TEXT, LOCALE_LOCKED_PROPOSAL_TEXT])
-
-      await formCancelButton(wrapper, PRINCIPLES)?.trigger('click')
-      await flushPromises()
-
-      expect(describedTexts(wrapper, LOCALE_SELECT[PRINCIPLES])).toEqual([LOCALE_HELP_TEXT])
-      expect(wrapper.find('#admin-quality-principle-locale-locked-help').exists()).toBe(false)
-    })
-
-    // D-a de l'auteur (#748, 2026-10-30) : le verrou de la langue est expliqué, en plus de l'aide
-    // permanente (#582) ; le texte du verrou n'est rendu que pendant lui.
-    it("trait : le verrou de la langue est expliqué en édition, et pas dans un formulaire libre", async () => {
-      const { wrapper } = await mountPage(createPrincipleRepository(), createTraitRepository(), createTranslationRepository(TRANSLATED_TRAIT))
-
-      expect(describedTexts(wrapper, LOCALE_SELECT[TRAITS])).toEqual([LOCALE_HELP_TEXT])
-      expect(wrapper.find('#admin-quality-trait-locale-locked-help').exists()).toBe(false)
-
-      await buttonLabelled(actionsForLine(wrapper, TRAITS, 'Documenté'), 'Modifier').trigger('click')
-
-      expect(describedTexts(wrapper, LOCALE_SELECT[TRAITS])).toEqual([LOCALE_HELP_TEXT, LOCALE_LOCKED_EDITING_TEXT])
-    })
-
-    it("trait : après une proposition, le verrou de la langue est expliqué et « Annuler » retire l'explication", async () => {
-      const { wrapper } = await mountPage(createPrincipleRepository(), createTraitRepository(), createTranslationRepository(TRANSLATED_TRAIT))
-
-      await buttonLabelled(actionsForLine(wrapper, TRAITS, 'Documenté'), 'Modifier').trigger('click')
-      await translateButton(wrapper, TRAITS).trigger('click')
-      await flushPromises()
-
-      expect(describedTexts(wrapper, LOCALE_SELECT[TRAITS])).toEqual([LOCALE_HELP_TEXT, LOCALE_LOCKED_PROPOSAL_TEXT])
-
-      await formCancelButton(wrapper, TRAITS)?.trigger('click')
-      await flushPromises()
-
-      expect(describedTexts(wrapper, LOCALE_SELECT[TRAITS])).toEqual([LOCALE_HELP_TEXT])
-      expect(wrapper.find('#admin-quality-trait-locale-locked-help').exists()).toBe(false)
+    describeEntryFormLock({
+      name: 'trait',
+      mount: async () => (await mountPage(createPrincipleRepository(), createTraitRepository(), createTranslationRepository(TRANSLATED_TRAIT))).wrapper,
+      form: TRAITS,
+      ids: {
+        locale: 'admin-quality-trait-locale',
+        group: 'admin-quality-trait-translation-group',
+        title: 'admin-quality-trait-label',
+        hint: 'admin-quality-trait-locale-locked-help',
+      },
+      heading: 'Ajouter un trait',
+      permanentHelp: LOCALE_HELP_TEXT,
+      startEdit: async (wrapper) => {
+        await buttonLabelled(actionsForLine(wrapper, TRAITS, 'Documenté'), 'Modifier').trigger('click')
+      },
+      propose: async (wrapper) => {
+        await translateButton(wrapper, TRAITS).trigger('click')
+        await flushPromises()
+      },
     })
 
     it('affiche le message du quota en cas de 429 et laisse le formulaire intact', async () => {

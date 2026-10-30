@@ -136,8 +136,8 @@ status announcement) that a fork would silently lose:
 - **A locale selector disabled for a lock says why** (#748, R79b, D-a): `presentation/ui/admin/LocaleLockedHint.vue`
   (`admin.localeLockedEditing`, `admin.localeLockedProposal`) is rendered **only during the lock** and referenced by
   `aria-describedby` only then, after the permanent help when the selector has one (two ids); eight forms, one text
-  each. `tests/support/localeLockHint.ts` (`describedTexts()`) reads the texts an `aria-describedby` designates and
-  fails on a dangling IDREF.
+  each. `tests/support/entryFormLock.ts` (`describedTexts()`, `describeEntryFormLock()`) reads the texts an
+  `aria-describedby` designates, fails on a dangling IDREF and declares the four lock cases once for the eight forms.
 - **A me-card group spread across two categories is not signalled by the backoffice, by decision**
   (issue #573). Such a group (FR in one category, EN in another) predates #501's guard; the backend
   refuses, before any write, every write that would add a member to it or reorder one of its categories

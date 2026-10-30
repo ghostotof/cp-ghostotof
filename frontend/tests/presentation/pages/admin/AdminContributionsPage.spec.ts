@@ -13,7 +13,7 @@ import type { AdminTranslationRepository } from '../../../../src/domain/admin/tr
 import { AdminTranslationError } from '../../../../src/domain/admin/translation/errors/AdminTranslationError'
 import { AdminOrderError } from '../../../../src/domain/admin/shared/errors/AdminOrderError'
 import { expectNoAccessibilityViolation } from '../../../support/axe'
-import { describedTexts, LOCALE_LOCKED_EDITING_TEXT, LOCALE_LOCKED_PROPOSAL_TEXT } from '../../../support/localeLockHint'
+import { describeEntryFormLock } from '../../../support/entryFormLock'
 
 const GROUP_ONE = '019968b0-0000-7000-8000-000000000001'
 const GROUP_TWO = '019968b0-0000-7000-8000-000000000002'
@@ -141,11 +141,6 @@ function buttonLabelled(scope: VueWrapper | DOMWrapper<Element>, label: string):
   const button = scope.findAll('button').find((candidate) => candidate.text() === label)
   if (!button) throw new Error(`Bouton « ${label} » introuvable.`)
   return button as DOMWrapper<HTMLButtonElement>
-}
-
-/** Le « Annuler » du formulaire : la barre d'ordre du tableau porte le sien, qu'on ne vise pas ici. */
-function formCancelButton(wrapper: VueWrapper): DOMWrapper<Element> | undefined {
-  return wrapper.findAll('form button').find((candidate) => candidate.text() === 'Annuler')
 }
 
 function translateButton(wrapper: VueWrapper): DOMWrapper<Element> {
@@ -378,70 +373,26 @@ describe('AdminContributionsPage', () => {
     expect(banner.text()).toContain('FR')
   })
 
-  it("après une proposition, le sélecteur de langue est désactivé et « Annuler » est affiché", async () => {
-    const { wrapper } = await mountPage(createContributionRepository())
-
-    await buttonLabelled(actionsForLine(wrapper, "Un tableau de bord d'observabilité maison"), 'Modifier').trigger('click')
-    await translateButton(wrapper).trigger('click')
-    await flushPromises()
-
-    // Création dans la langue cible (le formulaire n'est plus en édition) : la
-    // proposition est la version de l'entrée source dans l'autre langue, dans son
-    // groupe gardé. Changer la langue en ferait une seconde version de la langue
-    // source dans ce groupe (Sp7-1) : le sélecteur reste verrouillé, comme en édition.
-    expect(wrapper.get('#admin-contribution-locale').attributes('disabled')).toBeDefined()
-    expect(wrapper.get('h2').text()).toBe('Ajouter une contribution')
-    expect(formCancelButton(wrapper)).toBeDefined()
-  })
-
-  it("« Annuler » après une proposition rend un formulaire vide, le sélecteur actif, sans avis", async () => {
-    const { wrapper } = await mountPage(createContributionRepository())
-
-    await buttonLabelled(actionsForLine(wrapper, "Un tableau de bord d'observabilité maison"), 'Modifier').trigger('click')
-    await translateButton(wrapper).trigger('click')
-    await flushPromises()
-    expect(wrapper.find('form [role="status"]').exists()).toBe(true)
-    expect(formCancelButton(wrapper)).toBeDefined()
-
-    await formCancelButton(wrapper)?.trigger('click')
-    await flushPromises()
-
-    expect(wrapper.find('form [role="status"]').exists()).toBe(false)
-    expect(wrapper.get('#admin-contribution-locale').attributes('disabled')).toBeUndefined()
-    expect(valueOf(wrapper, '#admin-contribution-locale')).toBe('fr')
-    expect(valueOf(wrapper, '#admin-contribution-translation-group')).toBe('')
-    expect(valueOf(wrapper, '#admin-contribution-title')).toBe('')
-    expect(wrapper.get('h2').text()).toBe('Ajouter une contribution')
-    expect(formCancelButton(wrapper)).toBeUndefined()
-  })
-
-  // D-a de l'auteur (#748, 2026-10-30) : un sélecteur désactivé dit pourquoi, par un texte rendu
-  // seulement pendant le verrou et désigné par `aria-describedby` (jamais une référence pendante).
-  it("le verrou de la langue est expliqué en édition, et pas dans un formulaire libre", async () => {
-    const { wrapper } = await mountPage(createContributionRepository())
-
-    expect(describedTexts(wrapper, '#admin-contribution-locale')).toEqual([])
-    expect(wrapper.find('#admin-contribution-locale-locked-help').exists()).toBe(false)
-
-    await buttonLabelled(actionsForLine(wrapper, "Un tableau de bord d'observabilité maison"), 'Modifier').trigger('click')
-
-    expect(describedTexts(wrapper, '#admin-contribution-locale')).toEqual([LOCALE_LOCKED_EDITING_TEXT])
-  })
-
-  it("après une proposition, le verrou de la langue est expliqué et « Annuler » retire l'explication", async () => {
-    const { wrapper } = await mountPage(createContributionRepository())
-
-    await buttonLabelled(actionsForLine(wrapper, "Un tableau de bord d'observabilité maison"), 'Modifier').trigger('click')
-    await translateButton(wrapper).trigger('click')
-    await flushPromises()
-
-    expect(describedTexts(wrapper, '#admin-contribution-locale')).toEqual([LOCALE_LOCKED_PROPOSAL_TEXT])
-
-    await formCancelButton(wrapper)?.trigger('click')
-    await flushPromises()
-
-    expect(describedTexts(wrapper, '#admin-contribution-locale')).toEqual([])
-    expect(wrapper.find('#admin-contribution-locale-locked-help').exists()).toBe(false)
+  // Les quatre cas du verrou (langue désactivée, « Annuler », texte du verrou) : écrits une fois pour les
+  // huit formulaires dans `tests/support/entryFormLock.ts` (#748, R91).
+  describeEntryFormLock({
+    name: '',
+    mount: async () => (await mountPage(createContributionRepository())).wrapper,
+    form: 0,
+    ids: {
+      locale: 'admin-contribution-locale',
+      group: 'admin-contribution-translation-group',
+      title: 'admin-contribution-title',
+      hint: 'admin-contribution-locale-locked-help',
+    },
+    heading: 'Ajouter une contribution',
+    startEdit: async (wrapper) => {
+      await buttonLabelled(actionsForLine(wrapper, "Un tableau de bord d'observabilité maison"), 'Modifier').trigger('click')
+    },
+    propose: async (wrapper) => {
+      await translateButton(wrapper).trigger('click')
+      await flushPromises()
+    },
   })
 
   it('enregistre la proposition comme une nouvelle entrée EN rattachée au même groupe', async () => {
