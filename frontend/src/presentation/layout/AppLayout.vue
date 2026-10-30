@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { onAccountSwitched } from '../../application/auth/useAuth'
+import { createStaleRequestGuard } from '../../application/shared/staleRequestGuard'
 import { usePortfolioContent } from '../../application/portfolio/usePortfolioContent'
 import AppHeader from './AppHeader.vue'
 import AppFooter from './AppFooter.vue'
@@ -38,13 +39,14 @@ const pageKey = ref(0)
  *
  * Deux rejeux peuvent se chevaucher (deux changements de compte rapprochés) : le routeur annule le premier dès que le
  * second démarre, et la promesse du premier se règle alors que le second court encore. Un booléen seul serait donc
- * rabattu trop tôt, page du premier compte visible. Chaque rejeu prend un **jeton** (`replayId`) : seul le dernier
- * lève le masque (#748, CR4-2).
+ * rabattu trop tôt, page du premier compte visible. Chaque rejeu prend un **jeton** du garde commun
+ * (`createStaleRequestGuard`, `application/shared/`, celui des composables : « seul le dernier appel démarré compte ») :
+ * seul le dernier lève le masque (#748, CR4-2). Pas de compteur local de plus pour la même règle (St5-11).
  */
 const isReplaying = ref(false)
 
-/** Le numéro du dernier rejeu lancé : un rejeu ne démasque la page que s'il est encore celui-là. */
-let replayId = 0
+/** Les jetons des rejeux : un rejeu ne démasque la page que s'il est encore le dernier lancé. */
+const replays = createStaleRequestGuard()
 
 /**
  * Un autre compte que celui dont la session a fini est revenu (`useAuth().onAccountSwitched`) : la session est déjà
@@ -55,7 +57,7 @@ let replayId = 0
  * que la garde va refuser.
  */
 onAccountSwitched(() => {
-  const mine = ++replayId
+  const mine = replays.begin()
   isReplaying.value = true
   void replayNavigation(mine)
 })
@@ -71,7 +73,7 @@ async function replayNavigation(mine: number): Promise<void> {
     // Dans cet ordre : la clé avance avant que la page revienne, qui est alors une instance neuve (ou celle que la
     // garde a choisie), jamais l'ancienne. Aussi en cas d'échec : la page ne reste pas masquée pour toujours.
     pageKey.value += 1
-    if (mine === replayId) {
+    if (replays.isCurrent(mine)) {
       isReplaying.value = false
     }
   }

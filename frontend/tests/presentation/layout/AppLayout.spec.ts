@@ -324,6 +324,8 @@ describe('AppLayout — un autre compte au retour', () => {
     const { wrapper, router, mounts } = await mountProtected(OTHER_SUPER)
     // Une garde retenue : le second rejeu l'atteint ; le premier, annulé par le second avant d'y arriver, règle sa
     // promesse tout de suite — c'est elle qui, avec un booléen partagé, démasquait la page pendant que le second court.
+    // Ce test passe par l'annulation réelle de vue-router (le déclencheur réel) et en dépend ; le suivant épingle le
+    // jeton sans le routeur.
     let release: () => void = () => undefined
     const held = new Promise<void>((resolve) => {
       release = resolve
@@ -339,6 +341,36 @@ describe('AppLayout — un autre compte au retour', () => {
     release()
     await flushPromises()
 
+    expect(wrapper.find('[data-testid="counted-page"]').exists()).toBe(true)
+    expect(mounts.count).toBe(2)
+  })
+
+  it("deux rejeux : le premier réglé pendant que le second court ne démasque pas la page (sans dépendre du routeur)", async () => {
+    const { wrapper, router, mounts } = await mountProtected(OTHER_SUPER)
+    // Le routeur est remplacé par deux promesses retenues, réglées à la main : l'ordre des règlements ne tient plus au
+    // moment où vue-router annule la première navigation (le test précédent, lui, passe par cette annulation réelle).
+    const settle: Array<() => void> = []
+    vi.spyOn(router, 'replace').mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          settle.push(resolve)
+        }),
+    )
+
+    notifyAccountSwitched()
+    notifyAccountSwitched()
+    await flushPromises()
+    expect(settle).toHaveLength(2)
+    expect(wrapper.find('[data-testid="counted-page"]').exists()).toBe(false)
+
+    // Le premier rejeu se règle alors que le second court : un jeton périmé ne lève pas le masque.
+    settle[0]()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="counted-page"]').exists()).toBe(false)
+
+    // Le dernier règle : la page revient, remontée (la clé a avancé à chaque règlement).
+    settle[1]()
+    await flushPromises()
     expect(wrapper.find('[data-testid="counted-page"]').exists()).toBe(true)
     expect(mounts.count).toBe(2)
   })
