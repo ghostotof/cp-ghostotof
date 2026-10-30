@@ -132,7 +132,7 @@ fi
 # Auth derrière. Lu sur le source : aucune exécution ne tombe dans cette fenêtre
 # d'un instant, mais l'ordre des deux lignes est exactement ce qui la ferme.
 trap_line="$(grep -n "^  trap '.*' EXIT" "$TOOLS/audit-prod.sh" | head -1 | cut -d: -f1)"
-file_line="$(grep -n 'smoke_auth_config_file "' "$TOOLS/audit-prod.sh" | head -1 | cut -d: -f1)"
+file_line="$(grep -n 'smoke_auth_config_file AUDIT_BASIC_AUTH ' "$TOOLS/audit-prod.sh" | head -1 | cut -d: -f1)"
 if [ -n "$trap_line" ] && [ -n "$file_line" ] && [ "$trap_line" -lt "$file_line" ]; then
   pass "le trap (ligne $trap_line) précède la création du fichier -K (ligne $file_line)"
 else

@@ -52,22 +52,17 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/smoke-http.sh" || {
   exit 2
 }
 
-SMOKE_CURL_BIN="${SMOKE_CURL:-curl}"
 attempts=6
 username="smoke-throttling-probe-$(date +%s)-$$"
 
 # Les en-têtes de chaque réponse, pour y lire Retry-After.
 headers_file="$(mktemp)"
-auth_config=""
-trap 'rm -f "$headers_file" ${auth_config:+"$auth_config"}' EXIT
+trap 'rm -f "$headers_file" ${SMOKE_AUTH_CONFIG:+"$SMOKE_AUTH_CONFIG"}' EXIT
 
 # La Basic Auth passe par un fichier de configuration curl en 600, jamais par un
 # argument ; un retour à la ligne y est refusé (sortie 2). Voir la bibliothèque.
 SMOKE_CURL_OPTS=(-sS --connect-timeout 5 --max-time 15 -D "$headers_file")
-if [ -n "${AUDIT_BASIC_AUTH:-}" ]; then
-  auth_config="$(smoke_auth_config_file "$AUDIT_BASIC_AUTH")" || exit 2
-  SMOKE_CURL_OPTS+=(-K "$auth_config")
-fi
+smoke_add_basic_auth AUDIT_BASIC_AUTH || exit 2
 
 # Le `detail` littéral de LoginRateLimitExceededException (backend) : le
 # second discriminant face à la zone nginx, dont le 429 dit « Trop de
@@ -77,14 +72,6 @@ app_detail='"detail":"Trop de tentatives de connexion.'
 # nginx non — les deux formes valent le même JSON. ERE de bash, pas de grep :
 # portable, et sans pipe que `pipefail` ferait échouer sur un SIGPIPE.
 type_pattern='"type":"(\\)?/errors(\\)?/rate-limited"'
-
-# Valeur d'un en-tête de la dernière réponse : nom insensible à la casse
-# (HTTP/2 l'écrit en minuscules), CR retiré, dernière occurrence.
-header() {
-  tr -d '\r' < "$headers_file" | awk -v name="$1" '
-    tolower(substr($0, 1, length(name) + 1)) == tolower(name) ":" { sub(/^[^:]*:[[:space:]]*/, ""); value = $0 }
-    END { print value }'
-}
 
 throttled_at=0
 for attempt in $(seq 1 "$attempts"); do
@@ -105,8 +92,8 @@ for attempt in $(seq 1 "$attempts"); do
   excerpt="$(smoke_excerpt "$body")"
 
   if [ "$status" = "429" ]; then
-    retry_after="$(header Retry-After)"
-    content_type="$(header Content-Type)"
+    retry_after="$(smoke_header "$headers_file" Retry-After)"
+    content_type="$(smoke_header "$headers_file" Content-Type)"
     if [ -z "$retry_after" ]; then
       echo "tentative $attempt : 429 sans Retry-After — c'est la zone nginx \`login\`, pas le login_throttling de l'application, et il ne prouve rien sur l'état des limiteurs (corps : $excerpt)" >&2
       exit 1

@@ -17,16 +17,17 @@
 #
 # Sortie : 0 si tous les hôtes passent, 1 si l'un échoue (une annotation
 # `::error::` par hôte en échec, lisible dans le résumé du run), 2 si les
-# arguments sont invalides ou la bibliothèque introuvable.
+# arguments sont invalides ou la bibliothèque introuvable ou invalide.
 # ---------------------------------------------------------------------------
 set -uo pipefail   # pas de -e : un hôte en échec n'empêche pas de contrôler les suivants
 
 # Sans -e, un `source` en échec ne s'arrête pas : chaque appel finirait en
 # « command not found », FAILURES resterait à 0 et le run serait vert sans
-# avoir rien contrôlé.
+# avoir rien contrôlé. Le stderr du `source` reste visible : une erreur de syntaxe
+# de la bibliothèque s'y lit, au lieu de se cacher sous « introuvable » (#748, C6-7).
 # shellcheck source=tools/lib/tls-certificate.sh
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/tls-certificate.sh" 2> /dev/null || {
-  echo "bibliothèque introuvable : tools/lib/tls-certificate.sh" >&2
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/tls-certificate.sh" || {
+  echo "bibliothèque introuvable ou invalide : tools/lib/tls-certificate.sh" >&2
   exit 2
 }
 

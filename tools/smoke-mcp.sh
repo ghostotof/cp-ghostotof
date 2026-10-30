@@ -68,7 +68,6 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/smoke-http.sh" || {
 
 endpoint="$base/api/mcp"
 
-SMOKE_CURL_BIN="${SMOKE_CURL:-curl}"
 # Bien au-delà de la rafale d'un pod (20) et du taux rechargé pendant la
 # boucle, bien en deçà de la rafale de `publicapi` (200).
 MAX_REQUESTS=120
@@ -87,24 +86,12 @@ MODERN_VERSION='2026-07-28'
 
 headers_file="$(mktemp)"
 body_file="$(mktemp)"
-auth_config=""
-trap 'rm -f "$headers_file" "$body_file" ${auth_config:+"$auth_config"}' EXIT
+trap 'rm -f "$headers_file" "$body_file" ${SMOKE_AUTH_CONFIG:+"$SMOKE_AUTH_CONFIG"}' EXIT
 
 # La Basic Auth passe par un fichier de configuration curl en 600, jamais par un
 # argument ; un retour à la ligne y est refusé (sortie 2). Voir la bibliothèque.
 SMOKE_CURL_OPTS=(-sS --connect-timeout 5 --max-time 15 -D "$headers_file")
-if [ -n "${AUDIT_BASIC_AUTH:-}" ]; then
-  auth_config="$(smoke_auth_config_file "$AUDIT_BASIC_AUTH")" || exit 2
-  SMOKE_CURL_OPTS+=(-K "$auth_config")
-fi
-
-# Valeur d'un en-tête de la dernière réponse : nom insensible à la casse
-# (HTTP/2 l'écrit en minuscules), CR retiré, dernière occurrence.
-header() {
-  tr -d '\r' < "$headers_file" | awk -v name="$1" '
-    tolower(substr($0, 1, length(name) + 1)) == tolower(name) ":" { sub(/^[^:]*:[[:space:]]*/, ""); value = $0 }
-    END { print value }'
-}
+smoke_add_basic_auth AUDIT_BASIC_AUTH || exit 2
 
 # request <étape> <méthode> <en-têtes curl…> : remplit `status` et `body`.
 # Un curl en échec (délai, connexion coupée) arrête le smoke en nommant l'étape.
@@ -133,7 +120,7 @@ if [ "$status" != "200" ]; then
   echo "initialize : $status reçu, 200 attendu (corps : $excerpt)" >&2
   exit 1
 fi
-session_id="$(header Mcp-Session-Id)"
+session_id="$(smoke_header "$headers_file" Mcp-Session-Id)"
 if [ -z "$session_id" ]; then
   echo "initialize : 200 sans en-tête Mcp-Session-Id, le handshake n'a pas abouti (corps : $excerpt)" >&2
   exit 1
@@ -184,7 +171,7 @@ for attempt in $(seq 1 "$SESSION_MAX_REQUESTS"); do
   fi
 done
 if [ -n "$session_counted" ]; then
-  content_type="$(header Content-Type)"
+  content_type="$(smoke_header "$headers_file" Content-Type)"
   if [[ "$content_type" != application/problem+json* || "$body" != *'"type":"/errors/rate-limited"'* ]]; then
     echo "ping sous « Mcp-Session-Id: 0 », requête $((session_counted + 1)) : 429 en « $content_type », application/problem+json /errors/rate-limited attendu — pas le refus d'une zone nginx (corps : $excerpt)" >&2
     exit 1
@@ -214,7 +201,7 @@ for attempt in $(seq 1 "$MAX_REQUESTS"); do
   request "saturation, requête $attempt" GET -H 'Accept: text/event-stream'
 
   if [ "$status" = "429" ]; then
-    content_type="$(header Content-Type)"
+    content_type="$(smoke_header "$headers_file" Content-Type)"
     if [[ "$content_type" != application/problem+json* ]]; then
       echo "requête $attempt : 429 en « $content_type », application/problem+json attendu — l'error_page @rate_limited ne s'applique pas (corps : $excerpt)" >&2
       exit 1

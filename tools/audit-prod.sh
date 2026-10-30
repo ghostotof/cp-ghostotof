@@ -57,7 +57,7 @@ if [ -n "${AUDIT_BASIC_AUTH:-}" ]; then
     exit 2
   }
   trap 'rm -f "${CURL_AUTH_CONFIG:-}"' EXIT
-  CURL_AUTH_CONFIG="$(smoke_auth_config_file "$AUDIT_BASIC_AUTH")" || exit 2
+  CURL_AUTH_CONFIG="$(smoke_auth_config_file AUDIT_BASIC_AUTH "$AUDIT_BASIC_AUTH")" || exit 2
   CURL_OPTS+=(-K "$CURL_AUTH_CONFIG")
 fi
 DIG_TIMEOUT=(+time=3 +tries=1)

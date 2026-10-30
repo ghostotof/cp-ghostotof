@@ -3,7 +3,7 @@
 # smoke-http.test.sh
 # ---------------------------------------------------------------------------
 # Test hors ligne de tools/lib/smoke-http.sh (smoke_auth_config_file,
-# smoke_excerpt, smoke_fetch) : un faux `curl` rejoue une réponse canned et note
+# smoke_add_basic_auth, smoke_header, smoke_excerpt, smoke_fetch) : un faux `curl` rejoue une réponse canned et note
 # ses arguments, aucun appel réseau, aucune écriture dans le dépôt courant.
 # Les scripts qui sourcent la bibliothèque ont chacun leur test (le contrat de
 # leurs sorties) ; celui-ci épingle ce que la bibliothèque promet seule.
@@ -36,7 +36,7 @@ else
 fi
 
 # --- smoke_auth_config_file : le fichier -K, échappé au format de curl, en 600.
-config="$(smoke_auth_config_file 'u:p"a\b')"
+config="$(smoke_auth_config_file AUDIT_BASIC_AUTH 'u:p"a\b')"
 if [ "$(cat "$config")" = 'user = "u:p\"a\\b"' ] && [ "$(stat -c %a "$config")" = "600" ]; then
   pass "smoke_auth_config_file : user = \"u:p\\\"a\\\\b\", mode 600, chemin imprimé"
 else
@@ -48,7 +48,7 @@ rm -f "$config"
 # message sur stderr, rien sur stdout, aucun fichier, la valeur jamais citée.
 for newline_value in $'u:p\nurl = "x"' $'u:p\rurl = "x"'; do
   set +e
-  smoke_auth_config_file "$newline_value" > "$TMP/stdout" 2> "$TMP/stderr"
+  smoke_auth_config_file AUDIT_BASIC_AUTH "$newline_value" > "$TMP/stdout" 2> "$TMP/stderr"
   rc=$?
   set -e
   if [ "$rc" -eq 2 ] && grep -q 'AUDIT_BASIC_AUTH contient un retour à la ligne' "$TMP/stderr" \
@@ -59,6 +59,82 @@ for newline_value in $'u:p\nurl = "x"' $'u:p\rurl = "x"'; do
     fail "smoke_auth_config_file : retour à la ligne" "rc=$rc ; stderr : $(cat -A "$TMP/stderr") ; fichiers : $(ls -A "$TMP/tmpdir")"
   fi
 done
+
+# --- C6-9 : le refus nomme la variable reçue, pas une variable écrite en dur.
+set +e
+smoke_auth_config_file AUTRE_VAR $'a\nb' > "$TMP/stdout" 2> "$TMP/stderr"
+rc=$?
+set -e
+if [ "$rc" -eq 2 ] && grep -q '^AUTRE_VAR contient un retour à la ligne' "$TMP/stderr" \
+   && ! grep -q 'AUDIT_BASIC_AUTH' "$TMP/stderr" && [ -z "$(ls -A "$TMP/tmpdir")" ]; then
+  pass "smoke_auth_config_file : le refus nomme la variable reçue (AUTRE_VAR), aucun fichier"
+else
+  fail "smoke_auth_config_file : nom de la variable" "rc=$rc ; stderr : $(cat -A "$TMP/stderr")"
+fi
+
+# --- smoke_add_basic_auth <nom de variable> : variable vide ou absente, rien ;
+# posée, `-K <fichier>` dans SMOKE_CURL_OPTS et SMOKE_AUTH_CONFIG pour le trap.
+# Appelée dans le shell courant (pas de sous-shell : elle pose des variables).
+# `set -u` est actif : une variable absente ne doit pas faire échouer `${!nom}`.
+unset SMOKE_AUTH_CONFIG
+SMOKE_CURL_OPTS=(-sS)
+unset UNE_AUTH
+rc=0
+smoke_add_basic_auth UNE_AUTH || rc=$?
+if [ "$rc" -eq 0 ] && [ "${#SMOKE_CURL_OPTS[@]}" -eq 1 ] && [ -z "${SMOKE_AUTH_CONFIG:-}" ] \
+   && [ -z "$(ls -A "$TMP/tmpdir")" ]; then
+  pass "smoke_add_basic_auth : variable absente → rien ajouté, aucun fichier"
+else
+  fail "smoke_add_basic_auth (absente)" "rc=$rc ; options : ${SMOKE_CURL_OPTS[*]} ; fichiers : $(ls -A "$TMP/tmpdir")"
+fi
+UNE_AUTH=""
+rc=0
+smoke_add_basic_auth UNE_AUTH || rc=$?
+if [ "$rc" -eq 0 ] && [ "${#SMOKE_CURL_OPTS[@]}" -eq 1 ] && [ -z "${SMOKE_AUTH_CONFIG:-}" ] \
+   && [ -z "$(ls -A "$TMP/tmpdir")" ]; then
+  pass "smoke_add_basic_auth : variable vide → rien ajouté, aucun fichier"
+else
+  fail "smoke_add_basic_auth (vide)" "rc=$rc ; options : ${SMOKE_CURL_OPTS[*]} ; fichiers : $(ls -A "$TMP/tmpdir")"
+fi
+UNE_AUTH='u:p'
+rc=0
+smoke_add_basic_auth UNE_AUTH || rc=$?
+if [ "$rc" -eq 0 ] && [ "${#SMOKE_CURL_OPTS[@]}" -eq 3 ] && [ "${SMOKE_CURL_OPTS[1]}" = "-K" ] \
+   && [ "${SMOKE_CURL_OPTS[2]}" = "$SMOKE_AUTH_CONFIG" ] && [ "$(cat "$SMOKE_AUTH_CONFIG")" = 'user = "u:p"' ] \
+   && [ "$(stat -c %a "$SMOKE_AUTH_CONFIG")" = "600" ]; then
+  pass "smoke_add_basic_auth : variable posée → -K <fichier> en 600 et SMOKE_AUTH_CONFIG"
+else
+  fail "smoke_add_basic_auth (posée)" "rc=$rc ; options : ${SMOKE_CURL_OPTS[*]} ; config : ${SMOKE_AUTH_CONFIG:-}"
+fi
+rm -f "$SMOKE_AUTH_CONFIG"
+# Un retour à la ligne : retour 2, le message nomme la variable, aucune option
+# ajoutée, SMOKE_AUTH_CONFIG vide (le trap de l'appelant n'a rien à supprimer).
+SMOKE_CURL_OPTS=(-sS)
+# Lue par smoke_add_basic_auth, par indirection (${!nom}).
+# shellcheck disable=SC2034
+UNE_AUTH=$'u:p\nurl = "x"'
+set +e
+smoke_add_basic_auth UNE_AUTH > "$TMP/stdout" 2> "$TMP/stderr"
+rc=$?
+set -e
+if [ "$rc" -eq 2 ] && grep -q '^UNE_AUTH contient un retour à la ligne' "$TMP/stderr" \
+   && [ "${#SMOKE_CURL_OPTS[@]}" -eq 1 ] && [ -z "${SMOKE_AUTH_CONFIG:-}" ] && [ -z "$(ls -A "$TMP/tmpdir")" ]; then
+  pass "smoke_add_basic_auth : retour à la ligne → retour 2, la variable est nommée, rien ajouté"
+else
+  fail "smoke_add_basic_auth (retour à la ligne)" "rc=$rc ; stderr : $(cat -A "$TMP/stderr") ; options : ${SMOKE_CURL_OPTS[*]}"
+fi
+unset UNE_AUTH SMOKE_AUTH_CONFIG
+
+# --- smoke_header <fichier> <nom> : nom insensible à la casse, CR retiré,
+# dernière occurrence ; un en-tête absent donne une valeur vide.
+printf 'HTTP/2 429\r\nretry-after: 12\r\nContent-Type: text/plain\r\nRETRY-AFTER: 30\r\n\r\n' > "$TMP/headers"
+if [ "$(smoke_header "$TMP/headers" Retry-After)" = "30" ] \
+   && [ "$(smoke_header "$TMP/headers" content-type)" = "text/plain" ] \
+   && [ -z "$(smoke_header "$TMP/headers" X-Absent)" ]; then
+  pass "smoke_header : nom sans casse, CR retiré, dernière occurrence, absent → vide"
+else
+  fail "smoke_header" "retry-after : $(smoke_header "$TMP/headers" Retry-After | cat -A) ; content-type : $(smoke_header "$TMP/headers" content-type | cat -A)"
+fi
 
 # --- smoke_excerpt : caractères de contrôle en espaces, 160 caractères.
 excerpt="$(smoke_excerpt $'<html>\r::error::forge\033[31m</html>')"
@@ -86,7 +162,7 @@ chmod +x "$TMP/curl"
 export FAKE_ARGS="$TMP/args"
 : > "$FAKE_ARGS"
 
-SMOKE_CURL_BIN="$TMP/curl"
+SMOKE_CURL="$TMP/curl"
 SMOKE_CURL_OPTS=(-sS --max-time 15)
 
 SMOKE_STATUS=""; SMOKE_BODY=""
@@ -118,15 +194,15 @@ for curl_code in 6 7 28; do
   fi
 done
 
-# --- Sans SMOKE_CURL_BIN, c'est `curl` du PATH : le faux est placé en tête.
+# --- Sans SMOKE_CURL, c'est `curl` du PATH : le faux est placé en tête.
 mkdir "$TMP/bin"; cp "$TMP/curl" "$TMP/bin/curl"
-unset SMOKE_CURL_BIN
+unset SMOKE_CURL
 rc=0
 PATH="$TMP/bin:$PATH" smoke_fetch "GET /y" https://example.invalid/y || rc=$?
 if [ "$rc" -eq 0 ] && [ "$SMOKE_STATUS" = "200" ]; then
-  pass "smoke_fetch : SMOKE_CURL_BIN absent → curl du PATH"
+  pass "smoke_fetch : SMOKE_CURL absent → curl du PATH"
 else
-  fail "smoke_fetch sans SMOKE_CURL_BIN" "rc=$rc ; statut : $SMOKE_STATUS"
+  fail "smoke_fetch sans SMOKE_CURL" "rc=$rc ; statut : $SMOKE_STATUS"
 fi
 
 echo

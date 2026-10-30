@@ -63,7 +63,6 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/smoke-http.sh" || {
   exit 2
 }
 
-SMOKE_CURL_BIN="${SMOKE_CURL:-curl}"
 public_path="/api/contributions/fr"
 protected_path="/api/me"
 
@@ -73,16 +72,12 @@ dead_cookie="BEARER=$(openssl rand -hex 16)"
 
 # Les en-têtes de chaque réponse, pour y lire les Set-Cookie.
 headers_file="$(mktemp)"
-auth_config=""
-trap 'rm -f "$headers_file" ${auth_config:+"$auth_config"}' EXIT
+trap 'rm -f "$headers_file" ${SMOKE_AUTH_CONFIG:+"$SMOKE_AUTH_CONFIG"}' EXIT
 
 # La Basic Auth passe par un fichier de configuration curl en 600, jamais par un
 # argument ; un retour à la ligne y est refusé (sortie 2). Voir la bibliothèque.
 SMOKE_CURL_OPTS=(-sS --connect-timeout 5 --max-time 15 -D "$headers_file")
-if [ -n "${AUDIT_BASIC_AUTH:-}" ]; then
-  auth_config="$(smoke_auth_config_file "$AUDIT_BASIC_AUTH")" || exit 2
-  SMOKE_CURL_OPTS+=(-K "$auth_config")
-fi
+smoke_add_basic_auth AUDIT_BASIC_AUTH || exit 2
 
 # Les valeurs de tous les en-têtes Set-Cookie de la dernière réponse : nom
 # insensible à la casse (HTTP/2 l'écrit en minuscules), CR retiré.

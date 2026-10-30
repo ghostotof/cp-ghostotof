@@ -242,8 +242,9 @@ paths:
   **chain**, from `s_client`'s last `Verify return code` against the default trust store (a certificate of
   Let's Encrypt's staging CA, or a missing intermediate, has the right name and expiry). An unreadable
   certificate, an invalid threshold or a missing verification line fails, never passes. Both scripts stop
-  in 2 when a library fails to load (without `-e`, a failed `source` let the check pass, review of #719 —
-  `security-headers.sh` included). `tools/tests/tls-certificate.test.sh` (`tools-tests`) proves each verdict on
+  in 2 when a library fails to load, saying « introuvable ou invalide » with bash's own error left on stderr
+  (#748, C6-7; without `-e`, a failed `source` let the check pass, review of #719 — `security-headers.sh`
+  included). `tools/tests/tls-certificate.test.sh` (`tools-tests`) proves each verdict on
   certificates of a test CA (`openssl ca`, any start and end), and the script end to end against local
   `openssl s_server`s (`NAME@ADDRESS:PORT`, the test CA given by OpenSSL's own `SSL_CERT_FILE`); each
   measured red by mutation (chain never judged, a fixed 25 in `auto`, rounding down). **The host list is

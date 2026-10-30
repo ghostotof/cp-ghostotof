@@ -326,17 +326,36 @@ fi
 script "site.example@127.0.0.1:1"
 expect_script "port fermé → exit 1, « aucun certificat lisible »" 1 'aucun certificat lisible'
 
-# Bibliothèque introuvable : arrêt en 2, jamais un vert sans contrôle.
+# Bibliothèque introuvable : arrêt en 2, jamais un vert sans contrôle. Le message
+# dit « introuvable ou invalide » (comme les scripts de fumée, #748 C6-7) et
+# l'erreur de bash reste sur stderr.
 mkdir -p "$TMP/isole"
 cp "$SCRIPT" "$TMP/isole/check-tls-expiry.sh"
 set +e
-"$TMP/isole/check-tls-expiry.sh" site.example > "$TMP/out" 2>&1
+LC_ALL=C "$TMP/isole/check-tls-expiry.sh" site.example > "$TMP/out" 2>&1
 code="$?"
 set -e
-if [ "$code" -eq 2 ] && grep -q 'bibliothèque introuvable' "$TMP/out" && ! grep -q 'passent' "$TMP/out"; then
-  pass "bibliothèque absente → exit 2, aucun hôte contrôlé"
+if [ "$code" -eq 2 ] && grep -q 'bibliothèque introuvable ou invalide : tools/lib/tls-certificate.sh' "$TMP/out" \
+   && grep -q 'No such file' "$TMP/out" && ! grep -q 'passent' "$TMP/out"; then
+  pass "bibliothèque absente → exit 2, « introuvable ou invalide », erreur de bash visible, aucun hôte contrôlé"
 else
   fail "bibliothèque absente" "code $code ; sortie : $(cat "$TMP/out")"
+fi
+
+# Bibliothèque présente mais invalide (#748, C6-7) : même sortie 2, et l'erreur de
+# syntaxe de bash n'est plus cachée sous « introuvable ».
+mkdir -p "$TMP/invalide/lib"
+cp "$SCRIPT" "$TMP/invalide/check-tls-expiry.sh"
+printf 'if then\n' > "$TMP/invalide/lib/tls-certificate.sh"
+set +e
+LC_ALL=C "$TMP/invalide/check-tls-expiry.sh" site.example > "$TMP/out" 2>&1
+code="$?"
+set -e
+if [ "$code" -eq 2 ] && grep -q 'bibliothèque introuvable ou invalide : tools/lib/tls-certificate.sh' "$TMP/out" \
+   && grep -q 'syntax error' "$TMP/out" && ! grep -q 'passent' "$TMP/out"; then
+  pass "bibliothèque invalide → exit 2, « introuvable ou invalide », erreur de syntaxe de bash visible"
+else
+  fail "bibliothèque invalide" "code $code ; sortie : $(cat "$TMP/out")"
 fi
 
 if [ "$failures" -gt 0 ]; then
