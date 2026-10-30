@@ -7,6 +7,7 @@ namespace App\Tests\Security;
 use App\Mcp\Infrastructure\Corpus\NominativeCorpusReader;
 use App\Security\Authentication\Infrastructure\Http\CsrfCookieRequestSubscriber;
 use App\Security\Authentication\Infrastructure\Http\LoginCsrfRequestListener;
+use App\Tests\Support\AuthorizationSiteKind;
 use App\Tests\Support\AuthorizationSites;
 use App\Tests\Support\PhpSources;
 use App\Tests\Support\RepositoryFiles;
@@ -42,30 +43,36 @@ use PHPUnit\Framework\TestCase;
  * (le recensement d'un code qui ne trouverait jamais rien rendrait le premier test vert sans
  * rien garder).
  *
- * Non vus, limite assumée : un appel dynamique (`$security->{$method}()`), une sous-classe des
- * trois exceptions, une autorisation posée par le vendor ou par la configuration (ce que
- * `access_control` est, justement), un `isGranted()` d'un autre objet que la sécurité, homonyme :
- * le renommer.
+ * Ce que le détecteur ne voit pas, limite assumée (aucun élargissement, décision 1 de la
+ * septième relecture) : la liste est dans le docblock d'{@see AuthorizationSites}, avec le renvoi
+ * au contrôle à l'exécution (invariant n° 9 d'`ApiRouteExposureTest`) qui voit ces formes sur une
+ * route hors de `PUBLIC_PATHS`.
  */
 final class AuthorizationLivesInAccessControlTest extends TestCase
 {
     /**
      * Les fichiers qui portent des sites sans que ce soit l'autorisation d'une route de `/api`.
      *
+     * Une exemption compte les sites **par nature et par fichier**, pas site par site (C7-13) : un
+     * site déplacé dans le fichier exempté, ou remplacé par un autre de même nature, reste couvert.
+     *
      * @var array<class-string, array{string, array<string, int>}> classe => [raison, nature => nombre exact de sites]
      */
     private const array EXEMPTIONS = [
         NominativeCorpusReader::class => [
-            'Pare-feu `mcp`, pas `api` : le connecteur MCP juge le palier de la connexion, qu\'aucune règle d\'`access_control` de `/api/mcp` ne peut exprimer (le jeton est opaque, vérifié en base).',
-            ['isGranted' => 1],
+            'Pare-feu `mcp`, pas `api` : le connecteur MCP juge le palier de la connexion, '
+            .'qu\'aucune règle d\'`access_control` de `/api/mcp` ne peut exprimer (le jeton est opaque, vérifié en base).',
+            [AuthorizationSiteKind::IsGrantedCall->value => 1],
         ],
         CsrfCookieRequestSubscriber::class => [
-            'Garde du double-submit, priorité 20, avant le pare-feu : son 403 refuse une écriture sans jeton CSRF valide, il n\'autorise aucune route.',
-            ['refusal' => 2],
+            'Garde du double-submit, priorité 20, avant le pare-feu : '
+            .'son 403 refuse une écriture sans jeton CSRF valide, il n\'autorise aucune route.',
+            [AuthorizationSiteKind::Refusal->value => 2],
         ],
         LoginCsrfRequestListener::class => [
-            'Garde du login-CSRF, priorité 20, avant le pare-feu : son 403 refuse une requête sans `X-Requested-With`, il n\'autorise aucune route.',
-            ['refusal' => 1],
+            'Garde du login-CSRF, priorité 20, avant le pare-feu : '
+            .'son 403 refuse une requête sans `X-Requested-With`, il n\'autorise aucune route.',
+            [AuthorizationSiteKind::Refusal->value => 1],
         ],
     ];
 
@@ -76,10 +83,10 @@ final class AuthorizationLivesInAccessControlTest extends TestCase
             $exempted = $this->exemptedKindsOf($path);
             $seen = [];
             foreach (AuthorizationSites::in(RepositoryFiles::read($path)) as [$line, $kind]) {
-                $seen[$kind] = ($seen[$kind] ?? 0) + 1;
+                $seen[$kind->value] = ($seen[$kind->value] ?? 0) + 1;
                 // Une exemption couvre un nombre exact de sites : le suivant est un site de trop.
-                if ($seen[$kind] > ($exempted[$kind] ?? 0)) {
-                    $found[] = $path.':'.$line.' ('.$kind.')';
+                if ($seen[$kind->value] > ($exempted[$kind->value] ?? 0)) {
+                    $found[] = $path.':'.$line.' ('.$kind->value.')';
                 }
             }
         }
@@ -87,14 +94,15 @@ final class AuthorizationLivesInAccessControlTest extends TestCase
         self::assertSame(
             [],
             $found,
-            'Une autorisation de /api est une règle d\'access_control de security.yaml, jamais un #[IsGranted], un denyAccessUnlessGranted, '
-            .'un `security:` d\'API Platform, un isGranted(), un refus levé à la main ou un AccessDecisionManagerInterface : '
+            'Une autorisation de /api est une règle d\'access_control de security.yaml, '
+            .'jamais un #[IsGranted], un denyAccessUnlessGranted, un `security:` d\'API Platform, un isGranted(), '
+            .'un refus levé à la main ou un AccessDecisionManagerInterface : '
             .'PublicRouteIgnoresRefusedSessionListener tient « route publique = route sans règle ». Voir le docblock de ce test.',
         );
     }
 
     /**
-     * @param list<array{int, string}> $expected ligne et nature de chaque site
+     * @param list<array{int, AuthorizationSiteKind}> $expected ligne et nature de chaque site
      */
     #[DataProvider('formsTheDetectorSees')]
     public function testTheDetectorSeesEachForm(string $code, array $expected): void
@@ -103,29 +111,86 @@ final class AuthorizationLivesInAccessControlTest extends TestCase
     }
 
     /**
-     * @return iterable<string, array{string, list<array{int, string}>}>
+     * @return iterable<string, array{string, list<array{int, AuthorizationSiteKind}>}>
      */
     public static function formsTheDetectorSees(): iterable
     {
-        yield 'attribut, nom court' => ["<?php\n#[IsGranted('X')]\nfinal class A {}\n", [[2, 'IsGranted']]];
-        yield 'attribut, nom complet' => ["<?php\n#[\\Symfony\\Component\\Security\\Http\\Attribute\\IsGranted('X')]\nfinal class A {}\n", [[2, 'IsGranted']]];
-        yield 'import de l\'attribut' => ["<?php\nuse Symfony\\Component\\Security\\Http\\Attribute\\IsGranted;\n", [[2, 'IsGranted']]];
-        yield 'denyAccessUnlessGranted' => ["<?php\n\$this->denyAccessUnlessGranted('X');\n", [[2, 'denyAccessUnlessGranted']]];
-        yield 'security: d\'API Platform' => ["<?php\n\$a = new Get(security: \"x\");\n", [[2, 'security:']]];
-        yield 'securityPostDenormalize:' => ["<?php\n\$a = new Put(securityPostDenormalize: \"x\");\n", [[2, 'security:']]];
-        yield 'securityPostValidation: après un autre argument' => ["<?php\n\$a = new Put(uriTemplate: '/x', securityPostValidation: \"x\");\n", [[2, 'security:']]];
-        yield 'appel ->isGranted(' => ["<?php\n\$security->isGranted('X');\n", [[2, 'isGranted']]];
-        yield 'appel ?->isGranted(' => ["<?php\n\$security?->isGranted('X');\n", [[2, 'isGranted']]];
-        yield 'appel statique ::isGranted(' => ["<?php\nSecurity::isGranted('X');\n", [[2, 'isGranted']]];
-        yield 'appel statique, nom complet' => ["<?php\n\\Symfony\\Bundle\\SecurityBundle\\Security::isGranted('X');\n", [[2, 'isGranted']]];
-        yield 'refus levé, AccessDeniedHttpException' => ["<?php\nthrow new AccessDeniedHttpException();\n", [[2, 'refusal']]];
-        yield 'refus levé, AccessDeniedException de nom complet' => ["<?php\nthrow new \\Symfony\\Component\\Security\\Core\\Exception\\AccessDeniedException();\n", [[2, 'refusal']]];
-        yield 'refus levé, UnauthorizedHttpException' => ["<?php\nthrow new UnauthorizedHttpException('x');\n", [[2, 'refusal']]];
-        yield 'gestionnaire de décision, propriété' => ["<?php\nfinal class A { private AccessDecisionManagerInterface \$m; }\n", [[2, 'decisionManager']]];
-        yield 'gestionnaire de décision, import' => ["<?php\nuse Symfony\\Component\\Security\\Core\\Authorization\\AccessDecisionManagerInterface;\n", [[2, 'decisionManager']]];
-        yield 'chaîne is_granted, guillemets simples' => ["<?php\n\$a = 'is_granted(\"ROLE_X\")';\n", [[2, 'is_granted']]];
-        yield 'chaîne is_granted, guillemets doubles' => ["<?php\n\$a = \"is_granted('ROLE_X')\";\n", [[2, 'is_granted']]];
-        yield 'chaîne is_granted, interpolée' => ["<?php\n\$a = \"is_granted('ROLE_X') and \$b\";\n", [[2, 'is_granted']]];
+        yield 'attribut, nom court' => [
+            "<?php\n#[IsGranted('X')]\nfinal class A {}\n",
+            [[2, AuthorizationSiteKind::IsGrantedAttribute]],
+        ];
+        yield 'attribut, nom complet' => [
+            "<?php\n#[\\Symfony\\Component\\Security\\Http\\Attribute\\IsGranted('X')]\nfinal class A {}\n",
+            [[2, AuthorizationSiteKind::IsGrantedAttribute]],
+        ];
+        yield 'import de l\'attribut' => [
+            "<?php\nuse Symfony\\Component\\Security\\Http\\Attribute\\IsGranted;\n",
+            [[2, AuthorizationSiteKind::IsGrantedAttribute]],
+        ];
+        yield 'denyAccessUnlessGranted' => [
+            "<?php\n\$this->denyAccessUnlessGranted('X');\n",
+            [[2, AuthorizationSiteKind::DenyAccessUnlessGranted]],
+        ];
+        yield 'security: d\'API Platform' => [
+            "<?php\n\$a = new Get(security: \"x\");\n",
+            [[2, AuthorizationSiteKind::SecurityArgument]],
+        ];
+        yield 'securityPostDenormalize:' => [
+            "<?php\n\$a = new Put(securityPostDenormalize: \"x\");\n",
+            [[2, AuthorizationSiteKind::SecurityArgument]],
+        ];
+        yield 'securityPostValidation: après un autre argument' => [
+            "<?php\n\$a = new Put(uriTemplate: '/x', securityPostValidation: \"x\");\n",
+            [[2, AuthorizationSiteKind::SecurityArgument]],
+        ];
+        yield 'appel ->isGranted(' => [
+            "<?php\n\$security->isGranted('X');\n",
+            [[2, AuthorizationSiteKind::IsGrantedCall]],
+        ];
+        yield 'appel ?->isGranted(' => [
+            "<?php\n\$security?->isGranted('X');\n",
+            [[2, AuthorizationSiteKind::IsGrantedCall]],
+        ];
+        yield 'appel statique ::isGranted(' => [
+            "<?php\nSecurity::isGranted('X');\n",
+            [[2, AuthorizationSiteKind::IsGrantedCall]],
+        ];
+        yield 'appel statique, nom complet' => [
+            "<?php\n\\Symfony\\Bundle\\SecurityBundle\\Security::isGranted('X');\n",
+            [[2, AuthorizationSiteKind::IsGrantedCall]],
+        ];
+        yield 'refus levé, AccessDeniedHttpException' => [
+            "<?php\nthrow new AccessDeniedHttpException();\n",
+            [[2, AuthorizationSiteKind::Refusal]],
+        ];
+        yield 'refus levé, AccessDeniedException de nom complet' => [
+            "<?php\nthrow new \\Symfony\\Component\\Security\\Core\\Exception\\AccessDeniedException();\n",
+            [[2, AuthorizationSiteKind::Refusal]],
+        ];
+        yield 'refus levé, UnauthorizedHttpException' => [
+            "<?php\nthrow new UnauthorizedHttpException('x');\n",
+            [[2, AuthorizationSiteKind::Refusal]],
+        ];
+        yield 'gestionnaire de décision, propriété' => [
+            "<?php\nfinal class A { private AccessDecisionManagerInterface \$m; }\n",
+            [[2, AuthorizationSiteKind::DecisionManager]],
+        ];
+        yield 'gestionnaire de décision, import' => [
+            "<?php\nuse Symfony\\Component\\Security\\Core\\Authorization\\AccessDecisionManagerInterface;\n",
+            [[2, AuthorizationSiteKind::DecisionManager]],
+        ];
+        yield 'chaîne is_granted, guillemets simples' => [
+            "<?php\n\$a = 'is_granted(\"ROLE_X\")';\n",
+            [[2, AuthorizationSiteKind::IsGrantedExpression]],
+        ];
+        yield 'chaîne is_granted, guillemets doubles' => [
+            "<?php\n\$a = \"is_granted('ROLE_X')\";\n",
+            [[2, AuthorizationSiteKind::IsGrantedExpression]],
+        ];
+        yield 'chaîne is_granted, interpolée' => [
+            "<?php\n\$a = \"is_granted('ROLE_X') and \$b\";\n",
+            [[2, AuthorizationSiteKind::IsGrantedExpression]],
+        ];
     }
 
     /**
@@ -161,7 +226,7 @@ final class AuthorizationLivesInAccessControlTest extends TestCase
         foreach (self::EXEMPTIONS as $class => [$reason, $expectedKinds]) {
             $found = [];
             foreach (AuthorizationSites::in(RepositoryFiles::read($this->pathOf($class))) as [, $kind]) {
-                $found[$kind] = ($found[$kind] ?? 0) + 1;
+                $found[$kind->value] = ($found[$kind->value] ?? 0) + 1;
             }
             ksort($found);
             ksort($expectedKinds);
@@ -169,7 +234,14 @@ final class AuthorizationLivesInAccessControlTest extends TestCase
             self::assertSame(
                 $expectedKinds,
                 $found,
-                \sprintf('%s est exemptée (%s) pour des sites qui ne sont plus ceux d\'EXEMPTIONS : attendu %s, trouvé %s. Ajuster le nombre ou retirer l\'entrée.', $class, $reason, json_encode($expectedKinds), json_encode($found)),
+                \sprintf(
+                    '%s est exemptée (%s) pour des sites qui ne sont plus ceux d\'EXEMPTIONS : attendu %s, trouvé %s. '
+                    .'Ajuster le nombre ou retirer l\'entrée.',
+                    $class,
+                    $reason,
+                    json_encode($expectedKinds),
+                    json_encode($found),
+                ),
             );
         }
     }
