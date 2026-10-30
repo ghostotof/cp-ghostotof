@@ -2467,6 +2467,734 @@ porté, **sans** rien changer pour une route qui exige un rôle. Faits vérifié
 
 ---
 
+## Corrections de la cinquième relecture (2026-10-30)
+
+R35 à R45 sont faites (6e4e1de4 → cce0310a). Quatre relectures du diff fc99f3b4...cce0310a (`/code-review medium`
+CR5-*, audit de sécurité C5-*, axe Standards St5-*, axe Spec Sp5-*) : aucun critique ni haut, aucun contournement.
+Constats complets et décisions : `tasks/relectures-748/relecture-5-constats.md` (la source de vérité). Tous sont traités
+ici par R46 à R58, avant les tâches 11 et 12 : corrigés, écrits comme limite, ou écartés avec leur raison (ci-dessous).
+
+### Décisions de l'auteur (2026-10-30)
+
+1. **C5-1 (= CR5-5) : limite acceptée, écrite** (R58). Q1 de la quatrième série inchangé (cookie gardé sur une route
+   publique, audit à chaque requête) ; la rafale de lignes `session-refused-after-credentials-change` d'un onglet légitime
+   est écrite dans `security-authentication-sessions.md` (bornée par la zone nginx `publicapi` et la vie de la page :
+   `/api/me` à chaque chargement efface le cookie ; un attaquant n'y gagne rien).
+2. **C5-2 (= CR5-6) : accepté et documenté** (R58 et la PR). Une lecture publique d'une personne connectée authentifie
+   (JWT vérifié et un `SELECT` du compte) : conséquence de la décision 1 de la quatrième série.
+3. **CR5-3 / CR5-4 (= Sp5-11) : un seul enregistrement par langue** (R50). Le bouton d'une langue est désactivé tant que
+   sa sauvegarde est en vol ; l'état « en cours » est tenu par langue. `lastSaveOf` (R43) est **retiré** (choix n° 5).
+4. Toujours valables : **tout jusqu'à zéro** (décision 2 de la quatrième série) ; C7 limite acceptée ; à dire dans la PR :
+   C7, Sp4-b, C5-1, C5-2 (tâche 12).
+
+### Vérification de chaque constat dans le code (HEAD 95d84fee)
+
+- **CR5-1 (= C5-3a), confirmé.** `backofficeSessionExpiry.ts:45-53` : `refused()` compte toute écriture (`refusalScope`
+  nul, `markBackofficeAccessRefused`, `backofficeAccessRefusal.ts:41-48`) ; `AccessRefusedNotice.vue:65` efface au
+  démontage, **rien au montage**. Une écriture refusée arrivée après la sortie du backoffice laisse le compteur à 1, et
+  l'alerte apparaît au prochain montage d'`AdminLayout`, sur une page sans rapport. La relecture de `/api/me` qui
+  l'accompagne n'est **pas** inutile : elle remet l'en-tête au palier que le serveur reconnaît (un compte rétrogradé), où
+  que soit la personne — elle est gardée (choix n° 1).
+- **CR5-2 (= C5-3b), confirmé, et plus large que décrit.** `refused()` ignore `sentAt.session`. Deux chemins de
+  changement de compte : le retour après une session finie (`restoreSession`, qui avance la génération) et un autre
+  compte lu **hors** session finie (`applyLiveSession`, `sessionLifecycle.ts:77-83`, qui **n'avance pas** la génération) ;
+  sur le second, un contrôle de génération dans `refused()` ne suffirait pas. Corrigé par les deux (R48, choix n° 2).
+- **St5-1, confirmé.** `sessionLifecycle.ts:42-43` (« **La** descente de `sessionEnded` ») alors que `markBaseAccessGranted`
+  la baisse aussi (R41) ; `sessionState.ts:111-114` (`applySession` : « `markSessionExpired`, … `restoreSession`, qui
+  seuls jugent… ») ignore la seconde descente.
+- **CR5-7 (= C5-5), confirmé, et plus large.** `router/index.ts:213-218` : `await waitForAuthCheck()` sans borne ;
+  `HttpAuthRepository.me()` (l. 73-76) n'a ni délai ni `AbortSignal`. Vu en vérifiant : le garde des routes protégées
+  attend de même, et un `me()` qui pend tient aussi **pour toujours** l'emplacement `singleFlight` de
+  `recheckEndedSession` et de `rereadAfterRefusal` (chaque relecture suivante rend la même promesse en attente). La borne
+  se pose donc sur `me()`, pas sur la seule route `login` (R49, choix n° 4).
+- **CR5-8 (= St5-14), confirmé pour le docblock, faux en pratique pour l'ordre.** vue-router tient pour **doublon** une
+  navigation dont la requête ne diffère que par l'ordre des paramètres (comparaison clé par clé) et ne l'exécute pas :
+  le `watch` d'`AccessRefusedNotice.vue:51-54` ne voit jamais `?a=1&b=2` devenir `?b=2&a=1`. Une « revisite du même
+  `fullPath` » n'est pas une navigation non plus. Reste faux : le docblock de `scope` (`backofficeAccessRefusal.ts:24`,
+  « deux visites successives de la même route sont deux périmètres »). Corrigé en R54, avec un test de caractérisation
+  (et la clé triée si ce test se révélait rouge).
+- **CR5-9 (= St5-3), confirmé.** `raiseSessionEnded`/`lowerSessionEnded` (`sessionState.ts:98,107`) sont exportés à tout
+  `src/` ; seul `sessionLifecycle.ts` les importe aujourd'hui. `sessionStateEncapsulation.spec.ts:14` dit « les trois
+  écritures » et en liste quatre noms (dont `authState`, une lecture) alors que le module en exporte six.
+- **CR5-10 (= C5-4), confirmé en partie.** `smoke-dead-session-cookie.sh:101` : sous `set -e`, un `curl` en échec dans
+  l'affectation `response="$(…)"` sort avec **le code de curl** (6, 7, 28), hors du contrat 0/1/2. « Sans message » est
+  inexact : `-sS` imprime `curl: (7) …` sur stderr ; le script n'ajoute rien qui dise ce qui n'a pas été vérifié. Même
+  motif dans `smoke-login-throttling.sh:88` et `smoke-mcp.sh` (traité par R57).
+- **Sp5-2, confirmé.** R37 a retiré `it('un échec réseau au premier essai : aucun rejeu, le rejet remonte')` et
+  `it.each([[429], [403], [500]])` ; `HttpBaseAccessRepository.spec.ts:46` et `:71` testent tous deux le 429.
+- **Sp5-1 (= C5-9), confirmé.** `ApiRouteExposureTest::testARefusedSessionCookieNeverChangesTheAnonymousAnswer` ne compare
+  que les statuts et, pour `PUBLIC_PATHS`, les noms des cookies posés ; l'effacement n'est vérifié que sur `/api/me`
+  (`RefusedSessionCookiesAreClearedTest`, `PublicRouteIgnoresRefusedSessionTest`). **Déjà couvert** : le `cv` périmé sur
+  une route publique (`SessionBeforePasswordChangeTest`, R35). Manquent : un JWT signé d'un **compte supprimé**, une
+  forme `%XX` du chemin. Ces causes ne sont pas répétées route par route : le prédicat ne lit que le chemin
+  (`AccessMapStaysPathOnlyTest`) et toutes passent par `LoginFailureEvent` ; une route publique et une protégée suffisent
+  (R46, choix n° 7).
+- **St5-2, confirmé.** `backofficeAccessRefusal.ts:20` (« avance à chaque effacement, donc à chaque navigation ») et `:15`
+  (« depuis la dernière navigation ») : depuis R38, une navigation par le seul fragment n'efface plus.
+- **St5-4, confirmé.** `frontend-session.md`, « Tests », dernière puce : « a refused cookie cleared by its first 401 ».
+- **St5-5, confirmé, et plus large.** `k8s/README.md` §2bis (l. 637 et l. 659-660) ne cite ni
+  `smoke-dead-session-cookie.sh` ni `smoke-mcp.sh`, qui lisent aussi `PREPROD_BASIC_AUTH` (`pipeline.yml:891-949`).
+- **St5-6, confirmé.** La charge du JWT expiré : `ApiRouteExposureTest:236-241`, `RefusedSessionCookiesAreClearedTest:56-61`,
+  `PublicRouteIgnoresRefusedSessionTest:190-196` ; `new Cookie(AuthCookieFactory::BEARER, …)` quatre fois (avec
+  `JwtClockSkewTest:99`) ; `PUBLIC_ROUTE`/`PROTECTED_ROUTE` copiées dans deux tests.
+- **St5-7, confirmé.** `PublicRouteIgnoresRefusedSessionTest:166` refait en une ligne `ApiRouteExposureTest::concreteUrl()`
+  (sans l'UUID valide, ici sans effet : l'`AccessMap` ne passe pas par le routeur).
+- **St5-8, confirmé, et plus large.** Le fichier `-K` est construit à l'identique dans **quatre** scripts
+  (`audit-prod.sh:43-47`, `smoke-login-throttling.sh:57-61`, `smoke-mcp.sh:85-88`, `smoke-dead-session-cookie.sh:68-72`) ;
+  l'extrait de corps dans trois ; `tools/lib/` sert déjà `security-headers.sh` et `tls-certificate.sh`.
+- **St5-9, confirmé.** Le même paragraphe de trois lignes dans les huit dépôts publics (`about`, `quality`, `incidents`,
+  `contributions`, `watch`, `experience`, `contact`, `account`).
+- **St5-10, confirmé (jugement rouvert).** `BackofficeSendStamp.refusalScope: number | null`, `null` = écriture. La
+  condition du jugement St4 (CR4-1) est remplie ; tranché au choix n° 6.
+- **St5-11, confirmé, et une réutilisation manquée trouvée.** `application/shared/staleRequestGuard.ts`
+  (`createStaleRequestGuard`, « seule la réponse du dernier appel démarré ») existe déjà et sert sept composables ;
+  `replayId` (`AppLayout.vue:47`) et `lastSaveOf` le récrivent. Tranché au choix n° 8.
+- **St5-12, confirmé.** `requiresAccess()` public, `SingleFlight.clear()` dans l'interface de production,
+  `resetBackofficeAccessRefusalForTests` dans `src/`. Tranché au choix n° 9.
+- **St5-13, confirmé.** `LoginPage.vue` : `'anonymous' === tier.value` est la négation d'`isAuthenticated`.
+- **St5-15, confirmé.** `singleFlight.ts` ne connaît rien de la session ; `application/shared/` existe.
+- **St5-16, confirmé.** `security-authentication-sessions.md:142-164` : la puce de `StaleSessionCookiesClearingListener`
+  porte aussi tout R35 ; le docblock du listener (l. 14-77) raconte l'historique (`credentials: 'omit'`, préprod).
+- **C5-6, confirmé.** Le smoke ne lit que `bearer_set_cookies` ; `XSRF-TOKEN` n'est vérifié ni à l'étape 2 (aucun posé)
+  ni à l'étape 3 (expiré aussi, `StaleSessionCookiesClearingListener` expire les deux).
+- **C5-7, confirmé, et plus large.** `printf 'user = "%s"\n'` n'échappe que `"` et `\` : un `\n` dans `AUDIT_BASIC_AUTH`
+  ouvre une seconde directive dans le fichier `-K`. Quatre copies (St5-8).
+- **C5-8, confirmé.** `smoke-dead-session-cookie.test.sh` note les arguments du faux `curl`, jamais le contenu du `-K`.
+- **C5-10, confirmé.** `noOmittedCredentials.spec.ts:28` : `/credentials:\s*['"]omit['"]/`.
+- **C5-11, confirmé.** `frontend.md` le dit (« not in dev (two) ») ; `frontend-session.md` ne dit pas que R35 n'est donc
+  exercé que par PHPUnit et le smoke de préprod.
+- **C5-12, confirmé.** Aucun `#[IsGranted]`, `denyAccessUnlessGranted`, `security:` d'API Platform dans `src/` ; un seul
+  `isGranted()`, `NominativeCorpusReader.php:66`, sur le pare-feu `mcp` (pas `api`). Rien ne garde la prémisse.
+- **C5-13, confirmé, écarté** (voir « Constats écartés »).
+- **Sp5-3, confirmé.** `AppLayout.spec.ts:323-344` : le test ne rougit sous l'ancien booléen que si vue-router annule la
+  première navigation avant la garde retenue.
+- **Sp5-4, faux pour le code, vrai pour le plan.** `BaseAccessControllerTest:225` lit `limiter.base_access` par
+  `self::getContainer()` : c'est ce que dit le docblock de `TestServiceLocator` (« Ne pas l'appeler depuis un test »).
+  Le plan de R35 avait tort ; le code est juste. Écarté.
+- **Sp5-5 à Sp5-8** : fichiers et tests hors des tables de R35 à R45, cohérents. Écartés.
+- **Sp5-9, déjà couvert** : la tâche 11 a le point « La préprod réelle, derrière sa Basic Auth » (C1 au navigateur).
+- **Sp5-10, confirmé.** `docs/adr/0003-paliers-d-acces.md:272` : « sur toute l'API authentifiée par le cookie ».
+
+### Choix de conception tranchés
+
+1. **CR5-1 : l'alerte efface au montage comme au démontage** (`onMounted(clearBackofficeAccessRefusal)`). Le compteur
+   peut monter pendant que rien ne l'affiche ; il repart de zéro quand une alerte paraît. La relecture de `/api/me`
+   reste. *Écarté* : ne compter qu'avec une alerte montée (un drapeau de module posé par l'alerte) — un état de plus,
+   partagé entre trois modules, pour le même résultat visible, et il ferait perdre la relecture qui corrige l'en-tête.
+2. **CR5-2 : un refus parti sous une autre génération n'est ni compté ni relu** (`isCurrentGeneration(sentAt.session)` en
+   tête de `refused()`), **et un autre compte lu hors session finie avance la génération** (`applyLiveSession`, avant
+   `notifyAccountSwitched()`). Ce second point amende R26 (« une session *lue* n'avance rien ») pour un seul cas : la page
+   ouverte n'est plus celle du compte qui l'a envoyée, tout ce qui est parti avant est périmé — comme au retour d'une
+   session finie, qui l'avance déjà. *Écarté* : effacer sur `onAccountSwitched` — le rejeu remonte déjà `AdminLayout`
+   (clé du `RouterView`) et le choix n° 1 efface au montage ; un abonnement de plus ne couvrirait pas la réponse tardive.
+3. **Le contrôle de génération ne touche que `refused()`** : `ended()` le fait déjà (`markSessionExpired(sentAt.session)`).
+4. **CR5-7 : `me()` abandonne après `ME_TIMEOUT_MS = 15_000`** (`AbortController` et `setTimeout`, minuterie levée dans
+   un `finally`). Un abandon rejette comme un échec réseau : la première vérification finit (`markFirstCheckDone` dans le
+   `finally` de `checkAuth`), la route `login` et le garde s'ouvrent, l'emplacement `singleFlight` se libère.
+   15 s plutôt que 10 : au-delà, une personne connectée sur un réseau très lent passe pour anonyme et une route
+   protégée la mène à la connexion — le délai doit dépasser tout `/api/me` qui finirait par répondre. *Écartés* :
+   `Promise.race` dans le seul `beforeEnter` de `login` (le garde et les relectures resteraient bloqués) ;
+   `AbortSignal.timeout()` (une minuterie interne que les faux minuteurs de Vitest ne pilotent pas).
+5. **Décision 3 : `save(locale)` refuse un second enregistrement de la même langue tant que le premier est en vol** (aucune
+   requête, rend `false`, aucune erreur posée) ; `isSaving` (calculé, la langue montrée) désactive « Enregistrer » et
+   « Proposer la traduction » de cette langue seulement. **`lastSaveOf` est retiré** : avec au plus un enregistrement en
+   vol par langue, « le dernier de sa langue » est toujours le seul, la branche `lastSaveOf[locale] !== mine` ne peut
+   plus être vraie. Le garder « en défense » défendrait contre un cas que le composable interdit lui-même, et laisserait
+   deux mécanismes pour une règle (St5-11). La défense est le refus dans `save()`, pas le seul bouton (une soumission
+   implicite au clavier, un futur second appelant) ; un test l'épingle. L'`isSubmitting` global du formulaire, qui
+   bloquait l'EN pendant un FR en vol, disparaît.
+6. **St5-10 : une union discriminée, et elle reste dans `domain/`** : `type RefusalScope = { readonly kind: 'read';
+   readonly scope: number } | { readonly kind: 'write' }`, `BackofficeSendStamp.refusal: RefusalScope`. Le sens de
+   « écriture » ne tient plus à un `null`. La place : `infrastructure/` (qui le porte) ne peut importer `application/`
+   (R28), et `application/` ne peut importer `infrastructure/` ; seul `domain/` est commun. Le jugement St4 (« une notion
+   de navigation dans le domaine ») est levé par le nom : le type dit ce qu'est la requête (lecture, écriture) et porte
+   un nombre opaque ; aucune route, aucun chemin.
+7. **Sp5-1 : l'invariant n° 8 vérifie aussi l'effacement**, sans requête de plus : quand la réponse au cookie refusé est
+   un 401 **du pare-feu `api`**, elle expire `BEARER` et `XSRF-TOKEN`. Les causes nouvelles (compte supprimé, `%XX`) vont
+   dans `PublicRouteIgnoresRefusedSessionTest`, une route publique et une protégée chacune : les répéter sur chaque route
+   doublerait la durée de l'invariant (déjà trois requêtes par route et méthode) sans rien couvrir de plus.
+8. **St5-11 : `replayId` passe par `createStaleRequestGuard`** (R53), `lastSaveOf` disparaît (choix n° 5). *Gardés à
+   part, avec leur raison* : la génération (globale, avancée par cinq sources hors de tout `begin`) ; le périmètre de refus
+   (lu sans avancer, une écriture n'en relève aucun) ; `isCurrentKey` (une clé, pas un numéro). Un utilitaire commun à ces
+   formes aurait autant de modes que d'appelants.
+9. **St5-12, tranché point par point.** `requiresAccess()` **reste public** : c'est le point de comparaison avec
+   `AccessListener::supports()`, sans effet, et le rendre privé obligerait le test à passer par la réflexion ou par un
+   service de plus pour une seule méthode ; son docblock le dit (R56). `SingleFlight.clear()` **sort de l'interface** :
+   la remise à zéro recrée les deux emplacements (R55). `resetBackofficeAccessRefusalForTests` **reste dans `src/`** :
+   c'est la convention du module (`reset…ForTests`, jamais appelée par `src/`, `frontend-session-retour.md`) et C12 a
+   mesuré que Rollup la retire du bundle (R42).
+10. **St5-8 : `tools/lib/smoke-http.sh`** (R57), sourcé par les trois scripts de fumée et `audit-prod.sh` : le fichier
+    `-K` (refus des retours à la ligne, échappement), l'extrait de corps, l'appel `curl` qui rend statut et corps et dit
+    un échec réseau. L'extension du contrat d'échec de `curl` (CR5-10) aux deux autres scripts de fumée est un
+    changement de comportement, annoncé et testé dans R57.
+11. **C5-10 : la garde retire les commentaires, puis refuse toute chaîne `'omit'`** (guillemets simples, doubles ou
+    gabarit) dans `src/`. Limite écrite dans son docblock : une valeur composée (`'om' + 'it'`) ou venue d'ailleurs.
+12. **C5-12 : une garde de source**, `AuthorizationLivesInAccessControlTest`, plutôt qu'une limite écrite : la prémisse
+    de R35 (une route publique est une route sans règle) se casserait en silence au premier `#[IsGranted]`.
+
+**Questions à l'auteur** (le plan suit la recommandation ; une autre réponse ne change que la tâche citée) :
+
+- **Q1 (R48)** : un refus d'écriture arrivé hors du backoffice : **effacé au prochain montage de l'alerte, la relecture de
+  `/api/me` gardée** (recommandé) ou **ni compté ni relu** tant qu'aucune alerte n'est montée ?
+- **Q2 (R48)** : un autre compte lu **hors** session finie (`applyLiveSession`) **avance la génération** (recommandé : tout
+  ce qui est parti sous l'autre compte devient périmé, comme au retour) ou non (R26 inchangé, CR5-2 alors corrigé sur le
+  seul chemin du retour) ?
+- **Q3 (R49)** : la borne de `/api/me` : **15 s sur `me()`** (recommandé : la route `login`, le garde et les relectures se
+  libèrent ensemble) ou une borne sur le seul `beforeEnter` de `login` ? Une autre valeur que 15 s ne change que la
+  constante.
+
+### Review Focus (cinquième relecture)
+
+1. **Une écriture refusée revenue après la sortie du backoffice, puis un retour plus tard** : aucune alerte « accès
+   refusé » au retour ; l'en-tête a suivi le palier relu. Test : R48.
+2. **Le 403 tardif d'une écriture du compte A après un changement de compte**, par les deux chemins (retour après une
+   session finie, autre compte révélé par un refus) : rien d'affiché, rien de relu. Test : R48.
+3. **Un `/api/me` qui ne répond pas, onglet neuf sur `login?expired=1`** : la page s'ouvre après `ME_TIMEOUT_MS`, sans
+   rien annoncer avant. Test : R49.
+4. **Réglages « À propos » : FR en vol, passage en EN, puis retour en FR** : l'EN s'enregistre ; le FR reste désactivé
+   jusqu'à sa réponse ; un second « Enregistrer » FR n'envoie rien. Test : R50.
+5. **`AUDIT_BASIC_AUTH` avec un retour à la ligne** : sortie 2 avant tout appel `curl`, valeur jamais citée. Test : R47.
+
+### Contraintes propres aux tâches R46 à R58
+
+- Les **Global Constraints** et toutes les contraintes des séries précédentes valent. Exécution : **un agent par tâche
+  (sonnet, effort high), successifs dans l'ordre R46 → R58**, qui lit d'abord `tasks/relectures-748/brief-commun-agents.md`.
+  `superpowers:test-driven-development` : test écrit d'abord, **vu rouge pour la bonne raison** ; un test de couverture
+  vert d'emblée est vu rouge par la mutation que sa tâche nomme ; refactoring pur : la suite existante comme filet,
+  nombre de tests noté avant et après. **`superpowers:verification-before-completion` invoquée réellement** avant le
+  rendu. Un commit par tâche, fichiers nommés (`git add <fichiers>`, `git mv`/`git rm` pour un déplacement ou une
+  suppression), message en français terminé par les lignes d'attribution que donne le fil principal.
+- **Chaque code de sortie se lit sans pipe** : `make front-test; echo "exit=$?"` (de même `front-lint`, `front-build`,
+  `back-test`, `back-quality`, chaque test hors ligne et `tools/check-claude-rules.sh`). Un `| tail` masque l'échec.
+- Backend (R46, R56) : lire avec `Read` un fichier de `backend/tests/Security/` avant d'écrire ; test ciblé
+  `docker compose exec -u dev backend php bin/phpunit <chemin>`, puis `make back-test` et `make back-quality` (toujours
+  `-u dev`) ; `rm -rf var/cache/test` après un changement de service ; JWT de test signé par l'encodeur du conteneur,
+  valeur invalide tirée au hasard (`bin2hex(random_bytes(16))`), jamais de secret littéral.
+- Outillage (R47, R57) : lire avec `Read` les scripts touchés avant d'écrire ; `bash tools/tests/<script>.test.sh` hors
+  ligne pour chaque script touché ; shellcheck dans l'image épinglée du job `tools-tests` (celle d'actionlint, qui
+  l'embarque) : `docker run --rm --entrypoint shellcheck -v "$PWD":/repo:ro -w /repo
+  rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 -x --severity=warning
+  <fichiers>` (si l'image n'expose pas `shellcheck`, le noter et lancer `shellcheck` de l'hôte, en le disant) ;
+  `tools/check-workflow-timeouts.sh` si `pipeline.yml` change.
+- Frontend : test ciblé `docker compose exec -T frontend npm test -- <chemins>`, puis `make front-test`, `make front-lint`,
+  `make front-build` ; `docker compose restart frontend` après un fichier créé, déplacé ou un remplacement de masse.
+- Règles : `tools/check-claude-rules.sh` après chaque modification (50 000 octets par règle ; `security-user.md` n'est
+  pas touchée) ; **remplacer** des phrases plutôt qu'en ajouter. Un fichier créé ou déplacé qui entre dans les `paths:`
+  d'une règle y est ajouté dans le même commit, et **indexé (`git add`) avant** `check-claude-rules` (qui ne voit que les
+  fichiers suivis).
+- Ne jamais lire `.env.local`, `.env.test.local`, `config/jwt/*` ni un fichier de secrets (les exclure de tout
+  `grep -r`) ; ne jamais nommer un compte réel. Aucun `git checkout`, `switch`, `stash`, `reset`. Pas de push, pas de PR.
+
+### Fichiers (tâches R46 à R58)
+
+| Fichier | Responsabilité | Tâches |
+|---|---|---|
+| `backend/tests/Security/ApiRouteExposureTest.php` | invariant n° 8 : l'effacement d'un 401 ; `ConcreteApiUrl` | R46, R56 |
+| `backend/tests/Security/Authentication/Infrastructure/Security/PublicRouteIgnoresRefusedSessionTest.php` | compte supprimé, `%XX` ; aides partagées | R46, R56 |
+| `backend/tests/Security/AuthorizationLivesInAccessControlTest.php` (nouveau) | garde : toute autorisation de `/api` dans `access_control` | R46 |
+| `backend/tests/Support/{RefusedBearerCookie,ConcreteApiUrl}.php` (nouveaux) | le cookie refusé des tests, l'URL concrète d'une route | R56 |
+| `backend/tests/Security/Authentication/Infrastructure/Jwt/{RefusedSessionCookiesAreClearedTest,JwtClockSkewTest}.php` | aides partagées | R56 |
+| `backend/src/Security/Authentication/Infrastructure/Security/PublicRouteIgnoresRefusedSessionListener.php` | docblock réduit | R56 |
+| `tools/smoke-dead-session-cookie.sh`, `tools/tests/smoke-dead-session-cookie.test.sh` | échec de `curl`, `XSRF-TOKEN`, contenu du `-K` | R47, R57 |
+| `tools/{smoke-login-throttling,smoke-mcp,audit-prod}.sh`, `tools/tests/{smoke-login-throttling,smoke-mcp}.test.sh` | retours à la ligne refusés ; bibliothèque | R47, R57 |
+| `tools/lib/smoke-http.sh` (nouveau) | `-K`, extrait, appel `curl` | R57 |
+| `frontend/src/presentation/router/backofficeSessionExpiry.ts`, `frontend/src/presentation/ui/admin/AccessRefusedNotice.vue`, `frontend/src/application/auth/{sessionLifecycle,useAuth}.ts` | refus et génération | R48 |
+| `frontend/src/infrastructure/auth/HttpAuthRepository.ts`, `frontend/src/presentation/pages/LoginPage.vue` | borne de `/api/me` ; `isAuthenticated` | R49 |
+| `frontend/src/application/admin/about/useAdminAboutSettings.ts`, `frontend/src/presentation/pages/admin/AdminAboutSettingsForm.vue` | un enregistrement par langue | R50 |
+| les huit dépôts publics, `frontend/tests/infrastructure/http/noOmittedCredentials.spec.ts`, `frontend/tests/infrastructure/baseAccess/HttpBaseAccessRepository.spec.ts` | docblock, garde, cas d'échec | R51 |
+| `frontend/src/application/auth/{sessionState,sessionLifecycle}.ts`, `frontend/tests/application/auth/sessionStateEncapsulation.spec.ts` | docblocks, garde d'imports | R52 |
+| `frontend/src/presentation/layout/AppLayout.vue`, `frontend/tests/presentation/layout/AppLayout.spec.ts` | rejeu | R53 |
+| `frontend/src/domain/admin/shared/BackofficeSessionReaction.ts`, `frontend/src/application/admin/shared/backofficeAccessRefusal.ts`, `frontend/src/infrastructure/admin/shared/BackofficeHttpClient.ts`, `backofficeSessionExpiry.ts` | union `RefusalScope`, docblocks | R54 |
+| `frontend/src/application/shared/singleFlight.ts` (déplacé), `frontend/tests/application/shared/singleFlight.spec.ts` (déplacé) | utilitaire générique | R55 |
+| `.claude/rules/*`, `k8s/README.md`, `docs/adr/0003-paliers-d-acces.md` | documentation | R46 à R58 |
+
+---
+
+### Task R46 : Backend — l'invariant n° 8 vérifie l'effacement ; un compte supprimé et `%XX` ; toute autorisation dans `access_control` (Sp5-1/C5-9, C5-12)
+
+**Files :**
+- Modify : `backend/tests/Security/ApiRouteExposureTest.php`, `backend/tests/Security/Authentication/Infrastructure/Security/PublicRouteIgnoresRefusedSessionTest.php`
+- Create : `backend/tests/Security/AuthorizationLivesInAccessControlTest.php`
+- Modify (règle) : `.claude/rules/security-authentication-sessions.md` (la phrase « Invariant n° 8… » de la puce de `StaleSessionCookiesClearingListener`)
+
+**Interfaces :**
+- `answerWithBearer()` rend aussi `'expired' => list<string>` : les noms des cookies posés dont `getExpiresTime()` est
+  strictement positif et passé.
+- Le pare-feu d'une requête : `self::getContainer()->get('security.firewall.map')->getFirewallConfig(Request::create(<url>, <méthode>))?->getName()`.
+- `AuthorizationLivesInAccessControlTest` : parcourt `src/` (`PhpSources::files()`, `significantTokens()`) ; refuse
+  l'attribut `IsGranted`, l'appel `denyAccessUnlessGranted`, les arguments nommés `security:`, `securityPostDenormalize:`,
+  `securityPostValidation:` ; `->isGranted(` seulement dans `ISGRANTED_OUTSIDE_API = [NominativeCorpusReader::class =>
+  '<raison : pare-feu mcp, pas api ; le connecteur MCP juge le palier de la connexion>']`, et l'entrée doit rester
+  nécessaire. Docblock : pourquoi (C5-12 : `PublicRouteIgnoresRefusedSessionListener` tient « route publique = route sans
+  règle d'`access_control` » ; un `#[IsGranted]` sur une route sans règle refuserait l'anonyme mais n'effacerait pas un
+  cookie refusé), ce qu'il ne voit pas (un appel dynamique, le vendor).
+
+- [ ] **Step 1 : filet** — `make back-test; echo "exit=$?"`, nombre de tests noté.
+- [ ] **Step 2 : tests**
+  - `ApiRouteExposureTest`, invariant n° 8 : pour les libellés `invalide` et `expiré`, quand le statut est 401 **et** que le
+    pare-feu de la requête est `api`, `expired` contient `BEARER` et `XSRF-TOKEN` (message : la méthode, le chemin, les
+    noms expirés). Docblock de l'invariant : une phrase de plus (l'effacement, et pourquoi les autres pare-feux sont
+    exclus : `mcp` et `oauth` ne lisent pas le cookie).
+  - `PublicRouteIgnoresRefusedSessionTest` : `testATokenOfADeletedAccountIsServedOnAPublicReadAndClearedByTheFirstProtectedRoute`
+    (compte de test connecté, ligne supprimée en SQL — `DELETE FROM cpg_user WHERE id = :id` —, puis `PUBLIC_ROUTE` : servi,
+    cookie gardé ; `PROTECTED_ROUTE` : 401, les deux cookies expirés aux attributs de la fabrique) ;
+    `testAPercentEncodedPathIsJudgedLikeItsCanonicalForm` (`BEARER` aléatoire ; `GET /%61pi/contributions/fr` : 200, aucun
+    `Set-Cookie` ; `GET /%61pi/me` : 401, les deux cookies expirés).
+  - `AuthorizationLivesInAccessControlTest` : `testNoAuthorizationIsDeclaredOutsideAccessControl` ;
+    `testEveryAllowListEntryIsStillNeeded`.
+  Run : `docker compose exec -u dev backend php bin/phpunit tests/Security/ApiRouteExposureTest.php tests/Security/AuthorizationLivesInAccessControlTest.php tests/Security/Authentication/Infrastructure/Security`.
+  Expected : vert d'emblée (couverture d'un comportement juste). **Rouge vu par mutation, à noter dans le message** :
+  l'écoute de `JWT_INVALID` retirée de `StaleSessionCookiesClearingListener` → l'invariant n° 8 et le test du compte
+  supprimé rougissent ; un `security: "is_granted('ROLE_USER')"` ajouté à une ressource API Platform → la garde rougit ;
+  `rm -rf var/cache/test` après chaque mutation, mutations retirées (`git diff` vide sur `src/`).
+- [ ] **Step 3 : règle** — `security-authentication-sessions.md` : la phrase « **Invariant n° 8 of `ApiRouteExposureTest`**: … »
+  remplacée par : « **Invariant n° 8 of `ApiRouteExposureTest`**: on every route and method, a refused `BEARER` (invalid,
+  expired) gets the anonymous status, a 401 of the `api` firewall expires both cookies, and a `PUBLIC_PATHS` route sets no
+  cookie the anonymous call does not; the premise (every authorization of `/api` is an `access_control` rule) is held by
+  `AuthorizationLivesInAccessControlTest` (C5-12). »
+- [ ] **Step 4 : verts** — `make back-test; echo "exit=$?"` (filet + 4), `make back-quality; echo "exit=$?"`,
+  `tools/check-claude-rules.sh; echo "exit=$?"`.
+- [ ] **Step 5 : commit** — `test(security): l'invariant n° 8 vérifie l'effacement, un compte supprimé et %XX ; toute autorisation reste dans access_control (#748)`.
+
+---
+
+### Task R47 : Le smoke du cookie mort — échec de `curl`, `XSRF-TOKEN`, contenu du `-K` ; les retours à la ligne refusés partout (CR5-10, C5-6, C5-7, C5-8)
+
+**Files :**
+- Modify : `tools/smoke-dead-session-cookie.sh`, `tools/tests/smoke-dead-session-cookie.test.sh`
+- Modify : `tools/smoke-login-throttling.sh`, `tools/tests/smoke-login-throttling.test.sh`, `tools/smoke-mcp.sh`, `tools/tests/smoke-mcp.test.sh`, `tools/audit-prod.sh`
+
+**Interfaces :**
+- Dans les quatre scripts, avant d'écrire le fichier `-K` : `AUDIT_BASIC_AUTH` qui contient `\n` ou `\r` → message
+  « AUDIT_BASIC_AUTH contient un retour à la ligne : refusé, il ouvrirait une directive dans le fichier de configuration
+  curl » sur stderr (la valeur n'est jamais citée), **sortie 2**, aucun fichier écrit, aucun appel `curl`. (`audit-prod.sh`
+  sort déjà en 2 sur une bibliothèque introuvable : même classe d'erreur, d'environnement.)
+- `smoke-dead-session-cookie.sh`, `fetch()` : `response="$(…)" || { rc=$?; echo "<méthode> <chemin> : curl a échoué (code $rc : réseau, DNS ou délai) — rien de vérifié" >&2; exit 1; }`.
+- `smoke-dead-session-cookie.sh` : `set_cookies_named <nom>` (remplace `bearer_set_cookies`, nom insensible à la casse) ;
+  étape 2 : aucun `Set-Cookie` de `BEARER` **ni** de `XSRF-TOKEN` ; étape 3 : un `Set-Cookie` expirant pour **chacun** des
+  deux (le message nomme celui qui manque). En-tête du script : les trois vérifications réécrites en conséquence.
+- Faux `curl` du test : une ligne de réponse `curl-exit:<n>|…` le fait écrire `curl: (<n>) faux échec` sur stderr et sortir
+  en `<n>` ; quand `-K <fichier>` est passé, il copie le fichier dans `$FAKE_KCONFIG` et son mode (`stat -c %a`) dans
+  `$FAKE_KMODE`.
+
+- [ ] **Step 1 : tests hors ligne, rouges**
+  - `smoke-dead-session-cookie.test.sh` : « curl en échec (code 7) à l'étape 1 → sortie 1, message `curl a échoué (code 7)` » ;
+    « étape 2 avec un `Set-Cookie: XSRF-TOKEN=…` → 1, message `XSRF-TOKEN` » ; « étape 3 avec seul `BEARER` expiré → 1,
+    message `XSRF-TOKEN` » ; la réponse nominale de l'étape 3 porte désormais les deux cookies expirés ;
+    « `AUDIT_BASIC_AUTH='u:p"a\b'` : le fichier `-K` vaut exactement `user = "u:p\"a\\b"` et son mode est `600` » ;
+    « `AUDIT_BASIC_AUTH=$'u:p\nurl = "x"'` → sortie 2, aucun appel du faux `curl`, la valeur absente de la sortie ».
+  - `smoke-login-throttling.test.sh` et `smoke-mcp.test.sh` : le même cas du retour à la ligne (sortie 2, aucun appel).
+  Run : `bash tools/tests/smoke-dead-session-cookie.test.sh; echo "exit=$?"` (et les deux autres). Expected : code 7 au lieu
+  de 1 ; sortie 0 malgré `XSRF-TOKEN` ; sortie 0 ou un appel `curl` malgré le retour à la ligne.
+- [ ] **Step 2 : implémenter** — selon les interfaces. `audit-prod.sh` n'a pas de test hors ligne : mesure à la main,
+  `AUDIT_BASIC_AUTH=$'u:p\nx' tools/audit-prod.sh https://example.invalid; echo "exit=$?"` → 2 sans requête (noter la sortie).
+- [ ] **Step 3 : verts** — les trois tests hors ligne à 0, shellcheck (image épinglée) sur les sept fichiers,
+  `tools/check-claude-rules.sh; echo "exit=$?"`.
+- [ ] **Step 4 : commit** — `fix(tools): le smoke du cookie mort dit un échec réseau et vérifie XSRF-TOKEN ; un retour à la ligne dans la Basic Auth est refusé (#748)`.
+
+---
+
+### Task R48 : Un refus du backoffice ne survit ni au démontage du layout ni à un changement de compte (CR5-1/C5-3a, CR5-2/C5-3b)
+
+**Files :**
+- Modify : `frontend/src/presentation/router/backofficeSessionExpiry.ts`, `frontend/src/presentation/ui/admin/AccessRefusedNotice.vue`, `frontend/src/application/auth/sessionLifecycle.ts` (`applyLiveSession`), `frontend/src/application/auth/useAuth.ts` (réexport)
+- Test : `frontend/tests/presentation/router/backofficeSessionExpiry.spec.ts`, `frontend/tests/presentation/ui/admin/AccessRefusedNotice.spec.ts`, `frontend/tests/presentation/layout/AdminLayout.sessionEnded.spec.ts`, `frontend/tests/application/auth/useAuth.spec.ts`
+- Modify (règles) : `.claude/rules/frontend-session-refus.md` (« A real refusal », puce du backoffice ; « Tests »), `.claude/rules/frontend-session-retour.md` (« The session generation », premier paragraphe ; « Only the same account… », la phrase « Outside an ended session… »)
+
+**Interfaces :**
+- `useAuth.ts` réexporte `isCurrentGeneration` (la façade, comme `sessionStamp`).
+- `createBackofficeSessionReaction().refused(sentAt)` : `if (!isCurrentGeneration(sentAt.session)) return` **avant**
+  `markBackofficeAccessRefused` (ni compté ni relu) ; commentaire : la réponse est celle d'une session qui n'est plus la
+  courante (CR5-2).
+- `AccessRefusedNotice.vue` : `onMounted(clearBackofficeAccessRefusal)` ; docblock, la puce « Effacée… » : « et au montage :
+  un refus d'écriture revenu pendant qu'aucune alerte n'était montée (la personne avait quitté le backoffice) ne s'affiche
+  pas plus tard sur une page sans rapport (CR5-1) ; la relecture du palier a eu lieu ».
+- `applyLiveSession(session)` : dans la branche « autre identifiant », `advanceGeneration()` puis `notifyAccountSwitched()` ;
+  docblock : un changement de compte périme tout ce qui est parti avant, comme le retour (CR5-2, amende R26 pour ce seul cas).
+
+- [ ] **Step 1 : tests, rouges**
+  - `AccessRefusedNotice.spec.ts` (Review Focus 1) : `it("un refus d'écriture arrivé après le démontage ne s'affiche pas au montage suivant")`
+    (monter, démonter, `markBackofficeAccessRefused(null)`, remonter → aucune `[data-testid="admin-access-refused"]`).
+  - `backofficeSessionExpiry.spec.ts` (Review Focus 2) : `it("le refus d'une écriture partie sous une autre génération n'est ni compté ni relu")`
+    (`stampAtSend('write')`, `advanceGeneration()` importé de `sessionGeneration`, `refused(stamp)` → `backofficeAccessRefused.value === 0`,
+    `rereadAfterRefusal` jamais appelé) ; `it("le refus d'une lecture partie sous une autre génération n'est ni compté ni relu")`.
+  - `useAuth.spec.ts` : `it("un autre compte lu hors session finie avance la génération avant le signal")` (compte A appliqué
+    par `checkAuth()`, `sentAt = sessionStamp()`, `rereadAfterRefusal()` rend B → `isCurrentGeneration(sentAt)` faux, et
+    l'abonné d'`onAccountSwitched` lit déjà la génération nouvelle) ; `it("le même identifiant lu hors session finie n'avance rien")` (vert).
+  - `AdminLayout.sessionEnded.spec.ts` : `it("après un changement de compte, le 403 tardif d'un enregistrement du premier compte n'affiche rien")`.
+  Expected : alerte affichée au remontage ; compteur à 1 et relecture appelée ; génération inchangée.
+- [ ] **Step 2 : implémenter** — selon les interfaces.
+- [ ] **Step 3 : règles** — `frontend-session-refus.md`, puce du backoffice : après « a write always does », une phrase
+  **remplacée** : « … for a read that left under another scope; a refusal sent under another session generation counts
+  and re-reads nothing (R48, CR5-2); the alert also clears on mount, so a write refused while no alert was mounted never
+  shows later on an unrelated page (CR5-1) » ; « Tests » : les quatre nouveaux. `frontend-session-retour.md` : la liste
+  « advanced at each accepted end, at each return and by every session the tab itself decides » gagne « and when a read
+  outside an ended session finds another account (`applyLiveSession`, R48) » ; la phrase « Outside an ended session … only
+  a different `username` … does the same » précise « (the generation advances first) ».
+- [ ] **Step 4 : verts** — specs ciblés PASS ; `make front-test; echo "exit=$?"`, `make front-lint; echo "exit=$?"`,
+  `make front-build; echo "exit=$?"`, `tools/check-claude-rules.sh; echo "exit=$?"`.
+- [ ] **Step 5 : commit** — `fix(frontend): un refus du backoffice ne survit ni au démontage du layout ni à un changement de compte (#748)`.
+
+---
+
+### Task R49 : `/api/me` abandonne après quinze secondes ; `LoginPage` lit `isAuthenticated` (CR5-7/C5-5, St5-13)
+
+**Files :**
+- Modify : `frontend/src/infrastructure/auth/HttpAuthRepository.ts`, `frontend/src/presentation/pages/LoginPage.vue`
+- Test : `frontend/tests/infrastructure/auth/HttpAuthRepository.spec.ts`, `frontend/tests/presentation/router/adminGuard.spec.ts`, `frontend/tests/application/auth/useAuth.spec.ts`
+- Modify (règles) : `.claude/rules/frontend-session-retour.md` (« The re-check on return », première sous-puce), `.claude/rules/frontend-session-bandeau.md` (« Both flags open the login… »)
+
+**Interfaces :**
+- `export const ME_TIMEOUT_MS = 15_000` (`HttpAuthRepository.ts`) ; `me()` : `const controller = new AbortController()`,
+  `const timer = setTimeout(() => controller.abort(), ME_TIMEOUT_MS)`, `fetch(url, { method: 'GET', credentials: 'include',
+  signal: controller.signal })` et la lecture du corps dans un `try`, `clearTimeout(timer)` dans le `finally`. Docblock :
+  pourquoi (CR5-7 : la route `login`, le garde et les deux relectures attendent `/api/me` ; un `me()` qui pend tenait aussi
+  l'emplacement `singleFlight` pour toujours), pourquoi 15 s (choix n° 4), pourquoi pas `AbortSignal.timeout()`.
+- `LoginPage.vue` : `const { login, user, isAuthenticated } = useAuth()` ; `hasSessionEnded = !isAuthenticated.value && isSessionEnded(route)`.
+
+- [ ] **Step 1 : tests, rouges**
+  - `HttpAuthRepository.spec.ts` : `it("me() abandonne après ME_TIMEOUT_MS : rejet AbortError")` (faux minuteurs ; `fetch`
+    simulé qui ne résout jamais et rejette une `DOMException('…', 'AbortError')` quand son `signal` est abandonné ;
+    `vi.advanceTimersByTime(ME_TIMEOUT_MS)`) ; `it("une réponse avant le délai lève la minuterie")` (`vi.getTimerCount() === 0`) ;
+    l'assertion `toHaveBeenCalledWith` de `me()` gagne `signal: expect.any(AbortSignal)` (changement exprès).
+  - `adminGuard.spec.ts` (Review Focus 3) : `it("onglet neuf, /api/me qui ne répond pas : la connexion s'ouvre après le délai, sans annonce avant")`.
+  - `useAuth.spec.ts` : `it("un me() abandonné libère la relecture : la suivante rappelle me()")`.
+  Expected : la promesse reste en attente ; `signal` absent ; la page jamais rendue.
+- [ ] **Step 2 : implémenter** — selon les interfaces ; `vi.useRealTimers()` en `afterEach`.
+- [ ] **Step 3 : St5-13** — `LoginPage` selon les interfaces ; `LoginPage.spec.ts` vert sans changement (refactoring).
+- [ ] **Step 4 : règles** — `frontend-session-retour.md`, première sous-puce de « The re-check on return » : « a rejection of
+  `/api/me` (network) is swallowed » devient « a rejection of `/api/me` (network, or `me()` giving up after
+  `ME_TIMEOUT_MS`, 15 s, R49) is swallowed », et une demi-phrase : la borne vaut pour la première vérification (le garde et
+  la route `login` s'ouvrent). `frontend-session-bandeau.md` : « first awaits `waitForAuthCheck()` » gagne « (bounded:
+  `me()` gives up after 15 s, R49) ».
+- [ ] **Step 5 : verts** — specs ciblés PASS ; `make front-test; echo "exit=$?"`, `make front-lint; echo "exit=$?"`,
+  `make front-build; echo "exit=$?"`, `tools/check-claude-rules.sh; echo "exit=$?"`.
+- [ ] **Step 6 : commit** — `fix(frontend): /api/me abandonne après quinze secondes, la connexion et le garde n'attendent plus sans fin (#748)`.
+
+---
+
+### Task R50 : Réglages « À propos » — un seul enregistrement en vol par langue (décision 3 : CR5-3, CR5-4, Sp5-11)
+
+**Files :**
+- Modify : `frontend/src/application/admin/about/useAdminAboutSettings.ts`, `frontend/src/presentation/pages/admin/AdminAboutSettingsForm.vue`
+- Test : `frontend/tests/application/admin/about/useAdminAboutSettings.spec.ts`, `frontend/tests/presentation/pages/admin/AdminAboutPage.spec.ts`
+- Modify (règle) : `.claude/rules/frontend-backoffice.md` (la phrase « **Only the last save of a locale sets its verdict and its value** … »)
+
+**Interfaces :**
+- `UseAdminAboutSettingsResult` gagne `isSaving: ComputedRef<boolean>` (un enregistrement de la langue montrée est en vol,
+  lue par `isCurrentKey`).
+- `const saving = ref<Partial<Record<Locale, true>>>({})` ; `save(locale, input)` : si `saving.value[locale]`, rend `false`
+  sans requête ni effacement d'erreur ; sinon pose, puis retire dans un `finally`. `lastSaveOf` et ses deux conditions
+  **retirés** : `write(locale, saved)` et `failures.value[locale] = visible` sans condition (le reste inchangé : effacement
+  de l'erreur de la langue au départ, `write` sous la clé courante). Commentaire : choix n° 5.
+- `AdminAboutSettingsForm.vue` : `isSubmitting` retiré ; « Enregistrer » `:disabled="isSaving || isLocked"`,
+  `TranslateEntryButton` `:disabled="!hasProseToTranslate || isSaving || isLocked"` ; `handleSubmit` n'a plus de drapeau.
+
+- [ ] **Step 1 : tests, rouges**
+  - `useAdminAboutSettings.spec.ts` : le `describe` R43 (quatre tests) remplacé par `describe('un seul enregistrement en vol par langue (#748, R50, décision 3)')` :
+    `it("un second enregistrement FR pendant le premier : aucune requête, rend false, l'erreur FR intacte")` ;
+    `it("un enregistrement EN part pendant un FR en vol")` ; `it("isSaving suit la langue montrée : vrai en FR pendant le FR, faux en EN")` ;
+    `it("après la réponse du FR, réussie ou en échec, un nouvel enregistrement FR part")`. (Retrait exprès : le chevauchement
+    que R43 arbitrait n'existe plus.)
+  - `AdminAboutPage.spec.ts` (Review Focus 4) : `it("FR en vol, passage en EN : « Enregistrer » actif ; retour en FR : désactivé jusqu'à la réponse")`.
+  Expected : deux appels à `update` ; « Enregistrer » EN désactivé (l'`isSubmitting` global).
+- [ ] **Step 2 : implémenter** — selon les interfaces ; les tests R11, R20, R31 restent verts sans changement.
+- [ ] **Step 3 : règle** — `frontend-backoffice.md` : la phrase R43 **remplacée** par : « **One save per locale in flight**
+  (R50, the author's decision of 2026-10-30, CR5-3/CR5-4): `save(locale)` refuses a second save of a locale while its
+  first is in flight (no request, `false`), and the form disables « Enregistrer » for that locale only (`isSaving`): an
+  English save is not held by a French one. With one response per locale in flight, R43's `lastSaveOf` had nothing left
+  to arbitrate and is gone. »
+- [ ] **Step 4 : verts** — specs ciblés PASS ; `make front-test; echo "exit=$?"` (− 4 + 5), `make front-lint; echo "exit=$?"`,
+  `make front-build; echo "exit=$?"`, `tools/check-claude-rules.sh; echo "exit=$?"`.
+- [ ] **Step 5 : commit** — `fix(frontend): réglages « À propos », un seul enregistrement en vol par langue (#748)`.
+
+---
+
+### Task R51 : Les dépôts publics renvoient à la règle ; la garde voit tout `'omit'` ; « Accès instantané » retrouve ses cas d'échec (St5-9, C5-10, Sp5-2)
+
+**Files :**
+- Modify : `frontend/src/infrastructure/{about/HttpAboutContentRepository,quality/HttpQualityContentRepository,incidents/HttpIncidentRepository,contributions/HttpContributionRepository,watch/HttpWatchRepository,experience/HttpExperienceTechnologyRepository,contact/HttpContactRepository,account/HttpAccountRepository}.ts` (docblock seul)
+- Modify : `frontend/tests/infrastructure/http/noOmittedCredentials.spec.ts`, `frontend/tests/infrastructure/baseAccess/HttpBaseAccessRepository.spec.ts`
+- Modify (règle) : `.claude/rules/frontend-session.md` (« Tests », la puce `noOmittedCredentials.spec.ts`)
+
+**Interfaces :**
+- Les huit docblocks : le paragraphe de trois lignes (« Aucun `credentials` … Jamais `'omit'` … ») **remplacé** par une
+  phrase : « Aucun `credentials` : voir `.claude/rules/frontend.md`, « API-backed content » (#748, R37). »
+- `noOmittedCredentials.spec.ts` : `function offendsWithOmit(source: string): boolean` (exportée dans le spec) — retire
+  `/\*…*/` et `//…` (pas `://`), puis cherche `/(['"`])omit\1/`. Le test parcourt `src/**/*.{ts,vue}` avec elle. Docblock :
+  la limite (une valeur composée, venue d'une variable d'ailleurs, un fichier hors de `src/`).
+- `HttpBaseAccessRepository.spec.ts` : `it.each([[401], [403], [500]])("un %i est un échec unknown, un seul appel")`
+  remplace les deux tests `unknown` ; un seul test 429 (avec le nombre d'appels) ;
+  `it("un rejet réseau remonte tel quel, un seul appel")` (`rejects.toBe(failure)`).
+
+- [ ] **Step 1 : filet** — `make front-test; echo "exit=$?"`, nombre noté.
+- [ ] **Step 2 : tests, rouges** — `noOmittedCredentials.spec.ts` : `it("le détecteur voit une valeur typée hors de l'objet d'options")`
+  (`offendsWithOmit("const mode: RequestCredentials = 'omit'")` vrai ; `` "credentials: `omit`" `` vrai ;
+  `"// Jamais 'omit'"` faux ; `"/* 'omit' */"` faux ; `"fetch('https://x/omit')"` faux). Expected : `offendsWithOmit` introuvable.
+  `HttpBaseAccessRepository.spec.ts` : verts d'emblée (couverture rendue) ; **rouge vu par mutation** : `grant()` qui
+  transforme un rejet réseau en `BaseAccessError('unknown')` → le test du rejet rougit (noter, mutation retirée).
+- [ ] **Step 3 : implémenter** — les huit docblocks, la garde.
+- [ ] **Step 4 : règle** — `frontend-session.md`, « Tests » : « `noOmittedCredentials.spec.ts` (no file of `src/` writes a
+  string `'omit'` outside a comment — typed or in the options object —, which drops preprod's Basic Auth, R37, R51) ».
+- [ ] **Step 5 : verts** — `make front-test; echo "exit=$?"` (filet + 2 : + 1 détecteur ; `HttpBaseAccessRepository.spec.ts` passe de six à sept tests), `make front-lint; echo "exit=$?"`,
+  `make front-build; echo "exit=$?"`, `tools/check-claude-rules.sh; echo "exit=$?"`.
+- [ ] **Step 6 : commit** — `test(frontend): les dépôts publics renvoient à leur règle, la garde voit tout 'omit', « Accès instantané » retrouve ses cas d'échec (#748)`.
+
+---
+
+### Task R52 : L'état de session — des docblocks justes, une garde des importeurs (St5-1, CR5-9/St5-3)
+
+**Files :**
+- Modify : `frontend/src/application/auth/sessionState.ts` (docblock d'`applySession`), `frontend/src/application/auth/sessionLifecycle.ts` (docblock de `restoreSession`)
+- Modify : `frontend/tests/application/auth/sessionStateEncapsulation.spec.ts`
+- Modify (règle) : `.claude/rules/frontend-session-retour.md` (« Where it lives », la parenthèse de `sessionState.ts`)
+
+**Interfaces :**
+- `restoreSession` : « **La** descente » → « La descente **par le retour d'un compte** (l'autre, sans signal, est
+  `markBaseAccessGranted`) ». `applySession` : « … la fin est l'affaire de `markSessionExpired`, ses deux descentes celles de
+  `restoreSession` et de `markBaseAccessGranted` ; seules les deux premières jugent la génération et le jeton d'écriture ».
+- `sessionStateEncapsulation.spec.ts` : `const WRITERS: Record<string, readonly string[]>` = `raiseSessionEnded` et
+  `lowerSessionEnded` → `['application/auth/sessionLifecycle.ts']` ; `beginCheck`, `markFirstCheckDone`, `forgetLastAccount`
+  → `['application/auth/useAuth.ts']` ; `applySession` → `['application/auth/sessionLifecycle.ts', 'application/auth/useAuth.ts']`.
+  Lit `src/**/*.{ts,vue}` (`import.meta.glob` `?raw`), relève les noms importés depuis un chemin qui finit par `sessionState'` ;
+  chaque nom de `WRITERS` n'est importé que par sa liste ; `useAuth.ts` ne réexporte aucun d'eux. `markBaseAccessGranted` et
+  `markBaseAccessExpired` restent hors de la table : API publique de la façade (`useBaseAccess`, les composables du palier
+  de base). Le commentaire « les trois
+  écritures » remplacé par la liste exacte des exports attendus.
+
+- [ ] **Step 1 : test** — `it("les fonctions qui écrivent l'état ne sont importées que par leurs modules")` ;
+  `it("useAuth ne réexporte aucune écriture")`. Vert d'emblée ; **rouge vu par mutation** : `raiseSessionEnded` importé
+  dans `useAuth.ts` → le premier rougit (noter, mutation retirée).
+- [ ] **Step 2 : docblocks** — selon les interfaces.
+- [ ] **Step 3 : règle** — « Where it lives » : après « only named functions write it », « (each imported by its own
+  modules only: `sessionStateEncapsulation.spec.ts`, R52) ».
+- [ ] **Step 4 : verts** — `make front-test; echo "exit=$?"`, `make front-lint; echo "exit=$?"`, `make front-build; echo "exit=$?"`,
+  `tools/check-claude-rules.sh; echo "exit=$?"`.
+- [ ] **Step 5 : commit** — `test(frontend): les écritures de l'état de session gardées par importeur ; ses deux descentes dites (#748)`.
+
+---
+
+### Task R53 : Le rejeu — un test qui ne dépend plus du routeur, le jeton par `createStaleRequestGuard` (Sp5-3, St5-11 ; refactoring)
+
+**Files :**
+- Modify : `frontend/src/presentation/layout/AppLayout.vue`
+- Test : `frontend/tests/presentation/layout/AppLayout.spec.ts`
+- Modify (règle) : `.claude/rules/frontend-session-retour.md` (la parenthèse « each takes a token, `const mine = ++replayId` »)
+
+**Interfaces :**
+- `AppLayout.vue` : `const replays = createStaleRequestGuard()` (`application/shared/staleRequestGuard.ts`) à la place de
+  `let replayId` ; l'abonné : `const mine = replays.begin()` ; le `finally` : `if (replays.isCurrent(mine))`. Docblock
+  d'`isReplaying` : le garde commun, et pourquoi (St5-11).
+
+- [ ] **Step 1 : filet** — `make front-test; echo "exit=$?"`, nombre noté.
+- [ ] **Step 2 : test** — `it("deux rejeux : le premier réglé pendant que le second court ne démasque pas la page (sans dépendre du routeur)")` :
+  `vi.spyOn(router, 'replace')` rend, par appel, une promesse retenue ; deux `notifyAccountSwitched()` ; la première promesse
+  résolue → sonde absente ; la seconde → sonde présente. Vert d'emblée ; **rouge vu par mutation** (`isReplaying.value = false`
+  sans condition dans le `finally`). Le test R39 existant reste, son commentaire précise qu'il passe par l'annulation réelle
+  de vue-router (le déclencheur réel), dont il dépend.
+- [ ] **Step 3 : refactorer** — selon les interfaces ; aucun autre test ne change.
+- [ ] **Step 4 : règle** — « each takes a token, `const mine = ++replayId` » → « each takes a token from
+  `createStaleRequestGuard` (`application/shared/`, the guard the composables use) ».
+- [ ] **Step 5 : verts** — `make front-test; echo "exit=$?"` (filet + 1), `make front-lint; echo "exit=$?"`, `make front-build; echo "exit=$?"`,
+  `tools/check-claude-rules.sh; echo "exit=$?"`.
+- [ ] **Step 6 : commit** — `refactor(frontend): le rejeu prend son jeton au garde commun, et son test ne dépend plus du routeur (#748)`.
+
+---
+
+### Task R54 : Le périmètre de refus — une union lecture/écriture, des docblocks qui disent quand il avance (St5-10, St5-2, CR5-8 ; refactoring)
+
+**Files :**
+- Modify : `frontend/src/domain/admin/shared/BackofficeSessionReaction.ts`, `frontend/src/application/admin/shared/backofficeAccessRefusal.ts`, `frontend/src/presentation/router/backofficeSessionExpiry.ts`, `frontend/src/infrastructure/admin/shared/BackofficeHttpClient.ts` (si un type y est nommé)
+- Test : `frontend/tests/application/admin/shared/backofficeAccessRefusal.spec.ts`, `frontend/tests/presentation/router/backofficeSessionExpiry.spec.ts`, `frontend/tests/presentation/ui/admin/AccessRefusedNotice.spec.ts`
+- Modify (règles) : `.claude/rules/frontend-session-refus.md` (« The backoffice reaction », la parenthèse du timbre ; puce du backoffice de « A real refusal »)
+
+**Interfaces :**
+- `domain/admin/shared/BackofficeSessionReaction.ts` : `export type RefusalScope = { readonly kind: 'read'; readonly scope: number } | { readonly kind: 'write' }` ;
+  `BackofficeSendStamp { readonly session: number; readonly refusal: RefusalScope }` ; `BackofficeSendKind = RefusalScope['kind']` ;
+  `stampAtSend(kind: BackofficeSendKind)`. Docblock : choix n° 6 (pourquoi le domaine, pourquoi aucune notion de route).
+- `backofficeSessionExpiry.ts` : `refusal: 'write' === kind ? { kind: 'write' } : { kind: 'read', scope: refusalScope() }`.
+- `markBackofficeAccessRefused(sentIn: RefusalScope): boolean` — compte si `'write' === sentIn.kind` ou `sentIn.scope === scope`.
+- Docblocks de `backofficeAccessRefusal.ts` (St5-2, CR5-8) : en tête, « depuis la dernière navigation » → « depuis le dernier
+  effacement » ; `scope` : « avance à chaque effacement — un changement de chemin ou de requête (pas le seul fragment),
+  une fin de session, le montage et le démontage de l'alerte (R48) » ; « deux visites successives de la même route sont deux
+  périmètres » → « A, B puis A : trois périmètres ; une navigation vers l'adresse courante n'en est pas une (vue-router la
+  tient pour un doublon, paramètres de requête permutés compris, et ne l'exécute pas) ».
+
+- [ ] **Step 1 : filet** — `make front-test; echo "exit=$?"`, nombre noté.
+- [ ] **Step 2 : caractérisation (CR5-8)** — `AccessRefusedNotice.spec.ts` : `it("une requête aux paramètres permutés garde l'alerte : le routeur n'y voit pas de navigation")`
+  (refus compté sur `?a=1&b=2`, `router.push({ query: { b: '2', a: '1' } })` → alerte présente, `refusalScope()` inchangé).
+  Attendu vert. **S'il est rouge** (le routeur navigue), la clé surveillée trie les paramètres —
+  `route.path + JSON.stringify(Object.entries(route.query).sort(([a], [b]) => a.localeCompare(b)))` —, le test passe au
+  vert avec ce tri, et le message de commit dit CR5-8 confirmé.
+- [ ] **Step 3 : refactorer** — selon les interfaces ; les specs changent seulement là où ils construisent un timbre ou
+  appellent `markBackofficeAccessRefused` (`null` → `{ kind: 'write' }`, un nombre → `{ kind: 'read', scope: n }`) : changement
+  de signature, comportement identique (le dire dans le message).
+- [ ] **Step 4 : règles** — `frontend-session-refus.md` : « the send stamp `{ session, refusalScope }`, `refusalScope` null for
+  a write » → « the send stamp `{ session, refusal }`, `refusal` a `RefusalScope`: `{ kind: 'read', scope }` or
+  `{ kind: 'write' }` (R54) » ; « (`refusalScope()`, `null` for a write: …) » → « (`{ kind: 'write' }` for a write: …) ».
+- [ ] **Step 5 : verts** — `make front-test; echo "exit=$?"` (filet + 1), `make front-lint; echo "exit=$?"`, `make front-build; echo "exit=$?"`,
+  `tools/check-claude-rules.sh; echo "exit=$?"`.
+- [ ] **Step 6 : commit** — `refactor(frontend): le périmètre de refus est une union lecture/écriture ; ses docblocks disent quand il avance (#748)`.
+
+---
+
+### Task R55 : `singleFlight` rejoint `application/shared`, sans `clear()` de test dans son interface (St5-15, St5-12 en partie ; refactoring)
+
+**Files :**
+- Move : `frontend/src/application/auth/singleFlight.ts` → `frontend/src/application/shared/singleFlight.ts` ; `frontend/tests/application/auth/singleFlight.spec.ts` → `frontend/tests/application/shared/singleFlight.spec.ts` (`git mv`)
+- Modify : `frontend/src/application/auth/useAuth.ts`, `frontend/tests/application/auth/resetAuthStateForTests.spec.ts`
+- Modify (règle) : `.claude/rules/frontend-session-retour.md` (`paths:` : les deux nouveaux chemins ; « Where it lives » ; « Tests »)
+
+**Interfaces :**
+- `SingleFlight<T> { run(task: () => Promise<T>): Promise<T> }` (plus de `clear`) ; `createSingleFlight<T>()` inchangé sinon.
+- `useAuth.ts` : `let endedSessionRecheck = createSingleFlight<void>()`, `let refusalReread = createSingleFlight<RefusalReread>()` ;
+  `resetSessionRereadsForTests()` les recrée.
+
+- [ ] **Step 1 : filet** — `make front-test; echo "exit=$?"`, nombre noté.
+- [ ] **Step 2 : test** — `resetAuthStateForTests.spec.ts` : `it("une relecture en vol avant la remise à zéro n'est plus partagée après")`
+  (`recheckEndedSession()` en session finie avec un `me()` retenu, `resetAuthStateForTests()`, session finie de nouveau,
+  `recheckEndedSession()` → `me()` appelé une seconde fois). Vert d'emblée (`clear()` le fait aujourd'hui) : il remplace,
+  au niveau de la façade, le test `clear()` de `singleFlight.spec.ts`, retiré avec la méthode.
+- [ ] **Step 3 : refactorer** — `git mv` des deux fichiers, imports mis à jour, `clear()` retiré ; `docker compose restart frontend`.
+- [ ] **Step 4 : règle** — `paths:` gagne `frontend/src/application/shared/singleFlight.ts` et
+  `frontend/tests/application/shared/singleFlight.spec.ts` (**`git add` avant `check-claude-rules`**) ; « Where it lives » :
+  `singleFlight.ts` sort de la liste d'`application/auth/` et devient « `application/shared/singleFlight.ts` (generic, next to
+  `staleRequestGuard.ts`; the reset for tests recreates the two slots, no `clear()` in its interface, R55) ».
+- [ ] **Step 5 : verts** — `make front-test; echo "exit=$?"` (filet − 1 + 1), `make front-lint; echo "exit=$?"`,
+  `make front-build; echo "exit=$?"`, `tools/check-claude-rules.sh; echo "exit=$?"`.
+- [ ] **Step 6 : commit** — `refactor(frontend): singleFlight rejoint application/shared, sans clear() de test dans son interface (#748)`.
+
+---
+
+### Task R56 : Backend — le cookie refusé des tests et l'URL concrète écrits une fois ; le docblock du listener R35 réduit à ses raisons (St5-6, St5-7, St5-16 pour le docblock, St5-12 pour `requiresAccess`)
+
+**Files :**
+- Create : `backend/tests/Support/RefusedBearerCookie.php`, `backend/tests/Support/ConcreteApiUrl.php`
+- Modify : `backend/tests/Security/ApiRouteExposureTest.php`, `backend/tests/Security/Authentication/Infrastructure/Jwt/RefusedSessionCookiesAreClearedTest.php`, `backend/tests/Security/Authentication/Infrastructure/Security/PublicRouteIgnoresRefusedSessionTest.php`, `backend/tests/Security/Authentication/Infrastructure/Jwt/JwtClockSkewTest.php`
+- Modify : `backend/src/Security/Authentication/Infrastructure/Security/PublicRouteIgnoresRefusedSessionListener.php` (docblocks seuls)
+- Modify (règle) : `.claude/rules/security-authentication-sessions.md` (`paths:` : `backend/tests/Support/RefusedBearerCookie.php`)
+
+**Interfaces :**
+- `trait RefusedBearerCookie` : `private const string PUBLIC_ROUTE = '/api/contributions/fr'`, `private const string
+  PROTECTED_ROUTE = '/api/me'` (docblocks repris de `RefusedSessionCookiesAreClearedTest`, St3-12 cité),
+  `private static function expiredJwt(): string` (l'encodeur du conteneur, `exp` une heure passée),
+  `private static function putTheBearer(KernelBrowser $client, string $jwt): void` (le `Cookie` exact d'aujourd'hui).
+- `final class ConcreteApiUrl { public static function of(string $path): string }` — le corps et le docblock de
+  `ApiRouteExposureTest::concreteUrl()` (UUID v7 valide compris), retirée de ce test.
+- Docblock du listener, **au plus 35 lignes** : ce qu'il fait (une route sans règle d'`access_control` sert l'anonyme
+  quel que soit le cookie), pourquoi l'`AccessMap` (aucune seconde liste ; la prémisse gardée par
+  `AuthorizationLivesInAccessControlTest`, R46), pourquoi le dispatcher d'`api` et la priorité -1024, ce qui reste à une
+  route protégée (le 401 et l'effacement), qu'une route publique ne touche pas au cookie et pourquoi (CR3-2), la session
+  close auditée, les trois options écartées en une ligne chacune. L'historique (`credentials: 'omit'`, la Basic Auth de
+  la préprod) sort : il est dans l'ADR 0003 et la règle. `requiresAccess()` : « publique parce que c'est le point de
+  comparaison avec `AccessListener::supports()`, lu par le test de prédicat ; sans effet » (St5-12).
+
+- [ ] **Step 1 : filet** — `make back-test; echo "exit=$?"`, nombre noté.
+- [ ] **Step 2 : refactorer** — les deux aides ; les quatre tests les utilisent (`use RefusedBearerCookie;`, plus de
+  constante ni de fabrique locale ; `testThePredicateAgreesWithTheAccessListenerOnEveryRoute` passe par `ConcreteApiUrl::of()`) ;
+  le docblock. `make back-style-fix` si un import est ajouté.
+- [ ] **Step 3 : règle** — `paths:` de `security-authentication-sessions.md` gagne `backend/tests/Support/RefusedBearerCookie.php`
+  (**`git add` avant `check-claude-rules`**).
+- [ ] **Step 4 : verts** — `make back-test; echo "exit=$?"` (même nombre que le filet), `make back-quality; echo "exit=$?"`,
+  `tools/check-claude-rules.sh; echo "exit=$?"`.
+- [ ] **Step 5 : commit** — `refactor(security): le cookie refusé des tests et l'URL concrète d'une route écrits une fois ; le docblock du listener R35 réduit à ses raisons (#748)`.
+
+---
+
+### Task R57 : `tools/lib/smoke-http.sh` — la Basic Auth, l'extrait et l'appel `curl` des scripts de fumée écrits une fois (St5-8 ; CR5-10 étendu)
+
+**Files :**
+- Create : `tools/lib/smoke-http.sh`
+- Modify : `tools/smoke-dead-session-cookie.sh`, `tools/smoke-login-throttling.sh`, `tools/smoke-mcp.sh`, `tools/audit-prod.sh`
+- Test : `tools/tests/smoke-dead-session-cookie.test.sh`, `tools/tests/smoke-login-throttling.test.sh`, `tools/tests/smoke-mcp.test.sh`
+
+**Interfaces :**
+- Bibliothèque sourçable, sans `set -e` ni appel réseau à la source (modèle : l'en-tête de `tools/lib/security-headers.sh`) :
+  - `smoke_auth_config_file <valeur>` : refuse `\r`/`\n` (message de R47 sur stderr, retour 2) ; sinon écrit le fichier `-K`
+    en 600 (`umask 077`, `mktemp`), échappé comme aujourd'hui, et imprime son chemin. L'appelant :
+    `auth_config="$(smoke_auth_config_file "$AUDIT_BASIC_AUTH")" || exit 2` et garde son `trap`.
+  - `smoke_excerpt <texte>` : caractères de contrôle en espaces, 160 caractères.
+  - `smoke_fetch <libellé> <url> [arguments curl…]` : lance `"$SMOKE_CURL_BIN" "${SMOKE_CURL_OPTS[@]}" "$@" -w '\n%{http_code}' "$url"`,
+    pose `SMOKE_STATUS` et `SMOKE_BODY` ; un échec de `curl` imprime « <libellé> : curl a échoué (code <n> : réseau, DNS ou
+    délai) — rien de vérifié » et rend 1. L'appelant : `smoke_fetch … || exit 1`.
+- Sourcée comme `audit-prod.sh` le fait déjà (`# shellcheck source=tools/lib/smoke-http.sh`, `source "$(cd "$(dirname
+  "${BASH_SOURCE[0]}")" && pwd)/lib/smoke-http.sh"`, sortie 2 si introuvable). `audit-prod.sh` n'en prend que
+  `smoke_auth_config_file`.
+
+- [ ] **Step 1 : filet** — les trois tests hors ligne à 0, sorties notées.
+- [ ] **Step 2 : tests, rouges (le comportement étendu)** — `smoke-login-throttling.test.sh` et `smoke-mcp.test.sh` : « curl en
+  échec (code 7) à la première requête → sortie 1, message `curl a échoué (code 7)` » (le faux `curl` gagne la ligne
+  `curl-exit:<n>` de R47). Expected : sortie 7.
+- [ ] **Step 3 : extraire** — la bibliothèque ; les quatre scripts la sourcent et perdent leurs copies (comportement des
+  cas existants inchangé : les tests du filet restent verts sans changement).
+- [ ] **Step 4 : verts** — les trois tests hors ligne à 0 ; shellcheck (image épinglée) sur `tools/lib/smoke-http.sh`, les
+  quatre scripts et les trois tests ; `AUDIT_BASIC_AUTH=$'u:p\nx' tools/audit-prod.sh https://example.invalid; echo "exit=$?"` → 2 ;
+  `tools/check-claude-rules.sh; echo "exit=$?"`.
+- [ ] **Step 5 : commit** — `refactor(tools): la Basic Auth, l'extrait et l'appel curl des scripts de fumée dans tools/lib/smoke-http.sh ; un échec réseau dit partout (#748)`.
+
+---
+
+### Task R58 : Documentation (C5-1, C5-2, C5-11, St5-4, St5-5, St5-16 pour la règle, Sp5-10)
+
+**Files :**
+- Modify : `.claude/rules/security-authentication-sessions.md`, `.claude/rules/security-authentication-audit.md`, `.claude/rules/frontend-session.md`, `k8s/README.md`, `docs/adr/0003-paliers-d-acces.md`
+
+- [ ] **Step 1 : `security-authentication-sessions.md` (St5-16, C5-1, C5-2)** — dans la puce de
+  `StaleSessionCookiesClearingListener`, tout ce qui suit « `JWT_NOT_FOUND` (no cookie) clears nothing. » jusqu'à « Rejected:
+  `lazy: true` … firewall without authenticator for public routes. » **sort** pour former sa propre puce,
+  « **`Infrastructure/Security/PublicRouteIgnoresRefusedSessionListener`** (#748 R35, …) », texte déplacé, pas récrit ; elle
+  reçoit à sa fin les deux limites, texte exact :
+  « **Accepted limit (C5-1, the author's decision of 2026-10-30)**: a closed session (the password changed since) kept by a
+  legitimate tab writes one `session-refused-after-credentials-change` line per public request until that tab's next
+  `GET /api/me` — every load — clears the cookie; bounded by the nginx `publicapi` zone and the page's life, and an
+  attacker gains nothing (served as anonymous). Not de-duplicated, for the reason in `security-authentication-audit.md`.
+  **Accepted (C5-2, the author's decision of 2026-10-30)**: since the SPA sends its cookies to public reads (R37), a public
+  read by a signed-in person is authenticated — the JWT verified and one `SELECT` of the account (the `cpg_users` provider
+  reloads it) —, the price of serving a public route whatever the cookie (decision 1 of the fourth review); the response
+  stays the anonymous one. »
+  L'« Accepted limit » restant dans la puce de `StaleSessionCookiesClearingListener` (l'échéance du login) y reste.
+  La phrase « Pinned by … » se partage : `RefusedSessionCookiesAreClearedTest` reste dans la puce d'origine ;
+  `PublicRouteIgnoresRefusedSession{,Registration}Test`, `AuthorizationLivesInAccessControlTest` et le smoke de préprod
+  passent dans la nouvelle.
+- [ ] **Step 2 : `security-authentication-audit.md` (C5-1)** — dans « No de-duplication, on purpose », « the browser clears the
+  cookies after the first 401 (`StaleSessionCookiesClearingListener`), so only a loop replaying a kept token writes several
+  lines » **remplacé** par « the browser clears the cookies at the first 401 of a route that requires a role
+  (`StaleSessionCookiesClearingListener`); a public route serves the closed session as anonymous and audits each request
+  (#748 R35), so a legitimate tab writes one line per public read until its next `/api/me` (C5-1, accepted), and otherwise
+  only a loop replaying a kept token writes several lines ».
+- [ ] **Step 3 : `frontend-session.md` (St5-4, C5-11)** — « Tests », dernière puce : « (a refused cookie cleared by its first
+  401) » → « (a refused cookie cleared by the first 401 of a protected route) ». « Accepted limits », dernière puce : « the
+  server serves a public route as anonymous whatever the cookie (R35) » → « the server serves a public route as anonymous
+  whatever the cookie (R35; in dev, two origins, public reads leave without cookies, so R35 is exercised there by PHPUnit
+  and the preprod smoke only) ».
+- [ ] **Step 4 : `k8s/README.md` (St5-5)** — l. 637 : « que construisent `tools/audit-prod.sh` et
+  `tools/smoke-login-throttling.sh` » → « que construit `tools/lib/smoke-http.sh` pour `tools/audit-prod.sh` et les trois
+  scripts de fumée (`smoke-login-throttling.sh`, `smoke-dead-session-cookie.sh`, `smoke-mcp.sh`) » ; l. 659-660 :
+  « `smoke-test-preprod` (`tools/smoke-login-throttling.sh`) » → « `smoke-test-preprod` (`tools/smoke-login-throttling.sh`,
+  `tools/smoke-dead-session-cookie.sh`, `tools/smoke-mcp.sh`) ».
+- [ ] **Step 5 : ADR 0003 (Sp5-10)** — l. 272 : « sur toute l'API authentifiée par le cookie » → « sur toute route de l'API
+  authentifiée par le cookie qui exige un rôle ».
+- [ ] **Step 6 : balayage** — `grep -rn "first 401\b\|premier 401\|lastSaveOf\|replayId\|refusalScope: number\|application/auth/singleFlight" .claude docs frontend/src backend/src k8s/README.md`
+  ne rend que l'historique daté ou le sens juste (le noter).
+- [ ] **Step 7 : verts** — `tools/check-claude-rules.sh; echo "exit=$?"` ; `make front-test; echo "exit=$?"` (aucun code
+  touché : témoin) ; `make back-test; echo "exit=$?"` non requis (aucun fichier backend).
+- [ ] **Step 8 : commit** — `docs: les limites C5-1 et C5-2, la puce du listener R35, les tests et le README à jour de la cinquième relecture de #748`.
+
+### Constats écartés, avec leur raison
+
+- **C5-13** (`/api/logout` avec un `BEARER` mort et sans `XSRF-TOKEN` valide : 403 CSRF, rien d'effacé). Préexistant ; le
+  SPA envoie toujours l'en-tête depuis le cookie (`HttpAuthRepository.logout()`), et sans `XSRF-TOKEN` le cookie mort tombe au
+  prochain `/api/me` (chaque chargement). Exclure `/api/logout` du CSRF rouvrirait la déconnexion forcée d'un tiers ; effacer
+  sur le 403 CSRF ferait d'un refus de sécurité un effet de bord. Avantage nul, risque réel.
+- **Sp5-4** : le code suit le docblock de `TestServiceLocator` ; c'est le plan de R35 qui avait tort (vérification).
+- **Sp5-5 à Sp5-8** : écarts de table, cohérents ; rien à changer.
+- **Sp5-9** : déjà couvert par la tâche 11 (« La préprod réelle, derrière sa Basic Auth »).
+- **St5-11, en partie** : la génération, le périmètre de refus et `isCurrentKey` restent distincts (choix n° 8).
+- **St5-12, en partie** : `requiresAccess()` public et `resetBackofficeAccessRefusalForTests` dans `src/` gardés (choix n° 9).
+- **CR5-8, l'ordre des paramètres** : faux en pratique (vérification) ; épinglé par la caractérisation de R54.
+
+---
+
 ### Task 11 : Contrôle au navigateur — **fil principal, pas un agent de tâche**
 
 Pile de dev locale, FR et EN, axe-core injecté dans la page, noté dans la PR (référentiel WCAG 2.2 AA) :
@@ -2585,6 +3313,24 @@ Ce que les corrections R35 à R45 ont changé, à mesurer aussi :
   `AppLayout.spec.ts`), la relecture débloquée après un `me()` qui lève (R41, `singleFlight.spec.ts`), la tolérance d'horloge
   (R44), l'invariant n° 8 (R35, `ApiRouteExposureTest`), la limite C7 (écrite, R45).
 
+Ce que les corrections R46 à R58 ont changé, à mesurer aussi (ajouté par le plan de la cinquième série) :
+
+- [ ] **Refus d'écriture hors du backoffice** (R48, CR5-1) : un compte `ROLE_SUPER` rétrogradé, « Enregistrer » ralenti
+  (« Slow 3G »), aller sur l'accueil avant la réponse (403 avec jeton), revenir plus tard dans le backoffice → aucune
+  alerte « accès refusé » ; l'en-tête a suivi le palier relu (un `/api/me` dans l'onglet Réseau).
+- [ ] **403 tardif après un changement de compte** (R48, CR5-2) : le scénario « Changement de compte révélé par un refus »
+  ci-dessus, avec un second « Enregistrer » du premier compte ralenti et revenu après le passage au second → rien
+  d'affiché, aucun `/api/me` de plus.
+- [ ] **`/api/me` qui ne répond pas** (R49, CR5-7) : outils réseau, une limitation personnalisée à très forte latence sur
+  `/api/me`, `/<locale>/login?expired=1` dans un nouvel onglet → aucune annonce pendant l'attente, la page s'ouvre au bout
+  de quinze secondes.
+- [ ] **Réglages « À propos »** (R50, décision 3 ; remplace le point R43 ci-dessus, dont le second enregistrement FR n'est
+  plus possible) : FR ralenti, passage en EN → « Enregistrer » actif, l'EN s'enregistre ; retour en FR avant la réponse →
+  « Enregistrer » désactivé jusqu'à elle ; un double clic n'envoie qu'un `PUT`.
+- [ ] Non contrôlables au navigateur, à noter comme tels : l'invariant n° 8 élargi et la garde d'autorisation (R46,
+  PHPUnit), le smoke et sa bibliothèque (R47, R57 : tests hors ligne ; la sortie de `smoke-test-preprod` à la release),
+  les refactorings R52 à R56.
+
 - [ ] Tout écart → retour à la tâche concernée (nouveau commit), puis ce contrôle refait.
 
 ### Task 12 : Clôture — **fil principal**
@@ -2592,6 +3338,15 @@ Ce que les corrections R35 à R45 ont changé, à mesurer aussi :
 - [ ] `make front-test`, `make front-lint`, `make front-build`, **`make back-test` et `make back-quality`** (R1, R21) verts sur la tête ; `tools/check-claude-rules.sh` vert (les `paths:` ajoutés correspondent à des fichiers suivis, aucune règle au-delà de 50 000 octets, `frontend-session.md` et ses trois parties de R34 comprises, chacune avec sa ligne dans l'index de `.claude/CLAUDE.md`) ; `tasks/regle-session-en-attente.md` n'existe plus (intégré par R34). `bash tools/tests/smoke-dead-session-cookie.test.sh` vert (R36).
 - [ ] Corps de la PR, compléments des troisième et quatrième relectures (R23 à R45) : **une route publique sert l'anonyme quel que soit le cookie `BEARER`** (R35, décision de l'auteur du 2026-10-29, qui remplace `credentials: 'omit'` de R23 et le rejeu d'« Accès instantané » de R24, retirés par R37) : un cookie refusé (JWT expiré, invalide, antérieur à un changement de mot de passe) ne fait plus répondre 401 une route sans règle d'`access_control` ; il est effacé par la première route qui exige un rôle (le SPA lit `/api/me` à chaque chargement) ; une session close par un changement de mot de passe, présentée à une route publique, est servie comme anonyme et auditée ; `POST /api/logout` avec un cookie mort répond 2xx et expire les cookies ; « Accès instantané » ne consomme plus qu'un jeton du quota. `ApiRouteExposureTest` gagne l'invariant n° 8 (un cookie refusé ne change jamais la réponse anonyme, sur chaque route) et `smoke-test-preprod` une étape (R36). **C1** : `omit` retirait aussi la Basic Auth de la préprod ; une garde l'interdit désormais. **R21b est retirée** (décision de l'auteur du 2026-10-29) : l'accès de base n'appelle plus `POST /api/logout` à son échéance, l'en-tête repasse simplement à anonyme. **`clock_skew: 5`** : cinq secondes d'écart d'horloge entre pods tolérées (sur `iat` comme sur `exp`). Limite écrite : la réponse tardive (401) d'une requête authentifiée partie avec un cookie mort peut effacer des cookies posés entre-temps par une connexion dans un autre onglet ; la requête suivante le dit (session finie), une reconnexion répare. La politique de cookies publiée dit désormais « cookies de session ». Aucune action au déploiement.
 - [ ] Corps de la PR, quatrième relecture (R38 à R45) : un refus d'enregistrement du backoffice n'est jamais périmé, le lien d'évitement n'efface plus l'alerte ; deux rejeux de navigation qui se chevauchent ; la connexion attend la vérification de la session (plus d'annonce « session finie » fugitive dans un onglet neuf) et ne dit rien au palier de base ; l'accès de base clôt une session finie ; `singleFlight` ; l'état de session encapsulé ; seul le dernier enregistrement « À propos » d'une langue décide ; `JwtClockSkewTest` stable. **Limite acceptée C7** (décision de l'auteur du 2026-10-29) : un changement de compte dans un autre onglet, sans session finie dans celui-ci, n'est détecté par rien (antérieure à #748, suppose un accès au même navigateur). **Sp4-b** : R32 a changé la date de la politique de confidentialité et le registre RGPD sans que le plan le demande — gardé, le texte publié ayant changé ; R45 les complète.
+- [ ] Corps de la PR, cinquième relecture (R46 à R58 ; ajouté par le plan de la cinquième série) : l'invariant n° 8 vérifie
+  l'effacement d'un cookie refusé et une garde tient toute autorisation de `/api` dans `access_control` ; un refus du
+  backoffice ne survit ni au démontage du layout ni à un changement de compte (un autre compte lu hors session finie avance
+  la génération) ; `/api/me` abandonne après quinze secondes ; réglages « À propos » : un seul enregistrement en vol par
+  langue ; les scripts de fumée disent un échec réseau (sortie 1), refusent une Basic Auth à retour à la ligne (sortie 2)
+  et partagent `tools/lib/smoke-http.sh`. **Limite acceptée C5-1** (décision de l'auteur du 2026-10-30) : une session close
+  par un changement de mot de passe, gardée par un onglet légitime, écrit une ligne d'audit par lecture publique jusqu'au
+  prochain `/api/me` (bornée par la zone `publicapi`). **C5-2, accepté** : une lecture publique d'une personne connectée
+  est authentifiée (JWT vérifié et un `SELECT` du compte). `bash tools/tests/smoke-{dead-session-cookie,login-throttling,mcp}.test.sh` verts.
 - [ ] Corps de la PR : la note de release de F1 (R21, remplace celle de R1) — `BEARER` et `XSRF-TOKEN` sont désormais des **cookies de session**, au login comme à l'accès de base (le JWT garde son heure, l'accès de base ses quinze minutes) : fermer le navigateur sans restauration de session finit la session ; à l'expiration du JWT, la première requête prend un 401 qui efface les deux cookies, la suivante est anonyme ; **une session ouverte avant le déploiement garde ses cookies persistants, au plus une heure** (rien à faire) ; le frontend juge désormais la session par génération (une réponse partie sous une autre session ne la finit ni ne la rétablit) et un autre compte au retour rejoue la navigation.
 - [ ] **Amendement d'ADR 0003** — **déplacé dans R21 (Step 3b) par décision de l'auteur du 2026-10-29** ; à la clôture, seulement vérifier qu'il est fait et cohérent. Contenu attendu (décision 1 du 2026-10-29) : ligne de statut (« Amendée le 2026-10-29 ») ; dans « Risque accepté — le logout ne révoque pas le jeton », le paragraphe des faits (`set_cookies.BEARER.lifetime` vaut `0` : cookie de session ; `token_ttl` 3600 et les 900 s de l'accès de base inchangés) ; un amendement « 2026-10-29 (#748, F1) » : `BEARER` et `XSRF-TOKEN` sont des cookies de session ; le risque « navigateur fermé » (un cookie qui survit à la fermeture, en lecture comme en écriture) **disparaît, sauf navigateur qui restaure la session** ; tout cookie refusé (expiré, invalide, antérieur au changement de mot de passe) est effacé par son premier 401 ; ce que cela ne change pas (un jeton copié reste valable jusqu'à son `exp`) ; les conditions qui rouvrent la décision, inchangées. `docs/adr/0003-paliers-d-acces.md` seul, relu contre `security-authentication-sessions.md` (R21).
 - [ ] **Ticket à proposer à l'auteur** (texte dans le rapport de clôture, pas de création sans son accord) : le préfixe `__Host-` des deux cookies (S2 de la première relecture : préprod d'abord, il renomme ce que Lexik, `CsrfCookieRequestSubscriber` et le frontend lisent par nom) **et F12** (le jeton CSRF n'est lié ni à la session ni au temps : le lier au JWT — par exemple un HMAC dérivé de son `iat` et du compte — ou lui donner une échéance signée), avec la note que R21 réduit déjà la durée de vie des deux cookies à la session du navigateur, **et A3-3** de la troisième relecture (depuis R21, tout cookie `BEARER` refusé efface les deux cookies : un sous-domaine qui pose un faux `BEARER` sur `Path=/api` — plus spécifique que le `Path=/` du vrai, donc envoyé en premier — fait répondre 401 et efface la session valide ; `__Host-` interdit qu'un sous-domaine pose ce nom). Depuis R35, A3-3 ne touche plus que les routes qui exigent un rôle (une route publique ignore un cookie refusé). **Et C8** de la quatrième relecture (« le même compte » est jugé sur l'identifiant, pas sur l'UUID du compte : un compte supprimé puis recréé sous le même identifiant passe pour le même ; l'exposer par `/api/me` et le retenir dans `LastAccount`). Le pare-feu sans authentificateur pour `/api/account/base-access`, un temps proposé ici, **n'est plus à joindre** : R35 couvre le cas.
