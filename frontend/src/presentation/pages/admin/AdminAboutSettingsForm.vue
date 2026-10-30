@@ -6,7 +6,7 @@ import { useAdminTranslation } from '../../../application/admin/translation/useA
 import { applyTranslationProposal, collectProseFields } from '../../../application/admin/translation/proseFields'
 import BaseTextInput from '../../ui/BaseTextInput.vue'
 import TranslateEntryButton from '../../ui/admin/TranslateEntryButton.vue'
-import { otherLocale, type Locale } from '../../../domain/portfolio/entities/Locale'
+import type { Locale } from '../../../domain/portfolio/entities/Locale'
 import type { TranslationProposal } from '../../../domain/admin/translation/entities/TranslationProposal'
 
 /**
@@ -25,7 +25,7 @@ const emit = defineEmits<{ switchLocale: [locale: Locale] }>()
 
 const { t } = useI18n()
 
-const { settings, isLoading, hasError, isLoaded, errorMessage, load, save, isSaving, isSavingLocale } = useAdminAboutSettings()
+const { settings, isLoading, hasError, isLoaded, errorMessage, load, save, isSaving, isAnySaving } = useAdminAboutSettings()
 
 const form = reactive({ siteEyebrow: '', meEyebrow: '', technicalSubtitle: '', personalSubtitle: '', hobbiesSubtitle: '' })
 const errorText = computed(() => {
@@ -58,8 +58,7 @@ const pendingProposal = ref<TranslationProposal | null>(null)
 // ne s'affiche que sous elle, et il part quand le formulaire de cette langue est relu du serveur (le `watch` de
 // `settings`, ci-dessous), la proposition non enregistrée étant alors perdue (décision 4 de la sixième série).
 const proposal = ref<{ readonly source: Locale; readonly target: Locale } | null>(null)
-// L'avis est celui de la langue montrée si c'est la cible de la proposition (R86, St7-10) : le `watch` de `settings` et le
-// `v-if` de l'avis le lisent d'ici, une seule comparaison.
+// L'avis est celui de la langue montrée si c'est la cible de la proposition (R86, St7-10) : le `v-if` de l'avis le lit d'ici.
 const isProposalShown = computed(() => proposal.value?.target === props.locale)
 const hasProseToTranslate = computed(() => PROSE_FIELDS.some((field) => '' !== form[field].trim()))
 const translationErrorText = computed(() => {
@@ -87,9 +86,10 @@ watch(
       form.personalSubtitle = value.personalSubtitle
       form.hobbiesSubtitle = value.hobbiesSubtitle
 
-      if (isProposalShown.value) {
-        proposal.value = null
-      }
+      // Des réglages qui arrivent sont ceux de la langue montrée (la clé courante) : la proposition, si elle est
+      // affichée, est la leur ; sinon elle n'est pas affichée et le retour sur sa cible la retirerait de toute façon
+      // (St8-14). Aucune condition : celle qui était là n'avait aucun effet visible.
+      proposal.value = null
     }
   },
   { immediate: true, flush: 'sync' },
@@ -215,7 +215,7 @@ async function handleSubmit(): Promise<void> {
 
       <div class="mb-3">
         <!--
-          Retenu aussi tant que la langue **cible** enregistre (R67, décision 3 de la sixième série) : la réponse de cet
+          Retenu tant qu'une langue enregistre, la montrée comme la **cible** (R67, R98, décision 3 de la sixième série) : la réponse de cet
           enregistrement est écrite dans les réglages et recopiée par-dessus la proposition que la traduction pose sur
           son formulaire. Un enregistrement de la cible lancé pendant que la traduction court la recouvre encore, et
           l'avis part avec elle (R66) : rien n'est dit de faux.
@@ -223,7 +223,7 @@ async function handleSubmit(): Promise<void> {
         <TranslateEntryButton
           :form-locale="locale"
           :is-translating="isTranslating"
-          :disabled="!hasProseToTranslate || isSavingLocale(locale) || isSavingLocale(otherLocale(locale)) || isLocked"
+          :disabled="!hasProseToTranslate || isAnySaving || isLocked"
           :aria-describedby="lockedHintId"
           @translate="handleTranslate"
         />

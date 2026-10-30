@@ -21,10 +21,10 @@ export interface UseAdminAboutSettingsResult extends AdminLoadState {
   /** Un enregistrement de la **langue montrée** est en vol : désactive ses boutons, pas ceux d'une autre langue (R50). */
   isSaving: ComputedRef<boolean>
   /**
-   * Un enregistrement de **cette** langue est en vol, quelle que soit la langue montrée (R67) : le formulaire
-   * s'en sert pour retenir « Proposer la traduction » tant que la réponse de la langue cible recouvrirait la proposition.
+   * Un enregistrement est en vol dans **une** langue, quelle que soit la langue montrée (R67, R98) : le formulaire s'en
+   * sert pour retenir « Proposer la traduction » tant que la réponse de la langue cible recouvrirait la proposition.
    */
-  isSavingLocale: (locale: Locale) => boolean
+  isAnySaving: ComputedRef<boolean>
 }
 
 /**
@@ -72,10 +72,12 @@ export function useAdminAboutSettings(): UseAdminAboutSettingsResult {
     return undefined === current ? null : (failures.value[current] ?? null)
   })
 
-  // La seule lecture de `saving` (R86, St7-10) : `isSaving` la compose avec la clé courante au lieu de la répéter.
+  // Les seules lectures de `saving` (R86, R98) : `isSaving` la compose avec la clé courante, `isAnySaving` la lit pour
+  // toute langue ; la lecture d'une langue seule reste ici, elle n'a pas d'autre lecteur.
   const isSavingLocale = (locale: Locale): boolean => true === saving.value[locale]
 
   const isSaving = computed(() => SUPPORTED_LOCALES.some((locale) => isCurrentKey(locale) && isSavingLocale(locale)))
+  const isAnySaving = computed(() => SUPPORTED_LOCALES.some(isSavingLocale))
 
   const save = async (locale: Locale, input: AdminAboutSettingsInput): Promise<boolean> => {
     // Le refus vient d'ici et pas seulement du bouton désactivé : une soumission implicite au clavier ou un futur
@@ -106,5 +108,5 @@ export function useAdminAboutSettings(): UseAdminAboutSettingsResult {
     }
   }
 
-  return { settings, isLoading, hasError, isLoaded, errorMessage, load, save, isSaving, isSavingLocale }
+  return { settings, isLoading, hasError, isLoaded, errorMessage, load, save, isSaving, isAnySaving }
 }

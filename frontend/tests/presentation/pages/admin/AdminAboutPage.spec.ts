@@ -1572,8 +1572,8 @@ describe('AdminAboutPage', () => {
       expect(translateButton(wrapper, SETTINGS_FORM).attributes('disabled')).toBeUndefined()
     })
 
-    // La langue montrée tient aussi « Proposer la traduction » (R86, CR7-10) : le bouton lit `isSavingLocale(locale)` et
-    // celui de l'autre langue, ce qu'aucun test ne voyait quand la langue montrée seule enregistrait.
+    // La langue montrée tient aussi « Proposer la traduction » (R86, CR7-10) : le bouton lit `isAnySaving`, l'enregistrement
+    // de la langue montrée comme celui de l'autre, ce qu'aucun test ne voyait quand la langue montrée seule enregistrait.
     it("un enregistrement FR en vol, la page en FR : « Proposer la version EN » désactivé jusqu'à la réponse (#748, R86)", async () => {
       let answerFrenchSave!: (settings: AdminAboutSettings) => void
       const frenchSave = new Promise<AdminAboutSettings>((resolve) => {

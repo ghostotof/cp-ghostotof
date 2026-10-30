@@ -399,36 +399,33 @@ describe('useAdminAboutSettings', () => {
       expect(composable.isSaving.value).toBe(false)
     })
 
-    it("isSavingLocale dit l'enregistrement en vol de chaque langue, quelle que soit la langue montrée (#748, R67)", async () => {
+    it("isAnySaving dit un enregistrement en vol dans n'importe quelle langue, quelle que soit la langue montrée (#748, R67, R98)", async () => {
       const pending = pendingUpdates()
       const composable = mountWithComposable(
         createStubRepository({ update: pending.update, get: vi.fn(async (locale) => ({ ...SETTINGS, locale })) }),
       )
       await composable.load('fr')
-      expect(composable.isSavingLocale('fr')).toBe(false)
-      expect(composable.isSavingLocale('en')).toBe(false)
+      expect(composable.isAnySaving.value).toBe(false)
 
       const french = composable.save('fr', INPUT)
-      // La langue montrée est le FR : `isSaving` le dit ; `isSavingLocale` aussi, et ne dit rien de l'EN.
-      expect(composable.isSavingLocale('fr')).toBe(true)
-      expect(composable.isSavingLocale('en')).toBe(false)
+      expect(composable.isAnySaving.value).toBe(true)
 
-      // La page passe en EN : `isSaving` ne voit plus que l'EN, `isSavingLocale('fr')` voit encore le FR en vol.
+      // La page passe en EN : `isSaving` ne voit plus que l'EN, `isAnySaving` voit encore le FR en vol.
       await composable.load('en')
       expect(composable.isSaving.value).toBe(false)
-      expect(composable.isSavingLocale('fr')).toBe(true)
+      expect(composable.isAnySaving.value).toBe(true)
 
       const english = composable.save('en', INPUT)
-      expect(composable.isSavingLocale('en')).toBe(true)
+      expect(composable.isAnySaving.value).toBe(true)
 
       pending.answer(0, SETTINGS)
       await french
-      expect(composable.isSavingLocale('fr')).toBe(false)
-      expect(composable.isSavingLocale('en')).toBe(true)
+      // Le FR est fini, l'EN court encore.
+      expect(composable.isAnySaving.value).toBe(true)
 
       pending.fail(1, new AdminAboutError('validation', 'Invalide'))
       await english
-      expect(composable.isSavingLocale('en')).toBe(false)
+      expect(composable.isAnySaving.value).toBe(false)
     })
 
     it.each([

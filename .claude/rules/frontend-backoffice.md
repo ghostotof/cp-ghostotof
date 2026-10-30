@@ -269,9 +269,9 @@ version" copies nothing and the assistant sends all five fields.
   replaces the other's error (a failed FR save, then a successful or failed EN one, leaves the FR error for the way back).
   **One save per locale in flight** (R50, the author's decision of 2026-10-30, CR5-3/CR5-4): `save(locale)` refuses a
   second save of a locale while its first is in flight (no request, `false`), so the response that arrives is always the
-  only one of its locale. The form disables « Enregistrer » for the locale shown only (`isSaving`, read on `isSavingLocale`: an English save is not
-  held by a French one), and « Proposer la traduction » while the locale shown **or the target locale** has a save in
-  flight (`isSavingLocale` of both, R67, R86, decision 3 of the sixth review: the target's response would overwrite the proposal it
+  only one of its locale. The form disables « Enregistrer » for the locale shown only (`isSaving`, the current key's: an English save is not
+  held by a French one), and « Proposer la traduction » while any locale — with two, the one shown or the target — has a save in
+  flight (`isAnySaving`, R67, R86, R98, decision 3 of the sixth review: the target's response would overwrite the proposal it
   lands on; a save of the target started while the translation runs still does, and the notice goes with it, R66).
   Reloading a locale never clears its error: the form copies the settings read, so that error is the only trace of the refused save.
   **A proposal notice is its target locale's** (F11, R50, R66, decision 4 of the sixth review): `proposal`
