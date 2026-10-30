@@ -22,6 +22,8 @@ paths:
   - "tools/tests/smoke-login-throttling.test.sh"
   - "tools/smoke-mcp.sh"
   - "tools/tests/smoke-mcp.test.sh"
+  - "tools/lib/smoke-http.sh"
+  - "tools/tests/smoke-http.test.sh"
   - "backend/config/packages/nelmio_cors.yaml"
   - "SECURITY.md"
 ---
@@ -111,7 +113,9 @@ paths:
   costs nginx only. Its 413 is nginx's HTML page, like the server's 1 MB one. Accepted: claude.ai and ChatGPT
   connectors call from their providers' egress addresses, which their users share — fine at this site's
   audience, revisit if phase 2's real clients get throttled. `tools/smoke-mcp.sh`, run by `smoke-test-preprod`
-  (its own `timeout-minutes: 3`), proves it on the real pod: an `initialize` on the public host (a 403 there
+  (its own `timeout-minutes: 3`; like `smoke-login-throttling.sh` and `smoke-dead-session-cookie.sh` it builds the Basic Auth
+  file and calls `curl` through `tools/lib/smoke-http.sh` — `audit-prod.sh` shares the file only —: a line break in
+  `AUDIT_BASIC_AUTH` exits 2, a `curl` without an answer exits 1 saying nothing was verified), proves it on the real pod: an `initialize` on the public host (a 403 there
   means `allowed_hosts`, derived from `APP_FRONTEND_BASE_URL`, misses it), the session closed by `DELETE` (its
   status checked: a session left open stays an hour), a 16 KiB + 1 body refused in 413 with `Content-Length` then in
   `chunked` (under a fake session id: no zone of session creations, no PHP), then `GET`s without a session (they

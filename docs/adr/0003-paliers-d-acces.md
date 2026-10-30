@@ -269,7 +269,7 @@ déconnexion reste valable jusqu'à son échéance, et la clé de signature rest
 mais il ne survit plus au mot de passe qu'il a prouvé. C'est la remédiation d'un cookie volé : la personne
 (ou un `ROLE_SUPER`, `PUT /api/backoffice/users/{id}/password`, ou le lien d'invitation qui remplace ou pose
 un mot de passe) change le mot de passe, et **toute requête suivante portant un cookie ouvert avant le
-changement reçoit un 401** — sur toute l'API authentifiée par le cookie, pas seulement au
+changement reçoit un 401** — sur toute route de l'API authentifiée par le cookie qui exige un rôle, pas seulement au
 consentement MCP où la règle est née (R1) ; une route publique sert la session close comme l'anonyme et l'audite
 (amendement du 2026-10-29, R35). Le premier 401 efface les deux cookies d'authentification, comme la déconnexion :
 un cookie mort resterait dans le navigateur (l'amendement du 2026-10-29 étend cet effacement à tout cookie refusé par

@@ -21,6 +21,8 @@ paths:
   - "backend/tests/Support/RefusedBearerCookie.php"
   - "tools/smoke-dead-session-cookie.sh"
   - "tools/tests/smoke-dead-session-cookie.test.sh"
+  - "tools/lib/smoke-http.sh"
+  - "tools/tests/smoke-http.test.sh"
 ---
 
 # Backend — `Security/Authentication`: cookies and sessions
@@ -144,9 +146,15 @@ paths:
     F1) makes **every** refusal of the `BEARER` cookie — expired, invalid (signature, payload, account gone), opened
     before a password change (#650) — **expire `BEARER` and `XSRF-TOKEN`** through `AuthCookieFactory::expired()`: with
     session cookies a refused one would stay until the browser closes. The next request is anonymous.
-    `JWT_NOT_FOUND` (no cookie) clears nothing. **A route with no `access_control` rule serves the request as
-    anonymous and touches nothing** (`Infrastructure/Security/PublicRouteIgnoresRefusedSessionListener`, #748 R35, the
-    author's decision of 2026-10-29, replacing R23's `credentials: 'omit'` and R24's replay): a `LoginFailureEvent`
+    `JWT_NOT_FOUND` (no cookie) clears nothing. **Accepted limit**: a login's expiry is not exposed to the
+    frontend, so the first authenticated request after its `exp` takes the 401 (a read: 401; a write: 401, then the CSRF's
+    403 without token), read as an ended session (`.claude/rules/frontend-session.md`; the backoffice banner, the sign-in
+    at the next navigation — `.claude/rules/frontend-backoffice.md`, « Route protection »). Pinned by
+    `RefusedSessionCookiesAreClearedTest` (cleared on `/api/me` with the factory's attributes, the public route served
+    afterwards, a served session clearing nothing) and, for the password change, `SessionBeforePasswordChangeTest`.
+  - **`Infrastructure/Security/PublicRouteIgnoresRefusedSessionListener`** (#748 R35, the author's decision of
+    2026-10-29, replacing R23's `credentials: 'omit'` and R24's replay): **a route with no `access_control` rule serves
+    the request as anonymous and touches nothing**. A `LoginFailureEvent`
     listener on `security.event_dispatcher.api` only, last priority (-1024), that sets the response to `null` when the
     `AccessMap` asks for nothing — `requiresAccess()` is `AccessListener::supports()`'s predicate, compared with it on
     every route by a test, no second list of public routes (Lexik still builds and discards its 401). A protected
@@ -156,15 +164,21 @@ paths:
     route sets no cookie the anonymous call does not; the premise (every authorization of `/api` is an `access_control`
     rule) is held by `AuthorizationLivesInAccessControlTest` (C5-12).
     Rejected: `lazy: true` (the JWT authenticator's `supports()` stays `true`), a `JWTAuthenticator` subclass, a
-    firewall without authenticator for public routes. **Accepted limit**: a login's expiry is not exposed to the
-    frontend, so the first authenticated request after its `exp` takes the 401 (a read: 401; a write: 401, then the CSRF's
-    403 without token), read as an ended session (`.claude/rules/frontend-session.md`; the backoffice banner, the sign-in
-    at the next navigation — `.claude/rules/frontend-backoffice.md`, « Route protection »). Pinned by
-    `RefusedSessionCookiesAreClearedTest` (cleared on `/api/me` with the factory's attributes, the public route served
-    afterwards, a served session clearing nothing), `PublicRouteIgnoresRefusedSession{,Registration}Test`, for the
-    password change `SessionBeforePasswordChangeTest` and, on the real stack, `tools/smoke-dead-session-cookie.sh`
-    (`smoke-test-preprod`, behind the Basic Auth the test container lacks: a random `BEARER` on a public read gets 200
-    and no `Set-Cookie`, on `/api/me` a 401 that expires it; offline test `tools/tests/smoke-dead-session-cookie.test.sh`).
+    firewall without authenticator for public routes. Pinned by `PublicRouteIgnoresRefusedSession{,Registration}Test`,
+    `AuthorizationLivesInAccessControlTest` and, on the real stack, `tools/smoke-dead-session-cookie.sh`
+    (`smoke-test-preprod`, behind the Basic Auth the test container lacks): a random `BEARER` on a public read gets 200
+    and no `Set-Cookie` for `BEARER` nor `XSRF-TOKEN`; on `/api/me` a 401 that expires both. A `curl` that gets no
+    answer exits 1 with a message, a Basic Auth holding a line break is refused (exit 2), and that plumbing is shared
+    in `tools/lib/smoke-http.sh`; offline tests `tools/tests/smoke-dead-session-cookie.test.sh` and
+    `tools/tests/smoke-http.test.sh`.
+    **Accepted limit (C5-1, the author's decision of 2026-10-30)**: a closed session (the password changed since) kept by a
+    legitimate tab writes one `session-refused-after-credentials-change` line per public request until that tab's next
+    `GET /api/me` — every load — clears the cookie; bounded by the nginx `publicapi` zone and the page's life, and an
+    attacker gains nothing (served as anonymous). Not de-duplicated, for the reason in `security-authentication-audit.md`.
+    **Accepted (C5-2, the author's decision of 2026-10-30)**: since the SPA sends its cookies to public reads (R37), a public
+    read by a signed-in person is authenticated — the JWT verified and one `SELECT` of the account (the `cpg_users` provider
+    reloads it) —, the price of serving a public route whatever the cookie (decision 1 of the fourth review); the response
+    stays the anonymous one.
   - **`lexik_jwt_authentication.clock_skew: 5`** (#748, A3-9, the author's decision of 2026-10-29): a pod's clock a
     second ahead made an `iat` in the future a 401 which, since F1, clears the session. Read in Lexik 3.2
     (`LoadedJWS`, `LcobucciJWSProvider::verify()`): it loosens `iat` **and `exp`** (an expired token is served up to

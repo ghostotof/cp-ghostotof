@@ -633,8 +633,9 @@ docker run --rm -i -v "$TMP:/w:ro" httpd:alpine \
 ```
 
 L'alphabet base64 ne contient ni `:` ni guillemet : le couple reste
-découpable par `curl -u` et par le fichier de config que construisent
-`tools/audit-prod.sh` et `tools/smoke-login-throttling.sh`.
+découpable par `curl -u` et par le fichier de config que construit
+`tools/lib/smoke-http.sh` pour `tools/audit-prod.sh` et les trois scripts de fumée
+(`smoke-login-throttling.sh`, `smoke-dead-session-cookie.sh`, `smoke-mcp.sh`).
 
 #### Première installation
 
@@ -657,7 +658,8 @@ configuration nginx dès qu'il change.
 
 **Secret GitHub Actions associé** (créé côté GitHub, jamais dans ce dépôt) :
 les jobs `audit-preprod` (`tools/audit-prod.sh`) et `smoke-test-preprod`
-(`tools/smoke-login-throttling.sh`) interrogent la préprod — sans
+(`tools/smoke-login-throttling.sh`, `tools/smoke-dead-session-cookie.sh`,
+`tools/smoke-mcp.sh`) interrogent la préprod — sans
 identifiants, l'audit ne recevrait que des 401 et prendrait chacun pour une
 fuite. `PREPROD_BASIC_AUTH` porte les mêmes identifiants que le htpasswd
 ci-dessus, au format `utilisateur:mot_de_passe` (celui que `curl -u` attend,

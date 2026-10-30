@@ -83,7 +83,8 @@ does `BackofficeHttpClient`.
 - A browser that drops the cookies of an earlier session reads a finished session: signing in again is indeed the
   remedy.
 - **After the `exp` of a JWT (login or base access) the first 401 only reaches a route that requires a role** (#748, the
-  author's decision of 2026-10-29): the server serves a public route as anonymous whatever the cookie (R35), and the SPA
+  author's decision of 2026-10-29): the server serves a public route as anonymous whatever the cookie (R35; in dev, two origins, public reads leave
+  without cookies, so R35 is exercised there by PHPUnit and the preprod smoke only), and the SPA
   reads `/api/me` at every load, which clears a dead cookie.
   The login's expiry is not exposed to the frontend, so its first authenticated request takes the 401 and the session
   reads as ended (banner, sign-in again); « Accès instantané » ignores the dead cookie (one call, R37). The base access expires
@@ -155,7 +156,7 @@ is missing from the table), `sessionEndedLoad.spec.ts` (the thirteen composables
 other failure sets `unknown`; `useAdminTranslation` and `useOrderDraft` too), `HttpAdminUserRepository.spec.ts`,
 `HttpMcpConnectionsRepository.spec.ts`, `HttpOAuthConsentRepository.spec.ts`, `HttpAssistantRepository.spec.ts`.
 - `noOmittedCredentials.spec.ts` (no file of `src/` writes a string `'omit'` outside a comment — typed or in the options object —, which drops preprod's Basic Auth, R37, R51).
-- The backend facts it relies on are pinned by `AuthCookieAttributesTest` (session cookies), `BaseAccessControllerTest` and `RefusedSessionCookiesAreClearedTest` (a refused cookie cleared by its first 401), `JwtClockSkewTest` (`clock_skew` 5 s, R29), `cookiePolicy.spec.ts` (the published cookie policy says session cookies, R32), `.claude/rules/security-authentication-sessions.md`.
+- The backend facts it relies on are pinned by `AuthCookieAttributesTest` (session cookies), `BaseAccessControllerTest` and `RefusedSessionCookiesAreClearedTest` (a refused cookie cleared by the first 401 of a protected route), `JwtClockSkewTest` (`clock_skew` 5 s, R29), `cookiePolicy.spec.ts` (the published cookie policy says session cookies, R32), `.claude/rules/security-authentication-sessions.md`.
 
 Three guards of the first version are gone, because what they guarded no longer exists: `sessionEnded.spec.ts` (domain,
 `isSessionEndedError`), `visibleErrorReason.spec.ts` and `errorReasonsHideSessionEnded.spec.ts` (a source guard: every file
