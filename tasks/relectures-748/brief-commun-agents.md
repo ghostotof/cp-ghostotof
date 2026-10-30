@@ -9,13 +9,13 @@ Dépôt /home/ghostotof/dev/cp-ghostotof, branche `feature/spec-0007-748-a11y`. 
   ne suffit pas.
 
 ## Lecture préalable
-- Dans `tasks/plan-748.md` : « Global Constraints », puis, pour les tâches **R73 et suivantes**, la section
-  « Corrections de la septième relecture (2026-10-30) » en entier jusqu'à la première tâche (décisions de l'auteur,
+- Dans `tasks/plan-748.md` : « Global Constraints », puis, pour les tâches **R88 et suivantes**, la section
+  « Corrections de la huitième relecture (2026-10-30) » en entier jusqu'à la première tâche (décisions de l'auteur,
   vérification des constats, options comparées, choix tranchés, questions, Review Focus, contraintes d'exécution, table
-  des fichiers), puis **ta tâche**. (R59–R72 : « Corrections de la sixième relecture » ; R46–R58 : « … cinquième
-  relecture » ; R35–R45 : « … quatrième relecture » ; R23–R34 : « … troisième relecture » ; R12–R22 : « … deuxième
-  relecture » ; R1–R11 : « Corrections de relecture ».) Constats et décisions de la série :
-  `tasks/relectures-748/relecture-7-constats.md`. Les sections passées
+  des fichiers), puis **ta tâche**. (R73–R87 : « Corrections de la septième relecture » ; R59–R72 : « … sixième
+  relecture » ; R46–R58 : « … cinquième relecture » ; R35–R45 : « … quatrième relecture » ; R23–R34 : « … troisième
+  relecture » ; R12–R22 : « … deuxième relecture » ; R1–R11 : « Corrections de relecture ».) Constats et décisions de
+  la série : `tasks/relectures-748/relecture-8-constats.md`. Les sections passées
   sont l'archive de leur moment : une note « *(rectifié le …)* » y dit ce que les séries ont rendu faux.
   Suis-la ; si elle est fausse sur le code réel (les tâches R précédentes ont pu le changer), adapte au plus près de
   son intention et note l'écart, ou rends la question.
@@ -26,7 +26,7 @@ Dépôt /home/ghostotof/dev/cp-ghostotof, branche `feature/spec-0007-748-a11y`. 
   qui décrit un comportement que ta tâche modifie se corrige dans le même commit que le comportement** (St6-2 et Sp6-1
   sont nés de docs laissées en arrière) : avant le commit, cherche (`grep`) le nom de chaque fonction ou état touché
   dans `.claude/rules/` et dans les docblocks voisins. Une règle ne dépasse pas
-  50 000 octets (`security-user.md` en fait 47 914 : n'y ajoute rien ; `backoffice-api.md` 39 946 : n'y ajoute rien sans
+  50 000 octets (`security-user.md` en fait 47 914 : n'y ajoute rien ; `backoffice-api.md` 39 834 : n'y ajoute rien sans
   retirer d'abord) ; donne dans ton rendu la taille de chaque règle
   touchée.
 - **Un fichier créé ou déplacé qui entre dans les `paths:` d'une règle est indexé (`git add <fichier>`) avant
@@ -51,7 +51,9 @@ Dépôt /home/ghostotof/dev/cp-ghostotof, branche `feature/spec-0007-748-a11y`. 
   mutation que la tâche nomme. **Une mutation se restaure depuis une copie du fichier faite avant elle et vérifiée par
   `cmp`** (`cp f "$scratch/f.orig"`, muter, mesurer, `cp "$scratch/f.orig" f`, `cmp f "$scratch/f.orig"`), puis
   `git diff` vide sur le fichier muté ; **jamais `git checkout-index`, `git restore`, `git reset` ni aucune commande git
-  qui réécrit l'index ou l'arbre**. Pour un refactoring pur, le
+  qui réécrit l'index ou l'arbre**. **Une mutation s'écrit en place avec l'outil Edit, jamais par `sed -i` ni
+  `perl -pi`** : ils remplacent le fichier par un nouvel inode, que le montage du conteneur ne voit pas — la mutation ne
+  serait pas mesurée. Pour un refactoring pur, le
   filet est la suite existante, verte avant et après, nombre de tests noté ; dis quels tests de garde changent et pourquoi.
 - **Aucun travail en arrière-plan au rendu** : ni processus détaché, ni conteneur lancé à part, ni `vitest --watch` ;
   tout ce que tu as lancé est terminé quand tu rends.
@@ -71,7 +73,7 @@ Claude-Session: https://claude.ai/code/session_01SexJivTrKeHyUYAtAYLBDt
 Ne jamais lire `.env.local`, `.env.test.local`, `config/jwt/*` ni un fichier de secrets (exclus-les de tout grep -r).
 Ne jamais nommer un compte réel. **Git : seules `git add <fichiers>` et `git commit` modifient l'index ou l'arbre**
 (`git mv` / `git rm` pour un fichier déplacé ou supprimé) ; jamais `git reset` — **pas même sans argument** —, ni
-`checkout`, `switch`, `stash`, `restore`, `checkout-index`. Pas de push, pas de PR, pas de commentaire
+`add -N`, `checkout`, `switch`, `stash`, `restore`, `checkout-index`. Jamais `sed -i` ni `perl -pi` pour une mutation. Pas de push, pas de PR, pas de commentaire
 GitHub. Ne touche pas aux autres tâches ni à `tasks/` ; ne coche rien. Ne modifie un test existant que là où le
 comportement change exprès. Bloqué, ou décision qui revient à l'utilisateur : arrête-toi et rends la question.
 
