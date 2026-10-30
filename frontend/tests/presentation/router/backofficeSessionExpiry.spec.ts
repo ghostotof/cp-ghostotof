@@ -241,6 +241,72 @@ describe('backofficeSessionExpiry — refus réel (#748, R17)', () => {
     unmount()
   })
 
+  // R77 (CR7-2, CR7-3), tests de caractérisation : l'identité du compte est son **nom**, et un refus n'est écarté que
+  // si le compte de l'envoi et celui de la réception diffèrent — `null` d'un seul côté compris.
+  it.each(['read', 'write'] as const)(
+    "aucun compte à l'envoi ni à la réception : le refus (%s) est compté et relu, `null` des deux côtés est le même « aucun » (R77)",
+    async (kind) => {
+      me.mockClear()
+      await signIn(SUPER)
+      const { handler, unmount } = buildReaction()
+
+      // L'accès de base oublie le dernier compte : l'envoi et la réception relèvent tous deux `null`.
+      markBaseAccessGranted()
+      const sent = handler.stampAtSend(kind)
+      expect(sent.account).toBeNull()
+      handler.refused(sent)
+      await flushPromises()
+
+      expect(backofficeAccessRefused.value).toBe(1)
+      expect(me).toHaveBeenCalledTimes(1)
+      unmount()
+    },
+  )
+
+  it("aucun compte à l'envoi, un compte à la réception : le refus est écarté (limite écrite, sans chemin, CR7-3)", async () => {
+    me.mockClear()
+    await signIn(SUPER)
+    const { handler, unmount } = buildReaction()
+
+    // Le cas que le garde du backoffice interdit (il attend la première vérification) : la requête part avant tout compte.
+    markBaseAccessGranted()
+    const sent = handler.stampAtSend('write')
+    expect(sent.account).toBeNull()
+    await signIn(SUPER)
+    me.mockClear()
+    handler.refused(sent)
+    await flushPromises()
+
+    expect(backofficeAccessRefused.value).toBe(0)
+    expect(me).not.toHaveBeenCalled()
+    unmount()
+  })
+
+  it.each(['read', 'write'] as const)(
+    "déconnexion puis reconnexion au même nom entre l'envoi et le refus : le refus (%s) est compté, le nom est l'identité (R77)",
+    async (kind) => {
+      me.mockClear()
+      await signIn(SUPER)
+      const { handler, unmount } = buildReaction()
+
+      // La requête part sous « super » ; la personne se déconnecte (le dernier compte est oublié), puis se reconnecte
+      // sous le même nom : le compte à la réception est celui de l'envoi, par son nom.
+      const sent = handler.stampAtSend(kind)
+      const Probe = defineComponent({ setup: () => ({ auth: useAuth() }), template: '<div />' })
+      const wrapper = mount(Probe, { global: { provide: { [AUTH_REPOSITORY as symbol]: repository } } })
+      await wrapper.vm.auth.logout()
+      wrapper.unmount()
+      await signIn(SUPER)
+      me.mockClear()
+      handler.refused(sent)
+      await flushPromises()
+
+      expect(backofficeAccessRefused.value).toBe(1)
+      expect(me).toHaveBeenCalledTimes(1)
+      unmount()
+    },
+  )
+
   it("refused transmet le compte du timbre au comptage : l'écriture refusée n'est dite qu'à ce compte (R76)", async () => {
     await signIn(SUPER)
     const { handler, unmount } = buildReaction()

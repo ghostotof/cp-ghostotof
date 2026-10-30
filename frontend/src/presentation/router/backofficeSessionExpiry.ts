@@ -29,9 +29,14 @@ import type { BackofficeSendKind, BackofficeSendStamp, BackofficeSessionReaction
  * porte le périmètre de refus, que chaque effacement de l'alerte avance (chemin ou requête changés, fin de session, démontage) ; le 403 d'une page quittée n'affiche aucune alerte sur la
  * suivante et ne relit rien. **Une écriture refusée compte toujours** (R38) : le timbre porte `{ kind: 'write' }`, la
  * personne a fait le geste et doit apprendre son échec, au besoin sur la page où elle est allée ; le comptage **retient le
- * compte du timbre** (R76) : au montage de l'alerte, l'avis d'un enregistrement refusé pendant l'absence n'est dit qu'à ce compte — **sauf si le compte a changé depuis l'envoi** (R63, décision 2 de la
- * sixième relecture) : un refus parti sous un autre compte, ou sous aucun, n'est ni compté ni relu, lecture ou écriture ; le
- * même compte reste dit après une fin de session puis un retour, ou une bascule de palier. La relecture est branchée ici, côté composition, et non dans chaque composable : ils
+ * compte du timbre** (R76) : au montage de l'alerte, l'avis d'un enregistrement refusé pendant l'absence n'est dit qu'à ce compte — **sauf si le compte de l'envoi et celui de la réception
+ * diffèrent** (R63, décision 2 de la sixième relecture ; R77) : un refus ni compté ni relu, lecture ou écriture, quand
+ * `null` est d'un seul côté (un compte puis aucun, ou l'inverse) ou que les noms diffèrent ; `null` des deux côtés est le
+ * même « aucun » et compte. L'identité est le **nom** : le même nom après une fin de session puis un retour, une
+ * déconnexion puis une reconnexion, une bascule de palier ou un rôle perdu est le même compte, exprès (le 403 d'un compte
+ * rétrogradé est ce qu'il faut dire). Limites : un compte supprimé puis recréé sous le même nom passe pour le même (C8,
+ * ticket `__Host-`) ; `null` à l'envoi puis un compte écarte le refus, cas sans chemin (le garde du backoffice attend la
+ * première vérification, CR7-3). La relecture est branchée ici, côté composition, et non dans chaque composable : ils
  * n'appellent pas `useAuth()` (treize composables d'administration, dont aucun test ne fournit `AUTH_REPOSITORY`).
  *
  * Construite par `main.ts` avec le `useAuth()` de l'application (`app.runWithContext`) : `rereadAfterRefusal` a besoin
@@ -49,9 +54,11 @@ export function createBackofficeSessionReaction(auth: Pick<UseAuthResult, 'rerea
     refused: (sentAt: BackofficeSendStamp): void => {
       // Jugé sur le compte, non sur la génération (R63, décision 2 de la sixième relecture) : la génération avance aussi
       // à une fin de session, à un retour du même compte, à une bascule de palier, et rendrait muet le 403 d'un compte
-      // toujours à l'écran. Un refus parti sous un autre compte, ou sous aucun (`null` diffère de tout identifiant), est
-      // celui d'une session qui n'est plus la courante : le palier relu serait celui d'un compte qu'il ne concerne pas
-      // (CR5-2). La génération ne juge plus que `ended` : un 401 parti sous le premier compte ne finit pas la session du second.
+      // toujours à l'écran. Un refus parti sous un autre nom, ou sous un compte quand il n'y en a plus (ou l'inverse : `null`
+      // d'un seul côté diffère de tout nom), est celui d'une session qui n'est plus la courante : le palier relu serait
+      // celui d'un compte qu'il ne concerne pas (CR5-2). `null` des deux côtés est le même « aucun » : le refus compte.
+      // `null` à l'envoi puis un compte n'a pas de chemin : le garde du backoffice attend la première vérification (CR7-3).
+      // La génération ne juge plus que `ended` : un 401 parti sous le premier compte ne finit pas la session du second.
       if (sentAt.account !== lastAccountName()) {
         return
       }

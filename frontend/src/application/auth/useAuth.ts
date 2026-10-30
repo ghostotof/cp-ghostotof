@@ -33,9 +33,11 @@ export {
 }
 
 /**
- * L'identifiant du **dernier compte affiché** (`LastAccount`, `sessionState.ts`), ou `null` quand aucun n'est retenu :
- * ce que le timbre d'envoi du backoffice retient pour juger un refus tardif (#748, R63, décision 2 de la sixième
- * relecture : un refus n'est écarté que si le compte a changé). Une **lecture** : la façade l'expose sans exporter
+ * Le **nom** du **dernier compte affiché** (`LastAccount`, `sessionState.ts`), ou `null` quand aucun n'est retenu :
+ * c'est l'identité du compte pour le timbre d'envoi du backoffice, qui juge un refus tardif (#748, R63, décision 2 de la
+ * sixième relecture ; R77 : écarté quand les deux comptes diffèrent, `null` d'un seul côté compris ; `null` des deux côtés
+ * est le même « aucun »). Le même nom après une déconnexion puis une reconnexion, ou un rôle perdu, est le même compte ;
+ * un compte supprimé puis recréé sous le même nom passe pour le même (limite acceptée, C8). Une **lecture** : la façade l'expose sans exporter
  * `getLastAccount` en entier (les rôles n'ont pas à sortir d'ici), et ce n'est pas une écriture de l'état
  * (`sessionStateEncapsulation.spec.ts`).
  */

@@ -63,9 +63,12 @@ account without `ROLE_TRUSTED` (one that lost it while the page was open), or fr
   together send one `/api/me`. **What a refusal must still concern to count** is read on the send stamp
   `{ session, account, refusal }`:
   - **the account** (R63, decision 2 of the sixth review): `account` is the last account displayed at send time; a
-    refusal is dropped — neither counted nor re-read, read or write — only when that account has changed (another
-    account, or none after the base access). The same account's 403 stays said across an end and a return, or a tier
-    change; the generation judges `ended()` only.
+    refusal is dropped — neither counted nor re-read, read or write — only when the account at send time and the account
+    now differ, `null` on one side included (none on both sides is the same « none » and counts); the identity is the
+    **name** (R77): the same name after a sign-out and a sign-in, or after a lost role, is the same account, on purpose;
+    a deleted account recreated under the same name passes for the same (accepted, C8, the `__Host-` ticket); `null` at
+    send time then an account drops the refusal, with no path to it (the backoffice guard waits for the first check).
+    The same account's 403 stays said across an end and a return, or a tier change; the generation judges `ended()` only.
   - **the scope, for a read** (R28, CR3-8, R38): `get` stamps `{ kind: 'read', scope: refusalScope() }`, `mutate`
     `{ kind: 'write' }`. The scope advances at every clearing of the alert, and only there: a path or query change
     (the query's parameters sorted: vue-router runs a navigation that only permutes them, the alert ignores it, R54;
