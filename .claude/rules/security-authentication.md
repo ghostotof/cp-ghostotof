@@ -29,7 +29,9 @@ What stays here: the CSRF guards (double-submit, login-CSRF), the base access, `
     guard covers all of `src/`, so its rule lives in `.claude/rules/backend-conventions.md`.
   - `Infrastructure/Http/CsrfCookieRequestSubscriber.php` — double-submit-cookie CSRF check, a `kernel.request`
     listener at priority 20 (must run *above* the Security firewall's priority 8 — see the class docblock).
-    Its `EXCLUDED_PATHS` are **exact** paths, each justified in the docblock. Two since #647,
+    Its `EXCLUDED_PATHS` are **exact** paths, each justified in the docblock; every route of `/api` declares its
+    methods, each `GET`, `HEAD`, `OPTIONS` or one of its public `UNSAFE_METHODS` (invariant n° 10 of
+    `ApiRouteExposureTest`, C8-6: a `QUERY` route or a custom method would leave the double-submit). Two since #647,
     **`/api/oauth/token` and `/api/oauth/revoke`**: called by the MCP client, never a browser, so no
     `XSRF-TOKEN` to echo. Safe for the reason `/api/mcp`'s exclusion is (ADR 0006 D4): their `oauth`
     firewall has no authenticator and reads no cookie, so a cross-site request carrying a person's

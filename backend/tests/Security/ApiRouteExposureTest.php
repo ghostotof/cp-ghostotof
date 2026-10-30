@@ -31,7 +31,7 @@ use Symfony\Component\Routing\RouterInterface;
  * servie sans authentification, il faut l'inscrire **explicitement** dans
  * PUBLIC_PATHS avec sa justification — un choix conscient, jamais un oubli.
  *
- * Neuf invariants :
+ * Dix invariants :
  *  1. toute route hors PUBLIC_PATHS refuse un appelant anonyme (401 ou 403) ;
  *  2. aucune route /api/backoffice ne peut être inscrite dans PUBLIC_PATHS ;
  *  3. tout le backoffice refuse un compte authentifié mais sans ROLE_SUPER
@@ -62,10 +62,11 @@ use Symfony\Component\Routing\RouterInterface;
  *  9. sur le pare-feu `api`, une route publique est exactement une route sans règle
  *     d'`access_control` : `requiresAccess()` vaut vrai si et seulement si le chemin n'est ni
  *     dans PUBLIC_PATHS ni dans RULELESS_OUTSIDE_PUBLIC_PATHS (#748, R73), à l'exécution sur
- *     le routeur et l'`AccessMap`. Les témoins de la prémisse « toute autorisation de `/api`
- *     est une règle d'`access_control` » sont listés une fois, dans
+ *     le routeur et l'`AccessMap`. Les témoins de cette prémisse sont listés une fois, dans
  *     `.claude/rules/security-authentication-sessions.md` (puce de
- *     `PublicRouteIgnoresRefusedSessionListener`).
+ *     `PublicRouteIgnoresRefusedSessionListener`) ;
+ * 10. chaque route de `/api` déclare ses méthodes, et chacune est jugée par le double-submit : `GET`, `HEAD`,
+ *     `OPTIONS` ou l'une des `UNSAFE_METHODS` de `CsrfCookieRequestSubscriber` (#748, R89).
  */
 final class ApiRouteExposureTest extends WebTestCase
 {
@@ -127,6 +128,10 @@ final class ApiRouteExposureTest extends WebTestCase
      * une route revient à affirmer qu'elle ne porte aucune donnée
      * identifiante (D2 : le palier de base est publiable par construction).
      *
+     * `/api/logout` figure ici et dans RULELESS_OUTSIDE_PUBLIC_PATHS : chaque liste pose sa question (ce que le
+     * palier de base ouvre ; ce qui n'a pas de règle), pour la même substance — aucune donnée servie, les seuls
+     * cookies de l'appelant touchés (St8-13).
+     *
      * @var array<string, string> chemin de route (tel que déclaré au routeur) => raison
      */
     private const array BASE_TIER_PATHS = [
@@ -138,16 +143,24 @@ final class ApiRouteExposureTest extends WebTestCase
     /**
      * Routes du pare-feu `api` hors de PUBLIC_PATHS qui n'ont pourtant aucune règle d'`access_control`, chacune
      * justifiée (invariant n° 9). La liste est fermée : une route sans règle qui n'est ni publique ni ici fait
-     * rougir l'invariant, et une entrée devenue inutile aussi.
+     * rougir l'invariant, et une entrée devenue inutile aussi. `/api/logout` y figure et dans BASE_TIER_PATHS, pour
+     * la même substance (aucune donnée, les seuls cookies de l'appelant) : voir cette liste.
      *
      * @var array<string, string> chemin de route (tel que déclaré au routeur) => raison
      */
     private const array RULELESS_OUTSIDE_PUBLIC_PATHS = [
         '/api/logout' => '« Terminer cet accès » (#65, R35) : sans règle par construction, il expire les deux '
-            .'cookies de quiconque, y compris d\'un porteur dont le cookie est refusé (2xx depuis R35) ; une règle '
-            .'lui rendrait un 401. Pas public pour autant : le double-submit refuse une écriture sans jeton '
-            .'(invariant n° 1), et il ne sert aucune donnée.',
+            .'cookies de l\'appelant, y compris d\'un porteur dont le cookie est refusé (2xx depuis R35) ; une règle '
+            .'lui rendrait un 401. Pas public pour autant : il ne sert aucune donnée et n\'agit que sur les cookies '
+            .'de l\'appelant — le double-submit n\'y protège rien d\'autre, une paire s\'obtenant en un clic (accès de base).',
     ];
+
+    /**
+     * Les méthodes qu'une route de `/api` peut déclarer en dehors de `CsrfCookieRequestSubscriber::UNSAFE_METHODS` :
+     * celles que le double-submit laisse passer et qu'une route peut servir sans écrire (invariant n° 10). Une autre
+     * — `QUERY`, une méthode propre — sortirait du double-submit sans qu'aucune garde le voie (C8-6).
+     */
+    private const array SAFE_METHODS_OUTSIDE_THE_DOUBLE_SUBMIT = ['GET', 'HEAD', 'OPTIONS'];
 
     protected function setUp(): void
     {
@@ -162,10 +175,55 @@ final class ApiRouteExposureTest extends WebTestCase
     }
 
     /**
+     * Invariant n° 10 (#748, R89, C8-6, C8-4) : chaque route de `/api` déclare ses méthodes, et chacune est jugée par
+     * le double-submit — `GET`, `HEAD`, `OPTIONS` (SAFE_METHODS_OUTSIDE_THE_DOUBLE_SUBMIT) ou l'une des
+     * `CsrfCookieRequestSubscriber::UNSAFE_METHODS`. Une route sans méthode déclarée les accepte toutes et les autres
+     * invariants ne la sondent qu'en GET ; une route `QUERY` ou d'une méthode propre sortirait du double-submit sans
+     * qu'aucune garde le voie.
+     */
+    public function testEveryApiRouteDeclaresMethodsTheDoubleSubmitJudges(): void
+    {
+        $judged = [...self::SAFE_METHODS_OUTSIDE_THE_DOUBLE_SUBMIT, ...CsrfCookieRequestSubscriber::UNSAFE_METHODS];
+        $checked = 0;
+
+        foreach ($this->router()->getRouteCollection() as $route) {
+            $path = $route->getPath();
+            if (!str_starts_with($path, '/api')) {
+                continue;
+            }
+
+            self::assertNotSame(
+                [],
+                $route->getMethods(),
+                \sprintf('%s ne déclare aucune méthode : elle les accepte toutes, et l\'invariant n° 1 ne la sonde qu\'en GET.', $path),
+            );
+            foreach ($route->getMethods() as $method) {
+                self::assertContains(
+                    $method,
+                    $judged,
+                    \sprintf(
+                        '%s déclare %s, que le double-submit ne juge pas : ni sûre (GET, HEAD, OPTIONS) ni dans '
+                        .'CsrfCookieRequestSubscriber::UNSAFE_METHODS.',
+                        $path,
+                        $method,
+                    ),
+                );
+            }
+            ++$checked;
+        }
+
+        self::assertGreaterThan(0, $checked, 'Aucune route de /api sondée : le test ne vérifie plus rien.');
+    }
+
+    /**
      * Invariant n°1 — la règle de fond. Une route absente de PUBLIC_PATHS doit
      * être refusée à un anonyme : 401 (firewall JWT) pour les lectures, 403
      * (CsrfCookieRequestSubscriber, qui s'exécute au-dessus du firewall) pour
      * les méthodes d'écriture. Dans les deux cas : aucune donnée servie.
+     *
+     * Limite (C8-4) : un paramètre de chemin n'y prend qu'une valeur (`ConcreteApiUrl`). Exact tant qu'aucune règle
+     * d'`access_control` ne nomme un segment qu'une route paramètre — vérifié le 2026-10-30. Une route sans méthode
+     * déclarée (sondée en GET seul) est refusée par l'invariant n° 10.
      */
     public function testEveryRouteOutsideThePublicAllowListRefusesAnonymousCallers(): void
     {
@@ -265,7 +323,7 @@ final class ApiRouteExposureTest extends WebTestCase
      * réponse à un cookie refusé (`StaleSessionCookiesClearingListener`), aux attributs exacts
      * de la fabrique : sans quoi une session morte resterait dans le navigateur jusqu'à sa
      * fermeture. Une route sans règle n'y est pas jugée : l'invariant n° 9 voit qu'une route
-     * hors de PUBLIC_PATHS en a une. Les témoins de la prémisse sont listés une fois, dans
+     * hors de PUBLIC_PATHS en a une. Les témoins de cette prémisse sont listés une fois, dans
      * `.claude/rules/security-authentication-sessions.md` (puce de
      * `PublicRouteIgnoresRefusedSessionListener`).
      * Mêmes corps et en-têtes que l'invariant n°7 ; les méthodes non sûres portent en plus
