@@ -9,18 +9,22 @@ Dépôt /home/ghostotof/dev/cp-ghostotof, branche `feature/spec-0007-748-a11y`. 
   ne suffit pas.
 
 ## Lecture préalable
-- Dans `tasks/plan-748.md` : « Global Constraints », puis, pour les tâches **R46 et suivantes**, la section
-  « Corrections de la cinquième relecture (2026-10-30) » en entier jusqu'à la première tâche (décisions de l'auteur,
-  vérification des constats, choix de conception, questions, Review Focus, contraintes d'exécution, table des fichiers),
-  puis **ta tâche**. (R35–R45 : « Corrections de la quatrième relecture » ; R23–R34 : « … troisième relecture » ;
-  R12–R22 : « … deuxième relecture » ; R1–R11 : « Corrections de relecture ».) Constats et décisions de la série :
-  `tasks/relectures-748/relecture-5-constats.md`.
+- Dans `tasks/plan-748.md` : « Global Constraints », puis, pour les tâches **R59 et suivantes**, la section
+  « Corrections de la sixième relecture (2026-10-30) » en entier jusqu'à la première tâche (décisions de l'auteur,
+  vérification des constats, options comparées, choix tranchés, questions, Review Focus, contraintes d'exécution, table
+  des fichiers), puis **ta tâche**. (R46–R58 : « Corrections de la cinquième relecture » ; R35–R45 : « … quatrième
+  relecture » ; R23–R34 : « … troisième relecture » ; R12–R22 : « … deuxième relecture » ; R1–R11 : « Corrections de
+  relecture ».) Constats et décisions de la série : `tasks/relectures-748/relecture-6-constats.md`. Les sections passées
+  sont l'archive de leur moment : une note « *(rectifié le …)* » y dit ce que les séries ont rendu faux.
   Suis-la ; si elle est fausse sur le code réel (les tâches R précédentes ont pu le changer), adapte au plus près de
   son intention et note l'écart, ou rends la question.
 - Règles : avec l'outil **Read** (jamais cat/sed/grep, qui ne chargent pas les règles path-scoped), celles que ta
   tâche cite ou modifie, plus, pour le frontend, `.claude/rules/frontend.md` et `.claude/rules/frontend-a11y.md`, et au
   moins un fichier de chaque zone touchée (`frontend/src`, `backend/src`, `backend/tests`, `tools/`) avant d'y écrire.
-  Lis une règle avant de la modifier ; **remplace** une phrase plutôt que d'en ajouter. Une règle ne dépasse pas
+  Lis une règle avant de la modifier ; **remplace** une phrase plutôt que d'en ajouter. **Une docstring ou une règle
+  qui décrit un comportement que ta tâche modifie se corrige dans le même commit que le comportement** (St6-2 et Sp6-1
+  sont nés de docs laissées en arrière) : avant le commit, cherche (`grep`) le nom de chaque fonction ou état touché
+  dans `.claude/rules/` et dans les docblocks voisins. Une règle ne dépasse pas
   50 000 octets (`security-user.md` en fait 47 914 : n'y ajoute rien) ; donne dans ton rendu la taille de chaque règle
   touchée.
 - **Un fichier créé ou déplacé qui entre dans les `paths:` d'une règle est indexé (`git add <fichier>`) avant
@@ -42,8 +46,13 @@ Dépôt /home/ghostotof/dev/cp-ghostotof, branche `feature/spec-0007-748-a11y`. 
 - Après un remplacement de masse sur l'hôte (sed/perl), un fichier créé ou déplacé : `docker compose restart frontend`
   (ou `backend`) avant de croire un test (montage désynchronisé = tests menteurs).
 - Test rouge vu **pour la bonne raison** avant la correction ; un test de couverture vert d'emblée est vu rouge par la
-  mutation que la tâche nomme (mutation retirée ensuite, `git diff` vide sur le fichier muté). Pour un refactoring pur, le
+  mutation que la tâche nomme. **Une mutation se restaure depuis une copie du fichier faite avant elle et vérifiée par
+  `cmp`** (`cp f "$scratch/f.orig"`, muter, mesurer, `cp "$scratch/f.orig" f`, `cmp f "$scratch/f.orig"`), puis
+  `git diff` vide sur le fichier muté ; **jamais `git checkout-index`, `git restore` ni aucune commande git qui réécrit
+  l'arbre**. Pour un refactoring pur, le
   filet est la suite existante, verte avant et après, nombre de tests noté ; dis quels tests de garde changent et pourquoi.
+- **Aucun travail en arrière-plan au rendu** : ni processus détaché, ni conteneur lancé à part, ni `vitest --watch` ;
+  tout ce que tu as lancé est terminé quand tu rends.
 - Vitest 5 vide les imports CSS (même `?raw`) : lire un fichier source via `node:fs` (voir
   `frontend/tests/presentation/styleSheet.spec.ts`). `ResizeObserver` absent de jsdom. Faux minuteurs : rétablis en
   `afterEach` ; axe-core se bloque sous faux minuteurs. Tout état partagé (`authState`…) remis en
