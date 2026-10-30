@@ -1,11 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createMemoryHistory, createRouter, type Router } from 'vue-router'
-import { defineComponent, h } from 'vue'
+import { defineComponent, h, nextTick } from 'vue'
 import AccessRefusedNotice from '../../../../src/presentation/ui/admin/AccessRefusedNotice.vue'
 import { createAppI18n } from '../../../../src/presentation/i18n'
 import { AUTH_REPOSITORY, markSessionExpired } from '../../../../src/application/auth/useAuth'
 import {
+  backofficeAccessRefused,
   clearBackofficeAccessRefusal,
   markBackofficeAccessRefused,
   refusalScope,
@@ -24,7 +25,7 @@ const repository: AuthRepository = {
   me: vi.fn(async () => sessionFor(null)),
 }
 
-async function mountNotice(): Promise<{ wrapper: VueWrapper; router: Router }> {
+async function prepareRouter(): Promise<Router> {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
@@ -37,12 +38,24 @@ async function mountNotice(): Promise<{ wrapper: VueWrapper; router: Router }> {
   await router.push('/fr/admin/case-studies')
   await router.isReady()
 
-  const wrapper = mount(AccessRefusedNotice, {
-    attachTo: document.body,
-    global: { plugins: [createAppI18n(), router], provide: { [AUTH_REPOSITORY as symbol]: repository } },
-  })
+  return router
+}
 
-  return { wrapper, router }
+/** Monte l'alerte de façon synchrone : le premier rendu est observable avant que le moindre `await` ne l'ait laissé se compléter. */
+function mountWith(router: Router, language: 'fr' | 'en' = 'fr'): VueWrapper {
+  const i18n = createAppI18n()
+  i18n.global.locale.value = language
+
+  return mount(AccessRefusedNotice, {
+    attachTo: document.body,
+    global: { plugins: [i18n, router], provide: { [AUTH_REPOSITORY as symbol]: repository } },
+  })
+}
+
+async function mountNotice(language: 'fr' | 'en' = 'fr'): Promise<{ wrapper: VueWrapper; router: Router }> {
+  const router = await prepareRouter()
+
+  return { wrapper: mountWith(router, language), router }
 }
 
 /**
@@ -140,7 +153,7 @@ describe('AccessRefusedNotice (#748, R17)', () => {
     wrapper.unmount()
   })
 
-  it("une requête aux paramètres permutés garde l'alerte : le routeur n'y voit pas de navigation (R54, CR5-8)", async () => {
+  it("une requête aux paramètres permutés garde l'alerte : vue-router exécute la navigation, la clé triée l'ignore (R54, CR5-8)", async () => {
     const { wrapper, router } = await mountNotice()
     await router.push('/fr/admin/case-studies?a=1&b=2')
     await flushPromises()
@@ -148,10 +161,12 @@ describe('AccessRefusedNotice (#748, R17)', () => {
     await flushPromises()
     const scope = refusalScope()
 
-    // vue-router compare les paramètres clé par clé : cette « navigation » est un doublon, il ne l'exécute pas.
+    // vue-router compare la requête dans l'ordre où elle est écrite : il exécute cette navigation (le test était rouge
+    // avant le tri de la clé, R54). C'est la clé triée de l'alerte qui n'y voit pas de changement, et la garde.
     await router.push({ query: { b: '2', a: '1' } })
     await flushPromises()
 
+    expect(router.currentRoute.value.fullPath).toBe('/fr/admin/case-studies?b=2&a=1')
     expect(wrapper.find('[role="alert"]').exists()).toBe(true)
     expect(refusalScope()).toBe(scope)
     wrapper.unmount()
@@ -183,18 +198,110 @@ describe('AccessRefusedNotice (#748, R17)', () => {
     second.wrapper.unmount()
   })
 
-  it("un refus d'écriture arrivé après le démontage ne s'affiche pas au montage suivant (R48, CR5-1)", async () => {
-    const first = await mountNotice()
-    first.wrapper.unmount()
+  describe("l'enregistrement refusé pendant l'absence (R64, décision 1 de la sixième relecture)", () => {
+    const earlierSaveFr =
+      "Un enregistrement précédent a été refusé par le serveur : votre compte n'a peut-être pas, ou plus, l'accès de confiance, ou la session doit être rouverte. Changez de compte, ou reconnectez-vous au même, pour continuer."
+    const earlierSaveEn =
+      'An earlier save was refused by the server: your account may not have, or may no longer have, trusted access, or the session needs to be reopened. Switch account, or sign in again to the same one, to continue.'
 
-    // La personne a quitté le backoffice ; son enregistrement, parti avant, est refusé maintenant : aucune alerte n'est
-    // montée pour l'afficher, mais le compteur monte.
-    markBackofficeAccessRefused({ kind: 'write' })
+    /** Un enregistrement refusé alors qu'aucune alerte n'était montée : la personne avait quitté le backoffice. */
+    function writeRefusedWhileAway(): void {
+      markBackofficeAccessRefused({ kind: 'write' })
+    }
 
-    const second = await mountNotice()
-    await flushPromises()
+    it("un refus d'écriture arrivé après le démontage s'affiche au montage suivant, avec son propre texte, inséré après le montage", async () => {
+      const first = await mountNotice()
+      first.wrapper.unmount()
+      writeRefusedWhileAway()
+      const router = await prepareRouter()
 
-    expect(second.wrapper.find('[data-testid="admin-access-refused"]').exists()).toBe(false)
-    second.wrapper.unmount()
+      const wrapper = mountWith(router)
+
+      // Annoncée : l'alerte est insérée après le premier rendu (une région présente dès le premier rendu peut ne pas
+      // l'être, `frontend-a11y.md`).
+      expect(wrapper.find('[data-testid="admin-access-refused"]').exists()).toBe(false)
+      await nextTick()
+      const alert = wrapper.get('[data-testid="admin-access-refused"]')
+      expect(alert.attributes('role')).toBe('alert')
+      expect(alert.get('span').text()).toBe(earlierSaveFr)
+      expect(alert.get('a').text()).toBe('Changer de compte')
+      wrapper.unmount()
+    })
+
+    it("un refus de lecture compté sans alerte est oublié au montage", async () => {
+      const first = await mountNotice()
+      first.wrapper.unmount()
+      // Ce que le périmètre rend impossible hors du backoffice (le démontage l'avance) mais que le module accepte :
+      // une lecture du périmètre courant, comptée alors qu'aucune alerte n'est montée.
+      markBackofficeAccessRefused({ kind: 'read', scope: refusalScope() })
+
+      const second = await mountNotice()
+      await flushPromises()
+
+      expect(second.wrapper.find('[data-testid="admin-access-refused"]').exists()).toBe(false)
+      expect(backofficeAccessRefused.value).toBe(0)
+      second.wrapper.unmount()
+    })
+
+    it("un nouveau refus sur la page remplace le texte de l'enregistrement précédent par celui du refus courant", async () => {
+      const first = await mountNotice()
+      first.wrapper.unmount()
+      writeRefusedWhileAway()
+      const second = await mountNotice()
+      await flushPromises()
+      const alert = second.wrapper.get('[role="alert"]').element
+      const link = second.wrapper.get('a').element
+      expect(second.wrapper.get('span').text()).toBe(earlierSaveFr)
+
+      refuse()
+      await flushPromises()
+
+      expect(second.wrapper.get('span').text()).toContain('Le serveur refuse cette demande à votre session')
+      expect(second.wrapper.get('span').text()).not.toBe(earlierSaveFr)
+      expect(second.wrapper.get('[role="alert"]').element).toBe(alert)
+      expect(second.wrapper.get('a').element).toBe(link)
+      second.wrapper.unmount()
+    })
+
+    it("une navigation efface l'alerte de l'enregistrement précédent, et le refus suivant redit le texte courant", async () => {
+      const first = await mountNotice()
+      first.wrapper.unmount()
+      writeRefusedWhileAway()
+      const second = await mountNotice()
+      await flushPromises()
+      expect(second.wrapper.get('span').text()).toBe(earlierSaveFr)
+
+      await second.router.push('/fr/admin/technologies')
+      await flushPromises()
+      expect(second.wrapper.find('[role="alert"]').exists()).toBe(false)
+
+      refuse()
+      await flushPromises()
+      expect(second.wrapper.get('span').text()).toContain('Le serveur refuse cette demande à votre session')
+      second.wrapper.unmount()
+    })
+
+    it("le texte de l'enregistrement précédent en anglais", async () => {
+      const first = await mountNotice('en')
+      first.wrapper.unmount()
+      writeRefusedWhileAway()
+
+      const second = await mountNotice('en')
+      await flushPromises()
+
+      expect(second.wrapper.get('span').text()).toBe(earlierSaveEn)
+      second.wrapper.unmount()
+    })
+
+    it("l'alerte de l'enregistrement précédent n'a aucune violation d'accessibilité", async () => {
+      const first = await mountNotice()
+      first.wrapper.unmount()
+      writeRefusedWhileAway()
+      const second = await mountNotice()
+      await flushPromises()
+
+      await expectNoAccessibilityViolation(second.wrapper)
+      second.wrapper.unmount()
+    })
   })
 })

@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, useTemplateRef, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { authState } from '../../../application/auth/useAuth'
 import {
   backofficeAccessRefused,
   clearBackofficeAccessRefusal,
-  discardBackofficeAccessRefusals,
+  earlierWriteRefused,
+  settleBackofficeAccessRefusalsOnMount,
 } from '../../../application/admin/shared/backofficeAccessRefusal'
 import type { Locale } from '../../../domain/portfolio/entities/Locale'
 import { usePublishedHeight } from '../../layout/usePublishedHeight'
@@ -31,14 +32,21 @@ import { switchAccountLocation } from '../../router/reauthentication'
  *   connectée (`reauth=1`) et `redirect` ramène à cette page. La saisie en cours est perdue en le suivant : la
  *   personne lit d'abord pourquoi, et rien ne la déplace pendant qu'elle lit. Le message est neutre
  *   (`common.accessRefused`) : le compte n'a peut-être pas, ou plus, l'accès, ou la session doit être rouverte.
- * - **Effacée à chaque changement de chemin ou de requête** (`route.path` et `route.query`, paramètres triés), au montage et au démontage
- *   du layout (le montage ne fait que remettre le compteur à zéro, sans avancer le périmètre : le chargement de la page
- *   d'arrivée est déjà parti) : un refus d'une page ne suit pas la personne sur la suivante, et un refus d'écriture revenu pendant
- *   qu'aucune alerte n'était montée (la personne avait quitté le backoffice) ne s'affiche pas plus tard sur une page
- *   sans rapport (CR5-1) ; la relecture du palier a eu lieu. **Pas le fragment** (R38) : le lien
- *   d'évitement (`href="#main-content"`) ne change que lui, et effaçait l'alerte que la personne était en train de
- *   lire. L'effacement avance aussi le périmètre de refus (`refusalScope()`) : le 403 d'une lecture partie avant la
- *   navigation, arrivé après, est périmé et ne s'affiche pas (R28, CR3-8) ; celui d'une écriture s'affiche (R38).
+ * - **Effacée** (le périmètre de refus avance, `refusalScope()`) à chaque changement de chemin ou de requête
+ *   (`route.path` et `route.query`, paramètres triés), à une fin de session et au démontage du layout. **Pas le
+ *   fragment** (R38) : le lien d'évitement (`href="#main-content"`) ne change que lui, et effaçait l'alerte que la
+ *   personne était en train de lire. Un refus d'une page ne suit pas la personne sur la suivante : le 403 d'une
+ *   lecture partie avant la navigation, arrivé après, est périmé et ne s'affiche pas (R28, CR3-8) ; celui d'une
+ *   écriture s'affiche (R38).
+ * - **Le montage n'efface rien et ne change pas le périmètre ; il règle ce qui a été compté sans alerte** (R64,
+ *   décision 1 de la sixième relecture, amendant Q1 de la cinquième ; `settleBackofficeAccessRefusalsOnMount`) : une
+ *   lecture comptée alors qu'aucune alerte n'était montée est oubliée (le palier a été relu), un enregistrement refusé
+ *   pendant que la personne avait quitté le backoffice est **dit au retour**, avec son propre texte
+ *   (`common.earlierSaveRefused`, `earlierWriteRefused`). Le chargement de la page d'arrivée est parti avant le montage :
+ *   son refus doit compter. Le refus suivant sur la page remet `common.accessRefused`.
+ * - **Insérée après le montage** (`isMounted`) : une région `role="alert"` présente dès le premier rendu peut ne pas
+ *   être annoncée (`.claude/rules/frontend-a11y.md`) ; celle d'un enregistrement refusé pendant l'absence est donc
+ *   insérée un tick plus tard, comme celle d'un refus survenu sur la page.
  * - Collée sous l'en-tête comme le bandeau de session finie (page longue, « Enregistrer » en bas) ; les deux ne
  *   s'affichent jamais ensemble, elles publient donc la même hauteur (`--admin-notice-height`).
  */
@@ -46,7 +54,11 @@ const { t, locale } = useI18n()
 const route = useRoute()
 
 const switchAccountTarget = computed(() => switchAccountLocation(route, locale.value as Locale))
-const isShown = computed(() => backofficeAccessRefused.value > 0 && !authState.sessionEnded)
+// Faux au premier rendu : l'alerte est insérée après le montage, donc annoncée même quand un enregistrement refusé
+// pendant l'absence l'attend déjà (R64).
+const isMounted = ref(false)
+const isShown = computed(() => isMounted.value && backofficeAccessRefused.value > 0 && !authState.sessionEnded)
+const message = computed(() => (earlierWriteRefused.value ? t('common.earlierSaveRefused') : t('common.accessRefused')))
 
 const notice = useTemplateRef<HTMLElement>('notice')
 usePublishedHeight(notice, '--admin-notice-height')
@@ -68,11 +80,13 @@ watch(
   },
 )
 
-// Au montage comme au démontage (CR5-1) : le compteur peut monter pendant qu'aucune alerte n'est montée (une écriture
-// refusée après que la personne a quitté le backoffice). Sans cet effacement, l'alerte paraîtrait au prochain montage
-// d'`AdminLayout`, sur une page sans rapport avec le geste ; la relecture du palier, elle, a eu lieu. Le périmètre
-// n'avance pas : le chargement de la page d'arrivée est parti avant ce montage, son refus doit compter.
-onMounted(discardBackofficeAccessRefusals)
+// Au montage, règle ce qui a été compté sans alerte (R64) : une lecture est oubliée, une écriture refusée pendant
+// l'absence est dite. Le périmètre n'avance pas : le chargement de la page d'arrivée est parti avant ce montage, son
+// refus doit compter. Au démontage, tout s'efface.
+onMounted(() => {
+  settleBackofficeAccessRefusalsOnMount()
+  isMounted.value = true
+})
 onBeforeUnmount(clearBackofficeAccessRefusal)
 </script>
 
@@ -84,7 +98,7 @@ onBeforeUnmount(clearBackofficeAccessRefusal)
     class="access-refused-notice text-danger-emphasis mb-0 d-flex flex-wrap align-items-center gap-3"
     data-testid="admin-access-refused"
   >
-    <span :key="backofficeAccessRefused">{{ t('common.accessRefused') }}</span>
+    <span :key="backofficeAccessRefused">{{ message }}</span>
     <RouterLink :to="switchAccountTarget">
       {{ t('common.switchAccount') }}
     </RouterLink>

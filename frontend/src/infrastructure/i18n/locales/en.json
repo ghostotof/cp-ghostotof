@@ -46,6 +46,7 @@
     "accountMenu": "Account menu",
     "myAccount": "My account",
     "accessRefused": "The server refuses this request to your session: your account may not have, or may no longer have, trusted access, or the session needs to be reopened. Switch account, or sign in again to the same one, to continue.",
+    "earlierSaveRefused": "An earlier save was refused by the server: your account may not have, or may no longer have, trusted access, or the session needs to be reopened. Switch account, or sign in again to the same one, to continue.",
     "switchAccount": "Switch account"
   },
   "admin": {

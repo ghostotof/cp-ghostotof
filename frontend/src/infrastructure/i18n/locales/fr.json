@@ -46,6 +46,7 @@
     "accountMenu": "Menu du compte",
     "myAccount": "Mon compte",
     "accessRefused": "Le serveur refuse cette demande à votre session : votre compte n'a peut-être pas, ou plus, l'accès de confiance, ou la session doit être rouverte. Changez de compte, ou reconnectez-vous au même, pour continuer.",
+    "earlierSaveRefused": "Un enregistrement précédent a été refusé par le serveur : votre compte n'a peut-être pas, ou plus, l'accès de confiance, ou la session doit être rouverte. Changez de compte, ou reconnectez-vous au même, pour continuer.",
     "switchAccount": "Changer de compte"
   },
   "admin": {
