@@ -7,15 +7,10 @@ export interface BackofficeSendStamp {
   /** La génération de session courante (#748, R14). */
   readonly session: number
   /**
-   * Le dernier compte affiché à l'envoi, par son **nom** d'utilisateur (c'est l'identité : `/api/me` n'expose rien de plus
-   * stable), `null` quand aucun n'est retenu (jamais connecté, déconnexion, accès de base obtenu). Un refus est écarté
-   * quand le compte de l'envoi et celui de la réception diffèrent, `null` d'un seul côté compris (un compte puis aucun, ou
-   * l'inverse) ; `null` des deux côtés est le même « aucun » et compte (#748, R63, décision 2 de la sixième relecture ;
-   * R77). Le même nom après une fin de session puis un retour, une déconnexion puis une reconnexion, une bascule de
-   * palier ou un rôle perdu est le même compte, exprès : le 403 d'un compte rétrogradé est ce qu'il faut dire. **Limites** :
-   * un compte supprimé puis recréé sous le même nom passe pour le même (C8 de la quatrième relecture, rattaché au ticket
-   * `__Host-`) ; `null` à l'envoi puis un compte écarte le refus, cas sans chemin (le garde du backoffice attend la
-   * première vérification avant toute requête, CR7-3). La génération ci-dessus ne juge plus que le verdict « session finie ».
+   * Le **nom** du dernier compte affiché à l'envoi, `null` quand aucun n'est retenu : l'identité à laquelle un refus tardif
+   * est comparé.
+   * La règle de l'identité du compte et ses limites sont écrites une fois, dans
+   * `.claude/rules/frontend-session-refus.md` (sous-puce « the account »).
    */
   readonly account: string | null
   /** Ce qu'un refus doit encore concerner pour compter (#748, R28, R38, R54). */
@@ -62,8 +57,7 @@ export interface BackofficeSessionReaction {
    * l'envoi : la réaction compte le refus (l'alerte d'`AdminLayout` le dit) et relit le palier — sauf si la
    * personne a navigué depuis l'envoi **et que la requête était une lecture** (le refus est celui d'une page quittée ;
    * le refus d'une écriture compte toujours, R38), ou si le compte de l'envoi et celui de la réception diffèrent
-   * (`account`, R63, R77 : `null` d'un seul côté compris, `null` des deux côtés compte) : le refus est alors celui d'un
-   * compte qui n'est plus à l'écran, lecture ou écriture.
+   * (`account`) : le refus est alors celui d'un compte qui n'est plus à l'écran, lecture ou écriture.
    */
   refused(sentAt: BackofficeSendStamp): void
 }
