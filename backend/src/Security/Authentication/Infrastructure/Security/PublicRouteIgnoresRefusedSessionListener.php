@@ -25,9 +25,9 @@ use Symfony\Component\Security\Http\Event\LoginFailureEvent;
  *
  * **Pourquoi l'`AccessMap`**, pas une liste des routes publiques : c'est la source de vérité de
  * l'`AccessListener`, aucune seconde liste n'est à tenir. La prémisse — toute autorisation de `/api`
- * est une règle d'`access_control`, et elle ne dépend que du chemin — est gardée par
- * `AuthorizationLivesInAccessControlTest` (les jetons), `ApiPlatformOperationsCarryNoSecurityTest`
- * (les métadonnées compilées d'API Platform) et `AccessMapStaysPathOnlyTest`.
+ * est une règle d'`access_control`, et elle ne dépend que du chemin — est gardée par des
+ * témoins listés une fois, dans `.claude/rules/security-authentication-sessions.md` (puce de
+ * `PublicRouteIgnoresRefusedSessionListener`) ; `AccessMapStaysPathOnlyTest` tient le « que du chemin ».
  *
  * **Le dispatcher d'`api` seul**, le seul qui lit le cookie (`login` n'a pas de JWT, `mcp` et
  * `oauth` sont d'autres firewalls) ; **priorité -1024** pour avoir le dernier mot sur la réponse.
@@ -66,9 +66,10 @@ final readonly class PublicRouteIgnoresRefusedSessionListener
      * La route exige-t-elle quelque chose de l'appelant ? Le prédicat d'`AccessListener::supports()` :
      * des attributs d'accès, et pas le seul `PUBLIC_ACCESS`.
      *
-     * Publique pour ses deux lecteurs de test : `PublicRouteIgnoresRefusedSessionTest` la compare à
-     * `AccessListener::supports()` sur chaque route, et l'invariant n° 8 d'`ApiRouteExposureTest` n'y juge
-     * l'effacement que là où elle répond vrai (R59). Une lecture de l'`AccessMap` : aucun état modifié.
+     * Publique pour ses lecteurs de test : `PublicRouteIgnoresRefusedSessionTest` la compare à
+     * `AccessListener::supports()` sur chaque route, et `ApiRouteExposureTest` la lit (invariant n° 8 : l'effacement
+     * et le 401 de l'anonyme là où elle répond vrai, R59, C7-10 ; invariant n° 9 : vrai exactement hors de
+     * `PUBLIC_PATHS`, R73). Une lecture de l'`AccessMap` : aucun état modifié.
      */
     public function requiresAccess(Request $request): bool
     {

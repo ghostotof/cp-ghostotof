@@ -19,10 +19,8 @@ paths:
   override it, but a rule placed *before* it could accidentally widen backoffice access. **Every authorization of
   `/api` is an `access_control` rule** — never a `#[IsGranted]`, a `denyAccessUnlessGranted`, an `isGranted()` nor an
   API Platform `security:` (attribute, YAML or XML): `PublicRouteIgnoresRefusedSessionListener` reads « public route »
-  as « route without a rule » (#748 R35); held by `AuthorizationLivesInAccessControlTest` (tokens) and
-  `ApiPlatformOperationsCarryNoSecurityTest` (compiled metadata), details in `security-authentication-sessions.md`.
-  **Every `path` is
-  anchored with `(/|$)`** (issue #78, pt 2): a rule covers its route and its subtree, nothing else, so
+  as « route without a rule » (#748 R35); its witnesses are listed in `security-authentication-sessions.md`.
+  **Every `path` is anchored with `(/|$)`** (issue #78, pt 2): a rule covers its route and its subtree, nothing else, so
   `/api/cv-export` is *not* `ROLE_TRUSTED` by accident and a future `/api/case-studies-drafts` is *not*
   `ROLE_USER` by accident. A sibling path therefore inherits no implicit protection — write its rule, or
   `ApiRouteExposureTest` flags it. `tests/Security/AccessControlAnchoringTest.php` pins the anchors against

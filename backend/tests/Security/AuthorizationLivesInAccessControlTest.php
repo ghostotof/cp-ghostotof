@@ -24,8 +24,11 @@ use PHPUnit\Framework\TestCase;
  * refusée par l'attribut, et le cookie refusé ne serait jamais effacé (le 401 du pare-feu,
  * qui l'efface, ne viendrait plus). L'invariant n° 8 d'`ApiRouteExposureTest` ne le verrait
  * pas : il ne juge l'effacement que sur une route qui exige un rôle, et une route sans règle
- * n'en exige pas (R59). Cette garde et `ApiPlatformOperationsCarryNoSecurityTest` (les
- * métadonnées compilées, R61) sont les seuls témoins de la prémisse.
+ * n'en exige pas (R59). Hors de `PUBLIC_PATHS`, l'invariant n° 9 d'`ApiRouteExposureTest` voit à
+ * l'exécution une route sans règle ; sur une route de `PUBLIC_PATHS`, seule une garde de source
+ * voit un `#[IsGranted]`. Les témoins de cette prémisse sont listés une fois, dans
+ * `.claude/rules/security-authentication-sessions.md` (puce de
+ * `PublicRouteIgnoresRefusedSessionListener`).
  *
  * Refusés dans `src/` (par jetons, commentaires exclus, {@see AuthorizationSites}) : l'attribut
  * `IsGranted`, l'appel `denyAccessUnlessGranted`, les arguments nommés `security:`,

@@ -23,7 +23,9 @@ use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
  * tient « route publique = route sans règle » et sert comme l'anonyme une requête dont le
  * cookie `BEARER` est refusé. Un `security:` d'API Platform posé sur une route sans règle
  * romprait cette prémisse en silence (voir {@see AuthorizationLivesInAccessControlTest}, dont
- * celle-ci est le pendant).
+ * celle-ci est le pendant). Les témoins de cette prémisse sont listés une fois, dans
+ * `.claude/rules/security-authentication-sessions.md` (puce de
+ * `PublicRouteIgnoresRefusedSessionListener`).
  *
  * **Ce que cette garde voit de plus que celle des jetons** : elle lit les **métadonnées
  * compilées** (chaque ressource et chaque opération que `ResourceMetadataCollectionFactoryInterface`
