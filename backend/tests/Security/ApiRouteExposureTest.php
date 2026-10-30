@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Security;
 
 use App\Security\Authentication\Infrastructure\Http\AuthCookieFactory;
+use App\Security\Authentication\Infrastructure\Http\CsrfCookieRequestSubscriber;
 use App\Security\Authentication\Infrastructure\Http\CsrfCookieTokenSigner;
 use App\Security\Authentication\Infrastructure\Security\PublicRouteIgnoresRefusedSessionListener;
 use App\Security\User\Application\CpgUserRegistrarInterface;
@@ -370,7 +371,9 @@ final class ApiRouteExposureTest extends WebTestCase
             'HTTP_ACCEPT' => 'application/json',
             'HTTP_X_REQUESTED_WITH' => 'fetch',
         ];
-        if (!\in_array($method, ['GET', 'HEAD', 'OPTIONS'], true)) {
+        // La même liste que la garde du double-submit (une seule source) : une méthode qu'elle
+        // contrôle porte la paire valide, sans quoi la requête répond 403 avant le pare-feu.
+        if (\in_array($method, CsrfCookieRequestSubscriber::UNSAFE_METHODS, true)) {
             $csrfToken = self::getContainer()->get(CsrfCookieTokenSigner::class)->issue();
             $client->getCookieJar()->set(
                 new BrowserKitCookie(AuthCookieFactory::XSRF_TOKEN, $csrfToken, null, '/', 'localhost', false, false, false, 'lax'),

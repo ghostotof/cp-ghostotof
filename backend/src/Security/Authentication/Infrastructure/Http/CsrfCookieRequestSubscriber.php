@@ -39,7 +39,13 @@ use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 #[AsEventListener(event: RequestEvent::class, priority: 20)]
 final readonly class CsrfCookieRequestSubscriber
 {
-    private const array UNSAFE_METHODS = ['POST', 'PUT', 'PATCH', 'DELETE'];
+    /**
+     * Les méthodes qui changent l'état : seules soumises au double-submit. Publique parce que
+     * `ApiRouteExposureTest` (invariant n° 8) la lit pour savoir quelles requêtes sondées doivent
+     * porter la paire `XSRF-TOKEN` : la source de vérité du contrôle est ici, une liste recopiée
+     * dans le test pourrait s'en écarter sans que rien ne rougisse.
+     */
+    public const array UNSAFE_METHODS = ['POST', 'PUT', 'PATCH', 'DELETE'];
 
     /**
      * - /api/login_check : n'a pas encore de cookie XSRF-TOKEN (posé au login,
