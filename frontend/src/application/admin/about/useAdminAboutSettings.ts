@@ -72,9 +72,10 @@ export function useAdminAboutSettings(): UseAdminAboutSettingsResult {
     return undefined === current ? null : (failures.value[current] ?? null)
   })
 
-  const isSaving = computed(() => SUPPORTED_LOCALES.some((locale) => isCurrentKey(locale) && true === saving.value[locale]))
-
+  // La seule lecture de `saving` (R86, St7-10) : `isSaving` la compose avec la clé courante au lieu de la répéter.
   const isSavingLocale = (locale: Locale): boolean => true === saving.value[locale]
+
+  const isSaving = computed(() => SUPPORTED_LOCALES.some((locale) => isCurrentKey(locale) && isSavingLocale(locale)))
 
   const save = async (locale: Locale, input: AdminAboutSettingsInput): Promise<boolean> => {
     // Le refus vient d'ici et pas seulement du bouton désactivé : une soumission implicite au clavier ou un futur

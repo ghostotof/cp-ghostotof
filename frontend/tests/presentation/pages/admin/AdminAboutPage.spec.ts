@@ -1640,6 +1640,30 @@ describe('AdminAboutPage', () => {
       await flushPromises()
       expect(translateButton(wrapper, SETTINGS_FORM).attributes('disabled')).toBeUndefined()
     })
+
+    // La langue montrée tient aussi « Proposer la traduction » (R86, CR7-10) : le bouton lit `isSavingLocale(locale)` et
+    // celui de l'autre langue, ce qu'aucun test ne voyait quand la langue montrée seule enregistrait.
+    it("un enregistrement FR en vol, la page en FR : « Proposer la version EN » désactivé jusqu'à la réponse (#748, R86)", async () => {
+      let answerFrenchSave!: (settings: AdminAboutSettings) => void
+      const frenchSave = new Promise<AdminAboutSettings>((resolve) => {
+        answerFrenchSave = resolve
+      })
+      const settingsRepository = createSettingsRepository({
+        update: vi.fn().mockReturnValueOnce(frenchSave),
+      })
+      const translation = createTranslationRepository(TRANSLATED_SETTINGS)
+      const { wrapper } = await mountPage(settingsRepository, undefined, undefined, translation)
+      expect(translateButton(wrapper, SETTINGS_FORM).attributes('disabled')).toBeUndefined()
+
+      await formOf(wrapper, SETTINGS_FORM).trigger('submit.prevent')
+      await flushPromises()
+      expect(settingsRepository.update).toHaveBeenCalledWith('fr', expect.anything())
+      expect(translateButton(wrapper, SETTINGS_FORM).attributes('disabled')).toBeDefined()
+
+      answerFrenchSave(SETTINGS)
+      await flushPromises()
+      expect(translateButton(wrapper, SETTINGS_FORM).attributes('disabled')).toBeUndefined()
+    })
   })
 
   describe('garde de sortie et accessibilité', () => {

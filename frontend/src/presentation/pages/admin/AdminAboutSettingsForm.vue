@@ -58,6 +58,9 @@ const pendingProposal = ref<TranslationProposal | null>(null)
 // ne s'affiche que sous elle, et il part quand le formulaire de cette langue est relu du serveur (le `watch` de
 // `settings`, ci-dessous), la proposition non enregistrée étant alors perdue (décision 4 de la sixième série).
 const proposal = ref<{ readonly source: Locale; readonly target: Locale } | null>(null)
+// L'avis est celui de la langue montrée si c'est la cible de la proposition (R86, St7-10) : le `watch` de `settings` et le
+// `v-if` de l'avis le lisent d'ici, une seule comparaison.
+const isProposalShown = computed(() => proposal.value?.target === props.locale)
 const hasProseToTranslate = computed(() => PROSE_FIELDS.some((field) => '' !== form[field].trim()))
 const translationErrorText = computed(() => {
   const reason = translationErrorReason.value
@@ -84,7 +87,7 @@ watch(
       form.personalSubtitle = value.personalSubtitle
       form.hobbiesSubtitle = value.hobbiesSubtitle
 
-      if (proposal.value?.target === props.locale) {
+      if (isProposalShown.value) {
         proposal.value = null
       }
     }
@@ -139,8 +142,11 @@ async function handleTranslate(targetLocale: Locale): Promise<void> {
 async function handleSubmit(): Promise<void> {
   // La langue enregistrée est celle du départ : `props.locale` peut changer pendant l'attente.
   const locale = props.locale
-  // L'avis de la proposition n'est pas retiré ici : la réponse d'un enregistrement réussi de sa langue est écrite
-  // dans `settings` et repasse par le `watch` ci-dessus, qui le retire ; un enregistrement refusé (hors ligne, session
+  // L'avis de la proposition n'est pas retiré ici. La réponse réussie d'un enregistrement de la langue montrée est
+  // écrite dans `settings` et repasse par le `watch` ci-dessus, qui le retire. Celle d'un enregistrement de la langue
+  // cible, parti pendant qu'une autre était montrée, ne touche pas `settings` (`write` ne pose que sous la clé
+  // courante) : la proposition reste en mémoire, mais la langue cible est relue au retour avant tout rendu (le
+  // formulaire attend `isLoaded`), ce qui la retire aussi (CR7-8). Un enregistrement refusé (hors ligne, session
   // finie) ne relit rien, le formulaire porte toujours la proposition et l'avis reste dit (F11).
   await save(locale, { ...form })
 }
@@ -217,14 +223,14 @@ async function handleSubmit(): Promise<void> {
         <TranslateEntryButton
           :form-locale="locale"
           :is-translating="isTranslating"
-          :disabled="!hasProseToTranslate || isSaving || isSavingLocale(otherLocale(locale)) || isLocked"
+          :disabled="!hasProseToTranslate || isSavingLocale(locale) || isSavingLocale(otherLocale(locale)) || isLocked"
           :aria-describedby="lockedHintId"
           @translate="handleTranslate"
         />
       </div>
 
       <p
-        v-if="proposal && proposal.target === locale"
+        v-if="proposal && isProposalShown"
         class="alert alert-info small"
         role="status"
       >
