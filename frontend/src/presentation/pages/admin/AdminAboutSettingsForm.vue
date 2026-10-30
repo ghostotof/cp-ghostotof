@@ -6,7 +6,7 @@ import { useAdminTranslation } from '../../../application/admin/translation/useA
 import { applyTranslationProposal, collectProseFields } from '../../../application/admin/translation/proseFields'
 import BaseTextInput from '../../ui/BaseTextInput.vue'
 import TranslateEntryButton from '../../ui/admin/TranslateEntryButton.vue'
-import type { Locale } from '../../../domain/portfolio/entities/Locale'
+import { otherLocale, type Locale } from '../../../domain/portfolio/entities/Locale'
 import type { TranslationProposal } from '../../../domain/admin/translation/entities/TranslationProposal'
 
 /**
@@ -25,7 +25,7 @@ const emit = defineEmits<{ switchLocale: [locale: Locale] }>()
 
 const { t } = useI18n()
 
-const { settings, isLoading, hasError, isLoaded, errorMessage, load, save, isSaving } = useAdminAboutSettings()
+const { settings, isLoading, hasError, isLoaded, errorMessage, load, save, isSaving, isSavingLocale } = useAdminAboutSettings()
 
 const form = reactive({ siteEyebrow: '', meEyebrow: '', technicalSubtitle: '', personalSubtitle: '', hobbiesSubtitle: '' })
 const errorText = computed(() => {
@@ -208,10 +208,16 @@ async function handleSubmit(): Promise<void> {
       />
 
       <div class="mb-3">
+        <!--
+          Retenu aussi tant que la langue **cible** enregistre (R67, décision 3 de la sixième série) : la réponse de cet
+          enregistrement est écrite dans les réglages et recopiée par-dessus la proposition que la traduction pose sur
+          son formulaire. Un enregistrement de la cible lancé pendant que la traduction court la recouvre encore, et
+          l'avis part avec elle (R66) : rien n'est dit de faux.
+        -->
         <TranslateEntryButton
           :form-locale="locale"
           :is-translating="isTranslating"
-          :disabled="!hasProseToTranslate || isSaving || isLocked"
+          :disabled="!hasProseToTranslate || isSaving || isSavingLocale(otherLocale(locale)) || isLocked"
           :aria-describedby="lockedHintId"
           @translate="handleTranslate"
         />

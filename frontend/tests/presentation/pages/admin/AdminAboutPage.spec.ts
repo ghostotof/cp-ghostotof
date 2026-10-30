@@ -1426,6 +1426,66 @@ describe('AdminAboutPage', () => {
       await flushPromises()
       expect(saveButton().attributes('disabled')).toBeUndefined()
     })
+
+    // Décision 3 de la sixième série (CR6-2) : la réponse d'un enregistrement de la langue **cible** est écrite dans les
+    // réglages et recopiée par-dessus la proposition que la traduction vient d'y poser. « Proposer la traduction » attend
+    // donc cet enregistrement ; celui de la langue montrée la retient déjà (`isSaving`), et un EN n'est pas tenu par un FR.
+    it("un enregistrement EN en vol, la page en FR : « Proposer la version EN » désactivé jusqu'à la réponse, « Enregistrer » FR actif (#748, R67)", async () => {
+      let answerEnglishSave!: (settings: AdminAboutSettings) => void
+      const englishSave = new Promise<AdminAboutSettings>((resolve) => {
+        answerEnglishSave = resolve
+      })
+      const settingsRepository = createSettingsRepository({
+        get: vi.fn(async (locale: string) => ('en' === locale ? SETTINGS_EN : SETTINGS)),
+        update: vi.fn().mockReturnValueOnce(englishSave).mockResolvedValue(SETTINGS),
+      })
+      const translation = createTranslationRepository(TRANSLATED_SETTINGS)
+      const { wrapper } = await mountPage(settingsRepository, undefined, undefined, translation)
+      const saveButton = () => buttonLabelled(panelOf(wrapper, SETTINGS_PANEL), 'Enregistrer')
+
+      await wrapper.get('#admin-about-locale').setValue('en')
+      await flushPromises()
+      await formOf(wrapper, SETTINGS_FORM).trigger('submit.prevent')
+      await flushPromises()
+      expect(settingsRepository.update).toHaveBeenCalledWith('en', expect.anything())
+
+      await wrapper.get('#admin-about-locale').setValue('fr')
+      await flushPromises()
+
+      expect(translateButton(wrapper, SETTINGS_FORM).attributes('disabled')).toBeDefined()
+      expect(saveButton().attributes('disabled')).toBeUndefined()
+
+      answerEnglishSave(SETTINGS_EN)
+      await flushPromises()
+
+      expect(translateButton(wrapper, SETTINGS_FORM).attributes('disabled')).toBeUndefined()
+    })
+
+    it("un enregistrement FR en vol, la page en EN : « Proposer la version FR » désactivé jusqu'à la réponse, aucune traduction ne part (#748, R67, CR6-2)", async () => {
+      let answerFrenchSave!: (settings: AdminAboutSettings) => void
+      const frenchSave = new Promise<AdminAboutSettings>((resolve) => {
+        answerFrenchSave = resolve
+      })
+      const settingsRepository = createSettingsRepository({
+        get: vi.fn(async (locale: string) => ('en' === locale ? SETTINGS_EN : SETTINGS)),
+        update: vi.fn().mockReturnValueOnce(frenchSave).mockResolvedValue(SETTINGS_EN),
+      })
+      const translation = createTranslationRepository(TRANSLATED_SETTINGS)
+      const { wrapper } = await mountPage(settingsRepository, undefined, undefined, translation)
+
+      await formOf(wrapper, SETTINGS_FORM).trigger('submit.prevent')
+      await flushPromises()
+      expect(settingsRepository.update).toHaveBeenCalledWith('fr', expect.anything())
+
+      await wrapper.get('#admin-about-locale').setValue('en')
+      await flushPromises()
+      expect(valueOf(wrapper, '#admin-about-locale')).toBe('en')
+      expect(translateButton(wrapper, SETTINGS_FORM).attributes('disabled')).toBeDefined()
+
+      answerFrenchSave(SETTINGS)
+      await flushPromises()
+      expect(translateButton(wrapper, SETTINGS_FORM).attributes('disabled')).toBeUndefined()
+    })
   })
 
   describe('garde de sortie et accessibilité', () => {

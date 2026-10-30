@@ -20,6 +20,11 @@ export interface UseAdminAboutSettingsResult extends AdminLoadState {
   save: (locale: Locale, input: AdminAboutSettingsInput) => Promise<boolean>
   /** Un enregistrement de la **langue montrée** est en vol : désactive ses boutons, pas ceux d'une autre langue (R50). */
   isSaving: ComputedRef<boolean>
+  /**
+   * Un enregistrement de **cette** langue est en vol, quelle que soit la langue montrée (R67) : le formulaire
+   * s'en sert pour retenir « Proposer la traduction » tant que la réponse de la langue cible recouvrirait la proposition.
+   */
+  isSavingLocale: (locale: Locale) => boolean
 }
 
 /**
@@ -69,6 +74,8 @@ export function useAdminAboutSettings(): UseAdminAboutSettingsResult {
 
   const isSaving = computed(() => SUPPORTED_LOCALES.some((locale) => isCurrentKey(locale) && true === saving.value[locale]))
 
+  const isSavingLocale = (locale: Locale): boolean => true === saving.value[locale]
+
   const save = async (locale: Locale, input: AdminAboutSettingsInput): Promise<boolean> => {
     // Le refus vient d'ici et pas seulement du bouton désactivé : une soumission implicite au clavier ou un futur
     // second appelant ne passent pas par lui. Rien n'est effacé : l'enregistrement en vol posera le verdict.
@@ -98,5 +105,5 @@ export function useAdminAboutSettings(): UseAdminAboutSettingsResult {
     }
   }
 
-  return { settings, isLoading, hasError, isLoaded, errorMessage, load, save, isSaving }
+  return { settings, isLoading, hasError, isLoaded, errorMessage, load, save, isSaving, isSavingLocale }
 }

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { SUPPORTED_LOCALES, type Locale } from '../../../domain/portfolio/entities/Locale'
+import { otherLocale, type Locale } from '../../../domain/portfolio/entities/Locale'
 
 /**
  * Bouton « Proposer la version EN/FR » de l'assistant de traduction du
@@ -27,7 +27,7 @@ const emit = defineEmits<{ translate: [targetLocale: Locale] }>()
 
 const { t } = useI18n()
 
-const targetLocale = computed<Locale>(() => SUPPORTED_LOCALES.find((locale) => locale !== props.formLocale) ?? SUPPORTED_LOCALES[0])
+const targetLocale = computed<Locale>(() => otherLocale(props.formLocale))
 </script>
 
 <template>
