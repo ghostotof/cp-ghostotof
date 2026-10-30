@@ -4172,6 +4172,8 @@ leur endroit (Sp7-2, Sp7-3, Sp7-4, et le point R64 de la tâche 11), dans le com
    conception, puis les quatre relectures, et l'on recommence tant qu'elles trouvent quelque chose.
 4. Toujours valables : C5-1, C5-2, C7 (limite de la session) acceptés ; les décisions des séries 4 à 6 (R31, Q1 de la
    quatrième série, R50, Q2 et Q3 de la cinquième, décisions 1 à 4 et Q1 de la sixième) restent telles quelles.
+5. **Q1 et Q2 de la septième relecture : recommandations validées** (2026-10-30, avant R73). Q1 : la limite écrite,
+   la tolérance de CR6-6 gardée. Q2 : option A de Sp7-1, le sélecteur de langue verrouillé et « Annuler » affiché.
 
 ### Vérification de chaque constat dans le code (HEAD 30afa8e7)
 
