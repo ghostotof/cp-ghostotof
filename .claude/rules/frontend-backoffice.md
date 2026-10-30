@@ -129,15 +129,17 @@ status announcement) that a fork would silently lose:
   still send that body. `AdminAboutPage.spec.ts` pins the gesture (red before: `category: 'hobby'`,
   `translationGroup: null`), the release on « Annuler » and the message;
   `HttpAdminAboutMeCardRepository.spec.ts` the mapping.
-- **A locale selector that has a help text references it** (#582): the text is always rendered, so a
-  static `aria-describedby="<select id>-help"` on the selector and that `id` on the text — About's
-  settings, site and me cards, Quality's principles and traits; `AdminAboutPage.spec.ts` and
-  `AdminQualityPage.spec.ts` pin it.
-- **A locale selector disabled for a lock says why** (#748, R79b, D-a): `presentation/ui/admin/LocaleLockedHint.vue`
-  (`admin.localeLockedEditing`, `admin.localeLockedProposal`) is rendered **only during the lock** and referenced by
-  `aria-describedby` only then, after the permanent help when the selector has one (two ids); eight forms, one text
-  each. `tests/support/entryFormLock.ts` (`describedTexts()`, `describeEntryFormLock()`) reads the texts an
-  `aria-describedby` designates, fails on a dangling IDREF and declares the four lock cases once for the eight forms.
+- **A locale selector says why it is locked, and the help it always has** (#582; #748, R79b D-a, R92): About's settings
+  selector (`AdminAboutPage.vue`) carries a static `aria-describedby` to its always-rendered help; the per-entry forms
+  (site and me cards, Quality's principles and traits, which also always render a help, and the four others) bind it.
+  Every per-entry form's lock goes through `presentation/ui/admin/useEntryFormLock.ts` (`state`: `'none' | 'editing' |
+  'proposal'`), whose `EntryFormLockHint.vue` text is rendered **only during the lock** and referenced by
+  `aria-describedby` only then, after the permanent help when there is one (`localeDescribedBy`: one or two ids); one
+  text per state. A proposal is born of an edit, of « Créer la version XX » or of a blank form, and the language lock
+  holds in the three (the proposed prose is in the target language). `tests/support/entryFormLock.ts`
+  (`describedTexts()`, `describeEntryFormLock()`) reads the texts an `aria-describedby` designates, fails on a dangling
+  IDREF and runs the lock cases on the eight forms; `AdminAboutPage.spec.ts` and `AdminQualityPage.spec.ts` pin the
+  permanent help.
 - **A me-card group spread across two categories is not signalled by the backoffice, by decision**
   (issue #573). Such a group (FR in one category, EN in another) predates #501's guard; the backend
   refuses, before any write, every write that would add a member to it or reorder one of its categories

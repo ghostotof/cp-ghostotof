@@ -23,7 +23,8 @@ import BaseTextInput from '../../ui/BaseTextInput.vue'
 import BaseTextarea from '../../ui/BaseTextarea.vue'
 import BaseSelect from '../../ui/BaseSelect.vue'
 import TranslateEntryButton from '../../ui/admin/TranslateEntryButton.vue'
-import LocaleLockedHint from '../../ui/admin/LocaleLockedHint.vue'
+import EntryFormLockHint from '../../ui/admin/EntryFormLockHint.vue'
+import { useEntryFormLock } from '../../ui/admin/useEntryFormLock'
 import OrderHandle from '../../ui/admin/OrderHandle.vue'
 import OrderToolbar from '../../ui/admin/OrderToolbar.vue'
 import { LOCALE_NATIVE_NAMES, SUPPORTED_LOCALES, type Locale } from '../../../domain/portfolio/entities/Locale'
@@ -95,7 +96,11 @@ const proposalSourceLocale = ref<Locale | null>(null)
 const PROSE_FIELDS = ['title', 'summary', 'body'] as const
 
 const isEditing = computed(() => null !== editingId.value)
-const isLocaleLocked = computed(() => isEditing.value || null !== proposalSourceLocale.value)
+const lock = useEntryFormLock({
+  hintId: 'admin-contribution-locale-locked-help',
+  isEditing: () => isEditing.value,
+  hasProposal: () => null !== proposalSourceLocale.value,
+})
 
 const hasProseToTranslate = computed(() => PROSE_FIELDS.some((field) => '' !== form[field].trim()))
 
@@ -292,23 +297,18 @@ useUnsavedOrderGuard(isOrderDirty)
         novalidate
         @submit.prevent="handleSubmit"
       >
-        <!-- Verrouillée en édition (un PUT ne change pas la langue) et tant que le formulaire
-             porte une proposition de traduction : celle-ci est la version de l'entrée source
-             dans l'autre langue, dans son groupe gardé ; en changer la langue créerait une
-             seconde version de la langue source dans ce groupe (#748, Sp7-1). « Annuler »
-             retire la proposition et rend le sélecteur ; `LocaleLockedHint` dit le verrou (D-a). -->
+        <!-- Verrou d'édition et de proposition : voir `useEntryFormLock` (#748). -->
         <BaseSelect
           id="admin-contribution-locale"
           v-model="form.locale"
-          :disabled="isLocaleLocked"
-          :aria-describedby="isLocaleLocked ? 'admin-contribution-locale-locked-help' : undefined"
+          :disabled="lock.isEntryLocked"
+          :aria-describedby="lock.localeDescribedBy"
           :label="t('admin.contributions.localeLabel')"
           :options="localeOptions"
         />
-        <LocaleLockedHint
-          id="admin-contribution-locale-locked-help"
-          :is-editing="isEditing"
-          :has-proposal="null !== proposalSourceLocale"
+        <EntryFormLockHint
+          :id="lock.hintId"
+          :state="lock.state"
         />
         <BaseSelect
           id="admin-contribution-translation-group"
@@ -411,7 +411,7 @@ useUnsavedOrderGuard(isOrderDirty)
             {{ t('admin.contributions.save') }}
           </button>
           <button
-            v-if="isLocaleLocked"
+            v-if="lock.isEntryLocked"
             type="button"
             class="btn btn-outline-light"
             @click="resetForm"

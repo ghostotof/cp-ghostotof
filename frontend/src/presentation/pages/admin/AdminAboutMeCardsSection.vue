@@ -22,7 +22,8 @@ import BaseTextInput from '../../ui/BaseTextInput.vue'
 import BaseTextarea from '../../ui/BaseTextarea.vue'
 import BaseSelect from '../../ui/BaseSelect.vue'
 import TranslateEntryButton from '../../ui/admin/TranslateEntryButton.vue'
-import LocaleLockedHint from '../../ui/admin/LocaleLockedHint.vue'
+import EntryFormLockHint from '../../ui/admin/EntryFormLockHint.vue'
+import { useEntryFormLock } from '../../ui/admin/useEntryFormLock'
 import OrderHandle from '../../ui/admin/OrderHandle.vue'
 import OrderToolbar from '../../ui/admin/OrderToolbar.vue'
 import { LOCALE_NATIVE_NAMES, SUPPORTED_LOCALES, type Locale } from '../../../domain/portfolio/entities/Locale'
@@ -121,7 +122,12 @@ const CATEGORY_HELP_ID = 'admin-about-me-card-category-help'
 const editingId = ref<string | null>(null)
 const isSubmitting = ref(false)
 const isEditing = computed(() => null !== editingId.value)
-const isLocaleLocked = computed(() => isEditing.value || null !== proposalSourceLocale.value)
+const lock = useEntryFormLock({
+  hintId: 'admin-about-me-card-locale-locked-help',
+  isEditing: () => isEditing.value,
+  hasProposal: () => null !== proposalSourceLocale.value,
+  localeHelpId: 'admin-about-me-card-locale-help',
+})
 
 /**
  * Groupe de l'entrée dont le formulaire est issu (édition, ou « Créer la
@@ -362,16 +368,12 @@ function categoryLabel(category: AdminAboutMeCardCategory): string {
       novalidate
       @submit.prevent="handleSubmit"
     >
-      <!-- Verrouillée en édition (un PUT ne change pas la langue) et tant que le formulaire
-           porte une proposition de traduction : celle-ci est la version de la carte de l'entrée source
-           dans l'autre langue, dans son groupe gardé ; en changer la langue créerait une
-           seconde version de la langue source dans ce groupe (#748, Sp7-1). « Annuler »
-           retire la proposition et rend le sélecteur ; `LocaleLockedHint` dit le verrou (D-a). -->
+      <!-- Verrou d'édition et de proposition : voir `useEntryFormLock` (#748). -->
       <BaseSelect
         id="admin-about-me-card-locale"
         v-model="form.locale"
-        :disabled="isLocaleLocked"
-        :aria-describedby="isLocaleLocked ? 'admin-about-me-card-locale-help admin-about-me-card-locale-locked-help' : 'admin-about-me-card-locale-help'"
+        :disabled="lock.isEntryLocked"
+        :aria-describedby="lock.localeDescribedBy"
         :label="t('admin.localeLabel')"
         :options="localeOptions"
       />
@@ -381,10 +383,9 @@ function categoryLabel(category: AdminAboutMeCardCategory): string {
       >
         {{ t('admin.about.localeHelp') }}
       </p>
-      <LocaleLockedHint
-        id="admin-about-me-card-locale-locked-help"
-        :is-editing="isEditing"
-        :has-proposal="null !== proposalSourceLocale"
+      <EntryFormLockHint
+        :id="lock.hintId"
+        :state="lock.state"
       />
       <!--
         Désactivée en édition, comme la langue (issue #578) : une carte ne
@@ -400,13 +401,13 @@ function categoryLabel(category: AdminAboutMeCardCategory): string {
       <BaseSelect
         id="admin-about-me-card-category"
         v-model="form.category"
-        :disabled="isLocaleLocked"
-        :aria-describedby="isLocaleLocked ? CATEGORY_HELP_ID : undefined"
+        :disabled="lock.isEntryLocked"
+        :aria-describedby="lock.isEntryLocked ? CATEGORY_HELP_ID : undefined"
         :label="t('admin.about.meCard.categoryLabel')"
         :options="categoryOptions"
       />
       <p
-        v-if="isLocaleLocked"
+        v-if="lock.isEntryLocked"
         :id="CATEGORY_HELP_ID"
         class="form-text mb-3"
       >
@@ -485,7 +486,7 @@ function categoryLabel(category: AdminAboutMeCardCategory): string {
           {{ t('admin.about.save') }}
         </button>
         <button
-          v-if="isLocaleLocked"
+          v-if="lock.isEntryLocked"
           type="button"
           class="btn btn-outline-light"
           @click="resetForm"

@@ -24,7 +24,8 @@ import BaseTextInput from '../../ui/BaseTextInput.vue'
 import BaseTextarea from '../../ui/BaseTextarea.vue'
 import BaseSelect from '../../ui/BaseSelect.vue'
 import TranslateEntryButton from '../../ui/admin/TranslateEntryButton.vue'
-import LocaleLockedHint from '../../ui/admin/LocaleLockedHint.vue'
+import EntryFormLockHint from '../../ui/admin/EntryFormLockHint.vue'
+import { useEntryFormLock } from '../../ui/admin/useEntryFormLock'
 import OrderHandle from '../../ui/admin/OrderHandle.vue'
 import OrderToolbar from '../../ui/admin/OrderToolbar.vue'
 import { LOCALE_NATIVE_NAMES, SUPPORTED_LOCALES, type Locale } from '../../../domain/portfolio/entities/Locale'
@@ -173,9 +174,19 @@ const principleProposalSourceLocale = ref<Locale | null>(null)
 const traitProposalSourceLocale = ref<Locale | null>(null)
 
 const isEditingPrinciple = computed(() => null !== editingPrincipleId.value)
-const isPrincipleLocaleLocked = computed(() => isEditingPrinciple.value || null !== principleProposalSourceLocale.value)
+const principleLock = useEntryFormLock({
+  hintId: 'admin-quality-principle-locale-locked-help',
+  isEditing: () => isEditingPrinciple.value,
+  hasProposal: () => null !== principleProposalSourceLocale.value,
+  localeHelpId: 'admin-quality-principle-locale-help',
+})
 const isEditingTrait = computed(() => null !== editingTraitId.value)
-const isTraitLocaleLocked = computed(() => isEditingTrait.value || null !== traitProposalSourceLocale.value)
+const traitLock = useEntryFormLock({
+  hintId: 'admin-quality-trait-locale-locked-help',
+  isEditing: () => isEditingTrait.value,
+  hasProposal: () => null !== traitProposalSourceLocale.value,
+  localeHelpId: 'admin-quality-trait-locale-help',
+})
 
 const hasPrincipleProse = computed(() => PRINCIPLE_PROSE_FIELDS.some((field) => '' !== principleForm[field].trim()))
 const hasTraitProse = computed(() => '' !== traitForm.label.trim())
@@ -506,16 +517,12 @@ useUnsavedOrderGuard(isAnyOrderDirty)
         novalidate
         @submit.prevent="handleSubmitPrinciple"
       >
-        <!-- Verrouillée en édition (un PUT ne change pas la langue) et tant que le formulaire
-             porte une proposition de traduction : celle-ci est la version du principe de l'entrée source
-             dans l'autre langue, dans son groupe gardé ; en changer la langue créerait une
-             seconde version de la langue source dans ce groupe (#748, Sp7-1). « Annuler »
-             retire la proposition et rend le sélecteur ; `LocaleLockedHint` dit le verrou (D-a). -->
+        <!-- Verrou d'édition et de proposition : voir `useEntryFormLock` (#748). -->
         <BaseSelect
           id="admin-quality-principle-locale"
           v-model="principleForm.locale"
-          :disabled="isPrincipleLocaleLocked"
-          :aria-describedby="isPrincipleLocaleLocked ? 'admin-quality-principle-locale-help admin-quality-principle-locale-locked-help' : 'admin-quality-principle-locale-help'"
+          :disabled="principleLock.isEntryLocked"
+          :aria-describedby="principleLock.localeDescribedBy"
           :label="t('admin.localeLabel')"
           :options="localeOptions"
         />
@@ -525,10 +532,9 @@ useUnsavedOrderGuard(isAnyOrderDirty)
         >
           {{ t('admin.quality.localeHelp') }}
         </p>
-        <LocaleLockedHint
-          id="admin-quality-principle-locale-locked-help"
-          :is-editing="isEditingPrinciple"
-          :has-proposal="null !== principleProposalSourceLocale"
+        <EntryFormLockHint
+          :id="principleLock.hintId"
+          :state="principleLock.state"
         />
         <BaseSelect
           id="admin-quality-principle-translation-group"
@@ -604,7 +610,7 @@ useUnsavedOrderGuard(isAnyOrderDirty)
             {{ t('admin.quality.save') }}
           </button>
           <button
-            v-if="isPrincipleLocaleLocked"
+            v-if="principleLock.isEntryLocked"
             type="button"
             class="btn btn-outline-light"
             @click="resetPrincipleForm"
@@ -784,16 +790,12 @@ useUnsavedOrderGuard(isAnyOrderDirty)
         novalidate
         @submit.prevent="handleSubmitTrait"
       >
-        <!-- Verrouillée en édition (un PUT ne change pas la langue) et tant que le formulaire
-             porte une proposition de traduction : celle-ci est la version du trait de l'entrée source
-             dans l'autre langue, dans son groupe gardé ; en changer la langue créerait une
-             seconde version de la langue source dans ce groupe (#748, Sp7-1). « Annuler »
-             retire la proposition et rend le sélecteur ; `LocaleLockedHint` dit le verrou (D-a). -->
+        <!-- Verrou d'édition et de proposition : voir `useEntryFormLock` (#748). -->
         <BaseSelect
           id="admin-quality-trait-locale"
           v-model="traitForm.locale"
-          :disabled="isTraitLocaleLocked"
-          :aria-describedby="isTraitLocaleLocked ? 'admin-quality-trait-locale-help admin-quality-trait-locale-locked-help' : 'admin-quality-trait-locale-help'"
+          :disabled="traitLock.isEntryLocked"
+          :aria-describedby="traitLock.localeDescribedBy"
           :label="t('admin.localeLabel')"
           :options="localeOptions"
         />
@@ -803,10 +805,9 @@ useUnsavedOrderGuard(isAnyOrderDirty)
         >
           {{ t('admin.quality.localeHelp') }}
         </p>
-        <LocaleLockedHint
-          id="admin-quality-trait-locale-locked-help"
-          :is-editing="isEditingTrait"
-          :has-proposal="null !== traitProposalSourceLocale"
+        <EntryFormLockHint
+          :id="traitLock.hintId"
+          :state="traitLock.state"
         />
         <BaseSelect
           id="admin-quality-trait-translation-group"
@@ -865,7 +866,7 @@ useUnsavedOrderGuard(isAnyOrderDirty)
             {{ t('admin.quality.save') }}
           </button>
           <button
-            v-if="isTraitLocaleLocked"
+            v-if="traitLock.isEntryLocked"
             type="button"
             class="btn btn-outline-light"
             @click="resetTraitForm"
