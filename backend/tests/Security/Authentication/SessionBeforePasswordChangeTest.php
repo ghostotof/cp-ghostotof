@@ -237,7 +237,7 @@ final class SessionBeforePasswordChangeTest extends WebTestCase
         // … puis Lexik crée le jeton, bien après : `iat` est postérieur au changement, de plus d'une seconde.
         sleep(2);
         $jwt = self::getContainer()->get(JWTTokenManagerInterface::class)->create($readByTheLogin);
-        $this->putTheBearer($jwt);
+        $this->replaceTheSignedInBearer($jwt);
 
         $this->client->request('GET', self::ME);
 
@@ -448,11 +448,14 @@ final class SessionBeforePasswordChangeTest extends WebTestCase
             $payload[CredentialsVersionClaim::NAME] = $version;
         }
 
-        $this->putTheBearer(self::getContainer()->get(JWTEncoderInterface::class)->encode($payload));
+        $this->replaceTheSignedInBearer(self::getContainer()->get(JWTEncoderInterface::class)->encode($payload));
     }
 
-    /** Dépose ce JWT dans le cookie `BEARER`, avec les attributs de la vraie connexion. */
-    private function putTheBearer(string $jwt): void
+    /**
+     * Dépose ce JWT dans le cookie `BEARER`, avec les attributs de la vraie connexion — ce qui le
+     * distingue de `PutsTheBearerCookie::putTheBearer()`, aux attributs fixes (St6-8).
+     */
+    private function replaceTheSignedInBearer(string $jwt): void
     {
         $jar = $this->client->getCookieJar();
         $issued = $jar->get('BEARER');

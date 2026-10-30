@@ -66,8 +66,9 @@ final readonly class PublicRouteIgnoresRefusedSessionListener
      * La route exige-t-elle quelque chose de l'appelant ? Le prédicat d'`AccessListener::supports()` :
      * des attributs d'accès, et pas le seul `PUBLIC_ACCESS`.
      *
-     * Publique parce que c'est le point de comparaison avec `AccessListener::supports()`, que lit
-     * `PublicRouteIgnoresRefusedSessionTest` sur chaque route ; sans effet (St5-12).
+     * Publique pour ses deux lecteurs de test : `PublicRouteIgnoresRefusedSessionTest` la compare à
+     * `AccessListener::supports()` sur chaque route, et l'invariant n° 8 d'`ApiRouteExposureTest` n'y juge
+     * l'effacement que là où elle répond vrai (R59). Une lecture de l'`AccessMap` : aucun état modifié.
      */
     public function requiresAccess(Request $request): bool
     {

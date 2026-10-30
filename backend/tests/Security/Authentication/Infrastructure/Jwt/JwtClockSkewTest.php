@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Security\Authentication\Infrastructure\Jwt;
 
 use App\Security\User\Domain\ValueObject\BaseAccessUser;
-use App\Tests\Support\RefusedBearerCookie;
+use App\Tests\Support\PutsTheBearerCookie;
 use Lexik\Bundle\JWTAuthenticationBundle\Services\JWTTokenManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
@@ -44,7 +44,7 @@ use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
  */
 final class JwtClockSkewTest extends WebTestCase
 {
-    use RefusedBearerCookie;
+    use PutsTheBearerCookie;
 
     private KernelBrowser $client;
 

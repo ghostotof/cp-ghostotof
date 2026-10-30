@@ -7,12 +7,12 @@ namespace App\Tests\Support;
 use App\Security\Authentication\Infrastructure\Http\AuthCookieFactory;
 use Lexik\Bundle\JWTAuthenticationBundle\Encoder\JWTEncoderInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
-use Symfony\Component\BrowserKit\Cookie;
+use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 
 /**
- * Le cookie `BEARER` refusé des tests de session morte (#748, St5-6), écrit une fois :
- * le JWT expiré, sa pose dans le navigateur de test, les deux routes qui servent de témoins et
- * la vérification que la réponse efface les deux cookies. Quatre tests le refaisaient chacun.
+ * Le cookie `BEARER` refusé des tests de session morte (#748, St5-6) : le JWT expiré, les deux
+ * routes qui servent de témoins et la vérification que la réponse efface les deux cookies ; la pose
+ * du cookie vient de {@see PutsTheBearerCookie}.
  *
  * Le JWT expiré est signé par l'encodeur du conteneur (la clé du site), jamais par une clé écrite
  * ici ; une valeur « invalide » se tire au hasard (`bin2hex(random_bytes(16))`) à l'endroit où
@@ -23,9 +23,12 @@ use Symfony\Component\BrowserKit\Cookie;
  *
  * Une classe de test qui l'utilise lit aussi les cookies de la réponse ({@see ReadsResponseCookies}) :
  * le trait l'amène.
+ *
+ * @phpstan-require-extends KernelTestCase
  */
 trait RefusedBearerCookie
 {
+    use PutsTheBearerCookie;
     use ReadsResponseCookies;
 
     /** Une route qui exige un rôle (`ROLE_TRUSTED`) : l'anonyme y prend le 401, et un cookie refusé aussi. */
@@ -47,12 +50,6 @@ trait RefusedBearerCookie
             'iat' => time() - 7200,
             'exp' => time() - 3600,
         ]);
-    }
-
-    /** Pose ce JWT en `BEARER` dans le navigateur de test, comme un cookie de session le garderait. */
-    private static function putTheBearer(KernelBrowser $client, string $jwt): void
-    {
-        $client->getCookieJar()->set(new Cookie(AuthCookieFactory::BEARER, $jwt, null, '/', 'localhost', false, true, false, 'lax'));
     }
 
     /**
