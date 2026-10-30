@@ -46,14 +46,22 @@ export function describedBy(...ids: ReadonlyArray<string | undefined>): string |
  * 409 `locale-immutable`). Pendant une proposition, le formulaire est une création dans la langue
  * cible : changer la langue en ferait une seconde version de la langue source dans le groupe gardé
  * (Sp7-1). « Annuler » abandonne la proposition, vide le formulaire et rend les contrôles.
-
-Pendant une proposition, un seul texte (`admin.lockedByProposal`) est désigné par chaque contrôle verrouillé :
-la langue, « Proposer la version XX » (R93) et, dans les cartes « moi », la catégorie.
+ *
+ * Pendant une proposition, un seul texte (`admin.lockedByProposal`) est désigné par chaque contrôle verrouillé :
+ * la langue, « Version de » (R94 : « aucune » détacherait la proposition de sa source), « Proposer la version XX »
+ * (R93) et, dans les cartes « moi », la catégorie. En édition, « Version de » reste libre.
  *
  * Une proposition naît de trois gestes : l'édition d'une entrée, « Créer la version XX » (qui pose le
  * groupe de la ligne et la langue manquante) ou un formulaire vierge (aucun groupe). Le verrou de la
  * langue est juste dans les trois cas, la prose proposée étant dans la langue cible ; le groupe gardé
  * est celui de la source quand elle en a un, sinon aucun.
+ *
+ * Limite acceptée (Q1 de la huitième relecture, décidée par l'auteur le 2026-10-30) : une proposition dont la
+ * langue cible existe déjà dans le groupe (depuis « Créer la version XX », ou depuis l'édition d'une entrée
+ * dont le groupe a les deux langues) se termine, à l'enregistrement, sur le 409 `translation-already-exists` ;
+ * « Version de » étant verrouillé, « Annuler » est la seule sortie. Le détecter recopierait au frontend la
+ * règle d'unicité du serveur, ce que #573 a refusé. Depuis un formulaire vierge, la proposition part sans
+ * groupe et remplace la prose source, jamais enregistrée (antérieur, spec 0004).
  *
  * L'objet rendu est un `reactive` en lecture seule : le gabarit lit `lock.isEntryLocked` sans `.value`
  * (un `computed` rangé dans un objet ordinaire n'est pas déballé par le gabarit, la condition serait

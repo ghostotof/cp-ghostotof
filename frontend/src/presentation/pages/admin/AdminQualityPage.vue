@@ -539,6 +539,8 @@ useUnsavedOrderGuard(isAnyOrderDirty)
         <BaseSelect
           id="admin-quality-principle-translation-group"
           v-model="principleForm.translationGroup"
+          :disabled="principleLock.isProposalLocked"
+          :aria-describedby="principleLock.proposalDescribedBy"
           :label="t('admin.quality.translationOfLabel')"
           :options="principleTranslationOptions"
         />
@@ -812,6 +814,8 @@ useUnsavedOrderGuard(isAnyOrderDirty)
         <BaseSelect
           id="admin-quality-trait-translation-group"
           v-model="traitForm.translationGroup"
+          :disabled="traitLock.isProposalLocked"
+          :aria-describedby="traitLock.proposalDescribedBy"
           :label="t('admin.quality.translationOfLabel')"
           :options="traitTranslationOptions"
         />

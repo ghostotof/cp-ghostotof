@@ -190,10 +190,14 @@ value, so a lone source still attaches its proposal) so saving the proposed vers
 extra gesture, and a `role="status"` banner names the proposal's source locale; while the form
 holds the proposal its locale selector is locked, as in editing (R78, R79, Sp7-1: the
 kept group would make a second version of the source locale), and so are « Proposer la version XX » (R93, decision 1
-of the eighth review: a second translation took the form back to the source locale, group kept) and the me-card
+of the eighth review: a second translation took the form back to the source locale, group kept), « Version de » (R94,
+decision 3: « aucune » would detach the proposal from its source) and the me-card
 **category** selector (R79b, D-b: a version in the other language does not change category, #501/#561; « Créer la
 version XX » keeps the category free, by decision), all described by one text, `admin.lockedByProposal`, which says
-that « Annuler » drops the proposal and empties the form (R93, CR8-4). The old "page-locale"
+that « Annuler » drops the proposal and empties the form (R93, CR8-4). A proposal whose target locale the group
+already has (from « Créer la version XX », or from an entry whose group has both) ends on the server's 409
+`translation-already-exists` at save, « Annuler » being the way out (accepted, Q1 of the eighth review: detecting it
+would copy the server's uniqueness rule, as #573 refused). The old "page-locale"
 semantics is gone with the page-level selector (one locale per form, see above). About *settings* is
 the one singleton per locale, so its proposal is **deferred**: parked in `pendingProposal`, applied on the
 return of `load()` for the target locale (hence the `flush: 'sync'` watcher, or the copy from the server

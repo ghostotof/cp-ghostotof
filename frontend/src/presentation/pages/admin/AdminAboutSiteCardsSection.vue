@@ -307,6 +307,8 @@ async function handleDelete(card: AdminAboutSiteCard): Promise<void> {
       <BaseSelect
         id="admin-about-site-card-translation-group"
         v-model="form.translationGroup"
+        :disabled="lock.isProposalLocked"
+        :aria-describedby="lock.proposalDescribedBy"
         :label="t('admin.about.translationOfLabel')"
         :options="translationOptions"
       />

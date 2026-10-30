@@ -5403,6 +5403,7 @@ décision 4, un nombre la laisserait à lire dans une comparaison.
   refusé pour la même raison). Autre option : « Proposer la version XX » désactivé quand la langue cible existe déjà
   dans `sourceGroup`, avec son texte d'aide — une tâche R94b sur les huit formulaires (un cas de plus dans
   `describeEntryFormLock`, deux clés FR/EN, une phrase de règle).
+  **Décidé par l'auteur le 2026-10-30 : limite écrite** (recommandation suivie ; R94).
 
 ### Review Focus (huitième relecture)
 

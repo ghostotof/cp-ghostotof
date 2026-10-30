@@ -312,6 +312,8 @@ useUnsavedOrderGuard(isOrderDirty)
         <BaseSelect
           id="admin-case-study-translation-group"
           v-model="form.translationGroup"
+          :disabled="lock.isProposalLocked"
+          :aria-describedby="lock.proposalDescribedBy"
           :label="t('admin.caseStudies.translationOfLabel')"
           :options="translationOptions"
         />

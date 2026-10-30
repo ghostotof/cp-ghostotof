@@ -178,6 +178,35 @@ export function describeEntryFormLock(lockCase: EntryFormLockCase): void {
     expect(textsDescribing(wrapper, translateEntryButton(wrapper, form))).toEqual([])
   })
 
+  // Décision 3 de la huitième relecture (R94, Sp8-5) : pendant une proposition, « Version de » est verrouillé comme
+  // la langue. « aucune » détacherait la proposition de sa source (D-b) ; « Annuler » est la sortie. En édition,
+  // il reste libre (détacher une entrée de son groupe est un geste permis) et ne désigne aucun verrou.
+  it(`${prefix}après une proposition, « Version de » est désactivé et décrit par le texte du verrou ; « Annuler » le libère`, async () => {
+    const wrapper = await lockCase.mount()
+    const group = `#${ids.group}`
+
+    await lockCase.startEdit(wrapper)
+    await lockCase.propose(wrapper)
+
+    expect(wrapper.get(group).attributes('disabled')).toBeDefined()
+    expect(describedTexts(wrapper, group)).toEqual([LOCKED_BY_PROPOSAL_TEXT])
+
+    await formCancelButton(wrapper, form)?.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get(group).attributes('disabled')).toBeUndefined()
+    expect(describedTexts(wrapper, group)).toEqual([])
+  })
+
+  it(`${prefix}en édition, « Version de » reste libre et ne désigne aucun texte de verrou`, async () => {
+    const wrapper = await lockCase.mount()
+
+    await lockCase.startEdit(wrapper)
+
+    expect(wrapper.get(`#${ids.group}`).attributes('disabled')).toBeUndefined()
+    expect(describedTexts(wrapper, `#${ids.group}`)).toEqual([])
+  })
+
   it(`${prefix}après une proposition, le verrou de la langue est expliqué et « Annuler » retire l'explication`, async () => {
     const wrapper = await lockCase.mount()
 

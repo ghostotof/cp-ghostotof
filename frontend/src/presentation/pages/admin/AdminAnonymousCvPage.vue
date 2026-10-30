@@ -311,6 +311,8 @@ useUnsavedOrderGuard(isOrderDirty)
         <BaseSelect
           id="admin-anonymous-cv-translation-group"
           v-model="form.translationGroup"
+          :disabled="lock.isProposalLocked"
+          :aria-describedby="lock.proposalDescribedBy"
           :label="t('admin.anonymousCv.translationOfLabel')"
           :options="translationOptions"
         />

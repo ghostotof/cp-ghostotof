@@ -417,6 +417,8 @@ function categoryLabel(category: AdminAboutMeCardCategory): string {
       <BaseSelect
         id="admin-about-me-card-translation-group"
         v-model="form.translationGroup"
+        :disabled="lock.isProposalLocked"
+        :aria-describedby="lock.proposalDescribedBy"
         :label="t('admin.about.translationOfLabel')"
         :options="translationOptions"
       />

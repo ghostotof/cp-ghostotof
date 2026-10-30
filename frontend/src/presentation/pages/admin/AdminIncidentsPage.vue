@@ -318,6 +318,8 @@ useUnsavedOrderGuard(isOrderDirty)
         <BaseSelect
           id="admin-incident-translation-group"
           v-model="form.translationGroup"
+          :disabled="lock.isProposalLocked"
+          :aria-describedby="lock.proposalDescribedBy"
           :label="t('admin.incidents.translationOfLabel')"
           :options="translationOptions"
         />
