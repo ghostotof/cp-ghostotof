@@ -155,7 +155,7 @@ is missing from the table), `sessionEndedLoad.spec.ts` (the thirteen composables
 `hasError` and keeps the list, any other failure raises it; on a mutation it sets **no error and does not succeed**, any
 other failure sets `unknown`; `useAdminTranslation` and `useOrderDraft` too), `HttpAdminUserRepository.spec.ts`,
 `HttpMcpConnectionsRepository.spec.ts`, `HttpOAuthConsentRepository.spec.ts`, `HttpAssistantRepository.spec.ts`.
-- `noOmittedCredentials.spec.ts` (no file of `src/` holds a string literal `'omit'` — typed or in the options object; read by `tests/support/sourceText.ts` on TypeScript's syntax tree, a `.vue` by its `<script>` blocks only, R68, R80 —, which drops preprod's Basic Auth, R37, R51).
+- `noOmittedCredentials.spec.ts` (no file of `src/` holds a string literal `'omit'` — typed or in the options object; read by `tests/support/sourceText.ts` on TypeScript's syntax tree, template parts included, a `.vue` by its `<script>` blocks and the expressions of its `<template>`, R68, R80, R96 —, which drops preprod's Basic Auth, R37, R51).
 - The backend facts it relies on are pinned by `AuthCookieAttributesTest` (session cookies), `BaseAccessControllerTest` and `RefusedSessionCookiesAreClearedTest` (a refused cookie cleared by the first 401 of a protected route), `JwtClockSkewTest` (`clock_skew` 5 s, R29), `cookiePolicy.spec.ts` (the published cookie policy says session cookies, R32), `.claude/rules/security-authentication-sessions.md`.
 
 Three guards of the first version are gone, because what they guarded no longer exists: `sessionEnded.spec.ts` (domain,

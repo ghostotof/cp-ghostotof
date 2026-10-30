@@ -16,7 +16,8 @@ import { parse } from 'vue/compiler-sfc'
  * **Depuis R80 le module lit l'arbre syntaxique de TypeScript** (`typescript`, déjà en `devDependencies`) : ce que le
  * compilateur lit comme une chaîne, un gabarit, une regex ou un commentaire l'est ici aussi, et un échappement est lu
  * (`'om\x69t'` est `omit`). Un `.vue` passe d'abord par `scriptOf`, qui n'en garde que les blocs `<script>` (le
- * `<template>` n'est pas du JavaScript : son apostrophe ou son `//` ne doivent rien ouvrir).
+ * `<template>` n'est pas du JavaScript : son apostrophe ou son `//` ne doivent rien ouvrir). Les expressions de ce gabarit
+ * (directives, gestionnaires en ligne, interpolations) se lisent à part, par `templateExpressionsOf` (R96).
  *
  * Ce que ça coûte : les gardes dépendent de l'API du compilateur (`createSourceFile`, `getLeadingCommentRanges`…) et de
  * celle de `vue/compiler-sfc` (`parse`). Un passage à TypeScript 7 (le portage natif) la changera : les gardes
@@ -62,7 +63,7 @@ export function withoutComments(source: string): string {
     if (start < from) {
       continue
     }
-    text += source.slice(from, start) + ' ' + source.slice(start, end).replace(/[^\n]/g, '')
+    text += source.slice(from, start) + ' ' + source.slice(start, end).replace(/[^\r\n]/g, '')
     from = end
   }
 
@@ -71,14 +72,16 @@ export function withoutComments(source: string): string {
 
 /**
  * Le contenu de chaque littéral de la source, hors commentaires : chaînes `'…'` et `"…"` et gabarits sans `${`, lus comme
- * le compilateur les lit (échappements décodés : `'om\x69t'` donne `omit`). Un gabarit à expression n'a pas de contenu
- * fixe, mais les chaînes de ses expressions sont relevées, elles.
+ * le compilateur les lit (échappements décodés : `'om\x69t'` donne `omit`). Un gabarit à expression donne chacune de ses
+ * parties fixes (`a${x}b` donne `a` et `b`), puis les chaînes de ses expressions.
  */
 export function stringLiterals(source: string): string[] {
   const literals: string[] = []
 
   const visit = (node: ts.Node): void => {
-    if (ts.isStringLiteralLike(node)) {
+    // Une partie fixe de gabarit à expression (`TemplateHead`, `TemplateMiddle`, `TemplateTail`) est un littéral aussi :
+    // dans `` `${''}omit` ``, `omit` est un `TemplateTail`.
+    if (ts.isStringLiteralLike(node) || ts.isTemplateHead(node) || ts.isTemplateMiddle(node) || ts.isTemplateTail(node)) {
       literals.push(node.text)
     }
     ts.forEachChild(node, visit)
@@ -115,6 +118,56 @@ export function scriptOf(path: string, source: string): string {
   }
 
   return code
+}
+
+/** Ce que la lecture du gabarit utilise d'un nœud de l'arbre de `vue/compiler-sfc` (le reste du nœud est ignoré). */
+interface TemplateNode {
+  content?: string | TemplateNode
+  children?: TemplateNode[]
+  props?: TemplateNode[]
+  exp?: TemplateNode
+  arg?: TemplateNode
+  /** Vrai pour une expression simple : son `content` est le texte JavaScript. */
+  ast?: unknown
+}
+
+/**
+ * Les expressions JavaScript du `<template>` d'un `.vue`, dans l'ordre du document : la valeur de chaque directive
+ * (`:title`, `v-if`, `@click="…"` — un gestionnaire en ligne compris), l'argument d'une directive dynamique
+ * (`:[nom]`) et le contenu de chaque interpolation `{{ … }}`. `[]` pour un chemin qui n'est pas un `.vue` ou sans
+ * gabarit ; un `.vue` illisible est refusé comme par `scriptOf`. Chacune se lit ensuite avec `stringLiterals`.
+ */
+export function templateExpressionsOf(path: string, source: string): string[] {
+  if (!path.endsWith('.vue')) {
+    return []
+  }
+
+  const { descriptor, errors } = parse(source, { filename: path })
+  if (errors.length > 0) {
+    throw new Error(`${path} : ${errors.map((error) => error.message).join(' ; ')}`)
+  }
+
+  const expressions: string[] = []
+  const visit = (node: TemplateNode): void => {
+    // Une interpolation porte son expression dans `content` (un nœud) ; une directive dans `exp` ; un argument dynamique
+    // dans `arg`. Un `content` texte (nœud de texte, expression simple) est lu ici, à la feuille.
+    if ('string' === typeof node.content && undefined !== node.ast) {
+      expressions.push(node.content)
+    }
+    for (const child of [node.exp, node.arg, 'object' === typeof node.content ? node.content : undefined]) {
+      if (undefined !== child) {
+        visit(child)
+      }
+    }
+    for (const child of [...(node.props ?? []), ...(node.children ?? [])]) {
+      visit(child)
+    }
+  }
+  if (null !== descriptor.template && undefined !== descriptor.template.ast) {
+    visit(descriptor.template.ast as unknown as TemplateNode)
+  }
+
+  return expressions
 }
 
 /** L'arbre de `source`, lu comme du TypeScript (parents posés : `getChildren` en a besoin). */
