@@ -18,8 +18,16 @@ use ApiPlatform\Metadata\Put;
 use ApiPlatform\Metadata\QueryParameter;
 use ApiPlatform\Metadata\Resource\Factory\ResourceMetadataCollectionFactoryInterface;
 use ApiPlatform\Metadata\Resource\Factory\ResourceNameCollectionFactoryInterface;
+use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use DateTimeImmutable;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
+use Symfony\Component\TypeInfo\Type;
+use Symfony\Component\TypeInfo\Type\CollectionType;
+use Symfony\Component\TypeInfo\Type\CompositeTypeInterface;
+use Symfony\Component\TypeInfo\Type\EnumType;
+use Symfony\Component\TypeInfo\Type\ObjectType;
+use Symfony\Component\TypeInfo\Type\WrappingTypeInterface;
 
 /**
  * Aucune opération d'API Platform ne porte d'expression de sécurité, quelle que soit sa
@@ -52,8 +60,19 @@ use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
  * qu'à les accompagner). Elle lit aussi, pour la ressource et pour chaque opération, les
  * **paramètres** (`getParameters()`) et les **liens** (`getUriVariables()`, des `Link` qui étendent
  * `Parameter` : leur `security`), puis chaque **propriété** de chaque ressource (`ApiProperty` :
- * `security` et `securityPostDenormalize`). `getLinks()` n'est pas parcouru : ce sont des `WebLink`
+ * `security` et `securityPostDenormalize`). « Chaque ressource » veut dire : les classes de ressource, les DTO
+ * `input` et `output` de chaque ressource et opération (#748, R88 : `BackofficeUserInviteInput` en est un) et les
+ * objets `App\` que le type natif d'une propriété atteint (objet, collection, nullable, union), chaque classe lue
+ * une fois. Un lien (`uriVariables`) qui n'est pas un `Link` compilé est un constat, non une omission silencieuse.
+ * `getLinks()` n'est pas parcouru : ce sont des `WebLink`
  * de Symfony (l'en-tête HTTP `Link`), qui n'ont pas de `security`.
+ *
+ * **Pas de garde de vacuité sur les paramètres** : le parcours de `getParameters()` est la
+ * même boucle que celle des liens, exécutée sur chaque ressource et chaque opération (comptées) ;
+ * `testTheCheckSeesEachParameterExpression` prouve la lecture. Exiger qu'un paramètre existe rougirait pour rien (aucun
+ * n'existe dans `src/`), et une ressource de test ajoutée pour cela ajouterait une route `/api` au conteneur `test` que
+ * lisent toutes les gardes d'exposition (`ApiRouteExposureTest`, `RouterScopeTest`). Les classes DTO (`src/` en
+ * déclare une) et les objets imbriqués (`src/` en atteint neuf à R88) sont, eux, comptés.
  */
 final class ApiPlatformOperationsCarryNoSecurityTest extends KernelTestCase
 {
@@ -70,7 +89,14 @@ final class ApiPlatformOperationsCarryNoSecurityTest extends KernelTestCase
         $links = 0;
         $properties = 0;
         $found = [];
+        // Les classes dont on lit les propriétés : la file part des ressources, puis y entrent les DTO d'entrée
+        // et de sortie de chaque ressource et opération, puis les objets `App\` que le type d'une propriété atteint.
+        // Chaque classe est lue une fois (la clé de `$queue` est la classe).
+        $queue = [];
+        $dtoClasses = [];
+        $nestedClasses = [];
         foreach ($names->create() as $resourceClass) {
+            $queue[$resourceClass] = true;
             foreach ($metadata->create($resourceClass) as $resource) {
                 // La ressource elle-même : API Platform recopie ses valeurs sur les opérations
                 // qui n'ont pas les leurs, mais un défaut posé ici se verrait au plus tôt.
@@ -78,6 +104,10 @@ final class ApiPlatformOperationsCarryNoSecurityTest extends KernelTestCase
                     $found[] = \sprintf('%s (ressource) : %s = %s', $resourceClass, $attribute, $expression);
                 }
                 $links += $this->collectNested($resource, \sprintf('%s (ressource)', $resourceClass), $found);
+                foreach ($this->dtoClassesOf($resource) as $dtoClass) {
+                    $queue[$dtoClass] ??= true;
+                    $dtoClasses[$dtoClass] = true;
+                }
                 foreach ($resource->getOperations() ?? [] as $operationName => $operation) {
                     ++$visited;
                     foreach ($this->expressionsOf($operation) as $attribute => $expression) {
@@ -88,15 +118,30 @@ final class ApiPlatformOperationsCarryNoSecurityTest extends KernelTestCase
                         \sprintf('%s, opération %s', $resourceClass, $operationName),
                         $found,
                     );
+                    foreach ($this->dtoClassesOf($operation) as $dtoClass) {
+                        $queue[$dtoClass] ??= true;
+                        $dtoClasses[$dtoClass] = true;
+                    }
                 }
             }
+        }
 
-            // Les propriétés ne dépendent pas des opérations : `ApiProperty` porte son propre `security`.
-            foreach ($propertyNames->create($resourceClass) as $propertyName) {
+        // Les propriétés ne dépendent pas des opérations : `ApiProperty` porte son propre `security`. La file
+        // grandit pendant le parcours (un objet imbriqué y entre), d'où l'index et non un `foreach` sur une copie.
+        $read = [];
+        while (null !== ($class = array_key_first(array_diff_key($queue, $read)))) {
+            $read[$class] = true;
+            foreach ($propertyNames->create($class) as $propertyName) {
                 ++$properties;
-                $property = $propertyMetadata->create($resourceClass, $propertyName);
+                $property = $propertyMetadata->create($class, $propertyName);
                 foreach ($this->propertyExpressions($property) as $attribute => $expression) {
-                    $found[] = \sprintf('%s, propriété %s : %s = %s', $resourceClass, $propertyName, $attribute, $expression);
+                    $found[] = \sprintf('%s, propriété %s : %s = %s', $class, $propertyName, $attribute, $expression);
+                }
+                foreach ($this->nestedClassesOf($property) as $nested) {
+                    if (!isset($queue[$nested])) {
+                        $queue[$nested] = true;
+                        $nestedClasses[$nested] = true;
+                    }
                 }
             }
         }
@@ -106,6 +151,11 @@ final class ApiPlatformOperationsCarryNoSecurityTest extends KernelTestCase
         self::assertGreaterThan(0, $visited, 'Aucune opération parcourue : la garde ne verrait rien.');
         self::assertGreaterThan(0, $links, 'Aucun lien parcouru : la garde ne verrait rien des `uriVariables`.');
         self::assertGreaterThan(0, $properties, 'Aucune propriété parcourue : la garde ne verrait rien des `ApiProperty`.');
+        // `src/` déclare un DTO d'entrée (`BackofficeUserInviteInput`) : sans lui, la lecture des DTO ne verrait rien.
+        self::assertNotSame([], $dtoClasses, 'Aucune classe `input`/`output` parcourue : la garde ne verrait rien des DTO.');
+        // Et `src/` imbrique des objets `App\` (`AboutCardResource`, `WatchedProductResource`… : neuf à R88) :
+        // un parcours qui n'en suivrait aucun passerait ce test sans rien lire.
+        self::assertNotSame([], $nestedClasses, 'Aucun objet imbriqué parcouru : la garde ne verrait rien des classes atteintes par un type.');
         self::assertSame(
             [],
             $found,
@@ -192,6 +242,105 @@ final class ApiPlatformOperationsCarryNoSecurityTest extends KernelTestCase
     }
 
     /**
+     * @param list<class-string> $expected les classes de `App\` que le type natif de la propriété atteint
+     */
+    #[DataProvider('propertiesThatNestObjects')]
+    public function testTheCheckReachesNestedClasses(ApiProperty $property, array $expected): void
+    {
+        self::assertSame($expected, $this->nestedClassesOf($property));
+    }
+
+    /**
+     * @return iterable<string, array{ApiProperty, list<class-string>}>
+     */
+    public static function propertiesThatNestObjects(): iterable
+    {
+        yield 'un objet' => [new ApiProperty(nativeType: Type::object(self::class)), [self::class]];
+        yield 'une collection d\'objets' => [
+            new ApiProperty(nativeType: Type::list(Type::object(self::class))),
+            [self::class],
+        ];
+        yield 'un objet nullable' => [new ApiProperty(nativeType: Type::nullable(Type::object(self::class))), [self::class]];
+        yield 'une union' => [
+            new ApiProperty(nativeType: Type::union(Type::object(self::class), Type::string())),
+            [self::class],
+        ];
+        yield 'un type scalaire' => [new ApiProperty(nativeType: Type::string()), []];
+        yield 'un objet hors App\\' => [new ApiProperty(nativeType: Type::object(DateTimeImmutable::class)), []];
+        yield 'une énumération' => [new ApiProperty(nativeType: Type::enum(Locale::class)), []];
+        yield 'aucun type natif' => [new ApiProperty(), []];
+    }
+
+    public function testANonLinkUriVariableIsReported(): void
+    {
+        $found = [];
+        $links = $this->collectNested(new Get(uriVariables: ['id' => 'App\Foo']), 'contexte', $found);
+
+        self::assertSame(0, $links);
+        self::assertCount(1, $found);
+        self::assertStringContainsString('contexte, lien id', $found[0]);
+        self::assertStringContainsString('n\'est pas un Link compilé', $found[0]);
+    }
+
+    /**
+     * Les classes `input` et `output` d'une ressource ou d'une opération. API Platform normalise
+     * `input: Foo::class` en `['class' => Foo::class]` ; `false` (pas de DTO) et `null` n'en portent pas.
+     *
+     * @return list<class-string>
+     */
+    private function dtoClassesOf(Metadata $element): array
+    {
+        $classes = [];
+        foreach ([$element->getInput(), $element->getOutput()] as $dto) {
+            if (\is_array($dto) && isset($dto['class']) && \is_string($dto['class']) && class_exists($dto['class'])) {
+                $classes[] = $dto['class'];
+            }
+        }
+
+        return $classes;
+    }
+
+    /**
+     * Les classes de `App\` que le type natif d'une propriété atteint : un objet, la valeur d'une collection,
+     * un type nullable, une union ou une intersection, à toute profondeur. Les énumérations n'ont pas de propriété.
+     *
+     * @return list<class-string>
+     */
+    private function nestedClassesOf(ApiProperty $property): array
+    {
+        $type = $property->getNativeType();
+
+        return null === $type ? [] : array_values(array_unique($this->appClassesIn($type)));
+    }
+
+    /**
+     * @return list<class-string>
+     */
+    private function appClassesIn(Type $type): array
+    {
+        $classes = [];
+        if ($type instanceof ObjectType && !$type instanceof EnumType && str_starts_with($type->getClassName(), 'App\\')) {
+            /** @var class-string $className */
+            $className = $type->getClassName();
+            $classes[] = $className;
+        }
+        $inner = [];
+        if ($type instanceof CompositeTypeInterface) {
+            $inner = $type->getTypes();
+        } elseif ($type instanceof WrappingTypeInterface) {
+            $inner = [$type->getWrappedType()];
+        }
+        if ($type instanceof CollectionType) {
+            $inner[] = $type->getCollectionValueType();
+        }
+        foreach ($inner as $innerType) {
+            $classes = [...$classes, ...$this->appClassesIn($innerType)];
+        }
+
+        return $classes;
+    }
+
+    /**
      * @return array<string, string> attribut => expression, pour ceux que l'élément déclare
      */
     private function expressionsOf(Metadata $metadata): array
@@ -230,6 +379,10 @@ final class ApiPlatformOperationsCarryNoSecurityTest extends KernelTestCase
         }
         foreach ($candidates as $name => $link) {
             if (!$link instanceof Link) {
+                // Une variable non compilée n'a pas de `security` que la garde puisse lire : le dire plutôt que
+                // la sauter sans bruit (un `continue` ici laisserait passer une sécurité posée par un autre moyen).
+                $found[] = \sprintf('%s, lien %s : n\'est pas un Link compilé, sa sécurité ne serait pas lue', $context, $name);
+
                 continue;
             }
             ++$links;
