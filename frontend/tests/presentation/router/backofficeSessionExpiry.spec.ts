@@ -8,11 +8,11 @@ import {
   backofficeAccessRefused,
   clearBackofficeAccessRefusal,
 } from '../../../src/application/admin/shared/backofficeAccessRefusal'
-import { AUTH_REPOSITORY, authState, useAuth } from '../../../src/application/auth/useAuth'
-import { advanceGeneration } from '../../../src/application/auth/sessionGeneration'
+import { AUTH_REPOSITORY, authState, isCurrentGeneration, markBaseAccessGranted, markSessionExpired, useAuth } from '../../../src/application/auth/useAuth'
 import type { AuthRepository } from '../../../src/domain/auth/repositories/AuthRepository'
 import type { AuthenticatedUser } from '../../../src/domain/auth/entities/AuthenticatedUser'
 import { sessionFor } from '../../support/authSession'
+import { signInAgain } from '../../support/signInAgain'
 
 const SUPER: AuthenticatedUser = { username: 'super', roles: ['ROLE_SUPER', 'ROLE_USER'] }
 
@@ -179,15 +179,41 @@ describe('backofficeSessionExpiry — refus réel (#748, R17)', () => {
   })
 
   it.each(['read', 'write'] as const)(
-    "le refus d'une requête (%s) partie sous une autre génération n'est ni compté ni relu (R48, CR5-2)",
+    "le même compte, génération avancée depuis l'envoi (fin puis retour) : le refus (%s) est compté et relu (R63, décision 2)",
     async (kind) => {
       me.mockClear()
       await signIn(SUPER)
       const { handler, unmount } = buildReaction()
 
-      // La requête part sous la session courante, puis la génération avance (un autre compte, un retour, une connexion).
+      // La requête part sous le compte « super » ; la session finit, puis le même compte revient (un autre onglet, une
+      // reconnexion) : la génération a avancé deux fois, le compte n'a pas changé. Aucune alerte n'est montée ici, le
+      // périmètre ne bouge donc pas à la fin : seul le compte juge, ce que le test veut isoler.
       const sent = handler.stampAtSend(kind)
-      advanceGeneration()
+      markSessionExpired()
+      await signInAgain()
+      expect(isCurrentGeneration(sent.session)).toBe(false)
+      me.mockClear()
+      handler.refused(sent)
+      await flushPromises()
+
+      expect(backofficeAccessRefused.value).toBe(1)
+      expect(me).toHaveBeenCalledTimes(1)
+      unmount()
+    },
+  )
+
+  it.each(['read', 'write'] as const)(
+    "un autre compte depuis l'envoi : le refus (%s) n'est ni compté ni relu (R48, CR5-2, R63)",
+    async (kind) => {
+      me.mockClear()
+      await signIn(SUPER)
+      const { handler, unmount } = buildReaction()
+
+      // Le témoin : la requête part sous « super », puis un autre compte est lu hors session finie. Son 403 tardif est
+      // celui d'une session qui n'est plus la courante, le palier relu serait celui d'un compte qu'il ne concerne pas.
+      const sent = handler.stampAtSend(kind)
+      await signIn({ username: 'autre', roles: ['ROLE_SUPER', 'ROLE_USER'] })
+      me.mockClear()
       handler.refused(sent)
       await flushPromises()
 
@@ -196,6 +222,22 @@ describe('backofficeSessionExpiry — refus réel (#748, R17)', () => {
       unmount()
     },
   )
+
+  it("aucun compte retenu depuis l'envoi (accès de base obtenu) : le refus d'une écriture n'est ni compté ni relu", async () => {
+    me.mockClear()
+    await signIn(SUPER)
+    const { handler, unmount } = buildReaction()
+
+    // « Accès instantané » oublie le dernier compte : `null` diffère de tout identifiant.
+    const sent = handler.stampAtSend('write')
+    markBaseAccessGranted()
+    handler.refused(sent)
+    await flushPromises()
+
+    expect(backofficeAccessRefused.value).toBe(0)
+    expect(me).not.toHaveBeenCalled()
+    unmount()
+  })
 
   it('refused ne finit pas la session et ne quitte pas la page', async () => {
     await signIn(SUPER)

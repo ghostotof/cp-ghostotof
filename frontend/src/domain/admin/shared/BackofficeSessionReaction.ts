@@ -6,6 +6,13 @@
 export interface BackofficeSendStamp {
   /** La génération de session courante (#748, R14). */
   readonly session: number
+  /**
+   * Le dernier compte affiché à l'envoi (son identifiant), `null` quand aucun n'est retenu (jamais connecté, déconnexion,
+   * accès de base obtenu). Un refus n'est écarté que si ce compte a changé depuis l'envoi (#748, R63, décision 2 de la
+   * sixième relecture) : un autre compte, ou aucun. Le même compte reste dit, même après une fin de session puis un
+   * retour, ou une bascule de palier. La génération ci-dessus ne juge plus que le verdict « session finie ».
+   */
+  readonly account: string | null
   /** Ce qu'un refus doit encore concerner pour compter (#748, R28, R38, R54). */
   readonly refusal: RefusalScope
 }
@@ -49,7 +56,8 @@ export interface BackofficeSessionReaction {
    * son jeton. Appelé une fois par refus, juste avant que le client lève `AccessForbiddenError`, avec le timbre de
    * l'envoi : la réaction compte le refus (l'alerte d'`AdminLayout` le dit) et relit le palier — sauf si la
    * personne a navigué depuis l'envoi **et que la requête était une lecture** (le refus est celui d'une page quittée ;
-   * le refus d'une écriture compte toujours, R38).
+   * le refus d'une écriture compte toujours, R38), ou si le compte a changé depuis l'envoi (`account`, R63) : le refus
+   * est alors celui d'un compte qui n'est plus à l'écran, lecture ou écriture.
    */
   refused(sentAt: BackofficeSendStamp): void
 }

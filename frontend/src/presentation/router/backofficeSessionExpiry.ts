@@ -1,4 +1,4 @@
-import { isCurrentGeneration, markSessionExpired, sessionStamp, type UseAuthResult } from '../../application/auth/useAuth'
+import { lastAccountName, markSessionExpired, sessionStamp, type UseAuthResult } from '../../application/auth/useAuth'
 import { markBackofficeAccessRefused, refusalScope } from '../../application/admin/shared/backofficeAccessRefusal'
 import type { BackofficeSendKind, BackofficeSendStamp, BackofficeSessionReaction } from '../../domain/admin/shared/BackofficeSessionReaction'
 
@@ -28,9 +28,9 @@ import type { BackofficeSendKind, BackofficeSendStamp, BackofficeSessionReaction
  * répond « anonyme ». **Une lecture refusée après une navigation ne compte pas** (R28, CR3-8) : le timbre de l'envoi
  * porte le périmètre de refus, que chaque effacement de l'alerte avance (chemin ou requête changés, fin de session, montage, démontage) ; le 403 d'une page quittée n'affiche aucune alerte sur la
  * suivante et ne relit rien. **Une écriture refusée compte toujours** (R38) : le timbre porte `{ kind: 'write' }`, la
- * personne a fait le geste et doit apprendre son échec, au besoin sur la page où elle est allée — **sauf si la session a changé depuis l'envoi** (R48, CR5-2) : un refus
- * parti sous une autre génération (retour d'une session finie, autre compte lu) n'est ni compté ni relu, lecture ou
- * écriture. La relecture est branchée ici, côté composition, et non dans chaque composable : ils
+ * personne a fait le geste et doit apprendre son échec, au besoin sur la page où elle est allée — **sauf si le compte a changé depuis l'envoi** (R63, décision 2 de la
+ * sixième relecture) : un refus parti sous un autre compte, ou sous aucun, n'est ni compté ni relu, lecture ou écriture ; le
+ * même compte reste dit après une fin de session puis un retour, ou une bascule de palier. La relecture est branchée ici, côté composition, et non dans chaque composable : ils
  * n'appellent pas `useAuth()` (treize composables d'administration, dont aucun test ne fournit `AUTH_REPOSITORY`).
  *
  * Construite par `main.ts` avec le `useAuth()` de l'application (`app.runWithContext`) : `rereadAfterRefusal` a besoin
@@ -41,14 +41,17 @@ export function createBackofficeSessionReaction(auth: Pick<UseAuthResult, 'rerea
     // Une écriture ne relève aucun périmètre : son refus n'est jamais périmé (R38).
     stampAtSend: (kind: BackofficeSendKind): BackofficeSendStamp => ({
       session: sessionStamp(),
+      account: lastAccountName(),
       refusal: 'write' === kind ? { kind: 'write' } : { kind: 'read', scope: refusalScope() },
     }),
     ended: (sentAt: BackofficeSendStamp): boolean => markSessionExpired(sentAt.session),
     refused: (sentAt: BackofficeSendStamp): void => {
-      // Partie sous une autre génération (un autre compte, un retour, une connexion) : la réponse est celle d'une
-      // session qui n'est plus la courante, elle n'a rien à dire de celle-ci (CR5-2). Comme `ended`, mais ici le
-      // refus n'est ni compté ni relu : le palier relu serait celui d'un compte que ce refus ne concerne pas.
-      if (!isCurrentGeneration(sentAt.session)) {
+      // Jugé sur le compte, non sur la génération (R63, décision 2 de la sixième relecture) : la génération avance aussi
+      // à une fin de session, à un retour du même compte, à une bascule de palier, et rendrait muet le 403 d'un compte
+      // toujours à l'écran. Un refus parti sous un autre compte, ou sous aucun (`null` diffère de tout identifiant), est
+      // celui d'une session qui n'est plus la courante : le palier relu serait celui d'un compte qu'il ne concerne pas
+      // (CR5-2). La génération ne juge plus que `ended` : un 401 parti sous le premier compte ne finit pas la session du second.
+      if (sentAt.account !== lastAccountName()) {
         return
       }
 

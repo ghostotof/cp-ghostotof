@@ -19,6 +19,7 @@ import type { AuthRepository } from '../../../src/domain/auth/repositories/AuthR
 import type { AdminTranslationRepository } from '../../../src/domain/admin/translation/repositories/AdminTranslationRepository'
 import type { CvRepository } from '../../../src/domain/cv/repositories/CvRepository'
 import { sessionFor } from '../../support/authSession'
+import { signInAgain } from '../../support/signInAgain'
 import { defineComponent, h } from 'vue'
 
 const SUPER = { username: 'super', roles: ['ROLE_SUPER', 'ROLE_USER'] }
@@ -446,6 +447,42 @@ describe('AdminLayout — refus réel du backoffice (#748, R17)', () => {
     await flushPromises()
 
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(me).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+  })
+
+  it("le même compte rétabli entre l'envoi et le 403 d'un enregistrement : l'alerte s'affiche (R63, décision 2)", async () => {
+    let release: (status: number) => void = () => undefined
+    const pendingWrite = new Promise<Response>((resolve) => {
+      release = (status) => resolve(jsonResponse(status, { code: status, message: 'x' }))
+    })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init?: RequestInit) => ('GET' === (init?.method ?? 'GET') ? jsonResponse(200, []) : pendingWrite)),
+    )
+    const { wrapper } = await mountAdminCaseStudies(repository)
+
+    // « Enregistrer » part sous le compte « super » ; la page est restée ouverte.
+    await wrapper.get('#admin-case-study-title').setValue('Un moteur de tarification asynchrone')
+    await wrapper.get('#admin-case-study-problem').setValue('Des calculs bloquants.')
+    await wrapper.get('#admin-case-study-solution').setValue('Messenger.')
+    await wrapper.get('#admin-case-study-tradeoffs').setValue('Cohérence différée.')
+    await wrapper.get('#admin-case-study-measured-result').setValue('Temps divisé par dix.')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    // Déconnecté dans un autre onglet, puis reconnecté au même compte : la génération a avancé, le compte n'a pas changé.
+    markSessionExpired()
+    await signInAgain()
+    expect(authState.sessionEnded).toBe(false)
+    me.mockClear()
+
+    // Le serveur refuse l'enregistrement : c'est bien celui du compte qui est à l'écran, la personne doit l'apprendre.
+    release(403)
+    await flushPromises()
+
+    expect(wrapper.findAll('[role="alert"]')).toHaveLength(1)
+    expect(wrapper.get('[role="alert"]').text()).toContain('Le serveur refuse cette demande')
     expect(me).toHaveBeenCalledTimes(1)
     wrapper.unmount()
   })

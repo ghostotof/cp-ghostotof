@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { defineComponent, h } from 'vue'
-import { AUTH_REPOSITORY, authState, markBaseAccessExpired, markBaseAccessGranted, markSessionExpired, sessionStamp, useAuth, waitForAuthCheck } from '../../../src/application/auth/useAuth'
+import { AUTH_REPOSITORY, authState, markBaseAccessExpired, markBaseAccessGranted, markSessionExpired, lastAccountName, sessionStamp, useAuth, waitForAuthCheck } from '../../../src/application/auth/useAuth'
 import type { AuthRepository } from '../../../src/domain/auth/repositories/AuthRepository'
 import type { AuthenticatedUser } from '../../../src/domain/auth/entities/AuthenticatedUser'
 import { BASE_ACCESS_SESSION, type AuthSession } from '../../../src/domain/auth/entities/AuthSession'
@@ -1317,6 +1317,22 @@ describe('useAuth', () => {
 
         expect(switched).toHaveBeenCalledTimes(1)
         expect(restored).not.toHaveBeenCalled()
+      })
+
+      it("lastAccountName suit le dernier compte affiché : gardé à l'anonyme, oublié par logout (R63)", async () => {
+        const auth = mountWithComposable(createStubRepository({ login: vi.fn(async () => JANE) }))
+        expect(lastAccountName()).toBeNull()
+
+        await auth.login('jane', 'password')
+        expect(lastAccountName()).toBe('jane')
+
+        // La page ouverte reste celle du compte quand l'en-tête devient anonyme (fin de session).
+        markSessionExpired()
+        expect(auth.user.value).toBeNull()
+        expect(lastAccountName()).toBe('jane')
+
+        await auth.logout()
+        expect(lastAccountName()).toBeNull()
       })
     })
 

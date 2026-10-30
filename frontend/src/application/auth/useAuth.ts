@@ -5,7 +5,7 @@ import { ANONYMOUS_SESSION, type AccessTier, type AuthSession } from '../../doma
 import { ROLE_SUPER } from '../../domain/auth/entities/Role'
 import { hasRole } from '../../domain/auth/services/hasRole'
 import { sessionForUser } from '../../domain/auth/services/sessionForUser'
-import { markBaseAccessExpired, markBaseAccessGranted, applySession, authState, beginCheck, forgetLastAccount, markFirstCheckDone, waitForAuthCheck } from './sessionState'
+import { markBaseAccessExpired, markBaseAccessGranted, applySession, authState, beginCheck, forgetLastAccount, getLastAccount, markFirstCheckDone, waitForAuthCheck } from './sessionState'
 import { recallBaseAccessExpiry, scheduleBaseAccessExpiry } from './baseAccessExpiry'
 import { advanceGeneration, isCurrentGeneration, sessionStamp } from './sessionGeneration'
 import { onAccountSwitched, onSessionRestored } from './sessionEvents'
@@ -30,6 +30,17 @@ export {
   markSessionExpired,
   onSessionRestored,
   onAccountSwitched,
+}
+
+/**
+ * L'identifiant du **dernier compte affiché** (`LastAccount`, `sessionState.ts`), ou `null` quand aucun n'est retenu :
+ * ce que le timbre d'envoi du backoffice retient pour juger un refus tardif (#748, R63, décision 2 de la sixième
+ * relecture : un refus n'est écarté que si le compte a changé). Une **lecture** : la façade l'expose sans exporter
+ * `getLastAccount` en entier (les rôles n'ont pas à sortir d'ici), et ce n'est pas une écriture de l'état
+ * (`sessionStateEncapsulation.spec.ts`).
+ */
+export function lastAccountName(): string | null {
+  return getLastAccount()?.username ?? null
 }
 
 export const AUTH_REPOSITORY: InjectionKey<AuthRepository> = Symbol('AuthRepository')

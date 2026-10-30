@@ -77,9 +77,11 @@ export function restoreSession(session: AuthSession, announce: boolean): void {
  *
  * **Un autre compte avance la génération, avant le signal** (#748, R48, CR5-2 ; amende R26, « une session *lue* n'avance
  * rien », pour ce seul cas) : la page ouverte n'est plus celle du compte qui l'a envoyée, tout ce qui est parti avant
- * est périmé — comme au retour d'une session finie, qui l'avance déjà (`restoreSession`). Le 403 tardif d'un
- * enregistrement du premier compte n'affiche alors rien sous le second. Avancée avant `notifyAccountSwitched`, pour que
- * l'abonné lise déjà la génération nouvelle.
+ * est périmé — comme au retour d'une session finie, qui l'avance déjà (`restoreSession`). Un 401 parti sous le premier
+ * compte ne finit alors pas la session du second (`markSessionExpired(sentAt)`). Le 403 tardif d'un enregistrement du
+ * premier compte, lui, n'est plus jugé sur la génération mais sur le compte (R63, décision 2 de la sixième relecture :
+ * le timbre d'envoi retient `lastAccountName()`, que ce changement de compte remplace). Avancée avant
+ * `notifyAccountSwitched`, pour que l'abonné lise déjà la génération nouvelle.
  */
 export function applyLiveSession(session: AuthSession): void {
   const previous = getLastAccount()

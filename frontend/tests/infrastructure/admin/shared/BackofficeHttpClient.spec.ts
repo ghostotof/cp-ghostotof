@@ -27,7 +27,7 @@ function reaction(
 
 /** Un timbre d'envoi : la génération de session `session`, le périmètre de refus étant sans objet ici. */
 function stampOf(session: number, refusalScope = 0): BackofficeSendStamp {
-  return { session, refusal: { kind: 'read', scope: refusalScope } }
+  return { session, account: null, refusal: { kind: 'read', scope: refusalScope } }
 }
 
 function setCsrfCookie(value: string): void {
