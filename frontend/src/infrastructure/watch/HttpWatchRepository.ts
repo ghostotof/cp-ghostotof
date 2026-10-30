@@ -6,9 +6,7 @@ import { WatchUnavailableError } from '../../domain/watch/errors/WatchUnavailabl
  * Implémentation HTTP de WatchRepository. Endpoint public (GET /api/watch, cf.
  * App\Portfolio\Watch).
  *
- * Aucun `credentials` : le défaut `same-origin` envoie les cookies sur une seule origine (préprod, prod), et le serveur
- * sert une route publique comme à l'anonyme quel que soit le cookie (#748, R35). Jamais `'omit'` : il retire aussi la
- * Basic Auth de la préprod (C1, `noOmittedCredentials.spec.ts`).
+ * Aucun `credentials` : voir `.claude/rules/frontend.md`, « API-backed content » (#748, R37).
  *
  * Côté backend, cette route ne déclenche aucun appel sortant — elle sert un
  * instantané déjà calculé. La page ne dépend donc jamais de la disponibilité

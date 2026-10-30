@@ -43,37 +43,35 @@ describe('HttpBaseAccessRepository', () => {
     })
   })
 
-  it("grant() lève BaseAccessError('rate-limited') sur un 429", async () => {
-    stubFetch({ ok: false, status: 429 } as unknown as Response)
+  it.each([[401], [403], [500]])(
+    'un %i est un échec unknown, un seul appel (le serveur ignore un cookie refusé sur cette route publique, #748 R35)',
+    async (status) => {
+      const fetchMock = stubFetch({ ok: false, status } as unknown as Response)
 
-    await expect(new HttpBaseAccessRepository('https://api.example.test').grant()).rejects.toMatchObject({
-      reason: 'rate-limited',
-    } satisfies Partial<BaseAccessError>)
-  })
+      await expect(new HttpBaseAccessRepository('https://api.example.test').grant()).rejects.toMatchObject({
+        reason: 'unknown',
+      } satisfies Partial<BaseAccessError>)
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+    },
+  )
 
-  it("grant() lève BaseAccessError('unknown') sur un autre échec", async () => {
-    stubFetch({ ok: false, status: 500 } as unknown as Response)
-
-    await expect(new HttpBaseAccessRepository('https://api.example.test').grant()).rejects.toMatchObject({
-      reason: 'unknown',
-    } satisfies Partial<BaseAccessError>)
-  })
-
-  it("un 401 est un échec unknown, un seul appel (le serveur ignore un cookie refusé sur cette route publique, #748 R35)", async () => {
-    const fetchMock = stubFetch({ ok: false, status: 401 } as unknown as Response)
-
-    await expect(new HttpBaseAccessRepository('https://api.example.test').grant()).rejects.toMatchObject({
-      reason: 'unknown',
-    } satisfies Partial<BaseAccessError>)
-    expect(fetchMock).toHaveBeenCalledTimes(1)
-  })
-
-  it('un 429 est rate-limited, un seul appel', async () => {
+  it("un 429 est rate-limited, un seul appel (un seul jeton du limiteur)", async () => {
     const fetchMock = stubFetch({ ok: false, status: 429 } as unknown as Response)
 
     await expect(new HttpBaseAccessRepository('https://api.example.test').grant()).rejects.toMatchObject({
       reason: 'rate-limited',
     } satisfies Partial<BaseAccessError>)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('un rejet réseau remonte tel quel, un seul appel (aucun rejeu, aucune traduction en BaseAccessError)', async () => {
+    const failure = new TypeError('Failed to fetch')
+    const fetchMock = vi.fn(async () => {
+      throw failure
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(new HttpBaseAccessRepository('https://api.example.test').grant()).rejects.toBe(failure)
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 })

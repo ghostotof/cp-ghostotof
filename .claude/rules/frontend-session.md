@@ -154,7 +154,7 @@ is missing from the table), `sessionEndedLoad.spec.ts` (the thirteen composables
 `hasError` and keeps the list, any other failure raises it; on a mutation it sets **no error and does not succeed**, any
 other failure sets `unknown`; `useAdminTranslation` and `useOrderDraft` too), `HttpAdminUserRepository.spec.ts`,
 `HttpMcpConnectionsRepository.spec.ts`, `HttpOAuthConsentRepository.spec.ts`, `HttpAssistantRepository.spec.ts`.
-- `noOmittedCredentials.spec.ts` (no file of `src/` writes `credentials: 'omit'`, which drops preprod's Basic Auth, R37).
+- `noOmittedCredentials.spec.ts` (no file of `src/` writes a string `'omit'` outside a comment — typed or in the options object —, which drops preprod's Basic Auth, R37, R51).
 - The backend facts it relies on are pinned by `AuthCookieAttributesTest` (session cookies), `BaseAccessControllerTest` and `RefusedSessionCookiesAreClearedTest` (a refused cookie cleared by its first 401), `JwtClockSkewTest` (`clock_skew` 5 s, R29), `cookiePolicy.spec.ts` (the published cookie policy says session cookies, R32), `.claude/rules/security-authentication-sessions.md`.
 
 Three guards of the first version are gone, because what they guarded no longer exists: `sessionEnded.spec.ts` (domain,

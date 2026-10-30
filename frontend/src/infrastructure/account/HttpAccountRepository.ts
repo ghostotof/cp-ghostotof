@@ -4,10 +4,8 @@ import { PasswordSetupLinkError } from '../../domain/account/errors/PasswordSetu
 /**
  * Implémentation HTTP de AccountRepository. Comme HttpContactRepository, les
  * deux endpoints sont publics : aucune session, pas de header CSRF (chemins exclus
- * du double-submit côté backend, cf. CsrfCookieRequestSubscriber). Aucun `credentials` : le défaut `same-origin` envoie
- * les cookies sur une seule origine (préprod, prod), et le serveur sert une route publique comme à l'anonyme quel que
- * soit le cookie (#748, R35). Jamais `'omit'` : il retire aussi la Basic Auth de la préprod (C1,
- * `noOmittedCredentials.spec.ts`).
+ * du double-submit côté backend, cf. CsrfCookieRequestSubscriber). Aucun `credentials` : voir
+ * `.claude/rules/frontend.md`, « API-backed content » (#748, R37).
  *
  * Le jeton voyage TOUJOURS dans le corps JSON, jamais dans l'URL (audit A7,
  * décision D6) : un chemin finit dans les access logs du sidecar nginx et de

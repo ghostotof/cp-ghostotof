@@ -18,9 +18,7 @@ interface ExperienceTechnologyApiResponse {
  * (cf. App\Portfolio\Experience, aucune restriction dans access_control côté
  * backend).
  *
- * Aucun `credentials` : le défaut `same-origin` envoie les cookies sur une seule origine (préprod, prod), et le serveur
- * sert une route publique comme à l'anonyme quel que soit le cookie (#748, R35). Jamais `'omit'` : il retire aussi la
- * Basic Auth de la préprod (C1, `noOmittedCredentials.spec.ts`).
+ * Aucun `credentials` : voir `.claude/rules/frontend.md`, « API-backed content » (#748, R37).
  */
 export class HttpExperienceTechnologyRepository implements ExperienceTechnologyRepository {
   private readonly apiBaseUrl: string
