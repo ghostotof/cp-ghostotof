@@ -43,14 +43,16 @@ CURL_OPTS_ANONYMOUS=("${CURL_OPTS[@]}")
 # Un retour à la ligne (ou un CR) dans la valeur est refusé avant tout dossier et
 # toute requête (sortie 2, celle d'un défaut d'environnement, comme une
 # bibliothèque absente) : le fichier, son échappement et ce refus sont dans
-# tools/lib/smoke-http.sh, partagés avec les scripts de fumée. La bibliothèque
-# n'est sourcée que dans ce bloc, seul endroit qui s'en sert : sans
-# AUDIT_BASIC_AUTH (la vraie prod), l'audit n'en dépend pas. Le `trap` précède la
-# création du dossier : un
-# arrêt entre `mktemp -d` et l'affectation que lit le `trap` peut laisser un dossier
-# privé **vide**, jamais la valeur, qui n'est écrite qu'une fois le chemin connu du
-# `trap` (#748, C7-8).
-if [ -n "${AUDIT_BASIC_AUTH:-}" ]; then
+# tools/lib/smoke-http.sh, partagés avec les scripts de fumée.
+#
+# `[[ -v … ]]` teste le nom, jamais la valeur : développée ici, hors de tout
+# `set +x`, elle serait imprimée par un `bash -x` (C8-1) ; la bibliothèque juge le
+# vide, sous `set +x` (une valeur vide ne crée rien). L'audit de prod ne pose pas la
+# variable : il ne source donc pas la bibliothèque. Le `trap` précède la création du
+# dossier : un arrêt entre `mktemp -d` et l'affectation que lit le `trap` peut
+# laisser un dossier privé **vide**, jamais la valeur, qui n'est écrite qu'une fois
+# le chemin connu du `trap` (#748, C7-8).
+if [[ -v AUDIT_BASIC_AUTH ]]; then
   # Sortie 2 si la bibliothèque manque ou ne se lit pas (sans -e, un source en échec continuerait) ; stderr de bash visible.
   # shellcheck source=tools/lib/smoke-http.sh
   source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/smoke-http.sh" || {
@@ -59,7 +61,9 @@ if [ -n "${AUDIT_BASIC_AUTH:-}" ]; then
   }
   trap 'smoke_cleanup' EXIT
   smoke_write_auth_config AUDIT_BASIC_AUTH || exit 2
-  CURL_OPTS+=(-K "$SMOKE_AUTH_CONFIG")
+  if [ -n "$SMOKE_AUTH_CONFIG" ]; then
+    CURL_OPTS+=(-K "$SMOKE_AUTH_CONFIG")
+  fi
 fi
 DIG_TIMEOUT=(+time=3 +tries=1)
 

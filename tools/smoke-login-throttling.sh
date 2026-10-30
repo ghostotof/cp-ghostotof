@@ -59,10 +59,11 @@ headers_file="$(mktemp)"
 trap 'rm -f "$headers_file"; smoke_cleanup' EXIT
 
 # La Basic Auth passe par un fichier de configuration curl en 600, dans un dossier
-# privé que `smoke_cleanup` retire, jamais par un argument ; un retour à la ligne y
-# est refusé (sortie 2). Voir la bibliothèque.
+# privé que `smoke_cleanup` retire, jamais par un argument ; `smoke_fetch` le lit ;
+# un retour à la ligne y est refusé (sortie 2), une variable vide ne crée rien. Voir
+# la bibliothèque.
 SMOKE_CURL_OPTS=(-sS --connect-timeout 5 --max-time 15 -D "$headers_file")
-smoke_add_basic_auth AUDIT_BASIC_AUTH || exit 2
+smoke_write_auth_config AUDIT_BASIC_AUTH || exit 2
 
 # Le `detail` littéral de LoginRateLimitExceededException (backend) : le
 # second discriminant face à la zone nginx, dont le 429 dit « Trop de

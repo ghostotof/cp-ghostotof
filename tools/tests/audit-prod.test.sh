@@ -137,6 +137,34 @@ else
   fail "dossier privé de la Basic Auth" "chemin -K : ${k_path:-absent} ; TMPDIR : $(ls -A "$TMP/nominal.tmpdir")"
 fi
 
+# --- C8-1 : sous `bash -x`, la valeur de AUDIT_BASIC_AUTH n'apparaît nulle part dans
+# la trace (le test de présence ne la développe pas, la bibliothèque la lit sous
+# `set +x`). Valeur fictive, sans le mot « secret ».
+copy_tools traced reelle
+mkdir -p "$TMP/traced.tmpdir"
+: > "$TMP/traced.calls"
+set +e
+AUDIT_BASIC_AUTH='trace-user:trace-pass-value' LC_ALL=C FAKE_CALLS="$TMP/traced.calls" \
+  TMPDIR="$TMP/traced.tmpdir" PATH="$TMP/bin:$PATH" \
+  bash -x "$TMP/traced/tools/audit-prod.sh" example.invalid >"$TMP/traced.out" 2>"$TMP/traced.err"
+set -e
+if [ -s "$TMP/traced.err" ] && grep -q 'curl-auth.conf' "$TMP/traced.err" \
+   && ! grep -qF -e 'trace-pass-value' -e 'trace-user' "$TMP/traced.err" "$TMP/traced.out"; then
+  pass "bash -x : la valeur de AUDIT_BASIC_AUTH n'apparaît ni dans la trace ni dans la sortie"
+else
+  fail "valeur tracée" "$(grep -nF -e 'trace-' "$TMP/traced.err" | head -3)"
+fi
+
+# --- C8-1 : AUDIT_BASIC_AUTH posée mais vide : la bibliothèque juge le vide, aucun
+# -K donné à curl, aucun dossier dans TMPDIR.
+copy_tools vide reelle
+AUDIT_BASIC_AUTH='' run vide
+if [ -s "$TMP/vide.calls" ] && ! grep -q -- ' -K ' "$TMP/vide.calls" && [ -z "$(ls -A "$TMP/vide.tmpdir")" ] && [ "$rc" -eq 1 ]; then
+  pass "AUDIT_BASIC_AUTH vide : aucun -K, aucun dossier, l'audit court"
+else
+  fail "AUDIT_BASIC_AUTH vide" "rc=$rc ; appels : $(head -3 "$TMP/vide.calls") ; TMPDIR : $(ls -A "$TMP/vide.tmpdir")"
+fi
+
 # --- C6-8 : le `trap` est posé AVANT la création du fichier : un arrêt entre les
 # deux (signal, `exit` d'une expansion) laisserait sinon le fichier de la Basic
 # Auth derrière. Lu sur le source : aucune exécution ne tombe dans cette fenêtre

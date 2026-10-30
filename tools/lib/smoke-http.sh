@@ -6,20 +6,19 @@
 # `curl` contre un déploiement réel écrivaient chacun de leur côté (#748, R57).
 # Sourcée par :
 #   - tools/smoke-dead-session-cookie.sh, tools/smoke-login-throttling.sh,
-#     tools/smoke-mcp.sh (smoke_add_basic_auth, smoke_cleanup, smoke_header,
+#     tools/smoke-mcp.sh (smoke_write_auth_config, smoke_cleanup, smoke_header,
 #     smoke_headers, smoke_excerpt, smoke_fetch) ;
 #   - tools/audit-prod.sh (smoke_write_auth_config et smoke_cleanup, et
-#     seulement avec AUDIT_BASIC_AUTH) ;
+#     seulement si AUDIT_BASIC_AUTH est définie) ;
 #   - tools/tests/smoke-http.test.sh (hors ligne, faux curl).
 #
-# Six fonctions publiques (plus smoke_cleanup, qui défait la première) :
+# Cinq fonctions publiques (plus smoke_cleanup, qui défait la première) :
 #   smoke_write_auth_config <nom>          le fichier de configuration `-K` de la
 #                                          Basic Auth d'une variable, dans un
 #                                          dossier privé (SMOKE_AUTH_CONFIG) ;
+#                                          smoke_fetch le lit ;
 #   smoke_cleanup                          retire ce dossier ; à poser dans le
 #                                          `trap` de chaque appelant ;
-#   smoke_add_basic_auth <nom>             la Basic Auth d'une variable ajoutée
-#                                          à SMOKE_CURL_OPTS ;
 #   smoke_header <fichier> <nom>           la valeur d'un en-tête de réponse (la
 #                                          dernière s'il y en a plusieurs) ;
 #   smoke_headers <fichier> <nom>          toutes ses valeurs, une par ligne ;
@@ -33,6 +32,12 @@
 # Pas de `set -e` ici, ni d'appel réseau à la source : une bibliothèque sourcée
 # ne change pas les options du shell qui la source. Aucune fonction ne fait
 # sortir l'appelant ; c'est lui qui décide (`|| exit 2`, `|| exit 1`).
+#
+# Limite écrite (St8-12) : sourcer la bibliothèque deux fois remet SMOKE_AUTH_DIR
+# et SMOKE_AUTH_CONFIG à vide ; le dossier d'un premier smoke_write_auth_config
+# n'est alors plus retiré par le `trap`. Aucun script ne le fait (chacun source une
+# fois, en tête) ; un marqueur pour ce cas serait une astuce de shell de plus, et
+# le reste est un dossier 0700 de l'utilisateur sous TMPDIR.
 # ---------------------------------------------------------------------------
 
 # Le dossier privé de la Basic Auth et le fichier qu'il porte. Vides à la source,
@@ -62,16 +67,23 @@ smoke_cleanup() {
 # Écrit le fichier de configuration curl (`-K`) qui porte la Basic Auth, dans un
 # dossier privé (`mktemp -d`, 0700) sous TMPDIR, fichier en 600 (`umask 077`) :
 # SMOKE_AUTH_DIR et SMOKE_AUTH_CONFIG reçoivent les deux chemins, rien n'est
-# imprimé. Jamais `-u` : les arguments d'un processus se lisent dans `ps`, seul le
-# chemin du fichier apparaît dans ceux de curl. Les guillemets et antislashs sont
-# échappés au format attendu par curl, donc n'importe quel mot de passe convient.
+# imprimé, et smoke_fetch passe `-K` à chaque appel tant que SMOKE_AUTH_CONFIG est
+# posé (jamais rangé dans SMOKE_CURL_OPTS, donc jamais périmé). Jamais `-u` : les
+# arguments d'un processus se lisent dans `ps`, seul le chemin du fichier apparaît
+# dans ceux de curl. Les guillemets et antislashs sont échappés au format attendu
+# par curl, donc n'importe quel mot de passe convient.
+#
+# La bibliothèque juge le vide (C8-1) : une variable vide ou absente, retour 0, aucun
+# dossier, SMOKE_AUTH_CONFIG vide. La valeur n'est lue que sous `set +x`.
 #
 # Le nom est un identifiant (`[A-Za-z_][A-Za-z0-9_]*`), jamais une expression :
-# `${!nom}` évalue un indice, `x[$(commande)]` exécuterait la commande (C7-7).
-# La fonction lit elle-même la valeur (C7-9) et l'écrit **dans le shell courant**,
-# sous `set +x` (l'état de xtrace relevé avant, rétabli après) : la valeur ne passe
-# en argument d'aucune fonction ni d'aucun processus, donc ni dans `ps` ni dans la
-# trace d'un `set -x` de la CI.
+# `${!nom}` évalue un indice, `x[$(commande)]` exécuterait la commande (C7-7). Il ne
+# commence pas par `_smoke_` (CR8-5) : les locales de la fonction portent ce
+# préfixe, et `${!nom}` lit d'abord une locale du même nom — un nom comme `value`
+# ou `rc` donnerait une Basic Auth fausse et silencieuse. La fonction lit elle-même
+# la valeur (C7-9) et l'écrit **dans le shell courant**, sous `set +x` (l'état de
+# xtrace relevé avant, rétabli après) : la valeur ne passe en argument d'aucune
+# fonction ni d'aucun processus, donc ni dans `ps` ni dans la trace d'un `set -x`.
 #
 # Un retour à la ligne (ou un CR) ouvrirait une seconde directive dans ce fichier
 # (`url = …`, `output = …`) : l'échappement n'agit que sur `"` et `\`. Refusé avant
@@ -86,76 +98,41 @@ smoke_cleanup() {
 # l'appel de tête retire est ce que la bibliothèque a créé elle-même : les variables
 # sont vides à la source, un dossier hérité de l'environnement n'est jamais visé.
 #
-# Les scripts de fumée passent par smoke_add_basic_auth ; audit-prod.sh, qui garde
-# son propre `CURL_OPTS`, l'appelle directement, après avoir posé son
-# `trap 'smoke_cleanup' EXIT`, et pour une valeur non vide seulement. Un arrêt entre
-# la création du dossier et l'affectation que lit le `trap` peut laisser un dossier
+# L'appelant pose son `trap` **avant** (`trap 'rm -f "$headers_file"; smoke_cleanup'
+# EXIT`) puis `smoke_write_auth_config AUDIT_BASIC_AUTH || exit 2`. Un arrêt entre la
+# création du dossier et l'affectation que lit le `trap` peut laisser un dossier
 # privé **vide**, jamais la valeur : elle n'est écrite qu'une fois le chemin connu
 # du `trap` (C7-8).
 smoke_write_auth_config() {
-  local name="${1:-}" value saved_umask traced=0 rc=0
+  local _smoke_name="${1:-}" _smoke_value _smoke_umask _smoke_traced=0 _smoke_rc=0
   smoke_cleanup
-  if ! [[ "$name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+  if ! [[ "$_smoke_name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ && "$_smoke_name" != _smoke_* ]]; then
     echo "smoke_write_auth_config : nom de variable invalide" >&2
     return 2
   fi
-  case "$-" in *x*) traced=1 ;; esac
+  case "$-" in *x*) _smoke_traced=1 ;; esac
   set +x
-  value="${!name:-}"
-  if [[ "$value" == *$'\n'* || "$value" == *$'\r'* ]]; then
-    echo "$name contient un retour à la ligne : refusé, il ouvrirait une directive dans le fichier de configuration curl" >&2
-    rc=2
-  else
-    saved_umask="$(umask)"
+  _smoke_value="${!_smoke_name:-}"
+  if [[ "$_smoke_value" == *$'\n'* || "$_smoke_value" == *$'\r'* ]]; then
+    echo "$_smoke_name contient un retour à la ligne : refusé, il ouvrirait une directive dans le fichier de configuration curl" >&2
+    _smoke_rc=2
+  elif [ -n "$_smoke_value" ]; then
+    _smoke_umask="$(umask)"
     umask 077
-    SMOKE_AUTH_DIR="$(umask 077 && mktemp -d)" || rc=2
-    if [ "$rc" -eq 0 ]; then
+    SMOKE_AUTH_DIR="$(mktemp -d)" || _smoke_rc=2
+    if [ "$_smoke_rc" -eq 0 ]; then
       SMOKE_AUTH_CONFIG="$SMOKE_AUTH_DIR/curl-auth.conf"
-      value="${value//\\/\\\\}"
-      value="${value//\"/\\\"}"
-      printf 'user = "%s"\n' "$value" > "$SMOKE_AUTH_CONFIG" || { smoke_cleanup; rc=2; }
+      _smoke_value="${_smoke_value//\\/\\\\}"
+      _smoke_value="${_smoke_value//\"/\\\"}"
+      printf 'user = "%s"\n' "$_smoke_value" > "$SMOKE_AUTH_CONFIG" || { smoke_cleanup; _smoke_rc=2; }
     fi
-    umask "$saved_umask"
+    umask "$_smoke_umask"
   fi
-  value=""
-  if [ "$traced" -eq 1 ]; then
+  _smoke_value=""
+  if [ "$_smoke_traced" -eq 1 ]; then
     set -x
   fi
-  return "$rc"
-}
-
-# smoke_add_basic_auth <nom d'une variable d'environnement>
-#
-# Si la variable est vide ou absente, ne fait rien. Sinon écrit le fichier `-K` de
-# sa valeur (smoke_write_auth_config, qui valide le nom et nomme la variable dans
-# son refus), qui le retient dans SMOKE_AUTH_CONFIG, et ajoute `-K <fichier>` à
-# SMOKE_CURL_OPTS. Retour 2 pour un nom invalide ou si le fichier ne s'écrit pas
-# (retour à la ligne, disque) : l'appelant décide, `smoke_add_basic_auth
-# AUDIT_BASIC_AUTH || exit 2`.
-#
-# L'appelant pose son `trap` **avant** : `trap 'rm -f "$headers_file";
-# smoke_cleanup' EXIT`, qui retire le dossier à la sortie — un arrêt entre la
-# création du dossier et le `trap` n'en laisserait un derrière. La valeur n'est lue
-# que sous `set +x`, comme dans smoke_write_auth_config.
-smoke_add_basic_auth() {
-  local name="${1:-}" traced=0 empty=0
-  if ! [[ "$name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
-    echo "smoke_add_basic_auth : nom de variable invalide" >&2
-    return 2
-  fi
-  case "$-" in *x*) traced=1 ;; esac
-  set +x
-  if [ -z "${!name:-}" ]; then
-    empty=1
-  fi
-  if [ "$traced" -eq 1 ]; then
-    set -x
-  fi
-  if [ "$empty" -eq 1 ]; then
-    return 0
-  fi
-  smoke_write_auth_config "$name" || return 2
-  SMOKE_CURL_OPTS+=(-K "$SMOKE_AUTH_CONFIG")
+  return "$_smoke_rc"
 }
 
 # smoke_headers <fichier d'en-têtes> <nom>
@@ -189,21 +166,26 @@ smoke_excerpt() {
 
 # smoke_fetch <libellé> <url> [arguments curl…]
 #
-# Lance `"$SMOKE_CURL" "${SMOKE_CURL_OPTS[@]}" "$@" -w '\n%{http_code}' "$url"`
-# et pose :
+# Lance `"$SMOKE_CURL" "${SMOKE_CURL_OPTS[@]}" [-K "$SMOKE_AUTH_CONFIG"] "$@" -w
+# '\n%{http_code}' "$url"` et pose :
 #   SMOKE_STATUS   le code HTTP (la dernière ligne de la sortie) ;
 #   SMOKE_BODY     le corps (le reste).
-# L'appelant déclare SMOKE_CURL_OPTS (`-sS`, les délais, `-D <fichier>`, `-K
-# <fichier>`…) ; SMOKE_CURL vaut `curl` s'il est vide.
+# L'appelant déclare SMOKE_CURL_OPTS (`-sS`, les délais, `-D <fichier>`…) ; SMOKE_CURL
+# vaut `curl` s'il est vide. La Basic Auth n'y figure jamais : smoke_fetch lit
+# SMOKE_AUTH_CONFIG à chaque appel (St8-12), donc aucun `-K` périmé après un second
+# smoke_write_auth_config.
 #
 # Un `curl` qui n'obtient aucune réponse (réseau, DNS, délai) sort avec son code
 # (6, 7, 28…), hors du contrat 0/1/2 des scripts, si on le laisse à `set -e` : la
 # fonction le dit sur stderr — « <libellé> : curl a échoué (code <n> : réseau, DNS
 # ou délai) — rien de vérifié » — et rend 1. L'appelant : `smoke_fetch … || exit 1`.
 smoke_fetch() {
-  local label="$1" url="$2" response rc
+  local label="$1" url="$2" response rc _smoke_auth=()
   shift 2
-  response="$("${SMOKE_CURL:-curl}" "${SMOKE_CURL_OPTS[@]}" "$@" -w '\n%{http_code}' "$url")" || {
+  if [ -n "$SMOKE_AUTH_CONFIG" ]; then
+    _smoke_auth=(-K "$SMOKE_AUTH_CONFIG")
+  fi
+  response="$("${SMOKE_CURL:-curl}" "${SMOKE_CURL_OPTS[@]}" "${_smoke_auth[@]}" "$@" -w '\n%{http_code}' "$url")" || {
     rc=$?
     echo "$label : curl a échoué (code $rc : réseau, DNS ou délai) — rien de vérifié" >&2
     return 1
