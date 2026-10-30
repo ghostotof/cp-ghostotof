@@ -9,6 +9,10 @@ import {
 } from '../../../../src/application/admin/shared/backofficeAccessRefusal'
 import type { RefusalScope } from '../../../../src/domain/admin/shared/BackofficeSessionReaction'
 
+/** Les comptes des écritures de ces tests : le module retient le nom, jamais plus (R76). */
+const ACCOUNT_A = 'compte-a'
+const ACCOUNT_B = 'compte-b'
+
 /** Ce qu'une lecture envoyée maintenant relève à l'envoi (R54). */
 function readSentNow(): RefusalScope {
   return { kind: 'read', scope: refusalScope() }
@@ -22,8 +26,8 @@ function readSentNow(): RefusalScope {
  */
 describe('backofficeAccessRefusal', () => {
   it('un refus du périmètre courant compte et le dit', () => {
-    expect(markBackofficeAccessRefused(readSentNow())).toBe(true)
-    expect(markBackofficeAccessRefused(readSentNow())).toBe(true)
+    expect(markBackofficeAccessRefused(readSentNow(), ACCOUNT_A)).toBe(true)
+    expect(markBackofficeAccessRefused(readSentNow(), ACCOUNT_A)).toBe(true)
 
     expect(backofficeAccessRefused.value).toBe(2)
   })
@@ -33,12 +37,12 @@ describe('backofficeAccessRefusal', () => {
     clearBackofficeAccessRefusal()
 
     expect(refusalScope()).not.toBe(sentBefore)
-    expect(markBackofficeAccessRefused({ kind: 'read', scope: sentBefore })).toBe(false)
+    expect(markBackofficeAccessRefused({ kind: 'read', scope: sentBefore }, ACCOUNT_A)).toBe(false)
     expect(backofficeAccessRefused.value).toBe(0)
   })
 
   it('un effacement remet le compteur à zéro', () => {
-    markBackofficeAccessRefused(readSentNow())
+    markBackofficeAccessRefused(readSentNow(), ACCOUNT_A)
 
     clearBackofficeAccessRefusal()
 
@@ -47,38 +51,92 @@ describe('backofficeAccessRefusal', () => {
 
   it("au montage, une écriture comptée garde le compteur et se dit « enregistrement précédent » ; le périmètre ne bouge pas (R64)", () => {
     const sentFromThisPage = refusalScope()
-    markBackofficeAccessRefused({ kind: 'write' })
+    markBackofficeAccessRefused({ kind: 'write' }, ACCOUNT_A)
 
-    settleBackofficeAccessRefusalsOnMount()
+    settleBackofficeAccessRefusalsOnMount(ACCOUNT_A)
 
     expect(backofficeAccessRefused.value).toBe(1)
     expect(earlierWriteRefused.value).toBe(true)
     expect(refusalScope()).toBe(sentFromThisPage)
-    expect(markBackofficeAccessRefused({ kind: 'read', scope: sentFromThisPage })).toBe(true)
+    expect(markBackofficeAccessRefused({ kind: 'read', scope: sentFromThisPage }, ACCOUNT_A)).toBe(true)
   })
 
   it("au montage, un refus de lecture seul est oublié : compteur à zéro, rien à dire, périmètre inchangé (R64)", () => {
     const sentFromThisPage = refusalScope()
-    markBackofficeAccessRefused({ kind: 'read', scope: sentFromThisPage })
+    markBackofficeAccessRefused({ kind: 'read', scope: sentFromThisPage }, ACCOUNT_A)
 
-    settleBackofficeAccessRefusalsOnMount()
+    settleBackofficeAccessRefusalsOnMount(ACCOUNT_A)
 
     expect(backofficeAccessRefused.value).toBe(0)
     expect(earlierWriteRefused.value).toBe(false)
     expect(refusalScope()).toBe(sentFromThisPage)
   })
 
-  it("un refus compté après le montage remet le texte courant ; un effacement remet les deux à faux (R64)", () => {
-    markBackofficeAccessRefused({ kind: 'write' })
-    settleBackofficeAccessRefusalsOnMount()
+  it("au montage, l'écriture comptée du compte courant est dite", () => {
+    markBackofficeAccessRefused({ kind: 'write' }, ACCOUNT_A)
+
+    settleBackofficeAccessRefusalsOnMount(ACCOUNT_A)
+
+    expect(earlierWriteRefused.value).toBe(true)
+    expect(backofficeAccessRefused.value).toBe(1)
+  })
+
+  it("au montage, l'écriture comptée d'un autre compte remet tout à zéro", () => {
+    const sentFromThisPage = refusalScope()
+    markBackofficeAccessRefused({ kind: 'write' }, ACCOUNT_A)
+
+    settleBackofficeAccessRefusalsOnMount(ACCOUNT_B)
+
+    expect(earlierWriteRefused.value).toBe(false)
+    expect(backofficeAccessRefused.value).toBe(0)
+    expect(refusalScope()).toBe(sentFromThisPage)
+    // L'écriture comptée est oubliée aussi : un montage suivant, même sous le compte A, n'a plus rien à dire.
+    settleBackofficeAccessRefusalsOnMount(ACCOUNT_A)
+    expect(earlierWriteRefused.value).toBe(false)
+  })
+
+  it("au montage, une écriture comptée sous aucun compte n'est dite qu'à « aucun compte » (null contre null, R76)", () => {
+    markBackofficeAccessRefused({ kind: 'write' }, null)
+
+    settleBackofficeAccessRefusalsOnMount(ACCOUNT_A)
+    expect(earlierWriteRefused.value).toBe(false)
+
+    markBackofficeAccessRefused({ kind: 'write' }, null)
+    settleBackofficeAccessRefusalsOnMount(null)
+    expect(earlierWriteRefused.value).toBe(true)
+  })
+
+  it("après le montage, une lecture refusée garde l'avis et fait avancer le compteur", () => {
+    markBackofficeAccessRefused({ kind: 'write' }, ACCOUNT_A)
+    settleBackofficeAccessRefusalsOnMount(ACCOUNT_A)
+    expect(earlierWriteRefused.value).toBe(true)
+    expect(backofficeAccessRefused.value).toBe(1)
+
+    markBackofficeAccessRefused(readSentNow(), ACCOUNT_A)
+
+    expect(earlierWriteRefused.value).toBe(true)
+    expect(backofficeAccessRefused.value).toBe(2)
+  })
+
+  it("après le montage, une écriture refusée ramène le texte courant", () => {
+    markBackofficeAccessRefused({ kind: 'write' }, ACCOUNT_A)
+    settleBackofficeAccessRefusalsOnMount(ACCOUNT_A)
     expect(earlierWriteRefused.value).toBe(true)
 
-    markBackofficeAccessRefused(readSentNow())
+    markBackofficeAccessRefused({ kind: 'write' }, ACCOUNT_A)
+
     expect(earlierWriteRefused.value).toBe(false)
+    expect(backofficeAccessRefused.value).toBe(2)
+  })
+
+  it("un effacement remet l'avis à faux et oublie l'écriture comptée (R64)", () => {
+    markBackofficeAccessRefused({ kind: 'write' }, ACCOUNT_A)
+    settleBackofficeAccessRefusalsOnMount(ACCOUNT_A)
+    expect(earlierWriteRefused.value).toBe(true)
 
     // Un effacement oublie aussi l'écriture comptée : le montage suivant n'a rien à dire.
     clearBackofficeAccessRefusal()
-    settleBackofficeAccessRefusalsOnMount()
+    settleBackofficeAccessRefusalsOnMount(ACCOUNT_A)
     expect(earlierWriteRefused.value).toBe(false)
     expect(backofficeAccessRefused.value).toBe(0)
   })
@@ -86,17 +144,17 @@ describe('backofficeAccessRefusal', () => {
   it("un refus d'écriture (`{ kind: 'write' }`) compte toujours, même après une navigation", () => {
     clearBackofficeAccessRefusal()
 
-    expect(markBackofficeAccessRefused({ kind: 'write' })).toBe(true)
+    expect(markBackofficeAccessRefused({ kind: 'write' }, ACCOUNT_A)).toBe(true)
     expect(backofficeAccessRefused.value).toBe(1)
   })
 
   // Deux tests successifs : le premier laisse un refus compté et un périmètre avancé, le second les doit à zéro.
   it('remise à zéro (1/2) : un refus compté et un périmètre avancé', () => {
-    markBackofficeAccessRefused(readSentNow())
+    markBackofficeAccessRefused(readSentNow(), ACCOUNT_A)
     clearBackofficeAccessRefusal()
-    markBackofficeAccessRefused(readSentNow())
-    markBackofficeAccessRefused({ kind: 'write' })
-    settleBackofficeAccessRefusalsOnMount()
+    markBackofficeAccessRefused(readSentNow(), ACCOUNT_A)
+    markBackofficeAccessRefused({ kind: 'write' }, ACCOUNT_A)
+    settleBackofficeAccessRefusalsOnMount(ACCOUNT_A)
 
     expect(backofficeAccessRefused.value).toBe(2)
     expect(earlierWriteRefused.value).toBe(true)
@@ -105,7 +163,7 @@ describe('backofficeAccessRefusal', () => {
 
   it("remise à zéro (2/2) : le test précédent n'a rien laissé", () => {
     // Ni l'écriture comptée (drapeau du module) ni le texte « enregistrement précédent » ne survivent à la remise à zéro.
-    settleBackofficeAccessRefusalsOnMount()
+    settleBackofficeAccessRefusalsOnMount(ACCOUNT_A)
 
     expect(backofficeAccessRefused.value).toBe(0)
     expect(earlierWriteRefused.value).toBe(false)

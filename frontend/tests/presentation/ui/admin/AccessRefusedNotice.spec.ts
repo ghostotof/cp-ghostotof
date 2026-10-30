@@ -4,7 +4,7 @@ import { createMemoryHistory, createRouter, type Router } from 'vue-router'
 import { defineComponent, h, nextTick } from 'vue'
 import AccessRefusedNotice from '../../../../src/presentation/ui/admin/AccessRefusedNotice.vue'
 import { createAppI18n } from '../../../../src/presentation/i18n'
-import { AUTH_REPOSITORY, markSessionExpired } from '../../../../src/application/auth/useAuth'
+import { AUTH_REPOSITORY, lastAccountName, markSessionExpired, useAuth } from '../../../../src/application/auth/useAuth'
 import {
   backofficeAccessRefused,
   clearBackofficeAccessRefusal,
@@ -13,6 +13,7 @@ import {
 } from '../../../../src/application/admin/shared/backofficeAccessRefusal'
 import type { AuthRepository } from '../../../../src/domain/auth/repositories/AuthRepository'
 import { sessionFor } from '../../../support/authSession'
+import { sessionForUser } from '../../../../src/domain/auth/services/sessionForUser'
 import { signInAgain } from '../../../support/signInAgain'
 import { expectNoAccessibilityViolation } from '../../../support/axe'
 
@@ -59,12 +60,37 @@ async function mountNotice(language: 'fr' | 'en' = 'fr'): Promise<{ wrapper: Vue
 }
 
 /**
+ * Connecte `username` dans l'onglet : c'est le « dernier compte affiché » que le montage de l'alerte compare au compte
+ * de l'écriture refusée (R76). Un `login` simple, hors session finie.
+ */
+async function signInAs(username: string): Promise<void> {
+  const account = { username, roles: ['ROLE_SUPER', 'ROLE_USER'] }
+  const accountRepository: AuthRepository = {
+    login: vi.fn(async () => account),
+    logout: vi.fn(async () => undefined),
+    hasWriteToken: () => true,
+    me: vi.fn(async () => sessionForUser(account)),
+  }
+  let auth: ReturnType<typeof useAuth> | undefined
+  const Probe = defineComponent({
+    setup() {
+      auth = useAuth()
+      return () => h('div')
+    },
+  })
+  const probe = mount(Probe, { global: { provide: { [AUTH_REPOSITORY as symbol]: accountRepository } } })
+  await auth?.login(username, 'x')
+  probe.unmount()
+  await flushPromises()
+}
+
+/**
  * L'alerte « accès refusé » du backoffice (#748, R17, F4), rendue une fois par `AdminLayout` : un refus réel
  * (un 403 qui n'est pas une fin de session) la lève, la navigation et la fin de session l'effacent.
  */
 /** Un refus réel d'une requête partie sous le périmètre courant (jamais d'une page quittée, voir R28). */
 function refuse(): void {
-  markBackofficeAccessRefused({ kind: 'read', scope: refusalScope() })
+  markBackofficeAccessRefused({ kind: 'read', scope: refusalScope() }, lastAccountName())
 }
 
 describe('AccessRefusedNotice (#748, R17)', () => {
@@ -206,7 +232,7 @@ describe('AccessRefusedNotice (#748, R17)', () => {
 
     /** Un enregistrement refusé alors qu'aucune alerte n'était montée : la personne avait quitté le backoffice. */
     function writeRefusedWhileAway(): void {
-      markBackofficeAccessRefused({ kind: 'write' })
+      markBackofficeAccessRefused({ kind: 'write' }, lastAccountName())
     }
 
     it("un refus d'écriture arrivé après le démontage s'affiche au montage suivant, avec son propre texte, inséré après le montage", async () => {
@@ -233,7 +259,7 @@ describe('AccessRefusedNotice (#748, R17)', () => {
       first.wrapper.unmount()
       // Ce que le périmètre rend impossible hors du backoffice (le démontage l'avance) mais que le module accepte :
       // une lecture du périmètre courant, comptée alors qu'aucune alerte n'est montée.
-      markBackofficeAccessRefused({ kind: 'read', scope: refusalScope() })
+      markBackofficeAccessRefused({ kind: 'read', scope: refusalScope() }, lastAccountName())
 
       const second = await mountNotice()
       await flushPromises()
@@ -243,7 +269,7 @@ describe('AccessRefusedNotice (#748, R17)', () => {
       second.wrapper.unmount()
     })
 
-    it("un nouveau refus sur la page remplace le texte de l'enregistrement précédent par celui du refus courant", async () => {
+    it("un nouvel enregistrement refusé sur la page remplace le texte de l'enregistrement précédent par celui du refus courant", async () => {
       const first = await mountNotice()
       first.wrapper.unmount()
       writeRefusedWhileAway()
@@ -253,7 +279,8 @@ describe('AccessRefusedNotice (#748, R17)', () => {
       const link = second.wrapper.get('a').element
       expect(second.wrapper.get('span').text()).toBe(earlierSaveFr)
 
-      refuse()
+      // Une écriture : le geste courant, il a le texte courant (R76, CR7-4). Une lecture, elle, garde l'avis (test suivant).
+      markBackofficeAccessRefused({ kind: 'write' }, lastAccountName())
       await flushPromises()
 
       expect(second.wrapper.get('span').text()).toContain('Le serveur refuse cette demande à votre session')
@@ -278,6 +305,44 @@ describe('AccessRefusedNotice (#748, R17)', () => {
       refuse()
       await flushPromises()
       expect(second.wrapper.get('span').text()).toContain('Le serveur refuse cette demande à votre session')
+      second.wrapper.unmount()
+    })
+
+    it("l'avis de l'enregistrement précédent reste quand la lecture de la page d'arrivée est refusée (R76, CR7-4)", async () => {
+      await signInAs('compte-a')
+      const first = await mountNotice()
+      first.wrapper.unmount()
+      writeRefusedWhileAway()
+      const second = await mountNotice()
+      await flushPromises()
+      const message = second.wrapper.get('span').element
+      expect(second.wrapper.get('span').text()).toBe(earlierSaveFr)
+
+      // Le chargement de la page d'arrivée, parti avant le montage, est refusé : son refus compte et se réannonce, mais
+      // le texte de l'enregistrement précédent, qui dit déjà ce que dirait une lecture refusée, reste.
+      refuse()
+      await flushPromises()
+
+      expect(second.wrapper.get('span').text()).toBe(earlierSaveFr)
+      expect(backofficeAccessRefused.value).toBe(2)
+      // Le `<span>` est remplacé (sa `key` est le compteur) : c'est ce qui réannonce l'alerte.
+      expect(second.wrapper.get('span').element).not.toBe(message)
+      second.wrapper.unmount()
+    })
+
+    it("une écriture refusée sous A, B connecté dans l'onglet : aucune alerte au montage (R76, décision 2)", async () => {
+      await signInAs('compte-a')
+      const first = await mountNotice()
+      first.wrapper.unmount()
+      writeRefusedWhileAway()
+      // A se déconnecte (le compte retenu est oublié), B se connecte dans l'onglet et ouvre le backoffice.
+      await signInAs('compte-b')
+
+      const second = await mountNotice()
+      await flushPromises()
+
+      expect(second.wrapper.find('[data-testid="admin-access-refused"]').exists()).toBe(false)
+      expect(backofficeAccessRefused.value).toBe(0)
       second.wrapper.unmount()
     })
 

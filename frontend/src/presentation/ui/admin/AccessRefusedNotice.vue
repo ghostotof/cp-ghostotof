@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { authState } from '../../../application/auth/useAuth'
+import { authState, lastAccountName } from '../../../application/auth/useAuth'
 import {
   backofficeAccessRefused,
   clearBackofficeAccessRefusal,
@@ -37,13 +37,16 @@ import { switchAccountLocation } from '../../router/reauthentication'
  *   fragment** (R38) : le lien d'évitement (`href="#main-content"`) ne change que lui, et effaçait l'alerte que la
  *   personne était en train de lire. Un refus d'une page ne suit pas la personne sur la suivante : le 403 d'une
  *   lecture partie avant la navigation, arrivé après, est périmé et ne s'affiche pas (R28, CR3-8) ; celui d'une
- *   écriture s'affiche (R38).
+ *   écriture s'affiche (R38). Un effacement oublie aussi l'écriture comptée et le compte qui l'a envoyée (R76).
  * - **Le montage n'efface rien et ne change pas le périmètre ; il règle ce qui a été compté sans alerte** (R64,
  *   décision 1 de la sixième relecture, amendant Q1 de la cinquième ; `settleBackofficeAccessRefusalsOnMount`) : une
  *   lecture comptée alors qu'aucune alerte n'était montée est oubliée (le palier a été relu), un enregistrement refusé
  *   pendant que la personne avait quitté le backoffice est **dit au retour**, avec son propre texte
- *   (`common.earlierSaveRefused`, `earlierWriteRefused`). Le chargement de la page d'arrivée est parti avant le montage :
- *   son refus doit compter. Le refus suivant sur la page remet `common.accessRefused`.
+ *   (`common.earlierSaveRefused`, `earlierWriteRefused`) — **au compte qui l'a envoyé seulement** (R76, décision 2 de la
+ *   septième relecture : `lastAccountName()` est passé au montage, un autre compte remet tout à zéro). Le chargement de
+ *   la page d'arrivée est parti avant le montage : son refus doit compter, et **s'il est refusé, l'avis reste** (CR7-4 :
+ *   une lecture refusée avance le compteur, l'alerte se réannonce, le texte est gardé). Un refus d'**écriture** sur la
+ *   page remet `common.accessRefused` : c'est un nouvel enregistrement refusé.
  * - **Insérée après le montage** (`isMounted`) : une région `role="alert"` présente dès le premier rendu peut ne pas
  *   être annoncée (`.claude/rules/frontend-a11y.md`) ; celle d'un enregistrement refusé pendant l'absence est donc
  *   insérée un tick plus tard, comme celle d'un refus survenu sur la page.
@@ -81,10 +84,10 @@ watch(
 )
 
 // Au montage, règle ce qui a été compté sans alerte (R64) : une lecture est oubliée, une écriture refusée pendant
-// l'absence est dite. Le périmètre n'avance pas : le chargement de la page d'arrivée est parti avant ce montage, son
+// l'absence est dite au compte qui l'a envoyée (R76), à nul autre. Le périmètre n'avance pas : le chargement de la page d'arrivée est parti avant ce montage, son
 // refus doit compter. Au démontage, tout s'efface.
 onMounted(() => {
-  settleBackofficeAccessRefusalsOnMount()
+  settleBackofficeAccessRefusalsOnMount(lastAccountName())
   isMounted.value = true
 })
 onBeforeUnmount(clearBackofficeAccessRefusal)

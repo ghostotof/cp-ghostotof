@@ -7,6 +7,8 @@ import type { BackofficeSessionReaction } from '../../../src/domain/admin/shared
 import {
   backofficeAccessRefused,
   clearBackofficeAccessRefusal,
+  earlierWriteRefused,
+  settleBackofficeAccessRefusalsOnMount,
 } from '../../../src/application/admin/shared/backofficeAccessRefusal'
 import { AUTH_REPOSITORY, authState, isCurrentGeneration, markBaseAccessGranted, markSessionExpired, useAuth } from '../../../src/application/auth/useAuth'
 import type { AuthRepository } from '../../../src/domain/auth/repositories/AuthRepository'
@@ -236,6 +238,24 @@ describe('backofficeSessionExpiry — refus réel (#748, R17)', () => {
 
     expect(backofficeAccessRefused.value).toBe(0)
     expect(me).not.toHaveBeenCalled()
+    unmount()
+  })
+
+  it("refused transmet le compte du timbre au comptage : l'écriture refusée n'est dite qu'à ce compte (R76)", async () => {
+    await signIn(SUPER)
+    const { handler, unmount } = buildReaction()
+
+    // L'écriture part sous « super » : le comptage retient ce nom, que le montage de l'alerte compare au compte courant.
+    handler.refused(handler.stampAtSend('write'))
+    settleBackofficeAccessRefusalsOnMount('super')
+    expect(earlierWriteRefused.value).toBe(true)
+    expect(backofficeAccessRefused.value).toBe(1)
+
+    clearBackofficeAccessRefusal()
+    handler.refused(handler.stampAtSend('write'))
+    settleBackofficeAccessRefusalsOnMount('autre')
+    expect(earlierWriteRefused.value).toBe(false)
+    expect(backofficeAccessRefused.value).toBe(0)
     unmount()
   })
 

@@ -28,7 +28,8 @@ import type { BackofficeSendKind, BackofficeSendStamp, BackofficeSessionReaction
  * répond « anonyme ». **Une lecture refusée après une navigation ne compte pas** (R28, CR3-8) : le timbre de l'envoi
  * porte le périmètre de refus, que chaque effacement de l'alerte avance (chemin ou requête changés, fin de session, démontage) ; le 403 d'une page quittée n'affiche aucune alerte sur la
  * suivante et ne relit rien. **Une écriture refusée compte toujours** (R38) : le timbre porte `{ kind: 'write' }`, la
- * personne a fait le geste et doit apprendre son échec, au besoin sur la page où elle est allée — **sauf si le compte a changé depuis l'envoi** (R63, décision 2 de la
+ * personne a fait le geste et doit apprendre son échec, au besoin sur la page où elle est allée ; le comptage **retient le
+ * compte du timbre** (R76) : au montage de l'alerte, l'avis d'un enregistrement refusé pendant l'absence n'est dit qu'à ce compte — **sauf si le compte a changé depuis l'envoi** (R63, décision 2 de la
  * sixième relecture) : un refus parti sous un autre compte, ou sous aucun, n'est ni compté ni relu, lecture ou écriture ; le
  * même compte reste dit après une fin de session puis un retour, ou une bascule de palier. La relecture est branchée ici, côté composition, et non dans chaque composable : ils
  * n'appellent pas `useAuth()` (treize composables d'administration, dont aucun test ne fournit `AUTH_REPOSITORY`).
@@ -56,7 +57,7 @@ export function createBackofficeSessionReaction(auth: Pick<UseAuthResult, 'rerea
       }
 
       // Une lecture partie avant une navigation (CR3-8) : ni comptée ni relue, la page qui l'a émise n'existe plus.
-      if (!markBackofficeAccessRefused(sentAt.refusal)) {
+      if (!markBackofficeAccessRefused(sentAt.refusal, sentAt.account)) {
         return
       }
 
