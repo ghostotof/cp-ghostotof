@@ -2643,6 +2643,12 @@ ici par R46 à R58, avant les tâches 11 et 12 : corrigés, écrits comme limite
   libèrent ensemble) ou une borne sur le seul `beforeEnter` de `login` ? Une autre valeur que 15 s ne change que la
   constante.
 
+**Réponses de l'auteur (2026-10-30)** : Q1, Q2, Q3 **selon la recommandation** (effacé au montage, relecture gardée ;
+`applyLiveSession` avance la génération, R26 amendé pour ce cas ; 15 s sur `me()`). Et les deux défauts antérieurs relevés
+pendant la vérification **rejoignent la série** : (a) `checkAuth()` n'attrape pas un rejet de `me()` → R49, étape 3b ;
+(b) l'avis « proposition de traduction » des réglages « À propos » effacé par le succès d'un enregistrement d'une autre
+langue → R50, étape 2b.
+
 ### Review Focus (cinquième relecture)
 
 1. **Une écriture refusée revenue après la sortie du backoffice, puis un retour plus tard** : aucune alerte « accès
@@ -2862,6 +2868,12 @@ ici par R46 à R58, avant les tâches 11 et 12 : corrigés, écrits comme limite
   Expected : la promesse reste en attente ; `signal` absent ; la page jamais rendue.
 - [ ] **Step 2 : implémenter** — selon les interfaces ; `vi.useRealTimers()` en `afterEach`.
 - [ ] **Step 3 : St5-13** — `LoginPage` selon les interfaces ; `LoginPage.spec.ts` vert sans changement (refactoring).
+- [ ] **Step 3b : `checkAuth()` attrape un rejet de `me()`** (défaut antérieur, décision de l'auteur du 2026-10-30) — un rejet
+  (réseau, ou abandon après `ME_TIMEOUT_MS`) termine la première vérification comme un anonyme : `isChecking` retombe, l'état
+  reste anonyme, `waitForAuthCheck()` se résout, **aucun rejet non géré** (ni dans `checkAuth`, ni dans `main.ts`). Test
+  rouge d'abord dans `useAuth.spec.ts` : `it("checkAuth : un me() rejeté termine la vérification en anonyme, sans rejet non géré")`
+  (`me` simulé rejeté ; la promesse de `checkAuth()` se résout ; `waitForAuthCheck()` se résout ; état anonyme). Vérifier
+  l'appelant dans `main.ts` et le dire dans le rendu. Docblock de `checkAuth` : pourquoi.
 - [ ] **Step 4 : règles** — `frontend-session-retour.md`, première sous-puce de « The re-check on return » : « a rejection of
   `/api/me` (network) is swallowed » devient « a rejection of `/api/me` (network, or `me()` giving up after
   `ME_TIMEOUT_MS`, 15 s, R49) is swallowed », et une demi-phrase : la borne vaut pour la première vérification (le garde et
@@ -2899,6 +2911,14 @@ ici par R46 à R58, avant les tâches 11 et 12 : corrigés, écrits comme limite
   - `AdminAboutPage.spec.ts` (Review Focus 4) : `it("FR en vol, passage en EN : « Enregistrer » actif ; retour en FR : désactivé jusqu'à la réponse")`.
   Expected : deux appels à `update` ; « Enregistrer » EN désactivé (l'`isSubmitting` global).
 - [ ] **Step 2 : implémenter** — selon les interfaces ; les tests R11, R20, R31 restent verts sans changement.
+- [ ] **Step 2b : l'avis « proposition de traduction » ne s'efface que pour sa langue** (défaut antérieur, décision de
+  l'auteur du 2026-10-30) — aujourd'hui le succès d'un enregistrement de **n'importe quelle** langue remet
+  `proposalSourceLocale` à `null` (`AdminAboutSettingsForm.vue`, `handleSubmit`). Établir dans le code à quelle langue
+  l'avis se rapporte (la langue montrée qui a reçu la proposition) et ne l'effacer qu'au succès de l'enregistrement de
+  **cette** langue ; un échec le garde (F11). Test rouge d'abord dans `AdminAboutPage.spec.ts` :
+  `it("une proposition en EN, enregistrement réussi du FR : l'avis EN reste")`, puis le témoin
+  `it("enregistrement réussi de l'EN : l'avis disparaît")`. Si la règle `frontend-backoffice.md` décrit l'avis, la phrase
+  est remplacée dans le même commit.
 - [ ] **Step 3 : règle** — `frontend-backoffice.md` : la phrase R43 **remplacée** par : « **One save per locale in flight**
   (R50, the author's decision of 2026-10-30, CR5-3/CR5-4): `save(locale)` refuses a second save of a locale while its
   first is in flight (no request, `false`), and the form disables « Enregistrer » for that locale only (`isSaving`): an
