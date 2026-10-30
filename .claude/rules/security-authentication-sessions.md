@@ -164,7 +164,10 @@ paths:
     of a route that requires a role (`requiresAccess()`) expires both cookies with the factory's exact attributes, and a
     `PUBLIC_PATHS` route sets no cookie the anonymous call does not; the premise (every authorization of `/api` is an
     `access_control` rule) is held by `AuthorizationLivesInAccessControlTest` (C5-12), the only witness of a `#[IsGranted]`
-    put on a route without a rule, which the invariant no longer judges.
+    put on a route without a rule, which the invariant no longer judges. Its detector (`tests/Support/AuthorizationSites`,
+    proven on code extracts) also refuses a hand-thrown `AccessDenied(Http)Exception` / `UnauthorizedHttpException`, a
+    static `::isGranted(`, `AccessDecisionManagerInterface` and an `is_granted(` string; each exemption (the MCP
+    reader, the two CSRF guards) carries its reason and the exact number of sites it covers.
     Rejected: `lazy: true` (the JWT authenticator's `supports()` stays `true`), a `JWTAuthenticator` subclass, a
     firewall without authenticator for public routes. Pinned by `PublicRouteIgnoresRefusedSession{,Registration}Test`,
     `AuthorizationLivesInAccessControlTest` and, on the real stack, `tools/smoke-dead-session-cookie.sh`
