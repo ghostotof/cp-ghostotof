@@ -51,9 +51,12 @@ Dépôt /home/ghostotof/dev/cp-ghostotof, branche `feature/spec-0007-748-a11y`. 
   mutation que la tâche nomme. **Une mutation se restaure depuis une copie du fichier faite avant elle et vérifiée par
   `cmp`** (`cp f "$scratch/f.orig"`, muter, mesurer, `cp "$scratch/f.orig" f`, `cmp f "$scratch/f.orig"`), puis
   `git diff` vide sur le fichier muté ; **jamais `git checkout-index`, `git restore`, `git reset` ni aucune commande git
-  qui réécrit l'index ou l'arbre**. **Une mutation s'écrit en place avec l'outil Edit, jamais par `sed -i` ni
-  `perl -pi`** : ils remplacent le fichier par un nouvel inode, que le montage du conteneur ne voit pas — la mutation ne
-  serait pas mesurée. Pour un refactoring pur, le
+  qui réécrit l'index ou l'arbre**. **Une mutation s'écrit en place par Python** (`open(p, 'r+')` ou `open(p, 'w')`
+  sur le même chemin, qui garde l'inode), **jamais par `sed -i`, `perl -pi` ni l'outil Edit** : tous trois remplacent le
+  fichier par un nouvel inode, que le montage du conteneur ne voit pas — la mutation ne serait pas mesurée et un test
+  resterait vert à tort (R99 : une mutation faite par Edit est restée verte dans le conteneur backend). On restaure
+  depuis la copie, puis on vérifie par `cmp`. En cas de doute sur ce que voit le conteneur : `docker compose restart
+  backend` ou `docker compose restart frontend`. Pour un refactoring pur, le
   filet est la suite existante, verte avant et après, nombre de tests noté ; dis quels tests de garde changent et pourquoi.
 - **Aucun travail en arrière-plan au rendu** : ni processus détaché, ni conteneur lancé à part, ni `vitest --watch` ;
   tout ce que tu as lancé est terminé quand tu rends.
