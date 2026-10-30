@@ -6,14 +6,13 @@ namespace App\Tests\Security;
 
 use App\Security\Authentication\Infrastructure\Http\AuthCookieFactory;
 use App\Security\User\Application\CpgUserRegistrarInterface;
+use App\Tests\Support\ConcreteApiUrl;
 use App\Tests\Support\HttpJson;
-use App\Tests\Support\ReadsResponseCookies;
+use App\Tests\Support\RefusedBearerCookie;
 use App\Tests\Support\TestCredentials;
 use Doctrine\ORM\EntityManagerInterface;
-use Lexik\Bundle\JWTAuthenticationBundle\Encoder\JWTEncoderInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
-use Symfony\Component\BrowserKit\Cookie;
 use Symfony\Component\HttpFoundation\Cookie as HttpFoundationCookie;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\Routing\RouterInterface;
@@ -58,7 +57,7 @@ use Symfony\Component\Routing\RouterInterface;
 final class ApiRouteExposureTest extends WebTestCase
 {
     use HttpJson;
-    use ReadsResponseCookies;
+    use RefusedBearerCookie;
 
     private const string PLAIN_USERNAME = 'jane';
 
@@ -149,7 +148,7 @@ final class ApiRouteExposureTest extends WebTestCase
         self::assertNotEmpty($routes, 'Aucune route protégée détectée : le test ne vérifie plus rien.');
 
         foreach ($routes as [$path, $method]) {
-            $client->request($method, $this->concreteUrl($path));
+            $client->request($method, ConcreteApiUrl::of($path));
             $this->assertOnlyFactoryCookies($client, $method.' '.$path);
 
             self::assertContains(
@@ -214,7 +213,7 @@ final class ApiRouteExposureTest extends WebTestCase
 
         foreach (array_keys(self::PUBLIC_PATHS) as $path) {
             foreach ($this->requestableMethods($this->routeMethods($path)) as $method) {
-                $client->request($method, $this->concreteUrl($path), server: [
+                $client->request($method, ConcreteApiUrl::of($path), server: [
                     'CONTENT_TYPE' => 'application/json',
                     'HTTP_ACCEPT' => 'application/json',
                     'HTTP_X_REQUESTED_WITH' => 'fetch',
@@ -241,13 +240,7 @@ final class ApiRouteExposureTest extends WebTestCase
     public function testARefusedSessionCookieNeverChangesTheAnonymousAnswer(): void
     {
         $client = self::createClient();
-        $expired = self::getContainer()->get(JWTEncoderInterface::class)->encode([
-            'username' => 'expired-'.bin2hex(random_bytes(4)),
-            'roles' => ['ROLE_USER'],
-            'iat' => time() - 7200,
-            'exp' => time() - 3600,
-        ]);
-        $cookies = ['anonyme' => null, 'invalide' => bin2hex(random_bytes(16)), 'expiré' => $expired];
+        $cookies = ['anonyme' => null, 'invalide' => bin2hex(random_bytes(16)), 'expiré' => self::expiredJwt()];
 
         $checked = 0;
         foreach ($this->allApiRoutePaths() as $path) {
@@ -300,10 +293,10 @@ final class ApiRouteExposureTest extends WebTestCase
         $client->getCookieJar()->clear();
         self::getContainer()->get('cache.rate_limiter')->clear();
         if (null !== $bearer) {
-            $client->getCookieJar()->set(new Cookie(AuthCookieFactory::BEARER, $bearer, null, '/', 'localhost', false, true, false, 'lax'));
+            self::putTheBearer($client, $bearer);
         }
 
-        $client->request($method, $this->concreteUrl($path), server: [
+        $client->request($method, ConcreteApiUrl::of($path), server: [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_ACCEPT' => 'application/json',
             'HTTP_X_REQUESTED_WITH' => 'fetch',
@@ -327,7 +320,7 @@ final class ApiRouteExposureTest extends WebTestCase
      */
     private function firewallOf(string $path, string $method): ?string
     {
-        return self::getContainer()->get('security.firewall.map')->getFirewallConfig(Request::create($this->concreteUrl($path), $method))?->getName();
+        return self::getContainer()->get('security.firewall.map')->getFirewallConfig(Request::create(ConcreteApiUrl::of($path), $method))?->getName();
     }
 
     /**
@@ -348,7 +341,7 @@ final class ApiRouteExposureTest extends WebTestCase
         self::assertNotEmpty($routes, 'Aucune route de backoffice détectée.');
 
         foreach ($routes as [$path, $method]) {
-            $client->request($method, $this->concreteUrl($path), server: [
+            $client->request($method, ConcreteApiUrl::of($path), server: [
                 'CONTENT_TYPE' => 'application/json',
                 'HTTP_X_XSRF_TOKEN' => $csrfToken,
             ], content: self::jsonBody([]));
@@ -434,7 +427,7 @@ final class ApiRouteExposureTest extends WebTestCase
         self::assertNotEmpty($routes, 'Aucune route hors palier de base détectée : le test ne vérifie plus rien.');
 
         foreach ($routes as [$path, $method]) {
-            $client->request($method, $this->concreteUrl($path), server: [
+            $client->request($method, ConcreteApiUrl::of($path), server: [
                 'CONTENT_TYPE' => 'application/json',
                 'HTTP_X_XSRF_TOKEN' => $csrfToken,
             ], content: self::jsonBody([]));
@@ -474,7 +467,7 @@ final class ApiRouteExposureTest extends WebTestCase
             $csrfToken = $this->obtainBaseAccess($client);
 
             foreach ($this->requestableMethods($this->routeMethods($path)) as $method) {
-                $client->request($method, $this->concreteUrl($path), server: [
+                $client->request($method, ConcreteApiUrl::of($path), server: [
                     'CONTENT_TYPE' => 'application/json',
                     'HTTP_X_XSRF_TOKEN' => $csrfToken,
                 ], content: self::jsonBody([]));
@@ -558,35 +551,6 @@ final class ApiRouteExposureTest extends WebTestCase
         $requestable = array_values(array_filter($methods, static fn (string $method): bool => 'HEAD' !== $method));
 
         return [] === $requestable ? ['GET'] : $requestable;
-    }
-
-    /**
-     * Substitue des valeurs plausibles aux paramètres d'URL : la ressource
-     * visée n'a pas besoin d'exister, le contrôle d'accès s'applique bien avant
-     * que le provider ne cherche quoi que ce soit.
-     */
-    private function concreteUrl(string $path): string
-    {
-        $url = str_replace(['.{_format}', '{_format}'], '', $path);
-
-        return (string) preg_replace_callback(
-            '/\{(\w+)\}/',
-            static fn (array $matches): string => match ($matches[1]) {
-                'locale' => 'fr',
-                'token' => str_repeat('a', 64),
-                'status' => '404',
-                'index' => 'index',
-                // UUID fixe et valide au sens de `Requirement::UUID` (nibble de
-                // version 7, variante 8) : les tâches suivantes posent des
-                // `requirements: ['id' => Requirement::UUID]` sur les
-                // opérations d'item, et un `1` y serait un 404 du routeur
-                // (RouterListener, priorité 32) avant même le firewall
-                // (priorité 8) — le test perdrait sa portée sur ces routes.
-                'id' => '019968a0-0000-7000-8000-000000000001',
-                default => '1',
-            },
-            $url,
-        );
     }
 
     /**

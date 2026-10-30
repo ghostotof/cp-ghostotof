@@ -4,12 +4,9 @@ declare(strict_types=1);
 
 namespace App\Tests\Security\Authentication\Infrastructure\Jwt;
 
-use App\Security\Authentication\Infrastructure\Http\AuthCookieFactory;
-use App\Tests\Support\ReadsResponseCookies;
-use Lexik\Bundle\JWTAuthenticationBundle\Encoder\JWTEncoderInterface;
+use App\Tests\Support\RefusedBearerCookie;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
-use Symfony\Component\BrowserKit\Cookie;
 
 /**
  * #748 (F1, décision de l'auteur du 2026-10-29) : `BEARER` et `XSRF-TOKEN` sont
@@ -31,17 +28,7 @@ use Symfony\Component\BrowserKit\Cookie;
  */
 final class RefusedSessionCookiesAreClearedTest extends WebTestCase
 {
-    use ReadsResponseCookies;
-
-    /** Une route qui exige un rôle (`ROLE_TRUSTED`) : l'anonyme y prend le 401, et un cookie refusé aussi. */
-    private const string PROTECTED_ROUTE = '/api/me';
-
-    /**
-     * Une route publique (ApiRouteExposureTest::PUBLIC_PATHS), servie une fois le cookie effacé. Elle
-     * répond 200 sur une table vide (ContributionResourceTest) : un 404, un 403 ou tout autre
-     * code que le 200 ne passe pas pour « servie » (St3-12 de la troisième relecture).
-     */
-    private const string PUBLIC_ROUTE = '/api/contributions/fr';
+    use RefusedBearerCookie;
 
     private KernelBrowser $client;
 
@@ -53,13 +40,7 @@ final class RefusedSessionCookiesAreClearedTest extends WebTestCase
 
     public function testAnExpiredJwtCookieIsClearedByItsFirst401(): void
     {
-        $encoder = self::getContainer()->get(JWTEncoderInterface::class);
-        $this->putTheCookie($encoder->encode([
-            'username' => 'expired-'.bin2hex(random_bytes(4)),
-            'roles' => ['ROLE_USER'],
-            'iat' => time() - 7200,
-            'exp' => time() - 3600,
-        ]));
+        self::putTheBearer($this->client, self::expiredJwt());
 
         $this->client->request('GET', self::PROTECTED_ROUTE);
 
@@ -69,7 +50,7 @@ final class RefusedSessionCookiesAreClearedTest extends WebTestCase
 
     public function testAnInvalidJwtCookieIsClearedToo(): void
     {
-        $this->putTheCookie(bin2hex(random_bytes(16)));
+        self::putTheBearer($this->client, bin2hex(random_bytes(16)));
 
         $this->client->request('GET', self::PROTECTED_ROUTE);
 
@@ -94,16 +75,7 @@ final class RefusedSessionCookiesAreClearedTest extends WebTestCase
     private function assertRefusedAndBothCookiesCleared(): void
     {
         self::assertResponseStatusCodeSame(401);
-
-        $cookies = $this->cookiesByName($this->client);
-        $factory = self::getContainer()->get(AuthCookieFactory::class);
-        foreach ([AuthCookieFactory::BEARER, AuthCookieFactory::XSRF_TOKEN] as $name) {
-            self::assertArrayHasKey($name, $cookies, \sprintf('Le 401 doit effacer %s.', $name));
-            self::assertTrue($cookies[$name]->isCleared(), \sprintf('%s doit être expiré.', $name));
-            // Mêmes attributs que la pose : sinon le navigateur ne le supprimerait pas.
-            self::assertSame($this->attributes($factory->expired($name)), $this->attributes($cookies[$name]));
-        }
-        self::assertNull($this->client->getCookieJar()->get(AuthCookieFactory::BEARER), 'Le navigateur garde le cookie refusé.');
+        $this->assertBothCookiesExpiredLikeTheFactory($this->client);
     }
 
     /** Le navigateur n'envoie plus rien : la même requête est anonyme, donc plus un 401. */
@@ -114,11 +86,5 @@ final class RefusedSessionCookiesAreClearedTest extends WebTestCase
         // Seul le 200 prouve que la route a été atteinte et servie : un 401 est le cookie mort, et
         // tout autre code (un 403, un 404) laisserait passer un refus qui n'est pas celui-là.
         self::assertResponseStatusCodeSame(200, 'Le cookie effacé ne doit plus faire refuser la route publique.');
-    }
-
-    /** Pose ce JWT en `BEARER` dans le navigateur de test, comme un cookie de session le garderait. */
-    private function putTheCookie(string $jwt): void
-    {
-        $this->client->getCookieJar()->set(new Cookie(AuthCookieFactory::BEARER, $jwt, null, '/', 'localhost', false, true, false, 'lax'));
     }
 }

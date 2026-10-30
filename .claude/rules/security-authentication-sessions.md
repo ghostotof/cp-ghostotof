@@ -18,6 +18,7 @@ paths:
   - "backend/tests/Security/Authentication/Infrastructure/Security/SessionBeforePasswordChange*Test.php"
   - "backend/tests/Support/CookieConstructions.php"
   - "backend/tests/Support/ReadsResponseCookies.php"
+  - "backend/tests/Support/RefusedBearerCookie.php"
   - "tools/smoke-dead-session-cookie.sh"
   - "tools/tests/smoke-dead-session-cookie.test.sh"
 ---

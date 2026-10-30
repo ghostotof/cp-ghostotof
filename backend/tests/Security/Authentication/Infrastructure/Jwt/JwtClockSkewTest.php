@@ -4,12 +4,11 @@ declare(strict_types=1);
 
 namespace App\Tests\Security\Authentication\Infrastructure\Jwt;
 
-use App\Security\Authentication\Infrastructure\Http\AuthCookieFactory;
 use App\Security\User\Domain\ValueObject\BaseAccessUser;
+use App\Tests\Support\RefusedBearerCookie;
 use Lexik\Bundle\JWTAuthenticationBundle\Services\JWTTokenManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
-use Symfony\Component\BrowserKit\Cookie;
 
 /**
  * #748 (A3-9) : deux pods dont les horloges divergent de quelques secondes ne doivent pas
@@ -45,6 +44,8 @@ use Symfony\Component\BrowserKit\Cookie;
  */
 final class JwtClockSkewTest extends WebTestCase
 {
+    use RefusedBearerCookie;
+
     private KernelBrowser $client;
 
     protected function setUp(): void
@@ -96,7 +97,7 @@ final class JwtClockSkewTest extends WebTestCase
             [BaseAccessUser::TOKEN_CLAIM => true, 'iat' => $issuedAt, 'exp' => $expiresAt],
         );
 
-        $this->client->getCookieJar()->set(new Cookie(AuthCookieFactory::BEARER, $jwt, null, '/', 'localhost', false, true, false, 'lax'));
+        self::putTheBearer($this->client, $jwt);
         $this->client->request('GET', '/api/me');
     }
 }

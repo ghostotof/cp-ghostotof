@@ -8,17 +8,16 @@ use App\Security\Authentication\Infrastructure\Http\AuthCookieFactory;
 use App\Security\Authentication\Infrastructure\Security\PublicRouteIgnoresRefusedSessionListener;
 use App\Security\User\Application\CpgUserRegistrarInterface;
 use App\Security\User\Domain\Entity\CpgUser;
+use App\Tests\Support\ConcreteApiUrl;
 use App\Tests\Support\HttpJson;
-use App\Tests\Support\ReadsResponseCookies;
 use App\Tests\Support\ReadsSecurityAuditLog;
+use App\Tests\Support\RefusedBearerCookie;
 use App\Tests\Support\TestCredentials;
 use App\Tests\Support\TestDatabase;
 use Doctrine\DBAL\Connection;
 use Doctrine\ORM\EntityManagerInterface;
-use Lexik\Bundle\JWTAuthenticationBundle\Encoder\JWTEncoderInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
-use Symfony\Component\BrowserKit\Cookie;
 use Symfony\Component\HttpFoundation\Request;
 
 /**
@@ -38,14 +37,8 @@ use Symfony\Component\HttpFoundation\Request;
 final class PublicRouteIgnoresRefusedSessionTest extends WebTestCase
 {
     use HttpJson;
-    use ReadsResponseCookies;
     use ReadsSecurityAuditLog;
-
-    /** Une route publique (ApiRouteExposureTest::PUBLIC_PATHS) qui répond 200 sur une table vide. */
-    private const string PUBLIC_ROUTE = '/api/contributions/fr';
-
-    /** Une route qui exige un rôle : l'anonyme y prend le 401, et un cookie refusé aussi. */
-    private const string PROTECTED_ROUTE = '/api/me';
+    use RefusedBearerCookie;
 
     private KernelBrowser $client;
 
@@ -64,8 +57,8 @@ final class PublicRouteIgnoresRefusedSessionTest extends WebTestCase
 
     public function testAnExpiredCookieOnAPublicReadIsServedAndKept(): void
     {
-        $jwt = $this->expiredJwt();
-        $this->putTheBearer($jwt);
+        $jwt = self::expiredJwt();
+        self::putTheBearer($this->client, $jwt);
 
         $this->client->request('GET', self::PUBLIC_ROUTE);
 
@@ -75,7 +68,7 @@ final class PublicRouteIgnoresRefusedSessionTest extends WebTestCase
     public function testAnInvalidCookieOnAPublicReadIsServedAndKept(): void
     {
         $jwt = bin2hex(random_bytes(16));
-        $this->putTheBearer($jwt);
+        self::putTheBearer($this->client, $jwt);
 
         $this->client->request('GET', self::PUBLIC_ROUTE);
 
@@ -85,21 +78,14 @@ final class PublicRouteIgnoresRefusedSessionTest extends WebTestCase
     /** Le cookie gardé par la route publique tombe au premier 401 d'une route protégée, aux attributs de la pose. */
     public function testTheFirstProtectedRouteStillRefusesAndClears(): void
     {
-        $this->putTheBearer($this->expiredJwt());
+        self::putTheBearer($this->client, self::expiredJwt());
         $this->client->request('GET', self::PUBLIC_ROUTE);
         self::assertResponseStatusCodeSame(200);
 
         $this->client->request('GET', self::PROTECTED_ROUTE);
 
         self::assertResponseStatusCodeSame(401);
-        $cookies = $this->cookiesByName($this->client);
-        $factory = self::getContainer()->get(AuthCookieFactory::class);
-        foreach ([AuthCookieFactory::BEARER, AuthCookieFactory::XSRF_TOKEN] as $name) {
-            self::assertArrayHasKey($name, $cookies, \sprintf('Le 401 doit effacer %s.', $name));
-            self::assertTrue($cookies[$name]->isCleared(), \sprintf('%s doit être expiré.', $name));
-            self::assertSame($this->attributes($factory->expired($name)), $this->attributes($cookies[$name]));
-        }
-        self::assertNull($this->client->getCookieJar()->get(AuthCookieFactory::BEARER), 'Le navigateur garde le cookie refusé.');
+        $this->assertBothCookiesExpiredLikeTheFactory($this->client);
     }
 
     /**
@@ -120,7 +106,7 @@ final class PublicRouteIgnoresRefusedSessionTest extends WebTestCase
 
         $this->client->request('GET', self::PROTECTED_ROUTE);
         self::assertResponseStatusCodeSame(401);
-        $this->assertBothCookiesExpiredLikeTheFactory();
+        $this->assertBothCookiesExpiredLikeTheFactory($this->client);
     }
 
     /**
@@ -131,14 +117,14 @@ final class PublicRouteIgnoresRefusedSessionTest extends WebTestCase
     public function testAPercentEncodedPathIsJudgedLikeItsCanonicalForm(): void
     {
         $jwt = bin2hex(random_bytes(16));
-        $this->putTheBearer($jwt);
+        self::putTheBearer($this->client, $jwt);
 
         $this->client->request('GET', '/%61pi/contributions/fr');
         $this->assertServedWithoutTouchingTheCookie($jwt);
 
         $this->client->request('GET', '/%61pi/me');
         self::assertResponseStatusCodeSame(401);
-        $this->assertBothCookiesExpiredLikeTheFactory();
+        $this->assertBothCookiesExpiredLikeTheFactory($this->client);
     }
 
     /**
@@ -151,7 +137,7 @@ final class PublicRouteIgnoresRefusedSessionTest extends WebTestCase
     {
         $this->registerTrusted();
         $csrfToken = $this->signIn();
-        $this->putTheBearer(bin2hex(random_bytes(16)));
+        self::putTheBearer($this->client, bin2hex(random_bytes(16)));
 
         $this->client->request('POST', '/api/logout', server: ['HTTP_X_XSRF_TOKEN' => $csrfToken]);
 
@@ -202,7 +188,7 @@ final class PublicRouteIgnoresRefusedSessionTest extends WebTestCase
                 continue;
             }
             // Une URL concrète : l'`AccessMap` ne lit que le chemin, pas la ressource.
-            $url = (string) preg_replace('/\{\w+\}/', '1', str_replace(['.{_format}', '{_format}'], '', $path));
+            $url = ConcreteApiUrl::of($path);
             $methods = $route->getMethods();
             foreach ([] === $methods ? ['GET'] : $methods as $method) {
                 $request = Request::create($url, $method);
@@ -217,40 +203,11 @@ final class PublicRouteIgnoresRefusedSessionTest extends WebTestCase
         self::assertGreaterThan($required, $seen, 'Aucune route publique vue : le test ne compare plus rien.');
     }
 
-    /** Les deux cookies d'auth de la réponse sont expirés, aux attributs exacts de la fabrique, et le navigateur ne garde plus le `BEARER`. */
-    private function assertBothCookiesExpiredLikeTheFactory(): void
-    {
-        $cookies = $this->cookiesByName($this->client);
-        $factory = self::getContainer()->get(AuthCookieFactory::class);
-        foreach ([AuthCookieFactory::BEARER, AuthCookieFactory::XSRF_TOKEN] as $name) {
-            self::assertArrayHasKey($name, $cookies, \sprintf('Le 401 doit effacer %s.', $name));
-            self::assertTrue($cookies[$name]->isCleared(), \sprintf('%s doit être expiré.', $name));
-            self::assertSame($this->attributes($factory->expired($name)), $this->attributes($cookies[$name]));
-        }
-        self::assertNull($this->client->getCookieJar()->get(AuthCookieFactory::BEARER), 'Le navigateur garde le cookie refusé.');
-    }
-
     private function assertServedWithoutTouchingTheCookie(string $jwt): void
     {
         self::assertResponseStatusCodeSame(200, 'Un cookie refusé ne doit pas faire répondre 401 une route publique.');
         self::assertSame([], $this->client->getResponse()->headers->getCookies(), 'Une route publique ne pose ni n\'efface rien.');
         self::assertSame($jwt, $this->client->getCookieJar()->get(AuthCookieFactory::BEARER)?->getValue(), 'Le cookie refusé reste dans le navigateur.');
-    }
-
-    private function expiredJwt(): string
-    {
-        return self::getContainer()->get(JWTEncoderInterface::class)->encode([
-            'username' => 'expired-'.bin2hex(random_bytes(4)),
-            'roles' => ['ROLE_USER'],
-            'iat' => time() - 7200,
-            'exp' => time() - 3600,
-        ]);
-    }
-
-    /** Pose ce JWT en `BEARER` dans le navigateur de test, comme un cookie de session le garderait. */
-    private function putTheBearer(string $jwt): void
-    {
-        $this->client->getCookieJar()->set(new Cookie(AuthCookieFactory::BEARER, $jwt, null, '/', 'localhost', false, true, false, 'lax'));
     }
 
     private function registerTrusted(): CpgUser
