@@ -193,6 +193,13 @@ function formOf(wrapper: VueWrapper, which: number): DOMWrapper<Element> {
   return wrapper.findAll('form')[which]
 }
 
+/** Le « Annuler » du formulaire d'un contenu : la barre d'ordre du tableau porte le sien, qu'on ne vise pas ici. */
+function formCancelButton(wrapper: VueWrapper, which: number): DOMWrapper<Element> | undefined {
+  return formOf(wrapper, which)
+    .findAll('button')
+    .find((candidate) => candidate.text() === 'Annuler')
+}
+
 function translateButton(wrapper: VueWrapper, which: number): DOMWrapper<Element> {
   const button = panelOf(wrapper, which)
     .findAll('button')
@@ -666,6 +673,56 @@ describe('AdminQualityPage', () => {
         translationGroup: T_GROUP_TWO,
         label: TRANSLATED_TRAIT.label,
       })
+    })
+
+    // Sp7-1 (#748, R79) : la proposition est la version de l'entrée source dans l'autre langue, dans
+    // son groupe gardé. En changer la langue ferait une seconde version de la langue source dans ce
+    // groupe : le sélecteur reste verrouillé, comme en édition, et « Annuler » retire la proposition.
+    it("principe : après une proposition, la langue est verrouillée et « Annuler » la retire", async () => {
+      const { wrapper } = await mountPage()
+
+      await buttonLabelled(actionsForLine(wrapper, PRINCIPLES, "Tests d'abord"), 'Modifier').trigger('click')
+      await translateButton(wrapper, PRINCIPLES).trigger('click')
+      await flushPromises()
+
+      expect(wrapper.findAll('h2')[PRINCIPLES].text()).toBe('Ajouter un principe')
+      expect(wrapper.get(LOCALE_SELECT[PRINCIPLES]).attributes('disabled')).toBeDefined()
+      expect(formCancelButton(wrapper, PRINCIPLES)).toBeDefined()
+
+      await formCancelButton(wrapper, PRINCIPLES)?.trigger('click')
+      await flushPromises()
+
+      expect(formOf(wrapper, PRINCIPLES).find('[role="status"]').exists()).toBe(false)
+      expect(wrapper.get(LOCALE_SELECT[PRINCIPLES]).attributes('disabled')).toBeUndefined()
+      expect(valueOf(wrapper, LOCALE_SELECT[PRINCIPLES])).toBe('fr')
+      expect(valueOf(wrapper, '#admin-quality-principle-translation-group')).toBe('')
+      expect(valueOf(wrapper, '#admin-quality-principle-title')).toBe('')
+      expect(wrapper.findAll('h2')[PRINCIPLES].text()).toBe('Ajouter un principe')
+      expect(formCancelButton(wrapper, PRINCIPLES)).toBeUndefined()
+    })
+
+    it("trait : après une proposition, la langue est verrouillée et « Annuler » la retire", async () => {
+      const translation = createTranslationRepository(TRANSLATED_TRAIT)
+      const { wrapper } = await mountPage(createPrincipleRepository(), createTraitRepository(), translation)
+
+      await buttonLabelled(actionsForLine(wrapper, TRAITS, 'Documenté'), 'Modifier').trigger('click')
+      await translateButton(wrapper, TRAITS).trigger('click')
+      await flushPromises()
+
+      expect(wrapper.findAll('h2')[TRAITS].text()).toBe('Ajouter un trait')
+      expect(wrapper.get(LOCALE_SELECT[TRAITS]).attributes('disabled')).toBeDefined()
+      expect(formCancelButton(wrapper, TRAITS)).toBeDefined()
+
+      await formCancelButton(wrapper, TRAITS)?.trigger('click')
+      await flushPromises()
+
+      expect(formOf(wrapper, TRAITS).find('[role="status"]').exists()).toBe(false)
+      expect(wrapper.get(LOCALE_SELECT[TRAITS]).attributes('disabled')).toBeUndefined()
+      expect(valueOf(wrapper, LOCALE_SELECT[TRAITS])).toBe('fr')
+      expect(valueOf(wrapper, '#admin-quality-trait-translation-group')).toBe('')
+      expect(valueOf(wrapper, '#admin-quality-trait-label')).toBe('')
+      expect(wrapper.findAll('h2')[TRAITS].text()).toBe('Ajouter un trait')
+      expect(formCancelButton(wrapper, TRAITS)).toBeUndefined()
     })
 
     it('affiche le message du quota en cas de 429 et laisse le formulaire intact', async () => {

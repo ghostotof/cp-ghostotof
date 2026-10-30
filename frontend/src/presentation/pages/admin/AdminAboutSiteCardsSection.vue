@@ -277,10 +277,15 @@ async function handleDelete(card: AdminAboutSiteCard): Promise<void> {
       novalidate
       @submit.prevent="handleSubmit"
     >
+      <!-- Verrouillée en édition (un PUT ne change pas la langue) et tant que le formulaire
+           porte une proposition de traduction : celle-ci est la version de la carte de l'entrée source
+           dans l'autre langue, dans son groupe gardé ; en changer la langue créerait une
+           seconde version de la langue source dans ce groupe (#748, Sp7-1). « Annuler »
+           retire la proposition et rend le sélecteur. -->
       <BaseSelect
         id="admin-about-site-card-locale"
         v-model="form.locale"
-        :disabled="isEditing"
+        :disabled="isEditing || null !== proposalSourceLocale"
         aria-describedby="admin-about-site-card-locale-help"
         :label="t('admin.localeLabel')"
         :options="localeOptions"
@@ -364,7 +369,7 @@ async function handleDelete(card: AdminAboutSiteCard): Promise<void> {
           {{ t('admin.about.save') }}
         </button>
         <button
-          v-if="isEditing"
+          v-if="isEditing || null !== proposalSourceLocale"
           type="button"
           class="btn btn-outline-light"
           @click="resetForm"

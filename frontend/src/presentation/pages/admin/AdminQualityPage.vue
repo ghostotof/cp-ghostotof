@@ -503,10 +503,15 @@ useUnsavedOrderGuard(isAnyOrderDirty)
         novalidate
         @submit.prevent="handleSubmitPrinciple"
       >
+        <!-- Verrouillée en édition (un PUT ne change pas la langue) et tant que le formulaire
+             porte une proposition de traduction : celle-ci est la version du principe de l'entrée source
+             dans l'autre langue, dans son groupe gardé ; en changer la langue créerait une
+             seconde version de la langue source dans ce groupe (#748, Sp7-1). « Annuler »
+             retire la proposition et rend le sélecteur. -->
         <BaseSelect
           id="admin-quality-principle-locale"
           v-model="principleForm.locale"
-          :disabled="isEditingPrinciple"
+          :disabled="isEditingPrinciple || null !== principleProposalSourceLocale"
           aria-describedby="admin-quality-principle-locale-help"
           :label="t('admin.localeLabel')"
           :options="localeOptions"
@@ -591,7 +596,7 @@ useUnsavedOrderGuard(isAnyOrderDirty)
             {{ t('admin.quality.save') }}
           </button>
           <button
-            v-if="isEditingPrinciple"
+            v-if="isEditingPrinciple || null !== principleProposalSourceLocale"
             type="button"
             class="btn btn-outline-light"
             @click="resetPrincipleForm"
@@ -771,10 +776,15 @@ useUnsavedOrderGuard(isAnyOrderDirty)
         novalidate
         @submit.prevent="handleSubmitTrait"
       >
+        <!-- Verrouillée en édition (un PUT ne change pas la langue) et tant que le formulaire
+             porte une proposition de traduction : celle-ci est la version du trait de l'entrée source
+             dans l'autre langue, dans son groupe gardé ; en changer la langue créerait une
+             seconde version de la langue source dans ce groupe (#748, Sp7-1). « Annuler »
+             retire la proposition et rend le sélecteur. -->
         <BaseSelect
           id="admin-quality-trait-locale"
           v-model="traitForm.locale"
-          :disabled="isEditingTrait"
+          :disabled="isEditingTrait || null !== traitProposalSourceLocale"
           aria-describedby="admin-quality-trait-locale-help"
           :label="t('admin.localeLabel')"
           :options="localeOptions"
@@ -842,7 +852,7 @@ useUnsavedOrderGuard(isAnyOrderDirty)
             {{ t('admin.quality.save') }}
           </button>
           <button
-            v-if="isEditingTrait"
+            v-if="isEditingTrait || null !== traitProposalSourceLocale"
             type="button"
             class="btn btn-outline-light"
             @click="resetTraitForm"

@@ -296,6 +296,13 @@ function formOf(wrapper: VueWrapper, which: number): DOMWrapper<Element> {
   return wrapper.findAll('form')[which]
 }
 
+/** Le « Annuler » d'un formulaire de carte : le seul de ce formulaire, les barres d'ordre ont le leur. */
+function formCancelButton(wrapper: VueWrapper, which: number): DOMWrapper<Element> | undefined {
+  return formOf(wrapper, which)
+    .findAll('button')
+    .find((candidate) => candidate.text() === 'Annuler')
+}
+
 function translateButton(wrapper: VueWrapper, which: number): DOMWrapper<Element> {
   const button = wrapper.findAll('button').filter((candidate) => candidate.text().includes('Proposer la version'))[which]
   if (!button) throw new Error('Bouton de traduction introuvable.')
@@ -1005,6 +1012,58 @@ describe('AdminAboutPage', () => {
         description: 'Description veille',
         iconKey: fixture.lonelyIconKey,
       })
+    })
+
+    // Sp7-1 (#748, R79) : voir les tests des principes et traits qualité. Dans les cartes « moi », seul
+    // le sélecteur de langue est verrouillé par la proposition ; la catégorie (verrouillée en édition
+    // seulement, #578) reste libre en création, où une proposition la garde déjà telle que lue.
+    it("carte « site » : après une proposition, la langue est verrouillée et « Annuler » la retire", async () => {
+      const { wrapper } = await mountPage()
+
+      await buttonLabelled(actionsForLine(wrapper, SITE, 'Stack technique'), 'Modifier').trigger('click')
+      await translateButton(wrapper, SITE_FORM).trigger('click')
+      await flushPromises()
+
+      expect(wrapper.findAll('h2')[SITE_FORM].text()).toBe('Ajouter une carte')
+      expect(wrapper.get('#admin-about-site-card-locale').attributes('disabled')).toBeDefined()
+      expect(formCancelButton(wrapper, SITE_FORM)).toBeDefined()
+
+      await formCancelButton(wrapper, SITE_FORM)?.trigger('click')
+      await flushPromises()
+
+      expect(formOf(wrapper, SITE_FORM).find('[role="status"]').exists()).toBe(false)
+      expect(wrapper.get('#admin-about-site-card-locale').attributes('disabled')).toBeUndefined()
+      expect(valueOf(wrapper, '#admin-about-site-card-locale')).toBe('fr')
+      expect(valueOf(wrapper, '#admin-about-site-card-translation-group')).toBe('')
+      expect(valueOf(wrapper, '#admin-about-site-card-title')).toBe('')
+      expect(wrapper.findAll('h2')[SITE_FORM].text()).toBe('Ajouter une carte')
+      expect(formCancelButton(wrapper, SITE_FORM)).toBeUndefined()
+    })
+
+    it("carte « moi » : après une proposition, la langue est verrouillée et « Annuler » la retire", async () => {
+      const translation = createTranslationRepository({ title: 'Veille continue', description: 'Description veille' })
+      const { wrapper } = await mountPage(createSettingsRepository(), createSiteCardRepository(), undefined, translation)
+
+      await buttonLabelled(actionsForLine(wrapper, ME_TABLE.technical, ME_FIXTURES.technical.titles[2]), 'Modifier').trigger('click')
+      await translateButton(wrapper, ME_FORM).trigger('click')
+      await flushPromises()
+
+      expect(wrapper.findAll('h2')[ME_FORM].text()).toBe('Ajouter une carte')
+      expect(wrapper.get('#admin-about-me-card-locale').attributes('disabled')).toBeDefined()
+      expect(valueOf(wrapper, '#admin-about-me-card-category')).toBe('technical')
+      expect(wrapper.get('#admin-about-me-card-category').attributes('disabled')).toBeUndefined()
+      expect(formCancelButton(wrapper, ME_FORM)).toBeDefined()
+
+      await formCancelButton(wrapper, ME_FORM)?.trigger('click')
+      await flushPromises()
+
+      expect(formOf(wrapper, ME_FORM).find('[role="status"]').exists()).toBe(false)
+      expect(wrapper.get('#admin-about-me-card-locale').attributes('disabled')).toBeUndefined()
+      expect(valueOf(wrapper, '#admin-about-me-card-locale')).toBe('fr')
+      expect(valueOf(wrapper, '#admin-about-me-card-translation-group')).toBe('')
+      expect(valueOf(wrapper, '#admin-about-me-card-title')).toBe('')
+      expect(wrapper.findAll('h2')[ME_FORM].text()).toBe('Ajouter une carte')
+      expect(formCancelButton(wrapper, ME_FORM)).toBeUndefined()
     })
 
     it('affiche le message du quota en cas de 429 et laisse le formulaire intact', async () => {
