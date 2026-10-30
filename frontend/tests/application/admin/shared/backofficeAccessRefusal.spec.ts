@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   backofficeAccessRefused,
   clearBackofficeAccessRefusal,
+  discardBackofficeAccessRefusals,
   markBackofficeAccessRefused,
   refusalScope,
 } from '../../../../src/application/admin/shared/backofficeAccessRefusal'
@@ -35,6 +36,17 @@ describe('backofficeAccessRefusal', () => {
     clearBackofficeAccessRefusal()
 
     expect(backofficeAccessRefused.value).toBe(0)
+  })
+
+  it("écarter les refus remet le compteur à zéro sans avancer le périmètre : une lecture déjà partie compte encore (R48)", () => {
+    const sentFromThisPage = refusalScope()
+    markBackofficeAccessRefused(null)
+
+    discardBackofficeAccessRefusals()
+
+    expect(backofficeAccessRefused.value).toBe(0)
+    expect(refusalScope()).toBe(sentFromThisPage)
+    expect(markBackofficeAccessRefused(sentFromThisPage)).toBe(true)
   })
 
   it("un refus d'écriture (périmètre nul) compte toujours, même après une navigation", () => {

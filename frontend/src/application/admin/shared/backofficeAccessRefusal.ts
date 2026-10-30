@@ -57,6 +57,16 @@ export function clearBackofficeAccessRefusal(): void {
   scope += 1
 }
 
+/**
+ * Écarte les refus comptés **sans avancer le périmètre** (#748, R48, CR5-1) : à l'arrivée sur le backoffice, ce qui a
+ * été compté pendant qu'aucune alerte n'était montée (une écriture refusée après que la personne a quitté le
+ * backoffice) ne doit pas s'afficher sur une page sans rapport. Le périmètre reste : une lecture que la page
+ * d'arrivée a déjà envoyée (son chargement, partie avant le montage de l'alerte) garde le sien et, refusée, compte.
+ */
+export function discardBackofficeAccessRefusals(): void {
+  refusals.value = 0
+}
+
 /** Remet le compteur et le périmètre à ceux du chargement. Réservée aux tests (`tests/support/setup.ts`), jamais appelée par `src/`. */
 export function resetBackofficeAccessRefusalForTests(): void {
   refusals.value = 0

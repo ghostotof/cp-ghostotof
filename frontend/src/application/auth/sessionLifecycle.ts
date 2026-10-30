@@ -73,11 +73,18 @@ export function restoreSession(session: AuthSession, announce: boolean): void {
  * appliquée, puis `onAccountSwitched` rejoue la navigation, comme au retour d'une session finie. Le même identifiant
  * (rôles changés ou non) et un palier sans compte sont appliqués sans signal : un rôle perdu y est traité en place
  * (alerte, saisie gardée, R7/R17). Aucun compte retenu (premier chargement) : rien à comparer, aucun signal.
+ *
+ * **Un autre compte avance la génération, avant le signal** (#748, R48, CR5-2 ; amende R26, « une session *lue* n'avance
+ * rien », pour ce seul cas) : la page ouverte n'est plus celle du compte qui l'a envoyée, tout ce qui est parti avant
+ * est périmé — comme au retour d'une session finie, qui l'avance déjà (`restoreSession`). Le 403 tardif d'un
+ * enregistrement du premier compte n'affiche alors rien sous le second. Avancée avant `notifyAccountSwitched`, pour que
+ * l'abonné lise déjà la génération nouvelle.
  */
 export function applyLiveSession(session: AuthSession): void {
   const previous = getLastAccount()
   applySession(session)
   if (null !== previous && null !== session.user && previous.username !== session.user.username) {
+    advanceGeneration()
     notifyAccountSwitched()
   }
 }

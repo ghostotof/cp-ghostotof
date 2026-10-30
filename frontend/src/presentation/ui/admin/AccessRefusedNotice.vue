@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, useTemplateRef, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, useTemplateRef, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { authState } from '../../../application/auth/useAuth'
 import {
   backofficeAccessRefused,
   clearBackofficeAccessRefusal,
+  discardBackofficeAccessRefusals,
 } from '../../../application/admin/shared/backofficeAccessRefusal'
 import type { Locale } from '../../../domain/portfolio/entities/Locale'
 import { usePublishedHeight } from '../../layout/usePublishedHeight'
@@ -30,8 +31,11 @@ import { switchAccountLocation } from '../../router/reauthentication'
  *   connectée (`reauth=1`) et `redirect` ramène à cette page. La saisie en cours est perdue en le suivant : la
  *   personne lit d'abord pourquoi, et rien ne la déplace pendant qu'elle lit. Le message est neutre
  *   (`common.accessRefused`) : le compte n'a peut-être pas, ou plus, l'accès, ou la session doit être rouverte.
- * - **Effacée à chaque changement de chemin ou de requête** (`route.path` et `route.query`), et au démontage du
- *   layout : un refus d'une page ne suit pas la personne sur la suivante. **Pas le fragment** (R38) : le lien
+ * - **Effacée à chaque changement de chemin ou de requête** (`route.path` et `route.query`), au montage et au démontage
+ *   du layout (le montage ne fait que remettre le compteur à zéro, sans avancer le périmètre : le chargement de la page
+ *   d'arrivée est déjà parti) : un refus d'une page ne suit pas la personne sur la suivante, et un refus d'écriture revenu pendant
+ *   qu'aucune alerte n'était montée (la personne avait quitté le backoffice) ne s'affiche pas plus tard sur une page
+ *   sans rapport (CR5-1) ; la relecture du palier a eu lieu. **Pas le fragment** (R38) : le lien
  *   d'évitement (`href="#main-content"`) ne change que lui, et effaçait l'alerte que la personne était en train de
  *   lire. L'effacement avance aussi le périmètre de refus (`refusalScope`) : le 403 d'une lecture partie avant la
  *   navigation, arrivé après, est périmé et ne s'affiche pas (R28, CR3-8) ; celui d'une écriture s'affiche (R38).
@@ -62,6 +66,11 @@ watch(
   },
 )
 
+// Au montage comme au démontage (CR5-1) : le compteur peut monter pendant qu'aucune alerte n'est montée (une écriture
+// refusée après que la personne a quitté le backoffice). Sans cet effacement, l'alerte paraîtrait au prochain montage
+// d'`AdminLayout`, sur une page sans rapport avec le geste ; la relecture du palier, elle, a eu lieu. Le périmètre
+// n'avance pas : le chargement de la page d'arrivée est parti avant ce montage, son refus doit compter.
+onMounted(discardBackofficeAccessRefusals)
 onBeforeUnmount(clearBackofficeAccessRefusal)
 </script>
 

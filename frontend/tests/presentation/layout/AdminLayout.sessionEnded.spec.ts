@@ -413,6 +413,43 @@ describe('AdminLayout — refus réel du backoffice (#748, R17)', () => {
     wrapper.unmount()
   })
 
+  it("après un changement de compte, le 403 tardif d'un enregistrement du premier compte n'affiche rien (R48, CR5-2)", async () => {
+    let release: (status: number) => void = () => undefined
+    const pendingWrite = new Promise<Response>((resolve) => {
+      release = (status) => resolve(jsonResponse(status, { code: status, message: 'x' }))
+    })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init?: RequestInit) => ('GET' === (init?.method ?? 'GET') ? jsonResponse(200, []) : pendingWrite)),
+    )
+    const { wrapper } = await mountAdminCaseStudies(repository)
+
+    // « Enregistrer » part sous le compte « super » ; la page est restée ouverte.
+    await wrapper.get('#admin-case-study-title').setValue('Un moteur de tarification asynchrone')
+    await wrapper.get('#admin-case-study-problem').setValue('Des calculs bloquants.')
+    await wrapper.get('#admin-case-study-solution').setValue('Messenger.')
+    await wrapper.get('#admin-case-study-tradeoffs').setValue('Cohérence différée.')
+    await wrapper.get('#admin-case-study-measured-result').setValue('Temps divisé par dix.')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    // Hors session finie, une lecture du palier trouve un autre compte (par exemple connecté dans un autre onglet).
+    const Probe = defineComponent({ setup: () => ({ auth: useAuth() }), template: '<div />' })
+    const probe = mount(Probe, { global: { provide: { [AUTH_REPOSITORY as symbol]: repository } } })
+    me.mockImplementationOnce(async () => sessionFor({ username: 'autre', roles: ['ROLE_SUPER', 'ROLE_USER'] }))
+    await probe.vm.auth.checkAuth()
+    probe.unmount()
+    expect(me).toHaveBeenCalledTimes(1)
+
+    // Le serveur refuse l'enregistrement du premier compte : la réponse est celle d'une session qui n'est plus la courante.
+    release(403)
+    await flushPromises()
+
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(me).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+  })
+
   describe('un refus parti avant une navigation (CR3-8)', () => {
     /** Une lecture lente : la réponse n'arrive que lorsque le test la libère. */
     function stubSlowRead(): { release: (status: number) => void } {

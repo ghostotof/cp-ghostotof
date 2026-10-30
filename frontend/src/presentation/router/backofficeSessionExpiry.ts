@@ -1,4 +1,4 @@
-import { markSessionExpired, sessionStamp, type UseAuthResult } from '../../application/auth/useAuth'
+import { isCurrentGeneration, markSessionExpired, sessionStamp, type UseAuthResult } from '../../application/auth/useAuth'
 import { markBackofficeAccessRefused, refusalScope } from '../../application/admin/shared/backofficeAccessRefusal'
 import type { BackofficeSendKind, BackofficeSendStamp, BackofficeSessionReaction } from '../../domain/admin/shared/BackofficeSessionReaction'
 
@@ -28,7 +28,9 @@ import type { BackofficeSendKind, BackofficeSendStamp, BackofficeSessionReaction
  * répond « anonyme ». **Une lecture refusée après une navigation ne compte pas** (R28, CR3-8) : le timbre de l'envoi
  * porte le périmètre de refus, que chaque navigation avance ; le 403 d'une page quittée n'affiche aucune alerte sur la
  * suivante et ne relit rien. **Une écriture refusée compte toujours** (R38) : le timbre porte un périmètre nul, la
- * personne a fait le geste et doit apprendre son échec, au besoin sur la page où elle est allée. La relecture est branchée ici, côté composition, et non dans chaque composable : ils
+ * personne a fait le geste et doit apprendre son échec, au besoin sur la page où elle est allée — **sauf si la session a changé depuis l'envoi** (R48, CR5-2) : un refus
+ * parti sous une autre génération (retour d'une session finie, autre compte lu) n'est ni compté ni relu, lecture ou
+ * écriture. La relecture est branchée ici, côté composition, et non dans chaque composable : ils
  * n'appellent pas `useAuth()` (treize composables d'administration, dont aucun test ne fournit `AUTH_REPOSITORY`).
  *
  * Construite par `main.ts` avec le `useAuth()` de l'application (`app.runWithContext`) : `rereadAfterRefusal` a besoin
@@ -43,6 +45,13 @@ export function createBackofficeSessionReaction(auth: Pick<UseAuthResult, 'rerea
     }),
     ended: (sentAt: BackofficeSendStamp): boolean => markSessionExpired(sentAt.session),
     refused: (sentAt: BackofficeSendStamp): void => {
+      // Partie sous une autre génération (un autre compte, un retour, une connexion) : la réponse est celle d'une
+      // session qui n'est plus la courante, elle n'a rien à dire de celle-ci (CR5-2). Comme `ended`, mais ici le
+      // refus n'est ni compté ni relu : le palier relu serait celui d'un compte que ce refus ne concerne pas.
+      if (!isCurrentGeneration(sentAt.session)) {
+        return
+      }
+
       // Une lecture partie avant une navigation (CR3-8) : ni comptée ni relue, la page qui l'a émise n'existe plus.
       if (!markBackofficeAccessRefused(sentAt.refusalScope)) {
         return

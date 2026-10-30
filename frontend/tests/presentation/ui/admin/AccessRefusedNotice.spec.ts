@@ -165,4 +165,19 @@ describe('AccessRefusedNotice (#748, R17)', () => {
     expect(second.wrapper.find('[role="alert"]').exists()).toBe(false)
     second.wrapper.unmount()
   })
+
+  it("un refus d'écriture arrivé après le démontage ne s'affiche pas au montage suivant (R48, CR5-1)", async () => {
+    const first = await mountNotice()
+    first.wrapper.unmount()
+
+    // La personne a quitté le backoffice ; son enregistrement, parti avant, est refusé maintenant : aucune alerte n'est
+    // montée pour l'afficher, mais le compteur monte.
+    markBackofficeAccessRefused(null)
+
+    const second = await mountNotice()
+    await flushPromises()
+
+    expect(second.wrapper.find('[data-testid="admin-access-refused"]').exists()).toBe(false)
+    second.wrapper.unmount()
+  })
 })

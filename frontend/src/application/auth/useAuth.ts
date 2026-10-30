@@ -26,6 +26,7 @@ export {
   markBaseAccessGranted,
   markBaseAccessExpired,
   sessionStamp,
+  isCurrentGeneration,
   markSessionExpired,
   onSessionRestored,
   onAccountSwitched,

@@ -76,7 +76,7 @@ paths:
     reads run again, the typed input stays); **another** account, the same one with a role lost, or **none kept**
     has its session applied and calls **only** `onAccountSwitched(callback)` (same mechanics: a scope, dropped at
     `onScopeDispose`). **Outside an ended session** (`checkAuth()`, `rereadAfterRefusal()`, `applyLiveSession`) only a
-    **different `username`** from the last account does the same; a role lost there stays handled in place (R7/R17). Nobody announces « Session
+    **different `username`** from the last account does the same (the generation advances first); a role lost there stays handled in place (R7/R17). Nobody announces « Session
     rétablie » for it, and no list is re-read: the open page is no longer that account's. `AppLayout` is the one
     subscriber: it replays the navigation to the current route with `router.replace({ path, query, hash, force: true })`
     — `force` because the router ignores a navigation to the address it is on, so the guard would never judge the new
@@ -112,7 +112,8 @@ changed since: another tab signed in again, or the end was already announced by 
 module counter, **the generation** (`sessionStamp()`), advanced at each accepted **end**, at each **return** and by
 **every session the tab itself decides** (R26, CR3-4): `login()`, `logout()` (before the send and when the anonymous is
 applied), `markBaseAccessGranted()`, and `markBaseAccessExpired()` when it changes the tier — so a `/api/me` sent
-before one never overwrites it. A *read* session (`applyReadSession`) advances nothing: it is the response. A
+before one never overwrites it — and when a read outside an ended session finds another account (`applyLiveSession`,
+R48, CR5-2: before `onAccountSwitched`, so what left under the first account is stale). Any other *read* session (`applyReadSession`) advances nothing: it is the response. A
 caller reads it **before sending** and hands it back with the verdict:
 
 - `markSessionExpired(sentAt?)` returns whether the session **is ended**. Without `sentAt`, or under the current

@@ -9,6 +9,7 @@ import {
   clearBackofficeAccessRefusal,
 } from '../../../src/application/admin/shared/backofficeAccessRefusal'
 import { AUTH_REPOSITORY, authState, useAuth } from '../../../src/application/auth/useAuth'
+import { advanceGeneration } from '../../../src/application/auth/sessionGeneration'
 import type { AuthRepository } from '../../../src/domain/auth/repositories/AuthRepository'
 import type { AuthenticatedUser } from '../../../src/domain/auth/entities/AuthenticatedUser'
 import { sessionFor } from '../../support/authSession'
@@ -176,6 +177,25 @@ describe('backofficeSessionExpiry — refus réel (#748, R17)', () => {
     expect(me).toHaveBeenCalledTimes(1)
     unmount()
   })
+
+  it.each(['read', 'write'] as const)(
+    "le refus d'une requête (%s) partie sous une autre génération n'est ni compté ni relu (R48, CR5-2)",
+    async (kind) => {
+      me.mockClear()
+      await signIn(SUPER)
+      const { handler, unmount } = buildReaction()
+
+      // La requête part sous la session courante, puis la génération avance (un autre compte, un retour, une connexion).
+      const sent = handler.stampAtSend(kind)
+      advanceGeneration()
+      handler.refused(sent)
+      await flushPromises()
+
+      expect(backofficeAccessRefused.value).toBe(0)
+      expect(me).not.toHaveBeenCalled()
+      unmount()
+    },
+  )
 
   it('refused ne finit pas la session et ne quitte pas la page', async () => {
     await signIn(SUPER)

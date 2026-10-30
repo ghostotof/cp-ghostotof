@@ -1335,6 +1335,42 @@ describe('useAuth', () => {
         expect(restored).not.toHaveBeenCalled()
       })
 
+      it('un autre compte lu avance la génération avant le signal (R48, CR5-2 : R26 amendé pour ce cas)', async () => {
+        const me = vi.fn<() => Promise<AuthSession>>()
+        me.mockResolvedValueOnce(sessionFor(JANE))
+        let stampAtSignal: number | undefined
+        const auth = mountWithComposable(createStubRepository({ me }), (probe) => {
+          probe.onAccountSwitched(() => {
+            stampAtSignal = sessionStamp()
+          })
+        })
+        await auth.checkAuth()
+        // Une requête de « jane » part : elle lit la génération à l'envoi.
+        const sentAt = sessionStamp()
+
+        me.mockResolvedValueOnce(sessionFor(OTHER))
+        await auth.rereadAfterRefusal()
+
+        // Tout ce qui est parti sous « jane » est périmé, et l'abonné le voit déjà au moment du signal.
+        expect(sessionStamp()).not.toBe(sentAt)
+        expect(stampAtSignal).toBeDefined()
+        expect(stampAtSignal).not.toBe(sentAt)
+      })
+
+      it("le même identifiant lu hors session finie n'avance rien (R48)", async () => {
+        const me = vi.fn<() => Promise<AuthSession>>()
+        me.mockResolvedValueOnce(sessionFor(JANE))
+        const auth = mountWithComposable(createStubRepository({ me }))
+        await auth.checkAuth()
+        const sentAt = sessionStamp()
+
+        // Mêmes identifiant, rôles réduits : appliqué en place, la page ouverte reste la sienne.
+        me.mockResolvedValueOnce(sessionFor({ username: 'jane', roles: ['ROLE_USER'] }))
+        await auth.rereadAfterRefusal()
+
+        expect(sessionStamp()).toBe(sentAt)
+      })
+
       it("aucun compte n'a jamais été affiché : le premier compte lu ne « change » rien", async () => {
         const me = vi.fn(async () => sessionFor(JANE))
         const { auth, restored, switched } = subscribed(createStubRepository({ me }))
