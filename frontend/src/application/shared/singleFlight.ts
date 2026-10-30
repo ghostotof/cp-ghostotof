@@ -14,8 +14,6 @@ export interface SingleFlight<T> {
    * rejetée), la pose, et la libère quand elle se règle, résolue ou rejetée.
    */
   run(task: () => Promise<T>): Promise<T>
-  /** Oublie la promesse en vol. Réservée aux tests (`reset…ForTests`), jamais appelée par `src/`. */
-  clear(): void
 }
 
 export function createSingleFlight<T>(): SingleFlight<T> {
@@ -47,9 +45,6 @@ export function createSingleFlight<T>(): SingleFlight<T> {
         .catch(() => undefined)
 
       return pending
-    },
-    clear() {
-      inFlight = null
     },
   }
 }

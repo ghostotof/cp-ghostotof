@@ -10,7 +10,7 @@ import { recallBaseAccessExpiry, scheduleBaseAccessExpiry } from './baseAccessEx
 import { advanceGeneration, isCurrentGeneration, sessionStamp } from './sessionGeneration'
 import { onAccountSwitched, onSessionRestored } from './sessionEvents'
 import { applyLiveSession, canRestore, isReturnOfAccount, markSessionExpired, restoreSession } from './sessionLifecycle'
-import { createSingleFlight } from './singleFlight'
+import { createSingleFlight } from '../shared/singleFlight'
 
 /**
  * `useAuth.ts` est la façade de la session (#748, R25) : le composable, les deux relectures de `/api/me` mutualisées,
@@ -35,18 +35,21 @@ export {
 export const AUTH_REPOSITORY: InjectionKey<AuthRepository> = Symbol('AuthRepository')
 
 /** La relecture de session finie en vol, partagée par tous les appelants de `useAuth()` : au plus une à la fois. */
-const endedSessionRecheck = createSingleFlight<void>()
+let endedSessionRecheck = createSingleFlight<void>()
 
 /**
  * La relecture du palier après un refus réel en vol (#748, R15), partagée elle aussi : une lecture et une révocation
  * refusées ensemble, ou deux pages, n'envoient qu'un `/api/me`.
  */
-const refusalReread = createSingleFlight<RefusalReread>()
+let refusalReread = createSingleFlight<RefusalReread>()
 
-/** Réservée aux tests (`resetAuthStateForTests`), jamais appelée par `src/` : plus aucune relecture en vol. */
+/**
+ * Réservée aux tests (`resetAuthStateForTests`), jamais appelée par `src/` : plus aucune relecture en vol. Les deux
+ * emplacements sont recréés plutôt qu'« effacés » : `SingleFlight` n'a pas de `clear()` que seuls les tests appelleraient.
+ */
 export function resetSessionRereadsForTests(): void {
-  endedSessionRecheck.clear()
-  refusalReread.clear()
+  endedSessionRecheck = createSingleFlight<void>()
+  refusalReread = createSingleFlight<RefusalReread>()
 }
 
 /**

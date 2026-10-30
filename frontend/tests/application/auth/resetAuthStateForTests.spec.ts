@@ -82,4 +82,28 @@ describe('resetAuthStateForTests', () => {
     release()
     await inFlight
   })
+
+  it("une relecture en vol avant la remise à zéro n'est plus partagée après", async () => {
+    // Le premier `/api/me` reste en vol jusqu'à `release()` ; le second répond aussitôt « anonyme ».
+    let release: () => void = () => undefined
+    const me = vi
+      .fn<AuthRepository['me']>()
+      .mockImplementationOnce(() => new Promise((resolve) => (release = () => resolve(sessionFor(null)))))
+      .mockImplementation(async () => sessionFor(null))
+    const repository: AuthRepository = { login: vi.fn(), logout: vi.fn(), hasWriteToken: () => true, me }
+    const auth = useAuthWith(repository)
+
+    markSessionExpired()
+    const inFlight = auth.recheckEndedSession()
+    expect(me).toHaveBeenCalledTimes(1)
+
+    // Le test suivant repart de l'état du chargement : sa session finie ne reçoit pas la promesse en vol de celui-ci.
+    resetAuthStateForTests()
+    markSessionExpired()
+    await auth.recheckEndedSession()
+
+    expect(me).toHaveBeenCalledTimes(2)
+    release()
+    await inFlight
+  })
 })

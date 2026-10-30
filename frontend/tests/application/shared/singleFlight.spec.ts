@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createSingleFlight } from '../../../src/application/auth/singleFlight'
+import { createSingleFlight } from '../../../src/application/shared/singleFlight'
 
 /** Une tâche dont le test tient la réponse : elle reste en vol tant que `settle`/`fail` n'est pas appelé. */
 function deferredTask(): { task: () => Promise<string>; settle: (value: string) => void; fail: (error: Error) => void } {
@@ -64,17 +64,5 @@ describe('createSingleFlight (#748, R41, St4-4)', () => {
     await expect(flight.run(next)).resolves.toBe('ok')
 
     expect(throwing).toHaveBeenCalledTimes(2)
-  })
-
-  it("clear() oublie la promesse en vol : le test suivant ne reçoit pas celle d'un autre", async () => {
-    const flight = createSingleFlight<string>()
-    const { task } = deferredTask()
-    const next = vi.fn(async () => 'ok')
-
-    void flight.run(task)
-    flight.clear()
-
-    await expect(flight.run(next)).resolves.toBe('ok')
-    expect(next).toHaveBeenCalledTimes(1)
   })
 })

@@ -6,6 +6,8 @@ paths:
   - "frontend/tests/support/setup.ts"
   - "frontend/tests/support/signInAgain.ts"
   - "frontend/tests/application/auth/**"
+  - "frontend/src/application/shared/singleFlight.ts"
+  - "frontend/tests/application/shared/singleFlight.spec.ts"
   - "frontend/tests/presentation/layout/AppLayout.spec.ts"
   - "frontend/tests/presentation/layout/useSessionRecheckOnFocus.spec.ts"
 ---
@@ -24,9 +26,9 @@ paths:
 - **Where it lives** (#748, R25: `useAuth.ts` was split, its public API unchanged, everything still re-exported from it).
   Under `application/auth/`: `sessionState.ts` (the reactive state, **not exported** (R42): only named functions write it, `beginCheck`, `applySession`, `raiseSessionEnded`, `lowerSessionEnded`, the base-access marks, and everything else reads the read-only `authState`; each write is imported by its own modules only (`sessionLifecycle.ts` for `raiseSessionEnded` and `lowerSessionEnded`, `useAuth.ts` for the check and forget marks, both for `applySession`) and `useAuth.ts` re-exports none of them: `sessionStateEncapsulation.spec.ts`, R52),
   `baseAccessExpiry.ts` (its timer, which takes its callback as a parameter and imports nothing: no cycle),
-  `sessionGeneration.ts`, `singleFlight.ts` (the one-re-read-in-flight slot), `sessionEvents.ts` (the two signals), `sessionLifecycle.ts` (`markSessionExpired`,
+  `sessionGeneration.ts`, `sessionEvents.ts` (the two signals), `sessionLifecycle.ts` (`markSessionExpired`,
   `restoreSession`, and `canRestore`, the descent's condition written once: ended, an account, a write token), and
-  `useAuth.ts` (the composable and the two shared re-reads, each a `createSingleFlight`). **Tests start from the module state of loading**:
+  `useAuth.ts` (the composable and the two shared re-reads, each a `createSingleFlight`), then `application/shared/singleFlight.ts` (generic, next to `staleRequestGuard.ts`; the reset for tests recreates the two slots, no `clear()` in its interface, R55). **Tests start from the module state of loading**:
   `resetAuthStateForTests()` (each module owns a `reset…ForTests`, tests only, never called by `src/`; a new module state
   is added to it) is called before each test by `tests/support/setup.ts`, the `setupFiles` of `vite.config.ts`, which also
   resets the backoffice's refusal and its registered reaction (R38) and calls `enableAutoUnmount` once.
@@ -37,7 +39,7 @@ paths:
   banner **no longer listens to `focus`** (a test pins it), so a return costs **one** `/api/me`, banner shown or not.
   - `recheckEndedSession()` does nothing outside an ended session; **one re-read in flight at a time** (a second call
     while the first runs returns the same promise, so two quick returns, or two `useAuth()` callers, send one request;
-    the slot is `createSingleFlight` in `singleFlight.ts` (R41, St4-4), written once for this re-read and for
+    the slot is `createSingleFlight` in `application/shared/singleFlight.ts` (R41, St4-4), written once for this re-read and for
     `rereadAfterRefusal`, and released by a `.finally` set **after** the promise is held, so a `me()` that throws
     synchronously never leaves a settled promise behind); a rejection of `/api/me` (network, or `me()` giving up after `ME_TIMEOUT_MS`, 15 s, R49) is swallowed and the session stays ended, with no
     announcement. The bound holds for the first check too: `checkAuth()` swallows the rejection like an anonymous answer, so `waitForAuthCheck()` resolves, the guard and the `login` route open, and `main.ts`, which does not await it, gets no unhandled rejection.
@@ -141,7 +143,7 @@ caller reads it **before sending** and hands it back with the verdict:
 
 ## Tests
 
-- `singleFlight.spec.ts` (shared in flight, freed after a resolution, a rejection, a synchronous throw, R41); `useAuth.spec.ts` (including `sessionEndedCount`, `onSessionRestored` and `onAccountSwitched`: once, synchronously, never at the end, dropped with its scope, a subscriber that throws, the same account or another (R18); the generation in both directions, R14; the base access going anonymous at its deadline with no network call, R23), `resetAuthStateForTests.spec.ts` (every module's state back to its loading value, R25), `sessionStateEncapsulation.spec.ts` (`state` and `isSameAccount` are not exported, R42; the exact export list of `sessionState.ts`, and the importers of each write, R52).
+- `singleFlight.spec.ts` (shared in flight, freed after a resolution, a rejection, a synchronous throw, R41); `useAuth.spec.ts` (including `sessionEndedCount`, `onSessionRestored` and `onAccountSwitched`: once, synchronously, never at the end, dropped with its scope, a subscriber that throws, the same account or another (R18); the generation in both directions, R14; the base access going anonymous at its deadline with no network call, R23), `resetAuthStateForTests.spec.ts` (every module's state back to its loading value, R25; a re-read in flight before the reset is not shared after, R55), `sessionStateEncapsulation.spec.ts` (`state` and `isSameAccount` are not exported, R42; the exact export list of `sessionState.ts`, and the importers of each write, R52).
 - For the re-check on return (R8): `useAuth.spec.ts` (the account found with its write token restores; **without `XSRF-TOKEN` the session stays ended**; nothing outside an ended session; one read in flight for two quick calls; a network failure swallowed; `isChecking` untouched by the re-check and by any `checkAuth()` after the first).
 - `HttpAuthRepository.spec.ts` (`hasWriteToken`: present, absent, empty; `logout()` sends the CSRF token).
 - `useSessionRecheckOnFocus.spec.ts` (`focus` re-reads, not after unmount), `AppLayout.spec.ts` (one `/api/me` per return with the banner shown, the re-check outside the backoffice, the session staying ended while no account is back; another account replays the navigation, then remounts the page, R18; the page hidden meanwhile, even when the replay fails, R27, and until the last of two overlapping replays, R39, and again with the router replaced by two held promises, R53).
