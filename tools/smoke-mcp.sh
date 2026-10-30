@@ -58,19 +58,15 @@ if [ -z "$base" ]; then
 fi
 base="${base%/}"
 
-# Un retour à la ligne (ou un CR) dans la Basic Auth ouvrirait une seconde
-# directive dans le fichier de configuration curl (`url = …`, `output = …`) :
-# `printf 'user = "%s"'` n'échappe que `"` et `\`. Refusé avant tout fichier et
-# tout appel ; la valeur n'est jamais citée (c'est un secret). Sortie 2, comme
-# tout défaut d'environnement.
-if [[ "${AUDIT_BASIC_AUTH:-}" == *$'\n'* || "${AUDIT_BASIC_AUTH:-}" == *$'\r'* ]]; then
-  echo "AUDIT_BASIC_AUTH contient un retour à la ligne : refusé, il ouvrirait une directive dans le fichier de configuration curl" >&2
+# shellcheck source=tools/lib/smoke-http.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/smoke-http.sh" 2> /dev/null || {
+  echo "bibliothèque introuvable : tools/lib/smoke-http.sh" >&2
   exit 2
-fi
+}
 
 endpoint="$base/api/mcp"
 
-curl_bin="${SMOKE_CURL:-curl}"
+SMOKE_CURL_BIN="${SMOKE_CURL:-curl}"
 # Bien au-delà de la rafale d'un pod (20) et du taux rechargé pendant la
 # boucle, bien en deçà de la rafale de `publicapi` (200).
 MAX_REQUESTS=120
@@ -92,11 +88,12 @@ body_file="$(mktemp)"
 auth_config=""
 trap 'rm -f "$headers_file" "$body_file" ${auth_config:+"$auth_config"}' EXIT
 
-curl_opts=(-sS --connect-timeout 5 --max-time 15 -D "$headers_file")
+# La Basic Auth passe par un fichier de configuration curl en 600, jamais par un
+# argument ; un retour à la ligne y est refusé (sortie 2). Voir la bibliothèque.
+SMOKE_CURL_OPTS=(-sS --connect-timeout 5 --max-time 15 -D "$headers_file")
 if [ -n "${AUDIT_BASIC_AUTH:-}" ]; then
-  auth_config="$(mktemp)"
-  printf 'user = "%s"\n' "$(printf '%s' "$AUDIT_BASIC_AUTH" | sed 's/\\/\\\\/g; s/"/\\"/g')" > "$auth_config"
-  curl_opts+=(-K "$auth_config")
+  auth_config="$(smoke_auth_config_file "$AUDIT_BASIC_AUTH")" || exit 2
+  SMOKE_CURL_OPTS+=(-K "$auth_config")
 fi
 
 # Valeur d'un en-tête de la dernière réponse : nom insensible à la casse
@@ -108,23 +105,16 @@ header() {
 }
 
 # request <étape> <méthode> <en-têtes curl…> : remplit `status` et `body`.
-# Dernière ligne de la sortie = code HTTP, le reste = corps. Un curl en échec
-# (délai, connexion coupée) arrête le smoke en nommant l'étape.
+# Un curl en échec (délai, connexion coupée) arrête le smoke en nommant l'étape.
 request() {
-  local step="$1" method="$2" response code
+  local step="$1" method="$2"
   shift 2
-  if response="$("$curl_bin" "${curl_opts[@]}" -X "$method" "$@" -w '\n%{http_code}' "$endpoint")"; then
-    :
-  else
-    code=$?
-    echo "$step : curl a échoué (code $code) sur $method $endpoint" >&2
-    exit 1
-  fi
-  status="${response##*$'\n'}"
-  body="${response%$'\n'*}"
-  # Le corps part dans le journal de la CI : tout caractère de contrôle devient
-  # une espace, un `\r` y ouvrirait une ligne `::commande::` du runner.
-  excerpt="$(printf '%s' "$body" | tr '\000-\037\177' '[ *]' | cut -c1-160)"
+  smoke_fetch "$step ($method $endpoint)" "$endpoint" -X "$method" "$@" || exit 1
+  status="$SMOKE_STATUS"
+  body="$SMOKE_BODY"
+  # Le corps part dans le journal de la CI : `smoke_excerpt` neutralise les
+  # caractères de contrôle.
+  excerpt="$(smoke_excerpt "$body")"
 }
 
 # --- 1. initialize sur l'hôte réel.

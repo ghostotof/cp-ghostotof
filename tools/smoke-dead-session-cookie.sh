@@ -39,10 +39,10 @@
 # Env :    AUDIT_BASIC_AUTH  "utilisateur:mot_de_passe" (préprod), optionnel.
 #                            Jamais via `-u` : les arguments d'un processus se
 #                            lisent dans `ps` ; le couple passe par un fichier
-#                            de configuration curl en 600 (comme
-#                            smoke-login-throttling.sh).
+#                            de configuration curl en 600 (tools/lib/
+#                            smoke-http.sh). Un retour à la ligne y est refusé
+#                            (sortie 2).
 #          SMOKE_CURL        binaire curl de substitution (tests hors ligne).
-#                            Un retour à la ligne y est refusé (sortie 2).
 # Sortie : 0 conforme, 1 écart (ou curl sans réponse), 2 usage ou environnement
 #          faux.
 # ---------------------------------------------------------------------------
@@ -55,17 +55,13 @@ if [ -z "$base" ]; then
 fi
 base="${base%/}"
 
-# Un retour à la ligne (ou un CR) dans la Basic Auth ouvrirait une seconde
-# directive dans le fichier de configuration curl (`url = …`, `output = …`) :
-# `printf 'user = "%s"'` n'échappe que `"` et `\`. Refusé avant tout fichier et
-# tout appel ; la valeur n'est jamais citée (c'est un secret). Sortie 2, comme
-# tout défaut d'environnement.
-if [[ "${AUDIT_BASIC_AUTH:-}" == *$'\n'* || "${AUDIT_BASIC_AUTH:-}" == *$'\r'* ]]; then
-  echo "AUDIT_BASIC_AUTH contient un retour à la ligne : refusé, il ouvrirait une directive dans le fichier de configuration curl" >&2
+# shellcheck source=tools/lib/smoke-http.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/smoke-http.sh" 2> /dev/null || {
+  echo "bibliothèque introuvable : tools/lib/smoke-http.sh" >&2
   exit 2
-fi
+}
 
-curl_bin="${SMOKE_CURL:-curl}"
+SMOKE_CURL_BIN="${SMOKE_CURL:-curl}"
 public_path="/api/contributions/fr"
 protected_path="/api/me"
 
@@ -78,20 +74,13 @@ headers_file="$(mktemp)"
 auth_config=""
 trap 'rm -f "$headers_file" ${auth_config:+"$auth_config"}' EXIT
 
-# Fichier de configuration créé en 600 dès l'origine, jamais lisible d'un tiers.
-curl_opts=(-sS --connect-timeout 5 --max-time 15 -D "$headers_file")
+# La Basic Auth passe par un fichier de configuration curl en 600, jamais par un
+# argument ; un retour à la ligne y est refusé (sortie 2). Voir la bibliothèque.
+SMOKE_CURL_OPTS=(-sS --connect-timeout 5 --max-time 15 -D "$headers_file")
 if [ -n "${AUDIT_BASIC_AUTH:-}" ]; then
-  auth_config="$(umask 077 && mktemp)"
-  printf 'user = "%s"\n' "$(printf '%s' "$AUDIT_BASIC_AUTH" | sed 's/\\/\\\\/g; s/"/\\"/g')" > "$auth_config"
-  curl_opts+=(-K "$auth_config")
+  auth_config="$(smoke_auth_config_file "$AUDIT_BASIC_AUTH")" || exit 2
+  SMOKE_CURL_OPTS+=(-K "$auth_config")
 fi
-
-# Tout caractère de contrôle devient une espace : ce texte part dans le journal
-# de la CI, où un `\r` ouvrirait une ligne `::commande::` que le runner
-# exécuterait.
-excerpt() {
-  printf '%s' "$1" | tr '\000-\037\177' '[ *]' | cut -c1-160
-}
 
 # Les valeurs de tous les en-têtes Set-Cookie de la dernière réponse : nom
 # insensible à la casse (HTTP/2 l'écrit en minuscules), CR retiré.
@@ -114,18 +103,10 @@ status=""
 body=""
 fetch() {
   local path="$1"; shift
-  local response
-  local rc
-  # Dernière ligne = code HTTP, le reste = corps. Sous `set -e`, un curl en
-  # échec dans l'affectation ferait sortir le script avec le code de curl (6, 7,
-  # 28…), hors du contrat 0/1/2 : on le dit, et rien n'a été vérifié.
-  response="$("$curl_bin" "${curl_opts[@]}" "$@" -w '\n%{http_code}' "$base$path")" || {
-    rc=$?
-    echo "GET $path : curl a échoué (code $rc : réseau, DNS ou délai) — rien de vérifié" >&2
-    exit 1
-  }
-  status="${response##*$'\n'}"
-  body="${response%$'\n'*}"
+  # Un curl sans réponse sort 1 en le disant (contrat 0/1/2, voir la bibliothèque).
+  smoke_fetch "GET $path" "$base$path" "$@" || exit 1
+  status="$SMOKE_STATUS"
+  body="$SMOKE_BODY"
 }
 
 # Un Set-Cookie efface-t-il le cookie ? `Max-Age=0` (ou négatif), ou un
@@ -147,11 +128,11 @@ expires_it() {
 # --- 1. Le témoin : la route publique répond sans cookie.
 fetch "$public_path"
 if [ "$status" = "401" ]; then
-  echo "témoin : GET $public_path sans cookie a répondu 401 — c'est la Basic Auth de l'ingress (AUDIT_BASIC_AUTH absent ou faux ?) ou une route devenue protégée, pas le cookie mort (corps : $(excerpt "$body"))" >&2
+  echo "témoin : GET $public_path sans cookie a répondu 401 — c'est la Basic Auth de l'ingress (AUDIT_BASIC_AUTH absent ou faux ?) ou une route devenue protégée, pas le cookie mort (corps : $(smoke_excerpt "$body"))" >&2
   exit 1
 fi
 if [ "$status" != "200" ]; then
-  echo "témoin : GET $public_path sans cookie : $status reçu, 200 attendu (corps : $(excerpt "$body"))" >&2
+  echo "témoin : GET $public_path sans cookie : $status reçu, 200 attendu (corps : $(smoke_excerpt "$body"))" >&2
   exit 1
 fi
 echo "témoin : GET $public_path sans cookie → 200"
@@ -159,13 +140,13 @@ echo "témoin : GET $public_path sans cookie → 200"
 # --- 2. La lecture publique avec un cookie mort : servie, rien posé.
 fetch "$public_path" -b "$dead_cookie"
 if [ "$status" != "200" ]; then
-  echo "lecture publique refusée pour un cookie mort : GET $public_path avec un BEARER aléatoire a répondu $status, 200 attendu — le pare-feu refuse encore une session morte sur une route publique, #748 C1 (corps : $(excerpt "$body"))" >&2
+  echo "lecture publique refusée pour un cookie mort : GET $public_path avec un BEARER aléatoire a répondu $status, 200 attendu — le pare-feu refuse encore une session morte sur une route publique, #748 C1 (corps : $(smoke_excerpt "$body"))" >&2
   exit 1
 fi
 for name in "${session_cookies[@]}"; do
   leftover="$(set_cookies_named "$name")"
   if [ -n "$leftover" ]; then
-    echo "lecture publique servie mais elle pose un Set-Cookie $name (« $(excerpt "$leftover") ») : une route publique ne doit rien effacer, la course d'un 401 tardif s'étendrait à chaque lecture" >&2
+    echo "lecture publique servie mais elle pose un Set-Cookie $name (« $(smoke_excerpt "$leftover") ») : une route publique ne doit rien effacer, la course d'un 401 tardif s'étendrait à chaque lecture" >&2
     exit 1
   fi
 done
@@ -174,7 +155,7 @@ echo "lecture publique : GET $public_path avec un BEARER mort → 200, aucun Set
 # --- 3. La route protégée avec le même cookie : refusée, cookie effacé.
 fetch "$protected_path" -b "$dead_cookie"
 if [ "$status" != "401" ]; then
-  echo "GET $protected_path avec un BEARER mort : $status reçu, 401 attendu (corps : $(excerpt "$body"))" >&2
+  echo "GET $protected_path avec un BEARER mort : $status reçu, 401 attendu (corps : $(smoke_excerpt "$body"))" >&2
   exit 1
 fi
 # Les DEUX cookies de session doivent être expirés : un seul laisserait l'autre
@@ -186,7 +167,7 @@ for name in "${session_cookies[@]}"; do
     if expires_it "$cookie"; then cleared=1; fi
   done < <(set_cookies_named "$name")
   if [ "$cleared" -ne 1 ]; then
-    echo "GET $protected_path en 401 mais n'efface pas le cookie mort : aucun Set-Cookie $name expiré (Max-Age=0 ou expires passé), il resterait jusqu'à la fermeture du navigateur (Set-Cookie vus : « $(excerpt "$(set_cookies)") »)" >&2
+    echo "GET $protected_path en 401 mais n'efface pas le cookie mort : aucun Set-Cookie $name expiré (Max-Age=0 ou expires passé), il resterait jusqu'à la fermeture du navigateur (Set-Cookie vus : « $(smoke_excerpt "$(set_cookies)") »)" >&2
     exit 1
   fi
 done

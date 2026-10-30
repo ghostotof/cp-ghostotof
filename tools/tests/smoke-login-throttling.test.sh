@@ -25,6 +25,9 @@ fail()  { printf '  FAIL %s\n       %s\n' "$1" "$2"; failures=$((failures + 1));
 # le corps comme le vrai avec `-w '\n%{http_code}'`, écrit les en-têtes dans
 # le fichier de `-D`, et ajoute ses arguments à $FAKE_ARGS. Le corps passe par
 # `printf '%b'` : `\r` ou `\033` y deviennent les vrais caractères de contrôle.
+# Une ligne `curl-exit:<n>|…` fait écrire `curl: (<n>) faux échec` sur stderr et
+# sortir en `<n>`, comme un vrai curl qui n'a pas de réponse (7 : connexion
+# refusée, 6 : DNS, 28 : délai).
 cat > "$TMP/curl" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -38,6 +41,12 @@ n=$(wc -l < "$FAKE_CALLS" 2>/dev/null || echo 0)
 n=$((n + 1))
 echo "$n" >> "$FAKE_CALLS"
 line="$(sed -n "${n}p" "$FAKE_RESPONSES")"
+if [[ "$line" == curl-exit:* ]]; then
+  exit_code="${line#curl-exit:}"
+  exit_code="${exit_code%%|*}"
+  echo "curl: ($exit_code) faux échec" >&2
+  exit "$exit_code"
+fi
 code="${line%%|*}"
 rest="${line#*|}"
 retry_after="${rest%%|*}"
@@ -198,6 +207,25 @@ if [ "$rc" -eq 2 ] && grep -q 'AUDIT_BASIC_AUTH contient un retour à la ligne' 
   pass "AUDIT_BASIC_AUTH avec un retour à la ligne → sortie 2, aucun appel, valeur jamais citée"
 else
   fail "retour à la ligne dans AUDIT_BASIC_AUTH" "rc=$rc ; err : $(cat -A "$TMP/err") ; appels : $(cat "$TMP/newline.calls")"
+fi
+
+# --- CR5-10 étendu : un curl en échec (réseau, DNS, délai) sort du contrat
+# 0/1/2 si le script laisse `set -e` rendre le code de curl (7, 6, 28). Il doit
+# sortir 1 et dire que RIEN n'a été vérifié, à la première tentative comme plus
+# tard, sans enchaîner d'autre appel.
+run net1 'curl-exit:7|'
+if [ "$rc" -eq 1 ] && grep -q 'curl a échoué (code 7' "$TMP/err" && grep -q 'rien de vérifié' "$TMP/err" \
+   && [ "$(wc -l < "$TMP/net1.calls")" -eq 1 ]; then
+  pass "curl en échec (7) à la tentative 1 → sortie 1, « curl a échoué (code 7) … rien de vérifié »"
+else
+  fail "curl en échec à la tentative 1" "rc=$rc ; err : $(cat "$TMP/err")"
+fi
+run net3 "$invalid" "$invalid" 'curl-exit:28|'
+if [ "$rc" -eq 1 ] && grep -q 'curl a échoué (code 28' "$TMP/err" && grep -q 'tentative 3' "$TMP/err" \
+   && [ "$(wc -l < "$TMP/net3.calls")" -eq 3 ]; then
+  pass "curl en échec (28) à la tentative 3 → sortie 1, la tentative est nommée, arrêt immédiat"
+else
+  fail "curl en échec à la tentative 3" "rc=$rc ; err : $(cat "$TMP/err")"
 fi
 
 # --- Sans URL : usage, code 2.

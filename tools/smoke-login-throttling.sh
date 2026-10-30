@@ -44,17 +44,13 @@ if [ -z "$base" ]; then
 fi
 base="${base%/}"
 
-# Un retour à la ligne (ou un CR) dans la Basic Auth ouvrirait une seconde
-# directive dans le fichier de configuration curl (`url = …`, `output = …`) :
-# `printf 'user = "%s"'` n'échappe que `"` et `\`. Refusé avant tout fichier et
-# tout appel ; la valeur n'est jamais citée (c'est un secret). Sortie 2, comme
-# tout défaut d'environnement.
-if [[ "${AUDIT_BASIC_AUTH:-}" == *$'\n'* || "${AUDIT_BASIC_AUTH:-}" == *$'\r'* ]]; then
-  echo "AUDIT_BASIC_AUTH contient un retour à la ligne : refusé, il ouvrirait une directive dans le fichier de configuration curl" >&2
+# shellcheck source=tools/lib/smoke-http.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/smoke-http.sh" 2> /dev/null || {
+  echo "bibliothèque introuvable : tools/lib/smoke-http.sh" >&2
   exit 2
-fi
+}
 
-curl_bin="${SMOKE_CURL:-curl}"
+SMOKE_CURL_BIN="${SMOKE_CURL:-curl}"
 attempts=6
 username="smoke-throttling-probe-$(date +%s)-$$"
 
@@ -63,11 +59,12 @@ headers_file="$(mktemp)"
 auth_config=""
 trap 'rm -f "$headers_file" ${auth_config:+"$auth_config"}' EXIT
 
-curl_opts=(-sS --connect-timeout 5 --max-time 15 -D "$headers_file")
+# La Basic Auth passe par un fichier de configuration curl en 600, jamais par un
+# argument ; un retour à la ligne y est refusé (sortie 2). Voir la bibliothèque.
+SMOKE_CURL_OPTS=(-sS --connect-timeout 5 --max-time 15 -D "$headers_file")
 if [ -n "${AUDIT_BASIC_AUTH:-}" ]; then
-  auth_config="$(mktemp)"
-  printf 'user = "%s"\n' "$(printf '%s' "$AUDIT_BASIC_AUTH" | sed 's/\\/\\\\/g; s/"/\\"/g')" > "$auth_config"
-  curl_opts+=(-K "$auth_config")
+  auth_config="$(smoke_auth_config_file "$AUDIT_BASIC_AUTH")" || exit 2
+  SMOKE_CURL_OPTS+=(-K "$auth_config")
 fi
 
 # Le `detail` littéral de LoginRateLimitExceededException (backend) : le
@@ -89,24 +86,21 @@ header() {
 
 throttled_at=0
 for attempt in $(seq 1 "$attempts"); do
-  # Dernière ligne = code HTTP, le reste = corps.
-  response="$("$curl_bin" "${curl_opts[@]}" \
+  # Un curl sans réponse arrête le smoke en le disant : sortie 1, rien de vérifié.
+  smoke_fetch "tentative $attempt" "$base/api/login_check" \
     -X POST \
     -H 'Content-Type: application/json' \
     -H 'X-Requested-With: fetch' \
-    -d "{\"username\":\"$username\",\"password\":\"wrong-password-smoke\"}" \
-    -w '\n%{http_code}' \
-    "$base/api/login_check")"
-  status="${response##*$'\n'}"
-  body="${response%$'\n'*}"
+    -d "{\"username\":\"$username\",\"password\":\"wrong-password-smoke\"}" || exit 1
+  status="$SMOKE_STATUS"
+  body="$SMOKE_BODY"
 
   # Le corps est toujours montré, tronqué : un 401 de la Basic Auth de
   # l'ingress (HTML nginx) et un 401 de l'application (JSON Lexik) se
   # ressemblent au code près, et c'est la première chose à savoir quand ce
-  # test échoue. Tout caractère de contrôle devient une espace : ce texte part
-  # dans le journal de la CI, où un `\r` ouvrirait une ligne `::commande::`
-  # que le runner exécuterait.
-  excerpt="$(printf '%s' "$body" | tr '\000-\037\177' '[ *]' | cut -c1-160)"
+  # test échoue. `smoke_excerpt` neutralise les caractères de contrôle (le texte
+  # part dans le journal de la CI).
+  excerpt="$(smoke_excerpt "$body")"
 
   if [ "$status" = "429" ]; then
     retry_after="$(header Retry-After)"
