@@ -217,12 +217,14 @@ export function useAuth(): UseAuthResult {
   }
 
   /**
-   * La vérification de la session au chargement (`main.ts`) et à chaque relecture hors session finie. **Elle ne rejette
-   * jamais** (#748, R49, étape 3b) : un rejet de `/api/me` — le réseau, ou l'abandon après `ME_TIMEOUT_MS` — ne dit
-   * rien du palier ; la première vérification finit donc comme pour un anonyme (`isChecking` retombe, l'état n'est
-   * pas touché, `waitForAuthCheck()` se résout, la route `login` et le garde s'ouvrent). `main.ts` lance `checkAuth()`
-   * sans l'attendre ni l'attraper : sans ce `catch`, le rejet y serait un rejet non géré (le `finally` relâche
-   * `isChecking`, mais n'absorbe rien).
+   * La vérification de la session au chargement (`main.ts`, son seul appelant). **Le rejet de `/api/me` ne rejette
+   * pas** (#748, R49, étape 3b ; R65) : le réseau, ou l'abandon après `ME_TIMEOUT_MS`, ne dit rien du palier ; la
+   * première vérification finit donc comme pour un anonyme (`isChecking` retombe, l'état n'est pas touché,
+   * `waitForAuthCheck()` se résout, la route `login` et le garde s'ouvrent). **Seul cet appel est protégé** : une erreur
+   * levée après la réponse (`applyReadSession`, un abonné non isolé, `scheduleBaseAccessExpiry`) est une erreur de
+   * programmation, elle remonte — la première vérification finit quand même, le `finally` la relâche. `main.ts` lance
+   * `checkAuth()` sans l'attendre ni l'attraper, **exprès** : ce rejet y devient un rejet non géré, visible dans la
+   * console et par `unhandledrejection`, au lieu d'être pris pour un réseau muet.
    */
   const checkAuth = async (): Promise<void> => {
     // Silencieuse après la première vérification : voir `hasCheckedOnce`.
@@ -234,16 +236,20 @@ export function useAuth(): UseAuthResult {
       const rememberedExpiry = recallBaseAccessExpiry()
       // La génération est lue à l'envoi : une réponse arrivée après une fin ou un retour est d'une session révolue.
       const sentAt = sessionStamp()
-      const session = await repository.me()
+      let session: AuthSession
+      try {
+        session = await repository.me()
+      } catch {
+        // Le réseau ne répond pas, ou `me()` a abandonné : le palier reste ce qu'il était (anonyme au chargement),
+        // la personne le saura à sa prochaine requête. Le `finally` extérieur termine la première vérification.
+        return
+      }
       if (!applyReadSession(session, sentAt)) {
         return
       }
       if ('base' === session.tier && null === session.user && null !== rememberedExpiry && rememberedExpiry.getTime() > Date.now()) {
         scheduleBaseAccessExpiry(rememberedExpiry, markBaseAccessExpired)
       }
-    } catch {
-      // Le réseau ne répond pas, ou `me()` a abandonné : le palier reste ce qu'il était (anonyme au chargement),
-      // la personne le saura à sa prochaine requête.
     } finally {
       markFirstCheckDone()
     }

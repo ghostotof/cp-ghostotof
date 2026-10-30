@@ -648,6 +648,41 @@ describe('useAuth', () => {
       expect(unhandled).not.toHaveBeenCalled()
     })
 
+    it("checkAuth : un me() abandonné après ME_TIMEOUT_MS finit aussi la vérification en anonyme (R65)", async () => {
+      // Témoin de l'autre moitié de la borne : l'abandon est un rejet de /api/me comme le réseau, il reste avalé.
+      resetAuthStateForTests()
+      expect(authState.isChecking).toBe(true)
+      const abort = new DOMException('The operation was aborted.', 'AbortError')
+      const auth = mountWithComposable(createStubRepository({ me: vi.fn(async () => Promise.reject(abort)) }))
+
+      await expect(auth.checkAuth()).resolves.toBeUndefined()
+      await expect(waitForAuthCheck()).resolves.toBeUndefined()
+
+      expect(auth.isChecking.value).toBe(false)
+      expect(auth.tier.value).toBe('anonymous')
+    })
+
+    it('checkAuth : une erreur levée après la réponse de /api/me remonte, et la première vérification finit quand même (R65)', async () => {
+      // Un onglet neuf, session finie, `me()` rend un compte : la descente demande le jeton d'écriture, qui lève. Ce n'est
+      // pas un rejet de `me()` mais une erreur de programmation : elle ne doit pas être prise pour un réseau muet.
+      resetAuthStateForTests()
+      markSessionExpired()
+      expect(authState.isChecking).toBe(true)
+      const repository = createStubRepository({
+        me: vi.fn(async () => sessionFor({ username: 'jane', roles: ['ROLE_TRUSTED', 'ROLE_USER'] })),
+        hasWriteToken: () => {
+          throw new TypeError('bug')
+        },
+      })
+      const auth = mountWithComposable(repository)
+
+      await expect(auth.checkAuth()).rejects.toThrow('bug')
+
+      // Le `finally` relâche quand même la première vérification : le garde de route et la page de connexion s'ouvrent.
+      await expect(waitForAuthCheck()).resolves.toBeUndefined()
+      expect(auth.isChecking.value).toBe(false)
+    })
+
     it('un me() abandonné libère la relecture : la suivante rappelle me()', async () => {
       const abort = new DOMException('The operation was aborted.', 'AbortError')
       const me = vi.fn().mockRejectedValueOnce(abort).mockResolvedValueOnce(sessionFor({ username: 'jane', roles: ['ROLE_TRUSTED', 'ROLE_USER'] }))
