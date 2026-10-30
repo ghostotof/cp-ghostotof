@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Tests\Security;
 
 use App\Security\Authentication\Infrastructure\Http\AuthCookieFactory;
+use App\Security\Authentication\Infrastructure\Http\CsrfCookieTokenSigner;
+use App\Security\Authentication\Infrastructure\Security\PublicRouteIgnoresRefusedSessionListener;
 use App\Security\User\Application\CpgUserRegistrarInterface;
 use App\Tests\Support\ConcreteApiUrl;
 use App\Tests\Support\HttpJson;
@@ -13,7 +15,7 @@ use App\Tests\Support\TestCredentials;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
-use Symfony\Component\HttpFoundation\Cookie as HttpFoundationCookie;
+use Symfony\Component\BrowserKit\Cookie as BrowserKitCookie;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\Routing\RouterInterface;
 
@@ -49,10 +51,16 @@ use Symfony\Component\Routing\RouterInterface;
  *     statut de celle d'un appelant sans cookie (#748, R35 — une route publique
  *     ne répond plus 401 à un cookie mort ; une route protégée garde son refus),
  *     et une route publique ne pose aucun cookie que l'anonyme ne pose pas ;
- *     quand ce statut est le 401 du pare-feu `api`, la réponse expire `BEARER` et
- *     `XSRF-TOKEN` (#748, R46 ; `mcp` et `oauth` ne lisent pas le cookie, ils n'ont rien
- *     à effacer). Que toute autorisation de `/api` soit une règle d'`access_control`, la
- *     prémisse de la lecture publique, est tenu par `AuthorizationLivesInAccessControlTest`.
+ *     quand ce statut est le 401 du pare-feu `api` **d'une route qui exige un rôle**
+ *     (`requiresAccess()`, la source de vérité du listener : un 401 métier d'une route
+ *     publique n'est pas une session refusée), la réponse expire `BEARER` et `XSRF-TOKEN`
+ *     aux attributs exacts d'`AuthCookieFactory::expired()` (#748, R46, R59 ; `mcp` et
+ *     `oauth` ne lisent pas le cookie, ils n'ont rien à effacer). Les écritures portent une
+ *     paire CSRF valide (cookie et en-tête) : sans elle, le double-submit répond 403 avant
+ *     le pare-feu et l'égalité des statuts serait triviale. Conséquence : un `#[IsGranted]`
+ *     posé sur une route sans règle d'`access_control` ne se voit pas ici. Que toute
+ *     autorisation de `/api` soit une règle d'`access_control`, la prémisse de la lecture
+ *     publique, est tenu par `AuthorizationLivesInAccessControlTest`, seul témoin.
  */
 final class ApiRouteExposureTest extends WebTestCase
 {
@@ -232,10 +240,15 @@ final class ApiRouteExposureTest extends WebTestCase
      * de Lexik pour un cookie mort, une route protégée garde son refus, jamais plus
      * que l'anonyme n'obtiendrait —, et pour une route de PUBLIC_PATHS la réponse
      * n'ajoute aucun cookie à ceux de l'anonyme (le cookie refusé y est laissé, la
-     * première route protégée l'efface). Quand le statut est un 401 du pare-feu `api`, les
-     * deux cookies sont expirés dans la réponse (`StaleSessionCookiesClearingListener`) : sans
-     * quoi une session morte resterait dans le navigateur jusqu'à sa fermeture. Mêmes corps et
-     * en-têtes que l'invariant n°7.
+     * première route protégée l'efface). Quand le statut est un 401 du pare-feu `api` et
+     * que la route exige un rôle (`requiresAccess()`), les deux cookies sont expirés dans
+     * la réponse (`StaleSessionCookiesClearingListener`), aux attributs exacts de la
+     * fabrique : sans quoi une session morte resterait dans le navigateur jusqu'à sa
+     * fermeture. Une route sans règle ne serait pas jugée ici, ce qu'un `#[IsGranted]`
+     * posé dessus ferait passer : `AuthorizationLivesInAccessControlTest` le garde.
+     * Mêmes corps et en-têtes que l'invariant n°7 ; les méthodes non sûres portent en plus
+     * une paire `XSRF-TOKEN` valide, sans quoi le 403 du double-submit répondrait avant le
+     * pare-feu dans les trois variantes (R59, C6-1).
      */
     public function testARefusedSessionCookieNeverChangesTheAnonymousAnswer(): void
     {
@@ -250,7 +263,14 @@ final class ApiRouteExposureTest extends WebTestCase
                     $answers[$label] = $this->answerWithBearer($client, $method, $path, $bearer);
                 }
 
-                $statuses = \sprintf('%s %s : statuts anonyme/invalide/expiré = %d/%d/%d.', $method, $path, $answers['anonyme']['status'], $answers['invalide']['status'], $answers['expiré']['status']);
+                $statuses = \sprintf(
+                    '%s %s : statuts anonyme/invalide/expiré = %d/%d/%d.',
+                    $method,
+                    $path,
+                    $answers['anonyme']['status'],
+                    $answers['invalide']['status'],
+                    $answers['expiré']['status'],
+                );
                 self::assertSame($answers['anonyme']['status'], $answers['invalide']['status'], $statuses);
                 self::assertSame($answers['anonyme']['status'], $answers['expiré']['status'], $statuses);
 
@@ -264,13 +284,27 @@ final class ApiRouteExposureTest extends WebTestCase
                     }
                 }
 
-                if (401 === $answers['anonyme']['status'] && 'api' === $this->firewallOf($path, $method)) {
+                // Un 401 métier d'une route publique n'est pas une session refusée : seul le 401 d'une
+                // route qui exige un rôle, celui du pare-feu, efface (CR6-6).
+                $isRefusedByTheApiFirewall = 401 === $answers['anonyme']['status'] && 'api' === $this->firewallOf($path, $method);
+                if ($isRefusedByTheApiFirewall && $this->requiresAccess($path, $method)) {
+                    $factory = self::getContainer()->get(AuthCookieFactory::class);
                     foreach (['invalide', 'expiré'] as $label) {
-                        self::assertEqualsCanonicalizing(
-                            [AuthCookieFactory::BEARER, AuthCookieFactory::XSRF_TOKEN],
-                            array_values(array_intersect($answers[$label]['expired'], [AuthCookieFactory::BEARER, AuthCookieFactory::XSRF_TOKEN])),
-                            \sprintf('%s %s : le 401 du pare-feu api doit expirer BEARER et XSRF-TOKEN avec un cookie %s (expirés : %s).', $method, $path, $label, [] === $answers[$label]['expired'] ? 'aucun' : implode(', ', $answers[$label]['expired'])),
-                        );
+                        foreach ([AuthCookieFactory::BEARER, AuthCookieFactory::XSRF_TOKEN] as $name) {
+                            self::assertSame(
+                                $this->attributes($factory->expired($name)),
+                                $answers[$label]['cleared'][$name] ?? null,
+                                \sprintf(
+                                    '%s %s : le 401 du pare-feu api doit expirer %s aux attributs de la fabrique '
+                                    .'avec un cookie %s (expirés : %s).',
+                                    $method,
+                                    $path,
+                                    $name,
+                                    $label,
+                                    [] === $answers[$label]['cleared'] ? 'aucun' : implode(', ', array_keys($answers[$label]['cleared'])),
+                                ),
+                            );
+                        }
                     }
                 }
                 ++$checked;
@@ -282,11 +316,14 @@ final class ApiRouteExposureTest extends WebTestCase
 
     /**
      * Un appel isolé : pot de cookies vidé, quotas remis à zéro, `BEARER` éventuel posé
-     * comme un navigateur le garderait. Rend le statut et les noms des cookies posés.
+     * comme un navigateur le garderait. Une méthode non sûre porte une paire `XSRF-TOKEN`
+     * valide (cookie et en-tête, signée par le signataire du conteneur), dans les trois
+     * variantes : sans elle, le double-submit répond 403 avant le pare-feu. Rend le statut,
+     * les noms des cookies posés et, par nom, les attributs de ceux que la réponse efface
+     * (`Cookie::isCleared()` : échéance strictement positive et passée ; un cookie de session
+     * a une échéance nulle).
      *
-     * `expired` : les noms des cookies posés avec une échéance passée, ceux que la réponse efface.
-     *
-     * @return array{status: int, cookies: list<string>, expired: list<string>}
+     * @return array{status: int, cookies: list<string>, cleared: array<string, array<string, mixed>>}
      */
     private function answerWithBearer(KernelBrowser $client, string $method, string $path, ?string $bearer): array
     {
@@ -296,23 +333,43 @@ final class ApiRouteExposureTest extends WebTestCase
             self::putTheBearer($client, $bearer);
         }
 
-        $client->request($method, ConcreteApiUrl::of($path), server: [
+        $server = [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_ACCEPT' => 'application/json',
             'HTTP_X_REQUESTED_WITH' => 'fetch',
-        ], content: self::jsonBody([]));
+        ];
+        if (!\in_array($method, ['GET', 'HEAD', 'OPTIONS'], true)) {
+            $csrfToken = self::getContainer()->get(CsrfCookieTokenSigner::class)->issue();
+            $client->getCookieJar()->set(
+                new BrowserKitCookie(AuthCookieFactory::XSRF_TOKEN, $csrfToken, null, '/', 'localhost', false, false, false, 'lax'),
+            );
+            $server['HTTP_X_XSRF_TOKEN'] = $csrfToken;
+        }
 
-        $set = $client->getResponse()->headers->getCookies();
-        $names = array_map(static fn (HttpFoundationCookie $cookie): string => $cookie->getName(), $set);
+        $client->request($method, ConcreteApiUrl::of($path), server: $server, content: self::jsonBody([]));
+
+        $names = [];
+        $cleared = [];
+        foreach ($client->getResponse()->headers->getCookies() as $cookie) {
+            $names[] = $cookie->getName();
+            if ($cookie->isCleared()) {
+                $cleared[$cookie->getName()] = $this->attributes($cookie);
+            }
+        }
         sort($names);
-        // Un cookie de session a une échéance nulle : seul un temps strictement positif et passé efface.
-        $expired = array_values(array_map(
-            static fn (HttpFoundationCookie $cookie): string => $cookie->getName(),
-            array_filter($set, static fn (HttpFoundationCookie $cookie): bool => $cookie->getExpiresTime() > 0 && $cookie->getExpiresTime() < time()),
-        ));
-        sort($expired);
+        ksort($cleared);
 
-        return ['status' => $client->getResponse()->getStatusCode(), 'cookies' => $names, 'expired' => $expired];
+        return ['status' => $client->getResponse()->getStatusCode(), 'cookies' => $names, 'cleared' => $cleared];
+    }
+
+    /**
+     * La route exige-t-elle un rôle ? Le prédicat que le listener des routes publiques lit, sur la
+     * requête que le pare-feu verrait : la même source de vérité, aucune seconde liste.
+     */
+    private function requiresAccess(string $path, string $method): bool
+    {
+        return self::getContainer()->get(PublicRouteIgnoresRefusedSessionListener::class)
+            ->requiresAccess(Request::create(ConcreteApiUrl::of($path), $method));
     }
 
     /**
