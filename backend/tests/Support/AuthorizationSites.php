@@ -13,20 +13,8 @@ use PhpToken;
  *
  * Par jetons (`PhpSources::significantTokens()`), commentaires exclus : un site
  * nommé dans un docblock n'en est pas un. Chaque site est rendu avec sa ligne
- * et sa nature ({@see \App\Tests\Support\AuthorizationSiteKind}) :
- * - `IsGranted` : l'attribut, son import ou son nom complet ;
- * - `denyAccessUnlessGranted` : l'appel du contrôleur de base ;
- * - `security:` : les arguments nommés par lesquels API Platform pose une
- *   autorisation sur une opération ;
- * - `isGranted` : un appel `->isGranted(`, `?->isGranted(` ou `::isGranted(` ;
- * - `refusal` : `new AccessDeniedException`, `new AccessDeniedHttpException` ou
- *   `new UnauthorizedHttpException`, nom court ou complet : un refus levé à la
- *   main décide à la place de `access_control` ;
- * - `decisionManager` : le nom `AccessDecisionManagerInterface`, sans lequel
- *   aucun `decide()` d'autorisation n'est injectable (refuser le nom plutôt que
- *   `->decide(`, que le consentement OAuth porte aussi, homonyme) ;
- * - `is_granted` : une chaîne littérale qui contient `is_granted(`, l'expression
- *   de sécurité d'API Platform ou d'un `#[Security]`.
+ * et sa nature ({@see \App\Tests\Support\AuthorizationSite}, {@see \App\Tests\Support\AuthorizationSiteKind} :
+ * chaque `case` y décrit la forme qu'il recense).
  *
  * **Ne voit pas** (le détecteur n'est pas élargi, décision 1 de la septième
  * relecture de #748) : un `#[CurrentUser]` non nullable,
@@ -63,7 +51,7 @@ final class AuthorizationSites
     private const array NOT_AN_ATTRIBUTE_AFTER = [\T_OBJECT_OPERATOR, \T_NULLSAFE_OBJECT_OPERATOR, \T_DOUBLE_COLON, \T_FUNCTION];
 
     /**
-     * @return list<array{int, AuthorizationSiteKind}> ligne et nature de chaque site, dans l'ordre du code
+     * @return list<AuthorizationSite> chaque site, dans l'ordre du code
      */
     public static function in(string $code): array
     {
@@ -73,7 +61,7 @@ final class AuthorizationSites
         foreach ($tokens as $index => $token) {
             $kind = self::kindAt($tokens, $index);
             if (null !== $kind) {
-                $sites[] = [$token->line, $kind];
+                $sites[] = new AuthorizationSite($token->line, $kind);
             }
         }
 

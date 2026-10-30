@@ -7,6 +7,7 @@ namespace App\Tests\Security;
 use App\Mcp\Infrastructure\Corpus\NominativeCorpusReader;
 use App\Security\Authentication\Infrastructure\Http\CsrfCookieRequestSubscriber;
 use App\Security\Authentication\Infrastructure\Http\LoginCsrfRequestListener;
+use App\Tests\Support\AuthorizationSite;
 use App\Tests\Support\AuthorizationSiteKind;
 use App\Tests\Support\AuthorizationSites;
 use App\Tests\Support\PhpSources;
@@ -56,23 +57,25 @@ final class AuthorizationLivesInAccessControlTest extends TestCase
      * Une exemption compte les sites **par nature et par fichier**, pas site par site (C7-13) : un
      * site déplacé dans le fichier exempté, ou remplacé par un autre de même nature, reste couvert.
      *
-     * @var array<class-string, array{string, array<string, int>}> classe => [raison, nature => nombre exact de sites]
+     * Classe => [raison, [[nature, nombre exact de sites]]].
+     *
+     * @var array<class-string, array{string, list<array{AuthorizationSiteKind, int}>}>
      */
     private const array EXEMPTIONS = [
         NominativeCorpusReader::class => [
             'Pare-feu `mcp`, pas `api` : le connecteur MCP juge le palier de la connexion, '
             .'qu\'aucune règle d\'`access_control` de `/api/mcp` ne peut exprimer (le jeton est opaque, vérifié en base).',
-            [AuthorizationSiteKind::IsGrantedCall->value => 1],
+            [[AuthorizationSiteKind::IsGrantedCall, 1]],
         ],
         CsrfCookieRequestSubscriber::class => [
             'Garde du double-submit, priorité 20, avant le pare-feu : '
             .'son 403 refuse une écriture sans jeton CSRF valide, il n\'autorise aucune route.',
-            [AuthorizationSiteKind::Refusal->value => 2],
+            [[AuthorizationSiteKind::Refusal, 2]],
         ],
         LoginCsrfRequestListener::class => [
             'Garde du login-CSRF, priorité 20, avant le pare-feu : '
             .'son 403 refuse une requête sans `X-Requested-With`, il n\'autorise aucune route.',
-            [AuthorizationSiteKind::Refusal->value => 1],
+            [[AuthorizationSiteKind::Refusal, 1]],
         ],
     ];
 
@@ -80,14 +83,16 @@ final class AuthorizationLivesInAccessControlTest extends TestCase
     {
         $found = [];
         foreach (PhpSources::files(RepositoryFiles::backend('src')) as $path) {
-            $exempted = $this->exemptedKindsOf($path);
-            $seen = [];
-            foreach (AuthorizationSites::in(RepositoryFiles::read($path)) as [$line, $kind]) {
-                $seen[$kind->value] = ($seen[$kind->value] ?? 0) + 1;
-                // Une exemption couvre un nombre exact de sites : le suivant est un site de trop.
-                if ($seen[$kind->value] > ($exempted[$kind->value] ?? 0)) {
-                    $found[] = $path.':'.$line.' ('.$kind->value.')';
+            // Les sites que l'exemption du fichier couvre, un par un : chacun en consomme un.
+            $remaining = $this->exemptedKindsOf($path);
+            foreach (AuthorizationSites::in(RepositoryFiles::read($path)) as $site) {
+                $covered = array_search($site->kind, $remaining, true);
+                if (false === $covered) {
+                    // Une exemption couvre un nombre exact de sites : le suivant est un site de trop.
+                    $found[] = $path.':'.$site->line.' ('.$site->kind->name.')';
+                    continue;
                 }
+                unset($remaining[$covered]);
             }
         }
 
@@ -102,94 +107,94 @@ final class AuthorizationLivesInAccessControlTest extends TestCase
     }
 
     /**
-     * @param list<array{int, AuthorizationSiteKind}> $expected ligne et nature de chaque site
+     * @param list<AuthorizationSite> $expected chaque site attendu, dans l'ordre du code
      */
     #[DataProvider('formsTheDetectorSees')]
     public function testTheDetectorSeesEachForm(string $code, array $expected): void
     {
-        self::assertSame($expected, AuthorizationSites::in($code));
+        self::assertEquals($expected, AuthorizationSites::in($code));
     }
 
     /**
-     * @return iterable<string, array{string, list<array{int, AuthorizationSiteKind}>}>
+     * @return iterable<string, array{string, list<AuthorizationSite>}>
      */
     public static function formsTheDetectorSees(): iterable
     {
         yield 'attribut, nom court' => [
             "<?php\n#[IsGranted('X')]\nfinal class A {}\n",
-            [[2, AuthorizationSiteKind::IsGrantedAttribute]],
+            [new AuthorizationSite(2, AuthorizationSiteKind::IsGrantedAttribute)],
         ];
         yield 'attribut, nom complet' => [
             "<?php\n#[\\Symfony\\Component\\Security\\Http\\Attribute\\IsGranted('X')]\nfinal class A {}\n",
-            [[2, AuthorizationSiteKind::IsGrantedAttribute]],
+            [new AuthorizationSite(2, AuthorizationSiteKind::IsGrantedAttribute)],
         ];
         yield 'import de l\'attribut' => [
             "<?php\nuse Symfony\\Component\\Security\\Http\\Attribute\\IsGranted;\n",
-            [[2, AuthorizationSiteKind::IsGrantedAttribute]],
+            [new AuthorizationSite(2, AuthorizationSiteKind::IsGrantedAttribute)],
         ];
         yield 'denyAccessUnlessGranted' => [
             "<?php\n\$this->denyAccessUnlessGranted('X');\n",
-            [[2, AuthorizationSiteKind::DenyAccessUnlessGranted]],
+            [new AuthorizationSite(2, AuthorizationSiteKind::DenyAccessUnlessGranted)],
         ];
         yield 'security: d\'API Platform' => [
             "<?php\n\$a = new Get(security: \"x\");\n",
-            [[2, AuthorizationSiteKind::SecurityArgument]],
+            [new AuthorizationSite(2, AuthorizationSiteKind::SecurityArgument)],
         ];
         yield 'securityPostDenormalize:' => [
             "<?php\n\$a = new Put(securityPostDenormalize: \"x\");\n",
-            [[2, AuthorizationSiteKind::SecurityArgument]],
+            [new AuthorizationSite(2, AuthorizationSiteKind::SecurityArgument)],
         ];
         yield 'securityPostValidation: après un autre argument' => [
             "<?php\n\$a = new Put(uriTemplate: '/x', securityPostValidation: \"x\");\n",
-            [[2, AuthorizationSiteKind::SecurityArgument]],
+            [new AuthorizationSite(2, AuthorizationSiteKind::SecurityArgument)],
         ];
         yield 'appel ->isGranted(' => [
             "<?php\n\$security->isGranted('X');\n",
-            [[2, AuthorizationSiteKind::IsGrantedCall]],
+            [new AuthorizationSite(2, AuthorizationSiteKind::IsGrantedCall)],
         ];
         yield 'appel ?->isGranted(' => [
             "<?php\n\$security?->isGranted('X');\n",
-            [[2, AuthorizationSiteKind::IsGrantedCall]],
+            [new AuthorizationSite(2, AuthorizationSiteKind::IsGrantedCall)],
         ];
         yield 'appel statique ::isGranted(' => [
             "<?php\nSecurity::isGranted('X');\n",
-            [[2, AuthorizationSiteKind::IsGrantedCall]],
+            [new AuthorizationSite(2, AuthorizationSiteKind::IsGrantedCall)],
         ];
         yield 'appel statique, nom complet' => [
             "<?php\n\\Symfony\\Bundle\\SecurityBundle\\Security::isGranted('X');\n",
-            [[2, AuthorizationSiteKind::IsGrantedCall]],
+            [new AuthorizationSite(2, AuthorizationSiteKind::IsGrantedCall)],
         ];
         yield 'refus levé, AccessDeniedHttpException' => [
             "<?php\nthrow new AccessDeniedHttpException();\n",
-            [[2, AuthorizationSiteKind::Refusal]],
+            [new AuthorizationSite(2, AuthorizationSiteKind::Refusal)],
         ];
         yield 'refus levé, AccessDeniedException de nom complet' => [
             "<?php\nthrow new \\Symfony\\Component\\Security\\Core\\Exception\\AccessDeniedException();\n",
-            [[2, AuthorizationSiteKind::Refusal]],
+            [new AuthorizationSite(2, AuthorizationSiteKind::Refusal)],
         ];
         yield 'refus levé, UnauthorizedHttpException' => [
             "<?php\nthrow new UnauthorizedHttpException('x');\n",
-            [[2, AuthorizationSiteKind::Refusal]],
+            [new AuthorizationSite(2, AuthorizationSiteKind::Refusal)],
         ];
         yield 'gestionnaire de décision, propriété' => [
             "<?php\nfinal class A { private AccessDecisionManagerInterface \$m; }\n",
-            [[2, AuthorizationSiteKind::DecisionManager]],
+            [new AuthorizationSite(2, AuthorizationSiteKind::DecisionManager)],
         ];
         yield 'gestionnaire de décision, import' => [
             "<?php\nuse Symfony\\Component\\Security\\Core\\Authorization\\AccessDecisionManagerInterface;\n",
-            [[2, AuthorizationSiteKind::DecisionManager]],
+            [new AuthorizationSite(2, AuthorizationSiteKind::DecisionManager)],
         ];
         yield 'chaîne is_granted, guillemets simples' => [
             "<?php\n\$a = 'is_granted(\"ROLE_X\")';\n",
-            [[2, AuthorizationSiteKind::IsGrantedExpression]],
+            [new AuthorizationSite(2, AuthorizationSiteKind::IsGrantedExpression)],
         ];
         yield 'chaîne is_granted, guillemets doubles' => [
             "<?php\n\$a = \"is_granted('ROLE_X')\";\n",
-            [[2, AuthorizationSiteKind::IsGrantedExpression]],
+            [new AuthorizationSite(2, AuthorizationSiteKind::IsGrantedExpression)],
         ];
         yield 'chaîne is_granted, interpolée' => [
             "<?php\n\$a = \"is_granted('ROLE_X') and \$b\";\n",
-            [[2, AuthorizationSiteKind::IsGrantedExpression]],
+            [new AuthorizationSite(2, AuthorizationSiteKind::IsGrantedExpression)],
         ];
     }
 
@@ -223,13 +228,12 @@ final class AuthorizationLivesInAccessControlTest extends TestCase
 
     public function testEveryExemptionIsStillNeeded(): void
     {
-        foreach (self::EXEMPTIONS as $class => [$reason, $expectedKinds]) {
-            $found = [];
-            foreach (AuthorizationSites::in(RepositoryFiles::read($this->pathOf($class))) as [, $kind]) {
-                $found[$kind->value] = ($found[$kind->value] ?? 0) + 1;
-            }
-            ksort($found);
-            ksort($expectedKinds);
+        foreach (self::EXEMPTIONS as $class => [$reason, $expected]) {
+            $expectedKinds = $this->countByKind($this->expand($expected));
+            $found = $this->countByKind(array_map(
+                static fn (AuthorizationSite $site): AuthorizationSiteKind => $site->kind,
+                AuthorizationSites::in(RepositoryFiles::read($this->pathOf($class))),
+            ));
 
             self::assertSame(
                 $expectedKinds,
@@ -247,17 +251,48 @@ final class AuthorizationLivesInAccessControlTest extends TestCase
     }
 
     /**
-     * @return array<string, int> nature => nombre de sites que l'exemption du fichier couvre (vide s'il n'est pas exempté)
+     * @return list<AuthorizationSiteKind> un cas par site que l'exemption du fichier couvre (vide s'il n'est pas exempté)
      */
     private function exemptedKindsOf(string $path): array
     {
         foreach (self::EXEMPTIONS as $class => [, $kinds]) {
             if ($this->pathOf($class) === $path) {
-                return $kinds;
+                return $this->expand($kinds);
             }
         }
 
         return [];
+    }
+
+    /**
+     * @param list<array{AuthorizationSiteKind, int}> $counts
+     *
+     * @return list<AuthorizationSiteKind> chaque nature répétée autant de fois que son nombre
+     */
+    private function expand(array $counts): array
+    {
+        $kinds = [];
+        foreach ($counts as [$kind, $count]) {
+            array_push($kinds, ...array_fill(0, $count, $kind));
+        }
+
+        return $kinds;
+    }
+
+    /**
+     * @param list<AuthorizationSiteKind> $kinds
+     *
+     * @return array<string, int> libellé de la nature => nombre de sites, trié par libellé
+     */
+    private function countByKind(array $kinds): array
+    {
+        $counts = [];
+        foreach ($kinds as $kind) {
+            $counts[$kind->value] = ($counts[$kind->value] ?? 0) + 1;
+        }
+        ksort($counts);
+
+        return $counts;
     }
 
     /**
