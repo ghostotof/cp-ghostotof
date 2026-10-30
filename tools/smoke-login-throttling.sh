@@ -44,9 +44,11 @@ if [ -z "$base" ]; then
 fi
 base="${base%/}"
 
+# Le stderr du `source` reste visible : une erreur de syntaxe de la bibliothèque
+# s'y lit, au lieu de se cacher sous « introuvable » (#748, C6-7).
 # shellcheck source=tools/lib/smoke-http.sh
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/smoke-http.sh" 2> /dev/null || {
-  echo "bibliothèque introuvable : tools/lib/smoke-http.sh" >&2
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/smoke-http.sh" || {
+  echo "bibliothèque introuvable ou invalide : tools/lib/smoke-http.sh" >&2
   exit 2
 }
 
@@ -110,7 +112,7 @@ for attempt in $(seq 1 "$attempts"); do
       exit 1
     fi
     if ! [[ "$retry_after" =~ ^[0-9]+$ ]] || [ "$retry_after" -le 0 ]; then
-      echo "tentative $attempt : 429 avec un Retry-After invalide (« $retry_after »), un nombre de secondes > 0 attendu (corps : $excerpt)" >&2
+      echo "tentative $attempt : 429 avec un Retry-After invalide (« $(smoke_excerpt "$retry_after") »), un nombre de secondes > 0 attendu (corps : $excerpt)" >&2
       exit 1
     fi
     if [[ "$content_type" != application/problem+json* ]]; then

@@ -428,6 +428,7 @@ jobs:
           tools/tests/smoke-dead-session-cookie.test.sh
           tools/tests/smoke-mcp.test.sh
           tools/tests/smoke-http.test.sh
+          tools/tests/audit-prod.test.sh
           tools/tests/rotate-deployer-token.test.sh
           tools/tests/wait-external-secrets.test.sh
           tools/tests/wait-rollout.test.sh

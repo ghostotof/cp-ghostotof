@@ -228,6 +228,31 @@ else
   fail "curl en échec à la tentative 3" "rc=$rc ; err : $(cat "$TMP/err")"
 fi
 
+# --- C6-7 : une bibliothèque présente mais invalide ne se dit pas « introuvable »
+# en cachant la vraie erreur : sortie 2, « introuvable ou invalide » et l'erreur
+# de bash sur stderr.
+mkdir -p "$TMP/badlib/tools/lib"
+cp "$SCRIPT" "$TMP/badlib/tools/"
+printf 'if then\n' > "$TMP/badlib/tools/lib/smoke-http.sh"
+# LC_ALL=C : bash dit « syntax error » en anglais, quelle que soit la langue du poste.
+set +e; LC_ALL=C "$TMP/badlib/tools/smoke-login-throttling.sh" https://example.invalid >/dev/null 2>"$TMP/err"; rc=$?; set -e
+if [ "$rc" -eq 2 ] && grep -q 'introuvable ou invalide : tools/lib/smoke-http.sh' "$TMP/err" && grep -q 'syntax error' "$TMP/err"; then
+  pass "bibliothèque invalide → sortie 2, « introuvable ou invalide » et l'erreur de syntaxe de bash visible"
+else
+  fail "bibliothèque invalide" "rc=$rc ; err : $(cat "$TMP/err")"
+fi
+
+# --- C6-12 : le Retry-After invalide part dans le journal de la CI : en extrait,
+# sans caractère de contrôle (un ESC ou un octet de commande n'y a rien à faire).
+# `header()` retire déjà le CR : le contrôle qui survit est un autre (ESC ici).
+run retryctl "$invalid" $'429|12x\033[31m::error::forge|application/problem+json|{"type":"\\/errors\\/rate-limited","status":429}'
+if [ "$rc" -eq 1 ] && grep -q 'Retry-After invalide' "$TMP/err" && grep -q '::error::forge' "$TMP/err" \
+   && ! grep -q $'\033' "$TMP/err" && ! grep -q $'\r' "$TMP/err"; then
+  pass "Retry-After invalide avec caractère de contrôle → échec, extrait neutralisé dans le message"
+else
+  fail "Retry-After avec caractère de contrôle" "rc=$rc ; err : $(cat -A "$TMP/err")"
+fi
+
 # --- Sans URL : usage, code 2.
 set +e; "$SCRIPT" >/dev/null 2>"$TMP/err"; rc=$?; set -e
 if [ "$rc" -eq 2 ] && grep -q '^usage' "$TMP/err"; then pass "sans argument → usage, code 2"; else fail "usage" "rc=$rc"; fi

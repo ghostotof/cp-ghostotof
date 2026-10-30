@@ -287,6 +287,27 @@ for newline_value in $'u:p\nurl = "x"' $'u:p\rurl = "x"'; do
   fi
 done
 
+# --- C6-7 : une bibliothèque présente mais invalide (erreur de syntaxe) ne se dit
+# pas « introuvable » en cachant la vraie erreur : le script sort 2, le message
+# nomme « introuvable ou invalide » ET l'erreur de bash reste sur stderr.
+mkdir -p "$TMP/badlib/tools/lib"
+cp "$SCRIPT" "$TMP/badlib/tools/"
+printf 'if then\n' > "$TMP/badlib/tools/lib/smoke-http.sh"
+# LC_ALL=C : bash dit « syntax error » en anglais, quelle que soit la langue du poste.
+set +e; LC_ALL=C "$TMP/badlib/tools/smoke-dead-session-cookie.sh" https://example.invalid >/dev/null 2>"$TMP/err"; rc=$?; set -e
+if [ "$rc" -eq 2 ] && grep -q 'introuvable ou invalide : tools/lib/smoke-http.sh' "$TMP/err" && grep -q 'syntax error' "$TMP/err"; then
+  pass "bibliothèque invalide → sortie 2, « introuvable ou invalide » et l'erreur de syntaxe de bash visible"
+else
+  fail "bibliothèque invalide" "rc=$rc ; err : $(cat "$TMP/err")"
+fi
+rm -rf "$TMP/badlib/tools/lib"
+set +e; "$TMP/badlib/tools/smoke-dead-session-cookie.sh" https://example.invalid >/dev/null 2>"$TMP/err"; rc=$?; set -e
+if [ "$rc" -eq 2 ] && grep -q 'introuvable ou invalide : tools/lib/smoke-http.sh' "$TMP/err"; then
+  pass "bibliothèque absente → sortie 2, même message"
+else
+  fail "bibliothèque absente" "rc=$rc ; err : $(cat "$TMP/err")"
+fi
+
 # --- Sans URL : usage, code 2.
 set +e; "$SCRIPT" >/dev/null 2>"$TMP/err"; rc=$?; set -e
 if [ "$rc" -eq 2 ] && grep -q '^usage' "$TMP/err"; then pass "sans argument → usage, code 2"; else fail "usage" "rc=$rc"; fi
