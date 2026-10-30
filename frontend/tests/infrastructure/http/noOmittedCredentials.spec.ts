@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { scriptOf, stringLiterals, templateExpressionsOf } from '../../support/sourceText'
+import { SRC_SCRIPTS, SRC_TEMPLATE_EXPRESSIONS } from '../../support/srcSources'
 
 /**
  * Garde de source (#748, R37, R51) : aucun fichier de `src/` n'écrit une chaîne `'omit'` hors d'un commentaire.
@@ -23,18 +24,15 @@ import { scriptOf, stringLiterals, templateExpressionsOf } from '../../support/s
  * `<script>`) **et** les expressions de son `<template>` (directives, gestionnaires en ligne, interpolations), et les
  * parties fixes d'un gabarit comptent comme des littéraux (`` `${''}omit` `` contient `omit`). Un gabarit `${x}omit` est
  * donc signalé sans être exactement `'omit'` : faux positif bruyant, aucun dans `src/`.
+ *
+ * Les fichiers sont lus une fois pour les gardes de `src/` par `tests/support/srcSources.ts` (R97).
  */
-const raw = import.meta.glob(['../../../src/**/*.ts', '../../../src/**/*.vue'], {
-  query: '?raw',
-  import: 'default',
-  eager: true,
-}) as Record<string, string>
 
 /** Les littéraux lus de chaque fichier : ceux de son script et, pour un `.vue`, ceux des expressions de son gabarit (R96). */
 const sources = Object.fromEntries(
-  Object.entries(raw).map(([path, source]) => [
+  Object.entries(SRC_SCRIPTS).map(([path, script]) => [
     path,
-    [...stringLiterals(scriptOf(path, source)), ...templateExpressionsOf(path, source).flatMap((expression) => stringLiterals(expression))],
+    [...stringLiterals(script), ...(SRC_TEMPLATE_EXPRESSIONS[path] ?? []).flatMap((expression) => stringLiterals(expression))],
   ]),
 ) as Record<string, string[]>
 
@@ -87,7 +85,7 @@ describe("aucun credentials: 'omit' dans src/", () => {
   it("aucun fichier n'écrit la chaîne 'omit' hors d'un commentaire (elle retire aussi la Basic Auth de la préprod, C1)", () => {
     const offenders = Object.entries(sources)
       .filter(([, literals]) => literals.includes('omit'))
-      .map(([path]) => path.replace('../../../src/', ''))
+      .map(([path]) => path)
       .sort()
 
     expect(offenders).toEqual([])

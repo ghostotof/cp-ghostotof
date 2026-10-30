@@ -2,29 +2,26 @@ import ts from 'typescript'
 import { parse } from 'vue/compiler-sfc'
 
 /**
- * Le lecteur de source des gardes de `tests/` (#748, R68, R80 ; Sp6-11, St6-9, CR7-7, St7-9, Sp7-8).
+ * Le lecteur de source des gardes de `tests/` (#748).
  *
- * Trois gardes lisent le texte de `src/` : `noOmittedCredentials.spec.ts` (aucune chaîne `'omit'`) et, dans
- * `sessionStateEncapsulation.spec.ts`, les imports de `sessionState` et les blocs `export { … }`. Elles retiraient les
- * commentaires par deux regex, puis (R68) par un parcours caractère par caractère : l'un comme l'autre devinaient où
- * commence une chaîne, un gabarit ou un commentaire, et se trompaient dès qu'une **regex littérale** les trompait —
- * `RichText.vue` écrit `` /`([^`]+)`/ `` (un gabarit ouvert que rien ne ferme avant le prochain accent grave du
- * fichier), `HttpCvRepository.ts` écrit `/filename="?([^";]+)"?/` (une chaîne ouverte jusqu'à la fin de sa ligne), et un
- * `/^\/*$/` avalerait tout jusqu'au prochain fermant de commentaire de bloc. La limite que R68 avait écrite (« aucune n'existe dans `src/` »)
- * était fausse.
+ * Ce que le module fait : il lit le texte de `src/` comme le compilateur le lit. Il s'appuie sur l'arbre syntaxique de
+ * TypeScript (`typescript`, déjà en `devDependencies`) : ce que le compilateur lit comme une chaîne, un gabarit, une
+ * regex ou un commentaire l'est ici aussi, un échappement est lu (`'om\x69t'` est `omit`), et une regex littérale
+ * (`` /`([^`]+)`/ ``, `/filename="?([^";]+)"?/`) n'ouvre ni gabarit, ni chaîne, ni commentaire. Un `.vue` passe d'abord
+ * par `scriptOf`, qui n'en garde que les blocs `<script>` (le `<template>` n'est pas du JavaScript : son apostrophe ou
+ * son `//` ne doivent rien ouvrir) ; les expressions de ce gabarit (directives, gestionnaires en ligne, interpolations)
+ * se lisent à part, par `templateExpressionsOf`. Les fins de ligne (`\r` compris) d'un commentaire ou d'un bloc écarté
+ * sont gardées : une position ou un numéro de ligne reste celui de la source.
  *
- * **Depuis R80 le module lit l'arbre syntaxique de TypeScript** (`typescript`, déjà en `devDependencies`) : ce que le
- * compilateur lit comme une chaîne, un gabarit, une regex ou un commentaire l'est ici aussi, et un échappement est lu
- * (`'om\x69t'` est `omit`). Un `.vue` passe d'abord par `scriptOf`, qui n'en garde que les blocs `<script>` (le
- * `<template>` n'est pas du JavaScript : son apostrophe ou son `//` ne doivent rien ouvrir). Les expressions de ce gabarit
- * (directives, gestionnaires en ligne, interpolations) se lisent à part, par `templateExpressionsOf` (R96).
+ * Qui l'appelle : `srcSources.ts` lit une fois les fichiers de `src/` pour `noOmittedCredentials.spec.ts` et
+ * `sessionStateEncapsulation.spec.ts`.
  *
  * Ce que ça coûte : les gardes dépendent de l'API du compilateur (`createSourceFile`, `getLeadingCommentRanges`…) et de
  * celle de `vue/compiler-sfc` (`parse`). Un passage à TypeScript 7 (le portage natif) la changera : les gardes
  * rougiront alors bruyamment (une importation qui échoue), jamais en silence.
  *
  * Reste vrai : une chaîne non terminée n'a plus de limite écrite ici — c'est du code que `vue-tsc` refuse
- * (`make front-build`), donc jamais du code livré (Sp7-8).
+ * (`make front-build`), donc jamais du code livré.
  */
 
 /**

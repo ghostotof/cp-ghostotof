@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { scriptOf, withoutComments } from '../../support/sourceText'
+import { withoutComments } from '../../support/sourceText'
+import { SRC_SCRIPTS } from '../../support/srcSources'
 
 /**
  * Garde d'encapsulation (#748, R42, St4-5, St4-6, R52, St5-3) : l'état réactif de la session n'est écrit que par
@@ -26,14 +27,7 @@ import { scriptOf, withoutComments } from '../../support/sourceText'
  * restent hors de la table : c'est l'API publique de la façade (`useBaseAccess` et les composables du palier de base les
  * appellent), elles jugent elles-mêmes la génération.
  */
-const raw = import.meta.glob(['../../../src/**/*.ts', '../../../src/**/*.vue'], {
-  query: '?raw',
-  import: 'default',
-  eager: true,
-}) as Record<string, string>
-
-/** Le code lu de chaque fichier : un `.vue` n'y a que ses blocs `<script>` (son gabarit n'est pas du JavaScript, R80). */
-const sources = Object.fromEntries(Object.entries(raw).map(([path, source]) => [path, scriptOf(path, source)]))
+const sources = SRC_SCRIPTS
 
 /**
  * Les écritures de `sessionState.ts` et les seuls fichiers de `src/` (chemins relatifs à `src/`) autorisés à les importer.
@@ -230,7 +224,7 @@ describe("Les écritures de l'état de session ont chacune leurs importeurs", ()
     const offenders: string[] = []
 
     for (const [path, source] of Object.entries(sources)) {
-      const file = path.replace('../../../src/', '')
+      const file = path
       const imported = namesImportedFromSessionState(source)
 
       for (const [name, allowed] of Object.entries(WRITERS)) {
@@ -248,7 +242,7 @@ describe("Les écritures de l'état de session ont chacune leurs importeurs", ()
 
     for (const [name, allowed] of Object.entries(WRITERS)) {
       for (const file of allowed) {
-        const source = sources[`../../../src/${file}`]
+        const source = sources[file]
         const imported = source === undefined ? [] : namesImportedFromSessionState(source)
         if (!imported.includes(name)) {
           dead.push(`${file} n'importe pas ${name}`)
@@ -297,7 +291,7 @@ describe("Les écritures de l'état de session ont chacune leurs importeurs", ()
   })
 
   it('useAuth ne réexporte aucune écriture', async () => {
-    const source = sources['../../../src/application/auth/useAuth.ts'] ?? ''
+    const source = sources['application/auth/useAuth.ts'] ?? ''
     const reexported = namesInExportBlocks(source)
     const exported = Object.keys(await import('../../../src/application/auth/useAuth'))
 
