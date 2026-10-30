@@ -151,7 +151,9 @@ paths:
     every route by a test, no second list of public routes (Lexik still builds and discards its 401). A protected
     route keeps its 401 and the clearing; the first one reached clears the dead cookie, and the SPA reads one at each
     load (`GET /api/me`). **Invariant n° 8 of `ApiRouteExposureTest`**: on every route and method, a refused `BEARER`
-    (invalid, expired) gets the anonymous status, and a `PUBLIC_PATHS` route sets no cookie the anonymous call does not.
+    (invalid, expired) gets the anonymous status, a 401 of the `api` firewall expires both cookies, and a `PUBLIC_PATHS`
+    route sets no cookie the anonymous call does not; the premise (every authorization of `/api` is an `access_control`
+    rule) is held by `AuthorizationLivesInAccessControlTest` (C5-12).
     Rejected: `lazy: true` (the JWT authenticator's `supports()` stays `true`), a `JWTAuthenticator` subclass, a
     firewall without authenticator for public routes. **Accepted limit**: a login's expiry is not exposed to the
     frontend, so the first authenticated request after its `exp` takes the 401 (a read: 401; a write: 401, then the CSRF's

@@ -103,6 +103,45 @@ final class PublicRouteIgnoresRefusedSessionTest extends WebTestCase
     }
 
     /**
+     * Le jeton d'un compte **supprimé** (C5-9) : signé par la clé du site et pas expiré, mais le
+     * pare-feu ne retrouve plus le compte. C'est une autre cause de refus que l'expiration ou
+     * la valeur invalide, par une autre voie de Lexik : même verdict, une route publique le sert
+     * comme l'anonyme, la première route protégée l'efface.
+     */
+    public function testATokenOfADeletedAccountIsServedOnAPublicReadAndClearedByTheFirstProtectedRoute(): void
+    {
+        $account = $this->registerTrusted();
+        $this->signIn();
+        $jwt = $this->client->getCookieJar()->get(AuthCookieFactory::BEARER)?->getValue() ?? self::fail('Aucun cookie BEARER.');
+        $this->connection()->executeStatement('DELETE FROM cpg_user WHERE id = :id', ['id' => $account->getId()->toRfc4122()]);
+
+        $this->client->request('GET', self::PUBLIC_ROUTE);
+        $this->assertServedWithoutTouchingTheCookie($jwt);
+
+        $this->client->request('GET', self::PROTECTED_ROUTE);
+        self::assertResponseStatusCodeSame(401);
+        $this->assertBothCookiesExpiredLikeTheFactory();
+    }
+
+    /**
+     * Le chemin d'une requête est jugé sous sa forme canonique (`%61` est `a`), comme le font le
+     * routeur et l'`AccessMap` : `/%61pi/…` n'échappe ni à l'indulgence de la route publique ni
+     * au refus de la route protégée, et ne change pas l'effacement.
+     */
+    public function testAPercentEncodedPathIsJudgedLikeItsCanonicalForm(): void
+    {
+        $jwt = bin2hex(random_bytes(16));
+        $this->putTheBearer($jwt);
+
+        $this->client->request('GET', '/%61pi/contributions/fr');
+        $this->assertServedWithoutTouchingTheCookie($jwt);
+
+        $this->client->request('GET', '/%61pi/me');
+        self::assertResponseStatusCodeSame(401);
+        $this->assertBothCookiesExpiredLikeTheFactory();
+    }
+
+    /**
      * `/api/logout` n'a pas de règle d'`access_control` : l'`AccessMap` la tient pour
      * publique. Avec un cookie mort et son `XSRF-TOKEN` (un navigateur qui se
      * déconnecte après l'expiration), la déconnexion est servie et expire les deux
@@ -176,6 +215,19 @@ final class PublicRouteIgnoresRefusedSessionTest extends WebTestCase
 
         self::assertGreaterThan(0, $required, 'Aucune route protégée vue : le test ne compare plus rien.');
         self::assertGreaterThan($required, $seen, 'Aucune route publique vue : le test ne compare plus rien.');
+    }
+
+    /** Les deux cookies d'auth de la réponse sont expirés, aux attributs exacts de la fabrique, et le navigateur ne garde plus le `BEARER`. */
+    private function assertBothCookiesExpiredLikeTheFactory(): void
+    {
+        $cookies = $this->cookiesByName($this->client);
+        $factory = self::getContainer()->get(AuthCookieFactory::class);
+        foreach ([AuthCookieFactory::BEARER, AuthCookieFactory::XSRF_TOKEN] as $name) {
+            self::assertArrayHasKey($name, $cookies, \sprintf('Le 401 doit effacer %s.', $name));
+            self::assertTrue($cookies[$name]->isCleared(), \sprintf('%s doit être expiré.', $name));
+            self::assertSame($this->attributes($factory->expired($name)), $this->attributes($cookies[$name]));
+        }
+        self::assertNull($this->client->getCookieJar()->get(AuthCookieFactory::BEARER), 'Le navigateur garde le cookie refusé.');
     }
 
     private function assertServedWithoutTouchingTheCookie(string $jwt): void

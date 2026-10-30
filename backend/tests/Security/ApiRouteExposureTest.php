@@ -15,6 +15,7 @@ use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\BrowserKit\Cookie;
 use Symfony\Component\HttpFoundation\Cookie as HttpFoundationCookie;
+use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\Routing\RouterInterface;
 
 /**
@@ -48,7 +49,11 @@ use Symfony\Component\Routing\RouterInterface;
  *     chose** que l'anonyme : sur chaque route et chaque méthode, la réponse a le
  *     statut de celle d'un appelant sans cookie (#748, R35 — une route publique
  *     ne répond plus 401 à un cookie mort ; une route protégée garde son refus),
- *     et une route publique ne pose aucun cookie que l'anonyme ne pose pas.
+ *     et une route publique ne pose aucun cookie que l'anonyme ne pose pas ;
+ *     quand ce statut est le 401 du pare-feu `api`, la réponse expire `BEARER` et
+ *     `XSRF-TOKEN` (#748, R46 ; `mcp` et `oauth` ne lisent pas le cookie, ils n'ont rien
+ *     à effacer). Que toute autorisation de `/api` soit une règle d'`access_control`, la
+ *     prémisse de la lecture publique, est tenu par `AuthorizationLivesInAccessControlTest`.
  */
 final class ApiRouteExposureTest extends WebTestCase
 {
@@ -228,7 +233,10 @@ final class ApiRouteExposureTest extends WebTestCase
      * de Lexik pour un cookie mort, une route protégée garde son refus, jamais plus
      * que l'anonyme n'obtiendrait —, et pour une route de PUBLIC_PATHS la réponse
      * n'ajoute aucun cookie à ceux de l'anonyme (le cookie refusé y est laissé, la
-     * première route protégée l'efface). Mêmes corps et en-têtes que l'invariant n°7.
+     * première route protégée l'efface). Quand le statut est un 401 du pare-feu `api`, les
+     * deux cookies sont expirés dans la réponse (`StaleSessionCookiesClearingListener`) : sans
+     * quoi une session morte resterait dans le navigateur jusqu'à sa fermeture. Mêmes corps et
+     * en-têtes que l'invariant n°7.
      */
     public function testARefusedSessionCookieNeverChangesTheAnonymousAnswer(): void
     {
@@ -262,6 +270,16 @@ final class ApiRouteExposureTest extends WebTestCase
                         );
                     }
                 }
+
+                if (401 === $answers['anonyme']['status'] && 'api' === $this->firewallOf($path, $method)) {
+                    foreach (['invalide', 'expiré'] as $label) {
+                        self::assertEqualsCanonicalizing(
+                            [AuthCookieFactory::BEARER, AuthCookieFactory::XSRF_TOKEN],
+                            array_values(array_intersect($answers[$label]['expired'], [AuthCookieFactory::BEARER, AuthCookieFactory::XSRF_TOKEN])),
+                            \sprintf('%s %s : le 401 du pare-feu api doit expirer BEARER et XSRF-TOKEN avec un cookie %s (expirés : %s).', $method, $path, $label, [] === $answers[$label]['expired'] ? 'aucun' : implode(', ', $answers[$label]['expired'])),
+                        );
+                    }
+                }
                 ++$checked;
             }
         }
@@ -273,7 +291,9 @@ final class ApiRouteExposureTest extends WebTestCase
      * Un appel isolé : pot de cookies vidé, quotas remis à zéro, `BEARER` éventuel posé
      * comme un navigateur le garderait. Rend le statut et les noms des cookies posés.
      *
-     * @return array{status: int, cookies: list<string>}
+     * `expired` : les noms des cookies posés avec une échéance passée, ceux que la réponse efface.
+     *
+     * @return array{status: int, cookies: list<string>, expired: list<string>}
      */
     private function answerWithBearer(KernelBrowser $client, string $method, string $path, ?string $bearer): array
     {
@@ -289,10 +309,25 @@ final class ApiRouteExposureTest extends WebTestCase
             'HTTP_X_REQUESTED_WITH' => 'fetch',
         ], content: self::jsonBody([]));
 
-        $names = array_map(static fn (HttpFoundationCookie $cookie): string => $cookie->getName(), $client->getResponse()->headers->getCookies());
+        $set = $client->getResponse()->headers->getCookies();
+        $names = array_map(static fn (HttpFoundationCookie $cookie): string => $cookie->getName(), $set);
         sort($names);
+        // Un cookie de session a une échéance nulle : seul un temps strictement positif et passé efface.
+        $expired = array_values(array_map(
+            static fn (HttpFoundationCookie $cookie): string => $cookie->getName(),
+            array_filter($set, static fn (HttpFoundationCookie $cookie): bool => $cookie->getExpiresTime() > 0 && $cookie->getExpiresTime() < time()),
+        ));
+        sort($expired);
 
-        return ['status' => $client->getResponse()->getStatusCode(), 'cookies' => $names];
+        return ['status' => $client->getResponse()->getStatusCode(), 'cookies' => $names, 'expired' => $expired];
+    }
+
+    /**
+     * Le pare-feu que Symfony retient pour cette requête, comme le fait le `FirewallMap` ; `null` hors de tous.
+     */
+    private function firewallOf(string $path, string $method): ?string
+    {
+        return self::getContainer()->get('security.firewall.map')->getFirewallConfig(Request::create($this->concreteUrl($path), $method))?->getName();
     }
 
     /**
