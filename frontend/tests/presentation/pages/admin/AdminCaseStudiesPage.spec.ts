@@ -16,7 +16,7 @@ import { markSessionExpired } from '../../../../src/application/auth/useAuth'
 import { signInAgain } from '../../../support/signInAgain'
 import { AdminOrderError } from '../../../../src/domain/admin/shared/errors/AdminOrderError'
 import { expectNoAccessibilityViolation } from '../../../support/axe'
-import { describeEntryFormLock } from '../../../support/entryFormLock'
+import { describeEntryFormLock, LOCKED_BY_PROPOSAL_TEXT, textsDescribing } from '../../../support/entryFormLock'
 
 const GROUP_ONE = '019968b0-0000-7000-8000-000000000011'
 const GROUP_TWO = '019968b0-0000-7000-8000-000000000012'
@@ -260,6 +260,22 @@ describe('AdminCaseStudiesPage', () => {
     expect(buttonLabelled(wrapper, 'Enregistrer').attributes('disabled')).toBeUndefined()
     expect(wrapper.find('#admin-order-locked-hint').exists()).toBe(false)
     expect(wrapper.text()).toContain('Ordre · à jour')
+  })
+
+  // Review Focus 1 de la huitième relecture (R93) : le bouton de traduction porte deux verrous à la fois, et les
+  // décrit tous les deux, celui de l'ordre d'abord.
+  it("un ordre modifié et une proposition affichée : le bouton de traduction est décrit par les deux textes", async () => {
+    const { wrapper } = await mountPage()
+
+    await buttonLabelled(actionsForLine(wrapper, 'PHPStan progressif sur un legacy'), 'Modifier').trigger('click')
+    await translateButton(wrapper).trigger('click')
+    await flushPromises()
+    await dragRow(wrapper, 0, 2)
+
+    expect(textsDescribing(wrapper, translateButton(wrapper))).toEqual([
+      "Enregistrez ou annulez l'ordre d'abord.",
+      LOCKED_BY_PROPOSAL_TEXT,
+    ])
   })
 
   it("recharge la liste et annonce un ordre obsolète quand le serveur refuse l'ensemble envoyé", async () => {

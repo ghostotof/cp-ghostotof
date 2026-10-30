@@ -11,10 +11,18 @@ export interface EntryFormLock {
   readonly state: EntryFormLockState
   /** Vrai en édition comme pendant une proposition : la langue (et la catégorie d'une carte « moi ») ne change pas. */
   readonly isEntryLocked: boolean
+  /**
+   * Vrai pendant une proposition seulement : « Proposer la version XX » (une seconde traduction depuis la
+   * proposition ramènerait le formulaire à la langue source, groupe gardé, Sp7-1) et, avec elle, ce que la
+   * proposition fige sans que l'édition le fige (R93).
+   */
+  readonly isProposalLocked: boolean
   /** Identifiant du texte qui dit le verrou (`EntryFormLockHint`), rendu seulement pendant le verrou. */
   readonly hintId: string
   /** `aria-describedby` du sélecteur de langue : son aide permanente s'il en a une, puis le texte du verrou pendant le verrou. */
   readonly localeDescribedBy: string | undefined
+  /** `aria-describedby` d'un contrôle que seule la proposition verrouille : le texte du verrou pendant elle, rien sinon. */
+  readonly proposalDescribedBy: string | undefined
 }
 
 /**
@@ -37,7 +45,10 @@ export function describedBy(...ids: ReadonlyArray<string | undefined>): string |
  * Deux verrous. En édition, la langue d'une entrée existante ne change pas (un `PUT` ne la change pas,
  * 409 `locale-immutable`). Pendant une proposition, le formulaire est une création dans la langue
  * cible : changer la langue en ferait une seconde version de la langue source dans le groupe gardé
- * (Sp7-1). « Annuler » retire la proposition et rend le sélecteur.
+ * (Sp7-1). « Annuler » abandonne la proposition, vide le formulaire et rend les contrôles.
+
+Pendant une proposition, un seul texte (`admin.lockedByProposal`) est désigné par chaque contrôle verrouillé :
+la langue, « Proposer la version XX » (R93) et, dans les cartes « moi », la catégorie.
  *
  * Une proposition naît de trois gestes : l'édition d'une entrée, « Créer la version XX » (qui pose le
  * groupe de la ligne et la langue manquante) ou un formulaire vierge (aucun groupe). Le verrou de la
@@ -63,6 +74,8 @@ export function useEntryFormLock(options: {
     return options.hasProposal() ? 'proposal' : 'none'
   })
   const isEntryLocked = computed(() => 'none' !== state.value)
+  const isProposalLocked = computed(() => 'proposal' === state.value)
+  const proposalDescribedBy = computed(() => (isProposalLocked.value ? options.hintId : undefined))
   const localeDescribedBy = computed(() =>
     describedBy(options.localeHelpId, isEntryLocked.value ? options.hintId : undefined),
   )
@@ -71,6 +84,8 @@ export function useEntryFormLock(options: {
     reactive({
       state,
       isEntryLocked,
+      isProposalLocked,
+      proposalDescribedBy,
       hintId: options.hintId,
       localeDescribedBy,
     }),

@@ -120,8 +120,8 @@ status announcement) that a fork would silently lose:
   its category, under a 200. It is now disabled in editing (and, since R79b, while the form holds a translation
   proposal), with a visible hint
   (`admin.about.meCard.categoryLockedHelp`: create the card in the right category, then delete this one)
-  referenced by `aria-describedby` **only while the lock holds** (editing, or a translation proposal, R79b: the same
-  id, the text `categoryProposalLockedHelp`) — the hint is not rendered otherwise, and an IDREF to a missing element
+  referenced by `aria-describedby` **only while the lock holds** (editing; during a translation proposal the
+  category is described by the form's proposal text instead, R93) — the hint is not rendered otherwise, and an IDREF to a missing element
   is an a11y fault. The server refuses another category with a 409 of type
   `me-card-category-immutable` (`.claude/rules/portfolio-ordre-ecritures.md`), which
   `HttpAdminAboutMeCardRepository` reads as the reason `category-immutable` — keyed on the `type`, the
@@ -188,10 +188,12 @@ the target locale, the non-prose fields (`version`, `occurredAt`, `iconKey`…) 
 entry's `translationGroup` is kept too** (spec 0004 D9, `sourceGroup` — distinct from the selector's
 value, so a lone source still attaches its proposal) so saving the proposed version links it with no
 extra gesture, and a `role="status"` banner names the proposal's source locale; while the form
-holds the proposal its locale selector is locked, as in editing, and « Annuler » drops it (R78, R79, Sp7-1: the
-kept group would make a second version of the source locale); so is the me-card **category** selector (R79b, D-b: a
-version in the other language does not change category, #501/#561; « Créer la version XX » keeps the category free,
-by decision). The old "page-locale"
+holds the proposal its locale selector is locked, as in editing (R78, R79, Sp7-1: the
+kept group would make a second version of the source locale), and so are « Proposer la version XX » (R93, decision 1
+of the eighth review: a second translation took the form back to the source locale, group kept) and the me-card
+**category** selector (R79b, D-b: a version in the other language does not change category, #501/#561; « Créer la
+version XX » keeps the category free, by decision), all described by one text, `admin.lockedByProposal`, which says
+that « Annuler » drops the proposal and empties the form (R93, CR8-4). The old "page-locale"
 semantics is gone with the page-level selector (one locale per form, see above). About *settings* is
 the one singleton per locale, so its proposal is **deferred**: parked in `pendingProposal`, applied on the
 return of `load()` for the target locale (hence the `flush: 'sync'` watcher, or the copy from the server

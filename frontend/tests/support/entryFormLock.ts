@@ -8,10 +8,9 @@ import { expect, it } from 'vitest'
  * jamais « cet id existe ».
  */
 export const LOCALE_LOCKED_EDITING_TEXT = "La langue d'une entrée existante ne peut pas être modifiée."
-export const LOCALE_LOCKED_PROPOSAL_TEXT =
-  'La langue est celle de la proposition de traduction ; « Annuler » permet d\'en changer.'
-export const CATEGORY_LOCKED_PROPOSAL_TEXT =
-  'La catégorie est celle de la proposition de traduction ; « Annuler » permet d\'en changer.'
+/** Le texte unique du verrou d'une proposition : langue, bouton de traduction et catégorie « moi » le désignent (R93). */
+export const LOCKED_BY_PROPOSAL_TEXT =
+  'Verrouillé par la proposition de traduction en cours ; « Annuler » l\'abandonne et vide le formulaire.'
 
 /**
  * Les textes que désigne l'`aria-describedby` du champ `selector`, dans l'ordre des identifiants ;
@@ -19,7 +18,12 @@ export const CATEGORY_LOCKED_PROPOSAL_TEXT =
  * IDREF pendante est elle-même une faute d'accessibilité (`.claude/rules/frontend-a11y.md`).
  */
 export function describedTexts(wrapper: VueWrapper, selector: string): string[] {
-  const reference = wrapper.get(selector).attributes('aria-describedby')
+  return textsDescribing(wrapper, wrapper.get(selector), selector)
+}
+
+/** Comme `describedTexts`, pour un élément déjà trouvé (un bouton sans identifiant, par exemple). */
+export function textsDescribing(wrapper: VueWrapper, element: Pick<DOMWrapper<Element>, 'attributes'>, label = 'élément'): string[] {
+  const reference = element.attributes('aria-describedby')
   if (undefined === reference) {
     return []
   }
@@ -30,7 +34,7 @@ export function describedTexts(wrapper: VueWrapper, selector: string): string[] 
     .map((id) => {
       const target = wrapper.find(`#${id}`)
       if (!target.exists()) {
-        throw new Error(`${selector} : aria-describedby désigne #${id}, qui n'existe pas.`)
+        throw new Error(`${label} : aria-describedby désigne #${id}, qui n'existe pas.`)
       }
 
       return target.text()
@@ -49,6 +53,22 @@ export function formCancelButton(wrapper: VueWrapper, form?: number): DOMWrapper
   const buttons = undefined === form ? wrapper.findAll('form button') : wrapper.findAll('form')[form].findAll('button')
 
   return buttons.find((candidate) => candidate.text() === 'Annuler')
+}
+
+/**
+ * Le bouton « Proposer la version XX » du `form`-ième formulaire de la page (le libellé dépend de la langue du
+ * formulaire, d'où la recherche par préfixe).
+ */
+export function translateEntryButton(wrapper: VueWrapper, form: number): DOMWrapper<Element> {
+  const button = wrapper
+    .findAll('form')
+    [form].findAll('button')
+    .find((candidate) => candidate.text().startsWith('Proposer la version'))
+  if (undefined === button) {
+    throw new Error('Bouton de traduction introuvable.')
+  }
+
+  return button
 }
 
 /** Un formulaire par entrée, tel que les cas partagés du verrou le montent et le conduisent (#748, St8-5). */
@@ -130,13 +150,41 @@ export function describeEntryFormLock(lockCase: EntryFormLockCase): void {
     expect(describedTexts(wrapper, locale)).toEqual([...permanent, LOCALE_LOCKED_EDITING_TEXT])
   })
 
+  // Décision 1 de la huitième relecture (R93, CR8-1) : une seconde traduction depuis la proposition remettait
+  // le formulaire dans la langue source, groupe gardé (Sp7-1) ; le serveur la refuse (409). Le bouton est
+  // désactivé et décrit par le texte du verrou, qui dit que « Annuler » est la sortie.
+  it(`${prefix}après une proposition, « Proposer la version … » est désactivé et décrit par le texte du verrou`, async () => {
+    const wrapper = await lockCase.mount()
+
+    await lockCase.startEdit(wrapper)
+    expect(translateEntryButton(wrapper, form).attributes('disabled')).toBeUndefined()
+    await lockCase.propose(wrapper)
+
+    const button = translateEntryButton(wrapper, form)
+    expect(button.attributes('disabled')).toBeDefined()
+    expect(textsDescribing(wrapper, button)).toEqual([LOCKED_BY_PROPOSAL_TEXT])
+  })
+
+  it(`${prefix}« Annuler » après une proposition rend le bouton de traduction libre de tout texte de verrou`, async () => {
+    const wrapper = await lockCase.mount()
+
+    await lockCase.startEdit(wrapper)
+    await lockCase.propose(wrapper)
+    await formCancelButton(wrapper, form)?.trigger('click')
+    await flushPromises()
+
+    // Le formulaire est vide : le bouton reste désactivé faute de prose, mais ne désigne plus aucun verrou
+    // (une IDREF vers un texte retiré serait pendante, et `textsDescribing` échoue sur elle).
+    expect(textsDescribing(wrapper, translateEntryButton(wrapper, form))).toEqual([])
+  })
+
   it(`${prefix}après une proposition, le verrou de la langue est expliqué et « Annuler » retire l'explication`, async () => {
     const wrapper = await lockCase.mount()
 
     await lockCase.startEdit(wrapper)
     await lockCase.propose(wrapper)
 
-    expect(describedTexts(wrapper, locale)).toEqual([...permanent, LOCALE_LOCKED_PROPOSAL_TEXT])
+    expect(describedTexts(wrapper, locale)).toEqual([...permanent, LOCKED_BY_PROPOSAL_TEXT])
 
     await formCancelButton(wrapper, form)?.trigger('click')
     await flushPromises()

@@ -39,6 +39,20 @@ describe('useEntryFormLock', () => {
     expect(lock.state).toBe('editing')
   })
 
+  it("isProposalLocked et proposalDescribedBy ne valent que pendant une proposition, pas en édition", () => {
+    const { lock, isEditing, hasProposal } = lockOf()
+    expect(lock.isProposalLocked).toBe(false)
+    expect(lock.proposalDescribedBy).toBeUndefined()
+
+    hasProposal.value = true
+    expect(lock.isProposalLocked).toBe(true)
+    expect(lock.proposalDescribedBy).toBe('hint')
+
+    isEditing.value = true
+    expect(lock.isProposalLocked).toBe(false)
+    expect(lock.proposalDescribedBy).toBeUndefined()
+  })
+
   it("l'identifiant du texte se lit sans `.value`", () => {
     expect(lockOf().lock.hintId).toBe('hint')
   })

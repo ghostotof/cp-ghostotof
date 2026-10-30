@@ -26,7 +26,7 @@ import type { AdminTranslationRepository } from '../../../../src/domain/admin/tr
 import { AdminTranslationError } from '../../../../src/domain/admin/translation/errors/AdminTranslationError'
 import { expectNoAccessibilityViolation } from '../../../support/axe'
 import {
-  CATEGORY_LOCKED_PROPOSAL_TEXT,
+  LOCKED_BY_PROPOSAL_TEXT,
   describedTexts,
   describeEntryFormLock,
   formCancelButton,
@@ -1072,7 +1072,7 @@ describe('AdminAboutPage', () => {
 
       expect(wrapper.get('#admin-about-me-card-category').attributes('disabled')).toBeDefined()
       expect(valueOf(wrapper, '#admin-about-me-card-category')).toBe('technical')
-      expect(describedTexts(wrapper, '#admin-about-me-card-category')).toEqual([CATEGORY_LOCKED_PROPOSAL_TEXT])
+      expect(describedTexts(wrapper, '#admin-about-me-card-category')).toEqual([LOCKED_BY_PROPOSAL_TEXT])
 
       await formCancelButton(wrapper, ME_FORM)?.trigger('click')
       await flushPromises()

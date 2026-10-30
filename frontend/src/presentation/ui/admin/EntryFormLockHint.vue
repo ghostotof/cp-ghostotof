@@ -27,6 +27,6 @@ const { t } = useI18n()
     :id="id"
     class="form-text mb-3"
   >
-    {{ 'editing' === state ? t('admin.localeLockedEditing') : t('admin.localeLockedProposal') }}
+    {{ 'editing' === state ? t('admin.localeLockedEditing') : t('admin.lockedByProposal') }}
   </p>
 </template>

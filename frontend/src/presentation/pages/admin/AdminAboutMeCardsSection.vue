@@ -23,7 +23,7 @@ import BaseTextarea from '../../ui/BaseTextarea.vue'
 import BaseSelect from '../../ui/BaseSelect.vue'
 import TranslateEntryButton from '../../ui/admin/TranslateEntryButton.vue'
 import EntryFormLockHint from '../../ui/admin/EntryFormLockHint.vue'
-import { useEntryFormLock } from '../../ui/admin/useEntryFormLock'
+import { describedBy, useEntryFormLock } from '../../ui/admin/useEntryFormLock'
 import OrderHandle from '../../ui/admin/OrderHandle.vue'
 import OrderToolbar from '../../ui/admin/OrderToolbar.vue'
 import { LOCALE_NATIVE_NAMES, SUPPORTED_LOCALES, type Locale } from '../../../domain/portfolio/entities/Locale'
@@ -395,23 +395,24 @@ function categoryLabel(category: AdminAboutMeCardCategory): string {
         change pas de catégorie (#501, #561) — la changer vidait « Version de »
         (le watcher ci-dessus) et l'enregistrement créait une carte détachée de sa
         source avec la prose générée. « Créer la version XX » reste libre. L'aide
-        n'existe que pendant le verrou, d'où un `aria-describedby` conditionnel —
-        jamais une référence vers un élément absent.
+        propre à la catégorie n'existe qu'en édition ; pendant une proposition, la
+        catégorie désigne le texte du verrou du formulaire (R93) — jamais une
+        référence vers un élément absent.
       -->
       <BaseSelect
         id="admin-about-me-card-category"
         v-model="form.category"
         :disabled="lock.isEntryLocked"
-        :aria-describedby="lock.isEntryLocked ? CATEGORY_HELP_ID : undefined"
+        :aria-describedby="isEditing ? CATEGORY_HELP_ID : lock.proposalDescribedBy"
         :label="t('admin.about.meCard.categoryLabel')"
         :options="categoryOptions"
       />
       <p
-        v-if="lock.isEntryLocked"
+        v-if="isEditing"
         :id="CATEGORY_HELP_ID"
         class="form-text mb-3"
       >
-        {{ isEditing ? t('admin.about.meCard.categoryLockedHelp') : t('admin.about.meCard.categoryProposalLockedHelp') }}
+        {{ t('admin.about.meCard.categoryLockedHelp') }}
       </p>
       <BaseSelect
         id="admin-about-me-card-translation-group"
@@ -446,8 +447,8 @@ function categoryLabel(category: AdminAboutMeCardCategory): string {
         <TranslateEntryButton
           :form-locale="form.locale"
           :is-translating="isTranslating"
-          :disabled="!hasProseToTranslate || isSubmitting || isLocked"
-          :aria-describedby="lockedHintId"
+          :disabled="!hasProseToTranslate || isSubmitting || isLocked || lock.isProposalLocked"
+          :aria-describedby="describedBy(lockedHintId, lock.proposalDescribedBy)"
           @translate="handleTranslate"
         />
       </div>

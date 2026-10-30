@@ -62,7 +62,7 @@
     "comingSoon": "This section will be available soon.",
     "localeLabel": "Language",
     "localeLockedEditing": "The language of an existing entry cannot be changed.",
-    "localeLockedProposal": "The language is that of the translation proposal; “Cancel” lets you change it.",
+    "lockedByProposal": "Locked by the current translation proposal; “Cancel” discards it and clears the form.",
     "nav": {
       "content": "Content",
       "technologies": "Technologies",
@@ -181,7 +181,6 @@
         "editAction": "Edit",
         "categoryLabel": "Category",
         "categoryLockedHelp": "A card's category cannot be changed: to file it elsewhere, create it in the right category (its versions in the other languages too), then delete this one.",
-        "categoryProposalLockedHelp": "The category is that of the translation proposal; “Cancel” lets you change it.",
         "categoryTechnical": "Technically",
         "categoryPersonal": "Personally",
         "categoryHobby": "Outside work",

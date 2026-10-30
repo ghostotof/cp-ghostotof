@@ -24,7 +24,7 @@ import BaseTextarea from '../../ui/BaseTextarea.vue'
 import BaseSelect from '../../ui/BaseSelect.vue'
 import TranslateEntryButton from '../../ui/admin/TranslateEntryButton.vue'
 import EntryFormLockHint from '../../ui/admin/EntryFormLockHint.vue'
-import { useEntryFormLock } from '../../ui/admin/useEntryFormLock'
+import { describedBy, useEntryFormLock } from '../../ui/admin/useEntryFormLock'
 import OrderHandle from '../../ui/admin/OrderHandle.vue'
 import OrderToolbar from '../../ui/admin/OrderToolbar.vue'
 import { LOCALE_NATIVE_NAMES, SUPPORTED_LOCALES, type Locale } from '../../../domain/portfolio/entities/Locale'
@@ -366,8 +366,8 @@ useUnsavedOrderGuard(isOrderDirty)
           <TranslateEntryButton
             :form-locale="form.locale"
             :is-translating="isTranslating"
-            :disabled="!hasProseToTranslate || isSubmitting || isOrderDirty"
-            :aria-describedby="lockedHintId"
+            :disabled="!hasProseToTranslate || isSubmitting || isOrderDirty || lock.isProposalLocked"
+            :aria-describedby="describedBy(lockedHintId, lock.proposalDescribedBy)"
             @translate="handleTranslate"
           />
         </div>
