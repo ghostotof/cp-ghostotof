@@ -60,7 +60,8 @@ use Symfony\Component\Routing\RouterInterface;
  *     le pare-feu et l'égalité des statuts serait triviale. Conséquence : un `#[IsGranted]`
  *     posé sur une route sans règle d'`access_control` ne se voit pas ici. Que toute
  *     autorisation de `/api` soit une règle d'`access_control`, la prémisse de la lecture
- *     publique, est tenu par `AuthorizationLivesInAccessControlTest`, seul témoin.
+ *     publique, est tenu par `AuthorizationLivesInAccessControlTest` (les jetons) et
+ *     `ApiPlatformOperationsCarryNoSecurityTest` (les métadonnées compilées), seuls témoins.
  */
 final class ApiRouteExposureTest extends WebTestCase
 {
@@ -245,7 +246,8 @@ final class ApiRouteExposureTest extends WebTestCase
      * la réponse (`StaleSessionCookiesClearingListener`), aux attributs exacts de la
      * fabrique : sans quoi une session morte resterait dans le navigateur jusqu'à sa
      * fermeture. Une route sans règle ne serait pas jugée ici, ce qu'un `#[IsGranted]`
-     * posé dessus ferait passer : `AuthorizationLivesInAccessControlTest` le garde.
+     * posé dessus ferait passer : `AuthorizationLivesInAccessControlTest` et
+     * `ApiPlatformOperationsCarryNoSecurityTest` le gardent.
      * Mêmes corps et en-têtes que l'invariant n°7 ; les méthodes non sûres portent en plus
      * une paire `XSRF-TOKEN` valide, sans quoi le 403 du double-submit répondrait avant le
      * pare-feu dans les trois variantes (R59, C6-1).

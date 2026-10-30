@@ -163,14 +163,19 @@ paths:
     or the double-submit's 403 would answer first —, a refused `BEARER` (invalid, expired) gets the anonymous status, a 401
     of a route that requires a role (`requiresAccess()`) expires both cookies with the factory's exact attributes, and a
     `PUBLIC_PATHS` route sets no cookie the anonymous call does not; the premise (every authorization of `/api` is an
-    `access_control` rule) is held by `AuthorizationLivesInAccessControlTest` (C5-12), the only witness of a `#[IsGranted]`
-    put on a route without a rule, which the invariant no longer judges. Its detector (`tests/Support/AuthorizationSites`,
-    proven on code extracts) also refuses a hand-thrown `AccessDenied(Http)Exception` / `UnauthorizedHttpException`, a
-    static `::isGranted(`, `AccessDecisionManagerInterface` and an `is_granted(` string; each exemption (the MCP
-    reader, the two CSRF guards) carries its reason and the exact number of sites it covers.
+    `access_control` rule) is held by `AuthorizationLivesInAccessControlTest` and `ApiPlatformOperationsCarryNoSecurityTest`
+    (C5-12, R60, R61), the only witnesses of a `#[IsGranted]` or a `security:` put on a route without a rule, which the
+    invariant no longer judges. The first one's detector (`tests/Support/AuthorizationSites`, by tokens, proven on code
+    extracts) also refuses a hand-thrown `AccessDenied(Http)Exception` / `UnauthorizedHttpException`, a static
+    `::isGranted(`, `AccessDecisionManagerInterface` and an `is_granted(` string; each exemption (the MCP reader, the two
+    CSRF guards) carries its reason and the exact number of sites it covers. The second reads the **compiled** API
+    Platform metadata — `security`, `securityPostDenormalize`, `securityPostValidation` of every resource and operation
+    (39 classes, 112 operations on 2026-10-30) — so it also sees what the tokens cannot: a `security:` declared in YAML or
+    XML, or merged by `api_platform.defaults` (measured: a `defaults.security` in a temporary config file turns it red
+    and leaves the first green).
     Rejected: `lazy: true` (the JWT authenticator's `supports()` stays `true`), a `JWTAuthenticator` subclass, a
     firewall without authenticator for public routes. Pinned by `PublicRouteIgnoresRefusedSession{,Registration}Test`,
-    `AuthorizationLivesInAccessControlTest` and, on the real stack, `tools/smoke-dead-session-cookie.sh`
+    `AuthorizationLivesInAccessControlTest`, `ApiPlatformOperationsCarryNoSecurityTest` and, on the real stack, `tools/smoke-dead-session-cookie.sh`
     (`smoke-test-preprod`, behind the Basic Auth the test container lacks): a random `BEARER` on a public read gets 200
     and no `Set-Cookie` for `BEARER` nor `XSRF-TOKEN`; on `/api/me` a 401 that expires both. A `curl` that gets no
     answer exits 1 with a message, a Basic Auth holding a line break is refused (exit 2), and that plumbing is shared

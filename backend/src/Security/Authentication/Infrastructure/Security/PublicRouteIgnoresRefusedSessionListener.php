@@ -26,7 +26,8 @@ use Symfony\Component\Security\Http\Event\LoginFailureEvent;
  * **Pourquoi l'`AccessMap`**, pas une liste des routes publiques : c'est la source de vérité de
  * l'`AccessListener`, aucune seconde liste n'est à tenir. La prémisse — toute autorisation de `/api`
  * est une règle d'`access_control`, et elle ne dépend que du chemin — est gardée par
- * `AuthorizationLivesInAccessControlTest` et `AccessMapStaysPathOnlyTest`.
+ * `AuthorizationLivesInAccessControlTest` (les jetons), `ApiPlatformOperationsCarryNoSecurityTest`
+ * (les métadonnées compilées d'API Platform) et `AccessMapStaysPathOnlyTest`.
  *
  * **Le dispatcher d'`api` seul**, le seul qui lit le cookie (`login` n'a pas de JWT, `mcp` et
  * `oauth` sont d'autres firewalls) ; **priorité -1024** pour avoir le dernier mot sur la réponse.
