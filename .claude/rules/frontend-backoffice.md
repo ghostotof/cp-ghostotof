@@ -178,7 +178,9 @@ Quality principles/traits, About site/me cards) behaves the same way: the form s
 the target locale, the non-prose fields (`version`, `occurredAt`, `iconKey`…) are kept, **the source
 entry's `translationGroup` is kept too** (spec 0004 D9, `sourceGroup` — distinct from the selector's
 value, so a lone source still attaches its proposal) so saving the proposed version links it with no
-extra gesture, and a `role="status"` banner names the proposal's source locale. The old "page-locale"
+extra gesture, and a `role="status"` banner names the proposal's source locale; while the form
+holds the proposal its locale selector is locked, as in editing, and « Annuler » drops it (R78, R79, Sp7-1: the
+kept group would make a second version of the source locale). The old "page-locale"
 semantics is gone with the page-level selector (one locale per form, see above). About *settings* is
 the one singleton per locale, so its proposal is **deferred**: parked in `pendingProposal`, applied on the
 return of `load()` for the target locale (hence the `flush: 'sync'` watcher, or the copy from the server

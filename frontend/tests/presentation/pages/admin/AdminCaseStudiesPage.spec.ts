@@ -148,6 +148,11 @@ function buttonLabelled(scope: VueWrapper | DOMWrapper<Element>, label: string):
   return button as DOMWrapper<HTMLButtonElement>
 }
 
+/** Le « Annuler » du formulaire : la barre d'ordre du tableau porte le sien, qu'on ne vise pas ici. */
+function formCancelButton(wrapper: VueWrapper): DOMWrapper<Element> | undefined {
+  return wrapper.findAll('form button').find((candidate) => candidate.text() === 'Annuler')
+}
+
 function translateButton(wrapper: VueWrapper): DOMWrapper<Element> {
   const button = wrapper.findAll('button').find((candidate) => candidate.text().includes('Proposer la version'))
   if (!button) throw new Error('Bouton de traduction introuvable.')
@@ -461,6 +466,43 @@ describe('AdminCaseStudiesPage', () => {
     const banner = wrapper.get('form [role="status"]')
     expect(banner.text()).toContain('Proposition générée par IA')
     expect(banner.text()).toContain('FR')
+  })
+
+  it("après une proposition, le sélecteur de langue est désactivé et « Annuler » est affiché", async () => {
+    const { wrapper } = await mountPage(createStubRepository())
+
+    await buttonLabelled(actionsForLine(wrapper, 'PHPStan progressif sur un legacy'), 'Modifier').trigger('click')
+    await translateButton(wrapper).trigger('click')
+    await flushPromises()
+
+    // Création dans la langue cible (le formulaire n'est plus en édition) : la
+    // proposition est la version de l'entrée source dans l'autre langue, dans son
+    // groupe gardé. Changer la langue en ferait une seconde version de la langue
+    // source dans ce groupe (Sp7-1) : le sélecteur reste verrouillé, comme en édition.
+    expect(wrapper.get('#admin-case-study-locale').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('h2').text()).toBe('Ajouter une étude de cas')
+    expect(formCancelButton(wrapper)).toBeDefined()
+  })
+
+  it("« Annuler » après une proposition rend un formulaire vide, le sélecteur actif, sans avis", async () => {
+    const { wrapper } = await mountPage(createStubRepository())
+
+    await buttonLabelled(actionsForLine(wrapper, 'PHPStan progressif sur un legacy'), 'Modifier').trigger('click')
+    await translateButton(wrapper).trigger('click')
+    await flushPromises()
+    expect(wrapper.find('form [role="status"]').exists()).toBe(true)
+    expect(formCancelButton(wrapper)).toBeDefined()
+
+    await formCancelButton(wrapper)?.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('form [role="status"]').exists()).toBe(false)
+    expect(wrapper.get('#admin-case-study-locale').attributes('disabled')).toBeUndefined()
+    expect(valueOf(wrapper, '#admin-case-study-locale')).toBe('fr')
+    expect(valueOf(wrapper, '#admin-case-study-translation-group')).toBe('')
+    expect(valueOf(wrapper, '#admin-case-study-title')).toBe('')
+    expect(wrapper.get('h2').text()).toBe('Ajouter une étude de cas')
+    expect(formCancelButton(wrapper)).toBeUndefined()
   })
 
   it('enregistre la proposition comme une nouvelle entrée EN rattachée au même groupe', async () => {

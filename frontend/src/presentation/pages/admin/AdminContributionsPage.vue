@@ -290,10 +290,15 @@ useUnsavedOrderGuard(isOrderDirty)
         novalidate
         @submit.prevent="handleSubmit"
       >
+        <!-- Verrouillée en édition (un PUT ne change pas la langue) et tant que le formulaire
+             porte une proposition de traduction : celle-ci est la version de l'entrée source
+             dans l'autre langue, dans son groupe gardé ; en changer la langue créerait une
+             seconde version de la langue source dans ce groupe (#748, Sp7-1). « Annuler »
+             retire la proposition et rend le sélecteur. -->
         <BaseSelect
           id="admin-contribution-locale"
           v-model="form.locale"
-          :disabled="isEditing"
+          :disabled="isEditing || null !== proposalSourceLocale"
           :label="t('admin.contributions.localeLabel')"
           :options="localeOptions"
         />
@@ -398,7 +403,7 @@ useUnsavedOrderGuard(isOrderDirty)
             {{ t('admin.contributions.save') }}
           </button>
           <button
-            v-if="isEditing"
+            v-if="isEditing || null !== proposalSourceLocale"
             type="button"
             class="btn btn-outline-light"
             @click="resetForm"
