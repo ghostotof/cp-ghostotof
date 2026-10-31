@@ -165,6 +165,9 @@ final readonly class CsrfCookieRequestSubscriber
         // Symfony l'exécute bien comme /api/logout.
         $path = CanonicalPath::of($request);
 
+        // Le préfixe large est voulu, pas `CanonicalPath::isUnderApi()` : le pare-feu `api` est `^/api` non
+        // ancré (A23), une route `/apix` y lirait `BEARER` ; ancrer ce test sortirait une écriture authentifiée
+        // du double-submit (`CsrfCookieRequestSubscriberTest`, cas `/apix`).
         if (!str_starts_with($path, '/api')) {
             return false;
         }

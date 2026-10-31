@@ -44,7 +44,10 @@ What stays here: the CSRF guards (double-submit, login-CSRF), the base access, `
     `GET`, `HEAD`, `OPTIONS` or one of its public `UNSAFE_METHODS` (invariant n° 10 of `ApiRouteExposureTest`, C8-6: a
     `QUERY` route or a custom method would leave the double-submit; « safe » is a convention the review keeps, C9-7).
     **`/api/logout` stays under the guard**: its 403 is the only barrier against a forced logout (C9-1, pinned by
-    `AuthenticationFlowTest::testAForcedLogoutWithoutTheCsrfHeaderExpiresNoCookie`).
+    `AuthenticationFlowTest::testAForcedLogoutWithoutTheCsrfHeaderExpiresNoCookie`, and without any cookie, the
+    real cross-site case, `testACrossSiteLogoutWithoutAnyCookieIsForbiddenAndExpiresNoCookie`). Its own test of
+    « under `/api` » is the **bare** prefix on purpose: it follows the `api` firewall, `^/api` unanchored (A23),
+    where a `/apix` route would read `BEARER` (`CsrfCookieRequestSubscriberTest`, `/apix`).
   - `Infrastructure/Http/LoginCsrfRequestListener.php` — **login-CSRF guard** (issue #76) on the two anonymous
     routes that *set* a `BEARER` cookie, `POST /api/login_check` and `POST /api/account/base-access`. Both are
     rightly outside the double-submit (an anonymous caller has no `XSRF-TOKEN` to echo), but a cross-site
@@ -77,8 +80,9 @@ What stays here: the CSRF guards (double-submit, login-CSRF), the base access, `
     regression test; two `kernel.exception` listeners use it too, `Shared/Infrastructure/Http/`'s
     `ApiProblemResponseListener` and `ApiJsonErrorFormatListener` (see "Errors under `/api`" in `.claude/rules/backoffice-api.md`) — and
     `SecurityAuditLogger` logs the canonical form for the same reason. A subtree check goes through
-    `CanonicalPath::isUnder($request, '/api/<x>')` (`isUnderApi()` is that, for `/api`): "the prefix exactly,
-    or the prefix followed by `/`", the `access_control` anchoring rule, written once (issue #322).
+    `CanonicalPath::isUnder($request, '/api/<x>')` (`isUnderApi()` is that, for `/api`; `isPathUnder($path, $prefix)`
+    is the same rule on a string, for the tests that walk the router): "the prefix exactly, or the prefix followed
+    by `/`", the `access_control` anchoring rule, written once (issue #322).
   - **The `login` firewall is anchored on its `check_path`, the `api` one deliberately is not** (audit A23,
     `security.yaml`). `login` is `^/api/login_check$`: it holds a `json_login` and reads **no** JWT, so any
     route ever added under a looser `^/api/login` would be served anonymously, the visitor's `BEARER` never

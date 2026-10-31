@@ -9,12 +9,12 @@ use App\Security\Authentication\Infrastructure\Http\CsrfCookieRequestSubscriber;
 use App\Security\Authentication\Infrastructure\Http\CsrfCookieTokenSigner;
 use App\Security\Authentication\Infrastructure\Security\PublicRouteIgnoresRefusedSessionListener;
 use App\Security\User\Application\CpgUserRegistrarInterface;
+use App\Shared\Infrastructure\Http\CanonicalPath;
 use App\Tests\Support\ConcreteApiUrl;
 use App\Tests\Support\HttpJson;
 use App\Tests\Support\RefusedBearerCookie;
 use App\Tests\Support\TestCredentials;
 use Doctrine\ORM\EntityManagerInterface;
-use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\BrowserKit\Cookie as BrowserKitCookie;
@@ -63,7 +63,8 @@ use Symfony\Component\Routing\RouterInterface;
  *  9. sur le pare-feu `api`, une route publique est exactement une route sans règle
  *     d'`access_control` : `requiresAccess()` vaut vrai si et seulement si le chemin n'est ni
  *     dans PUBLIC_PATHS ni dans RULELESS_OUTSIDE_PUBLIC_PATHS (#748, R73), à l'exécution sur
- *     le routeur et l'`AccessMap`. Les témoins de cette prémisse sont listés une fois, dans
+ *     le routeur et l'`AccessMap` : c'est la prémisse « route publique = route sans règle ».
+ *     Les témoins de cette prémisse sont listés une fois, dans
  *     `.claude/rules/security-authentication-sessions.md` (puce de
  *     `PublicRouteIgnoresRefusedSessionListener`) ;
  * 10. chaque route de `/api` déclare ses méthodes, et chacune est jugée par le double-submit : `GET`, `HEAD`,
@@ -179,29 +180,6 @@ final class ApiRouteExposureTest extends WebTestCase
     }
 
     /**
-     * « Relève de `/api` » : `/api` lui-même ou un chemin qui le prolonge par `/` — jamais un voisin comme `/apis`,
-     * `/api-x` ou `/apix/y`, que l'`access_control` ancré (`(/|$)`) ne couvre pas non plus. Écrit une fois, lu par
-     * l'invariant n° 10 et par `allApiRoutePaths()`.
-     */
-    #[DataProvider('pathsAndWhetherTheyAreApi')]
-    public function testOnlyApiPathsAreJudged(string $path, bool $expected): void
-    {
-        self::assertSame($expected, $this->isApiPath($path), $path);
-    }
-
-    /**
-     * @return iterable<string, array{0: string, 1: bool}>
-     */
-    public static function pathsAndWhetherTheyAreApi(): iterable
-    {
-        yield '/api' => ['/api', true];
-        yield '/api/me' => ['/api/me', true];
-        yield '/apis' => ['/apis', false];
-        yield '/api-x' => ['/api-x', false];
-        yield '/apix/y' => ['/apix/y', false];
-    }
-
-    /**
      * Invariant n° 10 (#748, R89, C8-6, C8-4) : chaque route de `/api` déclare ses méthodes, et chacune est jugée par
      * le double-submit — `GET`, `HEAD`, `OPTIONS` (SAFE_METHODS_OUTSIDE_THE_DOUBLE_SUBMIT) ou l'une des
      * `CsrfCookieRequestSubscriber::UNSAFE_METHODS`. Une route sans méthode déclarée les accepte toutes et les autres
@@ -217,7 +195,7 @@ final class ApiRouteExposureTest extends WebTestCase
 
         foreach ($this->router()->getRouteCollection() as $route) {
             $path = $route->getPath();
-            if (!$this->isApiPath($path)) {
+            if (!CanonicalPath::isPathUnder($path, '/api')) {
                 continue;
             }
 
@@ -342,8 +320,8 @@ final class ApiRouteExposureTest extends WebTestCase
      * de l'anonyme. Sur chaque chemin de `/api` et chaque méthode, trois appels sur un
      * pot de cookies vidé et des quotas remis à zéro : sans cookie, avec une valeur
      * invalide, avec un JWT expiré signé par l'encodeur du conteneur. Les statuts des
-     * deux derniers **égalent** celui du premier — une route publique n'a plus le 401
-     * de Lexik pour un cookie mort, une route protégée garde son refus, jamais plus
+     * deux derniers **égalent** celui du premier — une route publique répond à un
+     * cookie mort comme à l'anonyme, une route protégée garde son refus, jamais plus
      * que l'anonyme n'obtiendrait —, et pour une route de PUBLIC_PATHS la réponse
      * n'ajoute aucun cookie à ceux de l'anonyme (le cookie refusé y est laissé, la
      * première route protégée l'efface). Sur le pare-feu `api`, une route qui exige un rôle
@@ -780,7 +758,7 @@ final class ApiRouteExposureTest extends WebTestCase
         foreach ($this->router()->getRouteCollection() as $route) {
             $path = $route->getPath();
 
-            if (!$this->isApiPath($path) || isset(self::PUBLIC_PATHS[$path])) {
+            if (!CanonicalPath::isPathUnder($path, '/api') || isset(self::PUBLIC_PATHS[$path])) {
                 continue;
             }
 
@@ -800,21 +778,12 @@ final class ApiRouteExposureTest extends WebTestCase
         $paths = [];
 
         foreach ($this->router()->getRouteCollection() as $route) {
-            if ($this->isApiPath($route->getPath())) {
+            if (CanonicalPath::isPathUnder($route->getPath(), '/api')) {
                 $paths[$route->getPath()] = true;
             }
         }
 
         return array_keys($paths);
-    }
-
-    /**
-     * Le chemin relève de `/api` : `/api` lui-même ou `/api/…`, jamais un voisin (`/apis`, `/api-x`). Seule lecture
-     * de « relève de `/api` » de ce fichier, la même ancre que l'`access_control` (`(/|$)`).
-     */
-    private function isApiPath(string $path): bool
-    {
-        return '/api' === $path || str_starts_with($path, '/api/');
     }
 
     /**

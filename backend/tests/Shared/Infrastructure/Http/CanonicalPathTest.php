@@ -89,6 +89,36 @@ final class CanonicalPathTest extends TestCase
     }
 
     /**
+     * La même règle sur une chaîne déjà canonique, pour les tests qui parcourent le routeur : `/api` exactement ou
+     * `/api/…`, jamais un voisin.
+     */
+    #[DataProvider('pathMembership')]
+    public function testIsPathUnder(string $path, bool $expected): void
+    {
+        self::assertSame($expected, CanonicalPath::isPathUnder($path, '/api'), $path);
+    }
+
+    /**
+     * @return iterable<string, array{string, bool}>
+     */
+    public static function pathMembership(): iterable
+    {
+        yield '/api' => ['/api', true];
+        yield '/api/me' => ['/api/me', true];
+        yield '/apis' => ['/apis', false];
+        yield '/api-x' => ['/api-x', false];
+        yield '/apix/y' => ['/apix/y', false];
+    }
+
+    #[DataProvider('malformedPrefixes')]
+    public function testIsPathUnderRefusesAMalformedPrefix(string $prefix): void
+    {
+        $this->expectException(MalformedPathPrefixException::class);
+
+        CanonicalPath::isPathUnder('/api/assistant/answers', $prefix);
+    }
+
+    /**
      * Un préfixe mal formé échouerait sans bruit : `/api/assistant/` ne
      * correspondrait plus à rien (une garde désactivée), `` correspondrait à
      * tout. L'erreur de programmation doit se voir.

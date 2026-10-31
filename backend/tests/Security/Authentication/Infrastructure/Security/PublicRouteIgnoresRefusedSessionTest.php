@@ -184,6 +184,8 @@ final class PublicRouteIgnoresRefusedSessionTest extends WebTestCase
         $required = 0;
         foreach ($router->getRouteCollection() as $route) {
             $path = $route->getPath();
+            // Le préfixe large est voulu : le pare-feu `api` est `^/api` non ancré (A23), le listener y vit et juge
+            // aussi un voisin comme `/apix` ; ancrer ce test le sortirait du parcours.
             if (!str_starts_with($path, '/api')) {
                 continue;
             }

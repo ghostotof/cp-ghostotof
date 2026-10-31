@@ -103,11 +103,14 @@ final class AuthenticationFlowTest extends WebTestCase
     public function testAForcedLogoutWithoutTheCsrfHeaderExpiresNoCookie(): void
     {
         $client = self::createClient();
-        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::USERNAME, TestCredentials::plainPassword(), [CpgUser::ROLE_TRUSTED]);
-        $client->request('POST', '/api/login_check', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_X_REQUESTED_WITH' => 'fetch'], content: self::jsonBody([
-            'username' => self::USERNAME,
-            'password' => TestCredentials::plainPassword(),
-        ]));
+        $registrar = $client->getContainer()->get(CpgUserRegistrarInterface::class);
+        $registrar->register(self::USERNAME, TestCredentials::plainPassword(), [CpgUser::ROLE_TRUSTED]);
+        $client->request(
+            'POST',
+            '/api/login_check',
+            server: ['CONTENT_TYPE' => 'application/json', 'HTTP_X_REQUESTED_WITH' => 'fetch'],
+            content: self::jsonBody(['username' => self::USERNAME, 'password' => TestCredentials::plainPassword()]),
+        );
         self::assertResponseIsSuccessful();
         self::assertNotNull($client->getCookieJar()->get('XSRF-TOKEN'));
 
@@ -120,6 +123,21 @@ final class AuthenticationFlowTest extends WebTestCase
         // La session est intacte.
         $client->request('GET', '/api/me');
         self::assertResponseIsSuccessful();
+    }
+
+    /**
+     * Le cas intersite réel : le navigateur n'envoie aucun cookie (`SameSite=Lax` sur une soumission d'un site tiers)
+     * et la requête n'a pas d'en-tête non plus. Le 403 du double-submit répond avant le `LogoutListener`, donc sans
+     * `Set-Cookie` : la réponse ne peut rien faire expirer chez la victime.
+     */
+    public function testACrossSiteLogoutWithoutAnyCookieIsForbiddenAndExpiresNoCookie(): void
+    {
+        $client = self::createClient();
+
+        $client->request('POST', '/api/logout');
+
+        self::assertResponseStatusCodeSame(403);
+        self::assertSame([], $client->getResponse()->headers->getCookies(), 'Un logout intersite refusé n\'expire aucun cookie.');
     }
 
     /**
