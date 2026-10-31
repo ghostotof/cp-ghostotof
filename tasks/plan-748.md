@@ -6214,7 +6214,8 @@ plus ou de moins se lit dans la liste. (B) un objet `AuthorizationExemption` : i
    directive, argument dynamique non statique, interpolation → `` `(${exp})` `` ; un `content` `null` ou absent n'est
    jamais visité.
 
-**Questions à l'auteur** (le plan suit la recommandation ; une autre réponse ne change que la tâche citée) :
+**Questions à l'auteur** (le plan suit la recommandation ; une autre réponse ne change que la tâche citée). **Réponses de
+l'auteur (2026-10-31) : Q1 (a) (A), Q1 (b) le texte reste, Q2 l'accepter — les trois recommandations, le plan ne change pas.**
 
 - **Q1 (R102)** : (a) **qui dit la fin du chargement** — options (A) à (D) ci-dessus ; **recommandé : (A)**,
   `useAdminLoad` déclare ses chargements (un endroit, aucune page à câbler, ordre sûr). (B) changerait l'interface

@@ -9,13 +9,13 @@ Dépôt /home/ghostotof/dev/cp-ghostotof, branche `feature/spec-0007-748-a11y`. 
   ne suffit pas.
 
 ## Lecture préalable
-- Dans `tasks/plan-748.md` : « Global Constraints », puis, pour les tâches **R88 et suivantes**, la section
-  « Corrections de la huitième relecture (2026-10-30) » en entier jusqu'à la première tâche (décisions de l'auteur,
+- Dans `tasks/plan-748.md` : « Global Constraints », puis, pour les tâches **R102 et suivantes**, la section
+  « Corrections de la neuvième relecture (2026-10-31) » en entier jusqu'à la première tâche (décisions de l'auteur,
   vérification des constats, options comparées, choix tranchés, questions, Review Focus, contraintes d'exécution, table
-  des fichiers), puis **ta tâche**. (R73–R87 : « Corrections de la septième relecture » ; R59–R72 : « … sixième
+  des fichiers), puis **ta tâche**. (R88–R101 : « Corrections de la huitième relecture » ; R73–R87 : « Corrections de la septième relecture » ; R59–R72 : « … sixième
   relecture » ; R46–R58 : « … cinquième relecture » ; R35–R45 : « … quatrième relecture » ; R23–R34 : « … troisième
   relecture » ; R12–R22 : « … deuxième relecture » ; R1–R11 : « Corrections de relecture ».) Constats et décisions de
-  la série : `tasks/relectures-748/relecture-8-constats.md`. Les sections passées
+  la série : `tasks/relectures-748/relecture-9-constats.md`. Les sections passées
   sont l'archive de leur moment : une note « *(rectifié le …)* » y dit ce que les séries ont rendu faux.
   Suis-la ; si elle est fausse sur le code réel (les tâches R précédentes ont pu le changer), adapte au plus près de
   son intention et note l'écart, ou rends la question.
