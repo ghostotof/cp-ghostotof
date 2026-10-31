@@ -77,3 +77,12 @@ check_plain_http_refused() {
 check_redirect_args_refused() {
   _check_value_refused ' : option de redirection ou URL non https:// avec la Basic Auth — rien de vérifié$'
 }
+
+# check_protocol_args_refused  (CASE_LABEL, CASE_RC, CASE_ERR, CASE_CALLS, CASE_OUT, CASE_VALUE)
+#
+# Une Basic Auth et, dans les arguments de smoke_fetch, `--proto` ou `--proto-redir` (seuls ou en `--nom=valeur`) :
+# ils l'emporteraient sur le `--proto-redir =https` posé avant eux. Sortie 2 avant tout appel de curl, « option de
+# protocole (--proto, --proto-redir) refusée avec la Basic Auth — rien de vérifié » en queue du message, la valeur nulle part.
+check_protocol_args_refused() {
+  _check_value_refused ' : option de protocole (--proto, --proto-redir) refusée avec la Basic Auth — rien de vérifié$'
+}

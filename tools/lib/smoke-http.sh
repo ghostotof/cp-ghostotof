@@ -40,6 +40,9 @@
 #   - une variable définie mais vide (le secret de préprod manquant) : « secret de Basic Auth vide ».
 # Une variable non définie n'envoie aucune Basic Auth (la prod, un smoke local). Une fois le fichier
 # écrit, la variable n'est plus exportée : aucun processus lancé ensuite (curl, dig, openssl) ne la reçoit.
+# Cela n'efface pas la valeur du processus lui-même : sa copie d'environnement, lisible sous /proc, la porte
+# encore. Aucune ligne de l'audit, des smokes ni de cette bibliothèque ne lit cette copie (R148b, garde de
+# tools/tests/smoke-http.test.sh).
 #
 # Pas de `set -e` ici, ni d'appel réseau à la source : une bibliothèque sourcée
 # ne change pas les options du shell qui la source. Aucune fonction ne fait
@@ -256,6 +259,19 @@ _smoke_is_redirect_or_plain_url_arg() {
   return 1
 }
 
+# _smoke_is_protocol_arg <argument de curl>
+#
+# Vrai (0) pour `--proto` ou `--proto-redir`, seuls ou en `--nom=valeur` (R148b) : curl retient la
+# dernière valeur donnée, et celle de l'appelant, placée après le `--proto-redir =https` de smoke_fetch,
+# l'emporterait. Les noms exacts seulement : curl refuse une abréviation (`--proto-r`), et
+# `--proto-default` ne change que le schéma d'une URL sans schéma. L'appelant ne cite pas l'argument.
+_smoke_is_protocol_arg() {
+  case "$1" in
+    --proto | --proto=* | --proto-redir | --proto-redir=*) return 0 ;;
+  esac
+  return 1
+}
+
 # smoke_fetch <libellé> <url> [arguments curl…]
 #
 # Lance `"$SMOKE_CURL" "${SMOKE_CURL_OPTS[@]}" [-K "$SMOKE_AUTH_CONFIG" --proto-redir =https] "$@" -w
@@ -282,6 +298,9 @@ _smoke_is_redirect_or_plain_url_arg() {
 #     redirection ou URL non https:// avec la Basic Auth — rien de vérifié » (C12-13). Le `-K` suivrait
 #     sinon une redirection ou une URL que le contrôle de `url` ci-dessus ne juge pas. Même refus,
 #     curl non appelé, valeur jamais citée. L'appel qui part porte `--proto-redir =https` ;
+#   - SMOKE_AUTH_CONFIG posé et `--proto` ou `--proto-redir` dans `"$@"` (seuls ou en `--nom=valeur`) : « <libellé> :
+#     option de protocole (--proto, --proto-redir) refusée avec la Basic Auth — rien de vérifié » (R148b). La
+#     dernière valeur de curl l'emporterait sur le `--proto-redir =https` posé avant. Même refus, curl non appelé ;
 #   - SMOKE_AUTH_CONFIG posé mais son fichier disparu : « <libellé> : fichier de la
 #     Basic Auth absent — rien de vérifié », curl n'est pas appelé (sans `-K`, il
 #     lirait le 401 de la préprod comme un résultat).
@@ -297,6 +316,10 @@ smoke_fetch() {
     for _smoke_arg in "$@"; do
       if _smoke_is_redirect_or_plain_url_arg "$_smoke_arg"; then
         echo "$label : option de redirection ou URL non https:// avec la Basic Auth — rien de vérifié" >&2
+        return 2
+      fi
+      if _smoke_is_protocol_arg "$_smoke_arg"; then
+        echo "$label : option de protocole (--proto, --proto-redir) refusée avec la Basic Auth — rien de vérifié" >&2
         return 2
       fi
     done

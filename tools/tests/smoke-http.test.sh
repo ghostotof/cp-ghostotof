@@ -597,6 +597,42 @@ if [ "$rc" -eq 0 ] && grep -q 'option de redirection ou URL non https://' "$TMP/
 else
   fail "refus d'un argument tracé" "rc=$rc ; $(grep -F "${args_auth%%:*}" "$TMP/trace" | head -3)"
 fi
+# R148b : `--proto` et `--proto-redir` (seuls ou en `--nom=valeur`) dans `"$@"` l'emporteraient sur le
+# `--proto-redir =https` posé avant eux : refusés avec la Basic Auth, sortie 2, curl jamais appelé, valeur jamais citée.
+for refused in "--proto" "--proto=https" "--proto-redir" "--proto-redir=all" "--proto-redir=http,https"; do
+  : > "$FAKE_ARGS"
+  rc=0
+  FAKE_STATUS=200 smoke_fetch "GET /proto" https://example.invalid/x -X POST "$refused" > "$TMP/stdout" 2> "$TMP/stderr" || rc=$?
+  CASE_LABEL="smoke_fetch : « $refused » dans les arguments avec la Basic Auth → retour 2, curl jamais appelé" \
+    CASE_RC="$rc" \
+    CASE_ERR="$TMP/stderr" \
+    CASE_CALLS="$FAKE_ARGS" \
+    CASE_OUT="$TMP/stdout" \
+    CASE_VALUE="$args_auth" \
+    check_protocol_args_refused
+done
+# La forme à deux arguments (`--proto-redir`, puis sa valeur) est refusée dès le premier.
+: > "$FAKE_ARGS"
+rc=0
+FAKE_STATUS=200 smoke_fetch "GET /proto" https://example.invalid/x --proto-redir '=all' > "$TMP/stdout" 2> "$TMP/stderr" || rc=$?
+CASE_LABEL="smoke_fetch : « --proto-redir =all » en deux arguments avec la Basic Auth → retour 2, curl jamais appelé" \
+  CASE_RC="$rc" \
+  CASE_ERR="$TMP/stderr" \
+  CASE_CALLS="$FAKE_ARGS" \
+  CASE_OUT="$TMP/stdout" \
+  CASE_VALUE="$args_auth" \
+  check_protocol_args_refused
+# Voisins permis : des options qui commencent comme elles sans être elles (`--progress-bar`, `--proto-default`).
+: > "$FAKE_ARGS"
+rc=0
+FAKE_STATUS=200 smoke_fetch "GET /proto" https://example.invalid/x --progress-bar --proto-default https || rc=$?
+expected_args="-sS --max-time 15 -K $SMOKE_AUTH_CONFIG --proto-redir =https --progress-bar --proto-default https"
+expected_args+=" -w \\n%{http_code} https://example.invalid/x"
+if [ "$rc" -eq 0 ] && [ "$(cat "$FAKE_ARGS")" = "$expected_args" ]; then
+  pass "smoke_fetch : --progress-bar et --proto-default ne sont pas des options de protocole refusées, l'appel part"
+else
+  fail "voisins de --proto" "rc=$rc ; $(cat -A "$FAKE_ARGS")"
+fi
 smoke_cleanup
 unset UNE_AUTH
 # Sans Basic Auth, `-L` et une URL http:// partent comme avant, sans `-K` ni `--proto-redir`.
@@ -781,11 +817,18 @@ env_dump_lines() {
   local pat_env='(^|[^[:alnum:]_.$-])env([^[:alnum:]_]|$)'
   local pat_set='(^|[;&|(`{]|\$\()[[:space:]]*set[[:space:]]*($|[|>;&)])'
   local pat_indirect='\$\{!'
+  # R148b : `export -n` ne retire la valeur que de l'environnement des fils ; /proc/<pid>/environ la montre encore.
+  local pat_proc_environ='/proc/[^[:space:]]*environ([^[:alnum:]_]|$)'
   while IFS= read -r line || [ -n "$line" ]; do
     n=$((n + 1))
     # La ligne d'interpréteur n'est pas un appel d'`env`.
     if [ "$n" -eq 1 ] && [[ "$line" == '#!'* ]]; then continue; fi
     # Le corps de _smoke_write_auth_config, seul lecteur de la valeur, lit par indirection.
+    # /proc/…/environ n'a aucune excuse, pas même dans le corps du lecteur : jugé avant son exemption.
+    if [[ "$line" =~ $pat_proc_environ ]]; then
+      printf '%s:%s\n' "$n" "$line"
+      continue
+    fi
     if [ "$line" = '_smoke_write_auth_config() {' ]; then in_reader=1; fi
     if [ "$in_reader" -eq 1 ]; then
       if [ "$line" = '}' ]; then in_reader=0; fi
@@ -817,6 +860,13 @@ dump_forbidden=(
   'export -p'
   'readonly -p'
   'value="${!some_name}"'
+  'cat /proc/self/environ'
+  'tr "\0" "\n" < /proc/$$/environ'
+  'strings "/proc/${pid}/environ"'
+  'cat /proc/12345/environ'
+  'cat /proc/self/../self/environ'
+  '# lire /proc/self/environ, dit en commentaire'
+  $'cat <<\'EOT\'\n/proc/self/environ\nEOT'
   $'cat <<\'EOT\'\n# declare -p SOME_NAME\nEOT'
   '# printenv, dit en commentaire'
 )
@@ -839,6 +889,9 @@ dump_allowed=(
   'setup_value="$offset"'
   'value="${#some_name}"'
   'value="${some_name:-}"'
+  'cat /proc/self/status'
+  'cat /proc/self/cmdline'
+  'echo /proc/self/environment'
   'echo "a pour valeur $env_name"'
 )
 for line in "${dump_allowed[@]}"; do
@@ -865,6 +918,15 @@ if [ -n "$(env_dump_lines "$TMP/mutant-lib.sh")" ]; then
   pass "garde des vidages : une indirection hors de _smoke_write_auth_config est refusée dans la bibliothèque"
 else
   fail "indirection hors de la fonction" "la garde ne voit rien"
+fi
+
+# R148b : la lecture de /proc/<pid>/environ est refusée aussi dans le corps du lecteur, exempté des autres motifs.
+cp "$LIB" "$TMP/mutant-lib.sh"
+sed 's|^  _smoke_value="${!_smoke_name:-}"$|&\n  : < /proc/self/environ|' "$LIB" > "$TMP/mutant-lib.sh"
+if [ -n "$(env_dump_lines "$TMP/mutant-lib.sh")" ] && grep -q '^  : < /proc/self/environ$' "$TMP/mutant-lib.sh"; then
+  pass "garde des vidages : /proc/self/environ lu dans le corps de _smoke_write_auth_config est refusé"
+else
+  fail "/proc/environ dans le lecteur" "la garde ne voit rien"
 fi
 
 # --- Sans SMOKE_CURL, c'est `curl` du PATH : le faux est placé en tête.

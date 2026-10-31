@@ -9244,6 +9244,25 @@ retour sur la cible relit ses réglages, qui retirent la proposition de toute fa
 
 ---
 
+### Task R148b : Outillage — `--proto`/`--proto-redir` refusés en argument, `/proc/…/environ` refusé (décision de l'auteur, 2026-10-31)
+
+**Décision.** R148 laissait deux contournements, sans appel actuel qui les utilise : (1) `--proto-redir …` ou `--proto …`
+(et `--proto-redir=…`, `--proto=…`) dans `"$@"` de `smoke_fetch` l'emporte, dernière valeur retenue par curl, sur le
+`--proto-redir =https` posé avant ; (2) `export -n` ne retire la valeur que de l'environnement des fils, `/proc/…/environ`
+la montre encore.
+
+**Fait.**
+- `tools/lib/smoke-http.sh` : `_smoke_is_protocol_arg` (noms exacts ; curl 8.14 refuse les abréviations, `--proto-default`
+  reste permis) ; avec `SMOKE_AUTH_CONFIG` posé, `smoke_fetch` rend 2 sans appel, « option de protocole (--proto,
+  --proto-redir) refusée avec la Basic Auth — rien de vérifié », valeur jamais citée.
+- `tools/tests/smoke-http.test.sh` : un cas rouge par forme (`check_protocol_args_refused`, `tools/tests/lib/smoke-cases.sh`),
+  voisins `--progress-bar` et `--proto-default` ; la garde des vidages refuse toute ligne qui lit `/proc/…/environ`,
+  y compris dans le corps de `_smoke_write_auth_config`, avec voisins `/proc/self/status`, `/proc/self/environment`.
+- Règle `deploiement-nginx.md` : une phrase par fait ajoutée à la liste des refus de `smoke_fetch`, à l'export retiré et
+  aux deux gardes.
+
+---
+
 ### Task R150 : Les lignes de plus de 140 caractères écrites par #748, dans les règles et le code (Sp12-1 ; décision 3, Q4)
 
 **Ce que « > 140 » mesure** : la longueur d'une ligne en caractères (`awk 'length>140'`), pas la taille d'un diff.
