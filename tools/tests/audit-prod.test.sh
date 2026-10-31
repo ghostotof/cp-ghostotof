@@ -220,13 +220,14 @@ calls_of() {
   done < "$TMP/$1.calls"
   return 0
 }
-# lacking <avec|sans> <nom> : les appels qui devraient porter --proto-redir et ne le portent pas (avec -K),
-# ou qui le portent sans devoir (sans -K), bornés à deux pour un message lisible.
+# lacking <avec|sans> <nom> [<prédicat>] : les appels qui devraient porter l'option que lit le prédicat
+# (has_proto_redir par défaut) et ne la portent pas (avec -K), ou qui la portent sans devoir (sans -K), bornés à deux
+# pour un message lisible.
 lacking() {
-  local line count=0
+  local line count=0 reads="${3:-has_proto_redir}"
   while IFS= read -r line; do
     [ -n "$line" ] || continue
-    if { [ "$1" = avec ] && ! has_proto_redir <<< "$line"; } || { [ "$1" = sans ] && has_proto_redir <<< "$line"; }; then
+    if { [ "$1" = avec ] && ! "$reads" <<< "$line"; } || { [ "$1" = sans ] && "$reads" <<< "$line"; }; then
       count=$((count + 1))
       [ "$count" -le 2 ] && printf '%s | ' "${line:0:90}"
     fi
@@ -253,6 +254,28 @@ elif [ -n "$bad" ]; then
   fail "aucun appel sans -K ne porte --proto-redir" "avec l'option : $bad"
 else
   pass "aucun appel sans -K ne porte --proto-redir (avec et sans Basic Auth)"
+fi
+
+# --- D2 de la treizième relecture : `--proto-redir` ne borne que les redirections ; la première requête part du
+# schéma de l'URL, que curl devine en `http://` quand elle n'en porte pas. Chaque appel qui porte `-K` porte donc
+# aussi `--proto =https` (curl refuse alors toute URL qui n'est pas en https, la sienne comprise) ; un appel sans
+# `-K` ne le porte pas : les sondes anonymes de la section 3 visent des URL en `http://` exprès.
+has_proto() { grep -qE -- '(^| )--proto =https( |$)'; }
+bad="$(lacking avec nominal has_proto)"
+if [ -z "$with_k" ]; then
+  fail "chaque appel qui porte -K porte --proto =https" "aucun appel avec -K noté : le cas ne prouverait rien"
+elif [ -n "$bad" ]; then
+  fail "chaque appel qui porte -K porte --proto =https" "sans l'option : $bad"
+else
+  pass "chaque appel qui porte -K porte --proto =https ($(wc -l <<< "$with_k") appels)"
+fi
+bad="$(lacking sans sansauth has_proto)$(lacking sans nominal has_proto)"
+if [ -z "${without_k//$'\n'/}" ]; then
+  fail "aucun appel sans -K ne porte --proto =https" "aucun appel sans -K noté : le cas ne prouverait rien"
+elif [ -n "$bad" ]; then
+  fail "aucun appel sans -K ne porte --proto =https" "avec l'option : $bad"
+else
+  pass "aucun appel sans -K ne porte --proto =https (avec et sans Basic Auth)"
 fi
 
 # --- CR11-9 : une sonde de redirection qui reçoit 401 dit que l'hôte demande la Basic Auth (la sonde part sans

@@ -26,14 +26,30 @@ A user or a password made only of blanks (` :p`, `u: `, a tab) is refused like a
 A variable that is defined but empty exits 2 saying « secret de Basic Auth vide » (R116, the author's decision of 2026-10-31).
 An undefined one sends no Basic Auth.
 `smoke_fetch` calls `curl` (binary `SMOKE_CURL`) and reads the `-K` at each call, never from `SMOKE_CURL_OPTS`.
-It adds `--proto-redir =https` after the `-K`: curl follows a redirect only to `https://`.
+It adds `--proto =https --proto-redir =https` after the `-K`: curl then takes only `https://` URLs and redirects only to `https://`.
+`--proto` binds the first request too: a URL without a scheme (`host/path`, which curl guesses as `http://`) is refused by curl,
+and so is the `url` of a second `-K`.
 It refuses a `-K` on a URL that is not `https://` (exit 2, « non https:// »): curl sends `Authorization: Basic` on the first request.
-With a `-K`, it also refuses an argument of `"$@"` that is `-L`, `--location`, `--location-trusted`, `--url`, `--url=…`, a short-option
-cluster carrying `L`, or that holds `://` without starting with `https://` (exit 2, « option de redirection ou URL non https:// »).
-With a `-K`, it also refuses `--proto`, `--proto-redir` and their `--name=value` forms in `"$@"` (exit 2, « option de protocole », R148b).
-Why: curl keeps the last value given, so a caller's would win over the `--proto-redir =https` set before it.
+With a `-K`, it also refuses an argument of `"$@"` (exit 2, « option ou URL refusée », curl not called, the argument never quoted) that is:
+- `--`, alone (what follows is a URL);
+- a long option, with or without `=value`, whose lower-cased name is a prefix of `location`, `location-trusted`, `url`, `proto`,
+  `proto-redir`, `config`, `next`, `variable`, `insecure`, `resolve`, `connect-to` or `expand-`, or starts with `expand-`;
+- a short-option cluster carrying `L`, `K`, `k` or `:` (`-L`, `-0L`, `-4L`, `-#L`, `-sK`, `-k`, `-:`);
+- a value that **starts** with a scheme other than `https://`; `-H 'Origin: https://…'` and a JSON body quoting `http://` pass.
+Why a prefix: curl 8.5.0, the runner's (`ubuntu-latest`, Ubuntu 24.04), takes an unambiguous abbreviation and ignores the case.
+`--proto-r` and `--LOCATION-T` ran; a prefix curl finds ambiguous is refused too. `--progress-bar` and `--proto-default` pass.
+`--connect-timeout` and `--expect100-timeout` pass too.
+Accepted limit: a value glued to a short option (`-HAccept-Language: fr`) holding `L`, `K`, `k` or `:` is refused wrongly.
+No caller glues a value to a short option.
+Each element of `SMOKE_CURL_OPTS` is judged the same way, with its own message (exit 2, « SMOKE_CURL_OPTS porte une option refusée »).
+Why: a `--location-trusted` there would carry the `-K` to any `https` host. Not judged without a `-K`.
+`--proto` and `--proto-redir` are refused in `"$@"`: curl keeps the last value given, so a caller's would win over the pair set before it.
 A `-K` file gone exits 2 saying « fichier de la Basic Auth absent », and a `curl` without an answer exits 1.
 Nothing was verified in those cases.
+Measured on 2026-10-31, on `curlimages/curl@sha256:08e466006f0860e54fc299378de998935333e0e130a15f6f98482e9f8dab3058` (curl 8.5.0):
+`--network none`, a dummy `-K -` read from stdin, no secret. `--proto-r =all --version` exits 0 (the abbreviation is taken, the threat is real).
+With `-K … --proto =https --proto-r =all http://127.0.0.1:9/`, curl exits 1 « Protocol "http" not supported or disabled in libcurl ».
+`--proto =https` holds whatever the abbreviation: it is what closes the scheme, the refusals above close the rest.
 `audit-prod.sh` sources the library only when `AUDIT_BASIC_AUTH` is defined (`[[ -v ]]`, so the value is never expanded
 outside the library's `set +x`).
 The library's header is the only place that names the variable and lists every refused value; the scripts' `Env :` headers point to it.
@@ -47,7 +63,8 @@ A library that is missing or does not parse exits 2 saying « introuvable ou inv
 (#748, C6-7); the production audit, with the variable undefined, never reads it.
 Its redirection probes (section 3) leave without the Basic Auth (`CURL_OPTS_ANONYMOUS`): curl sends `Authorization: Basic`
 on the first request whatever the scheme, so a `-K` there would put the preprod credential in clear on `http://` (#750, R115).
-Every call that carries the `-K` follows redirects on `https` only (`--proto-redir =https`, R134), and none without it carries the option.
+Every call that carries the `-K` also carries `--proto =https --proto-redir =https` (`CURL_OPTS` here), and none without it carries either.
+The anonymous probes aim at `http://` URLs on purpose, so a `--proto =https` on them would refuse the very redirect they check.
 A probe answered 401 says the host asks for the Basic Auth when the audit carries it (preprod; it leaves without it on purpose),
 instead of reading as a broken redirect; against production, where nothing is carried, a 401 is printed without that hint (R149).
 A probe is one `curl -w '%{http_code} %{redirect_url}'`, read in two fields: the code and the target come from the same response.

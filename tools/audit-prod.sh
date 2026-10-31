@@ -56,9 +56,11 @@ CURL_OPTS_ANONYMOUS=("${CURL_OPTS[@]}")
 #     ou un mot de passe vide ou fait de blancs sont refusés par `smoke_use_auth_config` avant tout dossier
 #     (sortie 2, celle d'un défaut d'environnement, comme une bibliothèque absente).
 # Le `-K` va dans `CURL_OPTS` : l'audit n'appelle jamais `smoke_fetch`, ne réécrit pas
-# le fichier, donc aucun `-K` n'y est périmé. `--proto-redir =https` l'accompagne : un appel
-# authentifié ne suit une redirection (`-L`) que vers https, jamais vers http:// ni un autre
-# schéma, où l'identifiant partirait en clair ; sans `-K`, l'option n'a pas lieu d'être. Le `trap` précède la création du dossier :
+# le fichier, donc aucun `-K` n'y est périmé. `--proto =https` et `--proto-redir =https` l'accompagnent : un appel
+# authentifié n'envoie sa première requête qu'à une URL en https (une URL sans schéma, que curl devine en
+# `http://`, est refusée par curl lui-même) et ne suit une redirection (`-L`) que vers https, jamais vers http://
+# ni un autre schéma, où l'identifiant partirait en clair ; sans `-K`, les deux options n'ont pas lieu d'être
+# (les sondes de la section 3 visent des URL en `http://` exprès). Le `trap` précède la création du dossier :
 # un arrêt entre `mktemp -d` et l'affectation que lit le `trap` peut laisser un dossier
 # privé **vide**, jamais la valeur, qui n'est écrite qu'une fois le chemin connu du
 # `trap` (#748, C7-8).
@@ -72,7 +74,7 @@ if [[ -v AUDIT_BASIC_AUTH ]]; then
   }
   trap 'smoke_cleanup' EXIT
   smoke_use_auth_config AUDIT_BASIC_AUTH || exit 2
-  CURL_OPTS+=(-K "$SMOKE_AUTH_CONFIG" --proto-redir "=https")
+  CURL_OPTS+=(-K "$SMOKE_AUTH_CONFIG" --proto "=https" --proto-redir "=https")
   audit_with_basic_auth=1
 fi
 DIG_TIMEOUT=(+time=3 +tries=1)

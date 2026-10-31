@@ -69,20 +69,21 @@ check_plain_http_refused() {
   _check_value_refused ' : Basic Auth refusée sur une URL non https:// — rien de vérifié$'
 }
 
-# check_redirect_args_refused  (CASE_LABEL, CASE_RC, CASE_ERR, CASE_CALLS, CASE_OUT, CASE_VALUE)
+# check_args_refused  (CASE_LABEL, CASE_RC, CASE_ERR, CASE_CALLS, CASE_OUT, CASE_VALUE)
 #
-# Une Basic Auth et, dans les arguments de smoke_fetch, une option de redirection ou une URL qui n'est
-# pas en `https://` : sortie 2 avant tout appel de curl, « option de redirection ou URL non https:// avec
-# la Basic Auth — rien de vérifié » en queue du message, la valeur nulle part.
-check_redirect_args_refused() {
-  _check_value_refused ' : option de redirection ou URL non https:// avec la Basic Auth — rien de vérifié$'
+# Une Basic Auth et, dans les arguments de smoke_fetch, une option ou une URL que la bibliothèque refuse
+# (redirection, URL, configuration, protocole ou hôte) : sortie 2 avant tout appel de curl, « option ou URL
+# refusée avec la Basic Auth (redirection, URL, configuration, protocole ou hôte) — rien de vérifié » en queue
+# du message, la valeur nulle part.
+check_args_refused() {
+  _check_value_refused ' : option ou URL refusée avec la Basic Auth (redirection, URL, configuration, protocole ou hôte) — rien de vérifié$'
 }
 
-# check_protocol_args_refused  (CASE_LABEL, CASE_RC, CASE_ERR, CASE_CALLS, CASE_OUT, CASE_VALUE)
+# check_curl_opts_refused  (CASE_LABEL, CASE_RC, CASE_ERR, CASE_CALLS, CASE_OUT, CASE_VALUE)
 #
-# Une Basic Auth et, dans les arguments de smoke_fetch, `--proto` ou `--proto-redir` (seuls ou en `--nom=valeur`) :
-# ils l'emporteraient sur le `--proto-redir =https` posé avant eux. Sortie 2 avant tout appel de curl, « option de
-# protocole (--proto, --proto-redir) refusée avec la Basic Auth — rien de vérifié » en queue du message, la valeur nulle part.
-check_protocol_args_refused() {
-  _check_value_refused ' : option de protocole (--proto, --proto-redir) refusée avec la Basic Auth — rien de vérifié$'
+# Une Basic Auth et, dans SMOKE_CURL_OPTS, une option que la bibliothèque refuse : sortie 2 avant tout appel de
+# curl, « SMOKE_CURL_OPTS porte une option refusée avec la Basic Auth — rien de vérifié » en queue du message,
+# la valeur nulle part.
+check_curl_opts_refused() {
+  _check_value_refused ' : SMOKE_CURL_OPTS porte une option refusée avec la Basic Auth — rien de vérifié$'
 }
