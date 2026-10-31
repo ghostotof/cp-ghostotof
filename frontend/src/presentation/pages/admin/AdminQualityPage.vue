@@ -106,6 +106,7 @@ const localeOptions = SUPPORTED_LOCALES.map((locale) => ({ value: locale, label:
  */
 const {
   isTranslating: isTranslatingPrinciple,
+  isDiscardPending: isDiscardPendingPrinciple,
   errorReason: principleTranslationErrorReason,
   translate: translatePrinciple,
   discard: discardPrincipleTranslation,
@@ -121,6 +122,7 @@ const {
 })
 const {
   isTranslating: isTranslatingTrait,
+  isDiscardPending: isDiscardPendingTrait,
   errorReason: traitTranslationErrorReason,
   translate: translateTrait,
   discard: discardTraitTranslation,
@@ -602,6 +604,8 @@ useUnsavedOrderGuard(isAnyOrderDirty)
           <TranslateEntryButton
             :form-locale="principleForm.locale"
             :is-translating="isTranslatingPrinciple"
+            :is-discard-pending="isDiscardPendingPrinciple"
+            hint-id="admin-quality-principle-translation-hint"
             :disabled="!hasPrincipleProse || isSubmittingPrinciple || isAnyOrderDirty || principleLock.isProposalLocked"
             :aria-describedby="describedBy(lockedHintId, principleLock.proposalDescribedBy)"
             @translate="handleTranslatePrinciple"
@@ -860,6 +864,8 @@ useUnsavedOrderGuard(isAnyOrderDirty)
           <TranslateEntryButton
             :form-locale="traitForm.locale"
             :is-translating="isTranslatingTrait"
+            :is-discard-pending="isDiscardPendingTrait"
+            hint-id="admin-quality-trait-translation-hint"
             :disabled="!hasTraitProse || isSubmittingTrait || isAnyOrderDirty || traitLock.isProposalLocked"
             :aria-describedby="describedBy(lockedHintId, traitLock.proposalDescribedBy)"
             @translate="handleTranslateTrait"

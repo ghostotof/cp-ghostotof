@@ -65,6 +65,7 @@ const localeOptions = SUPPORTED_LOCALES.map((locale) => ({ value: locale, label:
 
 const {
   isTranslating,
+  isDiscardPending,
   errorReason: translationErrorReason,
   translate,
   discard: discardTranslation,
@@ -359,6 +360,8 @@ async function handleDelete(card: AdminAboutSiteCard): Promise<void> {
         <TranslateEntryButton
           :form-locale="form.locale"
           :is-translating="isTranslating"
+          :is-discard-pending="isDiscardPending"
+          hint-id="admin-about-site-card-translation-hint"
           :disabled="!hasProseToTranslate || isSubmitting || isLocked || lock.isProposalLocked"
           :aria-describedby="describedBy(lockedHintId, lock.proposalDescribedBy)"
           @translate="handleTranslate"

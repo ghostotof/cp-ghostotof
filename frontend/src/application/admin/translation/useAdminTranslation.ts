@@ -14,6 +14,11 @@ export const ADMIN_TRANSLATION_REPOSITORY: InjectionKey<AdminTranslationReposito
 export interface UseAdminTranslationResult {
   /** Vrai tant que la traduction courante est en vol et non périmée (par `discard()` ou par l'identité du formulaire). */
   isTranslating: Readonly<Ref<boolean>>
+  /**
+   * Vrai tant qu'un appel périmé (par `discard()` ou par l'identité du formulaire) n'a pas répondu : il continue côté
+   * serveur, et `translate()` n'en lance pas un second avant sa réponse (jamais plus d'un appel au modèle en vol).
+   */
+  isDiscardPending: Readonly<Ref<boolean>>
   /** La raison de l'échec de la dernière traduction, tant que le formulaire a l'identité qu'il avait à son échec. */
   errorReason: Readonly<Ref<AdminTranslationErrorReason | null>>
   translate: (sourceLocale: Locale, targetLocale: Locale, fields: TranslationFields) => Promise<TranslationProposal | null>
@@ -44,9 +49,10 @@ export interface UseAdminTranslationOptions {
  * composable ne touche jamais au formulaire ni à la persistance (ADR 0004, D4).
  * Pas de dépendance à useI18n() : la page traduit `errorReason`.
  *
- * Le composable se refuse lui-même, écrit ici une fois pour tous les formulaires : pas de requête tant qu'une
- * traduction est en vol, ni quand la page le lui dit (`isRefused`). Le refus vient d'ici, pas seulement du bouton
- * désactivé : un évènement `translate` émis par programme, ou une double activation avant le rendu, passerait.
+ * Le composable se refuse lui-même, écrit ici une fois pour tous les formulaires : pas de requête tant qu'un appel
+ * est en vol — la traduction courante comme une périmée qui n'a pas répondu —, ni quand la page le lui dit
+ * (`isRefused`). Le refus vient d'ici, pas seulement du bouton désactivé : un évènement `translate` émis par
+ * programme, ou une double activation avant le rendu, passerait.
  */
 export function useAdminTranslation(options: UseAdminTranslationOptions = {}): UseAdminTranslationResult {
   const repository = inject(ADMIN_TRANSLATION_REPOSITORY)
@@ -62,10 +68,14 @@ export function useAdminTranslation(options: UseAdminTranslationOptions = {}): U
   // réaffectation à l'identique ne remplace rien). Un calculé : relu seulement quand le formulaire change.
   const identity = computed(() => JSON.stringify(options.formIdentity?.() ?? null))
   const inFlight = ref(false)
+  // Un appel au dépôt est parti et n'a pas répondu, périmé ou non : `AbortSignal` écarté, l'appel déjà parti côté serveur
+  // coûte ce qu'il coûte, et le borner à un par formulaire borne ce coût.
+  const callRunning = ref(false)
   const failure = ref<{ readonly reason: AdminTranslationErrorReason; readonly identity: string } | null>(null)
   const requests = createStaleRequestGuard()
 
   const isTranslating = readonly(inFlight)
+  const isDiscardPending = computed(() => callRunning.value && !inFlight.value)
   const errorReason = computed(() => (failure.value?.identity === identity.value ? failure.value.reason : null))
 
   const translate = async (
@@ -73,12 +83,13 @@ export function useAdminTranslation(options: UseAdminTranslationOptions = {}): U
     targetLocale: Locale,
     fields: TranslationFields,
   ): Promise<TranslationProposal | null> => {
-    if (isTranslating.value || options.isRefused?.()) {
+    if (callRunning.value || options.isRefused?.()) {
       return null
     }
 
     const token = requests.begin()
     const sentIdentity = identity.value
+    callRunning.value = true
     inFlight.value = true
     failure.value = null
     // Le formulaire qui change d'identité pendant le vol périme la traduction pour de bon, même s'il retrouve ensuite
@@ -110,6 +121,7 @@ export function useAdminTranslation(options: UseAdminTranslationOptions = {}): U
       return null
     } finally {
       stopWatching()
+      callRunning.value = false
       // Une traduction périmée ne touche plus l'état : `discard()` l'a déjà rendu.
       if (requests.isCurrent(token)) {
         inFlight.value = false
@@ -123,5 +135,5 @@ export function useAdminTranslation(options: UseAdminTranslationOptions = {}): U
     failure.value = null
   }
 
-  return { isTranslating, errorReason, translate, discard }
+  return { isTranslating, isDiscardPending, errorReason, translate, discard }
 }

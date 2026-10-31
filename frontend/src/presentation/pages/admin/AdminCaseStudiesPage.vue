@@ -35,6 +35,7 @@ const { caseStudies, isLoading, hasError, isLoaded, errorMessage, load, create, 
   useAdminCaseStudies()
 const {
   isTranslating,
+  isDiscardPending,
   errorReason: translationErrorReason,
   translate,
   discard: discardTranslation,
@@ -387,6 +388,8 @@ useUnsavedOrderGuard(isOrderDirty)
           <TranslateEntryButton
             :form-locale="form.locale"
             :is-translating="isTranslating"
+            :is-discard-pending="isDiscardPending"
+            hint-id="admin-case-study-translation-hint"
             :disabled="!hasProseToTranslate || isSubmitting || isOrderDirty || lock.isProposalLocked"
             :aria-describedby="describedBy(lockedHintId, lock.proposalDescribedBy)"
             @translate="handleTranslate"

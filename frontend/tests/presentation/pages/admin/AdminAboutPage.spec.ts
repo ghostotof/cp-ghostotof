@@ -3,6 +3,7 @@ import { flushPromises, mount, type DOMWrapper, type VueWrapper } from '@vue/tes
 import { createMemoryHistory, createRouter, RouterView, type Router } from 'vue-router'
 import { defineComponent, h } from 'vue'
 import AdminAboutPage from '../../../../src/presentation/pages/admin/AdminAboutPage.vue'
+import TranslateEntryButton from '../../../../src/presentation/ui/admin/TranslateEntryButton.vue'
 import AdminAboutSettingsForm from '../../../../src/presentation/pages/admin/AdminAboutSettingsForm.vue'
 import { ADMIN_ABOUT_SETTINGS_REPOSITORY } from '../../../../src/application/admin/about/useAdminAboutSettings'
 import { ADMIN_ABOUT_SITE_CARD_REPOSITORY } from '../../../../src/application/admin/about/useAdminAboutSiteCards'
@@ -25,14 +26,17 @@ import type {
 import { AdminAboutError } from '../../../../src/domain/admin/about/errors/AdminAboutError'
 import { AdminOrderError } from '../../../../src/domain/admin/shared/errors/AdminOrderError'
 import type { AdminTranslationRepository } from '../../../../src/domain/admin/translation/repositories/AdminTranslationRepository'
+import type { TranslationProposal } from '../../../../src/domain/admin/translation/entities/TranslationProposal'
 import { AdminTranslationError } from '../../../../src/domain/admin/translation/errors/AdminTranslationError'
 import { expectNoAccessibilityViolation } from '../../../support/axe'
 import {
   ENTRY_LOCK_PROPOSAL_TEXT,
   describedTexts,
   describeEntryFormLock,
+  DISCARD_PENDING_TEXT,
   formCancelButton,
   LOCALE_HELP_TEXT,
+  textsDescribing,
   translateEntryButton,
 } from '../../../support/entryFormLock'
 
@@ -1160,6 +1164,38 @@ describe('AdminAboutPage', () => {
       expect(settingsRepository.get).toHaveBeenCalledWith('en')
       expect(siteCardRepository.list).not.toHaveBeenCalled()
       expect(meCardRepository.list).not.toHaveBeenCalled()
+    })
+
+    // Décision 2 de la onzième relecture (R125) : changer la langue pendant la traduction la périme ; l'appel déjà parti
+    // continue, et une nouvelle traduction émise avant sa réponse est refusée, le bouton disant pourquoi il attend.
+    it("la langue changée pendant une traduction : une seule traduction en vol, l'attente dite (#748, R125, décision 2)", async () => {
+      let answer!: (proposal: TranslationProposal) => void
+      const translation = createTranslationRepository(TRANSLATED_SETTINGS, {
+        translate: vi.fn(() => new Promise<TranslationProposal>((resolve) => { answer = resolve })),
+      })
+      const settingsRepository = createSettingsRepository({
+        get: vi.fn(async (locale: string) => ('en' === locale ? SETTINGS_EN : SETTINGS)),
+      })
+      const { wrapper } = await mountPage(settingsRepository, undefined, undefined, translation)
+      const settingsForm = wrapper.findAllComponents(AdminAboutSettingsForm)[0]
+      const button = () => translateEntryButton(wrapper, SETTINGS_FORM)
+
+      await button().trigger('click')
+      await wrapper.get('#admin-about-locale').setValue('en')
+      await flushPromises()
+      settingsForm.findComponent(TranslateEntryButton).vm.$emit('translate', 'fr')
+      await flushPromises()
+
+      expect(translation.translate).toHaveBeenCalledTimes(1)
+      expect(textsDescribing(wrapper, button())).toEqual([DISCARD_PENDING_TEXT])
+      await expectNoAccessibilityViolation(wrapper)
+
+      answer({ sourceLocale: 'fr', targetLocale: 'en', fields: TRANSLATED_SETTINGS })
+      await flushPromises()
+
+      expect(textsDescribing(wrapper, button())).toEqual([])
+      expect(valueOf(wrapper, '#admin-about-site-eyebrow')).toBe(TRANSLATED_SETTINGS.siteEyebrow)
+      expect(button().attributes('disabled')).toBeUndefined()
     })
 
     it('enregistre les réglages via son formulaire', async () => {

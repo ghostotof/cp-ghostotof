@@ -1,6 +1,7 @@
 import { flushPromises, type DOMWrapper, type VueWrapper } from '@vue/test-utils'
 import { expect, it, vi } from 'vitest'
 import TranslateEntryButton from '../../src/presentation/ui/admin/TranslateEntryButton.vue'
+import { expectNoAccessibilityViolation } from './axe'
 import { SUPPORTED_LOCALES } from '../../src/domain/portfolio/entities/Locale'
 import type { AdminTranslationRepository } from '../../src/domain/admin/translation/repositories/AdminTranslationRepository'
 
@@ -14,6 +15,10 @@ export const ENTRY_LOCK_EDITING_TEXT = "La langue d'une entrée existante ne peu
 /** Le texte unique du verrou d'une proposition : langue, « Version de », bouton de traduction et catégorie « moi » le désignent. */
 export const ENTRY_LOCK_PROPOSAL_TEXT =
   'Verrouillé par la proposition de traduction en cours ; « Annuler » l\'abandonne et vide le formulaire.'
+
+/** Le texte de l'attente d'un appel annulé : le bouton de traduction le désigne tant que la réponse périmée n'est pas là. */
+export const DISCARD_PENDING_TEXT =
+  'La traduction annulée se termine côté serveur : ce bouton revient dès sa réponse, qui ne change rien au formulaire.'
 
 /**
  * Les textes que désigne l'`aria-describedby` du champ `selector`, dans l'ordre des identifiants ;
@@ -297,6 +302,33 @@ export function describeEntryFormLock(lockCase: EntryFormLockCase): void {
 
     expect((wrapper.get(`#${ids.title}`).element as HTMLInputElement).value).toBe('')
     expect(headingOf(wrapper)).toBe(lockCase.heading)
+    expect(wrapper.findAll('form')[form].find('[role="status"]').exists()).toBe(false)
+  })
+
+  // Décision 2 de la onzième relecture (R125) : jamais plus d'un appel au modèle en vol par formulaire. « Annuler » vide le
+  // formulaire mais l'appel déjà parti continue : une nouvelle traduction émise aussitôt est refusée, et le bouton dit qu'il attend.
+  it(`${prefix}« Annuler » puis « translate » avant la réponse périmée : une seule traduction, l'attente dite`, async () => {
+    const translation = lockCase.createTranslation()
+    const wrapper = await lockCase.mount(translation)
+    await lockCase.startEdit(wrapper)
+    const reply = deferNextTranslation(translation)
+
+    translateButton(wrapper).vm.$emit('translate', 'en')
+    await flushPromises()
+    await formCancelButton(wrapper, form)?.trigger('click')
+    await flushPromises()
+    translateButton(wrapper).vm.$emit('translate', 'en')
+    await flushPromises()
+
+    expect(vi.mocked(translation.translate)).toHaveBeenCalledTimes(1)
+    expect(textsDescribing(wrapper, translateEntryButton(wrapper, form))).toEqual([DISCARD_PENDING_TEXT])
+    await expectNoAccessibilityViolation(wrapper)
+
+    reply.release()
+    await flushPromises()
+
+    expect(textsDescribing(wrapper, translateEntryButton(wrapper, form))).toEqual([])
+    expect(titleValue(wrapper)).toBe('')
     expect(wrapper.findAll('form')[form].find('[role="status"]').exists()).toBe(false)
   })
 

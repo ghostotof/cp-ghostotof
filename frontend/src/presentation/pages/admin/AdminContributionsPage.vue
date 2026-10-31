@@ -35,6 +35,7 @@ const { contributions, isLoading, hasError, isLoaded, errorMessage, load, create
   useAdminContributions()
 const {
   isTranslating,
+  isDiscardPending,
   errorReason: translationErrorReason,
   translate,
   discard: discardTranslation,
@@ -392,6 +393,8 @@ useUnsavedOrderGuard(isOrderDirty)
           <TranslateEntryButton
             :form-locale="form.locale"
             :is-translating="isTranslating"
+            :is-discard-pending="isDiscardPending"
+            hint-id="admin-contribution-translation-hint"
             :disabled="!hasProseToTranslate || isSubmitting || isOrderDirty || lock.isProposalLocked"
             :aria-describedby="describedBy(lockedHintId, lock.proposalDescribedBy)"
             @translate="handleTranslate"

@@ -83,6 +83,7 @@ const categoryOptions = computed(() =>
 
 const {
   isTranslating,
+  isDiscardPending,
   errorReason: translationErrorReason,
   translate,
   discard: discardTranslation,
@@ -468,6 +469,8 @@ function categoryLabel(category: AdminAboutMeCardCategory): string {
         <TranslateEntryButton
           :form-locale="form.locale"
           :is-translating="isTranslating"
+          :is-discard-pending="isDiscardPending"
+          hint-id="admin-about-me-card-translation-hint"
           :disabled="!hasProseToTranslate || isSubmitting || isLocked || lock.isProposalLocked"
           :aria-describedby="describedBy(lockedHintId, lock.proposalDescribedBy)"
           @translate="handleTranslate"

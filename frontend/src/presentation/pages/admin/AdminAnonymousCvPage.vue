@@ -36,6 +36,7 @@ const { sections, isLoading, hasError, isLoaded, errorMessage, load, create, upd
   useAdminAnonymousCvSections()
 const {
   isTranslating,
+  isDiscardPending,
   errorReason: translationErrorReason,
   translate,
   discard: discardTranslation,
@@ -378,6 +379,8 @@ useUnsavedOrderGuard(isOrderDirty)
           <TranslateEntryButton
             :form-locale="form.locale"
             :is-translating="isTranslating"
+            :is-discard-pending="isDiscardPending"
+            hint-id="admin-anonymous-cv-translation-hint"
             :disabled="!hasProseToTranslate || isSubmitting || isOrderDirty || lock.isProposalLocked"
             :aria-describedby="describedBy(lockedHintId, lock.proposalDescribedBy)"
             @translate="handleTranslate"

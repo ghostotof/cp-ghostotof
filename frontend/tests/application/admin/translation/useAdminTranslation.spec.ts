@@ -129,7 +129,7 @@ describe('useAdminTranslation', () => {
     expect(composable.errorReason.value).toBeNull()
   })
 
-  it("discard() : l'échec d'une traduction périmée ne pose aucune raison, et la suivante part (#748, R114)", async () => {
+  it("discard() : l'échec d'une traduction périmée ne pose aucune raison, et la suivante part ensuite (#748, R114, R125)", async () => {
     let reject!: (error: unknown) => void
     const translate = vi.fn<AdminTranslationRepository['translate']>()
       .mockImplementationOnce(() => new Promise<TranslationProposal>((_, r) => { reject = r }))
@@ -138,13 +138,78 @@ describe('useAdminTranslation', () => {
 
     const stale = composable.translate('fr', 'en', FIELDS)
     composable.discard()
-    const next = composable.translate('fr', 'en', FIELDS)
     reject(new AdminTranslationError('unavailable', 'Indisponible.'))
 
     expect(await stale).toBeNull()
-    expect(await next).toEqual(PROPOSAL)
+    expect(await composable.translate('fr', 'en', FIELDS)).toEqual(PROPOSAL)
     expect(composable.errorReason.value).toBeNull()
     expect(composable.isTranslating.value).toBe(false)
+  })
+
+  it('discard() puis translate() avant la réponse périmée : aucune requête, null (#748, R125, décision 2)', async () => {
+    let resolve!: (proposal: TranslationProposal) => void
+    const translate = vi.fn<AdminTranslationRepository['translate']>(() => new Promise<TranslationProposal>((r) => { resolve = r }))
+    const composable = mountWithComposable({ translate })
+
+    const stale = composable.translate('fr', 'en', FIELDS)
+    composable.discard()
+    expect(composable.isTranslating.value).toBe(false)
+    expect(composable.isDiscardPending.value).toBe(true)
+
+    expect(await composable.translate('fr', 'en', FIELDS)).toBeNull()
+    expect(translate).toHaveBeenCalledTimes(1)
+
+    resolve(PROPOSAL)
+    expect(await stale).toBeNull()
+  })
+
+  it('la réponse périmée arrivée, isDiscardPending retombe et une traduction repart (#748, R125)', async () => {
+    let resolve!: (proposal: TranslationProposal) => void
+    const translate = vi.fn<AdminTranslationRepository['translate']>()
+      .mockImplementationOnce(() => new Promise<TranslationProposal>((r) => { resolve = r }))
+      .mockResolvedValueOnce(PROPOSAL)
+    const composable = mountWithComposable({ translate })
+
+    const stale = composable.translate('fr', 'en', FIELDS)
+    composable.discard()
+    resolve(PROPOSAL)
+    expect(await stale).toBeNull()
+
+    expect(composable.isDiscardPending.value).toBe(false)
+    expect(await composable.translate('fr', 'en', FIELDS)).toEqual(PROPOSAL)
+    expect(translate).toHaveBeenCalledTimes(2)
+  })
+
+  it('une réponse périmée en échec : isDiscardPending retombe, aucune raison posée (#748, R125)', async () => {
+    let reject!: (error: unknown) => void
+    const translate = vi.fn<AdminTranslationRepository['translate']>(() => new Promise<TranslationProposal>((_, r) => { reject = r }))
+    const composable = mountWithComposable({ translate })
+
+    const stale = composable.translate('fr', 'en', FIELDS)
+    composable.discard()
+    expect(composable.isDiscardPending.value).toBe(true)
+    reject(new AdminTranslationError('unavailable', 'Indisponible.'))
+    await stale
+
+    expect(composable.isDiscardPending.value).toBe(false)
+    expect(composable.errorReason.value).toBeNull()
+  })
+
+  it("une identité changée : isDiscardPending jusqu'à la réponse, jamais deux appels en vol (#748, R125)", async () => {
+    let resolve!: (proposal: TranslationProposal) => void
+    const translate = vi.fn<AdminTranslationRepository['translate']>(() => new Promise<TranslationProposal>((r) => { resolve = r }))
+    const identity = ref('a')
+    const composable = mountWithComposable({ translate }, { formIdentity: () => identity.value })
+
+    const stale = composable.translate('fr', 'en', FIELDS)
+    identity.value = 'b'
+    expect(composable.isDiscardPending.value).toBe(true)
+    expect(await composable.translate('fr', 'en', FIELDS)).toBeNull()
+    expect(translate).toHaveBeenCalledTimes(1)
+
+    resolve(PROPOSAL)
+    await stale
+    expect(composable.isDiscardPending.value).toBe(false)
   })
 
   it('une identité de formulaire changée pendant la traduction : isTranslating retombe, la réponse rend null (#748, R124)', async () => {

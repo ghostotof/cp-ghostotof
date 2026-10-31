@@ -394,6 +394,7 @@
     "translation": {
       "proposeVersion": "Suggest the {locale} version",
       "inProgress": "Translating…",
+      "discardPending": "The cancelled translation is still finishing on the server: this button comes back as soon as it answers, and the answer changes nothing in the form.",
       "proposalNotice": "AI-generated suggestion from the {locale} version: review and correct it before saving. Nothing is saved until you click Save.",
       "errors": {
         "validation": "The content to translate is invalid (empty or too long field).",

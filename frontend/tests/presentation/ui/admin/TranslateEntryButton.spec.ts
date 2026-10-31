@@ -6,8 +6,16 @@ import { expectNoAccessibilityViolation } from '../../../support/axe'
 
 type Props = InstanceType<typeof TranslateEntryButton>['$props']
 
-function mountButton(props: Props) {
-  return mount(TranslateEntryButton, { props, global: { plugins: [createAppI18n()] } })
+const HINT_ID = 'admin-test-translation-hint'
+const DISCARD_PENDING_TEXT =
+  "La traduction annulée se termine côté serveur : ce bouton revient dès sa réponse, qui ne change rien au formulaire."
+
+function mountButton(props: Partial<Props> & Pick<Props, 'formLocale' | 'isTranslating'>, attrs: Record<string, string> = {}) {
+  return mount(TranslateEntryButton, {
+    props: { hintId: HINT_ID, ...props },
+    attrs,
+    global: { plugins: [createAppI18n()] },
+  })
 }
 
 describe('TranslateEntryButton', () => {
@@ -56,5 +64,27 @@ describe('TranslateEntryButton', () => {
   it('ne présente aucune violation d\'accessibilité, au repos comme en cours', async () => {
     await expectNoAccessibilityViolation(mountButton({ formLocale: 'fr', isTranslating: false }))
     await expectNoAccessibilityViolation(mountButton({ formLocale: 'fr', isTranslating: true }))
+  })
+
+  it("pendant l'attente d'un appel annulé, le bouton est désactivé et décrit par le texte de l'attente (#748, R125, décision 2)", () => {
+    const wrapper = mountButton({ formLocale: 'fr', isTranslating: false, isDiscardPending: true }, { 'aria-describedby': 'aide-page' })
+
+    const button = wrapper.get('button')
+    expect(button.attributes('disabled')).toBeDefined()
+    expect(button.attributes('aria-describedby')).toBe(`aide-page ${HINT_ID}`)
+    expect(wrapper.get(`#${HINT_ID}`).text()).toBe(DISCARD_PENDING_TEXT)
+  })
+
+  it("hors attente, aucun texte d'attente et aucune référence vers lui (#748, R125)", () => {
+    const wrapper = mountButton({ formLocale: 'fr', isTranslating: false }, { 'aria-describedby': 'aide-page' })
+
+    expect(wrapper.find(`#${HINT_ID}`).exists()).toBe(false)
+    expect(wrapper.get('button').attributes('disabled')).toBeUndefined()
+    expect(wrapper.get('button').attributes('aria-describedby')).toBe('aide-page')
+    expect(mountButton({ formLocale: 'fr', isTranslating: false }).get('button').attributes('aria-describedby')).toBeUndefined()
+  })
+
+  it("ne présente aucune violation d'accessibilité pendant l'attente d'un appel annulé (#748, R125)", async () => {
+    await expectNoAccessibilityViolation(mountButton({ formLocale: 'fr', isTranslating: false, isDiscardPending: true }))
   })
 })

@@ -54,6 +54,7 @@ const PROSE_FIELDS = ['siteEyebrow', 'meEyebrow', 'technicalSubtitle', 'personal
 // Une traduction dont le formulaire n'est plus celui de l'envoi (une autre langue, d'autres réglages posés) est périmée.
 const {
   isTranslating,
+  isDiscardPending,
   errorReason: translationErrorReason,
   translate,
 } = useAdminTranslation({ formIdentity: () => ({ locale: props.locale, prose: collectProseFields(form, PROSE_FIELDS) }) })
@@ -231,6 +232,8 @@ async function handleSubmit(): Promise<void> {
         <TranslateEntryButton
           :form-locale="locale"
           :is-translating="isTranslating"
+          :is-discard-pending="isDiscardPending"
+          hint-id="admin-about-settings-translation-hint"
           :disabled="!hasProseToTranslate || isAnySaving || isLocked"
           :aria-describedby="lockedHintId"
           @translate="handleTranslate"
