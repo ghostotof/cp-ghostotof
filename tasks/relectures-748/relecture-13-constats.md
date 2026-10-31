@@ -8,9 +8,22 @@ L'audit a rejoué une preuve de concept locale (écouteur sur 127.0.0.1, identif
 `--proto =https` sans fuite ; fichiers de rejeu dans le scratchpad de la session (`c13/`).
 
 ## Décisions de l'utilisateur
-_(à prendre — voir les questions ci-dessous)_
+Prises le 2026-10-31 : **les huit recommandations**.
+- Q1 → `renewForm()` en tête de `startCreateVersion` et `startEdit` (huit formulaires) + un cas partagé de la régression.
+- Q2 → `--proto =https` avec chaque `-K` (`smoke_fetch`, `CURL_OPTS` de l'audit) ; refus des options par préfixe dans `"$@"`
+  et `SMOKE_CURL_OPTS` ; un argument refusé s'il **commence** par un schéma autre que `https://` (plus de `*://*`).
+- Q3 → étendre la garde des vidages, exemption réduite à la seule ligne de lecture, faux positif `${env}` corrigé, **et**
+  écrire que la garde vise les fautes de bonne foi.
+- Q4 → le bloc de traduction porté dans `useTranslatedForm` (`errorText`, `hasProse`, `proposeFrom(...)`), tâche dédiée.
+- Q5 → une règle dédiée à l'outillage des smokes et de l'audit, l'ancienne puce gardant un renvoi.
+- Q6 → `pendingProposal` des réglages remis à `null` à tout changement de langue qui ne mène pas à la cible et sur un échec
+  de la lecture.
+- Q7 → l'ordre `discardIfDeleted` puis `remove()` gardé, limite écrite.
+- Q8 → raccourcis de R150 acceptés et consignés au plan ; rétablir ce qui a perdu du sens (« désactivé », « palier de
+  confiance », la référence R67 si elle tient sous 140).
+- Tout le reste se corrige (critère « tout jusqu'à zéro ») ; CR13-8 écarté (raison dans « Info »).
 
-Questions à poser :
+Questions posées :
 1. **CR13-1** : `startCreateVersion` (et `startEdit`) remettent le formulaire sans `renewForm()`. Reco : `renewForm()` en
    tête des deux, dans les huit formulaires, + un cas partagé (second « Créer la version XX » de la même ligne pendant une
    traduction). Option : désactiver « Modifier » / « Créer la version » pendant `isTranslating`.
