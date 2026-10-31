@@ -113,7 +113,7 @@ export interface EntryFormLockCase {
    * (son bouton « Supprimer », l'entrée de l'autre langue de la ligne). Même `window.confirm` simulé que `deleteEditedEntry`.
    */
   readonly deleteSourceEntry: (wrapper: VueWrapper) => Promise<void>
-  /** Modifie l'ordre d'un tableau de la page (glisser une ligne) sans l'enregistrer : le brouillon d'ordre est sale. */
+  /** Modifie l'ordre d'un tableau de la page (« ↓ » de la première poignée) sans l'enregistrer : le brouillon d'ordre est sale. */
   readonly dirtyOrder: (wrapper: VueWrapper) => Promise<void>
   /**
    * Arme le dépôt du formulaire pour que son prochain enregistrement ne reçoive jamais de réponse : l'enregistrement lancé

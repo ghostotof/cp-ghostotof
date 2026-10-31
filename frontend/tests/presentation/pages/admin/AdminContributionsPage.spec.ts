@@ -152,6 +152,14 @@ async function dragRow(wrapper: VueWrapper, from: number, to: number): Promise<v
   await tableRows[to].trigger('drop')
 }
 
+/**
+ * Descend la première ligne d'un cran par la flèche « ↓ » de sa poignée, l'alternative clavier au glisser-déposer : le
+ * brouillon d'ordre devient sale sans geste de souris.
+ */
+async function moveFirstRowDown(wrapper: VueWrapper): Promise<void> {
+  await rows(wrapper)[0].get('button').trigger('keydown', { key: 'ArrowDown' })
+}
+
 describe('AdminContributionsPage', () => {
   afterEach(() => {
     vi.restoreAllMocks()
@@ -404,7 +412,7 @@ describe('AdminContributionsPage', () => {
       await buttonLabelled(actionsForLine(wrapper, 'Un lock npm dans le manifeste'), 'Modifier').trigger('click')
     },
     startCreateVersion: (wrapper) => buttonLabelled(wrapper, 'Créer la version EN').trigger('click'),
-    dirtyOrder: (wrapper) => dragRow(wrapper, 0, 2),
+    dirtyOrder: moveFirstRowDown,
     propose: async (wrapper) => {
       await translateEntryButton(wrapper, 0).trigger('click')
       await flushPromises()

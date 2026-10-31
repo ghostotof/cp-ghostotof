@@ -327,6 +327,14 @@ async function dragRow(wrapper: VueWrapper, which: number, from: number, to: num
   await rows[to].trigger('drop')
 }
 
+/**
+ * Descend la première ligne d'un tableau d'un cran par la flèche « ↓ » de sa poignée, l'alternative clavier au
+ * glisser-déposer : le brouillon d'ordre devient sale sans geste de souris.
+ */
+async function moveFirstRowDown(wrapper: VueWrapper, which: number): Promise<void> {
+  await rowsOf(wrapper, which)[0].get('button').trigger('keydown', { key: 'ArrowDown' })
+}
+
 describe('AdminAboutPage', () => {
   afterEach(() => {
     vi.restoreAllMocks()
@@ -1059,7 +1067,7 @@ describe('AdminAboutPage', () => {
         await buttonLabelled(actionsForLine(wrapper, SITE, 'Architecture'), 'Modifier').trigger('click')
       },
       startCreateVersion: (wrapper) => buttonLabelled(rowsOf(wrapper, SITE)[1], 'Créer la version EN').trigger('click'),
-      dirtyOrder: (wrapper) => dragRow(wrapper, SITE, 0, 2),
+      dirtyOrder: (wrapper) => moveFirstRowDown(wrapper, SITE),
       propose: async (wrapper) => {
         await translateEntryButton(wrapper, SITE_FORM).trigger('click')
         await flushPromises()
@@ -1101,7 +1109,7 @@ describe('AdminAboutPage', () => {
         await buttonLabelled(actionsForLine(wrapper, ME_TABLE.technical, ME_FIXTURES.technical.titles[0]), 'Modifier').trigger('click')
       },
       startCreateVersion: (wrapper) => buttonLabelled(rowsOf(wrapper, ME_TABLE.technical)[1], 'Créer la version FR').trigger('click'),
-      dirtyOrder: (wrapper) => dragRow(wrapper, ME_TABLE.technical, 0, 2),
+      dirtyOrder: (wrapper) => moveFirstRowDown(wrapper, ME_TABLE.technical),
       propose: async (wrapper) => {
         await translateEntryButton(wrapper, ME_FORM).trigger('click')
         await flushPromises()

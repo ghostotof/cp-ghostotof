@@ -148,15 +148,15 @@ const mountAdminCaseStudies = (auth: AuthRepository = authRepository, locale: 'f
     locale,
   )
 
-/** La qualité : une page à **deux** listes (principes, traits). */
-const mountAdminQuality = async (auth: AuthRepository): Promise<VueWrapper> =>
-  (
-    await mountAdminPage(AdminQualityPage, 'quality', {
-      [ADMIN_QUALITY_PRINCIPLE_REPOSITORY as symbol]: new HttpAdminQualityPrincipleRepository('https://api.example.test'),
-      [ADMIN_QUALITY_TRAIT_REPOSITORY as symbol]: new HttpAdminQualityTraitRepository('https://api.example.test'),
-      [AUTH_REPOSITORY as symbol]: auth,
-    })
-  ).wrapper
+/** Les dépôts de « Qualité », page à **deux** listes (principes, traits) : trois dépôts, dont celui de la session. */
+const qualityProviders = (auth: AuthRepository) => ({
+  [ADMIN_QUALITY_PRINCIPLE_REPOSITORY as symbol]: new HttpAdminQualityPrincipleRepository('https://api.example.test'),
+  [ADMIN_QUALITY_TRAIT_REPOSITORY as symbol]: new HttpAdminQualityTraitRepository('https://api.example.test'),
+  [AUTH_REPOSITORY as symbol]: auth,
+})
+
+const mountAdminQuality = (auth: AuthRepository): Promise<VueWrapper> =>
+  mountAdminPage(AdminQualityPage, 'quality', qualityProviders(auth)).then(({ wrapper }) => wrapper)
 
 /**
  * Régression de R1c (code-review CR1) : un 401 mène à la connexion, la page est
