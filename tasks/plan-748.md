@@ -7530,6 +7530,924 @@ raison en quelques mots (historique daté, sens juste, préfixe voulu). Une rech
 ---
 
 
+## Corrections de la onzième relecture (2026-10-31)
+
+R112 à R120 et R114b sont faites (après 39498f33, jusqu'à 55199dca ; constats de la onzième relecture : 5fd65d6e). Leurs
+cases restent non cochées, par convention des séries : cette phrase dit qu'elles sont faites.
+
+Quatre relectures du diff 13d4de17...55199dca (`/code-review medium` CR11-*, audit de sécurité C11-*, axe Standards
+St11-*, axe Spec Sp11-*) : aucun critique ni haut, trois moyens (CR11-1, St11-3, St11-4). Constats complets et
+décisions : `tasks/relectures-748/relecture-11-constats.md` (la source de vérité). Tous sont traités ici par R121 à
+R136, avant les tâches 11 et 12 : corrigés, ou écartés par l'auteur (« Sans suite », repris ci-dessous). Les points de
+contrôle au navigateur et le corps de PR de la série sont ajoutés aux tâches 11 et 12 dans le commit de ce plan. Les
+sections passées restent l'archive de leur moment.
+
+### Décisions de l'auteur (2026-10-31)
+
+1. **CR11-1 ≈ C11-9 : règle + garde.** `frontend-session-refus.md` dit qu'une page du backoffice lance son chargement
+   dans `setup` (ou un watcher `immediate`) ; une garde de source refuse un chargement (`load(`, appel de dépôt) dans un
+   `onMounted` des pages et sections admin ; la limite d'un sous-composant rendu plus tard par un `v-if` reste écrite.
+   R121.
+2. **CR11-3 = C11-6 : un appel en vol.** Une nouvelle traduction reste refusée tant que la requête périmée par
+   `discard()` (ou par un formulaire remplacé) n'est pas terminée : jamais plus d'un appel au modèle en vol par
+   formulaire ; le bouton occupé après « Annuler » le dit par un texte d'aide FR/EN lié par `aria-describedby`. R125.
+3. **CR11-5 : prose en lecture seule.** Pendant une traduction, les champs de prose du formulaire sont en `readonly`
+   (pas `disabled` : lisibles et focusables), avec un texte d'aide lié par `aria-describedby` ; huit formulaires par
+   entrée + réglages « À propos ». C11-7 (b), sans décision : la suppression de l'entrée en édition et le changement de
+   langue d'un formulaire en création périment la traduction en vol. R124 (C11-7), R126 (lecture seule).
+4. **Identifiants de constat : permis dans les commentaires** (ils renvoient aux constats archivés), **interdits dans
+   les noms de tests** ; `brief-commun-agents.md` est corrigé en ce sens dans le commit de ce plan. St11-18 et Sp11-5
+   n'appellent pas d'autre correction ; St11-1 et Sp11-1 (noms de tests) se corrigent. R135.
+5. **Sans suite** : Sp11-4 (lignes de 121 à 129 de `deploiement-nginx.md`).
+6. **Toujours valables** : C5-1, C5-2, C7, CR6-6, CR7-2, la limite de R94, les « Sans suite » précédents (C10-5,
+   Sp10-8, St9-17, Sp9-8, C9-8, St9-11), pas de rotation de la Basic Auth de préprod (C10-1) ; critère d'arrêt **tout
+   jusqu'à zéro** : tous les autres constats se corrigent sans décision.
+
+### Vérification de chaque constat dans le code (HEAD 5fd65d6e)
+
+- **CR11-1 ≈ C11-9, confirmé, sans effet aujourd'hui.** Les seuls `onMounted` de `presentation/pages/admin` sont ceux
+  d'`AdminUsersPage.vue:83` (deux `addEventListener`) ; chaque page charge dans son `setup` (`useAdminLoad`) ou un
+  watcher `immediate` (`AdminAboutSettingsForm.vue:103-111`). `AccessRefusedNotice.vue:92` avance l'époque dans son
+  `onMounted`, rendu avant `<RouterView />` : un `onMounted` de page passe après lui. Aucune garde ne l'empêche.
+- **CR11-2, confirmé.** `markBackofficeAccessRefused` (`backofficeAccessRefusal.ts:110-131`) garde l'avis pour toute
+  lecture dont `sentIn.epoch !== epoch`, sans borne : aucun délai sur `fetch`, et rien ne clôt le chargement de la page
+  d'arrivée quand la personne relance une lecture.
+- **CR11-3 = C11-6, confirmé.** `useAdminTranslation.ts:89-93` : `discard()` appelle `requests.begin()` et remet
+  `isTranslating` à faux ; l'appel au dépôt (l. 69) continue sans `AbortSignal`, et la garde de la l. 60 laisse partir
+  la traduction suivante.
+- **St11-3, confirmé.** `discardTranslation()` en tête de `resetForm`, `startEdit` et `startCreateVersion` dans les
+  sept fichiers (huit formulaires : `AdminIncidentsPage.vue:182`, `:198`, `:225`, et de même ailleurs), et dans le watcher
+  de langue des réglages (`AdminAboutSettingsForm.vue:107`).
+- **CR11-5, C11-7 (= CR11-4), confirmés.** Les champs de prose restent modifiables pendant la traduction
+  (`BaseTextInput`/`BaseTextarea` sans `readonly`) ; `handleTranslate` (`AdminIncidentsPage.vue:276-289`) remplace chaque
+  champ de `PROSE_FIELDS` à la réponse. `handleDelete` (l. 291-297) ne touche ni le formulaire ni la traduction ; le
+  sélecteur de langue d'un formulaire en création (`:disabled="lock.isEntryLocked"`, libre hors verrou) ne périme rien.
+- **CR11-6 = C11-5 (+ St11-17), confirmé.** `AdminAboutSettingsForm.vue:53` : `useAdminTranslation()` sans
+  `isRefused` ; son bouton (`:disabled="!hasProseToTranslate || isAnySaving || isLocked"`) ne regarde pas
+  `isProposalShown`. Les huit formulaires passent `isRefused: () => lock.isProposalLocked` seulement, le brouillon
+  d'ordre (`isOrderDirty`) n'étant refusé que par le `:disabled` du bouton.
+- **C11-1, confirmé.** `smoke-http.sh:231-250` : `smoke_fetch` pose `-K` quel que soit le schéma de `url`.
+- **St11-4, confirmé.** Quatre appelants écrivent `smoke_write_auth_config AUDIT_BASIC_AUTH || exit 2` puis
+  `smoke_require_auth_config AUDIT_BASIC_AUTH || exit 2` (`audit-prod.sh:72-73`, `smoke-dead-session-cookie.sh:80-81`,
+  `smoke-login-throttling.sh:65-66`, `smoke-mcp.sh:94-95`) ; la seconde lit `SMOKE_AUTH_CONFIG` laissé par la première.
+- **C11-8, confirmé.** `smoke-http.sh:139` n'exige qu'un `:` : `:`, `u:` et `:p` écrivent un fichier.
+- **C11-2, confirmé.** `audit-prod.sh:74` ajoute `-K` à `CURL_OPTS`, lu avec `-L` l. 99, 150, 169, 253, 393, 412, 422,
+  sans `--proto-redir`.
+- **C11-3, confirmé.** `smoke-http.test.sh:518-530` cherche `\$\{?AUDIT_BASIC_AUTH|!AUDIT_BASIC_AUTH` : une liste
+  d'interdits. Lignes non commentées qui nomment la variable aujourd'hui : `audit-prod.sh:64` (`[[ -v ]]`), `:72-73`,
+  les deux appels de chaque smoke, et le message de `smoke-dead-session-cookie.sh:128` (le nom dans une chaîne).
+- **CR11-9, confirmé.** `audit-prod.sh:111-116` imprime le code de chaque sonde sans le juger : un 401 sur
+  `https://www.` se lirait sans explication.
+- **St11-16, confirmé.** La plomberie de `tools/lib/smoke-http.sh` est décrite dans `deploiement-nginx.md:117-135` —
+  c'est la bonne règle (ses `paths:` couvrent la bibliothèque et ses tests, ceux de `release.md` non) — et
+  l'explication de #750 est écrite dans `audit-prod.sh:24-28`, `:107-110` et `deploiement-nginx.md:133-134`.
+- **CR11-7 (+ St11-11), confirmé.** `AdminAboutSettingsForm.vue:63` (`isLoaded.value &&`) ; l'avis
+  (`v-if="proposal && isProposalShown"`) est sous le `<form v-else>` rendu une fois `isLoaded` ; le test de R113 lit
+  `vm.isProposalShown` par `as unknown as`.
+- **CR11-8 = St11-12, confirmé.** `ApiPlatformOperationsCarryNoSecurityTest.php:146-147`, `:158-161` (copie du tableau
+  par décomposition), `collectNested()` (l. 417) et `countLinks()` (l. 445) parcourent chacun `uriVariablesOf()` et
+  testent chacun `instanceof Link`.
+- **C11-4, St11-13, confirmés.** `CanonicalPath::isPathUnder()` (l. 78) est publique ; aucun fichier de `src/` hors
+  de `CanonicalPath.php` n'appelle `getPathInfo()` ni `isPathUnder()` aujourd'hui (le seul autre `getPathInfo()` est un
+  commentaire de `CsrfCookieRequestSubscriber.php:31`), et rien ne l'interdit.
+- **CR11-10, confirmé.** `sourceText.ts:163-174` : `wrapperOf` essaie de lire `(texte)` ; Vue (`vOn`) juge par
+  `isMemberExpression` / `isFnExpression` puis par la présence d'un `;`. `@vue/compiler-core` exporte
+  `isMemberExpressionBrowser(exp)` et `isFnExpressionBrowser(exp)` (`compiler-core.d.ts:1042`, `:1045`), sur le nœud
+  même que lit le lecteur ; il n'est pas une dépendance déclarée du frontend (`vue` en dépend, 3.5.44).
+- **St11-8, confirmé.** `sourceText.ts:224` (`5 === node.type`) ; `NodeTypes` vient de `@vue/compiler-core`
+  (`compiler-core.d.ts:153`), que `vue/compiler-sfc` ne réexporte pas ; `templateExpressionsOf` (l. 135) rend aussi la
+  valeur d'un attribut statique (l. 218).
+- **St11-5 = Sp11-8, confirmé.** `AccessRefusedNotice.vue:35` : « **Effacée** (le périmètre de refus avance,
+  `readRefusalScope()`) » nomme le lecteur pour l'effaceur (`clearBackofficeAccessRefusal`).
+- **St11-6, confirmé.** `backofficeAccessRefusal.spec.ts:17` (`readSentNow()` ne fait qu'appeler
+  `readRefusalScope()`) ; le cas « une lecture … qui ne répond pas » relève une estampille qu'il n'utilise pas.
+- **St11-7, St11-15, Sp11-7, confirmés.** `tests/support/entryFormLock.ts:116-118`, `:139`, `:145`, `:259`, `:275`,
+  `:293`, `:312`, `:328` (cinq `findAll('form')[form].find('[role="status"]')` et plus), `translateButton` et
+  `translateEntryButton` (l. 65, 118), `mountLocked` (l. 116) ; docblock coupé (l. 106-107) ; commentaire des l. 239-241 ;
+  `AdminCaseStudiesPage.spec.ts:259-260` ; `useEntryFormLock.spec.ts:11` (`proposalSource`).
+- **St11-9, confirmé.** `sourceText.spec.ts:168` et `:197-201` posent la même assertion sur `a(); b('omit')`.
+- **St11-10, confirmé.** `earlierSaveFr` / `accessRefusedFr` dans `AccessRefusedNotice.spec.ts:22`, `:237` et
+  `AdminLayout.sessionEnded.spec.ts:616-619` ; `mountAdminQuality` (l. 567) refait `mountAdminCaseStudies` (l. 75).
+- **St11-14, Sp11-10, confirmés.** `audit-prod.test.sh:56-68` (`run() { run_as "$1"; }`) ; le cas « vide » recopié dans
+  `smoke-dead-session-cookie.test.sh`, `smoke-login-throttling.test.sh:212-220`, `smoke-mcp.test.sh:302` ;
+  `audit-prod.test.sh:216` ne montre plus `TMPDIR` à l'échec.
+- **Sp11-2, confirmé.** `AppLayout.spec.ts:168` (« Le bandeau n'a plus son écouteur »).
+- **Sp11-9, confirmé.** Le cas d'intégration de R112 (`AdminLayout.sessionEnded.spec.ts`, vers la l. 665) ne lit le
+  texte qu'après les deux refus.
+- **St11-1, Sp11-1, confirmés.** Les noms listés par Sp11-1 portent un identifiant de constat (`LoginPage.spec.ts:144`
+  A3-10, `AppLayout.spec.ts:298` A3-13, `AdminAboutPage.spec.ts:1203` CR2, `:1340` et `:1527` F11,
+  `signInLocations.spec.ts:57`, `:84` et `SignInAgainLink.spec.ts:76` F8, `adminGuard.spec.ts:262` B/F2,
+  `noOmittedCredentials.spec.ts:88` C1) ; la recherche large en rend d'autres, dont une partie antérieure à #748
+  (`#650, S2`, `#650, F-I1`, `audit A7`, `#647, F1`) : seuls les noms ajoutés ou touchés par une série de #748 (lignes
+  dont `git blame` donne un commit de `0e581b42..HEAD`) changent. St11-1 relève aussi des identifiants de **tâche**
+  (« (#748, R119) ») qu'il dit tolérés : le brief les permet, Q3 le rend à l'auteur.
+- **St11-2 = Sp11-3, confirmé** (`awk 'length>140'`) : `frontend-session-refus.md:26` (216) et `:79` (143),
+  `frontend-session.md:151` (142), `security-authentication-sessions.md:177` (176). Les règles portent d'autres lignes
+  longues, antérieures (tables, puces) : le balayage R136 ne coupe que celles qu'une série de #748 a écrites.
+- **St11-18, Sp11-5** : décision 4, rien à changer dans le code. **Sp11-6** : `const sources` de `colorClasses.spec.ts`
+  et `signInLocations.spec.ts` nomme bien des sources de fichiers ; acté, rien à corriger. **Sp11-4** : sans suite.
+
+### Options comparées
+
+**St11-3 — comment une traduction en vol apprend que son formulaire a été remplacé** (Q1, rendue à l'auteur ; le plan
+suit (A)).
+
+| Option | Pour | Contre |
+|---|---|---|
+| (A) **le composable juge l'identité du formulaire** : la page lui donne `formIdentity: () => unknown` (l'entrée éditée, la langue, le groupe source, la prose envoyée) ; une traduction dont le formulaire n'a plus l'identité relevée à l'envoi est périmée (réactif : `isTranslating` retombe dès le remplacement, la réponse rend `null`) — **recommandée** | les 24 appels disparaissent ; un geste futur qui remplace le formulaire (ou change sa langue, C11-7) périme la traduction sans y penser ; avec la prose en lecture seule (R126), seule une remise du formulaire change l'identité | un getter par formulaire (neuf) ; une comparaison sérialisée (`JSON.stringify`) à chaque lecture d'`isTranslating` ; une suppression de l'entrée éditée ne change pas l'identité : `discard()` reste pour elle |
+| (B) **garder les appels explicites** et ajouter une garde de source : toute fonction d'une page qui affecte `editingId.value`, `form.locale` ou un champ de `PROSE_FIELDS` appelle `discardTranslation()` avant | aucun mécanisme nouveau ; le code reste celui de R114b | la recopie reste (Shotgun Surgery tenue par une garde au lieu d'être retirée) ; la garde lit des noms (`editingId`, `form`) que chaque page choisit, fragile au renommage |
+
+**CR11-2 — combien de temps une lecture de la page d'arrivée garde l'avis** (Q2, rendue à l'auteur ; le plan suit (B)).
+
+| Option | Pour | Contre |
+|---|---|---|
+| (A) **écrire la limite** : le texte reste vrai (`earlierSave` est monotone, une lecture d'avant le montage ne garde qu'un avis encore vrai) ; règle et docblock disent qu'aucune durée ne borne l'avis | rien ne change dans le code ; R112 reste tel quel | la personne qui a relancé une lecture (« Réessayer ») et dont une lecture lente de l'arrivée est refusée ensuite relit l'ancien avis au lieu du refus courant |
+| (B) **la première lecture envoyée après le montage clôt le chargement de la page d'arrivée** : une lecture d'avant le montage refusée ensuite rend `common.accessRefused` — **recommandée** | un geste de la personne (une lecture qu'elle relance) l'emporte, comme partout ailleurs ; la borne est un fait (un envoi), pas un délai | un état de plus dans le module (`isLandingOpen`), avancé par l'estampille d'une lecture : la fonction qui estampille n'est plus un simple lecteur (son nom le dit, St11-5) |
+
+**St11-8, CR11-10 — d'où le lecteur de gabarit tient les règles de Vue** (Q4, rendue à l'auteur ; le plan suit (A)).
+
+| Option | Pour | Contre |
+|---|---|---|
+| (A) **déclarer `@vue/compiler-dom` en `devDependencies`, au même intervalle que `vue` (`^3.5.44`)** et importer `NodeTypes`, `isMemberExpressionBrowser`, `isFnExpressionBrowser` (réexportés de `compiler-core`) — **recommandée** | les deux constats sont tenus à la lettre : le type de nœud et le jugement d'un `v-on` sont ceux de Vue ; `vue` dépend déjà de ce paquet, `npm` le déduplique (aucun octet de plus au `node_modules`) | `package.json` et `package-lock.json` changent ; une montée de `vue` qui sortirait de l'intervalle désalignerait les deux (même intervalle : `npm` le refuse bruyamment) ; le manifeste de la veille (`app:watch:build-manifest`) liste une dépendance de développement de plus |
+| (B) **une constante nommée et un essai de syntaxe gardé** : `INTERPOLATION = 5`, épinglée par un test qui lit le type d'un `{{ a }}` analysé ; le `v-on` reste jugé par l'essai `(texte)`, sa différence avec Vue écrite et épinglée | aucune dépendance déclarée | CR11-10 reste vrai à la lettre (la promesse « comme Vue » ne tient pas pour un objet en gestionnaire avec argument) ; un nombre recopié de Vue |
+
+**CR11-6 — les réglages « À propos » pendant une proposition affichée** (Q5, rendue à l'auteur ; le plan suit (A)).
+(A) **refuser et désactiver** « Proposer la version XX » pendant une proposition affichée, avec un texte d'aide lié
+(`admin.about.settingsProposalLockedHelp`, rendu seulement pendant elle), comme les formulaires par entrée (R93) —
+**recommandée** : une seconde traduction bascule la page et la proposition non enregistrée est perdue sans geste
+d'abandon ; coût : une clé FR/EN et un texte de plus. (B) refuser seulement ce que le bouton refuse déjà
+(`isAnySaving || isLocked`), le bouton restant libre pendant une proposition : rien de nouveau à lire, mais la perte
+silencieuse de la proposition reste (le cas Sp7-1 sur les réglages).
+
+Écartées (décision 2) : un `AbortSignal` passé au dépôt (un `fetch` interrompu côté client ne retire pas l'appel au
+modèle déjà parti côté serveur : il n'économise rien du coût, que la décision borne) ; garder `isTranslating` vrai
+jusqu'à la réponse périmée (le formulaire vidé par « Annuler » resterait en lecture seule, R126).
+
+### Choix de conception tranchés
+
+1. **Décision 1 (R121).** `tests/support/sourceText.ts` exporte `syntaxTreeOf(source: string): ts.SourceFile` (l'actuel
+   `treeOf`, renommé) et `callsInsideHook(source: string, hook: string): string[]` : le texte du *callee* de chaque appel
+   écrit dans une fonction passée à `hook(…)` (fonctions imbriquées comprises), dans l'ordre du source
+   (`['document.addEventListener', 'load', 'repository.list']`). Garde
+   `frontend/tests/presentation/pages/admin/noLoadInOnMounted.spec.ts`, sur les clés de `SRC_SCRIPTS` qui commencent
+   par `presentation/pages/admin/` : refusé, un *callee* dont le dernier segment est `load`, `reload`, commence par
+   `load` ou finit par `Load`, est `list`, `get`, `fetch`, `translate`, ou porte un nom local que le fichier lie à la
+   clé `load` d'une déstructuration (`const { load: refresh } = useX()`). Garde-fous : au moins douze fichiers lus, au
+   moins un `onMounted` trouvé (celui d'`AdminUsersPage.vue`).
+2. **Q1 (A) (R124).** `UseAdminTranslationOptions.formIdentity?: () => unknown` : relevée (`JSON.stringify`) à
+   l'envoi ; `isTranslating: Readonly<Ref<boolean>>` est vrai tant que la traduction courante est en vol, n'a pas été
+   périmée par `discard()` et que `JSON.stringify(formIdentity())` vaut l'identité relevée ; sa réponse rend `null`
+   sinon. `discard()` reste (la suppression de l'entrée éditée). Chaque formulaire passe
+   `formIdentity: () => ({ entry: editingId.value, locale: form.locale, group: sourceGroup.value, prose: collectProseFields(form, PROSE_FIELDS) })`
+   (Qualité : `editingPrincipleId` / `editingTraitId` et leurs champs ; réglages : `{ locale: props.locale, prose: … }`).
+   Les vingt-quatre `discardTranslation()` des remises, `startEdit…` et `startCreate…Version`, et celui du watcher de
+   langue des réglages, sont retirés ; `handleDelete…` appelle `discard()` quand l'entrée supprimée est celle en
+   édition (`entry.id === editingId.value`).
+3. **Décision 2 (R125).** `UseAdminTranslationResult.isDiscardPending: Readonly<Ref<boolean>>` : vrai tant qu'un appel
+   périmé (par `discard()` ou par l'identité) n'a pas répondu. `translate()` rend `null` sans requête si
+   `isTranslating`, `isDiscardPending` ou `isRefused?.()` est vrai : jamais plus d'un appel au dépôt en vol par
+   instance. `TranslateEntryButton` gagne les props `isDiscardPending: boolean` (défaut `false`) et `hintId: string`
+   (requise), passe à `inheritAttrs: false` et deux racines : le bouton (désactivé si `disabled || isTranslating ||
+   isDiscardPending`, `aria-describedby` = celui reçu suivi de `hintId` pendant l'attente, par `describedBy`) et
+   `<p v-if="isDiscardPending" :id="hintId" class="form-text mb-0">` portant `admin.translation.discardPending`.
+   FR : « La traduction annulée se termine côté serveur : ce bouton revient dès sa réponse, qui ne change rien au
+   formulaire. » EN : “The cancelled translation is still finishing on the server: this button comes back as soon as it
+   answers, and the answer changes nothing in the form.”
+4. **Décision 3 (R126).** Composant `presentation/ui/admin/TranslationReadonlyHint.vue` (`id: string`, `shown:
+   boolean`) : `<p v-if="shown" :id class="form-text mb-3">{{ t('admin.translation.proseReadonly') }}</p>`, rendu sous
+   le bouton de traduction. FR : « Traduction en cours : les champs de texte sont en lecture seule jusqu'à la réponse.
+   Rien de ce qui est écrit n'est perdu. » EN : “Translation in progress: the text fields are read-only until the answer.
+   Nothing written is lost.” Chaque champ de `PROSE_FIELDS` (et de `PRINCIPLE_PROSE_FIELDS`, `TRAIT_PROSE_FIELDS`, des
+   réglages) reçoit `:readonly="isTranslating"` (passé par `$attrs`, `inheritAttrs: false` des `Base*`, rien à y
+   changer) et `:aria-describedby="describedBy(<aide existante>, proseReadonlyHintId)"`, où `proseReadonlyHintId` vaut
+   l'identifiant du texte pendant la traduction et `undefined` sinon (aucune référence pendante).
+5. **CR11-6, Q5 (A) (R127).** Les huit formulaires : `isRefused: () => lock.isProposalLocked || isOrderDirty.value`
+   (Qualité : `isAnyOrderDirty` de la page, ou ses deux brouillons). Réglages : `isRefused: () => isAnySaving.value ||
+   props.isLocked || isProposalShown.value` ; le `:disabled` du bouton gagne `|| isProposalShown` et son
+   `aria-describedby` le texte `admin.about.settingsProposalLockedHelp` (FR : « Verrouillé par la proposition de
+   traduction affichée : enregistrez-la, ou changez de langue pour l'abandonner. » EN : “Locked by the translation
+   proposal shown: save it, or switch language to discard it.”), rendu seulement pendant elle.
+6. **Q2 (B) (R122).** `backofficeAccessRefusal.ts` : `readRefusalScope()` devient `stampBackofficeRead():
+   ReadRefusalScope` (St11-5 : un verbe, puisqu'elle a un effet) ; `let isLandingOpen = false`, mis à vrai par
+   `settleBackofficeAccessRefusalsOnMount` après l'avance de l'époque, mis à faux par la première
+   `stampBackofficeRead()` appelée sous l'époque courante (après le montage) ; une lecture refusée garde
+   `earlierSave` si `sentIn.epoch !== epoch && isLandingOpen`. `clearBackofficeAccessRefusal()` le remet à faux,
+   `resetBackofficeAccessRefusalForTests()` aussi. `stampAtSend` appelle `stampBackofficeRead()`.
+7. **St11-4, C11-8, C11-1 (R133).** `smoke-http.sh` : `smoke_use_auth_config <NOM>` écrit et exige en une fonction
+   (validation du nom, `smoke_write_auth_config`, puis le jugement du vide) ; `smoke_require_auth_config` devient
+   `_smoke_require_auth_config` (privée, appelée par elle seule) ; les quatre appelants écrivent
+   `smoke_use_auth_config AUDIT_BASIC_AUTH || exit 2`. `smoke_write_auth_config` refuse une valeur dont l'utilisateur
+   est vide (motif `?*:*` non satisfait : `:`, `:p`) ou le mot de passe vide (`u:`) : « <NOM> : Basic Auth sans
+   utilisateur ou sans mot de passe (utilisateur:mot_de_passe attendu), refusée », retour 2, jugé sous `set +x`.
+   `smoke_fetch` sort 2, curl non appelé, quand `SMOKE_AUTH_CONFIG` est posé et `url` ne commence pas par `https://` :
+   « <libellé> : Basic Auth refusée sur une URL non https:// — rien de vérifié ».
+8. **C11-3 (R133).** La garde de source de `smoke-http.test.sh` devient une liste d'autorisation : toute ligne non
+   commentée des quatre scripts qui contient le mot `AUDIT_BASIC_AUTH` est refusée, sauf `if [[ -v AUDIT_BASIC_AUTH ]];
+   then` et `smoke_use_auth_config AUDIT_BASIC_AUTH || exit 2` (formes exactes, blancs de tête admis). Le message de
+   `smoke-dead-session-cookie.sh:128` dit « la Basic Auth de l'ingress (secret de préprod absent ou faux ?) ».
+9. **C11-2, CR11-9, St11-16 (R134).** `audit-prod.sh` : `CURL_OPTS+=(-K "$SMOKE_AUTH_CONFIG" --proto-redir =https)` ;
+   dans la boucle « Redirections », un code `401` est suivi de « (l'hôte demande la Basic Auth : la sonde part sans
+   elle, #750) ». Le commentaire de `CURL_OPTS_ANONYMOUS` ne réexplique plus #750 : il nomme ses deux lecteurs et renvoie
+   au commentaire de la boucle, seul à l'expliquer dans le script ; la règle garde sa phrase.
+10. **CR11-8 (R131).** `final readonly class CompiledNestedReading` (`found: list<string>`, `links: int`), dans
+    `backend/tests/Support/` ; `readNested(Metadata $element, string $context): CompiledNestedReading` remplace
+    `collectNested()` et `countLinks()` (un parcours de `uriVariablesOf()`, un seul `instanceof Link`) ; l'appelant
+    ajoute par `array_push($found, ...$nested->found)`.
+11. **C11-4, St11-13 (R132).** Garde `backend/tests/Shared/Infrastructure/Http/PathIsDecidedCanonicallyTest.php` : par
+    jetons (`PhpToken::tokenize`, commentaires écartés), aucun fichier de `backend/src` hors de `CanonicalPath.php`
+    n'appelle `getPathInfo(` ni `isPathUnder(` ; garde-fou : au moins un appel de `CanonicalPath::of(` trouvé.
+    Docblock d'`isPathUnder()` : « hors des tests, une requête passe par `isUnder()` (le chemin décodé par `of()`) ;
+    `PathIsDecidedCanonicallyTest` le tient ».
+12. **St11-8, CR11-10, Q4 (A) (R130).** `templateExpressionsOf` → `templateFragmentsOf`, `SRC_TEMPLATE_EXPRESSIONS` →
+    `SRC_TEMPLATE_FRAGMENTS` ; `NodeTypes.INTERPOLATION` remplace `5` ; `wrapperOf` pour `on` avec argument :
+    expression si `isMemberExpressionBrowser(exp) || isFnExpressionBrowser(exp)`, sinon corps de fonction si
+    `exp.content` contient `;`, sinon l'expression `($event) => (texte)` — la règle de `vOn` de Vue 3.5, nommée dans le
+    docblock.
+
+**Questions à l'auteur** (le plan suit chaque recommandation ; une autre réponse ne change que la tâche nommée).
+
+- **Q1 (R124, St11-3) : l'identité du formulaire ou les appels gardés.** Recommandé : **(A)**, `formIdentity` — les
+  24 appels disparaissent et un geste futur est couvert sans y penser ; son coût : un getter par formulaire et
+  `discard()` gardé pour la suppression. (B) changerait R124 en : appels gardés, `handleDelete` et le sélecteur de
+  langue en création gagnent les leurs, plus une garde de source sur les affectations.
+- **Q2 (R122, CR11-2) : borner l'avis par la première lecture relancée, ou écrire la limite.** Recommandé : **(B)** —
+  une lecture relancée par la personne l'emporte ; son coût : un état de plus dans le module. (A) changerait R122 en :
+  `readRefusalScope()` renommée `currentReadScope()` (St11-5), une phrase de règle et de docblock, aucun état.
+- **Q3 (R135, St11-1) : les identifiants de tâche dans les noms de tests.** Le brief les permet (« le ticket, une
+  tâche ou une décision ») et St11-1 les dit tolérés. Recommandé : **les garder** (ils renvoient au plan archivé, comme
+  un identifiant de constat dans un commentaire) ; les retirer ferait de R135 un renommage de plusieurs centaines de
+  noms (`grep -rcP "\(#748, R[0-9]+" frontend/tests` le chiffre avant d'y toucher).
+- **Q4 (R130, St11-8 + CR11-10) : `@vue/compiler-dom` déclaré, ou une constante nommée.** Recommandé : **(A)** — les
+  deux constats tenus à la lettre, aucun octet de plus installé ; son coût : `package.json` et `package-lock.json`.
+  (B) changerait R130 en : constante épinglée par un test, l'écart du `v-on` avec Vue écrit dans le docblock et
+  épinglé par un cas.
+- **Q5 (R127, CR11-6) : verrouiller la traduction des réglages pendant une proposition affichée.** Recommandé :
+  **(A)** — la perte silencieuse d'une proposition non enregistrée est le cas que R93 a fermé pour les entrées ; son
+  coût : une clé FR/EN. (B) changerait R127 en : `isRefused` des réglages = `isAnySaving || isLocked` seulement.
+
+### Review Focus (onzième relecture)
+
+1. **« Annuler » pendant une traduction, puis « Proposer la version XX » aussitôt** (clic, Entrée, `translate` émis) :
+   aucune seconde requête tant que la première n'a pas répondu ; le bouton est désactivé et décrit par le texte de
+   l'attente ; à la réponse périmée, rien ne change au formulaire et le bouton revient. Test : R125.
+2. **Une saisie pendant la traduction** : chaque champ de prose est `readonly` et décrit par le texte d'aide, le focus
+   y entre et la touche Tab en sort ; à la réponse, la proposition remplace la prose ; à un échec (429, 503), la prose
+   d'origine est intacte et de nouveau modifiable, le texte d'aide disparu. Test : R126.
+3. **Supprimer l'entrée en édition, ou changer la langue d'un formulaire en création, pendant une traduction** : la
+   réponse ne pose aucune proposition, aucun avis `role="status"`. Test : R124.
+4. **Une page future qui charge dans son `onMounted`** (directement, ou par un nom local lié à `load`) : la garde
+   rougit en nommant le fichier et l'appel. Test : R121.
+5. **Un smoke ou l'audit avec une Basic Auth et une base `http://`, ou une valeur `:`/`u:`/`:p`** : sortie 2 avant
+   tout appel de curl, le message dit pourquoi sans citer la valeur. Test : R133.
+
+### Contraintes propres aux tâches R121 à R136
+
+- Les **Global Constraints** et toutes les contraintes des séries précédentes valent. Exécution : **un agent par tâche,
+  successifs dans l'ordre R121 → R136**, qui lit d'abord `tasks/relectures-748/brief-commun-agents.md`. **Pour R121 et
+  suivantes, la section à lire en entier jusqu'à la première tâche est celle-ci** (« Corrections de la onzième
+  relecture ») et le fichier de constats `tasks/relectures-748/relecture-11-constats.md` (le brief le dit, mis à jour
+  dans le commit de ce plan). `superpowers:test-driven-development` : test écrit d'abord, **vu rouge pour la bonne
+  raison** ; un test de couverture vert d'emblée est vu rouge par la mutation que sa tâche nomme, **restaurée depuis
+  une copie du fichier faite avant la mutation et vérifiée par `cmp`** puis `git diff` vide sur le fichier muté.
+  **Une mutation s'écrit en place par Python seulement** (`python3 -I` ; `open(p, 'r+')` ou `open(p, 'w')` sur le même
+  chemin, qui garde l'inode), **jamais par l'outil Edit, `sed -i` ni `perl -pi`**. Après une écriture du code par Edit
+  ou Write (pas une mutation), `docker compose restart frontend` (ou `backend`) avant de croire un test, en cas de
+  doute. Refactoring pur : la suite existante comme filet, nombre de tests noté avant et après.
+  **`superpowers:verification-before-completion` invoquée réellement** avant le rendu.
+- **Cache de test backend vidé dans le conteneur, jamais sur l'hôte** : `docker compose exec -u dev backend rm -rf
+  var/cache/test` après chaque mutation de configuration ou de service et après sa restauration.
+- **Git : seuls `git add <fichiers>` et `git commit`** (et `git mv` / `git rm` pour un déplacement ou une
+  suppression). Ni `reset` (pas même sans argument), ni `add -N`, ni `checkout`, ni `checkout-index`, ni `switch`, ni
+  `restore`, ni `stash`, **ni `git commit --amend`** : une erreur de commit se corrige par un commit suivant. **Un
+  commit par tâche**, fichiers nommés, message en français terminé par les lignes d'attribution que donne le brief.
+- **Une docstring ou une règle qui décrit un comportement modifié se corrige dans le même commit** ; une phrase de règle
+  se **remplace**, elle ne s'ajoute pas à côté ; un commentaire s'écrit **au présent** (ni « depuis R… », ni « n'est
+  plus », ni « restait ») ; **un identifiant de constat est permis dans un commentaire** (décision 4), **jamais dans un
+  nom de test** ; un nom de test peut citer le ticket, une tâche ou une décision (`#748, R125, décision 2`).
+- **Lignes touchées ≤ 140 caractères**, mesurées par `python3 -I` (ou `awk 'length>140'`) sur chaque fichier touché,
+  **règles de `.claude/rules/` comprises** (une ligne de table Markdown ne se coupe pas : le dire au rendu).
+- **Aucun travail en arrière-plan au rendu** ; **chaque code de sortie se lit sans pipe** (`make front-test; echo
+  "exit=$?"`, de même `front-lint`, `front-build`, `back-test`, `back-quality`, chaque test hors ligne et
+  `tools/check-claude-rules.sh`).
+- Frontend (R121 à R130, R135) : lire avec `Read` `.claude/rules/frontend.md`, `.claude/rules/frontend-a11y.md` et la
+  règle de la zone (`frontend-session-refus.md`, `frontend-session.md`, `frontend-backoffice.md` ; `ai.md` avant de
+  toucher `useAdminTranslation.ts`) ; test ciblé `docker compose exec -T frontend npm test -- <chemins>`, puis
+  `make front-test`, `make front-lint`, `make front-build` ; toute chaîne nouvelle en FR et EN
+  (`frontend/src/infrastructure/i18n/locales/{fr,en}.json`).
+- Backend (R131, R132) : lire avec `Read` un fichier de `backend/tests/Security/`, `.claude/rules/backoffice-api.md` et
+  `.claude/rules/security-authentication.md` avant d'écrire ; test ciblé `docker compose exec -u dev backend php
+  bin/phpunit <chemin>`, puis `make back-test` et `make back-quality` ; `make back-style-fix` après un import ajouté.
+- Outillage (R133, R134) : lire avec `Read` les scripts touchés et `.claude/rules/deploiement-nginx.md` ;
+  `bash tools/tests/<script>.test.sh; echo "exit=$?"` pour chaque script touché ; shellcheck dans l'image épinglée du job
+  `tools-tests` : `docker run --rm --entrypoint shellcheck -v "$PWD":/repo:ro -w /repo
+  rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 -x --severity=warning
+  <fichiers>` (si l'image n'expose pas `shellcheck`, le noter et lancer celui de l'hôte, en le disant). Une valeur de
+  test ne contient jamais le mot « secret » (un message attendu, si).
+- Règles : `tools/check-claude-rules.sh` après chaque modification ; 50 000 octets par règle, taille de chaque règle
+  touchée notée au rendu. Tailles au départ (HEAD 5fd65d6e) : `frontend-session-refus.md` 13 957,
+  `frontend-session.md` 15 976, `frontend-backoffice.md` 29 329, `frontend-a11y.md` 13 050,
+  `security-authentication.md` 10 047, `security-authentication-sessions.md` 22 279, `deploiement-nginx.md` 29 512 ;
+  non touchées : `backoffice-api.md` **39 834**, `release.md` 7 045, `ai.md` 18 919.
+- Ne jamais lire `.env.local`, `.env.test.local`, `config/jwt/*` ni un fichier de secrets (les exclure de tout
+  `grep -r`) ; ne jamais nommer un compte réel. Pas de push, pas de PR.
+
+### Fichiers (tâches R121 à R136)
+
+| Fichier | Responsabilité | Tâches |
+|---|---|---|
+| `frontend/tests/support/sourceText.ts`, `sourceText.spec.ts`, `frontend/tests/presentation/pages/admin/noLoadInOnMounted.spec.ts` (créé), `.claude/rules/frontend-session-refus.md` | aucun chargement dans un `onMounted` admin | R121 |
+| `frontend/src/application/admin/shared/backofficeAccessRefusal.ts`, `frontend/src/presentation/router/backofficeSessionExpiry.ts`, `frontend/src/presentation/ui/admin/AccessRefusedNotice.vue` (docblock), leurs specs et celles qui estampillent à la main | la page d'arrivée close par la première lecture relancée ; le nom de l'estampille | R122 |
+| `backofficeAccessRefusal.spec.ts`, `AccessRefusedNotice.spec.ts`, `AdminLayout.sessionEnded.spec.ts`, `frontend/tests/support/accessRefusalTexts.ts` (créé) | specs du refus : sans Middle Man, textes et montage écrits une fois, intégration lue à chaque annonce | R123 |
+| `frontend/src/application/admin/translation/useAdminTranslation.ts`, les sept fichiers de formulaires par entrée, `AdminAboutSettingsForm.vue`, `useAdminTranslation.spec.ts`, `frontend/tests/support/entryFormLock.ts`, les six specs de formulaires, `AdminAboutPage.spec.ts` | identité du formulaire ; suppression et langue en création | R124 |
+| `useAdminTranslation.ts`, `frontend/src/presentation/ui/admin/TranslateEntryButton.vue`, les neuf sites du bouton, `fr.json`/`en.json`, `TranslateEntryButton.spec.ts`, `entryFormLock.ts`, `AdminAboutPage.spec.ts` | un appel en vol, l'attente dite | R125 |
+| `frontend/src/presentation/ui/admin/TranslationReadonlyHint.vue` (créé), les neuf formulaires, `fr.json`/`en.json`, `entryFormLock.ts`, `AdminAboutPage.spec.ts` | prose en lecture seule pendant la traduction | R126 |
+| les neuf formulaires (`isRefused`), `AdminAboutSettingsForm.vue` (bouton), `fr.json`/`en.json`, `entryFormLock.ts`, `AdminAboutPage.spec.ts` | refus par programme = refus du bouton | R127 |
+| `AdminAboutSettingsForm.vue`, `AdminAboutPage.spec.ts` | une seule source de vérité pour l'avis des réglages | R128 |
+| `frontend/tests/support/entryFormLock.ts`, `useEntryFormLock.spec.ts`, `AdminCaseStudiesPage.spec.ts`, `AppLayout.spec.ts`, `sourceText.spec.ts` | hygiène des specs | R129 |
+| `frontend/package.json`, `frontend/package-lock.json`, `sourceText.ts`, `srcSources.ts`, `sourceText.spec.ts`, lecteurs de `SRC_TEMPLATE_EXPRESSIONS` | le lecteur de gabarit tient ses règles de Vue | R130 |
+| `backend/tests/Security/ApiPlatformOperationsCarryNoSecurityTest.php`, `backend/tests/Support/CompiledNestedReading.php` (créé) | une passe sur les liens | R131 |
+| `backend/src/Shared/Infrastructure/Http/CanonicalPath.php` (docblock), `backend/tests/Shared/Infrastructure/Http/PathIsDecidedCanonicallyTest.php` (créé), `.claude/rules/security-authentication.md` | aucun chemin brut hors de `CanonicalPath` | R132 |
+| `tools/lib/smoke-http.sh`, `tools/{audit-prod,smoke-dead-session-cookie,smoke-login-throttling,smoke-mcp}.sh`, `tools/tests/{smoke-http,audit-prod,smoke-dead-session-cookie,smoke-login-throttling,smoke-mcp}.test.sh`, `tools/tests/lib/smoke-cases.sh` (créé), `.claude/rules/deploiement-nginx.md`, `.claude/rules/security-authentication-sessions.md` | une fonction de Basic Auth, refus `http://` et valeur creuse, liste d'autorisation, tests sans recopie | R133 |
+| `tools/audit-prod.sh`, `tools/tests/audit-prod.test.sh`, `.claude/rules/deploiement-nginx.md` | redirections `https` seulement, 401 de la sonde dit, #750 expliqué une fois | R134 |
+| specs et tests hors ligne désignés par la recherche | noms de tests sans identifiant de constat | R135 |
+| `.claude/rules/*`, fichiers désignés | balayage | R136 |
+
+---
+
+### Task R121 : Aucune page du backoffice ne charge dans un `onMounted` : la règle et sa garde (décision 1 : CR11-1 ≈ C11-9)
+
+**Files :**
+- Modify : `frontend/tests/support/sourceText.ts` (`syntaxTreeOf`, `callsInsideHook`)
+- Test : `frontend/tests/support/sourceText.spec.ts`, `frontend/tests/presentation/pages/admin/noLoadInOnMounted.spec.ts` (créé)
+- Modify (règle) : `.claude/rules/frontend-session-refus.md` (puce « the alert's mount advances the epoch only… », `paths:`)
+
+**Interfaces :**
+- Produces : choix tranché 1 — `syntaxTreeOf(source: string): ts.SourceFile`, `callsInsideHook(source: string, hook:
+  string): string[]`. Consumes : `SRC_SCRIPTS` (`srcSources.ts`).
+
+- [ ] **Step 1 : tests, rouges.** `sourceText.spec.ts` :
+  `it("callsInsideHook rend le callee de chaque appel des fonctions passées au hook, imbriquées comprises (#748, R121)")`
+  — source `onMounted(() => { a(); x.y(); const f = () => load() }) ; b()` → `['a', 'x.y', 'load']` ; `onMounted(go)`
+  (référence, pas de fonction écrite) → `[]` ; `other(() => a())` → `[]`.
+  `noLoadInOnMounted.spec.ts` (docblock : la règle, ce qu'elle ne voit pas — un `await` avant l'envoi, un
+  sous-composant rendu plus tard) :
+  `it("aucun fichier de presentation/pages/admin n'appelle un chargement dans un onMounted (#748, R121, décision 1)")`
+  (message : `fichier : callee`), et ses garde-fous (≥ 12 fichiers, ≥ 1 `onMounted` trouvé).
+  Run : `docker compose exec -T frontend npm test -- tests/support/sourceText.spec.ts tests/presentation/pages/admin/noLoadInOnMounted.spec.ts`.
+  Expected : FAIL, `callsInsideHook` introuvable.
+- [ ] **Step 2 : implémenter** selon le choix tranché 1 (`treeOf` renommé partout où il est lu).
+- [ ] **Step 3 : rouges vus par mutation** (Python, copie vérifiée par `cmp`) : (a) dans `AdminIncidentsPage.vue`,
+  `onMounted(() => { void load() })` ajouté (et `onMounted` importé) → la garde rougit en nommant
+  `presentation/pages/admin/AdminIncidentsPage.vue : load` ; (b) dans `AdminQualityPage.vue`, une déstructuration
+  `load: refresh` et `onMounted(() => refresh())` → rouge sur `refresh` ; restaurés.
+- [ ] **Step 4 : règle** — dans la puce « **the alert's mount advances the epoch only, never the scope…** », après
+  « …whenever it answers; » : « **a backoffice page starts its load in `setup`** (or an `immediate` watcher), both
+  stamped before the alert's `onMounted` — a read sent from the page's own `onMounted` would carry the new epoch and say
+  `common.accessRefused` for the earlier save; `noLoadInOnMounted.spec.ts` refuses a load or a repository call in an
+  `onMounted` of `presentation/pages/admin` (R121, decision 1 of the eleventh review). Accepted, held by the review: a
+  read sent after an `await` before `get`, or by a sub-component rendered later by a `v-if`; » — lignes ≤ 140 ;
+  `paths:` gagne `frontend/tests/presentation/pages/admin/noLoadInOnMounted.spec.ts` (fichier indexé par `git add`
+  avant `tools/check-claude-rules.sh`). Taille notée.
+- [ ] **Step 5 : verts** — specs ciblés PASS ; `make front-test; echo "exit=$?"`, `make front-lint; echo "exit=$?"`,
+  `make front-build; echo "exit=$?"`, `tools/check-claude-rules.sh; echo "exit=$?"` ; `grep -rn "treeOf(" frontend/tests`
+  : `syntaxTreeOf` seul.
+- [ ] **Step 6 : commit** — `test(frontend): aucune page du backoffice ne charge dans un onMounted, la règle et sa garde de source (#748)`.
+
+---
+
+### Task R122 : Le refus du backoffice — la première lecture relancée clôt le chargement de la page d'arrivée ; l'estampille nommée par son effet (CR11-2, Q2 (B) ; St11-5 = Sp11-8)
+
+**Files :**
+- Modify : `frontend/src/application/admin/shared/backofficeAccessRefusal.ts`, `frontend/src/presentation/router/backofficeSessionExpiry.ts`, `frontend/src/presentation/ui/admin/AccessRefusedNotice.vue` (docblock)
+- Test : `frontend/tests/application/admin/shared/backofficeAccessRefusal.spec.ts`, `frontend/tests/presentation/ui/admin/AccessRefusedNotice.spec.ts`, `frontend/tests/presentation/layout/AdminLayout.sessionEnded.spec.ts` ; les specs qui appellent `readRefusalScope()` (liste par `grep -rln readRefusalScope frontend/tests`)
+- Modify (règle) : `.claude/rules/frontend-session-refus.md` (l. 26, l. 72-87)
+
+**Interfaces :**
+- Produces : choix tranché 6 — `stampBackofficeRead(): ReadRefusalScope`. Supprime : `readRefusalScope()`.
+- St11-5 : la puce « **Effacée** » d'`AccessRefusedNotice.vue` nomme l'effaceur, `clearBackofficeAccessRefusal()`, qui
+  fait avancer le périmètre ; le docblock du module dit que `stampBackofficeRead()` estampille une lecture et, après le
+  montage, clôt le chargement de la page d'arrivée.
+
+- [ ] **Step 1 : tests, rouges.** `backofficeAccessRefusal.spec.ts` :
+  `it("après la première lecture envoyée après le montage, une lecture de la page d'arrivée refusée rend le texte courant (#748, R122)")`
+  (écriture refusée comptée, une estampille avant `settle`, `settle`, une estampille après, puis le refus de la
+  première → `earlierSaveRefused` faux) ; `it("avant toute lecture relancée, chaque lecture de la page d'arrivée garde l'avis (#748, R122)")`
+  (le cas de R112, sous le nouveau nom). `AdminLayout.sessionEnded.spec.ts` :
+  `it("« Réessayer » servi, puis le refus tardif d'une lecture de la page d'arrivée : le texte courant (#748, R122)")`
+  sur `AdminQualityPage` (une liste en 403, l'autre retenue par une promesse manuelle ; « Réessayer » servi ; la
+  retenue répond 403 → texte FR exact de `common.accessRefused`).
+  Run : `docker compose exec -T frontend npm test -- tests/application/admin/shared tests/presentation/ui/admin/AccessRefusedNotice.spec.ts tests/presentation/layout/AdminLayout.sessionEnded.spec.ts`.
+  Expected : FAIL, `stampBackofficeRead` introuvable ; puis, exportée sans l'état, le premier cas sur `true`.
+- [ ] **Step 2 : implémenter** selon le choix tranché 6 ; chaque transition reste une seule affectation de
+  `state.value` (R84) ; renommage de `readRefusalScope` par `python3 -I` sur la liste de `grep -rln`, puis
+  `docker compose restart frontend`.
+- [ ] **Step 3 : rouge vu par mutation** (Python, copie vérifiée par `cmp`) : la mise à faux d'`isLandingOpen` retirée
+  de `stampBackofficeRead()` → le cas de l'intégration et le premier cas du module rougissent ; restauré.
+- [ ] **Step 4 : règle** — l. 26 et l. 72 : `readRefusalScope()` → `stampBackofficeRead()` ; l. 84-87, « every read
+  **sent before the mount** … whenever it answers; » → « every read **sent before the mount** — the landing page's
+  load, stamped by its `setup` — keeps that text and re-announces it until the first read sent after the mount (a
+  « Réessayer », a re-read after a save) closes that load (R122); ». Lignes touchées ≤ 140 (la l. 26, 216 caractères, et
+  la l. 79, 143, coupées : St11-2). Taille notée.
+- [ ] **Step 5 : verts** — `make front-test; echo "exit=$?"`, `make front-lint; echo "exit=$?"`,
+  `make front-build; echo "exit=$?"`, `tools/check-claude-rules.sh; echo "exit=$?"` ;
+  `grep -rn readRefusalScope frontend/src frontend/tests .claude/rules` : vide.
+- [ ] **Step 6 : commit** — `fix(frontend): la première lecture relancée après le montage clôt le chargement de la page d'arrivée ; l'estampille d'une lecture nommée par son effet (#748)`.
+
+---
+
+### Task R123 : Les specs du refus — sans intermédiaire, textes et montage écrits une fois, l'intégration lue à chaque annonce (St11-6, St11-10, Sp11-9 ; refactoring de tests)
+
+**Files :**
+- Create : `frontend/tests/support/accessRefusalTexts.ts` (`EARLIER_SAVE_REFUSED_FR`, `ACCESS_REFUSED_FR`, lus de
+  `fr.json` par la clé, jamais recopiés)
+- Modify : `frontend/tests/application/admin/shared/backofficeAccessRefusal.spec.ts`, `frontend/tests/presentation/ui/admin/AccessRefusedNotice.spec.ts`, `frontend/tests/presentation/layout/AdminLayout.sessionEnded.spec.ts`
+
+**Interfaces :**
+- Consumes : R122 (`stampBackofficeRead`). St11-6 : `readSentNow()` retiré, `stampBackofficeRead()` appelée
+  directement ; le cas « une lecture … qui ne répond pas » garde l'estampille jamais refusée **et** le dit par une
+  assertion (`backofficeAccessRefused` inchangé après les deux estampilles) — distinct de « partie après le montage ».
+  St11-10 : `mountAdminPage(component, route, providers)` remplace `mountAdminCaseStudies` et `mountAdminQuality`
+  (les deux deviennent des appels d'une ligne).
+
+- [ ] **Step 1 : filet** — `make front-test; echo "exit=$?"`, nombre de tests noté.
+- [ ] **Step 2 : test renforcé, rouge par mutation** (Sp11-9) — le cas d'intégration de R112 lit le texte FR exact
+  **après chaque** annonce et vérifie que le `<span>` est remplacé (référence d'élément différente) entre la première
+  et la seconde. Mutation (Python, copie vérifiée par `cmp`) : la `key` du `<span>` d'`AccessRefusedNotice.vue`
+  retirée → le cas rougit sur le remplacement ; restauré.
+- [ ] **Step 3 : refactorer** selon les interfaces.
+- [ ] **Step 4 : verts** — même nombre de tests (± les cas renommés, dits) ; `make front-lint; echo "exit=$?"`,
+  `make front-build; echo "exit=$?"` ; `grep -rn "readSentNow\|const earlierSaveFr\|const accessRefusedFr\|function mountAdminQuality" frontend/tests` : vide.
+- [ ] **Step 5 : commit** — `test(frontend): les specs du refus sans intermédiaire, textes et montage écrits une fois, chaque annonce lue (#748)`.
+
+---
+
+### Task R124 : Traduction assistée — l'identité du formulaire périme la traduction en vol ; la suppression de l'entrée éditée et la langue d'une création aussi (St11-3, Q1 (A) ; C11-7 = CR11-4, décision 3)
+
+**Files :**
+- Modify : `frontend/src/application/admin/translation/useAdminTranslation.ts`, `frontend/src/presentation/pages/admin/{AdminCaseStudiesPage,AdminIncidentsPage,AdminContributionsPage,AdminAnonymousCvPage,AdminQualityPage,AdminAboutMeCardsSection,AdminAboutSiteCardsSection,AdminAboutSettingsForm}.vue`
+- Test : `frontend/tests/application/admin/translation/useAdminTranslation.spec.ts`, `frontend/tests/support/entryFormLock.ts` (deux cas partagés, `deleteEditedEntry` dans `EntryFormLockCase`), les six specs qui déclarent un `EntryFormLockCase`
+- Modify (règle) : `.claude/rules/frontend-backoffice.md` (« Translation assistant », la phrase « every gesture that replaces the form's content … (`discard()`, R114, R114b) »)
+
+**Interfaces :**
+- Produces : choix tranché 2 — `UseAdminTranslationOptions.formIdentity?: () => unknown`, `isTranslating:
+  Readonly<Ref<boolean>>`. `EntryFormLockCase.deleteEditedEntry: (wrapper: VueWrapper) => Promise<void>` (le
+  `window.confirm` simulé à `true` par le support).
+
+- [ ] **Step 1 : filet** — `make front-test; echo "exit=$?"`, nombre noté ; les cas de R114/R114b (« Annuler »,
+  « Modifier », « Créer la version XX » pendant une traduction, langue des réglages) en sont le filet : ils restent
+  verts une fois les appels retirés.
+- [ ] **Step 2 : tests, rouges** (Review Focus 3). `useAdminTranslation.spec.ts` :
+  `it("une identité de formulaire changée pendant la traduction : isTranslating retombe, la réponse rend null (#748, R124)")`
+  (dépôt différé, `formIdentity` sur une `ref`, changée avant la réponse) ;
+  `it("une identité inchangée : la proposition est rendue (#748, R124)")`.
+  `entryFormLock.ts` (huit formulaires) :
+  `it(\`${prefix}supprimer l'entrée en édition pendant une traduction : la réponse ne pose rien\`)` (différée,
+  `deleteEditedEntry`, réponse, `flushPromises()` → aucun avis `role="status"` de proposition, aucun champ de prose
+  rempli) ; `it(\`${prefix}changer la langue d'une création pendant une traduction : la réponse ne pose rien\`)`
+  (formulaire vierge rempli, traduction différée, `#${ids.locale}` changé, réponse → rien).
+  Run : `docker compose exec -T frontend npm test -- tests/application/admin/translation tests/presentation/pages/admin`.
+  Expected : FAIL — `formIdentity` sans effet ; les seize cas posent la proposition.
+- [ ] **Step 3 : implémenter** selon le choix tranché 2 ; docblock du composable : l'identité, `discard()` pour ce
+  qu'elle ne voit pas (une suppression).
+- [ ] **Step 4 : rouges vus par mutation** (Python, copie vérifiée par `cmp`) : (a) la comparaison d'identité retirée
+  du composable → les cas « Modifier », « Créer la version XX », « langue d'une création » et le cas des réglages
+  rougissent ; (b) l'appel de `discard()` retiré de `handleDelete` d'`AdminContributionsPage.vue` → seul son cas
+  « supprimer » rougit ; restaurés.
+- [ ] **Step 5 : règle** — « and every gesture that replaces the form's content — « Annuler », « Modifier », « Créer la
+  version XX », and the About settings' change of language — discards the response in flight (`discard()`, R114,
+  R114b) » → « and a response whose form no longer has the identity read at send time (the entry, the locale, the source
+  group, the prose: `formIdentity`) is discarded, whatever gesture replaced it, a deleted entry being discarded by
+  `discard()` (R124) ». Taille notée.
+- [ ] **Step 6 : verts** — `make front-test; echo "exit=$?"` (filet + 2 + 16), `make front-lint; echo "exit=$?"`,
+  `make front-build; echo "exit=$?"`, `tools/check-claude-rules.sh; echo "exit=$?"` ;
+  `grep -c discardTranslation frontend/src/presentation/pages/admin/*.vue` : le nom déstructuré et un appel par
+  `handleDelete…` seulement (Qualité : deux de chaque ; réglages : 0).
+- [ ] **Step 7 : commit** — `refactor(frontend): une traduction en vol se périme quand son formulaire change d'identité, la suppression de l'entrée éditée aussi (#748)`.
+
+---
+
+### Task R125 : Traduction assistée — un seul appel au modèle en vol par formulaire ; l'attente après « Annuler » est dite (décision 2 : CR11-3 = C11-6)
+
+**Files :**
+- Modify : `frontend/src/application/admin/translation/useAdminTranslation.ts`, `frontend/src/presentation/ui/admin/TranslateEntryButton.vue`, les neuf sites de `<TranslateEntryButton>` (`hintId` et `isDiscardPending` passés), `frontend/src/infrastructure/i18n/locales/{fr,en}.json` (`admin.translation.discardPending`)
+- Test : `useAdminTranslation.spec.ts`, `frontend/tests/presentation/ui/admin/TranslateEntryButton.spec.ts`, `frontend/tests/support/entryFormLock.ts`, `AdminAboutPage.spec.ts`
+- Modify (règle) : `.claude/rules/frontend-backoffice.md` (« Translation assistant ») ; `.claude/rules/frontend-a11y.md` non touchée (la convention du texte rendu pendant l'état y est déjà)
+
+**Interfaces :**
+- Consumes : R124 (`isTranslating`, l'identité). Produces : choix tranché 3 — `isDiscardPending`,
+  `TranslateEntryButton` props `isDiscardPending`, `hintId`.
+
+- [ ] **Step 1 : tests, rouges** (Review Focus 1). `useAdminTranslation.spec.ts` :
+  `it("discard() puis translate() avant la réponse périmée : aucune requête, null (#748, R125, décision 2)")` ;
+  `it("la réponse périmée arrivée, isDiscardPending retombe et une traduction repart (#748, R125)")` ;
+  `it("une réponse périmée en échec : isDiscardPending retombe, aucune raison posée (#748, R125)")`.
+  `TranslateEntryButton.spec.ts` : `isDiscardPending` vrai → bouton `disabled`, `aria-describedby` se termine par
+  `hintId`, le texte FR exact rendu sous cet `id` ; faux → aucun élément de cet `id`, aucun `aria-describedby` vers lui.
+  `entryFormLock.ts` (huit formulaires) : `it(\`${prefix}« Annuler » puis « translate » avant la réponse périmée : une seule traduction, l'attente dite\`)`
+  (dépôt différé, édition, `translate`, « Annuler », `translate` émis → un appel ; `describedTexts` du bouton contient
+  le texte FR exact ; réponse → le texte disparaît, formulaire vide). `AdminAboutPage.spec.ts` : le même pour les
+  réglages (langue changée pendant la traduction). `expectNoAccessibilityViolation` sur un formulaire pendant
+  l'attente.
+  Run : `docker compose exec -T frontend npm test -- tests/application/admin/translation tests/presentation/ui/admin/TranslateEntryButton.spec.ts tests/presentation/pages/admin`.
+  Expected : FAIL — deux appels au dépôt ; `isDiscardPending` introuvable.
+- [ ] **Step 2 : implémenter** selon le choix tranché 3 ; FR et EN exacts du choix 3 ; identifiants
+  `admin-<formulaire>-translation-hint` (un par formulaire, uniques dans la page à plusieurs formulaires).
+- [ ] **Step 3 : rouge vu par mutation** (Python, copie vérifiée par `cmp`) : `isDiscardPending` retiré de la garde de
+  `translate()` → les cas « une seule traduction » rougissent (le bouton reste désactivé : seul le `translate` émis par
+  programme le voit) ; restauré.
+- [ ] **Step 4 : règle** — dans « Translation assistant », après la phrase de R124 : « **one model call in flight per
+  form**: a discarded call still running refuses the next one (`isDiscardPending`, R125, decision 2 of the eleventh
+  review: no `AbortSignal`, the call already left costs what it costs), and the button says why it waits through a text
+  referenced by `aria-describedby` only while it waits (`admin.translation.discardPending`) ». Taille notée.
+- [ ] **Step 5 : verts** — `make front-test; echo "exit=$?"`, `make front-lint; echo "exit=$?"`,
+  `make front-build; echo "exit=$?"`, `tools/check-claude-rules.sh; echo "exit=$?"`.
+- [ ] **Step 6 : commit** — `fix(frontend): un seul appel au modèle en vol par formulaire, l'attente après « Annuler » dite (#748)`.
+
+---
+
+### Task R126 : Traduction assistée — la prose est en lecture seule pendant une traduction, et le dit (décision 3 : CR11-5)
+
+**Files :**
+- Create : `frontend/src/presentation/ui/admin/TranslationReadonlyHint.vue`
+- Modify : les neuf formulaires (sept fichiers par entrée, `AdminAboutSettingsForm.vue`), `frontend/src/infrastructure/i18n/locales/{fr,en}.json` (`admin.translation.proseReadonly`)
+- Test : `frontend/tests/support/entryFormLock.ts` (`EntryFormLockCase.ids.prose: readonly string[]`, renseigné dans les six specs), `AdminAboutPage.spec.ts` (réglages)
+- Modify (règle) : `.claude/rules/frontend-backoffice.md` (« Translation assistant »)
+
+**Interfaces :**
+- Consumes : R124 (`isTranslating` réactif à l'identité). Produces : choix tranché 4 — `TranslationReadonlyHint`
+  (`id`, `shown`), identifiants `admin-<formulaire>-prose-readonly-hint`.
+
+- [ ] **Step 1 : tests, rouges** (Review Focus 2). `entryFormLock.ts` (huit formulaires) :
+  `it(\`${prefix}pendant une traduction, chaque champ de prose est en lecture seule et décrit par le texte d'aide\`)`
+  (différée : pour chaque `ids.prose`, `readonly` présent, `disabled` absent, `describedTexts` contient le texte FR
+  exact ; le sélecteur de langue n'est pas décrit par lui) ;
+  `it(\`${prefix}la traduction répondue ou en échec : la prose redevient modifiable, le texte disparaît\`)` (succès,
+  puis un second montage avec un dépôt qui rejette `AdminTranslationError('unavailable')` : `readonly` absent, aucun
+  élément de l'`id`, la prose d'origine intacte dans le cas d'échec) ; `expectNoAccessibilityViolation` pendant la
+  traduction. `AdminAboutPage.spec.ts` : les deux mêmes pour les cinq champs des réglages.
+  Run : `docker compose exec -T frontend npm test -- tests/presentation/pages/admin`.
+  Expected : FAIL sur `readonly` absent.
+- [ ] **Step 2 : implémenter** selon le choix tranché 4 (FR et EN exacts) ; les champs non-prose (`version`,
+  `occurredAt`, `iconKey`, catégorie…) ne changent pas.
+- [ ] **Step 3 : rouge vu par mutation** (Python, copie vérifiée par `cmp`) : `:readonly` retiré d'un seul champ de
+  prose d'`AdminAnonymousCvPage.vue` → seul son cas rougit, en nommant l'`id` ; restauré.
+- [ ] **Step 4 : règle** — dans « Translation assistant », après la phrase de R125 : « while a translation runs, the
+  form's prose fields are `readonly` (not `disabled`: readable and focusable), each described by
+  `admin.translation.proseReadonly`, rendered only then: the answer replaces prose nobody could change meanwhile (R126,
+  decision 3 of the eleventh review) ». Taille notée.
+- [ ] **Step 5 : verts** — `make front-test; echo "exit=$?"`, `make front-lint; echo "exit=$?"`,
+  `make front-build; echo "exit=$?"`, `tools/check-claude-rules.sh; echo "exit=$?"`.
+- [ ] **Step 6 : commit** — `fix(frontend): pendant une traduction, la prose du formulaire est en lecture seule et le dit (#748)`.
+
+---
+
+### Task R127 : Traduction assistée — ce que le bouton refuse, `translate` le refuse aussi : brouillon d'ordre, enregistrement, proposition des réglages (CR11-6 = C11-5, St11-17 ; Q5 (A))
+
+**Files :**
+- Modify : les sept fichiers de formulaires par entrée, `AdminAboutSettingsForm.vue`, `frontend/src/infrastructure/i18n/locales/{fr,en}.json` (`admin.about.settingsProposalLockedHelp`)
+- Test : `frontend/tests/support/entryFormLock.ts` (un cas, `dirtyOrder` dans `EntryFormLockCase`), `AdminAboutPage.spec.ts`
+- Modify (règle) : `.claude/rules/frontend-backoffice.md` (« Translation assistant » : `isRefused` ; réglages : « The button is disabled while an order draft is dirty… »)
+
+**Interfaces :**
+- Produces : choix tranché 5. `EntryFormLockCase.dirtyOrder: (wrapper: VueWrapper) => Promise<void>` (un ↓ sur la
+  première poignée de la table du formulaire).
+
+- [ ] **Step 1 : tests, rouges.** `entryFormLock.ts` : `it(\`${prefix}un ordre modifié : un « translate » émis ne lance aucune traduction\`)`.
+  `AdminAboutPage.spec.ts` : `it("réglages, un enregistrement en vol : un « translate » émis ne lance rien (#748, R127)")` ;
+  `it("réglages, un ordre modifié ailleurs : un « translate » émis ne lance rien (#748, R127)")` ;
+  `it("réglages, une proposition affichée : le bouton est désactivé, décrit par son texte, et un « translate » émis ne lance rien (#748, R127)")`
+  (texte FR exact ; l'avis gardé ; hors proposition, aucun élément de l'`id`).
+  Run : `docker compose exec -T frontend npm test -- tests/presentation/pages/admin`.
+  Expected : FAIL, un appel au dépôt dans chaque cas ; bouton actif pendant la proposition.
+- [ ] **Step 2 : implémenter** selon le choix tranché 5 (FR et EN exacts).
+- [ ] **Step 3 : rouge vu par mutation** (Python, copie vérifiée par `cmp`) : `|| isOrderDirty.value` retiré de
+  l'`isRefused` d'`AdminCaseStudiesPage.vue` → seul son cas rougit ; restauré.
+- [ ] **Step 4 : règle** — « during a proposal (`isRefused`, the form's lock) and while a translation is in flight »
+  → « whenever its button is disabled (`isRefused`: the form's lock and a dirty order draft; for the About settings a
+  save in flight, a dirty order and a proposal shown, R127) and while a translation is in flight » ; la phrase des
+  réglages gagne : « and while a proposal is shown, said by `admin.about.settingsProposalLockedHelp` (R127) ». Taille notée.
+- [ ] **Step 5 : verts** — `make front-test; echo "exit=$?"`, `make front-lint; echo "exit=$?"`,
+  `make front-build; echo "exit=$?"`, `tools/check-claude-rules.sh; echo "exit=$?"`.
+- [ ] **Step 6 : commit** — `fix(frontend): la traduction assistée refuse par programme tout ce que son bouton refuse (#748)`.
+
+---
+
+### Task R128 : Réglages « À propos » — l'avis de proposition a une seule source de vérité (CR11-7, St11-11)
+
+**Files :**
+- Modify : `frontend/src/presentation/pages/admin/AdminAboutSettingsForm.vue` (`isProposalShown`, son commentaire)
+- Test : `frontend/tests/presentation/pages/admin/AdminAboutPage.spec.ts` (le cas de R113)
+- Modify (règle) : `.claude/rules/frontend-backoffice.md` (« it shows only under a loaded form (`isLoaded`), … (R113) »)
+
+**Interfaces :**
+- `isProposalShown = computed(() => proposal.value?.target === props.locale)` ; le commentaire dit que l'avis est rendu
+  sous `<form v-else>`, qui n'existe qu'une fois `isLoaded`. Le cas de R113 ne lit plus `vm` : il vérifie dans le DOM,
+  après la relecture refusée, qu'aucun formulaire ni avis `role="status"` de proposition n'est rendu.
+
+- [ ] **Step 1 : filet** — le spec à 0, nombre noté.
+- [ ] **Step 2 : réécrire le cas** selon les interfaces ; il passe sur le code actuel.
+- [ ] **Step 3 : rouge vu par mutation** (Python, copie vérifiée par `cmp`) : l'avis sorti du `<form v-else>` (placé
+  avant lui, même `v-if`) **et** `isLoaded.value &&` retiré → le cas rougit dans le DOM ; restauré.
+- [ ] **Step 4 : implémenter** : `isLoaded.value &&` retiré ; le cas reste vert.
+- [ ] **Step 5 : règle** — « it shows only under a loaded form (`isLoaded`), so a refused or interrupted re-read of its
+  target shows nothing (R113) » → « it is rendered inside the form, which exists only once loaded, so a refused or
+  interrupted re-read of its target shows nothing (R113, R128) ». Taille notée.
+- [ ] **Step 6 : verts** — `make front-test; echo "exit=$?"`, `make front-lint; echo "exit=$?"`,
+  `make front-build; echo "exit=$?"`, `tools/check-claude-rules.sh; echo "exit=$?"` ;
+  `grep -n "as unknown as { isProposalShown" frontend/tests/presentation/pages/admin/AdminAboutPage.spec.ts` : vide.
+- [ ] **Step 7 : commit** — `refactor(frontend): réglages « À propos », l'avis de proposition n'a qu'une source de vérité, son test lit le DOM (#748)`.
+
+---
+
+### Task R129 : Hygiène des specs — le support du verrou, les commentaires restés, un test en double (St11-7, St11-15, Sp11-7, Sp11-2, St11-9 ; refactoring de tests)
+
+**Files :**
+- Modify : `frontend/tests/support/entryFormLock.ts`, `frontend/tests/presentation/ui/admin/useEntryFormLock.spec.ts`, `frontend/tests/presentation/pages/admin/AdminCaseStudiesPage.spec.ts`, `frontend/tests/presentation/layout/AppLayout.spec.ts`, `frontend/tests/support/sourceText.spec.ts`
+
+**Interfaces :**
+- St11-7 : toute lecture du titre passe par `titleValue` ; `proposalNotice(wrapper)` (le `role="status"` du
+  formulaire) remplace les `findAll('form')[form].find('[role="status"]')` ; `translateButton` retiré au profit de
+  `findComponent(TranslateEntryButton)` sur le résultat de `formOf(wrapper)` (un seul nom par objet : le bouton DOM
+  reste `translateEntryButton`, le composant devient `translateButtonComponent`) ; `mountLocked` → `mountWithNewTranslation`.
+- St11-15 : `AdminCaseStudiesPage.spec.ts:259-260` en un commentaire d'une phrase ; le docblock de
+  `describeEntryFormLock` (l. 106-107) recoupé ; `useEntryFormLock.spec.ts` : `proposalSource` → `proposalSourceLocale`.
+- Sp11-7 : le commentaire des l. 239-241 dit « dans l'une ou l'autre langue — la cible de la proposition comme sa
+  source ».
+- Sp11-2 : `AppLayout.spec.ts:168` au présent (« Le mécanisme partagé relit seul la session : un seul `me()` »).
+- St11-9 : le cas de `sourceText.spec.ts:197-201` retiré (celui de la l. 168 tient la même assertion).
+
+- [ ] **Step 1 : filet** — `make front-test; echo "exit=$?"`, nombre noté.
+- [ ] **Step 2 : refactorer** selon les interfaces (renommages par `python3 -I` puis `docker compose restart frontend`).
+- [ ] **Step 3 : verts** — nombre de tests : filet − 1 (St11-9, dit) ; `make front-lint; echo "exit=$?"`,
+  `make front-build; echo "exit=$?"` ; `grep -rn "mountLocked\|const translateButton =\|\[form\]\.find('\[role=\"status\"\]')\|proposalSource\b" frontend/tests` : vide.
+- [ ] **Step 4 : commit** — `test(frontend): le support du verrou sans doublons ni noms trompeurs, commentaires au présent, un test en double retiré (#748)`.
+
+---
+
+### Task R130 : Le lecteur de gabarit tient de Vue le type d'un nœud et le jugement d'un `v-on` (St11-8, CR11-10 ; Q4 (A))
+
+**Files :**
+- Modify : `frontend/package.json`, `frontend/package-lock.json`, `frontend/tests/support/sourceText.ts`, `frontend/tests/support/srcSources.ts`, les lecteurs de `SRC_TEMPLATE_EXPRESSIONS` (`grep -rln SRC_TEMPLATE_EXPRESSIONS frontend/tests`)
+- Test : `frontend/tests/support/sourceText.spec.ts`
+- Modify (règle) : `.claude/rules/frontend-session.md` (puce `noOmittedCredentials.spec.ts`, « (a `v-on` handler as an expression, a statement list as a function body) »)
+
+**Interfaces :**
+- Choix tranché 12. `"@vue/compiler-dom": "^3.5.44"` en `devDependencies` (le même intervalle que `vue`), installé
+  dans le conteneur (`docker compose exec -T frontend npm install --save-dev @vue/compiler-dom@^3.5.44`), puis
+  `npm ls @vue/compiler-dom` : **une seule** version, celle de `vue`.
+
+- [ ] **Step 1 : filet** — `make front-test; echo "exit=$?"`, nombre noté.
+- [ ] **Step 2 : tests, rouges** — `sourceText.spec.ts` : `@click="{ credentials: 'omit' }"` → le fragment
+  `($event) => ({ credentials: 'omit' })`, `'omit'` lu ; `@click="a.b"` et `@click="() => b('omit')"` → l'expression
+  telle quelle ; `@click="b('omit')"` → `($event) => (b('omit'))` ; `@click="a(); b('omit')"` → corps de fonction.
+  Chaque forme attendue est confirmée par la sortie de `compileTemplate` de `vue/compiler-sfc` sur le même gabarit
+  (lue une fois à l'écriture du test, notée au rendu). Un cas : `NodeTypes.INTERPOLATION` est le type d'un `{{ a }}`
+  analysé. Run : `docker compose exec -T frontend npm test -- tests/support/sourceText.spec.ts`. Expected : FAIL sur
+  l'objet et l'appel unique (l'essai `(texte)` les lit sans `$event`).
+- [ ] **Step 3 : implémenter** selon le choix tranché 12 ; renommages par `python3 -I` ; docblocks de
+  `templateFragmentsOf` et de l'en-tête du module (« les fragments », plus « les expressions » pour l'ensemble).
+- [ ] **Step 4 : rouge vu par mutation** (Python, copie vérifiée par `cmp`) : `isFnExpressionBrowser(exp)` retiré de
+  `wrapperOf` → le cas `() => b('omit')` rougit ; restauré.
+- [ ] **Step 5 : règle** — « (a `v-on` handler as an expression, a statement list as a function body) » → « (a `v-on`
+  judged by Vue's own `isMemberExpressionBrowser` / `isFnExpressionBrowser`, an inline statement as Vue wraps it,
+  R130) ». Taille notée.
+- [ ] **Step 6 : verts** — `make front-test; echo "exit=$?"` (filet + nouveaux cas), `make front-lint; echo "exit=$?"`,
+  `make front-build; echo "exit=$?"`, `tools/check-claude-rules.sh; echo "exit=$?"` ;
+  `grep -rn "templateExpressionsOf\|SRC_TEMPLATE_EXPRESSIONS\|5 === node.type" frontend/tests` : vide.
+- [ ] **Step 7 : commit** — `test(frontend): le lecteur de gabarit tient de Vue le type d'une interpolation et le jugement d'un v-on (#748)`.
+
+---
+
+### Task R131 : Backend — la garde des métadonnées lit les paramètres et les liens d'un élément en une passe (CR11-8 = St11-12 ; refactoring)
+
+**Files :**
+- Modify : `backend/tests/Security/ApiPlatformOperationsCarryNoSecurityTest.php`
+- Create : `backend/tests/Support/CompiledNestedReading.php`
+
+**Interfaces :**
+- Choix tranché 10. `testANonLinkUriVariableIsReported` lit `readNested()` (`links` 0, `found` d'une ligne).
+
+- [ ] **Step 1 : filet** — la classe verte, nombre de cas noté ; `make back-test; echo "exit=$?"`.
+- [ ] **Step 2 : refactorer** selon le choix tranché 10 ; `make back-style-fix`.
+- [ ] **Step 3 : rouge vu par mutation** (Python, copie vérifiée par `cmp`) : `++$links` retiré de `readNested()` → le
+  garde-fou « `src/` a des liens » rougit ; restauré.
+- [ ] **Step 4 : verts** — mêmes nombres ; `make back-test; echo "exit=$?"`, `make back-quality; echo "exit=$?"` ;
+  `grep -n "collectNested\|countLinks\|\.\.\.\$found" backend/tests/Security/ApiPlatformOperationsCarryNoSecurityTest.php` : vide ;
+  `grep -c "instanceof Link" …` : 1.
+- [ ] **Step 5 : commit** — `refactor(security): la garde des métadonnées lit paramètres et liens d'un élément en une passe (#748)`.
+
+---
+
+### Task R132 : Backend — aucun chemin de requête brut hors de `CanonicalPath` (C11-4, St11-13)
+
+**Files :**
+- Modify : `backend/src/Shared/Infrastructure/Http/CanonicalPath.php` (docblock d'`isPathUnder()`)
+- Create : `backend/tests/Shared/Infrastructure/Http/PathIsDecidedCanonicallyTest.php`
+- Modify (règle) : `.claude/rules/security-authentication.md` (puce `CanonicalPath`)
+
+**Interfaces :**
+- Choix tranché 11. Le test lit `backend/src/**/*.php` (`RecursiveDirectoryIterator`), par jetons : un `T_STRING`
+  `getPathInfo` ou `isPathUnder` suivi de `(`, précédé de `->` ou `::`, hors de `CanonicalPath.php` → constat
+  `<fichier>:<ligne> : <nom>`.
+
+- [ ] **Step 1 : test** `testNoFileOfSrcReadsTheRawPathOrJudgesAStringPath` — vert d'emblée (aucun site). Garde-fou
+  `testTheGuardSeesTheCanonicalReads` (au moins un `CanonicalPath::of(` hors de `CanonicalPath.php`).
+- [ ] **Step 2 : rouges vus par mutation** (Python, copie vérifiée par `cmp`, cache vidé dans le conteneur après la
+  mutation et la restauration) : (a) dans `LoginCsrfRequestListener.php`, `CanonicalPath::of($request)` →
+  `$request->getPathInfo()` → rouge, fichier et ligne nommés ; (b) un `CanonicalPath::isPathUnder($request->getPathInfo(), '/api')`
+  dans `CsrfCookieRequestSubscriber.php` → deux constats ; restaurés.
+- [ ] **Step 3 : docblock et règle** — docblock selon le choix tranché 11 ; règle : « `isPathUnder($path, $prefix)` is
+  the same rule on a string, for the tests that walk the router » → « … for the tests that walk the router; no file of
+  `src/` but `CanonicalPath` calls it or `getPathInfo()` (`PathIsDecidedCanonicallyTest`, R132) ». Taille notée.
+- [ ] **Step 4 : verts** — `make back-test; echo "exit=$?"`, `make back-quality; echo "exit=$?"`,
+  `tools/check-claude-rules.sh; echo "exit=$?"`.
+- [ ] **Step 5 : commit** — `test(security): aucun fichier de src ne lit le chemin brut ni ne juge un chemin en chaîne hors de CanonicalPath (#748)`.
+
+---
+
+### Task R133 : Outillage — la Basic Auth posée et exigée par une fonction, jamais sur `http://`, jamais creuse ; la garde en liste d'autorisation ; les tests sans recopie (St11-4, C11-1, C11-8, C11-3, St11-14, Sp11-10)
+
+**Files :**
+- Modify : `tools/lib/smoke-http.sh`, `tools/audit-prod.sh`, `tools/smoke-dead-session-cookie.sh`, `tools/smoke-login-throttling.sh`, `tools/smoke-mcp.sh`
+- Create : `tools/tests/lib/smoke-cases.sh` (`check_empty_basic_auth <libellé> <rc> <fichier err> <fichier appels> <fichier out>`, la forme des trois cas « vide »)
+- Test : `tools/tests/{smoke-http,audit-prod,smoke-dead-session-cookie,smoke-login-throttling,smoke-mcp}.test.sh`
+- Modify (règles) : `.claude/rules/deploiement-nginx.md` (l. 119-130), `.claude/rules/security-authentication-sessions.md` (si elle nomme `smoke_require_auth_config` : `grep` d'abord)
+
+**Interfaces :**
+- Choix tranchés 7 et 8. St11-14 : dans `audit-prod.test.sh`, `run_as` → `run_audit <nom> [préfixe de commande…]`,
+  `run` retiré, `run_traced <nom>` = `run_audit "$1" bash -x` ; les trois cas « vide » des smokes appellent
+  `check_empty_basic_auth`. Sp11-10 : l'échec du cas « vide » de l'audit liste `TMPDIR` (`ls -A`).
+
+- [ ] **Step 1 : filet** — les cinq tests hors ligne à 0, sorties notées.
+- [ ] **Step 2 : tests, rouges** (Review Focus 5). `smoke-http.test.sh` : `smoke_use_auth_config` — définie vide → 2,
+  « secret de Basic Auth vide » ; non définie → 0, aucun dossier ; pleine → 0, fichier écrit ; `:`, `u:`, `:p` → 2,
+  « sans utilisateur ou sans mot de passe », aucun dossier, la valeur absente de stderr ; `smoke_fetch` avec
+  `SMOKE_AUTH_CONFIG` posé sur `http://x` → 2, « non https:// », le faux curl jamais appelé ; sur `https://x` → curl
+  appelé avec `-K`. Garde de source réécrite (choix 8) ; elle rougit aujourd'hui sur
+  `smoke-dead-session-cookie.sh:128` et sur les appels `smoke_write_auth_config`/`smoke_require_auth_config`. Un cas
+  par smoke : base `http://…` avec `AUDIT_BASIC_AUTH='u:p'` → sortie 2, aucun appel.
+  Run : chaque test hors ligne, `; echo "exit=$?"`. Expected : `smoke_use_auth_config` introuvable ; `:p` rend 0 ;
+  `http://` appelle curl.
+- [ ] **Step 3 : implémenter** selon les choix 7 et 8 ; les commentaires d'en-tête des quatre scripts et de la
+  bibliothèque nomment `smoke_use_auth_config` ; la phrase « À appeler juste après smoke_write_auth_config » disparaît.
+- [ ] **Step 4 : rouges vus par mutation** (Python, copie vérifiée par `cmp`) : (a) `printenv AUDIT_BASIC_AUTH >/dev/null`
+  ajouté à `smoke-mcp.sh` (la forme de C11-3, invisible à l'ancienne garde) → la garde rougit en nommant la ligne ;
+  (b) le test du schéma retiré de `smoke_fetch` → le cas `http://` de la bibliothèque et des trois smokes rougit ;
+  restaurés.
+- [ ] **Step 5 : règles** — `deploiement-nginx.md`, l. 119-130 **remplacées** (une phrase par fait, ≤ 140) :
+  `smoke_use_auth_config` (nom validé, valeur lue sous `set +x`, retour à la ligne, valeur sans `:`, sans utilisateur
+  ou sans mot de passe : sortie 2 ; définie vide : « secret de Basic Auth vide », sortie 2 ; non définie : sans Basic
+  Auth) ; `smoke_fetch` (refuse le `-K` sur une URL non `https://`, R133) ; la garde de source, liste
+  d'autorisation (`[[ -v ]]` et l'appel de la bibliothèque, R133). Tailles notées.
+- [ ] **Step 6 : verts** — les cinq tests hors ligne à 0 (filet + nouveaux cas) ; shellcheck (image épinglée) sur la
+  bibliothèque, les quatre scripts, les cinq tests et `tools/tests/lib/smoke-cases.sh` ;
+  `tools/check-claude-rules.sh; echo "exit=$?"` ;
+  `grep -rn "smoke_require_auth_config\|run() {" tools` : `_smoke_require_auth_config` seul, dans la bibliothèque.
+- [ ] **Step 7 : commit** — `fix(tools): la Basic Auth posée et exigée par une fonction, refusée sur http:// et sans utilisateur ou mot de passe ; la garde en liste d'autorisation (#748)`.
+
+---
+
+### Task R134 : Outillage — l'audit ne suit une redirection authentifiée qu'en `https`, une sonde en 401 le dit, #750 expliqué une fois (C11-2, CR11-9, St11-16)
+
+**Files :**
+- Modify : `tools/audit-prod.sh`
+- Test : `tools/tests/audit-prod.test.sh` (le faux curl rend `FAKE_CURL_HTTP_CODE_FOR_WWW` sur stdout pour une URL
+  `https://www.` avec `-w '%{http_code}'`, si posée)
+- Modify (règle) : `.claude/rules/deploiement-nginx.md` (phrase de #750, l. 133-134)
+
+**Interfaces :**
+- Consumes : R133 (`smoke_use_auth_config` dans l'audit). Choix tranché 9.
+
+- [ ] **Step 1 : tests, rouges.** `audit-prod.test.sh`, run nominal (`AUDIT_BASIC_AUTH='u:p'`) :
+  `pass "chaque appel qui porte -K porte --proto-redir =https"` ; un run `FAKE_CURL_HTTP_CODE_FOR_WWW=401` :
+  `pass "une sonde https://www. en 401 dit que l'hôte demande la Basic Auth"`. Run :
+  `bash tools/tests/audit-prod.test.sh; echo "exit=$?"`. Expected : exit 1, les deux en FAIL.
+- [ ] **Step 2 : implémenter** selon le choix tranché 9.
+- [ ] **Step 3 : règle** — St11-16 : la plomberie reste dans `deploiement-nginx.md` (ses `paths:` couvrent
+  `tools/lib/smoke-http.sh` et ses tests, ceux de `release.md` non) ; la phrase de #750 gagne « ; every authenticated
+  call follows redirects on `https` only (`--proto-redir =https`, R134), and a probe answered 401 says the host asks
+  for the Basic Auth ». Taille notée.
+- [ ] **Step 4 : verts** — `bash tools/tests/audit-prod.test.sh; echo "exit=$?"` à 0 ; shellcheck (image épinglée)
+  sur les deux fichiers ; `tools/check-claude-rules.sh; echo "exit=$?"` ;
+  `grep -c "#750" tools/audit-prod.sh` : 2 (le commentaire de la boucle et le renvoi de `CURL_OPTS_ANONYMOUS`).
+- [ ] **Step 5 : commit** — `fix(tools): l'audit ne suit une redirection authentifiée qu'en https, une sonde en 401 le dit ; #750 expliqué une fois (#748)`.
+
+---
+
+### Task R135 : Les noms de tests sans identifiant de constat (décision 4 : St11-1, Sp11-1)
+
+**Files :** les specs et tests hors ligne que la recherche désigne, dont la liste de Sp11-1 (`LoginPage.spec.ts:144`,
+`AppLayout.spec.ts:298`, `AdminAboutPage.spec.ts:1203`, `:1340`, `:1527`, `signInLocations.spec.ts:57`, `:84`,
+`SignInAgainLink.spec.ts:76`, `adminGuard.spec.ts:262`, `noOmittedCredentials.spec.ts:88`).
+
+**Interfaces :**
+- Q3 : les identifiants de **tâche** (`R…`), de décision et le ticket restent. Un identifiant de constat retiré d'un
+  nom va, s'il éclaire le cas, dans un commentaire au-dessus (décision 4).
+- Regex des identifiants de constat (`grep -P`), à la place de celle de R120 qui ne voyait que `Sp|CR|St|C` suivis
+  d'un tiret : `\b(CR|St|Sp|C|A|F|S|B|E|I|M)[0-9]+(-[0-9]+)?[a-z]?\b|\bB/F[0-9]+\b|\bF-I[0-9]+\b` (couvre `A3-10`,
+  `F8`, `CR2`, `B/F2`, `C1`, `F11`, `S2`, `F-I1`, `CR10-4`).
+
+- [ ] **Step 1 : recherche** — noms de tests :
+  `grep -rnP "\b(it|describe|test)(\.each\([^)]*\))?\(\s*['\"\x60].*(<regex>)" frontend/tests` ;
+  `grep -rnP "function test\w*\(|yield ['\"]" backend/tests | grep -P "<regex>"` ;
+  `grep -rnP "\b(pass|fail) ['\"].*(<regex>)" tools/tests`. Pour chaque ligne, le commit de `git blame --porcelain -L n,n`
+  est-il dans `git rev-list 0e581b42..HEAD` ? Oui : réécrit ; non : listé comme antérieur à #748, gardé. Faux positifs
+  (`%E0`, un code d'état) listés avec leur raison.
+- [ ] **Step 2 : réécrire** chaque nom désigné (par `python3 -I`), puis `docker compose restart frontend`.
+- [ ] **Step 3 : verts** — mêmes nombres de tests ; `make front-test; echo "exit=$?"`, `make front-lint; echo "exit=$?"`,
+  `make front-build; echo "exit=$?"` ; `make back-test; echo "exit=$?"` et les tests hors ligne si un de leurs fichiers
+  a changé ; la recherche du Step 1 rejouée : seules les lignes antérieures et les faux positifs restent.
+- [ ] **Step 4 : commit** — `test: les noms de tests de #748 sans identifiant de constat (#748)`.
+
+---
+
+### Task R136 : Balayage documentaire de la onzième série — avec la liste des recherches et de leurs résultats
+
+Les docstrings et les règles ont suivi chaque comportement dans son commit ; cette tâche vérifie qu'il ne reste rien.
+**Les trois derniers balayages ont été incomplets** (R120 : identifiants vus sous une seule forme, longueurs mesurées
+hors de `.claude/rules/`) : le rendu donne, pour **chaque** recherche ci-dessous, la commande exacte, le nombre de
+lignes rendues et, pour chaque ligne gardée, la raison en quelques mots. Une recherche sans ligne se dit « 0 ».
+
+**Files :** ceux que le balayage désigne ; St11-2 désigne déjà `frontend-session.md:151` (142) et
+`security-authentication-sessions.md:177` (176) si R122 ne les a pas coupées.
+
+- [ ] **Step 1 : recherches** (fichiers de secrets et `node_modules` exclus ; périmètre `.claude docs frontend/src
+  frontend/tests backend/src backend/tests tools`) :
+  1. Noms disparus : `grep -rn -e readRefusalScope -e readSentNow -e "smoke_require_auth_config AUDIT" -e templateExpressionsOf -e SRC_TEMPLATE_EXPRESSIONS -e collectNested -e countLinks -e mountLocked -e "treeOf("`
+     (`syntaxTreeOf(` et `_smoke_require_auth_config` attendus, à dire).
+  2. Vocabulaire de l'ancien mécanisme : `grep -rn -e "discardTranslation()" -e "périme la traduction" -e "every gesture that replaces"`
+     — chaque ligne gardée dit l'identité du formulaire ou la suppression.
+  3. Identifiants de constat dans les noms de tests : la recherche de R135, rejouée ; 0 hors antérieurs et faux
+     positifs.
+  4. Récits au passé dans les fichiers que `git diff --name-only 55199dca...HEAD -- frontend backend tools .claude`
+     liste : `grep -nE "(depuis R[0-9]+|n'est plus|n'a plus|ne .* plus |restait|courait|lisait|était là|used to|no longer)"` ;
+     la référence `R…` qui **justifie** une règle reste.
+  5. Longueurs : `awk 'length>140 {print FILENAME": "FNR": "length}'` sur chaque fichier que
+     `git diff --name-only 0e581b42...HEAD -- frontend backend tools .claude/rules` liste ; chaque ligne rendue dont
+     `git blame` donne un commit de `0e581b42..HEAD` est coupée (une ligne de table Markdown se dit, non coupée) ; les
+     autres sont listées comme antérieures.
+  6. Règles touchées par la série : relire en entier, avec `Read`, `frontend-session-refus.md`, `frontend-session.md`,
+     `frontend-backoffice.md` (« Translation assistant » et les réglages), `security-authentication.md`,
+     `security-authentication-sessions.md`, `deploiement-nginx.md` (paragraphe des smokes) : toute phrase fausse sur le
+     code de HEAD est **remplacée**.
+  7. Le docblock d'en-tête de chaque fichier de `src/` et de `tests/support/` modifié par R121 à R135
+     (`git diff --name-only 5fd65d6e...HEAD -- frontend/src frontend/tests/support backend/src tools`) relu contre son
+     code.
+- [ ] **Step 2 : verts** — `tools/check-claude-rules.sh; echo "exit=$?"` ; taille de chaque règle touchée par la série
+  notée, toutes < 50 000 octets, `backoffice-api.md` à ses 39 834 octets ; `make front-test; echo "exit=$?"` si un
+  fichier de `frontend/` a changé, `make back-test; echo "exit=$?"` si un de `backend/`, les tests hors ligne si un de
+  `tools/`.
+- [ ] **Step 3 : commit** (seulement si le balayage a changé un fichier) — `docs: le balayage de la onzième relecture de #748`.
+  Sinon, le rendu dit « rien à changer » et donne la liste des recherches et de leurs résultats.
+
+### Traçabilité des constats
+
+| Constat | Traitement |
+|---|---|
+| CR11-1 ≈ C11-9 | R121 (décision 1) |
+| St11-3 | R124 (Q1) |
+| St11-4 | R133 |
+| CR11-3 = C11-6 | R125 (décision 2) |
+| CR11-5 | R126 (décision 3) |
+| C11-7 = CR11-4 | R124 (suppression, langue d'une création) |
+| CR11-6 = C11-5 (+ St11-17) | R127 (Q5) |
+| C11-1 | R133 |
+| CR11-2 | R122 (Q2) |
+| CR11-7 + St11-11 | R128 |
+| CR11-8 = St11-12 | R131 |
+| St11-1, Sp11-1 | R135 (décision 4, Q3) ; R136 recherche 3 |
+| St11-2 = Sp11-3 | R122 (`frontend-session-refus.md:26`, `:79`), R136 recherche 5 (`frontend-session.md:151`, `security-authentication-sessions.md:177`) |
+| St11-5 = Sp11-8 | R122 |
+| St11-6 | R123 |
+| St11-7 | R129 |
+| St11-8 | R130 (Q4) |
+| St11-10 | R123 |
+| St11-14 | R133 |
+| St11-15 | R129 |
+| Sp11-2 | R129 |
+| Sp11-7 | R129 |
+| St11-9 | R129 |
+| St11-16 | R134 (règle gardée dans `deploiement-nginx.md`, #750 expliqué une fois) |
+| C11-2 | R134 |
+| C11-3 | R133 |
+| C11-4, St11-13 | R132 |
+| C11-8 | R133 |
+| CR11-9 | R134 |
+| CR11-10 | R130 (Q4) |
+| St11-18, Sp11-5 | décision 4 : `brief-commun-agents.md` corrigé dans le commit de ce plan, rien d'autre |
+| Sp11-6 | acté dans la vérification ci-dessus, rien à corriger |
+| Sp11-9 | R123 |
+| Sp11-10 | R133 |
+| Sp11-4 | sans suite (décision 5) |
+
+### Constats écartés, avec leur raison
+
+- **Sp11-4** : écarté par l'auteur le 2026-10-31 (décision 5).
+- **Sp11-6** : le constat dit lui-même que les noms sont justes (des sources de fichiers) ; rien à corriger.
+
+---
+
+
 ### Task 11 : Contrôle au navigateur — **fil principal, pas un agent de tâche**
 
 Pile de dev locale, FR et EN, axe-core injecté dans la page, noté dans la PR (référentiel WCAG 2.2 AA) :
@@ -7763,6 +8681,27 @@ Ce que les corrections R112 à R120 ont changé, à mesurer aussi (ajouté par l
   release, où un secret vide sort désormais en 2 dans les trois smokes), l'ancrage et les gardes backend (R117, R118,
   PHPUnit), le lecteur de gabarit (R119).
 
+Ce que les corrections R121 à R136 ont changé, à mesurer aussi (ajouté par le plan de la onzième série) :
+
+- [ ] **La prose en lecture seule pendant une traduction** (R126, décision 3 de la onzième série) : réseau ralenti
+  (« Slow 3G »), « Proposer la version … » sur un incident en édition, puis un formulaire « À propos » (réglages) ;
+  pendant l'attente, chaque champ de prose prend le focus au clavier, ne change pas à la frappe, et un lecteur d'écran
+  (ou l'arbre d'accessibilité des outils du navigateur) le dit en lecture seule avec le texte « Traduction en cours :
+  les champs de texte sont en lecture seule… » ; à la réponse, la proposition remplit les champs, redevenus
+  modifiables ; une réponse en erreur (quota) laisse la prose d'origine, modifiable. FR et EN.
+- [ ] **Le texte d'aide après « Annuler »** (R125, décision 2) : réseau ralenti, « Proposer la version … » puis
+  « Annuler » → le bouton est désactivé, décrit par « La traduction annulée se termine côté serveur… » (onglet
+  Accessibilité), une seconde activation (clic, Entrée) n'envoie aucun `POST /api/backoffice/translations` (onglet
+  Réseau : un seul) ; à la réponse, le texte disparaît, le formulaire reste vide, le bouton revient. FR et EN.
+- [ ] **Les réglages pendant une proposition affichée** (R127) : « Proposer la version … » désactivé et décrit par son
+  texte de verrou ; il revient après l'enregistrement de la proposition.
+- [ ] Non contrôlables au navigateur, à noter comme tels : la garde des chargements dans un `onMounted` (R121, garde de
+  source), la clôture du chargement de la page d'arrivée par la première lecture relancée (R122 : couverte par
+  `AdminLayout.sessionEnded.spec.ts`, ou au navigateur par le procédé du point R76 avec une lecture ralentie, si elle se
+  reproduit), l'identité du formulaire (R124, specs), l'outillage (R133, R134 : tests hors ligne ;
+  `smoke-test-preprod` et `audit-preprod` à la release), les gardes backend (R131, R132), le lecteur de gabarit
+  (R130), les noms de tests (R135).
+
 - [ ] Tout écart → retour à la tâche concernée (nouveau commit), puis ce contrôle refait.
 
 ### Task 12 : Clôture — **fil principal**
@@ -7831,6 +8770,20 @@ Ce que les corrections R112 à R120 ont changé, à mesurer aussi (ajouté par l
   depuis le 2026-09-12) ; les trois smokes s'arrêtent en 2 sur un secret vide (décision 4) et toute Basic Auth sans
   « : » est refusée ; « relève de `/api` » écrit une fois pour les tests (`CanonicalPath::isPathUnder`), le préfixe
   large du double-submit gardé exprès et prouvé (`POST /apix` → 403). `bash tools/tests/{smoke-dead-session-cookie,smoke-login-throttling,smoke-mcp,smoke-http,audit-prod}.test.sh` verts.
+- [ ] Corps de la PR, onzième relecture (R121 à R136 ; ajouté par le plan de la onzième série) : une page du backoffice
+  charge dans son `setup`, une garde de source refuse un chargement dans un `onMounted` (décision 1 du 2026-10-31 ; la
+  limite d'un sous-composant rendu plus tard reste écrite) ; la première lecture relancée après le montage clôt le
+  chargement de la page d'arrivée (réponse à Q2) ; **un seul appel au modèle en vol par formulaire** : « Annuler » ne
+  laisse plus repartir une traduction facturée tant que la précédente n'a pas répondu, et le bouton dit pourquoi il
+  attend (décision 2 : pas d'`AbortSignal`, l'appel parti coûte ce qu'il coûte) ; **la prose est en lecture seule
+  pendant une traduction** (décision 3 : rien de tapé n'est perdu) ; une traduction en vol se périme dès que son
+  formulaire change d'identité, y compris par la suppression de l'entrée éditée ou la langue d'une création ; la
+  traduction refuse par programme tout ce que son bouton refuse (brouillon d'ordre, enregistrement, proposition des
+  réglages) ; les smokes et l'audit posent la Basic Auth par une seule fonction, la refusent sur `http://` et sans
+  utilisateur ou mot de passe, ne suivent une redirection authentifiée qu'en `https` ; aucun chemin de requête brut hors
+  de `CanonicalPath` ; les identifiants de constat restent permis dans les commentaires et quittent les noms de tests
+  (décision 4). Si Q4 (A) est retenue : `@vue/compiler-dom` en `devDependencies`, même intervalle que `vue`, une seule
+  version installée. `bash tools/tests/{smoke-dead-session-cookie,smoke-login-throttling,smoke-mcp,smoke-http,audit-prod}.test.sh` verts.
 - [ ] Corps de la PR : la note de release de F1 (R21, remplace celle de R1) — `BEARER` et `XSRF-TOKEN` sont désormais des **cookies de session**, au login comme à l'accès de base (le JWT garde son heure, l'accès de base ses quinze minutes) : fermer le navigateur sans restauration de session finit la session ; à l'expiration du JWT, la première requête prend un 401 qui efface les deux cookies, la suivante est anonyme ; **une session ouverte avant le déploiement garde ses cookies persistants, au plus une heure** (rien à faire) ; le frontend juge désormais la session par génération (une réponse partie sous une autre session ne la finit ni ne la rétablit) et un autre compte au retour rejoue la navigation.
 - [ ] **Amendement d'ADR 0003** — **déplacé dans R21 (Step 3b) par décision de l'auteur du 2026-10-29** ; à la clôture, seulement vérifier qu'il est fait et cohérent. Contenu attendu (décision 1 du 2026-10-29) : ligne de statut (« Amendée le 2026-10-29 ») ; dans « Risque accepté — le logout ne révoque pas le jeton », le paragraphe des faits (`set_cookies.BEARER.lifetime` vaut `0` : cookie de session ; `token_ttl` 3600 et les 900 s de l'accès de base inchangés) ; un amendement « 2026-10-29 (#748, F1) » : `BEARER` et `XSRF-TOKEN` sont des cookies de session ; le risque « navigateur fermé » (un cookie qui survit à la fermeture, en lecture comme en écriture) **disparaît, sauf navigateur qui restaure la session** ; tout cookie refusé (expiré, invalide, antérieur au changement de mot de passe) est effacé par son premier 401 ; ce que cela ne change pas (un jeton copié reste valable jusqu'à son `exp`) ; les conditions qui rouvrent la décision, inchangées. `docs/adr/0003-paliers-d-acces.md` seul, relu contre `security-authentication-sessions.md` (R21).
 - [ ] **Ticket à proposer à l'auteur** (texte dans le rapport de clôture, pas de création sans son accord) : le préfixe `__Host-` des deux cookies (S2 de la première relecture : préprod d'abord, il renomme ce que Lexik, `CsrfCookieRequestSubscriber` et le frontend lisent par nom) **et F12** (le jeton CSRF n'est lié ni à la session ni au temps : le lier au JWT — par exemple un HMAC dérivé de son `iat` et du compte — ou lui donner une échéance signée), avec la note que R21 réduit déjà la durée de vie des deux cookies à la session du navigateur, **et A3-3** de la troisième relecture (depuis R21, tout cookie `BEARER` refusé efface les deux cookies : un sous-domaine qui pose un faux `BEARER` sur `Path=/api` — plus spécifique que le `Path=/` du vrai, donc envoyé en premier — fait répondre 401 et efface la session valide ; `__Host-` interdit qu'un sous-domaine pose ce nom). Depuis R35, A3-3 ne touche plus que les routes qui exigent un rôle (une route publique ignore un cookie refusé). **Et C8** de la quatrième relecture (« le même compte » est jugé sur l'identifiant, pas sur l'UUID du compte : un compte supprimé puis recréé sous le même identifiant passe pour le même ; l'exposer par `/api/me` et le retenir dans `LastAccount` ; CR7-2 de la septième relecture est le même cas, côté refus du backoffice, R77). Le pare-feu sans authentificateur pour `/api/account/base-access`, un temps proposé ici, **n'est plus à joindre** : R35 couvre le cas.
