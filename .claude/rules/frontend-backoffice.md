@@ -205,8 +205,9 @@ group and the form's generation, compared field by field by `sameFormIdentity`, 
 longer has the identity read at send time is discarded, whatever gesture replaced it and even if the form later regains that
 identity (R124). Every reset of the form advances its generation, `renewForm()` of `useTranslatedForm`, called first by each
 `resetForm` (R139, decision 1 of the twelfth review): a blank form saved during a translation keeps its entry, locale and
-group, and only the generation tells it from the form the call left. `discard()` covers what no identity sees: the deletion
-of the edited entry.
+group, and only the generation tells it from the form the call left. What no identity sees, a deletion, goes through
+`discardIfDeleted()` of `useTranslatedForm`: the entry being edited, or the source of a creation attached to its group (R124,
+R140). A page calls it before every `remove`; deleting another member of the edited entry's group changes nothing.
 **One model call in flight per mounted form**: a discarded call still running refuses the next one (`isDiscardPending`, R125,
 decision 2 of the eleventh review: no `AbortSignal`, the call already left costs what it costs). A page left and reopened, or
 a second tab, starts its own call, bounded by the 30/h quota (accepted, C12-5). The button says why it waits through a text

@@ -399,6 +399,10 @@ describe('AdminAnonymousCvPage', () => {
     deleteEditedEntry: async (wrapper) => {
       await buttonLabelled(actionsForLine(wrapper, 'Frontend Vue 3'), 'Supprimer').trigger('click')
     },
+    // L'entrée source de la ligne de « Créer la version … » : celle que `startEdit` ouvre.
+    deleteSourceEntry: async (wrapper) => {
+      await buttonLabelled(actionsForLine(wrapper, 'Frontend Vue 3'), 'Supprimer').trigger('click')
+    },
     startEditOther: async (wrapper) => {
       await buttonLabelled(actionsForLine(wrapper, 'Backend PHP / Symfony'), 'Modifier').trigger('click')
     },

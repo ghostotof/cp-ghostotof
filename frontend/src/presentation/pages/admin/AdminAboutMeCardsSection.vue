@@ -90,7 +90,7 @@ const {
   isRefused: isTranslationRefused,
   errorReason: translationErrorReason,
   translate,
-  discard: discardTranslation,
+  discardIfDeleted,
   renewForm,
   proseReadonlyHintId,
   translationHintId,
@@ -367,10 +367,8 @@ async function handleDelete(card: AdminAboutMeCard): Promise<void> {
     return
   }
 
-  // La suppression ne change rien au formulaire : la traduction de l'entrée supprimée est périmée ici.
-  if (card.id === editingId.value) {
-    discardTranslation()
-  }
+  // La suppression ne change rien au formulaire : le composable périme la traduction de l'entrée supprimée ou de sa source.
+  discardIfDeleted(card)
 
   await remove(card.id)
 }

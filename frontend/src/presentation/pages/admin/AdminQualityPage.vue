@@ -113,7 +113,7 @@ const {
   isRefused: isPrincipleTranslationRefused,
   errorReason: principleTranslationErrorReason,
   translate: translatePrinciple,
-  discard: discardPrincipleTranslation,
+  discardIfDeleted: discardPrincipleIfDeleted,
   renewForm: renewPrincipleForm,
   proseReadonlyHintId: principleProseReadonlyHintId,
   translationHintId: principleTranslationHintId,
@@ -135,7 +135,7 @@ const {
   isRefused: isTraitTranslationRefused,
   errorReason: traitTranslationErrorReason,
   translate: translateTrait,
-  discard: discardTraitTranslation,
+  discardIfDeleted: discardTraitIfDeleted,
   renewForm: renewTraitForm,
   proseReadonlyHintId: traitProseReadonlyHintId,
   translationHintId: traitTranslationHintId,
@@ -511,10 +511,8 @@ async function handleDeletePrinciple(principle: AdminQualityPrinciple): Promise<
     return
   }
 
-  // La suppression ne change rien au formulaire : la traduction de l'entrée supprimée est périmée ici.
-  if (principle.id === editingPrincipleId.value) {
-    discardPrincipleTranslation()
-  }
+  // La suppression ne change rien au formulaire : le composable périme la traduction de l'entrée supprimée ou de sa source.
+  discardPrincipleIfDeleted(principle)
 
   await removePrinciple(principle.id)
 }
@@ -524,10 +522,8 @@ async function handleDeleteTrait(trait: AdminQualityTrait): Promise<void> {
     return
   }
 
-  // La suppression ne change rien au formulaire : la traduction de l'entrée supprimée est périmée ici.
-  if (trait.id === editingTraitId.value) {
-    discardTraitTranslation()
-  }
+  // La suppression ne change rien au formulaire : le composable périme la traduction de l'entrée supprimée ou de sa source.
+  discardTraitIfDeleted(trait)
 
   await removeTrait(trait.id)
 }

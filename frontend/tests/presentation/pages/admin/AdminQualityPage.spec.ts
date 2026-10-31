@@ -693,6 +693,10 @@ describe('AdminQualityPage', () => {
       deleteEditedEntry: async (wrapper) => {
         await buttonLabelled(actionsForLine(wrapper, PRINCIPLES, "Tests d'abord"), 'Supprimer').trigger('click')
       },
+      // L'entrée source de la ligne de « Créer la version … » : celle que `startEdit` ouvre.
+      deleteSourceEntry: async (wrapper) => {
+        await buttonLabelled(actionsForLine(wrapper, PRINCIPLES, "Tests d'abord"), 'Supprimer').trigger('click')
+      },
       startEditOther: async (wrapper) => {
         await buttonLabelled(actionsForLine(wrapper, PRINCIPLES, 'Revue systématique'), 'Modifier').trigger('click')
       },
@@ -729,6 +733,10 @@ describe('AdminQualityPage', () => {
         await buttonLabelled(actionsForLine(wrapper, TRAITS, 'Documenté'), 'Modifier').trigger('click')
       },
       deleteEditedEntry: async (wrapper) => {
+        await buttonLabelled(actionsForLine(wrapper, TRAITS, 'Documenté'), 'Supprimer').trigger('click')
+      },
+      // L'entrée source de la ligne de « Créer la version … » : celle que `startEdit` ouvre.
+      deleteSourceEntry: async (wrapper) => {
         await buttonLabelled(actionsForLine(wrapper, TRAITS, 'Documenté'), 'Supprimer').trigger('click')
       },
       startEditOther: async (wrapper) => {

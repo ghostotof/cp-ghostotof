@@ -140,4 +140,71 @@ describe('useTranslatedForm', () => {
     form.renewForm()
     expect(form.errorReason.value).toBeNull()
   })
+
+  // Supprimer une entrée ne change rien au formulaire : la page le dit au composable, qui juge si la traduction en vol y
+  // était rattachée — l'entrée éditée, ou la source d'une création rattachée à son groupe (#748, R140).
+  describe('discardIfDeleted', () => {
+    const GROUP = 'groupe-source'
+    const OTHER_GROUP = 'autre-groupe'
+
+    /** Un formulaire dont l'identité est celle donnée, une traduction partie, puis la suppression de `deleted`. */
+    async function deleteDuringTranslation(
+      identity: { entry: string | null; group: string | null },
+      deleted: { id: string; translationGroup: string | null },
+    ) {
+      const { form, release } = mountTranslatedForm({ identity: () => ({ ...identity, locale: 'fr' }) })
+      const pending = form.translate('fr', 'en', { title: 'Panne' })
+
+      form.discardIfDeleted(deleted)
+
+      release(PROPOSAL)
+      return { form, answer: await pending }
+    }
+
+    it("périme la traduction de l'entrée éditée qu'on supprime (#748, R140)", async () => {
+      const { form, answer } = await deleteDuringTranslation(
+        { entry: 'a', group: GROUP },
+        { id: 'a', translationGroup: GROUP },
+      )
+
+      expect(answer).toBeNull()
+      expect(form.isTranslating.value).toBe(false)
+    })
+
+    it("périme la traduction d'une création rattachée quand on supprime l'entrée source de son groupe (#748, R140)", async () => {
+      const { answer } = await deleteDuringTranslation(
+        { entry: null, group: GROUP },
+        { id: 'source', translationGroup: GROUP },
+      )
+
+      expect(answer).toBeNull()
+    })
+
+    it("ne périme rien quand l'entrée supprimée est une autre que l'entrée éditée, même du même groupe (#748, R140)", async () => {
+      const { answer } = await deleteDuringTranslation(
+        { entry: 'en', group: GROUP },
+        { id: 'fr', translationGroup: GROUP },
+      )
+
+      expect(answer).toEqual(PROPOSAL)
+    })
+
+    it("ne périme rien quand l'entrée supprimée n'est pas de la source d'une création rattachée (#748, R140)", async () => {
+      const { answer } = await deleteDuringTranslation(
+        { entry: null, group: GROUP },
+        { id: 'ailleurs', translationGroup: OTHER_GROUP },
+      )
+
+      expect(answer).toEqual(PROPOSAL)
+    })
+
+    it("ne périme pas la traduction d'un formulaire vierge quand une entrée sans groupe est supprimée (#748, R140)", async () => {
+      const { answer } = await deleteDuringTranslation(
+        { entry: null, group: null },
+        { id: 'seule', translationGroup: null },
+      )
+
+      expect(answer).toEqual(PROPOSAL)
+    })
+  })
 })

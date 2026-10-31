@@ -127,6 +127,11 @@ export interface EntryFormLockCase {
    * est simulé à `true` par le support, qui le rétablit ensuite.
    */
   readonly deleteEditedEntry: (wrapper: VueWrapper) => Promise<void>
+  /**
+   * Supprime, depuis le tableau, l'entrée source de la ligne que `startCreateVersion` vient d'ouvrir en création rattachée
+   * (son bouton « Supprimer », l'entrée de l'autre langue de la ligne). Même `window.confirm` simulé que `deleteEditedEntry`.
+   */
+  readonly deleteSourceEntry: (wrapper: VueWrapper) => Promise<void>
   /** Modifie l'ordre d'un tableau de la page (glisser une ligne) sans l'enregistrer : le brouillon d'ordre est sale. */
   readonly dirtyOrder: (wrapper: VueWrapper) => Promise<void>
   /**
@@ -143,8 +148,8 @@ export interface EntryFormLockCase {
  *   et « Proposer la version XX », et « Annuler » retire l'explication ;
  * - un « translate » émis pendant une proposition, un ordre modifié, un enregistrement en vol, sans prose, ou avant la première
  *   réponse, ne lance rien ;
- * - « Annuler », « Modifier », « Créer la version XX », la suppression de l'entrée éditée et le changement de langue d'une
- *   création pendant une traduction en périment la réponse ;
+ * - « Annuler », « Modifier », « Créer la version XX », la suppression de l'entrée éditée ou de la source d'une création
+ *   rattachée, et le changement de langue d'une création pendant une traduction en périment la réponse ;
  * - un formulaire vierge enregistré pendant une traduction n'en reçoit pas la réponse (la génération du formulaire) ;
  * - la prose est en lecture seule pendant une traduction ; l'erreur d'un échec survit à la frappe, et ne reparaît pas au retour
  *   à l'entrée où elle est née.
@@ -491,6 +496,34 @@ export function describeEntryFormLock(lockCase: EntryFormLockCase): void {
     await flushPromises()
 
     expect(titleValue(wrapper)).toBe(titleOfEntry)
+    expect(proposalNotice(wrapper).exists()).toBe(false)
+  })
+
+  // Supprimer l'entrée source d'une « Créer la version XX » ne change rien au formulaire (ni entrée, ni langue, ni groupe) : la
+  // proposition serait posée sur un groupe sans membre, alors que son entrée source n'existe plus (R140).
+  it(`${prefix}supprimer l'entrée source d'une création rattachée pendant une traduction : la réponse ne pose rien`, async () => {
+    const translation = lockCase.createTranslation()
+    const wrapper = await lockCase.mount(translation)
+    await lockCase.startCreateVersion(wrapper)
+    await wrapper.get(`#${ids.title}`).setValue('Titre saisi')
+    const formLocale = (wrapper.get(locale).element as HTMLSelectElement).value
+    const reply = deferNextTranslation(translation)
+
+    translateButtonComponent(wrapper).vm.$emit('translate', SUPPORTED_LOCALES.find((candidate) => candidate !== formLocale))
+    await flushPromises()
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    try {
+      await lockCase.deleteSourceEntry(wrapper)
+    } finally {
+      confirm.mockRestore()
+    }
+    await flushPromises()
+    reply.release()
+    await flushPromises()
+
+    expect(vi.mocked(translation.translate)).toHaveBeenCalledTimes(1)
+    expect(titleValue(wrapper)).toBe('Titre saisi')
+    expect((wrapper.get(locale).element as HTMLSelectElement).value).toBe(formLocale)
     expect(proposalNotice(wrapper).exists()).toBe(false)
   })
 

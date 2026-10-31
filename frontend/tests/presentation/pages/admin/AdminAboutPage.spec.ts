@@ -1054,6 +1054,10 @@ describe('AdminAboutPage', () => {
       deleteEditedEntry: async (wrapper) => {
         await buttonLabelled(actionsForLine(wrapper, SITE, 'Stack technique'), 'Supprimer').trigger('click')
       },
+      // L'entrée source de la ligne de « Créer la version … » : celle que `startEdit` ouvre.
+      deleteSourceEntry: async (wrapper) => {
+        await buttonLabelled(actionsForLine(wrapper, SITE, 'Stack technique'), 'Supprimer').trigger('click')
+      },
       startEditOther: async (wrapper) => {
         await buttonLabelled(actionsForLine(wrapper, SITE, 'Architecture'), 'Modifier').trigger('click')
       },
@@ -1090,6 +1094,10 @@ describe('AdminAboutPage', () => {
         await buttonLabelled(actionsForLine(wrapper, ME_TABLE.technical, ME_FIXTURES.technical.titles[2]), 'Modifier').trigger('click')
       },
       deleteEditedEntry: async (wrapper) => {
+        await buttonLabelled(actionsForLine(wrapper, ME_TABLE.technical, ME_FIXTURES.technical.titles[2]), 'Supprimer').trigger('click')
+      },
+      // L'entrée source de la ligne de « Créer la version … » : celle que `startEdit` ouvre.
+      deleteSourceEntry: async (wrapper) => {
         await buttonLabelled(actionsForLine(wrapper, ME_TABLE.technical, ME_FIXTURES.technical.titles[2]), 'Supprimer').trigger('click')
       },
       startEditOther: async (wrapper) => {

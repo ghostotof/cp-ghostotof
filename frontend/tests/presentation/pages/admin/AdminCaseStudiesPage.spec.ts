@@ -502,6 +502,10 @@ describe('AdminCaseStudiesPage', () => {
     deleteEditedEntry: async (wrapper) => {
       await buttonLabelled(actionsForLine(wrapper, 'PHPStan progressif sur un legacy'), 'Supprimer').trigger('click')
     },
+    // L'entrée source de la ligne de « Créer la version … » : celle que `startEdit` ouvre.
+    deleteSourceEntry: async (wrapper) => {
+      await buttonLabelled(actionsForLine(wrapper, 'PHPStan progressif sur un legacy'), 'Supprimer').trigger('click')
+    },
     startEditOther: async (wrapper) => {
       await buttonLabelled(actionsForLine(wrapper, 'Un moteur de tarification asynchrone'), 'Modifier').trigger('click')
     },

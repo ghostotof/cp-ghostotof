@@ -396,6 +396,10 @@ describe('AdminContributionsPage', () => {
     deleteEditedEntry: async (wrapper) => {
       await buttonLabelled(actionsForLine(wrapper, "Un tableau de bord d'observabilité maison"), 'Supprimer').trigger('click')
     },
+    // L'entrée source de la ligne de « Créer la version … » : celle que `startEdit` ouvre.
+    deleteSourceEntry: async (wrapper) => {
+      await buttonLabelled(actionsForLine(wrapper, "Un tableau de bord d'observabilité maison"), 'Supprimer').trigger('click')
+    },
     startEditOther: async (wrapper) => {
       await buttonLabelled(actionsForLine(wrapper, 'Un lock npm dans le manifeste'), 'Modifier').trigger('click')
     },
