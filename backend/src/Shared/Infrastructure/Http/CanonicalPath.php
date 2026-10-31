@@ -68,6 +68,8 @@ final class CanonicalPath
     /**
      * La même règle d'ancrage sur un chemin déjà canonique (`of()`, ou un chemin de route tel que le routeur le
      * déclare) : pour les tests qui parcourent le routeur et n'ont pas de requête. Rien n'est décodé ici.
+     * Hors des tests, une requête passe par `isUnder()` (le chemin décodé par `of()`) ; `PathIsDecidedCanonicallyTest`
+     * le tient : aucun fichier de `src/` hors de cette classe n'appelle `isPathUnder()` ni `getPathInfo()`.
      *
      * @param string $path   chemin absolu, déjà décodé
      * @param string $prefix chemin absolu, sans `/` final (`/api/assistant`)
