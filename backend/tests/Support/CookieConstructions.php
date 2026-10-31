@@ -125,9 +125,9 @@ final class CookieConstructions
         }
 
         // Cookie::create(…), Cookie::fromString(…) : un appel, pas une
-        // constante ni `::class`.
-        if (null !== $next && $next->is(\T_DOUBLE_COLON)) {
-            return self::isCall($tokens, $index + 2) && self::isCookieClass($token, $namespace, $imports);
+        // constante ni `::class` (MemberCalls juge la forme de l'appel).
+        if (MemberCalls::isStaticCallAt($tokens, $index + 2)) {
+            return self::isCookieClass($token, $namespace, $imports);
         }
 
         if (null === $next || '(' !== $next->text || !$token->is([\T_STRING, \T_NAME_FULLY_QUALIFIED])) {
@@ -135,10 +135,11 @@ final class CookieConstructions
         }
 
         $name = strtolower(ltrim($token->text, '\\'));
-        $previous = $tokens[$index - 1] ?? null;
-        if (null !== $previous && $previous->is([\T_OBJECT_OPERATOR, \T_NULLSAFE_OBJECT_OPERATOR])) {
+        if (MemberCalls::isInstanceCallAt($tokens, $index)) {
             return \in_array($name, self::COOKIE_METHODS, true);
         }
+
+        $previous = $tokens[$index - 1] ?? null;
 
         return (null === $previous || !$previous->is(self::NOT_A_FUNCTION_CALL))
             && \in_array($name, self::COOKIE_FUNCTIONS, true);
@@ -150,19 +151,6 @@ final class CookieConstructions
     private static function isCookieClass(PhpToken $name, string $namespace, array $imports): bool
     {
         return \in_array(ClassNameResolver::resolve($name, $namespace, $imports), self::COOKIE_CLASSES, true);
-    }
-
-    /**
-     * Un nom de méthode en $index, suivi de `(`.
-     *
-     * @param list<PhpToken> $tokens
-     */
-    private static function isCall(array $tokens, int $index): bool
-    {
-        $method = $tokens[$index] ?? null;
-        $open = $tokens[$index + 1] ?? null;
-
-        return null !== $method && $method->is(\T_STRING) && null !== $open && '(' === $open->text;
     }
 
     /**

@@ -82,6 +82,10 @@ final class AuthCookiesComeFromTheFactoryTest extends TestCase
         yield 'classe anonyme qui étend Cookie' => [$use."\$c = new class('x') extends Cookie {};\n", [4]];
         yield 'expiration en ligne' => ["<?php\nnamespace App;\n\$response->headers->clearCookie('BEARER');\n", [3]];
         yield 'expiration en ligne, appel nullsafe' => ["<?php\nnamespace App;\n\$response?->headers->clearCookie('BEARER');\n", [3]];
+        yield 'expiration en ligne, appel nullsafe de la méthode même' => [
+            "<?php\nnamespace App;\n\$response->headers?->clearCookie('BEARER');\n",
+            [3],
+        ];
         yield 'retouche du Secure d\'un cookie de la fabrique' => ["<?php\nnamespace App;\n\$c = \$this->factory->bearer(\$jwt)->withSecure(false);\n", [3]];
         yield 'retouche de HttpOnly' => ["<?php\nnamespace App;\n\$c = \$cookie->withHttpOnly(false);\n", [3]];
         yield 'retouche de SameSite' => ["<?php\nnamespace App;\n\$c = \$cookie->withSameSite('none');\n", [3]];
@@ -116,6 +120,7 @@ final class AuthCookiesComeFromTheFactoryTest extends TestCase
         yield 'homonyme de l\'espace de noms' => ["<?php\nnamespace App;\n\$c = Cookie::create('x');\n", []];
         yield 'cookie de BrowserKit' => ["<?php\nnamespace App;\nuse Symfony\\Component\\BrowserKit\\Cookie;\n\$c = new Cookie('x', 'y');\n", []];
         yield 'méthode homonyme déclarée' => ["<?php\nnamespace App;\nfinal class A { public function setcookie(): void {} }\n", []];
+        yield 'méthode statique homonyme d\'une autre classe' => ["<?php\nnamespace App;\n\$c = Other::clearCookie('BEARER');\n", []];
         yield 'méthode homonyme appelée' => ["<?php\nnamespace App;\n\$a->setcookie();\n", []];
         yield 'commentaire' => ["<?php\nnamespace App;\n// Cookie::create('x'), clearCookie(), Set-Cookie\n", []];
         yield 'autre en-tête' => ["<?php\nnamespace App;\n\$response->headers->set('Cache-Control', 'no-store');\n", []];

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Shared\Infrastructure\Http;
 
 use App\Shared\Infrastructure\Http\CanonicalPath;
+use App\Tests\Support\ClassNameResolver;
 use App\Tests\Support\MemberCalls;
 use App\Tests\Support\PhpSources;
 use App\Tests\Support\RepositoryFiles;
@@ -24,7 +25,9 @@ use PHPUnit\Framework\TestCase;
  * Refusés dans `src/` (par jetons, commentaires et chaînes exclus) : un appel `getPathInfo(` ou `isPathUnder(`,
  * sans égard à la casse (PHP n'en fait pas pour un nom de méthode), écrit `->`, `?->` ou `::`, y compris en appelable
  * de première classe (`->getPathInfo(...)`), hors de `CanonicalPath.php`. Aucun appel légitime n'existe aujourd'hui,
- * donc aucune exemption. La forme d'appel est celle de {@see MemberCalls}, que lit aussi `AuthorizationSites`.
+ * donc aucune exemption. La forme d'appel est celle de {@see MemberCalls}, que lisent aussi `AuthorizationSites`,
+ * `CookieConstructions` et `PlainPasswordInputs`. Le compteur de lectures canoniques ne compte qu'un nom qui résout vers
+ * `CanonicalPath` (alias compris), jamais un homonyme d'un autre espace de noms.
  *
  * Ce que la garde ne voit pas, limite assumée : un chemin lu autrement que par ces deux noms
  * (`$request->server->get('PATH_INFO')`, `getRequestUri()`, `getUri()`, `getBaseUrl()`, `$_SERVER`), un nom construit
@@ -36,9 +39,6 @@ final class PathIsDecidedCanonicallyTest extends TestCase
 
     /** Les méthodes refusées, en minuscules : PHP ne distingue pas la casse d'un nom de méthode. */
     private const array FORBIDDEN_CALLS = ['getpathinfo', 'ispathunder'];
-
-    /** Les jetons qui portent un nom de classe : court, qualifié, relatif (`namespace\\X`) ou de nom complet. */
-    private const array CLASS_NAMES = [\T_STRING, \T_NAME_QUALIFIED, \T_NAME_RELATIVE, \T_NAME_FULLY_QUALIFIED];
 
     /** Le périmètre lu : `src/` compte plusieurs centaines de fichiers, une lecture vide ne garde rien. */
     private const int MINIMUM_FILES_READ = 300;
@@ -137,22 +137,56 @@ final class PathIsDecidedCanonicallyTest extends TestCase
      */
     public static function formsTheCounterSees(): iterable
     {
-        yield 'nom court' => ["<?php\n\$p = CanonicalPath::of(\$request);\n", 1];
-        yield 'nom qualifié par un espace de noms' => ["<?php\n\$p = Http\\CanonicalPath::of(\$request);\n", 1];
+        $canonical = CanonicalPath::class;
+        $import = "<?php\nuse {$canonical};\n";
+
+        yield 'nom court' => [$import."\$p = CanonicalPath::of(\$request);\n", 1];
+        yield 'nom qualifié par un espace de noms' => [
+            "<?php\nnamespace App\\Shared\\Infrastructure;\n\$p = Http\\CanonicalPath::of(\$request);\n",
+            1,
+        ];
         yield 'nom complet' => [
             "<?php\n\$p = \\App\\Shared\\Infrastructure\\Http\\CanonicalPath::of(\$request);\n",
             1,
         ];
-        yield 'nom relatif à l\'espace de noms courant' => ["<?php\n\$p = namespace\\CanonicalPath::of(\$request);\n", 1];
-        yield 'méthode en casse différente' => ["<?php\n\$p = CanonicalPath::OF(\$request);\n", 1];
-        yield 'classe en casse différente' => ["<?php\n\$p = canonicalpath::of(\$request);\n", 1];
-        yield 'deux lectures' => ["<?php\n\$a = CanonicalPath::of(\$x);\n\$b = \\A\\CanonicalPath::of(\$y);\n", 2];
-        yield 'une autre méthode du même nom de préfixe' => ["<?php\n\$p = CanonicalPath::often(\$request);\n", 0];
+        yield 'nom relatif à l\'espace de noms courant' => [
+            "<?php\nnamespace App\\Shared\\Infrastructure\\Http;\n\$p = namespace\\CanonicalPath::of(\$request);\n",
+            1,
+        ];
+        yield 'méthode en casse différente' => [$import."\$p = CanonicalPath::OF(\$request);\n", 1];
+        yield 'classe en casse différente' => [$import."\$p = canonicalpath::of(\$request);\n", 1];
+        yield 'deux lectures' => [$import."\$a = CanonicalPath::of(\$x);\n\$b = \\{$canonical}::of(\$y);\n", 2];
+        yield 'une autre méthode du même nom de préfixe' => [$import."\$p = CanonicalPath::often(\$request);\n", 0];
         yield 'une autre classe' => ["<?php\n\$p = Other::of(\$request);\n", 0];
         yield 'une autre classe de nom complet' => ["<?php\n\$p = \\App\\OtherCanonicalPath::of(\$request);\n", 0];
-        yield 'un nom sans appel' => ["<?php\n\$n = CanonicalPath::of;\n", 0];
-        yield 'un commentaire' => ["<?php\n// CanonicalPath::of(\$request)\n", 0];
-        yield 'une chaîne' => ["<?php\n\$m = 'CanonicalPath::of(\$request)';\n", 0];
+        yield 'un nom sans appel' => [$import."\$n = CanonicalPath::of;\n", 0];
+        yield 'un commentaire' => [$import."// CanonicalPath::of(\$request)\n", 0];
+        yield 'une chaîne' => [$import."\$m = 'CanonicalPath::of(\$request)';\n", 0];
+
+        // Le nom se résout comme PHP le résout : seule la classe de CanonicalPath compte, pas un homonyme.
+        yield 'alias de la classe importée' => ["<?php\nuse {$canonical} as CP;\n\$p = CP::of(\$request);\n", 1];
+        yield 'nom court importé' => ["<?php\nuse {$canonical};\n\$p = CanonicalPath::of(\$request);\n", 1];
+        yield 'nom court dans son espace de noms' => [
+            "<?php\nnamespace App\\Shared\\Infrastructure\\Http;\n\$p = CanonicalPath::of(\$request);\n",
+            1,
+        ];
+        yield 'nom qualifié depuis l\'espace de noms parent' => [
+            "<?php\nnamespace App\\Shared\\Infrastructure;\n\$p = Http\\CanonicalPath::of(\$request);\n",
+            1,
+        ];
+        yield 'nom relatif dans l\'espace de noms de la classe' => [
+            "<?php\nnamespace App\\Shared\\Infrastructure\\Http;\n\$p = namespace\\CanonicalPath::of(\$request);\n",
+            1,
+        ];
+        yield 'homonyme de nom complet d\'un autre espace de noms' => ["<?php\n\$p = \\Other\\CanonicalPath::of(\$request);\n", 0];
+        yield 'homonyme importé' => ["<?php\nuse Other\\CanonicalPath;\n\$p = CanonicalPath::of(\$request);\n", 0];
+        yield 'alias d\'un homonyme' => ["<?php\nuse Other\\CanonicalPath as CP;\n\$p = CP::of(\$request);\n", 0];
+        yield 'homonyme de l\'espace de noms courant' => ["<?php\nnamespace App\\Other;\n\$p = CanonicalPath::of(\$request);\n", 0];
+        yield 'alias qui en cache un autre nom' => ["<?php\nuse {$canonical} as Other;\n\$p = Other::of(\$request);\n", 1];
+        yield 'import d\'un espace de noms précédent oublié' => [
+            "<?php\nnamespace A;\nuse {$canonical};\nnamespace B;\n\$p = CanonicalPath::of(\$request);\n",
+            0,
+        ];
     }
 
     #[DataProvider('formsTheDetectorLeavesAlone')]
@@ -212,19 +246,21 @@ final class PathIsDecidedCanonicallyTest extends TestCase
     }
 
     /**
-     * Le nombre de `CanonicalPath::of(` d'un code source : le nom de la classe court, qualifié, relatif ou complet
-     * (son dernier segment), la méthode sans égard à la casse.
+     * Le nombre de `CanonicalPath::of(` d'un code source : un nom qui **résout** vers la classe de
+     * {@see CanonicalPath} (nom complet, nom court importé ou dans son espace de noms, alias, nom qualifié ou relatif,
+     * comme {@see ClassNameResolver} les résout), jamais un homonyme d'un autre espace de noms ; la méthode sans
+     * égard à la casse, la forme d'appel (`::`, puis `(`) celle de {@see MemberCalls}, lue une fois.
      */
     private function canonicalReadsIn(string $code): int
     {
         $tokens = PhpSources::significantTokens($code);
+        $canonical = strtolower(CanonicalPath::class);
         $count = 0;
-        foreach ($tokens as $index => $token) {
-            $isRead = $token->is(self::CLASS_NAMES)
-                && 'canonicalpath' === strtolower(substr((string) strrchr('\\'.$token->text, '\\'), 1))
-                && ($tokens[$index + 1] ?? null)?->is(\T_DOUBLE_COLON) === true
-                && isset($tokens[$index + 2]) && 'of' === strtolower($tokens[$index + 2]->text)
-                && MemberCalls::isCallAt($tokens, $index + 2);
+        foreach (ClassNameResolver::scopes($tokens) as $index => [$namespace, $imports]) {
+            $isRead = $tokens[$index]->is(ClassNameResolver::NAMES)
+                && $canonical === ClassNameResolver::resolve($tokens[$index], $namespace, $imports)
+                && 'of' === strtolower($tokens[$index + 2]->text ?? '')
+                && MemberCalls::isStaticCallAt($tokens, $index + 2);
             if ($isRead) {
                 ++$count;
             }

@@ -76,19 +76,19 @@ final class AuthorizationSites
      */
     private static function kindAt(array $tokens, int $index): ?AuthorizationSiteKind
     {
-        $token = $tokens[$index];
-        $previous = $tokens[$index - 1] ?? null;
-
-        return self::ofStringLiteral($token)
-            ?? self::ofName($token, $previous)
+        return self::ofStringLiteral($tokens, $index)
+            ?? self::ofName($tokens, $index)
             ?? self::ofCall($tokens, $index);
     }
 
     /**
      * Une chaîne qui contient `is_granted(` : l'expression de sécurité d'API Platform ou d'un `#[Security]`.
+     *
+     * @param list<PhpToken> $tokens
      */
-    private static function ofStringLiteral(PhpToken $token): ?AuthorizationSiteKind
+    private static function ofStringLiteral(array $tokens, int $index): ?AuthorizationSiteKind
     {
+        $token = $tokens[$index];
         if (!$token->is([\T_CONSTANT_ENCAPSED_STRING, \T_ENCAPSED_AND_WHITESPACE])) {
             return null;
         }
@@ -98,12 +98,17 @@ final class AuthorizationSites
 
     /**
      * Un nom de classe, court, importé ou de nom complet : l'attribut, un refus levé, le gestionnaire de décision.
+     *
+     * @param list<PhpToken> $tokens
      */
-    private static function ofName(PhpToken $token, ?PhpToken $previous): ?AuthorizationSiteKind
+    private static function ofName(array $tokens, int $index): ?AuthorizationSiteKind
     {
+        $token = $tokens[$index];
         if (!$token->is(self::NAMES)) {
             return null;
         }
+
+        $previous = $tokens[$index - 1] ?? null;
 
         // Le dernier segment du nom : `IsGranted` écrit court, importé ou de nom complet.
         $short = strtolower(basename(str_replace('\\', '/', $token->text)));

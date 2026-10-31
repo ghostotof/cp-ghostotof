@@ -56,8 +56,6 @@ final class PlainPasswordInputs
 
     private const array NAMES = [\T_NAME_QUALIFIED, \T_NAME_FULLY_QUALIFIED];
 
-    private const array OBJECT_OPERATORS = [\T_OBJECT_OPERATOR, \T_NULLSAFE_OBJECT_OPERATOR];
-
     /**
      * @param list<class-string> $classes
      *
@@ -212,7 +210,11 @@ final class PlainPasswordInputs
                 $designated = true;
             } elseif ($token->is(\T_STRING) && $token->text === $shortName && $namespace === $interfaceNamespace) {
                 $designated = true;
-            } elseif ($token->is(self::OBJECT_OPERATORS) && self::isCallTo($tokens, $index + 1, $method)) {
+            }
+
+            // Le nom de la méthode, appelée sur un objet (`->`, `?->`), sans tenir compte de la casse : la forme d'appel
+            // est celle de MemberCalls. Un `if` à part : un nom peut aussi être celui de l'interface.
+            if (0 === strcasecmp($token->text, $method) && MemberCalls::isInstanceCallAt($tokens, $index)) {
                 $called = true;
             }
         }
@@ -227,17 +229,6 @@ final class PlainPasswordInputs
         }
 
         return SensitiveParameters::label($element);
-    }
-
-    /**
-     * @param list<PhpToken> $tokens
-     */
-    private static function isCallTo(array $tokens, int $index, string $method): bool
-    {
-        return isset($tokens[$index], $tokens[$index + 1])
-            && $tokens[$index]->is(\T_STRING)
-            && 0 === strcasecmp($tokens[$index]->text, $method)
-            && '(' === $tokens[$index + 1]->text;
     }
 
     /**
