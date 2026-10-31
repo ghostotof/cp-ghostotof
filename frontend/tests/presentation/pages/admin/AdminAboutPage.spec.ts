@@ -1223,8 +1223,7 @@ describe('AdminAboutPage', () => {
     // traduction le refuse aussi. Un « translate » émis par programme passerait un `:disabled` seul.
     const SETTINGS_PROPOSAL_LOCKED_HINT = '#admin-about-settings-proposal-locked-help'
     const SETTINGS_PROPOSAL_LOCKED_TEXT =
-      'Verrouillé par la proposition de traduction affichée : enregistrez-la, ' +
-      "ou passez à l'autre langue puis revenez à celle-ci pour l'abandonner."
+      'Verrouillé par la proposition de traduction affichée : enregistrez-la, ou « Abandonner » pour la retirer.'
     const emitSettingsTranslate = (wrapper: VueWrapper, target: 'fr' | 'en'): void => {
       wrapper.findAllComponents(AdminAboutSettingsForm)[0].findComponent(TranslateEntryButton).vm.$emit('translate', target)
     }
@@ -1301,9 +1300,9 @@ describe('AdminAboutPage', () => {
       expect(panelOf(wrapper, SETTINGS_PANEL).get('[role="status"]').text()).toContain('Proposition générée par IA')
     })
 
-    // R127b : le texte du verrou nomme le geste qui abandonne la proposition. Changer de langue seul la garde (R103) ; elle
-    // ne disparaît qu'au retour sur sa langue cible, dont le formulaire est relu du serveur : « passez à l'autre langue puis
-    // revenez à celle-ci », par le sélecteur « Langue des textes de la page À propos ».
+    // R127b : changer de langue seul garde la proposition (R103) ; elle ne disparaît qu'au retour sur sa langue cible, dont
+    // le formulaire est relu du serveur, par le sélecteur « Langue des textes de la page À propos ». Depuis R127c, le texte
+    // du verrou nomme « Abandonner » et non plus ce détour, qui reste un autre chemin du même retrait.
     it("réglages, une proposition affichée : passer à l'autre langue puis revenir l'abandonne (#748, R127b)", async () => {
       const settingsRepository = createSettingsRepository({
         get: vi.fn(async (locale: string) => ('en' === locale ? SETTINGS_EN : SETTINGS)),
@@ -1329,6 +1328,64 @@ describe('AdminAboutPage', () => {
       expect(panelOf(wrapper, SETTINGS_PANEL).find('[role="status"]').exists()).toBe(false)
       expect(translateEntryButton(wrapper, SETTINGS_FORM).attributes('disabled')).toBeUndefined()
       expect(textsDescribing(wrapper, translateEntryButton(wrapper, SETTINGS_FORM))).toEqual([])
+    })
+
+    // R127c, décision de l'auteur du 2026-10-31 : un bouton « Abandonner » retire la proposition affichée et relit le
+    // formulaire de la langue montrée. Il n'existe que pendant la proposition, et le texte du verrou le nomme.
+    const abandonButton = (wrapper: VueWrapper): DOMWrapper<Element> | undefined =>
+      panelOf(wrapper, SETTINGS_PANEL)
+        .findAll('button')
+        .find((button) => 'Abandonner' === button.text())
+    const SAVED_EN: AdminAboutSettings = { ...SETTINGS_EN, siteEyebrow: 'Saved English eyebrow' }
+
+    it("réglages, « Abandonner » : un bouton simple, seulement pendant une proposition, nommé par le verrou (#748, R127c)", async () => {
+      const translation = createTranslationRepository(TRANSLATED_SETTINGS)
+      const { wrapper } = await mountPage(createSettingsRepository(), undefined, undefined, translation)
+      expect(abandonButton(wrapper)).toBeUndefined()
+
+      await translateEntryButton(wrapper, SETTINGS_FORM).trigger('click')
+      await flushPromises()
+
+      const abandon = abandonButton(wrapper)
+      expect(abandon?.element.tagName).toBe('BUTTON')
+      expect(abandon?.attributes('type')).toBe('button')
+      expect(abandon?.attributes('disabled')).toBeUndefined()
+      expect(textsDescribing(wrapper, translateEntryButton(wrapper, SETTINGS_FORM))).toEqual([SETTINGS_PROPOSAL_LOCKED_TEXT])
+      expect(SETTINGS_PROPOSAL_LOCKED_TEXT).toContain('« Abandonner »')
+      await expectNoAccessibilityViolation(wrapper)
+    })
+
+    it("réglages, « Abandonner » retire la proposition, relit le formulaire, lève le verrou, rend le focus (#748, R127c)", async () => {
+      const settingsRepository = createSettingsRepository({
+        get: vi.fn(async (locale: string) => ('en' === locale ? SAVED_EN : SETTINGS)),
+      })
+      const translation = createTranslationRepository(TRANSLATED_SETTINGS)
+      const { wrapper } = await mountPage(settingsRepository, undefined, undefined, translation, { attach: true })
+      await translateEntryButton(wrapper, SETTINGS_FORM).trigger('click')
+      await flushPromises()
+      expect(valueOf(wrapper, '#admin-about-site-eyebrow')).toBe(TRANSLATED_SETTINGS.siteEyebrow)
+      const englishReads = (): number =>
+        vi.mocked(settingsRepository.get).mock.calls.filter(([locale]) => 'en' === locale).length
+      expect(englishReads()).toBe(1)
+
+      await abandonButton(wrapper)?.trigger('click')
+      await flushPromises()
+
+      // Le formulaire de la langue montrée est relu du serveur : les valeurs enregistrées reviennent.
+      expect(englishReads()).toBe(2)
+      expect(valueOf(wrapper, '#admin-about-locale')).toBe('en')
+      expect(valueOf(wrapper, '#admin-about-site-eyebrow')).toBe(SAVED_EN.siteEyebrow)
+      expect(valueOf(wrapper, '#admin-about-me-eyebrow')).toBe(SAVED_EN.meEyebrow)
+      // Le verrou, son texte, l'avis et le bouton d'abandon sont partis ; « Proposer » est libre.
+      expect(wrapper.find(SETTINGS_PROPOSAL_LOCKED_HINT).exists()).toBe(false)
+      expect(panelOf(wrapper, SETTINGS_PANEL).find('[role="status"]').exists()).toBe(false)
+      expect(abandonButton(wrapper)).toBeUndefined()
+      expect(translateEntryButton(wrapper, SETTINGS_FORM).attributes('disabled')).toBeUndefined()
+      expect(textsDescribing(wrapper, translateEntryButton(wrapper, SETTINGS_FORM))).toEqual([])
+      // Le bouton a disparu sous le focus : il revient au premier champ du formulaire relu, jamais à `body`.
+      expect(document.activeElement).toBe(wrapper.get('#admin-about-site-eyebrow').element)
+      expect(translation.translate).toHaveBeenCalledOnce()
+      await expectNoAccessibilityViolation(wrapper)
     })
 
     // Décision 3 de la onzième relecture (R126) : pendant la traduction des réglages, les cinq champs de prose sont en

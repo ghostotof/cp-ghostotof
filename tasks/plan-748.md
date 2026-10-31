@@ -7865,6 +7865,7 @@ Q5 (A) verrouiller — les cinq recommandations, le plan ne change pas.**
 | `frontend/src/presentation/ui/admin/TranslationReadonlyHint.vue` (créé), les neuf formulaires, `fr.json`/`en.json`, `entryFormLock.ts`, `AdminAboutPage.spec.ts` | prose en lecture seule pendant la traduction | R126 |
 | les neuf formulaires (`isRefused`), `AdminAboutSettingsForm.vue` (bouton), `fr.json`/`en.json`, `entryFormLock.ts`, `AdminAboutPage.spec.ts` | refus par programme = refus du bouton | R127 |
 | neuf `isRefused`, `fr/en.json`, `entryFormLock.ts`, six specs, règle | `isRefused` complet ; texte exact | R127b |
+| `AdminAboutSettingsForm.vue`, `fr.json`/`en.json`, `AdminAboutPage.spec.ts`, règle | bouton « Abandonner » des réglages | R127c |
 | `AdminAboutSettingsForm.vue`, `AdminAboutPage.spec.ts` | une seule source de vérité pour l'avis des réglages | R128 |
 | `frontend/tests/support/entryFormLock.ts`, `useEntryFormLock.spec.ts`, `AdminCaseStudiesPage.spec.ts`, `AppLayout.spec.ts`, `sourceText.spec.ts` | hygiène des specs | R129 |
 | `frontend/package.json`, `frontend/package-lock.json`, `sourceText.ts`, `srcSources.ts`, `sourceText.spec.ts`, lecteurs de `SRC_TEMPLATE_EXPRESSIONS` | le lecteur de gabarit tient ses règles de Vue | R130 |
@@ -8179,6 +8180,32 @@ sur sa langue cible, dont le formulaire est relu.
 
 ---
 
+### Task R127c : Réglages « À propos » — un bouton « Abandonner » retire la proposition de traduction affichée
+
+**Origine.** Question rendue par R127b (le seul geste d'abandon était un aller-retour de langue), tranchée par l'auteur le
+2026-10-31 : un bouton « Abandonner » (EN « Discard »), visible pendant la proposition seulement, qui la retire et relit le
+formulaire de la langue montrée. Le texte du verrou le nomme. Pas de confirmation ; focus au premier champ une fois relu ;
+pas d'annonce, comme l'« Annuler » des formulaires par entrée. Une traduction en vol est périmée par le même geste.
+
+**Files :**
+- Modify : `AdminAboutSettingsForm.vue` (`handleAbandonProposal`, `copySettingsToForm`),
+  `frontend/src/infrastructure/i18n/locales/{fr,en}.json` (`admin.about.settingsProposalLockedHelp`, `settingsProposalDiscard`)
+- Test : `AdminAboutPage.spec.ts` (bouton et texte, abandon, audit axe pendant la proposition)
+- Modify (règle) : `.claude/rules/frontend-backoffice.md` (phrase des réglages : « Abandonner » remplace l'aller-retour)
+
+- [ ] **Step 1 : tests rouges** — bouton absent hors proposition, simple et nommé par le texte exact du verrou ; abandon :
+  proposition, avis et verrou partis, valeurs enregistrées relues (lecture servie par le même objet : la recopie ne dépend pas
+  du `watch`), « Proposer » libre, focus au premier champ ; axe pendant la proposition.
+- [ ] **Step 2 : implémenter** le bouton et le texte, FR et EN.
+- [ ] **Step 3 : mutation** (Python, copie vérifiée par `cmp`) : la recopie retirée → « valeurs relues » rougit ; `.focus()` retiré →
+  le focus ; `await load()` retiré → le nombre de lectures ; restauré.
+- [ ] **Step 4 : règle** — phrase des réglages remplacée.
+- [ ] **Step 5 : verts** — `make front-test`, `make front-lint`, `make front-build`, `tools/check-claude-rules.sh`.
+- [ ] **Step 6 : commit** — `feat(frontend): réglages « À propos », un bouton « Abandonner » retire la proposition de
+  traduction affichée (#748)`.
+
+---
+
 ### Task R128 : Réglages « À propos » — l'avis de proposition a une seule source de vérité (CR11-7, St11-11)
 
 **Files :**
@@ -8459,6 +8486,7 @@ lignes rendues et, pour chaque ligne gardée, la raison en quelques mots. Une re
 | C11-7 = CR11-4 | R124 (suppression, langue d'une création) |
 | CR11-6 = C11-5 (+ St11-17) | R127 (Q5) |
 | questions de R127 (décisions de l'auteur du 2026-10-31) | R127b |
+| question de R127b (décision de l'auteur du 2026-10-31) | R127c |
 | C11-1 | R133 |
 | CR11-2 | R122 (Q2) |
 | CR11-7 + St11-11 | R128 |

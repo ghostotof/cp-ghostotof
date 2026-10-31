@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAdminAboutSettings } from '../../../application/admin/about/useAdminAboutSettings'
 import { useAdminTranslation } from '../../../application/admin/translation/useAdminTranslation'
@@ -8,6 +8,7 @@ import BaseTextInput from '../../ui/BaseTextInput.vue'
 import TranslateEntryButton from '../../ui/admin/TranslateEntryButton.vue'
 import TranslationReadonlyHint from '../../ui/admin/TranslationReadonlyHint.vue'
 import { describedBy } from '../../ui/admin/useEntryFormLock'
+import type { AdminAboutSettings } from '../../../domain/admin/about/entities/AdminAboutSettings'
 import type { Locale } from '../../../domain/portfolio/entities/Locale'
 import type { TranslationProposal } from '../../../domain/admin/translation/entities/TranslationProposal'
 
@@ -61,11 +62,14 @@ const {
   isDiscardPending,
   errorReason: translationErrorReason,
   translate,
+  discard: discardTranslation,
 } = useAdminTranslation({
   isRefused: () => !hasProseToTranslate.value || isAnySaving.value || props.isLocked || isProposalShown.value,
   formIdentity: () => ({ locale: props.locale }),
 })
 const pendingProposal = ref<TranslationProposal | null>(null)
+// Le formulaire rendu (absent pendant une lecture) : « Abandonner » y rend le focus au premier champ une fois relu.
+const formElement = ref<HTMLFormElement | null>(null)
 // La proposition posée sur un formulaire (R66, St6-10) : `source` est la langue traduite, que dit l'avis, `target` la
 // langue du formulaire qui la porte, celle que la page a prise pour la recevoir. L'avis n'est que celui de `target` : il
 // ne s'affiche que sous elle, et il part quand le formulaire de cette langue est relu du serveur (le `watch` de
@@ -100,11 +104,7 @@ watch(
   settings,
   (value) => {
     if (value) {
-      form.siteEyebrow = value.siteEyebrow
-      form.meEyebrow = value.meEyebrow
-      form.technicalSubtitle = value.technicalSubtitle
-      form.personalSubtitle = value.personalSubtitle
-      form.hobbiesSubtitle = value.hobbiesSubtitle
+      copySettingsToForm(value)
 
       // Des réglages qui arrivent sont ceux de la langue montrée (la clé courante) : si c'est la cible de la
       // proposition, ils la remplacent et la retirent ; sinon la proposition reste, et la relecture de sa cible la
@@ -140,6 +140,15 @@ watch(
   { flush: 'sync' },
 )
 
+/** Recopie les réglages lus du serveur dans le formulaire : les valeurs enregistrées de la langue montrée. */
+function copySettingsToForm(value: AdminAboutSettings): void {
+  form.siteEyebrow = value.siteEyebrow
+  form.meEyebrow = value.meEyebrow
+  form.technicalSubtitle = value.technicalSubtitle
+  form.personalSubtitle = value.personalSubtitle
+  form.hobbiesSubtitle = value.hobbiesSubtitle
+}
+
 /** Pose la proposition en attente si la locale qui vient d'être chargée est sa cible. */
 function applyPendingProposal(loadedLocale: Locale): void {
   if (!pendingProposal.value || loadedLocale !== pendingProposal.value.targetLocale) {
@@ -159,6 +168,37 @@ async function handleTranslate(targetLocale: Locale): Promise<void> {
 
   pendingProposal.value = translated
   emit('switchLocale', targetLocale)
+}
+
+/**
+ * « Abandonner » (R127c, décision de l'auteur du 2026-10-31) : retire la proposition affichée et relit le formulaire de
+ * la langue montrée, dont les valeurs enregistrées reviennent. Le bouton n'existe que pendant la proposition, et la
+ * proposition est la cible de la langue montrée : la relire est le retrait que fait déjà le retour sur cette langue
+ * (R66, décision 4), sans l'aller-retour. La recopie est refaite ici et pas laissée au seul `watch` des réglages, qui ne
+ * se déclenche pas si la lecture rend l'objet déjà détenu. Une traduction en vol est périmée par le même geste.
+ * Aucune confirmation (pas de `confirm`) : la proposition n'est jamais enregistrée, la perdre ne coûte qu'un appel.
+ *
+ * Le bouton disparaît sous le focus (le formulaire est masqué pendant la lecture) : une fois relu, le focus va au
+ * premier champ, jamais à `body`. Comme « Annuler » des formulaires par entrée, l'abandon n'est pas annoncé.
+ */
+async function handleAbandonProposal(): Promise<void> {
+  const locale = props.locale
+  discardTranslation()
+  pendingProposal.value = null
+  await load(locale)
+
+  // La personne a changé de langue pendant la lecture : le formulaire n'est plus celui qu'on a relu.
+  if (locale !== props.locale || !isLoaded.value || !settings.value) {
+    return
+  }
+
+  copySettingsToForm(settings.value)
+  if (proposal.value?.target === locale) {
+    proposal.value = null
+  }
+
+  await nextTick()
+  formElement.value?.querySelector<HTMLElement>('input')?.focus()
 }
 
 async function handleSubmit(): Promise<void> {
@@ -201,6 +241,7 @@ async function handleSubmit(): Promise<void> {
     </p>
     <form
       v-else
+      ref="formElement"
       novalidate
       @submit.prevent="handleSubmit"
     >
@@ -261,6 +302,14 @@ async function handleSubmit(): Promise<void> {
           :aria-describedby="describedBy(lockedHintId, isProposalShown ? PROPOSAL_LOCKED_HINT_ID : undefined)"
           @translate="handleTranslate"
         />
+        <button
+          v-if="isProposalShown"
+          type="button"
+          class="btn btn-outline-light ms-2"
+          @click="handleAbandonProposal"
+        >
+          {{ t('admin.about.settingsProposalDiscard') }}
+        </button>
         <p
           v-if="isProposalShown"
           :id="PROPOSAL_LOCKED_HINT_ID"
