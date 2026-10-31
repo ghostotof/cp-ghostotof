@@ -78,11 +78,10 @@ final class AuthorizationSites
     {
         $token = $tokens[$index];
         $previous = $tokens[$index - 1] ?? null;
-        $next = $tokens[$index + 1] ?? null;
 
         return self::ofStringLiteral($token)
             ?? self::ofName($token, $previous)
-            ?? self::ofCall($token, $previous, $next);
+            ?? self::ofCall($tokens, $index);
     }
 
     /**
@@ -125,21 +124,24 @@ final class AuthorizationSites
 
     /**
      * Un appel (`denyAccessUnlessGranted`, `->isGranted(`, `::isGranted(`) ou un argument nommé d'API Platform.
+     * La forme d'un appel de membre (`->`, `?->`, `::`, puis `(`) est celle de {@see MemberCalls}.
+     *
+     * @param list<PhpToken> $tokens
      */
-    private static function ofCall(PhpToken $token, ?PhpToken $previous, ?PhpToken $next): ?AuthorizationSiteKind
+    private static function ofCall(array $tokens, int $index): ?AuthorizationSiteKind
     {
+        $token = $tokens[$index];
         if (!$token->is(\T_STRING)) {
             return null;
         }
 
+        $previous = $tokens[$index - 1] ?? null;
+        $next = $tokens[$index + 1] ?? null;
         $name = strtolower($token->text);
-        $isCall = '(' === $next?->text;
-        $isMethodCall = ($previous?->is([\T_OBJECT_OPERATOR, \T_NULLSAFE_OBJECT_OPERATOR]) ?? false) && $isCall;
-        $isStaticCall = ($previous?->is(\T_DOUBLE_COLON) ?? false) && $isCall;
 
         return match (true) {
             'denyaccessunlessgranted' === $name => AuthorizationSiteKind::DenyAccessUnlessGranted,
-            'isgranted' === $name && ($isMethodCall || $isStaticCall) => AuthorizationSiteKind::IsGrantedCall,
+            'isgranted' === $name && MemberCalls::isCallAt($tokens, $index) => AuthorizationSiteKind::IsGrantedCall,
             \in_array($name, self::NAMED_ARGUMENTS, true)
                 && ':' === $next?->text
                 && \in_array($previous?->text, ['(', ','], true) => AuthorizationSiteKind::SecurityArgument,

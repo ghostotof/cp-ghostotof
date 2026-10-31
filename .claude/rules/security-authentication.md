@@ -82,7 +82,8 @@ What stays here: the CSRF guards (double-submit, login-CSRF), the base access, `
     `SecurityAuditLogger` logs the canonical form for the same reason. A subtree check goes through
     `CanonicalPath::isUnder($request, '/api/<x>')` (`isUnderApi()` is that, for `/api`; `isPathUnder($path, $prefix)`
     is the same rule on a string, for the tests that walk the router; no file of `src/` but `CanonicalPath` calls it
-    or `getPathInfo()`, `PathIsDecidedCanonicallyTest`, R132): "the prefix exactly, or the prefix followed
+    or `getPathInfo()`, in any letter case, `PathIsDecidedCanonicallyTest`, R132; it does not see `getRequestUri()`,
+    `getUri()`, `getBaseUrl()`, `server->get('PATH_INFO')` nor `$_SERVER`): "the prefix exactly, or the prefix followed
     by `/`", the `access_control` anchoring rule, written once (issue #322).
   - **The `login` firewall is anchored on its `check_path`, the `api` one deliberately is not** (audit A23,
     `security.yaml`). `login` is `^/api/login_check$`: it holds a `json_login` and reads **no** JWT, so any

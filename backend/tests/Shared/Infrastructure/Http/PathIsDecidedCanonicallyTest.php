@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace App\Tests\Shared\Infrastructure\Http;
 
 use App\Shared\Infrastructure\Http\CanonicalPath;
+use App\Tests\Support\MemberCalls;
 use App\Tests\Support\PhpSources;
 use App\Tests\Support\RepositoryFiles;
-use PhpToken;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
@@ -22,18 +22,23 @@ use PHPUnit\Framework\TestCase;
  * test d'écoute ne le voie. Hors de `CanonicalPath.php`, une requête passe donc par `isUnder()` ou `of()`.
  *
  * Refusés dans `src/` (par jetons, commentaires et chaînes exclus) : un appel `getPathInfo(` ou `isPathUnder(`,
- * écrit `->`, `?->` ou `::`, y compris en appelable de première classe (`->getPathInfo(...)`), hors de
- * `CanonicalPath.php`. Aucun appel légitime n'existe aujourd'hui, donc aucune exemption.
+ * sans égard à la casse (PHP n'en fait pas pour un nom de méthode), écrit `->`, `?->` ou `::`, y compris en appelable
+ * de première classe (`->getPathInfo(...)`), hors de `CanonicalPath.php`. Aucun appel légitime n'existe aujourd'hui,
+ * donc aucune exemption. La forme d'appel est celle de {@see MemberCalls}, que lit aussi `AuthorizationSites`.
  *
  * Ce que la garde ne voit pas, limite assumée : un chemin lu autrement que par ces deux noms
- * (`$request->server->get('PATH_INFO')`, `getRequestUri()`, `$_SERVER`), un nom construit à l'exécution
- * (`$request->{'getPathInfo'}()`) et un `Request` lu par un tiers de `vendor/`.
+ * (`$request->server->get('PATH_INFO')`, `getRequestUri()`, `getUri()`, `getBaseUrl()`, `$_SERVER`), un nom construit
+ * à l'exécution (`$request->{'getPathInfo'}()`) et un `Request` lu par un tiers de `vendor/`.
  */
 final class PathIsDecidedCanonicallyTest extends TestCase
 {
     private const string CANONICAL_PATH_FILE = '/src/Shared/Infrastructure/Http/CanonicalPath.php';
 
-    private const array FORBIDDEN_CALLS = ['getPathInfo', 'isPathUnder'];
+    /** Les méthodes refusées, en minuscules : PHP ne distingue pas la casse d'un nom de méthode. */
+    private const array FORBIDDEN_CALLS = ['getpathinfo', 'ispathunder'];
+
+    /** Les jetons qui portent un nom de classe : court, qualifié, relatif (`namespace\\X`) ou de nom complet. */
+    private const array CLASS_NAMES = [\T_STRING, \T_NAME_QUALIFIED, \T_NAME_RELATIVE, \T_NAME_FULLY_QUALIFIED];
 
     /** Le périmètre lu : `src/` compte plusieurs centaines de fichiers, une lecture vide ne garde rien. */
     private const int MINIMUM_FILES_READ = 300;
@@ -110,6 +115,44 @@ final class PathIsDecidedCanonicallyTest extends TestCase
             "<?php\n\$p = \$request\n    ->getPathInfo\n    ();\n",
             [['line' => 3, 'name' => 'getPathInfo']],
         ];
+        // PHP ne distingue pas la casse d'un nom de méthode : `->getpathinfo()` lit le chemin brut tout autant.
+        yield 'lecture du chemin brut, casse différente' => [
+            "<?php\n\$p = \$request->getpathinfo();\n",
+            [['line' => 2, 'name' => 'getpathinfo']],
+        ];
+        yield 'jugement d\'une chaîne, casse différente' => [
+            "<?php\nCanonicalPath::ISPATHUNDER(\$path, '/api');\n",
+            [['line' => 2, 'name' => 'ISPATHUNDER']],
+        ];
+    }
+
+    #[DataProvider('formsTheCounterSees')]
+    public function testTheCanonicalReadCounterSeesEachForm(string $code, int $expected): void
+    {
+        self::assertSame($expected, $this->canonicalReadsIn($code));
+    }
+
+    /**
+     * @return iterable<string, array{string, int}>
+     */
+    public static function formsTheCounterSees(): iterable
+    {
+        yield 'nom court' => ["<?php\n\$p = CanonicalPath::of(\$request);\n", 1];
+        yield 'nom qualifié par un espace de noms' => ["<?php\n\$p = Http\\CanonicalPath::of(\$request);\n", 1];
+        yield 'nom complet' => [
+            "<?php\n\$p = \\App\\Shared\\Infrastructure\\Http\\CanonicalPath::of(\$request);\n",
+            1,
+        ];
+        yield 'nom relatif à l\'espace de noms courant' => ["<?php\n\$p = namespace\\CanonicalPath::of(\$request);\n", 1];
+        yield 'méthode en casse différente' => ["<?php\n\$p = CanonicalPath::OF(\$request);\n", 1];
+        yield 'classe en casse différente' => ["<?php\n\$p = canonicalpath::of(\$request);\n", 1];
+        yield 'deux lectures' => ["<?php\n\$a = CanonicalPath::of(\$x);\n\$b = \\A\\CanonicalPath::of(\$y);\n", 2];
+        yield 'une autre méthode du même nom de préfixe' => ["<?php\n\$p = CanonicalPath::often(\$request);\n", 0];
+        yield 'une autre classe' => ["<?php\n\$p = Other::of(\$request);\n", 0];
+        yield 'une autre classe de nom complet' => ["<?php\n\$p = \\App\\OtherCanonicalPath::of(\$request);\n", 0];
+        yield 'un nom sans appel' => ["<?php\n\$n = CanonicalPath::of;\n", 0];
+        yield 'un commentaire' => ["<?php\n// CanonicalPath::of(\$request)\n", 0];
+        yield 'une chaîne' => ["<?php\n\$m = 'CanonicalPath::of(\$request)';\n", 0];
     }
 
     #[DataProvider('formsTheDetectorLeavesAlone')]
@@ -147,7 +190,8 @@ final class PathIsDecidedCanonicallyTest extends TestCase
     }
 
     /**
-     * Les appels `getPathInfo(` et `isPathUnder(` d'un code source : un nom, suivi de `(`, précédé de `->`, `?->` ou `::`.
+     * Les appels `getPathInfo(` et `isPathUnder(` d'un code source, un nom de méthode sans égard à la casse (PHP n'en
+     * fait pas) : la forme d'appel (`->`, `?->` ou `::`, puis `(`) est celle de {@see MemberCalls}.
      *
      * @return list<array{line: int, name: string}>
      */
@@ -156,16 +200,10 @@ final class PathIsDecidedCanonicallyTest extends TestCase
         $tokens = PhpSources::significantTokens($code);
         $found = [];
         foreach ($tokens as $index => $token) {
-            if (!$token->is(\T_STRING) || !\in_array($token->text, self::FORBIDDEN_CALLS, true)) {
-                continue;
-            }
-
-            $before = $tokens[$index - 1] ?? null;
-            $after = $tokens[$index + 1] ?? null;
-            if (
-                $before instanceof PhpToken && $before->is([\T_OBJECT_OPERATOR, \T_NULLSAFE_OBJECT_OPERATOR, \T_DOUBLE_COLON])
-                && $after instanceof PhpToken && '(' === $after->text
-            ) {
+            $isForbidden = $token->is(\T_STRING)
+                && \in_array(strtolower($token->text), self::FORBIDDEN_CALLS, true)
+                && MemberCalls::isCallAt($tokens, $index);
+            if ($isForbidden) {
                 $found[] = ['line' => $token->line, 'name' => $token->text];
             }
         }
@@ -174,17 +212,19 @@ final class PathIsDecidedCanonicallyTest extends TestCase
     }
 
     /**
-     * Le nombre de `CanonicalPath::of(` d'un code source, nom court ou complet.
+     * Le nombre de `CanonicalPath::of(` d'un code source : le nom de la classe court, qualifié, relatif ou complet
+     * (son dernier segment), la méthode sans égard à la casse.
      */
     private function canonicalReadsIn(string $code): int
     {
         $tokens = PhpSources::significantTokens($code);
         $count = 0;
         foreach ($tokens as $index => $token) {
-            $isRead = $token->is(\T_STRING) && 'CanonicalPath' === $token->text
+            $isRead = $token->is(self::CLASS_NAMES)
+                && 'canonicalpath' === strtolower(substr((string) strrchr('\\'.$token->text, '\\'), 1))
                 && ($tokens[$index + 1] ?? null)?->is(\T_DOUBLE_COLON) === true
-                && ($tokens[$index + 2] ?? null)?->text === 'of'
-                && ($tokens[$index + 3] ?? null)?->text === '(';
+                && isset($tokens[$index + 2]) && 'of' === strtolower($tokens[$index + 2]->text)
+                && MemberCalls::isCallAt($tokens, $index + 2);
             if ($isRead) {
                 ++$count;
             }
