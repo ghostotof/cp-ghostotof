@@ -10,6 +10,7 @@ import { ADMIN_ABOUT_ME_CARD_REPOSITORY } from '../../../../src/application/admi
 import { ADMIN_TRANSLATION_REPOSITORY } from '../../../../src/application/admin/translation/useAdminTranslation'
 import { createAppI18n } from '../../../../src/presentation/i18n'
 import { markSessionExpired } from '../../../../src/application/auth/useAuth'
+import { AccessForbiddenError } from '../../../../src/domain/auth/errors/AccessForbiddenError'
 import { SessionEndedError } from '../../../../src/domain/auth/errors/SessionEndedError'
 import { signInAgain } from '../../../support/signInAgain'
 import type { AdminAboutSettingsRepository } from '../../../../src/domain/admin/about/repositories/AdminAboutSettingsRepository'
@@ -1469,6 +1470,37 @@ describe('AdminAboutPage', () => {
       await flushPromises()
 
       expect(valueOf(wrapper, '#admin-about-site-eyebrow')).toBe('Server EN')
+      expect(panelOf(wrapper, SETTINGS_PANEL).find('[role="status"]').exists()).toBe(false)
+    })
+
+    // La relecture de la cible refusée (403) ou interrompue laisse les réglages nuls : le formulaire n'est pas rendu, et
+    // l'avis de la proposition ne se rapporte à rien. L'état est la seule observation : l'avis vit dans le formulaire.
+    it("une proposition en EN, retour à l'EN refusé : aucun avis sous un formulaire non chargé (#748, R113)", async () => {
+      let englishReads = 0
+      const settingsRepository = createSettingsRepository({
+        get: vi.fn(async (locale: string) => {
+          if ('en' !== locale) return SETTINGS
+          englishReads += 1
+          if (englishReads > 1) throw new AccessForbiddenError()
+
+          return SETTINGS_EN
+        }),
+      })
+      const translation = createTranslationRepository(TRANSLATED_SETTINGS)
+      const { wrapper } = await mountPage(settingsRepository, undefined, undefined, translation)
+
+      await translateEntryButton(wrapper, SETTINGS_FORM).trigger('click')
+      await flushPromises()
+      expect(panelOf(wrapper, SETTINGS_PANEL).find('[role="status"]').exists()).toBe(true)
+
+      await wrapper.get('#admin-about-locale').setValue('fr')
+      await flushPromises()
+      await wrapper.get('#admin-about-locale').setValue('en')
+      await flushPromises()
+
+      expect(englishReads).toBe(2)
+      const form = wrapper.findComponent(AdminAboutSettingsForm).vm as unknown as { isProposalShown: boolean }
+      expect(form.isProposalShown).toBe(false)
       expect(panelOf(wrapper, SETTINGS_PANEL).find('[role="status"]').exists()).toBe(false)
     })
 

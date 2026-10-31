@@ -58,8 +58,9 @@ const pendingProposal = ref<TranslationProposal | null>(null)
 // ne s'affiche que sous elle, et il part quand le formulaire de cette langue est relu du serveur (le `watch` de
 // `settings`, ci-dessous), la proposition non enregistrée étant alors perdue (décision 4 de la sixième série).
 const proposal = ref<{ readonly source: Locale; readonly target: Locale } | null>(null)
-// L'avis est celui de la langue montrée si c'est la cible de la proposition (R86, St7-10) : le `v-if` de l'avis le lit d'ici.
-const isProposalShown = computed(() => proposal.value?.target === props.locale)
+// L'avis est celui de la langue montrée si c'est la cible de la proposition (R86, St7-10), et seulement sous un formulaire
+// chargé : une relecture de la cible refusée ou interrompue laisse les réglages nuls, sans formulaire pour le porter.
+const isProposalShown = computed(() => isLoaded.value && proposal.value?.target === props.locale)
 const hasProseToTranslate = computed(() => PROSE_FIELDS.some((field) => '' !== form[field].trim()))
 const translationErrorText = computed(() => {
   const reason = translationErrorReason.value
@@ -86,10 +87,10 @@ watch(
       form.personalSubtitle = value.personalSubtitle
       form.hobbiesSubtitle = value.hobbiesSubtitle
 
-      // Des réglages qui arrivent sont ceux de la langue montrée (la clé courante). Si c'est la cible de la
-      // proposition, ils la remplacent et la retirent ; sinon la proposition reste, et le retour sur sa cible, qui
-      // relit, la retire. L'effet ne se voit pas dans le DOM (l'avis n'est rendu que sous sa cible) : le test lit l'état.
-      if (isProposalShown.value) {
+      // Des réglages qui arrivent sont ceux de la langue montrée (la clé courante) : si c'est la cible de la
+      // proposition, ils la remplacent et la retirent ; sinon la proposition reste, et la relecture de sa cible la
+      // retire. Le test lit l'état : l'avis n'est rendu que sous sa cible.
+      if (proposal.value?.target === props.locale) {
         proposal.value = null
       }
     }
