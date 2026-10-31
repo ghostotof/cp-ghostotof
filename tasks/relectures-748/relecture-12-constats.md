@@ -12,9 +12,19 @@ avec `-K`, fichier 600, dossier 700 retiré ; TERM/HUP/INT (`set -m`) : 143/129/
 ApiPlatformOperationsCarryNoSecurity) et `make front-test` verts.
 
 ## Décisions de l'utilisateur
-_(à prendre à la reprise — session close par `/exit` avant les questions)_
+Prises le 2026-10-31 à la reprise (session close par `/exit` avant les questions) : **les quatre recommandations**.
+- Q1 → **(b)** une génération de formulaire dans `formIdentity`, incrémentée par `resetForm()` ; `failure` effacé au
+  changement de génération (règle CR12-2 au passage).
+- Q2 → **oui aux deux** : un seul `computed` du refus (lu par `isRefused` et le `:disabled`) ; un composable de la prose
+  (identité, id de l'aide en lecture seule, `proseDescribedBy`).
+- Q3 → couper les lignes > 140 antérieures de #748 dans **les règles et le code**, pas le JSON ni les tables, dans une
+  tâche dédiée (liste à refaire, celle de la session précédente est perdue).
+- Q4 → **oui** : le mot refusé partout hors des deux formes (commentaires compris, en-têtes `Env :` réécrits) + garde des
+  vidages d'environnement.
+- Tout le reste (faibles, info) se corrige — critère d'arrêt « tout jusqu'à zéro » ; le plan rend en question ce qui
+  demande un arbitrage.
 
-Questions à poser :
+Questions posées :
 1. **CR12-1 = C12-1** (régression de R124 + R126) : comment périmer une traduction en vol quand un formulaire vierge est
    enregistré (identité inchangée) ? Options : (a) « Enregistrer » désactivé pendant `isTranslating` (la prose est déjà en
    lecture seule) ; (b) une génération de formulaire dans `formIdentity`, incrémentée par `resetForm()` ; (c) `discard()`
