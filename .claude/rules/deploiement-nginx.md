@@ -114,12 +114,25 @@ paths:
   costs nginx only. Its 413 is nginx's HTML page, like the server's 1 MB one. Accepted: claude.ai and ChatGPT
   connectors call from their providers' egress addresses, which their users share — fine at this site's
   audience, revisit if phase 2's real clients get throttled. `tools/smoke-mcp.sh` is run by `smoke-test-preprod` (its own `timeout-minutes: 3`).
-  It shares `tools/lib/smoke-http.sh` with `smoke-login-throttling.sh` and `smoke-dead-session-cookie.sh`. The library reads headers (`smoke_header`, and `smoke_headers` for a repeated one such as `Set-Cookie`).
-  `smoke_write_auth_config` validates the variable's name: refused if it starts with `_smoke_` (the library's own locals) or `SMOKE_AUTH_` (the variables its head `smoke_cleanup` empties). It reads the value itself, under `set +x`, and writes it in a private directory. An empty value writes nothing. A second call replaces the first. Every `trap` runs `smoke_cleanup`.
-  `smoke_fetch` calls `curl` (binary `SMOKE_CURL`) and reads the `-K` at each call, never from `SMOKE_CURL_OPTS`. A `-K` file gone exits 2 saying « fichier de la Basic Auth absent », and a `curl` without an answer exits 1; nothing was verified in both cases.
-  `audit-prod.sh` shares the library for `smoke_write_auth_config` and `smoke_cleanup` only. It sources it only when `AUDIT_BASIC_AUTH` is defined (`[[ -v ]]`, so the value is never expanded outside the library's `set +x`). A defined but empty `AUDIT_BASIC_AUTH` exits 2 saying « secret de Basic Auth vide » before any call (R106, the author's decision of 2026-10-31); an undefined one is the production audit.
-  Its redirection probes (section 3) leave without the Basic Auth (`CURL_OPTS_ANONYMOUS`): curl sends `Authorization: Basic` on the first request whatever the scheme, so a `-K` there would put the preprod credential in clear on `http://` (#750, R115).
-  A line break in it exits 2, and so does a library that is missing or does not parse, saying « introuvable ou invalide » with bash's own error left on stderr (#748, C6-7). Offline test: `tools/tests/audit-prod.test.sh`, fake `dig`/`curl`/`openssl`.
+  The library `tools/lib/smoke-http.sh` is shared by `smoke-login-throttling.sh`, `smoke-dead-session-cookie.sh` and this one.
+  It reads headers (`smoke_header`, and `smoke_headers` for a repeated one such as `Set-Cookie`).
+  `smoke_write_auth_config` validates the variable's name: it is refused if it starts with `_smoke_` (the library's
+  own locals) or `SMOKE_AUTH_` (the variables its head `smoke_cleanup` empties).
+  It reads the value itself, under `set +x`, and writes it in a private directory.
+  A value with a line break, or non-empty without « : » (blanks included), exits 2 naming the variable, never quoting it.
+  An empty value writes nothing. A second call replaces the first. Every `trap` runs `smoke_cleanup`.
+  `smoke_require_auth_config` follows it in the three smokes and in the audit: a variable that is defined but empty
+  exits 2 saying « secret de Basic Auth vide » (R116, the author's decision of 2026-10-31); an undefined one sends no Basic Auth.
+  `smoke_fetch` calls `curl` (binary `SMOKE_CURL`) and reads the `-K` at each call, never from `SMOKE_CURL_OPTS`.
+  A `-K` file gone exits 2 saying « fichier de la Basic Auth absent », and a `curl` without an answer exits 1.
+  Nothing was verified in both cases.
+  `audit-prod.sh` sources the library only when `AUDIT_BASIC_AUTH` is defined (`[[ -v ]]`, so the value is never expanded
+  outside the library's `set +x`), and no command line of the audit or the smokes expands it (`smoke-http.test.sh` reads them).
+  A library that is missing or does not parse exits 2 saying « introuvable ou invalide », with bash's own error left on stderr
+  (#748, C6-7); the production audit, with the variable undefined, never reads it.
+  Its redirection probes (section 3) leave without the Basic Auth (`CURL_OPTS_ANONYMOUS`): curl sends `Authorization: Basic`
+  on the first request whatever the scheme, so a `-K` there would put the preprod credential in clear on `http://` (#750, R115).
+  Offline test: `tools/tests/audit-prod.test.sh`, fake `dig`/`curl`/`openssl`.
   The smoke proves it on the real pod: an `initialize` on the public host (a 403 there
   means `allowed_hosts`, derived from `APP_FRONTEND_BASE_URL`, misses it), the session closed by `DELETE` (its
   status checked: a session left open stays an hour), a 16 KiB + 1 body refused in 413 with `Content-Length` then in

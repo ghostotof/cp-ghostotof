@@ -209,6 +209,16 @@ else
   fail "retour à la ligne dans AUDIT_BASIC_AUTH" "rc=$rc ; err : $(cat -A "$TMP/err") ; appels : $(cat "$TMP/newline.calls")"
 fi
 
+# --- Un secret de Basic Auth défini mais vide (le secret de préprod manquant) : sortie 2, « secret de
+# Basic Auth vide » sur stderr, aucun appel. Sans lui, chaque 401 de la préprod se lirait comme un résultat.
+AUDIT_BASIC_AUTH='' run vide "$toomany"
+if [ "$rc" -eq 2 ] && grep -q '^AUDIT_BASIC_AUTH : secret de Basic Auth vide' "$TMP/err" \
+   && [ ! -s "$TMP/vide.calls" ] && [ ! -s "$TMP/out" ]; then
+  pass "AUDIT_BASIC_AUTH vide → sortie 2, « secret de Basic Auth vide », aucun appel"
+else
+  fail "AUDIT_BASIC_AUTH vide" "rc=$rc ; err : $(cat -A "$TMP/err") ; appels : $(cat "$TMP/vide.calls")"
+fi
+
 # --- CR5-10 étendu : un curl en échec (réseau, DNS, délai) sort du contrat
 # 0/1/2 si le script laisse `set -e` rendre le code de curl (7, 6, 28). Il doit
 # sortir 1 et dire que RIEN n'a été vérifié, à la première tentative comme plus

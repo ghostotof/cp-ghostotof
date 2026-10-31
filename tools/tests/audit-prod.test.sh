@@ -49,19 +49,23 @@ copy_tools() {
   fi
 }
 
-# run <nom> : lance la copie $TMP/<nom>/tools/audit-prod.sh contre un domaine
-# qui n'existe pas (LC_ALL=C : bash dit « syntax error » en anglais quelle que soit la langue du poste) ; $rc, $TMP/<nom>.calls, $TMP/<nom>.err. TMPDIR est confiné
-# pour voir ce que le script laisse derrière lui.
-run() {
+# run <nom> : lance la copie $TMP/<nom>/tools/audit-prod.sh contre un domaine qui n'existe pas ;
+# $rc, $TMP/<nom>.calls, $TMP/<nom>.out, $TMP/<nom>.err. LC_ALL=C : bash dit « syntax error » en
+# anglais quelle que soit la langue du poste. TMPDIR est confiné pour voir ce que le script laisse
+# derrière lui. run_traced <nom> : le même environnement, sous `bash -x`.
+run_as() {
   local name="$1"
+  shift
   : > "$TMP/$name.calls"
   mkdir -p "$TMP/$name.tmpdir"
   set +e
   LC_ALL=C FAKE_CALLS="$TMP/$name.calls" TMPDIR="$TMP/$name.tmpdir" PATH="$TMP/bin:$PATH" \
-    "$TMP/$name/tools/audit-prod.sh" example.invalid >"$TMP/$name.out" 2>"$TMP/$name.err"
+    "$@" "$TMP/$name/tools/audit-prod.sh" example.invalid >"$TMP/$name.out" 2>"$TMP/$name.err"
   rc=$?
   set -e
 }
+run() { run_as "$1"; }
+run_traced() { run_as "$1" bash -x; }
 
 # --- C6-7 : sans AUDIT_BASIC_AUTH, la bibliothèque de la Basic Auth n'est pas
 # sourcée du tout : une smoke-http.sh invalide ne change rien à l'audit (il court
@@ -191,13 +195,7 @@ fi
 # la trace (le test de présence ne la développe pas, la bibliothèque la lit sous
 # `set +x`). Valeur fictive, sans le mot « secret ».
 copy_tools traced reelle
-mkdir -p "$TMP/traced.tmpdir"
-: > "$TMP/traced.calls"
-set +e
-AUDIT_BASIC_AUTH='trace-user:trace-pass-value' LC_ALL=C FAKE_CALLS="$TMP/traced.calls" \
-  TMPDIR="$TMP/traced.tmpdir" PATH="$TMP/bin:$PATH" \
-  bash -x "$TMP/traced/tools/audit-prod.sh" example.invalid >"$TMP/traced.out" 2>"$TMP/traced.err"
-set -e
+AUDIT_BASIC_AUTH='trace-user:trace-pass-value' run_traced traced
 if [ -s "$TMP/traced.err" ] && grep -q 'curl-auth.conf' "$TMP/traced.err" \
    && ! grep -qF -e 'trace-pass-value' -e 'trace-user' "$TMP/traced.err" "$TMP/traced.out"; then
   pass "bash -x : la valeur de AUDIT_BASIC_AUTH n'apparaît ni dans la trace ni dans la sortie"
@@ -205,34 +203,40 @@ else
   fail "valeur tracée" "$(grep -nF -e 'trace-' "$TMP/traced.err" | head -3)"
 fi
 
-# --- Décision 3 de la neuvième série (CR9-8, C9-6) : AUDIT_BASIC_AUTH posée mais vide
-# (le secret de préprod manquant) arrête l'audit : sortie 2, « secret de Basic Auth
-# vide » sur stderr, aucun appel à dig/curl/openssl, aucun dossier dans TMPDIR. Un audit
-# qui courait sans Basic Auth lisait le 401 de la préprod comme des dizaines d'échecs.
+# --- Décisions 3 de la neuvième série et 4 de la dixième (smoke_require_auth_config) : AUDIT_BASIC_AUTH
+# posée mais vide (le secret de préprod manquant) arrête l'audit : sortie 2, « secret de Basic Auth
+# vide » sur stderr, aucun appel à dig/curl/openssl, aucun dossier dans TMPDIR. Un audit sans Basic Auth
+# lirait le 401 de la préprod comme des dizaines d'échecs.
 copy_tools vide reelle
 AUDIT_BASIC_AUTH='' run vide
 if [ "$rc" -eq 2 ] && grep -q 'AUDIT_BASIC_AUTH : secret de Basic Auth vide' "$TMP/vide.err" \
    && [ ! -s "$TMP/vide.calls" ] && [ -z "$(ls -A "$TMP/vide.tmpdir")" ] && [ ! -s "$TMP/vide.out" ]; then
   pass "AUDIT_BASIC_AUTH vide : sortie 2, « secret de Basic Auth vide », aucun appel, aucun dossier"
 else
-  fail "AUDIT_BASIC_AUTH vide" "rc=$rc ; err : $(cat "$TMP/vide.err") ; appels : $(head -3 "$TMP/vide.calls") ; TMPDIR : $(ls -A "$TMP/vide.tmpdir")"
+  fail "AUDIT_BASIC_AUTH vide" "rc=$rc ; err : $(cat "$TMP/vide.err") ; appels : $(head -3 "$TMP/vide.calls")"
 fi
 
 # Le même sous `bash -x` : la trace ne porte de la variable que son nom (le test de
 # présence ne la développe pas, le vide est jugé sur le chemin du fichier).
 copy_tools videtraced reelle
-mkdir -p "$TMP/videtraced.tmpdir"
-: > "$TMP/videtraced.calls"
-set +e
-AUDIT_BASIC_AUTH='' LC_ALL=C FAKE_CALLS="$TMP/videtraced.calls" TMPDIR="$TMP/videtraced.tmpdir" PATH="$TMP/bin:$PATH" \
-  bash -x "$TMP/videtraced/tools/audit-prod.sh" example.invalid >"$TMP/videtraced.out" 2>"$TMP/videtraced.err"
-vide_rc=$?
-set -e
-if [ "$vide_rc" -eq 2 ] && grep -q 'secret de Basic Auth vide' "$TMP/videtraced.err" \
+AUDIT_BASIC_AUTH='' run_traced videtraced
+if [ "$rc" -eq 2 ] && grep -q 'secret de Basic Auth vide' "$TMP/videtraced.err" \
    && ! grep -qE 'AUDIT_BASIC_AUTH=|AUDIT_BASIC_AUTH:-' "$TMP/videtraced.err" "$TMP/videtraced.out"; then
   pass "AUDIT_BASIC_AUTH vide sous bash -x : sortie 2, rien de la variable que son nom dans la trace"
 else
-  fail "AUDIT_BASIC_AUTH vide tracée" "rc=$vide_rc ; $(grep -n 'AUDIT_BASIC_AUTH' "$TMP/videtraced.err" | head -5)"
+  fail "AUDIT_BASIC_AUTH vide tracée" "rc=$rc ; $(grep -n 'AUDIT_BASIC_AUTH' "$TMP/videtraced.err" | head -5)"
+fi
+
+# Une valeur sans « : » (un identifiant sans mot de passe, ou des blancs) : sortie 2 avant toute
+# requête, « sans « : » », la valeur ni dans la sortie ni dans la trace.
+copy_tools sansdeuxpoints reelle
+AUDIT_BASIC_AUTH='identifiant-seul' run_traced sansdeuxpoints
+if [ "$rc" -eq 2 ] && grep -q 'AUDIT_BASIC_AUTH : Basic Auth sans « : »' "$TMP/sansdeuxpoints.err" \
+   && [ ! -s "$TMP/sansdeuxpoints.calls" ] && [ -z "$(ls -A "$TMP/sansdeuxpoints.tmpdir")" ] \
+   && ! grep -qF 'identifiant-seul' "$TMP/sansdeuxpoints.out" "$TMP/sansdeuxpoints.err"; then
+  pass "AUDIT_BASIC_AUTH sans « : » : sortie 2, aucun appel, aucun dossier, valeur ni citée ni tracée"
+else
+  fail "AUDIT_BASIC_AUTH sans « : »" "rc=$rc ; err : $(grep -v 'identifiant-seul' "$TMP/sansdeuxpoints.err" | head -3)"
 fi
 
 # --- C6-8 : le `trap` est posé AVANT la création du fichier : un arrêt entre les

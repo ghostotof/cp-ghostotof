@@ -29,7 +29,8 @@
 #
 # Usage :  tools/smoke-login-throttling.sh <url-de-base>
 #          ex. tools/smoke-login-throttling.sh https://preprod.cp-ghostotof.com
-# Env :    AUDIT_BASIC_AUTH  "utilisateur:mot_de_passe" (préprod), optionnel.
+# Env :    AUDIT_BASIC_AUTH  "utilisateur:mot_de_passe" (préprod), optionnel : non définie, aucune
+#                            Basic Auth ; définie mais vide, ou sans « : », sortie 2.
 #                            Jamais via `-u` : les arguments d'un processus se
 #                            lisent dans `ps` ; le couple passe par un fichier
 #                            de configuration curl en 600 (comme audit-prod.sh).
@@ -58,9 +59,11 @@ username="smoke-throttling-probe-$(date +%s)-$$"
 headers_file="$(mktemp)"
 trap 'rm -f "$headers_file"; smoke_cleanup' EXIT
 
-# Basic Auth : `smoke_write_auth_config` et `smoke_fetch` (en-tête de tools/lib/smoke-http.sh).
+# Basic Auth : `smoke_write_auth_config` écrit le fichier `-K`, `smoke_require_auth_config` refuse un secret
+# défini mais vide, `smoke_fetch` le lit (tools/lib/smoke-http.sh).
 SMOKE_CURL_OPTS=(-sS --connect-timeout 5 --max-time 15 -D "$headers_file")
 smoke_write_auth_config AUDIT_BASIC_AUTH || exit 2
+smoke_require_auth_config AUDIT_BASIC_AUTH || exit 2
 
 # Le `detail` littéral de LoginRateLimitExceededException (backend) : le
 # second discriminant face à la zone nginx, dont le 429 dit « Trop de

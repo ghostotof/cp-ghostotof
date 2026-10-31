@@ -296,6 +296,16 @@ else
   fail "mode du fichier -K" "mode : $(cat "$TMP/kfile.kmode" 2>&1)"
 fi
 
+# --- Un secret de Basic Auth défini mais vide (le secret de préprod manquant) : sortie 2, « secret de
+# Basic Auth vide » sur stderr, aucun appel. Sans lui, chaque 401 de la préprod se lirait comme un résultat.
+AUDIT_BASIC_AUTH='' run vide "$witness_ok" "$public_ok" "$me_cleared"
+if [ "$rc" -eq 2 ] && grep -q '^AUDIT_BASIC_AUTH : secret de Basic Auth vide' "$TMP/err" \
+   && [ ! -s "$TMP/vide.calls" ] && [ ! -s "$TMP/out" ]; then
+  pass "AUDIT_BASIC_AUTH vide → sortie 2, « secret de Basic Auth vide », aucun appel"
+else
+  fail "AUDIT_BASIC_AUTH vide" "rc=$rc ; err : $(cat -A "$TMP/err") ; appels : $(cat "$TMP/vide.calls")"
+fi
+
 # --- C5-7 : un retour à la ligne dans la Basic Auth ouvrirait une seconde
 # directive dans le fichier -K (`url = …`) : refus, sortie 2 (erreur
 # d'environnement), aucun appel, la valeur n'est jamais citée.

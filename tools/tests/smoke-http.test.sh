@@ -216,6 +216,80 @@ else
   fail "vide après posée" "config : [$SMOKE_AUTH_CONFIG] ; fichiers : $(ls -A "$TMP/tmpdir")"
 fi
 
+# --- Décision 4 de la dixième série : smoke_require_auth_config <nom> juge le vide après
+# smoke_write_auth_config. Définie et vide : retour 2 et « secret de Basic Auth vide » ;
+# non définie : 0 (l'audit de la prod, un smoke local) ; définie et pleine : 0.
+UNE_AUTH=""
+smoke_write_auth_config UNE_AUTH
+rc=0
+smoke_require_auth_config UNE_AUTH > "$TMP/stdout" 2> "$TMP/stderr" || rc=$?
+if [ "$rc" -eq 2 ] && grep -q '^UNE_AUTH : secret de Basic Auth vide' "$TMP/stderr" && [ ! -s "$TMP/stdout" ]; then
+  pass "smoke_require_auth_config : variable définie et vide → retour 2, « secret de Basic Auth vide »"
+else
+  fail "smoke_require_auth_config (vide)" "rc=$rc ; stderr : $(cat -A "$TMP/stderr")"
+fi
+unset UNE_AUTH
+smoke_write_auth_config UNE_AUTH
+rc=0
+smoke_require_auth_config UNE_AUTH > "$TMP/stdout" 2> "$TMP/stderr" || rc=$?
+if [ "$rc" -eq 0 ] && [ ! -s "$TMP/stdout" ] && [ ! -s "$TMP/stderr" ]; then
+  pass "smoke_require_auth_config : variable non définie → retour 0, rien dit"
+else
+  fail "smoke_require_auth_config (non définie)" "rc=$rc ; stderr : $(cat -A "$TMP/stderr")"
+fi
+UNE_AUTH='u:p'
+smoke_write_auth_config UNE_AUTH
+rc=0
+smoke_require_auth_config UNE_AUTH > "$TMP/stdout" 2> "$TMP/stderr" || rc=$?
+if [ "$rc" -eq 0 ] && [ ! -s "$TMP/stdout" ] && [ ! -s "$TMP/stderr" ]; then
+  pass "smoke_require_auth_config : variable pleine écrite → retour 0"
+else
+  fail "smoke_require_auth_config (pleine)" "rc=$rc ; stderr : $(cat -A "$TMP/stderr")"
+fi
+smoke_cleanup
+for bad_name in SMOKE_AUTH_DIR _smoke_x '1abc' "$hostile"; do
+  rc=0
+  smoke_require_auth_config "$bad_name" > "$TMP/stdout" 2> "$TMP/stderr" || rc=$?
+  if [ "$rc" -eq 2 ] && [ ! -e "$TMP/pwned" ] && grep -q '^smoke_require_auth_config : nom de variable invalide' "$TMP/stderr"; then
+    pass "smoke_require_auth_config : nom invalide ($bad_name) → retour 2, aucune commande exécutée"
+  else
+    fail "smoke_require_auth_config : nom invalide" "nom : $bad_name ; rc=$rc ; stderr : $(cat -A "$TMP/stderr")"
+  fi
+  rm -f "$TMP/pwned"
+done
+# Sous `set -x`, ni l'une ni l'autre ne laisse la valeur dans la trace (le test ne la développe pas).
+UNE_AUTH='traced-user:traced-pass-value'
+rc=0
+( set -x; smoke_write_auth_config UNE_AUTH; smoke_require_auth_config UNE_AUTH; in_rc=$?; smoke_cleanup; exit "$in_rc" ) \
+  > /dev/null 2> "$TMP/trace" || rc=$?
+if [ "$rc" -eq 0 ] && [ -s "$TMP/trace" ] && ! grep -qF -e 'traced-pass-value' -e 'traced-user' "$TMP/trace"; then
+  pass "smoke_require_auth_config sous set -x : la valeur n'apparaît pas dans la trace"
+else
+  fail "smoke_require_auth_config tracée" "rc=$rc ; $(grep -F 'traced-' "$TMP/trace" | head -3)"
+fi
+
+# --- Une valeur non vide sans « : » (ou faite de blancs) ne donne pas un identifiant : retour 2,
+# « sans « : » » nommant la variable, aucun dossier, la valeur jamais citée, ni imprimée sous set -x.
+for colonless in 'seulementutilisateur' '   '; do
+  UNE_AUTH="$colonless"
+  rc=0
+  smoke_write_auth_config UNE_AUTH > "$TMP/stdout" 2> "$TMP/stderr" || rc=$?
+  if [ "$rc" -eq 2 ] && grep -q '^UNE_AUTH : Basic Auth sans « : »' "$TMP/stderr" && [ ! -s "$TMP/stdout" ] \
+     && [ -z "$(ls -A "$TMP/tmpdir")" ] && [ -z "$SMOKE_AUTH_CONFIG" ] && ! grep -qF 'seulementutilisateur' "$TMP/stderr"; then
+    pass "smoke_write_auth_config : valeur sans « : » (${#colonless} caractères) → retour 2, aucun dossier, valeur jamais citée"
+  else
+    fail "smoke_write_auth_config : valeur sans « : »" "rc=$rc ; stderr : $(cat -A "$TMP/stderr") ; fichiers : $(ls -A "$TMP/tmpdir")"
+  fi
+done
+UNE_AUTH='seulementutilisateur'
+( set -x; smoke_write_auth_config UNE_AUTH || true ) > /dev/null 2> "$TMP/trace"
+if grep -q 'sans « : »' "$TMP/trace" && ! grep -qF 'seulementutilisateur' "$TMP/trace"; then
+  pass "smoke_write_auth_config : le refus d'une valeur sans « : » ne laisse pas la valeur dans la trace set -x"
+else
+  fail "valeur sans « : » tracée" "$(grep -F 'seulement' "$TMP/trace" | head -3)"
+fi
+unset UNE_AUTH
+
 # --- CR8-5 : une variable qui porte un nom courant (`name`, `value`, `rc`, `traced`,
 # `saved_umask`, `empty`) est lue pour ce qu'elle est, jamais masquée par une locale
 # de la fonction (les siennes portent le préfixe `_smoke_`).
@@ -425,7 +499,9 @@ TOOLS_DIR="$(dirname "$(dirname "$LIB")")"
 joined_calls() {
   sed -e ':a' -e '/\\$/{N;s/\\\n//;ba' -e '}' "$1" | grep 'smoke_fetch' || true
 }
-for script in "$TOOLS_DIR"/*.sh; do joined_calls "$script" | sed "s|^|$(basename "$script"): |"; done | grep -F '|| exit 1' > "$TMP/exit1" || true
+for script in "$TOOLS_DIR"/*.sh; do
+  joined_calls "$script" | sed "s|^|$(basename "$script"): |"
+done | grep -F '|| exit 1' > "$TMP/exit1" || true
 if [ ! -s "$TMP/exit1" ]; then
   pass "aucun appel de smoke_fetch n'est suivi de « || exit 1 »"
 else
@@ -438,6 +514,21 @@ for caller in smoke-dead-session-cookie smoke-login-throttling smoke-mcp; do
     fail "$caller.sh" "aucun smoke_fetch suivi de || exit \"\$?\""
   fi
 done
+
+# --- Aucune ligne de commande de l'audit ni des trois smokes ne développe AUDIT_BASIC_AUTH :
+# le secret n'est lu que par la bibliothèque, sous `set +x`. Un test de présence écrit
+# `[ -z "$AUDIT_BASIC_AUTH" ]` trace `'[' -z '' ']'` comme le test juste : aucun cas ne le voit
+# sous `bash -x`, seule la lecture du source le voit. Les lignes de commentaire sont écartées.
+leaks=""
+for script in audit-prod smoke-dead-session-cookie smoke-login-throttling smoke-mcp; do
+  leaks+="$(grep -nvE '^[[:space:]]*#' "$TOOLS_DIR/$script.sh" \
+    | grep -E '\$\{?AUDIT_BASIC_AUTH|!AUDIT_BASIC_AUTH' | sed "s|^|$script.sh:|" || true)"
+done
+if [ -z "$leaks" ]; then
+  pass "aucune ligne de commande de l'audit ni des smokes ne développe AUDIT_BASIC_AUTH"
+else
+  fail "AUDIT_BASIC_AUTH développée" "$leaks"
+fi
 
 # --- Sans SMOKE_CURL, c'est `curl` du PATH : le faux est placé en tête.
 mkdir "$TMP/bin"; cp "$TMP/curl" "$TMP/bin/curl"

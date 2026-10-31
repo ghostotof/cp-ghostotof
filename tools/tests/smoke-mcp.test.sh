@@ -299,6 +299,16 @@ else
   fail "retour à la ligne dans AUDIT_BASIC_AUTH" "rc=$rc ; err : $(cat -A "$TMP/err") ; appels : $(cat "$TMP/newline.calls")"
 fi
 
+# --- Un secret de Basic Auth défini mais vide (le secret de préprod manquant) : sortie 2, « secret de
+# Basic Auth vide » sur stderr, aucun appel. Sans lui, chaque 401 de la préprod se lirait comme un résultat.
+AUDIT_BASIC_AUTH='' run vide "$init"
+if [ "$rc" -eq 2 ] && grep -q '^AUDIT_BASIC_AUTH : secret de Basic Auth vide' "$TMP/err" \
+   && [ ! -s "$TMP/vide.calls" ] && [ ! -s "$TMP/out" ]; then
+  pass "AUDIT_BASIC_AUTH vide → sortie 2, « secret de Basic Auth vide », aucun appel"
+else
+  fail "AUDIT_BASIC_AUTH vide" "rc=$rc ; err : $(cat -A "$TMP/err") ; appels : $(cat "$TMP/vide.calls")"
+fi
+
 # --- Sans URL : usage, code 2.
 set +e; "$SCRIPT" >/dev/null 2>"$TMP/err"; rc=$?; set -e
 if [ "$rc" -eq 2 ] && grep -q '^usage' "$TMP/err"; then pass "sans argument → usage, code 2"; else fail "usage" "rc=$rc"; fi
