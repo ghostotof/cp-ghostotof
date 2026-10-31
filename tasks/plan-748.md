@@ -7764,7 +7764,9 @@ jusqu'à la réponse périmée (le formulaire vidé par « Annuler » resterait 
     `exp.content` contient `;`, sinon l'expression `($event) => (texte)` — la règle de `vOn` de Vue 3.5, nommée dans le
     docblock.
 
-**Questions à l'auteur** (le plan suit chaque recommandation ; une autre réponse ne change que la tâche nommée).
+**Questions à l'auteur** (le plan suit chaque recommandation ; une autre réponse ne change que la tâche nommée). **Réponses de l'auteur
+(2026-10-31) : Q1 (A) `formIdentity`, Q2 (B) borner, Q3 garder les identifiants de tâche, Q4 (A) déclarer `@vue/compiler-dom`,
+Q5 (A) verrouiller — les cinq recommandations, le plan ne change pas.**
 
 - **Q1 (R124, St11-3) : l'identité du formulaire ou les appels gardés.** Recommandé : **(A)**, `formIdentity` — les
   24 appels disparaissent et un geste futur est couvert sans y penser ; son coût : un getter par formulaire et
