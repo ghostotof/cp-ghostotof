@@ -4,6 +4,7 @@ import { mount } from '@vue/test-utils'
 import { ADMIN_TRANSLATION_REPOSITORY } from '../../../../src/application/admin/translation/useAdminTranslation'
 import type { AdminTranslationRepository } from '../../../../src/domain/admin/translation/repositories/AdminTranslationRepository'
 import type { TranslationProposal } from '../../../../src/domain/admin/translation/entities/TranslationProposal'
+import { AdminTranslationError } from '../../../../src/domain/admin/translation/errors/AdminTranslationError'
 import type { Locale } from '../../../../src/domain/portfolio/entities/Locale'
 import {
   proseFieldId,
@@ -16,9 +17,9 @@ const HINT = `${PREFIX}-prose-readonly-hint`
 const PROPOSAL: TranslationProposal = { sourceLocale: 'fr', targetLocale: 'en', fields: { title: 'Outage' } }
 
 /** Monte le composable dans un hôte, avec un dépôt dont la réponse attend `release()`. */
-function mountTranslatedForm(options: Partial<UseTranslatedFormOptions> = {}) {
+function mountTranslatedForm(options: Partial<UseTranslatedFormOptions> = {}, failing?: AdminTranslationRepository) {
   let release!: (proposal: TranslationProposal) => void
-  const repository: AdminTranslationRepository = {
+  const repository: AdminTranslationRepository = failing ?? {
     translate: vi.fn(() => new Promise<TranslationProposal>((resolve) => { release = resolve })),
   }
   let captured: ReturnType<typeof useTranslatedForm> | undefined
@@ -112,5 +113,31 @@ describe('useTranslatedForm', () => {
 
     release(PROPOSAL)
     expect(await pending).toBeNull()
+  })
+
+  it("renewForm() périme la traduction en vol, même si l'entrée, la langue et le groupe sont inchangés (#748, R139)", async () => {
+    const { form, release } = mountTranslatedForm()
+
+    const pending = form.translate('fr', 'en', { title: 'Panne' })
+    expect(form.isTranslating.value).toBe(true)
+
+    form.renewForm()
+    expect(form.isTranslating.value).toBe(false)
+
+    release(PROPOSAL)
+    expect(await pending).toBeNull()
+  })
+
+  it("renewForm() efface l'échec d'une traduction (#748, R139)", async () => {
+    const repository: AdminTranslationRepository = {
+      translate: vi.fn(async () => { throw new AdminTranslationError('unavailable', 'Indisponible.') }),
+    }
+    const { form } = mountTranslatedForm({}, repository)
+
+    await form.translate('fr', 'en', { title: 'Panne' })
+    expect(form.errorReason.value).toBe('unavailable')
+
+    form.renewForm()
+    expect(form.errorReason.value).toBeNull()
   })
 })

@@ -1,4 +1,4 @@
-import { computed, inject, readonly, ref, watch, type InjectionKey, type Ref } from 'vue'
+import { computed, getCurrentScope, inject, readonly, ref, watch, type EffectScope, type InjectionKey, type Ref } from 'vue'
 import type { Locale } from '../../../domain/portfolio/entities/Locale'
 import type { TranslationProposal, TranslationFields } from '../../../domain/admin/translation/entities/TranslationProposal'
 import { sameFormIdentity, type FormIdentity } from '../../../domain/admin/translation/entities/FormIdentity'
@@ -26,7 +26,10 @@ export interface UseAdminTranslationResult {
    * composable tient seul, n'en fait pas partie : `isTranslating` et `isDiscardPending` la disent.
    */
   isRefused: Readonly<Ref<boolean>>
-  /** La raison de l'échec de la dernière traduction, tant que le formulaire a l'identité qu'il avait à son échec. */
+  /**
+   * La raison de l'échec de la dernière traduction. Effacée à tout changement d'identité du formulaire et à la traduction
+   * suivante, jamais rendue par un retour à l'identité de l'échec : « Modifier » A (échec), B, puis A n'affiche rien.
+   */
   errorReason: Readonly<Ref<AdminTranslationErrorReason | null>>
   translate: (sourceLocale: Locale, targetLocale: Locale, fields: TranslationFields) => Promise<TranslationProposal | null>
   /**
@@ -48,10 +51,12 @@ export interface UseAdminTranslationOptions {
    * Ce qui fait l'identité du formulaire (`FormIdentity`) : l'entrée éditée, la langue, le groupe source, la génération.
    * Comparée champ par champ (`sameFormIdentity`) ; dès que le formulaire n'a plus l'identité relevée à l'envoi, la traduction en vol est
    * périmée pour de bon, même s'il la retrouve ensuite, quel que soit le geste qui l'a remplacé (« Annuler »,
-   * « Modifier » une autre entrée, « Créer la version XX », un changement de langue) : `isTranslating` retombe
-   * aussitôt et la réponse rend `null`. Rouvrir la même entrée ne change rien au formulaire : rien n'est périmé.
-   * La prose n'en fait pas partie : la page la met en lecture seule pendant la traduction, et la raison d'un échec ne
-   * disparaît que par un changement d'identité ou la traduction suivante, pas par la frappe qui corrige la prose.
+   * « Modifier » une autre entrée, « Créer la version XX », un changement de langue, toute remise à zéro du formulaire, qui
+   * fait avancer la génération) : `isTranslating` retombe aussitôt et la réponse rend `null`. Rouvrir la même entrée ne
+   * change rien au formulaire : rien n'est périmé. Ce que l'identité ne voit pas — la suppression de l'entrée éditée —,
+   * `discard()` le périme. La prose n'en fait pas partie : la page la met en lecture seule pendant la traduction, et la
+   * raison d'un échec ne disparaît que par un changement d'identité ou la traduction suivante, pas par la frappe qui
+   * corrige la prose.
    */
   readonly formIdentity?: () => FormIdentity
 }
@@ -96,15 +101,38 @@ export function useAdminTranslation(options: UseAdminTranslationOptions = {}): U
   // Un appel au dépôt est parti et n'a pas répondu, périmé ou non : `AbortSignal` écarté, l'appel déjà parti côté serveur
   // coûte ce qu'il coûte, et le borner à un par formulaire borne ce coût.
   const isAnyCallRunning = ref(false)
-  const failure = ref<{ readonly reason: AdminTranslationErrorReason; readonly identity: FormIdentity | null } | null>(null)
+  const failure = ref<AdminTranslationErrorReason | null>(null)
   const requests = createStaleRequestGuard()
 
   const isTranslating = readonly(isAwaitingCurrent)
   const isDiscardPending = computed(() => isAnyCallRunning.value && !isAwaitingCurrent.value)
   const isRefused = computed(() => options.isRefused?.() ?? false)
-  const errorReason = computed(() =>
-    null !== failure.value && isSameIdentity(failure.value.identity, identity.value) ? failure.value.reason : null,
-  )
+  // L'échec n'est rendu qu'à l'identité où il est né : le guetteur d'identité l'efface à tout changement (voir `translate`).
+  const errorReason = readonly(failure)
+  // La portée du composant : le guetteur d'identité, né plus tard, s'y arrête avec lui.
+  const scope: EffectScope | undefined = getCurrentScope()
+  let isWatchingIdentity = false
+
+  /**
+   * Un changement d'identité du formulaire périme la traduction en vol pour de bon, même si le formulaire retrouve ensuite
+   * la même, et efface l'échec : la personne est passée par un autre formulaire, ce que `discard()` fait déjà. Le guetteur
+   * naît à la première traduction, pas au montage : la page déclare le composable avant son formulaire, que l'identité
+   * lit. Il reste ensuite, car l'échec d'une traduction survit à l'appel qui l'a posé.
+   */
+  function watchIdentity(): void {
+    if (isWatchingIdentity || (undefined !== scope && !scope.active)) {
+      return
+    }
+    isWatchingIdentity = true
+    const start = (): void => {
+      watch(identity, () => discard(), { flush: 'sync' })
+    }
+    if (undefined === scope) {
+      start()
+    } else {
+      scope.run(start)
+    }
+  }
 
   const translate = async (
     sourceLocale: Locale,
@@ -116,22 +144,10 @@ export function useAdminTranslation(options: UseAdminTranslationOptions = {}): U
     }
 
     const token = requests.begin()
-    const sentIdentity = identity.value
     isAnyCallRunning.value = true
     isAwaitingCurrent.value = true
     failure.value = null
-    // Le formulaire qui change d'identité pendant le vol périme la traduction pour de bon, même s'il retrouve ensuite
-    // la même : la personne est passée par un autre formulaire. Le guetteur naît ici, pas au montage : la page
-    // déclare le composable avant son formulaire, que l'identité lit.
-    const stopWatching = watch(
-      identity,
-      () => {
-        if (requests.isCurrent(token)) {
-          discard()
-        }
-      },
-      { flush: 'sync' },
-    )
+    watchIdentity()
 
     try {
       const proposal = await repository.translate(sourceLocale, targetLocale, fields)
@@ -145,10 +161,9 @@ export function useAdminTranslation(options: UseAdminTranslationOptions = {}): U
       // Une session finie ne pose aucune raison : le bandeau de session finie l'annonce seul (#748).
       const reason =
         visibleMutationError(error, AdminTranslationError, () => new AdminTranslationError('unknown', 'Unknown error'))?.reason ?? null
-      failure.value = null === reason ? null : { reason, identity: sentIdentity }
+      failure.value = reason
       return null
     } finally {
-      stopWatching()
       isAnyCallRunning.value = false
       // Une traduction périmée ne touche plus l'état : `discard()` l'a déjà rendu.
       if (requests.isCurrent(token)) {

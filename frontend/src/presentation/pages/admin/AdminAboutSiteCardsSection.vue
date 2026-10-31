@@ -73,6 +73,7 @@ const {
   errorReason: translationErrorReason,
   translate,
   discard: discardTranslation,
+  renewForm,
   proseReadonlyHintId,
   translationHintId,
   proseFieldAttrs,
@@ -192,6 +193,8 @@ const translationOptions = computed(() => [
 ])
 
 function resetForm(): void {
+  // Avant toute écriture : une remise à zéro change la génération du formulaire, que la traduction en vol lit (R139).
+  renewForm()
   editingId.value = null
   proposalSourceLocale.value = null
   sourceGroup.value = null

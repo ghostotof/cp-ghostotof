@@ -1,4 +1,4 @@
-import { computed, type Ref } from 'vue'
+import { computed, ref, type Ref } from 'vue'
 import {
   useAdminTranslation,
   type UseAdminTranslationResult,
@@ -23,7 +23,8 @@ export interface UseTranslatedFormOptions {
   readonly hintIdPrefix: string
   /**
    * Ce qui fait l'identité du formulaire : l'entrée éditée, la langue, le groupe source (`FormIdentity` moins sa
-   * génération, que le composable pose). Lu par `useAdminTranslation`, qui périme la traduction en vol quand elle change.
+   * génération, que le composable pose : `renewForm()`). Lu par `useAdminTranslation`, qui périme la traduction en vol et
+   * efface l'échec quand elle change.
    */
   readonly identity: () => Omit<FormIdentity, 'generation'>
   /** Vrai quand la page ne veut aucune traduction (`useAdminTranslation`, `isRefused`) : ne dépend que de sources réactives. */
@@ -31,6 +32,14 @@ export interface UseTranslatedFormOptions {
 }
 
 export interface UseTranslatedFormResult extends UseAdminTranslationResult {
+  /**
+   * Fait avancer la génération du formulaire : à appeler en premier par **chaque** remise à zéro du formulaire
+   * (`resetForm()`, `resetPrincipleForm()`, `resetTraitForm()`…). Une remise à zéro ne change ni l'entrée, ni la langue, ni le
+   * groupe d'un formulaire déjà vierge, et la réponse d'une traduction partie avant elle poserait sa proposition sur le
+   * formulaire vidé : la génération, elle, change, et périme la traduction en vol comme elle efface l'échec (`discard()`
+   * reste pour ce qu'aucune identité ne voit, la suppression de l'entrée éditée).
+   */
+  readonly renewForm: () => void
   /** Identifiant du texte d'aide de la prose (`TranslationReadonlyHint`), rendu seulement pendant la traduction. */
   readonly proseReadonlyHintId: string
   /** Identifiant du texte de l'attente après « Annuler » (`TranslateEntryButton`, `hintId`). */
@@ -54,11 +63,15 @@ export interface UseTranslatedFormResult extends UseAdminTranslationResult {
  * champs de prose (`proseFields.ts`), la proposition qu'elle pose, la suppression d'une entrée (`discard`).
  */
 export function useTranslatedForm(options: UseTranslatedFormOptions): UseTranslatedFormResult {
+  // Le numéro du formulaire : une remise à zéro le fait avancer, et rien d'autre (voir `renewForm`).
+  const generation = ref(0)
   const translation = useAdminTranslation({
     isRefused: options.isRefused,
-    // La génération du formulaire n'existe pas encore : toute identité en porte la même.
-    formIdentity: () => ({ ...options.identity(), generation: 0 }),
+    formIdentity: () => ({ ...options.identity(), generation: generation.value }),
   })
+  const renewForm = (): void => {
+    generation.value += 1
+  }
 
   const proseReadonlyHintId = `${options.hintIdPrefix}-prose-readonly-hint`
   const translationHintId = `${options.hintIdPrefix}-translation-hint`
@@ -69,5 +82,5 @@ export function useTranslatedForm(options: UseTranslatedFormOptions): UseTransla
     'aria-describedby': describedBy(helpId, proseDescribedBy.value),
   })
 
-  return { ...translation, proseReadonlyHintId, translationHintId, proseDescribedBy, proseFieldAttrs }
+  return { ...translation, renewForm, proseReadonlyHintId, translationHintId, proseDescribedBy, proseFieldAttrs }
 }

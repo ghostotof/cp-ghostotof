@@ -114,6 +114,7 @@ const {
   errorReason: principleTranslationErrorReason,
   translate: translatePrinciple,
   discard: discardPrincipleTranslation,
+  renewForm: renewPrincipleForm,
   proseReadonlyHintId: principleProseReadonlyHintId,
   translationHintId: principleTranslationHintId,
   proseFieldAttrs: principleProseFieldAttrs,
@@ -135,6 +136,7 @@ const {
   errorReason: traitTranslationErrorReason,
   translate: translateTrait,
   discard: discardTraitTranslation,
+  renewForm: renewTraitForm,
   proseReadonlyHintId: traitProseReadonlyHintId,
   translationHintId: traitTranslationHintId,
   proseFieldAttrs: traitProseFieldAttrs,
@@ -344,6 +346,8 @@ const traitTranslationOptions = computed(() => [
 ])
 
 function resetPrincipleForm(): void {
+  // Avant toute écriture : une remise à zéro change la génération du formulaire, que la traduction en vol lit (R139).
+  renewPrincipleForm()
   editingPrincipleId.value = null
   principleProposalSourceLocale.value = null
   principleSourceGroup.value = null
@@ -355,6 +359,8 @@ function resetPrincipleForm(): void {
 }
 
 function resetTraitForm(): void {
+  // Avant toute écriture : une remise à zéro change la génération du formulaire, que la traduction en vol lit (R139).
+  renewTraitForm()
   editingTraitId.value = null
   traitProposalSourceLocale.value = null
   traitSourceGroup.value = null

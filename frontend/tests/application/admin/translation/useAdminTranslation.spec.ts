@@ -302,6 +302,44 @@ describe('useAdminTranslation', () => {
     expect(await pending).toBeNull()
   })
 
+  it("une identité changée efface l'échec, un retour à elle ne le rend pas (#748, R139)", async () => {
+    const translate = vi.fn<AdminTranslationRepository['translate']>()
+      .mockRejectedValueOnce(new AdminTranslationError('unavailable', 'Indisponible.'))
+    const identity = ref(identityOf('a'))
+    const composable = mountWithComposable({ translate }, { formIdentity: () => identity.value })
+
+    await composable.translate('fr', 'en', FIELDS)
+    expect(composable.errorReason.value).toBe('unavailable')
+
+    identity.value = identityOf('b')
+    expect(composable.errorReason.value).toBeNull()
+
+    identity.value = identityOf('a')
+    expect(composable.errorReason.value).toBeNull()
+  })
+
+  it("une génération avancée efface l'échec, et périme la traduction en vol (#748, R139)", async () => {
+    let resolve!: (proposal: TranslationProposal) => void
+    const translate = vi.fn<AdminTranslationRepository['translate']>()
+      .mockRejectedValueOnce(new AdminTranslationError('unavailable', 'Indisponible.'))
+      .mockImplementationOnce(() => new Promise<TranslationProposal>((r) => { resolve = r }))
+    const identity = ref<FormIdentity>({ entry: null, locale: 'fr', group: null, generation: 0 })
+    const composable = mountWithComposable({ translate }, { formIdentity: () => identity.value })
+
+    await composable.translate('fr', 'en', FIELDS)
+    expect(composable.errorReason.value).toBe('unavailable')
+    identity.value = { ...identity.value, generation: 1 }
+    expect(composable.errorReason.value).toBeNull()
+
+    const pending = composable.translate('fr', 'en', FIELDS)
+    expect(composable.isTranslating.value).toBe(true)
+    identity.value = { ...identity.value, generation: 2 }
+    expect(composable.isTranslating.value).toBe(false)
+
+    resolve(PROPOSAL)
+    expect(await pending).toBeNull()
+  })
+
   it('une identité inchangée : la proposition est rendue (#748, R124)', async () => {
     let resolve!: (proposal: TranslationProposal) => void
     const translate = vi.fn<AdminTranslationRepository['translate']>(() => new Promise<TranslationProposal>((r) => { resolve = r }))

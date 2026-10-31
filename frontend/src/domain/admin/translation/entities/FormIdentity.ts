@@ -8,7 +8,8 @@ import type { Locale } from '../../../portfolio/entities/Locale'
  * - `entry` : l'entrée éditée, `null` pour une création ;
  * - `locale` : la langue du formulaire ;
  * - `group` : le groupe de traduction de la source (« Créer la version XX », une proposition), `null` sinon ;
- * - `generation` : le numéro du formulaire, que la remise à zéro fera avancer ; `0` tant qu'aucune ne le fait.
+ * - `generation` : le numéro du formulaire, que chaque remise à zéro fait avancer (`renewForm()` de `useTranslatedForm`) : un
+ *   formulaire vierge, remis à zéro, garde la même entrée, langue et groupe, et ne se distingue de l'ancien que par lui ; `0` au départ.
  */
 export interface FormIdentity {
   readonly entry: string | null

@@ -145,7 +145,9 @@ export interface EntryFormLockCase {
  *   réponse, ne lance rien ;
  * - « Annuler », « Modifier », « Créer la version XX », la suppression de l'entrée éditée et le changement de langue d'une
  *   création pendant une traduction en périment la réponse ;
- * - la prose est en lecture seule pendant une traduction et l'erreur d'un échec survit à la frappe.
+ * - un formulaire vierge enregistré pendant une traduction n'en reçoit pas la réponse (la génération du formulaire) ;
+ * - la prose est en lecture seule pendant une traduction ; l'erreur d'un échec survit à la frappe, et ne reparaît pas au retour
+ *   à l'entrée où elle est née.
  * Le support crée le dépôt de traduction de chaque cas, le passe à `mount` et compte ses appels. Écrits une fois pour les huit
  * formulaires : un cas de plus s'y ajoute une fois.
  */
@@ -492,6 +494,31 @@ export function describeEntryFormLock(lockCase: EntryFormLockCase): void {
     expect(proposalNotice(wrapper).exists()).toBe(false)
   })
 
+  // Un formulaire vierge enregistré pendant une traduction : l'enregistrement le remet à zéro sans changer l'entrée, la langue ni
+  // le groupe, et la réponse du modèle, arrivée après, ne doit rien poser sur ce formulaire vidé (la génération du formulaire).
+  it(`${prefix}un formulaire vierge enregistré pendant une traduction : la réponse ne pose rien`, async () => {
+    const translation = lockCase.createTranslation()
+    const wrapper = await lockCase.mount(translation)
+    await wrapper.get(`#${ids.title}`).setValue('Titre saisi')
+    const reply = deferNextTranslation(translation)
+
+    translateButtonComponent(wrapper).vm.$emit('translate', 'en')
+    await flushPromises()
+    await formOf(wrapper).trigger('submit.prevent')
+    await flushPromises()
+    reply.release()
+    await flushPromises()
+
+    expect(titleValue(wrapper)).toBe('')
+    for (const id of proseIds) {
+      expect((wrapper.get(`#${id}`).element as HTMLInputElement | HTMLTextAreaElement).value, `#${id}`).toBe('')
+    }
+    expect(proposalNotice(wrapper).exists()).toBe(false)
+    expect((wrapper.get(locale).element as HTMLSelectElement).value).toBe('fr')
+    expect(headingOf(wrapper)).toBe(lockCase.heading)
+    expect(translateEntryButton(wrapper, form).attributes('disabled')).toBeDefined()
+  })
+
   it(`${prefix}changer la langue d'une création pendant une traduction : la réponse ne pose rien`, async () => {
     const translation = lockCase.createTranslation()
     const wrapper = await lockCase.mount(translation)
@@ -578,6 +605,34 @@ export function describeEntryFormLock(lockCase: EntryFormLockCase): void {
     await flushPromises()
 
     expect(titleValue(wrapper)).toBe('Titre corrigé après l\'échec')
+    expect(formOf(wrapper).find('[role="alert"]').text()).toBe(TRANSLATION_UNAVAILABLE_TEXT)
+  })
+
+  // L'échec d'une traduction est effacé à tout changement d'identité du formulaire, et un retour à l'identité de l'échec ne le
+  // rend pas : « Modifier » A (échec), « Modifier » B, puis A ne montre aucune erreur. Une frappe, elle, ne l'efface pas.
+  it(`${prefix}une traduction en échec, une autre entrée ouverte, puis la première : aucune erreur`, async () => {
+    const translation = lockCase.createTranslation()
+    const wrapper = await lockCase.mount(translation)
+    await lockCase.startEdit(wrapper)
+    vi.mocked(translation.translate).mockRejectedValueOnce(new AdminTranslationError('unavailable', 'Indisponible.'))
+
+    translateButtonComponent(wrapper).vm.$emit('translate', 'en')
+    await flushPromises()
+    expect(formOf(wrapper).find('[role="alert"]').text()).toBe(TRANSLATION_UNAVAILABLE_TEXT)
+
+    await lockCase.startEditOther(wrapper)
+    expect(formOf(wrapper).find('[role="alert"]').exists()).toBe(false)
+    await lockCase.startEdit(wrapper)
+
+    expect(formOf(wrapper).find('[role="alert"]').exists()).toBe(false)
+
+    // Un nouvel échec sur la première entrée se montre, et la frappe qui suit ne l'efface pas.
+    vi.mocked(translation.translate).mockRejectedValueOnce(new AdminTranslationError('unavailable', 'Indisponible.'))
+    translateButtonComponent(wrapper).vm.$emit('translate', 'en')
+    await flushPromises()
+    await wrapper.get(`#${ids.title}`).setValue('Titre corrigé après le second échec')
+    await flushPromises()
+
     expect(formOf(wrapper).find('[role="alert"]').text()).toBe(TRANSLATION_UNAVAILABLE_TEXT)
   })
 }
