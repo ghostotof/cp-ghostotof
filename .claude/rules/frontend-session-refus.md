@@ -24,7 +24,8 @@ paths:
   verdict is judged by **session generation** (`frontend-session-retour.md`, « The session generation »), not « idempotent »: several lists of a page answering 401
   together leave under the same generation, the first end counts and the others announce nothing more. The registry lives
   in the module, so `infrastructure/` imports neither the session nor the router. The type (`BackofficeSessionReaction`
-  and the send stamp `{ session, account, refusal }`, `refusal` a `RefusalScope`: `{ kind: 'read', scope, epoch }` or `{ kind: 'write' }`, R38, R54) lives in `domain/admin/shared/`, which all three layers may import:
+  and the send stamp `{ session, account, refusal }`, `refusal` a `RefusalScope`: `{ kind: 'read', scope, epoch }` or
+  `{ kind: 'write' }`, R38, R54) lives in `domain/admin/shared/`, which all three layers may import:
   no `infrastructure/` file imports `application/` (R28).
 
 ## A real refusal (#748, R7)
@@ -70,27 +71,29 @@ account without `ROLE_TRUSTED` (one that lost it while the page was open), or fr
     a deleted account recreated under the same name passes for the same (accepted, C8, the `__Host-` ticket); `null` at
     send time then an account drops the refusal, with no path to it (the backoffice guard waits for the first check).
     The same account's 403 stays said across an end and a return, or a tier change; the generation judges `ended()` only.
-  - **the scope, for a read** (R28, CR3-8, R38): `get` stamps `readRefusalScope()` (`{ kind: 'read', scope, epoch }`), `mutate`
-    `{ kind: 'write' }`. The scope advances at every clearing of the alert, and only there: a path or query change
-    (the query's parameters sorted: vue-router runs a navigation that only permutes them, the alert ignores it, R54;
-    not the fragment alone: the skip link), an ended session, the alert's unmount. A read that left under another
-    scope came from a page left: `markBackofficeAccessRefused(sentIn, account)` answers `false`. A write carries no scope: the
-    person made the gesture and must learn it failed. A read also carries the **epoch**, which the alert's mount
-    advances (and nothing else): a read sent before the mount belongs to the landing page's load.
-  - **the alert's mount advances the epoch only, never the scope, and settles what was counted without an alert** (R64, decision 1 of the sixth
-    review, amending Q1 of the fifth): a read's refusal is forgotten (the tier was re-read), a **write**'s is shown with
-    its own text, `common.earlierSaveRefused` (« Un enregistrement précédent a été refusé par le serveur… »),
-    **only to the account that sent it** (R76, decision 2 of the seventh review: `markBackofficeAccessRefused(sentIn,
-    account)` keeps the write's account, the mount passes `lastAccountName()`, and another account at the mount resets
-    everything), the alert inserted after the mount so that it is announced (`frontend-a11y.md`); every read
-    **sent before the mount** — the landing page's load, stamped by its `setup` — keeps that text and re-announces it,
-    whenever it answers; **a backoffice page starts its load in `setup`** (or an `immediate` watcher), both stamped before
-    the alert's `onMounted` — a read sent from the page's own `onMounted` would carry the new epoch and say
-    `common.accessRefused` for the earlier save; `noLoadInOnMounted.spec.ts` refuses a load or a repository call in an
-    `onMounted` of `presentation/pages/admin` (R121, decision 1 of the eleventh review). Accepted, held by the review: a
-    read sent after an `await` before `get`, or by a sub-component rendered later by a `v-if`; any other refusal, read or
-    write, brings back `common.accessRefused` (R112, decision 3 of the tenth review, amending the letter of decision 1 of
-    the ninth: no load window, no counter).
+  - **the scope, for a read** (R28, CR3-8, R38): `get` stamps `stampBackofficeRead()` (`{ kind: 'read', scope, epoch }`; a
+    verb, since it also closes the landing load below), `mutate` `{ kind: 'write' }`. The scope advances at every clearing of
+    the alert, and only there: a path or query change (the query's parameters sorted: vue-router runs a navigation that only
+    permutes them, the alert ignores it, R54; not the fragment alone: the skip link), an ended session, the alert's unmount.
+    A read that left under another scope came from a page left: `markBackofficeAccessRefused(sentIn, account)` answers
+    `false`. A write carries no scope: the person made the gesture and must learn it failed. A read also carries the
+    **epoch**, which the alert's mount advances (and nothing else): a read sent before the mount belongs to the landing
+    page's load.
+  - **the alert's mount advances the epoch only, never the scope, and settles what was counted without an alert** (R64,
+    decision 1 of the sixth review, amending Q1 of the fifth): a read's refusal is forgotten (the tier was re-read), a
+    **write**'s is shown with its own text, `common.earlierSaveRefused` (« Un enregistrement précédent a été refusé par le
+    serveur… »), **only to the account that sent it** (R76, decision 2 of the seventh review:
+    `markBackofficeAccessRefused(sentIn, account)` keeps the write's account, the mount passes `lastAccountName()`, and
+    another account at the mount resets everything), the alert inserted after the mount so that it is announced
+    (`frontend-a11y.md`); every read **sent before the mount** — the landing page's load, stamped by its `setup` — keeps that
+    text and re-announces it until the first read sent after the mount (a « Réessayer », a re-read after a save) closes that
+    load (R122, Q2 of the eleventh review: the bound is a send, not a delay); **a backoffice page starts its load in
+    `setup`** (or an `immediate` watcher), both stamped before the alert's `onMounted` — a read sent from the page's own
+    `onMounted` would carry the new epoch and say `common.accessRefused` for the earlier save; `noLoadInOnMounted.spec.ts`
+    refuses a load or a repository call in an `onMounted` of `presentation/pages/admin` (R121, decision 1 of the eleventh
+    review). Accepted, held by the review: a read sent after an `await` before `get`, or by a sub-component rendered later by
+    a `v-if`; any other refusal, read or write, brings back `common.accessRefused` (R112, decision 3 of the tenth review,
+    amending the letter of decision 1 of the ninth: no load window, no counter).
 
   `useAdminLoad` (no `hasError`, nothing re-read on return) and `visibleMutationError` (`null`, the mutation resolves
   `false`, the input stays) keep it quiet like `SessionEndedError`; **one alert**, `AccessRefusedNotice` in

@@ -1,5 +1,5 @@
 import { lastAccountName, markSessionExpired, sessionStamp, type UseAuthResult } from '../../application/auth/useAuth'
-import { markBackofficeAccessRefused, readRefusalScope } from '../../application/admin/shared/backofficeAccessRefusal'
+import { markBackofficeAccessRefused, stampBackofficeRead } from '../../application/admin/shared/backofficeAccessRefusal'
 import type { BackofficeSendKind, BackofficeSendStamp, BackofficeSessionReaction } from '../../domain/admin/shared/BackofficeSessionReaction'
 
 /**
@@ -28,7 +28,8 @@ import type { BackofficeSendKind, BackofficeSendStamp, BackofficeSessionReaction
  * répond « anonyme ». **Une lecture refusée après une navigation ne compte pas** (R28) : le timbre de l'envoi
  * porte le périmètre de refus, que chaque effacement de l'alerte avance (chemin ou requête changés, fin de session,
  * démontage) ; le 403 d'une page quittée n'affiche aucune alerte sur la suivante et ne relit rien. Il porte aussi l'époque
- * de montage (R112) : une lecture partie avant le montage de l'alerte est du chargement de la page d'arrivée.
+ * de montage (R112) : une lecture partie avant le montage de l'alerte est du chargement de la page d'arrivée, que la
+ * première lecture estampillée après le montage clôt (R122, `stampBackofficeRead`).
  * **Une écriture refusée compte toujours** (R38) : le timbre porte `{ kind: 'write' }`, la
  * personne a fait le geste et doit apprendre son échec, au besoin sur la page où elle est allée ; le comptage **retient le
  * compte du timbre** (R76), et un refus dont le compte de l'envoi diffère de celui de la réception n'est ni compté ni relu, lecture ou
@@ -42,11 +43,12 @@ import type { BackofficeSendKind, BackofficeSendStamp, BackofficeSessionReaction
  */
 export function createBackofficeSessionReaction(auth: Pick<UseAuthResult, 'rereadAfterRefusal'>): BackofficeSessionReaction {
   return {
-    // Une écriture ne relève ni périmètre ni époque : son refus n'est jamais périmé (R38). Une lecture relève les deux (R112).
+    // Une écriture ne relève ni périmètre ni époque : son refus n'est jamais périmé (R38). Une lecture relève les deux (R112)
+    // et, estampillée après le montage, clôt le chargement de la page d'arrivée (R122).
     stampAtSend: (kind: BackofficeSendKind): BackofficeSendStamp => ({
       session: sessionStamp(),
       account: lastAccountName(),
-      refusal: 'write' === kind ? { kind: 'write' } : readRefusalScope(),
+      refusal: 'write' === kind ? { kind: 'write' } : stampBackofficeRead(),
     }),
     ended: (sentAt: BackofficeSendStamp): boolean => markSessionExpired(sentAt.session),
     refused: (sentAt: BackofficeSendStamp): void => {

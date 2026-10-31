@@ -326,6 +326,25 @@ describe('backofficeSessionExpiry — refus réel (#748, R17)', () => {
     unmount()
   })
 
+  it("seule une lecture estampille le chargement : une écriture ne clôt pas la page d'arrivée, une lecture oui (#748, R122)", async () => {
+    await signIn(SUPER)
+    const { handler, unmount } = buildReaction()
+    handler.refused(handler.stampAtSend('write'))
+    const landing = handler.stampAtSend('read')
+    settleBackofficeAccessRefusalsOnMount('super')
+
+    // Une écriture partie après le montage ne relance aucune lecture : la page d'arrivée garde l'avis.
+    handler.stampAtSend('write')
+    handler.refused(landing)
+    expect(earlierSaveRefused.value).toBe(true)
+
+    // Une lecture partie après le montage la clôt : le refus tardif de la page d'arrivée rend le texte courant.
+    handler.stampAtSend('read')
+    handler.refused(landing)
+    expect(earlierSaveRefused.value).toBe(false)
+    unmount()
+  })
+
   it('refused ne finit pas la session et ne quitte pas la page', async () => {
     await signIn(SUPER)
     await router.push('/fr/admin/users')

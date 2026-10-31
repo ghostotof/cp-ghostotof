@@ -32,8 +32,8 @@ import { switchAccountLocation } from '../../router/reauthentication'
  *   connectée (`reauth=1`) et `redirect` ramène à cette page. La saisie en cours est perdue en le suivant : la
  *   personne lit d'abord pourquoi, et rien ne la déplace pendant qu'elle lit. Le message est neutre
  *   (`common.accessRefused`) : le compte n'a peut-être pas, ou plus, l'accès, ou la session doit être rouverte.
- * - **Effacée** (le périmètre de refus avance, `readRefusalScope()`) à chaque changement de chemin ou de requête
- *   (`route.path` et `route.query`, paramètres triés), à une fin de session et au démontage du layout. **Pas le
+ * - **Effacée** (`clearBackofficeAccessRefusal()` fait avancer le périmètre de refus) à chaque changement de chemin ou de
+ *   requête (`route.path` et `route.query`, paramètres triés), à une fin de session et au démontage du layout. **Pas le
  *   fragment** (R38) : le lien d'évitement (`href="#main-content"`) ne change que lui, et effaçait l'alerte que la
  *   personne était en train de lire. Un refus d'une page ne suit pas la personne sur la suivante : le 403 d'une
  *   lecture partie avant la navigation, arrivé après, est périmé et ne s'affiche pas (R28, CR3-8) ; celui d'une

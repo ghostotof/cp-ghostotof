@@ -680,3 +680,89 @@ describe('AdminLayout — l\'avis de l\'enregistrement précédent sur une page 
     },
   )
 })
+
+/**
+ * Le chargement de la page d'arrivée n'a pas de durée, il a une fin (#748, R122, CR11-2) : la première lecture envoyée
+ * après le montage — ici la relecture qui suit un enregistrement — le clôt. Une lecture du chargement qui n'a pas répondu
+ * jusque-là et qui est refusée ensuite dit le refus courant, non l'avis d'un enregistrement d'avant.
+ */
+describe("AdminLayout — le chargement de la page d'arrivée est clos par la première lecture relancée (#748, R122)", () => {
+  const earlierSaveFr =
+    "Un enregistrement précédent a été refusé par le serveur : votre compte n'a peut-être pas, ou plus, l'accès de confiance, " +
+    'ou la session doit être rouverte. Changez de compte, ou reconnectez-vous au même, pour continuer.'
+  const accessRefusedFr =
+    "Le serveur refuse cette demande à votre session : votre compte n'a peut-être pas, ou plus, l'accès de confiance, " +
+    'ou la session doit être rouverte. Changez de compte, ou reconnectez-vous au même, pour continuer.'
+  const repository: AuthRepository = { ...authRepository, me: async () => sessionFor(SUPER) }
+
+  beforeEach(async () => {
+    await signIn()
+    document.cookie = 'XSRF-TOKEN=jeton; path=/'
+    setBackofficeSessionReaction(createProductionReaction(repository))
+  })
+
+  afterEach(() => {
+    setBackofficeSessionReaction(null)
+    clearBackofficeAccessRefusal()
+    vi.unstubAllGlobals()
+    document.cookie = 'XSRF-TOKEN=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/'
+    document.body.innerHTML = ''
+  })
+
+  it("une relecture servie, puis le refus tardif d'une lecture de la page d'arrivée : le texte courant (#748, R122)", async () => {
+    // La liste des traits est retenue par une promesse manuelle : sa réponse arrive après la relecture des principes.
+    let refuseHeldRead: () => void = () => undefined
+    const heldRead = new Promise<Response>((resolve) => {
+      refuseHeldRead = () => resolve(jsonResponse(403, { code: 403, message: 'x' }))
+    })
+    let principleReads = 0
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if ('POST' === init?.method) {
+          return jsonResponse(201, {
+            id: '019968a0-0000-7000-8000-0000000000a1',
+            locale: 'fr',
+            translationGroup: '019968b0-0000-7000-8000-0000000000e1',
+            title: 'DDD',
+            description: 'Description DDD',
+            iconKey: 'boxes',
+            position: 0,
+          })
+        }
+        if (url.endsWith('/traits')) {
+          return heldRead
+        }
+        principleReads += 1
+
+        // Le chargement des principes est refusé ; la relecture qui suit l'enregistrement est servie.
+        return 1 === principleReads ? jsonResponse(403, { code: 403, message: 'x' }) : jsonResponse(200, [])
+      }),
+    )
+    // Un enregistrement refusé pendant que la personne avait quitté le backoffice, sous le compte connecté.
+    markBackofficeAccessRefused({ kind: 'write' }, lastAccountName())
+
+    const wrapper = await mountAdminQuality(repository)
+
+    // Les deux lectures du chargement sont parties avant le montage : l'une refusée, l'autre en attente. L'avis tient.
+    expect(wrapper.get('[data-testid="admin-access-refused"] span').text()).toBe(earlierSaveFr)
+    expect(backofficeAccessRefused.value).toBe(2)
+
+    // Un principe créé : l'écriture, puis la relecture des principes, partie après le montage, sont servies.
+    await wrapper.get('#admin-quality-principle-title').setValue('DDD')
+    await wrapper.get('#admin-quality-principle-description').setValue('Description DDD')
+    await wrapper.get('#admin-quality-principle-icon-key').setValue('boxes')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(principleReads).toBe(2)
+    expect(wrapper.get('[data-testid="admin-access-refused"] span').text()).toBe(earlierSaveFr)
+
+    // La lecture retenue du chargement répond enfin, refusée : le chargement est clos, c'est le texte courant.
+    refuseHeldRead()
+    await flushPromises()
+
+    expect(backofficeAccessRefused.value).toBe(3)
+    expect(wrapper.get('[data-testid="admin-access-refused"] span').text()).toBe(accessRefusedFr)
+    wrapper.unmount()
+  })
+})

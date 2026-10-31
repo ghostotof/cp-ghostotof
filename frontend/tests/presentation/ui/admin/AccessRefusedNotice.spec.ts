@@ -9,7 +9,7 @@ import {
   backofficeAccessRefused,
   clearBackofficeAccessRefusal,
   markBackofficeAccessRefused,
-  readRefusalScope,
+  stampBackofficeRead,
 } from '../../../../src/application/admin/shared/backofficeAccessRefusal'
 import type { ReadRefusalScope } from '../../../../src/domain/admin/shared/BackofficeSessionReaction'
 import type { AuthRepository } from '../../../../src/domain/auth/repositories/AuthRepository'
@@ -98,7 +98,7 @@ async function signInAs(username: string): Promise<void> {
  * Un refus réel d'une lecture : par défaut partie maintenant (le périmètre et l'époque courants, jamais d'une page
  * quittée, voir R28) ; `sentIn` est l'estampille relevée plus tôt, celle d'une lecture partie avant le montage de l'alerte.
  */
-function refuse(sentIn: ReadRefusalScope = readRefusalScope()): void {
+function refuse(sentIn: ReadRefusalScope = stampBackofficeRead()): void {
   markBackofficeAccessRefused(sentIn, lastAccountName())
 }
 
@@ -165,14 +165,14 @@ describe('AccessRefusedNotice (#748, R17)', () => {
     const { wrapper, router } = await mountNotice()
     refuse()
     await flushPromises()
-    const scope = readRefusalScope().scope
+    const scope = stampBackofficeRead().scope
 
     await router.push({ hash: '#main-content' })
     await flushPromises()
 
     expect(router.currentRoute.value.fullPath).toBe('/fr/admin/case-studies#main-content')
     expect(wrapper.find('[role="alert"]').exists()).toBe(true)
-    expect(readRefusalScope().scope).toBe(scope)
+    expect(stampBackofficeRead().scope).toBe(scope)
     wrapper.unmount()
   })
 
@@ -194,7 +194,7 @@ describe('AccessRefusedNotice (#748, R17)', () => {
     await flushPromises()
     refuse()
     await flushPromises()
-    const scope = readRefusalScope().scope
+    const scope = stampBackofficeRead().scope
 
     // vue-router compare la requête dans l'ordre où elle est écrite : il exécute cette navigation (sans le tri de la clé,
     // R54, le test serait rouge). C'est la clé triée de l'alerte qui n'y voit pas de changement, et la garde.
@@ -203,7 +203,7 @@ describe('AccessRefusedNotice (#748, R17)', () => {
 
     expect(router.currentRoute.value.fullPath).toBe('/fr/admin/case-studies?b=2&a=1')
     expect(wrapper.find('[role="alert"]').exists()).toBe(true)
-    expect(readRefusalScope().scope).toBe(scope)
+    expect(stampBackofficeRead().scope).toBe(scope)
     wrapper.unmount()
   })
 
@@ -322,7 +322,7 @@ describe('AccessRefusedNotice (#748, R17)', () => {
       first.wrapper.unmount()
       writeRefusedWhileAway()
       // Le chargement de la page d'arrivée part dans le `setup` de la page, avant le montage de l'alerte.
-      const landingRead = readRefusalScope()
+      const landingRead = stampBackofficeRead()
       const second = await mountNotice()
       await flushPromises()
       const message = second.wrapper.get('span').element
@@ -346,8 +346,8 @@ describe('AccessRefusedNotice (#748, R17)', () => {
       first.wrapper.unmount()
       writeRefusedWhileAway()
       // Une page à deux listes : deux lectures estampillées avant le montage de l'alerte.
-      const firstLandingRead = readRefusalScope()
-      const secondLandingRead = readRefusalScope()
+      const firstLandingRead = stampBackofficeRead()
+      const secondLandingRead = stampBackofficeRead()
       const second = await mountNotice()
       await flushPromises()
       expect(second.wrapper.get('span').text()).toBe(earlierSaveFr)
