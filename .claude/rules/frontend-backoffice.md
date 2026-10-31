@@ -231,8 +231,9 @@ not save would burn quota for nothing) and, for the settings, while a proposal i
 replace it with no « Annuler »), said by `admin.about.settings.proposalLockedHelp`, which names « Abandonner »
 (`admin.about.settings.proposalDiscard`, R127c, R141):
 a `type="button"` shown only during the proposal, no confirmation, that drops it and re-reads the shown language's form
-(saved values back, focus to the first field, not announced like the per-entry « Annuler »); switching language alone
-keeps the proposal, only the return to its target re-reads it (R103).
+(saved values back, focus to the first field, not announced like the per-entry « Annuler »); any arrival of settings
+drops the proposal, whatever its language — invisible, the notice being under its target only and the return to it re-reading
+its settings (R141b, the author's decision revising decision 2 of the ninth review).
 Never use `v-html` on text coming back from the model: it goes
 through the form fields, then `RichText.vue`. The case-studies admin page (`/admin/case-studies`, issue #104,
 closed 2026-09-14) is wired exactly like the CV sans identité one — every field is prose, so "Create the XX
@@ -306,11 +307,12 @@ version" copies nothing and the assistant sends all five fields.
   lands on; a save of the target started while the translation runs still does, and the notice goes with it, R66).
   Reloading a locale never clears its error: the form copies the settings read, so that error is the only trace of the refused save.
   **A proposal notice is its target locale's** (F11, R50, R66, decision 4 of the sixth review): `proposal`
-  (`{ source, target }`) shows under the form of `target` only, survives a refused save, and goes whenever that
-  locale's form is re-read from the server — the response of its successful save, a reload, a return to it —, which
-  loses the proposal; settings of the other locale arriving leave it (R103, decision 2 of the ninth review); it is
-  rendered inside the form, which exists only once loaded, so a refused or interrupted re-read of its target shows
-  nothing (R113, R128). The About settings are the only keyed composable, so the only one with these races.
+  (`{ source, target }`) shows under the form of `target` only, survives a refused save, and goes whenever
+  settings arrive from the server — the response of a successful save, a reload, a return to a language —, which loses
+  the proposal, the other locale's included (R141b, the author's decision of 2026-10-31 revising decision 2 of the
+  ninth review: invisible, no spec pins it); it is rendered inside the form, which exists only once loaded, so a refused
+  or interrupted re-read of its target shows nothing (R113, R128). The About settings are the only keyed composable, so
+  the only one with these races.
   **The return is the one signal that exists** (R13): `useAuth().onSessionRestored(callback)`, called once at each
   descent of `authState.sessionEnded` by the same account (another one replays the navigation instead, R18). `useAdminLoad` subscribes to it; if its
   last read ended on `SessionEndedError`, it re-runs `load(same key)` **once**. A newer `load()` replaces the

@@ -1316,8 +1316,8 @@ describe('AdminAboutPage', () => {
       expect(panelOf(wrapper, SETTINGS_PANEL).get('[role="status"]').text()).toContain('Proposition générée par IA')
     })
 
-    // R127b : changer de langue seul garde la proposition (R103) ; elle ne disparaît qu'au retour sur sa langue cible, dont
-    // le formulaire est relu du serveur, par le sélecteur « Langue des textes de la page À propos ». Depuis R127c, le texte
+    // R127b : la proposition ne se montre pas sous l'autre langue, et le retour sur sa langue cible relit le formulaire du
+    // serveur, par le sélecteur « Langue des textes de la page À propos ». Depuis R127c, le texte
     // du verrou nomme « Abandonner » et non plus ce détour, qui reste un autre chemin du même retrait.
     it("réglages, une proposition affichée : passer à l'autre langue puis revenir l'abandonne (#748, R127b)", async () => {
       const settingsRepository = createSettingsRepository({
@@ -1329,7 +1329,7 @@ describe('AdminAboutPage', () => {
       await flushPromises()
       expect(textsDescribing(wrapper, translateEntryButton(wrapper, SETTINGS_FORM))).toEqual([SETTINGS_PROPOSAL_LOCKED_TEXT])
 
-      // Changer de langue seul ne l'abandonne pas : elle est gardée, et ne se montre pas sous l'autre langue.
+      // Sous l'autre langue, la proposition ne se montre pas (aucun avis ni verrou), que des réglages l'aient retirée ou non.
       await wrapper.get('#admin-about-locale').setValue('fr')
       await flushPromises()
       expect(wrapper.find(SETTINGS_PROPOSAL_LOCKED_HINT).exists()).toBe(false)
@@ -1740,10 +1740,11 @@ describe('AdminAboutPage', () => {
       expect(panelOf(wrapper, SETTINGS_PANEL).find('[role="status"]').exists()).toBe(false)
     })
 
-    // L'effet de la condition du `watch` de `settings` ne se voit pas dans le DOM : l'avis n'est rendu que sous sa
-    // cible, et le retour sur l'EN relit l'EN, qui retire la proposition de toute façon. Le cas dit ce que le DOM montre
-    // (les réglages du FR, aucun avis) ; il ne lit plus l'état du composant (R141, St12-9).
-    it("une proposition en EN, passage au FR puis enregistrement du FR : la proposition EN reste (#748, R103, décision 2)", async () => {
+    // Le retrait de la proposition par le `watch` de `settings` quand ils sont ceux de l'autre langue ne se voit pas dans le
+    // DOM : l'avis n'est rendu que sous sa cible, et le retour sur l'EN relit l'EN, qui retire la proposition de toute
+    // façon. Le cas dit ce que le DOM montre (les réglages du FR, aucun avis) ; il ne lit plus l'état du composant
+    // (R141, St12-9).
+    it("une proposition en EN, passage au FR puis enregistrement du FR : aucun avis sous le FR (#748, R141b)", async () => {
       const settingsRepository = createSettingsRepository({
         get: vi.fn(async (locale: string) => ('en' === locale ? SETTINGS_EN : SETTINGS)),
         update: vi.fn(async () => SETTINGS),
@@ -1761,8 +1762,8 @@ describe('AdminAboutPage', () => {
       await flushPromises()
 
       expect(settingsRepository.update).toHaveBeenCalledWith('fr', expect.anything())
-      // Les réglages du FR sont arrivés sous le FR, qui n'est pas la cible : la proposition de l'EN est gardée.
-      // Le formulaire du FR porte les réglages que le serveur vient de rendre, et aucun avis de la proposition de l'EN.
+      // Les réglages du FR sont arrivés sous le FR, qui n'est pas la cible : ils retirent la proposition de l'EN (R141b), ce
+      // que le DOM ne dit pas. Il montre le formulaire du FR, qui porte les réglages rendus par le serveur, sans avis.
       expect(valueOf(wrapper, '#admin-about-locale')).toBe('fr')
       expect(valueOf(wrapper, '#admin-about-site-eyebrow')).toBe(SETTINGS.siteEyebrow)
       expect(panelOf(wrapper, SETTINGS_PANEL).find('[role="status"]').exists()).toBe(false)

@@ -8982,6 +8982,30 @@ Q4 (a), Q5 oui, Q6 oui, Q7 le garder, Q8 oui). Le plan les suit déjà : aucune 
 
 ---
 
+### Task R141b : Réglages « À propos » — toute arrivée de réglages retire la proposition (décision de l'auteur, 2026-10-31)
+
+**Décision.** Dans `AdminAboutSettingsForm.vue`, le `watch` de `settings` retire la proposition à toute arrivée de
+réglages, sans la condition `proposal.value?.target === props.locale`. Cela révise la décision 2 de la neuvième
+relecture (R103 : des réglages de l'autre langue laissaient la proposition) sur ce seul point.
+
+**Raison.** R141 a montré que la condition est invisible : l'avis n'est rendu que sous la cible (`isProposalShown`), et le
+retour sur la cible relit ses réglages, qui retirent la proposition de toute façon ; depuis que le spec ne lit plus `vm`
+(St12-9), la mutation qui retire la condition ne rougit aucun test. Une règle que rien ne distingue ne se garde pas.
+
+**Fait.**
+- `AdminAboutSettingsForm.vue` : la condition retirée, les commentaires qui décrivaient l'ancienne règle réécrits
+  (docblock de l'avis, commentaire de `proposal`, commentaire et corps du `watch`).
+- Le `if (proposal.value?.target === locale)` de `handleDiscardProposal` est un autre chemin (la recopie après la lecture
+  de « Abandonner », que le `watch` ne couvre pas si la lecture rend l'objet déjà détenu) : non touché, la question est
+  rendue à l'auteur.
+- Règle `frontend-backoffice.md` : les deux phrases (« settings of the other locale arriving leave it (R103…) » et
+  « switching language alone keeps the proposal… ») remplacées par la règle nouvelle.
+- Tests : refactoring de comportement invisible, aucun test ajouté ; `AdminAboutPage.spec.ts` ne change que le nom et les
+  commentaires de deux cas qui disaient « la proposition reste » (leurs assertions, lues au DOM, sont inchangées).
+  Suite : 2484 tests verts avant et après.
+
+---
+
 ### Task R142 : Traduction assistée — les textes des specs lus de `fr.json`, et des textes justes (St12-10 ; C12-6 = Sp12-9, Q2)
 
 **Files :**

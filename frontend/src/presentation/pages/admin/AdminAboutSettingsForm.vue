@@ -52,7 +52,7 @@ const errorText = computed(() => {
  * donc ce retour, jamais posée sur un formulaire non chargé.
  *
  * L'avis « proposition générée par IA » est celui de la langue cible (`proposal.target`) : absent sous l'autre langue,
- * il part dès que le formulaire de sa langue est relu du serveur (R66, décision 4).
+ * il part dès que des réglages arrivent du serveur, quelle que soit leur langue (R66, décision 4 ; R141b).
  */
 // Une traduction dont le formulaire n'est plus celui de l'envoi (une autre langue : l'identité ne porte que la langue) est périmée.
 // Le composable refuse de lui-même tout ce que le bouton refuse (R127, R127b) : l'absence de prose, un enregistrement en vol,
@@ -76,8 +76,8 @@ const pendingProposal = ref<TranslationProposal | null>(null)
 const formElement = ref<HTMLFormElement | null>(null)
 // La proposition posée sur un formulaire (R66, St6-10) : `source` est la langue traduite, que dit l'avis, `target` la
 // langue du formulaire qui la porte, celle que la page a prise pour la recevoir. L'avis n'est que celui de `target` : il
-// ne s'affiche que sous elle, et il part quand le formulaire de cette langue est relu du serveur (le `watch` de
-// `settings`, ci-dessous), la proposition non enregistrée étant alors perdue (décision 4 de la sixième série).
+// ne s'affiche que sous elle, et il part dès que des réglages arrivent du serveur (le `watch` de `settings`, ci-dessous),
+// la proposition non enregistrée étant alors perdue (décision 4 de la sixième série, R141b).
 const proposal = ref<{ readonly source: Locale; readonly target: Locale } | null>(null)
 // L'avis est celui de la langue montrée si c'est la cible de la proposition (R86, St7-10). Chaque lecteur est dans le
 // formulaire (avis, verrou, « Abandonner », bouton), qui n'existe qu'une fois `isLoaded` : une relecture de la cible
@@ -97,22 +97,20 @@ const translationErrorText = computed(() => {
 // pose des réglages), la copie a déjà eu lieu et la proposition en attente peut
 // se poser par-dessus sans être écrasée ensuite.
 //
-// Ces réglages sont ceux du serveur : toute relecture de la langue cible d'une proposition — la réponse de son
-// enregistrement réussi, un rechargement, un retour sur elle — remplace le formulaire et fait perdre la proposition,
-// donc son avis (R66, décision 4). Un enregistrement refusé ne relit rien et le garde (F11). La proposition en
-// attente se pose après, au `watch` d'`isLoaded` : la copie qui la précède ne la retire pas.
+// Ces réglages sont ceux du serveur : tout réglage qui arrive — la réponse d'un enregistrement réussi, un
+// rechargement, un retour sur une langue — remplace le formulaire et fait perdre la proposition, donc son avis
+// (R66, décision 4). Un enregistrement refusé ne relit rien et la garde (F11). La proposition en attente se pose
+// après, au `watch` d'`isLoaded` : la copie qui la précède ne la retire pas.
 watch(
   settings,
   (value) => {
     if (value) {
       copySettingsToForm(value)
 
-      // Des réglages qui arrivent sont ceux de la langue montrée (la clé courante) : si c'est la cible de la
-      // proposition, ils la remplacent et la retirent ; sinon la proposition reste, et la relecture de sa cible la
-      // retire. L'effet ne se voit pas dans le DOM : l'avis n'est rendu que sous sa cible.
-      if (proposal.value?.target === props.locale) {
-        proposal.value = null
-      }
+      // Tout réglage qui arrive retire la proposition, quelle que soit sa langue (R141b, décision de l'auteur révisant la
+      // décision 2 de la neuvième série : des réglages de l'autre langue la laissaient). Que la condition soit retirée ne se
+      // voit pas : l'avis n'est rendu que sous la cible, et le retour sur elle relit ses réglages, qui la retirent de toute façon.
+      proposal.value = null
     }
   },
   { immediate: true, flush: 'sync' },
