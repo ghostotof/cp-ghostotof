@@ -278,6 +278,40 @@ else
   fail "une sonde https://www. en 301 ne porte pas ce message" "ligne de la sonde : ${probe_line:-absente}"
 fi
 
+# --- CR12-9 : une sonde de redirection = un seul appel curl, qui lit le code et la cible d'une même réponse
+# (`-w '%{http_code} %{redirect_url}'`) : deux appels pouvaient lire deux réponses différentes. Lu sur le run
+# nominal : chacune des trois URL de la section 3 reçoit exactement un appel, qui porte les deux variables.
+# probe_calls <nom> <url> : les appels curl dont le DERNIER argument est exactement l'URL, un par ligne.
+probe_calls() {
+  local line
+  while IFS= read -r line; do
+    case "$line" in "curl "*) [ "${line##* }" = "$2" ] && printf '%s\n' "$line" ;; esac
+  done < "$TMP/$1.calls"
+  return 0
+}
+for probe_url in 'http://example.invalid' 'http://www.example.invalid' 'https://www.example.invalid'; do
+  one_probe="$(probe_calls nominal "$probe_url")"
+  if [ -z "$one_probe" ]; then
+    fail "une sonde de redirection = un appel curl ($probe_url)" "aucun appel noté : le cas ne prouverait rien"
+  elif [ "$(wc -l <<< "$one_probe")" -eq 1 ] && [[ "$one_probe" == *"-w %{http_code} %{redirect_url} "* ]]; then
+    pass "une sonde de redirection = un appel curl, code et cible d'une même réponse ($probe_url)"
+  else
+    fail "une sonde de redirection = un appel curl ($probe_url)" "$(wc -l <<< "$one_probe") appel(s) : ${one_probe//$'\n'/ | }"
+  fi
+done
+
+# --- Q5 de la douzième série : l'indice « la sonde part sans la Basic Auth » (#750) n'a de sens que si l'audit
+# porte la Basic Auth (la préprod). Contre la vraie prod, un 401 de la sonde s'imprime seul, sans l'indice : la
+# Basic Auth n'y est pas en cause. Le cas avec la Basic Auth (l'indice présent) est celui de CR11-9, plus haut.
+copy_tools sonde401prod reelle
+FAKE_CURL_HTTP_CODE_FOR_WWW=401 run_audit sonde401prod
+probe_line="$(grep -F 'https://www.example.invalid' "$TMP/sonde401prod.out" | head -1 || true)"
+if [[ "$probe_line" == *' 401'* && "$probe_line" != *'Basic Auth'* && "$probe_line" != *'#750'* ]]; then
+  pass "sans Basic Auth, un 401 de sonde s'imprime sans l'indice"
+else
+  fail "sans Basic Auth, un 401 de sonde s'imprime sans l'indice" "ligne de la sonde : ${probe_line:-absente}"
+fi
+
 # --- C8-1 : sous `bash -x`, la valeur de AUDIT_BASIC_AUTH n'apparaît nulle part dans
 # la trace (le test de présence ne la développe pas, la bibliothèque la lit sous
 # `set +x`). Valeur fictive, sans le mot « secret ».

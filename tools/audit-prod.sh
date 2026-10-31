@@ -62,6 +62,7 @@ CURL_OPTS_ANONYMOUS=("${CURL_OPTS[@]}")
 # un arrêt entre `mktemp -d` et l'affectation que lit le `trap` peut laisser un dossier
 # privé **vide**, jamais la valeur, qui n'est écrite qu'une fois le chemin connu du
 # `trap` (#748, C7-8).
+audit_with_basic_auth=0   # 1 si l'audit porte la Basic Auth (préprod) : l'indice du 401 de la section 3 en dépend
 if [[ -v AUDIT_BASIC_AUTH ]]; then
   # Sortie 2 si la bibliothèque manque ou ne se lit pas (sans -e, un source en échec continuerait) ; stderr de bash visible.
   # shellcheck source=tools/lib/smoke-http.sh
@@ -72,6 +73,7 @@ if [[ -v AUDIT_BASIC_AUTH ]]; then
   trap 'smoke_cleanup' EXIT
   smoke_use_auth_config AUDIT_BASIC_AUTH || exit 2
   CURL_OPTS+=(-K "$SMOKE_AUTH_CONFIG" --proto-redir "=https")
+  audit_with_basic_auth=1
 fi
 DIG_TIMEOUT=(+time=3 +tries=1)
 
@@ -107,15 +109,20 @@ section "Redirections"
 # Ces sondes partent sans Basic Auth (CURL_OPTS_ANONYMOUS) : curl envoie
 # `Authorization: Basic` dès la première requête, quel que soit le schéma, donc
 # l'identifiant de la préprod partirait en clair sur http://. Une redirection
-# se juge sans authentification (#750). Conséquence : en préprod, l'hôte répond 401
-# à la sonde, ce que la ligne dit au lieu de passer pour une redirection cassée.
+# se juge sans authentification (#750). Conséquence : contre la préprod (l'audit porte la
+# Basic Auth), l'hôte répond 401 à la sonde, ce que la ligne dit au lieu de passer pour une
+# redirection cassée ; contre la vraie prod, un 401 s'imprime seul, sans l'indice.
 for url in "http://${DOMAIN}" "http://www.${DOMAIN}" "https://www.${DOMAIN}"; do
-  # %{http_code} = code de la 1re réponse, %{redirect_url} = cible du Location
-  code="$(curl -sS "${CURL_OPTS_ANONYMOUS[@]}" -o /dev/null -w '%{http_code}' "$url")"
+  # Un seul appel par sonde : le code de la 1re réponse (%{http_code}) et la cible de son
+  # Location (%{redirect_url}) viennent de la même réponse, jamais de deux requêtes
+  # qui pourraient différer. La réponse est assignée, puis lue en deux champs.
+  probe="$(curl -sS "${CURL_OPTS_ANONYMOUS[@]}" -o /dev/null -w '%{http_code} %{redirect_url}' "$url")"
+  read -r code target <<< "$probe"
   hint=""
-  [ "$code" = "401" ] && hint=" (l'hôte demande la Basic Auth : la sonde part sans elle, #750)"
-  printf '%-32s -> %s %s%s\n' "$url" "$code" \
-    "$(curl -sS "${CURL_OPTS_ANONYMOUS[@]}" -o /dev/null -w '%{redirect_url}' "$url")" "$hint"
+  if [ "$code" = "401" ] && [ "$audit_with_basic_auth" = 1 ]; then
+    hint=" (l'hôte demande la Basic Auth : la sonde part sans elle, #750)"
+  fi
+  printf '%-32s -> %s %s%s\n' "$url" "$code" "${target:-}" "$hint"
 done
 
 # ---------------------------------------------------------------------------

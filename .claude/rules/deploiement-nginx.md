@@ -146,7 +146,9 @@ paths:
   Its redirection probes (section 3) leave without the Basic Auth (`CURL_OPTS_ANONYMOUS`): curl sends `Authorization: Basic`
   on the first request whatever the scheme, so a `-K` there would put the preprod credential in clear on `http://` (#750, R115).
   Every call that carries the `-K` follows redirects on `https` only (`--proto-redir =https`, R134), and none without it carries the option.
-  A probe answered 401 says the host asks for the Basic Auth (it leaves without it on purpose), instead of reading as a broken redirect.
+  A probe answered 401 says the host asks for the Basic Auth when the audit carries it (preprod; it leaves without it on purpose),
+  instead of reading as a broken redirect; against production, where nothing is carried, a 401 is printed without that hint (R149).
+  A probe is one `curl -w '%{http_code} %{redirect_url}'`, read in two fields: the code and the target come from the same response.
   Offline test: `tools/tests/audit-prod.test.sh`, fake `dig`/`curl`/`openssl`.
   The smoke proves it on the real pod: an `initialize` on the public host (a 403 there
   means `allowed_hosts`, derived from `APP_FRONTEND_BASE_URL`, misses it), the session closed by `DELETE` (its
