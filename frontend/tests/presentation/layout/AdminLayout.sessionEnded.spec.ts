@@ -29,7 +29,8 @@ import type { AdminTranslationRepository } from '../../../src/domain/admin/trans
 import type { CvRepository } from '../../../src/domain/cv/repositories/CvRepository'
 import { sessionFor } from '../../support/authSession'
 import { signInAgain } from '../../support/signInAgain'
-import { defineComponent, h } from 'vue'
+import { ACCESS_REFUSED_FR, EARLIER_SAVE_REFUSED_FR } from '../../support/accessRefusalTexts'
+import { defineComponent, h, type Component } from 'vue'
 
 const SUPER = { username: 'super', roles: ['ROLE_SUPER', 'ROLE_USER'] }
 
@@ -67,15 +68,32 @@ async function signIn(): Promise<void> {
   probe.unmount()
 }
 
+/** Les rubriques de la navigation d'`AdminLayout` : chacune est une route, le lien d'un nom inconnu lèverait. */
+const ADMIN_SECTIONS = [
+  'technologies',
+  'about',
+  'quality',
+  'contributions',
+  'incidents',
+  'anonymous-cv',
+  'case-studies',
+  'watch',
+  'users',
+]
+
 /**
- * Le montage de production : AdminLayout autour d'une vraie page d'édition, le
- * vrai dépôt HTTP (donc `BackofficeHttpClient`) sur un `fetch` simulé, et la
- * vraie réaction à un 401.
+ * Le montage de production : `AdminLayout` autour d'une vraie page d'édition (`route`, la rubrique qu'elle tient), ses
+ * vrais dépôts HTTP (donc `BackofficeHttpClient`, `providers`) sur un `fetch` simulé, la vraie réaction. Les autres
+ * rubriques sont des routes vides, et `elsewhere` une page où naviguer. Les lectures du chargement partent dans le `setup`
+ * de la page, avant le montage de l'alerte d'`AdminLayout`.
  */
-async function mountAdminCaseStudies(
-  auth: AuthRepository = authRepository,
+async function mountAdminPage(
+  page: Component,
+  route: string,
+  providers: Record<symbol, unknown>,
   locale: 'fr' | 'en' = 'fr',
 ): Promise<{ wrapper: VueWrapper; router: Router }> {
+  const emptyPage = defineComponent({ setup: () => () => h('p') })
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
@@ -85,39 +103,60 @@ async function mountAdminCaseStudies(
         // Comme la vraie route : le lien de reconnexion ne ramène qu'à une route `requiresAuth` (#748, R16, F8).
         meta: { requiresAuth: true },
         children: [
-          { path: 'case-studies', name: 'admin-case-studies', component: AdminCaseStudiesPage },
+          ...ADMIN_SECTIONS.map((name) => ({
+            path: name,
+            name: `admin-${name}`,
+            component: name === route ? page : emptyPage,
+          })),
           { path: 'elsewhere', name: 'admin-elsewhere', component: defineComponent({ setup: () => () => h('p', 'ailleurs') }) },
         ],
       },
-      { path: '/:locale(fr|en)/admin/users', name: 'admin-users', component: AdminCaseStudiesPage },
-      { path: '/:locale(fr|en)/login', name: 'login', component: AdminCaseStudiesPage },
+      { path: '/:locale(fr|en)/login', name: 'login', component: emptyPage },
     ],
   })
-  await router.push(`/${locale}/admin/case-studies`)
+  await router.push(`/${locale}/admin/${route}`)
   await router.isReady()
 
   const i18n = createAppI18n()
   // La langue de l'interface suit celle de la route (le routeur de production la pose).
   i18n.global.locale.value = locale
-  const wrapper = mount(
-    defineComponent({ template: '<RouterView />' }),
-    {
-      attachTo: document.body,
-      global: {
-        plugins: [i18n, router],
-        provide: {
-          [ADMIN_CASE_STUDY_REPOSITORY as symbol]: new HttpAdminCaseStudyRepository('https://api.example.test'),
-          [ADMIN_TRANSLATION_REPOSITORY as symbol]: translationRepository,
-          [CV_REPOSITORY as symbol]: cvRepository,
-          [AUTH_REPOSITORY as symbol]: auth,
-        },
+  const wrapper = mount(defineComponent({ template: '<RouterView />' }), {
+    attachTo: document.body,
+    global: {
+      plugins: [i18n, router],
+      provide: {
+        [ADMIN_TRANSLATION_REPOSITORY as symbol]: translationRepository,
+        [CV_REPOSITORY as symbol]: cvRepository,
+        ...providers,
       },
     },
-  )
+  })
   await flushPromises()
 
   return { wrapper, router }
 }
+
+/** Les études de cas : une page d'édition à une liste. */
+const mountAdminCaseStudies = (auth: AuthRepository = authRepository, locale: 'fr' | 'en' = 'fr') =>
+  mountAdminPage(
+    AdminCaseStudiesPage,
+    'case-studies',
+    {
+      [ADMIN_CASE_STUDY_REPOSITORY as symbol]: new HttpAdminCaseStudyRepository('https://api.example.test'),
+      [AUTH_REPOSITORY as symbol]: auth,
+    },
+    locale,
+  )
+
+/** La qualité : une page à **deux** listes (principes, traits). */
+const mountAdminQuality = async (auth: AuthRepository): Promise<VueWrapper> =>
+  (
+    await mountAdminPage(AdminQualityPage, 'quality', {
+      [ADMIN_QUALITY_PRINCIPLE_REPOSITORY as symbol]: new HttpAdminQualityPrincipleRepository('https://api.example.test'),
+      [ADMIN_QUALITY_TRAIT_REPOSITORY as symbol]: new HttpAdminQualityTraitRepository('https://api.example.test'),
+      [AUTH_REPOSITORY as symbol]: auth,
+    })
+  ).wrapper
 
 /**
  * Régression de R1c (code-review CR1) : un 401 mène à la connexion, la page est
@@ -559,89 +598,57 @@ describe('AdminLayout — refus réel du backoffice (#748, R17)', () => {
   })
 })
 
-/**
- * Le montage de production d'une page à **deux** listes : `AdminLayout` autour d'`AdminQualityPage`, ses deux dépôts HTTP
- * (donc `BackofficeHttpClient`) sur un `fetch` simulé, la vraie réaction. Les deux lectures du chargement partent dans le
- * `setup` de la page, avant le montage de l'alerte d'`AdminLayout`.
- */
-async function mountAdminQuality(auth: AuthRepository): Promise<VueWrapper> {
-  const router = createRouter({
-    history: createMemoryHistory(),
-    routes: [
-      {
-        path: '/:locale(fr|en)/admin',
-        component: AdminLayout,
-        meta: { requiresAuth: true },
-        children: [
-          { path: 'quality', name: 'admin-quality', component: AdminQualityPage },
-          // Les autres rubriques de la navigation du layout : des routes vides, le lien d'un nom inconnu lèverait.
-          ...['technologies', 'about', 'contributions', 'incidents', 'anonymous-cv', 'case-studies', 'watch', 'users'].map((name) => ({
-            path: name,
-            name: `admin-${name}`,
-            component: defineComponent({ setup: () => () => h('p') }),
-          })),
-        ],
-      },
-      { path: '/:locale(fr|en)/login', name: 'login', component: defineComponent({ setup: () => () => h('p') }) },
-    ],
+/** La réponse que le dépôt HTTP lit d'un principe de qualité créé (`POST`), servie par les écritures de ces cas. */
+function createdPrincipleResponse(): Response {
+  return jsonResponse(201, {
+    id: '019968a0-0000-7000-8000-0000000000a1',
+    locale: 'fr',
+    translationGroup: '019968b0-0000-7000-8000-0000000000e1',
+    title: 'DDD',
+    description: 'Description DDD',
+    iconKey: 'boxes',
+    position: 0,
   })
-  await router.push('/fr/admin/quality')
-  await router.isReady()
+}
 
-  const i18n = createAppI18n()
-  i18n.global.locale.value = 'fr'
-  const wrapper = mount(defineComponent({ template: '<RouterView />' }), {
-    attachTo: document.body,
-    global: {
-      plugins: [i18n, router],
-      provide: {
-        [ADMIN_QUALITY_PRINCIPLE_REPOSITORY as symbol]: new HttpAdminQualityPrincipleRepository('https://api.example.test'),
-        [ADMIN_QUALITY_TRAIT_REPOSITORY as symbol]: new HttpAdminQualityTraitRepository('https://api.example.test'),
-        [ADMIN_TRANSLATION_REPOSITORY as symbol]: translationRepository,
-        [CV_REPOSITORY as symbol]: cvRepository,
-        [AUTH_REPOSITORY as symbol]: auth,
-      },
-    },
+/** Une lecture retenue : son refus part quand le test le décide (`refuse`), après d'autres événements. */
+function heldRead(): { response: Promise<Response>; refuse: () => void } {
+  let refuse: () => void = () => undefined
+  const response = new Promise<Response>((resolve) => {
+    refuse = () => resolve(jsonResponse(403, { code: 403, message: 'x' }))
   })
+
+  return { response, refuse }
+}
+
+/** Un principe de qualité créé par le formulaire : l'écriture est servie, puis la page relit sa liste. */
+async function createQualityPrinciple(wrapper: VueWrapper): Promise<void> {
+  await wrapper.get('#admin-quality-principle-title').setValue('DDD')
+  await wrapper.get('#admin-quality-principle-description').setValue('Description DDD')
+  await wrapper.get('#admin-quality-principle-icon-key').setValue('boxes')
+  await wrapper.get('form').trigger('submit')
   await flushPromises()
+}
 
-  return wrapper
+/** Le `<span>` du message de l'alerte : sa référence change à chaque annonce (c'est ce qui réannonce l'alerte). */
+function noticeMessage(wrapper: VueWrapper): { text: string; element: Element } {
+  const span = wrapper.get('[data-testid="admin-access-refused"] span')
+
+  return { text: span.text(), element: span.element }
 }
 
 /**
- * L'avis de l'enregistrement précédent sur une vraie page à deux listes (#748, R112, décision 3) : le chargement de la page
- * d'arrivée est ce que ses lectures ont de commun, d'être parties avant le montage de l'alerte, et rien d'autre.
+ * L'avis de l'enregistrement précédent sur une vraie page à deux listes, et la fin du chargement de la page d'arrivée
+ * (#748, R112, R122) : la personne est connectée, un enregistrement a été refusé pendant qu'elle avait quitté le backoffice,
+ * et les deux lectures du chargement partent dans le `setup` de la page, avant le montage de l'alerte.
  */
-describe('AdminLayout — l\'avis de l\'enregistrement précédent sur une page à deux listes (#748, R112)', () => {
-  const earlierSaveFr =
-    "Un enregistrement précédent a été refusé par le serveur : votre compte n'a peut-être pas, ou plus, l'accès de confiance, " +
-    'ou la session doit être rouverte. Changez de compte, ou reconnectez-vous au même, pour continuer.'
-  const accessRefusedFr =
-    "Le serveur refuse cette demande à votre session : votre compte n'a peut-être pas, ou plus, l'accès de confiance, " +
-    'ou la session doit être rouverte. Changez de compte, ou reconnectez-vous au même, pour continuer.'
+describe("AdminLayout — l'avis de l'enregistrement précédent sur une page à deux listes (#748, R112, R122)", () => {
   const repository: AuthRepository = { ...authRepository, me: async () => sessionFor(SUPER) }
 
   beforeEach(async () => {
     await signIn()
     document.cookie = 'XSRF-TOKEN=jeton; path=/'
     setBackofficeSessionReaction(createProductionReaction(repository))
-    // Toutes les lectures sont refusées ; une écriture est acceptée (201) et sa relecture, une lecture, est refusée.
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (_url: string, init?: RequestInit) =>
-        'POST' === init?.method
-          ? jsonResponse(201, {
-              id: '019968a0-0000-7000-8000-0000000000a1',
-              locale: 'fr',
-              translationGroup: '019968b0-0000-7000-8000-0000000000e1',
-              title: 'DDD',
-              description: 'Description DDD',
-              iconKey: 'boxes',
-              position: 0,
-            })
-          : jsonResponse(403, { code: 403, message: 'x' }),
-      ),
-    )
   })
 
   afterEach(() => {
@@ -653,85 +660,75 @@ describe('AdminLayout — l\'avis de l\'enregistrement précédent sur une page 
   })
 
   it(
-    "une page à deux listes refusées après un enregistrement refusé pendant l'absence : l'avis aux deux annonces, " +
-      "le texte courant à la relecture qui suit un enregistrement (#748, R112, décision 3)",
+    "l'avis à chaque annonce du chargement, le texte courant à la relecture qui suit un enregistrement (#748, R112, décision 3)",
     async () => {
+      // Les deux listes du chargement sont retenues : chaque refus arrive à son heure, et chaque annonce se lit.
+      const principles = heldRead()
+      const traits = heldRead()
+      let principleReads = 0
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (url: string, init?: RequestInit) => {
+          if ('POST' === init?.method) {
+            return createdPrincipleResponse()
+          }
+          if (url.endsWith('/traits')) {
+            return traits.response
+          }
+          principleReads += 1
+
+          // Le chargement des principes est retenu ; la relecture qui suit l'enregistrement est refusée.
+          return 1 === principleReads ? principles.response : jsonResponse(403, { code: 403, message: 'x' })
+        }),
+      )
       // Un enregistrement refusé pendant que la personne avait quitté le backoffice, sous le compte connecté.
       markBackofficeAccessRefused({ kind: 'write' }, lastAccountName())
 
       const wrapper = await mountAdminQuality(repository)
 
-      // Les deux lectures du chargement (principes, traits) sont parties avant le montage de l'alerte, toutes deux refusées.
-      expect(wrapper.get('[data-testid="admin-access-refused"] span').text()).toBe(earlierSaveFr)
+      // L'alerte porte l'avis dès le montage : l'écriture seule est comptée.
+      const atMount = noticeMessage(wrapper)
+      expect(atMount.text).toBe(EARLIER_SAVE_REFUSED_FR)
+      expect(backofficeAccessRefused.value).toBe(1)
+
+      // Les deux lectures du chargement, parties avant le montage de l'alerte, sont refusées l'une après l'autre.
+      principles.refuse()
+      await flushPromises()
+      const afterPrinciples = noticeMessage(wrapper)
+      expect(afterPrinciples.text).toBe(EARLIER_SAVE_REFUSED_FR)
+      expect(afterPrinciples.element).not.toBe(atMount.element)
+      expect(backofficeAccessRefused.value).toBe(2)
+
+      traits.refuse()
+      await flushPromises()
+      const afterTraits = noticeMessage(wrapper)
+      expect(afterTraits.text).toBe(EARLIER_SAVE_REFUSED_FR)
+      expect(afterTraits.element).not.toBe(afterPrinciples.element)
       expect(backofficeAccessRefused.value).toBe(3)
-      const afterLoad = wrapper.get('[data-testid="admin-access-refused"] span').element
 
       // Un principe créé : l'écriture est servie, sa relecture, partie après le montage, est refusée.
-      await wrapper.get('#admin-quality-principle-title').setValue('DDD')
-      await wrapper.get('#admin-quality-principle-description').setValue('Description DDD')
-      await wrapper.get('#admin-quality-principle-icon-key').setValue('boxes')
-      await wrapper.get('form').trigger('submit')
-      await flushPromises()
+      await createQualityPrinciple(wrapper)
 
-      expect(wrapper.get('[data-testid="admin-access-refused"] span').text()).toBe(accessRefusedFr)
-      expect(wrapper.get('[data-testid="admin-access-refused"] span').element).not.toBe(afterLoad)
+      const afterRead = noticeMessage(wrapper)
+      expect(afterRead.text).toBe(ACCESS_REFUSED_FR)
+      expect(afterRead.element).not.toBe(afterTraits.element)
       expect(backofficeAccessRefused.value).toBe(4)
       wrapper.unmount()
     },
   )
-})
-
-/**
- * Le chargement de la page d'arrivée n'a pas de durée, il a une fin (#748, R122, CR11-2) : la première lecture envoyée
- * après le montage — ici la relecture qui suit un enregistrement — le clôt. Une lecture du chargement qui n'a pas répondu
- * jusque-là et qui est refusée ensuite dit le refus courant, non l'avis d'un enregistrement d'avant.
- */
-describe("AdminLayout — le chargement de la page d'arrivée est clos par la première lecture relancée (#748, R122)", () => {
-  const earlierSaveFr =
-    "Un enregistrement précédent a été refusé par le serveur : votre compte n'a peut-être pas, ou plus, l'accès de confiance, " +
-    'ou la session doit être rouverte. Changez de compte, ou reconnectez-vous au même, pour continuer.'
-  const accessRefusedFr =
-    "Le serveur refuse cette demande à votre session : votre compte n'a peut-être pas, ou plus, l'accès de confiance, " +
-    'ou la session doit être rouverte. Changez de compte, ou reconnectez-vous au même, pour continuer.'
-  const repository: AuthRepository = { ...authRepository, me: async () => sessionFor(SUPER) }
-
-  beforeEach(async () => {
-    await signIn()
-    document.cookie = 'XSRF-TOKEN=jeton; path=/'
-    setBackofficeSessionReaction(createProductionReaction(repository))
-  })
-
-  afterEach(() => {
-    setBackofficeSessionReaction(null)
-    clearBackofficeAccessRefusal()
-    vi.unstubAllGlobals()
-    document.cookie = 'XSRF-TOKEN=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/'
-    document.body.innerHTML = ''
-  })
 
   it("une relecture servie, puis le refus tardif d'une lecture de la page d'arrivée : le texte courant (#748, R122)", async () => {
-    // La liste des traits est retenue par une promesse manuelle : sa réponse arrive après la relecture des principes.
-    let refuseHeldRead: () => void = () => undefined
-    const heldRead = new Promise<Response>((resolve) => {
-      refuseHeldRead = () => resolve(jsonResponse(403, { code: 403, message: 'x' }))
-    })
+    // La liste des traits est retenue : sa réponse arrive après la relecture des principes.
+    const traits = heldRead()
     let principleReads = 0
     vi.stubGlobal(
       'fetch',
       vi.fn(async (url: string, init?: RequestInit) => {
         if ('POST' === init?.method) {
-          return jsonResponse(201, {
-            id: '019968a0-0000-7000-8000-0000000000a1',
-            locale: 'fr',
-            translationGroup: '019968b0-0000-7000-8000-0000000000e1',
-            title: 'DDD',
-            description: 'Description DDD',
-            iconKey: 'boxes',
-            position: 0,
-          })
+          return createdPrincipleResponse()
         }
         if (url.endsWith('/traits')) {
-          return heldRead
+          return traits.response
         }
         principleReads += 1
 
@@ -739,30 +736,25 @@ describe("AdminLayout — le chargement de la page d'arrivée est clos par la pr
         return 1 === principleReads ? jsonResponse(403, { code: 403, message: 'x' }) : jsonResponse(200, [])
       }),
     )
-    // Un enregistrement refusé pendant que la personne avait quitté le backoffice, sous le compte connecté.
     markBackofficeAccessRefused({ kind: 'write' }, lastAccountName())
 
     const wrapper = await mountAdminQuality(repository)
 
     // Les deux lectures du chargement sont parties avant le montage : l'une refusée, l'autre en attente. L'avis tient.
-    expect(wrapper.get('[data-testid="admin-access-refused"] span').text()).toBe(earlierSaveFr)
+    expect(noticeMessage(wrapper).text).toBe(EARLIER_SAVE_REFUSED_FR)
     expect(backofficeAccessRefused.value).toBe(2)
 
     // Un principe créé : l'écriture, puis la relecture des principes, partie après le montage, sont servies.
-    await wrapper.get('#admin-quality-principle-title').setValue('DDD')
-    await wrapper.get('#admin-quality-principle-description').setValue('Description DDD')
-    await wrapper.get('#admin-quality-principle-icon-key').setValue('boxes')
-    await wrapper.get('form').trigger('submit')
-    await flushPromises()
+    await createQualityPrinciple(wrapper)
     expect(principleReads).toBe(2)
-    expect(wrapper.get('[data-testid="admin-access-refused"] span').text()).toBe(earlierSaveFr)
+    expect(noticeMessage(wrapper).text).toBe(EARLIER_SAVE_REFUSED_FR)
 
     // La lecture retenue du chargement répond enfin, refusée : le chargement est clos, c'est le texte courant.
-    refuseHeldRead()
+    traits.refuse()
     await flushPromises()
 
     expect(backofficeAccessRefused.value).toBe(3)
-    expect(wrapper.get('[data-testid="admin-access-refused"] span').text()).toBe(accessRefusedFr)
+    expect(noticeMessage(wrapper).text).toBe(ACCESS_REFUSED_FR)
     wrapper.unmount()
   })
 })

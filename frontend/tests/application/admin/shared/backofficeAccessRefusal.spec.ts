@@ -7,16 +7,10 @@ import {
   stampBackofficeRead,
   settleBackofficeAccessRefusalsOnMount,
 } from '../../../../src/application/admin/shared/backofficeAccessRefusal'
-import type { ReadRefusalScope } from '../../../../src/domain/admin/shared/BackofficeSessionReaction'
 
 /** Les comptes des écritures de ces tests : le module retient le nom, jamais plus (R76). */
 const ACCOUNT_A = 'compte-a'
 const ACCOUNT_B = 'compte-b'
-
-/** Ce qu'une lecture envoyée maintenant relève à l'envoi : le périmètre et l'époque courants (R54). */
-function readSentNow(): ReadRefusalScope {
-  return stampBackofficeRead()
-}
 
 /**
  * Le compteur des refus réels et son périmètre (#748, R28, CR3-8) : une navigation (un effacement) avance le
@@ -26,14 +20,14 @@ function readSentNow(): ReadRefusalScope {
  */
 describe('backofficeAccessRefusal', () => {
   it('un refus du périmètre courant compte et le dit', () => {
-    expect(markBackofficeAccessRefused(readSentNow(), ACCOUNT_A)).toBe(true)
-    expect(markBackofficeAccessRefused(readSentNow(), ACCOUNT_A)).toBe(true)
+    expect(markBackofficeAccessRefused(stampBackofficeRead(), ACCOUNT_A)).toBe(true)
+    expect(markBackofficeAccessRefused(stampBackofficeRead(), ACCOUNT_A)).toBe(true)
 
     expect(backofficeAccessRefused.value).toBe(2)
   })
 
   it('un effacement avance le périmètre : le refus relevé avant ne compte plus, rien ne change', () => {
-    const sentBefore = readSentNow()
+    const sentBefore = stampBackofficeRead()
     clearBackofficeAccessRefusal()
 
     expect(stampBackofficeRead().scope).not.toBe(sentBefore.scope)
@@ -42,7 +36,7 @@ describe('backofficeAccessRefusal', () => {
   })
 
   it('un effacement remet le compteur à zéro', () => {
-    markBackofficeAccessRefused(readSentNow(), ACCOUNT_A)
+    markBackofficeAccessRefused(stampBackofficeRead(), ACCOUNT_A)
 
     clearBackofficeAccessRefusal()
 
@@ -50,7 +44,7 @@ describe('backofficeAccessRefusal', () => {
   })
 
   it("au montage, une écriture comptée garde le compteur et se dit « enregistrement précédent » ; le périmètre ne bouge pas (R64)", () => {
-    const sentFromThisPage = readSentNow()
+    const sentFromThisPage = stampBackofficeRead()
     markBackofficeAccessRefused({ kind: 'write' }, ACCOUNT_A)
 
     settleBackofficeAccessRefusalsOnMount(ACCOUNT_A)
@@ -62,7 +56,7 @@ describe('backofficeAccessRefusal', () => {
   })
 
   it("au montage, un refus de lecture seul est oublié : compteur à zéro, rien à dire, périmètre inchangé (R64)", () => {
-    const sentFromThisPage = readSentNow()
+    const sentFromThisPage = stampBackofficeRead()
     markBackofficeAccessRefused(sentFromThisPage, ACCOUNT_A)
 
     settleBackofficeAccessRefusalsOnMount(ACCOUNT_A)
@@ -82,7 +76,7 @@ describe('backofficeAccessRefusal', () => {
   })
 
   it("au montage, l'écriture comptée d'un autre compte remet tout à zéro", () => {
-    const sentFromThisPage = readSentNow()
+    const sentFromThisPage = stampBackofficeRead()
     markBackofficeAccessRefused({ kind: 'write' }, ACCOUNT_A)
 
     settleBackofficeAccessRefusalsOnMount(ACCOUNT_B)
@@ -109,8 +103,8 @@ describe('backofficeAccessRefusal', () => {
   it("avant toute lecture relancée, chaque lecture de la page d'arrivée garde l'avis, à toute heure (#748, R122)", () => {
     markBackofficeAccessRefused({ kind: 'write' }, ACCOUNT_A)
     // Une page à deux listes (Qualité, À propos) : deux lectures estampillées dans le `setup` de la page, avant le montage.
-    const firstLanding = readSentNow()
-    const secondLanding = readSentNow()
+    const firstLanding = stampBackofficeRead()
+    const secondLanding = stampBackofficeRead()
     settleBackofficeAccessRefusalsOnMount(ACCOUNT_A)
     expect(earlierSaveRefused.value).toBe(true)
     expect(backofficeAccessRefused.value).toBe(1)
@@ -127,11 +121,11 @@ describe('backofficeAccessRefusal', () => {
 
   it("après la première lecture envoyée après le montage, le refus d'une lecture d'arrivée rend le texte courant (#748, R122)", () => {
     markBackofficeAccessRefused({ kind: 'write' }, ACCOUNT_A)
-    const firstLanding = readSentNow()
-    const secondLanding = readSentNow()
+    const firstLanding = stampBackofficeRead()
+    const secondLanding = stampBackofficeRead()
     settleBackofficeAccessRefusalsOnMount(ACCOUNT_A)
     // Une lecture que la personne relance (« Réessayer », une relecture après un enregistrement) : elle clôt le chargement.
-    readSentNow()
+    stampBackofficeRead()
     expect(earlierSaveRefused.value).toBe(true)
 
     // Les lectures d'avant le montage, refusées longtemps après : l'avis ne revient pas, c'est le refus courant.
@@ -145,9 +139,9 @@ describe('backofficeAccessRefusal', () => {
 
   it("un nouveau montage rouvre le chargement de la page d'arrivée : ses lectures gardent l'avis de nouveau (#748, R122)", () => {
     settleBackofficeAccessRefusalsOnMount(ACCOUNT_A)
-    readSentNow()
+    stampBackofficeRead()
     markBackofficeAccessRefused({ kind: 'write' }, ACCOUNT_A)
-    const landing = readSentNow()
+    const landing = stampBackofficeRead()
     settleBackofficeAccessRefusalsOnMount(ACCOUNT_A)
     expect(earlierSaveRefused.value).toBe(true)
 
@@ -158,9 +152,9 @@ describe('backofficeAccessRefusal', () => {
 
   it("une lecture partie après le montage rend le texte courant (#748, R112)", () => {
     markBackofficeAccessRefused({ kind: 'write' }, ACCOUNT_A)
-    const landing = readSentNow()
+    const landing = stampBackofficeRead()
     settleBackofficeAccessRefusalsOnMount(ACCOUNT_A)
-    const afterMount = readSentNow()
+    const afterMount = stampBackofficeRead()
 
     markBackofficeAccessRefused(afterMount, ACCOUNT_A)
     expect(earlierSaveRefused.value).toBe(false)
@@ -173,14 +167,17 @@ describe('backofficeAccessRefusal', () => {
 
   it("une lecture de la page d'arrivée qui ne répond pas ne garde pas l'avis pour les suivantes (#748, R112)", () => {
     markBackofficeAccessRefused({ kind: 'write' }, ACCOUNT_A)
-    // Cette lecture-ci ne répond jamais : aucun refus ne lui est rendu.
-    readSentNow()
+    // Cette lecture-ci ne répond jamais : aucun refus ne lui est rendu, estampiller n'en compte aucun.
+    stampBackofficeRead()
     settleBackofficeAccessRefusalsOnMount(ACCOUNT_A)
-    const afterMount = readSentNow()
+    const afterMount = stampBackofficeRead()
+    expect(backofficeAccessRefused.value).toBe(1)
+    expect(earlierSaveRefused.value).toBe(true)
 
     markBackofficeAccessRefused(afterMount, ACCOUNT_A)
 
     expect(earlierSaveRefused.value).toBe(false)
+    expect(backofficeAccessRefused.value).toBe(2)
   })
 
   it("le montage avance l'époque, pas le périmètre (#748, R112)", () => {
@@ -196,7 +193,7 @@ describe('backofficeAccessRefusal', () => {
 
   it("après un effacement, une lecture d'avant le montage est périmée (#748, R112)", () => {
     markBackofficeAccessRefused({ kind: 'write' }, ACCOUNT_A)
-    const landing = readSentNow()
+    const landing = stampBackofficeRead()
     settleBackofficeAccessRefusalsOnMount(ACCOUNT_A)
 
     clearBackofficeAccessRefusal()
@@ -207,7 +204,7 @@ describe('backofficeAccessRefusal', () => {
 
   it("une écriture comptée sous aucun compte se distingue de l'absence d'écriture", () => {
     // Aucune écriture comptée, aucun compte au montage : rien à dire, même si « aucun » égale « aucun ».
-    markBackofficeAccessRefused(readSentNow(), null)
+    markBackofficeAccessRefused(stampBackofficeRead(), null)
     settleBackofficeAccessRefusalsOnMount(null)
     expect(earlierSaveRefused.value).toBe(false)
     expect(backofficeAccessRefused.value).toBe(0)
@@ -250,9 +247,9 @@ describe('backofficeAccessRefusal', () => {
 
   // Deux tests successifs : le premier laisse un refus compté et un périmètre avancé, le second les doit à zéro.
   it('remise à zéro (1/2) : un refus compté et un périmètre avancé', () => {
-    markBackofficeAccessRefused(readSentNow(), ACCOUNT_A)
+    markBackofficeAccessRefused(stampBackofficeRead(), ACCOUNT_A)
     clearBackofficeAccessRefusal()
-    markBackofficeAccessRefused(readSentNow(), ACCOUNT_A)
+    markBackofficeAccessRefused(stampBackofficeRead(), ACCOUNT_A)
     markBackofficeAccessRefused({ kind: 'write' }, ACCOUNT_A)
     settleBackofficeAccessRefusalsOnMount(ACCOUNT_A)
 
