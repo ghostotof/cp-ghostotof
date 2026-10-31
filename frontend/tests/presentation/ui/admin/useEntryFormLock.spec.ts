@@ -8,10 +8,10 @@ describe('useEntryFormLock', () => {
   // Les refs du formulaire, comme le font les pages : `isEditing` et la locale de la source de la proposition.
   function lockOf(options: { localeHelpId?: string } = {}) {
     const isEditing = ref(false)
-    const proposalSource = ref<Locale | null>(null)
-    const lock = useEntryFormLock({ hintId: 'hint', isEditing, proposalSourceLocale: proposalSource, ...options })
+    const proposalSourceLocale = ref<Locale | null>(null)
+    const lock = useEntryFormLock({ hintId: 'hint', isEditing, proposalSourceLocale: proposalSourceLocale, ...options })
 
-    return { lock, isEditing, proposalSource }
+    return { lock, isEditing, proposalSourceLocale }
   }
 
   it("l'état vaut 'none' sans édition ni proposition", () => {
@@ -22,9 +22,9 @@ describe('useEntryFormLock', () => {
   })
 
   it("l'état vaut 'editing' en édition, 'proposal' pendant une proposition, et l'édition l'emporte", () => {
-    const { lock, isEditing, proposalSource } = lockOf()
+    const { lock, isEditing, proposalSourceLocale } = lockOf()
 
-    proposalSource.value = 'fr'
+    proposalSourceLocale.value = 'fr'
     expect(lock.state).toBe('proposal')
     expect(lock.isEntryLocked).toBe(true)
 
@@ -32,21 +32,21 @@ describe('useEntryFormLock', () => {
     expect(lock.state).toBe('editing')
     expect(lock.isEntryLocked).toBe(true)
 
-    proposalSource.value = null
+    proposalSourceLocale.value = null
     expect(lock.state).toBe('editing')
   })
 
   it("accepte aussi des getters, lus à chaque évaluation", () => {
     const isEditing = ref(false)
-    const proposalSource = ref<Locale | null>(null)
+    const proposalSourceLocale = ref<Locale | null>(null)
     const lock = useEntryFormLock({
       hintId: 'hint',
       isEditing: () => isEditing.value,
-      proposalSourceLocale: () => proposalSource.value,
+      proposalSourceLocale: () => proposalSourceLocale.value,
     })
     expect(lock.state).toBe('none')
 
-    proposalSource.value = 'en'
+    proposalSourceLocale.value = 'en'
     expect(lock.state).toBe('proposal')
 
     isEditing.value = true
@@ -54,11 +54,11 @@ describe('useEntryFormLock', () => {
   })
 
   it("isProposalLocked et proposalDescribedBy ne valent que pendant une proposition, pas en édition", () => {
-    const { lock, isEditing, proposalSource } = lockOf()
+    const { lock, isEditing, proposalSourceLocale } = lockOf()
     expect(lock.isProposalLocked).toBe(false)
     expect(lock.proposalDescribedBy).toBeUndefined()
 
-    proposalSource.value = 'fr'
+    proposalSourceLocale.value = 'fr'
     expect(lock.isProposalLocked).toBe(true)
     expect(lock.proposalDescribedBy).toBe('hint')
 
@@ -82,7 +82,7 @@ describe('useEntryFormLock', () => {
     expect(withHelp.lock.localeDescribedBy).toBe('help hint')
 
     const withoutHelp = lockOf()
-    withoutHelp.proposalSource.value = 'fr'
+    withoutHelp.proposalSourceLocale.value = 'fr'
     expect(withoutHelp.lock.localeDescribedBy).toBe('hint')
   })
 

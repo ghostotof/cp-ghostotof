@@ -97,8 +97,8 @@ export interface EntryFormLockCase {
   /** Rang du formulaire dans la page (`findAll('form')`) ; 0 pour une page à un seul formulaire. */
   readonly form: number
   /**
-   * Identifiants (sans `#`) du sélecteur de langue, du groupe de traduction, du champ de titre, du texte du verrou et
-   * de chaque champ de prose du formulaire (ceux que la traduction envoie et remplace).
+   * Identifiants (sans `#`) du sélecteur de langue, du groupe de traduction, du champ de titre, du texte du verrou
+   * et de chaque champ de prose du formulaire (ceux que la traduction envoie et remplace).
    */
   readonly ids: {
     readonly locale: string
@@ -134,14 +134,16 @@ export interface EntryFormLockCase {
 }
 
 /**
- * Déclare, dans le `describe` appelant, les cas du verrou d'un formulaire par entrée : la proposition
- * désactive la langue et montre « Annuler » ; « Annuler » rend un formulaire vide ; le verrou est expliqué en
- * édition et pas dans un formulaire libre ; il l'est pendant une proposition, avec « Version de » et
- * « Proposer la version XX », et « Annuler » retire l'explication ; un « translate » émis pendant une proposition,
- * ou avant la première réponse, ne lance rien ; « Annuler », « Modifier », « Créer la version XX », la suppression
- * de l'entrée éditée et le changement de langue d'une création pendant une traduction en périment la réponse ; la prose est en
- * lecture seule pendant une traduction et l'erreur d'un échec survit à la frappe. Le support
- * crée le dépôt de traduction de chaque cas, le passe à `mount` et compte ses appels. Écrits une fois pour les huit
+ * Déclare, dans le `describe` appelant, les cas du verrou d'un formulaire par entrée :
+ * - la proposition désactive la langue et montre « Annuler » ; « Annuler » rend un formulaire vide ;
+ * - le verrou est expliqué en édition et pas dans un formulaire libre ; il l'est pendant une proposition, avec « Version de »
+ *   et « Proposer la version XX », et « Annuler » retire l'explication ;
+ * - un « translate » émis pendant une proposition, un ordre modifié, un enregistrement en vol, sans prose, ou avant la première
+ *   réponse, ne lance rien ;
+ * - « Annuler », « Modifier », « Créer la version XX », la suppression de l'entrée éditée et le changement de langue d'une
+ *   création pendant une traduction en périment la réponse ;
+ * - la prose est en lecture seule pendant une traduction et l'erreur d'un échec survit à la frappe.
+ * Le support crée le dépôt de traduction de chaque cas, le passe à `mount` et compte ses appels. Écrits une fois pour les huit
  * formulaires : un cas de plus s'y ajoute une fois.
  */
 export function describeEntryFormLock(lockCase: EntryFormLockCase): void {
@@ -150,12 +152,16 @@ export function describeEntryFormLock(lockCase: EntryFormLockCase): void {
   const prefix = '' === lockCase.name ? '' : `${lockCase.name} : `
   const permanent = undefined === lockCase.permanentHelp ? [] : [lockCase.permanentHelp]
   const headingOf = (wrapper: VueWrapper): string => wrapper.findAll('h2')[form].text()
-  const mountLocked = async (): Promise<VueWrapper> => lockCase.mount(lockCase.createTranslation())
+  const mountWithNewTranslation = async (): Promise<VueWrapper> => lockCase.mount(lockCase.createTranslation())
   const titleValue = (wrapper: VueWrapper): string => (wrapper.get(`#${ids.title}`).element as HTMLInputElement).value
-  const translateButton = (wrapper: VueWrapper) => wrapper.findAll('form')[form].findComponent(TranslateEntryButton)
+  // Le formulaire du cas dans la page, l'avis de proposition qu'il porte et le composant de son bouton de traduction
+  // (`translateEntryButton`, exporté plus haut, est le bouton DOM) : un seul chemin vers chacun.
+  const formOf = (wrapper: VueWrapper) => wrapper.findAll('form')[form]
+  const proposalNotice = (wrapper: VueWrapper) => formOf(wrapper).find('[role="status"]')
+  const translateButtonComponent = (wrapper: VueWrapper) => formOf(wrapper).findComponent(TranslateEntryButton)
 
   it(`${prefix}après une proposition, le sélecteur de langue est désactivé et « Annuler » est affiché`, async () => {
-    const wrapper = await mountLocked()
+    const wrapper = await mountWithNewTranslation()
 
     await lockCase.startEdit(wrapper)
     await lockCase.propose(wrapper)
@@ -169,21 +175,21 @@ export function describeEntryFormLock(lockCase: EntryFormLockCase): void {
   })
 
   it(`${prefix}« Annuler » après une proposition rend un formulaire vide, le sélecteur actif, sans avis`, async () => {
-    const wrapper = await mountLocked()
+    const wrapper = await mountWithNewTranslation()
 
     await lockCase.startEdit(wrapper)
     await lockCase.propose(wrapper)
-    expect(wrapper.findAll('form')[form].find('[role="status"]').exists()).toBe(true)
+    expect(proposalNotice(wrapper).exists()).toBe(true)
     expect(formCancelButton(wrapper, form)).toBeDefined()
 
     await formCancelButton(wrapper, form)?.trigger('click')
     await flushPromises()
 
-    expect(wrapper.findAll('form')[form].find('[role="status"]').exists()).toBe(false)
+    expect(proposalNotice(wrapper).exists()).toBe(false)
     expect(wrapper.get(locale).attributes('disabled')).toBeUndefined()
     expect((wrapper.get(locale).element as HTMLSelectElement).value).toBe('fr')
     expect((wrapper.get(`#${ids.group}`).element as HTMLSelectElement).value).toBe('')
-    expect((wrapper.get(`#${ids.title}`).element as HTMLInputElement).value).toBe('')
+    expect(titleValue(wrapper)).toBe('')
     expect(headingOf(wrapper)).toBe(lockCase.heading)
     expect(formCancelButton(wrapper, form)).toBeUndefined()
   })
@@ -191,7 +197,7 @@ export function describeEntryFormLock(lockCase: EntryFormLockCase): void {
   // D-a de l'auteur (#748, 2026-10-30) : un sélecteur désactivé dit pourquoi, par un texte rendu
   // seulement pendant le verrou et désigné par `aria-describedby` (jamais une référence pendante).
   it(`${prefix}le verrou de la langue est expliqué en édition, et pas dans un formulaire libre`, async () => {
-    const wrapper = await mountLocked()
+    const wrapper = await mountWithNewTranslation()
 
     expect(describedTexts(wrapper, locale)).toEqual(permanent)
     expect(wrapper.find(`#${ids.hint}`).exists()).toBe(false)
@@ -205,7 +211,7 @@ export function describeEntryFormLock(lockCase: EntryFormLockCase): void {
   // le formulaire dans la langue source, groupe gardé (Sp7-1) ; le serveur la refuse (409). Le bouton est
   // désactivé et décrit par le texte du verrou, qui dit que « Annuler » est la sortie.
   it(`${prefix}après une proposition, « Proposer la version … » est désactivé et décrit par le texte du verrou`, async () => {
-    const wrapper = await mountLocked()
+    const wrapper = await mountWithNewTranslation()
 
     await lockCase.startEdit(wrapper)
     expect(translateEntryButton(wrapper, form).attributes('disabled')).toBeUndefined()
@@ -217,7 +223,7 @@ export function describeEntryFormLock(lockCase: EntryFormLockCase): void {
   })
 
   it(`${prefix}« Annuler » après une proposition rend le bouton de traduction libre de tout texte de verrou`, async () => {
-    const wrapper = await mountLocked()
+    const wrapper = await mountWithNewTranslation()
 
     await lockCase.startEdit(wrapper)
     await lockCase.propose(wrapper)
@@ -233,7 +239,7 @@ export function describeEntryFormLock(lockCase: EntryFormLockCase): void {
   // la langue. « aucune » détacherait la proposition de sa source (D-b) ; « Annuler » est la sortie. En édition,
   // il reste libre (détacher une entrée de son groupe est un geste permis) et ne désigne aucun verrou.
   it(`${prefix}après une proposition, « Version de » est désactivé et décrit par le texte du verrou ; « Annuler » le libère`, async () => {
-    const wrapper = await mountLocked()
+    const wrapper = await mountWithNewTranslation()
     const group = `#${ids.group}`
 
     await lockCase.startEdit(wrapper)
@@ -250,7 +256,7 @@ export function describeEntryFormLock(lockCase: EntryFormLockCase): void {
   })
 
   it(`${prefix}en édition, « Version de » reste libre et ne désigne aucun texte de verrou`, async () => {
-    const wrapper = await mountLocked()
+    const wrapper = await mountWithNewTranslation()
 
     await lockCase.startEdit(wrapper)
 
@@ -259,7 +265,7 @@ export function describeEntryFormLock(lockCase: EntryFormLockCase): void {
   })
 
   it(`${prefix}après une proposition, le verrou de la langue est expliqué et « Annuler » retire l'explication`, async () => {
-    const wrapper = await mountLocked()
+    const wrapper = await mountWithNewTranslation()
 
     await lockCase.startEdit(wrapper)
     await lockCase.propose(wrapper)
@@ -274,8 +280,8 @@ export function describeEntryFormLock(lockCase: EntryFormLockCase): void {
   })
 
   // Le bouton désactivé n'est pas la seule garde : un « translate » émis par programme, dans l'une ou l'autre langue
-  // (celle qui ramènerait le formulaire en arrière comme celle de la source), ne lance aucune traduction et laisse la
-  // proposition en place. Le refus vient de `useAdminTranslation` (`isRefused`), pas seulement du `:disabled`.
+  // — la cible de la proposition comme sa source —, ne lance aucune traduction et laisse la proposition en place.
+  // Le refus vient de `useAdminTranslation` (`isRefused`), pas seulement du `:disabled`.
   it(`${prefix}pendant une proposition, un « translate » émis ne lance aucune traduction`, async () => {
     const translation = lockCase.createTranslation()
     const wrapper = await lockCase.mount(translation)
@@ -286,14 +292,14 @@ export function describeEntryFormLock(lockCase: EntryFormLockCase): void {
     const localeBefore = (wrapper.get(locale).element as HTMLSelectElement).value
 
     for (const target of SUPPORTED_LOCALES) {
-      translateButton(wrapper).vm.$emit('translate', target)
+      translateButtonComponent(wrapper).vm.$emit('translate', target)
       await flushPromises()
     }
 
     expect(vi.mocked(translation.translate)).toHaveBeenCalledTimes(requests)
     expect((wrapper.get(locale).element as HTMLSelectElement).value).toBe(localeBefore)
     expect(headingOf(wrapper)).toBe(lockCase.heading)
-    expect(wrapper.findAll('form')[form].find('[role="status"]').exists()).toBe(true)
+    expect(proposalNotice(wrapper).exists()).toBe(true)
   })
 
   // Décision 5 de la onzième relecture (R127) : le bouton est désactivé pendant un brouillon d'ordre (une proposition que le
@@ -305,11 +311,11 @@ export function describeEntryFormLock(lockCase: EntryFormLockCase): void {
     await lockCase.dirtyOrder(wrapper)
     expect(translateEntryButton(wrapper, form).attributes('disabled')).toBeDefined()
 
-    translateButton(wrapper).vm.$emit('translate', 'en')
+    translateButtonComponent(wrapper).vm.$emit('translate', 'en')
     await flushPromises()
 
     expect(vi.mocked(translation.translate)).not.toHaveBeenCalled()
-    expect(wrapper.findAll('form')[form].find('[role="status"]').exists()).toBe(false)
+    expect(proposalNotice(wrapper).exists()).toBe(false)
   })
 
   // R127b (décision de l'auteur du 2026-10-31) : le bouton est aussi désactivé pendant l'enregistrement du formulaire et sans
@@ -319,15 +325,15 @@ export function describeEntryFormLock(lockCase: EntryFormLockCase): void {
     const wrapper = await lockCase.mount(translation)
     await lockCase.startEdit(wrapper)
     lockCase.holdNextSave()
-    await wrapper.findAll('form')[form].trigger('submit.prevent')
+    await formOf(wrapper).trigger('submit.prevent')
     await flushPromises()
     expect(translateEntryButton(wrapper, form).attributes('disabled')).toBeDefined()
 
-    translateButton(wrapper).vm.$emit('translate', 'en')
+    translateButtonComponent(wrapper).vm.$emit('translate', 'en')
     await flushPromises()
 
     expect(vi.mocked(translation.translate)).not.toHaveBeenCalled()
-    expect(wrapper.findAll('form')[form].find('[role="status"]').exists()).toBe(false)
+    expect(proposalNotice(wrapper).exists()).toBe(false)
   })
 
   it(`${prefix}sans aucune prose à traduire : un « translate » émis ne lance aucune traduction`, async () => {
@@ -339,12 +345,12 @@ export function describeEntryFormLock(lockCase: EntryFormLockCase): void {
     }
     expect(translateEntryButton(wrapper, form).attributes('disabled')).toBeDefined()
 
-    translateButton(wrapper).vm.$emit('translate', 'en')
+    translateButtonComponent(wrapper).vm.$emit('translate', 'en')
     await flushPromises()
 
     expect(vi.mocked(translation.translate)).not.toHaveBeenCalled()
-    expect(wrapper.findAll('form')[form].find('[role="status"]').exists()).toBe(false)
-    expect(wrapper.findAll('form')[form].find('[role="alert"]').exists()).toBe(false)
+    expect(proposalNotice(wrapper).exists()).toBe(false)
+    expect(formOf(wrapper).find('[role="alert"]').exists()).toBe(false)
   })
 
   it(`${prefix}deux « translate » avant la première réponse : une seule traduction`, async () => {
@@ -353,14 +359,14 @@ export function describeEntryFormLock(lockCase: EntryFormLockCase): void {
     await lockCase.startEdit(wrapper)
     const reply = deferNextTranslation(translation)
 
-    translateButton(wrapper).vm.$emit('translate', 'en')
-    translateButton(wrapper).vm.$emit('translate', 'fr')
+    translateButtonComponent(wrapper).vm.$emit('translate', 'en')
+    translateButtonComponent(wrapper).vm.$emit('translate', 'fr')
     await flushPromises()
     reply.release()
     await flushPromises()
 
     expect(vi.mocked(translation.translate)).toHaveBeenCalledTimes(1)
-    expect(wrapper.findAll('form')[form].find('[role="status"]').exists()).toBe(true)
+    expect(proposalNotice(wrapper).exists()).toBe(true)
   })
 
   it(`${prefix}« Annuler » pendant une traduction : la réponse qui arrive ne remplit rien`, async () => {
@@ -369,16 +375,16 @@ export function describeEntryFormLock(lockCase: EntryFormLockCase): void {
     await lockCase.startEdit(wrapper)
     const reply = deferNextTranslation(translation)
 
-    translateButton(wrapper).vm.$emit('translate', 'en')
+    translateButtonComponent(wrapper).vm.$emit('translate', 'en')
     await flushPromises()
     await formCancelButton(wrapper, form)?.trigger('click')
     await flushPromises()
     reply.release()
     await flushPromises()
 
-    expect((wrapper.get(`#${ids.title}`).element as HTMLInputElement).value).toBe('')
+    expect(titleValue(wrapper)).toBe('')
     expect(headingOf(wrapper)).toBe(lockCase.heading)
-    expect(wrapper.findAll('form')[form].find('[role="status"]').exists()).toBe(false)
+    expect(proposalNotice(wrapper).exists()).toBe(false)
   })
 
   // Décision 2 de la onzième relecture (R125) : jamais plus d'un appel au modèle en vol par formulaire. « Annuler » vide le
@@ -389,11 +395,11 @@ export function describeEntryFormLock(lockCase: EntryFormLockCase): void {
     await lockCase.startEdit(wrapper)
     const reply = deferNextTranslation(translation)
 
-    translateButton(wrapper).vm.$emit('translate', 'en')
+    translateButtonComponent(wrapper).vm.$emit('translate', 'en')
     await flushPromises()
     await formCancelButton(wrapper, form)?.trigger('click')
     await flushPromises()
-    translateButton(wrapper).vm.$emit('translate', 'en')
+    translateButtonComponent(wrapper).vm.$emit('translate', 'en')
     await flushPromises()
 
     expect(vi.mocked(translation.translate)).toHaveBeenCalledTimes(1)
@@ -405,7 +411,7 @@ export function describeEntryFormLock(lockCase: EntryFormLockCase): void {
 
     expect(textsDescribing(wrapper, translateEntryButton(wrapper, form))).toEqual([])
     expect(titleValue(wrapper)).toBe('')
-    expect(wrapper.findAll('form')[form].find('[role="status"]').exists()).toBe(false)
+    expect(proposalNotice(wrapper).exists()).toBe(false)
   })
 
   // Chaque geste qui remplace le contenu du formulaire périme la traduction en vol : sa réponse n'y pose ni prose ni avis.
@@ -415,7 +421,7 @@ export function describeEntryFormLock(lockCase: EntryFormLockCase): void {
     await lockCase.startEdit(wrapper)
     const reply = deferNextTranslation(translation)
 
-    translateButton(wrapper).vm.$emit('translate', 'en')
+    translateButtonComponent(wrapper).vm.$emit('translate', 'en')
     await flushPromises()
     await lockCase.startEditOther(wrapper)
     const titleOfOther = titleValue(wrapper)
@@ -424,7 +430,7 @@ export function describeEntryFormLock(lockCase: EntryFormLockCase): void {
 
     expect(titleValue(wrapper)).toBe(titleOfOther)
     expect(headingOf(wrapper)).not.toBe(lockCase.heading)
-    expect(wrapper.findAll('form')[form].find('[role="status"]').exists()).toBe(false)
+    expect(proposalNotice(wrapper).exists()).toBe(false)
   })
 
   it(`${prefix}« Créer la version » pendant une traduction : la réponse qui arrive ne remplit rien`, async () => {
@@ -433,14 +439,14 @@ export function describeEntryFormLock(lockCase: EntryFormLockCase): void {
     await lockCase.startEdit(wrapper)
     const reply = deferNextTranslation(translation)
 
-    translateButton(wrapper).vm.$emit('translate', 'en')
+    translateButtonComponent(wrapper).vm.$emit('translate', 'en')
     await flushPromises()
     await lockCase.startCreateVersion(wrapper)
     reply.release()
     await flushPromises()
 
     expect(titleValue(wrapper)).toBe('')
-    expect(wrapper.findAll('form')[form].find('[role="status"]').exists()).toBe(false)
+    expect(proposalNotice(wrapper).exists()).toBe(false)
   })
 
   // Ce que l'identité du formulaire ne voit pas : supprimer l'entrée éditée ne change rien au formulaire, la page périme
@@ -452,7 +458,7 @@ export function describeEntryFormLock(lockCase: EntryFormLockCase): void {
     const titleOfEntry = titleValue(wrapper)
     const reply = deferNextTranslation(translation)
 
-    translateButton(wrapper).vm.$emit('translate', 'en')
+    translateButtonComponent(wrapper).vm.$emit('translate', 'en')
     await flushPromises()
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
     try {
@@ -465,7 +471,7 @@ export function describeEntryFormLock(lockCase: EntryFormLockCase): void {
     await flushPromises()
 
     expect(titleValue(wrapper)).toBe(titleOfEntry)
-    expect(wrapper.findAll('form')[form].find('[role="status"]').exists()).toBe(false)
+    expect(proposalNotice(wrapper).exists()).toBe(false)
   })
 
   it(`${prefix}changer la langue d'une création pendant une traduction : la réponse ne pose rien`, async () => {
@@ -474,7 +480,7 @@ export function describeEntryFormLock(lockCase: EntryFormLockCase): void {
     await wrapper.get(`#${ids.title}`).setValue('Titre saisi')
     const reply = deferNextTranslation(translation)
 
-    translateButton(wrapper).vm.$emit('translate', 'en')
+    translateButtonComponent(wrapper).vm.$emit('translate', 'en')
     await flushPromises()
     await wrapper.get(locale).setValue('en')
     reply.release()
@@ -482,7 +488,7 @@ export function describeEntryFormLock(lockCase: EntryFormLockCase): void {
 
     expect(titleValue(wrapper)).toBe('Titre saisi')
     expect(headingOf(wrapper)).toBe(lockCase.heading)
-    expect(wrapper.findAll('form')[form].find('[role="status"]').exists()).toBe(false)
+    expect(proposalNotice(wrapper).exists()).toBe(false)
   })
 
   // Décision 3 de la onzième relecture (R126) : pendant une traduction, la prose est en lecture seule (focusable et
@@ -493,7 +499,7 @@ export function describeEntryFormLock(lockCase: EntryFormLockCase): void {
     await lockCase.startEdit(wrapper)
     const reply = deferNextTranslation(translation)
 
-    translateButton(wrapper).vm.$emit('translate', 'en')
+    translateButtonComponent(wrapper).vm.$emit('translate', 'en')
     await flushPromises()
 
     for (const id of ids.prose) {
@@ -521,7 +527,7 @@ export function describeEntryFormLock(lockCase: EntryFormLockCase): void {
     const titleOfEntry = titleValue(wrapper)
     vi.mocked(translation.translate).mockRejectedValueOnce(new AdminTranslationError('unavailable', 'Indisponible.'))
 
-    translateButton(wrapper).vm.$emit('translate', 'en')
+    translateButtonComponent(wrapper).vm.$emit('translate', 'en')
     await flushPromises()
 
     for (const id of ids.prose) {
@@ -530,7 +536,7 @@ export function describeEntryFormLock(lockCase: EntryFormLockCase): void {
     }
     expect(wrapper.text()).not.toContain(PROSE_READONLY_TEXT)
     expect(titleValue(wrapper)).toBe(titleOfEntry)
-    expect(wrapper.findAll('form')[form].find('[role="alert"]').text()).toBe(TRANSLATION_UNAVAILABLE_TEXT)
+    expect(formOf(wrapper).find('[role="alert"]').text()).toBe(TRANSLATION_UNAVAILABLE_TEXT)
     await expectNoAccessibilityViolation(wrapper)
   })
 
@@ -543,15 +549,15 @@ export function describeEntryFormLock(lockCase: EntryFormLockCase): void {
     await lockCase.startEdit(wrapper)
     vi.mocked(translation.translate).mockRejectedValueOnce(new AdminTranslationError('unavailable', 'Indisponible.'))
 
-    translateButton(wrapper).vm.$emit('translate', 'en')
+    translateButtonComponent(wrapper).vm.$emit('translate', 'en')
     await flushPromises()
-    expect(wrapper.findAll('form')[form].find('[role="alert"]').text()).toBe(TRANSLATION_UNAVAILABLE_TEXT)
+    expect(formOf(wrapper).find('[role="alert"]').text()).toBe(TRANSLATION_UNAVAILABLE_TEXT)
 
     await wrapper.get(`#${ids.title}`).setValue('Titre corrigé après l\'échec')
     await flushPromises()
 
     expect(titleValue(wrapper)).toBe('Titre corrigé après l\'échec')
-    expect(wrapper.findAll('form')[form].find('[role="alert"]').text()).toBe(TRANSLATION_UNAVAILABLE_TEXT)
+    expect(formOf(wrapper).find('[role="alert"]').text()).toBe(TRANSLATION_UNAVAILABLE_TEXT)
   })
 }
 

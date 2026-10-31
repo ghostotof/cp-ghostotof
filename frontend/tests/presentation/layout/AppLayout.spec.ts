@@ -165,7 +165,7 @@ describe('AppLayout — revérification de la session finie au retour', () => {
     window.dispatchEvent(new Event('focus'))
     await flushPromises()
 
-    // Le bandeau n'a plus son écouteur : le mécanisme partagé est le seul, sans doublon.
+    // Le mécanisme partagé relit seul la session : un seul `me()`.
     expect(repository.me).toHaveBeenCalledTimes(1)
     expect(wrapper.find('[data-testid="admin-session-ended"]').exists()).toBe(false)
     expect(authState.sessionEnded).toBe(false)

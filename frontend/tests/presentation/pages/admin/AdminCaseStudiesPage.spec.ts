@@ -256,8 +256,7 @@ describe('AdminCaseStudiesPage', () => {
     expect(wrapper.text()).toContain('Ordre · à jour')
   })
 
-  // (#748, R93) : le bouton de traduction porte deux verrous à la fois, et les
-  // décrit tous les deux, celui de l'ordre d'abord.
+  // (#748, R93) : le bouton de traduction porte deux verrous à la fois et les décrit tous les deux, celui de l'ordre d'abord.
   it("un ordre modifié et une proposition affichée : le bouton de traduction est décrit par les deux textes", async () => {
     const { wrapper } = await mountPage()
 

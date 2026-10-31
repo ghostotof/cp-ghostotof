@@ -165,8 +165,11 @@ describe('templateExpressionsOf', () => {
       expect(fragmentsOf('<C :opts="{ credentials: \'omit\' }" />')).toEqual(["({ credentials: 'omit' })"])
     })
 
-    it('lit un gestionnaire en ligne comme le corps d\'une fonction : plusieurs instructions y sont permises', () => {
-      expect(fragmentsOf('<button @click="a(); b(\'omit\')">x</button>')).toEqual(["() => {\na(); b('omit')\n}"])
+    it("lit un gestionnaire en ligne comme le corps d'une fonction (plusieurs instructions), et y voit le 'omit'", () => {
+      const template = '<button @click="a(); b(\'omit\')">x</button>'
+
+      expect(fragmentsOf(template)).toEqual(["() => {\na(); b('omit')\n}"])
+      expect(literalsOf(template)).toContain('omit')
     })
 
     it("lit la valeur d'un attribut statique : un mode=\"omit\" écrit en dur dans le gabarit est vu (#748, R119)", () => {
@@ -193,13 +196,6 @@ describe('templateExpressionsOf', () => {
       expect(fragments).toEqual(["(function () { b('omit') })"])
       expect(syntaxErrorsOf(fragments[0] ?? '')).toEqual([])
       expect(literalsOf('<button @click="function () { b(\'omit\') }">x</button>')).toContain('omit')
-    })
-
-    it("lit un gestionnaire qui est une suite d'instructions comme un corps de fonction, et y voit le 'omit'", () => {
-      const template = '<button @click="a(); b(\'omit\')">x</button>'
-
-      expect(literalsOf(template)).toContain('omit')
-      expect(fragmentsOf(template)).toEqual(["() => {\na(); b('omit')\n}"])
     })
 
     it("lit une interpolation et un argument dynamique entre parenthèses, et ne rend pas un argument statique", () => {
