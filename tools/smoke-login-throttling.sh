@@ -29,11 +29,9 @@
 #
 # Usage :  tools/smoke-login-throttling.sh <url-de-base>
 #          ex. tools/smoke-login-throttling.sh https://preprod.cp-ghostotof.com
-# Env :    AUDIT_BASIC_AUTH  "utilisateur:mot_de_passe" (préprod), optionnel : non définie, aucune
-#                            Basic Auth ; définie mais vide, ou sans utilisateur ou sans mot de passe, sortie 2.
-#                            Jamais via `-u` : les arguments d'un processus se
-#                            lisent dans `ps` ; le couple passe par un fichier
-#                            de configuration curl en 600 (comme audit-prod.sh).
+# Env :    la Basic Auth de préprod, optionnelle : voir tools/lib/smoke-http.sh (la variable qui la porte, les
+#          valeurs refusées, la sortie 2). Jamais via `-u` : les arguments d'un processus se lisent dans `ps` ;
+#          le couple passe par un fichier de configuration curl en 600.
 #          SMOKE_CURL        binaire curl de substitution (tests hors ligne).
 # ---------------------------------------------------------------------------
 set -euo pipefail

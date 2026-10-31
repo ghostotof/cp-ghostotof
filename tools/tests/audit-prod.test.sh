@@ -296,8 +296,13 @@ fi
 # lirait le 401 de la préprod comme des dizaines d'échecs.
 copy_tools vide reelle
 AUDIT_BASIC_AUTH='' run_audit vide
-check_empty_basic_auth "AUDIT_BASIC_AUTH vide : sortie 2, « secret de Basic Auth vide », aucun appel, aucun dossier" \
-  "$rc" "$TMP/vide.err" "$TMP/vide.calls" "$TMP/vide.out" "$TMP/vide.tmpdir"
+CASE_LABEL="AUDIT_BASIC_AUTH vide : sortie 2, « secret de Basic Auth vide », aucun appel, aucun dossier" \
+  CASE_RC="$rc" \
+  CASE_ERR="$TMP/vide.err" \
+  CASE_CALLS="$TMP/vide.calls" \
+  CASE_OUT="$TMP/vide.out" \
+  CASE_TMPDIR="$TMP/vide.tmpdir" \
+  check_empty_basic_auth
 
 # Le même sous `bash -x` : la trace ne porte de la variable que son nom (le test de
 # présence ne la développe pas, le vide est jugé sur le chemin du fichier).

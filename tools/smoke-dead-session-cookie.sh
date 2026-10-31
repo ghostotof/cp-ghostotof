@@ -36,13 +36,9 @@
 #
 # Usage :  tools/smoke-dead-session-cookie.sh <url-de-base>
 #          ex. tools/smoke-dead-session-cookie.sh https://preprod.cp-ghostotof.com
-# Env :    AUDIT_BASIC_AUTH  "utilisateur:mot_de_passe" (préprod), optionnel : non définie, aucune
-#                            Basic Auth ; définie mais vide, ou sans utilisateur ou sans mot de passe, sortie 2.
-#                            Jamais via `-u` : les arguments d'un processus se
-#                            lisent dans `ps` ; le couple passe par un fichier
-#                            de configuration curl en 600 (tools/lib/
-#                            smoke-http.sh). Un retour à la ligne y est refusé
-#                            (sortie 2).
+# Env :    la Basic Auth de préprod, optionnelle : voir tools/lib/smoke-http.sh (la variable qui la porte, les
+#          valeurs refusées, la sortie 2). Jamais via `-u` : les arguments d'un processus se lisent dans `ps` ;
+#          le couple passe par un fichier de configuration curl en 600.
 #          SMOKE_CURL        binaire curl de substitution (tests hors ligne).
 # Sortie : 0 conforme, 1 écart (ou curl sans réponse), 2 usage ou environnement
 #          faux (dont le fichier de la Basic Auth disparu).

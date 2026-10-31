@@ -306,15 +306,24 @@ fi
 # --- Un secret de Basic Auth défini mais vide (le secret de préprod manquant) : sortie 2, « secret de
 # Basic Auth vide » sur stderr, aucun appel. Sans lui, chaque 401 de la préprod se lirait comme un résultat.
 AUDIT_BASIC_AUTH='' run vide "$init"
-check_empty_basic_auth "AUDIT_BASIC_AUTH vide → sortie 2, « secret de Basic Auth vide », aucun appel" \
-  "$rc" "$TMP/err" "$TMP/vide.calls" "$TMP/out"
+CASE_LABEL="AUDIT_BASIC_AUTH vide → sortie 2, « secret de Basic Auth vide », aucun appel" \
+  CASE_RC="$rc" \
+  CASE_ERR="$TMP/err" \
+  CASE_CALLS="$TMP/vide.calls" \
+  CASE_OUT="$TMP/out" \
+  check_empty_basic_auth
 
 # --- C11-1 : une Basic Auth et une base en `http://` — curl enverrait `Authorization: Basic` en clair :
 # sortie 2 au premier appel, aucun appel de curl, la valeur ni dans les messages ni dans les arguments.
 http_auth="$(generated_basic_auth)"
 AUDIT_BASIC_AUTH="$http_auth" TEST_BASE_URL=http://example.invalid run httpbase "$init"
-check_plain_http_refused "Basic Auth et base http:// → sortie 2, « non https:// », aucun appel, valeur jamais citée" \
-  "$rc" "$TMP/err" "$TMP/httpbase.calls" "$TMP/out" "$http_auth"
+CASE_LABEL="Basic Auth et base http:// → sortie 2, « non https:// », aucun appel, valeur jamais citée" \
+  CASE_RC="$rc" \
+  CASE_ERR="$TMP/err" \
+  CASE_CALLS="$TMP/httpbase.calls" \
+  CASE_OUT="$TMP/out" \
+  CASE_VALUE="$http_auth" \
+  check_plain_http_refused
 # Sans Basic Auth, une base http:// est servie comme avant (un smoke local) : aucun -K.
 TEST_BASE_URL=http://example.invalid run httplocal "$init"
 if ! grep -q -- ' -K ' "$TMP/httplocal.args" && [ -s "$TMP/httplocal.calls" ] && ! grep -q 'non https://' "$TMP/err"; then
