@@ -31,7 +31,7 @@ describe('backofficeAccessRefusal', () => {
     const sentBefore = stampBackofficeRead()
     clearBackofficeAccessRefusal()
 
-    expect(currentRefusalScope().scope).not.toBe(sentBefore.scope)
+    expect(stampBackofficeRead().scope).not.toBe(sentBefore.scope)
     expect(markBackofficeAccessRefused(sentBefore, ACCOUNT_A)).toBe(false)
     expect(backofficeAccessRefused.value).toBe(0)
   })
@@ -52,7 +52,7 @@ describe('backofficeAccessRefusal', () => {
 
     expect(backofficeAccessRefused.value).toBe(1)
     expect(earlierSaveRefused.value).toBe(true)
-    expect(currentRefusalScope().scope).toBe(sentFromThisPage.scope)
+    expect(stampBackofficeRead().scope).toBe(sentFromThisPage.scope)
     expect(markBackofficeAccessRefused(sentFromThisPage, ACCOUNT_A)).toBe(true)
   })
 
@@ -64,7 +64,7 @@ describe('backofficeAccessRefusal', () => {
 
     expect(backofficeAccessRefused.value).toBe(0)
     expect(earlierSaveRefused.value).toBe(false)
-    expect(currentRefusalScope().scope).toBe(sentFromThisPage.scope)
+    expect(stampBackofficeRead().scope).toBe(sentFromThisPage.scope)
   })
 
   it("au montage, l'écriture comptée du compte courant est dite", () => {
@@ -84,7 +84,7 @@ describe('backofficeAccessRefusal', () => {
 
     expect(earlierSaveRefused.value).toBe(false)
     expect(backofficeAccessRefused.value).toBe(0)
-    expect(currentRefusalScope().scope).toBe(sentFromThisPage.scope)
+    expect(stampBackofficeRead().scope).toBe(sentFromThisPage.scope)
     // L'écriture comptée est oubliée aussi : un montage suivant, même sous le compte A, n'a plus rien à dire.
     settleBackofficeAccessRefusalsOnMount(ACCOUNT_A)
     expect(earlierSaveRefused.value).toBe(false)
@@ -201,7 +201,7 @@ describe('backofficeAccessRefusal', () => {
 
     settleBackofficeAccessRefusalsOnMount(ACCOUNT_A)
 
-    const after = currentRefusalScope()
+    const after = stampBackofficeRead()
     expect(after.scope).toBe(before.scope)
     expect(after.epoch).not.toBe(before.epoch)
   })
@@ -270,14 +270,15 @@ describe('backofficeAccessRefusal', () => {
 
     expect(backofficeAccessRefused.value).toBe(2)
     expect(earlierSaveRefused.value).toBe(true)
-    expect(currentRefusalScope().scope).toBeGreaterThan(0)
-    expect(currentRefusalScope().epoch).toBeGreaterThan(0)
+    const sent = stampBackofficeRead()
+    expect(sent.scope).toBeGreaterThan(0)
+    expect(sent.epoch).toBeGreaterThan(0)
   })
 
   it("remise à zéro (2/2) : le test précédent n'a rien laissé", () => {
     // Ni l'écriture comptée (drapeau du module) ni le texte « enregistrement précédent » ne survivent à la remise à zéro.
     // Le périmètre et l'époque se lisent avant le montage, qui avance l'époque.
-    expect(currentRefusalScope()).toEqual({ kind: 'read', scope: 0, epoch: 0 })
+    expect(stampBackofficeRead()).toEqual({ kind: 'read', scope: 0, epoch: 0 })
     settleBackofficeAccessRefusalsOnMount(ACCOUNT_A)
 
     expect(backofficeAccessRefused.value).toBe(0)

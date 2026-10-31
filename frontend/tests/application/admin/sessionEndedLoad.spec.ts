@@ -52,7 +52,7 @@ interface Handle {
 
 interface Case {
   name: string
-  key: InjectionKey<never>
+  key: InjectionKey<unknown>
   /** Nom de la méthode de lecture du dépôt. */
   read: 'list' | 'get'
   compose: () => Handle
@@ -64,23 +64,48 @@ interface Case {
 
 const ONE = { id: 'x' }
 
+/** Ce que onze composables de liste exposent de commun : la lecture, la suppression (leur première mutation), l'erreur de mutation. */
+interface ListComposable {
+  hasError: Ref<boolean>
+  isLoaded: Ref<boolean>
+  load: Handle['load']
+  remove: (id: string) => Promise<unknown>
+  errorMessage: { readonly value: unknown }
+}
+
+/** Le `compose` d'un composable de liste : la valeur lue est celle de sa propriété `listProperty` (`cards`, `sections`…). */
+function composeList<K extends string>(
+  use: () => ListComposable & Record<K, { readonly value: unknown }>,
+  listProperty: K,
+): () => Handle {
+  return () => {
+    const c = use()
+    return {
+      hasError: c.hasError,
+      isLoaded: c.isLoaded,
+      load: c.load,
+      value: () => c[listProperty].value,
+      mutate: () => c.remove('x'),
+      shown: () => c.errorMessage.value,
+    }
+  }
+}
+
+/**
+ * Un cas de liste ordinaire : une lecture `list` qui rend `[ONE]`, un `load()` sans argument. `overrides` donne ce qui change
+ * d'un composable à l'autre (`key`, `compose`) ou ce qui s'écarte du cas ordinaire (les réglages, la lecture seule).
+ */
+function standardCase(name: string, overrides: Pick<Case, 'key' | 'compose'> & Partial<Case>): Case {
+  return { name, read: 'list', loaded: [ONE], args: [], ...overrides }
+}
+
 const CASES: Case[] = [
-  {
-    name: 'useAdminAboutMeCards', key: ADMIN_ABOUT_ME_CARD_REPOSITORY as never, read: 'list', loaded: [ONE], args: [],
-    compose: () => {
-      const c = useAdminAboutMeCards()
-      return {
-        hasError: c.hasError,
-        isLoaded: c.isLoaded,
-        load: c.load,
-        value: () => c.cards.value,
-        mutate: () => c.remove('x'),
-        shown: () => c.errorMessage.value,
-      }
-    },
-  },
-  {
-    name: 'useAdminAboutSettings', key: ADMIN_ABOUT_SETTINGS_REPOSITORY as never, read: 'get', loaded: ONE, args: ['fr'],
+  standardCase('useAdminAboutMeCards', { key: ADMIN_ABOUT_ME_CARD_REPOSITORY, compose: composeList(useAdminAboutMeCards, 'cards') }),
+  standardCase('useAdminAboutSettings', {
+    key: ADMIN_ABOUT_SETTINGS_REPOSITORY,
+    read: 'get',
+    loaded: ONE,
+    args: ['fr'],
     compose: () => {
       const c = useAdminAboutSettings()
       return {
@@ -92,135 +117,30 @@ const CASES: Case[] = [
         shown: () => c.errorMessage.value,
       }
     },
-  },
-  {
-    name: 'useAdminAboutSiteCards', key: ADMIN_ABOUT_SITE_CARD_REPOSITORY as never, read: 'list', loaded: [ONE], args: [],
-    compose: () => {
-      const c = useAdminAboutSiteCards()
-      return {
-        hasError: c.hasError,
-        isLoaded: c.isLoaded,
-        load: c.load,
-        value: () => c.cards.value,
-        mutate: () => c.remove('x'),
-        shown: () => c.errorMessage.value,
-      }
-    },
-  },
-  {
-    name: 'useAdminAnonymousCvSections', key: ADMIN_ANONYMOUS_CV_SECTION_REPOSITORY as never, read: 'list', loaded: [ONE], args: [],
-    compose: () => {
-      const c = useAdminAnonymousCvSections()
-      return {
-        hasError: c.hasError,
-        isLoaded: c.isLoaded,
-        load: c.load,
-        value: () => c.sections.value,
-        mutate: () => c.remove('x'),
-        shown: () => c.errorMessage.value,
-      }
-    },
-  },
-  {
-    name: 'useAdminCaseStudies', key: ADMIN_CASE_STUDY_REPOSITORY as never, read: 'list', loaded: [ONE], args: [],
-    compose: () => {
-      const c = useAdminCaseStudies()
-      return {
-        hasError: c.hasError,
-        isLoaded: c.isLoaded,
-        load: c.load,
-        value: () => c.caseStudies.value,
-        mutate: () => c.remove('x'),
-        shown: () => c.errorMessage.value,
-      }
-    },
-  },
-  {
-    name: 'useAdminContributions', key: ADMIN_CONTRIBUTION_REPOSITORY as never, read: 'list', loaded: [ONE], args: [],
-    compose: () => {
-      const c = useAdminContributions()
-      return {
-        hasError: c.hasError,
-        isLoaded: c.isLoaded,
-        load: c.load,
-        value: () => c.contributions.value,
-        mutate: () => c.remove('x'),
-        shown: () => c.errorMessage.value,
-      }
-    },
-  },
-  {
-    name: 'useAdminIncidents', key: ADMIN_INCIDENT_REPOSITORY as never, read: 'list', loaded: [ONE], args: [],
-    compose: () => {
-      const c = useAdminIncidents()
-      return {
-        hasError: c.hasError,
-        isLoaded: c.isLoaded,
-        load: c.load,
-        value: () => c.incidents.value,
-        mutate: () => c.remove('x'),
-        shown: () => c.errorMessage.value,
-      }
-    },
-  },
-  {
-    name: 'useAdminQualityPrinciples', key: ADMIN_QUALITY_PRINCIPLE_REPOSITORY as never, read: 'list', loaded: [ONE], args: [],
-    compose: () => {
-      const c = useAdminQualityPrinciples()
-      return {
-        hasError: c.hasError,
-        isLoaded: c.isLoaded,
-        load: c.load,
-        value: () => c.principles.value,
-        mutate: () => c.remove('x'),
-        shown: () => c.errorMessage.value,
-      }
-    },
-  },
-  {
-    name: 'useAdminQualityTraits', key: ADMIN_QUALITY_TRAIT_REPOSITORY as never, read: 'list', loaded: [ONE], args: [],
-    compose: () => {
-      const c = useAdminQualityTraits()
-      return {
-        hasError: c.hasError,
-        isLoaded: c.isLoaded,
-        load: c.load,
-        value: () => c.traits.value,
-        mutate: () => c.remove('x'),
-        shown: () => c.errorMessage.value,
-      }
-    },
-  },
-  {
-    name: 'useAdminExperienceTechnologies', key: ADMIN_EXPERIENCE_TECHNOLOGY_REPOSITORY as never, read: 'list', loaded: [ONE], args: [],
-    compose: () => {
-      const c = useAdminExperienceTechnologies()
-      return {
-        hasError: c.hasError,
-        isLoaded: c.isLoaded,
-        load: c.load,
-        value: () => c.technologies.value,
-        mutate: () => c.remove('x'),
-        shown: () => c.errorMessage.value,
-      }
-    },
-  },
-  {
-    name: 'useAdminUsers', key: ADMIN_USER_REPOSITORY as never, read: 'list', loaded: [ONE], args: [],
-    compose: () => {
-      const c = useAdminUsers()
-      return {
-        hasError: c.hasError,
-        isLoaded: c.isLoaded,
-        load: c.load,
-        value: () => c.users.value,
-        mutate: () => c.remove('x'),
-        shown: () => c.errorMessage.value,
-      }
-    },
-  },
-  {
-    name: 'useAdminVulnerabilities', key: ADMIN_VULNERABILITY_REPOSITORY as never, read: 'list', loaded: [ONE], args: [],
+  }),
+  standardCase('useAdminAboutSiteCards', { key: ADMIN_ABOUT_SITE_CARD_REPOSITORY, compose: composeList(useAdminAboutSiteCards, 'cards') }),
+  standardCase('useAdminAnonymousCvSections', {
+    key: ADMIN_ANONYMOUS_CV_SECTION_REPOSITORY,
+    compose: composeList(useAdminAnonymousCvSections, 'sections'),
+  }),
+  standardCase('useAdminCaseStudies', { key: ADMIN_CASE_STUDY_REPOSITORY, compose: composeList(useAdminCaseStudies, 'caseStudies') }),
+  standardCase('useAdminContributions', {
+    key: ADMIN_CONTRIBUTION_REPOSITORY,
+    compose: composeList(useAdminContributions, 'contributions'),
+  }),
+  standardCase('useAdminIncidents', { key: ADMIN_INCIDENT_REPOSITORY, compose: composeList(useAdminIncidents, 'incidents') }),
+  standardCase('useAdminQualityPrinciples', {
+    key: ADMIN_QUALITY_PRINCIPLE_REPOSITORY,
+    compose: composeList(useAdminQualityPrinciples, 'principles'),
+  }),
+  standardCase('useAdminQualityTraits', { key: ADMIN_QUALITY_TRAIT_REPOSITORY, compose: composeList(useAdminQualityTraits, 'traits') }),
+  standardCase('useAdminExperienceTechnologies', {
+    key: ADMIN_EXPERIENCE_TECHNOLOGY_REPOSITORY,
+    compose: composeList(useAdminExperienceTechnologies, 'technologies'),
+  }),
+  standardCase('useAdminUsers', { key: ADMIN_USER_REPOSITORY, compose: composeList(useAdminUsers, 'users') }),
+  standardCase('useAdminVulnerabilities', {
+    key: ADMIN_VULNERABILITY_REPOSITORY,
     compose: () => {
       const c = useAdminVulnerabilities()
       // Pas de `load` exposé : le chargement part au montage, un second ne se déclenche pas à la demande.
@@ -233,21 +153,11 @@ const CASES: Case[] = [
         shown: () => null,
       }
     },
-  },
-  {
-    name: 'useAdminWatchedProducts', key: ADMIN_WATCHED_PRODUCT_REPOSITORY as never, read: 'list', loaded: [ONE], args: [],
-    compose: () => {
-      const c = useAdminWatchedProducts()
-      return {
-        hasError: c.hasError,
-        isLoaded: c.isLoaded,
-        load: c.load,
-        value: () => c.products.value,
-        mutate: () => c.remove('x'),
-        shown: () => c.errorMessage.value,
-      }
-    },
-  },
+  }),
+  standardCase('useAdminWatchedProducts', {
+    key: ADMIN_WATCHED_PRODUCT_REPOSITORY,
+    compose: composeList(useAdminWatchedProducts, 'products'),
+  }),
 ]
 
 /**

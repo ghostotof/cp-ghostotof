@@ -8,7 +8,6 @@ import { AUTH_REPOSITORY, lastAccountName, markSessionExpired, useAuth } from '.
 import {
   backofficeAccessRefused,
   clearBackofficeAccessRefusal,
-  currentRefusalScope,
   markBackofficeAccessRefused,
   stampBackofficeRead,
 } from '../../../../src/application/admin/shared/backofficeAccessRefusal'
@@ -162,14 +161,14 @@ describe('AccessRefusedNotice (#748, R17)', () => {
     const { wrapper, router } = await mountNotice()
     refuse()
     await flushPromises()
-    const scope = currentRefusalScope().scope
+    const scope = stampBackofficeRead().scope
 
     await router.push({ hash: '#main-content' })
     await flushPromises()
 
     expect(router.currentRoute.value.fullPath).toBe('/fr/admin/case-studies#main-content')
     expect(wrapper.find('[role="alert"]').exists()).toBe(true)
-    expect(currentRefusalScope().scope).toBe(scope)
+    expect(stampBackofficeRead().scope).toBe(scope)
     wrapper.unmount()
   })
 
@@ -191,7 +190,7 @@ describe('AccessRefusedNotice (#748, R17)', () => {
     await flushPromises()
     refuse()
     await flushPromises()
-    const scope = currentRefusalScope().scope
+    const scope = stampBackofficeRead().scope
 
     // vue-router compare la requête dans l'ordre où elle est écrite : il exécute cette navigation (sans le tri de la clé,
     // R54, le test serait rouge). C'est la clé triée de l'alerte qui n'y voit pas de changement, et la garde.
@@ -200,7 +199,7 @@ describe('AccessRefusedNotice (#748, R17)', () => {
 
     expect(router.currentRoute.value.fullPath).toBe('/fr/admin/case-studies?b=2&a=1')
     expect(wrapper.find('[role="alert"]').exists()).toBe(true)
-    expect(currentRefusalScope().scope).toBe(scope)
+    expect(stampBackofficeRead().scope).toBe(scope)
     wrapper.unmount()
   })
 

@@ -75,15 +75,15 @@ account without `ROLE_TRUSTED` (one that lost it while the page was open), or fr
     send time then an account drops the refusal, with no path to it (the backoffice guard waits for the first check).
     The same account's 403 stays said across an end and a return, or a tier change; the generation judges `ended()` only.
   - **the scope, for a read** (R28, CR3-8, R38): `get` stamps `stampBackofficeRead()` (`{ kind: 'read', scope, epoch }`; a
-    verb, since it also closes the landing load below; `currentRefusalScope()` reads the same pair with no effect, for whoever
-    sends nothing, the specs, R143), `mutate` `{ kind: 'write' }`. The module holds the scope, the epoch and the open landing
-    load as one immutable object replaced as a block (`RefusalModuleState`, R143). The scope advances at every clearing of
-    the alert, and only there: a path or query change (the query's parameters sorted: vue-router runs a navigation that only
-    permutes them, the alert ignores it, R54; not the fragment alone: the skip link), an ended session, the alert's unmount.
-    A read that left under another scope came from a page left: `markBackofficeAccessRefused(sentIn, account)` answers
-    `false`. A write carries no scope: the person made the gesture and must learn it failed. A read also carries the
-    **epoch**, which the alert's mount advances (and nothing else): a read sent before the mount belongs to the landing
-    page's load.
+    verb, since it also closes the landing load below; `currentRefusalScope()` reads the same pair with no effect, and no
+    code of `src/` calls it outside the module, R143, R158), `mutate` `{ kind: 'write' }`. The module holds the scope, the
+    epoch and the open landing load as one immutable object replaced as a block (`RefusalModuleState`, R143). The scope
+    advances at every clearing of the alert, and only there: a path or query change (the query's parameters sorted: vue-router
+    runs a navigation that only permutes them, the alert ignores it, R54; not the fragment alone: the skip link), an ended
+    session, the alert's unmount. A read that left under another scope came from a page left:
+    `markBackofficeAccessRefused(sentIn, account)` answers `false`. A write carries no scope: the person made the gesture
+    and must learn it failed. A read also carries the **epoch**, which the alert's mount advances (and nothing else): a read
+    sent before the mount belongs to the landing page's load.
   - **the alert's mount advances the epoch only, never the scope, and settles what was counted without an alert** (R64,
     decision 1 of the sixth review, amending Q1 of the fifth): a read's refusal is forgotten (the tier was re-read), a
     **write**'s is shown with its own text, `common.earlierSaveRefused` (« Un enregistrement précédent a été refusé par le
@@ -144,7 +144,8 @@ whose `/api/me` answers 401 now ends the session on the interface. **Still accep
     before a navigation counts and re-reads nothing (R28); a write does (R38).
   - `backofficeAccessRefusal.spec.ts`: the scope, a write's `{ kind: 'write' }`, two successive tests starting from zero.
     The landing load (R122): every read sent before the mount keeps the text, the first one stamped after closes it, and
-    `currentRefusalScope()`, a read with no effect, closes nothing (R143).
+    `currentRefusalScope()`, a read with no effect, closes nothing (R143). A spec that sends a read reads the scope of its
+    stamp, as the fake client does; `currentRefusalScope()` stays exported for that one case, the exception (R158, Q8).
   - `AccessRefusedNotice.spec.ts`: a fragment change keeps the alert, a query change clears it, the same parameters in
     another order keep it (vue-router runs that navigation, the sorted key ignores it, R54).
   - `AdminLayout.sessionEnded.spec.ts`: a refused save back after a navigation is shown on the next page; after an account
