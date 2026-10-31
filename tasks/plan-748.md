@@ -6942,7 +6942,8 @@ garder au pas de Vue, que `vue/compiler-sfc` n'exporte pas.
    (text: string) => string` (un `switch` sur `directive.name`, option (A) de CR10-5) remplace le ternaire ;
    `read(expression: TemplateExpression | undefined, wrap)`.
 
-**Question à l'auteur** (le plan suit la recommandation ; une autre réponse ne change que R112) :
+**Question à l'auteur** (le plan suit la recommandation ; une autre réponse ne change que R112). **Réponse de l'auteur
+(2026-10-31) : (A), le champ `epoch` — la recommandation, le plan ne change pas.**
 
 - **Q1 (R112, décision 3) : la forme de l'estampille.** (A) un second nombre opaque `epoch` dans l'estampille d'une
   lecture, avancé au montage de l'alerte ; (B) le montage avance le périmètre et retient l'ancien comme périmètre de la
