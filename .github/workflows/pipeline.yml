@@ -444,6 +444,7 @@ jobs:
           tools/tests/d8-guard-step.test.sh
           tools/tests/summary-phpunit.test.sh
           tools/tests/tls-certificate.test.sh
+          tools/tests/audit-prod.test.sh
       # Seuils : erreurs et avertissements bloquent, `info`/`style` non —
       # audit-prod.sh, antérieur à ce job, porte trois remarques de style que
       # ce job n'a pas vocation à réécrire.
