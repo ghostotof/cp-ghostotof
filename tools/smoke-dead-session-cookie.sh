@@ -138,15 +138,13 @@ echo "témoin : GET $public_path sans cookie → 200"
 # --- 2. La lecture publique avec un cookie mort : servie, rien posé.
 fetch "$public_path" -b "$dead_cookie"
 if [ "$status" != "200" ]; then
-  echo "lecture publique refusée pour un cookie mort : GET $public_path avec un BEARER aléatoire a répondu $status, 200 attendu" \
-    "— le pare-feu refuse encore une session morte sur une route publique, #748 C1 (corps : $(smoke_excerpt "$body"))" >&2
+  echo "lecture publique refusée pour un cookie mort : GET $public_path avec un BEARER aléatoire a répondu $status, 200 attendu — le pare-feu refuse encore une session morte sur une route publique, #748 C1 (corps : $(smoke_excerpt "$body"))" >&2
   exit 1
 fi
 for name in "${session_cookies[@]}"; do
   leftover="$(set_cookies_named "$name")"
   if [ -n "$leftover" ]; then
-    echo "lecture publique servie mais elle pose un Set-Cookie $name (« $(smoke_excerpt "$leftover") ») :" \
-      "une route publique ne doit rien effacer, la course d'un 401 tardif s'étendrait à chaque lecture" >&2
+    echo "lecture publique servie mais elle pose un Set-Cookie $name (« $(smoke_excerpt "$leftover") ») : une route publique ne doit rien effacer, la course d'un 401 tardif s'étendrait à chaque lecture" >&2
     exit 1
   fi
 done
@@ -167,8 +165,7 @@ for name in "${session_cookies[@]}"; do
     if expires_it "$cookie"; then cleared=1; fi
   done < <(set_cookies_named "$name")
   if [ "$cleared" -ne 1 ]; then
-    echo "GET $protected_path en 401 mais n'efface pas le cookie mort : aucun Set-Cookie $name expiré (Max-Age=0 ou expires passé)," \
-      "il resterait jusqu'à la fermeture du navigateur (Set-Cookie vus : « $(smoke_excerpt "$(set_cookies)") »)" >&2
+    echo "GET $protected_path en 401 mais n'efface pas le cookie mort : aucun Set-Cookie $name expiré (Max-Age=0 ou expires passé), il resterait jusqu'à la fermeture du navigateur (Set-Cookie vus : « $(smoke_excerpt "$(set_cookies)") »)" >&2
     exit 1
   fi
 done

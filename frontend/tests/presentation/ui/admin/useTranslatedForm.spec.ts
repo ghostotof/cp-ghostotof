@@ -140,7 +140,7 @@ describe('useTranslatedForm', () => {
     expect(await pending).toBeNull()
   })
 
-  // Aucun cas d'intégration ne l'isole : depuis R152, chaque geste de page qui change le groupe avance aussi la génération.
+  // Aucun cas d'intégration ne l'isole : chaque geste de page qui change le groupe avance aussi la génération.
   it("une identité qui ne change que par son groupe périme la traduction (#748, R152)", async () => {
     const group = ref<string | null>('groupe-source')
     const { form, release } = mountTranslatedForm({ identity: () => ({ entry: null, locale: 'fr', group: group.value }) })

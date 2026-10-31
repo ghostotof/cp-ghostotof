@@ -18,7 +18,7 @@ import AdminQualityTraitsSection from './AdminQualityTraitsSection.vue'
  * fait dans un panneau (« Modifier » sur une entrée anglaise, « Créer la
  * version EN », une traduction) de réécrire la langue de l'entrée en cours
  * d'édition dans *l'autre* panneau, sans avertissement — d'autant plus
- * silencieusement que, depuis D8, changer de langue ne recharge plus aucune liste.
+ * silencieusement que, selon D8, changer de langue ne recharge aucune liste.
  * Le détail (assistant, « Modifier » sur une autre langue) est dans les sections.
  *
  * **Verrouillage (D6) : global à la page.** Chaque section annonce son brouillon

@@ -175,7 +175,7 @@ export function templateFragmentsOf(path: string, source: string): string[] {
  * - un paramètre de `v-slot` est un paramètre de fonction (`{ a = 1 }` y est un motif de déstructuration, non un bloc) ;
  * - toute autre directive est une expression (`{ credentials: 'omit' }` y est un littéral objet, non un bloc étiqueté).
  */
-function wrapperOf(directive: TemplateDirective): (text: string, node: ExpressionNode) => string {
+function wrapperOf(directive: TemplateDirective): FragmentWrapper {
   switch (directive.name) {
     case 'on':
       return (text, node) => {
@@ -197,67 +197,82 @@ const asParameter = (text: string): string => `(${text}) => 0`
 const asHandler = (text: string): string => `($event) => (${text})`
 const asBody = (text: string): string => `($event) => {\n${text}\n}`
 
+/** Comment un fragment est écrit pour que TypeScript le lise comme Vue le compile (`wrapperOf`, `asExpression`…). */
+type FragmentWrapper = (text: string, node: ExpressionNode) => string
+
+/** Un nœud du gabarit, de la racine à une expression composée. */
+type TemplateNode = TemplateRoot | TemplateChild | TemplateExpression
+
 /**
  * Les fragments JavaScript d'un gabarit déjà lu, dans l'ordre du document : la valeur de chaque directive (écrite par
  * `wrapperOf`), les alias d'un `v-for` (valeur, clé, index, des paramètres de fonction ; sa source, une expression),
  * l'argument d'une directive dynamique (`:[nom]`), la valeur d'un attribut statique (`mode="omit"`, rendue en chaîne
  * JavaScript) et le contenu de chaque interpolation `{{ … }}`.
  *
- * Un nœud sans contenu (`null` ou absent) n'est jamais visité.
+ * Un nœud sans contenu (`null` ou absent) n'est jamais visité. Le parcours est fait par `pushTemplateNode`, qui range
+ * ses fragments dans la liste reçue.
  */
 export function fragmentsOfTemplateAst(root: TemplateRoot): string[] {
   const fragments: string[] = []
-
-  const read = (expression: TemplateExpression | undefined, wrap: (text: string, node: ExpressionNode) => string): void => {
-    // Une expression composée (`CompoundExpressionNode`) naît de la transformation, jamais de l'analyse : seul le texte source compte.
-    if (undefined !== expression && 'content' in expression && 'string' === typeof expression.content) {
-      fragments.push(wrap(expression.content, expression))
-    }
-  }
-
-  const readDirective = (directive: TemplateDirective): void => {
-    if (undefined !== directive.forParseResult) {
-      const { source, value, key, index } = directive.forParseResult
-      read(source, asExpression)
-      read(value, asParameter)
-      read(key, asParameter)
-      read(index, asParameter)
-    } else {
-      read(directive.exp, wrapperOf(directive))
-    }
-    // Un argument statique (`:title`, `@click`) est un nom, non une expression.
-    if (undefined !== directive.arg && 'isStatic' in directive.arg && !directive.arg.isStatic) {
-      read(directive.arg, asExpression)
-    }
-  }
-
-  const visit = (node: TemplateRoot | TemplateChild | TemplateExpression): void => {
-    if ('props' in node) {
-      for (const prop of node.props) {
-        if ('exp' in prop) {
-          readDirective(prop)
-        } else if (undefined !== prop.value) {
-          // Un attribut statique (`mode="omit"`) est une chaîne que le composant reçoit telle quelle.
-          fragments.push(JSON.stringify(prop.value.content))
-        }
-      }
-    }
-    // Une interpolation porte son expression dans `content` (un nœud) ; un nœud de texte, dans `content` (une chaîne).
-    if ('type' in node && NodeTypes.INTERPOLATION === node.type && 'content' in node && null !== node.content) {
-      read(node.content, asExpression)
-    }
-    if ('children' in node) {
-      for (const child of node.children) {
-        // Les enfants d'une expression composée comptent aussi des chaînes et des symboles, qui ne sont pas des nœuds.
-        if ('object' === typeof child) {
-          visit(child)
-        }
-      }
-    }
-  }
-  visit(root)
+  pushTemplateNode(fragments, root)
 
   return fragments
+}
+
+/** Range le fragment d'une expression, écrit par `wrap`, sauf une expression absente ou sans texte source. */
+function pushExpression(fragments: string[], expression: TemplateExpression | undefined, wrap: FragmentWrapper): void {
+  // Une expression composée (`CompoundExpressionNode`) naît de la transformation, jamais de l'analyse : seul le texte source compte.
+  if (undefined !== expression && 'content' in expression && 'string' === typeof expression.content) {
+    fragments.push(wrap(expression.content, expression))
+  }
+}
+
+/** Range les fragments d'une directive : sa valeur (ou les alias et la source d'un `v-for`), puis son argument dynamique. */
+function pushDirective(fragments: string[], directive: TemplateDirective): void {
+  if (undefined !== directive.forParseResult) {
+    const { source, value, key, index } = directive.forParseResult
+    pushExpression(fragments, source, asExpression)
+    pushExpression(fragments, value, asParameter)
+    pushExpression(fragments, key, asParameter)
+    pushExpression(fragments, index, asParameter)
+  } else {
+    pushExpression(fragments, directive.exp, wrapperOf(directive))
+  }
+  // Un argument statique (`:title`, `@click`) est un nom, non une expression.
+  if (undefined !== directive.arg && 'isStatic' in directive.arg && !directive.arg.isStatic) {
+    pushExpression(fragments, directive.arg, asExpression)
+  }
+}
+
+/** Range les fragments des attributs d'un élément : ses directives, et la valeur de ses attributs statiques. */
+function pushProps(fragments: string[], element: Extract<TemplateNode, { props: unknown[] }>): void {
+  for (const prop of element.props) {
+    if ('exp' in prop) {
+      pushDirective(fragments, prop)
+    } else if (undefined !== prop.value) {
+      // Un attribut statique (`mode="omit"`) est une chaîne que le composant reçoit telle quelle.
+      fragments.push(JSON.stringify(prop.value.content))
+    }
+  }
+}
+
+/** Range, dans l'ordre du document, les fragments d'un nœud puis ceux de ses enfants. */
+function pushTemplateNode(fragments: string[], node: TemplateNode): void {
+  if ('props' in node) {
+    pushProps(fragments, node)
+  }
+  // Une interpolation porte son expression dans `content` (un nœud) ; un nœud de texte, dans `content` (une chaîne).
+  if ('type' in node && NodeTypes.INTERPOLATION === node.type && 'content' in node && null !== node.content) {
+    pushExpression(fragments, node.content, asExpression)
+  }
+  if ('children' in node) {
+    for (const child of node.children) {
+      // Les enfants d'une expression composée comptent aussi des chaînes et des symboles, qui ne sont pas des nœuds.
+      if ('object' === typeof child) {
+        pushTemplateNode(fragments, child)
+      }
+    }
+  }
 }
 
 /**

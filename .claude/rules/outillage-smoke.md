@@ -25,14 +25,18 @@ The `rm -rf` of `smoke_cleanup`, run at the head of a second call before the rea
 the author's decision of 2026-10-31 keeps that order (a child of the same user, which logs nothing, for the time of the cleaning;
 reordering would complicate the failure path of the name for no risk).
 `export -n` does not wipe the shell's own copy of its environment, which `/proc/<pid>/environ` still shows (R148b).
+General limit of the children: a process started **before** `smoke_use_auth_config` receives the variable of the Basic Auth, today the
+`mktemp` of the `headers_file` (and of the `body_file` of `smoke-mcp.sh`), the `date +%s` of `smoke-login-throttling.sh` and the
+`openssl rand` of `smoke-dead-session-cookie.sh`. `export -n` only spares the children started afterwards from logging their environment,
+and none of today's children logs anything: the same good-faith spirit as the limit of the guards below (D3 of the thirteenth review).
 A value with a line break, without « : », or with an empty user or password (`:`, `:p`, `u:`) exits 2 naming the variable, not quoting it.
 A user or a password made only of blanks (` :p`, `u: `, a tab) is refused like an empty one, with the same message (R148).
 A variable that is defined but empty exits 2 saying « secret de Basic Auth vide » (R116, the author's decision of 2026-10-31).
 An undefined one sends no Basic Auth.
 `smoke_fetch` calls `curl` (binary `SMOKE_CURL`) and reads the `-K` at each call, never from `SMOKE_CURL_OPTS`.
 It adds `--proto =https --proto-redir =https` after the `-K`: curl then takes only `https://` URLs and redirects only to `https://`.
-`--proto` binds the first request too: a URL without a scheme (`host/path`, which curl guesses as `http://`) is refused by curl,
-and so is the `url` of a second `-K`.
+`--proto` binds the first request too: a URL without a scheme (`host/path`, which curl guesses as `http://`)
+is refused by curl, and so is the `url` of a second `-K`.
 It refuses a `-K` on a URL that is not `https://` (exit 2, « non https:// »): curl sends `Authorization: Basic` on the first request.
 With a `-K`, it also refuses an argument of `"$@"` (exit 2, « option ou URL refusée », curl not called, the argument never quoted) that is:
 - `--`, alone (what follows is a URL);
@@ -55,8 +59,8 @@ Measured on 2026-10-31, on `curlimages/curl@sha256:08e466006f0860e54fc299378de99
 `--proto-r =all --version` exits 0 (the abbreviation is taken, the threat is real).
 With `-K … --proto =https --proto-r =all http://127.0.0.1:9/`, curl exits 1 « Protocol "http" not supported or disabled in libcurl ».
 `--proto =https` holds whatever the abbreviation: it is what closes the scheme, the refusals above close the rest.
-`audit-prod.sh` sources the library only when `AUDIT_BASIC_AUTH` is defined (`[[ -v ]]`, so the value is never expanded
-outside the library's `set +x`).
+`audit-prod.sh` sources the library only when `AUDIT_BASIC_AUTH` is defined (`[[ -v ]]`,
+so the value is never expanded outside the library's `set +x`).
 It computes the library's directory with bash builtins (`${BASH_SOURCE[0]%/*}`, `cd`, `pwd`), never `dirname`: the variable is
 still exported there, and no process may start before the library removes the export.
 The three smokes do the same before their `source` (R165, the author's decision of 2026-10-31).

@@ -1733,7 +1733,7 @@ describe('AdminAboutPage', () => {
 
     // L'avis dit que le formulaire d'une langue porte une proposition : il se rapporte à la langue **cible** de la
     // proposition (celle que la page a prise pour la recevoir), pas à la langue source nommée dans son texte, et il ne
-    // s'affiche que sous elle (R66, décision 4 de la sixième série : il ne reste plus sous l'autre langue, R50 le disait).
+    // s'affiche que sous elle (R66, décision 4 de la sixième série : il ne reste pas sous l'autre langue).
     it("une proposition en EN, enregistrement réussi du FR : le FR n'affiche aucun avis (#748, R50, R66)", async () => {
       const settingsRepository = createSettingsRepository({
         get: vi.fn(async (locale: string) => ('en' === locale ? SETTINGS_EN : SETTINGS)),
@@ -2080,7 +2080,7 @@ describe('AdminAboutPage', () => {
     })
 
     // La langue montrée tient aussi « Proposer la traduction » (R86, CR7-10) : le bouton lit `isAnySaving`, l'enregistrement
-    // de la langue montrée comme celui de l'autre, ce qu'aucun test ne voyait quand la langue montrée seule enregistrait.
+    // de la langue montrée comme celui de l'autre.
     it("un enregistrement FR en vol, la page en FR : « Proposer la version EN » désactivé jusqu'à la réponse (#748, R86)", async () => {
       let answerFrenchSave!: (settings: AdminAboutSettings) => void
       const frenchSave = new Promise<AdminAboutSettings>((resolve) => {

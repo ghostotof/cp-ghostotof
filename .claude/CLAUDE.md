@@ -59,8 +59,8 @@ This file only carries what applies everywhere, plus what runs from the shell (g
 | `deploiement-postgres.md` | PostgreSQL roles, bootstrap superuser, `pg_hba.conf` | touching `postgres*`, `postgres-roles/`, the migrator, a migration |
 | `deploiement-etat-hors-pod.md` | no state on the pod (ADR 0005) | touching `cache`/`lock`/rate limiters, a volume, `lock_timeout` |
 | `deploiement-nginx.md` | nginx rate limits, headers, `security.txt` | touching an nginx conf, a rate-limit zone, a response header |
-| `outillage-smoke.md` | the smokes' and the audit's shared library: the Basic Auth, `smoke_fetch`'s refusals, the guards of `smoke-http.test.sh` | touching `tools/lib/smoke-http.sh`, a `tools/smoke-*.sh`, `tools/audit-prod.sh`'s Basic Auth or their tests |
 | `release.md` | release flow, pipeline internals | touching `pipeline.yml`, a release script, `RELEASE_NOTES.md` |
+| `outillage-smoke.md` | the smokes' and the audit's shared library: the Basic Auth, `smoke_fetch`'s refusals, the guards of `smoke-http.test.sh` | touching `tools/lib/smoke-http.sh`, a `tools/smoke-*.sh`, `tools/audit-prod.sh`'s Basic Auth or their tests |
 
 ## Goals
 

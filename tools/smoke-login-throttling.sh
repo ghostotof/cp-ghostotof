@@ -101,8 +101,7 @@ for attempt in $(seq 1 "$attempts"); do
       exit 1
     fi
     if ! [[ "$retry_after" =~ ^[0-9]+$ ]] || [ "$retry_after" -le 0 ]; then
-      echo "tentative $attempt : 429 avec un Retry-After invalide (« $(smoke_excerpt "$retry_after") »)," \
-        "un nombre de secondes > 0 attendu (corps : $excerpt)" >&2
+      echo "tentative $attempt : 429 avec un Retry-After invalide (« $(smoke_excerpt "$retry_after") »), un nombre de secondes > 0 attendu (corps : $excerpt)" >&2
       exit 1
     fi
     if [[ "$content_type" != application/problem+json* ]]; then

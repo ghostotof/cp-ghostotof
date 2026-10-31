@@ -103,38 +103,32 @@ theirs). The expiry (actor `system`), the supersession (`supersededBy`) and a co
   hand-written JSON response like `ConsentController` (no API Platform), `Cache-Control: no-store` — the list says
   which clients read the nominative CV on the person's behalf. The account is `#[CurrentUser]`, never an id the
   client sends. The `DELETE` is a cookie request: the CSRF double-submit applies, no exclusion.
-- **`GET`: two reads in one snapshot, no lock, no N+1** (`OwnMcpConnections::of()`, R3, CR2, CR3):
-  `findNotRevokedOfAccount()` — **every** connection of the account not revoked (active, and expired not yet marked) —
-  and `findTerminatedOfAccount($id, $limit)` (`revoked_at IS NOT NULL`: the revoked and the expired the purge marked,
-  kept six months), both on the client-joined base `ofAccount()`, **which sorts nothing**: each half writes its own
-  order, because the order decides *which* rows a limit keeps. **The terminated are chosen by `revoked_at DESC, id
-  DESC`** (the most recently ended — a `LIMIT` over the grant date kept the wrong fifty for a person who revokes an
-  old connection), the non-revoked by `granted_at DESC, id DESC` (all returned, the order is presentation). **The
-  display is per grant**: the service merges the two halves in PHP and sorts them `granted_at DESC, id DESC`, the
-  order the page always showed — the end instant decides what is kept, not how it is shown. **Both reads run inside
-  `ReadSnapshotInterface::read()`** (`Mcp/Connection/Application`, implemented by
-  `Infrastructure/Doctrine/DoctrineReadSnapshot`): a `REPEATABLE READ READ ONLY` transaction, `SET TRANSACTION`
-  before the first query (DBAL 4 opens its transaction without options). Without it, in `READ COMMITTED`, a
-  revocation committed between the two statements made a connection vanish from the list (seen by the first half as
-  active and not by the second as terminated, or the reverse — measured, red). Read only, so no row lock (a refresh or
-  the purge never waits for a list) and no serialization failure (`40001` is born of an update of a row modified since
-  the snapshot, and this makes none). **It refuses a transaction already open**
-  (`ReadSnapshotInsideTransactionException`, a `LogicException` with no HTTP mapping): nested, DBAL would open a
-  savepoint and the isolation level could no longer be chosen. Rejected: `TransactionInterface` (it writes, flushes
-  the unit of work and closes the EntityManager on failure); one query (a `LIMIT` in a DQL sub-query is impossible,
-  native SQL plus a mapping is more code than the port). `DoctrineReadSnapshotTest`, `OwnMcpConnectionsTest`.
-  **The terminated are bounded to
-  `OwnMcpConnections::TERMINATED_LIMIT = 50`** — the one place the number is written, the page cites none. `of()` asks
-  for **limit + 1**: the extra row says « there are more » without a `COUNT`; the answer is `OwnMcpConnectionList{connections,
-  terminatedTruncated}`. **The non-revoked are unbounded
-  because they are bounded by nature**: an abandoned approval expires in an hour and the purge marks it each night, a
-  first exchange supersedes the pair's others, clients are a closed list registered by CLI. No index migration:
-  `account_id` suffices (EXPLAIN: 0.24 ms and 1.0 ms for the two halves, 3 005 rows of the account among 63 000 — 3 000
-  terminated plus the other accounts' rows). The entry: `id`, `client{id,name}`, `grantedAt`, `codeExchanged` (boolean,
-  not the instant: #730's backfill only approximates it), `lastUsedAt`, `expiresAt`, `state`, `revokedAt`,
-  `revocationCause`; **`expiresAt` is `null` exactly for `revoked`** (an `expired` keeps the date that expired it;
-  the page decides nothing about hiding a date). No token, code nor hash. The author's decision of 2026-10-28
-  first listed every connection; R3 bounded the history (#650, F6).
+- **`GET`: two reads in one snapshot, no lock, no N+1** (`OwnMcpConnections::of()`, R3, CR2, CR3): `findNotRevokedOfAccount()` — **every**
+  connection of the account not revoked (active, and expired not yet marked) — and `findTerminatedOfAccount($id, $limit)` (`revoked_at IS
+  NOT NULL`: the revoked and the expired the purge marked, kept six months), both on the client-joined base `ofAccount()`, **which sorts
+  nothing**: each half writes its own order, because the order decides *which* rows a limit keeps. **The terminated are chosen by
+  `revoked_at DESC, id DESC`** (the most recently ended — a `LIMIT` over the grant date kept the wrong fifty for a person who revokes an
+  old connection), the non-revoked by `granted_at DESC, id DESC` (all returned, the order is presentation). **The display is per grant**:
+  the service merges the two halves in PHP and sorts them `granted_at DESC, id DESC`, the order the page always showed — the end instant
+  decides what is kept, not how it is shown. **Both reads run inside `ReadSnapshotInterface::read()`** (`Mcp/Connection/Application`,
+  implemented by `Infrastructure/Doctrine/DoctrineReadSnapshot`): a `REPEATABLE READ READ ONLY` transaction, `SET TRANSACTION` before the
+  first query (DBAL 4 opens its transaction without options). Without it, in `READ COMMITTED`, a revocation committed between the two
+  statements made a connection vanish from the list (seen by the first half as active and not by the second as terminated, or the reverse
+  — measured, red). Read only, so no row lock (a refresh or the purge never waits for a list) and no serialization failure (`40001` is
+  born of an update of a row modified since the snapshot, and this makes none). **It refuses a transaction already open**
+  (`ReadSnapshotInsideTransactionException`, a `LogicException` with no HTTP mapping): nested, DBAL would open a savepoint and the
+  isolation level could no longer be chosen. Rejected: `TransactionInterface` (it writes, flushes the unit of work and closes the
+  EntityManager on failure); one query (a `LIMIT` in a DQL sub-query is impossible, native SQL plus a mapping is more code than the port).
+  `DoctrineReadSnapshotTest`, `OwnMcpConnectionsTest`. **The terminated are bounded to `OwnMcpConnections::TERMINATED_LIMIT = 50`** — the
+  one place the number is written, the page cites none. `of()` asks for **limit + 1**: the extra row says « there are more » without a
+  `COUNT`; the answer is `OwnMcpConnectionList{connections, terminatedTruncated}`. **The non-revoked are unbounded because they are
+  bounded by nature**: an abandoned approval expires in an hour and the purge marks it each night, a first exchange supersedes the pair's
+  others, clients are a closed list registered by CLI. No index migration: `account_id` suffices (EXPLAIN: 0.24 ms and 1.0 ms for the two
+  halves, 3 005 rows of the account among 63 000 — 3 000 terminated plus the other accounts' rows). The entry: `id`, `client{id,name}`,
+  `grantedAt`, `codeExchanged` (boolean, not the instant: #730's backfill only approximates it), `lastUsedAt`, `expiresAt`, `state`,
+  `revokedAt`, `revocationCause`; **`expiresAt` is `null` exactly for `revoked`** (an `expired` keeps the date that expired it; the page
+  decides nothing about hiding a date). No token, code nor hash. The author's decision of 2026-10-28 first listed every connection; R3
+  bounded the history (#650, F6).
 - **The state has one rule** (`OwnMcpConnections::stateOf()`, `OwnMcpConnectionState`): `revoked` when `revoked_at` is
   set and the cause is not `expired`; `expired` when the cause is `expired` **or** `isExpiredAt($now)` is true (never
   `revoked_at` alone, which does not say why); `active` otherwise. A connection revoked then past its deadline stays
@@ -306,50 +300,40 @@ which reads the request again under the current account. `OAuthConsentPage.spec.
 ## Frontend
 
 - **Slice**: `domain/mcp` (`McpConnection` entity, `McpConnectionsRepository`, two errors) → `infrastructure/mcp/
-  HttpMcpConnectionsRepository` → `application/mcp/useMcpConnections` (status `loading|ready|error`, revocation
-  outcome `revoked|already-gone|failed`; the list is **re-read from the server** after a revocation, the frontend
-  recomputes no state nor deadline; a `SessionEndedError` (a 401, or a 403 to a
-  `DELETE` sent without a CSRF token, judged by `sessionAwareFetch`,
-  `.claude/rules/frontend-session.md`), marks the session expired like `useAssistant` and `refusal` (`'session-ended'`) tells
-  the page; any other 403 is an `AccessForbiddenError`: `refusal` is `'forbidden'`, the session is not marked expired,
-  `/api/me` is re-read once, and the page offers « Changer de compte » (#748, #732-4, R7); either refusal disables
-  every « Révoquer » and replaces « Réessayer »; `refusal` is reset at the start of each `load()` and `revoke()`; `load()` keeps only the
-  last read launched) → `presentation/pages/McpConnectionsPage.vue`, provided in
-  `main.ts`. Dates: `presentation/format/instant.ts`, `Europe/Paris`. What the slice shares with the rest of the
-  frontend (the sign-in-again link, `expired=1`, the list contract, the two apps' `accountId` contract, the
-  labels « Jamais aboutie » / « Pas encore renouvelée » / « Sans échéance »): `.claude/rules/frontend.md`.
-- **The page** `/<locale>/mcp-connections`: `requiresAuth`, `roles: [ROLE_TRUSTED, ROLE_SUPER]`, `noindex` (the guard is
-  a courtesy, `/api/me` is the authority). One table (`<caption>`, `th scope`), the page title its only heading;
-  « Révoquer » only on `active` rows, its accessible name carrying the client and the grant date; `window.confirm()`
-  naming the client **and the grant date** (the backoffice convention; #748); the only `role="status"` of the page
-  announces the outcome, a failure is a `role="alert"`. **Focus (#748)**: on `revoked` / `already-gone` the focus goes to
-  the `<h1>` (the clicked button is gone) and the outcome is written to the status region 250 ms later
-  (`.claude/rules/frontend-a11y.md`); on a plain failure it goes back to the « Révoquer » that was clicked; on a
-  refused request (session ended or real refusal) it goes to the `<h1>`. « Réessayer
-  » hands the focus back too: the `<h1>` on success, the new
-  « Réessayer » on a new failure. `aria-busy` is on the table's container, never on the
-  `<section>`. A cause missing from `CAUSE_LABEL_KEYS` (a newer
-  backend) reads as the generic label: causes are mapped explicitly, never built by string concatenation.
-- **Desktop account menu**: `presentation/layout/AccountMenu.vue`, a WAI-ARIA **disclosure** (button with
-  `aria-expanded` and `aria-controls`, a list of ordinary links), not a `role="menu"`. It closes on a second click,
-  Escape, a click outside, a navigation, the choice of an entry and (#748) **when the focus leaves for an element
-  outside the menu** (`focusout` with a non-null `relatedTarget` outside the container; a null `relatedTarget` — Safari
-  gives no focus to a clicked button — leaves it open, an accepted limit: closing on any `focusout` would hide the list
-  before the click arrives). Escape returns the focus to the button **only if it
-  was inside the menu, or held by nobody since it was opened**
-  (`document.activeElement` is `body` or `null` and no `focusin` went outside the menu since the opening, R19: Safari gives no focus to a
-  clicked button, so after an opening with the
-  mouse the active element is `body`, #748, R10; an element focused elsewhere then removed leaves `body` too);
-  with the focus elsewhere (another header menu) the menu closes
-  without stealing it. The current entry carries `active`
-  (`exact-active-class`, as on the mobile menu's four links) beside the `aria-current="page"` that `RouterLink` sets.
-  Its list is hidden
-  by `v-show`, so `aria-controls` names an element that exists while closed (`.claude/rules/frontend-a11y.md`). It groups the actions
-  of the **trusted tier** that used to sit flat in `AppHeader` (assistant, administration or CV download, logout) plus
-  « Mes connexions MCP ». Under 768 px the existing icon menu stays, with one more link.
-  **The base tier keeps its flat actions on desktop** — the author's decision of 2026-10-28: the menu is the trusted
-  tier's. Not checked in a browser yet (the task-10 control: tab order, visible focus, contrast, 768 and 1024 px widths;
-  it needs a trusted-tier session) — to do and to note in the PR (`.claude/rules/frontend-a11y.md`).
+  HttpMcpConnectionsRepository` → `application/mcp/useMcpConnections` (status `loading|ready|error`, revocation outcome
+  `revoked|already-gone|failed`; the list is **re-read from the server** after a revocation, the frontend recomputes no state nor
+  deadline; a `SessionEndedError` (a 401, or a 403 to a `DELETE` sent without a CSRF token, judged by `sessionAwareFetch`,
+  `.claude/rules/frontend-session.md`), marks the session expired like `useAssistant` and `refusal` (`'session-ended'`) tells the page;
+  any other 403 is an `AccessForbiddenError`: `refusal` is `'forbidden'`, the session is not marked expired, `/api/me` is re-read once,
+  and the page offers « Changer de compte » (#748, #732-4, R7); either refusal disables every « Révoquer » and replaces « Réessayer »;
+  `refusal` is reset at the start of each `load()` and `revoke()`; `load()` keeps only the last read launched) →
+  `presentation/pages/McpConnectionsPage.vue`, provided in `main.ts`. Dates: `presentation/format/instant.ts`, `Europe/Paris`. What the
+  slice shares with the rest of the frontend (the sign-in-again link, `expired=1`, the list contract, the two apps' `accountId` contract,
+  the labels « Jamais aboutie » / « Pas encore renouvelée » / « Sans échéance »): `.claude/rules/frontend.md`.
+- **The page** `/<locale>/mcp-connections`: `requiresAuth`, `roles: [ROLE_TRUSTED, ROLE_SUPER]`, `noindex` (the guard is a courtesy,
+  `/api/me` is the authority). One table (`<caption>`, `th scope`), the page title its only heading; « Révoquer » only on `active` rows,
+  its accessible name carrying the client and the grant date; `window.confirm()` naming the client **and the grant date** (the backoffice
+  convention; #748); the only `role="status"` of the page announces the outcome, a failure is a `role="alert"`. **Focus (#748)**: on
+  `revoked` / `already-gone` the focus goes to the `<h1>` (the clicked button is gone) and the outcome is written to the status region 250
+  ms later (`.claude/rules/frontend-a11y.md`); on a plain failure it goes back to the « Révoquer » that was clicked; on a refused request
+  (session ended or real refusal) it goes to the `<h1>`. « Réessayer » hands the focus back too: the `<h1>` on success, the new «
+  Réessayer » on a new failure. `aria-busy` is on the table's container, never on the `<section>`. A cause missing from `CAUSE_LABEL_KEYS`
+  (a newer backend) reads as the generic label: causes are mapped explicitly, never built by string concatenation.
+- **Desktop account menu**: `presentation/layout/AccountMenu.vue`, a WAI-ARIA **disclosure** (button with `aria-expanded` and
+  `aria-controls`, a list of ordinary links), not a `role="menu"`. It closes on a second click, Escape, a click outside, a navigation, the
+  choice of an entry and (#748) **when the focus leaves for an element outside the menu** (`focusout` with a non-null `relatedTarget`
+  outside the container; a null `relatedTarget` — Safari gives no focus to a clicked button — leaves it open, an accepted limit: closing
+  on any `focusout` would hide the list before the click arrives). Escape returns the focus to the button **only if it was inside the
+  menu, or held by nobody since it was opened** (`document.activeElement` is `body` or `null` and no `focusin` went outside the menu since
+  the opening, R19: Safari gives no focus to a clicked button, so after an opening with the mouse the active element is `body`, #748, R10;
+  an element focused elsewhere then removed leaves `body` too); with the focus elsewhere (another header menu) the menu closes without
+  stealing it. The current entry carries `active` (`exact-active-class`, as on the mobile menu's four links) beside the
+  `aria-current="page"` that `RouterLink` sets. Its list is hidden by `v-show`, so `aria-controls` names an element that exists while
+  closed (`.claude/rules/frontend-a11y.md`). It groups the actions of the **trusted tier** that used to sit flat in `AppHeader`
+  (assistant, administration or CV download, logout) plus « Mes connexions MCP ». Under 768 px the existing icon menu stays, with one more
+  link. **The base tier keeps its flat actions on desktop** — the author's decision of 2026-10-28: the menu is the trusted tier's. Not
+  checked in a browser yet (the task-10 control: tab order, visible focus, contrast, 768 and 1024 px widths; it needs a trusted-tier
+  session) — to do and to note in the PR (`.claude/rules/frontend-a11y.md`).
 
 ## Accepted limits (the author's decisions of 2026-10-28; revisit through a new issue)
 

@@ -116,17 +116,15 @@ paths:
 
 ## Tests
 
-- `SessionEndedBanner.spec.ts` (alert
-inserted, no focus taken, the link and its icon, no listener on `focus`, the sticky class, the status region present from
-mount and its message on return and emptied on the next route or by a new end, a refusal replacing the message, once per tick, and never the
-alert nor the focused link; the height measured on one element), `usePublishedHeight.spec.ts` (the height posted, updated on
-a second reading, removed with the target), `AdminLayout.sessionEnded.spec.ts` (the banner a direct child of the section holding the page,
-and adding no element to its flow; the page stays mounted with its typed
-input; red when `router.replace` is reintroduced; the banner is the only alert on a 401 and on a 403 without a token, a 403
-with a token shows the single « accès refusé » alert (`AccessRefusedNotice.spec.ts` too), with « Changer de compte » in the same tab, the
-input kept, `/api/me` read once, the alert cleared on navigation and masked when the re-read finds the session ended),
-`AdminCaseStudiesPage.spec.ts` and `OrderToolbar.spec.ts` (an ended session adds no alert of the
-page's, and the input stays).
+- `SessionEndedBanner.spec.ts` (alert inserted, no focus taken, the link and its icon, no listener on `focus`, the sticky class, the
+  status region present from mount and its message on return and emptied on the next route or by a new end, a refusal replacing the
+  message, once per tick, and never the alert nor the focused link; the height measured on one element), `usePublishedHeight.spec.ts` (the
+  height posted, updated on a second reading, removed with the target), `AdminLayout.sessionEnded.spec.ts` (the banner a direct child of
+  the section holding the page, and adding no element to its flow; the page stays mounted with its typed input; red when `router.replace`
+  is reintroduced; the banner is the only alert on a 401 and on a 403 without a token, a 403 with a token shows the single « accès refusé »
+  alert (`AccessRefusedNotice.spec.ts` too), with « Changer de compte » in the same tab, the input kept, `/api/me` read once, the alert
+  cleared on navigation and masked when the re-read finds the session ended), `AdminCaseStudiesPage.spec.ts` and `OrderToolbar.spec.ts`
+  (an ended session adds no alert of the page's, and the input stays).
 - `signInLocations.spec.ts` (`loginLocation`, the two wrappers, no `redirect` off a protected route, and the guard that no other file names
   `expired`/`reauth`), `SignInAgainLink.spec.ts` (new tab, hidden text, icon, one root; no `redirect` on a public route; the same tab on
   `signInInSameTab`), `adminGuard.spec.ts` (an account opens the login with `expired=1` as with `reauth=1`, with no flag it goes home; the

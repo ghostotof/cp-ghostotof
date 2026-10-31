@@ -10421,6 +10421,90 @@ section (avant « ### Task 11 »), sans cocher de case ni toucher au reste.
 - **St13-8** : le constat établit que le cas de R141b ne peut pas rougir, ce que la décision R141b de l'auteur et la
   règle (« invisible … no spec pins it ») disent déjà ; rien à corriger.
 
+### Ce que la treizième série a réellement fait *(rectifié le 2026-11-01)*
+
+Cette sous-section couvre les tâches **R152 à R167** (la série que l'utilisateur nomme la quatorzième ; la section garde son titre
+« treizième relecture », le plan l'a ainsi intitulée). Elle est écrite par R167 sur HEAD 875f7345, après contrôle des commits : un
+écart déclaré par un agent n'y figure que s'il se lit dans le diff. Les sections passées restent des archives. L'écart 190/187 de la
+douzième série (R150) est déjà rectifié plus haut (« 187, pas 190 ») ; rien à y ajouter.
+
+**Commits.** R152 5ea2130a, R153 722f25ff, R154 e4948fdc, R155 4fa390d3, R156 6eb35163, R157 048c1aef, R157b ef0cca06, R158 3bd60f09,
+R159 35158719, R160 5c8bd7d3, R161 d8f481a2, R162 99560db2, R163 1a7280cb, R164 e6fc5d5c, R165 747e6a86, R166 875f7345 ; R167 : le commit
+de ce balayage.
+
+- **R152** : écart. `createVersionAgain` et `editSameEntry` ne sont pas créés (les clics rejoués de « Modifier » et « Créer la version
+  XX » suffisent) ; `deleteSiblingOfOther` est ajouté aux huit cas (Sp13-3) ; hors traduction, `aria-busy` vaut `'false'` (le composant
+  ne retire pas l'attribut), le cas lit donc `'true'` puis `'false'`, non « absent ».
+- **R153** : écart. `form` est un `Record<F, string>`, non un `Readonly<…>` ; l'appel du composable descend sous la déclaration de `form`
+  (zone morte temporelle) ; les pages gardent l'alias `errorText: translationErrorText` (le nom local, la recherche « noms disparus »
+  le retrouve : ce n'est pas la fonction retirée) ; `proseDescribedBy` est inliné dans `proseFieldAttrs()` ; `application/…/proseFields.ts`
+  devient `proseFieldCopy.ts` ; la mutation (a) du plan n'est vue rouge qu'au composable seul (les cas partagés restent verts) ; le
+  paragraphe de règle est réécrit sans comparaison mot à mot.
+- **R154** : écart. `deleteSourceEntry` est supprimé (le cas se lit par les clics), `fieldIdPrefix` dérive de `ids.locale`, `dirtyOrder`
+  devient `orderTable`, le test de `describedBy` est déplacé à `describedBy.spec.ts`, et le cas « portée arrêtée » de `watchIdentity` se
+  lit par `console.warn`.
+- **R155** : conforme. Le verrou global `isAnyOrderDirty` est passé aux deux sections, qui émettent `orderDirtyChange` ; la garde de
+  sortie reste à la page.
+- **R156** : écart. La mutation est faite sur la clé lue (`common.accessRefused` d'`en.json`), non sur le JSON des textes ;
+  `entryFormLockTexts.ts` est créé comme prévu ; le spec des textes est déplacé sous `tests/infrastructure/i18n/`.
+- **R157** : écart. Une garde de fin de lecture et `isInterrupted` (`useAdminLoad`) sont posés, mesurés invisibles (retirer la garde ne
+  fait rougir aucun test) et retirés par R157b.
+- **R157b** : conforme à la décision de l'auteur (2026-10-31) : la garde et `isInterrupted` retirées, le changement de langue seule
+  sortie ; le commit porte aussi la section R157b du plan.
+- **R158** : écart. `currentRefusalScope()` reste exporté pour le seul cas de pureté (« une lecture sans effet », R143), Q8 (B) puis
+  (A) : les specs qui envoient une lecture lisent la portée du `stampBackofficeRead()` reçu ; pas de faux client dans ce cas ;
+  `standardCase(name, overrides?)` à signature resserrée ; treize entrées (non douze) tiennent chacune sur une ligne.
+- **R159** : écart. Des cas existants sont changés exprès (`immediate: true` avec `flush: 'post'` n'est plus refusé) ;
+  `fragmentsOfTemplateAst` n'est pas découpé (St13-26), repris par R167 (voir plus bas).
+- **R160** : écart. La commande proposée est `npm pkg set "devDependencies.@vue/compiler-dom=<intervalle>" && npm install
+  --package-lock-only` (le plan disait `npm install` ensuite sans l'option) ; deux autres messages de la garde ont changé avec elle.
+- **R161** : écart. `ClassNameResolver` est réutilisé : aucun `ImportedNames` créé ; `MemberCallsTest` est dans `tests/Shared/` (le
+  dossier des tests de `tests/Support/`) ; trois prédicats de `MemberCalls` ; `T_STRING` est exigé après `::`.
+- **R162** : écart. L'indentation de deux espaces des lignes déplacées est ôtée ; le renvoi de la puce des zones est en fin du
+  paragraphe du smoke MCP ; le glob `tools/smoke-*.sh` couvre aussi `smoke-messenger-probe.sh`.
+- **R163** : écart. La casse est ignorée (`--LOCATION-T`) ; la mesure sur curl 8.5.0 lit un `-K -` sur l'entrée standard ; les refus sont
+  plus larges que la liste du plan (`--exp`, `--expand-`…) ; l'image mesurée est épinglée par son digest (`sha256:08e46600…`).
+- **R164** : écart. « seul » est lu comme « sans nom » (le mot de la garde) ; la prose des règles et des commentaires est reformulée ; un
+  cas `dirname` de l'audit est ajouté (C13-5).
+- **R165** : écart. `run_case` pose sept variables (non six) ; `_case_incomplete` nomme l'échec d'une variable absente ;
+  `write_env_noting_dirname` est ajouté ; la limite du nettoyage `rm -rf` de tête est écrite (décision 6 de #748 gardée, B).
+- **R166** : écart. Dix-huit noms de tests (non seize ni dix-neuf) ont été raccourcis par b40ddc21 ; « (#748, R67) » est remis dans le
+  nom ; quatre `echo` ont été coupés en deux arguments, contre la décision de l'auteur : recollés par R167 (A).
+
+**Décisions prises en cours de série.** R157b (retrait de la garde de fin de lecture et d'`isInterrupted`) ; A et B de R165 (les trois
+smokes sans `dirname` avant la bibliothèque ; la limite du nettoyage) ; les `echo` d'un seul tenant (un message se cherche par `grep`) ;
+la limite générale des fils (`outillage-smoke.md` : un fils lancé avant `smoke_use_auth_config` voit la variable de la Basic Auth ;
+aucun fils actuel ne journalise) ; `fragmentsOfTemplateAst` découpé en fonctions nommées de moins de 40 lignes ; la ligne d'index de
+`outillage-smoke.md` placée après `release.md`, pour que « the index of the four below » de `deploiement.md` reste vrai.
+
+**Questions Q1 à Q14 et réponse suivie** (l'auteur : « les quatorze recommandations », 2026-10-31) : Q1 (A) `proposeFrom(target,
+switchForm)` ; Q2 `removeEntry` dans le composable ; Q3 le bloc de gabarit reste dans chaque page ; Q4 deux sections de Qualité ; Q5
+`outillage-smoke.md` ; Q6 les textes de `proseReadonly` ; Q7 `discard` → `expire` ; Q8 (B) puis (A) ; Q9 deux messages de refus ; Q10 la
+proposition attend le retour de la session ; Q11 une valeur collée à une option courte refusée à tort, limite écrite ; Q12 curl 8.5.0
+tiré et mesuré, `--network none` ; Q13 « désactivé » et « le palier de confiance » rétablis, « (#748, R67) » dans le nom ; Q14 un agent
+du balayage écrit cette sous-section.
+
+**Lignes de plus de 140 caractères laissées** (aucune n'est écrite par R152 à R167 hors table Markdown, JSON et littéral seul) :
+- les neuf littéraux seuls rendus par R166 : `frontend/src/infrastructure/portfolio/content/en.ts:145-146` et `fr.ts:145-146`,
+  `frontend/tests/infrastructure/portfolio/cookiePolicy.spec.ts:15,16,21,22`, `tools/tests/smoke-dead-session-cookie.test.sh:101` ;
+- les quatre `echo` recollés par R167 (A), un message d'un seul tenant : `tools/smoke-dead-session-cookie.sh:141,147,168` et
+  `tools/smoke-login-throttling.sh:104` ;
+- la table de `.claude/CLAUDE.md:63` (la ligne d'index de `outillage-smoke.md`, une ligne de table ne se coupe pas) et les textes
+  `admin.translation.proseReadonly` (`fr.json:399-400`, `en.json:399-400`, JSON) ;
+- les lignes de ces mêmes fichiers antérieures à la série (blame hors de `2a5cb860..HEAD`) : tables Markdown, JSON, littéraux de
+  `content/*.ts`, messages d'`echo` des smokes de #650 et de l'audit, regex de tests de sécurité : non écrites par la série, laissées.
+
+**Hors périmètre, non touché** (F) : le commentaire « autrefois » de `frontend/src/domain/experience/services/formatExperienceDuration.ts:6`
+(fichier non touché par #748) ; les textes d'interface recopiés en dur dans des specs hors du périmètre de R156 (`OAuthConsentPage`,
+`McpConnectionsPage`, `SessionEndedBanner`, `SignInAgainLink`, pages admin…).
+
+**Balayage de R167** (commandes et résultats au rendu de la tâche) : noms disparus, 0 hors l'alias `translationErrorText` des huit
+pages ; vocabulaire, 0 hors des gardes négatives de `adminTranslationTexts.spec.ts`, du mot « autrefois » ci-dessus et de deux phrases
+de la règle `outillage-smoke.md` sous la limite de bonne foi ; noms de tests, 0 écrit par la série (les `%E0` sont des faux positifs) ;
+récits au passé : six commentaires reformulés (`AdminQualityPage.vue`, `useTranslatedForm.spec.ts`, `AdminAboutPage.spec.ts` ×2,
+`CompiledNestedReading.php`, la règle `frontend-session-bandeau.md` réalignée) ; moignons recollés sans changer un mot dans
+`mcp-oauth-revocation-personne.md`, `frontend-session-refus.md`, `frontend-session-bandeau.md`, `frontend.md`, `outillage-smoke.md`.
+
 ---
 
 

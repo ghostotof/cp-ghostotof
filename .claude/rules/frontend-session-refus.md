@@ -21,15 +21,13 @@ paths:
 
 - **`main.ts`** registers `createBackofficeSessionReaction(useAuth())` (`presentation/router/backofficeSessionExpiry.ts`), a
   `BackofficeSessionReaction` `{ stampAtSend(kind), ended, refused }` (`refused`: see « A real refusal ») over `markSessionExpired`: **no
-  `router.replace`** (R1c's navigation unmounted the page at the very
-  click of « Enregistrer », and a case study written for more than an hour — the JWT's lifetime — was lost with it). The
-  verdict is judged by **session generation** (`frontend-session-retour.md`, « The session generation
-  »), not « idempotent »: several lists of a page answering 401
-  together leave under the same generation, the first end counts and the others announce nothing more. The registry lives
-  in the module, so `infrastructure/` imports neither the session nor the router. The type (`BackofficeSessionReaction`
-  and the send stamp `{ session, account, refusal }`, `refusal` a `RefusalScope`: `{ kind: 'read', scope, epoch }` or
-  `{ kind: 'write' }`, R38, R54) lives in `domain/admin/shared/`, which all three layers may import:
-  no `infrastructure/` file imports `application/` (R28).
+  `router.replace`** (R1c's navigation unmounted the page at the very click of « Enregistrer », and a case study written for more than an
+  hour — the JWT's lifetime — was lost with it). The verdict is judged by **session generation** (`frontend-session-retour.md`, « The
+  session generation »), not « idempotent »: several lists of a page answering 401 together leave under the same generation, the first end
+  counts and the others announce nothing more. The registry lives in the module, so `infrastructure/` imports neither the session nor the
+  router. The type (`BackofficeSessionReaction` and the send stamp `{ session, account, refusal }`, `refusal` a `RefusalScope`: `{ kind:
+  'read', scope, epoch }` or `{ kind: 'write' }`, R38, R54) lives in `domain/admin/shared/`, which all three layers may import: no
+  `infrastructure/` file imports `application/` (R28).
 
 ## A real refusal (#748, R7)
 

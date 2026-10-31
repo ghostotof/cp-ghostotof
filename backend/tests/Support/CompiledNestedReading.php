@@ -8,8 +8,8 @@ namespace App\Tests\Support;
  * Ce que la garde des métadonnées a lu des paramètres et des liens (`uriVariables`) d'une ressource ou d'une
  * opération, en un seul parcours : les constats et le nombre de liens compilés vus (#748, R131).
  *
- * Un objet plutôt que deux parcours de `uriVariables` (l'un pour les constats, l'autre pour le décompte), qui
- * testaient chacun `instanceof Link` : ce que l'on compte et ce que l'on juge ne peuvent plus diverger.
+ * Un objet plutôt que deux parcours de `uriVariables` (l'un pour les constats, l'autre pour le décompte), chacun
+ * jugeant `instanceof Link` : ce que l'on compte et ce que l'on juge ne peuvent diverger.
  */
 final readonly class CompiledNestedReading
 {
