@@ -7,20 +7,21 @@ import { createAppI18n } from '../../../../src/presentation/i18n'
 import { AUTH_REPOSITORY, lastAccountName, markSessionExpired, useAuth } from '../../../../src/application/auth/useAuth'
 import {
   backofficeAccessRefused,
-  beginBackofficeLoad,
   clearBackofficeAccessRefusal,
   markBackofficeAccessRefused,
-  refusalScope,
+  readRefusalScope,
 } from '../../../../src/application/admin/shared/backofficeAccessRefusal'
+import type { ReadRefusalScope } from '../../../../src/domain/admin/shared/BackofficeSessionReaction'
 import type { AuthRepository } from '../../../../src/domain/auth/repositories/AuthRepository'
 import { sessionFor } from '../../../support/authSession'
 import { sessionForUser } from '../../../../src/domain/auth/services/sessionForUser'
 import { signInAgain } from '../../../support/signInAgain'
 import { expectNoAccessibilityViolation } from '../../../support/axe'
 
-/** Le texte FR exact de `common.accessRefused` (Sp9-5 : un texte se compare entier, jamais par `toContain`). */
+/** Le texte FR exact de `common.accessRefused` : un texte se compare entier, jamais par `toContain`. */
 const accessRefusedFr =
-  "Le serveur refuse cette demande à votre session : votre compte n'a peut-être pas, ou plus, l'accès de confiance, ou la session doit être rouverte. Changez de compte, ou reconnectez-vous au même, pour continuer."
+  "Le serveur refuse cette demande à votre session : votre compte n'a peut-être pas, ou plus, l'accès de confiance, " +
+  'ou la session doit être rouverte. Changez de compte, ou reconnectez-vous au même, pour continuer.'
 
 const StubPage = defineComponent({ setup: () => () => h('div') })
 
@@ -93,9 +94,12 @@ async function signInAs(username: string): Promise<void> {
  * L'alerte « accès refusé » du backoffice (#748, R17, F4), rendue une fois par `AdminLayout` : un refus réel
  * (un 403 qui n'est pas une fin de session) la lève, la navigation et la fin de session l'effacent.
  */
-/** Un refus réel d'une requête partie sous le périmètre courant (jamais d'une page quittée, voir R28). */
-function refuse(): void {
-  markBackofficeAccessRefused({ kind: 'read', scope: refusalScope() }, lastAccountName())
+/**
+ * Un refus réel d'une lecture : par défaut partie maintenant (le périmètre et l'époque courants, jamais d'une page
+ * quittée, voir R28) ; `sentIn` est l'estampille relevée plus tôt, celle d'une lecture partie avant le montage de l'alerte.
+ */
+function refuse(sentIn: ReadRefusalScope = readRefusalScope()): void {
+  markBackofficeAccessRefused(sentIn, lastAccountName())
 }
 
 describe('AccessRefusedNotice (#748, R17)', () => {
@@ -161,14 +165,14 @@ describe('AccessRefusedNotice (#748, R17)', () => {
     const { wrapper, router } = await mountNotice()
     refuse()
     await flushPromises()
-    const scope = refusalScope()
+    const scope = readRefusalScope().scope
 
     await router.push({ hash: '#main-content' })
     await flushPromises()
 
     expect(router.currentRoute.value.fullPath).toBe('/fr/admin/case-studies#main-content')
     expect(wrapper.find('[role="alert"]').exists()).toBe(true)
-    expect(refusalScope()).toBe(scope)
+    expect(readRefusalScope().scope).toBe(scope)
     wrapper.unmount()
   })
 
@@ -184,13 +188,13 @@ describe('AccessRefusedNotice (#748, R17)', () => {
     wrapper.unmount()
   })
 
-  it("une requête aux paramètres permutés garde l'alerte : vue-router exécute la navigation, la clé triée l'ignore (R54, CR5-8)", async () => {
+  it("une requête aux paramètres permutés garde l'alerte : vue-router exécute la navigation, la clé triée l'ignore (R54)", async () => {
     const { wrapper, router } = await mountNotice()
     await router.push('/fr/admin/case-studies?a=1&b=2')
     await flushPromises()
     refuse()
     await flushPromises()
-    const scope = refusalScope()
+    const scope = readRefusalScope().scope
 
     // vue-router compare la requête dans l'ordre où elle est écrite : il exécute cette navigation (sans le tri de la clé,
     // R54, le test serait rouge). C'est la clé triée de l'alerte qui n'y voit pas de changement, et la garde.
@@ -199,7 +203,7 @@ describe('AccessRefusedNotice (#748, R17)', () => {
 
     expect(router.currentRoute.value.fullPath).toBe('/fr/admin/case-studies?b=2&a=1')
     expect(wrapper.find('[role="alert"]').exists()).toBe(true)
-    expect(refusalScope()).toBe(scope)
+    expect(readRefusalScope().scope).toBe(scope)
     wrapper.unmount()
   })
 
@@ -264,7 +268,7 @@ describe('AccessRefusedNotice (#748, R17)', () => {
       first.wrapper.unmount()
       // Ce que le périmètre rend impossible hors du backoffice (le démontage l'avance) mais que le module accepte :
       // une lecture du périmètre courant, comptée alors qu'aucune alerte n'est montée.
-      markBackofficeAccessRefused({ kind: 'read', scope: refusalScope() }, lastAccountName())
+      refuse()
 
       const second = await mountNotice()
       await flushPromises()
@@ -284,7 +288,7 @@ describe('AccessRefusedNotice (#748, R17)', () => {
       const link = second.wrapper.get('a').element
       expect(second.wrapper.get('span').text()).toBe(earlierSaveFr)
 
-      // Une écriture : le geste courant, il a le texte courant (R76, CR7-4). Une lecture, elle, garde l'avis (test suivant).
+      // Une écriture : le geste courant, il a le texte courant (R76). Une lecture, elle, garde l'avis (test suivant).
       markBackofficeAccessRefused({ kind: 'write' }, lastAccountName())
       await flushPromises()
 
@@ -312,13 +316,13 @@ describe('AccessRefusedNotice (#748, R17)', () => {
       second.wrapper.unmount()
     })
 
-    it("l'avis de l'enregistrement précédent reste quand la lecture de la page d'arrivée est refusée (R76, CR7-4)", async () => {
+    it("l'avis de l'enregistrement précédent reste quand la lecture de la page d'arrivée est refusée (R76)", async () => {
       await signInAs('compte-a')
       const first = await mountNotice()
       first.wrapper.unmount()
       writeRefusedWhileAway()
       // Le chargement de la page d'arrivée part dans le `setup` de la page, avant le montage de l'alerte.
-      beginBackofficeLoad()
+      const landingRead = readRefusalScope()
       const second = await mountNotice()
       await flushPromises()
       const message = second.wrapper.get('span').element
@@ -326,7 +330,7 @@ describe('AccessRefusedNotice (#748, R17)', () => {
 
       // Le chargement de la page d'arrivée, parti avant le montage, est refusé : son refus compte et se réannonce, mais
       // le texte de l'enregistrement précédent, qui dit déjà ce que dirait une lecture refusée, reste.
-      refuse()
+      refuse(landingRead)
       await flushPromises()
 
       expect(second.wrapper.get('span').text()).toBe(earlierSaveFr)
@@ -336,71 +340,42 @@ describe('AccessRefusedNotice (#748, R17)', () => {
       second.wrapper.unmount()
     })
 
-    it("l'avis tient toutes les lectures du chargement, et part au refus qui le suit (Review Focus 1 et 2)", async () => {
+    it("l'avis tient toutes les lectures parties avant le montage, et part au refus d'une lecture partie après (#748, R112)", async () => {
       await signInAs('compte-a')
       const first = await mountNotice()
       first.wrapper.unmount()
       writeRefusedWhileAway()
-      // Une page à deux listes : deux chargements en vol au montage de l'alerte.
-      const endFirstLoad = beginBackofficeLoad()
-      const endSecondLoad = beginBackofficeLoad()
+      // Une page à deux listes : deux lectures estampillées avant le montage de l'alerte.
+      const firstLandingRead = readRefusalScope()
+      const secondLandingRead = readRefusalScope()
       const second = await mountNotice()
       await flushPromises()
       expect(second.wrapper.get('span').text()).toBe(earlierSaveFr)
 
       // Les deux lectures du chargement, refusées : l'avis est dit aux deux annonces (le `<span>` est remplacé à chacune).
       const afterMount = second.wrapper.get('span').element
-      refuse()
+      refuse(firstLandingRead)
       await flushPromises()
       expect(second.wrapper.get('span').text()).toBe(earlierSaveFr)
       const afterFirstRead = second.wrapper.get('span').element
       expect(afterFirstRead).not.toBe(afterMount)
 
-      refuse()
+      refuse(secondLandingRead)
       await flushPromises()
       expect(second.wrapper.get('span').text()).toBe(earlierSaveFr)
       const afterSecondRead = second.wrapper.get('span').element
       expect(afterSecondRead).not.toBe(afterFirstRead)
 
-      // Le chargement fini, le texte de l'alerte déjà affichée ne change pas sans refus…
-      endFirstLoad()
-      endSecondLoad()
+      // Le texte de l'alerte déjà affichée ne change pas sans refus…
       await flushPromises()
       expect(second.wrapper.get('span').text()).toBe(earlierSaveFr)
       expect(second.wrapper.get('span').element).toBe(afterSecondRead)
 
-      // … et la lecture refusée qui suit (« Réessayer », rôle perdu) ramène le texte courant, réannoncé.
+      // … et le refus d'une lecture partie après le montage (« Réessayer », rôle perdu) ramène le texte courant, réannoncé.
       refuse()
       await flushPromises()
       expect(second.wrapper.get('span').text()).toBe(accessRefusedFr)
       expect(second.wrapper.get('span').element).not.toBe(afterSecondRead)
-      second.wrapper.unmount()
-    })
-
-    it("l'avis de l'enregistrement précédent tient les lectures du chargement, pas la suivante (R102, décision 1)", async () => {
-      await signInAs('compte-a')
-      const first = await mountNotice()
-      first.wrapper.unmount()
-      writeRefusedWhileAway()
-      const endLoad = beginBackofficeLoad()
-      const second = await mountNotice()
-      await flushPromises()
-      expect(second.wrapper.get('span').text()).toBe(earlierSaveFr)
-
-      // La lecture de chargement, refusée : l'avis reste, le `<span>` est remplacé (réannoncé).
-      const afterMount = second.wrapper.get('span').element
-      refuse()
-      await flushPromises()
-      expect(second.wrapper.get('span').text()).toBe(earlierSaveFr)
-      expect(second.wrapper.get('span').element).not.toBe(afterMount)
-
-      // Le chargement fini, une relecture refusée plus tard : le texte courant, et l'alerte se réannonce encore.
-      endLoad()
-      const afterLoad = second.wrapper.get('span').element
-      refuse()
-      await flushPromises()
-      expect(second.wrapper.get('span').text()).toBe(accessRefusedFr)
-      expect(second.wrapper.get('span').element).not.toBe(afterLoad)
       second.wrapper.unmount()
     })
 

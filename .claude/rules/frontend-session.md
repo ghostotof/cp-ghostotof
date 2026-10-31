@@ -116,7 +116,6 @@ does `BackofficeHttpClient`.
     read; any other rejection raises it; a response older than the last `load()` is dropped (stale guard); `K` is the
     read's key (the locale, for the About settings; a new key runs `clear` first). `isLoaded` says the value of the
     current key was read: **a first read ended by the session leaves it false, and a page never says « aucune … » then**.
-    Each `load()` also declares itself to the backoffice's refusal (`beginBackofficeLoad`, `frontend-session-refus.md`).
     On return (`onSessionRestored`, the same account) the read it interrupted runs again, once, with its key (#748, R4,
     `.claude/rules/frontend-backoffice.md`);
   - `visibleMutationError(error, OwnError, fallback)` for a `catch` of a mutation: `null` for a `SessionEndedError` (the
@@ -149,7 +148,7 @@ the given headers kept, the cookie read once even if it vanishes meanwhile (R28)
 - `BackofficeHttpClient.spec.ts` (a 401 on read
 and write, a 403 to a write without a token or with an empty cookie, each **rejects `SessionEndedError`** and calls the
 reaction once, also with no reaction registered; 200/204/404/409/422/500 give the response back with no reaction; a 403 to a read, or to a write with its token, calls `refused` once with the send stamp and **rejects `AccessForbiddenError`**, also with no reaction (R17); a network failure rises as it came).
-- `useAdminLoad.spec.ts` (`isLoaded`, the key that empties, the read run again on return, `tests/support/signInAgain.ts` being the return, the load declared and ended on every outcome, R102) and
+- `useAdminLoad.spec.ts` (`isLoaded`, the key that empties, the read run again on return, `tests/support/signInAgain.ts` being the return) and
 `visibleMutationError.spec.ts` (the two functions), `sessionEndedMapping.spec.ts` (the table of the 15 repositories: a 401
 on every call each exposes, read, write, order, rejects `SessionEndedError` unchanged; a glob fails when a new repository
 is missing from the table), `sessionEndedLoad.spec.ts` (the thirteen composables: an ended session on a load raises no

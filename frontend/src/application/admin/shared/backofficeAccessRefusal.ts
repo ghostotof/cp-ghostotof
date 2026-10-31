@@ -1,5 +1,5 @@
 import { computed, shallowRef } from 'vue'
-import type { RefusalScope } from '../../../domain/admin/shared/BackofficeSessionReaction'
+import type { ReadRefusalScope, RefusalScope } from '../../../domain/admin/shared/BackofficeSessionReaction'
 
 /**
  * Le refus réel du backoffice (#748, R17, F4) : un 403 qui n'est pas une fin de session — une lecture, ou une écriture
@@ -12,6 +12,10 @@ import type { RefusalScope } from '../../../domain/admin/shared/BackofficeSessio
  * plus la réannonce sans la réinsérer. État de module, comme `authState` : la réaction vit dans `main.ts`, hors
  * de tout composant, et l'alerte dans un autre.
  *
+ * Ce que le module tient : le compteur de refus, l'avis « enregistrement précédent », l'écriture comptée et le compte
+ * qui l'a envoyée, le périmètre et l'époque (deux nombres que la présentation fait avancer, voir plus bas). La relecture
+ * du palier qui suit chaque refus (`rereadAfterRefusal`) est l'affaire de `useAuth`, exposé à part.
+ *
  * **Ce qui est compté pendant qu'aucune alerte n'est montée** (#748, R64, décision 1 de la sixième relecture, qui amende
  * la réponse Q1 de la cinquième ; R76, décision 2 de la septième) : en pratique une écriture — le démontage de l'alerte
  * avance le périmètre, donc une lecture partie du backoffice porte un périmètre révolu et ne compte pas. Au montage
@@ -20,18 +24,13 @@ import type { RefusalScope } from '../../../domain/admin/shared/BackofficeSessio
  * plus sur le backoffice — **mais seulement au compte qui l'a envoyée** : le refus retient ce compte, et un autre compte
  * au montage (A refusé, déconnecté, B connecté dans l'onglet) remet tout à zéro, l'avis de A n'étant pas celui de B.
  * **Après le montage**, un refus **d'écriture** ramène le texte courant (c'est un nouvel enregistrement refusé, le dire
- * « précédent » serait faux). **Toute lecture refusée pendant le chargement de la page d'arrivée** garde l'avis (CR7-4,
- * option C, liée au chargement en R102, décision 1 de la neuvième relecture : ce chargement, parti avant le montage,
- * peut être refusé en plusieurs lectures ; son texte dit déjà ce qu'une lecture refusée dirait). Le chargement est
- * l'ensemble des `load()` de `useAdminLoad` en vol au montage, chacun se déclarant par `beginBackofficeLoad` ; il se
- * termine quand ils ont tous répondu, servis ou refusés. **Un `load()` lancé pendant ce chargement le prolonge**
- * (accepté : une relecture rendue par « Réessayer » sur une autre liste le tient ouvert). **Une fois terminé, le texte
- * de l'alerte déjà affichée reste** (il changerait sans refus ni réannonce), **et le refus suivant, lecture ou écriture,
- * ramène le texte courant** (une relecture refusée plus tard, rôle perdu, n'est pas le chargement). Le compteur avance
- * à chaque refus compté, donc l'alerte se réannonce.
- *
- * Exposé à part de `useAuth` : la relecture du palier (`rereadAfterRefusal`) qui suit chaque refus est l'affaire
- * de `useAuth`, ce module ne tient que « combien de refus depuis le dernier effacement ».
+ * « précédent » serait faux). **Une lecture partie avant le montage de l'alerte est du chargement de la page d'arrivée
+ * et garde l'avis, quel que soit le moment de sa réponse** (#748, R112, décision 3 de la dixième relecture) : ce
+ * chargement, parti dans le `setup` de la page avant l'`onMounted` de l'alerte, peut être refusé en plusieurs lectures,
+ * et son texte dit déjà ce qu'une lecture refusée dirait. **Toute autre lecture refusée**, partie après le montage
+ * (« Réessayer », une relecture après un enregistrement, rôle perdu), **ramène le texte courant** : ce n'est plus le
+ * chargement. L'époque, relevée à l'envoi, est ce qui les distingue. Le compteur avance à chaque refus compté, donc
+ * l'alerte se réannonce.
  */
 
 /**
@@ -40,29 +39,25 @@ import type { RefusalScope } from '../../../domain/admin/shared/BackofficeSessio
  * affectation de `state.value` ; aucun champ ne peut rester d'une transition à l'autre sans qu'elle le dise.
  *
  * - `count` : le nombre de refus réels depuis le dernier effacement (0 = aucun).
- * - `earlierSave` : où en est l'avis « enregistrement précédent » (R64, R76, R102) — `'none'` : le compteur dit le
- *   refus de la page ; `'landing'` : le montage a réglé une écriture refusée pendant l'absence **et** le chargement de la
- *   page d'arrivée est en vol, l'avis est dit et chaque lecture refusée le garde ; `'landed'` : ce chargement est terminé
- *   (servi ou refusé), le texte reste celui de l'avis jusqu'au refus suivant, qui le rend à `'none'`. Une écriture
- *   comptée le remet à `'none'`.
+ * - `earlierSave` : vrai quand le montage a réglé une écriture refusée pendant l'absence (R64, R76) et qu'aucun refus
+ *   venu depuis ne l'a ramené à faux : l'alerte dit alors l'avis « enregistrement précédent ». Une écriture comptée, ou une
+ *   lecture partie après le montage, le remet à faux ; une lecture partie avant le montage le garde (R112).
  * - `countedWrite` : une union discriminée (St8-10) — `{ kind: 'none' }` : aucune écriture comptée depuis le dernier
  *   effacement ; `{ kind: 'write', account }` : une l'a été (R64), `account` étant le compte qui l'a envoyée (R76,
  *   décision 2 de la septième relecture), `null` quand elle est partie sous aucun compte — ce que « aucune écriture »
  *   ne dit pas. La dernière écriture comptée l'emporte. `settleBackofficeAccessRefusalsOnMount` la lit au montage pour
  *   distinguer une écriture d'une lecture ; le montage ne dit l'avis qu'à ce compte.
  */
-type EarlierSave = 'none' | 'landing' | 'landed'
-
 type CountedWrite = { readonly kind: 'none' } | { readonly kind: 'write'; readonly account: string | null }
 
 interface RefusalState {
   readonly count: number
-  readonly earlierSave: EarlierSave
+  readonly earlierSave: boolean
   readonly countedWrite: CountedWrite
 }
 
 /** L'état sans refus : celui du chargement, de chaque effacement et de la remise des tests. Figé, jamais modifié en place. */
-const NO_REFUSAL: RefusalState = Object.freeze<RefusalState>({ count: 0, earlierSave: 'none', countedWrite: { kind: 'none' } })
+const NO_REFUSAL: RefusalState = Object.freeze<RefusalState>({ count: 0, earlierSave: false, countedWrite: { kind: 'none' } })
 
 /**
  * `shallowRef` : l'objet est remplacé en bloc, jamais modifié champ à champ, donc sans proxy profond (un objet figé n'en
@@ -73,58 +68,33 @@ const state = shallowRef<RefusalState>(NO_REFUSAL)
 /**
  * Le périmètre des refus (#748, R28, CR3-8) : un nombre qui avance à chaque effacement (`clearBackofficeAccessRefusal`) —
  * un changement de chemin ou de requête (pas le seul fragment, R38), une fin de session, le démontage de l'alerte —, et
- * qu'aucune lecture n'avance. Le montage n'avance rien (R64). Une requête le lit à l'envoi (`{ kind: 'read', scope }`, voir
- * `RefusalScope`) et le rend au refus (`markBackofficeAccessRefused`) : un 403 arrivé sous un autre périmètre est celui
- * d'une page quittée, il ne compte pas sur la suivante — sauf une écriture, qui ne relève aucun périmètre
- * (`{ kind: 'write' }`, R38). Pas un simple « booléen de navigation » : A, B puis A font trois périmètres. Une
- * navigation vers l'adresse courante n'est pas exécutée par vue-router ; une permutation des paramètres de requête
- * l'est (R54, CR5-8), mais la clé triée de l'alerte n'y voit pas de changement : ni l'une ni l'autre n'avance le
- * périmètre. Pas de `ref` : rien ne l'affiche.
+ * qu'aucune lecture ni le montage n'avance. Une requête le lit à l'envoi (`readRefusalScope()`) et le rend au refus
+ * (`markBackofficeAccessRefused`) : un 403 arrivé sous un autre périmètre est celui d'une page quittée, il ne compte pas
+ * sur la suivante — sauf une écriture, qui ne relève aucun périmètre (`{ kind: 'write' }`, R38). Pas un simple « booléen
+ * de navigation » : A, B puis A font trois périmètres. Une navigation vers l'adresse courante n'est pas exécutée par
+ * vue-router ; une permutation des paramètres de requête l'est (R54, CR5-8), mais la clé triée de l'alerte n'y voit pas de
+ * changement : ni l'une ni l'autre n'avance le périmètre. Pas de `ref` : rien ne l'affiche.
  */
 let scope = 0
 
 /**
- * Le nombre de `load()` d'administration en vol sous le périmètre courant (`beginBackofficeLoad`), remis à zéro à chaque
- * effacement. Pas de `ref` : rien ne l'affiche. C'est lui qui dit si le chargement de la page d'arrivée est en vol au
- * montage de l'alerte (`settle…`) et quand il se termine.
+ * L'époque de montage (#748, R112, décision 3 de la dixième relecture) : un nombre qui n'avance qu'au montage de l'alerte
+ * (`settleBackofficeAccessRefusalsOnMount`), et que nul effacement n'avance (le périmètre isole déjà une page). Une lecture
+ * le relève à l'envoi avec le périmètre : si, à son refus, l'époque a avancé, la lecture est partie avant le montage, c'est
+ * du chargement de la page d'arrivée. Deux nombres, deux sens : le périmètre dit « quelle page », l'époque « avant ou après
+ * le montage ». Pas de `ref` : rien ne l'affiche.
  */
-let loadsInFlight = 0
+let epoch = 0
 
-/** Le nombre de refus réels depuis le dernier effacement ; 0 = aucun, rien à afficher. */
+/** Le compteur de refus réels depuis le dernier effacement ; 0 = aucun, rien à afficher. */
 export const backofficeAccessRefused = computed(() => state.value.count)
 
 /** Vrai quand le compteur dit un enregistrement refusé pendant l'absence de l'alerte (R64) : l'alerte lui donne son propre texte. */
-export const earlierSaveRefused = computed(() => 'none' !== state.value.earlierSave)
+export const earlierSaveRefused = computed(() => state.value.earlierSave)
 
-/** Le périmètre courant, à relever à l'envoi d'une requête. */
-export function refusalScope(): number {
-  return scope
-}
-
-/**
- * Déclare un `load()` d'administration en vol (`useAdminLoad`, #748, R102) et rend sa fin. Les `load()` en vol au
- * montage de l'alerte sont le chargement de la page d'arrivée : tant qu'il dure, toute lecture refusée garde l'avis
- * « enregistrement précédent » ; quand le dernier a répondu, servi ou refusé, il se termine, **sans changer le texte
- * d'une alerte déjà affichée** (seul un refus le fait). La fin est **idempotente** et **sans effet si le périmètre a
- * changé depuis** (un effacement a remis le compteur à zéro : cette fin n'est plus celle d'un chargement compté). Un
- * `load()` lancé pendant le chargement de la page d'arrivée le prolonge ; lancé après, il ne rouvre rien.
- */
-export function beginBackofficeLoad(): () => void {
-  const startedIn = scope
-  let isEnded = false
-  loadsInFlight += 1
-
-  return () => {
-    if (isEnded || startedIn !== scope) {
-      return
-    }
-    isEnded = true
-    loadsInFlight -= 1
-    // Le dernier chargement en vol a répondu : la fenêtre de l'avis se ferme, son texte reste jusqu'au refus suivant.
-    if (0 === loadsInFlight && 'landing' === state.value.earlierSave) {
-      state.value = { ...state.value, earlierSave: 'landed' }
-    }
-  }
+/** Ce qu'une lecture relève à l'envoi : le périmètre et l'époque courants, relevés ensemble. */
+export function readRefusalScope(): ReadRefusalScope {
+  return { kind: 'read', scope, epoch }
 }
 
 /**
@@ -133,9 +103,9 @@ export function beginBackofficeLoad(): () => void {
  * n'est compté et `false` est rendu (l'appelant ne relit pas non plus le palier). Une écriture compte toujours. `account`
  * est le compte relevé à l'envoi (`null` : aucun) ; seule une écriture le retient, pour que le montage suivant ne dise
  * l'avis qu'à lui (R76). **Une écriture comptée remet le texte courant** (`earlierSaveRefused` faux : le message redevient
- * celui du refus de la page, c'est un nouvel enregistrement refusé) ; **une lecture comptée pendant le chargement de la
- * page d'arrivée garde l'avis** (CR7-4, option C : le compteur avance, l'alerte se réannonce, l'avis « enregistrement
- * précédent » reste), **la première une fois ce chargement terminé le rend** (R102 : `'landed'` → `'none'`).
+ * celui du refus de la page, c'est un nouvel enregistrement refusé). Une lecture comptée **partie avant le montage**
+ * (`sentIn.epoch` n'est plus l'époque) est du chargement de la page d'arrivée et garde l'avis, quel que soit le moment
+ * de sa réponse ; **partie après**, elle ramène le texte courant.
  */
 export function markBackofficeAccessRefused(sentIn: RefusalScope, account: string | null): boolean {
   if ('read' === sentIn.kind && sentIn.scope !== scope) {
@@ -143,12 +113,14 @@ export function markBackofficeAccessRefused(sentIn: RefusalScope, account: strin
   }
 
   const count = state.value.count + 1
-  // Une écriture remet le texte courant et retient son compte ; une lecture laisse l'avis tant que le chargement de la
-  // page d'arrivée est en vol (`'landing'`), le rend s'il est terminé (`'landed'`), et laisse l'écriture comptée.
-  state.value =
-    'write' === sentIn.kind
-      ? { count, earlierSave: 'none', countedWrite: { kind: 'write', account } }
-      : { ...state.value, count, earlierSave: 'landing' === state.value.earlierSave ? 'landing' : 'none' }
+  if ('write' === sentIn.kind) {
+    state.value = { count, earlierSave: false, countedWrite: { kind: 'write', account } }
+
+    return true
+  }
+
+  const isLandingRead = sentIn.epoch !== epoch
+  state.value = { ...state.value, count, earlierSave: isLandingRead && state.value.earlierSave }
 
   return true
 }
@@ -156,27 +128,26 @@ export function markBackofficeAccessRefused(sentIn: RefusalScope, account: strin
 /**
  * Efface les refus et avance le périmètre : à chaque changement de chemin ou de requête, à une fin de session (le
  * bandeau parle seul) et au démontage du layout (R48). Les refus des lectures déjà parties deviennent périmés. Oublie aussi
- * l'écriture comptée (R64) et le compte des chargements en vol (les fins qui suivront portent un périmètre révolu).
+ * l'écriture comptée (R64). L'époque ne bouge pas.
  */
 export function clearBackofficeAccessRefusal(): void {
   state.value = NO_REFUSAL
   scope += 1
-  loadsInFlight = 0
 }
 
 /**
  * Règle au montage de l'alerte ce qui a été compté **sans alerte** (#748, R64, décision 1 de la sixième relecture,
  * amendant Q1 de la cinquième ; remplace `discardBackofficeAccessRefusals`, R48, CR5-1) : une écriture refusée après que
- * la personne a quitté le backoffice est dite au retour, avec son propre texte (`earlierSave` à `'landing'` si le
- * chargement de la page d'arrivée est en vol, à `'landed'` s'il a déjà répondu ; le compteur garde sa valeur) — **si
- * c'est le compte courant qui l'a envoyée** (R76, décision 2 de la septième relecture) ; sinon (une lecture seule, ou
- * l'écriture d'un autre compte : A refusé, B connecté depuis) le compteur, l'avis et l'écriture comptée repartent à
- * zéro. `currentAccount` est passé par l'appelant (`lastAccountName()`), non importé de `useAuth` : le module reste
- * exposé à part. **Le périmètre n'avance pas** : le chargement de la page d'arrivée est parti avant ce montage, son
- * refus doit compter, et **ses lectures, elles seules**, gardent l'avis (R102). Le compte des chargements en vol n'est
- * pas touché : ils répondent après le montage.
+ * la personne a quitté le backoffice est dite au retour, avec son propre texte (`earlierSave` vrai ; le compteur garde sa
+ * valeur) — **si c'est le compte courant qui l'a envoyée** (R76, décision 2 de la septième relecture) ; sinon (une lecture
+ * seule, ou l'écriture d'un autre compte : A refusé, B connecté depuis) le compteur, l'avis et l'écriture comptée repartent
+ * à zéro. `currentAccount` est passé par l'appelant (`lastAccountName()`), non importé de `useAuth` : le module reste
+ * exposé à part. **Le montage avance l'époque, jamais le périmètre** (R112) : le chargement de la page d'arrivée est parti
+ * avant ce montage, son refus doit compter, et **ses lectures, elles seules**, portent l'ancienne époque et gardent l'avis.
  */
 export function settleBackofficeAccessRefusalsOnMount(currentAccount: string | null): void {
+  epoch += 1
+
   const countedWrite = state.value.countedWrite
   if ('write' !== countedWrite.kind || countedWrite.account !== currentAccount) {
     state.value = NO_REFUSAL
@@ -184,15 +155,15 @@ export function settleBackofficeAccessRefusalsOnMount(currentAccount: string | n
     return
   }
 
-  state.value = { ...state.value, earlierSave: loadsInFlight > 0 ? 'landing' : 'landed' }
+  state.value = { ...state.value, earlierSave: true }
 }
 
 /**
- * Remet le compteur, le texte de l'écriture précédente, les chargements en vol et le périmètre à ceux du chargement.
+ * Remet le compteur, le texte de l'écriture précédente, le périmètre et l'époque à ceux du chargement.
  * Réservée aux tests (`tests/support/setup.ts`), jamais appelée par `src/`.
  */
 export function resetBackofficeAccessRefusalForTests(): void {
   state.value = NO_REFUSAL
   scope = 0
-  loadsInFlight = 0
+  epoch = 0
 }

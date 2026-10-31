@@ -18,19 +18,27 @@ export interface BackofficeSendStamp {
 }
 
 /**
+ * Ce qu'une lecture relève à l'envoi pour juger son éventuel refus (#748, R54, St5-10, R112) : deux nombres **opaques**,
+ * que la présentation fait avancer et dont le domaine ignore le sens (voir `backofficeAccessRefusal.ts`) —
+ * - `scope` : le périmètre courant, qui avance à chaque effacement de l'alerte ; une lecture partie d'une page quittée
+ *   porte un périmètre révolu et son refus ne compte pas (CR3-8) ;
+ * - `epoch` : l'époque courante, qui n'avance qu'au montage de l'alerte ; une lecture partie avant le montage porte une
+ *   époque révolue, et son refus garde l'avis de l'enregistrement précédent.
+ */
+export type ReadRefusalScope = { readonly kind: 'read'; readonly scope: number; readonly epoch: number }
+
+/**
  * Ce que la requête relève à l'envoi pour juger son éventuel refus (#748, R54, St5-10), une union plutôt qu'un nombre
  * nul pour l'écriture :
- * - `read` : une lecture porte le périmètre courant, un nombre **opaque** que la présentation fait avancer à chaque
- *   effacement (voir `backofficeAccessRefusal.ts`) ; une lecture partie d'une page quittée porte un périmètre révolu et
- *   son refus ne compte pas (CR3-8) ;
- * - `write` : une écriture ne relève aucun périmètre et n'est jamais périmée — la personne a fait le geste, elle doit
- *   apprendre son échec, où qu'elle soit allée depuis (R38).
+ * - `read` : une lecture porte le périmètre et l'époque courants (`ReadRefusalScope`) ;
+ * - `write` : une écriture ne relève rien et n'est jamais périmée — la personne a fait le geste, elle doit apprendre son
+ *   échec, où qu'elle soit allée depuis (R38).
  *
  * Le type vit dans le domaine parce que l'infrastructure le porte et que l'application le juge, et qu'aucune des deux
  * n'importe l'autre (R28). Il ne porte aucune notion de navigation : il dit ce qu'est la requête (lecture, écriture) et
- * un nombre dont le domaine ignore le sens — ni route, ni chemin.
+ * deux nombres dont le domaine ignore le sens — ni route, ni chemin.
  */
-export type RefusalScope = { readonly kind: 'read'; readonly scope: number } | { readonly kind: 'write' }
+export type RefusalScope = ReadRefusalScope | { readonly kind: 'write' }
 
 /** Ce que la requête est : une lecture peut être celle d'une page quittée, une écriture est toujours un geste (R38). */
 export type BackofficeSendKind = RefusalScope['kind']

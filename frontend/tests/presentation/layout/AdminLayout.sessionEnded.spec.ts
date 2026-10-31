@@ -3,17 +3,26 @@ import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createMemoryHistory, createRouter, type Router } from 'vue-router'
 import AdminLayout from '../../../src/presentation/layout/AdminLayout.vue'
 import AdminCaseStudiesPage from '../../../src/presentation/pages/admin/AdminCaseStudiesPage.vue'
+import AdminQualityPage from '../../../src/presentation/pages/admin/AdminQualityPage.vue'
 import { createAppI18n } from '../../../src/presentation/i18n'
 import { ADMIN_CASE_STUDY_REPOSITORY } from '../../../src/application/admin/caseStudies/useAdminCaseStudies'
+import { ADMIN_QUALITY_PRINCIPLE_REPOSITORY } from '../../../src/application/admin/quality/useAdminQualityPrinciples'
+import { ADMIN_QUALITY_TRAIT_REPOSITORY } from '../../../src/application/admin/quality/useAdminQualityTraits'
 import { ADMIN_TRANSLATION_REPOSITORY } from '../../../src/application/admin/translation/useAdminTranslation'
 import { CV_REPOSITORY } from '../../../src/application/cv/useCvDownload'
-import { AUTH_REPOSITORY, authState, markSessionExpired, useAuth } from '../../../src/application/auth/useAuth'
+import { AUTH_REPOSITORY, authState, lastAccountName, markSessionExpired, useAuth } from '../../../src/application/auth/useAuth'
 import { HttpAdminCaseStudyRepository } from '../../../src/infrastructure/admin/caseStudies/HttpAdminCaseStudyRepository'
+import { HttpAdminQualityPrincipleRepository } from '../../../src/infrastructure/admin/quality/HttpAdminQualityPrincipleRepository'
+import { HttpAdminQualityTraitRepository } from '../../../src/infrastructure/admin/quality/HttpAdminQualityTraitRepository'
 import { setBackofficeSessionReaction } from '../../../src/infrastructure/admin/shared/BackofficeHttpClient'
 import {
   createBackofficeSessionReaction,
 } from '../../../src/presentation/router/backofficeSessionExpiry'
-import { clearBackofficeAccessRefusal } from '../../../src/application/admin/shared/backofficeAccessRefusal'
+import {
+  backofficeAccessRefused,
+  clearBackofficeAccessRefusal,
+  markBackofficeAccessRefused,
+} from '../../../src/application/admin/shared/backofficeAccessRefusal'
 import { expectNoAccessibilityViolation } from '../../support/axe'
 import type { AuthRepository } from '../../../src/domain/auth/repositories/AuthRepository'
 import type { AdminTranslationRepository } from '../../../src/domain/admin/translation/repositories/AdminTranslationRepository'
@@ -414,7 +423,7 @@ describe('AdminLayout — refus réel du backoffice (#748, R17)', () => {
     wrapper.unmount()
   })
 
-  it("après un changement de compte, le 403 tardif d'un enregistrement du premier compte n'affiche rien (R48, CR5-2)", async () => {
+  it("après un changement de compte, le 403 tardif d'un enregistrement du premier compte n'affiche rien (R48)", async () => {
     let release: (status: number) => void = () => undefined
     const pendingWrite = new Promise<Response>((resolve) => {
       release = (status) => resolve(jsonResponse(status, { code: status, message: 'x' }))
@@ -548,4 +557,126 @@ describe('AdminLayout — refus réel du backoffice (#748, R17)', () => {
     expect(authState.sessionEnded).toBe(true)
     wrapper.unmount()
   })
+})
+
+/**
+ * Le montage de production d'une page à **deux** listes : `AdminLayout` autour d'`AdminQualityPage`, ses deux dépôts HTTP
+ * (donc `BackofficeHttpClient`) sur un `fetch` simulé, la vraie réaction. Les deux lectures du chargement partent dans le
+ * `setup` de la page, avant le montage de l'alerte d'`AdminLayout`.
+ */
+async function mountAdminQuality(auth: AuthRepository): Promise<VueWrapper> {
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      {
+        path: '/:locale(fr|en)/admin',
+        component: AdminLayout,
+        meta: { requiresAuth: true },
+        children: [
+          { path: 'quality', name: 'admin-quality', component: AdminQualityPage },
+          // Les autres rubriques de la navigation du layout : des routes vides, le lien d'un nom inconnu lèverait.
+          ...['technologies', 'about', 'contributions', 'incidents', 'anonymous-cv', 'case-studies', 'watch', 'users'].map((name) => ({
+            path: name,
+            name: `admin-${name}`,
+            component: defineComponent({ setup: () => () => h('p') }),
+          })),
+        ],
+      },
+      { path: '/:locale(fr|en)/login', name: 'login', component: defineComponent({ setup: () => () => h('p') }) },
+    ],
+  })
+  await router.push('/fr/admin/quality')
+  await router.isReady()
+
+  const i18n = createAppI18n()
+  i18n.global.locale.value = 'fr'
+  const wrapper = mount(defineComponent({ template: '<RouterView />' }), {
+    attachTo: document.body,
+    global: {
+      plugins: [i18n, router],
+      provide: {
+        [ADMIN_QUALITY_PRINCIPLE_REPOSITORY as symbol]: new HttpAdminQualityPrincipleRepository('https://api.example.test'),
+        [ADMIN_QUALITY_TRAIT_REPOSITORY as symbol]: new HttpAdminQualityTraitRepository('https://api.example.test'),
+        [ADMIN_TRANSLATION_REPOSITORY as symbol]: translationRepository,
+        [CV_REPOSITORY as symbol]: cvRepository,
+        [AUTH_REPOSITORY as symbol]: auth,
+      },
+    },
+  })
+  await flushPromises()
+
+  return wrapper
+}
+
+/**
+ * L'avis de l'enregistrement précédent sur une vraie page à deux listes (#748, R112, décision 3) : le chargement de la page
+ * d'arrivée est ce que ses lectures ont de commun, d'être parties avant le montage de l'alerte, et rien d'autre.
+ */
+describe('AdminLayout — l\'avis de l\'enregistrement précédent sur une page à deux listes (#748, R112)', () => {
+  const earlierSaveFr =
+    "Un enregistrement précédent a été refusé par le serveur : votre compte n'a peut-être pas, ou plus, l'accès de confiance, " +
+    'ou la session doit être rouverte. Changez de compte, ou reconnectez-vous au même, pour continuer.'
+  const accessRefusedFr =
+    "Le serveur refuse cette demande à votre session : votre compte n'a peut-être pas, ou plus, l'accès de confiance, " +
+    'ou la session doit être rouverte. Changez de compte, ou reconnectez-vous au même, pour continuer.'
+  const repository: AuthRepository = { ...authRepository, me: async () => sessionFor(SUPER) }
+
+  beforeEach(async () => {
+    await signIn()
+    document.cookie = 'XSRF-TOKEN=jeton; path=/'
+    setBackofficeSessionReaction(createProductionReaction(repository))
+    // Toutes les lectures sont refusées ; une écriture est acceptée (201) et sa relecture, une lecture, est refusée.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init?: RequestInit) =>
+        'POST' === init?.method
+          ? jsonResponse(201, {
+              id: '019968a0-0000-7000-8000-0000000000a1',
+              locale: 'fr',
+              translationGroup: '019968b0-0000-7000-8000-0000000000e1',
+              title: 'DDD',
+              description: 'Description DDD',
+              iconKey: 'boxes',
+              position: 0,
+            })
+          : jsonResponse(403, { code: 403, message: 'x' }),
+      ),
+    )
+  })
+
+  afterEach(() => {
+    setBackofficeSessionReaction(null)
+    clearBackofficeAccessRefusal()
+    vi.unstubAllGlobals()
+    document.cookie = 'XSRF-TOKEN=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/'
+    document.body.innerHTML = ''
+  })
+
+  it(
+    "une page à deux listes refusées après un enregistrement refusé pendant l'absence : l'avis aux deux annonces, " +
+      "le texte courant à la relecture qui suit un enregistrement (#748, R112, décision 3)",
+    async () => {
+      // Un enregistrement refusé pendant que la personne avait quitté le backoffice, sous le compte connecté.
+      markBackofficeAccessRefused({ kind: 'write' }, lastAccountName())
+
+      const wrapper = await mountAdminQuality(repository)
+
+      // Les deux lectures du chargement (principes, traits) sont parties avant le montage de l'alerte, toutes deux refusées.
+      expect(wrapper.get('[data-testid="admin-access-refused"] span').text()).toBe(earlierSaveFr)
+      expect(backofficeAccessRefused.value).toBe(3)
+      const afterLoad = wrapper.get('[data-testid="admin-access-refused"] span').element
+
+      // Un principe créé : l'écriture est servie, sa relecture, partie après le montage, est refusée.
+      await wrapper.get('#admin-quality-principle-title').setValue('DDD')
+      await wrapper.get('#admin-quality-principle-description').setValue('Description DDD')
+      await wrapper.get('#admin-quality-principle-icon-key').setValue('boxes')
+      await wrapper.get('form').trigger('submit')
+      await flushPromises()
+
+      expect(wrapper.get('[data-testid="admin-access-refused"] span').text()).toBe(accessRefusedFr)
+      expect(wrapper.get('[data-testid="admin-access-refused"] span').element).not.toBe(afterLoad)
+      expect(backofficeAccessRefused.value).toBe(4)
+      wrapper.unmount()
+    },
+  )
 })

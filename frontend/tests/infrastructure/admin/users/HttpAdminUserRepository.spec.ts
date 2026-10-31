@@ -15,7 +15,7 @@ const INVITED_USER_ID = '019968a0-0000-7000-8000-000000000009'
 const MISSING_USER_ID = '019968a0-0000-7000-8000-000000000999'
 
 /** Le timbre d'envoi d'une lecture partie avant tout compte et tout refus : ce que ces tests ont besoin que la réaction rende. */
-const readStamp = (): BackofficeSendStamp => ({ session: 0, account: null, refusal: { kind: 'read', scope: 0 } })
+const readStamp = (): BackofficeSendStamp => ({ session: 0, account: null, refusal: { kind: 'read', scope: 0, epoch: 0 } })
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })

@@ -5,12 +5,6 @@ import { useAdminLoad } from '../../../../src/application/admin/shared/useAdminL
 import { SessionEndedError } from '../../../../src/domain/auth/errors/SessionEndedError'
 import { AccessForbiddenError } from '../../../../src/domain/auth/errors/AccessForbiddenError'
 import { markSessionExpired } from '../../../../src/application/auth/useAuth'
-import {
-  earlierSaveRefused,
-  markBackofficeAccessRefused,
-  refusalScope,
-  settleBackofficeAccessRefusalsOnMount,
-} from '../../../../src/application/admin/shared/backofficeAccessRefusal'
 import { signInAgain } from '../../../support/signInAgain'
 
 /**
@@ -124,74 +118,6 @@ describe('useAdminLoad', () => {
     await signInAgain()
 
     expect(read).not.toHaveBeenCalled()
-  })
-
-  describe("chaque load() se déclare au refus du backoffice (#748, R102)", () => {
-    /** Une lecture refusée du périmètre courant, comme la compte `BackofficeHttpClient` avant de lever `AccessForbiddenError`. */
-    function readRefused(): void {
-      markBackofficeAccessRefused({ kind: 'read', scope: refusalScope() }, 'compte-a')
-    }
-
-    /** Un enregistrement refusé pendant l'absence, réglé au montage de l'alerte alors que `pending` est en vol. */
-    function settleWhileLoading(): void {
-      markBackofficeAccessRefused({ kind: 'write' }, 'compte-a')
-      settleBackofficeAccessRefusalsOnMount('compte-a')
-    }
-
-    it('chaque load() dit sa fin, réussie : avant sa réponse l\'avis tient une lecture refusée, après il ne la tient plus', async () => {
-      const pending = deferred<string>()
-      const state = mountLoad<string>({ read: () => pending.promise, apply: () => undefined })
-      const loading = state.load()
-      settleWhileLoading()
-
-      readRefused()
-      expect(earlierSaveRefused.value).toBe(true)
-
-      pending.resolve('lue')
-      await loading
-      readRefused()
-      expect(earlierSaveRefused.value).toBe(false)
-    })
-
-    it('chaque load() dit sa fin, refusée', async () => {
-      const pending = deferred<string>()
-      const state = mountLoad<string>({ read: () => pending.promise, apply: () => undefined })
-      const loading = state.load()
-      settleWhileLoading()
-
-      // Le client compte le refus, puis lève : la fin du chargement suit le refus.
-      readRefused()
-      pending.reject(new AccessForbiddenError())
-      await loading
-      expect(earlierSaveRefused.value).toBe(true)
-
-      readRefused()
-      expect(earlierSaveRefused.value).toBe(false)
-    })
-
-    it('chaque load() dit sa fin, périmée, en session finie ou en échec', async () => {
-      const first = deferred<string>()
-      const second = deferred<string>()
-      const pending = [first, second]
-      const state = mountLoad<string>({
-        read: () => (pending.shift() as ReturnType<typeof deferred<string>>).promise,
-        apply: () => undefined,
-      })
-      const older = state.load()
-      const newer = state.load()
-      settleWhileLoading()
-
-      second.resolve('récente')
-      await newer
-      // La plus ancienne est encore en vol : le chargement de la page d'arrivée l'est aussi.
-      readRefused()
-      expect(earlierSaveRefused.value).toBe(true)
-
-      first.reject(new SessionEndedError())
-      await older
-      readRefused()
-      expect(earlierSaveRefused.value).toBe(false)
-    })
   })
 
   it('une réponse plus ancienne que le dernier load est jetée', async () => {
