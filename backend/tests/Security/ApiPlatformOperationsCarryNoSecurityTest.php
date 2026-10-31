@@ -19,12 +19,13 @@ use ApiPlatform\Metadata\QueryParameter;
 use ApiPlatform\Metadata\Resource\Factory\ResourceMetadataCollectionFactoryInterface;
 use ApiPlatform\Metadata\Resource\Factory\ResourceNameCollectionFactoryInterface;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use App\Tests\Support\CompiledPropertiesReading;
+use App\Tests\Support\CompiledResourcesReading;
 use DateTimeImmutable;
 use PHPUnit\Framework\Attributes\DataProvider;
 use SplObjectStorage;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\TypeInfo\Type;
-use Symfony\Component\TypeInfo\Type\CollectionType;
 use Symfony\Component\TypeInfo\Type\CompositeTypeInterface;
 use Symfony\Component\TypeInfo\Type\EnumType;
 use Symfony\Component\TypeInfo\Type\GenericType;
@@ -84,33 +85,31 @@ final class ApiPlatformOperationsCarryNoSecurityTest extends KernelTestCase
         self::bootKernel();
         $container = self::getContainer();
 
-        $found = [];
         // Première étape : les expressions de chaque ressource et opération, et les classes dont on lira les propriétés.
         $collected = $this->collectClassesToRead(
             $container->get(ResourceNameCollectionFactoryInterface::class),
             $container->get(ResourceMetadataCollectionFactoryInterface::class),
-            $found,
         );
         // Seconde étape : les propriétés de ces classes, et celles des objets `App\` que leur type atteint.
         $read = $this->readProperties(
-            $collected['classes'],
+            $collected->classes,
             $container->get(PropertyNameCollectionFactoryInterface::class),
             $container->get(PropertyMetadataFactoryInterface::class),
-            $found,
         );
+        $found = [...$collected->found, ...$read->found];
 
         // Une garde qui ne parcourt rien rougirait jamais. Les paramètres ne sont pas comptés : aucune
         // ressource de `src/` n'en déclare peut-être, une garde qui l'exigerait rougirait pour rien.
-        self::assertGreaterThan(0, $collected['operations'], 'Aucune opération parcourue : la garde ne verrait rien.');
-        self::assertGreaterThan(0, $collected['links'], 'Aucun lien parcouru : la garde ne verrait rien des `uriVariables`.');
-        self::assertGreaterThan(0, $read['properties'], 'Aucune propriété parcourue : la garde ne verrait rien des `ApiProperty`.');
+        self::assertGreaterThan(0, $collected->operations, 'Aucune opération parcourue : la garde ne verrait rien.');
+        self::assertGreaterThan(0, $collected->links, 'Aucun lien parcouru : la garde ne verrait rien des `uriVariables`.');
+        self::assertGreaterThan(0, $read->properties, 'Aucune propriété parcourue : la garde ne verrait rien des `ApiProperty`.');
         // `src/` déclare un DTO d'entrée (`BackofficeUserInviteInput`) : sans lui, la lecture des DTO ne verrait rien.
-        self::assertNotSame([], $collected['dtoClasses'], 'Aucune classe `input`/`output` parcourue : la garde ne verrait rien des DTO.');
+        self::assertNotSame([], $collected->dtoClasses, 'Aucune classe `input`/`output` parcourue : la garde ne verrait rien des DTO.');
         // Et `src/` imbrique des objets `App\` (`AboutCardResource`, `WatchedProductResource`…) :
         // un parcours qui n'en suivrait aucun passerait ce test sans rien lire.
         self::assertNotSame(
             [],
-            $read['nestedClasses'],
+            $read->nestedClasses,
             'Aucun objet imbriqué parcouru : la garde ne verrait rien des classes atteintes par un type.',
         );
         self::assertSame(
@@ -126,21 +125,12 @@ final class ApiPlatformOperationsCarryNoSecurityTest extends KernelTestCase
      * Première étape : parcourt chaque ressource et chaque opération compilées, relève leurs expressions de
      * sécurité, de paramètres et de liens, et dresse la liste des classes dont lire les propriétés — les ressources,
      * puis les DTO `input` et `output` de chacune et de ses opérations. Chaque classe y figure une fois (clé du tableau).
-     *
-     * @param list<string> $found complété des constats
-     *
-     * @return array{
-     *     classes: array<string, true>,
-     *     dtoClasses: array<class-string, true>,
-     *     operations: int,
-     *     links: int,
-     * }
      */
     private function collectClassesToRead(
         ResourceNameCollectionFactoryInterface $names,
         ResourceMetadataCollectionFactoryInterface $metadata,
-        array &$found,
-    ): array {
+    ): CompiledResourcesReading {
+        $found = [];
         $classes = [];
         $dtoClasses = [];
         $operations = 0;
@@ -153,7 +143,8 @@ final class ApiPlatformOperationsCarryNoSecurityTest extends KernelTestCase
                 foreach ($this->expressionsOf($resource) as $attribute => $expression) {
                     $found[] = \sprintf('%s (ressource) : %s = %s', $resourceClass, $attribute, $expression);
                 }
-                $links += $this->collectNested($resource, \sprintf('%s (ressource)', $resourceClass), $found);
+                $found = [...$found, ...$this->collectNested($resource, \sprintf('%s (ressource)', $resourceClass))];
+                $links += $this->countLinks($resource);
                 foreach ($this->dtoClassesOf($resource) as $dtoClass) {
                     $classes[$dtoClass] ??= true;
                     $dtoClasses[$dtoClass] = true;
@@ -163,11 +154,11 @@ final class ApiPlatformOperationsCarryNoSecurityTest extends KernelTestCase
                     foreach ($this->expressionsOf($operation) as $attribute => $expression) {
                         $found[] = \sprintf('%s, opération %s : %s = %s', $resourceClass, $operationName, $attribute, $expression);
                     }
-                    $links += $this->collectNested(
-                        $operation,
-                        \sprintf('%s, opération %s', $resourceClass, $operationName),
-                        $found,
-                    );
+                    $found = [
+                        ...$found,
+                        ...$this->collectNested($operation, \sprintf('%s, opération %s', $resourceClass, $operationName)),
+                    ];
+                    $links += $this->countLinks($operation);
                     foreach ($this->dtoClassesOf($operation) as $dtoClass) {
                         $classes[$dtoClass] ??= true;
                         $dtoClasses[$dtoClass] = true;
@@ -176,7 +167,7 @@ final class ApiPlatformOperationsCarryNoSecurityTest extends KernelTestCase
             }
         }
 
-        return ['classes' => $classes, 'dtoClasses' => $dtoClasses, 'operations' => $operations, 'links' => $links];
+        return new CompiledResourcesReading($classes, $dtoClasses, $operations, $links, $found);
     }
 
     /**
@@ -185,16 +176,13 @@ final class ApiPlatformOperationsCarryNoSecurityTest extends KernelTestCase
      * propriété y entre —, d'où l'index et non un `foreach` sur une copie.
      *
      * @param array<string, true> $classes la file de départ, celle de {@see collectClassesToRead()}
-     * @param list<string>        $found   complété des constats
-     *
-     * @return array{properties: int, nestedClasses: array<class-string, true>}
      */
     private function readProperties(
         array $classes,
         PropertyNameCollectionFactoryInterface $propertyNames,
         PropertyMetadataFactoryInterface $propertyMetadata,
-        array &$found,
-    ): array {
+    ): CompiledPropertiesReading {
+        $found = [];
         $queue = $classes;
         $read = [];
         $properties = 0;
@@ -216,7 +204,7 @@ final class ApiPlatformOperationsCarryNoSecurityTest extends KernelTestCase
             }
         }
 
-        return ['properties' => $properties, 'nestedClasses' => $nestedClasses];
+        return new CompiledPropertiesReading($properties, $nestedClasses, $found);
     }
 
     /**
@@ -339,10 +327,10 @@ final class ApiPlatformOperationsCarryNoSecurityTest extends KernelTestCase
 
     public function testANonLinkUriVariableIsReported(): void
     {
-        $found = [];
-        $links = $this->collectNested(new Get(uriVariables: ['id' => 'App\Foo']), 'contexte', $found);
+        $element = new Get(uriVariables: ['id' => 'App\Foo']);
+        $found = $this->collectNested($element, 'contexte');
 
-        self::assertSame(0, $links);
+        self::assertSame(0, $this->countLinks($element));
         self::assertCount(1, $found);
         self::assertStringContainsString('contexte, lien id', $found[0]);
         self::assertStringContainsString('n\'est pas un Link compilé', $found[0]);
@@ -368,8 +356,8 @@ final class ApiPlatformOperationsCarryNoSecurityTest extends KernelTestCase
 
     /**
      * Les classes de `App\` que le type natif d'une propriété atteint, à toute profondeur : un objet, une
-     * collection (sa clé et sa valeur), un générique (ses types variables), un type nullable, une union ou une
-     * intersection. Les énumérations n'ont pas de propriété.
+     * collection (sa clé et sa valeur, par le générique qu'elle enveloppe), un générique (ses types variables),
+     * un type nullable, une union ou une intersection. Les énumérations n'ont pas de propriété.
      *
      * @return list<class-string>
      */
@@ -398,13 +386,9 @@ final class ApiPlatformOperationsCarryNoSecurityTest extends KernelTestCase
             $inner = [$type->getWrappedType()];
         }
         if ($type instanceof GenericType) {
-            // `Foo<Bar>` : le conteneur ne dit rien de `App\`, ses types variables, si.
+            // `Foo<Bar>` : le conteneur ne dit rien de `App\`, ses types variables, si. Une collection enveloppe un
+            // générique (`SplObjectStorage<Clé, Valeur>`) : sa clé et sa valeur sont lues par cette seule voie.
             $inner = [...$inner, ...$type->getVariableTypes()];
-        }
-        if ($type instanceof CollectionType) {
-            // La clé d'une collection est un type comme sa valeur (`SplObjectStorage<Clé, Valeur>`).
-            $inner[] = $type->getCollectionKeyType();
-            $inner[] = $type->getCollectionValueType();
         }
         foreach ($inner as $innerType) {
             $classes = [...$classes, ...$this->appClassesIn($innerType)];
@@ -428,29 +412,18 @@ final class ApiPlatformOperationsCarryNoSecurityTest extends KernelTestCase
     /**
      * Les paramètres et les liens (`uriVariables`) d'une ressource ou d'une opération.
      *
-     * @param list<string> $found complété des constats, « <contexte>, paramètre|lien <nom> : security = <expr> »
-     *
-     * @return int le nombre de liens parcourus (garde-fou : `src/` en a)
+     * @return list<string> les constats, « <contexte>, paramètre|lien <nom> : security = <expr> »
      */
-    private function collectNested(Metadata $element, string $context, array &$found): int
+    private function collectNested(Metadata $element, string $context): array
     {
+        $found = [];
         foreach ($element->getParameters() ?? [] as $name => $parameter) {
             foreach ($this->parameterExpressions($parameter) as $attribute => $expression) {
                 $found[] = \sprintf('%s, paramètre %s : %s = %s', $context, $name, $attribute, $expression);
             }
         }
 
-        $links = 0;
-        // Compilées, les `uriVariables` sont des `Link` d'API Platform, qui étendent `Parameter` ; un
-        // tableau non compilé n'en porte pas. `getLinks()` n'est pas parcouru : ce sont des `WebLink` de
-        // Symfony (relations de l'en-tête HTTP `Link`), sans `security`.
-        $candidates = [];
-        if ($element instanceof ApiResource || $element instanceof HttpOperation) {
-            foreach ((array) $element->getUriVariables() as $name => $link) {
-                $candidates[(string) $name] = $link;
-            }
-        }
-        foreach ($candidates as $name => $link) {
+        foreach ($this->uriVariablesOf($element) as $name => $link) {
             if (!$link instanceof Link) {
                 // Une variable non compilée n'a pas de `security` que la garde puisse lire : le dire plutôt que
                 // la sauter sans bruit (un `continue` ici laisserait passer une sécurité posée par un autre moyen).
@@ -458,13 +431,39 @@ final class ApiPlatformOperationsCarryNoSecurityTest extends KernelTestCase
 
                 continue;
             }
-            ++$links;
             foreach ($this->parameterExpressions($link) as $attribute => $expression) {
                 $found[] = \sprintf('%s, lien %s : %s = %s', $context, $name, $attribute, $expression);
             }
         }
 
-        return $links;
+        return $found;
+    }
+
+    /**
+     * @return int le nombre de liens compilés parcourus (garde-fou : `src/` en a)
+     */
+    private function countLinks(Metadata $element): int
+    {
+        return \count(array_filter($this->uriVariablesOf($element), static fn (mixed $link): bool => $link instanceof Link));
+    }
+
+    /**
+     * Compilées, les `uriVariables` sont des `Link` d'API Platform, qui étendent `Parameter` ; un tableau non
+     * compilé n'en porte pas. `getLinks()` n'est pas parcouru : ce sont des `WebLink` de Symfony (relations de
+     * l'en-tête HTTP `Link`), sans `security`.
+     *
+     * @return array<string, mixed> nom => lien, tel que l'élément le déclare
+     */
+    private function uriVariablesOf(Metadata $element): array
+    {
+        $variables = [];
+        if ($element instanceof ApiResource || $element instanceof HttpOperation) {
+            foreach ((array) $element->getUriVariables() as $name => $link) {
+                $variables[(string) $name] = $link;
+            }
+        }
+
+        return $variables;
     }
 
     /**

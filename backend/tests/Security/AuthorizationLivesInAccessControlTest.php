@@ -38,11 +38,11 @@ use PHPUnit\Framework\TestCase;
  * `->isGranted(`, `?->isGranted(` ou `::isGranted(`, un refus levé à la main (`new
  * AccessDeniedException`, `new AccessDeniedHttpException`, `new UnauthorizedHttpException`),
  * le nom `AccessDecisionManagerInterface` et toute chaîne qui contient `is_granted(`, hors de
- * {@see self::EXEMPTIONS}. Chaque exemption dit sa raison et liste, un par un, les sites qu'elle
- * couvre : un site de plus dans un fichier exempté est refusé, un site de moins rend l'entrée
- * superflue, et les deux échouent. Le détecteur est éprouvé sur des extraits
- * (le recensement d'un code qui ne trouverait jamais rien rendrait le premier test vert sans
- * rien garder).
+ * {@see self::EXEMPTIONS}. Chaque exemption dit sa raison et le nombre de sites qu'elle couvre dans
+ * son fichier, par nature : un site déplacé dans le fichier reste couvert, un site de plus d'une nature
+ * est refusé, un site de moins rend l'entrée superflue, et ces deux-là échouent. Le détecteur est
+ * éprouvé sur des extraits (le recensement d'un code qui ne trouverait jamais rien rendrait le premier
+ * test vert sans rien garder).
  *
  * Ce que le détecteur ne voit pas, limite assumée (aucun élargissement, décision 1 de la
  * septième relecture) : la liste est dans le docblock d'{@see AuthorizationSites}, avec le renvoi
@@ -84,12 +84,12 @@ final class AuthorizationLivesInAccessControlTest extends TestCase
     {
         $found = [];
         foreach (PhpSources::files(RepositoryFiles::backend('src')) as $path) {
-            // Les sites que l'exemption du fichier couvre, un par un : chacun en consomme un.
+            // Les natures que l'exemption du fichier couvre, une par site : chaque site trouvé en consomme une.
             $remaining = $this->exemptedKindsOf($path);
             foreach (AuthorizationSites::in(RepositoryFiles::read($path)) as $site) {
                 $covered = array_search($site->kind, $remaining, true);
                 if (false === $covered) {
-                    // Une exemption couvre des sites listés un par un : celui-ci n'y figure pas, c'est un site de trop.
+                    // Plus aucun site de cette nature dans l'exemption du fichier : c'est un site de trop.
                     $found[] = $path.':'.$site->line.' ('.$site->kind->name.')';
                     continue;
                 }
