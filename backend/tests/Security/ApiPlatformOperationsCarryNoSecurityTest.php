@@ -19,6 +19,7 @@ use ApiPlatform\Metadata\QueryParameter;
 use ApiPlatform\Metadata\Resource\Factory\ResourceMetadataCollectionFactoryInterface;
 use ApiPlatform\Metadata\Resource\Factory\ResourceNameCollectionFactoryInterface;
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
+use App\Tests\Support\CompiledNestedReading;
 use App\Tests\Support\CompiledPropertiesReading;
 use App\Tests\Support\CompiledResourcesReading;
 use DateTimeImmutable;
@@ -143,8 +144,9 @@ final class ApiPlatformOperationsCarryNoSecurityTest extends KernelTestCase
                 foreach ($this->expressionsOf($resource) as $attribute => $expression) {
                     $found[] = \sprintf('%s (ressource) : %s = %s', $resourceClass, $attribute, $expression);
                 }
-                $found = [...$found, ...$this->collectNested($resource, \sprintf('%s (ressource)', $resourceClass))];
-                $links += $this->countLinks($resource);
+                $nested = $this->readNested($resource, \sprintf('%s (ressource)', $resourceClass));
+                array_push($found, ...$nested->found);
+                $links += $nested->links;
                 foreach ($this->dtoClassesOf($resource) as $dtoClass) {
                     $classes[$dtoClass] ??= true;
                     $dtoClasses[$dtoClass] = true;
@@ -154,11 +156,9 @@ final class ApiPlatformOperationsCarryNoSecurityTest extends KernelTestCase
                     foreach ($this->expressionsOf($operation) as $attribute => $expression) {
                         $found[] = \sprintf('%s, opération %s : %s = %s', $resourceClass, $operationName, $attribute, $expression);
                     }
-                    $found = [
-                        ...$found,
-                        ...$this->collectNested($operation, \sprintf('%s, opération %s', $resourceClass, $operationName)),
-                    ];
-                    $links += $this->countLinks($operation);
+                    $nested = $this->readNested($operation, \sprintf('%s, opération %s', $resourceClass, $operationName));
+                    array_push($found, ...$nested->found);
+                    $links += $nested->links;
                     foreach ($this->dtoClassesOf($operation) as $dtoClass) {
                         $classes[$dtoClass] ??= true;
                         $dtoClasses[$dtoClass] = true;
@@ -328,12 +328,12 @@ final class ApiPlatformOperationsCarryNoSecurityTest extends KernelTestCase
     public function testANonLinkUriVariableIsReported(): void
     {
         $element = new Get(uriVariables: ['id' => 'App\Foo']);
-        $found = $this->collectNested($element, 'contexte');
+        $nested = $this->readNested($element, 'contexte');
 
-        self::assertSame(0, $this->countLinks($element));
-        self::assertCount(1, $found);
-        self::assertStringContainsString('contexte, lien id', $found[0]);
-        self::assertStringContainsString('n\'est pas un Link compilé', $found[0]);
+        self::assertSame(0, $nested->links);
+        self::assertCount(1, $nested->found);
+        self::assertStringContainsString('contexte, lien id', $nested->found[0]);
+        self::assertStringContainsString('n\'est pas un Link compilé', $nested->found[0]);
     }
 
     /**
@@ -410,13 +410,13 @@ final class ApiPlatformOperationsCarryNoSecurityTest extends KernelTestCase
     }
 
     /**
-     * Les paramètres et les liens (`uriVariables`) d'une ressource ou d'une opération.
-     *
-     * @return list<string> les constats, « <contexte>, paramètre|lien <nom> : security = <expr> »
+     * Les paramètres et les liens (`uriVariables`) d'une ressource ou d'une opération, en un seul parcours : les
+     * constats, et le nombre de liens compilés vus (le garde-fou « `src/` a des liens »).
      */
-    private function collectNested(Metadata $element, string $context): array
+    private function readNested(Metadata $element, string $context): CompiledNestedReading
     {
         $found = [];
+        $links = 0;
         foreach ($element->getParameters() ?? [] as $name => $parameter) {
             foreach ($this->parameterExpressions($parameter) as $attribute => $expression) {
                 $found[] = \sprintf('%s, paramètre %s : %s = %s', $context, $name, $attribute, $expression);
@@ -431,20 +431,13 @@ final class ApiPlatformOperationsCarryNoSecurityTest extends KernelTestCase
 
                 continue;
             }
+            ++$links;
             foreach ($this->parameterExpressions($link) as $attribute => $expression) {
                 $found[] = \sprintf('%s, lien %s : %s = %s', $context, $name, $attribute, $expression);
             }
         }
 
-        return $found;
-    }
-
-    /**
-     * @return int le nombre de liens compilés parcourus (garde-fou : `src/` en a)
-     */
-    private function countLinks(Metadata $element): int
-    {
-        return \count(array_filter($this->uriVariablesOf($element), static fn (mixed $link): bool => $link instanceof Link));
+        return new CompiledNestedReading($found, $links);
     }
 
     /**
