@@ -16,7 +16,7 @@ import { AdminOrderError } from '../../../../src/domain/admin/shared/errors/Admi
 import type { AdminTranslationRepository } from '../../../../src/domain/admin/translation/repositories/AdminTranslationRepository'
 import { AdminTranslationError } from '../../../../src/domain/admin/translation/errors/AdminTranslationError'
 import { expectNoAccessibilityViolation } from '../../../support/axe'
-import { describeEntryFormLock, LOCALE_HELP_TEXT } from '../../../support/entryFormLock'
+import { describeEntryFormLock, LOCALE_HELP_TEXT, translateEntryButton } from '../../../support/entryFormLock'
 
 const P_GROUP_ONE = '019968b0-0000-7000-8000-0000000000e1'
 const P_GROUP_TWO = '019968b0-0000-7000-8000-0000000000e2'
@@ -192,14 +192,6 @@ const LOCALE_SELECT = ['#admin-quality-principle-locale', '#admin-quality-trait-
 
 function formOf(wrapper: VueWrapper, which: number): DOMWrapper<Element> {
   return wrapper.findAll('form')[which]
-}
-
-function translateButton(wrapper: VueWrapper, which: number): DOMWrapper<Element> {
-  const button = panelOf(wrapper, which)
-    .findAll('button')
-    .find((candidate) => candidate.text().includes('Proposer la version'))
-  if (!button) throw new Error('Bouton de traduction introuvable.')
-  return button
 }
 
 /** Glisse une ligne sur une autre, comme le ferait la souris. */
@@ -413,12 +405,12 @@ describe('AdminQualityPage', () => {
       expect(buttonLabelled(formOf(wrapper, PRINCIPLES), 'Enregistrer').attributes('disabled')).toBeDefined()
       // Un appel au modèle produirait une proposition que le formulaire verrouillé ne
       // pourrait pas enregistrer : du quota dépensé pour rien (ADR 0004).
-      expect(translateButton(wrapper, PRINCIPLES).attributes('disabled')).toBeDefined()
+      expect(translateEntryButton(wrapper, PRINCIPLES).attributes('disabled')).toBeDefined()
 
       // L'autre panneau est verrouillé lui aussi.
       expect(buttonLabelled(actionsForLine(wrapper, TRAITS, 'Testé'), 'Modifier').attributes('disabled')).toBeDefined()
       expect(buttonLabelled(formOf(wrapper, TRAITS), 'Enregistrer').attributes('disabled')).toBeDefined()
-      expect(translateButton(wrapper, TRAITS).attributes('disabled')).toBeDefined()
+      expect(translateEntryButton(wrapper, TRAITS).attributes('disabled')).toBeDefined()
 
       await buttonLabelled(panelOf(wrapper, PRINCIPLES), 'Annuler').trigger('click')
 
@@ -589,7 +581,7 @@ describe('AdminQualityPage', () => {
       const { wrapper } = await mountPage(createPrincipleRepository(), createTraitRepository(), translation)
 
       await buttonLabelled(actionsForLine(wrapper, PRINCIPLES, "Tests d'abord"), 'Modifier').trigger('click')
-      await translateButton(wrapper, PRINCIPLES).trigger('click')
+      await translateEntryButton(wrapper, PRINCIPLES).trigger('click')
       await flushPromises()
 
       expect(translation.translate).toHaveBeenCalledWith('fr', 'en', {
@@ -606,7 +598,7 @@ describe('AdminQualityPage', () => {
       expect(wrapper.findAll('h2')[PRINCIPLES].text()).toBe('Modifier le principe')
       vi.mocked(principleRepository.list).mockClear()
 
-      await translateButton(wrapper, PRINCIPLES).trigger('click')
+      await translateEntryButton(wrapper, PRINCIPLES).trigger('click')
       await flushPromises()
 
       expect(wrapper.findAll('h2')[PRINCIPLES].text()).toBe('Ajouter un principe')
@@ -629,7 +621,7 @@ describe('AdminQualityPage', () => {
       const { wrapper } = await mountPage(principleRepository)
 
       await buttonLabelled(actionsForLine(wrapper, PRINCIPLES, "Tests d'abord"), 'Modifier').trigger('click')
-      await translateButton(wrapper, PRINCIPLES).trigger('click')
+      await translateEntryButton(wrapper, PRINCIPLES).trigger('click')
       await flushPromises()
 
       await formOf(wrapper, PRINCIPLES).trigger('submit.prevent')
@@ -651,7 +643,7 @@ describe('AdminQualityPage', () => {
       const { wrapper } = await mountPage(createPrincipleRepository(), traitRepository, translation)
 
       await buttonLabelled(actionsForLine(wrapper, TRAITS, 'Documenté'), 'Modifier').trigger('click')
-      await translateButton(wrapper, TRAITS).trigger('click')
+      await translateEntryButton(wrapper, TRAITS).trigger('click')
       await flushPromises()
 
       expect(translation.translate).toHaveBeenCalledWith('fr', 'en', { label: TRAIT_FR_TWO.label })
@@ -669,7 +661,7 @@ describe('AdminQualityPage', () => {
       })
     })
 
-    // Les quatre cas du verrou de la langue, avec l'aide permanente (#582) : écrits une fois pour les huit
+    // Les cas du verrou de la langue, avec l'aide permanente (#582) : écrits une fois pour les huit
     // formulaires dans `tests/support/entryFormLock.ts` (#748, R91). Sp7-1 : la proposition est la version
     // de l'entrée source dans l'autre langue, dans son groupe gardé ; « Annuler » la retire.
     let lockTranslation = createTranslationRepository()
@@ -685,7 +677,7 @@ describe('AdminQualityPage', () => {
         locale: 'admin-quality-principle-locale',
         group: 'admin-quality-principle-translation-group',
         title: 'admin-quality-principle-title',
-        hint: 'admin-quality-principle-locale-locked-help',
+        hint: 'admin-quality-principle-entry-lock-help',
       },
       heading: 'Ajouter un principe',
       permanentHelp: LOCALE_HELP_TEXT,
@@ -693,7 +685,7 @@ describe('AdminQualityPage', () => {
         await buttonLabelled(actionsForLine(wrapper, PRINCIPLES, "Tests d'abord"), 'Modifier').trigger('click')
       },
       propose: async (wrapper) => {
-        await translateButton(wrapper, PRINCIPLES).trigger('click')
+        await translateEntryButton(wrapper, PRINCIPLES).trigger('click')
         await flushPromises()
       },
       translationRequests: () => vi.mocked(lockTranslation.translate).mock.calls.length,
@@ -711,7 +703,7 @@ describe('AdminQualityPage', () => {
         locale: 'admin-quality-trait-locale',
         group: 'admin-quality-trait-translation-group',
         title: 'admin-quality-trait-label',
-        hint: 'admin-quality-trait-locale-locked-help',
+        hint: 'admin-quality-trait-entry-lock-help',
       },
       heading: 'Ajouter un trait',
       permanentHelp: LOCALE_HELP_TEXT,
@@ -719,7 +711,7 @@ describe('AdminQualityPage', () => {
         await buttonLabelled(actionsForLine(wrapper, TRAITS, 'Documenté'), 'Modifier').trigger('click')
       },
       propose: async (wrapper) => {
-        await translateButton(wrapper, TRAITS).trigger('click')
+        await translateEntryButton(wrapper, TRAITS).trigger('click')
         await flushPromises()
       },
       translationRequests: () => vi.mocked(lockTranslation.translate).mock.calls.length,
@@ -734,7 +726,7 @@ describe('AdminQualityPage', () => {
       const { wrapper } = await mountPage(createPrincipleRepository(), createTraitRepository(), translation)
 
       await buttonLabelled(actionsForLine(wrapper, PRINCIPLES, "Tests d'abord"), 'Modifier').trigger('click')
-      await translateButton(wrapper, PRINCIPLES).trigger('click')
+      await translateEntryButton(wrapper, PRINCIPLES).trigger('click')
       await flushPromises()
 
       expect(formOf(wrapper, PRINCIPLES).get('[role="alert"]').text()).toContain('Quota horaire')

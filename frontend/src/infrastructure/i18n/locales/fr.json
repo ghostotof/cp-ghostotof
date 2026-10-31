@@ -61,8 +61,10 @@
     "contentNavigation": "Navigation du contenu",
     "comingSoon": "Cette section sera bientôt disponible.",
     "localeLabel": "Langue",
-    "localeLockedEditing": "La langue d'une entrée existante ne peut pas être modifiée.",
-    "lockedByProposal": "Verrouillé par la proposition de traduction en cours ; « Annuler » l'abandonne et vide le formulaire.",
+    "entryLock": {
+      "editing": "La langue d'une entrée existante ne peut pas être modifiée.",
+      "proposal": "Verrouillé par la proposition de traduction en cours ; « Annuler » l'abandonne et vide le formulaire."
+    },
     "nav": {
       "content": "Contenu",
       "technologies": "Technologies",

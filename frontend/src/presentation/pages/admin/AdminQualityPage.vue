@@ -175,16 +175,16 @@ const traitProposalSourceLocale = ref<Locale | null>(null)
 
 const isEditingPrinciple = computed(() => null !== editingPrincipleId.value)
 const principleLock = useEntryFormLock({
-  hintId: 'admin-quality-principle-locale-locked-help',
-  isEditing: () => isEditingPrinciple.value,
-  hasProposal: () => null !== principleProposalSourceLocale.value,
+  hintId: 'admin-quality-principle-entry-lock-help',
+  isEditing: isEditingPrinciple,
+  proposalSource: principleProposalSourceLocale,
   localeHelpId: 'admin-quality-principle-locale-help',
 })
 const isEditingTrait = computed(() => null !== editingTraitId.value)
 const traitLock = useEntryFormLock({
-  hintId: 'admin-quality-trait-locale-locked-help',
-  isEditing: () => isEditingTrait.value,
-  hasProposal: () => null !== traitProposalSourceLocale.value,
+  hintId: 'admin-quality-trait-entry-lock-help',
+  isEditing: isEditingTrait,
+  proposalSource: traitProposalSourceLocale,
   localeHelpId: 'admin-quality-trait-locale-help',
 })
 

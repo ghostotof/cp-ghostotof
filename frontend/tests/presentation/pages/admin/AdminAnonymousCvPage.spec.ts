@@ -13,7 +13,7 @@ import type { AdminTranslationRepository } from '../../../../src/domain/admin/tr
 import { AdminTranslationError } from '../../../../src/domain/admin/translation/errors/AdminTranslationError'
 import { AdminOrderError } from '../../../../src/domain/admin/shared/errors/AdminOrderError'
 import { expectNoAccessibilityViolation } from '../../../support/axe'
-import { describeEntryFormLock } from '../../../support/entryFormLock'
+import { describeEntryFormLock, translateEntryButton } from '../../../support/entryFormLock'
 
 const GROUP_ONE = '019968b0-0000-7000-8000-000000000011'
 const GROUP_TWO = '019968b0-0000-7000-8000-000000000012'
@@ -144,12 +144,6 @@ function buttonLabelled(scope: VueWrapper | DOMWrapper<Element>, label: string):
   return button as DOMWrapper<HTMLButtonElement>
 }
 
-function translateButton(wrapper: VueWrapper): DOMWrapper<Element> {
-  const button = wrapper.findAll('button').find((candidate) => candidate.text().includes('Proposer la version'))
-  if (!button) throw new Error('Bouton de traduction introuvable.')
-  return button
-}
-
 /** Glisse la première ligne sur la troisième, comme le ferait la souris. */
 async function dragRow(wrapper: VueWrapper, from: number, to: number): Promise<void> {
   const tableRows = rows(wrapper)
@@ -245,7 +239,7 @@ describe('AdminAnonymousCvPage', () => {
     expect(buttonLabelled(wrapper, 'Enregistrer').attributes('disabled')).toBeDefined()
     // Un appel au modèle produirait une proposition que le formulaire verrouillé ne
     // pourrait pas enregistrer : du quota dépensé pour rien (ADR 0004).
-    expect(translateButton(wrapper).attributes('disabled')).toBeDefined()
+    expect(translateEntryButton(wrapper, 0).attributes('disabled')).toBeDefined()
 
     await buttonLabelled(wrapper, 'Annuler').trigger('click')
 
@@ -343,7 +337,7 @@ describe('AdminAnonymousCvPage', () => {
     const { wrapper } = await mountPage(createStubRepository(), translation)
 
     await buttonLabelled(actionsForLine(wrapper, 'Frontend Vue 3'), 'Modifier').trigger('click')
-    await translateButton(wrapper).trigger('click')
+    await translateEntryButton(wrapper, 0).trigger('click')
     await flushPromises()
 
     expect(translation.translate).toHaveBeenCalledWith('fr', 'en', {
@@ -360,7 +354,7 @@ describe('AdminAnonymousCvPage', () => {
     await buttonLabelled(actionsForLine(wrapper, 'Frontend Vue 3'), 'Modifier').trigger('click')
     expect(wrapper.get('h2').text()).toBe('Modifier la section')
 
-    await translateButton(wrapper).trigger('click')
+    await translateEntryButton(wrapper, 0).trigger('click')
     await flushPromises()
 
     expect(wrapper.get('h2').text()).toBe('Ajouter une section')
@@ -376,7 +370,7 @@ describe('AdminAnonymousCvPage', () => {
     expect(banner.text()).toContain('FR')
   })
 
-  // Les quatre cas du verrou (langue désactivée, « Annuler », texte du verrou) : écrits une fois pour les
+  // Les cas du verrou (langue désactivée, « Annuler », texte du verrou…) : écrits une fois pour les
   // huit formulaires dans `tests/support/entryFormLock.ts` (#748, R91).
   let lockTranslation = createTranslationRepository()
   describeEntryFormLock({
@@ -391,14 +385,14 @@ describe('AdminAnonymousCvPage', () => {
       locale: 'admin-anonymous-cv-locale',
       group: 'admin-anonymous-cv-translation-group',
       title: 'admin-anonymous-cv-title',
-      hint: 'admin-anonymous-cv-locale-locked-help',
+      hint: 'admin-anonymous-cv-entry-lock-help',
     },
     heading: 'Ajouter une section',
     startEdit: async (wrapper) => {
       await buttonLabelled(actionsForLine(wrapper, 'Frontend Vue 3'), 'Modifier').trigger('click')
     },
     propose: async (wrapper) => {
-      await translateButton(wrapper).trigger('click')
+      await translateEntryButton(wrapper, 0).trigger('click')
       await flushPromises()
     },
     translationRequests: () => vi.mocked(lockTranslation.translate).mock.calls.length,
@@ -409,7 +403,7 @@ describe('AdminAnonymousCvPage', () => {
     const { wrapper } = await mountPage(sections)
 
     await buttonLabelled(actionsForLine(wrapper, 'Frontend Vue 3'), 'Modifier').trigger('click')
-    await translateButton(wrapper).trigger('click')
+    await translateEntryButton(wrapper, 0).trigger('click')
     await flushPromises()
 
     await wrapper.get('form').trigger('submit.prevent')
@@ -433,7 +427,7 @@ describe('AdminAnonymousCvPage', () => {
     const { wrapper } = await mountPage(createStubRepository(), translation)
 
     await buttonLabelled(actionsForLine(wrapper, 'Frontend Vue 3'), 'Modifier').trigger('click')
-    await translateButton(wrapper).trigger('click')
+    await translateEntryButton(wrapper, 0).trigger('click')
     await flushPromises()
 
     expect(wrapper.get('form [role="alert"]').text()).toContain('Quota horaire')

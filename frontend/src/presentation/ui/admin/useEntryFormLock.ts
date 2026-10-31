@@ -1,4 +1,5 @@
-import { computed, reactive, readonly } from 'vue'
+import { computed, reactive, readonly, toValue, type MaybeRefOrGetter } from 'vue'
+import type { Locale } from '../../../domain/portfolio/entities/Locale'
 
 /**
  * Ce qui verrouille un formulaire par entrée : rien, l'édition d'une entrée existante, ou une
@@ -47,7 +48,7 @@ export function describedBy(...ids: ReadonlyArray<string | undefined>): string |
  * cible : changer la langue en ferait une seconde version de la langue source dans le groupe gardé
  * (Sp7-1). « Annuler » abandonne la proposition, vide le formulaire et rend les contrôles.
  *
- * Pendant une proposition, un seul texte (`admin.lockedByProposal`) est désigné par chaque contrôle verrouillé :
+ * Pendant une proposition, un seul texte (`admin.entryLock.proposal`) est désigné par chaque contrôle verrouillé :
  * la langue, « Version de » (R94 : « aucune » détacherait la proposition de sa source), « Proposer la version XX »
  * (R93) et, dans les cartes « moi », la catégorie. En édition, « Version de » reste libre.
  *
@@ -69,17 +70,19 @@ export function describedBy(...ids: ReadonlyArray<string | undefined>): string |
  */
 export function useEntryFormLock(options: {
   readonly hintId: string
-  readonly isEditing: () => boolean
-  readonly hasProposal: () => boolean
+  /** Vrai quand le formulaire édite une entrée existante : la ref du formulaire, ou un getter. */
+  readonly isEditing: MaybeRefOrGetter<boolean>
+  /** Locale de l'entrée dont le formulaire est la proposition traduite, `null` hors proposition : la ref du formulaire, ou un getter. */
+  readonly proposalSource: MaybeRefOrGetter<Locale | null>
   /** Identifiant de l'aide permanente du sélecteur de langue (#582), quand il en a une. */
   readonly localeHelpId?: string
 }): EntryFormLock {
   const state = computed<EntryFormLockState>(() => {
-    if (options.isEditing()) {
+    if (toValue(options.isEditing)) {
       return 'editing'
     }
 
-    return options.hasProposal() ? 'proposal' : 'none'
+    return null !== toValue(options.proposalSource) ? 'proposal' : 'none'
   })
   const isEntryLocked = computed(() => 'none' !== state.value)
   const isProposalLocked = computed(() => 'proposal' === state.value)

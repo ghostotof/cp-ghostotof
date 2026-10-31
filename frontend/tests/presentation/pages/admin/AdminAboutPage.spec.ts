@@ -32,6 +32,7 @@ import {
   describeEntryFormLock,
   formCancelButton,
   LOCALE_HELP_TEXT,
+  translateEntryButton,
 } from '../../../support/entryFormLock'
 
 const SETTINGS: AdminAboutSettings = {
@@ -302,12 +303,6 @@ function orderScopeOf(wrapper: VueWrapper, which: number): DOMWrapper<Element> {
 
 function formOf(wrapper: VueWrapper, which: number): DOMWrapper<Element> {
   return wrapper.findAll('form')[which]
-}
-
-function translateButton(wrapper: VueWrapper, which: number): DOMWrapper<Element> {
-  const button = wrapper.findAll('button').filter((candidate) => candidate.text().includes('Proposer la version'))[which]
-  if (!button) throw new Error('Bouton de traduction introuvable.')
-  return button
 }
 
 function optionsOf(wrapper: VueWrapper, id: string): string[] {
@@ -597,7 +592,7 @@ describe('AdminAboutPage', () => {
           // Un appel au modèle produirait une proposition que le formulaire
           // verrouillé ne pourrait pas enregistrer : du quota dépensé pour rien
           // (ADR 0004).
-          expect(translateButton(wrapper, form).attributes('disabled')).toBeDefined()
+          expect(translateEntryButton(wrapper, form).attributes('disabled')).toBeDefined()
         }
 
         await buttonLabelled(orderScopeOf(wrapper, which), 'Annuler').trigger('click')
@@ -924,7 +919,7 @@ describe('AdminAboutPage', () => {
       const { wrapper } = await mountPage(undefined, undefined, undefined, translation)
 
       await buttonLabelled(actionsForLine(wrapper, SITE, 'Stack technique'), 'Modifier').trigger('click')
-      await translateButton(wrapper, SITE_FORM).trigger('click')
+      await translateEntryButton(wrapper, SITE_FORM).trigger('click')
       await flushPromises()
 
       expect(translation.translate).toHaveBeenCalledWith('fr', 'en', {
@@ -942,7 +937,7 @@ describe('AdminAboutPage', () => {
       expect(wrapper.findAll('h2')[SITE_FORM].text()).toBe('Modifier la carte')
       vi.mocked(siteCardRepository.list).mockClear()
 
-      await translateButton(wrapper, SITE_FORM).trigger('click')
+      await translateEntryButton(wrapper, SITE_FORM).trigger('click')
       await flushPromises()
 
       expect(wrapper.findAll('h2')[SITE_FORM].text()).toBe('Ajouter une carte')
@@ -989,7 +984,7 @@ describe('AdminAboutPage', () => {
       await buttonLabelled(actionsForLine(wrapper, ME_TABLE.technical, fixture.titles[2]), 'Modifier').trigger('click')
       expect(valueOf(wrapper, '#admin-about-me-card-locale')).toBe('en')
 
-      await translateButton(wrapper, ME_FORM).trigger('click')
+      await translateEntryButton(wrapper, ME_FORM).trigger('click')
       await flushPromises()
 
       expect(translation.translate).toHaveBeenCalledWith('en', 'fr', {
@@ -1015,7 +1010,7 @@ describe('AdminAboutPage', () => {
       })
     })
 
-    // Les quatre cas du verrou de la langue, avec l'aide permanente (#582) : écrits une fois pour les huit
+    // Les cas du verrou de la langue, avec l'aide permanente (#582) : écrits une fois pour les huit
     // formulaires dans `tests/support/entryFormLock.ts` (#748, R91). Dans les cartes « moi », la proposition
     // verrouille aussi la catégorie (D-b, plus bas) ; « Annuler » libère les deux.
     let lockTranslation = createTranslationRepository()
@@ -1031,7 +1026,7 @@ describe('AdminAboutPage', () => {
         locale: 'admin-about-site-card-locale',
         group: 'admin-about-site-card-translation-group',
         title: 'admin-about-site-card-title',
-        hint: 'admin-about-site-card-locale-locked-help',
+        hint: 'admin-about-site-card-entry-lock-help',
       },
       heading: 'Ajouter une carte',
       permanentHelp: LOCALE_HELP_TEXT,
@@ -1039,7 +1034,7 @@ describe('AdminAboutPage', () => {
         await buttonLabelled(actionsForLine(wrapper, SITE, 'Stack technique'), 'Modifier').trigger('click')
       },
       propose: async (wrapper) => {
-        await translateButton(wrapper, SITE_FORM).trigger('click')
+        await translateEntryButton(wrapper, SITE_FORM).trigger('click')
         await flushPromises()
       },
       translationRequests: () => vi.mocked(lockTranslation.translate).mock.calls.length,
@@ -1057,7 +1052,7 @@ describe('AdminAboutPage', () => {
         locale: 'admin-about-me-card-locale',
         group: 'admin-about-me-card-translation-group',
         title: 'admin-about-me-card-title',
-        hint: 'admin-about-me-card-locale-locked-help',
+        hint: 'admin-about-me-card-entry-lock-help',
       },
       heading: 'Ajouter une carte',
       permanentHelp: LOCALE_HELP_TEXT,
@@ -1065,7 +1060,7 @@ describe('AdminAboutPage', () => {
         await buttonLabelled(actionsForLine(wrapper, ME_TABLE.technical, ME_FIXTURES.technical.titles[2]), 'Modifier').trigger('click')
       },
       propose: async (wrapper) => {
-        await translateButton(wrapper, ME_FORM).trigger('click')
+        await translateEntryButton(wrapper, ME_FORM).trigger('click')
         await flushPromises()
       },
       translationRequests: () => vi.mocked(lockTranslation.translate).mock.calls.length,
@@ -1079,7 +1074,7 @@ describe('AdminAboutPage', () => {
       const { wrapper } = await mountPage(createSettingsRepository(), createSiteCardRepository(), undefined, translation)
 
       await buttonLabelled(actionsForLine(wrapper, ME_TABLE.technical, ME_FIXTURES.technical.titles[2]), 'Modifier').trigger('click')
-      await translateButton(wrapper, ME_FORM).trigger('click')
+      await translateEntryButton(wrapper, ME_FORM).trigger('click')
       await flushPromises()
 
       expect(wrapper.get('#admin-about-me-card-category').attributes('disabled')).toBeDefined()
@@ -1113,7 +1108,7 @@ describe('AdminAboutPage', () => {
       const { wrapper } = await mountPage(undefined, undefined, undefined, translation)
 
       await buttonLabelled(actionsForLine(wrapper, SITE, 'Stack technique'), 'Modifier').trigger('click')
-      await translateButton(wrapper, SITE_FORM).trigger('click')
+      await translateEntryButton(wrapper, SITE_FORM).trigger('click')
       await flushPromises()
 
       expect(formOf(wrapper, SITE_FORM).get('[role="alert"]').text()).toContain('Quota horaire')
@@ -1293,7 +1288,7 @@ describe('AdminAboutPage', () => {
         mountedPage = wrapper
         session.ended = true
 
-        await translateButton(wrapper, SETTINGS_FORM).trigger('click')
+        await translateEntryButton(wrapper, SETTINGS_FORM).trigger('click')
         await flushPromises()
 
         // La page est passée en EN, la lecture EN est en session finie : aucun formulaire, donc aucune proposition posée.
@@ -1322,7 +1317,7 @@ describe('AdminAboutPage', () => {
       const { wrapper } = await mountPage(settingsRepository, undefined, undefined, translation)
       vi.mocked(settingsRepository.get).mockClear()
 
-      await translateButton(wrapper, SETTINGS_FORM).trigger('click')
+      await translateEntryButton(wrapper, SETTINGS_FORM).trigger('click')
       await flushPromises()
 
       expect(translation.translate).toHaveBeenCalledWith('fr', 'en', {
@@ -1354,7 +1349,7 @@ describe('AdminAboutPage', () => {
       const translation = createTranslationRepository(TRANSLATED_SETTINGS)
       const { wrapper } = await mountPage(settingsRepository, undefined, undefined, translation)
 
-      await translateButton(wrapper, SETTINGS_FORM).trigger('click')
+      await translateEntryButton(wrapper, SETTINGS_FORM).trigger('click')
       await flushPromises()
       expect(panelOf(wrapper, SETTINGS_PANEL).get('[role="status"]').text()).toContain('Proposition générée par IA')
 
@@ -1372,7 +1367,7 @@ describe('AdminAboutPage', () => {
       const translation = createTranslationRepository(TRANSLATED_SETTINGS)
       const { wrapper } = await mountPage(settingsRepository, undefined, undefined, translation)
 
-      await translateButton(wrapper, SETTINGS_FORM).trigger('click')
+      await translateEntryButton(wrapper, SETTINGS_FORM).trigger('click')
       await flushPromises()
       expect(panelOf(wrapper, SETTINGS_PANEL).find('[role="status"]').exists()).toBe(true)
 
@@ -1393,7 +1388,7 @@ describe('AdminAboutPage', () => {
       const translation = createTranslationRepository(TRANSLATED_SETTINGS)
       const { wrapper } = await mountPage(settingsRepository, undefined, undefined, translation)
 
-      await translateButton(wrapper, SETTINGS_FORM).trigger('click')
+      await translateEntryButton(wrapper, SETTINGS_FORM).trigger('click')
       await flushPromises()
       expect(valueOf(wrapper, '#admin-about-locale')).toBe('en')
       expect(panelOf(wrapper, SETTINGS_PANEL).find('[role="status"]').exists()).toBe(true)
@@ -1420,7 +1415,7 @@ describe('AdminAboutPage', () => {
       const translation = createTranslationRepository(TRANSLATED_SETTINGS)
       const { wrapper } = await mountPage(settingsRepository, undefined, undefined, translation)
 
-      await translateButton(wrapper, SETTINGS_FORM).trigger('click')
+      await translateEntryButton(wrapper, SETTINGS_FORM).trigger('click')
       await flushPromises()
       expect(valueOf(wrapper, '#admin-about-locale')).toBe('en')
 
@@ -1443,7 +1438,7 @@ describe('AdminAboutPage', () => {
       const translation = createTranslationRepository(TRANSLATED_SETTINGS)
       const { wrapper } = await mountPage(settingsRepository, undefined, undefined, translation)
 
-      await translateButton(wrapper, SETTINGS_FORM).trigger('click')
+      await translateEntryButton(wrapper, SETTINGS_FORM).trigger('click')
       await flushPromises()
       expect(panelOf(wrapper, SETTINGS_PANEL).find('[role="status"]').exists()).toBe(true)
 
@@ -1463,7 +1458,7 @@ describe('AdminAboutPage', () => {
       const translation = createTranslationRepository(TRANSLATED_SETTINGS)
       const { wrapper } = await mountPage(settingsRepository, undefined, undefined, translation)
 
-      await translateButton(wrapper, SETTINGS_FORM).trigger('click')
+      await translateEntryButton(wrapper, SETTINGS_FORM).trigger('click')
       await flushPromises()
       expect(valueOf(wrapper, '#admin-about-site-eyebrow')).toBe(TRANSLATED_SETTINGS.siteEyebrow)
       expect(panelOf(wrapper, SETTINGS_PANEL).find('[role="status"]').exists()).toBe(true)
@@ -1485,7 +1480,7 @@ describe('AdminAboutPage', () => {
       const translation = createTranslationRepository(TRANSLATED_SETTINGS)
       const { wrapper } = await mountPage(settingsRepository, undefined, undefined, translation)
 
-      await translateButton(wrapper, SETTINGS_FORM).trigger('click')
+      await translateEntryButton(wrapper, SETTINGS_FORM).trigger('click')
       await flushPromises()
       expect(valueOf(wrapper, '#admin-about-locale')).toBe('en')
 
@@ -1501,7 +1496,7 @@ describe('AdminAboutPage', () => {
       const translation = createTranslationRepository(TRANSLATED_SETTINGS)
       const { wrapper } = await mountPage(settingsRepository, undefined, undefined, translation)
 
-      await translateButton(wrapper, SETTINGS_FORM).trigger('click')
+      await translateEntryButton(wrapper, SETTINGS_FORM).trigger('click')
       await flushPromises()
       expect(valueOf(wrapper, '#admin-about-locale')).toBe('en')
       expect(panelOf(wrapper, SETTINGS_PANEL).find('[role="status"]').exists()).toBe(true)
@@ -1576,13 +1571,13 @@ describe('AdminAboutPage', () => {
       await wrapper.get('#admin-about-locale').setValue('fr')
       await flushPromises()
 
-      expect(translateButton(wrapper, SETTINGS_FORM).attributes('disabled')).toBeDefined()
+      expect(translateEntryButton(wrapper, SETTINGS_FORM).attributes('disabled')).toBeDefined()
       expect(saveButton().attributes('disabled')).toBeUndefined()
 
       answerEnglishSave(SETTINGS_EN)
       await flushPromises()
 
-      expect(translateButton(wrapper, SETTINGS_FORM).attributes('disabled')).toBeUndefined()
+      expect(translateEntryButton(wrapper, SETTINGS_FORM).attributes('disabled')).toBeUndefined()
     })
 
     it("un enregistrement FR en vol, la page en EN : « Proposer la version FR » désactivé jusqu'à la réponse, aucune traduction ne part (#748, R67, CR6-2)", async () => {
@@ -1604,11 +1599,11 @@ describe('AdminAboutPage', () => {
       await wrapper.get('#admin-about-locale').setValue('en')
       await flushPromises()
       expect(valueOf(wrapper, '#admin-about-locale')).toBe('en')
-      expect(translateButton(wrapper, SETTINGS_FORM).attributes('disabled')).toBeDefined()
+      expect(translateEntryButton(wrapper, SETTINGS_FORM).attributes('disabled')).toBeDefined()
 
       answerFrenchSave(SETTINGS)
       await flushPromises()
-      expect(translateButton(wrapper, SETTINGS_FORM).attributes('disabled')).toBeUndefined()
+      expect(translateEntryButton(wrapper, SETTINGS_FORM).attributes('disabled')).toBeUndefined()
     })
 
     // La langue montrée tient aussi « Proposer la traduction » (R86, CR7-10) : le bouton lit `isAnySaving`, l'enregistrement
@@ -1623,16 +1618,16 @@ describe('AdminAboutPage', () => {
       })
       const translation = createTranslationRepository(TRANSLATED_SETTINGS)
       const { wrapper } = await mountPage(settingsRepository, undefined, undefined, translation)
-      expect(translateButton(wrapper, SETTINGS_FORM).attributes('disabled')).toBeUndefined()
+      expect(translateEntryButton(wrapper, SETTINGS_FORM).attributes('disabled')).toBeUndefined()
 
       await formOf(wrapper, SETTINGS_FORM).trigger('submit.prevent')
       await flushPromises()
       expect(settingsRepository.update).toHaveBeenCalledWith('fr', expect.anything())
-      expect(translateButton(wrapper, SETTINGS_FORM).attributes('disabled')).toBeDefined()
+      expect(translateEntryButton(wrapper, SETTINGS_FORM).attributes('disabled')).toBeDefined()
 
       answerFrenchSave(SETTINGS)
       await flushPromises()
-      expect(translateButton(wrapper, SETTINGS_FORM).attributes('disabled')).toBeUndefined()
+      expect(translateEntryButton(wrapper, SETTINGS_FORM).attributes('disabled')).toBeUndefined()
     })
   })
 

@@ -98,9 +98,9 @@ const PROSE_FIELDS = ['title', 'impact', 'rootCause', 'resolution', 'invariant']
 
 const isEditing = computed(() => null !== editingId.value)
 const lock = useEntryFormLock({
-  hintId: 'admin-incident-locale-locked-help',
-  isEditing: () => isEditing.value,
-  hasProposal: () => null !== proposalSourceLocale.value,
+  hintId: 'admin-incident-entry-lock-help',
+  isEditing,
+  proposalSource: proposalSourceLocale,
 })
 
 const hasProseToTranslate = computed(() => PROSE_FIELDS.some((field) => '' !== form[field].trim()))

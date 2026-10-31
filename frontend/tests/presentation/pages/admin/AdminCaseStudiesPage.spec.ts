@@ -16,7 +16,7 @@ import { markSessionExpired } from '../../../../src/application/auth/useAuth'
 import { signInAgain } from '../../../support/signInAgain'
 import { AdminOrderError } from '../../../../src/domain/admin/shared/errors/AdminOrderError'
 import { expectNoAccessibilityViolation } from '../../../support/axe'
-import { describeEntryFormLock, LOCKED_BY_PROPOSAL_TEXT, textsDescribing } from '../../../support/entryFormLock'
+import { describeEntryFormLock, LOCKED_BY_PROPOSAL_TEXT, textsDescribing, translateEntryButton } from '../../../support/entryFormLock'
 
 const GROUP_ONE = '019968b0-0000-7000-8000-000000000011'
 const GROUP_TWO = '019968b0-0000-7000-8000-000000000012'
@@ -149,12 +149,6 @@ function buttonLabelled(scope: VueWrapper | DOMWrapper<Element>, label: string):
   return button as DOMWrapper<HTMLButtonElement>
 }
 
-function translateButton(wrapper: VueWrapper): DOMWrapper<Element> {
-  const button = wrapper.findAll('button').find((candidate) => candidate.text().includes('Proposer la version'))
-  if (!button) throw new Error('Bouton de traduction introuvable.')
-  return button
-}
-
 /** Glisse la première ligne sur la troisième, comme le ferait la souris. */
 async function dragRow(wrapper: VueWrapper, from: number, to: number): Promise<void> {
   const tableRows = rows(wrapper)
@@ -250,7 +244,7 @@ describe('AdminCaseStudiesPage', () => {
     expect(buttonLabelled(wrapper, 'Enregistrer').attributes('disabled')).toBeDefined()
     // Un appel au modèle produirait une proposition que le formulaire verrouillé ne
     // pourrait pas enregistrer : du quota dépensé pour rien (ADR 0004).
-    expect(translateButton(wrapper).attributes('disabled')).toBeDefined()
+    expect(translateEntryButton(wrapper, 0).attributes('disabled')).toBeDefined()
 
     await buttonLabelled(wrapper, 'Annuler').trigger('click')
 
@@ -268,11 +262,11 @@ describe('AdminCaseStudiesPage', () => {
     const { wrapper } = await mountPage()
 
     await buttonLabelled(actionsForLine(wrapper, 'PHPStan progressif sur un legacy'), 'Modifier').trigger('click')
-    await translateButton(wrapper).trigger('click')
+    await translateEntryButton(wrapper, 0).trigger('click')
     await flushPromises()
     await dragRow(wrapper, 0, 2)
 
-    expect(textsDescribing(wrapper, translateButton(wrapper))).toEqual([
+    expect(textsDescribing(wrapper, translateEntryButton(wrapper, 0))).toEqual([
       "Enregistrez ou annulez l'ordre d'abord.",
       LOCKED_BY_PROPOSAL_TEXT,
     ])
@@ -445,7 +439,7 @@ describe('AdminCaseStudiesPage', () => {
     const { wrapper } = await mountPage(createStubRepository(), translation)
 
     await buttonLabelled(actionsForLine(wrapper, 'PHPStan progressif sur un legacy'), 'Modifier').trigger('click')
-    await translateButton(wrapper).trigger('click')
+    await translateEntryButton(wrapper, 0).trigger('click')
     await flushPromises()
 
     expect(translation.translate).toHaveBeenCalledWith('fr', 'en', {
@@ -464,7 +458,7 @@ describe('AdminCaseStudiesPage', () => {
     await buttonLabelled(actionsForLine(wrapper, 'PHPStan progressif sur un legacy'), 'Modifier').trigger('click')
     expect(wrapper.get('h2').text()).toBe("Modifier l'étude de cas")
 
-    await translateButton(wrapper).trigger('click')
+    await translateEntryButton(wrapper, 0).trigger('click')
     await flushPromises()
 
     expect(wrapper.get('h2').text()).toBe('Ajouter une étude de cas')
@@ -480,7 +474,7 @@ describe('AdminCaseStudiesPage', () => {
     expect(banner.text()).toContain('FR')
   })
 
-  // Les quatre cas du verrou (langue désactivée, « Annuler », texte du verrou) : écrits une fois pour les
+  // Les cas du verrou (langue désactivée, « Annuler », texte du verrou…) : écrits une fois pour les
   // huit formulaires dans `tests/support/entryFormLock.ts` (#748, R91).
   let lockTranslation = createTranslationRepository()
   describeEntryFormLock({
@@ -495,14 +489,14 @@ describe('AdminCaseStudiesPage', () => {
       locale: 'admin-case-study-locale',
       group: 'admin-case-study-translation-group',
       title: 'admin-case-study-title',
-      hint: 'admin-case-study-locale-locked-help',
+      hint: 'admin-case-study-entry-lock-help',
     },
     heading: 'Ajouter une étude de cas',
     startEdit: async (wrapper) => {
       await buttonLabelled(actionsForLine(wrapper, 'PHPStan progressif sur un legacy'), 'Modifier').trigger('click')
     },
     propose: async (wrapper) => {
-      await translateButton(wrapper).trigger('click')
+      await translateEntryButton(wrapper, 0).trigger('click')
       await flushPromises()
     },
     translationRequests: () => vi.mocked(lockTranslation.translate).mock.calls.length,
@@ -513,7 +507,7 @@ describe('AdminCaseStudiesPage', () => {
     const { wrapper } = await mountPage(caseStudies)
 
     await buttonLabelled(actionsForLine(wrapper, 'PHPStan progressif sur un legacy'), 'Modifier').trigger('click')
-    await translateButton(wrapper).trigger('click')
+    await translateEntryButton(wrapper, 0).trigger('click')
     await flushPromises()
 
     await wrapper.get('form').trigger('submit.prevent')
@@ -534,7 +528,7 @@ describe('AdminCaseStudiesPage', () => {
     const { wrapper } = await mountPage(createStubRepository(), translation)
 
     await buttonLabelled(actionsForLine(wrapper, 'PHPStan progressif sur un legacy'), 'Modifier').trigger('click')
-    await translateButton(wrapper).trigger('click')
+    await translateEntryButton(wrapper, 0).trigger('click')
     await flushPromises()
 
     expect(wrapper.get('form [role="alert"]').text()).toContain('Quota horaire')

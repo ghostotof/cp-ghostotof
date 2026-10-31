@@ -9,7 +9,7 @@ import TranslateEntryButton from '../../src/presentation/ui/admin/TranslateEntry
  * jamais « cet id existe ».
  */
 export const LOCALE_LOCKED_EDITING_TEXT = "La langue d'une entrée existante ne peut pas être modifiée."
-/** Le texte unique du verrou d'une proposition : langue, bouton de traduction et catégorie « moi » le désignent (R93). */
+/** Le texte unique du verrou d'une proposition : langue, « Version de », bouton de traduction et catégorie « moi » le désignent. */
 export const LOCKED_BY_PROPOSAL_TEXT =
   'Verrouillé par la proposition de traduction en cours ; « Annuler » l\'abandonne et vide le formulaire.'
 
@@ -94,10 +94,11 @@ export interface EntryFormLockCase {
 }
 
 /**
- * Déclare, dans le `describe` appelant, les quatre cas du verrou d'un formulaire par entrée : la proposition
+ * Déclare, dans le `describe` appelant, les cas du verrou d'un formulaire par entrée : la proposition
  * désactive la langue et montre « Annuler » ; « Annuler » rend un formulaire vide ; le verrou est expliqué en
- * édition et pas dans un formulaire libre ; il l'est pendant une proposition et « Annuler » retire l'explication.
- * Écrits une fois pour les huit formulaires (R91) : R93 et R94 y ajoutent leurs cas une fois.
+ * édition et pas dans un formulaire libre ; il l'est pendant une proposition, avec « Version de » et
+ * « Proposer la version XX », et « Annuler » retire l'explication ; un « translate » émis pendant une proposition
+ * ne lance rien. Écrits une fois pour les huit formulaires : un cas de plus s'y ajoute une fois.
  */
 export function describeEntryFormLock(lockCase: EntryFormLockCase): void {
   const { ids, form } = lockCase

@@ -61,8 +61,10 @@
     "contentNavigation": "Content navigation",
     "comingSoon": "This section will be available soon.",
     "localeLabel": "Language",
-    "localeLockedEditing": "The language of an existing entry cannot be changed.",
-    "lockedByProposal": "Locked by the current translation proposal; “Cancel” discards it and clears the form.",
+    "entryLock": {
+      "editing": "The language of an existing entry cannot be changed.",
+      "proposal": "Locked by the current translation proposal; “Cancel” discards it and clears the form."
+    },
     "nav": {
       "content": "Content",
       "technologies": "Technologies",

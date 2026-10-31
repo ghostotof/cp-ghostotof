@@ -95,11 +95,15 @@ const form = reactive<SiteCardForm>({
 
 const editingId = ref<string | null>(null)
 const isSubmitting = ref(false)
+
+/** Locale de l'entrée dont le formulaire est une proposition traduite, `null` sinon. */
+const proposalSourceLocale = ref<Locale | null>(null)
+
 const isEditing = computed(() => null !== editingId.value)
 const lock = useEntryFormLock({
-  hintId: 'admin-about-site-card-locale-locked-help',
-  isEditing: () => isEditing.value,
-  hasProposal: () => null !== proposalSourceLocale.value,
+  hintId: 'admin-about-site-card-entry-lock-help',
+  isEditing,
+  proposalSource: proposalSourceLocale,
   localeHelpId: 'admin-about-site-card-locale-help',
 })
 
@@ -112,9 +116,6 @@ const lock = useEntryFormLock({
  * aucune traduction et que le sélecteur affichait donc « aucune ».
  */
 const sourceGroup = ref<string | null>(null)
-
-/** Locale de l'entrée dont le formulaire est une proposition traduite, `null` sinon. */
-const proposalSourceLocale = ref<Locale | null>(null)
 
 const hasProseToTranslate = computed(() => PROSE_FIELDS.some((field) => '' !== form[field].trim()))
 const errorText = computed(() => {

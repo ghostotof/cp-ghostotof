@@ -194,7 +194,7 @@ of the eighth review: a second translation took the form back to the source loca
 refuses itself as well, not only through the disabled button, R104), « Version de » (R94,
 decision 3: « aucune » would detach the proposal from its source) and the me-card
 **category** selector (R79b, D-b: a version in the other language does not change category, #501/#561; « Créer la
-version XX » keeps the category free, by decision), all described by one text, `admin.lockedByProposal`, which says
+version XX » keeps the category free, by decision), all described by one text, `admin.entryLock.proposal`, which says
 that « Annuler » drops the proposal and empties the form (R93, CR8-4). A proposal whose target locale the group
 already has (from « Créer la version XX », or from an entry whose group has both) ends on the server's 409
 `translation-already-exists` at save, « Annuler » being the way out (accepted, Q1 of the eighth review: detecting it
