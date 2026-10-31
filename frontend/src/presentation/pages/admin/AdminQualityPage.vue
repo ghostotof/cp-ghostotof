@@ -108,6 +108,7 @@ const localeOptions = SUPPORTED_LOCALES.map((locale) => ({ value: locale, label:
 const {
   isTranslating: isTranslatingPrinciple,
   isDiscardPending: isDiscardPendingPrinciple,
+  isRefused: isPrincipleTranslationRefused,
   errorReason: principleTranslationErrorReason,
   translate: translatePrinciple,
   discard: discardPrincipleTranslation,
@@ -119,11 +120,13 @@ const {
     entry: editingPrincipleId.value,
     locale: principleForm.locale,
     group: principleSourceGroup.value,
+    generation: 0,
   }),
 })
 const {
   isTranslating: isTranslatingTrait,
   isDiscardPending: isDiscardPendingTrait,
+  isRefused: isTraitTranslationRefused,
   errorReason: traitTranslationErrorReason,
   translate: translateTrait,
   discard: discardTraitTranslation,
@@ -135,6 +138,7 @@ const {
     entry: editingTraitId.value,
     locale: traitForm.locale,
     group: traitSourceGroup.value,
+    generation: 0,
   }),
 })
 
@@ -617,7 +621,7 @@ useUnsavedOrderGuard(isAnyOrderDirty)
             :is-translating="isTranslatingPrinciple"
             :is-discard-pending="isDiscardPendingPrinciple"
             hint-id="admin-quality-principle-translation-hint"
-            :disabled="!hasPrincipleProse || isSubmittingPrinciple || isAnyOrderDirty || principleLock.isProposalLocked"
+            :disabled="isPrincipleTranslationRefused"
             :aria-describedby="describedBy(lockedHintId, principleLock.proposalDescribedBy)"
             @translate="handleTranslatePrinciple"
           />
@@ -884,7 +888,7 @@ useUnsavedOrderGuard(isAnyOrderDirty)
             :is-translating="isTranslatingTrait"
             :is-discard-pending="isDiscardPendingTrait"
             hint-id="admin-quality-trait-translation-hint"
-            :disabled="!hasTraitProse || isSubmittingTrait || isAnyOrderDirty || traitLock.isProposalLocked"
+            :disabled="isTraitTranslationRefused"
             :aria-describedby="describedBy(lockedHintId, traitLock.proposalDescribedBy)"
             @translate="handleTranslateTrait"
           />

@@ -1,6 +1,7 @@
 import { computed, inject, readonly, ref, watch, type InjectionKey, type Ref } from 'vue'
 import type { Locale } from '../../../domain/portfolio/entities/Locale'
 import type { TranslationProposal, TranslationFields } from '../../../domain/admin/translation/entities/TranslationProposal'
+import { sameFormIdentity, type FormIdentity } from '../../../domain/admin/translation/entities/FormIdentity'
 import type { AdminTranslationRepository } from '../../../domain/admin/translation/repositories/AdminTranslationRepository'
 import {
   AdminTranslationError,
@@ -19,6 +20,12 @@ export interface UseAdminTranslationResult {
    * serveur, et `translate()` n'en lance pas un second avant sa réponse (jamais plus d'un appel au modèle en vol).
    */
   isDiscardPending: Readonly<Ref<boolean>>
+  /**
+   * Vrai quand la page ne veut aucune traduction (`options.isRefused`) : l'unique source du refus, lue par `translate()`
+   * et par le `:disabled` du bouton de la page — aucune page ne réécrit le prédicat. L'attente d'une réponse, que le
+   * composable tient seul, n'en fait pas partie : `isTranslating` et `isDiscardPending` la disent.
+   */
+  isRefused: Readonly<Ref<boolean>>
   /** La raison de l'échec de la dernière traduction, tant que le formulaire a l'identité qu'il avait à son échec. */
   errorReason: Readonly<Ref<AdminTranslationErrorReason | null>>
   translate: (sourceLocale: Locale, targetLocale: Locale, fields: TranslationFields) => Promise<TranslationProposal | null>
@@ -31,21 +38,27 @@ export interface UseAdminTranslationResult {
 
 export interface UseAdminTranslationOptions {
   /**
-   * Vrai quand la page ne veut aucune traduction : `translate()` ne lance rien. Ce que le bouton refuse, `translate` le
-   * refuse, et la page l'écrit ici une fois par condition de son `:disabled` (une proposition affichée, un brouillon
-   * d'ordre, un enregistrement en vol, l'absence de prose…), hors l'attente d'une réponse que le composable tient seul.
+   * Vrai quand la page ne veut aucune traduction : `translate()` ne lance rien. La page l'écrit ici une fois par
+   * condition (une proposition affichée, un brouillon d'ordre, un enregistrement en vol, l'absence de prose…), hors
+   * l'attente d'une réponse que le composable tient seul, et le bouton lit le résultat (`isRefused`) : un seul
+   * prédicat. Lu par un `computed` : il ne dépend que de sources réactives (`ref`, `props`, `reactive`).
    */
   readonly isRefused?: () => boolean
   /**
-   * Ce qui fait l'identité du formulaire : l'entrée éditée, la langue, le groupe source. Comparée par son contenu
-   * (`JSON.stringify`) ; dès que le formulaire n'a plus l'identité relevée à l'envoi, la traduction en vol est
+   * Ce qui fait l'identité du formulaire (`FormIdentity`) : l'entrée éditée, la langue, le groupe source, la génération.
+   * Comparée champ par champ (`sameFormIdentity`) ; dès que le formulaire n'a plus l'identité relevée à l'envoi, la traduction en vol est
    * périmée pour de bon, même s'il la retrouve ensuite, quel que soit le geste qui l'a remplacé (« Annuler »,
    * « Modifier » une autre entrée, « Créer la version XX », un changement de langue) : `isTranslating` retombe
    * aussitôt et la réponse rend `null`. Rouvrir la même entrée ne change rien au formulaire : rien n'est périmé.
    * La prose n'en fait pas partie : la page la met en lecture seule pendant la traduction, et la raison d'un échec ne
    * disparaît que par un changement d'identité ou la traduction suivante, pas par la frappe qui corrige la prose.
    */
-  readonly formIdentity?: () => unknown
+  readonly formIdentity?: () => FormIdentity
+}
+
+/** Deux identités de formulaire sont la même si aucune n'est posée, ou si chacun de leurs champs l'est. */
+function isSameIdentity(a: FormIdentity | null, b: FormIdentity | null): boolean {
+  return null === a || null === b ? a === b : sameFormIdentity(a, b)
 }
 
 /**
@@ -57,8 +70,8 @@ export interface UseAdminTranslationOptions {
  *
  * Le composable se refuse lui-même, écrit ici une fois pour tous les formulaires : pas de requête tant qu'un appel
  * est en vol — la traduction courante comme une périmée qui n'a pas répondu —, ni quand la page le lui dit
- * (`isRefused`). Le refus vient d'ici, pas seulement du bouton désactivé : un évènement `translate` émis par
- * programme, ou une double activation avant le rendu, passerait.
+ * (`options.isRefused`, exposé en `isRefused`). Le refus vient d'ici, pas seulement du bouton désactivé : un évènement
+ * `translate` émis par programme, ou une double activation avant le rendu, passerait.
  */
 export function useAdminTranslation(options: UseAdminTranslationOptions = {}): UseAdminTranslationResult {
   const repository = inject(ADMIN_TRANSLATION_REPOSITORY)
@@ -70,33 +83,42 @@ export function useAdminTranslation(options: UseAdminTranslationOptions = {}): U
     )
   }
 
-  // L'identité courante du formulaire, sérialisée : deux identités égales par le contenu sont la même (une
-  // réaffectation à l'identique ne remplace rien). Un calculé : relu seulement quand le formulaire change.
-  const identity = computed(() => JSON.stringify(options.formIdentity?.() ?? null))
-  const inFlight = ref(false)
+  // L'identité courante du formulaire. Un calculé : relu seulement quand le formulaire change. La page rend un objet neuf à
+  // chaque lecture, que Vue croirait toujours changé : le calculé garde l'objet précédent tant que le contenu est le même
+  // (`sameFormIdentity`), si bien qu'une réaffectation à l'identique ne réveille pas le guetteur et ne remplace rien.
+  const identity = computed<FormIdentity | null>((previous) => {
+    const next = options.formIdentity?.() ?? null
+
+    return isSameIdentity(previous ?? null, next) ? (previous ?? null) : next
+  })
+  // La traduction courante attend sa réponse, non périmée (ni par `discard()` ni par l'identité du formulaire).
+  const isAwaitingCurrent = ref(false)
   // Un appel au dépôt est parti et n'a pas répondu, périmé ou non : `AbortSignal` écarté, l'appel déjà parti côté serveur
   // coûte ce qu'il coûte, et le borner à un par formulaire borne ce coût.
-  const callRunning = ref(false)
-  const failure = ref<{ readonly reason: AdminTranslationErrorReason; readonly identity: string } | null>(null)
+  const isAnyCallRunning = ref(false)
+  const failure = ref<{ readonly reason: AdminTranslationErrorReason; readonly identity: FormIdentity | null } | null>(null)
   const requests = createStaleRequestGuard()
 
-  const isTranslating = readonly(inFlight)
-  const isDiscardPending = computed(() => callRunning.value && !inFlight.value)
-  const errorReason = computed(() => (failure.value?.identity === identity.value ? failure.value.reason : null))
+  const isTranslating = readonly(isAwaitingCurrent)
+  const isDiscardPending = computed(() => isAnyCallRunning.value && !isAwaitingCurrent.value)
+  const isRefused = computed(() => options.isRefused?.() ?? false)
+  const errorReason = computed(() =>
+    null !== failure.value && isSameIdentity(failure.value.identity, identity.value) ? failure.value.reason : null,
+  )
 
   const translate = async (
     sourceLocale: Locale,
     targetLocale: Locale,
     fields: TranslationFields,
   ): Promise<TranslationProposal | null> => {
-    if (callRunning.value || options.isRefused?.()) {
+    if (isAnyCallRunning.value || isRefused.value) {
       return null
     }
 
     const token = requests.begin()
     const sentIdentity = identity.value
-    callRunning.value = true
-    inFlight.value = true
+    isAnyCallRunning.value = true
+    isAwaitingCurrent.value = true
     failure.value = null
     // Le formulaire qui change d'identité pendant le vol périme la traduction pour de bon, même s'il retrouve ensuite
     // la même : la personne est passée par un autre formulaire. Le guetteur naît ici, pas au montage : la page
@@ -127,19 +149,19 @@ export function useAdminTranslation(options: UseAdminTranslationOptions = {}): U
       return null
     } finally {
       stopWatching()
-      callRunning.value = false
+      isAnyCallRunning.value = false
       // Une traduction périmée ne touche plus l'état : `discard()` l'a déjà rendu.
       if (requests.isCurrent(token)) {
-        inFlight.value = false
+        isAwaitingCurrent.value = false
       }
     }
   }
 
   function discard(): void {
     requests.begin()
-    inFlight.value = false
+    isAwaitingCurrent.value = false
     failure.value = null
   }
 
-  return { isTranslating, isDiscardPending, errorReason, translate, discard }
+  return { isTranslating, isDiscardPending, isRefused, errorReason, translate, discard }
 }

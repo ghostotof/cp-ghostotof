@@ -60,12 +60,13 @@ const PROSE_FIELDS = ['siteEyebrow', 'meEyebrow', 'technicalSubtitle', 'personal
 const {
   isTranslating,
   isDiscardPending,
+  isRefused: isTranslationRefused,
   errorReason: translationErrorReason,
   translate,
   discard: discardTranslation,
 } = useAdminTranslation({
   isRefused: () => !hasProseToTranslate.value || isAnySaving.value || props.isLocked || isProposalShown.value,
-  formIdentity: () => ({ locale: props.locale }),
+  formIdentity: () => ({ entry: null, locale: props.locale, group: null, generation: 0 }),
 })
 const pendingProposal = ref<TranslationProposal | null>(null)
 // Le formulaire rendu (absent pendant une lecture) : « Abandonner » y rend le focus au premier champ une fois relu.
@@ -299,7 +300,7 @@ async function handleSubmit(): Promise<void> {
           :is-translating="isTranslating"
           :is-discard-pending="isDiscardPending"
           hint-id="admin-about-settings-translation-hint"
-          :disabled="!hasProseToTranslate || isAnySaving || isLocked || isProposalShown"
+          :disabled="isTranslationRefused"
           :aria-describedby="describedBy(lockedHintId, isProposalShown ? PROPOSAL_LOCKED_HINT_ID : undefined)"
           @translate="handleTranslate"
         />

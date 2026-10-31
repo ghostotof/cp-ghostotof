@@ -192,15 +192,16 @@ extra gesture, and a `role="status"` banner names the proposal's source locale; 
 holds the proposal its locale selector is locked, as in editing (R78, R79, Sp7-1: the
 kept group would make a second version of the source locale), and so are « Proposer la version XX » (R93, decision 1
 of the eighth review: a second translation took the form back to the source locale, group kept; `useAdminTranslation`
-refuses the call itself, not only the disabled button: whenever that button is disabled (`isRefused`, one term per
-condition of its `:disabled`: no prose to translate, a save in flight, a dirty order draft or the page's order lock, the
-form's proposal lock; for the About settings a proposal shown, R127, R127b) and while a call is in flight, and a
-response whose form no longer has the identity read at send time (the entry, the locale, the source group:
-`formIdentity`, never the prose) is discarded, whatever gesture replaced it and even if the form later regains that
-identity, a deleted entry being discarded by `discard()` (R124); **one model call in flight per form**: a discarded
-call still running refuses the next one (`isDiscardPending`, R125, decision 2 of the eleventh review: no `AbortSignal`, the
-call already left costs what it costs), and the button says why it waits through a text referenced by `aria-describedby`
-only while it waits, `admin.translation.discardPending`), « Version de » (R94,
+refuses the call itself, not only the disabled button: whenever that button is disabled and while a call is in flight —
+the page writes its refusal once, as the `isRefused` option (one term per condition: no prose to translate, a save in
+flight, a dirty order draft or the page's order lock, the form's proposal lock; for the About settings a proposal shown,
+R127, R127b), and the button's `:disabled` reads the `isRefused` the composable exposes (R137), never a copy of the
+predicate —, and a response whose form no longer has the identity read at send time (`FormIdentity`: the entry, the
+locale, the source group, compared field by field by `sameFormIdentity`, never the prose) is discarded, whatever gesture
+replaced it and even if the form later regains that identity, a deleted entry being discarded by `discard()` (R124);
+**one model call in flight per form**: a discarded call still running refuses the next one (`isDiscardPending`, R125,
+decision 2 of the eleventh review: no `AbortSignal`, the call already left costs what it costs), and the button says why
+it waits through a text referenced by `aria-describedby` only while it waits, `admin.translation.discardPending`), « Version de » (R94,
 decision 3: « aucune » would detach the proposal from its source) and the me-card
 **category** selector (R79b, D-b: a version in the other language does not change category, #501/#561; « Créer la
 version XX » keeps the category free, by decision), all described by one text, `admin.entryLock.proposal`, which says

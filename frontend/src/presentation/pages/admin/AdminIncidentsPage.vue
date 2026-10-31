@@ -37,6 +37,7 @@ const { incidents, isLoading, hasError, isLoaded, errorMessage, load, create, up
 const {
   isTranslating,
   isDiscardPending,
+  isRefused: isTranslationRefused,
   errorReason: translationErrorReason,
   translate,
   discard: discardTranslation,
@@ -48,6 +49,7 @@ const {
     entry: editingId.value,
     locale: form.locale,
     group: sourceGroup.value,
+    generation: 0,
   }),
 })
 
@@ -422,7 +424,7 @@ useUnsavedOrderGuard(isOrderDirty)
             :is-translating="isTranslating"
             :is-discard-pending="isDiscardPending"
             hint-id="admin-incident-translation-hint"
-            :disabled="!hasProseToTranslate || isSubmitting || isOrderDirty || lock.isProposalLocked"
+            :disabled="isTranslationRefused"
             :aria-describedby="describedBy(lockedHintId, lock.proposalDescribedBy)"
             @translate="handleTranslate"
           />

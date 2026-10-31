@@ -318,6 +318,19 @@ export function describeEntryFormLock(lockCase: EntryFormLockCase): void {
     expect(proposalNotice(wrapper).exists()).toBe(false)
   })
 
+  // Le bouton et `translate` lisent le même refus (R137) : un brouillon d'ordre modifié désactive le bouton, et c'est la source
+  // que lit aussi le composable. Retirer cette condition du refus de la page rouvrirait le bouton et l'appel à la fois.
+  it(`${prefix}un ordre modifié : le bouton de traduction est désactivé`, async () => {
+    const translation = lockCase.createTranslation()
+    const wrapper = await lockCase.mount(translation)
+    await lockCase.startEdit(wrapper)
+    expect(translateEntryButton(wrapper, form).attributes('disabled')).toBeUndefined()
+
+    await lockCase.dirtyOrder(wrapper)
+
+    expect(translateEntryButton(wrapper, form).attributes('disabled')).toBeDefined()
+  })
+
   // R127b (décision de l'auteur du 2026-10-31) : le bouton est aussi désactivé pendant l'enregistrement du formulaire et sans
   // aucune prose à traduire ; `isRefused` reprend ces deux conditions, faute de quoi un « translate » émis les passerait.
   it(`${prefix}un enregistrement en vol : un « translate » émis ne lance aucune traduction`, async () => {

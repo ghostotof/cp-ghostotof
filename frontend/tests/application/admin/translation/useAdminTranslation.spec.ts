@@ -7,10 +7,16 @@ import {
 } from '../../../../src/application/admin/translation/useAdminTranslation'
 import type { AdminTranslationRepository } from '../../../../src/domain/admin/translation/repositories/AdminTranslationRepository'
 import type { TranslationProposal } from '../../../../src/domain/admin/translation/entities/TranslationProposal'
+import type { FormIdentity } from '../../../../src/domain/admin/translation/entities/FormIdentity'
 import { AdminTranslationError } from '../../../../src/domain/admin/translation/errors/AdminTranslationError'
 
 const FIELDS = { title: 'Panne', impact: 'Formulaire en 500.' }
 const PROPOSAL: TranslationProposal = { sourceLocale: 'fr', targetLocale: 'en', fields: { title: 'Outage', impact: 'Form down.' } }
+
+/** Une identité de formulaire typée, que seule l'entrée distingue. */
+function identityOf(entry: string): FormIdentity {
+  return { entry, locale: 'fr', group: null, generation: 0 }
+}
 
 function mountWithComposable(repository: AdminTranslationRepository, options?: Parameters<typeof useAdminTranslation>[0]) {
   let captured: ReturnType<typeof useAdminTranslation> | undefined
@@ -101,17 +107,39 @@ describe('useAdminTranslation', () => {
 
   it('isRefused vrai : aucune requête, null (#748, R114)', async () => {
     const translate = vi.fn<AdminTranslationRepository['translate']>(async () => PROPOSAL)
-    let refused = true
-    const composable = mountWithComposable({ translate }, { isRefused: () => refused })
+    // Une `ref` : le refus est un calculé (R137), qui ne se relit que si une source réactive change.
+    const refused = ref(true)
+    const composable = mountWithComposable({ translate }, { isRefused: () => refused.value })
 
     expect(await composable.translate('fr', 'en', FIELDS)).toBeNull()
     expect(translate).not.toHaveBeenCalled()
     expect(composable.isTranslating.value).toBe(false)
     expect(composable.errorReason.value).toBeNull()
 
-    refused = false
+    refused.value = false
     expect(await composable.translate('fr', 'en', FIELDS)).toEqual(PROPOSAL)
     expect(translate).toHaveBeenCalledTimes(1)
+  })
+
+  it('isRefused suit le prédicat de la page : la valeur exposée et translate() lisent la même source (#748, R137)', async () => {
+    const translate = vi.fn<AdminTranslationRepository['translate']>().mockResolvedValue(PROPOSAL)
+    const refused = ref(true)
+    const composable = mountWithComposable({ translate }, { isRefused: () => refused.value })
+
+    expect(composable.isRefused.value).toBe(true)
+    expect(await composable.translate('fr', 'en', FIELDS)).toBeNull()
+    expect(translate).not.toHaveBeenCalled()
+
+    refused.value = false
+    expect(composable.isRefused.value).toBe(false)
+    expect(await composable.translate('fr', 'en', FIELDS)).toEqual(PROPOSAL)
+    expect(translate).toHaveBeenCalledTimes(1)
+  })
+
+  it("isRefused est faux quand la page n'en dit rien (#748, R137)", () => {
+    const composable = mountWithComposable({ translate: vi.fn() })
+
+    expect(composable.isRefused.value).toBe(false)
   })
 
   it('discard() périme la traduction en vol : sa réponse rend null (#748, R114)', async () => {
@@ -198,11 +226,11 @@ describe('useAdminTranslation', () => {
   it("une identité changée : isDiscardPending jusqu'à la réponse, jamais deux appels en vol (#748, R125)", async () => {
     let resolve!: (proposal: TranslationProposal) => void
     const translate = vi.fn<AdminTranslationRepository['translate']>(() => new Promise<TranslationProposal>((r) => { resolve = r }))
-    const identity = ref('a')
+    const identity = ref(identityOf('a'))
     const composable = mountWithComposable({ translate }, { formIdentity: () => identity.value })
 
     const stale = composable.translate('fr', 'en', FIELDS)
-    identity.value = 'b'
+    identity.value = identityOf('b')
     expect(composable.isDiscardPending.value).toBe(true)
     expect(await composable.translate('fr', 'en', FIELDS)).toBeNull()
     expect(translate).toHaveBeenCalledTimes(1)
@@ -215,13 +243,13 @@ describe('useAdminTranslation', () => {
   it('une identité de formulaire changée pendant la traduction : isTranslating retombe, la réponse rend null (#748, R124)', async () => {
     let resolve!: (proposal: TranslationProposal) => void
     const translate = vi.fn<AdminTranslationRepository['translate']>(() => new Promise<TranslationProposal>((r) => { resolve = r }))
-    const identity = ref({ entry: 'a', locale: 'fr' })
+    const identity = ref(identityOf('a'))
     const composable = mountWithComposable({ translate }, { formIdentity: () => identity.value })
 
     const pending = composable.translate('fr', 'en', FIELDS)
     expect(composable.isTranslating.value).toBe(true)
 
-    identity.value = { entry: 'b', locale: 'fr' }
+    identity.value = identityOf('b')
     expect(composable.isTranslating.value).toBe(false)
 
     resolve(PROPOSAL)
@@ -233,11 +261,11 @@ describe('useAdminTranslation', () => {
   it("une identité changée : l'échec de la traduction périmée ne pose aucune raison (#748, R124)", async () => {
     let reject!: (error: unknown) => void
     const translate = vi.fn<AdminTranslationRepository['translate']>(() => new Promise<TranslationProposal>((_, r) => { reject = r }))
-    const identity = ref('a')
+    const identity = ref(identityOf('a'))
     const composable = mountWithComposable({ translate }, { formIdentity: () => identity.value })
 
     const pending = composable.translate('fr', 'en', FIELDS)
-    identity.value = 'b'
+    identity.value = identityOf('b')
     reject(new AdminTranslationError('unavailable', 'Indisponible.'))
 
     expect(await pending).toBeNull()
@@ -247,12 +275,27 @@ describe('useAdminTranslation', () => {
   it("une identité changée puis rétablie : la traduction partie du premier formulaire reste périmée (#748, R124)", async () => {
     let resolve!: (proposal: TranslationProposal) => void
     const translate = vi.fn<AdminTranslationRepository['translate']>(() => new Promise<TranslationProposal>((r) => { resolve = r }))
-    const identity = ref('a')
+    const identity = ref(identityOf('a'))
     const composable = mountWithComposable({ translate }, { formIdentity: () => identity.value })
 
     const pending = composable.translate('fr', 'en', FIELDS)
-    identity.value = 'b'
-    identity.value = 'a'
+    identity.value = identityOf('b')
+    identity.value = identityOf('a')
+    expect(composable.isTranslating.value).toBe(false)
+
+    resolve(PROPOSAL)
+    expect(await pending).toBeNull()
+  })
+
+  it("une identité qui ne diffère que par le groupe source : la traduction en vol est périmée (#748, R137)", async () => {
+    let resolve!: (proposal: TranslationProposal) => void
+    const translate = vi.fn<AdminTranslationRepository['translate']>(() => new Promise<TranslationProposal>((r) => { resolve = r }))
+    // Une création vierge, puis « Créer la version XX » d'une entrée : ni l'entrée (aucune) ni la langue ne changent.
+    const identity = ref<FormIdentity>({ entry: null, locale: 'en', group: null, generation: 0 })
+    const composable = mountWithComposable({ translate }, { formIdentity: () => identity.value })
+
+    const pending = composable.translate('fr', 'en', FIELDS)
+    identity.value = { ...identity.value, group: 'groupe-source' }
     expect(composable.isTranslating.value).toBe(false)
 
     resolve(PROPOSAL)
@@ -262,12 +305,12 @@ describe('useAdminTranslation', () => {
   it('une identité inchangée : la proposition est rendue (#748, R124)', async () => {
     let resolve!: (proposal: TranslationProposal) => void
     const translate = vi.fn<AdminTranslationRepository['translate']>(() => new Promise<TranslationProposal>((r) => { resolve = r }))
-    const identity = ref({ entry: 'a', locale: 'fr' })
+    const identity = ref(identityOf('a'))
     const composable = mountWithComposable({ translate }, { formIdentity: () => identity.value })
 
     const pending = composable.translate('fr', 'en', FIELDS)
     // Une réaffectation à l'identique ne remplace rien : l'identité est comparée par son contenu.
-    identity.value = { entry: 'a', locale: 'fr' }
+    identity.value = identityOf('a')
     expect(composable.isTranslating.value).toBe(true)
 
     resolve(PROPOSAL)
