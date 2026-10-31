@@ -259,7 +259,7 @@ describe('router — page de connexion d’une personne déjà connectée', () =
     expect(router.currentRoute.value.query.redirect).toBe(CONSENT)
   })
 
-  it("connectée, `expired=1` : la page de connexion s'ouvre (B/F2), la requête intacte", async () => {
+  it("connectée, `expired=1` : la page de connexion s'ouvre, la requête intacte", async () => {
     // Un `BEARER` vivant sans `XSRF-TOKEN` : le bandeau dit « session finie », son lien (`expired=1`) ne doit pas
     // renvoyer à l'accueil une personne dont `authState.user` est encore posé. Le drapeau n'ouvre que la page.
     await primeAuthState({ username: 'guest', roles: ['ROLE_USER', 'ROLE_TRUSTED'] })

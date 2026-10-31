@@ -54,7 +54,7 @@ describe('loginLocation', () => {
     })
   })
 
-  it("hors route protégée : pas de redirect, le chemin d'une page non revue ne part pas dans l'URL (F8)", () => {
+  it("hors route protégée : pas de redirect, le chemin d'une page non revue ne part pas dans l'URL", () => {
     expect(loginLocation(routeAt('/fr/contact?x=1', 'fr', false), 'en', 'session-ended')).toEqual({
       name: 'login',
       params: { locale: 'fr' },
@@ -81,7 +81,7 @@ describe('signInAgainLocation', () => {
   })
 })
 
-describe('hors route protégée (F8)', () => {
+describe('hors route protégée', () => {
   it.each([
     ['signInAgainLocation', signInAgainLocation, { expired: '1' }],
     ['switchAccountLocation', switchAccountLocation, { reauth: '1' }],

@@ -577,7 +577,7 @@ describe('useAuth', () => {
       expect(auth.hasSessionEnded.value).toBe(false)
     })
 
-    it("checkAuth() ne rétablit pas une session finie quand le compte n'a pas de jeton d'écriture (F5)", async () => {
+    it("checkAuth() ne rétablit pas une session finie quand le compte n'a pas de jeton d'écriture", async () => {
       const restored = vi.fn()
       const repository = createStubRepository({ me: vi.fn(async () => JANE), hasWriteToken: () => false })
       const auth = mountWithComposable(repository, (probe) => probe.onSessionRestored(restored))

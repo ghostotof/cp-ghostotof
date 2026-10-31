@@ -73,7 +73,7 @@ describe('SignInAgainLink', () => {
     expect(wrapper.get('a').classes()).toEqual(expect.arrayContaining(['btn', 'btn-outline-light', 'btn-sm']))
   })
 
-  it("sur une route publique : pas de redirect, le chemin de la page ne part pas dans l'URL (F8)", async () => {
+  it("sur une route publique : pas de redirect, le chemin de la page ne part pas dans l'URL", async () => {
     const wrapper = await mountLink('/fr/contact?x=1', 'fr')
 
     expect(wrapper.get('a').attributes('href')).toBe('/fr/login?expired=1')

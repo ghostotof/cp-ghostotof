@@ -141,7 +141,7 @@ describe('LoginPage', () => {
       },
     )
 
-    describe('connectée (A3-10, R30)', () => {
+    describe('connectée (R30)', () => {
       afterEach(async () => {
         await primeSession(null)
       })

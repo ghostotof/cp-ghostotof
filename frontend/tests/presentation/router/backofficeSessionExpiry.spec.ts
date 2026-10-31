@@ -206,7 +206,7 @@ describe('backofficeSessionExpiry — refus réel (#748, R17)', () => {
   )
 
   it.each(['read', 'write'] as const)(
-    "un autre compte depuis l'envoi : le refus (%s) n'est ni compté ni relu (R48, CR5-2, R63)",
+    "un autre compte depuis l'envoi : le refus (%s) n'est ni compté ni relu (R48, R63)",
     async (kind) => {
       me.mockClear()
       await signIn(SUPER)

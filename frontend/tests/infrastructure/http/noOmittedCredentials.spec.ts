@@ -85,7 +85,7 @@ describe("aucun credentials: 'omit' dans src/", () => {
     expect(offendsWithOmit("const a = ['//', 'omit']")).toBe(true)
   })
 
-  it("aucun fichier n'écrit la chaîne 'omit' hors d'un commentaire (elle retire aussi la Basic Auth de la préprod, C1)", () => {
+  it("aucun fichier n'écrit la chaîne 'omit' hors d'un commentaire (elle retire aussi la Basic Auth de la préprod)", () => {
     const offenders = Object.entries(literalsByFile)
       .filter(([, literals]) => writesOmit(literals))
       .map(([path]) => path)

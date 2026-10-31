@@ -295,7 +295,7 @@ describe('AppLayout — un autre compte au retour', () => {
     expect(wrapper.find('[data-testid="counted-page"]').exists()).toBe(true)
   })
 
-  it("pendant le rejeu, l'ancienne page n'est plus rendue ; la garde libérée, la page est remontée (A3-13)", async () => {
+  it("pendant le rejeu, l'ancienne page n'est plus rendue ; la garde libérée, la page est remontée", async () => {
     const { wrapper, router, mounts } = await mountProtected(OTHER_SUPER)
     // Ajoutée après la garde de la page : elle ne retient que le rejeu, la garde du routeur n'ayant pas encore rejugé.
     let release: () => void = () => undefined

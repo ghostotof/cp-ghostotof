@@ -1497,7 +1497,7 @@ describe('AdminAboutPage', () => {
       expect(settingsRepository.update).toHaveBeenLastCalledWith('en', TRANSLATED_SETTINGS)
     })
 
-    describe('session finie pendant la lecture des réglages de la locale cible (#748, R4, CR2)', () => {
+    describe('session finie pendant la lecture des réglages de la locale cible (#748, R4)', () => {
       // Une page laissée montée relirait sa lecture interrompue au retour suivant, et rouvrirait la session finie
       // pour le test d'après : on la démonte avant de rendre la session.
       let mountedPage: VueWrapper | undefined
@@ -1634,7 +1634,7 @@ describe('AdminAboutPage', () => {
       expect(settingsRepository.update).toHaveBeenCalledWith('en', TRANSLATED_SETTINGS)
     })
 
-    it('un enregistrement refusé garde la mention de la proposition de traduction (#748, R20, F11)', async () => {
+    it('un enregistrement refusé garde la mention de la proposition de traduction (#748, R20)', async () => {
       const settingsRepository = createSettingsRepository({
         update: vi.fn(async () => Promise.reject(new AdminAboutError('validation', 'Invalide'))),
       })
@@ -1823,7 +1823,7 @@ describe('AdminAboutPage', () => {
       expect(settingsPanel.findAll('button').map((button) => button.text())).not.toContain('Abandonner')
     })
 
-    it("une proposition en EN, enregistrement EN refusé : l'avis reste, rien n'est relu (#748, R66, F11)", async () => {
+    it("une proposition en EN, enregistrement EN refusé : l'avis reste, rien n'est relu (#748, R66)", async () => {
       const settingsRepository = createSettingsRepository({
         get: vi.fn(async (locale: string) => ('en' === locale ? SETTINGS_EN : SETTINGS)),
         update: vi.fn(async () => Promise.reject(new AdminAboutError('validation', 'Invalide'))),
