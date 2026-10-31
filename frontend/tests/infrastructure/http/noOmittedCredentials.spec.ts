@@ -67,7 +67,7 @@ describe("aucun credentials: 'omit' dans src/", () => {
     expect(offendsWithOmit("fetch('https://x/omit')")).toBe(false)
   })
 
-  it("le détecteur voit un gabarit à expression et un gestionnaire en ligne du <template> (CR8-10)", () => {
+  it("le détecteur voit un gabarit à expression et un gestionnaire en ligne du <template>", () => {
     expect(offendsWithOmit("const m = `${''}omit`")).toBe(true)
     const inline = '<template><button @click="go({ credentials: \'omit\' })">x</button></template>\n<script setup lang="ts">\n</script>\n'
     expect(offendsWithOmit(inline, 'X.vue')).toBe(true)
@@ -76,7 +76,7 @@ describe("aucun credentials: 'omit' dans src/", () => {
     expect(offendsWithOmit('<template><p>omit</p></template>', 'X.vue')).toBe(false)
   })
 
-  it("le détecteur ne laisse pas un '/*' ou un '//' dans une chaîne masquer la suite (Sp6-11)", () => {
+  it("le détecteur ne laisse pas un '/*' ou un '//' dans une chaîne masquer la suite", () => {
     // Une chaîne `'/*'` n'ouvre pas de commentaire : le `'omit'` qui suit est bien écrit.
     expect(offendsWithOmit("const a = '/*'\nconst mode = 'omit' // */")).toBe(true)
     // Une URL n'est pas un commentaire, mais ce qu'elle contient n'est pas un `'omit'` non plus.

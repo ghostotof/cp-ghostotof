@@ -282,7 +282,7 @@ describe('useAuth', () => {
       expect(auth.user.value?.username).toBe('jane')
     })
 
-    it("session finie, puis accès de base obtenu : la session n'est plus finie, aucun signal (#748, R41, CR4-3)", () => {
+    it("session finie, puis accès de base obtenu : la session n'est plus finie, aucun signal (#748, R41)", () => {
       const { auth, restored, switched } = subscribed(createStubRepository())
       markSessionExpired()
       expect(auth.hasSessionEnded.value).toBe(true)
@@ -349,7 +349,7 @@ describe('useAuth', () => {
       expect(restored).not.toHaveBeenCalled()
     })
 
-    it("aucun compte retenu (fin au palier de base dès le départ) : onAccountSwitched, rien n'est « rétabli » (R26, CR3-5)", async () => {
+    it("aucun compte retenu (fin au palier de base dès le départ) : onAccountSwitched, rien n'est « rétabli » (R26)", async () => {
       const { auth, restored, switched } = subscribed(createStubRepository({ me: vi.fn(async () => sessionFor(OTHER)) }))
       markBaseAccessGranted()
       markSessionExpired()
@@ -478,7 +478,7 @@ describe('useAuth', () => {
 
     const JANE = sessionFor({ username: 'jane', roles: ['ROLE_TRUSTED', 'ROLE_USER'] })
 
-    it("un refus parti avant le retour ne refinit pas la session (Review Focus 1)", async () => {
+    it("un refus parti avant le retour ne refinit pas la session", async () => {
       const auth = mountWithComposable(createStubRepository())
       markSessionExpired()
       const sent = sessionStamp()
@@ -775,7 +775,7 @@ describe('useAuth', () => {
       expect(auth.hasSessionEnded.value).toBe(true)
     })
 
-    it('session finie, me() lève de façon synchrone : la relecture suivante rappelle me() (#748, R41, St4-4)', async () => {
+    it('session finie, me() lève de façon synchrone : la relecture suivante rappelle me() (#748, R41)', async () => {
       const repository = createStubRepository({
         me: vi.fn((): Promise<AuthSession> => {
           throw new Error('réseau')
@@ -897,7 +897,7 @@ describe('useAuth', () => {
       expect(auth.hasSessionEnded.value).toBe(false)
     })
 
-    describe('followRefusal : la suite d\'un refus réel, écrite une fois (R27, St3-7)', () => {
+    describe('followRefusal : la suite d\'un refus réel, écrite une fois (R27)', () => {
       it('session finie et refus toujours affiché : showSessionEnded est appelé', async () => {
         const auth = mountWithComposable(createStubRepository({ me: vi.fn(async () => sessionFor(null)) }))
         await auth.login('jane', 'password')
@@ -1187,7 +1187,7 @@ describe('useAuth', () => {
       return { auth, restored, switched }
     }
 
-    describe("une session décidée dans l'onglet périme le /api/me parti avant elle (CR3-4)", () => {
+    describe("une session décidée dans l'onglet périme le /api/me parti avant elle", () => {
       it("logout pendant qu'un /api/me est en vol : l'en-tête reste anonyme", async () => {
         const { me, settle } = deferredMe()
         const auth = mountWithComposable(createStubRepository({ me: vi.fn(me), login: vi.fn(async () => JANE) }))
@@ -1285,7 +1285,7 @@ describe('useAuth', () => {
       })
     })
 
-    describe('« le même compte » est le dernier compte affiché : identité et droits (CR3-5)', () => {
+    describe('« le même compte » est le dernier compte affiché : identité et droits', () => {
       it('fin de session après une relecture au palier de base, puis un autre compte revient : onAccountSwitched, pas onSessionRestored', async () => {
         const me = vi.fn<() => Promise<AuthSession>>()
         const { auth, restored, switched } = subscribed(createStubRepository({ me, login: vi.fn(async () => JANE) }))
@@ -1371,7 +1371,7 @@ describe('useAuth', () => {
       })
     })
 
-    describe('une relecture après un refus, hors session finie, qui trouve un autre compte (CR3-6)', () => {
+    describe('une relecture après un refus, hors session finie, qui trouve un autre compte', () => {
       it('la session appliquée et onAccountSwitched', async () => {
         const me = vi.fn(async () => sessionFor(OTHER))
         const { auth, restored, switched } = subscribed(createStubRepository({ me, login: vi.fn(async () => JANE) }))
@@ -1424,7 +1424,7 @@ describe('useAuth', () => {
         expect(restored).not.toHaveBeenCalled()
       })
 
-      it('un autre compte lu avance la génération avant le signal (R48, CR5-2 : R26 amendé pour ce cas)', async () => {
+      it('un autre compte lu avance la génération avant le signal (R48 : R26 amendé pour ce cas)', async () => {
         const me = vi.fn<() => Promise<AuthSession>>()
         me.mockResolvedValueOnce(sessionFor(JANE))
         let stampAtSignal: number | undefined
@@ -1472,7 +1472,7 @@ describe('useAuth', () => {
       })
     })
 
-    describe('une connexion en session finie rétablit toujours (CR3-9)', () => {
+    describe('une connexion en session finie rétablit toujours', () => {
       it("sans XSRF-TOKEN lisible : la session n'est plus finie, aucun signal", async () => {
         const repository = createStubRepository({ hasWriteToken: () => false, login: vi.fn(async () => JANE) })
         const { auth, restored, switched } = subscribed(repository)
@@ -1488,7 +1488,7 @@ describe('useAuth', () => {
       })
     })
 
-    describe("une relecture en session finie ne pose qu'un compte qui peut rétablir (Sp3-3)", () => {
+    describe("une relecture en session finie ne pose qu'un compte qui peut rétablir", () => {
       it('le palier de base trouvé : rien ne change (ni palier ni sessionEnded)', async () => {
         const auth = mountWithComposable(createStubRepository({ me: vi.fn(async () => BASE_ACCESS_SESSION) }))
         markSessionExpired()

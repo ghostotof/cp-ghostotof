@@ -13,7 +13,7 @@ function deferredTask(): { task: () => Promise<string>; settle: (value: string) 
   return { task: vi.fn(() => pending), settle, fail }
 }
 
-describe('createSingleFlight (#748, R41, St4-4)', () => {
+describe('createSingleFlight (#748, R41)', () => {
   it('partage la promesse en vol : le second appel ne relance pas la tâche', async () => {
     const flight = createSingleFlight<string>()
     const { task, settle } = deferredTask()

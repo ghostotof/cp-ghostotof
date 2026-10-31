@@ -89,7 +89,7 @@ watch(
 
       // Des réglages qui arrivent sont ceux de la langue montrée (la clé courante) : si c'est la cible de la
       // proposition, ils la remplacent et la retirent ; sinon la proposition reste, et la relecture de sa cible la
-      // retire. Le test lit l'état : l'avis n'est rendu que sous sa cible.
+      // retire. L'effet ne se voit pas dans le DOM : l'avis n'est rendu que sous sa cible.
       if (proposal.value?.target === props.locale) {
         proposal.value = null
       }

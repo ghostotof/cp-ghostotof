@@ -25,10 +25,11 @@ import type { BackofficeSendKind, BackofficeSendStamp, BackofficeSessionReaction
  * le compte (`markBackofficeAccessRefused`, que l'alerte d'`AdminLayout` affiche) et **relit le palier**
  * (`rereadAfterRefusal`, une relecture en vol partagée : une lecture et une écriture refusées ensemble n'envoient
  * qu'un `/api/me`) — l'en-tête reprend le palier que le serveur reconnaît, ou la session est dite finie si `/api/me`
- * répond « anonyme ». **Une lecture refusée après une navigation ne compte pas** (R28, CR3-8) : le timbre de l'envoi
+ * répond « anonyme ». **Une lecture refusée après une navigation ne compte pas** (R28) : le timbre de l'envoi
  * porte le périmètre de refus, que chaque effacement de l'alerte avance (chemin ou requête changés, fin de session,
  * démontage) ; le 403 d'une page quittée n'affiche aucune alerte sur la suivante et ne relit rien. Il porte aussi l'époque
- * de montage (R112) : une lecture partie avant le montage de l'alerte est du chargement de la page d'arrivée. **Une écriture refusée compte toujours** (R38) : le timbre porte `{ kind: 'write' }`, la
+ * de montage (R112) : une lecture partie avant le montage de l'alerte est du chargement de la page d'arrivée.
+ * **Une écriture refusée compte toujours** (R38) : le timbre porte `{ kind: 'write' }`, la
  * personne a fait le geste et doit apprendre son échec, au besoin sur la page où elle est allée ; le comptage **retient le
  * compte du timbre** (R76), et un refus dont le compte de l'envoi diffère de celui de la réception n'est ni compté ni relu, lecture ou
  * écriture. La règle de l'identité du compte et ses limites sont écrites une fois, dans

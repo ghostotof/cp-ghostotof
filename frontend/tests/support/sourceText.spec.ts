@@ -40,12 +40,12 @@ describe('withoutComments', () => {
     expect(withoutComments('const a = `${ (() => { return 1 })() } // t`')).toBe('const a = `${ (() => { return 1 })() } // t`')
   })
 
-  it("une regex littérale qui contient '/*' ne masque pas la suite (CR7-7)", () => {
+  it("une regex littérale qui contient '/*' ne masque pas la suite", () => {
     // `/^\/*$/` : le `/*` n'ouvre pas de commentaire, c'est un `\/` suivi de `*`.
     expect(withoutComments("const r = /^\\/*$/\nimport { x } from './sessionState'")).toBe("const r = /^\\/*$/\nimport { x } from './sessionState'")
   })
 
-  it("garde le \\r d'un commentaire de bloc avec son \\n : les numéros de ligne d'une source CRLF restent ceux de la source (CR8-10)", () => {
+  it("garde le \\r d'un commentaire de bloc avec son \\n : les numéros de ligne d'une source CRLF restent ceux de la source", () => {
     expect(withoutComments('x /* a\r\nb */ y')).toBe('x  \r\n y')
   })
 
@@ -68,7 +68,7 @@ describe('stringLiterals', () => {
     expect(stringLiterals("const a = ['//', 'http://x/omit']")).toEqual(['//', 'http://x/omit'])
   })
 
-  it("rend aussi les parties fixes d'un gabarit à expression : `${''}omit` contient omit (CR8-10)", () => {
+  it("rend aussi les parties fixes d'un gabarit à expression : `${''}omit` contient omit", () => {
     expect(stringLiterals("const m = `${''}omit`")).toContain('omit')
     expect(stringLiterals('const m = `a${x}omit${y}b`')).toEqual(['a', 'omit', 'b'])
   })
@@ -78,11 +78,11 @@ describe('stringLiterals', () => {
     expect(stringLiterals("const a = 'it\\'s'")).toEqual(["it's"])
   })
 
-  it("une regex littérale qui contient un accent grave n'ouvre pas de gabarit (RichText.vue, CR7-7)", () => {
+  it("une regex littérale qui contient un accent grave n'ouvre pas de gabarit (RichText.vue)", () => {
     expect(stringLiterals("const r = /`([^`]+)`/g\nconst m = 'omit'")).toEqual(['omit'])
   })
 
-  it("une regex littérale qui contient une quote n'ouvre pas de chaîne (CR7-7)", () => {
+  it("une regex littérale qui contient une quote n'ouvre pas de chaîne", () => {
     expect(stringLiterals("const r = /[\"']/, m = 'omit'")).toEqual(['omit'])
   })
 })
@@ -90,7 +90,7 @@ describe('stringLiterals', () => {
 describe('scriptOf', () => {
   const component = "<template><p>l'accès // ici</p></template>\n<script setup lang=\"ts\">\nconst m = 'omit'\n</script>\n"
 
-  it("ne garde d'un .vue que le contenu de ses blocs <script> : l'apostrophe du gabarit n'ouvre rien (CR7-7, Sp7-8)", () => {
+  it("ne garde d'un .vue que le contenu de ses blocs <script> : l'apostrophe du gabarit n'ouvre rien", () => {
     expect(stringLiterals(scriptOf('X.vue', component))).toEqual(['omit'])
   })
 
@@ -107,7 +107,7 @@ describe('scriptOf', () => {
     expect(stringLiterals(scriptOf('X.vue', both))).toEqual(['un', 'deux'])
   })
 
-  it("refuse un .vue illisible en nommant son chemin : une garde qui le sauterait le laisserait sans garde (St8-2)", () => {
+  it("refuse un .vue illisible en nommant son chemin : une garde qui le sauterait le laisserait sans garde", () => {
     expect(() => scriptOf('X.vue', '<template><p></template>')).toThrow(/X\.vue/)
   })
 
@@ -121,7 +121,7 @@ describe('templateExpressionsOf', () => {
   const literalsOf = (template: string): string[] =>
     templateExpressionsOf('X.vue', wrap(template)).flatMap((expression) => stringLiterals(expression))
 
-  it("rend l'expression d'un gestionnaire en ligne : un 'omit' qui y est écrit est vu (CR8-10)", () => {
+  it("rend l'expression d'un gestionnaire en ligne : un 'omit' qui y est écrit est vu", () => {
     expect(literalsOf('<button @click="go({ credentials: \'omit\' })">x</button>')).toEqual(['omit'])
   })
 
@@ -138,7 +138,7 @@ describe('templateExpressionsOf', () => {
     expect(() => templateExpressionsOf('X.vue', '<template><p></template>')).toThrow(/X\.vue/)
   })
 
-  describe('chaque expression est rendue comme le fragment JavaScript que Vue compile (CR9-7)', () => {
+  describe('chaque expression est rendue comme le fragment JavaScript que Vue compile', () => {
     const fragmentsOf = (template: string): string[] => templateExpressionsOf('X.vue', wrap(template))
 
     it("lit l'expression d'un v-for : un 'omit' écrit dans la source de la boucle est vu", () => {
@@ -226,7 +226,7 @@ describe('syntaxErrorsOf', () => {
 })
 
 describe('fragmentsOfTemplateAst', () => {
-  it("ne visite jamais un contenu nul ou absent (CR9-6) : `typeof null` est 'object'", () => {
+  it("ne visite jamais un contenu nul ou absent : `typeof null` est 'object'", () => {
     const root = { type: 0, children: [{ type: 5, content: null }, { type: 5 }] } as unknown as TemplateRoot
 
     expect(fragmentsOfTemplateAst(root)).toEqual([])

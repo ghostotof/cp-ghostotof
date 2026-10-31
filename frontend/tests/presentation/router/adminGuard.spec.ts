@@ -432,7 +432,7 @@ describe('router — garde /mcp-connections (ROLE_TRUSTED ou ROLE_SUPER, #650)',
   })
 })
 
-describe('router — la page de connexion attend la première vérification (#748, R40, Sp4-1/C2)', () => {
+describe('router — la page de connexion attend la première vérification (#748, R40)', () => {
   /**
    * Un onglet neuf : `main.ts` monte l'application puis lance `checkAuth()` ; la route `login` est ouverte pendant que
    * `/api/me` est en vol (`isChecking` vrai, remis à cet état par `tests/support/setup.ts`), `authState.user` est encore nul.
@@ -516,7 +516,7 @@ describe('router — la page de connexion attend la première vérification (#74
     expect(wrapper.find('[data-testid="login-reauth-notice"]').exists()).toBe(false)
   })
 
-  describe('un /api/me qui ne répond pas (#748, R49, CR5-7)', () => {
+  describe('un /api/me qui ne répond pas (#748, R49)', () => {
     afterEach(() => {
       // Les faux minuteurs ne survivent pas à leur test.
       vi.useRealTimers()

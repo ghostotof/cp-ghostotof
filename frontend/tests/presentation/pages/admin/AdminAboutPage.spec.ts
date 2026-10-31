@@ -1632,7 +1632,7 @@ describe('AdminAboutPage', () => {
       expect(translateEntryButton(wrapper, SETTINGS_FORM).attributes('disabled')).toBeUndefined()
     })
 
-    it("un enregistrement FR en vol, la page en EN : « Proposer la version FR » désactivé jusqu'à la réponse, aucune traduction ne part (#748, R67, CR6-2)", async () => {
+    it("un enregistrement FR en vol, la page en EN : « Proposer la version FR » désactivé, aucune requête (#748, R67)", async () => {
       let answerFrenchSave!: (settings: AdminAboutSettings) => void
       const frenchSave = new Promise<AdminAboutSettings>((resolve) => {
         answerFrenchSave = resolve

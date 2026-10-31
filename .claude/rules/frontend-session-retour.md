@@ -125,7 +125,7 @@ caller reads it **before sending** and hands it back with the verdict:
   failure** (the MCP page: `status = 'error'` or `lastOutcome = 'failed'` with no `refusal`; the consent: the `unknown`
   failure; the assistant: `AssistantError('unknown')`; the backoffice client: the response is handed back to the repository,
   which translates it, and no `SessionEndedError` is raised). A request sent before a return can no longer end the
-  session it did not belong to (Review Focus 1). Both directions share the one number: an end from before the return,
+  session it did not belong to. Both directions share the one number: an end from before the return,
   and a return from before an end.
 - **The descent by an account's return** (`restoreSession`, `sessionLifecycle.ts`) is asked, by `canRestore`, for **an
   account and a write token (`hasWriteToken()`)**; the caller judges the **current generation** itself

@@ -320,7 +320,7 @@ describe('AppLayout — un autre compte au retour', () => {
     expect(router.currentRoute.value.fullPath).toBe('/fr/admin/case-studies?tri=nom#fin')
   })
 
-  it("deux rejeux qui se chevauchent : la page reste masquée jusqu'au dernier (CR4-2)", async () => {
+  it("deux rejeux qui se chevauchent : la page reste masquée jusqu'au dernier", async () => {
     const { wrapper, router, mounts } = await mountProtected(OTHER_SUPER)
     // Une garde retenue : le second rejeu l'atteint ; le premier, annulé par le second avant d'y arriver, règle sa
     // promesse tout de suite — c'est elle qui, avec un booléen partagé, démasquait la page pendant que le second court.
@@ -404,7 +404,7 @@ describe('AppLayout — un autre compte au retour', () => {
     expect(mounts.count).toBe(1)
   })
 
-  it('un refus réel dont la relecture trouve un autre compte rejoue la navigation (R26, CR3-6)', async () => {
+  it('un refus réel dont la relecture trouve un autre compte rejoue la navigation (R26)', async () => {
     const { wrapper, router, mounts, judged, repository } = await mountProtected(OTHER_SUPER)
     expect(mounts.count).toBe(1)
     const Probe = defineComponent({ setup: () => ({ auth: useAuth() }), template: '<div />' })

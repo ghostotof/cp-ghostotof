@@ -496,7 +496,7 @@ describe('AdminLayout — refus réel du backoffice (#748, R17)', () => {
     wrapper.unmount()
   })
 
-  describe('un refus parti avant une navigation (CR3-8)', () => {
+  describe('un refus parti avant une navigation (#748, R28)', () => {
     /** Une lecture lente : la réponse n'arrive que lorsque le test la libère. */
     function stubSlowRead(): { release: (status: number) => void } {
       let release: (status: number) => void = () => undefined

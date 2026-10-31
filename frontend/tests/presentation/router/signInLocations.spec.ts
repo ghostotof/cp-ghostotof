@@ -119,7 +119,7 @@ describe('qui compose ces liens', () => {
       .sort()
   }
 
-  it("loginLocation n'importe ni sessionEnded ni reauthentication (St3-9)", () => {
+  it("loginLocation n'importe ni sessionEnded ni reauthentication", () => {
     // Les constantes des deux drapeaux sont déclarées dans `loginLocation.ts`, que les deux autres modules importent :
     // un seul sens, aucun cycle.
     const source = sources['../../../src/presentation/router/loginLocation.ts']

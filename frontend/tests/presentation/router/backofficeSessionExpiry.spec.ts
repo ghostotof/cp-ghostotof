@@ -134,7 +134,7 @@ describe('backofficeSessionExpiry — refus réel (#748, R17)', () => {
     unmount()
   })
 
-  it("un refus parti avant une navigation n'est ni compté ni relu (CR3-8)", async () => {
+  it("un refus parti avant une navigation n'est ni compté ni relu", async () => {
     me.mockClear()
     await signIn(SUPER)
     const { handler, unmount } = buildReaction()
@@ -264,7 +264,7 @@ describe('backofficeSessionExpiry — refus réel (#748, R17)', () => {
     },
   )
 
-  it("aucun compte à l'envoi, un compte à la réception : le refus est écarté (limite écrite, sans chemin, CR7-3)", async () => {
+  it("aucun compte à l'envoi, un compte à la réception : le refus est écarté (limite écrite, sans chemin)", async () => {
     me.mockClear()
     await signIn(SUPER)
     const { handler, unmount } = buildReaction()

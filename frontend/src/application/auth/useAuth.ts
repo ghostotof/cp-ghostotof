@@ -14,7 +14,7 @@ import { createSingleFlight } from '../shared/singleFlight'
 
 /**
  * `useAuth.ts` est la façade de la session (#748, R25) : le composable, les deux relectures de `/api/me` mutualisées,
- * et les **réexports** de tout ce que les autres fichiers importent d'ici, qui n'ont donc qu'un site d'import. Où vit le
+ * et les **réexports** de tout ce que les autres fichiers importent d'ici : ils gardent ainsi un seul site d'import, celui-ci. Où vit le
  * reste : `sessionState.ts` (l'état et le palier), `baseAccessExpiry.ts` (la minuterie de l'accès de base),
  * `sessionGeneration.ts` (la génération), `sessionEvents.ts` (les deux signaux), `sessionLifecycle.ts` (la fin et le
  * retour).
