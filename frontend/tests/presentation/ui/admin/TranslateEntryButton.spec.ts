@@ -3,12 +3,11 @@ import { mount } from '@vue/test-utils'
 import TranslateEntryButton from '../../../../src/presentation/ui/admin/TranslateEntryButton.vue'
 import { createAppI18n } from '../../../../src/presentation/i18n'
 import { expectNoAccessibilityViolation } from '../../../support/axe'
+import { DISCARD_PENDING_FR } from '../../../support/adminTranslationTexts'
 
 type Props = InstanceType<typeof TranslateEntryButton>['$props']
 
 const HINT_ID = 'admin-test-translation-hint'
-const DISCARD_PENDING_TEXT =
-  "La traduction annulée se termine côté serveur : ce bouton revient dès sa réponse, qui ne change rien au formulaire."
 
 function mountButton(props: Partial<Props> & Pick<Props, 'formLocale' | 'isTranslating'>, attrs: Record<string, string> = {}) {
   return mount(TranslateEntryButton, {
@@ -72,7 +71,7 @@ describe('TranslateEntryButton', () => {
     const button = wrapper.get('button')
     expect(button.attributes('disabled')).toBeDefined()
     expect(button.attributes('aria-describedby')).toBe(`aide-page ${HINT_ID}`)
-    expect(wrapper.get(`#${HINT_ID}`).text()).toBe(DISCARD_PENDING_TEXT)
+    expect(wrapper.get(`#${HINT_ID}`).text()).toBe(DISCARD_PENDING_FR)
   })
 
   it("hors attente, aucun texte d'attente et aucune référence vers lui (#748, R125)", () => {

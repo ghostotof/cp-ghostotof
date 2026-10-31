@@ -16,7 +16,8 @@ import { AdminOrderError } from '../../../../src/domain/admin/shared/errors/Admi
 import type { AdminTranslationRepository } from '../../../../src/domain/admin/translation/repositories/AdminTranslationRepository'
 import { AdminTranslationError } from '../../../../src/domain/admin/translation/errors/AdminTranslationError'
 import { expectNoAccessibilityViolation } from '../../../support/axe'
-import { describeEntryFormLock, LOCALE_HELP_TEXT, translateEntryButton } from '../../../support/entryFormLock'
+import { describeEntryFormLock, translateEntryButton } from '../../../support/entryFormLock'
+import { LOCALE_HELP_FR } from '../../../support/adminTranslationTexts'
 import { QUALITY_PRINCIPLE_PROSE_FIELDS, QUALITY_TRAIT_PROSE_FIELDS } from '../../../../src/presentation/pages/admin/proseFields'
 
 const P_GROUP_ONE = '019968b0-0000-7000-8000-0000000000e1'
@@ -686,7 +687,7 @@ describe('AdminQualityPage', () => {
       proseFields: QUALITY_PRINCIPLE_PROSE_FIELDS,
       fieldIdPrefix: 'admin-quality-principle',
       heading: 'Ajouter un principe',
-      permanentHelp: LOCALE_HELP_TEXT,
+      permanentHelp: LOCALE_HELP_FR,
       startEdit: async (wrapper) => {
         await buttonLabelled(actionsForLine(wrapper, PRINCIPLES, "Tests d'abord"), 'Modifier').trigger('click')
       },
@@ -728,7 +729,7 @@ describe('AdminQualityPage', () => {
       proseFields: QUALITY_TRAIT_PROSE_FIELDS,
       fieldIdPrefix: 'admin-quality-trait',
       heading: 'Ajouter un trait',
-      permanentHelp: LOCALE_HELP_TEXT,
+      permanentHelp: LOCALE_HELP_FR,
       startEdit: async (wrapper) => {
         await buttonLabelled(actionsForLine(wrapper, TRAITS, 'Documenté'), 'Modifier').trigger('click')
       },

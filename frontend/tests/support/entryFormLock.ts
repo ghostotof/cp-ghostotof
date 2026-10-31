@@ -5,29 +5,14 @@ import { expectNoAccessibilityViolation } from './axe'
 import { SUPPORTED_LOCALES } from '../../src/domain/portfolio/entities/Locale'
 import type { AdminTranslationRepository } from '../../src/domain/admin/translation/repositories/AdminTranslationRepository'
 import { proseFieldId } from '../../src/presentation/ui/admin/useTranslatedForm'
+import {
+  DISCARD_PENDING_FR,
+  ENTRY_LOCK_EDITING_FR,
+  ENTRY_LOCK_PROPOSAL_FR,
+  PROSE_READONLY_FR,
+  TRANSLATION_UNAVAILABLE_FR,
+} from './adminTranslationTexts'
 import { AdminTranslationError } from '../../src/domain/admin/translation/errors/AdminTranslationError'
-
-/**
- * Les textes qui expliquent un sélecteur verrouillé d'un formulaire par entrée (#748, D-a et D-b
- * de l'auteur, 2026-10-30), écrits ici une fois pour les huit formulaires et la catégorie des
- * cartes « moi ». Lus par `describedTexts()` : un test dit « ce texte décrit ce sélecteur »,
- * jamais « cet id existe ».
- */
-export const ENTRY_LOCK_EDITING_TEXT = "La langue d'une entrée existante ne peut pas être modifiée."
-/** Le texte unique du verrou d'une proposition : langue, « Version de », bouton de traduction et catégorie « moi » le désignent. */
-export const ENTRY_LOCK_PROPOSAL_TEXT =
-  'Verrouillé par la proposition de traduction en cours ; « Annuler » l\'abandonne et vide le formulaire.'
-
-/** Le texte de l'attente d'un appel annulé : le bouton de traduction le désigne tant que la réponse périmée n'est pas là. */
-export const DISCARD_PENDING_TEXT =
-  'La traduction annulée se termine côté serveur : ce bouton revient dès sa réponse, qui ne change rien au formulaire.'
-
-/** Le texte d'aide des champs de prose pendant une traduction : chacun le désigne tant que la réponse n'est pas là. */
-export const PROSE_READONLY_TEXT =
-  "Traduction en cours : les champs de texte sont en lecture seule jusqu'à la réponse. Rien de ce qui est écrit n'est perdu."
-
-/** Le message d'une traduction en échec (503), tel que le formulaire le rend. */
-export const TRANSLATION_UNAVAILABLE_TEXT = "L'assistant de traduction est indisponible. Réessayez plus tard."
 
 /**
  * Les textes que désigne l'`aria-describedby` du champ `selector`, dans l'ordre des identifiants ;
@@ -57,10 +42,6 @@ export function textsDescribing(wrapper: VueWrapper, element: Pick<DOMWrapper<El
       return target.text()
     })
 }
-
-/** L'aide permanente des sélecteurs de langue des principes, traits et cartes (#582), vraie en toute circonstance. */
-export const LOCALE_HELP_TEXT =
-  "Langue de cette entrée : c'est elle qui sera enregistrée, et celle sur laquelle porte l'assistant de traduction. Le tableau ci-dessous, lui, affiche toutes les langues."
 
 /**
  * Le « Annuler » du formulaire d'un contenu (le `form`-ième de la page) : la barre d'ordre du tableau porte le
@@ -216,7 +197,7 @@ export function describeEntryFormLock(lockCase: EntryFormLockCase): void {
 
     await lockCase.startEdit(wrapper)
 
-    expect(describedTexts(wrapper, locale)).toEqual([...permanent, ENTRY_LOCK_EDITING_TEXT])
+    expect(describedTexts(wrapper, locale)).toEqual([...permanent, ENTRY_LOCK_EDITING_FR])
   })
 
   // Décision 1 de la huitième relecture (R93, CR8-1) : une seconde traduction depuis la proposition remettait
@@ -231,7 +212,7 @@ export function describeEntryFormLock(lockCase: EntryFormLockCase): void {
 
     const button = translateEntryButton(wrapper, form)
     expect(button.attributes('disabled')).toBeDefined()
-    expect(textsDescribing(wrapper, button)).toEqual([ENTRY_LOCK_PROPOSAL_TEXT])
+    expect(textsDescribing(wrapper, button)).toEqual([ENTRY_LOCK_PROPOSAL_FR])
   })
 
   it(`${prefix}« Annuler » après une proposition rend le bouton de traduction libre de tout texte de verrou`, async () => {
@@ -258,7 +239,7 @@ export function describeEntryFormLock(lockCase: EntryFormLockCase): void {
     await lockCase.propose(wrapper)
 
     expect(wrapper.get(group).attributes('disabled')).toBeDefined()
-    expect(describedTexts(wrapper, group)).toEqual([ENTRY_LOCK_PROPOSAL_TEXT])
+    expect(describedTexts(wrapper, group)).toEqual([ENTRY_LOCK_PROPOSAL_FR])
 
     await formCancelButton(wrapper, form)?.trigger('click')
     await flushPromises()
@@ -282,7 +263,7 @@ export function describeEntryFormLock(lockCase: EntryFormLockCase): void {
     await lockCase.startEdit(wrapper)
     await lockCase.propose(wrapper)
 
-    expect(describedTexts(wrapper, locale)).toEqual([...permanent, ENTRY_LOCK_PROPOSAL_TEXT])
+    expect(describedTexts(wrapper, locale)).toEqual([...permanent, ENTRY_LOCK_PROPOSAL_FR])
 
     await formCancelButton(wrapper, form)?.trigger('click')
     await flushPromises()
@@ -428,7 +409,7 @@ export function describeEntryFormLock(lockCase: EntryFormLockCase): void {
     await flushPromises()
 
     expect(vi.mocked(translation.translate)).toHaveBeenCalledTimes(1)
-    expect(textsDescribing(wrapper, translateEntryButton(wrapper, form))).toEqual([DISCARD_PENDING_TEXT])
+    expect(textsDescribing(wrapper, translateEntryButton(wrapper, form))).toEqual([DISCARD_PENDING_FR])
     await expectNoAccessibilityViolation(wrapper)
 
     reply.release()
@@ -584,9 +565,9 @@ export function describeEntryFormLock(lockCase: EntryFormLockCase): void {
       const field = wrapper.get(`#${id}`)
       expect(field.attributes('readonly'), `#${id} : readonly`).toBeDefined()
       expect(field.attributes('disabled'), `#${id} : disabled`).toBeUndefined()
-      expect(describedTexts(wrapper, `#${id}`), `#${id} : aria-describedby`).toContain(PROSE_READONLY_TEXT)
+      expect(describedTexts(wrapper, `#${id}`), `#${id} : aria-describedby`).toContain(PROSE_READONLY_FR)
     }
-    expect(describedTexts(wrapper, locale)).not.toContain(PROSE_READONLY_TEXT)
+    expect(describedTexts(wrapper, locale)).not.toContain(PROSE_READONLY_FR)
     // Dans l'autre sens : aucun autre champ du formulaire n'est en lecture seule, ni ne manque à la liste de la page.
     const readonlyIds = formOf(wrapper).findAll('[readonly]').map((field) => field.attributes('id'))
     expect([...readonlyIds].sort()).toEqual([...proseIds].sort())
@@ -598,7 +579,7 @@ export function describeEntryFormLock(lockCase: EntryFormLockCase): void {
     for (const id of proseIds) {
       expect(wrapper.get(`#${id}`).attributes('readonly'), `#${id} : readonly après la réponse`).toBeUndefined()
     }
-    expect(wrapper.text()).not.toContain(PROSE_READONLY_TEXT)
+    expect(wrapper.text()).not.toContain(PROSE_READONLY_FR)
   })
 
   it(`${prefix}une traduction en échec : la prose redevient modifiable, intacte, le texte d'aide disparaît`, async () => {
@@ -613,11 +594,11 @@ export function describeEntryFormLock(lockCase: EntryFormLockCase): void {
 
     for (const id of proseIds) {
       expect(wrapper.get(`#${id}`).attributes('readonly'), `#${id} : readonly après l'échec`).toBeUndefined()
-      expect(describedTexts(wrapper, `#${id}`), `#${id} : aria-describedby`).not.toContain(PROSE_READONLY_TEXT)
+      expect(describedTexts(wrapper, `#${id}`), `#${id} : aria-describedby`).not.toContain(PROSE_READONLY_FR)
     }
-    expect(wrapper.text()).not.toContain(PROSE_READONLY_TEXT)
+    expect(wrapper.text()).not.toContain(PROSE_READONLY_FR)
     expect(titleValue(wrapper)).toBe(titleOfEntry)
-    expect(formOf(wrapper).find('[role="alert"]').text()).toBe(TRANSLATION_UNAVAILABLE_TEXT)
+    expect(formOf(wrapper).find('[role="alert"]').text()).toBe(TRANSLATION_UNAVAILABLE_FR)
     await expectNoAccessibilityViolation(wrapper)
   })
 
@@ -632,13 +613,13 @@ export function describeEntryFormLock(lockCase: EntryFormLockCase): void {
 
     translateButtonComponent(wrapper).vm.$emit('translate', 'en')
     await flushPromises()
-    expect(formOf(wrapper).find('[role="alert"]').text()).toBe(TRANSLATION_UNAVAILABLE_TEXT)
+    expect(formOf(wrapper).find('[role="alert"]').text()).toBe(TRANSLATION_UNAVAILABLE_FR)
 
     await wrapper.get(`#${ids.title}`).setValue('Titre corrigé après l\'échec')
     await flushPromises()
 
     expect(titleValue(wrapper)).toBe('Titre corrigé après l\'échec')
-    expect(formOf(wrapper).find('[role="alert"]').text()).toBe(TRANSLATION_UNAVAILABLE_TEXT)
+    expect(formOf(wrapper).find('[role="alert"]').text()).toBe(TRANSLATION_UNAVAILABLE_FR)
   })
 
   // L'échec d'une traduction est effacé à tout changement d'identité du formulaire, et un retour à l'identité de l'échec ne le
@@ -651,7 +632,7 @@ export function describeEntryFormLock(lockCase: EntryFormLockCase): void {
 
     translateButtonComponent(wrapper).vm.$emit('translate', 'en')
     await flushPromises()
-    expect(formOf(wrapper).find('[role="alert"]').text()).toBe(TRANSLATION_UNAVAILABLE_TEXT)
+    expect(formOf(wrapper).find('[role="alert"]').text()).toBe(TRANSLATION_UNAVAILABLE_FR)
 
     await lockCase.startEditOther(wrapper)
     expect(formOf(wrapper).find('[role="alert"]').exists()).toBe(false)
@@ -666,7 +647,7 @@ export function describeEntryFormLock(lockCase: EntryFormLockCase): void {
     await wrapper.get(`#${ids.title}`).setValue('Titre corrigé après le second échec')
     await flushPromises()
 
-    expect(formOf(wrapper).find('[role="alert"]').text()).toBe(TRANSLATION_UNAVAILABLE_TEXT)
+    expect(formOf(wrapper).find('[role="alert"]').text()).toBe(TRANSLATION_UNAVAILABLE_FR)
   })
 }
 

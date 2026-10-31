@@ -35,18 +35,15 @@ import {
   ME_CARD_PROSE_FIELDS,
   SITE_CARD_PROSE_FIELDS,
 } from '../../../../src/presentation/pages/admin/proseFields'
+import { describedTexts, describeEntryFormLock, formCancelButton, textsDescribing, translateEntryButton } from '../../../support/entryFormLock'
 import {
-  ENTRY_LOCK_PROPOSAL_TEXT,
-  describedTexts,
-  describeEntryFormLock,
-  DISCARD_PENDING_TEXT,
-  formCancelButton,
-  LOCALE_HELP_TEXT,
-  PROSE_READONLY_TEXT,
-  textsDescribing,
-  translateEntryButton,
-  TRANSLATION_UNAVAILABLE_TEXT,
-} from '../../../support/entryFormLock'
+  ABOUT_LOCALE_HELP_FR,
+  DISCARD_PENDING_FR,
+  ENTRY_LOCK_PROPOSAL_FR,
+  PROSE_READONLY_FR,
+  SETTINGS_PROPOSAL_LOCKED_FR,
+  TRANSLATION_UNAVAILABLE_FR,
+} from '../../../support/adminTranslationTexts'
 
 const SETTINGS: AdminAboutSettings = {
   locale: 'fr',
@@ -1047,7 +1044,7 @@ describe('AdminAboutPage', () => {
       proseFields: SITE_CARD_PROSE_FIELDS,
       fieldIdPrefix: 'admin-about-site-card',
       heading: 'Ajouter une carte',
-      permanentHelp: LOCALE_HELP_TEXT,
+      permanentHelp: ABOUT_LOCALE_HELP_FR,
       startEdit: async (wrapper) => {
         await buttonLabelled(actionsForLine(wrapper, SITE, 'Stack technique'), 'Modifier').trigger('click')
       },
@@ -1089,7 +1086,7 @@ describe('AdminAboutPage', () => {
       proseFields: ME_CARD_PROSE_FIELDS,
       fieldIdPrefix: 'admin-about-me-card',
       heading: 'Ajouter une carte',
-      permanentHelp: LOCALE_HELP_TEXT,
+      permanentHelp: ABOUT_LOCALE_HELP_FR,
       startEdit: async (wrapper) => {
         await buttonLabelled(actionsForLine(wrapper, ME_TABLE.technical, ME_FIXTURES.technical.titles[2]), 'Modifier').trigger('click')
       },
@@ -1127,7 +1124,7 @@ describe('AdminAboutPage', () => {
 
       expect(wrapper.get('#admin-about-me-card-category').attributes('disabled')).toBeDefined()
       expect(valueOf(wrapper, '#admin-about-me-card-category')).toBe('technical')
-      expect(describedTexts(wrapper, '#admin-about-me-card-category')).toEqual([ENTRY_LOCK_PROPOSAL_TEXT])
+      expect(describedTexts(wrapper, '#admin-about-me-card-category')).toEqual([ENTRY_LOCK_PROPOSAL_FR])
 
       await formCancelButton(wrapper, ME_FORM)?.trigger('click')
       await flushPromises()
@@ -1144,7 +1141,7 @@ describe('AdminAboutPage', () => {
 
       expect(wrapper.get('#admin-about-me-card-category').attributes('disabled')).toBeUndefined()
       expect(describedTexts(wrapper, '#admin-about-me-card-category')).toEqual([])
-      expect(describedTexts(wrapper, '#admin-about-me-card-locale')).toEqual([LOCALE_HELP_TEXT])
+      expect(describedTexts(wrapper, '#admin-about-me-card-locale')).toEqual([ABOUT_LOCALE_HELP_FR])
     })
 
     it('affiche le message du quota en cas de 429 et laisse le formulaire intact', async () => {
@@ -1224,7 +1221,7 @@ describe('AdminAboutPage', () => {
       await flushPromises()
 
       expect(translation.translate).toHaveBeenCalledTimes(1)
-      expect(textsDescribing(wrapper, button())).toEqual([DISCARD_PENDING_TEXT])
+      expect(textsDescribing(wrapper, button())).toEqual([DISCARD_PENDING_FR])
       await expectNoAccessibilityViolation(wrapper)
 
       answer({ sourceLocale: 'fr', targetLocale: 'en', fields: TRANSLATED_SETTINGS })
@@ -1238,8 +1235,6 @@ describe('AdminAboutPage', () => {
     // Décision 5 et Q5 (A) de la onzième relecture (R127) : ce que le bouton « Proposer la version XX » refuse, la
     // traduction le refuse aussi. Un « translate » émis par programme passerait un `:disabled` seul.
     const SETTINGS_PROPOSAL_LOCKED_HINT = '#admin-about-settings-proposal-locked-help'
-    const SETTINGS_PROPOSAL_LOCKED_TEXT =
-      'Verrouillé par la proposition de traduction affichée : enregistrez-la, ou « Abandonner » pour la retirer.'
     const emitSettingsTranslate = (wrapper: VueWrapper, target: 'fr' | 'en'): void => {
       wrapper.findAllComponents(AdminAboutSettingsForm)[0].findComponent(TranslateEntryButton).vm.$emit('translate', target)
     }
@@ -1305,7 +1300,7 @@ describe('AdminAboutPage', () => {
 
       const button = translateEntryButton(wrapper, SETTINGS_FORM)
       expect(button.attributes('disabled')).toBeDefined()
-      expect(textsDescribing(wrapper, button)).toEqual([SETTINGS_PROPOSAL_LOCKED_TEXT])
+      expect(textsDescribing(wrapper, button)).toEqual([SETTINGS_PROPOSAL_LOCKED_FR])
       await expectNoAccessibilityViolation(wrapper)
 
       emitSettingsTranslate(wrapper, 'fr')
@@ -1327,7 +1322,7 @@ describe('AdminAboutPage', () => {
       const { wrapper } = await mountPage(settingsRepository, undefined, undefined, translation)
       await translateEntryButton(wrapper, SETTINGS_FORM).trigger('click')
       await flushPromises()
-      expect(textsDescribing(wrapper, translateEntryButton(wrapper, SETTINGS_FORM))).toEqual([SETTINGS_PROPOSAL_LOCKED_TEXT])
+      expect(textsDescribing(wrapper, translateEntryButton(wrapper, SETTINGS_FORM))).toEqual([SETTINGS_PROPOSAL_LOCKED_FR])
 
       // Sous l'autre langue, la proposition ne se montre pas (aucun avis ni verrou), que des réglages l'aient retirée ou non.
       await wrapper.get('#admin-about-locale').setValue('fr')
@@ -1427,7 +1422,7 @@ describe('AdminAboutPage', () => {
         const field = wrapper.get(`#${id}`)
         expect(field.attributes('readonly'), `#${id} : readonly`).toBeDefined()
         expect(field.attributes('disabled'), `#${id} : disabled`).toBeUndefined()
-        expect(describedTexts(wrapper, `#${id}`), `#${id} : aria-describedby`).toEqual([PROSE_READONLY_TEXT])
+        expect(describedTexts(wrapper, `#${id}`), `#${id} : aria-describedby`).toEqual([PROSE_READONLY_FR])
       }
       // Dans l'autre sens : aucun autre champ du formulaire n'est en lecture seule, ni ne manque à la liste de la page.
       const readonlyIds = panelOf(wrapper, SETTINGS_PANEL).findAll('[readonly]').map((field) => field.attributes('id'))
@@ -1440,7 +1435,7 @@ describe('AdminAboutPage', () => {
       for (const id of SETTINGS_PROSE_IDS) {
         expect(wrapper.get(`#${id}`).attributes('readonly'), `#${id} : readonly après la réponse`).toBeUndefined()
       }
-      expect(wrapper.text()).not.toContain(PROSE_READONLY_TEXT)
+      expect(wrapper.text()).not.toContain(PROSE_READONLY_FR)
     })
 
     it("une traduction des réglages en échec : prose modifiable et intacte, l'erreur survit à la frappe (#748, R126)", async () => {
@@ -1455,14 +1450,14 @@ describe('AdminAboutPage', () => {
       for (const id of SETTINGS_PROSE_IDS) {
         expect(wrapper.get(`#${id}`).attributes('readonly'), `#${id} : readonly après l'échec`).toBeUndefined()
       }
-      expect(wrapper.text()).not.toContain(PROSE_READONLY_TEXT)
+      expect(wrapper.text()).not.toContain(PROSE_READONLY_FR)
       expect(valueOf(wrapper, '#admin-about-site-eyebrow')).toBe(SETTINGS.siteEyebrow)
-      expect(panelOf(wrapper, SETTINGS_PANEL).get('[role="alert"]').text()).toBe(TRANSLATION_UNAVAILABLE_TEXT)
+      expect(panelOf(wrapper, SETTINGS_PANEL).get('[role="alert"]').text()).toBe(TRANSLATION_UNAVAILABLE_FR)
 
       await wrapper.get('#admin-about-site-eyebrow').setValue('Corrigé après l\'échec')
       await flushPromises()
 
-      expect(panelOf(wrapper, SETTINGS_PANEL).get('[role="alert"]').text()).toBe(TRANSLATION_UNAVAILABLE_TEXT)
+      expect(panelOf(wrapper, SETTINGS_PANEL).get('[role="alert"]').text()).toBe(TRANSLATION_UNAVAILABLE_FR)
     })
 
     it('enregistre les réglages via son formulaire', async () => {

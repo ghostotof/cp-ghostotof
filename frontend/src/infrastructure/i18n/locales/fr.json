@@ -396,8 +396,8 @@
     "translation": {
       "proposeVersion": "Proposer la version {locale}",
       "inProgress": "Traduction en cours…",
-      "discardPending": "La traduction annulée se termine côté serveur : ce bouton revient dès sa réponse, qui ne change rien au formulaire.",
-      "proseReadonly": "Traduction en cours : les champs de texte sont en lecture seule jusqu'à la réponse. Rien de ce qui est écrit n'est perdu.",
+      "discardPending": "La traduction précédente, abandonnée, se termine côté serveur : ce bouton revient dès sa réponse, qui ne change rien au formulaire.",
+      "proseReadonly": "Traduction en cours : les champs de texte sont en lecture seule jusqu'à la réponse, qui les remplace par la proposition ; l'entrée enregistrée ne change pas.",
       "proposalNotice": "Proposition générée par IA à partir de la version {locale} : relisez et corrigez avant d'enregistrer. Rien n'est enregistré tant que vous ne cliquez pas sur Enregistrer.",
       "errors": {
         "validation": "Le contenu à traduire est invalide (champ vide ou trop long).",
