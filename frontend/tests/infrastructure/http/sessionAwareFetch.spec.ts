@@ -157,7 +157,10 @@ describe('sessionAwareFetch', () => {
     const fetchMock = vi.fn(async () => response(200))
     vi.stubGlobal('fetch', fetchMock)
 
-    await sessionAwareFetch(URL, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: '{}' })
+    await sessionAwareFetch(
+      URL,
+      { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: '{}' },
+    )
 
     expect(sentInit(fetchMock).headers).toEqual({ 'Content-Type': 'application/json', Accept: 'application/json', 'X-XSRF-TOKEN': 'abc' })
     expect(sentInit(fetchMock).body).toBe('{}')

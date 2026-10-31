@@ -46,7 +46,9 @@ describe('withoutComments', () => {
 
   it("une regex littérale qui contient '/*' ne masque pas la suite", () => {
     // `/^\/*$/` : le `/*` n'ouvre pas de commentaire, c'est un `\/` suivi de `*`.
-    expect(withoutComments("const r = /^\\/*$/\nimport { x } from './sessionState'")).toBe("const r = /^\\/*$/\nimport { x } from './sessionState'")
+    expect(
+      withoutComments("const r = /^\\/*$/\nimport { x } from './sessionState'"),
+    ).toBe("const r = /^\\/*$/\nimport { x } from './sessionState'")
   })
 
   it("garde le \\r d'un commentaire de bloc avec son \\n : les numéros de ligne d'une source CRLF restent ceux de la source", () => {

@@ -369,10 +369,18 @@ describe('AdminLayout — refus réel du backoffice (#748, R17)', () => {
   })
 
   it.each([
-    ['fr', "Le serveur refuse cette demande à votre session : votre compte n'a peut-être pas, ou plus, l'accès de confiance, ou la session doit être rouverte. Changez de compte, ou reconnectez-vous au même, pour continuer.", 'Changer de compte'],
-    ['en', 'The server refuses this request to your session: your account may not have, or may no longer have, trusted access, or the session needs to be reopened. Switch account, or sign in again to the same one, to continue.', 'Switch account'],
+    [
+      'fr',
+      "Le serveur refuse cette demande à votre session : votre compte n'a peut-être pas, ou plus, l'accès de confiance, ou la session doit être rouverte. Changez de compte, ou reconnectez-vous au même, pour continuer.",
+      'Changer de compte',
+    ],
+    [
+      'en',
+      'The server refuses this request to your session: your account may not have, or may no longer have, trusted access, or the session needs to be reopened. Switch account, or sign in again to the same one, to continue.',
+      'Switch account',
+    ],
   ] as const)(
-    "refus réel à l'enregistrement (%s) : une alerte, « Changer de compte » vers la connexion dans le même onglet, la saisie reste, le palier est relu une fois",
+    "refus réel à l'enregistrement (%s) : alerte, « Changer de compte » vers la connexion même onglet, saisie gardée, palier relu une fois",
     async (locale, message, linkLabel) => {
       stubFetch(200, 403)
       const { wrapper, router } = await mountAdminCaseStudies(repository, locale)

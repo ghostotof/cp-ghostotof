@@ -247,7 +247,7 @@ describe('useOAuthConsent', () => {
     expect(authState.sessionEnded).toBe(false)
   })
 
-  it("forbidden à la décision : terminal, la demande n'est plus montrée, pas de retour à ready, la session n'est pas marquée expirée", async () => {
+  it("forbidden à la décision : terminal, la demande n'est plus montrée, pas de retour à ready, session non marquée expirée", async () => {
     const decide = vi.fn(async () => {
       throw new AccessForbiddenError()
     })

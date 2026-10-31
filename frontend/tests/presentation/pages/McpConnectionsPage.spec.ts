@@ -551,7 +551,10 @@ describe('McpConnectionsPage', () => {
 
   describe('focus et annonces (#748)', () => {
     /** La liste telle que le serveur la rend une fois « Claude Code » révoquée. */
-    const AFTER_REVOCATION = listOf([{ ...ACTIVE, state: 'revoked', expiresAt: null, revokedAt: '2026-10-28T11:00:00+01:00', revocationCause: 'person' }, NEVER_USED])
+    const AFTER_REVOCATION = listOf([
+      { ...ACTIVE, state: 'revoked', expiresAt: null, revokedAt: '2026-10-28T11:00:00+01:00', revocationCause: 'person' },
+      NEVER_USED,
+    ])
 
     it("après une révocation, le titre a le focus avant que l'issue soit annoncée", async () => {
       const list = vi.fn().mockResolvedValueOnce(listOf([ACTIVE, NEVER_USED])).mockResolvedValue(AFTER_REVOCATION)
@@ -845,7 +848,7 @@ describe('McpConnectionsPage', () => {
       expect(wrapper.text()).not.toContain("n'a pas pu être révoquée")
     })
 
-    it("révocation refusée pour session finie, puis retour : aucune alerte « révocation échouée » que personne n'a déclenchée", async () => {
+    it("révocation refusée pour session finie, puis retour : pas d'alerte « révocation échouée » que personne n'a déclenchée", async () => {
       await signInAgain() // Le compte affiché quand la session finit : sans lui, son retour n'est pas « le même compte » (R26, CR3-5).
       const revoke = vi.fn().mockRejectedValue(new SessionEndedError())
       const { wrapper } = await mountPage({ revoke })
@@ -955,7 +958,7 @@ describe('McpConnectionsPage', () => {
       expect(document.activeElement).toBe(wrapper.get('h1').element)
     })
 
-    it("refus réel puis /api/me en 401 : la page dit la session finie, avec le lien de reconnexion et non « Changer de compte » (R15)", async () => {
+    it("refus réel, /api/me en 401 : la page dit session finie, avec le lien de reconnexion, non « Changer de compte » (R15)", async () => {
       const list = vi.fn().mockRejectedValue(new AccessForbiddenError())
       const me = vi.fn<() => Promise<AuthSession>>(async () => ANONYMOUS_SESSION)
       const { wrapper } = await mountPage({ list, me })

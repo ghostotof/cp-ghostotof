@@ -167,8 +167,8 @@ async function handleInstantAccess(): Promise<void> {
  * courant la quitterait, et « Accès instantané » remplacerait le cookie puis mènerait aux études de cas. On
  * propose donc le lien du bandeau (`SessionEndedBanner`) : un nouvel onglet qui ramène ici, et pas le CTA — sauf
  * sur une route `meta.signInInSameTab` (le consentement OAuth, étape d'un flux qui finit par un redirect vers le
- * client), où `SignInAgainLink` reste dans l'onglet (R16, F7). Sur une route publique, rien ne change : `sessionEnded` y survit jusqu'à une connexion, et un nouvel onglet y serait
- * incompréhensible.
+ * client), où `SignInAgainLink` reste dans l'onglet (R16, F7). Sur une route publique, rien ne change : `sessionEnded` y survit jusqu'à une
+ * connexion, et un nouvel onglet y serait incompréhensible.
  */
 const sessionEndedHere = computed(() => hasSessionEnded.value && true === route.meta.requiresAuth)
 
@@ -366,7 +366,9 @@ function navLinkClass(link: NavigationLink) {
                 />
               </button>
             </template>
-            <!-- Session finie sur une page protégée : le lien du bandeau, dans un nouvel onglet (#748), le même onglet sur le consentement. -->
+            <!--
+              Session finie sur une page protégée : le lien du bandeau, dans un nouvel onglet (#748), le même onglet sur le consentement.
+            -->
             <SignInAgainLink
               v-if="sessionEndedHere"
               class="btn btn-outline-light btn-sm d-inline-flex align-items-center gap-2"

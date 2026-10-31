@@ -22,7 +22,8 @@ paths:
 
 # Frontend — the banner, the sign-in-again link and the header (reference)
 
-> Split from `.claude/rules/frontend-session.md` (#748, St3-11; procedure of #605), which keeps the index of the parts. The index of every rule is at the top of `.claude/CLAUDE.md`.
+> Split from `.claude/rules/frontend-session.md` (#748, St3-11; procedure of #605), which keeps the index of the parts. The index of every
+> rule is at the top of `.claude/CLAUDE.md`.
 
 ## The interface
 
@@ -75,7 +76,8 @@ paths:
     re-authentication) delegate to it. The flags' constants live in `loginLocation.ts`, which imports neither module (St3-9: no cycle,
     `signInLocations.spec.ts` checks it); the spec also fails when a file other than those three names the parameters.
   - **Both flags open the login to a signed-in person, and nothing more** (R16, B/F2): the `login` route's `beforeEnter`
-    first awaits `waitForAuthCheck()` (bounded: `me()` gives up after 15 s, R49), like the guard of protected routes (R40: in a fresh tab `user` is null while `/api/me`
+    first awaits `waitForAuthCheck()` (bounded: `me()` gives up after 15 s, R49), like the guard of protected routes (R40: in a fresh tab
+    `user` is null while `/api/me`
     is in flight), then sends an account home unless `reauth=1` **or** `expired=1`. Why `expired=1`: a `BEARER` still alive with no
     `XSRF-TOKEN` leaves `authState.user` set while every write is refused, and the banner's link would otherwise land on
     the home page — a dead end for up to an hour. The flag grants no right; `redirect` stays judged by
@@ -100,7 +102,8 @@ paths:
   - The assistant's link used to stay in the same tab and omit `expired=1`: it changed with R6 (the typed question is worth keeping).
 - **The header follows the banner on a protected page** (#748): while the session is ended *and* the route has
   `meta.requiresAuth` (backoffice, MCP, assistant — the pages that ended it), `AppHeader`'s « Connexion » is that same link
-  (`SignInAgainLink` with the button's classes: new tab, `redirect` to the current `fullPath`, `expired=1`, hidden text and `external-link` icon — the same tab, with none of the last two, on the consent, `meta.signInInSameTab`), and « Accès
+  (`SignInAgainLink` with the button's classes: new tab, `redirect` to the current `fullPath`, `expired=1`, hidden text and `external-link`
+  icon — the same tab, with none of the last two, on the consent, `meta.signInInSameTab`), and « Accès
   instantané » is **not offered**: it would replace the cookie and lead to the case studies, the page and its typed input
   with it. Rejected: hiding « Connexion » (a button that vanishes shifts the bar and removes a known path). On a public
   route nothing changes (`sessionEnded` survives there until a sign-in, and a new tab would make no sense);
@@ -115,10 +118,18 @@ paths:
 
 - `SessionEndedBanner.spec.ts` (alert
 inserted, no focus taken, the link and its icon, no listener on `focus`, the sticky class, the status region present from
-mount and its message on return and emptied on the next route or by a new end, a refusal replacing the message, once per tick, and never the alert nor the focused link; the height measured on one element), `usePublishedHeight.spec.ts` (the height posted, updated on
-a second reading, removed with the target), `AdminLayout.sessionEnded.spec.ts` (the banner a direct child of the section holding the page, and adding no element to its flow; the page stays mounted with its typed
+mount and its message on return and emptied on the next route or by a new end, a refusal replacing the message, once per tick, and never the
+alert nor the focused link; the height measured on one element), `usePublishedHeight.spec.ts` (the height posted, updated on
+a second reading, removed with the target), `AdminLayout.sessionEnded.spec.ts` (the banner a direct child of the section holding the page,
+and adding no element to its flow; the page stays mounted with its typed
 input; red when `router.replace` is reintroduced; the banner is the only alert on a 401 and on a 403 without a token, a 403
-with a token shows the single « accès refusé » alert (`AccessRefusedNotice.spec.ts` too), with « Changer de compte » in the same tab, the input kept, `/api/me` read once, the alert cleared on navigation and masked when the re-read finds the session ended), `AdminCaseStudiesPage.spec.ts` and `OrderToolbar.spec.ts` (an ended session adds no alert of the
+with a token shows the single « accès refusé » alert (`AccessRefusedNotice.spec.ts` too), with « Changer de compte » in the same tab, the
+input kept, `/api/me` read once, the alert cleared on navigation and masked when the re-read finds the session ended),
+`AdminCaseStudiesPage.spec.ts` and `OrderToolbar.spec.ts` (an ended session adds no alert of the
 page's, and the input stays).
-- `signInLocations.spec.ts` (`loginLocation`, the two wrappers, no `redirect` off a protected route, and the guard that no other file names `expired`/`reauth`), `SignInAgainLink.spec.ts` (new tab, hidden text, icon, one root; no `redirect` on a public route; the same tab on `signInInSameTab`), `adminGuard.spec.ts` (an account opens the login with `expired=1` as with `reauth=1`, with no flag it goes home; the route waits for the first check), `protectedRoutesCarryNoSecret.spec.ts` (every `requiresAuth` route is reviewed: its `fullPath` leaves in the `redirect` of a new tab).
+- `signInLocations.spec.ts` (`loginLocation`, the two wrappers, no `redirect` off a protected route, and the guard that no other file names
+  `expired`/`reauth`), `SignInAgainLink.spec.ts` (new tab, hidden text, icon, one root; no `redirect` on a public route; the same tab on
+  `signInInSameTab`), `adminGuard.spec.ts` (an account opens the login with `expired=1` as with `reauth=1`, with no flag it goes home; the
+  route waits for the first check), `protectedRoutesCarryNoSecret.spec.ts` (every `requiresAuth` route is reviewed: its `fullPath` leaves in
+  the `redirect` of a new tab).
 - `AppHeader.spec.ts` (the new-tab « Connexion » on the assistant, the MCP page and the consent).

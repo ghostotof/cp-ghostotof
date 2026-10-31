@@ -152,8 +152,10 @@ paths:
     lock's closure**, on the instance re-read `FOR UPDATE`, never one without the other (an `UPDATE … SET v = v + 1`
     would protect nothing more). **`upgradePassword()` and `setPassword()` advance nothing** (a rehash keeps the
     secret; `CpgUserRegistrar` sets a first password at creation). The JWT carries a copy (`cv`) and the one predicate is
-    `claimsAStaleCredentialsVersion(?int)` (equality, an absent claim is 0), which refuses the session on every route of the `api` firewall that requires a role (a public
-    route serves the request as anonymous, #748 R35) and at the consent (`.claude/rules/security-authentication-sessions.md`). The first form dated the change
+    `claimsAStaleCredentialsVersion(?int)` (equality, an absent claim is 0), which refuses the session on every route of the `api` firewall
+    that requires a role (a public
+    route serves the request as anonymous, #748 R35) and at the consent (`.claude/rules/security-authentication-sessions.md`). The first
+    form dated the change
     (`credentials_changed_at`, `Version20261028160000`); it was never delivered on its own: `Version20261028200000`
     drops it in the same deployment, `hasChangedCredentialsSince()` and the instant argument of `replacePassword()`
     are gone.

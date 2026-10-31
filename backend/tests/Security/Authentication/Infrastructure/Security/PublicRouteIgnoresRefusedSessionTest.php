@@ -195,7 +195,11 @@ final class PublicRouteIgnoresRefusedSessionTest extends WebTestCase
             foreach ([] === $methods ? ['GET'] : $methods as $method) {
                 $request = Request::create($url, $method);
                 $verdict = true === $accessListener->supports($request);
-                self::assertSame($verdict, $listener->requiresAccess($request), \sprintf('%s %s : le prédicat diverge d\'AccessListener::supports().', $method, $path));
+                self::assertSame(
+                    $verdict,
+                    $listener->requiresAccess($request),
+                    \sprintf('%s %s : le prédicat diverge d\'AccessListener::supports().', $method, $path),
+                );
                 ++$seen;
                 $required += $verdict ? 1 : 0;
             }
@@ -209,7 +213,11 @@ final class PublicRouteIgnoresRefusedSessionTest extends WebTestCase
     {
         self::assertResponseStatusCodeSame(200, 'Un cookie refusé ne doit pas faire répondre 401 une route publique.');
         self::assertSame([], $this->client->getResponse()->headers->getCookies(), 'Une route publique ne pose ni n\'efface rien.');
-        self::assertSame($jwt, $this->client->getCookieJar()->get(AuthCookieFactory::BEARER)?->getValue(), 'Le cookie refusé reste dans le navigateur.');
+        self::assertSame(
+            $jwt,
+            $this->client->getCookieJar()->get(AuthCookieFactory::BEARER)?->getValue(),
+            'Le cookie refusé reste dans le navigateur.',
+        );
     }
 
     private function registerTrusted(): CpgUser
@@ -222,10 +230,15 @@ final class PublicRouteIgnoresRefusedSessionTest extends WebTestCase
     /** Ouvre une vraie session et rend le jeton `XSRF-TOKEN` à renvoyer dans l'en-tête des écritures. */
     private function signIn(): string
     {
-        $this->client->request('POST', '/api/login_check', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_X_REQUESTED_WITH' => 'fetch'], content: self::jsonBody([
-            'username' => 'jane',
-            'password' => TestCredentials::plainPassword(),
-        ]));
+        $this->client->request(
+            'POST',
+            '/api/login_check',
+            server: ['CONTENT_TYPE' => 'application/json', 'HTTP_X_REQUESTED_WITH' => 'fetch'],
+            content: self::jsonBody([
+                'username' => 'jane',
+                'password' => TestCredentials::plainPassword(),
+            ]),
+        );
         self::assertResponseIsSuccessful();
 
         return $this->client->getCookieJar()->get(AuthCookieFactory::XSRF_TOKEN)?->getValue() ?? self::fail('Aucun cookie XSRF-TOKEN.');

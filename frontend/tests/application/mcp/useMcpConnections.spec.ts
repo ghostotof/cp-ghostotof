@@ -171,7 +171,11 @@ describe('useMcpConnections', () => {
   })
 
   it('load() sur une session expirée le dit à la page (refusal session-ended), qu\'un autre échec ne dit pas', async () => {
-    const list = vi.fn().mockRejectedValueOnce(new SessionEndedError()).mockRejectedValueOnce(new McpConnectionsRequestFailedError()).mockResolvedValue(listOf([A]))
+    const list = vi
+      .fn()
+      .mockRejectedValueOnce(new SessionEndedError())
+      .mockRejectedValueOnce(new McpConnectionsRequestFailedError())
+      .mockResolvedValue(listOf([A]))
     const connections = mountComposable({ list, revoke: vi.fn() })
 
     await connections.load()
@@ -328,7 +332,7 @@ describe('useMcpConnections', () => {
     await pending
   })
 
-  it("le refus remet l'en-tête au vrai palier : /api/me, simulé au palier de base, ôte le palier de confiance d'un compte rétrogradé", async () => {
+  it("le refus remet l'en-tête au vrai palier : /api/me, simulé au palier de base, ôte la confiance d'un compte rétrogradé", async () => {
     // Un compte de confiance, tel que l'en-tête l'affichait avant le refus.
     await signInTrusted()
     expect(authState.tier).toBe('trusted')

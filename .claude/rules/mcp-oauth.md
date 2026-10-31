@@ -356,7 +356,8 @@ paths:
   the header's « Connexion » too (`meta.signInInSameTab`, R16): the page is a
   step of an OAuth flow that ends in `window.location.replace` towards the client, so a second tab would leave the
   request open in the first and the person could decide it twice; `.claude/rules/frontend-session.md` says why
-  every other page opens a new tab. **Any other 403** — the `GET` (never subject to the CSRF guard: it is `access_control` refusing an account
+  every other page opens a new tab. **Any other 403** — the `GET` (never subject to the CSRF guard: it is `access_control` refusing an
+  account
   without `ROLE_TRUSTED`, one that lost it while the page was open) or a `POST` that carried its token — is
   `AccessForbiddenError`, the **terminal** failure `forbidden` (#748, #732 point 4, R7): the request is no longer
   shown, the session is **not** marked expired (it holds for the rest of the site), `/api/me` is re-read once
@@ -370,7 +371,8 @@ paths:
   login page opened by `reauth=1` shows the **neutral** `auth.reauthNotice` (« Confirm your identity or sign in with
   another account: you will then return to the page you left. ») — it used to talk about the ten-minute rule of this
   page alone, wrong for « Changer de compte » from a refusal, « Mes connexions MCP » or the assistant; the reason of the
-  ten minutes is still said by this page's own alert (`reauthenticationRequired`), before the link. 422 is terminal (`malformed-decision`), a 400 whose `type` is the
+  ten minutes is still said by this page's own alert (`reauthenticationRequired`), before the link. 422 is terminal (`malformed-decision`),
+  a 400 whose `type` is the
   rejection is `invalid`. **A 401 whose `type` is `reauthentication-required`** (only on the approval) is
   its own failure, terminal, the session **not** marked expired: the page says why and links to the login
   with `redirect` (the full path) and **`reauth=1`** (`presentation/router/reauthentication.ts`, one value only),

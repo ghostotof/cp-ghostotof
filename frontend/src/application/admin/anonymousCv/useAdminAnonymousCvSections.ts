@@ -61,7 +61,11 @@ export function useAdminAnonymousCvSections(): UseAdminAnonymousCvSectionsResult
 
       return true
     } catch (error) {
-      errorMessage.value = visibleMutationError(error, AdminAnonymousCvSectionError, () => new AdminAnonymousCvSectionError('unknown', 'Unknown error'))
+      errorMessage.value = visibleMutationError(
+        error,
+        AdminAnonymousCvSectionError,
+        () => new AdminAnonymousCvSectionError('unknown', 'Unknown error'),
+      )
 
       return false
     }

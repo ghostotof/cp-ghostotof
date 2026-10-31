@@ -59,8 +59,8 @@ export interface UseMcpConnectionsResult {
  * Après une révocation, la liste est relue depuis le serveur plutôt que
  * corrigée localement : l'état et la cause d'une connexion sont jugés par lui
  * (échéance, cause), le frontend n'en refait aucun calcul. Une session
- * finie (`SessionEndedError` du dépôt, voir `infrastructure/http/sessionAwareFetch.ts`) marque la session expirée, comme `useAssistant` : la page
- * ne sert que le palier de confiance, l'en-tête ne doit pas rester « connecté » ;
+ * finie (`SessionEndedError` du dépôt, voir `infrastructure/http/sessionAwareFetch.ts`) marque la session expirée, comme `useAssistant` :
+ * la page ne sert que le palier de confiance, l'en-tête ne doit pas rester « connecté » ;
  * elle est aussi dite à la page (`refusal`), qui propose de se reconnecter.
  *
  * Un refus réel (`AccessForbiddenError`) ne marque **jamais** la session expirée : elle vaut pour le reste du

@@ -30,11 +30,19 @@ final class PublicRouteIgnoresRefusedSessionRegistrationTest extends KernelTestC
             }
         }
 
-        self::assertArrayHasKey(PublicRouteIgnoresRefusedSessionListener::class, $priorities, 'L\'écouteur n\'est pas inscrit sur le firewall `api`.');
+        self::assertArrayHasKey(
+            PublicRouteIgnoresRefusedSessionListener::class,
+            $priorities,
+            'L\'écouteur n\'est pas inscrit sur le firewall `api`.',
+        );
         $ours = $priorities[PublicRouteIgnoresRefusedSessionListener::class];
         unset($priorities[PublicRouteIgnoresRefusedSessionListener::class]);
         foreach ($priorities as $class => $priority) {
-            self::assertLessThan($priority, $ours, \sprintf('L\'écouteur ne passe pas après %s : il n\'a plus le dernier mot sur la réponse.', $class));
+            self::assertLessThan(
+                $priority,
+                $ours,
+                \sprintf('L\'écouteur ne passe pas après %s : il n\'a plus le dernier mot sur la réponse.', $class),
+            );
         }
     }
 
@@ -51,7 +59,11 @@ final class PublicRouteIgnoresRefusedSessionRegistrationTest extends KernelTestC
     {
         foreach ($this->dispatcher($firewall)->getListeners(LoginFailureEvent::class) as $listener) {
             $target = \is_array($listener) ? $listener[0] : $listener;
-            self::assertNotInstanceOf(PublicRouteIgnoresRefusedSessionListener::class, $target, \sprintf('L\'écouteur est inscrit sur le firewall `%s`.', $firewall));
+            self::assertNotInstanceOf(
+                PublicRouteIgnoresRefusedSessionListener::class,
+                $target,
+                \sprintf('L\'écouteur est inscrit sur le firewall `%s`.', $firewall),
+            );
         }
     }
 
@@ -62,7 +74,11 @@ final class PublicRouteIgnoresRefusedSessionRegistrationTest extends KernelTestC
 
         foreach ($dispatcher->getListeners(LoginFailureEvent::class) as $listener) {
             $target = \is_array($listener) ? $listener[0] : $listener;
-            self::assertNotInstanceOf(PublicRouteIgnoresRefusedSessionListener::class, $target, 'L\'écouteur est inscrit sur le dispatcher principal.');
+            self::assertNotInstanceOf(
+                PublicRouteIgnoresRefusedSessionListener::class,
+                $target,
+                'L\'écouteur est inscrit sur le dispatcher principal.',
+            );
         }
     }
 

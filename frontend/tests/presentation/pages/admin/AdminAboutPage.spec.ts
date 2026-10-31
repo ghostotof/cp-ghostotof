@@ -35,7 +35,13 @@ import {
   ME_CARD_PROSE_FIELDS,
   SITE_CARD_PROSE_FIELDS,
 } from '../../../../src/presentation/pages/admin/proseFields'
-import { describedTexts, describeEntryFormLock, formCancelButton, textsDescribing, translateEntryButton } from '../../../support/entryFormLock'
+import {
+  describedTexts,
+  describeEntryFormLock,
+  formCancelButton,
+  textsDescribing,
+  translateEntryButton,
+} from '../../../support/entryFormLock'
 import {
   ABOUT_LOCALE_HELP_FR,
   DISCARD_PENDING_FR,
@@ -1485,7 +1491,7 @@ describe('AdminAboutPage', () => {
       })
     })
 
-    it("la réponse d'un enregistrement parti dans la langue quittée ne remplace pas les réglages de la langue affichée (#748, R11)", async () => {
+    it("la réponse d'un enregistrement parti dans la langue quittée ne remplace pas les réglages affichés (#748, R11)", async () => {
       // Le scénario complet, à promesses maîtrisées : un enregistrement FR est en vol, la personne passe en EN,
       // la lecture EN aboutit, puis seulement la réponse FR arrive.
       let answerFrenchSave!: (settings: AdminAboutSettings) => void
@@ -1790,7 +1796,7 @@ describe('AdminAboutPage', () => {
       expect(panelOf(wrapper, SETTINGS_PANEL).find('[role="status"]').exists()).toBe(false)
     })
 
-    it("une proposition en EN, passage en FR puis retour en EN : les réglages EN relus, l'avis a disparu (#748, R66, décision 4)", async () => {
+    it("une proposition en EN, passage en FR puis retour en EN : réglages EN relus, avis disparu (#748, R66, décision 4)", async () => {
       // Le serveur rend à l'EN des valeurs qui diffèrent de la proposition : la lecture du retour les pose, et la
       // proposition, non enregistrée, est perdue avec son avis.
       const settingsRepository = createSettingsRepository({
@@ -1923,7 +1929,7 @@ describe('AdminAboutPage', () => {
     // Décision 3 de la sixième série (CR6-2) : la réponse d'un enregistrement de la langue **cible** est écrite dans les
     // réglages et recopiée par-dessus la proposition que la traduction vient d'y poser. « Proposer la traduction » attend
     // donc cet enregistrement ; celui de la langue montrée la retient déjà (`isSaving`), et un EN n'est pas tenu par un FR.
-    it("un enregistrement EN en vol, la page en FR : « Proposer la version EN » désactivé jusqu'à la réponse, « Enregistrer » FR actif (#748, R67)", async () => {
+    it("enregistrement EN en vol, page FR : « Proposer la version EN » inactif jusqu'à la réponse, « Enregistrer » FR actif", async () => {
       let answerEnglishSave!: (settings: AdminAboutSettings) => void
       const englishSave = new Promise<AdminAboutSettings>((resolve) => {
         answerEnglishSave = resolve

@@ -108,7 +108,11 @@ if [ "$rc" -eq 0 ] && grep -q '^OK' "$TMP/out"; then
 else
   fail "cas nominal" "rc=$rc ; out : $(cat "$TMP/out") ; err : $(cat "$TMP/err")"
 fi
-if [ "$(wc -l < "$TMP/nominal.calls")" -eq 3 ]; then pass "exactement 3 appels"; else fail "nombre d'appels" "$(wc -l < "$TMP/nominal.calls")"; fi
+if [ "$(wc -l < "$TMP/nominal.calls")" -eq 3 ]; then
+  pass "exactement 3 appels"
+else
+  fail "nombre d'appels" "$(wc -l < "$TMP/nominal.calls")"
+fi
 
 # --- Les URL et le cookie : le témoin n'en porte pas, les deux autres appels
 # portent le même BEARER aléatoire (hexadécimal, 32 caractères).
@@ -127,18 +131,28 @@ fi
 # motif connu de l'attaquant et pourrait tomber sur une session réelle).
 run again "$witness_ok" "$public_ok" "$me_cleared"
 other="$(sed -n 2p "$TMP/again.args" | grep -oE 'BEARER=[0-9a-f]{32}' || true)"
-if [ -n "$other" ] && [ "$other" != "$cookie2" ]; then pass "le cookie est tiré au hasard à chaque exécution"; else fail "cookie aléatoire" "$cookie2 / $other"; fi
+if [ -n "$other" ] && [ "$other" != "$cookie2" ]; then
+  pass "le cookie est tiré au hasard à chaque exécution"
+else
+  fail "cookie aléatoire" "$cookie2 / $other"
+fi
 
 # --- Variantes de casse et de forme de l'effacement : en-tête en casse
 # HTTP/1, `Max-Age=0` seul, `expires` passé seul → succès.
-run case1 "$witness_ok" "$public_ok" '401|Set-Cookie: bearer=deleted; Max-Age=0; path=/~Set-Cookie: xsrf-token=deleted; Max-Age=0; path=/|{}'
-if [ "$rc" -eq 0 ]; then pass "Set-Cookie / bearer / Max-Age=0 en casse libre → succès"; else fail "casse" "rc=$rc ; err : $(cat "$TMP/err")"; fi
+run case1 "$witness_ok" "$public_ok" \
+  '401|Set-Cookie: bearer=deleted; Max-Age=0; path=/~Set-Cookie: xsrf-token=deleted; Max-Age=0; path=/|{}'
+if [ "$rc" -eq 0 ]; then
+  pass "Set-Cookie / bearer / Max-Age=0 en casse libre → succès"
+else
+  fail "casse" "rc=$rc ; err : $(cat "$TMP/err")"
+fi
 run case2 "$witness_ok" "$public_ok" '401|set-cookie: BEARER=deleted; expires=Thu, 01 Jan 1970 00:00:01 GMT; path=/~set-cookie: XSRF-TOKEN=deleted; expires=Thu, 01 Jan 1970 00:00:01 GMT; path=/|{}'
 if [ "$rc" -eq 0 ]; then pass "expires passé sans Max-Age → succès"; else fail "expires" "rc=$rc ; err : $(cat "$TMP/err")"; fi
 
 # --- C1 côté serveur : la lecture publique refuse le cookie mort → échec.
 run public401 "$witness_ok" '401||{"code":401,"message":"Invalid JWT Token"}'
-if [ "$rc" -eq 1 ] && grep -q 'lecture publique refusée pour un cookie mort' "$TMP/err" && [ "$(wc -l < "$TMP/public401.calls")" -eq 2 ]; then
+if [ "$rc" -eq 1 ] && grep -q 'lecture publique refusée pour un cookie mort' "$TMP/err" \
+   && [ "$(wc -l < "$TMP/public401.calls")" -eq 2 ]; then
   pass "lecture publique en 401 avec cookie → échec nommé, arrêt immédiat"
 else
   fail "lecture publique refusée" "rc=$rc ; err : $(cat "$TMP/err")"
@@ -217,7 +231,11 @@ else
   fail "secret dans les arguments" "args : $(cat "$TMP/auth.args")"
 fi
 run noauth "$witness_ok" "$public_ok" "$me_cleared"
-if ! grep -q -- ' -K ' "$TMP/noauth.args"; then pass "sans AUDIT_BASIC_AUTH → pas de -K"; else fail "sans auth" "args : $(cat "$TMP/noauth.args")"; fi
+if ! grep -q -- ' -K ' "$TMP/noauth.args"; then
+  pass "sans AUDIT_BASIC_AUTH → pas de -K"
+else
+  fail "sans auth" "args : $(cat "$TMP/noauth.args")"
+fi
 
 # --- C7-6 : un SMOKE_AUTH_CONFIG hérité de l'environnement, sans AUDIT_BASIC_AUTH,
 # n'est jamais le fichier du script : le `trap` ne le supprime pas. Un fichier
@@ -227,14 +245,16 @@ printf 'témoin\n' > "$TMP/herite-config"
 mkdir "$TMP/herite-dir"
 printf 'témoin\n' > "$TMP/herite-dir/curl-auth.conf"
 SMOKE_AUTH_CONFIG="$TMP/herite-config" SMOKE_AUTH_DIR="$TMP/herite-dir" run inherited "$witness_ok" "$public_ok" "$me_cleared"
-if [ "$rc" -eq 0 ] && [ -f "$TMP/herite-config" ] && [ -f "$TMP/herite-dir/curl-auth.conf" ] && ! grep -q -- ' -K ' "$TMP/inherited.args"; then
+if [ "$rc" -eq 0 ] && [ -f "$TMP/herite-config" ] && [ -f "$TMP/herite-dir/curl-auth.conf" ] \
+   && ! grep -q -- ' -K ' "$TMP/inherited.args"; then
   pass "SMOKE_AUTH_CONFIG et SMOKE_AUTH_DIR hérités, sans AUDIT_BASIC_AUTH : les témoins existent après la sortie, pas de -K"
 else
   fail "variables héritées" "rc=$rc ; config : $([ -f "$TMP/herite-config" ] && echo présent || echo supprimé) ; dossier : $([ -f "$TMP/herite-dir/curl-auth.conf" ] && echo présent || echo supprimé)"
 fi
 printf 'témoin\n' > "$TMP/herite-config"
 printf 'témoin\n' > "$TMP/herite-dir/curl-auth.conf"
-AUDIT_BASIC_AUTH='u:p' SMOKE_AUTH_CONFIG="$TMP/herite-config" SMOKE_AUTH_DIR="$TMP/herite-dir" run inheritedauth "$witness_ok" "$public_ok" "$me_cleared"
+AUDIT_BASIC_AUTH='u:p' SMOKE_AUTH_CONFIG="$TMP/herite-config" SMOKE_AUTH_DIR="$TMP/herite-dir" \
+  run inheritedauth "$witness_ok" "$public_ok" "$me_cleared"
 if [ "$rc" -eq 0 ] && [ -f "$TMP/herite-config" ] && [ -f "$TMP/herite-dir/curl-auth.conf" ] \
    && [ "$(cat "$TMP/inheritedauth.kconfig")" = 'user = "u:p"' ]; then
   pass "avec AUDIT_BASIC_AUTH, les témoins hérités survivent aussi : le script écrit le sien"
@@ -252,7 +272,8 @@ else
   fail "curl en échec à l'étape 1" "rc=$rc ; err : $(cat "$TMP/err")"
 fi
 run net2 "$witness_ok" 'curl-exit:28|'
-if [ "$rc" -eq 1 ] && grep -q 'curl a échoué (code 28' "$TMP/err" && grep -q 'rien de vérifié' "$TMP/err" && [ "$(wc -l < "$TMP/net2.calls")" -eq 2 ]; then
+if [ "$rc" -eq 1 ] && grep -q 'curl a échoué (code 28' "$TMP/err" && grep -q 'rien de vérifié' "$TMP/err" \
+   && [ "$(wc -l < "$TMP/net2.calls")" -eq 2 ]; then
   pass "curl en échec (28) à l'étape 2 → sortie 1, arrêt immédiat"
 else
   fail "curl en échec à l'étape 2" "rc=$rc ; err : $(cat "$TMP/err")"

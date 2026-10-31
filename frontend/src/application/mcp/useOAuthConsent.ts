@@ -62,7 +62,14 @@ export type OAuthConsentState = 'loading' | 'ready' | 'submitting' | 'invalid' |
  *                          le même corps) ;
  * - `unknown`            : réseau, 5xx, réponse inattendue.
  */
-export type OAuthConsentFailure = 'session-ended' | 'forbidden' | 'reauthentication-required' | 'account-changed' | 'unsafe-redirect' | 'malformed-decision' | 'unknown'
+export type OAuthConsentFailure =
+  | 'session-ended'
+  | 'forbidden'
+  | 'reauthentication-required'
+  | 'account-changed'
+  | 'unsafe-redirect'
+  | 'malformed-decision'
+  | 'unknown'
 
 export interface UseOAuthConsentResult {
   state: DeepReadonly<Ref<OAuthConsentState>>

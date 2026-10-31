@@ -66,7 +66,10 @@ describe('BackofficeHttpClient — fin de session', () => {
     if (null !== cookie) setCsrfCookie(cookie)
     const client = new BackofficeHttpClient(API_BASE_URL)
 
-    const call = 'GET' === method ? client.get('/api/backoffice/users') : client.mutate(method, '/api/backoffice/users/1', { password: 'x' })
+    const call =
+      'GET' === method
+        ? client.get('/api/backoffice/users')
+        : client.mutate(method, '/api/backoffice/users/1', { password: 'x' })
 
     await expect(call).rejects.toBeInstanceOf(SessionEndedError)
     expect(onSessionEnded).toHaveBeenCalledTimes(1)
@@ -103,7 +106,7 @@ describe('BackofficeHttpClient — fin de session', () => {
 
   describe('refus réel (#748, R17)', () => {
     // Une lecture (GET), ou une écriture (PUT) partie avec son jeton.
-    it.each(['GET', 'PUT'] as const)("403 sur %s : refused appelé une fois, AccessForbiddenError, jamais la session finie", async (method) => {
+    it.each(['GET', 'PUT'] as const)("403 sur %s : refused appelé une fois, AccessForbiddenError, jamais session finie", async (method) => {
       const onSessionEnded = vi.fn(() => true)
       const onRefused = vi.fn()
       setBackofficeSessionReaction(reaction(onSessionEnded, 0, onRefused))
@@ -217,7 +220,10 @@ describe('BackofficeHttpClient — fin de session', () => {
         vi.stubGlobal('fetch', vi.fn(async () => response(401)))
         const client = new BackofficeHttpClient(API_BASE_URL)
 
-        const result = 'GET' === method ? await client.get('/api/backoffice/users') : await client.mutate(method, '/api/backoffice/users/1', {})
+        const result =
+          'GET' === method
+            ? await client.get('/api/backoffice/users')
+            : await client.mutate(method, '/api/backoffice/users/1', {})
 
         expect(result.status).toBe(401)
         expect(ended).toHaveBeenCalledWith(stampOf(3))

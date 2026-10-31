@@ -437,7 +437,10 @@ async function handleSubmitPrinciple(): Promise<void> {
     iconKey: principleForm.iconKey,
   }
 
-  const succeeded = null !== editingPrincipleId.value ? await updatePrinciple(editingPrincipleId.value, input) : await createPrinciple(input)
+  const succeeded =
+    null !== editingPrincipleId.value
+      ? await updatePrinciple(editingPrincipleId.value, input)
+      : await createPrinciple(input)
 
   isSubmittingPrinciple.value = false
 

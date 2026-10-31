@@ -108,7 +108,8 @@ paths:
   would otherwise pass for a fresh login, and outlive a password change. The `cv` of the refreshed token is the one
   **of the token being refreshed**, never a re-read of the account's current version, which would absolve a stolen
   token.
-- **A session opened before the last password change is refused by every route of the `api` firewall that requires a role; a public route serves the request as anonymous, the refusal still audited** (#650, R1b, the
+- **A session opened before the last password change is refused by every route of the `api` firewall that requires a role; a public route
+  serves the request as anonymous, the refusal still audited** (#650, R1b, the
   author's decision of 2026-10-28; ADR 0003 amended), **judged on the credentials version the JWT carries, not on a
   date** (S1 of the second review, decision of 2026-10-28). Three pieces, one source of truth each:
   - **`cpg_user.credentials_version`** (`INT NOT NULL DEFAULT 0`, `Version20261028180000`, fingerprint n° 39 of
@@ -177,8 +178,10 @@ paths:
     each kind it covers in its file; `ApiPlatformOperationsCarryNoSecurityTest`, which reads the **compiled** API Platform
     metadata — every resource, operation, parameter, link
     and property — of the resources, of their input and output DTOs and of the `App\` objects they nest (R74, R88) —, a
-    `uriVariable` that is not a compiled `Link` being reported: `security`, `securityPostDenormalize` and `securityPostValidation` of the resources and operations, a
-    parameter's or a link's `security`, a property's `security` and `securityPostDenormalize`, so it also sees a `security:` declared in YAML or XML or merged by `api_platform.defaults`. **Seen by none
+    `uriVariable` that is not a compiled `Link` being reported: `security`, `securityPostDenormalize` and `securityPostValidation` of the
+    resources and operations, a
+    parameter's or a link's `security`, a property's `security` and `securityPostDenormalize`, so it also sees a `security:` declared in
+    YAML or XML or merged by `api_platform.defaults`. **Seen by none
     (accepted, Q1 of the seventh review)**: an authorization other than an API Platform expression on a `PUBLIC_PATHS` route;
     the written justification of the `PUBLIC_PATHS` entry is what a review reads.
     Rejected: `lazy: true` (the JWT authenticator's `supports()` stays `true`), a `JWTAuthenticator` subclass, a
@@ -215,5 +218,6 @@ paths:
     (`.claude/rules/mcp-oauth.md`, « Consent »).
   `SessionBeforePasswordChangeTest` (HTTP: the real `PUT` then the cookie replayed, a version older or newer, the
   `iat` playing no part, a token without claim before and after a change, **the race** — an instance read before
-  the change, a token created after it: refused, red under the old rule —, the base tier, a closed session served as anonymous on a public route and cleared by
+  the change, a token created after it: refused, red under the old rule —, the base tier, a closed session served as anonymous on a public
+  route and cleared by
   the first protected one), `…RefusalListenerTest`, `…RegistrationTest`, `CredentialsVersionClaimListenerTest`.

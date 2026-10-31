@@ -478,7 +478,9 @@ final class ApiRouteExposureTest extends WebTestCase
      */
     private function firewallOf(string $path, string $method): ?string
     {
-        return self::getContainer()->get('security.firewall.map')->getFirewallConfig(Request::create(ConcreteApiUrl::of($path), $method))?->getName();
+        return self::getContainer()->get('security.firewall.map')
+            ->getFirewallConfig(Request::create(ConcreteApiUrl::of($path), $method))
+            ?->getName();
     }
 
     /**

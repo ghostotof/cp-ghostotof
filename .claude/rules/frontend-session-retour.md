@@ -14,7 +14,8 @@ paths:
 
 # Frontend — the return, the session state and its generation (reference)
 
-> Split from `.claude/rules/frontend-session.md` (#748, St3-11; procedure of #605), which keeps the index of the parts. The index of every rule is at the top of `.claude/CLAUDE.md`.
+> Split from `.claude/rules/frontend-session.md` (#748, St3-11; procedure of #605), which keeps the index of the parts. The index of every
+> rule is at the top of `.claude/CLAUDE.md`.
 
 ## The state, the re-check on return and the replay
 
@@ -24,11 +25,17 @@ paths:
   decides closes the end, like `login()`, **with no signal** and no announcement, the generation having advanced).
   `applySession()` lowers nothing.
 - **Where it lives** (#748, R25: `useAuth.ts` was split, its public API unchanged, everything still re-exported from it).
-  Under `application/auth/`: `sessionState.ts` (the reactive state, **not exported** (R42): only named functions write it, `markFirstCheckDone`, `applySession`, `raiseSessionEnded`, `lowerSessionEnded`, the base-access marks, and everything else reads the read-only `authState`; each write is imported by its own modules only (`sessionLifecycle.ts` for `raiseSessionEnded` and `lowerSessionEnded`, `useAuth.ts` for the check and forget marks, both for `applySession`) and no other module of `src/` exports one, under any name — checked by identity on the loaded modules: `sessionStateEncapsulation.spec.ts`, R52, R69),
+  Under `application/auth/`: `sessionState.ts` (the reactive state, **not exported** (R42): only named functions write it,
+  `markFirstCheckDone`, `applySession`, `raiseSessionEnded`, `lowerSessionEnded`, the base-access marks, and everything else reads the
+  read-only `authState`; each write is imported by its own modules only (`sessionLifecycle.ts` for `raiseSessionEnded` and
+  `lowerSessionEnded`, `useAuth.ts` for the check and forget marks, both for `applySession`) and no other module of `src/` exports one,
+  under any name — checked by identity on the loaded modules: `sessionStateEncapsulation.spec.ts`, R52, R69),
   `baseAccessExpiry.ts` (its timer, which takes its callback as a parameter and imports nothing: no cycle),
   `sessionGeneration.ts`, `sessionEvents.ts` (the two signals), `sessionLifecycle.ts` (`markSessionExpired`,
   `restoreSession`, and `canRestore`, the descent's condition written once: ended, an account, a write token), and
-  `useAuth.ts` (the composable and the two shared re-reads, each a `createSingleFlight`), then `application/shared/singleFlight.ts` (generic, next to `staleRequestGuard.ts`; the reset for tests recreates the two slots, no `clear()` in its interface, R55). **Tests start from the module state of loading**:
+  `useAuth.ts` (the composable and the two shared re-reads, each a `createSingleFlight`), then `application/shared/singleFlight.ts`
+  (generic, next to `staleRequestGuard.ts`; the reset for tests recreates the two slots, no `clear()` in its interface, R55). **Tests start
+  from the module state of loading**:
   `resetAuthStateForTests()` (each module owns a `reset…ForTests`, tests only, never called by `src/`; a new module state
   is added to it) is called before each test by `tests/support/setup.ts`, the `setupFiles` of `vite.config.ts`, which also
   resets the backoffice's refusal and its registered reaction (R38) and calls `enableAutoUnmount` once.
@@ -41,15 +48,20 @@ paths:
     while the first runs returns the same promise, so two quick returns, or two `useAuth()` callers, send one request;
     the slot is `createSingleFlight` in `application/shared/singleFlight.ts` (R41, St4-4), written once for this re-read and for
     `rereadAfterRefusal`, and released by a `.finally` set **after** the promise is held, so a `me()` that throws
-    synchronously never leaves a settled promise behind); a rejection of `/api/me` (network, or `me()` giving up after `ME_TIMEOUT_MS`, 15 s, R49) is swallowed and the session stays ended, with no
-    announcement. The bound holds for the first check too: `checkAuth()` swallows a rejection of `/api/me` only, like an anonymous answer, so `waitForAuthCheck()` resolves, the guard and the `login` route open, and `main.ts`, which does not await it, gets no unhandled rejection for it. An error raised after the response (`applyReadSession`, `scheduleBaseAccessExpiry`: a programming error) surfaces — `main.ts` does not catch it, on purpose, so it shows as an unhandled rejection — and the first check still ends (R65).
+    synchronously never leaves a settled promise behind); a rejection of `/api/me` (network, or `me()` giving up after `ME_TIMEOUT_MS`, 15
+    s, R49) is swallowed and the session stays ended, with no
+    announcement. The bound holds for the first check too: `checkAuth()` swallows a rejection of `/api/me` only, like an anonymous answer,
+    so `waitForAuthCheck()` resolves, the guard and the `login` route open, and `main.ts`, which does not await it, gets no unhandled
+    rejection for it. An error raised after the response (`applyReadSession`, `scheduleBaseAccessExpiry`: a programming error) surfaces —
+    `main.ts` does not catch it, on purpose, so it shows as an unhandled rejection — and the first check still ends (R65).
   - **It is silent: `isChecking` is never touched.** `isChecking` is born `true` and lowered once, when the load's
     `checkAuth()` ends (`markFirstCheckDone()`, the one `waitForAuthCheck` makes the route guard wait for); no re-read raises
     it (this one, the re-read after a real refusal: see « A real refusal » in `frontend-session-refus.md`). Raised on
     each return, it would hide the header's right-hand group (`v-if="!isChecking"`) and make it flicker at every return
     on the tab. `waitForAuthCheck()` is unaffected: it resolves on the first check, as before.
   - **A session is restored only if an account comes back *and* a write token exists**: `AuthRepository.hasWriteToken()`
-    (a domain port; `HttpAuthRepository` answers from `hasCsrfToken()`, since the application does not read a cookie). A `/api/me` that finds the account while `XSRF-TOKEN` is gone (a
+    (a domain port; `HttpAuthRepository` answers from `hasCsrfToken()`, since the application does not read a cookie). A `/api/me` that
+    finds the account while `XSRF-TOKEN` is gone (a
     browser that restores only one of the two cookies, or a session opened before R21) would
     be a session whose first write takes the CSRF 403, read as an ended session again: restoring it would announce
     « Session rétablie » and the loop would start over. The state is then left as it is. Only the account case restores:
@@ -57,7 +69,8 @@ paths:
   - **Nobody but `useAuth` restores, and nobody else re-reads a list** (#748, R13): the restoration brings
     `authState.sessionEnded` down and `useAuth` **emits one signal for it**,
     `onSessionRestored(callback)` (also exported as a function, for the composables that need no
-    `AUTH_REPOSITORY`): `callback` is called once, synchronously, at each such descent by the same account (next bullet) — never at the end of a session —,
+    `AUTH_REPOSITORY`): `callback` is called once, synchronously, at each such descent by the same account (next bullet) — never at the end
+    of a session —,
     and the subscription is dropped at `onScopeDispose` (a page unmounted is no longer called). **A page that depends
     on the return subscribes to it; no page `watch`es `authState.sessionEnded` any more** (five did: it was the same
     condition written five times). Each reacts for what concerns it. The administration composables through
@@ -78,7 +91,8 @@ paths:
     reads run again, the typed input stays); **another** account, the same one with a role lost, or **none kept**
     has its session applied and calls **only** `onAccountSwitched(callback)` (same mechanics: a scope, dropped at
     `onScopeDispose`). **Outside an ended session** (`checkAuth()`, `rereadAfterRefusal()`, `applyLiveSession`) only a
-    **different `username`** from the last account does the same (the generation advances first); a role lost there stays handled in place (R7/R17). Nobody announces « Session
+    **different `username`** from the last account does the same (the generation advances first); a role lost there stays handled in place
+    (R7/R17). Nobody announces « Session
     rétablie » for it, and no list is re-read: the open page is no longer that account's. `AppLayout` is the one
     subscriber: it replays the navigation to the current route with `router.replace({ path, query, hash, force: true })`
     — `force` because the router ignores a navigation to the address it is on, so the guard would never judge the new
@@ -88,7 +102,8 @@ paths:
     after: the other order would mount a protected page, for an instant, for an account the guard is about to refuse.
     **The routed page is hidden during the replay** (R27, A3-13: `isReplaying`, set synchronously in the subscriber,
     lowered in the `finally` after the key advances, so also when the replay fails, **but only by the last replay**:
-    each takes a token from `createStaleRequestGuard` (`application/shared/`, the guard the composables use), because the router cancels the first of two overlapping replays and
+    each takes a token from `createStaleRequestGuard` (`application/shared/`, the guard the composables use), because the router cancels the
+    first of two overlapping replays and
     settles its promise early, CR4-2): the new account's session is already
     applied, so the header is its, and the old page would stay under it with the first account's data until the guard
     resolved. The same-account return never replays: no hiding, no flicker.
@@ -115,7 +130,8 @@ module counter, **the generation** (`sessionStamp()`), advanced at each accepted
 **every session the tab itself decides** (R26, CR3-4): `login()`, `logout()` (before the send and when the anonymous is
 applied), `markBaseAccessGranted()`, and `markBaseAccessExpired()` when it changes the tier — so a `/api/me` sent
 before one never overwrites it — and when a read outside an ended session finds another account (`applyLiveSession`,
-R48, CR5-2: before `onAccountSwitched`, so a 401 that left under the first account does not end the second's session; a refusal is judged on the account, R63). Any other *read* session (`applyReadSession`) advances nothing: it is the response. A
+R48, CR5-2: before `onAccountSwitched`, so a 401 that left under the first account does not end the second's session; a refusal is judged on
+the account, R63). Any other *read* session (`applyReadSession`) advances nothing: it is the response. A
 caller reads it **before sending** and hands it back with the verdict:
 
 - `markSessionExpired(sentAt?)` returns whether the session **is ended**. Without `sentAt`, or under the current
@@ -130,8 +146,10 @@ caller reads it **before sending** and hands it back with the verdict:
 - **The descent by an account's return** (`restoreSession`, `sessionLifecycle.ts`) is asked, by `canRestore`, for **an
   account and a write token (`hasWriteToken()`)**; the caller judges the **current generation** itself
   (`isCurrentGeneration(sentAt)`), `login()` excepted — a sign-in is the person's own gesture and skips both. `login()`,
-  `checkAuth()`, `recheckEndedSession()` and `rereadAfterRefusal()` (through `applyReadSession`) all go through it; **in an ended session a read that
-  finds the base tier or the anonymous one sets nothing** (Sp3-3); it advances the generation and then calls the `onSessionRestored` subscribers (or `onAccountSwitched`'s for another account; `login()` calls neither, R18). A `/api/me` sent before a new
+  `checkAuth()`, `recheckEndedSession()` and `rereadAfterRefusal()` (through `applyReadSession`) all go through it; **in an ended session a
+  read that
+  finds the base tier or the anonymous one sets nothing** (Sp3-3); it advances the generation and then calls the `onSessionRestored`
+  subscribers (or `onAccountSwitched`'s for another account; `login()` calls neither, R18). A `/api/me` sent before a new
   refusal, or before a return, answers for a session that is gone: its result is dropped (it neither restores nor
   puts the header back to an account). `checkAuth()` no longer lowers `sessionEnded` for an account without a write token
   (F5: it did, while `recheckEndedSession()` required one).
@@ -143,8 +161,19 @@ caller reads it **before sending** and hands it back with the verdict:
 
 ## Tests
 
-- `singleFlight.spec.ts` (shared in flight, freed after a resolution, a rejection, a synchronous throw, R41); `useAuth.spec.ts` (including `sessionEndedCount`, `onSessionRestored` and `onAccountSwitched`: once, synchronously, never at the end, dropped with its scope, a subscriber that throws, the same account or another (R18); the generation in both directions, R14; the base access going anonymous at its deadline with no network call, R23; `lastAccountName` follows the last account displayed, R63), `resetAuthStateForTests.spec.ts` (every module's state back to its loading value, R25; a re-read in flight before the reset is not shared after, R55), `sessionStateEncapsulation.spec.ts` (`state` and `isSameAccount` are not exported, R42; the exact export list of `sessionState.ts`, the importers of each write, and no other module exporting one, R52, R69).
-- For the re-check on return (R8): `useAuth.spec.ts` (the account found with its write token restores; **without `XSRF-TOKEN` the session stays ended**; nothing outside an ended session; one read in flight for two quick calls; a network failure swallowed; `isChecking` untouched by the re-check and by any `checkAuth()` after the first).
+- `singleFlight.spec.ts` (shared in flight, freed after a resolution, a rejection, a synchronous throw, R41); `useAuth.spec.ts` (including
+  `sessionEndedCount`, `onSessionRestored` and `onAccountSwitched`: once, synchronously, never at the end, dropped with its scope, a
+  subscriber that throws, the same account or another (R18); the generation in both directions, R14; the base access going anonymous at its
+  deadline with no network call, R23; `lastAccountName` follows the last account displayed, R63), `resetAuthStateForTests.spec.ts` (every
+  module's state back to its loading value, R25; a re-read in flight before the reset is not shared after, R55),
+  `sessionStateEncapsulation.spec.ts` (`state` and `isSameAccount` are not exported, R42; the exact export list of `sessionState.ts`, the
+  importers of each write, and no other module exporting one, R52, R69).
+- For the re-check on return (R8): `useAuth.spec.ts` (the account found with its write token restores; **without `XSRF-TOKEN` the session
+  stays ended**; nothing outside an ended session; one read in flight for two quick calls; a network failure swallowed; `isChecking`
+  untouched by the re-check and by any `checkAuth()` after the first).
 - `HttpAuthRepository.spec.ts` (`hasWriteToken`: present, absent, empty; `logout()` sends the CSRF token).
-- `useSessionRecheckOnFocus.spec.ts` (`focus` re-reads, not after unmount), `AppLayout.spec.ts` (one `/api/me` per return with the banner shown, the re-check outside the backoffice, the session staying ended while no account is back; another account replays the navigation, then remounts the page, R18; the page hidden meanwhile, even when the replay fails, R27, and until the last of two overlapping replays, R39, and again with the router replaced by two held promises, R53).
+- `useSessionRecheckOnFocus.spec.ts` (`focus` re-reads, not after unmount), `AppLayout.spec.ts` (one `/api/me` per return with the banner
+  shown, the re-check outside the backoffice, the session staying ended while no account is back; another account replays the navigation,
+  then remounts the page, R18; the page hidden meanwhile, even when the replay fails, R27, and until the last of two overlapping replays,
+  R39, and again with the router replaced by two held promises, R53).
 - `SessionEndedBanner.spec.ts` (the banner does not listen to `focus`; the return is driven by `recheckEndedSession()`).

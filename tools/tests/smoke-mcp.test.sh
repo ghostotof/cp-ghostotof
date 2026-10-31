@@ -231,7 +231,8 @@ chmod +x "$TMP/failing-curl"
 set +e
 SMOKE_CURL="$TMP/failing-curl" "$SCRIPT" https://example.invalid >"$TMP/out" 2>"$TMP/err"; rc=$?
 set -e
-if [ "$rc" -eq 1 ] && grep -q 'initialize' "$TMP/err" && grep -q 'curl a échoué (code 28' "$TMP/err" && grep -q 'rien de vérifié' "$TMP/err"; then
+if [ "$rc" -eq 1 ] && grep -q 'initialize' "$TMP/err" && grep -q 'curl a échoué (code 28' "$TMP/err" \
+   && grep -q 'rien de vérifié' "$TMP/err"; then
   pass "curl en échec → étape nommée, « rien de vérifié », code 1"
 else
   fail "curl en échec" "rc=$rc ; err : $(cat "$TMP/err")"

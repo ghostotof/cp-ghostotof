@@ -202,7 +202,12 @@ describe('useAssistant', () => {
       async () => {
         throw new AssistantError('forbidden')
       },
-      { login: vi.fn(async () => ({ username: 'jane', roles: ['ROLE_USER', 'ROLE_TRUSTED'] })), logout: vi.fn(), hasWriteToken: () => true, me },
+      {
+        login: vi.fn(async () => ({ username: 'jane', roles: ['ROLE_USER', 'ROLE_TRUSTED'] })),
+        logout: vi.fn(),
+        hasWriteToken: () => true,
+        me,
+      },
     )
     await auth.login('jane', 'password')
     expect(auth.hasSessionEnded.value).toBe(false)
@@ -225,7 +230,12 @@ describe('useAssistant', () => {
       async () => {
         throw new AssistantError('forbidden')
       },
-      { login: vi.fn(async () => ({ username: 'jane', roles: ['ROLE_USER', 'ROLE_TRUSTED'] })), logout: vi.fn(), hasWriteToken: () => true, me },
+      {
+        login: vi.fn(async () => ({ username: 'jane', roles: ['ROLE_USER', 'ROLE_TRUSTED'] })),
+        logout: vi.fn(),
+        hasWriteToken: () => true,
+        me,
+      },
     )
     await auth.login('jane', 'password')
     expect(auth.tier.value).toBe('trusted')
@@ -264,7 +274,12 @@ describe('useAssistant', () => {
       async () => {
         throw new AssistantError('forbidden')
       },
-      { login: vi.fn(async () => ({ username: 'jane', roles: ['ROLE_USER', 'ROLE_TRUSTED'] })), logout: vi.fn(), hasWriteToken: () => true, me },
+      {
+        login: vi.fn(async () => ({ username: 'jane', roles: ['ROLE_USER', 'ROLE_TRUSTED'] })),
+        logout: vi.fn(),
+        hasWriteToken: () => true,
+        me,
+      },
     )
     await auth.login('jane', 'password')
 

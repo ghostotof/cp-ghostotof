@@ -1,6 +1,10 @@
 import { lastAccountName, markSessionExpired, sessionStamp, type UseAuthResult } from '../../application/auth/useAuth'
 import { markBackofficeAccessRefused, stampBackofficeRead } from '../../application/admin/shared/backofficeAccessRefusal'
-import type { BackofficeSendKind, BackofficeSendStamp, BackofficeSessionReaction } from '../../domain/admin/shared/BackofficeSessionReaction'
+import type {
+  BackofficeSendKind,
+  BackofficeSendStamp,
+  BackofficeSessionReaction,
+} from '../../domain/admin/shared/BackofficeSessionReaction'
 
 /**
  * La réaction du backoffice à une session finie (un 401, ou un 403 à une écriture sans jeton CSRF), branchée

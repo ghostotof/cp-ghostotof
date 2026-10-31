@@ -105,7 +105,8 @@ status announcement) that a fork would silently lose:
   visible hint referenced by `aria-describedby` — never a `title`, Bootstrap's `.btn:disabled` has
   `pointer-events: none` — and leaving the route asks `window.confirm`, closing the tab goes through
   `beforeunload` — both in `application/admin/shared/useUnsavedOrderGuard(isDirty)` (#170 F5), tested once
-  in its own spec (unmounted by the global `enableAutoUnmount` of `tests/support/setup.ts`; a page left mounted keeps its listener); a page calls it,
+  in its own spec (unmounted by the global `enableAutoUnmount` of `tests/support/setup.ts`; a page left mounted keeps its listener); a page
+  calls it,
   never re-implements it. `startEdit` sends back the group it read whenever the entry has a
   sibling, otherwise `''` → `null`, which `ContentPlacement::detach` treats as a no-op on a lone
   entry. The `Position` number field is gone from every form; `BaseNumberInput` survives only for
@@ -269,17 +270,22 @@ version" copies nothing and the assistant sends all five fields.
 - **A 401, or a 403 to a write sent without a CSRF token, mid-page ends the session on the interface, and moves
   nobody** (#650, R1c, #748). `BackofficeHttpClient` (`get` and `mutate`) sends through
   `infrastructure/http/sessionAwareFetch.ts`, calls the reaction registered by `main.ts`
-  (`setBackofficeSessionReaction()`: `markSessionExpired(sentAt.session)`, judged by session generation, and no navigation) and **raises `SessionEndedError`** (or, for a response sent before the session was restored, hands it back as an ordinary failure, #748 R14): no
+  (`setBackofficeSessionReaction()`: `markSessionExpired(sentAt.session)`, judged by session generation, and no navigation) and **raises
+  `SessionEndedError`** (or, for a response sent before the session was restored, hands it back as an ordinary failure, #748 R14): no
   repository translates it, and the composables keep it quiet through `useAdminLoad` (reads) and `visibleMutationError`
   (mutations), the banner being the only announcement. **A new administration client goes through
   `BackofficeHttpClient`, a new composable through those two functions, and its mutations resolve to `true` only on
-  success** (a page resets its form on that, never on `errorMessage`). **Any other 403** (a read, or a write that carried its token) raises `AccessForbiddenError` after the reaction's `refused()` (#748, R17; a read sent before a navigation is not counted, R28; a write always is, R38): kept quiet the same way, and `AccessRefusedNotice` in `AdminLayout` says it once (`common.accessRefused`, « Changer de compte » in the same tab). The rule, its backend facts, the shared errors, the
+  success** (a page resets its form on that, never on `errorMessage`). **Any other 403** (a read, or a write that carried its token) raises
+  `AccessForbiddenError` after the reaction's `refused()` (#748, R17; a read sent before a navigation is not counted, R28; a write always
+  is, R38): kept quiet the same way, and `AccessRefusedNotice` in `AdminLayout` says it once (`common.accessRefused`, « Changer de compte »
+  in the same tab). The rule, its backend facts, the shared errors, the
   banner, the header's link and the re-check on return: `.claude/rules/frontend-session.md`.
 - **Not loaded is not empty, a new key empties the old value, and what an ended session interrupted is read again on
   return** (#748, R4). `useAdminLoad` exposes `isLoaded` (the value of the current key was read and set: false before the
   first read, after a first read that ended on `SessionEndedError`, and as soon as a new key starts reading); an
   administration page says « aucune … » **only when `isLoaded`**, and shows `admin.notLoaded` (« Contenu non chargé… »,
-  not a live region: the banner or the « accès refusé » alert announces; the text is neutral) otherwise. Without it a first read in an ended session left the list at `[]`
+  not a live region: the banner or the « accès refusé » alert announces; the text is neutral) otherwise. Without it a first read in an ended
+  session left the list at `[]`
   with no error, and twelve empty states claimed the content did not exist. `emptyStateNeedsLoaded.spec.ts` is the source
   guard: every file of `presentation/pages/admin` that composes a `…empty` state reads `isLoaded` at least as many times in
   its template. A new list page adds the `isLoaded` guard before its empty state.
@@ -314,7 +320,8 @@ version" copies nothing and the assistant sends all five fields.
   or interrupted re-read of its target shows nothing (R113, R128). The About settings are the only keyed composable, so
   the only one with these races.
   **The return is the one signal that exists** (R13): `useAuth().onSessionRestored(callback)`, called once at each
-  descent of `authState.sessionEnded` by the same account (another one replays the navigation instead, R18). `useAdminLoad` subscribes to it; if its
+  descent of `authState.sessionEnded` by the same account (another one replays the navigation instead, R18). `useAdminLoad` subscribes to
+  it; if its
   last read ended on `SessionEndedError`, it re-runs `load(same key)` **once**. A newer `load()` replaces the
   interrupted one; a read that succeeded leaves nothing to replay. A mechanism that re-reads the session (the shared
   re-check on focus) only has to restore it: it never re-reads lists itself, so nothing is doubled. A page does not

@@ -10,7 +10,18 @@ import type { AdminUser } from '../../../domain/admin/users/entities/AdminUser'
 import { MAX_PASSWORD_BYTES, MIN_PASSWORD_LENGTH } from '../../../domain/account/services/passwordLength'
 
 const { t } = useI18n()
-const { users, isLoading, hasError, isLoaded, errorMessage, invite, setSuperAdmin, resendInvitation, remove, changePassword } = useAdminUsers()
+const {
+  users,
+  isLoading,
+  hasError,
+  isLoaded,
+  errorMessage,
+  invite,
+  setSuperAdmin,
+  resendInvitation,
+  remove,
+  changePassword,
+} = useAdminUsers()
 const { user: currentUser } = useAuth()
 
 // --- Invitation ---

@@ -404,7 +404,8 @@ fi
 
 # --- smoke_headers <fichier> <nom> (St7-3) : toutes les valeurs, une par ligne,
 # dans l'ordre, nom sans casse, CR retiré ; smoke_header en est la dernière ligne.
-printf 'HTTP/2 401\r\nset-cookie: BEARER=a; Max-Age=0\r\nContent-Type: text/plain\r\nSet-Cookie: XSRF-TOKEN=b; Max-Age=0\r\n\r\n' > "$TMP/cookies"
+printf 'HTTP/2 401\r\nset-cookie: BEARER=a; Max-Age=0\r\nContent-Type: text/plain\r\nSet-Cookie: XSRF-TOKEN=b; Max-Age=0\r\n\r\n' \
+  > "$TMP/cookies"
 rc=0
 cookies="$(smoke_headers "$TMP/cookies" Set-Cookie)" || rc=$?
 if [ "$rc" -eq 0 ] && [ "$cookies" = $'BEARER=a; Max-Age=0\nXSRF-TOKEN=b; Max-Age=0' ] \

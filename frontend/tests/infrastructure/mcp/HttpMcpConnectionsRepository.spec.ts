@@ -103,7 +103,7 @@ describe('HttpMcpConnectionsRepository', () => {
       await expect(repository.list()).rejects.toBeInstanceOf(SessionEndedError)
     })
 
-    it('list : un 403 est AccessForbiddenError, pas une session finie : une lecture n\'est jamais refusée pour le CSRF (#748, #732)', async () => {
+    it('list : un 403 est AccessForbiddenError, pas une session finie : lecture jamais refusée pour le CSRF (#748, #732)', async () => {
       fetchMock.mockResolvedValue(jsonResponse({ type: '/errors/anything' }, 403))
 
       await expect(repository.list()).rejects.toBeInstanceOf(AccessForbiddenError)

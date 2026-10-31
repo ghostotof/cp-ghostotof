@@ -164,7 +164,7 @@ describe('LoginPage', () => {
       // Palier de base : l'accès de base tient (le cookie vit), la session n'est pas finie ; et il n'y a aucun compte
       // à confirmer. Cas réel : session finie dans l'onglet A, « Accès instantané » dans B, lien du bandeau de A ouvert
       // ensuite (#748, R40, CR4-7). La page est la connexion ordinaire.
-      it.each([['fr'], ['en']])("palier de base, expired=1 : aucune annonce, ni « session finie » ni « confirmez » (%s)", async (locale) => {
+      it.each([['fr'], ['en']])("palier de base, expired=1 : pas d'annonce, ni « session finie » ni « confirmez » (%s)", async (locale) => {
         const repository = createStubRepository({ me: vi.fn(async () => BASE_ACCESS_SESSION) })
         const probe = mount(
           defineComponent({
@@ -236,7 +236,7 @@ describe('LoginPage', () => {
     it.each([
       ['fr', 'Confirmez votre identité ou connectez-vous avec un autre compte : vous reviendrez ensuite à la page que vous quittiez.'],
       ['en', 'Confirm your identity or sign in with another account: you will then return to the page you left.'],
-    ])('annonce pourquoi la page de connexion s’ouvre alors que la personne est connectée, sans parler de dix minutes (%s)', async (locale, notice) => {
+    ])('dit pourquoi la page de connexion s’ouvre à une personne connectée, sans parler de dix minutes (%s)', async (locale, notice) => {
       await primeSession({ username: 'jane', roles: ['ROLE_USER', 'ROLE_TRUSTED'] })
       const { wrapper } = await mountLoginPage(createStubRepository(), locale, { reauth: '1', redirect: CONSENT })
 

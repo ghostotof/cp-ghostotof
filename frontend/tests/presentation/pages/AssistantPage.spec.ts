@@ -304,7 +304,7 @@ describe('AssistantPage', () => {
   it.each<['fr' | 'en', string, string]>([
     ['fr', 'Votre session a expiré.', "Se reconnecter (s'ouvre dans un nouvel onglet)"],
     ['en', 'Your session has expired.', 'Sign in again (opens in a new tab)'],
-  ])("session finie (%s) : « Se reconnecter » ouvre un nouvel onglet, expired=1, retour à l'assistant", async (locale, message, linkText) => {
+  ])("session finie (%s) : « Se reconnecter » : nouvel onglet, expired=1, retour à l'assistant", async (locale, message, linkText) => {
     const { repository, calls } = createControlledRepository()
     const wrapper = mountPage(repository, undefined, locale)
     // La page est montée sur sa route : `redirect` est le chemin courant.
@@ -440,7 +440,12 @@ describe('AssistantPage — le compte change au retour', () => {
 
   async function mountInLayout(returning: typeof FIRST, repository: AssistantRepository) {
     // Le compte affiché quand la session finit : c'est lui que le retour compare.
-    const signedIn: AuthRepository = { login: vi.fn(async () => FIRST), logout: vi.fn(), hasWriteToken: () => true, me: vi.fn(async () => sessionFor(returning)) }
+    const signedIn: AuthRepository = {
+      login: vi.fn(async () => FIRST),
+      logout: vi.fn(),
+      hasWriteToken: () => true,
+      me: vi.fn(async () => sessionFor(returning)),
+    }
     const Probe = defineComponent({ setup: () => ({ auth: useAuth() }), template: '<div />' })
     const probe = mount(Probe, { global: { provide: { [AUTH_REPOSITORY as symbol]: signedIn } } })
     await probe.vm.auth.login(FIRST.username, 'x')

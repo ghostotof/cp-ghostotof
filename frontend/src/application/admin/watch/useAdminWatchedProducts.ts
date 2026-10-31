@@ -58,7 +58,11 @@ export function useAdminWatchedProducts(): UseAdminWatchedProductsResult {
 
       return true
     } catch (error) {
-      errorMessage.value = visibleMutationError(error, AdminWatchedProductError, () => new AdminWatchedProductError('unknown', 'Unknown error'))
+      errorMessage.value = visibleMutationError(
+        error,
+        AdminWatchedProductError,
+        () => new AdminWatchedProductError('unknown', 'Unknown error'),
+      )
 
       return false
     }

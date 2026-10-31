@@ -70,7 +70,12 @@ function namesImportedFromSessionState(source: string): string[] {
   const code = withoutComments(source)
   const names: string[] = []
 
-  for (const match of code.matchAll(new RegExp(`\\b(?:import|export)\\s+(?:type\\s+)?([^;'"]*?)\\s*\\bfrom\\s*['"]${SESSION_STATE_PATH}['"]`, 'g'))) {
+  for (const match of code.matchAll(
+    new RegExp(
+      `\\b(?:import|export)\\s+(?:type\\s+)?([^;'"]*?)\\s*\\bfrom\\s*['"]${SESSION_STATE_PATH}['"]`,
+      'g',
+    ),
+  )) {
     const clause = match[1] ?? ''
     if (clause.includes('*')) {
       names.push(ALL)
@@ -129,7 +134,10 @@ function namesInExportBlocks(source: string): string[] {
  * Les modules de `src/` (hors `main.ts`, qui monte l'application et ne s'importe pas), chargés : le contrôle par identité
  * compare leurs valeurs exportées aux écritures. Aucun module de `src/*.ts` n'a été exclu pour ne pas se charger sous jsdom.
  */
-const loadedModules = import.meta.glob(['../../../src/**/*.ts', '!../../../src/main.ts'], { eager: true }) as Record<string, Record<string, unknown>>
+const loadedModules = import.meta.glob(
+  ['../../../src/**/*.ts', '!../../../src/main.ts'],
+  { eager: true },
+) as Record<string, Record<string, unknown>>
 
 /** Le module qui définit les écritures : lui seul peut les exporter. */
 const SESSION_STATE_MODULE = 'application/auth/sessionState.ts'
@@ -200,7 +208,11 @@ describe("Les écritures de l'état de session ont chacune leurs importeurs", ()
 
   it('le relevé voit les formes d\'import (nommé, multiligne, type, renommé, espace de noms, dynamique, réexport)', () => {
     expect(namesImportedFromSessionState("import { lowerSessionEnded } from './sessionState'")).toEqual(['lowerSessionEnded'])
-    expect(namesImportedFromSessionState("import {\n  applySession,\n  raiseSessionEnded as raise,\n  type LastAccount,\n} from '../auth/sessionState'")).toEqual([
+    expect(
+      namesImportedFromSessionState(
+        "import {\n  applySession,\n  raiseSessionEnded as raise,\n  type LastAccount,\n} from '../auth/sessionState'",
+      ),
+    ).toEqual([
       'applySession',
       'raiseSessionEnded',
       'LastAccount',

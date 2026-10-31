@@ -57,7 +57,11 @@ export function useAdminExperienceTechnologies(): UseAdminExperienceTechnologies
 
       return true
     } catch (error) {
-      errorMessage.value = visibleMutationError(error, AdminExperienceTechnologyError, () => new AdminExperienceTechnologyError('unknown', 'Unknown error'))
+      errorMessage.value = visibleMutationError(
+        error,
+        AdminExperienceTechnologyError,
+        () => new AdminExperienceTechnologyError('unknown', 'Unknown error'),
+      )
 
       return false
     }

@@ -23,7 +23,8 @@ paths:
 > The one rule of #748 (R2). It was a bullet of `frontend-backoffice.md` and was repeated, in part, by
 > `frontend.md`, `mcp-oauth.md` and `mcp-oauth-revocation-personne.md`: those now say their own case in a sentence
 > and point here. The code-side counterpart is the docblock of `infrastructure/http/sessionAwareFetch.ts`. The
-> index of every rule is at the top of `.claude/CLAUDE.md`. Split by sub-domain in #748 (St3-11, procedure of #605): the original kept the rule below and the index of where each part went.
+> index of every rule is at the top of `.claude/CLAUDE.md`. Split by sub-domain in #748 (St3-11, procedure of #605): the original kept the
+> rule below and the index of where each part went.
 
 ## Where the rest of this area went
 
@@ -60,7 +61,8 @@ facts are checked in the backend:
 value and takes the verdict from the same value, and returns `{ response, endedTheSession }`. **"With a token" is
 `readWriteToken() !== null` (`infrastructure/auth/csrfCookie.ts`), the only definition**, which `hasCsrfToken()` (for
 `hasWriteToken()`) applies too — an empty or undecodable value (`XSRF-TOKEN=%E0`: the `URIError` is caught, `null`) is
-absent. Two reads could be split by another tab, the header gone while the verdict said « with a token ». Its second parameter is typed `SessionAwareInit`, which the MCP and consent clients reuse. The verdict is taken **at send time**, on what left
+absent. Two reads could be split by another tab, the header gone while the verdict said « with a token ». Its second parameter is typed
+`SessionAwareInit`, which the MCP and consent clients reuse. The verdict is taken **at send time**, on what left
 (`isWrite && !token`), never by re-reading the cookie at reception (another tab may have set it back) nor by the 403's
 `detail` (localisable, not a contract). A network failure or an `AbortError` rejects as it came: the client translates
 it. The boolean no longer travels from function to function (`sentWithoutCsrfToken` is gone from every repository).
@@ -83,7 +85,8 @@ does `BackofficeHttpClient`.
 - A browser that drops the cookies of an earlier session reads a finished session: signing in again is indeed the
   remedy.
 - **After the `exp` of a JWT (login or base access) the first 401 only reaches a route that requires a role** (#748, the
-  author's decision of 2026-10-29): the server serves a public route as anonymous whatever the cookie (R35; in dev, two origins, public reads leave
+  author's decision of 2026-10-29): the server serves a public route as anonymous whatever the cookie (R35; in dev, two origins, public
+  reads leave
   without cookies, so R35 is exercised there by PHPUnit and the preprod smoke only), and the SPA
   reads `/api/me` at every load, which clears a dead cookie.
   The login's expiry is not exposed to the frontend, so its first authenticated request takes the 401 and the session
@@ -140,14 +143,19 @@ does `BackofficeHttpClient`.
 
 ## Tests
 
-The specs of the rule and of the clients; those of the banner and the links are in `frontend-session-bandeau.md`, of the return and the generation in `frontend-session-retour.md`, of the refusal in `frontend-session-refus.md`.
+The specs of the rule and of the clients; those of the banner and the links are in `frontend-session-bandeau.md`, of the return and the
+generation in `frontend-session-retour.md`, of the refusal in `frontend-session-refus.md`.
 
 - `sessionAwareFetch.spec.ts` (the rule's table; a read leaves with the cookies and no CSRF header, a write carries the
 header read in the cookie, a write without a cookie or with an empty one ends the session on a 403, a 401 on any method,
-the given headers kept, the cookie read once even if it vanishes meanwhile (R28), a network failure or an abort rejecting as it came), `csrfCookie.spec.ts` (`readWriteToken`: an empty or undecodable `XSRF-TOKEN=%E0` is absent, no exception, R12) and `problemJson.spec.ts` (`hasProblemType`: the slug, the whole segment only, any other or no type).
+the given headers kept, the cookie read once even if it vanishes meanwhile (R28), a network failure or an abort rejecting as it came),
+`csrfCookie.spec.ts` (`readWriteToken`: an empty or undecodable `XSRF-TOKEN=%E0` is absent, no exception, R12) and `problemJson.spec.ts`
+(`hasProblemType`: the slug, the whole segment only, any other or no type).
 - `BackofficeHttpClient.spec.ts` (a 401 on read
 and write, a 403 to a write without a token or with an empty cookie, each **rejects `SessionEndedError`** and calls the
-reaction once, also with no reaction registered; 200/204/404/409/422/500 give the response back with no reaction; a 403 to a read, or to a write with its token, calls `refused` once with the send stamp and **rejects `AccessForbiddenError`**, also with no reaction (R17); a network failure rises as it came).
+reaction once, also with no reaction registered; 200/204/404/409/422/500 give the response back with no reaction; a 403 to a read, or to a
+write with its token, calls `refused` once with the send stamp and **rejects `AccessForbiddenError`**, also with no reaction (R17); a
+network failure rises as it came).
 - `useAdminLoad.spec.ts` (`isLoaded`, the key that empties, the read run again on return, `tests/support/signInAgain.ts`
   being the return) and
 `visibleMutationError.spec.ts` (the two functions), `sessionEndedMapping.spec.ts` (the table of the 15 repositories: a 401
@@ -164,7 +172,10 @@ other failure sets `unknown`; `useAdminTranslation` and `useOrderDraft` too), `H
   `isFnExpressionBrowser`, an inline statement as Vue wraps it, R130), every fragment of `src/` required to parse, a
   `<template>` without a tree (`lang`, `src`) refused, R68, R80, R96, R110, R119 —, which drops preprod's Basic Auth, R37,
   R51).
-- The backend facts it relies on are pinned by `AuthCookieAttributesTest` (session cookies), `BaseAccessControllerTest` and `RefusedSessionCookiesAreClearedTest` (a refused cookie cleared by the first 401 of a protected route), `JwtClockSkewTest` (`clock_skew` 5 s, R29), `cookiePolicy.spec.ts` (the published cookie policy says session cookies, R32), `.claude/rules/security-authentication-sessions.md`.
+- The backend facts it relies on are pinned by `AuthCookieAttributesTest` (session cookies), `BaseAccessControllerTest` and
+  `RefusedSessionCookiesAreClearedTest` (a refused cookie cleared by the first 401 of a protected route), `JwtClockSkewTest` (`clock_skew` 5
+  s, R29), `cookiePolicy.spec.ts` (the published cookie policy says session cookies, R32),
+  `.claude/rules/security-authentication-sessions.md`.
 
 Three guards of the first version are gone, because what they guarded no longer exists: `sessionEnded.spec.ts` (domain,
 `isSessionEndedError`), `visibleErrorReason.spec.ts` and `errorReasonsHideSessionEnded.spec.ts` (a source guard: every file

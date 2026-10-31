@@ -25,7 +25,8 @@ export interface McpConnectionsRepository {
    * déjà révoquée répond comme une révocation réussie.
    *
    * @throws McpConnectionNotFoundError connexion inconnue de ce compte (404 `mcp-connection-not-found`)
-   * @throws SessionEndedError session absente ou expirée (401, ou 403 parti sans jeton CSRF, voir `infrastructure/http/sessionAwareFetch.ts`)
+   * @throws SessionEndedError session absente ou expirée (401, ou 403 parti sans jeton CSRF, voir
+   *   `infrastructure/http/sessionAwareFetch.ts`)
    * @throws AccessForbiddenError tout autre 403 : un refus réel
    * @throws McpConnectionsRequestFailedError tout autre échec
    */

@@ -56,7 +56,8 @@ version number is a fact, not a translation, so only the surrounding UI strings 
 **These public repositories (and the contact and password-setup ones) write no `credentials`** (#748, R37): the default
 `same-origin` sends the cookies in preprod and prod (one origin) and not in dev (two), and the server serves a public
 route as anonymous whatever the cookie (R35). **`'omit'` is forbidden** (`noOmittedCredentials.spec.ts`): it also drops
-the Basic Auth of preprod, so each call takes the ingress's 401 — invisible in dev and CI. Don't add new content here unless it's genuinely backend-managed (i.e. editable
+the Basic Auth of preprod, so each call takes the ingress's 401 — invisible in dev and CI. Don't add new content here unless it's genuinely
+backend-managed (i.e. editable
 from the backoffice) — purely static content still belongs in `infrastructure/portfolio/content/{fr,en}.ts`.
 
 The assistant follows the same layered shape without being backoffice content: its slice (spec 0005,
@@ -67,7 +68,8 @@ incremental parser `serverEvents.ts`) → `application/assistant/useAssistant.ts
 in code points, never `.length`; a session ended — a 401, or a 403 sent without a CSRF token, judged by
 `sessionAwareFetch`, `.claude/rules/frontend-session.md` — is `unauthenticated` and calls `markSessionExpired()`; a 403
 that carried its token is a real refusal, `forbidden`: the session stays (never `markSessionExpired()`), the composable
-re-reads `/api/me` once (`useAuth().rereadAfterRefusal()`, not awaited, one in flight, a rejection swallowed) so the header returns to the tier
+re-reads `/api/me` once (`useAuth().rereadAfterRefusal()`, not awaited, one in flight, a rejection swallowed) so the header returns to the
+tier
 the server now recognises, and the page says the refusal in a neutral message (`common.accessRefused`) with a « Changer
 de compte » link (`login?redirect=<this page>&reauth=1`, the same tab, the lost conversation accepted) — #748, #732
 point 4, R7; `.claude/rules/frontend-session-refus.md`, « A real refusal ») →
@@ -120,7 +122,8 @@ Three things the MCP slice shares with the rest of the frontend:
 
 `HttpMcpConnectionsRepository` and `HttpOAuthConsentRepository` (like `HttpAssistantRepository`) send through the shared
 **function** `sessionAwareFetch`, **never `BackofficeHttpClient`**, which is the backoffice's alone: the reaction to an ended
-session there is the composable's (`markSessionExpired()`), with no redirect (`.claude/rules/frontend-session.md`). **The two apps agree on a contract**:
+session there is the composable's (`markSessionExpired()`), with no redirect (`.claude/rules/frontend-session.md`). **The two apps agree on
+a contract**:
 the consent decision carries `accountId` (the `account.id` the summary showed). A frontend and a backend that differ
 there fail: a new frontend before its backend cannot parse a summary without `account.id`, an old frontend page left
 open after the new backend sends no `accountId` and gets a 422 (the page is terminal, a reload fixes it). **The

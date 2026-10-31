@@ -5,7 +5,16 @@ import { ANONYMOUS_SESSION, type AccessTier, type AuthSession } from '../../doma
 import { ROLE_SUPER } from '../../domain/auth/entities/Role'
 import { hasRole } from '../../domain/auth/services/hasRole'
 import { sessionForUser } from '../../domain/auth/services/sessionForUser'
-import { markBaseAccessExpired, markBaseAccessGranted, applySession, authState, forgetLastAccount, getLastAccount, markFirstCheckDone, waitForAuthCheck } from './sessionState'
+import {
+  markBaseAccessExpired,
+  markBaseAccessGranted,
+  applySession,
+  authState,
+  forgetLastAccount,
+  getLastAccount,
+  markFirstCheckDone,
+  waitForAuthCheck,
+} from './sessionState'
 import { recallBaseAccessExpiry, scheduleBaseAccessExpiry } from './baseAccessExpiry'
 import { advanceGeneration, isCurrentGeneration, sessionStamp } from './sessionGeneration'
 import { onAccountSwitched, onSessionRestored } from './sessionEvents'
@@ -131,8 +140,8 @@ export interface UseAuthResult {
    * Abonne `callback` au **retour** de la session : il est appelé une fois, de façon synchrone, à chaque descente
    * de `sessionEnded` (vrai → faux) où **le même compte** revient (même identifiant, aucun rôle perdu, #748, R26) — par
    * la relecture au retour sur l'onglet. Ni pour un autre compte (`onAccountSwitched`), ni pour une connexion dans l'onglet (la page
-   * de connexion navigue elle-même, #748, R18). Jamais à la fin de la session, ni quand rien n'était fini. À appeler dans un scope (le `setup` d'un
-   * composant, un `effectScope`) : l'abonnement est retiré à `onScopeDispose`. C'est **le** signal de retour :
+   * de connexion navigue elle-même, #748, R18). Jamais à la fin de la session, ni quand rien n'était fini. À appeler dans un scope (le
+   * `setup` d'un composant, un `effectScope`) : l'abonnement est retiré à `onScopeDispose`. C'est **le** signal de retour :
    * une page qui dépend du retour (relire ce qu'une session finie a interrompu) s'y abonne, elle ne surveille
    * plus `authState.sessionEnded` elle-même.
    */
@@ -141,8 +150,9 @@ export interface UseAuthResult {
    * Abonne `callback` au **changement de compte** (#748, R18, R26) : la session a fini et c'est **un autre compte**, ou
    * le même avec un rôle perdu, ou un compte quand aucun n'était retenu, qui est revenu (par la relecture au retour sur
    * l'onglet, ou `checkAuth()`) ; ou, hors session finie, la relecture qui suit un refus réel
-   * (`rereadAfterRefusal()`) trouve **un autre identifiant** que celui du dernier compte affiché. La session est déjà appliquée quand `callback` est appelé ; `onSessionRestored` n'est pas appelé (la page ouverte n'est pas
-   * « rétablie » : ce n'est plus la page de ce compte). Jamais pour une connexion dans l'onglet. Même mécanique que
+   * (`rereadAfterRefusal()`) trouve **un autre identifiant** que celui du dernier compte affiché. La session est déjà appliquée quand
+   * `callback` est appelé ; `onSessionRestored` n'est pas appelé (la page ouverte n'est pas « rétablie » : ce n'est plus la page de ce
+   * compte). Jamais pour une connexion dans l'onglet. Même mécanique que
    * `onSessionRestored` : un scope, retiré à `onScopeDispose`. Seul `AppLayout` s'y abonne.
    */
   onAccountSwitched: (callback: () => void) => void

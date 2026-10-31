@@ -399,7 +399,7 @@ describe('useAdminAboutSettings', () => {
       expect(composable.isSaving.value).toBe(false)
     })
 
-    it("isAnySaving dit un enregistrement en vol dans n'importe quelle langue, quelle que soit la langue montrée (#748, R67, R98)", async () => {
+    it("isAnySaving dit un enregistrement en vol dans toute langue, quelle que soit la langue montrée (#748, R67, R98)", async () => {
       const pending = pendingUpdates()
       const composable = mountWithComposable(
         createStubRepository({ update: pending.update, get: vi.fn(async (locale) => ({ ...SETTINGS, locale })) }),

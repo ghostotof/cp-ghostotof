@@ -67,59 +67,186 @@ const ONE = { id: 'x' }
 const CASES: Case[] = [
   {
     name: 'useAdminAboutMeCards', key: ADMIN_ABOUT_ME_CARD_REPOSITORY as never, read: 'list', loaded: [ONE], args: [],
-    compose: () => { const c = useAdminAboutMeCards(); return { hasError: c.hasError, isLoaded: c.isLoaded, load: c.load, value: () => c.cards.value, mutate: () => c.remove('x'), shown: () => c.errorMessage.value } },
+    compose: () => {
+      const c = useAdminAboutMeCards()
+      return {
+        hasError: c.hasError,
+        isLoaded: c.isLoaded,
+        load: c.load,
+        value: () => c.cards.value,
+        mutate: () => c.remove('x'),
+        shown: () => c.errorMessage.value,
+      }
+    },
   },
   {
     name: 'useAdminAboutSettings', key: ADMIN_ABOUT_SETTINGS_REPOSITORY as never, read: 'get', loaded: ONE, args: ['fr'],
-    compose: () => { const c = useAdminAboutSettings(); return { hasError: c.hasError, isLoaded: c.isLoaded, load: c.load, value: () => c.settings.value, mutate: () => c.save('fr', {} as never), shown: () => c.errorMessage.value } },
+    compose: () => {
+      const c = useAdminAboutSettings()
+      return {
+        hasError: c.hasError,
+        isLoaded: c.isLoaded,
+        load: c.load,
+        value: () => c.settings.value,
+        mutate: () => c.save('fr', {} as never),
+        shown: () => c.errorMessage.value,
+      }
+    },
   },
   {
     name: 'useAdminAboutSiteCards', key: ADMIN_ABOUT_SITE_CARD_REPOSITORY as never, read: 'list', loaded: [ONE], args: [],
-    compose: () => { const c = useAdminAboutSiteCards(); return { hasError: c.hasError, isLoaded: c.isLoaded, load: c.load, value: () => c.cards.value, mutate: () => c.remove('x'), shown: () => c.errorMessage.value } },
+    compose: () => {
+      const c = useAdminAboutSiteCards()
+      return {
+        hasError: c.hasError,
+        isLoaded: c.isLoaded,
+        load: c.load,
+        value: () => c.cards.value,
+        mutate: () => c.remove('x'),
+        shown: () => c.errorMessage.value,
+      }
+    },
   },
   {
     name: 'useAdminAnonymousCvSections', key: ADMIN_ANONYMOUS_CV_SECTION_REPOSITORY as never, read: 'list', loaded: [ONE], args: [],
-    compose: () => { const c = useAdminAnonymousCvSections(); return { hasError: c.hasError, isLoaded: c.isLoaded, load: c.load, value: () => c.sections.value, mutate: () => c.remove('x'), shown: () => c.errorMessage.value } },
+    compose: () => {
+      const c = useAdminAnonymousCvSections()
+      return {
+        hasError: c.hasError,
+        isLoaded: c.isLoaded,
+        load: c.load,
+        value: () => c.sections.value,
+        mutate: () => c.remove('x'),
+        shown: () => c.errorMessage.value,
+      }
+    },
   },
   {
     name: 'useAdminCaseStudies', key: ADMIN_CASE_STUDY_REPOSITORY as never, read: 'list', loaded: [ONE], args: [],
-    compose: () => { const c = useAdminCaseStudies(); return { hasError: c.hasError, isLoaded: c.isLoaded, load: c.load, value: () => c.caseStudies.value, mutate: () => c.remove('x'), shown: () => c.errorMessage.value } },
+    compose: () => {
+      const c = useAdminCaseStudies()
+      return {
+        hasError: c.hasError,
+        isLoaded: c.isLoaded,
+        load: c.load,
+        value: () => c.caseStudies.value,
+        mutate: () => c.remove('x'),
+        shown: () => c.errorMessage.value,
+      }
+    },
   },
   {
     name: 'useAdminContributions', key: ADMIN_CONTRIBUTION_REPOSITORY as never, read: 'list', loaded: [ONE], args: [],
-    compose: () => { const c = useAdminContributions(); return { hasError: c.hasError, isLoaded: c.isLoaded, load: c.load, value: () => c.contributions.value, mutate: () => c.remove('x'), shown: () => c.errorMessage.value } },
+    compose: () => {
+      const c = useAdminContributions()
+      return {
+        hasError: c.hasError,
+        isLoaded: c.isLoaded,
+        load: c.load,
+        value: () => c.contributions.value,
+        mutate: () => c.remove('x'),
+        shown: () => c.errorMessage.value,
+      }
+    },
   },
   {
     name: 'useAdminIncidents', key: ADMIN_INCIDENT_REPOSITORY as never, read: 'list', loaded: [ONE], args: [],
-    compose: () => { const c = useAdminIncidents(); return { hasError: c.hasError, isLoaded: c.isLoaded, load: c.load, value: () => c.incidents.value, mutate: () => c.remove('x'), shown: () => c.errorMessage.value } },
+    compose: () => {
+      const c = useAdminIncidents()
+      return {
+        hasError: c.hasError,
+        isLoaded: c.isLoaded,
+        load: c.load,
+        value: () => c.incidents.value,
+        mutate: () => c.remove('x'),
+        shown: () => c.errorMessage.value,
+      }
+    },
   },
   {
     name: 'useAdminQualityPrinciples', key: ADMIN_QUALITY_PRINCIPLE_REPOSITORY as never, read: 'list', loaded: [ONE], args: [],
-    compose: () => { const c = useAdminQualityPrinciples(); return { hasError: c.hasError, isLoaded: c.isLoaded, load: c.load, value: () => c.principles.value, mutate: () => c.remove('x'), shown: () => c.errorMessage.value } },
+    compose: () => {
+      const c = useAdminQualityPrinciples()
+      return {
+        hasError: c.hasError,
+        isLoaded: c.isLoaded,
+        load: c.load,
+        value: () => c.principles.value,
+        mutate: () => c.remove('x'),
+        shown: () => c.errorMessage.value,
+      }
+    },
   },
   {
     name: 'useAdminQualityTraits', key: ADMIN_QUALITY_TRAIT_REPOSITORY as never, read: 'list', loaded: [ONE], args: [],
-    compose: () => { const c = useAdminQualityTraits(); return { hasError: c.hasError, isLoaded: c.isLoaded, load: c.load, value: () => c.traits.value, mutate: () => c.remove('x'), shown: () => c.errorMessage.value } },
+    compose: () => {
+      const c = useAdminQualityTraits()
+      return {
+        hasError: c.hasError,
+        isLoaded: c.isLoaded,
+        load: c.load,
+        value: () => c.traits.value,
+        mutate: () => c.remove('x'),
+        shown: () => c.errorMessage.value,
+      }
+    },
   },
   {
     name: 'useAdminExperienceTechnologies', key: ADMIN_EXPERIENCE_TECHNOLOGY_REPOSITORY as never, read: 'list', loaded: [ONE], args: [],
-    compose: () => { const c = useAdminExperienceTechnologies(); return { hasError: c.hasError, isLoaded: c.isLoaded, load: c.load, value: () => c.technologies.value, mutate: () => c.remove('x'), shown: () => c.errorMessage.value } },
+    compose: () => {
+      const c = useAdminExperienceTechnologies()
+      return {
+        hasError: c.hasError,
+        isLoaded: c.isLoaded,
+        load: c.load,
+        value: () => c.technologies.value,
+        mutate: () => c.remove('x'),
+        shown: () => c.errorMessage.value,
+      }
+    },
   },
   {
     name: 'useAdminUsers', key: ADMIN_USER_REPOSITORY as never, read: 'list', loaded: [ONE], args: [],
-    compose: () => { const c = useAdminUsers(); return { hasError: c.hasError, isLoaded: c.isLoaded, load: c.load, value: () => c.users.value, mutate: () => c.remove('x'), shown: () => c.errorMessage.value } },
+    compose: () => {
+      const c = useAdminUsers()
+      return {
+        hasError: c.hasError,
+        isLoaded: c.isLoaded,
+        load: c.load,
+        value: () => c.users.value,
+        mutate: () => c.remove('x'),
+        shown: () => c.errorMessage.value,
+      }
+    },
   },
   {
     name: 'useAdminVulnerabilities', key: ADMIN_VULNERABILITY_REPOSITORY as never, read: 'list', loaded: [ONE], args: [],
     compose: () => {
       const c = useAdminVulnerabilities()
       // Pas de `load` exposé : le chargement part au montage, un second ne se déclenche pas à la demande.
-      return { hasError: c.hasError, isLoaded: c.isLoaded, load: async () => undefined, value: () => c.vulnerabilities.value, mutate: null, shown: () => null }
+      return {
+        hasError: c.hasError,
+        isLoaded: c.isLoaded,
+        load: async () => undefined,
+        value: () => c.vulnerabilities.value,
+        mutate: null,
+        shown: () => null,
+      }
     },
   },
   {
     name: 'useAdminWatchedProducts', key: ADMIN_WATCHED_PRODUCT_REPOSITORY as never, read: 'list', loaded: [ONE], args: [],
-    compose: () => { const c = useAdminWatchedProducts(); return { hasError: c.hasError, isLoaded: c.isLoaded, load: c.load, value: () => c.products.value, mutate: () => c.remove('x'), shown: () => c.errorMessage.value } },
+    compose: () => {
+      const c = useAdminWatchedProducts()
+      return {
+        hasError: c.hasError,
+        isLoaded: c.isLoaded,
+        load: c.load,
+        value: () => c.products.value,
+        mutate: () => c.remove('x'),
+        shown: () => c.errorMessage.value,
+      }
+    },
   },
 ]
 
@@ -244,7 +371,11 @@ describe('mutation refusée : session finie', () => {
           return () => h('div')
         },
       }),
-      { global: { provide: { [ADMIN_TRANSLATION_REPOSITORY as symbol]: { translate: async () => Promise.reject(new SessionEndedError()) } } } },
+      {
+        global: {
+          provide: { [ADMIN_TRANSLATION_REPOSITORY as symbol]: { translate: async () => Promise.reject(new SessionEndedError()) } },
+        },
+      },
     )
 
     const proposal = await captured?.translate('fr', 'en', {})

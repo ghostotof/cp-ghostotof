@@ -119,7 +119,12 @@ const showTable = computed(() => 'error' !== status.value && connections.value.l
 const showEmpty = computed(() => 'ready' === status.value && 0 === connections.value.length)
 
 /** L'issue que la région d'état dit : copie différée de `lastOutcome`, vide tant que le focus n'a pas bougé. */
-const { announced: announcedOutcome, focusThenAnnounce, cancel: cancelAnnouncement, isUnmounted } = useFocusThenAnnounce<McpRevocationOutcome>()
+const {
+  announced: announcedOutcome,
+  focusThenAnnounce,
+  cancel: cancelAnnouncement,
+  isUnmounted,
+} = useFocusThenAnnounce<McpRevocationOutcome>()
 
 /** Le seul `role="status"` de la page : vide hors chargement, révocation et issue à annoncer. */
 const statusMessage = computed<string>(() => {

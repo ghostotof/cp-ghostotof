@@ -115,12 +115,21 @@ final class AuthCookieAttributesTest extends WebTestCase
     {
         $client = self::createClient();
         self::getContainer()->get('cache.rate_limiter')->clear();
-        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::USERNAME, TestCredentials::plainPassword(), [CpgUser::ROLE_TRUSTED]);
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(
+            self::USERNAME,
+            TestCredentials::plainPassword(),
+            [CpgUser::ROLE_TRUSTED],
+        );
 
-        $client->request('POST', '/api/login_check', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_X_REQUESTED_WITH' => 'fetch'], content: self::jsonBody([
-            'username' => self::USERNAME,
-            'password' => TestCredentials::plainPassword(),
-        ]));
+        $client->request(
+            'POST',
+            '/api/login_check',
+            server: ['CONTENT_TYPE' => 'application/json', 'HTTP_X_REQUESTED_WITH' => 'fetch'],
+            content: self::jsonBody([
+                'username' => self::USERNAME,
+                'password' => TestCredentials::plainPassword(),
+            ]),
+        );
         self::assertResponseIsSuccessful();
 
         $this->assertBothAreSessionCookies($this->cookiesByName($client), 'login');
@@ -145,7 +154,11 @@ final class AuthCookieAttributesTest extends WebTestCase
     {
         foreach ([AuthCookieFactory::BEARER, AuthCookieFactory::XSRF_TOKEN] as $name) {
             self::assertArrayHasKey($name, $cookies, \sprintf('%s absent de la réponse (%s).', $name, $site));
-            self::assertSame(0, $cookies[$name]->getExpiresTime(), \sprintf('%s : %s doit être un cookie de session (aucune échéance), il a une échéance persistante.', $site, $name));
+            self::assertSame(
+                0,
+                $cookies[$name]->getExpiresTime(),
+                \sprintf('%s : %s doit être un cookie de session (aucune échéance), il a une échéance persistante.', $site, $name),
+            );
             self::assertFalse($cookies[$name]->isCleared(), \sprintf('%s : %s ne doit pas être expiré.', $site, $name));
         }
     }

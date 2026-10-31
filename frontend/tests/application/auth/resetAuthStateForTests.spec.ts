@@ -1,7 +1,16 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, effectScope, h } from 'vue'
 import type { AuthRepository } from '../../../src/domain/auth/repositories/AuthRepository'
-import { AUTH_REPOSITORY, authState, markBaseAccessGranted, markSessionExpired, onAccountSwitched, onSessionRestored, sessionStamp, useAuth } from '../../../src/application/auth/useAuth'
+import {
+  AUTH_REPOSITORY,
+  authState,
+  markBaseAccessGranted,
+  markSessionExpired,
+  onAccountSwitched,
+  onSessionRestored,
+  sessionStamp,
+  useAuth,
+} from '../../../src/application/auth/useAuth'
 import { resetAuthStateForTests } from '../../../src/application/auth/resetAuthStateForTests'
 import { sessionFor } from '../../support/authSession'
 

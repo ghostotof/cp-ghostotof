@@ -37,7 +37,9 @@ describe('HttpAdminUserRepository', () => {
     setBackofficeSessionReaction({ stampAtSend: readStamp, ended: onSessionEnded, refused: () => undefined })
     vi.stubGlobal('fetch', vi.fn(async () => jsonResponse(401, { code: 401, message: 'Session closed by a password change.' })))
 
-    await expect(new HttpAdminUserRepository(API_BASE_URL).changePassword(USER_ID, 'new-password')).rejects.toBeInstanceOf(SessionEndedError)
+    await expect(
+      new HttpAdminUserRepository(API_BASE_URL).changePassword(USER_ID, 'new-password'),
+    ).rejects.toBeInstanceOf(SessionEndedError)
 
     expect(onSessionEnded).toHaveBeenCalledTimes(1)
   })
@@ -52,7 +54,7 @@ describe('HttpAdminUserRepository', () => {
     expect(onSessionEnded).toHaveBeenCalledTimes(1)
   })
 
-  it('un 403 est un refus réel levé par le client, jamais traduit par le dépôt : ni session finie, ni AdminUserError (#748, R17)', async () => {
+  it('un 403 est un refus réel du client, jamais traduit par le dépôt : ni session finie, ni AdminUserError (#748, R17)', async () => {
     const onSessionEnded = vi.fn(() => true)
     const onRefused = vi.fn()
     setBackofficeSessionReaction({ stampAtSend: readStamp, ended: onSessionEnded, refused: onRefused })

@@ -239,7 +239,7 @@ describe('AccessRefusedNotice (#748, R17)', () => {
       markBackofficeAccessRefused({ kind: 'write' }, lastAccountName())
     }
 
-    it("un refus d'écriture arrivé après le démontage s'affiche au montage suivant, avec son propre texte, inséré après le montage", async () => {
+    it("un refus d'écriture après le démontage s'affiche au montage suivant, avec son propre texte, inséré après le montage", async () => {
       const first = await mountNotice()
       first.wrapper.unmount()
       writeRefusedWhileAway()
@@ -273,7 +273,7 @@ describe('AccessRefusedNotice (#748, R17)', () => {
       second.wrapper.unmount()
     })
 
-    it("un nouvel enregistrement refusé sur la page remplace le texte de l'enregistrement précédent par celui du refus courant", async () => {
+    it("un nouvel enregistrement refusé sur la page remplace le texte du précédent par celui du refus courant", async () => {
       const first = await mountNotice()
       first.wrapper.unmount()
       writeRefusedWhileAway()

@@ -114,7 +114,8 @@ paths:
   (`Content-Length` over the bound) is rendered at find-config, before any zone: an unlimited flow of them
   costs nginx only. Its 413 is nginx's HTML page, like the server's 1 MB one. Accepted: claude.ai and ChatGPT
   connectors call from their providers' egress addresses, which their users share — fine at this site's
-  audience, revisit if phase 2's real clients get throttled. `tools/smoke-mcp.sh` is run by `smoke-test-preprod` (its own `timeout-minutes: 3`).
+  audience, revisit if phase 2's real clients get throttled. `tools/smoke-mcp.sh` is run by `smoke-test-preprod` (its own
+  `timeout-minutes: 3`).
   The library `tools/lib/smoke-http.sh` is shared by `smoke-login-throttling.sh`, `smoke-dead-session-cookie.sh` and this one.
   It reads headers (`smoke_header`, and `smoke_headers` for a repeated one such as `Set-Cookie`).
   `smoke_use_auth_config <NAME> || exit 2` is the only Basic Auth call of the audit and the three smokes (R133): it writes, then requires.

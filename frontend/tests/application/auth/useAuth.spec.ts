@@ -1,7 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { defineComponent, h } from 'vue'
-import { AUTH_REPOSITORY, authState, markBaseAccessExpired, markBaseAccessGranted, markSessionExpired, lastAccountName, sessionStamp, useAuth, waitForAuthCheck } from '../../../src/application/auth/useAuth'
+import {
+  AUTH_REPOSITORY,
+  authState,
+  markBaseAccessExpired,
+  markBaseAccessGranted,
+  markSessionExpired,
+  lastAccountName,
+  sessionStamp,
+  useAuth,
+  waitForAuthCheck,
+} from '../../../src/application/auth/useAuth'
 import type { AuthRepository } from '../../../src/domain/auth/repositories/AuthRepository'
 import type { AuthenticatedUser } from '../../../src/domain/auth/entities/AuthenticatedUser'
 import { BASE_ACCESS_SESSION, type AuthSession } from '../../../src/domain/auth/entities/AuthSession'
@@ -685,7 +695,10 @@ describe('useAuth', () => {
 
     it('un me() abandonné libère la relecture : la suivante rappelle me()', async () => {
       const abort = new DOMException('The operation was aborted.', 'AbortError')
-      const me = vi.fn().mockRejectedValueOnce(abort).mockResolvedValueOnce(sessionFor({ username: 'jane', roles: ['ROLE_TRUSTED', 'ROLE_USER'] }))
+      const me = vi
+        .fn()
+        .mockRejectedValueOnce(abort)
+        .mockResolvedValueOnce(sessionFor({ username: 'jane', roles: ['ROLE_TRUSTED', 'ROLE_USER'] }))
       const auth = mountWithComposable(createStubRepository({ me }))
       markSessionExpired()
 
@@ -698,7 +711,9 @@ describe('useAuth', () => {
     })
 
     it("un compte retrouvé avec son jeton d'écriture rétablit la session", async () => {
-      const repository = createStubRepository({ me: vi.fn(async () => sessionFor({ username: 'jane', roles: ['ROLE_TRUSTED', 'ROLE_USER'] })) })
+      const repository = createStubRepository({
+        me: vi.fn(async () => sessionFor({ username: 'jane', roles: ['ROLE_TRUSTED', 'ROLE_USER'] })),
+      })
       const auth = mountWithComposable(repository)
       markSessionExpired()
 
@@ -1205,7 +1220,11 @@ describe('useAuth', () => {
       it("logout refusé par le serveur pendant qu'un /api/me est en vol : l'en-tête reste anonyme", async () => {
         const { me, settle } = deferredMe()
         const auth = mountWithComposable(
-          createStubRepository({ me: vi.fn(me), login: vi.fn(async () => JANE), logout: vi.fn(async () => Promise.reject(new Error('403'))) }),
+          createStubRepository({
+            me: vi.fn(me),
+            login: vi.fn(async () => JANE),
+            logout: vi.fn(async () => Promise.reject(new Error('403'))),
+          }),
         )
         await auth.login('jane', 'password')
 
@@ -1286,7 +1305,7 @@ describe('useAuth', () => {
     })
 
     describe('« le même compte » est le dernier compte affiché : identité et droits', () => {
-      it('fin de session après une relecture au palier de base, puis un autre compte revient : onAccountSwitched, pas onSessionRestored', async () => {
+      it('fin de session puis relecture au palier de base, autre compte au retour : onAccountSwitched, pas onSessionRestored', async () => {
         const me = vi.fn<() => Promise<AuthSession>>()
         const { auth, restored, switched } = subscribed(createStubRepository({ me, login: vi.fn(async () => JANE) }))
         await auth.login('jane', 'password')

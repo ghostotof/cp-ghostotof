@@ -19,7 +19,13 @@ import { advanceGeneration } from './sessionGeneration'
  * par des fonctions nommées (`applySession`, `markFirstCheckDone`, `raiseSessionEnded`,
  * `lowerSessionEnded`) ; tout le reste lit `authState`.
  */
-const state = reactive<{ tier: AccessTier; user: AuthenticatedUser | null; isChecking: boolean; sessionEnded: boolean; sessionEndedCount: number }>({
+const state = reactive<{
+  tier: AccessTier
+  user: AuthenticatedUser | null
+  isChecking: boolean
+  sessionEnded: boolean
+  sessionEndedCount: number
+}>({
   tier: ANONYMOUS_SESSION.tier,
   user: ANONYMOUS_SESSION.user,
   isChecking: true,

@@ -8,7 +8,9 @@ import { HttpAdminContributionRepository } from '../../../src/infrastructure/adm
 import { HttpAdminIncidentRepository } from '../../../src/infrastructure/admin/incidents/HttpAdminIncidentRepository'
 import { HttpAdminQualityPrincipleRepository } from '../../../src/infrastructure/admin/quality/HttpAdminQualityPrincipleRepository'
 import { HttpAdminQualityTraitRepository } from '../../../src/infrastructure/admin/quality/HttpAdminQualityTraitRepository'
-import { HttpAdminExperienceTechnologyRepository } from '../../../src/infrastructure/admin/technologies/HttpAdminExperienceTechnologyRepository'
+import {
+  HttpAdminExperienceTechnologyRepository,
+} from '../../../src/infrastructure/admin/technologies/HttpAdminExperienceTechnologyRepository'
 import { HttpAdminTranslationRepository } from '../../../src/infrastructure/admin/translation/HttpAdminTranslationRepository'
 import { HttpAdminUserRepository } from '../../../src/infrastructure/admin/users/HttpAdminUserRepository'
 import { HttpAdminVulnerabilityRepository } from '../../../src/infrastructure/admin/watch/HttpAdminVulnerabilityRepository'

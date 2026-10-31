@@ -229,7 +229,12 @@ describe('AppLayout — un autre compte au retour', () => {
     const router = createRouter({
       history: createMemoryHistory(),
       routes: [
-        { path: '/:locale(fr|en)/admin/case-studies', name: 'admin-case-studies', component: Counted, meta: { requiresAuth: true, roles: [ROLE_SUPER] } },
+        {
+          path: '/:locale(fr|en)/admin/case-studies',
+          name: 'admin-case-studies',
+          component: Counted,
+          meta: { requiresAuth: true, roles: [ROLE_SUPER] },
+        },
         { path: '/:locale(fr|en)/forbidden', name: 'forbidden', component: PlainStub },
         { path: '/:locale(fr|en)/login', name: 'login', component: PlainStub },
       ],
