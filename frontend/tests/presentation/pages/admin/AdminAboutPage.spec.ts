@@ -1791,7 +1791,7 @@ describe('AdminAboutPage', () => {
     })
 
     // La relecture de la cible refusée (403) ou interrompue laisse les réglages nuls : le formulaire n'est pas rendu, et
-    // l'avis de la proposition ne se rapporte à rien. L'état est la seule observation : l'avis vit dans le formulaire.
+    // avec lui ni l'avis de la proposition, ni son verrou, ni « Abandonner » : tout vit dans le formulaire.
     it("une proposition en EN, retour à l'EN refusé : aucun avis sous un formulaire non chargé (#748, R113)", async () => {
       let englishReads = 0
       const settingsRepository = createSettingsRepository({
@@ -1816,9 +1816,11 @@ describe('AdminAboutPage', () => {
       await flushPromises()
 
       expect(englishReads).toBe(2)
-      const form = wrapper.findComponent(AdminAboutSettingsForm).vm as unknown as { isProposalShown: boolean }
-      expect(form.isProposalShown).toBe(false)
-      expect(panelOf(wrapper, SETTINGS_PANEL).find('[role="status"]').exists()).toBe(false)
+      const settingsPanel = panelOf(wrapper, SETTINGS_PANEL)
+      expect(settingsPanel.find('form').exists()).toBe(false)
+      expect(settingsPanel.text()).toContain('Contenu non chargé')
+      expect(settingsPanel.find('[role="status"]').exists()).toBe(false)
+      expect(settingsPanel.findAll('button').map((button) => button.text())).not.toContain('Abandonner')
     })
 
     it("une proposition en EN, enregistrement EN refusé : l'avis reste, rien n'est relu (#748, R66, F11)", async () => {

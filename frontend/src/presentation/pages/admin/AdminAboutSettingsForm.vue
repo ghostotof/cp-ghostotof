@@ -75,9 +75,10 @@ const formElement = ref<HTMLFormElement | null>(null)
 // ne s'affiche que sous elle, et il part quand le formulaire de cette langue est relu du serveur (le `watch` de
 // `settings`, ci-dessous), la proposition non enregistrée étant alors perdue (décision 4 de la sixième série).
 const proposal = ref<{ readonly source: Locale; readonly target: Locale } | null>(null)
-// L'avis est celui de la langue montrée si c'est la cible de la proposition (R86, St7-10), et seulement sous un formulaire
-// chargé : une relecture de la cible refusée ou interrompue laisse les réglages nuls, sans formulaire pour le porter.
-const isProposalShown = computed(() => isLoaded.value && proposal.value?.target === props.locale)
+// L'avis est celui de la langue montrée si c'est la cible de la proposition (R86, St7-10). Chaque lecteur est dans le
+// formulaire (avis, verrou, « Abandonner », bouton), qui n'existe qu'une fois `isLoaded` : une relecture de la cible
+// refusée ou interrompue laisse les réglages nuls, sans formulaire pour les porter. `translate` n'est émis que par ce bouton.
+const isProposalShown = computed(() => proposal.value?.target === props.locale)
 // Pendant une traduction, la prose du formulaire est en lecture seule et désigne le texte d'aide (R126) : la référence
 // n'existe que pendant elle, avec le texte, jamais pendante.
 const PROSE_READONLY_HINT_ID = 'admin-about-settings-prose-readonly-hint'
