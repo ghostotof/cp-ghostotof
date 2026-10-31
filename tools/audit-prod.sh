@@ -23,9 +23,8 @@ CURL_OPTS=(--connect-timeout 5 --max-time 15)
 
 # Les mêmes options, sans jamais la Basic Auth ci-dessous : pour les seuls appels
 # qui doivent partir SANS elle, même en préprod. Deux lecteurs : les sondes de
-# redirection (section 3, #750 : un `-K` mettrait l'identifiant en clair sur http://)
-# et les métadonnées OAuth (section 6ter, qu'un client MCP lit sans savoir répondre
-# à une Basic Auth).
+# redirection (section 3, qui en dit la raison) et les métadonnées OAuth (section 6ter,
+# qu'un client MCP lit sans savoir répondre à une Basic Auth).
 CURL_OPTS_ANONYMOUS=("${CURL_OPTS[@]}")
 
 # Préprod exige une Basic Auth (point de sécurité 2026-09-12) : sans elle,
@@ -57,7 +56,9 @@ CURL_OPTS_ANONYMOUS=("${CURL_OPTS[@]}")
 #     ou un mot de passe vide sont refusés par `smoke_use_auth_config` avant tout dossier
 #     (sortie 2, celle d'un défaut d'environnement, comme une bibliothèque absente).
 # Le `-K` va dans `CURL_OPTS` : l'audit n'appelle jamais `smoke_fetch`, ne réécrit pas
-# le fichier, donc aucun `-K` n'y est périmé. Le `trap` précède la création du dossier :
+# le fichier, donc aucun `-K` n'y est périmé. `--proto-redir =https` l'accompagne : un appel
+# authentifié ne suit une redirection (`-L`) que vers https, jamais vers http:// ni un autre
+# schéma, où l'identifiant partirait en clair ; sans `-K`, l'option n'a pas lieu d'être. Le `trap` précède la création du dossier :
 # un arrêt entre `mktemp -d` et l'affectation que lit le `trap` peut laisser un dossier
 # privé **vide**, jamais la valeur, qui n'est écrite qu'une fois le chemin connu du
 # `trap` (#748, C7-8).
@@ -70,7 +71,7 @@ if [[ -v AUDIT_BASIC_AUTH ]]; then
   }
   trap 'smoke_cleanup' EXIT
   smoke_use_auth_config AUDIT_BASIC_AUTH || exit 2
-  CURL_OPTS+=(-K "$SMOKE_AUTH_CONFIG")
+  CURL_OPTS+=(-K "$SMOKE_AUTH_CONFIG" --proto-redir "=https")
 fi
 DIG_TIMEOUT=(+time=3 +tries=1)
 
@@ -106,12 +107,15 @@ section "Redirections"
 # Ces sondes partent sans Basic Auth (CURL_OPTS_ANONYMOUS) : curl envoie
 # `Authorization: Basic` dès la première requête, quel que soit le schéma, donc
 # l'identifiant de la préprod partirait en clair sur http://. Une redirection
-# se juge sans authentification (#750).
+# se juge sans authentification (#750). Conséquence : en préprod, l'hôte répond 401
+# à la sonde, ce que la ligne dit au lieu de passer pour une redirection cassée.
 for url in "http://${DOMAIN}" "http://www.${DOMAIN}" "https://www.${DOMAIN}"; do
   # %{http_code} = code de la 1re réponse, %{redirect_url} = cible du Location
-  printf '%-32s -> %s %s\n' "$url" \
-    "$(curl -sS "${CURL_OPTS_ANONYMOUS[@]}" -o /dev/null -w '%{http_code}' "$url")" \
-    "$(curl -sS "${CURL_OPTS_ANONYMOUS[@]}" -o /dev/null -w '%{redirect_url}' "$url")"
+  code="$(curl -sS "${CURL_OPTS_ANONYMOUS[@]}" -o /dev/null -w '%{http_code}' "$url")"
+  hint=""
+  [ "$code" = "401" ] && hint=" (l'hôte demande la Basic Auth : la sonde part sans elle, #750)"
+  printf '%-32s -> %s %s%s\n' "$url" "$code" \
+    "$(curl -sS "${CURL_OPTS_ANONYMOUS[@]}" -o /dev/null -w '%{redirect_url}' "$url")" "$hint"
 done
 
 # ---------------------------------------------------------------------------

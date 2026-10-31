@@ -135,6 +135,8 @@ paths:
   (#748, C6-7); the production audit, with the variable undefined, never reads it.
   Its redirection probes (section 3) leave without the Basic Auth (`CURL_OPTS_ANONYMOUS`): curl sends `Authorization: Basic`
   on the first request whatever the scheme, so a `-K` there would put the preprod credential in clear on `http://` (#750, R115).
+  Every call that carries the `-K` follows redirects on `https` only (`--proto-redir =https`, R134), and none without it carries the option.
+  A probe answered 401 says the host asks for the Basic Auth (it leaves without it on purpose), instead of reading as a broken redirect.
   Offline test: `tools/tests/audit-prod.test.sh`, fake `dig`/`curl`/`openssl`.
   The smoke proves it on the real pod: an `initialize` on the public host (a 403 there
   means `allowed_hosts`, derived from `APP_FRONTEND_BASE_URL`, misses it), the session closed by `DELETE` (its

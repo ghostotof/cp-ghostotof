@@ -29,15 +29,28 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib/smoke-cases.sh"
 
 # Les faux : ils notent « <nom> <arguments> » et échouent (sortie 7 pour curl,
 # comme une connexion refusée ; 1 pour les autres), sans sortie.
+# Une exception pour curl : si FAKE_CURL_HTTP_CODE_FOR_WWW est posée, un appel
+# `-w '%{http_code}'` sur une URL https://www. rend ce code sur stdout (sortie 0),
+# la réponse d'un hôte qui exige la Basic Auth (401) ou non.
 mkdir -p "$TMP/bin"
-for fake in dig curl openssl; do
+for fake in dig openssl; do
   cat > "$TMP/bin/$fake" <<FAKE
 #!/usr/bin/env bash
 printf '%s %s\n' "$fake" "\$*" >> "\$FAKE_CALLS"
-exit $([ "$fake" = curl ] && echo 7 || echo 1)
+exit 1
 FAKE
   chmod +x "$TMP/bin/$fake"
 done
+cat > "$TMP/bin/curl" <<'FAKE'
+#!/usr/bin/env bash
+printf '%s %s\n' curl "$*" >> "$FAKE_CALLS"
+if [ -n "${FAKE_CURL_HTTP_CODE_FOR_WWW:-}" ] && [[ "$*" == *'%{http_code}'* ]] && [[ "${!#}" == https://www.* ]]; then
+  printf '%s' "$FAKE_CURL_HTTP_CODE_FOR_WWW"
+  exit 0
+fi
+exit 7
+FAKE
+chmod +x "$TMP/bin/curl"
 
 # copy_tools <nom> <invalide|réelle> : une copie de tools/ où smoke-http.sh est soit la
 # vraie bibliothèque, soit un fichier à erreur de syntaxe.
@@ -192,6 +205,77 @@ elif [ -n "$without_k" ]; then
   fail "chaque appel https:// vers l'apex porte -K (la préprod reste authentifiée)" "sans -K : $without_k"
 else
   pass "chaque appel https:// vers l'apex porte -K (la préprod reste authentifiée)"
+fi
+
+# --- C11-2 : un appel qui porte `-K` ne suit une redirection que vers https (`--proto-redir =https`) : une
+# redirection vers http:// ou un autre schéma ne recevrait jamais l'identifiant. Un appel sans `-K` (l'audit de la
+# vraie prod, ou les sondes anonymes) n'a aucune raison de le porter : il ne le porte pas.
+has_proto_redir() { grep -qE -- '(^| )--proto-redir =https( |$)'; }
+# calls_of <nom> <avec|sans> : les appels curl d'un run qui portent (ou non) `-K`, un par ligne.
+calls_of() {
+  local line
+  while IFS= read -r line; do
+    case "$line" in "curl "*) ;; *) continue ;; esac
+    if has_k <<< "$line"; then [ "$2" = avec ] && printf '%s\n' "$line"; else [ "$2" = sans ] && printf '%s\n' "$line"; fi
+  done < "$TMP/$1.calls"
+  return 0
+}
+# lacking <avec|sans> <nom> : les appels qui devraient porter --proto-redir et ne le portent pas (avec -K),
+# ou qui le portent sans devoir (sans -K), bornés à deux pour un message lisible.
+lacking() {
+  local line count=0
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    if { [ "$1" = avec ] && ! has_proto_redir <<< "$line"; } || { [ "$1" = sans ] && has_proto_redir <<< "$line"; }; then
+      count=$((count + 1))
+      [ "$count" -le 2 ] && printf '%s | ' "${line:0:90}"
+    fi
+  done <<< "$(calls_of "$2" "$1")"
+  return 0
+}
+
+with_k="$(calls_of nominal avec)"
+bad="$(lacking avec nominal)"
+if [ -z "$with_k" ]; then
+  fail "chaque appel qui porte -K porte --proto-redir =https" "aucun appel avec -K noté : le cas ne prouverait rien"
+elif [ -n "$bad" ]; then
+  fail "chaque appel qui porte -K porte --proto-redir =https" "sans l'option : $bad"
+else
+  pass "chaque appel qui porte -K porte --proto-redir =https ($(wc -l <<< "$with_k") appels)"
+fi
+
+# Le témoin : sans Basic Auth (l'audit de la vraie prod) et pour les appels anonymes d'un run authentifié.
+without_k="$(calls_of sansauth sans)"$'\n'"$(calls_of nominal sans)"
+bad="$(lacking sans sansauth)$(lacking sans nominal)"
+if [ -z "${without_k//$'\n'/}" ]; then
+  fail "aucun appel sans -K ne porte --proto-redir" "aucun appel sans -K noté : le cas ne prouverait rien"
+elif [ -n "$bad" ]; then
+  fail "aucun appel sans -K ne porte --proto-redir" "avec l'option : $bad"
+else
+  pass "aucun appel sans -K ne porte --proto-redir (avec et sans Basic Auth)"
+fi
+
+# --- CR11-9 : une sonde de redirection qui reçoit 401 dit que l'hôte demande la Basic Auth (la sonde part sans
+# elle exprès) au lieu de passer pour une redirection cassée. Un autre code ne porte pas ce message. La valeur
+# de la Basic Auth (générée) n'apparaît nulle part.
+copy_tools sonde401 reelle
+probe_auth="$(generated_basic_auth)"
+FAKE_CURL_HTTP_CODE_FOR_WWW=401 AUDIT_BASIC_AUTH="$probe_auth" run_audit sonde401
+probe_line="$(grep -F 'https://www.example.invalid' "$TMP/sonde401.out" | head -1 || true)"
+if [[ "$probe_line" == *' 401 '* && "$probe_line" == *"l'hôte demande la Basic Auth"* ]] \
+   && ! grep -qF -- "$probe_auth" "$TMP/sonde401.out" "$TMP/sonde401.err" "$TMP/sonde401.calls"; then
+  pass "une sonde https://www. en 401 dit que l'hôte demande la Basic Auth"
+else
+  fail "une sonde https://www. en 401 dit que l'hôte demande la Basic Auth" "ligne de la sonde : ${probe_line:-absente}"
+fi
+
+copy_tools sonde200 reelle
+FAKE_CURL_HTTP_CODE_FOR_WWW=301 AUDIT_BASIC_AUTH="$(generated_basic_auth)" run_audit sonde200
+probe_line="$(grep -F 'https://www.example.invalid' "$TMP/sonde200.out" | head -1 || true)"
+if [[ "$probe_line" == *' 301 '* && "$probe_line" != *'Basic Auth'* ]]; then
+  pass "une sonde https://www. en 301 ne porte pas ce message"
+else
+  fail "une sonde https://www. en 301 ne porte pas ce message" "ligne de la sonde : ${probe_line:-absente}"
 fi
 
 # --- C8-1 : sous `bash -x`, la valeur de AUDIT_BASIC_AUTH n'apparaît nulle part dans
