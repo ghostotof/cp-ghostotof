@@ -384,6 +384,12 @@ describe('AdminContributionsPage', () => {
     startEdit: async (wrapper) => {
       await buttonLabelled(actionsForLine(wrapper, "Un tableau de bord d'observabilité maison"), 'Modifier').trigger('click')
     },
+    deleteEditedEntry: async (wrapper) => {
+      await buttonLabelled(actionsForLine(wrapper, "Un tableau de bord d'observabilité maison"), 'Supprimer').trigger('click')
+    },
+    startEditOther: async (wrapper) => {
+      await buttonLabelled(actionsForLine(wrapper, 'Un lock npm dans le manifeste'), 'Modifier').trigger('click')
+    },
     startCreateVersion: (wrapper) => buttonLabelled(wrapper, 'Créer la version EN').trigger('click'),
     propose: async (wrapper) => {
       await translateEntryButton(wrapper, 0).trigger('click')

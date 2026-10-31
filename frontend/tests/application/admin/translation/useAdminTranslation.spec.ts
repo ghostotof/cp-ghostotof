@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { defineComponent, h } from 'vue'
+import { defineComponent, h, ref } from 'vue'
 import { mount } from '@vue/test-utils'
 import {
   ADMIN_TRANSLATION_REPOSITORY,
@@ -144,6 +144,69 @@ describe('useAdminTranslation', () => {
     expect(await stale).toBeNull()
     expect(await next).toEqual(PROPOSAL)
     expect(composable.errorReason.value).toBeNull()
+    expect(composable.isTranslating.value).toBe(false)
+  })
+
+  it('une identité de formulaire changée pendant la traduction : isTranslating retombe, la réponse rend null (#748, R124)', async () => {
+    let resolve!: (proposal: TranslationProposal) => void
+    const translate = vi.fn<AdminTranslationRepository['translate']>(() => new Promise<TranslationProposal>((r) => { resolve = r }))
+    const identity = ref({ entry: 'a', locale: 'fr' })
+    const composable = mountWithComposable({ translate }, { formIdentity: () => identity.value })
+
+    const pending = composable.translate('fr', 'en', FIELDS)
+    expect(composable.isTranslating.value).toBe(true)
+
+    identity.value = { entry: 'b', locale: 'fr' }
+    expect(composable.isTranslating.value).toBe(false)
+
+    resolve(PROPOSAL)
+    expect(await pending).toBeNull()
+    expect(composable.isTranslating.value).toBe(false)
+    expect(composable.errorReason.value).toBeNull()
+  })
+
+  it("une identité changée : l'échec de la traduction périmée ne pose aucune raison (#748, R124)", async () => {
+    let reject!: (error: unknown) => void
+    const translate = vi.fn<AdminTranslationRepository['translate']>(() => new Promise<TranslationProposal>((_, r) => { reject = r }))
+    const identity = ref('a')
+    const composable = mountWithComposable({ translate }, { formIdentity: () => identity.value })
+
+    const pending = composable.translate('fr', 'en', FIELDS)
+    identity.value = 'b'
+    reject(new AdminTranslationError('unavailable', 'Indisponible.'))
+
+    expect(await pending).toBeNull()
+    expect(composable.errorReason.value).toBeNull()
+  })
+
+  it("une identité changée puis rétablie : la traduction partie du premier formulaire reste périmée (#748, R124)", async () => {
+    let resolve!: (proposal: TranslationProposal) => void
+    const translate = vi.fn<AdminTranslationRepository['translate']>(() => new Promise<TranslationProposal>((r) => { resolve = r }))
+    const identity = ref('a')
+    const composable = mountWithComposable({ translate }, { formIdentity: () => identity.value })
+
+    const pending = composable.translate('fr', 'en', FIELDS)
+    identity.value = 'b'
+    identity.value = 'a'
+    expect(composable.isTranslating.value).toBe(false)
+
+    resolve(PROPOSAL)
+    expect(await pending).toBeNull()
+  })
+
+  it('une identité inchangée : la proposition est rendue (#748, R124)', async () => {
+    let resolve!: (proposal: TranslationProposal) => void
+    const translate = vi.fn<AdminTranslationRepository['translate']>(() => new Promise<TranslationProposal>((r) => { resolve = r }))
+    const identity = ref({ entry: 'a', locale: 'fr' })
+    const composable = mountWithComposable({ translate }, { formIdentity: () => identity.value })
+
+    const pending = composable.translate('fr', 'en', FIELDS)
+    // Une réaffectation à l'identique ne remplace rien : l'identité est comparée par son contenu.
+    identity.value = { entry: 'a', locale: 'fr' }
+    expect(composable.isTranslating.value).toBe(true)
+
+    resolve(PROPOSAL)
+    expect(await pending).toEqual(PROPOSAL)
     expect(composable.isTranslating.value).toBe(false)
   })
 

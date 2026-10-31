@@ -50,8 +50,13 @@ const errorText = computed(() => {
  * L'avis « proposition générée par IA » est celui de la langue cible (`proposal.target`) : absent sous l'autre langue,
  * il part dès que le formulaire de sa langue est relu du serveur (R66, décision 4).
  */
-const { isTranslating, errorReason: translationErrorReason, translate, discard: discardTranslation } = useAdminTranslation()
 const PROSE_FIELDS = ['siteEyebrow', 'meEyebrow', 'technicalSubtitle', 'personalSubtitle', 'hobbiesSubtitle'] as const
+// Une traduction dont le formulaire n'est plus celui de l'envoi (une autre langue, d'autres réglages posés) est périmée.
+const {
+  isTranslating,
+  errorReason: translationErrorReason,
+  translate,
+} = useAdminTranslation({ formIdentity: () => ({ locale: props.locale, prose: collectProseFields(form, PROSE_FIELDS) }) })
 const pendingProposal = ref<TranslationProposal | null>(null)
 // La proposition posée sur un formulaire (R66, St6-10) : `source` est la langue traduite, que dit l'avis, `target` la
 // langue du formulaire qui la porte, celle que la page a prise pour la recevoir. L'avis n'est que celui de `target` : il
@@ -103,8 +108,6 @@ watch(
 watch(
   () => props.locale,
   (locale) => {
-    // Le formulaire d'une autre langue : la traduction en vol n'a plus de formulaire à qui répondre.
-    discardTranslation()
     void load(locale)
   },
   { immediate: true },

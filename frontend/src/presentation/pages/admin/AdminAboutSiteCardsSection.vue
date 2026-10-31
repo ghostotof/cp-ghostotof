@@ -68,7 +68,16 @@ const {
   errorReason: translationErrorReason,
   translate,
   discard: discardTranslation,
-} = useAdminTranslation({ isRefused: () => lock.isProposalLocked })
+} = useAdminTranslation({
+  isRefused: () => lock.isProposalLocked,
+  // Ce qui fait l'identité du formulaire : une traduction dont il n'a plus cette identité est périmée.
+  formIdentity: () => ({
+    entry: editingId.value,
+    locale: form.locale,
+    group: sourceGroup.value,
+    prose: collectProseFields(form, PROSE_FIELDS),
+  }),
+})
 
 /**
  * Prose d'une carte du site. Le complément de cette liste — `iconKey` — est ce
@@ -181,7 +190,6 @@ const translationOptions = computed(() => [
 ])
 
 function resetForm(): void {
-  discardTranslation()
   editingId.value = null
   proposalSourceLocale.value = null
   sourceGroup.value = null
@@ -198,7 +206,6 @@ function resetForm(): void {
 // traite une entrée seule en non-geste (`count($members) === 1`), le groupe
 // est conservé. Le sélecteur affiche donc « aucune » sans conséquence.
 function startEdit(card: AdminAboutSiteCard): void {
-  discardTranslation()
   editingId.value = card.id
   proposalSourceLocale.value = null
   sourceGroup.value = card.translationGroup
@@ -217,7 +224,6 @@ function startEdit(card: AdminAboutSiteCard): void {
  * traduire puisqu'il n'y a rien d'écrit encore.
  */
 function startCreateVersion(row: TranslationGroupRow<AdminAboutSiteCard>, locale: Locale): void {
-  discardTranslation()
   const existing = firstEntry(row, SUPPORTED_LOCALES)
 
   editingId.value = null
@@ -278,6 +284,11 @@ async function handleTranslate(targetLocale: Locale): Promise<void> {
 async function handleDelete(card: AdminAboutSiteCard): Promise<void> {
   if (!window.confirm(t('admin.about.siteCard.confirmDelete', { title: card.title }))) {
     return
+  }
+
+  // La suppression ne change rien au formulaire : la traduction de l'entrée supprimée est périmée ici.
+  if (card.id === editingId.value) {
+    discardTranslation()
   }
 
   await remove(card.id)

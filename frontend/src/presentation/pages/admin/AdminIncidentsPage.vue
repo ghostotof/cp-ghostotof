@@ -38,7 +38,16 @@ const {
   errorReason: translationErrorReason,
   translate,
   discard: discardTranslation,
-} = useAdminTranslation({ isRefused: () => lock.isProposalLocked })
+} = useAdminTranslation({
+  isRefused: () => lock.isProposalLocked,
+  // Ce qui fait l'identité du formulaire : une traduction dont il n'a plus cette identité est périmée.
+  formIdentity: () => ({
+    entry: editingId.value,
+    locale: form.locale,
+    group: sourceGroup.value,
+    prose: collectProseFields(form, PROSE_FIELDS),
+  }),
+})
 
 const editingId = ref<string | null>(null)
 
@@ -179,7 +188,6 @@ const translationOptions = computed(() => [
 ])
 
 function resetForm(): void {
-  discardTranslation()
   editingId.value = null
   proposalSourceLocale.value = null
   sourceGroup.value = null
@@ -195,7 +203,6 @@ function resetForm(): void {
 }
 
 function startEdit(incident: AdminIncident): void {
-  discardTranslation()
   editingId.value = incident.id
   proposalSourceLocale.value = null
   sourceGroup.value = incident.translationGroup
@@ -222,7 +229,6 @@ function startEdit(incident: AdminIncident): void {
  * puisqu'il n'y a rien à écrire encore.
  */
 function startCreateVersion(row: TranslationGroupRow<AdminIncident>, locale: Locale): void {
-  discardTranslation()
   const existing = firstEntry(row, SUPPORTED_LOCALES)
 
   editingId.value = null
@@ -291,6 +297,11 @@ async function handleTranslate(targetLocale: Locale): Promise<void> {
 async function handleDelete(incident: AdminIncident): Promise<void> {
   if (!window.confirm(t('admin.incidents.confirmDelete', { title: incident.title }))) {
     return
+  }
+
+  // La suppression ne change rien au formulaire : la traduction de l'entrée supprimée est périmée ici.
+  if (incident.id === editingId.value) {
+    discardTranslation()
   }
 
   await remove(incident.id)

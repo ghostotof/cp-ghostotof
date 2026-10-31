@@ -491,6 +491,12 @@ describe('AdminCaseStudiesPage', () => {
     startEdit: async (wrapper) => {
       await buttonLabelled(actionsForLine(wrapper, 'PHPStan progressif sur un legacy'), 'Modifier').trigger('click')
     },
+    deleteEditedEntry: async (wrapper) => {
+      await buttonLabelled(actionsForLine(wrapper, 'PHPStan progressif sur un legacy'), 'Supprimer').trigger('click')
+    },
+    startEditOther: async (wrapper) => {
+      await buttonLabelled(actionsForLine(wrapper, 'Un moteur de tarification asynchrone'), 'Modifier').trigger('click')
+    },
     startCreateVersion: (wrapper) => buttonLabelled(wrapper, 'Créer la version EN').trigger('click'),
     propose: async (wrapper) => {
       await translateEntryButton(wrapper, 0).trigger('click')

@@ -680,6 +680,12 @@ describe('AdminQualityPage', () => {
       startEdit: async (wrapper) => {
         await buttonLabelled(actionsForLine(wrapper, PRINCIPLES, "Tests d'abord"), 'Modifier').trigger('click')
       },
+      deleteEditedEntry: async (wrapper) => {
+        await buttonLabelled(actionsForLine(wrapper, PRINCIPLES, "Tests d'abord"), 'Supprimer').trigger('click')
+      },
+      startEditOther: async (wrapper) => {
+        await buttonLabelled(actionsForLine(wrapper, PRINCIPLES, 'Revue systématique'), 'Modifier').trigger('click')
+      },
       startCreateVersion: (wrapper) => buttonLabelled(rowsOf(wrapper, PRINCIPLES)[1], 'Créer la version EN').trigger('click'),
       propose: async (wrapper) => {
         await translateEntryButton(wrapper, PRINCIPLES).trigger('click')
@@ -702,6 +708,12 @@ describe('AdminQualityPage', () => {
       permanentHelp: LOCALE_HELP_TEXT,
       startEdit: async (wrapper) => {
         await buttonLabelled(actionsForLine(wrapper, TRAITS, 'Documenté'), 'Modifier').trigger('click')
+      },
+      deleteEditedEntry: async (wrapper) => {
+        await buttonLabelled(actionsForLine(wrapper, TRAITS, 'Documenté'), 'Supprimer').trigger('click')
+      },
+      startEditOther: async (wrapper) => {
+        await buttonLabelled(actionsForLine(wrapper, TRAITS, 'Observable'), 'Modifier').trigger('click')
       },
       startCreateVersion: (wrapper) => buttonLabelled(rowsOf(wrapper, TRAITS)[1], 'Créer la version EN').trigger('click'),
       propose: async (wrapper) => {

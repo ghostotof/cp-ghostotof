@@ -91,10 +91,17 @@ export interface EntryFormLockCase {
   readonly permanentHelp?: string
   /** Ouvre une entrée existante en édition. */
   readonly startEdit: (wrapper: VueWrapper) => Promise<void>
+  /** Ouvre en édition une autre entrée que celle de `startEdit` : ce qui remplace le formulaire par celui d'une autre. */
+  readonly startEditOther: (wrapper: VueWrapper) => Promise<void>
   /** « Créer la version XX » d'une ligne du tableau : ouvre une création rattachée, prose vide. */
   readonly startCreateVersion: (wrapper: VueWrapper) => Promise<void>
   /** Depuis l'entrée en édition, demande la proposition de traduction et attend qu'elle s'affiche. */
   readonly propose: (wrapper: VueWrapper) => Promise<void>
+  /**
+   * Supprime l'entrée en édition depuis le tableau (son bouton « Supprimer »). Le `window.confirm` de la page
+   * est simulé à `true` par le support, qui le rétablit ensuite.
+   */
+  readonly deleteEditedEntry: (wrapper: VueWrapper) => Promise<void>
 }
 
 /**
@@ -102,8 +109,8 @@ export interface EntryFormLockCase {
  * désactive la langue et montre « Annuler » ; « Annuler » rend un formulaire vide ; le verrou est expliqué en
  * édition et pas dans un formulaire libre ; il l'est pendant une proposition, avec « Version de » et
  * « Proposer la version XX », et « Annuler » retire l'explication ; un « translate » émis pendant une proposition,
- * ou avant la première réponse, ne lance rien ; « Annuler », « Modifier » et « Créer la version XX » pendant une
- * traduction en périment la réponse. Le support
+ * ou avant la première réponse, ne lance rien ; « Annuler », « Modifier », « Créer la version XX », la suppression
+ * de l'entrée éditée et le changement de langue d'une création pendant une traduction en périment la réponse. Le support
  * crée le dépôt de traduction de chaque cas, le passe à `mount` et compte ses appels. Écrits une fois pour les huit
  * formulaires : un cas de plus s'y ajoute une fois.
  */
@@ -294,20 +301,20 @@ export function describeEntryFormLock(lockCase: EntryFormLockCase): void {
   })
 
   // Chaque geste qui remplace le contenu du formulaire périme la traduction en vol : sa réponse n'y pose ni prose ni avis.
-  it(`${prefix}« Modifier » une entrée pendant une traduction : la réponse qui arrive ne remplit rien`, async () => {
+  it(`${prefix}« Modifier » une autre entrée pendant une traduction : la réponse qui arrive ne remplit rien`, async () => {
     const translation = lockCase.createTranslation()
     const wrapper = await lockCase.mount(translation)
     await lockCase.startEdit(wrapper)
-    const titleOfEntry = titleValue(wrapper)
     const reply = deferNextTranslation(translation)
 
     translateButton(wrapper).vm.$emit('translate', 'en')
     await flushPromises()
-    await lockCase.startEdit(wrapper)
+    await lockCase.startEditOther(wrapper)
+    const titleOfOther = titleValue(wrapper)
     reply.release()
     await flushPromises()
 
-    expect(titleValue(wrapper)).toBe(titleOfEntry)
+    expect(titleValue(wrapper)).toBe(titleOfOther)
     expect(headingOf(wrapper)).not.toBe(lockCase.heading)
     expect(wrapper.findAll('form')[form].find('[role="status"]').exists()).toBe(false)
   })
@@ -325,6 +332,48 @@ export function describeEntryFormLock(lockCase: EntryFormLockCase): void {
     await flushPromises()
 
     expect(titleValue(wrapper)).toBe('')
+    expect(wrapper.findAll('form')[form].find('[role="status"]').exists()).toBe(false)
+  })
+
+  // Ce que l'identité du formulaire ne voit pas : supprimer l'entrée éditée ne change rien au formulaire, la page périme
+  // la traduction elle-même. Changer la langue d'une création change l'identité : le composable la périme seul.
+  it(`${prefix}supprimer l'entrée en édition pendant une traduction : la réponse ne pose rien`, async () => {
+    const translation = lockCase.createTranslation()
+    const wrapper = await lockCase.mount(translation)
+    await lockCase.startEdit(wrapper)
+    const titleOfEntry = titleValue(wrapper)
+    const reply = deferNextTranslation(translation)
+
+    translateButton(wrapper).vm.$emit('translate', 'en')
+    await flushPromises()
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    try {
+      await lockCase.deleteEditedEntry(wrapper)
+    } finally {
+      confirm.mockRestore()
+    }
+    await flushPromises()
+    reply.release()
+    await flushPromises()
+
+    expect(titleValue(wrapper)).toBe(titleOfEntry)
+    expect(wrapper.findAll('form')[form].find('[role="status"]').exists()).toBe(false)
+  })
+
+  it(`${prefix}changer la langue d'une création pendant une traduction : la réponse ne pose rien`, async () => {
+    const translation = lockCase.createTranslation()
+    const wrapper = await lockCase.mount(translation)
+    await wrapper.get(`#${ids.title}`).setValue('Titre saisi')
+    const reply = deferNextTranslation(translation)
+
+    translateButton(wrapper).vm.$emit('translate', 'en')
+    await flushPromises()
+    await wrapper.get(locale).setValue('en')
+    reply.release()
+    await flushPromises()
+
+    expect(titleValue(wrapper)).toBe('Titre saisi')
+    expect(headingOf(wrapper)).toBe(lockCase.heading)
     expect(wrapper.findAll('form')[form].find('[role="status"]').exists()).toBe(false)
   })
 }

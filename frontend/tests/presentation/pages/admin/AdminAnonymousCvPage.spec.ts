@@ -387,6 +387,12 @@ describe('AdminAnonymousCvPage', () => {
     startEdit: async (wrapper) => {
       await buttonLabelled(actionsForLine(wrapper, 'Frontend Vue 3'), 'Modifier').trigger('click')
     },
+    deleteEditedEntry: async (wrapper) => {
+      await buttonLabelled(actionsForLine(wrapper, 'Frontend Vue 3'), 'Supprimer').trigger('click')
+    },
+    startEditOther: async (wrapper) => {
+      await buttonLabelled(actionsForLine(wrapper, 'Backend PHP / Symfony'), 'Modifier').trigger('click')
+    },
     startCreateVersion: (wrapper) => buttonLabelled(wrapper, 'Créer la version EN').trigger('click'),
     propose: async (wrapper) => {
       await translateEntryButton(wrapper, 0).trigger('click')

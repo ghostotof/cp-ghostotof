@@ -86,7 +86,16 @@ const {
   errorReason: translationErrorReason,
   translate,
   discard: discardTranslation,
-} = useAdminTranslation({ isRefused: () => lock.isProposalLocked })
+} = useAdminTranslation({
+  isRefused: () => lock.isProposalLocked,
+  // Ce qui fait l'identité du formulaire : une traduction dont il n'a plus cette identité est périmée.
+  formIdentity: () => ({
+    entry: editingId.value,
+    locale: form.locale,
+    group: sourceGroup.value,
+    prose: collectProseFields(form, PROSE_FIELDS),
+  }),
+})
 
 /**
  * Prose d'une carte « moi ». Le complément de cette liste — `iconKey` et
@@ -250,7 +259,6 @@ watch(
 )
 
 function resetForm(): void {
-  discardTranslation()
   editingId.value = null
   proposalSourceLocale.value = null
   sourceGroup.value = null
@@ -270,7 +278,6 @@ function resetForm(): void {
 // `hasSibling` cherche dans **toutes** les catégories : sur un groupe réparti
 // (antérieur à #501), le sélecteur paraît vide, « aucune » le répare (#573).
 function startEdit(card: AdminAboutMeCard): void {
-  discardTranslation()
   editingId.value = card.id
   proposalSourceLocale.value = null
   sourceGroup.value = card.translationGroup
@@ -290,7 +297,6 @@ function startEdit(card: AdminAboutMeCard): void {
  * traduire puisqu'il n'y a rien d'écrit encore.
  */
 function startCreateVersion(row: TranslationGroupRow<AdminAboutMeCard>, locale: Locale): void {
-  discardTranslation()
   const existing = firstEntry(row, SUPPORTED_LOCALES)
 
   editingId.value = null
@@ -355,6 +361,11 @@ async function handleTranslate(targetLocale: Locale): Promise<void> {
 async function handleDelete(card: AdminAboutMeCard): Promise<void> {
   if (!window.confirm(t('admin.about.meCard.confirmDelete', { title: card.title }))) {
     return
+  }
+
+  // La suppression ne change rien au formulaire : la traduction de l'entrée supprimée est périmée ici.
+  if (card.id === editingId.value) {
+    discardTranslation()
   }
 
   await remove(card.id)

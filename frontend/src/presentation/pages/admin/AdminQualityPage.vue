@@ -109,13 +109,31 @@ const {
   errorReason: principleTranslationErrorReason,
   translate: translatePrinciple,
   discard: discardPrincipleTranslation,
-} = useAdminTranslation({ isRefused: () => principleLock.isProposalLocked })
+} = useAdminTranslation({
+  isRefused: () => principleLock.isProposalLocked,
+  // Ce qui fait l'identité du formulaire : une traduction dont il n'a plus cette identité est périmée.
+  formIdentity: () => ({
+    entry: editingPrincipleId.value,
+    locale: principleForm.locale,
+    group: principleSourceGroup.value,
+    prose: collectProseFields(principleForm, PRINCIPLE_PROSE_FIELDS),
+  }),
+})
 const {
   isTranslating: isTranslatingTrait,
   errorReason: traitTranslationErrorReason,
   translate: translateTrait,
   discard: discardTraitTranslation,
-} = useAdminTranslation({ isRefused: () => traitLock.isProposalLocked })
+} = useAdminTranslation({
+  isRefused: () => traitLock.isProposalLocked,
+  // Ce qui fait l'identité du formulaire : une traduction dont il n'a plus cette identité est périmée.
+  formIdentity: () => ({
+    entry: editingTraitId.value,
+    locale: traitForm.locale,
+    group: traitSourceGroup.value,
+    prose: collectProseFields(traitForm, TRAIT_PROSE_FIELDS),
+  }),
+})
 
 /**
  * Prose des principes. Le complément de cette liste — `iconKey` — est ce que
@@ -320,7 +338,6 @@ const traitTranslationOptions = computed(() => [
 ])
 
 function resetPrincipleForm(): void {
-  discardPrincipleTranslation()
   editingPrincipleId.value = null
   principleProposalSourceLocale.value = null
   principleSourceGroup.value = null
@@ -332,7 +349,6 @@ function resetPrincipleForm(): void {
 }
 
 function resetTraitForm(): void {
-  discardTraitTranslation()
   editingTraitId.value = null
   traitProposalSourceLocale.value = null
   traitSourceGroup.value = null
@@ -347,7 +363,6 @@ function resetTraitForm(): void {
 // traite une entrée seule en non-geste (`count($members) === 1`), le groupe
 // est conservé. Le sélecteur affiche donc « aucune » sans conséquence.
 function startEditPrinciple(principle: AdminQualityPrinciple): void {
-  discardPrincipleTranslation()
   editingPrincipleId.value = principle.id
   principleProposalSourceLocale.value = null
   principleSourceGroup.value = principle.translationGroup
@@ -359,7 +374,6 @@ function startEditPrinciple(principle: AdminQualityPrinciple): void {
 }
 
 function startEditTrait(trait: AdminQualityTrait): void {
-  discardTraitTranslation()
   editingTraitId.value = trait.id
   traitProposalSourceLocale.value = null
   traitSourceGroup.value = trait.translationGroup
@@ -376,7 +390,6 @@ function startEditTrait(trait: AdminQualityTrait): void {
  * il n'y a rien à traduire puisqu'il n'y a rien d'écrit encore.
  */
 function startCreatePrincipleVersion(row: TranslationGroupRow<AdminQualityPrinciple>, locale: Locale): void {
-  discardPrincipleTranslation()
   const existing = firstEntry(row, SUPPORTED_LOCALES)
 
   editingPrincipleId.value = null
@@ -391,7 +404,6 @@ function startCreatePrincipleVersion(row: TranslationGroupRow<AdminQualityPrinci
 
 /** Même geste pour un trait, qui n'a aucun champ non-prose à recopier. */
 function startCreateTraitVersion(row: TranslationGroupRow<AdminQualityTrait>, locale: Locale): void {
-  discardTraitTranslation()
   editingTraitId.value = null
   traitProposalSourceLocale.value = null
   traitSourceGroup.value = row.key
@@ -487,12 +499,22 @@ async function handleDeletePrinciple(principle: AdminQualityPrinciple): Promise<
     return
   }
 
+  // La suppression ne change rien au formulaire : la traduction de l'entrée supprimée est périmée ici.
+  if (principle.id === editingPrincipleId.value) {
+    discardPrincipleTranslation()
+  }
+
   await removePrinciple(principle.id)
 }
 
 async function handleDeleteTrait(trait: AdminQualityTrait): Promise<void> {
   if (!window.confirm(t('admin.quality.trait.confirmDelete', { label: trait.label }))) {
     return
+  }
+
+  // La suppression ne change rien au formulaire : la traduction de l'entrée supprimée est périmée ici.
+  if (trait.id === editingTraitId.value) {
+    discardTraitTranslation()
   }
 
   await removeTrait(trait.id)

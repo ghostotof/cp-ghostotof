@@ -1,4 +1,4 @@
-import { inject, ref, type InjectionKey, type Ref } from 'vue'
+import { computed, inject, readonly, ref, watch, type InjectionKey, type Ref } from 'vue'
 import type { Locale } from '../../../domain/portfolio/entities/Locale'
 import type { TranslationProposal, TranslationFields } from '../../../domain/admin/translation/entities/TranslationProposal'
 import type { AdminTranslationRepository } from '../../../domain/admin/translation/repositories/AdminTranslationRepository'
@@ -12,12 +12,14 @@ import { createStaleRequestGuard } from '../../shared/staleRequestGuard'
 export const ADMIN_TRANSLATION_REPOSITORY: InjectionKey<AdminTranslationRepository> = Symbol('AdminTranslationRepository')
 
 export interface UseAdminTranslationResult {
-  isTranslating: Ref<boolean>
-  errorReason: Ref<AdminTranslationErrorReason | null>
+  /** Vrai tant que la traduction courante est en vol et non périmée (par `discard()` ou par l'identité du formulaire). */
+  isTranslating: Readonly<Ref<boolean>>
+  /** La raison de l'échec de la dernière traduction, tant que le formulaire a l'identité qu'il avait à son échec. */
+  errorReason: Readonly<Ref<AdminTranslationErrorReason | null>>
   translate: (sourceLocale: Locale, targetLocale: Locale, fields: TranslationFields) => Promise<TranslationProposal | null>
   /**
-   * Périme la traduction en vol (la page remplace le contenu du formulaire : « Annuler », « Modifier »…) :
-   * sa réponse rend `null` et ne pose ni état ni raison.
+   * Périme la traduction en vol : sa réponse rend `null` et ne pose ni état ni raison. Pour ce que `formIdentity` ne
+   * voit pas — la suppression de l'entrée éditée, qui ne change rien au formulaire.
    */
   discard: () => void
 }
@@ -25,6 +27,14 @@ export interface UseAdminTranslationResult {
 export interface UseAdminTranslationOptions {
   /** Vrai quand la page ne veut aucune traduction (une proposition est déjà affichée) : `translate()` ne lance rien. */
   readonly isRefused?: () => boolean
+  /**
+   * Ce qui fait l'identité du formulaire : l'entrée éditée, la langue, le groupe source, la prose. Comparée par son
+   * contenu (`JSON.stringify`) ; dès que le formulaire n'a plus l'identité relevée à l'envoi, la traduction en vol est
+   * périmée pour de bon, même s'il la retrouve ensuite, quel que soit le geste qui l'a remplacé (« Annuler »,
+   * « Modifier » une autre entrée, « Créer la version XX », un changement de langue) : `isTranslating` retombe
+   * aussitôt et la réponse rend `null`. Rouvrir la même entrée ne change rien au formulaire : rien n'est périmé.
+   */
+  readonly formIdentity?: () => unknown
 }
 
 /**
@@ -48,9 +58,15 @@ export function useAdminTranslation(options: UseAdminTranslationOptions = {}): U
     )
   }
 
-  const isTranslating = ref(false)
-  const errorReason = ref<AdminTranslationErrorReason | null>(null)
+  // L'identité courante du formulaire, sérialisée : deux identités égales par le contenu sont la même (une
+  // réaffectation à l'identique ne remplace rien). Un calculé : relu seulement quand le formulaire change.
+  const identity = computed(() => JSON.stringify(options.formIdentity?.() ?? null))
+  const inFlight = ref(false)
+  const failure = ref<{ readonly reason: AdminTranslationErrorReason; readonly identity: string } | null>(null)
   const requests = createStaleRequestGuard()
+
+  const isTranslating = readonly(inFlight)
+  const errorReason = computed(() => (failure.value?.identity === identity.value ? failure.value.reason : null))
 
   const translate = async (
     sourceLocale: Locale,
@@ -62,8 +78,21 @@ export function useAdminTranslation(options: UseAdminTranslationOptions = {}): U
     }
 
     const token = requests.begin()
-    isTranslating.value = true
-    errorReason.value = null
+    const sentIdentity = identity.value
+    inFlight.value = true
+    failure.value = null
+    // Le formulaire qui change d'identité pendant le vol périme la traduction pour de bon, même s'il retrouve ensuite
+    // la même : la personne est passée par un autre formulaire. Le guetteur naît ici, pas au montage : la page
+    // déclare le composable avant son formulaire, que l'identité lit.
+    const stopWatching = watch(
+      identity,
+      () => {
+        if (requests.isCurrent(token)) {
+          discard()
+        }
+      },
+      { flush: 'sync' },
+    )
 
     try {
       const proposal = await repository.translate(sourceLocale, targetLocale, fields)
@@ -75,21 +104,23 @@ export function useAdminTranslation(options: UseAdminTranslationOptions = {}): U
       }
 
       // Une session finie ne pose aucune raison : le bandeau de session finie l'annonce seul (#748).
-      errorReason.value =
+      const reason =
         visibleMutationError(error, AdminTranslationError, () => new AdminTranslationError('unknown', 'Unknown error'))?.reason ?? null
+      failure.value = null === reason ? null : { reason, identity: sentIdentity }
       return null
     } finally {
+      stopWatching()
       // Une traduction périmée ne touche plus l'état : `discard()` l'a déjà rendu.
       if (requests.isCurrent(token)) {
-        isTranslating.value = false
+        inFlight.value = false
       }
     }
   }
 
-  const discard = (): void => {
+  function discard(): void {
     requests.begin()
-    isTranslating.value = false
-    errorReason.value = null
+    inFlight.value = false
+    failure.value = null
   }
 
   return { isTranslating, errorReason, translate, discard }

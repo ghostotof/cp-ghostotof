@@ -1030,6 +1030,12 @@ describe('AdminAboutPage', () => {
       startEdit: async (wrapper) => {
         await buttonLabelled(actionsForLine(wrapper, SITE, 'Stack technique'), 'Modifier').trigger('click')
       },
+      deleteEditedEntry: async (wrapper) => {
+        await buttonLabelled(actionsForLine(wrapper, SITE, 'Stack technique'), 'Supprimer').trigger('click')
+      },
+      startEditOther: async (wrapper) => {
+        await buttonLabelled(actionsForLine(wrapper, SITE, 'Architecture'), 'Modifier').trigger('click')
+      },
       startCreateVersion: (wrapper) => buttonLabelled(rowsOf(wrapper, SITE)[1], 'Créer la version EN').trigger('click'),
       propose: async (wrapper) => {
         await translateEntryButton(wrapper, SITE_FORM).trigger('click')
@@ -1053,6 +1059,12 @@ describe('AdminAboutPage', () => {
       permanentHelp: LOCALE_HELP_TEXT,
       startEdit: async (wrapper) => {
         await buttonLabelled(actionsForLine(wrapper, ME_TABLE.technical, ME_FIXTURES.technical.titles[2]), 'Modifier').trigger('click')
+      },
+      deleteEditedEntry: async (wrapper) => {
+        await buttonLabelled(actionsForLine(wrapper, ME_TABLE.technical, ME_FIXTURES.technical.titles[2]), 'Supprimer').trigger('click')
+      },
+      startEditOther: async (wrapper) => {
+        await buttonLabelled(actionsForLine(wrapper, ME_TABLE.technical, ME_FIXTURES.technical.titles[0]), 'Modifier').trigger('click')
       },
       startCreateVersion: (wrapper) => buttonLabelled(rowsOf(wrapper, ME_TABLE.technical)[1], 'Créer la version FR').trigger('click'),
       propose: async (wrapper) => {
