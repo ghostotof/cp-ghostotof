@@ -6,11 +6,7 @@ import type { AdminTranslationRepository } from '../../../../src/domain/admin/tr
 import type { TranslationProposal } from '../../../../src/domain/admin/translation/entities/TranslationProposal'
 import { AdminTranslationError } from '../../../../src/domain/admin/translation/errors/AdminTranslationError'
 import type { Locale } from '../../../../src/domain/portfolio/entities/Locale'
-import {
-  proseFieldId,
-  useTranslatedForm,
-  type UseTranslatedFormOptions,
-} from '../../../../src/presentation/ui/admin/useTranslatedForm'
+import { useTranslatedForm, type UseTranslatedFormOptions } from '../../../../src/presentation/ui/admin/useTranslatedForm'
 
 const PREFIX = 'admin-incident'
 const HINT = `${PREFIX}-prose-readonly-hint`
@@ -41,13 +37,6 @@ function mountTranslatedForm(options: Partial<UseTranslatedFormOptions> = {}, fa
 }
 
 describe('useTranslatedForm', () => {
-  it("proseFieldId écrit l'identifiant d'un champ en kebab, derrière le préfixe de son formulaire (#748, R138)", () => {
-    expect(proseFieldId('admin-incident', 'rootCause')).toBe('admin-incident-root-cause')
-    expect(proseFieldId('admin-about', 'siteEyebrow')).toBe('admin-about-site-eyebrow')
-    expect(proseFieldId('admin-case-study', 'title')).toBe('admin-case-study-title')
-    expect(proseFieldId('admin-case-study', 'measuredResult')).toBe('admin-case-study-measured-result')
-  })
-
   it('nomme les deux textes du formulaire d’après son préfixe (#748, R138)', () => {
     const { form } = mountTranslatedForm({ hintIdPrefix: 'admin-about-settings' })
 

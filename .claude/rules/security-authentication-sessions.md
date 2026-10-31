@@ -178,8 +178,8 @@ paths:
     each kind it covers in its file; `ApiPlatformOperationsCarryNoSecurityTest`, which reads the **compiled** API Platform
     metadata — every resource, operation, parameter, link
     and property — of the resources, of their input and output DTOs and of the `App\` objects they nest (R74, R88) —, a
-    `uriVariable` that is not a compiled `Link` being reported: `security`, `securityPostDenormalize` and `securityPostValidation` of the
-    resources and operations, a
+    `uriVariable` that is not a compiled `Link` being reported: `security`, `securityPostDenormalize` and
+    `securityPostValidation` of the resources and operations, a
     parameter's or a link's `security`, a property's `security` and `securityPostDenormalize`, so it also sees a `security:` declared in
     YAML or XML or merged by `api_platform.defaults`. **Seen by none
     (accepted, Q1 of the seventh review)**: an authorization other than an API Platform expression on a `PUBLIC_PATHS` route;
@@ -218,6 +218,6 @@ paths:
     (`.claude/rules/mcp-oauth.md`, « Consent »).
   `SessionBeforePasswordChangeTest` (HTTP: the real `PUT` then the cookie replayed, a version older or newer, the
   `iat` playing no part, a token without claim before and after a change, **the race** — an instance read before
-  the change, a token created after it: refused, red under the old rule —, the base tier, a closed session served as anonymous on a public
-  route and cleared by
+  the change, a token created after it: refused, red under the old rule —, the base tier, a closed
+  session served as anonymous on a public route and cleared by
   the first protected one), `…RefusalListenerTest`, `…RegistrationTest`, `CredentialsVersionClaimListenerTest`.

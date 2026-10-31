@@ -82,8 +82,8 @@ fixed:
   `display: none`, neither read nor reachable by keyboard. Its tests therefore read « nothing outside the menu »
   (`outsideDesktopMenu` in `AppHeader.spec.ts`), never « nothing in the DOM ».
 - **A live region is announced when it is *inserted*, or when its content changes** (#650, S2): the backoffice's
-  `SessionEndedBanner` is a `role="alert"` **inserted by `v-if`** at the moment a 401, or a 403 to a write sent without a CSRF token, ends
-  the session, so it is
+  `SessionEndedBanner` is a `role="alert"` **inserted by `v-if`** at the moment a 401, or a 403 to a
+  write sent without a CSRF token, ends the session, so it is
   announced and interrupts, which is what follows a failed « Enregistrer ». **It never takes the focus** (no
   `focus()`): the person may be in the middle of a sentence, and the link sits in the reading order, reachable by
   keyboard. Its link is `presentation/ui/SignInAgainLink.vue` (#748, R6): it opens a new tab, said in the link text (a
@@ -94,8 +94,8 @@ fixed:
   `role="status"` is in the DOM from the mount, empty and `visually-hidden`, and only its content changes when the
   session comes back (« Session rétablie »), because a live region inserted already full may not be announced. The
   banner is sticky under the header, `scroll-padding-top` keeping the focus out from under both (WCAG 2.4.11,
-  `.claude/rules/frontend-backoffice.md`). It differs from `LoginPage`'s notice (next bullet) by when it appears: the banner is inserted
-  after
+  `.claude/rules/frontend-backoffice.md`). It differs from `LoginPage`'s notice
+  (next bullet) by when it appears: the banner is inserted after
   the first render (announced), the notice is present from it (may not be). **An alert already shown is announced again
   only if its content is replaced** (#748, R9, S7, R19, E): a second refusal while the banner is displayed changes nothing in an
   idempotent state, so the message `<span>` carries a `:key` (`useAuth().sessionEndedCount`, +1 per accepted refusal, see
@@ -110,8 +110,8 @@ fixed:
 - **A gesture that moves the focus and announces an outcome: focus first, announce after a short delay** (#748,
   `presentation/ui/useFocusThenAnnounce.ts`, `ANNOUNCE_AFTER_FOCUS_MS` = 250 ms): **the pattern has one implementation,
   `useFocusThenAnnounce`** (`announced`, `focusThenAnnounce(target, value)`, `cancel()`, `isUnmounted()`); a page that
-  needs it calls it and holds no timer of its own (`McpConnectionsPage.vue` is the first). The `role="status"` region is written only once
-  the
+  needs it calls it and holds no timer of its own (`McpConnectionsPage.vue` is the
+  first). The `role="status"` region is written only once the
   focus has moved, because an announcement written at the moment of the move can be cut off by the reading of the
   element that takes the focus. Not `aria-describedby` from the title to the message: whether a description is read
   at focus depends on the screen reader's settings (VoiceOver reads it after a delay, NVDA only if « announce

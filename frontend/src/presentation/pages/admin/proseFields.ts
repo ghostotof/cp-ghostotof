@@ -9,7 +9,8 @@
  * ni employeur, ni client — vaut pour la proposition autant que pour l'original, et c'est la relecture humaine qui la
  * garantit.
  *
- * L'identifiant du champ dans le formulaire suit `<préfixe du formulaire>-<champ en kebab>` (`proseFieldId`).
+ * L'identifiant du champ dans le formulaire suit `<préfixe du formulaire>-<champ en kebab>` : les gabarits l'écrivent en littéral,
+ * les specs le dérivent de ces listes (`tests/support/proseFieldId.ts`).
  */
 
 /** Incidents. Le complément : `version`, `occurredAt`. */

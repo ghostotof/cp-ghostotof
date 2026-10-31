@@ -192,9 +192,9 @@ async function handleDiscardProposal(): Promise<void> {
   }
 
   copySettingsToForm(settings.value)
-  if (proposal.value?.target === locale) {
-    proposal.value = null
-  }
+  // Sans condition : le bouton n'existe que pendant la proposition affichée, et la langue montrée n'a pas changé depuis.
+  // Le `watch` de `settings` la retire aussi, mais pas quand la lecture rend l'objet déjà détenu (voir ci-dessus).
+  proposal.value = null
 
   await nextTick()
   formElement.value?.querySelector<HTMLElement>('input')?.focus()

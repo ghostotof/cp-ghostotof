@@ -6,15 +6,6 @@ import {
 import type { FormIdentity } from '../../../domain/admin/translation/entities/FormIdentity'
 import { describedBy } from './describedBy'
 
-/**
- * L'identifiant d'un champ de prose : `<préfixe du formulaire>-<champ en kebab>` (`admin-incident` + `rootCause` donne
- * `admin-incident-root-cause`). La règle que suivent tous les champs de prose du backoffice, écrite une fois : un spec
- * dérive de la liste des champs d'une page (`proseFields.ts`) l'identifiant que le formulaire doit rendre.
- */
-export function proseFieldId(prefix: string, field: string): string {
-  return `${prefix}-${field.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}`
-}
-
 export interface UseTranslatedFormOptions {
   /**
    * Préfixe des identifiants des deux textes que le formulaire rend (`<préfixe>-prose-readonly-hint`,

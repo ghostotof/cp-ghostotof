@@ -53,7 +53,7 @@ CURL_OPTS_ANONYMOUS=("${CURL_OPTS[@]}")
 #     chemins exposés ;
 #   - définie et pleine : le fichier `-K` est écrit une fois, ici, avant tout appel.
 #     Un retour à la ligne (ou un CR) dans la valeur, l'absence de « : », un utilisateur
-#     ou un mot de passe vide sont refusés par `smoke_use_auth_config` avant tout dossier
+#     ou un mot de passe vide ou fait de blancs sont refusés par `smoke_use_auth_config` avant tout dossier
 #     (sortie 2, celle d'un défaut d'environnement, comme une bibliothèque absente).
 # Le `-K` va dans `CURL_OPTS` : l'audit n'appelle jamais `smoke_fetch`, ne réécrit pas
 # le fichier, donc aucun `-K` n'y est périmé. `--proto-redir =https` l'accompagne : un appel

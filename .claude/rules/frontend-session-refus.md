@@ -14,8 +14,8 @@ paths:
 
 # Frontend — a real refusal and the backoffice's reaction (reference)
 
-> Split from `.claude/rules/frontend-session.md` (#748, St3-11; procedure of #605), which keeps the index of the parts. The index of every
-> rule is at the top of `.claude/CLAUDE.md`.
+> Split from `.claude/rules/frontend-session.md` (#748, St3-11; procedure of #605), which keeps the index of the parts.
+> The index of every rule is at the top of `.claude/CLAUDE.md`.
 
 ## The backoffice reaction
 
@@ -23,8 +23,8 @@ paths:
   `BackofficeSessionReaction` `{ stampAtSend(kind), ended, refused }` (`refused`: see « A real refusal ») over `markSessionExpired`: **no
   `router.replace`** (R1c's navigation unmounted the page at the very
   click of « Enregistrer », and a case study written for more than an hour — the JWT's lifetime — was lost with it). The
-  verdict is judged by **session generation** (`frontend-session-retour.md`, « The session generation »), not « idempotent »: several lists
-  of a page answering 401
+  verdict is judged by **session generation** (`frontend-session-retour.md`, « The session generation
+  »), not « idempotent »: several lists of a page answering 401
   together leave under the same generation, the first end counts and the others announce nothing more. The registry lives
   in the module, so `infrastructure/` imports neither the session nor the router. The type (`BackofficeSessionReaction`
   and the send stamp `{ session, account, refusal }`, `refusal` a `RefusalScope`: `{ kind: 'read', scope, epoch }` or
@@ -119,8 +119,8 @@ account without `ROLE_TRUSTED` (one that lost it while the page was open), or fr
   that is still trusted (S8).
 - **« Changer de compte »** (`common.switchAccount`, `switchAccountLocation`: `login?redirect=<this page>&reauth=1`) is the
   only link that opens the login to a signed-in person, and the new cookies it sets also mend a stale signature. **The
-  same tab** on the three pages: the consent is a step of an OAuth flow (see `frontend-session-bandeau.md`, « The interface »), and on the
-  assistant the lost
+  same tab** on the three pages: the consent is a step of an OAuth flow (see
+  `frontend-session-bandeau.md`, « The interface »), and on the assistant the lost
   conversation is accepted (the author's decision of 2026-10-29); « Mes connexions MCP » keeps no input to protect.
   This differs from the ended-session link (`SignInAgainLink`, a new tab, on the assistant and the MCP page; the same tab on the consent).
 - **No « Réessayer »** on the MCP page (the same request takes the same verdict) and **every « Révoquer » disabled**; the
@@ -132,8 +132,8 @@ account without `ROLE_TRUSTED` (one that lost it while the page was open), or fr
 **Limits removed by R7 and R8**: the header of an account stripped of `ROLE_TRUSTED` no longer stays at the trusted tier
 until the next full load; a `GET` in 403 on the MCP page no longer shows the generic failure with a « Réessayer » that
 cannot help; and the header no longer flickers while `/api/me` is read after a refusal (R8: the re-reads never touch
-`isChecking`, see « The re-check on return » in `frontend-session-retour.md`); and, since R15, a header left anonymous without
-`sessionEnded` — a refusal
+`isChecking`, see « The re-check on return » in `frontend-session-retour.md`); and, since
+R15, a header left anonymous without `sessionEnded` — a refusal
 whose `/api/me` answers 401 now ends the session on the interface. **Still accepted**: a refusal leaves the page it came from.
 
 ## Tests
@@ -163,8 +163,8 @@ whose `/api/me` answers 401 now ends the session on the interface. **Still accep
   holds it, a stale or failing read holds it, `isChecking` untouched; `followRefusal`: ended and still shown, replaced meanwhile, held,
   R27), `useAssistant.spec.ts` and `useOAuthConsent.spec.ts` (`/api/me` read once on `forbidden`, not on an ended session; a 401 on that
   read says the session ended), `McpConnectionsPage.spec.ts` / `AssistantPage.spec.ts` / `OAuthConsentPage.spec.ts` (the exact neutral text
-  in both languages, « Changer de compte » with `reauth=1`, no « Réessayer », « Révoquer » disabled) and `LoginPage.spec.ts` (the neutral
-  announcement).
+  in both languages, « Changer de compte » with `reauth=1`, no « Réessayer », « Révoquer »
+  disabled) and `LoginPage.spec.ts` (the neutral announcement).
 - `noLoadInOnMounted.spec.ts` (R121, R144: no load or repository call after the mount of a backoffice page or component, which
   would carry the mounted alert's epoch; one fake file per form it sees, in `tests/support/sourceText.spec.ts` for the reader).
 - The reactions `useMcpConnections.spec.ts`, `useOAuthConsent.spec.ts`, `useAssistant.spec.ts`.

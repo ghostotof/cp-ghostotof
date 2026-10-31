@@ -29,7 +29,7 @@ import type { AdminTranslationRepository } from '../../../../src/domain/admin/tr
 import type { TranslationProposal } from '../../../../src/domain/admin/translation/entities/TranslationProposal'
 import { AdminTranslationError } from '../../../../src/domain/admin/translation/errors/AdminTranslationError'
 import { expectNoAccessibilityViolation } from '../../../support/axe'
-import { proseFieldId } from '../../../../src/presentation/ui/admin/useTranslatedForm'
+import { proseFieldId } from '../../../support/proseFieldId'
 import {
   ABOUT_SETTINGS_PROSE_FIELDS,
   ME_CARD_PROSE_FIELDS,
@@ -1751,7 +1751,7 @@ describe('AdminAboutPage', () => {
 
     // Le retrait de la proposition par le `watch` de `settings` quand ils sont ceux de l'autre langue ne se voit pas dans le
     // DOM : l'avis n'est rendu que sous sa cible, et le retour sur l'EN relit l'EN, qui retire la proposition de toute
-    // façon. Le cas dit ce que le DOM montre (les réglages du FR, aucun avis) ; il ne lit plus l'état du composant
+    // façon. Le cas dit ce que le DOM montre (les réglages du FR, aucun avis), jamais l'état du composant
     // (R141, St12-9).
     it("une proposition en EN, passage au FR puis enregistrement du FR : aucun avis sous le FR (#748, R141b)", async () => {
       const settingsRepository = createSettingsRepository({

@@ -47,7 +47,8 @@ const currentLocale = computed<Locale>(() => {
             v-if="appVersion.releaseUrl"
             :href="appVersion.releaseUrl"
             :title="versionTitle"
-            class="link-muted link-underline-opacity-0 link-underline-opacity-100-hover d-inline-flex align-items-center gap-1 font-monospace"
+            class="link-muted link-underline-opacity-0 link-underline-opacity-100-hover d-inline-flex align-items-center gap-1
+                   font-monospace"
             data-testid="app-version"
             rel="noopener"
             target="_blank"

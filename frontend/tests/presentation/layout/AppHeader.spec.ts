@@ -782,10 +782,9 @@ describe('AppHeader', () => {
 
   /**
    * L'en-tête à 320 px (#748, constat 6). Mesures du ticket : le groupe de droite seul demandait 331 px au palier de
-   * confiance, 389 px en anonyme et en EN, pour 301 px utiles. Décision de l'auteur : la marque cède, ses actions non. jsdom ne calcule pas
-   * la
-   * mise en page : on épingle les classes et le CSS scopé (lu par `node:fs`, Vitest vide les imports CSS), la mesure
-   * réelle à 320 px étant faite au navigateur.
+   * confiance, 389 px en anonyme et en EN, pour 301 px utiles. Décision de l'auteur : la marque cède, ses actions non.
+   * jsdom ne calcule pas la mise en page : on épingle les classes et le CSS scopé (lu par `node:fs`, Vitest vide les imports
+   * CSS), la mesure réelle à 320 px étant faite au navigateur.
    */
   describe('en-tête à 320 px (#748)', () => {
     const source = readFileSync(resolve(import.meta.dirname, '../../../src/presentation/layout/AppHeader.vue'), 'utf8')

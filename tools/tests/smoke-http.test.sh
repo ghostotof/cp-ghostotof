@@ -678,10 +678,10 @@ fi
 smoke_cleanup
 unset UNE_AUTH exported_auth args_auth
 
-# --- St12-14 : smoke_write_auth_config n'est plus publique ; smoke_use_auth_config est la seule
-# entrée, et le nom privé la porte. Aucun appelant du dépôt n'écrit l'ancien nom.
+# --- St12-14 : smoke_write_auth_config (sans tiret bas) n'existe pas ; smoke_use_auth_config est la seule
+# entrée, et le nom privé la porte. Aucun appelant du dépôt n'écrit le nom sans tiret bas.
 if ! declare -F smoke_write_auth_config > /dev/null && declare -F _smoke_write_auth_config > /dev/null; then
-  pass "la bibliothèque n'expose plus _smoke_write_auth_config : seule _smoke_write_auth_config existe, privée"
+  pass "la bibliothèque n'expose pas smoke_write_auth_config : seule _smoke_write_auth_config existe, privée"
 else
   fail "smoke_write_auth_config publique" "$(declare -F | grep -F smoke_write_auth_config | tr '\n' ' ')"
 fi

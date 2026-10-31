@@ -14,8 +14,8 @@ paths:
 
 # Frontend — the return, the session state and its generation (reference)
 
-> Split from `.claude/rules/frontend-session.md` (#748, St3-11; procedure of #605), which keeps the index of the parts. The index of every
-> rule is at the top of `.claude/CLAUDE.md`.
+> Split from `.claude/rules/frontend-session.md` (#748, St3-11; procedure of #605), which keeps the index of the parts.
+> The index of every rule is at the top of `.claude/CLAUDE.md`.
 
 ## The state, the re-check on return and the replay
 
@@ -34,8 +34,8 @@ paths:
   `sessionGeneration.ts`, `sessionEvents.ts` (the two signals), `sessionLifecycle.ts` (`markSessionExpired`,
   `restoreSession`, and `canRestore`, the descent's condition written once: ended, an account, a write token), and
   `useAuth.ts` (the composable and the two shared re-reads, each a `createSingleFlight`), then `application/shared/singleFlight.ts`
-  (generic, next to `staleRequestGuard.ts`; the reset for tests recreates the two slots, no `clear()` in its interface, R55). **Tests start
-  from the module state of loading**:
+  (generic, next to `staleRequestGuard.ts`; the reset for tests recreates the two slots, no `clear()` in its
+  interface, R55). **Tests start from the module state of loading**:
   `resetAuthStateForTests()` (each module owns a `reset…ForTests`, tests only, never called by `src/`; a new module state
   is added to it) is called before each test by `tests/support/setup.ts`, the `setupFiles` of `vite.config.ts`, which also
   resets the backoffice's refusal and its registered reaction (R38) and calls `enableAutoUnmount` once.
@@ -69,8 +69,8 @@ paths:
   - **Nobody but `useAuth` restores, and nobody else re-reads a list** (#748, R13): the restoration brings
     `authState.sessionEnded` down and `useAuth` **emits one signal for it**,
     `onSessionRestored(callback)` (also exported as a function, for the composables that need no
-    `AUTH_REPOSITORY`): `callback` is called once, synchronously, at each such descent by the same account (next bullet) — never at the end
-    of a session —,
+    `AUTH_REPOSITORY`): `callback` is called once, synchronously, at each such descent by the same
+    account (next bullet) — never at the end of a session —,
     and the subscription is dropped at `onScopeDispose` (a page unmounted is no longer called). **A page that depends
     on the return subscribes to it; no page `watch`es `authState.sessionEnded` any more** (five did: it was the same
     condition written five times). Each reacts for what concerns it. The administration composables through
@@ -91,8 +91,8 @@ paths:
     reads run again, the typed input stays); **another** account, the same one with a role lost, or **none kept**
     has its session applied and calls **only** `onAccountSwitched(callback)` (same mechanics: a scope, dropped at
     `onScopeDispose`). **Outside an ended session** (`checkAuth()`, `rereadAfterRefusal()`, `applyLiveSession`) only a
-    **different `username`** from the last account does the same (the generation advances first); a role lost there stays handled in place
-    (R7/R17). Nobody announces « Session
+    **different `username`** from the last account does the same (the generation advances first); a role lost there
+    stays handled in place (R7/R17). Nobody announces « Session
     rétablie » for it, and no list is re-read: the open page is no longer that account's. `AppLayout` is the one
     subscriber: it replays the navigation to the current route with `router.replace({ path, query, hash, force: true })`
     — `force` because the router ignores a navigation to the address it is on, so the guard would never judge the new
@@ -102,8 +102,8 @@ paths:
     after: the other order would mount a protected page, for an instant, for an account the guard is about to refuse.
     **The routed page is hidden during the replay** (R27, A3-13: `isReplaying`, set synchronously in the subscriber,
     lowered in the `finally` after the key advances, so also when the replay fails, **but only by the last replay**:
-    each takes a token from `createStaleRequestGuard` (`application/shared/`, the guard the composables use), because the router cancels the
-    first of two overlapping replays and
+    each takes a token from `createStaleRequestGuard` (`application/shared/`, the guard the composables use), because
+    the router cancels the first of two overlapping replays and
     settles its promise early, CR4-2): the new account's session is already
     applied, so the header is its, and the old page would stay under it with the first account's data until the guard
     resolved. The same-account return never replays: no hiding, no flicker.
@@ -146,8 +146,8 @@ caller reads it **before sending** and hands it back with the verdict:
 - **The descent by an account's return** (`restoreSession`, `sessionLifecycle.ts`) is asked, by `canRestore`, for **an
   account and a write token (`hasWriteToken()`)**; the caller judges the **current generation** itself
   (`isCurrentGeneration(sentAt)`), `login()` excepted — a sign-in is the person's own gesture and skips both. `login()`,
-  `checkAuth()`, `recheckEndedSession()` and `rereadAfterRefusal()` (through `applyReadSession`) all go through it; **in an ended session a
-  read that
+  `checkAuth()`, `recheckEndedSession()` and `rereadAfterRefusal()` (through
+  `applyReadSession`) all go through it; **in an ended session a read that
   finds the base tier or the anonymous one sets nothing** (Sp3-3); it advances the generation and then calls the `onSessionRestored`
   subscribers (or `onAccountSwitched`'s for another account; `login()` calls neither, R18). A `/api/me` sent before a new
   refusal, or before a return, answers for a session that is gone: its result is dropped (it neither restores nor

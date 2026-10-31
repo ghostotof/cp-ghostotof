@@ -85,8 +85,8 @@ does `BackofficeHttpClient`.
 - A browser that drops the cookies of an earlier session reads a finished session: signing in again is indeed the
   remedy.
 - **After the `exp` of a JWT (login or base access) the first 401 only reaches a route that requires a role** (#748, the
-  author's decision of 2026-10-29): the server serves a public route as anonymous whatever the cookie (R35; in dev, two origins, public
-  reads leave
+  author's decision of 2026-10-29): the server serves a public route as anonymous
+  whatever the cookie (R35; in dev, two origins, public reads leave
   without cookies, so R35 is exercised there by PHPUnit and the preprod smoke only), and the SPA
   reads `/api/me` at every load, which clears a dead cookie.
   The login's expiry is not exposed to the frontend, so its first authenticated request takes the 401 and the session
@@ -154,8 +154,8 @@ the given headers kept, the cookie read once even if it vanishes meanwhile (R28)
 - `BackofficeHttpClient.spec.ts` (a 401 on read
 and write, a 403 to a write without a token or with an empty cookie, each **rejects `SessionEndedError`** and calls the
 reaction once, also with no reaction registered; 200/204/404/409/422/500 give the response back with no reaction; a 403 to a read, or to a
-write with its token, calls `refused` once with the send stamp and **rejects `AccessForbiddenError`**, also with no reaction (R17); a
-network failure rises as it came).
+write with its token, calls `refused` once with the send stamp and **rejects `AccessForbiddenError`**, also
+with no reaction (R17); a network failure rises as it came).
 - `useAdminLoad.spec.ts` (`isLoaded`, the key that empties, the read run again on return, `tests/support/signInAgain.ts`
   being the return) and
 `visibleMutationError.spec.ts` (the two functions), `sessionEndedMapping.spec.ts` (the table of the 15 repositories: a 401

@@ -105,8 +105,8 @@ status announcement) that a fork would silently lose:
   visible hint referenced by `aria-describedby` — never a `title`, Bootstrap's `.btn:disabled` has
   `pointer-events: none` — and leaving the route asks `window.confirm`, closing the tab goes through
   `beforeunload` — both in `application/admin/shared/useUnsavedOrderGuard(isDirty)` (#170 F5), tested once
-  in its own spec (unmounted by the global `enableAutoUnmount` of `tests/support/setup.ts`; a page left mounted keeps its listener); a page
-  calls it,
+  in its own spec (unmounted by the global `enableAutoUnmount` of
+  `tests/support/setup.ts`; a page left mounted keeps its listener); a page calls it,
   never re-implements it. `startEdit` sends back the group it read whenever the entry has a
   sibling, otherwise `''` → `null`, which `ContentPlacement::detach` treats as a no-op on a lone
   entry. The `Position` number field is gone from every form; `BaseNumberInput` survives only for
@@ -180,7 +180,7 @@ status announcement) that a fork would silently lose:
 → `infrastructure/admin/translation/HttpAdminTranslationRepository.ts` (`POST /api/backoffice/translations`)
 → `application/admin/translation/useAdminTranslation.ts` (`translate()` returns the proposal or `null` and
 exposes `errorReason`; **it never touches a form nor persists anything**, ADR 0004 D4) + the two helpers in
-`proseFields.ts` (`collectProseFields` drops blank fields, the API refuses them with a 422;
+`application/admin/translation/proseFields.ts` (`collectProseFields` drops blank fields, the API refuses them with a 422;
 `applyTranslationProposal` leaves a field absent from the proposal untouched) → `presentation/ui/admin/
 TranslateEntryButton.vue` (label follows the form's locale, `aria-busy` while calling, emits `translate`).
 **Each page alone decides which of its fields are prose** (spec D2 — the backend is content-agnostic) and
@@ -218,7 +218,8 @@ described by `admin.translation.proseReadonly`
 (`TranslationReadonlyHint`), rendered only then — `presentation/ui/admin/useTranslatedForm.ts` wraps `useAdminTranslation`
 for every form and writes that once (`proseFieldAttrs()` bound by `v-bind` on each prose field, the two hint ids from one
 `hintIdPrefix`), the field lists living in `presentation/pages/admin/proseFields.ts`, read by the page and by its spec
-(`proseFieldId`: `<form prefix>-<field in kebab>`): the answer replaces prose nobody could change meanwhile, which is why the
+(the spec derives each field's id with `tests/support/proseFieldId.ts`, `<form prefix>-<field in kebab>`; the templates write the ids
+literally, no production code reads it): the answer replaces prose nobody could change meanwhile, which is why the
 prose is out of `formIdentity` and a failed translation's message (429, 503) survives typing, cleared by any change of
 identity or the next translation, never brought back by a return to it (R126, R139, decision 3 of the eleventh review). A proposal
 whose target locale the group already has (from « Créer la version XX », or from an entry whose group has both) ends on the server's 409
@@ -284,8 +285,8 @@ version" copies nothing and the assistant sends all five fields.
   return** (#748, R4). `useAdminLoad` exposes `isLoaded` (the value of the current key was read and set: false before the
   first read, after a first read that ended on `SessionEndedError`, and as soon as a new key starts reading); an
   administration page says « aucune … » **only when `isLoaded`**, and shows `admin.notLoaded` (« Contenu non chargé… »,
-  not a live region: the banner or the « accès refusé » alert announces; the text is neutral) otherwise. Without it a first read in an ended
-  session left the list at `[]`
+  not a live region: the banner or the « accès refusé » alert announces; the text is neutral) otherwise.
+  Without it a first read in an ended session left the list at `[]`
   with no error, and twelve empty states claimed the content did not exist. `emptyStateNeedsLoaded.spec.ts` is the source
   guard: every file of `presentation/pages/admin` that composes a `…empty` state reads `isLoaded` at least as many times in
   its template. A new list page adds the `isLoaded` guard before its empty state.
@@ -320,8 +321,8 @@ version" copies nothing and the assistant sends all five fields.
   or interrupted re-read of its target shows nothing (R113, R128). The About settings are the only keyed composable, so
   the only one with these races.
   **The return is the one signal that exists** (R13): `useAuth().onSessionRestored(callback)`, called once at each
-  descent of `authState.sessionEnded` by the same account (another one replays the navigation instead, R18). `useAdminLoad` subscribes to
-  it; if its
+  descent of `authState.sessionEnded` by the same account (another one replays the
+  navigation instead, R18). `useAdminLoad` subscribes to it; if its
   last read ended on `SessionEndedError`, it re-runs `load(same key)` **once**. A newer `load()` replaces the
   interrupted one; a read that succeeded leaves nothing to replay. A mechanism that re-reads the session (the shared
   re-check on focus) only has to restore it: it never re-reads lists itself, so nothing is doubled. A page does not

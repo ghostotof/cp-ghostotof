@@ -4,7 +4,7 @@ import TranslateEntryButton from '../../src/presentation/ui/admin/TranslateEntry
 import { expectNoAccessibilityViolation } from './axe'
 import { SUPPORTED_LOCALES } from '../../src/domain/portfolio/entities/Locale'
 import type { AdminTranslationRepository } from '../../src/domain/admin/translation/repositories/AdminTranslationRepository'
-import { proseFieldId } from '../../src/presentation/ui/admin/useTranslatedForm'
+import { proseFieldId } from './proseFieldId'
 import {
   DISCARD_PENDING_FR,
   ENTRY_LOCK_EDITING_FR,

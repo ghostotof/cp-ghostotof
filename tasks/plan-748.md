@@ -9310,6 +9310,18 @@ sa raison ; une recherche sans ligne se dit « 0 ». **« ≤ 140 » est la long
 
 **Files :** ceux que le balayage désigne.
 
+**Ajouts décidés par l'auteur (2026-10-31)**, faits dans le même commit, sans case cochée :
+
+1. `proseFieldId` quitte `useTranslatedForm.ts` (aucun code de production pour les seuls tests) pour
+   `frontend/tests/support/proseFieldId.ts` (son spec `proseFieldId.spec.ts` à côté) ; la règle `frontend-backoffice.md` le dit.
+2. `handleDiscardProposal` (`AdminAboutSettingsForm.vue`) retire la proposition sans condition : le bouton n'existe que si
+   `isProposalShown`, et la langue montrée est vérifiée juste avant.
+3. Les lignes très courtes que la coupe automatique de R150 a laissées dans `.claude/rules/*.md` sont recollées, sans changer un
+   mot (la suite de mots, marqueurs `>` exceptés, est la même avant et après) ; toutes les lignes restent ≤ 140.
+4. `AppFooter.vue` : l'attribut `class` statique de 142 caractères est coupé sur deux lignes ; `colorClasses.spec.ts` voit encore
+   une classe interdite placée sur la ligne de continuation (mutation vue rouge).
+5. Les neuf lignes shell > 140 dont le message est un littéral seul restent, listées.
+
 - [ ] **Step 1 : recherches** (secrets et `node_modules` exclus ; périmètre `.claude docs frontend/src frontend/tests
   backend/src backend/tests tools`) :
   1. Noms disparus : `grep -rn -e "JSON.stringify(options.formIdentity" -e inFlight -e callRunning -e PROSE_READONLY_HINT_ID
