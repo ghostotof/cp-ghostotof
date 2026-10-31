@@ -25,8 +25,9 @@ paths:
 Content/user management UI, mirrored per-resource under `domain/admin/<resource>/{entities,repositories,errors}`
 → `infrastructure/admin/<resource>/Http*Repository.ts` → `application/admin/<resource>/use*.ts` →
 `presentation/pages/admin/Admin*Page.vue` (form + Bootstrap table, `window.confirm()` for deletes — no modals).
-Existing resources: `technologies`, `quality` (principles + traits), `contributions`, `incidents`, `anonymousCv`,
-`caseStudies` (the two base-tier contents of ADR 0003 D5, both prose-only, editorial rule reminded above the
+Existing resources: `technologies`, `quality` (principles + traits, one section each, `AdminQualityPrinciplesSection` and
+`AdminQualityTraitsSection`, under a page that keeps the shared order lock, as `about` does), `contributions`, `incidents`,
+`anonymousCv`, `caseStudies` (the two base-tier contents of ADR 0003 D5, both prose-only, editorial rule reminded above the
 form: no client or employer name — no filter does it for you), `about` (settings + site cards +
 me cards), `watch` (tracked products + the `ROLE_SUPER`-only vulnerability detail, read-only), `users` (list + **invite by email** + change-password + promote/demote + resend invitation + delete;
 direct username+password creation stays CLI-only). `AdminUsersPage.vue` disables the delete and role buttons on

@@ -5,8 +5,8 @@
  * Partagé par tous ses appelants : le verrou d'un formulaire (`useEntryFormLock`), la prose d'un formulaire traduit
  * (`useTranslatedForm`), le bouton de traduction (`TranslateEntryButton`) et le bouton « Proposer la version XX » de chaque
  * page ou section de formulaire (`AdminIncidentsPage`, `AdminContributionsPage`, `AdminCaseStudiesPage`,
- * `AdminAnonymousCvPage`, `AdminQualityPage`, `AdminAboutSiteCardsSection`, `AdminAboutMeCardsSection`,
- * `AdminAboutSettingsForm`) : un seul endroit écrit la forme.
+ * `AdminAnonymousCvPage`, `AdminQualityPrinciplesSection`, `AdminQualityTraitsSection`, `AdminAboutSiteCardsSection`,
+ * `AdminAboutMeCardsSection`, `AdminAboutSettingsForm`) : un seul endroit écrit la forme.
  */
 export function describedBy(...ids: ReadonlyArray<string | undefined>): string | undefined {
   const present = ids.filter((id): id is string => undefined !== id && '' !== id)
