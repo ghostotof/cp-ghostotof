@@ -201,6 +201,8 @@ function resetForm(): void {
 }
 
 function startEdit(caseStudy: AdminCaseStudy): void {
+  // Avant toute écriture : ce geste remplit ou vide le formulaire, il en avance la génération que la traduction en vol lit (R152).
+  renewForm()
   editingId.value = caseStudy.id
   proposalSourceLocale.value = null
   sourceGroup.value = caseStudy.translationGroup
@@ -224,6 +226,8 @@ function startEdit(caseStudy: AdminCaseStudy): void {
  * recopier, et rien à traduire puisqu'il n'y a rien d'écrit encore.
  */
 function startCreateVersion(row: TranslationGroupRow<AdminCaseStudy>, locale: Locale): void {
+  // Avant toute écriture : ce geste remplit ou vide le formulaire, il en avance la génération que la traduction en vol lit (R152).
+  renewForm()
   editingId.value = null
   proposalSourceLocale.value = null
   sourceGroup.value = row.key

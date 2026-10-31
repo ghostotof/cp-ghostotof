@@ -375,6 +375,8 @@ function resetTraitForm(): void {
 // traite une entrée seule en non-geste (`count($members) === 1`), le groupe
 // est conservé. Le sélecteur affiche donc « aucune » sans conséquence.
 function startEditPrinciple(principle: AdminQualityPrinciple): void {
+  // Avant toute écriture : ce geste remplit ou vide le formulaire, il en avance la génération que la traduction en vol lit (R152).
+  renewPrincipleForm()
   editingPrincipleId.value = principle.id
   principleProposalSourceLocale.value = null
   principleSourceGroup.value = principle.translationGroup
@@ -386,6 +388,8 @@ function startEditPrinciple(principle: AdminQualityPrinciple): void {
 }
 
 function startEditTrait(trait: AdminQualityTrait): void {
+  // Avant toute écriture : ce geste remplit ou vide le formulaire, il en avance la génération que la traduction en vol lit (R152).
+  renewTraitForm()
   editingTraitId.value = trait.id
   traitProposalSourceLocale.value = null
   traitSourceGroup.value = trait.translationGroup
@@ -402,6 +406,8 @@ function startEditTrait(trait: AdminQualityTrait): void {
  * il n'y a rien à traduire puisqu'il n'y a rien d'écrit encore.
  */
 function startCreatePrincipleVersion(row: TranslationGroupRow<AdminQualityPrinciple>, locale: Locale): void {
+  // Avant toute écriture : ce geste remplit ou vide le formulaire, il en avance la génération que la traduction en vol lit (R152).
+  renewPrincipleForm()
   const existing = firstEntry(row, SUPPORTED_LOCALES)
 
   editingPrincipleId.value = null
@@ -416,6 +422,8 @@ function startCreatePrincipleVersion(row: TranslationGroupRow<AdminQualityPrinci
 
 /** Même geste pour un trait, qui n'a aucun champ non-prose à recopier. */
 function startCreateTraitVersion(row: TranslationGroupRow<AdminQualityTrait>, locale: Locale): void {
+  // Avant toute écriture : ce geste remplit ou vide le formulaire, il en avance la génération que la traduction en vol lit (R152).
+  renewTraitForm()
   editingTraitId.value = null
   traitProposalSourceLocale.value = null
   traitSourceGroup.value = row.key

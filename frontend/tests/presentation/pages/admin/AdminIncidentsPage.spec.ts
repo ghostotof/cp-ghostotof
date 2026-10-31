@@ -430,6 +430,10 @@ describe('AdminIncidentsPage', () => {
     startEditOther: async (wrapper) => {
       await buttonLabelled(actionsForLine(wrapper, 'Panne du broker RabbitMQ'), 'Modifier').trigger('click')
     },
+    // Le membre de l'autre langue de l'entrée que `startEditOther` ouvre.
+    deleteSiblingOfOther: async (wrapper) => {
+      await buttonLabelled(actionsForLine(wrapper, 'RabbitMQ broker outage'), 'Supprimer').trigger('click')
+    },
     startCreateVersion: (wrapper) => buttonLabelled(wrapper, 'Créer la version EN').trigger('click'),
     dirtyOrder: moveFirstRowDown,
     propose: async (wrapper) => {

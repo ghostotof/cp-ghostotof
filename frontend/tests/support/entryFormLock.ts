@@ -113,6 +113,11 @@ export interface EntryFormLockCase {
    * (son bouton « Supprimer », l'entrée de l'autre langue de la ligne). Même `window.confirm` simulé que `deleteEditedEntry`.
    */
   readonly deleteSourceEntry: (wrapper: VueWrapper) => Promise<void>
+  /**
+   * Supprime, depuis le tableau, l'entrée de l'autre langue de celle que `startEditOther` ouvre (elles partagent un groupe) : un
+   * membre du groupe de l'entrée éditée, qui n'est ni cette entrée ni la source d'une création. Même `window.confirm` simulé.
+   */
+  readonly deleteSiblingOfOther: (wrapper: VueWrapper) => Promise<void>
   /** Modifie l'ordre d'un tableau de la page (« ↓ » de la première poignée) sans l'enregistrer : le brouillon d'ordre est sale. */
   readonly dirtyOrder: (wrapper: VueWrapper) => Promise<void>
   /**
@@ -129,8 +134,9 @@ export interface EntryFormLockCase {
  *   et « Proposer la version XX », et « Annuler » retire l'explication ;
  * - un « translate » émis pendant une proposition, un ordre modifié, un enregistrement en vol, sans prose, ou avant la première
  *   réponse, ne lance rien ;
- * - « Annuler », « Modifier », « Créer la version XX », la suppression de l'entrée éditée ou de la source d'une création
- *   rattachée, et le changement de langue d'une création pendant une traduction en périment la réponse ;
+ * - « Annuler », « Modifier » (une autre entrée, ou celle qu'on édite), « Créer la version XX » (aussi recliqué), la suppression
+ *   de l'entrée éditée ou de la source d'une création rattachée, et le changement de langue d'une création pendant une traduction
+ *   en périment la réponse ; la suppression de l'autre langue de l'entrée éditée, non : la proposition est posée ;
  * - un formulaire vierge enregistré pendant une traduction n'en reçoit pas la réponse (la génération du formulaire) ;
  * - la prose est en lecture seule pendant une traduction ; l'erreur d'un échec survit à la frappe, et ne reparaît pas au retour
  *   à l'entrée où elle est née.
@@ -455,6 +461,53 @@ export function describeEntryFormLock(lockCase: EntryFormLockCase): void {
     expect(proposalNotice(wrapper).exists()).toBe(false)
   })
 
+  // Un geste qui remplit ou vide le formulaire sans changer son identité (même ligne, même langue, même entrée) avance quand même sa
+  // génération : recliquer « Créer la version XX » ou « Modifier » vide ou recharge la prose, et la réponse partie avant ne s'y pose pas.
+  // Les clics de `startCreateVersion` et de `startEdit` sont ceux de la même ligne : les refaire est le même geste.
+  it(`${prefix}« Créer la version XX » recliqué pendant une traduction : la réponse ne pose rien`, async () => {
+    const translation = lockCase.createTranslation()
+    const wrapper = await lockCase.mount(translation)
+    await lockCase.startCreateVersion(wrapper)
+    await wrapper.get(`#${ids.title}`).setValue('Titre saisi')
+    const formLocale = (wrapper.get(locale).element as HTMLSelectElement).value
+    const reply = deferNextTranslation(translation)
+
+    translateButtonComponent(wrapper).vm.$emit('translate', SUPPORTED_LOCALES.find((candidate) => candidate !== formLocale))
+    await flushPromises()
+    await lockCase.startCreateVersion(wrapper)
+    reply.release()
+    await flushPromises()
+
+    expect(vi.mocked(translation.translate)).toHaveBeenCalledTimes(1)
+    expect(titleValue(wrapper)).toBe('')
+    for (const id of proseIds) {
+      expect((wrapper.get(`#${id}`).element as HTMLInputElement | HTMLTextAreaElement).value, `#${id}`).toBe('')
+    }
+    expect((wrapper.get(locale).element as HTMLSelectElement).value).toBe(formLocale)
+    expect(headingOf(wrapper)).toBe(lockCase.heading)
+    expect(proposalNotice(wrapper).exists()).toBe(false)
+  })
+
+  it(`${prefix}« Modifier » de l'entrée éditée recliqué pendant une traduction : la réponse ne pose rien`, async () => {
+    const translation = lockCase.createTranslation()
+    const wrapper = await lockCase.mount(translation)
+    await lockCase.startEdit(wrapper)
+    const titleOfEntry = titleValue(wrapper)
+    const editHeading = headingOf(wrapper)
+    const reply = deferNextTranslation(translation)
+
+    translateButtonComponent(wrapper).vm.$emit('translate', 'en')
+    await flushPromises()
+    await lockCase.startEdit(wrapper)
+    reply.release()
+    await flushPromises()
+
+    expect(vi.mocked(translation.translate)).toHaveBeenCalledTimes(1)
+    expect(titleValue(wrapper)).toBe(titleOfEntry)
+    expect(headingOf(wrapper)).toBe(editHeading)
+    expect(proposalNotice(wrapper).exists()).toBe(false)
+  })
+
   // Ce que l'identité du formulaire ne voit pas : supprimer l'entrée éditée ne change rien au formulaire, la page périme
   // la traduction elle-même. Changer la langue d'une création change l'identité : le composable la périme seul.
   it(`${prefix}supprimer l'entrée en édition pendant une traduction : la réponse ne pose rien`, async () => {
@@ -508,6 +561,32 @@ export function describeEntryFormLock(lockCase: EntryFormLockCase): void {
     expect(proposalNotice(wrapper).exists()).toBe(false)
   })
 
+  // Voisin du cas précédent : supprimer l'autre langue de l'entrée éditée ne change ni l'entrée, ni le formulaire, ni la source de la
+  // traduction (R140) : la proposition arrive et se pose, la traduction n'est pas périmée.
+  it(`${prefix}supprimer l'autre langue de l'entrée éditée pendant une traduction : la proposition est posée`, async () => {
+    const translation = lockCase.createTranslation()
+    const wrapper = await lockCase.mount(translation)
+    await lockCase.startEditOther(wrapper)
+    // La page est en édition : sa proposition la bascule en création (le titre proposé peut égaler le titre lu : on lit le titre `h2`).
+    expect(headingOf(wrapper)).not.toBe(lockCase.heading)
+    const reply = deferNextTranslation(translation)
+
+    translateButtonComponent(wrapper).vm.$emit('translate', 'en')
+    await flushPromises()
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    try {
+      await lockCase.deleteSiblingOfOther(wrapper)
+    } finally {
+      confirm.mockRestore()
+    }
+    await flushPromises()
+    reply.release()
+    await flushPromises()
+
+    expect(headingOf(wrapper)).toBe(lockCase.heading)
+    expect(proposalNotice(wrapper).exists()).toBe(true)
+  })
+
   // Un formulaire vierge enregistré pendant une traduction : l'enregistrement le remet à zéro sans changer l'entrée, la langue ni
   // le groupe, et la réponse du modèle, arrivée après, ne doit rien poser sur ce formulaire vidé (la génération du formulaire).
   it(`${prefix}un formulaire vierge enregistré pendant une traduction : la réponse ne pose rien`, async () => {
@@ -518,6 +597,8 @@ export function describeEntryFormLock(lockCase: EntryFormLockCase): void {
 
     translateButtonComponent(wrapper).vm.$emit('translate', 'en')
     await flushPromises()
+    // Pendant l'attente le bouton dit qu'il travaille ; l'enregistrement qui suit ne le libère pas (l'appel est en vol).
+    expect(formOf(wrapper).get('button[aria-busy]').attributes('aria-busy')).toBe('true')
     await formOf(wrapper).trigger('submit.prevent')
     await flushPromises()
     reply.release()
@@ -530,7 +611,12 @@ export function describeEntryFormLock(lockCase: EntryFormLockCase): void {
     expect(proposalNotice(wrapper).exists()).toBe(false)
     expect((wrapper.get(locale).element as HTMLSelectElement).value).toBe('fr')
     expect(headingOf(wrapper)).toBe(lockCase.heading)
+    // Retour du bouton : plus occupé (`aria-busy="false"`, le composant ne retire pas l'attribut), inactif faute de prose,
+    // actif dès qu'une prose est saisie — la réponse périmée ne le laisse pas bloqué.
+    expect(formOf(wrapper).get('button[aria-busy]').attributes('aria-busy')).toBe('false')
     expect(translateEntryButton(wrapper, form).attributes('disabled')).toBeDefined()
+    await wrapper.get(`#${ids.title}`).setValue('Nouveau titre')
+    expect(translateEntryButton(wrapper, form).attributes('disabled')).toBeUndefined()
   })
 
   it(`${prefix}changer la langue d'une création pendant une traduction : la réponse ne pose rien`, async () => {

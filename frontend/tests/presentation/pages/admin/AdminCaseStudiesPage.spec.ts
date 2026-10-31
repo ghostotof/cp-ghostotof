@@ -518,6 +518,10 @@ describe('AdminCaseStudiesPage', () => {
     startEditOther: async (wrapper) => {
       await buttonLabelled(actionsForLine(wrapper, 'Un moteur de tarification asynchrone'), 'Modifier').trigger('click')
     },
+    // Le membre de l'autre langue de l'entrée que `startEditOther` ouvre.
+    deleteSiblingOfOther: async (wrapper) => {
+      await buttonLabelled(actionsForLine(wrapper, 'An asynchronous pricing engine'), 'Supprimer').trigger('click')
+    },
     startCreateVersion: (wrapper) => buttonLabelled(wrapper, 'Créer la version EN').trigger('click'),
     dirtyOrder: moveFirstRowDown,
     propose: async (wrapper) => {

@@ -53,9 +53,9 @@ export interface UseAdminTranslationOptions {
    * Ce qui fait l'identité du formulaire (`FormIdentity`) : l'entrée éditée, la langue, le groupe source, la génération.
    * Comparée champ par champ (`sameFormIdentity`) ; dès que le formulaire n'a plus l'identité relevée à l'envoi, la
    * traduction en vol est périmée pour de bon, même s'il la retrouve ensuite, quel que soit le geste qui l'a remplacé
-   * (« Annuler », « Modifier » une autre entrée, « Créer la version XX », un changement de langue, toute remise à zéro du
-   * formulaire, qui fait avancer la génération) : `isTranslating` retombe aussitôt et la réponse rend `null`. Rouvrir la même
-   * entrée ne change rien au formulaire : rien n'est périmé. Ce que l'identité ne voit pas — la suppression de l'entrée
+   * (« Annuler », « Modifier », « Créer la version XX », un changement de langue, toute remise à zéro du formulaire : chaque
+   * geste qui le remplit ou le vide fait avancer la génération, y compris rouvrir la même entrée) : `isTranslating` retombe
+   * aussitôt et la réponse rend `null`. Ce que l'identité ne voit pas — la suppression de l'entrée
    * éditée ou de la source d'une création rattachée —, `discard()` le périme. La prose n'en fait pas partie : la page la met
    * en lecture seule pendant la traduction, et la raison d'un échec ne disparaît que par un changement d'identité ou la
    * traduction suivante, pas par la frappe qui corrige la prose.

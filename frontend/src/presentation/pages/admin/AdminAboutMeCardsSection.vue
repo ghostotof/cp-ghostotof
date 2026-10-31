@@ -282,6 +282,8 @@ function resetForm(): void {
 // `hasSibling` cherche dans **toutes** les catégories : sur un groupe réparti
 // (antérieur à #501), le sélecteur paraît vide, « aucune » le répare (#573).
 function startEdit(card: AdminAboutMeCard): void {
+  // Avant toute écriture : ce geste remplit ou vide le formulaire, il en avance la génération que la traduction en vol lit (R152).
+  renewForm()
   editingId.value = card.id
   proposalSourceLocale.value = null
   sourceGroup.value = card.translationGroup
@@ -301,6 +303,8 @@ function startEdit(card: AdminAboutMeCard): void {
  * traduire puisqu'il n'y a rien d'écrit encore.
  */
 function startCreateVersion(row: TranslationGroupRow<AdminAboutMeCard>, locale: Locale): void {
+  // Avant toute écriture : ce geste remplit ou vide le formulaire, il en avance la génération que la traduction en vol lit (R152).
+  renewForm()
   const existing = firstEntry(row, SUPPORTED_LOCALES)
 
   editingId.value = null

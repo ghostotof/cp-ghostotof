@@ -204,9 +204,11 @@ copy of the predicate.
 **A response is discarded when its form changed.** The form's identity is `FormIdentity`: the entry, the locale, the source
 group and the form's generation, compared field by field by `sameFormIdentity`, never the prose. A response whose form no
 longer has the identity read at send time is discarded, whatever gesture replaced it and even if the form later regains that
-identity (R124). Every reset of the form advances its generation, `renewForm()` of `useTranslatedForm`, called first by each
-`resetForm` (R139, decision 1 of the twelfth review): a blank form saved during a translation keeps its entry, locale and
-group, and only the generation tells it from the form the call left. What no identity sees, a deletion, goes through
+identity (R124). Every gesture that fills or empties the form (a reset, « Modifier », « Créer la version XX ») advances its
+generation, `renewForm()` of `useTranslatedForm`, called first by each `resetForm`, `startEdit` and `startCreateVersion` (R139,
+decision 1 of the twelfth review; R152, D1 of the thirteenth): a blank form saved during a translation, or a « Modifier » or a
+« Créer la version XX » clicked again on the same entry or line, keeps its entry, locale and group, and only the generation tells
+it from the form the call left. What no identity sees, a deletion, goes through
 `discardIfDeleted()` of `useTranslatedForm`: the entry being edited, or the source of a creation attached to its group (R124,
 R140). A page calls it before every `remove`; deleting another member of the edited entry's group changes nothing.
 **One model call in flight per mounted form**: a discarded call still running refuses the next one (`isDiscardPending`, R125,

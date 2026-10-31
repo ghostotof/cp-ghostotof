@@ -411,6 +411,10 @@ describe('AdminContributionsPage', () => {
     startEditOther: async (wrapper) => {
       await buttonLabelled(actionsForLine(wrapper, 'Un lock npm dans le manifeste'), 'Modifier').trigger('click')
     },
+    // Le membre de l'autre langue de l'entrée que `startEditOther` ouvre.
+    deleteSiblingOfOther: async (wrapper) => {
+      await buttonLabelled(actionsForLine(wrapper, 'An npm lock in the manifest'), 'Supprimer').trigger('click')
+    },
     startCreateVersion: (wrapper) => buttonLabelled(wrapper, 'Créer la version EN').trigger('click'),
     dirtyOrder: moveFirstRowDown,
     propose: async (wrapper) => {

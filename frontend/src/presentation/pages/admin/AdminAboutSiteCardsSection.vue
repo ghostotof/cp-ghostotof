@@ -211,6 +211,8 @@ function resetForm(): void {
 // traite une entrée seule en non-geste (`count($members) === 1`), le groupe
 // est conservé. Le sélecteur affiche donc « aucune » sans conséquence.
 function startEdit(card: AdminAboutSiteCard): void {
+  // Avant toute écriture : ce geste remplit ou vide le formulaire, il en avance la génération que la traduction en vol lit (R152).
+  renewForm()
   editingId.value = card.id
   proposalSourceLocale.value = null
   sourceGroup.value = card.translationGroup
@@ -229,6 +231,8 @@ function startEdit(card: AdminAboutSiteCard): void {
  * traduire puisqu'il n'y a rien d'écrit encore.
  */
 function startCreateVersion(row: TranslationGroupRow<AdminAboutSiteCard>, locale: Locale): void {
+  // Avant toute écriture : ce geste remplit ou vide le formulaire, il en avance la génération que la traduction en vol lit (R152).
+  renewForm()
   const existing = firstEntry(row, SUPPORTED_LOCALES)
 
   editingId.value = null

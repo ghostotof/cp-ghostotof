@@ -709,6 +709,10 @@ describe('AdminQualityPage', () => {
       startEditOther: async (wrapper) => {
         await buttonLabelled(actionsForLine(wrapper, PRINCIPLES, 'Revue systématique'), 'Modifier').trigger('click')
       },
+      // Le membre de l'autre langue de l'entrée que `startEditOther` ouvre.
+      deleteSiblingOfOther: async (wrapper) => {
+        await buttonLabelled(actionsForLine(wrapper, PRINCIPLES, 'Systematic review'), 'Supprimer').trigger('click')
+      },
       startCreateVersion: (wrapper) => buttonLabelled(rowsOf(wrapper, PRINCIPLES)[1], 'Créer la version EN').trigger('click'),
       dirtyOrder: (wrapper) => moveFirstRowDown(wrapper, PRINCIPLES),
       propose: async (wrapper) => {
@@ -750,6 +754,10 @@ describe('AdminQualityPage', () => {
       },
       startEditOther: async (wrapper) => {
         await buttonLabelled(actionsForLine(wrapper, TRAITS, 'Observable'), 'Modifier').trigger('click')
+      },
+      // Le membre de l'autre langue de l'entrée que `startEditOther` ouvre.
+      deleteSiblingOfOther: async (wrapper) => {
+        await buttonLabelled(actionsForLine(wrapper, TRAITS, 'Observable (en)'), 'Supprimer').trigger('click')
       },
       startCreateVersion: (wrapper) => buttonLabelled(rowsOf(wrapper, TRAITS)[1], 'Créer la version EN').trigger('click'),
       dirtyOrder: (wrapper) => moveFirstRowDown(wrapper, TRAITS),

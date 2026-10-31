@@ -24,11 +24,13 @@ export interface UseTranslatedFormOptions {
 
 export interface UseTranslatedFormResult extends UseAdminTranslationResult {
   /**
-   * Fait avancer la génération du formulaire : à appeler en premier par **chaque** remise à zéro du formulaire
-   * (`resetForm()`, `resetPrincipleForm()`, `resetTraitForm()`…). Une remise à zéro ne change ni l'entrée, ni la langue, ni le
-   * groupe d'un formulaire déjà vierge, et la réponse d'une traduction partie avant elle poserait sa proposition sur le
-   * formulaire vidé : la génération, elle, change, et périme la traduction en vol comme elle efface l'échec (ce
-   * qu'aucune identité ne voit, la suppression d'une entrée, passe par `discardIfDeleted`).
+   * Fait avancer la génération du formulaire : à appeler en premier par **chaque** geste qui remplit ou vide le formulaire —
+   * remise à zéro (`resetForm()`, `resetPrincipleForm()`, `resetTraitForm()`…), « Modifier » (`startEdit`…), « Créer la version
+   * XX » (`startCreateVersion`…). Un tel geste peut ne changer ni l'entrée, ni la langue, ni le groupe (un formulaire déjà
+   * vierge, « Modifier » de l'entrée déjà éditée, « Créer la version XX » de la même ligne), et la réponse d'une traduction
+   * partie avant lui poserait sa proposition sur le formulaire vidé ou rechargé : la génération, elle, change, et périme la
+   * traduction en vol comme elle efface l'échec (ce qu'aucune identité ne voit, la suppression d'une entrée, passe par
+   * `discardIfDeleted`).
    */
   readonly renewForm: () => void
   /**
@@ -63,7 +65,7 @@ export interface UseTranslatedFormResult extends UseAdminTranslationResult {
  * champs de prose (`proseFields.ts`), la proposition qu'elle pose, la suppression d'une entrée (qu'elle dit à `discardIfDeleted`).
  */
 export function useTranslatedForm(options: UseTranslatedFormOptions): UseTranslatedFormResult {
-  // Le numéro du formulaire : une remise à zéro le fait avancer, et rien d'autre (voir `renewForm`).
+  // Le numéro du formulaire : un geste qui le remplit ou le vide le fait avancer, et rien d'autre (voir `renewForm`).
   const generation = ref(0)
   const translation = useAdminTranslation({
     isRefused: options.isRefused,

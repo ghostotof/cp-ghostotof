@@ -117,6 +117,21 @@ describe('useTranslatedForm', () => {
     expect(await pending).toBeNull()
   })
 
+  // Aucun cas d'intégration ne l'isole : depuis R152, chaque geste de page qui change le groupe avance aussi la génération.
+  it("une identité qui ne change que par son groupe périme la traduction (#748, R152)", async () => {
+    const group = ref<string | null>('groupe-source')
+    const { form, release } = mountTranslatedForm({ identity: () => ({ entry: null, locale: 'fr', group: group.value }) })
+
+    const pending = form.translate('fr', 'en', { title: 'Panne' })
+    expect(form.isTranslating.value).toBe(true)
+
+    group.value = 'autre-groupe'
+    expect(form.isTranslating.value).toBe(false)
+
+    release(PROPOSAL)
+    expect(await pending).toBeNull()
+  })
+
   it("renewForm() efface l'échec d'une traduction (#748, R139)", async () => {
     const repository: AdminTranslationRepository = {
       translate: vi.fn(async () => { throw new AdminTranslationError('unavailable', 'Indisponible.') }),

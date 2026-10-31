@@ -199,6 +199,8 @@ function resetForm(): void {
 }
 
 function startEdit(section: AdminAnonymousCvSection): void {
+  // Avant toute écriture : ce geste remplit ou vide le formulaire, il en avance la génération que la traduction en vol lit (R152).
+  renewForm()
   editingId.value = section.id
   proposalSourceLocale.value = null
   sourceGroup.value = section.translationGroup
@@ -222,6 +224,8 @@ function startEdit(section: AdminAnonymousCvSection): void {
  * puisqu'il n'y a rien à écrire encore.
  */
 function startCreateVersion(row: TranslationGroupRow<AdminAnonymousCvSection>, locale: Locale): void {
+  // Avant toute écriture : ce geste remplit ou vide le formulaire, il en avance la génération que la traduction en vol lit (R152).
+  renewForm()
   const existing = firstEntry(row, SUPPORTED_LOCALES)
 
   editingId.value = null

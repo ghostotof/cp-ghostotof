@@ -1072,6 +1072,10 @@ describe('AdminAboutPage', () => {
       startEditOther: async (wrapper) => {
         await buttonLabelled(actionsForLine(wrapper, SITE, 'Architecture'), 'Modifier').trigger('click')
       },
+      // Le membre de l'autre langue de l'entrée que `startEditOther` ouvre.
+      deleteSiblingOfOther: async (wrapper) => {
+        await buttonLabelled(actionsForLine(wrapper, SITE, 'Architecture (en)'), 'Supprimer').trigger('click')
+      },
       startCreateVersion: (wrapper) => buttonLabelled(rowsOf(wrapper, SITE)[1], 'Créer la version EN').trigger('click'),
       dirtyOrder: (wrapper) => moveFirstRowDown(wrapper, SITE),
       propose: async (wrapper) => {
@@ -1113,6 +1117,10 @@ describe('AdminAboutPage', () => {
       },
       startEditOther: async (wrapper) => {
         await buttonLabelled(actionsForLine(wrapper, ME_TABLE.technical, ME_FIXTURES.technical.titles[0]), 'Modifier').trigger('click')
+      },
+      // Le membre de l'autre langue de l'entrée que `startEditOther` ouvre.
+      deleteSiblingOfOther: async (wrapper) => {
+        await buttonLabelled(actionsForLine(wrapper, ME_TABLE.technical, ME_FIXTURES.technical.titles[1]), 'Supprimer').trigger('click')
       },
       startCreateVersion: (wrapper) => buttonLabelled(rowsOf(wrapper, ME_TABLE.technical)[1], 'Créer la version FR').trigger('click'),
       dirtyOrder: (wrapper) => moveFirstRowDown(wrapper, ME_TABLE.technical),
