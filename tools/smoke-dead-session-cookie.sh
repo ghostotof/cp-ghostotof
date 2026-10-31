@@ -44,7 +44,7 @@
 #                            (sortie 2).
 #          SMOKE_CURL        binaire curl de substitution (tests hors ligne).
 # Sortie : 0 conforme, 1 écart (ou curl sans réponse), 2 usage ou environnement
-#          faux.
+#          faux (dont le fichier de la Basic Auth disparu).
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
@@ -73,10 +73,7 @@ dead_cookie="BEARER=$(openssl rand -hex 16)"
 headers_file="$(mktemp)"
 trap 'rm -f "$headers_file"; smoke_cleanup' EXIT
 
-# La Basic Auth passe par un fichier de configuration curl en 600, dans un dossier
-# privé que `smoke_cleanup` retire, jamais par un argument ; `smoke_fetch` le lit ;
-# un retour à la ligne y est refusé (sortie 2), une variable vide ne crée rien. Voir
-# la bibliothèque.
+# Basic Auth : `smoke_write_auth_config` et `smoke_fetch` (en-tête de tools/lib/smoke-http.sh).
 SMOKE_CURL_OPTS=(-sS --connect-timeout 5 --max-time 15 -D "$headers_file")
 smoke_write_auth_config AUDIT_BASIC_AUTH || exit 2
 
@@ -100,8 +97,8 @@ status=""
 body=""
 fetch() {
   local path="$1"; shift
-  # Un curl sans réponse sort 1 en le disant (contrat 0/1/2, voir la bibliothèque).
-  smoke_fetch "GET $path" "$base$path" "$@" || exit 1
+  # Sortie 1 (curl sans réponse) ou 2 (fichier de la Basic Auth absent), dite par la bibliothèque.
+  smoke_fetch "GET $path" "$base$path" "$@" || exit "$?"
   status="$SMOKE_STATUS"
   body="$SMOKE_BODY"
 }

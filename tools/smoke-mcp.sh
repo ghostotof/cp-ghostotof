@@ -87,19 +87,17 @@ headers_file="$(mktemp)"
 body_file="$(mktemp)"
 trap 'rm -f "$headers_file" "$body_file"; smoke_cleanup' EXIT
 
-# La Basic Auth passe par un fichier de configuration curl en 600, dans un dossier
-# privé que `smoke_cleanup` retire, jamais par un argument ; `smoke_fetch` le lit ;
-# un retour à la ligne y est refusé (sortie 2), une variable vide ne crée rien. Voir
-# la bibliothèque.
+# Basic Auth : `smoke_write_auth_config` et `smoke_fetch` (en-tête de tools/lib/smoke-http.sh).
 SMOKE_CURL_OPTS=(-sS --connect-timeout 5 --max-time 15 -D "$headers_file")
 smoke_write_auth_config AUDIT_BASIC_AUTH || exit 2
 
 # request <étape> <méthode> <en-têtes curl…> : remplit `status` et `body`.
-# Un curl en échec (délai, connexion coupée) arrête le smoke en nommant l'étape.
+# Un curl en échec (délai, connexion coupée : sortie 1) ou un fichier de la Basic Auth
+# absent (sortie 2) arrête le smoke en nommant l'étape.
 request() {
   local step="$1" method="$2"
   shift 2
-  smoke_fetch "$step ($method $endpoint)" "$endpoint" -X "$method" "$@" || exit 1
+  smoke_fetch "$step ($method $endpoint)" "$endpoint" -X "$method" "$@" || exit "$?"
   status="$SMOKE_STATUS"
   body="$SMOKE_BODY"
   # Le corps part dans le journal de la CI : `smoke_excerpt` neutralise les

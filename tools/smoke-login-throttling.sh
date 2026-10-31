@@ -58,10 +58,7 @@ username="smoke-throttling-probe-$(date +%s)-$$"
 headers_file="$(mktemp)"
 trap 'rm -f "$headers_file"; smoke_cleanup' EXIT
 
-# La Basic Auth passe par un fichier de configuration curl en 600, dans un dossier
-# privé que `smoke_cleanup` retire, jamais par un argument ; `smoke_fetch` le lit ;
-# un retour à la ligne y est refusé (sortie 2), une variable vide ne crée rien. Voir
-# la bibliothèque.
+# Basic Auth : `smoke_write_auth_config` et `smoke_fetch` (en-tête de tools/lib/smoke-http.sh).
 SMOKE_CURL_OPTS=(-sS --connect-timeout 5 --max-time 15 -D "$headers_file")
 smoke_write_auth_config AUDIT_BASIC_AUTH || exit 2
 
@@ -76,12 +73,12 @@ type_pattern='"type":"(\\)?/errors(\\)?/rate-limited"'
 
 throttled_at=0
 for attempt in $(seq 1 "$attempts"); do
-  # Un curl sans réponse arrête le smoke en le disant : sortie 1, rien de vérifié.
+  # Un curl sans réponse (sortie 1) ou un fichier de la Basic Auth absent (sortie 2) arrête le smoke en le disant.
   smoke_fetch "tentative $attempt" "$base/api/login_check" \
     -X POST \
     -H 'Content-Type: application/json' \
     -H 'X-Requested-With: fetch' \
-    -d "{\"username\":\"$username\",\"password\":\"wrong-password-smoke\"}" || exit 1
+    -d "{\"username\":\"$username\",\"password\":\"wrong-password-smoke\"}" || exit "$?"
   status="$SMOKE_STATUS"
   body="$SMOKE_BODY"
 

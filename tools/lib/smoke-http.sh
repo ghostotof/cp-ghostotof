@@ -24,14 +24,15 @@
 #   smoke_headers <fichier> <nom>          toutes ses valeurs, une par ligne ;
 #   smoke_excerpt <texte>                  un extrait sans caractère de contrôle ;
 #   smoke_fetch <libellé> <url> [args…]    un appel curl qui rend statut et corps
-#                                          et dit un échec réseau.
+#                                          et dit un échec réseau ou un
+#                                          fichier de Basic Auth absent.
 #
 # Le binaire est `SMOKE_CURL` (`curl` s'il est vide ; les tests hors ligne y
 # mettent un faux) : un seul nom, lu ici seulement.
 #
 # Pas de `set -e` ici, ni d'appel réseau à la source : une bibliothèque sourcée
 # ne change pas les options du shell qui la source. Aucune fonction ne fait
-# sortir l'appelant ; c'est lui qui décide (`|| exit 2`, `|| exit 1`).
+# sortir l'appelant ; c'est lui qui décide (`|| exit 2`, `|| exit "$?"`).
 #
 # Limite écrite (St8-12) : sourcer la bibliothèque deux fois remet SMOKE_AUTH_DIR
 # et SMOKE_AUTH_CONFIG à vide ; le dossier d'un premier smoke_write_auth_config
@@ -73,14 +74,17 @@ smoke_cleanup() {
 # dans ceux de curl. Les guillemets et antislashs sont échappés au format attendu
 # par curl, donc n'importe quel mot de passe convient.
 #
-# La bibliothèque juge le vide (C8-1) : une variable vide ou absente, retour 0, aucun
-# dossier, SMOKE_AUTH_CONFIG vide. La valeur n'est lue que sous `set +x`.
+# Une variable vide ou absente : retour 0, aucun dossier, SMOKE_AUTH_CONFIG vide. La
+# valeur n'est lue que sous `set +x`. C'est à l'appelant de juger ce vide (SMOKE_AUTH_CONFIG
+# vide) : l'audit l'arrête (sortie 2), les scripts de fumée n'envoient alors aucune Basic Auth.
 #
 # Le nom est un identifiant (`[A-Za-z_][A-Za-z0-9_]*`), jamais une expression :
 # `${!nom}` évalue un indice, `x[$(commande)]` exécuterait la commande (C7-7). Il ne
 # commence pas par `_smoke_` (CR8-5) : les locales de la fonction portent ce
 # préfixe, et `${!nom}` lit d'abord une locale du même nom — un nom comme `value`
-# ou `rc` donnerait une Basic Auth fausse et silencieuse. La fonction lit elle-même
+# ou `rc` donnerait une Basic Auth fausse et silencieuse. Il ne commence pas non plus
+# par `SMOKE_AUTH_` (C9-5) : SMOKE_AUTH_DIR et SMOKE_AUTH_CONFIG sont remises à vide par
+# l'appel de tête avant la lecture, le retour serait 0 et aucune Basic Auth ne serait posée. La fonction lit elle-même
 # la valeur (C7-9) et l'écrit **dans le shell courant**, sous `set +x` (l'état de
 # xtrace relevé avant, rétabli après) : la valeur ne passe en argument d'aucune
 # fonction ni d'aucun processus, donc ni dans `ps` ni dans la trace d'un `set -x`.
@@ -106,7 +110,7 @@ smoke_cleanup() {
 smoke_write_auth_config() {
   local _smoke_name="${1:-}" _smoke_value _smoke_umask _smoke_traced=0 _smoke_rc=0
   smoke_cleanup
-  if ! [[ "$_smoke_name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ && "$_smoke_name" != _smoke_* ]]; then
+  if ! [[ "$_smoke_name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ && "$_smoke_name" != _smoke_* && "$_smoke_name" != SMOKE_AUTH_* ]]; then
     echo "smoke_write_auth_config : nom de variable invalide" >&2
     return 2
   fi
@@ -175,14 +179,23 @@ smoke_excerpt() {
 # SMOKE_AUTH_CONFIG à chaque appel (St8-12), donc aucun `-K` périmé après un second
 # smoke_write_auth_config.
 #
-# Un `curl` qui n'obtient aucune réponse (réseau, DNS, délai) sort avec son code
-# (6, 7, 28…), hors du contrat 0/1/2 des scripts, si on le laisse à `set -e` : la
-# fonction le dit sur stderr — « <libellé> : curl a échoué (code <n> : réseau, DNS
-# ou délai) — rien de vérifié » — et rend 1. L'appelant : `smoke_fetch … || exit 1`.
+# Rend 1 (aucune réponse) ou 2 (fichier de la Basic Auth absent), après l'avoir dit sur
+# stderr, sans jamais faire sortir l'appelant :
+#   - un `curl` qui n'obtient aucune réponse (réseau, DNS, délai) sort avec son code
+#     (6, 7, 28…), hors du contrat 0/1/2 des scripts, si on le laisse à `set -e` :
+#     « <libellé> : curl a échoué (code <n> : réseau, DNS ou délai) — rien de vérifié » ;
+#   - SMOKE_AUTH_CONFIG posé mais son fichier disparu : « <libellé> : fichier de la
+#     Basic Auth absent — rien de vérifié », curl n'est pas appelé (sans `-K`, il
+#     lirait le 401 de la préprod comme un résultat).
+# L'appelant : `smoke_fetch … || exit "$?"`.
 smoke_fetch() {
   local label="$1" url="$2" response rc _smoke_auth=()
   shift 2
   if [ -n "$SMOKE_AUTH_CONFIG" ]; then
+    if [ ! -f "$SMOKE_AUTH_CONFIG" ]; then
+      echo "$label : fichier de la Basic Auth absent — rien de vérifié" >&2
+      return 2
+    fi
     _smoke_auth=(-K "$SMOKE_AUTH_CONFIG")
   fi
   response="$("${SMOKE_CURL:-curl}" "${SMOKE_CURL_OPTS[@]}" "${_smoke_auth[@]}" "$@" -w '\n%{http_code}' "$url")" || {

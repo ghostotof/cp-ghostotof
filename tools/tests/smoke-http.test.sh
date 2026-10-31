@@ -158,9 +158,11 @@ unset AUDIT_BASIC_AUTH AUTRE_VAR
 # --- C7-7 : le nom est un identifiant, jamais une expression. `${!nom}` évalue
 # un indice : un nom `x[$(commande)]` exécuterait la commande. Retour 2, aucune
 # commande exécutée, aucun fichier. CR8-5 : un nom qui commence par `_smoke_` (les locales
-# de la bibliothèque) est refusé aussi.
+# de la bibliothèque) est refusé aussi. C9-5 : de même `SMOKE_AUTH_` (SMOKE_AUTH_DIR et
+# SMOKE_AUTH_CONFIG, que le `smoke_cleanup` de tête remet à vide avant la lecture : le
+# retour serait 0 et l'appelant croirait avoir posé une Basic Auth).
 hostile='x[$(touch "$TMP/pwned")]'
-for bad_name in "$hostile" '1abc' 'a-b' '' '_smoke_x' '_smoke_name'; do
+for bad_name in "$hostile" '1abc' 'a-b' '' '_smoke_x' '_smoke_name' SMOKE_AUTH_CONFIG SMOKE_AUTH_DIR SMOKE_AUTH_X; do
   SMOKE_CURL_OPTS=(-sS)
   rc=0
   smoke_write_auth_config "$bad_name" > "$TMP/stdout" 2> "$TMP/stderr" || rc=$?
@@ -395,6 +397,47 @@ else
 fi
 smoke_cleanup
 unset UNE_AUTH
+
+# --- C9-4 : une Basic Auth écrite dont le fichier a disparu ne part pas sans elle :
+# smoke_fetch rend 2, dit « fichier de la Basic Auth absent — rien de vérifié » et
+# n'appelle pas curl (un appel sans -K lirait le 401 de la préprod comme un résultat).
+# Lue par smoke_write_auth_config, par indirection (${!nom}).
+# shellcheck disable=SC2034
+UNE_AUTH='gone:file'
+smoke_write_auth_config UNE_AUTH
+rm -f "$SMOKE_AUTH_CONFIG"
+: > "$FAKE_ARGS"
+rc=0
+FAKE_STATUS=200 smoke_fetch "GET /gone" https://example.invalid/gone > "$TMP/stdout" 2> "$TMP/stderr" || rc=$?
+if [ "$rc" -eq 2 ] && grep -q '^GET /gone : fichier de la Basic Auth absent — rien de vérifié$' "$TMP/stderr" \
+   && [ ! -s "$FAKE_ARGS" ] && [ ! -s "$TMP/stdout" ]; then
+  pass "smoke_fetch : fichier -K disparu → retour 2, « fichier de la Basic Auth absent », curl jamais appelé"
+else
+  fail "smoke_fetch fichier -K absent" "rc=$rc ; stderr : $(cat -A "$TMP/stderr") ; appels : $(cat "$FAKE_ARGS")"
+fi
+smoke_cleanup
+unset UNE_AUTH
+
+# --- C9-4 : les appelants de smoke_fetch rendent son code (1 ou 2), jamais un `exit 1`
+# qui ferait d'un fichier de Basic Auth absent un échec de réseau.
+# Un appel s'étend parfois sur plusieurs lignes (`\` en fin de ligne) : on les joint d'abord.
+TOOLS_DIR="$(dirname "$(dirname "$LIB")")"
+joined_calls() {
+  sed -e ':a' -e '/\\$/{N;s/\\\n//;ba' -e '}' "$1" | grep 'smoke_fetch' || true
+}
+for script in "$TOOLS_DIR"/*.sh; do joined_calls "$script" | sed "s|^|$(basename "$script"): |"; done | grep -F '|| exit 1' > "$TMP/exit1" || true
+if [ ! -s "$TMP/exit1" ]; then
+  pass "aucun appel de smoke_fetch n'est suivi de « || exit 1 »"
+else
+  fail "smoke_fetch || exit 1" "$(cat "$TMP/exit1")"
+fi
+for caller in smoke-dead-session-cookie smoke-login-throttling smoke-mcp; do
+  if joined_calls "$TOOLS_DIR/$caller.sh" | grep -qF '|| exit "$?"'; then
+    pass "$caller.sh : smoke_fetch … || exit \"\$?\""
+  else
+    fail "$caller.sh" "aucun smoke_fetch suivi de || exit \"\$?\""
+  fi
+done
 
 # --- Sans SMOKE_CURL, c'est `curl` du PATH : le faux est placé en tête.
 mkdir "$TMP/bin"; cp "$TMP/curl" "$TMP/bin/curl"

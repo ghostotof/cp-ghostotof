@@ -155,14 +155,34 @@ else
   fail "valeur tracée" "$(grep -nF -e 'trace-' "$TMP/traced.err" | head -3)"
 fi
 
-# --- C8-1 : AUDIT_BASIC_AUTH posée mais vide : la bibliothèque juge le vide, aucun
-# -K donné à curl, aucun dossier dans TMPDIR.
+# --- Décision 3 de la neuvième série (CR9-8, C9-6) : AUDIT_BASIC_AUTH posée mais vide
+# (le secret de préprod manquant) arrête l'audit : sortie 2, « secret de Basic Auth
+# vide » sur stderr, aucun appel à dig/curl/openssl, aucun dossier dans TMPDIR. Un audit
+# qui courait sans Basic Auth lisait le 401 de la préprod comme des dizaines d'échecs.
 copy_tools vide reelle
 AUDIT_BASIC_AUTH='' run vide
-if [ -s "$TMP/vide.calls" ] && ! grep -q -- ' -K ' "$TMP/vide.calls" && [ -z "$(ls -A "$TMP/vide.tmpdir")" ] && [ "$rc" -eq 1 ]; then
-  pass "AUDIT_BASIC_AUTH vide : aucun -K, aucun dossier, l'audit court"
+if [ "$rc" -eq 2 ] && grep -q 'AUDIT_BASIC_AUTH : secret de Basic Auth vide' "$TMP/vide.err" \
+   && [ ! -s "$TMP/vide.calls" ] && [ -z "$(ls -A "$TMP/vide.tmpdir")" ] && [ ! -s "$TMP/vide.out" ]; then
+  pass "AUDIT_BASIC_AUTH vide : sortie 2, « secret de Basic Auth vide », aucun appel, aucun dossier"
 else
-  fail "AUDIT_BASIC_AUTH vide" "rc=$rc ; appels : $(head -3 "$TMP/vide.calls") ; TMPDIR : $(ls -A "$TMP/vide.tmpdir")"
+  fail "AUDIT_BASIC_AUTH vide" "rc=$rc ; err : $(cat "$TMP/vide.err") ; appels : $(head -3 "$TMP/vide.calls") ; TMPDIR : $(ls -A "$TMP/vide.tmpdir")"
+fi
+
+# Le même sous `bash -x` : la trace ne porte de la variable que son nom (le test de
+# présence ne la développe pas, le vide est jugé sur le chemin du fichier).
+copy_tools videtraced reelle
+mkdir -p "$TMP/videtraced.tmpdir"
+: > "$TMP/videtraced.calls"
+set +e
+AUDIT_BASIC_AUTH='' LC_ALL=C FAKE_CALLS="$TMP/videtraced.calls" TMPDIR="$TMP/videtraced.tmpdir" PATH="$TMP/bin:$PATH" \
+  bash -x "$TMP/videtraced/tools/audit-prod.sh" example.invalid >"$TMP/videtraced.out" 2>"$TMP/videtraced.err"
+vide_rc=$?
+set -e
+if [ "$vide_rc" -eq 2 ] && grep -q 'secret de Basic Auth vide' "$TMP/videtraced.err" \
+   && ! grep -qE 'AUDIT_BASIC_AUTH=|AUDIT_BASIC_AUTH:-' "$TMP/videtraced.err" "$TMP/videtraced.out"; then
+  pass "AUDIT_BASIC_AUTH vide sous bash -x : sortie 2, rien de la variable que son nom dans la trace"
+else
+  fail "AUDIT_BASIC_AUTH vide tracée" "rc=$vide_rc ; $(grep -n 'AUDIT_BASIC_AUTH' "$TMP/videtraced.err" | head -5)"
 fi
 
 # --- C6-8 : le `trap` est posé AVANT la création du fichier : un arrêt entre les

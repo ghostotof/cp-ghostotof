@@ -40,18 +40,23 @@ CURL_OPTS_ANONYMOUS=("${CURL_OPTS[@]}")
 # (`-K`), créé en 600 dans un dossier privé que `smoke_cleanup` retire à la sortie ;
 # seul son chemin apparaît dans les arguments. Les guillemets et antislashs sont
 # échappés au format attendu par curl, donc n'importe quel mot de passe convient.
-# Un retour à la ligne (ou un CR) dans la valeur est refusé avant tout dossier et
-# toute requête (sortie 2, celle d'un défaut d'environnement, comme une
-# bibliothèque absente) : le fichier, son échappement et ce refus sont dans
-# tools/lib/smoke-http.sh, partagés avec les scripts de fumée.
+# Le fichier et son échappement sont dans tools/lib/smoke-http.sh, partagée avec les
+# scripts de fumée.
 #
-# `[[ -v … ]]` teste le nom, jamais la valeur : développée ici, hors de tout
-# `set +x`, elle serait imprimée par un `bash -x` (C8-1) ; la bibliothèque juge le
-# vide, sous `set +x` (une valeur vide ne crée rien). L'audit de prod ne pose pas la
-# variable : il ne source donc pas la bibliothèque. Le `trap` précède la création du
-# dossier : un arrêt entre `mktemp -d` et l'affectation que lit le `trap` peut
-# laisser un dossier privé **vide**, jamais la valeur, qui n'est écrite qu'une fois
-# le chemin connu du `trap` (#748, C7-8).
+# Trois cas, jugés sur le nom, jamais sur la valeur : `[[ -v … ]]` ne la développe pas,
+# et développée ici, hors de tout `set +x`, un `bash -x` l'imprimerait (C8-1).
+#   - non définie : l'audit de la vraie prod (non protégée). Il ne source pas la
+#     bibliothèque et n'envoie aucune Basic Auth ;
+#   - définie et vide : le secret de préprod manquant. Sortie 2 avant toute requête,
+#     faute de quoi chaque 401 de la préprod se lirait comme des chemins exposés ;
+#   - définie et pleine : le fichier `-K` est écrit une fois, ici, avant tout appel.
+#     Un retour à la ligne (ou un CR) dans la valeur est refusé avant tout dossier
+#     (sortie 2, celle d'un défaut d'environnement, comme une bibliothèque absente).
+# Le `-K` va dans `CURL_OPTS` : l'audit n'appelle jamais `smoke_fetch`, ne réécrit pas
+# le fichier, donc aucun `-K` n'y est périmé. Le `trap` précède la création du dossier :
+# un arrêt entre `mktemp -d` et l'affectation que lit le `trap` peut laisser un dossier
+# privé **vide**, jamais la valeur, qui n'est écrite qu'une fois le chemin connu du
+# `trap` (#748, C7-8).
 if [[ -v AUDIT_BASIC_AUTH ]]; then
   # Sortie 2 si la bibliothèque manque ou ne se lit pas (sans -e, un source en échec continuerait) ; stderr de bash visible.
   # shellcheck source=tools/lib/smoke-http.sh
@@ -61,9 +66,12 @@ if [[ -v AUDIT_BASIC_AUTH ]]; then
   }
   trap 'smoke_cleanup' EXIT
   smoke_write_auth_config AUDIT_BASIC_AUTH || exit 2
-  if [ -n "$SMOKE_AUTH_CONFIG" ]; then
-    CURL_OPTS+=(-K "$SMOKE_AUTH_CONFIG")
+  # Une valeur vide ne crée aucun fichier : le chemin vide dit le vide, sans lire la valeur.
+  if [ -z "$SMOKE_AUTH_CONFIG" ]; then
+    echo "AUDIT_BASIC_AUTH : secret de Basic Auth vide, rien de vérifié" >&2
+    exit 2
   fi
+  CURL_OPTS+=(-K "$SMOKE_AUTH_CONFIG")
 fi
 DIG_TIMEOUT=(+time=3 +tries=1)
 
