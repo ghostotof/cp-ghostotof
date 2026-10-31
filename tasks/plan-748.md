@@ -8734,6 +8734,9 @@ rendu du plan au fil principal, repris ici en une ligne chacune.
 - **Q8 (R139, CR12-2)** : l'erreur d'une traduction effacée à **tout** changement d'identité (« Modifier » une autre
   entrée l'efface aussi), pas seulement au changement de génération. Recommandé : oui (seule forme qui ferme A, B, A).
 
+**Réponses de l'auteur (2026-10-31)** : Q1 à Q8 → **les huit recommandations** (Q1 (a), Q2 ces textes, Q3 (a),
+Q4 (a), Q5 oui, Q6 oui, Q7 le garder, Q8 oui). Le plan les suit déjà : aucune tâche ne change.
+
 ### Review Focus (douzième relecture)
 
 1. **Un formulaire vierge enregistré pendant une traduction** (clic sur « Enregistrer », réponse du dépôt de création
