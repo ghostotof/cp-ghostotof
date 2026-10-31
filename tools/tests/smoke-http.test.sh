@@ -130,7 +130,9 @@ SMOKE_AUTH_DIR="$TMP/herite2" UNE_AUTH='u:p' bash -c '
 if [ "$rc" -eq 0 ] && [ -d "$TMP/herite2" ] && [ -z "$(ls -A "$TMP/tmpdir")" ]; then
   pass "un dossier hérité de l'environnement survit à deux _smoke_write_auth_config et à smoke_cleanup"
 else
-  fail "dossier hérité et second appel" "rc=$rc ; dossier hérité : $([ -d "$TMP/herite2" ] && echo présent || echo disparu) ; TMPDIR : $(ls -A "$TMP/tmpdir" | tr '\n' ' ')"
+  kept_dir="$([ -d "$TMP/herite2" ] && echo présent || echo disparu)"
+  leftovers="$(ls -A "$TMP/tmpdir" | tr '\n' ' ')"
+  fail "dossier hérité et second appel" "rc=$rc ; dossier hérité : $kept_dir ; TMPDIR : $leftovers"
 fi
 
 # --- Un retour à la ligne ou un CR ouvrirait une seconde directive : retour 2,
@@ -400,7 +402,9 @@ if [ "$(smoke_header "$TMP/headers" Retry-After)" = "30" ] \
    && [ -z "$(smoke_header "$TMP/headers" X-Absent)" ]; then
   pass "smoke_header : nom sans casse, CR retiré, dernière occurrence, absent → vide"
 else
-  fail "smoke_header" "retry-after : $(smoke_header "$TMP/headers" Retry-After | cat -A) ; content-type : $(smoke_header "$TMP/headers" content-type | cat -A)"
+  retry_after="$(smoke_header "$TMP/headers" Retry-After | cat -A)"
+  content_type="$(smoke_header "$TMP/headers" content-type | cat -A)"
+  fail "smoke_header" "retry-after : $retry_after ; content-type : $content_type"
 fi
 
 # --- smoke_headers <fichier> <nom> (St7-3) : toutes les valeurs, une par ligne,

@@ -51,7 +51,8 @@ Why: a `--location-trusted` there would carry the `-K` to any `https` host. Not 
 A `-K` file gone exits 2 saying « fichier de la Basic Auth absent », and a `curl` without an answer exits 1.
 Nothing was verified in those cases.
 Measured on 2026-10-31, on `curlimages/curl@sha256:08e466006f0860e54fc299378de998935333e0e130a15f6f98482e9f8dab3058` (curl 8.5.0):
-`--network none`, a dummy `-K -` read from stdin, no secret. `--proto-r =all --version` exits 0 (the abbreviation is taken, the threat is real).
+`--network none`, a dummy `-K -` read from stdin, no secret.
+`--proto-r =all --version` exits 0 (the abbreviation is taken, the threat is real).
 With `-K … --proto =https --proto-r =all http://127.0.0.1:9/`, curl exits 1 « Protocol "http" not supported or disabled in libcurl ».
 `--proto =https` holds whatever the abbreviation: it is what closes the scheme, the refusals above close the rest.
 `audit-prod.sh` sources the library only when `AUDIT_BASIC_AUTH` is defined (`[[ -v ]]`, so the value is never expanded

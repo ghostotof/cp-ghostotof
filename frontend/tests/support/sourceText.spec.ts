@@ -108,7 +108,15 @@ describe('scriptOf', () => {
   })
 
   it('garde les deux blocs, <script> et <script setup>', () => {
-    const both = "<script lang=\"ts\">\nexport const a = 'un'\n</script>\n<script setup lang=\"ts\">\nconst b = 'deux'\n</script>\n<template><p>'trois'</p></template>"
+    const both = [
+      '<script lang="ts">',
+      "export const a = 'un'",
+      '</script>',
+      '<script setup lang="ts">',
+      "const b = 'deux'",
+      '</script>',
+      "<template><p>'trois'</p></template>",
+    ].join('\n')
 
     expect(stringLiterals(scriptOf('X.vue', both))).toEqual(['un', 'deux'])
   })

@@ -146,7 +146,9 @@ if [ "$rc" -eq 0 ]; then
 else
   fail "casse" "rc=$rc ; err : $(cat "$TMP/err")"
 fi
-run case2 "$witness_ok" "$public_ok" '401|set-cookie: BEARER=deleted; expires=Thu, 01 Jan 1970 00:00:01 GMT; path=/~set-cookie: XSRF-TOKEN=deleted; expires=Thu, 01 Jan 1970 00:00:01 GMT; path=/|{}'
+expires_only='expires=Thu, 01 Jan 1970 00:00:01 GMT; path=/'
+run case2 "$witness_ok" "$public_ok" \
+  "401|set-cookie: BEARER=deleted; ${expires_only}~set-cookie: XSRF-TOKEN=deleted; ${expires_only}|{}"
 if [ "$rc" -eq 0 ]; then pass "expires passé sans Max-Age → succès"; else fail "expires" "rc=$rc ; err : $(cat "$TMP/err")"; fi
 
 # --- C1 côté serveur : la lecture publique refuse le cookie mort → échec.
@@ -249,7 +251,9 @@ if [ "$rc" -eq 0 ] && [ -f "$TMP/herite-config" ] && [ -f "$TMP/herite-dir/curl-
    && ! grep -q -- ' -K ' "$TMP/inherited.args"; then
   pass "SMOKE_AUTH_CONFIG et SMOKE_AUTH_DIR hérités, sans AUDIT_BASIC_AUTH : les témoins existent après la sortie, pas de -K"
 else
-  fail "variables héritées" "rc=$rc ; config : $([ -f "$TMP/herite-config" ] && echo présent || echo supprimé) ; dossier : $([ -f "$TMP/herite-dir/curl-auth.conf" ] && echo présent || echo supprimé)"
+  kept_config="$([ -f "$TMP/herite-config" ] && echo présent || echo supprimé)"
+  kept_dir="$([ -f "$TMP/herite-dir/curl-auth.conf" ] && echo présent || echo supprimé)"
+  fail "variables héritées" "rc=$rc ; config : $kept_config ; dossier : $kept_dir"
 fi
 printf 'témoin\n' > "$TMP/herite-config"
 printf 'témoin\n' > "$TMP/herite-dir/curl-auth.conf"

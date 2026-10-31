@@ -332,18 +332,21 @@ describe('useMcpConnections', () => {
     await pending
   })
 
-  it("le refus remet l'en-tête au vrai palier : /api/me, simulé au palier de base, ôte la confiance d'un compte rétrogradé", async () => {
-    // Un compte de confiance, tel que l'en-tête l'affichait avant le refus.
-    await signInTrusted()
-    expect(authState.tier).toBe('trusted')
-    const connections = mountComposable({ list: vi.fn().mockRejectedValue(new AccessForbiddenError()), revoke: vi.fn() })
+  it(
+    "le refus remet l'en-tête au vrai palier : /api/me, simulé au palier de base, ôte le palier de confiance d'un compte rétrogradé",
+    async () => {
+      // Un compte de confiance, tel que l'en-tête l'affichait avant le refus.
+      await signInTrusted()
+      expect(authState.tier).toBe('trusted')
+      const connections = mountComposable({ list: vi.fn().mockRejectedValue(new AccessForbiddenError()), revoke: vi.fn() })
 
-    await connections.load()
-    await flushPromises()
+      await connections.load()
+      await flushPromises()
 
-    expect(authState.tier).toBe('base')
-    expect(authState.user).toBeNull()
-  })
+      expect(authState.tier).toBe('base')
+      expect(authState.user).toBeNull()
+    },
+  )
 
   it("/api/me qui échoue à son tour ne boucle pas et ne casse pas le refus", async () => {
     const connections = mountComposable({ list: vi.fn().mockRejectedValue(new AccessForbiddenError()), revoke: vi.fn() })
