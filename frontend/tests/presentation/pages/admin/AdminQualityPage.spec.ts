@@ -661,17 +661,13 @@ describe('AdminQualityPage', () => {
       })
     })
 
-    // Les cas du verrou de la langue, avec l'aide permanente (#582) : écrits une fois pour les huit
+    // Les cas du verrou du formulaire, avec l'aide permanente (#582) : écrits une fois pour les huit
     // formulaires dans `tests/support/entryFormLock.ts` (#748, R91). Sp7-1 : la proposition est la version
     // de l'entrée source dans l'autre langue, dans son groupe gardé ; « Annuler » la retire.
-    let lockTranslation = createTranslationRepository()
     describeEntryFormLock({
       name: 'principe',
-      mount: async () => {
-        lockTranslation = createTranslationRepository()
-
-        return (await mountPage(createPrincipleRepository(), createTraitRepository(), lockTranslation)).wrapper
-      },
+      createTranslation: () => createTranslationRepository(),
+      mount: async (translation) => (await mountPage(createPrincipleRepository(), createTraitRepository(), translation)).wrapper,
       form: PRINCIPLES,
       ids: {
         locale: 'admin-quality-principle-locale',
@@ -688,16 +684,12 @@ describe('AdminQualityPage', () => {
         await translateEntryButton(wrapper, PRINCIPLES).trigger('click')
         await flushPromises()
       },
-      translationRequests: () => vi.mocked(lockTranslation.translate).mock.calls.length,
     })
 
     describeEntryFormLock({
       name: 'trait',
-      mount: async () => {
-        lockTranslation = createTranslationRepository(TRANSLATED_TRAIT)
-
-        return (await mountPage(createPrincipleRepository(), createTraitRepository(), lockTranslation)).wrapper
-      },
+      createTranslation: () => createTranslationRepository(TRANSLATED_TRAIT),
+      mount: async (translation) => (await mountPage(createPrincipleRepository(), createTraitRepository(), translation)).wrapper,
       form: TRAITS,
       ids: {
         locale: 'admin-quality-trait-locale',
@@ -714,7 +706,6 @@ describe('AdminQualityPage', () => {
         await translateEntryButton(wrapper, TRAITS).trigger('click')
         await flushPromises()
       },
-      translationRequests: () => vi.mocked(lockTranslation.translate).mock.calls.length,
     })
 
     it('affiche le message du quota en cas de 429 et laisse le formulaire intact', async () => {

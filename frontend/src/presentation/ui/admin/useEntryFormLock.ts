@@ -72,8 +72,11 @@ export function useEntryFormLock(options: {
   readonly hintId: string
   /** Vrai quand le formulaire édite une entrée existante : la ref du formulaire, ou un getter. */
   readonly isEditing: MaybeRefOrGetter<boolean>
-  /** Locale de l'entrée dont le formulaire est la proposition traduite, `null` hors proposition : la ref du formulaire, ou un getter. */
-  readonly proposalSource: MaybeRefOrGetter<Locale | null>
+  /**
+   * Locale de l'entrée dont le formulaire est la proposition traduite, `null` hors proposition : la ref du
+   * formulaire, ou un getter. Seule sa présence est lue (un booléen obligerait chaque page à un getter `null !== …`).
+   */
+  readonly proposalSourceLocale: MaybeRefOrGetter<Locale | null>
   /** Identifiant de l'aide permanente du sélecteur de langue (#582), quand il en a une. */
   readonly localeHelpId?: string
 }): EntryFormLock {
@@ -82,7 +85,7 @@ export function useEntryFormLock(options: {
       return 'editing'
     }
 
-    return null !== toValue(options.proposalSource) ? 'proposal' : 'none'
+    return null !== toValue(options.proposalSourceLocale) ? 'proposal' : 'none'
   })
   const isEntryLocked = computed(() => 'none' !== state.value)
   const isProposalLocked = computed(() => 'proposal' === state.value)

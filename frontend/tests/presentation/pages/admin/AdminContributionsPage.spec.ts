@@ -369,14 +369,10 @@ describe('AdminContributionsPage', () => {
 
   // Les cas du verrou (langue désactivée, « Annuler », texte du verrou…) : écrits une fois pour les
   // huit formulaires dans `tests/support/entryFormLock.ts` (#748, R91).
-  let lockTranslation = createTranslationRepository()
   describeEntryFormLock({
     name: '',
-    mount: async () => {
-      lockTranslation = createTranslationRepository()
-
-      return (await mountPage(createContributionRepository(), lockTranslation)).wrapper
-    },
+    createTranslation: () => createTranslationRepository(),
+    mount: async (translation) => (await mountPage(createContributionRepository(), translation)).wrapper,
     form: 0,
     ids: {
       locale: 'admin-contribution-locale',
@@ -392,7 +388,6 @@ describe('AdminContributionsPage', () => {
       await translateEntryButton(wrapper, 0).trigger('click')
       await flushPromises()
     },
-    translationRequests: () => vi.mocked(lockTranslation.translate).mock.calls.length,
   })
 
   it('enregistre la proposition comme une nouvelle entrée EN rattachée au même groupe', async () => {

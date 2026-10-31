@@ -28,7 +28,7 @@ import type { AdminTranslationRepository } from '../../../../src/domain/admin/tr
 import { AdminTranslationError } from '../../../../src/domain/admin/translation/errors/AdminTranslationError'
 import { expectNoAccessibilityViolation } from '../../../support/axe'
 import {
-  LOCKED_BY_PROPOSAL_TEXT,
+  ENTRY_LOCK_PROPOSAL_TEXT,
   describedTexts,
   describeEntryFormLock,
   formCancelButton,
@@ -734,12 +734,12 @@ describe('AdminAboutPage', () => {
     })
 
     /**
-     * Issue #578 : une carte ne change pas de catégorie. Le sélecteur restait
-     * actif en édition ; le changer vidait « Version de » (le watcher ci-dessus,
-     * pensé pour la création), le `PUT` partait avec `translationGroup: null`,
-     * et le serveur détachait la carte de sa traduction en ignorant la
-     * catégorie (200). Il est désactivé, comme la langue (#170 R2), avec une
-     * aide visible qui dit comment ranger la carte ailleurs.
+     * Issue #578 : une carte ne change pas de catégorie. Le sélecteur est
+     * désactivé en édition, comme la langue (#170 R2), avec une aide visible qui
+     * dit comment ranger la carte ailleurs : actif, le changer viderait « Version
+     * de » (le watcher ci-dessus, pensé pour la création), le `PUT` partirait avec
+     * `translationGroup: null` et le serveur détacherait la carte de sa traduction
+     * en ignorant la catégorie (200).
      */
     it("modifier une carte « moi » qui a une traduction : la catégorie ne se change pas, l'enregistrement garde le lien (#578)", async () => {
       const meCardRepository = createMeCardRepository()
@@ -1011,17 +1011,13 @@ describe('AdminAboutPage', () => {
       })
     })
 
-    // Les cas du verrou de la langue, avec l'aide permanente (#582) : écrits une fois pour les huit
+    // Les cas du verrou du formulaire, avec l'aide permanente (#582) : écrits une fois pour les huit
     // formulaires dans `tests/support/entryFormLock.ts` (#748, R91). Dans les cartes « moi », la proposition
     // verrouille aussi la catégorie (D-b, plus bas) ; « Annuler » libère les deux.
-    let lockTranslation = createTranslationRepository()
     describeEntryFormLock({
       name: 'carte « site »',
-      mount: async () => {
-        lockTranslation = createTranslationRepository()
-
-        return (await mountPage(undefined, undefined, undefined, lockTranslation)).wrapper
-      },
+      createTranslation: () => createTranslationRepository(),
+      mount: async (translation) => (await mountPage(undefined, undefined, undefined, translation)).wrapper,
       form: SITE_FORM,
       ids: {
         locale: 'admin-about-site-card-locale',
@@ -1038,16 +1034,13 @@ describe('AdminAboutPage', () => {
         await translateEntryButton(wrapper, SITE_FORM).trigger('click')
         await flushPromises()
       },
-      translationRequests: () => vi.mocked(lockTranslation.translate).mock.calls.length,
     })
 
     describeEntryFormLock({
       name: 'carte « moi »',
-      mount: async () => {
-        lockTranslation = createTranslationRepository({ title: 'Veille continue', description: 'Description veille' })
-
-        return (await mountPage(createSettingsRepository(), createSiteCardRepository(), undefined, lockTranslation)).wrapper
-      },
+      createTranslation: () => createTranslationRepository({ title: 'Veille continue', description: 'Description veille' }),
+      mount: async (translation) =>
+        (await mountPage(createSettingsRepository(), createSiteCardRepository(), undefined, translation)).wrapper,
       form: ME_FORM,
       ids: {
         locale: 'admin-about-me-card-locale',
@@ -1064,7 +1057,6 @@ describe('AdminAboutPage', () => {
         await translateEntryButton(wrapper, ME_FORM).trigger('click')
         await flushPromises()
       },
-      translationRequests: () => vi.mocked(lockTranslation.translate).mock.calls.length,
     })
 
     // D-b de l'auteur (#748, 2026-10-30) : une version dans l'autre langue ne change pas de catégorie
@@ -1080,7 +1072,7 @@ describe('AdminAboutPage', () => {
 
       expect(wrapper.get('#admin-about-me-card-category').attributes('disabled')).toBeDefined()
       expect(valueOf(wrapper, '#admin-about-me-card-category')).toBe('technical')
-      expect(describedTexts(wrapper, '#admin-about-me-card-category')).toEqual([LOCKED_BY_PROPOSAL_TEXT])
+      expect(describedTexts(wrapper, '#admin-about-me-card-category')).toEqual([ENTRY_LOCK_PROPOSAL_TEXT])
 
       await formCancelButton(wrapper, ME_FORM)?.trigger('click')
       await flushPromises()

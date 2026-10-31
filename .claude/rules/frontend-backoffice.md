@@ -138,7 +138,8 @@ status announcement) that a fork would silently lose:
   text per state. A proposal is born of an edit, of « Créer la version XX » or of a blank form, and the language lock
   holds in the three (the proposed prose is in the target language). `tests/support/entryFormLock.ts`
   (`describedTexts()`, `describeEntryFormLock()`) reads the texts an `aria-describedby` designates, fails on a dangling
-  IDREF and runs the lock cases on the eight forms; `AdminAboutPage.spec.ts` and `AdminQualityPage.spec.ts` pin the
+  IDREF and runs the lock cases on the eight forms (it creates each case's translation repository and counts its
+  calls); `AdminAboutPage.spec.ts` and `AdminQualityPage.spec.ts` pin the
   permanent help.
 - **A me-card group spread across two categories is not signalled by the backoffice, by decision**
   (issue #573). Such a group (FR in one category, EN in another) predates #501's guard; the backend
@@ -190,8 +191,9 @@ value, so a lone source still attaches its proposal) so saving the proposed vers
 extra gesture, and a `role="status"` banner names the proposal's source locale; while the form
 holds the proposal its locale selector is locked, as in editing (R78, R79, Sp7-1: the
 kept group would make a second version of the source locale), and so are « Proposer la version XX » (R93, decision 1
-of the eighth review: a second translation took the form back to the source locale, group kept; `handleTranslate`
-refuses itself as well, not only through the disabled button, R104), « Version de » (R94,
+of the eighth review: a second translation took the form back to the source locale, group kept; `useAdminTranslation`
+refuses the call itself, not only the disabled button: during a proposal (`isRefused`, the form's lock) and while a
+translation is in flight, and « Annuler » discards the response in flight (`discard()`, R114)), « Version de » (R94,
 decision 3: « aucune » would detach the proposal from its source) and the me-card
 **category** selector (R79b, D-b: a version in the other language does not change category, #501/#561; « Créer la
 version XX » keeps the category free, by decision), all described by one text, `admin.entryLock.proposal`, which says

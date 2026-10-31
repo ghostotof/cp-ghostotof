@@ -108,12 +108,14 @@ const {
   isTranslating: isTranslatingPrinciple,
   errorReason: principleTranslationErrorReason,
   translate: translatePrinciple,
-} = useAdminTranslation()
+  discard: discardPrincipleTranslation,
+} = useAdminTranslation({ isRefused: () => principleLock.isProposalLocked })
 const {
   isTranslating: isTranslatingTrait,
   errorReason: traitTranslationErrorReason,
   translate: translateTrait,
-} = useAdminTranslation()
+  discard: discardTraitTranslation,
+} = useAdminTranslation({ isRefused: () => traitLock.isProposalLocked })
 
 /**
  * Prose des principes. Le complément de cette liste — `iconKey` — est ce que
@@ -177,14 +179,14 @@ const isEditingPrinciple = computed(() => null !== editingPrincipleId.value)
 const principleLock = useEntryFormLock({
   hintId: 'admin-quality-principle-entry-lock-help',
   isEditing: isEditingPrinciple,
-  proposalSource: principleProposalSourceLocale,
+  proposalSourceLocale: principleProposalSourceLocale,
   localeHelpId: 'admin-quality-principle-locale-help',
 })
 const isEditingTrait = computed(() => null !== editingTraitId.value)
 const traitLock = useEntryFormLock({
   hintId: 'admin-quality-trait-entry-lock-help',
   isEditing: isEditingTrait,
-  proposalSource: traitProposalSourceLocale,
+  proposalSourceLocale: traitProposalSourceLocale,
   localeHelpId: 'admin-quality-trait-locale-help',
 })
 
@@ -318,6 +320,7 @@ const traitTranslationOptions = computed(() => [
 ])
 
 function resetPrincipleForm(): void {
+  discardPrincipleTranslation()
   editingPrincipleId.value = null
   principleProposalSourceLocale.value = null
   principleSourceGroup.value = null
@@ -329,6 +332,7 @@ function resetPrincipleForm(): void {
 }
 
 function resetTraitForm(): void {
+  discardTraitTranslation()
   editingTraitId.value = null
   traitProposalSourceLocale.value = null
   traitSourceGroup.value = null
@@ -441,12 +445,6 @@ async function handleSubmitTrait(): Promise<void> {
  * D4). En cas d'échec, le formulaire reste intact et la raison s'affiche.
  */
 async function handleTranslatePrinciple(targetLocale: Locale): Promise<void> {
-  // Le refus vient d'ici, pas seulement du bouton désactivé : une seconde traduction ramènerait le formulaire
-  // à la langue source, groupe gardé (Sp7-1).
-  if (principleLock.isProposalLocked) {
-    return
-  }
-
   const sourceLocale = principleForm.locale
 
   const proposal = await translatePrinciple(
@@ -466,12 +464,6 @@ async function handleTranslatePrinciple(targetLocale: Locale): Promise<void> {
 }
 
 async function handleTranslateTrait(targetLocale: Locale): Promise<void> {
-  // Le refus vient d'ici, pas seulement du bouton désactivé : une seconde traduction ramènerait le formulaire
-  // à la langue source, groupe gardé (Sp7-1).
-  if (traitLock.isProposalLocked) {
-    return
-  }
-
   const sourceLocale = traitForm.locale
 
   const proposal = await translateTrait(sourceLocale, targetLocale, collectProseFields(traitForm, TRAIT_PROSE_FIELDS))

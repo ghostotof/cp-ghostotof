@@ -9,7 +9,7 @@ describe('useEntryFormLock', () => {
   function lockOf(options: { localeHelpId?: string } = {}) {
     const isEditing = ref(false)
     const proposalSource = ref<Locale | null>(null)
-    const lock = useEntryFormLock({ hintId: 'hint', isEditing, proposalSource, ...options })
+    const lock = useEntryFormLock({ hintId: 'hint', isEditing, proposalSourceLocale: proposalSource, ...options })
 
     return { lock, isEditing, proposalSource }
   }
@@ -42,7 +42,7 @@ describe('useEntryFormLock', () => {
     const lock = useEntryFormLock({
       hintId: 'hint',
       isEditing: () => isEditing.value,
-      proposalSource: () => proposalSource.value,
+      proposalSourceLocale: () => proposalSource.value,
     })
     expect(lock.state).toBe('none')
 

@@ -7,6 +7,7 @@ import {
   type AdminTranslationErrorReason,
 } from '../../../domain/admin/translation/errors/AdminTranslationError'
 import { visibleMutationError } from '../shared/visibleMutationError'
+import { createStaleRequestGuard } from '../../shared/staleRequestGuard'
 
 export const ADMIN_TRANSLATION_REPOSITORY: InjectionKey<AdminTranslationRepository> = Symbol('AdminTranslationRepository')
 
@@ -14,6 +15,13 @@ export interface UseAdminTranslationResult {
   isTranslating: Ref<boolean>
   errorReason: Ref<AdminTranslationErrorReason | null>
   translate: (sourceLocale: Locale, targetLocale: Locale, fields: TranslationFields) => Promise<TranslationProposal | null>
+  /** Périme la traduction en vol (« Annuler ») : sa réponse rend `null` et ne pose ni état ni raison. */
+  discard: () => void
+}
+
+export interface UseAdminTranslationOptions {
+  /** Vrai quand la page ne veut aucune traduction (une proposition est déjà affichée) : `translate()` ne lance rien. */
+  readonly isRefused?: () => boolean
 }
 
 /**
@@ -22,8 +30,12 @@ export interface UseAdminTranslationResult {
  * d'échec, la raison étant exposée) et décide seule quoi en faire — ce
  * composable ne touche jamais au formulaire ni à la persistance (ADR 0004, D4).
  * Pas de dépendance à useI18n() : la page traduit `errorReason`.
+ *
+ * Le composable se refuse lui-même, écrit ici une fois pour tous les formulaires : pas de requête tant qu'une
+ * traduction est en vol, ni quand la page le lui dit (`isRefused`). Le refus vient d'ici, pas seulement du bouton
+ * désactivé : un évènement `translate` émis par programme, ou une double activation avant le rendu, passerait.
  */
-export function useAdminTranslation(): UseAdminTranslationResult {
+export function useAdminTranslation(options: UseAdminTranslationOptions = {}): UseAdminTranslationResult {
   const repository = inject(ADMIN_TRANSLATION_REPOSITORY)
 
   if (!repository) {
@@ -35,26 +47,47 @@ export function useAdminTranslation(): UseAdminTranslationResult {
 
   const isTranslating = ref(false)
   const errorReason = ref<AdminTranslationErrorReason | null>(null)
+  const requests = createStaleRequestGuard()
 
   const translate = async (
     sourceLocale: Locale,
     targetLocale: Locale,
     fields: TranslationFields,
   ): Promise<TranslationProposal | null> => {
+    if (isTranslating.value || options.isRefused?.()) {
+      return null
+    }
+
+    const token = requests.begin()
     isTranslating.value = true
     errorReason.value = null
 
     try {
-      return await repository.translate(sourceLocale, targetLocale, fields)
+      const proposal = await repository.translate(sourceLocale, targetLocale, fields)
+
+      return requests.isCurrent(token) ? proposal : null
     } catch (error) {
+      if (!requests.isCurrent(token)) {
+        return null
+      }
+
       // Une session finie ne pose aucune raison : le bandeau de session finie l'annonce seul (#748).
       errorReason.value =
         visibleMutationError(error, AdminTranslationError, () => new AdminTranslationError('unknown', 'Unknown error'))?.reason ?? null
       return null
     } finally {
-      isTranslating.value = false
+      // Une traduction périmée ne touche plus l'état : `discard()` l'a déjà rendu.
+      if (requests.isCurrent(token)) {
+        isTranslating.value = false
+      }
     }
   }
 
-  return { isTranslating, errorReason, translate }
+  const discard = (): void => {
+    requests.begin()
+    isTranslating.value = false
+    errorReason.value = null
+  }
+
+  return { isTranslating, errorReason, translate, discard }
 }

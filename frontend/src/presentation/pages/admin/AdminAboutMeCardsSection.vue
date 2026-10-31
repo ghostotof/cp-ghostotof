@@ -81,7 +81,12 @@ const categoryOptions = computed(() =>
   ME_CARD_CATEGORIES.map((category) => ({ value: category, label: categoryLabel(category) })),
 )
 
-const { isTranslating, errorReason: translationErrorReason, translate } = useAdminTranslation()
+const {
+  isTranslating,
+  errorReason: translationErrorReason,
+  translate,
+  discard: discardTranslation,
+} = useAdminTranslation({ isRefused: () => lock.isProposalLocked })
 
 /**
  * Prose d'une carte « moi ». Le complément de cette liste — `iconKey` et
@@ -128,7 +133,7 @@ const isEditing = computed(() => null !== editingId.value)
 const lock = useEntryFormLock({
   hintId: 'admin-about-me-card-entry-lock-help',
   isEditing,
-  proposalSource: proposalSourceLocale,
+  proposalSourceLocale,
   localeHelpId: 'admin-about-me-card-locale-help',
 })
 
@@ -245,6 +250,7 @@ watch(
 )
 
 function resetForm(): void {
+  discardTranslation()
   editingId.value = null
   proposalSourceLocale.value = null
   sourceGroup.value = null
@@ -330,12 +336,6 @@ async function handleSubmit(): Promise<void> {
  * (ADR 0004, D4). En cas d'échec, le formulaire reste intact.
  */
 async function handleTranslate(targetLocale: Locale): Promise<void> {
-  // Le refus vient d'ici, pas seulement du bouton désactivé : une seconde traduction ramènerait le formulaire
-  // à la langue source, groupe gardé (Sp7-1).
-  if (lock.isProposalLocked) {
-    return
-  }
-
   const sourceLocale = form.locale
 
   const proposal = await translate(sourceLocale, targetLocale, collectProseFields(form, PROSE_FIELDS))

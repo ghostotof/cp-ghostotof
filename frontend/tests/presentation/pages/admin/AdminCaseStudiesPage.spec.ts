@@ -16,7 +16,7 @@ import { markSessionExpired } from '../../../../src/application/auth/useAuth'
 import { signInAgain } from '../../../support/signInAgain'
 import { AdminOrderError } from '../../../../src/domain/admin/shared/errors/AdminOrderError'
 import { expectNoAccessibilityViolation } from '../../../support/axe'
-import { describeEntryFormLock, LOCKED_BY_PROPOSAL_TEXT, textsDescribing, translateEntryButton } from '../../../support/entryFormLock'
+import { describeEntryFormLock, ENTRY_LOCK_PROPOSAL_TEXT, textsDescribing, translateEntryButton } from '../../../support/entryFormLock'
 
 const GROUP_ONE = '019968b0-0000-7000-8000-000000000011'
 const GROUP_TWO = '019968b0-0000-7000-8000-000000000012'
@@ -268,7 +268,7 @@ describe('AdminCaseStudiesPage', () => {
 
     expect(textsDescribing(wrapper, translateEntryButton(wrapper, 0))).toEqual([
       "Enregistrez ou annulez l'ordre d'abord.",
-      LOCKED_BY_PROPOSAL_TEXT,
+      ENTRY_LOCK_PROPOSAL_TEXT,
     ])
   })
 
@@ -476,14 +476,10 @@ describe('AdminCaseStudiesPage', () => {
 
   // Les cas du verrou (langue désactivée, « Annuler », texte du verrou…) : écrits une fois pour les
   // huit formulaires dans `tests/support/entryFormLock.ts` (#748, R91).
-  let lockTranslation = createTranslationRepository()
   describeEntryFormLock({
     name: '',
-    mount: async () => {
-      lockTranslation = createTranslationRepository()
-
-      return (await mountPage(createStubRepository(), lockTranslation)).wrapper
-    },
+    createTranslation: () => createTranslationRepository(),
+    mount: async (translation) => (await mountPage(createStubRepository(), translation)).wrapper,
     form: 0,
     ids: {
       locale: 'admin-case-study-locale',
@@ -499,7 +495,6 @@ describe('AdminCaseStudiesPage', () => {
       await translateEntryButton(wrapper, 0).trigger('click')
       await flushPromises()
     },
-    translationRequests: () => vi.mocked(lockTranslation.translate).mock.calls.length,
   })
 
   it('enregistre la proposition comme une nouvelle entrée EN rattachée au même groupe', async () => {
