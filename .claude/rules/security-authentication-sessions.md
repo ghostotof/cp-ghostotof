@@ -174,7 +174,8 @@ paths:
     docblock) refuses in `src/` an `#[IsGranted]`, a `denyAccessUnlessGranted`, an `isGranted()`, an API Platform `security:`
     argument, a hand-thrown `AccessDenied(Http)Exception` / `UnauthorizedHttpException`, `AccessDecisionManagerInterface` and an
     `is_granted(` string, each exemption (the MCP reader, the two CSRF guards) carrying its reason and the number of sites of
-    each kind it covers in its file; `ApiPlatformOperationsCarryNoSecurityTest`, which reads the **compiled** API Platform metadata — every resource, operation, parameter, link
+    each kind it covers in its file; `ApiPlatformOperationsCarryNoSecurityTest`, which reads the **compiled** API Platform
+    metadata — every resource, operation, parameter, link
     and property — of the resources, of their input and output DTOs and of the `App\` objects they nest (R74, R88) —, a
     `uriVariable` that is not a compiled `Link` being reported: `security`, `securityPostDenormalize` and `securityPostValidation` of the resources and operations, a
     parameter's or a link's `security`, a property's `security` and `securityPostDenormalize`, so it also sees a `security:` declared in YAML or XML or merged by `api_platform.defaults`. **Seen by none

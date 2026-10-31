@@ -148,14 +148,22 @@ the given headers kept, the cookie read once even if it vanishes meanwhile (R28)
 - `BackofficeHttpClient.spec.ts` (a 401 on read
 and write, a 403 to a write without a token or with an empty cookie, each **rejects `SessionEndedError`** and calls the
 reaction once, also with no reaction registered; 200/204/404/409/422/500 give the response back with no reaction; a 403 to a read, or to a write with its token, calls `refused` once with the send stamp and **rejects `AccessForbiddenError`**, also with no reaction (R17); a network failure rises as it came).
-- `useAdminLoad.spec.ts` (`isLoaded`, the key that empties, the read run again on return, `tests/support/signInAgain.ts` being the return) and
+- `useAdminLoad.spec.ts` (`isLoaded`, the key that empties, the read run again on return, `tests/support/signInAgain.ts`
+  being the return) and
 `visibleMutationError.spec.ts` (the two functions), `sessionEndedMapping.spec.ts` (the table of the 15 repositories: a 401
 on every call each exposes, read, write, order, rejects `SessionEndedError` unchanged; a glob fails when a new repository
 is missing from the table), `sessionEndedLoad.spec.ts` (the thirteen composables: an ended session on a load raises no
 `hasError` and keeps the list, any other failure raises it; on a mutation it sets **no error and does not succeed**, any
 other failure sets `unknown`; `useAdminTranslation` and `useOrderDraft` too), `HttpAdminUserRepository.spec.ts`,
 `HttpMcpConnectionsRepository.spec.ts`, `HttpOAuthConsentRepository.spec.ts`, `HttpAssistantRepository.spec.ts`.
-- `noOmittedCredentials.spec.ts` (no file of `src/` holds a string literal `'omit'` — typed or in the options object; read by `tests/support/sourceText.ts` on TypeScript's syntax tree, the files of `src/` loaded once for it and `sessionStateEncapsulation.spec.ts` by `tests/support/srcSources.ts` (R97), template parts included, a `.vue` by its `<script>` blocks and the expressions of its `<template>` — `v-for`, `v-slot` and static attribute values included, each read as the JavaScript fragment Vue compiles (a `v-on` judged by Vue's own `isMemberExpressionBrowser` / `isFnExpressionBrowser`, an inline statement as Vue wraps it, R130), every fragment of `src/` required to parse, a `<template>` without a tree (`lang`, `src`) refused, R68, R80, R96, R110, R119 —, which drops preprod's Basic Auth, R37, R51).
+- `noOmittedCredentials.spec.ts` (no file of `src/` holds a string literal `'omit'` — typed or in the options object; read
+  by `tests/support/sourceText.ts` on TypeScript's syntax tree, the files of `src/` loaded once for it and
+  `sessionStateEncapsulation.spec.ts` by `tests/support/srcSources.ts` (R97), template parts included, a `.vue` by its
+  `<script>` blocks and the expressions of its `<template>` — `v-for`, `v-slot` and static attribute values included, each
+  read as the JavaScript fragment Vue compiles (a `v-on` judged by Vue's own `isMemberExpressionBrowser` /
+  `isFnExpressionBrowser`, an inline statement as Vue wraps it, R130), every fragment of `src/` required to parse, a
+  `<template>` without a tree (`lang`, `src`) refused, R68, R80, R96, R110, R119 —, which drops preprod's Basic Auth, R37,
+  R51).
 - The backend facts it relies on are pinned by `AuthCookieAttributesTest` (session cookies), `BaseAccessControllerTest` and `RefusedSessionCookiesAreClearedTest` (a refused cookie cleared by the first 401 of a protected route), `JwtClockSkewTest` (`clock_skew` 5 s, R29), `cookiePolicy.spec.ts` (the published cookie policy says session cookies, R32), `.claude/rules/security-authentication-sessions.md`.
 
 Three guards of the first version are gone, because what they guarded no longer exists: `sessionEnded.spec.ts` (domain,
