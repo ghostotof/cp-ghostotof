@@ -3,6 +3,7 @@ import { flushPromises, mount, type DOMWrapper, type VueWrapper } from '@vue/tes
 import { createMemoryHistory, createRouter, RouterView, type Router } from 'vue-router'
 import { defineComponent, h } from 'vue'
 import AdminAboutPage from '../../../../src/presentation/pages/admin/AdminAboutPage.vue'
+import AdminAboutSettingsForm from '../../../../src/presentation/pages/admin/AdminAboutSettingsForm.vue'
 import { ADMIN_ABOUT_SETTINGS_REPOSITORY } from '../../../../src/application/admin/about/useAdminAboutSettings'
 import { ADMIN_ABOUT_SITE_CARD_REPOSITORY } from '../../../../src/application/admin/about/useAdminAboutSiteCards'
 import { ADMIN_ABOUT_ME_CARD_REPOSITORY } from '../../../../src/application/admin/about/useAdminAboutMeCards'
@@ -1394,6 +1395,33 @@ describe('AdminAboutPage', () => {
       await flushPromises()
 
       expect(settingsRepository.update).toHaveBeenCalledWith('fr', expect.anything())
+      expect(panelOf(wrapper, SETTINGS_PANEL).find('[role="status"]').exists()).toBe(false)
+    })
+
+    // L'effet de la condition du `watch` de `settings` ne se voit pas dans le DOM : l'avis n'est rendu que sous sa
+    // cible, et le retour sur l'EN relit l'EN, qui retire la proposition de toute façon. Le test lit donc l'état du
+    // composant (`proposal`), la seule observation possible (R103, décision 2 de la neuvième série, Q2).
+    it("une proposition en EN, passage au FR puis enregistrement du FR : la proposition EN reste (#748, R103, décision 2)", async () => {
+      const settingsRepository = createSettingsRepository({
+        get: vi.fn(async (locale: string) => ('en' === locale ? SETTINGS_EN : SETTINGS)),
+        update: vi.fn(async () => SETTINGS),
+      })
+      const translation = createTranslationRepository(TRANSLATED_SETTINGS)
+      const { wrapper } = await mountPage(settingsRepository, undefined, undefined, translation)
+
+      await translateButton(wrapper, SETTINGS_FORM).trigger('click')
+      await flushPromises()
+      expect(valueOf(wrapper, '#admin-about-locale')).toBe('en')
+
+      await wrapper.get('#admin-about-locale').setValue('fr')
+      await flushPromises()
+      await formOf(wrapper, SETTINGS_FORM).trigger('submit.prevent')
+      await flushPromises()
+
+      expect(settingsRepository.update).toHaveBeenCalledWith('fr', expect.anything())
+      // Les réglages du FR sont arrivés sous le FR, qui n'est pas la cible : la proposition de l'EN est gardée.
+      const form = wrapper.findComponent(AdminAboutSettingsForm).vm as unknown as { proposal: unknown }
+      expect(form.proposal).toEqual({ source: 'fr', target: 'en' })
       expect(panelOf(wrapper, SETTINGS_PANEL).find('[role="status"]').exists()).toBe(false)
     })
 

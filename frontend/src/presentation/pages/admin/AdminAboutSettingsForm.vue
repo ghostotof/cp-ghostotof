@@ -86,10 +86,12 @@ watch(
       form.personalSubtitle = value.personalSubtitle
       form.hobbiesSubtitle = value.hobbiesSubtitle
 
-      // Des réglages qui arrivent sont ceux de la langue montrée (la clé courante) : la proposition, si elle est
-      // affichée, est la leur ; sinon elle n'est pas affichée et le retour sur sa cible la retirerait de toute façon
-      // (St8-14). Aucune condition : celle qui était là n'avait aucun effet visible.
-      proposal.value = null
+      // Des réglages qui arrivent sont ceux de la langue montrée (la clé courante). Si c'est la cible de la
+      // proposition, ils la remplacent et la retirent ; sinon la proposition reste, et le retour sur sa cible, qui
+      // relit, la retire. L'effet ne se voit pas dans le DOM (l'avis n'est rendu que sous sa cible) : le test lit l'état.
+      if (isProposalShown.value) {
+        proposal.value = null
+      }
     }
   },
   { immediate: true, flush: 'sync' },
