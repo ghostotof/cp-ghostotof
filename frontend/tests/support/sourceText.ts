@@ -16,6 +16,7 @@ import { parse, type SFCTemplateBlock } from 'vue/compiler-sfc'
  *
  * Qui l'appelle : `srcSources.ts` lit une fois les fichiers de `src/` pour `noOmittedCredentials.spec.ts` et
  * `sessionStateEncapsulation.spec.ts`.
+ * `noLoadInOnMounted.spec.ts` lit, par `callsInsideHook`, les appels écrits dans un `onMounted` des pages du backoffice.
  *
  * Ce que ça coûte : les gardes dépendent de l'API du compilateur (`createSourceFile`, `getLeadingCommentRanges`…) et de
  * celle de `vue/compiler-sfc` (`parse`). Un passage à TypeScript 7 (le portage natif) la changera : les gardes
@@ -31,7 +32,7 @@ import { parse, type SFCTemplateBlock } from 'vue/compiler-sfc'
  * expressions de gabarit rendus tels quels.
  */
 export function withoutComments(source: string): string {
-  const file = treeOf(source)
+  const file = syntaxTreeOf(source)
   // Les commentaires, par position de début (un même commentaire est vu comme « de tête » d'un jeton et « de queue » du
   // précédent : la table le compte une fois).
   const comments = new Map<number, number>()
@@ -84,7 +85,7 @@ export function stringLiterals(source: string): string[] {
     }
     ts.forEachChild(node, visit)
   }
-  visit(treeOf(source))
+  visit(syntaxTreeOf(source))
 
   return literals
 }
@@ -249,6 +250,38 @@ export function syntaxErrorsOf(fragment: string): string[] {
 }
 
 /** L'arbre de `source`, lu comme du TypeScript (parents posés : `getChildren` en a besoin). */
-function treeOf(source: string): ts.SourceFile {
+export function syntaxTreeOf(source: string): ts.SourceFile {
   return ts.createSourceFile('source.ts', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+}
+
+/**
+ * Le texte du *callee* de chaque appel écrit dans une fonction passée à `hook(…)`, dans l'ordre du source, fonctions
+ * imbriquées comprises (`onMounted(() => { a(); x.y() })` donne `['a', 'x.y']`). Une référence (`onMounted(go)`) ne rend rien.
+ */
+export function callsInsideHook(source: string, hook: string): string[] {
+  const file = syntaxTreeOf(source)
+  const callees: string[] = []
+
+  const collect = (node: ts.Node): void => {
+    if (ts.isCallExpression(node)) {
+      callees.push(node.expression.getText(file))
+    }
+    ts.forEachChild(node, collect)
+  }
+
+  const visit = (node: ts.Node): void => {
+    if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && hook === node.expression.text) {
+      for (const argument of node.arguments) {
+        if (ts.isArrowFunction(argument) || ts.isFunctionExpression(argument)) {
+          collect(argument.body)
+        }
+      }
+
+      return
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(file)
+
+  return callees
 }

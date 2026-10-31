@@ -9,6 +9,7 @@ paths:
   - "frontend/src/presentation/ui/admin/AccessRefusedNotice.vue"
   - "frontend/tests/application/admin/shared/backofficeAccessRefusal.spec.ts"
   - "frontend/tests/presentation/ui/admin/AccessRefusedNotice.spec.ts"
+  - "frontend/tests/presentation/pages/admin/noLoadInOnMounted.spec.ts"
 ---
 
 # Frontend — a real refusal and the backoffice's reaction (reference)
@@ -83,8 +84,13 @@ account without `ROLE_TRUSTED` (one that lost it while the page was open), or fr
     account)` keeps the write's account, the mount passes `lastAccountName()`, and another account at the mount resets
     everything), the alert inserted after the mount so that it is announced (`frontend-a11y.md`); every read
     **sent before the mount** — the landing page's load, stamped by its `setup` — keeps that text and re-announces it,
-    whenever it answers; any other refusal, read or write, brings back `common.accessRefused` (R112, decision 3 of the
-    tenth review, amending the letter of decision 1 of the ninth: no load window, no counter).
+    whenever it answers; **a backoffice page starts its load in `setup`** (or an `immediate` watcher), both stamped before
+    the alert's `onMounted` — a read sent from the page's own `onMounted` would carry the new epoch and say
+    `common.accessRefused` for the earlier save; `noLoadInOnMounted.spec.ts` refuses a load or a repository call in an
+    `onMounted` of `presentation/pages/admin` (R121, decision 1 of the eleventh review). Accepted, held by the review: a
+    read sent after an `await` before `get`, or by a sub-component rendered later by a `v-if`; any other refusal, read or
+    write, brings back `common.accessRefused` (R112, decision 3 of the tenth review, amending the letter of decision 1 of
+    the ninth: no load window, no counter).
 
   `useAdminLoad` (no `hasError`, nothing re-read on return) and `visibleMutationError` (`null`, the mutation resolves
   `false`, the input stays) keep it quiet like `SessionEndedError`; **one alert**, `AccessRefusedNotice` in

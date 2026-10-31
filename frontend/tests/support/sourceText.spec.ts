@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  callsInsideHook,
   fragmentsOfTemplateAst,
   scriptOf,
   stringLiterals,
@@ -230,5 +231,22 @@ describe('fragmentsOfTemplateAst', () => {
     const root = { type: 0, children: [{ type: 5, content: null }, { type: 5 }] } as unknown as TemplateRoot
 
     expect(fragmentsOfTemplateAst(root)).toEqual([])
+  })
+})
+
+describe('callsInsideHook', () => {
+  it('callsInsideHook rend le callee de chaque appel des fonctions passées au hook, imbriquées comprises (#748, R121)', () => {
+    expect(callsInsideHook('onMounted(() => { a(); x.y(); const f = () => load() }) ; b()', 'onMounted')).toEqual(['a', 'x.y', 'load'])
+  })
+
+  it("callsInsideHook ne rend rien pour une référence passée au hook, ni pour un autre appel qui reçoit une fonction (#748, R121)", () => {
+    expect(callsInsideHook('onMounted(go)', 'onMounted')).toEqual([])
+    expect(callsInsideHook('other(() => a())', 'onMounted')).toEqual([])
+  })
+
+  it('callsInsideHook rend les appels de chaque appel du hook, dans l\'ordre du source, `function` comprise (#748, R121)', () => {
+    const source = 'onMounted(function () { first() })\nonMounted(async () => { await second.call() })'
+
+    expect(callsInsideHook(source, 'onMounted')).toEqual(['first', 'second.call'])
   })
 })
