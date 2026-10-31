@@ -151,7 +151,7 @@ final class ApiRouteExposureTest extends WebTestCase
      */
     private const array RULELESS_OUTSIDE_PUBLIC_PATHS = [
         '/api/logout' => '« Terminer cet accès » (#65, R35) : sans règle par construction, il expire les deux '
-            .'cookies de l\'appelant, y compris d\'un porteur dont le cookie est refusé (2xx depuis R35) ; une règle '
+            .'cookies de l\'appelant, y compris d\'un porteur dont le cookie est refusé (2xx) ; une règle '
             .'lui rendrait un 401. Pas public pour autant : il ne sert aucune donnée, et le double-submit le garde de '
             .'la déconnexion forcée — un formulaire tiers part sans `X-XSRF-TOKEN`, et son 403 (priorité 20, avant le '
             .'`LogoutListener`) est la seule barrière, `SameSite=Lax` n\'empêchant pas le navigateur d\'accepter les '

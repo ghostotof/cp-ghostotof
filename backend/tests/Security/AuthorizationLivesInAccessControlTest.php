@@ -38,9 +38,9 @@ use PHPUnit\Framework\TestCase;
  * `->isGranted(`, `?->isGranted(` ou `::isGranted(`, un refus levé à la main (`new
  * AccessDeniedException`, `new AccessDeniedHttpException`, `new UnauthorizedHttpException`),
  * le nom `AccessDecisionManagerInterface` et toute chaîne qui contient `is_granted(`, hors de
- * {@see self::EXEMPTIONS}. Chaque exemption dit sa raison et le **nombre exact** de sites de
- * chaque nature qu'elle couvre : un site de plus dans un fichier exempté est refusé, un site de
- * moins rend l'entrée superflue, et les deux échouent. Le détecteur est éprouvé sur des extraits
+ * {@see self::EXEMPTIONS}. Chaque exemption dit sa raison et liste, un par un, les sites qu'elle
+ * couvre : un site de plus dans un fichier exempté est refusé, un site de moins rend l'entrée
+ * superflue, et les deux échouent. Le détecteur est éprouvé sur des extraits
  * (le recensement d'un code qui ne trouverait jamais rien rendrait le premier test vert sans
  * rien garder).
  *
@@ -89,7 +89,7 @@ final class AuthorizationLivesInAccessControlTest extends TestCase
             foreach (AuthorizationSites::in(RepositoryFiles::read($path)) as $site) {
                 $covered = array_search($site->kind, $remaining, true);
                 if (false === $covered) {
-                    // Une exemption couvre un nombre exact de sites : le suivant est un site de trop.
+                    // Une exemption couvre des sites listés un par un : celui-ci n'y figure pas, c'est un site de trop.
                     $found[] = $path.':'.$site->line.' ('.$site->kind->name.')';
                     continue;
                 }
@@ -241,7 +241,7 @@ final class AuthorizationLivesInAccessControlTest extends TestCase
                 $found,
                 \sprintf(
                     '%s est exemptée (%s) pour des sites qui ne sont plus ceux d\'EXEMPTIONS : attendu %s, trouvé %s. '
-                    .'Ajuster le nombre ou retirer l\'entrée.',
+                    .'Ajuster la liste des sites ou retirer l\'entrée.',
                     $class,
                     $reason,
                     json_encode($expectedKinds),

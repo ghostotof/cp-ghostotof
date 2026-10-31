@@ -192,8 +192,8 @@ describe('AccessRefusedNotice (#748, R17)', () => {
     await flushPromises()
     const scope = refusalScope()
 
-    // vue-router compare la requête dans l'ordre où elle est écrite : il exécute cette navigation (le test était rouge
-    // avant le tri de la clé, R54). C'est la clé triée de l'alerte qui n'y voit pas de changement, et la garde.
+    // vue-router compare la requête dans l'ordre où elle est écrite : il exécute cette navigation (sans le tri de la clé,
+    // R54, le test serait rouge). C'est la clé triée de l'alerte qui n'y voit pas de changement, et la garde.
     await router.push({ query: { b: '2', a: '1' } })
     await flushPromises()
 
@@ -377,7 +377,7 @@ describe('AccessRefusedNotice (#748, R17)', () => {
       second.wrapper.unmount()
     })
 
-    it("l'avis de l'enregistrement précédent tient la lecture de chargement, pas la suivante (R95, décision 4)", async () => {
+    it("l'avis de l'enregistrement précédent tient les lectures du chargement, pas la suivante (R102, décision 1)", async () => {
       await signInAs('compte-a')
       const first = await mountNotice()
       first.wrapper.unmount()

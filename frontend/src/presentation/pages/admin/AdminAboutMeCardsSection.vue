@@ -60,11 +60,10 @@ import {
  * un autre contenu.
  *
  * **Une carte ne change pas de catégorie** (issue #578) : en édition, le
- * sélecteur est désactivé, comme celui de la langue. Il restait actif, et le
- * changer vidait « Version de » : le `PUT` partait avec `translationGroup:
- * null`, et le serveur, qui ignorait alors la catégorie, détachait la carte de
- * sa traduction en répondant 200. Il refuse désormais une autre catégorie
- * (409 `me-card-category-immutable`).
+ * sélecteur est désactivé, comme celui de la langue. Un `PUT` qui changerait
+ * la catégorie est refusé par le serveur (409 `me-card-category-immutable`) :
+ * le changer ici viderait « Version de », le `PUT` partirait avec
+ * `translationGroup: null` et détacherait la carte de sa traduction.
  *
  * **Le verrou d'ordre (D6) est global à la page** : cette section annonce son
  * `orderDirtyChange` (la somme de ses trois brouillons) et reçoit `isLocked`.

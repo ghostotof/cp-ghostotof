@@ -475,7 +475,7 @@ describe('AdminQualityPage', () => {
       // langue de l'autre — et le trait français en cours d'édition se serait
       // enregistré en anglais, sans avertissement ni index unique pour l'arrêter
       // (une entrée solitaire n'a pas de sœur qui occupe déjà la locale). La
-      // langue est désormais un champ de chaque formulaire.
+      // langue est un champ de chaque formulaire.
       await buttonLabelled(actionsForLine(wrapper, TRAITS, 'Documenté'), 'Modifier').trigger('click')
       expect(valueOf(wrapper, LOCALE_SELECT[TRAITS])).toBe('fr')
 

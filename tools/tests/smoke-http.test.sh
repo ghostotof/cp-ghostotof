@@ -216,9 +216,9 @@ else
   fail "vide après posée" "config : [$SMOKE_AUTH_CONFIG] ; fichiers : $(ls -A "$TMP/tmpdir")"
 fi
 
-# --- CR8-5 : une variable qui porte le nom d'une locale de l'ancienne version
-# (`name`, `value`, `rc`, `traced`, `saved_umask`, `empty`) est lue pour ce qu'elle
-# est, jamais masquée par une locale de la fonction.
+# --- CR8-5 : une variable qui porte un nom courant (`name`, `value`, `rc`, `traced`,
+# `saved_umask`, `empty`) est lue pour ce qu'elle est, jamais masquée par une locale
+# de la fonction (les siennes portent le préfixe `_smoke_`).
 for shadow in name value rc traced saved_umask empty; do
   printf -v "$shadow" '%s' 'u:p'
   rc_call=0

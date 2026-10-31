@@ -75,7 +75,7 @@ use Symfony\Component\TypeInfo\Type\WrappingTypeInterface;
  * `testTheCheckSeesEachParameterExpression` prouve la lecture. Exiger qu'un paramètre existe rougirait pour rien (aucun
  * n'existe dans `src/`), et une ressource de test ajoutée pour cela ajouterait une route `/api` au conteneur `test` que
  * lisent toutes les gardes d'exposition (`ApiRouteExposureTest`, `RouterScopeTest`). Les classes DTO (`src/` en
- * déclare une) et les objets imbriqués (`src/` en atteint neuf à R88) sont, eux, comptés.
+ * déclare une) et les objets imbriqués (`src/` en atteint plusieurs) sont, eux, comptés.
  */
 final class ApiPlatformOperationsCarryNoSecurityTest extends KernelTestCase
 {
@@ -106,7 +106,7 @@ final class ApiPlatformOperationsCarryNoSecurityTest extends KernelTestCase
         self::assertGreaterThan(0, $read['properties'], 'Aucune propriété parcourue : la garde ne verrait rien des `ApiProperty`.');
         // `src/` déclare un DTO d'entrée (`BackofficeUserInviteInput`) : sans lui, la lecture des DTO ne verrait rien.
         self::assertNotSame([], $collected['dtoClasses'], 'Aucune classe `input`/`output` parcourue : la garde ne verrait rien des DTO.');
-        // Et `src/` imbrique des objets `App\` (`AboutCardResource`, `WatchedProductResource`… : neuf à R88) :
+        // Et `src/` imbrique des objets `App\` (`AboutCardResource`, `WatchedProductResource`…) :
         // un parcours qui n'en suivrait aucun passerait ce test sans rien lire.
         self::assertNotSame(
             [],

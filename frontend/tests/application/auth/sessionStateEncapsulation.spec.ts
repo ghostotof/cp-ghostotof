@@ -8,16 +8,16 @@ import { SRC_SCRIPTS } from '../../support/srcSources'
  * laisserait n'importe quel module de `application/auth/` (ou de `src/`) écrire `tier`, `user` ou `sessionEnded`
  * sans passer par `applySession` ni par la génération.
  *
- * Depuis R52 la garde porte aussi sur **qui importe** chaque écriture : `raiseSessionEnded` et `lowerSessionEnded`
- * posent `sessionEnded` sans juger la génération ni le jeton d'écriture (c'est `markSessionExpired` / `restoreSession`
- * qui le font), et elles étaient exportées à tout `src/`. Chaque fonction de `WRITERS` n'est importée que par les
+ * La garde porte aussi sur **qui importe** chaque écriture (R52) : `raiseSessionEnded` et `lowerSessionEnded` posent
+ * `sessionEnded` sans juger la génération ni le jeton d'écriture (c'est `markSessionExpired` / `restoreSession` qui le
+ * font), donc aucun autre module de `src/` ne doit les importer. Chaque fonction de `WRITERS` n'est importée que par les
  * modules de sa liste, avec la raison de chacun.
  *
- * Depuis R69 (C6-5) elle voit aussi le suffixe d'un chemin (`./sessionState.js`, `.mjs`), compte comme important
- * **toutes** les écritures un `import()` dont le chemin n'est pas un littéral (gabarit, variable) et tout
- * `import.meta.glob`, et un contrôle **par identité** porte sur les valeurs : aucun module de `src/` autre que
- * `sessionState.ts` n'exporte une valeur `===` à une écriture, sous aucun nom (`export const x = raiseSessionEnded`
- * échappe à toute lecture du texte d'un import).
+ * Elle voit le suffixe d'un chemin (`./sessionState.js`, `.mjs`), compte comme important **toutes** les écritures un
+ * `import()` dont le chemin n'est pas un littéral (gabarit, variable) et tout `import.meta.glob` (R69, C6-5), et un
+ * contrôle **par identité** porte sur les valeurs : aucun module de `src/` autre que `sessionState.ts` n'exporte une
+ * valeur `===` à une écriture, sous aucun nom (`export const x = raiseSessionEnded` échappe à toute lecture du texte
+ * d'un import).
  *
  * Limites écrites : le relevé lit les `import … from '…/sessionState'` et les `export … from` des sources de `src/` ; un
  * import d'espace de noms (`* as`, `export *`) ou dynamique est compté comme important **toutes** les écritures. Le

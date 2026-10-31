@@ -12,9 +12,9 @@ import {
 /**
  * Le lecteur de source des gardes (#748, R68, Sp6-11, St6-9) : il connaît les chaînes, donc un `'/*'`, un `'//'` ou
  * une URL dans une chaîne n'ouvre pas de commentaire. Les trois gardes de source (`noOmittedCredentials`,
- * `sessionStateEncapsulation` : imports et blocs `export`) le partagent au lieu de retirer les commentaires chacune par
- * une regex, qui masquait tout ce qui suivait un `'/*'`. Depuis R80 (CR7-7) il lit l'arbre syntaxique de TypeScript : ce
- * que le compilateur lit comme une chaîne, un gabarit, une regex ou un commentaire l'est ici aussi.
+ * `sessionStateEncapsulation` : imports et blocs `export`) le partagent : aucune ne retire les commentaires par une regex,
+ * qui masquerait tout ce qui suit un `'/*'`. Il lit l'arbre syntaxique de TypeScript (R80, CR7-7) : ce que le compilateur
+ * lit comme une chaîne, un gabarit, une regex ou un commentaire l'est ici aussi.
  */
 describe('withoutComments', () => {
   it('garde tels quels une URL, un "/*" entre guillemets doubles et un "//" dans une expression de gabarit', () => {
