@@ -1017,13 +1017,20 @@ describe('AdminAboutPage', () => {
       })
     })
 
+    // Les dépôts du formulaire en cours de test, recréés par chaque `mount` : `holdNextSave` les arme.
+    let siteCardUnderLock = createSiteCardRepository()
+    let meCardUnderLock = createMeCardRepository()
+
     // Les cas du verrou du formulaire, avec l'aide permanente (#582) : écrits une fois pour les huit
     // formulaires dans `tests/support/entryFormLock.ts` (#748, R91). Dans les cartes « moi », la proposition
     // verrouille aussi la catégorie (D-b, plus bas) ; « Annuler » libère les deux.
     describeEntryFormLock({
       name: 'carte « site »',
       createTranslation: () => createTranslationRepository(),
-      mount: async (translation) => (await mountPage(undefined, undefined, undefined, translation)).wrapper,
+      mount: async (translation) => {
+        siteCardUnderLock = createSiteCardRepository()
+        return (await mountPage(undefined, siteCardUnderLock, undefined, translation)).wrapper
+      },
       form: SITE_FORM,
       ids: {
         locale: 'admin-about-site-card-locale',
@@ -1049,13 +1056,18 @@ describe('AdminAboutPage', () => {
         await translateEntryButton(wrapper, SITE_FORM).trigger('click')
         await flushPromises()
       },
+      holdNextSave: () => {
+        vi.mocked(siteCardUnderLock.update).mockReturnValueOnce(new Promise<never>(() => {}))
+      },
     })
 
     describeEntryFormLock({
       name: 'carte « moi »',
       createTranslation: () => createTranslationRepository({ title: 'Veille continue', description: 'Description veille' }),
-      mount: async (translation) =>
-        (await mountPage(createSettingsRepository(), createSiteCardRepository(), undefined, translation)).wrapper,
+      mount: async (translation) => {
+        meCardUnderLock = createMeCardRepository()
+        return (await mountPage(createSettingsRepository(), createSiteCardRepository(), meCardUnderLock, translation)).wrapper
+      },
       form: ME_FORM,
       ids: {
         locale: 'admin-about-me-card-locale',
@@ -1080,6 +1092,9 @@ describe('AdminAboutPage', () => {
       propose: async (wrapper) => {
         await translateEntryButton(wrapper, ME_FORM).trigger('click')
         await flushPromises()
+      },
+      holdNextSave: () => {
+        vi.mocked(meCardUnderLock.update).mockReturnValueOnce(new Promise<never>(() => {}))
       },
     })
 
@@ -1208,7 +1223,8 @@ describe('AdminAboutPage', () => {
     // traduction le refuse aussi. Un « translate » émis par programme passerait un `:disabled` seul.
     const SETTINGS_PROPOSAL_LOCKED_HINT = '#admin-about-settings-proposal-locked-help'
     const SETTINGS_PROPOSAL_LOCKED_TEXT =
-      "Verrouillé par la proposition de traduction affichée : enregistrez-la, ou changez de langue pour l'abandonner."
+      'Verrouillé par la proposition de traduction affichée : enregistrez-la, ' +
+      "ou passez à l'autre langue puis revenez à celle-ci pour l'abandonner."
     const emitSettingsTranslate = (wrapper: VueWrapper, target: 'fr' | 'en'): void => {
       wrapper.findAllComponents(AdminAboutSettingsForm)[0].findComponent(TranslateEntryButton).vm.$emit('translate', target)
     }
@@ -1244,6 +1260,23 @@ describe('AdminAboutPage', () => {
       expect(valueOf(wrapper, '#admin-about-locale')).toBe('fr')
     })
 
+    // R127b : le bouton est aussi désactivé sans aucune prose à traduire ; un « translate » émis ne lance rien non plus.
+    it("réglages, sans aucune prose à traduire : un « translate » émis ne lance rien (#748, R127b)", async () => {
+      const translation = createTranslationRepository(TRANSLATED_SETTINGS)
+      const { wrapper } = await mountPage(createSettingsRepository(), undefined, undefined, translation)
+      for (const id of SETTINGS_PROSE_IDS) {
+        await wrapper.get(`#${id}`).setValue('')
+      }
+      expect(translateEntryButton(wrapper, SETTINGS_FORM).attributes('disabled')).toBeDefined()
+
+      emitSettingsTranslate(wrapper, 'en')
+      await flushPromises()
+
+      expect(translation.translate).not.toHaveBeenCalled()
+      expect(valueOf(wrapper, '#admin-about-locale')).toBe('fr')
+      expect(panelOf(wrapper, SETTINGS_PANEL).find('[role="alert"]').exists()).toBe(false)
+    })
+
     it("réglages, une proposition affichée : bouton désactivé et décrit, un « translate » émis ne lance rien (#748, R127)", async () => {
       const translation = createTranslationRepository(TRANSLATED_SETTINGS)
       const { wrapper } = await mountPage(createSettingsRepository(), undefined, undefined, translation)
@@ -1266,6 +1299,36 @@ describe('AdminAboutPage', () => {
       expect(translation.translate).toHaveBeenCalledOnce()
       expect(valueOf(wrapper, '#admin-about-locale')).toBe('en')
       expect(panelOf(wrapper, SETTINGS_PANEL).get('[role="status"]').text()).toContain('Proposition générée par IA')
+    })
+
+    // R127b : le texte du verrou nomme le geste qui abandonne la proposition. Changer de langue seul la garde (R103) ; elle
+    // ne disparaît qu'au retour sur sa langue cible, dont le formulaire est relu du serveur : « passez à l'autre langue puis
+    // revenez à celle-ci », par le sélecteur « Langue des textes de la page À propos ».
+    it("réglages, une proposition affichée : passer à l'autre langue puis revenir l'abandonne (#748, R127b)", async () => {
+      const settingsRepository = createSettingsRepository({
+        get: vi.fn(async (locale: string) => ('en' === locale ? SETTINGS_EN : SETTINGS)),
+      })
+      const translation = createTranslationRepository(TRANSLATED_SETTINGS)
+      const { wrapper } = await mountPage(settingsRepository, undefined, undefined, translation)
+      await translateEntryButton(wrapper, SETTINGS_FORM).trigger('click')
+      await flushPromises()
+      expect(textsDescribing(wrapper, translateEntryButton(wrapper, SETTINGS_FORM))).toEqual([SETTINGS_PROPOSAL_LOCKED_TEXT])
+
+      // Changer de langue seul ne l'abandonne pas : elle est gardée, et ne se montre pas sous l'autre langue.
+      await wrapper.get('#admin-about-locale').setValue('fr')
+      await flushPromises()
+      expect(wrapper.find(SETTINGS_PROPOSAL_LOCKED_HINT).exists()).toBe(false)
+      const kept = wrapper.findComponent(AdminAboutSettingsForm).vm as unknown as { proposal: unknown }
+      expect(kept.proposal).toEqual({ source: 'fr', target: 'en' })
+
+      await wrapper.get('#admin-about-locale').setValue('en')
+      await flushPromises()
+
+      expect(valueOf(wrapper, '#admin-about-locale')).toBe('en')
+      expect(wrapper.find(SETTINGS_PROPOSAL_LOCKED_HINT).exists()).toBe(false)
+      expect(panelOf(wrapper, SETTINGS_PANEL).find('[role="status"]').exists()).toBe(false)
+      expect(translateEntryButton(wrapper, SETTINGS_FORM).attributes('disabled')).toBeUndefined()
+      expect(textsDescribing(wrapper, translateEntryButton(wrapper, SETTINGS_FORM))).toEqual([])
     })
 
     // Décision 3 de la onzième relecture (R126) : pendant la traduction des réglages, les cinq champs de prose sont en

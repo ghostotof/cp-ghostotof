@@ -31,8 +31,9 @@ export interface UseAdminTranslationResult {
 
 export interface UseAdminTranslationOptions {
   /**
-   * Vrai quand la page ne veut aucune traduction, ce que son bouton refuse déjà (une proposition affichée, un brouillon
-   * d'ordre, un enregistrement en vol…) : `translate()` ne lance rien.
+   * Vrai quand la page ne veut aucune traduction : `translate()` ne lance rien. Ce que le bouton refuse, `translate` le
+   * refuse, et la page l'écrit ici une fois par condition de son `:disabled` (une proposition affichée, un brouillon
+   * d'ordre, un enregistrement en vol, l'absence de prose…), hors l'attente d'une réponse que le composable tient seul.
    */
   readonly isRefused?: () => boolean
   /**

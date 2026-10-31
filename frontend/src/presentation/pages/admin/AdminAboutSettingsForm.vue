@@ -54,15 +54,15 @@ const errorText = computed(() => {
  */
 const PROSE_FIELDS = ['siteEyebrow', 'meEyebrow', 'technicalSubtitle', 'personalSubtitle', 'hobbiesSubtitle'] as const
 // Une traduction dont le formulaire n'est plus celui de l'envoi (une autre langue, d'autres réglages posés) est périmée.
-// Le composable refuse de lui-même tout ce que le bouton refuse (R127) : un enregistrement en vol, le verrou d'ordre de la
-// page et une proposition affichée, qu'une seconde traduction remplacerait sans geste d'abandon.
+// Le composable refuse de lui-même tout ce que le bouton refuse (R127, R127b) : l'absence de prose, un enregistrement en vol,
+// le verrou d'ordre de la page et une proposition affichée, qu'une seconde traduction remplacerait sans geste d'abandon.
 const {
   isTranslating,
   isDiscardPending,
   errorReason: translationErrorReason,
   translate,
 } = useAdminTranslation({
-  isRefused: () => isAnySaving.value || props.isLocked || isProposalShown.value,
+  isRefused: () => !hasProseToTranslate.value || isAnySaving.value || props.isLocked || isProposalShown.value,
   formIdentity: () => ({ locale: props.locale }),
 })
 const pendingProposal = ref<TranslationProposal | null>(null)

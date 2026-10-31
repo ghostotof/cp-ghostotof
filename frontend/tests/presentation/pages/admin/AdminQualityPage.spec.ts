@@ -661,13 +661,20 @@ describe('AdminQualityPage', () => {
       })
     })
 
+    // Les dépôts du formulaire en cours de test, recréés par chaque `mount` : `holdNextSave` les arme.
+    let principleUnderLock = createPrincipleRepository()
+    let traitUnderLock = createTraitRepository()
+
     // Les cas du verrou du formulaire, avec l'aide permanente (#582) : écrits une fois pour les huit
     // formulaires dans `tests/support/entryFormLock.ts` (#748, R91). Sp7-1 : la proposition est la version
     // de l'entrée source dans l'autre langue, dans son groupe gardé ; « Annuler » la retire.
     describeEntryFormLock({
       name: 'principe',
       createTranslation: () => createTranslationRepository(),
-      mount: async (translation) => (await mountPage(createPrincipleRepository(), createTraitRepository(), translation)).wrapper,
+      mount: async (translation) => {
+        principleUnderLock = createPrincipleRepository()
+        return (await mountPage(principleUnderLock, createTraitRepository(), translation)).wrapper
+      },
       form: PRINCIPLES,
       ids: {
         locale: 'admin-quality-principle-locale',
@@ -693,12 +700,18 @@ describe('AdminQualityPage', () => {
         await translateEntryButton(wrapper, PRINCIPLES).trigger('click')
         await flushPromises()
       },
+      holdNextSave: () => {
+        vi.mocked(principleUnderLock.update).mockReturnValueOnce(new Promise<never>(() => {}))
+      },
     })
 
     describeEntryFormLock({
       name: 'trait',
       createTranslation: () => createTranslationRepository(TRANSLATED_TRAIT),
-      mount: async (translation) => (await mountPage(createPrincipleRepository(), createTraitRepository(), translation)).wrapper,
+      mount: async (translation) => {
+        traitUnderLock = createTraitRepository()
+        return (await mountPage(createPrincipleRepository(), traitUnderLock, translation)).wrapper
+      },
       form: TRAITS,
       ids: {
         locale: 'admin-quality-trait-locale',
@@ -723,6 +736,9 @@ describe('AdminQualityPage', () => {
       propose: async (wrapper) => {
         await translateEntryButton(wrapper, TRAITS).trigger('click')
         await flushPromises()
+      },
+      holdNextSave: () => {
+        vi.mocked(traitUnderLock.update).mockReturnValueOnce(new Promise<never>(() => {}))
       },
     })
 

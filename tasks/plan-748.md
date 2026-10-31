@@ -7864,6 +7864,7 @@ Q5 (A) verrouiller — les cinq recommandations, le plan ne change pas.**
 | `useAdminTranslation.ts`, `frontend/src/presentation/ui/admin/TranslateEntryButton.vue`, les neuf sites du bouton, `fr.json`/`en.json`, `TranslateEntryButton.spec.ts`, `entryFormLock.ts`, `AdminAboutPage.spec.ts` | un appel en vol, l'attente dite | R125 |
 | `frontend/src/presentation/ui/admin/TranslationReadonlyHint.vue` (créé), les neuf formulaires, `fr.json`/`en.json`, `entryFormLock.ts`, `AdminAboutPage.spec.ts` | prose en lecture seule pendant la traduction | R126 |
 | les neuf formulaires (`isRefused`), `AdminAboutSettingsForm.vue` (bouton), `fr.json`/`en.json`, `entryFormLock.ts`, `AdminAboutPage.spec.ts` | refus par programme = refus du bouton | R127 |
+| neuf `isRefused`, `fr/en.json`, `entryFormLock.ts`, six specs, règle | `isRefused` complet ; texte exact | R127b |
 | `AdminAboutSettingsForm.vue`, `AdminAboutPage.spec.ts` | une seule source de vérité pour l'avis des réglages | R128 |
 | `frontend/tests/support/entryFormLock.ts`, `useEntryFormLock.spec.ts`, `AdminCaseStudiesPage.spec.ts`, `AppLayout.spec.ts`, `sourceText.spec.ts` | hygiène des specs | R129 |
 | `frontend/package.json`, `frontend/package-lock.json`, `sourceText.ts`, `srcSources.ts`, `sourceText.spec.ts`, lecteurs de `SRC_TEMPLATE_EXPRESSIONS` | le lecteur de gabarit tient ses règles de Vue | R130 |
@@ -8138,6 +8139,43 @@ lit un calculé par formulaire (`proseDescribedBy`) qui vaut l'identifiant penda
 - [ ] **Step 5 : verts** — `make front-test; echo "exit=$?"`, `make front-lint; echo "exit=$?"`,
   `make front-build; echo "exit=$?"`, `tools/check-claude-rules.sh; echo "exit=$?"`.
 - [ ] **Step 6 : commit** — `fix(frontend): la traduction assistée refuse par programme tout ce que son bouton refuse (#748)`.
+
+---
+
+### Task R127b : Traduction assistée — `isRefused` complet (enregistrement, prose) ; le texte des réglages dit le geste d'abandon
+
+**Origine.** Deux questions rendues par R127, tranchées par l'auteur le 2026-10-31. (1) La promesse de R127 (« ce que le bouton
+refuse, `translate` le refuse ») restait inexacte : le `:disabled` de chaque bouton compte aussi `isSubmitting`
+(ou `isAnySaving`) et `!hasProseToTranslate`, que l'`isRefused` des formulaires par entrée ne reprenait pas.
+(2) `admin.about.settingsProposalLockedHelp`
+disait « changez de langue pour l'abandonner » : faux, changer de langue garde la proposition (R103) ; elle ne disparaît qu'au retour
+sur sa langue cible, dont le formulaire est relu.
+
+**Files :**
+- Modify : `AdminCaseStudiesPage.vue`, `AdminContributionsPage.vue`, `AdminIncidentsPage.vue`, `AdminAnonymousCvPage.vue`,
+  `AdminQualityPage.vue` (principe et trait), `AdminAboutSiteCardsSection.vue`, `AdminAboutMeCardsSection.vue`,
+  `AdminAboutSettingsForm.vue` (`!hasProseToTranslate`), `useAdminTranslation.ts` (docblock d'`isRefused`),
+  `frontend/src/infrastructure/i18n/locales/{fr,en}.json` (`admin.about.settingsProposalLockedHelp`)
+- Test : `frontend/tests/support/entryFormLock.ts` (deux cas partagés, `holdNextSave` dans `EntryFormLockCase`), les six specs de
+  page qui l'appellent (`holdNextSave`), `AdminAboutPage.spec.ts` (sans prose, geste, texte)
+- Modify (règle) : `.claude/rules/frontend-backoffice.md` (« Translation assistant » : `isRefused`, texte des réglages)
+
+**Interfaces :**
+- Produces : `EntryFormLockCase.holdNextSave: () => void` (arme le dépôt du formulaire : le prochain enregistrement ne répond jamais).
+- Vérifié : aucune autre condition du `:disabled` de `TranslateEntryButton` n'échappe à `isRefused` ; ses propres `isTranslating` et
+  `isDiscardPending` sont tenus par le composable (`callRunning`).
+- Geste retenu : « passer à l'autre langue puis revenir à celle-ci » par le sélecteur « Langue des textes de la page À propos » ;
+  prouvé par un test (la proposition survit au passage, disparaît au retour, avis et verrou avec elle, bouton libre).
+
+- [x] **Step 1 : tests rouges** — cas partagés « un enregistrement en vol » et « sans aucune prose à traduire » (les huit
+  formulaires), `AdminAboutPage.spec.ts` : réglages sans prose, texte exact du verrou, geste.
+- [x] **Step 2 : implémenter** `isRefused` complet des neuf sites, textes FR et EN.
+- [x] **Step 3 : mutation** (Python, copie vérifiée par `cmp`) : `isSubmitting.value ||` retiré de `AdminCaseStudiesPage.vue` →
+  seul son cas « enregistrement en vol » rougit ; `!hasProseToTranslate.value ||` retiré → seul son cas « sans prose » ; restauré.
+- [x] **Step 4 : règle** — phrase d'`isRefused` et phrase des réglages remplacées.
+- [x] **Step 5 : verts** — `make front-test`, `make front-lint`, `make front-build`, `tools/check-claude-rules.sh`.
+- [x] **Step 6 : commit** — `fix(frontend): la traduction refuse aussi pendant un enregistrement et sans prose ;
+  le texte des réglages verrouillés dit le geste qui abandonne la proposition (#748)`.
 
 ---
 
@@ -8420,6 +8458,7 @@ lignes rendues et, pour chaque ligne gardée, la raison en quelques mots. Une re
 | CR11-5 | R126 (décision 3) |
 | C11-7 = CR11-4 | R124 (suppression, langue d'une création) |
 | CR11-6 = C11-5 (+ St11-17) | R127 (Q5) |
+| questions de R127 (décisions de l'auteur du 2026-10-31) | R127b |
 | C11-1 | R133 |
 | CR11-2 | R122 (Q2) |
 | CR11-7 + St11-11 | R128 |

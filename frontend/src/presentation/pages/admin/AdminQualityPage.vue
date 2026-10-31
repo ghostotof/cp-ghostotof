@@ -112,7 +112,7 @@ const {
   translate: translatePrinciple,
   discard: discardPrincipleTranslation,
 } = useAdminTranslation({
-  isRefused: () => principleLock.isProposalLocked || isAnyOrderDirty.value,
+  isRefused: () => !hasPrincipleProse.value || isSubmittingPrinciple.value || isAnyOrderDirty.value || principleLock.isProposalLocked,
   // Ce qui fait l'identité du formulaire : une traduction dont il n'a plus cette identité est périmée. La prose n'en
   // fait pas partie : la saisie est empêchée pendant la traduction, et l'erreur d'un échec survit à la frappe.
   formIdentity: () => ({
@@ -128,7 +128,7 @@ const {
   translate: translateTrait,
   discard: discardTraitTranslation,
 } = useAdminTranslation({
-  isRefused: () => traitLock.isProposalLocked || isAnyOrderDirty.value,
+  isRefused: () => !hasTraitProse.value || isSubmittingTrait.value || isAnyOrderDirty.value || traitLock.isProposalLocked,
   // Ce qui fait l'identité du formulaire : une traduction dont il n'a plus cette identité est périmée. La prose n'en
   // fait pas partie : la saisie est empêchée pendant la traduction, et l'erreur d'un échec survit à la frappe.
   formIdentity: () => ({

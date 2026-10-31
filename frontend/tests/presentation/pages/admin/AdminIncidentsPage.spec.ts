@@ -386,12 +386,18 @@ describe('AdminIncidentsPage', () => {
     expect(banner.text()).toContain('FR')
   })
 
+  // Le dépôt du formulaire en cours de test, recréé par chaque `mount` : `holdNextSave` l'arme.
+  let repositoryUnderLock = createIncidentRepository()
+
   // Les cas du verrou (langue désactivée, « Annuler », texte du verrou…) : écrits une fois pour les
   // huit formulaires dans `tests/support/entryFormLock.ts` (#748, R91).
   describeEntryFormLock({
     name: '',
     createTranslation: () => createTranslationRepository(),
-    mount: async (translation) => (await mountPage(createIncidentRepository(), translation)).wrapper,
+    mount: async (translation) => {
+      repositoryUnderLock = createIncidentRepository()
+      return (await mountPage(repositoryUnderLock, translation)).wrapper
+    },
     form: 0,
     ids: {
       locale: 'admin-incident-locale',
@@ -421,6 +427,9 @@ describe('AdminIncidentsPage', () => {
     propose: async (wrapper) => {
       await translateEntryButton(wrapper, 0).trigger('click')
       await flushPromises()
+    },
+    holdNextSave: () => {
+      vi.mocked(repositoryUnderLock.update).mockReturnValueOnce(new Promise<never>(() => {}))
     },
   })
 

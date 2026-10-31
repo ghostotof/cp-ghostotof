@@ -126,6 +126,11 @@ export interface EntryFormLockCase {
   readonly deleteEditedEntry: (wrapper: VueWrapper) => Promise<void>
   /** Modifie l'ordre d'un tableau de la page (glisser une ligne) sans l'enregistrer : le brouillon d'ordre est sale. */
   readonly dirtyOrder: (wrapper: VueWrapper) => Promise<void>
+  /**
+   * Arme le dépôt du formulaire pour que son prochain enregistrement ne reçoive jamais de réponse : l'enregistrement lancé
+   * ensuite par le test reste « en vol » (`isSubmitting`). Appelé après `mount`, sur le dépôt que ce `mount` a créé.
+   */
+  readonly holdNextSave: () => void
 }
 
 /**
@@ -305,6 +310,41 @@ export function describeEntryFormLock(lockCase: EntryFormLockCase): void {
 
     expect(vi.mocked(translation.translate)).not.toHaveBeenCalled()
     expect(wrapper.findAll('form')[form].find('[role="status"]').exists()).toBe(false)
+  })
+
+  // R127b (décision de l'auteur du 2026-10-31) : le bouton est aussi désactivé pendant l'enregistrement du formulaire et sans
+  // aucune prose à traduire ; `isRefused` reprend ces deux conditions, faute de quoi un « translate » émis les passerait.
+  it(`${prefix}un enregistrement en vol : un « translate » émis ne lance aucune traduction`, async () => {
+    const translation = lockCase.createTranslation()
+    const wrapper = await lockCase.mount(translation)
+    await lockCase.startEdit(wrapper)
+    lockCase.holdNextSave()
+    await wrapper.findAll('form')[form].trigger('submit.prevent')
+    await flushPromises()
+    expect(translateEntryButton(wrapper, form).attributes('disabled')).toBeDefined()
+
+    translateButton(wrapper).vm.$emit('translate', 'en')
+    await flushPromises()
+
+    expect(vi.mocked(translation.translate)).not.toHaveBeenCalled()
+    expect(wrapper.findAll('form')[form].find('[role="status"]').exists()).toBe(false)
+  })
+
+  it(`${prefix}sans aucune prose à traduire : un « translate » émis ne lance aucune traduction`, async () => {
+    const translation = lockCase.createTranslation()
+    const wrapper = await lockCase.mount(translation)
+    await lockCase.startEdit(wrapper)
+    for (const id of ids.prose) {
+      await wrapper.get(`#${id}`).setValue('')
+    }
+    expect(translateEntryButton(wrapper, form).attributes('disabled')).toBeDefined()
+
+    translateButton(wrapper).vm.$emit('translate', 'en')
+    await flushPromises()
+
+    expect(vi.mocked(translation.translate)).not.toHaveBeenCalled()
+    expect(wrapper.findAll('form')[form].find('[role="status"]').exists()).toBe(false)
+    expect(wrapper.findAll('form')[form].find('[role="alert"]').exists()).toBe(false)
   })
 
   it(`${prefix}deux « translate » avant la première réponse : une seule traduction`, async () => {
