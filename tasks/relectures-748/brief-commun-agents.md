@@ -9,13 +9,13 @@ Dépôt /home/ghostotof/dev/cp-ghostotof, branche `feature/spec-0007-748-a11y`. 
   ne suffit pas.
 
 ## Lecture préalable
-- Dans `tasks/plan-748.md` : « Global Constraints », puis, pour les tâches **R121 et suivantes**, la section
-  « Corrections de la onzième relecture (2026-10-31) » en entier jusqu'à la première tâche (décisions de l'auteur,
+- Dans `tasks/plan-748.md` : « Global Constraints », puis, pour les tâches **R137 et suivantes**, la section
+  « Corrections de la douzième relecture (2026-10-31) » en entier jusqu'à la première tâche (décisions de l'auteur,
   vérification des constats, options comparées, choix tranchés, questions, Review Focus, contraintes d'exécution, table
-  des fichiers), puis **ta tâche**. (R112–R120 et R114b : « … dixième relecture » ; R102–R111 : « … neuvième relecture » ; R88–R101 : « Corrections de la huitième relecture » ; R73–R87 : « Corrections de la septième relecture » ; R59–R72 : « … sixième
+  des fichiers), puis **ta tâche**. (R121–R136 : « … onzième relecture » ; R112–R120 et R114b : « … dixième relecture » ; R102–R111 : « … neuvième relecture » ; R88–R101 : « Corrections de la huitième relecture » ; R73–R87 : « Corrections de la septième relecture » ; R59–R72 : « … sixième
   relecture » ; R46–R58 : « … cinquième relecture » ; R35–R45 : « … quatrième relecture » ; R23–R34 : « … troisième
   relecture » ; R12–R22 : « … deuxième relecture » ; R1–R11 : « Corrections de relecture ».) Constats et décisions de
-  la série : `tasks/relectures-748/relecture-11-constats.md`. Les sections passées
+  la série : `tasks/relectures-748/relecture-12-constats.md` (R121–R136 : `relecture-11-constats.md`). Les sections passées
   sont l'archive de leur moment : une note « *(rectifié le …)* » y dit ce que les séries ont rendu faux.
   Suis-la ; si elle est fausse sur le code réel (les tâches R précédentes ont pu le changer), adapte au plus près de
   son intention et note l'écart, ou rends la question.
@@ -62,6 +62,8 @@ Dépôt /home/ghostotof/dev/cp-ghostotof, branche `feature/spec-0007-748-a11y`. 
   filet est la suite existante, verte avant et après, nombre de tests noté ; dis quels tests de garde changent et pourquoi.
 - **Aucun travail en arrière-plan au rendu** : ni processus détaché, ni conteneur lancé à part, ni `vitest --watch` ;
   tout ce que tu as lancé est terminé quand tu rends.
+- **« ≤ 140 » est la longueur d'une ligne en caractères** (`awk 'length>140'`), jamais la taille d'un diff ni un nombre
+  de lignes changées (R121 l'a mal lu) ; une ligne de table Markdown ou de JSON ne se coupe pas (le dire au rendu).
 - Vitest 5 vide les imports CSS (même `?raw`) : lire un fichier source via `node:fs` (voir
   `frontend/tests/presentation/styleSheet.spec.ts`). `ResizeObserver` absent de jsdom. Faux minuteurs : rétablis en
   `afterEach` ; axe-core se bloque sous faux minuteurs. Tout état partagé (`authState`…) remis en
@@ -80,7 +82,8 @@ Ne jamais nommer un compte réel. **Git : seules `git add <fichiers>` et `git co
 (`git mv` / `git rm` pour un fichier déplacé ou supprimé) ; jamais `git reset` — **pas même sans argument** —, ni
 `add -N`, `checkout`, `switch`, `stash`, `restore`, `checkout-index`, ni `git commit --amend` (une erreur de commit se
 corrige par un commit suivant). Jamais `sed -i` ni `perl -pi` pour une mutation. Pas de push, pas de PR, pas de commentaire
-GitHub. Ne touche pas aux autres tâches ni à `tasks/` ; ne coche rien. Ne modifie un test existant que là où le
+GitHub. Ne touche pas aux autres tâches ni à `tasks/` ; ne coche rien — **aucune case `- [ ]` de `tasks/plan-748.md`**,
+même celles de ta tâche (R127b l'a fait). Ne modifie un test existant que là où le
 comportement change exprès. Bloqué, ou décision qui revient à l'utilisateur : arrête-toi et rends la question.
 
 ## Rendu
