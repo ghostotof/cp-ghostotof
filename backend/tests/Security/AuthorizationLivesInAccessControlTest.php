@@ -56,26 +56,27 @@ final class AuthorizationLivesInAccessControlTest extends TestCase
      *
      * Une exemption compte les sites **par nature et par fichier**, pas site par site (C7-13) : un
      * site déplacé dans le fichier exempté, ou remplacé par un autre de même nature, reste couvert.
+     * Chaque site couvert est écrit une fois dans `sites` : un de plus ou de moins se lit dans la liste.
      *
-     * Classe => [raison, [[nature, nombre exact de sites]]].
+     * Classe => raison et natures des sites couverts.
      *
-     * @var array<class-string, array{string, list<array{AuthorizationSiteKind, int}>}>
+     * @var array<class-string, array{reason: string, sites: list<AuthorizationSiteKind>}>
      */
     private const array EXEMPTIONS = [
         NominativeCorpusReader::class => [
-            'Pare-feu `mcp`, pas `api` : le connecteur MCP juge le palier de la connexion, '
-            .'qu\'aucune règle d\'`access_control` de `/api/mcp` ne peut exprimer (le jeton est opaque, vérifié en base).',
-            [[AuthorizationSiteKind::IsGrantedCall, 1]],
+            'reason' => 'Pare-feu `mcp`, pas `api` : le connecteur MCP juge le palier de la connexion, '
+                .'qu\'aucune règle d\'`access_control` de `/api/mcp` ne peut exprimer (le jeton est opaque, vérifié en base).',
+            'sites' => [AuthorizationSiteKind::IsGrantedCall],
         ],
         CsrfCookieRequestSubscriber::class => [
-            'Garde du double-submit, priorité 20, avant le pare-feu : '
-            .'son 403 refuse une écriture sans jeton CSRF valide, il n\'autorise aucune route.',
-            [[AuthorizationSiteKind::Refusal, 2]],
+            'reason' => 'Garde du double-submit, priorité 20, avant le pare-feu : '
+                .'son 403 refuse une écriture sans jeton CSRF valide, il n\'autorise aucune route.',
+            'sites' => [AuthorizationSiteKind::Refusal, AuthorizationSiteKind::Refusal],
         ],
         LoginCsrfRequestListener::class => [
-            'Garde du login-CSRF, priorité 20, avant le pare-feu : '
-            .'son 403 refuse une requête sans `X-Requested-With`, il n\'autorise aucune route.',
-            [[AuthorizationSiteKind::Refusal, 1]],
+            'reason' => 'Garde du login-CSRF, priorité 20, avant le pare-feu : '
+                .'son 403 refuse une requête sans `X-Requested-With`, il n\'autorise aucune route.',
+            'sites' => [AuthorizationSiteKind::Refusal],
         ],
     ];
 
@@ -228,8 +229,8 @@ final class AuthorizationLivesInAccessControlTest extends TestCase
 
     public function testEveryExemptionIsStillNeeded(): void
     {
-        foreach (self::EXEMPTIONS as $class => [$reason, $expected]) {
-            $expectedKinds = $this->countByKind($this->expand($expected));
+        foreach (self::EXEMPTIONS as $class => ['reason' => $reason, 'sites' => $sites]) {
+            $expectedKinds = $this->countByKind($sites);
             $found = $this->countByKind(array_map(
                 static fn (AuthorizationSite $site): AuthorizationSiteKind => $site->kind,
                 AuthorizationSites::in(RepositoryFiles::read($this->pathOf($class))),
@@ -255,9 +256,9 @@ final class AuthorizationLivesInAccessControlTest extends TestCase
      */
     private function exemptedKindsOf(string $path): array
     {
-        foreach (self::EXEMPTIONS as $class => [, $kinds]) {
+        foreach (self::EXEMPTIONS as $class => ['sites' => $sites]) {
             if ($this->pathOf($class) === $path) {
-                return $this->expand($kinds);
+                return $sites;
             }
         }
 
@@ -265,30 +266,15 @@ final class AuthorizationLivesInAccessControlTest extends TestCase
     }
 
     /**
-     * @param list<array{AuthorizationSiteKind, int}> $counts
-     *
-     * @return list<AuthorizationSiteKind> chaque nature répétée autant de fois que son nombre
-     */
-    private function expand(array $counts): array
-    {
-        $kinds = [];
-        foreach ($counts as [$kind, $count]) {
-            array_push($kinds, ...array_fill(0, $count, $kind));
-        }
-
-        return $kinds;
-    }
-
-    /**
      * @param list<AuthorizationSiteKind> $kinds
      *
-     * @return array<string, int> libellé de la nature => nombre de sites, trié par libellé
+     * @return array<string, int> nom du cas => nombre de sites, trié par nom
      */
     private function countByKind(array $kinds): array
     {
         $counts = [];
         foreach ($kinds as $kind) {
-            $counts[$kind->value] = ($counts[$kind->value] ?? 0) + 1;
+            $counts[$kind->name] = ($counts[$kind->name] ?? 0) + 1;
         }
         ksort($counts);
 
