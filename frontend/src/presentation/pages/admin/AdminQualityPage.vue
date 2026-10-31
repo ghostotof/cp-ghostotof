@@ -441,6 +441,12 @@ async function handleSubmitTrait(): Promise<void> {
  * D4). En cas d'échec, le formulaire reste intact et la raison s'affiche.
  */
 async function handleTranslatePrinciple(targetLocale: Locale): Promise<void> {
+  // Le refus vient d'ici, pas seulement du bouton désactivé : une seconde traduction ramènerait le formulaire
+  // à la langue source, groupe gardé (Sp7-1).
+  if (principleLock.isProposalLocked) {
+    return
+  }
+
   const sourceLocale = principleForm.locale
 
   const proposal = await translatePrinciple(
@@ -460,6 +466,12 @@ async function handleTranslatePrinciple(targetLocale: Locale): Promise<void> {
 }
 
 async function handleTranslateTrait(targetLocale: Locale): Promise<void> {
+  // Le refus vient d'ici, pas seulement du bouton désactivé : une seconde traduction ramènerait le formulaire
+  // à la langue source, groupe gardé (Sp7-1).
+  if (traitLock.isProposalLocked) {
+    return
+  }
+
   const sourceLocale = traitForm.locale
 
   const proposal = await translateTrait(sourceLocale, targetLocale, collectProseFields(traitForm, TRAIT_PROSE_FIELDS))

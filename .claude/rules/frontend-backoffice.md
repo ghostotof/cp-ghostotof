@@ -190,7 +190,8 @@ value, so a lone source still attaches its proposal) so saving the proposed vers
 extra gesture, and a `role="status"` banner names the proposal's source locale; while the form
 holds the proposal its locale selector is locked, as in editing (R78, R79, Sp7-1: the
 kept group would make a second version of the source locale), and so are « Proposer la version XX » (R93, decision 1
-of the eighth review: a second translation took the form back to the source locale, group kept), « Version de » (R94,
+of the eighth review: a second translation took the form back to the source locale, group kept; `handleTranslate`
+refuses itself as well, not only through the disabled button, R104), « Version de » (R94,
 decision 3: « aucune » would detach the proposal from its source) and the me-card
 **category** selector (R79b, D-b: a version in the other language does not change category, #501/#561; « Créer la
 version XX » keeps the category free, by decision), all described by one text, `admin.lockedByProposal`, which says

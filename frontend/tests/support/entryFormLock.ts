@@ -1,5 +1,6 @@
 import { flushPromises, type DOMWrapper, type VueWrapper } from '@vue/test-utils'
 import { expect, it } from 'vitest'
+import TranslateEntryButton from '../../src/presentation/ui/admin/TranslateEntryButton.vue'
 
 /**
  * Les textes qui expliquent un sélecteur verrouillé d'un formulaire par entrée (#748, D-a et D-b
@@ -88,6 +89,8 @@ export interface EntryFormLockCase {
   readonly startEdit: (wrapper: VueWrapper) => Promise<void>
   /** Depuis l'entrée en édition, demande la proposition de traduction et attend qu'elle s'affiche. */
   readonly propose: (wrapper: VueWrapper) => Promise<void>
+  /** Le nombre d'appels, depuis le dernier `mount`, au dépôt de traduction du formulaire monté (R104, C9-2). */
+  readonly translationRequests: () => number
 }
 
 /**
@@ -220,5 +223,25 @@ export function describeEntryFormLock(lockCase: EntryFormLockCase): void {
 
     expect(describedTexts(wrapper, locale)).toEqual(permanent)
     expect(wrapper.find(`#${ids.hint}`).exists()).toBe(false)
+  })
+
+  // C9-2 (R104) : le bouton désactivé n'est pas la seule garde. Un « translate » émis pendant une proposition
+  // (la langue source, celle qui ramènerait le formulaire en arrière) ne lance aucune traduction et laisse la
+  // proposition en place : le refus vient du gestionnaire, pas seulement du `:disabled`.
+  it(`${prefix}pendant une proposition, un « translate » émis ne lance aucune traduction`, async () => {
+    const wrapper = await lockCase.mount()
+
+    await lockCase.startEdit(wrapper)
+    await lockCase.propose(wrapper)
+    const requests = lockCase.translationRequests()
+    const localeBefore = (wrapper.get(locale).element as HTMLSelectElement).value
+
+    wrapper.findAll('form')[form].findComponent(TranslateEntryButton).vm.$emit('translate', 'fr')
+    await flushPromises()
+
+    expect(lockCase.translationRequests()).toBe(requests)
+    expect((wrapper.get(locale).element as HTMLSelectElement).value).toBe(localeBefore)
+    expect(headingOf(wrapper)).toBe(lockCase.heading)
+    expect(wrapper.findAll('form')[form].find('[role="status"]').exists()).toBe(true)
   })
 }

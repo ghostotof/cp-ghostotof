@@ -254,6 +254,12 @@ async function handleSubmit(): Promise<void> {
  * D4). En cas d'échec, le formulaire reste intact et la raison s'affiche.
  */
 async function handleTranslate(targetLocale: Locale): Promise<void> {
+  // Le refus vient d'ici, pas seulement du bouton désactivé : une seconde traduction ramènerait le formulaire
+  // à la langue source, groupe gardé (Sp7-1).
+  if (lock.isProposalLocked) {
+    return
+  }
+
   const sourceLocale = form.locale
 
   const proposal = await translate(sourceLocale, targetLocale, collectProseFields(form, PROSE_FIELDS))

@@ -672,9 +672,14 @@ describe('AdminQualityPage', () => {
     // Les quatre cas du verrou de la langue, avec l'aide permanente (#582) : écrits une fois pour les huit
     // formulaires dans `tests/support/entryFormLock.ts` (#748, R91). Sp7-1 : la proposition est la version
     // de l'entrée source dans l'autre langue, dans son groupe gardé ; « Annuler » la retire.
+    let lockTranslation = createTranslationRepository()
     describeEntryFormLock({
       name: 'principe',
-      mount: async () => (await mountPage()).wrapper,
+      mount: async () => {
+        lockTranslation = createTranslationRepository()
+
+        return (await mountPage(createPrincipleRepository(), createTraitRepository(), lockTranslation)).wrapper
+      },
       form: PRINCIPLES,
       ids: {
         locale: 'admin-quality-principle-locale',
@@ -691,11 +696,16 @@ describe('AdminQualityPage', () => {
         await translateButton(wrapper, PRINCIPLES).trigger('click')
         await flushPromises()
       },
+      translationRequests: () => vi.mocked(lockTranslation.translate).mock.calls.length,
     })
 
     describeEntryFormLock({
       name: 'trait',
-      mount: async () => (await mountPage(createPrincipleRepository(), createTraitRepository(), createTranslationRepository(TRANSLATED_TRAIT))).wrapper,
+      mount: async () => {
+        lockTranslation = createTranslationRepository(TRANSLATED_TRAIT)
+
+        return (await mountPage(createPrincipleRepository(), createTraitRepository(), lockTranslation)).wrapper
+      },
       form: TRAITS,
       ids: {
         locale: 'admin-quality-trait-locale',
@@ -712,6 +722,7 @@ describe('AdminQualityPage', () => {
         await translateButton(wrapper, TRAITS).trigger('click')
         await flushPromises()
       },
+      translationRequests: () => vi.mocked(lockTranslation.translate).mock.calls.length,
     })
 
     it('affiche le message du quota en cas de 429 et laisse le formulaire intact', async () => {

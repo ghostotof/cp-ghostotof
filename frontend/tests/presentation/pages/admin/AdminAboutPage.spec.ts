@@ -1018,9 +1018,14 @@ describe('AdminAboutPage', () => {
     // Les quatre cas du verrou de la langue, avec l'aide permanente (#582) : écrits une fois pour les huit
     // formulaires dans `tests/support/entryFormLock.ts` (#748, R91). Dans les cartes « moi », la proposition
     // verrouille aussi la catégorie (D-b, plus bas) ; « Annuler » libère les deux.
+    let lockTranslation = createTranslationRepository()
     describeEntryFormLock({
       name: 'carte « site »',
-      mount: async () => (await mountPage()).wrapper,
+      mount: async () => {
+        lockTranslation = createTranslationRepository()
+
+        return (await mountPage(undefined, undefined, undefined, lockTranslation)).wrapper
+      },
       form: SITE_FORM,
       ids: {
         locale: 'admin-about-site-card-locale',
@@ -1037,11 +1042,16 @@ describe('AdminAboutPage', () => {
         await translateButton(wrapper, SITE_FORM).trigger('click')
         await flushPromises()
       },
+      translationRequests: () => vi.mocked(lockTranslation.translate).mock.calls.length,
     })
 
     describeEntryFormLock({
       name: 'carte « moi »',
-      mount: async () => (await mountPage(createSettingsRepository(), createSiteCardRepository(), undefined, createTranslationRepository({ title: 'Veille continue', description: 'Description veille' }))).wrapper,
+      mount: async () => {
+        lockTranslation = createTranslationRepository({ title: 'Veille continue', description: 'Description veille' })
+
+        return (await mountPage(createSettingsRepository(), createSiteCardRepository(), undefined, lockTranslation)).wrapper
+      },
       form: ME_FORM,
       ids: {
         locale: 'admin-about-me-card-locale',
@@ -1058,6 +1068,7 @@ describe('AdminAboutPage', () => {
         await translateButton(wrapper, ME_FORM).trigger('click')
         await flushPromises()
       },
+      translationRequests: () => vi.mocked(lockTranslation.translate).mock.calls.length,
     })
 
     // D-b de l'auteur (#748, 2026-10-30) : une version dans l'autre langue ne change pas de catégorie

@@ -378,9 +378,14 @@ describe('AdminAnonymousCvPage', () => {
 
   // Les quatre cas du verrou (langue désactivée, « Annuler », texte du verrou) : écrits une fois pour les
   // huit formulaires dans `tests/support/entryFormLock.ts` (#748, R91).
+  let lockTranslation = createTranslationRepository()
   describeEntryFormLock({
     name: '',
-    mount: async () => (await mountPage(createStubRepository())).wrapper,
+    mount: async () => {
+      lockTranslation = createTranslationRepository()
+
+      return (await mountPage(createStubRepository(), lockTranslation)).wrapper
+    },
     form: 0,
     ids: {
       locale: 'admin-anonymous-cv-locale',
@@ -396,6 +401,7 @@ describe('AdminAnonymousCvPage', () => {
       await translateButton(wrapper).trigger('click')
       await flushPromises()
     },
+    translationRequests: () => vi.mocked(lockTranslation.translate).mock.calls.length,
   })
 
   it('enregistre la proposition comme une nouvelle entrée EN rattachée au même groupe', async () => {
