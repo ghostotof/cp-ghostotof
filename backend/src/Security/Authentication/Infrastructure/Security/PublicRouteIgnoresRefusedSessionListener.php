@@ -24,9 +24,9 @@ use Symfony\Component\Security\Http\Event\LoginFailureEvent;
  * jamais plus que l'anonyme.
  *
  * **Pourquoi l'`AccessMap`**, pas une liste des routes publiques : c'est la source de vérité de
- * l'`AccessListener`, aucune seconde liste n'est à tenir. La prémisse — toute autorisation de `/api`
- * est une règle d'`access_control`, et elle ne dépend que du chemin. Les témoins de cette prémisse sont
- * listés une fois, dans `.claude/rules/security-authentication-sessions.md` (puce de
+ * l'`AccessListener`, aucune seconde liste n'est à tenir. Cette lecture repose sur une prémisse : toute
+ * autorisation de `/api` est une règle d'`access_control`, et cette règle ne dépend que du chemin. Les
+ * témoins de cette prémisse sont listés une fois, dans `.claude/rules/security-authentication-sessions.md` (puce de
  * `PublicRouteIgnoresRefusedSessionListener`) ; `AccessMapStaysPathOnlyTest` tient le « que du chemin ».
  *
  * **Le dispatcher d'`api` seul**, le seul qui lit le cookie (`login` n'a pas de JWT, `mcp` et

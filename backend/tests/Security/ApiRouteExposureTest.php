@@ -14,6 +14,7 @@ use App\Tests\Support\HttpJson;
 use App\Tests\Support\RefusedBearerCookie;
 use App\Tests\Support\TestCredentials;
 use Doctrine\ORM\EntityManagerInterface;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 use Symfony\Component\BrowserKit\Cookie as BrowserKitCookie;
@@ -151,8 +152,11 @@ final class ApiRouteExposureTest extends WebTestCase
     private const array RULELESS_OUTSIDE_PUBLIC_PATHS = [
         '/api/logout' => '« Terminer cet accès » (#65, R35) : sans règle par construction, il expire les deux '
             .'cookies de l\'appelant, y compris d\'un porteur dont le cookie est refusé (2xx depuis R35) ; une règle '
-            .'lui rendrait un 401. Pas public pour autant : il ne sert aucune donnée et n\'agit que sur les cookies '
-            .'de l\'appelant — le double-submit n\'y protège rien d\'autre, une paire s\'obtenant en un clic (accès de base).',
+            .'lui rendrait un 401. Pas public pour autant : il ne sert aucune donnée, et le double-submit le garde de '
+            .'la déconnexion forcée — un formulaire tiers part sans `X-XSRF-TOKEN`, et son 403 (priorité 20, avant le '
+            .'`LogoutListener`) est la seule barrière, `SameSite=Lax` n\'empêchant pas le navigateur d\'accepter les '
+            .'`Set-Cookie` expirés de la réponse. Jamais dans `EXCLUDED_PATHS` (témoin : '
+            .'`AuthenticationFlowTest::testAForcedLogoutWithoutTheCsrfHeaderExpiresNoCookie`).',
     ];
 
     /**
@@ -175,11 +179,36 @@ final class ApiRouteExposureTest extends WebTestCase
     }
 
     /**
+     * « Relève de `/api` » : `/api` lui-même ou un chemin qui le prolonge par `/` — jamais un voisin comme `/apis`,
+     * `/api-x` ou `/apix/y`, que l'`access_control` ancré (`(/|$)`) ne couvre pas non plus. Écrit une fois, lu par
+     * l'invariant n° 10 et par `allApiRoutePaths()`.
+     */
+    #[DataProvider('pathsAndWhetherTheyAreApi')]
+    public function testOnlyApiPathsAreJudged(string $path, bool $expected): void
+    {
+        self::assertSame($expected, $this->isApiPath($path), $path);
+    }
+
+    /**
+     * @return iterable<string, array{0: string, 1: bool}>
+     */
+    public static function pathsAndWhetherTheyAreApi(): iterable
+    {
+        yield '/api' => ['/api', true];
+        yield '/api/me' => ['/api/me', true];
+        yield '/apis' => ['/apis', false];
+        yield '/api-x' => ['/api-x', false];
+        yield '/apix/y' => ['/apix/y', false];
+    }
+
+    /**
      * Invariant n° 10 (#748, R89, C8-6, C8-4) : chaque route de `/api` déclare ses méthodes, et chacune est jugée par
      * le double-submit — `GET`, `HEAD`, `OPTIONS` (SAFE_METHODS_OUTSIDE_THE_DOUBLE_SUBMIT) ou l'une des
      * `CsrfCookieRequestSubscriber::UNSAFE_METHODS`. Une route sans méthode déclarée les accepte toutes et les autres
      * invariants ne la sondent qu'en GET ; une route `QUERY` ou d'une méthode propre sortirait du double-submit sans
      * qu'aucune garde le voie.
+     * « Sûre » est une convention : l'invariant juge les méthodes déclarées, pas qu'une route `GET` n'écrit rien ;
+     * une écriture servie en `GET` échapperait au double-submit, la relecture tient ce point (C9-7).
      */
     public function testEveryApiRouteDeclaresMethodsTheDoubleSubmitJudges(): void
     {
@@ -188,7 +217,7 @@ final class ApiRouteExposureTest extends WebTestCase
 
         foreach ($this->router()->getRouteCollection() as $route) {
             $path = $route->getPath();
-            if (!str_starts_with($path, '/api')) {
+            if (!$this->isApiPath($path)) {
                 continue;
             }
 
@@ -323,7 +352,8 @@ final class ApiRouteExposureTest extends WebTestCase
      * réponse à un cookie refusé (`StaleSessionCookiesClearingListener`), aux attributs exacts
      * de la fabrique : sans quoi une session morte resterait dans le navigateur jusqu'à sa
      * fermeture. Une route sans règle n'y est pas jugée : l'invariant n° 9 voit qu'une route
-     * hors de PUBLIC_PATHS en a une. Les témoins de cette prémisse sont listés une fois, dans
+     * hors de PUBLIC_PATHS en a une : c'est la prémisse « route publique = route sans règle ».
+     * Les témoins de cette prémisse sont listés une fois, dans
      * `.claude/rules/security-authentication-sessions.md` (puce de
      * `PublicRouteIgnoresRefusedSessionListener`).
      * Mêmes corps et en-têtes que l'invariant n°7 ; les méthodes non sûres portent en plus
@@ -750,7 +780,7 @@ final class ApiRouteExposureTest extends WebTestCase
         foreach ($this->router()->getRouteCollection() as $route) {
             $path = $route->getPath();
 
-            if (!str_starts_with($path, '/api') || isset(self::PUBLIC_PATHS[$path])) {
+            if (!$this->isApiPath($path) || isset(self::PUBLIC_PATHS[$path])) {
                 continue;
             }
 
@@ -770,12 +800,21 @@ final class ApiRouteExposureTest extends WebTestCase
         $paths = [];
 
         foreach ($this->router()->getRouteCollection() as $route) {
-            if (str_starts_with($route->getPath(), '/api')) {
+            if ($this->isApiPath($route->getPath())) {
                 $paths[$route->getPath()] = true;
             }
         }
 
         return array_keys($paths);
+    }
+
+    /**
+     * Le chemin relève de `/api` : `/api` lui-même ou `/api/…`, jamais un voisin (`/apis`, `/api-x`). Seule lecture
+     * de « relève de `/api` » de ce fichier, la même ancre que l'`access_control` (`(/|$)`).
+     */
+    private function isApiPath(string $path): bool
+    {
+        return '/api' === $path || str_starts_with($path, '/api/');
     }
 
     /**

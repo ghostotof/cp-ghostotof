@@ -94,6 +94,35 @@ final class AuthenticationFlowTest extends WebTestCase
     }
 
     /**
+     * `/api/logout` n'a aucune règle d'`access_control` et n'est jamais dans `EXCLUDED_PATHS` : le double-submit est
+     * la seule barrière contre une déconnexion forcée (#748, C9-1). Un formulaire tiers part sans `X-XSRF-TOKEN` ; le
+     * 403 du `CsrfCookieRequestSubscriber` (priorité 20) répond avant le `LogoutListener`, donc sans `Set-Cookie`
+     * expiré — `SameSite=Lax` n'empêche pas le navigateur d'accepter ceux de la réponse. Le cookie `XSRF-TOKEN` est
+     * ici présent et valide : c'est l'en-tête seul qui manque, et la session survit.
+     */
+    public function testAForcedLogoutWithoutTheCsrfHeaderExpiresNoCookie(): void
+    {
+        $client = self::createClient();
+        $client->getContainer()->get(CpgUserRegistrarInterface::class)->register(self::USERNAME, TestCredentials::plainPassword(), [CpgUser::ROLE_TRUSTED]);
+        $client->request('POST', '/api/login_check', server: ['CONTENT_TYPE' => 'application/json', 'HTTP_X_REQUESTED_WITH' => 'fetch'], content: self::jsonBody([
+            'username' => self::USERNAME,
+            'password' => TestCredentials::plainPassword(),
+        ]));
+        self::assertResponseIsSuccessful();
+        self::assertNotNull($client->getCookieJar()->get('XSRF-TOKEN'));
+
+        // Le cookie `XSRF-TOKEN` part avec la requête (le jar le renvoie), l'en-tête manque.
+        $client->request('POST', '/api/logout');
+
+        self::assertResponseStatusCodeSame(403);
+        self::assertSame([], $client->getResponse()->headers->getCookies(), 'Un logout refusé n\'expire aucun cookie.');
+
+        // La session est intacte.
+        $client->request('GET', '/api/me');
+        self::assertResponseIsSuccessful();
+    }
+
+    /**
      * Régression issue #77 (reproduit en dev : `POST /%61pi/logout` sans
      * XSRF-TOKEN répondait 204 avec `Set-Cookie: BEARER=deleted`). Le
      * firewall décode le chemin et exécute bien le logout ; la protection

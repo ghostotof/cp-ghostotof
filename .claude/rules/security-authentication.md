@@ -29,9 +29,7 @@ What stays here: the CSRF guards (double-submit, login-CSRF), the base access, `
     guard covers all of `src/`, so its rule lives in `.claude/rules/backend-conventions.md`.
   - `Infrastructure/Http/CsrfCookieRequestSubscriber.php` — double-submit-cookie CSRF check, a `kernel.request`
     listener at priority 20 (must run *above* the Security firewall's priority 8 — see the class docblock).
-    Its `EXCLUDED_PATHS` are **exact** paths, each justified in the docblock; every route of `/api` declares its
-    methods, each `GET`, `HEAD`, `OPTIONS` or one of its public `UNSAFE_METHODS` (invariant n° 10 of
-    `ApiRouteExposureTest`, C8-6: a `QUERY` route or a custom method would leave the double-submit). Two since #647,
+    Its `EXCLUDED_PATHS` are **exact** paths, each justified in the docblock. Two since #647,
     **`/api/oauth/token` and `/api/oauth/revoke`**: called by the MCP client, never a browser, so no
     `XSRF-TOKEN` to echo. Safe for the reason `/api/mcp`'s exclusion is (ADR 0006 D4): their `oauth`
     firewall has no authenticator and reads no cookie, so a cross-site request carrying a person's
@@ -42,7 +40,11 @@ What stays here: the CSRF guards (double-submit, login-CSRF), the base access, `
     (`testABearerCookieWithoutTheXsrfHeaderIsNeitherRefusedNorRead`) pin both halves. **The consent,
     `/api/oauth/consent`, stays under the guard**: it reads the person (`ROLE_TRUSTED`) and grants in their
     name (`ConsentControllerTest::testAnApprovalWithoutTheCsrfHeaderIsForbidden`). Never exclude a prefix
-    such as `/api/oauth/`. See `.claude/rules/mcp-oauth.md`.
+    such as `/api/oauth/`. See `.claude/rules/mcp-oauth.md`. **Every route of `/api` declares its methods**, each
+    `GET`, `HEAD`, `OPTIONS` or one of its public `UNSAFE_METHODS` (invariant n° 10 of `ApiRouteExposureTest`, C8-6: a
+    `QUERY` route or a custom method would leave the double-submit; « safe » is a convention the review keeps, C9-7).
+    **`/api/logout` stays under the guard**: its 403 is the only barrier against a forced logout (C9-1, pinned by
+    `AuthenticationFlowTest::testAForcedLogoutWithoutTheCsrfHeaderExpiresNoCookie`).
   - `Infrastructure/Http/LoginCsrfRequestListener.php` — **login-CSRF guard** (issue #76) on the two anonymous
     routes that *set* a `BEARER` cookie, `POST /api/login_check` and `POST /api/account/base-access`. Both are
     rightly outside the double-submit (an anonymous caller has no `XSRF-TOKEN` to echo), but a cross-site
