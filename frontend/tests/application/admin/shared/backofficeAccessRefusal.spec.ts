@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   backofficeAccessRefused,
+  beginBackofficeLoad,
   clearBackofficeAccessRefusal,
   earlierSaveRefused,
   markBackofficeAccessRefused,
@@ -106,8 +107,9 @@ describe('backofficeAccessRefusal', () => {
     expect(earlierSaveRefused.value).toBe(true)
   })
 
-  it("après le montage, une lecture refusée garde l'avis et fait avancer le compteur", () => {
+  it("pendant le chargement de la page d'arrivée, une lecture refusée garde l'avis et fait avancer le compteur", () => {
     markBackofficeAccessRefused({ kind: 'write' }, ACCOUNT_A)
+    beginBackofficeLoad()
     settleBackofficeAccessRefusalsOnMount(ACCOUNT_A)
     expect(earlierSaveRefused.value).toBe(true)
     expect(backofficeAccessRefused.value).toBe(1)
@@ -118,22 +120,109 @@ describe('backofficeAccessRefusal', () => {
     expect(backofficeAccessRefused.value).toBe(2)
   })
 
-  it("après le montage, la première lecture refusée garde l'avis, la seconde ramène le texte courant (R95, décision 4)", () => {
+  it("pendant le chargement de la page d'arrivée, chaque lecture refusée garde l'avis (Sp9-9)", () => {
     markBackofficeAccessRefused({ kind: 'write' }, ACCOUNT_A)
+    // Une page à deux listes (Qualité, À propos) : deux chargements en vol au montage.
+    beginBackofficeLoad()
+    beginBackofficeLoad()
     settleBackofficeAccessRefusalsOnMount(ACCOUNT_A)
 
-    // La première : le chargement de la page d'arrivée, parti avant le montage.
     markBackofficeAccessRefused(readSentNow(), ACCOUNT_A)
     expect(earlierSaveRefused.value).toBe(true)
 
-    // La seconde : une relecture ultérieure (rôle perdu), ce n'est plus le chargement ; le compteur avance quand même.
     markBackofficeAccessRefused(readSentNow(), ACCOUNT_A)
-    expect(earlierSaveRefused.value).toBe(false)
+    expect(earlierSaveRefused.value).toBe(true)
     expect(backofficeAccessRefused.value).toBe(3)
+  })
 
-    // Et l'avis ne revient pas avec une troisième lecture.
+  it("le chargement terminé, la lecture refusée suivante ramène le texte courant (CR9-1)", () => {
+    markBackofficeAccessRefused({ kind: 'write' }, ACCOUNT_A)
+    const endLoad = beginBackofficeLoad()
+    settleBackofficeAccessRefusalsOnMount(ACCOUNT_A)
+
+    endLoad()
+    // La fin du chargement ne change pas le texte d'une alerte déjà affichée : seul un refus le fait (Q1 b).
+    expect(earlierSaveRefused.value).toBe(true)
+    expect(backofficeAccessRefused.value).toBe(1)
+
     markBackofficeAccessRefused(readSentNow(), ACCOUNT_A)
     expect(earlierSaveRefused.value).toBe(false)
+    expect(backofficeAccessRefused.value).toBe(2)
+
+    // Et l'avis ne revient pas avec une lecture de plus.
+    markBackofficeAccessRefused(readSentNow(), ACCOUNT_A)
+    expect(earlierSaveRefused.value).toBe(false)
+  })
+
+  it("un chargement refusé avant le montage est terminé au règlement : la lecture refusée suivante ramène le texte courant", () => {
+    markBackofficeAccessRefused({ kind: 'write' }, ACCOUNT_A)
+    const endLoad = beginBackofficeLoad()
+    markBackofficeAccessRefused(readSentNow(), ACCOUNT_A)
+    endLoad()
+
+    settleBackofficeAccessRefusalsOnMount(ACCOUNT_A)
+    expect(earlierSaveRefused.value).toBe(true)
+
+    markBackofficeAccessRefused(readSentNow(), ACCOUNT_A)
+    expect(earlierSaveRefused.value).toBe(false)
+  })
+
+  it("la fin d'un chargement d'un périmètre effacé ne ferme pas le chargement suivant", () => {
+    const endStale = beginBackofficeLoad()
+    clearBackofficeAccessRefusal()
+
+    markBackofficeAccessRefused({ kind: 'write' }, ACCOUNT_A)
+    beginBackofficeLoad()
+    settleBackofficeAccessRefusalsOnMount(ACCOUNT_A)
+    endStale()
+
+    markBackofficeAccessRefused(readSentNow(), ACCOUNT_A)
+    expect(earlierSaveRefused.value).toBe(true)
+  })
+
+  it("un chargement lancé après la fin du chargement de la page d'arrivée ne rouvre pas l'avis", () => {
+    markBackofficeAccessRefused({ kind: 'write' }, ACCOUNT_A)
+    const endLanding = beginBackofficeLoad()
+    settleBackofficeAccessRefusalsOnMount(ACCOUNT_A)
+    endLanding()
+
+    // « Réessayer » sur une liste : un chargement de plus, hors de celui de la page d'arrivée.
+    const endRetry = beginBackofficeLoad()
+    markBackofficeAccessRefused(readSentNow(), ACCOUNT_A)
+    expect(earlierSaveRefused.value).toBe(false)
+
+    endRetry()
+    expect(earlierSaveRefused.value).toBe(false)
+  })
+
+  it("un chargement lancé pendant celui de la page d'arrivée le prolonge", () => {
+    markBackofficeAccessRefused({ kind: 'write' }, ACCOUNT_A)
+    const endFirst = beginBackofficeLoad()
+    settleBackofficeAccessRefusalsOnMount(ACCOUNT_A)
+    const endSecond = beginBackofficeLoad()
+
+    endFirst()
+    markBackofficeAccessRefused(readSentNow(), ACCOUNT_A)
+    expect(earlierSaveRefused.value).toBe(true)
+
+    endSecond()
+    markBackofficeAccessRefused(readSentNow(), ACCOUNT_A)
+    expect(earlierSaveRefused.value).toBe(false)
+  })
+
+  it("la fin d'un chargement est idempotente", () => {
+    markBackofficeAccessRefused({ kind: 'write' }, ACCOUNT_A)
+    const endFirst = beginBackofficeLoad()
+    beginBackofficeLoad()
+    settleBackofficeAccessRefusalsOnMount(ACCOUNT_A)
+
+    // Appelée deux fois, la fin du premier ne compte qu'une fois : le second est encore en vol, l'avis tient.
+    endFirst()
+    endFirst()
+    markBackofficeAccessRefused(readSentNow(), ACCOUNT_A)
+    markBackofficeAccessRefused(readSentNow(), ACCOUNT_A)
+
+    expect(earlierSaveRefused.value).toBe(true)
   })
 
   it("une écriture comptée sous aucun compte se distingue de l'absence d'écriture (St8-10)", () => {

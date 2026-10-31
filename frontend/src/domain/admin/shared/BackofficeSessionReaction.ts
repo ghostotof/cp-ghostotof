@@ -57,7 +57,9 @@ export interface BackofficeSessionReaction {
    * l'envoi : la réaction compte le refus (l'alerte d'`AdminLayout` le dit) et relit le palier — sauf si la
    * personne a navigué depuis l'envoi **et que la requête était une lecture** (le refus est celui d'une page quittée ;
    * le refus d'une écriture compte toujours, R38), ou si le compte de l'envoi et celui de la réception diffèrent
-   * (`account`) : le refus est alors celui d'un compte qui n'est plus à l'écran, lecture ou écriture.
+   * (`account`) : le refus est alors celui d'un compte qui n'est plus à l'écran, lecture ou écriture. La règle de
+   * l'identité du compte et ses limites sont écrites une fois, dans `.claude/rules/frontend-session-refus.md`
+   * (sous-puce « the account »).
    */
   refused(sentAt: BackofficeSendStamp): void
 }

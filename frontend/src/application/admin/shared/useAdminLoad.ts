@@ -3,6 +3,7 @@ import { AccessForbiddenError } from '../../../domain/auth/errors/AccessForbidde
 import { SessionEndedError } from '../../../domain/auth/errors/SessionEndedError'
 import { onSessionRestored } from '../../auth/useAuth'
 import { createStaleRequestGuard } from '../../shared/staleRequestGuard'
+import { beginBackofficeLoad } from './backofficeAccessRefusal'
 
 /** Ce que tout composable d'administration expose d'un chargement, pour que la page le lise partout de la même façon. */
 export interface AdminLoadState {
@@ -55,6 +56,10 @@ export interface AdminLoadOptions<T, K> {
  * la clé courante, et périme alors toute lecture en vol : un `GET` servi avant le COMMIT d'un `PUT` rendrait les
  * anciennes valeurs, et les poserait par-dessus les nouvelles. Un composable à clé n'en garde pas de copie à lui.
  *
+ * **Chaque `load()` se déclare au refus du backoffice** (#748, R102, `beginBackofficeLoad`) et dit sa fin dans son
+ * `finally`, pour toute réponse — servie, refusée, en échec ou périmée : les `load()` en vol au montage d'`AccessRefusedNotice`
+ * sont le chargement de la page d'arrivée, dont les lectures refusées gardent l'avis « enregistrement précédent ».
+ *
  * `K` est la clé de la lecture : `void` pour une liste, la locale pour le singleton des réglages « À propos ».
  */
 export function useAdminLoad<T, K = void>(
@@ -72,6 +77,7 @@ export function useAdminLoad<T, K = void>(
   const requested = shallowRef<{ key: K } | null>(null)
 
   const load = async (key: K): Promise<void> => {
+    const endLoad = beginBackofficeLoad()
     const token = requestGuard.begin()
     requested.value = { key }
     isLoading.value = true
@@ -102,6 +108,8 @@ export function useAdminLoad<T, K = void>(
         }
       }
     } finally {
+      // Après le `catch` : un refus réel est déjà compté (le client le compte avant de lever), la fin vient ensuite.
+      endLoad()
       if (requestGuard.isCurrent(token)) isLoading.value = false
     }
   }

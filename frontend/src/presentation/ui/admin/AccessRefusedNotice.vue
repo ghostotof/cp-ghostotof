@@ -44,10 +44,13 @@ import { switchAccountLocation } from '../../router/reauthentication'
  *   pendant que la personne avait quitté le backoffice est **dit au retour**, avec son propre texte
  *   (`common.earlierSaveRefused`, `earlierSaveRefused`) — **au compte qui l'a envoyé seulement** (R76, décision 2 de la
  *   septième relecture : `lastAccountName()` est passé au montage, un autre compte remet tout à zéro). Le chargement de
- *   la page d'arrivée est parti avant le montage : son refus doit compter, et **s'il est refusé, l'avis reste** (CR7-4 :
- *   la **première** lecture refusée après le montage avance le compteur, réannonce l'alerte et garde le texte). Tout
- *   refus suivant, **lecture** (une relecture refusée plus tard, rôle perdu) **ou écriture**, remet `common.accessRefused`
- *   (R95, décision 4 de la huitième relecture) : ce n'est plus le chargement, ou c'est un nouvel enregistrement refusé.
+ *   la page d'arrivée est parti avant le montage : son refus doit compter, et **chaque lecture refusée pendant ce
+ *   chargement garde l'avis** et réannonce l'alerte (CR7-4, R102 : le chargement est l'ensemble des `load()` de
+ *   `useAdminLoad` en vol au montage, chacun déclaré par `beginBackofficeLoad` ; il se termine quand ils ont tous
+ *   répondu, et un `load()` lancé entre-temps le prolonge). Une fois terminé, le texte de l'alerte affichée reste jusqu'au
+ *   refus suivant, **lecture** (une relecture refusée plus tard, rôle perdu) **ou écriture**, qui remet
+ *   `common.accessRefused` (décision 1 de la neuvième relecture, amendant la décision 4 de la huitième) : ce n'est plus
+ *   le chargement, ou c'est un nouvel enregistrement refusé.
  * - **Insérée après le montage** (`isMounted`) : une région `role="alert"` présente dès le premier rendu peut ne pas
  *   être annoncée (`.claude/rules/frontend-a11y.md`) ; celle d'un enregistrement refusé pendant l'absence est donc
  *   insérée un tick plus tard, comme celle d'un refus survenu sur la page.
@@ -85,8 +88,8 @@ watch(
 )
 
 // Au montage, règle ce qui a été compté sans alerte (R64) : une lecture est oubliée, une écriture refusée pendant
-// l'absence est dite au compte qui l'a envoyée (R76), à nul autre. Le périmètre n'avance pas : le chargement de la page d'arrivée est parti avant ce montage, son
-// refus doit compter. Au démontage, tout s'efface.
+// l'absence est dite au compte qui l'a envoyée (R76), à nul autre. Le périmètre n'avance pas : le chargement de la page
+// d'arrivée est parti avant ce montage, son refus doit compter. Au démontage, tout s'efface.
 onMounted(() => {
   settleBackofficeAccessRefusalsOnMount(lastAccountName())
   isMounted.value = true

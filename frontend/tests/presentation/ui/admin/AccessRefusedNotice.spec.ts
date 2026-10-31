@@ -7,6 +7,7 @@ import { createAppI18n } from '../../../../src/presentation/i18n'
 import { AUTH_REPOSITORY, lastAccountName, markSessionExpired, useAuth } from '../../../../src/application/auth/useAuth'
 import {
   backofficeAccessRefused,
+  beginBackofficeLoad,
   clearBackofficeAccessRefusal,
   markBackofficeAccessRefused,
   refusalScope,
@@ -16,6 +17,10 @@ import { sessionFor } from '../../../support/authSession'
 import { sessionForUser } from '../../../../src/domain/auth/services/sessionForUser'
 import { signInAgain } from '../../../support/signInAgain'
 import { expectNoAccessibilityViolation } from '../../../support/axe'
+
+/** Le texte FR exact de `common.accessRefused` (Sp9-5 : un texte se compare entier, jamais par `toContain`). */
+const accessRefusedFr =
+  "Le serveur refuse cette demande à votre session : votre compte n'a peut-être pas, ou plus, l'accès de confiance, ou la session doit être rouverte. Changez de compte, ou reconnectez-vous au même, pour continuer."
 
 const StubPage = defineComponent({ setup: () => () => h('div') })
 
@@ -115,7 +120,7 @@ describe('AccessRefusedNotice (#748, R17)', () => {
     await flushPromises()
 
     const alert = wrapper.get('[role="alert"]')
-    expect(alert.text()).toContain('Le serveur refuse cette demande à votre session')
+    expect(alert.get('span').text()).toBe(accessRefusedFr)
     const link = alert.get('a')
     expect(link.text()).toBe('Changer de compte')
     expect(link.attributes('href')).toBe('/fr/login?redirect=/fr/admin/case-studies&reauth=1')
@@ -283,8 +288,7 @@ describe('AccessRefusedNotice (#748, R17)', () => {
       markBackofficeAccessRefused({ kind: 'write' }, lastAccountName())
       await flushPromises()
 
-      expect(second.wrapper.get('span').text()).toContain('Le serveur refuse cette demande à votre session')
-      expect(second.wrapper.get('span').text()).not.toBe(earlierSaveFr)
+      expect(second.wrapper.get('span').text()).toBe(accessRefusedFr)
       expect(second.wrapper.get('[role="alert"]').element).toBe(alert)
       expect(second.wrapper.get('a').element).toBe(link)
       second.wrapper.unmount()
@@ -304,7 +308,7 @@ describe('AccessRefusedNotice (#748, R17)', () => {
 
       refuse()
       await flushPromises()
-      expect(second.wrapper.get('span').text()).toContain('Le serveur refuse cette demande à votre session')
+      expect(second.wrapper.get('span').text()).toBe(accessRefusedFr)
       second.wrapper.unmount()
     })
 
@@ -313,6 +317,8 @@ describe('AccessRefusedNotice (#748, R17)', () => {
       const first = await mountNotice()
       first.wrapper.unmount()
       writeRefusedWhileAway()
+      // Le chargement de la page d'arrivée part dans le `setup` de la page, avant le montage de l'alerte.
+      beginBackofficeLoad()
       const second = await mountNotice()
       await flushPromises()
       const message = second.wrapper.get('span').element
@@ -330,11 +336,53 @@ describe('AccessRefusedNotice (#748, R17)', () => {
       second.wrapper.unmount()
     })
 
+    it("l'avis tient toutes les lectures du chargement, et part au refus qui le suit (Review Focus 1 et 2)", async () => {
+      await signInAs('compte-a')
+      const first = await mountNotice()
+      first.wrapper.unmount()
+      writeRefusedWhileAway()
+      // Une page à deux listes : deux chargements en vol au montage de l'alerte.
+      const endFirstLoad = beginBackofficeLoad()
+      const endSecondLoad = beginBackofficeLoad()
+      const second = await mountNotice()
+      await flushPromises()
+      expect(second.wrapper.get('span').text()).toBe(earlierSaveFr)
+
+      // Les deux lectures du chargement, refusées : l'avis est dit aux deux annonces (le `<span>` est remplacé à chacune).
+      const afterMount = second.wrapper.get('span').element
+      refuse()
+      await flushPromises()
+      expect(second.wrapper.get('span').text()).toBe(earlierSaveFr)
+      const afterFirstRead = second.wrapper.get('span').element
+      expect(afterFirstRead).not.toBe(afterMount)
+
+      refuse()
+      await flushPromises()
+      expect(second.wrapper.get('span').text()).toBe(earlierSaveFr)
+      const afterSecondRead = second.wrapper.get('span').element
+      expect(afterSecondRead).not.toBe(afterFirstRead)
+
+      // Le chargement fini, le texte de l'alerte déjà affichée ne change pas sans refus…
+      endFirstLoad()
+      endSecondLoad()
+      await flushPromises()
+      expect(second.wrapper.get('span').text()).toBe(earlierSaveFr)
+      expect(second.wrapper.get('span').element).toBe(afterSecondRead)
+
+      // … et la lecture refusée qui suit (« Réessayer », rôle perdu) ramène le texte courant, réannoncé.
+      refuse()
+      await flushPromises()
+      expect(second.wrapper.get('span').text()).toBe(accessRefusedFr)
+      expect(second.wrapper.get('span').element).not.toBe(afterSecondRead)
+      second.wrapper.unmount()
+    })
+
     it("l'avis de l'enregistrement précédent tient la lecture de chargement, pas la suivante (R95, décision 4)", async () => {
       await signInAs('compte-a')
       const first = await mountNotice()
       first.wrapper.unmount()
       writeRefusedWhileAway()
+      const endLoad = beginBackofficeLoad()
       const second = await mountNotice()
       await flushPromises()
       expect(second.wrapper.get('span').text()).toBe(earlierSaveFr)
@@ -346,12 +394,12 @@ describe('AccessRefusedNotice (#748, R17)', () => {
       expect(second.wrapper.get('span').text()).toBe(earlierSaveFr)
       expect(second.wrapper.get('span').element).not.toBe(afterMount)
 
-      // Une relecture refusée plus tard : le texte courant, et l'alerte se réannonce encore.
+      // Le chargement fini, une relecture refusée plus tard : le texte courant, et l'alerte se réannonce encore.
+      endLoad()
       const afterLoad = second.wrapper.get('span').element
       refuse()
       await flushPromises()
-      expect(second.wrapper.get('span').text()).toContain('Le serveur refuse cette demande à votre session')
-      expect(second.wrapper.get('span').text()).not.toBe(earlierSaveFr)
+      expect(second.wrapper.get('span').text()).toBe(accessRefusedFr)
       expect(second.wrapper.get('span').element).not.toBe(afterLoad)
       second.wrapper.unmount()
     })
