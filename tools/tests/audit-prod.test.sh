@@ -137,6 +137,56 @@ else
   fail "dossier privé de la Basic Auth" "chemin -K : ${k_path:-absent} ; TMPDIR : $(ls -A "$TMP/nominal.tmpdir")"
 fi
 
+# --- #750 : curl envoie `Authorization: Basic` dès la première requête, quel que soit le
+# schéma. Un appel http:// qui porte `-K <fichier d'identifiants>` met l'identifiant de la
+# préprod en clair sur le réseau ; les sondes de redirection (section 3) partent donc sans
+# Basic Auth, et seuls les appels https:// vers l'apex la portent. Lu sur les appels du run
+# `nominal` (curl d'abord, l'URL en dernier argument).
+# url_calls <nom> <préfixe d'URL> : les appels curl dont l'URL commence par le préfixe.
+url_calls() {
+  local line
+  while IFS= read -r line; do
+    case "$line" in
+      "curl "*) case "${line##* }" in "$2"*) printf '%s\n' "$line" ;; esac ;;
+    esac
+  done < "$TMP/$1.calls"
+}
+has_k() { grep -qE -- '(^| )-K( |$)'; }
+
+http_calls="$(url_calls nominal 'http://')"
+if [ -z "$http_calls" ]; then
+  fail "aucun appel http:// ne porte -K" "aucun appel http:// noté : le cas ne prouverait rien"
+elif has_k <<< "$http_calls"; then
+  fail "aucun appel http:// ne porte -K" "la Basic Auth part en clair : ${http_calls//$'\n'/ | }"
+else
+  pass "aucun appel http:// ne porte -K"
+fi
+
+www_calls="$(url_calls nominal 'https://www.example.invalid')"
+if [ -z "$www_calls" ]; then
+  fail "la sonde de redirection https://www. part sans -K" "aucun appel https://www. noté"
+elif has_k <<< "$www_calls"; then
+  fail "la sonde de redirection https://www. part sans -K" "${www_calls//$'\n'/ | }"
+else
+  pass "la sonde de redirection https://www. part sans -K"
+fi
+
+# Les métadonnées OAuth de la section 6ter partent sans Basic Auth exprès (un client MCP les lit
+# sans savoir y répondre) : elles sont écartées, tout autre appel vers l'apex porte `-K`.
+apex_calls="$(url_calls nominal 'https://example.invalid')"
+without_k=""
+while IFS= read -r line; do
+  case "${line##* }" in "https://example.invalid/.well-known/oauth-"*) continue ;; esac
+  [ -n "$line" ] && ! has_k <<< "$line" && without_k+="$line | "
+done <<< "$apex_calls"
+if [ -z "$apex_calls" ]; then
+  fail "chaque appel https:// vers l'apex porte -K (la préprod reste authentifiée)" "aucun appel https:// vers l'apex noté"
+elif [ -n "$without_k" ]; then
+  fail "chaque appel https:// vers l'apex porte -K (la préprod reste authentifiée)" "sans -K : $without_k"
+else
+  pass "chaque appel https:// vers l'apex porte -K (la préprod reste authentifiée)"
+fi
+
 # --- C8-1 : sous `bash -x`, la valeur de AUDIT_BASIC_AUTH n'apparaît nulle part dans
 # la trace (le test de présence ne la développe pas, la bibliothèque la lit sous
 # `set +x`). Valeur fictive, sans le mot « secret ».
