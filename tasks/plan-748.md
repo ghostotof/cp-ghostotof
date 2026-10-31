@@ -6016,6 +6016,715 @@ Les docstrings et les règles ont suivi chaque comportement dans son commit ; ce
 ---
 
 
+## Corrections de la neuvième relecture (2026-10-31)
+
+R88 à R101 sont faites (après c585b960, jusqu'à 2c0a6d57 ; constats de la neuvième relecture : 7e3e39b3).
+
+Quatre relectures du diff c585b960...2c0a6d57 (`/code-review medium` CR9-*, audit de sécurité C9-*, axe Standards
+St9-*, axe Spec Sp9-*) : aucun critique ni haut, un moyen (St9-6, lisibilité). Constats complets et décisions :
+`tasks/relectures-748/relecture-9-constats.md` (la source de vérité). Tous sont traités ici par R102 à R111, avant les
+tâches 11 et 12 : corrigés, ou écartés par l'auteur (« Sans suite », repris ci-dessous). Les points de contrôle au
+navigateur et le corps de PR de la série sont ajoutés aux tâches 11 et 12 dans le commit de ce plan. Les sections
+passées restent l'archive de leur moment ; la contrainte de mutation de la huitième série est rectifiée ici (Sp9-7,
+« Contraintes propres aux tâches R102 à R111 »).
+
+### Décisions de l'auteur (2026-10-31)
+
+1. **CR9-1 / Sp9-9 : lier l'avis au chargement.** L'avis « enregistrement précédent » vaut pour **toutes** les lectures
+   du chargement de la page d'arrivée et retombe à `'none'` dès que ce chargement se termine, réussi ou refusé ; toute
+   lecture refusée ensuite rend `common.accessRefused`. Amende la décision 4 de la huitième série. R102 (la façon de
+   signaler la fin du chargement est la question Q1 ci-dessous ; le plan suit sa recommandation).
+2. **CR9-9 : remettre la condition.** `if (isProposalShown)` rétabli dans le `watch` de `settings`
+   d'`AdminAboutSettingsForm`, avec un test qui l'observe (enregistrer la source pendant une proposition vers l'autre
+   langue garde l'avis de la cible). R103 (Q2 ci-dessous : ce que le test peut observer).
+3. **CR9-8 / C9-6 : échouer tôt.** `AUDIT_BASIC_AUTH` défini mais vide → sortie 2 « secret de Basic Auth vide » avant
+   tout appel, cas ajouté à `audit-prod.test.sh` ; variable non définie (prod) inchangée. R106.
+4. **Sans suite** : St9-17 (emplacement de `useEntryFormLock.ts`), Sp9-8 (champ `heading`), C9-8 (angle mort de
+   `getNativeType()`, pas même écrit), St9-11 (`describedBy` et voisins restent où ils sont).
+5. **Toujours valables** : C5-1, C5-2, C7, CR6-6, CR7-2, la limite de R94 ; critère d'arrêt **tout jusqu'à zéro** : tous
+   les autres constats se corrigent sans décision.
+
+### Vérification de chaque constat dans le code (HEAD 7e3e39b3)
+
+- **CR9-1 ≈ Sp9-9, confirmé.** `backofficeAccessRefusal.ts:113` : une lecture comptée fait `'atMount'` → `'keptByARead'`
+  → `'none'`, rien d'autre ne fait avancer l'état ; aucune notion de fin de chargement n'existe dans le module. Les
+  chargements partent tous dans le `setup` de la page : chaque composable appelle `void load()` en fin de `setup`
+  (`useAdminCaseStudies.ts:86`, `useAdminQualityPrinciples.ts:82`…, treize composables, tous par `useAdminLoad`), et
+  `AdminAboutSettingsForm.vue:100-106` par un `watch(…, { immediate: true })`. `AccessRefusedNotice` est rendue par
+  `AdminLayout.vue:164`, avant `<RouterView />` (l. 166) : son `onMounted`, qui appelle
+  `settleBackofficeAccessRefusalsOnMount` (l. 90-93), part après le `setup` de toute la page — **les lectures du
+  chargement sont en vol au moment du règlement**. `BackofficeHttpClient` appelle `refused()` **avant** de lever
+  `AccessForbiddenError` (docblock de `refused`, `BackofficeSessionReaction.ts:54-60`) : le refus d'une lecture est
+  compté avant que le `finally` de son `load()` ne s'exécute.
+- **CR9-9, confirmé ; l'effet n'est pas visible dans le DOM.** `AdminAboutSettingsForm.vue:89-92` vide `proposal` à
+  toute arrivée de réglages. Avec la condition, une proposition vers l'EN survit à l'arrivée et à l'enregistrement des
+  réglages FR, mais le retour sur l'EN relit l'EN (`watch` de `props.locale`, l. 100) et la retire de toute façon ;
+  l'avis n'est rendu que sous sa cible (`v-if="proposal && isProposalShown"`, l. 233). C'est le mutant équivalent de
+  St8-14 : le test de la décision 2 lit l'état du composant (R103, Q2).
+- **CR9-8 = C9-6, confirmé.** `audit-prod.sh:55-64` : `[[ -v AUDIT_BASIC_AUTH ]]` vrai pour une valeur vide, la
+  bibliothèque ne crée rien, `CURL_OPTS` reste sans `-K` et l'audit court ; `audit-prod.test.sh:155-164` pince
+  aujourd'hui ce comportement (« l'audit court », sortie 1) — changement exprès.
+- **St9-16, confirmé.** `audit-prod.sh:62` range `-K` dans `CURL_OPTS` ; l'audit n'appelle jamais `smoke_fetch`, écrit
+  le fichier une fois, avant tout appel, et ne le réécrit pas : aucun `-K` périmé n'y est possible (la forme écartée
+  par St8-12 visait un second `smoke_write_auth_config`). Le commentaire Basic Auth est recopié dans
+  `smoke-dead-session-cookie.sh:76-79`, `smoke-login-throttling.sh:61-64`, `smoke-mcp.sh:90-93`.
+- **C9-4, C9-5, confirmés.** `smoke_fetch` (`smoke-http.sh:200-205`) passe `-K` sans vérifier le fichier ; les trois
+  appelants font `|| exit 1` (`smoke-login-throttling.sh:84`, `smoke-dead-session-cookie.sh:104`, `smoke-mcp.sh:102`).
+  `smoke_write_auth_config` (l. 113) accepte `SMOKE_AUTH_DIR` et `SMOKE_AUTH_CONFIG`, que son `smoke_cleanup` de tête
+  vide avant la lecture : retour 0, aucune Basic Auth.
+- **St9-18, confirmé.** `deploiement-nginx.md:117-119`, une phrase de plus de 900 caractères, trois niveaux de
+  parenthèses et de tirets.
+- **C9-1, confirmé.** `ApiRouteExposureTest.php:152-155` ; `AuthenticationFlowTest.php:83-85` vérifie le 403 d'un
+  logout sans en-tête, pas l'absence de `Set-Cookie` ; aucun texte ne dit que ce 403 est la barrière contre la
+  déconnexion forcée.
+- **CR9-5 = Sp9-11, confirmé.** `ApiRouteExposureTest.php:191` (invariant n° 10) **et** `allApiRoutePaths()` (l. 773) :
+  `str_starts_with($path, '/api')`.
+- **C9-7, Sp9-10, St9-5, confirmés.** Docblock de l'invariant n° 10 (l. 177-183) ; `security-authentication.md:32-34`
+  (la phrase de R89 entre « Its `EXCLUDED_PATHS` … » et « Two since #647 ») ; `ApiRouteExposureTest.php:325-326`
+  (« cette prémisse » sans antécédent) ; `PublicRouteIgnoresRefusedSessionListener.php:27-28` (incise ouverte par un
+  tiret, jamais fermée, sans verbe).
+- **St9-6, CR9-4 = St9-7, Sp9-6, confirmés.** `ApiPlatformOperationsCarryNoSecurityTest.php:79-166` (file, DTO, objets
+  imbriqués, six assertions) ; `appClassesIn()` (l. 319-341) ne suit ni `GenericType::getVariableTypes()` ni
+  `CollectionType::getCollectionKeyType()` ; l. 158 : 143 caractères.
+- **CR9-2 = St9-2 = C9-3, CR9-3 = St9-4, St9-3, confirmés.** `AuthorizationLivesInAccessControlTest.php:92`
+  (`->name`) contre `:291` (`->value`) ; `AuthorizationSiteKind.php:13-14` (« Les valeurs sont les libellés lus dans les
+  messages d'échec et dans les exemptions ») ; les cas `Refusal` et `DecisionManager` (l. 30-34) disent moins que ce
+  que le docblock d'`AuthorizationSites` leur délègue ; `EXEMPTIONS` (l. 62-80) en tuples `[nature, nombre]` et
+  `[raison, …]`, `countByKind($this->expand($expected))` (l. 232).
+- **CR9-7 = Sp9-1, CR9-6, St9-14 (+ Sp9-12), confirmés.** `sourceText.ts:155-158` : une expression n'est retenue que si
+  `undefined !== node.ast` ; l'`exp` d'un `v-for` (lue en mode `Skip`, `ast` absent) et son `forParseResult` ne sont
+  jamais lus ; `'object' === typeof node.content` est vrai pour `null` ; `TemplateNode` (l. 128-136, « Vrai pour une
+  expression simple ») est écrit à la main et l'arbre lui est converti par `as unknown as` (l. 168) ;
+  `stringLiterals` (l. 70-73) dit « gabarits sans `${` » puis le contraire ; « Reste vrai : … n'a plus de limite écrite »
+  (l. 21-22) est un reste d'historique. `vue/compiler-sfc` ne réexporte pas les types de nœuds de `@vue/compiler-core`
+  (seulement `BindingMetadata`, `CompilerError`… : `compiler-sfc.d.ts:4`) ; `SFCTemplateBlock['ast']` est typé `RootNode`.
+- **St9-12, CR9-10 = St9-13, C9-9, St9-15, confirmés.** `noOmittedCredentials.spec.ts:30-49` (`sources` et `literalsOf`
+  recomposent la même lecture ; le vrai test lit `literals.includes('omit')`, pas `offendsWithOmit`) ;
+  `sessionStateEncapsulation.spec.ts:227-228` (`const sources = SRC_SCRIPTS`, `const file = path`) ; **C9-9 : la
+  ligne `expect(source).not.toBe('')` existe déjà** (`sessionStateEncapsulation.spec.ts:295`) : ce qui reste est le
+  repli `?? ''` (l. 291), qui transforme un fichier absent en assertion au lieu d'une erreur qui le nomme — R110 le
+  retire. « Depuis R51 », « Depuis R96 » (`noOmittedCredentials.spec.ts:16`, `:21`), « celle qui était là »
+  (`AdminAboutSettingsForm.vue:91`).
+- **C9-2, St9-8 = Sp9-2 = Sp9-3, St9-9, St9-10, confirmés.** `handleTranslate` (`AdminCaseStudiesPage.vue:256` et les
+  six autres fichiers) ne lit pas le verrou ; `entryFormLock.ts:11` (`LOCKED_BY_PROPOSAL_TEXT` : « langue, bouton de
+  traduction et catégorie », sans « Version de ») et `:94` (« les quatre cas ») ; « quatre cas » dans les six specs de
+  formulaires ; `EntryFormLockHint.vue:6-13` (le sélecteur de langue seul ; « « Annuler » la retire ») ; identifiants
+  `admin-…-locale-locked-help` (sept fichiers) et clés `admin.localeLockedEditing` / `admin.lockedByProposal`, alors
+  que le texte dit l'état du verrou du formulaire ; `hasProposal: () => null !== proposalSourceLocale.value` répété
+  (`AdminCaseStudiesPage.vue:102`…) ; un `translateButton` local dans six specs (`AdminCaseStudiesPage.spec.ts:152`…),
+  à côté de `translateEntryButton` (`tests/support/entryFormLock.ts`).
+- **Sp9-4, Sp9-5, Sp9-6 (front), confirmés.** `BackofficeSessionReaction.ts:53-60` (docblock de `refused`, sans la
+  phrase de renvoi du choix 12 de R100) ; `AccessRefusedNotice.spec.ts` (second texte lu par `toContain`) ;
+  `backofficeAccessRefusal.ts:140` et `:143` au-delà de 140 caractères.
+- **Sp9-7, confirmé.** Le plan, contraintes de la huitième série (« Une mutation s'écrit en place, avec l'outil Edit »),
+  contredit `brief-commun-agents.md:54-57` (Python seul). Rectifié dans les contraintes ci-dessous ; le brief, lui,
+  est juste.
+
+### Options comparées
+
+**Décision 1 — qui dit la fin du chargement de la page d'arrivée** (Q1, rendue à l'auteur ; le plan suit (A)) :
+
+| Option | Pour | Contre |
+|---|---|---|
+| (A) **`useAdminLoad` déclare chacun de ses `load()` au module** (`beginBackofficeLoad()` au départ, la fonction rendue dans le `finally`) ; le chargement de la page d'arrivée est l'ensemble des `load()` en vol au règlement, et il se termine quand ce nombre retombe à zéro — **recommandée** | un seul endroit, les treize composables couverts sans toucher une page ; l'ordre est sûr (le refus est compté avant le `finally`, le règlement suit le `setup` de la page) ; une page à plusieurs listes (À propos, Qualité) est un seul chargement ; le module reste au même étage (`application/admin/shared`) | un état de plus dans le module (un compteur, remis à zéro à chaque effacement) ; un `load()` lancé pendant le chargement (« Réessayer » sur une autre liste, la relecture qui suit un enregistrement) le prolonge — accepté, écrit dans le docblock |
+| (B) `BackofficeHttpClient` compte les **lectures** en vol par la réaction (`stampAtSend('read')`, plus une méthode `settled(sentAt)` à ajouter à `BackofficeSessionReaction`) | au plus près du réseau ; voit une lecture qui ne passerait pas par `useAdminLoad` | l'interface du domaine change (trois couches) ; une lecture n'est pas un chargement (un chargement à deux lectures successives retomberait à zéro entre elles) ; aucune lecture de `src/` ne contourne `useAdminLoad` aujourd'hui |
+| (C) chaque page dit la fin de son chargement (`await` de ses `load()`, puis un `endLandingLoad()`) | la sémantique exacte « le chargement de la page » | douze pages à câbler ; une page qui l'oublie garde l'avis ouvert jusqu'à la navigation suivante — il faudrait une garde de source de plus |
+| (D) une fenêtre de temps ou un tick après le montage | rien à câbler | non déterministe, faux sur un réseau lent |
+
+**Décision 1 — le texte affiché à la fin du chargement.** Lue au pied de la lettre (`earlierSave` à `'none'` à la fin
+du chargement), la décision ferait basculer le texte de l'alerte déjà affichée vers `common.accessRefused` **sans
+nouveau refus** (le texte est un `computed` de l'état) : l'alerte dirait « accès refusé » d'un enregistrement qu'elle
+annonçait l'instant d'avant, sans réannonce (la `key` est le compteur). Le plan distingue donc la **fenêtre** (fermée
+à la fin du chargement) du **texte** (gardé jusqu'au refus suivant, qui ramène `common.accessRefused`). Q1 (b)
+demande à l'auteur de le confirmer.
+
+**CR9-7 — comment lire une expression de gabarit.** (A) **chaque expression rendue comme un fragment JavaScript que
+TypeScript lit comme Vue l'entend** (un gestionnaire `v-on` en corps de fonction, un paramètre de `v-slot` ou un alias
+de `v-for` en paramètre de fonction, le reste entre parenthèses), une garde vérifiant qu'aucun fragment de `src/` n'a
+d'erreur de syntaxe — **retenue** : un littéral objet n'est plus un bloc étiqueté, un `v-slot` déstructuré n'est plus
+lu par chance, et la garde rougit le jour où une forme nouvelle n'est pas un fragment valide. (B) Garder le texte brut :
+rien à écrire, mais « par chance » reste vrai.
+
+**St9-14 — le type des nœuds du gabarit.** (A) Déclarer `@vue/compiler-core` en `devDependencies` et importer ses types
+et `NodeTypes` : typé de bout en bout, mais un second paquet à garder au pas de `vue` (une version divergente
+dupliquerait le compilateur dans l'arbre). (B) **Dériver la racine de `vue/compiler-sfc`
+(`NonNullable<SFCTemplateBlock['ast']>`) et ses enfants de ce type, rétrécis par propriété (`'props' in node`,
+`'exp' in prop`)** — **retenue** : aucun paquet de plus, aucun `as unknown as`, aucun nombre magique.
+
+**St9-3 — la forme d'une exemption.** (A) **`array{reason: string, sites: list<AuthorizationSiteKind>}`, chaque site
+couvert écrit une fois** (`[Refusal, Refusal]`) — **retenue** : ni tuple lu par position, ni `expand()` ; un site de
+plus ou de moins se lit dans la liste. (B) un objet `AuthorizationExemption` : impossible dans une constante de classe
+(pas de `new` dans une constante), il faudrait une méthode statique.
+
+### Choix de conception tranchés
+
+1. **Décision 1, option (A) (R102).** `backofficeAccessRefusal.ts` :
+   `type EarlierSave = 'none' | 'landing' | 'landed'` (remplace `'atMount' | 'keptByARead'`) — `'landing'` : le montage a
+   réglé une écriture refusée du compte courant **et** le chargement de la page d'arrivée est en vol ; `'landed'` : le
+   chargement est terminé (réussi ou refusé), le texte reste celui de l'avis jusqu'au refus suivant ; `'none'` : le
+   texte courant. Un compteur de module `let loadsInFlight = 0` (pas de `ref` : rien ne l'affiche).
+   `export function beginBackofficeLoad(): () => void` — incrémente `loadsInFlight`, relève le périmètre courant et rend
+   la fin, **idempotente** et **sans effet si le périmètre a changé depuis** ; la fin qui ramène `loadsInFlight` à 0
+   passe `'landing'` à `'landed'` (par `transition`, compteur de refus inchangé : aucune réannonce).
+   Transitions : `settle…(compte)` — une écriture comptée de ce compte → `earlierSave` = `loadsInFlight > 0 ? 'landing'
+   : 'landed'`, sinon `NO_REFUSAL` ; une lecture comptée — `'landing'` reste `'landing'`, `'landed'` → `'none'`,
+   `'none'` reste `'none'` ; une écriture comptée → `'none'` (inchangé) ; `clearBackofficeAccessRefusal()` et
+   `resetBackofficeAccessRefusalForTests()` remettent aussi `loadsInFlight` à 0. `earlierSaveRefused` reste
+   `'none' !== earlierSave`. `useAdminLoad.load()` : `const endLoad = beginBackofficeLoad()` en première ligne,
+   `endLoad()` en tête du `finally` (après le `catch` : le refus est déjà compté), pour toute réponse, périmée comprise.
+2. **Décision 2 (R103).** `if (isProposalShown.value) { proposal.value = null }` dans le `watch` de `settings` ; le
+   commentaire dit, au présent, que des réglages arrivés pour une autre langue que la cible laissent la proposition
+   (retirée au retour sur la cible, qui relit) ; le test lit `proposal` par `wrapper.findComponent(AdminAboutSettingsForm).vm`
+   (Q2).
+3. **C9-2 (R104).** `if (lock.isProposalLocked) { return }` en tête de chaque `handleTranslate` des huit formulaires
+   (`principleLock` / `traitLock` dans `AdminQualityPage.vue`), avec le commentaire du motif de
+   `useAdminAboutSettings.save` (« le refus vient d'ici, pas seulement du bouton désactivé »).
+4. **St9-9, St9-10 (R105).** Identifiants de texte `admin-<contenu>-entry-lock-help` (remplacent
+   `admin-<contenu>-locale-locked-help`) ; clés `admin.entryLock.editing` et `admin.entryLock.proposal` (remplacent
+   `admin.localeLockedEditing` et `admin.lockedByProposal`, textes FR et EN inchangés) : nommées par l'état du verrou,
+   comme `EntryFormLockState`. `useEntryFormLock(options: { readonly hintId: string; readonly isEditing:
+   MaybeRefOrGetter<boolean>; readonly proposalSource: MaybeRefOrGetter<Locale | null>; readonly localeHelpId?: string })`
+   (`toValue`, `vue`) : chaque formulaire passe ses refs (`isEditing`, `proposalSourceLocale`).
+5. **CR9-8, C9-6, St9-16, C9-4, C9-5 (R106).** `audit-prod.sh` : après `smoke_write_auth_config AUDIT_BASIC_AUTH || exit 2`,
+   un `SMOKE_AUTH_CONFIG` vide → « AUDIT_BASIC_AUTH : secret de Basic Auth vide, rien de vérifié » sur stderr, sortie 2 —
+   jugé sur le chemin, jamais sur la valeur (`set -x` n'imprime rien d'elle) ; puis `CURL_OPTS+=(-K "$SMOKE_AUTH_CONFIG")`
+   sans condition, la raison de St9-16 écrite à côté (fichier écrit une fois avant tout appel, jamais réécrit,
+   `smoke_fetch` non utilisé par l'audit). `smoke_write_auth_config` refuse aussi tout nom commençant par
+   `SMOKE_AUTH_` (les variables que son `smoke_cleanup` de tête remet à vide), retour 2, « nom de variable invalide ».
+   `smoke_fetch` : `SMOKE_AUTH_CONFIG` posé mais fichier absent → « <libellé> : fichier de la Basic Auth absent — rien
+   de vérifié », retour 2, curl non appelé ; les trois appelants `|| exit "$?"`.
+6. **C9-1 (R107).** La raison de `/api/logout` dans `RULELESS_OUTSIDE_PUBLIC_PATHS` dit que le double-submit l'y garde
+   de la déconnexion forcée, et le nomme jamais exclu ; témoin `AuthenticationFlowTest::testAForcedLogoutWithoutTheCsrfHeaderExpiresNoCookie`.
+   `private static function isApiPath(string $path): bool` (`'/api' === $path || str_starts_with($path, '/api/')`),
+   seule lecture de « relève de `/api` » dans `ApiRouteExposureTest`.
+7. **St9-6 (R108).** `testNoOperationCarriesASecurityExpression` appelle
+   `collectClassesToRead(ResourceNameCollectionFactoryInterface $names, ResourceMetadataCollectionFactoryInterface $metadata, array &$found): array{classes: array<class-string, true>, dtoClasses: array<class-string, true>, operations: int, links: int}`
+   puis
+   `readProperties(array $classes, PropertyNameCollectionFactoryInterface $propertyNames, PropertyMetadataFactoryInterface $propertyMetadata, array &$found): array{properties: int, nestedClasses: array<class-string, true>}`,
+   et garde les six assertions ; formes à clés nommées, jamais un tuple.
+8. **CR9-2, CR9-3, St9-3 (R109).** `AuthorizationSiteKind` devient une énumération **pure** (sans `: string` ni valeurs) :
+   les messages d'échec et le décompte des exemptions nomment le cas (`->name`), un seul vocabulaire. Ses `case`
+   portent ce que le docblock d'`AuthorizationSites` leur délègue (texte au Step 2 de R109). `EXEMPTIONS` : option (A)
+   ci-dessus ; `countByKind(list<AuthorizationSiteKind>): array<string, int>` (par `->name`, trié) ; `expand()` retiré.
+9. **CR9-7, CR9-6, St9-14 (R110).** Option (A) de CR9-7, option (B) de St9-14 ; `export function
+   expressionsOfTemplate(root: TemplateRoot): string[]` (`type TemplateRoot = NonNullable<SFCTemplateBlock['ast']>`,
+   exporté), appelée par `templateExpressionsOf` ; fragments : directive `on` avec expression → `` `() => {\n${exp}\n}` `` ;
+   directive `slot` avec expression → `` `(${exp}) => 0` `` ; directive `for` → `` `(${source})` `` puis, pour chacun de
+   `value`, `key`, `index` présents, `` `(${alias}) => 0` `` (lus dans `forParseResult`) ; toute autre expression de
+   directive, argument dynamique non statique, interpolation → `` `(${exp})` `` ; un `content` `null` ou absent n'est
+   jamais visité.
+
+**Questions à l'auteur** (le plan suit la recommandation ; une autre réponse ne change que la tâche citée) :
+
+- **Q1 (R102)** : (a) **qui dit la fin du chargement** — options (A) à (D) ci-dessus ; **recommandé : (A)**,
+  `useAdminLoad` déclare ses chargements (un endroit, aucune page à câbler, ordre sûr). (B) changerait l'interface
+  `BackofficeSessionReaction` et `BackofficeHttpClient` ; (C) les douze pages et une garde de source de plus.
+  (b) **le texte à la fin du chargement** : **recommandé : il reste celui de l'avis jusqu'au refus suivant**, qui ramène
+  `common.accessRefused` (sinon le texte d'une alerte déjà affichée change sans refus ni réannonce). La lecture
+  littérale (texte rendu à `common.accessRefused` dès la fin du chargement) ne change que le Step 1 et la transition
+  de fin de R102.
+- **Q2 (R103)** : l'effet de la condition rétablie **ne se voit pas dans le DOM** (le retour sur la langue cible la relit
+  et retire la proposition, l'avis n'est rendu que sous elle : St8-14, mutant équivalent). Le test de la décision 2 lit
+  donc l'état du composant (`proposal`, par `wrapper.vm`, que Vue Test Utils rend pour un `<script setup>`).
+  **Recommandé : l'accepter** (la décision le demande, et c'est la seule observation possible). Autre option : garder
+  la condition sans test, en écrivant pourquoi dans le commentaire du `watch`.
+
+### Review Focus (neuvième relecture)
+
+1. **Une page à deux listes (Qualité, À propos) dont les deux lectures du chargement sont refusées, après un
+   enregistrement refusé pendant l'absence** : l'avis « enregistrement précédent » est dit aux deux annonces. Test : R102.
+2. **Le chargement réussi, puis « Réessayer » ou une relecture refusée** (rôle perdu) : `common.accessRefused`. Test : R102.
+3. **`AUDIT_BASIC_AUTH=''` (secret de préprod manquant)** : sortie 2, « secret de Basic Auth vide », aucun appel,
+   aucun dossier ; sous `bash -x`, rien de la valeur. Non définie : l'audit de prod inchangé. Test : R106.
+4. **Une proposition vers l'EN, passage au FR, enregistrement du FR** : la proposition de l'EN reste. Test : R103.
+5. **Un `translate` émis pendant une proposition** (le bouton désactivé n'est pas la seule garde) : aucune requête de
+   traduction, le formulaire garde la proposition. Test : R104.
+
+### Contraintes propres aux tâches R102 à R111
+
+- Les **Global Constraints** et toutes les contraintes des séries précédentes valent. Exécution : **un agent par tâche,
+  successifs dans l'ordre R102 → R111**, qui lit d'abord `tasks/relectures-748/brief-commun-agents.md`. **Pour R102 et
+  suivantes, la section à lire en entier jusqu'à la première tâche est celle-ci** (« Corrections de la neuvième
+  relecture ») et le fichier de constats `tasks/relectures-748/relecture-9-constats.md` : le brief nomme encore la
+  huitième série, le fil principal le met à jour avant de lancer R102.
+  `superpowers:test-driven-development` : test écrit d'abord, **vu rouge pour la bonne raison** ; un test de couverture
+  vert d'emblée est vu rouge par la mutation que sa tâche nomme, **restaurée depuis une copie du fichier faite avant la
+  mutation et vérifiée par `cmp`** (`cp f "$scratch/f.orig"`, muter, mesurer, `cp "$scratch/f.orig" f`,
+  `cmp f "$scratch/f.orig"`) puis `git diff` vide sur le fichier muté. **Une mutation s'écrit en place par Python
+  seulement** (`python3 -I` ; `open(p, 'r+')` ou `open(p, 'w')` sur le même chemin, qui garde l'inode), **jamais par
+  l'outil Edit, `sed -i` ni `perl -pi`** : tous trois remplacent le fichier par un nouvel inode, que le montage du
+  conteneur peut ne pas voir — la mutation ne serait pas mesurée (R99). *Ceci rectifie la contrainte de la huitième
+  série, qui prescrivait l'outil Edit (Sp9-7) ; le brief commun dit déjà juste.* Après une écriture du code par Edit ou
+  Write (pas une mutation), `docker compose restart frontend` (ou `backend`) avant de croire un test, en cas de doute.
+  Refactoring pur : la suite existante comme filet, nombre de tests noté avant et après.
+  **`superpowers:verification-before-completion` invoquée réellement** avant le rendu.
+- **Git : seuls `git add <fichiers>` et `git commit`** (et `git mv` / `git rm` pour un déplacement ou une
+  suppression). Ni `reset` (pas même sans argument), ni `add -N`, ni `checkout`, ni `checkout-index`, ni `switch`, ni
+  `restore`, ni `stash`. **Un commit par tâche**, fichiers nommés, message en français terminé par les lignes
+  d'attribution que donne le brief.
+- **Une docstring ou une règle qui décrit un comportement modifié se corrige dans le même commit** ; une phrase de règle
+  se **remplace**, elle ne s'ajoute pas à côté ; un commentaire s'écrit **au présent** (St9-15 : ni « depuis R… », ni
+  « celle qui était là » — l'historique vit dans le plan et dans `git log`).
+- **Aucun travail en arrière-plan au rendu** ; **chaque code de sortie se lit sans pipe** (`make front-test; echo
+  "exit=$?"`, de même `front-lint`, `front-build`, `back-test`, `back-quality`, chaque test hors ligne et
+  `tools/check-claude-rules.sh`).
+- Frontend (R102 à R105, R110) : lire avec `Read` `.claude/rules/frontend.md`, `.claude/rules/frontend-a11y.md` et la
+  règle de la zone (`frontend-session-refus.md`, `frontend-backoffice.md`, `frontend-session.md`) ; test ciblé
+  `docker compose exec -T frontend npm test -- <chemins>`, puis `make front-test`, `make front-lint`, `make front-build` ;
+  toute chaîne nouvelle ou clé renommée en FR et EN ; lignes touchées ≤ 140 caractères (mesurées par `python3 -I`).
+- Backend (R107 à R109) : lire avec `Read` un fichier de `backend/tests/Security/` et `.claude/rules/backoffice-api.md`
+  avant d'écrire ; test ciblé `docker compose exec -u dev backend php bin/phpunit <chemin>`, puis `make back-test` et
+  `make back-quality` ; `rm -rf var/cache/test` après chaque mutation de configuration ou de service ;
+  `make back-style-fix` après un import ajouté ; lignes touchées ≤ 140 caractères ; jamais de secret littéral.
+- Outillage (R106) : lire avec `Read` les scripts touchés et `.claude/rules/deploiement-nginx.md` ;
+  `bash tools/tests/<script>.test.sh; echo "exit=$?"` pour chaque script touché ; shellcheck dans l'image épinglée du job
+  `tools-tests` : `docker run --rm --entrypoint shellcheck -v "$PWD":/repo:ro -w /repo
+  rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 -x --severity=warning
+  <fichiers>` (si l'image n'expose pas `shellcheck`, le noter et lancer celui de l'hôte, en le disant). Une valeur de
+  test ne contient jamais le mot « secret » (un message attendu, si).
+- Règles : `tools/check-claude-rules.sh` après chaque modification ; 50 000 octets par règle, taille de chaque règle
+  touchée notée au rendu. Tailles au départ (HEAD 7e3e39b3) : `backoffice-api.md` **39 834** (aucune tâche n'y touche),
+  `security-user.md` 47 914 (non touchée), `frontend-backoffice.md` 28 662, `frontend-session-refus.md` 13 575,
+  `frontend-session.md` 15 682, `security-authentication.md` 9 347, `security-authentication-sessions.md` 22 487,
+  `deploiement-nginx.md` 28 687.
+- Ne jamais lire `.env.local`, `.env.test.local`, `config/jwt/*` ni un fichier de secrets (les exclure de tout
+  `grep -r`) ; ne jamais nommer un compte réel. Pas de push, pas de PR.
+
+### Fichiers (tâches R102 à R111)
+
+| Fichier | Responsabilité | Tâches |
+|---|---|---|
+| `frontend/src/application/admin/shared/backofficeAccessRefusal.ts`, `frontend/src/application/admin/shared/useAdminLoad.ts`, `frontend/src/presentation/ui/admin/AccessRefusedNotice.vue` (docblock), `frontend/src/domain/admin/shared/BackofficeSessionReaction.ts` (docblock de `refused`) ; specs `backofficeAccessRefusal.spec.ts`, `useAdminLoad.spec.ts`, `AccessRefusedNotice.spec.ts` | l'avis lié au chargement | R102 |
+| `frontend/src/presentation/pages/admin/AdminAboutSettingsForm.vue`, `frontend/tests/presentation/pages/admin/AdminAboutPage.spec.ts` | la condition du `watch` | R103 |
+| les sept fichiers de formulaires par entrée, `frontend/tests/support/entryFormLock.ts`, les six specs de formulaires | `handleTranslate` se refuse lui-même | R104 |
+| `frontend/src/presentation/ui/admin/useEntryFormLock.ts`, `EntryFormLockHint.vue`, les sept fichiers de formulaires, `frontend/src/infrastructure/i18n/locales/{fr,en}.json`, `frontend/tests/support/entryFormLock.ts`, `frontend/tests/presentation/ui/admin/useEntryFormLock.spec.ts`, les six specs | noms, interface, textes du verrou | R105 |
+| `tools/lib/smoke-http.sh`, `tools/{audit-prod,smoke-dead-session-cookie,smoke-login-throttling,smoke-mcp}.sh`, `tools/tests/{smoke-http,audit-prod}.test.sh` | Basic Auth vide, fichier absent, noms refusés | R106 |
+| `backend/tests/Security/ApiRouteExposureTest.php`, `backend/tests/Security/Authentication/AuthenticationFlowTest.php`, `backend/src/Security/Authentication/Infrastructure/Security/PublicRouteIgnoresRefusedSessionListener.php` | `/api/logout`, « relève de `/api` », prémisse | R107 |
+| `backend/tests/Security/ApiPlatformOperationsCarryNoSecurityTest.php` | extraction, génériques | R108 |
+| `backend/tests/Support/AuthorizationSiteKind.php`, `backend/tests/Security/AuthorizationLivesInAccessControlTest.php` | un vocabulaire, exemptions | R109 |
+| `frontend/tests/support/sourceText.ts`, `sourceText.spec.ts`, `frontend/tests/infrastructure/http/noOmittedCredentials.spec.ts`, `frontend/tests/application/auth/sessionStateEncapsulation.spec.ts` | lecteur de gabarit, gardes | R110 |
+| `.claude/rules/*` | dans le commit du comportement | R102 à R110 ; balayage R111 |
+
+---
+
+### Task R102 : Le refus du backoffice — l'avis de l'enregistrement précédent vaut pour tout le chargement de la page d'arrivée (décision 1 : CR9-1 ≈ Sp9-9 ; Sp9-4, Sp9-5, Sp9-6 pour le frontend)
+
+**Files :**
+- Modify : `frontend/src/application/admin/shared/backofficeAccessRefusal.ts`, `frontend/src/application/admin/shared/useAdminLoad.ts`, `frontend/src/presentation/ui/admin/AccessRefusedNotice.vue` (docblock et commentaire de l'`onMounted`), `frontend/src/domain/admin/shared/BackofficeSessionReaction.ts` (docblock de `refused`, Sp9-4)
+- Test : `frontend/tests/application/admin/shared/backofficeAccessRefusal.spec.ts`, `frontend/tests/application/admin/shared/useAdminLoad.spec.ts`, `frontend/tests/presentation/ui/admin/AccessRefusedNotice.spec.ts`
+- Modify (règle) : `.claude/rules/frontend-session-refus.md` (l. 83-85 et la puce « Tests », l. 116)
+
+**Interfaces :**
+- Produces : `export function beginBackofficeLoad(): () => void` (choix tranché 1) ; `EarlierSave` `'none' | 'landing' |
+  'landed'` ; `earlierSaveRefused` inchangé (booléen). Consumes : rien d'une autre tâche.
+- Docblocks du module, de `RefusalState`, de `markBackofficeAccessRefused`, de `settle…`, d'`useAdminLoad` (une ligne :
+  chaque `load()` se déclare au refus du backoffice, pour borner l'avis au chargement de la page d'arrivée) et
+  d'`AccessRefusedNotice` (puce du montage) : la règle de la décision 1, au présent, dont la limite écrite « un `load()`
+  lancé pendant le chargement le prolonge ».
+- Sp9-4 : le docblock de `refused` se termine par la phrase de renvoi identique du choix 12 de R100 : « La règle de
+  l'identité du compte et ses limites sont écrites une fois, dans `.claude/rules/frontend-session-refus.md`
+  (sous-puce « the account »). »
+
+- [ ] **Step 1 : tests, rouges** — `backofficeAccessRefusal.spec.ts` (une écriture refusée du compte `alice` comptée
+  hors alerte, puis les chargements, puis `settle…('alice')`) :
+  - `it("pendant le chargement de la page d'arrivée, chaque lecture refusée garde l'avis (Sp9-9)")` : deux
+    `beginBackofficeLoad()`, `settle`, deux lectures refusées → `earlierSaveRefused` vrai après chacune (expected
+    aujourd'hui : faux après la seconde) ;
+  - `it("le chargement terminé, la lecture refusée suivante ramène le texte courant (CR9-1)")` : un chargement, `settle`,
+    sa fin → `earlierSaveRefused` **encore vrai** (le texte ne change pas sans refus, Q1 b) ; une lecture refusée →
+    faux (expected aujourd'hui : vrai) ;
+  - `it("un chargement refusé avant le montage est terminé au règlement : la lecture refusée suivante ramène le texte courant")` :
+    un chargement, sa lecture refusée et sa fin **avant** `settle` → avis dit ; une lecture refusée → faux ;
+  - `it("la fin d'un chargement d'un périmètre effacé ne ferme pas le chargement suivant")` ;
+  - `it("un chargement lancé après la fin du chargement de la page d'arrivée ne rouvre pas l'avis")` ;
+  - `it("la fin d'un chargement est idempotente")` (deux chargements, la fin du premier appelée deux fois : l'avis tient
+    une lecture refusée de plus) ;
+  - les tests qui nomment `'keptByARead'` ou « la première lecture » changent exprès.
+  `useAdminLoad.spec.ts` : `it("chaque load() se déclare au refus du backoffice et dit sa fin, réussie, refusée ou périmée")`
+  (une lecture différée : avant sa réponse l'avis tient une lecture refusée, après il ne la tient plus).
+  `AccessRefusedNotice.spec.ts` (Review Focus 1 et 2) : `it("l'avis tient toutes les lectures du chargement, et part au refus qui le suit")`
+  — deux lectures refusées du chargement : le texte FR exact de `common.earlierSaveRefused` aux deux annonces (le
+  `<span>` réannoncé) ; puis le chargement fini, une lecture refusée : le texte FR exact de `common.accessRefused`.
+  **Sp9-5** : chaque texte attendu de ce spec est comparé par `toBe` au texte FR exact, jamais par `toContain`.
+  Run : `docker compose exec -T frontend npm test -- tests/application/admin/shared/backofficeAccessRefusal.spec.ts tests/application/admin/shared/useAdminLoad.spec.ts tests/presentation/ui/admin/AccessRefusedNotice.spec.ts`.
+  Expected : FAIL, `beginBackofficeLoad` introuvable ; puis, une fois exportée vide, les cas Sp9-9 et CR9-1 sur leurs
+  valeurs attendues.
+- [ ] **Step 2 : implémenter** selon le choix tranché 1 ; chaque transition par `transition()` ; lignes du module
+  ≤ 140 caractères (Sp9-6 : l. 140 et 143 d'aujourd'hui).
+- [ ] **Step 3 : rouge vu par mutation** (Python, copie vérifiée par `cmp`) : dans `useAdminLoad.ts`, `endLoad()` déplacé
+  du `finally` au seul chemin de réussite → le cas « refusé » de `useAdminLoad.spec.ts` et le cas Sp9-9
+  d'`AccessRefusedNotice.spec.ts` rougissent ; restauré.
+- [ ] **Step 4 : règle** — `frontend-session-refus.md` : « the **first** read refused after the mount keeps that text and
+  re-announces it (the landing page's own load, CR7-4); any later refusal, read or write, brings back
+  `common.accessRefused` (R95, decision 4 of the eighth review). » → « every read refused **during the landing page's
+  load** keeps that text and re-announces it — the load is the `useAdminLoad` reads in flight at the mount, each
+  `load()` declaring itself (`beginBackofficeLoad`), and it ends when they have all answered, served or refused (a
+  `load()` started meanwhile extends it); once it has ended the text stays until the next refusal, which, read or
+  write, brings back `common.accessRefused` (R102, decision 1 of the ninth review, amending decision 4 of the
+  eighth). » ; puce « Tests » : « the first read refused after the mount keeps the text and the next brings back the
+  current one, R76, R95 » → « every read refused during the landing load keeps the text, the first refusal after it
+  brings back the current one, R76, R102 ». Taille notée.
+- [ ] **Step 5 : verts** — specs ciblés PASS ; `make front-test; echo "exit=$?"`, `make front-lint; echo "exit=$?"`,
+  `make front-build; echo "exit=$?"`, `tools/check-claude-rules.sh; echo "exit=$?"` ;
+  `grep -rn "atMount\|keptByARead\|première lecture" frontend/src frontend/tests .claude` : vide ou historique daté.
+- [ ] **Step 6 : commit** — `fix(frontend): l'avis de l'enregistrement précédent vaut pour tout le chargement de la page d'arrivée et retombe à sa fin (#748)`.
+
+---
+
+### Task R103 : Réglages « À propos » — des réglages d'une autre langue que la cible laissent la proposition (décision 2 : CR9-9 ; St9-15 pour ce commentaire)
+
+**Files :**
+- Modify : `frontend/src/presentation/pages/admin/AdminAboutSettingsForm.vue` (le `watch` de `settings` et son commentaire)
+- Test : `frontend/tests/presentation/pages/admin/AdminAboutPage.spec.ts`
+- Modify (règle) : `.claude/rules/frontend-backoffice.md` (« **A proposal notice is its target locale's** … goes whenever that locale's form is re-read from the server »)
+
+**Interfaces :**
+- Choix tranché 2. Le commentaire du `watch`, au présent : des réglages qui arrivent sont ceux de la langue montrée ;
+  si c'est la cible de la proposition, ils la remplacent et la retirent ; sinon la proposition reste, et le retour sur
+  sa cible la relit (décision 4 de la sixième série). Plus de « celle qui était là » (St9-15).
+
+- [ ] **Step 1 : test, rouge** — `it("une proposition en EN, passage au FR puis enregistrement du FR : la proposition de l'EN reste (#748, R103, décision 2)")` :
+  les étapes du test « une proposition en EN, enregistrement réussi du FR » (même dépôt de réglages et de traduction),
+  puis `expect((wrapper.findComponent(AdminAboutSettingsForm).vm as unknown as { proposal: unknown }).proposal).toEqual({ source: 'fr', target: 'en' })`
+  (Review Focus 4 ; l'avis reste absent sous le FR, assertion gardée). Run :
+  `docker compose exec -T frontend npm test -- tests/presentation/pages/admin/AdminAboutPage.spec.ts`. Expected : FAIL,
+  `proposal` vaut `null`. Si Vue Test Utils ne rend pas l'état du `<script setup>` par `vm` : s'arrêter et rendre Q2.
+- [ ] **Step 2 : implémenter** selon le choix tranché 2.
+- [ ] **Step 3 : règle** — « and goes whenever that locale's form is re-read from the server — the response of its
+  successful save, a reload, a return to it —, which loses the proposal » → « and goes whenever that locale's form is
+  re-read from the server — the response of its successful save, a reload, a return to it —, which loses the
+  proposal; settings of the other locale arriving leave it (R103, decision 2 of the ninth review) ». Taille notée.
+- [ ] **Step 4 : verts** — spec ciblé PASS ; `make front-test; echo "exit=$?"`, `make front-lint; echo "exit=$?"`,
+  `make front-build; echo "exit=$?"`, `tools/check-claude-rules.sh; echo "exit=$?"`.
+- [ ] **Step 5 : commit** — `fix(frontend): réglages « À propos », des réglages d'une autre langue que la cible laissent la proposition (#748)`.
+
+---
+
+### Task R104 : Formulaires par entrée — `handleTranslate` se refuse lui-même pendant une proposition (C9-2)
+
+**Files :**
+- Modify : `frontend/src/presentation/pages/admin/{AdminCaseStudiesPage,AdminIncidentsPage,AdminContributionsPage,AdminAnonymousCvPage,AdminQualityPage,AdminAboutMeCardsSection,AdminAboutSiteCardsSection}.vue`
+- Test : `frontend/tests/support/entryFormLock.ts`, les six specs qui déclarent un `EntryFormLockCase`
+- Modify (règle) : `.claude/rules/frontend-backoffice.md` (« Translation assistant », la phrase « and so are « Proposer la version XX » (R93, … ) »)
+
+**Interfaces :**
+- Choix tranché 3. `EntryFormLockCase` gagne `readonly translationRequests: () => number` (le nombre d'appels au dépôt
+  de traduction du spec, remis à zéro par son `beforeEach`).
+
+- [ ] **Step 1 : test, rouge** — dans `describeEntryFormLock`, pour les huit formulaires :
+  `it("pendant une proposition, un « translate » émis ne lance aucune traduction")` (Review Focus 5) : `startEdit`,
+  `propose`, `n = translationRequests()`, puis `wrapper.findAll('form')[form].findComponent(TranslateEntryButton).vm.$emit('translate', 'fr')`
+  (la langue source, celle qui ramènerait le formulaire en arrière), `flushPromises()` → `translationRequests()` vaut
+  `n`, le titre du formulaire et l'avis `role="status"` restent ceux de la proposition. Run :
+  `docker compose exec -T frontend npm test -- tests/presentation/pages/admin`. Expected : FAIL sur les huit cas, un
+  appel de plus au dépôt.
+- [ ] **Step 2 : implémenter** selon le choix tranché 3 ; `docker compose restart frontend` en cas de doute.
+- [ ] **Step 3 : rouge vu par mutation** (Python, copie vérifiée par `cmp`) : la garde retirée de
+  `AdminAboutSiteCardsSection.vue` → seul le cas « carte du site » rougit ; restauré.
+- [ ] **Step 4 : règle** — dans la phrase « and so are « Proposer la version XX » (R93, decision 1 of the eighth review: a
+  second translation took the form back to the source locale, group kept) » → « … group kept; `handleTranslate`
+  refuses itself as well, not only through the disabled button, R104) ». Taille notée.
+- [ ] **Step 5 : verts** — `make front-test; echo "exit=$?"` (filet + 8), `make front-lint; echo "exit=$?"`,
+  `make front-build; echo "exit=$?"`, `tools/check-claude-rules.sh; echo "exit=$?"`.
+- [ ] **Step 6 : commit** — `fix(frontend): pendant une proposition, la traduction d'un formulaire par entrée se refuse elle-même, pas seulement par son bouton (#748)`.
+
+---
+
+### Task R105 : Formulaires par entrée — le verrou nommé par son état, une interface qui prend les refs, des textes sans compteur périmé (St9-8 = Sp9-2 = Sp9-3, St9-9, St9-10 ; refactoring)
+
+**Files :**
+- Modify : `frontend/src/presentation/ui/admin/useEntryFormLock.ts`, `frontend/src/presentation/ui/admin/EntryFormLockHint.vue`, les sept fichiers de formulaires, `frontend/src/infrastructure/i18n/locales/{fr,en}.json`
+- Test : `frontend/tests/support/entryFormLock.ts`, `frontend/tests/presentation/ui/admin/useEntryFormLock.spec.ts` (interface : changement exprès), les six specs de formulaires (identifiants `ids.hint`, `translateButton` local)
+- Modify (règle) : `.claude/rules/frontend-backoffice.md` (la phrase « all described by one text, `admin.lockedByProposal`, … » et toute mention des clés ou identifiants renommés)
+
+**Interfaces :**
+- Consumes : la garde de R104 (`lock.isProposalLocked`). Produces : choix tranché 4 — `useEntryFormLock({ hintId,
+  isEditing, proposalSource, localeHelpId? })`, identifiants `admin-<contenu>-entry-lock-help`, clés
+  `admin.entryLock.editing` / `admin.entryLock.proposal`.
+- St9-8 : le docblock de `describeEntryFormLock` et les commentaires des six specs nomment « les cas du verrou »,
+  **sans nombre** ; `LOCKED_BY_PROPOSAL_TEXT` : « langue, « Version de », bouton de traduction et, sur une carte
+  « moi », catégorie » ; le docblock d'`EntryFormLockHint.vue` dit le texte du verrou **du formulaire** : en édition, la
+  langue ; pendant une proposition, chaque contrôle qu'elle fige (langue, « Version de », « Proposer la version XX »,
+  catégorie d'une carte « moi »), et qu'« Annuler » abandonne la proposition et vide le formulaire.
+- St9-10 : les specs lisent `translateEntryButton` du support là où leur `translateButton` local fait la même chose ;
+  un local qui vise autre chose (le bouton des réglages « À propos ») reste, sa raison en une ligne.
+
+- [ ] **Step 1 : filet** — `make front-test; echo "exit=$?"`, nombre de tests noté.
+- [ ] **Step 2 : refactorer** selon les interfaces (renommages : `python3 -I` sur la liste des fichiers que `grep -rln`
+  donne, puis `docker compose restart frontend`) ; `useEntryFormLock.spec.ts` passe des refs et des getters (les deux
+  formes de `MaybeRefOrGetter`).
+- [ ] **Step 3 : verts** — `make front-test; echo "exit=$?"` (même nombre), `make front-lint; echo "exit=$?"` (aucune clé
+  inutilisée ni manquante), `make front-build; echo "exit=$?"`, `tools/check-claude-rules.sh; echo "exit=$?"` ;
+  `grep -rn "locale-locked-help\|localeLockedEditing\|lockedByProposal\|hasProposal\|quatre cas" frontend/src frontend/tests .claude`
+  (`node_modules` exclu) : vide ; taille de la règle notée.
+- [ ] **Step 4 : commit** — `refactor(frontend): le verrou des formulaires par entrée nommé par son état, une interface qui prend les refs, des textes sans compteur (#748)`.
+
+---
+
+### Task R106 : Outillage — une Basic Auth vide arrête l'audit, un fichier `-K` disparu se dit, les noms de la bibliothèque refusés (décision 3 : CR9-8 = C9-6 ; St9-16, C9-4, C9-5, St9-18)
+
+**Files :**
+- Modify : `tools/audit-prod.sh`, `tools/lib/smoke-http.sh`, `tools/smoke-dead-session-cookie.sh`, `tools/smoke-login-throttling.sh`, `tools/smoke-mcp.sh`
+- Test : `tools/tests/audit-prod.test.sh` (le cas « AUDIT_BASIC_AUTH vide » change exprès), `tools/tests/smoke-http.test.sh`
+- Modify (règles) : `.claude/rules/deploiement-nginx.md` (l. 117-119, St9-18), `.claude/rules/security-authentication-sessions.md` (« A `curl` that gets no answer exits 1 with a message, a Basic Auth holding a line break is refused (exit 2), and that plumbing — … »)
+
+**Interfaces :**
+- Choix tranché 5. Commentaires : le bloc Basic Auth d'`audit-prod.sh` réécrit d'un tenant, au présent (vide → sortie 2 ;
+  non définie → l'audit de prod, bibliothèque non sourcée ; `-K` dans `CURL_OPTS` et pourquoi c'est juste ici) ; dans
+  les trois scripts de fumée, le commentaire de quatre lignes devient « # Basic Auth : `smoke_write_auth_config` et
+  `smoke_fetch` (en-tête de tools/lib/smoke-http.sh). » ; le contrat de `smoke_fetch` dit « rend 1 (aucune réponse) ou
+  2 (fichier de la Basic Auth absent) », et ceux des appelants « sortie 1 ou 2 ».
+
+- [ ] **Step 1 : filet** — les cinq tests hors ligne (`smoke-http`, `smoke-dead-session-cookie`,
+  `smoke-login-throttling`, `smoke-mcp`, `audit-prod`) à 0, sorties notées.
+- [ ] **Step 2 : tests, rouges**
+  - `audit-prod.test.sh` (Review Focus 3) : le cas « `AUDIT_BASIC_AUTH=''` » attend désormais sortie 2, « secret de
+    Basic Auth vide » sur stderr, **aucun appel** au faux `dig`/`curl`, aucun dossier dans `TMPDIR` (expected
+    aujourd'hui : sortie 1, des appels) ; le même sous `bash -x` : rien d'autre de la variable que son nom dans la trace ;
+    le cas sans la variable (`sansauth`) inchangé.
+  - `smoke-http.test.sh` : « `smoke_write_auth_config SMOKE_AUTH_CONFIG`, puis `SMOKE_AUTH_DIR` : retour 2, « nom de
+    variable invalide », rien créé » (expected : retour 0) ; « Basic Auth écrite, fichier retiré, `smoke_fetch` : retour
+    2, « fichier de la Basic Auth absent », le faux curl jamais appelé » (expected : curl appelé) ; garde de source :
+    `grep -n 'smoke_fetch' tools/*.sh` — aucun appel suivi de `|| exit 1`.
+  Run : chaque test hors ligne, `; echo "exit=$?"`.
+- [ ] **Step 3 : implémenter** selon les interfaces.
+- [ ] **Step 4 : règles** — `deploiement-nginx.md`, l. 117-119 : la parenthèse « (its own `timeout-minutes: 3`; like …
+  « introuvable ou invalide » …) » **remplacée** par des phrases courtes, un fait chacune, sans parenthèse imbriquée : la
+  bibliothèque partagée et ses fonctions ; `smoke_write_auth_config` (nom validé, refusé s'il commence par `_smoke_` ou
+  `SMOKE_AUTH_`, valeur lue sous `set +x`, dossier privé, un second appel remplace le premier) ; `smoke_fetch` lit le
+  `-K` à chaque appel et dit un fichier absent (sortie 2) ; `audit-prod.sh` ne source la bibliothèque que si
+  `AUDIT_BASIC_AUTH` est définie (`[[ -v ]]`), une valeur vide l'arrête (sortie 2, R106, décision 3 de la neuvième
+  série) ; ses sorties (retour à la ligne, bibliothèque invalide : 2 ; curl sans réponse : 1) ; puis la suite de la
+  puce (« proves it on the real pod: … ») inchangée. `security-authentication-sessions.md` : « A `curl` that gets no
+  answer exits 1 with a message, a Basic Auth holding a line break is refused (exit 2) » → « … refused (exit 2), so is a
+  `-K` file gone (exit 2) ». Tailles notées.
+- [ ] **Step 5 : verts** — les cinq tests hors ligne à 0 ; shellcheck (image épinglée) sur la bibliothèque, les quatre
+  scripts et les deux tests ; `tools/check-claude-rules.sh; echo "exit=$?"`.
+- [ ] **Step 6 : commit** — `fix(tools): une Basic Auth vide arrête l'audit avant tout appel, un fichier -K disparu se dit, les noms des variables de la bibliothèque refusés (#748)`.
+
+---
+
+### Task R107 : Backend — `/api/logout` gardé par le double-submit, dit et prouvé ; « relève de `/api` » écrit une fois ; la prémisse dite juste (C9-1, CR9-5 = Sp9-11, C9-7, Sp9-10, St9-5)
+
+**Files :**
+- Modify : `backend/tests/Security/ApiRouteExposureTest.php`, `backend/src/Security/Authentication/Infrastructure/Security/PublicRouteIgnoresRefusedSessionListener.php` (docblock, St9-5)
+- Test : `backend/tests/Security/Authentication/AuthenticationFlowTest.php`
+- Modify (règle) : `.claude/rules/security-authentication.md` (l. 31-45, puce `CsrfCookieRequestSubscriber`)
+
+**Interfaces :**
+- Choix tranché 6. Raison de `/api/logout` dans `RULELESS_OUTSIDE_PUBLIC_PATHS` : « « Terminer cet accès » (#65, R35) :
+  sans règle par construction, il expire les deux cookies de l'appelant, y compris d'un porteur dont le cookie est
+  refusé (2xx depuis R35) ; une règle lui rendrait un 401. Pas public pour autant : il ne sert aucune donnée, et le
+  double-submit le garde de la déconnexion forcée — un formulaire tiers part sans `X-XSRF-TOKEN`, et son 403 (priorité
+  20, avant le `LogoutListener`) est la seule barrière, `SameSite=Lax` n'empêchant pas le navigateur d'accepter les
+  `Set-Cookie` expirés de la réponse. Jamais dans `EXCLUDED_PATHS` (témoin :
+  `AuthenticationFlowTest::testAForcedLogoutWithoutTheCsrfHeaderExpiresNoCookie`). » (lignes ≤ 140).
+- `isApiPath()` : lu par l'invariant n° 10 et par `allApiRoutePaths()` ; toute autre lecture « commence par `/api` » du
+  fichier y passe (`grep -n "'/api'" `).
+- C9-7, docblock de l'invariant n° 10 : « « Sûre » est une convention : l'invariant juge les méthodes déclarées, pas
+  qu'une route `GET` n'écrit rien ; une écriture servie en `GET` échapperait au double-submit, la relecture tient ce
+  point. »
+- Sp9-10 : à la l. 325-326, « … l'invariant n° 9 voit qu'une route hors de PUBLIC_PATHS en a une : c'est la prémisse
+  « route publique = route sans règle ». Les témoins de cette prémisse … » ; chaque autre occurrence de la phrase de
+  renvoi du fichier a son antécédent dans la phrase qui la précède (le vérifier, l. 64-65 comprises).
+- St9-5 : « La prémisse — toute autorisation de `/api` est une règle d'`access_control`, et elle ne dépend que du
+  chemin. » → « Cette lecture repose sur une prémisse : toute autorisation de `/api` est une règle d'`access_control`,
+  et cette règle ne dépend que du chemin. »
+
+- [ ] **Step 1 : filet** — `make back-test; echo "exit=$?"`, nombre de tests noté.
+- [ ] **Step 2 : tests** — `ApiRouteExposureTest::testOnlyApiPathsAreJudged` (fournisseur : `/api` vrai, `/api/me` vrai,
+  `/apis` faux, `/api-x` faux, `/apix/y` faux ; `isApiPath` lu par réflexion ou rendu `public static` dans le test).
+  Expected : FAIL, `isApiPath` introuvable. `AuthenticationFlowTest::testAForcedLogoutWithoutTheCsrfHeaderExpiresNoCookie` :
+  connexion comme dans le test du cycle complet, `POST /api/logout` sans `X-XSRF-TOKEN` → 403 et
+  `$client->getResponse()->headers->getCookies()` vide, puis `GET /api/me` → 200. Expected : vert (comportement juste) ;
+  vu rouge au Step 4.
+- [ ] **Step 3 : implémenter** selon les interfaces.
+- [ ] **Step 4 : rouge vu par mutation** (Python, copie vérifiée par `cmp`, `rm -rf var/cache/test` après) :
+  `'/api/logout'` ajouté à `CsrfCookieRequestSubscriber::EXCLUDED_PATHS` → le témoin rougit (204 et deux cookies
+  expirés) ; restauré.
+- [ ] **Step 5 : règle** — `security-authentication.md` : la phrase de R89 (« every route of `/api` declares its methods,
+  … would leave the double-submit) ») **quitte** la place où elle coupe `EXCLUDED_PATHS` de « Two since #647 » : « Its
+  `EXCLUDED_PATHS` are **exact** paths, each justified in the docblock. Two since #647, … » reste d'un tenant jusqu'à
+  « See `.claude/rules/mcp-oauth.md`. », puis : « **Every route of `/api` declares its methods**, each `GET`, `HEAD`,
+  `OPTIONS` or one of its public `UNSAFE_METHODS` (invariant n° 10 of `ApiRouteExposureTest`, C8-6: a `QUERY` route or a
+  custom method would leave the double-submit; « safe » is a convention the review keeps, C9-7). **`/api/logout` stays
+  under the guard**: its 403 is the only barrier against a forced logout (C9-1, pinned by `AuthenticationFlowTest`). »
+  Taille notée.
+- [ ] **Step 6 : verts** — `make back-test; echo "exit=$?"` (filet + 6), `make back-quality; echo "exit=$?"`,
+  `tools/check-claude-rules.sh; echo "exit=$?"` ; lignes touchées ≤ 140.
+- [ ] **Step 7 : commit** — `test(security): /api/logout gardé par le double-submit contre la déconnexion forcée, dit et prouvé ; « relève de /api » écrit une fois ; la prémisse dite juste (#748)`.
+
+---
+
+### Task R108 : Backend — la garde des métadonnées compilées en deux étapes nommées, les génériques et les clés de collection suivis (St9-6, CR9-4 = St9-7, Sp9-6)
+
+**Files :**
+- Modify : `backend/tests/Security/ApiPlatformOperationsCarryNoSecurityTest.php`
+
+**Interfaces :**
+- Choix tranché 7 (`collectClassesToRead`, `readProperties`). `appClassesIn()` suit aussi
+  `GenericType::getVariableTypes()` et `CollectionType::getCollectionKeyType()` ; son docblock et celui de
+  `nestedClassesOf()` disent « à toute profondeur » juste (objet, collection — clé et valeur —, générique, nullable,
+  union, intersection). Lignes du fichier ≤ 140 caractères (Sp9-6 : l. 158).
+
+- [ ] **Step 1 : filet** — la classe ciblée verte, nombre de cas noté ; `make back-test; echo "exit=$?"`.
+- [ ] **Step 2 : tests, rouges** — `propertiesThatNestObjects` gagne `'un générique non collection'`
+  (`Type::generic(Type::object(DateTimeImmutable::class), Type::object(self::class))` → `[self::class]`) et `'la clé
+  d'une collection'` (`Type::collection(Type::object(SplObjectStorage::class), Type::string(), Type::object(self::class))`
+  → `[self::class]` ; si TypeInfo refuse une clé objet, ce cas est retiré, la raison écrite dans le docblock
+  d'`appClassesIn()` et au rendu). Run :
+  `docker compose exec -u dev backend php bin/phpunit tests/Security/ApiPlatformOperationsCarryNoSecurityTest.php`.
+  Expected : FAIL, `[]` au lieu de `[self::class]`.
+- [ ] **Step 3 : implémenter** `appClassesIn()`, puis extraire `collectClassesToRead()` et `readProperties()` ;
+  `make back-style-fix` si un import est ajouté.
+- [ ] **Step 4 : verts** — la classe ciblée verte (filet + 2) ; `make back-test; echo "exit=$?"`,
+  `make back-quality; echo "exit=$?"` ; longueurs mesurées (`python3 -I`).
+- [ ] **Step 5 : commit** — `test(security): la garde des métadonnées compilées en deux étapes nommées, les génériques et les clés de collection suivis (#748)`.
+
+---
+
+### Task R109 : Backend — les sites d'autorisation dans un seul vocabulaire, les exemptions écrites site par site (CR9-2 = St9-2 = C9-3 et St9-1, CR9-3 = St9-4, St9-3 ; refactoring)
+
+**Files :**
+- Modify : `backend/tests/Support/AuthorizationSiteKind.php`, `backend/tests/Security/AuthorizationLivesInAccessControlTest.php` ; `backend/tests/Support/AuthorizationSites.php` seulement si son renvoi aux `case` change
+
+**Interfaces :**
+- Choix tranché 8. Docblock de l'énumération : « … Les messages d'échec et le décompte des exemptions nomment le cas
+  (`->name`) : un seul vocabulaire. » (remplace « Les valeurs sont les libellés … »). `case Refusal` : « Un refus levé
+  à la main — `new AccessDeniedException`, `new AccessDeniedHttpException` ou `new UnauthorizedHttpException`, de nom
+  court ou complet : il décide à la place d'`access_control`. Attraper, tester ou importer l'exception n'en est pas
+  un. » `case DecisionManager` : « Le nom `AccessDecisionManagerInterface`, partout où il est écrit (import, type,
+  propriété) : le nom et non l'appel `->decide(`, que le consentement OAuth porte en homonyme. »
+- `EXEMPTIONS` : `array<class-string, array{reason: string, sites: list<AuthorizationSiteKind>}>` —
+  `NominativeCorpusReader` : `[IsGrantedCall]`, `CsrfCookieRequestSubscriber` : `[Refusal, Refusal]`,
+  `LoginCsrfRequestListener` : `[Refusal]` ; son docblock (« Classe => [raison, [[nature, nombre exact de sites]]] »)
+  réécrit ; `testEveryExemptionIsStillNeeded` compare `countByKind($sites)` à `countByKind(<sites trouvés>)`.
+
+- [ ] **Step 1 : filet** — la classe ciblée verte, nombre de cas noté ; `make back-test; echo "exit=$?"`.
+- [ ] **Step 2 : refactorer** selon les interfaces.
+- [ ] **Step 3 : rouge vu par mutation** (Python, copie vérifiée par `cmp`) : un troisième `Refusal` ajouté à l'exemption
+  de `CsrfCookieRequestSubscriber` → `testEveryExemptionIsStillNeeded` rougit, attendu et trouvé écrits
+  `{"Refusal":3}` / `{"Refusal":2}` (le même nom que les messages de `testNoAuthorizationIsDeclaredOutsideAccessControl`) ;
+  restauré.
+- [ ] **Step 4 : verts** — la classe ciblée verte, même nombre de cas ; `make back-test; echo "exit=$?"` (même nombre),
+  `make back-quality; echo "exit=$?"` ; `grep -n -- "->value\|expand(" backend/tests/Security/AuthorizationLivesInAccessControlTest.php` :
+  vide ; lignes ≤ 140.
+- [ ] **Step 5 : commit** — `refactor(security): les sites d'autorisation dans un seul vocabulaire, les exemptions écrites site par site, chaque cas dit ce qu'il recense (#748)`.
+
+---
+
+### Task R110 : Le lecteur de gabarit lit chaque expression comme Vue l'entend ; ses types sont ceux du compilateur ; les gardes de source sans recomposition ni repli (CR9-7 = Sp9-1, CR9-6, St9-14 + Sp9-12, St9-12, CR9-10 = St9-13, C9-9, St9-15)
+
+**Files :**
+- Modify : `frontend/tests/support/sourceText.ts`, `frontend/tests/support/sourceText.spec.ts`, `frontend/tests/infrastructure/http/noOmittedCredentials.spec.ts`, `frontend/tests/application/auth/sessionStateEncapsulation.spec.ts`
+- Modify (règle) : `.claude/rules/frontend-session.md` (l. 158, puce `noOmittedCredentials.spec.ts`)
+
+**Interfaces :**
+- Choix tranché 9. `TemplateNode` retiré ; aucun `as unknown as` dans `sourceText.ts`.
+- St9-14 : docblock de `stringLiterals` : « chaînes `'…'` et `"…"`, gabarits sans expression, et chaque partie fixe d'un
+  gabarit à expression (`a${x}b` donne `a` et `b`), puis les chaînes de ses expressions » ; « Reste vrai : … n'a plus
+  de limite écrite » → « Une chaîne non terminée est lue comme TypeScript la lit ; `vue-tsc` refuse ce code (`make
+  front-build`), il n'est jamais livré. »
+- St9-12 : `noOmittedCredentials.spec.ts` — `function literalsOf(script: string, templateExpressions: readonly string[]): string[]`
+  et `function writesOmit(literals: readonly string[]): boolean`, lues par `sources`, par les tests du détecteur
+  (`offendsWithOmit(source, path) = writesOmit(literalsOf(scriptOf(path, source), templateExpressionsOf(path, source)))`)
+  **et** par le vrai test ; son docblock au présent (St9-15 : « Depuis R51… », « Depuis R96… » réécrits) ; nouveau
+  test : chaque fragment de `SRC_TEMPLATE_EXPRESSIONS` se lit sans erreur de syntaxe
+  (`ts.transpileModule(fragment, { reportDiagnostics: true }).diagnostics` vide, le fichier et le fragment nommés).
+- CR9-10 : les alias `sources` et `file` retirés ; C9-9 : `function sourceOf(path: string): string` lève une erreur qui
+  nomme le chemin absent de `SRC_SCRIPTS` ; il remplace le repli `?? ''` (l. 291), et l'assertion `not.toBe('')`
+  devenue inutile part avec lui.
+
+- [ ] **Step 1 : filet** — `make front-test; echo "exit=$?"`, nombre noté, durées de `noOmittedCredentials.spec.ts` et
+  `sessionStateEncapsulation.spec.ts`.
+- [ ] **Step 2 : tests, rouges** — `sourceText.spec.ts` :
+  `templateExpressionsOf('X.vue', '<template><li v-for="m in [\'omit\']">{{ m }}</li></template>')` : ses `stringLiterals`
+  contiennent `'omit'` (expected : non, l'`exp` du `v-for` sautée) ; `<template><C v-slot="{ mode = 'omit' }">x</C></template>` :
+  un fragment `({ mode = 'omit' }) => 0` ; `:opts="{ credentials: 'omit' }"` : un fragment `({ credentials: 'omit' })` ;
+  `@click="a(); b('omit')"` : un fragment en corps de fonction ; chaque fragment de ces cas sans diagnostic de
+  `ts.transpileModule` ; `expressionsOfTemplate({ type: 0, children: [{ type: 5, content: null }] } as unknown as TemplateRoot)`
+  rend `[]` sans lever (CR9-6, le transtypage restant dans le test). Run :
+  `docker compose exec -T frontend npm test -- tests/support/sourceText.spec.ts tests/infrastructure/http/noOmittedCredentials.spec.ts tests/application/auth/sessionStateEncapsulation.spec.ts`.
+  Expected : FAIL, `expressionsOfTemplate` introuvable et le `v-for` non lu.
+- [ ] **Step 3 : implémenter** selon les interfaces.
+- [ ] **Step 4 : rouges vus par mutation** (Python, copie vérifiée par `cmp`) : (a) la branche `for` retirée → le cas
+  `v-for` rouge ; (b) le test `null` du `content` retiré → le cas CR9-6 lève ; restaurés.
+- [ ] **Step 5 : règle** — « a `.vue` by its `<script>` blocks and the expressions of its `<template>`, R68, R80, R96 » →
+  « a `.vue` by its `<script>` blocks and the expressions of its `<template>` — `v-for` and `v-slot` included, each read
+  as the JavaScript fragment Vue compiles, every fragment of `src/` required to parse, R68, R80, R96, R110 ». Taille notée.
+- [ ] **Step 6 : verts** — `make front-test; echo "exit=$?"` (durées des deux gardes comparées au filet),
+  `make front-lint; echo "exit=$?"`, `make front-build; echo "exit=$?"`, `tools/check-claude-rules.sh; echo "exit=$?"`.
+- [ ] **Step 7 : commit** — `test(frontend): le lecteur de gabarit lit chaque expression comme Vue l'entend, typé par le compilateur ; les gardes de source sans recomposition ni repli (#748)`.
+
+---
+
+### Task R111 : Balayage documentaire de la neuvième série
+
+Les docstrings et les règles ont suivi chaque comportement dans son commit ; cette tâche vérifie qu'il ne reste rien.
+
+**Files :** ceux que le balayage désigne (`.claude/rules/*`, docblocks de `frontend/src`, `frontend/tests`, `backend/src`, `backend/tests`, `tools/`).
+
+- [ ] **Step 1 : balayage** — `grep -rn "atMount\|keptByARead\|première lecture refusée\|locale-locked-help\|localeLockedEditing\|lockedByProposal\|hasProposal\|quatre cas\|libellés lus dans les messages\|n'a plus de limite\|qui était là\|le double-submit n'y protège rien\|str_starts_with(\$path, '/api')\|smoke_fetch .*|| exit 1" .claude docs frontend/src frontend/tests backend/src backend/tests tools`
+  (les fichiers de secrets et `node_modules` exclus) : ne rend que l'historique daté ou le sens juste, noté ligne par
+  ligne. Puis St9-15 : dans les fichiers que `git diff --name-only c585b960...HEAD -- frontend backend tools` liste, un
+  commentaire qui raconte une série (« depuis R… », « n'est plus », « celle qui était ») est réécrit au présent — la
+  référence `R…` qui **justifie** une règle reste. Toute phrase fausse trouvée est **remplacée**.
+- [ ] **Step 2 : verts** — `tools/check-claude-rules.sh; echo "exit=$?"` ; taille de chaque règle touchée par la série
+  notée, toutes < 50 000 octets, `backoffice-api.md` à ses 39 834 octets ; `make front-test; echo "exit=$?"` si un
+  fichier de `frontend/` a changé, `make back-test; echo "exit=$?"` si un de `backend/`, les tests hors ligne si un de
+  `tools/`.
+- [ ] **Step 3 : commit** (seulement si le balayage a changé un fichier) — `docs: le balayage de la neuvième relecture de #748`.
+  Sinon, le rendu dit « rien à changer » et les sorties du grep.
+
+### Traçabilité des constats
+
+| Constat | Traitement |
+|---|---|
+| St9-6 | R108 |
+| CR9-1 ≈ Sp9-9 | R102 (décision 1, Q1) |
+| C9-1 | R107 |
+| CR9-2 = St9-2 = C9-3, St9-1 | R109 |
+| CR9-3 = St9-4 | R109 |
+| CR9-4 = St9-7 | R108 |
+| C9-8 | sans suite (décision 4) |
+| CR9-5 = Sp9-11 | R107 |
+| CR9-7 = Sp9-1 | R110 |
+| CR9-6 | R110 |
+| CR9-8 = C9-6 | R106 (décision 3) |
+| St9-16 | R106 |
+| CR9-9 | R103 (décision 2, Q2) |
+| C9-2 | R104 |
+| St9-8 = Sp9-2 = Sp9-3 | R105 |
+| St9-9 | R105 |
+| St9-10 | R105 |
+| St9-11 | sans suite (décision 4) |
+| St9-12 | R110 |
+| St9-14 (+ Sp9-12) | R110 |
+| St9-3 | R109 |
+| St9-5 | R107 |
+| Sp9-4 | R102 |
+| Sp9-5 | R102 |
+| Sp9-6 | R102 (frontend), R108 (backend) |
+| Sp9-7 | contrainte rectifiée dans cette section (commit de ce plan) ; l'édition du brief par R101 est celle du fil principal, gardée |
+| CR9-10 = St9-13 | R110 |
+| C9-9 | R110 (l'assertion existe déjà ; le repli `?? ''` retiré) |
+| C9-4 | R106 |
+| C9-5 | R106 |
+| C9-7 | R107 |
+| Sp9-10 | R107 |
+| St9-15 | R103 (« celle qui était là »), R110 (« Depuis R51/R96 »), R111 (le reste) |
+| St9-17 | sans suite (décision 4) |
+| St9-18 | R106 |
+| Sp9-8 | sans suite (décision 4) |
+
+### Constats écartés, avec leur raison
+
+- **St9-17, Sp9-8, C9-8, St9-11** : écartés par l'auteur le 2026-10-31 (décision 4) ; C9-8 n'est pas même écrit comme
+  limite.
+
+---
+
+
 ### Task 11 : Contrôle au navigateur — **fil principal, pas un agent de tâche**
 
 Pile de dev locale, FR et EN, axe-core injecté dans la page, noté dans la PR (référentiel WCAG 2.2 AA) :
@@ -6214,6 +6923,21 @@ reprend D-a, D-b et la limite « Créer la version » de R79b, que le point R78/
   (R88, R89, PHPUnit), l'outillage (R90 : tests hors ligne ; `smoke-test-preprod` et `audit-preprod` à la release),
   les gardes de source (R96, R97), les refactorings R91, R92 et R97 à R100.
 
+Ce que les corrections R102 à R111 ont changé, à mesurer aussi (ajouté par le plan de la neuvième série) :
+
+- [ ] **L'avis de l'enregistrement précédent, lié au chargement** (R102, décision 1 de la neuvième série ; remplace le
+  point R95 « borné au chargement » ci-dessus) : le procédé du point R76, l'arrivée sur « À propos » ou « Qualité »
+  (plusieurs listes) ; chaque lecture refusée du chargement réannonce « Un enregistrement précédent a été refusé… »,
+  et une fois les listes chargées, « Réessayer » ou une relecture refusée dit « accès refusé ». Si les lectures refusées
+  ne se reproduisent pas (un compte que le frontend croit encore `ROLE_SUPER`), les noter couvertes par
+  `AccessRefusedNotice.spec.ts` et `backofficeAccessRefusal.spec.ts`.
+- [ ] **« Proposer la version … » pendant une proposition** (R104) : bouton désactivé, Entrée et Espace au clavier ne
+  lancent rien (onglet Réseau : aucun `POST /api/backoffice/translations` de plus), FR et EN.
+- [ ] Non contrôlables au navigateur, à noter comme tels : la proposition gardée sous une autre langue (R103 : état
+  interne, `AdminAboutPage.spec.ts`), l'outillage (R106 : tests hors ligne ; `audit-preprod` à la release, où un secret
+  vide sort désormais en 2), les gardes backend (R107 à R109, PHPUnit), le lecteur de gabarit (R110), les refactorings
+  R105, R108 et R109.
+
 - [ ] Tout écart → retour à la tâche concernée (nouveau commit), puis ce contrôle refait.
 
 ### Task 12 : Clôture — **fil principal**
@@ -6261,6 +6985,14 @@ reprend D-a, D-b et la limite « Créer la version » de R79b, que le point R78/
   langue cible existe déjà dans le groupe (depuis « Créer la version XX ») finit sur le 409 du serveur, « Annuler » en
   sort ; « Créer la version XX » laisse la catégorie libre (D-b).
   `bash tools/tests/{smoke-dead-session-cookie,smoke-login-throttling,smoke-mcp,smoke-http,audit-prod}.test.sh` verts.
+- [ ] Corps de la PR, neuvième relecture (R102 à R111 ; ajouté par le plan de la neuvième série) : l'avis
+  « enregistrement précédent » vaut pour toutes les lectures du chargement de la page d'arrivée et cède au premier refus
+  qui suit ce chargement (décision 1 du 2026-10-31, amendant la décision 4 de la huitième) ; réglages « À propos » : des
+  réglages d'une autre langue que la cible laissent la proposition (décision 2) ; pendant une proposition, la traduction
+  d'un formulaire par entrée se refuse elle-même ; l'audit de préprod s'arrête (sortie 2) sur une Basic Auth définie mais
+  vide, avant tout appel (décision 3), et les scripts de fumée disent un fichier `-K` disparu ; `/api/logout` reste sous
+  le double-submit, seule barrière contre la déconnexion forcée (témoin ajouté) ; le lecteur de gabarit des gardes lit
+  `v-for` et `v-slot`. `bash tools/tests/{smoke-dead-session-cookie,smoke-login-throttling,smoke-mcp,smoke-http,audit-prod}.test.sh` verts.
 - [ ] Corps de la PR : la note de release de F1 (R21, remplace celle de R1) — `BEARER` et `XSRF-TOKEN` sont désormais des **cookies de session**, au login comme à l'accès de base (le JWT garde son heure, l'accès de base ses quinze minutes) : fermer le navigateur sans restauration de session finit la session ; à l'expiration du JWT, la première requête prend un 401 qui efface les deux cookies, la suivante est anonyme ; **une session ouverte avant le déploiement garde ses cookies persistants, au plus une heure** (rien à faire) ; le frontend juge désormais la session par génération (une réponse partie sous une autre session ne la finit ni ne la rétablit) et un autre compte au retour rejoue la navigation.
 - [ ] **Amendement d'ADR 0003** — **déplacé dans R21 (Step 3b) par décision de l'auteur du 2026-10-29** ; à la clôture, seulement vérifier qu'il est fait et cohérent. Contenu attendu (décision 1 du 2026-10-29) : ligne de statut (« Amendée le 2026-10-29 ») ; dans « Risque accepté — le logout ne révoque pas le jeton », le paragraphe des faits (`set_cookies.BEARER.lifetime` vaut `0` : cookie de session ; `token_ttl` 3600 et les 900 s de l'accès de base inchangés) ; un amendement « 2026-10-29 (#748, F1) » : `BEARER` et `XSRF-TOKEN` sont des cookies de session ; le risque « navigateur fermé » (un cookie qui survit à la fermeture, en lecture comme en écriture) **disparaît, sauf navigateur qui restaure la session** ; tout cookie refusé (expiré, invalide, antérieur au changement de mot de passe) est effacé par son premier 401 ; ce que cela ne change pas (un jeton copié reste valable jusqu'à son `exp`) ; les conditions qui rouvrent la décision, inchangées. `docs/adr/0003-paliers-d-acces.md` seul, relu contre `security-authentication-sessions.md` (R21).
 - [ ] **Ticket à proposer à l'auteur** (texte dans le rapport de clôture, pas de création sans son accord) : le préfixe `__Host-` des deux cookies (S2 de la première relecture : préprod d'abord, il renomme ce que Lexik, `CsrfCookieRequestSubscriber` et le frontend lisent par nom) **et F12** (le jeton CSRF n'est lié ni à la session ni au temps : le lier au JWT — par exemple un HMAC dérivé de son `iat` et du compte — ou lui donner une échéance signée), avec la note que R21 réduit déjà la durée de vie des deux cookies à la session du navigateur, **et A3-3** de la troisième relecture (depuis R21, tout cookie `BEARER` refusé efface les deux cookies : un sous-domaine qui pose un faux `BEARER` sur `Path=/api` — plus spécifique que le `Path=/` du vrai, donc envoyé en premier — fait répondre 401 et efface la session valide ; `__Host-` interdit qu'un sous-domaine pose ce nom). Depuis R35, A3-3 ne touche plus que les routes qui exigent un rôle (une route publique ignore un cookie refusé). **Et C8** de la quatrième relecture (« le même compte » est jugé sur l'identifiant, pas sur l'UUID du compte : un compte supprimé puis recréé sous le même identifiant passe pour le même ; l'exposer par `/api/me` et le retenir dans `LastAccount` ; CR7-2 de la septième relecture est le même cas, côté refus du backoffice, R77). Le pare-feu sans authentificateur pour `/api/account/base-access`, un temps proposé ici, **n'est plus à joindre** : R35 couvre le cas.
