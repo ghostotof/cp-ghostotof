@@ -9700,6 +9700,11 @@ Le plan suit chaque recommandation ; une autre réponse ne change que la tâche 
   « Ce que la treizième série a réellement fait » à la fin de cette section, seule exception au « ne touche pas à
   `tasks/` » du brief ; option : le fil principal l'écrit lui-même après le balayage.
 
+**Réponses de l'auteur (2026-10-31)** : Q1 à Q14 → **les quatorze recommandations** (Q1 (A), Q4 deux sections, Q5
+`outillage-smoke.md`, Q6 ces textes, Q8 (B) puis (A), Q10 la proposition attend le retour de la session, Q12 tirer
+`curlimages/curl:8.5.0` épinglé par digest, lancé en `--network none`) ; l'ajout d'`isInterrupted` à `useAdminLoad`
+(R157) est validé. Le plan les suit déjà : aucune tâche ne change.
+
 ### Review Focus (treizième relecture)
 
 1. **Un second « Créer la version XX » de la même ligne et de la même langue pendant une traduction**, puis la réponse
