@@ -15,11 +15,6 @@ export interface UseAdminAboutSettingsResult extends AdminLoadState {
   settings: Ref<AdminAboutSettings | null>
   /** L'erreur du dernier enregistrement, **si c'est celle de la langue montrée** ; `null` sinon (#748, R20). */
   errorMessage: ComputedRef<AdminAboutError | null>
-  /**
-   * La dernière lecture a fini en session finie et attend le retour de la session (`useAdminLoad`, R157) : les réglages ne
-   * sont pas lus, mais ce n'est ni une erreur ni un refus. Le formulaire s'en sert pour garder la proposition de traduction.
-   */
-  isInterrupted: Readonly<Ref<boolean>>
   load: (locale: Locale) => Promise<void>
   /** Rend `false`, sans requête ni erreur posée, si un enregistrement de cette langue est déjà en vol (R50). */
   save: (locale: Locale, input: AdminAboutSettingsInput) => Promise<boolean>
@@ -57,7 +52,7 @@ export function useAdminAboutSettings(): UseAdminAboutSettingsResult {
   // sans arbitrage (R43 numérotait les chevauchements ; il n'y en a plus). Une langue ne retient pas l'autre.
   const saving = ref<Partial<Record<Locale, true>>>({})
 
-  const { isLoading, hasError, isLoaded, isInterrupted, load, write, isCurrentKey } = useAdminLoad<AdminAboutSettings, Locale>({
+  const { isLoading, hasError, isLoaded, load, write, isCurrentKey } = useAdminLoad<AdminAboutSettings, Locale>({
     read: (locale) => repository.get(locale),
     apply: (value) => {
       settings.value = value
@@ -113,5 +108,5 @@ export function useAdminAboutSettings(): UseAdminAboutSettingsResult {
     }
   }
 
-  return { settings, isLoading, hasError, isLoaded, isInterrupted, errorMessage, load, save, isSaving, isAnySaving }
+  return { settings, isLoading, hasError, isLoaded, errorMessage, load, save, isSaving, isAnySaving }
 }

@@ -10002,6 +10002,38 @@ Le plan suit chaque recommandation ; une autre réponse ne change que la tâche 
 
 ---
 
+### Task R157b : Réglages « À propos » — la garde de fin de lecture et `isInterrupted` retirées (décision de l'auteur, 2026-10-31)
+
+**Files :**
+- Modify : `frontend/src/presentation/pages/admin/AdminAboutSettingsForm.vue` (le guetteur de `isLoading`, le docblock de
+  `pendingProposal`), `frontend/src/application/admin/shared/useAdminLoad.ts` et
+  `frontend/src/application/admin/about/useAdminAboutSettings.ts` (`isInterrupted`, de retour à l'état d'avant R157)
+- Test : `frontend/tests/application/admin/shared/useAdminLoad.spec.ts` (les quatre cas `isInterrupted` retirés)
+- Modify (règle) : `.claude/rules/frontend-backoffice.md` (la phrase de `pendingProposal`)
+
+**Décision.** R157 avait posé deux gardes qui retirent `pendingProposal` : (1) au changement de `props.locale` qui ne mène
+pas à la cible ; (2) un guetteur de `isLoading` quand une lecture finit sans `isLoaded` ni `isInterrupted`, appuyé sur un
+`isInterrupted` ajouté à `useAdminLoad`. R157 a mesuré que (2) est invisible : après une lecture de la cible en échec, le
+seul chemin vers un nouveau chargement est un changement de langue (aucune page admin n'a de « Réessayer »), que (1)
+traite ; retirer (2) seul ne fait rougir aucun test. **On retire (2) et `isInterrupted`**, qui n'aurait plus de lecteur
+en production (même raison que `proseFieldId`). Cela révise la validation d'`isInterrupted` donnée au plan (décision 6,
+« D6 (R157) », ci-dessus).
+
+**Raison.** Un mécanisme sans effet observable se paie en code, en docblocks et en tests ; la règle dit désormais que le
+changement de langue est la seule sortie après une lecture en échec, et qu'une fin de session garde la proposition (Q10).
+
+**Fait.**
+- `useAdminLoad.ts` et `useAdminAboutSettings.ts` rendus à leur état d'avant R157 (`interrupted` redevient une variable
+  simple, sans `computed` ni relais) ; `useAdminLoad.spec.ts` rendu à l'identique d'avant R157 (suite : 2557 → 2553).
+- `AdminAboutSettingsForm.vue` : guetteur de `isLoading` retiré, la garde (1), le préfixe `admin-about-settings-*` et les
+  cas de page de R157 intacts ; docblock de `pendingProposal` réécrit (seule sortie : le changement de langue ; une fin de
+  session la garde).
+- Règle `frontend-backoffice.md` : la phrase de `pendingProposal` réécrite ; `grep -rn isInterrupted frontend .claude` vide.
+- Preuve : la mutation « garde (1) retirée » rougit encore les trois cas de page (retour à la langue source, lecture en
+  échec en erreur ordinaire, 403) ; le cas Q10 reste vert.
+
+---
+
 ### Task R158 : Le refus du backoffice — une lecture pure sans export pour les specs, un état lisible, des specs compacts (Q8 : St13-23 = C13-9 ; St13-23 pour `qualityProviders` ; St13-32 ; St13-18 ; Sp13-9 pour ce fichier)
 
 **Files :**

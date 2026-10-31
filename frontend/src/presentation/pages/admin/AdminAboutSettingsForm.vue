@@ -29,7 +29,7 @@ const emit = defineEmits<{ switchLocale: [locale: Locale] }>()
 
 const { t } = useI18n()
 
-const { settings, isLoading, hasError, isLoaded, isInterrupted, errorMessage, load, save, isSaving, isAnySaving } = useAdminAboutSettings()
+const { settings, isLoading, hasError, isLoaded, errorMessage, load, save, isSaving, isAnySaving } = useAdminAboutSettings()
 
 const form = reactive({ siteEyebrow: '', meEyebrow: '', technicalSubtitle: '', personalSubtitle: '', hobbiesSubtitle: '' })
 const errorText = computed(() => {
@@ -51,11 +51,12 @@ const errorText = computed(() => {
  * de la session, lancée alors par le composable lui-même. La proposition attend
  * donc ce retour, jamais posée sur un formulaire non chargé.
  *
- * `pendingProposal` part de trois façons (R157, décision 6 de la treizième relecture) : **posée** sur le formulaire de sa
- * cible une fois lue ; **retirée** quand la page va à une autre langue que sa cible, ou quand la lecture de la cible
- * finit sans valeur ni attente du retour (une erreur ordinaire, un refus 403), sans quoi elle se poserait au prochain
- * chargement de la cible, bien plus tard ; **abandonnée** par « Abandonner » (`handleDiscardProposal`). Une lecture de la
- * cible interrompue par une fin de session la **garde** jusqu'au retour de la session (`isInterrupted`).
+ * `pendingProposal` part de trois façons (R157, décision 6 de la treizième relecture ; R157b) : **posée** sur le formulaire
+ * de sa cible une fois lue ; **retirée** quand la page va à une autre langue que sa cible — la seule sortie après une lecture
+ * de la cible en échec (erreur ordinaire, refus 403), faute de « Réessayer » sur la page : un changement de langue est alors
+ * le seul chemin vers un nouveau chargement — ; **abandonnée** par « Abandonner » (`handleDiscardProposal`). Une fin de
+ * session la **garde** : la lecture de la cible reprend au retour de la session et la pose alors (Q10). Aucun guetteur de
+ * fin de lecture : il n'aurait rien retiré qu'un changement de langue ne retire déjà (R157b, décision de l'auteur).
  *
  * L'avis « proposition générée par IA » est celui de la langue cible (`proposal.target`) : absent sous l'autre langue,
  * il part dès que des réglages arrivent du serveur, quelle que soit leur langue (R66, décision 4 ; R141b).
@@ -132,21 +133,6 @@ watch(
     void load(locale)
   },
   { immediate: true },
-)
-
-// Une lecture qui finit sans valeur : ni `isLoaded` ni l'attente du retour de la session, donc une erreur ordinaire ou un
-// refus. La proposition en attente est retirée (R157) : la cible ne se lira pas, et un chargement ultérieur de la cible
-// la poserait sans que personne l'attende. `isInterrupted` la garde : la lecture reprend au retour, comme `isLoaded` le dit.
-// `flush: 'sync'` : `isLoading` retombe après `isLoaded` (`finally`), et le `watch` d'`isLoaded` ci-dessous a déjà posé la
-// proposition d'une lecture réussie.
-watch(
-  isLoading,
-  (loading) => {
-    if (!loading && !isLoaded.value && !isInterrupted.value) {
-      pendingProposal.value = null
-    }
-  },
-  { flush: 'sync' },
 )
 
 // Les réglages de `props.locale` viennent d'être posés et recopiés dans le formulaire : la proposition en
