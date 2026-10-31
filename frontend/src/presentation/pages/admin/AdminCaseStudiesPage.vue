@@ -3,7 +3,6 @@ import { computed, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useUnsavedOrderGuard } from '../../../application/admin/shared/useUnsavedOrderGuard'
 import { useAdminCaseStudies } from '../../../application/admin/caseStudies/useAdminCaseStudies'
-import { useAdminTranslation } from '../../../application/admin/translation/useAdminTranslation'
 import { applyTranslationProposal, collectProseFields } from '../../../application/admin/translation/proseFields'
 import { useOrderDraft } from '../../../application/admin/shared/useOrderDraft'
 import { useOrderHandleFocus } from '../../../application/admin/shared/useOrderHandleFocus'
@@ -25,7 +24,10 @@ import BaseSelect from '../../ui/BaseSelect.vue'
 import TranslateEntryButton from '../../ui/admin/TranslateEntryButton.vue'
 import TranslationReadonlyHint from '../../ui/admin/TranslationReadonlyHint.vue'
 import EntryFormLockHint from '../../ui/admin/EntryFormLockHint.vue'
-import { describedBy, useEntryFormLock } from '../../ui/admin/useEntryFormLock'
+import { describedBy } from '../../ui/admin/describedBy'
+import { useEntryFormLock } from '../../ui/admin/useEntryFormLock'
+import { useTranslatedForm } from '../../ui/admin/useTranslatedForm'
+import { CASE_STUDY_PROSE_FIELDS } from './proseFields'
 import OrderHandle from '../../ui/admin/OrderHandle.vue'
 import OrderToolbar from '../../ui/admin/OrderToolbar.vue'
 import { LOCALE_NATIVE_NAMES, SUPPORTED_LOCALES, type Locale } from '../../../domain/portfolio/entities/Locale'
@@ -41,15 +43,18 @@ const {
   errorReason: translationErrorReason,
   translate,
   discard: discardTranslation,
-} = useAdminTranslation({
+  proseReadonlyHintId,
+  translationHintId,
+  proseFieldAttrs,
+} = useTranslatedForm({
+  hintIdPrefix: 'admin-case-study',
   isRefused: () => !hasProseToTranslate.value || isSubmitting.value || isOrderDirty.value || lock.isProposalLocked,
   // Ce qui fait l'identité du formulaire : une traduction dont il n'a plus cette identité est périmée. La prose n'en
   // fait pas partie : la saisie est empêchée pendant la traduction, et l'erreur d'un échec survit à la frappe.
-  formIdentity: () => ({
+  identity: () => ({
     entry: editingId.value,
     locale: form.locale,
     group: sourceGroup.value,
-    generation: 0,
   }),
 })
 
@@ -102,17 +107,6 @@ const sourceGroup = ref<string | null>(null)
  */
 const proposalSourceLocale = ref<Locale | null>(null)
 
-/**
- * Les champs que l'assistant traduit — ici, tout : une étude de cas n'a aucun
- * champ non-prose, « Créer la version XX » n'a donc rien à recopier de
- * l'entrée existante (spec 0002, D2 ; spec 0004 §7).
- *
- * Contenu du palier de base (ADR 0003 D5) : la règle éditoriale — jamais de
- * nom de client — vaut pour la proposition autant que pour l'original, et c'est
- * la relecture humaine qui la garantit.
- */
-const PROSE_FIELDS = ['title', 'problem', 'solution', 'tradeoffs', 'measuredResult'] as const
-
 const isEditing = computed(() => null !== editingId.value)
 const lock = useEntryFormLock({
   hintId: 'admin-case-study-entry-lock-help',
@@ -120,11 +114,7 @@ const lock = useEntryFormLock({
   proposalSourceLocale,
 })
 
-// Pendant une traduction, la prose du formulaire est en lecture seule et désigne le texte d'aide (R126) : la référence
-// n'existe que pendant elle, avec le texte, jamais pendante.
-const PROSE_READONLY_HINT_ID = 'admin-case-study-prose-readonly-hint'
-const proseDescribedBy = computed(() => (isTranslating.value ? PROSE_READONLY_HINT_ID : undefined))
-const hasProseToTranslate = computed(() => PROSE_FIELDS.some((field) => '' !== form[field].trim()))
+const hasProseToTranslate = computed(() => CASE_STUDY_PROSE_FIELDS.some((field) => '' !== form[field].trim()))
 
 const translationErrorText = computed(() => {
   const reason = translationErrorReason.value
@@ -278,7 +268,7 @@ async function handleSubmit(): Promise<void> {
 async function handleTranslate(targetLocale: Locale): Promise<void> {
   const sourceLocale = form.locale
 
-  const proposal = await translate(sourceLocale, targetLocale, collectProseFields(form, PROSE_FIELDS))
+  const proposal = await translate(sourceLocale, targetLocale, collectProseFields(form, CASE_STUDY_PROSE_FIELDS))
   if (!proposal) {
     return
   }
@@ -286,7 +276,7 @@ async function handleTranslate(targetLocale: Locale): Promise<void> {
   editingId.value = null
   form.locale = targetLocale
   form.translationGroup = sourceGroup.value ?? ''
-  applyTranslationProposal(form, PROSE_FIELDS, proposal)
+  applyTranslationProposal(form, CASE_STUDY_PROSE_FIELDS, proposal)
   proposalSourceLocale.value = sourceLocale
 }
 
@@ -347,16 +337,14 @@ useUnsavedOrderGuard(isOrderDirty)
         <BaseTextInput
           id="admin-case-study-title"
           v-model="form.title"
-          :readonly="isTranslating"
-          :aria-describedby="proseDescribedBy"
+          v-bind="proseFieldAttrs()"
           :label="t('admin.caseStudies.titleLabel')"
           required
         />
         <BaseTextarea
           id="admin-case-study-problem"
           v-model="form.problem"
-          :readonly="isTranslating"
-          :aria-describedby="proseDescribedBy"
+          v-bind="proseFieldAttrs()"
           :label="t('admin.caseStudies.problemLabel')"
           :rows="5"
           required
@@ -364,8 +352,7 @@ useUnsavedOrderGuard(isOrderDirty)
         <BaseTextarea
           id="admin-case-study-solution"
           v-model="form.solution"
-          :readonly="isTranslating"
-          :aria-describedby="proseDescribedBy"
+          v-bind="proseFieldAttrs()"
           :label="t('admin.caseStudies.solutionLabel')"
           :rows="6"
           required
@@ -373,8 +360,7 @@ useUnsavedOrderGuard(isOrderDirty)
         <BaseTextarea
           id="admin-case-study-tradeoffs"
           v-model="form.tradeoffs"
-          :readonly="isTranslating"
-          :aria-describedby="proseDescribedBy"
+          v-bind="proseFieldAttrs()"
           :label="t('admin.caseStudies.tradeoffsLabel')"
           :rows="4"
           required
@@ -382,11 +368,10 @@ useUnsavedOrderGuard(isOrderDirty)
         <BaseTextarea
           id="admin-case-study-measured-result"
           v-model="form.measuredResult"
-          :readonly="isTranslating"
+          v-bind="proseFieldAttrs('admin-case-study-measured-result-help')"
           :label="t('admin.caseStudies.measuredResultLabel')"
           :rows="3"
           required
-          :aria-describedby="describedBy('admin-case-study-measured-result-help', proseDescribedBy)"
         />
         <div
           id="admin-case-study-measured-result-help"
@@ -405,7 +390,7 @@ useUnsavedOrderGuard(isOrderDirty)
             :form-locale="form.locale"
             :is-translating="isTranslating"
             :is-discard-pending="isDiscardPending"
-            hint-id="admin-case-study-translation-hint"
+            :hint-id="translationHintId"
             :disabled="isTranslationRefused"
             :aria-describedby="describedBy(lockedHintId, lock.proposalDescribedBy)"
             @translate="handleTranslate"
@@ -413,7 +398,7 @@ useUnsavedOrderGuard(isOrderDirty)
         </div>
 
         <TranslationReadonlyHint
-          :id="PROSE_READONLY_HINT_ID"
+          :id="proseReadonlyHintId"
           :shown="isTranslating"
         />
 

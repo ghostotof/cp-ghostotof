@@ -1,7 +1,8 @@
 import { ref } from 'vue'
 import { describe, expect, it } from 'vitest'
 import type { Locale } from '../../../../src/domain/portfolio/entities/Locale'
-import { describedBy, useEntryFormLock } from '../../../../src/presentation/ui/admin/useEntryFormLock'
+import { describedBy } from '../../../../src/presentation/ui/admin/describedBy'
+import { useEntryFormLock } from '../../../../src/presentation/ui/admin/useEntryFormLock'
 
 /** Le verrou d'un formulaire par entrée (#748, R92) : l'état, les verrous dérivés, les identifiants ARIA. */
 describe('useEntryFormLock', () => {

@@ -3,7 +3,6 @@ import { computed, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useUnsavedOrderGuard } from '../../../application/admin/shared/useUnsavedOrderGuard'
 import { useAdminIncidents } from '../../../application/admin/incidents/useAdminIncidents'
-import { useAdminTranslation } from '../../../application/admin/translation/useAdminTranslation'
 import { applyTranslationProposal, collectProseFields } from '../../../application/admin/translation/proseFields'
 import { useOrderDraft } from '../../../application/admin/shared/useOrderDraft'
 import { useOrderHandleFocus } from '../../../application/admin/shared/useOrderHandleFocus'
@@ -26,7 +25,10 @@ import BaseSelect from '../../ui/BaseSelect.vue'
 import TranslateEntryButton from '../../ui/admin/TranslateEntryButton.vue'
 import TranslationReadonlyHint from '../../ui/admin/TranslationReadonlyHint.vue'
 import EntryFormLockHint from '../../ui/admin/EntryFormLockHint.vue'
-import { describedBy, useEntryFormLock } from '../../ui/admin/useEntryFormLock'
+import { describedBy } from '../../ui/admin/describedBy'
+import { useEntryFormLock } from '../../ui/admin/useEntryFormLock'
+import { useTranslatedForm } from '../../ui/admin/useTranslatedForm'
+import { INCIDENT_PROSE_FIELDS } from './proseFields'
 import OrderHandle from '../../ui/admin/OrderHandle.vue'
 import OrderToolbar from '../../ui/admin/OrderToolbar.vue'
 import { LOCALE_NATIVE_NAMES, SUPPORTED_LOCALES, type Locale } from '../../../domain/portfolio/entities/Locale'
@@ -41,15 +43,18 @@ const {
   errorReason: translationErrorReason,
   translate,
   discard: discardTranslation,
-} = useAdminTranslation({
+  proseReadonlyHintId,
+  translationHintId,
+  proseFieldAttrs,
+} = useTranslatedForm({
+  hintIdPrefix: 'admin-incident',
   isRefused: () => !hasProseToTranslate.value || isSubmitting.value || isOrderDirty.value || lock.isProposalLocked,
   // Ce qui fait l'identité du formulaire : une traduction dont il n'a plus cette identité est périmée. La prose n'en
   // fait pas partie : la saisie est empêchée pendant la traduction, et l'erreur d'un échec survit à la frappe.
-  formIdentity: () => ({
+  identity: () => ({
     entry: editingId.value,
     locale: form.locale,
     group: sourceGroup.value,
-    generation: 0,
   }),
 })
 
@@ -106,14 +111,6 @@ const sourceGroup = ref<string | null>(null)
  */
 const proposalSourceLocale = ref<Locale | null>(null)
 
-/**
- * Les champs que l'assistant traduit — la prose. Le complément de cette liste
- * (`version`, `occurredAt`) est ce que « Créer la version XX » recopie de
- * l'entrée existante : une version ou une date n'a pas de traduction
- * (spec 0002, D2 ; spec 0004 §7). Une seule source de vérité par page.
- */
-const PROSE_FIELDS = ['title', 'impact', 'rootCause', 'resolution', 'invariant'] as const
-
 const isEditing = computed(() => null !== editingId.value)
 const lock = useEntryFormLock({
   hintId: 'admin-incident-entry-lock-help',
@@ -121,11 +118,7 @@ const lock = useEntryFormLock({
   proposalSourceLocale,
 })
 
-// Pendant une traduction, la prose du formulaire est en lecture seule et désigne le texte d'aide (R126) : la référence
-// n'existe que pendant elle, avec le texte, jamais pendante.
-const PROSE_READONLY_HINT_ID = 'admin-incident-prose-readonly-hint'
-const proseDescribedBy = computed(() => (isTranslating.value ? PROSE_READONLY_HINT_ID : undefined))
-const hasProseToTranslate = computed(() => PROSE_FIELDS.some((field) => '' !== form[field].trim()))
+const hasProseToTranslate = computed(() => INCIDENT_PROSE_FIELDS.some((field) => '' !== form[field].trim()))
 
 const translationErrorText = computed(() => {
   const reason = translationErrorReason.value
@@ -233,7 +226,7 @@ function startEdit(incident: AdminIncident): void {
 /**
  * « Créer la version XX » : formulaire en création, déjà rattaché au groupe,
  * dans la langue manquante, avec les champs non-prose recopiés de l'entrée
- * existante (cf. PROSE_FIELDS) et la prose vide — il n'y a rien à traduire
+ * existante (cf. INCIDENT_PROSE_FIELDS) et la prose vide — il n'y a rien à traduire
  * puisqu'il n'y a rien à écrire encore.
  */
 function startCreateVersion(row: TranslationGroupRow<AdminIncident>, locale: Locale): void {
@@ -290,7 +283,7 @@ async function handleSubmit(): Promise<void> {
 async function handleTranslate(targetLocale: Locale): Promise<void> {
   const sourceLocale = form.locale
 
-  const proposal = await translate(sourceLocale, targetLocale, collectProseFields(form, PROSE_FIELDS))
+  const proposal = await translate(sourceLocale, targetLocale, collectProseFields(form, INCIDENT_PROSE_FIELDS))
   if (!proposal) {
     return
   }
@@ -298,7 +291,7 @@ async function handleTranslate(targetLocale: Locale): Promise<void> {
   editingId.value = null
   form.locale = targetLocale
   form.translationGroup = sourceGroup.value ?? ''
-  applyTranslationProposal(form, PROSE_FIELDS, proposal)
+  applyTranslationProposal(form, INCIDENT_PROSE_FIELDS, proposal)
   proposalSourceLocale.value = sourceLocale
 }
 
@@ -353,8 +346,7 @@ useUnsavedOrderGuard(isOrderDirty)
         <BaseTextInput
           id="admin-incident-title"
           v-model="form.title"
-          :readonly="isTranslating"
-          :aria-describedby="proseDescribedBy"
+          v-bind="proseFieldAttrs()"
           :label="t('admin.incidents.titleLabel')"
           required
         />
@@ -373,8 +365,7 @@ useUnsavedOrderGuard(isOrderDirty)
         <BaseTextarea
           id="admin-incident-impact"
           v-model="form.impact"
-          :readonly="isTranslating"
-          :aria-describedby="proseDescribedBy"
+          v-bind="proseFieldAttrs()"
           :label="t('admin.incidents.impactLabel')"
           :rows="3"
           required
@@ -382,8 +373,7 @@ useUnsavedOrderGuard(isOrderDirty)
         <BaseTextarea
           id="admin-incident-root-cause"
           v-model="form.rootCause"
-          :readonly="isTranslating"
-          :aria-describedby="proseDescribedBy"
+          v-bind="proseFieldAttrs()"
           :label="t('admin.incidents.rootCauseLabel')"
           :rows="5"
           required
@@ -391,8 +381,7 @@ useUnsavedOrderGuard(isOrderDirty)
         <BaseTextarea
           id="admin-incident-resolution"
           v-model="form.resolution"
-          :readonly="isTranslating"
-          :aria-describedby="proseDescribedBy"
+          v-bind="proseFieldAttrs()"
           :label="t('admin.incidents.resolutionLabel')"
           :rows="3"
           required
@@ -400,11 +389,10 @@ useUnsavedOrderGuard(isOrderDirty)
         <BaseTextarea
           id="admin-incident-invariant"
           v-model="form.invariant"
-          :readonly="isTranslating"
+          v-bind="proseFieldAttrs('admin-incident-invariant-help')"
           :label="t('admin.incidents.invariantLabel')"
           :rows="4"
           required
-          :aria-describedby="describedBy('admin-incident-invariant-help', proseDescribedBy)"
         />
         <div
           id="admin-incident-invariant-help"
@@ -423,7 +411,7 @@ useUnsavedOrderGuard(isOrderDirty)
             :form-locale="form.locale"
             :is-translating="isTranslating"
             :is-discard-pending="isDiscardPending"
-            hint-id="admin-incident-translation-hint"
+            :hint-id="translationHintId"
             :disabled="isTranslationRefused"
             :aria-describedby="describedBy(lockedHintId, lock.proposalDescribedBy)"
             @translate="handleTranslate"
@@ -431,7 +419,7 @@ useUnsavedOrderGuard(isOrderDirty)
         </div>
 
         <TranslationReadonlyHint
-          :id="PROSE_READONLY_HINT_ID"
+          :id="proseReadonlyHintId"
           :shown="isTranslating"
         />
 

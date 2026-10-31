@@ -29,6 +29,12 @@ import type { AdminTranslationRepository } from '../../../../src/domain/admin/tr
 import type { TranslationProposal } from '../../../../src/domain/admin/translation/entities/TranslationProposal'
 import { AdminTranslationError } from '../../../../src/domain/admin/translation/errors/AdminTranslationError'
 import { expectNoAccessibilityViolation } from '../../../support/axe'
+import { proseFieldId } from '../../../../src/presentation/ui/admin/useTranslatedForm'
+import {
+  ABOUT_SETTINGS_PROSE_FIELDS,
+  ME_CARD_PROSE_FIELDS,
+  SITE_CARD_PROSE_FIELDS,
+} from '../../../../src/presentation/pages/admin/proseFields'
 import {
   ENTRY_LOCK_PROPOSAL_TEXT,
   describedTexts,
@@ -1037,8 +1043,9 @@ describe('AdminAboutPage', () => {
         group: 'admin-about-site-card-translation-group',
         title: 'admin-about-site-card-title',
         hint: 'admin-about-site-card-entry-lock-help',
-        prose: ['admin-about-site-card-title', 'admin-about-site-card-description'],
       },
+      proseFields: SITE_CARD_PROSE_FIELDS,
+      fieldIdPrefix: 'admin-about-site-card',
       heading: 'Ajouter une carte',
       permanentHelp: LOCALE_HELP_TEXT,
       startEdit: async (wrapper) => {
@@ -1074,8 +1081,9 @@ describe('AdminAboutPage', () => {
         group: 'admin-about-me-card-translation-group',
         title: 'admin-about-me-card-title',
         hint: 'admin-about-me-card-entry-lock-help',
-        prose: ['admin-about-me-card-title', 'admin-about-me-card-description'],
       },
+      proseFields: ME_CARD_PROSE_FIELDS,
+      fieldIdPrefix: 'admin-about-me-card',
       heading: 'Ajouter une carte',
       permanentHelp: LOCALE_HELP_TEXT,
       startEdit: async (wrapper) => {
@@ -1390,13 +1398,7 @@ describe('AdminAboutPage', () => {
 
     // Décision 3 de la onzième relecture (R126) : pendant la traduction des réglages, les cinq champs de prose sont en
     // lecture seule, décrits par le texte d'aide ; la réponse remplace une prose que personne n'a pu changer.
-    const SETTINGS_PROSE_IDS = [
-      'admin-about-site-eyebrow',
-      'admin-about-me-eyebrow',
-      'admin-about-technical-subtitle',
-      'admin-about-personal-subtitle',
-      'admin-about-hobbies-subtitle',
-    ]
+    const SETTINGS_PROSE_IDS = ABOUT_SETTINGS_PROSE_FIELDS.map((field) => proseFieldId('admin-about', field))
 
     it("pendant une traduction, la prose des réglages est en lecture seule et décrite par le texte d'aide (#748, R126)", async () => {
       let answer!: (proposal: TranslationProposal) => void
@@ -1414,6 +1416,9 @@ describe('AdminAboutPage', () => {
         expect(field.attributes('disabled'), `#${id} : disabled`).toBeUndefined()
         expect(describedTexts(wrapper, `#${id}`), `#${id} : aria-describedby`).toEqual([PROSE_READONLY_TEXT])
       }
+      // Dans l'autre sens : aucun autre champ du formulaire n'est en lecture seule, ni ne manque à la liste de la page.
+      const readonlyIds = panelOf(wrapper, SETTINGS_PANEL).findAll('[readonly]').map((field) => field.attributes('id'))
+      expect([...readonlyIds].sort()).toEqual([...SETTINGS_PROSE_IDS].sort())
       await expectNoAccessibilityViolation(wrapper)
 
       answer({ sourceLocale: 'fr', targetLocale: 'en', fields: TRANSLATED_SETTINGS })

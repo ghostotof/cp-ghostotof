@@ -14,6 +14,7 @@ import { AdminTranslationError } from '../../../../src/domain/admin/translation/
 import { AdminOrderError } from '../../../../src/domain/admin/shared/errors/AdminOrderError'
 import { expectNoAccessibilityViolation } from '../../../support/axe'
 import { describeEntryFormLock, translateEntryButton } from '../../../support/entryFormLock'
+import { INCIDENT_PROSE_FIELDS } from '../../../../src/presentation/pages/admin/proseFields'
 
 const GROUP_ONE = '019968b0-0000-7000-8000-000000000001'
 const GROUP_TWO = '019968b0-0000-7000-8000-000000000002'
@@ -404,14 +405,9 @@ describe('AdminIncidentsPage', () => {
       group: 'admin-incident-translation-group',
       title: 'admin-incident-title',
       hint: 'admin-incident-entry-lock-help',
-      prose: [
-        'admin-incident-title',
-        'admin-incident-impact',
-        'admin-incident-root-cause',
-        'admin-incident-resolution',
-        'admin-incident-invariant',
-      ],
     },
+    proseFields: INCIDENT_PROSE_FIELDS,
+    fieldIdPrefix: 'admin-incident',
     heading: 'Ajouter un incident',
     startEdit: async (wrapper) => {
       await buttonLabelled(actionsForLine(wrapper, 'Image obsolète servie'), 'Modifier').trigger('click')

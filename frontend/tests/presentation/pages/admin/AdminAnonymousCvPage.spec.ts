@@ -14,6 +14,7 @@ import { AdminTranslationError } from '../../../../src/domain/admin/translation/
 import { AdminOrderError } from '../../../../src/domain/admin/shared/errors/AdminOrderError'
 import { expectNoAccessibilityViolation } from '../../../support/axe'
 import { describeEntryFormLock, translateEntryButton } from '../../../support/entryFormLock'
+import { ANONYMOUS_CV_PROSE_FIELDS } from '../../../../src/presentation/pages/admin/proseFields'
 
 const GROUP_ONE = '019968b0-0000-7000-8000-000000000011'
 const GROUP_TWO = '019968b0-0000-7000-8000-000000000012'
@@ -388,8 +389,9 @@ describe('AdminAnonymousCvPage', () => {
       group: 'admin-anonymous-cv-translation-group',
       title: 'admin-anonymous-cv-title',
       hint: 'admin-anonymous-cv-entry-lock-help',
-      prose: ['admin-anonymous-cv-title', 'admin-anonymous-cv-skills', 'admin-anonymous-cv-achievements'],
     },
+    proseFields: ANONYMOUS_CV_PROSE_FIELDS,
+    fieldIdPrefix: 'admin-anonymous-cv',
     heading: 'Ajouter une section',
     startEdit: async (wrapper) => {
       await buttonLabelled(actionsForLine(wrapper, 'Frontend Vue 3'), 'Modifier').trigger('click')

@@ -1,5 +1,6 @@
 import { computed, reactive, readonly, toValue, type MaybeRefOrGetter } from 'vue'
 import type { Locale } from '../../../domain/portfolio/entities/Locale'
+import { describedBy } from './describedBy'
 
 /**
  * Ce qui verrouille un formulaire par entrée : rien, l'édition d'une entrée existante, ou une
@@ -24,16 +25,6 @@ export interface EntryFormLock {
   readonly localeDescribedBy: string | undefined
   /** `aria-describedby` d'un contrôle que seule la proposition verrouille : le texte du verrou pendant elle, rien sinon. */
   readonly proposalDescribedBy: string | undefined
-}
-
-/**
- * Les identifiants non vides, joints par une espace (la forme d'un `aria-describedby`) ; `undefined`
- * s'il n'y en a aucun, pour que l'attribut ne soit pas rendu.
- */
-export function describedBy(...ids: ReadonlyArray<string | undefined>): string | undefined {
-  const present = ids.filter((id): id is string => undefined !== id && '' !== id)
-
-  return 0 === present.length ? undefined : present.join(' ')
 }
 
 /**

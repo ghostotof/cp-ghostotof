@@ -2,7 +2,6 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAdminAboutSiteCards } from '../../../application/admin/about/useAdminAboutSiteCards'
-import { useAdminTranslation } from '../../../application/admin/translation/useAdminTranslation'
 import { applyTranslationProposal, collectProseFields } from '../../../application/admin/translation/proseFields'
 import { useOrderDraft } from '../../../application/admin/shared/useOrderDraft'
 import { useOrderHandleFocus } from '../../../application/admin/shared/useOrderHandleFocus'
@@ -24,7 +23,10 @@ import BaseSelect from '../../ui/BaseSelect.vue'
 import TranslateEntryButton from '../../ui/admin/TranslateEntryButton.vue'
 import TranslationReadonlyHint from '../../ui/admin/TranslationReadonlyHint.vue'
 import EntryFormLockHint from '../../ui/admin/EntryFormLockHint.vue'
-import { describedBy, useEntryFormLock } from '../../ui/admin/useEntryFormLock'
+import { describedBy } from '../../ui/admin/describedBy'
+import { useEntryFormLock } from '../../ui/admin/useEntryFormLock'
+import { useTranslatedForm } from '../../ui/admin/useTranslatedForm'
+import { SITE_CARD_PROSE_FIELDS } from './proseFields'
 import OrderHandle from '../../ui/admin/OrderHandle.vue'
 import OrderToolbar from '../../ui/admin/OrderToolbar.vue'
 import { LOCALE_NATIVE_NAMES, SUPPORTED_LOCALES, type Locale } from '../../../domain/portfolio/entities/Locale'
@@ -71,24 +73,20 @@ const {
   errorReason: translationErrorReason,
   translate,
   discard: discardTranslation,
-} = useAdminTranslation({
+  proseReadonlyHintId,
+  translationHintId,
+  proseFieldAttrs,
+} = useTranslatedForm({
+  hintIdPrefix: 'admin-about-site-card',
   isRefused: () => !hasProseToTranslate.value || isSubmitting.value || props.isLocked || lock.isProposalLocked,
   // Ce qui fait l'identité du formulaire : une traduction dont il n'a plus cette identité est périmée. La prose n'en
   // fait pas partie : la saisie est empêchée pendant la traduction, et l'erreur d'un échec survit à la frappe.
-  formIdentity: () => ({
+  identity: () => ({
     entry: editingId.value,
     locale: form.locale,
     group: sourceGroup.value,
-    generation: 0,
   }),
 })
-
-/**
- * Prose d'une carte du site. Le complément de cette liste — `iconKey` — est ce
- * que « Créer la version XX » recopie de l'entrée existante : une clé d'icône
- * n'a pas de traduction (spec 0002, D2 ; spec 0004 §7). Une seule source de vérité.
- */
-const PROSE_FIELDS = ['title', 'description'] as const
 
 /**
  * `locale` est typée explicitement : sans annotation, `reactive` l'infère au
@@ -135,11 +133,7 @@ const lock = useEntryFormLock({
  */
 const sourceGroup = ref<string | null>(null)
 
-// Pendant une traduction, la prose du formulaire est en lecture seule et désigne le texte d'aide (R126) : la référence
-// n'existe que pendant elle, avec le texte, jamais pendante.
-const PROSE_READONLY_HINT_ID = 'admin-about-site-card-prose-readonly-hint'
-const proseDescribedBy = computed(() => (isTranslating.value ? PROSE_READONLY_HINT_ID : undefined))
-const hasProseToTranslate = computed(() => PROSE_FIELDS.some((field) => '' !== form[field].trim()))
+const hasProseToTranslate = computed(() => SITE_CARD_PROSE_FIELDS.some((field) => '' !== form[field].trim()))
 const errorText = computed(() => {
   const reason = errorMessage.value?.reason
 
@@ -228,7 +222,7 @@ function startEdit(card: AdminAboutSiteCard): void {
  * « Créer la version XX » : formulaire en création, déjà rattaché au groupe,
  * dans la langue manquante — qu'adopte le sélecteur du formulaire. Les champs
  * non-prose sont recopiés de l'entrée existante (ici `iconKey`, cf.
- * PROSE_FIELDS par complément) et la prose reste vide : il n'y a rien à
+ * SITE_CARD_PROSE_FIELDS par complément) et la prose reste vide : il n'y a rien à
  * traduire puisqu'il n'y a rien d'écrit encore.
  */
 function startCreateVersion(row: TranslationGroupRow<AdminAboutSiteCard>, locale: Locale): void {
@@ -277,7 +271,7 @@ async function handleSubmit(): Promise<void> {
 async function handleTranslate(targetLocale: Locale): Promise<void> {
   const sourceLocale = form.locale
 
-  const proposal = await translate(sourceLocale, targetLocale, collectProseFields(form, PROSE_FIELDS))
+  const proposal = await translate(sourceLocale, targetLocale, collectProseFields(form, SITE_CARD_PROSE_FIELDS))
   if (!proposal) {
     return
   }
@@ -285,7 +279,7 @@ async function handleTranslate(targetLocale: Locale): Promise<void> {
   editingId.value = null
   form.locale = targetLocale
   form.translationGroup = sourceGroup.value ?? ''
-  applyTranslationProposal(form, PROSE_FIELDS, proposal)
+  applyTranslationProposal(form, SITE_CARD_PROSE_FIELDS, proposal)
   proposalSourceLocale.value = sourceLocale
 }
 
@@ -343,16 +337,14 @@ async function handleDelete(card: AdminAboutSiteCard): Promise<void> {
       <BaseTextInput
         id="admin-about-site-card-title"
         v-model="form.title"
-        :readonly="isTranslating"
-        :aria-describedby="proseDescribedBy"
+        v-bind="proseFieldAttrs()"
         :label="t('admin.about.siteCard.titleLabel')"
         required
       />
       <BaseTextarea
         id="admin-about-site-card-description"
         v-model="form.description"
-        :readonly="isTranslating"
-        :aria-describedby="proseDescribedBy"
+        v-bind="proseFieldAttrs()"
         :label="t('admin.about.siteCard.descriptionLabel')"
         required
       />
@@ -372,7 +364,7 @@ async function handleDelete(card: AdminAboutSiteCard): Promise<void> {
           :form-locale="form.locale"
           :is-translating="isTranslating"
           :is-discard-pending="isDiscardPending"
-          hint-id="admin-about-site-card-translation-hint"
+          :hint-id="translationHintId"
           :disabled="isTranslationRefused"
           :aria-describedby="describedBy(lockedHintId, lock.proposalDescribedBy)"
           @translate="handleTranslate"
@@ -380,7 +372,7 @@ async function handleDelete(card: AdminAboutSiteCard): Promise<void> {
       </div>
 
       <TranslationReadonlyHint
-        :id="PROSE_READONLY_HINT_ID"
+        :id="proseReadonlyHintId"
         :shown="isTranslating"
       />
 

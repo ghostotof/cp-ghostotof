@@ -17,6 +17,7 @@ import { signInAgain } from '../../../support/signInAgain'
 import { AdminOrderError } from '../../../../src/domain/admin/shared/errors/AdminOrderError'
 import { expectNoAccessibilityViolation } from '../../../support/axe'
 import { describeEntryFormLock, ENTRY_LOCK_PROPOSAL_TEXT, textsDescribing, translateEntryButton } from '../../../support/entryFormLock'
+import { CASE_STUDY_PROSE_FIELDS } from '../../../../src/presentation/pages/admin/proseFields'
 
 const GROUP_ONE = '019968b0-0000-7000-8000-000000000011'
 const GROUP_TWO = '019968b0-0000-7000-8000-000000000012'
@@ -491,14 +492,9 @@ describe('AdminCaseStudiesPage', () => {
       group: 'admin-case-study-translation-group',
       title: 'admin-case-study-title',
       hint: 'admin-case-study-entry-lock-help',
-      prose: [
-        'admin-case-study-title',
-        'admin-case-study-problem',
-        'admin-case-study-solution',
-        'admin-case-study-tradeoffs',
-        'admin-case-study-measured-result',
-      ],
     },
+    proseFields: CASE_STUDY_PROSE_FIELDS,
+    fieldIdPrefix: 'admin-case-study',
     heading: 'Ajouter une étude de cas',
     startEdit: async (wrapper) => {
       await buttonLabelled(actionsForLine(wrapper, 'PHPStan progressif sur un legacy'), 'Modifier').trigger('click')

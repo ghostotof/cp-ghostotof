@@ -3,7 +3,6 @@ import { computed, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useUnsavedOrderGuard } from '../../../application/admin/shared/useUnsavedOrderGuard'
 import { useAdminAnonymousCvSections } from '../../../application/admin/anonymousCv/useAdminAnonymousCvSections'
-import { useAdminTranslation } from '../../../application/admin/translation/useAdminTranslation'
 import { applyTranslationProposal, collectProseFields } from '../../../application/admin/translation/proseFields'
 import { useOrderDraft } from '../../../application/admin/shared/useOrderDraft'
 import { useOrderHandleFocus } from '../../../application/admin/shared/useOrderHandleFocus'
@@ -26,7 +25,10 @@ import BaseSelect from '../../ui/BaseSelect.vue'
 import TranslateEntryButton from '../../ui/admin/TranslateEntryButton.vue'
 import TranslationReadonlyHint from '../../ui/admin/TranslationReadonlyHint.vue'
 import EntryFormLockHint from '../../ui/admin/EntryFormLockHint.vue'
-import { describedBy, useEntryFormLock } from '../../ui/admin/useEntryFormLock'
+import { describedBy } from '../../ui/admin/describedBy'
+import { useEntryFormLock } from '../../ui/admin/useEntryFormLock'
+import { useTranslatedForm } from '../../ui/admin/useTranslatedForm'
+import { ANONYMOUS_CV_PROSE_FIELDS } from './proseFields'
 import OrderHandle from '../../ui/admin/OrderHandle.vue'
 import OrderToolbar from '../../ui/admin/OrderToolbar.vue'
 import { LOCALE_NATIVE_NAMES, SUPPORTED_LOCALES, type Locale } from '../../../domain/portfolio/entities/Locale'
@@ -42,15 +44,18 @@ const {
   errorReason: translationErrorReason,
   translate,
   discard: discardTranslation,
-} = useAdminTranslation({
+  proseReadonlyHintId,
+  translationHintId,
+  proseFieldAttrs,
+} = useTranslatedForm({
+  hintIdPrefix: 'admin-anonymous-cv',
   isRefused: () => !hasProseToTranslate.value || isSubmitting.value || isOrderDirty.value || lock.isProposalLocked,
   // Ce qui fait l'identité du formulaire : une traduction dont il n'a plus cette identité est périmée. La prose n'en
   // fait pas partie : la saisie est empêchée pendant la traduction, et l'erreur d'un échec survit à la frappe.
-  formIdentity: () => ({
+  identity: () => ({
     entry: editingId.value,
     locale: form.locale,
     group: sourceGroup.value,
-    generation: 0,
   }),
 })
 
@@ -101,18 +106,6 @@ const sourceGroup = ref<string | null>(null)
  */
 const proposalSourceLocale = ref<Locale | null>(null)
 
-/**
- * Les champs que l'assistant traduit — la prose. Le complément de cette liste
- * (`yearsOfExperience`) est ce que « Créer la version XX » recopie de
- * l'entrée existante : un nombre d'années n'a pas de traduction (spec 0002,
- * D2 ; spec 0004 §7). Une seule source de vérité par page.
- *
- * Contenu du palier de base (ADR 0003 D5) : la règle éditoriale — ni nom, ni
- * employeur, ni client — vaut pour la proposition autant que pour l'original,
- * et c'est la relecture humaine qui la garantit.
- */
-const PROSE_FIELDS = ['title', 'skills', 'achievements'] as const
-
 const isEditing = computed(() => null !== editingId.value)
 const lock = useEntryFormLock({
   hintId: 'admin-anonymous-cv-entry-lock-help',
@@ -120,11 +113,7 @@ const lock = useEntryFormLock({
   proposalSourceLocale,
 })
 
-// Pendant une traduction, la prose du formulaire est en lecture seule et désigne le texte d'aide (R126) : la référence
-// n'existe que pendant elle, avec le texte, jamais pendante.
-const PROSE_READONLY_HINT_ID = 'admin-anonymous-cv-prose-readonly-hint'
-const proseDescribedBy = computed(() => (isTranslating.value ? PROSE_READONLY_HINT_ID : undefined))
-const hasProseToTranslate = computed(() => PROSE_FIELDS.some((field) => '' !== form[field].trim()))
+const hasProseToTranslate = computed(() => ANONYMOUS_CV_PROSE_FIELDS.some((field) => '' !== form[field].trim()))
 
 const translationErrorText = computed(() => {
   const reason = translationErrorReason.value
@@ -226,7 +215,7 @@ function startEdit(section: AdminAnonymousCvSection): void {
 /**
  * « Créer la version XX » : formulaire en création, déjà rattaché au groupe,
  * dans la langue manquante, avec les champs non-prose recopiés de l'entrée
- * existante (cf. PROSE_FIELDS) et la prose vide — il n'y a rien à traduire
+ * existante (cf. ANONYMOUS_CV_PROSE_FIELDS) et la prose vide — il n'y a rien à traduire
  * puisqu'il n'y a rien à écrire encore.
  */
 function startCreateVersion(row: TranslationGroupRow<AdminAnonymousCvSection>, locale: Locale): void {
@@ -277,7 +266,7 @@ async function handleSubmit(): Promise<void> {
 async function handleTranslate(targetLocale: Locale): Promise<void> {
   const sourceLocale = form.locale
 
-  const proposal = await translate(sourceLocale, targetLocale, collectProseFields(form, PROSE_FIELDS))
+  const proposal = await translate(sourceLocale, targetLocale, collectProseFields(form, ANONYMOUS_CV_PROSE_FIELDS))
   if (!proposal) {
     return
   }
@@ -285,7 +274,7 @@ async function handleTranslate(targetLocale: Locale): Promise<void> {
   editingId.value = null
   form.locale = targetLocale
   form.translationGroup = sourceGroup.value ?? ''
-  applyTranslationProposal(form, PROSE_FIELDS, proposal)
+  applyTranslationProposal(form, ANONYMOUS_CV_PROSE_FIELDS, proposal)
   proposalSourceLocale.value = sourceLocale
 }
 
@@ -346,16 +335,14 @@ useUnsavedOrderGuard(isOrderDirty)
         <BaseTextInput
           id="admin-anonymous-cv-title"
           v-model="form.title"
-          :readonly="isTranslating"
-          :aria-describedby="proseDescribedBy"
+          v-bind="proseFieldAttrs()"
           :label="t('admin.anonymousCv.titleLabel')"
           required
         />
         <BaseTextarea
           id="admin-anonymous-cv-skills"
           v-model="form.skills"
-          :readonly="isTranslating"
-          :aria-describedby="proseDescribedBy"
+          v-bind="proseFieldAttrs()"
           :label="t('admin.anonymousCv.skillsLabel')"
           :rows="3"
           required
@@ -369,11 +356,10 @@ useUnsavedOrderGuard(isOrderDirty)
         <BaseTextarea
           id="admin-anonymous-cv-achievements"
           v-model="form.achievements"
-          :readonly="isTranslating"
+          v-bind="proseFieldAttrs('admin-anonymous-cv-achievements-help')"
           :label="t('admin.anonymousCv.achievementsLabel')"
           :rows="6"
           required
-          :aria-describedby="describedBy('admin-anonymous-cv-achievements-help', proseDescribedBy)"
         />
         <div
           id="admin-anonymous-cv-achievements-help"
@@ -392,7 +378,7 @@ useUnsavedOrderGuard(isOrderDirty)
             :form-locale="form.locale"
             :is-translating="isTranslating"
             :is-discard-pending="isDiscardPending"
-            hint-id="admin-anonymous-cv-translation-hint"
+            :hint-id="translationHintId"
             :disabled="isTranslationRefused"
             :aria-describedby="describedBy(lockedHintId, lock.proposalDescribedBy)"
             @translate="handleTranslate"
@@ -400,7 +386,7 @@ useUnsavedOrderGuard(isOrderDirty)
         </div>
 
         <TranslationReadonlyHint
-          :id="PROSE_READONLY_HINT_ID"
+          :id="proseReadonlyHintId"
           :shown="isTranslating"
         />
 

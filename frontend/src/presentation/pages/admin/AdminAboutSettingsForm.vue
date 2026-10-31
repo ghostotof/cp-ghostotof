@@ -2,12 +2,13 @@
 import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAdminAboutSettings } from '../../../application/admin/about/useAdminAboutSettings'
-import { useAdminTranslation } from '../../../application/admin/translation/useAdminTranslation'
 import { applyTranslationProposal, collectProseFields } from '../../../application/admin/translation/proseFields'
 import BaseTextInput from '../../ui/BaseTextInput.vue'
 import TranslateEntryButton from '../../ui/admin/TranslateEntryButton.vue'
 import TranslationReadonlyHint from '../../ui/admin/TranslationReadonlyHint.vue'
-import { describedBy } from '../../ui/admin/useEntryFormLock'
+import { describedBy } from '../../ui/admin/describedBy'
+import { useTranslatedForm } from '../../ui/admin/useTranslatedForm'
+import { ABOUT_SETTINGS_PROSE_FIELDS } from './proseFields'
 import type { AdminAboutSettings } from '../../../domain/admin/about/entities/AdminAboutSettings'
 import type { Locale } from '../../../domain/portfolio/entities/Locale'
 import type { TranslationProposal } from '../../../domain/admin/translation/entities/TranslationProposal'
@@ -53,7 +54,6 @@ const errorText = computed(() => {
  * L'avis « proposition générée par IA » est celui de la langue cible (`proposal.target`) : absent sous l'autre langue,
  * il part dès que le formulaire de sa langue est relu du serveur (R66, décision 4).
  */
-const PROSE_FIELDS = ['siteEyebrow', 'meEyebrow', 'technicalSubtitle', 'personalSubtitle', 'hobbiesSubtitle'] as const
 // Une traduction dont le formulaire n'est plus celui de l'envoi (une autre langue, d'autres réglages posés) est périmée.
 // Le composable refuse de lui-même tout ce que le bouton refuse (R127, R127b) : l'absence de prose, un enregistrement en vol,
 // le verrou d'ordre de la page et une proposition affichée, qu'une seconde traduction remplacerait sans geste d'abandon.
@@ -64,9 +64,13 @@ const {
   errorReason: translationErrorReason,
   translate,
   discard: discardTranslation,
-} = useAdminTranslation({
+  proseReadonlyHintId,
+  translationHintId,
+  proseFieldAttrs,
+} = useTranslatedForm({
+  hintIdPrefix: 'admin-about-settings',
   isRefused: () => !hasProseToTranslate.value || isAnySaving.value || props.isLocked || isProposalShown.value,
-  formIdentity: () => ({ entry: null, locale: props.locale, group: null, generation: 0 }),
+  identity: () => ({ entry: null, locale: props.locale, group: null }),
 })
 const pendingProposal = ref<TranslationProposal | null>(null)
 // Le formulaire rendu (absent pendant une lecture) : « Abandonner » y rend le focus au premier champ une fois relu.
@@ -80,13 +84,9 @@ const proposal = ref<{ readonly source: Locale; readonly target: Locale } | null
 // formulaire (avis, verrou, « Abandonner », bouton), qui n'existe qu'une fois `isLoaded` : une relecture de la cible
 // refusée ou interrompue laisse les réglages nuls, sans formulaire pour les porter. `translate` n'est émis que par ce bouton.
 const isProposalShown = computed(() => proposal.value?.target === props.locale)
-// Pendant une traduction, la prose du formulaire est en lecture seule et désigne le texte d'aide (R126) : la référence
-// n'existe que pendant elle, avec le texte, jamais pendante.
-const PROSE_READONLY_HINT_ID = 'admin-about-settings-prose-readonly-hint'
 // Pendant une proposition affichée, le bouton de traduction est verrouillé et désigne ce texte, rendu seulement alors (R127).
 const PROPOSAL_LOCKED_HINT_ID = 'admin-about-settings-proposal-locked-help'
-const proseDescribedBy = computed(() => (isTranslating.value ? PROSE_READONLY_HINT_ID : undefined))
-const hasProseToTranslate = computed(() => PROSE_FIELDS.some((field) => '' !== form[field].trim()))
+const hasProseToTranslate = computed(() => ABOUT_SETTINGS_PROSE_FIELDS.some((field) => '' !== form[field].trim()))
 const translationErrorText = computed(() => {
   const reason = translationErrorReason.value
 
@@ -157,13 +157,13 @@ function applyPendingProposal(loadedLocale: Locale): void {
     return
   }
 
-  applyTranslationProposal(form, PROSE_FIELDS, pendingProposal.value)
+  applyTranslationProposal(form, ABOUT_SETTINGS_PROSE_FIELDS, pendingProposal.value)
   proposal.value = { source: pendingProposal.value.sourceLocale, target: pendingProposal.value.targetLocale }
   pendingProposal.value = null
 }
 
 async function handleTranslate(targetLocale: Locale): Promise<void> {
-  const translated = await translate(props.locale, targetLocale, collectProseFields(form, PROSE_FIELDS))
+  const translated = await translate(props.locale, targetLocale, collectProseFields(form, ABOUT_SETTINGS_PROSE_FIELDS))
   if (!translated) {
     return
   }
@@ -250,40 +250,35 @@ async function handleSubmit(): Promise<void> {
       <BaseTextInput
         id="admin-about-site-eyebrow"
         v-model="form.siteEyebrow"
-        :readonly="isTranslating"
-        :aria-describedby="proseDescribedBy"
+        v-bind="proseFieldAttrs()"
         :label="t('admin.about.settings.siteEyebrowLabel')"
         required
       />
       <BaseTextInput
         id="admin-about-me-eyebrow"
         v-model="form.meEyebrow"
-        :readonly="isTranslating"
-        :aria-describedby="proseDescribedBy"
+        v-bind="proseFieldAttrs()"
         :label="t('admin.about.settings.meEyebrowLabel')"
         required
       />
       <BaseTextInput
         id="admin-about-technical-subtitle"
         v-model="form.technicalSubtitle"
-        :readonly="isTranslating"
-        :aria-describedby="proseDescribedBy"
+        v-bind="proseFieldAttrs()"
         :label="t('admin.about.settings.technicalSubtitleLabel')"
         required
       />
       <BaseTextInput
         id="admin-about-personal-subtitle"
         v-model="form.personalSubtitle"
-        :readonly="isTranslating"
-        :aria-describedby="proseDescribedBy"
+        v-bind="proseFieldAttrs()"
         :label="t('admin.about.settings.personalSubtitleLabel')"
         required
       />
       <BaseTextInput
         id="admin-about-hobbies-subtitle"
         v-model="form.hobbiesSubtitle"
-        :readonly="isTranslating"
-        :aria-describedby="proseDescribedBy"
+        v-bind="proseFieldAttrs()"
         :label="t('admin.about.settings.hobbiesSubtitleLabel')"
         required
       />
@@ -299,7 +294,7 @@ async function handleSubmit(): Promise<void> {
           :form-locale="locale"
           :is-translating="isTranslating"
           :is-discard-pending="isDiscardPending"
-          hint-id="admin-about-settings-translation-hint"
+          :hint-id="translationHintId"
           :disabled="isTranslationRefused"
           :aria-describedby="describedBy(lockedHintId, isProposalShown ? PROPOSAL_LOCKED_HINT_ID : undefined)"
           @translate="handleTranslate"
@@ -322,7 +317,7 @@ async function handleSubmit(): Promise<void> {
       </div>
 
       <TranslationReadonlyHint
-        :id="PROSE_READONLY_HINT_ID"
+        :id="proseReadonlyHintId"
         :shown="isTranslating"
       />
 

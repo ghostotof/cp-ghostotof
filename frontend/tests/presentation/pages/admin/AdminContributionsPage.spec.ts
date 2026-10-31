@@ -14,6 +14,7 @@ import { AdminTranslationError } from '../../../../src/domain/admin/translation/
 import { AdminOrderError } from '../../../../src/domain/admin/shared/errors/AdminOrderError'
 import { expectNoAccessibilityViolation } from '../../../support/axe'
 import { describeEntryFormLock, translateEntryButton } from '../../../support/entryFormLock'
+import { CONTRIBUTION_PROSE_FIELDS } from '../../../../src/presentation/pages/admin/proseFields'
 
 const GROUP_ONE = '019968b0-0000-7000-8000-000000000001'
 const GROUP_TWO = '019968b0-0000-7000-8000-000000000002'
@@ -385,8 +386,9 @@ describe('AdminContributionsPage', () => {
       group: 'admin-contribution-translation-group',
       title: 'admin-contribution-title',
       hint: 'admin-contribution-entry-lock-help',
-      prose: ['admin-contribution-title', 'admin-contribution-summary', 'admin-contribution-body'],
     },
+    proseFields: CONTRIBUTION_PROSE_FIELDS,
+    fieldIdPrefix: 'admin-contribution',
     heading: 'Ajouter une contribution',
     startEdit: async (wrapper) => {
       await buttonLabelled(actionsForLine(wrapper, "Un tableau de bord d'observabilité maison"), 'Modifier').trigger('click')

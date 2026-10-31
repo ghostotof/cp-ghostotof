@@ -17,6 +17,7 @@ import type { AdminTranslationRepository } from '../../../../src/domain/admin/tr
 import { AdminTranslationError } from '../../../../src/domain/admin/translation/errors/AdminTranslationError'
 import { expectNoAccessibilityViolation } from '../../../support/axe'
 import { describeEntryFormLock, LOCALE_HELP_TEXT, translateEntryButton } from '../../../support/entryFormLock'
+import { QUALITY_PRINCIPLE_PROSE_FIELDS, QUALITY_TRAIT_PROSE_FIELDS } from '../../../../src/presentation/pages/admin/proseFields'
 
 const P_GROUP_ONE = '019968b0-0000-7000-8000-0000000000e1'
 const P_GROUP_TWO = '019968b0-0000-7000-8000-0000000000e2'
@@ -681,8 +682,9 @@ describe('AdminQualityPage', () => {
         group: 'admin-quality-principle-translation-group',
         title: 'admin-quality-principle-title',
         hint: 'admin-quality-principle-entry-lock-help',
-        prose: ['admin-quality-principle-title', 'admin-quality-principle-description'],
       },
+      proseFields: QUALITY_PRINCIPLE_PROSE_FIELDS,
+      fieldIdPrefix: 'admin-quality-principle',
       heading: 'Ajouter un principe',
       permanentHelp: LOCALE_HELP_TEXT,
       startEdit: async (wrapper) => {
@@ -718,8 +720,9 @@ describe('AdminQualityPage', () => {
         group: 'admin-quality-trait-translation-group',
         title: 'admin-quality-trait-label',
         hint: 'admin-quality-trait-entry-lock-help',
-        prose: ['admin-quality-trait-label'],
       },
+      proseFields: QUALITY_TRAIT_PROSE_FIELDS,
+      fieldIdPrefix: 'admin-quality-trait',
       heading: 'Ajouter un trait',
       permanentHelp: LOCALE_HELP_TEXT,
       startEdit: async (wrapper) => {

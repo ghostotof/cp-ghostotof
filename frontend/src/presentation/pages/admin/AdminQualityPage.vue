@@ -4,7 +4,6 @@ import { useI18n } from 'vue-i18n'
 import { useUnsavedOrderGuard } from '../../../application/admin/shared/useUnsavedOrderGuard'
 import { useAdminQualityPrinciples } from '../../../application/admin/quality/useAdminQualityPrinciples'
 import { useAdminQualityTraits } from '../../../application/admin/quality/useAdminQualityTraits'
-import { useAdminTranslation } from '../../../application/admin/translation/useAdminTranslation'
 import { applyTranslationProposal, collectProseFields } from '../../../application/admin/translation/proseFields'
 import { useOrderDraft } from '../../../application/admin/shared/useOrderDraft'
 import { useOrderHandleFocus } from '../../../application/admin/shared/useOrderHandleFocus'
@@ -26,7 +25,10 @@ import BaseSelect from '../../ui/BaseSelect.vue'
 import TranslateEntryButton from '../../ui/admin/TranslateEntryButton.vue'
 import TranslationReadonlyHint from '../../ui/admin/TranslationReadonlyHint.vue'
 import EntryFormLockHint from '../../ui/admin/EntryFormLockHint.vue'
-import { describedBy, useEntryFormLock } from '../../ui/admin/useEntryFormLock'
+import { describedBy } from '../../ui/admin/describedBy'
+import { useEntryFormLock } from '../../ui/admin/useEntryFormLock'
+import { useTranslatedForm } from '../../ui/admin/useTranslatedForm'
+import { QUALITY_PRINCIPLE_PROSE_FIELDS, QUALITY_TRAIT_PROSE_FIELDS } from './proseFields'
 import OrderHandle from '../../ui/admin/OrderHandle.vue'
 import OrderToolbar from '../../ui/admin/OrderToolbar.vue'
 import { LOCALE_NATIVE_NAMES, SUPPORTED_LOCALES, type Locale } from '../../../domain/portfolio/entities/Locale'
@@ -112,15 +114,18 @@ const {
   errorReason: principleTranslationErrorReason,
   translate: translatePrinciple,
   discard: discardPrincipleTranslation,
-} = useAdminTranslation({
+  proseReadonlyHintId: principleProseReadonlyHintId,
+  translationHintId: principleTranslationHintId,
+  proseFieldAttrs: principleProseFieldAttrs,
+} = useTranslatedForm({
+  hintIdPrefix: 'admin-quality-principle',
   isRefused: () => !hasPrincipleProse.value || isSubmittingPrinciple.value || isAnyOrderDirty.value || principleLock.isProposalLocked,
   // Ce qui fait l'identité du formulaire : une traduction dont il n'a plus cette identité est périmée. La prose n'en
   // fait pas partie : la saisie est empêchée pendant la traduction, et l'erreur d'un échec survit à la frappe.
-  formIdentity: () => ({
+  identity: () => ({
     entry: editingPrincipleId.value,
     locale: principleForm.locale,
     group: principleSourceGroup.value,
-    generation: 0,
   }),
 })
 const {
@@ -130,26 +135,20 @@ const {
   errorReason: traitTranslationErrorReason,
   translate: translateTrait,
   discard: discardTraitTranslation,
-} = useAdminTranslation({
+  proseReadonlyHintId: traitProseReadonlyHintId,
+  translationHintId: traitTranslationHintId,
+  proseFieldAttrs: traitProseFieldAttrs,
+} = useTranslatedForm({
+  hintIdPrefix: 'admin-quality-trait',
   isRefused: () => !hasTraitProse.value || isSubmittingTrait.value || isAnyOrderDirty.value || traitLock.isProposalLocked,
   // Ce qui fait l'identité du formulaire : une traduction dont il n'a plus cette identité est périmée. La prose n'en
   // fait pas partie : la saisie est empêchée pendant la traduction, et l'erreur d'un échec survit à la frappe.
-  formIdentity: () => ({
+  identity: () => ({
     entry: editingTraitId.value,
     locale: traitForm.locale,
     group: traitSourceGroup.value,
-    generation: 0,
   }),
 })
-
-/**
- * Prose des principes. Le complément de cette liste — `iconKey` — est ce que
- * « Créer la version XX » recopie de l'entrée existante : une clé d'icône n'a
- * pas de traduction (spec 0002, D2 ; spec 0004 §7). Une seule source de vérité.
- */
-const PRINCIPLE_PROSE_FIELDS = ['title', 'description'] as const
-/** Un trait n'est qu'un libellé court — mais un libellé se traduit, et c'est son seul champ. */
-const TRAIT_PROSE_FIELDS = ['label'] as const
 
 /**
  * `locale` est typée explicitement : sans annotation, `reactive` l'infère au
@@ -215,13 +214,7 @@ const traitLock = useEntryFormLock({
   localeHelpId: 'admin-quality-trait-locale-help',
 })
 
-// Pendant une traduction, la prose du formulaire est en lecture seule et désigne le texte d'aide (R126) : la référence
-// n'existe que pendant elle, avec le texte, jamais pendante.
-const PRINCIPLE_PROSE_READONLY_HINT_ID = 'admin-quality-principle-prose-readonly-hint'
-const principleProseDescribedBy = computed(() => (isTranslatingPrinciple.value ? PRINCIPLE_PROSE_READONLY_HINT_ID : undefined))
-const TRAIT_PROSE_READONLY_HINT_ID = 'admin-quality-trait-prose-readonly-hint'
-const traitProseDescribedBy = computed(() => (isTranslatingTrait.value ? TRAIT_PROSE_READONLY_HINT_ID : undefined))
-const hasPrincipleProse = computed(() => PRINCIPLE_PROSE_FIELDS.some((field) => '' !== principleForm[field].trim()))
+const hasPrincipleProse = computed(() => QUALITY_PRINCIPLE_PROSE_FIELDS.some((field) => '' !== principleForm[field].trim()))
 const hasTraitProse = computed(() => '' !== traitForm.label.trim())
 
 const principleErrorText = computed(() => {
@@ -399,7 +392,7 @@ function startEditTrait(trait: AdminQualityTrait): void {
  * « Créer la version XX » : formulaire en création, déjà rattaché au groupe,
  * dans la langue manquante — que le sélecteur de la page adopte, puisqu'il est
  * la langue des formulaires. Les champs non-prose sont recopiés de l'entrée
- * existante (cf. PRINCIPLE_PROSE_FIELDS par complément) et la prose reste vide :
+ * existante (cf. QUALITY_PRINCIPLE_PROSE_FIELDS par complément) et la prose reste vide :
  * il n'y a rien à traduire puisqu'il n'y a rien d'écrit encore.
  */
 function startCreatePrincipleVersion(row: TranslationGroupRow<AdminQualityPrinciple>, locale: Locale): void {
@@ -479,7 +472,7 @@ async function handleTranslatePrinciple(targetLocale: Locale): Promise<void> {
   const proposal = await translatePrinciple(
     sourceLocale,
     targetLocale,
-    collectProseFields(principleForm, PRINCIPLE_PROSE_FIELDS),
+    collectProseFields(principleForm, QUALITY_PRINCIPLE_PROSE_FIELDS),
   )
   if (!proposal) {
     return
@@ -488,14 +481,14 @@ async function handleTranslatePrinciple(targetLocale: Locale): Promise<void> {
   editingPrincipleId.value = null
   principleForm.locale = targetLocale
   principleForm.translationGroup = principleSourceGroup.value ?? ''
-  applyTranslationProposal(principleForm, PRINCIPLE_PROSE_FIELDS, proposal)
+  applyTranslationProposal(principleForm, QUALITY_PRINCIPLE_PROSE_FIELDS, proposal)
   principleProposalSourceLocale.value = sourceLocale
 }
 
 async function handleTranslateTrait(targetLocale: Locale): Promise<void> {
   const sourceLocale = traitForm.locale
 
-  const proposal = await translateTrait(sourceLocale, targetLocale, collectProseFields(traitForm, TRAIT_PROSE_FIELDS))
+  const proposal = await translateTrait(sourceLocale, targetLocale, collectProseFields(traitForm, QUALITY_TRAIT_PROSE_FIELDS))
   if (!proposal) {
     return
   }
@@ -503,7 +496,7 @@ async function handleTranslateTrait(targetLocale: Locale): Promise<void> {
   editingTraitId.value = null
   traitForm.locale = targetLocale
   traitForm.translationGroup = traitSourceGroup.value ?? ''
-  applyTranslationProposal(traitForm, TRAIT_PROSE_FIELDS, proposal)
+  applyTranslationProposal(traitForm, QUALITY_TRAIT_PROSE_FIELDS, proposal)
   traitProposalSourceLocale.value = sourceLocale
 }
 
@@ -590,16 +583,14 @@ useUnsavedOrderGuard(isAnyOrderDirty)
         <BaseTextInput
           id="admin-quality-principle-title"
           v-model="principleForm.title"
-          :readonly="isTranslatingPrinciple"
-          :aria-describedby="principleProseDescribedBy"
+          v-bind="principleProseFieldAttrs()"
           :label="t('admin.quality.principle.titleLabel')"
           required
         />
         <BaseTextarea
           id="admin-quality-principle-description"
           v-model="principleForm.description"
-          :readonly="isTranslatingPrinciple"
-          :aria-describedby="principleProseDescribedBy"
+          v-bind="principleProseFieldAttrs()"
           :label="t('admin.quality.principle.descriptionLabel')"
           required
         />
@@ -620,7 +611,7 @@ useUnsavedOrderGuard(isAnyOrderDirty)
             :form-locale="principleForm.locale"
             :is-translating="isTranslatingPrinciple"
             :is-discard-pending="isDiscardPendingPrinciple"
-            hint-id="admin-quality-principle-translation-hint"
+            :hint-id="principleTranslationHintId"
             :disabled="isPrincipleTranslationRefused"
             :aria-describedby="describedBy(lockedHintId, principleLock.proposalDescribedBy)"
             @translate="handleTranslatePrinciple"
@@ -628,7 +619,7 @@ useUnsavedOrderGuard(isAnyOrderDirty)
         </div>
 
         <TranslationReadonlyHint
-          :id="PRINCIPLE_PROSE_READONLY_HINT_ID"
+          :id="principleProseReadonlyHintId"
           :shown="isTranslatingPrinciple"
         />
 
@@ -876,8 +867,7 @@ useUnsavedOrderGuard(isAnyOrderDirty)
         <BaseTextInput
           id="admin-quality-trait-label"
           v-model="traitForm.label"
-          :readonly="isTranslatingTrait"
-          :aria-describedby="traitProseDescribedBy"
+          v-bind="traitProseFieldAttrs()"
           :label="t('admin.quality.trait.labelLabel')"
           required
         />
@@ -887,7 +877,7 @@ useUnsavedOrderGuard(isAnyOrderDirty)
             :form-locale="traitForm.locale"
             :is-translating="isTranslatingTrait"
             :is-discard-pending="isDiscardPendingTrait"
-            hint-id="admin-quality-trait-translation-hint"
+            :hint-id="traitTranslationHintId"
             :disabled="isTraitTranslationRefused"
             :aria-describedby="describedBy(lockedHintId, traitLock.proposalDescribedBy)"
             @translate="handleTranslateTrait"
@@ -895,7 +885,7 @@ useUnsavedOrderGuard(isAnyOrderDirty)
         </div>
 
         <TranslationReadonlyHint
-          :id="TRAIT_PROSE_READONLY_HINT_ID"
+          :id="traitProseReadonlyHintId"
           :shown="isTranslatingTrait"
         />
 

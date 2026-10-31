@@ -4,6 +4,7 @@ import TranslateEntryButton from '../../src/presentation/ui/admin/TranslateEntry
 import { expectNoAccessibilityViolation } from './axe'
 import { SUPPORTED_LOCALES } from '../../src/domain/portfolio/entities/Locale'
 import type { AdminTranslationRepository } from '../../src/domain/admin/translation/repositories/AdminTranslationRepository'
+import { proseFieldId } from '../../src/presentation/ui/admin/useTranslatedForm'
 import { AdminTranslationError } from '../../src/domain/admin/translation/errors/AdminTranslationError'
 
 /**
@@ -96,17 +97,19 @@ export interface EntryFormLockCase {
   readonly mount: (translation: AdminTranslationRepository) => Promise<VueWrapper>
   /** Rang du formulaire dans la page (`findAll('form')`) ; 0 pour une page à un seul formulaire. */
   readonly form: number
-  /**
-   * Identifiants (sans `#`) du sélecteur de langue, du groupe de traduction, du champ de titre, du texte du verrou
-   * et de chaque champ de prose du formulaire (ceux que la traduction envoie et remplace).
-   */
+  /** Identifiants (sans `#`) du sélecteur de langue, du groupe de traduction, du champ de titre et du texte du verrou. */
   readonly ids: {
     readonly locale: string
     readonly group: string
     readonly title: string
     readonly hint: string
-    readonly prose: readonly string[]
   }
+  /**
+   * Les champs de prose du formulaire — la liste que la page lit (`proseFields.ts`), jamais une copie — et le préfixe de
+   * leurs identifiants : le champ `rootCause` du préfixe `admin-incident` est `#admin-incident-root-cause` (`proseFieldId`).
+   */
+  readonly proseFields: readonly string[]
+  readonly fieldIdPrefix: string
   /** Le titre `h2` du formulaire quand il est vierge (« Ajouter … »). */
   readonly heading: string
   /** L'aide permanente de la langue (#582), lue avant le texte du verrou, quand le formulaire en a une. */
@@ -148,6 +151,8 @@ export interface EntryFormLockCase {
  */
 export function describeEntryFormLock(lockCase: EntryFormLockCase): void {
   const { ids, form } = lockCase
+  // Les identifiants des champs de prose, dérivés de la liste de la page : ceux que la traduction envoie et remplace.
+  const proseIds = lockCase.proseFields.map((field) => proseFieldId(lockCase.fieldIdPrefix, field))
   const locale = `#${ids.locale}`
   const prefix = '' === lockCase.name ? '' : `${lockCase.name} : `
   const permanent = undefined === lockCase.permanentHelp ? [] : [lockCase.permanentHelp]
@@ -353,7 +358,7 @@ export function describeEntryFormLock(lockCase: EntryFormLockCase): void {
     const translation = lockCase.createTranslation()
     const wrapper = await lockCase.mount(translation)
     await lockCase.startEdit(wrapper)
-    for (const id of ids.prose) {
+    for (const id of proseIds) {
       await wrapper.get(`#${id}`).setValue('')
     }
     expect(translateEntryButton(wrapper, form).attributes('disabled')).toBeDefined()
@@ -515,19 +520,22 @@ export function describeEntryFormLock(lockCase: EntryFormLockCase): void {
     translateButtonComponent(wrapper).vm.$emit('translate', 'en')
     await flushPromises()
 
-    for (const id of ids.prose) {
+    for (const id of proseIds) {
       const field = wrapper.get(`#${id}`)
       expect(field.attributes('readonly'), `#${id} : readonly`).toBeDefined()
       expect(field.attributes('disabled'), `#${id} : disabled`).toBeUndefined()
       expect(describedTexts(wrapper, `#${id}`), `#${id} : aria-describedby`).toContain(PROSE_READONLY_TEXT)
     }
     expect(describedTexts(wrapper, locale)).not.toContain(PROSE_READONLY_TEXT)
+    // Dans l'autre sens : aucun autre champ du formulaire n'est en lecture seule, ni ne manque à la liste de la page.
+    const readonlyIds = formOf(wrapper).findAll('[readonly]').map((field) => field.attributes('id'))
+    expect([...readonlyIds].sort()).toEqual([...proseIds].sort())
     await expectNoAccessibilityViolation(wrapper)
 
     reply.release()
     await flushPromises()
 
-    for (const id of ids.prose) {
+    for (const id of proseIds) {
       expect(wrapper.get(`#${id}`).attributes('readonly'), `#${id} : readonly après la réponse`).toBeUndefined()
     }
     expect(wrapper.text()).not.toContain(PROSE_READONLY_TEXT)
@@ -543,7 +551,7 @@ export function describeEntryFormLock(lockCase: EntryFormLockCase): void {
     translateButtonComponent(wrapper).vm.$emit('translate', 'en')
     await flushPromises()
 
-    for (const id of ids.prose) {
+    for (const id of proseIds) {
       expect(wrapper.get(`#${id}`).attributes('readonly'), `#${id} : readonly après l'échec`).toBeUndefined()
       expect(describedTexts(wrapper, `#${id}`), `#${id} : aria-describedby`).not.toContain(PROSE_READONLY_TEXT)
     }

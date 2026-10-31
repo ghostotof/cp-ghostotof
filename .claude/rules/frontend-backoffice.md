@@ -207,7 +207,10 @@ decision 3: « aucune » would detach the proposal from its source) and the me-c
 version XX » keeps the category free, by decision), all described by one text, `admin.entryLock.proposal`, which says
 that « Annuler » drops the proposal and empties the form (R93, CR8-4). **While a translation runs, the form's prose fields
 are `readonly`** (not `disabled`: readable and focusable), each described by `admin.translation.proseReadonly`
-(`TranslationReadonlyHint`), rendered only then: the answer replaces prose nobody could change meanwhile, which is why the
+(`TranslationReadonlyHint`), rendered only then — `presentation/ui/admin/useTranslatedForm.ts` wraps `useAdminTranslation`
+for every form and writes that once (`proseFieldAttrs()` bound by `v-bind` on each prose field, the two hint ids from one
+`hintIdPrefix`), the field lists living in `presentation/pages/admin/proseFields.ts`, read by the page and by its spec
+(`proseFieldId`: `<form prefix>-<field in kebab>`): the answer replaces prose nobody could change meanwhile, which is why the
 prose is out of `formIdentity` and a failed translation's message (429, 503) survives typing, cleared only by a real change
 of form or the next translation (R126, decision 3 of the eleventh review; the author's decision of 2026-10-31). A proposal
 whose target locale the group already has (from « Créer la version XX », or from an entry whose group has both) ends on the server's 409

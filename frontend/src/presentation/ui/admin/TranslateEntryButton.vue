@@ -2,7 +2,7 @@
 import { computed, useAttrs } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { otherLocale, type Locale } from '../../../domain/portfolio/entities/Locale'
-import { describedBy } from './useEntryFormLock'
+import { describedBy } from './describedBy'
 
 // Deux racines (le bouton, puis le texte de l'attente) : les attributs de la page vont au bouton, pas au fragment.
 defineOptions({ inheritAttrs: false })
@@ -30,10 +30,16 @@ const props = withDefaults(
     /** Identifiant du texte de l'attente, unique dans la page (une page porte plusieurs formulaires). */
     hintId: string
     disabled?: boolean
+    /**
+     * Référence(s) que la page donne au bouton (le verrou, la proposition) : une prop, car Vue y range
+     * `aria-describedby` ; l'attente de la réponse périmée s'y ajoute (`buttonDescribedBy`).
+     */
+    ariaDescribedby?: string
   }>(),
   {
     isDiscardPending: false,
     disabled: false,
+    ariaDescribedby: undefined,
   },
 )
 
@@ -45,7 +51,7 @@ const attrs = useAttrs()
 
 const targetLocale = computed<Locale>(() => otherLocale(props.formLocale))
 const buttonDescribedBy = computed(() =>
-  describedBy(attrs['aria-describedby'] as string | undefined, props.isDiscardPending ? props.hintId : undefined),
+  describedBy(props.ariaDescribedby, props.isDiscardPending ? props.hintId : undefined),
 )
 </script>
 
