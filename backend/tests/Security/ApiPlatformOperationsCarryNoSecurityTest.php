@@ -21,11 +21,13 @@ use ApiPlatform\Metadata\Resource\Factory\ResourceNameCollectionFactoryInterface
 use App\Portfolio\Shared\Domain\ValueObject\Locale;
 use DateTimeImmutable;
 use PHPUnit\Framework\Attributes\DataProvider;
+use SplObjectStorage;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\TypeInfo\Type;
 use Symfony\Component\TypeInfo\Type\CollectionType;
 use Symfony\Component\TypeInfo\Type\CompositeTypeInterface;
 use Symfony\Component\TypeInfo\Type\EnumType;
+use Symfony\Component\TypeInfo\Type\GenericType;
 use Symfony\Component\TypeInfo\Type\ObjectType;
 use Symfony\Component\TypeInfo\Type\WrappingTypeInterface;
 
@@ -62,8 +64,9 @@ use Symfony\Component\TypeInfo\Type\WrappingTypeInterface;
  * `Parameter` : leur `security`), puis chaque **propriété** de chaque ressource (`ApiProperty` :
  * `security` et `securityPostDenormalize`). « Chaque ressource » veut dire : les classes de ressource, les DTO
  * `input` et `output` de chaque ressource et opération (#748, R88 : `BackofficeUserInviteInput` en est un) et les
- * objets `App\` que le type natif d'une propriété atteint (objet, collection, nullable, union), chaque classe lue
- * une fois. Un lien (`uriVariables`) qui n'est pas un `Link` compilé est un constat, non une omission silencieuse.
+ * objets `App\` que le type natif d'une propriété atteint (objet, collection — clé et valeur —, générique, nullable,
+ * union, intersection), chaque classe lue une fois. Un lien (`uriVariables`) qui n'est pas un `Link` compilé est un
+ * constat, non une omission silencieuse.
  * `getLinks()` n'est pas parcouru : ce sont des `WebLink`
  * de Symfony (l'en-tête HTTP `Link`), qui n'ont pas de `security`.
  *
@@ -80,23 +83,70 @@ final class ApiPlatformOperationsCarryNoSecurityTest extends KernelTestCase
     {
         self::bootKernel();
         $container = self::getContainer();
-        $names = $container->get(ResourceNameCollectionFactoryInterface::class);
-        $metadata = $container->get(ResourceMetadataCollectionFactoryInterface::class);
-        $propertyNames = $container->get(PropertyNameCollectionFactoryInterface::class);
-        $propertyMetadata = $container->get(PropertyMetadataFactoryInterface::class);
 
-        $visited = 0;
-        $links = 0;
-        $properties = 0;
         $found = [];
-        // Les classes dont on lit les propriétés : la file part des ressources, puis y entrent les DTO d'entrée
-        // et de sortie de chaque ressource et opération, puis les objets `App\` que le type d'une propriété atteint.
-        // Chaque classe est lue une fois (la clé de `$queue` est la classe).
-        $queue = [];
+        // Première étape : les expressions de chaque ressource et opération, et les classes dont on lira les propriétés.
+        $collected = $this->collectClassesToRead(
+            $container->get(ResourceNameCollectionFactoryInterface::class),
+            $container->get(ResourceMetadataCollectionFactoryInterface::class),
+            $found,
+        );
+        // Seconde étape : les propriétés de ces classes, et celles des objets `App\` que leur type atteint.
+        $read = $this->readProperties(
+            $collected['classes'],
+            $container->get(PropertyNameCollectionFactoryInterface::class),
+            $container->get(PropertyMetadataFactoryInterface::class),
+            $found,
+        );
+
+        // Une garde qui ne parcourt rien rougirait jamais. Les paramètres ne sont pas comptés : aucune
+        // ressource de `src/` n'en déclare peut-être, une garde qui l'exigerait rougirait pour rien.
+        self::assertGreaterThan(0, $collected['operations'], 'Aucune opération parcourue : la garde ne verrait rien.');
+        self::assertGreaterThan(0, $collected['links'], 'Aucun lien parcouru : la garde ne verrait rien des `uriVariables`.');
+        self::assertGreaterThan(0, $read['properties'], 'Aucune propriété parcourue : la garde ne verrait rien des `ApiProperty`.');
+        // `src/` déclare un DTO d'entrée (`BackofficeUserInviteInput`) : sans lui, la lecture des DTO ne verrait rien.
+        self::assertNotSame([], $collected['dtoClasses'], 'Aucune classe `input`/`output` parcourue : la garde ne verrait rien des DTO.');
+        // Et `src/` imbrique des objets `App\` (`AboutCardResource`, `WatchedProductResource`… : neuf à R88) :
+        // un parcours qui n'en suivrait aucun passerait ce test sans rien lire.
+        self::assertNotSame(
+            [],
+            $read['nestedClasses'],
+            'Aucun objet imbriqué parcouru : la garde ne verrait rien des classes atteintes par un type.',
+        );
+        self::assertSame(
+            [],
+            $found,
+            "Toute autorisation de /api est une règle d'access_control de security.yaml, jamais un `security:` d'API Platform "
+            ."(attribut, YAML ou XML) : PublicRouteIgnoresRefusedSessionListener tient « route publique = route sans règle ».\n - "
+            .implode("\n - ", $found),
+        );
+    }
+
+    /**
+     * Première étape : parcourt chaque ressource et chaque opération compilées, relève leurs expressions de
+     * sécurité, de paramètres et de liens, et dresse la liste des classes dont lire les propriétés — les ressources,
+     * puis les DTO `input` et `output` de chacune et de ses opérations. Chaque classe y figure une fois (clé du tableau).
+     *
+     * @param list<string> $found complété des constats
+     *
+     * @return array{
+     *     classes: array<string, true>,
+     *     dtoClasses: array<class-string, true>,
+     *     operations: int,
+     *     links: int,
+     * }
+     */
+    private function collectClassesToRead(
+        ResourceNameCollectionFactoryInterface $names,
+        ResourceMetadataCollectionFactoryInterface $metadata,
+        array &$found,
+    ): array {
+        $classes = [];
         $dtoClasses = [];
-        $nestedClasses = [];
+        $operations = 0;
+        $links = 0;
         foreach ($names->create() as $resourceClass) {
-            $queue[$resourceClass] = true;
+            $classes[$resourceClass] = true;
             foreach ($metadata->create($resourceClass) as $resource) {
                 // La ressource elle-même : API Platform recopie ses valeurs sur les opérations
                 // qui n'ont pas les leurs, mais un défaut posé ici se verrait au plus tôt.
@@ -105,11 +155,11 @@ final class ApiPlatformOperationsCarryNoSecurityTest extends KernelTestCase
                 }
                 $links += $this->collectNested($resource, \sprintf('%s (ressource)', $resourceClass), $found);
                 foreach ($this->dtoClassesOf($resource) as $dtoClass) {
-                    $queue[$dtoClass] ??= true;
+                    $classes[$dtoClass] ??= true;
                     $dtoClasses[$dtoClass] = true;
                 }
                 foreach ($resource->getOperations() ?? [] as $operationName => $operation) {
-                    ++$visited;
+                    ++$operations;
                     foreach ($this->expressionsOf($operation) as $attribute => $expression) {
                         $found[] = \sprintf('%s, opération %s : %s = %s', $resourceClass, $operationName, $attribute, $expression);
                     }
@@ -119,16 +169,36 @@ final class ApiPlatformOperationsCarryNoSecurityTest extends KernelTestCase
                         $found,
                     );
                     foreach ($this->dtoClassesOf($operation) as $dtoClass) {
-                        $queue[$dtoClass] ??= true;
+                        $classes[$dtoClass] ??= true;
                         $dtoClasses[$dtoClass] = true;
                     }
                 }
             }
         }
 
-        // Les propriétés ne dépendent pas des opérations : `ApiProperty` porte son propre `security`. La file
-        // grandit pendant le parcours (un objet imbriqué y entre), d'où l'index et non un `foreach` sur une copie.
+        return ['classes' => $classes, 'dtoClasses' => $dtoClasses, 'operations' => $operations, 'links' => $links];
+    }
+
+    /**
+     * Seconde étape : lit les propriétés de chaque classe (`ApiProperty` porte son propre `security`, que les
+     * opérations ne disent pas). La file grandit pendant le parcours — un objet `App\` atteint par le type d'une
+     * propriété y entre —, d'où l'index et non un `foreach` sur une copie.
+     *
+     * @param array<string, true> $classes la file de départ, celle de {@see collectClassesToRead()}
+     * @param list<string>        $found   complété des constats
+     *
+     * @return array{properties: int, nestedClasses: array<class-string, true>}
+     */
+    private function readProperties(
+        array $classes,
+        PropertyNameCollectionFactoryInterface $propertyNames,
+        PropertyMetadataFactoryInterface $propertyMetadata,
+        array &$found,
+    ): array {
+        $queue = $classes;
         $read = [];
+        $properties = 0;
+        $nestedClasses = [];
         while (null !== ($class = array_key_first(array_diff_key($queue, $read)))) {
             $read[$class] = true;
             foreach ($propertyNames->create($class) as $propertyName) {
@@ -146,23 +216,7 @@ final class ApiPlatformOperationsCarryNoSecurityTest extends KernelTestCase
             }
         }
 
-        // Une garde qui ne parcourt rien rougirait jamais. Les paramètres ne sont pas comptés : aucune
-        // ressource de `src/` n'en déclare peut-être, une garde qui l'exigerait rougirait pour rien.
-        self::assertGreaterThan(0, $visited, 'Aucune opération parcourue : la garde ne verrait rien.');
-        self::assertGreaterThan(0, $links, 'Aucun lien parcouru : la garde ne verrait rien des `uriVariables`.');
-        self::assertGreaterThan(0, $properties, 'Aucune propriété parcourue : la garde ne verrait rien des `ApiProperty`.');
-        // `src/` déclare un DTO d'entrée (`BackofficeUserInviteInput`) : sans lui, la lecture des DTO ne verrait rien.
-        self::assertNotSame([], $dtoClasses, 'Aucune classe `input`/`output` parcourue : la garde ne verrait rien des DTO.');
-        // Et `src/` imbrique des objets `App\` (`AboutCardResource`, `WatchedProductResource`… : neuf à R88) :
-        // un parcours qui n'en suivrait aucun passerait ce test sans rien lire.
-        self::assertNotSame([], $nestedClasses, 'Aucun objet imbriqué parcouru : la garde ne verrait rien des classes atteintes par un type.');
-        self::assertSame(
-            [],
-            $found,
-            "Toute autorisation de /api est une règle d'access_control de security.yaml, jamais un `security:` d'API Platform "
-            ."(attribut, YAML ou XML) : PublicRouteIgnoresRefusedSessionListener tient « route publique = route sans règle ».\n - "
-            .implode("\n - ", $found),
-        );
+        return ['properties' => $properties, 'nestedClasses' => $nestedClasses];
     }
 
     /**
@@ -265,6 +319,18 @@ final class ApiPlatformOperationsCarryNoSecurityTest extends KernelTestCase
             new ApiProperty(nativeType: Type::union(Type::object(self::class), Type::string())),
             [self::class],
         ];
+        // Un générique qui n'est pas une collection : `Foo<Bar>` atteint `Bar` par ses types variables.
+        yield 'un générique non collection' => [
+            new ApiProperty(nativeType: Type::generic(Type::object(DateTimeImmutable::class), Type::object(self::class))),
+            [self::class],
+        ];
+        // Une collection à clé objet (`SplObjectStorage<Clé, Valeur>`) : la clé est lue comme la valeur.
+        yield 'la clé d\'une collection' => [
+            new ApiProperty(
+                nativeType: Type::collection(Type::object(SplObjectStorage::class), Type::string(), Type::object(self::class)),
+            ),
+            [self::class],
+        ];
         yield 'un type scalaire' => [new ApiProperty(nativeType: Type::string()), []];
         yield 'un objet hors App\\' => [new ApiProperty(nativeType: Type::object(DateTimeImmutable::class)), []];
         yield 'une énumération' => [new ApiProperty(nativeType: Type::enum(Locale::class)), []];
@@ -301,8 +367,9 @@ final class ApiPlatformOperationsCarryNoSecurityTest extends KernelTestCase
     }
 
     /**
-     * Les classes de `App\` que le type natif d'une propriété atteint : un objet, la valeur d'une collection,
-     * un type nullable, une union ou une intersection, à toute profondeur. Les énumérations n'ont pas de propriété.
+     * Les classes de `App\` que le type natif d'une propriété atteint, à toute profondeur : un objet, une
+     * collection (sa clé et sa valeur), un générique (ses types variables), un type nullable, une union ou une
+     * intersection. Les énumérations n'ont pas de propriété.
      *
      * @return list<class-string>
      */
@@ -330,7 +397,13 @@ final class ApiPlatformOperationsCarryNoSecurityTest extends KernelTestCase
         } elseif ($type instanceof WrappingTypeInterface) {
             $inner = [$type->getWrappedType()];
         }
+        if ($type instanceof GenericType) {
+            // `Foo<Bar>` : le conteneur ne dit rien de `App\`, ses types variables, si.
+            $inner = [...$inner, ...$type->getVariableTypes()];
+        }
         if ($type instanceof CollectionType) {
+            // La clé d'une collection est un type comme sa valeur (`SplObjectStorage<Clé, Valeur>`).
+            $inner[] = $type->getCollectionKeyType();
             $inner[] = $type->getCollectionValueType();
         }
         foreach ($inner as $innerType) {
