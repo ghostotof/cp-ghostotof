@@ -32,7 +32,7 @@ export interface AdminLoadOptions<T, K> {
 /**
  * Le chargement d'une ressource d'administration, écrit **une fois** (#748, R3) pour les treize composables :
  * `isLoading` part à `true`, une réponse (ou un rejet) plus ancienne que le dernier `load()` est jetée
- * (« Réessayer » pendant une relecture, un sélecteur de locale cliqué en rafale), et tout rejet lève `hasError`
+ * (une relecture lancée pendant une autre, un sélecteur de locale cliqué en rafale), et tout rejet lève `hasError`
  * — **sauf `SessionEndedError`**, levée par `BackofficeHttpClient` : une session finie n'est pas un échec de
  * chargement, le bandeau de session finie (`SessionEndedBanner`) l'annonce seul, et la valeur déjà lue reste
  * affichée. Un composable qui chargerait sans passer ici devrait réécrire ce filtre, et l'oublier doublerait

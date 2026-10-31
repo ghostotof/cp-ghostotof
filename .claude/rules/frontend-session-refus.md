@@ -72,7 +72,9 @@ account without `ROLE_TRUSTED` (one that lost it while the page was open), or fr
     send time then an account drops the refusal, with no path to it (the backoffice guard waits for the first check).
     The same account's 403 stays said across an end and a return, or a tier change; the generation judges `ended()` only.
   - **the scope, for a read** (R28, CR3-8, R38): `get` stamps `stampBackofficeRead()` (`{ kind: 'read', scope, epoch }`; a
-    verb, since it also closes the landing load below), `mutate` `{ kind: 'write' }`. The scope advances at every clearing of
+    verb, since it also closes the landing load below; `currentRefusalScope()` reads the same pair with no effect, for whoever
+    sends nothing, the specs, R143), `mutate` `{ kind: 'write' }`. The module holds the scope, the epoch and the open landing
+    load as one immutable object replaced as a block (`RefusalModuleState`, R143). The scope advances at every clearing of
     the alert, and only there: a path or query change (the query's parameters sorted: vue-router runs a navigation that only
     permutes them, the alert ignores it, R54; not the fragment alone: the skip link), an ended session, the alert's unmount.
     A read that left under another scope came from a page left: `markBackofficeAccessRefused(sentIn, account)` answers
@@ -86,14 +88,18 @@ account without `ROLE_TRUSTED` (one that lost it while the page was open), or fr
     `markBackofficeAccessRefused(sentIn, account)` keeps the write's account, the mount passes `lastAccountName()`, and
     another account at the mount resets everything), the alert inserted after the mount so that it is announced
     (`frontend-a11y.md`); every read **sent before the mount** — the landing page's load, stamped by its `setup` — keeps that
-    text and re-announces it until the first read sent after the mount (a « Réessayer », a re-read after a save) closes that
-    load (R122, Q2 of the eleventh review: the bound is a send, not a delay); **a backoffice page starts its load in
-    `setup`** (or an `immediate` watcher), both stamped before the alert's `onMounted` — a read sent from the page's own
-    `onMounted` would carry the new epoch and say `common.accessRefused` for the earlier save; `noLoadInOnMounted.spec.ts`
-    refuses a load or a repository call in an `onMounted` of `presentation/pages/admin` (R121, decision 1 of the eleventh
-    review). Accepted, held by the review: a read sent after an `await` before `get`, or by a sub-component rendered later by
-    a `v-if`; any other refusal, read or write, brings back `common.accessRefused` (R112, decision 3 of the tenth review,
-    amending the letter of decision 1 of the ninth: no load window, no counter).
+    text and re-announces it until the first read **stamped** after the mount closes that load (R122, Q2 of the eleventh
+    review: the bound is a send, not a delay). Any stamped read closes it, whatever started it: a re-read after a save, a
+    section rendered later by a `v-if`, a watcher, a replay (R143, CR12-4). **A backoffice page starts its load in `setup`**
+    (or an `immediate` watcher), both stamped before the alert's `onMounted`: a read sent from the page's own `onMounted`
+    would carry the new epoch and say `common.accessRefused` for the earlier save. `noLoadInOnMounted.spec.ts` refuses a
+    load or a repository call in an `onMounted` of `presentation/pages/admin` (R121, decision 1 of the eleventh review).
+    Any other refusal, read or write, brings back `common.accessRefused` (R112, decision 3 of the tenth review, amending the
+    letter of decision 1 of the ninth: no load window, no counter).
+  - **Accepted limits** (Q3 (a) of the twelfth review, R143): the module cannot tell a read the person relaunched from one
+    the page started alone, so a read sent after an `await` before `get`, or by a sub-component rendered later, closes the
+    landing load all the same. The text shown next is `common.accessRefused`, which is true too. No admin page has a
+    « Réessayer »: nothing here depends on one.
 
   `useAdminLoad` (no `hasError`, nothing re-read on return) and `visibleMutationError` (`null`, the mutation resolves
   `false`, the input stays) keep it quiet like `SessionEndedError`; **one alert**, `AccessRefusedNotice` in
@@ -124,19 +130,25 @@ whose `/api/me` answers 401 now ends the session on the interface. **Still accep
 
 ## Tests
 
-- `backofficeSessionExpiry.spec.ts` (the session is closed, no navigation, parallel verdicts of one generation announce
-  once, a verdict sent before the return refinishes nothing; `refused` counts the refusal and re-reads the tier once; a
-  read sent before a navigation counts and re-reads nothing, R28; a write does, R38), `backofficeAccessRefusal.spec.ts`
-  (the scope, a write's `{ kind: 'write' }`, two successive tests starting from zero), `AccessRefusedNotice.spec.ts` (a
-  fragment change keeps the alert, a query change clears it, the same parameters in another order keep it — vue-router
-  runs that navigation, the sorted key ignores it, R54), `AdminLayout.sessionEnded.spec.ts` (a refused save back after a
-  navigation is shown on the next page; after an account switch the late 403 of the first account's save shows nothing,
-  R48), plus a write refused after the layout unmounted shows at the next mount with `common.earlierSaveRefused`, a read's
-  is forgotten, R64; another account at the mount sees nothing, every read sent before the mount keeps the text, a read
-  sent after it brings back the current one, R76, R112 (`AccessRefusedNotice.spec.ts`, `backofficeAccessRefusal.spec.ts`,
-  `backofficeSessionExpiry.spec.ts`; on a real two-list page, `AdminLayout.sessionEnded.spec.ts`), a refusal is dropped
-  only for another account, the same account's counts across an end and a return (`backofficeSessionExpiry.spec.ts`,
-  `AdminLayout.sessionEnded.spec.ts`, R63), another account read outside an ended session advances the generation before
-  the signal (`useAuth.spec.ts`).
+- The backoffice's reaction and its counter:
+  - `backofficeSessionExpiry.spec.ts`: the session is closed, no navigation; parallel verdicts of one generation announce once;
+    a verdict sent before the return refinishes nothing; `refused` counts the refusal and re-reads the tier once; a read sent
+    before a navigation counts and re-reads nothing (R28); a write does (R38).
+  - `backofficeAccessRefusal.spec.ts`: the scope, a write's `{ kind: 'write' }`, two successive tests starting from zero.
+    The landing load (R122): every read sent before the mount keeps the text, the first one stamped after closes it, and
+    `currentRefusalScope()`, a read with no effect, closes nothing (R143).
+  - `AccessRefusedNotice.spec.ts`: a fragment change keeps the alert, a query change clears it, the same parameters in
+    another order keep it (vue-router runs that navigation, the sorted key ignores it, R54).
+  - `AdminLayout.sessionEnded.spec.ts`: a refused save back after a navigation is shown on the next page; after an account
+    switch the late 403 of the first account's save shows nothing (R48); the landing load on a real two-list page (R122).
+  - A write refused after the layout unmounted shows at the next mount with `common.earlierSaveRefused`, a read's is
+    forgotten (R64); another account at the mount sees nothing; every read sent before the mount keeps the text, a read sent
+    after it brings back the current one (R76, R112, R122), in `AccessRefusedNotice.spec.ts`,
+    `backofficeAccessRefusal.spec.ts` and `backofficeSessionExpiry.spec.ts`.
+  - A refusal is dropped only for another account, the same account's counts across an end and a return (R63:
+    `backofficeSessionExpiry.spec.ts`, `AdminLayout.sessionEnded.spec.ts`); another account read outside an ended session
+    advances the generation before the signal (`useAuth.spec.ts`).
 - For the real refusal (R7): `HttpMcpConnectionsRepository.spec.ts` (a 403 on the read, or on the `DELETE` with a token, is `AccessForbiddenError`; without a token, `SessionEndedError`), `useMcpConnections.spec.ts` (`refusal`, `/api/me` read once, a demoted account's header back at the base tier, a failing `/api/me` swallowed; R15: one `/api/me` for a read and a revocation refused together, a 401 turning `forbidden` into `session-ended`), `useAuth.spec.ts` (`rereadAfterRefusal`: one read in flight, 401 ends the session, 403 holds it, a stale or failing read holds it, `isChecking` untouched; `followRefusal`: ended and still shown, replaced meanwhile, held, R27), `useAssistant.spec.ts` and `useOAuthConsent.spec.ts` (`/api/me` read once on `forbidden`, not on an ended session; a 401 on that read says the session ended), `McpConnectionsPage.spec.ts` / `AssistantPage.spec.ts` / `OAuthConsentPage.spec.ts` (the exact neutral text in both languages, « Changer de compte » with `reauth=1`, no « Réessayer », « Révoquer » disabled) and `LoginPage.spec.ts` (the neutral announcement).
+- `noLoadInOnMounted.spec.ts` (R121: no load or repository call in an `onMounted` of a backoffice page, which would carry the
+  mounted alert's epoch).
 - The reactions `useMcpConnections.spec.ts`, `useOAuthConsent.spec.ts`, `useAssistant.spec.ts`.

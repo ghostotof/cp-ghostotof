@@ -8,6 +8,7 @@ import { AUTH_REPOSITORY, lastAccountName, markSessionExpired, useAuth } from '.
 import {
   backofficeAccessRefused,
   clearBackofficeAccessRefusal,
+  currentRefusalScope,
   markBackofficeAccessRefused,
   stampBackofficeRead,
 } from '../../../../src/application/admin/shared/backofficeAccessRefusal'
@@ -161,14 +162,14 @@ describe('AccessRefusedNotice (#748, R17)', () => {
     const { wrapper, router } = await mountNotice()
     refuse()
     await flushPromises()
-    const scope = stampBackofficeRead().scope
+    const scope = currentRefusalScope().scope
 
     await router.push({ hash: '#main-content' })
     await flushPromises()
 
     expect(router.currentRoute.value.fullPath).toBe('/fr/admin/case-studies#main-content')
     expect(wrapper.find('[role="alert"]').exists()).toBe(true)
-    expect(stampBackofficeRead().scope).toBe(scope)
+    expect(currentRefusalScope().scope).toBe(scope)
     wrapper.unmount()
   })
 
@@ -190,7 +191,7 @@ describe('AccessRefusedNotice (#748, R17)', () => {
     await flushPromises()
     refuse()
     await flushPromises()
-    const scope = stampBackofficeRead().scope
+    const scope = currentRefusalScope().scope
 
     // vue-router compare la requête dans l'ordre où elle est écrite : il exécute cette navigation (sans le tri de la clé,
     // R54, le test serait rouge). C'est la clé triée de l'alerte qui n'y voit pas de changement, et la garde.
@@ -199,7 +200,7 @@ describe('AccessRefusedNotice (#748, R17)', () => {
 
     expect(router.currentRoute.value.fullPath).toBe('/fr/admin/case-studies?b=2&a=1')
     expect(wrapper.find('[role="alert"]').exists()).toBe(true)
-    expect(stampBackofficeRead().scope).toBe(scope)
+    expect(currentRefusalScope().scope).toBe(scope)
     wrapper.unmount()
   })
 
@@ -365,7 +366,7 @@ describe('AccessRefusedNotice (#748, R17)', () => {
       expect(second.wrapper.get('span').text()).toBe(EARLIER_SAVE_REFUSED_FR)
       expect(second.wrapper.get('span').element).toBe(afterSecondRead)
 
-      // … et le refus d'une lecture partie après le montage (« Réessayer », rôle perdu) ramène le texte courant, réannoncé.
+      // … et le refus d'une lecture partie après le montage (une relecture, rôle perdu) ramène le texte courant, réannoncé.
       refuse()
       await flushPromises()
       expect(second.wrapper.get('span').text()).toBe(ACCESS_REFUSED_FR)

@@ -46,7 +46,8 @@ import { switchAccountLocation } from '../../router/reauthentication'
  *   septième relecture : `lastAccountName()` est passé au montage, un autre compte remet tout à zéro). Le chargement de
  *   la page d'arrivée est parti avant le montage : son refus doit compter, et **chaque lecture partie avant le montage
  *   garde l'avis** et réannonce l'alerte, quel que soit le moment de sa réponse, **tant que ce chargement est ouvert** :
- *   la première lecture envoyée après le montage (« Réessayer », une relecture) le clôt (R122, `stampBackofficeRead`), et
+ *   la première lecture estampillée après le montage — une relecture après un enregistrement, mais aussi une section
+ *   rendue plus tard par un `v-if`, un watcher, un rejeu — le clôt (R122, R143, `stampBackofficeRead`), et
  *   le refus tardif d'une lecture d'avant dit alors `common.accessRefused` (CR7-4, R112 : le `setup` de la page a
  *   estampillé la lecture avant l'`onMounted` de l'alerte, l'estampille porte l'époque d'avant). Le texte de l'alerte
  *   affichée reste jusqu'au refus suivant d'**une lecture partie après le montage** (une relecture refusée plus tard,
