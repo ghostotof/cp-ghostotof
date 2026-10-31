@@ -229,3 +229,7 @@ Node changed, because reinstating it would hide a real regression just as well a
 `vue-i18n`/`@intlify/*` (and transitively a few ESLint tooling packages) declare `engines.node >= 22`. The
 container satisfies it, so this is only ever an `EBADENGINE` warning if someone installs outside it — one
 more reason the `make front-*` targets exist.
+
+`@vue/compiler-dom` is a direct dev dependency (the spec template reader imports it) and must stay `vue`'s own
+version, installed once: `tests/support/vueCompilerAlignment.spec.ts` reads `package.json` and the lockfile and
+fails with the `npm install --save-dev @vue/compiler-dom@<vue's version>` that realigns them (#748).
