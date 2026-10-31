@@ -44,12 +44,18 @@ function alignmentProblems(manifest: PackageJson, lock: PackageLock): string[] {
   const problems: string[] = []
   const vueRange = declaredRange(manifest, 'vue')
   const vueVersion = lock.packages['node_modules/vue']?.version
-  const fix = `npm install --save-dev ${COMPILER}@${vueVersion ?? '<version de vue>'}`
+  // `npm install …@<version>` écrit `^<version>` : avec `vue` en `~` le test refuserait ce qu'il vient de faire faire
+  // (#748, CR13-5). `npm pkg set` écrit l'intervalle de `vue` tel quel, `--package-lock-only` aligne l'entrée racine du
+  // lockfile (sinon `npm ci` refuse un lockfile en retard sur `package.json`).
+  const realign =
+    `npm pkg set "devDependencies.${COMPILER}=${vueRange ?? '<intervalle de vue>'}" && npm install --package-lock-only`
+  // Une installation en trop ou une version fausse se refont par `npm install`, puis l'intervalle se réécrit.
+  const reinstall = `npm install --save-dev ${COMPILER}@${vueVersion ?? '<version de vue>'} && ${realign}`
 
   const compilerRange = declaredRange(manifest, COMPILER)
   if (undefined === compilerRange || compilerRange !== vueRange) {
     problems.push(
-      `package.json : ${COMPILER} est déclaré « ${compilerRange ?? 'absent'} », vue « ${vueRange ?? 'absent'} » : ${fix}`,
+      `package.json : ${COMPILER} est déclaré « ${compilerRange ?? 'absent'} », vue « ${vueRange ?? 'absent'} » : ${realign}`,
     )
   }
 
@@ -57,7 +63,7 @@ function alignmentProblems(manifest: PackageJson, lock: PackageLock): string[] {
   if (1 !== entries.length) {
     problems.push(
       `package-lock.json : ${entries.length} installation(s) de ${COMPILER} (${entries.join(', ') || 'aucune'}), ` +
-        `une seule attendue : ${fix}`,
+        `une seule attendue : ${reinstall}`,
     )
   }
 
@@ -66,7 +72,7 @@ function alignmentProblems(manifest: PackageJson, lock: PackageLock): string[] {
   if (undefined === installed || installed !== required || installed !== vueVersion) {
     problems.push(
       `package-lock.json : ${COMPILER} installé en ${installed ?? 'absent'}, ` +
-        `exigé par vue en ${required ?? 'absent'}, vue en ${vueVersion ?? 'absent'} : ${fix}`,
+        `exigé par vue en ${required ?? 'absent'}, vue en ${vueVersion ?? 'absent'} : ${reinstall}`,
     )
   }
 
@@ -109,7 +115,22 @@ describe('@vue/compiler-dom reste la version de vue', () => {
     const problems = alignmentProblems({ ...manifest, devDependencies: { [COMPILER]: '^3.5.0' } }, lock)
 
     expect(problems).toHaveLength(1)
-    expect(problems[0]).toContain('npm install --save-dev @vue/compiler-dom@3.5.44')
+    expect(problems[0]).toContain('npm pkg set "devDependencies.@vue/compiler-dom=^3.5.44"')
+  })
+
+  // La boucle de CR13-5 : `vue` en `~`, la commande proposée écrivait `^<installée>`, que le test refusait de nouveau.
+  it("la commande proposée écrit l'intervalle de vue, celui que le test compare (#748, R160)", () => {
+    const { lock } = alignedLock()
+    const manifest: PackageJson = { dependencies: { vue: '~3.5.40' }, devDependencies: { [COMPILER]: '^3.5.44' } }
+
+    const problems = alignmentProblems(manifest, lock)
+
+    expect(problems).toHaveLength(1)
+    expect(problems[0]).toContain('npm pkg set "devDependencies.@vue/compiler-dom=~3.5.40"')
+
+    // Appliquer ce que la commande écrit réaligne le manifeste : le test ne redemande rien.
+    const written = /npm pkg set "devDependencies\.@vue\/compiler-dom=([^"]+)"/.exec(problems[0])?.[1]
+    expect(alignmentProblems({ ...manifest, devDependencies: { [COMPILER]: written ?? '' } }, lock)).toEqual([])
   })
 
   it('une seconde installation imbriquée est refusée et nommée', () => {
@@ -120,6 +141,8 @@ describe('@vue/compiler-dom reste la version de vue', () => {
 
     expect(problems).toHaveLength(1)
     expect(problems[0]).toContain(`node_modules/x/node_modules/${COMPILER}`)
+    // La réinstallation n'écrit pas `^` à la place de l'intervalle de vue : elle est suivie de la commande qui le réécrit.
+    expect(problems[0]).toContain('npm pkg set "devDependencies.@vue/compiler-dom=^3.5.44"')
   })
 
   it('une version installée qui n\'est pas celle que vue exige est refusée', () => {
