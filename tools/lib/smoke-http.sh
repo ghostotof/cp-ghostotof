@@ -6,19 +6,20 @@
 # `curl` contre un déploiement réel écrivaient chacun de leur côté (#748, R57).
 # Sourcée par :
 #   - tools/smoke-dead-session-cookie.sh, tools/smoke-login-throttling.sh,
-#     tools/smoke-mcp.sh (smoke_write_auth_config, smoke_require_auth_config,
-#     smoke_cleanup, smoke_header, smoke_headers, smoke_excerpt, smoke_fetch) ;
-#   - tools/audit-prod.sh (smoke_write_auth_config, smoke_require_auth_config et
-#     smoke_cleanup, et seulement si AUDIT_BASIC_AUTH est définie) ;
+#     tools/smoke-mcp.sh (smoke_use_auth_config, smoke_cleanup, smoke_header,
+#     smoke_headers, smoke_excerpt, smoke_fetch) ;
+#   - tools/audit-prod.sh (smoke_use_auth_config et smoke_cleanup, et seulement
+#     si AUDIT_BASIC_AUTH est définie) ;
 #   - tools/tests/smoke-http.test.sh (hors ligne, faux curl).
 #
-# Six fonctions publiques (plus smoke_cleanup, qui défait la première) :
+# Sept fonctions publiques :
+#   smoke_use_auth_config <nom>            ce que l'appelant écrit : pose la Basic Auth
+#                                          d'une variable puis refuse (2) une
+#                                          variable définie mais vide ;
 #   smoke_write_auth_config <nom>          le fichier de configuration `-K` de la
 #                                          Basic Auth d'une variable, dans un
 #                                          dossier privé (SMOKE_AUTH_CONFIG) ;
 #                                          smoke_fetch le lit ;
-#   smoke_require_auth_config <nom>        refuse (2) une variable définie mais
-#                                          vide, après la précédente ;
 #   smoke_cleanup                          retire ce dossier ; à poser dans le
 #                                          `trap` de chaque appelant ;
 #   smoke_header <fichier> <nom>           la valeur d'un en-tête de réponse (la
@@ -85,7 +86,7 @@ _smoke_is_variable_name() {
 # par curl, donc n'importe quel mot de passe convient.
 #
 # Une variable vide ou absente : retour 0, aucun dossier, SMOKE_AUTH_CONFIG vide. C'est à
-# l'appelant de juger ce vide : smoke_require_auth_config l'arrête (sortie 2) quand la
+# l'appelant de juger ce vide : smoke_use_auth_config l'arrête (sortie 2) quand la
 # variable est définie, une variable absente n'envoie aucune Basic Auth (la prod, un
 # smoke local). La valeur n'est lue que sous `set +x`.
 #
@@ -103,8 +104,9 @@ _smoke_is_variable_name() {
 #
 # Un retour à la ligne (ou un CR) ouvrirait une seconde directive dans ce fichier
 # (`url = …`, `output = …`) : l'échappement n'agit que sur `"` et `\`. Une valeur non
-# vide sans « : » (des blancs compris) n'est pas un couple utilisateur:mot_de_passe.
-# Les deux sont refusées avant tout dossier, sans citer la valeur (c'est un secret),
+# vide sans « : » (des blancs compris), ou dont l'utilisateur ou le mot de passe est vide
+# (`:`, `:p`, `u:`), n'est pas un couple utilisateur:mot_de_passe : curl coupe au premier « : ».
+# Les trois sont refusées avant tout dossier, sans citer la valeur (c'est un secret),
 # en nommant la variable reçue (#748 C6-9), retour 2 — celui d'un défaut
 # d'environnement. Retour 2 aussi pour un nom invalide, un dossier ou un fichier qui
 # ne s'écrit pas (le dossier est alors retiré).
@@ -115,9 +117,9 @@ _smoke_is_variable_name() {
 # l'appel de tête retire est ce que la bibliothèque a créé elle-même : les variables
 # sont vides à la source, un dossier hérité de l'environnement n'est jamais visé.
 #
-# L'appelant pose son `trap` **avant** (`trap 'rm -f "$headers_file"; smoke_cleanup'
-# EXIT`) puis `smoke_write_auth_config AUDIT_BASIC_AUTH || exit 2` et
-# `smoke_require_auth_config AUDIT_BASIC_AUTH || exit 2`. Un arrêt entre la
+# Les appelants passent par smoke_use_auth_config, qui l'appelle puis juge le vide. Ils posent
+# leur `trap` **avant** (`trap 'rm -f "$headers_file"; smoke_cleanup' EXIT`) puis écrivent
+# `smoke_use_auth_config AUDIT_BASIC_AUTH || exit 2`. Un arrêt entre la
 # création du dossier et l'affectation que lit le `trap` peut laisser un dossier
 # privé **vide**, jamais la valeur : elle n'est écrite qu'une fois le chemin connu
 # du `trap` (C7-8).
@@ -136,6 +138,9 @@ smoke_write_auth_config() {
     _smoke_rc=2
   elif [ -n "$_smoke_value" ] && [[ "$_smoke_value" != *:* ]]; then
     echo "$_smoke_name : Basic Auth sans « : » (utilisateur:mot_de_passe attendu), refusée" >&2
+    _smoke_rc=2
+  elif [ -n "$_smoke_value" ] && { [[ "$_smoke_value" == :* ]] || [ -z "${_smoke_value#*:}" ]; }; then
+    echo "$_smoke_name : Basic Auth sans utilisateur ou sans mot de passe (utilisateur:mot_de_passe attendu), refusée" >&2
     _smoke_rc=2
   elif [ -n "$_smoke_value" ]; then
     _smoke_umask="$(umask)"
@@ -156,20 +161,19 @@ smoke_write_auth_config() {
   return "$_smoke_rc"
 }
 
-# smoke_require_auth_config <nom d'une variable valant "utilisateur:mot_de_passe">
+# _smoke_require_auth_config <nom d'une variable valant "utilisateur:mot_de_passe">
 #
-# À appeler juste après smoke_write_auth_config, qui a posé SMOKE_AUTH_CONFIG ou non :
-# une variable **définie** mais vide (le secret de préprod manquant) ne pose rien, et un
-# script qui court alors sans Basic Auth lirait chaque 401 de la préprod comme un résultat.
+# Privée : smoke_use_auth_config l'appelle juste après smoke_write_auth_config, qui a posé
+# SMOKE_AUTH_CONFIG ou non. Une variable **définie** mais vide (le secret de préprod manquant) ne pose
+# rien, et un script qui court alors sans Basic Auth lirait chaque 401 de la préprod comme un résultat.
 # Retour 2 et « <nom> : secret de Basic Auth vide, rien de vérifié » sur stderr ; 0 sinon,
 # y compris pour une variable non définie (la prod n'a pas de Basic Auth). Le vide se juge sur
 # SMOKE_AUTH_CONFIG et la définition sur `[[ -v ]]` : la valeur n'est jamais développée,
-# donc jamais dans la trace d'un `set -x`. Même validation du nom que
-# smoke_write_auth_config. Aucune fonction ne fait sortir l'appelant : `|| exit 2`.
-smoke_require_auth_config() {
+# donc jamais dans la trace d'un `set -x`. Même validation du nom que smoke_write_auth_config.
+_smoke_require_auth_config() {
   local _smoke_name="${1:-}"
   if ! _smoke_is_variable_name "$_smoke_name"; then
-    echo "smoke_require_auth_config : nom de variable invalide" >&2
+    echo "_smoke_require_auth_config : nom de variable invalide" >&2
     return 2
   fi
   if [[ -v $_smoke_name ]] && [ -z "$SMOKE_AUTH_CONFIG" ]; then
@@ -177,6 +181,18 @@ smoke_require_auth_config() {
     return 2
   fi
   return 0
+}
+
+# smoke_use_auth_config <nom d'une variable valant "utilisateur:mot_de_passe">
+#
+# La seule fonction qu'un appelant écrit pour la Basic Auth : elle pose (smoke_write_auth_config) puis
+# exige (_smoke_require_auth_config), dans cet ordre, sans que l'appelant ait à s'en souvenir (St11-4).
+# Retour 0 : variable non définie (aucune Basic Auth), ou pleine et écrite (SMOKE_AUTH_CONFIG posé).
+# Retour 2, la cause dite sur stderr : nom invalide, valeur refusée, dossier impossible, ou variable
+# définie mais vide. Aucune fonction ne fait sortir l'appelant : `smoke_use_auth_config NOM || exit 2`.
+smoke_use_auth_config() {
+  smoke_write_auth_config "${1:-}" || return "$?"
+  _smoke_require_auth_config "${1:-}"
 }
 
 # smoke_headers <fichier d'en-têtes> <nom>
@@ -219,11 +235,15 @@ smoke_excerpt() {
 # SMOKE_AUTH_CONFIG à chaque appel (St8-12), donc aucun `-K` périmé après un second
 # smoke_write_auth_config.
 #
-# Rend 1 (aucune réponse) ou 2 (fichier de la Basic Auth absent), après l'avoir dit sur
-# stderr, sans jamais faire sortir l'appelant :
+# Rend 1 (aucune réponse) ou 2 (Basic Auth refusée sur une URL non https://, fichier de la
+# Basic Auth absent), après l'avoir dit sur stderr, sans jamais faire sortir l'appelant :
 #   - un `curl` qui n'obtient aucune réponse (réseau, DNS, délai) sort avec son code
 #     (6, 7, 28…), hors du contrat 0/1/2 des scripts, si on le laisse à `set -e` :
 #     « <libellé> : curl a échoué (code <n> : réseau, DNS ou délai) — rien de vérifié » ;
+#   - SMOKE_AUTH_CONFIG posé et `url` qui ne commence pas par `https://` : « <libellé> : Basic
+#     Auth refusée sur une URL non https:// — rien de vérifié ». curl envoie `Authorization:
+#     Basic` dès la première requête, quel que soit le schéma : l'identifiant partirait en clair
+#     (C11-1). curl n'est pas appelé, la valeur n'est jamais citée ;
 #   - SMOKE_AUTH_CONFIG posé mais son fichier disparu : « <libellé> : fichier de la
 #     Basic Auth absent — rien de vérifié », curl n'est pas appelé (sans `-K`, il
 #     lirait le 401 de la préprod comme un résultat).
@@ -232,6 +252,10 @@ smoke_fetch() {
   local label="$1" url="$2" response rc _smoke_auth=()
   shift 2
   if [ -n "$SMOKE_AUTH_CONFIG" ]; then
+    if [[ "$url" != https://* ]]; then
+      echo "$label : Basic Auth refusée sur une URL non https:// — rien de vérifié" >&2
+      return 2
+    fi
     if [ ! -f "$SMOKE_AUTH_CONFIG" ]; then
       echo "$label : fichier de la Basic Auth absent — rien de vérifié" >&2
       return 2

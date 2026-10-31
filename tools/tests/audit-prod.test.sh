@@ -23,6 +23,10 @@ failures=0
 pass()  { printf '  ok   %s\n' "$1"; }
 fail()  { printf '  FAIL %s\n       %s\n' "$1" "$2"; failures=$((failures + 1)); }
 
+# check_empty_basic_auth, generated_basic_auth : les cas communs aux smokes et à l'audit.
+# shellcheck source=tools/tests/lib/smoke-cases.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/smoke-cases.sh"
+
 # Les faux : ils notent « <nom> <arguments> » et échouent (sortie 7 pour curl,
 # comme une connexion refusée ; 1 pour les autres), sans sortie.
 mkdir -p "$TMP/bin"
@@ -49,11 +53,11 @@ copy_tools() {
   fi
 }
 
-# run <nom> : lance la copie $TMP/<nom>/tools/audit-prod.sh contre un domaine qui n'existe pas ;
-# $rc, $TMP/<nom>.calls, $TMP/<nom>.out, $TMP/<nom>.err. LC_ALL=C : bash dit « syntax error » en
-# anglais quelle que soit la langue du poste. TMPDIR est confiné pour voir ce que le script laisse
-# derrière lui. run_traced <nom> : le même environnement, sous `bash -x`.
-run_as() {
+# run_audit <nom> [préfixe de commande…] : lance la copie $TMP/<nom>/tools/audit-prod.sh contre un domaine
+# qui n'existe pas, derrière le préfixe s'il y en a un (`bash -x`) ; $rc, $TMP/<nom>.calls, $TMP/<nom>.out,
+# $TMP/<nom>.err. LC_ALL=C : bash dit « syntax error » en anglais quelle que soit la langue du poste. TMPDIR
+# est confiné pour voir ce que le script laisse derrière lui. run_traced <nom> : le même, sous `bash -x`.
+run_audit() {
   local name="$1"
   shift
   : > "$TMP/$name.calls"
@@ -64,14 +68,13 @@ run_as() {
   rc=$?
   set -e
 }
-run() { run_as "$1"; }
-run_traced() { run_as "$1" bash -x; }
+run_traced() { run_audit "$1" bash -x; }
 
 # --- C6-7 : sans AUDIT_BASIC_AUTH, la bibliothèque de la Basic Auth n'est pas
 # sourcée du tout : une smoke-http.sh invalide ne change rien à l'audit (il court
 # jusqu'au bout, sortie 1 par ses propres échecs, jamais 2 ni l'erreur de bash).
 copy_tools sansauth invalide
-run sansauth
+run_audit sansauth
 if [ "$rc" -eq 1 ] && ! grep -q 'syntax error' "$TMP/sansauth.err" && ! grep -q 'bibliothèque' "$TMP/sansauth.err" \
    && [ -s "$TMP/sansauth.calls" ]; then
   pass "sans AUDIT_BASIC_AUTH, une smoke-http.sh invalide n'est pas sourcée : l'audit court (sortie 1)"
@@ -83,7 +86,7 @@ fi
 # avant toute requête, en le disant (« introuvable ou invalide ») et avec l'erreur
 # de bash.
 copy_tools avecauth invalide
-AUDIT_BASIC_AUTH='u:p' run avecauth
+AUDIT_BASIC_AUTH='u:p' run_audit avecauth
 if [ "$rc" -eq 2 ] && grep -q 'introuvable ou invalide : tools/lib/smoke-http.sh' "$TMP/avecauth.err" \
    && grep -q 'syntax error' "$TMP/avecauth.err" && [ ! -s "$TMP/avecauth.calls" ]; then
   pass "avec AUDIT_BASIC_AUTH, une smoke-http.sh invalide → sortie 2, « introuvable ou invalide », erreur de bash, aucune requête"
@@ -96,7 +99,7 @@ fi
 for lib in security-headers tls-certificate; do
   copy_tools "lib-$lib" reelle
   printf 'if then\n' > "$TMP/lib-$lib/tools/lib/$lib.sh"
-  run "lib-$lib"
+  run_audit "lib-$lib"
   if [ "$rc" -eq 2 ] && grep -q "introuvable ou invalide : tools/lib/$lib.sh" "$TMP/lib-$lib.err" \
      && grep -q 'syntax error' "$TMP/lib-$lib.err"; then
     pass "$lib.sh invalide → sortie 2, « introuvable ou invalide », erreur de bash"
@@ -108,7 +111,7 @@ done
 # --- Un retour à la ligne dans AUDIT_BASIC_AUTH : sortie 2 avant toute requête,
 # valeur jamais citée.
 copy_tools newline reelle
-AUDIT_BASIC_AUTH=$'u:p\nurl = "x"' run newline
+AUDIT_BASIC_AUTH=$'u:p\nurl = "x"' run_audit newline
 if [ "$rc" -eq 2 ] && grep -q 'AUDIT_BASIC_AUTH contient un retour à la ligne' "$TMP/newline.err" \
    && [ ! -s "$TMP/newline.calls" ] && ! grep -qF 'url = ' "$TMP/newline.out" "$TMP/newline.err"; then
   pass "AUDIT_BASIC_AUTH avec un retour à la ligne → sortie 2, aucune requête, valeur jamais citée"
@@ -119,7 +122,7 @@ fi
 # --- C6-8 : le fichier -K ne survit pas au script, et la Basic Auth n'apparaît
 # jamais dans les arguments d'un appel.
 copy_tools nominal reelle
-AUDIT_BASIC_AUTH='u:p' run nominal
+AUDIT_BASIC_AUTH='u:p' run_audit nominal
 if grep -q 'curl .*-K ' "$TMP/nominal.calls" && ! grep -qF 'u:p' "$TMP/nominal.calls"; then
   pass "Basic Auth : curl reçoit -K <fichier>, jamais la valeur"
 else
@@ -203,18 +206,14 @@ else
   fail "valeur tracée" "$(grep -nF -e 'trace-' "$TMP/traced.err" | head -3)"
 fi
 
-# --- Décisions 3 de la neuvième série et 4 de la dixième (smoke_require_auth_config) : AUDIT_BASIC_AUTH
+# --- Décisions 3 de la neuvième série et 4 de la dixième (smoke_use_auth_config) : AUDIT_BASIC_AUTH
 # posée mais vide (le secret de préprod manquant) arrête l'audit : sortie 2, « secret de Basic Auth
 # vide » sur stderr, aucun appel à dig/curl/openssl, aucun dossier dans TMPDIR. Un audit sans Basic Auth
 # lirait le 401 de la préprod comme des dizaines d'échecs.
 copy_tools vide reelle
-AUDIT_BASIC_AUTH='' run vide
-if [ "$rc" -eq 2 ] && grep -q 'AUDIT_BASIC_AUTH : secret de Basic Auth vide' "$TMP/vide.err" \
-   && [ ! -s "$TMP/vide.calls" ] && [ -z "$(ls -A "$TMP/vide.tmpdir")" ] && [ ! -s "$TMP/vide.out" ]; then
-  pass "AUDIT_BASIC_AUTH vide : sortie 2, « secret de Basic Auth vide », aucun appel, aucun dossier"
-else
-  fail "AUDIT_BASIC_AUTH vide" "rc=$rc ; err : $(cat "$TMP/vide.err") ; appels : $(head -3 "$TMP/vide.calls")"
-fi
+AUDIT_BASIC_AUTH='' run_audit vide
+check_empty_basic_auth "AUDIT_BASIC_AUTH vide : sortie 2, « secret de Basic Auth vide », aucun appel, aucun dossier" \
+  "$rc" "$TMP/vide.err" "$TMP/vide.calls" "$TMP/vide.out" "$TMP/vide.tmpdir"
 
 # Le même sous `bash -x` : la trace ne porte de la variable que son nom (le test de
 # présence ne la développe pas, le vide est jugé sur le chemin du fichier).
@@ -239,12 +238,29 @@ else
   fail "AUDIT_BASIC_AUTH sans « : »" "rc=$rc ; err : $(grep -v 'identifiant-seul' "$TMP/sansdeuxpoints.err" | head -3)"
 fi
 
+# --- C11-8 : un utilisateur vide (`:`, `:p`) ou un mot de passe vide (`u:`) n'est pas une Basic Auth : sortie 2
+# avant toute requête, « sans utilisateur ou sans mot de passe », aucun dossier, la valeur ni dans la sortie
+# ni dans la trace de `bash -x`. Valeurs générées.
+token="g$RANDOM$RANDOM"
+copy_tools creuse reelle
+for hollow in ':' "${token}:" ":${token}"; do
+  AUDIT_BASIC_AUTH="$hollow" run_traced creuse
+  if [ "$rc" -eq 2 ] && grep -q 'AUDIT_BASIC_AUTH : Basic Auth sans utilisateur ou sans mot de passe' "$TMP/creuse.err" \
+     && [ ! -s "$TMP/creuse.calls" ] && [ -z "$(ls -A "$TMP/creuse.tmpdir")" ] \
+     && ! grep -qF "$token" "$TMP/creuse.out" "$TMP/creuse.err"; then
+    pass "AUDIT_BASIC_AUTH à côté vide (${#hollow} caractères) : sortie 2, aucun appel, aucun dossier, valeur ni citée ni tracée"
+  else
+    fail "AUDIT_BASIC_AUTH à côté vide" \
+      "rc=$rc ; err : $(grep -vF "$token" "$TMP/creuse.err" | head -3) ; TMPDIR : $(ls -A "$TMP/creuse.tmpdir")"
+  fi
+done
+
 # --- C6-8 : le `trap` est posé AVANT la création du fichier : un arrêt entre les
 # deux (signal, `exit` d'une expansion) laisserait sinon le fichier de la Basic
 # Auth derrière. Lu sur le source : aucune exécution ne tombe dans cette fenêtre
 # d'un instant, mais l'ordre des deux lignes est exactement ce qui la ferme.
 trap_line="$(grep -n "^  trap '.*' EXIT" "$TOOLS/audit-prod.sh" | head -1 | cut -d: -f1)"
-file_line="$(grep -n 'smoke_write_auth_config AUDIT_BASIC_AUTH' "$TOOLS/audit-prod.sh" | head -1 | cut -d: -f1)"
+file_line="$(grep -n 'smoke_use_auth_config AUDIT_BASIC_AUTH' "$TOOLS/audit-prod.sh" | head -1 | cut -d: -f1)"
 if [ -n "$trap_line" ] && [ -n "$file_line" ] && [ "$trap_line" -lt "$file_line" ]; then
   pass "le trap (ligne $trap_line) précède la création du fichier -K (ligne $file_line)"
 else

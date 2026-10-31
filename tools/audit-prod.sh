@@ -49,13 +49,13 @@ CURL_OPTS_ANONYMOUS=("${CURL_OPTS[@]}")
 # et développée ici, hors de tout `set +x`, un `bash -x` l'imprimerait (C8-1).
 #   - non définie : l'audit de la vraie prod (non protégée). Il ne source pas la
 #     bibliothèque et n'envoie aucune Basic Auth ;
-#   - définie et vide : le secret de préprod manquant. `smoke_require_auth_config` sort 2
+#   - définie et vide : le secret de préprod manquant. `smoke_use_auth_config` sort 2
 #     avant toute requête, faute de quoi chaque 401 de la préprod se lirait comme des
 #     chemins exposés ;
 #   - définie et pleine : le fichier `-K` est écrit une fois, ici, avant tout appel.
-#     Un retour à la ligne (ou un CR) dans la valeur, ou l'absence de « : », est refusé
-#     par `smoke_write_auth_config` avant tout dossier (sortie 2, celle d'un défaut
-#     d'environnement, comme une bibliothèque absente).
+#     Un retour à la ligne (ou un CR) dans la valeur, l'absence de « : », un utilisateur
+#     ou un mot de passe vide sont refusés par `smoke_use_auth_config` avant tout dossier
+#     (sortie 2, celle d'un défaut d'environnement, comme une bibliothèque absente).
 # Le `-K` va dans `CURL_OPTS` : l'audit n'appelle jamais `smoke_fetch`, ne réécrit pas
 # le fichier, donc aucun `-K` n'y est périmé. Le `trap` précède la création du dossier :
 # un arrêt entre `mktemp -d` et l'affectation que lit le `trap` peut laisser un dossier
@@ -69,8 +69,7 @@ if [[ -v AUDIT_BASIC_AUTH ]]; then
     exit 2
   }
   trap 'smoke_cleanup' EXIT
-  smoke_write_auth_config AUDIT_BASIC_AUTH || exit 2
-  smoke_require_auth_config AUDIT_BASIC_AUTH || exit 2
+  smoke_use_auth_config AUDIT_BASIC_AUTH || exit 2
   CURL_OPTS+=(-K "$SMOKE_AUTH_CONFIG")
 fi
 DIG_TIMEOUT=(+time=3 +tries=1)

@@ -44,7 +44,7 @@
 # Usage :  tools/smoke-mcp.sh <url-de-base>
 #          ex. tools/smoke-mcp.sh https://preprod.cp-ghostotof.com
 # Env :    AUDIT_BASIC_AUTH  "utilisateur:mot_de_passe" (préprod), optionnel : non définie, aucune
-#                            Basic Auth ; définie mais vide, ou sans « : », sortie 2.
+#                            Basic Auth ; définie mais vide, ou sans utilisateur ou sans mot de passe, sortie 2.
 #                            Jamais via `-u` : les arguments d'un processus se
 #                            lisent dans `ps` ; le couple passe par un fichier
 #                            de configuration curl en 600 (comme audit-prod.sh).
@@ -88,11 +88,10 @@ headers_file="$(mktemp)"
 body_file="$(mktemp)"
 trap 'rm -f "$headers_file" "$body_file"; smoke_cleanup' EXIT
 
-# Basic Auth : `smoke_write_auth_config` écrit le fichier `-K`, `smoke_require_auth_config` refuse un secret
-# défini mais vide, `smoke_fetch` le lit (tools/lib/smoke-http.sh).
+# Basic Auth : `smoke_use_auth_config` écrit le fichier `-K` et refuse (sortie 2) un secret vide ou creux,
+# `smoke_fetch` le lit et le refuse sur une URL non https:// (tools/lib/smoke-http.sh).
 SMOKE_CURL_OPTS=(-sS --connect-timeout 5 --max-time 15 -D "$headers_file")
-smoke_write_auth_config AUDIT_BASIC_AUTH || exit 2
-smoke_require_auth_config AUDIT_BASIC_AUTH || exit 2
+smoke_use_auth_config AUDIT_BASIC_AUTH || exit 2
 
 # request <étape> <méthode> <en-têtes curl…> : remplit `status` et `body`.
 # Un curl en échec (délai, connexion coupée : sortie 1) ou un fichier de la Basic Auth

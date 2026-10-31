@@ -25,6 +25,7 @@ paths:
   - "tools/tests/smoke-mcp.test.sh"
   - "tools/lib/smoke-http.sh"
   - "tools/tests/smoke-http.test.sh"
+  - "tools/tests/lib/smoke-cases.sh"
   - "backend/config/packages/nelmio_cors.yaml"
   - "SECURITY.md"
 ---
@@ -116,18 +117,20 @@ paths:
   audience, revisit if phase 2's real clients get throttled. `tools/smoke-mcp.sh` is run by `smoke-test-preprod` (its own `timeout-minutes: 3`).
   The library `tools/lib/smoke-http.sh` is shared by `smoke-login-throttling.sh`, `smoke-dead-session-cookie.sh` and this one.
   It reads headers (`smoke_header`, and `smoke_headers` for a repeated one such as `Set-Cookie`).
-  `smoke_write_auth_config` validates the variable's name: it is refused if it starts with `_smoke_` (the library's
-  own locals) or `SMOKE_AUTH_` (the variables its head `smoke_cleanup` empties).
-  It reads the value itself, under `set +x`, and writes it in a private directory.
-  A value with a line break, or non-empty without « : » (blanks included), exits 2 naming the variable, never quoting it.
-  An empty value writes nothing. A second call replaces the first. Every `trap` runs `smoke_cleanup`.
-  `smoke_require_auth_config` follows it in the three smokes and in the audit: a variable that is defined but empty
-  exits 2 saying « secret de Basic Auth vide » (R116, the author's decision of 2026-10-31); an undefined one sends no Basic Auth.
+  `smoke_use_auth_config <NAME> || exit 2` is the only Basic Auth call of the audit and the three smokes (R133): it writes, then requires.
+  The name is validated: refused if it starts with `_smoke_` (the library's own locals) or `SMOKE_AUTH_` (what `smoke_cleanup` empties).
+  The value is read under `set +x` and written in a private directory; every `trap` runs `smoke_cleanup`; a second call replaces the first.
+  A value with a line break, without « : », or with an empty user or password (`:`, `:p`, `u:`) exits 2 naming the variable, not quoting it.
+  A variable that is defined but empty exits 2 saying « secret de Basic Auth vide » (R116, the author's decision of 2026-10-31).
+  An undefined one sends no Basic Auth.
   `smoke_fetch` calls `curl` (binary `SMOKE_CURL`) and reads the `-K` at each call, never from `SMOKE_CURL_OPTS`.
+  It refuses a `-K` on a URL that is not `https://` (exit 2, « non https:// »): curl sends `Authorization: Basic` on the first request.
   A `-K` file gone exits 2 saying « fichier de la Basic Auth absent », and a `curl` without an answer exits 1.
-  Nothing was verified in both cases.
+  Nothing was verified in those cases.
   `audit-prod.sh` sources the library only when `AUDIT_BASIC_AUTH` is defined (`[[ -v ]]`, so the value is never expanded
-  outside the library's `set +x`), and no command line of the audit or the smokes expands it (`smoke-http.test.sh` reads them).
+  outside the library's `set +x`).
+  `smoke-http.test.sh` holds an allow-list: no uncommented line of the audit or the smokes names `AUDIT_BASIC_AUTH`,
+  except `if [[ -v AUDIT_BASIC_AUTH ]]; then` and the library call, once per script (R133).
   A library that is missing or does not parse exits 2 saying « introuvable ou invalide », with bash's own error left on stderr
   (#748, C6-7); the production audit, with the variable undefined, never reads it.
   Its redirection probes (section 3) leave without the Basic Auth (`CURL_OPTS_ANONYMOUS`): curl sends `Authorization: Basic`

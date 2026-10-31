@@ -37,7 +37,7 @@
 # Usage :  tools/smoke-dead-session-cookie.sh <url-de-base>
 #          ex. tools/smoke-dead-session-cookie.sh https://preprod.cp-ghostotof.com
 # Env :    AUDIT_BASIC_AUTH  "utilisateur:mot_de_passe" (préprod), optionnel : non définie, aucune
-#                            Basic Auth ; définie mais vide, ou sans « : », sortie 2.
+#                            Basic Auth ; définie mais vide, ou sans utilisateur ou sans mot de passe, sortie 2.
 #                            Jamais via `-u` : les arguments d'un processus se
 #                            lisent dans `ps` ; le couple passe par un fichier
 #                            de configuration curl en 600 (tools/lib/
@@ -74,11 +74,10 @@ dead_cookie="BEARER=$(openssl rand -hex 16)"
 headers_file="$(mktemp)"
 trap 'rm -f "$headers_file"; smoke_cleanup' EXIT
 
-# Basic Auth : `smoke_write_auth_config` écrit le fichier `-K`, `smoke_require_auth_config` refuse un secret
-# défini mais vide, `smoke_fetch` le lit (tools/lib/smoke-http.sh).
+# Basic Auth : `smoke_use_auth_config` écrit le fichier `-K` et refuse (sortie 2) un secret vide ou creux,
+# `smoke_fetch` le lit et le refuse sur une URL non https:// (tools/lib/smoke-http.sh).
 SMOKE_CURL_OPTS=(-sS --connect-timeout 5 --max-time 15 -D "$headers_file")
-smoke_write_auth_config AUDIT_BASIC_AUTH || exit 2
-smoke_require_auth_config AUDIT_BASIC_AUTH || exit 2
+smoke_use_auth_config AUDIT_BASIC_AUTH || exit 2
 
 # Les valeurs de tous les en-têtes Set-Cookie de la dernière réponse (la lecture
 # des en-têtes multiples est celle de la bibliothèque).
@@ -125,7 +124,9 @@ expires_it() {
 # --- 1. Le témoin : la route publique répond sans cookie.
 fetch "$public_path"
 if [ "$status" = "401" ]; then
-  echo "témoin : GET $public_path sans cookie a répondu 401 — c'est la Basic Auth de l'ingress (AUDIT_BASIC_AUTH absent ou faux ?) ou une route devenue protégée, pas le cookie mort (corps : $(smoke_excerpt "$body"))" >&2
+  echo "témoin : GET $public_path sans cookie a répondu 401 — c'est la Basic Auth de l'ingress" \
+    "(secret de préprod absent ou faux ?) ou une route devenue protégée, pas le cookie mort" \
+    "(corps : $(smoke_excerpt "$body"))" >&2
   exit 1
 fi
 if [ "$status" != "200" ]; then

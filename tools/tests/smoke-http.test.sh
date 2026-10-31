@@ -2,9 +2,9 @@
 #
 # smoke-http.test.sh
 # ---------------------------------------------------------------------------
-# Test hors ligne de tools/lib/smoke-http.sh (smoke_write_auth_config, smoke_cleanup,
-# smoke_header, smoke_headers, smoke_excerpt, smoke_fetch) : un faux `curl` rejoue une réponse canned et note
-# ses arguments, aucun appel réseau, aucune écriture dans le dépôt courant.
+# Test hors ligne de tools/lib/smoke-http.sh (smoke_use_auth_config, smoke_write_auth_config,
+# smoke_cleanup, smoke_header, smoke_headers, smoke_excerpt, smoke_fetch) : un faux `curl` rejoue
+# une réponse canned et note ses arguments, aucun appel réseau, aucune écriture dans le dépôt courant.
 # Les scripts qui sourcent la bibliothèque ont chacun leur test (le contrat de
 # leurs sorties) ; celui-ci épingle ce que la bibliothèque promet seule.
 #
@@ -13,6 +13,9 @@
 set -euo pipefail
 
 LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/smoke-http.sh"
+# generated_basic_auth : les valeurs de Basic Auth de ce test sont générées, jamais écrites en clair.
+# shellcheck source=tools/tests/lib/smoke-cases.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/smoke-cases.sh"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
@@ -216,57 +219,58 @@ else
   fail "vide après posée" "config : [$SMOKE_AUTH_CONFIG] ; fichiers : $(ls -A "$TMP/tmpdir")"
 fi
 
-# --- Décision 4 de la dixième série : smoke_require_auth_config <nom> juge le vide après
-# smoke_write_auth_config. Définie et vide : retour 2 et « secret de Basic Auth vide » ;
-# non définie : 0 (l'audit de la prod, un smoke local) ; définie et pleine : 0.
+# --- Décision 4 de la dixième série, choix 7 de la onzième : smoke_use_auth_config <nom> écrit puis
+# exige, en une fonction. Définie et vide : retour 2, « secret de Basic Auth vide », aucun dossier ;
+# non définie : 0, aucun dossier (l'audit de la prod, un smoke local) ; pleine : 0, le fichier est écrit.
 UNE_AUTH=""
-smoke_write_auth_config UNE_AUTH
 rc=0
-smoke_require_auth_config UNE_AUTH > "$TMP/stdout" 2> "$TMP/stderr" || rc=$?
-if [ "$rc" -eq 2 ] && grep -q '^UNE_AUTH : secret de Basic Auth vide' "$TMP/stderr" && [ ! -s "$TMP/stdout" ]; then
-  pass "smoke_require_auth_config : variable définie et vide → retour 2, « secret de Basic Auth vide »"
+smoke_use_auth_config UNE_AUTH > "$TMP/stdout" 2> "$TMP/stderr" || rc=$?
+if [ "$rc" -eq 2 ] && grep -q '^UNE_AUTH : secret de Basic Auth vide' "$TMP/stderr" && [ ! -s "$TMP/stdout" ] \
+   && [ -z "$(ls -A "$TMP/tmpdir")" ] && [ -z "$SMOKE_AUTH_CONFIG" ]; then
+  pass "smoke_use_auth_config : variable définie et vide → retour 2, « secret de Basic Auth vide », aucun dossier"
 else
-  fail "smoke_require_auth_config (vide)" "rc=$rc ; stderr : $(cat -A "$TMP/stderr")"
+  fail "smoke_use_auth_config (vide)" "rc=$rc ; stderr : $(cat -A "$TMP/stderr") ; fichiers : $(ls -A "$TMP/tmpdir")"
 fi
 unset UNE_AUTH
-smoke_write_auth_config UNE_AUTH
 rc=0
-smoke_require_auth_config UNE_AUTH > "$TMP/stdout" 2> "$TMP/stderr" || rc=$?
-if [ "$rc" -eq 0 ] && [ ! -s "$TMP/stdout" ] && [ ! -s "$TMP/stderr" ]; then
-  pass "smoke_require_auth_config : variable non définie → retour 0, rien dit"
+smoke_use_auth_config UNE_AUTH > "$TMP/stdout" 2> "$TMP/stderr" || rc=$?
+if [ "$rc" -eq 0 ] && [ ! -s "$TMP/stdout" ] && [ ! -s "$TMP/stderr" ] && [ -z "$(ls -A "$TMP/tmpdir")" ] \
+   && [ -z "$SMOKE_AUTH_CONFIG" ]; then
+  pass "smoke_use_auth_config : variable non définie → retour 0, rien dit, aucun dossier"
 else
-  fail "smoke_require_auth_config (non définie)" "rc=$rc ; stderr : $(cat -A "$TMP/stderr")"
+  fail "smoke_use_auth_config (non définie)" "rc=$rc ; stderr : $(cat -A "$TMP/stderr") ; fichiers : $(ls -A "$TMP/tmpdir")"
 fi
-UNE_AUTH='u:p'
-smoke_write_auth_config UNE_AUTH
+UNE_AUTH="$(generated_basic_auth)"
 rc=0
-smoke_require_auth_config UNE_AUTH > "$TMP/stdout" 2> "$TMP/stderr" || rc=$?
-if [ "$rc" -eq 0 ] && [ ! -s "$TMP/stdout" ] && [ ! -s "$TMP/stderr" ]; then
-  pass "smoke_require_auth_config : variable pleine écrite → retour 0"
+smoke_use_auth_config UNE_AUTH > "$TMP/stdout" 2> "$TMP/stderr" || rc=$?
+if [ "$rc" -eq 0 ] && [ ! -s "$TMP/stdout" ] && [ ! -s "$TMP/stderr" ] && [ "$(cat "$SMOKE_AUTH_CONFIG")" = "user = \"$UNE_AUTH\"" ]; then
+  pass "smoke_use_auth_config : variable pleine → retour 0, le fichier -K est écrit"
 else
-  fail "smoke_require_auth_config (pleine)" "rc=$rc ; stderr : $(cat -A "$TMP/stderr")"
+  fail "smoke_use_auth_config (pleine)" "rc=$rc ; stderr : $(cat -A "$TMP/stderr")"
 fi
 smoke_cleanup
-for bad_name in SMOKE_AUTH_DIR _smoke_x '1abc' "$hostile"; do
+# Un nom invalide est refusé comme par smoke_write_auth_config : retour 2, aucune commande exécutée.
+for bad_name in SMOKE_AUTH_DIR _smoke_x '1abc' '' "$hostile"; do
   rc=0
-  smoke_require_auth_config "$bad_name" > "$TMP/stdout" 2> "$TMP/stderr" || rc=$?
-  if [ "$rc" -eq 2 ] && [ ! -e "$TMP/pwned" ] && grep -q '^smoke_require_auth_config : nom de variable invalide' "$TMP/stderr"; then
-    pass "smoke_require_auth_config : nom invalide ($bad_name) → retour 2, aucune commande exécutée"
+  smoke_use_auth_config "$bad_name" > "$TMP/stdout" 2> "$TMP/stderr" || rc=$?
+  if [ "$rc" -eq 2 ] && [ ! -e "$TMP/pwned" ] && [ -z "$(ls -A "$TMP/tmpdir")" ] \
+     && grep -q ' : nom de variable invalide' "$TMP/stderr"; then
+    pass "smoke_use_auth_config : nom invalide (${bad_name:-vide}) → retour 2, aucune commande exécutée"
   else
-    fail "smoke_require_auth_config : nom invalide" "nom : $bad_name ; rc=$rc ; stderr : $(cat -A "$TMP/stderr")"
+    fail "smoke_use_auth_config : nom invalide" "nom : ${bad_name:-vide} ; rc=$rc ; stderr : $(cat -A "$TMP/stderr")"
   fi
   rm -f "$TMP/pwned"
 done
-# Sous `set -x`, ni l'une ni l'autre ne laisse la valeur dans la trace (le test ne la développe pas).
-UNE_AUTH='traced-user:traced-pass-value'
+# Sous `set -x`, ni le vide, ni une valeur pleine ne laissent la valeur dans la trace.
+UNE_AUTH="$(generated_basic_auth)"
 rc=0
-( set -x; smoke_write_auth_config UNE_AUTH; smoke_require_auth_config UNE_AUTH; in_rc=$?; smoke_cleanup; exit "$in_rc" ) \
-  > /dev/null 2> "$TMP/trace" || rc=$?
-if [ "$rc" -eq 0 ] && [ -s "$TMP/trace" ] && ! grep -qF -e 'traced-pass-value' -e 'traced-user' "$TMP/trace"; then
-  pass "smoke_require_auth_config sous set -x : la valeur n'apparaît pas dans la trace"
+( set -x; smoke_use_auth_config UNE_AUTH; in_rc=$?; smoke_cleanup; exit "$in_rc" ) > /dev/null 2> "$TMP/trace" || rc=$?
+if [ "$rc" -eq 0 ] && [ -s "$TMP/trace" ] && ! grep -qF -e "${UNE_AUTH%%:*}" -e "${UNE_AUTH#*:}" "$TMP/trace"; then
+  pass "smoke_use_auth_config sous set -x : la valeur n'apparaît pas dans la trace"
 else
-  fail "smoke_require_auth_config tracée" "rc=$rc ; $(grep -F 'traced-' "$TMP/trace" | head -3)"
+  fail "smoke_use_auth_config tracée" "rc=$rc ; $(grep -F "${UNE_AUTH%%:*}" "$TMP/trace" | head -3)"
 fi
+unset UNE_AUTH
 
 # --- Une valeur non vide sans « : » (ou faite de blancs) ne donne pas un identifiant : retour 2,
 # « sans « : » » nommant la variable, aucun dossier, la valeur jamais citée, ni imprimée sous set -x.
@@ -289,6 +293,32 @@ else
   fail "valeur sans « : » tracée" "$(grep -F 'seulement' "$TMP/trace" | head -3)"
 fi
 unset UNE_AUTH
+
+# --- C11-8 : un utilisateur vide (`:`, `:p`) ou un mot de passe vide (`u:`) n'est pas une Basic Auth :
+# retour 2, « sans utilisateur ou sans mot de passe » nommant la variable, aucun dossier, la valeur
+# jamais citée ni laissée dans la trace d'un `set -x`. smoke_use_auth_config refuse de même.
+token="g$RANDOM$RANDOM"
+for hollow in ':' "${token}:" ":${token}" "::${token}"; do
+  UNE_AUTH="$hollow"
+  for entry in smoke_write_auth_config smoke_use_auth_config; do
+    rc=0
+    "$entry" UNE_AUTH > "$TMP/stdout" 2> "$TMP/stderr" || rc=$?
+    if [ "$rc" -eq 2 ] && grep -q '^UNE_AUTH : Basic Auth sans utilisateur ou sans mot de passe' "$TMP/stderr" \
+       && [ ! -s "$TMP/stdout" ] && [ -z "$(ls -A "$TMP/tmpdir")" ] && [ -z "$SMOKE_AUTH_CONFIG" ] \
+       && ! grep -qF "$token" "$TMP/stderr"; then
+      pass "$entry : valeur à côté vide (${#hollow} caractères) → retour 2, aucun dossier, valeur jamais citée"
+    else
+      fail "$entry : valeur à côté vide" "rc=$rc ; stderr : $(grep -vF "$token" "$TMP/stderr" | cat -A) ; fichiers : $(ls -A "$TMP/tmpdir")"
+    fi
+  done
+  ( set -x; smoke_use_auth_config UNE_AUTH || true ) > /dev/null 2> "$TMP/trace"
+  if grep -q 'sans utilisateur ou sans mot de passe' "$TMP/trace" && ! grep -qF "$token" "$TMP/trace"; then
+    pass "le refus d'une valeur à côté vide (${#hollow} caractères) ne laisse pas la valeur dans la trace set -x"
+  else
+    fail "valeur à côté vide tracée" "$(grep -F "$token" "$TMP/trace" | head -3)"
+  fi
+done
+unset UNE_AUTH token
 
 # --- CR8-5 : une variable qui porte un nom courant (`name`, `value`, `rc`, `traced`,
 # `saved_umask`, `empty`) est lue pour ce qu'elle est, jamais masquée par une locale
@@ -472,6 +502,47 @@ fi
 smoke_cleanup
 unset UNE_AUTH
 
+# --- C11-1 : curl envoie `Authorization: Basic` dès la première requête, quel que soit le schéma.
+# Une Basic Auth posée et une URL qui ne commence pas par `https://` : smoke_fetch rend 2, dit
+# « non https:// — rien de vérifié » sans citer la valeur, et n'appelle pas curl. Sur `https://`, curl
+# reçoit le `-K`. La trace d'un `set -x` ne porte pas la valeur non plus.
+http_auth="$(generated_basic_auth)"
+UNE_AUTH="$http_auth"
+smoke_use_auth_config UNE_AUTH
+for plain_url in http://example.invalid/x HTTP://example.invalid/x ftp://example.invalid/x example.invalid/x; do
+  : > "$FAKE_ARGS"
+  rc=0
+  FAKE_STATUS=200 smoke_fetch "GET /http" "$plain_url" > "$TMP/stdout" 2> "$TMP/stderr" || rc=$?
+  check_plain_http_refused "smoke_fetch : Basic Auth sur $plain_url → retour 2, « non https:// », curl jamais appelé" \
+    "$rc" "$TMP/stderr" "$FAKE_ARGS" "$TMP/stdout" "$http_auth"
+done
+rc=0
+( set -x; FAKE_STATUS=200 smoke_fetch "GET /http" http://example.invalid/x || true ) > /dev/null 2> "$TMP/trace" || rc=$?
+if [ "$rc" -eq 0 ] && grep -q 'non https://' "$TMP/trace" && ! grep -qF -e "${http_auth%%:*}" -e "${http_auth#*:}" "$TMP/trace" \
+   && [ ! -s "$FAKE_ARGS" ]; then
+  pass "smoke_fetch : le refus d'une URL non https:// ne laisse pas la valeur dans la trace set -x"
+else
+  fail "refus http:// tracé" "rc=$rc ; $(grep -F "${http_auth%%:*}" "$TMP/trace" | head -3)"
+fi
+: > "$FAKE_ARGS"
+FAKE_STATUS=200 smoke_fetch "GET /https" https://example.invalid/x
+if grep -qF -- " -K $SMOKE_AUTH_CONFIG " "$FAKE_ARGS" && [ "$SMOKE_STATUS" = "200" ]; then
+  pass "smoke_fetch : Basic Auth sur https:// → curl reçoit le -K"
+else
+  fail "smoke_fetch https:// avec -K" "$(cat "$FAKE_ARGS")"
+fi
+# Sans Basic Auth, une URL http:// part comme avant (la préprod et la prod sont en https, un smoke local non).
+smoke_cleanup
+unset UNE_AUTH
+: > "$FAKE_ARGS"
+rc=0
+FAKE_STATUS=200 smoke_fetch "GET /local" http://example.invalid/x || rc=$?
+if [ "$rc" -eq 0 ] && [ -s "$FAKE_ARGS" ] && ! grep -q -- ' -K ' "$FAKE_ARGS"; then
+  pass "smoke_fetch : sans Basic Auth, une URL http:// part sans -K"
+else
+  fail "smoke_fetch http:// sans Basic Auth" "rc=$rc ; $(cat "$FAKE_ARGS")"
+fi
+
 # --- C9-4 : une Basic Auth écrite dont le fichier a disparu ne part pas sans elle :
 # smoke_fetch rend 2, dit « fichier de la Basic Auth absent — rien de vérifié » et
 # n'appelle pas curl (un appel sans -K lirait le 401 de la préprod comme un résultat).
@@ -515,19 +586,34 @@ for caller in smoke-dead-session-cookie smoke-login-throttling smoke-mcp; do
   fi
 done
 
-# --- Aucune ligne de commande de l'audit ni des trois smokes ne développe AUDIT_BASIC_AUTH :
-# le secret n'est lu que par la bibliothèque, sous `set +x`. Un test de présence écrit
-# `[ -z "$AUDIT_BASIC_AUTH" ]` trace `'[' -z '' ']'` comme le test juste : aucun cas ne le voit
-# sous `bash -x`, seule la lecture du source le voit. Les lignes de commentaire sont écartées.
-leaks=""
+# --- Liste d'autorisation (C11-3) : le secret n'est lu que par la bibliothèque, sous `set +x`. Toute ligne
+# non commentée de l'audit et des trois smokes qui contient le mot AUDIT_BASIC_AUTH est refusée, sauf deux
+# formes exactes (blancs de tête admis) : le test de définition de l'audit et l'appel de la bibliothèque.
+# Une liste d'interdits ne voyait que `${…}` et `$…` : `${#AUDIT_BASIC_AUTH}` ou `printenv AUDIT_BASIC_AUTH`
+# lisent la valeur sans que `bash -x` ne la montre autrement que par son effet, et un test de présence
+# `[ -z "$AUDIT_BASIC_AUTH" ]` trace comme le test juste : seule la lecture du source les voit.
+# Les lignes de commentaire sont écartées ; l'appel de la bibliothèque doit figurer une fois dans chaque script.
+allowed_use='smoke_use_auth_config AUDIT_BASIC_AUTH || exit 2'
+allowed_defined='if [[ -v AUDIT_BASIC_AUTH ]]; then'
+strays=""
 for script in audit-prod smoke-dead-session-cookie smoke-login-throttling smoke-mcp; do
-  leaks+="$(grep -nvE '^[[:space:]]*#' "$TOOLS_DIR/$script.sh" \
-    | grep -E '\$\{?AUDIT_BASIC_AUTH|!AUDIT_BASIC_AUTH' | sed "s|^|$script.sh:|" || true)"
+  while IFS= read -r numbered; do
+    code="${numbered#*:}"
+    code="${code#"${code%%[![:space:]]*}"}"
+    if [ "$code" = "$allowed_use" ] || { [ "$script" = audit-prod ] && [ "$code" = "$allowed_defined" ]; }; then
+      continue
+    fi
+    strays+="$script.sh:$numbered"$'\n'
+  done < <(grep -nvE '^[[:space:]]*#' "$TOOLS_DIR/$script.sh" | grep -w 'AUDIT_BASIC_AUTH' || true)
+  uses="$(grep -cxF -e "$allowed_use" -e "  $allowed_use" "$TOOLS_DIR/$script.sh" || true)"
+  if [ "$uses" -ne 1 ]; then
+    strays+="$script.sh : l'appel « $allowed_use » figure $uses fois, une attendue"$'\n'
+  fi
 done
-if [ -z "$leaks" ]; then
-  pass "aucune ligne de commande de l'audit ni des smokes ne développe AUDIT_BASIC_AUTH"
+if [ -z "$strays" ]; then
+  pass "AUDIT_BASIC_AUTH : seules les deux formes autorisées figurent dans l'audit et les smokes, l'appel une fois chacun"
 else
-  fail "AUDIT_BASIC_AUTH développée" "$leaks"
+  fail "AUDIT_BASIC_AUTH hors liste d'autorisation" "$strays"
 fi
 
 # --- Sans SMOKE_CURL, c'est `curl` du PATH : le faux est placé en tête.

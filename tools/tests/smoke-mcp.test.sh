@@ -19,6 +19,10 @@ failures=0
 pass()  { printf '  ok   %s\n' "$1"; }
 fail()  { printf '  FAIL %s\n       %s\n' "$1" "$2"; failures=$((failures + 1)); }
 
+# check_empty_basic_auth, check_plain_http_refused, generated_basic_auth : les cas communs aux smokes et à l'audit.
+# shellcheck source=tools/tests/lib/smoke-cases.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/smoke-cases.sh"
+
 # Le faux curl : lit la n-ième ligne de $FAKE_RESPONSES (format
 # `code|en-têtes|corps`, en-têtes séparés par `;`, champ vide = aucun), écrit
 # les en-têtes dans le fichier de `-D`, imprime le corps comme le vrai avec
@@ -63,7 +67,7 @@ run() {
   : > "$TMP/$name.args"; : > "$TMP/$name.calls"
   set +e
   FAKE_RESPONSES="$TMP/$name.responses" FAKE_ARGS="$TMP/$name.args" FAKE_CALLS="$TMP/$name.calls" \
-    SMOKE_CURL="$TMP/curl" "$SCRIPT" https://example.invalid >"$TMP/out" 2>"$TMP/err"
+    SMOKE_CURL="$TMP/curl" "$SCRIPT" "${TEST_BASE_URL:-https://example.invalid}" >"$TMP/out" 2>"$TMP/err"
   rc=$?
   set -e
 }
@@ -302,12 +306,35 @@ fi
 # --- Un secret de Basic Auth défini mais vide (le secret de préprod manquant) : sortie 2, « secret de
 # Basic Auth vide » sur stderr, aucun appel. Sans lui, chaque 401 de la préprod se lirait comme un résultat.
 AUDIT_BASIC_AUTH='' run vide "$init"
-if [ "$rc" -eq 2 ] && grep -q '^AUDIT_BASIC_AUTH : secret de Basic Auth vide' "$TMP/err" \
-   && [ ! -s "$TMP/vide.calls" ] && [ ! -s "$TMP/out" ]; then
-  pass "AUDIT_BASIC_AUTH vide → sortie 2, « secret de Basic Auth vide », aucun appel"
+check_empty_basic_auth "AUDIT_BASIC_AUTH vide → sortie 2, « secret de Basic Auth vide », aucun appel" \
+  "$rc" "$TMP/err" "$TMP/vide.calls" "$TMP/out"
+
+# --- C11-1 : une Basic Auth et une base en `http://` — curl enverrait `Authorization: Basic` en clair :
+# sortie 2 au premier appel, aucun appel de curl, la valeur ni dans les messages ni dans les arguments.
+http_auth="$(generated_basic_auth)"
+AUDIT_BASIC_AUTH="$http_auth" TEST_BASE_URL=http://example.invalid run httpbase "$init"
+check_plain_http_refused "Basic Auth et base http:// → sortie 2, « non https:// », aucun appel, valeur jamais citée" \
+  "$rc" "$TMP/err" "$TMP/httpbase.calls" "$TMP/out" "$http_auth"
+# Sans Basic Auth, une base http:// est servie comme avant (un smoke local) : aucun -K.
+TEST_BASE_URL=http://example.invalid run httplocal "$init"
+if ! grep -q -- ' -K ' "$TMP/httplocal.args" && [ -s "$TMP/httplocal.calls" ] && ! grep -q 'non https://' "$TMP/err"; then
+  pass "sans Basic Auth, une base http:// part sans -K"
 else
-  fail "AUDIT_BASIC_AUTH vide" "rc=$rc ; err : $(cat -A "$TMP/err") ; appels : $(cat "$TMP/vide.calls")"
+  fail "base http:// sans Basic Auth" "rc=$rc ; err : $(cat -A "$TMP/err") ; args : $(head -1 "$TMP/httplocal.args")"
 fi
+
+# --- C11-8 : un utilisateur ou un mot de passe vide n'est pas une Basic Auth : sortie 2 avant tout
+# appel, « sans utilisateur ou sans mot de passe », la valeur jamais citée.
+token="g$RANDOM$RANDOM"
+for hollow in ':' "${token}:" ":${token}"; do
+  AUDIT_BASIC_AUTH="$hollow" run creuse "$init"
+  if [ "$rc" -eq 2 ] && grep -q '^AUDIT_BASIC_AUTH : Basic Auth sans utilisateur ou sans mot de passe' "$TMP/err" \
+     && [ ! -s "$TMP/creuse.calls" ] && [ ! -s "$TMP/out" ] && ! grep -qF "$token" "$TMP/out" "$TMP/err" "$TMP/creuse.args"; then
+    pass "AUDIT_BASIC_AUTH à côté vide (${#hollow} caractères) → sortie 2, aucun appel, valeur jamais citée"
+  else
+    fail "AUDIT_BASIC_AUTH à côté vide" "rc=$rc ; err : $(grep -vF "$token" "$TMP/err" | cat -A) ; appels : $(cat "$TMP/creuse.calls")"
+  fi
+done
 
 # --- Sans URL : usage, code 2.
 set +e; "$SCRIPT" >/dev/null 2>"$TMP/err"; rc=$?; set -e
