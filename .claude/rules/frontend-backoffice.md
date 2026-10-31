@@ -194,16 +194,20 @@ kept group would make a second version of the source locale), and so are « Prop
 of the eighth review: a second translation took the form back to the source locale, group kept; `useAdminTranslation`
 refuses the call itself, not only the disabled button: during a proposal (`isRefused`, the form's lock) and while a
 call is in flight, and a response whose form no longer has the identity read at send time (the entry, the locale,
-the source group, the prose: `formIdentity`) is discarded, whatever gesture replaced it and even if the form later regains
-that identity, a deleted entry being discarded by `discard()` (R124); **one model call in flight per form**: a discarded
+the source group: `formIdentity`, never the prose) is discarded, whatever gesture replaced it and even if the form later
+regains that identity, a deleted entry being discarded by `discard()` (R124); **one model call in flight per form**: a discarded
 call still running refuses the next one (`isDiscardPending`, R125, decision 2 of the eleventh review: no `AbortSignal`, the
 call already left costs what it costs), and the button says why it waits through a text referenced by `aria-describedby`
 only while it waits, `admin.translation.discardPending`), « Version de » (R94,
 decision 3: « aucune » would detach the proposal from its source) and the me-card
 **category** selector (R79b, D-b: a version in the other language does not change category, #501/#561; « Créer la
 version XX » keeps the category free, by decision), all described by one text, `admin.entryLock.proposal`, which says
-that « Annuler » drops the proposal and empties the form (R93, CR8-4). A proposal whose target locale the group
-already has (from « Créer la version XX », or from an entry whose group has both) ends on the server's 409
+that « Annuler » drops the proposal and empties the form (R93, CR8-4). **While a translation runs, the form's prose fields
+are `readonly`** (not `disabled`: readable and focusable), each described by `admin.translation.proseReadonly`
+(`TranslationReadonlyHint`), rendered only then: the answer replaces prose nobody could change meanwhile, which is why the
+prose is out of `formIdentity` and a failed translation's message (429, 503) survives typing, cleared only by a real change
+of form or the next translation (R126, decision 3 of the eleventh review; the author's decision of 2026-10-31). A proposal
+whose target locale the group already has (from « Créer la version XX », or from an entry whose group has both) ends on the server's 409
 `translation-already-exists` at save, « Annuler » being the way out (accepted, Q1 of the eighth review: detecting it
 would copy the server's uniqueness rule, as #573 refused). The old "page-locale"
 semantics is gone with the page-level selector (one locale per form, see above). About *settings* is

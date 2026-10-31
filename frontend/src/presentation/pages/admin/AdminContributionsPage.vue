@@ -23,6 +23,7 @@ import BaseTextInput from '../../ui/BaseTextInput.vue'
 import BaseTextarea from '../../ui/BaseTextarea.vue'
 import BaseSelect from '../../ui/BaseSelect.vue'
 import TranslateEntryButton from '../../ui/admin/TranslateEntryButton.vue'
+import TranslationReadonlyHint from '../../ui/admin/TranslationReadonlyHint.vue'
 import EntryFormLockHint from '../../ui/admin/EntryFormLockHint.vue'
 import { describedBy, useEntryFormLock } from '../../ui/admin/useEntryFormLock'
 import OrderHandle from '../../ui/admin/OrderHandle.vue'
@@ -41,12 +42,12 @@ const {
   discard: discardTranslation,
 } = useAdminTranslation({
   isRefused: () => lock.isProposalLocked,
-  // Ce qui fait l'identité du formulaire : une traduction dont il n'a plus cette identité est périmée.
+  // Ce qui fait l'identité du formulaire : une traduction dont il n'a plus cette identité est périmée. La prose n'en
+  // fait pas partie : la saisie est empêchée pendant la traduction, et l'erreur d'un échec survit à la frappe.
   formIdentity: () => ({
     entry: editingId.value,
     locale: form.locale,
     group: sourceGroup.value,
-    prose: collectProseFields(form, PROSE_FIELDS),
   }),
 })
 
@@ -117,6 +118,10 @@ const lock = useEntryFormLock({
   proposalSourceLocale,
 })
 
+// Pendant une traduction, la prose du formulaire est en lecture seule et désigne le texte d'aide (R126) : la référence
+// n'existe que pendant elle, avec le texte, jamais pendante.
+const PROSE_READONLY_HINT_ID = 'admin-contribution-prose-readonly-hint'
+const proseDescribedBy = computed(() => (isTranslating.value ? PROSE_READONLY_HINT_ID : undefined))
 const hasProseToTranslate = computed(() => PROSE_FIELDS.some((field) => '' !== form[field].trim()))
 
 const translationErrorText = computed(() => {
@@ -341,6 +346,8 @@ useUnsavedOrderGuard(isOrderDirty)
         <BaseTextInput
           id="admin-contribution-title"
           v-model="form.title"
+          :readonly="isTranslating"
+          :aria-describedby="proseDescribedBy"
           :label="t('admin.contributions.titleLabel')"
           required
         />
@@ -365,6 +372,8 @@ useUnsavedOrderGuard(isOrderDirty)
         <BaseTextarea
           id="admin-contribution-summary"
           v-model="form.summary"
+          :readonly="isTranslating"
+          :aria-describedby="proseDescribedBy"
           :label="t('admin.contributions.summaryLabel')"
           :rows="3"
           required
@@ -372,10 +381,11 @@ useUnsavedOrderGuard(isOrderDirty)
         <BaseTextarea
           id="admin-contribution-body"
           v-model="form.body"
+          :readonly="isTranslating"
           :label="t('admin.contributions.bodyLabel')"
           :rows="14"
           required
-          aria-describedby="admin-contribution-body-help"
+          :aria-describedby="describedBy('admin-contribution-body-help', proseDescribedBy)"
         />
         <div
           id="admin-contribution-body-help"
@@ -400,6 +410,11 @@ useUnsavedOrderGuard(isOrderDirty)
             @translate="handleTranslate"
           />
         </div>
+
+        <TranslationReadonlyHint
+          :id="PROSE_READONLY_HINT_ID"
+          :shown="isTranslating"
+        />
 
         <p
           v-if="proposalSourceLocale"

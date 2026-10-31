@@ -8079,6 +8079,13 @@ Q5 (A) verrouiller — les cinq recommandations, le plan ne change pas.**
 - Consumes : R124 (`isTranslating` réactif à l'identité). Produces : choix tranché 4 — `TranslationReadonlyHint`
   (`id`, `shown`), identifiants `admin-<formulaire>-prose-readonly-hint`.
 
+**Décision de l'auteur du 2026-10-31, après R124 :** la prose sort de `formIdentity` (R124 l'y avait mise :
+`prose: collectProseFields(…)`) ; l'identité devient l'entrée, la langue, le groupe. La saisie pendant une traduction est
+empêchée par le `readonly`, et le message d'une traduction en échec (429, 503 : `errorReason`) survit à la frappe, effacé
+par un vrai changement de formulaire ou la traduction suivante. Cas partagé « l'erreur d'une traduction survit à la
+frappe », vu rouge avant le retrait. Écart : le plan nomme `describedBy(<aide existante>, proseReadonlyHintId)` ; le code
+lit un calculé par formulaire (`proseDescribedBy`) qui vaut l'identifiant pendant la traduction et `undefined` sinon.
+
 - [ ] **Step 1 : tests, rouges** (Review Focus 2). `entryFormLock.ts` (huit formulaires) :
   `it(\`${prefix}pendant une traduction, chaque champ de prose est en lecture seule et décrit par le texte d'aide\`)`
   (différée : pour chaque `ids.prose`, `readonly` présent, `disabled` absent, `describedTexts` contient le texte FR

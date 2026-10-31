@@ -4,6 +4,7 @@ import TranslateEntryButton from '../../src/presentation/ui/admin/TranslateEntry
 import { expectNoAccessibilityViolation } from './axe'
 import { SUPPORTED_LOCALES } from '../../src/domain/portfolio/entities/Locale'
 import type { AdminTranslationRepository } from '../../src/domain/admin/translation/repositories/AdminTranslationRepository'
+import { AdminTranslationError } from '../../src/domain/admin/translation/errors/AdminTranslationError'
 
 /**
  * Les textes qui expliquent un sélecteur verrouillé d'un formulaire par entrée (#748, D-a et D-b
@@ -19,6 +20,13 @@ export const ENTRY_LOCK_PROPOSAL_TEXT =
 /** Le texte de l'attente d'un appel annulé : le bouton de traduction le désigne tant que la réponse périmée n'est pas là. */
 export const DISCARD_PENDING_TEXT =
   'La traduction annulée se termine côté serveur : ce bouton revient dès sa réponse, qui ne change rien au formulaire.'
+
+/** Le texte d'aide des champs de prose pendant une traduction : chacun le désigne tant que la réponse n'est pas là. */
+export const PROSE_READONLY_TEXT =
+  "Traduction en cours : les champs de texte sont en lecture seule jusqu'à la réponse. Rien de ce qui est écrit n'est perdu."
+
+/** Le message d'une traduction en échec (503), tel que le formulaire le rend. */
+export const TRANSLATION_UNAVAILABLE_TEXT = "L'assistant de traduction est indisponible. Réessayez plus tard."
 
 /**
  * Les textes que désigne l'`aria-describedby` du champ `selector`, dans l'ordre des identifiants ;
@@ -88,8 +96,17 @@ export interface EntryFormLockCase {
   readonly mount: (translation: AdminTranslationRepository) => Promise<VueWrapper>
   /** Rang du formulaire dans la page (`findAll('form')`) ; 0 pour une page à un seul formulaire. */
   readonly form: number
-  /** Identifiants (sans `#`) du sélecteur de langue, du groupe de traduction, du champ de titre et du texte du verrou. */
-  readonly ids: { readonly locale: string; readonly group: string; readonly title: string; readonly hint: string }
+  /**
+   * Identifiants (sans `#`) du sélecteur de langue, du groupe de traduction, du champ de titre, du texte du verrou et
+   * de chaque champ de prose du formulaire (ceux que la traduction envoie et remplace).
+   */
+  readonly ids: {
+    readonly locale: string
+    readonly group: string
+    readonly title: string
+    readonly hint: string
+    readonly prose: readonly string[]
+  }
   /** Le titre `h2` du formulaire quand il est vierge (« Ajouter … »). */
   readonly heading: string
   /** L'aide permanente de la langue (#582), lue avant le texte du verrou, quand le formulaire en a une. */
@@ -115,7 +132,8 @@ export interface EntryFormLockCase {
  * édition et pas dans un formulaire libre ; il l'est pendant une proposition, avec « Version de » et
  * « Proposer la version XX », et « Annuler » retire l'explication ; un « translate » émis pendant une proposition,
  * ou avant la première réponse, ne lance rien ; « Annuler », « Modifier », « Créer la version XX », la suppression
- * de l'entrée éditée et le changement de langue d'une création pendant une traduction en périment la réponse. Le support
+ * de l'entrée éditée et le changement de langue d'une création pendant une traduction en périment la réponse ; la prose est en
+ * lecture seule pendant une traduction et l'erreur d'un échec survit à la frappe. Le support
  * crée le dépôt de traduction de chaque cas, le passe à `mount` et compte ses appels. Écrits une fois pour les huit
  * formulaires : un cas de plus s'y ajoute une fois.
  */
@@ -407,6 +425,75 @@ export function describeEntryFormLock(lockCase: EntryFormLockCase): void {
     expect(titleValue(wrapper)).toBe('Titre saisi')
     expect(headingOf(wrapper)).toBe(lockCase.heading)
     expect(wrapper.findAll('form')[form].find('[role="status"]').exists()).toBe(false)
+  })
+
+  // Décision 3 de la onzième relecture (R126) : pendant une traduction, la prose est en lecture seule (focusable et
+  // lisible, pas `disabled`) et le dit ; la réponse remplace une prose que personne n'a pu changer entre-temps.
+  it(`${prefix}pendant une traduction, chaque champ de prose est en lecture seule et décrit par le texte d'aide`, async () => {
+    const translation = lockCase.createTranslation()
+    const wrapper = await lockCase.mount(translation)
+    await lockCase.startEdit(wrapper)
+    const reply = deferNextTranslation(translation)
+
+    translateButton(wrapper).vm.$emit('translate', 'en')
+    await flushPromises()
+
+    for (const id of ids.prose) {
+      const field = wrapper.get(`#${id}`)
+      expect(field.attributes('readonly'), `#${id} : readonly`).toBeDefined()
+      expect(field.attributes('disabled'), `#${id} : disabled`).toBeUndefined()
+      expect(describedTexts(wrapper, `#${id}`), `#${id} : aria-describedby`).toContain(PROSE_READONLY_TEXT)
+    }
+    expect(describedTexts(wrapper, locale)).not.toContain(PROSE_READONLY_TEXT)
+    await expectNoAccessibilityViolation(wrapper)
+
+    reply.release()
+    await flushPromises()
+
+    for (const id of ids.prose) {
+      expect(wrapper.get(`#${id}`).attributes('readonly'), `#${id} : readonly après la réponse`).toBeUndefined()
+    }
+    expect(wrapper.text()).not.toContain(PROSE_READONLY_TEXT)
+  })
+
+  it(`${prefix}une traduction en échec : la prose redevient modifiable, intacte, le texte d'aide disparaît`, async () => {
+    const translation = lockCase.createTranslation()
+    const wrapper = await lockCase.mount(translation)
+    await lockCase.startEdit(wrapper)
+    const titleOfEntry = titleValue(wrapper)
+    vi.mocked(translation.translate).mockRejectedValueOnce(new AdminTranslationError('unavailable', 'Indisponible.'))
+
+    translateButton(wrapper).vm.$emit('translate', 'en')
+    await flushPromises()
+
+    for (const id of ids.prose) {
+      expect(wrapper.get(`#${id}`).attributes('readonly'), `#${id} : readonly après l'échec`).toBeUndefined()
+      expect(describedTexts(wrapper, `#${id}`), `#${id} : aria-describedby`).not.toContain(PROSE_READONLY_TEXT)
+    }
+    expect(wrapper.text()).not.toContain(PROSE_READONLY_TEXT)
+    expect(titleValue(wrapper)).toBe(titleOfEntry)
+    expect(wrapper.findAll('form')[form].find('[role="alert"]').text()).toBe(TRANSLATION_UNAVAILABLE_TEXT)
+    await expectNoAccessibilityViolation(wrapper)
+  })
+
+  // Décision de l'auteur du 2026-10-31 (après R124) : la prose n'est pas dans l'identité du formulaire ; la saisie est
+  // empêchée pendant la traduction, et le message d'un échec (429, 503) n'est effacé que par un vrai changement de
+  // formulaire ou la traduction suivante, pas par la frappe qui corrige la prose.
+  it(`${prefix}l'erreur d'une traduction survit à la frappe`, async () => {
+    const translation = lockCase.createTranslation()
+    const wrapper = await lockCase.mount(translation)
+    await lockCase.startEdit(wrapper)
+    vi.mocked(translation.translate).mockRejectedValueOnce(new AdminTranslationError('unavailable', 'Indisponible.'))
+
+    translateButton(wrapper).vm.$emit('translate', 'en')
+    await flushPromises()
+    expect(wrapper.findAll('form')[form].find('[role="alert"]').text()).toBe(TRANSLATION_UNAVAILABLE_TEXT)
+
+    await wrapper.get(`#${ids.title}`).setValue('Titre corrigé après l\'échec')
+    await flushPromises()
+
+    expect(titleValue(wrapper)).toBe('Titre corrigé après l\'échec')
+    expect(wrapper.findAll('form')[form].find('[role="alert"]').text()).toBe(TRANSLATION_UNAVAILABLE_TEXT)
   })
 }
 

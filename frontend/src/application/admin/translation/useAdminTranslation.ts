@@ -33,11 +33,13 @@ export interface UseAdminTranslationOptions {
   /** Vrai quand la page ne veut aucune traduction (une proposition est déjà affichée) : `translate()` ne lance rien. */
   readonly isRefused?: () => boolean
   /**
-   * Ce qui fait l'identité du formulaire : l'entrée éditée, la langue, le groupe source, la prose. Comparée par son
-   * contenu (`JSON.stringify`) ; dès que le formulaire n'a plus l'identité relevée à l'envoi, la traduction en vol est
+   * Ce qui fait l'identité du formulaire : l'entrée éditée, la langue, le groupe source. Comparée par son contenu
+   * (`JSON.stringify`) ; dès que le formulaire n'a plus l'identité relevée à l'envoi, la traduction en vol est
    * périmée pour de bon, même s'il la retrouve ensuite, quel que soit le geste qui l'a remplacé (« Annuler »,
    * « Modifier » une autre entrée, « Créer la version XX », un changement de langue) : `isTranslating` retombe
    * aussitôt et la réponse rend `null`. Rouvrir la même entrée ne change rien au formulaire : rien n'est périmé.
+   * La prose n'en fait pas partie : la page la met en lecture seule pendant la traduction, et la raison d'un échec ne
+   * disparaît que par un changement d'identité ou la traduction suivante, pas par la frappe qui corrige la prose.
    */
   readonly formIdentity?: () => unknown
 }

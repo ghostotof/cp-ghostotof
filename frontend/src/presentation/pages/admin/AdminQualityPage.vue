@@ -24,6 +24,7 @@ import BaseTextInput from '../../ui/BaseTextInput.vue'
 import BaseTextarea from '../../ui/BaseTextarea.vue'
 import BaseSelect from '../../ui/BaseSelect.vue'
 import TranslateEntryButton from '../../ui/admin/TranslateEntryButton.vue'
+import TranslationReadonlyHint from '../../ui/admin/TranslationReadonlyHint.vue'
 import EntryFormLockHint from '../../ui/admin/EntryFormLockHint.vue'
 import { describedBy, useEntryFormLock } from '../../ui/admin/useEntryFormLock'
 import OrderHandle from '../../ui/admin/OrderHandle.vue'
@@ -112,12 +113,12 @@ const {
   discard: discardPrincipleTranslation,
 } = useAdminTranslation({
   isRefused: () => principleLock.isProposalLocked,
-  // Ce qui fait l'identité du formulaire : une traduction dont il n'a plus cette identité est périmée.
+  // Ce qui fait l'identité du formulaire : une traduction dont il n'a plus cette identité est périmée. La prose n'en
+  // fait pas partie : la saisie est empêchée pendant la traduction, et l'erreur d'un échec survit à la frappe.
   formIdentity: () => ({
     entry: editingPrincipleId.value,
     locale: principleForm.locale,
     group: principleSourceGroup.value,
-    prose: collectProseFields(principleForm, PRINCIPLE_PROSE_FIELDS),
   }),
 })
 const {
@@ -128,12 +129,12 @@ const {
   discard: discardTraitTranslation,
 } = useAdminTranslation({
   isRefused: () => traitLock.isProposalLocked,
-  // Ce qui fait l'identité du formulaire : une traduction dont il n'a plus cette identité est périmée.
+  // Ce qui fait l'identité du formulaire : une traduction dont il n'a plus cette identité est périmée. La prose n'en
+  // fait pas partie : la saisie est empêchée pendant la traduction, et l'erreur d'un échec survit à la frappe.
   formIdentity: () => ({
     entry: editingTraitId.value,
     locale: traitForm.locale,
     group: traitSourceGroup.value,
-    prose: collectProseFields(traitForm, TRAIT_PROSE_FIELDS),
   }),
 })
 
@@ -210,6 +211,12 @@ const traitLock = useEntryFormLock({
   localeHelpId: 'admin-quality-trait-locale-help',
 })
 
+// Pendant une traduction, la prose du formulaire est en lecture seule et désigne le texte d'aide (R126) : la référence
+// n'existe que pendant elle, avec le texte, jamais pendante.
+const PRINCIPLE_PROSE_READONLY_HINT_ID = 'admin-quality-principle-prose-readonly-hint'
+const principleProseDescribedBy = computed(() => (isTranslatingPrinciple.value ? PRINCIPLE_PROSE_READONLY_HINT_ID : undefined))
+const TRAIT_PROSE_READONLY_HINT_ID = 'admin-quality-trait-prose-readonly-hint'
+const traitProseDescribedBy = computed(() => (isTranslatingTrait.value ? TRAIT_PROSE_READONLY_HINT_ID : undefined))
 const hasPrincipleProse = computed(() => PRINCIPLE_PROSE_FIELDS.some((field) => '' !== principleForm[field].trim()))
 const hasTraitProse = computed(() => '' !== traitForm.label.trim())
 
@@ -579,12 +586,16 @@ useUnsavedOrderGuard(isAnyOrderDirty)
         <BaseTextInput
           id="admin-quality-principle-title"
           v-model="principleForm.title"
+          :readonly="isTranslatingPrinciple"
+          :aria-describedby="principleProseDescribedBy"
           :label="t('admin.quality.principle.titleLabel')"
           required
         />
         <BaseTextarea
           id="admin-quality-principle-description"
           v-model="principleForm.description"
+          :readonly="isTranslatingPrinciple"
+          :aria-describedby="principleProseDescribedBy"
           :label="t('admin.quality.principle.descriptionLabel')"
           required
         />
@@ -611,6 +622,11 @@ useUnsavedOrderGuard(isAnyOrderDirty)
             @translate="handleTranslatePrinciple"
           />
         </div>
+
+        <TranslationReadonlyHint
+          :id="PRINCIPLE_PROSE_READONLY_HINT_ID"
+          :shown="isTranslatingPrinciple"
+        />
 
         <p
           v-if="principleProposalSourceLocale"
@@ -856,6 +872,8 @@ useUnsavedOrderGuard(isAnyOrderDirty)
         <BaseTextInput
           id="admin-quality-trait-label"
           v-model="traitForm.label"
+          :readonly="isTranslatingTrait"
+          :aria-describedby="traitProseDescribedBy"
           :label="t('admin.quality.trait.labelLabel')"
           required
         />
@@ -871,6 +889,11 @@ useUnsavedOrderGuard(isAnyOrderDirty)
             @translate="handleTranslateTrait"
           />
         </div>
+
+        <TranslationReadonlyHint
+          :id="TRAIT_PROSE_READONLY_HINT_ID"
+          :shown="isTranslatingTrait"
+        />
 
         <p
           v-if="traitProposalSourceLocale"

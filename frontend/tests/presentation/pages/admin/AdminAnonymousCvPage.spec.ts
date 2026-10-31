@@ -382,6 +382,7 @@ describe('AdminAnonymousCvPage', () => {
       group: 'admin-anonymous-cv-translation-group',
       title: 'admin-anonymous-cv-title',
       hint: 'admin-anonymous-cv-entry-lock-help',
+      prose: ['admin-anonymous-cv-title', 'admin-anonymous-cv-skills', 'admin-anonymous-cv-achievements'],
     },
     heading: 'Ajouter une section',
     startEdit: async (wrapper) => {

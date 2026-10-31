@@ -398,6 +398,13 @@ describe('AdminIncidentsPage', () => {
       group: 'admin-incident-translation-group',
       title: 'admin-incident-title',
       hint: 'admin-incident-entry-lock-help',
+      prose: [
+        'admin-incident-title',
+        'admin-incident-impact',
+        'admin-incident-root-cause',
+        'admin-incident-resolution',
+        'admin-incident-invariant',
+      ],
     },
     heading: 'Ajouter un incident',
     startEdit: async (wrapper) => {

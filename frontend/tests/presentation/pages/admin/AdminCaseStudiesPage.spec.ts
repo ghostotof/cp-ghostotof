@@ -486,6 +486,13 @@ describe('AdminCaseStudiesPage', () => {
       group: 'admin-case-study-translation-group',
       title: 'admin-case-study-title',
       hint: 'admin-case-study-entry-lock-help',
+      prose: [
+        'admin-case-study-title',
+        'admin-case-study-problem',
+        'admin-case-study-solution',
+        'admin-case-study-tradeoffs',
+        'admin-case-study-measured-result',
+      ],
     },
     heading: 'Ajouter une étude de cas',
     startEdit: async (wrapper) => {

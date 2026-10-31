@@ -379,6 +379,7 @@ describe('AdminContributionsPage', () => {
       group: 'admin-contribution-translation-group',
       title: 'admin-contribution-title',
       hint: 'admin-contribution-entry-lock-help',
+      prose: ['admin-contribution-title', 'admin-contribution-summary', 'admin-contribution-body'],
     },
     heading: 'Ajouter une contribution',
     startEdit: async (wrapper) => {

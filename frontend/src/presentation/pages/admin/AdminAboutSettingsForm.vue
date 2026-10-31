@@ -6,6 +6,7 @@ import { useAdminTranslation } from '../../../application/admin/translation/useA
 import { applyTranslationProposal, collectProseFields } from '../../../application/admin/translation/proseFields'
 import BaseTextInput from '../../ui/BaseTextInput.vue'
 import TranslateEntryButton from '../../ui/admin/TranslateEntryButton.vue'
+import TranslationReadonlyHint from '../../ui/admin/TranslationReadonlyHint.vue'
 import type { Locale } from '../../../domain/portfolio/entities/Locale'
 import type { TranslationProposal } from '../../../domain/admin/translation/entities/TranslationProposal'
 
@@ -57,7 +58,7 @@ const {
   isDiscardPending,
   errorReason: translationErrorReason,
   translate,
-} = useAdminTranslation({ formIdentity: () => ({ locale: props.locale, prose: collectProseFields(form, PROSE_FIELDS) }) })
+} = useAdminTranslation({ formIdentity: () => ({ locale: props.locale }) })
 const pendingProposal = ref<TranslationProposal | null>(null)
 // La proposition posée sur un formulaire (R66, St6-10) : `source` est la langue traduite, que dit l'avis, `target` la
 // langue du formulaire qui la porte, celle que la page a prise pour la recevoir. L'avis n'est que celui de `target` : il
@@ -67,6 +68,10 @@ const proposal = ref<{ readonly source: Locale; readonly target: Locale } | null
 // L'avis est celui de la langue montrée si c'est la cible de la proposition (R86, St7-10), et seulement sous un formulaire
 // chargé : une relecture de la cible refusée ou interrompue laisse les réglages nuls, sans formulaire pour le porter.
 const isProposalShown = computed(() => isLoaded.value && proposal.value?.target === props.locale)
+// Pendant une traduction, la prose du formulaire est en lecture seule et désigne le texte d'aide (R126) : la référence
+// n'existe que pendant elle, avec le texte, jamais pendante.
+const PROSE_READONLY_HINT_ID = 'admin-about-settings-prose-readonly-hint'
+const proseDescribedBy = computed(() => (isTranslating.value ? PROSE_READONLY_HINT_ID : undefined))
 const hasProseToTranslate = computed(() => PROSE_FIELDS.some((field) => '' !== form[field].trim()))
 const translationErrorText = computed(() => {
   const reason = translationErrorReason.value
@@ -194,30 +199,40 @@ async function handleSubmit(): Promise<void> {
       <BaseTextInput
         id="admin-about-site-eyebrow"
         v-model="form.siteEyebrow"
+        :readonly="isTranslating"
+        :aria-describedby="proseDescribedBy"
         :label="t('admin.about.settings.siteEyebrowLabel')"
         required
       />
       <BaseTextInput
         id="admin-about-me-eyebrow"
         v-model="form.meEyebrow"
+        :readonly="isTranslating"
+        :aria-describedby="proseDescribedBy"
         :label="t('admin.about.settings.meEyebrowLabel')"
         required
       />
       <BaseTextInput
         id="admin-about-technical-subtitle"
         v-model="form.technicalSubtitle"
+        :readonly="isTranslating"
+        :aria-describedby="proseDescribedBy"
         :label="t('admin.about.settings.technicalSubtitleLabel')"
         required
       />
       <BaseTextInput
         id="admin-about-personal-subtitle"
         v-model="form.personalSubtitle"
+        :readonly="isTranslating"
+        :aria-describedby="proseDescribedBy"
         :label="t('admin.about.settings.personalSubtitleLabel')"
         required
       />
       <BaseTextInput
         id="admin-about-hobbies-subtitle"
         v-model="form.hobbiesSubtitle"
+        :readonly="isTranslating"
+        :aria-describedby="proseDescribedBy"
         :label="t('admin.about.settings.hobbiesSubtitleLabel')"
         required
       />
@@ -239,6 +254,11 @@ async function handleSubmit(): Promise<void> {
           @translate="handleTranslate"
         />
       </div>
+
+      <TranslationReadonlyHint
+        :id="PROSE_READONLY_HINT_ID"
+        :shown="isTranslating"
+      />
 
       <p
         v-if="proposal && isProposalShown"

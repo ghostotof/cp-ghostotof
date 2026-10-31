@@ -36,8 +36,10 @@ import {
   DISCARD_PENDING_TEXT,
   formCancelButton,
   LOCALE_HELP_TEXT,
+  PROSE_READONLY_TEXT,
   textsDescribing,
   translateEntryButton,
+  TRANSLATION_UNAVAILABLE_TEXT,
 } from '../../../support/entryFormLock'
 
 const SETTINGS: AdminAboutSettings = {
@@ -1028,6 +1030,7 @@ describe('AdminAboutPage', () => {
         group: 'admin-about-site-card-translation-group',
         title: 'admin-about-site-card-title',
         hint: 'admin-about-site-card-entry-lock-help',
+        prose: ['admin-about-site-card-title', 'admin-about-site-card-description'],
       },
       heading: 'Ajouter une carte',
       permanentHelp: LOCALE_HELP_TEXT,
@@ -1058,6 +1061,7 @@ describe('AdminAboutPage', () => {
         group: 'admin-about-me-card-translation-group',
         title: 'admin-about-me-card-title',
         hint: 'admin-about-me-card-entry-lock-help',
+        prose: ['admin-about-me-card-title', 'admin-about-me-card-description'],
       },
       heading: 'Ajouter une carte',
       permanentHelp: LOCALE_HELP_TEXT,
@@ -1196,6 +1200,65 @@ describe('AdminAboutPage', () => {
       expect(textsDescribing(wrapper, button())).toEqual([])
       expect(valueOf(wrapper, '#admin-about-site-eyebrow')).toBe(TRANSLATED_SETTINGS.siteEyebrow)
       expect(button().attributes('disabled')).toBeUndefined()
+    })
+
+    // Décision 3 de la onzième relecture (R126) : pendant la traduction des réglages, les cinq champs de prose sont en
+    // lecture seule, décrits par le texte d'aide ; la réponse remplace une prose que personne n'a pu changer.
+    const SETTINGS_PROSE_IDS = [
+      'admin-about-site-eyebrow',
+      'admin-about-me-eyebrow',
+      'admin-about-technical-subtitle',
+      'admin-about-personal-subtitle',
+      'admin-about-hobbies-subtitle',
+    ]
+
+    it("pendant une traduction, la prose des réglages est en lecture seule et décrite par le texte d'aide (#748, R126)", async () => {
+      let answer!: (proposal: TranslationProposal) => void
+      const translation = createTranslationRepository(TRANSLATED_SETTINGS, {
+        translate: vi.fn(() => new Promise<TranslationProposal>((resolve) => { answer = resolve })),
+      })
+      const { wrapper } = await mountPage(createSettingsRepository(), undefined, undefined, translation)
+
+      await translateEntryButton(wrapper, SETTINGS_FORM).trigger('click')
+      await flushPromises()
+
+      for (const id of SETTINGS_PROSE_IDS) {
+        const field = wrapper.get(`#${id}`)
+        expect(field.attributes('readonly'), `#${id} : readonly`).toBeDefined()
+        expect(field.attributes('disabled'), `#${id} : disabled`).toBeUndefined()
+        expect(describedTexts(wrapper, `#${id}`), `#${id} : aria-describedby`).toEqual([PROSE_READONLY_TEXT])
+      }
+      await expectNoAccessibilityViolation(wrapper)
+
+      answer({ sourceLocale: 'fr', targetLocale: 'en', fields: TRANSLATED_SETTINGS })
+      await flushPromises()
+
+      for (const id of SETTINGS_PROSE_IDS) {
+        expect(wrapper.get(`#${id}`).attributes('readonly'), `#${id} : readonly après la réponse`).toBeUndefined()
+      }
+      expect(wrapper.text()).not.toContain(PROSE_READONLY_TEXT)
+    })
+
+    it("une traduction des réglages en échec : prose modifiable et intacte, l'erreur survit à la frappe (#748, R126)", async () => {
+      const translation = createTranslationRepository(TRANSLATED_SETTINGS, {
+        translate: vi.fn(async () => { throw new AdminTranslationError('unavailable', 'Indisponible.') }),
+      })
+      const { wrapper } = await mountPage(createSettingsRepository(), undefined, undefined, translation)
+
+      await translateEntryButton(wrapper, SETTINGS_FORM).trigger('click')
+      await flushPromises()
+
+      for (const id of SETTINGS_PROSE_IDS) {
+        expect(wrapper.get(`#${id}`).attributes('readonly'), `#${id} : readonly après l'échec`).toBeUndefined()
+      }
+      expect(wrapper.text()).not.toContain(PROSE_READONLY_TEXT)
+      expect(valueOf(wrapper, '#admin-about-site-eyebrow')).toBe(SETTINGS.siteEyebrow)
+      expect(panelOf(wrapper, SETTINGS_PANEL).get('[role="alert"]').text()).toBe(TRANSLATION_UNAVAILABLE_TEXT)
+
+      await wrapper.get('#admin-about-site-eyebrow').setValue('Corrigé après l\'échec')
+      await flushPromises()
+
+      expect(panelOf(wrapper, SETTINGS_PANEL).get('[role="alert"]').text()).toBe(TRANSLATION_UNAVAILABLE_TEXT)
     })
 
     it('enregistre les réglages via son formulaire', async () => {
