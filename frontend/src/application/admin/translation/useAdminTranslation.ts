@@ -15,7 +15,10 @@ export interface UseAdminTranslationResult {
   isTranslating: Ref<boolean>
   errorReason: Ref<AdminTranslationErrorReason | null>
   translate: (sourceLocale: Locale, targetLocale: Locale, fields: TranslationFields) => Promise<TranslationProposal | null>
-  /** Périme la traduction en vol (« Annuler ») : sa réponse rend `null` et ne pose ni état ni raison. */
+  /**
+   * Périme la traduction en vol (la page remplace le contenu du formulaire : « Annuler », « Modifier »…) :
+   * sa réponse rend `null` et ne pose ni état ni raison.
+   */
   discard: () => void
 }
 

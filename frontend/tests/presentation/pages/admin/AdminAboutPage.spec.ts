@@ -1030,6 +1030,7 @@ describe('AdminAboutPage', () => {
       startEdit: async (wrapper) => {
         await buttonLabelled(actionsForLine(wrapper, SITE, 'Stack technique'), 'Modifier').trigger('click')
       },
+      startCreateVersion: (wrapper) => buttonLabelled(rowsOf(wrapper, SITE)[1], 'Créer la version EN').trigger('click'),
       propose: async (wrapper) => {
         await translateEntryButton(wrapper, SITE_FORM).trigger('click')
         await flushPromises()
@@ -1053,6 +1054,7 @@ describe('AdminAboutPage', () => {
       startEdit: async (wrapper) => {
         await buttonLabelled(actionsForLine(wrapper, ME_TABLE.technical, ME_FIXTURES.technical.titles[2]), 'Modifier').trigger('click')
       },
+      startCreateVersion: (wrapper) => buttonLabelled(rowsOf(wrapper, ME_TABLE.technical)[1], 'Créer la version FR').trigger('click'),
       propose: async (wrapper) => {
         await translateEntryButton(wrapper, ME_FORM).trigger('click')
         await flushPromises()
@@ -1367,6 +1369,32 @@ describe('AdminAboutPage', () => {
       await formOf(wrapper, SETTINGS_FORM).trigger('submit.prevent')
       await flushPromises()
 
+      expect(panelOf(wrapper, SETTINGS_PANEL).find('[role="status"]').exists()).toBe(false)
+    })
+
+    // Changer la langue de la page relit le formulaire d'une autre langue : la traduction en vol n'a plus de formulaire
+    // à qui parler, sa réponse ne ramène ni la langue ni la prose proposée (#748, R114b).
+    it('changer la langue de la page pendant une traduction : la réponse qui arrive ne remplit rien (#748, R114b)', async () => {
+      type Proposal = Awaited<ReturnType<AdminTranslationRepository['translate']>>
+      let answer!: (proposal: Proposal) => void
+      const translation = createTranslationRepository(TRANSLATED_SETTINGS, {
+        translate: vi.fn(() => new Promise<Proposal>((resolve) => (answer = resolve))),
+      })
+      const settingsRepository = createSettingsRepository({
+        get: vi.fn(async (locale: string) => ('en' === locale ? SETTINGS_EN : SETTINGS)),
+      })
+      const { wrapper } = await mountPage(settingsRepository, undefined, undefined, translation)
+
+      await translateEntryButton(wrapper, SETTINGS_FORM).trigger('click')
+      await wrapper.get('#admin-about-locale').setValue('en')
+      await flushPromises()
+      await wrapper.get('#admin-about-locale').setValue('fr')
+      await flushPromises()
+      answer({ sourceLocale: 'fr', targetLocale: 'en', fields: TRANSLATED_SETTINGS })
+      await flushPromises()
+
+      expect(valueOf(wrapper, '#admin-about-locale')).toBe('fr')
+      expect(valueOf(wrapper, '#admin-about-site-eyebrow')).toBe(SETTINGS.siteEyebrow)
       expect(panelOf(wrapper, SETTINGS_PANEL).find('[role="status"]').exists()).toBe(false)
     })
 

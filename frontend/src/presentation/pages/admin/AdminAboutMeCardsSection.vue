@@ -270,6 +270,7 @@ function resetForm(): void {
 // `hasSibling` cherche dans **toutes** les catégories : sur un groupe réparti
 // (antérieur à #501), le sélecteur paraît vide, « aucune » le répare (#573).
 function startEdit(card: AdminAboutMeCard): void {
+  discardTranslation()
   editingId.value = card.id
   proposalSourceLocale.value = null
   sourceGroup.value = card.translationGroup
@@ -289,6 +290,7 @@ function startEdit(card: AdminAboutMeCard): void {
  * traduire puisqu'il n'y a rien d'écrit encore.
  */
 function startCreateVersion(row: TranslationGroupRow<AdminAboutMeCard>, locale: Locale): void {
+  discardTranslation()
   const existing = firstEntry(row, SUPPORTED_LOCALES)
 
   editingId.value = null

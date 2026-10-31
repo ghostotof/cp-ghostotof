@@ -192,6 +192,7 @@ function resetForm(): void {
 }
 
 function startEdit(caseStudy: AdminCaseStudy): void {
+  discardTranslation()
   editingId.value = caseStudy.id
   proposalSourceLocale.value = null
   sourceGroup.value = caseStudy.translationGroup
@@ -215,6 +216,7 @@ function startEdit(caseStudy: AdminCaseStudy): void {
  * recopier, et rien à traduire puisqu'il n'y a rien d'écrit encore.
  */
 function startCreateVersion(row: TranslationGroupRow<AdminCaseStudy>, locale: Locale): void {
+  discardTranslation()
   editingId.value = null
   proposalSourceLocale.value = null
   sourceGroup.value = row.key

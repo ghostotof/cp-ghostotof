@@ -50,7 +50,7 @@ const errorText = computed(() => {
  * L'avis « proposition générée par IA » est celui de la langue cible (`proposal.target`) : absent sous l'autre langue,
  * il part dès que le formulaire de sa langue est relu du serveur (R66, décision 4).
  */
-const { isTranslating, errorReason: translationErrorReason, translate } = useAdminTranslation()
+const { isTranslating, errorReason: translationErrorReason, translate, discard: discardTranslation } = useAdminTranslation()
 const PROSE_FIELDS = ['siteEyebrow', 'meEyebrow', 'technicalSubtitle', 'personalSubtitle', 'hobbiesSubtitle'] as const
 const pendingProposal = ref<TranslationProposal | null>(null)
 // La proposition posée sur un formulaire (R66, St6-10) : `source` est la langue traduite, que dit l'avis, `target` la
@@ -103,6 +103,8 @@ watch(
 watch(
   () => props.locale,
   (locale) => {
+    // Le formulaire d'une autre langue : la traduction en vol n'a plus de formulaire à qui répondre.
+    discardTranslation()
     void load(locale)
   },
   { immediate: true },

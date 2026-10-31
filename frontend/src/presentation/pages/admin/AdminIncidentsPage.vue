@@ -195,6 +195,7 @@ function resetForm(): void {
 }
 
 function startEdit(incident: AdminIncident): void {
+  discardTranslation()
   editingId.value = incident.id
   proposalSourceLocale.value = null
   sourceGroup.value = incident.translationGroup
@@ -221,6 +222,7 @@ function startEdit(incident: AdminIncident): void {
  * puisqu'il n'y a rien à écrire encore.
  */
 function startCreateVersion(row: TranslationGroupRow<AdminIncident>, locale: Locale): void {
+  discardTranslation()
   const existing = firstEntry(row, SUPPORTED_LOCALES)
 
   editingId.value = null

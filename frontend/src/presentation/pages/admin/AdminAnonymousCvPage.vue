@@ -191,6 +191,7 @@ function resetForm(): void {
 }
 
 function startEdit(section: AdminAnonymousCvSection): void {
+  discardTranslation()
   editingId.value = section.id
   proposalSourceLocale.value = null
   sourceGroup.value = section.translationGroup
@@ -214,6 +215,7 @@ function startEdit(section: AdminAnonymousCvSection): void {
  * puisqu'il n'y a rien à écrire encore.
  */
 function startCreateVersion(row: TranslationGroupRow<AdminAnonymousCvSection>, locale: Locale): void {
+  discardTranslation()
   const existing = firstEntry(row, SUPPORTED_LOCALES)
 
   editingId.value = null

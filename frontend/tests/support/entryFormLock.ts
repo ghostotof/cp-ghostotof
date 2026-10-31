@@ -91,6 +91,8 @@ export interface EntryFormLockCase {
   readonly permanentHelp?: string
   /** Ouvre une entrée existante en édition. */
   readonly startEdit: (wrapper: VueWrapper) => Promise<void>
+  /** « Créer la version XX » d'une ligne du tableau : ouvre une création rattachée, prose vide. */
+  readonly startCreateVersion: (wrapper: VueWrapper) => Promise<void>
   /** Depuis l'entrée en édition, demande la proposition de traduction et attend qu'elle s'affiche. */
   readonly propose: (wrapper: VueWrapper) => Promise<void>
 }
@@ -100,7 +102,8 @@ export interface EntryFormLockCase {
  * désactive la langue et montre « Annuler » ; « Annuler » rend un formulaire vide ; le verrou est expliqué en
  * édition et pas dans un formulaire libre ; il l'est pendant une proposition, avec « Version de » et
  * « Proposer la version XX », et « Annuler » retire l'explication ; un « translate » émis pendant une proposition,
- * ou avant la première réponse, ne lance rien ; « Annuler » pendant une traduction en périme la réponse. Le support
+ * ou avant la première réponse, ne lance rien ; « Annuler », « Modifier » et « Créer la version XX » pendant une
+ * traduction en périment la réponse. Le support
  * crée le dépôt de traduction de chaque cas, le passe à `mount` et compte ses appels. Écrits une fois pour les huit
  * formulaires : un cas de plus s'y ajoute une fois.
  */
@@ -111,6 +114,7 @@ export function describeEntryFormLock(lockCase: EntryFormLockCase): void {
   const permanent = undefined === lockCase.permanentHelp ? [] : [lockCase.permanentHelp]
   const headingOf = (wrapper: VueWrapper): string => wrapper.findAll('h2')[form].text()
   const mountLocked = async (): Promise<VueWrapper> => lockCase.mount(lockCase.createTranslation())
+  const titleValue = (wrapper: VueWrapper): string => (wrapper.get(`#${ids.title}`).element as HTMLInputElement).value
   const translateButton = (wrapper: VueWrapper) => wrapper.findAll('form')[form].findComponent(TranslateEntryButton)
 
   it(`${prefix}après une proposition, le sélecteur de langue est désactivé et « Annuler » est affiché`, async () => {
@@ -286,6 +290,41 @@ export function describeEntryFormLock(lockCase: EntryFormLockCase): void {
 
     expect((wrapper.get(`#${ids.title}`).element as HTMLInputElement).value).toBe('')
     expect(headingOf(wrapper)).toBe(lockCase.heading)
+    expect(wrapper.findAll('form')[form].find('[role="status"]').exists()).toBe(false)
+  })
+
+  // Chaque geste qui remplace le contenu du formulaire périme la traduction en vol : sa réponse n'y pose ni prose ni avis.
+  it(`${prefix}« Modifier » une entrée pendant une traduction : la réponse qui arrive ne remplit rien`, async () => {
+    const translation = lockCase.createTranslation()
+    const wrapper = await lockCase.mount(translation)
+    await lockCase.startEdit(wrapper)
+    const titleOfEntry = titleValue(wrapper)
+    const reply = deferNextTranslation(translation)
+
+    translateButton(wrapper).vm.$emit('translate', 'en')
+    await flushPromises()
+    await lockCase.startEdit(wrapper)
+    reply.release()
+    await flushPromises()
+
+    expect(titleValue(wrapper)).toBe(titleOfEntry)
+    expect(headingOf(wrapper)).not.toBe(lockCase.heading)
+    expect(wrapper.findAll('form')[form].find('[role="status"]').exists()).toBe(false)
+  })
+
+  it(`${prefix}« Créer la version » pendant une traduction : la réponse qui arrive ne remplit rien`, async () => {
+    const translation = lockCase.createTranslation()
+    const wrapper = await lockCase.mount(translation)
+    await lockCase.startEdit(wrapper)
+    const reply = deferNextTranslation(translation)
+
+    translateButton(wrapper).vm.$emit('translate', 'en')
+    await flushPromises()
+    await lockCase.startCreateVersion(wrapper)
+    reply.release()
+    await flushPromises()
+
+    expect(titleValue(wrapper)).toBe('')
     expect(wrapper.findAll('form')[form].find('[role="status"]').exists()).toBe(false)
   })
 }

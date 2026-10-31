@@ -193,7 +193,8 @@ holds the proposal its locale selector is locked, as in editing (R78, R79, Sp7-1
 kept group would make a second version of the source locale), and so are « Proposer la version XX » (R93, decision 1
 of the eighth review: a second translation took the form back to the source locale, group kept; `useAdminTranslation`
 refuses the call itself, not only the disabled button: during a proposal (`isRefused`, the form's lock) and while a
-translation is in flight, and « Annuler » discards the response in flight (`discard()`, R114)), « Version de » (R94,
+translation is in flight, and every gesture that replaces the form's content — « Annuler », « Modifier », « Créer la version
+XX », and the About settings' change of language — discards the response in flight (`discard()`, R114, R114b)), « Version de » (R94,
 decision 3: « aucune » would detach the proposal from its source) and the me-card
 **category** selector (R79b, D-b: a version in the other language does not change category, #501/#561; « Créer la
 version XX » keeps the category free, by decision), all described by one text, `admin.entryLock.proposal`, which says

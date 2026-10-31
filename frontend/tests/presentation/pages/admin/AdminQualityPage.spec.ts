@@ -680,6 +680,7 @@ describe('AdminQualityPage', () => {
       startEdit: async (wrapper) => {
         await buttonLabelled(actionsForLine(wrapper, PRINCIPLES, "Tests d'abord"), 'Modifier').trigger('click')
       },
+      startCreateVersion: (wrapper) => buttonLabelled(rowsOf(wrapper, PRINCIPLES)[1], 'Créer la version EN').trigger('click'),
       propose: async (wrapper) => {
         await translateEntryButton(wrapper, PRINCIPLES).trigger('click')
         await flushPromises()
@@ -702,6 +703,7 @@ describe('AdminQualityPage', () => {
       startEdit: async (wrapper) => {
         await buttonLabelled(actionsForLine(wrapper, TRAITS, 'Documenté'), 'Modifier').trigger('click')
       },
+      startCreateVersion: (wrapper) => buttonLabelled(rowsOf(wrapper, TRAITS)[1], 'Créer la version EN').trigger('click'),
       propose: async (wrapper) => {
         await translateEntryButton(wrapper, TRAITS).trigger('click')
         await flushPromises()

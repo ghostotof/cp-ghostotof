@@ -193,6 +193,7 @@ function resetForm(): void {
 }
 
 function startEdit(contribution: AdminContribution): void {
+  discardTranslation()
   editingId.value = contribution.id
   proposalSourceLocale.value = null
   sourceGroup.value = contribution.translationGroup
@@ -218,6 +219,7 @@ function startEdit(contribution: AdminContribution): void {
  * puisqu'il n'y a rien à écrire encore.
  */
 function startCreateVersion(row: TranslationGroupRow<AdminContribution>, locale: Locale): void {
+  discardTranslation()
   const existing = firstEntry(row, SUPPORTED_LOCALES)
 
   editingId.value = null

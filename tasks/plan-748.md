@@ -7205,6 +7205,35 @@ garder au pas de Vue, que `vue/compiler-sfc` n'exporte pas.
 
 ---
 
+### Task R114b : Traduction assistée — « Modifier », « Créer la version » et la langue des réglages périment la traduction en vol
+
+(Origine : question de R114, tranchée par l'auteur le 2026-10-31 : à corriger maintenant.)
+
+R114 n'a donné `discard()` qu'aux remises à zéro (« Annuler », enregistrement réussi) : `startEdit` et `startCreateVersion` remplacent
+aussi le contenu du formulaire, et une traduction en vol y posait alors la prose d'une autre entrée ; de même, le changement de
+langue de la page relit le formulaire des réglages « À propos » d'une autre langue.
+
+**Files :**
+- Modify : `frontend/src/presentation/pages/admin/{AdminCaseStudiesPage,AdminIncidentsPage,AdminContributionsPage,
+  AdminAnonymousCvPage,AdminQualityPage,AdminAboutMeCardsSection,AdminAboutSiteCardsSection,AdminAboutSettingsForm}.vue`
+  (`discard…()` en tête de chaque `startEdit…` et `startCreate…Version`, et du `watch` de `props.locale` des réglages),
+  `frontend/src/application/admin/translation/useAdminTranslation.ts` (docblock)
+- Test : `frontend/tests/support/entryFormLock.ts` (deux cas partagés, `startCreateVersion` dans `EntryFormLockCase`),
+  les six specs qui déclarent un `EntryFormLockCase` (une ligne `startCreateVersion`), `AdminAboutPage.spec.ts` (réglages)
+- Modify (règle) : `.claude/rules/frontend-backoffice.md` (« Translation assistant » : la phrase de `discard()`)
+
+- [x] Rouges vus pour la bonne raison : les huit formulaires (16 cas : « Modifier » une entrée pendant une traduction → la prose traduite
+  apparaît ; « Créer la version » → idem, avis de proposition) et les réglages (la langue de la page bascule en EN à l'arrivée).
+- [x] Autres chemins examinés : suppression de l'entrée ouverte (`handleDelete` ne touche pas au formulaire : rien à périmer) ;
+  changement de langue d'un formulaire par entrée (sélecteur désactivé en édition, et ne remplace aucune prose) ; catégorie d'une
+  carte « moi » (ne change que « Version de ») ; enregistrement réussi (passe déjà par `resetForm()`).
+- [x] Mutation de contrôle : l'appel retiré du `startEdit` d'`AdminIncidentsPage.vue`, du `startCreateVersion` du même fichier, du `watch`
+  des réglages → seul le cas visé rougit à chaque fois ; restaurés depuis une copie vérifiée par `cmp`.
+- [x] Vérification : `make front-test`, `make front-lint`, `make front-build`, `tools/check-claude-rules.sh` à 0.
+- Commit : `fix(frontend): « Modifier » une autre entrée et le changement de langue des réglages périment une traduction en vol (#748)`.
+
+---
+
 ### Task R115 : Outillage — les sondes de redirection de l'audit partent sans Basic Auth, jamais en clair sur `http://` (décision 1 : C10-1, même correction que #750)
 
 **Files :**
@@ -7474,6 +7503,7 @@ raison en quelques mots (historique daté, sens juste, préfixe voulu). Une rech
 | St10-5 + Sp10-5 | R116 (`audit-prod.test.sh`), R117 (`ApiRouteExposureTest.php`), R114 (`AdminAboutPage.spec.ts`), R120 recherches 3 et 4 |
 | St10-8 = Sp10-3 | R114 (constantes, « verrou de la langue »), R119 (`sources`) |
 | Sp10-2 | R114 |
+| Question de R114 (décision de l'auteur, 2026-10-31) | R114b |
 | St10-7 | R119 |
 | St10-9 | R118 |
 | St10-12 | R119 |
