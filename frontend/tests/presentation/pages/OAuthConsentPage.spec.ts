@@ -21,6 +21,7 @@ import { router as appRouter } from '../../../src/presentation/router'
 import { applySeoMeta } from '../../../src/presentation/router/seo'
 import { SUPPORTED_LOCALES, type Locale } from '../../../src/domain/portfolio/entities/Locale'
 import { sessionFor } from '../../support/authSession'
+import { ACCESS_REFUSED_EN, ACCESS_REFUSED_FR } from '../../support/accessRefusalTexts'
 import { expectNoAccessibilityViolation } from '../../support/axe'
 
 afterEach(() => {
@@ -173,12 +174,6 @@ async function keyboardClick(wrapper: VueWrapper, name: 'approve' | 'deny'): Pro
 function button(wrapper: VueWrapper, name: 'approve' | 'deny') {
   return wrapper.find(`[data-testid="consent-${name}"]`)
 }
-
-/** Le message d'un refus réel, partagé avec « Mes connexions MCP » et l'assistant (`common.accessRefused`, #748, R7). */
-const REFUSAL_FR =
-  "Le serveur refuse cette demande à votre session : votre compte n'a peut-être pas, ou plus, l'accès de confiance, ou la session doit être rouverte. Changez de compte, ou reconnectez-vous au même, pour continuer."
-const REFUSAL_EN =
-  'The server refuses this request to your session: your account may not have, or may no longer have, trusted access, or the session needs to be reopened. Switch account, or sign in again to the same one, to continue.'
 
 /** Une session de confiance, pour constater que la page la marque expirée. */
 async function primeTrustedSession(): Promise<void> {
@@ -528,7 +523,7 @@ describe('OAuthConsentPage — session', () => {
     // La session vaut toujours pour le reste du site : elle n'est pas marquée expirée.
     expect(authState.user).not.toBeNull()
     const alert = wrapper.find('[role="alert"]')
-    expect(alert.text()).toContain(REFUSAL_FR)
+    expect(alert.text()).toContain(ACCESS_REFUSED_FR)
     expect(me).toHaveBeenCalledOnce()
     const link = alert.find('a')
     expect(link.text()).toBe('Changer de compte')
@@ -553,7 +548,7 @@ describe('OAuthConsentPage — session', () => {
     await button(wrapper, 'approve').trigger('click')
     await flushPromises()
 
-    expect(wrapper.find('[role="alert"]').text()).toContain(REFUSAL_FR)
+    expect(wrapper.find('[role="alert"]').text()).toContain(ACCESS_REFUSED_FR)
     expect(wrapper.find('[role="alert"] a').text()).toBe('Changer de compte')
     expect(wrapper.findAll('button')).toHaveLength(0)
     expect(wrapper.find('[data-testid="consent-account"]').exists()).toBe(false)
@@ -568,7 +563,7 @@ describe('OAuthConsentPage — session', () => {
       }),
     })
 
-    expect(wrapper.find('[role="alert"]').text()).toContain(REFUSAL_EN)
+    expect(wrapper.find('[role="alert"]').text()).toContain(ACCESS_REFUSED_EN)
     expect(wrapper.find('[role="alert"] a').text()).toBe('Switch account')
   })
 

@@ -20,6 +20,7 @@ import type { Locale } from '../../../src/domain/portfolio/entities/Locale'
 import { expectNoAccessibilityViolation } from '../../support/axe'
 import { listOf } from '../../support/mcpConnectionList'
 import { signInAgain } from '../../support/signInAgain'
+import { ACCESS_REFUSED_EN, ACCESS_REFUSED_FR } from '../../support/accessRefusalTexts'
 
 // Seuls `setTimeout`/`clearTimeout` sont simulés : `flushPromises` s'appuie sur `setImmediate`,
 // qui doit rester réel. Le délai d'annonce (focus d'abord, annonce ensuite) est ainsi piloté
@@ -122,12 +123,6 @@ interface Options {
   /** `/api/me`, relu sur un refus réel : le palier de base par défaut. */
   me?: Mock<() => Promise<AuthSession>>
 }
-
-/** Le texte du refus réel, tel que dit à la personne (#748, R7). */
-const REFUSAL_FR =
-  "Le serveur refuse cette demande à votre session : votre compte n'a peut-être pas, ou plus, l'accès de confiance, ou la session doit être rouverte. Changez de compte, ou reconnectez-vous au même, pour continuer."
-const REFUSAL_EN =
-  'The server refuses this request to your session: your account may not have, or may no longer have, trusted access, or the session needs to be reopened. Switch account, or sign in again to the same one, to continue.'
 
 async function mountPage(options: Options = {}): Promise<Harness> {
   const locale = options.locale ?? 'fr'
@@ -901,8 +896,8 @@ describe('McpConnectionsPage', () => {
 
   describe('refus réel (403 qui ne finit pas la session, #748, R7)', () => {
     it.each<[Locale, string]>([
-      ['fr', REFUSAL_FR],
-      ['en', REFUSAL_EN],
+      ['fr', ACCESS_REFUSED_FR],
+      ['en', ACCESS_REFUSED_EN],
     ])(
       '%s : message neutre, « Changer de compte » vers login?reauth=1&redirect=<ce chemin>, aucun « Réessayer »',
       async (locale, message) => {
@@ -949,7 +944,7 @@ describe('McpConnectionsPage', () => {
 
       const alerts = wrapper.findAll('[role="alert"]')
       expect(alerts).toHaveLength(1)
-      expect(normalized(alerts[0]?.text() ?? '')).toContain(REFUSAL_FR)
+      expect(normalized(alerts[0]?.text() ?? '')).toContain(ACCESS_REFUSED_FR)
       expect(wrapper.text()).not.toContain("n'a pas pu être révoquée")
       expect(rows(wrapper)).toHaveLength(4)
       for (const revokeButton of wrapper.findAll('tbody button')) {

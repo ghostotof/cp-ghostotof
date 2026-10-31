@@ -17,6 +17,7 @@ import { StaticPortfolioContentRepository } from '../../../src/infrastructure/po
 import { BASE_ACCESS_REPOSITORY } from '../../../src/application/baseAccess/useBaseAccess'
 import { sessionFor } from '../../support/authSession'
 import { signInAgain } from '../../support/signInAgain'
+import { ACCESS_REFUSED_EN, ACCESS_REFUSED_FR } from '../../support/accessRefusalTexts'
 import { expectNoAccessibilityViolation } from '../../support/axe'
 
 /** Un appel au repository dont le test pilote les fragments et l'issue. */
@@ -330,12 +331,12 @@ describe('AssistantPage', () => {
   it.each<['fr' | 'en', string, string]>([
     [
       'fr',
-      "Le serveur refuse cette demande à votre session : votre compte n'a peut-être pas, ou plus, l'accès de confiance, ou la session doit être rouverte. Changez de compte, ou reconnectez-vous au même, pour continuer.",
+      ACCESS_REFUSED_FR,
       'Changer de compte',
     ],
     [
       'en',
-      'The server refuses this request to your session: your account may not have, or may no longer have, trusted access, or the session needs to be reopened. Switch account, or sign in again to the same one, to continue.',
+      ACCESS_REFUSED_EN,
       'Switch account',
     ],
   ])('refus (%s) : message neutre et « Changer de compte » (reauth=1, retour à l\'assistant)', async (locale, message, linkText) => {

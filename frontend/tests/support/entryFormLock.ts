@@ -5,13 +5,8 @@ import { expectNoAccessibilityViolation } from './axe'
 import { SUPPORTED_LOCALES } from '../../src/domain/portfolio/entities/Locale'
 import type { AdminTranslationRepository } from '../../src/domain/admin/translation/repositories/AdminTranslationRepository'
 import { proseFieldId } from './proseFieldId'
-import {
-  EXPIRED_CALL_PENDING_FR,
-  ENTRY_LOCK_EDITING_FR,
-  ENTRY_LOCK_PROPOSAL_FR,
-  PROSE_READONLY_FR,
-  TRANSLATION_UNAVAILABLE_FR,
-} from './adminTranslationTexts'
+import { EXPIRED_CALL_PENDING_FR, PROSE_READONLY_FR, TRANSLATION_UNAVAILABLE_FR } from './adminTranslationTexts'
+import { ENTRY_LOCK_EDITING_FR, ENTRY_LOCK_PROPOSAL_FR } from './entryFormLockTexts'
 import { AdminTranslationError } from '../../src/domain/admin/translation/errors/AdminTranslationError'
 
 /**

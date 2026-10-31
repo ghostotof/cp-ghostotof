@@ -18,7 +18,7 @@ import { sessionFor } from '../../../support/authSession'
 import { sessionForUser } from '../../../../src/domain/auth/services/sessionForUser'
 import { signInAgain } from '../../../support/signInAgain'
 import { expectNoAccessibilityViolation } from '../../../support/axe'
-import { ACCESS_REFUSED_FR, EARLIER_SAVE_REFUSED_FR } from '../../../support/accessRefusalTexts'
+import { ACCESS_REFUSED_FR, EARLIER_SAVE_REFUSED_EN, EARLIER_SAVE_REFUSED_FR } from '../../../support/accessRefusalTexts'
 
 const StubPage = defineComponent({ setup: () => () => h('div') })
 
@@ -231,9 +231,6 @@ describe('AccessRefusedNotice (#748, R17)', () => {
   })
 
   describe("l'enregistrement refusé pendant l'absence (R64, décision 1 de la sixième relecture)", () => {
-    const earlierSaveEn =
-      'An earlier save was refused by the server: your account may not have, or may no longer have, trusted access, or the session needs to be reopened. Switch account, or sign in again to the same one, to continue.'
-
     /** Un enregistrement refusé alors qu'aucune alerte n'était montée : la personne avait quitté le backoffice. */
     function writeRefusedWhileAway(): void {
       markBackofficeAccessRefused({ kind: 'write' }, lastAccountName())
@@ -398,7 +395,7 @@ describe('AccessRefusedNotice (#748, R17)', () => {
       const second = await mountNotice('en')
       await flushPromises()
 
-      expect(second.wrapper.get('span').text()).toBe(earlierSaveEn)
+      expect(second.wrapper.get('span').text()).toBe(EARLIER_SAVE_REFUSED_EN)
       second.wrapper.unmount()
     })
 

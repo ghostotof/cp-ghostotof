@@ -10,6 +10,7 @@ import { ADMIN_ABOUT_SITE_CARD_REPOSITORY } from '../../../../src/application/ad
 import { ADMIN_ABOUT_ME_CARD_REPOSITORY } from '../../../../src/application/admin/about/useAdminAboutMeCards'
 import { ADMIN_TRANSLATION_REPOSITORY } from '../../../../src/application/admin/translation/useAdminTranslation'
 import { createAppI18n } from '../../../../src/presentation/i18n'
+import fr from '../../../../src/infrastructure/i18n/locales/fr.json'
 import { markSessionExpired } from '../../../../src/application/auth/useAuth'
 import { AccessForbiddenError } from '../../../../src/domain/auth/errors/AccessForbiddenError'
 import { SessionEndedError } from '../../../../src/domain/auth/errors/SessionEndedError'
@@ -44,10 +45,12 @@ import {
 } from '../../../support/entryFormLock'
 import {
   ABOUT_LOCALE_HELP_FR,
-  EXPIRED_CALL_PENDING_FR,
   ENTRY_LOCK_PROPOSAL_FR,
-  PROSE_READONLY_FR,
   SETTINGS_PROPOSAL_LOCKED_FR,
+} from '../../../support/entryFormLockTexts'
+import {
+  EXPIRED_CALL_PENDING_FR,
+  PROSE_READONLY_FR,
   TRANSLATION_UNAVAILABLE_FR,
 } from '../../../support/adminTranslationTexts'
 
@@ -1839,7 +1842,7 @@ describe('AdminAboutPage', () => {
       expect(settingsPanel.find('form').exists()).toBe(false)
       expect(settingsPanel.text()).toContain('Contenu non chargé')
       expect(settingsPanel.find('[role="status"]').exists()).toBe(false)
-      expect(settingsPanel.findAll('button').map((button) => button.text())).not.toContain('Abandonner')
+      expect(settingsPanel.findAll('button').map((button) => button.text())).not.toContain(fr.admin.about.settings.proposalDiscard)
     })
 
     it("une proposition en EN, enregistrement EN refusé : l'avis reste, rien n'est relu (#748, R66)", async () => {

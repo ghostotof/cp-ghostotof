@@ -17,7 +17,7 @@ import { signInAgain } from '../../../support/signInAgain'
 import { AdminOrderError } from '../../../../src/domain/admin/shared/errors/AdminOrderError'
 import { expectNoAccessibilityViolation } from '../../../support/axe'
 import { describeEntryFormLock, textsDescribing, translateEntryButton } from '../../../support/entryFormLock'
-import { ENTRY_LOCK_PROPOSAL_FR } from '../../../support/adminTranslationTexts'
+import { ENTRY_LOCK_PROPOSAL_FR } from '../../../support/entryFormLockTexts'
 import { CASE_STUDY_PROSE_FIELDS } from '../../../../src/presentation/pages/admin/proseFields'
 
 const GROUP_ONE = '019968b0-0000-7000-8000-000000000011'
