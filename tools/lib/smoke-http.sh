@@ -88,14 +88,11 @@ _smoke_is_variable_name() {
 # _smoke_write_auth_config <nom d'une variable valant "utilisateur:mot_de_passe">
 #
 # Privée : seule smoke_use_auth_config l'appelle (St12-14) ; le test l'appelle aussi, pour ses cas. Écrit le fichier de
-# configuration curl (`-K`) qui porte la Basic Auth, dans un
-# dossier privé (`mktemp -d`, 0700) sous TMPDIR, fichier en 600 (`umask 077`) :
-# SMOKE_AUTH_DIR et SMOKE_AUTH_CONFIG reçoivent les deux chemins, rien n'est
-# imprimé, et smoke_fetch passe `-K` à chaque appel tant que SMOKE_AUTH_CONFIG est
-# posé (jamais rangé dans SMOKE_CURL_OPTS, donc jamais périmé). Jamais `-u` : les
-# arguments d'un processus se lisent dans `ps`, seul le chemin du fichier apparaît
-# dans ceux de curl. Les guillemets et antislashs sont échappés au format attendu
-# par curl, donc n'importe quel mot de passe convient.
+# configuration curl (`-K`) qui porte la Basic Auth, dans un dossier privé (`mktemp -d`, 0700) sous TMPDIR, fichier en 600
+# (`umask 077`) : SMOKE_AUTH_DIR et SMOKE_AUTH_CONFIG reçoivent les deux chemins, rien n'est imprimé, et smoke_fetch passe
+# `-K` à chaque appel tant que SMOKE_AUTH_CONFIG est posé (jamais rangé dans SMOKE_CURL_OPTS, donc jamais périmé). Jamais
+# `-u` : les arguments d'un processus se lisent dans `ps`, seul le chemin du fichier apparaît dans ceux de curl. Les
+# guillemets et antislashs sont échappés au format attendu par curl, donc n'importe quel mot de passe convient.
 #
 # Une variable vide ou absente : retour 0, aucun dossier, SMOKE_AUTH_CONFIG vide. C'est à
 # l'appelant de juger ce vide : smoke_use_auth_config l'arrête (sortie 2) quand la
@@ -114,21 +111,23 @@ _smoke_is_variable_name() {
 # ne passe en argument d'aucune fonction ni d'aucun processus, donc ni dans `ps` ni
 # dans la trace d'un `set -x`.
 #
-# Un retour à la ligne (ou un CR) ouvrirait une seconde directive dans ce fichier
-# (`url = …`, `output = …`) : l'échappement n'agit que sur `"` et `\`. Une valeur non
-# vide sans « : » (des blancs compris), ou dont l'utilisateur ou le mot de passe est vide ou
-# fait seulement de blancs (`:`, `:p`, `u:`, ` :p`, `u: `, C12-9), n'est pas un couple
-# utilisateur:mot_de_passe : curl coupe au premier « : ». Les trois sont refusées avant tout
-# dossier, sans citer la valeur (c'est un secret),
-# en nommant la variable reçue (#748 C6-9), retour 2 — celui d'un défaut
-# d'environnement. Retour 2 aussi pour un nom invalide, un dossier ou un fichier qui
-# ne s'écrit pas (le dossier est alors retiré).
+# Un retour à la ligne (ou un CR) ouvrirait une seconde directive dans ce fichier (`url = …`, `output = …`) :
+# l'échappement n'agit que sur `"` et `\`. Une valeur non vide sans « : » (des blancs compris), ou dont l'utilisateur ou
+# le mot de passe est vide ou fait seulement de blancs (`:`, `:p`, `u:`, ` :p`, `u: `, C12-9), n'est pas un couple
+# utilisateur:mot_de_passe : curl coupe au premier « : ». Les trois sont refusées avant tout dossier, sans citer la
+# valeur (c'est un secret), en nommant la variable reçue (#748 C6-9), retour 2 — celui d'un défaut d'environnement.
+# Retour 2 aussi pour un nom invalide, un dossier ou un fichier qui ne s'écrit pas (le dossier est alors retiré).
 #
 # Elle appelle smoke_cleanup **en tête**, avant tout, y compris la validation du nom
 # (décision 6 de #748) : un second appel remplace le premier, il ne laisse ni dossier
 # ni fichier d'identifiant derrière lui, et il n'existe jamais qu'un dossier. Ce que
 # l'appel de tête retire est ce que la bibliothèque a créé elle-même : les variables
 # sont vides à la source, un dossier hérité de l'environnement n'est jamais visé.
+#
+# Limite écrite (décision de l'auteur, 2026-10-31) : cet appel de tête lance `rm -rf`, un processus fils, avant la lecture
+# et donc avant `export -n`. Un second appel le lance avec la variable du second nom, si elle est encore exportée : `rm` la
+# reçoit. C'est un fils du même utilisateur, qui ne journalise rien, le temps du nettoyage ; changer l'ordre compliquerait
+# le chemin d'échec du nom pour un risque nul.
 #
 # Dès la lecture, avant toute validation et tout `mktemp`, la variable perd son attribut d'export (`export -n`,
 # C12-10, C13-5), pour toute valeur lue, refusée comprise : la valeur reste lisible dans le shell, mais aucun

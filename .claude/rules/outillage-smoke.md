@@ -21,6 +21,9 @@ The name is validated: refused if it starts with `_smoke_` (the library's own lo
 The value is read under `set +x` and written in a private directory; every `trap` runs `smoke_cleanup`; a second call replaces the first.
 As soon as the value is read, before any validation and before the `mktemp`, the variable is no longer exported (`export -n`, C13-5):
 no process started afterwards (`mktemp`, curl, dig, openssl) receives it, whatever the value, a refused one included.
+The `rm -rf` of `smoke_cleanup`, run at the head of a second call before the reading, still receives the second name if it is exported:
+the author's decision of 2026-10-31 keeps that order (a child of the same user, which logs nothing, for the time of the cleaning;
+reordering would complicate the failure path of the name for no risk).
 `export -n` does not wipe the shell's own copy of its environment, which `/proc/<pid>/environ` still shows (R148b).
 A value with a line break, without « : », or with an empty user or password (`:`, `:p`, `u:`) exits 2 naming the variable, not quoting it.
 A user or a password made only of blanks (` :p`, `u: `, a tab) is refused like an empty one, with the same message (R148).
@@ -55,11 +58,13 @@ With `-K … --proto =https --proto-r =all http://127.0.0.1:9/`, curl exits 1 «
 outside the library's `set +x`).
 It computes the library's directory with bash builtins (`${BASH_SOURCE[0]%/*}`, `cd`, `pwd`), never `dirname`: the variable is
 still exported there, and no process may start before the library removes the export.
-Its offline test records the environment of a fake `dirname`.
+The three smokes do the same before their `source` (R165, the author's decision of 2026-10-31).
+Each offline test, the audit's included, records the environment of a fake `dirname` (`write_env_noting_dirname`).
 Of the audit, the smokes and the library, the library's header is the only file that describes the variable
-and lists every refused value. This rule names it too, and the scripts' `Env :` headers point to the header.
+and lists every refused value. This rule names it too; the `Env :` headers of the audit and the three smokes point to it.
 `smoke-http.test.sh` holds two guards over the audit and the three smokes, read on every line, comments and heredocs included.
-The first: the word `AUDIT_BASIC_AUTH` appears only as `if [[ -v AUDIT_BASIC_AUTH ]]; then` (audit) and the library call, once per script.
+The first: the substring `AUDIT_BASIC_AUTH`, even inside a longer word, appears only as
+`if [[ -v AUDIT_BASIC_AUTH ]]; then` (audit) and the library call, once per script.
 The second: no line lists the environment or reads a variable by name, the library included (D3 of the thirteenth review).
 It refuses `declare`, `typeset`, `local`, `export` and `readonly` with no name (bare, or followed by options only: `declare -x`)
 and, with a `p` option, `declare -p`, `export -p`; `declare`, `typeset` and `local` with an `n` option (a nameref reads a variable by name);
@@ -83,3 +88,6 @@ A probe answered 401 says the host asks for the Basic Auth when the audit carrie
 instead of reading as a broken redirect; against production, where nothing is carried, a 401 is printed without that hint (R149).
 A probe is one `curl -w '%{http_code} %{redirect_url}'`, read in two fields: the code and the target come from the same response.
 Offline test: `tools/tests/audit-prod.test.sh`, fake `dig`/`curl`/`openssl`.
+The cases the offline tests share are `tools/tests/lib/smoke-cases.sh`'s, called as `run_case <case> <label> <rc> CASE_ERR=…`:
+their variables are locals of `run_case`, never exported (a generated Basic Auth must not reach the processes a case starts),
+and a variable a case needs that the call leaves out is a named `fail`, never an exit of the test.

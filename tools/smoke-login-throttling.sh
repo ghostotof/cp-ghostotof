@@ -29,7 +29,7 @@
 #
 # Usage :  tools/smoke-login-throttling.sh <url-de-base>
 #          ex. tools/smoke-login-throttling.sh https://preprod.cp-ghostotof.com
-# Env :    la Basic Auth de préprod, optionnelle : voir tools/lib/smoke-http.sh (la variable qui la porte, les
+# Env :    la variable de la Basic Auth de préprod, optionnelle : voir tools/lib/smoke-http.sh (son nom, les
 #          valeurs refusées, la sortie 2). Jamais via `-u` : les arguments d'un processus se lisent dans `ps` ;
 #          le couple passe par un fichier de configuration curl en 600.
 #          SMOKE_CURL        binaire curl de substitution (tests hors ligne).
@@ -44,8 +44,12 @@ fi
 base="${base%/}"
 
 # Sortie 2 si la bibliothèque manque ou ne se lit pas (sans -e, un source en échec continuerait) ; stderr de bash visible.
+# Le dossier se calcule sans `dirname` : la variable de la Basic Auth est encore exportée ici (la bibliothèque la retire dès
+# qu'elle la lit), aucun processus ne doit être lancé avant (C13-5). `cd` et `pwd` sont des commandes internes de bash.
+script_dir="${BASH_SOURCE[0]}"
+case "$script_dir" in */*) script_dir="${script_dir%/*}" ;; *) script_dir=. ;; esac
 # shellcheck source=tools/lib/smoke-http.sh
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/smoke-http.sh" || {
+source "$(cd "$script_dir" && pwd)/lib/smoke-http.sh" || {
   echo "bibliothèque introuvable ou invalide : tools/lib/smoke-http.sh" >&2
   exit 2
 }

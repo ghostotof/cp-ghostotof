@@ -20,7 +20,7 @@ failures=0
 pass()  { printf '  ok   %s\n' "$1"; }
 fail()  { printf '  FAIL %s\n       %s\n' "$1" "$2"; failures=$((failures + 1)); }
 
-# check_empty_basic_auth, check_plain_http_refused, generated_basic_auth : les cas communs aux smokes et à l'audit.
+# run_case (check_empty_basic_auth, check_non_https_refused), generated_basic_auth, write_env_noting_dirname : communs aux smokes.
 # shellcheck source=tools/tests/lib/smoke-cases.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/smoke-cases.sh"
 
@@ -324,24 +324,30 @@ fi
 # --- Un secret de Basic Auth défini mais vide (le secret de préprod manquant) : sortie 2, « secret de
 # Basic Auth vide » sur stderr, aucun appel. Sans lui, chaque 401 de la préprod se lirait comme un résultat.
 AUDIT_BASIC_AUTH='' run vide "$witness_ok" "$public_ok" "$me_cleared"
-CASE_LABEL="AUDIT_BASIC_AUTH vide → sortie 2, « secret de Basic Auth vide », aucun appel" \
-  CASE_RC="$rc" \
-  CASE_ERR="$TMP/err" \
-  CASE_CALLS="$TMP/vide.calls" \
-  CASE_OUT="$TMP/out" \
-  check_empty_basic_auth
+run_case check_empty_basic_auth \
+  "AUDIT_BASIC_AUTH vide → sortie 2, « secret de Basic Auth vide », aucun appel" "$rc" \
+  CASE_ERR="$TMP/err" CASE_CALLS="$TMP/vide.calls" CASE_OUT="$TMP/out"
+
+# --- C13-5 : la variable est encore exportée tant que la bibliothèque n'a pas lu la valeur ; un `dirname` lancé avant
+# le `source` la recevrait. Un faux `dirname` note son environnement : le dossier de la bibliothèque se calcule
+# sans processus, donc le fichier ne porte jamais la variable.
+write_env_noting_dirname "$TMP/dirname-bin"
+: > "$TMP/dirname-env.txt"
+AUDIT_BASIC_AUTH='u:p' FAKE_DIRNAME_ENV="$TMP/dirname-env.txt" PATH="$TMP/dirname-bin:$PATH" \
+  run dirname "$witness_ok" "$public_ok" "$me_cleared"
+if ! grep -q '^AUDIT_BASIC_AUTH=' "$TMP/dirname-env.txt"; then
+  pass "aucun dirname ne reçoit la Basic Auth (le dossier de la bibliothèque se calcule sans processus)"
+else
+  fail "dirname avant la bibliothèque" "$(grep -c '^AUDIT_BASIC_AUTH=' "$TMP/dirname-env.txt") environnement(s) la portent"
+fi
 
 # --- C11-1 : une Basic Auth et une base en `http://` — curl enverrait `Authorization: Basic` en clair :
 # sortie 2 au premier appel, aucun appel de curl, la valeur ni dans les messages ni dans les arguments.
 http_auth="$(generated_basic_auth)"
 AUDIT_BASIC_AUTH="$http_auth" TEST_BASE_URL=http://example.invalid run httpbase "$witness_ok" "$public_ok" "$me_cleared"
-CASE_LABEL="Basic Auth et base http:// → sortie 2, « non https:// », aucun appel, valeur jamais citée" \
-  CASE_RC="$rc" \
-  CASE_ERR="$TMP/err" \
-  CASE_CALLS="$TMP/httpbase.calls" \
-  CASE_OUT="$TMP/out" \
-  CASE_VALUE="$http_auth" \
-  check_plain_http_refused
+run_case check_non_https_refused \
+  "Basic Auth et base http:// → sortie 2, « non https:// », aucun appel, valeur jamais citée" "$rc" \
+  CASE_ERR="$TMP/err" CASE_CALLS="$TMP/httpbase.calls" CASE_OUT="$TMP/out" CASE_VALUE="$http_auth"
 # Sans Basic Auth, une base http:// est servie comme avant (un smoke local) : aucun -K.
 TEST_BASE_URL=http://example.invalid run httplocal "$witness_ok" "$public_ok" "$me_cleared"
 if ! grep -q -- ' -K ' "$TMP/httplocal.args" && [ -s "$TMP/httplocal.calls" ] && ! grep -q 'non https://' "$TMP/err"; then

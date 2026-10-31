@@ -8,6 +8,9 @@
 # domaines.
 #
 # Usage :  ./tools/audit-prod.sh cp-ghostotof.com
+# Env :    la variable de la Basic Auth de préprod, optionnelle : voir tools/lib/smoke-http.sh (son nom, les
+#          valeurs refusées, la sortie 2). Jamais via `-u` : les arguments d'un processus se lisent dans `ps` ;
+#          le couple passe par un fichier de configuration curl en 600.
 # ---------------------------------------------------------------------------
 
 set -uo pipefail   # -u : variable non définie = erreur / -o pipefail : remonte l'erreur d'un pipe
@@ -30,10 +33,10 @@ CURL_OPTS_ANONYMOUS=("${CURL_OPTS[@]}")
 # Préprod exige une Basic Auth (point de sécurité 2026-09-12) : sans elle,
 # chaque requête de cet audit recevrait 401 au lieu du vrai contenu, et les
 # sections 6/7 ci-dessous interpréteraient ce 401 comme des chemins
-# sensibles exposés — des dizaines de faux échecs bloquants. La Basic Auth
-# (« utilisateur:mot_de_passe », la variable est décrite dans tools/lib/smoke-http.sh)
-# est optionnelle : absente contre la vraie prod (non protégée), fournie par le job
-# audit-preprod du pipeline via le secret GitHub PREPROD_BASIC_AUTH.
+# sensibles exposés — des dizaines de faux échecs bloquants. La variable de la Basic Auth
+# (« utilisateur:mot_de_passe », décrite dans tools/lib/smoke-http.sh) est optionnelle :
+# absente contre la vraie prod (non protégée), fournie par le job audit-preprod du pipeline
+# via le secret GitHub PREPROD_BASIC_AUTH.
 #
 # Jamais via `-u` : les arguments d'un processus sont lisibles dans `ps` par
 # tout utilisateur de la machine pendant la requête (revue de sécurité du
@@ -64,7 +67,6 @@ CURL_OPTS_ANONYMOUS=("${CURL_OPTS[@]}")
 # un arrêt entre `mktemp -d` et l'affectation que lit le `trap` peut laisser un dossier
 # privé **vide**, jamais la valeur, qui n'est écrite qu'une fois le chemin connu du
 # `trap` (#748, C7-8).
-audit_with_basic_auth=0   # 1 si l'audit porte la Basic Auth (préprod) : l'indice du 401 de la section 3 en dépend
 if [[ -v AUDIT_BASIC_AUTH ]]; then
   # Sortie 2 si la bibliothèque manque ou ne se lit pas (sans -e, un source en échec continuerait) ; stderr de bash visible.
   # Le dossier se calcule sans `dirname` : la variable est encore exportée ici (la bibliothèque la retire dès qu'elle la
@@ -79,7 +81,6 @@ if [[ -v AUDIT_BASIC_AUTH ]]; then
   trap 'smoke_cleanup' EXIT
   smoke_use_auth_config AUDIT_BASIC_AUTH || exit 2
   CURL_OPTS+=(-K "$SMOKE_AUTH_CONFIG" --proto "=https" --proto-redir "=https")
-  audit_with_basic_auth=1
 fi
 DIG_TIMEOUT=(+time=3 +tries=1)
 
@@ -125,10 +126,11 @@ for url in "http://${DOMAIN}" "http://www.${DOMAIN}" "https://www.${DOMAIN}"; do
   probe="$(curl -sS "${CURL_OPTS_ANONYMOUS[@]}" -o /dev/null -w '%{http_code} %{redirect_url}' "$url")"
   read -r code target <<< "$probe"
   hint=""
-  if [ "$code" = "401" ] && [ "$audit_with_basic_auth" = 1 ]; then
+  # SMOKE_AUTH_CONFIG n'est posé que si l'audit porte la Basic Auth (préprod) : l'indice du 401 en dépend.
+  if [ "$code" = "401" ] && [ -n "${SMOKE_AUTH_CONFIG:-}" ]; then
     hint=" (l'hôte demande la Basic Auth : la sonde part sans elle, #750)"
   fi
-  printf '%-32s -> %s %s%s\n' "$url" "$code" "${target:-}" "$hint"
+  printf '%-32s -> %s %s%s\n' "$url" "$code" "$target" "$hint"
 done
 
 # ---------------------------------------------------------------------------

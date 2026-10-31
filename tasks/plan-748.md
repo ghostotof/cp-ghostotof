@@ -10264,6 +10264,16 @@ changement de langue est la seule sortie après une lecture en échec, et qu'une
   lit de `[ -n "$SMOKE_AUTH_CONFIG" ]` ou disparaît (un seul état) ; St13-52 : `${target:-}` → `$target` ; Sp13-15 : en-tête
   `Env :` d'`audit-prod.sh` sur le modèle des trois smokes.
 
+**Ajouts décidés par l'auteur (2026-10-31).**
+- **A.** `tools/smoke-mcp.sh`, `tools/smoke-login-throttling.sh` et `tools/smoke-dead-session-cookie.sh` appelaient encore `dirname`
+  avant le `source` de la bibliothèque, la variable de la Basic Auth encore exportée : ils prennent la forme sans `dirname` que R164 a
+  posée dans `tools/audit-prod.sh` (`${BASH_SOURCE[0]}`, `cd`, `pwd`), avec un cas par script sur le modèle de celui de l'audit (un faux
+  `dirname` qui note son environnement ne doit pas voir la variable), vu rouge avant la correction.
+- **B.** `_smoke_write_auth_config` lance `smoke_cleanup` (un `rm -rf`) en tête, avant la lecture (décision 6 de #748) : `rm` voit la
+  variable du second nom si elle est encore exportée. Décision : garder l'ordre, écrire la limite dans la règle et le docblock (un fils
+  du même utilisateur, qui ne journalise rien, le temps du nettoyage ; changer l'ordre compliquerait le chemin d'échec du nom pour un
+  risque nul).
+
 - [ ] **Step 1 : filet** — tous les tests hors ligne de l'outillage à 0, nombre de `pass` de chacun noté.
 - [ ] **Step 2 : refactorer** ; mêmes nombres de `pass`, codes 0.
 - [ ] **Step 3 : rouge vu par mutation** (Python, copie vérifiée par `cmp`) : `run_case` qui ne passe pas `<rc>` → les

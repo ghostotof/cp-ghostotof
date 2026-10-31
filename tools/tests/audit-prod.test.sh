@@ -23,7 +23,7 @@ failures=0
 pass()  { printf '  ok   %s\n' "$1"; }
 fail()  { printf '  FAIL %s\n       %s\n' "$1" "$2"; failures=$((failures + 1)); }
 
-# check_empty_basic_auth, generated_basic_auth : les cas communs aux smokes et à l'audit.
+# run_case (check_empty_basic_auth), write_env_noting_dirname : le cas et le faux communs aux smokes et à l'audit.
 # shellcheck source=tools/tests/lib/smoke-cases.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/smoke-cases.sh"
 
@@ -150,9 +150,7 @@ fi
 # --- C13-5 : aucun processus n'est lancé avant que la bibliothèque retire l'export de la variable. Un faux
 # `dirname` note son environnement : les appels qui suivent la bibliothèque (ses `source` voisins) y figurent, sans la
 # variable ; un `dirname` lancé avant le `source` la porterait.
-real_dirname="$(command -v dirname)"
-printf '%s\n' '#!/bin/sh' 'env >> "$FAKE_DIRNAME_ENV"' "exec $real_dirname \"\$@\"" > "$TMP/bin/dirname"
-chmod +x "$TMP/bin/dirname"
+write_env_noting_dirname "$TMP/bin"
 : > "$TMP/dirname-env.txt"
 copy_tools dirname reelle
 FAKE_DIRNAME_ENV="$TMP/dirname-env.txt" AUDIT_BASIC_AUTH='u:p' run_audit dirname
@@ -371,13 +369,9 @@ fi
 # lirait le 401 de la préprod comme des dizaines d'échecs.
 copy_tools vide reelle
 AUDIT_BASIC_AUTH='' run_audit vide
-CASE_LABEL="AUDIT_BASIC_AUTH vide : sortie 2, « secret de Basic Auth vide », aucun appel, aucun dossier" \
-  CASE_RC="$rc" \
-  CASE_ERR="$TMP/vide.err" \
-  CASE_CALLS="$TMP/vide.calls" \
-  CASE_OUT="$TMP/vide.out" \
-  CASE_TMPDIR="$TMP/vide.tmpdir" \
-  check_empty_basic_auth
+run_case check_empty_basic_auth \
+  "AUDIT_BASIC_AUTH vide : sortie 2, « secret de Basic Auth vide », aucun appel, aucun dossier" "$rc" \
+  CASE_ERR="$TMP/vide.err" CASE_CALLS="$TMP/vide.calls" CASE_OUT="$TMP/vide.out" CASE_TMPDIR="$TMP/vide.tmpdir"
 
 # Le même sous `bash -x` : la trace ne porte de la variable que son nom (le test de
 # présence ne la développe pas, le vide est jugé sur le chemin du fichier).

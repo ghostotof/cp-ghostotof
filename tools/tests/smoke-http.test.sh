@@ -13,7 +13,8 @@
 set -euo pipefail
 
 LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/smoke-http.sh"
-# generated_basic_auth : les valeurs de Basic Auth de ce test sont générées, jamais écrites en clair.
+# run_case (check_non_https_refused, check_args_refused, check_curl_opts_refused) et generated_basic_auth : les valeurs de
+# Basic Auth de ce test sont générées, jamais écrites en clair.
 # shellcheck source=tools/tests/lib/smoke-cases.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib/smoke-cases.sh"
 TMP="$(mktemp -d)"
@@ -517,17 +518,13 @@ unset UNE_AUTH
 http_auth="$(generated_basic_auth)"
 UNE_AUTH="$http_auth"
 smoke_use_auth_config UNE_AUTH
-for plain_url in http://example.invalid/x HTTP://example.invalid/x ftp://example.invalid/x example.invalid/x; do
+for non_https_url in http://example.invalid/x HTTP://example.invalid/x ftp://example.invalid/x example.invalid/x; do
   : > "$FAKE_ARGS"
   rc=0
-  FAKE_STATUS=200 smoke_fetch "GET /http" "$plain_url" > "$TMP/stdout" 2> "$TMP/stderr" || rc=$?
-  CASE_LABEL="smoke_fetch : Basic Auth sur $plain_url → retour 2, « non https:// », curl jamais appelé" \
-    CASE_RC="$rc" \
-    CASE_ERR="$TMP/stderr" \
-    CASE_CALLS="$FAKE_ARGS" \
-    CASE_OUT="$TMP/stdout" \
-    CASE_VALUE="$http_auth" \
-    check_plain_http_refused
+  FAKE_STATUS=200 smoke_fetch "GET /http" "$non_https_url" > "$TMP/stdout" 2> "$TMP/stderr" || rc=$?
+  run_case check_non_https_refused \
+    "smoke_fetch : Basic Auth sur $non_https_url → retour 2, « non https:// », curl jamais appelé" "$rc" \
+    CASE_ERR="$TMP/stderr" CASE_CALLS="$FAKE_ARGS" CASE_OUT="$TMP/stdout" CASE_VALUE="$http_auth"
 done
 rc=0
 ( set -x; FAKE_STATUS=200 smoke_fetch "GET /http" http://example.invalid/x || true ) > /dev/null 2> "$TMP/trace" || rc=$?
@@ -579,25 +576,17 @@ for refused in "${refused_args[@]}"; do
   : > "$FAKE_ARGS"
   rc=0
   FAKE_STATUS=200 smoke_fetch "GET /args" https://example.invalid/x -X POST "$refused" > "$TMP/stdout" 2> "$TMP/stderr" || rc=$?
-  CASE_LABEL="smoke_fetch : « $refused » dans les arguments avec la Basic Auth → retour 2, curl jamais appelé" \
-    CASE_RC="$rc" \
-    CASE_ERR="$TMP/stderr" \
-    CASE_CALLS="$FAKE_ARGS" \
-    CASE_OUT="$TMP/stdout" \
-    CASE_VALUE="$args_auth" \
-    check_args_refused
+  run_case check_args_refused \
+    "smoke_fetch : « $refused » dans les arguments avec la Basic Auth → retour 2, curl jamais appelé" "$rc" \
+    CASE_ERR="$TMP/stderr" CASE_CALLS="$FAKE_ARGS" CASE_OUT="$TMP/stdout" CASE_VALUE="$args_auth"
 done
 # La forme à deux arguments (`--proto-redir`, puis sa valeur) est refusée dès le premier.
 : > "$FAKE_ARGS"
 rc=0
 FAKE_STATUS=200 smoke_fetch "GET /proto" https://example.invalid/x --proto-redir '=all' > "$TMP/stdout" 2> "$TMP/stderr" || rc=$?
-CASE_LABEL="smoke_fetch : « --proto-redir =all » en deux arguments avec la Basic Auth → retour 2, curl jamais appelé" \
-  CASE_RC="$rc" \
-  CASE_ERR="$TMP/stderr" \
-  CASE_CALLS="$FAKE_ARGS" \
-  CASE_OUT="$TMP/stdout" \
-  CASE_VALUE="$args_auth" \
-  check_args_refused
+run_case check_args_refused \
+  "smoke_fetch : « --proto-redir =all » en deux arguments avec la Basic Auth → retour 2, curl jamais appelé" "$rc" \
+  CASE_ERR="$TMP/stderr" CASE_CALLS="$FAKE_ARGS" CASE_OUT="$TMP/stdout" CASE_VALUE="$args_auth"
 # Voisins permis : des arguments ordinaires, une URL https:// en argument, des options qui commencent comme une
 # option refusée sans l'être (`--progress-bar`, `--proto-default`, `--connect-timeout`, `--expect100-timeout`), un
 # en-tête dont la valeur cite une URL en `https://` et un corps JSON qui cite `http://` (ce sont des valeurs, pas
@@ -653,13 +642,9 @@ for refused in "--location-trusted" "--locat" "-4L" "-sK" "--config" "--proto-r"
   : > "$FAKE_ARGS"
   rc=0
   FAKE_STATUS=200 smoke_fetch "GET /opts" https://example.invalid/x > "$TMP/stdout" 2> "$TMP/stderr" || rc=$?
-  CASE_LABEL="smoke_fetch : « $refused » dans SMOKE_CURL_OPTS avec la Basic Auth → retour 2, curl jamais appelé" \
-    CASE_RC="$rc" \
-    CASE_ERR="$TMP/stderr" \
-    CASE_CALLS="$FAKE_ARGS" \
-    CASE_OUT="$TMP/stdout" \
-    CASE_VALUE="$args_auth" \
-    check_curl_opts_refused
+  run_case check_curl_opts_refused \
+    "smoke_fetch : « $refused » dans SMOKE_CURL_OPTS avec la Basic Auth → retour 2, curl jamais appelé" "$rc" \
+    CASE_ERR="$TMP/stderr" CASE_CALLS="$FAKE_ARGS" CASE_OUT="$TMP/stdout" CASE_VALUE="$args_auth"
   if grep -qF -- "$refused" "$TMP/stderr"; then
     fail "SMOKE_CURL_OPTS : l'argument n'est pas cité" "« $refused » est dans le stderr : $(cat -A "$TMP/stderr")"
   fi
@@ -770,16 +755,16 @@ for caller in smoke-dead-session-cookie smoke-login-throttling smoke-mcp; do
   fi
 done
 
-# --- Garde du mot (C11-3, C12-2) : le secret n'est lu que par la bibliothèque, sous `set +x`. Toute ligne
-# de l'audit et des trois smokes qui contient le mot AUDIT_BASIC_AUTH est refusée, commentaires et lignes
-# d'un heredoc compris, sauf deux formes exactes (blancs de tête quelconques, comparés une fois retirés) :
-# le test de définition de l'audit et l'appel de la bibliothèque, qui figure une fois par script.
+# --- Garde de la sous-chaîne AUDIT_BASIC_AUTH (C11-3, C12-2) : le secret n'est lu que par la bibliothèque, sous `set +x`.
+# Toute ligne de l'audit et des trois smokes qui contient la sous-chaîne AUDIT_BASIC_AUTH (même dans un mot plus long) est
+# refusée, commentaires et lignes d'un heredoc compris, sauf deux formes exactes (blancs de tête quelconques, comparés une
+# fois retirés) : le test de définition de l'audit et l'appel de la bibliothèque, qui figure une fois par script.
 # Une ligne de commentaire n'est pas écartée : un heredoc dont une ligne commence par `#` est du texte
 # que le shell lit, pas un commentaire. `${#…}` ou `printenv …` lisent la valeur sans que `bash -x`
 # ne la montre autrement que par son effet : seule la lecture du source les voit.
 allowed_use='smoke_use_auth_config AUDIT_BASIC_AUTH || exit 2'
 allowed_defined='if [[ -v AUDIT_BASIC_AUTH ]]; then'
-basic_auth_word_strays() {
+basic_auth_substring_strays() {
   local script="$1" file="$2" numbered code line uses=0
   while IFS= read -r numbered; do
     code="${numbered#*:}"
@@ -799,7 +784,7 @@ basic_auth_word_strays() {
 }
 strays=""
 for script in audit-prod smoke-dead-session-cookie smoke-login-throttling smoke-mcp; do
-  strays+="$(basic_auth_word_strays "$script" "$TOOLS_DIR/$script.sh")"$'\n'
+  strays+="$(basic_auth_substring_strays "$script" "$TOOLS_DIR/$script.sh")"$'\n'
 done
 if [ -z "${strays//$'\n'/}" ]; then
   pass "AUDIT_BASIC_AUTH : seules les deux formes autorisées figurent dans l'audit et les smokes, l'appel une fois chacun"
@@ -812,9 +797,9 @@ fi
 mutant_smoke() {
   cp "$TOOLS_DIR/smoke-mcp.sh" "$TMP/mutant-smoke.sh"
   printf '%s\n' "$@" >> "$TMP/mutant-smoke.sh"
-  basic_auth_word_strays smoke-mcp "$TMP/mutant-smoke.sh"
+  basic_auth_substring_strays smoke-mcp "$TMP/mutant-smoke.sh"
 }
-word_cases=(
+substring_cases=(
   $'cat <<\'EOT\'\n# valeur : $AUDIT_BASIC_AUTH\nEOT'
   $'cat <<\'EOT\'\n  # \tAUDIT_BASIC_AUTH\nEOT'
   '# la variable AUDIT_BASIC_AUTH est lue ici'
@@ -822,7 +807,7 @@ word_cases=(
   'echo "${#AUDIT_BASIC_AUTH}"'
   'smoke_use_auth_config AUDIT_BASIC_AUTH || exit 2'
 )
-word_labels=(
+substring_labels=(
   "un heredoc dont une ligne commence par # et nomme le mot"
   "un heredoc dont une ligne indentée commence par # et nomme le mot"
   "un commentaire qui nomme le mot"
@@ -830,21 +815,21 @@ word_labels=(
   "une longueur lue"
   "un second appel de la bibliothèque"
 )
-for i in "${!word_cases[@]}"; do
-  if [ -n "$(mutant_smoke "${word_cases[$i]}")" ]; then
-    pass "garde du mot : ${word_labels[$i]} est refusé"
+for i in "${!substring_cases[@]}"; do
+  if [ -n "$(mutant_smoke "${substring_cases[$i]}")" ]; then
+    pass "garde de la sous-chaîne AUDIT_BASIC_AUTH : ${substring_labels[$i]} est refusé"
   else
-    fail "garde du mot : ${word_labels[$i]}" "la garde ne voit rien"
+    fail "garde de la sous-chaîne AUDIT_BASIC_AUTH : ${substring_labels[$i]}" "la garde ne voit rien"
   fi
 done
 # Voisins permis : l'appel réindenté (quatre blancs, une tabulation) compte encore pour une fois, sans reste.
 for indent in '    ' $'\t'; do
   sed "s|^smoke_use_auth_config AUDIT_BASIC_AUTH|${indent}&|" "$TOOLS_DIR/smoke-mcp.sh" > "$TMP/mutant-smoke.sh"
-  if [ -z "$(basic_auth_word_strays smoke-mcp "$TMP/mutant-smoke.sh")" ] \
+  if [ -z "$(basic_auth_substring_strays smoke-mcp "$TMP/mutant-smoke.sh")" ] \
      && grep -qE '^[[:space:]]+smoke_use_auth_config' "$TMP/mutant-smoke.sh"; then
-    pass "garde du mot : l'appel indenté de ${#indent} caractère(s) est une forme permise, comptée une fois"
+    pass "garde de la sous-chaîne AUDIT_BASIC_AUTH : l'appel indenté de ${#indent} caractère(s) est une forme permise, comptée une fois"
   else
-    fail "garde du mot : appel indenté" "$(basic_auth_word_strays smoke-mcp "$TMP/mutant-smoke.sh")"
+    fail "garde de la sous-chaîne AUDIT_BASIC_AUTH : appel indenté" "$(basic_auth_substring_strays smoke-mcp "$TMP/mutant-smoke.sh")"
   fi
 done
 
@@ -1037,7 +1022,6 @@ else
 fi
 
 # R148b : la lecture de /proc/<pid>/environ est refusée dans le corps du lecteur comme partout (D3 : l'exemption est une ligne).
-cp "$LIB" "$TMP/mutant-lib.sh"
 sed 's|^  _smoke_value="${!_smoke_name:-}"$|&\n  : < /proc/self/environ|' "$LIB" > "$TMP/mutant-lib.sh"
 if [ -n "$(env_dump_lines "$TMP/mutant-lib.sh")" ] && grep -q '^  : < /proc/self/environ$' "$TMP/mutant-lib.sh"; then
   pass "garde des vidages : /proc/self/environ lu dans le corps de _smoke_write_auth_config est refusé"
