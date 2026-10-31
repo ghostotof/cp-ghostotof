@@ -1,5 +1,5 @@
 import ts from 'typescript'
-import { parse } from 'vue/compiler-sfc'
+import { parse, type SFCTemplateBlock } from 'vue/compiler-sfc'
 
 /**
  * Le lecteur de source des gardes de `tests/` (#748).
@@ -10,7 +10,8 @@ import { parse } from 'vue/compiler-sfc'
  * (`` /`([^`]+)`/ ``, `/filename="?([^";]+)"?/`) n'ouvre ni gabarit, ni chaîne, ni commentaire. Un `.vue` passe d'abord
  * par `scriptOf`, qui n'en garde que les blocs `<script>` (le `<template>` n'est pas du JavaScript : son apostrophe ou
  * son `//` ne doivent rien ouvrir) ; les expressions de ce gabarit (directives, gestionnaires en ligne, interpolations)
- * se lisent à part, par `templateExpressionsOf`. Les fins de ligne (`\r` compris) d'un commentaire ou d'un bloc écarté
+ * se lisent à part, par `templateExpressionsOf`, qui rend chacune comme le fragment JavaScript que Vue en
+ * compile. Les fins de ligne (`\r` compris) d'un commentaire ou d'un bloc écarté
  * sont gardées : une position ou un numéro de ligne reste celui de la source.
  *
  * Qui l'appelle : `srcSources.ts` lit une fois les fichiers de `src/` pour `noOmittedCredentials.spec.ts` et
@@ -20,8 +21,8 @@ import { parse } from 'vue/compiler-sfc'
  * celle de `vue/compiler-sfc` (`parse`). Un passage à TypeScript 7 (le portage natif) la changera : les gardes
  * rougiront alors bruyamment (une importation qui échoue), jamais en silence.
  *
- * Reste vrai : une chaîne non terminée n'a plus de limite écrite ici — c'est du code que `vue-tsc` refuse
- * (`make front-build`), donc jamais du code livré.
+ * Une chaîne non terminée est lue comme TypeScript la lit ; `vue-tsc` refuse ce code (`make front-build`), il n'est
+ * jamais livré.
  */
 
 /**
@@ -68,9 +69,9 @@ export function withoutComments(source: string): string {
 }
 
 /**
- * Le contenu de chaque littéral de la source, hors commentaires : chaînes `'…'` et `"…"` et gabarits sans `${`, lus comme
- * le compilateur les lit (échappements décodés : `'om\x69t'` donne `omit`). Un gabarit à expression donne chacune de ses
- * parties fixes (`a${x}b` donne `a` et `b`), puis les chaînes de ses expressions.
+ * Le contenu de chaque littéral de la source, hors commentaires : chaînes `'…'` et `"…"`, gabarits sans expression, et
+ * chaque partie fixe d'un gabarit à expression (`a${x}b` donne `a` et `b`), puis les chaînes de ses expressions. Les
+ * échappements sont décodés (`'om\x69t'` donne `omit`).
  */
 export function stringLiterals(source: string): string[] {
   const literals: string[] = []
@@ -117,21 +118,17 @@ export function scriptOf(path: string, source: string): string {
   return code
 }
 
-/** Ce que la lecture du gabarit utilise d'un nœud de l'arbre de `vue/compiler-sfc` (le reste du nœud est ignoré). */
-interface TemplateNode {
-  content?: string | TemplateNode
-  children?: TemplateNode[]
-  props?: TemplateNode[]
-  exp?: TemplateNode
-  arg?: TemplateNode
-  /** Vrai pour une expression simple : son `content` est le texte JavaScript. */
-  ast?: unknown
-}
+/** La racine du gabarit, telle que `vue/compiler-sfc` la type (`@vue/compiler-core` n'est pas une dépendance du dépôt). */
+export type TemplateRoot = NonNullable<SFCTemplateBlock['ast']>
+type TemplateChild = TemplateRoot['children'][number]
+type TemplateElement = Extract<TemplateChild, { props: unknown[] }>
+type TemplateProp = TemplateElement['props'][number]
+type TemplateDirective = Extract<TemplateProp, { exp: unknown }>
+type TemplateExpression = NonNullable<TemplateDirective['exp']>
 
 /**
- * Les expressions JavaScript du `<template>` d'un `.vue`, dans l'ordre du document : la valeur de chaque directive
- * (`:title`, `v-if`, `@click="…"` — un gestionnaire en ligne compris), l'argument d'une directive dynamique
- * (`:[nom]`) et le contenu de chaque interpolation `{{ … }}`. `[]` pour un chemin qui n'est pas un `.vue` ou sans
+ * Les expressions JavaScript du `<template>` d'un `.vue`, dans l'ordre du document, chacune rendue comme un fragment que
+ * TypeScript lit comme Vue l'entend (voir `expressionsOfTemplate`). `[]` pour un chemin qui n'est pas un `.vue` ou sans
  * gabarit ; un `.vue` illisible est refusé comme par `scriptOf`. Chacune se lit ensuite avec `stringLiterals`.
  */
 export function templateExpressionsOf(path: string, source: string): string[] {
@@ -144,27 +141,85 @@ export function templateExpressionsOf(path: string, source: string): string[] {
     throw new Error(`${path} : ${errors.map((error) => error.message).join(' ; ')}`)
   }
 
-  const expressions: string[] = []
-  const visit = (node: TemplateNode): void => {
-    // Une interpolation porte son expression dans `content` (un nœud) ; une directive dans `exp` ; un argument dynamique
-    // dans `arg`. Un `content` texte (nœud de texte, expression simple) est lu ici, à la feuille.
-    if ('string' === typeof node.content && undefined !== node.ast) {
-      expressions.push(node.content)
-    }
-    for (const child of [node.exp, node.arg, 'object' === typeof node.content ? node.content : undefined]) {
-      if (undefined !== child) {
-        visit(child)
-      }
-    }
-    for (const child of [...(node.props ?? []), ...(node.children ?? [])]) {
-      visit(child)
+  return null !== descriptor.template && undefined !== descriptor.template.ast ? expressionsOfTemplate(descriptor.template.ast) : []
+}
+
+/**
+ * Les fragments JavaScript d'un gabarit, dans l'ordre du document : la valeur de chaque directive, l'argument d'une
+ * directive dynamique (`:[nom]`) et le contenu de chaque interpolation `{{ … }}`. Chaque expression est écrite comme Vue
+ * la compile, pour que TypeScript la lise de la même façon :
+ *
+ * - un gestionnaire `v-on` est un corps de fonction (`a(); b()` y est permis) : `() => {\n…\n}` ;
+ * - un paramètre de `v-slot`, et chaque alias d'un `v-for` (valeur, clé, index), est un paramètre de fonction (`{ a = 1 }`
+ *   y est un motif de déstructuration, non un bloc) : `(…) => 0` ;
+ * - la source d'un `v-for`, toute autre expression de directive, un argument dynamique et une interpolation sont une
+ *   expression : `(…)` (`{ credentials: 'omit' }` y est un littéral objet, non un bloc étiqueté).
+ *
+ * Un nœud sans contenu (`null` ou absent) n'est jamais visité.
+ */
+export function expressionsOfTemplate(root: TemplateRoot): string[] {
+  const fragments: string[] = []
+
+  const read = (expression: object | null | undefined, wrap: (text: string) => string): void => {
+    // Une expression composée (`CompoundExpressionNode`) naît de la transformation, jamais de l'analyse : seul le texte source compte.
+    if (undefined !== expression && null !== expression && 'content' in expression && 'string' === typeof expression.content) {
+      fragments.push(wrap(expression.content))
     }
   }
-  if (null !== descriptor.template && undefined !== descriptor.template.ast) {
-    visit(descriptor.template.ast as unknown as TemplateNode)
+  const asExpression = (text: string): string => `(${text})`
+  const asParameter = (text: string): string => `(${text}) => 0`
+  const asBody = (text: string): string => `() => {\n${text}\n}`
+
+  const readDirective = (directive: TemplateDirective): void => {
+    if (undefined !== directive.forParseResult) {
+      const { source, value, key, index } = directive.forParseResult
+      read(source, asExpression)
+      read(value, asParameter)
+      read(key, asParameter)
+      read(index, asParameter)
+    } else {
+      read(directive.exp, 'on' === directive.name ? asBody : 'slot' === directive.name ? asParameter : asExpression)
+    }
+    // Un argument statique (`:title`, `@click`) est un nom, non une expression.
+    if (undefined !== directive.arg && 'isStatic' in directive.arg && !directive.arg.isStatic) {
+      read(directive.arg, asExpression)
+    }
   }
 
-  return expressions
+  const visit = (node: TemplateRoot | TemplateChild | TemplateExpression): void => {
+    if ('props' in node) {
+      for (const prop of node.props) {
+        if ('exp' in prop) {
+          readDirective(prop)
+        }
+      }
+    }
+    // Une interpolation porte son expression dans `content` (un nœud) ; un nœud de texte, dans `content` (une chaîne).
+    if ('content' in node && 'object' === typeof node.content && null !== node.content && 'content' in node.content) {
+      read(node.content, asExpression)
+    }
+    if ('children' in node) {
+      for (const child of node.children) {
+        // Les enfants d'une expression composée comptent aussi des chaînes et des symboles, qui ne sont pas des nœuds.
+        if ('object' === typeof child) {
+          visit(child)
+        }
+      }
+    }
+  }
+  visit(root)
+
+  return fragments
+}
+
+/**
+ * Les erreurs de syntaxe que TypeScript relève dans `fragment` (une liste de messages, vide si le fragment est valide) :
+ * la garde qui vérifie que tout fragment lu de `src/` est du JavaScript valide, et non une chaîne lue par chance.
+ */
+export function syntaxErrorsOf(fragment: string): string[] {
+  const { diagnostics } = ts.transpileModule(fragment, { reportDiagnostics: true })
+
+  return (diagnostics ?? []).map((diagnostic) => ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n'))
 }
 
 /** L'arbre de `source`, lu comme du TypeScript (parents posés : `getChildren` en a besoin). */

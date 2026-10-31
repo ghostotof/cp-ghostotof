@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { scriptOf, stringLiterals, templateExpressionsOf } from '../../support/sourceText'
+import { scriptOf, stringLiterals, syntaxErrorsOf, templateExpressionsOf } from '../../support/sourceText'
 import { SRC_SCRIPTS, SRC_TEMPLATE_EXPRESSIONS } from '../../support/srcSources'
 
 /**
@@ -14,40 +14,42 @@ import { SRC_SCRIPTS, SRC_TEMPLATE_EXPRESSIONS } from '../../support/srcSources'
  * interdit une. Le défaut `same-origin` convient aux dépôts publics, parce que le serveur sert une route publique comme
  * à l'anonyme quel que soit le cookie reçu (R35).
  *
- * Depuis R51 la garde ne cherche plus le seul littéral `credentials: 'omit'` : elle refuse toute chaîne `'omit'`
- * (guillemets simples, doubles ou gabarit) une fois les commentaires retirés, donc aussi `const mode:
- * RequestCredentials = 'omit'` puis `fetch(url, { credentials: mode })`. Limites écrites : une valeur composée
- * (`'om' + 'it'`), venue d'une variable ou d'un fichier d'ailleurs, ou un fichier hors de `src/`, lui échappe ; la
- * lecture de la règle (`.claude/rules/frontend.md`) et la relecture restent le filet de ces cas.
+ * La garde refuse toute chaîne `'omit'` (guillemets simples, doubles ou gabarit) une fois les commentaires retirés, donc
+ * aussi `const mode: RequestCredentials = 'omit'` puis `fetch(url, { credentials: mode })`. Limites écrites : une valeur
+ * composée (`'om' + 'it'`), venue d'une variable ou d'un fichier d'ailleurs, ou un fichier hors de `src/`, lui échappe ;
+ * la lecture de la règle (`.claude/rules/frontend.md`) et la relecture restent le filet de ces cas.
  *
- * Depuis R96 (CR8-10) la garde lit deux choses d'un fichier : ses littéraux de script (un `.vue` n'y a que ses blocs
- * `<script>`) **et** les expressions de son `<template>` (directives, gestionnaires en ligne, interpolations), et les
- * parties fixes d'un gabarit comptent comme des littéraux (`` `${''}omit` `` contient `omit`). Un gabarit `${x}omit` est
- * donc signalé sans être exactement `'omit'` : faux positif bruyant, aucun dans `src/`.
+ * Elle lit deux choses d'un fichier : ses littéraux de script (un `.vue` n'y a que ses blocs `<script>`) **et** les
+ * expressions de son `<template>` (directives, gestionnaires en ligne, interpolations, `v-for` et `v-slot` compris), et
+ * les parties fixes d'un gabarit comptent comme des littéraux (`` `${''}omit` `` contient `omit`). Un gabarit `${x}omit`
+ * est donc signalé sans être exactement `'omit'` : faux positif bruyant, aucun dans `src/`. Chaque expression est lue
+ * comme le fragment JavaScript que Vue compile, et un test vérifie que tout fragment de `src/` est de la syntaxe valide.
  *
  * Les fichiers sont lus une fois pour les gardes de `src/` par `tests/support/srcSources.ts` (R97).
  */
 
-/** Les littéraux lus de chaque fichier : ceux de son script et, pour un `.vue`, ceux des expressions de son gabarit (R96). */
-const sources = Object.fromEntries(
-  Object.entries(SRC_SCRIPTS).map(([path, script]) => [
-    path,
-    [...stringLiterals(script), ...(SRC_TEMPLATE_EXPRESSIONS[path] ?? []).flatMap((expression) => stringLiterals(expression))],
-  ]),
-) as Record<string, string[]>
-
-/** Les littéraux d'une source de test, lus comme ceux d'un fichier de `src/` (`path` en `.vue` : script et gabarit). */
-function literalsOf(source: string, path = 'x.ts'): string[] {
-  return [...stringLiterals(scriptOf(path, source)), ...templateExpressionsOf(path, source).flatMap((expression) => stringLiterals(expression))]
+/** Les littéraux d'un fichier : ceux de son script et ceux des expressions de son gabarit (`[]` hors d'un `.vue`). */
+function literalsOf(script: string, templateExpressions: readonly string[]): string[] {
+  return [...stringLiterals(script), ...templateExpressions.flatMap((expression) => stringLiterals(expression))]
 }
+
+/** Vrai si les littéraux d'un fichier contiennent la chaîne `'omit'`. */
+function writesOmit(literals: readonly string[]): boolean {
+  return literals.includes('omit')
+}
+
+/** Les littéraux lus de chaque fichier de `src/`, par chemin relatif à `src/`. */
+const sources = Object.fromEntries(
+  Object.entries(SRC_SCRIPTS).map(([path, script]) => [path, literalsOf(script, SRC_TEMPLATE_EXPRESSIONS[path] ?? [])]),
+) as Record<string, string[]>
 
 /**
  * Vrai si la source écrit une chaîne `'omit'` (simples, doubles ou gabarit) hors d'un commentaire. Lue par
  * `tests/support/sourceText.ts`, sur l'arbre syntaxique de TypeScript : un `'/*'`, un `'//'`, une URL entre guillemets
- * ou une regex littérale n'ouvre ni commentaire ni chaîne (Sp6-11, R68, CR7-7, R80). Locale à ce spec, non exportée : une garde n'est pas une API.
+ * ou une regex littérale n'ouvre ni commentaire ni chaîne. Locale à ce spec, non exportée : une garde n'est pas une API.
  */
 function offendsWithOmit(source: string, path = 'x.ts'): boolean {
-  return literalsOf(source, path).includes('omit')
+  return writesOmit(literalsOf(scriptOf(path, source), templateExpressionsOf(path, source)))
 }
 
 describe("aucun credentials: 'omit' dans src/", () => {
@@ -84,10 +86,27 @@ describe("aucun credentials: 'omit' dans src/", () => {
 
   it("aucun fichier n'écrit la chaîne 'omit' hors d'un commentaire (elle retire aussi la Basic Auth de la préprod, C1)", () => {
     const offenders = Object.entries(sources)
-      .filter(([, literals]) => literals.includes('omit'))
+      .filter(([, literals]) => writesOmit(literals))
       .map(([path]) => path)
       .sort()
 
     expect(offenders).toEqual([])
+  })
+
+  it('chaque expression de gabarit de src/ se lit sans erreur de syntaxe : le détecteur ne lit pas une chaîne par chance', () => {
+    const broken = Object.entries(SRC_TEMPLATE_EXPRESSIONS).flatMap(([path, fragments]) =>
+      fragments.flatMap((fragment) => syntaxErrorsOf(fragment).map((error) => `${path} : ${error} : ${fragment}`)),
+    )
+
+    expect(Object.values(SRC_TEMPLATE_EXPRESSIONS).flat().length).toBeGreaterThan(100)
+    expect(broken).toEqual([])
+  })
+
+  it('le détecteur voit un v-for, un v-slot déstructuré et un littéral objet lié du <template>', () => {
+    const vue = (template: string): string => `<template>${template}</template>\n<script setup lang="ts">\n</script>\n`
+
+    expect(offendsWithOmit(vue('<ul><li v-for="m in [\'omit\']">x</li></ul>'), 'X.vue')).toBe(true)
+    expect(offendsWithOmit(vue('<C v-slot="{ mode = \'omit\' }">x</C>'), 'X.vue')).toBe(true)
+    expect(offendsWithOmit(vue('<C :opts="{ credentials: \'omit\' }" />'), 'X.vue')).toBe(true)
   })
 })

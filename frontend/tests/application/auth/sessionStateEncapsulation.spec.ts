@@ -27,7 +27,16 @@ import { SRC_SCRIPTS } from '../../support/srcSources'
  * restent hors de la table : c'est l'API publique de la façade (`useBaseAccess` et les composables du palier de base les
  * appellent), elles jugent elles-mêmes la génération.
  */
-const sources = SRC_SCRIPTS
+
+/** Le script de `path` (relatif à `src/`) ; un chemin absent de `src/` est une erreur qui le nomme, non un texte vide. */
+function sourceOf(path: string): string {
+  const source = SRC_SCRIPTS[path]
+  if (undefined === source) {
+    throw new Error(`${path} : fichier absent de src/ (SRC_SCRIPTS)`)
+  }
+
+  return source
+}
 
 /**
  * Les écritures de `sessionState.ts` et les seuls fichiers de `src/` (chemins relatifs à `src/`) autorisés à les importer.
@@ -181,7 +190,7 @@ describe("L'état de session n'est pas exporté en écriture", () => {
 
 describe("Les écritures de l'état de session ont chacune leurs importeurs", () => {
   it('lit bien les sources, et chaque écriture de WRITERS est un export de sessionState', async () => {
-    expect(Object.keys(sources).length).toBeGreaterThan(100)
+    expect(Object.keys(SRC_SCRIPTS).length).toBeGreaterThan(100)
     const exported = Object.keys(await import('../../../src/application/auth/sessionState'))
 
     for (const name of Object.keys(WRITERS)) {
@@ -223,8 +232,7 @@ describe("Les écritures de l'état de session ont chacune leurs importeurs", ()
   it("les fonctions qui écrivent l'état ne sont importées que par leurs modules", () => {
     const offenders: string[] = []
 
-    for (const [path, source] of Object.entries(sources)) {
-      const file = path
+    for (const [file, source] of Object.entries(SRC_SCRIPTS)) {
       const imported = namesImportedFromSessionState(source)
 
       for (const [name, allowed] of Object.entries(WRITERS)) {
@@ -242,7 +250,7 @@ describe("Les écritures de l'état de session ont chacune leurs importeurs", ()
 
     for (const [name, allowed] of Object.entries(WRITERS)) {
       for (const file of allowed) {
-        const source = sources[file]
+        const source = SRC_SCRIPTS[file]
         const imported = source === undefined ? [] : namesImportedFromSessionState(source)
         if (!imported.includes(name)) {
           dead.push(`${file} n'importe pas ${name}`)
@@ -291,11 +299,9 @@ describe("Les écritures de l'état de session ont chacune leurs importeurs", ()
   })
 
   it('useAuth ne réexporte aucune écriture', async () => {
-    const source = sources['application/auth/useAuth.ts'] ?? ''
-    const reexported = namesInExportBlocks(source)
+    const reexported = namesInExportBlocks(sourceOf('application/auth/useAuth.ts'))
     const exported = Object.keys(await import('../../../src/application/auth/useAuth'))
 
-    expect(source).not.toBe('')
     for (const name of Object.keys(WRITERS)) {
       expect(reexported).not.toContain(name)
       expect(exported).not.toContain(name)

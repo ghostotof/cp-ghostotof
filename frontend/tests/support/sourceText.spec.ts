@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { scriptOf, stringLiterals, templateExpressionsOf, withoutComments } from './sourceText'
+import {
+  expressionsOfTemplate,
+  scriptOf,
+  stringLiterals,
+  syntaxErrorsOf,
+  templateExpressionsOf,
+  withoutComments,
+  type TemplateRoot,
+} from './sourceText'
 
 /**
  * Le lecteur de source des gardes (#748, R68, Sp6-11, St6-9) : il connaît les chaînes, donc un `'/*'`, un `'//'` ou
@@ -128,5 +136,66 @@ describe('templateExpressionsOf', () => {
 
   it('refuse un .vue illisible en nommant son chemin', () => {
     expect(() => templateExpressionsOf('X.vue', '<template><p></template>')).toThrow(/X\.vue/)
+  })
+
+  describe('chaque expression est rendue comme le fragment JavaScript que Vue compile (CR9-7)', () => {
+    const fragmentsOf = (template: string): string[] => templateExpressionsOf('X.vue', wrap(template))
+
+    it("lit l'expression d'un v-for : un 'omit' écrit dans la source de la boucle est vu", () => {
+      expect(literalsOf('<ul><li v-for="m in [\'omit\']">{{ m }}</li></ul>')).toContain('omit')
+      expect(fragmentsOf('<ul><li v-for="m in [\'omit\']">x</li></ul>')).toEqual(["(['omit'])", '(m) => 0'])
+    })
+
+    it("lit chaque alias d'un v-for (valeur déstructurée avec défaut, clé, index) comme un paramètre de fonction", () => {
+      expect(fragmentsOf('<li v-for="({ mode = \'omit\' }, k, i) in items">x</li>')).toEqual([
+        '(items)',
+        "({ mode = 'omit' }) => 0",
+        '(k) => 0',
+        '(i) => 0',
+      ])
+    })
+
+    it('lit un v-slot déstructuré, long ou abrégé, comme un paramètre de fonction', () => {
+      expect(fragmentsOf('<C v-slot="{ mode = \'omit\' }">x</C>')).toEqual(["({ mode = 'omit' }) => 0"])
+      expect(fragmentsOf('<C #row="{ item, index }">x</C>')).toEqual(['({ item, index }) => 0'])
+    })
+
+    it('lit un littéral objet lié entre parenthèses : ce n\'est pas un bloc étiqueté', () => {
+      expect(fragmentsOf('<C :opts="{ credentials: \'omit\' }" />')).toEqual(["({ credentials: 'omit' })"])
+    })
+
+    it('lit un gestionnaire en ligne comme le corps d\'une fonction : plusieurs instructions y sont permises', () => {
+      expect(fragmentsOf('<button @click="a(); b(\'omit\')">x</button>')).toEqual(["() => {\na(); b('omit')\n}"])
+    })
+
+    it("lit une interpolation et un argument dynamique entre parenthèses, et ne rend pas un argument statique", () => {
+      expect(fragmentsOf("<p :title=\"t\" :[dyn]=\"u\">{{ 'd' }}</p>")).toEqual(['(t)', '(u)', '(dyn)', "('d')"])
+      expect(fragmentsOf('<p :title="t" />')).toEqual(['(t)'])
+    })
+
+    it('chaque fragment se lit sans erreur de syntaxe', () => {
+      const template =
+        '<ul><li v-for="({ mode = \'omit\' }, k, i) in items" :key="k" @click="a(); b(\'omit\')">{{ mode }}</li></ul>' +
+        '<C v-slot="{ a = 1 }" :opts="{ credentials: 1 }" />'
+
+      for (const fragment of fragmentsOf(template)) {
+        expect(syntaxErrorsOf(fragment), fragment).toEqual([])
+      }
+    })
+  })
+})
+
+describe('syntaxErrorsOf', () => {
+  it('rend les erreurs de syntaxe de TypeScript pour un fragment, aucune pour un fragment valide', () => {
+    expect(syntaxErrorsOf('(a, b) => 0')).toEqual([])
+    expect(syntaxErrorsOf('(a, ')).not.toEqual([])
+  })
+})
+
+describe('expressionsOfTemplate', () => {
+  it("ne visite jamais un contenu nul ou absent (CR9-6) : `typeof null` est 'object'", () => {
+    const root = { type: 0, children: [{ type: 5, content: null }, { type: 5 }] } as unknown as TemplateRoot
+
+    expect(expressionsOfTemplate(root)).toEqual([])
   })
 })
